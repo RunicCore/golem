@@ -79,6 +79,14 @@ Each item names a breaking change and the action to take.
 - Several pre-1.0 exports are removed with no replacement ([Removed APIs](https://github.com/exprtlabs/codegen/blob/main/CHANGELOG.md#removed-apis-pre-10)).
 - An inventory (`.runic-codegen/outputs.json`) from an earlier release candidate is rejected. Delete it and run `npx runic-codegen generate`.
 
+### Generated files
+
+- Regenerate after upgrading. SDKs and OpenAPI documents change.
+- Replace imports of the SDK's `client.js`, `models.js`, `validation.js` and `client-runtime.js` with `sdk/index.js`, `sdk/models/<Name>.js` or `sdk/operations/<name>.js`; the [generated files](/reference/generated-files) page lists the public paths.
+- `__Projection<N>` schemas get stable names. Add a named type alias to choose one.
+- Install `@exprtlabs/codegen` at or above the version the SDK was generated for, with the same major version.
+- The identifiers of codecs in generated files change. A hand-written model and an SDK model with the same name and shape no longer share an id.
+
 ### Known trade-offs
 
 - Tagged-union encoding dispatches on the tag, measured about 6% slower than class-first dispatch.

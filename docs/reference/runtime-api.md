@@ -223,6 +223,26 @@ interface ApiOperation<Input, Result, Options = unknown> {
 - Overlapping `execute` calls all run; each one after the first logs `Concurrent execute() invocation for <name>`.
 - An operation caches no results or errors.
 
+Generated SDKs call the request runtime. Application code rarely does.
+
+| Member | Behavior |
+| --- | --- |
+| `ClientRuntime` | Holds a client's options and sends its requests. `new ClientRuntime(client, options, defaults)` |
+| `isUndeclaredResponseError` | `(error, client?)`: true for a status or media type the operation does not declare |
+| `serializePath` | Writes a path parameter |
+| `addQueryParameter` | Adds a query parameter |
+| `setQueryString` | Sets a whole querystring parameter |
+| `appendQuery` | Appends one encoded query pair |
+| `serializeHeaderSimple` | Writes a header value |
+| `serializeContentParameter` | Writes a parameter with a media type |
+| `addCookieParameter` | Adds a cookie parameter |
+| `addCookieStyleParameter` | Adds a cookie-style parameter |
+| `encodeBody` | Encodes a request body for its media type |
+| `applySecurity` | Adds credentials for the operation's security requirements |
+| `encode` | Percent-encodes a value |
+
+The module also exports the types these functions use: `ClientOptions`, `RequestOptions`, `ParameterSerializer`, `EncodedBody`, `BodyEncoder`, `MutualTlsTransport`, `AuthContext`, `TokenAuthValue`, `BasicCredentials`, `BasicAuthValue` and `RuntimeSecuritySchemes`. Each SDK aliases the option types with its client name, such as `PaymentsClientOptions`.
+
 Generated client options are in [Create a client](/guide/client-usage#create-a-client).
 
 ## `@exprtlabs/codegen/conversion` {#conversion}

@@ -37,13 +37,15 @@ The command writes `sdk/`. Import `TasksClient` from `../sdk/index.js`.
 
 ## Generated files
 
-| File | Contents |
-| --- | --- |
-| `index.ts` | Entrypoint |
-| `client.ts` | The client class and its runtime |
-| `operations/<name>.ts` | One operation factory per endpoint |
-| `models/<Schema>.ts` | A runtime model class per object schema |
-| `model-manifest.json` | Read by the model generator |
+Import only the public [generated files](/reference/generated-files); the others may change in a minor release.
+
+| File | Contents | Public |
+| --- | --- | --- |
+| `index.ts` | Entrypoint | Yes |
+| `client.ts` | The client class | No |
+| `operations/<name>.ts` | One operation factory per endpoint | Yes |
+| `models/<Schema>.ts` | A runtime model class per object schema | Yes |
+| `model-manifest.json` | Read by the model generator | No |
 
 For a schema named `Task` you get `Task`, the JSON data type, and `TaskModel`, its runtime class. Use `TaskModel` when you want an instance rather than response data:
 

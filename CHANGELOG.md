@@ -103,6 +103,11 @@ See [OpenAPI client support](docs/reference/openapi-support.md) for supported ve
 - Tooling requires Node.js 22.12 or newer.
 - **Breaking:** `@exprtlabs/model-codegen` declares `typescript` (`~7.0.2`) and `ttsc` (`~0.30.4`) as peer dependencies instead of dependencies, like `@exprtlabs/ts-to-openapi`; install them in the consuming project. `ttsc` builds the Go plugin with its bundled Go toolchain.
 - Packages no longer publish source maps, which referenced unpublished TypeScript sources. `@exprtlabs/codegen` no longer publishes the Go plugin's tests or `go.work` files.
+- **Breaking:** regenerate after upgrading. SDKs and OpenAPI documents change.
+- **Breaking:** the SDK no longer writes `validation.ts`, `client-runtime.ts` or `models.ts`, and `client.ts` and `validation.ts` are internal. Replace imports of `sdk/client.js`, `sdk/models.js`, `sdk/validation.js` and `sdk/client-runtime.js` with `sdk/index.js`, `sdk/models/<Name>.js` or `sdk/operations/<name>.js` ([generated files](docs/reference/generated-files.md)).
+- **Breaking:** `__Projection<N>` schemas get stable names built from the type's shape. Add a named type alias to choose one.
+- **Breaking:** install `@exprtlabs/codegen` at or above the version the SDK was generated for, with the same major version. Generation commands fail before writing when it is older.
+- **Breaking:** codec ids in generated files change. A hand-written model and an SDK model with the same name and shape no longer share an id.
 - **Breaking:** the output inventory (`.runic-codegen/outputs.json`) records a `destination` and `destinationKind` for every file; an inventory from an earlier release candidate is rejected. Delete it and regenerate.
 
 ### Removed APIs (pre-1.0)

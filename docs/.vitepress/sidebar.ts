@@ -38,6 +38,7 @@ export const SIDEBAR: readonly SidebarGroup[] = [
     { text: 'Runtime API', link: '/reference/runtime-api' },
     { text: 'Generator API', link: '/reference/generator-api' },
     { text: 'OpenAPI client support', link: '/reference/openapi-support' },
+    { text: 'Generated files', link: '/reference/generated-files' },
     { text: 'Diagnostics', link: '/reference/diagnostics' },
   ] },
   { text: 'Project', items: [
