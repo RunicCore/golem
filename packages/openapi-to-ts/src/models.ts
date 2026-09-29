@@ -1737,7 +1737,9 @@ export function collectOpenApiCodecEntries(
   return ordered.map((definition) => {
     const node = [...schemaGraph.nodes.values()].find((item) => item.name === definition.name);
     const codecId = node?.codecId ?? codecPublicId(definition.name, { kind: 'unknown' }, undefined, { source: 'openapi', constructs: true });
-    return { source: groupForModel.get(definition.name) ?? `models/${definition.name}.ts`, name: definition.name, codecId };
+    const source = groupForModel.get(definition.name);
+    if (!source) throw new Error(`Internal error: model ${definition.name} has no output group.`);
+    return { source, name: definition.name, codecId };
   });
 }
 
