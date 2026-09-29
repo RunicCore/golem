@@ -2,30 +2,30 @@
 import { ClientRuntime, type OperationValidationSources, type PaymentsClientOptions as ClientOptions, type PaymentsRequestOptions as RequestOptions, type RuntimeResponseContract } from '../client-runtime.js';
 import type * as Types from '../types.js';
 import { createApiOperation, type ApiOperation } from '@exprtlabs/codegen/client';
-import { schema as __runicSchema0 } from "../validation-schemas/f06268f05a_schemas_component___Projection0_input-3fec140cc2e9b329.js";
-import { schema as __runicSchema1 } from "../validation-schemas/06268f05a_schemas_component___Projection0_output-116d941b28c58126.js";
-import { schema as __runicSchema2 } from "../validation-schemas/a975df06268f05a_schemas_component_Merchant_input-e136fc35827a438c.js";
-import { schema as __runicSchema3 } from "../validation-schemas/975df06268f05a_schemas_component_Merchant_output-b2fe8fc9bb57c535.js";
-import { schema as __runicSchema4 } from "../validation-schemas/59ba975df06268f05a_schemas_component_Money_input-75905aec4b3cf1f8.js";
-import { schema as __runicSchema5 } from "../validation-schemas/9ba975df06268f05a_schemas_component_Money_output-1c3e08cdd4324b99.js";
-import { schema as __runicSchema6 } from "../validation-schemas/a975df06268f05a_schemas_component_Payment_output-69c994e33b04623b.js";
-import { schema as __runicSchema7 } from "../validation-schemas/df06268f05a_schemas_component_PaymentInput_input-8434ce429eaac03a.js";
+import { schema as __runicSchema0 } from "../validation-schemas/Merchant.input.js";
+import { schema as __runicSchema1 } from "../validation-schemas/Merchant.output.js";
+import { schema as __runicSchema2 } from "../validation-schemas/MerchantOmitId.input.js";
+import { schema as __runicSchema3 } from "../validation-schemas/MerchantOmitId.output.js";
+import { schema as __runicSchema4 } from "../validation-schemas/Money.input.js";
+import { schema as __runicSchema5 } from "../validation-schemas/Money.output.js";
+import { schema as __runicSchema6 } from "../validation-schemas/Payment.output.js";
+import { schema as __runicSchema7 } from "../validation-schemas/PaymentInput.input.js";
 
 
 const responseContracts: readonly RuntimeResponseContract[] = [{"status":"201","content":[{"contentType":"application/json","framing":"body"}],"headers":[]},{"status":"400","content":[],"headers":[]}];
 const __resolveOperationValidationSources = (): OperationValidationSources => ({
-    inputReference: "urn:runic:openapi:paymentsapi:510a4faa1f06a42804dbc2555824f479df635d9447759959ba975df06268f05a:schemas:operation:createPayment#/operations/createPayment/input",
-    responseReferences: [{"status":"201","contentType":"application/json","reference":"urn:runic:openapi:paymentsapi:510a4faa1f06a42804dbc2555824f479df635d9447759959ba975df06268f05a:schemas:operation:createPayment#/operations/createPayment/responses/201/application~1json"}],
+    inputReference: "urn:runic:openapi:paymentsapi:d3839f4869c824cf4c54868d051a37d9bd143d29a2154c4191da4e7122bf6c60:schemas:operation:createPayment#/operations/createPayment/input",
+    responseReferences: [{"status":"201","contentType":"application/json","reference":"urn:runic:openapi:paymentsapi:d3839f4869c824cf4c54868d051a37d9bd143d29a2154c4191da4e7122bf6c60:schemas:operation:createPayment#/operations/createPayment/responses/201/application~1json"}],
     schemas: new Map([
-      ["urn:runic:openapi:paymentsapi:510a4faa1f06a42804dbc2555824f479df635d9447759959ba975df06268f05a:schemas:operation:createPayment", JSON.parse("{\"$id\":\"urn:runic:openapi:paymentsapi:510a4faa1f06a42804dbc2555824f479df635d9447759959ba975df06268f05a:schemas:operation:createPayment\",\"$schema\":\"https://spec.openapis.org/oas/3.1/dialect/base\",\"operations\":{\"createPayment\":{\"input\":{\"type\":\"object\",\"properties\":{\"body\":{\"$ref\":\"urn:runic:openapi:paymentsapi:510a4faa1f06a42804dbc2555824f479df635d9447759959ba975df06268f05a:schemas:component:PaymentInput:input\"}},\"required\":[\"body\"],\"additionalProperties\":false},\"responses\":{\"201\":{\"application/json\":{\"$ref\":\"urn:runic:openapi:paymentsapi:510a4faa1f06a42804dbc2555824f479df635d9447759959ba975df06268f05a:schemas:component:Payment:output\"}},\"400\":{}}}}}") as object | boolean],
-      ["urn:runic:openapi:paymentsapi:510a4faa1f06a42804dbc2555824f479df635d9447759959ba975df06268f05a:schemas:component:__Projection0:input", __runicSchema0],
-      ["urn:runic:openapi:paymentsapi:510a4faa1f06a42804dbc2555824f479df635d9447759959ba975df06268f05a:schemas:component:__Projection0:output", __runicSchema1],
-      ["urn:runic:openapi:paymentsapi:510a4faa1f06a42804dbc2555824f479df635d9447759959ba975df06268f05a:schemas:component:Merchant:input", __runicSchema2],
-      ["urn:runic:openapi:paymentsapi:510a4faa1f06a42804dbc2555824f479df635d9447759959ba975df06268f05a:schemas:component:Merchant:output", __runicSchema3],
-      ["urn:runic:openapi:paymentsapi:510a4faa1f06a42804dbc2555824f479df635d9447759959ba975df06268f05a:schemas:component:Money:input", __runicSchema4],
-      ["urn:runic:openapi:paymentsapi:510a4faa1f06a42804dbc2555824f479df635d9447759959ba975df06268f05a:schemas:component:Money:output", __runicSchema5],
-      ["urn:runic:openapi:paymentsapi:510a4faa1f06a42804dbc2555824f479df635d9447759959ba975df06268f05a:schemas:component:Payment:output", __runicSchema6],
-      ["urn:runic:openapi:paymentsapi:510a4faa1f06a42804dbc2555824f479df635d9447759959ba975df06268f05a:schemas:component:PaymentInput:input", __runicSchema7],
+      ["urn:runic:openapi:paymentsapi:d3839f4869c824cf4c54868d051a37d9bd143d29a2154c4191da4e7122bf6c60:schemas:operation:createPayment", JSON.parse("{\"$id\":\"urn:runic:openapi:paymentsapi:d3839f4869c824cf4c54868d051a37d9bd143d29a2154c4191da4e7122bf6c60:schemas:operation:createPayment\",\"$schema\":\"https://spec.openapis.org/oas/3.1/dialect/base\",\"operations\":{\"createPayment\":{\"input\":{\"type\":\"object\",\"properties\":{\"body\":{\"$ref\":\"urn:runic:openapi:paymentsapi:d3839f4869c824cf4c54868d051a37d9bd143d29a2154c4191da4e7122bf6c60:schemas:component:PaymentInput:input\"}},\"required\":[\"body\"],\"additionalProperties\":false},\"responses\":{\"201\":{\"application/json\":{\"$ref\":\"urn:runic:openapi:paymentsapi:d3839f4869c824cf4c54868d051a37d9bd143d29a2154c4191da4e7122bf6c60:schemas:component:Payment:output\"}},\"400\":{}}}}}") as object | boolean],
+      ["urn:runic:openapi:paymentsapi:d3839f4869c824cf4c54868d051a37d9bd143d29a2154c4191da4e7122bf6c60:schemas:component:Merchant:input", __runicSchema0],
+      ["urn:runic:openapi:paymentsapi:d3839f4869c824cf4c54868d051a37d9bd143d29a2154c4191da4e7122bf6c60:schemas:component:Merchant:output", __runicSchema1],
+      ["urn:runic:openapi:paymentsapi:d3839f4869c824cf4c54868d051a37d9bd143d29a2154c4191da4e7122bf6c60:schemas:component:MerchantOmitId:input", __runicSchema2],
+      ["urn:runic:openapi:paymentsapi:d3839f4869c824cf4c54868d051a37d9bd143d29a2154c4191da4e7122bf6c60:schemas:component:MerchantOmitId:output", __runicSchema3],
+      ["urn:runic:openapi:paymentsapi:d3839f4869c824cf4c54868d051a37d9bd143d29a2154c4191da4e7122bf6c60:schemas:component:Money:input", __runicSchema4],
+      ["urn:runic:openapi:paymentsapi:d3839f4869c824cf4c54868d051a37d9bd143d29a2154c4191da4e7122bf6c60:schemas:component:Money:output", __runicSchema5],
+      ["urn:runic:openapi:paymentsapi:d3839f4869c824cf4c54868d051a37d9bd143d29a2154c4191da4e7122bf6c60:schemas:component:Payment:output", __runicSchema6],
+      ["urn:runic:openapi:paymentsapi:d3839f4869c824cf4c54868d051a37d9bd143d29a2154c4191da4e7122bf6c60:schemas:component:PaymentInput:input", __runicSchema7],
     ]),
 
   });

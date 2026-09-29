@@ -2,7 +2,7 @@
 /** Exact component and operation schemas retained for runtime validation. */
 export const schemaDialect = "https://spec.openapis.org/oas/3.1/dialect/base" as const;
 export const schemaRegistry = {
-  "$id": "urn:runic:openapi:paymentsapi:510a4faa1f06a42804dbc2555824f479df635d9447759959ba975df06268f05a:schemas",
+  "$id": "urn:runic:openapi:paymentsapi:d3839f4869c824cf4c54868d051a37d9bd143d29a2154c4191da4e7122bf6c60:schemas",
   "components": {
     "schemas": {
       "Merchant": {
@@ -24,6 +24,25 @@ export const schemaRegistry = {
         },
         "required": [
           "id",
+          "name"
+        ],
+        "type": "object"
+      },
+      "MerchantOmitId": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "allOf": [
+              {
+                "type": "string"
+              },
+              {
+                "minLength": 2
+              }
+            ]
+          }
+        },
+        "required": [
           "name"
         ],
         "type": "object"
@@ -62,7 +81,7 @@ export const schemaRegistry = {
         "additionalProperties": false,
         "properties": {
           "billing": {
-            "$ref": "#/components/schemas/__Projection0"
+            "$ref": "#/components/schemas/MerchantOmitId"
           },
           "id": {
             "type": "string"
@@ -97,7 +116,7 @@ export const schemaRegistry = {
         "additionalProperties": false,
         "properties": {
           "billing": {
-            "$ref": "#/components/schemas/__Projection0"
+            "$ref": "#/components/schemas/MerchantOmitId"
           },
           "merchant": {
             "$ref": "#/components/schemas/Merchant"
@@ -121,25 +140,6 @@ export const schemaRegistry = {
           "merchant",
           "money",
           "note"
-        ],
-        "type": "object"
-      },
-      "__Projection0": {
-        "additionalProperties": false,
-        "properties": {
-          "name": {
-            "allOf": [
-              {
-                "type": "string"
-              },
-              {
-                "minLength": 2
-              }
-            ]
-          }
-        },
-        "required": [
-          "name"
         ],
         "type": "object"
       }
@@ -200,7 +200,7 @@ export const schemaRegistry = {
         "200": {
           "application/json": {
             "items": {
-              "$ref": "urn:runic:openapi:paymentsapi:510a4faa1f06a42804dbc2555824f479df635d9447759959ba975df06268f05a:schemas:input#/components/schemas/Payment"
+              "$ref": "urn:runic:openapi:paymentsapi:d3839f4869c824cf4c54868d051a37d9bd143d29a2154c4191da4e7122bf6c60:schemas:input#/components/schemas/Payment"
             },
             "type": "array"
           }
@@ -213,7 +213,7 @@ export const schemaRegistry = {
         "type": "object",
         "properties": {
           "body": {
-            "$ref": "urn:runic:openapi:paymentsapi:510a4faa1f06a42804dbc2555824f479df635d9447759959ba975df06268f05a:schemas:input#/components/schemas/PaymentInput"
+            "$ref": "urn:runic:openapi:paymentsapi:d3839f4869c824cf4c54868d051a37d9bd143d29a2154c4191da4e7122bf6c60:schemas:input#/components/schemas/PaymentInput"
           }
         },
         "required": [
@@ -224,7 +224,7 @@ export const schemaRegistry = {
       "responses": {
         "201": {
           "application/json": {
-            "$ref": "urn:runic:openapi:paymentsapi:510a4faa1f06a42804dbc2555824f479df635d9447759959ba975df06268f05a:schemas:input#/components/schemas/Payment"
+            "$ref": "urn:runic:openapi:paymentsapi:d3839f4869c824cf4c54868d051a37d9bd143d29a2154c4191da4e7122bf6c60:schemas:input#/components/schemas/Payment"
           }
         },
         "400": {}
@@ -235,7 +235,7 @@ export const schemaRegistry = {
         "type": "object",
         "properties": {
           "body": {
-            "$ref": "urn:runic:openapi:paymentsapi:510a4faa1f06a42804dbc2555824f479df635d9447759959ba975df06268f05a:schemas:input#/components/schemas/Payment"
+            "$ref": "urn:runic:openapi:paymentsapi:d3839f4869c824cf4c54868d051a37d9bd143d29a2154c4191da4e7122bf6c60:schemas:input#/components/schemas/Payment"
           }
         },
         "required": [
@@ -246,7 +246,7 @@ export const schemaRegistry = {
       "responses": {
         "201": {
           "application/json": {
-            "$ref": "urn:runic:openapi:paymentsapi:510a4faa1f06a42804dbc2555824f479df635d9447759959ba975df06268f05a:schemas:input#/components/schemas/Payment"
+            "$ref": "urn:runic:openapi:paymentsapi:d3839f4869c824cf4c54868d051a37d9bd143d29a2154c4191da4e7122bf6c60:schemas:input#/components/schemas/Payment"
           }
         },
         "400": {}
@@ -277,7 +277,7 @@ export const schemaRegistry = {
       "responses": {
         "200": {
           "application/json": {
-            "$ref": "urn:runic:openapi:paymentsapi:510a4faa1f06a42804dbc2555824f479df635d9447759959ba975df06268f05a:schemas:input#/components/schemas/Payment"
+            "$ref": "urn:runic:openapi:paymentsapi:d3839f4869c824cf4c54868d051a37d9bd143d29a2154c4191da4e7122bf6c60:schemas:input#/components/schemas/Payment"
           }
         },
         "404": {}
@@ -312,7 +312,7 @@ export const schemaRegistry = {
   },
   "$defs": {
     "runic-input": {
-      "$id": "urn:runic:openapi:paymentsapi:510a4faa1f06a42804dbc2555824f479df635d9447759959ba975df06268f05a:schemas:input",
+      "$id": "urn:runic:openapi:paymentsapi:d3839f4869c824cf4c54868d051a37d9bd143d29a2154c4191da4e7122bf6c60:schemas:input",
       "components": {
         "schemas": {
           "Merchant": {
@@ -334,6 +334,25 @@ export const schemaRegistry = {
             },
             "required": [
               "id",
+              "name"
+            ],
+            "type": "object"
+          },
+          "MerchantOmitId": {
+            "additionalProperties": false,
+            "properties": {
+              "name": {
+                "allOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "minLength": 2
+                  }
+                ]
+              }
+            },
+            "required": [
               "name"
             ],
             "type": "object"
@@ -372,7 +391,7 @@ export const schemaRegistry = {
             "additionalProperties": false,
             "properties": {
               "billing": {
-                "$ref": "#/components/schemas/__Projection0"
+                "$ref": "#/components/schemas/MerchantOmitId"
               },
               "id": {
                 "type": "string"
@@ -407,7 +426,7 @@ export const schemaRegistry = {
             "additionalProperties": false,
             "properties": {
               "billing": {
-                "$ref": "#/components/schemas/__Projection0"
+                "$ref": "#/components/schemas/MerchantOmitId"
               },
               "merchant": {
                 "$ref": "#/components/schemas/Merchant"
@@ -433,25 +452,6 @@ export const schemaRegistry = {
               "note"
             ],
             "type": "object"
-          },
-          "__Projection0": {
-            "additionalProperties": false,
-            "properties": {
-              "name": {
-                "allOf": [
-                  {
-                    "type": "string"
-                  },
-                  {
-                    "minLength": 2
-                  }
-                ]
-              }
-            },
-            "required": [
-              "name"
-            ],
-            "type": "object"
           }
         }
       }
@@ -461,7 +461,7 @@ export const schemaRegistry = {
 } as const;
 /** JSON Schema 2020-compatible evaluation form; differs from schemaRegistry only where a binary-format string is widened to accept a Blob/File runtime value. */
 export const runtimeSchemaRegistry = schemaRegistry;
-export const schemaNames = ["Merchant","Money","Payment","PaymentInput","__Projection0"] as const;
+export const schemaNames = ["Merchant","MerchantOmitId","Money","Payment","PaymentInput"] as const;
 export type SchemaName = (typeof schemaNames)[number];
 export const operationNames = ["listPayments","createPayment","createPaymentAsClass","getPayment","deletePayment"] as const;
 export type OperationName = (typeof operationNames)[number];

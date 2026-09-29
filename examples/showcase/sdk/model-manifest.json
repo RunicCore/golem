@@ -5,7 +5,6 @@
   },
   "models": [
     {
-      "additionalProperties": false,
       "allowAny": false,
       "discriminator": null,
       "fields": [
@@ -55,7 +54,6 @@
       "variants": []
     },
     {
-      "additionalProperties": false,
       "allowAny": false,
       "discriminator": null,
       "fields": [

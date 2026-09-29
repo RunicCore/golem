@@ -6,13 +6,17 @@ export type Merchant = {
   name: (string);
 };
 
+export type MerchantOmitId = {
+  name: (string);
+};
+
 export type Money = {
   amount: (string);
   currency: ("EUR") | ("USD");
 };
 
 export type Payment = {
-  billing: __Projection0;
+  billing: MerchantOmitId;
   id: string;
   merchant: Merchant;
   money: Money;
@@ -20,12 +24,8 @@ export type Payment = {
 };
 
 export type PaymentInput = {
-  billing: __Projection0;
+  billing: MerchantOmitId;
   merchant: Merchant;
   money: Money;
   note: (string);
-};
-
-export type __Projection0 = {
-  name: (string);
 };

@@ -32,14 +32,14 @@
     "sdk/iobject-plugin-keys.ts": {
       "job": "openapi:sdk",
       "owner": "@exprtlabs/openapi-to-ts",
-      "digest": "28cbc093afffd6fd72003d192b24fe1f28238a182fd50a36040fab5524c8107f",
+      "digest": "f7b09a95dfc1e96ab0fea286885eae8467069f143b83723d933a379fc4d0e0c1",
       "destination": "sdk",
       "destinationKind": "directory"
     },
     "sdk/model-manifest.json": {
       "job": "openapi:sdk",
       "owner": "@exprtlabs/openapi-to-ts",
-      "digest": "220862a9cd20a6ef57ebc3d3b881a888c1e52d7a3734ea400ce419de66e783d4",
+      "digest": "6fab2c8984c6d3608fde48f3a8d18797ed5d5de9d9e450f38532a699101aaa6d",
       "destination": "sdk",
       "destinationKind": "directory"
     },
@@ -67,7 +67,7 @@
     "sdk/operations/createPayment.ts": {
       "job": "openapi:sdk",
       "owner": "@exprtlabs/openapi-to-ts",
-      "digest": "712db931dea573185357d37432db2a94957b2b989eaaccd83791ea1487cfd552",
+      "digest": "774755fa6a07f4ec3ea24958b8eb7003f3342e1b5cacc33df1825d2777cb5f8f",
       "destination": "sdk",
       "destinationKind": "directory"
     },
@@ -92,17 +92,17 @@
       "destination": "sdk",
       "destinationKind": "directory"
     },
-    "sdk/validation-schemas/627638ed7cc64f7c9_schemas_component_Money_output-88b519b63626f737.ts": {
-      "job": "openapi:sdk",
-      "owner": "@exprtlabs/openapi-to-ts",
-      "digest": "fd6223a8488c4b2f3ec33f3d9a832ff946a977cecca48c4426dccc4e4fc1b26a",
-      "destination": "sdk",
-      "destinationKind": "directory"
-    },
-    "sdk/validation-schemas/c627638ed7cc64f7c9_schemas_component_Money_input-ebb009ad8dd90ce2.ts": {
+    "sdk/validation-schemas/Money.input.ts": {
       "job": "openapi:sdk",
       "owner": "@exprtlabs/openapi-to-ts",
       "digest": "02de1ed9799a07d0a0ebd17fe6af5e3b2fe72c7cd46cbffac348dde2b638829f",
+      "destination": "sdk",
+      "destinationKind": "directory"
+    },
+    "sdk/validation-schemas/Money.output.ts": {
+      "job": "openapi:sdk",
+      "owner": "@exprtlabs/openapi-to-ts",
+      "digest": "fd6223a8488c4b2f3ec33f3d9a832ff946a977cecca48c4426dccc4e4fc1b26a",
       "destination": "sdk",
       "destinationKind": "directory"
     },

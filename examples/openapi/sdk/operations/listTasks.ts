@@ -2,7 +2,7 @@
 import { ClientRuntime, type OperationValidationSources, type TasksClientOptions as ClientOptions, type TasksRequestOptions as RequestOptions, type RuntimeResponseContract } from '../client-runtime.js';
 import type * as Types from '../types.js';
 import { createApiOperation, type ApiOperation } from '@exprtlabs/codegen/client';
-import { schema as __runicSchema0 } from "../validation-schemas/d72591b5011d7111a7_schemas_component_Task_output-8ab7b354f92cb4cd.js";
+import { schema as __runicSchema0 } from "../validation-schemas/Task.output.js";
 
 
 const responseContracts: readonly RuntimeResponseContract[] = [{"status":"200","content":[{"contentType":"application/json","framing":"body"}],"headers":[]}];

@@ -14,6 +14,16 @@ components:
         - id
         - name
       type: object
+    MerchantOmitId:
+      additionalProperties: false
+      properties:
+        name:
+          allOf:
+            - type: string
+            - minLength: 2
+      required:
+        - name
+      type: object
     Money:
       additionalProperties: false
       properties:
@@ -33,7 +43,7 @@ components:
       additionalProperties: false
       properties:
         billing:
-          $ref: "#/components/schemas/__Projection0"
+          $ref: "#/components/schemas/MerchantOmitId"
         id:
           type: string
         merchant:
@@ -55,7 +65,7 @@ components:
       additionalProperties: false
       properties:
         billing:
-          $ref: "#/components/schemas/__Projection0"
+          $ref: "#/components/schemas/MerchantOmitId"
         merchant:
           $ref: "#/components/schemas/Merchant"
         money:
@@ -69,16 +79,6 @@ components:
         - merchant
         - money
         - note
-      type: object
-    __Projection0:
-      additionalProperties: false
-      properties:
-        name:
-          allOf:
-            - type: string
-            - minLength: 2
-      required:
-        - name
       type: object
 info:
   title: Payments API

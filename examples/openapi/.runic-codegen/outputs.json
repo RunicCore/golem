@@ -32,14 +32,14 @@
     "sdk/iobject-plugin-keys.ts": {
       "job": "openapi:sdk",
       "owner": "@exprtlabs/openapi-to-ts",
-      "digest": "6a37c03212a1db423a9b52c41f27b44335d77f12fbaca024a8a08783bb852329",
+      "digest": "5671f7ac2bbc7a8e304dac85488f20fe9169327b5200213f3ff14756d27d8c1c",
       "destination": "sdk",
       "destinationKind": "directory"
     },
     "sdk/model-manifest.json": {
       "job": "openapi:sdk",
       "owner": "@exprtlabs/openapi-to-ts",
-      "digest": "27d396967a911c89270874b8de034621e6756f9abd28541a6023955829ecbbbb",
+      "digest": "a511f480522381d32650f565e4e7267d0653326b5b1feda212c7ab74969c2acc",
       "destination": "sdk",
       "destinationKind": "directory"
     },
@@ -67,21 +67,21 @@
     "sdk/operations/createTask.ts": {
       "job": "openapi:sdk",
       "owner": "@exprtlabs/openapi-to-ts",
-      "digest": "46089748d8c3bfcb3c45c4e8a19b7b92992c6a6898693e823083131dee892ff6",
+      "digest": "1b1e960c66195b8347e278d36c05f33c7d816c74ffb851fe3cb54e0f56088a39",
       "destination": "sdk",
       "destinationKind": "directory"
     },
     "sdk/operations/getTask.ts": {
       "job": "openapi:sdk",
       "owner": "@exprtlabs/openapi-to-ts",
-      "digest": "98b2f07e1882dba2b1f2976417107c646bfcf3e7db34a8b89b6af509a59235b8",
+      "digest": "f4f4f122273553dcb5873ae0c643634b803437ca40959ba841794ce5313e5d80",
       "destination": "sdk",
       "destinationKind": "directory"
     },
     "sdk/operations/listTasks.ts": {
       "job": "openapi:sdk",
       "owner": "@exprtlabs/openapi-to-ts",
-      "digest": "977c0e907a71f95171d7bceb1509afb6d9e2d0bcc6c45d742938f2e9f19b9202",
+      "digest": "23649eb19299710830b5db7477ecc005677c3ecac99329bd75563cd80adf6dde",
       "destination": "sdk",
       "destinationKind": "directory"
     },
@@ -106,14 +106,14 @@
       "destination": "sdk",
       "destinationKind": "directory"
     },
-    "sdk/validation-schemas/bd72591b5011d7111a7_schemas_component_Task_input-2671f94e89350f84.ts": {
+    "sdk/validation-schemas/Task.input.ts": {
       "job": "openapi:sdk",
       "owner": "@exprtlabs/openapi-to-ts",
       "digest": "f6e881bdca7a68698d82cffb15ab978fd0bce56646ee7513fef44bb446f96fb9",
       "destination": "sdk",
       "destinationKind": "directory"
     },
-    "sdk/validation-schemas/d72591b5011d7111a7_schemas_component_Task_output-8ab7b354f92cb4cd.ts": {
+    "sdk/validation-schemas/Task.output.ts": {
       "job": "openapi:sdk",
       "owner": "@exprtlabs/openapi-to-ts",
       "digest": "b94dc2e9b388a520c3093401ea8b2fb6bb0ca6d858726e2f9e709896fa950d90",

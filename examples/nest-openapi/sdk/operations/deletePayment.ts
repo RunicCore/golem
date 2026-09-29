@@ -6,10 +6,10 @@ import { createApiOperation, type ApiOperation } from '@exprtlabs/codegen/client
 
 const responseContracts: readonly RuntimeResponseContract[] = [{"status":"204","content":[],"headers":[]}];
 const __resolveOperationValidationSources = (): OperationValidationSources => ({
-    inputReference: "urn:runic:openapi:paymentsapi:510a4faa1f06a42804dbc2555824f479df635d9447759959ba975df06268f05a:schemas:operation:deletePayment#/operations/deletePayment/input",
+    inputReference: "urn:runic:openapi:paymentsapi:d3839f4869c824cf4c54868d051a37d9bd143d29a2154c4191da4e7122bf6c60:schemas:operation:deletePayment#/operations/deletePayment/input",
     responseReferences: [],
     schemas: new Map([
-      ["urn:runic:openapi:paymentsapi:510a4faa1f06a42804dbc2555824f479df635d9447759959ba975df06268f05a:schemas:operation:deletePayment", JSON.parse("{\"$id\":\"urn:runic:openapi:paymentsapi:510a4faa1f06a42804dbc2555824f479df635d9447759959ba975df06268f05a:schemas:operation:deletePayment\",\"$schema\":\"https://spec.openapis.org/oas/3.1/dialect/base\",\"operations\":{\"deletePayment\":{\"input\":{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\"}},\"required\":[\"id\"],\"additionalProperties\":false}},\"required\":[\"path\"],\"additionalProperties\":false},\"responses\":{\"204\":{}}}}}") as object | boolean],
+      ["urn:runic:openapi:paymentsapi:d3839f4869c824cf4c54868d051a37d9bd143d29a2154c4191da4e7122bf6c60:schemas:operation:deletePayment", JSON.parse("{\"$id\":\"urn:runic:openapi:paymentsapi:d3839f4869c824cf4c54868d051a37d9bd143d29a2154c4191da4e7122bf6c60:schemas:operation:deletePayment\",\"$schema\":\"https://spec.openapis.org/oas/3.1/dialect/base\",\"operations\":{\"deletePayment\":{\"input\":{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\"}},\"required\":[\"id\"],\"additionalProperties\":false}},\"required\":[\"path\"],\"additionalProperties\":false},\"responses\":{\"204\":{}}}}}") as object | boolean],
 
     ]),
 

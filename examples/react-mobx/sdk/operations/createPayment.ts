@@ -2,8 +2,8 @@
 import { ClientRuntime, type OperationValidationSources, type PaymentsClientOptions as ClientOptions, type PaymentsRequestOptions as RequestOptions, type RuntimeResponseContract } from '../client-runtime.js';
 import type * as Types from '../types.js';
 import { createObservableApiOperation as createApiOperation, type ObservableApiOperation as ApiOperation } from '@exprtlabs/codegen/mobx';
-import { schema as __runicSchema0 } from "../validation-schemas/c627638ed7cc64f7c9_schemas_component_Money_input-ebb009ad8dd90ce2.js";
-import { schema as __runicSchema1 } from "../validation-schemas/627638ed7cc64f7c9_schemas_component_Money_output-88b519b63626f737.js";
+import { schema as __runicSchema0 } from "../validation-schemas/Money.input.js";
+import { schema as __runicSchema1 } from "../validation-schemas/Money.output.js";
 
 
 const responseContracts: readonly RuntimeResponseContract[] = [{"status":"201","content":[{"contentType":"application/json","framing":"body"}],"headers":[]}];

@@ -5,7 +5,6 @@
   },
   "models": [
     {
-      "additionalProperties": false,
       "allowAny": false,
       "discriminator": null,
       "fields": [
@@ -26,7 +25,7 @@
         "export": "MerchantModel",
         "module": "./models/Merchant.ts"
       },
-      "id": "openapi:510a4faa1f06a428#/components/schemas/Merchant",
+      "id": "openapi:d3839f4869c824cf#/components/schemas/Merchant",
       "inheritance": null,
       "sourceKind": "openapi",
       "type": {
@@ -49,7 +48,43 @@
       "variants": []
     },
     {
-      "additionalProperties": false,
+      "allowAny": false,
+      "discriminator": null,
+      "fields": [
+        {
+          "modelReferences": [],
+          "name": "name",
+          "required": true,
+          "type": "(string)"
+        }
+      ],
+      "generated": {
+        "export": "MerchantOmitIdModel",
+        "module": "./models/MerchantOmitId.ts"
+      },
+      "id": "openapi:d3839f4869c824cf#/components/schemas/MerchantOmitId",
+      "inheritance": null,
+      "sourceKind": "openapi",
+      "type": {
+        "aliases": [
+          {
+            "export": "MerchantOmitId",
+            "module": "./index.ts"
+          }
+        ],
+        "export": "MerchantOmitId",
+        "module": "./types.ts"
+      },
+      "validation": {
+        "authority": "openapi",
+        "reference": "#/components/schemas/MerchantOmitId",
+        "registryExport": "runtimeSchemaRegistry",
+        "registryIdExport": "schemaRegistry",
+        "registryModule": "./schemas.ts"
+      },
+      "variants": []
+    },
+    {
       "allowAny": false,
       "discriminator": null,
       "fields": [
@@ -70,7 +105,7 @@
         "export": "MoneyModel",
         "module": "./models/Money.ts"
       },
-      "id": "openapi:510a4faa1f06a428#/components/schemas/Money",
+      "id": "openapi:d3839f4869c824cf#/components/schemas/Money",
       "inheritance": null,
       "sourceKind": "openapi",
       "type": {
@@ -93,17 +128,16 @@
       "variants": []
     },
     {
-      "additionalProperties": false,
       "allowAny": false,
       "discriminator": null,
       "fields": [
         {
           "modelReferences": [
-            "__Projection0"
+            "MerchantOmitId"
           ],
           "name": "billing",
           "required": true,
-          "type": "__Projection0Model"
+          "type": "MerchantOmitIdModel"
         },
         {
           "modelReferences": [],
@@ -138,7 +172,7 @@
         "export": "PaymentModel",
         "module": "./models/Payment.ts"
       },
-      "id": "openapi:510a4faa1f06a428#/components/schemas/Payment",
+      "id": "openapi:d3839f4869c824cf#/components/schemas/Payment",
       "inheritance": null,
       "sourceKind": "openapi",
       "type": {
@@ -161,17 +195,16 @@
       "variants": []
     },
     {
-      "additionalProperties": false,
       "allowAny": false,
       "discriminator": null,
       "fields": [
         {
           "modelReferences": [
-            "__Projection0"
+            "MerchantOmitId"
           ],
           "name": "billing",
           "required": true,
-          "type": "__Projection0Model"
+          "type": "MerchantOmitIdModel"
         },
         {
           "modelReferences": [
@@ -200,7 +233,7 @@
         "export": "PaymentInputModel",
         "module": "./models/PaymentInput.ts"
       },
-      "id": "openapi:510a4faa1f06a428#/components/schemas/PaymentInput",
+      "id": "openapi:d3839f4869c824cf#/components/schemas/PaymentInput",
       "inheritance": null,
       "sourceKind": "openapi",
       "type": {
@@ -221,44 +254,6 @@
         "registryModule": "./schemas.ts"
       },
       "variants": []
-    },
-    {
-      "additionalProperties": false,
-      "allowAny": false,
-      "discriminator": null,
-      "fields": [
-        {
-          "modelReferences": [],
-          "name": "name",
-          "required": true,
-          "type": "(string)"
-        }
-      ],
-      "generated": {
-        "export": "__Projection0Model",
-        "module": "./models/__Projection0.ts"
-      },
-      "id": "openapi:510a4faa1f06a428#/components/schemas/__Projection0",
-      "inheritance": null,
-      "sourceKind": "openapi",
-      "type": {
-        "aliases": [
-          {
-            "export": "__Projection0",
-            "module": "./index.ts"
-          }
-        ],
-        "export": "__Projection0",
-        "module": "./types.ts"
-      },
-      "validation": {
-        "authority": "openapi",
-        "reference": "#/components/schemas/__Projection0",
-        "registryExport": "runtimeSchemaRegistry",
-        "registryIdExport": "schemaRegistry",
-        "registryModule": "./schemas.ts"
-      },
-      "variants": []
     }
   ],
   "profile": {
@@ -269,42 +264,15 @@
   },
   "source": {
     "dialect": "3.2.0",
-    "digest": "510a4faa1f06a42804dbc2555824f479df635d9447759959ba975df06268f05a",
+    "digest": "d3839f4869c824cf4c54868d051a37d9bd143d29a2154c4191da4e7122bf6c60",
     "kind": "openapi"
   },
   "validationSchemaClosure": [
     {
       "aliases": [
-        "__Projection0",
-        "__Projection0_26d8c665",
-        "openapi:510a4faa1f06a428#/components/schemas/__Projection0"
-      ],
-      "codecId": "__Projection0_26d8c665",
-      "modelSchema": {
-        "additionalProperties": false,
-        "properties": {
-          "name": {
-            "allOf": [
-              {
-                "type": "string"
-              },
-              {
-                "minLength": 2
-              }
-            ]
-          }
-        },
-        "required": [
-          "name"
-        ],
-        "type": "object"
-      }
-    },
-    {
-      "aliases": [
         "Merchant",
         "Merchant_57caa914",
-        "openapi:510a4faa1f06a428#/components/schemas/Merchant"
+        "openapi:d3839f4869c824cf#/components/schemas/Merchant"
       ],
       "codecId": "Merchant_57caa914",
       "modelSchema": {
@@ -333,9 +301,36 @@
     },
     {
       "aliases": [
+        "MerchantOmitId",
+        "MerchantOmitId_26d8c665",
+        "openapi:d3839f4869c824cf#/components/schemas/MerchantOmitId"
+      ],
+      "codecId": "MerchantOmitId_26d8c665",
+      "modelSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "allOf": [
+              {
+                "type": "string"
+              },
+              {
+                "minLength": 2
+              }
+            ]
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "aliases": [
         "Money",
         "Money_2f69f5d7",
-        "openapi:510a4faa1f06a428#/components/schemas/Money"
+        "openapi:d3839f4869c824cf#/components/schemas/Money"
       ],
       "codecId": "Money_2f69f5d7",
       "modelSchema": {
@@ -372,26 +367,26 @@
     {
       "aliases": [
         "Payment",
-        "Payment_ca517e3b",
-        "openapi:510a4faa1f06a428#/components/schemas/Payment"
+        "Payment_c95c64de",
+        "openapi:d3839f4869c824cf#/components/schemas/Payment"
       ],
-      "codecId": "Payment_ca517e3b",
+      "codecId": "Payment_c95c64de",
       "modelSchema": {
         "$defs": {
+          "MerchantOmitId_26d8c665": {
+            "$ref": "MerchantOmitId_26d8c665"
+          },
           "Merchant_57caa914": {
             "$ref": "Merchant_57caa914"
           },
           "Money_2f69f5d7": {
             "$ref": "Money_2f69f5d7"
-          },
-          "__Projection0_26d8c665": {
-            "$ref": "__Projection0_26d8c665"
           }
         },
         "additionalProperties": false,
         "properties": {
           "billing": {
-            "$ref": "#/$defs/__Projection0_26d8c665"
+            "$ref": "#/$defs/MerchantOmitId_26d8c665"
           },
           "id": {
             "type": "string"
@@ -426,26 +421,26 @@
     {
       "aliases": [
         "PaymentInput",
-        "PaymentInput_0b7a4376",
-        "openapi:510a4faa1f06a428#/components/schemas/PaymentInput"
+        "PaymentInput_0bdebe5b",
+        "openapi:d3839f4869c824cf#/components/schemas/PaymentInput"
       ],
-      "codecId": "PaymentInput_0b7a4376",
+      "codecId": "PaymentInput_0bdebe5b",
       "modelSchema": {
         "$defs": {
+          "MerchantOmitId_26d8c665": {
+            "$ref": "MerchantOmitId_26d8c665"
+          },
           "Merchant_57caa914": {
             "$ref": "Merchant_57caa914"
           },
           "Money_2f69f5d7": {
             "$ref": "Money_2f69f5d7"
-          },
-          "__Projection0_26d8c665": {
-            "$ref": "__Projection0_26d8c665"
           }
         },
         "additionalProperties": false,
         "properties": {
           "billing": {
-            "$ref": "#/$defs/__Projection0_26d8c665"
+            "$ref": "#/$defs/MerchantOmitId_26d8c665"
           },
           "merchant": {
             "$ref": "#/$defs/Merchant_57caa914"

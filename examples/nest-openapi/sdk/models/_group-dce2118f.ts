@@ -4,13 +4,13 @@ import { convertModelField, decodeGeneratedModelTrusted, cloneConversionInput, e
 import { addNestedCodecSchema, ajvIssues, createObjectCodec, parseJson, registerIModelClass, requireAjvSchema, resolveGeneratedModelSchemaRefs, resolveModelValidationContextValidator, runSynchronousValidation, serdeValidates, stringifyJsonString, validationFailure, IssueRepresentation, IssueSource } from '@exprtlabs/codegen/serde';
 import { createOpenApiSyncAjvEngine } from '@exprtlabs/codegen/ajv';
 import type * as Types from '../types.js';
-import { __Projection0Model, type __Projection0Init } from "./__Projection0.js";
-import { fromWireFormat__Projection0, stringify__Projection0, toWireFormat__Projection0 } from "./_group-8af81a2f.js";
+import { fromWireFormatMerchantOmitId, stringifyMerchantOmitId, toWireFormatMerchantOmitId } from "./_group-36a03266.js";
 import { fromWireFormatMerchant, stringifyMerchant, toWireFormatMerchant } from "./_group-a5169c51.js";
 import { fromWireFormatMoney, stringifyMoney, toWireFormatMoney } from "./_group-bfb6e7d1.js";
 import { MerchantModel, type MerchantInit } from "./Merchant.js";
+import { MerchantOmitIdModel, type MerchantOmitIdInit } from "./MerchantOmitId.js";
 import { MoneyModel, type MoneyInit } from "./Money.js";
-import "./_group-8af81a2f.js";
+import "./_group-36a03266.js";
 import "./_group-a5169c51.js";
 import "./_group-bfb6e7d1.js";
 
@@ -19,7 +19,7 @@ function objectFromJSON<T extends object>(json: unknown, modelName: string): Par
 }
 
 export type PaymentFields = {
-  billing: __Projection0Model;
+  billing: MerchantOmitIdModel;
   id: string;
   merchant: MerchantModel;
   money: MoneyModel;
@@ -31,14 +31,14 @@ export type PaymentInit = ModelInit<PaymentFields>;
 function deserializePaymentFields(json: unknown): PaymentInit {
   const value = objectFromJSON<Record<string, unknown>>(json, "PaymentModel");
   const result: Record<string, unknown> = { ...value };
-  if (value["billing"] !== undefined) result["billing"] = convertModelField('deserialize', "billing", () => (value["billing"] == null || value["billing"] instanceof __Projection0Model ? value["billing"] : decodeGeneratedModelTrusted(__Projection0Model, value["billing"])));
+  if (value["billing"] !== undefined) result["billing"] = convertModelField('deserialize', "billing", () => (value["billing"] == null || value["billing"] instanceof MerchantOmitIdModel ? value["billing"] : decodeGeneratedModelTrusted(MerchantOmitIdModel, value["billing"])));
   if (value["merchant"] !== undefined) result["merchant"] = convertModelField('deserialize', "merchant", () => (value["merchant"] == null || value["merchant"] instanceof MerchantModel ? value["merchant"] : decodeGeneratedModelTrusted(MerchantModel, value["merchant"])));
   if (value["money"] !== undefined) result["money"] = convertModelField('deserialize', "money", () => (value["money"] == null || value["money"] instanceof MoneyModel ? value["money"] : decodeGeneratedModelTrusted(MoneyModel, value["money"])));
   return result as PaymentInit;
 }
 
 export class PaymentModel implements PaymentFields {
-  declare billing: __Projection0Model;
+  declare billing: MerchantOmitIdModel;
   declare id: string;
   declare merchant: MerchantModel;
   declare money: MoneyModel;
@@ -46,7 +46,7 @@ export class PaymentModel implements PaymentFields {
   declare readonly [generatedModelWireBrand]: Types.Payment;
   declare readonly [generatedModelFieldsBrand]: PaymentFields;
   constructor(values: PaymentInit = {}) {
-    if (values["billing"] !== undefined) this["billing"] = (values["billing"] == null || values["billing"] instanceof __Projection0Model ? values["billing"] : new __Projection0Model(values["billing"] as __Projection0Init)) as __Projection0Model;
+    if (values["billing"] !== undefined) this["billing"] = (values["billing"] == null || values["billing"] instanceof MerchantOmitIdModel ? values["billing"] : new MerchantOmitIdModel(values["billing"] as MerchantOmitIdInit)) as MerchantOmitIdModel;
     if (values["id"] !== undefined) this["id"] = (values["id"]) as string;
     if (values["merchant"] !== undefined) this["merchant"] = (values["merchant"] == null || values["merchant"] instanceof MerchantModel ? values["merchant"] : new MerchantModel(values["merchant"] as MerchantInit)) as MerchantModel;
     if (values["money"] !== undefined) this["money"] = (values["money"] == null || values["money"] instanceof MoneyModel ? values["money"] : new MoneyModel(values["money"] as MoneyInit)) as MoneyModel;
@@ -61,7 +61,7 @@ function decodePayment(json: unknown, constructor: GeneratedModelConstructor = P
 
 export function encodePayment(model: PaymentModel): Types.Payment {
   const result: Record<string, unknown> = {};
-  if (model["billing"] !== undefined) result["billing"] = convertModelField('serialize', "billing", () => (model["billing"] instanceof __Projection0Model ? encodeGeneratedModel(model["billing"]) : model["billing"]));
+  if (model["billing"] !== undefined) result["billing"] = convertModelField('serialize', "billing", () => (model["billing"] instanceof MerchantOmitIdModel ? encodeGeneratedModel(model["billing"]) : model["billing"]));
   if (model["id"] !== undefined) result["id"] = model["id"];
   if (model["merchant"] !== undefined) result["merchant"] = convertModelField('serialize', "merchant", () => (model["merchant"] instanceof MerchantModel ? encodeGeneratedModel(model["merchant"]) : model["merchant"]));
   if (model["money"] !== undefined) result["money"] = convertModelField('serialize', "money", () => (model["money"] instanceof MoneyModel ? encodeGeneratedModel(model["money"]) : model["money"]));
@@ -73,24 +73,24 @@ export function encodePayment(model: PaymentModel): Types.Payment {
 registerGeneratedModel(PaymentModel, {
   fields: ["billing", "id", "merchant", "money", "note"] as const,
   conversion: { decode: decodePayment, encode: encodePayment },
-  codecId: "Payment_ca517e3b",
+  codecId: "Payment_c95c64de",
   profile: {"mobx":false,"validation":true,"ajvStandalone":false,"allowAny":false},
 });
 
-registerIModelClass("Payment_ca517e3b", PaymentModel);
+registerIModelClass("Payment_c95c64de", PaymentModel);
 
 const objectAjvFast = createOpenApiSyncAjvEngine({ allErrors: false, validationBindings: {} });
 const objectAjvAll = createOpenApiSyncAjvEngine({ allErrors: true, validationBindings: {} });
 
 addNestedCodecSchema([(schema, id) => objectAjvFast.addSchema(schema, id), (schema, id) => objectAjvAll.addSchema(schema, id)], "Merchant_57caa914", MerchantModel);
+addNestedCodecSchema([(schema, id) => objectAjvFast.addSchema(schema, id), (schema, id) => objectAjvAll.addSchema(schema, id)], "MerchantOmitId_26d8c665", MerchantOmitIdModel);
 addNestedCodecSchema([(schema, id) => objectAjvFast.addSchema(schema, id), (schema, id) => objectAjvAll.addSchema(schema, id)], "Money_2f69f5d7", MoneyModel);
-addNestedCodecSchema([(schema, id) => objectAjvFast.addSchema(schema, id), (schema, id) => objectAjvAll.addSchema(schema, id)], "__Projection0_26d8c665", __Projection0Model);
-const __resolvedModelSchema_Payment = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"Payment_ca517e3b\",\"type\":\"object\",\"properties\":{\"billing\":{\"$ref\":\"#/$defs/__Projection0_26d8c665\"},\"id\":{\"type\":\"string\"},\"merchant\":{\"$ref\":\"#/$defs/Merchant_57caa914\"},\"money\":{\"$ref\":\"#/$defs/Money_2f69f5d7\"},\"note\":{\"allOf\":[{\"type\":\"string\"},{\"maxLength\":140}]}},\"required\":[\"billing\",\"id\",\"merchant\",\"money\",\"note\"],\"additionalProperties\":false,\"$defs\":{\"__Projection0_26d8c665\":{\"type\":\"object\",\"properties\":{\"name\":{\"allOf\":[{\"type\":\"string\"},{\"minLength\":2}]}},\"required\":[\"name\"],\"additionalProperties\":false},\"Merchant_57caa914\":{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\"},\"name\":{\"allOf\":[{\"type\":\"string\"},{\"minLength\":2}]}},\"required\":[\"id\",\"name\"],\"additionalProperties\":false},\"Money_2f69f5d7\":{\"type\":\"object\",\"properties\":{\"amount\":{\"allOf\":[{\"type\":\"string\"},{\"pattern\":\"^[0-9]+(?:\\\\.[0-9]{1,2})?$\"}]},\"currency\":{\"anyOf\":[{\"const\":\"EUR\"},{\"const\":\"USD\"}]}},\"required\":[\"amount\",\"currency\"],\"additionalProperties\":false}}}") as object) as object;
-objectAjvFast.addSchema(structuredClone(__resolvedModelSchema_Payment) as object, "Payment_ca517e3b");
-objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_Payment) as object, "Payment_ca517e3b");
+const __resolvedModelSchema_Payment = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"Payment_c95c64de\",\"type\":\"object\",\"properties\":{\"billing\":{\"$ref\":\"#/$defs/MerchantOmitId_26d8c665\"},\"id\":{\"type\":\"string\"},\"merchant\":{\"$ref\":\"#/$defs/Merchant_57caa914\"},\"money\":{\"$ref\":\"#/$defs/Money_2f69f5d7\"},\"note\":{\"allOf\":[{\"type\":\"string\"},{\"maxLength\":140}]}},\"required\":[\"billing\",\"id\",\"merchant\",\"money\",\"note\"],\"additionalProperties\":false,\"$defs\":{\"MerchantOmitId_26d8c665\":{\"type\":\"object\",\"properties\":{\"name\":{\"allOf\":[{\"type\":\"string\"},{\"minLength\":2}]}},\"required\":[\"name\"],\"additionalProperties\":false},\"Merchant_57caa914\":{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\"},\"name\":{\"allOf\":[{\"type\":\"string\"},{\"minLength\":2}]}},\"required\":[\"id\",\"name\"],\"additionalProperties\":false},\"Money_2f69f5d7\":{\"type\":\"object\",\"properties\":{\"amount\":{\"allOf\":[{\"type\":\"string\"},{\"pattern\":\"^[0-9]+(?:\\\\.[0-9]{1,2})?$\"}]},\"currency\":{\"anyOf\":[{\"const\":\"EUR\"},{\"const\":\"USD\"}]}},\"required\":[\"amount\",\"currency\"],\"additionalProperties\":false}}}") as object) as object;
+objectAjvFast.addSchema(structuredClone(__resolvedModelSchema_Payment) as object, "Payment_c95c64de");
+objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_Payment) as object, "Payment_c95c64de");
 
-const validatePaymentFast = requireAjvSchema(objectAjvFast.getSchema("Payment_ca517e3b"), "Payment_ca517e3b");
-const validatePaymentAll = requireAjvSchema(objectAjvAll.getSchema("Payment_ca517e3b"), "Payment_ca517e3b");
+const validatePaymentFast = requireAjvSchema(objectAjvFast.getSchema("Payment_c95c64de"), "Payment_c95c64de");
+const validatePaymentAll = requireAjvSchema(objectAjvAll.getSchema("Payment_c95c64de"), "Payment_c95c64de");
 
 function fillPayment(out: Record<string, unknown>, wire: Record<string, unknown>, copyIdentity = true): Record<string, unknown> {
   if (copyIdentity) {
@@ -98,7 +98,7 @@ function fillPayment(out: Record<string, unknown>, wire: Record<string, unknown>
     out["note"] = wire["note"];
   }
   if (Object.prototype.hasOwnProperty.call(wire, "billing")) {
-    out["billing"] = fromWireFormat__Projection0(wire["billing"], { validate: false, construct: __Projection0Model });
+    out["billing"] = fromWireFormatMerchantOmitId(wire["billing"], { validate: false, construct: MerchantOmitIdModel });
   }
   if (Object.prototype.hasOwnProperty.call(wire, "merchant")) {
     out["merchant"] = fromWireFormatMerchant(wire["merchant"], { validate: false, construct: MerchantModel });
@@ -110,7 +110,7 @@ function fillPayment(out: Record<string, unknown>, wire: Record<string, unknown>
 }
 
 function stringifyPaymentCore(value: Record<string, unknown>, _options?: { readonly validate?: boolean; readonly failFast?: boolean }): string {
-  return '{' + "\"billing\":" + stringify__Projection0(value["billing"] as never, { validate: false }) + ",\"id\":" + stringifyJsonString(value["id"] as string) + ",\"merchant\":" + stringifyMerchant(value["merchant"] as never, { validate: false }) + ",\"money\":" + stringifyMoney(value["money"] as never, { validate: false }) + ",\"note\":" + stringifyJsonString(value["note"] as string) + '}';
+  return '{' + "\"billing\":" + stringifyMerchantOmitId(value["billing"] as never, { validate: false }) + ",\"id\":" + stringifyJsonString(value["id"] as string) + ",\"merchant\":" + stringifyMerchant(value["merchant"] as never, { validate: false }) + ",\"money\":" + stringifyMoney(value["money"] as never, { validate: false }) + ",\"note\":" + stringifyJsonString(value["note"] as string) + '}';
 }
 
 
@@ -149,7 +149,7 @@ export function toWireFormatPayment(value: unknown, options?: { readonly validat
     assertPayment(value, options);
   }
   const record = value as Record<string, unknown>;
-  const wire = { ["billing"]: toWireFormat__Projection0(record["billing"] as never, { validate: false }), ["id"]: record["id"], ["merchant"]: toWireFormatMerchant(record["merchant"] as never, { validate: false }), ["money"]: toWireFormatMoney(record["money"] as never, { validate: false }), ["note"]: record["note"] };
+  const wire = { ["billing"]: toWireFormatMerchantOmitId(record["billing"] as never, { validate: false }), ["id"]: record["id"], ["merchant"]: toWireFormatMerchant(record["merchant"] as never, { validate: false }), ["money"]: toWireFormatMoney(record["money"] as never, { validate: false }), ["note"]: record["note"] };
   return wire as Types.Payment;
 }
 
@@ -165,7 +165,7 @@ export function validatePayment(value: unknown, options?: { readonly failFast?: 
     ok = failFast ? validatePaymentFast(value) : validatePaymentAll(value);
     errors = failFast ? validatePaymentFast.errors : validatePaymentAll.errors;
   } else {
-    const validator = resolveModelValidationContextValidator(options.validationContext, "Payment_ca517e3b", failFast ? 'first' : 'all');
+    const validator = resolveModelValidationContextValidator(options.validationContext, "Payment_c95c64de", failFast ? 'first' : 'all');
     ok = runSynchronousValidation(validator, value);
     errors = validator.errors;
   }
@@ -180,14 +180,14 @@ export function assertPayment(value: unknown, options?: { readonly failFast?: bo
     validationFailure(ajvIssues(validator, value, IssueRepresentation.Model, IssueSource.OpenAPI));
   }
 } else {
-  const validator = resolveModelValidationContextValidator(options.validationContext, "Payment_ca517e3b", options?.failFast !== false ? 'first' : 'all');
+  const validator = resolveModelValidationContextValidator(options.validationContext, "Payment_c95c64de", options?.failFast !== false ? 'first' : 'all');
   if (!runSynchronousValidation(validator, value)) validationFailure(ajvIssues(validator, value, IssueRepresentation.Model, IssueSource.OpenAPI));
 }
   return value as Record<string, unknown>;
 }
 
 
-createObjectCodec("Payment_ca517e3b", {
+createObjectCodec("Payment_c95c64de", {
   stringify: stringifyPayment as (value: never, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/codegen/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }) => string,
   parse: parsePayment as (text: string, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/codegen/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }) => never,
   validate: validatePayment,

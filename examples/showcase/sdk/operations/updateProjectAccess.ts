@@ -2,10 +2,10 @@
 import { ClientRuntime, type OperationValidationSources, type ProjectAccessClientOptions as ClientOptions, type ProjectAccessRequestOptions as RequestOptions, type RuntimeResponseContract } from '../client-runtime.js';
 import type * as Types from '../types.js';
 import { createApiOperation, type ApiOperation } from '@exprtlabs/codegen/client';
-import { schema as __runicSchema0 } from "../validation-schemas/327b2e437fef36de8_schemas_component_Member_input-085ece9a1bd0e30e.js";
-import { schema as __runicSchema1 } from "../validation-schemas/27b2e437fef36de8_schemas_component_Member_output-16a990d2c9710b0b.js";
-import { schema as __runicSchema2 } from "../validation-schemas/37fef36de8_schemas_component_ProjectAccess_input-0e03ee0b41876e47.js";
-import { schema as __runicSchema3 } from "../validation-schemas/7fef36de8_schemas_component_ProjectAccess_output-2fec76cfcb6f87f8.js";
+import { schema as __runicSchema0 } from "../validation-schemas/Member.input.js";
+import { schema as __runicSchema1 } from "../validation-schemas/Member.output.js";
+import { schema as __runicSchema2 } from "../validation-schemas/ProjectAccess.input.js";
+import { schema as __runicSchema3 } from "../validation-schemas/ProjectAccess.output.js";
 
 
 const responseContracts: readonly RuntimeResponseContract[] = [{"status":"200","content":[{"contentType":"application/json","framing":"body"}],"headers":[]}];
