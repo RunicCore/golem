@@ -200,7 +200,7 @@ test('OAS discriminator mappings select allOf variants in model decode, encode, 
         assert.deepEqual((result.diagnostics ?? []).map(diagnostic => diagnostic.code), example.warnings ?? []);
         compileGeneratedSdk(output, [], { strict: true });
 
-        const models = requireRecord(await import(pathToFileURL(path.join(output, 'dist/models.js')).href), 'pet models');
+        const models = requireRecord(await import(pathToFileURL(path.join(output, 'dist/index.js')).href), 'pet models');
         const PetModel = modelClass(models, `Pet${suffix}Model`);
         const CatModel = modelClass(models, `Cat${suffix}Model`);
         const DogModel = modelClass(models, `Dog${suffix}Model`);
@@ -259,13 +259,13 @@ test('a union variant used on its own keeps its declared tag type and any tag va
     });
     const consumer = path.join(output, 'standalone-cat.ts');
     writeFileSync(consumer, [
-      `import type { Cat${suffix}Init, Cat${suffix}Model } from './models.js';`,
+      `import type { Cat${suffix}Init, Cat${suffix}Model } from './index.js';`,
       `export const init: Cat${suffix}Init = { kind: 'anything', name: 'Miso' };`,
       `export function kindOf(cat: Cat${suffix}Model): string { const kind: string = cat.kind; return kind; }`,
       '',
     ].join('\n'));
     compileGeneratedSdk(output, [consumer], { strict: true });
-    const models = requireRecord(await import(pathToFileURL(path.join(output, 'dist/models.js')).href), 'models');
+    const models = requireRecord(await import(pathToFileURL(path.join(output, 'dist/index.js')).href), 'models');
     const CatModel = modelClass(models, `Cat${suffix}Model`);
     const parse = codec(models, `parseCat${suffix}`);
     const stringify = codec(models, `stringifyCat${suffix}`);
@@ -311,7 +311,7 @@ test('one variant model can be selected by two discriminated unions, in either d
       ['OPENAPI_UNION_SHARED_VARIANT', 'OPENAPI_UNION_SHARED_VARIANT'],
     );
     compileGeneratedSdk(output, [], { strict: true });
-    const models = requireRecord(await import(pathToFileURL(path.join(output, 'dist/models.js')).href), 'models');
+    const models = requireRecord(await import(pathToFileURL(path.join(output, 'dist/index.js')).href), 'models');
     const CatModel = modelClass(models, `Cat${suffix}Model`);
     const DogModel = modelClass(models, `Dog${suffix}Model`);
     const json = { pet: { kind: 'feline', name: 'Miso' }, pets: [{ kind: 'canine', bark: true }] };
@@ -364,7 +364,7 @@ test('a discriminated union with a null branch keeps its tag table for the model
     const document = petDocument(suffix, explicitMapping(suffix), { nullBranch: true });
     await generateMaterializedSdk(document, { output, name: 'Pets', profile: { mobx: false, validation } });
     compileGeneratedSdk(output, [], { strict: true });
-    const models = requireRecord(await import(pathToFileURL(path.join(output, 'dist/models.js')).href), 'models');
+    const models = requireRecord(await import(pathToFileURL(path.join(output, 'dist/index.js')).href), 'models');
     const OwnerModel = modelClass(models, `Owner${suffix}Model`);
     const CatModel = modelClass(models, `Cat${suffix}Model`);
     const DogModel = modelClass(models, `Dog${suffix}Model`);

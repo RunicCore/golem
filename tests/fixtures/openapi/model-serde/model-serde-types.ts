@@ -1,7 +1,7 @@
 
 import type { Event } from './types.js';
-import { ChildModel } from './models.js';
-import type { ChildFields, EventFields, EventInit, EventJSON } from './models.js';
+import { ChildModel } from './index.js';
+import type { ChildFields, EventFields, EventInit, EventJSON } from './index.js';
 
 const wire: EventJSON = {
   when: '2025-01-02T03:04:05Z',

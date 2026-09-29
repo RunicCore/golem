@@ -374,7 +374,7 @@ test('an allOf alias of one model is its own model with its own codec', async t 
       },
     }), { output, name: 'Alias', profile });
     compileGeneratedSdk(output, [], { strict: true });
-    const models = requireRecord(await import(pathToFileURL(path.join(output, 'dist/models.js')).href), 'alias models');
+    const models = requireRecord(await import(pathToFileURL(path.join(output, 'dist/index.js')).href), 'alias models');
     const PriceModel = models[`Price${suffix}Model`];
     const MoneyModel = models[`Money${suffix}Model`];
     const parsePrice = models[`parsePrice${suffix}`];

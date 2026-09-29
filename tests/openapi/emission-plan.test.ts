@@ -225,7 +225,6 @@ test('schema-only documents emit types, directional files, and models without a 
     'model-manifest.json',
     'input-schemas.ts',
     'output-schemas.ts',
-    'models.ts',
     'models/Widget.ts',
     'models/_group-<hash>.ts',
     'iobject-plugin-keys.ts',
@@ -444,4 +443,22 @@ test('stream and mutual-TLS surfaces are emitted only when they are used', async
   }, { output: outputDir(t, 'stream-security-surfaces-absent'), name: 'NoStreamSecurity', profile: { mobx: false, validation: false } });
   const plainClient = generatedClientSource(plain.artifacts);
   assert.doesNotMatch(plainClient, /StreamDecoder|MutualTlsTransport|applySecurity/);
+});
+
+test('the SDK entry re-exports each model module directly', async t => {
+  const output = outputDir(t, 'direct-models');
+  const result = await generateMaterializedSdk({
+    openapi: '3.2.0', info: info('Direct'), paths: {},
+    components: { schemas: {
+      Money: { type: 'object', properties: { amount: { type: 'string' } }, required: ['amount'] },
+      Payment: { type: 'object', properties: { money: { $ref: '#/components/schemas/Money' } }, required: ['money'] },
+    } },
+  }, { output, name: 'Direct', profile: { mobx: false, validation: false } });
+  const files = new Map(result.artifacts.map(artifact => [path.relative(output, artifact.path), artifact.content]));
+  assert.equal(files.has('models.ts'), false);
+  const index = files.get('index.ts') ?? '';
+  assert.match(index, /from '\.\/models\/Money\.js'/);
+  assert.match(index, /from '\.\/models\/Payment\.js'/);
+  assert.match(index, /export \* from '\.\/iobject-plugin-keys\.js'/);
+  compileStrictUnusedSdk(output);
 });

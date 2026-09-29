@@ -1,7 +1,7 @@
 // Runs inside a generated SDK directory. For each Owner.pet value, reports
 // both validators and whether each encoder's wire value decodes back to Cat.
 import { getValidator } from '@exprtlabs/codegen/validation';
-import * as models from './dist/models.js';
+import * as models from './dist/index.js';
 
 const { CatModel, DogModel, OwnerModel, validateOwner, encodeOwner, toWireFormatOwner, stringifyOwner, parseOwner } = models;
 class Stranger { constructor() { this.name = 'Miso'; } }

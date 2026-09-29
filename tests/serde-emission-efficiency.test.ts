@@ -74,7 +74,7 @@ test('model generation preserves imported model identity and detached JSON outpu
   writeGeneratedArtifacts(result.artifacts);
   await compileModelProject(value.root);
 
-  const sdkModule = await import(pathToFileURL(path.join(value.root, 'build/sdk/models.js')).href) as {
+  const sdkModule = await import(pathToFileURL(path.join(value.root, 'build/sdk/index.js')).href) as {
     readonly MoneyModel: new (values?: { amount?: number; currency?: string }) => object;
   };
   const walletModule = await import(pathToFileURL(path.join(value.root, 'build/wallet.model.js')).href) as {

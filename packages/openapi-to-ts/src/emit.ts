@@ -108,7 +108,7 @@ export const responseLinks = ${JSON.stringify(links, null, 2)} as const satisfie
 `;
 }
 
-export function generateIndex(profile: OpenApiGenerationProfile, plan?: EmissionPlan): string {
+export function generateIndex(profile: OpenApiGenerationProfile, plan?: EmissionPlan, modelReexports = ''): string {
   requireProfile(profile);
   const artifacts = plan?.artifacts;
   const include = (name: ArtifactFile): boolean => artifacts ? artifacts.has(name) : true;
@@ -116,7 +116,7 @@ export function generateIndex(profile: OpenApiGenerationProfile, plan?: Emission
 export * from './types.js';
 ${include('input-schemas.ts') ? "export type * as InputSchemas from './input-schemas.js';" : ''}
 ${include('output-schemas.ts') ? "export type * as OutputSchemas from './output-schemas.js';" : ''}
-${include('models.ts') ? "export * from './models.js';\nexport * from './iobject-plugin-keys.js';" : ''}
+${modelReexports ? `${modelReexports}\nexport * from './iobject-plugin-keys.js';` : ''}
 ${include('client.ts') ? "export * from './client.js';" : ''}
 ${include('inbound.ts') ? "export * from './inbound.js';" : ''}
 ${include('links.ts') ? "export * from './links.js';" : ''}
@@ -170,11 +170,14 @@ export function generatedFiles(document: unknown, options: WriteSdkOptions): {
   if (plan.artifacts.has('output-schemas.ts')) {
     files.set('output-schemas.ts', generateDirectionalSchemas(document, 'output'));
   }
-  if (plan.artifacts.has('models.ts')) {
-    for (const [name, source] of generateOpenApiModelArtifacts(document, profile, modelAnalysis, {
+  let modelReexports = '';
+  if (plan.hasModels) {
+    const models = generateOpenApiModelArtifacts(document, profile, modelAnalysis, {
       copyAdditionalProperties: plan.copyAdditionalProperties,
       objectFromJSON: plan.objectFromJSON,
-    })) files.set(name, source);
+    });
+    for (const [name, source] of models.files) files.set(name, source);
+    modelReexports = models.entryReexports;
     const codecEntries = collectOpenApiCodecEntries(document, modelAnalysis);
     files.set('iobject-plugin-keys.ts', emitCodecDeclarationTable(codecEntries, '@exprtlabs/openapi-to-ts'));
   }
@@ -220,7 +223,7 @@ export function generatedFiles(document: unknown, options: WriteSdkOptions): {
     files.set('validators.generated.NOTICES.txt', compiled.notices);
     files.set('validation-engine.ts', `${generatedBanner()}\nimport { configureModelValidationEngine, createStaticValidationEngine } from '@exprtlabs/codegen/validation';\nimport { createValidators } from './validators.generated.js';\nimport { runtimeSchemaRegistry, schemaRegistry } from './schemas.js';\nexport const defaultValidationEngine = createStaticValidationEngine(createValidators(), { [schemaRegistry.$id]: runtimeSchemaRegistry });\nconfigureModelValidationEngine(runtimeSchemaRegistry, schemaRegistry.$id, defaultValidationEngine);\n`);
   }
-  files.set('index.ts', generateIndex(profile, plan));
+  files.set('index.ts', generateIndex(profile, plan, modelReexports));
   assertUniquePublicExports(files);
   assertPortableFilenames(files.keys());
   return { files, output, clientName, operations, inboundOperations, diagnostics: [...ir.diagnostics, ...browserCookieDiagnostics(document, operations), ...modelAnalysis.diagnostics] };

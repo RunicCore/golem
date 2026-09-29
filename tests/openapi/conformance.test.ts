@@ -340,7 +340,7 @@ test('generates inheritable object models with serde conversion metadata', async
   assert.equal(compiled.status, 0, compiled.stderr || compiled.stdout);
 
   const modelExports = requireRecord(
-    await import(pathToFileURL(path.join(output, 'dist/models.js')).href),
+    await import(pathToFileURL(path.join(output, 'dist/index.js')).href),
     'models',
   );
   const BasePaymentModel = modelExports.BasePaymentModel;

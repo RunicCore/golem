@@ -1204,7 +1204,7 @@ export function generateOpenApiModelArtifacts(
   profile: OpenApiGenerationProfile,
   analysis: OpenApiModelAnalysis,
   helpers: { readonly copyAdditionalProperties?: boolean; readonly objectFromJSON?: boolean } = {},
-): ReadonlyMap<string, string> {
+): { readonly files: ReadonlyMap<string, string>; readonly entryReexports: string } {
   const { schemaGraph, definitions, ordered, grouping } = analysis;
   const { groups, owner, runtimeEdges } = grouping;
   const digest = sourceDigest(document);
@@ -1384,8 +1384,7 @@ export function generateOpenApiModelArtifacts(
   const reexports = ordered.map((definition) =>
     `export { ${definition.name}Model, ${codecExports(definition.name).map((name) => name.includes(' as ') ? name.slice(name.indexOf(' as ') + 4) : name).join(', ')} } from './models/${definition.name}.js';\nexport type { ${definition.name}Fields, ${definition.name}JSON, ${definition.name}Init } from './models/${definition.name}.js';`,
   );
-  files.set('models.ts', `${generatedBanner()}\n${reexports.join('\n')}\n`);
-  return files;
+  return { files, entryReexports: reexports.join('\n') };
 }
 
 /**

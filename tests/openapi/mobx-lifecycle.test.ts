@@ -145,7 +145,7 @@ test('generated MobX models initialize at construction and keep subclass hooks',
   });
 
   const generated = requireRecord(
-    await import(pathToFileURL(path.join(output, 'dist/models.js')).href),
+    await import(pathToFileURL(path.join(output, 'dist/index.js')).href),
     'mobx lifecycle models',
   );
   const trackedModule = requireRecord(
@@ -268,7 +268,7 @@ test('generated MobX models initialize at construction and keep subclass hooks',
     skipLibCheck: true,
   });
   const disabledGenerated = requireRecord(
-    await import(pathToFileURL(path.join(disabledOutput, 'dist/models.js')).href),
+    await import(pathToFileURL(path.join(disabledOutput, 'dist/index.js')).href),
     'disabled mobx models',
   );
   const DisabledUser = disabledGenerated.UserModel;

@@ -275,7 +275,7 @@ test('checked model serde validates wire before construction, converts nested nu
   compileGeneratedSdk(output, [], { strict: true, skipLibCheck: true });
 
   const models = requireRecord(
-    await import(pathToFileURL(path.join(output, 'dist/models.js')).href),
+    await import(pathToFileURL(path.join(output, 'dist/index.js')).href),
     'generated models',
   );
   assert.equal(typeof models.ChildModel, 'function');
@@ -400,7 +400,7 @@ test('generated nested Date, inherited, and dictionary conversions stay equivale
     else compileGeneratedSdk(output, [], { strict: true, skipLibCheck: true });
 
     const models = requireRecord(
-      await import(pathToFileURL(path.join(output, 'dist/models.js')).href),
+      await import(pathToFileURL(path.join(output, 'dist/index.js')).href),
       `${ajvStandalone ? 'standalone' : 'JIT'} generated models`,
     );
     const ChildModel = models.ChildModel;
@@ -489,7 +489,7 @@ test('generated discriminated unions infer abstract, concrete, and handwritten s
   compileGeneratedSdk(output, [consumer], { strict: true, skipLibCheck: true });
 
   const modelExports = requireRecord(
-    await import(pathToFileURL(path.join(output, 'dist/models.js')).href),
+    await import(pathToFileURL(path.join(output, 'dist/index.js')).href),
     'generated discriminated union models',
   );
   const CatModel = modelExports.CatModel as new (values?: Record<string, unknown>) => Record<string, unknown>;

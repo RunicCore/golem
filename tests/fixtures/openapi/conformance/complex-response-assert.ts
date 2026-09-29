@@ -1,5 +1,5 @@
 import type { CreatePaymentOperationHttpResponse } from './types.js';
-import { PaymentModel, PaymentStatusEventModel } from './models.js';
+import { PaymentModel, PaymentStatusEventModel } from './index.js';
 
 declare const response: CreatePaymentOperationHttpResponse;
 if (response.matched === 'status' && response.status === 201) {

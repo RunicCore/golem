@@ -83,7 +83,7 @@ test('watch regenerates model edits without rewriting SDKs or looping on outputs
   child.stderr.on('data', (value: Buffer) => { stderr += value.toString(); });
   try {
     await until(() => stdout.includes('Generated configured outputs.'), `initial watch generation: ${stderr}`);
-    const sdk = path.join(root, 'sdk/models.ts');
+    const sdk = path.join(root, 'sdk/index.ts');
     const sdkMtime = fs.statSync(sdk).mtimeMs;
     const modelSource = path.join(root, 'src/cart.model.ts');
     fs.writeFileSync(modelSource, fs.readFileSync(modelSource, 'utf8').replace('note: string', 'note: string; selected?: boolean'));

@@ -7,7 +7,7 @@ import type {
   PutEnvelopeOperationSuccessBody,
   GetEmbeddedOperationSuccessBody,
 } from './types.js';
-import { EnvelopeModel, ScopeUserModel, UserModel } from './models.js';
+import { EnvelopeModel, ScopeUserModel, UserModel } from './index.js';
 import { decodeGeneratedModel } from '@exprtlabs/codegen/conversion';
 
 const requestUser: InputSchemas.User = { id: 'u1', secret: 's' };

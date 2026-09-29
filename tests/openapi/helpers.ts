@@ -186,9 +186,8 @@ export function readGeneratedClientSource(output: string): string {
 }
 
 function isModelImplementation(filename: string): boolean {
-  return basename(filename) === 'models.ts'
-    || (basename(dirname(filename)) === 'models' && /^_group-.*\.ts$/.test(basename(filename))
-      && !filename.endsWith('.d.ts'));
+  return basename(dirname(filename)) === 'models' && /^_group-.*\.ts$/.test(basename(filename))
+    && !filename.endsWith('.d.ts');
 }
 
 /** Inspect all canonical model implementations while keeping facade tests separate. */
@@ -198,7 +197,7 @@ export function generatedModelSource(artifacts: readonly { path: string; content
 }
 
 export function readGeneratedModelSource(output: string): string {
-  const files = [join(output, 'models.ts')];
+  const files: string[] = [];
   const directory = join(output, 'models');
   if (existsSync(directory)) {
     files.push(...readdirSync(directory).map(name => join(directory, name)).filter(isModelImplementation));

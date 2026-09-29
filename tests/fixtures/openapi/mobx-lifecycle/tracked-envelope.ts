@@ -1,7 +1,7 @@
 
 import { asGenObservable } from '@exprtlabs/codegen/mobx';
 import { observable } from 'mobx';
-import { CardPaymentModel, EnvelopeModel } from './models.js';
+import { CardPaymentModel, EnvelopeModel } from './index.js';
 import type { Envelope } from './types.js';
 
 export class TrackedEnvelope extends EnvelopeModel {

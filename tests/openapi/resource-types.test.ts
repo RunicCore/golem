@@ -116,7 +116,7 @@ test('public generate types URI $id refs, directional imports, nested models, an
   compileStrictUnusedSdk(output, [path.join(output, 'resource-types-assert.ts')]);
 
   const generated = requireRecord(
-    await import(pathToFileURL(path.join(output, 'dist/models.js')).href),
+    await import(pathToFileURL(path.join(output, 'dist/index.js')).href),
     'resource type models',
   );
   const EnvelopeModel = generated.EnvelopeModel;

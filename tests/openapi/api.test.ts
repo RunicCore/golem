@@ -70,7 +70,7 @@ test('OpenAPI getValidator infers generated fields and rejects handwritten subcl
     '--skipLibCheck',
     '--outDir', path.join(output, 'build'),
     path.join(output, 'consumer.ts'),
-    path.join(output, 'models.ts'),
+    path.join(output, 'index.ts'),
     path.join(output, 'types.ts'),
   ]);
 });

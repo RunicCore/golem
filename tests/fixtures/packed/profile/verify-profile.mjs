@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { Cart } from './build/src/cart.model.js';
-import { MoneyModel } from './build/sdk/models.js';
+import { MoneyModel } from './build/sdk/index.js';
 import { ProfileClient } from './build/sdk/client.js';
 import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/codegen/conversion';
 import { getValidator, validateInstance } from '@exprtlabs/codegen/validation';

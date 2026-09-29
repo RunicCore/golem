@@ -336,7 +336,7 @@ test('direct operation and model entrypoints load only their generated closures 
     noUncheckedIndexedAccess: true,
   });
 
-  const models = requireRecord(await import(pathToFileURL(path.join(source, 'dist/models.js')).href), 'models facade');
+  const models = requireRecord(await import(pathToFileURL(path.join(source, 'dist/index.js')).href), 'models facade');
   const directTree = requireRecord(await import(pathToFileURL(path.join(source, 'dist/models/Tree.js')).href), 'Tree module');
   assert.ok(isGeneratedModelClass(models.TreeModel));
   assert.strictEqual(directTree.TreeModel, models.TreeModel);
@@ -527,7 +527,7 @@ test('compact OpenAPI schema closure feeds standalone nested model first/all val
     noUncheckedIndexedAccess: true,
   });
 
-  const sdkModels = requireRecord(await import(pathToFileURL(path.join(source, 'dist/models.js')).href), 'SDK models');
+  const sdkModels = requireRecord(await import(pathToFileURL(path.join(source, 'dist/index.js')).href), 'SDK models');
   const purchaseModule = requireRecord(await import(pathToFileURL(path.join(source, 'dist/purchase.model.js')).href), 'Purchase model');
   const Purchase = purchaseModule.Purchase;
   const OrderModel = sdkModels.OrderModel;

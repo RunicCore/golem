@@ -1,6 +1,6 @@
 
 import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/codegen/conversion';
-import { CatModel, DogModel, PetModel } from './models.js';
+import { CatModel, DogModel, PetModel } from './index.js';
 import type { Cat, Dog, Pet } from './types.js';
 import type { GeneratedModelResult } from '@exprtlabs/codegen/model';
 

@@ -25,7 +25,6 @@ export type ArtifactFile =
   | typeof ALWAYS_ARTIFACTS[number]
   | 'input-schemas.ts'
   | 'output-schemas.ts'
-  | 'models.ts'
   | 'client.ts'
   | 'inbound.ts'
   | 'links.ts'
@@ -362,7 +361,6 @@ export function buildEmissionPlan(
     artifacts.add('input-schemas.ts');
     artifacts.add('output-schemas.ts');
   }
-  if (hasModels) artifacts.add('models.ts');
   if (hasOutboundOperations) artifacts.add('client.ts');
   if (hasInboundOperations) artifacts.add('inbound.ts');
   if (links) artifacts.add('links.ts');

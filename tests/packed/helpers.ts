@@ -339,7 +339,7 @@ export function generatedCodecId(source: string, shortName: string): string {
 export function generatedCodecIdFromRoot(root: string, shortName: string): string {
   return generatedCodecId(
     filesUnder(root)
-      .filter((filename) => filename.endsWith('.generated.ts') || filename.endsWith('models.ts')
+      .filter((filename) => filename.endsWith('.generated.ts')
         || filename.endsWith('iobject-plugin-keys.ts')
         || (path.basename(path.dirname(filename)) === 'models' && /^_group-.*\.ts$/.test(path.basename(filename))))
       .map((filename) => fs.readFileSync(filename, 'utf8'))

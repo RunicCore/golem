@@ -1,5 +1,5 @@
 import { getValidator } from '@exprtlabs/codegen/validation';
-import { UserModel } from './models.js';
+import { UserModel } from './index.js';
 class UserEditor extends UserModel {
   public readonly localOnly = true;
 }
