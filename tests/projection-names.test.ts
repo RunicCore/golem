@@ -346,3 +346,15 @@ export class RefundsController { @Post() create(@Body() input: { merchant: TMerc
   const names = Object.keys((await documentOf(t, source)).components.schemas);
   for (const expected of ['PaymentsCreateBodyMerchantLoose', 'RefundsCreateBodyMerchantLoose']) assert.ok(names.includes(expected), `${expected} in ${names.join(', ')}`);
 });
+
+test('a union written as an alias plus null follows the authored member order', async t => {
+  const source = `import { Body, Controller, Post } from '@nestjs/common';
+${MODELS}
+type TEither = (TMerchant & { a: string }) | (TMoney & { b: string });
+export type TOrder = IModel<{ either: TEither | null }>;
+@Controller('orders') export class OrderController { @Post() save(@Body() body: TOrder): TOrder { return body; } }
+`;
+  const shapes = variantShapes((await documentOf(t, source)).components.schemas, 'OrderEither');
+  assert.ok(shapes.OrderEither1?.includes('a'), 'member 1 is the first authored member');
+  assert.ok(shapes.OrderEither2?.includes('b'), 'member 2 is the second authored member');
+});

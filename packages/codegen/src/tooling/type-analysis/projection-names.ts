@@ -119,23 +119,27 @@ export function safeNameHint(hint: string, owner: string): string {
   return cleaned !== undefined && isProjectionName(cleaned) ? cleaned : owner;
 }
 
-function flattenUnion(node: ts.TypeNode): ts.TypeNode[] {
+/** A concrete type alias of a union, such as `type TEither = A | B`. */
+function unionAlias(checker: ts.TypeChecker, node: ts.TypeNode): ts.TypeAliasDeclaration | undefined {
+  if (!ts.isTypeReferenceNode(node) || node.typeArguments?.length) return undefined;
+  const declaration = aliasDeclaration(checker, node);
+  return declaration && !declaration.typeParameters?.length && ts.isUnionTypeNode(unwrap(declaration.type)) ? declaration : undefined;
+}
+
+/** Members in authored order; an alias of a union inside a union contributes its own members. */
+function flattenUnion(checker: ts.TypeChecker, node: ts.TypeNode, seen: ReadonlySet<ts.TypeAliasDeclaration> = new Set()): ts.TypeNode[] {
   const current = unwrap(node);
-  return ts.isUnionTypeNode(current) ? current.types.flatMap(flattenUnion) : [current];
+  if (ts.isUnionTypeNode(current)) return current.types.flatMap(member => flattenUnion(checker, member, seen));
+  const alias = unionAlias(checker, current);
+  if (alias && !seen.has(alias)) return flattenUnion(checker, alias.type, new Set([...seen, alias]));
+  return [current];
 }
 
 /** The members of the union as authored, also through a concrete type alias of a union. */
 function authoredUnionMembers(checker: ts.TypeChecker, node: ts.TypeNode | undefined): ts.TypeNode[] | undefined {
   if (!node) return undefined;
   const current = unwrap(node);
-  if (ts.isUnionTypeNode(current)) return flattenUnion(current);
-  if (ts.isTypeReferenceNode(current) && !current.typeArguments?.length) {
-    const declaration = aliasDeclaration(checker, current);
-    if (declaration && !declaration.typeParameters?.length && ts.isUnionTypeNode(unwrap(declaration.type))) {
-      return flattenUnion(declaration.type);
-    }
-  }
-  return undefined;
+  return ts.isUnionTypeNode(current) || unionAlias(checker, current) ? flattenUnion(checker, current) : undefined;
 }
 
 export interface UnionVariantNaming {
@@ -191,7 +195,10 @@ export function unionVariantNaming(
     }
   }
   const matched = named.every(variant => indexOf(variant) >= 0);
-  const order = matched ? undefined : [...named].sort((a, b) => checker.typeToString(a).localeCompare(checker.typeToString(b)));
+  const order = matched ? undefined : [...named].sort((left, right) => {
+    const a = checker.typeToString(left), b = checker.typeToString(right);
+    return a < b ? -1 : a > b ? 1 : 0;
+  });
   named.forEach(variant => {
     const position = order ? order.indexOf(variant) : indexOf(variant);
     result.set(variant, { part: String(position + 1), node: nodeOf(variant) });
