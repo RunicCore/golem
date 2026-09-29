@@ -125,7 +125,7 @@ function assertArtifactInventory(
   });
   const modelGroups = files.filter(file => /^models\/_group-[a-f0-9]+\.ts$/.test(file));
   if (modelModules.length) assert.ok(modelGroups.length > 0, 'model implementations have private groups');
-  const schemaModules = files.filter(file => /^validation-schemas\/[A-Za-z0-9_$-]+\.ts$/.test(file));
+  const schemaModules = files.filter(file => /^validation-schemas\/[A-Za-z0-9_$-]+\.(?:input|output)(?:-[0-9a-f]{6})?\.ts$|^validation-schemas\/resource-[0-9a-f]{12}\.ts$/.test(file));
   for (const module of schemaModules) {
     const importPath = `../${module.replace(/\.ts$/, '.js')}`;
     assert.ok(result.artifacts.some(artifact => artifact.content.includes(importPath)), `${module} is in an operation dependency closure`);

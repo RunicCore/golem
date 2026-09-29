@@ -309,6 +309,36 @@ function stableResourceSuffix(value: string): string {
   return hash.toString(16).padStart(16, '0');
 }
 
+// 19 characters of directory + stem + ".output" + "-xxxxxx" + ".ts" stay within 100.
+const MAX_SCHEMA_FILE_STEM = 64;
+
+function schemaFileStem(name: string): string {
+  const safe = name.replace(/[^A-Za-z0-9_$-]/g, '_').slice(0, MAX_SCHEMA_FILE_STEM);
+  return safe || 'schema';
+}
+
+/**
+ * Names validation-schema files `<Component>.<direction>.ts`. A short id suffix
+ * is added only when two names collide on a case-insensitive file system. The
+ * suffix hashes the id without the document digest, so editing the document
+ * does not rename files.
+ */
+export function validationSchemaModuleNames(
+  entries: readonly { readonly id: string; readonly name: string; readonly direction: SchemaDirection }[],
+  rootId: string,
+): ReadonlyMap<string, string> {
+  const base = entries.map(item => ({ ...item, file: `${schemaFileStem(item.name)}.${item.direction}` }));
+  const counts = new Map<string, number>();
+  for (const item of base) counts.set(item.file.toLowerCase(), (counts.get(item.file.toLowerCase()) ?? 0) + 1);
+  const names = new Map<string, string>();
+  for (const item of base) {
+    const stableId = item.id.startsWith(rootId) ? item.id.slice(rootId.length) : item.id;
+    const collides = (counts.get(item.file.toLowerCase()) ?? 0) > 1;
+    names.set(item.id, `validation-schemas/${item.file}${collides ? `-${stableResourceSuffix(stableId).slice(0, 6)}` : ''}.ts`);
+  }
+  return names;
+}
+
 const schemaMapKeywords = new Set([
   '$defs', 'definitions', 'properties', 'patternProperties', 'dependentSchemas', 'dependencies',
 ]);
@@ -431,6 +461,7 @@ interface OperationValidationSchemaIndex {
   readonly outputProjectionId: string;
   readonly componentById: Map<string, object | boolean>;
   readonly componentNamesById: Map<string, { readonly name: string; readonly direction: SchemaDirection }>;
+  readonly moduleNames: ReadonlyMap<string, string>;
   readonly resourceById: Map<string, DirectionalResource>;
   readonly resourceIdsBySource: Map<string, string>;
   readonly rewrittenResources: Map<string, object | boolean>;
@@ -503,6 +534,8 @@ function createOperationValidationSchemaIndex(
       componentNamesById.set(id, { name, direction });
     }
   }
+  const moduleNames = validationSchemaModuleNames(
+    [...componentNamesById].map(([id, { name, direction }]) => ({ id, name, direction })), rootId);
   return {
     data,
     rootId,
@@ -511,6 +544,7 @@ function createOperationValidationSchemaIndex(
     outputProjectionId: data.outputResourceId,
     componentById,
     componentNamesById,
+    moduleNames,
     resourceById,
     resourceIdsBySource,
     rewrittenResources: new Map(),
@@ -735,8 +769,8 @@ function operationBundleFromIndex(
       throw new Error(`Unresolved OpenAPI validation schema reference ${JSON.stringify(item.ref)}.`);
     }
     schemas[baseId] = schema;
-    const safe = baseId.replace(/[^A-Za-z0-9_$-]/g, '_').slice(-48) || 'resource';
-    const moduleName = `validation-schemas/${safe}-${stableResourceSuffix(baseId)}.ts`;
+    const moduleName = index.moduleNames.get(baseId)
+      ?? `validation-schemas/resource-${stableResourceSuffix(baseId.startsWith(index.rootId) ? baseId.slice(index.rootId.length) : baseId).slice(0, 12)}.ts`;
     moduleById.set(baseId, moduleName);
     let module = index.moduleSources.get(baseId);
     if (!module) {
