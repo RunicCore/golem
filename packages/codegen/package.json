@@ -95,6 +95,11 @@
       "import": "./dist/tooling/generator-api.js",
       "default": "./dist/tooling/generator-api.js"
     },
+    "./generated-paths": {
+      "types": "./dist/tooling/generated-paths.d.ts",
+      "import": "./dist/tooling/generated-paths.js",
+      "default": "./dist/tooling/generated-paths.js"
+    },
     "./errors": {
       "types": "./dist/errors.d.ts",
       "import": "./dist/errors.js",

@@ -1,6 +1,7 @@
 import { existsSync, statSync } from 'node:fs';
 import path from 'node:path';
 import * as ts from '@exprtlabs/codegen/ts';
+import { operationCodecRegistryPath } from '@exprtlabs/codegen/generated-paths';
 import {
   assertAbsolute,
   canonicalFilename,
@@ -430,7 +431,7 @@ export async function generate(context: TsToOpenApiContext): Promise<TsToOpenApi
   const artifact: CodegenArtifact = { path: normalized.output, content };
   const operationRegistry = emitOperationRegistry(
     analysis.routes,
-    path.join(normalized.root, 'src/generated/operation-codecs.ts'),
+    operationCodecRegistryPath(normalized.root),
   );
   const watchInputs = new Set(projectWatchInputs(
     programInfo,

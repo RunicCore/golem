@@ -5,6 +5,7 @@ import crypto from 'node:crypto';
 import { hasErrorCode, isRecord } from './generator-api.js';
 import type { CodegenArtifact } from './generator-api.js';
 import { canonicalPath, contains } from './config.js';
+import { defaultModelOutput, isOperationCodecRegistry, operationCodecRegistryPath } from './generated-paths.js';
 import type { CodegenConfig, CodegenJob } from './config.js';
 
 export interface InventoryEntry {
@@ -113,26 +114,26 @@ function assertDestinationPath(filename: string, destination: string, label: str
   }
 }
 
-function defaultModelOutput(job: Extract<CodegenJob, { kind: 'models' }>): string {
-  return job.options.output ?? path.join(job.options.root, 'src/generated/models');
+function modelOutputOf(job: Extract<CodegenJob, { kind: 'models' }>): string {
+  return job.options.output ?? defaultModelOutput(job.options.root);
 }
 
 function jobDestinations(job: CodegenJob): readonly string[] {
   if (job.kind === 'controllers') {
-    return [job.options.output, path.join(job.options.root, 'src/generated/operation-codecs.ts')];
+    return [job.options.output, operationCodecRegistryPath(job.options.root)];
   }
   if (job.kind === 'openapi') return [job.options.output];
   const sourceRoot = path.join(job.options.root, 'src');
   const sourceDirectories = job.options.sources === undefined
     ? [sourceRoot]
     : job.options.sources.map(source => path.dirname(source));
-  return [defaultModelOutput(job), ...sourceDirectories];
+  return [modelOutputOf(job), ...sourceDirectories];
 }
 
 function artifactDestination(config: CodegenConfig, job: CodegenJob, filename: string): string {
   const destinations = jobDestinations(job);
   if (job.kind === 'controllers') {
-    const extra = path.join(job.options.root, 'src/generated/operation-codecs.ts');
+    const extra = operationCodecRegistryPath(job.options.root);
     if (!samePath(filename, job.options.output) && !samePath(filename, extra)) {
       throw new Error(`Generated output escapes the ${job.id} destination: ${filename}`);
     }
@@ -161,7 +162,7 @@ function inventoryDestination(config: CodegenConfig, filename: string, entry: In
     // A controllers job owns exactly its configured document and the operation-codec registry.
     const configured = path.resolve(config.directory, entry.job.slice('controllers:'.length));
     const isDocument = samePath(configured, destination);
-    const isRegistry = /(?:^|\/)src\/generated\/operation-codecs\.ts$/.test(portable(entry.destination));
+    const isRegistry = isOperationCodecRegistry(portable(entry.destination));
     if (path.resolve(filename) !== path.resolve(destination) || (!isDocument && !isRegistry)) {
       throw new Error(`Generated output escapes its exact file destination: ${filename}`);
     }
@@ -287,7 +288,7 @@ function assertNoUnrecordedOutputs(config: CodegenConfig, inventory: Inventory, 
   const roots = job.kind === 'openapi'
     ? [job.options.output]
     : job.kind === 'models'
-      ? [path.join(job.options.root, 'src'), defaultModelOutput(job), ...jobDestinations(job).slice(1)]
+      ? [path.join(job.options.root, 'src'), modelOutputOf(job), ...jobDestinations(job).slice(1)]
       : [];
   const drift: string[] = [];
   const visited = new Set<string>();

@@ -10,6 +10,7 @@ import type {
 } from '@exprtlabs/codegen/generator-api';
 import { buildCodecValidationPlan, compileStandaloneValidatorSet, type CodecSchemaClosureEntry } from '@exprtlabs/codegen/ajv-tooling';
 import { resolveProfile } from '@exprtlabs/codegen/generator-api';
+import { defaultModelOutput } from '@exprtlabs/codegen/generated-paths';
 import { emitCodecDeclarationTable } from '@exprtlabs/codegen/schema-graph';
 import {
   analyzeSourceGraph,
@@ -91,7 +92,7 @@ function validateContext(context: ModelCodegenContext): NormalizedContext {
   }
   const profile = resolveProfile(context.profile);
   const output = assertAbsolute(
-    context.output ?? join(root, 'src/generated/models'),
+    context.output ?? defaultModelOutput(root),
     'context.output',
   );
   const sources = context.sources === undefined

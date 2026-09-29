@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import YAML from 'yaml';
 import { isRecord, resolveProfile } from './generator-api.js';
+import { defaultModelOutput } from './generated-paths.js';
 import type {
   CodegenProfile,
   ControllerContext,
@@ -238,7 +239,7 @@ export function resolveConfig(filename = 'runic-codegen.yaml', onInput?: InputOb
     keys(value.models, ['root', 'sources', 'output'], 'models');
     const root = inputPath(value.models.root ?? '.', 'models.root');
     const output = canonicalPath(value.models.output === undefined
-      ? path.join(root, 'src/generated/models')
+      ? defaultModelOutput(root)
       : path.resolve(directory, nonempty(value.models.output, 'models.output')));
     if (fs.existsSync(output) && !fs.statSync(output).isDirectory()) throw new Error('models.output must be a directory.');
     for (const previous of outputs) {

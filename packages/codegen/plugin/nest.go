@@ -14,6 +14,7 @@ import (
 
 const codegenPluginName = "@exprtlabs/codegen/ttsc-plugin"
 const nestPluginName = "@exprtlabs/ts-to-openapi/ttsc-plugin"
+const defaultOperationCodecRegistry = "src/generated/operation-codecs.ts"
 
 var nestImport = regexp.MustCompile(`import \{([^}]+)\} from ['"]@exprtlabs/codegen/nest['"];`)
 
@@ -70,7 +71,7 @@ func boolField(config map[string]any, name string) (bool, bool) {
 }
 
 func checkNestCodecs(cwd string, prog *driver.Program) int {
-	expectedPath := filepath.Join(cwd, "src/generated/operation-codecs.ts")
+	expectedPath := filepath.Join(cwd, filepath.FromSlash(defaultOperationCodecRegistry))
 	expected, err := os.ReadFile(expectedPath)
 	missingRegistry := err != nil
 	keys := loadCodecKeys(prog, cwd)
