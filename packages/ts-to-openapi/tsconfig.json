@@ -1,0 +1,29 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "composite": true,
+    "sourceMap": false,
+    "rootDir": "src",
+    "outDir": "dist",
+    "tsBuildInfoFile": "../../.build/ts-to-openapi.tsbuildinfo",
+    "lib": [
+      "ES2023",
+      "DOM",
+      "DOM.Iterable"
+    ],
+    "types": [
+      "node"
+    ]
+  },
+  "include": [
+    "src/**/*.ts"
+  ],
+  "references": [
+    {
+      "path": "../codegen/tsconfig.runtime.json"
+    },
+    {
+      "path": "../codegen/tsconfig.tooling.json"
+    }
+  ]
+}

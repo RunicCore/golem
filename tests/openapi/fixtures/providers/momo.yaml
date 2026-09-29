@@ -1,0 +1,89 @@
+openapi: 3.1.0
+info:
+  title: MoMo-style payment fixture
+  version: 1.0.0
+servers:
+  - url: https://fixture.invalid
+security:
+  - signature: []
+paths:
+  /v2/gateway/api/create:
+    post:
+      operationId: createMomoPayment
+      summary: Create a payment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreatePayment'
+      responses:
+        '200':
+          description: Payment accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentResult'
+        '4XX':
+          description: Provider error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProviderError'
+  /ipn:
+    post:
+      operationId: receiveMomoIpn
+      summary: Receive an instant-payment notification
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PaymentResult'
+      responses:
+        '204':
+          description: Accepted
+components:
+  securitySchemes:
+    signature:
+      type: apiKey
+      in: header
+      name: X-Signature
+  schemas:
+    CreatePayment:
+      type: object
+      required: [requestId, amount, orderInfo]
+      additionalProperties: false
+      properties:
+        requestId:
+          type: string
+        amount:
+          type: integer
+          minimum: 1000
+        orderInfo:
+          type: string
+        partnerCode:
+          type: string
+          readOnly: true
+        signature:
+          type: string
+          writeOnly: true
+    PaymentResult:
+      type: object
+      required: [requestId, resultCode]
+      properties:
+        requestId:
+          type: string
+        resultCode:
+          type: integer
+        message:
+          type: [string, 'null']
+    ProviderError:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+        message:
+          type: string

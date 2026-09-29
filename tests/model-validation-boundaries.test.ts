@@ -1,0 +1,88 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import type { GeneratedModel, ModelTypeDescriptor } from '@exprtlabs/codegen/model';
+import { getValidator } from '@exprtlabs/codegen/validation';
+import { schemaForDescriptor } from '@exprtlabs/codegen/schema';
+import { createOpenApiAjvEngine } from '@exprtlabs/codegen/ajv';
+import { encodeGeneratedModel } from '@exprtlabs/codegen/conversion';
+import { installCodecModel } from './register-codec-model.js';
+
+function generated<Model extends object>(model: Model): Model & GeneratedModel<unknown> {
+  return model as Model & GeneratedModel<unknown>;
+}
+
+test('exact frontend models ignore prototype extras while nested records stay exact', async () => {
+  class Child {
+    value = 2;
+  }
+  const child: ModelTypeDescriptor = {
+    kind: 'object',
+    properties: { value: { kind: 'number' } },
+    required: ['value'],
+    additionalProperties: false,
+  };
+  installCodecModel({
+    constructor: Child,
+    name: 'Child',
+    fields: ['value'],
+    conversion: {
+      encode: model => ({ value: model.value }),
+      decode: value => Object.assign(new Child(), value),
+    },
+    definitions: { Child: child },
+  });
+  const settings: ModelTypeDescriptor = {
+    kind: 'object',
+    properties: { title: { kind: 'string' } },
+    required: ['title'],
+    additionalProperties: false,
+  };
+  class Editor {
+    child = new Child();
+    when = new Date('2026-01-01T00:00:00Z');
+    settings: { title: string } = { title: 'Draft' };
+    isSaving(): boolean { return false; }
+  }
+  const model: ModelTypeDescriptor = {
+    kind: 'object',
+    properties: {
+      child: { kind: 'generated-model', id: 'Child' },
+      when: { kind: 'date' },
+      settings,
+    },
+    required: ['child', 'when', 'settings'],
+    additionalProperties: false,
+  };
+  installCodecModel({
+    constructor: Editor,
+    name: 'Editor',
+    fields: ['child', 'when', 'settings'],
+    nestedCodecIds: ['Child'],
+    conversion: {
+      encode: value => ({
+        child: { value: value.child.value },
+        when: value.when.toISOString(),
+        settings: value.settings,
+      }),
+      decode: value => {
+        throw new Error(`decode must not run for invalid wire input: ${JSON.stringify(value)}`);
+      },
+    },
+    definitions: { Editor: model },
+  });
+  const editor = new Editor();
+  const validator = getValidator<Editor>(editor);
+  assert.equal(await validator.validate(), true);
+  const json = encodeGeneratedModel(generated(editor));
+  assert.deepEqual(json, { child: { value: 2 }, when: '2026-01-01T00:00:00.000Z', settings: { title: 'Draft' } });
+  const wireEngine = createOpenApiAjvEngine({ allErrors: false });
+  const wire = {
+    ...model,
+    properties: { ...model.properties, child, when: { kind: 'string' as const } },
+  };
+  wireEngine.addSchema(schemaForDescriptor(wire) as object, 'EditorWire');
+  const editorWire = wireEngine.getSchema('EditorWire');
+  assert.ok(editorWire);
+  const unexpected = { ...json as Record<string, unknown>, unexpected: true };
+  assert.equal(editorWire(unexpected), false);
+});

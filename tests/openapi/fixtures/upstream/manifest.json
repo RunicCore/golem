@@ -1,0 +1,152 @@
+{
+  "sources": [
+    {
+      "name": "OAI OpenAPI Specification",
+      "repository": "https://github.com/OAI/OpenAPI-Specification",
+      "commit": "8e166da300c64bb7144938fec518b8e3f4cae715",
+      "license": "Apache-2.0",
+      "licenseFile": "licenses/OAI-OpenAPI-Specification-APACHE-2.0.txt"
+    },
+    {
+      "name": "Redocly CLI",
+      "repository": "https://github.com/Redocly/redocly-cli",
+      "commit": "96c26193798357a3ad6a7604174e25ac8fad9292",
+      "license": "MIT",
+      "licenseFile": "licenses/Redocly-CLI-MIT.md"
+    },
+    {
+      "name": "openapi-to-rust",
+      "repository": "https://github.com/gpu-cli/openapi-to-rust",
+      "commit": "909250739bf30c1575d195066a919c8081afa33f",
+      "license": "MIT",
+      "licenseFile": "licenses/openapi-to-rust-MIT.txt"
+    }
+  ],
+  "fixtures": [
+    {
+      "source": "OAI OpenAPI Specification",
+      "version": "3.1",
+      "path": "oai/3.1-converted/api-with-examples.yaml",
+      "originalPath": "_archive_/schemas/v3.0/pass/api-with-examples.yaml",
+      "sha256": "df294c5c3725e64c644fb6d2ab6ff597c29d9a8031656fbe2813aef4fb38d689",
+      "conversion": "openapi field changed from 3.0.x to 3.1.0"
+    },
+    {
+      "source": "OAI OpenAPI Specification",
+      "version": "3.1",
+      "path": "oai/3.1-converted/callback-example.yaml",
+      "originalPath": "_archive_/schemas/v3.0/pass/callback-example.yaml",
+      "sha256": "6a168426dcefe4f7fbfdb03750a45893d31257e6ca4639242e1a4fdd81063b20",
+      "conversion": "openapi field changed from 3.0.x to 3.1.0"
+    },
+    {
+      "source": "OAI OpenAPI Specification",
+      "version": "3.1",
+      "path": "oai/3.1-converted/link-example.yaml",
+      "originalPath": "_archive_/schemas/v3.0/pass/link-example.yaml",
+      "sha256": "cbcb6aa3d23c8caf9c9f92688cd253f512d850d655616dafa682a24c28e6d34a",
+      "conversion": "openapi field changed from 3.0.x to 3.1.0"
+    },
+    {
+      "source": "OAI OpenAPI Specification",
+      "version": "3.1",
+      "path": "oai/3.1-converted/petstore-expanded.yaml",
+      "originalPath": "_archive_/schemas/v3.0/pass/petstore-expanded.yaml",
+      "sha256": "963dd3b8a771019a099ad539373b669217a5723a9ad71df0b8ed75de4e6a5d90",
+      "conversion": "openapi field changed from 3.0.x to 3.1.0"
+    },
+    {
+      "source": "OAI OpenAPI Specification",
+      "version": "3.1",
+      "path": "oai/3.1-converted/petstore.yaml",
+      "originalPath": "_archive_/schemas/v3.0/pass/petstore.yaml",
+      "sha256": "e998bbf9d54ee61fa992d23ffba9a71a039a07265e6a545a9c40d54286ad436c",
+      "conversion": "openapi field changed from 3.0.x to 3.1.0"
+    },
+    {
+      "source": "OAI OpenAPI Specification",
+      "version": "3.1",
+      "path": "oai/3.1-converted/uspto.yaml",
+      "originalPath": "_archive_/schemas/v3.0/pass/uspto.yaml",
+      "sha256": "bb39966b2ace79f575adac81ad72788add9a679bcff677d3adf114323ed7a341",
+      "conversion": "openapi field changed from 3.0.x to 3.1.0"
+    },
+    {
+      "source": "Redocly CLI",
+      "version": "3.1",
+      "path": "redocly/3.1/museum.yaml",
+      "originalPath": "resources/museum.yaml",
+      "sha256": "5d35d79abe958a5db10cd35fdc18c244b5513484c847282d018664e50da35a5a"
+    },
+    {
+      "source": "openapi-to-rust",
+      "version": "3.1",
+      "path": "openapi-to-rust/3.1/components/path-items-component.yaml",
+      "originalPath": "tests/conformance/fixtures/components/path-items-component.yaml",
+      "sha256": "37f3e63291f9193f416e621e631ce22fa448f1933ac236eb763ca4201e2c4a0d"
+    },
+    {
+      "source": "openapi-to-rust",
+      "version": "3.1",
+      "path": "openapi-to-rust/3.1/parameter/deepobject-query.yaml",
+      "originalPath": "tests/conformance/fixtures/parameter/deepobject-query.yaml",
+      "sha256": "b8733ccb9eba0b0dc5217d9ec8a4b8c8418701fd3c86020ca4d1a6da438c5162"
+    },
+    {
+      "source": "openapi-to-rust",
+      "version": "3.1",
+      "path": "openapi-to-rust/3.1/parameter/header-required.yaml",
+      "originalPath": "tests/conformance/fixtures/parameter/header-required.yaml",
+      "sha256": "e3fc16ca71db492572788daa70f95d81f1a1362977ca266dd582b6f96770031a"
+    },
+    {
+      "source": "openapi-to-rust",
+      "version": "3.1",
+      "path": "openapi-to-rust/3.1/schema/dynamic-ref-tree.yaml",
+      "originalPath": "tests/conformance/fixtures/schema/dynamic-ref-tree.yaml",
+      "sha256": "98391161500614ce604d4d338ddabfd44ed4f4b96db6a8d955853db985635542"
+    },
+    {
+      "source": "openapi-to-rust",
+      "version": "3.1",
+      "path": "openapi-to-rust/3.1/schema/type-string-or-null.yaml",
+      "originalPath": "tests/conformance/fixtures/schema/type-string-or-null.yaml",
+      "sha256": "4c14b870692c73405af1a0a95626b9726f9712179e26e743770ccfd43ed15b5d"
+    },
+    {
+      "source": "openapi-to-rust",
+      "version": "3.1",
+      "path": "openapi-to-rust/3.1/security/mutual-tls.yaml",
+      "originalPath": "tests/conformance/fixtures/security/mutual-tls.yaml",
+      "sha256": "2fda3775dd000af41ba79e59df69d7f604677ead2469022e2d11d8babd762745"
+    },
+    {
+      "source": "openapi-to-rust",
+      "version": "3.1",
+      "path": "openapi-to-rust/3.1/webhooks/basic-webhook.yaml",
+      "originalPath": "tests/conformance/fixtures/webhooks/basic-webhook.yaml",
+      "sha256": "3967cd5781be9fe82a0edf3e6790f2e0dce408ff9f7b8da495f10d733510edd3"
+    },
+    {
+      "source": "openapi-to-rust",
+      "version": "3.2",
+      "path": "openapi-to-rust/3.2/components/media-types-component.yaml",
+      "originalPath": "tests/conformance/fixtures/components/media-types-component-3.2.yaml",
+      "sha256": "3e78b790736d8c84d084dde8f83df1807c2b2b231b12004582a54589e12e8b87"
+    },
+    {
+      "source": "openapi-to-rust",
+      "version": "3.2",
+      "path": "openapi-to-rust/3.2/pathitem/additional-operations.yaml",
+      "originalPath": "tests/conformance/fixtures/pathitem/additional-operations-3.2.yaml",
+      "sha256": "a8b267aa1c7c539546fb95a61fda1ef4518a6150ef665a8b552e388e7d3c60aa"
+    },
+    {
+      "source": "openapi-to-rust",
+      "version": "3.2",
+      "path": "openapi-to-rust/3.2/pathitem/query-method.yaml",
+      "originalPath": "tests/conformance/fixtures/pathitem/query-method-3.2.yaml",
+      "sha256": "016d1c8e5170b5fcd18fe6257bb51be31f55512754b73b6afd72153c4af83df9"
+    }
+  ]
+}

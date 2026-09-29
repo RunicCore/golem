@@ -1,0 +1,10 @@
+version: 1
+mobx: false
+validation: true
+ajvStandalone: true
+openapi:
+  - input: api.json
+    output: sdk
+    name: Profile
+models:
+  root: .

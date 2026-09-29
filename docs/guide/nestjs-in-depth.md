@@ -1,0 +1,170 @@
+# Controllers in depth
+
+Shape routes, schemas, query objects, responses and request handling for NestJS 11 controllers.
+
+The types in your controller signatures produce both the OpenAPI schema and the runtime request conversion. Each section below is a separate example; [`examples/nest-openapi`](https://github.com/exprtlabs/codegen/tree/main/examples/nest-openapi) combines them in one app.
+
+## Route helpers
+
+`src/routes.ts`:
+
+<<< @/../examples/nest-openapi/src/routes.ts#route-helper
+
+Add to your controller:
+
+<<< @/../examples/nest-openapi/src/payments.controller.ts#route-helper-method
+
+| Path expression | Allowed |
+| --- | --- |
+| `'payments/transactions'` | Yes |
+| `routes.resource({ service: 'payments', resource: 'transactions' })` | Yes |
+| A helper returning a template, a concatenation, its own string parameters, a const string, or another simple helper | Yes |
+| A helper whose object argument is destructured in its signature | Yes |
+| A non-static class method used as a route helper | Rejected |
+| A helper that reads a file, awaits, or otherwise runs instead of folding to a value at generation time | Rejected |
+
+- The generator runs the helper on its own; it doesn't start your app or run other module code.
+- Results over 1 MiB are rejected. Job settings are in [controller configuration](/reference/config#controller-jobs).
+
+## Model schemas
+
+Use `TSerde` to store a number in the model and send a string in JSON.
+
+```ts
+import type { IModel } from '@exprtlabs/codegen/model';
+import type { Minimum, Pattern, TSerde } from '@exprtlabs/codegen/tags';
+
+type DecimalText = string & Pattern<'^[0-9]+(?:\\.[0-9]{1,2})?$'>;
+const writeAmount = (amount: number): DecimalText => amount.toFixed(2);
+const readAmount = (text: DecimalText): number => Number(text);
+
+export type TMoney = IModel<{
+  amount: number & Minimum<0> & TSerde<typeof writeAmount, typeof readAmount>;
+  currency: 'USD' | 'EUR';
+}>;
+```
+
+Generated OpenAPI:
+
+```yaml
+amount:
+  allOf:
+    - type: string
+    - pattern: '^[0-9]+(?:\.[0-9]{1,2})?$'
+```
+
+- A controller parameter or return type using that model appears in OpenAPI as its JSON value, including a `Pattern` declared on the decoder's parameter type.
+- The decoder's parameter type supplies the JSON type. Generation reads that type; it never calls a converter to infer a schema.
+- A validation constraint on the model value, such as `Minimum<0>` on a number, is not copied onto the string JSON field.
+- Custom predicates and converters stay in TypeScript. OpenAPI carries only the JSON schema. Class-validator decorators are not interpreted.
+- [`TSerde`](/guide/tags#convert-a-field-to-a-different-json-value) declares the pair.
+
+An `IModel` contract is authoritative in both request and response directions.
+Swagger metadata can add documentation, but a structural override must agree
+with the TypeScript contract and its [validation constraints](/guide/validation#openapi-validation-constraints-in-both-directions).
+
+## NestModelInterceptor
+
+`NestModelInterceptor` runs `fromWireFormat` on `@Body()` and `@Query()` before the handler, and writes an `IModel` or `IObject` return with `stringify`.
+
+<<< @/../examples/nest-openapi/src/application.ts#global-model-http
+
+Add a model and a controller that use it:
+
+```ts
+import type { IModel } from '@exprtlabs/codegen/model';
+import type { MinLength } from '@exprtlabs/codegen/tags';
+import { PaymentDraftBase } from './payment-draft.model.generated.js';
+
+export type TPaymentDraft = IModel<{ note: string & MinLength<2> }>;
+export class PaymentDraft extends PaymentDraftBase {}
+```
+
+```ts
+import { Body, Controller, Post } from '@nestjs/common';
+import { PaymentDraft } from './payment-draft.model.js';
+
+@Controller('payments')
+export class PaymentsController {
+  @Post()
+  create(@Body() input: PaymentDraft): PaymentDraft {
+    // { note: 'Lunch' } is a PaymentDraft instance.
+    // The HTTP response is that type's JSON.
+    // { note: '' } is HTTP 400 before this method runs.
+    return input;
+  }
+}
+```
+
+What happens to a request:
+
+1. `fromWireFormat` runs on `@Body()` and `@Query()` with fail-fast validation.
+2. Nest rejects malformed JSON with HTTP 400 before this interceptor runs. Input the interceptor can't decode, such as an unknown discriminator tag or an unparsable date, also returns HTTP 400 with `issues` (`LibError.causedByInput`).
+3. Valid input reaches the handler as a model: a type alias stays a plain object, and your class is constructed.
+4. An `IModel` or `IObject` return, including a `Promise` or an array of that type, is stringified with that type; any other return stays Nest JSON.
+5. An application converter that throws, and missing generated metadata, stay HTTP 500.
+
+`@Param()`, and a `@Body('field')` or `@Query('field')` that names one field, stay as Nest received them. Interfaces and array element types are erased from Nest metadata; for a collection body, declare a model that contains the array field.
+
+Compile-time recording of these types needs the project settings in [Set up TypeScript](/guide/nestjs#set-up-typescript) and a value import of the model module, so the codec exists before the interceptor runs. The full `@exprtlabs/codegen/nest` import is in the [runtime API](/reference/runtime-api#nest).
+
+| Declared return type | Response |
+| --- | --- |
+| `IModel` or `IObject`, including a `Promise` of that type | That type's JSON |
+| Array of that type | JSON array of those values |
+| Primitive, plain object, file, non-model class, or a union | Nest JSON |
+
+Models inside a plain wrapper are not traversed. Declare the wrapper as a model if its fields need serialization.
+
+::: tip Optional
+Use `nestModelStringifyInterceptor` to write the response with a codec other than the declared return type's own. Get that codec from a `@Body()` or `@Query()` parameter already typed with the target class, using `objectCodecFromMetatype`.
+:::
+
+## Query objects
+
+HTTP query values are strings, and repeated keys arrive as string arrays. Declare the query as an `IObject`. Before `fromWireFormat`, `NestModelInterceptor` decodes each field to the type its schema declares:
+
+| Field type | Query text | Decoded value |
+| --- | --- | --- |
+| `number` or `Integer` | `?limit=42` | `42` |
+| `boolean` | `?active=true` | `true` |
+| A number or boolean literal, such as `42` or `true` | `?mode=42` | `42` |
+| An array field given one value | `?status=paid` | `['paid']` |
+
+- A value that doesn't fit the declared type stays a string, so validation rejects it with HTTP 400.
+- A field that also accepts a string keeps it: for `string | number`, `'42'` stays `'42'`.
+- Only the query object's own properties are decoded; a query model that is a `$ref` to another model or a union at its root is passed through unchanged.
+- A JSON body is not decoded.
+- The interceptor stores the converted query on the individual request. Whole-query parameters on one route must use the same model type; repeated bindings share the converted value. The same rule applies to whole-body parameters. Field bindings such as `@Query('limit')` keep Nest's normal behavior.
+
+<<< @/../examples/nest-openapi/src/payment.model.ts#payment-filter
+
+<<< @/../examples/nest-openapi/src/payments.controller.ts#query-method
+
+- `GET /api/payments/transactions?limit=10&status=paid` yields `{ limit: 10, status: 'paid' }`.
+- Repeated `status=paid&status=pending` yields `{ status: ['paid', 'pending'] }`.
+- `limit=abc`, `status=refunded`, and undeclared keys (`exact: true`) return HTTP 400 before the handler.
+- `PaymentStatus | PaymentStatus[]` is the [supported query union](/guide/model-composition#unions). Arbitrary object unions are not converted on `@Query()` or `@Body()`.
+
+OpenAPI 3.2 emits the whole query schema; its SDK uses `.execute({ querystring: { limit: 10, status: ['paid'] } })`. OpenAPI 3.1.2 flattens a query object into independent named parameters when the [contract survives](/reference/openapi-support#nest-controller-generation) and the values fit [query compatibility](/reference/config#query-compatibility).
+
+## Status codes and media types
+
+| Controller contract | Generated success response |
+| --- | --- |
+| `@Post()` | `201` by default |
+| Other HTTP verbs | `200` by default |
+| `@HttpCode(204)` | `204`, including an explicit empty response |
+| Object or array return type | JSON by default |
+| `@Res({ passthrough: true })` or `@Response({ passthrough: true })` | Inferred from the return type |
+| Primitive, file, stream or manual response | Requires explicit supported Swagger media/schema metadata |
+
+- A `void` return does not imply `204`.
+- Swagger response decorators describe the response; `@HttpCode` controls Nest's status. Contradictions fail generation.
+- Path parameters must match placeholders and be required. Expanded routes and versions receive distinct operation IDs; remaining collisions fail.
+
+`@Res()` and `@Res({ passthrough: false })` handle the response manually, so declare a Swagger success response with a type or content/schema. Passthrough and endpoint-exclusion options must resolve to static booleans; generation reports an error when their values are unknown.
+
+Class-level Swagger response decorators, exclusion decorators and their [merge order](/reference/openapi-support#nest-controller-generation) follow `@nestjs/swagger`.
+
+Full example: [`examples/nest-openapi`](https://github.com/exprtlabs/codegen/tree/main/examples/nest-openapi)

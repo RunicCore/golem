@@ -1,0 +1,72 @@
+{
+  "name": "exprtlabs-codegen-workspace",
+  "private": true,
+  "version": "1.0.0-rc",
+  "type": "module",
+  "workspaces": [
+    "packages/*",
+    "examples/react-mobx",
+    "examples/nest-openapi"
+  ],
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "build": "ttsc -p packages/codegen/tsconfig.runtime.json && ttsc -p packages/codegen/tsconfig.tooling.json && ttsc -p packages/model-codegen/tsconfig.json && ttsc -p packages/openapi-to-ts/tsconfig.json && ttsc -p packages/ts-to-openapi/tsconfig.json",
+    "build:tests": "npm run build && npm run build:scripts && node .build/scripts/clean-tests.js && ttsc -p tsconfig.tests.json",
+    "build:scripts": "ttsc -p tsconfig.scripts.json",
+    "vendor:openapi-schemas": "npm run build:scripts && node .build/scripts/vendor-openapi-schemas.js",
+    "bench": "npm run build && npm run build:scripts && node .build/scripts/benchmark/run.js",
+    "bench:compare": "npm run build:scripts && node .build/scripts/benchmark/compare.js",
+    "test": "npm run build:tests && npm run test:unit:run",
+    "test:unit:run": "node --test --test-concurrency=2 .build/tests/*.test.js .build/tests/openapi/*.test.js .build/tests/ts-to-openapi/*.test.js",
+    "test:openapi": "npm run build:tests && node --test --test-concurrency=2 .build/tests/openapi/*.test.js",
+    "test:packed": "npm run build:tests && npm run test:packed:run",
+    "test:packed:run": "node --test --test-concurrency=1 .build/tests/packed/*.test.js",
+    "test:browser": "npm run build:tests && npm run test:browser:run",
+    "test:browser:run": "node --test --test-concurrency=1 .build/tests/browser/*.test.js",
+    "test:go": "npm run build:scripts && npm run test:go:run",
+    "test:go:run": "node .build/scripts/test-go-plugin.js",
+    "test:all": "npm run build:tests && npm run test:all:run",
+    "test:all:run": "npm run test:unit:run && npm run test:go:run && npm run test:packed:run && npm run test:browser:run && npm run check:react",
+    "check:react": "npm run check --workspace examples/react-mobx && npm test --workspace examples/react-mobx && npm run build --workspace examples/react-mobx",
+    "generate:examples": "npm run build && npm run build:scripts && node .build/scripts/examples.js generate",
+    "check:examples": "npm run build && npm run build:scripts && node .build/scripts/examples.js check",
+    "release:check": "npm run build:tests && node .build/scripts/release-check.js",
+    "generate:openapi-compliance": "npm run build:scripts && node .build/packages/openapi-to-ts/compliance/generate-matrix.js",
+    "check:openapi-compliance": "npm run build:scripts && node .build/packages/openapi-to-ts/compliance/generate-matrix.js --check",
+    "docs:dev": "vitepress dev docs",
+    "docs:build": "npm run generate:openapi-compliance && vitepress build docs",
+    "docs:check": "npm run docs:build && npm run build:tests && node --test .build/tests/docs-site.site-test.js && node .build/scripts/public-source.js scan docs/.vitepress/dist",
+    "docs:preview": "vitepress preview docs",
+    "public:check": "npm run build:scripts && node .build/scripts/public-source.js check",
+    "public:export": "npm run build:scripts && node .build/scripts/public-source.js export"
+  },
+  "devDependencies": {
+    "@fontsource/inter": "5.3.0",
+    "@fontsource/jetbrains-mono": "5.3.0",
+    "@fontsource/space-grotesk": "5.3.0",
+    "@playwright/test": "1.63.0",
+    "@types/node": "22.20.1",
+    "ajv": "^8.20.0",
+    "ajv-formats": "^3.0.1",
+    "class-transformer": "0.5.1",
+    "class-validator": "0.15.1",
+    "esbuild": "0.25.12",
+    "mobx": "^6.16.1",
+    "reflect-metadata": "0.2.2",
+    "ttsc": "0.30.x",
+    "typescript": "7.x",
+    "typia": "^14.0.6",
+    "vitepress": "1.6.4",
+    "zod": "4.6.5"
+  },
+  "imports": {
+    "#codegen/*": "./packages/codegen/dist/tooling/*.js",
+    "#openapi/*": "./packages/openapi-to-ts/dist/*.js",
+    "#model/*": "./packages/model-codegen/dist/*.js",
+    "#controllers/*": "./packages/ts-to-openapi/dist/*.js"
+  },
+  "description": "Generate OpenAPI from TypeScript controllers and generate TypeScript models and API clients, with validation, serialization and optional MobX integration.",
+  "license": "MIT"
+}

@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "files": {
+    "src/generated/models/iobject-plugin-keys.ts": {
+      "job": "models:.",
+      "owner": "@exprtlabs/model-codegen",
+      "digest": "49be4432652a35b2b9942443a91a8141a20c961a893ed1910f7d22205cacc0bd",
+      "destination": "src/generated/models",
+      "destinationKind": "directory"
+    },
+    "src/task.model.generated.ts": {
+      "job": "models:.",
+      "owner": "@exprtlabs/model-codegen",
+      "digest": "90100bb4b8d0a21d85c040f36c913f47a0e5a53946d7217b692a9efdee2cf329",
+      "destination": "src",
+      "destinationKind": "directory"
+    }
+  }
+}

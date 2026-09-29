@@ -1,0 +1,187 @@
+{
+  "version": 1,
+  "files": {
+    "api.yaml": {
+      "job": "controllers:api.yaml",
+      "owner": "@exprtlabs/ts-to-openapi",
+      "digest": "fe3f701193973d777333c6b8418742fd363fb00e138bcd6ee289cbcdf79fe6c6",
+      "destination": "api.yaml",
+      "destinationKind": "file"
+    },
+    "backend/project-access.model.generated.ts": {
+      "job": "models:.",
+      "owner": "@exprtlabs/model-codegen",
+      "digest": "4d9c492376e0b1926a52ee2f862d3a4a9e18dfd5b01da828df5dc0fb47eb5fc4",
+      "destination": "backend",
+      "destinationKind": "directory"
+    },
+    "sdk/client-runtime.ts": {
+      "job": "openapi:sdk",
+      "owner": "@exprtlabs/openapi-to-ts",
+      "digest": "649f04546c0a907f6e9e57f3746cf7f9dfe25810e8f6582682f2b4cb5081fb51",
+      "destination": "sdk",
+      "destinationKind": "directory"
+    },
+    "sdk/client.ts": {
+      "job": "openapi:sdk",
+      "owner": "@exprtlabs/openapi-to-ts",
+      "digest": "4a530b61e1306e6b8dee1e0cb07dac1623de9ef10e798e225d552c026c204443",
+      "destination": "sdk",
+      "destinationKind": "directory"
+    },
+    "sdk/index.ts": {
+      "job": "openapi:sdk",
+      "owner": "@exprtlabs/openapi-to-ts",
+      "digest": "421817c3121f4ee0fa5d7b012e82bc9b4fa281bba9ec53ad0d953a460de92b55",
+      "destination": "sdk",
+      "destinationKind": "directory"
+    },
+    "sdk/input-schemas.ts": {
+      "job": "openapi:sdk",
+      "owner": "@exprtlabs/openapi-to-ts",
+      "digest": "a7dc4475e9c6cd50992852b700cdce529dc43e793c23497aa9d59cbcee80ab82",
+      "destination": "sdk",
+      "destinationKind": "directory"
+    },
+    "sdk/iobject-plugin-keys.ts": {
+      "job": "openapi:sdk",
+      "owner": "@exprtlabs/openapi-to-ts",
+      "digest": "bc52ddf5ff95d2e17dd792565bdc1e794400db7c72680014cc786f070968974b",
+      "destination": "sdk",
+      "destinationKind": "directory"
+    },
+    "sdk/model-manifest.json": {
+      "job": "openapi:sdk",
+      "owner": "@exprtlabs/openapi-to-ts",
+      "digest": "d2ef104e9273f247077c5268e82ba2855ac71116d85e0796bcb1bad037a43e22",
+      "destination": "sdk",
+      "destinationKind": "directory"
+    },
+    "sdk/models.ts": {
+      "job": "openapi:sdk",
+      "owner": "@exprtlabs/openapi-to-ts",
+      "digest": "dc29aed21f8a1ac0fc8f3f97cf7d90aa54ff47fc13e7c7f2b75a0491d133862e",
+      "destination": "sdk",
+      "destinationKind": "directory"
+    },
+    "sdk/models/_group-51418635.ts": {
+      "job": "openapi:sdk",
+      "owner": "@exprtlabs/openapi-to-ts",
+      "digest": "ab6631933b7324db3e6dc47a3f4e7fb53d5cf179ff20560b70d09ef6e8d1be94",
+      "destination": "sdk",
+      "destinationKind": "directory"
+    },
+    "sdk/models/_group-868aa6ed.ts": {
+      "job": "openapi:sdk",
+      "owner": "@exprtlabs/openapi-to-ts",
+      "digest": "1cc94a8b94e01e27c13bdf75a3b3d8e5c96b205977d97a658e7fcedb19d031f2",
+      "destination": "sdk",
+      "destinationKind": "directory"
+    },
+    "sdk/models/Member.ts": {
+      "job": "openapi:sdk",
+      "owner": "@exprtlabs/openapi-to-ts",
+      "digest": "73c9a14b419dc54eb55d30bc67f1d3e3bea8ea48342c6bb898b54901997fd4cc",
+      "destination": "sdk",
+      "destinationKind": "directory"
+    },
+    "sdk/models/ProjectAccess.ts": {
+      "job": "openapi:sdk",
+      "owner": "@exprtlabs/openapi-to-ts",
+      "digest": "147f9e05de9a73a0d9893d92a8cd40684b301805d255e512ab937759f015baab",
+      "destination": "sdk",
+      "destinationKind": "directory"
+    },
+    "sdk/operations/updateProjectAccess.ts": {
+      "job": "openapi:sdk",
+      "owner": "@exprtlabs/openapi-to-ts",
+      "digest": "7a305240bf6994cef751dfa5dc22951f9c8497ec1d77909698c09d46b12c79ac",
+      "destination": "sdk",
+      "destinationKind": "directory"
+    },
+    "sdk/output-schemas.ts": {
+      "job": "openapi:sdk",
+      "owner": "@exprtlabs/openapi-to-ts",
+      "digest": "4dfe8527d0098e0792aa4625590963dbd2a979915e0edc068f5938ac085fe6c3",
+      "destination": "sdk",
+      "destinationKind": "directory"
+    },
+    "sdk/schemas.ts": {
+      "job": "openapi:sdk",
+      "owner": "@exprtlabs/openapi-to-ts",
+      "digest": "589d9a1004fb8fba4e3f5bb5a8791b574dc24cadcaa81ca7eeecbab68e4b4dbe",
+      "destination": "sdk",
+      "destinationKind": "directory"
+    },
+    "sdk/types.ts": {
+      "job": "openapi:sdk",
+      "owner": "@exprtlabs/openapi-to-ts",
+      "digest": "0329b2953ff59e47bb7fff3dead1d2a57796a1be40211c8377b272aa12a70f11",
+      "destination": "sdk",
+      "destinationKind": "directory"
+    },
+    "sdk/validation-schemas/27b2e437fef36de8_schemas_component_Member_output-16a990d2c9710b0b.ts": {
+      "job": "openapi:sdk",
+      "owner": "@exprtlabs/openapi-to-ts",
+      "digest": "85de1a8b0c2de77ee348500155562c5299dfe087dabd02f32868b06ed0b54c3b",
+      "destination": "sdk",
+      "destinationKind": "directory"
+    },
+    "sdk/validation-schemas/327b2e437fef36de8_schemas_component_Member_input-085ece9a1bd0e30e.ts": {
+      "job": "openapi:sdk",
+      "owner": "@exprtlabs/openapi-to-ts",
+      "digest": "b4e0924d3e10951b778c7db24d1228664c489ee248465cf088eff8c8eb78926d",
+      "destination": "sdk",
+      "destinationKind": "directory"
+    },
+    "sdk/validation-schemas/37fef36de8_schemas_component_ProjectAccess_input-0e03ee0b41876e47.ts": {
+      "job": "openapi:sdk",
+      "owner": "@exprtlabs/openapi-to-ts",
+      "digest": "e87659f45b4467c37f46afb8905816fc73e3ed214f6fd6820a5b895cde56fbb2",
+      "destination": "sdk",
+      "destinationKind": "directory"
+    },
+    "sdk/validation-schemas/7fef36de8_schemas_component_ProjectAccess_output-2fec76cfcb6f87f8.ts": {
+      "job": "openapi:sdk",
+      "owner": "@exprtlabs/openapi-to-ts",
+      "digest": "147a36e209dd59c5397189d5dfab24ccada95f58e0f84e09535fac9b66ec92e0",
+      "destination": "sdk",
+      "destinationKind": "directory"
+    },
+    "sdk/validation.ts": {
+      "job": "openapi:sdk",
+      "owner": "@exprtlabs/openapi-to-ts",
+      "digest": "711f62847c3449a9e04dff408915a1986b961d19ded3192cc0dfebe434e2a7cd",
+      "destination": "sdk",
+      "destinationKind": "directory"
+    },
+    "src/generated/models/iobject-plugin-keys.ts": {
+      "job": "models:.",
+      "owner": "@exprtlabs/model-codegen",
+      "digest": "fbdf1912232e81863718717b2b2a8f26c6b7af0e463a46a8219c8c2b4cb7d2c6",
+      "destination": "src/generated/models",
+      "destinationKind": "directory"
+    },
+    "src/generated/models/models.generated.ts": {
+      "job": "models:.",
+      "owner": "@exprtlabs/model-codegen",
+      "digest": "5a394bcd8ed981593c349ca538a9f90e9f6ea1593449f6c001952d5e19a742d4",
+      "destination": "src/generated/models",
+      "destinationKind": "directory"
+    },
+    "src/generated/operation-codecs.ts": {
+      "job": "controllers:api.yaml",
+      "owner": "@exprtlabs/ts-to-openapi",
+      "digest": "2008344119d3a95bbd41da3e109aec281bc5695255e3afea34bc0f3c7ce6a10b",
+      "destination": "src/generated/operation-codecs.ts",
+      "destinationKind": "file"
+    },
+    "src/project-access.model.generated.ts": {
+      "job": "models:.",
+      "owner": "@exprtlabs/model-codegen",
+      "digest": "4035806a6b8355de3ffea6556c4c96417304a56150e846c2e819ed6bd1a50799",
+      "destination": "src",
+      "destinationKind": "directory"
+    }
+  }
+}

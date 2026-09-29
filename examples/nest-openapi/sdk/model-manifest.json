@@ -1,0 +1,477 @@
+{
+  "generator": {
+    "name": "@exprtlabs/openapi-to-ts",
+    "version": "1.0.0-rc"
+  },
+  "models": [
+    {
+      "additionalProperties": false,
+      "allowAny": false,
+      "discriminator": null,
+      "fields": [
+        {
+          "modelReferences": [],
+          "name": "id",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "modelReferences": [],
+          "name": "name",
+          "required": true,
+          "type": "(string)"
+        }
+      ],
+      "generated": {
+        "export": "MerchantModel",
+        "module": "./models/Merchant.ts"
+      },
+      "id": "openapi:510a4faa1f06a428#/components/schemas/Merchant",
+      "inheritance": null,
+      "sourceKind": "openapi",
+      "type": {
+        "aliases": [
+          {
+            "export": "Merchant",
+            "module": "./index.ts"
+          }
+        ],
+        "export": "Merchant",
+        "module": "./types.ts"
+      },
+      "validation": {
+        "authority": "openapi",
+        "reference": "#/components/schemas/Merchant",
+        "registryExport": "runtimeSchemaRegistry",
+        "registryIdExport": "schemaRegistry",
+        "registryModule": "./schemas.ts"
+      },
+      "variants": []
+    },
+    {
+      "additionalProperties": false,
+      "allowAny": false,
+      "discriminator": null,
+      "fields": [
+        {
+          "modelReferences": [],
+          "name": "amount",
+          "required": true,
+          "type": "(string)"
+        },
+        {
+          "modelReferences": [],
+          "name": "currency",
+          "required": true,
+          "type": "(\"EUR\") | (\"USD\")"
+        }
+      ],
+      "generated": {
+        "export": "MoneyModel",
+        "module": "./models/Money.ts"
+      },
+      "id": "openapi:510a4faa1f06a428#/components/schemas/Money",
+      "inheritance": null,
+      "sourceKind": "openapi",
+      "type": {
+        "aliases": [
+          {
+            "export": "Money",
+            "module": "./index.ts"
+          }
+        ],
+        "export": "Money",
+        "module": "./types.ts"
+      },
+      "validation": {
+        "authority": "openapi",
+        "reference": "#/components/schemas/Money",
+        "registryExport": "runtimeSchemaRegistry",
+        "registryIdExport": "schemaRegistry",
+        "registryModule": "./schemas.ts"
+      },
+      "variants": []
+    },
+    {
+      "additionalProperties": false,
+      "allowAny": false,
+      "discriminator": null,
+      "fields": [
+        {
+          "modelReferences": [
+            "__Projection0"
+          ],
+          "name": "billing",
+          "required": true,
+          "type": "__Projection0Model"
+        },
+        {
+          "modelReferences": [],
+          "name": "id",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "modelReferences": [
+            "Merchant"
+          ],
+          "name": "merchant",
+          "required": true,
+          "type": "MerchantModel"
+        },
+        {
+          "modelReferences": [
+            "Money"
+          ],
+          "name": "money",
+          "required": true,
+          "type": "MoneyModel"
+        },
+        {
+          "modelReferences": [],
+          "name": "note",
+          "required": true,
+          "type": "(string)"
+        }
+      ],
+      "generated": {
+        "export": "PaymentModel",
+        "module": "./models/Payment.ts"
+      },
+      "id": "openapi:510a4faa1f06a428#/components/schemas/Payment",
+      "inheritance": null,
+      "sourceKind": "openapi",
+      "type": {
+        "aliases": [
+          {
+            "export": "Payment",
+            "module": "./index.ts"
+          }
+        ],
+        "export": "Payment",
+        "module": "./types.ts"
+      },
+      "validation": {
+        "authority": "openapi",
+        "reference": "#/components/schemas/Payment",
+        "registryExport": "runtimeSchemaRegistry",
+        "registryIdExport": "schemaRegistry",
+        "registryModule": "./schemas.ts"
+      },
+      "variants": []
+    },
+    {
+      "additionalProperties": false,
+      "allowAny": false,
+      "discriminator": null,
+      "fields": [
+        {
+          "modelReferences": [
+            "__Projection0"
+          ],
+          "name": "billing",
+          "required": true,
+          "type": "__Projection0Model"
+        },
+        {
+          "modelReferences": [
+            "Merchant"
+          ],
+          "name": "merchant",
+          "required": true,
+          "type": "MerchantModel"
+        },
+        {
+          "modelReferences": [
+            "Money"
+          ],
+          "name": "money",
+          "required": true,
+          "type": "MoneyModel"
+        },
+        {
+          "modelReferences": [],
+          "name": "note",
+          "required": true,
+          "type": "(string)"
+        }
+      ],
+      "generated": {
+        "export": "PaymentInputModel",
+        "module": "./models/PaymentInput.ts"
+      },
+      "id": "openapi:510a4faa1f06a428#/components/schemas/PaymentInput",
+      "inheritance": null,
+      "sourceKind": "openapi",
+      "type": {
+        "aliases": [
+          {
+            "export": "PaymentInput",
+            "module": "./index.ts"
+          }
+        ],
+        "export": "PaymentInput",
+        "module": "./types.ts"
+      },
+      "validation": {
+        "authority": "openapi",
+        "reference": "#/components/schemas/PaymentInput",
+        "registryExport": "runtimeSchemaRegistry",
+        "registryIdExport": "schemaRegistry",
+        "registryModule": "./schemas.ts"
+      },
+      "variants": []
+    },
+    {
+      "additionalProperties": false,
+      "allowAny": false,
+      "discriminator": null,
+      "fields": [
+        {
+          "modelReferences": [],
+          "name": "name",
+          "required": true,
+          "type": "(string)"
+        }
+      ],
+      "generated": {
+        "export": "__Projection0Model",
+        "module": "./models/__Projection0.ts"
+      },
+      "id": "openapi:510a4faa1f06a428#/components/schemas/__Projection0",
+      "inheritance": null,
+      "sourceKind": "openapi",
+      "type": {
+        "aliases": [
+          {
+            "export": "__Projection0",
+            "module": "./index.ts"
+          }
+        ],
+        "export": "__Projection0",
+        "module": "./types.ts"
+      },
+      "validation": {
+        "authority": "openapi",
+        "reference": "#/components/schemas/__Projection0",
+        "registryExport": "runtimeSchemaRegistry",
+        "registryIdExport": "schemaRegistry",
+        "registryModule": "./schemas.ts"
+      },
+      "variants": []
+    }
+  ],
+  "profile": {
+    "ajvStandalone": false,
+    "allowAny": false,
+    "mobx": false,
+    "validation": true
+  },
+  "source": {
+    "dialect": "3.2.0",
+    "digest": "510a4faa1f06a42804dbc2555824f479df635d9447759959ba975df06268f05a",
+    "kind": "openapi"
+  },
+  "validationSchemaClosure": [
+    {
+      "aliases": [
+        "__Projection0",
+        "__Projection0_26d8c665",
+        "openapi:510a4faa1f06a428#/components/schemas/__Projection0"
+      ],
+      "codecId": "__Projection0_26d8c665",
+      "modelSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "allOf": [
+              {
+                "type": "string"
+              },
+              {
+                "minLength": 2
+              }
+            ]
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "aliases": [
+        "Merchant",
+        "Merchant_57caa914",
+        "openapi:510a4faa1f06a428#/components/schemas/Merchant"
+      ],
+      "codecId": "Merchant_57caa914",
+      "modelSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "allOf": [
+              {
+                "type": "string"
+              },
+              {
+                "minLength": 2
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "aliases": [
+        "Money",
+        "Money_2f69f5d7",
+        "openapi:510a4faa1f06a428#/components/schemas/Money"
+      ],
+      "codecId": "Money_2f69f5d7",
+      "modelSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "amount": {
+            "allOf": [
+              {
+                "type": "string"
+              },
+              {
+                "pattern": "^[0-9]+(?:\\.[0-9]{1,2})?$"
+              }
+            ]
+          },
+          "currency": {
+            "anyOf": [
+              {
+                "const": "EUR"
+              },
+              {
+                "const": "USD"
+              }
+            ]
+          }
+        },
+        "required": [
+          "amount",
+          "currency"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "aliases": [
+        "Payment",
+        "Payment_ca517e3b",
+        "openapi:510a4faa1f06a428#/components/schemas/Payment"
+      ],
+      "codecId": "Payment_ca517e3b",
+      "modelSchema": {
+        "$defs": {
+          "Merchant_57caa914": {
+            "$ref": "Merchant_57caa914"
+          },
+          "Money_2f69f5d7": {
+            "$ref": "Money_2f69f5d7"
+          },
+          "__Projection0_26d8c665": {
+            "$ref": "__Projection0_26d8c665"
+          }
+        },
+        "additionalProperties": false,
+        "properties": {
+          "billing": {
+            "$ref": "#/$defs/__Projection0_26d8c665"
+          },
+          "id": {
+            "type": "string"
+          },
+          "merchant": {
+            "$ref": "#/$defs/Merchant_57caa914"
+          },
+          "money": {
+            "$ref": "#/$defs/Money_2f69f5d7"
+          },
+          "note": {
+            "allOf": [
+              {
+                "type": "string"
+              },
+              {
+                "maxLength": 140
+              }
+            ]
+          }
+        },
+        "required": [
+          "billing",
+          "id",
+          "merchant",
+          "money",
+          "note"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "aliases": [
+        "PaymentInput",
+        "PaymentInput_0b7a4376",
+        "openapi:510a4faa1f06a428#/components/schemas/PaymentInput"
+      ],
+      "codecId": "PaymentInput_0b7a4376",
+      "modelSchema": {
+        "$defs": {
+          "Merchant_57caa914": {
+            "$ref": "Merchant_57caa914"
+          },
+          "Money_2f69f5d7": {
+            "$ref": "Money_2f69f5d7"
+          },
+          "__Projection0_26d8c665": {
+            "$ref": "__Projection0_26d8c665"
+          }
+        },
+        "additionalProperties": false,
+        "properties": {
+          "billing": {
+            "$ref": "#/$defs/__Projection0_26d8c665"
+          },
+          "merchant": {
+            "$ref": "#/$defs/Merchant_57caa914"
+          },
+          "money": {
+            "$ref": "#/$defs/Money_2f69f5d7"
+          },
+          "note": {
+            "allOf": [
+              {
+                "type": "string"
+              },
+              {
+                "maxLength": 140
+              }
+            ]
+          }
+        },
+        "required": [
+          "billing",
+          "merchant",
+          "money",
+          "note"
+        ],
+        "type": "object"
+      }
+    }
+  ]
+}

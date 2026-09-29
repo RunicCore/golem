@@ -1,0 +1,23 @@
+// #region model-definition
+import type { IModel } from '@exprtlabs/codegen/model';
+import { asGenObservable } from '@exprtlabs/codegen/mobx';
+import { action, computed } from 'mobx';
+import { TaskBase } from './task.model.generated.js';
+
+export type TTask = IModel<{ title: string; done: boolean }>;
+
+export class Task extends TaskBase {
+  public constructor(values?: TTask) {
+    super({ title: 'New task', done: false, ...values });
+    asGenObservable(this, { label: computed, toggle: action });
+  }
+
+  public get label(): string {
+    return `${this.done ? 'Done' : 'Todo'}: ${this.title}`;
+  }
+
+  public toggle(): void {
+    this.done = !this.done;
+  }
+}
+// #endregion model-definition

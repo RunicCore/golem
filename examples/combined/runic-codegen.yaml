@@ -1,0 +1,9 @@
+version: 1
+mobx: false
+validation: true
+openapi:
+  - input: api.yaml
+    output: sdk
+    name: Payments
+models:
+  root: .

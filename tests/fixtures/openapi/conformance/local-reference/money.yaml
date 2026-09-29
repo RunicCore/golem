@@ -1,0 +1,5 @@
+type: object
+required: [currency]
+properties:
+  currency:
+    type: string

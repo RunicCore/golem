@@ -1,0 +1,221 @@
+{
+  "generator": {
+    "name": "@exprtlabs/openapi-to-ts",
+    "version": "1.0.0-rc"
+  },
+  "models": [
+    {
+      "additionalProperties": false,
+      "allowAny": false,
+      "discriminator": null,
+      "fields": [
+        {
+          "modelReferences": [],
+          "name": "email",
+          "required": true,
+          "type": "(string)"
+        },
+        {
+          "modelReferences": [],
+          "name": "id",
+          "required": true,
+          "type": "(string)"
+        },
+        {
+          "modelReferences": [],
+          "name": "name",
+          "required": true,
+          "type": "(string)"
+        }
+      ],
+      "generated": {
+        "export": "MemberModel",
+        "module": "./models/Member.ts"
+      },
+      "id": "openapi:98783e33fb1a145c#/components/schemas/Member",
+      "inheritance": null,
+      "sourceKind": "openapi",
+      "type": {
+        "aliases": [
+          {
+            "export": "Member",
+            "module": "./index.ts"
+          }
+        ],
+        "export": "Member",
+        "module": "./types.ts"
+      },
+      "validation": {
+        "authority": "openapi",
+        "reference": "#/components/schemas/Member",
+        "registryExport": "runtimeSchemaRegistry",
+        "registryIdExport": "schemaRegistry",
+        "registryModule": "./schemas.ts"
+      },
+      "variants": []
+    },
+    {
+      "additionalProperties": false,
+      "allowAny": false,
+      "discriminator": null,
+      "fields": [
+        {
+          "modelReferences": [
+            "Member"
+          ],
+          "name": "member",
+          "required": true,
+          "type": "MemberModel"
+        },
+        {
+          "modelReferences": [],
+          "name": "permissions",
+          "required": true,
+          "type": "(string)"
+        },
+        {
+          "modelReferences": [],
+          "name": "projectName",
+          "required": true,
+          "type": "(string)"
+        }
+      ],
+      "generated": {
+        "export": "ProjectAccessModel",
+        "module": "./models/ProjectAccess.ts"
+      },
+      "id": "openapi:98783e33fb1a145c#/components/schemas/ProjectAccess",
+      "inheritance": null,
+      "sourceKind": "openapi",
+      "type": {
+        "aliases": [
+          {
+            "export": "ProjectAccess",
+            "module": "./index.ts"
+          }
+        ],
+        "export": "ProjectAccess",
+        "module": "./types.ts"
+      },
+      "validation": {
+        "authority": "openapi",
+        "reference": "#/components/schemas/ProjectAccess",
+        "registryExport": "runtimeSchemaRegistry",
+        "registryIdExport": "schemaRegistry",
+        "registryModule": "./schemas.ts"
+      },
+      "variants": []
+    }
+  ],
+  "profile": {
+    "ajvStandalone": false,
+    "allowAny": false,
+    "mobx": false,
+    "validation": true
+  },
+  "source": {
+    "dialect": "3.2.0",
+    "digest": "98783e33fb1a145cd4a6d69dff3238f88b8132cf4c91a63327b2e437fef36de8",
+    "kind": "openapi"
+  },
+  "validationSchemaClosure": [
+    {
+      "aliases": [
+        "Member",
+        "Member_744cdea7",
+        "openapi:98783e33fb1a145c#/components/schemas/Member"
+      ],
+      "codecId": "Member_744cdea7",
+      "modelSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "email": {
+            "allOf": [
+              {
+                "type": "string"
+              },
+              {
+                "format": "email"
+              }
+            ]
+          },
+          "id": {
+            "allOf": [
+              {
+                "type": "string"
+              },
+              {
+                "minLength": 1
+              }
+            ]
+          },
+          "name": {
+            "allOf": [
+              {
+                "type": "string"
+              },
+              {
+                "minLength": 2
+              }
+            ]
+          }
+        },
+        "required": [
+          "email",
+          "id",
+          "name"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "aliases": [
+        "ProjectAccess",
+        "ProjectAccess_83b7c252",
+        "openapi:98783e33fb1a145c#/components/schemas/ProjectAccess"
+      ],
+      "codecId": "ProjectAccess_83b7c252",
+      "modelSchema": {
+        "$defs": {
+          "Member_744cdea7": {
+            "$ref": "Member_744cdea7"
+          }
+        },
+        "additionalProperties": false,
+        "properties": {
+          "member": {
+            "$ref": "#/$defs/Member_744cdea7"
+          },
+          "permissions": {
+            "allOf": [
+              {
+                "type": "string"
+              },
+              {
+                "pattern": "^0x[0-9a-fA-F]+$"
+              }
+            ]
+          },
+          "projectName": {
+            "allOf": [
+              {
+                "type": "string"
+              },
+              {
+                "maxLength": 48,
+                "minLength": 3,
+                "pattern": "^[A-Za-z][A-Za-z0-9 -]*$"
+              }
+            ]
+          }
+        },
+        "required": [
+          "member",
+          "permissions",
+          "projectName"
+        ],
+        "type": "object"
+      }
+    }
+  ]
+}

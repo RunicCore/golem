@@ -1,0 +1,269 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import test, { type TestContext } from 'node:test';
+import type { CodegenProfile } from '@exprtlabs/codegen/generator-api';
+import type { ModelTypeDescriptor } from '@exprtlabs/codegen/model';
+import { createExecutableValidationMemo, hasExecutableValidation } from '@exprtlabs/codegen/schema';
+import { generate } from '#model/generator';
+import { writeGeneratedArtifacts } from './fixture-project.js';
+import { compileModelProject, createModelProject, writeModelSources } from './model-project.js';
+import { command, ttscEnv } from './packed/helpers.js';
+
+const profiles: readonly (readonly [string, CodegenProfile])[] = [
+  ['validation off', { mobx: false, validation: false }],
+  ['runtime Ajv', { mobx: false, validation: true }],
+  ['standalone', { mobx: false, validation: true, ajvStandalone: true }],
+];
+
+function project(t: TestContext, prefix: string, profile: CodegenProfile) {
+  return createModelProject(t, {
+    prefix, linkTypescript: true, linkTtsc: true, allowJs: profile.ajvStandalone === true,
+  });
+}
+
+/** Item i references item i-1 twice, so any per-path expansion grows exponentially. */
+function chainSources(count: number, kind: 'IModel' | 'IObject' = 'IModel'): Record<string, string> {
+  const sources: Record<string, string> = {};
+  for (let index = 0; index < count; index++) {
+    const previous = index > 0
+      ? `import type { TItem${index - 1} } from './item-${index - 1}.model.js';\n`
+      : '';
+    const fields = index > 0 ? `; prev: TItem${index - 1}; prevs?: TItem${index - 1}[]` : '';
+    const base = kind === 'IModel' ? `import { Item${index}Base } from './item-${index}.model.generated.js';\n` : '';
+    const cls = kind === 'IModel' ? `export class Item${index} extends Item${index}Base {}\n` : '';
+    sources[`item-${index}.model.ts`] = `import type { ${kind} } from '@exprtlabs/codegen/model';
+import type { MinLength } from '@exprtlabs/codegen/tags';
+${previous}${base}export type TItem${index} = ${kind}<{ label: string & MinLength<3>; at: Date; kind: { k: 'a'; a: Date } | { k: 'b'; b: number }${fields} }>;
+${cls}`;
+  }
+  return sources;
+}
+
+const chainVerifier = (last: number) => `
+const codecs = await import('./build/item-${last}.model.generated.js');
+const item = (index) => ({ label: 'abc', at: '2024-01-01T00:00:00.000Z', kind: { k: 'a', a: '2024-01-02T00:00:00.000Z' }, ...(index > 0 ? { prev: item(index - 1), prevs: [item(index - 1)] } : {}) });
+const wire = item(${last});
+const model = codecs.fromWireFormatItem${last}(wire);
+let deepest = model;
+while (deepest.prev) deepest = deepest.prev;
+const invalid = structuredClone(wire);
+let leaf = invalid;
+while (leaf.prev) leaf = leaf.prev;
+leaf.label = 'x';
+let rejected = null;
+if (process.argv[2] === 'validate') {
+  try { codecs.fromWireFormatItem${last}(invalid); rejected = false; } catch { rejected = true; }
+}
+console.log(JSON.stringify({
+  date: deepest.at instanceof Date && deepest.kind.a instanceof Date,
+  wire: JSON.stringify(codecs.toWireFormatItem${last}(model)) === JSON.stringify(wire),
+  text: codecs.stringifyItem${last}(model) === JSON.stringify(wire),
+  rejected,
+}));
+`;
+
+for (const [label, profile] of profiles) for (const kind of ['IModel', 'IObject'] as const) {
+  test(`a companion emits only its own ${kind} models of a chained job and references the rest by codec id (${label})`, async (t: TestContext) => {
+    const count = 12;
+    const last = count - 1;
+    const { root, sourceRoot } = project(t, 'runic-model-chain-', profile);
+    writeModelSources(sourceRoot, chainSources(count, kind));
+    const { artifacts } = generate({ root, profile });
+    writeGeneratedArtifacts(artifacts);
+    const companion = (index: number): string =>
+      artifacts.find((artifact) => artifact.path.endsWith(`item-${index}.model.generated.ts`))?.content ?? '';
+    const lastCompanion = companion(last);
+    for (const index of [0, 5, last - 1]) {
+      const owner = companion(index);
+      const expectations: Readonly<Record<string, boolean>> = {
+        [`function fillItem${index}(`]: true,
+        [`function stringifyItem${index}Core(`]: true,
+        [`__resolvedModelSchema_Item${index} `]: profile.validation === true && profile.ajvStandalone !== true,
+        [`class Item${index}Base`]: kind === 'IModel',
+        [`function decodeItem${index}(`]: kind === 'IObject',
+        [`function encodeItem${index}(`]: kind === 'IObject',
+      };
+      for (const [owned, expected] of Object.entries(expectations)) {
+        assert.equal(lastCompanion.includes(owned), false, `item-${last} does not emit ${owned}`);
+        if (expected) assert.ok(owner.includes(owned), `item-${index} emits its own ${owned}`);
+      }
+    }
+    assert.ok(lastCompanion.includes(kind === 'IModel' ? `class Item${last}Base` : `function stringifyItem${last}Core(`));
+    // Each companion carries its own model; its size does not grow with the chain behind it.
+    assert.ok(lastCompanion.length < companion(1).length * 1.5, `item-${last} ${lastCompanion.length} B vs item-1 ${companion(1).length} B`);
+
+    await compileModelProject(root, [], { env: ttscEnv });
+    fs.writeFileSync(path.join(root, 'verify-chain.mjs'), chainVerifier(last));
+    const result = await command(root, process.execPath, ['verify-chain.mjs', profile.validation ? 'validate' : 'skip']);
+    assert.deepEqual(JSON.parse(result.stdout.trim()), {
+      date: true, wire: true, text: true, rejected: profile.validation ? true : null,
+    });
+  });
+}
+
+const cycleSources = {
+  'a.model.ts': `import type { IModel } from '@exprtlabs/codegen/model';
+import type { MinLength } from '@exprtlabs/codegen/tags';
+import type { TB } from './b.model.js';
+import { ABase } from './a.model.generated.js';
+export type TA = IModel<{ name: string & MinLength<2>; at: Date; b?: TB }>;
+export class A extends ABase {}
+`,
+  'b.model.ts': `import type { IModel } from '@exprtlabs/codegen/model';
+import type { TA } from './a.model.js';
+import { BBase } from './b.model.generated.js';
+export type TB = IModel<{ at: Date; as: TA[] }>;
+export class B extends BBase {}
+`,
+};
+
+const cycleVerifier = `
+const [first, validation] = process.argv.slice(2);
+const loaded = {};
+for (const name of first === 'a' ? ['a', 'b'] : ['b', 'a']) loaded[name] = await import('./build/' + name + '.model.generated.js');
+const { a, b } = loaded;
+const wireA = { name: 'aa', at: '2024-01-01T00:00:00.000Z', b: { at: '2024-01-02T00:00:00.000Z', as: [{ name: 'cc', at: '2024-01-03T00:00:00.000Z' }] } };
+const wireB = { at: '2024-01-02T00:00:00.000Z', as: [wireA] };
+const modelA = a.fromWireFormatA(wireA);
+const modelB = b.fromWireFormatB(wireB);
+let rejected = null;
+if (validation === 'validate') {
+  const invalid = structuredClone(wireB);
+  invalid.as[0].b.as[0].name = 'x';
+  try { b.fromWireFormatB(invalid); rejected = false; } catch { rejected = true; }
+}
+console.log(JSON.stringify({
+  a: modelA.b.as[0].at instanceof Date && a.stringifyA(modelA) === JSON.stringify(wireA)
+    && JSON.stringify(a.toWireFormatA(modelA)) === JSON.stringify(wireA),
+  b: modelB.as[0].b.as[0].at instanceof Date && b.stringifyB(modelB) === JSON.stringify(wireB),
+  rejected,
+}));
+`;
+
+for (const [label, profile] of profiles) {
+  test(`models of two sources that reference each other load in either import order (${label})`, async (t: TestContext) => {
+    const { root, sourceRoot } = project(t, 'runic-model-cycle-', profile);
+    writeModelSources(sourceRoot, cycleSources);
+    const { artifacts } = generate({ root, profile });
+    writeGeneratedArtifacts(artifacts);
+    const companionA = artifacts.find((artifact) => artifact.path.endsWith('a.model.generated.ts'))?.content ?? '';
+    const companionB = artifacts.find((artifact) => artifact.path.endsWith('b.model.generated.ts'))?.content ?? '';
+    assert.equal(companionA.includes('class BBase'), false);
+    assert.ok(companionB.includes('class BBase'), 'b.model.generated.ts emits its own BBase');
+    assert.equal(companionA.includes('function fillB('), false);
+    assert.ok(companionB.includes('function fillB('), 'b.model.generated.ts emits its own fillB');
+    await compileModelProject(root, [], { env: ttscEnv });
+    fs.writeFileSync(path.join(root, 'verify-cycle.mjs'), cycleVerifier);
+    for (const first of ['a', 'b']) {
+      const result = await command(root, process.execPath, ['verify-cycle.mjs', first, profile.validation ? 'validate' : 'skip']);
+      assert.deepEqual(JSON.parse(result.stdout.trim()), { a: true, b: true, rejected: profile.validation ? true : null }, `${first} first`);
+    }
+  });
+}
+
+test('editing a leaf model regenerates the ids its dependents reference', (t: TestContext) => {
+  const profile: CodegenProfile = { mobx: false, validation: true };
+  const { root, sourceRoot } = project(t, 'runic-model-leaf-edit-', profile);
+  writeModelSources(sourceRoot, chainSources(3));
+  const ids = (): { readonly owned: string; readonly referenced: readonly string[] } => {
+    const artifacts = generate({ root, profile }).artifacts;
+    writeGeneratedArtifacts(artifacts);
+    const text = (index: number): string =>
+      artifacts.find((artifact) => artifact.path.endsWith(`item-${index}.model.generated.ts`))?.content ?? '';
+    const owned = text(0).match(/registerIModelClass\("(Item0_[0-9a-f]{8})"/)?.[1] ?? '';
+    return { owned, referenced: [...new Set(text(1).match(/Item0_[0-9a-f]{8}/g) ?? [])] };
+  };
+  const before = ids();
+  assert.ok(before.owned);
+  assert.deepEqual(before.referenced, [before.owned]);
+  const leaf = path.join(sourceRoot, 'item-0.model.ts');
+  fs.writeFileSync(leaf, fs.readFileSync(leaf, 'utf8').replace('at: Date;', 'at: Date; note?: string;'));
+  const after = ids();
+  assert.notEqual(after.owned, before.owned);
+  assert.deepEqual(after.referenced, [after.owned], 'the dependent companion references the new id');
+});
+
+const mixedCycleSources = {
+  'order.model.ts': `import type { IModel } from '@exprtlabs/codegen/model';
+import type { MinLength } from '@exprtlabs/codegen/tags';
+import type { TLine } from './line.model.js';
+import { OrderBase } from './order.model.generated.js';
+export type TOrder = IModel<{ id: string & MinLength<2>; at: Date; lines: TLine[] }>;
+export class Order extends OrderBase {}
+`,
+  'line.model.ts': `import type { IObject } from '@exprtlabs/codegen/model';
+import type { TOrder } from './order.model.js';
+export type TLine = IObject<{ at: Date; qty: number; parent?: TOrder }>;
+`,
+};
+
+const mixedCycleVerifier = `
+const [first, validation] = process.argv.slice(2);
+const loaded = {};
+for (const name of first === 'order' ? ['order', 'line'] : ['line', 'order']) loaded[name] = await import('./build/' + name + '.model.generated.js');
+const { order, line } = loaded;
+const wireOrder = { id: 'o1', at: '2024-01-01T00:00:00.000Z', lines: [{ at: '2024-01-02T00:00:00.000Z', qty: 1, parent: { id: 'o2', at: '2024-01-03T00:00:00.000Z', lines: [] } }] };
+const model = order.fromWireFormatOrder(wireOrder);
+const wireLine = { at: '2024-01-04T00:00:00.000Z', qty: 2, parent: wireOrder };
+const plain = line.fromWireFormatLine(wireLine);
+let rejected = null;
+if (validation === 'validate') {
+  const invalid = structuredClone(wireLine);
+  invalid.parent.lines[0].parent.id = 'x';
+  try { line.fromWireFormatLine(invalid); rejected = false; } catch { rejected = true; }
+}
+console.log(JSON.stringify({
+  order: model.lines[0].at instanceof Date && model.lines[0].parent.at instanceof Date
+    && order.stringifyOrder(model) === JSON.stringify(wireOrder),
+  line: plain.parent.lines[0].parent.at instanceof Date && line.stringifyLine(plain) === JSON.stringify(wireLine)
+    && JSON.stringify(line.toWireFormatLine(plain)) === JSON.stringify(wireLine),
+  rejected,
+}));
+`;
+
+for (const [label, profile] of profiles) {
+  test(`an IModel and an IObject of two sources that reference each other load in either order (${label})`, async (t: TestContext) => {
+    const { root, sourceRoot } = project(t, 'runic-model-mixed-cycle-', profile);
+    writeModelSources(sourceRoot, mixedCycleSources);
+    const { artifacts } = generate({ root, profile });
+    writeGeneratedArtifacts(artifacts);
+    const orderCompanion = artifacts.find((artifact) => artifact.path.endsWith('order.model.generated.ts'))?.content ?? '';
+    const lineCompanion = artifacts.find((artifact) => artifact.path.endsWith('line.model.generated.ts'))?.content ?? '';
+    assert.equal(orderCompanion.includes('function decodeLine('), false);
+    assert.ok(lineCompanion.includes('function decodeLine('), 'line.model.generated.ts emits its own decodeLine');
+    assert.equal(orderCompanion.includes('function fillLine('), false);
+    assert.ok(lineCompanion.includes('function fillLine('), 'line.model.generated.ts emits its own fillLine');
+    await compileModelProject(root, [], { env: ttscEnv });
+    fs.writeFileSync(path.join(root, 'verify-mixed-cycle.mjs'), mixedCycleVerifier);
+    for (const first of ['order', 'line']) {
+      const result = await command(root, process.execPath, ['verify-mixed-cycle.mjs', first, profile.validation ? 'validate' : 'skip']);
+      assert.deepEqual(JSON.parse(result.stdout.trim()), { order: true, line: true, rejected: profile.validation ? true : null }, `${first} first`);
+    }
+  });
+}
+
+test('a job memo examines each referenced model once and never caches a result cut by a cycle', () => {
+  const reference = (name: string): ModelTypeDescriptor => ({ kind: 'reference', name });
+  const object = (properties: Record<string, ModelTypeDescriptor>): ModelTypeDescriptor =>
+    ({ kind: 'object', properties, required: [], additionalProperties: false });
+  const definitions: Record<string, ModelTypeDescriptor> = {
+    // A reaches B before its own executable rule; B leads back to A.
+    A: object({ b: reference('B'), rule: { kind: 'string', validations: ['rule'] } }),
+    B: object({ a: reference('A') }),
+    C: object({ x: reference('A') }),
+    D: object({ y: reference('B') }),
+  };
+  for (let index = 0; index < 30; index++) {
+    definitions[`Chain${index}`] = object(index === 0 ? { label: { kind: 'string' } } : { prev: reference(`Chain${index - 1}`), prevs: { kind: 'array', item: reference(`Chain${index - 1}`) } });
+  }
+  let resolved = 0;
+  const executableMemo = createExecutableValidationMemo();
+  const options = { executableMemo, resolveReference: (name: string) => { resolved++; return definitions[name]; } };
+  assert.equal(hasExecutableValidation(definitions.C, options), true);
+  assert.equal(hasExecutableValidation(definitions.D, options), true, 'B is not cached as false after the cycle cut');
+  resolved = 0;
+  for (let index = 1; index < 30; index++) assert.equal(hasExecutableValidation(definitions[`Chain${index}`], options), false);
+  // Each walk resolves its own two references and those of the one model it examines; the rest are cached.
+  assert.ok(resolved <= 4 * 30, `resolved ${resolved} references across 29 walks`);
+});

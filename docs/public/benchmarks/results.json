@@ -1,0 +1,1031 @@
+{
+  "schema": 2,
+  "measuredAt": "2026-09-27T22:29:30.473Z",
+  "git": {
+    "sha": "uncommitted",
+    "dirty": true
+  },
+  "environment": {
+    "node": "v24.21.0",
+    "os": "darwin",
+    "arch": "arm64",
+    "cpu": "Apple M4",
+    "cpus": 10
+  },
+  "packages": {
+    "@exprtlabs/codegen": "1.0.0-rc",
+    "@exprtlabs/model-codegen": "1.0.0-rc",
+    "@exprtlabs/openapi-to-ts": "1.0.0-rc",
+    "typescript": "7.0.2",
+    "typia": "14.0.6",
+    "class-transformer": "0.5.1",
+    "class-validator": "0.15.1",
+    "zod": "4.6.5",
+    "ajv": "8.20.0"
+  },
+  "settings": {
+    "warmupMs": 300,
+    "batchMs": 200,
+    "batches": 5
+  },
+  "groups": [
+    {
+      "id": "plain",
+      "label": "Plain objects, validated",
+      "description": "JSON text to validated plain objects and back. Codegen uses an IObject declaration."
+    },
+    {
+      "id": "classes",
+      "label": "Class instances",
+      "description": "JSON text to class instances and back, without validation. Codegen uses an IModel declaration."
+    },
+    {
+      "id": "validated-classes",
+      "label": "Validated class instances",
+      "description": "Class instances checked against their constraints."
+    }
+  ],
+  "payloads": [
+    {
+      "id": "simple",
+      "label": "Simple object",
+      "bytes": 123,
+      "description": "Four 3D points. Measures per-call overhead.",
+      "sourceUrl": "https://github.com/exprtlabs/codegen/blob/main/scripts/benchmark/fixtures/upstream/shared.ts"
+    },
+    {
+      "id": "nested",
+      "label": "Nested object",
+      "bytes": 817,
+      "description": "A nested API record with integer, length, pattern and array-size constraints.",
+      "sourceUrl": "https://github.com/exprtlabs/codegen/blob/main/scripts/benchmark/fixtures/upstream/shared.ts"
+    },
+    {
+      "id": "array",
+      "label": "Large array",
+      "bytes": 102226,
+      "description": "One company, 10 departments, 1,000 employees.",
+      "sourceUrl": "https://github.com/exprtlabs/codegen/blob/main/scripts/benchmark/fixtures/upstream/shared.ts"
+    },
+    {
+      "id": "checkout",
+      "label": "Checkout",
+      "bytes": 347,
+      "description": "Money from a generated SDK type, hex code, dates, nested line items, flags, a union and optional fields, with value conversion.",
+      "sourceUrl": "https://github.com/exprtlabs/codegen/blob/main/scripts/benchmark/fixtures/features/payloads.ts"
+    }
+  ],
+  "operations": [
+    {
+      "id": "parse",
+      "label": "Parse",
+      "description": "JSON text to the library's model value."
+    },
+    {
+      "id": "stringify",
+      "label": "Stringify",
+      "description": "Model value to JSON text."
+    },
+    {
+      "id": "validate",
+      "label": "Validate",
+      "description": "Check an already-decoded value."
+    }
+  ],
+  "adapters": [
+    {
+      "id": "codegen-object",
+      "group": "plain",
+      "label": "Codegen (IObject)",
+      "library": "@exprtlabs/codegen",
+      "checked": true,
+      "sourceUrl": "https://github.com/exprtlabs/codegen/blob/main/scripts/benchmark/fixtures/upstream/codegen-object.ts"
+    },
+    {
+      "id": "typia",
+      "group": "plain",
+      "label": "Typia",
+      "library": "typia",
+      "checked": true,
+      "sourceUrl": "https://github.com/exprtlabs/codegen/blob/main/scripts/benchmark/fixtures/upstream/typia.ts"
+    },
+    {
+      "id": "zod",
+      "group": "plain",
+      "label": "Zod",
+      "library": "zod",
+      "checked": true,
+      "sourceUrl": "https://github.com/exprtlabs/codegen/blob/main/scripts/benchmark/fixtures/upstream/zod.ts"
+    },
+    {
+      "id": "codegen",
+      "group": "classes",
+      "label": "Codegen (IModel)",
+      "library": "@exprtlabs/codegen",
+      "checked": false,
+      "sourceUrl": "https://github.com/exprtlabs/codegen/blob/main/scripts/benchmark/fixtures/upstream/codegen.ts"
+    },
+    {
+      "id": "class-transformer",
+      "group": "classes",
+      "label": "class-transformer",
+      "library": "class-transformer",
+      "checked": false,
+      "sourceUrl": "https://github.com/exprtlabs/codegen/blob/main/scripts/benchmark/fixtures/upstream/class-transformer.ts"
+    },
+    {
+      "id": "codegen-standalone",
+      "group": "validated-classes",
+      "label": "Codegen (IModel, validated)",
+      "library": "@exprtlabs/codegen",
+      "checked": true,
+      "sourceUrl": "https://github.com/exprtlabs/codegen/blob/main/scripts/benchmark/fixtures/upstream/codegen.ts"
+    },
+    {
+      "id": "codegen-runtime",
+      "group": "validated-classes",
+      "label": "Codegen (IModel, runtime Ajv)",
+      "library": "@exprtlabs/codegen",
+      "checked": true,
+      "sourceUrl": "https://github.com/exprtlabs/codegen/blob/main/scripts/benchmark/fixtures/upstream/codegen.ts"
+    },
+    {
+      "id": "class-validator",
+      "group": "validated-classes",
+      "label": "class-validator",
+      "library": "class-validator",
+      "checked": true,
+      "sourceUrl": "https://github.com/exprtlabs/codegen/blob/main/scripts/benchmark/fixtures/upstream/class-validator.ts"
+    }
+  ],
+  "cases": [
+    {
+      "payload": "simple",
+      "operation": "parse",
+      "adapter": "codegen-object",
+      "support": "full",
+      "opsPerSec": {
+        "median": 1509908.2001132101,
+        "min": 1025703.7142131205,
+        "max": 1514675.2666397907
+      }
+    },
+    {
+      "payload": "simple",
+      "operation": "parse",
+      "adapter": "typia",
+      "support": "full",
+      "opsPerSec": {
+        "median": 1720221.0087600644,
+        "min": 1714687.4980984728,
+        "max": 1729718.2010930676
+      }
+    },
+    {
+      "payload": "simple",
+      "operation": "parse",
+      "adapter": "zod",
+      "support": "full",
+      "opsPerSec": {
+        "median": 1278406.441830901,
+        "min": 1270132.7429513359,
+        "max": 1283094.6011423725
+      }
+    },
+    {
+      "payload": "nested",
+      "operation": "parse",
+      "adapter": "codegen-object",
+      "support": "full",
+      "opsPerSec": {
+        "median": 384391.2704742473,
+        "min": 303654.3791617578,
+        "max": 388418.8797234151
+      }
+    },
+    {
+      "payload": "nested",
+      "operation": "parse",
+      "adapter": "typia",
+      "support": "full",
+      "opsPerSec": {
+        "median": 335294.2242565119,
+        "min": 232139.01115130683,
+        "max": 337837.18412706954
+      }
+    },
+    {
+      "payload": "nested",
+      "operation": "parse",
+      "adapter": "zod",
+      "support": "full",
+      "opsPerSec": {
+        "median": 248708.49723200293,
+        "min": 248281.3090822002,
+        "max": 249039.2217524313
+      }
+    },
+    {
+      "payload": "array",
+      "operation": "parse",
+      "adapter": "codegen-object",
+      "support": "full",
+      "opsPerSec": {
+        "median": 3858.4937206246736,
+        "min": 2638.1723316971475,
+        "max": 3881.386665190159
+      }
+    },
+    {
+      "payload": "array",
+      "operation": "parse",
+      "adapter": "typia",
+      "support": "full",
+      "opsPerSec": {
+        "median": 4152.750854289967,
+        "min": 4129.001521080482,
+        "max": 4167.0559432766795
+      }
+    },
+    {
+      "payload": "array",
+      "operation": "parse",
+      "adapter": "zod",
+      "support": "full",
+      "opsPerSec": {
+        "median": 3229.251967652255,
+        "min": 3198.4154570063515,
+        "max": 3249.027282834927
+      }
+    },
+    {
+      "payload": "checkout",
+      "operation": "parse",
+      "adapter": "codegen-object",
+      "support": "full",
+      "opsPerSec": {
+        "median": 377020.28560926596,
+        "min": 232388.57461572892,
+        "max": 386849.05207583465
+      }
+    },
+    {
+      "payload": "checkout",
+      "operation": "parse",
+      "adapter": "typia",
+      "support": "none",
+      "note": "Typia checks JSON shapes but does not convert values, so the hex code and the dates would stay strings."
+    },
+    {
+      "payload": "checkout",
+      "operation": "parse",
+      "adapter": "zod",
+      "support": "full",
+      "opsPerSec": {
+        "median": 381523.91356063524,
+        "min": 380574.70890771743,
+        "max": 382879.92150961736
+      }
+    },
+    {
+      "payload": "simple",
+      "operation": "stringify",
+      "adapter": "codegen-object",
+      "support": "full",
+      "opsPerSec": {
+        "median": 5182420.56592285,
+        "min": 3842517.598426527,
+        "max": 5258895.887962322
+      }
+    },
+    {
+      "payload": "simple",
+      "operation": "stringify",
+      "adapter": "typia",
+      "support": "full",
+      "opsPerSec": {
+        "median": 5950531.467201616,
+        "min": 5923532.870219455,
+        "max": 6008469.995897458
+      }
+    },
+    {
+      "payload": "simple",
+      "operation": "stringify",
+      "adapter": "zod",
+      "support": "full",
+      "opsPerSec": {
+        "median": 2088869.9838684278,
+        "min": 2065439.5662576852,
+        "max": 2103603.186944221
+      }
+    },
+    {
+      "payload": "nested",
+      "operation": "stringify",
+      "adapter": "codegen-object",
+      "support": "full",
+      "opsPerSec": {
+        "median": 715803.465391121,
+        "min": 593921.6765788974,
+        "max": 731402.3620344499
+      }
+    },
+    {
+      "payload": "nested",
+      "operation": "stringify",
+      "adapter": "typia",
+      "support": "full",
+      "opsPerSec": {
+        "median": 551848.9584960808,
+        "min": 548843.9821136702,
+        "max": 559769.2126933032
+      }
+    },
+    {
+      "payload": "nested",
+      "operation": "stringify",
+      "adapter": "zod",
+      "support": "full",
+      "opsPerSec": {
+        "median": 281395.13467812125,
+        "min": 276930.40306317224,
+        "max": 282041.74808791484
+      }
+    },
+    {
+      "payload": "array",
+      "operation": "stringify",
+      "adapter": "codegen-object",
+      "support": "full",
+      "opsPerSec": {
+        "median": 6935.611235193953,
+        "min": 4618.019198399657,
+        "max": 7086.704324471264
+      }
+    },
+    {
+      "payload": "array",
+      "operation": "stringify",
+      "adapter": "typia",
+      "support": "full",
+      "opsPerSec": {
+        "median": 7407.23686543953,
+        "min": 7163.004585546622,
+        "max": 7578.492881374554
+      }
+    },
+    {
+      "payload": "array",
+      "operation": "stringify",
+      "adapter": "zod",
+      "support": "full",
+      "opsPerSec": {
+        "median": 4124.523938474193,
+        "min": 4111.777308855524,
+        "max": 4144.327520943879
+      }
+    },
+    {
+      "payload": "checkout",
+      "operation": "stringify",
+      "adapter": "codegen-object",
+      "support": "full",
+      "opsPerSec": {
+        "median": 356828.40307689767,
+        "min": 260475.875364515,
+        "max": 357797.9873863197
+      }
+    },
+    {
+      "payload": "checkout",
+      "operation": "stringify",
+      "adapter": "typia",
+      "support": "none",
+      "note": "Typia checks JSON shapes but does not convert values, so the hex code and the dates would stay strings."
+    },
+    {
+      "payload": "checkout",
+      "operation": "stringify",
+      "adapter": "zod",
+      "support": "full",
+      "opsPerSec": {
+        "median": 297970.3891925741,
+        "min": 293658.342697227,
+        "max": 299368.503439754
+      }
+    },
+    {
+      "payload": "simple",
+      "operation": "validate",
+      "adapter": "codegen-object",
+      "support": "full",
+      "opsPerSec": {
+        "median": 12274339.56322463,
+        "min": 5596815.513932134,
+        "max": 12782712.010804962
+      }
+    },
+    {
+      "payload": "simple",
+      "operation": "validate",
+      "adapter": "typia",
+      "support": "full",
+      "opsPerSec": {
+        "median": 25066149.59754804,
+        "min": 24683664.572709583,
+        "max": 25103400
+      }
+    },
+    {
+      "payload": "simple",
+      "operation": "validate",
+      "adapter": "zod",
+      "support": "full",
+      "opsPerSec": {
+        "median": 4661037.086851809,
+        "min": 4538996.209938161,
+        "max": 4680254.656421054
+      }
+    },
+    {
+      "payload": "nested",
+      "operation": "validate",
+      "adapter": "codegen-object",
+      "support": "full",
+      "opsPerSec": {
+        "median": 2210468.9476552596,
+        "min": 1255113.203562002,
+        "max": 2260948.2204597727
+      }
+    },
+    {
+      "payload": "nested",
+      "operation": "validate",
+      "adapter": "typia",
+      "support": "full",
+      "opsPerSec": {
+        "median": 1173033.6421576622,
+        "min": 1157872.520143515,
+        "max": 1202441.6721716945
+      }
+    },
+    {
+      "payload": "nested",
+      "operation": "validate",
+      "adapter": "zod",
+      "support": "full",
+      "opsPerSec": {
+        "median": 446011.75184569694,
+        "min": 444268.70891076303,
+        "max": 446679.1624765712
+      }
+    },
+    {
+      "payload": "array",
+      "operation": "validate",
+      "adapter": "codegen-object",
+      "support": "full",
+      "opsPerSec": {
+        "median": 37422.53621213843,
+        "min": 20941.767573606277,
+        "max": 37852.84834114899
+      }
+    },
+    {
+      "payload": "array",
+      "operation": "validate",
+      "adapter": "typia",
+      "support": "full",
+      "opsPerSec": {
+        "median": 73843.53975224729,
+        "min": 63378.015750786435,
+        "max": 74554.4550124085
+      }
+    },
+    {
+      "payload": "array",
+      "operation": "validate",
+      "adapter": "zod",
+      "support": "full",
+      "opsPerSec": {
+        "median": 11625.463346249904,
+        "min": 11599.852565873878,
+        "max": 11704.199330903255
+      }
+    },
+    {
+      "payload": "checkout",
+      "operation": "validate",
+      "adapter": "codegen-object",
+      "support": "full",
+      "opsPerSec": {
+        "median": 7480416.623698029,
+        "min": 4255049.852971783,
+        "max": 7907593.436697455
+      }
+    },
+    {
+      "payload": "checkout",
+      "operation": "validate",
+      "adapter": "typia",
+      "support": "none",
+      "note": "Typia checks JSON shapes but does not convert values, so the hex code and the dates would stay strings."
+    },
+    {
+      "payload": "checkout",
+      "operation": "validate",
+      "adapter": "zod",
+      "support": "full",
+      "opsPerSec": {
+        "median": 373919.84295366553,
+        "min": 372342.5464431362,
+        "max": 375748.0230317677
+      }
+    },
+    {
+      "payload": "simple",
+      "operation": "parse",
+      "adapter": "codegen",
+      "support": "full",
+      "opsPerSec": {
+        "median": 897335.1393299629,
+        "min": 893021.7644955683,
+        "max": 898223.342448112
+      }
+    },
+    {
+      "payload": "simple",
+      "operation": "parse",
+      "adapter": "class-transformer",
+      "support": "full",
+      "opsPerSec": {
+        "median": 236192.91421257434,
+        "min": 235704.6308795433,
+        "max": 237533.92115079763
+      }
+    },
+    {
+      "payload": "nested",
+      "operation": "parse",
+      "adapter": "codegen",
+      "support": "full",
+      "opsPerSec": {
+        "median": 268167.48469248053,
+        "min": 266319.4447239563,
+        "max": 268760.4707099682
+      }
+    },
+    {
+      "payload": "nested",
+      "operation": "parse",
+      "adapter": "class-transformer",
+      "support": "full",
+      "opsPerSec": {
+        "median": 73036.08964776034,
+        "min": 72711.88062785006,
+        "max": 73328.25509844397
+      }
+    },
+    {
+      "payload": "array",
+      "operation": "parse",
+      "adapter": "codegen",
+      "support": "full",
+      "opsPerSec": {
+        "median": 2187.8782465446693,
+        "min": 2170.945958864274,
+        "max": 2209.9547480687847
+      }
+    },
+    {
+      "payload": "array",
+      "operation": "parse",
+      "adapter": "class-transformer",
+      "support": "full",
+      "opsPerSec": {
+        "median": 580.0716388474,
+        "min": 569.1696239218348,
+        "max": 580.7640071506534
+      }
+    },
+    {
+      "payload": "checkout",
+      "operation": "parse",
+      "adapter": "codegen",
+      "support": "full",
+      "opsPerSec": {
+        "median": 496717.9311698165,
+        "min": 494871.44367273856,
+        "max": 499308.453492014
+      }
+    },
+    {
+      "payload": "checkout",
+      "operation": "parse",
+      "adapter": "class-transformer",
+      "support": "full",
+      "opsPerSec": {
+        "median": 159961.47567800587,
+        "min": 158316.90015509524,
+        "max": 160757.95676636972
+      }
+    },
+    {
+      "payload": "simple",
+      "operation": "stringify",
+      "adapter": "codegen",
+      "support": "full",
+      "opsPerSec": {
+        "median": 8356333.886456581,
+        "min": 8089674.943953141,
+        "max": 8444911.17506783
+      }
+    },
+    {
+      "payload": "simple",
+      "operation": "stringify",
+      "adapter": "class-transformer",
+      "support": "full",
+      "opsPerSec": {
+        "median": 252928.48890421021,
+        "min": 251988.13513865674,
+        "max": 254935.78110079514
+      }
+    },
+    {
+      "payload": "nested",
+      "operation": "stringify",
+      "adapter": "codegen",
+      "support": "full",
+      "opsPerSec": {
+        "median": 1088369.6127204152,
+        "min": 1074976.936369834,
+        "max": 1098738.255969913
+      }
+    },
+    {
+      "payload": "nested",
+      "operation": "stringify",
+      "adapter": "class-transformer",
+      "support": "full",
+      "opsPerSec": {
+        "median": 76134.93866224056,
+        "min": 75631.34966438227,
+        "max": 76437.96178174924
+      }
+    },
+    {
+      "payload": "array",
+      "operation": "stringify",
+      "adapter": "codegen",
+      "support": "full",
+      "opsPerSec": {
+        "median": 8283.444125643015,
+        "min": 8102.335207756686,
+        "max": 8307.765112779576
+      }
+    },
+    {
+      "payload": "array",
+      "operation": "stringify",
+      "adapter": "class-transformer",
+      "support": "full",
+      "opsPerSec": {
+        "median": 535.2926753088178,
+        "min": 516.8629648427566,
+        "max": 537.8768998886657
+      }
+    },
+    {
+      "payload": "checkout",
+      "operation": "stringify",
+      "adapter": "codegen",
+      "support": "full",
+      "opsPerSec": {
+        "median": 605326.4528079862,
+        "min": 597671.1574552243,
+        "max": 606946.3437072666
+      }
+    },
+    {
+      "payload": "checkout",
+      "operation": "stringify",
+      "adapter": "class-transformer",
+      "support": "full",
+      "opsPerSec": {
+        "median": 124781.41318459914,
+        "min": 123991.03606804747,
+        "max": 124862.25957015964
+      }
+    },
+    {
+      "payload": "simple",
+      "operation": "parse",
+      "adapter": "codegen-standalone",
+      "support": "full",
+      "opsPerSec": {
+        "median": 844434.1945149135,
+        "min": 843554.7277829541,
+        "max": 847055.8207915954
+      }
+    },
+    {
+      "payload": "simple",
+      "operation": "parse",
+      "adapter": "class-validator",
+      "support": "full",
+      "opsPerSec": {
+        "median": 96981.54503245818,
+        "min": 92461.57106263765,
+        "max": 98623.78791364613
+      }
+    },
+    {
+      "payload": "nested",
+      "operation": "parse",
+      "adapter": "codegen-standalone",
+      "support": "full",
+      "opsPerSec": {
+        "median": 239826.7100028659,
+        "min": 237903.99144041448,
+        "max": 240218.38034576885
+      }
+    },
+    {
+      "payload": "nested",
+      "operation": "parse",
+      "adapter": "class-validator",
+      "support": "full",
+      "opsPerSec": {
+        "median": 23827.92994858578,
+        "min": 23775.98985088615,
+        "max": 24034.584442034982
+      }
+    },
+    {
+      "payload": "array",
+      "operation": "parse",
+      "adapter": "codegen-standalone",
+      "support": "full",
+      "opsPerSec": {
+        "median": 2065.9776108218407,
+        "min": 2033.3695175093703,
+        "max": 2071.689933753226
+      }
+    },
+    {
+      "payload": "array",
+      "operation": "parse",
+      "adapter": "class-validator",
+      "support": "full",
+      "opsPerSec": {
+        "median": 194.4259176209098,
+        "min": 172.41113899108757,
+        "max": 196.55814404886436
+      }
+    },
+    {
+      "payload": "checkout",
+      "operation": "parse",
+      "adapter": "codegen-standalone",
+      "support": "full",
+      "opsPerSec": {
+        "median": 317945.69244384003,
+        "min": 316122.0653521586,
+        "max": 322211.6051022997
+      }
+    },
+    {
+      "payload": "checkout",
+      "operation": "parse",
+      "adapter": "class-validator",
+      "support": "full",
+      "opsPerSec": {
+        "median": 54608.11165149901,
+        "min": 54460.16666020891,
+        "max": 54818.675032624626
+      }
+    },
+    {
+      "payload": "simple",
+      "operation": "stringify",
+      "adapter": "codegen-standalone",
+      "support": "full",
+      "opsPerSec": {
+        "median": 4753239.025585994,
+        "min": 4744210.348685293,
+        "max": 4766198.295764904
+      }
+    },
+    {
+      "payload": "simple",
+      "operation": "stringify",
+      "adapter": "class-validator",
+      "support": "full",
+      "opsPerSec": {
+        "median": 101028.86342528669,
+        "min": 100580.36877691976,
+        "max": 101887.87716607968
+      }
+    },
+    {
+      "payload": "nested",
+      "operation": "stringify",
+      "adapter": "codegen-standalone",
+      "support": "full",
+      "opsPerSec": {
+        "median": 721582.411428726,
+        "min": 704352.016018907,
+        "max": 735343.9143518787
+      }
+    },
+    {
+      "payload": "nested",
+      "operation": "stringify",
+      "adapter": "class-validator",
+      "support": "full",
+      "opsPerSec": {
+        "median": 24562.543745625382,
+        "min": 24506.497531372854,
+        "max": 24603.359694009174
+      }
+    },
+    {
+      "payload": "array",
+      "operation": "stringify",
+      "adapter": "codegen-standalone",
+      "support": "full",
+      "opsPerSec": {
+        "median": 6569.837612726496,
+        "min": 6370.924692434916,
+        "max": 6773.297696225149
+      }
+    },
+    {
+      "payload": "array",
+      "operation": "stringify",
+      "adapter": "class-validator",
+      "support": "full",
+      "opsPerSec": {
+        "median": 193.7229223164428,
+        "min": 190.4828962183937,
+        "max": 195.75764600491087
+      }
+    },
+    {
+      "payload": "checkout",
+      "operation": "stringify",
+      "adapter": "codegen-standalone",
+      "support": "full",
+      "opsPerSec": {
+        "median": 351260.60865809786,
+        "min": 349061.67426210066,
+        "max": 352243.82279817975
+      }
+    },
+    {
+      "payload": "checkout",
+      "operation": "stringify",
+      "adapter": "class-validator",
+      "support": "full",
+      "opsPerSec": {
+        "median": 49893.24350836233,
+        "min": 49631.184602683454,
+        "max": 50336.874835125884
+      }
+    },
+    {
+      "payload": "simple",
+      "operation": "validate",
+      "adapter": "codegen-standalone",
+      "support": "full",
+      "opsPerSec": {
+        "median": 10344020.604961386,
+        "min": 10287987.140016025,
+        "max": 10430349.152436908
+      }
+    },
+    {
+      "payload": "simple",
+      "operation": "validate",
+      "adapter": "codegen-runtime",
+      "support": "full",
+      "opsPerSec": {
+        "median": 9936037.913432054,
+        "min": 9874929.14084644,
+        "max": 10060372.786691595
+      }
+    },
+    {
+      "payload": "simple",
+      "operation": "validate",
+      "adapter": "class-validator",
+      "support": "full",
+      "opsPerSec": {
+        "median": 177946.51491750535,
+        "min": 177221.04974280173,
+        "max": 179608.39070881924
+      }
+    },
+    {
+      "payload": "nested",
+      "operation": "validate",
+      "adapter": "codegen-standalone",
+      "support": "full",
+      "opsPerSec": {
+        "median": 2327554.669899801,
+        "min": 2301510.886016883,
+        "max": 2349056.027883217
+      }
+    },
+    {
+      "payload": "nested",
+      "operation": "validate",
+      "adapter": "codegen-runtime",
+      "support": "full",
+      "opsPerSec": {
+        "median": 2275177.726010059,
+        "min": 2253758.1293807547,
+        "max": 2305536.944630549
+      }
+    },
+    {
+      "payload": "nested",
+      "operation": "validate",
+      "adapter": "class-validator",
+      "support": "full",
+      "opsPerSec": {
+        "median": 38745.729833114994,
+        "min": 32252.587828956166,
+        "max": 38847.37780199836
+      }
+    },
+    {
+      "payload": "array",
+      "operation": "validate",
+      "adapter": "codegen-standalone",
+      "support": "full",
+      "opsPerSec": {
+        "median": 32707.693730233874,
+        "min": 32425.516656602595,
+        "max": 32748.81758874616
+      }
+    },
+    {
+      "payload": "array",
+      "operation": "validate",
+      "adapter": "codegen-runtime",
+      "support": "full",
+      "opsPerSec": {
+        "median": 32660.68936741152,
+        "min": 32254.37792853301,
+        "max": 32736.450216125777
+      }
+    },
+    {
+      "payload": "array",
+      "operation": "validate",
+      "adapter": "class-validator",
+      "support": "full",
+      "opsPerSec": {
+        "median": 303.61047504716686,
+        "min": 297.56935383216523,
+        "max": 304.1067502834599
+      }
+    },
+    {
+      "payload": "checkout",
+      "operation": "validate",
+      "adapter": "codegen-standalone",
+      "support": "full",
+      "opsPerSec": {
+        "median": 7272323.638381801,
+        "min": 7126114.085325316,
+        "max": 7361717.044381033
+      }
+    },
+    {
+      "payload": "checkout",
+      "operation": "validate",
+      "adapter": "codegen-runtime",
+      "support": "full",
+      "opsPerSec": {
+        "median": 7132336.249320277,
+        "min": 6970549.857849947,
+        "max": 7201670.997911251
+      }
+    },
+    {
+      "payload": "checkout",
+      "operation": "validate",
+      "adapter": "class-validator",
+      "support": "full",
+      "opsPerSec": {
+        "median": 91163.23371234667,
+        "min": 90472.62509359122,
+        "max": 92008.56236621295
+      }
+    }
+  ]
+}

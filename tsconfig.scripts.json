@@ -1,0 +1,21 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "outDir": ".build",
+    "types": [
+      "node"
+    ],
+    "lib": [
+      "ES2023",
+      "DOM",
+      "DOM.Iterable"
+    ],
+    "declaration": false
+  },
+  "include": [
+    "scripts/**/*.ts",
+    "packages/openapi-to-ts/compliance/*.ts"
+  ],
+  "exclude": ["scripts/benchmark/fixtures/**"]
+}

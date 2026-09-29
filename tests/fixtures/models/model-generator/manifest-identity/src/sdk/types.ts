@@ -1,0 +1,2 @@
+/* @runic-model-manifest ./model-manifest.json */
+export interface Money { currency: string; }

@@ -1,0 +1,7 @@
+import type { IModel } from '@exprtlabs/codegen/model';
+
+export type TItem = IModel<{ title: string; count: number }>;
+
+import { ItemBase } from './item.model.generated.js';
+
+export class Item extends ItemBase {}

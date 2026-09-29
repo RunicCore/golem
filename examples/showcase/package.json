@@ -1,0 +1,30 @@
+{
+  "name": "project-access-showcase",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "generate": "runic-codegen generate",
+    "check": "runic-codegen check && ttsc --noEmit",
+    "test": "runic-codegen check && ttsc && node --test .build/src/app.test.js",
+    "start": "runic-codegen check && ttsc && node .build/src/main.js"
+  },
+  "dependencies": {
+    "@exprtlabs/codegen": "1.0.0-rc",
+    "ajv": "^8.20.0",
+    "ajv-formats": "^3.0.1",
+    "@nestjs/common": "11.2.3",
+    "@nestjs/core": "11.2.3",
+    "@nestjs/platform-express": "11.2.3",
+    "@nestjs/swagger": "11.4.7",
+    "reflect-metadata": "0.2.2",
+    "rxjs": "7.8.2"
+  },
+  "devDependencies": {
+    "@exprtlabs/model-codegen": "1.0.0-rc",
+    "@exprtlabs/openapi-to-ts": "1.0.0-rc",
+    "@exprtlabs/ts-to-openapi": "1.0.0-rc",
+    "typescript": "7.x",
+    "ttsc": "0.30.x",
+    "@types/node": "22.20.1"
+  }
+}

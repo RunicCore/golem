@@ -1,0 +1,43 @@
+{
+  "openapi": "3.1.0",
+  "info": { "title": "Profile", "version": "1" },
+  "paths": {
+    "/money": {
+      "get": {
+        "operationId": "getMoney",
+        "responses": {
+          "200": {
+            "description": "Money",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Money" } } }
+          }
+        }
+      },
+      "post": {
+        "operationId": "createMoney",
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Money" } } }
+        },
+        "responses": {
+          "200": {
+            "description": "Money",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Money" } } }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Money": {
+        "type": "object",
+        "required": ["amount", "currency"],
+        "additionalProperties": false,
+        "properties": {
+          "amount": { "type": "number", "minimum": 0 },
+          "currency": { "type": "string", "pattern": "^[A-Z]{3}$" }
+        }
+      }
+    }
+  }
+}

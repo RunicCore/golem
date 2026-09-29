@@ -1,0 +1,19 @@
+{
+  "compilerOptions": {
+    "strict": true,
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
+    "skipLibCheck": true,
+    "types": ["node"],
+    "outDir": ".build",
+    "rootDir": ".",
+    "plugins": [{ "transform": "@exprtlabs/codegen/ttsc-plugin", "nest": true }]
+  },
+  "include": [
+    "src/**/*.ts",
+    "sdk/**/*.ts"
+  ]
+}

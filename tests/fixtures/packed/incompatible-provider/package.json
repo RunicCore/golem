@@ -1,0 +1,5 @@
+{
+  "name": "@exprtlabs/openapi-to-ts",
+  "type": "module",
+  "exports": { "./generator": "./incompatible.js" }
+}

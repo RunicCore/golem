@@ -1,0 +1,21 @@
+version: 1
+mobx: false
+validation: true
+controllers:
+  - framework: nestjs
+    root: .
+    sources:
+      - backend/project-access.controller.ts
+    output: api.yaml
+    info:
+      title: Project Access API
+      version: '1'
+openapi:
+  - input: api.yaml
+    output: sdk
+    name: ProjectAccess
+models:
+  root: .
+  sources:
+    - backend/project-access.model.ts
+    - src/project-access.model.ts

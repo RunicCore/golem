@@ -1,0 +1,103 @@
+{
+  "generator": {
+    "name": "@exprtlabs/openapi-to-ts",
+    "version": "1.0.0-rc"
+  },
+  "models": [
+    {
+      "additionalProperties": false,
+      "allowAny": false,
+      "discriminator": null,
+      "fields": [
+        {
+          "modelReferences": [],
+          "name": "amount",
+          "required": true,
+          "type": "number"
+        },
+        {
+          "modelReferences": [],
+          "name": "currency",
+          "required": true,
+          "type": "string"
+        }
+      ],
+      "generated": {
+        "export": "MoneyModel",
+        "module": "./models/Money.ts"
+      },
+      "id": "openapi:e3f4dba1e46a0fba#/components/schemas/Money",
+      "inheritance": null,
+      "sourceKind": "openapi",
+      "type": {
+        "aliases": [
+          {
+            "export": "Money",
+            "module": "./index.ts"
+          }
+        ],
+        "export": "Money",
+        "module": "./types.ts"
+      },
+      "validation": {
+        "authority": "openapi",
+        "reference": "#/components/schemas/Money",
+        "registryExport": "runtimeSchemaRegistry",
+        "registryIdExport": "schemaRegistry",
+        "registryModule": "./schemas.ts"
+      },
+      "variants": []
+    }
+  ],
+  "profile": {
+    "ajvStandalone": false,
+    "allowAny": false,
+    "mobx": true,
+    "validation": true
+  },
+  "source": {
+    "dialect": "3.1.0",
+    "digest": "e3f4dba1e46a0fbad92bcf41e56897807352186da24f1afdd03635f202f97e90",
+    "kind": "openapi"
+  },
+  "validationSchemaClosure": [
+    {
+      "aliases": [
+        "Money",
+        "Money_350e7fd6",
+        "openapi:e3f4dba1e46a0fba#/components/schemas/Money"
+      ],
+      "codecId": "Money_350e7fd6",
+      "modelSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "amount": {
+            "allOf": [
+              {
+                "type": "number"
+              },
+              {
+                "minimum": 0
+              }
+            ]
+          },
+          "currency": {
+            "allOf": [
+              {
+                "type": "string"
+              },
+              {
+                "pattern": "^[A-Z]{3}$"
+              }
+            ]
+          }
+        },
+        "required": [
+          "amount",
+          "currency"
+        ],
+        "type": "object"
+      }
+    }
+  ]
+}

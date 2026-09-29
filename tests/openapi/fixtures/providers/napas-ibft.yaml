@@ -1,0 +1,94 @@
+openapi: 3.1.0
+info:
+  title: NAPAS IBFT-style fixture
+  version: 1.0.0
+servers:
+  - url: https://fixture.invalid
+security:
+  - bearerAuth: []
+paths:
+  /ibft/transfers/{transactionId}:
+    post:
+      operationId: createIbftTransfer
+      summary: Submit an IBFT transfer
+      parameters:
+        - name: transactionId
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^TX[0-9]{8}$'
+        - name: X-Correlation-Id
+          in: header
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Transfer'
+      responses:
+        '202':
+          description: Transfer submitted
+          headers:
+            X-Correlation-Id:
+              required: true
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransferStatus'
+        default:
+          description: Problem
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+  schemas:
+    Transfer:
+      type: object
+      required: [debtorAccount, creditorAccount, amount]
+      additionalProperties: false
+      properties:
+        debtorAccount:
+          type: string
+        creditorAccount:
+          type: string
+        amount:
+          $ref: '#/components/schemas/Money'
+    Money:
+      type: object
+      required: [value, currency]
+      properties:
+        value:
+          type: number
+          exclusiveMinimum: 0
+        currency:
+          type: string
+          pattern: '^[A-Z]{3}$'
+    TransferStatus:
+      type: object
+      required: [transactionId, status]
+      properties:
+        transactionId:
+          type: string
+        status:
+          type: string
+          enum: [ACCEPTED, SETTLED, REJECTED]
+    Problem:
+      type: object
+      required: [title, status]
+      properties:
+        title:
+          type: string
+        status:
+          type: integer

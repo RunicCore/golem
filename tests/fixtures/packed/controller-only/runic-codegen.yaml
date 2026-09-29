@@ -1,0 +1,11 @@
+version: 1
+mobx: false
+validation: false
+controllers:
+  - root: .
+    sources:
+      - src/app.controller.ts
+    output: generated/openapi.json
+    info:
+      title: Packed Controller API
+      version: "1"

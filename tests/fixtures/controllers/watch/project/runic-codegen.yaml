@@ -1,0 +1,17 @@
+version: 1
+mobx: false
+validation: false
+controllers:
+  - framework: nestjs
+    root: .
+    output: ./generated/openapi.json
+    info:
+      title: Catalog API
+      version: '1'
+    globalPrefix: api
+openapi:
+  - input: ./generated/openapi.json
+    output: ./sdk
+    name: Catalog
+models:
+  root: .

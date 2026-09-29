@@ -1,0 +1,56 @@
+import { execFileSync } from 'node:child_process';
+import { copyFileSync, cpSync, mkdirSync, symlinkSync, writeFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { generate } from '@exprtlabs/model-codegen/generator';
+import type { ProjectKind } from './cases.js';
+import { copyGeneratedJavascript, generateFeatureMoneySdk } from './generate-sdk.js';
+
+export const root = fileURLToPath(new URL('../../../', import.meta.url));
+const upstreamDirectory = path.join(root, 'scripts/benchmark/fixtures/upstream');
+const featureDirectory = path.join(root, 'scripts/benchmark/fixtures/features');
+const featureSources = [
+  'payloads.ts', 'feature-tags.ts', 'features.model.ts', 'features.iobject.model.ts',
+  'features-class-transformer.models.ts', 'features-class-validator.models.ts',
+  'comparison-features-codegen.ts', 'comparison-features-codegen-object.ts',
+  'comparison-features-class-transformer.ts', 'comparison-features-class-validator.ts',
+];
+
+function prepare(directory: string, kind: ProjectKind): string {
+  const project = path.join(directory, kind);
+  const src = path.join(project, 'src');
+  cpSync(upstreamDirectory, src, { recursive: true });
+  symlinkSync(path.join(root, 'node_modules'), path.join(project, 'node_modules'), 'dir');
+  writeFileSync(path.join(project, 'package.json'), JSON.stringify({ private: true, type: 'module' }));
+  copyFileSync(path.join(root, 'scripts/benchmark/fixture-contract.ts'), path.join(src, 'fixture-contract.ts'));
+  for (const name of featureSources) copyFileSync(path.join(featureDirectory, name), path.join(src, name));
+  copyFileSync(path.join(root, 'examples/showcase/src/access-rules.ts'), path.join(src, 'access-rules.ts'));
+  writeFileSync(path.join(project, 'tsconfig.json'), JSON.stringify({
+    compilerOptions: {
+      target: 'ES2022', module: 'NodeNext', moduleResolution: 'NodeNext', strict: true, skipLibCheck: true,
+      experimentalDecorators: true, emitDecoratorMetadata: true, rootDir: 'src', outDir: 'build', types: ['node'],
+      plugins: [{ transform: 'typia/lib/transform' }],
+    },
+    include: ['src/**/*.ts'],
+  }));
+  const profile = { mobx: false, validation: kind !== 'plain', ajvStandalone: kind === 'standalone' };
+  const manifest = generateFeatureMoneySdk(project, src, { validation: profile.validation, ajvStandalone: profile.ajvStandalone });
+  const { artifacts } = generate({ root: project, profile, manifestInputs: [manifest] });
+  for (const artifact of artifacts) {
+    mkdirSync(path.dirname(artifact.path), { recursive: true });
+    writeFileSync(artifact.path, artifact.content);
+  }
+  execFileSync(process.execPath, [path.join(root, 'node_modules/ttsc/lib/launcher/ttsc.js'), '-p', path.join(project, 'tsconfig.json')],
+    { cwd: project, encoding: 'utf8', timeout: 180_000, maxBuffer: 16 * 1024 * 1024 });
+  for (const artifact of artifacts.filter(a => a.path.endsWith('.js'))) {
+    const destination = path.join(project, 'build', path.relative(src, artifact.path));
+    mkdirSync(path.dirname(destination), { recursive: true });
+    copyFileSync(artifact.path, destination);
+  }
+  copyGeneratedJavascript(src, project);
+  return path.join(project, 'build/cases.js');
+}
+
+export function prepareProjects(directory: string): Record<ProjectKind, string> {
+  return { plain: prepare(directory, 'plain'), runtime: prepare(directory, 'runtime'), standalone: prepare(directory, 'standalone') };
+}

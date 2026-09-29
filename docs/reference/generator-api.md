@@ -1,0 +1,221 @@
+# Generator API
+
+Call a generator from your own tool and apply the files it returns.
+
+Application projects use the [CLI](/reference/cli), which writes files, keeps
+the inventory and runs watch mode.
+
+- Providers return file contents; they do not write files.
+- Every context takes absolute paths and a `profile`.
+- `watchInputs` lists the paths a host watches after generation.
+- API version `1` is independent of the package release. It changes only with a breaking change to a context or result type.
+
+## Shared contracts
+
+```ts
+import type {
+  CodegenDiagnostic,
+  CodegenProfile,
+  CodegenProvider,
+  CodegenResult,
+} from '@exprtlabs/codegen/generator-api';
+
+interface CodegenProfile {
+  readonly mobx: boolean;
+  readonly validation: boolean;
+  readonly ajvStandalone?: boolean;
+  readonly allowAny?: boolean;
+}
+
+interface CodegenArtifact {
+  readonly path: string;
+  readonly content: string;
+}
+
+interface CodegenResult {
+  readonly artifacts: readonly CodegenArtifact[];
+  readonly manifestPaths: readonly string[];
+  readonly watchInputs: readonly string[];
+  readonly diagnostics?: readonly CodegenDiagnostic[];
+}
+
+enum CodegenDiagnosticSeverity {
+  Error = 'error',
+  Warning = 'warning',
+}
+
+interface CodegenDiagnostic {
+  readonly code: string;
+  readonly severity: CodegenDiagnosticSeverity;
+  readonly message: string;
+  readonly file?: string;
+  readonly line?: number;
+  readonly column?: number;
+  readonly path?: string;
+}
+
+type InputObserver = (absolutePath: string) => void;
+
+interface GeneratorSession {
+  retain<Resource extends Disposable>(key: string, create: () => Resource): Resource;
+}
+
+interface CodegenProvider<Context> {
+  readonly apiVersion: 1;
+  generate(context: Context): CodegenResult | Promise<CodegenResult>;
+}
+```
+
+| Export | Signature | Behavior |
+| --- | --- | --- |
+| `resolveProfile` | `(profile: CodegenProfile): ResolvedCodegenProfile` | Applies the defaults `ajvStandalone: false` and `allowAny: false` and returns a frozen profile. Throws `TypeError` for an unknown key, a non-boolean value, or `ajvStandalone: true` without `validation: true`. |
+| `CodegenProvider` | `{ apiVersion: 1; generate(context) }` | The shape each generator module exports. |
+| `CodegenDiagnosticSeverity` | `Error`, `Warning` | Severity of a returned diagnostic. |
+
+Every generator applies `resolveProfile` to the profile you pass. Show
+returned diagnostics to the user; their codes are in
+[Diagnostics](/reference/diagnostics). An error stops the generator with an
+exception instead of a result.
+
+`onInput` runs before each local read or existence check, including for a
+missing path. Watch the returned `watchInputs`.
+
+Pass the same `session` to repeated `generate()` calls of the model or
+controller generator to keep its TypeScript compiler running between calls.
+The session owner disposes the retained resources. Without a session, each
+call starts and closes its own compiler.
+
+## Generate OpenAPI from controllers
+
+`@exprtlabs/ts-to-openapi/generator` exports `apiVersion` and an
+asynchronous `generate()`. It returns one OpenAPI document and no
+manifests:
+
+```ts
+import { generate } from '@exprtlabs/ts-to-openapi/generator';
+
+const result = await generate({
+  root: '/absolute/app/backend',
+  output: '/absolute/app/api/payments.yaml',
+  info: { title: 'Payments API', version: '1' },
+  profile: { mobx: false, validation: true },
+});
+
+console.log(result.artifacts[0]?.path); // /absolute/app/api/payments.yaml
+```
+
+`ControllerContext`:
+
+| Field | Required | Default | Effect |
+| --- | --- | --- | --- |
+| `root` | Yes | — | Existing project directory. |
+| `output` | Yes | — | The `.json`, `.yaml` or `.yml` file to generate. |
+| `info` | Yes | — | OpenAPI `info` object. |
+| `profile` | Yes | — | `CodegenProfile`. |
+| `sources` | No | `*.controller.ts` below `<root>/src` | Non-empty list of controller files. |
+| `openapiVersion` | No | `'3.2.0'` | `'3.2.0'` or `'3.1.2'`. |
+| `servers`, `securitySchemes`, `tags`, `globalPrefix`, `uriVersioning` | No | omitted | Same as the [controller job keys](/reference/config#controller-jobs). |
+| `onInput` | No | omitted | Called with each path before it is read. |
+| `session` | No | omitted | Keeps the compiler running across calls. |
+
+Diagnostic source locations are not copied into the OpenAPI document.
+
+## Generate an OpenAPI SDK
+
+`@exprtlabs/openapi-to-ts/generator` exports `apiVersion` and an
+asynchronous `generate()` that returns an `OpenApiGenerationResult`:
+
+```ts
+import { apiVersion, generate } from '@exprtlabs/openapi-to-ts/generator';
+
+const result = await generate({
+  input: '/absolute/app/api.yaml',
+  output: '/absolute/app/sdk',
+  name: 'Payments',
+  profile: { mobx: false, validation: true },
+});
+
+console.log(apiVersion, result.artifacts.map(artifact => artifact.path));
+```
+
+`OpenApiContext`:
+
+| Field | Required | Default | Effect |
+| --- | --- | --- | --- |
+| `input` | Yes | — | OpenAPI document, JSON or YAML. |
+| `output` | Yes | — | SDK directory. |
+| `profile` | Yes | — | `CodegenProfile`. |
+| `name` | No | the document's `info.title`, else `Api` | Prefix of the client name, such as `PaymentsClient`. |
+| `allowRemoteRefs` | No | `false` | Reads HTTPS `$ref` documents when `true`. |
+| `remoteHosts` | No | `[]` | Hosts remote references may use; required with `allowRemoteRefs`. |
+| `maxRefBytes` | No | `5242880` | Maximum bytes read from one referenced document. |
+| `maxRefDocuments` | No | `256` | Maximum referenced documents, local ones included. |
+| `refTimeoutMs` | No | `10000` | Timeout of each remote read, in milliseconds. |
+| `onInput` | No | omitted | Called with each local path before it is read. |
+
+`manifestPaths` holds the SDK's `model-manifest.json`. Each model entry
+points to its `models/<Name>.ts` module. The optional
+`validationSchemaClosure` holds the model and JSON schemas that
+`ajvStandalone: true` model jobs compile.
+
+An SDK generated by an earlier release may lack those schemas. A model job
+with `ajvStandalone: true` that uses its models then fails with
+`Cannot compile standalone validators: … is unresolved`. Generate that SDK
+again.
+
+To generate from a document you already loaded, call `writeSdk`:
+
+```ts
+function writeSdk(
+  document: unknown,
+  options: { readonly output: string; readonly name?: string; readonly profile: CodegenProfile },
+): CodegenResult;
+```
+
+Pass a document from `loadValidatedDocument(filename, options?)`, which reads
+and checks it and bundles its references; `options` takes the reference
+fields and `onInput` above. `writeSdk` reads no files and returns empty
+`watchInputs`.
+
+## Generate TypeScript models
+
+`@exprtlabs/model-codegen/generator` exports `apiVersion` and a
+synchronous `generate()`:
+
+```ts
+import { apiVersion, generate } from '@exprtlabs/model-codegen/generator';
+
+const result = generate({
+  root: '/absolute/app',
+  profile: { mobx: false, validation: true },
+});
+
+console.log(apiVersion, result.artifacts.length);
+```
+
+`ModelContext`:
+
+| Field | Required | Default | Effect |
+| --- | --- | --- | --- |
+| `root` | Yes | — | Existing TypeScript project directory. |
+| `profile` | Yes | — | `CodegenProfile`. |
+| `output` | No | `<root>/src/generated/models` | Directory for files shared by all models of the job. |
+| `sources` | No | `*.model.ts` and `*.models.ts` below `<root>/src` | Model files. |
+| `manifestInputs` | No | `[]` | SDK `model-manifest.json` files whose models your declarations use. |
+| `onInput` | No | omitted | Called with each path before it is read or checked. |
+| `session` | No | omitted | Keeps the compiler running across calls. |
+
+| Helper | Signature | Returns |
+| --- | --- | --- |
+| `discoverModelSources` | `(root?, onInput?): string[]` | Model files below `<root>/src`, sorted. |
+| `generatedFilename` | `(source: string): string` | The generated file path: `task.model.ts` → `task.model.generated.ts`, `.models.ts` → `.models.generated.ts`. |
+| `isModelSource` | `(filename: string): boolean` | Whether the name ends in `.model.ts` or `.models.ts` and is not a generated file. |
+| `discoverModelManifests` | `(root?, onInput?): string[]` | [`@exprtlabs/codegen/manifest`](/reference/runtime-api#manifest) re-export. |
+
+## Apply results
+
+A result is an in-memory plan. A host that applies it keeps the artifact
+paths and contents, tracks `manifestPaths` and `watchInputs`, and chooses its
+own write, stale-file and inventory policy. The `runic-codegen` CLI applies
+results for normal projects, in the [job order](/reference/config) of the
+configuration.

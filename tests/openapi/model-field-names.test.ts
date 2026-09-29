@@ -1,0 +1,129 @@
+import { createFixtureProject } from '../fixture-project.js';
+import assert from 'node:assert/strict';
+import path from 'node:path';
+import test from 'node:test';
+import { generate, writeSdk } from '#openapi/generator';
+import {
+  ALL_GENERATION_PROFILES,
+  documentBase,
+  generatedModelSource,
+  writeGeneratedSdk,
+  writeOpenApiDocument,
+} from './helpers.js';
+
+test('reserves generated model API members across profiles and quotes wire keys', async (t) => {
+  for (const profile of ALL_GENERATION_PROFILES) {
+    const directory = createFixtureProject(t, 'runic-openapi-r6-member-');
+    const input = writeOpenApiDocument(directory, documentBase('3.1.0', {
+      components: {
+        schemas: {
+          Payment: {
+            type: 'object',
+            properties: {
+              toJSON: { type: 'string' },
+            },
+          },
+        },
+      },
+    }));
+    await assert.rejects(
+      () => generate({ input, output: path.join(directory, 'sdk'), profile }),
+      /collides with generated model API member/,
+    );
+  }
+
+  const quoted = createFixtureProject(t, 'runic-openapi-r6-quote-');
+  const quotedInput = writeOpenApiDocument(quoted, documentBase('3.1.0', {
+    components: {
+      schemas: {
+        Payment: {
+          type: 'object',
+          properties: {
+            'wired-key': { type: 'string' },
+          },
+        },
+      },
+    },
+  }));
+  const result = await generate({
+    input: quotedInput,
+    output: path.join(quoted, 'sdk'),
+    profile: { mobx: false, validation: false },
+  });
+  const types = result.artifacts.find((artifact) => artifact.path.endsWith('/types.ts'))?.content ?? '';
+  const models = generatedModelSource(result.artifacts);
+  assert.match(types, /"wired-key"\?: string/);
+  assert.match(models, /\["wired-key"\]/);
+});
+
+test('SDK generation rejects declared Object.prototype field names and directs callers to rename them', t => {
+  const output = createFixtureProject(t, 'runic-openapi-field-names-');
+  const cases: readonly { readonly name: string; readonly schema: Record<string, unknown> }[] = [
+    {
+      name: 'required __proto__',
+      schema: { type: 'object', required: ['__proto__'], properties: Object.fromEntries([['__proto__', { type: 'string' }]]) },
+    },
+    {
+      name: 'optional toString',
+      schema: { type: 'object', properties: { toString: { type: 'string' } } },
+    },
+    {
+      name: 'inherited constructor',
+      schema: { allOf: [{ $ref: '#/components/schemas/Base' }, { type: 'object', properties: { label: { type: 'string' } } }] },
+    },
+  ];
+  for (const [index, scenario] of cases.entries()) {
+    const schemas = scenario.name.includes('constructor')
+      ? {
+        Base: { type: 'object', properties: { constructor: { type: 'string' } } },
+        Special: scenario.schema,
+      }
+      : { Special: scenario.schema };
+    const document = {
+      openapi: '3.1.0', info: { title: `Unsupported ${index}`, version: '1' },
+      components: { schemas },
+    };
+    assert.throws(
+      () => writeGeneratedSdk(writeSdk, document, { output: path.join(output, String(index)), profile: { mobx: false, validation: false } }),
+      (error: unknown) => error instanceof Error
+        && /Declared model field/.test(error.message)
+        && /rename/.test(error.message)
+        && (scenario.name.includes('__proto__') ? /__proto__/.test(error.message)
+          : scenario.name.includes('toString') ? /toString/.test(error.message)
+            : /constructor/.test(error.message)),
+      scenario.name,
+    );
+  }
+  assert.throws(
+    () => writeGeneratedSdk(writeSdk, {
+      openapi: '3.1.0', info: { title: 'Validation-enabled field', version: '1' },
+      components: { schemas: { Special: { type: 'object', properties: { valueOf: { type: 'string' } } } } },
+    }, { output: path.join(output, 'validation-enabled'), profile: { mobx: false, validation: true } }),
+    (error: unknown) => error instanceof Error
+      && /Declared model field/.test(error.message)
+      && /"valueOf"/.test(error.message)
+      && /rename/.test(error.message),
+    'valueOf must be rejected during SDK generation when validation is enabled',
+  );
+
+  const literalPayload = Object.fromEntries([
+    ['toString', 'literal'],
+    ['constructor', 'literal'],
+    ['__proto__', 'literal'],
+  ]);
+  assert.doesNotThrow(() => writeGeneratedSdk(writeSdk, {
+    openapi: '3.1.0', info: { title: 'Metadata values', version: '1' },
+    components: { schemas: { Metadata: {
+      type: 'object',
+      properties: {
+        payload: {
+          type: 'object',
+          const: literalPayload,
+          enum: [literalPayload],
+          default: literalPayload,
+        },
+        entries: { type: 'object', additionalProperties: { type: 'object' } },
+      },
+    } } },
+  }, { output: path.join(output, 'metadata'), profile: { mobx: false, validation: false } }));
+});

@@ -1,0 +1,47 @@
+import assert from 'node:assert/strict';
+import { instanceToPlain, plainToInstance } from 'class-transformer';
+import type { Adapter, ComparisonFixture } from './fixture-contract.js';
+import { Checkout, LineItem, SdkMoney } from './features-class-transformer.models.js';
+import { assertFeatureWire, checkoutInput, featureComparison } from './payloads.js';
+
+// #region calls
+const toModel = (value: unknown): Checkout => plainToInstance(Checkout, value);
+const toPlain = (model: Checkout): unknown => instanceToPlain(model);
+
+export async function createClassTransformerFeatureFixtures(adapter: Adapter): Promise<readonly ComparisonFixture[]> {
+  if (adapter !== 'class-transformer') throw new TypeError(`Unsupported class-transformer adapter: ${adapter}`);
+  const input = checkoutInput();
+  const model = toModel(input.payload);
+  return [featureComparison(input.name, input.payload, {
+    'object-to-model': () => toModel(input.payload),
+    'model-to-object': () => toPlain(model),
+    'text-to-model': () => toModel(JSON.parse(input.text)),
+    'model-to-text': () => JSON.stringify(toPlain(model)),
+// #endregion calls
+  }, async () => {
+    const original = structuredClone(input.payload);
+    const fromObject = toModel(input.payload);
+    checkModel(fromObject);
+    checkModel(toModel(JSON.parse(input.text)));
+    assertFeatureWire(toPlain(fromObject), original);
+    assert.equal(JSON.stringify(toPlain(fromObject)), input.text);
+    assert.deepEqual(input.payload, original);
+    checkModel(model);
+  })];
+}
+
+function checkModel(checkout: Checkout): void {
+  assert.ok(checkout instanceof Checkout);
+  assert.ok(checkout.money instanceof SdkMoney);
+  assert.ok(checkout.primary instanceof LineItem);
+  assert.equal(checkout.code, 255);
+  assert.equal(checkout.note, 'ok');
+  assert.ok(checkout.when instanceof Date);
+  assert.equal(checkout.when.toISOString(), '2026-01-01T00:00:00.000Z');
+  assert.equal(checkout.flags.rush, 'yes');
+  assert.equal(checkout.channel.kind, 'hold');
+  assert.ok('until' in checkout.channel && checkout.channel.until instanceof Date);
+  assert.ok(checkout.span[0] instanceof Date && checkout.span[1] instanceof Date);
+  assert.equal(checkout.hold, null);
+  assert.equal(checkout.bag?.lane, 'A');
+}
