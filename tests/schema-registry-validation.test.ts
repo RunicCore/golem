@@ -41,6 +41,15 @@ test('operation validators key responses by status and media type', () => {
   assert.deepEqual([...validators.get('getMoney')!.responses.keys()], ['200:application/json']);
 });
 
+test('an operation input or response the engine cannot compile fails with validation_unavailable', () => {
+  const unavailable = (reference: string, message: RegExp) => assert.throws(
+    () => createRegistryOperationValidators(recordingEngine(new Set([reference])), data),
+    (error: unknown) => error instanceof LibError && error.kind === 'validation_unavailable' && message.test(error.message),
+  );
+  unavailable('urn:t:schemas#/operations/getMoney/input', /operation input: getMoney/);
+  unavailable('urn:t:schemas#/operations/getMoney/200/application/json', /operation response: getMoney 200 application\/json/);
+});
+
 test('a schema the engine cannot compile fails with validation_unavailable', () => {
   assert.throws(() => createRegistryValidators(recordingEngine(new Set(['urn:t:schemas#/$defs/Money'])), data),
     (error: unknown) => error instanceof LibError && error.kind === 'validation_unavailable' && /Money/.test(error.message));

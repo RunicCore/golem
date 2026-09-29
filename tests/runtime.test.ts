@@ -59,11 +59,14 @@ interface PaymentFields {
 
 test('dependency-free runtime entrypoints do not import optional integrations', () => {
   const modelSource = fs.readFileSync(join(distRoot, 'model.js'), 'utf8');
-  const validationSource = fs.readFileSync(join(distRoot, 'validation.js'), 'utf8');
+  const validationSources = ['validation.js', 'schema-registry-validation.js']
+    .map(name => fs.readFileSync(join(distRoot, name), 'utf8'));
   assert.doesNotMatch(modelSource, /from ['"].*(?:mobx|ajv)/i);
-  assert.doesNotMatch(validationSource, /from ['"].*(?:mobx|ajv)/i);
   assert.doesNotMatch(modelSource, /node:/);
-  assert.doesNotMatch(validationSource, /node:/);
+  for (const source of validationSources) {
+    assert.doesNotMatch(source, /from ['"].*(?:mobx|ajv)/i);
+    assert.doesNotMatch(source, /node:/);
+  }
 });
 
 test('structural validation preserves descriptors, custom rules, messages, and caching', async () => {

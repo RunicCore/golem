@@ -227,6 +227,8 @@ test('standalone SDK compiles with its generated JavaScript, exposes every model
     schemaReference: (name: string) => string;
     operationInputReference: (name: string) => string;
     operationResponseReference: (name: string, status: string, contentType: string) => string;
+    createRuntimeValidators: (engine: object) => unknown;
+    createOperationRuntimeValidators: (engine: object) => ReadonlyMap<string, { input: (value: unknown) => boolean }>;
   };
   const validators = generated.createValidators() as Record<string, GeneratedValidator>;
   const expected = generatedReferenceSet(schemas);
@@ -245,9 +247,8 @@ test('standalone SDK compiles with its generated JavaScript, exposes every model
   assert.equal(browserValidators[inputReference]({ body: task }), true);
   assert.equal(browserValidators[inputReference]({ body: { ...task, when: 'not-a-date' } }), false);
 
-  const validation = await import(pathToFileURL(path.join(compiled, 'validation.js')).href);
   const engineModule = await import(pathToFileURL(path.join(compiled, 'validation-engine.js')).href);
-  const operationValidators = validation.createOperationRuntimeValidators(engineModule.defaultValidationEngine);
+  const operationValidators = schemas.createOperationRuntimeValidators(engineModule.defaultValidationEngine);
   assert.equal(operationValidators.size, 2);
   assert.equal(operationValidators.get('createTask')?.input({ body: task }), true);
   assert.equal(operationValidators.get('getTask')?.input({ path: { id: 'task-1' } }), true);
@@ -259,7 +260,7 @@ test('standalone SDK compiles with its generated JavaScript, exposes every model
     (error: unknown) => error instanceof LibError && error.kind === LibErrorKind.ValidationUnavailable,
   );
   assert.throws(
-    () => validation.createRuntimeValidators({
+    () => schemas.createRuntimeValidators({
       addSchema() { /* replacement engines cannot silently compile schemas */ },
       getSchema() { return undefined; },
     }),
