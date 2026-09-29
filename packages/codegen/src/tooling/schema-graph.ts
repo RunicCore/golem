@@ -270,8 +270,9 @@ export function internDescriptors(
     readonly emitClass?: boolean;
     readonly validationEnabled?: boolean;
   }>,
-): void {
+): ReadonlyMap<string, string> {
   const interned = new Set<(typeof entries)[number]>();
+  const nodeIds = new Map<string, string>();
   const stack = new Set<string>();
   const visit = (entry: (typeof entries)[number]): void => {
     if (interned.has(entry)) return;
@@ -284,10 +285,11 @@ export function internDescriptors(
       }
     }
     interned.add(entry);
-    graph.intern(entry.descriptor, entry.name, entry.emitClass === true, entry.validationEnabled);
+    nodeIds.set(entry.name, graph.intern(entry.descriptor, entry.name, entry.emitClass === true, entry.validationEnabled).id);
     stack.delete(short);
   };
   for (const entry of entries) visit(entry);
+  return nodeIds;
 }
 
 /** How a codec builds values: where its model comes from and whether `parse` constructs a class. */
@@ -314,17 +316,21 @@ export function codecPublicId(
   return `${codecShortName(name)}_${hash8(key)}`;
 }
 
-function codecDeclarationKey(source: string, name: string): string {
-  return `${source.replace(/\\/g, '/')}#${codecShortName(name)}`;
+/**
+ * `<file>#<name>` as the ttsc plugin looks a class up: the short name of the emitted class
+ * when the entry gives one, otherwise the codec short name of the model.
+ */
+function codecDeclarationKey(source: string, name: string, className?: string): string {
+  return `${source.replace(/\\/g, '/')}#${className === undefined ? codecShortName(name) : modelName(className)}`;
 }
 
 export function emitCodecDeclarationTable(
-  entries: ReadonlyArray<{ readonly source: string; readonly name: string; readonly codecId: string }>,
+  entries: ReadonlyArray<{ readonly source: string; readonly name: string; readonly codecId: string; readonly className?: string }>,
   owner = '@exprtlabs/codegen',
 ): string {
   const seen = new Map<string, string>();
   for (const entry of entries) {
-    const key = codecDeclarationKey(entry.source, entry.name);
+    const key = codecDeclarationKey(entry.source, entry.name, entry.className);
     const previous = seen.get(key);
     if (previous !== undefined && previous !== entry.codecId) {
       throw new TypeError(

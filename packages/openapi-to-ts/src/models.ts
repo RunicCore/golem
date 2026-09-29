@@ -75,7 +75,10 @@ export interface OpenApiModelAnalysis {
   readonly grouping: SchemaGraphGrouping;
   readonly resources: ResourceIndex;
   readonly nodesById: ReadonlyMap<string, SchemaNode>;
+  /** By schema name, and by short codec name when that name is unambiguous. */
   readonly nodesByName: ReadonlyMap<string, SchemaNode>;
+  /** The schema each node was interned for. */
+  readonly definitionNameByNodeId: ReadonlyMap<string, string>;
   readonly nodesByCodecId: ReadonlyMap<string, SchemaNode>;
   readonly diagnostics: readonly CodegenDiagnostic[];
   readonly selections: DiscriminatorSelections;
@@ -917,13 +920,13 @@ export function internOpenApiSchemaGraph(
   validationEnabled = true,
   resources?: ResourceIndex,
   selections?: DiscriminatorSelections,
-) {
+): { readonly schemaGraph: SchemaGraph; readonly nodeIdByDefinition: ReadonlyMap<string, string> } {
   const schemaGraph = createSchemaGraph({}, {
     anonymousCodecPrefix: `openapi_${sourceDigest(document)}_`,
     codecSource: 'openapi',
   });
   const sharedSchemaContext = schemaContext(document, resources ? { resources } : {});
-  internDescriptors(schemaGraph, ordered.map((definition) => {
+  const nodeIdByDefinition = internDescriptors(schemaGraph, ordered.map((definition) => {
     const anchors = schemaContext(
       document,
       sharedSchemaContext,
@@ -941,24 +944,34 @@ export function internOpenApiSchemaGraph(
     };
   }));
   schemaGraph.seal();
-  return schemaGraph;
+  return { schemaGraph, nodeIdByDefinition };
 }
 
 /**
- * Graph nodes carry the short codec name (`Pay$ment`, `PaymentModel` and `TPayment` are all
- * `Payment`-like), while the rest of the pipeline looks them up by the schema's own name.
- * Both names resolve to the node.
+ * Each schema resolves to the node interned for it. Graph nodes carry the short codec name, so
+ * schemas that shorten alike (`PaymentModel`, `TPayment`, `Payment`) have separate nodes only
+ * when their shapes differ; equal shapes would share one codec and are rejected.
  */
 function nodesByDefinitionName(
-  nodes: readonly SchemaNode[],
-  definitions: ReadonlyMap<string, ModelDefinition>,
-): Map<string, SchemaNode> {
-  const byName = new Map(nodes.map((node) => [node.name, node] as const));
-  for (const definition of definitions.values()) {
-    const node = byName.get(codecShortName(definition.name));
-    if (node && !byName.has(definition.name)) byName.set(definition.name, node);
+  schemaGraph: SchemaGraph,
+  nodeIdByDefinition: ReadonlyMap<string, string>,
+): { readonly nodesByName: Map<string, SchemaNode>; readonly definitionNameByNodeId: Map<string, string> } {
+  const nodes = [...schemaGraph.nodes.values()];
+  const shortCounts = new Map<string, number>();
+  for (const node of nodes) shortCounts.set(node.name, (shortCounts.get(node.name) ?? 0) + 1);
+  const nodesByName = new Map(nodes.filter((node) => shortCounts.get(node.name) === 1).map((node) => [node.name, node] as const));
+  const definitionNameByNodeId = new Map<string, string>();
+  for (const [definitionName, nodeId] of nodeIdByDefinition) {
+    const node = schemaGraph.nodes.get(nodeId);
+    if (!node) throw new Error(`Internal error: model ${definitionName} has no schema node.`);
+    const other = definitionNameByNodeId.get(node.id);
+    if (other !== undefined) {
+      throw new Error(`OpenAPI components "${other}" and "${definitionName}" both map to the model name "${node.name}". Rename one of them.`);
+    }
+    definitionNameByNodeId.set(node.id, definitionName);
+    nodesByName.set(definitionName, node);
   }
-  return byName;
+  return { nodesByName, definitionNameByNodeId };
 }
 
 export function analyzeOpenApiModels(
@@ -967,13 +980,13 @@ export function analyzeOpenApiModels(
 ): OpenApiModelAnalysis {
   const resources = collectCanonicalResources(document);
   const { definitions, ordered, diagnostics, selections } = collectOpenApiModelDefinitions(document, resources);
-  const schemaGraph = internOpenApiSchemaGraph(document, ordered, definitions, validationEnabled, resources, selections);
+  const { schemaGraph, nodeIdByDefinition } = internOpenApiSchemaGraph(document, ordered, definitions, validationEnabled, resources, selections);
   const nodes = [...schemaGraph.nodes.values()];
   const nodesById = new Map(nodes.map((node) => [node.id, node]));
-  const nodesByName = nodesByDefinitionName(nodes, definitions);
+  const { nodesByName, definitionNameByNodeId } = nodesByDefinitionName(schemaGraph, nodeIdByDefinition);
   const nodesByCodecId = new Map(nodes.map((node) => [node.codecId, node]));
-  const grouping = schemaGraphGroups(schemaGraph, definitions);
-  return { definitions, ordered, schemaGraph, grouping, resources, nodesById, nodesByName, nodesByCodecId, diagnostics, selections };
+  const grouping = schemaGraphGroups(schemaGraph, definitions, nodesByName, definitionNameByNodeId);
+  return { definitions, ordered, schemaGraph, grouping, resources, nodesById, nodesByName, definitionNameByNodeId, nodesByCodecId, diagnostics, selections };
 }
 
 function openApiValidationSchemaClosure(
@@ -1074,8 +1087,9 @@ interface SchemaGraphGrouping {
 function schemaGraphGroups(
   schemaGraph: SchemaGraph,
   definitions: ReadonlyMap<string, ModelDefinition>,
+  nodesByName: ReadonlyMap<string, SchemaNode>,
+  definitionNameByNodeId: ReadonlyMap<string, string>,
 ): SchemaGraphGrouping {
-  const nodesByName = nodesByDefinitionName([...schemaGraph.nodes.values()], definitions);
   const runtimeEdges = new Map([...schemaGraph.nodes].map(([id, node]) => [id, new Set(node.edges)]));
   const addRuntimeEdge = (fromName: string, toName: string | undefined): void => {
     if (!toName) return;
@@ -1126,15 +1140,12 @@ function schemaGraphGroups(
   };
   for (const id of [...schemaGraph.nodes.keys()].sort()) if (!indices.has(id)) visit(id);
 
-  // Schemas of equal shape whose names shorten alike share one node.
-  const definitionsByCodecNode = new Map<string, string[]>();
-  for (const definition of definitions.values()) {
-    const node = nodesByName.get(definition.name);
-    if (node) definitionsByCodecNode.set(node.id, [...(definitionsByCodecNode.get(node.id) ?? []), definition.name]);
-  }
   const owner = new Map<string, string>();
   const groups = components.map((ids) => {
-    const models = new Set(ids.flatMap((id) => definitionsByCodecNode.get(id) ?? []));
+    const models = new Set(ids.flatMap((id) => {
+      const model = definitionNameByNodeId.get(id);
+      return model === undefined ? [] : [model];
+    }));
     const id = `group-${hashGroup([...ids].map((nodeId) => schemaGraph.nodes.get(nodeId)?.codecId ?? nodeId))}`;
     for (const nodeId of ids) owner.set(nodeId, id);
     return { id, filename: `models/_${id}.ts`, nodes: new Set(ids), models };
@@ -1308,11 +1319,12 @@ export function generateOpenApiModelArtifacts(
         addImport(codecModule, generatedFunctionName(node.id, functionName));
       }
       if (node.kind === 'object') addImport(codecModule, generatedFunctionName(node.id, 'fill'));
-      if (node.emitClass) {
-        const modelModule = `./${node.name}.js`;
-        addImport(modelModule, `${node.name}Model`);
+      const modelName = analysis.definitionNameByNodeId.get(nodeId);
+      if (node.emitClass && modelName !== undefined) {
+        const modelModule = `./${modelName}.js`;
+        addImport(modelModule, `${modelName}Model`);
         for (const suffix of ['Fields', 'JSON', 'Init'] as const) {
-          addImport(modelModule, `type ${node.name}${suffix}`);
+          addImport(modelModule, `type ${modelName}${suffix}`);
         }
       }
     }
@@ -1700,20 +1712,25 @@ export function generateModels(
     validationEnabled: profile.validation,
     ...(helpers.validatorSetExpr ? { validatorSetExpr: helpers.validatorSetExpr } : {}),
     issueSource: 'OpenAPI',
-    wireType: (node) => definitions.has(node.name) ? `Types.${node.name}` : undefined,
+    wireType: (node) => {
+      const modelName = analysis.definitionNameByNodeId.get(node.id);
+      return modelName !== undefined && definitions.has(modelName) ? `Types.${modelName}` : undefined;
+    },
     ...(helpers.exportedFillFunctionIds ? { exportedFillFunctionIds: helpers.exportedFillFunctionIds } : {}),
     nestedConstruct: (codecId) => {
       const node = analysis.nodesByCodecId.get(codecId)
         ?? analysis.nodesByName.get(codecId)
         ?? analysis.nodesById.get(codecId);
-      const short = node?.name ?? codecId;
-      return helpers.modelImport?.(short) ?? `${short}Model`;
+      const modelName = node ? analysis.definitionNameByNodeId.get(node.id) ?? node.name : codecId;
+      return helpers.modelImport?.(modelName) ?? `${modelName}Model`;
     },
     nestedGenerated: (name) => {
-      const node = analysis.nodesByName.get(codecShortName(name))
+      const node = analysis.nodesByName.get(name)
+        ?? analysis.nodesByName.get(codecShortName(name))
         ?? analysis.nodesById.get(name)
         ?? analysis.nodesByCodecId.get(name);
-      return node?.emitClass ? (helpers.modelImport?.(node.name) ?? `${node.name}Model`) : 'undefined';
+      const modelName = node ? analysis.definitionNameByNodeId.get(node.id) ?? node.name : name;
+      return node?.emitClass ? (helpers.modelImport?.(modelName) ?? `${modelName}Model`) : 'undefined';
     },
     nestedImportedSerde: (codecId) => {
       if (!helpers.codecFunctionImport) return undefined;
@@ -1742,7 +1759,7 @@ export function generateModels(
 export function collectOpenApiCodecEntries(
   document: unknown,
   analysis?: OpenApiModelAnalysis,
-): ReadonlyArray<{ readonly source: string; readonly name: string; readonly codecId: string }> {
+): ReadonlyArray<{ readonly source: string; readonly name: string; readonly codecId: string; readonly className: string }> {
   const modelAnalysis = analysis ?? analyzeOpenApiModels(document);
   const { ordered, schemaGraph } = modelAnalysis;
   const groupForModel = new Map<string, string>();
@@ -1754,7 +1771,7 @@ export function collectOpenApiCodecEntries(
     const codecId = node?.codecId ?? codecPublicId(definition.name, { kind: 'unknown' }, undefined, { source: 'openapi', constructs: true });
     const source = groupForModel.get(definition.name);
     if (!source) throw new Error(`Internal error: model ${definition.name} has no output group.`);
-    return { source, name: definition.name, codecId };
+    return { source, name: definition.name, codecId, className: `${definition.name}Model` };
   });
 }
 

@@ -757,7 +757,7 @@ test('schemas whose names the codec rule shortens still get output files and exp
     openapi: '3.1.0',
     info: { title: 'Shortened', version: '1' },
     paths: Object.fromEntries(names.map((name, index) => [`/p${index}`, { get: operation(name) }])),
-    components: { schemas: Object.fromEntries(names.map((name) => [name, object])) },
+    components: { schemas: { PaymentModel: object, TPayment: { ...object, properties: { amount: { type: 'number' } }, required: ['amount'] }, 'Pay$ment': object } },
   };
   const result = writeGeneratedSdk(writeSdk, document, { output: source, name: 'Shortened', profile: { mobx: false, validation: false } });
   compileStrictUnusedSdk(source);
@@ -766,4 +766,80 @@ test('schemas whose names the codec rule shortens still get output files and exp
   const exported = [...index.matchAll(/from '\.\/models\/([^']+)\.js'/g)].map((match) => match[1]!);
   assert.ok(exported.length > 0, 'the index re-exports models');
   for (const name of exported) assert.ok(files.has(path.join(source, 'models', `${name}.ts`)), `models/${name}.ts is written`);
+});
+
+const SHORTENED_OPTIONS = { strict: true, noUnusedLocals: true, noUnusedParameters: true, exactOptionalPropertyTypes: true, noUncheckedIndexedAccess: true } as const;
+
+function shortenedDocument(schemas: Record<string, unknown>): Record<string, unknown> {
+  const operation = (name: string) => ({
+    operationId: `get${name.replace(/[^A-Za-z]/g, '')}`,
+    responses: { '200': { description: 'ok', content: { 'application/json': { schema: { $ref: `#/components/schemas/${name}` } } } } },
+  });
+  return {
+    openapi: '3.1.0',
+    info: { title: 'Shortened', version: '1' },
+    paths: Object.fromEntries(Object.keys(schemas).map((name, index) => [`/p${index}`, { get: operation(name) }])),
+    components: { schemas },
+  };
+}
+
+const idObject = { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] };
+const amountObject = { type: 'object', properties: { amount: { type: 'number' } }, required: ['amount'] };
+
+async function generateShortened(t: TestContext, schemas: Record<string, unknown>) {
+  const { source } = fixture(t);
+  const result = writeGeneratedSdk(writeSdk, shortenedDocument(schemas), { output: source, name: 'Shortened', profile: { mobx: false, validation: false } });
+  compileGeneratedSdk(source, [], SHORTENED_OPTIONS);
+  const sdk = requireRecord(await import(pathToFileURL(path.join(source, 'dist/index.js')).href), 'shortened sdk');
+  return { result, sdk };
+}
+
+function roundTrip(sdk: Record<string, unknown>, model: string, klass: string, value: Record<string, unknown>): void {
+  const stringify = sdk[`stringify${model}`] as (value: unknown) => string;
+  const parse = sdk[`parse${model}`] as (text: string, options?: { readonly construct?: abstract new (values?: never) => object }) => unknown;
+  const Model = sdk[klass] as new (values?: never) => object;
+  const text = stringify(new Model(value as never));
+  assert.deepEqual(JSON.parse(text), value);
+  const parsed = parse(text, { construct: Model });
+  assert.ok(parsed instanceof Model, `${model} parses into ${klass}`);
+  assert.deepEqual(JSON.parse(stringify(parsed)), value);
+}
+
+test('schemas that shorten alike but differ in shape keep separate codecs', async t => {
+  const { result, sdk } = await generateShortened(t, { PaymentModel: idObject, TPayment: amountObject });
+  const keys = result.artifacts.find((artifact) => artifact.path.endsWith('iobject-plugin-keys.ts'))?.content ?? '';
+  const entries = [...keys.matchAll(/"([^"]+)#(\w+)": "(Payment_[0-9a-f]+)"/g)];
+  assert.deepEqual(entries.map((entry) => entry[2]).sort(), ['Payment', 'PaymentModel'], 'keys use the names the plugin derives from PaymentModelModel and TPaymentModel');
+  assert.equal(new Set(entries.map((entry) => entry[1])).size, 2, 'two files');
+  assert.equal(new Set(entries.map((entry) => entry[3])).size, 2, 'two codec ids');
+  for (const entry of entries) {
+    const declaring = result.artifacts.find((artifact) => artifact.path.endsWith(`/${entry[1]}`))?.content ?? '';
+    assert.match(declaring, entry[2] === 'Payment' ? /export class TPaymentModel\b/ : /export class PaymentModelModel\b/);
+  }
+  roundTrip(sdk, 'PaymentModel', 'PaymentModelModel', { id: 'a' });
+  roundTrip(sdk, 'TPayment', 'TPaymentModel', { amount: 3 });
+});
+
+test('a model that references schemas with shortened names imports their own classes', async t => {
+  const holder = { type: 'object', properties: { a: { $ref: '#/components/schemas/PaymentModel' }, b: { $ref: '#/components/schemas/Pay$ment' } }, required: ['a', 'b'] };
+  const { sdk } = await generateShortened(t, { PaymentModel: idObject, 'Pay$ment': amountObject, Holder: holder });
+  roundTrip(sdk, 'Holder', 'HolderModel', { a: { id: 'a' }, b: { amount: 2 } });
+});
+
+test('a single schema with a shortened name generates and round-trips', async t => {
+  const model = await generateShortened(t, { PaymentModel: idObject });
+  roundTrip(model.sdk, 'PaymentModel', 'PaymentModelModel', { id: 'a' });
+});
+
+test('a single schema with a dollar sign in its name generates and round-trips', async t => {
+  const model = await generateShortened(t, { 'Pay$ment': amountObject });
+  roundTrip(model.sdk, 'Pay$ment', 'Pay$mentModel', { amount: 1 });
+});
+
+test('two schemas of equal shape that shorten alike are rejected with both names', t => {
+  const { source } = fixture(t);
+  assert.throws(
+    () => writeGeneratedSdk(writeSdk, shortenedDocument({ PaymentModel: idObject, TPayment: idObject }), { output: source, name: 'Shortened', profile: { mobx: false, validation: false } }),
+    /OpenAPI components "PaymentModel" and "TPayment" both map to the model name "Payment"\. Rename one of them\./,
+  );
 });
