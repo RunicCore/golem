@@ -69,10 +69,16 @@ You get `src/task.model.generated.ts` beside the declaration, with the generated
 
 ## Add methods
 
-Extend the generated class in the same file:
+Extend the generated class in `src/task.model.ts`, below the declaration:
 
 ```ts
+import type { IModel } from '@exprtlabs/codegen/model';
 import { TaskBase } from './task.model.generated.js';
+
+export type TTask = IModel<{
+  title: string;
+  done: boolean;
+}>;
 
 export class Task extends TaskBase {
   toggle(): void {
@@ -98,7 +104,7 @@ console.log(toWireFormat<Task>(task)); // { title: 'Review the draft', done: tru
 console.log(await validateInstance(task)); // []
 ```
 
-`parse<Task>(text)` builds a `Task`; `parse<TTask>(text)` returns a plain object. `stringify` returns JSON text.
+`@exprtlabs/codegen/serde` also exports `parse` and `stringify`. `parse<Task>(text)` builds a `Task`; `parse<TTask>(text)` returns a plain object. `stringify` returns JSON text.
 
 ## Run it
 

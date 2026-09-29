@@ -41,7 +41,7 @@ The generators declare the compiler as a peer dependency, so npm installs one co
 
 ## TypeScript setup
 
-`parse<T>`, `stringify<T>`, `fromWireFormat<T>` and `toWireFormat<T>` need **TypeScript 7** and **`ttsc` 0.30**. `tsc` doesn't run the plugin, so an untransformed call throws at runtime. TypeScript 5 and 6 aren't supported.
+`parse<T>`, `stringify<T>`, `fromWireFormat<T>` and `toWireFormat<T>` need **TypeScript 7** and **`ttsc` 0.30**. `tsc` doesn't run the plugin, so an untransformed call throws at runtime.
 
 ```sh
 npm install --save-dev typescript@~7.0.2 ttsc@~0.30.4

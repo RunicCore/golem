@@ -1,6 +1,6 @@
+// #region read-task
 import type { TasksClient } from '../sdk/index.js';
 
-// #region read-task
 export async function readTask(client: TasksClient, id: string) {
   const response = await client.getTask().execute({ path: { id } });
   if (response.status === 404) {

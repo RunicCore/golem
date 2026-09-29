@@ -62,7 +62,6 @@ Each item names a breaking change and the action to take.
 - Every discriminated-union variant must declare the discriminator property. Add it to each variant schema.
 - An implicit discriminator value is the raw component name (`cat`), not the generated type name (`Cat`). Add an explicit `discriminator.mapping` where senders use another value.
 - A variant shared by two discriminated unions gives neither union a model class. Give each union its own variant schemas if code needs the union class.
-- In OpenAPI 3.0, `nullable: true` admits `null` only beside `type`. Add `type` to inline nullable schemas; for a nullable reference, move the document to 3.1 or later and use `oneOf: [{ $ref: ... }, { type: 'null' }]`.
 - An undeclared response status or media type throws `LibError` kind `response`. Declare every status and media type the server sends, and catch the error with `is<Client>UndeclaredResponseError`.
 - `allowReserved` query values keep `#`, `[`, `]`, `&` and `+` encoded and pass `%XX` escapes through. Stop pre-encoding values that already contain escapes.
 - A caller-supplied `fetchImpl` is called without a receiver. Bind or wrap a function that relies on `this` before passing it.

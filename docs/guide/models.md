@@ -19,7 +19,7 @@ Both declare fields. `IObject` stops there: values stay plain objects, and you c
 | Generates | validation and JSON conversion | the same, plus a class (`TaskBase`) |
 | Value from `parse` | plain object: `parse<TNote>(json)` | your class with `parse<Task>(json)`; a plain object with `parse<TTask>(json)` |
 | Methods and getters | no | yes, on your class |
-| MobX (`mobx: true`) | observable only as a field of a generated model | observable fields once your constructor calls `asGenObservable(this)` |
+| [MobX](/guide/mobx) (`mobx: true`) | observable only as a field of a generated model | observable fields once your constructor calls `asGenObservable(this)` |
 | Use it for | DTOs and nested data | domain objects with behavior |
 
 ## Declare fields
@@ -73,7 +73,7 @@ The field type decides construction, conversion and validation.
 | `bigint` | allowed in a model; `stringify` rejects it |
 | string, number and boolean literals | kept and checked |
 | arrays and tuples | items convert recursively; tuple length and optional or rest positions are checked |
-| object types | known properties convert; extra properties fail validation unless `{ exact: false }` |
+| object types | known properties convert; extra properties fail validation unless [`{ exact: false }`](/guide/model-composition#strict-objects-and-any) |
 | unions and intersections | intersections merge fields; [supported unions](/guide/model-composition#unions) |
 | another type-only `IModel` | a nested plain object, still converted |
 | your class (extends a `*Base`) | a nested instance of that class |

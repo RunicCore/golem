@@ -1,6 +1,6 @@
+// #region create-and-list
 import { TasksClient } from '../sdk/index.js';
 
-// #region create-and-list
 export async function listTasks(baseUrl: string) {
   const client = new TasksClient({ baseUrl });
   const operation = client.listTasks();

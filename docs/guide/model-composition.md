@@ -4,7 +4,7 @@ Nest models, derive types with `Pick` and `Omit`, and model unions that convert 
 
 ## Nested models and derived types
 
-A field typed with your class, such as `home: Address`, holds an instance of that class. A field typed with the declaration alias (`TAddress`) holds a plain object. `Pick`, `Omit`, `Partial`, `Required` and `Readonly` produce a derived type (`Pick`, `Omit`, `Partial`) as a plain object.
+A field typed with your class, such as `home: Address`, holds an instance of that class. A field typed with the declaration alias (`TAddress`) holds a plain object. `Pick`, `Omit`, `Partial`, `Required` and `Readonly` produce a derived type as a plain object.
 
 ```ts
 import type { IModel } from '@exprtlabs/codegen/model';
