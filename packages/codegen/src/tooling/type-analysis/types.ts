@@ -1,6 +1,7 @@
 import { fieldProvenance, isPropertyMapping, isReadonlySequenceType, readonlyPropertyNames, instantiatedTypeSource, substituteTypeNode, authoredPropertyTypeNode, type TypeSubstitutions } from './projections.js';
 import * as ts from '../typescript-ns.js';
 import { diagnostic, modelSpecificationForClass, propertyType, resolveSymbol } from './symbols.js';
+import { projectionIdentity } from './graph.js';
 import { pascalIdentifier, policySuffix, projectionBaseName, variantNameNode } from './projection-names.js';
 import { commonDirectory, canonicalFilename } from './project.js';
 import { assertSupportedModelFieldName } from '../schema.js';
@@ -386,6 +387,11 @@ function typeArgumentNode(node: ts.TypeNode | undefined, index: number): ts.Type
   return node && ts.isTypeReferenceNode(node) ? node.typeArguments?.[index] : undefined;
 }
 
+function arrayItemNameNode(node: ts.TypeNode | undefined): ts.TypeNode | undefined {
+  while (node && ts.isTypeOperatorNode(node) && node.operator === ts.SyntaxKind.ReadonlyKeyword) node = node.type;
+  return node && ts.isArrayTypeNode(node) ? node.elementType : typeArgumentNode(node, 0);
+}
+
 function tupleElementNode(node: ts.TypeNode | undefined, index: number): ts.TypeNode | undefined {
   while (node && ts.isTypeOperatorNode(node) && node.operator === ts.SyntaxKind.ReadonlyKeyword) node = node.type;
   if (!node || !ts.isTupleTypeNode(node)) return typeArgumentNode(node, index);
@@ -448,10 +454,18 @@ export function descriptorBuilder(
 } {
   const projections = new Map<string, ModelConversionDescriptor>();
   const projectionCache = new Map<ts.Type, Map<string, string>>();
-  const projectionOwners = new Map<string, ts.Type>();
+  // Where each projection name was first minted, for the clash diagnostic.
+  const projectionSources = new Map<string, string>();
+  const sourceLocation = (at: ts.Node): string => {
+    const sourceFile = at.getSourceFile();
+    const position = sourceFile.getLineAndCharacterOfPosition(at.getStart(sourceFile));
+    return `${sourceFile.fileName}:${position.line + 1}:${position.character + 1}`;
+  };
   const modelNames = new Map(
     specifications.map((specification) => [specification.declaration, specification.name] as const),
   );
+  const modelLocations = new Map(specifications.map((specification) =>
+    [specification.name, sourceLocation(specification.declaration)] as const));
   const modelNameOf = (declaration: ts.TypeAliasDeclaration): string | undefined => modelNames.get(declaration);
   const stableIdentityRoot = canonicalFilename(identityRoot ?? commonDirectory(
     specifications.map((specification) => specification.sourceFile.fileName),
@@ -657,7 +671,7 @@ export function descriptorBuilder(
       };
       const describeItem = (item: ts.Type, index: number): ModelConversionDescriptor => {
         const itemNode = tupleElementNode(childNode, index);
-        const descriptor = describe(item, context, seen, itemNode, representation, undefined, childSubstitutions, nameHint);
+        const descriptor = describe(item, context, seen, itemNode, representation, undefined, childSubstitutions, nameHint, tupleElementNode(nameNode, index));
         // A checker's indexed access type adds undefined for an optional tuple
         // slot. Preserve it only when the authored element admits undefined;
         // the optional marker already represents an absent slot.
@@ -694,7 +708,7 @@ export function descriptorBuilder(
           kind: 'tuple',
           ...(isReadonlySequenceType(checker, type) ? { isReadonly: true as const } : {}),
           items,
-          rest: { index: restIndex, item: describe(restType, context, seen, tupleElementNode(childNode, restIndex), representation, undefined, childSubstitutions, nameHint) },
+          rest: { index: restIndex, item: describe(restType, context, seen, tupleElementNode(childNode, restIndex), representation, undefined, childSubstitutions, nameHint, tupleElementNode(nameNode, restIndex)) },
           ...(optionalFrom === undefined ? {} : { optionalFrom }),
         } as TupleConversionDescriptor, metadata);
       }
@@ -715,30 +729,30 @@ export function descriptorBuilder(
       return withMetadata({
         kind: 'array',
         ...(isReadonlySequenceType(checker, type) ? { isReadonly: true as const } : {}),
-        item: describe(item ?? checker.getAnyType(), context, seen, arrayNode && ts.isArrayTypeNode(arrayNode) ? arrayNode.elementType : typeArgumentNode(arrayNode, 0), representation, undefined, childSubstitutions, nameHint),
+        item: describe(item ?? checker.getAnyType(), context, seen, arrayNode && ts.isArrayTypeNode(arrayNode) ? arrayNode.elementType : typeArgumentNode(arrayNode, 0), representation, undefined, childSubstitutions, nameHint, arrayItemNameNode(nameNode)),
       }, metadata);
     }
     if ((type.flags & ts.TypeFlags.Object) || objectLikeIntersection) {
       let projectionName: string | undefined;
       if (projection && !isRoot) {
-        const policy = `${context.exact}:${context.allowAny ?? allowAny}:${representation}`;
+        const nameAt = node ?? nameNode;
+        const candidate = `${projectionBaseName(checker, nameAt, modelNameOf, nameHint)}${policySuffix({
+          exact: context.exact, allowAny: context.allowAny ?? allowAny, representation,
+        })}`;
+        const here = sourceLocation(nameAt ?? context.declaration);
+        const modelLocation = modelLocations.get(candidate);
+        if (modelLocation) {
+          throw diagnostic(context.sourceFile, nameAt ?? context.declaration, '1059',
+            `Projection name ${candidate} is used by a projection and a model: ${here} and ${modelLocation}. Declare a named type alias for the projection.`);
+        }
+        const policy = `${context.exact}:${context.allowAny ?? allowAny}:${representation}:${candidate}`;
         const cached = projectionCache.get(type) ?? new Map<string, string>();
         projectionName = cached.get(policy);
         if (projectionName) return { kind: 'reference', name: projectionName, projection: true };
-        const candidate = `${projectionBaseName(checker, node ?? nameNode, modelNameOf, nameHint)}${policySuffix({
-          exact: context.exact, allowAny: context.allowAny ?? allowAny, representation,
-        })}`;
-        const owner = projectionOwners.get(candidate);
-        const clashesWithModel = [...modelNames.values()].includes(candidate);
-        if (clashesWithModel || (owner && owner !== type
-          && !(checker.isTypeAssignableTo(owner, type) && checker.isTypeAssignableTo(type, owner)))) {
-          throw diagnostic(context.sourceFile, node ?? context.declaration, '1059',
-            `Projection name ${candidate} is used by two different types. Declare a named type alias for one of them.`);
-        }
-        projectionOwners.set(candidate, owner ?? type);
         projectionName = candidate;
         cached.set(policy, projectionName);
         projectionCache.set(type, cached);
+        if (!projectionSources.has(candidate)) projectionSources.set(candidate, here);
       }
       if (seen.has(type) && !projectionName) {
         throw diagnostic(context.sourceFile, node ?? context.declaration, '1056', 'Recursive anonymous object conversion needs a named model or projected type.');
@@ -805,6 +819,16 @@ export function descriptorBuilder(
             : !context.exact,
       }, metadata);
       if (projectionName) {
+        const existing = projections.get(projectionName);
+        if (existing) {
+          const lookup = (name: string): ModelConversionDescriptor | undefined => projections.get(name);
+          if (projectionIdentity(lookup, projectionName, existing) !== projectionIdentity(lookup, projectionName, descriptor)) {
+            const nameAt = node ?? nameNode ?? context.declaration;
+            throw diagnostic(context.sourceFile, nameAt, '1059',
+              `Projection name ${projectionName} is used by two different types: ${projectionSources.get(projectionName)} and ${sourceLocation(nameAt)}. Declare a named type alias for one of them.`);
+          }
+          return { kind: 'reference', name: projectionName, projection: true };
+        }
         projections.set(projectionName, descriptor);
         return { kind: 'reference', name: projectionName, projection: true };
       }

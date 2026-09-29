@@ -50,18 +50,19 @@ function rewriteConstraint(
   }
 }
 
-/** Deduplicate projected shapes using conversion, identity and policy semantics. */
-export function deduplicateProjections(
-  definitions: Readonly<Record<string, ModelConversionDescriptor>>,
-  projectionNames: ReadonlySet<string>,
-): Record<string, ModelConversionDescriptor> {
-  const names = Object.keys(definitions).filter(name => projectionNames.has(name)).sort();
-  const canonical = (descriptor: ModelConversionDescriptor, stack: readonly string[] = []): unknown => {
+export type ProjectionLookup = (name: string) => ModelConversionDescriptor | undefined;
+
+function canonicalIdentity(
+  lookup: ProjectionLookup,
+  descriptor: ModelConversionDescriptor,
+  stack: readonly string[],
+): unknown {
+  const canonical = (descriptor: ModelConversionDescriptor, stack: readonly string[]): unknown => {
     const rich = descriptor as unknown as Rich;
     if (descriptor.kind === 'reference' && descriptor.projection) {
       const cycle = stack.indexOf(descriptor.name);
       if (cycle >= 0) return { cycle };
-      const target = definitions[descriptor.name];
+      const target = lookup(descriptor.name);
       return target ? canonical(target, [...stack, descriptor.name]) : descriptor;
     }
     let structure: unknown = descriptor;
@@ -91,10 +92,29 @@ export function deduplicateProjections(
       serde: rich.serde ? { id: rich.serde.id, wire: rich.serde.wireDescriptor ? canonical(rich.serde.wireDescriptor, stack) : undefined } : undefined,
     };
   };
+  return canonical(descriptor, stack);
+}
+
+/**
+ * Identity of a descriptor under conversion, validation and policy semantics. Projection
+ * references resolve through `lookup`; `name` is the projection being compared, so a
+ * self-reference reads as a cycle.
+ */
+export function projectionIdentity(lookup: ProjectionLookup, name: string, descriptor: ModelConversionDescriptor): string {
+  return JSON.stringify(canonicalIdentity(lookup, descriptor, [name]));
+}
+
+/** Deduplicate projected shapes using conversion, identity and policy semantics. */
+export function deduplicateProjections(
+  definitions: Readonly<Record<string, ModelConversionDescriptor>>,
+  projectionNames: ReadonlySet<string>,
+): Record<string, ModelConversionDescriptor> {
+  const names = Object.keys(definitions).filter(name => projectionNames.has(name)).sort();
+  const lookup: ProjectionLookup = name => definitions[name];
   const representatives = new Map<string, string>();
   const redirect = new Map<string, string>();
   for (const name of names) {
-    const key = JSON.stringify(canonical(definitions[name], [name]));
+    const key = projectionIdentity(lookup, name, definitions[name]!);
     const representative = representatives.get(key) ?? name;
     representatives.set(key, representative);
     redirect.set(name, representative);

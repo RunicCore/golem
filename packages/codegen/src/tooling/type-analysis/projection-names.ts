@@ -63,6 +63,10 @@ function readable(
   const declaration = aliasDeclaration(checker, current);
   const model = declaration ? modelNameOf(declaration) : undefined;
   if (model) return model;
+  if (depth === 0 && declaration) {
+    const alias = aliasProjectionName(declaration);
+    if (alias) return alias;
+  }
   const utility = ts.isIdentifier(current.typeName) ? current.typeName.text : undefined;
   if (!utility || !UTILITIES.has(utility) || !current.typeArguments?.length) return undefined;
   if (depth >= MAX_PROJECTION_DEPTH) return undefined;
@@ -76,9 +80,19 @@ function readable(
 }
 
 /**
- * Name for an anonymous projection written at `node`. A non-model type alias names it
- * (`TBilling` becomes `Billing`); otherwise the utility grammar; otherwise `fallback`
- * (owner model plus property, already PascalCase).
+ * A type alias names its projection only when it is a concrete, authored alias: no type
+ * parameters, not declared in a `.d.ts` file (so lib aliases such as `Record` never name),
+ * and a name that survives the same identifier check as keys. `TBilling` becomes `Billing`.
+ */
+function aliasProjectionName(declaration: ts.TypeAliasDeclaration): string | undefined {
+  if (declaration.typeParameters?.length || declaration.getSourceFile().isDeclarationFile) return undefined;
+  const alias = declaration.name.text;
+  return pascalIdentifier(/^T[A-Z]/.test(alias) ? alias.slice(1) : alias);
+}
+
+/**
+ * Name for an anonymous projection written at `node`: a concrete non-model type alias, then
+ * the utility grammar, then `fallback` (owner model plus property, already PascalCase).
  */
 export function projectionBaseName(
   checker: ts.TypeChecker,
@@ -86,17 +100,7 @@ export function projectionBaseName(
   modelNameOf: (declaration: ts.TypeAliasDeclaration) => string | undefined,
   fallback: string,
 ): string {
-  if (!node) return fallback;
-  const current = unwrap(node);
-  if (ts.isTypeReferenceNode(current)) {
-    const declaration = aliasDeclaration(checker, current);
-    const utility = ts.isIdentifier(current.typeName) ? current.typeName.text : '';
-    if (declaration && !modelNameOf(declaration) && !UTILITIES.has(utility)) {
-      const alias = declaration.name.text;
-      return /^T[A-Z]/.test(alias) ? alias.slice(1) : alias;
-    }
-  }
-  return readable(checker, current, modelNameOf, 0) ?? fallback;
+  return (node && readable(checker, node, modelNameOf, 0)) || fallback;
 }
 
 /**

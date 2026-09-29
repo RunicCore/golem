@@ -274,7 +274,7 @@ An error prints its code, location when known, and message, then stops generatio
 
 ### RUNM1059
 
-**Generated type name clash.** Two different inline types, such as `Omit<TMerchant, 'id'>` over two unrelated `TMerchant` types, derive the same generated name. **Fix:** Declare a named type alias for one of them, for example `type TBillingMerchant = Omit<TMerchant, 'id'>`.
+**Generated type name clash.** Two different inline types derive the same generated name, such as `Omit<TMerchant, 'id'>` over two unrelated `TMerchant` types, or an inline type whose derived name is also the name of a model. The message lists both places. **Fix:** Declare a named type alias for one of the inline types, for example `type TBillingMerchant = Omit<TMerchant, 'id'>`, and use it in the field.
 
 ## Client generator (OPENAPI)
 

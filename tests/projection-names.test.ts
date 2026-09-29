@@ -107,3 +107,94 @@ export type TOrder = IModel<{ a: Omit<TMerchant, 'id'>; b: Omit<TOtherMerchant, 
     info: { title: 'Clash', version: '1' }, profile: { mobx: false, validation: false },
   }), /RUNM1059/);
 });
+
+const GENERATE_OPTIONS = { openapiVersion: '3.2.0' as const, info: { title: 'Projection names', version: '1' }, profile: { mobx: false, validation: false } };
+
+async function generateSource(t: TestContext, source: string, files: Record<string, string> = {}) {
+  const root = createControllerFixture(t, {
+    prefix: 'runic-projection-names-', packageName: 'projection-names-fixture',
+    sourceFile: 'src/order.controller.ts', source, files,
+  });
+  return generate({ root, output: path.join(root, 'api.json'), ...GENERATE_OPTIONS });
+}
+
+interface Document { components: { schemas: Record<string, { properties?: Record<string, { $ref?: string }> }> } }
+
+async function documentOf(t: TestContext, source: string, files: Record<string, string> = {}): Promise<Document> {
+  const result = await generateSource(t, source, files);
+  return JSON.parse(result.artifacts[0]!.content) as Document;
+}
+
+const PRELUDE = `import { Body, Controller, Post } from '@nestjs/common';
+import type { IModel } from '@exprtlabs/codegen/model';
+import type { Pattern } from '@exprtlabs/codegen/tags';
+`;
+const ROUTE = (body: string, result: string): string => `@Controller('orders')
+export class OrderController { @Post() save(@Body() body: ${body}): ${result} { return body; } }
+`;
+
+test('a projection named like a model fails with RUNM1059 naming both places', async t => {
+  const source = `${PRELUDE}
+export type TMerchant = IModel<{ id: string; name: string }>;
+export type TMerchantOmitId = IModel<{ other: string }>;
+export type TOrder = IModel<{ shape: Omit<TMerchant, 'id'> }>;
+${ROUTE('TOrder', 'TOrder')}`;
+  await assert.rejects(generateSource(t, source), /RUNM1059.*MerchantOmitId.*order\.controller\.ts:\d+:\d+ and .*order\.controller\.ts:\d+:\d+/);
+});
+
+test('one expression used by two owners yields one schema, named the same whichever model is declared first', async t => {
+  const order = "export type TOrder = IModel<{ shape: Pick<TMerchant, 'id' | 'name' | 'city' | 'first-name'>; same: Omit<TMerchant, 'id'> }>;";
+  const payment = "export type TPayment = IModel<{ shape: Pick<TMerchant, 'id' | 'name' | 'city' | 'first-name'>; same: Omit<TMerchant, 'id'> }>;";
+  const route = `@Controller('orders')
+export class OrderController { @Post() save(@Body() body: TOrder): TPayment { return body as never; } }
+`;
+  const build = (first: string, second: string): string => `import { Body, Controller, Post } from '@nestjs/common';\n${MODELS}\n${first}\n${second}\n${route}`;
+  const forward = await documentOf(t, build(order, payment));
+  const swapped = await documentOf(t, build(payment, order));
+  assert.deepEqual(Object.keys(forward.components.schemas).sort(), Object.keys(swapped.components.schemas).sort());
+  const names = Object.keys(forward.components.schemas);
+  assert.ok(names.includes('OrderShape'), 'the smallest candidate survives');
+  assert.equal(names.includes('PaymentShape'), false);
+  assert.equal(names.filter(name => name === 'MerchantOmitId').length, 1);
+  assert.equal(forward.components.schemas.Order?.properties?.same?.$ref, forward.components.schemas.Payment?.properties?.same?.$ref);
+});
+
+test('a projection whose name is shared with a different tagged shape fails instead of merging', async t => {
+  const source = `${PRELUDE}
+import type { TMerchant as TOtherMerchant } from './other.model.js';
+export type TMerchant = IModel<{ id: string; name: string }>;
+export type TOrder = IModel<{ a: Omit<TMerchant, 'id'>; b: Omit<TOtherMerchant, 'id'> }>;
+${ROUTE('TOrder', 'TOrder')}`;
+  await assert.rejects(generateSource(t, source, {
+    'src/other.model.ts': "import type { IModel } from '@exprtlabs/codegen/model';\nimport type { Pattern } from '@exprtlabs/codegen/tags';\nexport type TMerchant = IModel<{ id: string; name: string & Pattern<'^x$'> }>;\n",
+  }), /RUNM1059.*used by two different types: .*order\.controller\.ts:\d+:\d+ and .*order\.controller\.ts:\d+:\d+/);
+});
+
+test('Record fields with different value types keep separate schemas and never merge tags', async t => {
+  const source = `${PRELUDE}
+type TCode = string & Pattern<'^[A-Z]+$'>;
+export type TOrder = IModel<{ a: Record<string, string>; b: Record<string, TCode>; c: Record<string, number> }>;
+${ROUTE('TOrder', 'TOrder')}`;
+  const document = await documentOf(t, source);
+  const properties = document.components.schemas.Order?.properties ?? {};
+  assert.deepEqual(Object.keys(document.components.schemas).sort(), ['Order', 'OrderA', 'OrderB', 'OrderC']);
+  assert.equal(new Set(Object.values(properties).map(property => property.$ref)).size, 3);
+});
+
+test('a generic helper alias used twice does not name its projections', async t => {
+  const source = `${PRELUDE}
+export type TMerchant = IModel<{ id: string; name: string }>;
+export type TMoney = IModel<{ id: string; amount: string }>;
+type TWithout<T, K extends keyof T> = Omit<T, K>;
+export type TOrder = IModel<{ a: TWithout<TMerchant, 'id'>; b: TWithout<TMoney, 'id'> }>;
+${ROUTE('TOrder', 'TOrder')}`;
+  const names = Object.keys((await documentOf(t, source)).components.schemas).sort();
+  assert.deepEqual(names, ['Order', 'OrderA', 'OrderB']);
+});
+
+test('a union of projection arrays names each item from its own expression', async t => {
+  const names = await componentNames(t, controller("x: Pick<TMerchant, 'id'>[] | Pick<TMoney, 'amount'>[]"));
+  for (const expected of ['MerchantPickId', 'MoneyPickAmount']) {
+    assert.ok(names.includes(expected), `${expected} in ${names.join(', ')}`);
+  }
+});
