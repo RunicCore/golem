@@ -85,13 +85,14 @@ function steps(tier: Tier, args: readonly string[], native: boolean): Step[] {
   ];
 }
 
-export interface ImageFacts { readonly node: string; readonly npm: string; readonly playwright: string | undefined; readonly browsersPresent: boolean }
+export interface ImageFacts { readonly node: string; readonly npm: string; readonly playwright: string | undefined; readonly browsers: string | undefined; readonly browsersPresent: boolean }
 
 export function imageMismatches(actual: ImageFacts, expected: Pick<ImageFacts, 'node' | 'npm' | 'playwright'>): string[] {
   const mismatches: string[] = [];
   if (actual.node !== expected.node) mismatches.push(`node is ${actual.node}, expected ${expected.node}`);
   if (actual.npm !== expected.npm) mismatches.push(`npm is ${actual.npm}, expected ${expected.npm}`);
   if (actual.playwright !== expected.playwright) mismatches.push(`@playwright/test is ${actual.playwright ?? 'not installed'}, expected ${expected.playwright ?? 'a devDependency'}`);
+  if (actual.browsers !== expected.playwright) mismatches.push(`playwright browsers ${actual.browsers ?? 'unrecorded'} vs package.json ${expected.playwright ?? 'no devDependency'}`);
   if (!actual.browsersPresent) mismatches.push('the Playwright browsers directory is missing');
   return mismatches;
 }
@@ -114,6 +115,7 @@ function assertContainer(tier: Tier, native: boolean): void {
     node: process.version,
     npm: spawnSync('npm', ['--version'], { encoding: 'utf8' }).stdout.trim(),
     playwright: installed?.version,
+    browsers: process.env.FE_DEPS_PLAYWRIGHT_VERSION,
     browsersPresent: fs.existsSync(process.env.PLAYWRIGHT_BROWSERS_PATH ?? '/ms-playwright'),
   }, { node: 'v22.12.0', npm: '10.9.8', playwright: manifest?.devDependencies['@playwright/test'] });
   if (mismatches.length) throw new Error(`The test image is stale: ${mismatches.join('; ')}. Run: npm run test:prepare`);

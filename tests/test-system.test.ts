@@ -26,17 +26,19 @@ test('focused accepts a name pattern alone and runs it over the unit files', () 
 });
 
 test('image check passes when node, npm, playwright and browsers match', () => {
-  const facts = { node: 'v22.12.0', npm: '10.9.8', playwright: '1.63.0', browsersPresent: true };
+  const facts = { node: 'v22.12.0', npm: '10.9.8', playwright: '1.63.0', browsers: '1.63.0', browsersPresent: true };
   assert.deepEqual(imageMismatches(facts, { node: 'v22.12.0', npm: '10.9.8', playwright: '1.63.0' }), []);
 });
 
 test('image check names each failed check', () => {
   const expected = { node: 'v22.12.0', npm: '10.9.8', playwright: '1.63.0' };
-  const mismatches = imageMismatches({ node: 'v24.0.0', npm: '11.0.0', playwright: '1.60.0', browsersPresent: false }, expected);
-  assert.equal(mismatches.length, 4);
+  const mismatches = imageMismatches({ node: 'v24.0.0', npm: '11.0.0', playwright: '1.60.0', browsers: '1.59.0', browsersPresent: false }, expected);
+  assert.equal(mismatches.length, 5);
   assert.match(mismatches[0], /^node is v24\.0\.0/);
   assert.match(mismatches[1], /^npm is 11\.0\.0/);
   assert.match(mismatches[2], /^@playwright\/test is 1\.60\.0, expected 1\.63\.0/);
-  assert.match(mismatches[3], /browsers directory is missing/);
-  assert.match(imageMismatches({ node: expected.node, npm: expected.npm, playwright: undefined, browsersPresent: true }, expected)[0], /not installed/);
+  assert.match(mismatches[3], /^playwright browsers 1\.59\.0 vs package\.json 1\.63\.0/);
+  assert.match(mismatches[4], /browsers directory is missing/);
+  assert.match(imageMismatches({ node: expected.node, npm: expected.npm, playwright: undefined, browsers: '1.63.0', browsersPresent: true }, expected)[0], /not installed/);
+  assert.match(imageMismatches({ node: expected.node, npm: expected.npm, playwright: '1.63.0', browsers: undefined, browsersPresent: true }, expected)[0], /playwright browsers unrecorded vs package\.json 1\.63\.0/);
 });
