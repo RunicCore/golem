@@ -166,7 +166,7 @@ export function registerApplicationTests(
   });
 
   test('handwritten and SDK models with the same shape get different hashed codec ids', () => {
-    for (const model of ['Payment', 'Merchant', 'Money', 'PaymentInput']) {
+    for (const model of ['Payment', 'Merchant', 'Money', 'PaymentInput'] as const) {
       const modelId = modelCodecKeys[`src/payment.model.ts#${model}`];
       const sdkId = sdkCodecId(model);
       assert.match(modelId ?? '', new RegExp(`^${model}_[0-9a-f]{8}$`));
