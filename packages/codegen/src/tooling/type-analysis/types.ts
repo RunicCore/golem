@@ -1,6 +1,7 @@
 import { fieldProvenance, isPropertyMapping, isReadonlySequenceType, readonlyPropertyNames, instantiatedTypeSource, substituteTypeNode, authoredPropertyTypeNode, type TypeSubstitutions } from './projections.js';
 import * as ts from '../typescript-ns.js';
 import { diagnostic, modelSpecificationForClass, propertyType, resolveSymbol } from './symbols.js';
+import { pascalIdentifier, policySuffix, projectionBaseName, variantNameNode } from './projection-names.js';
 import { commonDirectory, canonicalFilename } from './project.js';
 import { assertSupportedModelFieldName } from '../schema.js';
 import type {
@@ -447,10 +448,11 @@ export function descriptorBuilder(
 } {
   const projections = new Map<string, ModelConversionDescriptor>();
   const projectionCache = new Map<ts.Type, Map<string, string>>();
-  let projectionCount = 0;
+  const projectionOwners = new Map<string, ts.Type>();
   const modelNames = new Map(
     specifications.map((specification) => [specification.declaration, specification.name] as const),
   );
+  const modelNameOf = (declaration: ts.TypeAliasDeclaration): string | undefined => modelNames.get(declaration);
   const stableIdentityRoot = canonicalFilename(identityRoot ?? commonDirectory(
     specifications.map((specification) => specification.sourceFile.fileName),
   ));
@@ -470,6 +472,8 @@ export function descriptorBuilder(
     representation: 'model' | 'wire' = 'model',
     provenanceNode?: ts.TypeNode,
     substitutions: TypeSubstitutions = new Map(),
+    nameHint: string = context.name,
+    nameNode?: ts.TypeNode,
   ): ModelConversionDescriptor => {
     node = substituteTypeNode(checker, node, substitutions);
     const instantiated = instantiatedTypeSource(checker, node ?? provenanceNode, substitutions);
@@ -482,14 +486,14 @@ export function descriptorBuilder(
       diagnostic: (tagNode: ts.Node, code: string, message: string) =>
         diagnostic(context.sourceFile, tagNode, code, message),
       describeSchema: (schemaType: ts.Type, schemaNode?: ts.TypeNode) =>
-        describe(schemaType, { ...context, exact: false, schemaData: true }, seen, schemaNode, representation),
+        describe(schemaType, { ...context, exact: false, schemaData: true }, seen, schemaNode, representation, undefined, undefined, nameHint),
     };
     // Analyze checker types even when a child has no corresponding AST node
     // (for example the Date branch of `Date | undefined`).
     const analysis = analyzeNode(tagContext, originalType, node);
     let metadata: InternalTagMetadata = analysis.metadata;
     if (metadata.serde && !metadata.serde.wireDescriptor) {
-      const wireDescriptor = describe(metadata.serde.wireType, context, seen, undefined, 'wire');
+      const wireDescriptor = describe(metadata.serde.wireType, context, seen, undefined, 'wire', undefined, undefined, nameHint);
       metadata = {
         ...metadata,
         serde: { ...metadata.serde, wireDescriptor },
@@ -614,7 +618,7 @@ export function descriptorBuilder(
     if (type.isUnion()) {
       const descriptor: Extract<ModelConversionDescriptor, { readonly kind: 'union' }> = {
         kind: 'union',
-        variants: type.types.map((variant) => describe(variant, context, seen, undefined, representation, node ?? provenanceNode, childSubstitutions)),
+        variants: type.types.map((variant) => describe(variant, context, seen, undefined, representation, node ?? provenanceNode, childSubstitutions, nameHint, variantNameNode(checker, node, variant))),
       };
       rejectAmbiguousGeneratedModelUnion(descriptor, context);
       return withMetadata(descriptor, metadata);
@@ -631,7 +635,7 @@ export function descriptorBuilder(
     if (type.isIntersection() && !objectLikeIntersection) {
       return withMetadata({
         kind: 'intersection',
-        variants: type.types.map((variant) => describe(variant, context, seen, undefined, representation)),
+        variants: type.types.map((variant) => describe(variant, context, seen, undefined, representation, undefined, undefined, nameHint)),
       }, metadata);
     }
     if (checker.isTupleType(type)) {
@@ -653,7 +657,7 @@ export function descriptorBuilder(
       };
       const describeItem = (item: ts.Type, index: number): ModelConversionDescriptor => {
         const itemNode = tupleElementNode(childNode, index);
-        const descriptor = describe(item, context, seen, itemNode, representation, undefined, childSubstitutions);
+        const descriptor = describe(item, context, seen, itemNode, representation, undefined, childSubstitutions, nameHint);
         // A checker's indexed access type adds undefined for an optional tuple
         // slot. Preserve it only when the authored element admits undefined;
         // the optional marker already represents an absent slot.
@@ -690,7 +694,7 @@ export function descriptorBuilder(
           kind: 'tuple',
           ...(isReadonlySequenceType(checker, type) ? { isReadonly: true as const } : {}),
           items,
-          rest: { index: restIndex, item: describe(restType, context, seen, tupleElementNode(childNode, restIndex), representation, undefined, childSubstitutions) },
+          rest: { index: restIndex, item: describe(restType, context, seen, tupleElementNode(childNode, restIndex), representation, undefined, childSubstitutions, nameHint) },
           ...(optionalFrom === undefined ? {} : { optionalFrom }),
         } as TupleConversionDescriptor, metadata);
       }
@@ -711,7 +715,7 @@ export function descriptorBuilder(
       return withMetadata({
         kind: 'array',
         ...(isReadonlySequenceType(checker, type) ? { isReadonly: true as const } : {}),
-        item: describe(item ?? checker.getAnyType(), context, seen, arrayNode && ts.isArrayTypeNode(arrayNode) ? arrayNode.elementType : typeArgumentNode(arrayNode, 0), representation, undefined, childSubstitutions),
+        item: describe(item ?? checker.getAnyType(), context, seen, arrayNode && ts.isArrayTypeNode(arrayNode) ? arrayNode.elementType : typeArgumentNode(arrayNode, 0), representation, undefined, childSubstitutions, nameHint),
       }, metadata);
     }
     if ((type.flags & ts.TypeFlags.Object) || objectLikeIntersection) {
@@ -721,7 +725,18 @@ export function descriptorBuilder(
         const cached = projectionCache.get(type) ?? new Map<string, string>();
         projectionName = cached.get(policy);
         if (projectionName) return { kind: 'reference', name: projectionName, projection: true };
-        projectionName = `__Projection${projectionCount++}`;
+        const candidate = `${projectionBaseName(checker, node ?? nameNode, modelNameOf, nameHint)}${policySuffix({
+          exact: context.exact, allowAny: context.allowAny ?? allowAny, representation,
+        })}`;
+        const owner = projectionOwners.get(candidate);
+        const clashesWithModel = [...modelNames.values()].includes(candidate);
+        if (clashesWithModel || (owner && owner !== type
+          && !(checker.isTypeAssignableTo(owner, type) && checker.isTypeAssignableTo(type, owner)))) {
+          throw diagnostic(context.sourceFile, node ?? context.declaration, '1059',
+            `Projection name ${candidate} is used by two different types. Declare a named type alias for one of them.`);
+        }
+        projectionOwners.set(candidate, owner ?? type);
+        projectionName = candidate;
         cached.set(policy, projectionName);
         projectionCache.set(type, cached);
       }
@@ -771,6 +786,7 @@ export function descriptorBuilder(
           propertyNode
             ?? (isPropertyMapping(type) ? node ?? provenanceNode : undefined),
           childSubstitutions,
+          `${projectionName ?? nameHint}${pascalIdentifier(name) ?? 'Field'}`,
         );
         if ((property.flags & ts.SymbolFlags.Optional) === 0) required.push(name);
       }
@@ -783,7 +799,7 @@ export function descriptorBuilder(
         properties,
         required,
         additionalProperties: indexType
-          ? describe(indexType, context, nextSeen, indexValueNode(childNode), representation, undefined, childSubstitutions)
+          ? describe(indexType, context, nextSeen, indexValueNode(childNode), representation, undefined, childSubstitutions, `${projectionName ?? nameHint}Value`)
           : taggedAdditional !== undefined
             ? taggedAdditional
             : !context.exact,

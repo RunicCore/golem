@@ -272,6 +272,10 @@ An error prints its code, location when known, and message, then stops generatio
 
 **Unresolved contract type.** A field's type resolves to TypeScript's internal error type because its declaration or import couldn't be resolved. **Fix:** Fix the declaration or import before generating.
 
+### RUNM1059
+
+**Generated type name clash.** Two different inline types, such as `Omit<TMerchant, 'id'>` over two unrelated `TMerchant` types, derive the same generated name. **Fix:** Declare a named type alias for one of them, for example `type TBillingMerchant = Omit<TMerchant, 'id'>`.
+
 ## Client generator (OPENAPI)
 
 ### OPENAPI_BROWSER_COOKIE

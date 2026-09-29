@@ -53,8 +53,9 @@ function rewriteConstraint(
 /** Deduplicate projected shapes using conversion, identity and policy semantics. */
 export function deduplicateProjections(
   definitions: Readonly<Record<string, ModelConversionDescriptor>>,
+  projectionNames: ReadonlySet<string>,
 ): Record<string, ModelConversionDescriptor> {
-  const names = Object.keys(definitions).filter(name => name.startsWith('__Projection'));
+  const names = Object.keys(definitions).filter(name => projectionNames.has(name)).sort();
   const canonical = (descriptor: ModelConversionDescriptor, stack: readonly string[] = []): unknown => {
     const rich = descriptor as unknown as Rich;
     if (descriptor.kind === 'reference' && descriptor.projection) {

@@ -67,7 +67,7 @@ export function createContractAnalysis(
     const graph = deduplicateProjections({
       ...definitions, ...Object.fromEntries(describe.projections),
       ...(root ? { __ControllerResult: root } : {}),
-    });
+    }, new Set(describe.projections.keys()));
     const result = graph.__ControllerResult;
     delete graph.__ControllerResult;
     for (const name of Object.keys(definitions)) delete definitions[name];

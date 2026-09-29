@@ -8,3 +8,4 @@ export * from './projections.js';
 export * from './graph.js';
 export * from './contracts.js';
 export * from './schema.js';
+export * from './projection-names.js';

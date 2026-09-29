@@ -219,11 +219,12 @@ test('deduplicates equivalent nested model projections in the emitted components
 
   const document = documentOf(await generateFixture(root));
   const schemas = expectValue(expectValue(document.components, 'OpenAPI components').schemas, 'OpenAPI component schemas');
-  const projections = Object.keys(schemas).filter(name => name.startsWith('__Projection'));
-  assert.equal(projections.length, 1, 'equivalent projections produce one component');
+  assert.ok(schemas.AddressOmitId, 'the smallest derived name survives deduplication');
+  assert.equal(schemas.AddressPickCity, undefined, 'the equivalent projection redirects to it');
   const envelope = schemaOf(document, 'Envelope');
   const omitted = propertySchema(envelope, 'omitted');
   const selected = propertySchema(envelope, 'selected');
+  assert.equal(omitted.$ref, '#/components/schemas/AddressOmitId');
   assert.equal(omitted.$ref, selected.$ref, 'all equivalent projection references redirect to one component');
   assert.equal(schemas.Address, undefined, 'unreferenced source model is not emitted');
 });

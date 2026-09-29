@@ -875,7 +875,7 @@ export function analyzeSourceGraph(
     collectProjections(descriptor, specification);
   }
   for (const [name, projection] of projections) definitions[name] = projection;
-  definitions = deduplicateProjections(definitions);
+  definitions = deduplicateProjections(definitions, new Set(projections.keys()));
   const owned = Object.fromEntries(Object.entries(definitions).filter(([name]) =>
     ![...siblings].some((sibling) => sibling.name === name)));
   const externalIds = [...Object.values(owned).reduce(
