@@ -64,7 +64,7 @@ function generatedText(root: string): string {
     for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
       const filename = path.join(directory, entry.name);
       if (entry.isDirectory()) visit(filename);
-      else if (entry.name.endsWith('.generated.ts') || entry.name === 'models.ts') files.push(filename);
+      else if (entry.name.endsWith('.generated.ts')) files.push(filename);
     }
   };
   visit(root);

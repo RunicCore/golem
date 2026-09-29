@@ -25,7 +25,7 @@ import type {
   TJsonCheckout,
 } from './features.iobject.model.js';
 import './features.iobject.model.generated.js';
-import './sdk/models.js';
+import './sdk/index.js';
 import type { Fixture, Operation } from './fixture-contract.js';
 
 registerIModelClass('ReuseContact', ReuseContact);

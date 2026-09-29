@@ -4,7 +4,7 @@ import { requireObjectCodec } from '@exprtlabs/codegen/serde';
 import type { Adapter, ComparisonFixture } from './fixture-contract.js';
 import type { TJsonCheckout } from './features.iobject.model.js';
 import './features.iobject.model.generated.js';
-import './sdk/models.js';
+import './sdk/index.js';
 import { assertFeatureWire, checkoutInput, featureComparison } from './payloads.js';
 
 export async function createCodegenObjectFeatureFixtures(adapter: Adapter): Promise<readonly ComparisonFixture[]> {

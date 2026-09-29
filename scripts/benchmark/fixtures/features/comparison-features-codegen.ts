@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { registerIModelClass, requireObjectCodec } from '@exprtlabs/codegen/serde';
 import type { Adapter, ComparisonFixture } from './fixture-contract.js';
 import { Checkout, LineItem } from './features.model.js';
-import './sdk/models.js';
+import './sdk/index.js';
 import { assertFeatureWire, checkoutInput, featureComparison } from './payloads.js';
 
 registerIModelClass('LineItem', LineItem);
