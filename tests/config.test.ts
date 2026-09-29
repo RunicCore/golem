@@ -56,7 +56,7 @@ test('configured provider absence and incompatible API have distinct actionable 
   );
   const provider = path.join(root, 'node_modules/@exprtlabs/model-codegen');
   fs.mkdirSync(provider, { recursive: true });
-  fs.writeFileSync(path.join(provider, 'package.json'), JSON.stringify({ name: '@exprtlabs/model-codegen', type: 'module', exports: { './generator': './index.js' } }));
+  fs.writeFileSync(path.join(provider, 'package.json'), JSON.stringify({ name: '@exprtlabs/model-codegen', version, type: 'module', exports: { './generator': './index.js' } }));
   fs.writeFileSync(path.join(provider, 'index.js'), 'export const apiVersion = 99;\nexport function generate() {}\n');
   await assert.rejects(providersFor(loadConfig(filename)), /CLI supports API 1.*99/);
 });

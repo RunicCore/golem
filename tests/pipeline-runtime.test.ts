@@ -33,12 +33,18 @@ function linkPackages(root: string, names: readonly string[]): void {
   ));
 }
 
+function workspaceReleaseVersion(): string {
+  const { version } = JSON.parse(fs.readFileSync(path.join(workspace, 'packages/codegen/package.json'), 'utf8')) as { version: string };
+  return version;
+}
+
 function installFakeOpenApiProvider(root: string, manifest: unknown): void {
   const packageRoot = path.join(root, 'node_modules/@exprtlabs/openapi-to-ts');
   fs.rmSync(packageRoot, { recursive: true, force: true });
   fs.mkdirSync(packageRoot, { recursive: true });
   fs.writeFileSync(path.join(packageRoot, 'package.json'), JSON.stringify({
     name: '@exprtlabs/openapi-to-ts',
+    version: workspaceReleaseVersion(),
     type: 'module',
     exports: { './generator': './generator.js' },
   }));

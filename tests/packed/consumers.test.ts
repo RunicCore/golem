@@ -184,6 +184,10 @@ test('CLI resolves configured providers from a project with spaces outside cwd a
 
   const provider = path.join(root, 'node_modules/@exprtlabs/openapi-to-ts');
   copyFixtureFile(provider, 'packed/incompatible-provider/package.json', 'package.json');
+  // The runtime version check runs before the provider loads, so the fake needs the packed release version.
+  const providerManifest: Record<string, unknown> = JSON.parse(fs.readFileSync(path.join(provider, 'package.json'), 'utf8'));
+  const packedRelease: { version: string } = JSON.parse(fs.readFileSync(path.join(root, 'node_modules/@exprtlabs/codegen/package.json'), 'utf8'));
+  fs.writeFileSync(path.join(provider, 'package.json'), JSON.stringify({ ...providerManifest, version: packedRelease.version }));
   copyFixtureFile(provider, 'packed/incompatible-provider/incompatible.js', 'incompatible.js');
   const beforeIncompatible = registry.requests.length;
   const incompatible = await command(workspace, binary, ['check', '--config', config], { allowFailure: true });
