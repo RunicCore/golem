@@ -93,7 +93,7 @@ test('prefixItems unions compile in strict TypeScript and validate on default Aj
   copyFixtureFile(output, "openapi/prefix-items/prefix-assert.ts", "prefix-assert.ts");
   compileGeneratedSdk(output, [path.join(output, 'prefix-assert.ts')], { strict: true });
   const validation = requireRecord(
-    await import(pathToFileURL(path.join(output, 'dist/validation.js')).href),
+    await import(pathToFileURL(path.join(output, 'dist/schemas.js')).href),
     'validation',
   );
   const createOperationRuntimeValidators = validation.createOperationRuntimeValidators as (
@@ -124,7 +124,7 @@ test('prefixItems rest tuples accept extra items at runtime while keeping positi
   copyFixtureFile(output, "openapi/prefix-items/prefix-rest-assert.ts", "prefix-rest-assert.ts");
   compileGeneratedSdk(output, [path.join(output, 'prefix-rest-assert.ts')], { strict: true });
   const validation = requireRecord(
-    await import(pathToFileURL(path.join(output, 'dist/validation.js')).href),
+    await import(pathToFileURL(path.join(output, 'dist/schemas.js')).href),
     'validation',
   );
   const createOperationRuntimeValidators = validation.createOperationRuntimeValidators as (

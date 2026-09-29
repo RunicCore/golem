@@ -16,6 +16,7 @@ import type {
 } from './model.js';
 export { runValidation } from './validation-runner.js';
 export { createStaticValidationEngine } from './static-validation.js';
+export * from './schema-registry-validation.js';
 
 import { runValidationNow } from './validation-runner.js';
 import {

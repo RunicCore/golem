@@ -57,6 +57,7 @@ test('OpenAPI getValidator infers generated fields and rejects handwritten subcl
   const output = path.join(directory, 'sdk');
   copyFixtureFile(directory, 'openapi/api/validator-types/openapi.yaml', 'openapi.yaml');
   const result = await generate({ input, output, name: 'ValidatorTypes', profile: { mobx: false, validation: true } });
+  assert.equal(result.artifacts.some(({ path: filename }) => filename.endsWith('/validation.ts')), false);
   writeGeneratedArtifacts(result.artifacts);
   linkProjectPackages(output, { '@exprtlabs/codegen': path.join(workspace, 'packages/codegen') });
   copyFixtureFile(output, "openapi/api/consumer.ts", "consumer.ts");

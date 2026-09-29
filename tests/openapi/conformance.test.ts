@@ -490,7 +490,11 @@ test('generation is deterministic', async (t) => {
     fs.readFileSync(path.join(output, 'types.ts'), 'utf8'),
     /@runic-model-manifest \.\/model-manifest\.json/,
   );
-  assert.match(fs.readFileSync(path.join(output, 'validation.ts'), 'utf8'), /RuntimeValidationEngine/);
+  assert.equal(fs.existsSync(path.join(output, 'validation.ts')), false);
+  compileGeneratedSdk(output, []);
+  const generatedSchemas = await import(pathToFileURL(path.join(output, 'dist/schemas.js')).href);
+  assert.equal(typeof generatedSchemas.createRuntimeValidators, 'function');
+  assert.equal(typeof generatedSchemas.createOperationRuntimeValidators, 'function');
 });
 
 function wireAuthDocument() {
@@ -1422,7 +1426,7 @@ test('generated SDK operation validators and client enforce request/response sch
   ], { encoding: 'utf8' });
   assert.equal(compiled.status, 0, compiled.stderr || compiled.stdout);
   const generatedValidation = await import(
-    pathToFileURL(path.join(sdkOutput, 'dist/validation.js')).href
+    pathToFileURL(path.join(sdkOutput, 'dist/schemas.js')).href
   );
   const operationValidators = generatedValidation.createOperationRuntimeValidators(
     createOpenApiAjvEngine(),

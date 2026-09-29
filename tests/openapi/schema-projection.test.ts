@@ -96,7 +96,7 @@ async function generateProjection(t: TestContext, openapi: string) {
   });
   compileGeneratedSdk(output);
   const validation = requireRecord(
-    await import(pathToFileURL(path.join(output, 'dist/validation.js')).href),
+    await import(pathToFileURL(path.join(output, 'dist/schemas.js')).href),
     'validation',
   );
   const schemas = requireRecord(
@@ -228,7 +228,7 @@ test('public generation validates repeated aliases, sibling allOf required, and 
   copyFixtureFile(output, "openapi/schema-projection/alias-assert.ts", "alias-assert.ts");
   compileGeneratedSdk(output, [path.join(output, 'alias-assert.ts')], { strict: true });
   const validation = requireRecord(
-    await import(pathToFileURL(path.join(output, 'dist/validation.js')).href),
+    await import(pathToFileURL(path.join(output, 'dist/schemas.js')).href),
     'validation',
   );
   const operations = operationValidators(validation);
@@ -315,7 +315,7 @@ async function assertDirectionalEnvelope(
   assert.match(inputPack, new RegExp(`${escaped}:input`));
 
   const validation = requireRecord(
-    await import(pathToFileURL(path.join(output, 'dist/validation.js')).href),
+    await import(pathToFileURL(path.join(output, 'dist/schemas.js')).href),
     'validation',
   );
   const operations = operationValidators(validation);

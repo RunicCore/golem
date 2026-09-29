@@ -276,7 +276,6 @@ test('minimal GET without content omits codec options and unused helpers', async
     'client-runtime.ts',
     'operations/ping.ts',
     'schemas.ts',
-    ...(profile.validation ? ['validation.ts'] : []),
   ]);
 
   const output = outputDir(t, 'codec-omit');

@@ -854,6 +854,22 @@ export const operationResponseSchemaEntries: ReadonlyArray<
 `;
   }
   return `${generatedBanner()}
+import {
+  createRegistryOperationValidators,
+  createRegistryValidators,
+  type OperationRuntimeValidators,
+  type RuntimeValidationEngine,
+  type RuntimeValidator,
+} from '@exprtlabs/codegen/validation';
+
+export {
+  validateWith,
+  type OperationRuntimeValidators,
+  type RuntimeValidationEngine,
+  type RuntimeValidator,
+  type ValidationResult,
+} from '@exprtlabs/codegen/validation';
+
 /** Exact component and operation schemas retained for runtime validation. */
 export const schemaDialect = ${JSON.stringify(schemaDialect)} as const;
 export const schemaRegistry = ${registryJson} as const;
@@ -885,6 +901,27 @@ export function operationResponseReference(
   contentType: string,
 ): string {
   return \`\${schemaRegistry.$id}#/operations/\${pointerToken(String(name))}/responses/\${pointerToken(status)}/\${pointerToken(contentType)}\`;
+}
+
+const registryData = {
+  schemaRegistry,
+  runtimeSchemaRegistry,
+  schemaNames,
+  operationNames,
+  operationResponseSchemaEntries,
+  schemaReference,
+  operationInputReference,
+  operationResponseReference,
+};
+
+export function createRuntimeValidators(engine: RuntimeValidationEngine): ReadonlyMap<SchemaName, RuntimeValidator> {
+  return createRegistryValidators(engine, registryData);
+}
+
+export function createOperationRuntimeValidators(
+  engine: RuntimeValidationEngine,
+): ReadonlyMap<OperationName, OperationRuntimeValidators> {
+  return createRegistryOperationValidators(engine, registryData);
 }
 `;
 }

@@ -29,8 +29,7 @@ export type ArtifactFile =
   | 'client.ts'
   | 'inbound.ts'
   | 'links.ts'
-  | 'schemas.ts'
-  | 'validation.ts';
+  | 'schemas.ts';
 
 export type ClientHelperName =
   | 'constructor' | 'baseUrl' | 'fetchImpl' | 'defaultHeaders' | 'url'
@@ -358,7 +357,6 @@ export function buildEmissionPlan(
   };
   const needsSchemas = hasOutboundOperations
     || (profile.validation && (hasModels || hasOutboundOperations || hasInboundOperations));
-  const needsValidation = profile.validation && (hasOutboundOperations || hasInboundOperations);
   const artifacts = new Set<ArtifactFile>(ALWAYS_ARTIFACTS);
   if (hasComponentSchemas) {
     artifacts.add('input-schemas.ts');
@@ -369,7 +367,6 @@ export function buildEmissionPlan(
   if (hasInboundOperations) artifacts.add('inbound.ts');
   if (links) artifacts.add('links.ts');
   if (needsSchemas) artifacts.add('schemas.ts');
-  if (needsValidation) artifacts.add('validation.ts');
 
   const partial = {
     profile,

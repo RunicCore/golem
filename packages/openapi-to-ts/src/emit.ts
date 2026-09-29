@@ -121,7 +121,6 @@ ${include('client.ts') ? "export * from './client.js';" : ''}
 ${include('inbound.ts') ? "export * from './inbound.js';" : ''}
 ${include('links.ts') ? "export * from './links.js';" : ''}
 ${include('schemas.ts') ? "export * from './schemas.js';" : ''}
-${include('validation.ts') ? "export * from './validation.js';" : ''}
 `;
 }
 
@@ -139,111 +138,6 @@ import type * as Types from './types.js';
  */
 export interface ${clientName}InboundPort {
 ${methods}
-}
-`;
-}
-
-export function generateValidation(): string {
-  return `${generatedBanner()}
-import { runValidation } from '@exprtlabs/codegen/validation';
-import { LibError, LibErrorKind } from '@exprtlabs/codegen/errors';
-import {
-  operationInputReference,
-  operationNames,
-  operationResponseReference,
-  operationResponseSchemaEntries,
-  schemaNames,
-  schemaReference,
-  schemaRegistry,
-  runtimeSchemaRegistry,
-  type OperationName,
-  type SchemaName,
-} from './schemas.js';
-
-export interface ValidationResult {
-  valid: boolean;
-  errors?: readonly unknown[] | null;
-}
-
-export interface RuntimeValidator {
-  (value: unknown): boolean | Promise<boolean>;
-  readonly errors?: readonly unknown[] | null;
-}
-
-/**
- * Adapter boundary for a JSON Schema implementation that supports the emitted
- * schemaDialect. Constraints not representable in TypeScript remain enforced
- * by this runtime engine.
- */
-export interface RuntimeValidationEngine {
-  addSchema(schema: object | boolean, id: string): void;
-  getSchema(reference: string): RuntimeValidator | undefined;
-}
-
-export interface OperationRuntimeValidators {
-  readonly input: RuntimeValidator;
-  readonly responses: ReadonlyMap<string, RuntimeValidator>;
-}
-
-function registerSchemaRegistry(engine: RuntimeValidationEngine): void {
-  if (!engine.getSchema(schemaRegistry.$id)) {
-    engine.addSchema(runtimeSchemaRegistry, schemaRegistry.$id);
-  }
-  const defs = Reflect.get(runtimeSchemaRegistry, '$defs');
-  if (defs && typeof defs === 'object' && !Array.isArray(defs)) {
-    for (const resource of Object.values(defs as Record<string, unknown>)) {
-      if (!resource || typeof resource !== 'object' || Array.isArray(resource)) continue;
-      const id = Reflect.get(resource, '$id');
-      if (typeof id === 'string' && !engine.getSchema(id)) {
-        engine.addSchema(resource as object, id);
-      }
-    }
-  }
-}
-
-export function createRuntimeValidators(engine: RuntimeValidationEngine): ReadonlyMap<SchemaName, RuntimeValidator> {
-  registerSchemaRegistry(engine);
-  const validators = new Map<SchemaName, RuntimeValidator>();
-  for (const name of schemaNames) {
-    const validator = engine.getSchema(schemaReference(name));
-    if (!validator) throw new LibError(LibErrorKind.ValidationUnavailable, \`Runtime validator could not compile schema: \${name}\`);
-    validators.set(name, validator);
-  }
-  return validators;
-}
-
-export function createOperationRuntimeValidators(
-  engine: RuntimeValidationEngine,
-): ReadonlyMap<OperationName, OperationRuntimeValidators> {
-  registerSchemaRegistry(engine);
-  const responseEntries = new Map<OperationName, Array<readonly [string, string]>>();
-  for (const [name, status, contentType] of operationResponseSchemaEntries) {
-    const entries = responseEntries.get(name) ?? [];
-    entries.push([status, contentType]);
-    responseEntries.set(name, entries);
-  }
-  const validators = new Map<OperationName, OperationRuntimeValidators>();
-  for (const name of operationNames) {
-    const input = engine.getSchema(operationInputReference(name));
-    if (!input) throw new LibError(LibErrorKind.ValidationUnavailable, \`Runtime validator could not compile operation input: \${name}\`);
-    const responses = new Map<string, RuntimeValidator>();
-    for (const [status, contentType] of responseEntries.get(name) ?? []) {
-      const validator = engine.getSchema(operationResponseReference(name, status, contentType));
-      if (!validator) {
-        throw new LibError(LibErrorKind.ValidationUnavailable, \`Runtime validator could not compile operation response: \${name} \${status} \${contentType}\`);
-      }
-      responses.set(\`\${status}:\${contentType}\`, validator);
-    }
-    validators.set(name, { input, responses });
-  }
-  return validators;
-}
-
-export async function validateWith(
-  validator: RuntimeValidator,
-  value: unknown,
-): Promise<ValidationResult> {
-  return runValidation(validator, value);
 }
 `;
 }
@@ -305,9 +199,6 @@ export function generatedFiles(document: unknown, options: WriteSdkOptions): {
   }
   if (plan.artifacts.has('schemas.ts')) {
     files.set('schemas.ts', generateSchemas(document, profile, schemaData));
-  }
-  if (plan.artifacts.has('validation.ts')) {
-    files.set('validation.ts', generateValidation());
   }
   if (profile.ajvStandalone && profile.validation && plan.artifacts.has('schemas.ts')) {
     const data = schemaData ?? buildSchemaData(document, ir);
