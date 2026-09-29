@@ -4,21 +4,21 @@
     "src/builtin-tags.model.generated.ts": {
       "job": "models:.",
       "owner": "@exprtlabs/model-codegen",
-      "digest": "42da732d0ea804693d0af042e300468749a7416f1df056087007ea11c7f2b6c9",
+      "digest": "3d6fbdd798e3ce809b81ddd90652200122f0539653d96117be20389ca62402ac",
       "destination": "src",
       "destinationKind": "directory"
     },
     "src/collection-tags.model.generated.ts": {
       "job": "models:.",
       "owner": "@exprtlabs/model-codegen",
-      "digest": "0898a65d2e0b1c632503454475aac6f8401476ba095885a1a5b178a5f3a19194",
+      "digest": "f31408f79d6a402ad8681b5ea8429b04627a0ec695eed6a45d0431e491f09378",
       "destination": "src",
       "destinationKind": "directory"
     },
     "src/generated/models/iobject-plugin-keys.ts": {
       "job": "models:.",
       "owner": "@exprtlabs/model-codegen",
-      "digest": "bebac9e174248818e1d7b188d8b8527cc85bd9a02cf4a70c7e2c4620ebebe6e0",
+      "digest": "3f5066128df8eb2454e82d67d369f5af5770dc18e0bb51cc24c38548fd344078",
       "destination": "src/generated/models",
       "destinationKind": "directory"
     },
@@ -32,42 +32,42 @@
     "src/money.model.generated.ts": {
       "job": "models:.",
       "owner": "@exprtlabs/model-codegen",
-      "digest": "988c4fc23d0ec2f62fdeb85bfd80027b97b2fc532d8adcfe5a7e5d679ce4ef08",
+      "digest": "2b2cb2efa6326615a2799d2c3ba343571a1b3b80921830764065a050da49313c",
       "destination": "src",
       "destinationKind": "directory"
     },
     "src/note.model.generated.ts": {
       "job": "models:.",
       "owner": "@exprtlabs/model-codegen",
-      "digest": "a1b743b7eeff6b725e982a415669c69fbc45ba29cab30d2589f0363b596870d2",
+      "digest": "40964e8e1134e5f25b45cdda69b1f3983aa4c03caeff7da15b4741c57fef7d27",
       "destination": "src",
       "destinationKind": "directory"
     },
     "src/order-input.model.generated.ts": {
       "job": "models:.",
       "owner": "@exprtlabs/model-codegen",
-      "digest": "25e85023326a95459bd04e37e6d5e992008b2a9e46324a130b4e7da27f6ef763",
+      "digest": "f7b86414fd34c70215da8860e970512a595ee58ef90311914763b52ea8484dce",
       "destination": "src",
       "destinationKind": "directory"
     },
     "src/permission-input.model.generated.ts": {
       "job": "models:.",
       "owner": "@exprtlabs/model-codegen",
-      "digest": "7928fc77049e0936e5c91cd79ed073df8fb96b298776b2cf8bf5550f7f93ba22",
+      "digest": "764bee5c72ba96d0e6a5869a97ebbc887ca384aef80ee9ca4f412319be862a23",
       "destination": "src",
       "destinationKind": "directory"
     },
     "src/task-input.model.generated.ts": {
       "job": "models:.",
       "owner": "@exprtlabs/model-codegen",
-      "digest": "9d52da40916f0abcc00132e366e985b0f15c2bb0d004231042242cb0cb881ee0",
+      "digest": "6a48c3351fe0683b4136e070ee21295bd7ddba7173198161fc5a1de0e5a1c740",
       "destination": "src",
       "destinationKind": "directory"
     },
     "src/task.model.generated.ts": {
       "job": "models:.",
       "owner": "@exprtlabs/model-codegen",
-      "digest": "94cd8eddce92bb6ac014e983efc29ed35254c67ee9606cba7695fb186f857934",
+      "digest": "cd2f76686bf7420d5f810de5ce2053012e274246b17cdc4f0ab11c75a4a6c822",
       "destination": "src",
       "destinationKind": "directory"
     }

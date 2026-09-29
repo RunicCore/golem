@@ -53,11 +53,11 @@ registerGeneratedModel(TaskBase, {
     decode: (value, constructor) => decodeTaskModel(constructor ?? TaskBase, value),
     encode: encodeTaskModel,
   },
-  codecId: "Task_7cba84d0",
+  codecId: "Task_d553b631",
   profile: { validation: false, mobx: true },
 });
 
-registerIModelClass("Task_7cba84d0", TaskBase);
+registerIModelClass("Task_d553b631", TaskBase);
 
 function fillTask(out: Record<string, unknown>, wire: Record<string, unknown>, copyIdentity = true): Record<string, unknown> {
   if (copyIdentity) {
@@ -115,13 +115,13 @@ export function assertTask(_value: unknown): Record<string, unknown> {
 }
 
 
-createObjectCodec("Task_7cba84d0", {
+createObjectCodec("Task_d553b631", {
   stringify: stringifyTask as (value: never, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/codegen/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }) => string,
   parse: parseTask as (text: string, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/codegen/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }) => never,
   validate: validateTask,
   assert: assertTask,
   toWireFormat: toWireFormatTask,
   fromWireFormat: fromWireFormatTask,
-  schema: JSON.parse("{\"$id\":\"Task_7cba84d0\",\"type\":\"object\",\"properties\":{\"done\":{\"type\":\"boolean\"},\"title\":{\"type\":\"string\"}},\"required\":[\"done\",\"title\"],\"additionalProperties\":false}") as object,
+  schema: JSON.parse("{\"$id\":\"Task_d553b631\",\"type\":\"object\",\"properties\":{\"done\":{\"type\":\"boolean\"},\"title\":{\"type\":\"string\"}},\"required\":[\"done\",\"title\"],\"additionalProperties\":false}") as object,
   issueSource: IssueSource.TypeScript,
 });

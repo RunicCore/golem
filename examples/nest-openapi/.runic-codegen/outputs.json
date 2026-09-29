@@ -8,24 +8,17 @@
       "destination": "api/openapi.yaml",
       "destinationKind": "file"
     },
-    "sdk/client-runtime.ts": {
-      "job": "openapi:sdk",
-      "owner": "@exprtlabs/openapi-to-ts",
-      "digest": "ce9f8ea68f55256b4b8dae6860b5f9e4e86a6f9a131bf1a9604c1cee4a80f536",
-      "destination": "sdk",
-      "destinationKind": "directory"
-    },
     "sdk/client.ts": {
       "job": "openapi:sdk",
       "owner": "@exprtlabs/openapi-to-ts",
-      "digest": "f4d0f07a6d112fedbc24ee4c54d6ce0868d5225392fc551293a3fd326bf0b776",
+      "digest": "b03c4f0f74aa4f0364c23b0dfbb2a9a288ccb03d56a10414cb4a890146a1fa00",
       "destination": "sdk",
       "destinationKind": "directory"
     },
     "sdk/index.ts": {
       "job": "openapi:sdk",
       "owner": "@exprtlabs/openapi-to-ts",
-      "digest": "421817c3121f4ee0fa5d7b012e82bc9b4fa281bba9ec53ad0d953a460de92b55",
+      "digest": "652fab3e3a73f25a4f7255acf36bb2eff2fab63f3a5c3f4307316aa554f4b76b",
       "destination": "sdk",
       "destinationKind": "directory"
     },
@@ -39,126 +32,119 @@
     "sdk/iobject-plugin-keys.ts": {
       "job": "openapi:sdk",
       "owner": "@exprtlabs/openapi-to-ts",
-      "digest": "7b1138b1b826514d7128f2b7108cc2c0d1964df0403dcfe1e26aeeca5fe13bbc",
+      "digest": "91466c2b5d6258cf2bf3e51dede859e0386628cc4415f7009f64491bf083636a",
       "destination": "sdk",
       "destinationKind": "directory"
     },
     "sdk/model-manifest.json": {
       "job": "openapi:sdk",
       "owner": "@exprtlabs/openapi-to-ts",
-      "digest": "4982b0f9018dad2e90c5f7eeb3adb47313f1a8ca3aec29a33ce9e042aa3529c4",
+      "digest": "d067285429a4f2157c4b261696ccf746860eecc6e0a6833c8534e4334e992893",
       "destination": "sdk",
       "destinationKind": "directory"
     },
-    "sdk/models.ts": {
+    "sdk/models/_group-1246ba12.ts": {
       "job": "openapi:sdk",
       "owner": "@exprtlabs/openapi-to-ts",
-      "digest": "6d6332675f43e50a48c60ed871e06f2299ba89cb9881b60179a8a08183c627a8",
+      "digest": "2891152c903522956c5edfae5e9b05323e6a207f1f1bb0271d07716b15aa613f",
       "destination": "sdk",
       "destinationKind": "directory"
     },
-    "sdk/models/_group-2efd6b13.ts": {
+    "sdk/models/_group-57bcd84e.ts": {
       "job": "openapi:sdk",
       "owner": "@exprtlabs/openapi-to-ts",
-      "digest": "79a977b1c50fa5c6ccadf039ed608e0f32481d8e63728e007a48f72484e3f526",
+      "digest": "7c74c5e77e1452a59d95fcd9eb576afb55469e1b865e7fb05011effe2613ccd2",
       "destination": "sdk",
       "destinationKind": "directory"
     },
-    "sdk/models/_group-36a03266.ts": {
+    "sdk/models/_group-9667d97a.ts": {
       "job": "openapi:sdk",
       "owner": "@exprtlabs/openapi-to-ts",
-      "digest": "0a24196bdfafea3e53afef71c0222673a75015e1b9197a1bcace6cf203acc4a2",
+      "digest": "77e2727b22292d2f9068f560ef3793f097d0645ad12bd91284e59dd09657f897",
       "destination": "sdk",
       "destinationKind": "directory"
     },
-    "sdk/models/_group-a5169c51.ts": {
+    "sdk/models/_group-e0e37ed7.ts": {
       "job": "openapi:sdk",
       "owner": "@exprtlabs/openapi-to-ts",
-      "digest": "e4c89b6f3e3d1f3f7e904c2c7736a6fbd937c15cbfd8c84eadc38a0cdabe1756",
+      "digest": "05815bf357cffec7467893b4827c1d5b5d3962d7e067178787de126587976de3",
       "destination": "sdk",
       "destinationKind": "directory"
     },
-    "sdk/models/_group-bfb6e7d1.ts": {
+    "sdk/models/_group-f842534f.ts": {
       "job": "openapi:sdk",
       "owner": "@exprtlabs/openapi-to-ts",
-      "digest": "da68e50d5f04849de6136e8e8c579a86ffbd5f1abf7ea1b69e2c4f355938e013",
-      "destination": "sdk",
-      "destinationKind": "directory"
-    },
-    "sdk/models/_group-dce2118f.ts": {
-      "job": "openapi:sdk",
-      "owner": "@exprtlabs/openapi-to-ts",
-      "digest": "eb4daf594759b1824452c7aa547b56dc2f1c52ed41641dd6e4cc891d131102cb",
+      "digest": "3672b9fe0c194c507a123cf109bfc7800b684672b627d8da9a15e2ae9af3929c",
       "destination": "sdk",
       "destinationKind": "directory"
     },
     "sdk/models/Merchant.ts": {
       "job": "openapi:sdk",
       "owner": "@exprtlabs/openapi-to-ts",
-      "digest": "393053f51b22d8f1712054bece0c0d7ec2d12e46118ebb050e640b5f267b194d",
+      "digest": "a0c41653de21bf49d1c5e56abcb43fd8ebe99820ff08287ed29e0e78a9da69a4",
       "destination": "sdk",
       "destinationKind": "directory"
     },
     "sdk/models/MerchantOmitId.ts": {
       "job": "openapi:sdk",
       "owner": "@exprtlabs/openapi-to-ts",
-      "digest": "bac87be8e3e43e083d6de284eb9af8f884666acf625634bd362bee147165a6da",
+      "digest": "a3ae68462db2b8e1658cbe93f372fd041862e41a23df1746b4f5170e3efe9eda",
       "destination": "sdk",
       "destinationKind": "directory"
     },
     "sdk/models/Money.ts": {
       "job": "openapi:sdk",
       "owner": "@exprtlabs/openapi-to-ts",
-      "digest": "fece28135ff62a8ca2be20a0c4606b3711d319839f589aa967440560609826f1",
+      "digest": "e1d51979a29fb2700cd056c7722c64cf71f5cca7f82973139bd1cf1c5e53322b",
       "destination": "sdk",
       "destinationKind": "directory"
     },
     "sdk/models/Payment.ts": {
       "job": "openapi:sdk",
       "owner": "@exprtlabs/openapi-to-ts",
-      "digest": "0235b338189c5a08a63eab666c77ada70733fb0059e365d78cb18cb4a1d4ad1b",
+      "digest": "89d77b4555da3f1fb8ef79c3e6624e1cb9cfb18d03b962582a04d3b71590d602",
       "destination": "sdk",
       "destinationKind": "directory"
     },
     "sdk/models/PaymentInput.ts": {
       "job": "openapi:sdk",
       "owner": "@exprtlabs/openapi-to-ts",
-      "digest": "581806c6369ff212acc98f2e26d939688e72b29c20ab82e5fab2cc2ae094e340",
+      "digest": "03d58b94cc599159a5034131d61181cef76bebad6c2cca7e7f2c07556b96aa8a",
       "destination": "sdk",
       "destinationKind": "directory"
     },
     "sdk/operations/createPayment.ts": {
       "job": "openapi:sdk",
       "owner": "@exprtlabs/openapi-to-ts",
-      "digest": "ef1ffc76b79b81d1b2a4db261957c267927aefb59c293f34f41271ea778daa90",
+      "digest": "13fe4824cde619f0e82d03a1e660600ceb908bd83e329324b34901a9b6f3d975",
       "destination": "sdk",
       "destinationKind": "directory"
     },
     "sdk/operations/createPaymentAsClass.ts": {
       "job": "openapi:sdk",
       "owner": "@exprtlabs/openapi-to-ts",
-      "digest": "87a702b9529e1dc1aea0620066368a3c325cd91a076e5a10d6d00d610aa31015",
+      "digest": "b1fc6cd0c0e26b5dabfaf00575f8a68f62bf6878cef0a619c1d075eaeb507c6a",
       "destination": "sdk",
       "destinationKind": "directory"
     },
     "sdk/operations/deletePayment.ts": {
       "job": "openapi:sdk",
       "owner": "@exprtlabs/openapi-to-ts",
-      "digest": "b3c88a75344281965193b2dad4cc72960205d46d706e186763d4ec2e12fda5f4",
+      "digest": "b3633fc6866676b1489596b700971bcaea13fd707dd48f86324428c355c51afb",
       "destination": "sdk",
       "destinationKind": "directory"
     },
     "sdk/operations/getPayment.ts": {
       "job": "openapi:sdk",
       "owner": "@exprtlabs/openapi-to-ts",
-      "digest": "04af430ae1ff89e36704091ba9c73fd8d7d23cca22f81bcc8a3fb078f84e7a19",
+      "digest": "853d394afefcfbb6f6e73b4cb001260616e1e9b7883aeaa4b0207613117df594",
       "destination": "sdk",
       "destinationKind": "directory"
     },
     "sdk/operations/listPayments.ts": {
       "job": "openapi:sdk",
       "owner": "@exprtlabs/openapi-to-ts",
-      "digest": "2196278f458596f0e3fc8fcb66f25d30947a89c19dc8f5ee929fc20eee701b29",
+      "digest": "0e35ca3201a929bc1dc7e390743dbb972b9719078919542905d7111163a6638a",
       "destination": "sdk",
       "destinationKind": "directory"
     },
@@ -172,7 +158,7 @@
     "sdk/schemas.ts": {
       "job": "openapi:sdk",
       "owner": "@exprtlabs/openapi-to-ts",
-      "digest": "a119a6c8984cda3db102eeb72ff7996970f307a5c273de60544ee90ba8143158",
+      "digest": "4366a0d6e5a9ec018d9119381637f6a64a01a72575145e9c474bbb9c24b52ac9",
       "destination": "sdk",
       "destinationKind": "directory"
     },
@@ -246,31 +232,24 @@
       "destination": "sdk",
       "destinationKind": "directory"
     },
-    "sdk/validation.ts": {
-      "job": "openapi:sdk",
-      "owner": "@exprtlabs/openapi-to-ts",
-      "digest": "711f62847c3449a9e04dff408915a1986b961d19ded3192cc0dfebe434e2a7cd",
-      "destination": "sdk",
-      "destinationKind": "directory"
-    },
     "src/generated/models/iobject-plugin-keys.ts": {
       "job": "models:.",
       "owner": "@exprtlabs/model-codegen",
-      "digest": "33f5bd60a1c15306476465ab4583577d9de12dc79530f6bb6106fbdbc8711237",
+      "digest": "16fc7fe8745fa8d499dd1ae99640682c5927898d514c0097e39680c469db0618",
       "destination": "src/generated/models",
       "destinationKind": "directory"
     },
     "src/generated/operation-codecs.ts": {
       "job": "controllers:api/openapi.yaml",
       "owner": "@exprtlabs/ts-to-openapi",
-      "digest": "8246612795a9093c17d4ad054f4b96395d2921c1fe4e1dc6550eb0e3f4774838",
+      "digest": "b2e291caba0080b3c25ae717c13033618dac141754456888fe6a5c043a6fbd14",
       "destination": "src/generated/operation-codecs.ts",
       "destinationKind": "file"
     },
     "src/payment.model.generated.ts": {
       "job": "models:.",
       "owner": "@exprtlabs/model-codegen",
-      "digest": "9ca6ad14a31e95f55db34f6e5b730bb793398909351d498121e804e52d75b1cd",
+      "digest": "e7cf9bddce0d73895e87c479dcc663e945fe813cdd0da8ac4bc2ec139eda89df",
       "destination": "src",
       "destinationKind": "directory"
     }

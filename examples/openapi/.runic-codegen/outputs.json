@@ -1,24 +1,17 @@
 {
   "version": 1,
   "files": {
-    "sdk/client-runtime.ts": {
-      "job": "openapi:sdk",
-      "owner": "@exprtlabs/openapi-to-ts",
-      "digest": "d8d065bf2b785870f7ba4fe71c7d0cd0b77b83219460ff2eed773bfa185d95d4",
-      "destination": "sdk",
-      "destinationKind": "directory"
-    },
     "sdk/client.ts": {
       "job": "openapi:sdk",
       "owner": "@exprtlabs/openapi-to-ts",
-      "digest": "368075daee55805a36acfbef4bb9f48712b7518a4a8b9c371255cf7de414032e",
+      "digest": "fa00ac2ec3747dad16a7bb870198ca4516ad6fcbee456d9b3455a044b34c6a09",
       "destination": "sdk",
       "destinationKind": "directory"
     },
     "sdk/index.ts": {
       "job": "openapi:sdk",
       "owner": "@exprtlabs/openapi-to-ts",
-      "digest": "421817c3121f4ee0fa5d7b012e82bc9b4fa281bba9ec53ad0d953a460de92b55",
+      "digest": "11e999af4c18186f0b1d61b2b00f7495c9763558928a5930a4b7c4b69cf7feaf",
       "destination": "sdk",
       "destinationKind": "directory"
     },
@@ -32,56 +25,49 @@
     "sdk/iobject-plugin-keys.ts": {
       "job": "openapi:sdk",
       "owner": "@exprtlabs/openapi-to-ts",
-      "digest": "5671f7ac2bbc7a8e304dac85488f20fe9169327b5200213f3ff14756d27d8c1c",
+      "digest": "616c0c8d4001f6c25b6b6fbf6f5f1017f24a45412910b7694e6f4b0c4f023499",
       "destination": "sdk",
       "destinationKind": "directory"
     },
     "sdk/model-manifest.json": {
       "job": "openapi:sdk",
       "owner": "@exprtlabs/openapi-to-ts",
-      "digest": "a511f480522381d32650f565e4e7267d0653326b5b1feda212c7ab74969c2acc",
+      "digest": "e194371e4ab355b1669957ae98223d8e4a9f05d3bf2a15cf16a9ea477aaaa505",
       "destination": "sdk",
       "destinationKind": "directory"
     },
-    "sdk/models.ts": {
+    "sdk/models/_group-b28cd4ec.ts": {
       "job": "openapi:sdk",
       "owner": "@exprtlabs/openapi-to-ts",
-      "digest": "75efee34964fe4a0febb1f2290bd2b4459e6321f2445f4cbb3a65418e3fca284",
-      "destination": "sdk",
-      "destinationKind": "directory"
-    },
-    "sdk/models/_group-51252f71.ts": {
-      "job": "openapi:sdk",
-      "owner": "@exprtlabs/openapi-to-ts",
-      "digest": "a4677b7eb34da00449a160a5db099a762147f284d46a3fd9d6e8339fbcaddbff",
+      "digest": "14da201bcebb3c8f806a8d85d9166988500f69182309fa5d9ca402ff8fe1c322",
       "destination": "sdk",
       "destinationKind": "directory"
     },
     "sdk/models/Task.ts": {
       "job": "openapi:sdk",
       "owner": "@exprtlabs/openapi-to-ts",
-      "digest": "a00e324dfb2e8903b7bef91f2ae80ae76bc6875b33fdacd7224ee24a38c6bcdb",
+      "digest": "656c8b10b971a5f618039582fe4778ea91466997266cbb61e666a6306b258900",
       "destination": "sdk",
       "destinationKind": "directory"
     },
     "sdk/operations/createTask.ts": {
       "job": "openapi:sdk",
       "owner": "@exprtlabs/openapi-to-ts",
-      "digest": "1b1e960c66195b8347e278d36c05f33c7d816c74ffb851fe3cb54e0f56088a39",
+      "digest": "8ef1ae88dfc5ac60f6f5cba677ffe352094a827a1d90b55805b28d507957b462",
       "destination": "sdk",
       "destinationKind": "directory"
     },
     "sdk/operations/getTask.ts": {
       "job": "openapi:sdk",
       "owner": "@exprtlabs/openapi-to-ts",
-      "digest": "f4f4f122273553dcb5873ae0c643634b803437ca40959ba841794ce5313e5d80",
+      "digest": "4b0bfa8c906c657dff8eeb39937659daa2c22d80b26a00ba9764e2a9d455be59",
       "destination": "sdk",
       "destinationKind": "directory"
     },
     "sdk/operations/listTasks.ts": {
       "job": "openapi:sdk",
       "owner": "@exprtlabs/openapi-to-ts",
-      "digest": "23649eb19299710830b5db7477ecc005677c3ecac99329bd75563cd80adf6dde",
+      "digest": "56d0cb09395a0b1dbe6334004eda9a71333dd39cae627144ee7bcac714dc764b",
       "destination": "sdk",
       "destinationKind": "directory"
     },
@@ -95,7 +81,7 @@
     "sdk/schemas.ts": {
       "job": "openapi:sdk",
       "owner": "@exprtlabs/openapi-to-ts",
-      "digest": "0a09c578ab7737195d7d6541f0c74bebe74dd949f8197d442f3ecc4c54c4e156",
+      "digest": "1872ff95dfa7c15ad70aa8e9c31026610de67ebd92bc7da3c551f6e4af887560",
       "destination": "sdk",
       "destinationKind": "directory"
     },
@@ -117,13 +103,6 @@
       "job": "openapi:sdk",
       "owner": "@exprtlabs/openapi-to-ts",
       "digest": "b94dc2e9b388a520c3093401ea8b2fb6bb0ca6d858726e2f9e709896fa950d90",
-      "destination": "sdk",
-      "destinationKind": "directory"
-    },
-    "sdk/validation.ts": {
-      "job": "openapi:sdk",
-      "owner": "@exprtlabs/openapi-to-ts",
-      "digest": "711f62847c3449a9e04dff408915a1986b961d19ded3192cc0dfebe434e2a7cd",
       "destination": "sdk",
       "destinationKind": "directory"
     }

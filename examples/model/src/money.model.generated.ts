@@ -59,24 +59,24 @@ registerGeneratedModel(WalletBase, {
     decode: (value, constructor) => decodeWalletModel(constructor ?? WalletBase, value),
     encode: encodeWalletModel,
   },
-  codecId: "Wallet_9c0f714a",
+  codecId: "Wallet_f39079e2",
   profile: { validation: true, mobx: false },
 });
 
-registerIModelClass("Wallet_9c0f714a", WalletBase);
+registerIModelClass("Wallet_f39079e2", WalletBase);
 
 const objectAjvFast = createOpenApiSyncAjvEngine({ allErrors: false, validationBindings: {} });
 const objectAjvAll = createOpenApiSyncAjvEngine({ allErrors: true, validationBindings: {} });
 
-const __resolvedModelSchema_Money = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"Money_5ead2fe2\",\"type\":\"object\",\"properties\":{\"amount\":{\"allOf\":[{\"type\":\"number\"},{\"minimum\":0}]},\"currency\":{\"anyOf\":[{\"const\":\"EUR\"},{\"const\":\"USD\"}]}},\"required\":[\"amount\",\"currency\"],\"additionalProperties\":false}") as object) as object;
-objectAjvFast.addSchema(structuredClone(__resolvedModelSchema_Money) as object, "Money_5ead2fe2");
-objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_Money) as object, "Money_5ead2fe2");
-const __resolvedModelSchema_Wallet = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"Wallet_9c0f714a\",\"type\":\"object\",\"properties\":{\"balance\":{\"$ref\":\"#/$defs/Money_5ead2fe2\"}},\"required\":[\"balance\"],\"additionalProperties\":false,\"$defs\":{\"Money_5ead2fe2\":{\"type\":\"object\",\"properties\":{\"amount\":{\"allOf\":[{\"type\":\"number\"},{\"minimum\":0}]},\"currency\":{\"anyOf\":[{\"const\":\"EUR\"},{\"const\":\"USD\"}]}},\"required\":[\"amount\",\"currency\"],\"additionalProperties\":false}}}") as object) as object;
-objectAjvFast.addSchema(structuredClone(__resolvedModelSchema_Wallet) as object, "Wallet_9c0f714a");
-objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_Wallet) as object, "Wallet_9c0f714a");
+const __resolvedModelSchema_Money = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"Money_64c4561b\",\"type\":\"object\",\"properties\":{\"amount\":{\"allOf\":[{\"type\":\"number\"},{\"minimum\":0}]},\"currency\":{\"anyOf\":[{\"const\":\"EUR\"},{\"const\":\"USD\"}]}},\"required\":[\"amount\",\"currency\"],\"additionalProperties\":false}") as object) as object;
+objectAjvFast.addSchema(structuredClone(__resolvedModelSchema_Money) as object, "Money_64c4561b");
+objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_Money) as object, "Money_64c4561b");
+const __resolvedModelSchema_Wallet = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"Wallet_f39079e2\",\"type\":\"object\",\"properties\":{\"balance\":{\"$ref\":\"#/$defs/Money_64c4561b\"}},\"required\":[\"balance\"],\"additionalProperties\":false,\"$defs\":{\"Money_64c4561b\":{\"type\":\"object\",\"properties\":{\"amount\":{\"allOf\":[{\"type\":\"number\"},{\"minimum\":0}]},\"currency\":{\"anyOf\":[{\"const\":\"EUR\"},{\"const\":\"USD\"}]}},\"required\":[\"amount\",\"currency\"],\"additionalProperties\":false}}}") as object) as object;
+objectAjvFast.addSchema(structuredClone(__resolvedModelSchema_Wallet) as object, "Wallet_f39079e2");
+objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_Wallet) as object, "Wallet_f39079e2");
 
-const validateMoneyFast = requireAjvSchema(objectAjvFast.getSchema("Money_5ead2fe2"), "Money_5ead2fe2");
-const validateMoneyAll = requireAjvSchema(objectAjvAll.getSchema("Money_5ead2fe2"), "Money_5ead2fe2");
+const validateMoneyFast = requireAjvSchema(objectAjvFast.getSchema("Money_64c4561b"), "Money_64c4561b");
+const validateMoneyAll = requireAjvSchema(objectAjvAll.getSchema("Money_64c4561b"), "Money_64c4561b");
 
 function fillMoney(out: Record<string, unknown>, wire: Record<string, unknown>, copyIdentity = true): Record<string, unknown> {
   if (copyIdentity) {
@@ -142,7 +142,7 @@ export function validateMoney(value: unknown, options?: { readonly failFast?: bo
     ok = failFast ? validateMoneyFast(value) : validateMoneyAll(value);
     errors = failFast ? validateMoneyFast.errors : validateMoneyAll.errors;
   } else {
-    const validator = resolveModelValidationContextValidator(options.validationContext, "Money_5ead2fe2", failFast ? 'first' : 'all');
+    const validator = resolveModelValidationContextValidator(options.validationContext, "Money_64c4561b", failFast ? 'first' : 'all');
     ok = runSynchronousValidation(validator, value);
     errors = validator.errors;
   }
@@ -157,14 +157,14 @@ export function assertMoney(value: unknown, options?: { readonly failFast?: bool
     validationFailure(ajvIssues(validator, value, IssueRepresentation.Model, IssueSource.TypeScript));
   }
 } else {
-  const validator = resolveModelValidationContextValidator(options.validationContext, "Money_5ead2fe2", options?.failFast !== false ? 'first' : 'all');
+  const validator = resolveModelValidationContextValidator(options.validationContext, "Money_64c4561b", options?.failFast !== false ? 'first' : 'all');
   if (!runSynchronousValidation(validator, value)) validationFailure(ajvIssues(validator, value, IssueRepresentation.Model, IssueSource.TypeScript));
 }
   return value as Record<string, unknown>;
 }
 
 
-createObjectCodec("Money_5ead2fe2", {
+createObjectCodec("Money_64c4561b", {
   stringify: stringifyMoney as (value: never, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/codegen/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }) => string,
   parse: parseMoney as (text: string, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/codegen/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }) => never,
   validate: validateMoney,
@@ -175,8 +175,8 @@ createObjectCodec("Money_5ead2fe2", {
   issueSource: IssueSource.TypeScript,
 });
 
-const validateWalletFast = requireAjvSchema(objectAjvFast.getSchema("Wallet_9c0f714a"), "Wallet_9c0f714a");
-const validateWalletAll = requireAjvSchema(objectAjvAll.getSchema("Wallet_9c0f714a"), "Wallet_9c0f714a");
+const validateWalletFast = requireAjvSchema(objectAjvFast.getSchema("Wallet_f39079e2"), "Wallet_f39079e2");
+const validateWalletAll = requireAjvSchema(objectAjvAll.getSchema("Wallet_f39079e2"), "Wallet_f39079e2");
 
 function fillWallet(out: Record<string, unknown>, wire: Record<string, unknown>): Record<string, unknown> {
   if (Object.prototype.hasOwnProperty.call(wire, "balance")) {
@@ -241,7 +241,7 @@ export function validateWallet(value: unknown, options?: { readonly failFast?: b
     ok = failFast ? validateWalletFast(value) : validateWalletAll(value);
     errors = failFast ? validateWalletFast.errors : validateWalletAll.errors;
   } else {
-    const validator = resolveModelValidationContextValidator(options.validationContext, "Wallet_9c0f714a", failFast ? 'first' : 'all');
+    const validator = resolveModelValidationContextValidator(options.validationContext, "Wallet_f39079e2", failFast ? 'first' : 'all');
     ok = runSynchronousValidation(validator, value);
     errors = validator.errors;
   }
@@ -256,14 +256,14 @@ export function assertWallet(value: unknown, options?: { readonly failFast?: boo
     validationFailure(ajvIssues(validator, value, IssueRepresentation.Model, IssueSource.TypeScript));
   }
 } else {
-  const validator = resolveModelValidationContextValidator(options.validationContext, "Wallet_9c0f714a", options?.failFast !== false ? 'first' : 'all');
+  const validator = resolveModelValidationContextValidator(options.validationContext, "Wallet_f39079e2", options?.failFast !== false ? 'first' : 'all');
   if (!runSynchronousValidation(validator, value)) validationFailure(ajvIssues(validator, value, IssueRepresentation.Model, IssueSource.TypeScript));
 }
   return value as Record<string, unknown>;
 }
 
 
-createObjectCodec("Wallet_9c0f714a", {
+createObjectCodec("Wallet_f39079e2", {
   stringify: stringifyWallet as (value: never, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/codegen/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }) => string,
   parse: parseWallet as (text: string, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/codegen/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }) => never,
   validate: validateWallet,

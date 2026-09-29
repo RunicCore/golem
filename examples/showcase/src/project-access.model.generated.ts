@@ -64,37 +64,37 @@ registerGeneratedModel(ProjectAccessEditorBase, {
     decode: (value, constructor) => decodeProjectAccessEditorModel(constructor ?? ProjectAccessEditorBase, value),
     encode: encodeProjectAccessEditorModel,
   },
-  codecId: "ProjectAccessEditor_ca32a3cc",
+  codecId: "ProjectAccessEditor_561718b7",
   profile: { validation: true, mobx: false },
 });
 
-registerIModelClass("ProjectAccessEditor_ca32a3cc", ProjectAccessEditorBase);
+registerIModelClass("ProjectAccessEditor_561718b7", ProjectAccessEditorBase);
 
 const objectAjvFast = createOpenApiSyncAjvEngine({ allErrors: false, validationBindings: modelValidationBindings });
 const objectAjvAll = createOpenApiSyncAjvEngine({ allErrors: true, validationBindings: modelValidationBindings });
 
 addNestedCodecSchema([(schema, id) => objectAjvFast.addSchema(schema, id), (schema, id) => objectAjvAll.addSchema(schema, id)], "Member", MemberModel);
-const __resolvedModelSchema_ProjectAccessEditor = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"ProjectAccessEditor_ca32a3cc\",\"type\":\"object\",\"properties\":{\"member\":{\"$ref\":\"__exprtGeneratedModel:Member\"},\"permissions\":{\"exprtValidation\":{\"schema\":{\"allOf\":[{\"type\":\"number\"},{\"type\":\"integer\",\"maximum\":255,\"minimum\":0}]},\"bindings\":[\"src/access-rules.ts:627:820\"]}},\"projectName\":{\"allOf\":[{\"type\":\"string\"},{\"maxLength\":48,\"minLength\":3,\"pattern\":\"^[A-Za-z][A-Za-z0-9 -]*$\"}]}},\"required\":[\"member\",\"permissions\",\"projectName\"],\"additionalProperties\":false}") as object) as object;
-objectAjvFast.addSchema(structuredClone(__resolvedModelSchema_ProjectAccessEditor) as object, "ProjectAccessEditor_ca32a3cc");
-objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_ProjectAccessEditor) as object, "ProjectAccessEditor_ca32a3cc");
-const __resolvedWireSchema_ProjectAccessEditor = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"ProjectAccessEditor_ca32a3cc#wire\",\"type\":\"object\",\"properties\":{\"member\":{\"$ref\":\"__exprtGeneratedModel:Member\"},\"permissions\":{\"allOf\":[{\"type\":\"string\"},{\"pattern\":\"^0x[0-9a-fA-F]+$\"}]},\"projectName\":{\"allOf\":[{\"type\":\"string\"},{\"maxLength\":48,\"minLength\":3,\"pattern\":\"^[A-Za-z][A-Za-z0-9 -]*$\"}]}},\"required\":[\"member\",\"permissions\",\"projectName\"],\"additionalProperties\":false}") as object, 'wire') as object;
-objectAjvFast.addSchema(structuredClone(__resolvedWireSchema_ProjectAccessEditor) as object, "ProjectAccessEditor_ca32a3cc#wire");
-objectAjvAll.addSchema(structuredClone(__resolvedWireSchema_ProjectAccessEditor) as object, "ProjectAccessEditor_ca32a3cc#wire");
-const __resolvedModelOnlySchema_ProjectAccessEditor = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"ProjectAccessEditor_ca32a3cc#model-only\",\"properties\":{\"permissions\":{\"exprtValidation\":{\"schema\":{\"allOf\":[{\"type\":\"number\"},{\"type\":\"integer\",\"maximum\":255,\"minimum\":0}]},\"bindings\":[\"src/access-rules.ts:627:820\"]}}}}") as object, 'model-only') as object;
-objectAjvFast.addSchema(structuredClone(__resolvedModelOnlySchema_ProjectAccessEditor) as object, "ProjectAccessEditor_ca32a3cc#model-only");
-objectAjvAll.addSchema(structuredClone(__resolvedModelOnlySchema_ProjectAccessEditor) as object, "ProjectAccessEditor_ca32a3cc#model-only");
-const __resolvedWireOnlySchema_ProjectAccessEditor = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"ProjectAccessEditor_ca32a3cc#wire-only\",\"properties\":{\"permissions\":{\"allOf\":[{\"type\":\"string\"},{\"pattern\":\"^0x[0-9a-fA-F]+$\"}]}}}") as object, 'wire-only') as object;
-objectAjvFast.addSchema(structuredClone(__resolvedWireOnlySchema_ProjectAccessEditor) as object, "ProjectAccessEditor_ca32a3cc#wire-only");
-objectAjvAll.addSchema(structuredClone(__resolvedWireOnlySchema_ProjectAccessEditor) as object, "ProjectAccessEditor_ca32a3cc#wire-only");
+const __resolvedModelSchema_ProjectAccessEditor = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"ProjectAccessEditor_561718b7\",\"type\":\"object\",\"properties\":{\"member\":{\"$ref\":\"__exprtGeneratedModel:Member\"},\"permissions\":{\"exprtValidation\":{\"schema\":{\"allOf\":[{\"type\":\"number\"},{\"type\":\"integer\",\"maximum\":255,\"minimum\":0}]},\"bindings\":[\"src/access-rules.ts:627:820\"]}},\"projectName\":{\"allOf\":[{\"type\":\"string\"},{\"maxLength\":48,\"minLength\":3,\"pattern\":\"^[A-Za-z][A-Za-z0-9 -]*$\"}]}},\"required\":[\"member\",\"permissions\",\"projectName\"],\"additionalProperties\":false}") as object) as object;
+objectAjvFast.addSchema(structuredClone(__resolvedModelSchema_ProjectAccessEditor) as object, "ProjectAccessEditor_561718b7");
+objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_ProjectAccessEditor) as object, "ProjectAccessEditor_561718b7");
+const __resolvedWireSchema_ProjectAccessEditor = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"ProjectAccessEditor_561718b7#wire\",\"type\":\"object\",\"properties\":{\"member\":{\"$ref\":\"__exprtGeneratedModel:Member\"},\"permissions\":{\"allOf\":[{\"type\":\"string\"},{\"pattern\":\"^0x[0-9a-fA-F]+$\"}]},\"projectName\":{\"allOf\":[{\"type\":\"string\"},{\"maxLength\":48,\"minLength\":3,\"pattern\":\"^[A-Za-z][A-Za-z0-9 -]*$\"}]}},\"required\":[\"member\",\"permissions\",\"projectName\"],\"additionalProperties\":false}") as object, 'wire') as object;
+objectAjvFast.addSchema(structuredClone(__resolvedWireSchema_ProjectAccessEditor) as object, "ProjectAccessEditor_561718b7#wire");
+objectAjvAll.addSchema(structuredClone(__resolvedWireSchema_ProjectAccessEditor) as object, "ProjectAccessEditor_561718b7#wire");
+const __resolvedModelOnlySchema_ProjectAccessEditor = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"ProjectAccessEditor_561718b7#model-only\",\"properties\":{\"permissions\":{\"exprtValidation\":{\"schema\":{\"allOf\":[{\"type\":\"number\"},{\"type\":\"integer\",\"maximum\":255,\"minimum\":0}]},\"bindings\":[\"src/access-rules.ts:627:820\"]}}}}") as object, 'model-only') as object;
+objectAjvFast.addSchema(structuredClone(__resolvedModelOnlySchema_ProjectAccessEditor) as object, "ProjectAccessEditor_561718b7#model-only");
+objectAjvAll.addSchema(structuredClone(__resolvedModelOnlySchema_ProjectAccessEditor) as object, "ProjectAccessEditor_561718b7#model-only");
+const __resolvedWireOnlySchema_ProjectAccessEditor = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"ProjectAccessEditor_561718b7#wire-only\",\"properties\":{\"permissions\":{\"allOf\":[{\"type\":\"string\"},{\"pattern\":\"^0x[0-9a-fA-F]+$\"}]}}}") as object, 'wire-only') as object;
+objectAjvFast.addSchema(structuredClone(__resolvedWireOnlySchema_ProjectAccessEditor) as object, "ProjectAccessEditor_561718b7#wire-only");
+objectAjvAll.addSchema(structuredClone(__resolvedWireOnlySchema_ProjectAccessEditor) as object, "ProjectAccessEditor_561718b7#wire-only");
 
-const validateProjectAccessEditorFast = requireAjvSchema(objectAjvFast.getSchema("ProjectAccessEditor_ca32a3cc"), "ProjectAccessEditor_ca32a3cc");
-const validateProjectAccessEditorAll = requireAjvSchema(objectAjvAll.getSchema("ProjectAccessEditor_ca32a3cc"), "ProjectAccessEditor_ca32a3cc");
-const validateProjectAccessEditorWireFast = requireAjvSchema(objectAjvFast.getSchema("ProjectAccessEditor_ca32a3cc#wire"), "ProjectAccessEditor_ca32a3cc#wire");
-const validateProjectAccessEditorWireAll = requireAjvSchema(objectAjvAll.getSchema("ProjectAccessEditor_ca32a3cc#wire"), "ProjectAccessEditor_ca32a3cc#wire");
-const validateProjectAccessEditorModelOnlyFast = requireAjvSchema(objectAjvFast.getSchema("ProjectAccessEditor_ca32a3cc#model-only"), "ProjectAccessEditor_ca32a3cc#model-only");
-const validateProjectAccessEditorModelOnlyAll = requireAjvSchema(objectAjvAll.getSchema("ProjectAccessEditor_ca32a3cc#model-only"), "ProjectAccessEditor_ca32a3cc#model-only");
-const validateProjectAccessEditorWireOnlyFast = requireAjvSchema(objectAjvFast.getSchema("ProjectAccessEditor_ca32a3cc#wire-only"), "ProjectAccessEditor_ca32a3cc#wire-only");
-const validateProjectAccessEditorWireOnlyAll = requireAjvSchema(objectAjvAll.getSchema("ProjectAccessEditor_ca32a3cc#wire-only"), "ProjectAccessEditor_ca32a3cc#wire-only");
+const validateProjectAccessEditorFast = requireAjvSchema(objectAjvFast.getSchema("ProjectAccessEditor_561718b7"), "ProjectAccessEditor_561718b7");
+const validateProjectAccessEditorAll = requireAjvSchema(objectAjvAll.getSchema("ProjectAccessEditor_561718b7"), "ProjectAccessEditor_561718b7");
+const validateProjectAccessEditorWireFast = requireAjvSchema(objectAjvFast.getSchema("ProjectAccessEditor_561718b7#wire"), "ProjectAccessEditor_561718b7#wire");
+const validateProjectAccessEditorWireAll = requireAjvSchema(objectAjvAll.getSchema("ProjectAccessEditor_561718b7#wire"), "ProjectAccessEditor_561718b7#wire");
+const validateProjectAccessEditorModelOnlyFast = requireAjvSchema(objectAjvFast.getSchema("ProjectAccessEditor_561718b7#model-only"), "ProjectAccessEditor_561718b7#model-only");
+const validateProjectAccessEditorModelOnlyAll = requireAjvSchema(objectAjvAll.getSchema("ProjectAccessEditor_561718b7#model-only"), "ProjectAccessEditor_561718b7#model-only");
+const validateProjectAccessEditorWireOnlyFast = requireAjvSchema(objectAjvFast.getSchema("ProjectAccessEditor_561718b7#wire-only"), "ProjectAccessEditor_561718b7#wire-only");
+const validateProjectAccessEditorWireOnlyAll = requireAjvSchema(objectAjvAll.getSchema("ProjectAccessEditor_561718b7#wire-only"), "ProjectAccessEditor_561718b7#wire-only");
 
 function fillProjectAccessEditor(out: Record<string, unknown>, wire: Record<string, unknown>, copyIdentity = true): Record<string, unknown> {
   if (copyIdentity) {
@@ -179,7 +179,7 @@ export function validateProjectAccessEditor(value: unknown, options?: { readonly
     ok = failFast ? validateProjectAccessEditorFast(value) : validateProjectAccessEditorAll(value);
     errors = failFast ? validateProjectAccessEditorFast.errors : validateProjectAccessEditorAll.errors;
   } else {
-    const validator = resolveModelValidationContextValidator(options.validationContext, "ProjectAccessEditor_ca32a3cc", failFast ? 'first' : 'all');
+    const validator = resolveModelValidationContextValidator(options.validationContext, "ProjectAccessEditor_561718b7", failFast ? 'first' : 'all');
     ok = runSynchronousValidation(validator, value);
     errors = validator.errors;
   }
@@ -194,7 +194,7 @@ export function assertProjectAccessEditor(value: unknown, options?: { readonly f
     validationFailure(ajvIssues(validator, value, IssueRepresentation.Model, IssueSource.TypeScript));
   }
 } else {
-  const validator = resolveModelValidationContextValidator(options.validationContext, "ProjectAccessEditor_ca32a3cc", options?.failFast !== false ? 'first' : 'all');
+  const validator = resolveModelValidationContextValidator(options.validationContext, "ProjectAccessEditor_561718b7", options?.failFast !== false ? 'first' : 'all');
   if (!runSynchronousValidation(validator, value)) validationFailure(ajvIssues(validator, value, IssueRepresentation.Model, IssueSource.TypeScript));
 }
   return value as Record<string, unknown>;
@@ -207,7 +207,7 @@ function __runicAssertWire_ProjectAccessEditor(value: unknown, options?: { reado
     validationFailure(ajvIssues(validator, value, IssueRepresentation.Wire, IssueSource.TypeScript));
   }
 } else {
-  const validator = resolveModelValidationContextValidator(options.validationContext, "ProjectAccessEditor_ca32a3cc#wire", options?.failFast !== false ? 'first' : 'all');
+  const validator = resolveModelValidationContextValidator(options.validationContext, "ProjectAccessEditor_561718b7#wire", options?.failFast !== false ? 'first' : 'all');
   if (!runSynchronousValidation(validator, value)) validationFailure(ajvIssues(validator, value, IssueRepresentation.Wire, IssueSource.TypeScript));
 }
   return value as Record<string, unknown>;
@@ -220,7 +220,7 @@ function __runicAssertModelOnly_ProjectAccessEditor(value: unknown, options?: { 
     validationFailure(ajvIssues(validator, value, IssueRepresentation.Model, IssueSource.TypeScript));
   }
 } else {
-  const validator = resolveModelValidationContextValidator(options.validationContext, "ProjectAccessEditor_ca32a3cc#model-only", options?.failFast !== false ? 'first' : 'all');
+  const validator = resolveModelValidationContextValidator(options.validationContext, "ProjectAccessEditor_561718b7#model-only", options?.failFast !== false ? 'first' : 'all');
   if (!runSynchronousValidation(validator, value)) validationFailure(ajvIssues(validator, value, IssueRepresentation.Model, IssueSource.TypeScript));
 }
   return value as Record<string, unknown>;
@@ -233,13 +233,13 @@ function __runicAssertWireOnly_ProjectAccessEditor(value: unknown, options?: { r
     validationFailure(ajvIssues(validator, value, IssueRepresentation.Wire, IssueSource.TypeScript));
   }
 } else {
-  const validator = resolveModelValidationContextValidator(options.validationContext, "ProjectAccessEditor_ca32a3cc#wire-only", options?.failFast !== false ? 'first' : 'all');
+  const validator = resolveModelValidationContextValidator(options.validationContext, "ProjectAccessEditor_561718b7#wire-only", options?.failFast !== false ? 'first' : 'all');
   if (!runSynchronousValidation(validator, value)) validationFailure(ajvIssues(validator, value, IssueRepresentation.Wire, IssueSource.TypeScript));
 }
   return value as Record<string, unknown>;
 }
 
-createObjectCodec("ProjectAccessEditor_ca32a3cc", {
+createObjectCodec("ProjectAccessEditor_561718b7", {
   stringify: stringifyProjectAccessEditor as (value: never, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/codegen/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }) => string,
   parse: parseProjectAccessEditor as (text: string, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/codegen/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }) => never,
   validate: validateProjectAccessEditor,

@@ -44,21 +44,21 @@ export function encodeMerchantOmitId(model: MerchantOmitIdModel): Types.Merchant
 registerGeneratedModel(MerchantOmitIdModel, {
   fields: ["name"] as const,
   conversion: { decode: decodeMerchantOmitId, encode: encodeMerchantOmitId },
-  codecId: "MerchantOmitId_26d8c665",
+  codecId: "MerchantOmitId_1ef82815",
   profile: {"mobx":false,"validation":true,"ajvStandalone":false,"allowAny":false},
 });
 
-registerIModelClass("MerchantOmitId_26d8c665", MerchantOmitIdModel);
+registerIModelClass("MerchantOmitId_1ef82815", MerchantOmitIdModel);
 
 const objectAjvFast = createOpenApiSyncAjvEngine({ allErrors: false, validationBindings: {} });
 const objectAjvAll = createOpenApiSyncAjvEngine({ allErrors: true, validationBindings: {} });
 
-const __resolvedModelSchema_MerchantOmitId = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"MerchantOmitId_26d8c665\",\"type\":\"object\",\"properties\":{\"name\":{\"allOf\":[{\"type\":\"string\"},{\"minLength\":2}]}},\"required\":[\"name\"],\"additionalProperties\":false}") as object) as object;
-objectAjvFast.addSchema(structuredClone(__resolvedModelSchema_MerchantOmitId) as object, "MerchantOmitId_26d8c665");
-objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_MerchantOmitId) as object, "MerchantOmitId_26d8c665");
+const __resolvedModelSchema_MerchantOmitId = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"MerchantOmitId_1ef82815\",\"type\":\"object\",\"properties\":{\"name\":{\"allOf\":[{\"type\":\"string\"},{\"minLength\":2}]}},\"required\":[\"name\"],\"additionalProperties\":false}") as object) as object;
+objectAjvFast.addSchema(structuredClone(__resolvedModelSchema_MerchantOmitId) as object, "MerchantOmitId_1ef82815");
+objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_MerchantOmitId) as object, "MerchantOmitId_1ef82815");
 
-const validateMerchantOmitIdFast = requireAjvSchema(objectAjvFast.getSchema("MerchantOmitId_26d8c665"), "MerchantOmitId_26d8c665");
-const validateMerchantOmitIdAll = requireAjvSchema(objectAjvAll.getSchema("MerchantOmitId_26d8c665"), "MerchantOmitId_26d8c665");
+const validateMerchantOmitIdFast = requireAjvSchema(objectAjvFast.getSchema("MerchantOmitId_1ef82815"), "MerchantOmitId_1ef82815");
+const validateMerchantOmitIdAll = requireAjvSchema(objectAjvAll.getSchema("MerchantOmitId_1ef82815"), "MerchantOmitId_1ef82815");
 
 export function fillMerchantOmitId(out: Record<string, unknown>, wire: Record<string, unknown>, copyIdentity = true): Record<string, unknown> {
   if (copyIdentity) {
@@ -123,7 +123,7 @@ export function validateMerchantOmitId(value: unknown, options?: { readonly fail
     ok = failFast ? validateMerchantOmitIdFast(value) : validateMerchantOmitIdAll(value);
     errors = failFast ? validateMerchantOmitIdFast.errors : validateMerchantOmitIdAll.errors;
   } else {
-    const validator = resolveModelValidationContextValidator(options.validationContext, "MerchantOmitId_26d8c665", failFast ? 'first' : 'all');
+    const validator = resolveModelValidationContextValidator(options.validationContext, "MerchantOmitId_1ef82815", failFast ? 'first' : 'all');
     ok = runSynchronousValidation(validator, value);
     errors = validator.errors;
   }
@@ -138,14 +138,14 @@ export function assertMerchantOmitId(value: unknown, options?: { readonly failFa
     validationFailure(ajvIssues(validator, value, IssueRepresentation.Model, IssueSource.OpenAPI));
   }
 } else {
-  const validator = resolveModelValidationContextValidator(options.validationContext, "MerchantOmitId_26d8c665", options?.failFast !== false ? 'first' : 'all');
+  const validator = resolveModelValidationContextValidator(options.validationContext, "MerchantOmitId_1ef82815", options?.failFast !== false ? 'first' : 'all');
   if (!runSynchronousValidation(validator, value)) validationFailure(ajvIssues(validator, value, IssueRepresentation.Model, IssueSource.OpenAPI));
 }
   return value as Record<string, unknown>;
 }
 
 
-createObjectCodec("MerchantOmitId_26d8c665", {
+createObjectCodec("MerchantOmitId_1ef82815", {
   stringify: stringifyMerchantOmitId as (value: never, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/codegen/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }) => string,
   parse: parseMerchantOmitId as (text: string, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/codegen/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }) => never,
   validate: validateMerchantOmitId,

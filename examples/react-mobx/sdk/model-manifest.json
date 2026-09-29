@@ -54,6 +54,10 @@
     "mobx": true,
     "validation": true
   },
+  "runtime": {
+    "minimumVersion": "1.0.0-rc",
+    "name": "@exprtlabs/codegen"
+  },
   "source": {
     "dialect": "3.1.0",
     "digest": "d3e401b83a74a4f6d706e7aac6de85392642bd842fc3fac627638ed7cc64f7c9",
@@ -63,10 +67,10 @@
     {
       "aliases": [
         "Money",
-        "Money_350e7fd6",
+        "Money_a0f85026",
         "openapi:d3e401b83a74a4f6#/components/schemas/Money"
       ],
-      "codecId": "Money_350e7fd6",
+      "codecId": "Money_a0f85026",
       "modelSchema": {
         "additionalProperties": false,
         "properties": {

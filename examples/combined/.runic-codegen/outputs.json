@@ -1,24 +1,17 @@
 {
   "version": 1,
   "files": {
-    "sdk/client-runtime.ts": {
-      "job": "openapi:sdk",
-      "owner": "@exprtlabs/openapi-to-ts",
-      "digest": "4055d94912469fc157e639b076d436e7df2bec1cfd14b0efbe6ede3a4a6d905e",
-      "destination": "sdk",
-      "destinationKind": "directory"
-    },
     "sdk/client.ts": {
       "job": "openapi:sdk",
       "owner": "@exprtlabs/openapi-to-ts",
-      "digest": "21c44a1b12c640ee5fcba9597492c100f02fa0c52e9be8e082c5a1ea958c44a1",
+      "digest": "6b56ca404002effe2cbcf88f361e6df9c6911a7766ccf62ecc954be802ba7d79",
       "destination": "sdk",
       "destinationKind": "directory"
     },
     "sdk/index.ts": {
       "job": "openapi:sdk",
       "owner": "@exprtlabs/openapi-to-ts",
-      "digest": "421817c3121f4ee0fa5d7b012e82bc9b4fa281bba9ec53ad0d953a460de92b55",
+      "digest": "21558d9d0c4a5caf2e32b46b53caf75fe2aa64cdd7edfab330efbd0594f4801e",
       "destination": "sdk",
       "destinationKind": "directory"
     },
@@ -32,42 +25,35 @@
     "sdk/iobject-plugin-keys.ts": {
       "job": "openapi:sdk",
       "owner": "@exprtlabs/openapi-to-ts",
-      "digest": "f7b09a95dfc1e96ab0fea286885eae8467069f143b83723d933a379fc4d0e0c1",
+      "digest": "e4958d5fa74ca0e11d9543e56c14b6b9990726563a81b1a437df7667b3bc4e67",
       "destination": "sdk",
       "destinationKind": "directory"
     },
     "sdk/model-manifest.json": {
       "job": "openapi:sdk",
       "owner": "@exprtlabs/openapi-to-ts",
-      "digest": "fee2fe97b00782fcf026dea04459b8e462a9279d4dfda8d372c583d870c31741",
+      "digest": "2d55bdf624f6e868e01e4e2c4e66720bbfe431686016d6147fb17ef38e48599d",
       "destination": "sdk",
       "destinationKind": "directory"
     },
-    "sdk/models.ts": {
+    "sdk/models/_group-cf50637a.ts": {
       "job": "openapi:sdk",
       "owner": "@exprtlabs/openapi-to-ts",
-      "digest": "a7e87c5c80fb277fcba132c8cc343c28a1740c5a4eded32179167f8f3b208d84",
-      "destination": "sdk",
-      "destinationKind": "directory"
-    },
-    "sdk/models/_group-2621d9b0.ts": {
-      "job": "openapi:sdk",
-      "owner": "@exprtlabs/openapi-to-ts",
-      "digest": "4f1117eab5a4530ab30db8a850340e185847b90a41eef9abc44d1995e40e6d2b",
+      "digest": "2035196412a0a14eec98d7dc375cdcb1f6a44d749f6dddd526f01be2749adba8",
       "destination": "sdk",
       "destinationKind": "directory"
     },
     "sdk/models/Money.ts": {
       "job": "openapi:sdk",
       "owner": "@exprtlabs/openapi-to-ts",
-      "digest": "546e171adbee796b9982eb8b4b76ad30cec5527b66b4f29bc2e4033308120b9f",
+      "digest": "828882292c06a0cd04408476122b3de03e16ee306e15c920e7e2f22d19edbabe",
       "destination": "sdk",
       "destinationKind": "directory"
     },
     "sdk/operations/createPayment.ts": {
       "job": "openapi:sdk",
       "owner": "@exprtlabs/openapi-to-ts",
-      "digest": "cf4a1e15d5aad37de24874af00f59e9503e24aa45eeed08e4b4fbbfae57d700e",
+      "digest": "6289ac32fa2eb57401aa4d8936a35c6e6ea7717ef557945672992438598b838f",
       "destination": "sdk",
       "destinationKind": "directory"
     },
@@ -81,7 +67,7 @@
     "sdk/schemas.ts": {
       "job": "openapi:sdk",
       "owner": "@exprtlabs/openapi-to-ts",
-      "digest": "7648144bd8a28138e3aaa5b44298751d0ba79fbed07febefb94d05bb6fe463eb",
+      "digest": "fe228708ad3bd074db5b99c8f4eba7bbd298307100870035920a7fed747e676b",
       "destination": "sdk",
       "destinationKind": "directory"
     },
@@ -106,24 +92,17 @@
       "destination": "sdk",
       "destinationKind": "directory"
     },
-    "sdk/validation.ts": {
-      "job": "openapi:sdk",
-      "owner": "@exprtlabs/openapi-to-ts",
-      "digest": "711f62847c3449a9e04dff408915a1986b961d19ded3192cc0dfebe434e2a7cd",
-      "destination": "sdk",
-      "destinationKind": "directory"
-    },
     "src/generated/models/iobject-plugin-keys.ts": {
       "job": "models:.",
       "owner": "@exprtlabs/model-codegen",
-      "digest": "2223c290bfb63c138ebbbae5891c774cc6ed3b3b8ffd864cc6b37558a2c0e25a",
+      "digest": "7a39fdc030b8ed1a30b5132696a982e098c281691b1467524b038401e4e1a70a",
       "destination": "src/generated/models",
       "destinationKind": "directory"
     },
     "src/payment-editor.model.generated.ts": {
       "job": "models:.",
       "owner": "@exprtlabs/model-codegen",
-      "digest": "fa0916ae589654bf27db3a87d332064063917c4011c8980a660db46c0266bd5c",
+      "digest": "87eb70c44cf16aa8aee857877a1078093284ca2a188a8ba3d6655657b1dc5600",
       "destination": "src",
       "destinationKind": "directory"
     }

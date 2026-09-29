@@ -48,21 +48,21 @@ export function encodeMerchant(model: MerchantModel): Types.Merchant {
 registerGeneratedModel(MerchantModel, {
   fields: ["id", "name"] as const,
   conversion: { decode: decodeMerchant, encode: encodeMerchant },
-  codecId: "Merchant_57caa914",
+  codecId: "Merchant_2d893464",
   profile: {"mobx":false,"validation":true,"ajvStandalone":false,"allowAny":false},
 });
 
-registerIModelClass("Merchant_57caa914", MerchantModel);
+registerIModelClass("Merchant_2d893464", MerchantModel);
 
 const objectAjvFast = createOpenApiSyncAjvEngine({ allErrors: false, validationBindings: {} });
 const objectAjvAll = createOpenApiSyncAjvEngine({ allErrors: true, validationBindings: {} });
 
-const __resolvedModelSchema_Merchant = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"Merchant_57caa914\",\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\"},\"name\":{\"allOf\":[{\"type\":\"string\"},{\"minLength\":2}]}},\"required\":[\"id\",\"name\"],\"additionalProperties\":false}") as object) as object;
-objectAjvFast.addSchema(structuredClone(__resolvedModelSchema_Merchant) as object, "Merchant_57caa914");
-objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_Merchant) as object, "Merchant_57caa914");
+const __resolvedModelSchema_Merchant = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"Merchant_2d893464\",\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\"},\"name\":{\"allOf\":[{\"type\":\"string\"},{\"minLength\":2}]}},\"required\":[\"id\",\"name\"],\"additionalProperties\":false}") as object) as object;
+objectAjvFast.addSchema(structuredClone(__resolvedModelSchema_Merchant) as object, "Merchant_2d893464");
+objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_Merchant) as object, "Merchant_2d893464");
 
-const validateMerchantFast = requireAjvSchema(objectAjvFast.getSchema("Merchant_57caa914"), "Merchant_57caa914");
-const validateMerchantAll = requireAjvSchema(objectAjvAll.getSchema("Merchant_57caa914"), "Merchant_57caa914");
+const validateMerchantFast = requireAjvSchema(objectAjvFast.getSchema("Merchant_2d893464"), "Merchant_2d893464");
+const validateMerchantAll = requireAjvSchema(objectAjvAll.getSchema("Merchant_2d893464"), "Merchant_2d893464");
 
 export function fillMerchant(out: Record<string, unknown>, wire: Record<string, unknown>, copyIdentity = true): Record<string, unknown> {
   if (copyIdentity) {
@@ -128,7 +128,7 @@ export function validateMerchant(value: unknown, options?: { readonly failFast?:
     ok = failFast ? validateMerchantFast(value) : validateMerchantAll(value);
     errors = failFast ? validateMerchantFast.errors : validateMerchantAll.errors;
   } else {
-    const validator = resolveModelValidationContextValidator(options.validationContext, "Merchant_57caa914", failFast ? 'first' : 'all');
+    const validator = resolveModelValidationContextValidator(options.validationContext, "Merchant_2d893464", failFast ? 'first' : 'all');
     ok = runSynchronousValidation(validator, value);
     errors = validator.errors;
   }
@@ -143,14 +143,14 @@ export function assertMerchant(value: unknown, options?: { readonly failFast?: b
     validationFailure(ajvIssues(validator, value, IssueRepresentation.Model, IssueSource.OpenAPI));
   }
 } else {
-  const validator = resolveModelValidationContextValidator(options.validationContext, "Merchant_57caa914", options?.failFast !== false ? 'first' : 'all');
+  const validator = resolveModelValidationContextValidator(options.validationContext, "Merchant_2d893464", options?.failFast !== false ? 'first' : 'all');
   if (!runSynchronousValidation(validator, value)) validationFailure(ajvIssues(validator, value, IssueRepresentation.Model, IssueSource.OpenAPI));
 }
   return value as Record<string, unknown>;
 }
 
 
-createObjectCodec("Merchant_57caa914", {
+createObjectCodec("Merchant_2d893464", {
   stringify: stringifyMerchant as (value: never, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/codegen/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }) => string,
   parse: parseMerchant as (text: string, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/codegen/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }) => never,
   validate: validateMerchant,

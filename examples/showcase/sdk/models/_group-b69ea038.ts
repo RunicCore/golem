@@ -4,9 +4,9 @@ import { convertModelField, decodeGeneratedModelTrusted, cloneConversionInput, e
 import { addNestedCodecSchema, ajvIssues, createObjectCodec, parseJson, registerIModelClass, requireAjvSchema, resolveGeneratedModelSchemaRefs, resolveModelValidationContextValidator, runSynchronousValidation, serdeValidates, stringifyJsonString, validationFailure, IssueRepresentation, IssueSource } from '@exprtlabs/codegen/serde';
 import { createOpenApiSyncAjvEngine } from '@exprtlabs/codegen/ajv';
 import type * as Types from '../types.js';
-import { fromWireFormatMember, stringifyMember, toWireFormatMember } from "./_group-51418635.js";
+import { fromWireFormatMember, stringifyMember, toWireFormatMember } from "./_group-28875f0c.js";
 import { MemberModel, type MemberInit } from "./Member.js";
-import "./_group-51418635.js";
+import "./_group-28875f0c.js";
 
 function objectFromJSON<T extends object>(json: unknown, modelName: string): Partial<T> {
   return requireModelObject(json, modelName) as Partial<T>;
@@ -57,22 +57,22 @@ export function encodeProjectAccess(model: ProjectAccessModel): Types.ProjectAcc
 registerGeneratedModel(ProjectAccessModel, {
   fields: ["member", "permissions", "projectName"] as const,
   conversion: { decode: decodeProjectAccess, encode: encodeProjectAccess },
-  codecId: "ProjectAccess_83b7c252",
+  codecId: "ProjectAccess_87602853",
   profile: {"mobx":false,"validation":true,"ajvStandalone":false,"allowAny":false},
 });
 
-registerIModelClass("ProjectAccess_83b7c252", ProjectAccessModel);
+registerIModelClass("ProjectAccess_87602853", ProjectAccessModel);
 
 const objectAjvFast = createOpenApiSyncAjvEngine({ allErrors: false, validationBindings: {} });
 const objectAjvAll = createOpenApiSyncAjvEngine({ allErrors: true, validationBindings: {} });
 
-addNestedCodecSchema([(schema, id) => objectAjvFast.addSchema(schema, id), (schema, id) => objectAjvAll.addSchema(schema, id)], "Member_744cdea7", MemberModel);
-const __resolvedModelSchema_ProjectAccess = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"ProjectAccess_83b7c252\",\"type\":\"object\",\"properties\":{\"member\":{\"$ref\":\"#/$defs/Member_744cdea7\"},\"permissions\":{\"allOf\":[{\"type\":\"string\"},{\"pattern\":\"^0x[0-9a-fA-F]+$\"}]},\"projectName\":{\"allOf\":[{\"type\":\"string\"},{\"maxLength\":48,\"minLength\":3,\"pattern\":\"^[A-Za-z][A-Za-z0-9 -]*$\"}]}},\"required\":[\"member\",\"permissions\",\"projectName\"],\"additionalProperties\":false,\"$defs\":{\"Member_744cdea7\":{\"type\":\"object\",\"properties\":{\"email\":{\"allOf\":[{\"type\":\"string\"},{\"format\":\"email\"}]},\"id\":{\"allOf\":[{\"type\":\"string\"},{\"minLength\":1}]},\"name\":{\"allOf\":[{\"type\":\"string\"},{\"minLength\":2}]}},\"required\":[\"email\",\"id\",\"name\"],\"additionalProperties\":false}}}") as object) as object;
-objectAjvFast.addSchema(structuredClone(__resolvedModelSchema_ProjectAccess) as object, "ProjectAccess_83b7c252");
-objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_ProjectAccess) as object, "ProjectAccess_83b7c252");
+addNestedCodecSchema([(schema, id) => objectAjvFast.addSchema(schema, id), (schema, id) => objectAjvAll.addSchema(schema, id)], "Member_24b40f77", MemberModel);
+const __resolvedModelSchema_ProjectAccess = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"ProjectAccess_87602853\",\"type\":\"object\",\"properties\":{\"member\":{\"$ref\":\"#/$defs/Member_24b40f77\"},\"permissions\":{\"allOf\":[{\"type\":\"string\"},{\"pattern\":\"^0x[0-9a-fA-F]+$\"}]},\"projectName\":{\"allOf\":[{\"type\":\"string\"},{\"maxLength\":48,\"minLength\":3,\"pattern\":\"^[A-Za-z][A-Za-z0-9 -]*$\"}]}},\"required\":[\"member\",\"permissions\",\"projectName\"],\"additionalProperties\":false,\"$defs\":{\"Member_24b40f77\":{\"type\":\"object\",\"properties\":{\"email\":{\"allOf\":[{\"type\":\"string\"},{\"format\":\"email\"}]},\"id\":{\"allOf\":[{\"type\":\"string\"},{\"minLength\":1}]},\"name\":{\"allOf\":[{\"type\":\"string\"},{\"minLength\":2}]}},\"required\":[\"email\",\"id\",\"name\"],\"additionalProperties\":false}}}") as object) as object;
+objectAjvFast.addSchema(structuredClone(__resolvedModelSchema_ProjectAccess) as object, "ProjectAccess_87602853");
+objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_ProjectAccess) as object, "ProjectAccess_87602853");
 
-const validateProjectAccessFast = requireAjvSchema(objectAjvFast.getSchema("ProjectAccess_83b7c252"), "ProjectAccess_83b7c252");
-const validateProjectAccessAll = requireAjvSchema(objectAjvAll.getSchema("ProjectAccess_83b7c252"), "ProjectAccess_83b7c252");
+const validateProjectAccessFast = requireAjvSchema(objectAjvFast.getSchema("ProjectAccess_87602853"), "ProjectAccess_87602853");
+const validateProjectAccessAll = requireAjvSchema(objectAjvAll.getSchema("ProjectAccess_87602853"), "ProjectAccess_87602853");
 
 function fillProjectAccess(out: Record<string, unknown>, wire: Record<string, unknown>, copyIdentity = true): Record<string, unknown> {
   if (copyIdentity) {
@@ -141,7 +141,7 @@ export function validateProjectAccess(value: unknown, options?: { readonly failF
     ok = failFast ? validateProjectAccessFast(value) : validateProjectAccessAll(value);
     errors = failFast ? validateProjectAccessFast.errors : validateProjectAccessAll.errors;
   } else {
-    const validator = resolveModelValidationContextValidator(options.validationContext, "ProjectAccess_83b7c252", failFast ? 'first' : 'all');
+    const validator = resolveModelValidationContextValidator(options.validationContext, "ProjectAccess_87602853", failFast ? 'first' : 'all');
     ok = runSynchronousValidation(validator, value);
     errors = validator.errors;
   }
@@ -156,14 +156,14 @@ export function assertProjectAccess(value: unknown, options?: { readonly failFas
     validationFailure(ajvIssues(validator, value, IssueRepresentation.Model, IssueSource.OpenAPI));
   }
 } else {
-  const validator = resolveModelValidationContextValidator(options.validationContext, "ProjectAccess_83b7c252", options?.failFast !== false ? 'first' : 'all');
+  const validator = resolveModelValidationContextValidator(options.validationContext, "ProjectAccess_87602853", options?.failFast !== false ? 'first' : 'all');
   if (!runSynchronousValidation(validator, value)) validationFailure(ajvIssues(validator, value, IssueRepresentation.Model, IssueSource.OpenAPI));
 }
   return value as Record<string, unknown>;
 }
 
 
-createObjectCodec("ProjectAccess_83b7c252", {
+createObjectCodec("ProjectAccess_87602853", {
   stringify: stringifyProjectAccess as (value: never, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/codegen/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }) => string,
   parse: parseProjectAccess as (text: string, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/codegen/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }) => never,
   validate: validateProjectAccess,

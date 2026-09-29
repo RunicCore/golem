@@ -48,21 +48,21 @@ export function encodeTask(model: TaskModel): Types.Task {
 registerGeneratedModel(TaskModel, {
   fields: ["id", "title"] as const,
   conversion: { decode: decodeTask, encode: encodeTask },
-  codecId: "Task_0bb0cd96",
+  codecId: "Task_ec1995c6",
   profile: {"mobx":false,"validation":true,"ajvStandalone":false,"allowAny":false},
 });
 
-registerIModelClass("Task_0bb0cd96", TaskModel);
+registerIModelClass("Task_ec1995c6", TaskModel);
 
 const objectAjvFast = createOpenApiSyncAjvEngine({ allErrors: false, validationBindings: {} });
 const objectAjvAll = createOpenApiSyncAjvEngine({ allErrors: true, validationBindings: {} });
 
-const __resolvedModelSchema_Task = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"Task_0bb0cd96\",\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\"},\"title\":{\"allOf\":[{\"type\":\"string\"},{\"minLength\":1}]}},\"required\":[\"id\",\"title\"],\"additionalProperties\":true}") as object) as object;
-objectAjvFast.addSchema(structuredClone(__resolvedModelSchema_Task) as object, "Task_0bb0cd96");
-objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_Task) as object, "Task_0bb0cd96");
+const __resolvedModelSchema_Task = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"Task_ec1995c6\",\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\"},\"title\":{\"allOf\":[{\"type\":\"string\"},{\"minLength\":1}]}},\"required\":[\"id\",\"title\"],\"additionalProperties\":true}") as object) as object;
+objectAjvFast.addSchema(structuredClone(__resolvedModelSchema_Task) as object, "Task_ec1995c6");
+objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_Task) as object, "Task_ec1995c6");
 
-const validateTaskFast = requireAjvSchema(objectAjvFast.getSchema("Task_0bb0cd96"), "Task_0bb0cd96");
-const validateTaskAll = requireAjvSchema(objectAjvAll.getSchema("Task_0bb0cd96"), "Task_0bb0cd96");
+const validateTaskFast = requireAjvSchema(objectAjvFast.getSchema("Task_ec1995c6"), "Task_ec1995c6");
+const validateTaskAll = requireAjvSchema(objectAjvAll.getSchema("Task_ec1995c6"), "Task_ec1995c6");
 
 function fillTask(out: Record<string, unknown>, wire: Record<string, unknown>, copyIdentity = true): Record<string, unknown> {
   if (copyIdentity) {
@@ -128,7 +128,7 @@ export function validateTask(value: unknown, options?: { readonly failFast?: boo
     ok = failFast ? validateTaskFast(value) : validateTaskAll(value);
     errors = failFast ? validateTaskFast.errors : validateTaskAll.errors;
   } else {
-    const validator = resolveModelValidationContextValidator(options.validationContext, "Task_0bb0cd96", failFast ? 'first' : 'all');
+    const validator = resolveModelValidationContextValidator(options.validationContext, "Task_ec1995c6", failFast ? 'first' : 'all');
     ok = runSynchronousValidation(validator, value);
     errors = validator.errors;
   }
@@ -143,14 +143,14 @@ export function assertTask(value: unknown, options?: { readonly failFast?: boole
     validationFailure(ajvIssues(validator, value, IssueRepresentation.Model, IssueSource.OpenAPI));
   }
 } else {
-  const validator = resolveModelValidationContextValidator(options.validationContext, "Task_0bb0cd96", options?.failFast !== false ? 'first' : 'all');
+  const validator = resolveModelValidationContextValidator(options.validationContext, "Task_ec1995c6", options?.failFast !== false ? 'first' : 'all');
   if (!runSynchronousValidation(validator, value)) validationFailure(ajvIssues(validator, value, IssueRepresentation.Model, IssueSource.OpenAPI));
 }
   return value as Record<string, unknown>;
 }
 
 
-createObjectCodec("Task_0bb0cd96", {
+createObjectCodec("Task_ec1995c6", {
   stringify: stringifyTask as (value: never, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/codegen/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }) => string,
   parse: parseTask as (text: string, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/codegen/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }) => never,
   validate: validateTask,

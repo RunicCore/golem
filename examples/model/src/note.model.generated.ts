@@ -59,24 +59,24 @@ registerGeneratedModel(NotebookBase, {
     decode: (value, constructor) => decodeNotebookModel(constructor ?? NotebookBase, value),
     encode: encodeNotebookModel,
   },
-  codecId: "Notebook_d1c4b694",
+  codecId: "Notebook_5213e3e5",
   profile: { validation: true, mobx: false },
 });
 
-registerIModelClass("Notebook_d1c4b694", NotebookBase);
+registerIModelClass("Notebook_5213e3e5", NotebookBase);
 
 const objectAjvFast = createOpenApiSyncAjvEngine({ allErrors: false, validationBindings: {} });
 const objectAjvAll = createOpenApiSyncAjvEngine({ allErrors: true, validationBindings: {} });
 
-const __resolvedModelSchema_Note = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"Note_c3d9f018\",\"type\":\"object\",\"properties\":{\"text\":{\"type\":\"string\"}},\"required\":[\"text\"],\"additionalProperties\":false}") as object) as object;
-objectAjvFast.addSchema(structuredClone(__resolvedModelSchema_Note) as object, "Note_c3d9f018");
-objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_Note) as object, "Note_c3d9f018");
-const __resolvedModelSchema_Notebook = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"Notebook_d1c4b694\",\"type\":\"object\",\"properties\":{\"notes\":{\"type\":\"array\",\"items\":{\"$ref\":\"#/$defs/Note_c3d9f018\"}}},\"required\":[\"notes\"],\"additionalProperties\":false,\"$defs\":{\"Note_c3d9f018\":{\"type\":\"object\",\"properties\":{\"text\":{\"type\":\"string\"}},\"required\":[\"text\"],\"additionalProperties\":false}}}") as object) as object;
-objectAjvFast.addSchema(structuredClone(__resolvedModelSchema_Notebook) as object, "Notebook_d1c4b694");
-objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_Notebook) as object, "Notebook_d1c4b694");
+const __resolvedModelSchema_Note = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"Note_3fe96627\",\"type\":\"object\",\"properties\":{\"text\":{\"type\":\"string\"}},\"required\":[\"text\"],\"additionalProperties\":false}") as object) as object;
+objectAjvFast.addSchema(structuredClone(__resolvedModelSchema_Note) as object, "Note_3fe96627");
+objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_Note) as object, "Note_3fe96627");
+const __resolvedModelSchema_Notebook = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"Notebook_5213e3e5\",\"type\":\"object\",\"properties\":{\"notes\":{\"type\":\"array\",\"items\":{\"$ref\":\"#/$defs/Note_3fe96627\"}}},\"required\":[\"notes\"],\"additionalProperties\":false,\"$defs\":{\"Note_3fe96627\":{\"type\":\"object\",\"properties\":{\"text\":{\"type\":\"string\"}},\"required\":[\"text\"],\"additionalProperties\":false}}}") as object) as object;
+objectAjvFast.addSchema(structuredClone(__resolvedModelSchema_Notebook) as object, "Notebook_5213e3e5");
+objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_Notebook) as object, "Notebook_5213e3e5");
 
-const validateNoteFast = requireAjvSchema(objectAjvFast.getSchema("Note_c3d9f018"), "Note_c3d9f018");
-const validateNoteAll = requireAjvSchema(objectAjvAll.getSchema("Note_c3d9f018"), "Note_c3d9f018");
+const validateNoteFast = requireAjvSchema(objectAjvFast.getSchema("Note_3fe96627"), "Note_3fe96627");
+const validateNoteAll = requireAjvSchema(objectAjvAll.getSchema("Note_3fe96627"), "Note_3fe96627");
 
 function fillNote(out: Record<string, unknown>, wire: Record<string, unknown>, copyIdentity = true): Record<string, unknown> {
   if (copyIdentity) {
@@ -141,7 +141,7 @@ export function validateNote(value: unknown, options?: { readonly failFast?: boo
     ok = failFast ? validateNoteFast(value) : validateNoteAll(value);
     errors = failFast ? validateNoteFast.errors : validateNoteAll.errors;
   } else {
-    const validator = resolveModelValidationContextValidator(options.validationContext, "Note_c3d9f018", failFast ? 'first' : 'all');
+    const validator = resolveModelValidationContextValidator(options.validationContext, "Note_3fe96627", failFast ? 'first' : 'all');
     ok = runSynchronousValidation(validator, value);
     errors = validator.errors;
   }
@@ -156,14 +156,14 @@ export function assertNote(value: unknown, options?: { readonly failFast?: boole
     validationFailure(ajvIssues(validator, value, IssueRepresentation.Model, IssueSource.TypeScript));
   }
 } else {
-  const validator = resolveModelValidationContextValidator(options.validationContext, "Note_c3d9f018", options?.failFast !== false ? 'first' : 'all');
+  const validator = resolveModelValidationContextValidator(options.validationContext, "Note_3fe96627", options?.failFast !== false ? 'first' : 'all');
   if (!runSynchronousValidation(validator, value)) validationFailure(ajvIssues(validator, value, IssueRepresentation.Model, IssueSource.TypeScript));
 }
   return value as Record<string, unknown>;
 }
 
 
-createObjectCodec("Note_c3d9f018", {
+createObjectCodec("Note_3fe96627", {
   stringify: stringifyNote as (value: never, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/codegen/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }) => string,
   parse: parseNote as (text: string, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/codegen/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }) => never,
   validate: validateNote,
@@ -174,8 +174,8 @@ createObjectCodec("Note_c3d9f018", {
   issueSource: IssueSource.TypeScript,
 });
 
-const validateNotebookFast = requireAjvSchema(objectAjvFast.getSchema("Notebook_d1c4b694"), "Notebook_d1c4b694");
-const validateNotebookAll = requireAjvSchema(objectAjvAll.getSchema("Notebook_d1c4b694"), "Notebook_d1c4b694");
+const validateNotebookFast = requireAjvSchema(objectAjvFast.getSchema("Notebook_5213e3e5"), "Notebook_5213e3e5");
+const validateNotebookAll = requireAjvSchema(objectAjvAll.getSchema("Notebook_5213e3e5"), "Notebook_5213e3e5");
 
 function fillNotebook(out: Record<string, unknown>, wire: Record<string, unknown>): Record<string, unknown> {
   if (Object.prototype.hasOwnProperty.call(wire, "notes")) {
@@ -241,7 +241,7 @@ export function validateNotebook(value: unknown, options?: { readonly failFast?:
     ok = failFast ? validateNotebookFast(value) : validateNotebookAll(value);
     errors = failFast ? validateNotebookFast.errors : validateNotebookAll.errors;
   } else {
-    const validator = resolveModelValidationContextValidator(options.validationContext, "Notebook_d1c4b694", failFast ? 'first' : 'all');
+    const validator = resolveModelValidationContextValidator(options.validationContext, "Notebook_5213e3e5", failFast ? 'first' : 'all');
     ok = runSynchronousValidation(validator, value);
     errors = validator.errors;
   }
@@ -256,14 +256,14 @@ export function assertNotebook(value: unknown, options?: { readonly failFast?: b
     validationFailure(ajvIssues(validator, value, IssueRepresentation.Model, IssueSource.TypeScript));
   }
 } else {
-  const validator = resolveModelValidationContextValidator(options.validationContext, "Notebook_d1c4b694", options?.failFast !== false ? 'first' : 'all');
+  const validator = resolveModelValidationContextValidator(options.validationContext, "Notebook_5213e3e5", options?.failFast !== false ? 'first' : 'all');
   if (!runSynchronousValidation(validator, value)) validationFailure(ajvIssues(validator, value, IssueRepresentation.Model, IssueSource.TypeScript));
 }
   return value as Record<string, unknown>;
 }
 
 
-createObjectCodec("Notebook_d1c4b694", {
+createObjectCodec("Notebook_5213e3e5", {
   stringify: stringifyNotebook as (value: never, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/codegen/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }) => string,
   parse: parseNotebook as (text: string, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/codegen/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }) => never,
   validate: validateNotebook,

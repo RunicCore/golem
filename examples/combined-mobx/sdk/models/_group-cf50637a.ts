@@ -51,22 +51,22 @@ export function encodeMoney(model: MoneyModel): Types.Money {
 registerGeneratedModel(MoneyModel, {
   fields: ["amount", "currency"] as const,
   conversion: { decode: decodeMoney, encode: encodeMoney },
-  codecId: "Money_350e7fd6",
+  codecId: "Money_a0f85026",
   profile: {"mobx":true,"validation":true,"ajvStandalone":false,"allowAny":false},
   enhanceValidator: enhanceValidatorWithMobX,
 });
 
-registerIModelClass("Money_350e7fd6", MoneyModel);
+registerIModelClass("Money_a0f85026", MoneyModel);
 
 const objectAjvFast = createOpenApiSyncAjvEngine({ allErrors: false, validationBindings: {} });
 const objectAjvAll = createOpenApiSyncAjvEngine({ allErrors: true, validationBindings: {} });
 
-const __resolvedModelSchema_Money = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"Money_350e7fd6\",\"type\":\"object\",\"properties\":{\"amount\":{\"allOf\":[{\"type\":\"number\"},{\"minimum\":0}]},\"currency\":{\"allOf\":[{\"type\":\"string\"},{\"pattern\":\"^[A-Z]{3}$\"}]}},\"required\":[\"amount\",\"currency\"],\"additionalProperties\":false}") as object) as object;
-objectAjvFast.addSchema(structuredClone(__resolvedModelSchema_Money) as object, "Money_350e7fd6");
-objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_Money) as object, "Money_350e7fd6");
+const __resolvedModelSchema_Money = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"Money_a0f85026\",\"type\":\"object\",\"properties\":{\"amount\":{\"allOf\":[{\"type\":\"number\"},{\"minimum\":0}]},\"currency\":{\"allOf\":[{\"type\":\"string\"},{\"pattern\":\"^[A-Z]{3}$\"}]}},\"required\":[\"amount\",\"currency\"],\"additionalProperties\":false}") as object) as object;
+objectAjvFast.addSchema(structuredClone(__resolvedModelSchema_Money) as object, "Money_a0f85026");
+objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_Money) as object, "Money_a0f85026");
 
-const validateMoneyFast = requireAjvSchema(objectAjvFast.getSchema("Money_350e7fd6"), "Money_350e7fd6");
-const validateMoneyAll = requireAjvSchema(objectAjvAll.getSchema("Money_350e7fd6"), "Money_350e7fd6");
+const validateMoneyFast = requireAjvSchema(objectAjvFast.getSchema("Money_a0f85026"), "Money_a0f85026");
+const validateMoneyAll = requireAjvSchema(objectAjvAll.getSchema("Money_a0f85026"), "Money_a0f85026");
 
 function fillMoney(out: Record<string, unknown>, wire: Record<string, unknown>, copyIdentity = true): Record<string, unknown> {
   if (copyIdentity) {
@@ -132,7 +132,7 @@ export function validateMoney(value: unknown, options?: { readonly failFast?: bo
     ok = failFast ? validateMoneyFast(value) : validateMoneyAll(value);
     errors = failFast ? validateMoneyFast.errors : validateMoneyAll.errors;
   } else {
-    const validator = resolveModelValidationContextValidator(options.validationContext, "Money_350e7fd6", failFast ? 'first' : 'all');
+    const validator = resolveModelValidationContextValidator(options.validationContext, "Money_a0f85026", failFast ? 'first' : 'all');
     ok = runSynchronousValidation(validator, value);
     errors = validator.errors;
   }
@@ -147,14 +147,14 @@ export function assertMoney(value: unknown, options?: { readonly failFast?: bool
     validationFailure(ajvIssues(validator, value, IssueRepresentation.Model, IssueSource.OpenAPI));
   }
 } else {
-  const validator = resolveModelValidationContextValidator(options.validationContext, "Money_350e7fd6", options?.failFast !== false ? 'first' : 'all');
+  const validator = resolveModelValidationContextValidator(options.validationContext, "Money_a0f85026", options?.failFast !== false ? 'first' : 'all');
   if (!runSynchronousValidation(validator, value)) validationFailure(ajvIssues(validator, value, IssueRepresentation.Model, IssueSource.OpenAPI));
 }
   return value as Record<string, unknown>;
 }
 
 
-createObjectCodec("Money_350e7fd6", {
+createObjectCodec("Money_a0f85026", {
   stringify: stringifyMoney as (value: never, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/codegen/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }) => string,
   parse: parseMoney as (text: string, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/codegen/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }) => never,
   validate: validateMoney,

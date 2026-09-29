@@ -2,10 +2,12 @@
 export * from './types.js';
 export type * as InputSchemas from './input-schemas.js';
 export type * as OutputSchemas from './output-schemas.js';
-export * from './models.js';
+export { MemberModel, stringifyMember, parseMember, fromWireFormatMember, toWireFormatMember, validateMember, assertMember, encodeMember } from './models/Member.js';
+export type { MemberFields, MemberJSON, MemberInit } from './models/Member.js';
+export { ProjectAccessModel, stringifyProjectAccess, parseProjectAccess, fromWireFormatProjectAccess, toWireFormatProjectAccess, validateProjectAccess, assertProjectAccess, encodeProjectAccess } from './models/ProjectAccess.js';
+export type { ProjectAccessFields, ProjectAccessJSON, ProjectAccessInit } from './models/ProjectAccess.js';
 export * from './iobject-plugin-keys.js';
 export * from './client.js';
 
 
 export * from './schemas.js';
-export * from './validation.js';

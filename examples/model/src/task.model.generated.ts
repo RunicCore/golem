@@ -61,36 +61,36 @@ registerGeneratedModel(TaskBase, {
     decode: (value, constructor) => decodeTaskModel(constructor ?? TaskBase, value),
     encode: encodeTaskModel,
   },
-  codecId: "Task_cc583102",
+  codecId: "Task_c97a479d",
   profile: { validation: true, mobx: false },
 });
 
-registerIModelClass("Task_cc583102", TaskBase);
+registerIModelClass("Task_c97a479d", TaskBase);
 
 const objectAjvFast = createOpenApiSyncAjvEngine({ allErrors: false, validationBindings: {} });
 const objectAjvAll = createOpenApiSyncAjvEngine({ allErrors: true, validationBindings: {} });
 
-const __resolvedModelSchema_Task = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"Task_cc583102\",\"type\":\"object\",\"properties\":{\"done\":{\"type\":\"boolean\"},\"priority\":{\"type\":\"number\"},\"title\":{\"allOf\":[{\"type\":\"string\"},{\"minLength\":1}]}},\"required\":[\"done\",\"priority\",\"title\"],\"additionalProperties\":false}") as object) as object;
-objectAjvFast.addSchema(structuredClone(__resolvedModelSchema_Task) as object, "Task_cc583102");
-objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_Task) as object, "Task_cc583102");
-const __resolvedWireSchema_Task = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"Task_cc583102#wire\",\"type\":\"object\",\"properties\":{\"done\":{\"type\":\"boolean\"},\"priority\":{\"anyOf\":[{\"const\":\"high\"},{\"const\":\"low\"},{\"const\":\"normal\"}]},\"title\":{\"allOf\":[{\"type\":\"string\"},{\"minLength\":1}]}},\"required\":[\"done\",\"priority\",\"title\"],\"additionalProperties\":false}") as object, 'wire') as object;
-objectAjvFast.addSchema(structuredClone(__resolvedWireSchema_Task) as object, "Task_cc583102#wire");
-objectAjvAll.addSchema(structuredClone(__resolvedWireSchema_Task) as object, "Task_cc583102#wire");
-const __resolvedModelOnlySchema_Task = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"Task_cc583102#model-only\",\"properties\":{\"priority\":{\"type\":\"number\"}}}") as object, 'model-only') as object;
-objectAjvFast.addSchema(structuredClone(__resolvedModelOnlySchema_Task) as object, "Task_cc583102#model-only");
-objectAjvAll.addSchema(structuredClone(__resolvedModelOnlySchema_Task) as object, "Task_cc583102#model-only");
-const __resolvedWireOnlySchema_Task = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"Task_cc583102#wire-only\",\"properties\":{\"priority\":{\"anyOf\":[{\"const\":\"high\"},{\"const\":\"low\"},{\"const\":\"normal\"}]}}}") as object, 'wire-only') as object;
-objectAjvFast.addSchema(structuredClone(__resolvedWireOnlySchema_Task) as object, "Task_cc583102#wire-only");
-objectAjvAll.addSchema(structuredClone(__resolvedWireOnlySchema_Task) as object, "Task_cc583102#wire-only");
+const __resolvedModelSchema_Task = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"Task_c97a479d\",\"type\":\"object\",\"properties\":{\"done\":{\"type\":\"boolean\"},\"priority\":{\"type\":\"number\"},\"title\":{\"allOf\":[{\"type\":\"string\"},{\"minLength\":1}]}},\"required\":[\"done\",\"priority\",\"title\"],\"additionalProperties\":false}") as object) as object;
+objectAjvFast.addSchema(structuredClone(__resolvedModelSchema_Task) as object, "Task_c97a479d");
+objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_Task) as object, "Task_c97a479d");
+const __resolvedWireSchema_Task = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"Task_c97a479d#wire\",\"type\":\"object\",\"properties\":{\"done\":{\"type\":\"boolean\"},\"priority\":{\"anyOf\":[{\"const\":\"high\"},{\"const\":\"low\"},{\"const\":\"normal\"}]},\"title\":{\"allOf\":[{\"type\":\"string\"},{\"minLength\":1}]}},\"required\":[\"done\",\"priority\",\"title\"],\"additionalProperties\":false}") as object, 'wire') as object;
+objectAjvFast.addSchema(structuredClone(__resolvedWireSchema_Task) as object, "Task_c97a479d#wire");
+objectAjvAll.addSchema(structuredClone(__resolvedWireSchema_Task) as object, "Task_c97a479d#wire");
+const __resolvedModelOnlySchema_Task = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"Task_c97a479d#model-only\",\"properties\":{\"priority\":{\"type\":\"number\"}}}") as object, 'model-only') as object;
+objectAjvFast.addSchema(structuredClone(__resolvedModelOnlySchema_Task) as object, "Task_c97a479d#model-only");
+objectAjvAll.addSchema(structuredClone(__resolvedModelOnlySchema_Task) as object, "Task_c97a479d#model-only");
+const __resolvedWireOnlySchema_Task = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"Task_c97a479d#wire-only\",\"properties\":{\"priority\":{\"anyOf\":[{\"const\":\"high\"},{\"const\":\"low\"},{\"const\":\"normal\"}]}}}") as object, 'wire-only') as object;
+objectAjvFast.addSchema(structuredClone(__resolvedWireOnlySchema_Task) as object, "Task_c97a479d#wire-only");
+objectAjvAll.addSchema(structuredClone(__resolvedWireOnlySchema_Task) as object, "Task_c97a479d#wire-only");
 
-const validateTaskFast = requireAjvSchema(objectAjvFast.getSchema("Task_cc583102"), "Task_cc583102");
-const validateTaskAll = requireAjvSchema(objectAjvAll.getSchema("Task_cc583102"), "Task_cc583102");
-const validateTaskWireFast = requireAjvSchema(objectAjvFast.getSchema("Task_cc583102#wire"), "Task_cc583102#wire");
-const validateTaskWireAll = requireAjvSchema(objectAjvAll.getSchema("Task_cc583102#wire"), "Task_cc583102#wire");
-const validateTaskModelOnlyFast = requireAjvSchema(objectAjvFast.getSchema("Task_cc583102#model-only"), "Task_cc583102#model-only");
-const validateTaskModelOnlyAll = requireAjvSchema(objectAjvAll.getSchema("Task_cc583102#model-only"), "Task_cc583102#model-only");
-const validateTaskWireOnlyFast = requireAjvSchema(objectAjvFast.getSchema("Task_cc583102#wire-only"), "Task_cc583102#wire-only");
-const validateTaskWireOnlyAll = requireAjvSchema(objectAjvAll.getSchema("Task_cc583102#wire-only"), "Task_cc583102#wire-only");
+const validateTaskFast = requireAjvSchema(objectAjvFast.getSchema("Task_c97a479d"), "Task_c97a479d");
+const validateTaskAll = requireAjvSchema(objectAjvAll.getSchema("Task_c97a479d"), "Task_c97a479d");
+const validateTaskWireFast = requireAjvSchema(objectAjvFast.getSchema("Task_c97a479d#wire"), "Task_c97a479d#wire");
+const validateTaskWireAll = requireAjvSchema(objectAjvAll.getSchema("Task_c97a479d#wire"), "Task_c97a479d#wire");
+const validateTaskModelOnlyFast = requireAjvSchema(objectAjvFast.getSchema("Task_c97a479d#model-only"), "Task_c97a479d#model-only");
+const validateTaskModelOnlyAll = requireAjvSchema(objectAjvAll.getSchema("Task_c97a479d#model-only"), "Task_c97a479d#model-only");
+const validateTaskWireOnlyFast = requireAjvSchema(objectAjvFast.getSchema("Task_c97a479d#wire-only"), "Task_c97a479d#wire-only");
+const validateTaskWireOnlyAll = requireAjvSchema(objectAjvAll.getSchema("Task_c97a479d#wire-only"), "Task_c97a479d#wire-only");
 
 function fillTask(out: Record<string, unknown>, wire: Record<string, unknown>, copyIdentity = true): Record<string, unknown> {
   if (copyIdentity) {
@@ -173,7 +173,7 @@ export function validateTask(value: unknown, options?: { readonly failFast?: boo
     ok = failFast ? validateTaskFast(value) : validateTaskAll(value);
     errors = failFast ? validateTaskFast.errors : validateTaskAll.errors;
   } else {
-    const validator = resolveModelValidationContextValidator(options.validationContext, "Task_cc583102", failFast ? 'first' : 'all');
+    const validator = resolveModelValidationContextValidator(options.validationContext, "Task_c97a479d", failFast ? 'first' : 'all');
     ok = runSynchronousValidation(validator, value);
     errors = validator.errors;
   }
@@ -188,7 +188,7 @@ export function assertTask(value: unknown, options?: { readonly failFast?: boole
     validationFailure(ajvIssues(validator, value, IssueRepresentation.Model, IssueSource.TypeScript));
   }
 } else {
-  const validator = resolveModelValidationContextValidator(options.validationContext, "Task_cc583102", options?.failFast !== false ? 'first' : 'all');
+  const validator = resolveModelValidationContextValidator(options.validationContext, "Task_c97a479d", options?.failFast !== false ? 'first' : 'all');
   if (!runSynchronousValidation(validator, value)) validationFailure(ajvIssues(validator, value, IssueRepresentation.Model, IssueSource.TypeScript));
 }
   return value as Record<string, unknown>;
@@ -201,7 +201,7 @@ function __runicAssertWire_Task(value: unknown, options?: { readonly failFast?: 
     validationFailure(ajvIssues(validator, value, IssueRepresentation.Wire, IssueSource.TypeScript));
   }
 } else {
-  const validator = resolveModelValidationContextValidator(options.validationContext, "Task_cc583102#wire", options?.failFast !== false ? 'first' : 'all');
+  const validator = resolveModelValidationContextValidator(options.validationContext, "Task_c97a479d#wire", options?.failFast !== false ? 'first' : 'all');
   if (!runSynchronousValidation(validator, value)) validationFailure(ajvIssues(validator, value, IssueRepresentation.Wire, IssueSource.TypeScript));
 }
   return value as Record<string, unknown>;
@@ -214,7 +214,7 @@ function __runicAssertModelOnly_Task(value: unknown, options?: { readonly failFa
     validationFailure(ajvIssues(validator, value, IssueRepresentation.Model, IssueSource.TypeScript));
   }
 } else {
-  const validator = resolveModelValidationContextValidator(options.validationContext, "Task_cc583102#model-only", options?.failFast !== false ? 'first' : 'all');
+  const validator = resolveModelValidationContextValidator(options.validationContext, "Task_c97a479d#model-only", options?.failFast !== false ? 'first' : 'all');
   if (!runSynchronousValidation(validator, value)) validationFailure(ajvIssues(validator, value, IssueRepresentation.Model, IssueSource.TypeScript));
 }
   return value as Record<string, unknown>;
@@ -227,13 +227,13 @@ function __runicAssertWireOnly_Task(value: unknown, options?: { readonly failFas
     validationFailure(ajvIssues(validator, value, IssueRepresentation.Wire, IssueSource.TypeScript));
   }
 } else {
-  const validator = resolveModelValidationContextValidator(options.validationContext, "Task_cc583102#wire-only", options?.failFast !== false ? 'first' : 'all');
+  const validator = resolveModelValidationContextValidator(options.validationContext, "Task_c97a479d#wire-only", options?.failFast !== false ? 'first' : 'all');
   if (!runSynchronousValidation(validator, value)) validationFailure(ajvIssues(validator, value, IssueRepresentation.Wire, IssueSource.TypeScript));
 }
   return value as Record<string, unknown>;
 }
 
-createObjectCodec("Task_cc583102", {
+createObjectCodec("Task_c97a479d", {
   stringify: stringifyTask as (value: never, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/codegen/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }) => string,
   parse: parseTask as (text: string, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/codegen/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }) => never,
   validate: validateTask,

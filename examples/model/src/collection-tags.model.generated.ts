@@ -56,11 +56,11 @@ registerGeneratedModel(ContractsBase, {
     decode: (value, constructor) => decodeContractsModel(constructor ?? ContractsBase, value),
     encode: encodeContractsModel,
   },
-  codecId: "Contracts_8fb31b6f",
+  codecId: "Contracts_87aa2f02",
   profile: { validation: true, mobx: false },
 });
 
-registerIModelClass("Contracts_8fb31b6f", ContractsBase);
+registerIModelClass("Contracts_87aa2f02", ContractsBase);
 
 const objectAjvFast = createOpenApiSyncAjvEngine({ allErrors: false, validationBindings: {} });
 const objectAjvAll = createOpenApiSyncAjvEngine({ allErrors: true, validationBindings: {} });
@@ -68,9 +68,9 @@ const objectAjvAll = createOpenApiSyncAjvEngine({ allErrors: true, validationBin
 const __resolvedModelSchema___anon_1 = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"__anon_1\",\"type\":\"object\",\"properties\":{\"billingAddress\":{\"anyOf\":[{\"type\":\"string\"}]},\"card\":{\"anyOf\":[{\"type\":\"string\"}]}},\"additionalProperties\":false,\"dependentRequired\":{\"card\":[\"billingAddress\"]}}") as object) as object;
 objectAjvFast.addSchema(structuredClone(__resolvedModelSchema___anon_1) as object, "__anon_1");
 objectAjvAll.addSchema(structuredClone(__resolvedModelSchema___anon_1) as object, "__anon_1");
-const __resolvedModelSchema_Contracts = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"Contracts_8fb31b6f\",\"type\":\"object\",\"properties\":{\"billing\":{\"type\":\"object\",\"properties\":{\"billingAddress\":{\"anyOf\":[{\"type\":\"string\"}]},\"card\":{\"anyOf\":[{\"type\":\"string\"}]}},\"additionalProperties\":false,\"dependentRequired\":{\"card\":[\"billingAddress\"]}},\"destinations\":{\"type\":\"array\",\"items\":{\"type\":\"string\"},\"contains\":{\"allOf\":[{\"type\":\"string\"},{\"format\":\"email\"}]},\"minContains\":1}},\"required\":[\"billing\",\"destinations\"],\"additionalProperties\":false}") as object) as object;
-objectAjvFast.addSchema(structuredClone(__resolvedModelSchema_Contracts) as object, "Contracts_8fb31b6f");
-objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_Contracts) as object, "Contracts_8fb31b6f");
+const __resolvedModelSchema_Contracts = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"Contracts_87aa2f02\",\"type\":\"object\",\"properties\":{\"billing\":{\"type\":\"object\",\"properties\":{\"billingAddress\":{\"anyOf\":[{\"type\":\"string\"}]},\"card\":{\"anyOf\":[{\"type\":\"string\"}]}},\"additionalProperties\":false,\"dependentRequired\":{\"card\":[\"billingAddress\"]}},\"destinations\":{\"type\":\"array\",\"items\":{\"type\":\"string\"},\"contains\":{\"allOf\":[{\"type\":\"string\"},{\"format\":\"email\"}]},\"minContains\":1}},\"required\":[\"billing\",\"destinations\"],\"additionalProperties\":false}") as object) as object;
+objectAjvFast.addSchema(structuredClone(__resolvedModelSchema_Contracts) as object, "Contracts_87aa2f02");
+objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_Contracts) as object, "Contracts_87aa2f02");
 
 const validate__anon_1Fast = requireAjvSchema(objectAjvFast.getSchema("__anon_1"), "__anon_1");
 const validate__anon_1All = requireAjvSchema(objectAjvAll.getSchema("__anon_1"), "__anon_1");
@@ -194,8 +194,8 @@ createObjectCodec("__anon_1", {
   issueSource: IssueSource.TypeScript,
 });
 
-const validateContractsFast = requireAjvSchema(objectAjvFast.getSchema("Contracts_8fb31b6f"), "Contracts_8fb31b6f");
-const validateContractsAll = requireAjvSchema(objectAjvAll.getSchema("Contracts_8fb31b6f"), "Contracts_8fb31b6f");
+const validateContractsFast = requireAjvSchema(objectAjvFast.getSchema("Contracts_87aa2f02"), "Contracts_87aa2f02");
+const validateContractsAll = requireAjvSchema(objectAjvAll.getSchema("Contracts_87aa2f02"), "Contracts_87aa2f02");
 
 function fillContracts(out: Record<string, unknown>, wire: Record<string, unknown>): Record<string, unknown> {
   if (Object.prototype.hasOwnProperty.call(wire, "destinations")) {
@@ -264,7 +264,7 @@ export function validateContracts(value: unknown, options?: { readonly failFast?
     ok = failFast ? validateContractsFast(value) : validateContractsAll(value);
     errors = failFast ? validateContractsFast.errors : validateContractsAll.errors;
   } else {
-    const validator = resolveModelValidationContextValidator(options.validationContext, "Contracts_8fb31b6f", failFast ? 'first' : 'all');
+    const validator = resolveModelValidationContextValidator(options.validationContext, "Contracts_87aa2f02", failFast ? 'first' : 'all');
     ok = runSynchronousValidation(validator, value);
     errors = validator.errors;
   }
@@ -279,14 +279,14 @@ export function assertContracts(value: unknown, options?: { readonly failFast?: 
     validationFailure(ajvIssues(validator, value, IssueRepresentation.Model, IssueSource.TypeScript));
   }
 } else {
-  const validator = resolveModelValidationContextValidator(options.validationContext, "Contracts_8fb31b6f", options?.failFast !== false ? 'first' : 'all');
+  const validator = resolveModelValidationContextValidator(options.validationContext, "Contracts_87aa2f02", options?.failFast !== false ? 'first' : 'all');
   if (!runSynchronousValidation(validator, value)) validationFailure(ajvIssues(validator, value, IssueRepresentation.Model, IssueSource.TypeScript));
 }
   return value as Record<string, unknown>;
 }
 
 
-createObjectCodec("Contracts_8fb31b6f", {
+createObjectCodec("Contracts_87aa2f02", {
   stringify: stringifyContracts as (value: never, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/codegen/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }) => string,
   parse: parseContracts as (text: string, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/codegen/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }) => never,
   validate: validateContracts,

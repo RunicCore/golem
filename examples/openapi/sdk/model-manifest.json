@@ -54,6 +54,10 @@
     "mobx": false,
     "validation": true
   },
+  "runtime": {
+    "minimumVersion": "1.0.0-rc",
+    "name": "@exprtlabs/codegen"
+  },
   "source": {
     "dialect": "3.1.0",
     "digest": "cc24c3c3168942b6c3e2684339043b6830cdcb3c57853bd72591b5011d7111a7",
@@ -63,10 +67,10 @@
     {
       "aliases": [
         "Task",
-        "Task_0bb0cd96",
+        "Task_ec1995c6",
         "openapi:cc24c3c3168942b6#/components/schemas/Task"
       ],
-      "codecId": "Task_0bb0cd96",
+      "codecId": "Task_ec1995c6",
       "modelSchema": {
         "additionalProperties": true,
         "properties": {

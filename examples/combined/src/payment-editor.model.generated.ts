@@ -58,22 +58,22 @@ registerGeneratedModel(PaymentEditorBase, {
     decode: (value, constructor) => decodePaymentEditorModel(constructor ?? PaymentEditorBase, value),
     encode: encodePaymentEditorModel,
   },
-  codecId: "PaymentEditor_92161e0a",
+  codecId: "PaymentEditor_ec0e7711",
   profile: { validation: true, mobx: false },
 });
 
-registerIModelClass("PaymentEditor_92161e0a", PaymentEditorBase);
+registerIModelClass("PaymentEditor_ec0e7711", PaymentEditorBase);
 
 const objectAjvFast = createOpenApiSyncAjvEngine({ allErrors: false, validationBindings: {} });
 const objectAjvAll = createOpenApiSyncAjvEngine({ allErrors: true, validationBindings: {} });
 
 addNestedCodecSchema([(schema, id) => objectAjvFast.addSchema(schema, id), (schema, id) => objectAjvAll.addSchema(schema, id)], "Money", MoneyModel);
-const __resolvedModelSchema_PaymentEditor = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"PaymentEditor_92161e0a\",\"type\":\"object\",\"properties\":{\"money\":{\"$ref\":\"__exprtGeneratedModel:Money\"},\"note\":{\"type\":\"string\"}},\"required\":[\"money\",\"note\"],\"additionalProperties\":false}") as object) as object;
-objectAjvFast.addSchema(structuredClone(__resolvedModelSchema_PaymentEditor) as object, "PaymentEditor_92161e0a");
-objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_PaymentEditor) as object, "PaymentEditor_92161e0a");
+const __resolvedModelSchema_PaymentEditor = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"PaymentEditor_ec0e7711\",\"type\":\"object\",\"properties\":{\"money\":{\"$ref\":\"__exprtGeneratedModel:Money\"},\"note\":{\"type\":\"string\"}},\"required\":[\"money\",\"note\"],\"additionalProperties\":false}") as object) as object;
+objectAjvFast.addSchema(structuredClone(__resolvedModelSchema_PaymentEditor) as object, "PaymentEditor_ec0e7711");
+objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_PaymentEditor) as object, "PaymentEditor_ec0e7711");
 
-const validatePaymentEditorFast = requireAjvSchema(objectAjvFast.getSchema("PaymentEditor_92161e0a"), "PaymentEditor_92161e0a");
-const validatePaymentEditorAll = requireAjvSchema(objectAjvAll.getSchema("PaymentEditor_92161e0a"), "PaymentEditor_92161e0a");
+const validatePaymentEditorFast = requireAjvSchema(objectAjvFast.getSchema("PaymentEditor_ec0e7711"), "PaymentEditor_ec0e7711");
+const validatePaymentEditorAll = requireAjvSchema(objectAjvAll.getSchema("PaymentEditor_ec0e7711"), "PaymentEditor_ec0e7711");
 
 function fillPaymentEditor(out: Record<string, unknown>, wire: Record<string, unknown>, copyIdentity = true): Record<string, unknown> {
   if (copyIdentity) {
@@ -141,7 +141,7 @@ export function validatePaymentEditor(value: unknown, options?: { readonly failF
     ok = failFast ? validatePaymentEditorFast(value) : validatePaymentEditorAll(value);
     errors = failFast ? validatePaymentEditorFast.errors : validatePaymentEditorAll.errors;
   } else {
-    const validator = resolveModelValidationContextValidator(options.validationContext, "PaymentEditor_92161e0a", failFast ? 'first' : 'all');
+    const validator = resolveModelValidationContextValidator(options.validationContext, "PaymentEditor_ec0e7711", failFast ? 'first' : 'all');
     ok = runSynchronousValidation(validator, value);
     errors = validator.errors;
   }
@@ -156,14 +156,14 @@ export function assertPaymentEditor(value: unknown, options?: { readonly failFas
     validationFailure(ajvIssues(validator, value, IssueRepresentation.Model, IssueSource.TypeScript));
   }
 } else {
-  const validator = resolveModelValidationContextValidator(options.validationContext, "PaymentEditor_92161e0a", options?.failFast !== false ? 'first' : 'all');
+  const validator = resolveModelValidationContextValidator(options.validationContext, "PaymentEditor_ec0e7711", options?.failFast !== false ? 'first' : 'all');
   if (!runSynchronousValidation(validator, value)) validationFailure(ajvIssues(validator, value, IssueRepresentation.Model, IssueSource.TypeScript));
 }
   return value as Record<string, unknown>;
 }
 
 
-createObjectCodec("PaymentEditor_92161e0a", {
+createObjectCodec("PaymentEditor_ec0e7711", {
   stringify: stringifyPaymentEditor as (value: never, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/codegen/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }) => string,
   parse: parsePaymentEditor as (text: string, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/codegen/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }) => never,
   validate: validatePaymentEditor,

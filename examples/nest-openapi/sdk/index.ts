@@ -2,10 +2,18 @@
 export * from './types.js';
 export type * as InputSchemas from './input-schemas.js';
 export type * as OutputSchemas from './output-schemas.js';
-export * from './models.js';
+export { MerchantModel, stringifyMerchant, parseMerchant, fromWireFormatMerchant, toWireFormatMerchant, validateMerchant, assertMerchant, encodeMerchant } from './models/Merchant.js';
+export type { MerchantFields, MerchantJSON, MerchantInit } from './models/Merchant.js';
+export { MerchantOmitIdModel, stringifyMerchantOmitId, parseMerchantOmitId, fromWireFormatMerchantOmitId, toWireFormatMerchantOmitId, validateMerchantOmitId, assertMerchantOmitId, encodeMerchantOmitId } from './models/MerchantOmitId.js';
+export type { MerchantOmitIdFields, MerchantOmitIdJSON, MerchantOmitIdInit } from './models/MerchantOmitId.js';
+export { MoneyModel, stringifyMoney, parseMoney, fromWireFormatMoney, toWireFormatMoney, validateMoney, assertMoney, encodeMoney } from './models/Money.js';
+export type { MoneyFields, MoneyJSON, MoneyInit } from './models/Money.js';
+export { PaymentModel, stringifyPayment, parsePayment, fromWireFormatPayment, toWireFormatPayment, validatePayment, assertPayment, encodePayment } from './models/Payment.js';
+export type { PaymentFields, PaymentJSON, PaymentInit } from './models/Payment.js';
+export { PaymentInputModel, stringifyPaymentInput, parsePaymentInput, fromWireFormatPaymentInput, toWireFormatPaymentInput, validatePaymentInput, assertPaymentInput, encodePaymentInput } from './models/PaymentInput.js';
+export type { PaymentInputFields, PaymentInputJSON, PaymentInputInit } from './models/PaymentInput.js';
 export * from './iobject-plugin-keys.js';
 export * from './client.js';
 
 
 export * from './schemas.js';
-export * from './validation.js';

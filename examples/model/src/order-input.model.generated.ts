@@ -52,11 +52,11 @@ registerGeneratedModel(OrderInputBase, {
     decode: (value, constructor) => decodeOrderInputModel(constructor ?? OrderInputBase, value),
     encode: encodeOrderInputModel,
   },
-  codecId: "OrderInput_d19c0ede",
+  codecId: "OrderInput_bbcddf3d",
   profile: { validation: true, mobx: false },
 });
 
-registerIModelClass("OrderInput_d19c0ede", OrderInputBase);
+registerIModelClass("OrderInput_bbcddf3d", OrderInputBase);
 
 const objectAjvFast = createOpenApiSyncAjvEngine({ allErrors: false, validationBindings: {} });
 const objectAjvAll = createOpenApiSyncAjvEngine({ allErrors: true, validationBindings: {} });
@@ -64,9 +64,9 @@ const objectAjvAll = createOpenApiSyncAjvEngine({ allErrors: true, validationBin
 const __resolvedModelSchema___anon_1 = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"__anon_1\",\"type\":\"object\",\"properties\":{\"sku\":{\"allOf\":[{\"type\":\"string\"},{\"minLength\":3}]}},\"required\":[\"sku\"],\"additionalProperties\":false}") as object) as object;
 objectAjvFast.addSchema(structuredClone(__resolvedModelSchema___anon_1) as object, "__anon_1");
 objectAjvAll.addSchema(structuredClone(__resolvedModelSchema___anon_1) as object, "__anon_1");
-const __resolvedModelSchema_OrderInput = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"OrderInput_d19c0ede\",\"type\":\"object\",\"properties\":{\"items\":{\"type\":\"array\",\"items\":{\"type\":\"object\",\"properties\":{\"sku\":{\"allOf\":[{\"type\":\"string\"},{\"minLength\":3}]}},\"required\":[\"sku\"],\"additionalProperties\":false}}},\"required\":[\"items\"],\"additionalProperties\":false}") as object) as object;
-objectAjvFast.addSchema(structuredClone(__resolvedModelSchema_OrderInput) as object, "OrderInput_d19c0ede");
-objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_OrderInput) as object, "OrderInput_d19c0ede");
+const __resolvedModelSchema_OrderInput = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"OrderInput_bbcddf3d\",\"type\":\"object\",\"properties\":{\"items\":{\"type\":\"array\",\"items\":{\"type\":\"object\",\"properties\":{\"sku\":{\"allOf\":[{\"type\":\"string\"},{\"minLength\":3}]}},\"required\":[\"sku\"],\"additionalProperties\":false}}},\"required\":[\"items\"],\"additionalProperties\":false}") as object) as object;
+objectAjvFast.addSchema(structuredClone(__resolvedModelSchema_OrderInput) as object, "OrderInput_bbcddf3d");
+objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_OrderInput) as object, "OrderInput_bbcddf3d");
 
 const validate__anon_1Fast = requireAjvSchema(objectAjvFast.getSchema("__anon_1"), "__anon_1");
 const validate__anon_1All = requireAjvSchema(objectAjvAll.getSchema("__anon_1"), "__anon_1");
@@ -167,8 +167,8 @@ createObjectCodec("__anon_1", {
   issueSource: IssueSource.TypeScript,
 });
 
-const validateOrderInputFast = requireAjvSchema(objectAjvFast.getSchema("OrderInput_d19c0ede"), "OrderInput_d19c0ede");
-const validateOrderInputAll = requireAjvSchema(objectAjvAll.getSchema("OrderInput_d19c0ede"), "OrderInput_d19c0ede");
+const validateOrderInputFast = requireAjvSchema(objectAjvFast.getSchema("OrderInput_bbcddf3d"), "OrderInput_bbcddf3d");
+const validateOrderInputAll = requireAjvSchema(objectAjvAll.getSchema("OrderInput_bbcddf3d"), "OrderInput_bbcddf3d");
 
 function fillOrderInput(out: Record<string, unknown>, wire: Record<string, unknown>): Record<string, unknown> {
   if (Object.prototype.hasOwnProperty.call(wire, "items")) {
@@ -234,7 +234,7 @@ export function validateOrderInput(value: unknown, options?: { readonly failFast
     ok = failFast ? validateOrderInputFast(value) : validateOrderInputAll(value);
     errors = failFast ? validateOrderInputFast.errors : validateOrderInputAll.errors;
   } else {
-    const validator = resolveModelValidationContextValidator(options.validationContext, "OrderInput_d19c0ede", failFast ? 'first' : 'all');
+    const validator = resolveModelValidationContextValidator(options.validationContext, "OrderInput_bbcddf3d", failFast ? 'first' : 'all');
     ok = runSynchronousValidation(validator, value);
     errors = validator.errors;
   }
@@ -249,14 +249,14 @@ export function assertOrderInput(value: unknown, options?: { readonly failFast?:
     validationFailure(ajvIssues(validator, value, IssueRepresentation.Model, IssueSource.TypeScript));
   }
 } else {
-  const validator = resolveModelValidationContextValidator(options.validationContext, "OrderInput_d19c0ede", options?.failFast !== false ? 'first' : 'all');
+  const validator = resolveModelValidationContextValidator(options.validationContext, "OrderInput_bbcddf3d", options?.failFast !== false ? 'first' : 'all');
   if (!runSynchronousValidation(validator, value)) validationFailure(ajvIssues(validator, value, IssueRepresentation.Model, IssueSource.TypeScript));
 }
   return value as Record<string, unknown>;
 }
 
 
-createObjectCodec("OrderInput_d19c0ede", {
+createObjectCodec("OrderInput_bbcddf3d", {
   stringify: stringifyOrderInput as (value: never, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/codegen/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }) => string,
   parse: parseOrderInput as (text: string, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/codegen/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }) => never,
   validate: validateOrderInput,

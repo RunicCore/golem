@@ -2,10 +2,10 @@
 export * from './types.js';
 export type * as InputSchemas from './input-schemas.js';
 export type * as OutputSchemas from './output-schemas.js';
-export * from './models.js';
+export { TaskModel, stringifyTask, parseTask, fromWireFormatTask, toWireFormatTask, validateTask, assertTask, encodeTask } from './models/Task.js';
+export type { TaskFields, TaskJSON, TaskInit } from './models/Task.js';
 export * from './iobject-plugin-keys.js';
 export * from './client.js';
 
 
 export * from './schemas.js';
-export * from './validation.js';

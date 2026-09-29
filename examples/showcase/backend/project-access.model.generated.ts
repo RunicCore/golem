@@ -59,11 +59,11 @@ registerGeneratedModel(MemberBase, {
     decode: (value, constructor) => decodeMemberModel(constructor ?? MemberBase, value),
     encode: encodeMemberModel,
   },
-  codecId: "Member_744cdea7",
+  codecId: "Member_5f7b88d4",
   profile: { validation: true, mobx: false },
 });
 
-registerIModelClass("Member_744cdea7", MemberBase);
+registerIModelClass("Member_5f7b88d4", MemberBase);
 
 export type ProjectAccessFields = { projectName: string; member: MemberBase; permissions: number };
 export type ProjectAccessJSON = { projectName: string; member: MemberJSON; permissions: string };
@@ -78,7 +78,7 @@ export abstract class ProjectAccessBase implements GeneratedModel<ProjectAccessJ
 
   public constructor(values: ProjectAccessInit = {}) {
     if (Object.prototype.hasOwnProperty.call(values, "projectName")) defineModelProperty(this, "projectName", values["projectName"]);
-    if (Object.prototype.hasOwnProperty.call(values, "member")) defineModelProperty(this, "member", values["member"] == null || values["member"] instanceof MemberBase ? values["member"] : new (requireIModelClass("Member_744cdea7") as unknown as new (values?: MemberInit) => MemberBase)(values["member"] as unknown as MemberInit));
+    if (Object.prototype.hasOwnProperty.call(values, "member")) defineModelProperty(this, "member", values["member"] == null || values["member"] instanceof MemberBase ? values["member"] : new (requireIModelClass("Member_5f7b88d4") as unknown as new (values?: MemberInit) => MemberBase)(values["member"] as unknown as MemberInit));
     if (Object.prototype.hasOwnProperty.call(values, "permissions")) defineModelProperty(this, "permissions", values["permissions"]);
   }
 
@@ -87,7 +87,7 @@ export abstract class ProjectAccessBase implements GeneratedModel<ProjectAccessJ
 function decodeProjectAccessModel(constructor: GeneratedModelConstructor, json: unknown): ProjectAccessBase {
   const values = modelObject(json, "ProjectAccessBase");
   const result: Record<string, unknown> = { ...values };
-  if (Object.prototype.hasOwnProperty.call(values, "member")) defineModelProperty(result, "member", convertModelField("deserialize", "member", () => (values["member"] == null || values["member"] instanceof MemberBase ? values["member"] : decodeGeneratedModelTrusted(requireIModelClass("Member_744cdea7"), values["member"]))));
+  if (Object.prototype.hasOwnProperty.call(values, "member")) defineModelProperty(result, "member", convertModelField("deserialize", "member", () => (values["member"] == null || values["member"] instanceof MemberBase ? values["member"] : decodeGeneratedModelTrusted(requireIModelClass("Member_5f7b88d4"), values["member"]))));
   if (Object.prototype.hasOwnProperty.call(values, "permissions")) defineModelProperty(result, "permissions", convertModelField("deserialize", "permissions", () => (modelSerdeBindings["src/access-rules.ts:822:1090\u0000src/access-rules.ts:1092:1504"].deserialize(values["permissions"]))));
   return Reflect.construct(constructor, [result]) as ProjectAccessBase;
 }
@@ -110,33 +110,33 @@ registerGeneratedModel(ProjectAccessBase, {
     decode: (value, constructor) => decodeProjectAccessModel(constructor ?? ProjectAccessBase, value),
     encode: encodeProjectAccessModel,
   },
-  codecId: "ProjectAccess_0c3ee2b0",
+  codecId: "ProjectAccess_654d8e02",
   profile: { validation: true, mobx: false },
 });
 
-registerIModelClass("ProjectAccess_0c3ee2b0", ProjectAccessBase);
+registerIModelClass("ProjectAccess_654d8e02", ProjectAccessBase);
 
 const objectAjvFast = createOpenApiSyncAjvEngine({ allErrors: false, validationBindings: modelValidationBindings });
 const objectAjvAll = createOpenApiSyncAjvEngine({ allErrors: true, validationBindings: modelValidationBindings });
 
-const __resolvedModelSchema_Member = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"Member_744cdea7\",\"type\":\"object\",\"properties\":{\"email\":{\"allOf\":[{\"type\":\"string\"},{\"format\":\"email\"}]},\"id\":{\"allOf\":[{\"type\":\"string\"},{\"minLength\":1}]},\"name\":{\"allOf\":[{\"type\":\"string\"},{\"minLength\":2}]}},\"required\":[\"email\",\"id\",\"name\"],\"additionalProperties\":false}") as object) as object;
-objectAjvFast.addSchema(structuredClone(__resolvedModelSchema_Member) as object, "Member_744cdea7");
-objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_Member) as object, "Member_744cdea7");
-const __resolvedModelSchema_ProjectAccess = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"ProjectAccess_0c3ee2b0\",\"type\":\"object\",\"properties\":{\"member\":{\"$ref\":\"#/$defs/Member_744cdea7\"},\"permissions\":{\"exprtValidation\":{\"schema\":{\"allOf\":[{\"type\":\"number\"},{\"type\":\"integer\",\"maximum\":255,\"minimum\":0}]},\"bindings\":[\"src/access-rules.ts:627:820\"]}},\"projectName\":{\"allOf\":[{\"type\":\"string\"},{\"maxLength\":48,\"minLength\":3,\"pattern\":\"^[A-Za-z][A-Za-z0-9 -]*$\"}]}},\"required\":[\"member\",\"permissions\",\"projectName\"],\"additionalProperties\":false,\"$defs\":{\"Member_744cdea7\":{\"type\":\"object\",\"properties\":{\"email\":{\"allOf\":[{\"type\":\"string\"},{\"format\":\"email\"}]},\"id\":{\"allOf\":[{\"type\":\"string\"},{\"minLength\":1}]},\"name\":{\"allOf\":[{\"type\":\"string\"},{\"minLength\":2}]}},\"required\":[\"email\",\"id\",\"name\"],\"additionalProperties\":false}}}") as object) as object;
-objectAjvFast.addSchema(structuredClone(__resolvedModelSchema_ProjectAccess) as object, "ProjectAccess_0c3ee2b0");
-objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_ProjectAccess) as object, "ProjectAccess_0c3ee2b0");
-const __resolvedWireSchema_ProjectAccess = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"ProjectAccess_0c3ee2b0#wire\",\"type\":\"object\",\"properties\":{\"member\":{\"$ref\":\"#/$defs/Member_744cdea7\"},\"permissions\":{\"allOf\":[{\"type\":\"string\"},{\"pattern\":\"^0x[0-9a-fA-F]+$\"}]},\"projectName\":{\"allOf\":[{\"type\":\"string\"},{\"maxLength\":48,\"minLength\":3,\"pattern\":\"^[A-Za-z][A-Za-z0-9 -]*$\"}]}},\"required\":[\"member\",\"permissions\",\"projectName\"],\"additionalProperties\":false,\"$defs\":{\"Member_744cdea7\":{\"type\":\"object\",\"properties\":{\"email\":{\"allOf\":[{\"type\":\"string\"},{\"format\":\"email\"}]},\"id\":{\"allOf\":[{\"type\":\"string\"},{\"minLength\":1}]},\"name\":{\"allOf\":[{\"type\":\"string\"},{\"minLength\":2}]}},\"required\":[\"email\",\"id\",\"name\"],\"additionalProperties\":false}}}") as object, 'wire') as object;
-objectAjvFast.addSchema(structuredClone(__resolvedWireSchema_ProjectAccess) as object, "ProjectAccess_0c3ee2b0#wire");
-objectAjvAll.addSchema(structuredClone(__resolvedWireSchema_ProjectAccess) as object, "ProjectAccess_0c3ee2b0#wire");
-const __resolvedModelOnlySchema_ProjectAccess = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"ProjectAccess_0c3ee2b0#model-only\",\"properties\":{\"permissions\":{\"exprtValidation\":{\"schema\":{\"allOf\":[{\"type\":\"number\"},{\"type\":\"integer\",\"maximum\":255,\"minimum\":0}]},\"bindings\":[\"src/access-rules.ts:627:820\"]}}}}") as object, 'model-only') as object;
-objectAjvFast.addSchema(structuredClone(__resolvedModelOnlySchema_ProjectAccess) as object, "ProjectAccess_0c3ee2b0#model-only");
-objectAjvAll.addSchema(structuredClone(__resolvedModelOnlySchema_ProjectAccess) as object, "ProjectAccess_0c3ee2b0#model-only");
-const __resolvedWireOnlySchema_ProjectAccess = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"ProjectAccess_0c3ee2b0#wire-only\",\"properties\":{\"permissions\":{\"allOf\":[{\"type\":\"string\"},{\"pattern\":\"^0x[0-9a-fA-F]+$\"}]}}}") as object, 'wire-only') as object;
-objectAjvFast.addSchema(structuredClone(__resolvedWireOnlySchema_ProjectAccess) as object, "ProjectAccess_0c3ee2b0#wire-only");
-objectAjvAll.addSchema(structuredClone(__resolvedWireOnlySchema_ProjectAccess) as object, "ProjectAccess_0c3ee2b0#wire-only");
+const __resolvedModelSchema_Member = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"Member_5f7b88d4\",\"type\":\"object\",\"properties\":{\"email\":{\"allOf\":[{\"type\":\"string\"},{\"format\":\"email\"}]},\"id\":{\"allOf\":[{\"type\":\"string\"},{\"minLength\":1}]},\"name\":{\"allOf\":[{\"type\":\"string\"},{\"minLength\":2}]}},\"required\":[\"email\",\"id\",\"name\"],\"additionalProperties\":false}") as object) as object;
+objectAjvFast.addSchema(structuredClone(__resolvedModelSchema_Member) as object, "Member_5f7b88d4");
+objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_Member) as object, "Member_5f7b88d4");
+const __resolvedModelSchema_ProjectAccess = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"ProjectAccess_654d8e02\",\"type\":\"object\",\"properties\":{\"member\":{\"$ref\":\"#/$defs/Member_5f7b88d4\"},\"permissions\":{\"exprtValidation\":{\"schema\":{\"allOf\":[{\"type\":\"number\"},{\"type\":\"integer\",\"maximum\":255,\"minimum\":0}]},\"bindings\":[\"src/access-rules.ts:627:820\"]}},\"projectName\":{\"allOf\":[{\"type\":\"string\"},{\"maxLength\":48,\"minLength\":3,\"pattern\":\"^[A-Za-z][A-Za-z0-9 -]*$\"}]}},\"required\":[\"member\",\"permissions\",\"projectName\"],\"additionalProperties\":false,\"$defs\":{\"Member_5f7b88d4\":{\"type\":\"object\",\"properties\":{\"email\":{\"allOf\":[{\"type\":\"string\"},{\"format\":\"email\"}]},\"id\":{\"allOf\":[{\"type\":\"string\"},{\"minLength\":1}]},\"name\":{\"allOf\":[{\"type\":\"string\"},{\"minLength\":2}]}},\"required\":[\"email\",\"id\",\"name\"],\"additionalProperties\":false}}}") as object) as object;
+objectAjvFast.addSchema(structuredClone(__resolvedModelSchema_ProjectAccess) as object, "ProjectAccess_654d8e02");
+objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_ProjectAccess) as object, "ProjectAccess_654d8e02");
+const __resolvedWireSchema_ProjectAccess = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"ProjectAccess_654d8e02#wire\",\"type\":\"object\",\"properties\":{\"member\":{\"$ref\":\"#/$defs/Member_5f7b88d4\"},\"permissions\":{\"allOf\":[{\"type\":\"string\"},{\"pattern\":\"^0x[0-9a-fA-F]+$\"}]},\"projectName\":{\"allOf\":[{\"type\":\"string\"},{\"maxLength\":48,\"minLength\":3,\"pattern\":\"^[A-Za-z][A-Za-z0-9 -]*$\"}]}},\"required\":[\"member\",\"permissions\",\"projectName\"],\"additionalProperties\":false,\"$defs\":{\"Member_5f7b88d4\":{\"type\":\"object\",\"properties\":{\"email\":{\"allOf\":[{\"type\":\"string\"},{\"format\":\"email\"}]},\"id\":{\"allOf\":[{\"type\":\"string\"},{\"minLength\":1}]},\"name\":{\"allOf\":[{\"type\":\"string\"},{\"minLength\":2}]}},\"required\":[\"email\",\"id\",\"name\"],\"additionalProperties\":false}}}") as object, 'wire') as object;
+objectAjvFast.addSchema(structuredClone(__resolvedWireSchema_ProjectAccess) as object, "ProjectAccess_654d8e02#wire");
+objectAjvAll.addSchema(structuredClone(__resolvedWireSchema_ProjectAccess) as object, "ProjectAccess_654d8e02#wire");
+const __resolvedModelOnlySchema_ProjectAccess = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"ProjectAccess_654d8e02#model-only\",\"properties\":{\"permissions\":{\"exprtValidation\":{\"schema\":{\"allOf\":[{\"type\":\"number\"},{\"type\":\"integer\",\"maximum\":255,\"minimum\":0}]},\"bindings\":[\"src/access-rules.ts:627:820\"]}}}}") as object, 'model-only') as object;
+objectAjvFast.addSchema(structuredClone(__resolvedModelOnlySchema_ProjectAccess) as object, "ProjectAccess_654d8e02#model-only");
+objectAjvAll.addSchema(structuredClone(__resolvedModelOnlySchema_ProjectAccess) as object, "ProjectAccess_654d8e02#model-only");
+const __resolvedWireOnlySchema_ProjectAccess = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"ProjectAccess_654d8e02#wire-only\",\"properties\":{\"permissions\":{\"allOf\":[{\"type\":\"string\"},{\"pattern\":\"^0x[0-9a-fA-F]+$\"}]}}}") as object, 'wire-only') as object;
+objectAjvFast.addSchema(structuredClone(__resolvedWireOnlySchema_ProjectAccess) as object, "ProjectAccess_654d8e02#wire-only");
+objectAjvAll.addSchema(structuredClone(__resolvedWireOnlySchema_ProjectAccess) as object, "ProjectAccess_654d8e02#wire-only");
 
-const validateMemberFast = requireAjvSchema(objectAjvFast.getSchema("Member_744cdea7"), "Member_744cdea7");
-const validateMemberAll = requireAjvSchema(objectAjvAll.getSchema("Member_744cdea7"), "Member_744cdea7");
+const validateMemberFast = requireAjvSchema(objectAjvFast.getSchema("Member_5f7b88d4"), "Member_5f7b88d4");
+const validateMemberAll = requireAjvSchema(objectAjvAll.getSchema("Member_5f7b88d4"), "Member_5f7b88d4");
 
 function fillMember(out: Record<string, unknown>, wire: Record<string, unknown>, copyIdentity = true): Record<string, unknown> {
   if (copyIdentity) {
@@ -203,7 +203,7 @@ export function validateMember(value: unknown, options?: { readonly failFast?: b
     ok = failFast ? validateMemberFast(value) : validateMemberAll(value);
     errors = failFast ? validateMemberFast.errors : validateMemberAll.errors;
   } else {
-    const validator = resolveModelValidationContextValidator(options.validationContext, "Member_744cdea7", failFast ? 'first' : 'all');
+    const validator = resolveModelValidationContextValidator(options.validationContext, "Member_5f7b88d4", failFast ? 'first' : 'all');
     ok = runSynchronousValidation(validator, value);
     errors = validator.errors;
   }
@@ -218,14 +218,14 @@ export function assertMember(value: unknown, options?: { readonly failFast?: boo
     validationFailure(ajvIssues(validator, value, IssueRepresentation.Model, IssueSource.TypeScript));
   }
 } else {
-  const validator = resolveModelValidationContextValidator(options.validationContext, "Member_744cdea7", options?.failFast !== false ? 'first' : 'all');
+  const validator = resolveModelValidationContextValidator(options.validationContext, "Member_5f7b88d4", options?.failFast !== false ? 'first' : 'all');
   if (!runSynchronousValidation(validator, value)) validationFailure(ajvIssues(validator, value, IssueRepresentation.Model, IssueSource.TypeScript));
 }
   return value as Record<string, unknown>;
 }
 
 
-createObjectCodec("Member_744cdea7", {
+createObjectCodec("Member_5f7b88d4", {
   stringify: stringifyMember as (value: never, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/codegen/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }) => string,
   parse: parseMember as (text: string, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/codegen/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }) => never,
   validate: validateMember,
@@ -236,14 +236,14 @@ createObjectCodec("Member_744cdea7", {
   issueSource: IssueSource.TypeScript,
 });
 
-const validateProjectAccessFast = requireAjvSchema(objectAjvFast.getSchema("ProjectAccess_0c3ee2b0"), "ProjectAccess_0c3ee2b0");
-const validateProjectAccessAll = requireAjvSchema(objectAjvAll.getSchema("ProjectAccess_0c3ee2b0"), "ProjectAccess_0c3ee2b0");
-const validateProjectAccessWireFast = requireAjvSchema(objectAjvFast.getSchema("ProjectAccess_0c3ee2b0#wire"), "ProjectAccess_0c3ee2b0#wire");
-const validateProjectAccessWireAll = requireAjvSchema(objectAjvAll.getSchema("ProjectAccess_0c3ee2b0#wire"), "ProjectAccess_0c3ee2b0#wire");
-const validateProjectAccessModelOnlyFast = requireAjvSchema(objectAjvFast.getSchema("ProjectAccess_0c3ee2b0#model-only"), "ProjectAccess_0c3ee2b0#model-only");
-const validateProjectAccessModelOnlyAll = requireAjvSchema(objectAjvAll.getSchema("ProjectAccess_0c3ee2b0#model-only"), "ProjectAccess_0c3ee2b0#model-only");
-const validateProjectAccessWireOnlyFast = requireAjvSchema(objectAjvFast.getSchema("ProjectAccess_0c3ee2b0#wire-only"), "ProjectAccess_0c3ee2b0#wire-only");
-const validateProjectAccessWireOnlyAll = requireAjvSchema(objectAjvAll.getSchema("ProjectAccess_0c3ee2b0#wire-only"), "ProjectAccess_0c3ee2b0#wire-only");
+const validateProjectAccessFast = requireAjvSchema(objectAjvFast.getSchema("ProjectAccess_654d8e02"), "ProjectAccess_654d8e02");
+const validateProjectAccessAll = requireAjvSchema(objectAjvAll.getSchema("ProjectAccess_654d8e02"), "ProjectAccess_654d8e02");
+const validateProjectAccessWireFast = requireAjvSchema(objectAjvFast.getSchema("ProjectAccess_654d8e02#wire"), "ProjectAccess_654d8e02#wire");
+const validateProjectAccessWireAll = requireAjvSchema(objectAjvAll.getSchema("ProjectAccess_654d8e02#wire"), "ProjectAccess_654d8e02#wire");
+const validateProjectAccessModelOnlyFast = requireAjvSchema(objectAjvFast.getSchema("ProjectAccess_654d8e02#model-only"), "ProjectAccess_654d8e02#model-only");
+const validateProjectAccessModelOnlyAll = requireAjvSchema(objectAjvAll.getSchema("ProjectAccess_654d8e02#model-only"), "ProjectAccess_654d8e02#model-only");
+const validateProjectAccessWireOnlyFast = requireAjvSchema(objectAjvFast.getSchema("ProjectAccess_654d8e02#wire-only"), "ProjectAccess_654d8e02#wire-only");
+const validateProjectAccessWireOnlyAll = requireAjvSchema(objectAjvAll.getSchema("ProjectAccess_654d8e02#wire-only"), "ProjectAccess_654d8e02#wire-only");
 
 function fillProjectAccess(out: Record<string, unknown>, wire: Record<string, unknown>, copyIdentity = true): Record<string, unknown> {
   if (copyIdentity) {
@@ -328,7 +328,7 @@ export function validateProjectAccess(value: unknown, options?: { readonly failF
     ok = failFast ? validateProjectAccessFast(value) : validateProjectAccessAll(value);
     errors = failFast ? validateProjectAccessFast.errors : validateProjectAccessAll.errors;
   } else {
-    const validator = resolveModelValidationContextValidator(options.validationContext, "ProjectAccess_0c3ee2b0", failFast ? 'first' : 'all');
+    const validator = resolveModelValidationContextValidator(options.validationContext, "ProjectAccess_654d8e02", failFast ? 'first' : 'all');
     ok = runSynchronousValidation(validator, value);
     errors = validator.errors;
   }
@@ -343,7 +343,7 @@ export function assertProjectAccess(value: unknown, options?: { readonly failFas
     validationFailure(ajvIssues(validator, value, IssueRepresentation.Model, IssueSource.TypeScript));
   }
 } else {
-  const validator = resolveModelValidationContextValidator(options.validationContext, "ProjectAccess_0c3ee2b0", options?.failFast !== false ? 'first' : 'all');
+  const validator = resolveModelValidationContextValidator(options.validationContext, "ProjectAccess_654d8e02", options?.failFast !== false ? 'first' : 'all');
   if (!runSynchronousValidation(validator, value)) validationFailure(ajvIssues(validator, value, IssueRepresentation.Model, IssueSource.TypeScript));
 }
   return value as Record<string, unknown>;
@@ -356,7 +356,7 @@ function __runicAssertWire_ProjectAccess(value: unknown, options?: { readonly fa
     validationFailure(ajvIssues(validator, value, IssueRepresentation.Wire, IssueSource.TypeScript));
   }
 } else {
-  const validator = resolveModelValidationContextValidator(options.validationContext, "ProjectAccess_0c3ee2b0#wire", options?.failFast !== false ? 'first' : 'all');
+  const validator = resolveModelValidationContextValidator(options.validationContext, "ProjectAccess_654d8e02#wire", options?.failFast !== false ? 'first' : 'all');
   if (!runSynchronousValidation(validator, value)) validationFailure(ajvIssues(validator, value, IssueRepresentation.Wire, IssueSource.TypeScript));
 }
   return value as Record<string, unknown>;
@@ -369,7 +369,7 @@ function __runicAssertModelOnly_ProjectAccess(value: unknown, options?: { readon
     validationFailure(ajvIssues(validator, value, IssueRepresentation.Model, IssueSource.TypeScript));
   }
 } else {
-  const validator = resolveModelValidationContextValidator(options.validationContext, "ProjectAccess_0c3ee2b0#model-only", options?.failFast !== false ? 'first' : 'all');
+  const validator = resolveModelValidationContextValidator(options.validationContext, "ProjectAccess_654d8e02#model-only", options?.failFast !== false ? 'first' : 'all');
   if (!runSynchronousValidation(validator, value)) validationFailure(ajvIssues(validator, value, IssueRepresentation.Model, IssueSource.TypeScript));
 }
   return value as Record<string, unknown>;
@@ -382,13 +382,13 @@ function __runicAssertWireOnly_ProjectAccess(value: unknown, options?: { readonl
     validationFailure(ajvIssues(validator, value, IssueRepresentation.Wire, IssueSource.TypeScript));
   }
 } else {
-  const validator = resolveModelValidationContextValidator(options.validationContext, "ProjectAccess_0c3ee2b0#wire-only", options?.failFast !== false ? 'first' : 'all');
+  const validator = resolveModelValidationContextValidator(options.validationContext, "ProjectAccess_654d8e02#wire-only", options?.failFast !== false ? 'first' : 'all');
   if (!runSynchronousValidation(validator, value)) validationFailure(ajvIssues(validator, value, IssueRepresentation.Wire, IssueSource.TypeScript));
 }
   return value as Record<string, unknown>;
 }
 
-createObjectCodec("ProjectAccess_0c3ee2b0", {
+createObjectCodec("ProjectAccess_654d8e02", {
   stringify: stringifyProjectAccess as (value: never, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/codegen/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }) => string,
   parse: parseProjectAccess as (text: string, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/codegen/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }) => never,
   validate: validateProjectAccess,
