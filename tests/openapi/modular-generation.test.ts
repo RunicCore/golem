@@ -19,6 +19,7 @@ import { generate as generateModels } from '#model/generator';
 import { writeSdk } from '#openapi/generator';
 import {
   compileGeneratedSdk,
+  compileStrictUnusedSdk,
   isGeneratedModelClass,
   repoRoot,
   requireRecord,
@@ -745,4 +746,24 @@ test('sequential same-title generation jobs keep schema and resource contexts is
   const firstOperation = first.artifacts.find(artifact => artifact.path.endsWith('/operations/putEnvelope.ts'))?.content ?? '';
   const secondOperation = second.artifacts.find(artifact => artifact.path.endsWith('/operations/putEnvelope.ts'))?.content ?? '';
   assert.notEqual(firstOperation, secondOperation, 'operation references carry each job’s digest-qualified schema context');
+});
+
+test('schemas whose names the codec rule shortens still get output files and exports', t => {
+  const { source } = fixture(t);
+  const object = { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] };
+  const operation = (name: string) => ({ operationId: `get${name.replace(/[^A-Za-z]/g, '')}`, responses: { '200': { description: 'ok', content: { 'application/json': { schema: { $ref: `#/components/schemas/${name}` } } } } } });
+  const names = ['PaymentModel', 'TPayment', 'Pay$ment'];
+  const document = {
+    openapi: '3.1.0',
+    info: { title: 'Shortened', version: '1' },
+    paths: Object.fromEntries(names.map((name, index) => [`/p${index}`, { get: operation(name) }])),
+    components: { schemas: Object.fromEntries(names.map((name) => [name, object])) },
+  };
+  const result = writeGeneratedSdk(writeSdk, document, { output: source, name: 'Shortened', profile: { mobx: false, validation: false } });
+  compileStrictUnusedSdk(source);
+  const files = new Set(result.artifacts.map((artifact) => artifact.path));
+  const index = result.artifacts.find((artifact) => artifact.path.endsWith(`${path.sep}index.ts`))?.content ?? '';
+  const exported = [...index.matchAll(/from '\.\/models\/([^']+)\.js'/g)].map((match) => match[1]!);
+  assert.ok(exported.length > 0, 'the index re-exports models');
+  for (const name of exported) assert.ok(files.has(path.join(source, 'models', `${name}.ts`)), `models/${name}.ts is written`);
 });

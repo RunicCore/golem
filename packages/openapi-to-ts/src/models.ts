@@ -944,6 +944,23 @@ export function internOpenApiSchemaGraph(
   return schemaGraph;
 }
 
+/**
+ * Graph nodes carry the short codec name (`Pay$ment`, `PaymentModel` and `TPayment` are all
+ * `Payment`-like), while the rest of the pipeline looks them up by the schema's own name.
+ * Both names resolve to the node.
+ */
+function nodesByDefinitionName(
+  nodes: readonly SchemaNode[],
+  definitions: ReadonlyMap<string, ModelDefinition>,
+): Map<string, SchemaNode> {
+  const byName = new Map(nodes.map((node) => [node.name, node] as const));
+  for (const definition of definitions.values()) {
+    const node = byName.get(codecShortName(definition.name));
+    if (node && !byName.has(definition.name)) byName.set(definition.name, node);
+  }
+  return byName;
+}
+
 export function analyzeOpenApiModels(
   document: unknown,
   validationEnabled = true,
@@ -953,7 +970,7 @@ export function analyzeOpenApiModels(
   const schemaGraph = internOpenApiSchemaGraph(document, ordered, definitions, validationEnabled, resources, selections);
   const nodes = [...schemaGraph.nodes.values()];
   const nodesById = new Map(nodes.map((node) => [node.id, node]));
-  const nodesByName = new Map(nodes.map((node) => [node.name, node]));
+  const nodesByName = nodesByDefinitionName(nodes, definitions);
   const nodesByCodecId = new Map(nodes.map((node) => [node.codecId, node]));
   const grouping = schemaGraphGroups(schemaGraph, definitions);
   return { definitions, ordered, schemaGraph, grouping, resources, nodesById, nodesByName, nodesByCodecId, diagnostics, selections };
@@ -1058,7 +1075,7 @@ function schemaGraphGroups(
   schemaGraph: SchemaGraph,
   definitions: ReadonlyMap<string, ModelDefinition>,
 ): SchemaGraphGrouping {
-  const nodesByName = new Map([...schemaGraph.nodes.values()].map((node) => [node.name, node]));
+  const nodesByName = nodesByDefinitionName([...schemaGraph.nodes.values()], definitions);
   const runtimeEdges = new Map([...schemaGraph.nodes].map(([id, node]) => [id, new Set(node.edges)]));
   const addRuntimeEdge = (fromName: string, toName: string | undefined): void => {
     if (!toName) return;
@@ -1109,17 +1126,15 @@ function schemaGraphGroups(
   };
   for (const id of [...schemaGraph.nodes.keys()].sort()) if (!indices.has(id)) visit(id);
 
-  const definitionByCodecNode = new Map<string, string>();
+  // Schemas of equal shape whose names shorten alike share one node.
+  const definitionsByCodecNode = new Map<string, string[]>();
   for (const definition of definitions.values()) {
     const node = nodesByName.get(definition.name);
-    if (node) definitionByCodecNode.set(node.id, definition.name);
+    if (node) definitionsByCodecNode.set(node.id, [...(definitionsByCodecNode.get(node.id) ?? []), definition.name]);
   }
   const owner = new Map<string, string>();
   const groups = components.map((ids) => {
-    const models = new Set(ids.flatMap((id) => {
-      const model = definitionByCodecNode.get(id);
-      return model === undefined ? [] : [model];
-    }));
+    const models = new Set(ids.flatMap((id) => definitionsByCodecNode.get(id) ?? []));
     const id = `group-${hashGroup([...ids].map((nodeId) => schemaGraph.nodes.get(nodeId)?.codecId ?? nodeId))}`;
     for (const nodeId of ids) owner.set(nodeId, id);
     return { id, filename: `models/_${id}.ts`, nodes: new Set(ids), models };
@@ -1735,7 +1750,7 @@ export function collectOpenApiCodecEntries(
     for (const name of group.models) groupForModel.set(name, group.filename);
   }
   return ordered.map((definition) => {
-    const node = [...schemaGraph.nodes.values()].find((item) => item.name === definition.name);
+    const node = modelAnalysis.nodesByName.get(definition.name);
     const codecId = node?.codecId ?? codecPublicId(definition.name, { kind: 'unknown' }, undefined, { source: 'openapi', constructs: true });
     const source = groupForModel.get(definition.name);
     if (!source) throw new Error(`Internal error: model ${definition.name} has no output group.`);
