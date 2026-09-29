@@ -10,7 +10,7 @@ import { Payment, type TPaymentInput } from './payment.model.js';
 import { PaymentsController } from './payments.controller.js';
 import { submitPayment } from './client.js';
 import { IOBJECT_PLUGIN_KEYS as modelCodecKeys } from './generated/models/iobject-plugin-keys.js';
-import { IOBJECT_PLUGIN_KEYS as sdkCodecKeys } from '../sdk/index.js';
+import { IOBJECT_PLUGIN_KEYS as sdkCodecKeys } from '../sdk/iobject-plugin-keys.js';
 import {
   OPERATION_CODECS,
   OPERATION_OUTPUT_CODECS,
