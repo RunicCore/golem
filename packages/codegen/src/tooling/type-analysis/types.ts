@@ -2,7 +2,7 @@ import { fieldProvenance, isPropertyMapping, isReadonlySequenceType, readonlyPro
 import * as ts from '../typescript-ns.js';
 import { diagnostic, modelSpecificationForClass, propertyType, resolveSymbol } from './symbols.js';
 import { projectionIdentity } from './graph.js';
-import { isProjectionName, pascalIdentifier, policySuffix, projectionBaseName, safeNameHint, unionVariantParts, variantNameNode } from './projection-names.js';
+import { isProjectionName, pascalIdentifier, policySuffix, projectionBaseName, safeNameHint, unionVariantNaming } from './projection-names.js';
 import { commonDirectory, canonicalFilename } from './project.js';
 import { assertSupportedModelFieldName } from '../schema.js';
 import type {
@@ -466,7 +466,10 @@ export function descriptorBuilder(
   );
   const modelLocations = new Map(specifications.map((specification) =>
     [specification.name, sourceLocation(specification.declaration)] as const));
-  const modelNameOf = (declaration: ts.TypeAliasDeclaration): string | undefined => modelNames.get(declaration);
+  const modelNameOf = (declaration: ts.TypeAliasDeclaration): string | undefined => {
+    const name = modelNames.get(declaration);
+    return name === undefined ? undefined : safeNameHint(name, name);
+  };
   const stableIdentityRoot = canonicalFilename(identityRoot ?? commonDirectory(
     specifications.map((specification) => specification.sourceFile.fileName),
   ));
@@ -630,10 +633,10 @@ export function descriptorBuilder(
     }
     if (type.flags & ts.TypeFlags.TemplateLiteral) return withMetadata({ kind: 'string' }, metadata);
     if (type.isUnion()) {
-      const variantParts = unionVariantParts(checker, type.types, context.declaration);
+      const variantNaming = unionVariantNaming(checker, node, type.types, context.declaration);
       const descriptor: Extract<ModelConversionDescriptor, { readonly kind: 'union' }> = {
         kind: 'union',
-        variants: type.types.map((variant) => describe(variant, context, seen, undefined, representation, node ?? provenanceNode, childSubstitutions, `${nameHint}${variantParts.get(variant) ?? ''}`, variantNameNode(checker, node, variant))),
+        variants: type.types.map((variant) => describe(variant, context, seen, undefined, representation, node ?? provenanceNode, childSubstitutions, `${nameHint}${variantNaming.get(variant)?.part ?? ''}`, variantNaming.get(variant)?.node)),
       };
       rejectAmbiguousGeneratedModelUnion(descriptor, context);
       return withMetadata(descriptor, metadata);

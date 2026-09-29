@@ -217,7 +217,7 @@ export class PaymentController {
 `;
   const names = Object.keys((await documentOf(t, source)).components.schemas);
   assertReadableNames(names);
-  assert.ok(names.includes('CreatePaymentBodyMerchantLoose'), names.join(', '));
+  assert.ok(names.includes('PaymentCreatePaymentBodyMerchantLoose'), names.join(', '));
 });
 
 test('an intersection-root controller body names its derived field readably', async t => {
@@ -229,7 +229,7 @@ export class PaymentController {
 `;
   const names = Object.keys((await documentOf(t, source)).components.schemas);
   assertReadableNames(names);
-  assert.ok(names.includes('CreatePaymentBodyExtraLoose'), names.join(', '));
+  assert.ok(names.includes('PaymentCreatePaymentBodyExtraLoose'), names.join(', '));
 });
 
 test('two routes with same-named, differently shaped inline fields get distinct names without RUNM1059', async t => {
@@ -242,7 +242,7 @@ export class PaymentController {
 `;
   const names = Object.keys((await documentOf(t, source)).components.schemas);
   assertReadableNames(names);
-  for (const expected of ['CreatePaymentBodyMerchantLoose', 'UpdatePaymentBodyMerchantLoose']) {
+  for (const expected of ['PaymentCreatePaymentBodyMerchantLoose', 'PaymentUpdatePaymentBodyMerchantLoose']) {
     assert.ok(names.includes(expected), `${expected} in ${names.join(', ')}`);
   }
 });
@@ -263,4 +263,86 @@ test('union members without a discriminant are told apart by position', async t 
   for (const expected of ['OrderEither1', 'OrderEither2']) {
     assert.ok(names.includes(expected), `${expected} in ${names.join(', ')}`);
   }
+});
+
+type Schemas = Document['components']['schemas'];
+
+function variantShapes(schemas: Schemas, prefix: string): Record<string, string[]> {
+  return Object.fromEntries(Object.keys(schemas).filter(name => name.startsWith(prefix)).sort()
+    .map(name => [name, Object.keys(schemas[name]?.properties ?? {}).sort()]));
+}
+
+const SPLIT_MODELS = {
+  'src/b-merchant.ts': "import type { IModel } from '@exprtlabs/codegen/model';\nexport type TMerchant = IModel<{ id: string; name: string }>;\n",
+  'src/a-money.ts': "import type { IModel } from '@exprtlabs/codegen/model';\nexport type TMoney = IModel<{ amount: string }>;\n",
+};
+
+function eitherController(union: string): string {
+  return `import { Body, Controller, Post } from '@nestjs/common';
+import type { IModel } from '@exprtlabs/codegen/model';
+import type { TMerchant } from './b-merchant.js';
+import type { TMoney } from './a-money.js';
+export type TOrder = IModel<{ either: ${union} }>;
+@Controller('orders') export class OrderController { @Post() save(@Body() body: TOrder): TOrder { return body; } }
+`;
+}
+
+test('union member positions do not change when an unrelated controller file is added', async t => {
+  const source = eitherController('(TMerchant & { a: string }) | (TMoney & { b: string })');
+  const before = await documentOf(t, source, SPLIT_MODELS);
+  const unrelated = `import { Body, Controller, Post } from '@nestjs/common';
+import type { TMerchant } from './b-merchant.js';
+@Controller('users') export class UserController { @Post() save(@Body() body: TMerchant): TMerchant { return body; } }
+`;
+  const after = await documentOf(t, source, { ...SPLIT_MODELS, 'src/0-user.controller.ts': unrelated });
+  const expected = variantShapes(before.components.schemas, 'OrderEither');
+  assert.deepEqual(Object.keys(expected), ['OrderEither1', 'OrderEither2']);
+  assert.ok(expected.OrderEither1?.includes('a'), 'member 1 is the first authored member');
+  assert.ok(expected.OrderEither2?.includes('b'), 'member 2 is the second authored member');
+  assert.deepEqual(variantShapes(after.components.schemas, 'OrderEither'), expected);
+});
+
+test('union member positions follow the authored order', async t => {
+  const document = await documentOf(t, eitherController('(TMoney & { b: string }) | (TMerchant & { a: string })'), SPLIT_MODELS);
+  const shapes = variantShapes(document.components.schemas, 'OrderEither');
+  assert.ok(shapes.OrderEither1?.includes('b'));
+  assert.ok(shapes.OrderEither2?.includes('a'));
+});
+
+test('the discriminant is chosen by sorted property name, not by declaration order', async t => {
+  const names = await componentNames(t, controller(
+    "either: (TMerchant & { type: 'x'; kind: 'card' }) | (TMoney & { kind: 'bank'; type: 'y' })",
+  ));
+  for (const expected of ['OrderEitherCard', 'OrderEitherBank']) assert.ok(names.includes(expected), `${expected} in ${names.join(', ')}`);
+});
+
+test('discriminant values that collide after PascalCase fall back to positions', async t => {
+  const names = await componentNames(t, controller(
+    "either: (TMerchant & { kind: 'bank-transfer' }) | (TMoney & { kind: 'bank_transfer' })",
+  ));
+  for (const expected of ['OrderEither1', 'OrderEither2']) assert.ok(names.includes(expected), `${expected} in ${names.join(', ')}`);
+});
+
+test('underscores in model names become part of the derived name instead of dropping it', async t => {
+  const source = `import { Body, Controller, Post } from '@nestjs/common';
+${MODELS}
+export type TShop_Owner = IModel<{ id: string; name: string }>;
+export type TOrder_V2 = IModel<{ shape: TMerchant & { x: string }; owner: Omit<TShop_Owner, 'id'> }>;
+export type TPay_V2 = IModel<{ shape: TMerchant & { y: string } }>;
+@Controller('orders')
+export class OrderController { @Post() save(@Body() body: TOrder_V2): TPay_V2 { return body as never; } }
+`;
+  const names = await componentNames(t, source);
+  for (const expected of ['OrderV2Shape', 'PayV2Shape', 'ShopOwnerOmitId']) assert.ok(names.includes(expected), `${expected} in ${names.join(', ')}`);
+});
+
+test('the same method name on two controllers keeps distinct names', async t => {
+  const source = `${CONTROLLER_MODELS}
+@Controller('payments')
+export class PaymentsController { @Post() create(@Body() input: { merchant: TMerchant & { x: string } }): void {} }
+@Controller('refunds')
+export class RefundsController { @Post() create(@Body() input: { merchant: TMerchant & { y: string } }): void {} }
+`;
+  const names = Object.keys((await documentOf(t, source)).components.schemas);
+  for (const expected of ['PaymentsCreateBodyMerchantLoose', 'RefundsCreateBodyMerchantLoose']) assert.ok(names.includes(expected), `${expected} in ${names.join(', ')}`);
 });

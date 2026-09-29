@@ -123,7 +123,7 @@ export function createContractAnalysis(
   };
 }
 
-/** `CreatePaymentBody` for a method's body parameter; `CreatePaymentResponse` for what it returns. */
+/** `PaymentsCreateBody` for the body of `PaymentsController.create`; `PaymentsCreateResponse` for what it returns. */
 function controllerOwnerName(node: ts.Node): string {
   let method: ts.Node | undefined = node;
   while (method && !ts.isMethodDeclaration(method)) method = method.parent;
@@ -140,5 +140,7 @@ function controllerOwnerName(node: ts.Node): string {
       .find(name => name === 'Body' || name === 'Query');
     role = decorated ?? (ts.isIdentifier(node.name) ? pascalIdentifier(node.name.text) ?? 'Input' : 'Input');
   }
-  return `${methodPart || 'Controller'}${role}`;
+  const controller = method?.parent && ts.isClassDeclaration(method.parent) ? method.parent.name?.text : undefined;
+  const controllerPart = controller ? pascalIdentifier(controller.replace(/(?<=.)Controller$/, '')) ?? '' : '';
+  return `${controllerPart}${methodPart || 'Controller'}${role}`;
 }

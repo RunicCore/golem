@@ -103,56 +103,98 @@ export function projectionBaseName(
   return (node && readable(checker, node, modelNameOf, 0)) || fallback;
 }
 
-/**
- * The authored node that names one variant of a union: the union member whose type is the
- * variant, or the whole node when it is a single type made optional or nullable.
- */
-export function variantNameNode(checker: ts.TypeChecker, node: ts.TypeNode | undefined, variant: ts.Type): ts.TypeNode | undefined {
-  if (!node) return undefined;
-  const current = unwrap(node);
-  if (!ts.isUnionTypeNode(current)) return current;
-  return current.types.find(member => checker.getTypeFromTypeNode(member) === variant);
-}
-
 const PROJECTION_NAME = /^[A-Za-z][A-Za-z0-9]*$/;
 
 export function isProjectionName(name: string): boolean {
   return PROJECTION_NAME.test(name);
 }
 
-/** `hint` when it is a plain ASCII PascalCase identifier that is not a compiler-internal name; otherwise `owner`. */
+/**
+ * `hint` as a plain ASCII PascalCase identifier (`Order_V2` becomes `OrderV2`); `owner` when
+ * nothing identifier-like remains or the name is compiler-internal (`__type`).
+ */
 export function safeNameHint(hint: string, owner: string): string {
-  return isProjectionName(hint) && !hint.startsWith('__') ? hint : owner;
+  if (hint.startsWith('__')) return owner;
+  const cleaned = pascalIdentifier(hint);
+  return cleaned !== undefined && isProjectionName(cleaned) ? cleaned : owner;
 }
 
+function flattenUnion(node: ts.TypeNode): ts.TypeNode[] {
+  const current = unwrap(node);
+  return ts.isUnionTypeNode(current) ? current.types.flatMap(flattenUnion) : [current];
+}
+
+/** The members of the union as authored, also through a concrete type alias of a union. */
+function authoredUnionMembers(checker: ts.TypeChecker, node: ts.TypeNode | undefined): ts.TypeNode[] | undefined {
+  if (!node) return undefined;
+  const current = unwrap(node);
+  if (ts.isUnionTypeNode(current)) return flattenUnion(current);
+  if (ts.isTypeReferenceNode(current) && !current.typeArguments?.length) {
+    const declaration = aliasDeclaration(checker, current);
+    if (declaration && !declaration.typeParameters?.length && ts.isUnionTypeNode(unwrap(declaration.type))) {
+      return flattenUnion(declaration.type);
+    }
+  }
+  return undefined;
+}
+
+export interface UnionVariantNaming {
+  /** Appended to the owner hint when the variant falls back to owner plus property. */
+  readonly part: string;
+  /** The authored node that names the variant through the grammar. */
+  readonly node: ts.TypeNode | undefined;
+}
+
+const NULLISH = ts.TypeFlags.Null | ts.TypeFlags.Undefined | ts.TypeFlags.Void;
+
 /**
- * Parts that tell union variants apart when they fall back to owner plus property: the
- * PascalCased value of a string-literal property every variant has with a distinct value,
- * otherwise the 1-based position. Null and undefined variants take no part, and a union with
- * fewer than two other variants needs none.
+ * Names for the variants of a union, independent of the checker's type order. The part is
+ * the PascalCased value of a string-literal property every variant has (the first property
+ * in sorted order whose values stay distinct), otherwise the 1-based position of the
+ * variant's member in the union as written. Variants that match no authored member are
+ * numbered by their sorted type text. A union with fewer than two non-nullish variants needs
+ * no part.
  */
-export function unionVariantParts(
+export function unionVariantNaming(
   checker: ts.TypeChecker,
+  node: ts.TypeNode | undefined,
   variants: readonly ts.Type[],
   location: ts.Node,
-): ReadonlyMap<ts.Type, string> {
-  const named = variants.filter(variant => (variant.flags & (ts.TypeFlags.Null | ts.TypeFlags.Undefined | ts.TypeFlags.Void)) === 0);
-  const parts = new Map<ts.Type, string>();
-  if (named.length < 2) return parts;
+): ReadonlyMap<ts.Type, UnionVariantNaming> {
+  const result = new Map<ts.Type, UnionVariantNaming>();
+  const named = variants.filter(variant => (variant.flags & NULLISH) === 0);
+  const members = authoredUnionMembers(checker, node);
+  const memberTypes = members?.map(member => checker.getTypeFromTypeNode(member));
+  const indexOf = (variant: ts.Type): number => memberTypes?.indexOf(variant) ?? -1;
+  const nodeOf = (variant: ts.Type): ts.TypeNode | undefined => {
+    const index = indexOf(variant);
+    if (index >= 0) return members![index];
+    return !members && node && named.length === 1 ? unwrap(node) : undefined;
+  };
+  if (named.length < 2) {
+    for (const variant of named) result.set(variant, { part: '', node: nodeOf(variant) });
+    return result;
+  }
   const literalOf = (variant: ts.Type, property: string): string | undefined => {
     const symbol = checker.getPropertyOfType(variant, property);
     if (!symbol) return undefined;
     const type = checker.getTypeOfSymbolAtLocation(symbol, location);
     return type.flags & ts.TypeFlags.StringLiteral ? (type as ts.StringLiteralType).value : undefined;
   };
-  for (const property of checker.getPropertiesOfType(named[0]!).map(symbol => symbol.getName())) {
-    const values = named.map(variant => literalOf(variant, property));
-    const pascal = values.map(value => value === undefined ? undefined : pascalIdentifier(value));
-    if (pascal.every((value): value is string => value !== undefined) && new Set(values).size === named.length) {
-      named.forEach((variant, index) => parts.set(variant, pascal[index]!));
-      return parts;
+  const shared = checker.getPropertiesOfType(named[0]!).map(symbol => symbol.getName())
+    .filter(property => named.every(variant => literalOf(variant, property) !== undefined)).sort();
+  for (const property of shared) {
+    const pascal = named.map(variant => pascalIdentifier(literalOf(variant, property)!));
+    if (pascal.every((value): value is string => value !== undefined) && new Set(pascal).size === named.length) {
+      named.forEach((variant, index) => result.set(variant, { part: pascal[index]!, node: nodeOf(variant) }));
+      return result;
     }
   }
-  named.forEach((variant, index) => parts.set(variant, String(index + 1)));
-  return parts;
+  const matched = named.every(variant => indexOf(variant) >= 0);
+  const order = matched ? undefined : [...named].sort((a, b) => checker.typeToString(a).localeCompare(checker.typeToString(b)));
+  named.forEach(variant => {
+    const position = order ? order.indexOf(variant) : indexOf(variant);
+    result.set(variant, { part: String(position + 1), node: nodeOf(variant) });
+  });
+  return result;
 }
