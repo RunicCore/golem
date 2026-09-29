@@ -10,12 +10,16 @@ import { Payment, type TPaymentInput } from './payment.model.js';
 import { PaymentsController } from './payments.controller.js';
 import { submitPayment } from './client.js';
 import { IOBJECT_PLUGIN_KEYS as modelCodecKeys } from './generated/models/iobject-plugin-keys.js';
-import { IOBJECT_PLUGIN_KEYS as sdkCodecKeys } from '../sdk/iobject-plugin-keys.js';
+import { IOBJECT_PLUGIN_KEYS as sdkCodecKeys } from '../sdk/index.js';
 import {
   OPERATION_CODECS,
   OPERATION_OUTPUT_CODECS,
   OPERATION_QUERY_CODECS,
 } from './generated/operation-codecs.js';
+
+function sdkCodecId(model: string): string | undefined {
+  return Object.entries(sdkCodecKeys).find(([key]) => key.endsWith(`#${model}`))?.[1];
+}
 
 export type ApplicationFactory = () => Promise<INestApplication>;
 
@@ -163,12 +167,12 @@ export function registerApplicationTests(
 
   test('handwritten Payment and SDK Payment with the same shape share one hashed codec id', () => {
     const modelId = modelCodecKeys['src/payment.model.ts#Payment'];
-    const sdkId = sdkCodecKeys['models.ts#Payment'];
+    const sdkId = sdkCodecId('Payment');
     assert.match(modelId ?? '', /^Payment_[0-9a-f]{8}$/);
     assert.equal(sdkId, modelId);
-    assert.equal(sdkCodecKeys['models.ts#Merchant'], modelCodecKeys['src/payment.model.ts#Merchant']);
-    assert.equal(sdkCodecKeys['models.ts#Money'], modelCodecKeys['src/payment.model.ts#Money']);
-    assert.equal(sdkCodecKeys['models.ts#PaymentInput'], modelCodecKeys['src/payment.model.ts#PaymentInput']);
+    assert.equal(sdkCodecId('Merchant'), modelCodecKeys['src/payment.model.ts#Merchant']);
+    assert.equal(sdkCodecId('Money'), modelCodecKeys['src/payment.model.ts#Money']);
+    assert.equal(sdkCodecId('PaymentInput'), modelCodecKeys['src/payment.model.ts#PaymentInput']);
     assert.equal(OPERATION_CODECS['POST /api/payments/transactions'], modelCodecKeys['src/payment.model.ts#PaymentInput']);
     assert.equal(OPERATION_CODECS['POST /api/payments/transactions/as-class'], modelCodecKeys['src/payment.model.ts#Payment']);
     assert.equal(OPERATION_OUTPUT_CODECS['GET /api/payments/transactions/{id}'], modelCodecKeys['src/payment.model.ts#Payment']);
