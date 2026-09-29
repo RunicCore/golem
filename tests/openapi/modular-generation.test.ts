@@ -653,7 +653,7 @@ test('maintained Nest Payment keeps canonical codec identity across repeated com
     'the maintained SDK preserves its canonical Payment codec ID across repeated generations');
 
   // A second imported closure can carry the same shared component identity.
-  // The local full graph plus these two compact entries exercise three equal
+  // The local full graph plus this compact entry exercise two equal
   // candidates while keeping each payload paired with its own graph context.
   manifest.validationSchemaClosure.push(structuredClone(paymentClosure));
   writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);

@@ -5,6 +5,7 @@ import path from 'node:path';
 import test, { type TestContext } from 'node:test';
 
 import { generate } from '#controllers/generator';
+import { generate as generateModels } from '#model/generator';
 import { createControllerFixture } from '../fixture-templates/controllers/project.js';
 
 interface FixtureOptions {
@@ -309,4 +310,46 @@ test('rejects a root IModel union before emitting a controller artifact', async 
 test('unresolved controller contract types fail instead of becoming unrestricted schemas', async t => {
   const root = fixture(t, readFixture("controllers/contracts/unresolved-controller-contract-types-fail-instead-of-becoming-unrestricted-sch/controller.ts"));
   await assert.rejects(generateFixture(root), /RUNM1058.*could not be resolved/);
+});
+
+test('same-name same-shape class and plain models keep their own codec ids in the operation registry', async t => {
+  const controller = (directory: string, route: string): string => [
+    "import { Body, Controller, Post } from '@nestjs/common';",
+    `import { type TPayment } from './${directory}/payment.model.js';`,
+    `@Controller('${route}')`,
+    `export class ${route[0]?.toUpperCase()}${route.slice(1)}Controller {`,
+    '  @Post()',
+    '  create(@Body() input: TPayment): TPayment { return input; }',
+    '}',
+    '',
+  ].join('\n');
+  const model = (declaration: 'IModel' | 'IObject'): string => [
+    `import type { ${declaration} } from '@exprtlabs/codegen/model';`,
+    `export type TPayment = ${declaration}<{ amount: string }>;`,
+    '',
+  ].join('\n');
+  const root = fixture(t, controller('billing', 'billing'), {
+    files: {
+      'src/billing/payment.model.ts': model('IModel'),
+      'src/payout/payment.model.ts': model('IObject'),
+      'src/payout.controller.ts': controller('payout', 'payout'),
+    },
+  });
+  const contracts = await generateFixture(root);
+  const registry = contracts.artifacts.find(artifact => artifact.path.endsWith('operation-codecs.ts'))?.content ?? '';
+  const models = await generateModels({ root, profile: { mobx: false, validation: true } });
+  const keys = models.artifacts.find(artifact => artifact.path.endsWith('iobject-plugin-keys.ts'))?.content ?? '';
+  const keyOf = (directory: string): string => {
+    const id = keys.match(new RegExp(`src/${directory}/payment\\.model\\.ts#Payment": "([^"]+)"`))?.[1];
+    assert.ok(id, `${directory} model has a plugin key`);
+    return id;
+  };
+  const routeId = (route: string): string => {
+    const id = registry.match(new RegExp(`"POST /${route}": "([^"]+)"`))?.[1];
+    assert.ok(id, `${route} route has an operation codec`);
+    return id;
+  };
+  assert.notEqual(keyOf('billing'), keyOf('payout'));
+  assert.equal(routeId('billing'), keyOf('billing'), 'the class model route uses the class codec');
+  assert.equal(routeId('payout'), keyOf('payout'), 'the plain model route uses the plain codec');
 });

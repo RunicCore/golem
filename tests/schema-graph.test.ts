@@ -312,7 +312,7 @@ test('two different Payment contracts intern as distinct hashed codec ids', () =
   assert.match(source, new RegExp(`createObjectCodec\\("${second.codecId}"`));
 });
 
-test('IObject references and OpenAPI generated-model refs share a hashed codec id', () => {
+test('IObject references and OpenAPI generated-model refs share a codec shape', () => {
   const viaRef: ModelTypeDescriptor = {
     kind: 'object',
     properties: {

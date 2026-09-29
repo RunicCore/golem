@@ -76,7 +76,11 @@ export interface SchemaGraph {
     emitClass?: boolean,
     validationEnabled?: boolean,
   ): SchemaNode;
-  nodeFor(descriptor: ModelTypeDescriptor, name?: string): SchemaNode | undefined;
+  /**
+   * `constructs` selects the class or plain-object codec when one graph holds both
+   * for a name and shape; without it, either matches.
+   */
+  nodeFor(descriptor: ModelTypeDescriptor, name?: string, constructs?: boolean): SchemaNode | undefined;
   addOperation(operation: OperationNode): void;
   seal(): void;
   topo(): readonly SchemaNode[];
@@ -175,8 +179,9 @@ function namedShapeName(descriptor: ModelTypeDescriptor): string | undefined {
 
 /**
  * Shape used for codec ids. Named IObject refs, IModel classes, and OpenAPI
- * generated-model $refs of the same contract share one hash. Runtime
- * construct/projection flags are not part of the wire contract.
+ * generated-model $refs of the same contract share one shape. Runtime
+ * construct/projection flags are not part of it; codecPublicId adds the source
+ * and construction separately.
  *
  * Graph intern substitutes interned children's final codec ids. Unit tests that
  * call codecPublicId without a graph keep short-name refs.
@@ -527,12 +532,12 @@ export function createSchemaGraph(
     if (existing !== id) byName.delete(named);
   };
 
-  const nodeFor = (descriptor: ModelTypeDescriptor, name?: string): SchemaNode | undefined => {
+  const nodeFor = (descriptor: ModelTypeDescriptor, name?: string, constructs?: boolean): SchemaNode | undefined => {
     const named = name ?? namedIdentity(descriptor);
     if (named) {
       if (descriptor.kind === 'object' || (name !== undefined && descriptor.kind !== 'reference' && descriptor.kind !== 'generated-model')) {
         const lookup = internLookup();
-        const hashed = [true, false]
+        const hashed = (constructs === undefined ? [true, false] : [constructs])
           .map((constructs) => byPublicId.get(codecPublicId(named, descriptor, lookup, { source: codecSource, constructs })))
           .find((id) => id !== undefined);
         if (hashed) return nodes.get(hashed);

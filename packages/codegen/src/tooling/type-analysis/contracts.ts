@@ -55,7 +55,7 @@ export function createContractAnalysis(
   for (const specification of specifications) {
     const descriptor = described.get(specification);
     if (!descriptor) continue;
-    const node = internGraph.nodeFor(descriptor, specification.name);
+    const node = internGraph.nodeFor(descriptor, specification.name, specification.emitClass);
     const publicId = node?.codecId ?? codecPublicId(specification.name, descriptor, undefined, { source: 'typescript', constructs: specification.emitClass });
     codecBySpec.set(specification, publicId);
     codecIds[publicId] = publicId;

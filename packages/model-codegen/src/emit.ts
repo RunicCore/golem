@@ -982,7 +982,7 @@ export function codecEntriesForGraph(graph: SourceModelGraph, schemaGraph?: Sche
   const internedSchemaGraph = schemaGraph ?? internSourceDefinitions(graph.definitions, graph.emitted);
   return graph.emitted.map((specification) => {
     const descriptor = graph.definitions[specification.name];
-    const node = descriptor ? internedSchemaGraph.nodeFor(descriptor, specification.name) : undefined;
+    const node = descriptor ? internedSchemaGraph.nodeFor(descriptor, specification.name, specification.emitClass) : undefined;
     return {
       source: portableRelativeFilename(specification.sourceFile.fileName, graph.identityRoot),
       name: specification.name,
