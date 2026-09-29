@@ -242,7 +242,7 @@ test('example comments read as reader guidance, not test notes', () => {
 });
 
 const PUBLIC_SUBPATHS = ['model', 'validation', 'ajv', 'mobx', 'mobx-validation', 'errors', 'client', 'conversion', 'tags', 'serde', 'nest', 'ttsc-plugin', 'generator-api', 'manifest'];
-const INTERNAL_SUBPATHS = ['cli', 'emitter', 'schema', 'schema-graph', 'ajv-tooling', 'type-analysis', 'ts'];
+const INTERNAL_SUBPATHS = ['cli', 'emitter', 'schema', 'schema-graph', 'ajv-tooling', 'type-analysis', 'generated-paths', 'ts'];
 
 test('the runtime reference covers every @exprtlabs/codegen subpath', () => {
   const exports = Object.keys(JSON.parse(readFileSync(path.join(root, 'packages/codegen/package.json'), 'utf8')).exports as Record<string, unknown>).map(key => key.replace(/^\.\//, ''));
