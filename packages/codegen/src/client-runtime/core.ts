@@ -158,7 +158,7 @@ export interface UndeclaredResponseError extends LibError {
   readonly operation: string;
   readonly status: number;
   readonly headers: Headers;
-  readonly contentType: string | null;
+  readonly contentType: string;
 }
 
 const undeclaredResponseBrand = Symbol('UndeclaredResponseError');
@@ -739,4 +739,5 @@ export class ClientRuntime {
       if (!completed) await reader.cancel().catch(() => undefined);
       reader.releaseLock();
     }
-  }}
+  }
+}

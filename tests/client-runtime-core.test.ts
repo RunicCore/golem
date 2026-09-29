@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { LibError, LibErrorKind } from '@exprtlabs/codegen/errors';
 import { ClientRuntime, isUndeclaredResponseError, type RuntimeResponseContract } from '@exprtlabs/codegen/client';
 import type { RuntimeValidationEngine } from '@exprtlabs/codegen/validation';
 
@@ -15,7 +16,13 @@ const jsonContract: RuntimeResponseContract = {
   headers: [],
 };
 
-interface DecodedResponse<Body> { status: number; body: Body; headers: Record<string, unknown> }
+interface DecodedResponse<Body> {
+  matched: 'status' | 'range' | 'default';
+  status: number;
+  contentType: string | null;
+  body: Body;
+  headers: Record<string, unknown>;
+}
 
 test('a declared status and media type returns status and decoded body', async () => {
   const runtime = new ClientRuntime('Tasks', { baseUrl: 'https://api.test' });
@@ -99,4 +106,87 @@ test('an engine in the options wins over the factory, and no factory means no en
   assert.equal(withOwn.validationEngine, own);
   assert.equal(created, 0);
   assert.equal(new ClientRuntime('Tasks', { baseUrl: 'https://api.test' }).validationEngine, undefined);
+});
+
+const runtime = new ClientRuntime('Tasks', { baseUrl: 'https://api.test' });
+const empty = (status: number) => new Response(null, { status });
+const noContent = (status: string): RuntimeResponseContract => ({ status, content: [], headers: [] });
+
+test('an exact status beats a range, which beats default', async () => {
+  const contracts = [noContent('default'), noContent('2XX'), noContent('200')];
+  const read = async (status: number) =>
+    (await runtime.readResponse<DecodedResponse<unknown>>('op', empty(status), contracts, NO_VALIDATORS)).matched;
+  assert.equal(await read(200), 'status');
+  assert.equal(await read(204), 'range');
+  assert.equal(await read(404), 'default');
+});
+
+test('a 2XX range contract matches 204 and a default contract matches otherwise-undeclared statuses', async () => {
+  const result = await runtime.readResponse<DecodedResponse<unknown>>('op', empty(204), [noContent('2XX')], NO_VALIDATORS);
+  assert.equal(result.status, 204);
+  assert.equal(result.body, undefined);
+  const fallback = await runtime.readResponse<DecodedResponse<unknown>>('op', empty(500), [noContent('200'), noContent('default')], NO_VALIDATORS);
+  assert.equal(fallback.matched, 'default');
+});
+
+test('an exact media type beats type/*, which beats */*', async () => {
+  const media = (...types: string[]): RuntimeResponseContract => ({
+    status: '200',
+    content: types.map((contentType) => ({ contentType, framing: 'body' as const })),
+    headers: [],
+  });
+  const read = async (contract: RuntimeResponseContract) =>
+    (await runtime.readResponse<DecodedResponse<unknown>>('op', json(200, {}), [contract], NO_VALIDATORS)).contentType;
+  assert.equal(await read(media('*/*', 'application/*', 'application/json')), 'application/json');
+  assert.equal(await read(media('*/*', 'application/*')), 'application/*');
+  assert.equal(await read(media('*/*')), '*/*');
+});
+
+test('a declared status with an undeclared media type throws the undeclared error', async () => {
+  const error = await runtime.readResponse('op', json(200, {}, 'text/csv'), [jsonContract], NO_VALIDATORS)
+    .then(() => undefined, (caught: unknown) => caught);
+  assert.equal(isUndeclaredResponseError(error, 'Tasks'), true);
+  if (!isUndeclaredResponseError(error)) throw new TypeError('undeclared response error');
+  assert.equal(error.status, 200);
+  assert.equal(error.contentType, 'text/csv');
+});
+
+const streamContract = (contentType: string, framing: 'json-seq' | 'sse' | 'ndjson'): RuntimeResponseContract => ({
+  status: '200', content: [{ contentType, framing }], headers: [],
+});
+const collect = async (body: AsyncIterable<unknown>): Promise<unknown[]> => {
+  const items: unknown[] = [];
+  for await (const item of body) items.push(item);
+  return items;
+};
+
+test('a JSON-seq stream yields its records', async () => {
+  const RS = '\u001e';
+  const response = new Response(`${RS}{\n  "id": 1\n}\n${RS}${RS}{"id":2}\n`, {
+    headers: { 'content-type': 'application/json-seq' },
+  });
+  const result = await runtime.readResponse<DecodedResponse<AsyncIterable<unknown>>>(
+    'op', response, [streamContract('application/json-seq', 'json-seq')], NO_VALIDATORS);
+  assert.deepEqual(await collect(result.body), [{ id: 1 }, { id: 2 }]);
+});
+
+test('an SSE stream yields its data payloads', async () => {
+  const response = new Response('event: ping\ndata: {"id":1}\n\n', {
+    headers: { 'content-type': 'text/event-stream' },
+  });
+  const result = await runtime.readResponse<DecodedResponse<AsyncIterable<unknown>>>(
+    'op', response, [streamContract('text/event-stream', 'sse')], NO_VALIDATORS);
+  assert.deepEqual(await collect(result.body), [{ data: '{"id":1}', event: 'ping' }]);
+});
+
+test('a stream item that fails validation raises the validation error', async () => {
+  const reject = Object.assign((): boolean => false, { errors: [] as readonly unknown[] });
+  const validators = { input: reject, responses: new Map([['200:application/x-ndjson', reject]]) };
+  const response = new Response('{"id":1}\n', { headers: { 'content-type': 'application/x-ndjson' } });
+  const result = await runtime.readResponse<DecodedResponse<AsyncIterable<unknown>>>(
+    'op', response, [streamContract('application/x-ndjson', 'ndjson')], validators);
+  const error = await collect(result.body).then(() => undefined, (caught: unknown) => caught);
+  assert.ok(error instanceof LibError);
+  assert.equal(error.kind, LibErrorKind.Validation);
+  assert.equal(error.message, 'API data validation failed.');
 });
