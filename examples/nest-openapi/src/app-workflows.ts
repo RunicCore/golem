@@ -17,7 +17,7 @@ import {
 } from './generated/operation-codecs.js';
 
 function sdkCodecId(model: string): string | undefined {
-  return Object.entries(sdkCodecKeys).find(([key]) => key.endsWith(`#${model}`))?.[1];
+  return Object.entries(sdkCodecKeys).find(([key]) => key.endsWith(`#${model}Model`))?.[1];
 }
 
 export type ApplicationFactory = () => Promise<INestApplication>;

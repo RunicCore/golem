@@ -25,7 +25,7 @@
     "sdk/iobject-plugin-keys.ts": {
       "job": "openapi:sdk",
       "owner": "@exprtlabs/openapi-to-ts",
-      "digest": "616c0c8d4001f6c25b6b6fbf6f5f1017f24a45412910b7694e6f4b0c4f023499",
+      "digest": "e77fc8e075a9a4649c5c24402b36c5d825813e836d52aeaa56b2c10aeedb9db5",
       "destination": "sdk",
       "destinationKind": "directory"
     },
