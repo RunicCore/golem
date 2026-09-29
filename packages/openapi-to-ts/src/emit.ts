@@ -281,7 +281,7 @@ export function generatedFiles(document: unknown, options: WriteSdkOptions): {
       copyAdditionalProperties: plan.copyAdditionalProperties,
       objectFromJSON: plan.objectFromJSON,
     })) files.set(name, source);
-    const codecEntries = collectOpenApiCodecEntries(document, 'models.ts', modelAnalysis);
+    const codecEntries = collectOpenApiCodecEntries(document, modelAnalysis);
     files.set('iobject-plugin-keys.ts', emitCodecDeclarationTable(codecEntries, '@exprtlabs/openapi-to-ts'));
   }
   files.set('model-manifest.json', stableJson(generateModelManifest(document, profile, modelAnalysis)));

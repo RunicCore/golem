@@ -385,7 +385,7 @@ test('ttsc plugin resolves OpenAPI codecs through modular SDK facades without cr
     }, { output, name: sdkName, profile: { mobx: false, validation: false } });
     writeGeneratedArtifacts(generated.artifacts);
     const keys = fs.readFileSync(path.join(output, 'iobject-plugin-keys.ts'), 'utf8');
-    assert.match(keys, /"models\.ts#Money": "Money_[0-9a-f]{8}"/);
+    assert.doesNotMatch(keys, /"models\.ts#/);
     assert.match(keys, /"models\/_group-[0-9a-f]{8}\.ts#Money": "Money_[0-9a-f]{8}"/);
     return keys;
   };

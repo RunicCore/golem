@@ -1725,7 +1725,6 @@ export function generateModels(
 
 export function collectOpenApiCodecEntries(
   document: unknown,
-  source = 'models.ts',
   analysis?: OpenApiModelAnalysis,
 ): ReadonlyArray<{ readonly source: string; readonly name: string; readonly codecId: string }> {
   const modelAnalysis = analysis ?? analyzeOpenApiModels(document);
@@ -1734,13 +1733,10 @@ export function collectOpenApiCodecEntries(
   for (const group of modelAnalysis.grouping.groups) {
     for (const name of group.models) groupForModel.set(name, group.filename);
   }
-  return ordered.flatMap((definition) => {
+  return ordered.map((definition) => {
     const node = [...schemaGraph.nodes.values()].find((item) => item.name === definition.name);
     const codecId = node?.codecId ?? codecPublicId(definition.name, { kind: 'unknown' });
-    const entries = [{ source, name: definition.name, codecId }];
-    const declarationSource = groupForModel.get(definition.name);
-    if (declarationSource) entries.push({ source: declarationSource, name: definition.name, codecId });
-    return entries;
+    return { source: groupForModel.get(definition.name) ?? `models/${definition.name}.ts`, name: definition.name, codecId };
   });
 }
 
