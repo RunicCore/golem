@@ -919,6 +919,7 @@ export function internOpenApiSchemaGraph(
 ) {
   const schemaGraph = createSchemaGraph({}, {
     anonymousCodecPrefix: `openapi_${sourceDigest(document)}_`,
+    codecSource: 'openapi',
   });
   const sharedSchemaContext = schemaContext(document, resources ? { resources } : {});
   internDescriptors(schemaGraph, ordered.map((definition) => {
@@ -1734,7 +1735,7 @@ export function collectOpenApiCodecEntries(
   }
   return ordered.map((definition) => {
     const node = [...schemaGraph.nodes.values()].find((item) => item.name === definition.name);
-    const codecId = node?.codecId ?? codecPublicId(definition.name, { kind: 'unknown' });
+    const codecId = node?.codecId ?? codecPublicId(definition.name, { kind: 'unknown' }, undefined, { source: 'openapi', constructs: true });
     return { source: groupForModel.get(definition.name) ?? `models/${definition.name}.ts`, name: definition.name, codecId };
   });
 }

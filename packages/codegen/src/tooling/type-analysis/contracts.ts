@@ -56,7 +56,7 @@ export function createContractAnalysis(
     const descriptor = described.get(specification);
     if (!descriptor) continue;
     const node = internGraph.nodeFor(descriptor, specification.name);
-    const publicId = node?.codecId ?? codecPublicId(specification.name, descriptor);
+    const publicId = node?.codecId ?? codecPublicId(specification.name, descriptor, undefined, { source: 'typescript', constructs: specification.emitClass });
     codecBySpec.set(specification, publicId);
     codecIds[publicId] = publicId;
     const collided = (nameCounts.get(specification.name) ?? 0) > 1;

@@ -85,6 +85,8 @@ export interface SchemaGraph {
 export interface SchemaGraphOptions {
   /** Prefix for deterministic anonymous object codec ids in generated SDKs. */
   readonly anonymousCodecPrefix?: string;
+  /** Where the interned models come from; part of every computed codec id. Defaults to `typescript`. */
+  readonly codecSource?: CodecBuildIdentity['source'];
   /**
    * Codec ids fixed by the job, by model short name. A named model interned
    * here takes this id; a reference to a name this graph does not define is a
@@ -283,13 +285,28 @@ export function internDescriptors(
   for (const entry of entries) visit(entry);
 }
 
-/** Runtime codec id: short name plus a hash of the contract shape, not the file path. */
+/** How a codec builds values: where its model comes from and whether `parse` constructs a class. */
+export interface CodecBuildIdentity {
+  readonly source: 'typescript' | 'openapi';
+  readonly constructs: boolean;
+}
+
+/**
+ * Runtime codec id: short name plus a hash of the contract shape and, when given,
+ * how the codec builds values, not the file path. A plain-object codec and a class
+ * codec, or a TypeScript and an OpenAPI codec, never share an id.
+ */
 export function codecPublicId(
   name: string,
   descriptor: ModelTypeDescriptor,
   lookup?: CodecShapeLookup,
+  identity?: CodecBuildIdentity,
 ): string {
-  return `${codecShortName(name)}_${hash8(canonicalDescriptorKey(codecShapeDescriptor(descriptor, lookup)))}`;
+  const shape = codecShapeDescriptor(descriptor, lookup);
+  const key = identity === undefined
+    ? canonicalDescriptorKey(shape)
+    : `${identity.source}:${identity.constructs ? 'class' : 'plain'}:${canonicalDescriptorKey(shape)}`;
+  return `${codecShortName(name)}_${hash8(key)}`;
 }
 
 function codecDeclarationKey(source: string, name: string): string {
@@ -485,6 +502,7 @@ export function createSchemaGraph(
   const byKey = new Map<string, string>();
   const byName = new Map<string, string>();
   const byPublicId = new Map<string, string>();
+  const codecSource = options.codecSource ?? 'typescript';
   let anonymous = 0;
   let sealed = false;
 
@@ -513,8 +531,10 @@ export function createSchemaGraph(
     const named = name ?? namedIdentity(descriptor);
     if (named) {
       if (descriptor.kind === 'object' || (name !== undefined && descriptor.kind !== 'reference' && descriptor.kind !== 'generated-model')) {
-        const publicId = codecPublicId(named, descriptor, internLookup());
-        const hashed = byPublicId.get(publicId);
+        const lookup = internLookup();
+        const hashed = [true, false]
+          .map((constructs) => byPublicId.get(codecPublicId(named, descriptor, lookup, { source: codecSource, constructs })))
+          .find((id) => id !== undefined);
         if (hashed) return nodes.get(hashed);
       }
       const publicHit = byPublicId.get(named);
@@ -645,7 +665,7 @@ export function createSchemaGraph(
       }
     }
     const nextAnonymous = anonymous + 1;
-    const computedId = named ? codecPublicId(named, descriptor, internLookup()) : undefined;
+    const computedId = named ? codecPublicId(named, descriptor, internLookup(), { source: codecSource, constructs: emitClass }) : undefined;
     const publicId = named
       ? options.codecIds?.get(named) ?? computedId
       : options.anonymousCodecPrefix === undefined

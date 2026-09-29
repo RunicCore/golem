@@ -672,15 +672,15 @@ test('maintained Nest Payment keeps canonical codec identity across repeated com
     ...requireRecord(moneyClosure.modelSchema, 'Money model schema'),
     maxProperties: 1,
   };
-  manifest.validationSchemaClosure = manifest.validationSchemaClosure.map(entry => entry.codecId === moneyClosure.codecId
-    ? { ...entry, modelSchema: conflictingMoneySchema }
-    : entry);
+  // The hand-written Payment and the SDK no longer share Money's codec id, so the
+  // conflict is two closure entries that claim the SDK's Money id with different schemas.
+  manifest.validationSchemaClosure.push({ ...moneyClosure, modelSchema: conflictingMoneySchema });
   writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
   assert.throws(
     generatePayment,
     error => error instanceof TypeError
       && error.message === `Conflicting standalone schema identity "${moneyClosure.codecId}".`,
-    'a real nested component constraint conflict remains rejected under the shared identity',
+    'two closure entries with one codec id and different schemas remain rejected',
   );
 });
 

@@ -986,7 +986,7 @@ export function codecEntriesForGraph(graph: SourceModelGraph, schemaGraph?: Sche
     return {
       source: portableRelativeFilename(specification.sourceFile.fileName, graph.identityRoot),
       name: specification.name,
-      codecId: node?.codecId ?? codecPublicId(specification.name, descriptor ?? { kind: 'unknown' }),
+      codecId: node?.codecId ?? codecPublicId(specification.name, descriptor ?? { kind: 'unknown' }, undefined, { source: 'typescript', constructs: specification.emitClass }),
     };
   });
 }
