@@ -26,6 +26,8 @@ export interface TypeAnalysisContext {
   readonly sourceFile: ts.SourceFile;
   readonly declaration: ts.Node;
   readonly name: string;
+  /** PascalCase owner for derived projection names when `name` is not one (controller contexts). */
+  readonly ownerName?: string;
   readonly fieldsNode: ts.TypeNode;
   readonly fieldsType: ts.Type;
   readonly exact: boolean;

@@ -2,7 +2,7 @@ import { fieldProvenance, isPropertyMapping, isReadonlySequenceType, readonlyPro
 import * as ts from '../typescript-ns.js';
 import { diagnostic, modelSpecificationForClass, propertyType, resolveSymbol } from './symbols.js';
 import { projectionIdentity } from './graph.js';
-import { pascalIdentifier, policySuffix, projectionBaseName, variantNameNode } from './projection-names.js';
+import { isProjectionName, pascalIdentifier, policySuffix, projectionBaseName, safeNameHint, unionVariantParts, variantNameNode } from './projection-names.js';
 import { commonDirectory, canonicalFilename } from './project.js';
 import { assertSupportedModelFieldName } from '../schema.js';
 import type {
@@ -486,7 +486,7 @@ export function descriptorBuilder(
     representation: 'model' | 'wire' = 'model',
     provenanceNode?: ts.TypeNode,
     substitutions: TypeSubstitutions = new Map(),
-    nameHint: string = context.name,
+    nameHint: string = safeNameHint(context.ownerName ?? context.name, 'Model'),
     nameNode?: ts.TypeNode,
   ): ModelConversionDescriptor => {
     node = substituteTypeNode(checker, node, substitutions);
@@ -630,9 +630,10 @@ export function descriptorBuilder(
     }
     if (type.flags & ts.TypeFlags.TemplateLiteral) return withMetadata({ kind: 'string' }, metadata);
     if (type.isUnion()) {
+      const variantParts = unionVariantParts(checker, type.types, context.declaration);
       const descriptor: Extract<ModelConversionDescriptor, { readonly kind: 'union' }> = {
         kind: 'union',
-        variants: type.types.map((variant) => describe(variant, context, seen, undefined, representation, node ?? provenanceNode, childSubstitutions, nameHint, variantNameNode(checker, node, variant))),
+        variants: type.types.map((variant) => describe(variant, context, seen, undefined, representation, node ?? provenanceNode, childSubstitutions, `${nameHint}${variantParts.get(variant) ?? ''}`, variantNameNode(checker, node, variant))),
       };
       rejectAmbiguousGeneratedModelUnion(descriptor, context);
       return withMetadata(descriptor, metadata);
@@ -736,9 +737,10 @@ export function descriptorBuilder(
       let projectionName: string | undefined;
       if (projection && !isRoot) {
         const nameAt = node ?? nameNode;
-        const candidate = `${projectionBaseName(checker, nameAt, modelNameOf, nameHint)}${policySuffix({
+        const candidate = `${safeNameHint(projectionBaseName(checker, nameAt, modelNameOf, nameHint), nameHint)}${policySuffix({
           exact: context.exact, allowAny: context.allowAny ?? allowAny, representation,
         })}`;
+        if (!isProjectionName(candidate)) throw new Error(`Internal error: projection name "${candidate}" is not a plain identifier.`);
         const here = sourceLocation(nameAt ?? context.declaration);
         const modelLocation = modelLocations.get(candidate);
         if (modelLocation) {

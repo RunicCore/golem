@@ -1,6 +1,7 @@
 import * as ts from '../typescript-ns.js';
 import { collectSpecifications, type ModelSpecification, type TypeAnalysisContext } from './models.js';
 import { descriptorBuilder, type ModelConversionDescriptor } from './types.js';
+import { pascalIdentifier } from './projection-names.js';
 import { fieldProvenance } from './projections.js';
 import { deduplicateProjections } from './graph.js';
 import { modelSpecificationForClass } from './symbols.js';
@@ -112,6 +113,7 @@ export function createContractAnalysis(
       const context: TypeAnalysisContext = {
         sourceFile: node.getSourceFile(), declaration: node,
         name: type.aliasSymbol?.getName() ?? type.getSymbol()?.getName() ?? 'controller field',
+        ownerName: controllerOwnerName(node),
         fieldsNode: location, fieldsType: type,
         exact: false, allowAny: undefined, dto: true,
       };
@@ -119,4 +121,24 @@ export function createContractAnalysis(
       return syncProjections(descriptor) ?? descriptor;
     },
   };
+}
+
+/** `CreatePaymentBody` for a method's body parameter; `CreatePaymentResponse` for what it returns. */
+function controllerOwnerName(node: ts.Node): string {
+  let method: ts.Node | undefined = node;
+  while (method && !ts.isMethodDeclaration(method)) method = method.parent;
+  const methodPart = method && ts.isMethodDeclaration(method) && ts.isIdentifier(method.name)
+    ? pascalIdentifier(method.name.text) ?? ''
+    : '';
+  let role = 'Response';
+  if (ts.isParameter(node)) {
+    const decorators = ts.canHaveDecorators(node) ? ts.getDecorators(node) ?? [] : [];
+    const decorated = decorators
+      .map(decorator => ts.isCallExpression(decorator.expression) ? decorator.expression.expression : decorator.expression)
+      .filter(ts.isIdentifier)
+      .map(identifier => identifier.text)
+      .find(name => name === 'Body' || name === 'Query');
+    role = decorated ?? (ts.isIdentifier(node.name) ? pascalIdentifier(node.name.text) ?? 'Input' : 'Input');
+  }
+  return `${methodPart || 'Controller'}${role}`;
 }

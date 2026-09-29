@@ -113,3 +113,46 @@ export function variantNameNode(checker: ts.TypeChecker, node: ts.TypeNode | und
   if (!ts.isUnionTypeNode(current)) return current;
   return current.types.find(member => checker.getTypeFromTypeNode(member) === variant);
 }
+
+const PROJECTION_NAME = /^[A-Za-z][A-Za-z0-9]*$/;
+
+export function isProjectionName(name: string): boolean {
+  return PROJECTION_NAME.test(name);
+}
+
+/** `hint` when it is a plain ASCII PascalCase identifier that is not a compiler-internal name; otherwise `owner`. */
+export function safeNameHint(hint: string, owner: string): string {
+  return isProjectionName(hint) && !hint.startsWith('__') ? hint : owner;
+}
+
+/**
+ * Parts that tell union variants apart when they fall back to owner plus property: the
+ * PascalCased value of a string-literal property every variant has with a distinct value,
+ * otherwise the 1-based position. Null and undefined variants take no part, and a union with
+ * fewer than two other variants needs none.
+ */
+export function unionVariantParts(
+  checker: ts.TypeChecker,
+  variants: readonly ts.Type[],
+  location: ts.Node,
+): ReadonlyMap<ts.Type, string> {
+  const named = variants.filter(variant => (variant.flags & (ts.TypeFlags.Null | ts.TypeFlags.Undefined | ts.TypeFlags.Void)) === 0);
+  const parts = new Map<ts.Type, string>();
+  if (named.length < 2) return parts;
+  const literalOf = (variant: ts.Type, property: string): string | undefined => {
+    const symbol = checker.getPropertyOfType(variant, property);
+    if (!symbol) return undefined;
+    const type = checker.getTypeOfSymbolAtLocation(symbol, location);
+    return type.flags & ts.TypeFlags.StringLiteral ? (type as ts.StringLiteralType).value : undefined;
+  };
+  for (const property of checker.getPropertiesOfType(named[0]!).map(symbol => symbol.getName())) {
+    const values = named.map(variant => literalOf(variant, property));
+    const pascal = values.map(value => value === undefined ? undefined : pascalIdentifier(value));
+    if (pascal.every((value): value is string => value !== undefined) && new Set(values).size === named.length) {
+      named.forEach((variant, index) => parts.set(variant, pascal[index]!));
+      return parts;
+    }
+  }
+  named.forEach((variant, index) => parts.set(variant, String(index + 1)));
+  return parts;
+}

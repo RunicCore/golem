@@ -198,3 +198,69 @@ test('a union of projection arrays names each item from its own expression', asy
     assert.ok(names.includes(expected), `${expected} in ${names.join(', ')}`);
   }
 });
+
+const CONTROLLER_MODELS = `import { Body, Controller, Post, Put } from '@nestjs/common';
+${MODELS}
+`;
+const COMPONENT_NAME = /^[A-Za-z][A-Za-z0-9]*$/;
+
+function assertReadableNames(names: readonly string[]): void {
+  for (const name of names) assert.match(name, COMPONENT_NAME, `${name} is a plain component name`);
+}
+
+test('an inline controller body names its derived field after the method and parameter', async t => {
+  const source = `${CONTROLLER_MODELS}
+@Controller('payments')
+export class PaymentController {
+  @Post() createPayment(@Body() input: { merchant: TMerchant & { note: string } }): void {}
+}
+`;
+  const names = Object.keys((await documentOf(t, source)).components.schemas);
+  assertReadableNames(names);
+  assert.ok(names.includes('CreatePaymentBodyMerchantLoose'), names.join(', '));
+});
+
+test('an intersection-root controller body names its derived field readably', async t => {
+  const source = `${CONTROLLER_MODELS}
+@Controller('payments')
+export class PaymentController {
+  @Post() createPayment(@Body() input: TMerchant & { extra: TMerchant & { note: string } }): void {}
+}
+`;
+  const names = Object.keys((await documentOf(t, source)).components.schemas);
+  assertReadableNames(names);
+  assert.ok(names.includes('CreatePaymentBodyExtraLoose'), names.join(', '));
+});
+
+test('two routes with same-named, differently shaped inline fields get distinct names without RUNM1059', async t => {
+  const source = `${CONTROLLER_MODELS}
+@Controller('payments')
+export class PaymentController {
+  @Post() createPayment(@Body() input: { merchant: TMerchant & { note: string } }): void {}
+  @Put() updatePayment(@Body() input: { merchant: TMerchant & { other: number } }): void {}
+}
+`;
+  const names = Object.keys((await documentOf(t, source)).components.schemas);
+  assertReadableNames(names);
+  for (const expected of ['CreatePaymentBodyMerchantLoose', 'UpdatePaymentBodyMerchantLoose']) {
+    assert.ok(names.includes(expected), `${expected} in ${names.join(', ')}`);
+  }
+});
+
+test('union members that fall back to owner and property are told apart by a literal discriminant', async t => {
+  const names = await componentNames(t, controller(
+    "either: (TMerchant & { kind: 'card'; a: string }) | (TMoney & { kind: 'bank-transfer'; b: string })",
+  ));
+  for (const expected of ['OrderEitherCard', 'OrderEitherBankTransfer']) {
+    assert.ok(names.includes(expected), `${expected} in ${names.join(', ')}`);
+  }
+});
+
+test('union members without a discriminant are told apart by position', async t => {
+  const names = await componentNames(t, controller(
+    'either: (TMerchant & { a: string }) | (TMoney & { b: string })',
+  ));
+  for (const expected of ['OrderEither1', 'OrderEither2']) {
+    assert.ok(names.includes(expected), `${expected} in ${names.join(', ')}`);
+  }
+});
