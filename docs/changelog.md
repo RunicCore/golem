@@ -83,6 +83,7 @@ Each item names a breaking change and the action to take.
 
 - Regenerate after upgrading. SDKs and OpenAPI documents change.
 - Replace imports of the SDK's `client.js`, `models.js`, `validation.js` and `client-runtime.js` with `sdk/index.js`, `sdk/models/<Name>.js` or `sdk/operations/<name>.js`; the [generated files](/reference/generated-files) page lists the public paths.
+- Code the SDK used to carry now lives in `@exprtlabs/codegen/client` and `@exprtlabs/codegen/validation`.
 - `__Projection<N>` schemas get stable names. Add a named type alias to choose one.
 - Install `@exprtlabs/codegen` at or above the version the SDK was generated for, with the same major version.
 - The identifiers of codecs in generated files change. A hand-written model and an SDK model with the same name and shape no longer share an id.

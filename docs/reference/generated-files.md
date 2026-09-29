@@ -53,14 +53,16 @@ A type built from a model, such as `Omit<TMerchant, 'id'>`, gets a schema name f
 | `TMerchant & TMoney` | `MerchantAndMoney` |
 | The `billing` property of `TPayment` | `PaymentBilling` |
 
-A name comes from one of these rules, in order:
+The first matching rule gives the name:
 
-1. A named model wrapped in up to three levels of `Pick`, `Omit`, `Partial`, `Required` and `Readonly`, each with at most three string-literal keys. Keys are sorted and written in PascalCase, innermost wrapper first.
-2. An intersection of named models. The sorted names join with `And`.
-3. A type alias that names the type, such as `type TBilling = Omit<TMerchant, 'id'>`, which gives `Billing`. The alias needs no type parameters, must be declared in your own source rather than a `.d.ts` file, and must have an ASCII identifier name.
-4. Anything else: the owner model plus the property, such as `TPayment.billing` giving `PaymentBilling`.
+1. An intersection of named models. The sorted names join with `And`.
+2. A type alias that names the type, such as `type TBilling = Omit<TMerchant, 'id'>`, which gives `Billing`. A leading `T` is dropped from the alias name. The alias needs no type parameters, must be declared in your own source rather than a `.d.ts` file, and must have an ASCII identifier name.
+3. A named model wrapped in up to three levels of `Pick`, `Omit`, `Partial`, `Required` and `Readonly`, each key list with at most three string-literal keys. Keys are sorted and written in PascalCase, innermost wrapper first.
+4. Anything else: the owner plus the property, such as `TPayment.billing` giving `PaymentBilling`. The owner of a model field is the model. The owner of a controller parameter is the method name plus `Body` or `Query`, such as `CreatePaymentBody`, or the method name plus the parameter name for other parameters. The owner of a controller response is the method name plus `Response`.
 
-Non-default settings add suffixes, in this order: `Loose` for `exact: false`, `Any` for `allowAny: true`, and `Wire` for the wire representation.
+When the members of a union fall back to the owner plus the property, each member adds a part. The part is the PascalCase value of a string-literal property that every member has with a different value, such as `OrderEitherCard`. Without such a property, the part is the member's position, such as `OrderEither1`. Members named by rules 1 to 3 keep those names.
+
+Non-default settings add suffixes, in this order: `Loose` for `exact: false`, `Any` for `allowAny: true`, and `Wire` for the wire representation. Controller signatures use `exact: false`, so the same derived type there ends in `Loose`, such as `MerchantOmitIdLoose`.
 
 Equal shapes from different expressions merge into one schema. The alphabetically first name stays.
 
@@ -68,7 +70,7 @@ Two different shapes that get the same name fail generation with [RUNM1059](/ref
 
 ## Schema file names
 
-Each SDK writes its validation schemas as `<Component>.<input|output>.ts`. The component name keeps only letters, digits, `_`, `$` and `-`, and is cut at 64 characters. When two names are equal ignoring case, both get a six-character hex suffix.
+Each SDK writes its validation schemas as `<Component>.<input|output>.ts`. Characters in the component name other than letters, digits, `_`, `$` and `-` become `_`, and the name is cut at 64 characters. When two names are equal ignoring case, both get a six-character hex suffix.
 
 ## Codec identity
 
@@ -76,4 +78,4 @@ The id of a codec is the model name plus eight hex characters. The hash covers t
 
 ## Runtime version
 
-Install `@exprtlabs/codegen` at or above the version of the generator that wrote the files, with the same major version. `generate`, `check`, `exec` and `watch` fail before they write when the installed runtime is older or has a different major version. The message names both packages and versions. The SDK manifest records the minimum runtime version.
+Install `@exprtlabs/codegen` at or above the version of each generator package you use, with the same major version. `generate`, `check`, `exec` and `watch` compare the installed `@exprtlabs/codegen` with each installed generator package and fail before they write when the runtime is older or has a different major version. The message names both packages and versions. The SDK manifest records `runtime.minimumVersion` for reference.

@@ -110,6 +110,18 @@ function registerModelValidationEngineFactory(factory: () => ModelRuntimeValidat
 
 Used by generated code: `createStaticValidationEngine`, `runValidation`, `issuesFromErrors`, `getModelRuntimeValidator`.
 
+### Schema registry validators {#registry-validators}
+
+A generated SDK binds its schema registry to a validation engine with these functions.
+
+| Member | Signature | Behavior |
+| --- | --- | --- |
+| `createRegistryValidators` | `(engine: RuntimeValidationEngine, data: SchemaRegistryData): ReadonlyMap<Schema, RuntimeValidator>` | Adds the registry to `engine` if missing and returns one validator per schema name. Throws `LibError` when a schema does not compile. |
+| `createRegistryOperationValidators` | `(engine, data): ReadonlyMap<Operation, OperationRuntimeValidators>` | Returns the input validator and the response validators, keyed `status:contentType`, for each operation. |
+| `validateWith` | `(validator: RuntimeValidator, value: unknown): Promise<ValidationResult>` | Runs one validator and returns `{ valid, errors }`. |
+
+Types: `SchemaRegistryData`, `RuntimeValidator`, `RuntimeValidationEngine`, `OperationRuntimeValidators` and `ValidationResult`. `RuntimeValidationEngine` is the two-method adapter that [`ajv`](#ajv) implements: `addSchema(schema, id)` and `getSchema(reference)`.
+
 ## `@exprtlabs/codegen/ajv` {#ajv}
 
 ```ts
@@ -241,7 +253,7 @@ Generated SDKs call the request runtime. Application code rarely does.
 | `applySecurity` | Adds credentials for the operation's security requirements |
 | `encode` | Percent-encodes a value |
 
-The module also exports the types these functions use: `ClientOptions`, `RequestOptions`, `ParameterSerializer`, `EncodedBody`, `BodyEncoder`, `MutualTlsTransport`, `AuthContext`, `TokenAuthValue`, `BasicCredentials`, `BasicAuthValue` and `RuntimeSecuritySchemes`. Each SDK aliases the option types with its client name, such as `PaymentsClientOptions`.
+The module also exports the types these functions use, including `ClientOptions`, `RequestOptions`, `ClientRuntimeDefaults`, `ParameterSerializer`, `EncodedBody`, `BodyEncoder`, `MutualTlsTransport`, `ResponseHeaderDecoder`, `StreamDecoder`, `ResponseDecoder`, `UndeclaredResponseError`, `AuthContext`, `TokenAuthValue`, `BasicCredentials`, `BasicAuthValue` and `RuntimeSecuritySchemes`. Each SDK aliases the option types with its client name, such as `PaymentsClientOptions`.
 
 Generated client options are in [Create a client](/guide/client-usage#create-a-client).
 
