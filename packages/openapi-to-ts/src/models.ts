@@ -828,13 +828,6 @@ export function generateModelManifest(
         : null,
       discriminator: definition.discriminator || null,
       variants: definition.variants || [],
-      additionalProperties: definition.additionalProperties === null
-        ? false
-        : definition.additionalProperties === true
-          ? true
-          : definition.additionalProperties
-            ? schemaType(definition.additionalProperties, typeContext(fieldEnv))
-            : false,
       ...(profile.validation ? {
         validation: {
           authority: 'openapi',
