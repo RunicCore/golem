@@ -9,6 +9,13 @@ import { applyJob, digest, loadInventory, removeRetiredJobs } from '#codegen/out
 import { strongestInputKind } from '#codegen/pipeline';
 import type { CodegenConfig, CodegenJob } from '#codegen/config';
 import { sourceInvalidationModule } from './fixture-templates/controllers/source-invalidation.js';
+import { workspace } from './packed/helpers.js';
+
+// Fake providers carry the workspace release version so the runtime version check accepts them.
+function workspaceReleaseVersion(): string {
+  const { version } = JSON.parse(fs.readFileSync(path.join(workspace, 'packages/codegen/package.json'), 'utf8')) as { version: string };
+  return version;
+}
 
 function fixture(t: TestContext): { root: string; config: string } {
   const root = createFixtureProject(t, 'runic-controllers-');
@@ -37,6 +44,7 @@ function installProvider(root: string, result: Record<string, unknown>): void {
       path: path.join(packageRoot, 'package.json'),
       content: JSON.stringify({
         name: '@exprtlabs/ts-to-openapi',
+        version: workspaceReleaseVersion(),
         type: 'module',
         exports: { './generator': './generator.js' },
       }),
@@ -66,6 +74,7 @@ function installPipelineProvider(
       path: path.join(packageRoot, 'package.json'),
       content: JSON.stringify({
         name: packageName,
+        version: workspaceReleaseVersion(),
         type: 'module',
         exports: { './generator': './generator.js' },
       }),
