@@ -462,3 +462,19 @@ test('the SDK entry re-exports each model module directly', async t => {
   assert.match(index, /export \* from '\.\/iobject-plugin-keys\.js'/);
   compileStrictUnusedSdk(output);
 });
+
+test('an ajvStandalone validation SDK with operations compiles under strict unused checks', async t => {
+  const output = outputDir(t, 'standalone-strict');
+  await generateMaterializedSdk({
+    openapi: '3.1.0', info: info('Standalone'),
+    components: { schemas: { Item: {
+      type: 'object', required: ['name'], properties: { name: { type: 'string', minLength: 1 } },
+    } } },
+    paths: { '/items': { post: {
+      operationId: 'createItem',
+      requestBody: { required: true, content: { 'application/json': { schema: { $ref: '#/components/schemas/Item' } } } },
+      responses: { 200: { description: 'ok', content: { 'application/json': { schema: { $ref: '#/components/schemas/Item' } } } } },
+    } } },
+  }, { output, name: 'Standalone', profile: { mobx: false, validation: true, ajvStandalone: true } });
+  compileStrictUnusedSdk(output);
+});

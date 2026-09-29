@@ -8,6 +8,7 @@ import { loadInventory, applyJob, removeRetiredJobs } from './outputs.js';
 import { CodegenDiagnosticSeverity, errorMessage, hasErrorCode, isRecord } from './generator-api.js';
 import { validateModelManifest } from './model-manifest.js';
 import type { CodegenArtifact, CodegenDiagnostic, CodegenResult, GeneratorSession } from './generator-api.js';
+import { assertRuntimeCompatible } from './runtime-compatibility.js';
 
 export type InputKind = 'config' | 'controllers' | 'openapi' | 'models';
 
@@ -116,11 +117,26 @@ export function codegenDistTag(version: string = codegenVersion()): string {
   return prerelease ?? 'latest';
 }
 
-function codegenVersion(): string {
+export function codegenVersion(): string {
   // dist/tooling/pipeline.js → package.json of @exprtlabs/codegen.
   const manifest: unknown = JSON.parse(fs.readFileSync(new URL('../../package.json', import.meta.url), 'utf8'));
   if (!isRecord(manifest) || typeof manifest.version !== 'string') throw new Error('@exprtlabs/codegen package.json has no version.');
   return manifest.version;
+}
+
+/** Version of the package that owns `filename`, found by walking up to its package.json. */
+function packageVersion(specifier: string, filename: string): string {
+  for (let directory = path.dirname(filename); ; directory = path.dirname(directory)) {
+    const manifestFile = path.join(directory, 'package.json');
+    if (fs.existsSync(manifestFile)) {
+      const manifest: unknown = JSON.parse(fs.readFileSync(manifestFile, 'utf8'));
+      if (isRecord(manifest) && manifest.name === specifier) {
+        if (typeof manifest.version !== 'string') throw new Error(`${specifier} package.json has no version.`);
+        return manifest.version;
+      }
+    }
+    if (path.dirname(directory) === directory) throw new Error(`Cannot find the package.json of ${specifier}.`);
+  }
 }
 
 export async function providersFor(config: CodegenConfig): Promise<ReadonlyMap<string, LoadedProvider>> {
@@ -134,6 +150,7 @@ export async function providersFor(config: CodegenConfig): Promise<ReadonlyMap<s
       if (hasErrorCode(error, 'MODULE_NOT_FOUND')) throw new Error(`${job.kind} is configured but ${job.package} is not installed in ${config.directory}. Install it with npm install -D ${job.package}@${codegenDistTag()}.`);
       throw new Error(`Cannot resolve ${job.package}/generator: ${errorMessage(error)}`);
     }
+    assertRuntimeCompatible({ name: '@exprtlabs/codegen', version: codegenVersion() }, { name: job.package, version: packageVersion(job.package, filename) });
     const imported: unknown = await import(pathToFileURL(filename).href);
     if (!isRecord(imported) || imported.apiVersion !== 1 || typeof imported.generate !== 'function') {
       throw new Error(`Incompatible generator ${job.package}: CLI supports API 1; installed provider reports ${isRecord(imported) ? String(imported.apiVersion) : 'unknown'}.`);

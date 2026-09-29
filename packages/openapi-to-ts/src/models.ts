@@ -844,6 +844,7 @@ export function generateModelManifest(
       name: GENERATOR_NAME,
       version: PACKAGE_VERSION,
     },
+    runtime: { name: '@exprtlabs/codegen', minimumVersion: PACKAGE_VERSION },
     source: {
       kind: 'openapi',
       dialect: asRecord(document).openapi,

@@ -60,6 +60,20 @@ test('global profile changes remove obsolete validation and keep manifest identi
   await runPipeline(config, { check: true });
 });
 
+test('a generator package newer than the installed runtime is rejected before any file is written', async (t: TestContext) => {
+  const { root, config } = fixture(t);
+  const provider = path.join(root, 'node_modules/@exprtlabs/openapi-to-ts');
+  fs.rmSync(provider, { recursive: true });
+  fs.mkdirSync(path.join(provider, 'dist'), { recursive: true });
+  const source = path.join(workspace, 'packages/openapi-to-ts');
+  const manifest = JSON.parse(fs.readFileSync(path.join(source, 'package.json'), 'utf8')) as { version: string };
+  fs.writeFileSync(path.join(provider, 'package.json'), JSON.stringify({ ...manifest, version: '1.99.0' }));
+  fs.copyFileSync(path.join(source, 'dist/generator.js'), path.join(provider, 'dist/generator.js'));
+  await assert.rejects(runPipeline(config), /@exprtlabs\/codegen \S+ is older than @exprtlabs\/openapi-to-ts 1\.99\.0/);
+  assert.equal(fs.existsSync(path.join(root, 'sdk')), false);
+  assert.equal(fs.existsSync(path.join(root, '.runic-codegen')), false);
+});
+
 test('exec forwards child failure and never starts a child after generator failure', async (t: TestContext) => {
   const { root, config } = fixture(t);
   const binary = path.join(workspace, 'packages/codegen/dist/bin/runic-codegen.js');
