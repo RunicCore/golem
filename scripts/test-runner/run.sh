@@ -17,7 +17,7 @@ fi
 docker volume create --label org.exprtlabs.fe-deps-test=1 "$volume" >/dev/null
 mkdir -p "$root/.cache/test-results"
 tty=(); [ -t 1 ] && tty=(-t)
-exec docker run --rm --init "${tty[@]}" "${network[@]}" \
+exec docker run --rm --init ${tty[@]+"${tty[@]}"} ${network[@]+"${network[@]}"} \
   --label org.exprtlabs.fe-deps-test=1 \
   -v "$root:/src:ro" -v "$volume:/cache" -v "$root/.cache/test-results:/results" \
   -e PUBLIC_CONTENT_DENIED_TEXT -e PUBLIC_CONTENT_REQUIRE_DENIED_TEXT \

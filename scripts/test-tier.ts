@@ -85,6 +85,22 @@ function steps(tier: Tier, args: readonly string[], native: boolean): Step[] {
   ];
 }
 
+export interface ImageFacts { readonly node: string; readonly npm: string; readonly playwright: string | undefined; readonly browsersPresent: boolean }
+
+export function imageMismatches(actual: ImageFacts, expected: Pick<ImageFacts, 'node' | 'npm' | 'playwright'>): string[] {
+  const mismatches: string[] = [];
+  if (actual.node !== expected.node) mismatches.push(`node is ${actual.node}, expected ${expected.node}`);
+  if (actual.npm !== expected.npm) mismatches.push(`npm is ${actual.npm}, expected ${expected.npm}`);
+  if (actual.playwright !== expected.playwright) mismatches.push(`@playwright/test is ${actual.playwright ?? 'not installed'}, expected ${expected.playwright ?? 'a devDependency'}`);
+  if (!actual.browsersPresent) mismatches.push('the Playwright browsers directory is missing');
+  return mismatches;
+}
+
+function readJson<T>(file: string): T | undefined {
+  try { return JSON.parse(fs.readFileSync(file, 'utf8')) as T; }
+  catch { return undefined; }
+}
+
 function assertContainer(tier: Tier, native: boolean): void {
   if (native) {
     if (tier !== 'full') throw new Error('--native runs only the full tier (unit and Go), for CI platform jobs.');
@@ -92,13 +108,15 @@ function assertContainer(tier: Tier, native: boolean): void {
   }
   const command = { prepare: 'npm run test:prepare', focused: 'npm run test -- <files>', full: 'npm run test:full', acceptance: 'npm run test:acceptance', docs: 'npm run docs:check' }[tier];
   if (process.env.FE_DEPS_TEST_CONTAINER !== '1') throw new Error(`Run this tier through Docker: ${command}`);
-  const manifest: { devDependencies: Record<string, string> } = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
-  const expected = { node: 'v22.12.0', npm: '10.9.8', playwright: manifest.devDependencies['@playwright/test'] };
-  const npmVersion = spawnSync('npm', ['--version'], { encoding: 'utf8' }).stdout.trim();
-  const playwright = fs.existsSync(path.join(process.env.PLAYWRIGHT_BROWSERS_PATH ?? '/ms-playwright'));
-  if (process.version !== expected.node || npmVersion !== expected.npm || !playwright) {
-    throw new Error(`The test image is stale (node ${process.version}, npm ${npmVersion}). Run: npm run test:prepare`);
-  }
+  const manifest = readJson<{ devDependencies: Record<string, string> }>(path.join(root, 'package.json'));
+  const installed = readJson<{ version: string }>(path.join(root, 'node_modules/@playwright/test/package.json'));
+  const mismatches = imageMismatches({
+    node: process.version,
+    npm: spawnSync('npm', ['--version'], { encoding: 'utf8' }).stdout.trim(),
+    playwright: installed?.version,
+    browsersPresent: fs.existsSync(process.env.PLAYWRIGHT_BROWSERS_PATH ?? '/ms-playwright'),
+  }, { node: 'v22.12.0', npm: '10.9.8', playwright: manifest?.devDependencies['@playwright/test'] });
+  if (mismatches.length) throw new Error(`The test image is stale: ${mismatches.join('; ')}. Run: npm run test:prepare`);
 }
 
 function main(argv: readonly string[]): void {
