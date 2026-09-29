@@ -75,7 +75,7 @@ Declare the fields, run `npx runic-codegen generate`, then extend the generated 
 
 ## One contract, backend to frontend
 
-The controller returns plain types. One `generate` run writes the OpenAPI document, the SDK built from it and your models, in that order.
+The controller returns plain types. One `generate` run writes the OpenAPI document, the SDK built from it and your models.
 
 ::: code-group
 

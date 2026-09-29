@@ -1,6 +1,6 @@
 # OpenAPI client support
 
-Check which OpenAPI features the client generator supports, per version, feature and profile. The page also lists limits on NestJS controller generation.
+Check what the client generator supports for each OpenAPI version, feature and profile. The page also lists limits on NestJS controller generation.
 
 The table opens on OpenAPI 3.1 with MobX off and validation on. Each row names the feature, whether it is available, and the limitation that still applies.
 

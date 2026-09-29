@@ -99,7 +99,7 @@ export class PaymentsController {
 What happens to a request:
 
 1. `fromWireFormat` runs on `@Body()` and `@Query()` with fail-fast validation.
-2. Nest rejects malformed JSON with HTTP 400 before this interceptor runs. Input the interceptor can't decode, such as an unknown discriminator tag or an unparsable date, also returns HTTP 400 with `issues` (`LibError.causedByInput`).
+2. Nest rejects malformed JSON with HTTP 400 before this interceptor runs. Input that fails validation or can't be decoded, such as a broken constraint, an unknown discriminator tag or an unparsable date, returns HTTP 400 with `issues` (`LibError.causedByInput`).
 3. Valid input reaches the handler as a model: a type alias stays a plain object, and your class is constructed.
 4. An `IModel` or `IObject` return, including a `Promise` or an array of that type, is stringified with that type; any other return stays Nest JSON.
 5. An application converter that throws, and missing generated metadata, stay HTTP 500.

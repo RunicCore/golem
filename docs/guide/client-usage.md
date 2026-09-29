@@ -35,7 +35,7 @@ Response bodies are plain data; call `fromWireFormat<T>(response.body)` for a mo
 
 <<< ../../examples/openapi/src/task-requests.ts#request-arguments
 
-- `path`, `query`, `header` and `cookie` contain the operation's parameters; `body` contains request data.
+- `path`, `query`, `header` and `cookie` contain the operation's parameters; `body` contains request data, encoded by the operation's [body codec](/guide/codecs).
 - Request validation constraints are checked before `fetch` runs when validation is enabled.
 - Only parameter groups declared by the operation appear in its input type; pass `{}` when there are none.
 - When sending a model, first call `toWireFormat<T>(model)` to get the plain JSON request body.

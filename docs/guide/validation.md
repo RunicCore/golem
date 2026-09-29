@@ -67,7 +67,7 @@ Pass a path array to read errors inside objects or arrays. Field names are strin
 
 <<< ../../examples/model/src/order-input.model.ts#nested-field-errors
 
-Use `issues` when you need an error's code or source as well as its message; the `Issue` shape and the escaped paths used by the `errors` map are in the [runtime reference](/reference/runtime-api#validation).
+Use `issues` when you need an error's code or source as well as its message: each [`Issue`](/reference/runtime-api#errors) carries both. The `errors` map keys messages by [escaped JSON Pointer](/reference/runtime-api#model-validator).
 
 ## Instance rules
 

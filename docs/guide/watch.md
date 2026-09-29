@@ -18,7 +18,9 @@ delete files it generated earlier that are no longer produced.
 
 Watch reruns when a model file, controller, OpenAPI document or
 `runic-codegen.yaml` changes, and regenerates everything that depends on it. A
-model-only edit does not rerun an unchanged SDK job. Remote references are
+model-only edit does not rerun an unchanged SDK job. Type errors that come only
+from an outdated `.model.generated.ts` file don't block regeneration; errors in
+your own source still stop the write. Remote references are
 fetched during generation; the watcher does not poll them. Each model and
 controller job keeps its TypeScript compiler process running between runs; it
 closes when the watcher stops.

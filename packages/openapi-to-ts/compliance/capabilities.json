@@ -3504,7 +3504,7 @@
   "representationBoundaries": [
     "General negation and conditional schemas are not faithfully representable as TypeScript structural types; generated runtime validation remains authoritative.",
     "TypeScript does not provide exact unevaluated-property semantics across composition; generated runtime validation enforces them when validation is enabled.",
-    "Callbacks and webhooks are inbound contracts only. Generated as types; your app implements the handlers.",
+    "Callbacks and webhooks are inbound contracts only: they are generated as types, and your app implements the handlers.",
     "Response Link Objects are metadata only; evaluating runtime expressions remains application-owned.",
     "Unknown format names are annotations in the default Ajv engine; applications can supply an engine with custom format validators.",
     "OpenAPI 3.1 does not define the itemSchema stream surface used by this generator. Streams need OpenAPI 3.2."

@@ -2,6 +2,8 @@
 
 Turn NestJS controller decorators and TypeScript types into an OpenAPI document, then generate a client from it.
 
+A controller in your NestJS project, `src/payments.controller.ts`:
+
 ```ts
 import { Controller, Get, Param } from '@nestjs/common';
 
@@ -25,6 +27,7 @@ export class PaymentsController {
 
 ```sh
 npm install --save-dev @exprtlabs/ts-to-openapi@rc typescript@~7.0.2 ttsc@~0.30.4
+npm install @nestjs/swagger
 ```
 
 ## Describe a controller
@@ -52,9 +55,17 @@ controllers:
       version: '1'
 ```
 
-`globalPrefix` must match `app.setGlobalPrefix()`; the generator reads controllers, not your bootstrap code. The `models` job generates `PaymentBase`. Set `openapiVersion: '3.1.2'` in the controller job when a downstream tool doesn't support 3.2.
+Set `openapiVersion: '3.1.2'` in the controller job when a downstream tool doesn't support 3.2. You get `api/openapi.yaml`.
 
-You get `api/openapi.yaml`. The `createPayment` operation from a controller that takes and returns generated models:
+## Generated models in a controller
+
+<<< ../../examples/nest-openapi/src/payments.controller.ts#create-payment
+
+<<< ../../examples/nest-openapi/src/payment.model.ts#payment-types
+
+<<< ../../examples/nest-openapi/src/payment.model.ts#payment-class
+
+`Payment` extends the generated `PaymentBase`, which the `models` job writes ([Generate a client from the document](#generate-a-client-from-the-document)). `@ApiOperation({ operationId: 'createPayment' })` replaces the default, so the client method is `createPayment()`. `@ApiBadRequestResponse` from `@nestjs/swagger` produces the `400` response. The controller above produces this operation in `api/openapi.yaml`:
 
 ```yaml
 post:
@@ -76,30 +87,26 @@ post:
       description: Invalid payment input.
 ```
 
-## Generated models in a controller
-
-<<< ../../examples/nest-openapi/src/payments.controller.ts#create-payment
-
-<<< ../../examples/nest-openapi/src/payment.model.ts#payment-types
-
-`@ApiOperation({ operationId: 'createPayment' })` replaces the default, so the client method is `createPayment()`.
-
 ## Generate a client from the document
 
 Add an OpenAPI job that reads `./api/openapi.yaml` ([Generate a client](/guide/client)). One configuration can run both jobs:
 
 <<< ../../examples/nest-openapi/runic-codegen.yaml
 
+`globalPrefix: api` must match `app.setGlobalPrefix()`; the generator reads controllers, not your bootstrap code. The `models` job generates `PaymentBase`.
+
 ### Install the client and runtime packages
 
 ```sh
 npm install --save-dev @exprtlabs/openapi-to-ts@rc @exprtlabs/model-codegen@rc
-npm install @exprtlabs/codegen@rc ajv ajv-formats reflect-metadata @nestjs/swagger
+npm install @exprtlabs/codegen@rc ajv ajv-formats reflect-metadata
 ```
 
 <<< ../../examples/nest-openapi/src/client.ts#payment-client
 
 ## Set up TypeScript
+
+Add these options to the `tsconfig.json` from [Quick start](/guide/quick-start). `"nest": true` makes the [plugin](/reference/runtime-api#ttsc-plugin) record `@Body()`, `@Query()` and return types for Nest.
 
 ```json
 {
@@ -111,7 +118,7 @@ npm install @exprtlabs/codegen@rc ajv ajv-formats reflect-metadata @nestjs/swagg
 }
 ```
 
-Import `reflect-metadata` first in the application entry file, before any application module import. TypeScript erases the types of `@Body()`, `@Query()` and return values, so the plugin records them for the interceptor.
+Import `reflect-metadata` first in the application entry file, before any application module import. TypeScript erases the types of `@Body()`, `@Query()` and return values, so the plugin records them for `NestModelInterceptor`, which converts and validates requests and responses.
 
 ## Convert requests and responses
 
@@ -123,6 +130,6 @@ To convert `@Body()` and `@Query()` models and stringify `IModel` or `IObject` r
 
 ## Run the example
 
-In `examples/nest-openapi/`, run `npm install`, `npm run generate` and `npm start`. The API listens at `http://127.0.0.1:3000/api/payments/transactions`; set `PORT` to use another port. In a second terminal, `npm run client` prints `Payment 1: USD 12.50` on a fresh server; set `API_BASE_URL` when the API runs elsewhere.
+The example is in the Codegen repository's [`examples/nest-openapi/`](https://github.com/exprtlabs/codegen/tree/main/examples/nest-openapi). There, run `npm install`, `npm run generate` and `npm start`. The API listens at `http://127.0.0.1:3000/api/payments/transactions`: `globalPrefix: api` plus the controller route `payments/transactions`. Set `PORT` to use another port. In a second terminal, `npm run client` prints `Payment 1: USD 12.50` on a fresh server; set `API_BASE_URL` when the API runs elsewhere.
 
 Full example: [`examples/nest-openapi`](https://github.com/exprtlabs/codegen/tree/main/examples/nest-openapi)

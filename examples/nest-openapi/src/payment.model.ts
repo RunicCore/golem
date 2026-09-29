@@ -29,5 +29,7 @@ export type TPaymentFilter = IObject<{
 }, { exact: true }>;
 // #endregion payment-filter
 
+// #region payment-class
 // Generated fields and conversion. Interceptor constructs this for class params.
 export class Payment extends PaymentBase {}
+// #endregion payment-class
