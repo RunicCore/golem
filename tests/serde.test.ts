@@ -386,14 +386,14 @@ test('ttsc plugin resolves OpenAPI codecs through modular SDK facades without cr
     writeGeneratedArtifacts(generated.artifacts);
     const keys = fs.readFileSync(path.join(output, 'iobject-plugin-keys.ts'), 'utf8');
     assert.doesNotMatch(keys, /"models\.ts#/);
-    assert.match(keys, /"models\/_group-[0-9a-f]{8}\.ts#Money": "Money_[0-9a-f]{8}"/);
+    assert.match(keys, /"models\/_group-[0-9a-f]{8}\.ts#MoneyModel": "Money_[0-9a-f]{8}"/);
     return keys;
   };
 
   const firstKeys = writeGeneratedSdk('sdk-first', 'cents', 'number');
   const secondKeys = writeGeneratedSdk('sdk-second', 'code', 'string');
-  const firstId = firstKeys.match(/"models\/_group-[0-9a-f]{8}\.ts#Money": "(Money_[0-9a-f]{8})"/)?.[1];
-  const secondId = secondKeys.match(/"models\/_group-[0-9a-f]{8}\.ts#Money": "(Money_[0-9a-f]{8})"/)?.[1];
+  const firstId = firstKeys.match(/"models\/_group-[0-9a-f]{8}\.ts#MoneyModel": "(Money_[0-9a-f]{8})"/)?.[1];
+  const secondId = secondKeys.match(/"models\/_group-[0-9a-f]{8}\.ts#MoneyModel": "(Money_[0-9a-f]{8})"/)?.[1];
   assert.ok(firstId);
   assert.ok(secondId);
   assert.notEqual(firstId, secondId);
@@ -435,6 +435,57 @@ test('ttsc plugin resolves OpenAPI codecs through modular SDK facades without cr
   assert.equal(consumer.second.code, 'USD');
   assert.equal(consumer.first instanceof secondSdk.MoneyModel, false);
   assert.equal(consumer.second instanceof firstSdk.MoneyModel, false);
+});
+
+test('ttsc plugin resolves OpenAPI codecs for schemas whose class names carry the Model suffix', async (t) => {
+  const { root } = fixture(t, { mobx: false, validation: false });
+  const object = (property: string, type: string) => ({ type: 'object', required: [property], properties: { [property]: { type } } });
+  const generated = writeSdk({
+    openapi: '3.1.0',
+    info: { title: 'Suffixed', version: '1' },
+    components: {
+      schemas: {
+        PaymentModel: object('id', 'string'),
+        TPayment: object('amount', 'number'),
+        'Pay$ment': object('flag', 'boolean'),
+        Money: object('cents', 'number'),
+      },
+    },
+  }, { output: path.join(root, 'sdk'), name: 'Suffixed', profile: { mobx: false, validation: false } });
+  writeGeneratedArtifacts(generated.artifacts);
+  const tsconfig = JSON.parse(fs.readFileSync(path.join(root, 'tsconfig.json'), 'utf8')) as {
+    compilerOptions: Record<string, unknown>;
+    include: string[];
+  };
+  tsconfig.compilerOptions.rootDir = '.';
+  tsconfig.include = ['src/**/*.ts', 'sdk/**/*.ts'];
+  fs.writeFileSync(path.join(root, 'tsconfig.json'), JSON.stringify(tsconfig));
+  enableSerdePlugin(root);
+  fs.writeFileSync(path.join(root, 'src/use-suffixed.ts'), `import { fromWireFormat, parse, stringify } from '@exprtlabs/codegen/serde';
+import type { MoneyModel, PaymentModelModel, Pay$mentModel, TPaymentModel } from '../sdk/index.js';
+export const payment = fromWireFormat<PaymentModelModel>({ id: 'a' });
+export const tpayment = fromWireFormat<TPaymentModel>({ amount: 3 });
+export const dollar = fromWireFormat<Pay$mentModel>({ flag: true });
+export const money = fromWireFormat<MoneyModel>({ cents: 5 });
+export const texts = [stringify<PaymentModelModel>(payment), stringify<TPaymentModel>(tpayment), stringify<Pay$mentModel>(dollar), stringify<MoneyModel>(money)];
+export const parsed = [parse<PaymentModelModel>(texts[0]!), parse<TPaymentModel>(texts[1]!), parse<Pay$mentModel>(texts[2]!), parse<MoneyModel>(texts[3]!)];
+`);
+  await compile(root);
+  const emitted = fs.readFileSync(path.join(root, 'build/src/use-suffixed.js'), 'utf8');
+  assert.doesNotMatch(emitted, /fromWireFormat<|stringify<|parse</);
+  const ids = [...emitted.matchAll(/requireObjectCodec\("([A-Za-z_$]+_[0-9a-f]{8})"\)\.fromWireFormat/g)].map((match) => match[1]);
+  assert.equal(new Set(ids).size, 4, 'each call resolves to its own codec');
+
+  const sdk = await import(pathToFileURL(path.join(root, 'build/sdk/index.js')).href) as Record<string, new () => object>;
+  const consumer = await import(pathToFileURL(path.join(root, 'build/src/use-suffixed.js')).href) as {
+    payment: object; tpayment: object; dollar: object; money: object; texts: string[]; parsed: object[];
+  };
+  assert.ok(consumer.payment instanceof sdk.PaymentModelModel);
+  assert.ok(consumer.tpayment instanceof sdk.TPaymentModel);
+  assert.ok(consumer.dollar instanceof sdk['Pay$mentModel']!);
+  assert.ok(consumer.money instanceof sdk.MoneyModel);
+  assert.deepEqual(consumer.texts.map((text) => JSON.parse(text) as unknown), [{ id: 'a' }, { amount: 3 }, { flag: true }, { cents: 5 }]);
+  assert.deepEqual(consumer.parsed.map((item) => JSON.parse(JSON.stringify(item)) as unknown), [{ id: 'a' }, { amount: 3 }, { flag: true }, { cents: 5 }]);
 });
 
 test('ttsc plugin ignores a comment and string that look like serde calls', async (t) => {

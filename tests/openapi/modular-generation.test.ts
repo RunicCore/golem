@@ -809,12 +809,12 @@ test('schemas that shorten alike but differ in shape keep separate codecs', asyn
   const { result, sdk } = await generateShortened(t, { PaymentModel: idObject, TPayment: amountObject });
   const keys = result.artifacts.find((artifact) => artifact.path.endsWith('iobject-plugin-keys.ts'))?.content ?? '';
   const entries = [...keys.matchAll(/"([^"]+)#(\w+)": "(Payment_[0-9a-f]+)"/g)];
-  assert.deepEqual(entries.map((entry) => entry[2]).sort(), ['Payment', 'PaymentModel'], 'keys use the names the plugin derives from PaymentModelModel and TPaymentModel');
+  assert.deepEqual(entries.map((entry) => entry[2]).sort(), ['PaymentModelModel', 'TPaymentModel'], 'keys are the emitted class names');
   assert.equal(new Set(entries.map((entry) => entry[1])).size, 2, 'two files');
   assert.equal(new Set(entries.map((entry) => entry[3])).size, 2, 'two codec ids');
   for (const entry of entries) {
     const declaring = result.artifacts.find((artifact) => artifact.path.endsWith(`/${entry[1]}`))?.content ?? '';
-    assert.match(declaring, entry[2] === 'Payment' ? /export class TPaymentModel\b/ : /export class PaymentModelModel\b/);
+    assert.match(declaring, new RegExp(`export class ${entry[2]}\\b`));
   }
   roundTrip(sdk, 'PaymentModel', 'PaymentModelModel', { id: 'a' });
   roundTrip(sdk, 'TPayment', 'TPaymentModel', { amount: 3 });
@@ -843,3 +843,30 @@ test('two schemas of equal shape that shorten alike are rejected with both names
     /OpenAPI components "PaymentModel" and "TPayment" both map to the model name "Payment"\. Rename one of them\./,
   );
 });
+
+function holderOf(...targets: string[]): Record<string, unknown> {
+  return {
+    type: 'object',
+    properties: Object.fromEntries(targets.map((target, index) => [`f${index}`, { $ref: `#/components/schemas/${target}` }])),
+    required: targets.map((_, index) => `f${index}`),
+  };
+}
+
+const holderCases: ReadonlyArray<readonly [title: string, schemas: Record<string, unknown>, targets: string[], classes: string[], values: Record<string, unknown>[]]> = [
+  ['PaymentModel', { PaymentModel: idObject, TPayment: amountObject }, ['PaymentModel'], ['PaymentModelModel'], [{ id: 'a' }]],
+  ['TPayment', { PaymentModel: idObject, TPayment: amountObject }, ['TPayment'], ['TPaymentModel'], [{ amount: 2 }]],
+  ['both', { PaymentModel: idObject, TPayment: amountObject }, ['PaymentModel', 'TPayment'], ['PaymentModelModel', 'TPaymentModel'], [{ id: 'a' }, { amount: 2 }]],
+  ['Payment and TPayment', { Payment: idObject, TPayment: amountObject }, ['Payment', 'TPayment'], ['PaymentModel', 'TPaymentModel'], [{ id: 'a' }, { amount: 2 }]],
+];
+
+for (const [title, schemas, targets, classes, values] of holderCases) {
+  test(`a holder of ${title} compiles and round-trips its nested classes`, async t => {
+    const { sdk } = await generateShortened(t, { ...schemas, Holder: holderOf(...targets) });
+    const value = Object.fromEntries(values.map((item, index) => [`f${index}`, item]));
+    roundTrip(sdk, 'Holder', 'HolderModel', value);
+    const parsed = (sdk.parseHolder as (text: string, options: { construct: unknown }) => Record<string, unknown>)(JSON.stringify(value), { construct: sdk.HolderModel });
+    classes.forEach((klass, index) => {
+      assert.ok(parsed[`f${index}`] instanceof (sdk[klass] as new () => object), `f${index} is a ${klass}`);
+    });
+  });
+}

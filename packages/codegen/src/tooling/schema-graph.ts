@@ -317,11 +317,12 @@ export function codecPublicId(
 }
 
 /**
- * `<file>#<name>` as the ttsc plugin looks a class up: the short name of the emitted class
- * when the entry gives one, otherwise the codec short name of the model.
+ * `<file>#<name>`: the emitted class name when the entry gives one (the ttsc plugin applies
+ * `modelName` to it when it loads the table and when it looks a class up), otherwise the
+ * codec short name of the model.
  */
 function codecDeclarationKey(source: string, name: string, className?: string): string {
-  return `${source.replace(/\\/g, '/')}#${className === undefined ? codecShortName(name) : modelName(className)}`;
+  return `${source.replace(/\\/g, '/')}#${className ?? codecShortName(name)}`;
 }
 
 export function emitCodecDeclarationTable(
@@ -329,14 +330,18 @@ export function emitCodecDeclarationTable(
   owner = '@exprtlabs/codegen',
 ): string {
   const seen = new Map<string, string>();
+  // The plugin loads keys through `modelName`, so keys it would collapse must not differ in id.
+  const loaded = new Map<string, string>();
   for (const entry of entries) {
     const key = codecDeclarationKey(entry.source, entry.name, entry.className);
-    const previous = seen.get(key);
+    const loadedKey = `${key.slice(0, key.lastIndexOf('#'))}#${modelName(key.slice(key.lastIndexOf('#') + 1))}`;
+    const previous = loaded.get(loadedKey);
     if (previous !== undefined && previous !== entry.codecId) {
       throw new TypeError(
         `Codec declaration ${JSON.stringify(key)} maps to both ${previous} and ${entry.codecId}.`,
       );
     }
+    loaded.set(loadedKey, entry.codecId);
     seen.set(key, entry.codecId);
   }
   const lines = [...seen.entries()]
@@ -512,6 +517,8 @@ export function createSchemaGraph(
   const operations = new Map<string, OperationNode>();
   const byKey = new Map<string, string>();
   const byName = new Map<string, string>();
+  // Interned nodes by the exact name they were interned under; short names can be ambiguous, these are not.
+  const byRawName = new Map<string, string>();
   const byPublicId = new Map<string, string>();
   const codecSource = options.codecSource ?? 'typescript';
   let anonymous = 0;
@@ -550,7 +557,7 @@ export function createSchemaGraph(
       }
       const publicHit = byPublicId.get(named);
       if (publicHit) return nodes.get(publicHit);
-      const id = byName.get(named);
+      const id = byRawName.get(named) ?? byName.get(named);
       return id ? nodes.get(id) : undefined;
     }
     const id = byKey.get(canonicalDescriptorKey(descriptor));
@@ -601,9 +608,14 @@ export function createSchemaGraph(
     if (descriptor.kind === 'generated-model' || descriptor.kind === 'reference') {
       const raw = name ?? namedIdentity(descriptor) ?? 'Generated';
       const named = codecShortName(raw);
+      const interned = byRawName.get(raw);
+      const rawHit = interned === undefined ? undefined : nodes.get(interned);
+      if (rawHit && rawHit.kind !== 'reference') return applyFlags(rawHit);
       const existing = nodeFor(descriptor, named) ?? nodeFor(asReference(named), named);
       if (existing) return applyFlags(existing);
-      const id = identifierFromName(named);
+      // A reference to an ambiguous short name must not take the id of a node interned under it.
+      const taken = nodes.get(identifierFromName(named));
+      const id = taken && taken.kind !== 'reference' ? identifierFromName(`${raw}__reference`) : identifierFromName(named);
       const siblingId = descriptor.kind === 'reference' ? options.codecIds?.get(named) : undefined;
       const placeholder: SchemaNode = {
         id,
@@ -734,6 +746,7 @@ export function createSchemaGraph(
     if (computedId && computedId !== publicId && !byPublicId.has(computedId)) byPublicId.set(computedId, id);
     if (named) rememberShortName(named, id);
     if (raw && raw !== named) rememberShortName(raw, id);
+    if (raw) byRawName.set(raw, id);
     return placeholder;
   };
 
