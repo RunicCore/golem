@@ -1,0 +1,132 @@
+import type { BodyEncoder, ClientRuntime, EncodedBody, EncodingMetadata } from './core.js';
+import { addQueryParameter } from './parameters.js';
+
+/** Encoding metadata the generated operation declares for one request media type. */
+export interface RequestMediaMetadata {
+  readonly encoding: Readonly<Record<string, EncodingMetadata>>;
+  readonly prefixEncoding: readonly unknown[];
+  readonly itemEncoding: unknown;
+  readonly requiredCodec?: string;
+  readonly schemaType?: string;
+}
+
+function isEncodedBody(value: BodyInit | EncodedBody): value is EncodedBody {
+  return typeof value === 'object' &&
+    value !== null &&
+    'body' in value &&
+    !(value instanceof Blob) &&
+    !(value instanceof FormData) &&
+    !(value instanceof URLSearchParams) &&
+    !(value instanceof ArrayBuffer);
+}
+
+function findBodyEncoder(encoders: Record<string, BodyEncoder>, contentType: string): BodyEncoder | undefined {
+  if (Object.hasOwn(encoders, contentType)) return encoders[contentType];
+  const essence = (contentType.split(';', 1)[0] || '').trim().toLowerCase();
+  if (essence && Object.hasOwn(encoders, essence)) return encoders[essence];
+  return Object.hasOwn(encoders, '*/*') ? encoders['*/*'] : undefined;
+}
+
+export function encodeBody(
+  runtime: ClientRuntime,
+  operation: string,
+  value: unknown,
+  contentType: string | undefined,
+  mediaMetadata: Readonly<Record<string, RequestMediaMetadata>>,
+): { body?: BodyInit; contentType?: string } {
+  if (value === undefined || !contentType) return {};
+  const essence = (contentType.split(';', 1)[0] || '').trim().toLowerCase();
+  const metadata: RequestMediaMetadata = mediaMetadata[contentType] || mediaMetadata[essence] || {
+    encoding: {},
+    prefixEncoding: [],
+    itemEncoding: null,
+  };
+  const customEncoder = findBodyEncoder(runtime.options.bodyEncoders ?? {}, contentType);
+  if (customEncoder) {
+    const encoded = customEncoder(value, { contentType, ...metadata });
+    if (isEncodedBody(encoded)) return encoded;
+    return encoded instanceof FormData ? { body: encoded } : { body: encoded, contentType };
+  }
+  if (metadata.requiredCodec) {
+    throw new Error(
+      `Custom ${metadata.requiredCodec} required for operation ${operation} media ${contentType} type ${metadata.schemaType || 'ambiguous'}`,
+    );
+  }
+  if (essence.includes('json')) {
+    return { body: JSON.stringify(value), contentType };
+  }
+  if (essence === 'application/x-www-form-urlencoded') {
+    const advancedEncoding = metadata.prefixEncoding.length > 0 ||
+      metadata.itemEncoding !== null ||
+      Object.values(metadata.encoding).some((item) =>
+        item.contentType !== undefined ||
+        item.headers !== undefined ||
+        item.encoding !== undefined ||
+        item.prefixEncoding !== undefined ||
+        item.itemEncoding !== undefined
+      );
+    if (advancedEncoding) {
+      throw new Error(
+        `Form media type ${contentType} requires a custom body encoder for nested or content-specific Encoding Objects`,
+      );
+    }
+    const fields: string[] = [];
+    if (typeof value === 'object' && value !== null) {
+      for (const [name, item] of Object.entries(value)) {
+        const itemEncoding = metadata.encoding[name] || {};
+        addQueryParameter(
+          runtime,
+          fields,
+          name,
+          item,
+          itemEncoding.style || 'form',
+          itemEncoding.explode === undefined ? true : itemEncoding.explode,
+          itemEncoding.allowReserved === true,
+        );
+      }
+    }
+    return { body: fields.join('&'), contentType };
+  }
+  if (essence === 'multipart/form-data') {
+    const advancedEncoding = metadata.prefixEncoding.length > 0 ||
+      metadata.itemEncoding !== null ||
+      Object.values(metadata.encoding).some((item) =>
+        item.headers !== undefined ||
+        item.style !== undefined ||
+        item.explode !== undefined ||
+        item.allowReserved !== undefined ||
+        item.encoding !== undefined ||
+        item.prefixEncoding !== undefined ||
+        item.itemEncoding !== undefined
+      );
+    if (advancedEncoding) {
+      throw new Error(
+        `Multipart media type ${contentType} requires a custom body encoder for advanced Encoding Object fields`,
+      );
+    }
+    const form = new FormData();
+    const encoding = metadata.encoding;
+    if (typeof value === 'object' && value !== null) {
+      for (const [name, item] of Object.entries(value)) {
+        const values = Array.isArray(item) ? item : [item];
+        for (const entry of values) {
+          const partType = encoding[name]?.contentType;
+          if (entry instanceof Blob) form.append(name, entry);
+          else if (partType) {
+            const serialized = typeof entry === 'object' && entry !== null ? JSON.stringify(entry) : String(entry);
+            form.append(name, new Blob([serialized], { type: partType }));
+          }
+          else if (typeof entry === 'object' && entry !== null) {
+            form.append(name, new Blob([JSON.stringify(entry)], { type: 'application/json' }));
+          }
+          else form.append(name, String(entry));
+        }
+      }
+    }
+    return { body: form };
+  }
+  if (value instanceof Blob || value instanceof FormData || value instanceof URLSearchParams || typeof value === 'string') {
+    return { body: value, contentType };
+  }
+  throw new Error(`No request body encoder configured for media type: ${contentType}`);
+}

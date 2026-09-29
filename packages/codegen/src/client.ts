@@ -16,3 +16,6 @@ export function createApiOperation<Input, Result, Options = unknown>(
   return createTrackedApiOperation(name, run);
 }
 export * from './client-runtime/core.js';
+export * from './client-runtime/parameters.js';
+export * from './client-runtime/body-codecs.js';
+export * from './client-runtime/security.js';
