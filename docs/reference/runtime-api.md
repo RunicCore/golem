@@ -381,6 +381,8 @@ The build fails when `T` is not a single type name or `typeof` expression, or ha
 
 Add `"nest": true` to the same entry in a NestJS app. The plugin then inserts [`nestModelCodec`](#nest) on `@Body()` and `@Query()` parameters and `nestModelReturn` on handlers that return a model. Listing `@exprtlabs/ts-to-openapi/ttsc-plugin` has the same effect. Nest also needs `experimentalDecorators` and `emitDecoratorMetadata` ([Set up TypeScript](/guide/nestjs#set-up-typescript)).
 
+Add `"serde": false` to an entry to leave the calls in the table unchanged; they then throw `ValidationUnavailable`. If you list both plugin entries, add it to each.
+
 ## `@exprtlabs/codegen/generator-api` {#generator-api}
 
 ```ts

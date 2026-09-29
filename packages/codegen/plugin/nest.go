@@ -40,18 +40,14 @@ func pluginFeatures(raw string) (serde bool, nest bool) {
 	recognized := false
 	for _, entry := range entries {
 		transform, _ := entry.Config["transform"].(string)
-		serdeOff, serdeSet := boolField(entry.Config, "serde")
+		serdeOn, serdeSet := boolField(entry.Config, "serde")
 		nestOn, nestSet := boolField(entry.Config, "nest")
 		isCodegen := transform == codegenPluginName || entry.Name == codegenPluginName
 		isNest := transform == nestPluginName || entry.Name == nestPluginName || (nestSet && nestOn)
 		if isCodegen || isNest {
 			recognized = true
 		}
-		wantsSerde := isNest || isCodegen || (!isCodegen && !isNest)
-		if serdeSet && serdeOff {
-			wantsSerde = false
-		}
-		if wantsSerde {
+		if !serdeSet || serdeOn {
 			serde = true
 		}
 		if isNest {
