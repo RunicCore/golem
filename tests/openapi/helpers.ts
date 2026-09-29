@@ -171,13 +171,12 @@ export function artifactBasenames(artifacts: readonly { path: string }[]): strin
 
 export function generatedClientSource(artifacts: readonly { path: string; content: string }[]): string {
   return artifacts.filter(({ path: filename }) => basename(filename) === 'client.ts'
-    || basename(filename) === 'client-runtime.ts'
     || (basename(dirname(filename)) === 'operations' && filename.endsWith('.ts') && !filename.endsWith('.d.ts')))
     .map(artifact => artifact.content).join('\n');
 }
 
 export function readGeneratedClientSource(output: string): string {
-  const files = [join(output, 'client.ts'), join(output, 'client-runtime.ts')];
+  const files = [join(output, 'client.ts')];
   const operations = join(output, 'operations');
   if (existsSync(operations)) {
     files.push(...readdirSync(operations).filter(name => name.endsWith('.ts') && !name.endsWith('.d.ts'))

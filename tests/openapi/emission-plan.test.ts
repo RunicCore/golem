@@ -256,6 +256,22 @@ function pingDocument(): unknown {
   };
 }
 
+test('generated SDKs import the client runtime instead of copying it', async t => {
+  const output = outputDir(t, 'shared-runtime');
+  const result = await generateMaterializedSdk({
+    openapi: '3.2.0', info: info('Shared'),
+    paths: { '/items/{id}': { get: {
+      operationId: 'getItem',
+      parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+      responses: { '200': { description: 'item', content: { 'application/json': { schema: { type: 'object' } } } } },
+    } } },
+  }, { output, name: 'Shared', profile: { mobx: false, validation: true } });
+  const files = new Map(result.artifacts.map(artifact => [path.relative(output, artifact.path), artifact.content]));
+  assert.equal([...files.keys()].some(file => file.endsWith('client-runtime.ts')), false);
+  assert.match(files.get('operations/getItem.ts') ?? '', /from '@exprtlabs\/codegen\/client'/);
+  compileStrictUnusedSdk(output);
+});
+
 test('minimal GET without content omits codec options and unused helpers', async (t) => {
   await compileProfiles(t, {
     openapi: '3.2.0',
@@ -273,7 +289,6 @@ test('minimal GET without content omits codec options and unused helpers', async
     'types.ts',
     'model-manifest.json',
     'client.ts',
-    'client-runtime.ts',
     'operations/ping.ts',
     'schemas.ts',
   ]);
@@ -343,6 +358,7 @@ test('full-feature fixture compiles with noUnusedLocals for every profile', asyn
 });
 
 test('custom codec option families stay present for built-in media', async (t) => {
+  const output = outputDir(t, 'codec-surfaces');
   const withSurfaces = await generateMaterializedSdk({
     openapi: '3.2.0',
     info: info('Codecs'),
@@ -368,16 +384,13 @@ test('custom codec option families stay present for built-in media', async (t) =
         },
       },
     },
-  }, { output: outputDir(t, 'codec-surfaces'), name: 'Codecs', profile: { mobx: false, validation: false } });
-  const client = generatedClientSource(withSurfaces.artifacts);
-  assert.match(client, /bodyEncoders\?:/);
-  assert.match(client, /responseDecoders\?:/);
-  assert.match(client, /streamDecoders\?:/);
-  assert.doesNotMatch(client, /auth\?:/);
-  assert.doesNotMatch(client, /mutualTls\?:/);
+  }, { output, name: 'Codecs', profile: { mobx: false, validation: false } });
+  assert.ok(withSurfaces.artifacts.some(artifact => artifact.path.endsWith('client.ts')));
+  const assertFile = copyFixtureFile(output, 'openapi/emission-plan/codecs-client-assert.ts', 'codecs-client-assert.ts');
+  compileStrictUnusedSdk(output, [assertFile]);
 });
 
-test('stream and mutual-TLS helpers are emitted only when their surface is used', async (t) => {
+test('stream and mutual-TLS surfaces are emitted only when they are used', async (t) => {
   const itemSchema = { type: 'object', properties: { id: { type: 'integer' } } };
   const withSurfaces = await generateMaterializedSdk({
     openapi: '3.2.0',
@@ -412,12 +425,10 @@ test('stream and mutual-TLS helpers are emitted only when their surface is used'
     },
   }, { output: outputDir(t, 'stream-security-surfaces'), name: 'StreamSecurity', profile: { mobx: false, validation: false } });
   const client = generatedClientSource(withSurfaces.artifacts);
-  assert.match(client, /readNdjson/, 'the ndjson stream helper is emitted for an ndjson stream response');
-  assert.match(client, /readJsonSeq/, 'the json-seq stream helper is emitted for a json-seq stream response');
-  assert.match(client, /readServerSentEvents/, 'the SSE stream helper is emitted for an event-stream response');
-  assert.match(client, /streamDecoders/, 'the custom stream decoder surface is emitted for a stream response with an item schema');
-  assert.match(client, /applySecurity/, 'the security helper is emitted when a security scheme is used');
-  assert.match(client, /mutualTls/, 'the mutual TLS helper is emitted when a mutualTLS scheme is used');
+  assert.match(client, /StreamSecurityStreamDecoder\b/, 'the custom stream decoder surface is emitted for a stream response with an item schema');
+  assert.match(client, /applySecurity/, 'the security call is emitted when a security scheme is used');
+  assert.match(client, /StreamSecurityMutualTlsTransport\b/, 'the mutual TLS transport type is emitted when a mutualTLS scheme is used');
+  assert.doesNotMatch(client, /readNdjson|readJsonSeq|readServerSentEvents/, 'stream readers live in the shared runtime');
 
   const plain = await generateMaterializedSdk({
     openapi: '3.2.0',
@@ -432,5 +443,5 @@ test('stream and mutual-TLS helpers are emitted only when their surface is used'
     },
   }, { output: outputDir(t, 'stream-security-surfaces-absent'), name: 'NoStreamSecurity', profile: { mobx: false, validation: false } });
   const plainClient = generatedClientSource(plain.artifacts);
-  assert.doesNotMatch(plainClient, /readNdjson|readJsonSeq|readServerSentEvents|streamDecoders|mutualTls|applySecurity/);
+  assert.doesNotMatch(plainClient, /StreamDecoder|MutualTlsTransport|applySecurity/);
 });

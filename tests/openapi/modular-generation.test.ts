@@ -397,7 +397,7 @@ test('direct operation and model entrypoints load only their generated closures 
   const modelInputs = Object.keys(modelBundle.metafile.inputs).map(value => value.replaceAll('\\', '/'));
   const modelInputSet = modelInputs.join('\n');
   assert.ok(modelInputs.some(value => value.endsWith('/models/Tree.js')));
-  assert.doesNotMatch(modelInputSet, /\/src\/dist\/(?:client|client-runtime|schemas)\.js(?:\s|$)/);
+  assert.doesNotMatch(modelInputSet, /\/src\/dist\/(?:client|schemas)\.js(?:\s|$)/);
   assert.doesNotMatch(modelInputSet, /\/operations\/[^/]+\.js(?:\s|$)/);
   assert.ok(result.artifacts.some(artifact => artifact.path.endsWith('/models/Tree.ts')));
 });
@@ -684,9 +684,19 @@ test('maintained Nest Payment keeps canonical codec identity across repeated com
   );
 });
 
+test('an SDK has no client-runtime.ts whatever its operation count', () => {
+  for (const count of [1, 20]) {
+    const result = writeSdk(scaleDocument(count), {
+      output: path.join(tmpdir(), `openapi-no-runtime-${count}`),
+      name: 'Scale',
+      profile: { mobx: false, validation: true },
+    });
+    assert.equal(result.artifacts.some(artifact => artifact.path.endsWith(`${path.sep}client-runtime.ts`)), false);
+  }
+});
+
 test('10, 100, and 500 operations share one nested schema closure and grow linearly', () => {
   const sizes: number[] = [];
-  const runtimeSizes: number[] = [];
   const closureCounts: number[] = [];
   const closureBytes: number[] = [];
   for (const count of [10, 100, 500]) {
@@ -699,12 +709,9 @@ test('10, 100, and 500 operations share one nested schema closure and grow linea
     const operationArtifacts = result.artifacts.filter(artifact => artifact.path.includes(`${path.sep}operations${path.sep}`)
       && artifact.path.endsWith('.ts') && !artifact.path.endsWith('.d.ts'));
     const shared = schemaClosureArtifacts(result.artifacts);
-    const runtime = result.artifacts.find(artifact => artifact.path.endsWith(`${path.sep}client-runtime.ts`));
     assert.equal(operationArtifacts.length, count);
     assert.ok(shared.length >= 2, 'nested component dependencies are extracted into shared modules');
-    assert.ok(runtime);
     sizes.push(result.artifacts.reduce((total, artifact) => total + Buffer.byteLength(artifact.content), 0));
-    runtimeSizes.push(Buffer.byteLength(runtime?.content ?? ''));
     closureCounts.push(shared.length);
     closureBytes.push(shared.reduce((total, artifact) => total + Buffer.byteLength(artifact.content), 0));
   }
@@ -712,7 +719,6 @@ test('10, 100, and 500 operations share one nested schema closure and grow linea
     `100-operation source set remains proportional to 10 operations: ${sizes.join(', ')}`);
   assert.ok(sizes[2] !== undefined && sizes[1] !== undefined && sizes[2] <= sizes[1] * 6,
     `500-operation source set remains proportional to 100 operations: ${sizes.join(', ')}`);
-  assert.equal(new Set(runtimeSizes).size, 1, 'operation count does not duplicate shared client-runtime code');
   assert.equal(new Set(closureCounts).size, 1, 'operation count does not duplicate shared nested component modules');
   assert.equal(new Set(closureBytes).size, 1, 'shared component schema bytes stay constant as endpoints grow');
 });

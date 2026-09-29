@@ -1,5 +1,5 @@
 
-import type { PingClientOptions } from './client-runtime.js';
+import type { PingClientOptions } from './client.js';
 const options: PingClientOptions = { baseUrl: 'https://example.test' };
 // @ts-expect-error an operation with no request or response bodies has no codecs to override
 void ({ ...options, bodyEncoders: {} } satisfies PingClientOptions);

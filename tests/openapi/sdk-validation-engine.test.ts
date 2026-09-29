@@ -4,6 +4,7 @@ import { pathToFileURL } from 'node:url';
 import test from 'node:test';
 import type { CodegenProfile } from '@exprtlabs/codegen/generator-api';
 import { createOpenApiAjvEngine } from '@exprtlabs/codegen/ajv';
+import { ClientRuntime } from '@exprtlabs/codegen/client';
 import { writeSdk } from '#openapi/generator';
 import { createFixtureProject } from '../fixture-project.js';
 import { compileGeneratedSdk, isGeneratedClientClass, writeGeneratedSdk } from './helpers.js';
@@ -30,19 +31,22 @@ async function loadSdk(root: string, marker: string, profile: CodegenProfile): P
   writeGeneratedSdk(writeSdk, sdkDocument(marker), { output, name: 'Engine', profile });
   compileGeneratedSdk(output, []);
   const module: Record<string, unknown> = await import(pathToFileURL(path.join(output, 'dist/client.js')).href);
-  const runtimeModule: Record<string, unknown> = await import(pathToFileURL(path.join(output, 'dist/client-runtime.js')).href);
-  const ClientRuntime = runtimeModule.ClientRuntime as new (options: object) => { readonly validationEngine: unknown };
+  const Client = module.EngineClient;
+  assert.ok(isGeneratedClientClass(Client));
   const options = { baseUrl: 'https://fixture.invalid' };
-  const shared = new ClientRuntime(options).validationEngine;
+  const engineOf = (client: object): unknown => {
+    const runtime: unknown = Reflect.get(client, 'runtime');
+    if (!(runtime instanceof ClientRuntime)) throw new TypeError('the generated client holds a shared ClientRuntime');
+    return runtime.validationEngine;
+  };
+  const shared = engineOf(new Client(options));
   if (profile.ajvStandalone) assert.equal(shared, undefined);
   else {
     assert.ok(shared);
-    assert.equal(new ClientRuntime(options).validationEngine, shared, 'operation factories share one default engine');
+    assert.equal(engineOf(new Client(options)), shared, 'clients of one SDK share one default engine');
   }
   const supplied = { addSchema() {}, getSchema() { return undefined; } };
-  assert.equal(new ClientRuntime({ ...options, validationEngine: supplied }).validationEngine, supplied);
-  const Client = module.EngineClient;
-  assert.ok(isGeneratedClientClass(Client));
+  assert.equal(engineOf(new Client({ ...options, validationEngine: supplied })), supplied);
   const fetchImpl: typeof fetch = async (_url, init) =>
     new Response(String(init?.body), { headers: { 'content-type': 'application/json' } });
   return new Client({ baseUrl: 'https://fixture.invalid', fetchImpl }) as unknown as PayloadClient;

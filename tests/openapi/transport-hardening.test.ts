@@ -97,7 +97,7 @@ async function transportClient(
   const document = { ...transportDocument(), openapi: '3.2.0' };
   const result = await generateMaterializedSdk(document, { output, name: 'Transport', profile });
   compileGeneratedSdk(output, [], { strict: true });
-  const module = requireRecord(await import(pathToFileURL(path.join(output, 'dist/client.js')).href), 'transport client');
+  const module = requireRecord(await import(pathToFileURL(path.join(output, 'dist/index.js')).href), 'transport client');
   const Client = module.TransportClient;
   if (!isGeneratedClientClass(Client)) throw new TypeError('TransportClient must be a class');
   const guard = module.isTransportUndeclaredResponseError;
@@ -225,4 +225,32 @@ test('generated transport honors OAS security, encoding, response, and stream ru
     assert.deepEqual(await readEvents(['data: a\n', '\r']), [{ data: 'a' }]);
     });
   }
+});
+
+test('the undeclared-response guard recognizes only its own SDK', async t => {
+  const root = createFixtureProject(t, 'runic-openapi-guard-scope-');
+  const loaded = new Map<string, { Client: GeneratedClientClass; guard: (error: unknown) => boolean }>();
+  for (const name of ['Payments', 'Tasks']) {
+    const output = path.join(root, name);
+    await generateMaterializedSdk({
+      openapi: '3.1.0',
+      info: { title: name, version: '1' },
+      paths: { '/ping': { get: { operationId: 'ping', responses: noContent } } },
+    }, { output, name, profile: { mobx: false, validation: false } });
+    compileGeneratedSdk(output, [], { strict: true });
+    const module = requireRecord(await import(pathToFileURL(path.join(output, 'dist/index.js')).href), `${name} SDK`);
+    const Client = module[`${name}Client`];
+    const guard = module[`is${name}UndeclaredResponseError`];
+    if (!isGeneratedClientClass(Client)) throw new TypeError(`${name}Client must be a class`);
+    if (typeof guard !== 'function') throw new TypeError(`is${name}UndeclaredResponseError must be exported`);
+    loaded.set(name, { Client, guard: (error: unknown) => Reflect.apply(guard, undefined, [error]) === true });
+  }
+  const payments = loaded.get('Payments');
+  const tasks = loaded.get('Tasks');
+  if (!payments || !tasks) throw new TypeError('both SDKs must load');
+  const fetchImpl = async (): Promise<Response> => new Response('nope', { status: 200, headers: { 'content-type': 'text/plain' } });
+  const error: unknown = await new payments.Client({ baseUrl: 'https://api.test', fetchImpl }).ping().execute({}).then(() => undefined, (caught: unknown) => caught);
+  assert.ok(error instanceof LibError);
+  assert.equal(payments.guard(error), true);
+  assert.equal(tasks.guard(error), false);
 });

@@ -182,7 +182,6 @@ export function generatedFiles(document: unknown, options: WriteSdkOptions): {
   if (plan.artifacts.has('client.ts')) {
     const clientModules = generateClientModules(clientName, operations, document, profile, plan, schemaData);
     files.set('client.ts', clientModules.client);
-    files.set('client-runtime.ts', clientModules.runtime);
     for (const [name, source] of clientModules.operations) files.set(name, source);
     for (const [name, source] of clientModules.sharedSchemas) files.set(name, source);
     for (const [name, compiled] of clientModules.standaloneValidators) {

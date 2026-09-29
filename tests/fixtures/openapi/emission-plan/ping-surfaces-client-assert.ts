@@ -1,5 +1,5 @@
 
-import type { PingSurfacesClientOptions } from './client-runtime.js';
+import type { PingSurfacesClientOptions } from './client.js';
 // Positive pairing for ping-client-assert.ts: an operation with a request
 // body, response body, item-schema stream, and content-typed parameter has
 // all four codec option fields, and each one accepts an override.
