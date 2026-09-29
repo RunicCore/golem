@@ -90,7 +90,7 @@ export async function createApplication() {
 
 ```ts
 import { fromWireFormat } from '@exprtlabs/codegen/serde';
-import { PaymentsClient } from '../sdk/client.js';
+import { PaymentsClient } from '../sdk/index.js';
 import { Payment, type TPaymentInput } from './payment.model.js';
 
 export async function submitPayment(

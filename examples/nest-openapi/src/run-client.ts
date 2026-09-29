@@ -1,4 +1,4 @@
-import { PaymentsClient } from '../sdk/client.js';
+import { PaymentsClient } from '../sdk/index.js';
 import { submitPayment } from './client.js';
 import type { TPaymentInput } from './payment.model.js';
 

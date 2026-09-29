@@ -275,3 +275,19 @@ test('the diagnostics page lists every code the generators emit', () => {
     .filter(code => !new RegExp(`^### ${code}$`, 'm').test(page));
   assert.deepEqual(missing, []);
 });
+
+const INTERNAL_SDK_PATH = /sdk\/(?:client|client-runtime|validation|models|schemas|types|input-schemas|output-schemas|iobject-plugin-keys)\.(?:js|ts)\b|sdk\/models\/_group-|sdk\/validation-schemas\//;
+
+test('docs, READMEs and example sources import only public SDK paths', () => {
+  const examples = path.join(root, 'examples');
+  const files = [
+    ...markdownFiles(docs),
+    path.join(root, 'README.md'),
+    ...readdirSync(path.join(root, 'packages')).map(p => path.join(root, 'packages', p, 'README.md')),
+    ...readdirSync(examples).flatMap(name => [path.join(examples, name, 'README.md'), ...(existsSync(path.join(examples, name, 'src')) ? exampleSources(path.join(examples, name, 'src')) : [])]),
+  ].filter(existsSync);
+  const offenders = files
+    .filter(file => !/\.generated\.ts$/.test(file) && INTERNAL_SDK_PATH.test(readFileSync(file, 'utf8')))
+    .map(file => path.relative(root, file));
+  assert.deepEqual(offenders, []);
+});

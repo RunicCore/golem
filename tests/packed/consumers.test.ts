@@ -215,7 +215,7 @@ test('packed standalone model and SDK validators work without optional compiler 
     assert.equal(fs.existsSync(path.join(root, 'node_modules', name)), false, `${name} must be absent from standalone production`);
   }
   await command(root, registry.node22, ['--disallow-code-generation-from-strings', 'verify.mjs']);
-  const browser = await build({ entryPoints: [path.join(root, 'build/src/cart.model.js'), path.join(root, 'build/sdk/client.js')], outdir: 'browser', bundle: true, platform: 'browser', format: 'esm', write: false, metafile: true });
+  const browser = await build({ entryPoints: [path.join(root, 'build/src/cart.model.js'), path.join(root, 'build/sdk/index.js')], outdir: 'browser', bundle: true, platform: 'browser', format: 'esm', write: false, metafile: true });
   assert.doesNotMatch(Object.keys(browser.metafile.inputs).join('\n'), /node:|\/tooling\/|\/esbuild\/|\/mobx\//);
   assert.doesNotMatch(Object.keys(browser.metafile.inputs).join('\n'), /node_modules\/(?:ajv|ajv-formats)\//);
 });

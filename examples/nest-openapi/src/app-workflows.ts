@@ -5,12 +5,11 @@ import type { INestApplication } from '@nestjs/common';
 import { nestModelConstruct, objectCodecFromMetatype } from '@exprtlabs/codegen/nest';
 import { getObjectCodec, parse, stringify } from '@exprtlabs/codegen/serde';
 import { decodeGeneratedModel } from '@exprtlabs/codegen/conversion';
-import { PaymentsClient } from '../sdk/client.js';
+import { IOBJECT_PLUGIN_KEYS as sdkCodecKeys, PaymentsClient } from '../sdk/index.js';
 import { Payment, type TPaymentInput } from './payment.model.js';
 import { PaymentsController } from './payments.controller.js';
 import { submitPayment } from './client.js';
 import { IOBJECT_PLUGIN_KEYS as modelCodecKeys } from './generated/models/iobject-plugin-keys.js';
-import { IOBJECT_PLUGIN_KEYS as sdkCodecKeys } from '../sdk/index.js';
 import {
   OPERATION_CODECS,
   OPERATION_OUTPUT_CODECS,
