@@ -106,7 +106,7 @@ async function generateProjection(t: TestContext, openapi: string) {
     profile: { mobx: false, validation: true },
   });
   const manifest = result.artifacts.find((artifact) => artifact.path.endsWith('/model-manifest.json'))?.content ?? '';
-  return { output, manifest, registry: runtimeRegistryFromArtifact(result.artifacts) };
+  return { output, manifest, registry: runtimeRegistryFromArtifact(result.artifacts), artifacts: result.artifacts };
 }
 
 type OperationValidators = Map<string, {
@@ -518,8 +518,17 @@ test('duplicate conflicting $id values are rejected', () => {
 });
 
 test('directional projection is consistent on OAS 3.1 and 3.2 and keeps neutral model identity', async (t) => {
+  const emitted: Record<string, Record<string, string>> = {};
   for (const openapi of ['3.1.0', '3.2.0']) {
     const generated = await generateProjection(t, openapi);
+    emitted[openapi] = Object.fromEntries(generated.artifacts.map((artifact) => [
+      path.relative(generated.output, artifact.path),
+      artifact.content
+        .replace(/[0-9a-f]{64}/g, '<digest>')
+        .replace(/openapi:[0-9a-f]{16}/g, 'openapi:<id>')
+        .replace(/oas\/3\.[12]\/dialect/g, 'oas/<version>/dialect')
+        .replace(/"dialect": "3\.[12]\.0"/g, '"dialect": "<version>"'),
+    ]));
     const manifest = requireRecord(JSON.parse(generated.manifest), 'model manifest');
     assert.ok(Array.isArray(manifest.models));
     for (const entry of manifest.models) {
@@ -538,7 +547,10 @@ test('directional projection is consistent on OAS 3.1 and 3.2 and keeps neutral 
     assert.notEqual(inputResource.$id, outputResource.$id);
     assert.notEqual(inputResource.$id, generated.registry.$id);
 
-    if (openapi !== '3.1.0') continue;
+    if (openapi !== '3.1.0') {
+      assert.deepEqual(emitted[openapi], emitted['3.1.0'], '3.2 emits the same validators as 3.1 apart from digest and dialect markers');
+      continue;
+    }
     compileGeneratedSdk(generated.output);
     const validation = requireRecord(
       await import(pathToFileURL(path.join(generated.output, 'dist/schemas.js')).href),
