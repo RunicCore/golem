@@ -58,7 +58,16 @@ case "$tier" in
   *) ceiling=60 ;;
 esac
 status=0
-timeout -k 30s "$ceiling" node .build/scripts/test-tier.js "$@" || status=$?
+# timeout puts the tier in its own process group, so a Ctrl-C or docker stop
+# reaches only this shell. Pass it on; timeout forwards it to the tier.
+timeout -k 30s "$ceiling" node .build/scripts/test-tier.js "$@" &
+tier_pid=$!
+trap 'kill -INT "$tier_pid" 2>/dev/null || true' INT
+trap 'kill -TERM "$tier_pid" 2>/dev/null || true' TERM
+while :; do
+  wait "$tier_pid" && status=0 || status=$?
+  kill -0 "$tier_pid" 2>/dev/null || break
+done
 if [ "$status" -eq 124 ] || [ "$status" -eq 137 ]; then
   echo "The $tier tier exceeded its ${ceiling}s ceiling and was stopped." >&2
 fi
