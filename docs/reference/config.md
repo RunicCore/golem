@@ -7,9 +7,9 @@ from the current directory.
 - `version: 1` selects the configuration format and is independent of the package release.
 - `mobx`, `validation`, `ajvStandalone`, and `allowAny` apply to every job. A named `IObject` or `IModel` can still set `validation` and `allowAny` for that declaration.
 - Unknown keys are errors.
-- Configure at least one `controllers`, `openapi` or `models` job.
+- Configure at least one `generators`, `controllers`, `openapi` or `models` job.
 
-The CLI runs controller jobs first, OpenAPI SDK jobs second and model jobs
+The CLI runs [generator jobs](#generator-jobs) first, controller jobs next, OpenAPI SDK jobs third and model jobs
 last. A model job can therefore consume the manifest emitted by an SDK job.
 It records what it writes in an [inventory](/guide/watch#generated-files-and-the-inventory).
 
@@ -22,6 +22,7 @@ It records what it writes in an [inventory](/guide/watch#generated-files-and-the
 | `validation` | boolean | No | `true` | Generate runtime validation metadata and checks. Named `IObject` / `IModel` `{ validation: true or false }` overrides this per declaration. |
 | `ajvStandalone` | boolean | No | `false` | Precompile model, object-codec and SDK validators during generation. Requires `validation: true`. |
 | `allowAny` | boolean | No | `false` | Permit inferred `any` fields in models. An `IObject` or `IModel` can opt in with `IObject<F, { allowAny: true }>`, or tighten this policy explicitly. |
+| `generators` | array of generator jobs | No | — | A non-empty list of [jobs from installed packages](#generator-jobs). |
 | `controllers` | array of controller jobs | No | — | A non-empty list of controller-to-OpenAPI jobs. |
 | `openapi` | array of OpenAPI jobs | No | — | A non-empty list of OpenAPI SDK jobs. |
 | `models` | object | No | — | One TypeScript model job. |
@@ -175,3 +176,13 @@ profile with `IObject<Fields, { allowAny: false }>`. The declaration's own
 setting wins when present; otherwise the global profile applies. `allowAny`
 does not change `unknown`, suppress explicit tags or bypass JSON
 representability. Referenced models keep their own policy.
+
+## Generator jobs
+
+Install a package that provides a generator and list it under `generators`. Its jobs run before the built-in jobs, so the models job processes the files it writes.
+
+| Key | Type | Required | Meaning |
+| --- | --- | --- | --- |
+| `package` | string | Yes | Installed package that exports `./generator`. |
+| `output` | path | Yes | Config-relative directory the generator owns. |
+| `options` | object | No | Passed to the generator as-is; the generator validates it. |
