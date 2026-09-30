@@ -149,9 +149,14 @@ function digestFiles(root: string, files: readonly string[]): string {
   return hash.digest('hex');
 }
 
-/** Digest of the public source tree; equal to the digest `exportPublicSource` reports. */
-export function publicSourceDigest(root: string): string {
-  return digestFiles(fs.realpathSync(root), listPublicSourceFiles(root));
+// Public-source roots that npm pack never reads: the packages, root manifests,
+// tsconfigs and scripts/verify-package.ts build the tarballs.
+const PACK_UNREAD_ROOTS: readonly string[] = ['.github', 'docs', 'tests'];
+
+/** Key of a packed set: the digest of the public source files the pack step can read. A test or docs edit keeps the set. */
+export function packedSetDigest(root: string): string {
+  const files = listPublicSourceFiles(root).filter(file => !PACK_UNREAD_ROOTS.includes(portable(file).split('/')[0]));
+  return digestFiles(fs.realpathSync(root), files);
 }
 
 export function exportPublicSource(source: string, destination: string): { files: readonly string[]; digest: string } {

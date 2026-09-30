@@ -6,7 +6,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { TestContext } from 'node:test';
 import type { PackedPackage, PackageManifest, PackResult } from './packed-archive.js';
-import { publicSourceDigest } from './public-source.js';
+import { packedSetDigest } from './public-source.js';
 
 // The registry serves the packed set built by test-pack.ts. It lives under
 // scripts/ because both the packed tests and the prepare step's cache warming
@@ -17,7 +17,7 @@ export interface PreparedPackages { readonly workspaceVersion: string; readonly 
 
 export function preparedPackages(root: string = sourceRoot, packedRoot: string | undefined = process.env.FE_DEPS_PACKED_DIR): PreparedPackages {
   if (!packedRoot) throw new Error('FE_DEPS_PACKED_DIR is not set. Run packed tests through npm run test:full, test:acceptance, or npm run test -- <packed file>.');
-  const digest = publicSourceDigest(root);
+  const digest = packedSetDigest(root);
   const directory = path.join(packedRoot, digest);
   const manifestFile = path.join(directory, 'manifest.json');
   if (!fs.existsSync(manifestFile)) throw new Error(`No packed set for source digest ${digest}. The tier runner packs before packed tests; run npm run test:full.`);

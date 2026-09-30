@@ -2,7 +2,7 @@ import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { exportPublicSource, publicSourceDigest } from './public-source.js';
+import { exportPublicSource, packedSetDigest } from './public-source.js';
 import { assertReleaseConsistency } from './release-version.js';
 import { readManifest, readPack, verifyPackedArchive, type PackedPackage } from './packed-archive.js';
 
@@ -20,7 +20,7 @@ function npm(cwd: string, args: readonly string[]): string {
 
 /** Pack the public source once per digest; keep only the newest set. */
 export function packPublicSource(workspace: string, packedRoot: string): { readonly digest: string; readonly reused: boolean } {
-  const digest = publicSourceDigest(workspace);
+  const digest = packedSetDigest(workspace);
   const target = path.join(packedRoot, digest);
   if (fs.existsSync(path.join(target, 'manifest.json'))) return { digest, reused: true };
   fs.mkdirSync(packedRoot, { recursive: true });
