@@ -43,7 +43,7 @@ function writeSdk(document: unknown, options: { output: string; name?: string; p
   return writeGeneratedSdk(writeSdkFiles, document, options);
 }
 
-test('accepts the OpenAPI 3.1 and 3.2 feature lines', () => {
+test('validate() version and root rules', () => {
   for (const openapi of ['3.1.0', '3.1.2', '3.2.0']) {
     assert.doesNotThrow(() => validate({
       openapi,
@@ -51,18 +51,12 @@ test('accepts the OpenAPI 3.1 and 3.2 feature lines', () => {
       components: {},
     }));
   }
-});
-
-test('rejects OpenAPI 3.0 with a conversion hint', () => {
   for (const openapi of ['3.0.0', '3.0.4']) {
     assert.throws(
       () => validate({ openapi, info: { title: 'Fixture', version: '1' }, components: {} }),
       /^Error: OpenAPI 3\.0 is not supported; convert the document to OpenAPI 3\.1 or 3\.2$/,
     );
   }
-});
-
-test('rejects unsupported versions and empty OpenAPI roots', () => {
   assert.throws(() => validate({ openapi: '2.0', paths: {} }), /unsupported OpenAPI version/);
   assert.throws(
     () => validate({ openapi: '3.2.0', info: { title: 'Fixture', version: '1' } }),
