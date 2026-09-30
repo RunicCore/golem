@@ -22,29 +22,41 @@ function project(t: TestContext, prefix: string, profile: CodegenProfile) {
   });
 }
 
+interface Chain {
+  readonly kind: 'IModel' | 'IObject';
+  /** Model name stem: item i is `${name}${i}` in `${name.toLowerCase()}-${i}.model.ts`. */
+  readonly name: string;
+  /** Shortest label the chain accepts; a chain of the other kind uses another length so its models never share a shape. */
+  readonly minLabel: number;
+}
+
+const modelChain: Chain = { kind: 'IModel', name: 'Item', minLabel: 3 };
+const objectChain: Chain = { kind: 'IObject', name: 'Row', minLabel: 2 };
+
 /** Item i references item i-1 twice, so any per-path expansion grows exponentially. */
-function chainSources(count: number, kind: 'IModel' | 'IObject' = 'IModel'): Record<string, string> {
+function chainSources(count: number, { kind, name, minLabel }: Chain = modelChain): Record<string, string> {
+  const file = name.toLowerCase();
   const sources: Record<string, string> = {};
   for (let index = 0; index < count; index++) {
     const previous = index > 0
-      ? `import type { TItem${index - 1} } from './item-${index - 1}.model.js';\n`
+      ? `import type { T${name}${index - 1} } from './${file}-${index - 1}.model.js';\n`
       : '';
-    const fields = index > 0 ? `; prev: TItem${index - 1}; prevs?: TItem${index - 1}[]` : '';
-    const base = kind === 'IModel' ? `import { Item${index}Base } from './item-${index}.model.generated.js';\n` : '';
-    const cls = kind === 'IModel' ? `export class Item${index} extends Item${index}Base {}\n` : '';
-    sources[`item-${index}.model.ts`] = `import type { ${kind} } from '@exprtlabs/codegen/model';
+    const fields = index > 0 ? `; prev: T${name}${index - 1}; prevs?: T${name}${index - 1}[]` : '';
+    const base = kind === 'IModel' ? `import { ${name}${index}Base } from './${file}-${index}.model.generated.js';\n` : '';
+    const cls = kind === 'IModel' ? `export class ${name}${index} extends ${name}${index}Base {}\n` : '';
+    sources[`${file}-${index}.model.ts`] = `import type { ${kind} } from '@exprtlabs/codegen/model';
 import type { MinLength } from '@exprtlabs/codegen/tags';
-${previous}${base}export type TItem${index} = ${kind}<{ label: string & MinLength<3>; at: Date; kind: { k: 'a'; a: Date } | { k: 'b'; b: number }${fields} }>;
+${previous}${base}export type T${name}${index} = ${kind}<{ label: string & MinLength<${minLabel}>; at: Date; kind: { k: 'a'; a: Date } | { k: 'b'; b: number }${fields} }>;
 ${cls}`;
   }
   return sources;
 }
 
-const chainVerifier = (last: number) => `
-const codecs = await import('./build/item-${last}.model.generated.js');
+const chainVerifier = (last: number, name = 'Item') => `
+const codecs = await import('./build/${name.toLowerCase()}-${last}.model.generated.js');
 const item = (index) => ({ label: 'abc', at: '2024-01-01T00:00:00.000Z', kind: { k: 'a', a: '2024-01-02T00:00:00.000Z' }, ...(index > 0 ? { prev: item(index - 1), prevs: [item(index - 1)] } : {}) });
 const wire = item(${last});
-const model = codecs.fromWireFormatItem${last}(wire);
+const model = codecs.fromWireFormat${name}${last}(wire);
 let deepest = model;
 while (deepest.prev) deepest = deepest.prev;
 const invalid = structuredClone(wire);
@@ -53,52 +65,45 @@ while (leaf.prev) leaf = leaf.prev;
 leaf.label = 'x';
 let rejected = null;
 if (process.argv[2] === 'validate') {
-  try { codecs.fromWireFormatItem${last}(invalid); rejected = false; } catch { rejected = true; }
+  try { codecs.fromWireFormat${name}${last}(invalid); rejected = false; } catch { rejected = true; }
 }
 console.log(JSON.stringify({
   date: deepest.at instanceof Date && deepest.kind.a instanceof Date,
-  wire: JSON.stringify(codecs.toWireFormatItem${last}(model)) === JSON.stringify(wire),
-  text: codecs.stringifyItem${last}(model) === JSON.stringify(wire),
+  wire: JSON.stringify(codecs.toWireFormat${name}${last}(model)) === JSON.stringify(wire),
+  text: codecs.stringify${name}${last}(model) === JSON.stringify(wire),
   rejected,
 }));
 `;
 
-for (const [label, profile] of profiles) for (const kind of ['IModel', 'IObject'] as const) {
-  test(`a companion emits only its own ${kind} models of a chained job and references the rest by codec id (${label})`, async (t: TestContext) => {
+for (const [label, profile] of profiles) for (const chain of [modelChain, objectChain]) {
+  const { kind, name } = chain;
+  test(`a companion emits only its own ${kind} models of a chained job and references the rest by codec id (${label})`, (t: TestContext) => {
     const count = 12;
     const last = count - 1;
     const { root, sourceRoot } = project(t, 'runic-model-chain-', profile);
-    writeModelSources(sourceRoot, chainSources(count, kind));
+    writeModelSources(sourceRoot, chainSources(count, chain));
     const { artifacts } = generate({ root, profile });
-    writeGeneratedArtifacts(artifacts);
     const companion = (index: number): string =>
-      artifacts.find((artifact) => artifact.path.endsWith(`item-${index}.model.generated.ts`))?.content ?? '';
+      artifacts.find((artifact) => artifact.path.endsWith(`${name.toLowerCase()}-${index}.model.generated.ts`))?.content ?? '';
     const lastCompanion = companion(last);
     for (const index of [0, 5, last - 1]) {
       const owner = companion(index);
       const expectations: Readonly<Record<string, boolean>> = {
-        [`function fillItem${index}(`]: true,
-        [`function stringifyItem${index}Core(`]: true,
-        [`__resolvedModelSchema_Item${index} `]: profile.validation === true && profile.ajvStandalone !== true,
-        [`class Item${index}Base`]: kind === 'IModel',
-        [`function decodeItem${index}(`]: kind === 'IObject',
-        [`function encodeItem${index}(`]: kind === 'IObject',
+        [`function fill${name}${index}(`]: true,
+        [`function stringify${name}${index}Core(`]: true,
+        [`__resolvedModelSchema_${name}${index} `]: profile.validation === true && profile.ajvStandalone !== true,
+        [`class ${name}${index}Base`]: kind === 'IModel',
+        [`function decode${name}${index}(`]: kind === 'IObject',
+        [`function encode${name}${index}(`]: kind === 'IObject',
       };
       for (const [owned, expected] of Object.entries(expectations)) {
-        assert.equal(lastCompanion.includes(owned), false, `item-${last} does not emit ${owned}`);
-        if (expected) assert.ok(owner.includes(owned), `item-${index} emits its own ${owned}`);
+        assert.equal(lastCompanion.includes(owned), false, `${name.toLowerCase()}-${last} does not emit ${owned}`);
+        if (expected) assert.ok(owner.includes(owned), `${name.toLowerCase()}-${index} emits its own ${owned}`);
       }
     }
-    assert.ok(lastCompanion.includes(kind === 'IModel' ? `class Item${last}Base` : `function stringifyItem${last}Core(`));
+    assert.ok(lastCompanion.includes(kind === 'IModel' ? `class ${name}${last}Base` : `function stringify${name}${last}Core(`));
     // Each companion carries its own model; its size does not grow with the chain behind it.
-    assert.ok(lastCompanion.length < companion(1).length * 1.5, `item-${last} ${lastCompanion.length} B vs item-1 ${companion(1).length} B`);
-
-    await compileModelProject(root, [], { env: ttscEnv });
-    fs.writeFileSync(path.join(root, 'verify-chain.mjs'), chainVerifier(last));
-    const result = await command(root, process.execPath, ['verify-chain.mjs', profile.validation ? 'validate' : 'skip']);
-    assert.deepEqual(JSON.parse(result.stdout.trim()), {
-      date: true, wire: true, text: true, rejected: profile.validation ? true : null,
-    });
+    assert.ok(lastCompanion.length < companion(1).length * 1.5, `${name.toLowerCase()}-${last} ${lastCompanion.length} B vs ${name.toLowerCase()}-1 ${companion(1).length} B`);
   });
 }
 
@@ -140,27 +145,6 @@ console.log(JSON.stringify({
   rejected,
 }));
 `;
-
-for (const [label, profile] of profiles) {
-  test(`models of two sources that reference each other load in either import order (${label})`, async (t: TestContext) => {
-    const { root, sourceRoot } = project(t, 'runic-model-cycle-', profile);
-    writeModelSources(sourceRoot, cycleSources);
-    const { artifacts } = generate({ root, profile });
-    writeGeneratedArtifacts(artifacts);
-    const companionA = artifacts.find((artifact) => artifact.path.endsWith('a.model.generated.ts'))?.content ?? '';
-    const companionB = artifacts.find((artifact) => artifact.path.endsWith('b.model.generated.ts'))?.content ?? '';
-    assert.equal(companionA.includes('class BBase'), false);
-    assert.ok(companionB.includes('class BBase'), 'b.model.generated.ts emits its own BBase');
-    assert.equal(companionA.includes('function fillB('), false);
-    assert.ok(companionB.includes('function fillB('), 'b.model.generated.ts emits its own fillB');
-    await compileModelProject(root, [], { env: ttscEnv });
-    fs.writeFileSync(path.join(root, 'verify-cycle.mjs'), cycleVerifier);
-    for (const first of ['a', 'b']) {
-      const result = await command(root, process.execPath, ['verify-cycle.mjs', first, profile.validation ? 'validate' : 'skip']);
-      assert.deepEqual(JSON.parse(result.stdout.trim()), { a: true, b: true, rejected: profile.validation ? true : null }, `${first} first`);
-    }
-  });
-}
 
 test('editing a leaf model regenerates the ids its dependents reference', (t: TestContext) => {
   const profile: CodegenProfile = { mobx: false, validation: true };
@@ -222,24 +206,61 @@ console.log(JSON.stringify({
 }));
 `;
 
+// One project per profile holds a short chain of each kind and both cycles, so the profile compiles once.
 for (const [label, profile] of profiles) {
-  test(`an IModel and an IObject of two sources that reference each other load in either order (${label})`, async (t: TestContext) => {
-    const { root, sourceRoot } = project(t, 'runic-model-mixed-cycle-', profile);
-    writeModelSources(sourceRoot, mixedCycleSources);
+  test(`chained, cyclic and mixed-kind jobs compile in one project (${label})`, async (t: TestContext) => {
+    const { root, sourceRoot } = project(t, 'runic-model-job-graph-', profile);
+    writeModelSources(sourceRoot, {
+      ...chainSources(3, modelChain),
+      ...chainSources(3, objectChain),
+      ...cycleSources,
+      ...mixedCycleSources,
+    });
     const { artifacts } = generate({ root, profile });
     writeGeneratedArtifacts(artifacts);
-    const orderCompanion = artifacts.find((artifact) => artifact.path.endsWith('order.model.generated.ts'))?.content ?? '';
-    const lineCompanion = artifacts.find((artifact) => artifact.path.endsWith('line.model.generated.ts'))?.content ?? '';
-    assert.equal(orderCompanion.includes('function decodeLine('), false);
-    assert.ok(lineCompanion.includes('function decodeLine('), 'line.model.generated.ts emits its own decodeLine');
-    assert.equal(orderCompanion.includes('function fillLine('), false);
-    assert.ok(lineCompanion.includes('function fillLine('), 'line.model.generated.ts emits its own fillLine');
+    const generated = (name: string): string =>
+      artifacts.find((artifact) => artifact.path.endsWith(name))?.content ?? '';
     await compileModelProject(root, [], { env: ttscEnv });
-    fs.writeFileSync(path.join(root, 'verify-mixed-cycle.mjs'), mixedCycleVerifier);
-    for (const first of ['order', 'line']) {
-      const result = await command(root, process.execPath, ['verify-mixed-cycle.mjs', first, profile.validation ? 'validate' : 'skip']);
-      assert.deepEqual(JSON.parse(result.stdout.trim()), { order: true, line: true, rejected: profile.validation ? true : null }, `${first} first`);
+    const validation = profile.validation ? 'validate' : 'skip';
+
+    for (const chain of [modelChain, objectChain]) {
+      await t.test(`the ${chain.kind} models of a chained job convert, serialize and validate through their companions (${label})`, async () => {
+        const verifier = `verify-${chain.name.toLowerCase()}-chain.mjs`;
+        fs.writeFileSync(path.join(root, verifier), chainVerifier(2, chain.name));
+        const result = await command(root, process.execPath, [verifier, validation]);
+        assert.deepEqual(JSON.parse(result.stdout.trim()), {
+          date: true, wire: true, text: true, rejected: profile.validation ? true : null,
+        });
+      });
     }
+
+    await t.test(`models of two sources that reference each other load in either import order (${label})`, async () => {
+      const companionA = generated('a.model.generated.ts');
+      const companionB = generated('b.model.generated.ts');
+      assert.equal(companionA.includes('class BBase'), false);
+      assert.ok(companionB.includes('class BBase'), 'b.model.generated.ts emits its own BBase');
+      assert.equal(companionA.includes('function fillB('), false);
+      assert.ok(companionB.includes('function fillB('), 'b.model.generated.ts emits its own fillB');
+      fs.writeFileSync(path.join(root, 'verify-cycle.mjs'), cycleVerifier);
+      for (const first of ['a', 'b']) {
+        const result = await command(root, process.execPath, ['verify-cycle.mjs', first, validation]);
+        assert.deepEqual(JSON.parse(result.stdout.trim()), { a: true, b: true, rejected: profile.validation ? true : null }, `${first} first`);
+      }
+    });
+
+    await t.test(`an IModel and an IObject of two sources that reference each other load in either order (${label})`, async () => {
+      const orderCompanion = generated('order.model.generated.ts');
+      const lineCompanion = generated('line.model.generated.ts');
+      assert.equal(orderCompanion.includes('function decodeLine('), false);
+      assert.ok(lineCompanion.includes('function decodeLine('), 'line.model.generated.ts emits its own decodeLine');
+      assert.equal(orderCompanion.includes('function fillLine('), false);
+      assert.ok(lineCompanion.includes('function fillLine('), 'line.model.generated.ts emits its own fillLine');
+      fs.writeFileSync(path.join(root, 'verify-mixed-cycle.mjs'), mixedCycleVerifier);
+      for (const first of ['order', 'line']) {
+        const result = await command(root, process.execPath, ['verify-mixed-cycle.mjs', first, validation]);
+        assert.deepEqual(JSON.parse(result.stdout.trim()), { order: true, line: true, rejected: profile.validation ? true : null }, `${first} first`);
+      }
+    });
   });
 }
 

@@ -1,10 +1,10 @@
 
 import type { IModel } from '@exprtlabs/codegen/model';
-import { ItemBase, AddressBase } from './item.model.generated.js';
-export type TAddress = IModel<{ city: string }>;
+import { ItemBase, VenueBase } from './item.model.generated.js';
+export type TVenue = IModel<{ town: string }>;
 export type TItem = IModel<{
- dictionary: Record<string, TAddress>;
- tuple: [first: TAddress, ...rest: TAddress[]];
+ dictionary: Record<string, TVenue>;
+ tuple: [first: TVenue, ...rest: TVenue[]];
 }>;
-export class Address extends AddressBase {}
+export class Venue extends VenueBase {}
 export class Item extends ItemBase {}

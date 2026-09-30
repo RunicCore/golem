@@ -1,6 +1,6 @@
 import type { IModel } from '@exprtlabs/codegen/model';
-import { ChildBase, type ChildFields } from './child.model.generated.js';
-export type TChild = IModel<{ value: string; extra: number }>;
-export class Child extends ChildBase {
-  constructor(values: Partial<ChildFields> = {}) { super(values); }
+import { SharedChildBase, type SharedChildFields } from './child.model.generated.js';
+export type TSharedChild = IModel<{ value: string; extra: number }>;
+export class SharedChild extends SharedChildBase {
+  constructor(values: Partial<SharedChildFields> = {}) { super(values); }
 }

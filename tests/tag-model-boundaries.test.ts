@@ -4,12 +4,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import test, { type TestContext } from 'node:test';
 
-import { encodeGeneratedModel } from '@exprtlabs/codegen/conversion';
+import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/codegen/conversion';
 import { requireObjectCodec } from '@exprtlabs/codegen/serde';
 import { getValidator } from '@exprtlabs/codegen/validation';
 import { validationTagKey } from '@exprtlabs/codegen/schema';
 import type { ModelTypeDescriptor } from '@exprtlabs/codegen/model';
-import { generatedCodecIdFromRoot } from './support/consumer.js';
+import { generatedCodecId } from './support/consumer.js';
 import { generate, type ModelCodegenResult } from '#model/generator';
 import { writeGeneratedArtifacts } from './fixture-project.js';
 import { compileModelProject, createModelProject } from './model-project.js';
@@ -29,29 +29,68 @@ function copyStandaloneArtifacts(result: ModelCodegenResult, root: string, sourc
   }
 }
 
-async function runProfile(
-  t: TestContext,
-  writeSource: (sourceRoot: string) => void,
-  modelName: string,
-  ajvStandalone: boolean,
-): Promise<{ readonly root: string; readonly model: Record<string, unknown> }> {
+const fixtureRoot = 'models/tag-model-boundaries';
+// Each scenario keeps its own directory in the shared project, so the same file names never collide.
+const scenarios: Readonly<Record<string, Readonly<Record<string, string>>>> = {
+  cardinality: {
+    'codecs.ts': `${fixtureRoot}/root-property-cardinality-ignores-handwritten-state-and-still-checks-serde-w/codecs.ts`,
+    'box.model.ts': `${fixtureRoot}/root-property-cardinality-ignores-handwritten-state-and-still-checks-serde-w/box.model.ts`,
+  },
+  contains: {
+    'child.model.ts': `${fixtureRoot}/contains-tchild-accepts-a-handwritten-child-instance-with-exact-child-fields/child.model.ts`,
+    'parent.model.ts': `${fixtureRoot}/contains-tchild-accepts-a-handwritten-child-instance-with-exact-child-fields/parent.model.ts`,
+  },
+  patterns: {
+    'predicates.ts': `${fixtureRoot}/exact-objects-keep-pattern-properties-aligned-with-generated-validation/predicates.ts`,
+    'box.model.ts': `${fixtureRoot}/exact-objects-keep-pattern-properties-aligned-with-generated-validation/box.model.ts`,
+  },
+  dates: {
+    'calendar.model.ts': `${fixtureRoot}/date-descriptors-in-contains-and-dependentschemas-validate-model-date-values/calendar.model.ts`,
+  },
+  zoo: {
+    'zoo.model.ts': `${fixtureRoot}/discriminated-union-tag-projections-retain-the-selected-branch-fields/zoo.model.ts`,
+  },
+  shared: {
+    'child.model.ts': `${fixtureRoot}/shared-generated-instances-are-projected-independently-for-different-tag-des/child.model.ts`,
+    'shared.model.ts': `${fixtureRoot}/shared-generated-instances-are-projected-independently-for-different-tag-des/shared.model.ts`,
+  },
+};
+
+interface ScenarioProject {
+  readonly root: string;
+  readonly sourceRoot: string;
+  /** Load a built module of one scenario directory, for example ('zoo', 'zoo.model.js'). */
+  readonly load: (directory: string, file: string) => Promise<Record<string, unknown>>;
+}
+
+/** Generate and compile the named scenarios once, for one validator engine. */
+async function buildScenarioProject(t: TestContext, ajvStandalone: boolean, names: readonly string[]): Promise<ScenarioProject> {
   const { root, sourceRoot } = fixture(t);
-  writeSource(sourceRoot);
+  for (const directory of names) {
+    for (const [name, fixturePath] of Object.entries(scenarios[directory])) {
+      fs.mkdirSync(path.join(sourceRoot, directory), { recursive: true });
+      fs.writeFileSync(path.join(sourceRoot, directory, name), readFixture(fixturePath));
+    }
+  }
   const result = generate({ root, profile: { mobx: false, validation: true, ajvStandalone } });
   writeGeneratedArtifacts(result.artifacts);
   await compileModelProject(root);
   if (ajvStandalone) copyStandaloneArtifacts(result, root, sourceRoot);
-  const moduleValue: unknown = await import(path.toNamespacedPath(path.join(root, `build/${modelName.toLowerCase()}.model.js`)));
-  if (moduleValue === null || typeof moduleValue !== 'object') throw new Error(`Missing generated ${modelName} module.`);
-  const modelConstructor: unknown = Reflect.get(moduleValue, modelName);
-  if (typeof modelConstructor !== 'function') throw new Error(`Missing generated ${modelName} constructor.`);
-  return { root, model: { constructor: modelConstructor } };
+  return {
+    root,
+    sourceRoot,
+    load: async (directory, file) => {
+      const moduleValue: unknown = await import(path.toNamespacedPath(path.join(root, 'build', directory, file)));
+      if (moduleValue === null || typeof moduleValue !== 'object') throw new Error(`Missing generated module ${directory}/${file}.`);
+      return moduleValue as Record<string, unknown>;
+    },
+  };
 }
 
-function constructorOf(value: Record<string, unknown>): new (values?: never) => object {
-  const constructor = value.constructor;
-  if (typeof constructor !== 'function') throw new TypeError('Generated model constructor is unavailable.');
-  return constructor as new (values?: never) => object;
+async function loadModel(project: ScenarioProject, directory: string, file: string, modelName: string): Promise<new (values?: never) => object> {
+  const modelConstructor: unknown = Reflect.get(await project.load(directory, file), modelName);
+  if (typeof modelConstructor !== 'function') throw new Error(`Missing generated ${modelName} constructor.`);
+  return modelConstructor as new (values?: never) => object;
 }
 
 test('tag keys preserve user fields named like descriptor metadata', () => {
@@ -73,14 +112,19 @@ test('tag keys preserve user fields named like descriptor metadata', () => {
   assert.notEqual(dateKey, serdeKey, 'user property names must remain part of the tag identity');
 });
 
-test('root property cardinality ignores handwritten state and still checks serde wire output', async t => {
-  for (const ajvStandalone of [false, true]) {
-    await t.test(ajvStandalone ? 'standalone' : 'runtime', async profileTest => {
-      const loaded = await runProfile(profileTest, sourceRoot => {
-      fs.writeFileSync(path.join(sourceRoot, 'codecs.ts'), readFixture("models/tag-model-boundaries/root-property-cardinality-ignores-handwritten-state-and-still-checks-serde-w/codecs.ts"));
-      fs.writeFileSync(path.join(sourceRoot, 'box.model.ts'), readFixture("models/tag-model-boundaries/root-property-cardinality-ignores-handwritten-state-and-still-checks-serde-w/box.model.ts"));
-      }, 'Box', ajvStandalone);
-      const Box = constructorOf(loaded.model);
+interface Check {
+  readonly title: string;
+  /** The scenario directory this check reads; a standalone project holds only this one. */
+  readonly directory: string;
+  readonly run: (project: ScenarioProject, engine: 'JIT' | 'AOT') => Promise<void>;
+}
+
+const checks: readonly Check[] = [
+  {
+    title: 'root property cardinality ignores handwritten state and still checks serde wire output',
+    directory: 'cardinality',
+    run: async (project, engine) => {
+      const Box = await loadModel(project, 'cardinality', 'box.model.js', 'Box');
       const valid = Reflect.construct(Box, [{ code: 7 }]);
       const empty = Reflect.construct(Box, [{}]);
       const two = Reflect.construct(Box, [{ code: 7, label: 'too many' }]);
@@ -88,28 +132,20 @@ test('root property cardinality ignores handwritten state and still checks serde
         const candidate = getValidator(value);
         return { validate: () => candidate.validate(), issues: candidate.issues };
       };
-      assert.equal(await validator(valid).validate(), true, `${ajvStandalone ? 'AOT' : 'JIT'} accepts a valid model with handwritten state`);
+      assert.equal(await validator(valid).validate(), true, `${engine} accepts a valid model with handwritten state`);
       const wire = encodeGeneratedModel(valid);
-      assert.deepEqual(wire, { code: '7' }, `${ajvStandalone ? 'AOT' : 'JIT'} preserves the declared serde wire shape`);
-      assert.equal(await validator(empty).validate(), false, `${ajvStandalone ? 'AOT' : 'JIT'} enforces minProperties`);
-      assert.equal(await validator(two).validate(), false, `${ajvStandalone ? 'AOT' : 'JIT'} enforces maxProperties`);
-    });
-  }
-});
-
-test('Contains<TChild> accepts a handwritten child instance with exact child fields', async t => {
-  for (const ajvStandalone of [false, true]) {
-    await t.test(ajvStandalone ? 'standalone' : 'runtime', async profileTest => {
-      const loaded = await runProfile(profileTest, sourceRoot => {
-      fs.writeFileSync(path.join(sourceRoot, 'child.model.ts'), readFixture("models/tag-model-boundaries/contains-tchild-accepts-a-handwritten-child-instance-with-exact-child-fields/child.model.ts"));
-      fs.writeFileSync(path.join(sourceRoot, 'parent.model.ts'), readFixture("models/tag-model-boundaries/contains-tchild-accepts-a-handwritten-child-instance-with-exact-child-fields/parent.model.ts"));
-      }, 'Parent', ajvStandalone);
-      const childModule: unknown = await import(path.toNamespacedPath(path.join(loaded.root, 'build/child.model.js')));
-      if (childModule === null || typeof childModule !== 'object') throw new Error('Missing generated Child module.');
-      const childConstructor: unknown = Reflect.get(childModule, 'Child');
-      const Parent = constructorOf(loaded.model);
-      if (typeof childConstructor !== 'function') throw new Error('Missing generated Child constructor.');
-      const child = Reflect.construct(childConstructor, [{ name: 'nested' }]);
+      assert.deepEqual(wire, { code: '7' }, `${engine} preserves the declared serde wire shape`);
+      assert.equal(await validator(empty).validate(), false, `${engine} enforces minProperties`);
+      assert.equal(await validator(two).validate(), false, `${engine} enforces maxProperties`);
+    },
+  },
+  {
+    title: 'Contains<TChild> accepts a handwritten child instance with exact child fields',
+    directory: 'contains',
+    run: async (project, engine) => {
+      const Parent = await loadModel(project, 'contains', 'parent.model.js', 'Parent');
+      const Child = await loadModel(project, 'contains', 'child.model.js', 'Child');
+      const child = Reflect.construct(Child, [{ name: 'nested' }]);
       const parent = Reflect.construct(Parent, [{ children: [child], metadata: { children: [child], mode: 'loaded' } }]);
       const candidate = getValidator(parent);
       const valid = await candidate.validate();
@@ -117,7 +153,7 @@ test('Contains<TChild> accepts a handwritten child instance with exact child fie
       assert.equal(
         valid,
         true,
-        `${ajvStandalone ? 'AOT' : 'JIT'} accepts a nested handwritten child through Contains and DependentSchemas: ${JSON.stringify(issues)}`,
+        `${engine} accepts a nested handwritten child through Contains and DependentSchemas: ${JSON.stringify(issues)}`,
       );
       assert.deepEqual(issues, [], 'nested child validation issues');
       const empty = Reflect.construct(Parent, [{ children: [], metadata: { children: [child], mode: 'loaded' } }]);
@@ -125,44 +161,36 @@ test('Contains<TChild> accepts a handwritten child instance with exact child fie
       assert.equal(
         await emptyValidator.validate(),
         false,
-        `${ajvStandalone ? 'AOT' : 'JIT'} still enforces Contains after accepting a handwritten child`,
+        `${engine} still enforces Contains after accepting a handwritten child`,
       );
-    });
-  }
-});
-
-test('exact objects keep pattern properties aligned with generated validation', async t => {
-  for (const ajvStandalone of [false, true]) {
-    await t.test(ajvStandalone ? 'standalone' : 'runtime', async profileTest => {
-      const loaded = await runProfile(profileTest, sourceRoot => {
-        fs.writeFileSync(path.join(sourceRoot, 'predicates.ts'), readFixture("models/tag-model-boundaries/exact-objects-keep-pattern-properties-aligned-with-generated-validation/predicates.ts"));
-        fs.writeFileSync(path.join(sourceRoot, 'box.model.ts'), readFixture("models/tag-model-boundaries/exact-objects-keep-pattern-properties-aligned-with-generated-validation/box.model.ts"));
-      }, 'Box', ajvStandalone);
-      const Box = constructorOf(loaded.model);
-      const predicates = await import(path.toNamespacedPath(path.join(loaded.root, 'build/predicates.js')));
+    },
+  },
+  {
+    title: 'exact objects keep pattern properties aligned with generated validation',
+    directory: 'patterns',
+    run: async (project, engine) => {
+      const Box = await loadModel(project, 'patterns', 'box.model.js', 'PatternBox');
+      const predicates = await project.load('patterns', 'predicates.js') as { reset(): void; calls: number };
       predicates.reset();
       const valid = Reflect.construct(Box, [{ payload: { known: 'yes', x_count: 2 } }]);
       assert.equal(await getValidator(valid).validate(), true, 'pattern-declared key is accepted by exact model validation');
       assert.equal(predicates.calls, 1, 'pattern predicate runs once');
       const invalidPattern = Reflect.construct(Box, [{ payload: { known: 'yes', x_count: -1 } }]);
       assert.equal(await getValidator(invalidPattern).validate(), false, 'pattern predicate rejects invalid value');
+      const patternBoxCodec = generatedCodecId(fs.readFileSync(path.join(project.sourceRoot, 'patterns/box.model.generated.ts'), 'utf8'), 'PatternBox');
       assert.throws(
-        () => requireObjectCodec(generatedCodecIdFromRoot(loaded.root, 'Box')).fromWireFormat({
+        () => requireObjectCodec(patternBoxCodec).fromWireFormat({
           payload: { known: 'yes', other: 2 },
         }),
         'unmatched exact key remains rejected',
       );
-    });
-  }
-});
-
-test('Date descriptors in Contains and DependentSchemas validate model Date values', async t => {
-  for (const ajvStandalone of [false, true]) {
-    await t.test(ajvStandalone ? 'standalone' : 'runtime', async profileTest => {
-      const loaded = await runProfile(profileTest, sourceRoot => {
-      fs.writeFileSync(path.join(sourceRoot, 'calendar.model.ts'), readFixture("models/tag-model-boundaries/date-descriptors-in-contains-and-dependentschemas-validate-model-date-values/calendar.model.ts"));
-      }, 'Calendar', ajvStandalone);
-      const Calendar = constructorOf(loaded.model);
+    },
+  },
+  {
+    title: 'Date descriptors in Contains and DependentSchemas validate model Date values',
+    directory: 'dates',
+    run: async (project, engine) => {
+      const Calendar = await loadModel(project, 'dates', 'calendar.model.js', 'Calendar');
       const calendar = Reflect.construct(Calendar, [{ dates: [new Date('2025-01-02T03:04:05.000Z')], metadata: { dates: [new Date('2025-01-02T03:04:05.000Z')], mode: 'dated' } }]);
       const candidate = getValidator(calendar);
       const valid = await candidate.validate();
@@ -170,19 +198,16 @@ test('Date descriptors in Contains and DependentSchemas validate model Date valu
       assert.equal(
         valid,
         true,
-        `${ajvStandalone ? 'AOT' : 'JIT'} accepts model Date values in structural schemas: ${JSON.stringify(issues)}`,
+        `${engine} accepts model Date values in structural schemas: ${JSON.stringify(issues)}`,
       );
       assert.deepEqual(issues, [], 'Date structural validation issues');
       const wireInput = {
         dates: ['2025-01-02T03:04:05.000Z'],
         metadata: { dates: ['2025-01-02T03:04:05.000Z'], mode: 'dated' },
       };
-      const decoded = await (await import('@exprtlabs/codegen/conversion')).decodeGeneratedModel(
-        constructorOf(loaded.model),
-        wireInput,
-      ) as { dates: unknown[]; metadata: { dates: unknown[] } };
-      assert.ok(decoded.dates[0] instanceof Date, `${ajvStandalone ? 'AOT' : 'JIT'} accepts wire date-time strings`);
-      const assigned = Reflect.construct(constructorOf(loaded.model), [{
+      const decoded = decodeGeneratedModel(Calendar, wireInput) as { dates: unknown[]; metadata: { dates: unknown[] } };
+      assert.ok(decoded.dates[0] instanceof Date, `${engine} accepts wire date-time strings`);
+      const assigned = Reflect.construct(Calendar, [{
         dates: [new Date('2025-01-02T03:04:05.000Z')],
         metadata: { dates: [new Date('2025-01-02T03:04:05.000Z')], mode: 'dated' },
       }]);
@@ -191,58 +216,63 @@ test('Date descriptors in Contains and DependentSchemas validate model Date valu
       assert.equal(
         await invalidValidator.validate(),
         false,
-        `${ajvStandalone ? 'AOT' : 'JIT'} rejects wire strings when supplied as model-plane Date values`,
+        `${engine} rejects wire strings when supplied as model-plane Date values`,
       );
-    });
-  }
-});
-
-test('discriminated union tag projections retain the selected branch fields', async t => {
-  for (const ajvStandalone of [false, true]) {
-    await t.test(ajvStandalone ? 'standalone' : 'runtime', async profileTest => {
-      const loaded = await runProfile(profileTest, sourceRoot => {
-        fs.writeFileSync(path.join(sourceRoot, 'zoo.model.ts'), readFixture("models/tag-model-boundaries/discriminated-union-tag-projections-retain-the-selected-branch-fields/zoo.model.ts"));
-      }, 'Zoo', ajvStandalone);
-      const Zoo = constructorOf(loaded.model);
+    },
+  },
+  {
+    title: 'discriminated union tag projections retain the selected branch fields',
+    directory: 'zoo',
+    run: async (project, engine) => {
+      const Zoo = await loadModel(project, 'zoo', 'zoo.model.js', 'Zoo');
       const zoo = Reflect.construct(Zoo, [{ pets: [{ kind: 'dog', name: 'Rex', bark: true }] }]);
       const validator = getValidator(zoo);
       assert.equal(
         await validator.validate(),
         true,
-        `${ajvStandalone ? 'AOT' : 'JIT'} keeps the dog branch fields during Contains validation`,
+        `${engine} keeps the dog branch fields during Contains validation`,
       );
       const invalid = Reflect.construct(Zoo, [{ pets: [{ kind: 'dog', name: 'Rex' }] }]);
       assert.equal(await getValidator(invalid).validate(), false, 'missing selected-branch fields remain invalid');
-    });
-  }
-});
-
-test('shared generated instances are projected independently for different tag descriptors', async t => {
-  for (const ajvStandalone of [false, true]) {
-    await t.test(ajvStandalone ? 'standalone' : 'runtime', async profileTest => {
-      const loaded = await runProfile(profileTest, sourceRoot => {
-        fs.writeFileSync(path.join(sourceRoot, 'child.model.ts'), readFixture("models/tag-model-boundaries/shared-generated-instances-are-projected-independently-for-different-tag-des/child.model.ts"));
-        fs.writeFileSync(path.join(sourceRoot, 'shared.model.ts'), readFixture("models/tag-model-boundaries/shared-generated-instances-are-projected-independently-for-different-tag-des/shared.model.ts"));
-      }, 'Shared', ajvStandalone);
-      const childModule: unknown = await import(path.toNamespacedPath(path.join(loaded.root, 'build/child.model.js')));
-      if (childModule === null || typeof childModule !== 'object') throw new Error('Missing generated Child module.');
-      const Child = Reflect.get(childModule, 'Child');
-      if (typeof Child !== 'function') throw new Error('Missing generated Child constructor.');
-      const Shared = constructorOf(loaded.model);
+    },
+  },
+  {
+    title: 'shared generated instances are projected independently for different tag descriptors',
+    directory: 'shared',
+    run: async (project, engine) => {
+      const Child = await loadModel(project, 'shared', 'child.model.js', 'SharedChild');
+      const Shared = await loadModel(project, 'shared', 'shared.model.js', 'Shared');
       const child = Reflect.construct(Child, [{ value: 'ok', extra: 1 }]);
       const shared = Reflect.construct(Shared, [{ first: { value: 'ok' }, second: child }]);
       const validator = getValidator(shared);
       assert.equal(
         await validator.validate(),
         true,
-        `${ajvStandalone ? 'AOT' : 'JIT'} validates Pick and full nested models independently`,
+        `${engine} validates Pick and full nested models independently`,
       );
       Reflect.set(shared, 'first', child);
       assert.equal(
         await getValidator(shared).validate(),
         false,
-        `${ajvStandalone ? 'AOT' : 'JIT'} rejects extra enumerable fields on an exact Pick field`,
+        `${engine} rejects extra enumerable fields on an exact Pick field`,
       );
+    },
+  },
+];
+
+// The runtime engine holds every scenario in one project. Standalone validation cannot: models in one
+// project each name their first anonymous structural schema `__anon_1`, and generate() throws "Conflicting
+// standalone schema identity" when two models carry different ones. So each standalone check keeps its own
+// project.
+test('tag boundary scenarios share one runtime project', async t => {
+  const project = await buildScenarioProject(t, false, checks.map(check => check.directory));
+  for (const check of checks) await t.test(check.title, () => check.run(project, 'JIT'));
+});
+
+test('tag boundary scenarios each compile in their own standalone project', async t => {
+  for (const check of checks) {
+    await t.test(check.title, async subtest => {
+      await check.run(await buildScenarioProject(subtest, true, [check.directory]), 'AOT');
     });
   }
 });

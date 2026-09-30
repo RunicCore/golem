@@ -1,12 +1,12 @@
 
 import type { IModel } from '@exprtlabs/codegen/model';
-import { AddressBase, ContainerBase } from './item.model.generated.js';
-export type TAddress = IModel<{ city: string }>;
+import { PlaceBase, ContainerBase } from './item.model.generated.js';
+export type TPlace = IModel<{ borough: string }>;
 type Noop<T> = { [K in keyof T]: T[K] };
 export type TContainer = IModel<{
-  mapped: Noop<TAddress>;
-  intact: TAddress;
-  plain: { city: string };
+  mapped: Noop<TPlace>;
+  intact: TPlace;
+  plain: { borough: string };
 }>;
-export class Address extends AddressBase {}
+export class Place extends PlaceBase {}
 export class Container extends ContainerBase {}
