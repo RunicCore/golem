@@ -33,7 +33,7 @@
     "node": ">=22.15.0"
   },
   "bin": {
-    "runic-codegen": "./dist/bin/runic-codegen.js"
+    "golem": "./dist/bin/golem.js"
   },
   "files": [
     "dist",
@@ -47,7 +47,7 @@
   ],
   "sideEffects": [
     "./dist/ajv.js",
-    "./dist/bin/runic-codegen.js"
+    "./dist/bin/golem.js"
   ],
   "exports": {
     "./model": {

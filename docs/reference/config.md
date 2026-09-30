@@ -1,6 +1,6 @@
 # Configuration
 
-Put `runic-codegen.yaml` in the project that owns the source files. Paths
+Put `golem.yaml` in the project that owns the source files. Paths
 inside the file resolve from its directory; the `--config` value resolves
 from the current directory.
 

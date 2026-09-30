@@ -45,7 +45,7 @@ The project does not start an API server. Replace the URL with a matching
 | `backend/project-access.model.ts` | Native backend model and tagged fields |
 | `backend/project-access.controller.ts` | Route, request and response declaration |
 | `api.yaml` | Generated OpenAPI shapes and update operation |
-| `runic-codegen.yaml` | Controller, SDK and model generation jobs |
+| `golem.yaml` | Controller, SDK and model generation jobs |
 | `src/project-access.model.ts` | Handwritten editor and model declaration |
 | `src/access-rules.ts` | Validation tags and conversion functions |
 | `src/edit-access.ts` | Decode a wire draft, grant write access, re-encode it |

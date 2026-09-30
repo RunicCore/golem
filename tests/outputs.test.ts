@@ -26,8 +26,8 @@ function fixture(t: TestContext): OutputFixture {
   };
   const config: CodegenConfig = {
     directory,
-    configFile: path.join(directory, 'runic-codegen.yaml'),
-    inventoryFile: path.join(directory, '.runic-codegen/outputs.json'),
+    configFile: path.join(directory, 'golem.yaml'),
+    inventoryFile: path.join(directory, '.golem/outputs.json'),
     profile: { mobx: false, validation: true },
     jobs: [job],
   };

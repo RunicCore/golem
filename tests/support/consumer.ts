@@ -21,7 +21,7 @@ export function writeFixture(root: string, profile: CodegenProfile, includeModel
     ...(includeModels ? ['models:', '  root: .'] : []),
     '',
   ].join('\n');
-  fs.writeFileSync(path.join(root, 'runic-codegen.yaml'), configuration);
+  fs.writeFileSync(path.join(root, 'golem.yaml'), configuration);
 }
 
 export function generatedCodecId(source: string, shortName: string): string {

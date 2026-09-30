@@ -21,7 +21,7 @@ Add the ttsc plugin to `tsconfig.json` and compile with `npx ttsc` ([TypeScript 
 
 One configuration runs the OpenAPI job first; its `model-manifest.json` lets the model job resolve SDK types such as `Money`.
 
-<<< ../../examples/combined/runic-codegen.yaml
+<<< ../../examples/combined/golem.yaml
 
 The Payments API sends and returns `Money`, not the whole editor:
 
@@ -33,7 +33,7 @@ Write the declaration before the first generation. The SDK import is type-only, 
 
 <<< ../../examples/combined/src/payment-editor.model.ts#model-declaration
 
-Run `npx runic-codegen generate`. It writes `sdk/` and `src/payment-editor.model.generated.ts`, and shared files under `src/generated/models/`. Then add your `PaymentEditor` class, as at the top of this page; regeneration leaves it alone.
+Run `npx golem generate`. It writes `sdk/` and `src/payment-editor.model.generated.ts`, and shared files under `src/generated/models/`. Then add your `PaymentEditor` class, as at the top of this page; regeneration leaves it alone.
 
 ## Load and edit
 

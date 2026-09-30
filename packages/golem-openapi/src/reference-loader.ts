@@ -426,7 +426,7 @@ export async function loadReferenceGraph(
     const uri = resolved.href;
     if (options.skipRemote) return { target: null, preserve: false };
     if (!options.allowRemoteRefs) {
-      throw new Error(`remote reference blocked at ${item.walkerPointer}: ${item.reference}; set allowRemoteRefs: true and remoteHosts in runic-codegen.yaml to opt in`);
+      throw new Error(`remote reference blocked at ${item.walkerPointer}: ${item.reference}; set allowRemoteRefs: true and remoteHosts in golem.yaml to opt in`);
     }
     if (allowedHosts.size === 0) throw new Error('remote references require at least one explicitly allowed remote host');
     if (resolved.protocol !== 'https:') throw new Error(`remote reference must use HTTPS: ${uri}`);

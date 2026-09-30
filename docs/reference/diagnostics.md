@@ -186,7 +186,7 @@ An error prints its code, location when known, and message, then stops generatio
 
 ### RUNM1011
 
-**Field contains any.** A field's type includes `any`, and the model doesn't allow it. **Fix:** Replace it with a concrete type or `unknown`, or allow it with `{ allowAny: true }` as `IModel`'s second type argument, or `allowAny: true` in `runic-codegen.yaml`.
+**Field contains any.** A field's type includes `any`, and the model doesn't allow it. **Fix:** Replace it with a concrete type or `unknown`, or allow it with `{ allowAny: true }` as `IModel`'s second type argument, or `allowAny: true` in `golem.yaml`.
 
 ### RUNM1021
 

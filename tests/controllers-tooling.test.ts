@@ -23,7 +23,7 @@ function fixture(t: TestContext): { root: string; config: string } {
     path: path.join(root, 'src/app.controller.ts'),
     content: 'export class AppController {}\n',
   }]);
-  const config = path.join(root, 'runic-codegen.yaml');
+  const config = path.join(root, 'golem.yaml');
   return { root, config };
 }
 
@@ -166,7 +166,7 @@ test('controller error diagnostics block exact-file writes while warnings remain
   });
   await assert.rejects(() => runPipeline(failing.config), /TSOA1001.*unsupported route/);
   assert.equal(fs.existsSync(failingOutput), false);
-  assert.equal(fs.existsSync(path.join(failing.root, '.runic-codegen/outputs.json')), false);
+  assert.equal(fs.existsSync(path.join(failing.root, '.golem/outputs.json')), false);
 
   const warning = fixture(t);
   writeConfig(warning.config, [
@@ -190,7 +190,7 @@ test('controller error diagnostics block exact-file writes while warnings remain
   assert.equal(fs.existsSync(warningOutput), true);
   const result = state.results.get('controllers:generated/api.json');
   assert.deepEqual(result?.diagnostics, [{ severity: 'warning', code: 'TSOA2001', message: 'custom rule omitted' }]);
-  const inventory = JSON.parse(fs.readFileSync(path.join(warning.root, '.runic-codegen/outputs.json'), 'utf8')) as {
+  const inventory = JSON.parse(fs.readFileSync(path.join(warning.root, '.golem/outputs.json'), 'utf8')) as {
     files: Record<string, { owner: string; job: string; digest: string; destination: string }>;
   };
   const { digest: recordedDigest, ...recordedEntry } = inventory.files['generated/api.json'] ?? {};
@@ -219,8 +219,8 @@ test('controller OpenAPI files stay standards-valid while ownership and retireme
   };
   const config: CodegenConfig = {
     directory: root,
-    configFile: path.join(root, 'runic-codegen.yaml'),
-    inventoryFile: path.join(root, '.runic-codegen/outputs.json'),
+    configFile: path.join(root, 'golem.yaml'),
+    inventoryFile: path.join(root, '.golem/outputs.json'),
     profile: { mobx: false, validation: true },
     jobs: [job],
   };

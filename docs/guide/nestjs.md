@@ -42,7 +42,7 @@ The default document version is OpenAPI 3.2. `class-validator` decorators aren't
 
 ## Configure and generate
 
-Add `runic-codegen.yaml` beside the project's TypeScript configuration and run `npx runic-codegen generate`:
+Add `golem.yaml` beside the project's TypeScript configuration and run `npx golem generate`:
 
 ```yaml
 version: 1
@@ -91,7 +91,7 @@ post:
 
 Add an OpenAPI job that reads `./api/openapi.yaml` ([Generate a client](/guide/client)). One configuration can run both jobs:
 
-<<< ../../examples/nest-openapi/runic-codegen.yaml
+<<< ../../examples/nest-openapi/golem.yaml
 
 `globalPrefix: api` must match `app.setGlobalPrefix()`; the generator reads controllers, not your bootstrap code. The `models` job generates `PaymentBase`.
 

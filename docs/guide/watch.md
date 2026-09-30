@@ -2,22 +2,22 @@
 
 Generate once, regenerate while you edit, start your app after the first generation, and check generated files in CI.
 
-`runic-codegen watch` regenerates when inputs change. Configure [`runic-codegen.yaml`](/reference/config) first.
+`golem watch` regenerates when inputs change. Configure [`golem.yaml`](/reference/config) first.
 
 ```sh
-npx runic-codegen watch
+npx golem watch
 ```
 
-- `runic-codegen exec --watch -- <command>` generates before starting a child process.
-- `runic-codegen check` reports stale output without writing.
+- `golem exec --watch -- <command>` generates before starting a child process.
+- `golem check` reports stale output without writing.
 
-The CLI records generated paths in `.runic-codegen/outputs.json`, so it can
+The CLI records generated paths in `.golem/outputs.json`, so it can
 delete files it generated earlier that are no longer produced.
 
 ## Regenerate while editing
 
 Watch reruns when a model file, controller, OpenAPI document or
-`runic-codegen.yaml` changes, and regenerates everything that depends on it. A
+`golem.yaml` changes, and regenerates everything that depends on it. A
 model-only edit does not rerun an unchanged SDK job. Type errors that come only
 from an outdated `.model.generated.ts` file don't block regeneration; errors in
 your own source still stop the write. Remote references are
@@ -30,7 +30,7 @@ closes when the watcher stops.
 Use `exec` when the application must not start before its generated files exist:
 
 ```sh
-npx runic-codegen exec --watch -- npm run dev
+npx golem exec --watch -- npm run dev
 ```
 
 The CLI generates first, then starts the child command and keeps watching until
@@ -41,23 +41,23 @@ Regeneration doesn't restart your app; use your framework's own reload.
 ## Check without writing
 
 ```sh
-npx runic-codegen check
+npx golem check
 ```
 
 `check` exits with code 1 when a generated file is missing, stale or
 unrecorded, and writes nothing. Commit generated files and
-`.runic-codegen/outputs.json` together so the check knows which paths belong to
+`.golem/outputs.json` together so the check knows which paths belong to
 each job.
 
 ## Generated files and the inventory
 
 Generation replaces the files it generated before. Put custom behavior in your classes or application code; do not edit `*.generated.ts` files.
 
-`.runic-codegen/outputs.json` lists the files written by each job, so the CLI
+`.golem/outputs.json` lists the files written by each job, so the CLI
 can delete files it generated earlier that are no longer produced. Identical
 content keeps its modification time. Changed output is replaced even if it was
 edited or its generated marker was removed. `check` flags files that carry a
-generator marker but aren't in `.runic-codegen/outputs.json`; other files are
+generator marker but aren't in `.golem/outputs.json`; other files are
 left alone.
 
 Each recorded path also stores which job and package generated it and a
@@ -77,8 +77,8 @@ writes them.
 Fix the model, API document or configuration, then rerun the same commands:
 
 ```sh
-npx runic-codegen generate
-npx runic-codegen check
+npx golem generate
+npx golem check
 ```
 
 Generation recreates missing output and refreshes the inventory. If an earlier
@@ -92,5 +92,5 @@ Paths in a [configuration](/reference/config) are relative to that file. Select 
 configuration explicitly with the [CLI](/reference/cli) option `--config`:
 
 ```sh
-npx runic-codegen watch --config ./frontend/runic-codegen.yaml
+npx golem watch --config ./frontend/golem.yaml
 ```

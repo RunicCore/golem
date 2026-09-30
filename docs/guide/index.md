@@ -4,7 +4,7 @@ Codegen turns TypeScript declarations, OpenAPI documents and NestJS controllers 
 
 ## Which generator you need
 
-Each generator installs on its own and runs through the same `runic-codegen` command and `runic-codegen.yaml` file. The command and its configuration file are named `runic-codegen`; the packages are published under `@exprtlabs`.
+Each generator installs on its own and runs through the same `golem` command and `golem.yaml` file. The command and its configuration file are named `golem`; the packages are published under `@exprtlabs`.
 
 | You have | Generator | You get |
 | --- | --- | --- |

@@ -10,8 +10,8 @@ Know which generated paths and names you can import and commit, and which may ch
 | `sdk/models/<Name>.js` | One runtime model class per object schema | Yes |
 | `sdk/operations/<name>.js` | One operation factory per endpoint | Yes |
 | `<name>.model.generated.ts` | The generated base beside each model file | Yes |
-| `runic-codegen.yaml` | Your configuration keys | Yes |
-| `.runic-codegen/outputs.json` | The list of files the generator owns | Yes |
+| `golem.yaml` | Your configuration keys | Yes |
+| `.golem/outputs.json` | The list of files the generator owns | Yes |
 
 The SDK folder is the `sdk` output you configure. Import only from the paths above.
 

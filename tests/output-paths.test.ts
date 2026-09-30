@@ -29,7 +29,7 @@ function pipelineFixture(t: TestContext): { root: string; config: string; extern
   fs.writeFileSync(source, "import type { IModel } from '@exprtlabs/golem/model';\nexport type TCart = IModel<{ value: string }>;\n");
   t.after(() => fs.rmSync(external, { recursive: true, force: true }));
 
-  const config = path.join(root, 'runic-codegen.yaml');
+  const config = path.join(root, 'golem.yaml');
   fs.writeFileSync(config, [
     'version: 1',
     'mobx: false',
@@ -65,8 +65,8 @@ function modelJob(root: string, source: string): CodegenJob {
 function modelConfig(root: string, job: CodegenJob): CodegenConfig {
   return {
     directory: root,
-    configFile: path.join(root, 'runic-codegen.yaml'),
-    inventoryFile: path.join(root, '.runic-codegen/outputs.json'),
+    configFile: path.join(root, 'golem.yaml'),
+    inventoryFile: path.join(root, '.golem/outputs.json'),
     profile: { mobx: false, validation: true },
     jobs: [job],
   };
@@ -92,7 +92,7 @@ test('YAML pipeline supports external OpenAPI and model roots, sources, and outp
   assert.equal(fs.existsSync(sharedModelOutput), false);
   assert.equal(fs.existsSync(companion), true);
 
-  const inventoryFile = path.join(root, '.runic-codegen/outputs.json');
+  const inventoryFile = path.join(root, '.golem/outputs.json');
   const before = fs.readFileSync(inventoryFile);
   const beforeMtime = fs.statSync(inventoryFile, { bigint: true }).mtimeNs;
   const inventory = JSON.parse(before.toString()) as {

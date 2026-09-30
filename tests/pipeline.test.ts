@@ -17,7 +17,7 @@ function fixture(t: TestContext): { root: string; config: string } {
   ));
   fs.writeFileSync(path.join(root, 'package.json'), '{"name":"pipeline-fixture","type":"module"}');
   writeFixture(root, { mobx: false, validation: true });
-  return { root, config: path.join(root, 'runic-codegen.yaml') };
+  return { root, config: path.join(root, 'golem.yaml') };
 }
 
 async function until(check: () => boolean, message: string, timeout = 20000): Promise<void> {
@@ -72,12 +72,12 @@ test('a generator package newer than the installed runtime is rejected before an
   fs.copyFileSync(path.join(source, 'dist/generator.js'), path.join(provider, 'dist/generator.js'));
   await assert.rejects(runPipeline(config), /@exprtlabs\/golem \S+ is older than @exprtlabs\/golem-openapi 1\.99\.0/);
   assert.equal(fs.existsSync(path.join(root, 'sdk')), false);
-  assert.equal(fs.existsSync(path.join(root, '.runic-codegen')), false);
+  assert.equal(fs.existsSync(path.join(root, '.golem')), false);
 });
 
 test('exec forwards child failure and never starts a child after generator failure', async (t: TestContext) => {
   const { root, config } = fixture(t);
-  const binary = path.join(workspace, 'packages/golem/dist/bin/runic-codegen.js');
+  const binary = path.join(workspace, 'packages/golem/dist/bin/golem.js');
   const result = await command(root, process.execPath, [binary, 'exec', '--config', config, '--', process.execPath, '-e', 'process.exit(7)'], { allowFailure: true });
   assert.equal(result.code, 7);
   fs.writeFileSync(path.join(root, 'api.json'), '{}');
@@ -90,7 +90,7 @@ test('exec forwards child failure and never starts a child after generator failu
 
 test('watch regenerates model edits without rewriting SDKs or looping on outputs', async (t: TestContext) => {
   const { root } = fixture(t);
-  const binary = path.join(workspace, 'packages/golem/dist/bin/runic-codegen.js');
+  const binary = path.join(workspace, 'packages/golem/dist/bin/golem.js');
   const child = spawn(process.execPath, [binary, 'watch'], { cwd: root, stdio: ['ignore', 'pipe', 'pipe'] });
   let stdout = '';
   let stderr = '';
@@ -168,7 +168,7 @@ test('deleting a discovered model cleans its generated companion, and deleting t
   await runPipeline(config);
   assert.equal(fs.existsSync(companion), false);
 
-  const inventory = JSON.parse(fs.readFileSync(path.join(root, '.runic-codegen/outputs.json'), 'utf8')) as {
+  const inventory = JSON.parse(fs.readFileSync(path.join(root, '.golem/outputs.json'), 'utf8')) as {
     files: Record<string, unknown>;
   };
   assert.equal(Object.keys(inventory.files).some((f) => f.includes('cart.model.generated')), false);

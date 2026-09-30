@@ -49,8 +49,8 @@ export function verifyPackage(directory: string): void {
     requireFile(target.import);
   }
   if (manifest.name === '@exprtlabs/golem') {
-    if (!record(manifest.bin) || Object.keys(manifest.bin).join() !== 'runic-codegen') throw new Error('Shared package must own exactly runic-codegen.');
-    const binary = requireFile(manifest.bin['runic-codegen']);
+    if (!record(manifest.bin) || Object.keys(manifest.bin).join() !== 'golem') throw new Error('Shared package must own exactly golem.');
+    const binary = requireFile(manifest.bin['golem']);
     if (!fs.readFileSync(binary, 'utf8').startsWith('#!/usr/bin/env node\n')) throw new Error('Missing CLI shebang.');
     fs.chmodSync(binary, 0o755);
   } else if (manifest.bin !== undefined) throw new Error('Generator packages must not own executables.');

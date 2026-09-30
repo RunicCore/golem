@@ -2,7 +2,7 @@
 
 This release candidate brings TypeScript models, NestJS controller contracts
 and OpenAPI clients into one generation workflow. Install the generators
-independently, or combine them in one `runic-codegen.yaml` file.
+independently, or combine them in one `golem.yaml` file.
 
 ## What you can build
 
@@ -76,7 +76,7 @@ Each item names a breaking change and the action to take.
 
 - `typescript` (`~7.0.2`) and `ttsc` (`~0.30.4`) are peer dependencies of both generators. Install them in the consuming project.
 - Several pre-1.0 exports are removed with no replacement ([Removed APIs](https://github.com/exprtlabs/codegen/blob/main/CHANGELOG.md#removed-apis-pre-10)).
-- An inventory (`.runic-codegen/outputs.json`) from an earlier release candidate is rejected. Delete it and run `npx runic-codegen generate`.
+- An inventory (`.golem/outputs.json`) from an earlier release candidate is rejected. Delete it and run `npx golem generate`.
 
 ### Generated files
 

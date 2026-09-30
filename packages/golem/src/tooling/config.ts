@@ -138,7 +138,7 @@ export function contains(directory: string, filename: string): boolean {
 }
 
 /** Parse and resolve the complete dependency graph before checking existence. */
-export function resolveConfig(filename = 'runic-codegen.yaml', onInput?: InputObserver): CodegenConfig {
+export function resolveConfig(filename = 'golem.yaml', onInput?: InputObserver): CodegenConfig {
   const requested = path.resolve(filename);
   onInput?.(requested);
   const configFile = fs.realpathSync(requested);
@@ -265,7 +265,7 @@ export function resolveConfig(filename = 'runic-codegen.yaml', onInput?: InputOb
       }
     }
   }
-  return { configFile, directory, profile, jobs, inventoryFile: path.join(directory, '.runic-codegen', 'outputs.json') };
+  return { configFile, directory, profile, jobs, inventoryFile: path.join(directory, '.golem', 'outputs.json') };
 }
 
 export function validateConfigInputs(config: CodegenConfig): void {
@@ -290,7 +290,7 @@ export function validateConfigInputs(config: CodegenConfig): void {
   }
 }
 
-export function loadConfig(filename = 'runic-codegen.yaml', onInput?: InputObserver): CodegenConfig {
+export function loadConfig(filename = 'golem.yaml', onInput?: InputObserver): CodegenConfig {
   const config = resolveConfig(filename, onInput);
   validateConfigInputs(config);
   return config;

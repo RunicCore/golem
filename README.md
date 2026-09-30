@@ -4,7 +4,7 @@ One TypeScript-first toolchain for models, validation, JSON conversion,
 OpenAPI documents and typed API clients. Write the type once in
 `@exprtlabs/golem-model`, `@exprtlabs/golem-openapi` or
 `@exprtlabs/golem-ts-openapi`; the shared `@exprtlabs/golem` runtime and
-`runic-codegen` CLI generate the rest, in dependency order when a project uses
+`golem` CLI generate the rest, in dependency order when a project uses
 more than one.
 
 ## Install
@@ -53,7 +53,7 @@ import type { IModel } from '@exprtlabs/golem/model';
 export type TTask = IModel<{ title: string; done: boolean }>;
 ```
 ```sh
-npx runic-codegen generate
+npx golem generate
 ```
 ```ts
 import { TaskBase } from './task.model.generated.js';

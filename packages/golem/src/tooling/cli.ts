@@ -11,7 +11,7 @@ export function parseArguments(argv: readonly string[]): Arguments {
   const action = args.shift();
   if (!action || action === '--help' || action === '-h') return { action: 'help' };
   if (action !== 'generate' && action !== 'check' && action !== 'watch' && action !== 'exec') throw new Error(`Unknown command: ${action}`);
-  let config = 'runic-codegen.yaml';
+  let config = 'golem.yaml';
   let watch = false;
   let command: string[] = [];
   for (let i = 0; i < args.length; i += 1) {
@@ -29,7 +29,7 @@ export function parseArguments(argv: readonly string[]): Arguments {
 export async function main(argv = process.argv.slice(2)) {
   const options = parseArguments(argv);
   if (options.action === 'help') {
-    process.stdout.write('Usage: runic-codegen <generate|check|watch|exec> [--config runic-codegen.yaml]\n       runic-codegen exec [--watch] -- <command> [args...]\n');
+    process.stdout.write('Usage: golem <generate|check|watch|exec> [--config golem.yaml]\n       golem exec [--watch] -- <command> [args...]\n');
     return;
   }
   if (options.action === 'watch') {

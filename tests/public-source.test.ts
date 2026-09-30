@@ -64,7 +64,7 @@ function publicFixture(t: TestContext): string {
   writeFixture(root, 'examples/model/package.json', '{"name":"model-example"}\n');
   writeFixture(root, 'examples/model/src/main.ts', 'export {};\n');
   writeFixture(root, 'examples/model/sdk/model-manifest.json', '{"manifestVersion":2}\n');
-  writeFixture(root, 'examples/model/.runic-codegen/outputs.json', '{}\n');
+  writeFixture(root, 'examples/model/.golem/outputs.json', '{}\n');
   writeFixture(root, '.github/workflows/check.yml', 'name: checks\n');
   return root;
 }
@@ -120,7 +120,7 @@ test('public source inventory keeps licenses, generated example metadata, and so
     'packages/golem-ts-openapi/LICENSE',
     'packages/golem-ts-openapi/src/index.ts',
     'examples/model/sdk/model-manifest.json',
-    'examples/model/.runic-codegen/outputs.json',
+    'examples/model/.golem/outputs.json',
     '.github/workflows/check.yml',
   ];
   for (const relative of expected) assert.ok(files.includes(relative), relative);

@@ -1,7 +1,7 @@
 # @exprtlabs/golem
 
 `@exprtlabs/golem` is the runtime for generated models and SDKs, plus the
-`runic-codegen` command that runs configured generators. Install it in the
+`golem` command that runs configured generators. Install it in the
 application: generated code imports its runtime entry points, and the
 validated or observable profile also needs `ajv`/`ajv-formats` or `mobx`.
 

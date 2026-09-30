@@ -75,10 +75,10 @@ test('a hand-written and an SDK model of the same name and shape keep their own 
     'export type TMoney = IModel<{ amount: string; currency: string }>;',
     '',
   ].join('\n'));
-  fs.writeFileSync(path.join(root, 'runic-codegen.yaml'), [
+  fs.writeFileSync(path.join(root, 'golem.yaml'), [
     'version: 1', 'mobx: false', 'validation: true', 'openapi:', '  - input: api.json', '    output: sdk', '    name: Identity', 'models:', '  root: .', '',
   ].join('\n'));
-  await runPipeline(path.join(root, 'runic-codegen.yaml'));
+  await runPipeline(path.join(root, 'golem.yaml'));
 
   const keyOf = (file: string): string => {
     const match = fs.readFileSync(path.join(root, file), 'utf8').match(/#Money(?:Model)?": "(Money_[0-9a-f]{8})"/);

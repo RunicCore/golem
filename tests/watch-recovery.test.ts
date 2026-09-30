@@ -20,7 +20,7 @@ function fixture(t: TestContext): { root: string; config: string } {
   }
   fs.writeFileSync(path.join(root, 'package.json'), '{"name":"watch-recovery-fixture","type":"module"}');
   writeFixture(root, { mobx: false, validation: true });
-  const config = path.join(root, 'runic-codegen.yaml');
+  const config = path.join(root, 'golem.yaml');
   fs.writeFileSync(config, fs.readFileSync(config, 'utf8').replace(
     'validation: true\n',
     'validation: true\nallowAny: false\n',
@@ -206,7 +206,7 @@ test('watch reuses one compiler across edits and tsconfig path-mapping changes',
   const companion = path.join(root, 'src/cart.model.generated.ts');
   const generated = (): string => fs.existsSync(companion) ? fs.readFileSync(companion, 'utf8') : '';
 
-  const binary = path.join(workspace, 'packages/golem/dist/bin/runic-codegen.js');
+  const binary = path.join(workspace, 'packages/golem/dist/bin/golem.js');
   const child = spawn(process.execPath, [binary, 'watch', '--config', config], { cwd: root, stdio: ['ignore', 'pipe', 'pipe'] });
   let stdout = '';
   let stderr = '';

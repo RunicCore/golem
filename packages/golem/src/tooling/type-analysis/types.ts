@@ -609,7 +609,7 @@ export function descriptorBuilder(
           '1011',
           `Model ${context.name} contains any. Replace it with a concrete type or unknown, or allow it with `
             + `{ allowAny: true } as the model's second type argument (IModel<Fields, { allowAny: true }>) `
-            + 'or allowAny: true in runic-codegen.yaml.',
+            + 'or allowAny: true in golem.yaml.',
         );
       }
       return withMetadata(isErrorAny(type) ? { kind: 'unknown' } : { kind: 'any' }, metadata);

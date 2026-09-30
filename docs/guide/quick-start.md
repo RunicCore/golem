@@ -49,7 +49,7 @@ An `IObject` gives plain objects with the same validation and conversion; an `IM
 
 ## Generate the base
 
-Add `runic-codegen.yaml` at the project root and run the generator:
+Add `golem.yaml` at the project root and run the generator:
 
 ```yaml
 version: 1
@@ -58,7 +58,7 @@ models:
 ```
 
 ```sh
-npx runic-codegen generate
+npx golem generate
 ```
 
 ```

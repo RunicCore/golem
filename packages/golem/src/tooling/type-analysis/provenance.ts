@@ -129,7 +129,7 @@ function validateGeneratedModules(
     onInput?.(canonicalFilename(filename));
     return ts.sys.fileExists(filename);
   }, 'tsconfig.json');
-  const configFile = join(root, '.runic-codegen-manifest-validation.json');
+  const configFile = join(root, '.golem-manifest-validation.json');
   const validationConfig = appConfig
     ? { extends: appConfig, files: sources, include: [] }
     : {

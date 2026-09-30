@@ -31,7 +31,7 @@ function fixture(t: TestContext): string {
     files: {
       'src/payment.model.ts': readFixture('controllers/nest-plugin/project/payment.model.ts'),
       'src/payments.controller.ts': readFixture('controllers/nest-plugin/project/payments.controller.ts'),
-      'runic-codegen.yaml': 'version: 1\nmodels: { root: . }\n',
+      'golem.yaml': 'version: 1\nmodels: { root: . }\n',
     },
   });
 }

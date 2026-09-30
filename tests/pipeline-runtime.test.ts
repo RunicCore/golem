@@ -62,7 +62,7 @@ function combinedFixture(t: TestContext): CombinedFixture {
     JSON.stringify({ name: 'pipeline-runtime-fixture', private: true, type: 'module' }),
   );
   writeFixture(root, { mobx: false, validation: true });
-  const config = path.join(root, 'runic-codegen.yaml');
+  const config = path.join(root, 'golem.yaml');
   fs.writeFileSync(config, fs.readFileSync(config, 'utf8').replace(
     'validation: true\n',
     'validation: true\nallowAny: false\n',
@@ -95,7 +95,7 @@ function modelWatchFixture(t: TestContext): ModelWatchFixture {
     }),
   );
   fs.writeFileSync(
-    path.join(root, 'runic-codegen.yaml'),
+    path.join(root, 'golem.yaml'),
     'version: 1\nmobx: false\nvalidation: false\najvStandalone: false\nallowAny: false\nmodels:\n  root: .\n',
   );
 
@@ -104,7 +104,7 @@ function modelWatchFixture(t: TestContext): ModelWatchFixture {
 
   return {
     root,
-    config: path.join(root, 'runic-codegen.yaml'),
+    config: path.join(root, 'golem.yaml'),
     manifest,
     companion: path.join(root, 'src/cart.model.generated.ts'),
   };
@@ -329,7 +329,7 @@ test('initial model watch failures retain missing manifests and declarations in 
 test('exec forwards SIGTERM and SIGINT to its child and preserves the signal result', async (t: TestContext) => {
   for (const signal of ['SIGTERM', 'SIGINT'] as const) {
     const { root, config } = combinedFixture(t);
-    const binary = path.join(workspace, 'packages/golem/dist/bin/runic-codegen.js');
+    const binary = path.join(workspace, 'packages/golem/dist/bin/golem.js');
     const ready = path.join(root, `${signal.toLowerCase()}.ready`);
     const received = path.join(root, `${signal.toLowerCase()}.received`);
     const childScript = copyFixtureFile(root, 'pipeline/signal-child/run.cjs', 'signal-child.cjs');
@@ -362,7 +362,7 @@ test('exec forwards SIGTERM and SIGINT to its child and preserves the signal res
 
 test('exec --watch keeps its child alive through generation failure, recovers, and cleans up on signal', async (t: TestContext) => {
   const { root, config } = combinedFixture(t);
-  const binary = path.join(workspace, 'packages/golem/dist/bin/runic-codegen.js');
+  const binary = path.join(workspace, 'packages/golem/dist/bin/golem.js');
   const ready = path.join(root, 'watch-child.ready');
   const received = path.join(root, 'watch-child.received');
   const heartbeat = path.join(root, 'watch-child.heartbeat');
@@ -417,7 +417,7 @@ test('exec --watch keeps its child alive through generation failure, recovers, a
 
 test('exec --watch does not start its child or watcher when initial generation fails', async (t: TestContext) => {
   const { root, config } = combinedFixture(t);
-  const binary = path.join(workspace, 'packages/golem/dist/bin/runic-codegen.js');
+  const binary = path.join(workspace, 'packages/golem/dist/bin/golem.js');
   const ready = path.join(root, 'never-started.ready');
   const childScript = copyFixtureFile(root, 'pipeline/never-started-child/run.cjs', 'never-started-child.cjs');
   fs.writeFileSync(path.join(root, 'api.json'), JSON.stringify({ openapi: '2.0', info: {}, paths: {} }));
@@ -451,7 +451,7 @@ test('exec --watch does not start its child or watcher when initial generation f
 
 test('exec --watch exits with its child and releases the watcher', async (t: TestContext) => {
   const { root, config } = combinedFixture(t);
-  const binary = path.join(workspace, 'packages/golem/dist/bin/runic-codegen.js');
+  const binary = path.join(workspace, 'packages/golem/dist/bin/golem.js');
   const ready = path.join(root, 'watch-child-exit.ready');
   const childScript = copyFixtureFile(root, 'pipeline/exiting-child/run.cjs', 'exiting-child.cjs');
   const parent = spawn(process.execPath, [
@@ -551,7 +551,7 @@ test('pipeline rejects malformed or profile-mismatched returned manifests before
     const sentinel = path.join(output, 'existing.ts');
     fs.writeFileSync(sentinel, `sentinel:${entry.name}\n`);
     const before = fs.readFileSync(sentinel, 'utf8');
-    await assert.rejects(() => runPipeline(path.join(root, 'runic-codegen.yaml')), entry.error);
+    await assert.rejects(() => runPipeline(path.join(root, 'golem.yaml')), entry.error);
     assert.equal(fs.readFileSync(sentinel, 'utf8'), before, `${entry.name} keeps existing output intact`);
     assert.equal(fs.existsSync(path.join(output, 'model-manifest.json')), false, `${entry.name} writes no returned manifest`);
   }

@@ -17,9 +17,9 @@ Requests and responses are validated by default; `ajv` and `ajv-formats` supply 
 
 ## Point to your OpenAPI document
 
-Add `runic-codegen.yaml` at the project root. Paths are relative to it, and `name: Tasks` names the client `TasksClient`. The [`mobx`](/reference/config#root-keys) and [`validation`](/reference/config#validation-profiles) keys set MobX observability and runtime validation for the generated code.
+Add `golem.yaml` at the project root. Paths are relative to it, and `name: Tasks` names the client `TasksClient`. The [`mobx`](/reference/config#root-keys) and [`validation`](/reference/config#validation-profiles) keys set MobX observability and runtime validation for the generated code.
 
-<<< ../../examples/openapi/runic-codegen.yaml
+<<< ../../examples/openapi/golem.yaml
 
 The document is the contract. Keep it in the project or point `input` at the file your API already owns; any [supported OpenAPI feature](/reference/openapi-support) works:
 
@@ -30,7 +30,7 @@ Generation fails on an invalid document.
 ## Generate the SDK
 
 ```sh
-npx runic-codegen generate
+npx golem generate
 ```
 
 The command writes `sdk/`. Import `TasksClient` from `../sdk/index.js`, the path from a file in `src/`.

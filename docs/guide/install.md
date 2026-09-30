@@ -14,7 +14,7 @@ TypeScript 5 and 6 aren't supported.
 
 ## Packages per generator
 
-The `runic-codegen` command comes from `@exprtlabs/golem`, which every generator depends on. If `npx runic-codegen` isn't found, add `@exprtlabs/golem` as a direct dependency.
+The `golem` command comes from `@exprtlabs/golem`, which every generator depends on. If `npx golem` isn't found, add `@exprtlabs/golem` as a direct dependency.
 
 | To generate | Development dependency |
 | --- | --- |
@@ -77,14 +77,14 @@ A NestJS app needs extra compiler settings ([NestJS setup](/guide/nestjs#set-up-
 
 Validation is on and MobX is off by default.
 
-| Setting in `runic-codegen.yaml` | Extra application dependencies |
+| Setting in `golem.yaml` | Extra application dependencies |
 | --- | --- |
 | Validation on (`validation: true`) | `npm install ajv ajv-formats` |
 | MobX on (`mobx: true`) | `npm install mobx` |
 | Precompiled validators (`ajvStandalone: true`) | none; ship the generated validator JavaScript |
 | Validation off (`validation: false`) | none |
 
-These keys go at the top level of `runic-codegen.yaml` ([all settings](/reference/config#validation-profiles)).
+These keys go at the top level of `golem.yaml` ([all settings](/reference/config#validation-profiles)).
 
 ## Add Codegen to your project
 

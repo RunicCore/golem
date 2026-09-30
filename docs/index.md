@@ -16,7 +16,7 @@ hero:
       link: https://github.com/exprtlabs/codegen
 features:
   - title: All in one
-    details: One CLI, one <code>runic-codegen.yaml</code> and one runtime package cover models, validation, JSON, OpenAPI and clients.
+    details: One CLI, one <code>golem.yaml</code> and one runtime package cover models, validation, JSON, OpenAPI and clients.
     link: /reference/config
     linkText: Configuration
   - title: TypeScript is the schema
@@ -61,7 +61,7 @@ A typical TypeScript API stack assembles a library for each job and keeps their 
 
 ## One model, start to finish
 
-Declare the fields, run `npx runic-codegen generate`, then extend the generated class. Generation rewrites `task.model.generated.ts` and never touches your class.
+Declare the fields, run `npx golem generate`, then extend the generated class. Generation rewrites `task.model.generated.ts` and never touches your class.
 
 ::: code-group
 
@@ -81,7 +81,7 @@ The controller returns plain types. One `generate` run writes the OpenAPI docume
 
 <<< ../examples/nest-openapi/src/payments.controller.ts#create-payment [payments.controller.ts]
 
-<<< ../examples/nest-openapi/runic-codegen.yaml [runic-codegen.yaml]
+<<< ../examples/nest-openapi/golem.yaml [golem.yaml]
 
 <<< ../examples/nest-openapi/src/client.ts#payment-client [client.ts]
 

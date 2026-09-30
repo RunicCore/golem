@@ -22,11 +22,11 @@ test('packed binary ownership survives either generator installation order and u
     for (const name of order) {
       await npm(root, ['install', '--save-dev', packageSpec(registry, `@exprtlabs/${name}`)]);
       const help = await cli(root, ['--help']);
-      assert.match(help.stdout, /runic-codegen/);
+      assert.match(help.stdout, /golem/);
       assert.equal(fs.lstatSync(path.join(root, 'node_modules/@exprtlabs/golem')).isSymbolicLink(), false);
     }
     await npm(root, ['uninstall', `@exprtlabs/${order[0]}`]);
-    assert.match((await cli(root, ['--help'])).stdout, /runic-codegen/);
+    assert.match((await cli(root, ['--help'])).stdout, /golem/);
     assert.equal(fs.existsSync(path.join(root, 'node_modules/@exprtlabs', order[1])), true);
   }
 });
@@ -44,10 +44,10 @@ test('packed controller generator installs independently and resolves real Nest 
   for (const name of ['mobx', 'ajv', 'ajv-formats']) {
     assert.equal(fs.existsSync(path.join(root, 'node_modules', name)), false, `${name} must not be installed`);
   }
-  assert.equal(fs.existsSync(path.join(root, 'node_modules/.bin/runic-codegen')), true);
+  assert.equal(fs.existsSync(path.join(root, 'node_modules/.bin/golem')), true);
   assert.equal(fs.lstatSync(path.join(root, 'node_modules/@exprtlabs/golem')).isSymbolicLink(), false);
   const codegenManifest = JSON.parse(fs.readFileSync(path.join(root, 'node_modules/@exprtlabs/golem/package.json'), 'utf8')) as { bin?: Record<string, string> };
-  assert.deepEqual(Object.keys(codegenManifest.bin ?? {}), ['runic-codegen']);
+  assert.deepEqual(Object.keys(codegenManifest.bin ?? {}), ['golem']);
 });
 
 for (const profile of [
@@ -74,10 +74,10 @@ for (const profile of [
     assert.deepEqual(manifest.runtime, { name: '@exprtlabs/golem', minimumVersion: packedVersion });
     copyFixtureFile(root, profile.mobx ? 'packed/profile-mobx-after-generation/cart.model.ts' : 'packed/profile-after-generation/cart.model.ts', 'src/cart.model.ts');
     await cli(root, ['generate']);
-    const generated = [...filesUnder(path.join(root, 'sdk')), path.join(root, 'src/cart.model.generated.ts'), path.join(root, '.runic-codegen/outputs.json')];
+    const generated = [...filesUnder(path.join(root, 'sdk')), path.join(root, 'src/cart.model.generated.ts'), path.join(root, '.golem/outputs.json')];
     const before = new Map(generated.map(filename => [filename, { content: fs.readFileSync(filename, 'utf8'), mtime: fs.statSync(filename).mtimeMs }]));
     await cli(root, ['check']);
-    await command(root, process.execPath, [path.join(root, 'node_modules/@exprtlabs/golem/dist/bin/runic-codegen.js'), 'check']);
+    await command(root, process.execPath, [path.join(root, 'node_modules/@exprtlabs/golem/dist/bin/golem.js'), 'check']);
     await cli(root, ['generate']);
     for (const [filename, old] of before) {
       assert.equal(fs.readFileSync(filename, 'utf8'), old.content, filename);
@@ -124,8 +124,8 @@ test('CLI resolves configured providers from a project with spaces outside cwd a
   const root = registry.create(t, 'resolver with spaces');
   await npm(root, ['install', '--save-prod', packageSpec(registry, '@exprtlabs/golem')]);
   writeFixture(root, { mobx: false, validation: false }, false);
-  const config = path.join(root, 'runic-codegen.yaml');
-  const binary = path.join(root, 'node_modules/.bin/runic-codegen');
+  const config = path.join(root, 'golem.yaml');
+  const binary = path.join(root, 'node_modules/.bin/golem');
   const before = registry.requests.length;
   const missing = await command(workspace, binary, ['generate', '--config', config], { allowFailure: true });
   assert.notEqual(missing.code, 0);

@@ -115,6 +115,6 @@ Supported keywords, versions and profiles are in [OpenAPI client support](/refer
 
 ## Ajv and generation settings
 
-Validation is enabled by default. [Validation profiles](/reference/config#validation-profiles) set how validators are supplied in `runic-codegen.yaml`.
+Validation is enabled by default. [Validation profiles](/reference/config#validation-profiles) set how validators are supplied in `golem.yaml`.
 
 Full example: [`examples/model`](https://github.com/exprtlabs/codegen/tree/main/examples/model)

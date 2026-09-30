@@ -10,7 +10,7 @@ function fixture(t: TestContext, yaml: string): { root: string; filename: string
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'runic-config-')));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   fs.writeFileSync(path.join(root, 'api.yaml'), 'openapi: 3.1.0');
-  const filename = path.join(root, 'runic-codegen.yaml');
+  const filename = path.join(root, 'golem.yaml');
   fs.writeFileSync(filename, yaml);
   return { root, filename };
 }

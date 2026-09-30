@@ -216,6 +216,6 @@ console.log(apiVersion, result.artifacts.length);
 
 A result is an in-memory plan. A host that applies it keeps the artifact
 paths and contents, tracks `manifestPaths` and `watchInputs`, and chooses its
-own write, stale-file and inventory policy. The `runic-codegen` CLI applies
+own write, stale-file and inventory policy. The `golem` CLI applies
 results for normal projects, in the [job order](/reference/config) of the
 configuration.

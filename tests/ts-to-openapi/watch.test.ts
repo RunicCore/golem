@@ -66,7 +66,7 @@ function fixture(t: TestContext): RealFixture {
       include: ['src/**/*.ts'],
     },
     files: {
-      'runic-codegen.yaml': readFixture('controllers/watch/project/runic-codegen.yaml'),
+      'golem.yaml': readFixture('controllers/watch/project/golem.yaml'),
       'src/route-helper.ts': readFixture('controllers/watch/project/route-helper.ts'),
       'src/catalog.controller.ts': readFixture('controllers/watch/project/controller.ts'),
       'src/cart.model.ts': readFixture('controllers/watch/project/cart.model.ts'),
@@ -74,7 +74,7 @@ function fixture(t: TestContext): RealFixture {
   });
   const helper = path.join(root, 'src/route-helper.ts');
   const controller = path.join(root, 'src/catalog.controller.ts');
-  const config = path.join(root, 'runic-codegen.yaml');
+  const config = path.join(root, 'golem.yaml');
 
   return {
     root,
@@ -88,7 +88,7 @@ function fixture(t: TestContext): RealFixture {
 }
 
 function startWatch(fixture: RealFixture): WatchCapture {
-  const binary = path.join(workspace, 'packages/golem/dist/bin/runic-codegen.js');
+  const binary = path.join(workspace, 'packages/golem/dist/bin/golem.js');
   const child = spawn(process.execPath, [binary, 'watch', '--config', fixture.config], {
     cwd: fixture.root,
     env: { ...process.env, NODE_PATH: '' },

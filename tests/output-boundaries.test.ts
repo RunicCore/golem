@@ -17,8 +17,8 @@ function openApiContent(value: number): string {
 function configFor(directory: string, job: CodegenJob): CodegenConfig {
   return {
     directory,
-    configFile: path.join(directory, 'runic-codegen.yaml'),
-    inventoryFile: path.join(directory, '.runic-codegen/outputs.json'),
+    configFile: path.join(directory, 'golem.yaml'),
+    inventoryFile: path.join(directory, '.golem/outputs.json'),
     profile: { mobx: false, validation: true },
     jobs: [job],
   };
@@ -79,7 +79,7 @@ test('a symlinked inventory parent is rejected before check or generation writes
   const directory = fixture(t);
   const outside = path.join(directory, 'outside-inventory');
   fs.mkdirSync(outside, { recursive: true });
-  fs.symlinkSync(outside, path.join(directory, '.runic-codegen'), 'dir');
+  fs.symlinkSync(outside, path.join(directory, '.golem'), 'dir');
   const output = path.join(directory, 'sdk');
   fs.mkdirSync(output, { recursive: true });
   const job = openApiJob(output);

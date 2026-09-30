@@ -108,7 +108,7 @@ See [OpenAPI client support](docs/reference/openapi-support.md) for supported ve
 - **Breaking:** `__Projection<N>` schemas get stable names built from the type's shape. Add a named type alias to choose one.
 - **Breaking:** install `@exprtlabs/golem` at or above the version the SDK was generated for, with the same major version. Generation commands fail before writing when it is older.
 - **Breaking:** codec ids in generated files change. A hand-written model and an SDK model with the same name and shape no longer share an id.
-- **Breaking:** the output inventory (`.runic-codegen/outputs.json`) records a `destination` and `destinationKind` for every file; an inventory from an earlier release candidate is rejected. Delete it and regenerate.
+- **Breaking:** the output inventory (`.golem/outputs.json`) records a `destination` and `destinationKind` for every file; an inventory from an earlier release candidate is rejected. Delete it and regenerate.
 
 ### Removed APIs (pre-1.0)
 

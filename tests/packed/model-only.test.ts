@@ -31,7 +31,7 @@ test('model-only packed installation validates structure with no OpenAPI or MobX
 test('packed manifests and tarballs carry the release contract', () => {
   for (const [name, entry] of registry.packages) {
     assert.equal(entry.manifest.version, registry.workspaceVersion);
-    if (name === '@exprtlabs/golem') assert.deepEqual(Object.keys(entry.manifest.bin ?? {}), ['runic-codegen']);
+    if (name === '@exprtlabs/golem') assert.deepEqual(Object.keys(entry.manifest.bin ?? {}), ['golem']);
     else assert.equal(entry.manifest.bin, undefined);
     assert.equal(entry.manifest.license, 'MIT');
     assert.ok(entry.pack.files.some(file => file.path === 'LICENSE'));

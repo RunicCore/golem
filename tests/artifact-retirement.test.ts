@@ -60,8 +60,8 @@ function fixture(
   };
   const config: CodegenConfig = {
     directory: root,
-    configFile: path.join(root, 'runic-codegen.yaml'),
-    inventoryFile: path.join(root, '.runic-codegen/outputs.json'),
+    configFile: path.join(root, 'golem.yaml'),
+    inventoryFile: path.join(root, '.golem/outputs.json'),
     profile: generationProfile,
     jobs: [job],
   };

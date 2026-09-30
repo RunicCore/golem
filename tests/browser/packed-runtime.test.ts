@@ -180,7 +180,7 @@ for (const standalone of [false, true]) {
       fs.writeFileSync(packageFile, JSON.stringify(manifest, null, 2));
     }
     await npm(root, ['install']);
-    fs.appendFileSync(path.join(root, 'runic-codegen.yaml'), `\najvStandalone: ${standalone}\n`);
+    fs.appendFileSync(path.join(root, 'golem.yaml'), `\najvStandalone: ${standalone}\n`);
     await cli(root, ['generate']);
     await cli(root, ['check']);
     await command(root, path.join(root, 'node_modules/.bin/ttsc'), ['-p', 'tsconfig.json', '--noEmit']);
