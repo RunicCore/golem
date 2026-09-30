@@ -27,3 +27,24 @@ test('model-only packed installation validates structure with no OpenAPI or MobX
   const browser = await build({ entryPoints: [path.join(root, 'build/item.model.js')], bundle: true, platform: 'browser', format: 'esm', write: false, metafile: true });
   assert.doesNotMatch(Object.keys(browser.metafile.inputs).join('\n'), /node:|\/tooling\/|\/mobx\//);
 });
+
+test('packed manifests and tarballs carry the release contract', () => {
+  for (const [name, entry] of registry.packages) {
+    assert.equal(entry.manifest.version, registry.workspaceVersion);
+    if (name === '@exprtlabs/codegen') assert.deepEqual(Object.keys(entry.manifest.bin ?? {}), ['runic-codegen']);
+    else assert.equal(entry.manifest.bin, undefined);
+    assert.equal(entry.manifest.license, 'MIT');
+    assert.ok(entry.pack.files.some(file => file.path === 'LICENSE'));
+    if (name === '@exprtlabs/codegen' || name === '@exprtlabs/ts-to-openapi') {
+      assert.ok(entry.pack.files.some(file => file.path === 'ttsc-plugin.cjs'), `${name} must pack ttsc-plugin.cjs`);
+    }
+    if (name === '@exprtlabs/codegen') {
+      assert.ok(entry.pack.files.some(file => file.path.startsWith('plugin/')), `${name} must pack native plugin sources`);
+    }
+    if (name === '@exprtlabs/ts-to-openapi') {
+      assert.equal(entry.pack.files.some(file => file.path.startsWith('plugin/')), false, 'Nest plugin source lives in @exprtlabs/codegen');
+    }
+    assert.ok(entry.pack.files.every(file => !/(?:^|\/)(?:docs?|assets?|\.vitepress|vitepress|vue|node_modules)(?:\/|$)/i.test(file.path)), name);
+  }
+  assert.deepEqual(registry.distTags, { rc: registry.workspaceVersion });
+});

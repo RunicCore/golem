@@ -9,7 +9,6 @@ export interface CommandResult { readonly code: number | null; readonly signal: 
 export const workspace = fileURLToPath(new URL('../../../', import.meta.url));
 export const ttsc = path.join(workspace, 'node_modules/ttsc/lib/launcher/ttsc.js');
 export const ttscEnv = { NODE_PATH: path.join(workspace, 'node_modules') };
-export const baselineNode = '22.15.0';
 /** Time a timed-out command's process group gets to exit after SIGTERM before SIGKILL. */
 export const KILL_GRACE_MS = 5000;
 

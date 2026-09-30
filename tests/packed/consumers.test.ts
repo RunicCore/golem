@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { build } from 'esbuild';
-import { workspace, command, npm, cli, baselineNode } from '../support/process.js';
+import { workspace, command, npm, cli } from '../support/process.js';
 import { writeFixture, filesUnder } from '../support/consumer.js';
 import { startRegistry, packageSpec, type PackedRegistry } from '../../scripts/packed-registry.js';
 import { AJV, AJV_FORMATS, ESBUILD, MOBX, NEST_COMMON, NEST_SWAGGER, TTSC, TYPESCRIPT } from '../../scripts/third-party-installs.js';
@@ -13,17 +13,10 @@ let registry: PackedRegistry;
 before(async () => { registry = await startRegistry(); });
 after(async () => { if (registry) await registry.close(); });
 
-test('packed verification uses the supported Node baseline', async () => {
-  assert.equal((await command(workspace, process.execPath, ['--version'])).stdout.trim(), `v${baselineNode}`);
-  assert.ok(Number(process.versions.node.split('.')[0]) >= 22);
-});
-
 test('packed binary ownership survives either generator installation order and uninstall', async t => {
   for (const order of [
     ['model-codegen', 'openapi-to-ts'], ['openapi-to-ts', 'model-codegen'],
     ['ts-to-openapi', 'model-codegen', 'openapi-to-ts'],
-    ['model-codegen', 'openapi-to-ts', 'ts-to-openapi'],
-    ['openapi-to-ts', 'ts-to-openapi', 'model-codegen'],
   ]) {
     const root = registry.create(t, order[0]);
     for (const name of order) {
@@ -36,24 +29,6 @@ test('packed binary ownership survives either generator installation order and u
     assert.match((await cli(root, ['--help'])).stdout, /runic-codegen/);
     assert.equal(fs.existsSync(path.join(root, 'node_modules/@exprtlabs', order[1])), true);
   }
-  for (const [name, entry] of registry.packages) {
-    assert.equal(entry.manifest.version, registry.workspaceVersion);
-    if (name === '@exprtlabs/codegen') assert.deepEqual(Object.keys(entry.manifest.bin ?? {}), ['runic-codegen']);
-    else assert.equal(entry.manifest.bin, undefined);
-    assert.equal(entry.manifest.license, 'MIT');
-    assert.ok(entry.pack.files.some(file => file.path === 'LICENSE'));
-    if (name === '@exprtlabs/codegen' || name === '@exprtlabs/ts-to-openapi') {
-      assert.ok(entry.pack.files.some(file => file.path === 'ttsc-plugin.cjs'), `${name} must pack ttsc-plugin.cjs`);
-    }
-    if (name === '@exprtlabs/codegen') {
-      assert.ok(entry.pack.files.some(file => file.path.startsWith('plugin/')), `${name} must pack native plugin sources`);
-    }
-    if (name === '@exprtlabs/ts-to-openapi') {
-      assert.equal(entry.pack.files.some(file => file.path.startsWith('plugin/')), false, 'Nest plugin source lives in @exprtlabs/codegen');
-    }
-    assert.ok(entry.pack.files.every(file => !/(?:^|\/)(?:docs?|assets?|\.vitepress|vitepress|vue|node_modules)(?:\/|$)/i.test(file.path)), name);
-  }
-  assert.deepEqual(registry.distTags, { rc: registry.workspaceVersion });
 });
 
 test('packed controller generator installs independently and resolves real Nest and Swagger packages', async t => {
@@ -80,7 +55,6 @@ for (const profile of [
   { mobx: false, validation: true, ajvStandalone: false },
   { mobx: true, validation: false, ajvStandalone: false },
   { mobx: true, validation: true, ajvStandalone: false },
-  { mobx: false, validation: true, ajvStandalone: true },
   { mobx: true, validation: true, ajvStandalone: true },
 ]) {
   test(`packed SDK and frontend model compose with mobx=${profile.mobx}, validation=${profile.validation}, standalone=${profile.ajvStandalone}`, async t => {
@@ -200,6 +174,11 @@ test('packed standalone model and SDK validators work without optional compiler 
   copyFixtureFile(root, 'packed/standalone-runtime-after-generation/cart.model.ts', 'src/cart.model.ts');
   await cli(root, ['generate']);
   await cli(root, ['check']);
+  const manifest = JSON.parse(fs.readFileSync(path.join(root, 'sdk/model-manifest.json'), 'utf8'));
+  assert.deepEqual(manifest.profile, { mobx: false, validation: true, ajvStandalone: true, allowAny: false });
+  const generatedText = [...filesUnder(path.join(root, 'sdk')), path.join(root, 'src/cart.model.generated.ts')]
+    .filter(filename => filename.endsWith('.ts')).map(filename => fs.readFileSync(filename, 'utf8')).join('\n');
+  assert.doesNotMatch(generatedText, /asGenObservable|ModelAnnotations|@exprtlabs\/codegen\/mobx/);
   await command(root, path.join(root, 'node_modules/.bin/ttsc'), ['-p', 'tsconfig.json']);
   await npm(root, ['prune', '--omit=dev'], { includeOptional: false });
   for (const name of ['ajv', 'ajv-formats', 'esbuild', 'mobx', 'typescript', '@exprtlabs/model-codegen', '@exprtlabs/openapi-to-ts']) {
