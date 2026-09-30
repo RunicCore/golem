@@ -24,6 +24,20 @@ export const TEST_TIMEOUT_MS = { focused: 60_000, full: 90_000, acceptance: 300_
 // files, so two at once is the most that helps.
 const UNIT_CAP = 8;
 const PACKED_CAP = 2;
+// The container's Go build cache (GOCACHE=/cache/go) grows with every plugin
+// build. A fresh prepare fills 4.3 GiB (2026-09-30), so Full and Acceptance clear
+// it past twice that; the next run then rebuilds the ttsc plugin from source.
+const GO_CACHE_LIMIT_BYTES = 9 * 1024 ** 3;
+
+export function trimGoCache(limitBytes: number): void {
+  const directory = process.env.GOCACHE;
+  if (!directory || !fs.existsSync(directory)) return;
+  const size = Number(spawnSync('du', ['-sb', directory], { encoding: 'utf8' }).stdout.split('\t')[0]);
+  if (size <= limitBytes) return;
+  fs.rmSync(directory, { recursive: true, force: true });
+  process.stdout.write(`Go build cache was ${(size / 1024 ** 3).toFixed(1)} GiB; cleared it. The next run rebuilds the ttsc plugin.\n`);
+}
+
 export const CONCURRENCY = {
   unit: Math.min(UNIT_CAP, os.availableParallelism()),
   packed: Math.max(1, Math.min(PACKED_CAP, Math.floor(os.availableParallelism() / 2))),
@@ -164,6 +178,8 @@ function main(argv: readonly string[]): void {
     const status = step.run();
     timings.push({ label: step.label, seconds: Math.round((Date.now() - stepStarted) / 1000), status });
   }
+  // Only the container's cache: natively, GOCACHE may be the developer's own.
+  if (!native && (tier === 'full' || tier === 'acceptance')) trimGoCache(GO_CACHE_LIMIT_BYTES);
   const total = Math.round((Date.now() - started) / 1000);
   for (const entry of timings) process.stdout.write(`${tier} ${entry.label}: ${entry.status === 0 ? 'passed' : 'FAILED'} in ${entry.seconds}s\n`);
   process.stdout.write(`${tier} finished in ${total}s\n`);

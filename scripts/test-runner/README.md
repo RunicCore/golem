@@ -16,6 +16,8 @@ Name a unit test that is too slow for Full `tests/<name>.acceptance.ts` or `test
 
 After you change what a test installs, run `npm run test:prepare` before the next tier run.
 
+Full and Acceptance clear the container's Go build cache when it passes 9 GiB. The next run then rebuilds the ttsc plugin, which takes a few minutes longer.
+
 ## Failure messages
 
 - `The fe-deps test image … is missing or out of date`: run `npm run test:prepare`.
