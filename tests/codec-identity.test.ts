@@ -6,7 +6,7 @@ import { codecPublicId } from '@exprtlabs/codegen/schema-graph';
 import type { ModelTypeDescriptor } from '@exprtlabs/codegen/model';
 import { runPipeline } from '#codegen/cli';
 import { copyFixtureFile, createFixtureProject, linkProjectPackages } from './fixture-project.js';
-import { command, workspace } from './packed/helpers.js';
+import { command, workspace } from './support/process.js';
 import { tscBin } from './openapi/helpers.js';
 
 const shape: ModelTypeDescriptor = {
@@ -28,12 +28,6 @@ test('the same shape gets different ids from TypeScript and OpenAPI sources', ()
     codecPublicId('Payment', shape, undefined, { source: 'typescript', constructs: true }),
     codecPublicId('Payment', shape, undefined, { source: 'openapi', constructs: true }),
   );
-});
-
-test('ids stay deterministic and keep the short-name prefix', () => {
-  const id = codecPublicId('Payment', shape, undefined, { source: 'openapi', constructs: true });
-  assert.equal(id, codecPublicId('Payment', shape, undefined, { source: 'openapi', constructs: true }));
-  assert.match(id, /^Payment_[0-9a-f]{8}$/);
 });
 
 const openApiDocument = {

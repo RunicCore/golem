@@ -6,7 +6,8 @@ import test, { type TestContext } from 'node:test';
 
 import { requireObjectCodec } from '@exprtlabs/codegen/serde';
 import { createSchemaGraph } from '@exprtlabs/codegen/schema-graph';
-import { command, generatedCodecId } from './packed/helpers.js';
+import { command } from './support/process.js';
+import { generatedCodecId } from './support/consumer.js';
 import { copyFixture, readFixture, writeGeneratedArtifacts } from './fixture-project.js';
 import { compileModelProject, createModelProject } from './model-project.js';
 import { generate } from '#model/generator';

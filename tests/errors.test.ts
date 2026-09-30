@@ -90,6 +90,10 @@ test('LibError preserves causes and snapshots unusual paths and JSON parameters'
   assert.ok(Object.isFrozen(snapshot.params));
   assert.ok(Object.isFrozen(snapshot.params.nested));
   assert.ok(Object.isFrozen(snapshot.params.values));
+
+  const empty = new LibError(LibErrorKind.ValidationUnavailable, 'Validation is unavailable.');
+  assert.deepEqual(empty.issues, []);
+  assert.ok(Object.isFrozen(empty.issues));
 });
 
 test('LibError rejects non-JSON issue parameters instead of retaining mutable or cyclic values', () => {
@@ -116,10 +120,4 @@ test('LibError rejects non-JSON issue parameters instead of retaining mutable or
     }]),
     /finite, acyclic JSON values/,
   );
-});
-
-test('empty LibError issue collections are immutable snapshots', () => {
-  const error = new LibError(LibErrorKind.ValidationUnavailable, 'Validation is unavailable.');
-  assert.deepEqual(error.issues, []);
-  assert.ok(Object.isFrozen(error.issues));
 });

@@ -236,6 +236,7 @@ test('emits a lossless whole querystring schema in 3.2 and rejects cross-field f
   const document = documentOf(await generateFixture(root, '3.2.0'));
   const operation = operationOf(document, '/search', 'get');
   const querystring = expectValue(operation.parameters?.find(item => item.in === 'querystring'), 'OpenAPI 3.2 querystring parameter');
+  assert.equal(querystring.name, 'query');
   const querySchema = contentSchema(querystring, 'application/x-www-form-urlencoded', 'querystring');
   assert.deepEqual(querySchema.dependentRequired, { min: ['max'] });
   const min = allOfSchemas(propertySchema(querySchema, 'min'), 'querystring.min');
@@ -284,6 +285,7 @@ test('reads actual Swagger response aliases and preserves their statuses', async
   assert.equal(responseOf(document, '/aliases/ok', 'get', '200').description, 'ok');
   assert.equal(responseOf(document, '/aliases/created', 'post', '201').description, 'created');
   assert.equal(contentSchema(responseOf(document, '/aliases/text', 'get', '200'), 'application/json', 'text response').type, 'string');
+  assert.equal(contentSchema(responseOf(document, '/aliases/primitive', 'get', '200'), 'application/json', 'primitive constructor response').type, 'string');
   assert.equal(responseOf(document, '/aliases/empty', 'delete', '204').description, 'empty');
 });
 

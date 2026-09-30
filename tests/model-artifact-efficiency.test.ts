@@ -17,7 +17,7 @@ import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/codegen/c
 import { IssueCode, IssueRepresentation, LibError, LibErrorKind } from '@exprtlabs/codegen/errors';
 import { findCodecIdForConstructor, requireObjectCodec } from '@exprtlabs/codegen/serde';
 import { getValidator } from '@exprtlabs/codegen/validation';
-import { generatedCodecIdFromRoot } from './packed/helpers.js';
+import { generatedCodecIdFromRoot } from './support/consumer.js';
 
 function fixture(t: TestContext, options: { readonly noUnusedLocals?: boolean } = {}) {
   return createModelProject(t, {

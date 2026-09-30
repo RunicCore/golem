@@ -3,7 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { TestContext } from 'node:test';
 
-import { command, type CommandOptions } from './packed/helpers.js';
+import { command, type CommandOptions } from './support/process.js';
 import {
   createFixtureProject,
   linkProjectPackages,

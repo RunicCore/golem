@@ -1,20 +1,14 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-/**
- * Standalone source examples. Each one is verified as a packed RC consumer
- * (`tests/packed/examples.test.ts`).
- */
+/** Standalone source examples: one packed-consumer project per generator profile. */
 export const SOURCE_EXAMPLES = ['model', 'openapi', 'combined', 'model-mobx', 'combined-mobx', 'showcase', 'nest-openapi'] as const;
 
-/** Framework fixtures with their own verification command (`check:react`). */
+/** Framework projects with their own toolchain. */
 export const FRAMEWORK_EXAMPLES = ['react-mobx'] as const;
 
 /** Every maintained project under `examples/`. */
 export const EXAMPLE_NAMES = [...SOURCE_EXAMPLES, ...FRAMEWORK_EXAMPLES] as const;
-
-export type SourceExampleName = (typeof SOURCE_EXAMPLES)[number];
-export type ExampleName = (typeof EXAMPLE_NAMES)[number];
 
 /** Reject an `examples/*` project that is missing from, or absent but listed in, the inventory. */
 export function assertExampleInventory(workspaceRoot: string): void {

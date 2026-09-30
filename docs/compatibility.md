@@ -6,7 +6,7 @@ Check which versions Codegen supports and which APIs stay stable.
 
 | Requirement | Version |
 | --- | --- |
-| Node.js | `>=22.12.0` |
+| Node.js | `>=22.15.0` |
 | TypeScript | `~7.0.2` |
 | `ttsc` | `~0.30.4` |
 | NestJS | `^11.0.0` (`@nestjs/common`) |

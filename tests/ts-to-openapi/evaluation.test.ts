@@ -94,23 +94,11 @@ function portablePath(filename: string): string {
   return filename.split(path.sep).join('/');
 }
 
-test('string literals evaluate without executing application modules', async (t: TestContext) => {
-  const { root } = project(t);
-  const filename = write(root, 'src/literal.ts', [
-    "export const ROUTE = '/tasks';",
-    "export const ROUTES = ['/a', '/b'];",
-    '',
-  ].join('\n'));
-  const program = compile(root);
-  const byName = expressionsByName(program, filename);
-  assert.equal(await evaluateRouteExpression(byName.get('ROUTE')!, program), '/tasks');
-  assert.deepEqual(await evaluateRouteExpression(byName.get('ROUTES')!, program), ['/a', '/b']);
-});
-
 test('literal and computed results honor maxResultBytes', async (t: TestContext) => {
   const { root } = project(t);
   const filename = write(root, 'src/size.ts', [
     "export const ROUTE = 'abcdefghij';",
+    "export const ROUTES = ['/a', '/b'];",
     '',
   ].join('\n'));
   const program = compile(root);
@@ -120,6 +108,8 @@ test('literal and computed results honor maxResultBytes', async (t: TestContext)
     /RUNT2106/,
   );
   assert.equal(await evaluateRouteExpression(byName.get('ROUTE')!, program, { maxResultBytes: 20 }), 'abcdefghij');
+  assert.deepEqual(await evaluateRouteExpression(byName.get('ROUTES')!, program), ['/a', '/b']);
+  assert.deepEqual(await evaluateRouteExpression(byName.get('ROUTES')!, program, { maxResultBytes: 20 }), ['/a', '/b']);
 });
 
 test('rejects invalid evaluation options', async (t: TestContext) => {

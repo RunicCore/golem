@@ -37,12 +37,8 @@ test('componentNameFor builds path-based names', () => {
   assert.equal(name('defs.json', '/$defs/Tag'), 'defs.Tag');
   assert.equal(name('defs.json', '/definitions/Tag'), 'defs.Tag');
   assert.equal(componentNameFor({ uri: 'https://schemas.example/money.json', pointer: '' }, directory), 'schemas.example.money');
-});
-
-test('componentNameFor sanitizes escaped and percent-encoded fragments', () => {
-  const uri = pathToFileURL('/work/api/defs.json').href;
-  assert.equal(componentNameFor({ uri, pointer: '/a~1b' }, '/work/api'), 'defs.a_b');
-  assert.equal(componentNameFor({ uri, pointer: '/with space' }, '/work/api'), 'defs.with_space');
+  assert.equal(name('defs.json', '/a~1b'), 'defs.a_b');
+  assert.equal(name('defs.json', '/with space'), 'defs.with_space');
 });
 
 test('external targets are hoisted and every ref is rewritten', async (t) => {
@@ -105,12 +101,26 @@ test('cross-file cycles become component refs', async (t) => {
 
 test('a ref from an external file back into the root becomes a root pointer', async (t) => {
   const { document } = await bundle(t, {
-    'x.json': { type: 'object', properties: { shared: { $ref: './api.json#/components/schemas/Shared' } } },
-  }, root({ components: { schemas: { Shared: { type: 'string' }, X: { $ref: './x.json' } } } }));
+    'x.json': {
+      type: 'object',
+      properties: {
+        shared: { $ref: './api.json#/components/schemas/Shared' },
+        // A root name needing percent-encoding is written back as a URI fragment.
+        named: { $ref: './api.json#/components/schemas/My%20Type' },
+      },
+    },
+  }, root({ components: { schemas: { Shared: { type: 'string' }, 'My Type': { type: 'string' }, X: { $ref: './x.json' } } } }));
   assert.deepEqual(document.components, {
     schemas: {
       Shared: { type: 'string' },
-      X: { type: 'object', properties: { shared: { $ref: '#/components/schemas/Shared' } } },
+      'My Type': { type: 'string' },
+      X: {
+        type: 'object',
+        properties: {
+          shared: { $ref: '#/components/schemas/Shared' },
+          named: { $ref: '#/components/schemas/My%20Type' },
+        },
+      },
     },
   });
 });
@@ -140,49 +150,42 @@ test('two root aliases to the same external target: the first name in code-unit 
   });
 });
 
-test('two case-differing root aliases to the same external target fail with an identifier collision', async (t) => {
-  await assert.rejects(
-    () => bundle(t, { 'shared.json': { type: 'string' } },
-      root({ components: { schemas: { Foo: { $ref: './shared.json' }, foo: { $ref: './shared.json' } } } })),
-    /components\/schemas name collision: api\.json#\/components\/schemas\/foo and shared\.json# both map to identifier Foo/,
-  );
-});
-
-test('names that differ only in case fail with an identifier collision', async (t) => {
-  await assert.rejects(
-    () => bundle(t, {
-      'models/User.json': { type: 'string' },
-      'models/user.yaml': 'type: number',
-    }, root({
+test('identifier collisions fail with both origins named', async (t) => {
+  const cases = [
+    {
+      label: 'case-differing root aliases to the same external target',
+      files: { 'shared.json': { type: 'string' } },
+      components: { schemas: { Foo: { $ref: './shared.json' }, foo: { $ref: './shared.json' } } },
+      pattern: /components\/schemas name collision: api\.json#\/components\/schemas\/foo and shared\.json# both map to identifier Foo/,
+    },
+    {
+      label: 'external files whose names differ only in case',
+      files: { 'models/User.json': { type: 'string' }, 'models/user.yaml': 'type: number' },
       components: {
         schemas: {
           Container: {
             type: 'object',
-            properties: {
-              a: { $ref: './models/User.json' },
-              b: { $ref: './models/user.yaml' },
-            },
+            properties: { a: { $ref: './models/User.json' }, b: { $ref: './models/user.yaml' } },
           },
         },
       },
-    })),
-    /components\/schemas name collision: models\/User\.json# and models\/user\.yaml# both map to identifier ModelsUser/,
-  );
-});
-
-test('a hoisted name that collides with a root component fails', async (t) => {
-  await assert.rejects(
-    () => bundle(t, { 'schemas/user.json': { type: 'string' } },
-      root({
-        components: {
-          schemas: {
-            SchemasUser: { type: 'number' },
-            Container: { type: 'object', properties: { a: { $ref: './schemas/user.json' } } },
-          },
+      pattern: /components\/schemas name collision: models\/User\.json# and models\/user\.yaml# both map to identifier ModelsUser/,
+    },
+    {
+      label: 'a hoisted name that collides with a root component',
+      files: { 'schemas/user.json': { type: 'string' } },
+      components: {
+        schemas: {
+          SchemasUser: { type: 'number' },
+          Container: { type: 'object', properties: { a: { $ref: './schemas/user.json' } } },
         },
-      })),
-    /components\/schemas name collision: api\.json#\/components\/schemas\/SchemasUser and schemas\/user\.json# both map to identifier SchemasUser/,
-  );
+      },
+      pattern: /components\/schemas name collision: api\.json#\/components\/schemas\/SchemasUser and schemas\/user\.json# both map to identifier SchemasUser/,
+    },
+  ];
+  for (const { label, files, components, pattern } of cases) {
+    await assert.rejects(() => bundle(t, files, root({ components })), pattern, label);
+  }
 });
 
 test('one target used as two component kinds fails', async (t) => {
@@ -223,18 +226,6 @@ test('a YAML alias shared by two locations is rewritten in both', async (t) => {
     schemas: {
       A: { type: 'object', properties: { first: { $ref: '#/components/schemas/x' }, second: { $ref: '#/components/schemas/x' } } },
       x: { type: 'string' },
-    },
-  });
-});
-
-test('a ref back into the root document is written with URI-fragment percent-encoding', async (t) => {
-  const { document } = await bundle(t, {
-    'x.json': { type: 'object', properties: { named: { $ref: './api.json#/components/schemas/My%20Type' } } },
-  }, root({ components: { schemas: { 'My Type': { type: 'string' }, X: { $ref: './x.json' } } } }));
-  assert.deepEqual(document.components, {
-    schemas: {
-      'My Type': { type: 'string' },
-      X: { type: 'object', properties: { named: { $ref: '#/components/schemas/My%20Type' } } },
     },
   });
 });

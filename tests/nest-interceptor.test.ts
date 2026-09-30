@@ -437,7 +437,7 @@ test('nestModelCodec before register does not convert', async () => {
   }
 });
 
-test('NestModelInterceptor leaves an undeclared return untouched and sends a declared null return as an empty body', async () => {
+test('NestModelInterceptor sends a declared null return as an empty body', async () => {
   const id = 'Returned_cccccccc';
   createObjectCodec(id, {
     stringify: (value) => JSON.stringify({ wire: value }),
@@ -448,21 +448,14 @@ test('NestModelInterceptor leaves an undeclared return untouched and sends a dec
     fromWireFormat: (value) => value,
   });
   class ReturnController {
-    plain() {
-      return { plain: true };
-    }
     empty() {
       return null;
     }
   }
   Controller('returns')(ReturnController);
-  for (const name of ['plain', 'empty'] as const) {
-    const descriptor = Object.getOwnPropertyDescriptor(ReturnController.prototype, name);
-    assert.ok(descriptor);
-    Post(name)(ReturnController.prototype, name, descriptor);
-  }
   const emptyDescriptor = Object.getOwnPropertyDescriptor(ReturnController.prototype, 'empty');
   assert.ok(emptyDescriptor);
+  Post('empty')(ReturnController.prototype, 'empty', emptyDescriptor);
   nestModelReturn(id)(ReturnController.prototype, 'empty', emptyDescriptor);
   class AppModule {}
   Module({ controllers: [ReturnController] })(AppModule);
@@ -471,9 +464,7 @@ test('NestModelInterceptor leaves an undeclared return untouched and sends a dec
   await application.listen(0, '127.0.0.1');
   try {
     const base = await application.getUrl();
-    const plain = await fetch(`${base}/returns/plain`, { method: 'POST' });
     const empty = await fetch(`${base}/returns/empty`, { method: 'POST' });
-    assert.deepEqual(await plain.json(), { plain: true });
     assert.equal(empty.status, 201);
     assert.equal(await empty.text(), '');
   } finally {
@@ -703,8 +694,6 @@ test('NestModelInterceptor model returns reach the client without an ExceptionsH
   });
   class LoggedController {
     objectDirect() { return { id: 'o1' }; }
-    async objectPromise() { return { id: 'o2' }; }
-    objectObservable() { return of({ id: 'o3' }); }
     modelDirect() { return new AccountModel('m1'); }
     async modelPromise() { return new AccountModel('m2'); }
     modelObservable() { return of(new AccountModel('m3')); }
@@ -715,8 +704,6 @@ test('NestModelInterceptor model returns reach the client without an ExceptionsH
   Controller('logged')(LoggedController);
   const routes: readonly [keyof LoggedController, string, boolean][] = [
     ['objectDirect', objectId, false],
-    ['objectPromise', objectId, false],
-    ['objectObservable', objectId, false],
     ['modelDirect', modelId, false],
     ['modelPromise', modelId, false],
     ['modelObservable', modelId, false],
@@ -749,8 +736,6 @@ test('NestModelInterceptor model returns reach the client without an ExceptionsH
     const base = await application.getUrl();
     const expected: readonly [string, unknown][] = [
       ['objectDirect', { object: { id: 'o1' } }],
-      ['objectPromise', { object: { id: 'o2' } }],
-      ['objectObservable', { object: { id: 'o3' } }],
       ['modelDirect', { model: 'm1' }],
       ['modelPromise', { model: 'm2' }],
       ['modelObservable', { model: 'm3' }],

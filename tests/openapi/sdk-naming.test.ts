@@ -90,29 +90,27 @@ test('reserved-word operation names get a deterministic identifier suffix and co
     [reservedDocument, ['delete_', 'new_', 'import_', 'constructor_', 'runtime_']],
     [rootDeleteDocument, ['delete_']],
   ] as const) {
-    for (const profile of [{ mobx: false, validation: false }, { mobx: true, validation: true }]) {
-      const directory = createFixtureProject(t, 'runic-openapi-reserved-operation-');
-      const output = path.join(directory, 'sdk');
-      const result = await generateMaterializedSdk(document, { output, name: 'Reserved', profile });
-      compileGeneratedSdk(output);
-      const client = requireRecord(await import(pathToFileURL(path.join(output, 'dist/client.js')).href), 'reserved client');
-      const ReservedClient = client.ReservedClient;
-      if (!isGeneratedClientClass(ReservedClient)) throw new TypeError('ReservedClient must be a class');
-      const instance = new ReservedClient({ baseUrl: 'https://example.test', fetchImpl: async () => new Response(null, { status: 204 }) });
-      for (const name of expected) {
-        const response = await instance[name]().execute({});
-        assert.equal(response.status, 204);
-      }
-      assert.deepEqual(
-        (result.diagnostics ?? []).map(diagnostic => diagnostic.severity),
-        expected.map(() => 'warning'),
+    const directory = createFixtureProject(t, 'runic-openapi-reserved-operation-');
+    const output = path.join(directory, 'sdk');
+    const result = await generateMaterializedSdk(document, { output, name: 'Reserved', profile: { mobx: true, validation: true } });
+    compileGeneratedSdk(output);
+    const client = requireRecord(await import(pathToFileURL(path.join(output, 'dist/client.js')).href), 'reserved client');
+    const ReservedClient = client.ReservedClient;
+    if (!isGeneratedClientClass(ReservedClient)) throw new TypeError('ReservedClient must be a class');
+    const instance = new ReservedClient({ baseUrl: 'https://example.test', fetchImpl: async () => new Response(null, { status: 204 }) });
+    for (const name of expected) {
+      const response = await instance[name]().execute({});
+      assert.equal(response.status, 204);
+    }
+    assert.deepEqual(
+      (result.diagnostics ?? []).map(diagnostic => diagnostic.severity),
+      expected.map(() => 'warning'),
+    );
+    for (const name of expected) {
+      assert.ok(
+        (result.diagnostics ?? []).some(diagnostic => diagnostic.message.includes(`"${name}"`)),
+        JSON.stringify(result.diagnostics),
       );
-      for (const name of expected) {
-        assert.ok(
-          (result.diagnostics ?? []).some(diagnostic => diagnostic.message.includes(`"${name}"`)),
-          JSON.stringify(result.diagnostics),
-        );
-      }
     }
   }
 });

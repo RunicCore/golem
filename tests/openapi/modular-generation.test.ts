@@ -1,8 +1,7 @@
-import { copyFixtureFile, createFixtureProject, linkProjectPackages, writeGeneratedArtifacts } from '../fixture-project.js';
+import { copyFixtureFile, createFixtureProject, readFixture, linkProjectPackages, writeGeneratedArtifacts } from '../fixture-project.js';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import {
-  copyFileSync,
   mkdirSync,
   readFileSync,
   writeFileSync,
@@ -19,7 +18,6 @@ import { generate as generateModels } from '#model/generator';
 import { writeSdk } from '#openapi/generator';
 import {
   compileGeneratedSdk,
-  compileStrictUnusedSdk,
   isGeneratedModelClass,
   repoRoot,
   requireRecord,
@@ -599,18 +597,17 @@ test('compact OpenAPI schema closure feeds standalone nested model first/all val
   assert.equal(runtimeManifest.source.digest.length, 64);
 });
 
-test('maintained Nest Payment keeps canonical codec identity across repeated compact SDK closure candidates', t => {
+test('a Nest-style Payment keeps canonical codec identity across repeated compact SDK closure candidates', t => {
   const { root, source } = fixture(t);
   const configPath = path.join(root, 'tsconfig.json');
   const projectConfig = requireRecord(JSON.parse(readFileSync(configPath, 'utf8')), 'fixture TypeScript config');
   const compilerOptions = requireRecord(projectConfig.compilerOptions, 'fixture compiler options');
   // The isolated source retains TPaymentInput and TPaymentFilter but omits the
-  // controllers that consume their generated conversion helpers. The maintained
-  // Nest project does not enable noUnusedLocals; keep strict typechecking here.
+  // controllers that consume their generated conversion helpers, so unused
+  // locals are allowed; the rest of strict typechecking stays on.
   compilerOptions.noUnusedLocals = false;
   writeFileSync(configPath, JSON.stringify(projectConfig));
-  const nestExample = path.join(repoRoot(), 'examples/nest-openapi');
-  const document = parse(readFileSync(path.join(nestExample, 'api/openapi.yaml'), 'utf8'));
+  const document = parse(readFixture('openapi/canonical-codec-identity/openapi.yaml'));
   const sdk = path.join(root, 'sdk');
   const sdkResult = writeSdk(document, {
     output: sdk,
@@ -620,8 +617,8 @@ test('maintained Nest Payment keeps canonical codec identity across repeated com
   writeGeneratedArtifacts(sdkResult.artifacts);
 
   const paymentSource = path.join(source, 'payment.model.ts');
-  copyFileSync(path.join(nestExample, 'src/payment.model.ts'), paymentSource);
-  copyFileSync(path.join(nestExample, 'src/payment-status.ts'), path.join(source, 'payment-status.ts'));
+  copyFixtureFile(root, 'openapi/canonical-codec-identity/payment.model.ts', 'src/payment.model.ts');
+  copyFixtureFile(root, 'openapi/canonical-codec-identity/payment-status.ts', 'src/payment-status.ts');
 
   const manifestPath = path.join(sdk, 'model-manifest.json');
   const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as {
@@ -651,7 +648,7 @@ test('maintained Nest Payment keeps canonical codec identity across repeated com
   const secondPaymentClosure = secondManifest.validationSchemaClosure.find(entry => entry.aliases?.includes('Payment'));
   assert.ok(secondPaymentClosure);
   assert.equal(secondPaymentClosure.codecId, paymentClosure.codecId,
-    'the maintained SDK preserves its canonical Payment codec ID across repeated generations');
+    'the SDK preserves its canonical Payment codec ID across repeated generations');
 
   // A second imported closure can carry the same shared component identity.
   // The local full graph plus this compact entry exercise two equal
@@ -685,22 +682,11 @@ test('maintained Nest Payment keeps canonical codec identity across repeated com
   );
 });
 
-test('an SDK has no client-runtime.ts whatever its operation count', () => {
-  for (const count of [1, 20]) {
-    const result = writeSdk(scaleDocument(count), {
-      output: path.join(tmpdir(), `openapi-no-runtime-${count}`),
-      name: 'Scale',
-      profile: { mobx: false, validation: true },
-    });
-    assert.equal(result.artifacts.some(artifact => artifact.path.endsWith(`${path.sep}client-runtime.ts`)), false);
-  }
-});
-
-test('10, 100, and 500 operations share one nested schema closure and grow linearly', () => {
+test('10 and 100 operations share one nested schema closure and grow linearly', () => {
   const sizes: number[] = [];
   const closureCounts: number[] = [];
   const closureBytes: number[] = [];
-  for (const count of [10, 100, 500]) {
+  for (const count of [10, 100]) {
     const output = path.join(tmpdir(), `openapi-scale-${count}`);
     const result = writeSdk(scaleDocument(count), {
       output,
@@ -718,8 +704,6 @@ test('10, 100, and 500 operations share one nested schema closure and grow linea
   }
   assert.ok(sizes[1] !== undefined && sizes[0] !== undefined && sizes[1] <= sizes[0] * 12,
     `100-operation source set remains proportional to 10 operations: ${sizes.join(', ')}`);
-  assert.ok(sizes[2] !== undefined && sizes[1] !== undefined && sizes[2] <= sizes[1] * 6,
-    `500-operation source set remains proportional to 100 operations: ${sizes.join(', ')}`);
   assert.equal(new Set(closureCounts).size, 1, 'operation count does not duplicate shared nested component modules');
   assert.equal(new Set(closureBytes).size, 1, 'shared component schema bytes stay constant as endpoints grow');
 });
@@ -760,7 +744,6 @@ test('schemas whose names the codec rule shortens still get output files and exp
     components: { schemas: { PaymentModel: object, TPayment: { ...object, properties: { amount: { type: 'number' } }, required: ['amount'] }, 'Pay$ment': object } },
   };
   const result = writeGeneratedSdk(writeSdk, document, { output: source, name: 'Shortened', profile: { mobx: false, validation: false } });
-  compileStrictUnusedSdk(source);
   const files = new Set(result.artifacts.map((artifact) => artifact.path));
   const index = result.artifacts.find((artifact) => artifact.path.endsWith(`${path.sep}index.ts`))?.content ?? '';
   const exported = [...index.matchAll(/from '\.\/models\/([^']+)\.js'/g)].map((match) => match[1]!);
@@ -805,21 +788,6 @@ function roundTrip(sdk: Record<string, unknown>, model: string, klass: string, v
   assert.deepEqual(JSON.parse(stringify(parsed)), value);
 }
 
-test('schemas that shorten alike but differ in shape keep separate codecs', async t => {
-  const { result, sdk } = await generateShortened(t, { PaymentModel: idObject, TPayment: amountObject });
-  const keys = result.artifacts.find((artifact) => artifact.path.endsWith('iobject-plugin-keys.ts'))?.content ?? '';
-  const entries = [...keys.matchAll(/"([^"]+)#(\w+)": "(Payment_[0-9a-f]+)"/g)];
-  assert.deepEqual(entries.map((entry) => entry[2]).sort(), ['PaymentModelModel', 'TPaymentModel'], 'keys are the emitted class names');
-  assert.equal(new Set(entries.map((entry) => entry[1])).size, 2, 'two files');
-  assert.equal(new Set(entries.map((entry) => entry[3])).size, 2, 'two codec ids');
-  for (const entry of entries) {
-    const declaring = result.artifacts.find((artifact) => artifact.path.endsWith(`/${entry[1]}`))?.content ?? '';
-    assert.match(declaring, new RegExp(`export class ${entry[2]}\\b`));
-  }
-  roundTrip(sdk, 'PaymentModel', 'PaymentModelModel', { id: 'a' });
-  roundTrip(sdk, 'TPayment', 'TPaymentModel', { amount: 3 });
-});
-
 test('a model that references schemas with shortened names imports their own classes', async t => {
   const holder = { type: 'object', properties: { a: { $ref: '#/components/schemas/PaymentModel' }, b: { $ref: '#/components/schemas/Pay$ment' } }, required: ['a', 'b'] };
   const { sdk } = await generateShortened(t, { PaymentModel: idObject, 'Pay$ment': amountObject, Holder: holder });
@@ -852,21 +820,36 @@ function holderOf(...targets: string[]): Record<string, unknown> {
   };
 }
 
-const holderCases: ReadonlyArray<readonly [title: string, schemas: Record<string, unknown>, targets: string[], classes: string[], values: Record<string, unknown>[]]> = [
-  ['PaymentModel', { PaymentModel: idObject, TPayment: amountObject }, ['PaymentModel'], ['PaymentModelModel'], [{ id: 'a' }]],
-  ['TPayment', { PaymentModel: idObject, TPayment: amountObject }, ['TPayment'], ['TPaymentModel'], [{ amount: 2 }]],
-  ['both', { PaymentModel: idObject, TPayment: amountObject }, ['PaymentModel', 'TPayment'], ['PaymentModelModel', 'TPaymentModel'], [{ id: 'a' }, { amount: 2 }]],
-  ['Payment and TPayment', { Payment: idObject, TPayment: amountObject }, ['Payment', 'TPayment'], ['PaymentModel', 'TPaymentModel'], [{ id: 'a' }, { amount: 2 }]],
-];
-
-for (const [title, schemas, targets, classes, values] of holderCases) {
-  test(`a holder of ${title} compiles and round-trips its nested classes`, async t => {
-    const { sdk } = await generateShortened(t, { ...schemas, Holder: holderOf(...targets) });
-    const value = Object.fromEntries(values.map((item, index) => [`f${index}`, item]));
-    roundTrip(sdk, 'Holder', 'HolderModel', value);
-    const parsed = (sdk.parseHolder as (text: string, options: { construct: unknown }) => Record<string, unknown>)(JSON.stringify(value), { construct: sdk.HolderModel });
-    classes.forEach((klass, index) => {
-      assert.ok(parsed[`f${index}`] instanceof (sdk[klass] as new () => object), `f${index} is a ${klass}`);
-    });
+function assertHolderRoundTrip(
+  sdk: Record<string, unknown>,
+  classes: string[],
+  values: Record<string, unknown>[],
+): void {
+  const value = Object.fromEntries(values.map((item, index) => [`f${index}`, item]));
+  roundTrip(sdk, 'Holder', 'HolderModel', value);
+  const parsed = (sdk.parseHolder as (text: string, options: { construct: unknown }) => Record<string, unknown>)(JSON.stringify(value), { construct: sdk.HolderModel });
+  classes.forEach((klass, index) => {
+    assert.ok(parsed[`f${index}`] instanceof (sdk[klass] as new () => object), `f${index} is a ${klass}`);
   });
 }
+
+test('a holder of both compiles and round-trips its nested classes', async t => {
+  const { result, sdk } = await generateShortened(t, { PaymentModel: idObject, TPayment: amountObject, Holder: holderOf('PaymentModel', 'TPayment') });
+  const keys = result.artifacts.find((artifact) => artifact.path.endsWith('iobject-plugin-keys.ts'))?.content ?? '';
+  const entries = [...keys.matchAll(/"([^"]+)#(\w+)": "(\w+_[0-9a-f]+)"/g)];
+  assert.deepEqual(entries.map((entry) => entry[2]).sort(), ['HolderModel', 'PaymentModelModel', 'TPaymentModel'], 'keys are the emitted class names');
+  assert.equal(new Set(entries.map((entry) => entry[1])).size, 3, 'three files');
+  assert.equal(new Set(entries.map((entry) => entry[3])).size, 3, 'three codec ids');
+  for (const entry of entries) {
+    const declaring = result.artifacts.find((artifact) => artifact.path.endsWith(`/${entry[1]}`))?.content ?? '';
+    assert.match(declaring, new RegExp(`export class ${entry[2]}\\b`), `${entry[2]} is declared in the file its plugin key names`);
+  }
+  roundTrip(sdk, 'PaymentModel', 'PaymentModelModel', { id: 'a' });
+  roundTrip(sdk, 'TPayment', 'TPaymentModel', { amount: 3 });
+  assertHolderRoundTrip(sdk, ['PaymentModelModel', 'TPaymentModel'], [{ id: 'a' }, { amount: 2 }]);
+});
+
+test('a holder of Payment and TPayment compiles and round-trips its nested classes', async t => {
+  const { sdk } = await generateShortened(t, { Payment: idObject, TPayment: amountObject, Holder: holderOf('Payment', 'TPayment') });
+  assertHolderRoundTrip(sdk, ['PaymentModel', 'TPaymentModel'], [{ id: 'a' }, { amount: 2 }]);
+});

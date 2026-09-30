@@ -4,7 +4,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import test from 'node:test';
 
 import { copyFixtureFile, createFixtureProject } from '../fixture-project.js';
-import { command } from '../packed/helpers.js';
+import { command } from '../support/process.js';
 import { writeSdk } from '#openapi/generator';
 import {
   compileGeneratedSdk,
@@ -90,62 +90,84 @@ for (const ajvStandalone of [false, true]) {
   });
 }
 
-/** A mapping names its target in the document's own spelling: an escaped pointer, a bare name, or a schema `$id`. */
-function mappedDocument(cat: string, dog: string, refs: { readonly branch: string; readonly mapping: string }): Record<string, unknown> {
-  const pointer = (name: string) => `#/components/schemas/${encodeURIComponent(name.replaceAll('~', '~0').replaceAll('/', '~1'))}`;
-  return {
-    openapi: '3.1.0',
-    info: { title: 'Names', version: '1' },
-    paths: {
-      '/pets': {
-        post: {
-          operationId: 'createPet',
-          requestBody: { required: true, content: { 'application/json': { schema: { $ref: '#/components/schemas/Pet' } } } },
-          responses: { 200: { description: 'ok' } },
-        },
-      },
-    },
-    components: {
-      schemas: {
-        [cat]: {
-          ...(refs.branch.startsWith('https:') || refs.mapping.startsWith('https:') ? { $id: 'https://pets.test/cat' } : {}),
-          type: 'object', required: ['name'], properties: { kind: { type: 'string' }, name: { type: 'string' } },
-        },
-        [dog]: { type: 'object', required: ['bark'], properties: { kind: { type: 'string' }, bark: { type: 'boolean' } } },
-        Pet: {
-          oneOf: [{ $ref: refs.branch === 'pointer' ? pointer(cat) : refs.branch }, { $ref: pointer(dog) }],
-          discriminator: {
-            propertyName: 'kind',
-            mapping: { cat: refs.mapping === 'pointer' ? pointer(cat) : refs.mapping, dog: pointer(dog) },
-          },
-        },
-      },
-    },
-  };
+interface MappedNames {
+  /** Capitalized prefix that keeps the case's union, operation and variant fields distinct within the shared document. */
+  readonly id: string;
+  readonly cat: string;
+  readonly dog: string;
+  readonly refs: { readonly branch: string; readonly mapping: string };
 }
 
-const escapedNameDocuments: readonly [string, Record<string, unknown>][] = [
-  ['space', mappedDocument('Pet Cat', 'Pet Dog', { branch: 'pointer', mapping: 'pointer' })],
-  ['tilde', mappedDocument('a~cat', 'a~dog', { branch: 'pointer', mapping: 'pointer' })],
-  ['slash', mappedDocument('a/cat', 'a/dog', { branch: 'pointer', mapping: 'pointer' })],
-  ['$id branch', mappedDocument('Cat', 'Dog', { branch: 'https://pets.test/cat', mapping: 'pointer' })],
-  ['$id mapping', mappedDocument('Cat', 'Dog', { branch: 'pointer', mapping: 'https://pets.test/cat' })],
+/** A mapping names its target in the document's own spelling: an escaped pointer, a bare name, or a schema `$id`. */
+const mappedCases: readonly MappedNames[] = [
+  { id: 'Space', cat: 'Pet Cat', dog: 'Pet Dog', refs: { branch: 'pointer', mapping: 'pointer' } },
+  { id: 'Tilde', cat: 'a~cat', dog: 'a~dog', refs: { branch: 'pointer', mapping: 'pointer' } },
+  { id: 'Slash', cat: 'b/cat', dog: 'b/dog', refs: { branch: 'pointer', mapping: 'pointer' } },
+  { id: 'IdBranch', cat: 'IdBranchCat', dog: 'IdBranchDog', refs: { branch: 'https://pets.test/id-branch-cat', mapping: 'pointer' } },
+  { id: 'IdMapping', cat: 'IdMappingCat', dog: 'IdMappingDog', refs: { branch: 'pointer', mapping: 'https://pets.test/id-mapping-cat' } },
 ];
+const catField = ({ id }: MappedNames) => `cat${id}`;
+const dogField = ({ id }: MappedNames) => `dog${id}`;
+
+/**
+ * One document with a discriminated union and operation per case. Every case gets its own variant field names, because
+ * variants with identical fields but different names would break `instanceof` inside one generated project.
+ */
+function mappedDocument(cases: readonly MappedNames[]): Record<string, unknown> {
+  const pointer = (name: string) => `#/components/schemas/${encodeURIComponent(name.replaceAll('~', '~0').replaceAll('/', '~1'))}`;
+  const paths: Record<string, unknown> = {};
+  const schemas: Record<string, unknown> = {};
+  for (const mapped of cases) {
+    const { id, cat, dog, refs } = mapped;
+    const union = `${id}Pet`;
+    paths[`/${id}`] = {
+      post: {
+        operationId: `create${union}`,
+        requestBody: { required: true, content: { 'application/json': { schema: { $ref: pointer(union) } } } },
+        responses: { 200: { description: 'ok' } },
+      },
+    };
+    const schemaId = [refs.branch, refs.mapping].find((ref) => ref.startsWith('https:'));
+    schemas[cat] = {
+      ...(schemaId === undefined ? {} : { $id: schemaId }),
+      type: 'object', required: [catField(mapped)], properties: { kind: { type: 'string' }, [catField(mapped)]: { type: 'string' } },
+    };
+    schemas[dog] = { type: 'object', required: [dogField(mapped)], properties: { kind: { type: 'string' }, [dogField(mapped)]: { type: 'boolean' } } };
+    schemas[union] = {
+      oneOf: [{ $ref: refs.branch === 'pointer' ? pointer(cat) : refs.branch }, { $ref: pointer(dog) }],
+      discriminator: {
+        propertyName: 'kind',
+        mapping: { cat: refs.mapping === 'pointer' ? pointer(cat) : refs.mapping, dog: pointer(dog) },
+      },
+    };
+  }
+  return { openapi: '3.1.0', info: { title: 'Names', version: '1' }, paths, components: { schemas } };
+}
 
 // Each profile generates, compiles and runs the SDK: runtime Ajv lowers mappings as the
 // generated modules register schemas; standalone lowers them at generation.
 for (const ajvStandalone of [false, true]) {
   test(`discriminator mappings select variants for escaped names and $id references (ajvStandalone=${ajvStandalone})`, async (t) => {
-    for (const [label, document] of escapedNameDocuments) {
-      const output = path.join(createFixtureProject(t, 'runic-openapi-mapped-names-'), 'sdk');
-      // These component names are outside the OpenAPI component-key pattern, so the document is not re-validated.
-      writeGeneratedSdk(writeSdk, document, { output, name: 'Names', profile: { mobx: false, validation: true, ajvStandalone } });
-      compileGeneratedSdk(output, [], { strict: true });
-      copyFixtureFile(output, 'openapi/standalone-discriminator/verify-mapping.mjs', 'verify-mapping.mjs');
-      const flags = ajvStandalone ? ['--disallow-code-generation-from-strings'] : [];
-      const result = await command(output, process.execPath, [...flags, 'verify-mapping.mjs']);
-      assert.deepEqual(JSON.parse(result.stdout), { cat: true, dog: true, dogTagWithCatFields: false, unknownTag: false }, label);
-    }
+    const output = path.join(createFixtureProject(t, 'runic-openapi-mapped-names-'), 'sdk');
+    // These component names are outside the OpenAPI component-key pattern, so the document is not re-validated.
+    writeGeneratedSdk(writeSdk, mappedDocument(mappedCases), { output, name: 'Names', profile: { mobx: false, validation: true, ajvStandalone } });
+    compileGeneratedSdk(output, [], { strict: true });
+    copyFixtureFile(output, 'openapi/standalone-discriminator/verify-mapping.mjs', 'verify-mapping.mjs');
+    const requests = Object.fromEntries(mappedCases.map((mapped) => [mapped.id, {
+      operation: `create${mapped.id}Pet`,
+      bodies: {
+        cat: { kind: 'cat', [catField(mapped)]: 'Miso' },
+        dog: { kind: 'dog', [dogField(mapped)]: true },
+        dogTagWithCatFields: { kind: 'dog', [catField(mapped)]: 'Miso' },
+        unknownTag: { kind: 'bird', [catField(mapped)]: 'Miso' },
+      },
+    }]));
+    const flags = ajvStandalone ? ['--disallow-code-generation-from-strings'] : [];
+    const result = await command(output, process.execPath, [...flags, 'verify-mapping.mjs', JSON.stringify(requests)]);
+    assert.deepEqual(
+      JSON.parse(result.stdout),
+      Object.fromEntries(mappedCases.map(({ id }) => [id, { cat: true, dog: true, dogTagWithCatFields: false, unknownTag: false }])),
+    );
   });
 }
 

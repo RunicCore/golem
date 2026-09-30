@@ -4,7 +4,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { test, type TestContext } from 'node:test';
 import { runPipeline } from '#codegen/cli';
-import { workspace, writeFixture } from './packed/helpers.js';
+import { workspace } from './support/process.js';
+import { writeFixture } from './support/consumer.js';
 import { generate as generateModels } from '@exprtlabs/model-codegen/generator';
 
 function packageFixture(t: TestContext, { profile = { mobx: false, validation: true }, models = true } = {}): { root: string; config: string } {

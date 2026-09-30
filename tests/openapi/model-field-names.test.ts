@@ -4,33 +4,31 @@ import path from 'node:path';
 import test from 'node:test';
 import { generate, writeSdk } from '#openapi/generator';
 import {
-  ALL_GENERATION_PROFILES,
   documentBase,
   generatedModelSource,
   writeGeneratedSdk,
   writeOpenApiDocument,
 } from './helpers.js';
 
-test('reserves generated model API members across profiles and quotes wire keys', async (t) => {
-  for (const profile of ALL_GENERATION_PROFILES) {
-    const directory = createFixtureProject(t, 'runic-openapi-r6-member-');
-    const input = writeOpenApiDocument(directory, documentBase('3.1.0', {
-      components: {
-        schemas: {
-          Payment: {
-            type: 'object',
-            properties: {
-              toJSON: { type: 'string' },
-            },
+test('reserves generated model API members and quotes wire keys', async (t) => {
+  // RESERVED_MODEL_MEMBERS has no profile input, so one profile covers the rejection.
+  const directory = createFixtureProject(t, 'runic-openapi-r6-member-');
+  const input = writeOpenApiDocument(directory, documentBase('3.1.0', {
+    components: {
+      schemas: {
+        Payment: {
+          type: 'object',
+          properties: {
+            toJSON: { type: 'string' },
           },
         },
       },
-    }));
-    await assert.rejects(
-      () => generate({ input, output: path.join(directory, 'sdk'), profile }),
-      /collides with generated model API member/,
-    );
-  }
+    },
+  }));
+  await assert.rejects(
+    () => generate({ input, output: path.join(directory, 'sdk'), profile: { mobx: false, validation: false } }),
+    /collides with generated model API member/,
+  );
 
   const quoted = createFixtureProject(t, 'runic-openapi-r6-quote-');
   const quotedInput = writeOpenApiDocument(quoted, documentBase('3.1.0', {

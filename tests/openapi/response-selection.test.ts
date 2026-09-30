@@ -1,9 +1,9 @@
-import type { TestContext } from 'node:test';
-import { createFixtureProject } from '../fixture-project.js';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import test from 'node:test';
+import test, { after } from 'node:test';
 import {
   compileGeneratedSdk,
   generateMaterializedSdk,
@@ -66,9 +66,23 @@ function document(): Record<string, unknown> {
   };
 }
 
-async function loadClient(t: TestContext, profile: { mobx: boolean; validation: boolean }) {
-  const output = path.join(createFixtureProject(t, 'runic-openapi-select-'), 'sdk');
-  await generateMaterializedSdk(document(), { output, name: 'Select', profile });
+// One generate and compile: the emitted response contract does not depend on mobx or validation, so every test shares it.
+let selectClient: ReturnType<typeof generateClient> | undefined;
+const selectRoots: string[] = [];
+after(() => {
+  for (const root of selectRoots) fs.rmSync(root, { recursive: true, force: true });
+});
+
+function loadClient() {
+  selectClient ??= generateClient();
+  return selectClient;
+}
+
+async function generateClient() {
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'runic-openapi-select-')));
+  selectRoots.push(root);
+  const output = path.join(root, 'sdk');
+  await generateMaterializedSdk(document(), { output, name: 'Select', profile: { mobx: false, validation: false } });
   compileGeneratedSdk(output);
   const module = requireRecord(
     await import(pathToFileURL(path.join(output, 'dist/client.js')).href),
@@ -83,8 +97,8 @@ function json(status: number, body: unknown, contentType: string): Response {
   return new Response(JSON.stringify(body), { status, headers: { 'content-type': contentType } });
 }
 
-test('selects exact status then exact media, then type/*, then */* without status fallthrough', async (t) => {
-  const SelectClient = await loadClient(t, { mobx: false, validation: false });
+test('selects exact status then exact media, then type/*, then */* without status fallthrough', async () => {
+  const SelectClient = await loadClient();
   const seen: string[] = [];
   const client = new SelectClient({
     baseUrl: 'https://api.example',
@@ -125,46 +139,42 @@ test('selects exact status then exact media, then type/*, then */* without statu
   seen.push('default');
   assert.equal(fallback.status, 404);
   assert.deepEqual(fallback.body, { kind: 'default' });
-});
 
-test('does not fall through to another status when the selected status has the wrong media', async (t) => {
-  const SelectClient = await loadClient(t, { mobx: false, validation: false });
-  const client = new SelectClient({
+  // The selected status 200 declares only JSON: a wrong media type is undeclared, not another status's response.
+  const wrongMedia = new SelectClient({
     baseUrl: 'https://api.example',
     fetchImpl: async () => json(200, { kind: 'wrong' }, 'text/plain'),
   });
   await assert.rejects(
-    () => client.getExact().execute({}),
+    () => wrongMedia.getExact().execute({}),
     /Undeclared OpenAPI response.*200/,
   );
 });
 
-test('custom response decoder overrides built-in JSON and protocol checks remain on every profile', async (t) => {
-  for (const validation of [false, true]) {
-    const SelectClient = await loadClient(t, { mobx: false, validation });
-    const responseDecoders = {
-      'application/json': async (response: Response) => {
-        const text = await response.text();
-        return { ...JSON.parse(text), custom: true };
-      },
-    };
-    const client = new SelectClient({
-      baseUrl: 'https://api.example',
-      responseDecoders,
-      fetchImpl: async () => json(200, { kind: 'exact' }, 'application/json'),
-    });
-    const result = await client.getItem().execute({});
-    assert.deepEqual(result.body, { kind: 'exact', custom: true });
+test('custom response decoder overrides built-in JSON and protocol checks remain', async () => {
+  const SelectClient = await loadClient();
+  const responseDecoders = {
+    'application/json': async (response: Response) => {
+      const text = await response.text();
+      return { ...JSON.parse(text), custom: true };
+    },
+  };
+  const client = new SelectClient({
+    baseUrl: 'https://api.example',
+    responseDecoders,
+    fetchImpl: async () => json(200, { kind: 'exact' }, 'application/json'),
+  });
+  const result = await client.getItem().execute({});
+  assert.deepEqual(result.body, { kind: 'exact', custom: true });
 
-    const undeclaredClient = new SelectClient({
-      baseUrl: 'https://api.example',
-      responseDecoders,
-      fetchImpl: async () => json(200, { kind: 'wrong' }, 'text/plain'),
-    });
-    await assert.rejects(
-      () => undeclaredClient.getExact().execute({}),
-      /Undeclared OpenAPI response.*200/,
-      `validation=${validation}: an installed custom decoder does not bypass the undeclared-media check`,
-    );
-  }
+  const undeclaredClient = new SelectClient({
+    baseUrl: 'https://api.example',
+    responseDecoders,
+    fetchImpl: async () => json(200, { kind: 'wrong' }, 'text/plain'),
+  });
+  await assert.rejects(
+    () => undeclaredClient.getExact().execute({}),
+    /Undeclared OpenAPI response.*200/,
+    'an installed custom decoder does not bypass the undeclared-media check',
+  );
 });

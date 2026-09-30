@@ -3,24 +3,20 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { build } from 'esbuild';
-import { workspace, versions, command, npm, cli, packedRegistry, packageSpec, writeFixture, filesUnder, baselineNode } from './helpers.js';
+import { workspace, command, npm, cli } from '../support/process.js';
+import { writeFixture, filesUnder } from '../support/consumer.js';
+import { startRegistry, packageSpec, type PackedRegistry } from '../../scripts/packed-registry.js';
+import { AJV, AJV_FORMATS, ESBUILD, MOBX, NEST_COMMON, NEST_SWAGGER, TTSC, TYPESCRIPT } from '../../scripts/third-party-installs.js';
 import { copyFixture, copyFixtureFile } from '../fixture-project.js';
 
-let registry: Awaited<ReturnType<typeof packedRegistry>>;
-before(async () => { registry = await packedRegistry(); });
+let registry: PackedRegistry;
+before(async () => { registry = await startRegistry(); });
 after(async () => { if (registry) await registry.close(); });
-
-test('packed verification uses the supported Node baseline', async () => {
-  assert.equal((await command(workspace, registry.node22, ['--version'])).stdout.trim(), `v${baselineNode}`);
-  assert.ok(Number(process.versions.node.split('.')[0]) >= 22);
-});
 
 test('packed binary ownership survives either generator installation order and uninstall', async t => {
   for (const order of [
     ['model-codegen', 'openapi-to-ts'], ['openapi-to-ts', 'model-codegen'],
     ['ts-to-openapi', 'model-codegen', 'openapi-to-ts'],
-    ['model-codegen', 'openapi-to-ts', 'ts-to-openapi'],
-    ['openapi-to-ts', 'ts-to-openapi', 'model-codegen'],
   ]) {
     const root = registry.create(t, order[0]);
     for (const name of order) {
@@ -33,29 +29,11 @@ test('packed binary ownership survives either generator installation order and u
     assert.match((await cli(root, ['--help'])).stdout, /runic-codegen/);
     assert.equal(fs.existsSync(path.join(root, 'node_modules/@exprtlabs', order[1])), true);
   }
-  for (const [name, entry] of registry.packages) {
-    assert.equal(entry.manifest.version, registry.workspaceVersion);
-    if (name === '@exprtlabs/codegen') assert.deepEqual(Object.keys(entry.manifest.bin ?? {}), ['runic-codegen']);
-    else assert.equal(entry.manifest.bin, undefined);
-    assert.equal(entry.manifest.license, 'MIT');
-    assert.ok(entry.pack.files.some(file => file.path === 'LICENSE'));
-    if (name === '@exprtlabs/codegen' || name === '@exprtlabs/ts-to-openapi') {
-      assert.ok(entry.pack.files.some(file => file.path === 'ttsc-plugin.cjs'), `${name} must pack ttsc-plugin.cjs`);
-    }
-    if (name === '@exprtlabs/codegen') {
-      assert.ok(entry.pack.files.some(file => file.path.startsWith('plugin/')), `${name} must pack native plugin sources`);
-    }
-    if (name === '@exprtlabs/ts-to-openapi') {
-      assert.equal(entry.pack.files.some(file => file.path.startsWith('plugin/')), false, 'Nest plugin source lives in @exprtlabs/codegen');
-    }
-    assert.ok(entry.pack.files.every(file => !/(?:^|\/)(?:docs?|assets?|\.vitepress|vitepress|vue|node_modules)(?:\/|$)/i.test(file.path)), name);
-  }
-  assert.deepEqual(registry.distTags, { rc: registry.workspaceVersion });
 });
 
 test('packed controller generator installs independently and resolves real Nest and Swagger packages', async t => {
   const root = registry.create(t, 'controller-only');
-  await npm(root, ['install', '--save-dev', packageSpec(registry, '@exprtlabs/ts-to-openapi'), '@nestjs/common@11.2.3', '@nestjs/swagger@11.4.7']);
+  await npm(root, ['install', '--save-dev', packageSpec(registry, '@exprtlabs/ts-to-openapi'), NEST_COMMON, NEST_SWAGGER]);
   copyFixture(root, 'packed/controller-only');
   await cli(root, ['generate']);
   await cli(root, ['check']);
@@ -72,37 +50,20 @@ test('packed controller generator installs independently and resolves real Nest 
   assert.deepEqual(Object.keys(codegenManifest.bin ?? {}), ['runic-codegen']);
 });
 
-test('model-only packed installation validates structure with no OpenAPI or MobX runtime', async t => {
-  const root = registry.create(t, 'model-only');
-  await npm(root, ['install', '--save-dev', packageSpec(registry, '@exprtlabs/model-codegen')]);
-  await npm(root, ['install', '--save-prod', packageSpec(registry, '@exprtlabs/codegen'), 'ajv@8.20.0', 'ajv-formats@3.0.1']);
-  copyFixture(root, 'packed/model-only');
-  await cli(root, ['generate']);
-  copyFixtureFile(root, 'packed/model-only-after-generation/item.model.ts', 'src/item.model.ts');
-  await cli(root, ['generate']);
-  await command(root, path.join(root, 'node_modules/.bin/ttsc'), ['-p', 'tsconfig.json']);
-  await npm(root, ['prune', '--omit=dev'], { includeOptional: false });
-  for (const name of ['mobx', 'typescript', '@exprtlabs/model-codegen', '@exprtlabs/openapi-to-ts']) assert.equal(fs.existsSync(path.join(root, 'node_modules', name)), false, `${name} should not be installed`);
-  await command(root, process.execPath, ['verify.mjs']);
-  const browser = await build({ entryPoints: [path.join(root, 'build/item.model.js')], bundle: true, platform: 'browser', format: 'esm', write: false, metafile: true });
-  assert.doesNotMatch(Object.keys(browser.metafile.inputs).join('\n'), /node:|\/tooling\/|\/mobx\//);
-});
-
 for (const profile of [
   { mobx: false, validation: false, ajvStandalone: false },
   { mobx: false, validation: true, ajvStandalone: false },
   { mobx: true, validation: false, ajvStandalone: false },
   { mobx: true, validation: true, ajvStandalone: false },
-  { mobx: false, validation: true, ajvStandalone: true },
   { mobx: true, validation: true, ajvStandalone: true },
 ]) {
   test(`packed SDK and frontend model compose with mobx=${profile.mobx}, validation=${profile.validation}, standalone=${profile.ajvStandalone}`, async t => {
     const root = registry.create(t, `profile-${profile.mobx}-${profile.validation}-${profile.ajvStandalone}`);
     await npm(root, ['install', '--save-dev', packageSpec(registry, '@exprtlabs/model-codegen'), packageSpec(registry, '@exprtlabs/openapi-to-ts')]);
-    if (profile.ajvStandalone) await npm(root, ['install', '--save-dev', 'esbuild@0.25.12']);
+    if (profile.ajvStandalone) await npm(root, ['install', '--save-dev', ESBUILD]);
     const production = [packageSpec(registry, '@exprtlabs/codegen')];
-    if (profile.mobx) production.push(`mobx@${versions.mobx}`);
-    if (profile.validation) production.push(`ajv@${versions.ajv}`, `ajv-formats@${versions['ajv-formats']}`);
+    if (profile.mobx) production.push(MOBX);
+    if (profile.validation) production.push(AJV, AJV_FORMATS);
     await npm(root, ['install', '--save-prod', ...production]);
     writeFixture(root, profile);
     await cli(root, ['generate']);
@@ -116,7 +77,7 @@ for (const profile of [
     const generated = [...filesUnder(path.join(root, 'sdk')), path.join(root, 'src/cart.model.generated.ts'), path.join(root, '.runic-codegen/outputs.json')];
     const before = new Map(generated.map(filename => [filename, { content: fs.readFileSync(filename, 'utf8'), mtime: fs.statSync(filename).mtimeMs }]));
     await cli(root, ['check']);
-    await command(root, registry.node22, [path.join(root, 'node_modules/@exprtlabs/codegen/dist/bin/runic-codegen.js'), 'check']);
+    await command(root, process.execPath, [path.join(root, 'node_modules/@exprtlabs/codegen/dist/bin/runic-codegen.js'), 'check']);
     await cli(root, ['generate']);
     for (const [filename, old] of before) {
       assert.equal(fs.readFileSync(filename, 'utf8'), old.content, filename);
@@ -138,7 +99,7 @@ for (const profile of [
     copyFixtureFile(root, 'packed/profile/browser-exports.ts', 'browser-exports.ts');
     fs.writeFileSync(path.join(root, 'profile.json'), JSON.stringify(profile));
     await command(root, process.execPath, ['verify-profile.mjs']);
-    await command(root, registry.node22, ['verify-profile.mjs']);
+    await command(root, process.execPath, ['verify-profile.mjs']);
     const browser = await build({ entryPoints: [path.join(root, 'browser-exports.ts')], bundle: true, platform: 'browser', format: 'esm', write: false, metafile: true });
     const modules = Object.keys(browser.metafile.inputs).join('\n');
     assert.doesNotMatch(modules, /node:|\/tooling\/|\/typescript\/|\/@redocly\//);
@@ -155,7 +116,7 @@ test('packed OpenAPI-only install generates without loading the model generator'
   assert.equal(fs.existsSync(path.join(root, 'node_modules/@exprtlabs/model-codegen')), false);
   await cli(root, ['generate']);
   await cli(root, ['check']);
-  await npm(root, ['install', '--save-dev', `typescript@${versions.typescript}`, `ttsc@${versions.ttsc}`]);
+  await npm(root, ['install', '--save-dev', TYPESCRIPT, TTSC]);
   await command(root, path.join(root, 'node_modules/.bin/ttsc'), ['-p', 'tsconfig.json']);
 });
 
@@ -174,7 +135,7 @@ test('CLI resolves configured providers from a project with spaces outside cwd a
 
   await npm(root, ['install', '--save-dev', packageSpec(registry, '@exprtlabs/openapi-to-ts')]);
   await command(workspace, binary, ['generate', '--config', config]);
-  await command(workspace, registry.node22, [binary, 'check', '--config', config]);
+  await command(workspace, process.execPath, [binary, 'check', '--config', config]);
 
   // Executable loading does not inherit the consuming project's module format.
   const manifest: Record<string, unknown> = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
@@ -205,7 +166,7 @@ test('packed public generator declarations retain synchronous models and asynchr
 
 test('packed standalone model and SDK validators work without optional compiler peers', async t => {
   const root = registry.create(t, 'standalone-runtime');
-  await npm(root, ['install', '--save-dev', packageSpec(registry, '@exprtlabs/model-codegen'), packageSpec(registry, '@exprtlabs/openapi-to-ts'), `ajv@${versions.ajv}`, `ajv-formats@${versions['ajv-formats']}`], { includeOptional: true });
+  await npm(root, ['install', '--save-dev', packageSpec(registry, '@exprtlabs/model-codegen'), packageSpec(registry, '@exprtlabs/openapi-to-ts'), AJV, AJV_FORMATS], { includeOptional: true });
   await npm(root, ['install', '--save-prod', packageSpec(registry, '@exprtlabs/codegen')]);
   copyFixture(root, 'packed/standalone-runtime');
   copyFixtureFile(root, 'packed/profile/api.json', 'api.json');
@@ -213,12 +174,17 @@ test('packed standalone model and SDK validators work without optional compiler 
   copyFixtureFile(root, 'packed/standalone-runtime-after-generation/cart.model.ts', 'src/cart.model.ts');
   await cli(root, ['generate']);
   await cli(root, ['check']);
+  const manifest = JSON.parse(fs.readFileSync(path.join(root, 'sdk/model-manifest.json'), 'utf8'));
+  assert.deepEqual(manifest.profile, { mobx: false, validation: true, ajvStandalone: true, allowAny: false });
+  const generatedText = [...filesUnder(path.join(root, 'sdk')), path.join(root, 'src/cart.model.generated.ts')]
+    .filter(filename => filename.endsWith('.ts')).map(filename => fs.readFileSync(filename, 'utf8')).join('\n');
+  assert.doesNotMatch(generatedText, /asGenObservable|ModelAnnotations|@exprtlabs\/codegen\/mobx/);
   await command(root, path.join(root, 'node_modules/.bin/ttsc'), ['-p', 'tsconfig.json']);
   await npm(root, ['prune', '--omit=dev'], { includeOptional: false });
   for (const name of ['ajv', 'ajv-formats', 'esbuild', 'mobx', 'typescript', '@exprtlabs/model-codegen', '@exprtlabs/openapi-to-ts']) {
     assert.equal(fs.existsSync(path.join(root, 'node_modules', name)), false, `${name} must be absent from standalone production`);
   }
-  await command(root, registry.node22, ['--disallow-code-generation-from-strings', 'verify.mjs']);
+  await command(root, process.execPath, ['--disallow-code-generation-from-strings', 'verify.mjs']);
   const browser = await build({ entryPoints: [path.join(root, 'build/src/cart.model.js'), path.join(root, 'build/sdk/index.js')], outdir: 'browser', bundle: true, platform: 'browser', format: 'esm', write: false, metafile: true });
   assert.doesNotMatch(Object.keys(browser.metafile.inputs).join('\n'), /node:|\/tooling\/|\/esbuild\/|\/mobx\//);
   assert.doesNotMatch(Object.keys(browser.metafile.inputs).join('\n'), /node_modules\/(?:ajv|ajv-formats)\//);

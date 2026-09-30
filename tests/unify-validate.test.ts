@@ -9,7 +9,8 @@ import { requireObjectCodec } from '@exprtlabs/codegen/serde';
 import { getValidator, validateInstance } from '@exprtlabs/codegen/validation';
 import { generate as generateOpenApi } from '@exprtlabs/openapi-to-ts/generator';
 import { generate } from '#model/generator';
-import { command, generatedCodecIdFromRoot, workspace } from './packed/helpers.js';
+import { command, workspace } from './support/process.js';
+import { generatedCodecIdFromRoot } from './support/consumer.js';
 import { pathToFileURL } from 'node:url';
 
 interface Fixture {
@@ -228,7 +229,10 @@ test('SDK Money $ref plus extra TValidation, local TValidation, and TSerde compi
   const parsed = codec.parse(text) as { note: string };
   assert.equal(codec.validate(parsed), true);
   assert.equal(parsed.note, 'ok');
+  const rules = await import(pathToFileURL(path.join(root, 'build/rules.js')).href) as { extraMoneyCalls: number };
+  const callsBefore = rules.extraMoneyCalls;
   const jsonValue = jsonCodec.parse(text);
+  assert.equal(rules.extraMoneyCalls - callsBefore, 1, 'extraMoney runs once per parse');
   assert.equal(jsonCodec.validate(jsonValue), true);
   assert.throws(() => codec.parse(JSON.stringify({ ...validWire, code: 'gg' })));
   assert.equal((companion.match(/function validateCheckout\b/g) ?? []).length, 1);

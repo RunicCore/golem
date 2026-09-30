@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { createOpenApiAjvEngine } from '@exprtlabs/codegen/ajv';
+import { createOpenApiAjvEngine, createOpenApiSyncAjvEngine } from '@exprtlabs/codegen/ajv';
+import { LibError, LibErrorKind } from '@exprtlabs/codegen/errors';
 
 test('the OpenAPI Ajv engine enforces $dynamicRef/$dynamicAnchor recursion, unevaluatedProperties, and allErrors', async () => {
   const engine = createOpenApiAjvEngine();
@@ -89,4 +90,38 @@ test('the OpenAPI Ajv engine enforces $dynamicRef/$dynamicAnchor recursion, unev
   // that one call instead of stopping at the first.
   await validateMoney({ amount: 0, currency: 'vnd' });
   assert.ok(validateMoney.errors && validateMoney.errors.length >= 2);
+});
+
+test('public Ajv engine keeps async schemas while generated sync provider rejects them at resolution', async () => {
+  const schema = {
+    $async: true,
+    type: 'object',
+    required: ['enabled'],
+    properties: { enabled: { const: true } },
+    additionalProperties: false,
+  };
+  const asyncEngine = createOpenApiAjvEngine();
+  asyncEngine.addSchema(schema, 'async-public-schema');
+  const asyncValidator = asyncEngine.getSchema('async-public-schema');
+  assert.ok(asyncValidator, 'general engine resolves async Ajv schema');
+  assert.equal(await asyncValidator({ enabled: true }), true);
+  assert.equal(await asyncValidator({ enabled: false }), false);
+  const typeErrors = (asyncValidator.errors ?? []).map(error => error !== null && typeof error === 'object'
+    ? [Reflect.get(error, 'keyword'), Reflect.get(error, 'instancePath')]
+    : []);
+  assert.deepEqual(typeErrors, [['const', '/enabled']], 'Ajv async failure paths are retained');
+  assert.equal(await asyncValidator({}), false);
+  const requiredErrors = (asyncValidator.errors ?? []).map(error => error !== null && typeof error === 'object'
+    ? [Reflect.get(error, 'keyword'), Reflect.get(error, 'instancePath')]
+    : []);
+  assert.deepEqual(requiredErrors, [['required', '']], 'Ajv async required failures retain the root path');
+  assert.equal(await asyncValidator({ enabled: true }), true);
+  assert.equal(asyncValidator.errors, null, 'a successful async run clears prior errors');
+
+  const syncEngine = createOpenApiSyncAjvEngine();
+  syncEngine.addSchema(schema, 'async-sync-schema');
+  assert.throws(
+    () => syncEngine.getSchema('async-sync-schema'),
+    error => error instanceof LibError && error.kind === LibErrorKind.ValidationUnavailable,
+  );
 });

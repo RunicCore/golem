@@ -1,39 +1,38 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import test from 'node:test';
+import test, { after } from 'node:test';
+import { ClientRuntime } from '@exprtlabs/codegen/client';
 import { LibError, LibErrorKind } from '@exprtlabs/codegen/errors';
-import { createFixtureProject } from '../fixture-project.js';
 import {
   captureRequest,
   compileGeneratedSdk,
   generateMaterializedSdk,
-  isAsyncIterable,
   isGeneratedClientClass,
   requireRecord,
   type CapturedRequest,
   type GeneratedClientClass,
-  type OpenApiGenerationProfile,
 } from './helpers.js';
 
 const noContent = { 204: { description: 'done' } };
 
+// The transport rules themselves (auth, query serialization, response bodies, SSE) are tested on
+// ClientRuntime in tests/client-runtime-*.test.ts. This document only proves what the generator emits.
 function transportDocument(): Record<string, unknown> {
   return {
-    openapi: '3.1.0',
+    openapi: '3.2.0',
     info: { title: 'Transport', version: '1' },
     components: {
       securitySchemes: {
         bearer: { type: 'http', scheme: 'bearer' },
-        basic: { type: 'http', scheme: 'basic' },
         session: { type: 'apiKey', in: 'cookie', name: 'session' },
       },
     },
     paths: {
       '/optional-auth': { get: { operationId: 'optionalAuth', security: [{}, { bearer: [] }], responses: noContent } },
-      '/basic': { get: { operationId: 'basicAuth', security: [{ basic: [] }], responses: noContent } },
       '/session': { get: { operationId: 'sessionAuth', security: [{ session: [] }], responses: noContent } },
-      '/empty': { delete: { operationId: 'emptyResponse', responses: noContent } },
       '/reserved': {
         get: {
           operationId: 'reservedQuery',
@@ -44,25 +43,6 @@ function transportDocument(): Record<string, unknown> {
           responses: noContent,
         },
       },
-      '/deep': {
-        get: {
-          operationId: 'deepQuery',
-          parameters: [{
-            name: 'filter',
-            in: 'query',
-            style: 'deepObject',
-            explode: true,
-            schema: {
-              type: 'object',
-              properties: {
-                owner: { type: 'object', properties: { name: { type: 'string' }, nick: { type: ['string', 'null'] }, team: { type: 'object', properties: { id: { type: 'integer' } } } } },
-                kind: { type: 'string' },
-              },
-            },
-          }],
-          responses: noContent,
-        },
-      },
       '/cookie': {
         get: {
           operationId: 'cookieParameter',
@@ -70,32 +50,37 @@ function transportDocument(): Record<string, unknown> {
           responses: noContent,
         },
       },
-      '/events': {
-        get: {
-          operationId: 'events',
-          responses: {
-            200: {
-              description: 'events',
-              content: { 'text/event-stream': { itemSchema: { type: 'object' } } },
-            },
-          },
-        },
-      },
     },
   };
 }
 
-async function transportClient(
-  t: Parameters<typeof createFixtureProject>[0],
-  profile: OpenApiGenerationProfile,
-): Promise<{
-  Client: GeneratedClientClass;
-  isUndeclared: (error: unknown) => boolean;
-  diagnostics: readonly { code: string }[];
-}> {
-  const output = path.join(createFixtureProject(t, 'runic-openapi-transport-'), 'sdk');
-  const document = { ...transportDocument(), openapi: '3.2.0' };
-  const result = await generateMaterializedSdk(document, { output, name: 'Transport', profile });
+interface TransportSdk {
+  readonly Client: GeneratedClientClass;
+  readonly isUndeclared: (error: unknown) => boolean;
+  readonly diagnostics: readonly { code: string }[];
+}
+
+// One generate and strict compile: mobx and validation do not touch transport, so both tests share it.
+let transportSdk: Promise<TransportSdk> | undefined;
+const transportRoots: string[] = [];
+after(() => {
+  for (const root of transportRoots) fs.rmSync(root, { recursive: true, force: true });
+});
+
+function loadTransportSdk(): Promise<TransportSdk> {
+  transportSdk ??= generateTransportSdk();
+  return transportSdk;
+}
+
+async function generateTransportSdk(): Promise<TransportSdk> {
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'runic-openapi-transport-')));
+  transportRoots.push(root);
+  const output = path.join(root, 'sdk');
+  const result = await generateMaterializedSdk(transportDocument(), {
+    output,
+    name: 'Transport',
+    profile: { mobx: false, validation: false },
+  });
   compileGeneratedSdk(output, [], { strict: true });
   const module = requireRecord(await import(pathToFileURL(path.join(output, 'dist/index.js')).href), 'transport client');
   const Client = module.TransportClient;
@@ -116,141 +101,46 @@ function recorder(respond: (request: CapturedRequest) => Response = () => new Re
   return { requests, fetchImpl };
 }
 
-test('generated transport honors OAS security, encoding, response, and stream rules', async suite => {
-  for (const profile of [{ mobx: false, validation: false }, { mobx: true, validation: true }] as const) {
-    await suite.test(`validation=${profile.validation}`, async t => {
-    const { Client, isUndeclared, diagnostics } = await transportClient(t, profile);
+test('generated transport reports browser cookie diagnostics and wires reserved query characters and literal names', async () => {
+  const { Client, diagnostics } = await loadTransportSdk();
 
-    // Cookie parameters and cookie API keys cannot be sent from a browser.
-    assert.deepEqual(
-      diagnostics.map(diagnostic => diagnostic.code).sort(),
-      ['OPENAPI_BROWSER_COOKIE', 'OPENAPI_BROWSER_COOKIE'],
-    );
+  // Cookie parameters and cookie API keys cannot be sent from a browser.
+  assert.deepEqual(
+    diagnostics.map(diagnostic => diagnostic.code).sort(),
+    ['OPENAPI_BROWSER_COOKIE', 'OPENAPI_BROWSER_COOKIE'],
+  );
 
-    // An optional requirement ({}) is a fallback: configured credentials are still sent.
-    let calls = recorder();
-    await new Client({ baseUrl: 'https://api.test', fetchImpl: calls.fetchImpl, auth: { bearer: 'token' } }).optionalAuth().execute({});
-    await new Client({ baseUrl: 'https://api.test', fetchImpl: calls.fetchImpl }).optionalAuth().execute({});
-    assert.deepEqual(calls.requests.map(request => request.init.headers.get('authorization')), ['Bearer token', null]);
-
-    // Basic credentials are UTF-8 encoded before base64.
-    calls = recorder();
-    await new Client({ baseUrl: 'https://api.test', fetchImpl: calls.fetchImpl, auth: { basic: { username: 'jürgen', password: 'π' } } }).basicAuth().execute({});
-    // RFC 7617: the user-id cannot contain a colon.
-    await assert.rejects(
-      () => new Client({ baseUrl: 'https://api.test', fetchImpl: calls.fetchImpl, auth: { basic: { username: 'a:b', password: 'p' } } }).basicAuth().execute({}),
-      /must not contain ":"/,
-    );
-    assert.equal(calls.requests[0]?.init.headers.get('authorization'), `Basic ${Buffer.from('jürgen:π', 'utf8').toString('base64')}`);
-
-    // allowReserved keeps #[]&+ encoded and passes existing %XX triples through; names are literal.
-    calls = recorder();
-    await new Client({ baseUrl: 'https://api.test', fetchImpl: calls.fetchImpl }).reservedQuery().execute({
-      query: { q: 'a/b?c#d[e]&f+g%20h:@!$', 'this.id': 'x' },
-    });
-    assert.equal(calls.requests[0]?.url, 'https://api.test/reserved?q=a/b?c%23d%5Be%5D%26f%2Bg%20h:@!$&this.id=x');
-
-    // Nested deepObject values serialize recursively.
-    calls = recorder();
-    await new Client({ baseUrl: 'https://api.test', fetchImpl: calls.fetchImpl }).deepQuery().execute({
-      query: { filter: { owner: { name: 'Ann', nick: null, team: { id: 7 } }, kind: 'x' } },
-    });
-    assert.equal(
-      calls.requests[0]?.url,
-      'https://api.test/deep?filter[owner][name]=Ann&filter[owner][team][id]=7&filter[kind]=x',
-    );
-
-    // A declared response without content ignores (and cancels) a body the server sends anyway.
-    let cancelled = false;
-    const unexpectedBody = () => new ReadableStream<Uint8Array>({
-      start(controller) { controller.enqueue(new TextEncoder().encode('unexpected')); },
-      cancel() { cancelled = true; },
-    });
-    const declaredEmpty = recorder(() => {
-      // Response forbids a 204 body; the stub reports 204 for a response that still carries one.
-      const response = new Response(unexpectedBody(), { status: 200, headers: { 'content-type': 'text/plain' } });
-      Object.defineProperty(response, 'status', { value: 204 });
-      return response;
-    });
-    const emptyStatus = recorder(() => new Response(unexpectedBody(), { status: 200, headers: { 'content-type': 'text/plain' } }));
-    const empty = await new Client({ baseUrl: 'https://api.test', fetchImpl: declaredEmpty.fetchImpl }).emptyResponse().execute({});
-    assert.equal(empty.status, 204);
-    assert.equal(empty.body, undefined);
-    assert.equal(cancelled, true, 'the unread body is cancelled');
-
-    // An undeclared status is a response LibError carrying its facts; the body is cancelled.
-    cancelled = false;
-    await assert.rejects(
-      () => new Client({ baseUrl: 'https://api.test', fetchImpl: emptyStatus.fetchImpl }).emptyResponse().execute({}),
-      (error: unknown) => error instanceof LibError
-        && error.kind === LibErrorKind.Response
-        && isUndeclared(error)
-        && Reflect.get(error, 'operation') === 'emptyResponse'
-        && Reflect.get(error, 'status') === 200
-        && Reflect.get(error, 'contentType') === 'text/plain'
-        && Reflect.get(error, 'headers') instanceof Headers
-        && Reflect.get(error, 'headers').get('content-type') === 'text/plain',
-    );
-    assert.equal(cancelled, true, 'the undeclared response body is cancelled');
-    assert.equal(isUndeclared(new LibError(LibErrorKind.Response, 'other')), false);
-
-    const readEvents = async (chunks: readonly (string | Uint8Array)[]): Promise<unknown[]> => {
-      const stream = recorder(() => new Response(new ReadableStream<Uint8Array>({
-        start(controller) {
-          for (const chunk of chunks) controller.enqueue(typeof chunk === 'string' ? new TextEncoder().encode(chunk) : chunk);
-          controller.close();
-        },
-      }), { status: 200, headers: { 'content-type': 'text/event-stream' } }));
-      const events = await new Client({ baseUrl: 'https://api.test', fetchImpl: stream.fetchImpl }).events().execute({});
-      assert.ok(isAsyncIterable(events.body));
-      const received: unknown[] = [];
-      for await (const event of events.body) received.push(event);
-      return received;
-    };
-    // A CRLF split across chunks does not dispatch early; a partial event at EOF is dropped.
-    assert.deepEqual(await readEvents(['data: a\r', '\ndata: b\r\n\r\n', 'data: partial']), [{ data: 'a\nb' }]);
-    // A data-less event discards its type; the next event does not inherit it.
-    assert.deepEqual(await readEvents(['event: ping\n\n', 'data: x\n\n']), [{ data: 'x' }]);
-    // A multi-byte UTF-8 character split across chunks, inside a data line and
-    // right before a line boundary, decodes intact.
-    const splitAt = (text: string, marker: string, offset: number): Uint8Array[] => {
-      const bytes = new TextEncoder().encode(text);
-      const cut = new TextEncoder().encode(text.slice(0, text.indexOf(marker))).length + offset;
-      return [bytes.slice(0, cut), bytes.slice(cut)];
-    };
-    assert.deepEqual(await readEvents(splitAt('data: 1€2\n\n', '€', 1)), [{ data: '1€2' }]);
-    assert.deepEqual(await readEvents(splitAt('data: 😀\r\n\r\n', '😀', 3)), [{ data: '😀' }]);
-    assert.deepEqual(await readEvents([...splitAt('data: €', '€', 2), '\n\n']), [{ data: '€' }]);
-    // A CR at the end of the stream still ends the blank line that dispatches.
-    assert.deepEqual(await readEvents(['data: a\n', '\r']), [{ data: 'a' }]);
-    });
-  }
+  // allowReserved keeps #[]&+ encoded and passes existing %XX triples through; names are literal.
+  const calls = recorder();
+  await new Client({ baseUrl: 'https://api.test', fetchImpl: calls.fetchImpl }).reservedQuery().execute({
+    query: { q: 'a/b?c#d[e]&f+g%20h:@!$', 'this.id': 'x' },
+  });
+  assert.equal(calls.requests[0]?.url, 'https://api.test/reserved?q=a/b?c%23d%5Be%5D%26f%2Bg%20h:@!$&this.id=x');
 });
 
-test('the undeclared-response guard recognizes only its own SDK', async t => {
-  const root = createFixtureProject(t, 'runic-openapi-guard-scope-');
-  const loaded = new Map<string, { Client: GeneratedClientClass; guard: (error: unknown) => boolean }>();
-  for (const name of ['Payments', 'Tasks']) {
-    const output = path.join(root, name);
-    await generateMaterializedSdk({
-      openapi: '3.1.0',
-      info: { title: name, version: '1' },
-      paths: { '/ping': { get: { operationId: 'ping', responses: noContent } } },
-    }, { output, name, profile: { mobx: false, validation: false } });
-    compileGeneratedSdk(output, [], { strict: true });
-    const module = requireRecord(await import(pathToFileURL(path.join(output, 'dist/index.js')).href), `${name} SDK`);
-    const Client = module[`${name}Client`];
-    const guard = module[`is${name}UndeclaredResponseError`];
-    if (!isGeneratedClientClass(Client)) throw new TypeError(`${name}Client must be a class`);
-    if (typeof guard !== 'function') throw new TypeError(`is${name}UndeclaredResponseError must be exported`);
-    loaded.set(name, { Client, guard: (error: unknown) => Reflect.apply(guard, undefined, [error]) === true });
-  }
-  const payments = loaded.get('Payments');
-  const tasks = loaded.get('Tasks');
-  if (!payments || !tasks) throw new TypeError('both SDKs must load');
-  const fetchImpl = async (): Promise<Response> => new Response('nope', { status: 200, headers: { 'content-type': 'text/plain' } });
-  const error: unknown = await new payments.Client({ baseUrl: 'https://api.test', fetchImpl }).ping().execute({}).then(() => undefined, (caught: unknown) => caught);
-  assert.ok(error instanceof LibError);
-  assert.equal(payments.guard(error), true);
-  assert.equal(tasks.guard(error), false);
+test('generated transport sends the configured bearer token for an optional security requirement and no authorization header otherwise', async () => {
+  const { Client } = await loadTransportSdk();
+
+  // An optional requirement ({}) is a fallback: configured credentials are still sent.
+  const calls = recorder();
+  await new Client({ baseUrl: 'https://api.test', fetchImpl: calls.fetchImpl, auth: { bearer: 'token' } }).optionalAuth().execute({});
+  await new Client({ baseUrl: 'https://api.test', fetchImpl: calls.fetchImpl }).optionalAuth().execute({});
+  assert.deepEqual(calls.requests.map(request => request.init.headers.get('authorization')), ['Bearer token', null]);
+});
+
+test('the undeclared-response guard recognizes only its own SDK', async () => {
+  const { Client, isUndeclared } = await loadTransportSdk();
+  const undeclared = async (): Promise<Response> => new Response('nope', { status: 200, headers: { 'content-type': 'text/plain' } });
+  const own: unknown = await new Client({ baseUrl: 'https://api.test', fetchImpl: undeclared, auth: { session: 's' } }).sessionAuth().execute({})
+    .then(() => undefined, (caught: unknown) => caught);
+  assert.ok(own instanceof LibError);
+  assert.equal(isUndeclared(own), true);
+
+  // The same failure raised by another client's runtime, and unrelated LibErrors, are not this SDK's.
+  const foreign: unknown = await new ClientRuntime('Payments', { baseUrl: 'https://api.test' })
+    .readResponse('ping', await undeclared(), [{ status: '204', content: [], headers: [] }], undefined)
+    .then(() => undefined, (caught: unknown) => caught);
+  assert.ok(foreign instanceof LibError);
+  assert.equal(isUndeclared(foreign), false);
+  assert.equal(isUndeclared(new LibError(LibErrorKind.Response, 'other')), false);
 });

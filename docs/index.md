@@ -91,7 +91,7 @@ The controller returns plain types. One `generate` run writes the OpenAPI docume
 
 ## Get started
 
-Codegen needs Node.js 22.12 or newer, TypeScript 7 and `ttsc` 0.30. The generator writes the JSON conversion code; the `ttsc` plugin points your `parse` and `toWireFormat` calls at it when you compile ([Installation](/guide/install)).
+Codegen needs Node.js 22.15 or newer, TypeScript 7 and `ttsc` 0.30. The generator writes the JSON conversion code; the `ttsc` plugin points your `parse` and `toWireFormat` calls at it when you compile ([Installation](/guide/install)).
 
 ```bash
 npm install @exprtlabs/codegen@rc ajv ajv-formats

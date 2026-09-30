@@ -9,7 +9,7 @@ more than one.
 
 ## Install
 
-Use npm with Node.js 22.12 or newer. Put the runtime in application
+Use npm with Node.js 22.15 or newer. Put the runtime in application
 dependencies, the generator in development dependencies, alongside the peer
 compiler ([installation](docs/guide/install.md)):
 

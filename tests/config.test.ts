@@ -26,6 +26,27 @@ test('defaults and relative paths are anchored to the config rather than process
   assert.equal(job0.options.output, path.join(root, 'sdk'));
   assert.ok(job1 && job1.kind === 'models');
   assert.equal(job1.options.root, root);
+  assert.equal(job1.options.output, path.join(root, 'src/generated/models'));
+
+  const explicit = fixture(t, [
+    'version: 1',
+    'mobx: true',
+    'validation: true',
+    'ajvStandalone: true',
+    'allowAny: true',
+    'models:',
+    '  root: project',
+    '  output: generated/models',
+    '',
+  ].join('\n'));
+  fs.mkdirSync(path.join(explicit.root, 'project'), { recursive: true });
+  const explicitConfig = loadConfig(explicit.filename);
+  assert.deepEqual(explicitConfig.profile, { mobx: true, validation: true, ajvStandalone: true, allowAny: true });
+  const modelJob = explicitConfig.jobs.find((job) => job.kind === 'models');
+  assert.ok(modelJob && modelJob.kind === 'models');
+  assert.equal(modelJob.options.root, path.join(explicit.root, 'project'));
+  assert.equal(modelJob.options.output, path.join(explicit.root, 'generated/models'));
+  assert.deepEqual(modelJob.options.profile, explicitConfig.profile);
 });
 
 test('configuration errors reject unknown overrides, duplicate keys and overlapping outputs', (t: TestContext) => {
@@ -37,6 +58,12 @@ test('configuration errors reject unknown overrides, duplicate keys and overlapp
     ['version: 1\nopenapi: [{input: api.yaml, output: sdk}, {input: api.yaml, output: sdk/nested}]', /Overlapping/],
     ['version: 1\nopenapi: [{input: api.yaml, output: sdk, allowRemoteRefs: true}]', /remoteHosts/],
     ['version: 1\nopenapi: [{input: api.yaml, output: sdk, maxRefBytes: 0}]', /positive/],
+    ['version: 1\nallowAny: maybe\nmodels: {}\n', /allowAny must be a boolean/],
+    ['version: 1\najvStandalone: maybe\nmodels: {}\n', /ajvStandalone must be a boolean/],
+    ['version: 1\nopenapi:\n  - input: api.yaml\n    output: sdk\n    ajvStandalone: true\n', /Unknown openapi\[0\] key/],
+    ['version: 1\nvalidation: false\najvStandalone: true\nopenapi:\n  - input: api.yaml\n    output: sdk\n', /ajvStandalone.*validation|validation.*ajvStandalone/],
+    ['version: 1\nopenapi:\n  - input: api.yaml\n    output: sdk\nmodels:\n  root: .\n  output: sdk/models\n', /Overlapping/],
+    ['version: 1\nopenapi:\n  - input: api.yaml\n    output: src\nmodels:\n  root: .\n', /Overlapping/],
   ];
   for (const [yaml, error] of testCases) {
     const { filename } = fixture(t, yaml);

@@ -5,7 +5,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { runPipeline } from '#codegen/cli';
-import { writeFixture, command, workspace } from './packed/helpers.js';
+import { command, workspace } from './support/process.js';
+import { writeFixture } from './support/consumer.js';
 import { readGeneratedModelSource } from './openapi/helpers.js';
 
 function fixture(t: TestContext): { root: string; config: string } {
@@ -131,28 +132,25 @@ test('watch regenerates model edits without rewriting SDKs or looping on outputs
   }
 });
 
-test('removing a model source cleans its generated companion while preserving other sources', async (t: TestContext) => {
+// ---------------------------------------------------------------------------
+// Deleting a discovered model cleans its companion; deleting the final one also cleans a modified companion
+// ---------------------------------------------------------------------------
+
+test('deleting a discovered model cleans its generated companion, and deleting the final one cleans the inventory', async (t: TestContext) => {
   const { root, config } = fixture(t);
   const extra = path.join(root, 'src/extra.model.ts');
   fs.writeFileSync(extra, "import type {IModel} from '@exprtlabs/codegen/model'; export type TExtra=IModel<{value:string}>;\n");
   await runPipeline(config);
-  const output = path.join(root, 'src/extra.model.generated.ts');
-  assert.equal(fs.existsSync(output), true);
+  const companion = path.join(root, 'src/cart.model.generated.ts');
+  const extraCompanion = path.join(root, 'src/extra.model.generated.ts');
+  assert.equal(fs.existsSync(companion), true);
+  assert.equal(fs.existsSync(extraCompanion), true);
+
+  // Removing one source cleans its companion and preserves the other's.
   fs.unlinkSync(extra);
   await assert.rejects(runPipeline(config, { check: true }), /stale/);
   await runPipeline(config);
-  assert.equal(fs.existsSync(output), false);
-  assert.equal(fs.existsSync(path.join(root, 'src/cart.model.generated.ts')), true);
-});
-
-// ---------------------------------------------------------------------------
-// Deleting the final discovered model cleans its modified disposable companion
-// ---------------------------------------------------------------------------
-
-test('deleting the final discovered model cleans its generated companion and inventory', async (t: TestContext) => {
-  const { root, config } = fixture(t);
-  await runPipeline(config);
-  const companion = path.join(root, 'src/cart.model.generated.ts');
+  assert.equal(fs.existsSync(extraCompanion), false);
   assert.equal(fs.existsSync(companion), true);
 
   // A local edit to the companion must not block its removal once the

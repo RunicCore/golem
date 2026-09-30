@@ -78,10 +78,10 @@ test('API execution resolves Basic and cookie credentials and merges constructor
   assert.equal(requests[2].get('cookie'), 'session=a%20b%2Fc');
 });
 
-test('header simple values stay literal and never percent-decode', async (t) => {
+test('header simple values stay literal and never percent-decode, and OAS 3.2 style cookie stringifies without URI encoding while form cookies keep encoding', async (t) => {
   const Client = await loadClient(t, {
     openapi: '3.2.0',
-    info: { title: 'Headers', version: '1' },
+    info: { title: 'HeadersCookies', version: '1' },
     paths: {
       '/echo': {
         get: {
@@ -102,36 +102,6 @@ test('header simple values stay literal and never percent-decode', async (t) => 
           },
         },
       },
-    },
-  }, 'Headers');
-  const client = new Client({
-    baseUrl: 'https://api.example',
-    fetchImpl: async (url: string | URL | Request, init?: RequestInit) => {
-      const captured = captureRequest(url, init);
-      assert.equal(captured.init.headers.get('X-Greeting'), 'hello world');
-      assert.equal(captured.init.headers.get('X-Percent'), 'a%20b');
-      return new Response('{}', {
-        status: 200,
-        headers: {
-          'content-type': 'application/json',
-          'X-Greeting': 'hello world',
-          'X-Percent': 'a%20b',
-        },
-      });
-    },
-  });
-  const result = await client.echo().execute({
-    header: { 'X-Greeting': 'hello world', 'X-Percent': 'a%20b' },
-  });
-  assert.equal(result.headers?.['X-Greeting'], 'hello world');
-  assert.equal(result.headers?.['X-Percent'], 'a%20b');
-});
-
-test('OAS 3.2 style cookie stringifies without URI encoding while form cookies keep encoding', async (t) => {
-  const Client = await loadClient(t, {
-    openapi: '3.2.0',
-    info: { title: 'Cookies', version: '1' },
-    paths: {
       '/jar': {
         get: {
           operationId: 'readJar',
@@ -160,16 +130,39 @@ test('OAS 3.2 style cookie stringifies without URI encoding while form cookies k
         },
       },
     },
-  }, 'Cookies');
+  }, 'HeadersCookies');
+
+  const headerClient = new Client({
+    baseUrl: 'https://api.example',
+    fetchImpl: async (url: string | URL | Request, init?: RequestInit) => {
+      const captured = captureRequest(url, init);
+      assert.equal(captured.init.headers.get('X-Greeting'), 'hello world');
+      assert.equal(captured.init.headers.get('X-Percent'), 'a%20b');
+      return new Response('{}', {
+        status: 200,
+        headers: {
+          'content-type': 'application/json',
+          'X-Greeting': 'hello world',
+          'X-Percent': 'a%20b',
+        },
+      });
+    },
+  });
+  const result = await headerClient.echo().execute({
+    header: { 'X-Greeting': 'hello world', 'X-Percent': 'a%20b' },
+  });
+  assert.equal(result.headers?.['X-Greeting'], 'hello world');
+  assert.equal(result.headers?.['X-Percent'], 'a%20b');
+
   let cookie: string | null = null;
-  const client = new Client({
+  const cookieClient = new Client({
     baseUrl: 'https://api.example',
     fetchImpl: async (url: string | URL | Request, init?: RequestInit) => {
       cookie = captureRequest(url, init).init.headers.get('cookie');
       return new Response(null, { status: 204 });
     },
   });
-  await client.readJar().execute({
+  await cookieClient.readJar().execute({
     cookie: {
       plain: 'hello world',
       tags: ['a b', 'c%20d'],

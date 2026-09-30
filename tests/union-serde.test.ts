@@ -6,7 +6,7 @@ import test, { type TestContext } from 'node:test';
 
 import { IssueRepresentation, LibError, LibErrorKind } from '@exprtlabs/codegen/errors';
 import { generate } from '#model/generator';
-import { command, workspace } from './packed/helpers.js';
+import { command, workspace } from './support/process.js';
 
 async function compile(root: string): Promise<void> {
   await command(root, process.execPath, [

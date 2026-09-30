@@ -5,7 +5,8 @@ import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { test, type TestContext } from 'node:test';
 import { runPipeline } from '#codegen/pipeline';
-import { workspace, writeFixture } from './packed/helpers.js';
+import { workspace } from './support/process.js';
+import { writeFixture } from './support/consumer.js';
 
 function fixture(t: TestContext) {
   const root = createFixtureProject(t, 'runic-validator-transition-');

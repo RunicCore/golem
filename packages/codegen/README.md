@@ -7,7 +7,7 @@ validated or observable profile also needs `ajv`/`ajv-formats` or `mobx`.
 
 ## Install
 
-Use npm with Node.js 22.12 or newer:
+Use npm with Node.js 22.15 or newer:
 
 ```sh
 npm install @exprtlabs/codegen@rc ajv ajv-formats

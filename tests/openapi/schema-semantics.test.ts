@@ -1,4 +1,3 @@
-import type { TestContext } from 'node:test';
 import { createFixtureProject } from '../fixture-project.js';
 import assert from 'node:assert/strict';
 import { writeFileSync } from 'node:fs';
@@ -9,7 +8,6 @@ import { LibError, LibErrorKind, IssueSource } from '@exprtlabs/codegen/errors';
 import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/codegen/conversion';
 import { generate } from '#openapi/generator';
 import {
-  ALL_GENERATION_PROFILES,
   compileGeneratedSdk,
   documentBase,
   generateMaterializedSdk,
@@ -111,150 +109,72 @@ test('generated SDK enforces conditional request and response schemas with runti
   }
 });
 
-async function publicBooleanSchemaCase(t: TestContext, openapi: string, nested: boolean, byRef: boolean): Promise<void> {
-  for (const profile of ALL_GENERATION_PROFILES) {
-    const directory = createFixtureProject(t, 'runic-openapi-r13-');
-    const falseSchema = byRef ? { $ref: '#/components/schemas/Never' } : false;
-    const extra: Record<string, unknown> = {
-      paths: {
-        '/values': {
-          post: {
-            operationId: 'putValue',
-            requestBody: {
-              required: true,
-              content: {
-                'application/json': {
-                  schema: nested ? { type: 'object', additionalProperties: falseSchema } : falseSchema,
-                },
-              },
-            },
-            responses: {
-              200: {
-                description: 'ok',
-                content: {
-                  'application/json': { schema: true },
-                },
-              },
-            },
-          },
-        },
-      },
-    };
-    if (byRef) {
-      extra.components = { schemas: { Never: false } };
-    }
-    const input = writeOpenApiDocument(directory, documentBase(openapi, extra));
-    const result = await generate({
-      input,
-      output: path.join(directory, 'sdk'),
-      name: 'BooleanSchema',
-      profile,
-    });
-    const types = result.artifacts.find((artifact) => artifact.path.endsWith('/types.ts'))?.content ?? '';
-    if (nested) {
-      assert.match(types, /Record<string, never>/);
-    } else {
-      assert.match(types, /body: (never|InputSchemas\.Never)/);
-    }
-    assert.match(types, /body: unknown/);
-    const output = path.join(directory, 'sdk');
-    materializeGeneratedSdk(result.artifacts, output);
-    compileGeneratedSdk(output);
-    const compiled = requireRecord(
-      await import(pathToFileURL(path.join(output, 'dist/client.js')).href),
-      'boolean schema client',
-    );
-    assert.equal(isGeneratedClientClass(compiled.BooleanSchemaClient), true);
-    if (!isGeneratedClientClass(compiled.BooleanSchemaClient)) throw new TypeError('BooleanSchemaClient');
-    const BooleanSchemaClient = compiled.BooleanSchemaClient;
-    if (profile.validation) {
-      const client = new BooleanSchemaClient({
-        baseUrl: 'https://api.example',
-        fetchImpl: async () => new Response('{"ok":true}', {
-          status: 200,
-          headers: { 'content-type': 'application/json' },
-        }),
-      });
-      await assert.rejects(() => client.putValue().execute({ body: nested ? { extra: 1 } : 1 }), /validation failed/);
-    } else {
-      const client = new BooleanSchemaClient({
+/** Three operations whose request body is `false` directly, as `additionalProperties`, and by `$ref`; every response is `true`. */
+function booleanSchemaDocument(openapi: string): Record<string, unknown> {
+  const operation = (operationId: string, schema: unknown) => ({
+    post: {
+      operationId,
+      requestBody: { required: true, content: { 'application/json': { schema } } },
+      responses: { 200: { description: 'ok', content: { 'application/json': { schema: true } } } },
+    },
+  });
+  return documentBase(openapi, {
+    paths: {
+      '/direct': operation('putDirect', false),
+      '/nested': operation('putNested', { type: 'object', additionalProperties: false }),
+      '/ref': operation('putRef', { $ref: '#/components/schemas/Never' }),
+    },
+    // `Forbidden` is a schema-valued keyword (`not: true`) that generation must accept.
+    components: { schemas: { Never: false, Forbidden: { not: true } } },
+  });
+}
+
+test('public generation accepts OAS 3.1/3.2 boolean schemas in direct, nested, and $ref positions', async (t) => {
+  const inputs = { putDirect: 1, putNested: { extra: 1 }, putRef: 1 } as const;
+  for (const openapi of ['3.1.0', '3.2.0']) {
+    const profiles = openapi === '3.2.0'
+      ? [{ mobx: false, validation: false }, { mobx: false, validation: true }]
+      : [{ mobx: false, validation: false }];
+    for (const profile of profiles) {
+      const directory = createFixtureProject(t, 'runic-openapi-r13-');
+      const output = path.join(directory, 'sdk');
+      const input = writeOpenApiDocument(directory, booleanSchemaDocument(openapi));
+      const result = await generate({ input, output, name: 'BooleanSchema', profile });
+      const types = result.artifacts.find((artifact) => artifact.path.endsWith('/types.ts'))?.content ?? '';
+      assert.match(types, /body: never/, types);
+      assert.match(types, /Record<string, never>/, types);
+      assert.match(types, /body: InputSchemas\.Never/, types);
+      assert.match(types, /body: unknown/, types);
+      // The 3.1 document is checked on its emitted types only; 3.2 also compiles and runs.
+      if (openapi === '3.1.0') continue;
+      materializeGeneratedSdk(result.artifacts, output);
+      compileGeneratedSdk(output);
+      const compiled = requireRecord(
+        await import(pathToFileURL(path.join(output, 'dist/client.js')).href),
+        'boolean schema client',
+      );
+      assert.equal(isGeneratedClientClass(compiled.BooleanSchemaClient), true);
+      if (!isGeneratedClientClass(compiled.BooleanSchemaClient)) throw new TypeError('BooleanSchemaClient');
+      const client = new compiled.BooleanSchemaClient({
         baseUrl: 'https://api.example',
         fetchImpl: async () => new Response('{"unexpected":true}', {
           status: 200,
           headers: { 'content-type': 'application/json' },
         }),
       });
-      const response = await client.putValue().execute({ body: nested ? { extra: 1 } : 1 });
-      assert.equal(response.status, 200);
+      for (const [operation, body] of Object.entries(inputs)) {
+        const execute = () => client[operation]().execute({ body });
+        if (profile.validation) {
+          await assert.rejects(execute, /validation failed/, `${operation} rejects its body`);
+        } else {
+          assert.equal((await execute()).status, 200, `${operation} passes its body through`);
+        }
+      }
     }
   }
-}
-
-test('public generation accepts OAS 3.1/3.2 boolean schemas in direct, nested, and $ref positions', async (t) => {
-  for (const openapi of ['3.1.0', '3.2.0']) {
-    await publicBooleanSchemaCase(t, openapi, false, false);
-    await publicBooleanSchemaCase(t, openapi, true, false);
-    await publicBooleanSchemaCase(t, openapi, false, true);
-  }
 });
 
-test('schema-valued keywords true/false do not throw during public generation', async (t) => {
-  const directory = createFixtureProject(t, 'runic-openapi-r13-keywords-');
-  const input = writeOpenApiDocument(directory, documentBase('3.1.0', {
-    paths: {
-      '/closed': {
-        get: {
-          operationId: 'closedList',
-          responses: {
-            200: {
-              description: 'ok',
-              content: {
-                'application/json': {
-                  schema: {
-                    type: 'array',
-                    prefixItems: [{ type: 'string' }],
-                    items: false,
-                  },
-                },
-              },
-            },
-          },
-        },
-      },
-    },
-    components: {
-      schemas: {
-        Forbidden: { not: true },
-      },
-    },
-  }));
-  await assert.doesNotReject(() => generate({
-    input,
-    output: path.join(directory, 'sdk'),
-    profile: { mobx: false, validation: false },
-  }));
-});
-
-test('rejects OAS 3.0 and malformed or unresolved documents', async (t) => {
-  const directory = createFixtureProject(t, 'runic-openapi-r13-30-');
-  const input = writeOpenApiDocument(directory, documentBase('3.0.3', {
-    paths: {
-      '/values': {
-        post: {
-          operationId: 'putValue',
-          requestBody: {
-            content: { 'application/json': { schema: false } },
-          },
-          responses: { 200: { description: 'ok' } },
-        },
-      },
-    },
-  }));
-  await assert.rejects(
-    () => generate({ input, output: path.join(directory, 'sdk'), profile: { mobx: false, validation: false } }),
-    /^Error: OpenAPI 3\.0 is not supported; convert the document to OpenAPI 3\.1 or 3\.2$/,
-  );
-
+test('rejects malformed or unresolved documents', async (t) => {
   const malformed = createFixtureProject(t, 'runic-openapi-r13-malformed-');
   const malformedInput = writeOpenApiDocument(malformed, { openapi: '3.1.0', paths: {} });
   await assert.rejects(

@@ -61,9 +61,14 @@ const invalidCases: readonly {
   { field: 'aliasExclusiveMax', value: 7, code: 'exclusiveMaximum' },
 ];
 
-for (const mobx of [false, true] as const) {
-  for (const ajvStandalone of [false, true] as const) {
-    test(`all built-in model tags execute independently with mobx=${mobx} and ${ajvStandalone ? 'standalone' : 'runtime'} Ajv`, async t => {
+// mobx does not change constraint execution, so each axis runs once.
+const profiles = [
+  { mobx: false, ajvStandalone: false },
+  { mobx: true, ajvStandalone: true },
+] as const;
+
+for (const { mobx, ajvStandalone } of profiles) {
+  test(`all built-in model tags execute independently with mobx=${mobx} and ${ajvStandalone ? 'standalone' : 'runtime'} Ajv`, async t => {
     const { root, sourceRoot } = createModelProject(t, { prefix: 'runic-builtin-tags-', name: 'builtin-tags' });
     writeModelSources(sourceRoot, { 'a.model.ts': builtinTagsModelSource({ mobx }) });
 
@@ -84,6 +89,5 @@ for (const mobx of [false, true] as const) {
       assert.equal(getValidator(model).issues[0]?.code, item.code, item.field);
       assert.deepEqual(getValidator(model).issues[0]?.path, [item.field], item.field);
     }
-    });
-  }
+  });
 }

@@ -1,0 +1,26 @@
+{
+  "name": "packed-nest-app",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@exprtlabs/codegen": "rc",
+    "@nestjs/common": "11.2.3",
+    "@nestjs/core": "11.2.3",
+    "@nestjs/platform-express": "11.2.3",
+    "@nestjs/platform-fastify": "11.2.3",
+    "@nestjs/swagger": "11.4.7",
+    "reflect-metadata": "0.2.2",
+    "rxjs": "7.8.2",
+    "ajv": "^8.20.0",
+    "ajv-formats": "^3.0.1"
+  },
+  "devDependencies": {
+    "@exprtlabs/model-codegen": "rc",
+    "@exprtlabs/openapi-to-ts": "rc",
+    "@exprtlabs/ts-to-openapi": "rc",
+    "typescript": "~7.0.2",
+    "ttsc": "~0.30.4",
+    "@types/node": "22.20.1"
+  }
+}

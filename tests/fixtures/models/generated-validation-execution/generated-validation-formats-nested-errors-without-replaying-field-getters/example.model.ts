@@ -1,6 +1,6 @@
 import type { IModel } from '@exprtlabs/codegen/model';
 import { validateInstance, getValidator } from '@exprtlabs/codegen/validation';
-import { ChildBase, RootBase } from './example.model.generated.js';
+import { ChildBase, RootBase } from './getter-replay.model.generated.js';
 export type TChild = IModel<{ value: number }>;
 export type TRoot = IModel<{ child: TChild }>;
 export class Child extends ChildBase {}

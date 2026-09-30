@@ -10,7 +10,7 @@ import { requireObjectCodec } from '@exprtlabs/codegen/serde';
 import { LibError, LibErrorKind, IssueRepresentation, IssueSource } from '@exprtlabs/codegen/errors';
 import type { GeneratedModel } from '@exprtlabs/codegen/model';
 import { getValidator } from '@exprtlabs/codegen/validation';
-import { generatedCodecIdFromRoot } from '../packed/helpers.js';
+import { generatedCodecIdFromRoot } from '../support/consumer.js';
 import {
   compileGeneratedSdk,
   generateMaterializedSdk,
@@ -30,6 +30,7 @@ type EventInitLike = {
   maybeWhen?: Date | null;
   child?: ChildInstance | ChildInitLike;
   children?: readonly (ChildInstance | ChildInitLike)[];
+  labels?: readonly string[];
 };
 interface EventInstance {
   readonly when: Date;
@@ -105,6 +106,7 @@ function modelSerdeDocument(): Record<string, unknown> {
             maybeWhen: { type: ['string', 'null'], format: 'date-time' },
             child: { $ref: '#/components/schemas/Child' },
             children: { type: 'array', items: { $ref: '#/components/schemas/Child' } },
+            labels: { type: 'array', items: { type: 'string' } },
           },
         },
         Problem: {
@@ -250,20 +252,79 @@ function discriminatedUnionSerdeDocument(): Record<string, unknown> {
   };
 }
 
-test('OpenAPI models keep Date fields separate from wire strings and compile nested Init/Fields/JSON contracts', async t => {
-  const output = path.join(createFixtureProject(t, 'runic-openapi-model-serde-'), 'sdk');
-  await generateMaterializedSdk(modelSerdeDocument(), {
-    output,
-    name: 'ModelSerde',
-    profile: { mobx: false, validation: true, ajvStandalone: false, allowAny: false },
+async function assertNestedDateInheritedAndDictionaryConversions(
+  models: Record<string, unknown>,
+  label: string,
+): Promise<void> {
+  const ChildModel = models.ChildModel;
+  const EventModel = models.EventModel;
+  const DerivedEventModel = models.DerivedEventModel as unknown as DictionaryModelConstructor;
+  const DictionaryModel = models.DictionaryModel as unknown as DictionaryModelConstructor;
+  const DerivedDictionaryModel = models.DerivedDictionaryModel as unknown as DictionaryModelConstructor;
+  assert.equal(typeof ChildModel, 'function');
+  assert.equal(typeof EventModel, 'function');
+  if (typeof ChildModel !== 'function' || typeof EventModel !== 'function') {
+    throw new TypeError('Expected generated ChildModel and EventModel classes.');
+  }
+
+  const nestedChild = new (ChildModel as new (values?: ChildInitLike) => ChildInstance)({
+    id: 'invalid-child',
+    when: new Date(Number.NaN),
+  });
+  const invalidEvent = new (EventModel as new (values?: EventInitLike) => EventInstance)({
+    when: new Date('2025-01-02T03:04:05Z'),
+    child: nestedChild,
+  });
+  const validator = getValidator(invalidEvent);
+  assert.equal(await validator.validate(), false, `${label} nested model validation rejects invalid Date`);
+  assert.deepEqual(validator.issues.map(issue => issue.path), [['child', 'when']]);
+  assert.equal(validator.errorsFor(['child', 'when']).length, 1, 'errorsFor matches a multi-segment nested path');
+
+  const inherited = decodeGeneratedModel(DerivedEventModel as unknown as EventConstructor, {
+    baseWhen: '2025-02-03T04:05:06Z',
+    baseLabel: 'base',
+    derivedWhen: '2025-03-04T05:06:07Z',
+  }) as EventInstance & { readonly baseWhen: Date; readonly derivedWhen: Date };
+  assert.ok(inherited.baseWhen instanceof Date, 'inherited Date field is decoded by derived deserialize');
+  assert.ok(inherited.derivedWhen instanceof Date, 'derived Date field is decoded by derived deserialize');
+  assert.deepEqual(encodeGeneratedModel(generated(inherited)), {
+    baseWhen: '2025-02-03T04:05:06.000Z',
+    baseLabel: 'base',
+    derivedWhen: '2025-03-04T05:06:07.000Z',
   });
 
-  copyFixtureFile(output, "openapi/model-serde/model-serde-types.ts", "model-serde-types.ts");
-  compileGeneratedSdk(output, [path.join(output, 'model-serde-types.ts')], {
-    strict: true,
-    skipLibCheck: true,
+  const dictionary = decodeGeneratedModel(DictionaryModel as unknown as DictionaryModelConstructor, {
+    first: {
+      when: '2025-04-05T06:07:08Z',
+      child: { id: 'dictionary-child' },
+    },
   });
-});
+  const dictionaryEntry = (dictionary.first as Record<string, unknown>);
+  assert.ok(dictionaryEntry.when instanceof Date, 'dictionary Date value is decoded');
+  assert.ok(dictionaryEntry.child instanceof ChildModel, 'dictionary nested model is decoded');
+  assert.deepEqual(encodeGeneratedModel(generated(dictionary)), {
+    first: { when: '2025-04-05T06:07:08.000Z', child: { id: 'dictionary-child' } },
+  });
+
+  const derivedDictionary = decodeGeneratedModel(DerivedDictionaryModel as unknown as DictionaryModelConstructor, {
+    baseWhen: '2025-06-07T08:09:10Z',
+    derivedWhen: '2025-07-08T09:10:11Z',
+    entry: {
+      when: '2025-08-09T10:11:12Z',
+      child: { id: 'derived-dictionary-child' },
+    },
+  });
+  assert.ok(derivedDictionary.baseWhen instanceof Date, 'inherited declared field remains a Date');
+  assert.ok(derivedDictionary.derivedWhen instanceof Date, 'derived declared field remains a Date');
+  const derivedEntry = derivedDictionary.entry as Record<string, unknown>;
+  assert.ok(derivedEntry.when instanceof Date, 'derived dictionary Date value is decoded');
+  assert.ok(derivedEntry.child instanceof ChildModel, 'derived dictionary nested model is decoded');
+  assert.deepEqual(encodeGeneratedModel(generated(derivedDictionary)), {
+    baseWhen: '2025-06-07T08:09:10.000Z',
+    derivedWhen: '2025-07-08T09:10:11.000Z',
+    entry: { when: '2025-08-09T10:11:12.000Z', child: { id: 'derived-dictionary-child' } },
+  });
+}
 
 test('checked model serde validates wire before construction, converts nested nullable values once, and preserves typed HTTP errors', async t => {
   const output = path.join(createFixtureProject(t, 'runic-openapi-model-serde-runtime-'), 'sdk');
@@ -272,7 +333,12 @@ test('checked model serde validates wire before construction, converts nested nu
     name: 'ModelSerde',
     profile: { mobx: false, validation: true, ajvStandalone: false, allowAny: false },
   });
-  compileGeneratedSdk(output, [], { strict: true, skipLibCheck: true });
+  // Nested Init/Fields/JSON contracts: Date is the runtime value, the wire contract stays a string.
+  copyFixtureFile(output, "openapi/model-serde/model-serde-types.ts", "model-serde-types.ts");
+  compileGeneratedSdk(output, [path.join(output, 'model-serde-types.ts')], {
+    strict: true,
+    skipLibCheck: true,
+  });
 
   const models = requireRecord(
     await import(pathToFileURL(path.join(output, 'dist/index.js')).href),
@@ -299,8 +365,14 @@ test('checked model serde validates wire before construction, converts nested nu
     maybeWhen: null,
     child: countedChild,
     children: [countedChild],
+    labels: ['one', 'two'],
   });
   const wire = encodeGeneratedModel(generated(model)) as Record<string, unknown>;
+  assert.equal(
+    JSON.stringify(wire),
+    '{"when":"0001-01-01T00:00:00.123Z","maybeWhen":null,"child":{"id":"counted"},"children":[{"id":"counted"}],"labels":["one","two"]}',
+    'OpenAPI models use the same detached JSON serialization as object serialization',
+  );
   assert.equal(wire.when, '0001-01-01T00:00:00.123Z');
   assert.equal(wire.maybeWhen, null);
   assert.deepEqual(wire.child, { id: 'counted' });
@@ -383,95 +455,23 @@ test('checked model serde validates wire before construction, converts nested nu
     body: problem,
     headers: {},
   });
+
+  await assertNestedDateInheritedAndDictionaryConversions(models, 'JIT');
 });
 
-test('generated nested Date, inherited, and dictionary conversions stay equivalent in JIT and standalone SDKs', async t => {
-  for (const ajvStandalone of [false, true]) {
-    const output = path.join(
-      createFixtureProject(t, `runic-openapi-model-serde-${ajvStandalone ? 'aot' : 'jit'}-`),
-      'sdk',
-    );
-    await generateMaterializedSdk(modelSerdeDocument(), {
-      output,
-      name: 'ModelSerde',
-      profile: { mobx: false, validation: true, ajvStandalone, allowAny: false },
-    });
-    if (ajvStandalone) compileStandaloneModelSerdeSdk(output);
-    else compileGeneratedSdk(output, [], { strict: true, skipLibCheck: true });
-
-    const models = requireRecord(
-      await import(pathToFileURL(path.join(output, 'dist/index.js')).href),
-      `${ajvStandalone ? 'standalone' : 'JIT'} generated models`,
-    );
-    const ChildModel = models.ChildModel;
-    const EventModel = models.EventModel;
-    const DerivedEventModel = models.DerivedEventModel as unknown as DictionaryModelConstructor;
-    const DictionaryModel = models.DictionaryModel as unknown as DictionaryModelConstructor;
-    const DerivedDictionaryModel = models.DerivedDictionaryModel as unknown as DictionaryModelConstructor;
-    assert.equal(typeof ChildModel, 'function');
-    assert.equal(typeof EventModel, 'function');
-    if (typeof ChildModel !== 'function' || typeof EventModel !== 'function') {
-      throw new TypeError('Expected generated ChildModel and EventModel classes.');
-    }
-
-    const nestedChild = new (ChildModel as new (values?: ChildInitLike) => ChildInstance)({
-      id: 'invalid-child',
-      when: new Date(Number.NaN),
-    });
-    const invalidEvent = new (EventModel as new (values?: EventInitLike) => EventInstance)({
-      when: new Date('2025-01-02T03:04:05Z'),
-      child: nestedChild,
-    });
-    const validator = getValidator(invalidEvent);
-    assert.equal(await validator.validate(), false, `${ajvStandalone ? 'standalone' : 'JIT'} nested model validation rejects invalid Date`);
-    assert.deepEqual(validator.issues.map(issue => issue.path), [['child', 'when']]);
-    assert.equal(validator.errorsFor(['child', 'when']).length, 1, 'errorsFor matches a multi-segment nested path');
-
-    const inherited = decodeGeneratedModel(DerivedEventModel as unknown as EventConstructor, {
-      baseWhen: '2025-02-03T04:05:06Z',
-      baseLabel: 'base',
-      derivedWhen: '2025-03-04T05:06:07Z',
-    }) as EventInstance & { readonly baseWhen: Date; readonly derivedWhen: Date };
-    assert.ok(inherited.baseWhen instanceof Date, 'inherited Date field is decoded by derived deserialize');
-    assert.ok(inherited.derivedWhen instanceof Date, 'derived Date field is decoded by derived deserialize');
-    assert.deepEqual(encodeGeneratedModel(generated(inherited)), {
-      baseWhen: '2025-02-03T04:05:06.000Z',
-      baseLabel: 'base',
-      derivedWhen: '2025-03-04T05:06:07.000Z',
-    });
-
-    const dictionary = decodeGeneratedModel(DictionaryModel as unknown as DictionaryModelConstructor, {
-      first: {
-        when: '2025-04-05T06:07:08Z',
-        child: { id: 'dictionary-child' },
-      },
-    });
-    const dictionaryEntry = (dictionary.first as Record<string, unknown>);
-    assert.ok(dictionaryEntry.when instanceof Date, 'dictionary Date value is decoded');
-    assert.ok(dictionaryEntry.child instanceof ChildModel, 'dictionary nested model is decoded');
-    assert.deepEqual(encodeGeneratedModel(generated(dictionary)), {
-      first: { when: '2025-04-05T06:07:08.000Z', child: { id: 'dictionary-child' } },
-    });
-
-    const derivedDictionary = decodeGeneratedModel(DerivedDictionaryModel as unknown as DictionaryModelConstructor, {
-      baseWhen: '2025-06-07T08:09:10Z',
-      derivedWhen: '2025-07-08T09:10:11Z',
-      entry: {
-        when: '2025-08-09T10:11:12Z',
-        child: { id: 'derived-dictionary-child' },
-      },
-    });
-    assert.ok(derivedDictionary.baseWhen instanceof Date, 'inherited declared field remains a Date');
-    assert.ok(derivedDictionary.derivedWhen instanceof Date, 'derived declared field remains a Date');
-    const derivedEntry = derivedDictionary.entry as Record<string, unknown>;
-    assert.ok(derivedEntry.when instanceof Date, 'derived dictionary Date value is decoded');
-    assert.ok(derivedEntry.child instanceof ChildModel, 'derived dictionary nested model is decoded');
-    assert.deepEqual(encodeGeneratedModel(generated(derivedDictionary)), {
-      baseWhen: '2025-06-07T08:09:10.000Z',
-      derivedWhen: '2025-07-08T09:10:11.000Z',
-      entry: { when: '2025-08-09T10:11:12.000Z', child: { id: 'derived-dictionary-child' } },
-    });
-  }
+test('generated nested Date, inherited, and dictionary conversions work in a standalone SDK', async t => {
+  const output = path.join(createFixtureProject(t, 'runic-openapi-model-serde-aot-'), 'sdk');
+  await generateMaterializedSdk(modelSerdeDocument(), {
+    output,
+    name: 'ModelSerde',
+    profile: { mobx: false, validation: true, ajvStandalone: true, allowAny: false },
+  });
+  compileStandaloneModelSerdeSdk(output);
+  const models = requireRecord(
+    await import(pathToFileURL(path.join(output, 'dist/index.js')).href),
+    'standalone generated models',
+  );
+  await assertNestedDateInheritedAndDictionaryConversions(models, 'standalone');
 });
 
 test('generated discriminated unions infer abstract, concrete, and handwritten serde classes', async t => {

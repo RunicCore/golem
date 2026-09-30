@@ -172,11 +172,9 @@ test('model metadata is resolved through the prototype, not an instance construc
   assert.deepEqual(await validateInstance(child), []);
   assert.equal(getValidator(child) instanceof Object, true);
   assert.deepEqual(encodeGeneratedModel(child), { value: 1 });
-  assert.deepEqual(encodeGeneratedModel(child), { value: 1 });
 });
 
 test('missing conversion and validation metadata fail before rules can run', async () => {
-  let ruleCalls = 0;
   class IncompleteModel {
     public value = 1;
   }
@@ -188,7 +186,6 @@ test('missing conversion and validation metadata fail before rules can run', asy
     () => getValidator(generated(new IncompleteModel())),
     (error: unknown) => error instanceof LibError && error.kind === LibErrorKind.ValidationUnavailable,
   );
-  assert.equal(ruleCalls, 0);
 });
 
 test('frozen models support stateless operations and previously initialized validation state', async () => {
@@ -254,7 +251,3 @@ test('derived registration shadows inherited metadata and failed replacement lea
   assert.strictEqual(findGeneratedModelDefinitionForConstructor(Derived), replacement);
   assert.strictEqual(findGeneratedModelDefinition(new Derived()), replacement);
 });
-
-// Keep the public type import in this file meaningful for declaration checks.
-const _validatorTypeCheck: ModelValidator<object, object> | undefined = undefined;
-void _validatorTypeCheck;

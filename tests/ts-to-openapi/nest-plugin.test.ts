@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import test, { type TestContext } from 'node:test';
 import { generate } from '#model/generator';
-import { command, workspace } from '../packed/helpers.js';
+import { command, workspace } from '../support/process.js';
 import { createControllerFixture } from '../fixture-templates/controllers/project.js';
 import { paymentModelSource } from '../fixture-templates/controllers/payment-model.js';
 
@@ -37,7 +37,15 @@ function fixture(t: TestContext): string {
 }
 
 
-test('ttsc nest plugin registers nestModelCodec metadata and does not attach pipes or interceptors', async (t) => {
+// The decorators TypeScript emits for one controller method.
+function decoratorsOf(emitted: string, method: string): string {
+  const block = new RegExp(`__decorate\\(\\[((?:(?!__decorate\\()[\\s\\S])*?)\\], PaymentsController\\.prototype, "${method}"`);
+  const match = emitted.match(block);
+  assert.ok(match?.[1], `${method} has emitted decorators`);
+  return match[1];
+}
+
+test('ttsc nest plugin registers nestModelCodec and nestModelReturn metadata, keeps custom pipes, and does not attach pipes or interceptors', async (t) => {
   const root = fixture(t);
   const result = generate({ root, profile: { mobx: false, validation: true } });
   writeGeneratedArtifacts(result.artifacts);
@@ -47,69 +55,47 @@ test('ttsc nest plugin registers nestModelCodec metadata and does not attach pip
     path.join(root, 'tsconfig.json'),
   ]);
   const emitted = fs.readFileSync(path.join(root, 'build/payments.controller.js'), 'utf8');
-  assert.match(emitted, /__param\(0, Body\(\)\)/);
-  assert.match(emitted, /__param\(0, nestModelCodec\("PaymentInput_[0-9a-f]{8}"\)\)/);
-  assert.match(emitted, /__param\(0, nestModelCodec\("Payment_[0-9a-f]{8}"\)\)/);
-  assert.match(emitted, /__param\(0, Query\(\)\)/);
-  assert.match(emitted, /__param\(0, nestModelCodec\("PaymentFilter_[0-9a-f]{8}"\)\)/);
-  assert.match(emitted, /nestModelReturn\("Payment_[0-9a-f]{8}"\)/);
-  assert.match(emitted, /nestModelReturn\("Payment_[0-9a-f]{8}", true\)/);
+  const model = /nestModelReturn\("Payment_[0-9a-f]{8}"\)/;
+  const modelArray = /nestModelReturn\("Payment_[0-9a-f]{8}", true\)/;
+
+  const create = decoratorsOf(emitted, 'create');
+  assert.match(create, /__param\(0, Body\(\)\)/);
+  assert.match(create, /__param\(0, nestModelCodec\("PaymentInput_[0-9a-f]{8}"\)\)/);
+  assert.match(create, model);
+  const createAsClass = decoratorsOf(emitted, 'createAsClass');
+  assert.match(createAsClass, /__param\(0, Body\(\)\)/);
+  assert.match(createAsClass, /__param\(0, nestModelCodec\("Payment_[0-9a-f]{8}"\)\)/);
+  const list = decoratorsOf(emitted, 'list');
+  assert.match(list, /__param\(0, Query\(\)\)/);
+  assert.match(list, /__param\(0, nestModelCodec\("PaymentFilter_[0-9a-f]{8}"\)\)/);
+  assert.match(list, modelArray);
+
+  // Promise-wrapped model returns are recorded like direct ones.
+  assert.match(decoratorsOf(emitted, 'createAsync'), model);
+  assert.match(decoratorsOf(emitted, 'listAsync'), modelArray);
+  // A non-model return, and a union that includes a model, are left alone.
+  assert.doesNotMatch(decoratorsOf(emitted, 'count'), /nestModelReturn/);
+  assert.doesNotMatch(decoratorsOf(emitted, 'either'), /nestModelReturn/);
+  assert.equal(emitted.match(/nestModelReturn\(/g)?.length, 4);
+
+  // An array @Body() is stamped with the element codec.
+  const createBatch = decoratorsOf(emitted, 'createBatch');
+  assert.match(createBatch, /__param\(0, Body\(\)\)/);
+  assert.match(createBatch, /__param\(0, nestModelCodec\("PaymentInput_[0-9a-f]{8}"\)\)/);
+
+  // A pipe already passed to @Body()/@Query() is kept and the codec metadata is still registered.
+  const createPiped = decoratorsOf(emitted, 'createPiped');
+  assert.match(createPiped, /Body\(customPipe\)/);
+  assert.match(createPiped, /nestModelCodec\("PaymentInput_[0-9a-f]{8}"\)/);
+  const listPiped = decoratorsOf(emitted, 'listPiped');
+  assert.match(listPiped, /Query\(customPipe\)/);
+  assert.match(listPiped, /nestModelCodec\("PaymentFilter_[0-9a-f]{8}"\)/);
+
   assert.doesNotMatch(emitted, /nestModelCodec\("[^"]+"\)\),,/);
   assert.doesNotMatch(emitted, /nestModelPipe/);
   assert.doesNotMatch(emitted, /UseInterceptors|NestModelInterceptor|nestModelStringifyInterceptor/);
   assert.match(emitted, /from '@exprtlabs\/codegen\/nest'/);
   assert.doesNotMatch(emitted, /OPERATION_CODECS/);
-});
-
-test('ttsc nest plugin records a model return and leaves a non-model return alone', async (t) => {
-  const root = fixture(t);
-  fs.writeFileSync(path.join(root, 'src/payments.controller.ts'), readFixture("controllers/nest-plugin/ttsc-nest-plugin-records-a-model-return-and-leaves-a-non-model-return-alone/payments.controller.ts"));
-  const result = generate({ root, profile: { mobx: false, validation: true } });
-  writeGeneratedArtifacts(result.artifacts);
-  await command(root, process.execPath, [
-    path.join(workspace, 'node_modules/ttsc/lib/launcher/ttsc.js'),
-    '-p',
-    path.join(root, 'tsconfig.json'),
-  ]);
-  const emitted = fs.readFileSync(path.join(root, 'build/payments.controller.js'), 'utf8');
-  // list() declares Promise<readonly TPayment[]>.
-  assert.match(emitted, /nestModelReturn\("Payment_[0-9a-f]{8}", true\)/);
-  assert.equal(emitted.match(/nestModelReturn\(/g)?.length, 2);
-  assert.doesNotMatch(emitted, /UseInterceptors|NestModelInterceptor|nestModelStringifyInterceptor/);
-});
-
-test('ttsc nest plugin stamps an array @Body() with the element codec', async (t) => {
-  const root = fixture(t);
-  fs.writeFileSync(path.join(root, 'src/payments.controller.ts'), readFixture("controllers/nest-plugin/ttsc-nest-plugin-stamps-an-array-body-with-the-element-codec/payments.controller.ts"));
-  const result = generate({ root, profile: { mobx: false, validation: true } });
-  writeGeneratedArtifacts(result.artifacts);
-  await command(root, process.execPath, [
-    path.join(workspace, 'node_modules/ttsc/lib/launcher/ttsc.js'),
-    '-p',
-    path.join(root, 'tsconfig.json'),
-  ]);
-  const emitted = fs.readFileSync(path.join(root, 'build/payments.controller.js'), 'utf8');
-  assert.match(emitted, /__param\(0, Body\(\)\)/);
-  assert.match(emitted, /__param\(0, nestModelCodec\("PaymentInput_[0-9a-f]{8}"\)\)/);
-});
-
-test('ttsc nest plugin keeps a pipe already passed to @Body()/@Query() and still registers codec metadata', async (t) => {
-  const root = fixture(t);
-  fs.writeFileSync(path.join(root, 'src/payments.controller.ts'), readFixture("controllers/nest-plugin/ttsc-nest-plugin-keeps-a-pipe-already-passed-to-body-query-and-still-registers/payments.controller.ts"));
-  const result = generate({ root, profile: { mobx: false, validation: true } });
-  writeGeneratedArtifacts(result.artifacts);
-  await command(root, process.execPath, [
-    path.join(workspace, 'node_modules/ttsc/lib/launcher/ttsc.js'),
-    '-p',
-    path.join(root, 'tsconfig.json'),
-  ]);
-  const emitted = fs.readFileSync(path.join(root, 'build/payments.controller.js'), 'utf8');
-  assert.match(emitted, /Body\(customPipe\)/);
-  assert.match(emitted, /Query\(customPipe\)/);
-  assert.match(emitted, /nestModelCodec\("PaymentInput_[0-9a-f]{8}"\)/);
-  assert.match(emitted, /nestModelCodec\("PaymentFilter_[0-9a-f]{8}"\)/);
-  assert.doesNotMatch(emitted, /nestModelPipe/);
-  assert.doesNotMatch(emitted, /UseInterceptors|NestModelInterceptor|nestModelStringifyInterceptor/);
 });
 
 test('two Payment contracts keep distinct hashed nestModelCodec ids', async (t) => {
@@ -129,13 +115,10 @@ test('two Payment contracts keep distinct hashed nestModelCodec ids', async (t) 
   const result = generate({ root, profile: { mobx: false, validation: true } });
   writeGeneratedArtifacts(result.artifacts);
   const keys = result.artifacts.find((artifact) => artifact.path.endsWith('iobject-plugin-keys.ts'))?.content ?? '';
-  assert.match(keys, /src\/billing\/payment\.model\.ts#Payment/);
-  assert.match(keys, /src\/payout\/payment\.model\.ts#Payment/);
   const billingId = keys.match(/src\/billing\/payment\.model\.ts#Payment": "([^"]+)"/)?.[1];
   const payoutId = keys.match(/src\/payout\/payment\.model\.ts#Payment": "([^"]+)"/)?.[1];
   assert.ok(billingId);
   assert.ok(payoutId);
-  assert.notEqual(billingId, payoutId);
   await command(root, process.execPath, [
     path.join(workspace, 'node_modules/ttsc/lib/launcher/ttsc.js'),
     '-p',

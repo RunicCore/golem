@@ -12,7 +12,7 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import test from 'node:test';
 import { generate } from '#openapi/generator';
-import { command, workspace } from '../packed/helpers.js';
+import { command, workspace } from '../support/process.js';
 import { tscBin } from './helpers.js';
 
 function fixture(directory: string): string {
@@ -120,9 +120,11 @@ test('SDK generated with mobx and validation disabled loads and runs an operatio
 
   compileStrictUnusedSdk(output);
 
-  const probes = [path.join(output, 'peer-dep-probe.mjs'), path.join(codegenDestination, 'dist/peer-dep-probe.mjs')];
-  for (const probe of probes) {
+  const probeDirectories = [output, path.join(codegenDestination, 'dist')];
+  for (const directory of probeDirectories) {
     for (const missing of ['mobx', 'ajv']) {
+      // One file per missing package: Node caches a failed import by URL, so reusing a file returns the first failure.
+      const probe = path.join(directory, `peer-dep-probe-${missing}.mjs`);
       writeFileSync(probe, `export * from '${missing}';\n`);
       await assert.rejects(
         () => import(pathToFileURL(probe).href),

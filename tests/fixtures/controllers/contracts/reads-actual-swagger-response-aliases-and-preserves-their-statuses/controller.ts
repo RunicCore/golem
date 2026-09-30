@@ -18,6 +18,10 @@ export class AliasController {
   @ApiOkResponse({ schema: { type: 'string' }, description: 'text' })
   text(): string { return 'text'; }
 
+  @Get('primitive')
+  @ApiOkResponse({ type: String })
+  primitive(): string { return 'ok'; }
+
   @Delete('empty')
   @HttpCode(204)
   @ApiNoContentResponse({ description: 'empty' })

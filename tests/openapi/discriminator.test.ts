@@ -165,6 +165,14 @@ const cases: readonly {
     unknown: 'bird',
     shape: { nestedToy: true },
   },
+  {
+    name: 'union that also admits null',
+    discriminator: explicitMapping,
+    cat: () => ['feline'],
+    dog: () => 'canine',
+    unknown: 'bird',
+    shape: { nullBranch: true },
+  },
 ];
 
 const profiles: readonly OpenApiGenerationProfile[] = [
@@ -186,7 +194,8 @@ function codec(exports: Record<string, unknown>, name: string): (value: unknown)
 
 test('OAS discriminator mappings select allOf variants in model decode, encode, and the shared codec', async suite => {
   for (const [caseIndex, example] of cases.entries()) {
-    for (const [profileIndex, profile] of profiles.entries()) {
+    // Each case exercises a distinct lowering path; the second profile only re-runs the first case.
+    for (const [profileIndex, profile] of (caseIndex === 0 ? profiles : profiles.slice(1)).entries()) {
       await suite.test(`${example.name} (mobx=${profile.mobx}, validation=${profile.validation})`, async t => {
         const suffix = `X${caseIndex}${profileIndex}`;
         const catTags = example.cat(suffix);
@@ -201,24 +210,27 @@ test('OAS discriminator mappings select allOf variants in model decode, encode, 
         compileGeneratedSdk(output, [], { strict: true });
 
         const models = requireRecord(await import(pathToFileURL(path.join(output, 'dist/index.js')).href), 'pet models');
-        const PetModel = modelClass(models, `Pet${suffix}Model`);
+        // A union that admits null is not lowered to a model class of its own.
+        const PetModel = example.shape?.nullBranch ? undefined : modelClass(models, `Pet${suffix}Model`);
         const CatModel = modelClass(models, `Cat${suffix}Model`);
         const DogModel = modelClass(models, `Dog${suffix}Model`);
         const OwnerModel = modelClass(models, `Owner${suffix}Model`);
 
         const toy = example.shape?.nestedToy ? { toy: { shape: 'round', bounce: true } } : {};
-        for (const tag of catTags) {
-          const pet = decodeGeneratedModel(PetModel, { kind: tag, name: 'Miso', ...toy });
-          assert.ok(pet instanceof CatModel, `tag ${tag} selects cat`);
-          assert.deepEqual(encodeGeneratedModel(pet), { kind: tag, name: 'Miso', ...toy });
-          if (example.shape?.nestedToy) {
-            const toyValue = requireRecord(pet, 'cat').toy;
-            assert.ok(toyValue instanceof modelClass(models, `Ball${suffix}Model`), 'nested union selects its variant');
+        if (PetModel) {
+          for (const tag of catTags) {
+            const pet: object = decodeGeneratedModel(PetModel, { kind: tag, name: 'Miso', ...toy });
+            assert.ok(pet instanceof CatModel, `tag ${tag} selects cat`);
+            assert.deepEqual(encodeGeneratedModel(pet), { kind: tag, name: 'Miso', ...toy });
+            if (example.shape?.nestedToy) {
+              const toyValue = requireRecord(pet, 'cat').toy;
+              assert.ok(toyValue instanceof modelClass(models, `Ball${suffix}Model`), 'nested union selects its variant');
+            }
           }
+          const dog = decodeGeneratedModel(PetModel, { kind: dogTag, bark: true });
+          assert.ok(dog instanceof DogModel, `tag ${dogTag} selects dog`);
+          assert.deepEqual(encodeGeneratedModel(dog), { kind: dogTag, bark: true });
         }
-        const dog = decodeGeneratedModel(PetModel, { kind: dogTag, bark: true });
-        assert.ok(dog instanceof DogModel, `tag ${dogTag} selects dog`);
-        assert.deepEqual(encodeGeneratedModel(dog), { kind: dogTag, bark: true });
 
         const ownerJson = {
           pet: { kind: dogTag, bark: false },
@@ -231,11 +243,25 @@ test('OAS discriminator mappings select allOf variants in model decode, encode, 
         assert.ok(owner.pets.at(-1) instanceof DogModel);
         assert.deepEqual(encodeGeneratedModel(owner), ownerJson);
 
-        assert.throws(
-          () => decodeGeneratedModel(PetModel, { kind: example.unknown, name: 'Miso' }),
-          (error: unknown) => error instanceof LibError && error.kind === LibErrorKind.Deserialization,
-        );
-        assert.throws(() => decodeGeneratedModel(OwnerModel, { pet: { kind: example.unknown, name: 'Miso' } }));
+        if (PetModel) {
+          assert.throws(
+            () => decodeGeneratedModel(PetModel, { kind: example.unknown, name: 'Miso' }),
+            (error: unknown) => error instanceof LibError && error.kind === LibErrorKind.Deserialization,
+          );
+        }
+        const decodeUnknownTag = () => decodeGeneratedModel(OwnerModel, { pet: { kind: example.unknown, name: 'Miso' } });
+        if (example.shape?.nullBranch) assert.throws(decodeUnknownTag, (error: unknown) => error instanceof LibError);
+        else assert.throws(decodeUnknownTag);
+
+        if (example.shape?.nullBranch) {
+          const nullableJson = { pet: null, pets: [{ kind: catTags[0], name: 'Miso' }, { kind: dogTag, bark: true }, null] };
+          const nullable = requireRecord(decodeGeneratedModel(OwnerModel, nullableJson), 'nullable owner');
+          assert.equal(nullable.pet, null);
+          assert.ok(Array.isArray(nullable.pets));
+          assert.ok(nullable.pets[0] instanceof CatModel && nullable.pets[1] instanceof DogModel);
+          assert.equal(nullable.pets[2], null);
+          assert.deepEqual(encodeGeneratedModel(nullable), nullableJson);
+        }
 
         // The shared codec path (parse/stringify) dispatches on the same tags.
         const parsed = requireRecord(codec(models, `parseOwner${suffix}`)(JSON.stringify(ownerJson)), 'parsed owner');
@@ -292,8 +318,10 @@ test('a union variant used on its own keeps its declared tag type and any tag va
 
 test('one variant model can be selected by two discriminated unions, in either declaration order', async t => {
   const outcomes: unknown[] = [];
-  for (const [profileIndex, profile] of profiles.entries()) for (const order of ['union-first', 'shared-first'] as const) {
-    const suffix = `${order === 'union-first' ? 'TwiceA' : 'TwiceB'}${profileIndex}`;
+  // The lowering-order warning does not depend on the profile, so one profile (mobx and validation on) is enough.
+  const profile = profiles[1];
+  for (const order of ['union-first', 'shared-first'] as const) {
+    const suffix = order === 'union-first' ? 'TwiceA' : 'TwiceB';
     const document = petDocument(suffix, explicitMapping(suffix));
     const schemas = requireRecord(requireRecord(document.components, 'components').schemas, 'schemas');
     const feline = {
@@ -323,7 +351,7 @@ test('one variant model can be selected by two discriminated unions, in either d
     // Cat cannot extend both unions, so neither becomes a union model class.
     outcomes.push([`Pet${suffix}Model` in models, `Feline${suffix}Model` in models]);
   }
-  assert.deepEqual(outcomes, profiles.flatMap(() => [[false, false], [false, false]]));
+  assert.deepEqual(outcomes, [[false, false], [false, false]]);
 });
 
 test('a discriminator over a non-model variant is reported and left to the union shape', async t => {
@@ -355,31 +383,6 @@ test('a discriminator mapping must target one of the union variants', async t =>
     () => generateMaterializedSdk(document, { output, name: 'Pets', profile: { mobx: false, validation: false } }),
     /discriminator mapping "stray" of schema "PetStray" targets "#\/components\/schemas\/OwnerStray", which is not one of its variants/,
   );
-});
-
-test('a discriminated union with a null branch keeps its tag table for the model variants', async t => {
-  for (const validation of [false, true]) {
-    const suffix = validation ? 'NullV' : 'NullN';
-    const output = path.join(createFixtureProject(t, 'runic-openapi-discriminator-null-'), 'sdk');
-    const document = petDocument(suffix, explicitMapping(suffix), { nullBranch: true });
-    await generateMaterializedSdk(document, { output, name: 'Pets', profile: { mobx: false, validation } });
-    compileGeneratedSdk(output, [], { strict: true });
-    const models = requireRecord(await import(pathToFileURL(path.join(output, 'dist/index.js')).href), 'models');
-    const OwnerModel = modelClass(models, `Owner${suffix}Model`);
-    const CatModel = modelClass(models, `Cat${suffix}Model`);
-    const DogModel = modelClass(models, `Dog${suffix}Model`);
-    const json = { pet: null, pets: [{ kind: 'feline', name: 'Miso' }, { kind: 'canine', bark: true }, null] };
-    const owner = requireRecord(decodeGeneratedModel(OwnerModel, json), 'owner');
-    assert.equal(owner.pet, null);
-    assert.ok(Array.isArray(owner.pets));
-    assert.ok(owner.pets[0] instanceof CatModel && owner.pets[1] instanceof DogModel);
-    assert.equal(owner.pets[2], null);
-    assert.deepEqual(encodeGeneratedModel(owner), json);
-    assert.throws(
-      () => decodeGeneratedModel(OwnerModel, { pet: { kind: 'bird', name: 'Miso' } }),
-      (error: unknown) => error instanceof LibError,
-    );
-  }
 });
 
 test('every variant must declare the discriminator property', async t => {

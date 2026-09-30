@@ -12,7 +12,7 @@ hexadecimal string required by the API.
 
 ## Install and run from the download
 
-Use Node.js 22.12 or newer:
+Use Node.js 22.15 or newer:
 
 ```sh
 npm install

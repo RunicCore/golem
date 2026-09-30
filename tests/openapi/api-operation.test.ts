@@ -1,8 +1,10 @@
 import { copyFixtureFile, createFixtureProject } from '../fixture-project.js';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import test, { type TestContext } from 'node:test';
+import test, { after, type TestContext } from 'node:test';
 import { configure, reaction } from 'mobx';
 import { generate } from '#openapi/generator';
 import {
@@ -166,11 +168,31 @@ function itemsDocument(): Record<string, unknown> {
   };
 }
 
-async function loadItemsClient(t: TestContext, profile: OpenApiGenerationProfile): Promise<{
-  Client: new (options: Record<string, unknown>) => ItemsClient;
-  output: string;
-}> {
-  const output = path.join(createFixtureProject(t, 'runic-api-operation-'), 'sdk');
+interface ItemsClientModule {
+  readonly Client: new (options: Record<string, unknown>) => ItemsClient;
+  readonly output: string;
+}
+
+// One generate and compile per profile: the tests share the loaded module and each builds its own clients.
+const itemsClients = new Map<string, Promise<ItemsClientModule>>();
+const itemsClientRoots: string[] = [];
+after(() => {
+  for (const root of itemsClientRoots) fs.rmSync(root, { recursive: true, force: true });
+});
+
+function loadItemsClient(profile: OpenApiGenerationProfile): Promise<ItemsClientModule> {
+  const key = `mobx=${profile.mobx},validation=${profile.validation}`;
+  const cached = itemsClients.get(key);
+  if (cached) return cached;
+  const loaded = generateItemsClient(profile);
+  itemsClients.set(key, loaded);
+  return loaded;
+}
+
+async function generateItemsClient(profile: OpenApiGenerationProfile): Promise<ItemsClientModule> {
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'runic-api-operation-')));
+  itemsClientRoots.push(root);
+  const output = path.join(root, 'sdk');
   const result = await generateMaterializedSdk(itemsDocument(), {
     output,
     name: 'Items',
@@ -190,7 +212,7 @@ async function loadItemsClient(t: TestContext, profile: OpenApiGenerationProfile
 }
 
 test('generated factory is inert, reusable, and reads auth at execute time', async (t) => {
-  const { Client, output } = await loadItemsClient(t, { mobx: false, validation: true });
+  const { Client, output } = await loadItemsClient({ mobx: false, validation: true });
   copyFixtureFile(output, "openapi/api-operation/loading-boundary.ts", "loading-boundary.ts");
   compileGeneratedSdk(output, [path.join(output, 'loading-boundary.ts')], { noEmit: true, strict: true });
 
@@ -243,7 +265,7 @@ test('overlapping generated execute calls warn in both profiles and clean up on 
   for (const mobx of [false, true]) {
     const warnings = captureWarnings(t);
     if (mobx) enforceActions(t);
-    const { Client } = await loadItemsClient(t, { mobx, validation: true });
+    const { Client } = await loadItemsClient({ mobx, validation: true });
     let release: (() => void) | undefined;
     const gate = new Promise<void>((resolve) => {
       release = resolve;
@@ -321,7 +343,7 @@ test('overlapping generated execute calls warn in both profiles and clean up on 
 test('generated execute recovers from pipeline failures on the same object', async (t) => {
   for (const mobx of [false, true]) {
     if (mobx) enforceActions(t);
-    const { Client } = await loadItemsClient(t, { mobx, validation: true });
+    const { Client } = await loadItemsClient({ mobx, validation: true });
 
     let rejectAuth = true;
     const listed = new Client({
@@ -417,7 +439,7 @@ test('generated loading stays true when a failed execute overlaps a pending succ
   for (const mobx of [false, true]) {
     const warnings = captureWarnings(t);
     if (mobx) enforceActions(t);
-    const { Client } = await loadItemsClient(t, { mobx, validation: true });
+    const { Client } = await loadItemsClient({ mobx, validation: true });
     let release: (() => void) | undefined;
     const gate = new Promise<void>((resolve) => {
       release = resolve;
@@ -460,7 +482,7 @@ test('generated factory objects and clients isolate pending counters and overlap
   for (const mobx of [false, true]) {
     const warnings = captureWarnings(t);
     if (mobx) enforceActions(t);
-    const { Client } = await loadItemsClient(t, { mobx, validation: true });
+    const { Client } = await loadItemsClient({ mobx, validation: true });
     let release: (() => void) | undefined;
     const gate = new Promise<void>((resolve) => {
       release = resolve;
@@ -504,7 +526,7 @@ test('generated factory objects and clients isolate pending counters and overlap
 
 test('MobX generated loading follows execute settlement, not stream consumption', async (t) => {
   enforceActions(t);
-  const { Client, output } = await loadItemsClient(t, { mobx: true, validation: false });
+  const { Client, output } = await loadItemsClient({ mobx: true, validation: false });
   copyFixtureFile(output, "openapi/api-operation/loading-present.ts", "loading-present.ts");
   compileGeneratedSdk(output, [path.join(output, 'loading-present.ts')], { noEmit: true, strict: true });
 

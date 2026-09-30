@@ -30,7 +30,7 @@
   },
   "type": "module",
   "engines": {
-    "node": ">=22.12.0"
+    "node": ">=22.15.0"
   },
   "bin": {
     "runic-codegen": "./dist/bin/runic-codegen.js"

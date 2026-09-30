@@ -6,7 +6,7 @@ Install the generator you need as a development dependency and the shared runtim
 
 | Tool | Version |
 | --- | --- |
-| Node.js | `22.12` or newer |
+| Node.js | `22.15` or newer |
 | `typescript` | `~7.0.2` |
 | `ttsc` | `~0.30.4` |
 

@@ -8,7 +8,7 @@ import { generatedJsonData } from './generated-data.js';
 import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/codegen/conversion';
 import { requireObjectCodec } from '@exprtlabs/codegen/serde';
 import { getValidator } from '@exprtlabs/codegen/validation';
-import { generatedCodecIdFromRoot } from './packed/helpers.js';
+import { generatedCodecIdFromRoot } from './support/consumer.js';
 import { createModelProject, compileModelProject } from './model-project.js';
 import { taggedModelSource } from './fixture-templates/models/model-tags.js';
 import { joinSource, tsSource, type SourceFragment } from './source-template.js';
@@ -61,28 +61,6 @@ import { validate } from './validators.js';`,
   }
 });
 
-test('builtin constraints run before custom predicates and distinct predicates compose once', async t => {
-  const { root, sourceRoot } = fixture(t);
-  fs.writeFileSync(path.join(sourceRoot, 'predicates.ts'), readFixture("models/model-tags/builtin-constraints-run-before-custom-predicates-and-distinct-predicates-com/predicates.ts"));
-  fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), taggedModelSource({
-    name: 'A',
-    imports: tsSource`import type { MinLength, TValidation } from '@exprtlabs/codegen/tags';
-import { first, second } from './predicates.js';`,
-    fields: tsSource`value: string & MinLength<3> & TValidation<typeof first> & TValidation<typeof first> & TValidation<typeof second>`,
-  }).text);
-  const result = generate({ root, profile: { mobx: false, validation: true } });
-  writeGeneratedArtifacts(result.artifacts);
-  await compileModelProject(root);
-  const { A } = await import(path.toNamespacedPath(path.join(root, 'build/a.model.js')));
-  const predicates = await import(path.toNamespacedPath(path.join(root, 'build/predicates.js')));
-  const invalid = new A({ value: 'x' });
-  assert.equal(await getValidator(invalid).validate({ failFast: false }), false);
-  assert.equal(predicates.calls, 0, 'custom callbacks are suppressed when builtins fail');
-  const valid = new A({ value: 'long' });
-  assert.equal(await getValidator(valid).validate({ failFast: false }), true);
-  assert.equal(predicates.calls, 2, 'same node deduplicates one predicate while distinct predicates both run');
-});
-
 test('extended JSON Schema tags preserve sibling keywords in generated validation', async t => {
   const { root, sourceRoot } = fixture(t);
   fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), taggedModelSource({
@@ -120,64 +98,154 @@ type ValueArray = Array<string>;`,
   }
 });
 
-test('structural tag schemas remain isolated when constraints are equal', async t => {
+// One project holds every validation=true, non-standalone case that compiles and executes; each case keeps
+// its own directory, so file and class names never collide. Cases that assert a diagnostic, or use another
+// profile, keep projects of their own.
+test('validation-on tag cases share one generated project', async t => {
   const { root, sourceRoot } = fixture(t);
-  fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), taggedModelSource({
-    name: 'A',
-    imports: tsSource`import type { AdditionalProperties, MinProperties } from '@exprtlabs/codegen/tags';`,
-    fields: tsSource`value: { a?: string } & MinProperties<1> & AdditionalProperties<never>`,
-  }).text);
-  fs.writeFileSync(path.join(sourceRoot, 'b.model.ts'), taggedModelSource({
-    name: 'B',
-    imports: tsSource`import type { AdditionalProperties, MinProperties } from '@exprtlabs/codegen/tags';`,
-    fields: tsSource`value: { b?: string } & MinProperties<1> & AdditionalProperties<never>`,
-  }).text);
+  const tags = (name: string, file: string): string => readFixture(`models/model-tags/${name}/${file}`);
+  const write = (directory: string, files: Readonly<Record<string, string>>): void => {
+    fs.mkdirSync(path.join(sourceRoot, directory), { recursive: true });
+    for (const [name, text] of Object.entries(files)) fs.writeFileSync(path.join(sourceRoot, directory, name), text);
+  };
+  write('builtin-order', {
+    'predicates.ts': tags('builtin-constraints-run-before-custom-predicates-and-distinct-predicates-com', 'predicates.ts'),
+    'a.model.ts': taggedModelSource({
+      name: 'A',
+      imports: tsSource`import type { MinLength, TValidation } from '@exprtlabs/codegen/tags';
+import { first, second } from './predicates.js';`,
+      fields: tsSource`value: string & MinLength<3> & TValidation<typeof first> & TValidation<typeof first> & TValidation<typeof second>`,
+    }).text,
+  });
+  write('structural-isolation', {
+    'a.model.ts': taggedModelSource({
+      name: 'A',
+      imports: tsSource`import type { AdditionalProperties, MinProperties } from '@exprtlabs/codegen/tags';`,
+      fields: tsSource`value: { a?: string } & MinProperties<1> & AdditionalProperties<never>`,
+    }).text,
+    'b.model.ts': taggedModelSource({
+      name: 'B',
+      imports: tsSource`import type { AdditionalProperties, MinProperties } from '@exprtlabs/codegen/tags';`,
+      fields: tsSource`value: { b?: string } & MinProperties<1> & AdditionalProperties<never>`,
+    }).text,
+  });
+  write('nested-issues', {
+    'a.model.ts': taggedModelSource({
+      name: 'A',
+      imports: tsSource`import type { AdditionalProperties, MinLength } from '@exprtlabs/codegen/tags';\ntype Value = { name: string & MinLength<3> };`,
+      fields: tsSource`value: Value & AdditionalProperties<never>`,
+    }).text,
+  });
+  // The shared-project Child of 'generic-aliases' is a different model, so this case names its own Leaf.
+  write('nested-contains', {
+    'leaf.model.ts': taggedModelSource({ name: 'Leaf', fields: tsSource`name: string` }).text,
+    'a.model.ts': taggedModelSource({
+      name: 'A',
+      imports: tsSource`import type { Contains } from '@exprtlabs/codegen/tags';\nimport type { TLeaf } from './leaf.model.js';`,
+      fields: tsSource`children: unknown[] & Contains<TLeaf>`,
+    }).text,
+  });
+  write('union-branches', {
+    'predicates.ts': tags('union-branch-predicates-stay-attached-to-their-checker-constituent', 'predicates.ts'),
+    'a.model.ts': taggedModelSource({
+      name: 'A',
+      imports: tsSource`import type { TValidation } from '@exprtlabs/codegen/tags';\nimport { numberValue, stringValue } from './predicates.js';`,
+      fields: tsSource`value: (string & TValidation<typeof stringValue>) | (number & TValidation<typeof numberValue>)`,
+    }).text,
+  });
+  write('utility-aliases', {
+    'predicates.ts': tags('utility-aliases-preserve-two-distinct-same-signature-predicates-and-deduplic', 'predicates.ts'),
+    'a.model.ts': taggedModelSource({
+      name: 'A',
+      imports: tsSource`import type { TValidation } from '@exprtlabs/codegen/tags';\nimport { first, firstAlias, second } from './predicates.js';\ntype Tagged<T extends string> = T & TValidation<typeof first> & TValidation<typeof firstAlias> & TValidation<typeof second>;\ntype Box<T> = { value: T };\ntype Payload = Partial<Pick<Box<Tagged<string>>, 'value'>>;`,
+      fields: tsSource`payload: Payload`,
+    }).text,
+  });
+  write('generic-aliases', {
+    'child.model.ts': taggedModelSource({ name: 'Child', fields: tsSource`name: string` }).text,
+    'parent.model.ts': tags('generic-aliases-preserve-concrete-local-model-identity-for-nested-conversion', 'parent.model.ts'),
+  });
+  write('recursive-alias', {
+    'node.model.ts': taggedModelSource({ name: 'Node', fields: tsSource`name: string; children?: TNode[]` }).text,
+  });
   const result = generate({ root, profile: { mobx: false, validation: true } });
   writeGeneratedArtifacts(result.artifacts);
   await compileModelProject(root);
-  const { A } = await import(path.toNamespacedPath(path.join(root, 'build/a.model.js')));
-  const { B } = await import(path.toNamespacedPath(path.join(root, 'build/b.model.js')));
-  assert.equal(await getValidator(new A({ value: { a: 'ok' } })).validate(), true);
-  assert.equal(await getValidator(new B({ value: { b: 'ok' } })).validate(), true);
-  assert.equal(await getValidator(new A({ value: { b: 'wrong-shape' } } as never)).validate(), false);
-  assert.equal(await getValidator(new B({ value: { a: 'wrong-shape' } } as never)).validate(), false);
-});
+  const load = (directory: string, file: string) => import(path.toNamespacedPath(path.join(root, 'build', directory, file)));
 
-test('structural tag schemas do not duplicate nested descriptor issues', async t => {
-  const { root, sourceRoot } = fixture(t);
-  fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), taggedModelSource({
-    name: 'A',
-    imports: tsSource`import type { AdditionalProperties, MinLength } from '@exprtlabs/codegen/tags';\ntype Value = { name: string & MinLength<3> };`,
-    fields: tsSource`value: Value & AdditionalProperties<never>`,
-  }).text);
-  const result = generate({ root, profile: { mobx: false, validation: true } });
-  writeGeneratedArtifacts(result.artifacts);
-  await compileModelProject(root);
-  const { A } = await import(path.toNamespacedPath(path.join(root, 'build/a.model.js')));
-  const validator = getValidator(new A({ value: { name: 'x' } }));
-  assert.equal(await validator.validate(), false);
-  assert.deepEqual(validator.issues.map((issue: { readonly code: string; readonly path: readonly (string | number)[] }) => ({ code: issue.code, path: issue.path })), [
-    { code: 'minLength', path: ['value', 'name'] },
-  ]);
-});
+  await t.test('builtin constraints run before custom predicates and distinct predicates compose once', async () => {
+    const { A } = await load('builtin-order', 'a.model.js');
+    const predicates = await load('builtin-order', 'predicates.js');
+    const invalid = new A({ value: 'x' });
+    assert.equal(await getValidator(invalid).validate({ failFast: false }), false);
+    assert.equal(predicates.calls, 0, 'custom callbacks are suppressed when builtins fail');
+    const valid = new A({ value: 'long' });
+    assert.equal(await getValidator(valid).validate({ failFast: false }), true);
+    assert.equal(predicates.calls, 2, 'same node deduplicates one predicate while distinct predicates both run');
+  });
 
-test('nested schema constraints collect referenced descriptors and project them', async t => {
-  const { root, sourceRoot } = fixture(t);
-  fs.writeFileSync(path.join(sourceRoot, 'child.model.ts'), taggedModelSource({ name: 'Child', fields: tsSource`name: string` }).text);
-  fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), taggedModelSource({
-    name: 'A',
-    imports: tsSource`import type { Contains } from '@exprtlabs/codegen/tags';\nimport type { TChild } from './child.model.js';`,
-    fields: tsSource`children: unknown[] & Contains<TChild>`,
-  }).text);
-  const result = generate({ root, profile: { mobx: false, validation: true } });
-  writeGeneratedArtifacts(result.artifacts);
-  await compileModelProject(root);
-  const { A } = await import(path.toNamespacedPath(path.join(root, 'build/a.model.js')));
-  assert.equal(await getValidator(new A({ children: [{ name: 'ok' }] })).validate(), true);
-  assert.equal(await getValidator(new A({ children: [{ name: 7 }] } as never)).validate(), false);
-  const shared = result.artifacts.map((artifact) => artifact.content).join('\n');
-  assert.match(shared, /contains/);
-  assert.match(generatedJsonData(shared), /"contains"/);
+  await t.test('structural tag schemas remain isolated when constraints are equal', async () => {
+    const { A } = await load('structural-isolation', 'a.model.js');
+    const { B } = await load('structural-isolation', 'b.model.js');
+    assert.equal(await getValidator(new A({ value: { a: 'ok' } })).validate(), true);
+    assert.equal(await getValidator(new B({ value: { b: 'ok' } })).validate(), true);
+    assert.equal(await getValidator(new A({ value: { b: 'wrong-shape' } } as never)).validate(), false);
+    assert.equal(await getValidator(new B({ value: { a: 'wrong-shape' } } as never)).validate(), false);
+  });
+
+  await t.test('structural tag schemas do not duplicate nested descriptor issues', async () => {
+    const { A } = await load('nested-issues', 'a.model.js');
+    const validator = getValidator(new A({ value: { name: 'x' } }));
+    assert.equal(await validator.validate(), false);
+    assert.deepEqual(validator.issues.map((issue: { readonly code: string; readonly path: readonly (string | number)[] }) => ({ code: issue.code, path: issue.path })), [
+      { code: 'minLength', path: ['value', 'name'] },
+    ]);
+  });
+
+  await t.test('nested schema constraints collect referenced descriptors and project them', async () => {
+    const { A } = await load('nested-contains', 'a.model.js');
+    assert.equal(await getValidator(new A({ children: [{ name: 'ok' }] })).validate(), true);
+    assert.equal(await getValidator(new A({ children: [{ name: 7 }] } as never)).validate(), false);
+    const shared = result.artifacts.filter(artifact => artifact.path.includes('/nested-contains/')).map((artifact) => artifact.content).join('\n');
+    assert.match(shared, /contains/);
+    assert.match(generatedJsonData(shared), /"contains"/);
+  });
+
+  await t.test('union branch predicates stay attached to their checker constituent', async () => {
+    const { A } = await load('union-branches', 'a.model.js');
+    const predicates = await load('union-branches', 'predicates.js');
+    assert.equal(await getValidator(new A({ value: 'text' })).validate(), true);
+    assert.equal(predicates.stringCalls, 1);
+    assert.equal(predicates.numberCalls, 0);
+    assert.equal(await getValidator(new A({ value: 7 })).validate(), true);
+    assert.equal(predicates.stringCalls, 1);
+    assert.equal(predicates.numberCalls, 1);
+  });
+
+  await t.test('utility aliases preserve two distinct same-signature predicates and deduplicate an alias', async () => {
+    const shared = result.artifacts.find((artifact) => artifact.path.endsWith('/models.generated.ts'))?.content ?? '';
+    assert.equal(new Set([...shared.matchAll(/src\/utility-aliases\/predicates\.ts:\d+:\d+/g)].map((match) => match[0])).size, 2);
+    const { A } = await load('utility-aliases', 'a.model.js');
+    const predicates = await load('utility-aliases', 'predicates.js');
+    assert.equal(await getValidator(new A({ payload: { value: 'ok' } })).validate({ failFast: false }), true);
+    assert.equal(predicates.firstCalls, 1, 'the same declaration is called once through its alias');
+    assert.equal(predicates.secondCalls, 1, 'the distinct same-signature declaration is retained');
+  });
+
+  await t.test('generic aliases preserve concrete local model identity for nested conversion', async () => {
+    const { Parent } = await load('generic-aliases', 'parent.model.js');
+    const { Child } = await load('generic-aliases', 'child.model.js');
+    const parent = decodeGeneratedModel(Parent, { child: { value: { name: 'nested' } } });
+    assert.ok(parent.child.value instanceof Child, 'generic nested model is constructed as the concrete local class');
+    assert.deepEqual(encodeGeneratedModel(parent), { child: { value: { name: 'nested' } } });
+  });
+
+  await t.test('recursive local IModel aliases remain concrete nested references', async () => {
+    const { Node } = await load('recursive-alias', 'node.model.js');
+    const node = decodeGeneratedModel(Node, { name: 'root', children: [{ name: 'leaf' }] });
+    assert.ok(node.children?.[0] instanceof Node);
+    assert.deepEqual(encodeGeneratedModel(node), { name: 'root', children: [{ name: 'leaf' }] });
+  });
 });
 
 for (const validation of [true, false] as const) {
@@ -271,27 +339,6 @@ test('nullable and optional tagged branches retain their supported family', t =>
   assert.doesNotThrow(() => generate({ root, profile: { mobx: false, validation: true } }));
 });
 
-test('union branch predicates stay attached to their checker constituent', async t => {
-  const { root, sourceRoot } = fixture(t);
-  fs.writeFileSync(path.join(sourceRoot, 'predicates.ts'), readFixture("models/model-tags/union-branch-predicates-stay-attached-to-their-checker-constituent/predicates.ts"));
-  fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), taggedModelSource({
-    name: 'A',
-    imports: tsSource`import type { TValidation } from '@exprtlabs/codegen/tags';\nimport { numberValue, stringValue } from './predicates.js';`,
-    fields: tsSource`value: (string & TValidation<typeof stringValue>) | (number & TValidation<typeof numberValue>)`,
-  }).text);
-  const result = generate({ root, profile: { mobx: false, validation: true } });
-  writeGeneratedArtifacts(result.artifacts);
-  await compileModelProject(root);
-  const { A } = await import(path.toNamespacedPath(path.join(root, 'build/a.model.js')));
-  const predicates = await import(path.toNamespacedPath(path.join(root, 'build/predicates.js')));
-  assert.equal(await getValidator(new A({ value: 'text' })).validate(), true);
-  assert.equal(predicates.stringCalls, 1);
-  assert.equal(predicates.numberCalls, 0);
-  assert.equal(await getValidator(new A({ value: 7 })).validate(), true);
-  assert.equal(predicates.stringCalls, 1);
-  assert.equal(predicates.numberCalls, 1);
-});
-
 test('validation false retains Date and serde conversions without a validator registry', async t => {
   const { root, sourceRoot } = fixture(t);
   fs.writeFileSync(path.join(sourceRoot, 'codecs.ts'), readFixture("models/model-tags/validation-false-retains-date-and-serde-conversions-without-a-validator-regi/codecs.ts"));
@@ -344,26 +391,6 @@ test('generic utility aliases retain nested constraints, predicates, and serde b
   assert.equal(bindings.serialized, 0, 'model-plane validate does not encode TSerde values');
   assert.deepEqual(encodeGeneratedModel(valid), { payload: { value: 'good', when: '2025-01-02T03:04:05.000Z' } });
   assert.equal(bindings.serialized, 1, 'an explicit serialize call serializes once for that call');
-});
-
-test('utility aliases preserve two distinct same-signature predicates and deduplicate an alias', async t => {
-  const { root, sourceRoot } = fixture(t);
-  fs.writeFileSync(path.join(sourceRoot, 'predicates.ts'), readFixture("models/model-tags/utility-aliases-preserve-two-distinct-same-signature-predicates-and-deduplic/predicates.ts"));
-  fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), taggedModelSource({
-    name: 'A',
-    imports: tsSource`import type { TValidation } from '@exprtlabs/codegen/tags';\nimport { first, firstAlias, second } from './predicates.js';\ntype Tagged<T extends string> = T & TValidation<typeof first> & TValidation<typeof firstAlias> & TValidation<typeof second>;\ntype Box<T> = { value: T };\ntype Payload = Partial<Pick<Box<Tagged<string>>, 'value'>>;`,
-    fields: tsSource`payload: Payload`,
-  }).text);
-  const result = generate({ root, profile: { mobx: false, validation: true } });
-  writeGeneratedArtifacts(result.artifacts);
-  const shared = result.artifacts.find((artifact) => artifact.path.endsWith('/models.generated.ts'))?.content ?? '';
-  assert.equal(new Set([...shared.matchAll(/src\/predicates\.ts:\d+:\d+/g)].map((match) => match[0])).size, 2);
-  await compileModelProject(root);
-  const { A } = await import(path.toNamespacedPath(path.join(root, 'build/a.model.js')));
-  const predicates = await import(path.toNamespacedPath(path.join(root, 'build/predicates.js')));
-  assert.equal(await getValidator(new A({ payload: { value: 'ok' } })).validate({ failFast: false }), true);
-  assert.equal(predicates.firstCalls, 1, 'the same declaration is called once through its alias');
-  assert.equal(predicates.secondCalls, 1, 'the distinct same-signature declaration is retained');
 });
 
 test('serde wire descriptors validate nested constraints before decode and after encode', async t => {
@@ -497,32 +524,6 @@ import * as bindings from './bindings.js';`,
       item.name,
     );
   }
-});
-
-test('generic aliases preserve concrete local model identity for nested conversion', async t => {
-  const { root, sourceRoot } = fixture(t);
-  fs.writeFileSync(path.join(sourceRoot, 'child.model.ts'), taggedModelSource({ name: 'Child', fields: tsSource`name: string` }).text);
-  fs.writeFileSync(path.join(sourceRoot, 'parent.model.ts'), readFixture("models/model-tags/generic-aliases-preserve-concrete-local-model-identity-for-nested-conversion/parent.model.ts"));
-  const result = generate({ root, profile: { mobx: false, validation: true } });
-  writeGeneratedArtifacts(result.artifacts);
-  await compileModelProject(root);
-  const { Parent } = await import(path.toNamespacedPath(path.join(root, 'build/parent.model.js')));
-  const { Child } = await import(path.toNamespacedPath(path.join(root, 'build/child.model.js')));
-  const parent = decodeGeneratedModel(Parent, { child: { value: { name: 'nested' } } });
-  assert.ok(parent.child.value instanceof Child, 'generic nested model is constructed as the concrete local class');
-  assert.deepEqual(encodeGeneratedModel(parent), { child: { value: { name: 'nested' } } });
-});
-
-test('recursive local IModel aliases remain concrete nested references', async t => {
-  const { root, sourceRoot } = fixture(t);
-  fs.writeFileSync(path.join(sourceRoot, 'node.model.ts'), taggedModelSource({ name: 'Node', fields: tsSource`name: string; children?: TNode[]` }).text);
-  const result = generate({ root, profile: { mobx: false, validation: true } });
-  writeGeneratedArtifacts(result.artifacts);
-  await compileModelProject(root);
-  const { Node } = await import(path.toNamespacedPath(path.join(root, 'build/node.model.js')));
-  const node = decodeGeneratedModel(Node, { name: 'root', children: [{ name: 'leaf' }] });
-  assert.ok(node.children?.[0] instanceof Node);
-  assert.deepEqual(encodeGeneratedModel(node), { name: 'root', children: [{ name: 'leaf' }] });
 });
 
 test('standalone model validators are external generated artifacts with declarations and notices', async t => {

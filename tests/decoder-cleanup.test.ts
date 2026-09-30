@@ -47,14 +47,14 @@ const decoderCases: readonly OpenResponseCase[] = [
   },
   {
     name: 'ProtocolMismatch',
-    operation: 'readValue',
+    operation: 'readMismatchedValue',
     declaredContentType: 'application/json',
     wireContentType: 'text/plain',
     content: { schema: { type: 'object' } },
   },
   {
     name: 'ActualMediaStreamDecoder',
-    operation: 'readEvents',
+    operation: 'readActualMediaEvents',
     declaredContentType: '*/*',
     wireContentType: 'application/x-events',
     content: { itemSchema: { type: 'object' } },
@@ -64,7 +64,7 @@ const decoderCases: readonly OpenResponseCase[] = [
   },
   {
     name: 'ValidationFailure',
-    operation: 'readValue',
+    operation: 'readValidatedValue',
     declaredContentType: 'application/json',
     wireContentType: 'application/json',
     content: {
@@ -81,42 +81,42 @@ const decoderCases: readonly OpenResponseCase[] = [
 ];
 
 test('decoder failures cancel an unconsumed generated response body', async t => {
+  const name = 'DecoderCleanup';
   for (const validation of [false, true]) {
-    for (const decoderCase of decoderCases) {
-      if (decoderCase.validationProfiles && !decoderCase.validationProfiles.includes(validation)) continue;
-      const root = mkdtempSync(path.join(tmpdir(), `runic-decoder-cleanup-${decoderCase.name.toLowerCase()}-`));
-      t.after(() => rmSync(root, { recursive: true, force: true }));
-      const output = path.join(root, 'sdk');
-      await generateMaterializedSdk({
-        openapi: '3.2.0',
-        info: { title: decoderCase.name, version: '1' },
-        paths: {
-          '/value': {
-            get: {
-              operationId: decoderCase.operation,
-              responses: {
-                200: {
-                  description: 'response',
-                  content: { [decoderCase.declaredContentType]: decoderCase.content },
-                },
-              },
+    const root = mkdtempSync(path.join(tmpdir(), `runic-decoder-cleanup-${validation ? 'validated' : 'unvalidated'}-`));
+    t.after(() => rmSync(root, { recursive: true, force: true }));
+    const output = path.join(root, 'sdk');
+    await generateMaterializedSdk({
+      openapi: '3.2.0',
+      info: { title: name, version: '1' },
+      paths: Object.fromEntries(decoderCases.map(decoderCase => [`/${decoderCase.name}`, {
+        get: {
+          operationId: decoderCase.operation,
+          responses: {
+            200: {
+              description: 'response',
+              content: { [decoderCase.declaredContentType]: decoderCase.content },
             },
           },
         },
-      }, {
-        output,
-        name: decoderCase.name,
-        profile: { mobx: false, validation },
-      });
-      compileStrictUnusedSdk(output);
+      }])),
+    }, {
+      output,
+      name,
+      profile: { mobx: false, validation },
+    });
+    compileStrictUnusedSdk(output);
 
-      const generated = requireRecord(
-        await import(pathToFileURL(path.join(output, 'dist', 'client.js')).href),
-        `${decoderCase.name} client`,
-      );
-      const Client = generated[`${decoderCase.name}Client`];
-      assert.ok(isGeneratedClientClass(Client));
-      if (!isGeneratedClientClass(Client)) throw new TypeError(`${decoderCase.name}Client`);
+    const generated = requireRecord(
+      await import(pathToFileURL(path.join(output, 'dist', 'client.js')).href),
+      `${name} client`,
+    );
+    const Client = generated[`${name}Client`];
+    assert.ok(isGeneratedClientClass(Client));
+    if (!isGeneratedClientClass(Client)) throw new TypeError(`${name}Client`);
+
+    for (const decoderCase of decoderCases) {
+      if (decoderCase.validationProfiles && !decoderCase.validationProfiles.includes(validation)) continue;
 
       let cancelled = false;
       const body = new ReadableStream<Uint8Array>({
@@ -167,7 +167,7 @@ test('decoder failures cancel an unconsumed generated response body', async t =>
             ? (error: unknown) => error === failure
             : /Undeclared OpenAPI response/,
       );
-      assert.equal(cancelled, true, `${decoderCase.name} failure must cancel its response body`);
+      assert.equal(cancelled, true, `${decoderCase.name} failure must cancel its response body (validation ${validation})`);
     }
   }
 });

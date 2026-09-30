@@ -40,8 +40,12 @@ async function loadSdk(root: string, marker: string, profile: CodegenProfile): P
     return runtime.validationEngine;
   };
   const shared = engineOf(new Client(options));
-  if (profile.ajvStandalone) assert.equal(shared, undefined);
-  else {
+  if (profile.ajvStandalone) {
+    assert.equal(shared, undefined);
+    const index: Record<string, unknown> = await import(pathToFileURL(path.join(output, 'dist/index.js')).href);
+    assert.equal(typeof index.createRuntimeValidators, 'function');
+    assert.equal(typeof index.createOperationRuntimeValidators, 'function');
+  } else {
     assert.ok(shared);
     assert.equal(engineOf(new Client(options)), shared, 'clients of one SDK share one default engine');
   }
@@ -100,21 +104,4 @@ test('same-title SDKs keep their schema contracts when they share a validation e
     await assert.rejects(client.sendPayload().execute({ body: { marker: marker === 'A' ? 'B' : 'A' } }));
     assert.equal(requests, before, 'invalid input never reaches transport');
   }
-});
-
-test('a standalone-engine SDK exposes createRuntimeValidators from its index and validates requests', async t => {
-  const root = createFixtureProject(t, 'runic-openapi-standalone-validators-');
-  const output = path.join(root, 'sdk');
-  writeGeneratedSdk(writeSdk, sdkDocument('A'), { output, name: 'Engine', profile: { mobx: false, validation: true, ajvStandalone: true } });
-  compileGeneratedSdk(output, []);
-  const sdk: Record<string, unknown> = await import(pathToFileURL(path.join(output, 'dist/index.js')).href);
-  assert.equal(typeof sdk.createRuntimeValidators, 'function');
-  assert.equal(typeof sdk.createOperationRuntimeValidators, 'function');
-  const Client = sdk.EngineClient;
-  assert.ok(isGeneratedClientClass(Client));
-  const fetchImpl: typeof fetch = async (_url, init) =>
-    new Response(String(init?.body), { headers: { 'content-type': 'application/json' } });
-  const client = new Client({ baseUrl: 'https://fixture.invalid', fetchImpl }) as unknown as PayloadClient;
-  assert.deepEqual((await client.sendPayload().execute({ body: { marker: 'A' } })).body, { marker: 'A' });
-  await assert.rejects(client.sendPayload().execute({ body: { marker: 'B' } }));
 });

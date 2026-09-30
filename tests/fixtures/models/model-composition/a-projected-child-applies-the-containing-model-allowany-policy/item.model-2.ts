@@ -1,7 +1,7 @@
 
 import type { IModel } from '@exprtlabs/codegen/model';
-import { ChildBase, ContainerBase } from './item.model.generated.js';
-export type TChild = IModel<{ id: string; raw: any }, { allowAny: true }>;
-export type TContainer = IModel<{ child: Omit<TChild, 'id'> }, { allowAny: true }>;
-export class Child extends ChildBase {}
+import { LeafBase, ContainerBase } from './item.model.generated.js';
+export type TLeaf = IModel<{ id: string; raw: any }, { allowAny: true }>;
+export type TContainer = IModel<{ child: Omit<TLeaf, 'id'> }, { allowAny: true }>;
+export class Leaf extends LeafBase {}
 export class Container extends ContainerBase {}

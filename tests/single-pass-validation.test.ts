@@ -4,6 +4,7 @@ import { pathToFileURL } from 'node:url';
 import test, { type TestContext } from 'node:test';
 import { IssueRepresentation, LibError, LibErrorKind } from '@exprtlabs/codegen/errors';
 import { requireObjectCodec } from '@exprtlabs/codegen/serde';
+import { validateInstance } from '@exprtlabs/codegen/validation';
 import { generate } from '#model/generator';
 import { readFixture, writeGeneratedArtifacts } from './fixture-project.js';
 import { generate as generateOpenApi } from '@exprtlabs/openapi-to-ts/generator';
@@ -92,28 +93,27 @@ for (const [label, profile] of [['runtime Ajv', { mobx: false, validation: true 
 
 const MONEY_FIXTURE = 'models/unify-validate/sdk-money-ref-plus-extra-tvalidation-local-tvalidation-and-tserde-share-one-';
 
-for (const [label, profile] of [['runtime Ajv', { mobx: false, validation: true }], ['standalone', { mobx: false, validation: true, ajvStandalone: true }]] as const) {
-  test(`a rule on an SDK model runs once per parse and IObject enforces it (${label})`, async t => {
-    const { root, sourceRoot } = createModelProject(t, { prefix: 'runic-single-pass-sdk-', name: 'single-pass-sdk', allowJs: true });
-    writeModelSources(root, { 'money.yaml': readFixture(`${MONEY_FIXTURE}/money.yaml`) });
-    writeGeneratedArtifacts((await generateOpenApi({ input: path.join(root, 'money.yaml'), output: path.join(sourceRoot, 'sdk'), name: 'Payments', profile })).artifacts);
-    writeModelSources(sourceRoot, { 'rules.ts': readFixture(`${MONEY_FIXTURE}/rules.ts`), 'checkout.model.ts': readFixture(`${MONEY_FIXTURE}/checkout.model.ts`) });
-    writeGeneratedArtifacts(generate({ root, profile, manifestInputs: [path.join(sourceRoot, 'sdk/model-manifest.json')] }).artifacts);
-    await compileModelProject(root);
-    const rules = await import(pathToFileURL(path.join(root, 'build/rules.js')).href) as { extraMoneyCalls: number };
-    await import(pathToFileURL(path.join(root, 'build/checkout.model.js')).href);
-    const wire = {
-      money: { amount: 12, currency: 'USD' }, note: 'ok', code: 'ff', when: '2026-01-01T00:00:00.000Z', items: [{ sku: 'ABC' }],
-      primary: { sku: 'ABC', quantity: 1, price: 2 }, flags: { rush: 'yes' }, channel: { kind: 'hold', until: '2026-01-03T00:00:00.000Z' },
-      span: ['2026-01-01T00:00:00.000Z', '2026-01-02T00:00:00.000Z'], hold: null, bag: { lane: 'A' },
-    };
-    const plain = requireObjectCodec('JsonCheckout');
-    const before = rules.extraMoneyCalls;
-    plain.parse(JSON.stringify(wire));
-    assert.equal(rules.extraMoneyCalls - before, 1, 'extraMoney runs once per parse');
-    assert.throws(() => plain.parse(JSON.stringify({ ...wire, money: { amount: 12, currency: 'XXX' } })), validationError);
-  });
-}
+test('a rule on an SDK model runs once per parse and IObject enforces it (standalone)', async t => {
+  const profile = { mobx: false, validation: true, ajvStandalone: true } as const;
+  const { root, sourceRoot } = createModelProject(t, { prefix: 'runic-single-pass-sdk-', name: 'single-pass-sdk', allowJs: true });
+  writeModelSources(root, { 'money.yaml': readFixture(`${MONEY_FIXTURE}/money.yaml`) });
+  writeGeneratedArtifacts((await generateOpenApi({ input: path.join(root, 'money.yaml'), output: path.join(sourceRoot, 'sdk'), name: 'Payments', profile })).artifacts);
+  writeModelSources(sourceRoot, { 'rules.ts': readFixture(`${MONEY_FIXTURE}/rules.ts`), 'checkout.model.ts': readFixture(`${MONEY_FIXTURE}/checkout.model.ts`) });
+  writeGeneratedArtifacts(generate({ root, profile, manifestInputs: [path.join(sourceRoot, 'sdk/model-manifest.json')] }).artifacts);
+  await compileModelProject(root);
+  const rules = await import(pathToFileURL(path.join(root, 'build/rules.js')).href) as { extraMoneyCalls: number };
+  await import(pathToFileURL(path.join(root, 'build/checkout.model.js')).href);
+  const wire = {
+    money: { amount: 12, currency: 'USD' }, note: 'ok', code: 'ff', when: '2026-01-01T00:00:00.000Z', items: [{ sku: 'ABC' }],
+    primary: { sku: 'ABC', quantity: 1, price: 2 }, flags: { rush: 'yes' }, channel: { kind: 'hold', until: '2026-01-03T00:00:00.000Z' },
+    span: ['2026-01-01T00:00:00.000Z', '2026-01-02T00:00:00.000Z'], hold: null, bag: { lane: 'A' },
+  };
+  const plain = requireObjectCodec('JsonCheckout');
+  const before = rules.extraMoneyCalls;
+  plain.parse(JSON.stringify(wire));
+  assert.equal(rules.extraMoneyCalls - before, 1, 'extraMoney runs once per parse');
+  assert.throws(() => plain.parse(JSON.stringify({ ...wire, money: { amount: 12, currency: 'XXX' } })), validationError);
+});
 
 const TOGGLES = `import type { IModel, IObject } from '@exprtlabs/codegen/model';
 import type { TValidation } from '@exprtlabs/codegen/tags';
@@ -152,6 +152,8 @@ for (const profileValidation of [true, false]) {
       const construct = models[name];
       const effective = declaration === 'on' || (declaration === 'inherit' && profileValidation);
       const model = codec.parse(JSON.stringify(value), { validate: false, construct });
+      if (declaration === 'off') assert.throws(() => codec.validate(model), unavailable, `${name} codec.validate`);
+      if (declaration === 'on') assert.equal(codec.validate({ note: 'hi', when: 'not a date' } as never), false, `${name} codec.validate rejects a bad value`);
       for (const call of ['omitted', 'true', 'false'] as const) {
         const options = call === 'omitted' ? { construct } : { validate: call === 'true', construct };
         const expected = call === 'false' ? 0 : !effective ? (call === 'true' ? 'unavailable' : 0) : 1;
@@ -174,6 +176,10 @@ for (const profileValidation of [true, false]) {
       counter.reset();
       requireObjectCodec('Parent').parse(JSON.stringify({ child: { secret: 7 }, ...value }), { construct: models.Parent });
       assert.equal(counter.calls, 1);
+      const parentCodec = requireObjectCodec('Parent');
+      const blank = new models.Parent({ child: { secret: 'x' }, note: '  ', when: new Date(value.when) });
+      assert.equal(parentCodec.validate(blank), false, 'a blank parent note is rejected');
+      assert.ok((await validateInstance(blank)).some(issue => issue.path[0] === 'note'));
       const source = result.artifacts.map(a => a.content).join('\n');
       const parentModelOnly = source.split('\n').find(line => line.includes('const __resolvedModelOnlySchema_Parent')) ?? '';
       assert.ok(parentModelOnly.length > 0 && !parentModelOnly.includes('Child'), 'the parent residual does not reference the opaque child');

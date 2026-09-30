@@ -27,7 +27,7 @@ test('Typia is not timed on checkout and says why', () => {
   assert.ok(!timedCases().some(c => c.payload === 'checkout' && c.adapter === 'typia'));
 });
 
-test('timed operations do no setup: codec lookup and option objects stay outside the timed call', () => {
+test('benchmark fixtures are fair: timed operations do no setup and Typia uses the exact variants', () => {
   const fixtures = path.resolve(import.meta.dirname, '../../scripts/benchmark/fixtures');
   for (const file of ['upstream/codegen.ts', 'features/comparison-features-codegen.ts', 'upstream/codegen-object.ts', 'features/comparison-features-codegen-object.ts']) {
     const source = readFileSync(path.join(fixtures, file), 'utf8');
@@ -37,15 +37,9 @@ test('timed operations do no setup: codec lookup and option objects stay outside
     for (const line of timed) assert.match(line, /: (?:\(\) => (?:codec|checkout)\.\w+\([^()]*\),?|decode,?|\(\) => \{)$/, `${file}: ${line.trim()}`);
     assert.match(source, /const decode = \(\): object => checkout\.fromWireFormat\(input\.payload, decodeOptions\)|const codec = requireObjectCodec\(codecId\(input\)\);|const checkout = requireObjectCodec<TJsonCheckout>\('JsonCheckout'\);/, file);
   }
-});
-
-test('Typia fixtures use the exact variants, matching the other libraries', () => {
-  const fixtures = path.resolve(import.meta.dirname, '../../scripts/benchmark/fixtures');
-  for (const file of ['upstream/typia.ts']) {
-    const source = readFileSync(path.join(fixtures, file), 'utf8');
-    assert.doesNotMatch(source, /createIs<|createAssertParse<|createAssertStringify</, file);
-    assert.match(source, /createEquals</, file);
-  }
+  const typia = readFileSync(path.join(fixtures, 'upstream/typia.ts'), 'utf8');
+  assert.doesNotMatch(typia, /createIs<|createAssertParse<|createAssertStringify</, 'upstream/typia.ts');
+  assert.match(typia, /createEquals</, 'upstream/typia.ts');
 });
 
 test('every timed Codegen case has a timed peer for the same payload and operation in its group', () => {

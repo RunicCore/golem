@@ -7,16 +7,16 @@ const rootElement = document.getElementById('root');
 if (!rootElement) throw new Error('App root was not found.');
 
 const originalDispose = PaymentStore.prototype.dispose;
-Reflect.set(globalThis, 'exampleDisposals', 0);
+Reflect.set(globalThis, 'storeDisposals', 0);
 PaymentStore.prototype.dispose = function () {
-  Reflect.set(globalThis, 'exampleDisposals', Number(Reflect.get(globalThis, 'exampleDisposals')) + 1);
+  Reflect.set(globalThis, 'storeDisposals', Number(Reflect.get(globalThis, 'storeDisposals')) + 1);
   return originalDispose.call(this);
 };
 
 const reactRoot: Root = createRoot(rootElement);
-Reflect.set(globalThis, 'unmountExample', () => reactRoot.unmount());
+Reflect.set(globalThis, 'unmountApp', () => reactRoot.unmount());
 reactRoot.render(
   <StrictMode>
-    <App />
+    <App baseUrl={location.origin} />
   </StrictMode>,
 );

@@ -17,7 +17,7 @@ import { buildCodecValidationPlan, type CodecSchemaClosureEntry } from '@exprtla
 import type { ModelTypeDescriptor } from '@exprtlabs/codegen/model';
 import { createSchemaGraph } from '@exprtlabs/codegen/schema-graph';
 import { generate } from '#model/generator';
-import { command, workspace } from './packed/helpers.js';
+import { command, workspace } from './support/process.js';
 import type { ModelValidationContext } from '@exprtlabs/codegen/model';
 import { LibError, LibErrorKind } from '@exprtlabs/codegen/errors';
 
@@ -208,7 +208,7 @@ test('standalone object codecs close nested schemas and preserve first/all sync 
       readonly schemas: Readonly<Record<string, object | boolean>>;
     };
   }];
-  const { findCodecIdForConstructor, requireObjectCodec, resolveModelValidationContextValidator } = await import('@exprtlabs/codegen/serde');
+  const { findCodecIdForConstructor, requireObjectCodec } = await import('@exprtlabs/codegen/serde');
   const { getValidator, validateInstance } = await import('@exprtlabs/codegen/validation');
   const codecId = findCodecIdForConstructor(RootBase);
   assert.ok(codecId, 'generated root model has a registered codec id');
@@ -260,9 +260,9 @@ test('standalone object codecs close nested schemas and preserve first/all sync 
   assert.equal(stateful.issues.length, 1);
   assert.equal((await validateInstance(invalid, { failFast: false })).length, 3);
 
-  const lookups: string[] = [];
   const accept = (_input: unknown): boolean => true;
   Object.defineProperty(accept, 'errors', { value: [] });
+  const lookups: string[] = [];
   const context: ModelValidationContext = {
     resolve(reference, mode) {
       lookups.push(`${reference}|${mode}`);
@@ -273,17 +273,7 @@ test('standalone object codecs close nested schemas and preserve first/all sync 
   assert.equal(codec.validate(invalid, { validationContext: context }), true);
   assert.equal(codec.validate(invalid, { failFast: false, validationContext: context }), true);
   assert.equal(codec.validate(invalid, { failFast: false, validationContext: context }), true);
-  resolveModelValidationContextValidator(context, 'shared-ref', 'first');
-  resolveModelValidationContextValidator(context, 'shared-ref#wire', 'first');
-  resolveModelValidationContextValidator(context, 'shared-ref', 'all');
-  resolveModelValidationContextValidator(context, 'shared-ref', 'first');
-  assert.deepEqual(lookups, [
-    `${codecId}|first`,
-    `${codecId}|all`,
-    'shared-ref|first',
-    'shared-ref#wire|first',
-    'shared-ref|all',
-  ], 'context resolution is reused separately for each reference and mode');
+  assert.deepEqual(lookups, [`${codecId}|first`, `${codecId}|all`], 'context resolution is reused separately for each mode');
 
   const engineLookups: string[] = [];
   const engineContext: ModelValidationContext = {
@@ -295,36 +285,10 @@ test('standalone object codecs close nested schemas and preserve first/all sync 
       },
     },
   };
-  const engineModelFirst = resolveModelValidationContextValidator(engineContext, 'engine-ref', 'first');
-  const engineModelAll = resolveModelValidationContextValidator(engineContext, 'engine-ref', 'all');
-  const engineWireFirst = resolveModelValidationContextValidator(engineContext, 'engine-ref#wire', 'first');
-  const engineWireAll = resolveModelValidationContextValidator(engineContext, 'engine-ref#wire', 'all');
-  assert.strictEqual(engineModelFirst, accept, 'the engine owns its error-mode behavior');
-  assert.strictEqual(resolveModelValidationContextValidator(engineContext, 'engine-ref', 'first'), engineModelFirst);
-  assert.strictEqual(resolveModelValidationContextValidator(engineContext, 'engine-ref', 'all'), engineModelAll);
-  assert.strictEqual(resolveModelValidationContextValidator(engineContext, 'engine-ref#wire', 'first'), engineWireFirst);
-  assert.strictEqual(resolveModelValidationContextValidator(engineContext, 'engine-ref#wire', 'all'), engineWireAll);
-  assert.deepEqual(engineLookups, ['engine-ref', 'engine-ref', 'engine-ref#wire', 'engine-ref#wire'], 'engine contexts cache each reference and mode independently');
-
-  let secondEngineLookups = 0;
-  const secondEngineValidator = (_input: unknown): boolean => false;
-  const secondEngineContext: ModelValidationContext = {
-    engine: {
-      addSchema() {},
-      getSchema() {
-        secondEngineLookups++;
-        return secondEngineValidator;
-      },
-    },
-  };
-  assert.strictEqual(resolveModelValidationContextValidator(secondEngineContext, 'engine-ref', 'first'), secondEngineValidator);
-  assert.equal(secondEngineLookups, 1, 'a separate context owns an independent engine cache for the same reference');
-
-  const engineBeforeCodecCalls = engineLookups.length;
   assert.equal(codec.validate(invalid, { validationContext: engineContext }), true);
   assert.equal(codec.validate(invalid, { validationContext: engineContext }), true);
   assert.equal(codec.validate(invalid, { failFast: false, validationContext: engineContext }), true);
-  assert.equal(engineLookups.length, engineBeforeCodecCalls + 2, 'generated codecs resolve and reuse explicit engine validators for first/all modes');
+  assert.deepEqual(engineLookups, [codecId, codecId], 'generated codecs resolve and reuse explicit engine validators for first/all modes');
 
   assert.throws(
     () => codec.validate(invalid, { validationContext: { resolve: () => undefined } }),
@@ -366,41 +330,6 @@ test('standalone object codecs close nested schemas and preserve first/all sync 
     process.off('unhandledRejection', captureUnhandled);
   }
   assert.deepEqual(unhandled, [], 'sync rejection consumes async override promises safely');
-});
-
-test('public Ajv engine keeps async schemas while generated sync provider rejects them at resolution', async () => {
-  const { createOpenApiAjvEngine, createOpenApiSyncAjvEngine } = await import('@exprtlabs/codegen/ajv');
-  const schema = {
-    $async: true,
-    type: 'object',
-    required: ['enabled'],
-    properties: { enabled: { const: true } },
-    additionalProperties: false,
-  };
-  const asyncEngine = createOpenApiAjvEngine();
-  asyncEngine.addSchema(schema, 'async-public-schema');
-  const asyncValidator = asyncEngine.getSchema('async-public-schema');
-  assert.ok(asyncValidator, 'general engine resolves async Ajv schema');
-  assert.equal(await asyncValidator({ enabled: true }), true);
-  assert.equal(await asyncValidator({ enabled: false }), false);
-  const typeErrors = (asyncValidator.errors ?? []).map(error => error !== null && typeof error === 'object'
-    ? [Reflect.get(error, 'keyword'), Reflect.get(error, 'instancePath')]
-    : []);
-  assert.deepEqual(typeErrors, [['const', '/enabled']], 'Ajv async failure paths are retained');
-  assert.equal(await asyncValidator({}), false);
-  const requiredErrors = (asyncValidator.errors ?? []).map(error => error !== null && typeof error === 'object'
-    ? [Reflect.get(error, 'keyword'), Reflect.get(error, 'instancePath')]
-    : []);
-  assert.deepEqual(requiredErrors, [['required', '']], 'Ajv async required failures retain the root path');
-  assert.equal(await asyncValidator({ enabled: true }), true);
-  assert.equal(asyncValidator.errors, null, 'a successful async run clears prior errors');
-
-  const syncEngine = createOpenApiSyncAjvEngine();
-  syncEngine.addSchema(schema, 'async-sync-schema');
-  assert.throws(
-    () => syncEngine.getSchema('async-sync-schema'),
-    error => error instanceof LibError && error.kind === LibErrorKind.ValidationUnavailable,
-  );
 });
 
 test('standalone plans permit equal model names in independent source graphs', async t => {

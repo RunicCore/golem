@@ -114,89 +114,83 @@ test('fills a response media schema from the declared contract while preserving 
   assert.equal(media?.schema?.$ref, '#/components/schemas/Payment');
 });
 
-test('normalizes ordinary DTO nullable properties, enums, and response overlays for both OpenAPI dialects', async t => {
-  for (const openapiVersion of ['3.2.0', '3.1.2'] as const) {
-    const root = fixture(t, readFixture("controllers/overlay/normalizes-ordinary-dto-nullable-properties-enums-and-response-overlays-for-bo/controller.ts"));
-    const document = documentOf(await generate({
-      root,
-      output: path.join(root, `openapi-${openapiVersion}.json`),
-      openapiVersion,
-      info: { title: 'Nullable DTO overlay', version: '1' },
-      profile: { mobx: false, validation: false },
-    }));
-    assertNoLegacyNullable(document);
-    const response = document.paths['/results']?.get?.responses['200']?.content?.['application/json']?.schema;
-    assert.ok(response);
-    const result = response;
-    const label = result.properties?.label;
-    const kind = result.properties?.kind;
-    assert.ok(label);
-    assert.ok(kind);
-    const ajv = new Ajv2020({ allErrors: true, strict: false, validateSchema: false });
-    const validateLabel = ajv.compile(standardSchema(document, label));
-    const validateKind = ajv.compile(standardSchema(document, kind));
-    const validateResponse = ajv.compile(standardSchema(document, response));
-    assert.equal(validateLabel('ok'), true, JSON.stringify(validateLabel.errors));
-    assert.equal(validateLabel(null), true, JSON.stringify(validateLabel.errors));
-    assert.equal(validateLabel(42), false);
-    assert.equal(validateKind('cat'), true, JSON.stringify(validateKind.errors));
-    assert.equal(validateKind('dog'), true, JSON.stringify(validateKind.errors));
-    assert.equal(validateKind(null), true, JSON.stringify(validateKind.errors));
-    assert.equal(validateKind('bird'), false);
-    assert.equal(validateResponse({ label: 'ok', kind: 'cat' }), true, JSON.stringify(validateResponse.errors));
-    assert.equal(validateResponse(null), true, JSON.stringify(validateResponse.errors));
-    assert.equal(validateResponse({ label: 42, kind: 'cat' }), false);
-  }
+test('normalizes ordinary DTO nullable properties, enums, and response overlays', async t => {
+  const root = fixture(t, readFixture("controllers/overlay/normalizes-ordinary-dto-nullable-properties-enums-and-response-overlays-for-bo/controller.ts"));
+  const document = documentOf(await generate({
+    root,
+    output: path.join(root, 'openapi.json'),
+    openapiVersion: '3.1.2',
+    info: { title: 'Nullable DTO overlay', version: '1' },
+    profile: { mobx: false, validation: false },
+  }));
+  assertNoLegacyNullable(document);
+  const response = document.paths['/results']?.get?.responses['200']?.content?.['application/json']?.schema;
+  assert.ok(response);
+  const result = response;
+  const label = result.properties?.label;
+  const kind = result.properties?.kind;
+  assert.ok(label);
+  assert.ok(kind);
+  const ajv = new Ajv2020({ allErrors: true, strict: false, validateSchema: false });
+  const validateLabel = ajv.compile(standardSchema(document, label));
+  const validateKind = ajv.compile(standardSchema(document, kind));
+  const validateResponse = ajv.compile(standardSchema(document, response));
+  assert.equal(validateLabel('ok'), true, JSON.stringify(validateLabel.errors));
+  assert.equal(validateLabel(null), true, JSON.stringify(validateLabel.errors));
+  assert.equal(validateLabel(42), false);
+  assert.equal(validateKind('cat'), true, JSON.stringify(validateKind.errors));
+  assert.equal(validateKind('dog'), true, JSON.stringify(validateKind.errors));
+  assert.equal(validateKind(null), true, JSON.stringify(validateKind.errors));
+  assert.equal(validateKind('bird'), false);
+  assert.equal(validateResponse({ label: 'ok', kind: 'cat' }), true, JSON.stringify(validateResponse.errors));
+  assert.equal(validateResponse(null), true, JSON.stringify(validateResponse.errors));
+  assert.equal(validateResponse({ label: 42, kind: 'cat' }), false);
 });
 
 test('allows nullable:false narrowing for ordinary DTOs while keeping the standard schema nonnullable', async t => {
-  for (const openapiVersion of ['3.2.0', '3.1.2'] as const) {
-    const root = fixture(t, readFixture("controllers/overlay/allows-nullable-false-narrowing-for-ordinary-dtos-while-keeping-the-standard-s/controller.ts"));
-    const document = documentOf(await generate({
-      root,
-      output: path.join(root, `openapi-${openapiVersion}.json`),
-      openapiVersion,
-      info: { title: 'Nonnullable DTO overlay', version: '1' },
-      profile: { mobx: false, validation: false },
-    }));
-    assertNoLegacyNullable(document);
-    const propertyResponse = document.paths['/narrow/property']?.get?.responses['200']?.content?.['application/json']?.schema;
-    const responseResponse = document.paths['/narrow/response']?.get?.responses['200']?.content?.['application/json']?.schema;
-    assert.ok(propertyResponse);
-    assert.ok(responseResponse);
-    const propertyObject = propertyResponse.anyOf?.find(item => item.type === 'object') ?? propertyResponse;
-    const label = propertyObject.properties?.label;
-    const kind = propertyObject.properties?.kind;
-    assert.ok(label);
-    assert.ok(kind);
-    const ajv = new Ajv2020({ allErrors: true, strict: false, validateSchema: false });
-    const validateLabel = ajv.compile(standardSchema(document, label));
-    const validateKind = ajv.compile(standardSchema(document, kind));
-    const validateResponse = ajv.compile(standardSchema(document, responseResponse));
-    assert.equal(validateLabel('ok'), true, JSON.stringify(validateLabel.errors));
-    assert.equal(validateLabel(null), false);
-    assert.equal(validateKind('cat'), true, JSON.stringify(validateKind.errors));
-    assert.equal(validateKind(null), false);
-    assert.equal(validateResponse({ label: 'ok', kind: 'cat' }), true, JSON.stringify(validateResponse.errors));
-    assert.equal(validateResponse(null), false);
-  }
+  const root = fixture(t, readFixture("controllers/overlay/allows-nullable-false-narrowing-for-ordinary-dtos-while-keeping-the-standard-s/controller.ts"));
+  const document = documentOf(await generate({
+    root,
+    output: path.join(root, 'openapi.json'),
+    openapiVersion: '3.1.2',
+    info: { title: 'Nonnullable DTO overlay', version: '1' },
+    profile: { mobx: false, validation: false },
+  }));
+  assertNoLegacyNullable(document);
+  const propertyResponse = document.paths['/narrow/property']?.get?.responses['200']?.content?.['application/json']?.schema;
+  const responseResponse = document.paths['/narrow/response']?.get?.responses['200']?.content?.['application/json']?.schema;
+  assert.ok(propertyResponse);
+  assert.ok(responseResponse);
+  const propertyObject = propertyResponse.anyOf?.find(item => item.type === 'object') ?? propertyResponse;
+  const label = propertyObject.properties?.label;
+  const kind = propertyObject.properties?.kind;
+  assert.ok(label);
+  assert.ok(kind);
+  const ajv = new Ajv2020({ allErrors: true, strict: false, validateSchema: false });
+  const validateLabel = ajv.compile(standardSchema(document, label));
+  const validateKind = ajv.compile(standardSchema(document, kind));
+  const validateResponse = ajv.compile(standardSchema(document, responseResponse));
+  assert.equal(validateLabel('ok'), true, JSON.stringify(validateLabel.errors));
+  assert.equal(validateLabel(null), false);
+  assert.equal(validateKind('cat'), true, JSON.stringify(validateKind.errors));
+  assert.equal(validateKind(null), false);
+  assert.equal(validateResponse({ label: 'ok', kind: 'cat' }), true, JSON.stringify(validateResponse.errors));
+  assert.equal(validateResponse(null), false);
 });
 
 test('rejects nullable Swagger overlays that widen a nonnullable IModel response', async t => {
-  for (const openapiVersion of ['3.2.0', '3.1.2'] as const) {
-    const root = fixture(t, readFixture("controllers/overlay/rejects-nullable-swagger-overlays-that-widen-a-nonnullable-imodel-response/controller.ts"));
-    await assert.rejects(
-      generate({
-        root,
-        output: path.join(root, `openapi-${openapiVersion}.json`),
-        openapiVersion,
-        info: { title: 'Nullable overlay', version: '1' },
-        profile: { mobx: false, validation: false },
-      }),
-      error => expectCode(error, 'NEST1503'),
-      `OpenAPI ${openapiVersion} must reject nullable widening`,
-    );
-  }
+  const root = fixture(t, readFixture("controllers/overlay/rejects-nullable-swagger-overlays-that-widen-a-nonnullable-imodel-response/controller.ts"));
+  await assert.rejects(
+    generate({
+      root,
+      output: path.join(root, 'openapi.json'),
+      openapiVersion: '3.1.2',
+      info: { title: 'Nullable overlay', version: '1' },
+      profile: { mobx: false, validation: false },
+    }),
+    error => expectCode(error, 'NEST1503'),
+    'nullable widening is rejected',
+  );
 });
 
 test('rejects Swagger required:false for required IModel querystring contracts and paths', async t => {

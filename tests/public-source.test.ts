@@ -106,7 +106,7 @@ function treeSnapshot(root: string): string {
   return entries.join('\n');
 }
 
-test('public source inventory keeps licenses, generated example metadata, and source surfaces', (t) => {
+test('public source inventory keeps licenses, generated example metadata, and source surfaces, and excludes local, generated, dependency, and workflow-local trees', (t) => {
   const root = publicFixture(t);
   const files = listPublicSourceFiles(root);
   const expected = [
@@ -129,10 +129,6 @@ test('public source inventory keeps licenses, generated example metadata, and so
     assert.equal(path.isAbsolute(relative), false);
     assert.equal(relative.split('/').includes('..'), false);
   }
-});
-
-test('public source inventory excludes local, generated, dependency, and workflow-local trees', (t) => {
-  const root = publicFixture(t);
   const dotPrivate = joinParts('.', 'pri', 'vate');
   const dotCache = joinParts('.', 'ca', 'che');
   const modules = joinParts('node', '_modules');
@@ -148,8 +144,8 @@ test('public source inventory excludes local, generated, dependency, and workflo
     `${localWorkflow}/config.json`,
   ];
   for (const relative of excluded) writeFixture(root, relative, 'placeholder\n');
-  const files = listPublicSourceFiles(root);
-  for (const relative of excluded) assert.equal(files.includes(relative), false, relative);
+  const filesWithExcluded = listPublicSourceFiles(root);
+  for (const relative of excluded) assert.equal(filesWithExcluded.includes(relative), false, relative);
 });
 
 test('interrupted documentation build output stays outside a public source export', (t) => {
@@ -167,7 +163,7 @@ test('interrupted documentation build output stays outside a public source expor
   ]);
 });
 
-test('content scanner reports forbidden paths and payload classes without returning payload text', (t) => {
+test('content scanner reports forbidden paths and payload classes without returning payload text, and accepts an explicit safe candidate set', (t) => {
   const root = publicFixture(t);
   const dotPrivate = joinParts('.', 'pri', 'vate');
   const absolutePath = joinParts('/', 'Users', '/', 'sample', '/', 'workspace', '/', 'source.ts');
@@ -195,17 +191,8 @@ test('content scanner reports forbidden paths and payload classes without return
   assert.equal(serialized.includes(marker), false);
   assert.equal(serialized.includes(keyPayload), false);
   assert.equal(serialized.includes(absolutePath), false);
-});
-
-test('content scanner accepts an explicit safe candidate set without scanning unrelated files', (t) => {
-  const root = publicFixture(t);
-  const dotPrivate = joinParts('.', 'pri', 'vate');
-  const marker = joinParts('synthetic-', 'workflow-', 'record-', 'marker');
-  writeFixture(root, `${dotPrivate}/notes.md`, marker);
-  writeFixture(root, 'docs/reference.md', marker);
-
-  const issues = scanPublicContent(root, ['README.md', 'packages/codegen/src/index.ts']);
-  assert.deepEqual(issues, []);
+  // An explicit safe candidate set is scanned without touching the unrelated forbidden files.
+  assert.deepEqual(scanPublicContent(root, ['README.md', 'packages/codegen/src/index.ts']), []);
 });
 
 test('scanner rejects traversal candidates before reading outside the source root', (t) => {

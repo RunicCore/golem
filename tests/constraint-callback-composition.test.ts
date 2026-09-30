@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import test, { type TestContext } from 'node:test';
 
-import { command, workspace } from './packed/helpers.js';
+import { command, workspace } from './support/process.js';
 import { generate } from '#model/generator';
 import { getValidator } from '@exprtlabs/codegen/validation';
 
@@ -74,6 +74,18 @@ for (const ajvStandalone of [false, true] as const) {
       {
         path: path.join(fixtureData.sourceRoot, 'a.model.ts'),
         content: readFixture('models/constraint-callback-composition/nested-value-callbacks/a.model.ts'),
+      },
+      {
+        path: path.join(fixtureData.sourceRoot, 'predicates-2.ts'),
+        content: readFixture('models/constraint-callback-composition/constraint-callback-composition-predicates/predicates-2.ts'),
+      },
+      {
+        path: path.join(fixtureData.sourceRoot, 'child.model.ts'),
+        content: readFixture('models/constraint-callback-composition/handwritten-child/child.model.ts'),
+      },
+      {
+        path: path.join(fixtureData.sourceRoot, 'parent.model.ts'),
+        content: readFixture('models/constraint-callback-composition/handwritten-child-parent/a.model.ts'),
       },
     ]);
 
@@ -151,43 +163,15 @@ for (const ajvStandalone of [false, true] as const) {
     const validConditional = new generated.A({ conditional: { kind: 'text' } });
     assert.equal(await getValidator(validConditional).validate(), true, 'if/else accepts the alternate branch');
     assert.equal(predicates.positiveCalls, 0, 'if/else does not invoke the unselected callback');
-  });
-}
 
-for (const ajvStandalone of [false, true] as const) {
-  test(`nested callback receives the original handwritten model instance with standalone=${ajvStandalone}`, async t => {
-    const fixtureData = fixture(t);
-    writeGeneratedArtifacts([
-      {
-        path: path.join(fixtureData.sourceRoot, 'predicates.ts'),
-        content: readFixture('models/constraint-callback-composition/constraint-callback-composition-predicates/predicates-2.ts'),
-      },
-      {
-        path: path.join(fixtureData.sourceRoot, 'child.model.ts'),
-        content: readFixture('models/constraint-callback-composition/handwritten-child/child.model.ts'),
-      },
-      {
-        path: path.join(fixtureData.sourceRoot, 'a.model.ts'),
-        content: readFixture('models/constraint-callback-composition/handwritten-child-parent/a.model.ts'),
-      },
-    ]);
-
-    const result = generate({
-      root: fixtureData.root,
-      profile: { mobx: false, validation: true, ajvStandalone },
-    });
-    writeArtifacts(result);
-    if (ajvStandalone) materializeStandalone(result, fixtureData);
-    await compile(fixtureData.root);
-
-    const generated = await import(path.toNamespacedPath(path.join(fixtureData.root, 'build/a.model.js')));
     const childModule = await import(path.toNamespacedPath(path.join(fixtureData.root, 'build/child.model.js')));
-    const predicates = await import(path.toNamespacedPath(path.join(fixtureData.root, 'build/predicates.js')));
-    predicates.reset();
+    const parentModule = await import(path.toNamespacedPath(path.join(fixtureData.root, 'build/parent.model.js')));
+    const childPredicates = await import(path.toNamespacedPath(path.join(fixtureData.root, 'build/predicates-2.js')));
+    childPredicates.reset();
     const child = new childModule.Child({ name: 'nested' });
-    const parent = new generated.A({ children: [child] });
+    const parent = new parentModule.Parent({ children: [child] });
     assert.equal(await getValidator(parent).validate(), true, 'the handwritten child satisfies the nested predicate');
-    assert.equal(predicates.childCalls, 1, 'the nested callback runs once');
-    assert.equal(predicates.lastChild, child, 'the nested callback receives the original child instance');
+    assert.equal(childPredicates.childCalls, 1, 'the nested callback runs once');
+    assert.equal(childPredicates.lastChild, child, 'the nested callback receives the original child instance');
   });
 }

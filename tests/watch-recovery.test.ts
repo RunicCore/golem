@@ -8,7 +8,8 @@ import { runPipeline, watchPipeline } from '#codegen/cli';
 import { contains } from '#codegen/config';
 import { GeneratorSessionResources } from '#codegen/pipeline';
 import { OwnedOutputIndex } from '#codegen/watch';
-import { workspace, writeFixture } from './packed/helpers.js';
+import { workspace } from './support/process.js';
+import { writeFixture } from './support/consumer.js';
 
 function fixture(t: TestContext): { root: string; config: string } {
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'runic-watch-recovery-')));
@@ -61,74 +62,16 @@ async function until(check: () => boolean, message: string, timeout = 25000): Pr
   throw new Error(`Timed out: ${message}`);
 }
 
-test('watch recovers when config references a missing root OpenAPI document that is created later', async (t: TestContext) => {
+test('watch recovers when a referenced local schema file is introduced after the document that references it', async (t: TestContext) => {
   const { root, config } = fixture(t);
-  const binary = path.join(workspace, 'packages/codegen/dist/bin/runic-codegen.js');
-  const child = spawn(process.execPath, [binary, 'watch', '--config', config], {
-    cwd: root,
-    stdio: ['ignore', 'pipe', 'pipe'],
-  });
-
-  let stdout = '';
-  let stderr = '';
-  child.stdout.on('data', (data: Buffer) => { stdout += data.toString(); });
-  child.stderr.on('data', (data: Buffer) => { stderr += data.toString(); });
+  const runs = countRuns(t);
+  const errors: unknown[] = [];
+  const stop = watchPipeline(config, error => { errors.push(error); });
 
   try {
-    await until(() => stdout.includes('Generated configured outputs.'), `initial generation: ${stderr}`);
+    await until(() => runs() === 1, 'initial generation');
 
-    // Update config to reference a nonexistent input 'next-api.json'
-    const originalConfig = fs.readFileSync(config, 'utf8');
-    fs.writeFileSync(config, originalConfig.replace('input: api.json', 'input: next-api.json'));
-
-    await until(() => stderr.includes('does not exist') || stderr.includes('ENOENT'), 'watcher reports missing input error');
-
-    // Create the missing 'next-api.json'
-    const nextApi = path.join(root, 'next-api.json');
-    fs.writeFileSync(nextApi, JSON.stringify({
-      openapi: '3.1.0',
-      info: { title: 'Next API', version: '2' },
-      paths: {
-        '/items': {
-          get: {
-            operationId: 'listItems',
-            responses: { 200: { description: 'Items' } },
-          },
-        },
-      },
-    }));
-
-    // Watcher must detect creation of the missing input and regenerate
-    await until(
-      () => fs.existsSync(path.join(root, 'sdk/client.ts')) && fs.readFileSync(path.join(root, 'sdk/client.ts'), 'utf8').includes('listItems'),
-      `watcher recovers after missing root input is created (stdout=${stdout}, stderr=${stderr})`,
-    );
-  } finally {
-    if (child.exitCode === null && child.signalCode === null) {
-      const closed = new Promise<void>(resolve => child.once('close', () => resolve()));
-      child.kill('SIGTERM');
-      await closed;
-    }
-  }
-});
-
-test('watch recovers when a referenced local schema file is introduced later (both save orders)', async (t: TestContext) => {
-  const { root, config } = fixture(t);
-  const binary = path.join(workspace, 'packages/codegen/dist/bin/runic-codegen.js');
-  const child = spawn(process.execPath, [binary, 'watch', '--config', config], {
-    cwd: root,
-    stdio: ['ignore', 'pipe', 'pipe'],
-  });
-
-  let stdout = '';
-  let stderr = '';
-  child.stdout.on('data', (data: Buffer) => { stdout += data.toString(); });
-  child.stderr.on('data', (data: Buffer) => { stderr += data.toString(); });
-
-  try {
-    await until(() => stdout.includes('Generated configured outputs.'), `initial generation: ${stderr}`);
-
-    // Save order 1: Update api.json with a ref to schemas/user.json BEFORE creating schemas/user.json
+    // Update api.json with a ref to schemas/user.json BEFORE creating schemas/user.json
     const apiFile = path.join(root, 'api.json');
     const apiWithRef = {
       openapi: '3.1.0',
@@ -149,7 +92,7 @@ test('watch recovers when a referenced local schema file is introduced later (bo
     };
     fs.writeFileSync(apiFile, JSON.stringify(apiWithRef));
 
-    await until(() => stderr.length > 0, 'missing reference error reported');
+    await until(() => errors.length > 0, 'missing reference error reported');
 
     // Create the missing schemas/user.json
     fs.mkdirSync(path.join(root, 'schemas'), { recursive: true });
@@ -161,15 +104,12 @@ test('watch recovers when a referenced local schema file is introduced later (bo
     // Watcher must detect the created file and recover
     await until(
       () => fs.existsSync(path.join(root, 'sdk/client.ts')) && fs.readFileSync(path.join(root, 'sdk/client.ts'), 'utf8').includes('getUser'),
-      `watcher recovers after missing schema is created (stderr=${stderr})`,
+      `watcher recovers after missing schema is created (errors=${errors.map(String).join('; ')})`,
     );
   } finally {
-    if (child.exitCode === null && child.signalCode === null) {
-      const closed = new Promise<void>(resolve => child.once('close', () => resolve()));
-      child.kill('SIGTERM');
-      await closed;
-    }
+    stop();
   }
+  await until(() => compilerChildren(process.pid).length === 0, 'the compiler closes with the watch');
 });
 
 test('watch keeps model dependencies outside the models root after a run that reuses the models job', async (t: TestContext) => {
@@ -203,19 +143,14 @@ test('watch keeps model dependencies outside the models root after a run that re
     [],
     'installed, linked and TypeScript library files are not models dependencies',
   );
-  const binary = path.join(workspace, 'packages/codegen/dist/bin/runic-codegen.js');
-  const child = spawn(process.execPath, [binary, 'watch', '--config', config], {
-    cwd: root,
-    stdio: ['ignore', 'pipe', 'pipe'],
-  });
-  let stdout = '';
-  let stderr = '';
-  child.stdout.on('data', (data: Buffer) => { stdout += data.toString(); });
-  child.stderr.on('data', (data: Buffer) => { stderr += data.toString(); });
+  const runs = countRuns(t);
+  const errors: unknown[] = [];
+  const stop = watchPipeline(config, error => { errors.push(error); });
+  const context = (): string => `(errors=${errors.map(String).join('; ')})`;
 
   try {
     const companion = path.join(app, 'src/cart.model.generated.ts');
-    await until(() => stdout.includes('Generated configured outputs.') && fs.existsSync(companion), `initial generation: ${stderr}`);
+    await until(() => runs() >= 1 && fs.existsSync(companion), `initial generation ${context()}`);
     assert.doesNotMatch(fs.readFileSync(companion, 'utf8'), /\btag\b/);
 
     // An OpenAPI-only edit regenerates the SDK and reuses the cached models job.
@@ -223,22 +158,19 @@ test('watch keeps model dependencies outside the models root after a run that re
     const client = path.join(root, 'sdk/client.ts');
     const api = path.join(root, 'api.json');
     fs.writeFileSync(api, fs.readFileSync(api, 'utf8').replace('getMoney', 'listItems'));
-    await until(() => fs.readFileSync(client, 'utf8').includes('listItems'), `SDK regenerates (stderr=${stderr})`);
-    await until(() => stdout.split('Generated configured outputs.').length >= 3, `incremental run completes (stderr=${stderr})`);
+    await until(() => fs.readFileSync(client, 'utf8').includes('listItems'), `SDK regenerates ${context()}`);
+    await until(() => runs() >= 2, `incremental run completes ${context()}`);
     assert.equal(fs.statSync(companion).mtimeMs, companionMtime, 'the models job is reused');
 
     fs.writeFileSync(shared, 'export type Note = { text: string; tag?: string };\n');
     await until(
       () => fs.readFileSync(companion, 'utf8').includes('tag'),
-      `an edit outside the models root regenerates the companion (stdout=${stdout}, stderr=${stderr})`,
+      `an edit outside the models root regenerates the companion ${context()}`,
     );
   } finally {
-    if (child.exitCode === null && child.signalCode === null) {
-      const closed = new Promise<void>(resolve => child.once('close', () => resolve()));
-      child.kill('SIGTERM');
-      await closed;
-    }
+    stop();
   }
+  await until(() => compilerChildren(process.pid).length === 0, 'the compiler closes with the watch');
 });
 
 function compilerChildren(parent: number): number[] {

@@ -12,7 +12,6 @@ import { buildSchemaData } from '#openapi/schemas';
 import {
   compileGeneratedSdk,
   generateMaterializedSdk,
-  materializeGeneratedSdk,
   requireRecord,
 } from './helpers.js';
 
@@ -87,6 +86,14 @@ function directionalComponents(openapi: string): Record<string, unknown> {
   };
 }
 
+function runtimeRegistryFromArtifact(artifacts: readonly { path: string; content: string }[]): Record<string, unknown> {
+  const text = artifacts.find((artifact) => artifact.path.endsWith('/schemas.ts'))?.content ?? '';
+  const literal = (name: string) => new RegExp(`^export const ${name} = (\\{[\\s\\S]*?\\}) as const;$`, 'm').exec(text)?.[1];
+  const json = literal('runtimeSchemaRegistry') ?? literal('schemaRegistry');
+  assert.ok(json, 'schemas.ts carries the registry literal');
+  return requireRecord(JSON.parse(json), 'runtimeSchemaRegistry');
+}
+
 async function generateProjection(t: TestContext, openapi: string) {
   const output = path.join(createFixtureProject(t, 'runic-openapi-projection-'), 'sdk');
   const result = await generateMaterializedSdk(directionalComponents(openapi), {
@@ -94,17 +101,8 @@ async function generateProjection(t: TestContext, openapi: string) {
     name: 'Projection',
     profile: { mobx: false, validation: true },
   });
-  compileGeneratedSdk(output);
-  const validation = requireRecord(
-    await import(pathToFileURL(path.join(output, 'dist/schemas.js')).href),
-    'validation',
-  );
-  const schemas = requireRecord(
-    await import(pathToFileURL(path.join(output, 'dist/schemas.js')).href),
-    'schemas',
-  );
   const manifest = result.artifacts.find((artifact) => artifact.path.endsWith('/model-manifest.json'))?.content ?? '';
-  return { validation, schemas, manifest };
+  return { output, manifest, registry: runtimeRegistryFromArtifact(result.artifacts), artifacts: result.artifacts };
 }
 
 type OperationValidators = Map<string, {
@@ -465,7 +463,6 @@ test('literal example and default $ref values are not treated as schema referenc
       name: 'LiteralRef',
       profile: { mobx: false, validation: true },
     });
-    compileGeneratedSdk(output);
     const schemasText = result.artifacts.find((artifact) => artifact.path.endsWith('/schemas.ts'))?.content ?? '';
     assert.match(schemasText, /https:\/\/evil\.example\/not-a-schema/);
     assert.match(schemasText, /https:\/\/evil\.example\/default-ref/);
@@ -490,8 +487,17 @@ test('duplicate conflicting $id values are rejected', () => {
 });
 
 test('directional projection is consistent on OAS 3.1 and 3.2 and keeps neutral model identity', async (t) => {
+  const emitted: Record<string, Record<string, string>> = {};
   for (const openapi of ['3.1.0', '3.2.0']) {
     const generated = await generateProjection(t, openapi);
+    emitted[openapi] = Object.fromEntries(generated.artifacts.map((artifact) => [
+      path.relative(generated.output, artifact.path),
+      artifact.content
+        .replace(/[0-9a-f]{64}/g, '<digest>')
+        .replace(/openapi:[0-9a-f]{16}/g, 'openapi:<id>')
+        .replace(/oas\/3\.[12]\/dialect/g, 'oas/<version>/dialect')
+        .replace(/"dialect": "3\.[12]\.0"/g, '"dialect": "<version>"'),
+    ]));
     const manifest = requireRecord(JSON.parse(generated.manifest), 'model manifest');
     assert.ok(Array.isArray(manifest.models));
     for (const entry of manifest.models) {
@@ -502,8 +508,25 @@ test('directional projection is consistent on OAS 3.1 and 3.2 and keeps neutral 
       assert.equal(implementation.export, `${String(type.export)}Model`);
     }
 
-    const operations = operationValidators(generated.validation);
-    const models = modelValidators(generated.validation);
+    const defs = requireRecord(generated.registry.$defs, '$defs');
+    const inputResource = requireRecord(defs['runic-input'], 'runic-input');
+    const outputResource = requireRecord(defs['runic-output'], 'runic-output');
+    assert.match(String(inputResource.$id), /:input$/);
+    assert.match(String(outputResource.$id), /:output$/);
+    assert.notEqual(inputResource.$id, outputResource.$id);
+    assert.notEqual(inputResource.$id, generated.registry.$id);
+
+    if (openapi !== '3.1.0') {
+      assert.deepEqual(emitted[openapi], emitted['3.1.0'], '3.2 emits the same validators as 3.1 apart from digest and dialect markers');
+      continue;
+    }
+    compileGeneratedSdk(generated.output);
+    const validation = requireRecord(
+      await import(pathToFileURL(path.join(generated.output, 'dist/schemas.js')).href),
+      'validation',
+    );
+    const operations = operationValidators(validation);
+    const models = modelValidators(validation);
     const widgetInput = operations.get('putWidget')?.input;
     const widgetResponse = operations.get('putWidget')?.responses.get('200:application/json');
     const widgetModel = models.get('Widget');
@@ -520,15 +543,6 @@ test('directional projection is consistent on OAS 3.1 and 3.2 and keeps neutral 
     assert.ok(requiredOnly);
     assert.equal(await requiredOnly({ ghost: 1 }), true);
     assert.equal(await requiredOnly({}), false);
-
-    const registry = requireRecord(generated.schemas.runtimeSchemaRegistry, 'runtimeSchemaRegistry');
-    const defs = requireRecord(registry.$defs, '$defs');
-    const inputResource = requireRecord(defs['runic-input'], 'runic-input');
-    const outputResource = requireRecord(defs['runic-output'], 'runic-output');
-    assert.match(String(inputResource.$id), /:input$/);
-    assert.match(String(outputResource.$id), /:output$/);
-    assert.notEqual(inputResource.$id, outputResource.$id);
-    assert.notEqual(inputResource.$id, registry.$id);
   }
 });
 
@@ -569,15 +583,9 @@ test('an external ./nested.json $ref projects directionally without cloning comp
     name: 'External',
     profile: { mobx: false, validation: true },
   });
-  materializeGeneratedSdk(result.artifacts, output);
-  compileGeneratedSdk(output);
   const inputSchemas = result.artifacts.find((artifact) => artifact.path.endsWith('/input-schemas.ts'))?.content ?? '';
   assert.doesNotMatch(inputSchemas, /hidden/);
-  const schemas = requireRecord(
-    await import(pathToFileURL(path.join(output, 'dist/schemas.js')).href),
-    'schemas',
-  );
-  const registry = requireRecord(schemas.runtimeSchemaRegistry, 'registry');
+  const registry = runtimeRegistryFromArtifact(result.artifacts);
   const defs = requireRecord(registry.$defs, '$defs');
   const inputResource = requireRecord(defs['runic-input'] as object, 'input');
   const outputResource = requireRecord(defs['runic-output'] as object, 'output');

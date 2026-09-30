@@ -13,10 +13,7 @@ test('warmup runs untimed full rotations in the same interleaving as the timed b
   assert.ok(steps.findIndex(s => s.timed) === warm.length, 'all warmup precedes timing');
   assert.deepEqual(timed.map(s => s.index), [0, 1, 2, 1, 2, 0]);
   assert.ok(timed.every(s => s.durationMs === 200));
-});
-
-test('no warmup steps when warmupMs is zero', () => {
-  assert.ok(schedule(2, { warmupMs: 0, batchMs: 1, batches: 1 }).every(s => s.timed));
+  assert.ok(schedule(2, { warmupMs: 0, batchMs: 1, batches: 1 }).every(s => s.timed), 'no warmup steps when warmupMs is zero');
 });
 
 test('sampleSync measures without awaiting and consumes every result', () => {

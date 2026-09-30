@@ -14,7 +14,7 @@ import * as mobxValidation from '@exprtlabs/codegen/mobx-validation';
 import * as emitter from '@exprtlabs/codegen/emitter';
 import { installCodecModel } from './register-codec-model.js';
 import { copyFixtureFile, createFixtureProject, linkProjectPackages } from './fixture-project.js';
-import { workspace } from './packed/helpers.js';
+import { workspace } from './support/process.js';
 import * as manifest from '@exprtlabs/codegen/manifest';
 
 const distRoot = dirname(fileURLToPath(import.meta.resolve('@exprtlabs/codegen/model')));
