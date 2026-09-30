@@ -6,7 +6,7 @@ tier="${1:?usage: fe-deps-test <prepare|focused|full|acceptance|docs> [args]}"
 exec 9>/cache/run.lock
 flock -n 9 || { echo "Another fe-deps test run holds /cache/run.lock; wait for it to finish." >&2; exit 2; }
 
-mkdir -p /cache/work /cache/npm /cache/packed /cache/go /cache/gomod
+mkdir -p /cache/work /cache/npm /cache/packed /cache/go /cache/gomod /cache/linux-lock
 # Copy the read-only source into the work tree, keeping mtimes so incremental
 # builds stay warm. Build output and installs live only in the work tree.
 rsync -a --delete \
@@ -20,6 +20,27 @@ export npm_config_cache=/cache/npm GOCACHE=/cache/go GOMODCACHE=/cache/gomod \
   FE_DEPS_PACKED_DIR=/cache/packed FE_DEPS_RESULTS_DIR=/results
 export GOTOOLCHAIN=local
 if [ "$tier" != prepare ]; then export npm_config_offline=true GOPROXY=off; fi
+
+# The checked-in package-lock.json is generated on macOS and lacks the Linux
+# platform binaries (typescript, esbuild, rollup). The container resolves its
+# own Linux lockfile online during `prepare`, keeps it in the cache volume, and
+# reuses it while the workspace manifests are unchanged. The checked-in
+# lockfile is never edited. rsync restores it on every run, so copy each time.
+linux_lock=/cache/linux-lock
+manifest_hash="$(printf '%s\n' package.json packages/*/package.json examples/react-mobx/package.json examples/nest-openapi/package.json \
+  | LC_ALL=C sort | xargs sha256sum | sha256sum | cut -c1-64)"
+if [ -f "$linux_lock/package-lock.json" ] && [ "$(cat "$linux_lock/manifests.sha256" 2>/dev/null || true)" = "$manifest_hash" ]; then
+  cp "$linux_lock/package-lock.json" package-lock.json
+elif [ "$tier" = prepare ]; then
+  rm -rf package-lock.json node_modules packages/*/node_modules examples/*/node_modules "$linux_lock/manifests.sha256"
+  npm install --no-audit --no-fund || {
+    echo "npm install failed while resolving the Linux lockfile; check the network and run: npm run test:prepare" >&2; exit 2; }
+  cp package-lock.json "$linux_lock/package-lock.json"
+  echo "$manifest_hash" > "$linux_lock/manifests.sha256"
+else
+  echo "No Linux lockfile for the current package.json files. Run: npm run test:prepare" >&2
+  exit 2
+fi
 
 lock_hash="$(sha256sum package-lock.json | cut -c1-64)"
 if [ "$(cat node_modules/.fe-deps-lock-hash 2>/dev/null || true)" != "$lock_hash" ]; then
