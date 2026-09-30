@@ -54,11 +54,14 @@ const tiers: Readonly<Record<Tier, { readonly budget: string; readonly purpose: 
 export function selectFocused(args: readonly string[]): { readonly files: readonly string[]; readonly passThrough: readonly string[]; readonly needsPack: boolean } {
   const files: string[] = [];
   const passThrough: string[] = [];
+  // A flag's separate value is the next argument unless that is a test file.
+  const testFile = (value: string): boolean => value.startsWith('tests/') || value.startsWith('.build/') || /\.[cm]?[jt]s$/.test(value);
   for (let index = 0; index < args.length; index++) {
     const value = args[index];
     if (value.startsWith('--')) {
       passThrough.push(value);
-      if (!value.includes('=') && index + 1 < args.length && !args[index + 1].startsWith('--')) passThrough.push(args[++index]);
+      const next = args[index + 1];
+      if (!value.includes('=') && next !== undefined && !next.startsWith('--') && !testFile(next)) passThrough.push(args[++index]);
     } else {
       files.push(value.startsWith('tests/') ? `.build/${value.replace(/\.ts$/, '.js')}` : value);
     }
