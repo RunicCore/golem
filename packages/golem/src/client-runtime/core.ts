@@ -1,11 +1,5 @@
-import { LibError, LibErrorKind, IssueSource, IssueRepresentation } from '../errors.js';
-import type {
-  OperationRuntimeValidators,
-  RuntimeValidationEngine,
-  RuntimeValidator,
-} from '../schema-registry-validation.js';
-import { issuesFromErrors } from '../validation-issues.js';
-import { runValidation } from '../validation-runner.js';
+import { LibError, LibErrorKind } from '../errors.js';
+import type { OperationRuntimeValidators, RuntimeValidationEngine } from '../schema-registry-validation.js';
 
 export interface ClientRuntimeDefaults {
   /** Builds the engine used when the caller supplies none. Without it a runtime has no default engine. */
@@ -151,6 +145,15 @@ export interface OperationValidationSources {
   readonly standaloneValidators?: () => OperationRuntimeValidators;
 }
 
+/** The matched response a check runs against. */
+export interface CheckedResponse {
+  readonly status: string;
+  readonly contentType: string | null;
+}
+
+/** Checks a decoded response body or stream item. Only SDKs generated with validation pass one, so the runtime core imports no validation code. */
+export type ResponseCheck = (response: CheckedResponse, value: unknown) => Promise<void>;
+
 /** A response whose status or media type the operation does not declare. Its body was cancelled. */
 export interface UndeclaredResponseError extends LibError {
   readonly kind: LibErrorKind.Response;
@@ -210,6 +213,17 @@ interface SelectedResponse {
   headers: readonly RuntimeResponseHeaderContract[];
 }
 
+async function* checkStreamItems(
+  selected: CheckedResponse,
+  stream: AsyncIterable<unknown>,
+  check: ResponseCheck,
+): AsyncIterable<unknown> {
+  for await (const item of stream) {
+    await check(selected, item);
+    yield item;
+  }
+}
+
 export class ClientRuntime {
   public readonly baseUrl: string;
   public readonly fetchImpl: typeof fetch;
@@ -218,8 +232,10 @@ export class ClientRuntime {
   private readonly responseDecoders: Record<string, ResponseDecoder>;
   private readonly responseHeaderDecoders: Record<string, ResponseHeaderDecoder>;
   private readonly streamDecoders: Record<string, StreamDecoder>;
-  private readonly operationValidatorOverrides: ReadonlyMap<string, OperationRuntimeValidators> | undefined;
-  private readonly operationValidatorCache = new Map<string, OperationRuntimeValidators>();
+  /** @internal Read by `operationValidators` in `validation.ts`. */
+  public readonly operationValidatorOverrides: ReadonlyMap<string, OperationRuntimeValidators> | undefined;
+  /** @internal Read by `operationValidators` in `validation.ts`. */
+  public readonly operationValidatorCache = new Map<string, OperationRuntimeValidators>();
 
   /** `options` stays readable so request-side helpers can read the settings they own. */
   constructor(
@@ -431,7 +447,7 @@ export class ClientRuntime {
     operation: string,
     response: Response,
     contracts: readonly RuntimeResponseContract[],
-    validators: OperationRuntimeValidators | undefined,
+    check?: ResponseCheck,
   ): Promise<TResponse> {
     try {
       const selected = this.selectResponse(operation, response, contracts);
@@ -441,13 +457,13 @@ export class ClientRuntime {
         const customStream = lookupCodec(this.streamDecoders, [rawContentType, selected.contentType || '']);
         if (customStream) {
           const framed = customStream(response, { operation, contentType: selected.actualContentType });
-          return this.httpResponse(operation, response, selected.status, selected.contentType, this.validateStreamItems(operation, selected, framed, validators), contracts) as TResponse;
+          return this.httpResponse(operation, response, selected.status, selected.contentType, check ? checkStreamItems(selected, framed, check) : framed, contracts) as TResponse;
         }
         const framed = selected.framing === 'ndjson' ? this.readNdjson(response.body)
           : selected.framing === 'json-seq' ? this.readJsonSeq(response.body)
           : selected.framing === 'sse' ? this.readServerSentEvents(response.body)
           : (() => { throw new Error('No stream decoder configured for media type: ' + (selected.contentType || '')); })();
-        const body = this.validateStreamItems(operation, selected, framed, validators);
+        const body = check ? checkStreamItems(selected, framed, check) : framed;
         return this.httpResponse(operation, response, selected.status, selected.contentType, body, contracts) as TResponse;
       }
       const mediaType = selected.actualContentType;
@@ -473,7 +489,7 @@ export class ClientRuntime {
       else {
         throw new Error(`No response decoder configured for media type: ${mediaType || '(empty)'}`);
       }
-      await this.assertValid(this.responseValidator(operation, selected, validators), body);
+      if (check) await check(selected, body);
       return this.httpResponse(operation, response, selected.status, selected.contentType, body, contracts) as TResponse;
     }
     catch (error) {
@@ -482,96 +498,6 @@ export class ClientRuntime {
         catch { /* Preserve the original protocol or decoder failure. */ }
       }
       throw error;
-    }
-  }
-
-  public async assertValid(
-    validator: RuntimeValidator | undefined,
-    value: unknown,
-  ): Promise<void> {
-    if (!validator) return;
-    try {
-      const result = await runValidation(validator, value);
-      if (!result.valid) {
-        throw new LibError(LibErrorKind.Validation, 'API data validation failed.', issuesFromErrors(result.errors, value, IssueSource.OpenAPI, IssueRepresentation.Wire));
-      }
-    } catch (error) {
-      if (error instanceof LibError) throw error;
-      throw new LibError(LibErrorKind.Validation, 'API data validation could not finish.', [], { cause: error, causedByInput: false });
-    }
-  }
-
-  public validateOperationInput(
-    operation: string,
-    value: unknown,
-    validators: OperationRuntimeValidators | undefined,
-  ): Promise<void> {
-    const validator = validators?.input;
-    if (!validator) throw new LibError(LibErrorKind.ValidationUnavailable, `Missing generated input validator for ${operation}`);
-    return this.assertValid(validator, value);
-  }
-
-  public responseValidator(
-    _operation: string,
-    selected: { status: string; contentType: string | null },
-    validators: OperationRuntimeValidators | undefined,
-  ): RuntimeValidator | undefined {
-    if (!validators || selected.contentType === null) return undefined;
-    return validators.responses.get(`${selected.status}:${selected.contentType}`);
-  }
-
-  public getOperationValidators(
-    operation: string,
-    resolveSources: () => OperationValidationSources,
-  ): OperationRuntimeValidators {
-    const cached = this.operationValidatorCache.get(operation);
-    if (cached) return cached;
-    const override = this.operationValidatorOverrides?.get(operation);
-    if (override) {
-      this.operationValidatorCache.set(operation, override);
-      return override;
-    }
-
-    const sources = resolveSources();
-    if (sources.standaloneValidators) {
-      const resolved = sources.standaloneValidators();
-      this.operationValidatorCache.set(operation, resolved);
-      return resolved;
-    }
-    const engine = this.validationEngine;
-    if (!engine) {
-      throw new LibError(LibErrorKind.ValidationUnavailable, `Missing validation engine for operation ${operation}`);
-    }
-    for (const [id, schema] of sources.schemas) {
-      if (!engine.getSchema(id)) engine.addSchema(schema, id);
-    }
-    const input = engine.getSchema(sources.inputReference);
-    if (!input) {
-      throw new LibError(LibErrorKind.ValidationUnavailable, `Runtime validator could not compile operation input: ${operation}`);
-    }
-    const responses = new Map<string, RuntimeValidator>();
-    for (const item of sources.responseReferences) {
-      const validator = engine.getSchema(item.reference);
-      if (!validator) {
-        throw new LibError(LibErrorKind.ValidationUnavailable, `Runtime validator could not compile operation response: ${operation} ${item.status} ${item.contentType}`);
-      }
-      responses.set(`${item.status}:${item.contentType}`, validator);
-    }
-    const resolved = { input, responses };
-    this.operationValidatorCache.set(operation, resolved);
-    return resolved;
-  }
-
-  private async *validateStreamItems<T>(
-    operation: string,
-    selected: { status: string; contentType: string | null },
-    stream: AsyncIterable<unknown>,
-    validators: OperationRuntimeValidators | undefined,
-  ): AsyncIterable<T> {
-    const validator = this.responseValidator(operation, selected, validators);
-    for await (const item of stream) {
-      await this.assertValid(validator, item);
-      yield item as T;
     }
   }
 

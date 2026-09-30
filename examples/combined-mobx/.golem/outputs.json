@@ -53,7 +53,7 @@
     "sdk/operations/createPayment.ts": {
       "job": "openapi:sdk",
       "owner": "@exprtlabs/golem-openapi",
-      "digest": "d83721490ec7d012ea03b235bc062fcb8f3d47f8b7416a84b742af8686798fad",
+      "digest": "92c5b2974ed312bcc42665b308b00a44cea3e3b373639ff0d26236be61eb861a",
       "destination": "sdk",
       "destinationKind": "directory"
     },

@@ -2,9 +2,9 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 import { ClientRuntime, isUndeclaredResponseError, type RuntimeResponseContract } from '@exprtlabs/golem/client';
-import type { RuntimeValidationEngine } from '@exprtlabs/golem/validation';
+import { responseCheck, type RuntimeValidationEngine } from '@exprtlabs/golem/validation';
 
-// The emitted runtime has no `validate` option: validation is off when the caller passes no operation validators.
+// The emitted runtime has no `validate` option: validation is off when the caller passes no response check.
 const NO_VALIDATORS = undefined;
 
 const json = (status: number, body: unknown, type = 'application/json') =>
@@ -222,7 +222,7 @@ test('a stream item that fails validation raises the validation error', async ()
   const validators = { input: reject, responses: new Map([['200:application/x-ndjson', reject]]) };
   const response = new Response('{"id":1}\n', { headers: { 'content-type': 'application/x-ndjson' } });
   const result = await runtime.readResponse<DecodedResponse<AsyncIterable<unknown>>>(
-    'op', response, [streamContract('application/x-ndjson', 'ndjson')], validators);
+    'op', response, [streamContract('application/x-ndjson', 'ndjson')], responseCheck(validators));
   const error = await collect(result.body).then(() => undefined, (caught: unknown) => caught);
   assert.ok(error instanceof LibError);
   assert.equal(error.kind, LibErrorKind.Validation);

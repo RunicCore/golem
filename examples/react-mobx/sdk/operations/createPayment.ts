@@ -4,6 +4,7 @@ import type { PaymentsClientOptions as ClientOptions, PaymentsRequestOptions as 
 import type * as Types from '../types.js';
 import { createObservableApiOperation as createApiOperation, type ObservableApiOperation as ApiOperation } from '@exprtlabs/golem/mobx';
 import { createOpenApiAjvEngine } from '@exprtlabs/golem/ajv';
+import { operationValidators, responseCheck, validateOperationInput } from '@exprtlabs/golem/validation';
 import { schema as __golemSchema0 } from "../validation-schemas/Money.input.js";
 import { schema as __golemSchema1 } from "../validation-schemas/Money.output.js";
 
@@ -25,9 +26,10 @@ export function createPayment(options: ClientOptions): ApiOperation<Types.Create
 }
 
 export function createCreatePaymentOperation(runtime: ClientRuntime): ApiOperation<Types.CreatePaymentOperationInput, Types.CreatePaymentOperationHttpResponse, RequestOptions> {
-  const validators = runtime.getOperationValidators("createPayment", __resolveOperationValidationSources);
+  const validators = operationValidators(runtime, "createPayment", __resolveOperationValidationSources);
+  const checkResponse = responseCheck(validators);
     return createApiOperation("createPayment", async (input: Types.CreatePaymentOperationInput, options: RequestOptions = {}): Promise<Types.CreatePaymentOperationHttpResponse> => {
-    await runtime.validateOperationInput("createPayment", input, validators);
+    await validateOperationInput("createPayment", input, validators);
     const query: string[] = [];
 
 
@@ -51,7 +53,7 @@ export function createCreatePaymentOperation(runtime: ClientRuntime): ApiOperati
       "createPayment",
       response,
       responseContracts,
-      validators,
+      checkResponse,
     );
     });
 }

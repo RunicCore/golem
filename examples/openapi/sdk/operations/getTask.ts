@@ -4,6 +4,7 @@ import type { TasksClientOptions as ClientOptions, TasksRequestOptions as Reques
 import type * as Types from '../types.js';
 import { createApiOperation, type ApiOperation } from '@exprtlabs/golem/client';
 import { createOpenApiAjvEngine } from '@exprtlabs/golem/ajv';
+import { operationValidators, responseCheck, validateOperationInput } from '@exprtlabs/golem/validation';
 import { schema as __golemSchema0 } from "../validation-schemas/Task.output.js";
 
 
@@ -23,9 +24,10 @@ export function getTask(options: ClientOptions): ApiOperation<Types.GetTaskOpera
 }
 
 export function createGetTaskOperation(runtime: ClientRuntime): ApiOperation<Types.GetTaskOperationInput, Types.GetTaskOperationHttpResponse, RequestOptions> {
-  const validators = runtime.getOperationValidators("getTask", __resolveOperationValidationSources);
+  const validators = operationValidators(runtime, "getTask", __resolveOperationValidationSources);
+  const checkResponse = responseCheck(validators);
     return createApiOperation("getTask", async (input: Types.GetTaskOperationInput, options: RequestOptions = {}): Promise<Types.GetTaskOperationHttpResponse> => {
-    await runtime.validateOperationInput("getTask", input, validators);
+    await validateOperationInput("getTask", input, validators);
     const query: string[] = [];
 
 
@@ -48,7 +50,7 @@ export function createGetTaskOperation(runtime: ClientRuntime): ApiOperation<Typ
       "getTask",
       response,
       responseContracts,
-      validators,
+      checkResponse,
     );
     });
 }
