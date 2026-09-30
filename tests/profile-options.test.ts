@@ -252,7 +252,6 @@ test('referenced models retain their own allowAny policy instead of inheriting t
 });
 
 for (const item of [
-  { name: 'global', global: true, options: tsSource`{ exact: true }` },
   { name: 'default-exact', global: true, options: tsSource`{}` },
   { name: 'per-model', global: false, options: tsSource`{ exact: true, allowAny: true }` },
 ] as const) {

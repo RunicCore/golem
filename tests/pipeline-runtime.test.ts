@@ -230,7 +230,7 @@ async function stopChild(child: ChildProcess): Promise<void> {
   await waitForClose(child);
 }
 
-test('initial watch failure records a missing configured input and recovers on creation', async (t: TestContext) => {
+test('initial watch failure records a missing configured input and recovers on creation, and a config edit to another missing input recovers the same way', async (t: TestContext) => {
   const { root, config } = combinedFixture(t);
   const originalInput = path.join(root, 'api.json');
   const missingInput = path.join(root, 'missing-api.json');
@@ -261,6 +261,22 @@ test('initial watch failure records a missing configured input and recovers on c
     fs.writeFileSync(source, fs.readFileSync(source, 'utf8').replace('note: string', 'note: string; probe?: string'));
     await until(() => fs.readFileSync(companion, 'utf8').includes('probe'), 'recovered watch regenerates the next edit');
     assert.equal(errors.length, recoveredErrorCount, 'recovered watch must not retry in a loop');
+
+    // A config edit while the watch is running that points at another missing input is reported, then recovers on creation.
+    fs.writeFileSync(config, fs.readFileSync(config, 'utf8').replace('input: missing-api.json', 'input: next-api.json'));
+    await until(
+      () => errors.length > recoveredErrorCount && /does not exist|OpenAPI input/.test(errors[errors.length - 1] ?? ''),
+      'watch reports the input that a config edit made missing',
+    );
+    fs.writeFileSync(path.join(root, 'next-api.json'), JSON.stringify({
+      openapi: '3.1.0',
+      info: { title: 'Next API', version: '2' },
+      paths: { '/items': { get: { operationId: 'listItems', responses: { 200: { description: 'Items' } } } } },
+    }));
+    await until(
+      () => fs.readFileSync(path.join(root, 'sdk/client.ts'), 'utf8').includes('listItems'),
+      'watch recovery after creating the input a config edit referenced',
+    );
   } finally {
     stop();
   }
