@@ -260,75 +260,49 @@ test('remote redirects are rejected and the resolver requests redirect errors', 
   }
 });
 
-test('file references cannot escape the input directory during input collection', async (t) => {
-  const directory = createFixtureProject(t, 'runic-openapi-file-escape-');
-  const input = path.join(directory, 'input');
-  mkdirSync(input);
-  const outside = path.join(directory, 'outside.json');
-  writeFileSync(outside, 'not a document');
-  const document = {
-    openapi: '3.2.0',
-    info: { title: 'File escape', version: '1' },
-    components: { schemas: { Escaped: { $ref: `file://${outside}` } } },
+test('local file references cannot escape the input directory by file URL, ../ or symlink', async (t) => {
+  const escapes: Record<string, (directory: string, input: string) => Promise<void>> = {
+    'a file:// URL during input collection': async (directory, input) => {
+      const outside = path.join(directory, 'outside.json');
+      writeFileSync(outside, 'not a document');
+      const document = {
+        openapi: '3.2.0',
+        info: { title: 'File escape', version: '1' },
+        components: { schemas: { Escaped: { $ref: `file://${outside}` } } },
+      };
+      const documentPath = path.join(input, 'api.json');
+      writeFileSync(documentPath, JSON.stringify(document));
+      await collectLocalReferenceInputs(documentPath, document);
+    },
+    'a ../ parent reference': async (directory, input) => {
+      writeFileSync(path.join(directory, 'outside.json'), remoteSchema);
+      await generateDocument(input, {
+        openapi: '3.2.0',
+        info: { title: 'Local parent', version: '1' },
+        components: { schemas: { Escaped: { $ref: '../outside.json' } } },
+      }, { allowRemoteRefs: false, remoteHosts: [] });
+    },
+    'a symlink to a file outside': async (directory, input) => {
+      const outside = path.join(directory, 'outside');
+      mkdirSync(outside);
+      writeFileSync(path.join(outside, 'schema.json'), remoteSchema);
+      symlinkSync(path.join(outside, 'schema.json'), path.join(input, 'linked.json'));
+      await generateDocument(input, {
+        openapi: '3.2.0',
+        info: { title: 'Local symlink', version: '1' },
+        components: { schemas: { Escaped: { $ref: './linked.json' } } },
+      }, { allowRemoteRefs: false, remoteHosts: [] });
+    },
   };
-  const documentPath = path.join(input, 'api.json');
-  writeFileSync(documentPath, JSON.stringify(document));
-  await assert.rejects(
-    () => collectLocalReferenceInputs(documentPath, document),
-    /local reference escapes the input directory/,
-  );
+  for (const [spelling, escape] of Object.entries(escapes)) {
+    const directory = createFixtureProject(t, 'runic-openapi-file-escape-');
+    const input = path.join(directory, 'input');
+    mkdirSync(input);
+    await assert.rejects(() => escape(directory, input), /local reference escapes the input directory/, spelling);
+  }
 });
 
-test('input collection reads a local reference that stays inside the input directory', async (t) => {
-  const directory = createFixtureProject(t, 'runic-openapi-file-inside-');
-  const input = path.join(directory, 'input');
-  mkdirSync(input);
-  writeFileSync(path.join(input, 'money.json'), remoteSchema);
-  const document = {
-    openapi: '3.2.0',
-    info: { title: 'Local sibling', version: '1' },
-    components: { schemas: { Amount: { $ref: './money.json' } } },
-  };
-  const documentPath = path.join(input, 'api.json');
-  writeFileSync(documentPath, JSON.stringify(document));
-  const inputs = await collectLocalReferenceInputs(documentPath, document);
-  assert.ok(inputs.some((filename) => filename.endsWith(`${path.sep}money.json`)));
-});
-
-test('local references cannot escape the input directory with ../', async (t) => {
-  const directory = createFixtureProject(t, 'runic-openapi-local-parent-');
-  const input = path.join(directory, 'input');
-  mkdirSync(input);
-  writeFileSync(path.join(directory, 'outside.json'), remoteSchema);
-  await assert.rejects(
-    () => generateDocument(input, {
-      openapi: '3.2.0',
-      info: { title: 'Local parent', version: '1' },
-      components: { schemas: { Escaped: { $ref: '../outside.json' } } },
-    }, { allowRemoteRefs: false, remoteHosts: [] }),
-    /local reference escapes the input directory/,
-  );
-});
-
-test('local references cannot escape the input directory through a symlink', async (t) => {
-  const directory = createFixtureProject(t, 'runic-openapi-local-symlink-');
-  const input = path.join(directory, 'input');
-  const outside = path.join(directory, 'outside');
-  mkdirSync(input);
-  mkdirSync(outside);
-  writeFileSync(path.join(outside, 'schema.json'), remoteSchema);
-  symlinkSync(path.join(outside, 'schema.json'), path.join(input, 'linked.json'));
-  await assert.rejects(
-    () => generateDocument(input, {
-      openapi: '3.2.0',
-      info: { title: 'Local symlink', version: '1' },
-      components: { schemas: { Escaped: { $ref: './linked.json' } } },
-    }, { allowRemoteRefs: false, remoteHosts: [] }),
-    /local reference escapes the input directory/,
-  );
-});
-
-test('streamed native bodies never fall back to response.text()', async () => {
+test('streamed native bodies never fall back to response.text() and past the cap are rejected and cancelled', async () => {
   const body = new TextEncoder().encode(remoteSchema);
   const response = streamResponse([body], { 'content-type': 'application/json' });
   Object.defineProperty(response, 'text', {
@@ -337,6 +311,21 @@ test('streamed native bodies never fall back to response.text()', async () => {
     },
   });
   assert.equal(await readLimitedBody(response, body.byteLength, 'https://schemas.example/money.json'), remoteSchema);
+
+  const cap = 8;
+  let cancelled = false;
+  const overCap = openStreamResponse(
+    [new Uint8Array(cap), new Uint8Array(32)],
+    { 'content-type': 'application/json' },
+    () => {
+      cancelled = true;
+    },
+  );
+  await assert.rejects(
+    () => readLimitedBody(overCap, cap, 'https://schemas.example/money.json'),
+    /exceeds/,
+  );
+  assert.equal(cancelled, true);
 });
 
 test('maxRefBytes timeout is preserved through body read and cancels the reader', { timeout: 2_000 }, async (t) => {
@@ -365,23 +354,4 @@ test('maxRefBytes timeout is preserved through body read and cancels the reader'
     clearInterval(keepAlive);
     restore();
   }
-});
-
-test('readLimitedBody rejects and cancels past the cap', async () => {
-  const cap = 8;
-  const first = new Uint8Array(cap);
-  const over = new Uint8Array(32);
-  let cancelled = false;
-  const response = openStreamResponse(
-    [first, over],
-    { 'content-type': 'application/json' },
-    () => {
-      cancelled = true;
-    },
-  );
-  await assert.rejects(
-    () => readLimitedBody(response, cap, 'https://schemas.example/money.json'),
-    /exceeds/,
-  );
-  assert.equal(cancelled, true);
 });

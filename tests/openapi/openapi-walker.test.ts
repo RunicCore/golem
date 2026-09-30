@@ -78,15 +78,12 @@ test('visitOpenApiComponent walks a standalone node of the given kind', () => {
   assert.deepEqual(refs, ['#/properties/a/$ref ./a.json', '#/Rate/schema/$ref ./h.json']);
 });
 
-test('resolveJsonPointer follows escaped tokens and array indexes', () => {
+test('resolveJsonPointer follows escaped tokens and array indexes, as plain RFC 6901 with no percent-decoding', () => {
   const value = { 'a/b': [{ 'c~d': 1 }] };
   assert.equal(resolveJsonPointer(value, '/a~1b/0/c~0d'), 1);
   assert.equal(resolveJsonPointer(value, ''), value);
   assert.equal(resolveJsonPointer(value, '/missing'), undefined);
   assert.equal(resolveJsonPointer(value, 'no-slash'), undefined);
-});
-
-test('resolveJsonPointer treats tokens as plain RFC 6901, with no percent-decoding', () => {
   assert.equal(resolveJsonPointer({ 'a%20b': 1 }, '/a%20b'), 1);
 });
 
