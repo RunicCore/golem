@@ -56,6 +56,20 @@ test('the built benchmarks page server-renders the first group table', () => {
   for (const text of ['Codegen (IObject)', 'Typia', 'Zod', 'not supported', 'Parse', 'Stringify', 'Validate']) assert.ok(table.includes(text), `table lacks "${text}"`);
 });
 
+test('built pages never render #region markers from imported snippets', () => {
+  assert.ok(existsSync(homeHtml), 'run npm run docs:build first');
+  const leaks: string[] = [];
+  const visit = (dir: string): void => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const file = path.join(dir, entry.name);
+      if (entry.isDirectory()) visit(file);
+      else if (file.endsWith('.html') && /#(?:end)?region\b/.test(readFileSync(file, 'utf8'))) leaks.push(path.relative(dist, file));
+    }
+  };
+  visit(dist);
+  assert.deepEqual(leaks, []);
+});
+
 test('section links resolve to a heading id in the built site', () => {
   assert.ok(existsSync(path.join(dist, 'index.html')), 'run npm run docs:build first');
   const missing: string[] = [];

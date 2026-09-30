@@ -98,10 +98,14 @@ test('the guide index mounts the How it works illustration', () => {
   assert.match(readFileSync(path.join(docs, 'guide/index.md'), 'utf8'), /## How it works\n\n<HowItWorks \/>\n/);
 });
 
-test('the benchmark page is disclaimed and explains each group in markdown', () => {
+test('the benchmark page is disclaimed, grouped by tabs, and explained in markdown', () => {
   const page = readFileSync(path.join(docs, 'benchmarks.md'), 'utf8');
   assert.match(page, /Benchmarks are for reference purposes only\./);
   for (const group of ['plain', 'classes', 'validated-classes']) assert.match(page, new RegExp(`<template #${group}>`), `explanation for ${group}`);
+  const chart = readFileSync(path.join(docs, '.vitepress/theme/BenchmarkChart.vue'), 'utf8');
+  assert.match(chart, /role="tablist"/);
+  assert.match(chart, /role="tab"/);
+  assert.match(chart, /<slot :name="group\.id"/, 'group explanations come from the page');
 });
 
 test('each benchmark group shows, per payload, the declarations and timed calls of every library it times', () => {
