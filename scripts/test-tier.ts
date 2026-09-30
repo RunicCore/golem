@@ -168,7 +168,7 @@ function main(argv: readonly string[]): void {
   const tier = tierArg as Tier;
   assertContainer(tier, native);
   const { budget, purpose } = tiers[tier];
-  process.stdout.write(`fe-deps ${tier} tier (${budget}): ${purpose}\n`);
+  process.stdout.write(`golem ${tier} tier (${budget}): ${purpose}\n`);
   if (resultsDir) {
     fs.mkdirSync(resultsDir, { recursive: true });
     // A run's results never mix with an earlier run's.

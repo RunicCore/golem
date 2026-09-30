@@ -65,7 +65,7 @@ async function warm(install: WarmInstall): Promise<WarmResult> {
 async function main(): Promise<void> {
   const started = Date.now();
   const registry = await startRegistry(preparedPackages(root));
-  const scratch = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'fe-deps-warm-')));
+  const scratch = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'golem-warm-')));
   try {
     const installs: WarmInstall[] = [];
     const thirdParty = path.join(scratch, 'third-party');

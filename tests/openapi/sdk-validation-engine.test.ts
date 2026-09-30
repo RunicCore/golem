@@ -59,7 +59,7 @@ async function loadSdk(root: string, marker: string, profile: CodegenProfile): P
 for (const ajvStandalone of [false, true]) {
   test(`SDK clients share one default validation engine and SDKs in one process keep their own schemas (${ajvStandalone ? 'standalone' : 'runtime Ajv'})`, async (t) => {
     const profile: CodegenProfile = { mobx: false, validation: true, ajvStandalone };
-    const root = createFixtureProject(t, 'fe-deps-sdk-engine-');
+    const root = createFixtureProject(t, 'golem-sdk-engine-');
     const clients = { A: await loadSdk(root, 'A', profile), B: await loadSdk(root, 'B', profile) };
     for (const [marker, client] of Object.entries(clients)) {
       const other = marker === 'A' ? 'B' : 'A';

@@ -1,6 +1,6 @@
 # Tests
 
-Run tests in the fe-deps test-runner image. Tier runs are offline.
+Run tests in the golem test-runner image. Tier runs are offline.
 
 | Command | Budget | Runs |
 | --- | --- | --- |
@@ -20,9 +20,9 @@ Full and Acceptance clear the container's Go build cache when it passes 9 GiB. T
 
 ## Failure messages
 
-- `The fe-deps test image … is missing or out of date`: run `npm run test:prepare`.
+- `The golem test image … is missing or out of date`: run `npm run test:prepare`.
 - `The npm cache is missing a package`: a test installs a package the cache lacks. Run `npm run test:prepare`.
-- `Another fe-deps test run holds /cache/run.lock`: one run uses the cache at a time. Wait for it.
+- `Another golem test run holds /cache/run.lock`: one run uses the cache at a time. Wait for it.
 - `Timed out after … ms`: the named command exceeded its limit and its processes were killed.
 - `The … tier exceeded its …s ceiling and was stopped`: the whole run passed its time limit.
 
