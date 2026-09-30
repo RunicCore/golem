@@ -62,8 +62,10 @@ export function command(cwd: string, executable: string, args: readonly string[]
  * Offline tiers run with `--network none`, which is what keeps tests offline.
  * npm's own offline mode would also refuse the local fixture registry, whose
  * port changes every run, so consumer npm commands prefer the cache instead.
+ * With no network, npm's fetch retries only delay a cache miss (70 s instead
+ * of 1 s), so they are off.
  */
-export const consumerNpmEnv = { npm_config_offline: 'false', npm_config_prefer_offline: 'true' } as const;
+export const consumerNpmEnv = { npm_config_offline: 'false', npm_config_prefer_offline: 'true', npm_config_fetch_retries: '0' } as const;
 
 /** Name `test:prepare` when npm could not get a package from the cache or from the unreachable public registry. */
 export function explainCacheMiss(error: unknown): unknown {
