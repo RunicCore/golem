@@ -4,7 +4,7 @@ import { writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import test from 'node:test';
-import { generate, writeSdk } from '#openapi/generator';
+import { generate } from '#openapi/generator';
 import {
   captureRequest,
   compileGeneratedSdk,
@@ -13,15 +13,11 @@ import {
   generateMaterializedSdk,
   isGeneratedClientClass,
   requireRecord,
-  writeGeneratedSdk,
   writeOpenApiDocument,
   type CapturedRequest,
 } from './helpers.js';
 
-import http from 'node:http';
-import { once } from 'node:events';
-
-test('operation parameters override path parameters by (in, name), typed and observed on the wire', async (t) => {
+test('operation parameters override path parameters by (in, name) and repeated path placeholders share one encoded parameter, observed on the wire', async (t) => {
   const directory = createFixtureProject(t, 'runic-openapi-r5-');
   const output = path.join(directory, 'sdk');
   await generateMaterializedSdk(documentBase('3.1.0', {
@@ -43,6 +39,13 @@ test('operation parameters override path parameters by (in, name), typed and obs
               content: { 'application/json': { schema: { type: 'object' } } },
             },
           },
+        },
+      },
+      '/x/{id}/{id}': {
+        get: {
+          operationId: 'repeat',
+          parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+          responses: { 200: { description: 'ok', content: { 'application/json': { schema: { type: 'object' } } } } },
         },
       },
     },
@@ -75,60 +78,13 @@ test('operation parameters override path parameters by (in, name), typed and obs
     'https://api.example/items/5?tag=3',
     'the operation-level integer parameters win over the path-level string parameters and are each serialized exactly once',
   );
-});
-
-test('parameter content false schemas remain false during normalization and are rejected before fetch', async t => {
-  const directory = createFixtureProject(t, 'runic-openapi-content-false-');
-  const output = path.join(directory, 'sdk');
-  await generateMaterializedSdk(documentBase('3.1.0', {
-    paths: {
-      '/blocked': {
-        get: {
-          operationId: 'blocked',
-          parameters: [{
-            name: 'queryValue',
-            in: 'query',
-            content: { 'application/json': { schema: false } },
-          }],
-          responses: { 204: { description: 'blocked' } },
-        },
-      },
-    },
-  }), {
-    output,
-    name: 'ContentFalse',
-    profile: { mobx: false, validation: true },
-  });
-  copyFixtureFile(output, 'openapi/parameters/parameters-content-false-assert.ts', 'parameters-content-false-assert.ts');
-  compileGeneratedSdk(output, [path.join(output, 'parameters-content-false-assert.ts')]);
-  const schemas = requireRecord(
-    await import(pathToFileURL(path.join(output, 'dist/schemas.js')).href),
-    'content false schemas',
+  const value = '$& /café';
+  await client.repeat().execute({ path: { id: value } });
+  assert.equal(
+    captured?.url,
+    `https://api.example/x/${encodeURIComponent(value)}/${encodeURIComponent(value)}`,
+    'every repeated path placeholder uses the same encoded parameter',
   );
-  const registry = requireRecord(schemas.runtimeSchemaRegistry, 'content false runtime registry');
-  const operation = requireRecord(requireRecord(registry.operations, 'content false operations').blocked, 'blocked operation');
-  const input = requireRecord(operation.input, 'blocked input');
-  const query = requireRecord(requireRecord(input.properties, 'blocked input properties').query, 'blocked query');
-  assert.equal(requireRecord(query.properties, 'blocked query properties').queryValue, false);
-
-  const module = requireRecord(
-    await import(pathToFileURL(path.join(output, 'dist/client.js')).href),
-    'content false client',
-  );
-  const Client = module.ContentFalseClient;
-  assert.equal(isGeneratedClientClass(Client), true);
-  if (!isGeneratedClientClass(Client)) throw new TypeError('ContentFalseClient');
-  let fetchCount = 0;
-  const client = new Client({
-    baseUrl: 'https://api.example',
-    fetchImpl: async () => { fetchCount += 1; return new Response(null, { status: 204 }); },
-  });
-  await assert.rejects(
-    () => client.blocked().execute({ query: { queryValue: 'anything' } }),
-    /validation failed/i,
-    'a schema: false content parameter is unusable and is rejected before serialization',
-  );
-  assert.equal(fetchCount, 0, 'the blocked queryValue must not reach fetch');
 });
 
 test('generated content parameters validate before execute with runtime and standalone Ajv', async t => {
@@ -189,6 +145,17 @@ test('generated content parameters validate before execute with runtime and stan
             responses: { 204: { description: 'ok' } },
           },
         },
+        '/blocked': {
+          get: {
+            operationId: 'blocked',
+            parameters: [{
+              name: 'queryValue',
+              in: 'query',
+              content: { 'application/json': { schema: false } },
+            }],
+            responses: { 204: { description: 'blocked' } },
+          },
+        },
       },
     });
     await generateMaterializedSdk(document, {
@@ -196,7 +163,20 @@ test('generated content parameters validate before execute with runtime and stan
       name: 'ContentParameters',
       profile: { mobx: false, validation: true, ajvStandalone },
     });
-    compileGeneratedSdk(output);
+    copyFixtureFile(output, 'openapi/parameters/parameters-content-false-assert.ts', 'parameters-content-false-assert.ts');
+    compileGeneratedSdk(output, [path.join(output, 'parameters-content-false-assert.ts')]);
+    if (!ajvStandalone) {
+      // A `false` parameter content schema stays `false` through normalization into the emitted runtime registry.
+      const schemas = requireRecord(
+        await import(pathToFileURL(path.join(output, 'dist/schemas.js')).href),
+        'content false schemas',
+      );
+      const registry = requireRecord(schemas.runtimeSchemaRegistry, 'content false runtime registry');
+      const operation = requireRecord(requireRecord(registry.operations, 'content false operations').blocked, 'blocked operation');
+      const input = requireRecord(operation.input, 'blocked input');
+      const query = requireRecord(requireRecord(input.properties, 'blocked input properties').query, 'blocked query');
+      assert.equal(requireRecord(query.properties, 'blocked query properties').queryValue, false);
+    }
     const module = requireRecord(
       await import(pathToFileURL(path.join(output, 'dist/client.js')).href),
       'content parameter client',
@@ -247,6 +227,13 @@ test('generated content parameters validate before execute with runtime and stan
       await api.execute(valid);
       assert.equal(fetchCount, index + 1);
     }
+    const fetchesBeforeBlocked = fetchCount;
+    await assert.rejects(
+      () => client.blocked().execute({ query: { queryValue: 'anything' } }),
+      /validation failed/i,
+      'a schema: false content parameter is unusable and is rejected before serialization',
+    );
+    assert.equal(fetchCount, fetchesBeforeBlocked, 'the blocked queryValue must not reach fetch');
   }
 });
 
@@ -292,29 +279,4 @@ test('a parameter $ref into a separate file resolves to its declared type after 
   const result = await generate({ input, output, name: 'External', profile: { mobx: false, validation: false } });
   const types = result.artifacts.find(artifact => artifact.path.endsWith('/types.ts'))?.content ?? '';
   assert.match(types, /limit: number/, types);
-});
-
-test('all repeated path placeholders use the same encoded parameter on the real HTTP request', async t => {
-  const output = createFixtureProject(t, 'runic-openapi-path-placeholders-');
-  const received: string[] = [];
-  const server = http.createServer((request, response) => { received.push(request.url ?? ''); response.writeHead(204).end(); });
-  server.listen(0, '127.0.0.1');
-  await once(server, 'listening');
-  t.after(() => { server.closeAllConnections(); server.close(); });
-  const address = server.address();
-  assert.ok(address && typeof address === 'object');
-  writeGeneratedSdk(writeSdk, {
-    openapi: '3.1.0', info: { title: 'Repeated path', version: '1' },
-    paths: { '/x/{id}/{id}': { get: {
-      operationId: 'repeat', parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
-      responses: { 204: { description: 'ok' } },
-    } } },
-  }, { output, name: 'Repeated', profile: { mobx: false, validation: true } });
-  compileGeneratedSdk(output, [], { strict: true, exactOptionalPropertyTypes: true, noUncheckedIndexedAccess: true });
-  const module: Record<string, unknown> = await import(pathToFileURL(path.join(output, 'dist/client.js')).href);
-  assert.ok(isGeneratedClientClass(module.RepeatedClient));
-  const client = new module.RepeatedClient({ baseUrl: `http://127.0.0.1:${address.port}` });
-  const value = '$& /café';
-  await client.repeat().execute({ path: { id: value } });
-  assert.deepEqual(received, [`/x/${encodeURIComponent(value)}/${encodeURIComponent(value)}`]);
 });
