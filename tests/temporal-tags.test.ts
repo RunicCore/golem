@@ -79,3 +79,17 @@ test('a missing Temporal gives the load-a-polyfill error', async () => {
     Object.assign(globalThis, { Temporal: saved });
   }
 });
+
+// Canonical Temporal strings the wire check must accept: fractional, negative and mixed-week durations, and an offset zone.
+for (const [field, value] of [
+  ['span', 'PT0.000000001S'],
+  ['span', '-P1D'],
+  ['span', 'P1W1D'],
+  ['zoned', '2025-01-02T03:04:05+01:00[+01:00]'],
+] as const) {
+  test(`Temporal tag ${field} round-trips ${value}`, async t => {
+    const codecs = await build(t);
+    const wire = { ...WIRE, [field]: value };
+    assert.deepEqual(JSON.parse(codecs.stringifyA(codecs.parseA(JSON.stringify(wire)))), wire);
+  });
+}

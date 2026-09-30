@@ -152,3 +152,20 @@ test('class field without TSerde is still rejected', t => {
   fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), taggedModelSource({ name: 'A', fields: tsSource`bytes: Uint8Array` }).text);
   assert.throws(() => generate({ root, profile: { mobx: false, validation: true } }), /RUNM1004/);
 });
+
+test('class-value output does not depend on the checkout directory', t => {
+  const outputs = [0, 1].map(() => {
+    const { root, sourceRoot } = fixture(t);
+    fs.writeFileSync(path.join(sourceRoot, 'codecs.ts'), CODECS);
+    fs.writeFileSync(path.join(sourceRoot, 'money.ts'), MONEY);
+    fs.writeFileSync(path.join(sourceRoot, 'temporal.d.ts'), TEMPORAL_D_TS);
+    fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), taggedModelSource({ name: 'A', imports: tsSource`import type { TSerde } from '@exprtlabs/golem/tags';
+import type { Money } from './money.js';
+import { encodeMoney, decodeMoney } from './codecs.js';
+type Price = Money & TSerde<typeof encodeMoney, typeof decodeMoney>;`, fields: tsSource`price: Price` }).text);
+    return generate({ root, profile: { mobx: false, validation: true } }).artifacts
+      .map(artifact => [path.relative(root, artifact.path), artifact.content] as const)
+      .sort(([left], [right]) => left.localeCompare(right));
+  });
+  assert.deepEqual(outputs[1], outputs[0]);
+});

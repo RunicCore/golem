@@ -15,11 +15,12 @@ function runtime(kind: LibErrorKind.Serialization | LibErrorKind.Deserialization
 
 /** Wire forms. Years outside 0000-9999 (Temporal's ±YYYYYY form) are rejected. */
 export type TemporalInstantWire = string & Format<'date-time'>;
-export type TemporalZonedDateTimeWire = string & Pattern<'^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?(?:Z|[+-]\\d{2}:\\d{2})\\[[A-Za-z0-9_+\\-/]+\\]$'>;
+export type TemporalZonedDateTimeWire = string & Pattern<'^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?(?:Z|[+-]\\d{2}:\\d{2})\\[[A-Za-z0-9_+\\-/:]+\\]$'>;
 export type TemporalPlainDateWire = string & Format<'date'>;
 export type TemporalPlainDateTimeWire = string & Pattern<'^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?$'>;
 export type TemporalPlainTimeWire = string & Pattern<'^\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?$'>;
-export type TemporalDurationWire = string & Format<'duration'>;
+/** Temporal's own `toString()` form: a sign, weeks mixed with other units, and up to nine fractional-second digits. */
+export type TemporalDurationWire = string & Pattern<'^-?P(?!$)(?:\\d+Y)?(?:\\d+M)?(?:\\d+W)?(?:\\d+D)?(?:T(?=\\d)(?:\\d+H)?(?:\\d+M)?(?:\\d+(?:\\.\\d{1,9})?S)?)?$'>;
 
 function codec<Model extends { toString(): string }, Wire extends string>(className: TemporalClassName) {
   return {

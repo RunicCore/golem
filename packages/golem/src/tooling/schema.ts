@@ -209,6 +209,9 @@ function canonicalDescriptorValue(value: unknown): unknown {
       result[key] = { ...item, ...(item.item === undefined ? {} : { item: canonicalDescriptorValue(item.item) }) };
     } else if (key === 'constraints' && Array.isArray(item)) {
       result[key] = item.map(canonicalConstraintValue);
+    } else if (key === 'typeImport' && isRecord(item)) {
+      // A class-value import's `module` is an absolute path; codec ids must not depend on the checkout directory.
+      result[key] = { exportName: item.exportName, ...(item.specifier === undefined ? {} : { specifier: item.specifier }) };
     } else {
       result[key] = item;
     }

@@ -87,3 +87,40 @@ test('RUNM1060 when no export reaches the codec', t => {
     return true;
   });
 });
+
+test('exports without a types condition reach the declaration file beside each target', async t => {
+  const { root, sourceRoot } = project(t);
+  writeCodecPackage(path.join(root, 'node_modules/@fixture/pg'), { name: '@fixture/pg', exports: { './codecs': './dist/codecs.js', './tags': './dist/tags.js' }, files: COUNT_DIST_FILES });
+  fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), model);
+  writeGeneratedArtifacts(generate({ root, profile: { mobx: false, validation: true } }).artifacts);
+  await roundTrip(root);
+});
+
+test('a nameless nested package.json inside the codec package does not hide the package', async t => {
+  const { root, sourceRoot } = project(t);
+  writeCodecPackage(path.join(root, 'node_modules/@fixture/pg'), { name: '@fixture/pg', exports: EXPORTS, files: { ...COUNT_DIST_FILES, 'dist/package.json': '{"type":"module"}' } });
+  fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), model);
+  writeGeneratedArtifacts(generate({ root, profile: { mobx: false, validation: true } }).artifacts);
+  await roundTrip(root);
+});
+
+test('a nameless package.json in the project keeps project codecs relative', t => {
+  const { root, sourceRoot } = project(t);
+  fs.mkdirSync(path.join(sourceRoot, 'lib'), { recursive: true });
+  fs.mkdirSync(path.join(sourceRoot, 'models'), { recursive: true });
+  fs.writeFileSync(path.join(sourceRoot, 'lib/codecs.ts'), "export function encodeCount(value: number): string { return String(value); }\nexport function decodeCount(value: string): number { return Number(value); }\n");
+  fs.writeFileSync(path.join(sourceRoot, 'models/package.json'), '{"type":"module"}');
+  fs.writeFileSync(path.join(sourceRoot, 'models/a.model.ts'), taggedModelSource({ name: 'A', imports: tsSource`import type { TSerde } from '@exprtlabs/golem/tags';\nimport { encodeCount, decodeCount } from '../lib/codecs.js';\ntype Count = number & TSerde<typeof encodeCount, typeof decodeCount>;`, fields: tsSource`count: Count` }).text);
+  const generated = generate({ root, profile: { mobx: false, validation: true } }).artifacts.find(a => a.path.endsWith(SHARED_MODELS))?.content ?? '';
+  assert.match(generated, /from "\.\.\/\.\.\/lib\/codecs\.js"/);
+});
+
+test('an edited package.json is read again by the next generation in the same process', t => {
+  const { root, sourceRoot } = project(t);
+  const packageRoot = path.join(root, 'node_modules/@fixture/pg');
+  writeCodecPackage(packageRoot, { name: '@fixture/pg', exports: { './tags': EXPORTS['./tags'] }, files: COUNT_DIST_FILES });
+  fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), model);
+  assert.throws(() => generate({ root, profile: { mobx: false, validation: true } }), /RUNM1060/);
+  writeCodecPackage(packageRoot, { name: '@fixture/pg', exports: EXPORTS, files: {} });
+  assert.doesNotThrow(() => generate({ root, profile: { mobx: false, validation: true } }));
+});
