@@ -19,7 +19,12 @@ export interface InventoryEntry {
 }
 export interface Inventory { version: 1; files: Record<string, InventoryEntry> }
 interface ExpectedArtifact { filename: string; content: string; destination: string }
-const OWNERS = new Set(['@exprtlabs/golem-model', '@exprtlabs/golem-openapi', '@exprtlabs/golem-ts-openapi']);
+const BUILT_IN_OWNERS = new Set(['@exprtlabs/golem-model', '@exprtlabs/golem-openapi', '@exprtlabs/golem-ts-openapi']);
+
+/** Packages whose ownership header marks a generated file: the built-in generators plus every configured generator job. */
+function ownersOf(config: GolemConfig): ReadonlySet<string> {
+  return new Set([...BUILT_IN_OWNERS, ...config.jobs.filter(job => job.kind === 'generator').map(job => job.package)]);
+}
 export const digest = (content: string): string => crypto.createHash('sha256').update(content).digest('hex');
 const portable = (filename: string): string => filename.split(path.sep).join('/');
 
@@ -119,6 +124,7 @@ function modelOutputOf(job: Extract<GolemJob, { kind: 'models' }>): string {
 }
 
 function jobDestinations(job: GolemJob): readonly string[] {
+  if (job.kind === 'generator') return [job.options.output];
   if (job.kind === 'controllers') {
     return [job.options.output, operationCodecRegistryPath(job.options.root)];
   }
@@ -184,8 +190,8 @@ function assertProtectedPath(config: GolemConfig, filename: string): void {
   }
 }
 
-function knownOwner(content: string): string | undefined {
-  for (const owner of OWNERS) if (marker(content, owner)) return owner;
+function knownOwner(content: string, owners: ReadonlySet<string>): string | undefined {
+  for (const owner of owners) if (marker(content, owner)) return owner;
   return undefined;
 }
 
@@ -224,12 +230,15 @@ export function loadInventory(config: GolemConfig): Inventory {
   const files: Record<string, InventoryEntry> = Object.create(null);
   for (const [filename, entry] of Object.entries(inventory.files)) {
     const key = validateRelativePath(filename, 'inventory path');
-    if (!isRecord(entry) || typeof entry.owner !== 'string' || !OWNERS.has(entry.owner) || typeof entry.job !== 'string' || typeof entry.digest !== 'string' || !/^[a-f0-9]{64}$/.test(entry.digest)) throw new Error(`Invalid generated inventory entry: ${filename}`);
+    if (!isRecord(entry) || typeof entry.owner !== 'string' || !entry.owner || typeof entry.job !== 'string' || typeof entry.digest !== 'string' || !/^[a-f0-9]{64}$/.test(entry.digest)) throw new Error(`Invalid generated inventory entry: ${filename}`);
+    // Any other owner is a generator package; the entry itself records it, so a retired generator's files stay known.
     const prefix = entry.owner === '@exprtlabs/golem-model'
       ? 'models:'
       : entry.owner === '@exprtlabs/golem-ts-openapi'
         ? 'controllers:'
-        : 'openapi:';
+        : entry.owner === '@exprtlabs/golem-openapi'
+          ? 'openapi:'
+          : 'generator:';
     if (!entry.job.startsWith(prefix) || entry.job.length === prefix.length) throw new Error(`Generated output ownership conflict: ${filename}. Inventory owner and job disagree.`);
     if (typeof entry.destination !== 'string') throw new Error(`Invalid generated inventory entry: ${filename}`);
     const destination = validateRelativePath(entry.destination, 'inventory destination', true);
@@ -277,7 +286,7 @@ function assertNoUnrecordedOutputs(config: GolemConfig, inventory: Inventory, jo
     const filename = path.resolve(job.options.output);
     const key = inventoryKey(config, filename);
     const current = readFile(filename);
-    const drift = current !== undefined && !expected.has(key) && !inventory.files[key] && knownOwner(current) !== undefined
+    const drift = current !== undefined && !expected.has(key) && !inventory.files[key] && knownOwner(current, ownersOf(config)) !== undefined
       ? [filename]
       : [];
     if (check && drift.length) {
@@ -285,12 +294,13 @@ function assertNoUnrecordedOutputs(config: GolemConfig, inventory: Inventory, jo
     }
     return drift;
   }
-  const roots = job.kind === 'openapi'
+  const roots = job.kind === 'openapi' || job.kind === 'generator'
     ? [job.options.output]
     : job.kind === 'models'
       ? [path.join(job.options.root, 'src'), modelOutputOf(job), ...jobDestinations(job).slice(1)]
       : [];
   const drift: string[] = [];
+  const owners = ownersOf(config);
   const visited = new Set<string>();
   const visit = (directory: string): void => {
     const canonicalDirectory = canonicalPath(directory);
@@ -306,7 +316,7 @@ function assertNoUnrecordedOutputs(config: GolemConfig, inventory: Inventory, jo
       if (!entry.isFile() || (!entry.name.endsWith('.ts') && !entry.name.endsWith('.js') && !entry.name.endsWith('.NOTICES.txt') && entry.name !== 'model-manifest.json')) continue;
       const key = inventoryKey(config, filename);
       if (expected.has(key) || inventory.files[key]) continue;
-      if (knownOwner(fs.readFileSync(filename, 'utf8')) !== undefined) drift.push(filename);
+      if (knownOwner(fs.readFileSync(filename, 'utf8'), owners) !== undefined) drift.push(filename);
     }
   };
   for (const root of roots) {

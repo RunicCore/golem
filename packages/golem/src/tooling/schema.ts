@@ -209,6 +209,9 @@ function canonicalDescriptorValue(value: unknown): unknown {
       result[key] = { ...item, ...(item.item === undefined ? {} : { item: canonicalDescriptorValue(item.item) }) };
     } else if (key === 'constraints' && Array.isArray(item)) {
       result[key] = item.map(canonicalConstraintValue);
+    } else if (key === 'typeImport' && isRecord(item)) {
+      // A class-value import's `module` is an absolute path; codec ids must not depend on the checkout directory.
+      result[key] = { exportName: item.exportName, ...(item.specifier === undefined ? {} : { specifier: item.specifier }) };
     } else {
       result[key] = item;
     }
@@ -374,6 +377,9 @@ function residualSchema(value: unknown, plane: ResidualPlane, state: SchemaAssem
   switch (value.kind) {
     case 'date':
       return plane === 'model-only' ? full('model') : { type: 'string', format: 'date-time' };
+    // A class instance or bigint has no JSON shape; only its TSerde wire value and its predicates are checked.
+    case 'class-value':
+      return nothing();
     case 'object': {
       const properties = isRecord(value.properties) ? value.properties : {};
       const kept = Object.keys(properties).sort()
@@ -493,6 +499,7 @@ function descriptorSchema(
       case 'date': schema = options.representation === 'model'
         ? { [MODEL_DATE_KEYWORD]: true }
         : { type: 'string', format: 'date-time' }; break;
+      case 'class-value': schema = {}; break;
       case 'literal': schema = { const: value.value }; break;
       case 'array': schema = { type: 'array', items: descriptorSchema(value.item, state, options) }; break;
       case 'tuple': {

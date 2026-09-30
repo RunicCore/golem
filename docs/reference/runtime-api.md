@@ -13,6 +13,7 @@ Find every `@exprtlabs/golem` import your application, NestJS app or tool can us
 | [`client`](#client) | `ApiOperation` and `createApiOperation` | none |
 | [`conversion`](#conversion) | Encode and decode a generated model | none |
 | [`tags`](#tags) | Type-only validation constraints, `TValidation`, `TSerde` | none |
+| [`temporal`](#temporal) | Temporal field types and their codecs | a `Temporal` global, such as `temporal-polyfill` |
 | [`serde`](#serde) | `parse<T>`, `stringify<T>`, `assertValue<T>`, `toWireFormat<T>`, `fromWireFormat<T>` | none |
 | [`nest`](#nest) | `NestModelInterceptor` and the decorators the plugin inserts | `@nestjs/common`, `rxjs` |
 | [`ttsc-plugin`](#ttsc-plugin) | The compile-time transform for the generic calls | `typescript` 7, `ttsc` 0.30 |
@@ -303,6 +304,23 @@ Every export is a type. Intersect a tag with a field type; assignment is unchang
 The `TSerde` deserializer's parameter type sets the JSON schema of the field ([which type controls validation](/guide/tags#which-type-controls-validation)).
 
 Also exported: `ModelValidationFunction`, `ModelSerializeFunction`, `ModelDeserializeFunction`.
+
+## `@exprtlabs/golem/temporal` {#temporal}
+
+Temporal field types for models. Each converts to an ISO 8601 string on the wire.
+
+| Tag | Model type | Wire string |
+| --- | --- | --- |
+| `TemporalInstant` | `Temporal.Instant` | `2025-01-02T03:04:05.123Z` |
+| `TemporalZonedDateTime` | `Temporal.ZonedDateTime` | `2025-01-02T03:04:05+01:00[Europe/Paris]` |
+| `TemporalPlainDate` | `Temporal.PlainDate` | `2025-01-02` |
+| `TemporalPlainDateTime` | `Temporal.PlainDateTime` | `2025-01-02T03:04:05` |
+| `TemporalPlainTime` | `Temporal.PlainTime` | `03:04:05.123` |
+| `TemporalDuration` | `Temporal.Duration` | `P1DT2H` |
+
+- Add `"esnext.temporal"` to `compilerOptions.lib`.
+- Load a `Temporal` before converting, for example `import 'temporal-polyfill/global'`. Without one, conversion fails with "Temporal is not available".
+- Calendar annotations such as `[u-ca=japanese]` and years outside 0000-9999 are rejected.
 
 ## `@exprtlabs/golem/serde` {#serde}
 

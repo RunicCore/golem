@@ -8,6 +8,7 @@ import type {
   ControllerContext,
   ControllerTag,
   ControllerUriVersioning,
+  GeneratorJobContext,
   InputObserver,
   ModelContext,
   OpenApiContext,
@@ -16,7 +17,8 @@ import type {
 export type GolemJob =
   | { readonly id: string; readonly kind: 'controllers'; readonly package: '@exprtlabs/golem-ts-openapi'; readonly options: ControllerContext }
   | { readonly id: string; readonly kind: 'openapi'; readonly package: '@exprtlabs/golem-openapi'; readonly options: OpenApiContext }
-  | { readonly id: string; readonly kind: 'models'; readonly package: '@exprtlabs/golem-model'; readonly options: ModelContext };
+  | { readonly id: string; readonly kind: 'models'; readonly package: '@exprtlabs/golem-model'; readonly options: ModelContext }
+  | { readonly id: string; readonly kind: 'generator'; readonly package: string; readonly options: GeneratorJobContext };
 
 export interface GolemConfig {
   readonly configFile: string;
@@ -145,7 +147,7 @@ export function resolveConfig(filename = 'golem.yaml', onInput?: InputObserver):
   onInput?.(configFile);
   const directory = path.dirname(configFile);
   const value: unknown = YAML.parse(fs.readFileSync(configFile, 'utf8'), { uniqueKeys: true });
-  keys(value, ['version', 'mobx', 'validation', 'ajvStandalone', 'allowAny', 'controllers', 'openapi', 'models'], 'configuration');
+  keys(value, ['version', 'mobx', 'validation', 'ajvStandalone', 'allowAny', 'generators', 'controllers', 'openapi', 'models'], 'configuration');
   if (value.version !== 1) throw new Error('Configuration version must be 1.');
   const profile = resolveProfile({
     mobx: boolean(value.mobx, false, 'mobx'), validation: boolean(value.validation, true, 'validation'),
@@ -160,6 +162,22 @@ export function resolveConfig(filename = 'golem.yaml', onInput?: InputObserver):
     onInput?.(resolved);
     return resolved;
   };
+  // Generator jobs run first, so the built-in jobs read what they write.
+  if (value.generators !== undefined) {
+    if (!Array.isArray(value.generators) || !value.generators.length) throw new Error('generators must be a nonempty array of jobs.');
+    for (const [index, entry] of value.generators.entries()) {
+      const label = `generators[${index}]`;
+      keys(entry, ['package', 'output', 'options'], label);
+      const packageName = nonempty(entry.package, `${label}.package`);
+      const output = canonicalPath(path.resolve(directory, nonempty(entry.output, `${label}.output`)));
+      if (fs.existsSync(output) && !fs.statSync(output).isDirectory()) throw new Error(`${label}.output must be a directory.`);
+      for (const previous of outputs) {
+        if (contains(previous, output) || contains(output, previous)) throw new Error(`Overlapping generated outputs: ${previous} and ${output}`);
+      }
+      outputs.push(output);
+      jobs.push({ id: `generator:${path.relative(directory, output) || '.'}`, kind: 'generator', package: packageName, options: { directory, output, options: entry.options ?? {}, profile } });
+    }
+  }
   if (value.controllers !== undefined) {
     if (!Array.isArray(value.controllers) || !value.controllers.length) throw new Error('controllers must be a nonempty array of jobs.');
     for (const [index, entry] of value.controllers.entries()) {
@@ -214,7 +232,7 @@ export function resolveConfig(filename = 'golem.yaml', onInput?: InputObserver):
     if (!Array.isArray(value.openapi) || !value.openapi.length) throw new Error('openapi must be a nonempty array of jobs.');
     for (const [index, entry] of value.openapi.entries()) {
       const label = `openapi[${index}]`;
-      keys(entry, ['input', 'output', 'name', 'allowRemoteRefs', 'remoteHosts', 'maxRefBytes', 'maxRefDocuments', 'refTimeoutMs'], label);
+      keys(entry, ['input', 'output', 'name', 'allowRemoteRefs', 'remoteHosts', 'maxRefBytes', 'maxRefDocuments', 'refTimeoutMs', 'dates'], label);
       const input = inputPath(entry.input, `${label}.input`);
       const output = canonicalPath(path.resolve(directory, nonempty(entry.output, `${label}.output`)));
       if (fs.existsSync(output) && !fs.statSync(output).isDirectory()) throw new Error(`${label}.output must be a directory.`);
@@ -226,9 +244,11 @@ export function resolveConfig(filename = 'golem.yaml', onInput?: InputObserver):
       if (entry.remoteHosts !== undefined && !Array.isArray(entry.remoteHosts)) throw new Error(`${label}.remoteHosts must be an array of nonempty hostnames.`);
       const remoteHosts = (entry.remoteHosts ?? []).map((host: unknown) => nonempty(host, `${label}.remoteHosts`));
       if (allowRemoteRefs && !remoteHosts.length) throw new Error(`${label}.allowRemoteRefs requires remoteHosts.`);
+      if (entry.dates !== undefined && entry.dates !== 'date' && entry.dates !== 'temporal') throw new Error(`${label}.dates must be "date" or "temporal".`);
       jobs.push({ id: `openapi:${path.relative(directory, output) || '.'}`, kind: 'openapi', package: '@exprtlabs/golem-openapi', options: {
         input, output, profile, allowRemoteRefs, remoteHosts,
         ...(entry.name === undefined ? {} : { name: nonempty(entry.name, `${label}.name`) }),
+        ...(entry.dates === undefined ? {} : { dates: entry.dates }),
         maxRefBytes: positive(entry.maxRefBytes, 5 * 1024 * 1024, `${label}.maxRefBytes`),
         maxRefDocuments: positive(entry.maxRefDocuments, 256, `${label}.maxRefDocuments`),
         refTimeoutMs: positive(entry.refTimeoutMs, 10000, `${label}.refTimeoutMs`),
@@ -253,9 +273,9 @@ export function resolveConfig(filename = 'golem.yaml', onInput?: InputObserver):
     }
     jobs.push({ id: `models:${path.relative(directory, root) || '.'}`, kind: 'models', package: '@exprtlabs/golem-model', options: { root, output, profile, ...(sources ? { sources } : {}) } });
   }
-  if (!jobs.length) throw new Error('Configure at least one controllers, openapi, or models section.');
+  if (!jobs.length) throw new Error('Configure at least one generators, controllers, openapi, or models section.');
   for (const [index, job] of jobs.entries()) {
-    const inputs = job.kind === 'openapi' ? [job.options.input] : job.options.sources ?? [];
+    const inputs = job.kind === 'openapi' ? [job.options.input] : job.kind === 'generator' ? [] : job.options.sources ?? [];
     for (const input of inputs) {
       for (const [producerIndex, producer] of jobs.entries()) {
         const output = producer.options.output;
@@ -283,7 +303,7 @@ export function validateConfigInputs(config: GolemConfig): void {
       // A controller job is the declared upstream producer for its exact OAS file.
       // It is intentionally allowed to be absent until the controller runs.
       if (!controllerOutputs.has(canonicalPath(job.options.input))) existing(job.options.input, 'file', 'OpenAPI input');
-    } else {
+    } else if (job.kind === 'models') {
       existing(job.options.root, 'directory', 'models.root');
       for (const source of job.options.sources ?? []) existing(source, 'file', 'model source');
     }

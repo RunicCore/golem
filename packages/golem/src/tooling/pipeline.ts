@@ -10,9 +10,10 @@ import { validateModelManifest } from './model-manifest.js';
 import type { GolemArtifact, GolemDiagnostic, GolemResult, GeneratorSession } from './generator-api.js';
 import { assertRuntimeCompatible } from './runtime-compatibility.js';
 
-export type InputKind = 'config' | 'controllers' | 'openapi' | 'models';
+export type InputKind = 'config' | 'controllers' | 'openapi' | 'models' | 'generator';
 
 const INPUT_KIND_PRIORITY: Readonly<Record<InputKind, number>> = {
+  generator: 0,
   models: 1,
   openapi: 2,
   controllers: 3,
@@ -266,6 +267,8 @@ function affectedJobs(config: GolemConfig, options: PipelineOptions): ReadonlySe
     for (const job of config.jobs) {
       if (job.kind === 'openapi') {
         if (input === job.options.input) affected.add(job.id);
+      } else if (job.kind === 'generator') {
+        // A generator job has no input pattern; it reruns from its recorded watchInputs or a config change.
       } else if (job.options.sources?.includes(input)
         || (!job.options.sources && contains(path.join(job.options.root, 'src'), input)
           && (job.kind === 'controllers' ? /\.controller\.ts$/.test(input) : /\.models?\.ts$/.test(input)))) affected.add(job.id);
@@ -318,7 +321,7 @@ export async function runPipeline(filename: string, options: PipelineOptions = {
     if (job.kind === 'controllers') {
       for (const input of [job.options.root, ...(job.options.sources ?? [])]) observe(input, 'controllers', job.id);
     } else if (job.kind === 'openapi') observe(job.options.input, 'openapi', job.id);
-    else for (const input of [job.options.root, ...(job.options.sources ?? [])]) observe(input, 'models', job.id);
+    else if (job.kind === 'models') for (const input of [job.options.root, ...(job.options.sources ?? [])]) observe(input, 'models', job.id);
   }
   validateConfigInputs(config);
   const providers = await providersFor(config);
@@ -334,7 +337,7 @@ export async function runPipeline(filename: string, options: PipelineOptions = {
     const previous = options.previous?.results.get(job.id);
     const previousJob = options.previous?.config.jobs.find(candidate => candidate.id === job.id);
     const cached = !options.check
-      && (affected ? !affected.has(job.id) : options.modelOnly && (job.kind === 'controllers' || job.kind === 'openapi'))
+      && (affected ? !affected.has(job.id) : options.modelOnly && (job.kind === 'controllers' || job.kind === 'openapi' || job.kind === 'generator'))
       && previous
       && JSON.stringify(previousJob?.options) === JSON.stringify(job.options);
     let result: GolemResult;
@@ -349,12 +352,20 @@ export async function runPipeline(filename: string, options: PipelineOptions = {
       if (!provider) throw new Error(`Missing loaded provider ${job.package}.`);
       const keys = new Set<string>();
       used.set(job.id, keys);
-      result = validateResult(await provider.generate({
-        ...job.options,
-        manifestInputs: [...manifests],
-        onInput: (input: string) => observe(input, job.kind),
-        session: session.forJob(job.id, keys),
-      }), job);
+      let generated: unknown;
+      try {
+        generated = await provider.generate({
+          ...job.options,
+          manifestInputs: [...manifests],
+          onInput: (input: string) => observe(input, job.kind),
+          session: session.forJob(job.id, keys),
+        });
+      } catch (error) {
+        // A package's generator failure names the package; built-in generators report their own diagnostics.
+        if (job.kind === 'generator') throw new Error(`Generator ${job.package} failed for ${job.id}: ${errorMessage(error)}`, { cause: error });
+        throw error;
+      }
+      result = validateResult(generated, job);
     }
     assertNoDiagnosticErrors(job, result);
     if (!cached) for (const diagnostic of result.diagnostics ?? []) {

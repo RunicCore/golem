@@ -121,6 +121,11 @@
       "import": "./dist/tags.js",
       "default": "./dist/tags.js"
     },
+    "./temporal": {
+      "types": "./dist/temporal.d.ts",
+      "import": "./dist/temporal.js",
+      "default": "./dist/temporal.js"
+    },
     "./schema": {
       "types": "./dist/tooling/schema.d.ts",
       "import": "./dist/tooling/schema.js",

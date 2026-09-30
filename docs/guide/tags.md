@@ -26,6 +26,19 @@ Tags are type-only annotations on a field type.
 
 Intersect the field type with each validation constraint tag. The title above is `string & MinLength<3> & MaxLength<80>`.
 
+## Name a tag combination
+
+Give a combination of tags a type alias and use the alias as the field type. A type parameter can supply a tag argument, so one alias serves every length.
+
+<<< ../../examples/model/src/tag-aliases.model.ts#tag-aliases
+
+- `Handle<20>` checks `maxLength: 20` and the pattern; aliases can use other aliases.
+- The argument must be a literal where you use the alias. `Varchar<number>` fails with [RUNM1043](/reference/diagnostics#runm1043).
+- An alias can hold one tag of each kind that depends on a type parameter ([RUNM1062](/reference/diagnostics#runm1062)).
+- `TSerde` and `TValidation` inside an alias take `typeof` an exported function, not a type parameter ([RUNM1061](/reference/diagnostics#runm1061)).
+- An alias or codec can come from an installed package. The generated file imports the codec through the package's `exports` ([RUNM1060](/reference/diagnostics#runm1060)).
+- A `TSerde` field can hold a class instance or a `bigint`, such as `Uint8Array & TSerde<typeof encode, typeof decode>`. The codec does all conversion; validation checks the JSON value.
+
 ## Built-in validation constraints
 
 | Value | Tags |

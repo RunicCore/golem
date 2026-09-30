@@ -107,6 +107,15 @@ export type ModelTypeDescriptor = ModelTypeMetadata & (
   | { readonly kind: 'null' }
   | { readonly kind: 'undefined' }
   | { readonly kind: 'date' }
+  /**
+   * A class instance or bigint converted only by its field's TSerde codec. `typeImport`
+   * exists during generation only; generated descriptor data omits it.
+   */
+  | {
+      readonly kind: 'class-value';
+      readonly typeName: string;
+      readonly typeImport?: { readonly exportName: string; readonly module: string; readonly specifier?: string };
+    }
   | { readonly kind: 'literal'; readonly value: string | number | boolean }
   | { readonly kind: 'array'; readonly isReadonly?: true; readonly item: ModelTypeDescriptor }
   | {

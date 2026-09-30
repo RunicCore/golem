@@ -70,6 +70,7 @@ export function compileGeneratedSdk(
     noUnusedParameters?: boolean;
     exactOptionalPropertyTypes?: boolean;
     noUncheckedIndexedAccess?: boolean;
+    lib?: readonly string[];
   } = {},
 ): void {
   const generatedJavascript: string[] = [];
@@ -96,7 +97,7 @@ export function compileGeneratedSdk(
       target: 'ES2022',
       module: compiler.module ?? 'NodeNext',
       moduleResolution: compiler.moduleResolution ?? 'NodeNext',
-      lib: ['ES2023', 'ESNext.Collection', 'DOM', 'DOM.Iterable'],
+      lib: compiler.lib ?? ['ES2023', 'ESNext.Collection', 'DOM', 'DOM.Iterable'],
       allowJs: true,
       skipLibCheck: compiler.skipLibCheck ?? true,
       typeRoots: [join(repoRoot(), 'node_modules/@types')],
@@ -216,6 +217,7 @@ export async function generateMaterializedSdk(
     maxRefBytes?: number;
     maxRefDocuments?: number;
     refTimeoutMs?: number;
+    dates?: 'date' | 'temporal';
   },
 ): Promise<Awaited<ReturnType<typeof generate>>> {
   const directory = dirname(options.output);
@@ -230,6 +232,7 @@ export async function generateMaterializedSdk(
     maxRefBytes: options.maxRefBytes,
     maxRefDocuments: options.maxRefDocuments,
     refTimeoutMs: options.refTimeoutMs,
+    ...(options.dates === undefined ? {} : { dates: options.dates }),
   };
   const result = await generate(context);
   materializeGeneratedSdk(result.artifacts, options.output);

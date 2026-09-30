@@ -58,6 +58,10 @@ function richDescriptor(descriptor: ModelConversionDescriptor): RichDescriptor {
   return descriptor as RichDescriptor;
 }
 
+function bindingImportPath(binding: { readonly module: string; readonly specifier?: string }, output: string): string {
+  return binding.specifier ?? sourceImportPath(binding.module, output);
+}
+
 function sourceImportPath(source: string, output: string): string {
   const relativePath = relative(dirname(output), source)
     .replace(/\\/g, '/')
@@ -531,6 +535,8 @@ function projectDescriptor(
           : descriptor.additionalProperties,
       };
       break;
+    // `typeImport` is an absolute path used only while emitting imports; generated data keeps the name.
+    case 'class-value': projected = { kind: 'class-value', typeName: descriptor.typeName } as ModelConversionDescriptor; break;
     default: projected = { kind: descriptor.kind, ...('value' in descriptor ? { value: descriptor.value } : {}), ...('name' in descriptor ? { name: descriptor.name } : {}), ...('id' in descriptor ? { id: descriptor.id } : {}), ...('projection' in descriptor && descriptor.projection ? { projection: true } : {}), ...('construct' in descriptor && descriptor.construct ? { construct: true as const } : {}) } as ModelConversionDescriptor;
   }
   const normalizedConstraints = validationEnabled
@@ -565,6 +571,7 @@ function descriptorType(
   }
   if (mode === 'wire' && descriptor.kind === 'date') return 'string';
   if ((mode === 'model' || mode === 'init') && descriptor.kind === 'date') return 'Date';
+  if ((mode === 'model' || mode === 'init') && descriptor.kind === 'class-value') return descriptor.typeName;
   switch (descriptor.kind) {
     case 'any': return 'any';
     case 'unknown': return 'unknown';
@@ -1042,12 +1049,12 @@ export function emitSharedSource(options: SharedSourceOptions): string | undefin
     lines.push(`import { createValidatorSet } from ${JSON.stringify(options.standaloneModule)};`);
   }
   lines.push(
-    ...validations.map((binding) => `import { ${binding.exportName} as ${validationNames.get(binding.id)} } from ${JSON.stringify(sourceImportPath(binding.module, output))};`),
+    ...validations.map((binding) => `import { ${binding.exportName} as ${validationNames.get(binding.id)} } from ${JSON.stringify(bindingImportPath(binding, output))};`),
     ...serde.flatMap((binding) => {
       const names = serdeNames.get(binding.id);
       return [
-        `import { ${binding.serialize.exportName} as ${names?.serialize}Source } from ${JSON.stringify(sourceImportPath(binding.serialize.module, output))};`,
-        `import { ${binding.deserialize.exportName} as ${names?.deserialize}Source } from ${JSON.stringify(sourceImportPath(binding.deserialize.module, output))};`,
+        `import { ${binding.serialize.exportName} as ${names?.serialize}Source } from ${JSON.stringify(bindingImportPath(binding.serialize, output))};`,
+        `import { ${binding.deserialize.exportName} as ${names?.deserialize}Source } from ${JSON.stringify(bindingImportPath(binding.deserialize, output))};`,
       ];
     }),
   );
@@ -1385,6 +1392,26 @@ export function emitSource(
     };
     return visit(descriptor);
   });
+  // A class-valued TSerde field names its class in the generated types; import each class once.
+  const classValueImports = new Map<string, string>();
+  for (const descriptor of Object.values(definitions)) {
+    const visit = (item: ModelConversionDescriptor): void => {
+      if (item.kind === 'class-value' && item.typeImport) {
+        const importPath = item.typeImport.specifier ?? sourceImportPath(item.typeImport.module, output);
+        classValueImports.set(`import type { ${item.typeImport.exportName} } from ${JSON.stringify(importPath)};`, importPath);
+      }
+      const rich = richDescriptor(item);
+      if (rich.serde?.wireDescriptor) visit(rich.serde.wireDescriptor);
+      if (item.kind === 'array') visit(item.item);
+      if (item.kind === 'tuple') { item.items.forEach(visit); if (item.rest) visit(item.rest.item); }
+      if (item.kind === 'union' || item.kind === 'intersection') item.variants.forEach(visit);
+      if (item.kind === 'object') {
+        Object.values(item.properties).forEach(visit);
+        if (typeof item.additionalProperties === 'object') visit(item.additionalProperties);
+      }
+    };
+    visit(descriptor);
+  }
 
   const anyCodecValidation = [...schemaGraph.nodes.values()].some(
     (node) => node.kind !== 'reference' && node.validationEnabled !== false,
@@ -1419,6 +1446,7 @@ export function emitSource(
     lines.push(`import { ${conversionImports.join(', ')} } from '@exprtlabs/golem/conversion';`);
   }
   if (hasDate) lines.push("import { deserializeDate, serializeDate } from '@exprtlabs/golem/conversion';");
+  lines.push(...[...classValueImports.keys()].sort());
     lines.push("import { addNestedCodecSchema, ajvIssues, createObjectCodec, lazyAjvSchema, parseJson, registerIModelClass, requireAjvSchema, requireIModelClass, requireObjectCodec, resolveGeneratedModelSchemaRefs, resolveModelValidationContextValidator, runSynchronousValidation, serdeValidates, stringifyJsonArray, stringifyJsonBoolean, stringifyJsonNumber, stringifyJsonScalar, stringifyJsonString, validationFailure, validationUnavailable, IssueRepresentation, IssueSource } from '@exprtlabs/golem/serde';");
   if (anyCodecValidation && !shared?.validationSetName) lines.push("import { createOpenApiSyncAjvEngine } from '@exprtlabs/golem/ajv';");
   if (anyCodecValidation && profile.mobx) lines.push("import { enhanceValidatorWithMobX } from '@exprtlabs/golem/mobx-validation';");
@@ -1462,12 +1490,12 @@ export function emitSource(
       const short = codecShortName(id);
       return `import { ${binding}, ${stringifyFunctionName(short)}, ${fromWireFunctionName(short)}, ${toWireFunctionName(short)} } from ${JSON.stringify(sourceImportPath(model.generatedFile, output))};`;
     }),
-    ...(!shared ? validationBindings.map((binding) => `import { ${binding.exportName} as ${bindingNames.get(binding.id)} } from ${JSON.stringify(sourceImportPath(binding.module, output))};`) : []),
+    ...(!shared ? validationBindings.map((binding) => `import { ${binding.exportName} as ${bindingNames.get(binding.id)} } from ${JSON.stringify(bindingImportPath(binding, output))};`) : []),
     ...(!shared ? serdeBindings.flatMap((binding) => {
       const names = serdeNames.get(binding.id);
       return [
-        `import { ${binding.serialize.exportName} as ${names?.serialize}Source } from ${JSON.stringify(sourceImportPath(binding.serialize.module, output))};`,
-        `import { ${binding.deserialize.exportName} as ${names?.deserialize}Source } from ${JSON.stringify(sourceImportPath(binding.deserialize.module, output))};`,
+        `import { ${binding.serialize.exportName} as ${names?.serialize}Source } from ${JSON.stringify(bindingImportPath(binding.serialize, output))};`,
+        `import { ${binding.deserialize.exportName} as ${names?.deserialize}Source } from ${JSON.stringify(bindingImportPath(binding.deserialize, output))};`,
       ];
     }) : []),
     '',

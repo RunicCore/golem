@@ -4,6 +4,7 @@ import { diagnostic, modelSpecificationForClass, propertyType, resolveSymbol } f
 import { projectionIdentity } from './graph.js';
 import { isProjectionName, pascalIdentifier, policySuffix, projectionBaseName, safeNameHint, unionVariantNaming } from './projection-names.js';
 import { commonDirectory, canonicalFilename } from './project.js';
+import { packageSpecifier } from './package-specifier.js';
 import { assertSupportedModelFieldName } from '../schema.js';
 import type {
   ModelConversionDescriptor,
@@ -118,6 +119,61 @@ function hasUniqueDiscriminator(
     if (valid) return true;
   }
   return false;
+}
+
+/** `bigint` itself, not a bigint literal or a union containing one. */
+function isBigIntValueType(type: ts.Type): boolean {
+  return (type.flags & ts.TypeFlags.BigInt) !== 0;
+}
+
+/** An instance type with behavior: call/construct signatures or methods. Arrays and tuples are data. */
+function isClassValueType(checker: ts.TypeChecker, type: ts.Type): boolean {
+  if ((type.flags & ts.TypeFlags.Object) === 0 || checker.isArrayType(type) || checker.isTupleType(type)) return false;
+  if (type.getCallSignatures().length > 0 || type.getConstructSignatures().length > 0) return true;
+  return checker.getPropertiesOfType(type).some((property) =>
+    (property.flags & ts.SymbolFlags.Method) !== 0
+    || property.declarations?.some((d) => ts.isMethodDeclaration(d) || ts.isMethodSignature(d)) === true);
+}
+
+/** The name generated code writes for the class, and the import it needs, if any. */
+function classValueReference(
+  checker: ts.TypeChecker,
+  type: ts.Type,
+  context: TypeAnalysisContext,
+): { typeName: string; typeImport?: { exportName: string; module: string; specifier?: string } } {
+  // The class's own symbol, never a local alias such as `type Bytes = Uint8Array & TSerde<…>`,
+  // which the model file need not export.
+  const symbol = type.getSymbol();
+  const declaration = symbol?.declarations?.[0];
+  if (!symbol || !declaration) throw diagnostic(context.sourceFile, context.declaration, '1004', `A TSerde class type in ${context.name} has no declaration.`);
+  // TS 7's API has no getFullyQualifiedName: qualify by the enclosing namespaces instead.
+  const names = [symbol.getName()];
+  let augmentsGlobal = false;
+  for (let parent: ts.Node | undefined = declaration.parent; parent && !ts.isSourceFile(parent); parent = parent.parent) {
+    if (!ts.isModuleDeclaration(parent) || !ts.isIdentifier(parent.name)) continue;
+    if (parent.name.text === 'global') { augmentsGlobal = true; break; }
+    names.unshift(parent.name.text);
+  }
+  const typeName = names.join('.');
+  // A script file (a TypeScript lib, an ambient .d.ts) or a `declare global` block declares a global name.
+  if (augmentsGlobal || !isModuleFile(declaration.getSourceFile())) return { typeName };
+  const sourceFile = declaration.getSourceFile();
+  const exportName = typeName.split('.')[0]!; // `Temporal` for `Temporal.Instant` imported from a module
+  const module = canonicalFilename(sourceFile.fileName);
+  const resolved = packageSpecifier(module, context.sourceFile.fileName);
+  if (resolved.kind === 'unexported') {
+    throw diagnostic(context.sourceFile, context.declaration, '1060', `Class ${typeName} is in package ${resolved.packageName}, but no "exports" entry reaches ${module}. Export that file from the package.`);
+  }
+  return { typeName, typeImport: { exportName, module, ...(resolved.kind === 'package' ? { specifier: resolved.specifier } : {}) } };
+}
+
+/** A file with a top-level import or export is a module; any other file declares globals. */
+function isModuleFile(sourceFile: ts.SourceFile): boolean {
+  return sourceFile.statements.some((statement) => ts.isImportDeclaration(statement)
+    || ts.isImportEqualsDeclaration(statement)
+    || ts.isExportDeclaration(statement)
+    || ts.isExportAssignment(statement)
+    || ('modifiers' in statement && (statement.modifiers as readonly ts.Node[] | undefined)?.some((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword)) === true);
 }
 
 function rejectAmbiguousGeneratedModelUnion(
@@ -554,6 +610,14 @@ export function descriptorBuilder(
         ...metadata,
         date: true,
       });
+    }
+
+    // A class instance or bigint has no JSON shape of its own; its TSerde codec is its only conversion.
+    if (metadata.serde && isBigIntValueType(type)) {
+      return withMetadata({ kind: 'class-value', typeName: 'bigint' } as ModelConversionDescriptor, metadata);
+    }
+    if (metadata.serde && isClassValueType(checker, type)) {
+      return withMetadata({ kind: 'class-value', ...classValueReference(checker, type, context) } as ModelConversionDescriptor, metadata);
     }
 
     const provenance = fieldProvenance(checker, node ?? provenanceNode ?? analysis.baseNode, specifications);
