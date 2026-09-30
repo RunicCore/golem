@@ -1,7 +1,9 @@
-import { createFixtureProject, writeGeneratedArtifacts } from '../fixture-project.js';
+import { writeGeneratedArtifacts } from '../fixture-project.js';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
-import test, { type TestContext } from 'node:test';
+import test, { after } from 'node:test';
 import * as ts from '@exprtlabs/codegen/ts';
 import { evaluateStaticValue } from '#controllers/evaluation/static-value';
 
@@ -50,8 +52,10 @@ const FILES: Readonly<Record<string, string>> = {
   ].join('\n'),
 };
 
-function evaluator(t: TestContext): (name: string) => ReturnType<typeof evaluateStaticValue> {
-  const root = createFixtureProject(t, 'runic-static-value-');
+// One Program serves every test in this file: the fixture files are read-only inputs.
+function createEvaluator(): (name: string) => ReturnType<typeof evaluateStaticValue> {
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'runic-static-value-')));
+  after(() => fs.rmSync(root, { recursive: true, force: true }));
   writeGeneratedArtifacts([
     { path: path.join(root, 'package.json'), content: '{ "type": "module" }\n' },
     {
@@ -78,21 +82,21 @@ function evaluator(t: TestContext): (name: string) => ReturnType<typeof evaluate
   };
 }
 
+const evaluate = createEvaluator();
+
 function valueOf(result: ReturnType<typeof evaluateStaticValue>): unknown {
   assert.equal(result.ok, true, result.ok ? '' : result.reason);
   return result.ok ? result.value : undefined;
 }
 
-test('reads const and enum element keys as keys, not as the member value', t => {
-  const evaluate = evaluator(t);
+test('reads const and enum element keys as keys, not as the member value', () => {
   assert.equal(valueOf(evaluate('ELEMENT_CONST_KEY')), 2);
   assert.equal(valueOf(evaluate('ELEMENT_ENUM_KEY')), 'ascending');
   assert.equal(valueOf(evaluate('ELEMENT_LITERAL_KEY')), 1);
   assert.equal(valueOf(evaluate('ENUM_LITERAL_KEY')), 2);
 });
 
-test('applies object spreads in source order and keeps __proto__ as an own key', t => {
-  const evaluate = evaluator(t);
+test('applies object spreads in source order and keeps __proto__ as an own key', () => {
   assert.deepEqual(valueOf(evaluate('SPREAD_ORDER')), { a: 1, b: 2 });
   const proto = valueOf(evaluate('PROTO_KEY'));
   assert.ok(proto !== null && typeof proto === 'object');
@@ -100,23 +104,20 @@ test('applies object spreads in source order and keeps __proto__ as an own key',
   assert.equal(Object.getPrototypeOf(proto), Object.prototype);
 });
 
-test('follows re-exported enums and consts across files, merged enums and as const', t => {
-  const evaluate = evaluator(t);
+test('follows re-exported enums and consts across files, merged enums and as const', () => {
   assert.deepEqual(valueOf(evaluate('REEXPORTED')), ['asc', 'api', 1]);
   assert.deepEqual(valueOf(evaluate('WHOLE_ENUM')), ['asc', 'desc']);
   assert.deepEqual(valueOf(evaluate('NUMERIC_AS_CONST')), { low: 1 });
   assert.deepEqual(valueOf(evaluate('MERGED_ENUM')), ['a', 'b']);
 });
 
-test('folds template and + concatenation and signed numbers', t => {
-  const evaluate = evaluator(t);
+test('folds template and + concatenation and signed numbers', () => {
   assert.equal(valueOf(evaluate('TEMPLATE')), 'api/v2');
   assert.equal(valueOf(evaluate('CONCAT')), 'api-1');
   assert.deepEqual(valueOf(evaluate('SIGNED')), [-1, 2]);
 });
 
-test('reports let/var bindings, calls, undefined, functions and self-reference as unresolvable', t => {
-  const evaluate = evaluator(t);
+test('reports let/var bindings, calls, undefined, functions and self-reference as unresolvable', () => {
   const reasons: Readonly<Record<string, RegExp>> = {
     FROM_LET: /mutable is not declared with const/,
     LET_MEMBER: /mutableObject is not declared with const/,
