@@ -50,6 +50,17 @@ export interface TagAnalysisContext {
   readonly diagnostic: (node: ts.Node, code: string, message: string) => Error;
   /** Resolve a tag's schema type without executing application code. */
   readonly describeSchema?: (type: ts.Type, node?: ts.TypeNode) => ConstraintSchemaValue;
+  readonly aliasUseSite?: AliasUseSite;
+}
+
+/** The concrete alias reference a generic tag alias is being read for. */
+interface AliasUseSite {
+  /** The use-site reference node in the model file; diagnostics point here. */
+  readonly node: ts.TypeReferenceNode;
+  /** The checker's instantiated type of `node`: its tag members carry substituted arguments. */
+  readonly type: ts.Type;
+  /** Type parameters of every alias entered below `node`. */
+  readonly parameters: ReadonlySet<ts.Symbol>;
 }
 
 const EMPTY: TagMetadata = Object.freeze({
@@ -542,6 +553,33 @@ function tagReferenceName(
   ]).has(candidate));
 }
 
+function dependsOnAliasParameter(context: TagAnalysisContext, node: ts.Node): boolean {
+  const parameters = context.aliasUseSite?.parameters;
+  if (!parameters?.size) return false;
+  let found = false;
+  const visit = (child: ts.Node): void => {
+    if (found) return;
+    if (ts.isTypeReferenceNode(child) && ts.isIdentifier(child.typeName)) {
+      const symbol = context.checker.getSymbolAtLocation(child.typeName);
+      if (symbol && parameters.has(symbol)) { found = true; return; }
+    }
+    ts.forEachChild(child, visit);
+  };
+  visit(node);
+  return found;
+}
+
+function instantiatedTag(context: TagAnalysisContext, name: string): TagMetadata {
+  const useSite = context.aliasUseSite!;
+  const atUseSite: TagAnalysisContext = { ...context, diagnostic: (_node, code, message) => context.diagnostic(useSite.node, code, message) };
+  const members = (useSite.type.isIntersection() ? useSite.type.types : [useSite.type])
+    .filter((member) => member.aliasSymbol?.getName() === name && isGolemTagSymbol(context.checker, member.aliasSymbol));
+  if (members.length !== 1) {
+    throw atUseSite.diagnostic(useSite.node, '1062', `${useSite.node.getText()} holds more than one ${name} tag, and one depends on a type parameter. Keep one ${name} per alias.`);
+  }
+  return parseCheckerTag(atUseSite, members[0]!)!;
+}
+
 function parseTag(
   context: TagAnalysisContext,
   node: ts.TypeReferenceNode,
@@ -549,6 +587,13 @@ function parseTag(
   const name = tagReferenceName(context, node);
   if (!name) return undefined;
   const arguments_ = node.typeArguments ?? [];
+  if (arguments_.some((argument) => dependsOnAliasParameter(context, argument))) {
+    if (name === 'TValidation' || name === 'TSerde') {
+      const useSite = context.aliasUseSite!;
+      throw context.diagnostic(useSite.node, '1061', `${name} in ${useSite.node.getText()} must name exported functions with typeof, not a type parameter.`);
+    }
+    return instantiatedTag(context, name);
+  }
   if (name === 'TValidation') {
     const predicate = arguments_[0];
     if (!predicate || !ts.isTypeQueryNode(predicate)) {
@@ -929,7 +974,20 @@ export function readTags(
     if (declaration && !seenAliases.has(declaration)) {
       const next = new Set(seenAliases);
       next.add(declaration);
-      const nested = readTags(context, declaration.type, next);
+      const parameters = declaration.typeParameters ?? [];
+      const nestedContext: TagAnalysisContext = parameters.length === 0 ? context : {
+        ...context,
+        aliasUseSite: {
+          // The outermost reference is concrete; inner references may name outer parameters.
+          node: context.aliasUseSite?.node ?? node,
+          type: context.aliasUseSite?.type ?? context.checker.getTypeFromTypeNode(node),
+          parameters: new Set([
+            ...(context.aliasUseSite?.parameters ?? []),
+            ...parameters.map((parameter) => context.checker.getSymbolAtLocation(parameter.name)).filter((s): s is ts.Symbol => s !== undefined),
+          ]),
+        },
+      };
+      const nested = readTags(nestedContext, declaration.type, next);
       if (nested.metadata.validations.length || nested.metadata.serde || nested.metadata.constraints.length || nested.metadata.date) {
         return nested;
       }
