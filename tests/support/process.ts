@@ -12,6 +12,28 @@ export const ttscEnv = { NODE_PATH: path.join(workspace, 'node_modules') };
 /** Time a timed-out command's process group gets to exit after SIGTERM before SIGKILL. */
 export const KILL_GRACE_MS = 5000;
 
+// Children run in their own process groups so a timeout can end their whole
+// tree. A test process that is itself stopped (a file timeout, Ctrl-C) would
+// leave those groups running, so it ends them on the way out.
+const liveGroups = new Set<number>();
+let exitCleanupInstalled = false;
+
+function endLiveGroups(): void {
+  for (const pid of liveGroups) {
+    try { process.kill(-pid, 'SIGKILL'); } catch { /* already exited */ }
+  }
+  liveGroups.clear();
+}
+
+function installExitCleanup(): void {
+  if (exitCleanupInstalled) return;
+  exitCleanupInstalled = true;
+  process.once('exit', endLiveGroups);
+  for (const name of ['SIGINT', 'SIGTERM'] as const) {
+    process.once(name, () => { endLiveGroups(); process.kill(process.pid, name); });
+  }
+}
+
 export function command(cwd: string, executable: string, args: readonly string[] = [], options: CommandOptions = {}): Promise<CommandResult> {
   return new Promise((resolve, reject) => {
     const env: NodeJS.ProcessEnv = { ...process.env, NODE_PATH: '', ...options.env };
@@ -33,6 +55,7 @@ export function command(cwd: string, executable: string, args: readonly string[]
     delete env.NODE_TEST_CONTEXT;
     const group = process.platform !== 'win32';
     const child = spawn(executable, args, { cwd, env, stdio: ['ignore', 'pipe', 'pipe'], detached: group });
+    if (group && child.pid) { installExitCleanup(); liveGroups.add(child.pid); }
     let stdout = '', stderr = '', timedOut = false;
     let escalation: NodeJS.Timeout | undefined;
     const signal = (name: NodeJS.Signals): void => {
@@ -46,9 +69,10 @@ export function command(cwd: string, executable: string, args: readonly string[]
       signal('SIGTERM');
       escalation = setTimeout(() => signal('SIGKILL'), KILL_GRACE_MS);
     }, limit);
-    child.once('error', error => { clearTimeout(timer); clearTimeout(escalation); reject(error); });
+    child.once('error', error => { clearTimeout(timer); clearTimeout(escalation); if (child.pid) liveGroups.delete(child.pid); reject(error); });
     child.once('close', (code, exitSignal) => {
       clearTimeout(timer); clearTimeout(escalation);
+      if (child.pid) liveGroups.delete(child.pid);
       // A timed-out child's descendants may still hold the group; end them too.
       if (timedOut) { signal('SIGKILL'); reject(new Error(`Timed out after ${limit} ms: ${executable} ${args.join(' ')}\n${stderr.slice(-4000)}`)); return; }
       const result = { code, signal: exitSignal, stdout, stderr };
