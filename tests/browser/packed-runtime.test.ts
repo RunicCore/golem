@@ -25,7 +25,7 @@ async function trackBlockedEval(page: Page): Promise<void> {
   });
 }
 before(async () => {
-  browser = await chromium.launch();
+  browser = await chromium.launch({ timeout: 30_000 });
   try { registry = await startRegistry(); }
   catch (error) { await browser.close(); throw error; }
 });
@@ -35,7 +35,7 @@ after(async () => {
 });
 
 for (const standalone of [false, true]) {
-  test(`packed browser executes reusable APIs, nested MobX models and custom codecs with standalone=${standalone}`, { timeout: 300_000 }, async t => {
+  test(`packed browser executes reusable APIs, nested MobX models and custom codecs with standalone=${standalone}`, async t => {
     const root = registry.create(t, `browser-${standalone}`);
     await npm(root, ['install', '--save-dev', packageSpec(registry, '@exprtlabs/model-codegen'), packageSpec(registry, '@exprtlabs/openapi-to-ts')]);
     if (standalone) await npm(root, ['install', '--save-dev', ESBUILD]);
@@ -107,6 +107,8 @@ for (const standalone of [false, true]) {
     if (!address || typeof address === 'string') throw new Error('Browser fixture did not bind');
     const page = await browser.newPage();
     t.after(() => page.close());
+    page.setDefaultTimeout(15_000);
+    page.setDefaultNavigationTimeout(15_000);
     if (standalone) await trackBlockedEval(page);
     const errors: string[] = [];
     page.on('pageerror', error => errors.push(error.message));
@@ -148,6 +150,8 @@ for (const standalone of [false, true]) {
       // packed application, rather than implying it supports strict CSP.
       const strictPage = await browser.newPage();
       t.after(() => strictPage.close());
+      strictPage.setDefaultTimeout(15_000);
+      strictPage.setDefaultNavigationTimeout(15_000);
       await strictPage.addInitScript(() => {
         document.addEventListener('securitypolicyviolation', event => {
           if (event.blockedURI === 'eval') Reflect.set(globalThis, 'blockedSchemaCompilation', true);
@@ -156,14 +160,14 @@ for (const standalone of [false, true]) {
       const strictResponse = await strictPage.goto(`http://127.0.0.1:${address.port}/strict`);
       assert.doesNotMatch(strictResponse?.headers()['content-security-policy'] ?? '', /unsafe-eval/);
       await strictPage.getByRole('button', { name: 'Run' }).click();
-      await strictPage.waitForFunction(() => Reflect.get(globalThis, 'blockedSchemaCompilation') === true);
+      await strictPage.waitForFunction(() => Reflect.get(globalThis, 'blockedSchemaCompilation') === true, undefined, { timeout: 15_000 });
       assert.equal(requests, 3, 'CSP-blocked schema compilation does not send a request');
     }
   });
 }
 
 for (const standalone of [false, true]) {
-  test(`packed React form survives StrictMode, validation, retry and disposal, standalone=${standalone}`, { timeout: 360_000 }, async t => {
+  test(`packed React form survives StrictMode, validation, retry and disposal, standalone=${standalone}`, async t => {
     const root = registry.create(t, `react-consumer-${standalone}`);
     copyFixture(root, 'browser/react-app');
     if (standalone) {
@@ -231,6 +235,8 @@ for (const standalone of [false, true]) {
     assert.ok(address && typeof address !== 'string');
     const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
     t.after(() => page.close());
+    page.setDefaultTimeout(15_000);
+    page.setDefaultNavigationTimeout(15_000);
     if (standalone) await trackBlockedEval(page);
     const errors: string[] = [];
     page.on('pageerror', error => errors.push(error.message));

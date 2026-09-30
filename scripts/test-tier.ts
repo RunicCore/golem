@@ -1,5 +1,6 @@
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { goBinary } from './go-binary.js';
@@ -12,10 +13,19 @@ export const UNIT_FILES = ['.build/tests/*.test.js', '.build/tests/openapi/*.tes
 export const PACKED_FILES = ['.build/tests/packed/consumers.test.js', '.build/tests/packed/nest-workflows.test.js'] as const;
 const SMOKE_FILE = '.build/tests/packed/model-only.test.js';
 export const BROWSER_FILES = ['.build/tests/browser/*.test.js'] as const;
-// Values from the Task 2 baseline replace these in Task 6.
-export const TEST_TIMEOUT_MS = { focused: 60_000, full: 60_000, acceptance: 300_000 } as const;
-// Task 6 replaces these with min(measured cap, os.availableParallelism()-derived value).
-export const CONCURRENCY = { unit: 2, packed: 1 } as const;
+// On Node 22 --test-timeout also limits each whole file, so each tier allows twice
+// its slowest file (2026-09-30, 694b437): serde about 44 s of tests in Full,
+// packed/consumers 146 s in Acceptance. Focused keeps its 1-minute budget.
+export const TEST_TIMEOUT_MS = { focused: 60_000, full: 90_000, acceptance: 300_000 } as const;
+// Unit: 8 files at once peaked at 3.5 of 7.7 GiB and halved the unit step (136 s to 69 s),
+// so the machine's parallelism is the only limit up to 8. Packed: Acceptance has two packed
+// files, so two at once is the most that helps.
+const UNIT_CAP = 8;
+const PACKED_CAP = 2;
+export const CONCURRENCY = {
+  unit: Math.min(UNIT_CAP, os.availableParallelism()),
+  packed: Math.max(1, Math.min(PACKED_CAP, Math.floor(os.availableParallelism() / 2))),
+} as const;
 
 const tiers: Readonly<Record<Tier, { readonly budget: string; readonly purpose: string }>> = {
   prepare: { budget: '≤5 min (plus a first-time image build), network', purpose: 'Fill the npm, Go and packed caches so tiers run offline.' },

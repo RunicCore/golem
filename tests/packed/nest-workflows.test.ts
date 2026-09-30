@@ -16,7 +16,7 @@ const RUNS: readonly { readonly standalone: boolean; readonly adapters: readonly
 ];
 
 for (const { standalone, adapters } of RUNS) {
-  test(`packed Nest consumer round trips on ${adapters.join(' and ')}, standalone=${standalone}`, { timeout: 420_000 }, async t => {
+  test(`packed Nest consumer round trips on ${adapters.join(' and ')}, standalone=${standalone}`, async t => {
     const root = registry.create(t, `nest-app-${standalone}`);
     copyFixture(root, 'packed/nest-app');
     if (standalone) {
