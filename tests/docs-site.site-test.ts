@@ -15,10 +15,6 @@ function markdownFiles(dir: string): string[] {
   });
 }
 
-test('the docs site is built', () => {
-  assert.ok(existsSync(path.join(dist, 'index.html')), 'run npm run docs:build first');
-});
-
 const homeHtml = path.join(dist, 'index.html');
 test('the built home page server-renders the hero and the final stage state', () => {
   assert.ok(existsSync(homeHtml), 'run npm run docs:build first');

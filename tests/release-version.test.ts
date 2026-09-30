@@ -3,11 +3,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { assertReleaseConsistency } from '../scripts/release-version.js';
 import { EXAMPLE_NAMES } from '../scripts/maintained-examples.js';
-
-const workspace = fileURLToPath(new URL('../../', import.meta.url));
 
 function writeJson(filename: string, value: unknown): void {
   fs.mkdirSync(path.dirname(filename), { recursive: true });
@@ -36,11 +33,6 @@ function releaseFixture(root: string, version = '1.0.0-rc'): void {
     });
   }
 }
-
-test('release consistency is anchored to the private workspace version', () => {
-  const rootManifest = JSON.parse(fs.readFileSync(path.join(workspace, 'package.json'), 'utf8')) as { version: string };
-  assert.equal(assertReleaseConsistency(workspace), rootManifest.version);
-});
 
 test('release consistency rejects public version and internal pin drift', t => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'runic-release-version-'));

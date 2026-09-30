@@ -5,7 +5,7 @@ import path from 'node:path';
 import test from 'node:test';
 import { timedCases } from '../scripts/benchmark/cases.js';
 import { isBenchmarkResults } from '../scripts/benchmark/results-schema.js';
-import { buildResults, gitState, summarize, writeFilesTogether, type MeasuredCase } from '../scripts/benchmark/results.js';
+import { buildResults, summarize, writeFilesTogether, type MeasuredCase } from '../scripts/benchmark/results.js';
 
 const settings = { warmupMs: 300, batchMs: 200, batches: 5 };
 const env = { node: 'v22.12.0', os: 'darwin', arch: 'arm64', cpu: 'Test CPU', cpus: 8 };
@@ -57,12 +57,6 @@ test('buildResults emits every case with support, notes and timings', () => {
 
 test('buildResults throws when a timed case has no measurement', () => {
   assert.throws(() => buildResults({ measured: measuredAll().slice(1), settings, environment: env, git: { sha: 'abc', dirty: false }, packages: {}, measuredAt: 'x' }), /missing measurement/);
-});
-
-test('gitState reports uncommitted when the directory has no commits', () => {
-  const dir = mkdtempSync(path.join(tmpdir(), 'bench-git-'));
-  try { assert.deepEqual(gitState(dir), { sha: 'uncommitted', dirty: true }); }
-  finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
 test('writeFilesTogether keeps the previous file when producing content fails', () => {

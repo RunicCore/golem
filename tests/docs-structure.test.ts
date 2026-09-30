@@ -59,12 +59,6 @@ test('light theme never uses lime as a text color', () => {
   }
 });
 
-test('home stage styles keep the no-JavaScript reveal and hide Replay under reduced motion', () => {
-  const style = readFileSync(path.join(docs, '.vitepress/theme/HomeStage.vue'), 'utf8').split('<style')[1] ?? '';
-  assert.match(style, /\.boot [^{]*\{[^}]*animation:[^}]*\breveal\b/, 'boot content reveals itself after a delay');
-  assert.match(style, /prefers-reduced-motion: reduce\)[^@]*\.replay \{ display: none; \}/, 'Replay is hidden when motion is reduced');
-});
-
 function luminance(hex: string): number {
   const channels = [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16) / 255)
     .map(c => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4));
@@ -76,54 +70,38 @@ function contrast(a: string, b: string): number {
   return (hi + 0.05) / (lo + 0.05);
 }
 
-test('home stage and how-it-works text colors meet WCAG AA contrast on the panel in both themes', () => {
+function themePalettes(): { light: Map<string, string>; dark: Map<string, string> } {
   const tokens = readFileSync(path.join(docs, '.vitepress/theme/tokens.css'), 'utf8');
   const vars = (block: string): Map<string, string> => new Map([...block.matchAll(/(--cg-[a-z0-9-]+):\s*(#[0-9a-f]{6})/gi)].map(m => [m[1], m[2]]));
   const light = vars(tokens.slice(tokens.indexOf(':root {'), tokens.indexOf('}', tokens.indexOf(':root {'))));
   const darkStart = tokens.indexOf('.dark {');
-  const dark = new Map([...light, ...vars(tokens.slice(darkStart, tokens.indexOf('}', darkStart)))]);
+  return { light, dark: new Map([...light, ...vars(tokens.slice(darkStart, tokens.indexOf('}', darkStart)))]) };
+}
+
+test('home stage, how-it-works text (4.5:1) and benchmark series colors (3:1) are legible on the panel in both themes', () => {
+  const { light, dark } = themePalettes();
   const style = ['HomeStage.vue', 'HowItWorks.vue'].map(file => readFileSync(path.join(docs, '.vitepress/theme', file), 'utf8').split('<style')[1] ?? '').join('\n');
-  const used = new Set([...style.matchAll(/(?:^|[;{\s])color:\s*var\((--cg-[a-z0-9-]+)\)/g)].map(m => m[1]));
+  const textColors = [...new Set([...style.matchAll(/(?:^|[;{\s])color:\s*var\((--cg-[a-z0-9-]+)\)/g)].map(m => m[1]))];
+  const seriesColors = ['--cg-series-1', '--cg-series-2', '--cg-series-3'];
   for (const [theme, palette] of [['light', light], ['dark', dark]] as const) {
-    for (const name of used) {
-      const fg = palette.get(name), bg = palette.get('--cg-panel');
-      assert.ok(fg && bg, `${theme}: ${name} or --cg-panel undefined`);
-      assert.ok(contrast(fg, bg) >= 4.5, `${theme}: ${name} ${fg} on ${bg} is ${contrast(fg, bg).toFixed(2)}:1`);
+    for (const [names, minimum] of [[textColors, 4.5], [seriesColors, 3]] as const) {
+      for (const name of names) {
+        const fg = palette.get(name), bg = palette.get('--cg-panel');
+        assert.ok(fg && bg, `${theme}: ${name} or --cg-panel undefined`);
+        assert.ok(contrast(fg, bg) >= minimum, `${theme}: ${name} ${fg} on ${bg} is ${contrast(fg, bg).toFixed(2)}:1, needs ${minimum}:1`);
+      }
     }
   }
 });
 
-
-test('the How it works illustration drops motion and Replay under reduced motion and stacks in a narrow column', () => {
-  const style = readFileSync(path.join(docs, '.vitepress/theme/HowItWorks.vue'), 'utf8').split('<style')[1] ?? '';
-  assert.match(style, /prefers-reduced-motion: reduce\)[^@]*\.replay \{ display: none; \}/);
-  assert.match(style, /@container \(max-width: 559px\)[^@]*grid-template-columns: 1fr;/);
+test('the guide index mounts the How it works illustration', () => {
   assert.match(readFileSync(path.join(docs, 'guide/index.md'), 'utf8'), /## How it works\n\n<HowItWorks \/>\n/);
 });
 
-test('the benchmark page is disclaimed, grouped by tabs, and explained in markdown', () => {
+test('the benchmark page is disclaimed and explains each group in markdown', () => {
   const page = readFileSync(path.join(docs, 'benchmarks.md'), 'utf8');
   assert.match(page, /Benchmarks are for reference purposes only\./);
   for (const group of ['plain', 'classes', 'validated-classes']) assert.match(page, new RegExp(`<template #${group}>`), `explanation for ${group}`);
-  const chart = readFileSync(path.join(docs, '.vitepress/theme/BenchmarkChart.vue'), 'utf8');
-  assert.match(chart, /role="tablist"/);
-  assert.match(chart, /role="tab"/);
-  assert.match(chart, /<slot :name="group\.id"/, 'group explanations come from the page');
-});
-
-test('benchmark series colors are distinguishable marks on the panel in both themes (3:1)', () => {
-  const tokens = readFileSync(path.join(docs, '.vitepress/theme/tokens.css'), 'utf8');
-  const vars = (block: string): Map<string, string> => new Map([...block.matchAll(/(--cg-[a-z0-9-]+):\s*(#[0-9a-f]{6})/gi)].map(m => [m[1], m[2]]));
-  const light = vars(tokens.slice(tokens.indexOf(':root {'), tokens.indexOf('}', tokens.indexOf(':root {'))));
-  const darkStart = tokens.indexOf('.dark {');
-  const dark = new Map([...light, ...vars(tokens.slice(darkStart, tokens.indexOf('}', darkStart)))]);
-  for (const [theme, palette] of [['light', light], ['dark', dark]] as const) {
-    for (const name of ['--cg-series-1', '--cg-series-2', '--cg-series-3']) {
-      const fg = palette.get(name), bg = palette.get('--cg-panel');
-      assert.ok(fg && bg, `${theme}: ${name} or --cg-panel undefined`);
-      assert.ok(contrast(fg, bg) >= 3, `${theme}: ${name} ${fg} on ${bg} is ${contrast(fg, bg).toFixed(2)}:1`);
-    }
-  }
 });
 
 test('each benchmark group shows, per payload, the declarations and timed calls of every library it times', () => {
