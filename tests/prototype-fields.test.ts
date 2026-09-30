@@ -14,7 +14,7 @@ import test, { type TestContext } from 'node:test';
 import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/codegen/conversion';
 import { getValidator } from '@exprtlabs/codegen/validation';
 import { generate } from '#model/generator';
-import { command, workspace } from './packed/helpers.js';
+import { command, workspace } from './support/process.js';
 import { prototypeFieldsModelSource } from './fixture-templates/models/prototype-fields.js';
 
 interface Fixture {

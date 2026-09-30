@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import test, { type TestContext } from 'node:test';
 import { generate } from '#model/generator';
-import { command, workspace } from '../packed/helpers.js';
+import { command, workspace } from '../support/process.js';
 import { createControllerFixture } from '../fixture-templates/controllers/project.js';
 import { paymentModelSource } from '../fixture-templates/controllers/payment-model.js';
 

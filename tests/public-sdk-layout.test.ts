@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { test } from 'node:test';
 import * as ts from '#codegen/typescript-ns';
-import { workspace } from './packed/helpers.js';
+import { workspace } from './support/process.js';
 
 type Layout = Record<string, Record<string, string[]>>;
 

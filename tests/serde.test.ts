@@ -17,7 +17,8 @@ import { validate as publicValidate } from '@exprtlabs/codegen/validation';
 import { IssueCode, IssueRepresentation, IssueSource, LibError, LibErrorKind } from '@exprtlabs/codegen/errors';
 import { generate } from '#model/generator';
 import { writeSdk } from '#openapi/generator';
-import { command, generatedCodecId, ttscEnv, workspace } from './packed/helpers.js';
+import { command, ttscEnv, workspace } from './support/process.js';
+import { generatedCodecId } from './support/consumer.js';
 import type { CodegenProfile } from '@exprtlabs/codegen/generator-api';
 
 function fixture(

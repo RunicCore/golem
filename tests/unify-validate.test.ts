@@ -9,7 +9,8 @@ import { requireObjectCodec } from '@exprtlabs/codegen/serde';
 import { getValidator, validateInstance } from '@exprtlabs/codegen/validation';
 import { generate as generateOpenApi } from '@exprtlabs/openapi-to-ts/generator';
 import { generate } from '#model/generator';
-import { command, generatedCodecIdFromRoot, workspace } from './packed/helpers.js';
+import { command, workspace } from './support/process.js';
+import { generatedCodecIdFromRoot } from './support/consumer.js';
 import { pathToFileURL } from 'node:url';
 
 interface Fixture {

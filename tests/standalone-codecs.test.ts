@@ -17,7 +17,7 @@ import { buildCodecValidationPlan, type CodecSchemaClosureEntry } from '@exprtla
 import type { ModelTypeDescriptor } from '@exprtlabs/codegen/model';
 import { createSchemaGraph } from '@exprtlabs/codegen/schema-graph';
 import { generate } from '#model/generator';
-import { command, workspace } from './packed/helpers.js';
+import { command, workspace } from './support/process.js';
 import type { ModelValidationContext } from '@exprtlabs/codegen/model';
 import { LibError, LibErrorKind } from '@exprtlabs/codegen/errors';
 

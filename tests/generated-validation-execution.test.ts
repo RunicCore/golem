@@ -6,7 +6,7 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import test from 'node:test';
 import { generate } from '#model/generator';
-import { command, workspace } from './packed/helpers.js';
+import { command, workspace } from './support/process.js';
 
 test('generated validation formats nested errors without replaying field getters', async t => {
   const root = mkdtempSync(path.join(os.tmpdir(), 'exprtlabs-generated-validation-'));

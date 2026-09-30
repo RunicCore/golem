@@ -6,7 +6,7 @@ import test, { type TestContext } from 'node:test';
 
 import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/codegen/conversion';
 import { requireObjectCodec } from '@exprtlabs/codegen/serde';
-import { generatedCodecIdFromRoot } from './packed/helpers.js';
+import { generatedCodecIdFromRoot } from './support/consumer.js';
 import { compileModelProject, createModelProject } from './model-project.js';
 import { discardedProjectionMetadataSource, projectionPolicyModelSource } from './fixture-templates/models/model-composition.js';
 import { generate } from '#model/generator';

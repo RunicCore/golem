@@ -4,7 +4,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import test from 'node:test';
 
 import { copyFixtureFile, createFixtureProject } from '../fixture-project.js';
-import { command } from '../packed/helpers.js';
+import { command } from '../support/process.js';
 import { writeSdk } from '#openapi/generator';
 import {
   compileGeneratedSdk,

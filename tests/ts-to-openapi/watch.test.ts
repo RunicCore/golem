@@ -6,7 +6,7 @@ import path from 'node:path';
 import { test, type TestContext } from 'node:test';
 
 import { runPipeline } from '#codegen/cli';
-import { workspace } from '../packed/helpers.js';
+import { workspace } from '../support/process.js';
 import { readGeneratedClientSource } from '../openapi/helpers.js';
 import { createControllerFixture } from '../fixture-templates/controllers/project.js';
 

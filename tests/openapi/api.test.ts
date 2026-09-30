@@ -12,7 +12,7 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import test from 'node:test';
 import { generate } from '#openapi/generator';
-import { command, workspace } from '../packed/helpers.js';
+import { command, workspace } from '../support/process.js';
 import { tscBin } from './helpers.js';
 
 function fixture(directory: string): string {

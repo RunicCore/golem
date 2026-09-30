@@ -5,7 +5,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { runPipeline } from '#codegen/cli';
-import { writeFixture, command, workspace } from './packed/helpers.js';
+import { command, workspace } from './support/process.js';
+import { writeFixture } from './support/consumer.js';
 import { readGeneratedModelSource } from './openapi/helpers.js';
 
 function fixture(t: TestContext): { root: string; config: string } {

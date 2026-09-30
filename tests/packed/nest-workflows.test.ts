@@ -2,11 +2,14 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { after, before, test } from 'node:test';
-import { assertExecutedConsumerTests, cli, command, copyExample, npm, packedRegistry } from './helpers.js';
+import { cli, command, npm } from '../support/process.js';
+import { assertExecutedConsumerTests, copyExample } from '../support/consumer.js';
+import { startRegistry, type PackedRegistry } from '../../scripts/packed-registry.js';
+import { NEST_VERSION } from '../../scripts/third-party-installs.js';
 import { copyFixtureFile } from '../fixture-project.js';
 
-let registry: Awaited<ReturnType<typeof packedRegistry>>;
-before(async () => { registry = await packedRegistry(); });
+let registry: PackedRegistry;
+before(async () => { registry = await startRegistry(); });
 after(async () => { await registry?.close(); });
 
 for (const standalone of [false, true]) {
@@ -16,7 +19,7 @@ for (const standalone of [false, true]) {
     const packageFile = path.join(root, 'package.json');
     const manifest = JSON.parse(fs.readFileSync(packageFile, 'utf8'));
     // This adapter is a dependency of the test consumer, not of the package.
-    manifest.dependencies['@nestjs/platform-fastify'] = manifest.dependencies['@nestjs/platform-express'];
+    manifest.dependencies['@nestjs/platform-fastify'] = NEST_VERSION;
     if (standalone) {
       for (const name of ['ajv', 'ajv-formats']) {
         manifest.devDependencies[name] = manifest.dependencies[name];
@@ -48,7 +51,7 @@ for (const standalone of [false, true]) {
         // The example suite covers successful create/read/list/delete, class
         // construction, query arrays, invalid body/query, malformed JSON,
         // rejection before controller side effects, and codec identity.
-        const result = await command(root, registry.node22, ['--test', '--test-reporter=tap', '.build/src/app-adapter.test.js'], {
+        const result = await command(root, process.execPath, ['--test', '--test-reporter=tap', '.build/src/app-adapter.test.js'], {
           env: { TEST_HTTP_ADAPTER: adapter }, timeout: 120_000,
         });
         assertExecutedConsumerTests(result.stdout, `packed Nest ${adapter} adapter round trip`);

@@ -6,7 +6,7 @@ import { codecPublicId } from '@exprtlabs/codegen/schema-graph';
 import type { ModelTypeDescriptor } from '@exprtlabs/codegen/model';
 import { runPipeline } from '#codegen/cli';
 import { copyFixtureFile, createFixtureProject, linkProjectPackages } from './fixture-project.js';
-import { command, workspace } from './packed/helpers.js';
+import { command, workspace } from './support/process.js';
 import { tscBin } from './openapi/helpers.js';
 
 const shape: ModelTypeDescriptor = {

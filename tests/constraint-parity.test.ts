@@ -18,7 +18,8 @@ import { collectSpecifications } from '@exprtlabs/codegen/type-analysis';
 import { loadModelManifests } from '@exprtlabs/codegen/type-analysis';
 import { createProgram, generatedFilename } from '@exprtlabs/codegen/type-analysis';
 import { generate as generateControllers } from '#controllers/generator';
-import { command, generatedCodecIdFromRoot, workspace } from './packed/helpers.js';
+import { command, workspace } from './support/process.js';
+import { generatedCodecIdFromRoot } from './support/consumer.js';
 import { containsSiblingConstraintSource } from './fixture-templates/models/constraint-parity.js';
 
 interface Fixture {

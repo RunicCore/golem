@@ -8,7 +8,7 @@ import { generatedJsonData } from './generated-data.js';
 import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/codegen/conversion';
 import { requireObjectCodec } from '@exprtlabs/codegen/serde';
 import { getValidator } from '@exprtlabs/codegen/validation';
-import { generatedCodecIdFromRoot } from './packed/helpers.js';
+import { generatedCodecIdFromRoot } from './support/consumer.js';
 import { createModelProject, compileModelProject } from './model-project.js';
 import { taggedModelSource } from './fixture-templates/models/model-tags.js';
 import { joinSource, tsSource, type SourceFragment } from './source-template.js';

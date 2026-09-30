@@ -5,10 +5,13 @@ import path from 'node:path';
 import { test, before, after } from 'node:test';
 import { chromium, expect, type Browser, type Page } from '@playwright/test';
 import { build } from 'esbuild';
-import { cli, command, copyExample, npm, packedRegistry, packageSpec, versions, writeFixture } from '../packed/helpers.js';
+import { cli, command, npm } from '../support/process.js';
+import { copyExample, writeFixture } from '../support/consumer.js';
+import { startRegistry, packageSpec, type PackedRegistry } from '../../scripts/packed-registry.js';
+import { AJV, AJV_FORMATS, ESBUILD, MOBX } from '../../scripts/third-party-installs.js';
 import { copyFixtureFile, readFixture } from '../fixture-project.js';
 
-let registry: Awaited<ReturnType<typeof packedRegistry>>;
+let registry: PackedRegistry;
 let browser: Browser;
 async function trackBlockedEval(page: Page): Promise<void> {
   await page.addInitScript(() => {
@@ -23,7 +26,7 @@ async function trackBlockedEval(page: Page): Promise<void> {
 }
 before(async () => {
   browser = await chromium.launch();
-  try { registry = await packedRegistry(); }
+  try { registry = await startRegistry(); }
   catch (error) { await browser.close(); throw error; }
 });
 after(async () => {
@@ -35,9 +38,9 @@ for (const standalone of [false, true]) {
   test(`packed browser executes reusable APIs, nested MobX models and custom codecs with standalone=${standalone}`, { timeout: 300_000 }, async t => {
     const root = registry.create(t, `browser-${standalone}`);
     await npm(root, ['install', '--save-dev', packageSpec(registry, '@exprtlabs/model-codegen'), packageSpec(registry, '@exprtlabs/openapi-to-ts')]);
-    if (standalone) await npm(root, ['install', '--save-dev', 'esbuild@0.25.12']);
-    await npm(root, ['install', '--save-prod', packageSpec(registry, '@exprtlabs/codegen'), `mobx@${versions.mobx}`]);
-    await npm(root, ['install', standalone ? '--save-dev' : '--save-prod', `ajv@${versions.ajv}`, `ajv-formats@${versions['ajv-formats']}`]);
+    if (standalone) await npm(root, ['install', '--save-dev', ESBUILD]);
+    await npm(root, ['install', '--save-prod', packageSpec(registry, '@exprtlabs/codegen'), MOBX]);
+    await npm(root, ['install', standalone ? '--save-dev' : '--save-prod', AJV, AJV_FORMATS]);
     writeFixture(root, { mobx: true, validation: true, ajvStandalone: standalone });
     const apiFile = path.join(root, 'api.json');
     const apiDocument = JSON.parse(fs.readFileSync(apiFile, 'utf8'));

@@ -5,7 +5,7 @@ import path from 'node:path';
 import test, { type TestContext } from 'node:test';
 import { generate } from '#model/generator';
 import { createModelProject } from './model-project.js';
-import { ttsc, ttscEnv } from './packed/helpers.js';
+import { ttsc, ttscEnv } from './support/process.js';
 
 const ANSI = /\u001b\[[0-9;]*m/g;
 

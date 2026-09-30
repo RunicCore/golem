@@ -6,7 +6,8 @@ import { test, type TestContext } from 'node:test';
 import type { CodegenConfig, CodegenJob } from '#codegen/config';
 import { runPipeline } from '#codegen/cli';
 import { applyJob, loadInventory } from '#codegen/outputs';
-import { workspace, writeFixture } from './packed/helpers.js';
+import { workspace } from './support/process.js';
+import { writeFixture } from './support/consumer.js';
 
 function pipelineFixture(t: TestContext): { root: string; config: string; external: string; source: string } {
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'runic-output-paths-')));

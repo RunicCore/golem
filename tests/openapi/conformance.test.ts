@@ -11,7 +11,7 @@ import { requireObjectCodec } from '@exprtlabs/codegen/serde';
 import { LibError, LibErrorKind, IssueSource } from '@exprtlabs/codegen/errors';
 import type { GeneratedModel } from '@exprtlabs/codegen/model';
 import { createOpenApiAjvEngine } from '@exprtlabs/codegen/ajv';
-import { generatedCodecId } from '../packed/helpers.js';
+import { generatedCodecId } from '../support/consumer.js';
 import {
   findRemoteRefs,
   loadValidatedDocument,

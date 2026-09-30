@@ -4,29 +4,13 @@ import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
 import type { TestContext } from 'node:test';
-import { packedRegistry, command, copyExample, assertExecutedConsumerTests } from './helpers.js';
+import { command } from '../support/process.js';
+import { copyExample, assertExecutedConsumerTests } from '../support/consumer.js';
+import { startRegistry, type PackedRegistry } from '../../scripts/packed-registry.js';
 import { SOURCE_EXAMPLES } from '../../scripts/maintained-examples.js';
 import type { SourceExampleName } from '../../scripts/maintained-examples.js';
 
-type Registry = Awaited<ReturnType<typeof packedRegistry>>;
-let registry: Registry;
-
-function shellQuote(value: string): string {
-  return "'" + value.replaceAll("'", "'\\''") + "'";
-}
-
-function consumerPath(registryRoot: string, registryValue: Registry): string {
-  const tools = path.join(registryRoot, '.source-example-tools');
-  fs.mkdirSync(tools, { recursive: true });
-  assert.ok(registryValue.npmCliPath, 'packed registry must expose its npm 10.9.8 CLI path');
-  const npm = path.join(tools, 'npm');
-  const npx = path.join(tools, 'npx');
-  fs.writeFileSync(npm, `#!/bin/sh\nexec ${shellQuote(registryValue.node22)} ${shellQuote(registryValue.npmCliPath)} "$@"\n`);
-  fs.writeFileSync(npx, `#!/bin/sh\nexec ${shellQuote(registryValue.node22)} ${shellQuote(registryValue.npmCliPath)} exec "$@"\n`);
-  fs.chmodSync(npm, 0o755);
-  fs.chmodSync(npx, 0o755);
-  return `${path.dirname(registryValue.node22)}${path.delimiter}${tools}${path.delimiter}${process.env.PATH ?? ''}`;
-}
+let registry: PackedRegistry;
 
 async function runConsumerShell(cwd: string, source: string, registryRoot: string): Promise<Awaited<ReturnType<typeof command>>> {
   return runConsumerShellWithEnvironment(cwd, source, registryRoot);
@@ -41,7 +25,6 @@ async function runConsumerShellWithEnvironment(
   return command(cwd, '/bin/sh', ['-eu', '-c', source], {
     timeout: 300000,
     env: {
-      PATH: consumerPath(registryRoot, registry),
       ...environment,
       NPM_CONFIG_USERCONFIG: path.join(registryRoot, '.npmrc'),
       npm_config_userconfig: path.join(registryRoot, '.npmrc'),
@@ -303,7 +286,7 @@ function copiedSourceRoot(t: TestContext, label: string): { readonly parent: str
 }
 
 before(async () => {
-  registry = await packedRegistry();
+  registry = await startRegistry();
   assertPackedRcRegistry();
 });
 

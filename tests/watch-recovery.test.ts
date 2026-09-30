@@ -8,7 +8,8 @@ import { runPipeline, watchPipeline } from '#codegen/cli';
 import { contains } from '#codegen/config';
 import { GeneratorSessionResources } from '#codegen/pipeline';
 import { OwnedOutputIndex } from '#codegen/watch';
-import { workspace, writeFixture } from './packed/helpers.js';
+import { workspace } from './support/process.js';
+import { writeFixture } from './support/consumer.js';
 
 function fixture(t: TestContext): { root: string; config: string } {
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'runic-watch-recovery-')));

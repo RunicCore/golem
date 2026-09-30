@@ -9,7 +9,7 @@ import { applyJob, digest, loadInventory, removeRetiredJobs } from '#codegen/out
 import { strongestInputKind } from '#codegen/pipeline';
 import type { CodegenConfig, CodegenJob } from '#codegen/config';
 import { sourceInvalidationModule } from './fixture-templates/controllers/source-invalidation.js';
-import { workspace } from './packed/helpers.js';
+import { workspace } from './support/process.js';
 
 // Fake providers carry the workspace release version so the runtime version check accepts them.
 function workspaceReleaseVersion(): string {

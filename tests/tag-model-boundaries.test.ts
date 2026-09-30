@@ -9,7 +9,7 @@ import { requireObjectCodec } from '@exprtlabs/codegen/serde';
 import { getValidator } from '@exprtlabs/codegen/validation';
 import { validationTagKey } from '@exprtlabs/codegen/schema';
 import type { ModelTypeDescriptor } from '@exprtlabs/codegen/model';
-import { generatedCodecIdFromRoot } from './packed/helpers.js';
+import { generatedCodecIdFromRoot } from './support/consumer.js';
 import { generate, type ModelCodegenResult } from '#model/generator';
 import { writeGeneratedArtifacts } from './fixture-project.js';
 import { compileModelProject, createModelProject } from './model-project.js';

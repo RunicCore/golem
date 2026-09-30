@@ -9,7 +9,7 @@ import { hasExecutableValidation } from '@exprtlabs/codegen/schema';
 import { generate } from '#model/generator';
 import { writeGeneratedArtifacts } from './fixture-project.js';
 import { compileModelProject, createModelProject, writeModelSources } from './model-project.js';
-import { ttscEnv } from './packed/helpers.js';
+import { ttscEnv } from './support/process.js';
 
 const sources = {
   'tree.model.ts': `import type { IModel } from '@exprtlabs/codegen/model';

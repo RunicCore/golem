@@ -8,7 +8,7 @@ import { createExecutableValidationMemo, hasExecutableValidation } from '@exprtl
 import { generate } from '#model/generator';
 import { writeGeneratedArtifacts } from './fixture-project.js';
 import { compileModelProject, createModelProject, writeModelSources } from './model-project.js';
-import { command, ttscEnv } from './packed/helpers.js';
+import { command, ttscEnv } from './support/process.js';
 
 const profiles: readonly (readonly [string, CodegenProfile])[] = [
   ['validation off', { mobx: false, validation: false }],

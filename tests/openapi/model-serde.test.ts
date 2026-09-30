@@ -10,7 +10,7 @@ import { requireObjectCodec } from '@exprtlabs/codegen/serde';
 import { LibError, LibErrorKind, IssueRepresentation, IssueSource } from '@exprtlabs/codegen/errors';
 import type { GeneratedModel } from '@exprtlabs/codegen/model';
 import { getValidator } from '@exprtlabs/codegen/validation';
-import { generatedCodecIdFromRoot } from '../packed/helpers.js';
+import { generatedCodecIdFromRoot } from '../support/consumer.js';
 import {
   compileGeneratedSdk,
   generateMaterializedSdk,

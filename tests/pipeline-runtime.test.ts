@@ -7,7 +7,8 @@ import { test, type TestContext } from 'node:test';
 
 import { runPipeline, watchPipeline } from '#codegen/cli';
 import { generate as generateOpenApi } from '#openapi/generator';
-import { workspace, writeFixture } from './packed/helpers.js';
+import { workspace } from './support/process.js';
+import { writeFixture } from './support/consumer.js';
 import { compileGeneratedSdk } from './openapi/helpers.js';
 
 interface CombinedFixture {

@@ -5,7 +5,7 @@ import { test } from 'node:test';
 import {
   DEFAULT_MODEL_OUTPUT, OPERATION_CODEC_REGISTRY, defaultModelOutput, isOperationCodecRegistry, operationCodecRegistryPath,
 } from '#codegen/generated-paths';
-import { workspace } from './packed/helpers.js';
+import { workspace } from './support/process.js';
 
 test('default generated paths resolve under the job root', () => {
   assert.equal(defaultModelOutput('/project'), path.join('/project', 'src/generated/models'));

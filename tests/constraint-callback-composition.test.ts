@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import test, { type TestContext } from 'node:test';
 
-import { command, workspace } from './packed/helpers.js';
+import { command, workspace } from './support/process.js';
 import { generate } from '#model/generator';
 import { getValidator } from '@exprtlabs/codegen/validation';
 

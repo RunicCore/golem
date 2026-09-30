@@ -6,7 +6,8 @@ import test, { type TestContext } from 'node:test';
 
 import * as ts from '@exprtlabs/codegen/ts';
 import { isModelDeclarationReference } from '@exprtlabs/codegen/type-analysis';
-import { command, generatedCodecId } from './packed/helpers.js';
+import { command } from './support/process.js';
+import { generatedCodecId } from './support/consumer.js';
 import {
   compileModelProject,
   createModelProject,

@@ -6,7 +6,7 @@ import test from 'node:test';
 
 import { generate as generateOpenApi } from '@exprtlabs/openapi-to-ts/generator';
 import { generate } from '#model/generator';
-import { command, ttsc } from './packed/helpers.js';
+import { command, ttsc } from './support/process.js';
 import { fixturePath, writeGeneratedArtifacts } from './fixture-project.js';
 import { compileModelProject, createModelProject, writeModelSources } from './model-project.js';
 

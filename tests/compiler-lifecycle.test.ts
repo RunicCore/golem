@@ -13,7 +13,7 @@ import {
   manifestScaleNames,
   manifestScaleTypesSource,
 } from './fixture-templates/models/compiler-lifecycle.js';
-import { workspace } from './packed/helpers.js';
+import { workspace } from './support/process.js';
 
 interface Fixture {
   readonly root: string;

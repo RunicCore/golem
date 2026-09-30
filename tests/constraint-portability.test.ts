@@ -6,7 +6,8 @@ import test from 'node:test';
 import { Ajv2020, type AnySchema } from 'ajv/dist/2020.js';
 import { generate as generateModels } from '#model/generator';
 import { generate as generateControllers } from '#controllers/generator';
-import { command, generatedCodecId, workspace } from './packed/helpers.js';
+import { command, workspace } from './support/process.js';
+import { generatedCodecId } from './support/consumer.js';
 
 const accepted = [
   { neg: -1 },

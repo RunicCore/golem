@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { TestContext } from 'node:test';
 import { createFixtureProject, linkProjectPackages, writeGeneratedArtifacts } from '../../fixture-project.js';
-import { workspace } from '../../packed/helpers.js';
+import { workspace } from '../../support/process.js';
 
 export interface ControllerFixtureOptions {
   readonly prefix: string;

@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
 import { generate } from '@exprtlabs/openapi-to-ts/generator';
-import { command, workspace } from './packed/helpers.js';
+import { command, workspace } from './support/process.js';
 
 test('public directional projection handles repeated aliases and allOf requirements without weakening neutral or required-only schemas', async t => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'runic-projection-integration-'));

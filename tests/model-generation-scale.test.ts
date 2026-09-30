@@ -5,7 +5,7 @@ import { Checker } from 'typescript/unstable/sync';
 import { copyFixtureFile, writeGeneratedArtifacts } from './fixture-project.js';
 import { scaleModelSource } from './fixture-templates/models/scale.js';
 import { generate } from '#model/generator';
-import { command } from './packed/helpers.js';
+import { command } from './support/process.js';
 import { compileModelProject, createModelProject, writeModelSources } from './model-project.js';
 
 test('many model companions share standalone validation and grow with the model count', async t => {

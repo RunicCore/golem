@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import test, { type TestContext } from 'node:test';
-import { command, generatedCodecId } from './packed/helpers.js';
+import { command } from './support/process.js';
+import { generatedCodecId } from './support/consumer.js';
 
 import { copyFixture, copyFixtureFile, writeGeneratedArtifacts } from './fixture-project.js';
 import { accountModelWithField, accountModelWithMissingImport } from './fixture-templates/models/model-generator.js';
