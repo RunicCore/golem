@@ -190,18 +190,19 @@ function emittedFiles(artifacts: readonly { path: string }[], output: string): s
     .replace(/^models\/_group-[a-f0-9]+\.ts$/, 'models/_group-<hash>.ts')).sort();
 }
 
-// The emitted file list is asserted for every profile; only the default (all-on) profile is compiled.
+// The emitted file list is asserted for every profile; only the default (all-on) profile is compiled, unless the caller compiles elsewhere.
 async function assertFilesPerProfile(
   t: TestContext,
   document: unknown,
   name: string,
   expected: (profile: OpenApiGenerationProfile) => readonly string[],
+  compileDefaultProfile = true,
 ): Promise<void> {
   for (const profile of ALL_GENERATION_PROFILES) {
     const output = outputDir(t, `${name}-${profile.mobx}-${profile.validation}`);
     const result = await generateMaterializedSdk(document, { output, name, profile });
     assert.deepEqual(emittedFiles(result.artifacts, output), [...expected(profile)].sort());
-    if (profile.mobx === defaultTestProfile.mobx && profile.validation === defaultTestProfile.validation) {
+    if (compileDefaultProfile && profile.mobx === defaultTestProfile.mobx && profile.validation === defaultTestProfile.validation) {
       compileStrictUnusedSdk(output);
     }
   }
@@ -272,20 +273,21 @@ test('generated SDKs import the client runtime instead of copying it', async t =
 });
 
 test('minimal GET without content omits codec options and unused helpers', async (t) => {
+  await assertFilesPerProfile(t, pingDocument(), 'Ping', () => [
+    'index.ts',
+    'types.ts',
+    'model-manifest.json',
+    'client.ts',
+    'operations/ping.ts',
+    'schemas.ts',
+  ], false);
+
   const output = outputDir(t, 'codec-omit');
-  const result = await generateMaterializedSdk(pingDocument(), {
+  await generateMaterializedSdk(pingDocument(), {
     output,
     name: 'Ping',
     profile: { mobx: false, validation: false },
   });
-  assert.deepEqual(emittedFiles(result.artifacts, output), [
-    'client.ts',
-    'index.ts',
-    'model-manifest.json',
-    'operations/ping.ts',
-    'schemas.ts',
-    'types.ts',
-  ]);
   const assertFile = copyFixtureFile(output, 'openapi/emission-plan/ping-client-assert.ts', 'ping-client-assert.ts');
   compileStrictUnusedSdk(output, [assertFile]);
 

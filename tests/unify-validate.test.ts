@@ -102,6 +102,46 @@ test('global validation true emits codec Ajv for IObject and IModel', async (t: 
   assert.deepEqual(issues.map((issue) => issue.path), getValidator(invalid).issues.map((issue) => issue.path));
 });
 
+test('I* validation option overrides the global flag in both directions and mixed files', async (t: TestContext) => {
+  const { root, sourceRoot } = fixture(t);
+  writeGeneratedArtifacts([{
+    path: path.join(sourceRoot, 'mixed.model.ts'),
+    content: readFixture('models/unify-validate/i-validation-option-overrides-the-global-flag-in-both-directions-and-mixed-f/mixed.model.ts'),
+  }]);
+  writeArtifacts(generate({ root, profile: { mobx: false, validation: false } }));
+  await compile(root);
+  const { Checked } = await import(pathToFileURL(path.join(root, 'build/mixed.model.js')).href);
+  const checkedCodec = requireObjectCodec(generatedCodecIdFromRoot(root, 'Checked'));
+  const trustedCodec = requireObjectCodec(generatedCodecIdFromRoot(root, 'Trusted'));
+  assert.equal(checkedCodec.validate(new Checked({ title: 'ok' })), true);
+  assert.equal(checkedCodec.validate({ title: 5 }), false, 'the per-type override still runs a real Ajv schema check');
+  assert.throws(() => trustedCodec.validate({ id: '1' }));
+  assert.throws(() => trustedCodec.stringify({ id: '1' }, { validate: true }));
+});
+
+test('nested interned child with validation false is opaque; parent field tags still run', async (t: TestContext) => {
+  const { root, sourceRoot } = fixture(t);
+  writeGeneratedArtifacts([
+    {
+      path: path.join(sourceRoot, 'predicates.ts'),
+      content: readFixture('models/unify-validate/nested-interned-child-with-validation-false-is-opaque-parent-field-tags-stil/predicates.ts'),
+    },
+    {
+      path: path.join(sourceRoot, 'nested.model.ts'),
+      content: readFixture('models/unify-validate/nested-interned-child-with-validation-false-is-opaque-parent-field-tags-stil/nested.model.ts'),
+    },
+  ]);
+  writeArtifacts(generate({ root, profile: { mobx: false, validation: true } }));
+  await compile(root);
+  const { Parent } = await import(pathToFileURL(path.join(root, 'build/nested.model.js')).href);
+  const codec = requireObjectCodec(generatedCodecIdFromRoot(root, 'Parent'));
+  const valid = new Parent({ child: { secret: 7 as never }, note: 'ok' });
+  assert.equal(codec.validate(valid), true);
+  const blank = new Parent({ child: { secret: 'x' }, note: '  ' });
+  assert.equal(codec.validate(blank), false);
+  assert.ok((await validateInstance(blank)).some((issue) => issue.path[0] === 'note'));
+});
+
 test('SDK Money $ref plus extra TValidation, local TValidation, and TSerde compile into one companion', async (t: TestContext) => {
   const { root, sourceRoot } = fixture(t);
   writeGeneratedArtifacts([{

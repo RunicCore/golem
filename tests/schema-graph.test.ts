@@ -148,6 +148,74 @@ test('intern preserves type-only nested refs as known-key copies and class refs 
   assert.deepEqual(result.notes, [{ sku: 'n1' }], 'array items of a closed nested object copy only their known keys');
 });
 
+test('construct skips identity-only fill and reuses extras-allowed identity nested objects', () => {
+  const item: ModelTypeDescriptor = {
+    kind: 'object',
+    properties: { sku: { kind: 'string' } },
+    required: ['sku'],
+    additionalProperties: false,
+  };
+  const note: ModelTypeDescriptor = {
+    kind: 'object',
+    properties: { sku: { kind: 'string' } },
+    required: ['sku'],
+    additionalProperties: false,
+  };
+  const flags: ModelTypeDescriptor = {
+    kind: 'object',
+    properties: {},
+    required: [],
+    additionalProperties: { kind: 'string' },
+  };
+  const bag: ModelTypeDescriptor = {
+    kind: 'object',
+    properties: { lane: { kind: 'string' } },
+    required: ['lane'],
+    additionalProperties: false,
+  };
+  const root: ModelTypeDescriptor = {
+    kind: 'object',
+    properties: {
+      flags,
+      bag,
+      notes: { kind: 'array', item: note },
+      item: { kind: 'reference', name: 'Item', construct: true },
+    },
+    required: ['flags', 'bag', 'notes', 'item'],
+    additionalProperties: false,
+  };
+  const graph = createSchemaGraph();
+  const itemNode = graph.intern(item, 'Item', true);
+  graph.intern(root, 'Root');
+  graph.seal();
+  const source = emitCodecRuntime(graph);
+  class ItemStub {
+    public constructor(values: object = {}) {
+      Object.assign(this, values);
+    }
+  }
+  serde.registerIModelClass(itemNode.codecId, ItemStub);
+  const { fromWireFormatRoot } = instantiateRuntime(source);
+  const wireFlags = { colorFlag: 'blue', sizeFlag: 'large' };
+  const wireBag = { lane: 'north', extra: 'drop-me' };
+  const wire = {
+    flags: wireFlags,
+    bag: wireBag,
+    notes: [{ sku: 'n1', extra: 'drop-me' }],
+    item: { sku: 'i1' },
+  };
+  const result = fromWireFormatRoot(wire, { validate: false }) as {
+    flags: unknown;
+    bag: unknown;
+    notes: unknown[];
+    item: unknown;
+  };
+  assert.deepEqual(result.flags, wireFlags, 'an additionalProperties nested object passes every key through instead of only known ones');
+  assert.deepEqual(result.bag, { lane: 'north' }, 'a closed nested object copies only its known keys, dropping the extra one');
+  assert.deepEqual(result.notes, [{ sku: 'n1' }], 'array items of a closed nested object copy only their known keys');
+  assert.ok(result.item instanceof ItemStub, 'a construct:true reference is constructed via the registered class instead of an identity-only fill');
+});
+
 test('TSerde intern emits a second Ajv schema only when wire and model intern keys differ', () => {
   const converted: ModelTypeDescriptor = {
     kind: 'object',

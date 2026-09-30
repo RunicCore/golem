@@ -61,6 +61,43 @@ import { validate } from './validators.js';`,
   }
 });
 
+test('extended JSON Schema tags preserve sibling keywords in generated validation', async t => {
+  const { root, sourceRoot } = fixture(t);
+  fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), taggedModelSource({
+    name: 'A',
+    imports: tsSource`import type { AdditionalProperties, Contains, DependentRequired, DependentSchemas, IfThenElse, MaxContains, MaxProperties, MinContains, MinItems, MinProperties, Not, OneOf, Pattern, PatternProperties, PropertyNames, UnevaluatedProperties } from '@exprtlabs/codegen/tags';
+type ValueObject = { foo?: string; bar?: string; x_value?: number };
+type ValueArray = Array<string>;`,
+    fields: tsSource`values: ValueArray & Contains<string & Pattern<'^ok$'>> & MinItems<1> & MinContains<1> & MaxContains<2>; objectValue: ValueObject & MinProperties<1> & MaxProperties<3> & PropertyNames<string & Pattern<'^[a-z_]+$'>> & PatternProperties<{ '^x_': number; '^z_': boolean }> & AdditionalProperties<never> & UnevaluatedProperties<never> & DependentRequired<{ foo: ['bar'] }> & DependentSchemas<{ foo: { bar: string } }> & OneOf<[{ foo: string }, { bar: string }]> & Not<{ forbidden: string }> & IfThenElse<{ bar: string }, { bar: string }, { foo: string }>;`,
+  }).text);
+  const result = generate({ root, profile: { mobx: false, validation: true } });
+  writeGeneratedArtifacts(result.artifacts);
+  const shared = result.artifacts.map((artifact) => artifact.content).join('\n');
+  for (const keyword of [
+    'contains', 'minContains', 'maxContains', 'minProperties', 'maxProperties',
+    'propertyNames', 'patternProperties', 'additionalProperties', 'unevaluatedProperties',
+    'dependentRequired', 'dependentSchemas', 'oneOf', 'not', 'if', 'then', 'else',
+  ]) assert.match(shared, new RegExp(`\\b${keyword}\\b`), keyword);
+  assert.match(generatedJsonData(shared), /"contains"[\s\S]*"(?:minContains"[\s\S]*"maxContains|maxContains"[\s\S]*"minContains)/);
+  await compileModelProject(root);
+  const { A } = await import(path.toNamespacedPath(path.join(root, 'build/a.model.js')));
+  const valid = new A({ values: ['ok'], objectValue: { bar: 'yes', x_value: 1 } });
+  assert.equal(await getValidator(valid).validate(), true);
+  for (const invalid of [
+    { values: ['bad'], objectValue: { foo: 'only' } },
+    { values: [], objectValue: { bar: 'yes' } },
+    { values: ['ok', 'ok', 'ok'], objectValue: { bar: 'yes' } },
+    { values: ['ok'], objectValue: {} },
+    { values: ['ok'], objectValue: { foo: 'x', bar: 'y' } },
+    { values: ['ok'], objectValue: { forbidden: 'x' } },
+    { values: ['ok'], objectValue: { 'Bad-Key': 'x' } },
+    { values: ['ok'], objectValue: { x_value: 'bad' } },
+    { values: ['ok'], objectValue: { z_flag: 'bad' } },
+  ]) {
+    assert.equal(await getValidator(new A(invalid as never)).validate(), false, JSON.stringify(invalid));
+  }
+});
+
 // One project holds every validation=true, non-standalone case that compiles and executes; each case keeps
 // its own directory, so file and class names never collide. Cases that assert a diagnostic, or use another
 // profile, keep projects of their own.

@@ -211,6 +211,45 @@ test('generated decoding preserves the constructor and initializer boundaries', 
   }
 });
 
+test('OpenAPI generated models use the same detached JSON serialization as object serialization', async (t) => {
+  const value = fixture(t);
+  writeFileSync(path.join(value.sourceRoot, 'types.ts'), readFixture("models/serde-emission-efficiency/openapi-generated-models-use-the-same-detached-json-serialization-as-object-/types.ts"));
+  const source = generateModels({
+    openapi: '3.1.0',
+    info: { title: 'Emission', version: '1' },
+    components: {
+      schemas: {
+        Child: {
+          type: 'object',
+          required: ['value'],
+          properties: { value: { type: 'string' } },
+        },
+        Parent: {
+          type: 'object',
+          required: ['title', 'child'],
+          properties: {
+            title: { type: 'string' },
+            child: { $ref: '#/components/schemas/Child' },
+            labels: { type: 'array', items: { type: 'string' } },
+          },
+        },
+      },
+    },
+  }, { mobx: false, validation: false });
+  writeFileSync(path.join(value.sourceRoot, 'models.ts'), source);
+  await compileModelProject(value.root);
+
+  const models = await import(pathToFileURL(path.join(value.root, 'build/models.js')).href) as unknown as {
+    readonly ChildModel: new (values?: Record<string, unknown>) => object;
+    readonly ParentModel: new (values?: Record<string, unknown>) => object;
+  };
+  const child = new models.ChildModel({ value: 'child' });
+  const parent = new models.ParentModel({ title: 'parent', child, labels: ['one', 'two'] });
+  const wire = encodeGeneratedModel(parent as GeneratedModel<unknown>);
+  const text = JSON.stringify(wire);
+  assert.equal(text, '{"title":"parent","child":{"value":"child"},"labels":["one","two"]}');
+});
+
 test('OpenAPI decoder leaves scalar fields in the initializer copy', () => {
   const source = generateModels({
     openapi: '3.1.0',

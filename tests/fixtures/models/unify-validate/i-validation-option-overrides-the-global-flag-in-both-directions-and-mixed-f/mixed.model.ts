@@ -1,0 +1,5 @@
+import type { IModel, IObject } from '@exprtlabs/codegen/model';
+import { CheckedBase, type CheckedFields } from './mixed.model.generated.js';
+export type TTrusted = IObject<{ id: string }, { validation: false }>;
+export type TChecked = IModel<{ title: string }, { validation: true }>;
+export class Checked extends CheckedBase { constructor(values: Partial<CheckedFields> = {}) { super(values); } }

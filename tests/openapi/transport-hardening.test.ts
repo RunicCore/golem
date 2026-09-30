@@ -26,10 +26,12 @@ function transportDocument(): Record<string, unknown> {
     info: { title: 'Transport', version: '1' },
     components: {
       securitySchemes: {
+        bearer: { type: 'http', scheme: 'bearer' },
         session: { type: 'apiKey', in: 'cookie', name: 'session' },
       },
     },
     paths: {
+      '/optional-auth': { get: { operationId: 'optionalAuth', security: [{}, { bearer: [] }], responses: noContent } },
       '/session': { get: { operationId: 'sessionAuth', security: [{ session: [] }], responses: noContent } },
       '/reserved': {
         get: {
@@ -114,6 +116,16 @@ test('generated transport reports browser cookie diagnostics and wires reserved 
     query: { q: 'a/b?c#d[e]&f+g%20h:@!$', 'this.id': 'x' },
   });
   assert.equal(calls.requests[0]?.url, 'https://api.test/reserved?q=a/b?c%23d%5Be%5D%26f%2Bg%20h:@!$&this.id=x');
+});
+
+test('generated transport sends the configured bearer token for an optional security requirement and no authorization header otherwise', async () => {
+  const { Client } = await loadTransportSdk();
+
+  // An optional requirement ({}) is a fallback: configured credentials are still sent.
+  const calls = recorder();
+  await new Client({ baseUrl: 'https://api.test', fetchImpl: calls.fetchImpl, auth: { bearer: 'token' } }).optionalAuth().execute({});
+  await new Client({ baseUrl: 'https://api.test', fetchImpl: calls.fetchImpl }).optionalAuth().execute({});
+  assert.deepEqual(calls.requests.map(request => request.init.headers.get('authorization')), ['Bearer token', null]);
 });
 
 test('the undeclared-response guard recognizes only its own SDK', async () => {
