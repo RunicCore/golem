@@ -31,7 +31,7 @@ function runTtsc(root: string, args: readonly string[]): { status: number | null
 
 const modes = [['build', []], ['--noEmit', ['--noEmit']], ['check', ['check']]] as const;
 
-test('ttsc with the codegen plugin reports TypeScript errors with code and line:col and fails', (t) => {
+test('ttsc with the golem plugin reports TypeScript errors with code and line:col and fails', (t) => {
   const root = pluginProject(t);
   for (const [label, args] of modes) {
     assert.equal(runTtsc(root, args).status, 0, `${label}: a clean project compiles`);

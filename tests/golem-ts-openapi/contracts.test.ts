@@ -126,8 +126,8 @@ function contentSchema(value: OpenApiResponse | OpenApiParameter | OpenApiReques
 
 function fixture(t: TestContext, source: string, options: FixtureOptions = {}): string {
   return createControllerFixture(t, {
-    prefix: 'golem-ts-to-openapi-contract-',
-    packageName: 'ts-to-openapi-contract-fixture',
+    prefix: 'golem-ts-openapi-contract-',
+    packageName: 'golem-ts-openapi-contract-fixture',
     sourceFile: 'src/contracts.controller.ts',
     source,
     files: {

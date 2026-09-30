@@ -2,8 +2,8 @@ import assert from 'node:assert/strict';
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 import { requireObjectCodec, type ObjectCodec } from '@exprtlabs/golem/serde';
 import type { Adapter, ComparisonFixture } from './fixture-contract.js';
-import './codegen.object.model.generated.js';
-import { createGolemObjectFeatureFixtures } from './comparison-features-codegen-object.js';
+import './golem.object.model.generated.js';
+import { createGolemObjectFeatureFixtures } from './comparison-features-golem-object.js';
 import { assertValidText, consumeValue, createFixtureInputs, invalidIpLength, invalidVariants, missingNullable, nullableVariant, unknownPropertyVariants, type FixtureInput } from './shared.js';
 
 function codecId(input: FixtureInput): string {
@@ -45,7 +45,7 @@ function verify(input: FixtureInput, codec: ObjectCodec<unknown>): void {
 }
 
 export async function createGolemObjectFixtures(adapter: Adapter): Promise<readonly ComparisonFixture[]> {
-  if (adapter !== 'codegen-object') throw new TypeError(`Unsupported Golem IObject adapter: ${adapter}`);
+  if (adapter !== 'golem-object') throw new TypeError(`Unsupported Golem IObject adapter: ${adapter}`);
   const fixtures: ComparisonFixture[] = [...await createGolemObjectFeatureFixtures(adapter)];
   for (const input of createFixtureInputs()) {
     // Resolve the codec once, as the other libraries' fixtures do; timed calls do only the conversion.

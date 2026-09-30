@@ -107,7 +107,7 @@ test('SDK generated with mobx and validation disabled loads and runs an operatio
   // Copy @exprtlabs/golem's package.json and dist as real files rather than
   // symlinking (linkProjectPackages/prepareSdkProject's usual behavior): Node
   // resolves a symlink to its real path before walking node_modules, so a
-  // symlinked codegen package would still resolve up into this workspace's own
+  // symlinked golem package would still resolve up into this workspace's own
   // node_modules, where mobx and ajv are installed, defeating the isolation
   // this test exists to prove. A real copy keeps the whole dependency chain
   // rooted under the temp project, where neither package exists at any

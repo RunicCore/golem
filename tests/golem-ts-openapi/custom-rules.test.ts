@@ -47,8 +47,8 @@ function record(value: unknown): value is Record<string, unknown> {
 
 function fixture(t: TestContext): string {
   return createControllerFixture(t, {
-    prefix: 'golem-ts-to-openapi-custom-rules-',
-    packageName: 'ts-to-openapi-custom-rules-fixture',
+    prefix: 'golem-ts-openapi-custom-rules-',
+    packageName: 'golem-ts-openapi-custom-rules-fixture',
     files: {
       'src/predicates.ts': readFixture('controllers/custom-rules/project/predicates.ts'),
       'src/catalog.controller.ts': readFixture('controllers/custom-rules/project/catalog.controller.ts'),

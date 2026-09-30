@@ -12,7 +12,7 @@ const featureDirectory = path.join(root, 'scripts/benchmark/fixtures/features');
 const featureSources = [
   'payloads.ts', 'feature-tags.ts', 'features.model.ts', 'features.iobject.model.ts',
   'features-class-transformer.models.ts', 'features-class-validator.models.ts',
-  'comparison-features-codegen.ts', 'comparison-features-codegen-object.ts',
+  'comparison-features-golem.ts', 'comparison-features-golem-object.ts',
   'comparison-features-class-transformer.ts', 'comparison-features-class-validator.ts',
 ];
 

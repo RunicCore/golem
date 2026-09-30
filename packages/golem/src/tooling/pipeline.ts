@@ -108,7 +108,7 @@ export class GeneratorSessionResources implements Disposable {
 }
 
 /**
- * The npm dist-tag matching this codegen release: the prerelease channel
+ * The npm dist-tag matching this golem release: the prerelease channel
  * (`1.0.0-rc` or `1.0.0-rc.2` → `rc`), or `latest` for a stable version.
  * Generator packages are published in lockstep under the same tag.
  */

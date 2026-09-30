@@ -5,7 +5,7 @@
     "sourceMap": false,
     "rootDir": "src",
     "outDir": "dist",
-    "tsBuildInfoFile": "../../.build/openapi-to-ts.tsbuildinfo",
+    "tsBuildInfoFile": "../../.build/golem-openapi.tsbuildinfo",
     "lib": [
       "ES2023",
       "DOM",

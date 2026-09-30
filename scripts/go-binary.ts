@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const executable = process.platform === 'win32' ? 'go.exe' : 'go';
 
-/** The Go toolchain ttsc builds the codegen plugin with: TTSC_GO_BINARY when set, otherwise the Go bundled in @ttsc/<platform>-<arch>. */
+/** The Go toolchain ttsc builds the golem plugin with: TTSC_GO_BINARY when set, otherwise the Go bundled in @ttsc/<platform>-<arch>. */
 export function goBinary(): string {
   const explicit = process.env.TTSC_GO_BINARY;
   if (explicit) return explicit;

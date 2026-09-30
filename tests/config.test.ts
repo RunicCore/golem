@@ -73,7 +73,7 @@ test('configuration errors reject unknown overrides, duplicate keys and overlapp
 
 test('configured provider absence and incompatible API have distinct actionable errors', async (t: TestContext) => {
   const { root, filename } = fixture(t, 'version: 1\nmodels: {}\n');
-  // The hint installs the generator from the same npm channel as the running codegen (1.0.0-rc -> @rc).
+  // The hint installs the generator from the same npm channel as the running golem (1.0.0-rc -> @rc).
   const { version } = JSON.parse(fs.readFileSync(new URL('../../packages/golem/package.json', import.meta.url), 'utf8')) as { version: string };
   const channel = /^\d+\.\d+\.\d+-([0-9A-Za-z-]+)/.exec(version)?.[1] ?? 'latest';
   await assert.rejects(

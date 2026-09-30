@@ -1,6 +1,6 @@
 /**
  * ttsc plugin descriptor. Registers nestModelCodec metadata on @Body()/@Query()
- * parameters and rewrites serde generics. The Go source is the shared codegen
+ * parameters and rewrites serde generics. The Go source is the shared golem
  * plugin, so this entry and @exprtlabs/golem/ttsc-plugin are one native backend.
  */
 const path = require('node:path');

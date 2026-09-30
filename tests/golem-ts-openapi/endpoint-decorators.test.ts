@@ -89,8 +89,8 @@ function documentOf(result: Awaited<ReturnType<typeof generate>>): OpenApiDocume
 
 function fixture(t: TestContext, source: string, options: FixtureOptions = {}): string {
   return createControllerFixture(t, {
-    prefix: 'golem-ts-to-openapi-endpoint-decorators-',
-    packageName: 'ts-to-openapi-endpoint-decorators-fixture',
+    prefix: 'golem-ts-openapi-endpoint-decorators-',
+    packageName: 'golem-ts-openapi-endpoint-decorators-fixture',
     source,
     files: options.files,
   });

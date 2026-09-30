@@ -7,7 +7,7 @@ export const OPERATIONS = ['object-to-model', 'model-to-object', 'text-to-model'
 export type Operation = typeof OPERATIONS[number];
 
 /** Keys the fixture modules switch on. */
-export const ADAPTERS = ['codegen', 'codegen-runtime', 'codegen-standalone', 'codegen-object', 'class-transformer', 'class-validator', 'typia', 'zod'] as const;
+export const ADAPTERS = ['golem', 'golem-runtime', 'golem-standalone', 'golem-object', 'class-transformer', 'class-validator', 'typia', 'zod'] as const;
 export type Adapter = typeof ADAPTERS[number];
 
 export interface ComparisonFixture {

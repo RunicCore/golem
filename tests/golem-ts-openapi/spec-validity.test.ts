@@ -41,8 +41,8 @@ const HEADER = "import { All, Controller, Get, Headers, Header, Param, Query, Re
 
 function fixture(t: TestContext, body: string): string {
   return createControllerFixture(t, {
-    prefix: 'golem-ts-to-openapi-spec-validity-',
-    packageName: 'ts-to-openapi-spec-validity-fixture',
+    prefix: 'golem-ts-openapi-spec-validity-',
+    packageName: 'golem-ts-openapi-spec-validity-fixture',
     source: `${HEADER}${body}\n`,
   });
 }

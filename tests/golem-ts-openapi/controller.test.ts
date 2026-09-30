@@ -171,8 +171,8 @@ function diagnosticsOf(error: unknown): readonly DiagnosticLike[] {
 
 function fixture(t: TestContext, source: string, options: FixtureOptions = {}): string {
   return createControllerFixture(t, {
-    prefix: 'golem-ts-to-openapi-controller-',
-    packageName: 'ts-to-openapi-controller-fixture',
+    prefix: 'golem-ts-openapi-controller-',
+    packageName: 'golem-ts-openapi-controller-fixture',
     sourceFile: 'src/catalog.controller.ts',
     source,
     files: options.files,

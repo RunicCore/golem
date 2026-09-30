@@ -53,4 +53,4 @@ Constructing `PaymentEditor` turns `money` into a `MoneyModel`. `toWireFormat(ed
 
 `validateInstance(editor)` returns the issues. `getValidator(editor)` keeps them on the model for a form ([Validation](/guide/validation)).
 
-Full example: [`examples/combined`](https://github.com/exprtlabs/codegen/tree/main/examples/combined)
+Full example: [`examples/combined`](https://github.com/RunicCore/golem/tree/master/examples/combined)

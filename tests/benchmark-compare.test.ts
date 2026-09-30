@@ -18,18 +18,18 @@ const c = (adapter: string, median: number, min: number, max: number): ResultCas
   ({ payload: 'simple', operation: 'parse', adapter, support: 'full', opsPerSec: { median, min, max } });
 
 test('delta percent and overlap per shared case', () => {
-  const out = compareResults(results([c('codegen', 1000, 900, 1100), c('zod', 500, 450, 550)]), results([c('codegen', 1200, 1150, 1250), c('zod', 510, 480, 540)]));
-  const codegen = out.rows.find(r => r.key === 'simple/parse/codegen');
-  assert.equal(codegen?.deltaPercent, 20);
-  assert.equal(codegen?.overlap, false);
+  const out = compareResults(results([c('golem', 1000, 900, 1100), c('zod', 500, 450, 550)]), results([c('golem', 1200, 1150, 1250), c('zod', 510, 480, 540)]));
+  const golem = out.rows.find(r => r.key === 'simple/parse/golem');
+  assert.equal(golem?.deltaPercent, 20);
+  assert.equal(golem?.overlap, false);
   assert.equal(out.rows.find(r => r.key === 'simple/parse/zod')?.overlap, true);
 });
 
 test('cases present on one side are listed, not dropped', () => {
-  const out = compareResults(results([c('codegen', 1, 1, 1)]), results([c('zod', 1, 1, 1)]));
-  assert.deepEqual(out.onlyBefore, ['simple/parse/codegen']);
+  const out = compareResults(results([c('golem', 1, 1, 1)]), results([c('zod', 1, 1, 1)]));
+  assert.deepEqual(out.onlyBefore, ['simple/parse/golem']);
   assert.deepEqual(out.onlyAfter, ['simple/parse/zod']);
-  assert.match(formatComparison(out), /only in before: simple\/parse\/codegen/);
+  assert.match(formatComparison(out), /only in before: simple\/parse\/golem/);
 });
 
 test('unsupported cases are skipped without NaN', () => {
@@ -40,20 +40,20 @@ test('unsupported cases are skipped without NaN', () => {
 });
 
 test('environment, package, settings, git and support changes produce warnings', () => {
-  const envBefore = results([c('codegen', 1, 1, 1)]);
-  const envAfter = results([c('codegen', 1, 1, 1)], { environment: { ...envBefore.environment, node: 'v24.0.0' }, packages: { zod: '4.7.0' } });
+  const envBefore = results([c('golem', 1, 1, 1)]);
+  const envAfter = results([c('golem', 1, 1, 1)], { environment: { ...envBefore.environment, node: 'v24.0.0' }, packages: { zod: '4.7.0' } });
   const envOut = compareResults(envBefore, envAfter);
   assert.ok(envOut.warnings.some(w => w.includes('node')), 'node');
   assert.ok(envOut.warnings.some(w => w.includes('zod')), 'zod');
 
-  const before = results([c('codegen', 1, 1, 1)]);
-  const after = results([{ payload: 'simple', operation: 'parse', adapter: 'codegen', support: 'none', note: 'not supported' }], {
+  const before = results([c('golem', 1, 1, 1)]);
+  const after = results([{ payload: 'simple', operation: 'parse', adapter: 'golem', support: 'none', note: 'not supported' }], {
     settings: { warmupMs: 300, batchMs: 100, batches: 5 }, git: { sha: 'b', dirty: true },
   });
   const out = compareResults(before, after);
   assert.ok(out.warnings.some(w => w.includes('batchMs')), 'settings');
   assert.ok(out.warnings.some(w => w.includes('git')), 'git');
-  assert.ok(out.warnings.some(w => w.includes('simple/parse/codegen') && w.includes('none')), 'support');
+  assert.ok(out.warnings.some(w => w.includes('simple/parse/golem') && w.includes('none')), 'support');
 });
 
 test('comparing a schema-1 file fails with a clear message', () => {

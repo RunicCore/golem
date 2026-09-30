@@ -87,6 +87,6 @@ A React component imports a generated model or client like any other module. Wra
 
 <<< ../../examples/react-mobx/src/App.tsx#observer-component
 
-`getValidator` reads the editor's validation issues ([Validation](/guide/validation)) for the form to render; the form's fields call action methods such as `setAmount` on change. [`examples/react-mobx`](https://github.com/exprtlabs/codegen/tree/main/examples/react-mobx) runs this editor against a local demo server.
+`getValidator` reads the editor's validation issues ([Validation](/guide/validation)) for the form to render; the form's fields call action methods such as `setAmount` on change. [`examples/react-mobx`](https://github.com/RunicCore/golem/tree/master/examples/react-mobx) runs this editor against a local demo server.
 
-Full example: [`examples/model-mobx`](https://github.com/exprtlabs/codegen/tree/main/examples/model-mobx)
+Full example: [`examples/model-mobx`](https://github.com/RunicCore/golem/tree/master/examples/model-mobx)

@@ -48,11 +48,11 @@ test('buildResults emits every case with support, notes, timings, groups and eac
   const none = results.cases.filter(c => c.support === 'none');
   assert.ok(none.length > 0 && none.every(c => c.opsPerSec === undefined && c.note));
   assert.equal(results.payloads.find(p => p.id === 'simple')?.bytes, 100);
-  assert.ok(results.adapters.every(a => a.sourceUrl.startsWith('https://github.com/exprtlabs/codegen/blob/main/')));
+  assert.ok(results.adapters.every(a => a.sourceUrl.startsWith('https://github.com/RunicCore/golem/blob/master/')));
   assert.ok(JSON.stringify(results).length < 30_000);
   assert.equal(results.schema, 2);
   assert.deepEqual(results.groups.map(g => g.id), ['plain', 'classes', 'validated-classes']);
-  assert.equal(results.adapters.find(a => a.id === 'codegen-object')?.group, 'plain');
+  assert.equal(results.adapters.find(a => a.id === 'golem-object')?.group, 'plain');
 });
 
 test('buildResults throws when a timed case has no measurement', () => {

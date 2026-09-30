@@ -8,7 +8,7 @@ import './sdk/index.js';
 import { assertFeatureWire, checkoutInput, featureComparison } from './payloads.js';
 
 export async function createGolemObjectFeatureFixtures(adapter: Adapter): Promise<readonly ComparisonFixture[]> {
-  if (adapter !== 'codegen-object') throw new TypeError(`Unsupported Golem IObject adapter: ${adapter}`);
+  if (adapter !== 'golem-object') throw new TypeError(`Unsupported Golem IObject adapter: ${adapter}`);
   const input = checkoutInput();
   // #region calls
   // Resolve the codec once, as the other libraries' fixtures do; timed calls do only the conversion.

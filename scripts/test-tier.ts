@@ -8,7 +8,7 @@ import { goBinary } from './go-binary.js';
 export type Tier = 'prepare' | 'focused' | 'full' | 'acceptance' | 'docs';
 export interface Step { readonly label: string; readonly run: () => number }
 
-export const UNIT_FILES = ['.build/tests/*.test.js', '.build/tests/openapi/*.test.js', '.build/tests/ts-to-openapi/*.test.js'] as const;
+export const UNIT_FILES = ['.build/tests/*.test.js', '.build/tests/openapi/*.test.js', '.build/tests/golem-ts-openapi/*.test.js'] as const;
 // The model-only smoke file runs in Full; Acceptance runs the others so it runs once.
 export const PACKED_FILES = ['.build/tests/packed/consumers.test.js', '.build/tests/packed/nest-workflows.test.js'] as const;
 const SMOKE_FILE = '.build/tests/packed/model-only.test.js';

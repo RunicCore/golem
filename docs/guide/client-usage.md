@@ -111,4 +111,4 @@ For a header parameter declared in the API document, use the operation's `header
 
 Check `controller.signal.aborted` before rethrowing a caught error; a failure unrelated to the abort should still propagate.
 
-Full example: [`examples/openapi`](https://github.com/exprtlabs/codegen/tree/main/examples/openapi)
+Full example: [`examples/openapi`](https://github.com/RunicCore/golem/tree/master/examples/openapi)

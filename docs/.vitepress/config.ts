@@ -39,9 +39,9 @@ export default defineConfig({
     },
     nav: NAV.map(item => ({ ...item })),
     sidebar: SIDEBAR.map(group => ({ text: group.text, items: group.items.map(item => ({ ...item })) })),
-    socialLinks: [{ icon: 'github', link: 'https://github.com/exprtlabs/codegen' }],
+    socialLinks: [{ icon: 'github', link: 'https://github.com/RunicCore/golem' }],
     footer: {
-      message: 'Released under the <a href="https://github.com/exprtlabs/codegen/blob/main/LICENSE">MIT License</a>.',
+      message: 'Released under the <a href="https://github.com/RunicCore/golem/blob/master/LICENSE">MIT License</a>.',
       copyright: 'Made by <a href="https://exprtlabs.ai">exprtlabs.ai</a>',
     },
   },

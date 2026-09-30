@@ -13,9 +13,9 @@ function options(validation: boolean, construct?: new (values?: never) => object
 }
 
 function validationFor(adapter: Adapter): boolean {
-  if (adapter === 'codegen') return false;
-  if (adapter === 'codegen-runtime' || adapter === 'codegen-standalone') return true;
-  throw new TypeError(`Unsupported codegen adapter: ${adapter}`);
+  if (adapter === 'golem') return false;
+  if (adapter === 'golem-runtime' || adapter === 'golem-standalone') return true;
+  throw new TypeError(`Unsupported golem adapter: ${adapter}`);
 }
 
 const codec = () => requireObjectCodec('Checkout');

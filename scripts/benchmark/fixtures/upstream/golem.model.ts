@@ -11,7 +11,7 @@ import {
   ObjectSimpleBase,
   Point3DBase,
   TimestampBase,
-} from './codegen.model.generated.js';
+} from './golem.model.generated.js';
 
 // #region simple
 export type TPoint3D = IModel<{

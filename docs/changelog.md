@@ -14,7 +14,7 @@ independently, or combine them in one `golem.yaml` file.
 - Generate typed API clients with authentication, cancellation, codecs and streaming responses. Browser clients use native `fetch` by default.
 - Keep generated files synchronized with `watch`, or use the read-only `check` command in CI.
 
-The [examples](https://github.com/exprtlabs/codegen/tree/main/examples) cover each generator independently, combined
+The [examples](https://github.com/RunicCore/golem/tree/master/examples) cover each generator independently, combined
 generation and optional MobX integration.
 
 ## Compatibility {#compatibility}
@@ -75,8 +75,9 @@ Each item names a breaking change and the action to take.
 ### Packages
 
 - `typescript` (`~7.0.2`) and `ttsc` (`~0.30.4`) are peer dependencies of both generators. Install them in the consuming project.
-- Several pre-1.0 exports are removed with no replacement ([Removed APIs](https://github.com/exprtlabs/codegen/blob/main/CHANGELOG.md#removed-apis-pre-10)).
-- An inventory (`.golem/outputs.json`) from an earlier release candidate is rejected. Delete it and run `npx golem generate`.
+- Several pre-1.0 exports are removed with no replacement ([Removed APIs](https://github.com/RunicCore/golem/blob/master/CHANGELOG.md#removed-apis-pre-10)).
+- The packages are renamed: `@exprtlabs/codegen` is `@exprtlabs/golem`, `@exprtlabs/model-codegen` is `@exprtlabs/golem-model`, `@exprtlabs/openapi-to-ts` is `@exprtlabs/golem-openapi` and `@exprtlabs/ts-to-openapi` is `@exprtlabs/golem-ts-openapi`. Subpaths are unchanged. Replace the dependencies and imports.
+- The CLI is `golem` (was `runic-codegen`) and generator-API types are `Golem*` (was `Codegen*`, for example `GolemProvider`). Rename `runic-codegen.yaml` to `golem.yaml`, delete `.runic-codegen/` and run `npx golem generate`.
 
 ### Generated files
 

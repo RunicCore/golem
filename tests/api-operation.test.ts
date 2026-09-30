@@ -340,7 +340,7 @@ test('stream execute loading ends when the response wrapper is available', async
   assert.deepEqual(collected, [1, 2]);
 });
 
-test('codegen client runtime stays dependency-free of MobX and HTTP types', async () => {
+test('golem client runtime stays dependency-free of MobX and HTTP types', async () => {
   const clientUrl = import.meta.resolve('@exprtlabs/golem/client');
   const mobxUrl = import.meta.resolve('@exprtlabs/golem/mobx');
   const trackedUrl = new URL('./api-operation.js', clientUrl);

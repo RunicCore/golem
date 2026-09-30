@@ -47,8 +47,8 @@ interface OpenApiDocument {
 
 function fixture(t: TestContext, source: string): string {
   return createControllerFixture(t, {
-    prefix: 'golem-ts-to-openapi-overlay-',
-    packageName: 'ts-to-openapi-overlay-fixture',
+    prefix: 'golem-ts-openapi-overlay-',
+    packageName: 'golem-ts-openapi-overlay-fixture',
     source,
   });
 }

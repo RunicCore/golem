@@ -8,8 +8,8 @@ import { createControllerFixture } from '../fixture-templates/controllers/projec
 
 function fixture(t: TestContext, source: string): string {
   return createControllerFixture(t, {
-    prefix: 'golem-ts-to-openapi-document-',
-    packageName: 'ts-to-openapi-document-fixture',
+    prefix: 'golem-ts-openapi-document-',
+    packageName: 'golem-ts-openapi-document-fixture',
     source,
   });
 }

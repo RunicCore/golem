@@ -384,7 +384,7 @@ export function lazyAjvSchema(
   return validator as ModelRuntimeSyncValidator;
 }
 
-/** Default Ajv on when the codegen profile enabled it; `{ validate: false }` skips. */
+/** Default Ajv on when the golem profile enabled it; `{ validate: false }` skips. */
 export function serdeValidates(options: SerdeOptions | undefined, validationEnabled: boolean): boolean {
   if (!validationEnabled) {
     if (options?.validate === true) validationUnavailable();

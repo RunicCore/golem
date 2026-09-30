@@ -15,7 +15,7 @@ import {
   ConstrainedMemberBase,
   ConstrainedObjectHierarchicalBase,
   ConstrainedTimestampBase,
-} from './codegen.constrained.model.generated.js';
+} from './golem.constrained.model.generated.js';
 
 // #region nested
 export type TConstrainedTimestamp = IModel<{

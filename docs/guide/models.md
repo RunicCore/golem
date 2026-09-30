@@ -92,4 +92,4 @@ npx golem generate
 
 Generation type-checks the whole project first and stops at the first TypeScript error, reported as `file:line:column`. It then replaces every `*.model.generated.ts` file and the shared files under `models.output` (default `src/generated/models/`); your classes don't change. Commit `.golem/outputs.json` with the generated files, and run `npx golem check` in CI ([Generate, watch and check](/guide/watch)).
 
-Full example: [`examples/model`](https://github.com/exprtlabs/codegen/tree/main/examples/model)
+Full example: [`examples/model`](https://github.com/RunicCore/golem/tree/master/examples/model)

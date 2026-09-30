@@ -65,4 +65,4 @@ Check the declared status before reading the body:
 
 <<< ../../examples/openapi/src/read-task.ts#read-task
 
-Full example: [`examples/openapi`](https://github.com/exprtlabs/codegen/tree/main/examples/openapi)
+Full example: [`examples/openapi`](https://github.com/RunicCore/golem/tree/master/examples/openapi)

@@ -49,4 +49,4 @@ Class-level Swagger response decorators, such as `@ApiOkResponse()`, apply to ev
 
 ## Full compliance matrix
 
-The complete matrix by OpenAPI version and profile is in [`MATRIX.md`](https://github.com/exprtlabs/codegen/blob/main/packages/golem-openapi/MATRIX.md).
+The complete matrix by OpenAPI version and profile is in [`MATRIX.md`](https://github.com/RunicCore/golem/blob/master/packages/golem-openapi/MATRIX.md).

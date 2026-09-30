@@ -46,8 +46,8 @@ const FIXTURES = 'controllers/swagger-metadata';
 
 function fixture(t: TestContext, name: string, files: Readonly<Record<string, string>> = {}): string {
   return createControllerFixture(t, {
-    prefix: 'golem-ts-to-openapi-swagger-metadata-',
-    packageName: 'ts-to-openapi-swagger-metadata-fixture',
+    prefix: 'golem-ts-openapi-swagger-metadata-',
+    packageName: 'golem-ts-openapi-swagger-metadata-fixture',
     source: readFixture(`${FIXTURES}/${name}/controller.ts`),
     files: Object.fromEntries(Object.entries(files).map(([target, source]) => [target, readFixture(`${FIXTURES}/${name}/${source}`)])),
     links: 'workspace',
@@ -56,8 +56,8 @@ function fixture(t: TestContext, name: string, files: Readonly<Record<string, st
 
 function inlineFixture(t: TestContext, source: string): string {
   return createControllerFixture(t, {
-    prefix: 'golem-ts-to-openapi-swagger-metadata-',
-    packageName: 'ts-to-openapi-swagger-metadata-fixture',
+    prefix: 'golem-ts-openapi-swagger-metadata-',
+    packageName: 'golem-ts-openapi-swagger-metadata-fixture',
     source,
     links: 'workspace',
   });

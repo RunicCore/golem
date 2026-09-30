@@ -4,6 +4,7 @@
   "description": "Generate TypeScript model bases from IModel definitions",
   "keywords": [
     "typescript",
+    "golem",
     "codegen",
     "models",
     "imodel",
@@ -15,11 +16,11 @@
   "homepage": "https://exprtlabs.ai",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/exprtlabs/codegen.git",
+    "url": "git+https://github.com/RunicCore/golem.git",
     "directory": "packages/golem-model"
   },
   "bugs": {
-    "url": "https://github.com/exprtlabs/codegen/issues"
+    "url": "https://github.com/RunicCore/golem/issues"
   },
   "publishConfig": {
     "access": "public",

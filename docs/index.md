@@ -13,7 +13,7 @@ hero:
       link: /guide/
     - theme: alt
       text: GitHub
-      link: https://github.com/exprtlabs/codegen
+      link: https://github.com/RunicCore/golem
 features:
   - title: All in one
     details: One CLI, one <code>golem.yaml</code> and one runtime package cover models, validation, JSON, OpenAPI and clients.

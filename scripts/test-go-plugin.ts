@@ -3,7 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { goBinary } from './go-binary.js';
 
-// Run the codegen plugin's Go tests with the toolchain ttsc builds it with.
+// Run the golem plugin's Go tests with the toolchain ttsc builds it with.
 const root = fileURLToPath(new URL('../../', import.meta.url));
 
 const result = spawnSync(goBinary(), ['test', './...'], {

@@ -2,7 +2,7 @@
 
 Each directory is a complete TypeScript project with its source contract,
 configuration, generated files and runnable entrypoint. Browse the folders below
-in the [Golem repository](https://github.com/exprtlabs/codegen). The documentation
+in the [Golem repository](https://github.com/RunicCore/golem). The documentation
 pages explain the examples and show source regions from these maintained files.
 
 | Example | Profile | Shows |

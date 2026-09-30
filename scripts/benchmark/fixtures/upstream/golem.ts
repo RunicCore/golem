@@ -14,7 +14,7 @@ import {
   ObjectSimple,
   Point3D,
   Timestamp,
-} from './codegen.model.js';
+} from './golem.model.js';
 import {
   ConstrainedAccount,
   ConstrainedChannel,
@@ -22,8 +22,8 @@ import {
   ConstrainedMember,
   ConstrainedObjectHierarchical,
   ConstrainedTimestamp,
-} from './codegen.constrained.model.js';
-import { createGolemFeatureFixtures } from './comparison-features-codegen.js';
+} from './golem.constrained.model.js';
+import { createGolemFeatureFixtures } from './comparison-features-golem.js';
 import {
   assertDetached,
   assertNoMutation,
@@ -102,10 +102,10 @@ async function verifyPublicTagInvocation(input: FixtureInput): Promise<void> {
 }
 
 function validationFor(adapter: Adapter): boolean {
-  if (adapter !== 'codegen' && adapter !== 'codegen-runtime' && adapter !== 'codegen-standalone') {
-    throw new TypeError(`Unsupported codegen adapter: ${adapter}`);
+  if (adapter !== 'golem' && adapter !== 'golem-runtime' && adapter !== 'golem-standalone') {
+    throw new TypeError(`Unsupported golem adapter: ${adapter}`);
   }
-  return adapter !== 'codegen';
+  return adapter !== 'golem';
 }
 
 function codecId(input: FixtureInput): string {

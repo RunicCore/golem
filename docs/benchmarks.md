@@ -28,7 +28,7 @@ Class instances are checked against their rules on the way in and out. Golem run
 
 ::: code-group
 
-<<< @/../scripts/benchmark/fixtures/upstream/codegen.object.model.ts#simple [Golem (IObject)]
+<<< @/../scripts/benchmark/fixtures/upstream/golem.object.model.ts#simple [Golem (IObject)]
 <<< @/../scripts/benchmark/fixtures/upstream/typia.models.ts#simple [Typia]
 <<< @/../scripts/benchmark/fixtures/upstream/zod.ts#simple [Zod]
 
@@ -38,7 +38,7 @@ Class instances are checked against their rules on the way in and out. Golem run
 
 ::: code-group
 
-<<< @/../scripts/benchmark/fixtures/upstream/codegen-object.ts#calls [Golem (IObject)]
+<<< @/../scripts/benchmark/fixtures/upstream/golem-object.ts#calls [Golem (IObject)]
 <<< @/../scripts/benchmark/fixtures/upstream/typia.ts#calls [Typia]
 <<< @/../scripts/benchmark/fixtures/upstream/zod.ts#calls [Zod]
 
@@ -51,7 +51,7 @@ Class instances are checked against their rules on the way in and out. Golem run
 
 ::: code-group
 
-<<< @/../scripts/benchmark/fixtures/upstream/codegen.object.model.ts#nested [Golem (IObject)]
+<<< @/../scripts/benchmark/fixtures/upstream/golem.object.model.ts#nested [Golem (IObject)]
 <<< @/../scripts/benchmark/fixtures/upstream/typia.models.ts#nested [Typia]
 <<< @/../scripts/benchmark/fixtures/upstream/zod.ts#nested [Zod]
 
@@ -61,7 +61,7 @@ Class instances are checked against their rules on the way in and out. Golem run
 
 ::: code-group
 
-<<< @/../scripts/benchmark/fixtures/upstream/codegen-object.ts#calls [Golem (IObject)]
+<<< @/../scripts/benchmark/fixtures/upstream/golem-object.ts#calls [Golem (IObject)]
 <<< @/../scripts/benchmark/fixtures/upstream/typia.ts#calls [Typia]
 <<< @/../scripts/benchmark/fixtures/upstream/zod.ts#calls [Zod]
 
@@ -74,7 +74,7 @@ Class instances are checked against their rules on the way in and out. Golem run
 
 ::: code-group
 
-<<< @/../scripts/benchmark/fixtures/upstream/codegen.object.model.ts#array [Golem (IObject)]
+<<< @/../scripts/benchmark/fixtures/upstream/golem.object.model.ts#array [Golem (IObject)]
 <<< @/../scripts/benchmark/fixtures/upstream/typia.models.ts#array [Typia]
 <<< @/../scripts/benchmark/fixtures/upstream/zod.ts#array [Zod]
 
@@ -84,7 +84,7 @@ Class instances are checked against their rules on the way in and out. Golem run
 
 ::: code-group
 
-<<< @/../scripts/benchmark/fixtures/upstream/codegen-object.ts#calls [Golem (IObject)]
+<<< @/../scripts/benchmark/fixtures/upstream/golem-object.ts#calls [Golem (IObject)]
 <<< @/../scripts/benchmark/fixtures/upstream/typia.ts#calls [Typia]
 <<< @/../scripts/benchmark/fixtures/upstream/zod.ts#calls [Zod]
 
@@ -106,7 +106,7 @@ Class instances are checked against their rules on the way in and out. Golem run
 
 ::: code-group
 
-<<< @/../scripts/benchmark/fixtures/features/comparison-features-codegen-object.ts#calls [Golem (IObject)]
+<<< @/../scripts/benchmark/fixtures/features/comparison-features-golem-object.ts#calls [Golem (IObject)]
 <<< @/../scripts/benchmark/fixtures/upstream/zod.ts#calls [Zod]
 
 :::
@@ -118,7 +118,7 @@ Class instances are checked against their rules on the way in and out. Golem run
 
 ::: code-group
 
-<<< @/../scripts/benchmark/fixtures/upstream/codegen.model.ts#simple [Golem (IModel)]
+<<< @/../scripts/benchmark/fixtures/upstream/golem.model.ts#simple [Golem (IModel)]
 <<< @/../scripts/benchmark/fixtures/upstream/class-transformer.models.ts#simple [class-transformer]
 
 :::
@@ -127,7 +127,7 @@ Class instances are checked against their rules on the way in and out. Golem run
 
 ::: code-group
 
-<<< @/../scripts/benchmark/fixtures/upstream/codegen.ts#calls [Golem (IModel)]
+<<< @/../scripts/benchmark/fixtures/upstream/golem.ts#calls [Golem (IModel)]
 <<< @/../scripts/benchmark/fixtures/upstream/class-transformer.ts#calls [class-transformer]
 
 :::
@@ -139,7 +139,7 @@ Class instances are checked against their rules on the way in and out. Golem run
 
 ::: code-group
 
-<<< @/../scripts/benchmark/fixtures/upstream/codegen.constrained.model.ts#nested [Golem (IModel)]
+<<< @/../scripts/benchmark/fixtures/upstream/golem.constrained.model.ts#nested [Golem (IModel)]
 <<< @/../scripts/benchmark/fixtures/upstream/class-transformer.models.ts#nested [class-transformer]
 
 :::
@@ -148,7 +148,7 @@ Class instances are checked against their rules on the way in and out. Golem run
 
 ::: code-group
 
-<<< @/../scripts/benchmark/fixtures/upstream/codegen.ts#calls [Golem (IModel)]
+<<< @/../scripts/benchmark/fixtures/upstream/golem.ts#calls [Golem (IModel)]
 <<< @/../scripts/benchmark/fixtures/upstream/class-transformer.ts#calls [class-transformer]
 
 :::
@@ -160,7 +160,7 @@ Class instances are checked against their rules on the way in and out. Golem run
 
 ::: code-group
 
-<<< @/../scripts/benchmark/fixtures/upstream/codegen.model.ts#array [Golem (IModel)]
+<<< @/../scripts/benchmark/fixtures/upstream/golem.model.ts#array [Golem (IModel)]
 <<< @/../scripts/benchmark/fixtures/upstream/class-transformer.models.ts#array [class-transformer]
 
 :::
@@ -169,7 +169,7 @@ Class instances are checked against their rules on the way in and out. Golem run
 
 ::: code-group
 
-<<< @/../scripts/benchmark/fixtures/upstream/codegen.ts#calls [Golem (IModel)]
+<<< @/../scripts/benchmark/fixtures/upstream/golem.ts#calls [Golem (IModel)]
 <<< @/../scripts/benchmark/fixtures/upstream/class-transformer.ts#calls [class-transformer]
 
 :::
@@ -190,7 +190,7 @@ Class instances are checked against their rules on the way in and out. Golem run
 
 ::: code-group
 
-<<< @/../scripts/benchmark/fixtures/features/comparison-features-codegen.ts#calls [Golem (IModel)]
+<<< @/../scripts/benchmark/fixtures/features/comparison-features-golem.ts#calls [Golem (IModel)]
 <<< @/../scripts/benchmark/fixtures/features/comparison-features-class-transformer.ts#calls [class-transformer]
 
 :::
@@ -202,7 +202,7 @@ Class instances are checked against their rules on the way in and out. Golem run
 
 ::: code-group
 
-<<< @/../scripts/benchmark/fixtures/upstream/codegen.model.ts#simple [Golem (IModel)]
+<<< @/../scripts/benchmark/fixtures/upstream/golem.model.ts#simple [Golem (IModel)]
 <<< @/../scripts/benchmark/fixtures/upstream/class-validator.models.ts#simple [class-validator]
 
 :::
@@ -211,7 +211,7 @@ Class instances are checked against their rules on the way in and out. Golem run
 
 ::: code-group
 
-<<< @/../scripts/benchmark/fixtures/upstream/codegen.ts#calls [Golem (IModel)]
+<<< @/../scripts/benchmark/fixtures/upstream/golem.ts#calls [Golem (IModel)]
 <<< @/../scripts/benchmark/fixtures/upstream/class-validator.ts#calls [class-validator]
 
 :::
@@ -223,7 +223,7 @@ Class instances are checked against their rules on the way in and out. Golem run
 
 ::: code-group
 
-<<< @/../scripts/benchmark/fixtures/upstream/codegen.constrained.model.ts#nested [Golem (IModel)]
+<<< @/../scripts/benchmark/fixtures/upstream/golem.constrained.model.ts#nested [Golem (IModel)]
 <<< @/../scripts/benchmark/fixtures/upstream/class-validator.models.ts#nested [class-validator]
 
 :::
@@ -232,7 +232,7 @@ Class instances are checked against their rules on the way in and out. Golem run
 
 ::: code-group
 
-<<< @/../scripts/benchmark/fixtures/upstream/codegen.ts#calls [Golem (IModel)]
+<<< @/../scripts/benchmark/fixtures/upstream/golem.ts#calls [Golem (IModel)]
 <<< @/../scripts/benchmark/fixtures/upstream/class-validator.ts#calls [class-validator]
 
 :::
@@ -244,7 +244,7 @@ Class instances are checked against their rules on the way in and out. Golem run
 
 ::: code-group
 
-<<< @/../scripts/benchmark/fixtures/upstream/codegen.model.ts#array [Golem (IModel)]
+<<< @/../scripts/benchmark/fixtures/upstream/golem.model.ts#array [Golem (IModel)]
 <<< @/../scripts/benchmark/fixtures/upstream/class-validator.models.ts#array [class-validator]
 
 :::
@@ -253,7 +253,7 @@ Class instances are checked against their rules on the way in and out. Golem run
 
 ::: code-group
 
-<<< @/../scripts/benchmark/fixtures/upstream/codegen.ts#calls [Golem (IModel)]
+<<< @/../scripts/benchmark/fixtures/upstream/golem.ts#calls [Golem (IModel)]
 <<< @/../scripts/benchmark/fixtures/upstream/class-validator.ts#calls [class-validator]
 
 :::
@@ -274,7 +274,7 @@ Class instances are checked against their rules on the way in and out. Golem run
 
 ::: code-group
 
-<<< @/../scripts/benchmark/fixtures/features/comparison-features-codegen.ts#calls [Golem (IModel)]
+<<< @/../scripts/benchmark/fixtures/features/comparison-features-golem.ts#calls [Golem (IModel)]
 <<< @/../scripts/benchmark/fixtures/features/comparison-features-class-validator.ts#calls [class-validator]
 
 :::

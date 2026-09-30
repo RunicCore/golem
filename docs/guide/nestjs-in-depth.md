@@ -2,7 +2,7 @@
 
 Shape routes, schemas, query objects, responses and request handling for NestJS 11 controllers.
 
-The types in your controller signatures produce both the OpenAPI schema and the runtime request conversion. Each section below is a separate example; [`examples/nest-openapi`](https://github.com/exprtlabs/codegen/tree/main/examples/nest-openapi) combines them in one app.
+The types in your controller signatures produce both the OpenAPI schema and the runtime request conversion. Each section below is a separate example; [`examples/nest-openapi`](https://github.com/RunicCore/golem/tree/master/examples/nest-openapi) combines them in one app.
 
 ## Route helpers
 
@@ -167,4 +167,4 @@ OpenAPI 3.2 emits the whole query schema; its SDK uses `.execute({ querystring: 
 
 Class-level Swagger response decorators, exclusion decorators and their [merge order](/reference/openapi-support#nest-controller-generation) follow `@nestjs/swagger`.
 
-Full example: [`examples/nest-openapi`](https://github.com/exprtlabs/codegen/tree/main/examples/nest-openapi)
+Full example: [`examples/nest-openapi`](https://github.com/RunicCore/golem/tree/master/examples/nest-openapi)

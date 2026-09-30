@@ -45,7 +45,7 @@ function publicFixture(t: TestContext): string {
   writeFixture(root, 'CHANGELOG.md', '# Changes\n');
   writeFixture(root, '.gitignore', 'node_modules\n');
   writeFixture(root, 'tsconfig.json', '{}\n');
-  writeFixture(root, 'packages/golem/package.json', '{"name":"codegen"}\n');
+  writeFixture(root, 'packages/golem/package.json', '{"name":"golem"}\n');
   writeFixture(root, 'packages/golem/README.md', '# Golem\n');
   writeFixture(root, 'packages/golem/LICENSE', 'upstream package license\n');
   writeFixture(root, 'packages/golem/MATRIX.md', '# Matrix\n');

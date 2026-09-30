@@ -50,8 +50,8 @@ function hasOperation(document: OpenApiDocument, route: string, method: string):
 
 function fixture(t: TestContext): RealFixture {
   const root = createControllerFixture(t, {
-    prefix: 'golem-ts-to-openapi-watch-',
-    packageName: 'ts-to-openapi-watch-fixture',
+    prefix: 'golem-ts-openapi-watch-',
+    packageName: 'golem-ts-openapi-watch-fixture',
     links: 'workspace',
     tsconfig: {
       compilerOptions: {

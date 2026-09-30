@@ -149,4 +149,4 @@ The class as type argument (`ProjectAccessEditor`) builds your class; the `T…`
 
 Run `npm start` in `examples/showcase`; set `PROJECT_ACCESS_API_BASE_URL` to send the save to a real API.
 
-Full example: [`examples/showcase`](https://github.com/exprtlabs/codegen/tree/main/examples/showcase)
+Full example: [`examples/showcase`](https://github.com/RunicCore/golem/tree/master/examples/showcase)

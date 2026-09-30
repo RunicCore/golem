@@ -117,4 +117,4 @@ Supported keywords, versions and profiles are in [OpenAPI client support](/refer
 
 Validation is enabled by default. [Validation profiles](/reference/config#validation-profiles) set how validators are supplied in `golem.yaml`.
 
-Full example: [`examples/model`](https://github.com/exprtlabs/codegen/tree/main/examples/model)
+Full example: [`examples/model`](https://github.com/RunicCore/golem/tree/master/examples/model)

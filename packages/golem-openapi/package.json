@@ -6,6 +6,7 @@
     "openapi",
     "typescript",
     "sdk",
+    "golem",
     "codegen",
     "client",
     "validation"
@@ -15,11 +16,11 @@
   "homepage": "https://exprtlabs.ai",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/exprtlabs/codegen.git",
+    "url": "git+https://github.com/RunicCore/golem.git",
     "directory": "packages/golem-openapi"
   },
   "bugs": {
-    "url": "https://github.com/exprtlabs/codegen/issues"
+    "url": "https://github.com/RunicCore/golem/issues"
   },
   "publishConfig": {
     "access": "public",
@@ -53,7 +54,7 @@
   },
   "scripts": {
     "build": "ttsc -p tsconfig.json",
-    "clean": "node -e \"for (const target of ['dist', '../../.build/openapi-to-ts.tsbuildinfo']) require('node:fs').rmSync(target, { recursive: true, force: true })\"",
+    "clean": "node -e \"for (const target of ['dist', '../../.build/golem-openapi.tsbuildinfo']) require('node:fs').rmSync(target, { recursive: true, force: true })\"",
     "prepack": "npm run clean && npm run build && ttsc -p ../../tsconfig.package-check.json && node ../../.build/scripts/verify-package.js ."
   }
 }

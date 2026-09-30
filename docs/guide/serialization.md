@@ -53,4 +53,4 @@ Each rule runs once; your decoders only see values that passed the JSON check.
 
 When `validation` is off, generated output has no Ajv. `{ validate: true }` then throws `LibErrorKind.ValidationUnavailable`, described in the [runtime reference](/reference/runtime-api#errors). `{ validate: false }` skips the check for data you already trust.
 
-Full example: [`examples/model`](https://github.com/exprtlabs/codegen/tree/main/examples/model)
+Full example: [`examples/model`](https://github.com/RunicCore/golem/tree/master/examples/model)

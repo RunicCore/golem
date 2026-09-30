@@ -130,6 +130,6 @@ To convert `@Body()` and `@Query()` models and stringify `IModel` or `IObject` r
 
 ## Run the example
 
-The example is in the Golem repository's [`examples/nest-openapi/`](https://github.com/exprtlabs/codegen/tree/main/examples/nest-openapi). There, run `npm install`, `npm run generate` and `npm start`. The API listens at `http://127.0.0.1:3000/api/payments/transactions`: `globalPrefix: api` plus the controller route `payments/transactions`. Set `PORT` to use another port. In a second terminal, `npm run client` prints `Payment 1: USD 12.50` on a fresh server; set `API_BASE_URL` when the API runs elsewhere.
+The example is in the Golem repository's [`examples/nest-openapi/`](https://github.com/RunicCore/golem/tree/master/examples/nest-openapi). There, run `npm install`, `npm run generate` and `npm start`. The API listens at `http://127.0.0.1:3000/api/payments/transactions`: `globalPrefix: api` plus the controller route `payments/transactions`. Set `PORT` to use another port. In a second terminal, `npm run client` prints `Payment 1: USD 12.50` on a fresh server; set `API_BASE_URL` when the API runs elsewhere.
 
-Full example: [`examples/nest-openapi`](https://github.com/exprtlabs/codegen/tree/main/examples/nest-openapi)
+Full example: [`examples/nest-openapi`](https://github.com/RunicCore/golem/tree/master/examples/nest-openapi)

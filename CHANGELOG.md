@@ -95,6 +95,7 @@ See [OpenAPI client support](docs/reference/openapi-support.md) for supported ve
 
 ### Generation
 
+- **Breaking:** the packages, CLI and files are renamed to golem. `@exprtlabs/codegen` is `@exprtlabs/golem`, `@exprtlabs/model-codegen` is `@exprtlabs/golem-model`, `@exprtlabs/openapi-to-ts` is `@exprtlabs/golem-openapi` and `@exprtlabs/ts-to-openapi` is `@exprtlabs/golem-ts-openapi`; subpaths are unchanged. The CLI is `golem`, the config file `golem.yaml` and the inventory directory `.golem/`. Generator-API types are renamed from `Codegen*` to `Golem*` (for example `GolemProvider`, `GolemProfile`), and generated internal names from `__runic*` to `__golem*`. Rename `runic-codegen.yaml` to `golem.yaml`, delete `.runic-codegen/` and run `npx golem generate`.
 - Generated files are replaced on regeneration; handwritten behavior belongs in source declarations and subclasses.
 - Identical output keeps its modification time. `check` reports drift without writing files.
 - Watch regenerates when a model imports a project file outside its job root.
@@ -108,7 +109,7 @@ See [OpenAPI client support](docs/reference/openapi-support.md) for supported ve
 - **Breaking:** `__Projection<N>` schemas get stable names built from the type's shape. Add a named type alias to choose one.
 - **Breaking:** install `@exprtlabs/golem` at or above the version the SDK was generated for, with the same major version. Generation commands fail before writing when it is older.
 - **Breaking:** codec ids in generated files change. A hand-written model and an SDK model with the same name and shape no longer share an id.
-- **Breaking:** the output inventory (`.golem/outputs.json`) records a `destination` and `destinationKind` for every file; an inventory from an earlier release candidate is rejected. Delete it and regenerate.
+- **Breaking:** the output inventory (`.golem/outputs.json`) records a `destination` and `destinationKind` for every file.
 
 ### Removed APIs (pre-1.0)
 
