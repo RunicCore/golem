@@ -151,6 +151,44 @@ test('a declared status with an undeclared media type throws the undeclared erro
   assert.equal(error.contentType, 'text/csv');
 });
 
+// Response forbids a 204 body, so a stub reports 204 for a response that still carries one.
+const unexpectedBody = (onCancel: () => void) => new ReadableStream<Uint8Array>({
+  start(controller) { controller.enqueue(new TextEncoder().encode('unexpected')); },
+  cancel() { onCancel(); },
+});
+
+test('a declared response without content ignores and cancels a body the server sends anyway', async () => {
+  let cancelled = false;
+  const response = new Response(unexpectedBody(() => { cancelled = true; }), {
+    status: 200, headers: { 'content-type': 'text/plain' },
+  });
+  Object.defineProperty(response, 'status', { value: 204 });
+  const result = await runtime.readResponse<DecodedResponse<unknown>>('op', response, [noContent('204')], NO_VALIDATORS);
+  assert.equal(result.status, 204);
+  assert.equal(result.body, undefined);
+  assert.equal(cancelled, true, 'the unread body is cancelled');
+});
+
+test('an undeclared status is a response error carrying its facts, and its body is cancelled', async () => {
+  let cancelled = false;
+  const response = new Response(unexpectedBody(() => { cancelled = true; }), {
+    status: 200, headers: { 'content-type': 'text/plain' },
+  });
+  await assert.rejects(
+    () => runtime.readResponse('emptyResponse', response, [noContent('204')], NO_VALIDATORS),
+    (error: unknown) => error instanceof LibError
+      && error.kind === LibErrorKind.Response
+      && isUndeclaredResponseError(error, 'Tasks')
+      && Reflect.get(error, 'operation') === 'emptyResponse'
+      && Reflect.get(error, 'status') === 200
+      && Reflect.get(error, 'contentType') === 'text/plain'
+      && Reflect.get(error, 'headers') instanceof Headers
+      && Reflect.get(error, 'headers').get('content-type') === 'text/plain',
+  );
+  assert.equal(cancelled, true, 'the undeclared response body is cancelled');
+  assert.equal(isUndeclaredResponseError(new LibError(LibErrorKind.Response, 'other')), false);
+});
+
 const streamContract = (contentType: string, framing: 'json-seq' | 'sse' | 'ndjson'): RuntimeResponseContract => ({
   status: '200', content: [{ contentType, framing }], headers: [],
 });

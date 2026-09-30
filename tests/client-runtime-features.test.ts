@@ -40,6 +40,16 @@ test('deepObject query parameters nest keys in brackets', () => {
   assert.deepEqual(query, ['filter[a][b]=1']);
 });
 
+test('nested deepObject values serialize recursively and skip null', () => {
+  const query: string[] = [];
+  addQueryParameter(
+    runtime, query, 'filter',
+    { owner: { name: 'Ann', nick: null, team: { id: 7 } }, kind: 'x' },
+    'deepObject', true, false,
+  );
+  assert.deepEqual(query, ['filter[owner][name]=Ann', 'filter[owner][team][id]=7', 'filter[kind]=x']);
+});
+
 test('a custom parameter serializer replaces the default for its media type', () => {
   const custom = new ClientRuntime('Tasks', {
     baseUrl: 'https://api.test',
@@ -83,4 +93,30 @@ test('missing credentials fail unless an empty requirement makes auth optional',
     /No configured credentials satisfy/,
   );
   await applySecurity(runtime, [{ key: [] }, {}], [], new Headers(), [], schemes);
+});
+
+test('an optional requirement is a fallback: configured credentials are still sent', async () => {
+  const schemes = { bearer: { type: 'http', scheme: 'bearer' } };
+  const requirements: Array<Record<string, string[]>> = [{}, { bearer: [] }];
+  const withToken = new ClientRuntime('Tasks', { baseUrl: 'https://api.test', auth: { bearer: 'token' } });
+  const sent = new Headers();
+  await applySecurity(withToken, requirements, [], sent, [], schemes);
+  assert.equal(sent.get('authorization'), 'Bearer token');
+  const anonymous = new Headers();
+  await applySecurity(runtime, requirements, [], anonymous, [], schemes);
+  assert.equal(anonymous.get('authorization'), null);
+});
+
+test('basic credentials are UTF-8 encoded before base64 and the user-id cannot contain a colon', async () => {
+  const schemes = { basic: { type: 'http', scheme: 'basic' } };
+  const basic = (username: string, password: string) =>
+    new ClientRuntime('Tasks', { baseUrl: 'https://api.test', auth: { basic: { username, password } } });
+  const headers = new Headers();
+  await applySecurity(basic('jürgen', 'π'), [{ basic: [] }], [], headers, [], schemes);
+  assert.equal(headers.get('authorization'), `Basic ${Buffer.from('jürgen:π', 'utf8').toString('base64')}`);
+  // RFC 7617: the user-id cannot contain a colon.
+  await assert.rejects(
+    applySecurity(basic('a:b', 'p'), [{ basic: [] }], [], new Headers(), [], schemes),
+    /must not contain ":"/,
+  );
 });
