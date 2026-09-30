@@ -374,6 +374,9 @@ function residualSchema(value: unknown, plane: ResidualPlane, state: SchemaAssem
   switch (value.kind) {
     case 'date':
       return plane === 'model-only' ? full('model') : { type: 'string', format: 'date-time' };
+    // A class instance or bigint has no JSON shape; only its TSerde wire value and its predicates are checked.
+    case 'class-value':
+      return nothing();
     case 'object': {
       const properties = isRecord(value.properties) ? value.properties : {};
       const kept = Object.keys(properties).sort()
@@ -493,6 +496,7 @@ function descriptorSchema(
       case 'date': schema = options.representation === 'model'
         ? { [MODEL_DATE_KEYWORD]: true }
         : { type: 'string', format: 'date-time' }; break;
+      case 'class-value': schema = {}; break;
       case 'literal': schema = { const: value.value }; break;
       case 'array': schema = { type: 'array', items: descriptorSchema(value.item, state, options) }; break;
       case 'tuple': {

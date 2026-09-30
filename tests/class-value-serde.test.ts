@@ -17,8 +17,8 @@ function fixture(t: TestContext) {
 const CODECS = `import type { Pattern } from '@exprtlabs/golem/tags';
 import { Money } from './money.js';
 export type Base64 = string & Pattern<'^[A-Za-z0-9+/]*={0,2}$'>;
-export function encodeBytes(value: Uint8Array): Base64 { return Buffer.from(value).toString('base64'); }
-export function decodeBytes(value: Base64): Uint8Array { return new Uint8Array(Buffer.from(value, 'base64')); }
+export function encodeBytes(value: Uint8Array): Base64 { return btoa(String.fromCharCode(...value)) as Base64; }
+export function decodeBytes(value: Base64): Uint8Array { return Uint8Array.from(atob(value), (char) => char.charCodeAt(0)); }
 export function encodeMoney(value: Money): string { return value.toString(); }
 export function decodeMoney(value: string): Money { return Money.parse(value); }
 export function encodeInstant(value: Temporal.Instant): string { return value.toString(); }
