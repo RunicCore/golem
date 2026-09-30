@@ -127,6 +127,8 @@ export interface OpenApiContext {
   readonly maxRefBytes?: number;
   readonly maxRefDocuments?: number;
   readonly refTimeoutMs?: number;
+  /** `temporal` maps `format: date-time`, `date` and `duration` to Temporal types; the default is `date`. */
+  readonly dates?: 'date' | 'temporal';
   readonly profile: GolemProfile;
   readonly onInput?: InputObserver;
 }

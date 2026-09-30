@@ -214,7 +214,7 @@ export function resolveConfig(filename = 'golem.yaml', onInput?: InputObserver):
     if (!Array.isArray(value.openapi) || !value.openapi.length) throw new Error('openapi must be a nonempty array of jobs.');
     for (const [index, entry] of value.openapi.entries()) {
       const label = `openapi[${index}]`;
-      keys(entry, ['input', 'output', 'name', 'allowRemoteRefs', 'remoteHosts', 'maxRefBytes', 'maxRefDocuments', 'refTimeoutMs'], label);
+      keys(entry, ['input', 'output', 'name', 'allowRemoteRefs', 'remoteHosts', 'maxRefBytes', 'maxRefDocuments', 'refTimeoutMs', 'dates'], label);
       const input = inputPath(entry.input, `${label}.input`);
       const output = canonicalPath(path.resolve(directory, nonempty(entry.output, `${label}.output`)));
       if (fs.existsSync(output) && !fs.statSync(output).isDirectory()) throw new Error(`${label}.output must be a directory.`);
@@ -226,9 +226,11 @@ export function resolveConfig(filename = 'golem.yaml', onInput?: InputObserver):
       if (entry.remoteHosts !== undefined && !Array.isArray(entry.remoteHosts)) throw new Error(`${label}.remoteHosts must be an array of nonempty hostnames.`);
       const remoteHosts = (entry.remoteHosts ?? []).map((host: unknown) => nonempty(host, `${label}.remoteHosts`));
       if (allowRemoteRefs && !remoteHosts.length) throw new Error(`${label}.allowRemoteRefs requires remoteHosts.`);
+      if (entry.dates !== undefined && entry.dates !== 'date' && entry.dates !== 'temporal') throw new Error(`${label}.dates must be "date" or "temporal".`);
       jobs.push({ id: `openapi:${path.relative(directory, output) || '.'}`, kind: 'openapi', package: '@exprtlabs/golem-openapi', options: {
         input, output, profile, allowRemoteRefs, remoteHosts,
         ...(entry.name === undefined ? {} : { name: nonempty(entry.name, `${label}.name`) }),
+        ...(entry.dates === undefined ? {} : { dates: entry.dates }),
         maxRefBytes: positive(entry.maxRefBytes, 5 * 1024 * 1024, `${label}.maxRefBytes`),
         maxRefDocuments: positive(entry.maxRefDocuments, 256, `${label}.maxRefDocuments`),
         refTimeoutMs: positive(entry.refTimeoutMs, 10000, `${label}.refTimeoutMs`),

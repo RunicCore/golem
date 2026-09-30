@@ -19,6 +19,7 @@ import {
   generateModelManifest,
   generateOpenApiModelArtifacts,
   collectOpenApiCodecEntries,
+  type OpenApiDates,
 } from './models.js';
 import { buildSchemaData, generateSchemas } from './schemas.js';
 import { generateDirectionalSchemas, generateTypes } from './types.js';
@@ -31,6 +32,8 @@ export interface WriteSdkOptions {
   readonly output: string;
   readonly name?: string;
   readonly profile: OpenApiGenerationProfile;
+  /** `temporal` maps date formats to Temporal types; the default keeps `Date`. */
+  readonly dates?: OpenApiDates;
 }
 
 export function generateLinks(operations: readonly NormalizedOperation[]): string {
@@ -158,7 +161,7 @@ export function generatedFiles(document: unknown, options: WriteSdkOptions): {
   const clientName = identifier(options.name || readString(asRecord(asRecord(document).info).title), 'Api');
   const output = path.resolve(options.output);
   const plan = buildEmissionPlan(document, ir, profile);
-  const modelAnalysis = analyzeOpenApiModels(document, profile.validation);
+  const modelAnalysis = analyzeOpenApiModels(document, profile.validation, options.dates ?? 'date');
   const schemaData = plan.artifacts.has('schemas.ts')
     ? buildSchemaData(document, ir)
     : undefined;

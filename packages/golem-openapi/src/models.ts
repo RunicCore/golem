@@ -60,8 +60,12 @@ interface DiscriminatorSelection {
 /** Selections resolved (and diagnosed) once per discriminated union schema object, per analysis. */
 type DiscriminatorSelections = Map<object, DiscriminatorSelection | null>;
 
+/** How `format: date-time`, `date` and `duration` strings become model values. */
+export type OpenApiDates = 'date' | 'temporal';
+
 interface ModelResolveEnv {
   readonly document: unknown;
+  readonly dates: OpenApiDates;
   readonly resources: ResourceIndex;
   readonly currentBase: string;
   readonly anchors?: ReadonlyMap<string, string>;
@@ -82,6 +86,7 @@ export interface OpenApiModelAnalysis {
   readonly nodesByCodecId: ReadonlyMap<string, SchemaNode>;
   readonly diagnostics: readonly GolemDiagnostic[];
   readonly selections: DiscriminatorSelections;
+  readonly dates: OpenApiDates;
 }
 
 function modelEnv(
@@ -90,9 +95,11 @@ function modelEnv(
   anchors?: ReadonlyMap<string, string>,
   resources?: ResourceIndex,
   selections?: DiscriminatorSelections,
+  dates: OpenApiDates = 'date',
 ): ModelResolveEnv {
   return {
     document,
+    dates,
     resources: resources ?? collectCanonicalResources(document),
     currentBase: currentBase ?? schemaDocumentBase(document),
     anchors,
@@ -102,6 +109,40 @@ function modelEnv(
 
 function withSchemaBase(env: ModelResolveEnv, schema: unknown): ModelResolveEnv {
   return { ...env, currentBase: nextSchemaBase(schema, env.currentBase, env.resources) };
+}
+
+/** `dates: temporal` string formats and the `@exprtlabs/golem/temporal` tag each converts with. */
+const TEMPORAL_FORMATS = {
+  'date-time': { typeName: 'Temporal.Instant', codec: 'TemporalInstant' },
+  date: { typeName: 'Temporal.PlainDate', codec: 'TemporalPlainDate' },
+  duration: { typeName: 'Temporal.Duration', codec: 'TemporalDuration' },
+} as const;
+
+const TEMPORAL_SERDE_PREFIX = 'temporal:';
+
+function temporalFormat(schema: unknown, env: ModelResolveEnv): (typeof TEMPORAL_FORMATS)[keyof typeof TEMPORAL_FORMATS] | undefined {
+  if (env.dates !== 'temporal' || !isJsonObject(schema) || typeof schema.format !== 'string') return undefined;
+  if (!(schema.type === 'string' || (Array.isArray(schema.type) && schema.type.includes('string')))) return undefined;
+  return Object.hasOwn(TEMPORAL_FORMATS, schema.format) ? TEMPORAL_FORMATS[schema.format as keyof typeof TEMPORAL_FORMATS] : undefined;
+}
+
+function isTemporalDescriptor(descriptor: ModelTypeDescriptor): boolean {
+  const serde = (descriptor as { readonly serde?: { readonly id?: string } }).serde;
+  return descriptor.kind === 'class-value' && serde?.id?.startsWith(TEMPORAL_SERDE_PREFIX) === true;
+}
+
+/**
+ * Calls the `@exprtlabs/golem/temporal` codec a `temporal:` serde id names; other ids never reach OpenAPI models.
+ * Conversion code holds values as `unknown`; wire validation has already checked them, so the call casts.
+ */
+const TEMPORAL_SERDE = {
+  deserialize: (id: string, value: string) => `deserialize${temporalCodecName(id)}((${value}) as never)`,
+  serialize: (id: string, value: string) => `serialize${temporalCodecName(id)}((${value}) as never)`,
+};
+
+function temporalCodecName(id: string): string {
+  if (!id.startsWith(TEMPORAL_SERDE_PREFIX)) throw new Error(`Unexpected serde id in an OpenAPI model: ${id}`);
+  return id.slice(TEMPORAL_SERDE_PREFIX.length);
 }
 
 function typeContext(env: ModelResolveEnv): SchemaTypeContext {
@@ -234,6 +275,8 @@ function modelFieldType(
   const seen = new Set(visiting).add(schema);
   const target = componentSchemaTarget(schema, nested);
   if (target !== undefined && target !== schema) return modelFieldType(target, definitions, nested, seen);
+  const temporal = temporalFormat(schema, env);
+  if (temporal) return admitsNull(asRecord(schema)) ? `${temporal.typeName} | null` : temporal.typeName;
   if (isJsonObject(schema) && schema.format === 'date-time'
     && (schema.type === 'string' || (Array.isArray(schema.type) && schema.type.includes('string')))) {
     return admitsNull(schema) ? 'Date | null' : 'Date';
@@ -347,6 +390,14 @@ function modelConversionDescriptor(
   const seen = new Set(visiting).add(schema);
   const target = componentSchemaTarget(schema, nested);
   if (target !== undefined && target !== schema) return modelConversionDescriptor(target, definitions, nested, direction, seen);
+  const temporal = temporalFormat(schema, env);
+  if (temporal) {
+    const value = {
+      kind: 'class-value', typeName: temporal.typeName,
+      serde: { id: `${TEMPORAL_SERDE_PREFIX}${temporal.codec}`, wireDescriptor: { kind: 'string' as const } },
+    } as unknown as ModelTypeDescriptor;
+    return admitsNull(asRecord(schema)) ? { kind: 'union', variants: [value, { kind: 'null' }] } : value;
+  }
   if (isJsonObject(schema) && schema.format === 'date-time'
     && (schema.type === 'string' || (Array.isArray(schema.type) && schema.type.includes('string')))) {
     const date: ModelTypeDescriptor = { kind: 'date' };
@@ -369,6 +420,13 @@ function modelConversionDescriptor(
     const convertedVariants = variants.map(item => isNullBranch(item)
       ? { kind: 'null' as const }
       : modelConversionDescriptor(item, definitions, nested, direction, seen));
+    const temporalVariants = convertedVariants.filter(isTemporalDescriptor);
+    if (temporalVariants.length) {
+      if (temporalVariants.length !== 1 || convertedVariants.some(item => !isTemporalDescriptor(item) && item.kind !== 'null')) {
+        throw new Error('A date-time model union must have one Temporal branch and optional null. Ambiguous string branches cannot be converted to Temporal.');
+      }
+      return { kind: 'union', variants: convertedVariants };
+    }
     const dateVariants = convertedVariants.filter(item => item.kind === 'date');
     if (dateVariants.length) {
       if (dateVariants.length !== 1 || convertedVariants.some(item => item.kind !== 'date' && item.kind !== 'null')) {
@@ -480,6 +538,7 @@ function modelFromJSONExpression(
     modelConversionDescriptor(schema, definitions, env, 'from'),
     expression,
     (reference) => modelResolver(reference, definitions),
+    TEMPORAL_SERDE,
   );
 }
 
@@ -498,6 +557,7 @@ function modelToJSONExpression(
     modelConversionDescriptor(schema, definitions, env, 'to'),
     expression,
     (reference) => ({ className: `${reference}Model`, encode: value => `encodeGeneratedModel(${value})` }),
+    TEMPORAL_SERDE,
   );
 }
 
@@ -799,7 +859,7 @@ export function generateModelManifest(
       definition.schemaName,
       definition.rawSchema,
     ).anchors;
-    const env = modelEnv(document, undefined, anchors, modelAnalysis.resources, modelAnalysis.selections);
+    const env = modelEnv(document, undefined, anchors, modelAnalysis.resources, modelAnalysis.selections, modelAnalysis.dates);
     const fieldEnv = withSchemaBase(env, definition.rawSchema);
     const fields = [...definition.properties.entries()].map(([name, schema]) => ({
       name,
@@ -920,6 +980,7 @@ export function internOpenApiSchemaGraph(
   validationEnabled = true,
   resources?: ResourceIndex,
   selections?: DiscriminatorSelections,
+  dates: OpenApiDates = 'date',
 ): { readonly schemaGraph: SchemaGraph; readonly nodeIdByDefinition: ReadonlyMap<string, string> } {
   const schemaGraph = createSchemaGraph({}, {
     anonymousCodecPrefix: `openapi_${sourceDigest(document)}_`,
@@ -933,7 +994,7 @@ export function internOpenApiSchemaGraph(
       definition.schemaName,
       definition.rawSchema,
     ).anchors;
-    const env = modelEnv(document, undefined, anchors, resources, selections);
+    const env = modelEnv(document, undefined, anchors, resources, selections, dates);
     return {
       name: definition.name,
       descriptor: definition.isUnion
@@ -977,16 +1038,17 @@ function nodesByDefinitionName(
 export function analyzeOpenApiModels(
   document: unknown,
   validationEnabled = true,
+  dates: OpenApiDates = 'date',
 ): OpenApiModelAnalysis {
   const resources = collectCanonicalResources(document);
   const { definitions, ordered, diagnostics, selections } = collectOpenApiModelDefinitions(document, resources);
-  const { schemaGraph, nodeIdByDefinition } = internOpenApiSchemaGraph(document, ordered, definitions, validationEnabled, resources, selections);
+  const { schemaGraph, nodeIdByDefinition } = internOpenApiSchemaGraph(document, ordered, definitions, validationEnabled, resources, selections, dates);
   const nodes = [...schemaGraph.nodes.values()];
   const nodesById = new Map(nodes.map((node) => [node.id, node]));
   const { nodesByName, definitionNameByNodeId } = nodesByDefinitionName(schemaGraph, nodeIdByDefinition);
   const nodesByCodecId = new Map(nodes.map((node) => [node.codecId, node]));
   const grouping = schemaGraphGroups(schemaGraph, definitions, nodesByName, definitionNameByNodeId);
-  return { definitions, ordered, schemaGraph, grouping, resources, nodesById, nodesByName, definitionNameByNodeId, nodesByCodecId, diagnostics, selections };
+  return { definitions, ordered, schemaGraph, grouping, resources, nodesById, nodesByName, definitionNameByNodeId, nodesByCodecId, diagnostics, selections, dates };
 }
 
 function openApiValidationSchemaClosure(
@@ -1245,7 +1307,7 @@ export function generateOpenApiModelArtifacts(
   const groupForModel = new Map<string, string>();
   const definitionsByGroup = new Map<string, ModelDefinition[]>();
   for (const group of groups) for (const name of group.models) groupForModel.set(name, group.id);
-  const sharedModelEnv = modelEnv(document, undefined, undefined, analysis.resources, analysis.selections);
+  const sharedModelEnv = modelEnv(document, undefined, undefined, analysis.resources, analysis.selections, analysis.dates);
   for (const definition of ordered) {
     const node = analysis.nodesByName.get(definition.name);
     const groupId = node ? owner.get(node.id) : undefined;
@@ -1431,7 +1493,7 @@ function unionConversion(
   const resolve = (reference: string) => modelResolver(reference, definitions);
   try {
     return direction === 'fromJSON'
-      ? emitModelFromJSON(descriptor, 'value', resolve)
+      ? emitModelFromJSON(descriptor, 'value', resolve, TEMPORAL_SERDE)
       : emitModelFromInit(descriptor, 'value', resolve);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -1508,7 +1570,7 @@ export function generateModels(
   moduleScope.claim('Types', 'import binding Types');
   moduleScope.claim('ModelInit', 'import binding ModelInit');
   const reservedMembers = new Set(RESERVED_MODEL_MEMBERS);
-  const sharedModelEnv = modelEnv(document, undefined, undefined, analysis.resources, analysis.selections);
+  const sharedModelEnv = modelEnv(document, undefined, undefined, analysis.resources, analysis.selections, analysis.dates);
   const usesDate = ordered.some(definition => [...definition.properties.values(), definition.additionalProperties].some(schema => /\bDate\b/.test(modelFieldType(schema, definitions, sharedModelEnv))));
   const initializerCalls = ordered.flatMap(definition => [...definition.properties.values()].map(schema => modelInitExpression(schema, 'value', definitions, sharedModelEnv))).join('\n');
   const schemaGraph = analysis.schemaGraph;
@@ -1558,7 +1620,7 @@ export function generateModels(
       definition.schemaName,
       definition.rawSchema,
     ).anchors;
-    const env = modelEnv(document, undefined, anchors, analysis.resources, analysis.selections);
+    const env = modelEnv(document, undefined, anchors, analysis.resources, analysis.selections, analysis.dates);
     const fieldEnv = withSchemaBase(env, definition.rawSchema);
     const typeName = definition.name;
     const className = `${typeName}Model`;
@@ -1710,6 +1772,7 @@ export function generateModels(
   }
   const codecRuntimeOptions: CodecRuntimeOptions = {
     validationEnabled: profile.validation,
+    serde: TEMPORAL_SERDE,
     ...(helpers.validatorSetExpr ? { validatorSetExpr: helpers.validatorSetExpr } : {}),
     issueSource: 'OpenAPI',
     wireType: (node) => {
@@ -1751,8 +1814,11 @@ export function generateModels(
   const conversionImports = [
     'convertModelField', 'decodeGeneratedModel', 'decodeGeneratedModelTrusted', 'cloneConversionInput', 'defineModelProperty', 'encodeGeneratedModel', 'deserializeDate', 'serializeDate', 'unknownDiscriminatorValue', 'withDiscriminatorValue', 'jsonWithDiscriminator', 'requireModelObject',
   ].filter(name => new RegExp(`\\b${name}\\(`).test(source));
+  // `dates: temporal` fields call their codecs from `@exprtlabs/golem/temporal`; import exactly those used.
+  const temporalImports = [...new Set(source.match(/\b(?:de)?serializeTemporal[A-Za-z]+(?=\()/g) ?? [])].sort();
+  const temporalImport = temporalImports.length ? `import { ${temporalImports.join(', ')} } from '@exprtlabs/golem/temporal';\n` : '';
   const trimmed = source.replace(/^import \{[^\n]+\} from '@exprtlabs\/golem\/conversion';\n/m,
-    conversionImports.length ? `import { ${conversionImports.join(', ')} } from '@exprtlabs/golem/conversion';\n` : '');
+    (conversionImports.length ? `import { ${conversionImports.join(', ')} } from '@exprtlabs/golem/conversion';\n` : '') + temporalImport);
   return pruneGeneratedImports(`${trimmed}\n`);
 }
 

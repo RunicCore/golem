@@ -136,6 +136,7 @@ JSON document and writes one SDK directory.
 | `maxRefBytes` | positive integer | No | `5242880` | Maximum bytes read from one referenced document, local or remote. |
 | `maxRefDocuments` | positive integer | No | `256` | Maximum referenced documents discovered, including local references. |
 | `refTimeoutMs` | positive integer | No | `10000` | Remote reference read timeout in milliseconds. |
+| `dates` | `date` or `temporal` | No | `date` | `temporal` maps `format: date-time` to `Temporal.Instant`, `date` to `Temporal.PlainDate` and `duration` to `Temporal.Duration`, converted by [`@exprtlabs/golem/temporal`](/reference/runtime-api#temporal). `time` stays a string. Encoding a `Temporal.Instant` writes `Z`, so the original offset is not kept. |
 
 Local references stay within the input document's directory. Validation and
 reference limits apply even when `validation: false`; that flag controls

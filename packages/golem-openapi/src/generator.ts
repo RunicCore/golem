@@ -44,6 +44,9 @@ function validateGenerateContext(context: OpenApiGenerationContext): OpenApiGene
   if (context.name !== undefined && (typeof context.name !== 'string' || !context.name.trim())) {
     throw new TypeError('context.name must be a non-empty string when provided');
   }
+  if (context.dates !== undefined && context.dates !== 'date' && context.dates !== 'temporal') {
+    throw new TypeError('context.dates must be "date" or "temporal" when provided');
+  }
   return requireProfile(context.profile);
 }
 
@@ -56,7 +59,7 @@ export async function generate(context: OpenApiGenerationContext): Promise<OpenA
   const input = path.resolve(context.input);
   const output = path.resolve(context.output);
   const loaded = await loadOpenApiInput(input, context);
-  const result = writeSdk(loaded.document, { output, name: context.name, profile });
+  const result = writeSdk(loaded.document, { output, name: context.name, profile, ...(context.dates === undefined ? {} : { dates: context.dates }) });
   return {
     apiVersion: API_VERSION,
     artifacts: result.artifacts,
