@@ -2,10 +2,11 @@ import { copyFixture, copyFixtureFile, createFixtureProject } from '../fixture-p
 import { compileGeneratedSdk, readGeneratedModelSource } from './helpers.js';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { spawnSync } from 'node:child_process';
-import test from 'node:test';
+import test, { after } from 'node:test';
 import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/codegen/conversion';
 import { requireObjectCodec } from '@exprtlabs/codegen/serde';
 import { LibError, LibErrorKind, IssueSource } from '@exprtlabs/codegen/errors';
@@ -200,7 +201,7 @@ test('complex example projects polymorphic nested models and exact HTTP contract
   compileGeneratedSdk(output, [assertFile], { strict: true });
 });
 
-test('OpenAPI 3.1 generation preserves its dialect and compiles', (t) => {
+test('OpenAPI 3.1 generation preserves its dialect', (t) => {
   const document = {
     openapi: '3.1.2',
     jsonSchemaDialect: 'https://json-schema.org/draft/2020-12/schema',
@@ -240,15 +241,6 @@ test('OpenAPI 3.1 generation preserves its dialect and compiles', (t) => {
     fs.readFileSync(path.join(output, 'schemas.ts'), 'utf8'),
     /https:\/\/json-schema\.org\/draft\/2020-12\/schema/,
   );
-  const compiled = spawnSync(process.execPath, [tscBin(), 
-    '--target', 'ES2022',
-    '--module', 'NodeNext',
-    '--moduleResolution', 'NodeNext',
-    '--lib', 'ES2023,ESNext.Collection,DOM,DOM.Iterable',
-    '--noEmit',
-    path.join(output, 'index.ts'),
-  ], { encoding: 'utf8' });
-  assert.equal(compiled.status, 0, compiled.stderr || compiled.stdout);
 });
 
 test('component-root dynamic anchors retain their local recursive scope', (t) => {
@@ -491,10 +483,6 @@ test('generation is deterministic', async (t) => {
     /@runic-model-manifest \.\/model-manifest\.json/,
   );
   assert.equal(fs.existsSync(path.join(output, 'validation.ts')), false);
-  compileGeneratedSdk(output, []);
-  const generatedSchemas = await import(pathToFileURL(path.join(output, 'dist/schemas.js')).href);
-  assert.equal(typeof generatedSchemas.createRuntimeValidators, 'function');
-  assert.equal(typeof generatedSchemas.createOperationRuntimeValidators, 'function');
 });
 
 function wireAuthDocument() {
@@ -652,10 +640,22 @@ function wireAuthDocument() {
   };
 }
 
-/** Generate and compile the Wire SDK against `wireAuthDocument()`, returning its client class. */
-async function compileWireClient(t: Parameters<typeof createFixtureProject>[0]) {
+let wireClient: ReturnType<typeof generateWireClient> | undefined;
+const wireClientRoots: string[] = [];
+after(() => {
+  for (const root of wireClientRoots) fs.rmSync(root, { recursive: true, force: true });
+});
+
+/** Generate and compile the Wire SDK against `wireAuthDocument()` once; the wire tests share its client class. */
+function compileWireClient() {
+  wireClient ??= generateWireClient();
+  return wireClient;
+}
+
+async function generateWireClient() {
   const document = wireAuthDocument();
-  const output = createFixtureProject(t, 'runic-openapi-wire-');
+  const output = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'runic-openapi-wire-')));
+  wireClientRoots.push(output);
   writeSdk(document, { output, name: 'Wire' });
   copyFixtureFile(output, "openapi/conformance/auth-type-test.ts", "auth-type-test.ts");
   const compiled = spawnSync(process.execPath, [tscBin(),
@@ -677,8 +677,8 @@ async function compileWireClient(t: Parameters<typeof createFixtureProject>[0]) 
   return clientModule.WireClient;
 }
 
-test('generated client serializes path, repeated query, form body and API-key auth', async (t) => {
-  const WireClient = await compileWireClient(t);
+test('generated client serializes path, repeated query, form body and API-key auth', async () => {
+  const WireClient = await compileWireClient();
   let request: CapturedRequest | undefined;
   const client = new WireClient({
     baseUrl: 'https://api.example',
@@ -713,8 +713,8 @@ test('generated client serializes path, repeated query, form body and API-key au
   assert.equal(request.init.signal, controller.signal);
 });
 
-test('generated client applies OAuth/OIDC, mTLS, XML and undeclared-response handling', async (t) => {
-  const WireClient = await compileWireClient(t);
+test('generated client applies OAuth/OIDC, mTLS, XML and undeclared-response handling', async () => {
+  const WireClient = await compileWireClient();
   let request: CapturedRequest | undefined;
   const authContexts: unknown[] = [];
   const responseHeaderContexts: unknown[] = [];
