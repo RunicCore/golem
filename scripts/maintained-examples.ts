@@ -28,3 +28,13 @@ export function assertExampleInventory(workspaceRoot: string): void {
     throw new Error(`examples/ projects (${present.join(', ')}) must match the maintained example inventory (${expected.join(', ')}).`);
   }
 }
+
+/** Copy a maintained example into `root`, excluding installed and build artifacts. */
+export function copyMaintainedExample(workspaceRoot: string, root: string, name: ExampleName): void {
+  const source = path.join(workspaceRoot, 'examples', name);
+  fs.cpSync(source, root, {
+    recursive: true,
+    filter: filename => !path.relative(source, filename).split(path.sep)
+      .some(part => ['node_modules', '.build', 'dist', '.cache', '.git', '.npmrc'].includes(part)),
+  });
+}

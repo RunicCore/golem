@@ -143,6 +143,17 @@ function rejectIssues(issues: readonly PublicContentIssue[]): void {
   if (issues.length) throw new Error(`Public content rejected:\n${issues.map(issue => `${issue.category}: ${issue.path}`).join('\n')}`);
 }
 
+function digestFiles(root: string, files: readonly string[]): string {
+  const hash = createHash('sha256');
+  for (const filename of files) hash.update(filename).update('\0').update(fs.readFileSync(path.join(root, filename))).update('\0');
+  return hash.digest('hex');
+}
+
+/** Digest of the public source tree; equal to the digest `exportPublicSource` reports. */
+export function publicSourceDigest(root: string): string {
+  return digestFiles(fs.realpathSync(root), listPublicSourceFiles(root));
+}
+
 export function exportPublicSource(source: string, destination: string): { files: readonly string[]; digest: string } {
   const files = listPublicSourceFiles(source);
   rejectIssues(scanPublicContent(source, files, publicContentOptions(source)));
@@ -169,11 +180,7 @@ export function exportPublicSource(source: string, destination: string): { files
   if (fs.existsSync(to) && (!fs.lstatSync(to).isDirectory() || fs.readdirSync(to).length > 0)) {
     throw new Error('Public export destination must be empty.');
   }
-  const hash = createHash('sha256');
-  for (const filename of files) {
-    const content = fs.readFileSync(path.join(from, filename));
-    hash.update(filename).update('\0').update(content).update('\0');
-  }
+  const digest = digestFiles(from, files);
   fs.mkdirSync(to, { recursive: true });
   for (const filename of files) {
     const output = path.join(to, filename);
@@ -181,7 +188,7 @@ export function exportPublicSource(source: string, destination: string): { files
     fs.copyFileSync(path.join(from, filename), output);
   }
   rejectIssues(scanPublicContent(to));
-  return { files, digest: hash.digest('hex') };
+  return { files, digest };
 }
 
 const entry = process.argv[1];
