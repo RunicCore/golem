@@ -15,6 +15,17 @@ elif ! docker image inspect "$tag" >/dev/null 2>&1; then
   exit 2
 fi
 docker volume create --label org.exprtlabs.fe-deps-test=1 "$volume" >/dev/null
+# The public-content scans read local denied text from .private/, which the
+# container's work tree leaves out. Pass it in the environment, never as a file.
+rules="$root/.private/public-content.json"
+if [ -f "$rules" ]; then
+  local_denied="$(node -e '
+    const value = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
+    if (!Array.isArray(value.deniedText) || !value.deniedText.every(item => typeof item === "string")) process.exit(3);
+    process.stdout.write(value.deniedText.join("\n"));' "$rules")" || { echo "Invalid local public-content rules: $rules" >&2; exit 2; }
+  export PUBLIC_CONTENT_DENIED_TEXT="${PUBLIC_CONTENT_DENIED_TEXT:+$PUBLIC_CONTENT_DENIED_TEXT
+}$local_denied"
+fi
 mkdir -p "$root/.cache/test-results"
 tty=(); [ -t 1 ] && tty=(-t)
 exec docker run --rm --init ${tty[@]+"${tty[@]}"} ${network[@]+"${network[@]}"} \
