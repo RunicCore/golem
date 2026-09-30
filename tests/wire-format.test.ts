@@ -238,6 +238,50 @@ export type AnyWire = Assert<NotAny<WireFormat<any>>>;
   assert.equal(result.code, 0, `${result.stdout}\n${result.stderr}`);
 });
 
+test('WireFormat<T> equals the emitted JSON type for nested and omitted-field SDK models with and without mobx', async t => {
+  const { root } = createModelProject(t, {
+    prefix: 'runic-wire-format-sdk-',
+    name: 'wire-format-sdk',
+    ttscPlugin: true,
+    linkWorkspaceNodeModules: true,
+    rootDir: '.',
+    include: ['fixtures/**/*.ts'],
+    compilerOptions: { noEmit: true },
+  });
+  const covered: string[] = [];
+  for (const mobx of [false, true]) {
+    const scope = `sdk-mobx-${mobx}`;
+    const projectRoot = path.join(root, 'fixtures', scope);
+    const sdk = path.join(projectRoot, 'sdk');
+    writeGeneratedArtifacts((await generateOpenApi({
+      input: fixturePath('wire-format/nested-sdk.yaml'),
+      output: sdk,
+      name: 'Payments',
+      profile: { mobx, validation: true },
+    })).artifacts);
+    const checkFile = path.join(projectRoot, 'sdk.wire-check.ts');
+    const imports: string[] = [];
+    const checks: WireCheck[] = [];
+    for (const name of fs.readdirSync(path.join(sdk, 'models')).filter(entry => /^[A-Z]\w*\.ts$/.test(entry))) {
+      const result = sdkChecks(path.join(sdk, 'models', name), checkFile, scope);
+      imports.push(...result.imports);
+      checks.push(...result.checks.map(check => ({ ...check, label: `${scope}/${check.label}` })));
+    }
+    fs.writeFileSync(checkFile, checkSource(imports, checks));
+    covered.push(...checks.map(check => check.label));
+  }
+  for (const mobx of [false, true]) {
+    for (const model of ['Payment', 'Merchant', 'MerchantOmitId']) {
+      for (const kind of ['Model', 'Fields']) {
+        const label = `sdk-mobx-${mobx}/sdk_mobx_${mobx}_${model}${kind}`;
+        assert.ok(covered.includes(label), `missing equivalence check ${label}`);
+      }
+    }
+  }
+  const result = await command(root, process.execPath, [ttsc, '-p', path.join(root, 'tsconfig.json')], { allowFailure: true });
+  assert.equal(result.code, 0, `${result.stdout}\n${result.stderr}`);
+});
+
 test('toWireFormat<T> returns the emitted JSON type through the ttsc plugin without a cast', async t => {
   const { root, sourceRoot } = createModelProject(t, {
     prefix: 'runic-wire-format-call-',
