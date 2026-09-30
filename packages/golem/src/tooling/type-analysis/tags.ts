@@ -1,5 +1,7 @@
+import path from 'node:path';
 import * as ts from '../typescript-ns.js';
 import { canonicalFilename, portableRelativeFilename } from './project.js';
+import { packageSpecifier } from './package-specifier.js';
 import { canonicalConstraintKey } from '../schema.js';
 import type { ConstraintSchemaValue, ModelConstraint } from '../schema.js';
 export type { ConstraintSchemaValue, ModelConstraint } from '../schema.js';
@@ -9,6 +11,8 @@ export interface ValueBinding {
   readonly module: string;
   readonly exportName: string;
   readonly declaration: ts.Declaration;
+  /** Package import specifier, set only when the function lives in another package. */
+  readonly specifier?: string;
 }
 
 export interface ValidationBinding extends ValueBinding {
@@ -241,6 +245,19 @@ function valueBindingForSymbol(
       '1040',
       `${kind} function must be exported so generated code can call it.`,
     );
+  }
+  const resolved = packageSpecifier(canonicalFilename(sourceFile.fileName), context.sourceFile.fileName);
+  if (resolved.kind === 'unexported') {
+    throw context.diagnostic(
+      node,
+      '1060',
+      `${kind} function ${exportName} is in package ${resolved.packageName}, but no "exports" entry in ${resolved.packageRoot}/package.json reaches ${path.relative(resolved.packageRoot, sourceFile.fileName)}. Export that file from the package.`,
+    );
+  }
+  if (resolved.kind === 'package') {
+    // A packaged function is identified by its public import, not its file offsets: the identity then survives
+    // package upgrades and relocation, and a package reached through two paths collapses to one binding.
+    return { id: `${resolved.specifier}#${exportName}`, module: canonicalFilename(sourceFile.fileName), exportName, declaration, specifier: resolved.specifier };
   }
   return {
     id: canonicalIdentity(declaration, context.identityRoot),

@@ -58,6 +58,10 @@ function richDescriptor(descriptor: ModelConversionDescriptor): RichDescriptor {
   return descriptor as RichDescriptor;
 }
 
+function bindingImportPath(binding: { readonly module: string; readonly specifier?: string }, output: string): string {
+  return binding.specifier ?? sourceImportPath(binding.module, output);
+}
+
 function sourceImportPath(source: string, output: string): string {
   const relativePath = relative(dirname(output), source)
     .replace(/\\/g, '/')
@@ -1042,12 +1046,12 @@ export function emitSharedSource(options: SharedSourceOptions): string | undefin
     lines.push(`import { createValidatorSet } from ${JSON.stringify(options.standaloneModule)};`);
   }
   lines.push(
-    ...validations.map((binding) => `import { ${binding.exportName} as ${validationNames.get(binding.id)} } from ${JSON.stringify(sourceImportPath(binding.module, output))};`),
+    ...validations.map((binding) => `import { ${binding.exportName} as ${validationNames.get(binding.id)} } from ${JSON.stringify(bindingImportPath(binding, output))};`),
     ...serde.flatMap((binding) => {
       const names = serdeNames.get(binding.id);
       return [
-        `import { ${binding.serialize.exportName} as ${names?.serialize}Source } from ${JSON.stringify(sourceImportPath(binding.serialize.module, output))};`,
-        `import { ${binding.deserialize.exportName} as ${names?.deserialize}Source } from ${JSON.stringify(sourceImportPath(binding.deserialize.module, output))};`,
+        `import { ${binding.serialize.exportName} as ${names?.serialize}Source } from ${JSON.stringify(bindingImportPath(binding.serialize, output))};`,
+        `import { ${binding.deserialize.exportName} as ${names?.deserialize}Source } from ${JSON.stringify(bindingImportPath(binding.deserialize, output))};`,
       ];
     }),
   );
@@ -1462,12 +1466,12 @@ export function emitSource(
       const short = codecShortName(id);
       return `import { ${binding}, ${stringifyFunctionName(short)}, ${fromWireFunctionName(short)}, ${toWireFunctionName(short)} } from ${JSON.stringify(sourceImportPath(model.generatedFile, output))};`;
     }),
-    ...(!shared ? validationBindings.map((binding) => `import { ${binding.exportName} as ${bindingNames.get(binding.id)} } from ${JSON.stringify(sourceImportPath(binding.module, output))};`) : []),
+    ...(!shared ? validationBindings.map((binding) => `import { ${binding.exportName} as ${bindingNames.get(binding.id)} } from ${JSON.stringify(bindingImportPath(binding, output))};`) : []),
     ...(!shared ? serdeBindings.flatMap((binding) => {
       const names = serdeNames.get(binding.id);
       return [
-        `import { ${binding.serialize.exportName} as ${names?.serialize}Source } from ${JSON.stringify(sourceImportPath(binding.serialize.module, output))};`,
-        `import { ${binding.deserialize.exportName} as ${names?.deserialize}Source } from ${JSON.stringify(sourceImportPath(binding.deserialize.module, output))};`,
+        `import { ${binding.serialize.exportName} as ${names?.serialize}Source } from ${JSON.stringify(bindingImportPath(binding.serialize, output))};`,
+        `import { ${binding.deserialize.exportName} as ${names?.deserialize}Source } from ${JSON.stringify(bindingImportPath(binding.deserialize, output))};`,
       ];
     }) : []),
     '',
