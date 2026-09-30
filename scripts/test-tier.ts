@@ -71,10 +71,10 @@ function steps(tier: Tier, args: readonly string[], native: boolean): Step[] {
       { label: 'docs public content', run: () => run(process.execPath, ['.build/scripts/public-source.js', 'scan', 'docs/.vitepress/dist']) },
     ];
   }
-  const full: Step[] = [nodeTest('unit', UNIT_FILES, TEST_TIMEOUT_MS.full, CONCURRENCY.unit), goTests];
-  if (tier === 'full') return native ? full : [...full];
-  // `prepare` is an online Acceptance run with a cold-cache per-test limit.
+  // `prepare` is an online Acceptance run with a cold-cache per-test limit for every step.
   const timeout = tier === 'prepare' ? TEST_TIMEOUT_MS.prepare : TEST_TIMEOUT_MS.acceptance;
+  const full: Step[] = [nodeTest('unit', UNIT_FILES, tier === 'prepare' ? timeout : TEST_TIMEOUT_MS.full, CONCURRENCY.unit), goTests];
+  if (tier === 'full') return native ? full : [...full];
   return [
     { label: 'public source', run: () => run(process.execPath, ['.build/scripts/public-source.js', 'check']) },
     { label: 'OpenAPI compliance', run: () => run(process.execPath, ['.build/packages/openapi-to-ts/compliance/generate-matrix.js', '--check']) },
