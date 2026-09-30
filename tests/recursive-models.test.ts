@@ -4,8 +4,6 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import test, { type TestContext } from 'node:test';
 import type { CodegenProfile } from '@exprtlabs/codegen/generator-api';
-import type { ModelTypeDescriptor } from '@exprtlabs/codegen/model';
-import { hasExecutableValidation } from '@exprtlabs/codegen/schema';
 import { generate } from '#model/generator';
 import { writeGeneratedArtifacts } from './fixture-project.js';
 import { compileModelProject, createModelProject, writeModelSources } from './model-project.js';
@@ -68,28 +66,3 @@ for (const [label, profile] of profiles) {
     assert.ok(generated.length < 400_000, `recursive models do not expand inline (${generated.length} bytes)`);
   });
 }
-
-test('executable-validation detection visits a shared model once per walk', () => {
-  // item_i references item_{i-1} twice, so the number of paths doubles per level.
-  const depth = 20;
-  const definitions: Record<string, ModelTypeDescriptor> = {};
-  for (let index = 0; index < depth; index++) {
-    definitions[`Item${index}`] = {
-      kind: 'object',
-      properties: index === 0
-        ? { label: { kind: 'string' } }
-        : { prev: { kind: 'reference', name: `Item${index - 1}` }, prevs: { kind: 'array', item: { kind: 'reference', name: `Item${index - 1}` } } },
-      required: [],
-      additionalProperties: false,
-    };
-  }
-  let resolved = 0;
-  const found = hasExecutableValidation(definitions[`Item${depth - 1}`], {
-    resolveReference: (name) => {
-      resolved++;
-      return definitions[name];
-    },
-  });
-  assert.equal(found, false);
-  assert.ok(resolved <= 2 * depth, `resolved ${resolved} references for ${depth} models`);
-});

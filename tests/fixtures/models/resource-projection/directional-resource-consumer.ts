@@ -42,3 +42,20 @@ await assert.rejects(
   () => invalidResponseClient.saveTree().execute({ path: { id: 'tree-1' }, body: requestBody }),
   /validation/i,
 );
+
+const embeddedBody = { code: 'embedded', child: { value: 7, serverValue: 'server-child' } };
+const embeddedClient = new ResourceProjectionClient({
+  baseUrl: 'https://example.test',
+  fetchImpl: async (url, init) => {
+    assert.equal(new URL(String(url)).pathname, '/value');
+    assert.equal(init?.method, 'GET');
+    return Response.json(embeddedBody);
+  },
+});
+assert.deepEqual((await embeddedClient.getValue().execute({})).body, embeddedBody);
+
+const invalidEmbeddedClient = new ResourceProjectionClient({
+  baseUrl: 'https://example.test',
+  fetchImpl: async () => Response.json({ code: 42, child: embeddedBody.child }),
+});
+await assert.rejects(() => invalidEmbeddedClient.getValue().execute({}), /validation/i);

@@ -287,4 +287,9 @@ test('a job memo examines each referenced model once and never caches a result c
   for (let index = 1; index < 30; index++) assert.equal(hasExecutableValidation(definitions[`Chain${index}`], options), false);
   // Each walk resolves its own two references and those of the one model it examines; the rest are cached.
   assert.ok(resolved <= 4 * 30, `resolved ${resolved} references across 29 walks`);
+  // Without a memo one walk still visits each shared model once, although the paths through the chain double per level.
+  const depth = 20;
+  resolved = 0;
+  assert.equal(hasExecutableValidation(definitions[`Chain${depth - 1}`], { resolveReference: options.resolveReference }), false);
+  assert.ok(resolved <= 2 * depth, `resolved ${resolved} references for ${depth} models`);
 });

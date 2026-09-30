@@ -1,10 +1,11 @@
-import type { AdditionalProperties, Contains, DependentRequired, DependentSchemas, IfThenElse, MaxContains, MaxProperties, MinContains, MinProperties, Not, OneOf, Pattern, PatternProperties, PropertyNames, UnevaluatedProperties } from '@exprtlabs/codegen/tags';
+import type { AdditionalProperties, Contains, DependentRequired, DependentSchemas, IfThenElse, MaxContains, MaxProperties, MinContains, MinItems, MinProperties, Not, OneOf, Pattern, PatternProperties, PropertyNames, UnevaluatedProperties } from '@exprtlabs/codegen/tags';
 import type { IModel } from '@exprtlabs/codegen/model';
 import { ABase, type AFields } from './a.model.generated.js';
 
 export type TA = IModel<{
   counts: { one?: string; two?: string; three?: string } & MinProperties<1> & MaxProperties<2>;
   contains: string[] & Contains<'hit'> & MinContains<1> & MaxContains<2>;
+  containsPattern: string[] & Contains<string & Pattern<'^ok$'>> & MinItems<1> & MinContains<1> & MaxContains<2>;
   names: Record<string, string> & PropertyNames<string & Pattern<'^[a-z]+$'>>;
   patterns: { known?: string } & PatternProperties<{ '^x_': number; '^z_': boolean }> & AdditionalProperties<never>;
   additional: { known: string } & AdditionalProperties<number>;

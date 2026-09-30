@@ -138,6 +138,7 @@ const cases = {
   valid: {
     counts: { one: 'a', two: 'b' },
     contains: ['miss', 'hit', 'hit'],
+    containsPattern: ['skip', 'ok'],
     names: { first: 'ok', second: 'ok' },
     patterns: { known: 'ok', x_count: 2, z_flag: true },
     additional: { known: 'ok', extra: 2 },
@@ -155,6 +156,7 @@ const cases = {
   boundaries: {
     counts: { one: 'a' },
     contains: ['hit', 'miss'],
+    containsPattern: ['ok', 'ok'],
     names: {},
     patterns: { known: 'ok' },
     additional: { known: 'ok' },
@@ -228,8 +230,12 @@ for (const ajvStandalone of [false, true] as const) {
       ['counts', { one: 'a', two: 'b', three: 'c' }],
       ['contains', ['miss', 'miss']],
       ['contains', ['hit', 'hit', 'hit']],
+      ['containsPattern', ['bad']],
+      ['containsPattern', []],
+      ['containsPattern', ['ok', 'ok', 'ok']],
       ['names', { Good: 'bad' }],
       ['patterns', { known: 'ok', x_count: 'bad' }],
+      ['patterns', { known: 'ok', z_flag: 'bad' }],
       ['patterns', { known: 'ok', other: true }],
       ['additional', { known: 'ok', extra: 'bad' }],
       ['unevaluated', { known: 'ok', extra: true }],

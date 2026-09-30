@@ -64,181 +64,88 @@ function deferred<T>(): Deferred<T> {
 // Rest Tuples and Escaped JSON Pointer Property Paths
 // ---------------------------------------------------------------------------
 
-test('tuple validation supports rest elements with prefix only', async () => {
-  const [{ registerGeneratedModel }, validation] = await Promise.all([
-    runtime('model'),
-    runtime('validation'),
-  ]);
+interface RestTupleCase {
+  readonly name: string;
+  readonly tuple: ModelTypeDescriptor;
+  readonly valid: readonly (readonly unknown[])[];
+  readonly invalid: readonly {
+    readonly data: readonly unknown[];
+    readonly issues?: readonly { readonly code: string; readonly path: readonly (string | number)[] }[];
+  }[];
+}
 
-  interface PrefixTupleFields {
-    data: [string, ...number[]];
-  }
-
-  class PrefixTupleModel {
-    public data?: unknown;
-    public constructor(data?: unknown) {
-      this.data = data;
-    }
-    public toJSON(): PrefixTupleFields {
-      return { data: this.data as [string, ...number[]] };
-    }
-  }
-
-  validatedModel(PrefixTupleModel, 'PrefixTuple', {
-        PrefixTuple: {
-          kind: 'object',
-          required: ['data'],
-          additionalProperties: false,
-          properties: {
-            data: {
-              kind: 'tuple',
-              items: [{ kind: 'string' }],
-              rest: {
-                index: 1,
-                item: { kind: 'number' },
-              },
-            },
-          },
-        },
-      }, ['data']);
-
-  // Positive cases: 1 item (prefix only), 2 items (prefix + 1 rest), 4 items (prefix + 3 rest)
-  for (const validData of [
-    ['hello'],
-    ['hello', 42],
-    ['hello', 1, 2, 3, 4],
-  ]) {
-    const model = new PrefixTupleModel(validData);
-    const validator = validation.getValidator(model);
-    assert.equal(await validator.validate(), true, `Expected valid for ${JSON.stringify(validData)}`);
-    assert.equal(validator.issues.length, 0);
-  }
-
-  // Negative case: empty array (less than min length 1)
+const restTupleCases: readonly RestTupleCase[] = [
   {
-    const model = new PrefixTupleModel([]);
-    const validator = validation.getValidator(model);
-    assert.equal(await validator.validate(), false);
-    assert.equal(validator.issues.some((i) => i.path[0] === 'data'), true);
-  }
-
-  // Negative case: prefix has wrong type
+    // [string, ...number[]]: 1 item (prefix only), 2 items (prefix + 1 rest), 5 items (prefix + 4 rest)
+    name: 'PrefixTuple',
+    tuple: { kind: 'tuple', items: [{ kind: 'string' }], rest: { index: 1, item: { kind: 'number' } } },
+    valid: [['hello'], ['hello', 42], ['hello', 1, 2, 3, 4]],
+    invalid: [
+      // fewer items than the minimum length of 1
+      { data: [] },
+      // prefix has the wrong type
+      { data: [123, 456], issues: [{ code: 'type', path: ['data', 0] }] },
+      // rest element has the wrong type
+      { data: ['hello', 1, 'bad', 3], issues: [{ code: 'type', path: ['data', 2] }] },
+    ],
+  },
   {
-    const model = new PrefixTupleModel([123, 456]);
-    const validator = validation.getValidator(model);
-    assert.equal(await validator.validate(), false);
-    assert.deepEqual(
-      validator.issues.map((i) => ({ code: i.code, path: i.path })),
-      [{ code: 'type', path: ['data', 0] }],
-    );
-  }
-
-  // Negative case: rest element has wrong type
+    // [string, ...number[], boolean]: 0, 1 and 3 rest items between prefix and suffix
+    name: 'PrefixSuffixTuple',
+    tuple: {
+      kind: 'tuple',
+      items: [{ kind: 'string' }, { kind: 'boolean' }],
+      rest: { index: 1, item: { kind: 'number' } },
+    },
+    valid: [['prefix', true], ['prefix', 100, false], ['prefix', 1, 2, 3, true]],
+    invalid: [],
+  },
   {
-    const model = new PrefixTupleModel(['hello', 1, 'bad', 3]);
-    const validator = validation.getValidator(model);
-    assert.equal(await validator.validate(), false);
-    assert.deepEqual(
-      validator.issues.map((i) => ({ code: i.code, path: i.path })),
-      [{ code: 'type', path: ['data', 2] }],
-    );
-  }
-});
+    // [...number[], string]: suffix only
+    name: 'SuffixTuple',
+    tuple: { kind: 'tuple', items: [{ kind: 'string' }], rest: { index: 0, item: { kind: 'number' } } },
+    valid: [['end'], [1, 2, 'end']],
+    invalid: [],
+  },
+];
 
-test('tuple validation supports rest elements with prefix and suffix', async () => {
-  const [{ registerGeneratedModel }, validation] = await Promise.all([
-    runtime('model'),
-    runtime('validation'),
-  ]);
+test('tuple validation supports rest elements with prefix only, prefix and suffix, and suffix only', async () => {
+  const validation = await runtime('validation');
 
-  interface PrefixSuffixTupleFields {
-    data: [string, ...number[], boolean];
-  }
-
-  class PrefixSuffixTupleModel {
-    public data?: unknown;
-    public constructor(data?: unknown) {
-      this.data = data;
+  for (const { name, tuple, valid, invalid } of restTupleCases) {
+    class RestTupleModel {
+      public data?: unknown;
+      public constructor(data?: unknown) {
+        this.data = data;
+      }
+      public toJSON(): { data: unknown } {
+        return { data: this.data };
+      }
     }
-    public toJSON(): PrefixSuffixTupleFields {
-      return { data: this.data as [string, ...number[], boolean] };
+    validatedModel(RestTupleModel, name, {
+      [name]: {
+        kind: 'object',
+        required: ['data'],
+        additionalProperties: false,
+        properties: { data: tuple },
+      },
+    }, ['data']);
+
+    for (const data of valid) {
+      const validator = validation.getValidator(new RestTupleModel(data));
+      assert.equal(await validator.validate(), true, `${name}: expected valid for ${JSON.stringify(data)}`);
+      assert.equal(validator.issues.length, 0, name);
     }
-  }
-
-  validatedModel(PrefixSuffixTupleModel, 'PrefixSuffixTuple', {
-        PrefixSuffixTuple: {
-          kind: 'object',
-          required: ['data'],
-          additionalProperties: false,
-          properties: {
-            data: {
-              kind: 'tuple',
-              items: [{ kind: 'string' }, { kind: 'boolean' }],
-              rest: {
-                index: 1,
-                item: { kind: 'number' },
-              },
-            },
-          },
-        },
-      }, ['data']);
-
-  // Positive cases:
-  // length 2 (prefix + suffix, 0 rest items)
-  // length 3 (prefix + 1 rest item + suffix)
-  // length 5 (prefix + 3 rest items + suffix)
-  for (const validData of [
-    ['prefix', true],
-    ['prefix', 100, false],
-    ['prefix', 1, 2, 3, true],
-  ]) {
-    const model = new PrefixSuffixTupleModel(validData);
-    const validator = validation.getValidator(model);
-    assert.equal(await validator.validate(), true, `Expected valid for ${JSON.stringify(validData)}`);
-  }
-});
-
-test('tuple validation supports rest elements with suffix only and optionalFrom', async () => {
-  const [{ registerGeneratedModel }, validation] = await Promise.all([
-    runtime('model'),
-    runtime('validation'),
-  ]);
-
-  interface SuffixTupleFields {
-    data: [...number[], string];
-  }
-
-  class SuffixTupleModel {
-    public data?: unknown;
-    public constructor(data?: unknown) {
-      this.data = data;
-    }
-    public toJSON(): SuffixTupleFields {
-      return { data: this.data as [...number[], string] };
+    for (const { data, issues } of invalid) {
+      const validator = validation.getValidator(new RestTupleModel(data));
+      assert.equal(await validator.validate(), false, `${name}: expected invalid for ${JSON.stringify(data)}`);
+      if (issues) {
+        assert.deepEqual(validator.issues.map((i) => ({ code: i.code, path: i.path })), issues, `${name}: ${JSON.stringify(data)}`);
+      } else {
+        assert.equal(validator.issues.some((i) => i.path[0] === 'data'), true, `${name}: ${JSON.stringify(data)}`);
+      }
     }
   }
-
-  validatedModel(SuffixTupleModel, 'SuffixTuple', {
-        SuffixTuple: {
-          kind: 'object',
-          required: ['data'],
-          additionalProperties: false,
-          properties: {
-            data: {
-              kind: 'tuple',
-              items: [{ kind: 'string' }],
-              rest: {
-                index: 0,
-                item: { kind: 'number' },
-              },
-            },
-          },
-        },
-      }, ['data']);
-
-  // Positive: 1 item ('end'), 3 items (1, 2, 'end')
-  assert.equal(await validation.getValidator(new SuffixTupleModel(['end'])).validate(), true);
-  assert.equal(await validation.getValidator(new SuffixTupleModel([1, 2, 'end'])).validate(), true);
 });
 
 test('JSON Pointer escapes ~ and / in property paths; errorsFor finds actual field', async () => {

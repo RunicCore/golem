@@ -23,7 +23,8 @@ test('keys become identifier parts, and keys without ASCII letters or digits giv
 const MODELS = `import type { IModel } from '@exprtlabs/codegen/model';
 export type TMerchant = IModel<{ id: string; name: string; city: string; 'first-name': string }>;
 export type TMoney = IModel<{ amount: string; currency: string }>;
-export type TBilling = Omit<TMerchant, 'id'>;
+// A shape of its own: the same shape as another field in one document would share that field's schema and name.
+export type TBilling = Omit<TMerchant, 'city'>;
 `;
 
 function controller(fields: string, extraRoute = ''): string {
@@ -51,25 +52,36 @@ async function componentNames(t: TestContext, source: string): Promise<string[]>
   return Object.keys(document.components.schemas).sort();
 }
 
-const cases: readonly [field: string, expected: string][] = [
+// Projections that name themselves from their own expression; the field that holds each one is irrelevant.
+const namedProjections: readonly [field: string, expected: string][] = [
   ["Omit<TMerchant, 'id'>", 'MerchantOmitId'],
   ["Pick<TMerchant, 'name' | 'id'>", 'MerchantPickIdName'],
   ["Partial<Omit<TMerchant, 'id'>>", 'MerchantOmitIdPartial'],
   ['TMerchant & TMoney', 'MerchantAndMoney'],
   ["Omit<TMerchant, 'first-name'>", 'MerchantOmitFirstName'],
   ['TBilling', 'Billing'],
-  ['TMerchant & { note: string }', 'OrderShape'],
-  ["Pick<TMerchant, 'id' | 'name' | 'city' | 'first-name'>", 'OrderShape'],
-  ["Partial<Readonly<Required<Omit<TMerchant, 'id'>>>>", 'OrderShape'],
 ];
 
-for (const [field, expected] of cases) {
-  test(`a field typed ${field} becomes the component ${expected}`, async t => {
-    const names = await componentNames(t, controller(`shape: ${field}`));
-    assert.ok(names.includes(expected), `${expected} in ${names.join(', ')}`);
-    assert.equal(names.some(name => name.startsWith('__Projection')), false);
-  });
-}
+// Projections with no name of their own fall back to the owner and the field, so each sits in its own field.
+const ownerFieldFallbacks: readonly [field: string, expected: string][] = [
+  ['TMerchant & { note: string }', 'OrderShape1'],
+  ["Pick<TMerchant, 'id' | 'name' | 'city' | 'first-name'>", 'OrderShape2'],
+  ["Partial<Readonly<Required<Omit<TMerchant, 'id'>>>>", 'OrderShape3'],
+];
+
+test('projections over a model are named from their own expressions', async t => {
+  const fields = namedProjections.map(([field], index) => `named${index + 1}: ${field}`).join('; ');
+  const names = await componentNames(t, controller(fields));
+  for (const [, expected] of namedProjections) assert.ok(names.includes(expected), `${expected} in ${names.join(', ')}`);
+  assert.equal(names.some(name => name.startsWith('__Projection')), false);
+});
+
+test('projections without a name of their own become the owner and the field', async t => {
+  const fields = ownerFieldFallbacks.map(([field], index) => `shape${index + 1}: ${field}`).join('; ');
+  const names = await componentNames(t, controller(fields));
+  for (const [, expected] of ownerFieldFallbacks) assert.ok(names.includes(expected), `${expected} in ${names.join(', ')}`);
+  assert.equal(names.some(name => name.startsWith('__Projection')), false);
+});
 
 test('an optional field and the members of a union are named from their own expressions', async t => {
   const names = await componentNames(t, controller(

@@ -39,6 +39,21 @@ function projectionDocument(): Record<string, unknown> {
     openapi: '3.1.0',
     info: { title: 'Resource Projection', version: '1' },
     paths: {
+      // An absolute URN reference at the operation level resolves to the
+      // embedded resource declared by its $id.
+      '/value': {
+        get: {
+          operationId: 'getValue',
+          responses: {
+            200: {
+              description: 'ok',
+              content: {
+                'application/json': { schema: { $ref: 'urn:fixture:embedded' } },
+              },
+            },
+          },
+        },
+      },
       '/trees/{id}': {
         post: {
           operationId: 'saveTree',
@@ -144,38 +159,6 @@ function projectionDocument(): Record<string, unknown> {
   };
 }
 
-function absoluteReferenceDocument(): Record<string, unknown> {
-  return {
-    openapi: '3.1.0',
-    info: { title: 'Absolute Resource Reference', version: '1' },
-    paths: {
-      '/value': {
-        get: {
-          operationId: 'getValue',
-          responses: {
-            200: {
-              description: 'ok',
-              content: {
-                'application/json': { schema: { $ref: 'urn:fixture:embedded' } },
-              },
-            },
-          },
-        },
-      },
-    },
-    components: {
-      schemas: {
-        Embedded: {
-          $id: 'urn:fixture:embedded',
-          type: 'object',
-          required: ['value'],
-          properties: { value: { type: 'string' } },
-        },
-      },
-    },
-  };
-}
-
 const graphWholeId = 'https://schemas.example.test/api/v1/graph/whole';
 const graphLeafId = 'https://schemas.example.test/api/v1/graph/parts/leaf';
 const graphNestedId = 'https://schemas.example.test/api/v1/graph/parts/nested';
@@ -258,12 +241,6 @@ function resourceGraphDocument(): Record<string, unknown> {
 function writeResourceGraphConsumer(output: string): string {
   const consumer = path.join(output, 'resource-graph-consumer.ts');
   writeFileSync(consumer, readFixture('models/resource-projection/resource-graph-consumer.ts'));
-  return consumer;
-}
-
-function writeAbsoluteReferenceConsumer(output: string): string {
-  const consumer = path.join(output, 'absolute-reference-consumer.ts');
-  writeFileSync(consumer, readFixture('models/resource-projection/absolute-reference-consumer.ts'));
   return consumer;
 }
 
@@ -384,45 +361,6 @@ test('public directional resources preserve nested scopes and run through strict
   assert.deepEqual(requireRecord(outputLiteral.exampleValue, 'output exampleValue').examples, [literalExample]);
   assert.deepEqual(requireRecord(outputLiteral.constValue, 'output constValue').const, literalConst);
   assert.deepEqual(requireRecord(outputLiteral.enumValue, 'output enumValue').enum, [literalEnum]);
-});
-
-test('public generation resolves an embedded absolute URN resource reference for the default Ajv client', async (t) => {
-  const root = mkdtempSync(path.join(tmpdir(), 'runic-absolute-resource-reference-'));
-  t.after(() => rmSync(root, { recursive: true, force: true }));
-  const input = path.join(root, 'openapi.json');
-  const output = path.join(root, 'sdk');
-  writeFileSync(input, `${JSON.stringify(absoluteReferenceDocument(), null, 2)}\n`);
-
-  const result = await generate({
-    input,
-    output,
-    name: 'AbsoluteResourceReference',
-    profile: { mobx: false, validation: true },
-  });
-  assert.equal(existsSync(output), false, 'public generation must stay pure until materialization');
-  materializeGeneratedSdk(result.artifacts, output);
-  const consumer = writeAbsoluteReferenceConsumer(output);
-  compileGeneratedSdk(output, [consumer], {
-    strict: true,
-    noUnusedLocals: true,
-    noUnusedParameters: true,
-    skipLibCheck: true,
-    outDir: path.join(output, 'build'),
-  });
-  const execution = spawnSync(process.execPath, [path.join(output, 'build', 'absolute-reference-consumer.js')], {
-    encoding: 'utf8',
-  });
-  assert.equal(execution.status, 0, `${execution.stdout}\n${execution.stderr}`);
-
-  const schemasModule = await import(pathToFileURL(path.join(output, 'build', 'schemas.js')).href);
-  const neutralRegistry = requireRecord(schemasModule.schemaRegistry, 'absolute neutral schema registry');
-  const neutralComponents = requireRecord(neutralRegistry.components, 'absolute neutral components');
-  const neutralSchemas = requireRecord(neutralComponents.schemas, 'absolute neutral schemas');
-  assert.equal(requireRecord(neutralSchemas.Embedded, 'absolute neutral Embedded').$id, 'urn:fixture:embedded');
-  const runtimeRegistry = requireRecord(schemasModule.runtimeSchemaRegistry, 'absolute runtime schema registry');
-  const outputSchemas = resourceSchemas(runtimeRegistry, 'runic-output');
-  const outputEmbedded = projectedSchema(runtimeRegistry, 'runic-output', outputSchemas, 'Embedded', 'urn:fixture:embedded');
-  assert.equal(requireRecord(outputEmbedded, 'absolute output Embedded').$id, 'urn:fixture:embedded:output');
 });
 
 test('public resource graph distinguishes whole, scalar, and nested targets with relative resource scope', async (t) => {
