@@ -1,0 +1,25 @@
+{
+  "name": "packed-react-app",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@exprtlabs/codegen": "rc",
+    "ajv": "8.20.0",
+    "ajv-formats": "3.0.1",
+    "mobx": "6.16.1",
+    "mobx-react-lite": "4.1.1",
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
+  },
+  "devDependencies": {
+    "@exprtlabs/model-codegen": "rc",
+    "@exprtlabs/openapi-to-ts": "rc",
+    "@types/node": "22.20.1",
+    "@types/react": "18.3.31",
+    "@types/react-dom": "18.3.7",
+    "esbuild": "0.25.12",
+    "typescript": "~7.0.2",
+    "ttsc": "~0.30.4"
+  }
+}

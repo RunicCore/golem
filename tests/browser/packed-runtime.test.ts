@@ -6,10 +6,10 @@ import { test, before, after } from 'node:test';
 import { chromium, expect, type Browser, type Page } from '@playwright/test';
 import { build } from 'esbuild';
 import { cli, command, npm } from '../support/process.js';
-import { copyExample, writeFixture } from '../support/consumer.js';
+import { writeFixture } from '../support/consumer.js';
 import { startRegistry, packageSpec, type PackedRegistry } from '../../scripts/packed-registry.js';
 import { AJV, AJV_FORMATS, ESBUILD, MOBX } from '../../scripts/third-party-installs.js';
-import { copyFixtureFile, readFixture } from '../fixture-project.js';
+import { copyFixture, copyFixtureFile, readFixture } from '../fixture-project.js';
 
 let registry: PackedRegistry;
 let browser: Browser;
@@ -163,27 +163,23 @@ for (const standalone of [false, true]) {
 }
 
 for (const standalone of [false, true]) {
-  test(`maintained React form survives StrictMode, validation, retry and disposal, standalone=${standalone}`, { timeout: 360_000 }, async t => {
+  test(`packed React form survives StrictMode, validation, retry and disposal, standalone=${standalone}`, { timeout: 360_000 }, async t => {
     const root = registry.create(t, `react-consumer-${standalone}`);
-    copyExample(root, 'react-mobx');
-    const packageFile = path.join(root, 'package.json');
-    const manifest = JSON.parse(fs.readFileSync(packageFile, 'utf8'));
+    copyFixture(root, 'browser/react-app');
     if (standalone) {
+      const packageFile = path.join(root, 'package.json');
+      const manifest: { dependencies: Record<string, string>; devDependencies: Record<string, string> } = JSON.parse(fs.readFileSync(packageFile, 'utf8'));
       for (const name of ['ajv', 'ajv-formats']) {
         manifest.devDependencies[name] = manifest.dependencies[name];
         delete manifest.dependencies[name];
       }
+      fs.writeFileSync(packageFile, JSON.stringify(manifest, null, 2));
     }
-    fs.writeFileSync(packageFile, JSON.stringify(manifest, null, 2));
     await npm(root, ['install']);
     fs.appendFileSync(path.join(root, 'runic-codegen.yaml'), `\najvStandalone: ${standalone}\n`);
     await cli(root, ['generate']);
     await cli(root, ['check']);
-    copyFixtureFile(root, 'browser/react-app/src/browser-test-entry.tsx', 'src/browser-test-entry.tsx');
     await command(root, path.join(root, 'node_modules/.bin/ttsc'), ['-p', 'tsconfig.json', '--noEmit']);
-    // Compile the ordinary production application as well as the development
-    // React build below, where StrictMode actually replays effects.
-    await command(root, path.join(root, 'node_modules/.bin/vite'), ['build']);
     await npm(root, ['prune', '--omit=dev'], { includeOptional: false });
     if (standalone) for (const name of ['ajv', 'ajv-formats']) {
       assert.equal(fs.existsSync(path.join(root, 'node_modules', name)), false);
@@ -191,12 +187,13 @@ for (const standalone of [false, true]) {
     const bundled = await build({
       entryPoints: [path.join(root, 'src/browser-test-entry.tsx')], outfile: path.join(root, 'browser/app.js'),
       bundle: true, platform: 'browser', format: 'esm', write: false, metafile: true,
-      define: { 'process.env.NODE_ENV': JSON.stringify('development'), 'import.meta.env.VITE_API_BASE_URL': 'location.origin' },
+      // The development React build is the one where StrictMode replays effects.
+      define: { 'process.env.NODE_ENV': JSON.stringify('development') },
     });
     if (standalone) assert.doesNotMatch(Object.keys(bundled.metafile.inputs).join('\n'), /node_modules\/(?:ajv|ajv-formats)\//);
     const javascript = bundled.outputFiles.find(file => file.path.endsWith('.js'))?.text;
     const css = bundled.outputFiles.find(file => file.path.endsWith('.css'))?.text;
-    assert.ok(javascript && css, 'the real example bundles its entry and styles');
+    assert.ok(javascript && css, 'the app bundles its entry and styles');
     const requests: unknown[] = [];
     let failNext = false;
     let holdNext = false;
@@ -240,7 +237,7 @@ for (const standalone of [false, true]) {
     const loaded = await page.goto(`http://127.0.0.1:${address.port}`);
     assert.equal(loaded?.headers()['content-security-policy'], csp);
     await expect(page.getByRole('heading', { name: 'Payment editor' })).toBeVisible();
-    await expect.poll(() => page.evaluate(() => Reflect.get(globalThis, 'exampleDisposals'))).toBe(1);
+    await expect.poll(() => page.evaluate(() => Reflect.get(globalThis, 'storeDisposals'))).toBe(1);
     assert.equal(requests.length, 0, 'StrictMode effect replay does not submit');
     await page.getByRole('spinbutton', { name: /^Amount\b/ }).fill('40');
     await page.getByLabel('Currency', { exact: true }).fill('eur');
@@ -280,9 +277,9 @@ for (const standalone of [false, true]) {
     await page.locator('form').dispatchEvent('submit');
     await expect.poll(() => requests.length).toBe(4);
     assert.equal(requests.length, 4, 'duplicate submit while saving sends only one request');
-    await page.evaluate(() => Reflect.get(globalThis, 'unmountExample')());
+    await page.evaluate(() => Reflect.get(globalThis, 'unmountApp')());
     await expect.poll(() => aborted).toBe(true);
-    assert.equal(await page.evaluate(() => Reflect.get(globalThis, 'exampleDisposals')), 2);
+    assert.equal(await page.evaluate(() => Reflect.get(globalThis, 'storeDisposals')), 2);
     held?.end('{"amount":99,"currency":"USD"}');
     await expect(page.locator('#root')).toBeEmpty();
     assert.equal(requests.length, 4, 'no late duplicate request');
