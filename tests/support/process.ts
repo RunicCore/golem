@@ -59,15 +59,30 @@ export function command(cwd: string, executable: string, args: readonly string[]
   });
 }
 
+/**
+ * Offline tiers run with `--network none`, which is what keeps tests offline.
+ * npm's own offline mode would also refuse the local fixture registry, whose
+ * port changes every run, so consumer npm commands prefer the cache instead.
+ */
+export const consumerNpmEnv = { npm_config_offline: 'false', npm_config_prefer_offline: 'true' } as const;
+
+/** Name `test:prepare` when npm could not get a package from the cache or from the unreachable public registry. */
+export function explainCacheMiss(error: unknown): unknown {
+  if (!(error instanceof Error)) return error;
+  const message = error.message;
+  const cacheMiss = /ENOTCACHED/.test(message)
+    || (/\b(?:ENOTFOUND|EAI_AGAIN|ECONNREFUSED|ENETUNREACH)\b/.test(message) && /registry\.npmjs\.org/.test(message));
+  return cacheMiss
+    ? new Error(`The npm cache is missing a package this test installs. Run: npm run test:prepare\n${message}`, { cause: error })
+    : error;
+}
+
 export async function npm(root: string, args: readonly string[], options: NpmOptions = {}): Promise<CommandResult> {
   try {
     return await command(root, 'npm', [...args, '--ignore-scripts', '--no-audit', '--no-fund',
-      options.includeOptional === false ? '--omit=optional' : '--include=optional'], { env: options.env });
+      options.includeOptional === false ? '--omit=optional' : '--include=optional'], { env: { ...consumerNpmEnv, ...options.env } });
   } catch (error) {
-    if (error instanceof Error && /ENOTCACHED/.test(error.message)) {
-      throw new Error(`The npm cache is missing a package this test installs. Run: npm run test:prepare\n${error.message}`, { cause: error });
-    }
-    throw error;
+    throw explainCacheMiss(error);
   }
 }
 

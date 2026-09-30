@@ -139,7 +139,11 @@ function main(argv: readonly string[]): void {
   assertContainer(tier, native);
   const { budget, purpose } = tiers[tier];
   process.stdout.write(`fe-deps ${tier} tier (${budget}): ${purpose}\n`);
-  if (resultsDir) fs.mkdirSync(resultsDir, { recursive: true });
+  if (resultsDir) {
+    fs.mkdirSync(resultsDir, { recursive: true });
+    // A run's results never mix with an earlier run's.
+    for (const name of fs.readdirSync(resultsDir)) if (name.endsWith('.tap') || name.endsWith('-timings.json')) fs.rmSync(path.join(resultsDir, name));
+  }
   const timings: { label: string; seconds: number; status: number }[] = [];
   const started = Date.now();
   for (const step of steps(tier, args, native)) {
