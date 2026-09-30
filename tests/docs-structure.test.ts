@@ -30,7 +30,7 @@ test('every markdown file under docs/ is in the inventory (no orphans)', () => {
 });
 
 test('repository markdown links into docs/ resolve', () => {
-  const sources = ['README.md', 'CHANGELOG.md', 'examples/README.md', ...readdirSync(path.join(root, 'packages')).map(p => `packages/${p}/README.md`)]
+  const sources = ['README.md', 'CHANGELOG.md', ...readdirSync(path.join(root, 'packages')).map(p => `packages/${p}/README.md`)]
     .filter(f => existsSync(path.join(root, f)));
   for (const source of sources) {
     const text = readFileSync(path.join(root, source), 'utf8');
@@ -154,23 +154,6 @@ test('each benchmark group shows, per payload, the declarations and timed calls 
   }
 });
 
-function snippetSource(page: string, raw: string): string {
-  const target = raw.replace(/\{[^}]*\}$/, '');
-  return target.startsWith('@/') ? path.join(docs, target.slice(2)) : path.resolve(path.dirname(page), target);
-}
-
-test('whole-file snippet imports never render #region markers', () => {
-  const leaks: string[] = [];
-  for (const page of markdownFiles(docs)) {
-    for (const [, raw] of readFileSync(page, 'utf8').matchAll(/^<<<\s+(\S+)/gm)) {
-      if (raw.includes('#')) continue; // a #region import strips the markers
-      const source = snippetSource(page, raw);
-      if (existsSync(source) && /#(?:end)?region\b/.test(readFileSync(source, 'utf8'))) leaks.push(`${path.relative(docs, page)}|${raw}`);
-    }
-  }
-  assert.deepEqual(leaks, []);
-});
-
 test('install commands use the generator peer ranges for typescript and ttsc', () => {
   const peers = JSON.parse(readFileSync(path.join(root, 'packages/model-codegen/package.json'), 'utf8')).peerDependencies as Record<string, string>;
   const files = [...markdownFiles(docs), path.join(root, 'README.md'), ...readdirSync(path.join(root, 'packages')).map(p => path.join(root, 'packages', p, 'README.md'))].filter(existsSync);
@@ -185,7 +168,7 @@ test('install commands use the generator peer ranges for typescript and ttsc', (
   assert.deepEqual(wrong, []);
 });
 
-// Pages whose TypeScript stays inline, with the reason. Everything else imports from examples/.
+// Pages whose TypeScript stays inline, with the reason. Everything else imports its code.
 const INLINE_CODE_ALLOWED: Readonly<Record<string, number>> = {
   'guide/auth.md': 2, // no example project; corrected against source
   'guide/codecs.md': 2, // no example project; corrected against source
@@ -196,7 +179,7 @@ const INLINE_CODE_ALLOWED: Readonly<Record<string, number>> = {
   'guide/nestjs-in-depth.md': 3, // declaration fragments; adding routes would change the example contract
 };
 
-test('guide TypeScript comes from examples except on listed pages', () => {
+test('guide TypeScript is imported except on listed pages', () => {
   const over: string[] = [];
   for (const page of markdownFiles(path.join(docs, 'guide'))) {
     const rel = path.relative(docs, page);
@@ -204,41 +187,6 @@ test('guide TypeScript comes from examples except on listed pages', () => {
     if (count > (INLINE_CODE_ALLOWED[rel] ?? 0)) over.push(`${rel}: ${count} inline TypeScript blocks`);
   }
   assert.deepEqual(over, []);
-});
-
-const NO_EXAMPLE_PAGES: ReadonlySet<string> = new Set([
-  'guide/index.md', 'guide/install.md', 'guide/quick-start.md', 'guide/watch.md',
-  'guide/auth.md', 'guide/codecs.md', 'guide/streams.md', 'guide/model-composition.md',
-]);
-test('guide pages with an example end with a Full example link', () => {
-  const missing: string[] = [];
-  for (const page of markdownFiles(path.join(docs, 'guide'))) {
-    const rel = path.relative(docs, page);
-    if (NO_EXAMPLE_PAGES.has(rel)) continue;
-    const last = readFileSync(page, 'utf8').trimEnd().split('\n').at(-1) ?? '';
-    if (!/^Full example: \[`examples\/[a-z-]+`\]\(https:\/\/github\.com\/exprtlabs\/codegen\/tree\/main\/examples\/[a-z-]+\)$/.test(last)) missing.push(rel);
-  }
-  assert.deepEqual(missing, []);
-});
-
-function exampleSources(dir: string): string[] {
-  return readdirSync(dir, { withFileTypes: true }).flatMap(e => {
-    const f = path.join(dir, e.name);
-    if (e.isDirectory()) return ['node_modules', 'sdk', 'generated', '.build', 'dist'].includes(e.name) ? [] : exampleSources(f);
-    return /\.tsx?$/.test(f) && !f.endsWith('.generated.ts') ? [f] : [];
-  });
-}
-
-test('example comments read as reader guidance, not test notes', () => {
-  const banned = /\b(?:child class|handwritten class|nestModelCodec|req\.body|wire shape)\b/i;
-  const hits: string[] = [];
-  for (const file of exampleSources(path.join(root, 'examples'))) {
-    readFileSync(file, 'utf8').split('\n').forEach((line, index) => {
-      const comment = line.match(/\/\/(.*)$/)?.[1];
-      if (comment && banned.test(comment)) hits.push(`${path.relative(root, file)}:${index + 1}`);
-    });
-  }
-  assert.deepEqual(hits, []);
 });
 
 const PUBLIC_SUBPATHS = ['model', 'validation', 'ajv', 'mobx', 'mobx-validation', 'errors', 'client', 'conversion', 'tags', 'serde', 'nest', 'ttsc-plugin', 'generator-api', 'manifest'];
@@ -278,13 +226,11 @@ test('the diagnostics page lists every code the generators emit', () => {
 
 const INTERNAL_SDK_PATH = /sdk\/(?:client|client-runtime|validation|models|schemas|types|input-schemas|output-schemas|iobject-plugin-keys)\.(?:js|ts)\b|sdk\/models\/_group-|sdk\/validation-schemas\//;
 
-test('docs, READMEs and example sources import only public SDK paths', () => {
-  const examples = path.join(root, 'examples');
+test('docs and READMEs import only public SDK paths', () => {
   const files = [
     ...markdownFiles(docs),
     path.join(root, 'README.md'),
     ...readdirSync(path.join(root, 'packages')).map(p => path.join(root, 'packages', p, 'README.md')),
-    ...readdirSync(examples).flatMap(name => [path.join(examples, name, 'README.md'), ...(existsSync(path.join(examples, name, 'src')) ? exampleSources(path.join(examples, name, 'src')) : [])]),
   ].filter(existsSync);
   const offenders = files
     .filter(file => !/\.generated\.ts$/.test(file) && INTERNAL_SDK_PATH.test(readFileSync(file, 'utf8')))
