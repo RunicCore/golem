@@ -4,7 +4,7 @@ import path from 'node:path';
 import test from 'node:test';
 import { codecPublicId } from '@exprtlabs/golem/schema-graph';
 import type { ModelTypeDescriptor } from '@exprtlabs/golem/model';
-import { runPipeline } from '#codegen/cli';
+import { runPipeline } from '#golem/cli';
 import { copyFixtureFile, createFixtureProject, linkProjectPackages } from './fixture-project.js';
 import { command, workspace } from './support/process.js';
 import { tscBin } from './openapi/helpers.js';

@@ -37,10 +37,10 @@ const F = 'scripts/benchmark/fixtures/upstream';
 
 /** Libraries are compared only within a group, where every adapter does the same job. */
 export const GROUPS: readonly GroupSpec[] = [
-  { id: 'plain', label: 'Plain objects, validated', description: 'JSON text to validated plain objects and back. Codegen uses an IObject declaration.',
+  { id: 'plain', label: 'Plain objects, validated', description: 'JSON text to validated plain objects and back. Golem uses an IObject declaration.',
     operations: { parse: ['codegen-object', 'typia', 'zod'], stringify: ['codegen-object', 'typia', 'zod'], validate: ['codegen-object', 'typia', 'zod'] },
     operationDescriptions: { parse: 'JSON text to a checked plain object', stringify: 'plain object, checked, to JSON text', validate: 'check a plain object' } },
-  { id: 'classes', label: 'Class instances', description: 'JSON text to class instances and back, without validation. Codegen uses an IModel declaration.',
+  { id: 'classes', label: 'Class instances', description: 'JSON text to class instances and back, without validation. Golem uses an IModel declaration.',
     operations: { parse: ['codegen', 'class-transformer'], stringify: ['codegen', 'class-transformer'], validate: [] },
     operationDescriptions: { parse: 'JSON text to instances of your classes', stringify: 'instances of your classes to JSON text' } },
   { id: 'validated-classes', label: 'Validated class instances', description: 'Class instances checked against their constraints.',
@@ -49,13 +49,13 @@ export const GROUPS: readonly GroupSpec[] = [
 ];
 
 export const BENCH_ADAPTERS: readonly AdapterSpec[] = [
-  { id: 'codegen-object', fixtureAdapter: 'codegen-object', project: 'standalone', group: 'plain', label: 'Codegen (IObject)', library: '@exprtlabs/golem', checked: true, sourceFile: `${F}/codegen-object.ts` },
+  { id: 'codegen-object', fixtureAdapter: 'codegen-object', project: 'standalone', group: 'plain', label: 'Golem (IObject)', library: '@exprtlabs/golem', checked: true, sourceFile: `${F}/codegen-object.ts` },
   { id: 'typia', fixtureAdapter: 'typia', project: 'plain', group: 'plain', label: 'Typia', library: 'typia', checked: true, sourceFile: `${F}/typia.ts` },
   { id: 'zod', fixtureAdapter: 'zod', project: 'plain', group: 'plain', label: 'Zod', library: 'zod', checked: true, sourceFile: `${F}/zod.ts` },
-  { id: 'codegen', fixtureAdapter: 'codegen', project: 'plain', group: 'classes', label: 'Codegen (IModel)', library: '@exprtlabs/golem', checked: false, sourceFile: `${F}/codegen.ts` },
+  { id: 'codegen', fixtureAdapter: 'codegen', project: 'plain', group: 'classes', label: 'Golem (IModel)', library: '@exprtlabs/golem', checked: false, sourceFile: `${F}/codegen.ts` },
   { id: 'class-transformer', fixtureAdapter: 'class-transformer', project: 'plain', group: 'classes', label: 'class-transformer', library: 'class-transformer', checked: false, sourceFile: `${F}/class-transformer.ts` },
-  { id: 'codegen-standalone', fixtureAdapter: 'codegen-standalone', project: 'standalone', group: 'validated-classes', label: 'Codegen (IModel, validated)', library: '@exprtlabs/golem', checked: true, sourceFile: `${F}/codegen.ts` },
-  { id: 'codegen-runtime', fixtureAdapter: 'codegen-runtime', project: 'runtime', group: 'validated-classes', label: 'Codegen (IModel, runtime Ajv)', library: '@exprtlabs/golem', checked: true, sourceFile: `${F}/codegen.ts` },
+  { id: 'codegen-standalone', fixtureAdapter: 'codegen-standalone', project: 'standalone', group: 'validated-classes', label: 'Golem (IModel, validated)', library: '@exprtlabs/golem', checked: true, sourceFile: `${F}/codegen.ts` },
+  { id: 'codegen-runtime', fixtureAdapter: 'codegen-runtime', project: 'runtime', group: 'validated-classes', label: 'Golem (IModel, runtime Ajv)', library: '@exprtlabs/golem', checked: true, sourceFile: `${F}/codegen.ts` },
   { id: 'class-validator', fixtureAdapter: 'class-validator', project: 'plain', group: 'validated-classes', label: 'class-validator', library: 'class-validator', checked: true, sourceFile: `${F}/class-validator.ts` },
 ];
 

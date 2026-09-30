@@ -3,10 +3,10 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 
 import { hasErrorCode, isRecord } from './generator-api.js';
-import type { CodegenArtifact } from './generator-api.js';
+import type { GolemArtifact } from './generator-api.js';
 import { canonicalPath, contains } from './config.js';
 import { defaultModelOutput, isOperationCodecRegistry, operationCodecRegistryPath } from './generated-paths.js';
-import type { CodegenConfig, CodegenJob } from './config.js';
+import type { GolemConfig, GolemJob } from './config.js';
 
 export interface InventoryEntry {
   job: string;
@@ -47,16 +47,16 @@ function samePath(left: string, right: string): boolean {
   return canonicalPath(left) === canonicalPath(right);
 }
 
-function relativePath(config: CodegenConfig, filename: string): string {
+function relativePath(config: GolemConfig, filename: string): string {
   const relative = portable(path.relative(canonicalPath(config.directory), canonicalPath(filename)));
   return relative || '.';
 }
 
-function inventoryKey(config: CodegenConfig, filename: string): string {
+function inventoryKey(config: GolemConfig, filename: string): string {
   return portable(path.relative(canonicalPath(config.directory), canonicalPath(filename)));
 }
 
-function inventoryPath(config: CodegenConfig, key: string): string {
+function inventoryPath(config: GolemConfig, key: string): string {
   return path.resolve(config.directory, key);
 }
 
@@ -66,7 +66,7 @@ function configuredDestinationPath(destination: string): string {
 }
 
 /** Keep the inventory under the canonical configuration directory. */
-function inventoryBoundaryPath(config: CodegenConfig): string {
+function inventoryBoundaryPath(config: GolemConfig): string {
   const requested = path.resolve(config.inventoryFile);
   const configuredRoot = path.resolve(config.directory);
   if (contains(configuredRoot, requested)) {
@@ -75,7 +75,7 @@ function inventoryBoundaryPath(config: CodegenConfig): string {
   return canonicalPath(requested);
 }
 
-function assertInventoryPath(config: CodegenConfig): void {
+function assertInventoryPath(config: GolemConfig): void {
   const boundary = inventoryBoundaryPath(config);
   const link = symlinkInPath(boundary);
   if (link !== undefined) {
@@ -114,11 +114,11 @@ function assertDestinationPath(filename: string, destination: string, label: str
   }
 }
 
-function modelOutputOf(job: Extract<CodegenJob, { kind: 'models' }>): string {
+function modelOutputOf(job: Extract<GolemJob, { kind: 'models' }>): string {
   return job.options.output ?? defaultModelOutput(job.options.root);
 }
 
-function jobDestinations(job: CodegenJob): readonly string[] {
+function jobDestinations(job: GolemJob): readonly string[] {
   if (job.kind === 'controllers') {
     return [job.options.output, operationCodecRegistryPath(job.options.root)];
   }
@@ -130,7 +130,7 @@ function jobDestinations(job: CodegenJob): readonly string[] {
   return [modelOutputOf(job), ...sourceDirectories];
 }
 
-function artifactDestination(config: CodegenConfig, job: CodegenJob, filename: string): string {
+function artifactDestination(config: GolemConfig, job: GolemJob, filename: string): string {
   const destinations = jobDestinations(job);
   if (job.kind === 'controllers') {
     const extra = operationCodecRegistryPath(job.options.root);
@@ -156,7 +156,7 @@ function destinationKind(owner: string): InventoryEntry['destinationKind'] {
   return owner === '@exprtlabs/golem-ts-openapi' ? 'file' : 'directory';
 }
 
-function inventoryDestination(config: CodegenConfig, filename: string, entry: InventoryEntry): string {
+function inventoryDestination(config: GolemConfig, filename: string, entry: InventoryEntry): string {
   const destination = recordedDestinationPath(config, entry.destination);
   if (entry.destinationKind === 'file') {
     // A controllers job owns exactly its configured document and the operation-codec registry.
@@ -170,7 +170,7 @@ function inventoryDestination(config: CodegenConfig, filename: string, entry: In
   return destination;
 }
 
-function recordedDestinationPath(config: CodegenConfig, destination: string): string {
+function recordedDestinationPath(config: GolemConfig, destination: string): string {
   const absolute = path.resolve(canonicalPath(config.directory), destination);
   if (canonicalPath(absolute) !== absolute) {
     throw new Error(`Generated output destination moved through a symbolic link: ${destination}`);
@@ -178,7 +178,7 @@ function recordedDestinationPath(config: CodegenConfig, destination: string): st
   return absolute;
 }
 
-function assertProtectedPath(config: CodegenConfig, filename: string): void {
+function assertProtectedPath(config: GolemConfig, filename: string): void {
   if (samePath(filename, config.configFile) || samePath(filename, config.inventoryFile)) {
     throw new Error(`Generated output collision: ${filename}`);
   }
@@ -214,7 +214,7 @@ export function marker(content: string, owner: string): boolean {
   } catch { return false; }
 }
 
-export function loadInventory(config: CodegenConfig): Inventory {
+export function loadInventory(config: GolemConfig): Inventory {
   assertInventoryPath(config);
   const content = readFile(config.inventoryFile);
   if (content === undefined) return { version: 1, files: {} };
@@ -258,7 +258,7 @@ export function atomicWrite(filename: string, content: string): boolean {
   return true;
 }
 
-function saveInventory(config: CodegenConfig, inventory: Inventory): void {
+function saveInventory(config: GolemConfig, inventory: Inventory): void {
   assertInventoryPath(config);
   const files = Object.fromEntries(Object.entries(inventory.files)
     .sort(([a], [b]) => a.localeCompare(b))
@@ -272,7 +272,7 @@ function saveInventory(config: CodegenConfig, inventory: Inventory): void {
   atomicWrite(config.inventoryFile, `${JSON.stringify({ version: 1, files }, null, 2)}\n`);
 }
 
-function assertNoUnrecordedOutputs(config: CodegenConfig, inventory: Inventory, job: CodegenJob, expected: ReadonlyMap<string, ExpectedArtifact>, check: boolean): string[] {
+function assertNoUnrecordedOutputs(config: GolemConfig, inventory: Inventory, job: GolemJob, expected: ReadonlyMap<string, ExpectedArtifact>, check: boolean): string[] {
   if (job.kind === 'controllers') {
     const filename = path.resolve(job.options.output);
     const key = inventoryKey(config, filename);
@@ -318,7 +318,7 @@ function assertNoUnrecordedOutputs(config: CodegenConfig, inventory: Inventory, 
   return drift;
 }
 
-export function applyJob(config: CodegenConfig, inventory: Inventory, job: CodegenJob, artifacts: readonly CodegenArtifact[], check = false): string[] {
+export function applyJob(config: GolemConfig, inventory: Inventory, job: GolemJob, artifacts: readonly GolemArtifact[], check = false): string[] {
   assertInventoryPath(config);
   if (!Array.isArray(artifacts)) throw new Error(`${job.package} returned invalid artifacts.`);
   const expected = new Map<string, ExpectedArtifact>();
@@ -376,7 +376,7 @@ export function applyJob(config: CodegenConfig, inventory: Inventory, job: Codeg
   return [...expected.values()].map(artifact => artifact.filename);
 }
 
-export function removeRetiredJobs(config: CodegenConfig, inventory: Inventory, check = false): void {
+export function removeRetiredJobs(config: GolemConfig, inventory: Inventory, check = false): void {
   assertInventoryPath(config);
   const active = new Set(config.jobs.map(job => job.id));
   const retired = Object.entries(inventory.files).filter(([, entry]) => !active.has(entry.job));

@@ -10,8 +10,8 @@ import { generate, type OpenApiGenerationContext, type OpenApiGenerationProfile,
 export type { OpenApiGenerationProfile };
 
 export function repoRoot(): string {
-  const codegenDist = dirname(fileURLToPath(import.meta.resolve('@exprtlabs/golem/model')));
-  return dirname(dirname(dirname(codegenDist)));
+  const golemDist = dirname(fileURLToPath(import.meta.resolve('@exprtlabs/golem/model')));
+  return dirname(dirname(dirname(golemDist)));
 }
 
 export function openApiFixture(...parts: string[]): string {

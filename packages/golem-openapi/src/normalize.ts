@@ -1,5 +1,5 @@
 import { asRecord, isJsonObject, objectEntries, readBoolean, readString, type JsonObject } from './json.js';
-import { CodegenDiagnosticSeverity, identifier, type CodegenDiagnostic } from '@exprtlabs/golem/generator-api';
+import { GolemDiagnosticSeverity, identifier, type GolemDiagnostic } from '@exprtlabs/golem/generator-api';
 import { inboundOperationName, operationName } from './names.js';
 
 const HTTP_METHODS_31 = ['get', 'put', 'post', 'delete', 'options', 'head', 'patch', 'trace'] as const;
@@ -82,7 +82,7 @@ export interface NormalizedDocument {
   readonly securitySchemes: JsonObject;
   readonly webhooks: JsonObject;
   /** Deterministic renames the allocator applied to generated operation names. */
-  readonly diagnostics: readonly CodegenDiagnostic[];
+  readonly diagnostics: readonly GolemDiagnostic[];
 }
 
 export function decodePointerToken(token: string): string {
@@ -304,14 +304,14 @@ function reserveName(names: OperationNames, requested: string, source: string, a
 function reserveOperationName(
   names: OperationNames,
   allocated: { readonly name: string; readonly requested: string },
-  diagnostics: CodegenDiagnostic[],
+  diagnostics: GolemDiagnostic[],
   source: string,
 ): string {
   const name = reserveName(names, allocated.name, source, allocated.requested);
   if (allocated.requested !== name) {
     diagnostics.push({
       code: 'OPENAPI_OPERATION_RENAMED',
-      severity: CodegenDiagnosticSeverity.Warning,
+      severity: GolemDiagnosticSeverity.Warning,
       message: `operation ${source} name ${JSON.stringify(allocated.requested)} is reserved; generated as ${JSON.stringify(name)}`,
     });
   }
@@ -364,7 +364,7 @@ export function normalizeDocument(document: unknown): NormalizedDocument {
   const featureLine = featureLineOf(root.openapi);
   const adapter = VERSION_ADAPTERS[featureLine];
   const names: OperationNames = new Map();
-  const diagnostics: CodegenDiagnostic[] = [];
+  const diagnostics: GolemDiagnostic[] = [];
   const operations: NormalizedOperation[] = [];
   for (const [route, rawPathItem] of objectEntries(root.paths)) {
     const pathItem = asRecord(resolveLocal(document, rawPathItem));

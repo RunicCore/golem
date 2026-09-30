@@ -55,7 +55,7 @@
     "zod": "4.6.5"
   },
   "imports": {
-    "#codegen/*": "./packages/golem/dist/tooling/*.js",
+    "#golem/*": "./packages/golem/dist/tooling/*.js",
     "#openapi/*": "./packages/golem-openapi/dist/*.js",
     "#model/*": "./packages/golem-model/dist/*.js",
     "#controllers/*": "./packages/golem-ts-openapi/dist/*.js"

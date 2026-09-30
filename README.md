@@ -1,4 +1,4 @@
-# ExprtLabs Codegen
+# ExprtLabs Golem
 
 One TypeScript-first toolchain for models, validation, JSON conversion,
 OpenAPI documents and typed API clients. Write the type once in
@@ -70,7 +70,7 @@ Run it: `npx ttsc && node .build/src/main.js`. Full setup: [Quick start](docs/gu
 
 ## More
 
-- [What is Codegen](docs/guide/index.md)
+- [What is Golem](docs/guide/index.md)
 - [Installation](docs/guide/install.md)
 - [Quick start](docs/guide/quick-start.md)
 - [Configuration reference](docs/reference/config.md)

@@ -3,19 +3,19 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { loadInventory, applyJob, digest } from '#codegen/outputs';
-import type { CodegenConfig, CodegenJob } from '#codegen/config';
+import { loadInventory, applyJob, digest } from '#golem/outputs';
+import type { GolemConfig, GolemJob } from '#golem/config';
 
 interface OutputFixture {
-  config: CodegenConfig;
-  job: CodegenJob;
+  config: GolemConfig;
+  job: GolemJob;
   filename: string;
 }
 
 function fixture(t: TestContext): OutputFixture {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'runic-outputs-'));
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
-  const job: CodegenJob = {
+  const job: GolemJob = {
     id: 'models:.',
     kind: 'models',
     package: '@exprtlabs/golem-model',
@@ -24,7 +24,7 @@ function fixture(t: TestContext): OutputFixture {
       profile: { mobx: false, validation: true },
     },
   };
-  const config: CodegenConfig = {
+  const config: GolemConfig = {
     directory,
     configFile: path.join(directory, 'golem.yaml'),
     inventoryFile: path.join(directory, '.golem/outputs.json'),

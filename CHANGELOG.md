@@ -85,7 +85,7 @@ The first release candidate includes four independently installable packages:
 - Fixed: component names containing `~`, `/` or spaces generate type names, registry ids and discriminator mappings correctly (for example `a~cat` produced an undefined type `A0cat`).
 - A non-object where a generated model expects an object is rejected as input (`LibError` of kind `deserialization`, `causedByInput`, HTTP 400 in Nest) instead of a `TypeError`.
 - **Breaking:** OpenAPI 3.0 documents are rejected; convert them to 3.1 or 3.2.
-- **Breaking:** `@redocly/openapi-core` is no longer a dependency. Codegen resolves `$ref`s and validates documents itself.
+- **Breaking:** `@redocly/openapi-core` is no longer a dependency. Golem resolves `$ref`s and validates documents itself.
 - **Breaking:** a schema pulled in from another file is named after its path (`schemas/user.json` → `schemas.user`, model `SchemasUser`) instead of its file name with a numeric suffix. A root component that is only a `$ref` to an external file keeps its own name; a root component with a `$ref` plus other keys is not an alias, so its target still gets the path-based name and can collide with the root name. A name clash now fails generation, naming both locations.
 - **Breaking:** an implicit discriminator value for a schema from another file is now its path-based component name (for example `schemas.dog`). Use an explicit `mapping`, or a root alias, to keep a chosen value.
 - **Breaking:** the `spec-ref-siblings`, `path-not-include-query`, and `nullable-type-sibling` validation rules are gone; error lines name the file that contains the problem.

@@ -4,7 +4,7 @@ import path from 'node:path';
 import { test } from 'node:test';
 import {
   DEFAULT_MODEL_OUTPUT, OPERATION_CODEC_REGISTRY, defaultModelOutput, isOperationCodecRegistry, operationCodecRegistryPath,
-} from '#codegen/generated-paths';
+} from '#golem/generated-paths';
 import { workspace } from './support/process.js';
 
 test('default generated paths resolve under the job root', () => {

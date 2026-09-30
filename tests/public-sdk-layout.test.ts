@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { test } from 'node:test';
 import { parse } from 'yaml';
-import * as ts from '#codegen/typescript-ns';
+import * as ts from '#golem/typescript-ns';
 import { writeSdk } from '#openapi/generator';
 import { createFixtureProject, readFixture, writeGeneratedArtifacts } from './fixture-project.js';
 

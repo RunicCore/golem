@@ -46,8 +46,8 @@ test('packed controller generator installs independently and resolves real Nest 
   }
   assert.equal(fs.existsSync(path.join(root, 'node_modules/.bin/golem')), true);
   assert.equal(fs.lstatSync(path.join(root, 'node_modules/@exprtlabs/golem')).isSymbolicLink(), false);
-  const codegenManifest = JSON.parse(fs.readFileSync(path.join(root, 'node_modules/@exprtlabs/golem/package.json'), 'utf8')) as { bin?: Record<string, string> };
-  assert.deepEqual(Object.keys(codegenManifest.bin ?? {}), ['golem']);
+  const golemManifest = JSON.parse(fs.readFileSync(path.join(root, 'node_modules/@exprtlabs/golem/package.json'), 'utf8')) as { bin?: Record<string, string> };
+  assert.deepEqual(Object.keys(golemManifest.bin ?? {}), ['golem']);
 });
 
 for (const profile of [

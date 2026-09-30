@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import test from 'node:test';
-import type { CodegenProfile } from '@exprtlabs/golem/generator-api';
+import type { GolemProfile } from '@exprtlabs/golem/generator-api';
 import { createOpenApiAjvEngine } from '@exprtlabs/golem/ajv';
 import { ClientRuntime } from '@exprtlabs/golem/client';
 import { writeSdk } from '#openapi/generator';
@@ -26,7 +26,7 @@ function sdkDocument(marker: string): Record<string, unknown> {
 
 type PayloadClient = { sendPayload(): { execute(input: { body: { marker: string } }): Promise<{ body: unknown }> } };
 
-async function loadSdk(root: string, marker: string, profile: CodegenProfile): Promise<PayloadClient> {
+async function loadSdk(root: string, marker: string, profile: GolemProfile): Promise<PayloadClient> {
   const output = path.join(root, marker);
   writeGeneratedSdk(writeSdk, sdkDocument(marker), { output, name: 'Engine', profile });
   compileGeneratedSdk(output, []);
@@ -58,7 +58,7 @@ async function loadSdk(root: string, marker: string, profile: CodegenProfile): P
 
 for (const ajvStandalone of [false, true]) {
   test(`SDK clients share one default validation engine and SDKs in one process keep their own schemas (${ajvStandalone ? 'standalone' : 'runtime Ajv'})`, async (t) => {
-    const profile: CodegenProfile = { mobx: false, validation: true, ajvStandalone };
+    const profile: GolemProfile = { mobx: false, validation: true, ajvStandalone };
     const root = createFixtureProject(t, 'golem-sdk-engine-');
     const clients = { A: await loadSdk(root, 'A', profile), B: await loadSdk(root, 'B', profile) };
     for (const [marker, client] of Object.entries(clients)) {

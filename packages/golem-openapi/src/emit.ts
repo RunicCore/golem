@@ -1,5 +1,5 @@
 import path from 'node:path';
-import type { CodegenArtifact, CodegenDiagnostic, CodegenResult } from '@exprtlabs/golem/generator-api';
+import type { GolemArtifact, GolemDiagnostic, GolemResult } from '@exprtlabs/golem/generator-api';
 import { isRecord } from '@exprtlabs/golem/generator-api';
 import { stableJson } from '@exprtlabs/golem/manifest';
 import { compileStandaloneValidators } from '@exprtlabs/golem/ajv-tooling';
@@ -23,9 +23,9 @@ import {
 import { buildSchemaData, generateSchemas } from './schemas.js';
 import { generateDirectionalSchemas, generateTypes } from './types.js';
 
-export interface OpenApiArtifact extends CodegenArtifact {}
+export interface OpenApiArtifact extends GolemArtifact {}
 
-export interface WriteSdkResult extends CodegenResult {}
+export interface WriteSdkResult extends GolemResult {}
 
 export interface WriteSdkOptions {
   readonly output: string;
@@ -148,7 +148,7 @@ export function generatedFiles(document: unknown, options: WriteSdkOptions): {
   clientName: string;
   operations: readonly NormalizedOperation[];
   inboundOperations: readonly NormalizedOperation[];
-  diagnostics: readonly CodegenDiagnostic[];
+  diagnostics: readonly GolemDiagnostic[];
 } {
   const profile = requireProfile(options.profile);
   const ir = normalizeAndValidate(document);

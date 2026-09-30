@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import path from 'node:path';
 import test, { type TestContext } from 'node:test';
-import { pascalIdentifier, policySuffix } from '#codegen/type-analysis/projection-names';
+import { pascalIdentifier, policySuffix } from '#golem/type-analysis/projection-names';
 import { generate } from '#controllers/generator';
 import { createControllerFixture } from './fixture-templates/controllers/project.js';
 

@@ -5,7 +5,7 @@ import path from 'node:path';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { test, type TestContext } from 'node:test';
 
-import { runPipeline, watchPipeline } from '#codegen/cli';
+import { runPipeline, watchPipeline } from '#golem/cli';
 import { generate as generateOpenApi } from '#openapi/generator';
 import { workspace } from './support/process.js';
 import { writeFixture } from './support/consumer.js';

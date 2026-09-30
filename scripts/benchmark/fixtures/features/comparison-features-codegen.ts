@@ -36,7 +36,7 @@ function checkConverted(model: object): void {
   assert.equal(Object.hasOwn(model, 'memo'), false);
 }
 
-export async function createCodegenFeatureFixtures(adapter: Adapter): Promise<readonly ComparisonFixture[]> {
+export async function createGolemFeatureFixtures(adapter: Adapter): Promise<readonly ComparisonFixture[]> {
   const validation = validationFor(adapter);
   const input = checkoutInput();
   // #region calls

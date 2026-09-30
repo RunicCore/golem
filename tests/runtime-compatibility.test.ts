@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { assertRuntimeCompatible, compareReleaseVersions } from '#codegen/runtime-compatibility';
+import { assertRuntimeCompatible, compareReleaseVersions } from '#golem/runtime-compatibility';
 
 test('release versions order by number, and a prerelease precedes its release', () => {
   assert.ok(compareReleaseVersions('1.0.0-rc', '1.0.0') < 0);

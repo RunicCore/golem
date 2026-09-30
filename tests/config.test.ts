@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { loadConfig } from '#codegen/config';
-import { parseArguments, providersFor } from '#codegen/cli';
+import { loadConfig } from '#golem/config';
+import { parseArguments, providersFor } from '#golem/cli';
 
 function fixture(t: TestContext, yaml: string): { root: string; filename: string } {
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'runic-config-')));

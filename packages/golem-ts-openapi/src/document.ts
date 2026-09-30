@@ -1,6 +1,6 @@
 import * as path from 'node:path';
 import YAML from 'yaml';
-import { CodegenDiagnosticSeverity, TsToOpenApiDiagnosticCode, TsToOpenApiError } from './diagnostics.js';
+import { GolemDiagnosticSeverity, TsToOpenApiDiagnosticCode, TsToOpenApiError } from './diagnostics.js';
 import {
   collectOperations,
   type OperationBuildContext,
@@ -36,7 +36,7 @@ function stable(value: unknown): unknown {
 function requiredString(value: unknown, field: string): string {
   if (typeof value !== 'string' || value.trim() === '') {
     throw new TsToOpenApiError({
-      severity: CodegenDiagnosticSeverity.Error,
+      severity: GolemDiagnosticSeverity.Error,
       code: TsToOpenApiDiagnosticCode.InvalidInfo,
       message: `OpenAPI info.${field} must be a non-empty string.`,
     });
@@ -51,7 +51,7 @@ function invalidDocument(
   message: string,
 ): never {
   throw new TsToOpenApiError({
-    severity: CodegenDiagnosticSeverity.Error,
+    severity: GolemDiagnosticSeverity.Error,
     code,
     message,
   });
@@ -314,7 +314,7 @@ export async function buildDocument(
   const openapi = context.openapiVersion ?? '3.2.0';
   if (openapi !== '3.2.0' && openapi !== '3.1.2') {
     throw new TsToOpenApiError({
-      severity: CodegenDiagnosticSeverity.Error,
+      severity: GolemDiagnosticSeverity.Error,
       code: TsToOpenApiDiagnosticCode.UnsupportedOpenApiVersion,
       message: `OpenAPI version ${openapi} is not supported; use 3.2.0 or 3.1.2.`,
     });

@@ -12,7 +12,7 @@ import (
 	"github.com/samchon/ttsc/packages/ttsc/driver"
 )
 
-const codegenPluginName = "@exprtlabs/golem/ttsc-plugin"
+const golemPluginName = "@exprtlabs/golem/ttsc-plugin"
 const nestPluginName = "@exprtlabs/golem-ts-openapi/ttsc-plugin"
 const defaultOperationCodecRegistry = "src/generated/operation-codecs.ts"
 
@@ -43,9 +43,9 @@ func pluginFeatures(raw string) (serde bool, nest bool) {
 		transform, _ := entry.Config["transform"].(string)
 		serdeOn, serdeSet := boolField(entry.Config, "serde")
 		nestOn, nestSet := boolField(entry.Config, "nest")
-		isCodegen := transform == codegenPluginName || entry.Name == codegenPluginName
+		isGolem := transform == golemPluginName || entry.Name == golemPluginName
 		isNest := transform == nestPluginName || entry.Name == nestPluginName || (nestSet && nestOn)
-		if isCodegen || isNest {
+		if isGolem || isNest {
 			recognized = true
 		}
 		if !serdeSet || serdeOn {

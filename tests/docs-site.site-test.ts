@@ -53,7 +53,7 @@ test('the built benchmarks page server-renders the first group table', () => {
   const html = readFileSync(benchmarksHtml, 'utf8');
   const table = html.slice(html.indexOf('bench-table'));
   assert.ok(html.includes('bench-table'), 'combined table rendered');
-  for (const text of ['Codegen (IObject)', 'Typia', 'Zod', 'not supported', 'Parse', 'Stringify', 'Validate']) assert.ok(table.includes(text), `table lacks "${text}"`);
+  for (const text of ['Golem (IObject)', 'Typia', 'Zod', 'not supported', 'Parse', 'Stringify', 'Validate']) assert.ok(table.includes(text), `table lacks "${text}"`);
 });
 
 test('built pages never render #region markers from imported snippets', () => {

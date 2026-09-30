@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { assertUniquePublicExports } from '#codegen/names';
+import { assertUniquePublicExports } from '#golem/names';
 
 const entry = "export * from './types.js';\nexport * from './schemas.js';\n";
 

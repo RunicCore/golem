@@ -1,8 +1,8 @@
 import type { Adapter, ComparisonFixture } from './fixture-contract.js';
 import { createClassTransformerFixtures } from './class-transformer.js';
 import { createClassValidatorFixtures } from './class-validator.js';
-import { createCodegenFixtures } from './codegen.js';
-import { createCodegenObjectFixtures } from './codegen-object.js';
+import { createGolemFixtures } from './codegen.js';
+import { createGolemObjectFixtures } from './codegen-object.js';
 import { createTypiaFixtures } from './typia.js';
 import { createZodFixtures } from './zod.js';
 
@@ -11,9 +11,9 @@ export async function createComparisonFixtures(adapter: Adapter): Promise<readon
     case 'codegen':
     case 'codegen-runtime':
     case 'codegen-standalone':
-      return createCodegenFixtures(adapter);
+      return createGolemFixtures(adapter);
     case 'codegen-object':
-      return createCodegenObjectFixtures(adapter);
+      return createGolemObjectFixtures(adapter);
     case 'class-transformer':
       return createClassTransformerFixtures(adapter);
     case 'class-validator':

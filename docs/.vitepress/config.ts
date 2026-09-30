@@ -22,7 +22,7 @@ function docsOutDir(): string {
 
 export default defineConfig({
   lang: 'en-US',
-  title: 'ExprtLabs Codegen',
+  title: 'ExprtLabs Golem',
   description: 'TypeScript models, validation and serialization, with OpenAPI clients and optional MobX integration.',
   srcDir: '.',
   base: docsBase(),
@@ -32,7 +32,7 @@ export default defineConfig({
   lastUpdated: false,
   appearance: 'dark',
   themeConfig: {
-    siteTitle: `Codegen v${releaseVersion}`,
+    siteTitle: `Golem v${releaseVersion}`,
     outline: [2, 3],
     search: {
       provider: 'local',

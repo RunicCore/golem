@@ -86,6 +86,6 @@ Validation is on and MobX is off by default.
 
 These keys go at the top level of `golem.yaml` ([all settings](/reference/config#validation-profiles)).
 
-## Add Codegen to your project
+## Add Golem to your project
 
 Next, build your first model in the [quick start](/guide/quick-start).

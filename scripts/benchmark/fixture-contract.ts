@@ -22,7 +22,7 @@ export interface ComparisonModule {
   createComparisonFixtures(adapter: Adapter): Promise<readonly ComparisonFixture[]>;
 }
 
-/* Codegen-only feature correctness (feature-check.ts). */
+/* Golem-only feature correctness (feature-check.ts). */
 export const MODES = ['conversion-only', 'runtime-ajv', 'standalone-ajv'] as const;
 export type Mode = typeof MODES[number];
 export const FEATURE_FIXTURES = ['reuse', 'nested-10', 'nested-200', 'compose', 'tagged', 'combined', 'sdk-extend'] as const;

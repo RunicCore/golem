@@ -19,11 +19,11 @@ import { generate } from '#model/generator';
 import { writeSdk } from '#openapi/generator';
 import { command, ttscEnv, workspace } from './support/process.js';
 import { generatedCodecId } from './support/consumer.js';
-import type { CodegenProfile } from '@exprtlabs/golem/generator-api';
+import type { GolemProfile } from '@exprtlabs/golem/generator-api';
 
 function fixture(
   t: TestContext,
-  profile: CodegenProfile = { mobx: false, validation: true },
+  profile: GolemProfile = { mobx: false, validation: true },
 ) {
   const { root } = createModelProject(t, {
     prefix: 'runic-serde-',

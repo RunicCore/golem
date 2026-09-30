@@ -2,7 +2,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { discoverSources, isRecord, resolveProfile } from './generator-api.js';
-import type { CodegenProfile, InputObserver } from './generator-api.js';
+import type { GolemProfile, InputObserver } from './generator-api.js';
 import type { CodecSchemaClosureEntry } from './ajv-tooling.js';
 
 export interface ModelManifestProvenance {
@@ -19,7 +19,7 @@ export interface ModelManifestEntry {
   readonly [key: string]: unknown;
 }
 export interface ModelManifest {
-  readonly profile: CodegenProfile;
+  readonly profile: GolemProfile;
   readonly models: readonly ModelManifestEntry[];
   readonly validationSchemaClosure?: readonly CodecSchemaClosureEntry[];
   readonly [key: string]: unknown;
@@ -55,11 +55,11 @@ export function sourceDigest(value: unknown): string {
     .digest('hex');
 }
 
-function isProfile(profile: unknown): profile is CodegenProfile {
+function isProfile(profile: unknown): profile is GolemProfile {
   return isRecord(profile) && ['mobx', 'validation', 'ajvStandalone', 'allowAny'].every(key => typeof profile[key] === 'boolean');
 }
 
-export function validateModelProfile(profile: unknown, filename = MODEL_MANIFEST_FILENAME): CodegenProfile {
+export function validateModelProfile(profile: unknown, filename = MODEL_MANIFEST_FILENAME): GolemProfile {
   if (!isRecord(profile)) {
     throw new Error(`Invalid model manifest ${filename}: profile must be an object.`);
   }
@@ -77,7 +77,7 @@ export function validateModelProfile(profile: unknown, filename = MODEL_MANIFEST
   return resolveProfile(profile);
 }
 
-export function modelManifestProfile(manifest: unknown, filename = MODEL_MANIFEST_FILENAME): CodegenProfile {
+export function modelManifestProfile(manifest: unknown, filename = MODEL_MANIFEST_FILENAME): GolemProfile {
   if (!isRecord(manifest)) {
     throw new Error(`Invalid model manifest ${filename}: expected an object.`);
   }

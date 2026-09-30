@@ -25,7 +25,7 @@ unions and the four-element IP tuple. Invalid verification inputs are cloned
 and mutated as `unknown`; no `any`-typed validation spoilers are copied from
 upstream. `ObjectHierarchical-Constrained` keeps the same nested payload but
 adds equivalent integer, range, string, pattern, and array-size constraints to
-the Codegen, class-validator, Typia and Zod declarations. The other fixtures are
+the Golem, class-validator, Typia and Zod declarations. The other fixtures are
 structural and intentionally contain no validation tags. The unconstrained
 `ObjectHierarchical` declarations remain only as base classes for the
 constrained class-transformer and class-validator models.

@@ -32,12 +32,12 @@
     {
       "id": "plain",
       "label": "Plain objects, validated",
-      "description": "JSON text to validated plain objects and back. Codegen uses an IObject declaration."
+      "description": "JSON text to validated plain objects and back. Golem uses an IObject declaration."
     },
     {
       "id": "classes",
       "label": "Class instances",
-      "description": "JSON text to class instances and back, without validation. Codegen uses an IModel declaration."
+      "description": "JSON text to class instances and back, without validation. Golem uses an IModel declaration."
     },
     {
       "id": "validated-classes",
@@ -96,7 +96,7 @@
     {
       "id": "codegen-object",
       "group": "plain",
-      "label": "Codegen (IObject)",
+      "label": "Golem (IObject)",
       "library": "@exprtlabs/golem",
       "checked": true,
       "sourceUrl": "https://github.com/exprtlabs/codegen/blob/main/scripts/benchmark/fixtures/upstream/codegen-object.ts"
@@ -120,7 +120,7 @@
     {
       "id": "codegen",
       "group": "classes",
-      "label": "Codegen (IModel)",
+      "label": "Golem (IModel)",
       "library": "@exprtlabs/golem",
       "checked": false,
       "sourceUrl": "https://github.com/exprtlabs/codegen/blob/main/scripts/benchmark/fixtures/upstream/codegen.ts"
@@ -136,7 +136,7 @@
     {
       "id": "codegen-standalone",
       "group": "validated-classes",
-      "label": "Codegen (IModel, validated)",
+      "label": "Golem (IModel, validated)",
       "library": "@exprtlabs/golem",
       "checked": true,
       "sourceUrl": "https://github.com/exprtlabs/codegen/blob/main/scripts/benchmark/fixtures/upstream/codegen.ts"
@@ -144,7 +144,7 @@
     {
       "id": "codegen-runtime",
       "group": "validated-classes",
-      "label": "Codegen (IModel, runtime Ajv)",
+      "label": "Golem (IModel, runtime Ajv)",
       "library": "@exprtlabs/golem",
       "checked": true,
       "sourceUrl": "https://github.com/exprtlabs/codegen/blob/main/scripts/benchmark/fixtures/upstream/codegen.ts"

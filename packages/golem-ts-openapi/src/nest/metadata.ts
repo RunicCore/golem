@@ -1,6 +1,6 @@
 import * as ts from '@exprtlabs/golem/ts';
 import {
-  CodegenDiagnosticSeverity,
+  GolemDiagnosticSeverity,
   TsToOpenApiDiagnosticCode,
   TsToOpenApiError,
   diagnostic,
@@ -231,7 +231,7 @@ export class DecoratorOptions {
       result.node,
       TsToOpenApiDiagnosticCode.UnsupportedSchemaMetadata,
       `${this.optionLabel(name)} is not a compile-time constant (${result.reason}); it is omitted from the document.`,
-      CodegenDiagnosticSeverity.Warning,
+      GolemDiagnosticSeverity.Warning,
     );
     if (!this.reader.onWarning) throw new TsToOpenApiError(warning);
     this.reader.onWarning(warning);

@@ -12,9 +12,9 @@ func TestPluginFeaturesReadsSerdeOption(t *testing.T) {
 		wantSerde bool
 		wantNest  bool
 	}{
-		{codegenPluginName, nil, true, false},
-		{codegenPluginName, true, true, false},
-		{codegenPluginName, false, false, false},
+		{golemPluginName, nil, true, false},
+		{golemPluginName, true, true, false},
+		{golemPluginName, false, false, false},
 		{nestPluginName, nil, true, true},
 		{nestPluginName, true, true, true},
 		{nestPluginName, false, false, true},

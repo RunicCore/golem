@@ -8,7 +8,7 @@ import { decodeGeneratedModel } from '@exprtlabs/golem/conversion';
 import { requireObjectCodec } from '@exprtlabs/golem/serde';
 import { IssueCode, IssueRepresentation, IssueSource, LibError, LibErrorKind, type Issue } from '@exprtlabs/golem/errors';
 import { getValidator } from '@exprtlabs/golem/validation';
-import type { CodegenProfile } from '#codegen/generator-api';
+import type { GolemProfile } from '#golem/generator-api';
 import { generate } from '#model/generator';
 import { command, workspace } from './support/process.js';
 import { generatedCodecIdFromRoot } from './support/consumer.js';
@@ -16,7 +16,7 @@ import { readFixture, writeGeneratedArtifacts } from './fixture-project.js';
 import { modelAliasSource, referencedPolicyModelSource, taggedProfilePayloadSource } from './fixture-templates/models/profile-options.js';
 import { tsSource, type SourceFragment } from './source-template.js';
 
-function profile(overrides: Partial<CodegenProfile> = {}): CodegenProfile {
+function profile(overrides: Partial<GolemProfile> = {}): GolemProfile {
   return {
     mobx: false,
     validation: true,

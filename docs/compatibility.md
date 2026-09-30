@@ -1,6 +1,6 @@
 # Compatibility and stability
 
-Check which versions Codegen supports and which APIs stay stable.
+Check which versions Golem supports and which APIs stay stable.
 
 ## Supported versions
 

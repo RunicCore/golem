@@ -10,7 +10,7 @@ import { getValidator } from '@exprtlabs/golem/validation';
 import { validationTagKey } from '@exprtlabs/golem/schema';
 import type { ModelTypeDescriptor } from '@exprtlabs/golem/model';
 import { generatedCodecId } from './support/consumer.js';
-import { generate, type ModelCodegenResult } from '#model/generator';
+import { generate, type GolemModelResult } from '#model/generator';
 import { writeGeneratedArtifacts } from './fixture-project.js';
 import { compileModelProject, createModelProject } from './model-project.js';
 
@@ -21,7 +21,7 @@ function fixture(t: TestContext) {
   });
 }
 
-function copyStandaloneArtifacts(result: ModelCodegenResult, root: string, sourceRoot: string): void {
+function copyStandaloneArtifacts(result: GolemModelResult, root: string, sourceRoot: string): void {
   for (const artifact of result.artifacts.filter(item => item.path.endsWith('.generated.js'))) {
     const built = path.join(root, 'build', path.relative(sourceRoot, artifact.path));
     fs.mkdirSync(path.dirname(built), { recursive: true });

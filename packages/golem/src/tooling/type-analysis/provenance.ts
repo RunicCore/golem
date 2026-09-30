@@ -10,7 +10,7 @@ import type {
   ModelManifest,
   ModelManifestEntry,
 } from '../model-manifest.js';
-import type { CodegenProfile, InputObserver } from '../generator-api.js';
+import type { GolemProfile, InputObserver } from '../generator-api.js';
 import type { CodecSchemaClosureEntry } from '../ajv-tooling.js';
 import { canonicalFilename } from './project.js';
 
@@ -47,7 +47,7 @@ function manifestProvenance(filename: string, moduleName: string, exportName: st
 function validateManifestProfile(
   manifest: ModelManifest,
   filename: string,
-  profile: CodegenProfile,
+  profile: GolemProfile,
 ): void {
   const advertised = manifest.profile;
   if (
@@ -179,7 +179,7 @@ export function loadModelManifests(
   program: ts.Program,
   options: ts.CompilerOptions,
   explicit: readonly string[],
-  profile: CodegenProfile,
+  profile: GolemProfile,
   onInput?: InputObserver,
 ): ManifestIndex {
   const advertised = new Set<string>();

@@ -121,10 +121,10 @@ test('each benchmark group shows, per payload, the declarations and timed calls 
       const start = page.indexOf(`<template #${group.id}-${payload.id}-code>`);
       assert.ok(start >= 0, `code for ${group.id}/${payload.id}`);
       const block = page.slice(start, page.indexOf('</template>', start));
-      // Codegen IModel adapters of a group share one declaration and one call snippet.
+      // Golem IModel adapters of a group share one declaration and one call snippet.
       const timed = results.adapters.filter(a => a.group === group.id
         && results.cases.some(c => c.adapter === a.id && c.payload === payload.id && c.opsPerSec !== undefined));
-      const labels = new Set(timed.map(a => a.label.startsWith('Codegen (IModel') ? 'Codegen (IModel)' : a.label));
+      const labels = new Set(timed.map(a => a.label.startsWith('Golem (IModel') ? 'Golem (IModel)' : a.label));
       for (const label of labels) {
         assert.equal((block.match(new RegExp(`\\[${label.replace(/[()]/g, '\\$&')}\\]`, 'g')) ?? []).length, 2, `${group.id}/${payload.id}: declarations and calls for ${label}`);
       }

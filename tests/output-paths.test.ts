@@ -3,9 +3,9 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { test, type TestContext } from 'node:test';
-import type { CodegenConfig, CodegenJob } from '#codegen/config';
-import { runPipeline } from '#codegen/cli';
-import { applyJob, loadInventory } from '#codegen/outputs';
+import type { GolemConfig, GolemJob } from '#golem/config';
+import { runPipeline } from '#golem/cli';
+import { applyJob, loadInventory } from '#golem/outputs';
 import { workspace } from './support/process.js';
 import { writeFixture } from './support/consumer.js';
 
@@ -48,7 +48,7 @@ function pipelineFixture(t: TestContext): { root: string; config: string; extern
   return { root, config, external, source };
 }
 
-function modelJob(root: string, source: string): CodegenJob {
+function modelJob(root: string, source: string): GolemJob {
   return {
     id: 'models:.',
     kind: 'models',
@@ -62,7 +62,7 @@ function modelJob(root: string, source: string): CodegenJob {
   };
 }
 
-function modelConfig(root: string, job: CodegenJob): CodegenConfig {
+function modelConfig(root: string, job: GolemJob): GolemConfig {
   return {
     directory: root,
     configFile: path.join(root, 'golem.yaml'),

@@ -4,20 +4,20 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { test, type TestContext } from 'node:test';
-import type { CodegenConfig, CodegenJob } from '#codegen/config';
-import { applyJob, loadInventory } from '#codegen/outputs';
+import type { GolemConfig, GolemJob } from '#golem/config';
+import { applyJob, loadInventory } from '#golem/outputs';
 import { generate } from '#openapi/generator';
 import type { OpenApiGenerationProfile, OpenApiGenerationResult } from '#openapi/generator';
 import { repoRoot, tscBin } from './openapi/helpers.js';
 import { snapshotFilesystem } from './fixture-project.js';
 
-type OpenApiJob = Extract<CodegenJob, { kind: 'openapi' }>;
+type OpenApiJob = Extract<GolemJob, { kind: 'openapi' }>;
 
 interface OpenApiFixture {
   readonly root: string;
   readonly input: string;
   readonly output: string;
-  readonly config: CodegenConfig;
+  readonly config: GolemConfig;
   readonly job: OpenApiJob;
 }
 
@@ -58,7 +58,7 @@ function fixture(
     package: '@exprtlabs/golem-openapi',
     options: { input, output, name: 'Retirement', profile: generationProfile },
   };
-  const config: CodegenConfig = {
+  const config: GolemConfig = {
     directory: root,
     configFile: path.join(root, 'golem.yaml'),
     inventoryFile: path.join(root, '.golem/outputs.json'),

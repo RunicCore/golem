@@ -1,9 +1,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import type { CodegenProfile } from '@exprtlabs/golem/generator-api';
+import type { GolemProfile } from '@exprtlabs/golem/generator-api';
 import { copyFixtureFile } from '../fixture-project.js';
 
-export function writeFixture(root: string, profile: CodegenProfile, includeModels = true): void {
+export function writeFixture(root: string, profile: GolemProfile, includeModels = true): void {
   copyFixtureFile(root, 'packed/profile/api.json', 'api.json');
   copyFixtureFile(root, 'packed/profile/tsconfig.json', 'tsconfig.json');
   if (includeModels) copyFixtureFile(root, 'packed/profile/src/cart.model.ts', 'src/cart.model.ts');

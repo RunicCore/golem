@@ -3,11 +3,11 @@ import path from 'node:path';
 import { createRequire } from 'node:module';
 import { pathToFileURL } from 'node:url';
 import { contains, resolveConfig, validateConfigInputs } from './config.js';
-import type { CodegenConfig, CodegenJob } from './config.js';
+import type { GolemConfig, GolemJob } from './config.js';
 import { loadInventory, applyJob, removeRetiredJobs } from './outputs.js';
-import { CodegenDiagnosticSeverity, errorMessage, hasErrorCode, isRecord } from './generator-api.js';
+import { GolemDiagnosticSeverity, errorMessage, hasErrorCode, isRecord } from './generator-api.js';
 import { validateModelManifest } from './model-manifest.js';
-import type { CodegenArtifact, CodegenDiagnostic, CodegenResult, GeneratorSession } from './generator-api.js';
+import type { GolemArtifact, GolemDiagnostic, GolemResult, GeneratorSession } from './generator-api.js';
 import { assertRuntimeCompatible } from './runtime-compatibility.js';
 
 export type InputKind = 'config' | 'controllers' | 'openapi' | 'models';
@@ -27,8 +27,8 @@ export function strongestInputKind(existing: InputKind | undefined, candidate: I
 }
 interface LoadedProvider { readonly apiVersion: 1; generate(context: unknown): unknown }
 export interface PipelineState {
-  readonly config: CodegenConfig;
-  readonly results: ReadonlyMap<string, CodegenResult>;
+  readonly config: GolemConfig;
+  readonly results: ReadonlyMap<string, GolemResult>;
   readonly inputs: ReadonlyMap<string, InputKind>;
   readonly dependencies: ReadonlyMap<string, ReadonlySet<string>>;
   readonly owned: ReadonlySet<string>;
@@ -39,7 +39,7 @@ export interface PipelineOptions {
   readonly changedInputs?: readonly string[];
   readonly previous?: PipelineState;
   readonly onInput?: (filename: string, kind: InputKind) => void;
-  readonly onConfig?: (config: CodegenConfig) => void;
+  readonly onConfig?: (config: GolemConfig) => void;
   readonly onOwned?: (filenames: readonly string[]) => void;
   /** Provider resources kept across runs; a run without one disposes its own. */
   readonly session?: GeneratorSessionResources;
@@ -112,12 +112,12 @@ export class GeneratorSessionResources implements Disposable {
  * (`1.0.0-rc` or `1.0.0-rc.2` → `rc`), or `latest` for a stable version.
  * Generator packages are published in lockstep under the same tag.
  */
-export function codegenDistTag(version: string = codegenVersion()): string {
+export function golemDistTag(version: string = golemVersion()): string {
   const prerelease = /^\d+\.\d+\.\d+-([0-9A-Za-z-]+)/.exec(version)?.[1];
   return prerelease ?? 'latest';
 }
 
-export function codegenVersion(): string {
+export function golemVersion(): string {
   // dist/tooling/pipeline.js → package.json of @exprtlabs/golem.
   const manifest: unknown = JSON.parse(fs.readFileSync(new URL('../../package.json', import.meta.url), 'utf8'));
   if (!isRecord(manifest) || typeof manifest.version !== 'string') throw new Error('@exprtlabs/golem package.json has no version.');
@@ -139,7 +139,7 @@ function packageVersion(specifier: string, filename: string): string {
   }
 }
 
-export async function providersFor(config: CodegenConfig): Promise<ReadonlyMap<string, LoadedProvider>> {
+export async function providersFor(config: GolemConfig): Promise<ReadonlyMap<string, LoadedProvider>> {
   const requireFromProject = createRequire(path.join(config.directory, 'package.json'));
   const providers = new Map<string, LoadedProvider>();
   for (const job of config.jobs) {
@@ -147,10 +147,10 @@ export async function providersFor(config: CodegenConfig): Promise<ReadonlyMap<s
     let filename: string;
     try { filename = requireFromProject.resolve(`${job.package}/generator`); }
     catch (error) {
-      if (hasErrorCode(error, 'MODULE_NOT_FOUND')) throw new Error(`${job.kind} is configured but ${job.package} is not installed in ${config.directory}. Install it with npm install -D ${job.package}@${codegenDistTag()}.`);
+      if (hasErrorCode(error, 'MODULE_NOT_FOUND')) throw new Error(`${job.kind} is configured but ${job.package} is not installed in ${config.directory}. Install it with npm install -D ${job.package}@${golemDistTag()}.`);
       throw new Error(`Cannot resolve ${job.package}/generator: ${errorMessage(error)}`);
     }
-    assertRuntimeCompatible({ name: '@exprtlabs/golem', version: codegenVersion() }, { name: job.package, version: packageVersion(job.package, filename) });
+    assertRuntimeCompatible({ name: '@exprtlabs/golem', version: golemVersion() }, { name: job.package, version: packageVersion(job.package, filename) });
     const imported: unknown = await import(pathToFileURL(filename).href);
     if (!isRecord(imported) || imported.apiVersion !== 1 || typeof imported.generate !== 'function') {
       throw new Error(`Incompatible generator ${job.package}: CLI supports API 1; installed provider reports ${isRecord(imported) ? String(imported.apiVersion) : 'unknown'}.`);
@@ -161,7 +161,7 @@ export async function providersFor(config: CodegenConfig): Promise<ReadonlyMap<s
   return providers;
 }
 
-function validateResult(result: unknown, job: CodegenJob): CodegenResult {
+function validateResult(result: unknown, job: GolemJob): GolemResult {
   if (!isRecord(result) || !Array.isArray(result.artifacts) || !Array.isArray(result.manifestPaths) || !Array.isArray(result.watchInputs)) {
     throw new Error(`Invalid generator result from ${job.package}. Expected artifacts, manifestPaths and watchInputs.`);
   }
@@ -174,7 +174,7 @@ function validateResult(result: unknown, job: CodegenJob): CodegenResult {
   if (job.kind === 'controllers' && result.apiVersion !== undefined && result.apiVersion !== 1) {
     throw new Error(`Invalid generator result from ${job.package}: expected API 1.`);
   }
-  const artifacts = result.artifacts.map((artifact: unknown): CodegenArtifact => {
+  const artifacts = result.artifacts.map((artifact: unknown): GolemArtifact => {
     if (!isRecord(artifact) || typeof artifact.path !== 'string' || !path.isAbsolute(artifact.path) || typeof artifact.content !== 'string') throw new Error(`${job.package} returned an invalid artifact.`);
     return { path: path.normalize(artifact.path), content: artifact.content };
   });
@@ -195,9 +195,9 @@ function validateResult(result: unknown, job: CodegenJob): CodegenResult {
     ? undefined
     : (() => {
       if (!Array.isArray(result.diagnostics)) throw new Error(`${job.package} returned invalid diagnostics.`);
-      return result.diagnostics.map((diagnostic: unknown): CodegenDiagnostic => {
+      return result.diagnostics.map((diagnostic: unknown): GolemDiagnostic => {
         if (!isRecord(diagnostic)
-            || (diagnostic.severity !== CodegenDiagnosticSeverity.Error && diagnostic.severity !== CodegenDiagnosticSeverity.Warning)
+            || (diagnostic.severity !== GolemDiagnosticSeverity.Error && diagnostic.severity !== GolemDiagnosticSeverity.Warning)
           || typeof diagnostic.code !== 'string'
           || !diagnostic.code.trim()
           || typeof diagnostic.message !== 'string') {
@@ -237,14 +237,14 @@ function validateResult(result: unknown, job: CodegenJob): CodegenResult {
   };
 }
 
-function diagnosticLocation(diagnostic: CodegenDiagnostic): string {
+function diagnosticLocation(diagnostic: GolemDiagnostic): string {
   if (!diagnostic.file) return '';
   const line = diagnostic.line === undefined ? '' : `:${diagnostic.line}${diagnostic.column === undefined ? '' : `:${diagnostic.column}`}`;
   return ` (${diagnostic.file}${line})`;
 }
 
-function assertNoDiagnosticErrors(job: CodegenJob, result: CodegenResult): void {
-  const errors = result.diagnostics?.filter(diagnostic => diagnostic.severity === CodegenDiagnosticSeverity.Error) ?? [];
+function assertNoDiagnosticErrors(job: GolemJob, result: GolemResult): void {
+  const errors = result.diagnostics?.filter(diagnostic => diagnostic.severity === GolemDiagnosticSeverity.Error) ?? [];
   if (errors.length === 0) return;
   throw new Error([
     `${job.package} reported ${errors.length} error diagnostic${errors.length === 1 ? '' : 's'}:`,
@@ -253,7 +253,7 @@ function assertNoDiagnosticErrors(job: CodegenJob, result: CodegenResult): void 
 }
 
 /** Select source consumers and then follow generated-artifact edges in pipeline order. */
-function affectedJobs(config: CodegenConfig, options: PipelineOptions): ReadonlySet<string> | undefined {
+function affectedJobs(config: GolemConfig, options: PipelineOptions): ReadonlySet<string> | undefined {
   const previous = options.previous;
   if (!previous || !options.changedInputs || options.check) return undefined;
   if (JSON.stringify(config.jobs) !== JSON.stringify(previous.config.jobs)) return undefined;
@@ -327,7 +327,7 @@ export async function runPipeline(filename: string, options: PipelineOptions = {
   removeRetiredJobs(config, inventory, Boolean(options.check));
   const affected = affectedJobs(config, options);
   const manifests: string[] = [];
-  const results = new Map<string, CodegenResult>();
+  const results = new Map<string, GolemResult>();
   const owned = new Set<string>([config.inventoryFile]);
   const used = new Map<string, Set<string>>();
   for (const job of config.jobs) {
@@ -337,7 +337,7 @@ export async function runPipeline(filename: string, options: PipelineOptions = {
       && (affected ? !affected.has(job.id) : options.modelOnly && (job.kind === 'controllers' || job.kind === 'openapi'))
       && previous
       && JSON.stringify(previousJob?.options) === JSON.stringify(job.options);
-    let result: CodegenResult;
+    let result: GolemResult;
     if (cached) {
       result = previous;
       for (const [input, consumers] of options.previous?.dependencies ?? []) {
@@ -358,7 +358,7 @@ export async function runPipeline(filename: string, options: PipelineOptions = {
     }
     assertNoDiagnosticErrors(job, result);
     if (!cached) for (const diagnostic of result.diagnostics ?? []) {
-      if (diagnostic.severity === CodegenDiagnosticSeverity.Warning) process.stderr.write(`${diagnostic.code}${diagnosticLocation(diagnostic)}: ${diagnostic.message}\n`);
+      if (diagnostic.severity === GolemDiagnosticSeverity.Warning) process.stderr.write(`${diagnostic.code}${diagnosticLocation(diagnostic)}: ${diagnostic.message}\n`);
     }
     for (const artifact of result.artifacts) {
       if (owned.has(artifact.path)) throw new Error(`Two generators emitted the same output: ${artifact.path}`);

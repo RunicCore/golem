@@ -66,7 +66,7 @@ Each item names a breaking change and the action to take.
 - `allowReserved` query values keep `#`, `[`, `]`, `&` and `+` encoded and pass `%XX` escapes through. Stop pre-encoding values that already contain escapes.
 - A caller-supplied `fetchImpl` is called without a receiver. Bind or wrap a function that relies on `this` before passing it.
 - OpenAPI 3.0 documents are rejected. Convert the document to OpenAPI 3.1 or 3.2.
-- `@redocly/openapi-core` is no longer a dependency; Codegen resolves `$ref`s and validates documents itself. Remove any direct dependency your project took on it.
+- `@redocly/openapi-core` is no longer a dependency; Golem resolves `$ref`s and validates documents itself. Remove any direct dependency your project took on it.
 - A schema pulled in from another file is named after its path (`schemas/user.json` → `schemas.user`, model `SchemasUser`) instead of its file name with a numeric suffix. A root component that is only a `$ref` to an external file keeps its own name; one with a `$ref` plus other keys is not an alias, so its target still gets the path-based name and can collide with the root name. A name collision fails generation, naming both locations; rename the colliding schema in the source document.
 - An implicit discriminator value for a schema from another file is its path-based component name (for example `schemas.dog`). Add an explicit `discriminator.mapping`, or a root alias, to keep a chosen value.
 - The `spec-ref-siblings`, `path-not-include-query` and `nullable-type-sibling` validation rules are gone, and error lines name the file that contains the problem. A document that relied on their stricter checks to fail generation now passes; every other rule is unchanged.

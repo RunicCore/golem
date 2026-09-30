@@ -4,10 +4,10 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { execFileSync, spawn } from 'node:child_process';
-import { runPipeline, watchPipeline } from '#codegen/cli';
-import { contains } from '#codegen/config';
-import { GeneratorSessionResources } from '#codegen/pipeline';
-import { OwnedOutputIndex } from '#codegen/watch';
+import { runPipeline, watchPipeline } from '#golem/cli';
+import { contains } from '#golem/config';
+import { GeneratorSessionResources } from '#golem/pipeline';
+import { OwnedOutputIndex } from '#golem/watch';
 import { workspace } from './support/process.js';
 import { writeFixture } from './support/consumer.js';
 

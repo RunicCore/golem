@@ -217,12 +217,12 @@ func serdeMethod(checker *shimchecker.Checker, expression *shimast.Node) (string
 		return "", false
 	}
 	if symbol.Name == "validate" {
-		if !symbolInCodegenValidation(symbol) {
+		if !symbolInGolemValidation(symbol) {
 			return "", false
 		}
 		return method, true
 	}
-	if !symbolInCodegenSerde(symbol) {
+	if !symbolInGolemSerde(symbol) {
 		return "", false
 	}
 	return method, true
@@ -255,7 +255,7 @@ func followImportAlias(checker *shimchecker.Checker, symbol *shimast.Symbol) *sh
 	return symbol
 }
 
-func symbolInCodegenSerde(symbol *shimast.Symbol) bool {
+func symbolInGolemSerde(symbol *shimast.Symbol) bool {
 	if symbol == nil {
 		return false
 	}
@@ -264,14 +264,14 @@ func symbolInCodegenSerde(symbol *shimast.Symbol) bool {
 			continue
 		}
 		source := shimast.GetSourceFileOfNode(declaration)
-		if source != nil && isCodegenSerdeFile(source.FileName()) {
+		if source != nil && isGolemSerdeFile(source.FileName()) {
 			return true
 		}
 	}
 	return false
 }
 
-func isCodegenPackageFile(filename string, bases ...string) bool {
+func isGolemPackageFile(filename string, bases ...string) bool {
 	slash := filepath.ToSlash(filename)
 	base := filepath.Base(slash)
 	matched := false
@@ -287,11 +287,11 @@ func isCodegenPackageFile(filename string, bases ...string) bool {
 	return strings.Contains(slash, "@exprtlabs/golem/") || strings.Contains(slash, "/packages/golem/")
 }
 
-func isCodegenSerdeFile(filename string) bool {
-	return isCodegenPackageFile(filename, "serde.ts", "serde.d.ts")
+func isGolemSerdeFile(filename string) bool {
+	return isGolemPackageFile(filename, "serde.ts", "serde.d.ts")
 }
 
-func symbolInCodegenValidation(symbol *shimast.Symbol) bool {
+func symbolInGolemValidation(symbol *shimast.Symbol) bool {
 	return symbolInPackageFiles(symbol, "validation.ts", "validation.d.ts")
 }
 
@@ -304,7 +304,7 @@ func symbolInPackageFiles(symbol *shimast.Symbol, bases ...string) bool {
 			continue
 		}
 		source := shimast.GetSourceFileOfNode(declaration)
-		if source != nil && isCodegenPackageFile(source.FileName(), bases...) {
+		if source != nil && isGolemPackageFile(source.FileName(), bases...) {
 			return true
 		}
 	}

@@ -1,6 +1,6 @@
 import * as ts from '@exprtlabs/golem/ts';
 import {
-  CodegenDiagnosticSeverity,
+  GolemDiagnosticSeverity,
   TsToOpenApiDiagnosticCode,
   TsToOpenApiError,
   diagnostic,
@@ -88,7 +88,7 @@ export function throwSchemaDiagnostic(
     node,
     code,
     message,
-    CodegenDiagnosticSeverity.Error,
+    GolemDiagnosticSeverity.Error,
   ));
 }
 
@@ -291,7 +291,7 @@ function conflict(options: SchemaMergeOptions, detail: string): never {
   const node = options.node;
   if (node) throwSchemaDiagnostic(node, TsToOpenApiDiagnosticCode.ConflictingSchemaMetadata, message);
   throw new TsToOpenApiError({
-    severity: CodegenDiagnosticSeverity.Error,
+    severity: GolemDiagnosticSeverity.Error,
     code: TsToOpenApiDiagnosticCode.ConflictingSchemaMetadata,
     message,
   });

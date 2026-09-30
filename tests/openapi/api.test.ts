@@ -112,15 +112,15 @@ test('SDK generated with mobx and validation disabled loads and runs an operatio
   // this test exists to prove. A real copy keeps the whole dependency chain
   // rooted under the temp project, where neither package exists at any
   // ancestor directory.
-  const codegenSource = path.join(workspace, 'packages/golem');
-  const codegenDestination = path.join(output, 'node_modules/@exprtlabs/golem');
-  mkdirSync(codegenDestination, { recursive: true });
-  cpSync(path.join(codegenSource, 'package.json'), path.join(codegenDestination, 'package.json'));
-  cpSync(path.join(codegenSource, 'dist'), path.join(codegenDestination, 'dist'), { recursive: true });
+  const golemSource = path.join(workspace, 'packages/golem');
+  const golemDestination = path.join(output, 'node_modules/@exprtlabs/golem');
+  mkdirSync(golemDestination, { recursive: true });
+  cpSync(path.join(golemSource, 'package.json'), path.join(golemDestination, 'package.json'));
+  cpSync(path.join(golemSource, 'dist'), path.join(golemDestination, 'dist'), { recursive: true });
 
   compileStrictUnusedSdk(output);
 
-  const probeDirectories = [output, path.join(codegenDestination, 'dist')];
+  const probeDirectories = [output, path.join(golemDestination, 'dist')];
   for (const directory of probeDirectories) {
     for (const missing of ['mobx', 'ajv']) {
       // One file per missing package: Node caches a failed import by URL, so reusing a file returns the first failure.

@@ -2,9 +2,9 @@ import { existsSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import * as ts from '@exprtlabs/golem/ts';
 import type {
-  CodegenArtifact,
-  CodegenProfile,
-  CodegenResult,
+  GolemArtifact,
+  GolemProfile,
+  GolemResult,
   GeneratorSession,
   InputObserver,
 } from '@exprtlabs/golem/generator-api';
@@ -43,9 +43,9 @@ import {
   retainedProgramSession,
 } from '@exprtlabs/golem/type-analysis';
 
-export interface ModelCodegenProfile extends CodegenProfile {}
+export interface GolemModelProfile extends GolemProfile {}
 
-export interface ModelCodegenContext {
+export interface GolemModelContext {
   /** Absolute project root used for TypeScript configuration and discovery. */
   readonly root: string;
   /** Optional shared output directory for job-level model metadata. */
@@ -53,7 +53,7 @@ export interface ModelCodegenContext {
   /** Absolute model source paths. Omit to discover model sources below root/src. */
   readonly sources?: readonly string[];
   /** Runtime features selected for generated model companions. */
-  readonly profile: ModelCodegenProfile;
+  readonly profile: GolemModelProfile;
   /** Absolute model-manifest paths to add to marker and source discovery. */
   readonly manifestInputs?: readonly string[];
   /** Observe attempted paths before reads and existence checks. */
@@ -62,9 +62,9 @@ export interface ModelCodegenContext {
   readonly session?: GeneratorSession;
 }
 
-export interface ModelCodegenArtifact extends CodegenArtifact {}
+export interface GolemModelArtifact extends GolemArtifact {}
 
-export interface ModelCodegenResult extends CodegenResult {}
+export interface GolemModelResult extends GolemResult {}
 
 export const apiVersion = 1 as const;
 
@@ -72,13 +72,13 @@ interface NormalizedContext {
   readonly root: string;
   readonly output: string;
   readonly sources: readonly string[] | undefined;
-  readonly profile: ModelCodegenProfile;
+  readonly profile: GolemModelProfile;
   readonly manifestInputs: readonly string[];
   readonly onInput?: InputObserver;
   readonly session?: GeneratorSession;
 }
 
-function validateContext(context: ModelCodegenContext): NormalizedContext {
+function validateContext(context: GolemModelContext): NormalizedContext {
   if (!context || typeof context !== 'object' || Array.isArray(context)) {
     throw new TypeError('generate(context) requires a context object.');
   }
@@ -128,7 +128,7 @@ function emptyResult(
   root: string,
   onInput?: InputObserver,
   session?: GeneratorSession,
-): ModelCodegenResult {
+): GolemModelResult {
   const info = createProgram([], root, onInput, retainedProgramSession(session, SESSION_OWNER, root));
   using program = info.program;
   const watchInputs = projectWatchInputs(info, program, root, [], discoverModelManifests(root));
@@ -307,7 +307,7 @@ function internJobSchemaGraphs(
   });
 }
 
-export function generate(context: ModelCodegenContext): ModelCodegenResult {
+export function generate(context: GolemModelContext): GolemModelResult {
   const normalized = validateContext(context);
   const sources = normalized.sources === undefined
     ? discoverModelSources(normalized.root, normalized.onInput)
@@ -418,7 +418,7 @@ export function generate(context: ModelCodegenContext): ModelCodegenResult {
   const shared = sharedBase && standalone
     ? { ...sharedBase, validationSetName: 'modelValidatorSet' }
     : sharedBase;
-  const artifacts: ModelCodegenArtifact[] = [];
+  const artifacts: GolemModelArtifact[] = [];
   const sharedContent = needsShared
     ? emitSharedSource({
       output: sharedOutput,

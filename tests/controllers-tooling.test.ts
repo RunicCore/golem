@@ -3,11 +3,11 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { test, type TestContext } from 'node:test';
-import { loadConfig } from '#codegen/config';
-import { runPipeline } from '#codegen/cli';
-import { applyJob, digest, loadInventory, removeRetiredJobs } from '#codegen/outputs';
-import { strongestInputKind } from '#codegen/pipeline';
-import type { CodegenConfig, CodegenJob } from '#codegen/config';
+import { loadConfig } from '#golem/config';
+import { runPipeline } from '#golem/cli';
+import { applyJob, digest, loadInventory, removeRetiredJobs } from '#golem/outputs';
+import { strongestInputKind } from '#golem/pipeline';
+import type { GolemConfig, GolemJob } from '#golem/config';
 import { sourceInvalidationModule } from './fixture-templates/controllers/source-invalidation.js';
 import { workspace } from './support/process.js';
 
@@ -206,7 +206,7 @@ test('controller error diagnostics block exact-file writes while warnings remain
 test('controller OpenAPI files stay standards-valid while ownership and retirement remain guarded', (t: TestContext) => {
   const { root } = fixture(t);
   const output = path.join(root, 'generated/api.json');
-  const job: CodegenJob = {
+  const job: GolemJob = {
     id: 'controllers:generated/api.json',
     kind: 'controllers',
     package: '@exprtlabs/golem-ts-openapi',
@@ -217,7 +217,7 @@ test('controller OpenAPI files stay standards-valid while ownership and retireme
       profile: { mobx: false, validation: true },
     },
   };
-  const config: CodegenConfig = {
+  const config: GolemConfig = {
     directory: root,
     configFile: path.join(root, 'golem.yaml'),
     inventoryFile: path.join(root, '.golem/outputs.json'),
@@ -230,7 +230,7 @@ test('controller OpenAPI files stay standards-valid while ownership and retireme
     'x-generator': '@exprtlabs/golem-ts-openapi', openapi: '3.2.0', info: { title: 'Test API', version: '1' }, paths: {},
   });
 
-  const retiredConfig: CodegenConfig = { ...config, jobs: [] };
+  const retiredConfig: GolemConfig = { ...config, jobs: [] };
   assert.throws(() => removeRetiredJobs(retiredConfig, loadInventory(config), true), /removed jobs/);
   assert.equal(fs.existsSync(output), true);
   removeRetiredJobs(retiredConfig, loadInventory(config), false);

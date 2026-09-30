@@ -23,7 +23,7 @@ import {
   ConstrainedObjectHierarchical,
   ConstrainedTimestamp,
 } from './codegen.constrained.model.js';
-import { createCodegenFeatureFixtures } from './comparison-features-codegen.js';
+import { createGolemFeatureFixtures } from './comparison-features-codegen.js';
 import {
   assertDetached,
   assertNoMutation,
@@ -39,7 +39,7 @@ import {
   type FixtureInput,
 } from './shared.js';
 
-type CodegenModel =
+type GolemModel =
   | InstanceType<typeof ObjectSimple>
   | InstanceType<typeof ConstrainedObjectHierarchical>
   | InstanceType<typeof Collection>;
@@ -117,29 +117,29 @@ function codecId(input: FixtureInput): string {
   }
 }
 
-function decode(input: FixtureInput, validation: boolean): CodegenModel {
-  return requireObjectCodec(codecId(input)).fromWireFormat(input.payload, trusted(validation, constructFor(input))) as CodegenModel;
+function decode(input: FixtureInput, validation: boolean): GolemModel {
+  return requireObjectCodec(codecId(input)).fromWireFormat(input.payload, trusted(validation, constructFor(input))) as GolemModel;
 }
 
-function decodeText(input: FixtureInput, text: string, validation: boolean): CodegenModel {
-  return requireObjectCodec(codecId(input)).parse(text, trusted(validation, constructFor(input))) as CodegenModel;
+function decodeText(input: FixtureInput, text: string, validation: boolean): GolemModel {
+  return requireObjectCodec(codecId(input)).parse(text, trusted(validation, constructFor(input))) as GolemModel;
 }
 
-function encode(model: CodegenModel, validation: boolean): unknown {
+function encode(model: GolemModel, validation: boolean): unknown {
   return requireObjectCodec(codecIdFromModel(model)).toWireFormat(model, trusted(validation));
 }
 
-function encodeText(model: CodegenModel, _payload: unknown, validation: boolean, id: string): string {
+function encodeText(model: GolemModel, _payload: unknown, validation: boolean, id: string): string {
   return requireObjectCodec(id).stringify(model as never, trusted(validation));
 }
 
-function codecIdFromModel(model: CodegenModel): string {
+function codecIdFromModel(model: GolemModel): string {
   if (model instanceof ObjectSimple) return 'ObjectSimple';
   if (model instanceof Collection) return 'Collection';
   return 'ConstrainedObjectHierarchical';
 }
 
-function assertNestedInstances(input: FixtureInput, value: CodegenModel): void {
+function assertNestedInstances(input: FixtureInput, value: GolemModel): void {
   switch (input.name) {
     case 'ObjectSimple': {
       assert.ok(value instanceof ObjectSimple);
@@ -187,7 +187,7 @@ function assertNestedInstances(input: FixtureInput, value: CodegenModel): void {
   }
 }
 
-async function verify(input: FixtureInput, validation: boolean, model: CodegenModel): Promise<void> {
+async function verify(input: FixtureInput, validation: boolean, model: GolemModel): Promise<void> {
   const original = structuredClone(input.payload);
   const fromObject = await decode(input, validation);
   const fromText = await decodeText(input, input.text, validation);
@@ -250,8 +250,8 @@ async function verify(input: FixtureInput, validation: boolean, model: CodegenMo
   assert.throws(() => encode(invalidModel, true));
 }
 
-export async function createCodegenFixtures(adapter: Adapter): Promise<readonly ComparisonFixture[]> {
-  const features = await createCodegenFeatureFixtures(adapter);
+export async function createGolemFixtures(adapter: Adapter): Promise<readonly ComparisonFixture[]> {
+  const features = await createGolemFeatureFixtures(adapter);
   const validation = validationFor(adapter);
   const fixtures: ComparisonFixture[] = [];
   const inputs = createFixtureInputs();

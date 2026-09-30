@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import test, { type TestContext } from 'node:test';
-import type { CodegenProfile } from '@exprtlabs/golem/generator-api';
+import type { GolemProfile } from '@exprtlabs/golem/generator-api';
 import type { ModelTypeDescriptor } from '@exprtlabs/golem/model';
 import { createExecutableValidationMemo, hasExecutableValidation } from '@exprtlabs/golem/schema';
 import { generate } from '#model/generator';
@@ -10,13 +10,13 @@ import { writeGeneratedArtifacts } from './fixture-project.js';
 import { compileModelProject, createModelProject, writeModelSources } from './model-project.js';
 import { command, ttscEnv } from './support/process.js';
 
-const profiles: readonly (readonly [string, CodegenProfile])[] = [
+const profiles: readonly (readonly [string, GolemProfile])[] = [
   ['validation off', { mobx: false, validation: false }],
   ['runtime Ajv', { mobx: false, validation: true }],
   ['standalone', { mobx: false, validation: true, ajvStandalone: true }],
 ];
 
-function project(t: TestContext, prefix: string, profile: CodegenProfile) {
+function project(t: TestContext, prefix: string, profile: GolemProfile) {
   return createModelProject(t, {
     prefix, linkTypescript: true, linkTtsc: true, allowJs: profile.ajvStandalone === true,
   });
@@ -147,7 +147,7 @@ console.log(JSON.stringify({
 `;
 
 test('editing a leaf model regenerates the ids its dependents reference', (t: TestContext) => {
-  const profile: CodegenProfile = { mobx: false, validation: true };
+  const profile: GolemProfile = { mobx: false, validation: true };
   const { root, sourceRoot } = project(t, 'runic-model-leaf-edit-', profile);
   writeModelSources(sourceRoot, chainSources(3));
   const ids = (): { readonly owned: string; readonly referenced: readonly string[] } => {

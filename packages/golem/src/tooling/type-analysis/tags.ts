@@ -175,15 +175,15 @@ function canonicalIdentity(declaration: ts.Declaration, identityRoot?: string): 
   return `${source}:${declaration.getStart(declaration.getSourceFile())}:${declaration.getEnd()}`;
 }
 
-function isCodegenTagsSource(filename: string): boolean {
+function isGolemTagsSource(filename: string): boolean {
   const normalized = filename.replace(/\\/g, '/');
   return /(?:^|\/)node_modules\/@exprtlabs\/golem\/(?:src|dist)\/tags(?:\.d)?\.(?:c|m)?ts$/.test(normalized)
     || /(?:^|\/)packages\/golem\/(?:src|dist)\/tags(?:\.d)?\.(?:c|m)?ts$/.test(normalized);
 }
 
-function isCodegenTagSymbol(checker: ts.TypeChecker, symbol: ts.Symbol | undefined): boolean {
+function isGolemTagSymbol(checker: ts.TypeChecker, symbol: ts.Symbol | undefined): boolean {
   const target = targetSymbol(checker, symbol);
-  return Boolean(target?.declarations?.some((declaration) => isCodegenTagsSource(declaration.getSourceFile().fileName)));
+  return Boolean(target?.declarations?.some((declaration) => isGolemTagsSource(declaration.getSourceFile().fileName)));
 }
 
 function publicExportName(
@@ -499,7 +499,7 @@ function tagReferenceName(
     ? node.typeName.text
     : node.typeName.right.text;
   const symbolAtNode = context.checker.getSymbolAtLocation(node.typeName);
-  if (!isCodegenTagSymbol(context.checker, symbolAtNode)) return undefined;
+  if (!isGolemTagSymbol(context.checker, symbolAtNode)) return undefined;
   const symbol = targetSymbol(context.checker, symbolAtNode);
   const symbolName = symbol?.getName();
   const names = new Set([text, name, symbolName].filter((value): value is string => Boolean(value)));
@@ -717,7 +717,7 @@ function parseCheckerTag(
   context: TagAnalysisContext,
   type: ts.Type,
 ): TagMetadata | undefined {
-  if (!isCodegenTagSymbol(context.checker, type.aliasSymbol)) return undefined;
+  if (!isGolemTagSymbol(context.checker, type.aliasSymbol)) return undefined;
   const name = type.aliasSymbol?.getName();
   if (!name) return undefined;
   const arguments_ = type.aliasTypeArguments ?? [];

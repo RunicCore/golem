@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { test, type TestContext } from 'node:test';
-import { runPipeline } from '#codegen/cli';
+import { runPipeline } from '#golem/cli';
 import { workspace } from './support/process.js';
 import { writeFixture } from './support/consumer.js';
 import { generate as generateModels } from '@exprtlabs/golem-model/generator';

@@ -1,6 +1,6 @@
 import * as ts from '@exprtlabs/golem/ts';
 import {
-  CodegenDiagnosticSeverity,
+  GolemDiagnosticSeverity,
   TsToOpenApiDiagnosticCode,
   diagnostic,
   type TsToOpenApiDiagnostic,
@@ -276,7 +276,7 @@ function applyPropertyMetadata(
       read?.node('type') ?? entry.node,
       TsToOpenApiDiagnosticCode.UnsupportedSchemaMetadata,
       `Swagger property ${name} type ${typeSpec.text} is not modelled; the TypeScript property type ${checker.typeToString(propertyType)} is used.`,
-      CodegenDiagnosticSeverity.Warning,
+      GolemDiagnosticSeverity.Warning,
     ));
   } else if (typeSpec && !typeMatchesSpec(checker, propertyType, typeSpec, format)) {
     conflict(`Swagger property ${name} type conflicts with the TypeScript property type ${checker.typeToString(propertyType)}.`);
@@ -417,7 +417,7 @@ function namedEnumReference(
       entry.node,
       TsToOpenApiDiagnosticCode.UnsupportedSchemaMetadata,
       `Swagger property ${name} enumName ${enumName} is ignored; the IModel wire schema keeps its inline enum.`,
-      CodegenDiagnosticSeverity.Warning,
+      GolemDiagnosticSeverity.Warning,
     ));
     return schema;
   }

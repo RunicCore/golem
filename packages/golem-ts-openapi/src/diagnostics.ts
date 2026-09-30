@@ -1,8 +1,8 @@
 import type * as ts from '@exprtlabs/golem/ts';
-import { CodegenDiagnosticSeverity } from '@exprtlabs/golem/generator-api';
+import { GolemDiagnosticSeverity } from '@exprtlabs/golem/generator-api';
 
-export { CodegenDiagnosticSeverity } from '@exprtlabs/golem/generator-api';
-export type DiagnosticSeverity = CodegenDiagnosticSeverity;
+export { GolemDiagnosticSeverity } from '@exprtlabs/golem/generator-api';
+export type DiagnosticSeverity = GolemDiagnosticSeverity;
 
 /** Stable provider diagnostic identifiers consumed by the shared CLI. */
 export enum TsToOpenApiDiagnosticCode {
@@ -51,7 +51,7 @@ export enum TsToOpenApiDiagnosticCode {
 }
 
 export interface TsToOpenApiDiagnostic {
-  readonly severity: CodegenDiagnosticSeverity;
+  readonly severity: GolemDiagnosticSeverity;
   readonly code: TsToOpenApiDiagnosticCode;
   readonly message: string;
   readonly file?: string;
@@ -75,7 +75,7 @@ export function diagnostic(
   node: ts.Node | undefined,
   code: TsToOpenApiDiagnosticCode,
   message: string,
-  severity: CodegenDiagnosticSeverity = CodegenDiagnosticSeverity.Error,
+  severity: GolemDiagnosticSeverity = GolemDiagnosticSeverity.Error,
 ): TsToOpenApiDiagnostic {
   if (!sourceFile || !node) return { severity, code, message };
   const position = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile));

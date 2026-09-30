@@ -418,10 +418,10 @@ Add `"serde": false` to an entry to leave the calls in the table unchanged; they
 ## `@exprtlabs/golem/generator-api` {#generator-api}
 
 ```ts
-import type { CodegenProvider, ModelContext } from '@exprtlabs/golem/generator-api';
+import type { GolemProvider, ModelContext } from '@exprtlabs/golem/generator-api';
 ```
 
-The contracts, `resolveProfile` and `CodegenDiagnosticSeverity` for tools that embed a generator are in the [generator API](/reference/generator-api).
+The contracts, `resolveProfile` and `GolemDiagnosticSeverity` for tools that embed a generator are in the [generator API](/reference/generator-api).
 
 Used by the generators: `discoverSources`, `isRecord`, `errorMessage`, `hasErrorCode`, `identifier`, `camelIdentifier`, `bindingName`, `propertyName`, `NameScope`, `assertPortableFilenames`, `assertUniquePublicExports`, `RESERVED_BINDING_NAMES`, `RESERVED_MODEL_MEMBERS`.
 

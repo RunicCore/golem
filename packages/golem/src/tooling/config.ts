@@ -4,7 +4,7 @@ import YAML from 'yaml';
 import { isRecord, resolveProfile } from './generator-api.js';
 import { defaultModelOutput } from './generated-paths.js';
 import type {
-  CodegenProfile,
+  GolemProfile,
   ControllerContext,
   ControllerTag,
   ControllerUriVersioning,
@@ -13,16 +13,16 @@ import type {
   OpenApiContext,
 } from './generator-api.js';
 
-export type CodegenJob =
+export type GolemJob =
   | { readonly id: string; readonly kind: 'controllers'; readonly package: '@exprtlabs/golem-ts-openapi'; readonly options: ControllerContext }
   | { readonly id: string; readonly kind: 'openapi'; readonly package: '@exprtlabs/golem-openapi'; readonly options: OpenApiContext }
   | { readonly id: string; readonly kind: 'models'; readonly package: '@exprtlabs/golem-model'; readonly options: ModelContext };
 
-export interface CodegenConfig {
+export interface GolemConfig {
   readonly configFile: string;
   readonly directory: string;
-  readonly profile: CodegenProfile;
-  readonly jobs: readonly CodegenJob[];
+  readonly profile: GolemProfile;
+  readonly jobs: readonly GolemJob[];
   readonly inventoryFile: string;
 }
 
@@ -138,7 +138,7 @@ export function contains(directory: string, filename: string): boolean {
 }
 
 /** Parse and resolve the complete dependency graph before checking existence. */
-export function resolveConfig(filename = 'golem.yaml', onInput?: InputObserver): CodegenConfig {
+export function resolveConfig(filename = 'golem.yaml', onInput?: InputObserver): GolemConfig {
   const requested = path.resolve(filename);
   onInput?.(requested);
   const configFile = fs.realpathSync(requested);
@@ -151,7 +151,7 @@ export function resolveConfig(filename = 'golem.yaml', onInput?: InputObserver):
     mobx: boolean(value.mobx, false, 'mobx'), validation: boolean(value.validation, true, 'validation'),
     ajvStandalone: boolean(value.ajvStandalone, false, 'ajvStandalone'), allowAny: boolean(value.allowAny, false, 'allowAny'),
   });
-  const jobs: CodegenJob[] = [];
+  const jobs: GolemJob[] = [];
   const outputs: string[] = [];
   const inputPath = (value: unknown, label: string): string => {
     const requested = path.resolve(directory, nonempty(value, label));
@@ -268,9 +268,9 @@ export function resolveConfig(filename = 'golem.yaml', onInput?: InputObserver):
   return { configFile, directory, profile, jobs, inventoryFile: path.join(directory, '.golem', 'outputs.json') };
 }
 
-export function validateConfigInputs(config: CodegenConfig): void {
+export function validateConfigInputs(config: GolemConfig): void {
   const controllerOutputs = new Set(config.jobs
-    .filter((job): job is Extract<CodegenJob, { kind: 'controllers' }> => job.kind === 'controllers')
+    .filter((job): job is Extract<GolemJob, { kind: 'controllers' }> => job.kind === 'controllers')
     .map(job => canonicalPath(job.options.output)));
   for (const job of config.jobs) {
     if (job.kind === 'controllers') {
@@ -290,7 +290,7 @@ export function validateConfigInputs(config: CodegenConfig): void {
   }
 }
 
-export function loadConfig(filename = 'golem.yaml', onInput?: InputObserver): CodegenConfig {
+export function loadConfig(filename = 'golem.yaml', onInput?: InputObserver): GolemConfig {
   const config = resolveConfig(filename, onInput);
   validateConfigInputs(config);
   return config;

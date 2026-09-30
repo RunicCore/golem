@@ -1,6 +1,6 @@
 import path from 'node:path';
 import type {
-  CodegenResult,
+  GolemResult,
   OpenApiContext,
 } from '@exprtlabs/golem/generator-api';
 import { findRemoteRefs, validate } from './document.js';
@@ -26,7 +26,7 @@ export type { OpenApiArtifact } from './emit.js';
 
 export interface OpenApiGenerationContext extends OpenApiContext {}
 
-export interface OpenApiGenerationResult extends CodegenResult {
+export interface OpenApiGenerationResult extends GolemResult {
   readonly apiVersion: 1;
 }
 

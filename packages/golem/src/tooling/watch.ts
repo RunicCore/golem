@@ -1,12 +1,12 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { contains } from './config.js';
-import type { CodegenConfig } from './config.js';
+import type { GolemConfig } from './config.js';
 import { discoverSources, errorMessage, hasErrorCode } from './generator-api.js';
 import { GeneratorSessionResources, runPipeline, strongestInputKind } from './pipeline.js';
 import type { InputKind, PipelineState } from './pipeline.js';
 
-function sourceCandidates(config: CodegenConfig, kind: 'models' | 'controllers'): Set<string> {
+function sourceCandidates(config: GolemConfig, kind: 'models' | 'controllers'): Set<string> {
   const found = new Set<string>();
   // Generated outputs can contain model-named files; they are not model sources.
   const outputs = config.jobs.flatMap(job => job.kind === 'openapi' || job.kind === 'controllers' ? [job.options.output] : []);

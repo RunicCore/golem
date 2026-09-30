@@ -2,7 +2,7 @@ import * as path from 'node:path';
 import { discoverSources } from '@exprtlabs/golem/generator-api';
 import * as ts from '@exprtlabs/golem/ts';
 import {
-  CodegenDiagnosticSeverity,
+  GolemDiagnosticSeverity,
   TsToOpenApiError,
   TsToOpenApiDiagnosticCode,
   diagnostic,
@@ -156,14 +156,14 @@ function exportClass(classDeclaration: ts.ClassDeclaration): boolean {
 function parseUriVersioning(value: unknown): UriVersioning {
   if (value === undefined || value === null) return { enabled: false, prefix: 'v', defaultVersions: [] };
   if (typeof value === 'string') {
-    if (value.toUpperCase() !== 'URI') throw new TsToOpenApiError({ severity: CodegenDiagnosticSeverity.Error, code: TsToOpenApiDiagnosticCode.UnsupportedVersioningType, message: `Only URI versioning is supported; received ${value}.` });
+    if (value.toUpperCase() !== 'URI') throw new TsToOpenApiError({ severity: GolemDiagnosticSeverity.Error, code: TsToOpenApiDiagnosticCode.UnsupportedVersioningType, message: `Only URI versioning is supported; received ${value}.` });
     return { enabled: true, prefix: 'v', defaultVersions: [] };
   }
-  if (typeof value !== 'object' || Array.isArray(value)) throw new TsToOpenApiError({ severity: CodegenDiagnosticSeverity.Error, code: TsToOpenApiDiagnosticCode.InvalidVersioningOptions, message: 'uriVersioning must be an object describing URI versioning.' });
+  if (typeof value !== 'object' || Array.isArray(value)) throw new TsToOpenApiError({ severity: GolemDiagnosticSeverity.Error, code: TsToOpenApiDiagnosticCode.InvalidVersioningOptions, message: 'uriVersioning must be an object describing URI versioning.' });
   const record = value as Record<string, unknown>;
   const type = record.type;
   if (!(type === undefined || type === 0 || type === 'URI' || type === 'uri')) {
-    throw new TsToOpenApiError({ severity: CodegenDiagnosticSeverity.Error, code: TsToOpenApiDiagnosticCode.UnsupportedVersioningMode, message: 'Only URI versioning is supported by the static Nest adapter.' });
+    throw new TsToOpenApiError({ severity: GolemDiagnosticSeverity.Error, code: TsToOpenApiDiagnosticCode.UnsupportedVersioningMode, message: 'Only URI versioning is supported by the static Nest adapter.' });
   }
   const prefix = record.prefix === undefined
     ? 'v'
@@ -490,7 +490,7 @@ export async function analyzeControllers(
   }
   if (controllers.length === 0) {
     throw new TsToOpenApiError({
-      severity: CodegenDiagnosticSeverity.Error,
+      severity: GolemDiagnosticSeverity.Error,
       code: TsToOpenApiDiagnosticCode.NoExportedControllers,
       message: 'No exported @Controller classes were found in the configured sources.',
     });

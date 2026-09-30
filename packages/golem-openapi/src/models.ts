@@ -17,12 +17,12 @@ import type { DiscriminatorValue, ModelConstraint, ModelTypeDescriptor, UnionDis
 
 import { asRecord, isJsonObject, jsonLiteral, objectEntries } from './json.js';
 import {
-  CodegenDiagnosticSeverity,
+  GolemDiagnosticSeverity,
   identifier,
   NameScope,
   propertyName,
   RESERVED_MODEL_MEMBERS,
-  type CodegenDiagnostic,
+  type GolemDiagnostic,
 } from '@exprtlabs/golem/generator-api';
 import { effectiveSchemaTypes, resolveLocal, type OpenApiSchema } from './normalize.js';
 import { generatedBanner, GENERATOR_NAME, PACKAGE_VERSION } from './package-info.js';
@@ -80,7 +80,7 @@ export interface OpenApiModelAnalysis {
   /** The schema each node was interned for. */
   readonly definitionNameByNodeId: ReadonlyMap<string, string>;
   readonly nodesByCodecId: ReadonlyMap<string, SchemaNode>;
-  readonly diagnostics: readonly CodegenDiagnostic[];
+  readonly diagnostics: readonly GolemDiagnostic[];
   readonly selections: DiscriminatorSelections;
 }
 
@@ -624,13 +624,13 @@ function exactComponentTarget(schema: unknown, env: ModelResolveEnv): ExactCompo
 export function collectOpenApiModelDefinitions(document: unknown, resources?: ResourceIndex): {
   definitions: Map<string, ModelDefinition>;
   ordered: ModelDefinition[];
-  diagnostics: CodegenDiagnostic[];
+  diagnostics: GolemDiagnostic[];
   selections: DiscriminatorSelections;
 } {
-  const diagnostics: CodegenDiagnostic[] = [];
+  const diagnostics: GolemDiagnostic[] = [];
   const selections: DiscriminatorSelections = new Map();
   const warn = (code: string, message: string): void => {
-    diagnostics.push({ code, severity: CodegenDiagnosticSeverity.Warning, message });
+    diagnostics.push({ code, severity: GolemDiagnosticSeverity.Warning, message });
   };
   const schemas = asRecord(asRecord(asRecord(document).components).schemas);
   const env = modelEnv(document, undefined, undefined, resources, selections);

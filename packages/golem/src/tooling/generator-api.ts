@@ -13,20 +13,20 @@ export {
   RESERVED_MODEL_MEMBERS,
 } from './names.js';
 
-export interface CodegenProfile {
+export interface GolemProfile {
   readonly mobx: boolean;
   readonly validation: boolean;
   readonly ajvStandalone?: boolean;
   readonly allowAny?: boolean;
 }
 
-export interface ResolvedCodegenProfile extends CodegenProfile {
+export interface ResolvedGolemProfile extends GolemProfile {
   readonly ajvStandalone: boolean;
   readonly allowAny: boolean;
 }
 
 /** Programmatic callers receive the same defaults and checks as YAML users. */
-export function resolveProfile(profile: CodegenProfile): ResolvedCodegenProfile {
+export function resolveProfile(profile: GolemProfile): ResolvedGolemProfile {
   if (!isRecord(profile)) throw new TypeError('Generation profile must be an object.');
   for (const key of Object.keys(profile)) {
     if (!['mobx', 'validation', 'ajvStandalone', 'allowAny'].includes(key)) {
@@ -48,24 +48,24 @@ export function resolveProfile(profile: CodegenProfile): ResolvedCodegenProfile 
   return Object.freeze(resolved);
 }
 
-export interface CodegenArtifact {
+export interface GolemArtifact {
   readonly path: string;
   readonly content: string;
 }
 
 /** Stable diagnostic severities shared by the CLI and every generator. */
-export enum CodegenDiagnosticSeverity {
+export enum GolemDiagnosticSeverity {
   Error = 'error',
   Warning = 'warning',
 }
 
 /** Provider-specific diagnostic codes remain strings so providers can evolve independently. */
-export type CodegenDiagnosticCode = string;
+export type GolemDiagnosticCode = string;
 
 /** Typed source diagnostics returned by a provider without putting provenance in generated schemas. */
-export interface CodegenDiagnostic {
-  readonly code: CodegenDiagnosticCode;
-  readonly severity: CodegenDiagnosticSeverity;
+export interface GolemDiagnostic {
+  readonly code: GolemDiagnosticCode;
+  readonly severity: GolemDiagnosticSeverity;
   readonly message: string;
   readonly file?: string;
   readonly line?: number;
@@ -87,11 +87,11 @@ export interface ControllerTag extends Readonly<Record<string, unknown>> {
   readonly name: string;
 }
 
-export interface CodegenResult {
-  readonly artifacts: readonly CodegenArtifact[];
+export interface GolemResult {
+  readonly artifacts: readonly GolemArtifact[];
   readonly manifestPaths: readonly string[];
   readonly watchInputs: readonly string[];
-  readonly diagnostics?: readonly CodegenDiagnostic[];
+  readonly diagnostics?: readonly GolemDiagnostic[];
 }
 
 /** Report a local input before attempting to read or resolve it. */
@@ -112,7 +112,7 @@ export interface ModelContext {
   readonly root: string;
   readonly output?: string;
   readonly sources?: readonly string[];
-  readonly profile: CodegenProfile;
+  readonly profile: GolemProfile;
   readonly manifestInputs?: readonly string[];
   readonly onInput?: InputObserver;
   readonly session?: GeneratorSession;
@@ -127,7 +127,7 @@ export interface OpenApiContext {
   readonly maxRefBytes?: number;
   readonly maxRefDocuments?: number;
   readonly refTimeoutMs?: number;
-  readonly profile: CodegenProfile;
+  readonly profile: GolemProfile;
   readonly onInput?: InputObserver;
 }
 
@@ -147,14 +147,14 @@ export interface ControllerContext {
   readonly tags?: readonly ControllerTag[];
   readonly globalPrefix?: string;
   readonly uriVersioning?: ControllerUriVersioning;
-  readonly profile: CodegenProfile;
+  readonly profile: GolemProfile;
   readonly onInput?: InputObserver;
   readonly session?: GeneratorSession;
 }
 
-export interface CodegenProvider<Context> {
+export interface GolemProvider<Context> {
   readonly apiVersion: 1;
-  generate(context: Context): CodegenResult | Promise<CodegenResult>;
+  generate(context: Context): GolemResult | Promise<GolemResult>;
 }
 
 export function isRecord(value: unknown): value is Record<string, unknown> {

@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import test, { type TestContext } from 'node:test';
-import type { CodegenProfile } from '@exprtlabs/golem/generator-api';
+import type { GolemProfile } from '@exprtlabs/golem/generator-api';
 import { generate } from '#model/generator';
 import { writeGeneratedArtifacts } from './fixture-project.js';
 import { compileModelProject, createModelProject, writeModelSources } from './model-project.js';
@@ -27,7 +27,7 @@ type Codecs = Record<string, Codec>;
 /** Compare wire values as JSON data; prototype and absent-field details belong to the wire-format suite. */
 const json = (value: unknown): unknown => JSON.parse(JSON.stringify(value));
 
-const profiles: readonly (readonly [string, CodegenProfile])[] = [
+const profiles: readonly (readonly [string, GolemProfile])[] = [
   ['validation off', { mobx: false, validation: false }],
   ['runtime Ajv', { mobx: false, validation: true }],
   ['standalone', { mobx: false, validation: true, ajvStandalone: true }],

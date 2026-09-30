@@ -12,16 +12,16 @@ import {
 } from '@exprtlabs/golem/type-analysis';
 import { schemaForDescriptor } from '@exprtlabs/golem/schema';
 import type {
-  CodegenArtifact,
-  CodegenDiagnostic,
-  CodegenResult,
+  GolemArtifact,
+  GolemDiagnostic,
+  GolemResult,
   ControllerContext,
   InputObserver,
-  ResolvedCodegenProfile,
+  ResolvedGolemProfile,
 } from '@exprtlabs/golem/generator-api';
 import { resolveProfile } from '@exprtlabs/golem/generator-api';
 import {
-  CodegenDiagnosticSeverity,
+  GolemDiagnosticSeverity,
   diagnostic,
   TsToOpenApiDiagnosticCode,
   TsToOpenApiError,
@@ -39,19 +39,19 @@ export const apiVersion = 1 as const;
 
 export type TsToOpenApiContext = ControllerContext;
 
-export interface TsToOpenApiResult extends CodegenResult {
+export interface TsToOpenApiResult extends GolemResult {
   readonly apiVersion: 1;
 }
 
-export type { CodegenArtifact, CodegenDiagnostic, InputObserver, ControllerContext };
-export { CodegenDiagnosticSeverity, TsToOpenApiDiagnosticCode } from './diagnostics.js';
+export type { GolemArtifact, GolemDiagnostic, InputObserver, ControllerContext };
+export { GolemDiagnosticSeverity, TsToOpenApiDiagnosticCode } from './diagnostics.js';
 
 function validateContext(context: TsToOpenApiContext): {
   readonly root: string;
   readonly output: string;
   readonly sources?: readonly string[];
   readonly openapiVersion: '3.2.0' | '3.1.2';
-  readonly profile: ResolvedCodegenProfile;
+  readonly profile: ResolvedGolemProfile;
   readonly onInput?: InputObserver;
 } {
   if (!context || typeof context !== 'object' || Array.isArray(context)) {
@@ -87,10 +87,10 @@ function validateContext(context: TsToOpenApiContext): {
   return { root, output, ...(sources ? { sources } : {}), openapiVersion, profile, onInput: context.onInput };
 }
 
-function asCodegenDiagnostic(value: TsToOpenApiDiagnostic): CodegenDiagnostic {
+function asGolemDiagnostic(value: TsToOpenApiDiagnostic): GolemDiagnostic {
   return {
     code: value.code,
-    severity: value.severity === CodegenDiagnosticSeverity.Error ? CodegenDiagnosticSeverity.Error : CodegenDiagnosticSeverity.Warning,
+    severity: value.severity === GolemDiagnosticSeverity.Error ? GolemDiagnosticSeverity.Error : GolemDiagnosticSeverity.Warning,
     message: value.message,
     ...(value.file === undefined ? {} : { file: value.file }),
     ...(value.line === undefined ? {} : { line: value.line }),
@@ -121,7 +121,7 @@ function assertResolvedLocalReferences(
       const name = componentReferenceName(value);
       if (name && schemas[name] === undefined) {
         throw new TsToOpenApiError({
-          severity: CodegenDiagnosticSeverity.Error,
+          severity: GolemDiagnosticSeverity.Error,
           code: TsToOpenApiDiagnosticCode.UnresolvedSchemaReference,
           message: `OpenAPI metadata references missing local schema component ${value}.`,
         });
@@ -203,7 +203,7 @@ export async function generate(context: TsToOpenApiContext): Promise<TsToOpenApi
   const sources = normalized.sources ?? discoverControllerSources(normalized.root, observe);
   if (sources.length === 0) {
     throw new TsToOpenApiError({
-      severity: CodegenDiagnosticSeverity.Error,
+      severity: GolemDiagnosticSeverity.Error,
       code: TsToOpenApiDiagnosticCode.NoControllerSources,
       message: `No controller source files found under ${path.join(normalized.root, 'src')}. Add a *.controller.ts file or provide context.sources.`,
     });
@@ -242,7 +242,7 @@ export async function generate(context: TsToOpenApiContext): Promise<TsToOpenApi
       sourceNode,
       TsToOpenApiDiagnosticCode.NonportableSchema,
       message,
-      CodegenDiagnosticSeverity.Warning,
+      GolemDiagnosticSeverity.Warning,
     )),
   });
   const describeControllerType = (
@@ -428,7 +428,7 @@ export async function generate(context: TsToOpenApiContext): Promise<TsToOpenApi
   const finalDocument = withComponents({ ...documentSchemas, ...registeredSchemas, ...generatedSchemas });
   assertResolvedLocalReferences(finalDocument);
   const content = serializeForOutput(finalDocument, normalized.output);
-  const artifact: CodegenArtifact = { path: normalized.output, content };
+  const artifact: GolemArtifact = { path: normalized.output, content };
   const operationRegistry = emitOperationRegistry(
     analysis.routes,
     operationCodecRegistryPath(normalized.root),
@@ -446,6 +446,6 @@ export async function generate(context: TsToOpenApiContext): Promise<TsToOpenApi
     artifacts: [artifact, operationRegistry],
     manifestPaths: [],
     watchInputs: [...watchInputs].sort(),
-    ...(schemaDiagnostics.length > 0 ? { diagnostics: schemaDiagnostics.map(asCodegenDiagnostic) } : {}),
+    ...(schemaDiagnostics.length > 0 ? { diagnostics: schemaDiagnostics.map(asGolemDiagnostic) } : {}),
   };
 }

@@ -19,7 +19,7 @@ import {
   type ToJsonModelResolver,
 } from '@exprtlabs/golem/emitter';
 import { createSchemaGraph, codecPublicId, codecShortName, internDescriptors, type SchemaGraph } from '@exprtlabs/golem/schema-graph';
-import { propertyName, RESERVED_MODEL_MEMBERS, type CodegenProfile } from '@exprtlabs/golem/generator-api';
+import { propertyName, RESERVED_MODEL_MEMBERS, type GolemProfile } from '@exprtlabs/golem/generator-api';
 import type { ManifestIndex } from '@exprtlabs/golem/type-analysis';
 import type { ModelSpecification } from '@exprtlabs/golem/type-analysis';
 import { descriptorBuilder, propertyType } from '@exprtlabs/golem/type-analysis';
@@ -185,7 +185,7 @@ function descriptorExternalIds(
 
 function assertGeneratedNames(
   specifications: readonly ModelSpecification[],
-  profile: CodegenProfile,
+  profile: GolemProfile,
   externalIds: readonly string[],
   manifestIndex: ManifestIndex,
 ): Map<string, string> {
@@ -782,7 +782,7 @@ export function createJobAnalysis(
   checker: ts.TypeChecker,
   specifications: readonly ModelSpecification[],
   manifestIndex: ManifestIndex,
-  profile: CodegenProfile,
+  profile: GolemProfile,
   sources: readonly string[],
   identityRoot?: string,
   compilerOptions?: ts.CompilerOptions,
@@ -813,7 +813,7 @@ export function analyzeSourceGraph(
   checker: ts.TypeChecker,
   specifications: readonly ModelSpecification[],
   manifestIndex: ManifestIndex,
-  profile: CodegenProfile,
+  profile: GolemProfile,
   identityRoot?: string,
   compilerOptions?: ts.CompilerOptions,
   job: JobAnalysis = createJobAnalysis(checker, specifications, manifestIndex, profile, [source], identityRoot, compilerOptions),
@@ -993,7 +993,7 @@ export function codecEntriesForGraph(graph: SourceModelGraph, schemaGraph?: Sche
 
 export interface SharedSourceOptions {
   readonly output: string;
-  readonly profile: CodegenProfile;
+  readonly profile: GolemProfile;
   readonly graphs: readonly SourceModelGraph[];
   readonly standaloneCode?: string;
   /** Relative/absolute module specifier for an external standalone factory. */
@@ -1107,7 +1107,7 @@ export function emitSource(
   checker: ts.TypeChecker,
   specifications: readonly ModelSpecification[],
   manifestIndex: ManifestIndex,
-  profile: CodegenProfile,
+  profile: GolemProfile,
   shared?: SharedSourceReference,
   identityRoot?: string,
   preparedGraph?: SourceModelGraph,

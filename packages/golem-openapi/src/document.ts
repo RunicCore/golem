@@ -4,7 +4,7 @@ import YAML from 'yaml';
 import { asRecord, isJsonObject, objectEntries } from './json.js';
 import { assertSupportedModelFieldName } from '@exprtlabs/golem/schema';
 import { normalizeDocument, resolveLocalPointer, type NormalizedDocument, type NormalizedOperation } from './normalize.js';
-import { CodegenDiagnosticSeverity, type CodegenDiagnostic } from '@exprtlabs/golem/generator-api';
+import { GolemDiagnosticSeverity, type GolemDiagnostic } from '@exprtlabs/golem/generator-api';
 import {
   collectCanonicalResources,
   lookupCanonicalResource,
@@ -194,10 +194,10 @@ export function unsupportedHttpAuthSchemes(document: unknown): void {
 export function browserCookieDiagnostics(
   document: unknown,
   operations: readonly NormalizedOperation[],
-): CodegenDiagnostic[] {
-  const diagnostics: CodegenDiagnostic[] = [];
+): GolemDiagnostic[] {
+  const diagnostics: GolemDiagnostic[] = [];
   const warn = (message: string): void => {
-    diagnostics.push({ code: 'OPENAPI_BROWSER_COOKIE', severity: CodegenDiagnosticSeverity.Warning, message });
+    diagnostics.push({ code: 'OPENAPI_BROWSER_COOKIE', severity: GolemDiagnosticSeverity.Warning, message });
   };
   for (const operation of operations) {
     for (const parameter of operation.parameters) {

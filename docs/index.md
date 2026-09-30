@@ -1,7 +1,7 @@
 ---
 layout: home
 hero:
-  name: Codegen
+  name: Golem
   text: 'Write the type once. <span class="clip">Generate the rest.</span>'
   tagline: One TypeScript-first toolchain for models, validation, JSON conversion, OpenAPI documents and typed API clients.
   actions:
@@ -9,7 +9,7 @@ hero:
       text: Quick start →
       link: /guide/quick-start
     - theme: alt
-      text: What is Codegen
+      text: What is Golem
       link: /guide/
     - theme: alt
       text: GitHub
@@ -43,9 +43,9 @@ features:
 
 ## One toolchain instead of a stack
 
-A typical TypeScript API stack assembles a library for each job and keeps their declarations in sync by hand. Codegen reads the types you already write and generates every piece from them.
+A typical TypeScript API stack assembles a library for each job and keeps their declarations in sync by hand. Golem reads the types you already write and generates every piece from them.
 
-| Job | Usually | With Codegen |
+| Job | Usually | With Golem |
 | --- | --- | --- |
 | Classes from JSON | class-transformer | `parse<Task>(text)` |
 | Validation | class-validator decorators or a Zod schema | tags on the field type |
@@ -55,7 +55,7 @@ A typical TypeScript API stack assembles a library for each job and keeps their 
 
 ## Your types are the schema
 
-`MinLength`, `Pattern` and `MaxLength` are types. Codegen turns them into validation, OpenAPI constraints and client-side checks. An `IObject` stays a plain object; an `IModel` also gets a generated class ([IObject or IModel](/guide/models#iobject-or-imodel)).
+`MinLength`, `Pattern` and `MaxLength` are types. Golem turns them into validation, OpenAPI constraints and client-side checks. An `IObject` stays a plain object; an `IModel` also gets a generated class ([IObject or IModel](/guide/models#iobject-or-imodel)).
 
 <<< ../examples/nest-openapi/src/payment.model.ts#payment-types
 
@@ -91,7 +91,7 @@ The controller returns plain types. One `generate` run writes the OpenAPI docume
 
 ## Get started
 
-Codegen needs Node.js 22.15 or newer, TypeScript 7 and `ttsc` 0.30. The generator writes the JSON conversion code; the `ttsc` plugin points your `parse` and `toWireFormat` calls at it when you compile ([Installation](/guide/install)).
+Golem needs Node.js 22.15 or newer, TypeScript 7 and `ttsc` 0.30. The generator writes the JSON conversion code; the `ttsc` plugin points your `parse` and `toWireFormat` calls at it when you compile ([Installation](/guide/install)).
 
 ```bash
 npm install @exprtlabs/golem@rc ajv ajv-formats

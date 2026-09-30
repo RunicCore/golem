@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
-import { runPipeline } from '#codegen/cli';
+import { runPipeline } from '#golem/cli';
 import { command, workspace } from './support/process.js';
 import { writeFixture } from './support/consumer.js';
 import { readGeneratedModelSource } from './openapi/helpers.js';

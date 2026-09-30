@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { schemaForDescriptor, VALIDATION_KEYWORD } from '#codegen/schema';
+import { schemaForDescriptor, VALIDATION_KEYWORD } from '#golem/schema';
 
 const str = { kind: 'string' };
 const num = { kind: 'number' };
@@ -58,7 +58,7 @@ test('an object-level TValidation wraps the model-only residual', () => {
   assert.deepEqual(schema, { [VALIDATION_KEYWORD]: { schema: true, bindings: ['src/rules.ts:1:2'] } });
 });
 
-import { createSchemaGraph } from '#codegen/schema-graph';
+import { createSchemaGraph } from '#golem/schema-graph';
 
 test('graph nodes get residual schemas only when something is left to check', () => {
   const graph = createSchemaGraph({

@@ -1,9 +1,9 @@
-import type { CodegenProfile } from '@exprtlabs/golem/generator-api';
+import type { GolemProfile } from '@exprtlabs/golem/generator-api';
 import { resolveProfile } from '@exprtlabs/golem/generator-api';
 
-export interface OpenApiGenerationProfile extends CodegenProfile {}
+export interface OpenApiGenerationProfile extends GolemProfile {}
 
-export function requireProfile(profile: CodegenProfile | undefined): OpenApiGenerationProfile {
+export function requireProfile(profile: GolemProfile | undefined): OpenApiGenerationProfile {
   if (profile === undefined || profile === null) {
     throw new TypeError('profile is required');
   }
