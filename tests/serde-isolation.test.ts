@@ -74,7 +74,7 @@ test('retained model instances are still traversed for cycles during isolation',
   assert.strictEqual(copy.child, child);
 });
 
-test('JSON text decoding preserves codec behavior', async () => {
+test('trusted nested decode skips isolation because the caller already detached the tree', () => {
   let calls = 0;
   class Counter { constructor(public value: number) {} }
   registerGeneratedModel(Counter, { fields: ['value'], profile: { validation: false }, conversion: {
@@ -87,34 +87,28 @@ test('JSON text decoding preserves codec behavior', async () => {
     encode: model => ({ value: model.value }),
   } });
   const input = { nested: { value: 1 } };
-  assert.equal((decodeGeneratedModel(Counter, input)).value, 2);
+  assert.equal(decodeGeneratedModel(Counter, input).value, 2);
   assert.equal(input.nested.value, 1);
-  assert.equal((decodeGeneratedModel(Counter, parseJson(JSON.stringify(input)) as object)).value, 2);
+  assert.equal(decodeGeneratedModel(Counter, parseJson(JSON.stringify(input)) as object).value, 2);
   assert.equal(calls, 2);
+  const trusted = { nested: { value: 1 } };
+  assert.equal(decodeGeneratedModelTrusted(Counter, trusted).value, 2);
+  assert.equal(trusted.nested.value, 2);
 });
 
-test('trusted nested decode skips isolation because the caller already detached the tree', () => {
-  class Counter { constructor(public value: number) {} }
-  registerGeneratedModel(Counter, { fields: ['value'], profile: { validation: false }, conversion: {
-    decode(input) {
-      const nested = Reflect.get(input as object, 'nested') as { value: number };
-      nested.value += 1;
-      return new Counter(nested.value);
-    },
-    encode: model => ({ value: model.value }),
-  } });
-  const input = { nested: { value: 1 } };
-  assert.equal(decodeGeneratedModelTrusted(Counter, input).value, 2);
-  assert.equal(input.nested.value, 2);
-});
-
-test('isolation snapshots sibling getters and ignores enumerable symbol getters', () => {
+test('isolation snapshots sibling getters, keeps own __proto__ data and ignores enumerable symbol getters', () => {
   let symbolCalls = 0;
   const input = { first: {} as object, later: { value: 1 } };
   Object.defineProperty(input.first, 'change', { enumerable: true, get() {
     input.later = { value: 9 };
     return 2;
   } });
+  Object.defineProperty(input, '__proto__', {
+    value: { flag: true },
+    enumerable: true,
+    configurable: true,
+    writable: true,
+  });
   Object.defineProperty(input, Symbol('excluded'), { enumerable: true, get() {
     symbolCalls++;
     throw new Error('Symbol input should not be read');
@@ -124,6 +118,9 @@ test('isolation snapshots sibling getters and ignores enumerable symbol getters'
   assert.deepEqual(input.later, { value: 9 });
   assert.equal(symbolCalls, 0);
   assert.equal(Object.getOwnPropertySymbols(copy).length, 0);
+  assert.strictEqual(Object.getPrototypeOf(copy), Object.prototype);
+  assert.equal(Object.hasOwn(copy, '__proto__'), true);
+  assert.deepEqual(Reflect.get(copy, '__proto__'), { flag: true });
 });
 
 
@@ -150,28 +147,4 @@ test('decode cycle tracking retains multiple contracts and recovers after failur
   recurse = false;
   assert.ok(decodeGeneratedModel(First, input) instanceof First);
   assert.ok(decodeGeneratedModel(Second, input) instanceof Second);
-});
-
-test('clone fallback preserves own __proto__ data without reading enumerable symbol getters', () => {
-  let symbolReads = 0;
-  const input = Object.create(Object.prototype) as Record<string, unknown>;
-  Object.defineProperty(input, '__proto__', {
-    value: { flag: true },
-    enumerable: true,
-    configurable: true,
-    writable: true,
-  });
-  Object.defineProperty(input, Symbol('ignored'), {
-    enumerable: true,
-    get() {
-      symbolReads += 1;
-      throw new Error('symbol getter must not be evaluated while cloning wire input');
-    },
-  });
-
-  const copy = cloneConversionInput(input) as Record<string, unknown>;
-  assert.strictEqual(Object.getPrototypeOf(copy), Object.prototype);
-  assert.equal(Object.hasOwn(copy, '__proto__'), true);
-  assert.deepEqual(copy['__proto__'], { flag: true });
-  assert.equal(symbolReads, 0);
 });

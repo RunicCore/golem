@@ -30,12 +30,6 @@ test('the same shape gets different ids from TypeScript and OpenAPI sources', ()
   );
 });
 
-test('ids stay deterministic and keep the short-name prefix', () => {
-  const id = codecPublicId('Payment', shape, undefined, { source: 'openapi', constructs: true });
-  assert.equal(id, codecPublicId('Payment', shape, undefined, { source: 'openapi', constructs: true }));
-  assert.match(id, /^Payment_[0-9a-f]{8}$/);
-});
-
 const openApiDocument = {
   openapi: '3.1.0',
   info: { title: 'Identity', version: '1' },

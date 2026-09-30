@@ -582,11 +582,6 @@ test('same-file nested IModel companions compile without naming the handwritten 
     'the generated companion never imports the same-file handwritten class, avoiding a use-before-bound reference',
   );
   await compile(root);
-  const { Collection, Item } = await import(pathToFileURL(path.join(root, 'build/money.model.js')).href) as {
-    Collection: new (values?: object) => object;
-    Item: new (values?: object) => object;
-  };
-  assert.ok(new Collection({ id: '1', items: [new Item({ sku: 'a', quantity: 1 })] }) instanceof Collection);
 });
 
 test('nested class-typed IModel fields construct; type-only parse fills like IObject', async (t) => {

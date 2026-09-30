@@ -280,21 +280,37 @@ test('discriminated plain object unions convert only the selected branch', () =>
   assert.equal(encodeCalls, 1, 'only the selected token branch is encoded');
 });
 
-test('ambiguous object union conversion fails instead of probing codecs', () => {
-  const descriptor: ModelConversionDescriptor = {
-    kind: 'union',
-    variants: [
-      objectDescriptor({ when: { kind: 'date' } }),
-      objectDescriptor({ when: { kind: 'date' } }),
-    ],
-  };
-  assert.throws(
-    () => emitModelFromJSON(descriptor, 'value', () => fromChild),
-    /unique|required literal discriminator|ambiguous/i,
-  );
+test('ambiguous union conversions fail generation instead of probing codecs', () => {
+  const cases: readonly { name: string; descriptor: ModelConversionDescriptor; message: RegExp }[] = [
+    {
+      name: 'object variants with the same discriminator',
+      descriptor: {
+        kind: 'union',
+        variants: [
+          objectDescriptor({ when: { kind: 'date' } }),
+          objectDescriptor({ when: { kind: 'date' } }),
+        ],
+      },
+      message: /unique|required literal discriminator|ambiguous/i,
+    },
+    {
+      name: 'date or date array',
+      descriptor: {
+        kind: 'union',
+        variants: [
+          { kind: 'date' },
+          { kind: 'array', item: { kind: 'date' } },
+        ],
+      },
+      message: /ambiguous conversions/i,
+    },
+  ];
+  for (const { name, descriptor, message } of cases) {
+    assert.throws(() => emitModelFromJSON(descriptor, 'value', () => fromChild), message, name);
+  }
 });
 
-test('identity scalar-or-array unions do not emit Array.isArray maps', () => {
+test('scalar-or-array unions convert the scalar and the array items without doubling Array.isArray', () => {
   const status: ModelConversionDescriptor = {
     kind: 'union',
     variants: [
@@ -303,12 +319,9 @@ test('identity scalar-or-array unions do not emit Array.isArray maps', () => {
       { kind: 'array', item: { kind: 'union', variants: [{ kind: 'literal', value: 'paid' }, { kind: 'literal', value: 'pending' }] } },
     ],
   };
-  assert.equal(emitModelFromJSON(status, 'value', () => fromChild), 'value');
+  assert.equal(emitModelFromJSON(status, 'value', () => fromChild), 'value', 'identity unions emit no Array.isArray map');
   assert.equal(emitModelToJSON(status, 'value', () => toChild), 'value');
   assert.doesNotMatch(emitModelFromJSON(status, 'value', () => fromChild), /Array\.isArray/);
-});
-
-test('scalar-or-array unions convert the scalar and the array items without doubling Array.isArray', () => {
   resetCounters();
   const token: ModelConversionDescriptor = {
     kind: 'number',
@@ -337,18 +350,4 @@ test('scalar-or-array unions convert the scalar and the array items without doub
   assert.equal(fromJSON('token:4'), 4);
   assert.deepEqual(fromJSON(['token:4', 'token:5']), [4, 5]);
   assert.equal(decodeCalls, 3);
-});
-
-test('date-or-date-array unions fail generation instead of probing', () => {
-  const descriptor: ModelConversionDescriptor = {
-    kind: 'union',
-    variants: [
-      { kind: 'date' },
-      { kind: 'array', item: { kind: 'date' } },
-    ],
-  };
-  assert.throws(
-    () => emitModelFromJSON(descriptor, 'value', () => fromChild),
-    /ambiguous conversions/i,
-  );
 });
