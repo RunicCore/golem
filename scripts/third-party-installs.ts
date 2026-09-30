@@ -1,15 +1,25 @@
+import fs from 'node:fs';
+
 // Every third-party package spec the packed and browser tests pass to
 // `npm install`. The tests import these specs, and `test:prepare` installs the
 // whole list to fill the npm cache, so the two cannot drift apart. Packages
-// that the tests install from a maintained example's own manifest are warmed
-// from that manifest, not listed here.
+// that a test installs from a fixture's own manifest are warmed from that
+// manifest, not listed here; the Nest specs below read the same manifest so
+// there is one place to change a Nest version.
 const versions = { mobx: '^6.13.0', ajv: '^8.20.0', 'ajv-formats': '^3.0.1', typescript: '~7.0.2', ttsc: '~0.30.4' };
 
-/** Version shared by the Nest packages the packed tests install next to the example manifest's own. */
-export const NEST_VERSION = '11.2.3';
-export const NEST_COMMON = `@nestjs/common@${NEST_VERSION}`;
-export const NEST_SWAGGER = '@nestjs/swagger@11.4.7';
-export const NEST_PLATFORM_FASTIFY = `@nestjs/platform-fastify@${NEST_VERSION}`;
+const nestAppManifest: { dependencies: Record<string, string> } = JSON.parse(
+  fs.readFileSync(new URL('../../tests/fixtures/packed/nest-app/package.json', import.meta.url), 'utf8'),
+);
+
+function nestAppSpec(name: string): string {
+  const version = nestAppManifest.dependencies[name];
+  if (!version) throw new Error(`tests/fixtures/packed/nest-app/package.json does not declare ${name}.`);
+  return `${name}@${version}`;
+}
+
+export const NEST_COMMON = nestAppSpec('@nestjs/common');
+export const NEST_SWAGGER = nestAppSpec('@nestjs/swagger');
 export const MOBX = `mobx@${versions.mobx}`;
 export const AJV = `ajv@${versions.ajv}`;
 export const AJV_FORMATS = `ajv-formats@${versions['ajv-formats']}`;
@@ -20,7 +30,7 @@ export const TYPESCRIPT = `typescript@${versions.typescript}`;
 export const TTSC = `ttsc@${versions.ttsc}`;
 
 export const THIRD_PARTY_INSTALLS: readonly string[] = [
-  NEST_COMMON, NEST_SWAGGER, NEST_PLATFORM_FASTIFY,
+  NEST_COMMON, NEST_SWAGGER,
   MOBX, AJV, AJV_FORMATS, AJV_PINNED, AJV_FORMATS_PINNED,
   ESBUILD, TYPESCRIPT, TTSC,
 ];
