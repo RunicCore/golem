@@ -53,7 +53,7 @@ test('release consistency rejects public version and internal pin drift', t => {
     publishConfig: { access: 'public', tag: 'rc' },
     dependencies: { '@exprtlabs/golem': '^1.0.0-rc' },
   });
-  assert.throws(() => assertReleaseConsistency(root), /must pin @exprtlabs\/golem/);
+  assert.throws(() => assertReleaseConsistency(root), /must pin @exprtlabs\/golem to /);
 });
 
 test('release consistency rejects an example project missing from the maintained inventory', t => {

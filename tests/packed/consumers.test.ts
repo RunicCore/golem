@@ -22,7 +22,7 @@ test('packed binary ownership survives either generator installation order and u
     for (const name of order) {
       await npm(root, ['install', '--save-dev', packageSpec(registry, `@exprtlabs/${name}`)]);
       const help = await cli(root, ['--help']);
-      assert.match(help.stdout, /golem/);
+      assert.match(help.stdout, /Usage: golem /);
       assert.equal(fs.lstatSync(path.join(root, 'node_modules/@exprtlabs/golem')).isSymbolicLink(), false);
     }
     await npm(root, ['uninstall', `@exprtlabs/${order[0]}`]);

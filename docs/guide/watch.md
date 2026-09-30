@@ -41,8 +41,10 @@ Regeneration doesn't restart your app; use your framework's own reload.
 ## Check without writing
 
 ```sh
-npx golem check
+npx --no-install golem check
 ```
+
+`--no-install` makes `npx` fail when the project doesn't install golem, instead of fetching the unrelated `golem` package from npm ([Install](/guide/install#packages-per-generator)).
 
 `check` exits with code 1 when a generated file is missing, stale or
 unrecorded, and writes nothing. Commit generated files and

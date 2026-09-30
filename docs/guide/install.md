@@ -14,7 +14,7 @@ TypeScript 5 and 6 aren't supported.
 
 ## Packages per generator
 
-The `golem` command comes from `@exprtlabs/golem`, which every generator depends on. If `npx golem` isn't found, add `@exprtlabs/golem` as a direct dependency.
+The `golem` command comes from `@exprtlabs/golem`, which every generator depends on. Install it in the project before you run `npx golem`: an unrelated npm package is also named `golem`, and without a local install `npx` offers to download and run that one, and in CI it runs it without asking. In scripts and CI, run `npx --no-install golem`, which fails instead.
 
 | To generate | Development dependency |
 | --- | --- |
