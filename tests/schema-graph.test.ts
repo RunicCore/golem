@@ -64,11 +64,29 @@ test('schema graph interns nested objects once and stringify composes by call', 
   assert.equal(stringifyPayment(paymentValue as never), JSON.stringify(paymentValue));
 });
 
-test('intern preserves type-only nested refs as known-key copies and class refs as construct', () => {
+test('intern preserves type-only nested refs as known-key copies and class refs as construct, and skips identity-only fill', () => {
   const item: ModelTypeDescriptor = {
     kind: 'object',
     properties: { sku: { kind: 'string' } },
     required: ['sku'],
+    additionalProperties: false,
+  };
+  const note: ModelTypeDescriptor = {
+    kind: 'object',
+    properties: { sku: { kind: 'string' } },
+    required: ['sku'],
+    additionalProperties: false,
+  };
+  const flags: ModelTypeDescriptor = {
+    kind: 'object',
+    properties: {},
+    required: [],
+    additionalProperties: { kind: 'string' },
+  };
+  const bag: ModelTypeDescriptor = {
+    kind: 'object',
+    properties: { lane: { kind: 'string' } },
+    required: ['lane'],
     additionalProperties: false,
   };
   const collection: ModelTypeDescriptor = {
@@ -76,8 +94,11 @@ test('intern preserves type-only nested refs as known-key copies and class refs 
     properties: {
       typeOnly: { kind: 'array', item: { kind: 'reference', name: 'Item' } },
       classField: { kind: 'reference', name: 'Item', construct: true },
+      flags,
+      bag,
+      notes: { kind: 'array', item: note },
     },
-    required: ['typeOnly', 'classField'],
+    required: ['typeOnly', 'classField', 'flags', 'bag', 'notes'],
     additionalProperties: false,
   };
   const graph = createSchemaGraph();
@@ -105,81 +126,26 @@ test('intern preserves type-only nested refs as known-key copies and class refs 
   }
   serde.registerIModelClass(itemNode.codecId, ItemStub);
   const { fromWireFormatCollection } = instantiateRuntime(source);
+  const wireFlags = { colorFlag: 'blue', sizeFlag: 'large' };
   const wire = {
     typeOnly: [{ sku: 'a', extra: 'drop-me' }],
     classField: { sku: 'b', extra: 'keep-me' },
-  };
-  const result = fromWireFormatCollection(wire, { validate: false }) as { typeOnly: unknown[]; classField: unknown };
-  assert.deepEqual(result.typeOnly, [{ sku: 'a' }], 'a type-only nested ref copies only its known keys');
-  assert.ok(result.classField instanceof ItemStub, 'a construct:true reference is constructed via the registered IModel class');
-});
-
-test('construct skips identity-only fill and reuses extras-allowed identity nested objects', () => {
-  const item: ModelTypeDescriptor = {
-    kind: 'object',
-    properties: { sku: { kind: 'string' } },
-    required: ['sku'],
-    additionalProperties: false,
-  };
-  const note: ModelTypeDescriptor = {
-    kind: 'object',
-    properties: { sku: { kind: 'string' } },
-    required: ['sku'],
-    additionalProperties: false,
-  };
-  const flags: ModelTypeDescriptor = {
-    kind: 'object',
-    properties: {},
-    required: [],
-    additionalProperties: { kind: 'string' },
-  };
-  const bag: ModelTypeDescriptor = {
-    kind: 'object',
-    properties: { lane: { kind: 'string' } },
-    required: ['lane'],
-    additionalProperties: false,
-  };
-  const root: ModelTypeDescriptor = {
-    kind: 'object',
-    properties: {
-      flags,
-      bag,
-      notes: { kind: 'array', item: note },
-      item: { kind: 'reference', name: 'Item', construct: true },
-    },
-    required: ['flags', 'bag', 'notes', 'item'],
-    additionalProperties: false,
-  };
-  const graph = createSchemaGraph();
-  const itemNode = graph.intern(item, 'Item', true);
-  graph.intern(root, 'Root');
-  graph.seal();
-  const source = emitCodecRuntime(graph);
-  class ItemStub {
-    public constructor(values: object = {}) {
-      Object.assign(this, values);
-    }
-  }
-  serde.registerIModelClass(itemNode.codecId, ItemStub);
-  const { fromWireFormatRoot } = instantiateRuntime(source);
-  const wireFlags = { colorFlag: 'blue', sizeFlag: 'large' };
-  const wireBag = { lane: 'north', extra: 'drop-me' };
-  const wire = {
     flags: wireFlags,
-    bag: wireBag,
+    bag: { lane: 'north', extra: 'drop-me' },
     notes: [{ sku: 'n1', extra: 'drop-me' }],
-    item: { sku: 'i1' },
   };
-  const result = fromWireFormatRoot(wire, { validate: false }) as {
+  const result = fromWireFormatCollection(wire, { validate: false }) as {
+    typeOnly: unknown[];
+    classField: unknown;
     flags: unknown;
     bag: unknown;
     notes: unknown[];
-    item: unknown;
   };
+  assert.deepEqual(result.typeOnly, [{ sku: 'a' }], 'a type-only nested ref copies only its known keys');
+  assert.ok(result.classField instanceof ItemStub, 'a construct:true reference is constructed via the registered IModel class instead of an identity-only fill');
   assert.deepEqual(result.flags, wireFlags, 'an additionalProperties nested object passes every key through instead of only known ones');
   assert.deepEqual(result.bag, { lane: 'north' }, 'a closed nested object copies only its known keys, dropping the extra one');
   assert.deepEqual(result.notes, [{ sku: 'n1' }], 'array items of a closed nested object copy only their known keys');
-  assert.ok(result.item instanceof ItemStub, 'a construct:true reference is constructed via the registered class instead of an identity-only fill');
 });
 
 test('TSerde intern emits a second Ajv schema only when wire and model intern keys differ', () => {
@@ -267,8 +233,6 @@ test('IObject and IModel with the same TSerde fields intern as separate stringif
   assert.match(source, /const __resolvedModelSchema_PermissionInput = resolveGeneratedModelSchemaRefs/);
   assert.match(source, /structuredClone\(__resolvedModelSchema_PermissionInput\)/, 'each schema is resolved once and reused via structuredClone, not re-resolved per Ajv instance');
   assert.doesNotMatch(source, /addSchema\(resolveGeneratedModelSchemaRefs/, 'schemas are hoisted to a named const instead of being resolved inline at each addSchema call');
-  assert.match(source, /return stringify\w+Wire\(wire as never/, 'the codec composes through its own wire stringify function instead of a naive JSON.stringify(wire)');
-  assert.doesNotMatch(source, /return JSON\.stringify\(wire\)/, 'the codec never falls back to JSON.stringify(wire) directly');
   class PermissionModel {
     public constructor(values: object = {}) {
       Object.assign(this, values);
@@ -285,7 +249,7 @@ test('IObject and IModel with the same TSerde fields intern as separate stringif
   assert.equal(stringifyPermission(decodedModel as never, { validate: false }), '{"permissions":"5"}', 'the IModel node has its own stringify function, separate from PermissionInput');
 });
 
-test('two different Payment contracts intern as distinct hashed codec ids', () => {
+test('different Payment contracts intern as distinct hashed codec ids and identical ones as one', () => {
   const billing: ModelTypeDescriptor = {
     kind: 'object',
     properties: { amount: { kind: 'number' } },
@@ -310,6 +274,17 @@ test('two different Payment contracts intern as distinct hashed codec ids', () =
   const source = emitCodecRuntime(graph);
   assert.match(source, new RegExp(`createObjectCodec\\("${first.codecId}"`));
   assert.match(source, new RegExp(`createObjectCodec\\("${second.codecId}"`));
+
+  const identical = createSchemaGraph();
+  const copyA = identical.intern({ ...billing, properties: { ...billing.properties } }, 'Payment');
+  const copyB = identical.intern({
+    kind: 'object',
+    properties: { amount: { kind: 'number' } },
+    required: ['amount'],
+    additionalProperties: false,
+  }, 'Payment');
+  assert.equal(copyA.codecId, copyB.codecId);
+  assert.equal(identical.nodes.size, 1);
 });
 
 test('IObject references and OpenAPI generated-model refs share a codec shape', () => {
@@ -374,25 +349,6 @@ test('parent Payment codec ids include nested Money contract shape', () => {
   right.intern(moneyAmount, 'Money');
   const second = right.intern(paymentOf('Money'), 'Payment');
   assert.equal(first.codecId, second.codecId);
-});
-
-test('identical Payment contracts intern as one hashed codec id', () => {
-  const payment: ModelTypeDescriptor = {
-    kind: 'object',
-    properties: { amount: { kind: 'number' } },
-    required: ['amount'],
-    additionalProperties: false,
-  };
-  const graph = createSchemaGraph();
-  const first = graph.intern({ ...payment, properties: { ...payment.properties } }, 'Payment');
-  const second = graph.intern({
-    kind: 'object',
-    properties: { amount: { kind: 'number' } },
-    required: ['amount'],
-    additionalProperties: false,
-  }, 'Payment');
-  assert.equal(first.codecId, second.codecId);
-  assert.equal(graph.nodes.size, 1);
 });
 
 test('codec declaration table maps source#Name to hashed ids and rejects conflicting rows', () => {

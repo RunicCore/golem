@@ -1,13 +1,13 @@
 import type { IModel } from '@exprtlabs/codegen/model';
-import { ABase, type AFields } from './a.model.generated.js';
+import { ParentBase, type ParentFields } from './parent.model.generated.js';
 import type { Contains, TValidation } from '@exprtlabs/codegen/tags';
 import type { TChild } from './child.model.js';
-import { childPredicate } from './predicates.js';
+import { childPredicate } from './predicates-2.js';
 
-export type TA = IModel<{
+export type TParent = IModel<{
   children?: unknown[] & Contains<TChild & TValidation<typeof childPredicate>>;
 }>;
 
-export class A extends ABase {
-  constructor(values: Partial<AFields> = {}) { super(values); }
+export class Parent extends ParentBase {
+  constructor(values: Partial<ParentFields> = {}) { super(values); }
 }
