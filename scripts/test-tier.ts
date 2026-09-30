@@ -2,20 +2,23 @@ import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { goBinary } from './go-binary.js';
 
 export type Tier = 'prepare' | 'focused' | 'full' | 'acceptance' | 'docs';
 export interface Step { readonly label: string; readonly run: () => number }
 
 export const UNIT_FILES = ['.build/tests/*.test.js', '.build/tests/openapi/*.test.js', '.build/tests/ts-to-openapi/*.test.js'] as const;
-export const PACKED_FILES = ['.build/tests/packed/*.test.js'] as const;
+// The model-only smoke file runs in Full; Acceptance runs the others so it runs once.
+export const PACKED_FILES = ['.build/tests/packed/consumers.test.js', '.build/tests/packed/examples.test.js', '.build/tests/packed/nest-workflows.test.js'] as const;
+const SMOKE_FILE = '.build/tests/packed/model-only.test.js';
 export const BROWSER_FILES = ['.build/tests/browser/*.test.js'] as const;
 // Values from the Task 2 baseline replace these in Task 6.
-export const TEST_TIMEOUT_MS = { focused: 60_000, full: 60_000, acceptance: 300_000, prepare: 900_000 } as const;
+export const TEST_TIMEOUT_MS = { focused: 60_000, full: 60_000, acceptance: 300_000 } as const;
 // Task 6 replaces these with min(measured cap, os.availableParallelism()-derived value).
 export const CONCURRENCY = { unit: 2, packed: 1 } as const;
 
 const tiers: Readonly<Record<Tier, { readonly budget: string; readonly purpose: string }>> = {
-  prepare: { budget: 'about 10 min, network', purpose: 'Fill the npm, Go and packed caches so tiers run offline.' },
+  prepare: { budget: '≤5 min (plus a first-time image build), network', purpose: 'Fill the npm, Go and packed caches so tiers run offline.' },
   focused: { budget: '≤1 min', purpose: 'Did my change break what I touched?' },
   full: { budget: '≤5 min', purpose: 'Did I break anything anywhere?' },
   acceptance: { budget: '≤10 min, needs a stated reason', purpose: 'Is this releasable?' },
@@ -44,8 +47,8 @@ export function selectFocused(args: readonly string[]): { readonly files: readon
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const resultsDir = process.env.FE_DEPS_RESULTS_DIR;
 
-function run(executable: string, args: readonly string[]): number {
-  const result = spawnSync(executable, args, { cwd: root, stdio: 'inherit' });
+function run(executable: string, args: readonly string[], cwd: string = root, env: NodeJS.ProcessEnv = {}): number {
+  const result = spawnSync(executable, args, { cwd, env: { ...process.env, ...env }, stdio: 'inherit' });
   if (result.error) throw result.error;
   return result.status ?? 1;
 }
@@ -58,11 +61,20 @@ function nodeTest(label: string, files: readonly string[], timeout: number, conc
 
 const npmRun = (label: string, script: string): Step => ({ label, run: () => run('npm', ['run', script]) });
 const goTests: Step = { label: 'go', run: () => run(process.execPath, ['.build/scripts/test-go-plugin.js']) };
+const pack: Step = { label: 'pack', run: () => run(process.execPath, ['.build/scripts/test-pack.js']) };
+// Prepare only fills caches; it never runs a test.
+const prepareSteps: Step[] = [
+  pack,
+  { label: 'warm', run: () => run(process.execPath, ['.build/scripts/test-warm.js']) },
+  { label: 'goModules', run: () => run(goBinary(), ['mod', 'download'], path.join(root, 'packages/codegen/plugin'), { GOTOOLCHAIN: 'local' }) },
+];
 
 function steps(tier: Tier, args: readonly string[], native: boolean): Step[] {
+  if (tier === 'prepare') return prepareSteps;
   if (tier === 'focused') {
     const selection = selectFocused(args);
-    return [nodeTest('focused', selection.files, TEST_TIMEOUT_MS.focused, CONCURRENCY.unit, selection.passThrough)];
+    const focused = nodeTest('focused', selection.files, TEST_TIMEOUT_MS.focused, CONCURRENCY.unit, selection.passThrough);
+    return selection.needsPack ? [pack, focused] : [focused];
   }
   if (tier === 'docs') {
     return [
@@ -71,16 +83,14 @@ function steps(tier: Tier, args: readonly string[], native: boolean): Step[] {
       { label: 'docs public content', run: () => run(process.execPath, ['.build/scripts/public-source.js', 'scan', 'docs/.vitepress/dist']) },
     ];
   }
-  // `prepare` is an online Acceptance run with a cold-cache per-test limit for every step.
-  const timeout = tier === 'prepare' ? TEST_TIMEOUT_MS.prepare : TEST_TIMEOUT_MS.acceptance;
-  const full: Step[] = [nodeTest('unit', UNIT_FILES, tier === 'prepare' ? timeout : TEST_TIMEOUT_MS.full, CONCURRENCY.unit), goTests];
-  if (tier === 'full') return native ? full : [...full];
+  const full: Step[] = [nodeTest('unit', UNIT_FILES, TEST_TIMEOUT_MS.full, CONCURRENCY.unit), goTests];
+  if (tier === 'full') return native ? full : [...full, pack, nodeTest('packed smoke', [SMOKE_FILE], TEST_TIMEOUT_MS.full, 1)];
   return [
     { label: 'public source', run: () => run(process.execPath, ['.build/scripts/public-source.js', 'check']) },
     { label: 'OpenAPI compliance', run: () => run(process.execPath, ['.build/packages/openapi-to-ts/compliance/generate-matrix.js', '--check']) },
-    ...full,
-    nodeTest('packed', PACKED_FILES, timeout, CONCURRENCY.packed),
-    nodeTest('browser', BROWSER_FILES, timeout, CONCURRENCY.packed),
+    ...steps('full', args, false),
+    nodeTest('packed', PACKED_FILES, TEST_TIMEOUT_MS.acceptance, CONCURRENCY.packed),
+    nodeTest('browser', BROWSER_FILES, TEST_TIMEOUT_MS.acceptance, CONCURRENCY.packed),
     npmRun('react example', 'check:react'),
   ];
 }

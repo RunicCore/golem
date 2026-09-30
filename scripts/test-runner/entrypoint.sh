@@ -54,7 +54,7 @@ npm rebuild --ignore-scripts --no-audit --no-fund
 # Run-level ceiling (F1: no run exceeds 10 min). --test-timeout only fails a
 # test; a hung file process or a stuck await is ended here.
 case "$tier" in
-  focused) ceiling=180 ;; full) ceiling=450 ;; acceptance) ceiling=600 ;; docs) ceiling=300 ;; prepare) ceiling=1800 ;;
+  focused) ceiling=180 ;; full) ceiling=450 ;; acceptance) ceiling=600 ;; docs) ceiling=300 ;; prepare) ceiling=300 ;;
   *) ceiling=60 ;;
 esac
 status=0
