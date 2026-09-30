@@ -3,14 +3,14 @@ import type { IModel } from '@exprtlabs/codegen/model';
 import type { MinProperties } from '@exprtlabs/codegen/tags';
 import { getValidator, validateInstance } from '@exprtlabs/codegen/validation';
 import { encodeGeneratedModel } from '@exprtlabs/codegen/conversion';
-import { ChildBase, RootBase } from './example.model.generated.js';
-export type TChild = IModel<{ value: number } & MinProperties<2>>;
-export type TRoot = IModel<{ child: TChild }>;
-export class Child extends ChildBase {}
-export class Root extends RootBase {}
+import { TagChildBase, TagRootBase } from './tag-message.model.generated.js';
+export type TTagChild = IModel<{ value: number } & MinProperties<2>>;
+export type TTagRoot = IModel<{ child: TTagChild }>;
+export class TagChild extends TagChildBase {}
+export class TagRoot extends TagRootBase {}
 export async function exercise() {
-  const child = new Child({ value: 1 });
-  const root = new Root({ child });
+  const child = new TagChild({ value: 1 });
+  const root = new TagRoot({ child });
   const registered = getValidator(child);
   registered.setErrors({ value: "existing display error" });
   registered.messages([{ path: [], code: IssueCode.MinProperties, message: "Child needs two fields." }]);
