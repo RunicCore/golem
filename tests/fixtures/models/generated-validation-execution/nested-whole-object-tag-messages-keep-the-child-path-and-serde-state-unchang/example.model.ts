@@ -1,8 +1,8 @@
-import { IssueCode } from '@exprtlabs/codegen/errors';
-import type { IModel } from '@exprtlabs/codegen/model';
-import type { MinProperties } from '@exprtlabs/codegen/tags';
-import { getValidator, validateInstance } from '@exprtlabs/codegen/validation';
-import { encodeGeneratedModel } from '@exprtlabs/codegen/conversion';
+import { IssueCode } from '@exprtlabs/golem/errors';
+import type { IModel } from '@exprtlabs/golem/model';
+import type { MinProperties } from '@exprtlabs/golem/tags';
+import { getValidator, validateInstance } from '@exprtlabs/golem/validation';
+import { encodeGeneratedModel } from '@exprtlabs/golem/conversion';
 import { TagChildBase, TagRootBase } from './tag-message.model.generated.js';
 export type TTagChild = IModel<{ value: number } & MinProperties<2>>;
 export type TTagRoot = IModel<{ child: TTagChild }>;

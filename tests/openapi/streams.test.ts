@@ -52,7 +52,7 @@ function loadClient(
   name: string,
   profile: { mobx: boolean; validation: boolean; ajvStandalone?: boolean },
 ): Promise<GeneratedClientClass> {
-  return loadClientAt(path.join(createFixtureProject(t, 'runic-openapi-streams-'), 'sdk'), document, name, profile);
+  return loadClientAt(path.join(createFixtureProject(t, 'golem-openapi-streams-'), 'sdk'), document, name, profile);
 }
 
 function streamDoc(contentType: string, itemSchema: unknown): Record<string, unknown> {
@@ -117,7 +117,7 @@ after(() => {
 
 function loadNeverStreamClient(): Promise<GeneratedClientClass> {
   if (neverStreamClient) return neverStreamClient;
-  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'runic-openapi-never-stream-')));
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'golem-openapi-never-stream-')));
   neverStreamRoots.push(root);
   const streams = streamDoc('application/x-ndjson', false);
   const document = {
@@ -146,7 +146,7 @@ function loadNeverStreamClient(): Promise<GeneratedClientClass> {
 
 test('itemSchema false emits AsyncIterable<never> and validation-on rejects the first item', async (t) => {
   const typesOff = await generateMaterializedSdk(streamDoc('application/x-ndjson', false), {
-    output: path.join(createFixtureProject(t, 'runic-openapi-itemschema-'), 'sdk'),
+    output: path.join(createFixtureProject(t, 'golem-openapi-itemschema-'), 'sdk'),
     name: 'NeverStream',
     profile: { mobx: false, validation: false },
   });

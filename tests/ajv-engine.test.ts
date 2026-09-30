@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { createOpenApiAjvEngine, createOpenApiSyncAjvEngine } from '@exprtlabs/codegen/ajv';
-import { LibError, LibErrorKind } from '@exprtlabs/codegen/errors';
+import { createOpenApiAjvEngine, createOpenApiSyncAjvEngine } from '@exprtlabs/golem/ajv';
+import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 
 test('the OpenAPI Ajv engine enforces $dynamicRef/$dynamicAnchor recursion, unevaluatedProperties, and allErrors', async () => {
   const engine = createOpenApiAjvEngine();
@@ -36,7 +36,7 @@ test('the OpenAPI Ajv engine enforces $dynamicRef/$dynamicAnchor recursion, unev
     children: [{ data: 'child', misspelled: true }],
   }), false);
 
-  const closedExtensionId = 'urn:runic:test:closed-extension';
+  const closedExtensionId = 'urn:golem:test:closed-extension';
   engine.addSchema({
     $id: closedExtensionId,
     type: 'object',
@@ -67,7 +67,7 @@ test('the OpenAPI Ajv engine enforces $dynamicRef/$dynamicAnchor recursion, unev
     extra: true,
   }), false);
 
-  const id = 'urn:runic:test:schemas';
+  const id = 'urn:golem:test:schemas';
   engine.addSchema({
     $id: id,
     components: {

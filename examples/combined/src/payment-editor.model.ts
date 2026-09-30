@@ -1,5 +1,5 @@
 // #region model-declaration
-import type { IModel } from '@exprtlabs/codegen/model';
+import type { IModel } from '@exprtlabs/golem/model';
 import type { Money } from '../sdk/index.js';
 
 export type TPaymentEditor = IModel<{
@@ -8,7 +8,7 @@ export type TPaymentEditor = IModel<{
 }>;
 // #endregion model-declaration
 
-import { getValidator } from '@exprtlabs/codegen/validation';
+import { getValidator } from '@exprtlabs/golem/validation';
 import { PaymentEditorBase, type PaymentEditorInit } from './payment-editor.model.generated.js';
 
 export class PaymentEditor extends PaymentEditorBase {

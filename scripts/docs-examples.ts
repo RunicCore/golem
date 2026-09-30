@@ -3,7 +3,7 @@ import path from 'node:path';
 import { listPublicSourceFiles, publicContentOptions, scanPublicContent } from './public-source.js';
 import { SOURCE_EXAMPLES } from './maintained-examples.js';
 const packageSnippetSources = new Set([
-  'packages/codegen/src/nest.ts',
+  'packages/golem/src/nest.ts',
 ]);
 /** The benchmark page shows the fixtures it times; they are in the public source inventory. */
 const benchmarkSnippetPrefix = 'scripts/benchmark/fixtures/';

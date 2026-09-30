@@ -1,4 +1,4 @@
-import { parse, fromWireFormat } from '@exprtlabs/codegen/serde';
+import { parse, fromWireFormat } from '@exprtlabs/golem/serde';
 import { Payment, type TPayment } from './money.model.js';
 export const parsed = parse<Payment>('{"id":"1","amount":{"currency":"USD","value":"1"},"note":"ok"}');
 export const trusted = parse<Payment>('{"id":"1","amount":{"currency":"USD","value":"1"},"note":"ok"}', { validate: false });

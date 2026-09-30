@@ -33,7 +33,7 @@ export interface ModelProject {
   readonly sourceRoot: string;
 }
 
-/** Create the standard temporary ESM consumer used by model-codegen tests. */
+/** Create the standard temporary ESM consumer used by golem-model tests. */
 export function createModelProject(t: TestContext, options: ModelProjectOptions): ModelProject {
   const root = createFixtureProject(t, options.prefix);
   const sourceRoot = path.join(root, 'src');
@@ -42,7 +42,7 @@ export function createModelProject(t: TestContext, options: ModelProjectOptions)
     private: true,
     type: 'module',
     ...(options.name === null ? {} : {
-      name: options.name ?? options.prefix.replace(/^runic-/, '').replace(/-+$/, ''),
+      name: options.name ?? options.prefix.replace(/^golem-/, '').replace(/-+$/, ''),
     }),
   };
   fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify(packageManifest));
@@ -51,7 +51,7 @@ export function createModelProject(t: TestContext, options: ModelProjectOptions)
     fs.symlinkSync(path.join(workspace, 'node_modules'), path.join(root, 'node_modules'), 'dir');
   } else {
     const packages: Record<string, string> = {
-      '@exprtlabs/codegen': path.join(workspace, 'packages/codegen'),
+      '@exprtlabs/golem': path.join(workspace, 'packages/golem'),
       ...(options.linkTypescript ? { typescript: path.join(workspace, 'node_modules/typescript') } : {}),
       ...(options.linkTtsc ? { ttsc: path.join(workspace, 'node_modules/ttsc') } : {}),
       ...options.packages,
@@ -68,7 +68,7 @@ export function createModelProject(t: TestContext, options: ModelProjectOptions)
     skipLibCheck: true,
     outDir: options.outDir ?? 'build',
     rootDir: options.rootDir ?? 'src',
-    ...(options.ttscPlugin ? { plugins: [{ transform: '@exprtlabs/codegen/ttsc-plugin' }] } : {}),
+    ...(options.ttscPlugin ? { plugins: [{ transform: '@exprtlabs/golem/ttsc-plugin' }] } : {}),
     ...(allowJs ? { allowJs: true, checkJs: options.checkJs ?? false } : {}),
     ...options.compilerOptions,
   };

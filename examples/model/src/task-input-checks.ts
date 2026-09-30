@@ -1,5 +1,5 @@
 // #region validate-a-model
-import { validateInstance } from '@exprtlabs/codegen/validation';
+import { validateInstance } from '@exprtlabs/golem/validation';
 import { TaskInput } from './task-input.model.js';
 
 export async function checkTaskInput() {

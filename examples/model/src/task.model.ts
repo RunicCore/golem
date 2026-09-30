@@ -1,6 +1,6 @@
 // #region model-definition
-import type { IModel } from '@exprtlabs/codegen/model';
-import type { MinLength, TSerde } from '@exprtlabs/codegen/tags';
+import type { IModel } from '@exprtlabs/golem/model';
+import type { MinLength, TSerde } from '@exprtlabs/golem/tags';
 import { TaskBase } from './task.model.generated.js';
 
 const PRIORITY_WORDS = ['low', 'normal', 'high'] as const;

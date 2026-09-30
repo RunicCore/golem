@@ -1,9 +1,9 @@
 import { autorun, configure, isObservableProp, runInAction } from 'mobx';
 import { ProfileClient, MoneyModel } from '../sdk/index.js';
 import { Cart } from './cart.model.js';
-import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/codegen/conversion';
-import { LibError, LibErrorKind } from '@exprtlabs/codegen/errors';
-import { getValidator } from '@exprtlabs/codegen/validation';
+import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/golem/conversion';
+import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
+import { getValidator } from '@exprtlabs/golem/validation';
 
 configure({ enforceActions: 'always' });
 

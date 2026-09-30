@@ -4,7 +4,7 @@ import path from 'node:path';
 import { test } from 'node:test';
 import {
   DEFAULT_MODEL_OUTPUT, OPERATION_CODEC_REGISTRY, defaultModelOutput, isOperationCodecRegistry, operationCodecRegistryPath,
-} from '#codegen/generated-paths';
+} from '#golem/generated-paths';
 import { workspace } from './support/process.js';
 
 test('default generated paths resolve under the job root', () => {
@@ -35,7 +35,7 @@ test('no package source outside generated-paths.ts spells a default generated pa
 });
 
 test('the Go plugin default registry path equals the TypeScript default', () => {
-  const go = fs.readFileSync(path.join(workspace, 'packages/codegen/plugin/nest.go'), 'utf8');
+  const go = fs.readFileSync(path.join(workspace, 'packages/golem/plugin/nest.go'), 'utf8');
   const match = /const defaultOperationCodecRegistry = "([^"]+)"/.exec(go);
   assert.ok(match, 'nest.go declares defaultOperationCodecRegistry');
   assert.equal(match[1], OPERATION_CODEC_REGISTRY);

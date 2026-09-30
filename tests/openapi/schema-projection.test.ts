@@ -5,7 +5,7 @@ import { writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import test from 'node:test';
-import { createOpenApiAjvEngine } from '@exprtlabs/codegen/ajv';
+import { createOpenApiAjvEngine } from '@exprtlabs/golem/ajv';
 import { generate, findRemoteRefs, loadValidatedDocument } from '#openapi/generator';
 import { collectCanonicalResources, projectSchema } from '#openapi/schema-projection';
 import { buildSchemaData } from '#openapi/schemas';
@@ -95,7 +95,7 @@ function runtimeRegistryFromArtifact(artifacts: readonly { path: string; content
 }
 
 async function generateProjection(t: TestContext, openapi: string) {
-  const output = path.join(createFixtureProject(t, 'runic-openapi-projection-'), 'sdk');
+  const output = path.join(createFixtureProject(t, 'golem-openapi-projection-'), 'sdk');
   const result = await generateMaterializedSdk(directionalComponents(openapi), {
     output,
     name: 'Projection',
@@ -162,7 +162,7 @@ test('repeated readOnly aliases drop every matching property and required entry'
 });
 
 test('public generation validates repeated aliases, sibling allOf required, and required-only control', async (t) => {
-  const output = path.join(createFixtureProject(t, 'runic-openapi-alias-'), 'sdk');
+  const output = path.join(createFixtureProject(t, 'golem-openapi-alias-'), 'sdk');
   await generateMaterializedSdk({
     openapi: '3.1.0',
     info: { title: 'Aliases', version: '1' },
@@ -308,7 +308,7 @@ async function assertDirectionalEnvelope(
   const schemasText = artifacts.find((artifact) => artifact.path.endsWith('/schemas.ts'))?.content ?? '';
   assert.match(schemasText, new RegExp(`${escaped}:input`));
   assert.match(schemasText, new RegExp(`${escaped}:output`));
-  const inputPack = schemasText.split('runic-input')[1]?.split('runic-output')[0] ?? '';
+  const inputPack = schemasText.split('golem-input')[1]?.split('golem-output')[0] ?? '';
   assert.doesNotMatch(inputPack, new RegExp(`"user": \\{\\s*"\\$ref": "${escaped}"`));
   assert.match(inputPack, new RegExp(`${escaped}:input`));
 
@@ -334,7 +334,7 @@ async function assertDirectionalEnvelope(
 }
 
 test('absolute and relative $id refs remap onto directional resources for Ajv', async (t) => {
-  const output = path.join(createFixtureProject(t, 'runic-openapi-absid-'), 'sdk');
+  const output = path.join(createFixtureProject(t, 'golem-openapi-absid-'), 'sdk');
   const document = directionalUserEnvelope(
     'https://schemas.example.test/user',
     'https://schemas.example.test/envelope',
@@ -390,7 +390,7 @@ test('undeclared HTTPS schema refs stay blocked without network', async (t) => {
   const remotes = findRemoteRefs(document);
   assert.equal(remotes.length, 1);
   assert.equal(remotes[0]?.ref, 'https://schemas.example.test/undeclared');
-  const directory = createFixtureProject(t, 'runic-openapi-blocked-https-');
+  const directory = createFixtureProject(t, 'golem-openapi-blocked-https-');
   writeFileSync(path.join(directory, 'openapi.json'), `${JSON.stringify(document)}\n`);
   let fetched = false;
   const originalFetch = globalThis.fetch;
@@ -410,7 +410,7 @@ test('undeclared HTTPS schema refs stay blocked without network', async (t) => {
 });
 
 test('literal example and default $ref values are not treated as schema references', async (t) => {
-  const output = path.join(createFixtureProject(t, 'runic-openapi-literal-ref-'), 'sdk');
+  const output = path.join(createFixtureProject(t, 'golem-openapi-literal-ref-'), 'sdk');
   const document = {
     openapi: '3.1.0',
     info: { title: 'LiteralRef', version: '1' },
@@ -509,8 +509,8 @@ test('directional projection is consistent on OAS 3.1 and 3.2 and keeps neutral 
     }
 
     const defs = requireRecord(generated.registry.$defs, '$defs');
-    const inputResource = requireRecord(defs['runic-input'], 'runic-input');
-    const outputResource = requireRecord(defs['runic-output'], 'runic-output');
+    const inputResource = requireRecord(defs['golem-input'], 'golem-input');
+    const outputResource = requireRecord(defs['golem-output'], 'golem-output');
     assert.match(String(inputResource.$id), /:input$/);
     assert.match(String(outputResource.$id), /:output$/);
     assert.notEqual(inputResource.$id, outputResource.$id);
@@ -547,7 +547,7 @@ test('directional projection is consistent on OAS 3.1 and 3.2 and keeps neutral 
 });
 
 test('an external ./nested.json $ref projects directionally without cloning components under the same $id', async (t) => {
-  const directory = createFixtureProject(t, 'runic-openapi-proj-ext-');
+  const directory = createFixtureProject(t, 'golem-openapi-proj-ext-');
   writeFileSync(path.join(directory, 'nested.json'), JSON.stringify({
     type: 'object',
     properties: {
@@ -587,8 +587,8 @@ test('an external ./nested.json $ref projects directionally without cloning comp
   assert.doesNotMatch(inputSchemas, /hidden/);
   const registry = runtimeRegistryFromArtifact(result.artifacts);
   const defs = requireRecord(registry.$defs, '$defs');
-  const inputResource = requireRecord(defs['runic-input'] as object, 'input');
-  const outputResource = requireRecord(defs['runic-output'] as object, 'output');
+  const inputResource = requireRecord(defs['golem-input'] as object, 'input');
+  const outputResource = requireRecord(defs['golem-output'] as object, 'output');
   assert.notEqual(inputResource.$id, registry.$id);
   assert.notEqual(outputResource.$id, registry.$id);
 });

@@ -1,4 +1,4 @@
-import type { IModel } from '@exprtlabs/codegen/model';
+import type { IModel } from '@exprtlabs/golem/model';
 import { CatBase, DogBase, OwnerBase } from './pets.model.generated.js';
 
 export type TCat = IModel<{ kind: 'cat' | 'kitty'; name: string }>;

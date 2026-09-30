@@ -1,7 +1,7 @@
 
     import { Purchase } from './dist/purchase.model.js';
     import { OrderModel, LineItemModel } from './dist/index.js';
-    import { getValidator } from '@exprtlabs/codegen/validation';
+    import { getValidator } from '@exprtlabs/golem/validation';
 
     const validOrder = new OrderModel({ id: 'ORD-1', lines: [new LineItemModel({ sku: 'sku-1', quantity: 1 })] });
     const validValidator = getValidator(new Purchase({ order: validOrder }));

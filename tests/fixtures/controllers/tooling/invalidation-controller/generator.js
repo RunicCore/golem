@@ -11,7 +11,7 @@ export function generate(context) {
   return {
     artifacts: [{
       path: context.output,
-      content: JSON.stringify({ 'x-generator': '@exprtlabs/ts-to-openapi', title: context.info.title }),
+      content: JSON.stringify({ 'x-generator': '@exprtlabs/golem-ts-openapi', title: context.info.title }),
     }],
     manifestPaths: [],
     watchInputs: context.sources,

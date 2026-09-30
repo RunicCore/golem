@@ -26,6 +26,6 @@ test('typescript/unstable stays inside the generator shim', () => {
     .filter((filename) => fs.readFileSync(filename, 'utf8').includes('typescript/unstable'))
     .map((filename) => portable(path.relative(root, filename)))
     .sort();
-  assert.deepEqual(hits, ['packages/codegen/src/tooling/typescript-ns.ts']);
+  assert.deepEqual(hits, ['packages/golem/src/tooling/typescript-ns.ts']);
 });
 

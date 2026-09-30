@@ -190,7 +190,7 @@ function loadItemsClient(profile: OpenApiGenerationProfile): Promise<ItemsClient
 }
 
 async function generateItemsClient(profile: OpenApiGenerationProfile): Promise<ItemsClientModule> {
-  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'runic-api-operation-')));
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'golem-api-operation-')));
   itemsClientRoots.push(root);
   const output = path.join(root, 'sdk');
   const result = await generateMaterializedSdk(itemsDocument(), {
@@ -573,7 +573,7 @@ test('MobX generated loading follows execute settlement, not stream consumption'
 });
 
 test('operation names that collide with the factory remain reserved', async (t) => {
-  const directory = createFixtureProject(t, 'runic-api-operation-reserved-');
+  const directory = createFixtureProject(t, 'golem-api-operation-reserved-');
   await assert.rejects(
     () => generate({
       input: writeOpenApiDocument(directory, {

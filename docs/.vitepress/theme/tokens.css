@@ -9,7 +9,7 @@
 
   /* Light "Marker": black ink; lime only as fill, highlight or underline. */
   --cg-bg: #f6f7fb; --cg-panel: #ffffff; --cg-line: #e2e6ef; --cg-line-2: #cfd6e4; --cg-muted: #556079;
-  /* Benchmark series: Codegen first, then the peers in group order. */
+  /* Benchmark series: Golem first, then the peers in group order. */
   --cg-series-1: #4d7c0f; --cg-series-2: #3b6ea5; --cg-series-3: #7c4dbd;
   --vp-c-bg: #ffffff; --vp-c-bg-alt: var(--cg-bg); --vp-c-bg-soft: #f1f3f8;
   --vp-c-divider: var(--cg-line);

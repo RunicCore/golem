@@ -12,7 +12,7 @@ import {
 
 test('reserves generated model API members and quotes wire keys', async (t) => {
   // RESERVED_MODEL_MEMBERS has no profile input, so one profile covers the rejection.
-  const directory = createFixtureProject(t, 'runic-openapi-r6-member-');
+  const directory = createFixtureProject(t, 'golem-openapi-r6-member-');
   const input = writeOpenApiDocument(directory, documentBase('3.1.0', {
     components: {
       schemas: {
@@ -30,7 +30,7 @@ test('reserves generated model API members and quotes wire keys', async (t) => {
     /collides with generated model API member/,
   );
 
-  const quoted = createFixtureProject(t, 'runic-openapi-r6-quote-');
+  const quoted = createFixtureProject(t, 'golem-openapi-r6-quote-');
   const quotedInput = writeOpenApiDocument(quoted, documentBase('3.1.0', {
     components: {
       schemas: {
@@ -55,7 +55,7 @@ test('reserves generated model API members and quotes wire keys', async (t) => {
 });
 
 test('SDK generation rejects declared Object.prototype field names and directs callers to rename them', t => {
-  const output = createFixtureProject(t, 'runic-openapi-field-names-');
+  const output = createFixtureProject(t, 'golem-openapi-field-names-');
   const cases: readonly { readonly name: string; readonly schema: Record<string, unknown> }[] = [
     {
       name: 'required __proto__',

@@ -1,7 +1,7 @@
 
 import { Controller, Get, Query } from '@nestjs/common';
 import { ApiQuery } from '@nestjs/swagger';
-import type { IModel } from '@exprtlabs/codegen/model';
+import type { IModel } from '@exprtlabs/golem/model';
 
 export type TFilter = IModel<{ limit: number }>;
 

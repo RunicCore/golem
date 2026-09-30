@@ -48,7 +48,7 @@ paths:
                   id: { type: integer }
 ```
 
-`runic-codegen.yaml`:
+`golem.yaml`:
 
 ```yaml
 version: 1
@@ -59,7 +59,7 @@ openapi:
     name: Events
 ```
 
-Run `npx runic-codegen generate` to update the client. With the [default
+Run `npx golem generate` to update the client. With the [default
 validation dependencies](/guide/install#runtime-dependencies)
 installed, each decoded item is checked.
 

@@ -1,7 +1,7 @@
 
 import { Body, Controller, Post } from '@nestjs/common';
-import type { IModel } from '@exprtlabs/codegen/model';
-import type { Minimum, Pattern, TSerde } from '@exprtlabs/codegen/tags';
+import type { IModel } from '@exprtlabs/golem/model';
+import type { Minimum, Pattern, TSerde } from '@exprtlabs/golem/tags';
 
 type AmountText = string & Pattern<'^[0-9]+$'>;
 export function encodeAmount(value: number): AmountText { return String(value) as AmountText; }

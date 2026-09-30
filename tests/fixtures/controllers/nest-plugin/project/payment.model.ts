@@ -1,4 +1,4 @@
-import type { IModel, IObject } from '@exprtlabs/codegen/model';
+import type { IModel, IObject } from '@exprtlabs/golem/model';
 import { PaymentBase } from './payment.model.generated.js';
 export type TPaymentInput = IObject<{ note: string }>;
 export type PaymentInput = TPaymentInput;

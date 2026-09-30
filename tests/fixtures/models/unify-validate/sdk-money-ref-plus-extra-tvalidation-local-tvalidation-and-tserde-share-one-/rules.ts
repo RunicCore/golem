@@ -1,4 +1,4 @@
-import type { TValidation } from '@exprtlabs/codegen/tags';
+import type { TValidation } from '@exprtlabs/golem/tags';
 /** Counts calls so tests can check each rule runs once per conversion. */
 export let extraMoneyCalls = 0;
 export function extraMoney(value: { amount: number; currency: string }): boolean | string {

@@ -1,7 +1,7 @@
 // #region project-access-controller
 import { Body, Controller, Param, Put } from '@nestjs/common';
 import { ApiOperation } from '@nestjs/swagger';
-import type { MinLength } from '@exprtlabs/codegen/tags';
+import type { MinLength } from '@exprtlabs/golem/tags';
 import { ProjectAccess } from './project-access.model.js';
 
 @Controller('projects/:projectId/access')

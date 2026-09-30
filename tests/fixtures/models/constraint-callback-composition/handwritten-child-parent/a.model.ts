@@ -1,6 +1,6 @@
-import type { IModel } from '@exprtlabs/codegen/model';
+import type { IModel } from '@exprtlabs/golem/model';
 import { ParentBase, type ParentFields } from './parent.model.generated.js';
-import type { Contains, TValidation } from '@exprtlabs/codegen/tags';
+import type { Contains, TValidation } from '@exprtlabs/golem/tags';
 import type { TChild } from './child.model.js';
 import { childPredicate } from './predicates-2.js';
 

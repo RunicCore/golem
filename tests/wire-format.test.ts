@@ -4,14 +4,14 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import test from 'node:test';
 
-import { generate as generateOpenApi } from '@exprtlabs/openapi-to-ts/generator';
+import { generate as generateOpenApi } from '@exprtlabs/golem-openapi/generator';
 import { generate } from '#model/generator';
 import { command, ttsc } from './support/process.js';
 import { fixturePath, writeGeneratedArtifacts } from './fixture-project.js';
 import { compileModelProject, createModelProject, writeModelSources } from './model-project.js';
 
 // modelName is internal to the built package; load it from dist instead of compiling package source into the tests.
-const distRoot = path.dirname(fileURLToPath(import.meta.resolve('@exprtlabs/codegen/model')));
+const distRoot = path.dirname(fileURLToPath(import.meta.resolve('@exprtlabs/golem/model')));
 const { modelName } = await import(pathToFileURL(path.join(distRoot, 'model-name.js')).href) as {
   readonly modelName: (aliasName: string) => string;
 };
@@ -19,7 +19,7 @@ const { modelName } = await import(pathToFileURL(path.join(distRoot, 'model-name
 const MODEL_SOURCE = /\.models?\.ts$/;
 const SDK_MONEY_SPEC = 'models/unify-validate/sdk-money-ref-plus-extra-tvalidation-local-tvalidation-and-tserde-share-one-/money.yaml';
 
-const CHECK_PRELUDE = `import type { WireFormat } from '@exprtlabs/codegen/serde';
+const CHECK_PRELUDE = `import type { WireFormat } from '@exprtlabs/golem/serde';
 type Same<Left, Right> = (<Probe>() => Probe extends Left ? 1 : 2) extends (<Probe>() => Probe extends Right ? 1 : 2) ? true : false;
 type NotAny<Value> = 0 extends 1 & Value ? false : true;
 type Assert<Value extends true> = Value;
@@ -126,7 +126,7 @@ function modelFixtureDirectories(directory: string): string[] {
 
 test('WireFormat<T> equals the generator-emitted JSON type for fixture models and generated SDK models', async t => {
   const { root } = createModelProject(t, {
-    prefix: 'runic-wire-format-',
+    prefix: 'golem-wire-format-',
     name: 'wire-format',
     ttscPlugin: true,
     linkWorkspaceNodeModules: true,
@@ -240,7 +240,7 @@ export type AnyWire = Assert<NotAny<WireFormat<any>>>;
 
 test('WireFormat<T> equals the emitted JSON type for nested and omitted-field SDK models with and without mobx', async t => {
   const { root } = createModelProject(t, {
-    prefix: 'runic-wire-format-sdk-',
+    prefix: 'golem-wire-format-sdk-',
     name: 'wire-format-sdk',
     ttscPlugin: true,
     linkWorkspaceNodeModules: true,
@@ -284,14 +284,14 @@ test('WireFormat<T> equals the emitted JSON type for nested and omitted-field SD
 
 test('toWireFormat<T> returns the emitted JSON type through the ttsc plugin without a cast', async t => {
   const { root, sourceRoot } = createModelProject(t, {
-    prefix: 'runic-wire-format-call-',
+    prefix: 'golem-wire-format-call-',
     name: 'wire-format-call',
     ttscPlugin: true,
     linkWorkspaceNodeModules: true,
   });
   writeModelSources(sourceRoot, {
-    'payment-editor.model.ts': `import type { IModel } from '@exprtlabs/codegen/model';
-import type { Minimum } from '@exprtlabs/codegen/tags';
+    'payment-editor.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
+import type { Minimum } from '@exprtlabs/golem/tags';
 import { PaymentEditorBase } from './payment-editor.model.generated.js';
 
 export type TPaymentEditor = IModel<{ amount: number & Minimum<0>; note: string; paidAt: Date }>;
@@ -305,7 +305,7 @@ export class PaymentEditor extends PaymentEditorBase {
   });
   writeGeneratedArtifacts(generate({ root, profile: { mobx: false, validation: true } }).artifacts);
   writeModelSources(sourceRoot, {
-    'main.ts': `import { toWireFormat } from '@exprtlabs/codegen/serde';
+    'main.ts': `import { toWireFormat } from '@exprtlabs/golem/serde';
 import { PaymentEditor, type TPaymentEditor } from './payment-editor.model.js';
 import type { PaymentEditorJSON } from './payment-editor.model.generated.js';
 
@@ -331,12 +331,12 @@ console.log(JSON.stringify({ wire, paidAt }));
 
 test('wire output omits optional fields that are absent or undefined', async t => {
   const { root, sourceRoot } = createModelProject(t, {
-    prefix: 'runic-wire-format-optional-',
+    prefix: 'golem-wire-format-optional-',
     name: 'wire-format-optional',
     linkWorkspaceNodeModules: true,
   });
   writeModelSources(sourceRoot, {
-    'visit.model.ts': `import type { IModel } from '@exprtlabs/codegen/model';
+    'visit.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
 import { SlotBase, VisitBase } from './visit.model.generated.js';
 
 export type TSlot = IModel<{ at: Date; room?: string }>;
@@ -360,7 +360,7 @@ export class Visit extends VisitBase {}
   const { Visit } = await import(pathToFileURL(path.join(root, 'build/visit.model.js')).href) as {
     readonly Visit: new (values: object) => object;
   };
-  const { encodeGeneratedModel } = await import('@exprtlabs/codegen/conversion');
+  const { encodeGeneratedModel } = await import('@exprtlabs/golem/conversion');
   const at = new Date('2026-01-02T03:04:05.000Z');
   const encoders = [
     ['toWireFormat', generated.toWireFormatVisit],

@@ -3,14 +3,14 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import test, { type TestContext } from 'node:test';
-import type { CodegenProfile } from '@exprtlabs/codegen/generator-api';
+import type { GolemProfile } from '@exprtlabs/golem/generator-api';
 import { generate } from '#model/generator';
 import { writeGeneratedArtifacts } from './fixture-project.js';
 import { compileModelProject, createModelProject, writeModelSources } from './model-project.js';
 import { ttscEnv } from './support/process.js';
 
 const sources = {
-  'tree.model.ts': `import type { IModel } from '@exprtlabs/codegen/model';
+  'tree.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
 import { NodeBase, LeftBase, RightBase } from './tree.model.generated.js';
 export type TNode = IModel<{ at: Date; children: TNode[] }>;
 export type TLeft = IModel<{ at: Date; right?: TRight }>;
@@ -27,7 +27,7 @@ type Codecs = Record<string, Codec>;
 /** Compare wire values as JSON data; prototype and absent-field details belong to the wire-format suite. */
 const json = (value: unknown): unknown => JSON.parse(JSON.stringify(value));
 
-const profiles: readonly (readonly [string, CodegenProfile])[] = [
+const profiles: readonly (readonly [string, GolemProfile])[] = [
   ['validation off', { mobx: false, validation: false }],
   ['runtime Ajv', { mobx: false, validation: true }],
   ['standalone', { mobx: false, validation: true, ajvStandalone: true }],
@@ -36,7 +36,7 @@ const profiles: readonly (readonly [string, CodegenProfile])[] = [
 for (const [label, profile] of profiles) {
   test(`self- and mutually recursive models generate and round-trip (${label})`, async (t: TestContext) => {
     const { root, sourceRoot } = createModelProject(t, {
-      prefix: 'runic-recursive-models-', linkTypescript: true, linkTtsc: true, allowJs: profile.ajvStandalone === true,
+      prefix: 'golem-recursive-models-', linkTypescript: true, linkTtsc: true, allowJs: profile.ajvStandalone === true,
     });
     writeModelSources(sourceRoot, sources);
     writeGeneratedArtifacts(generate({ root, profile }).artifacts);

@@ -1,5 +1,5 @@
-import type { IModel, IObject } from '@exprtlabs/codegen/model';
-import type { Integer, MaxLength, Minimum, MinLength, Pattern } from '@exprtlabs/codegen/tags';
+import type { IModel, IObject } from '@exprtlabs/golem/model';
+import type { Integer, MaxLength, Minimum, MinLength, Pattern } from '@exprtlabs/golem/tags';
 import type { PaymentStatus } from './payment-status.js';
 import { PaymentBase } from './payment.model.generated.js';
 

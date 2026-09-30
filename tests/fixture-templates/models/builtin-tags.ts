@@ -1,11 +1,11 @@
 import { literal, tsSource, type SourceFragment } from '../../source-template.js';
 
 export function builtinTagsModelSource({ mobx }: { readonly mobx: boolean }): SourceFragment {
-  const mobxImport = mobx ? tsSource`import { asGenObservable } from '@exprtlabs/codegen/mobx';` : tsSource``;
+  const mobxImport = mobx ? tsSource`import { asGenObservable } from '@exprtlabs/golem/mobx';` : tsSource``;
   const mobxInitialization = mobx ? tsSource`asGenObservable(this);` : tsSource``;
   const emailPattern = literal('^\\p{Letter}+$');
-  return tsSource`import type { IModel } from '@exprtlabs/codegen/model';
-import type { ExclusiveMax, ExclusiveMin, ExclusiveMaximum, ExclusiveMinimum, Format, Integer, Max, MaxItems, MaxLength, Maximum, Min, MinItems, MinLength, Minimum, MultipleOf, Pattern, UniqueItems } from '@exprtlabs/codegen/tags';
+  return tsSource`import type { IModel } from '@exprtlabs/golem/model';
+import type { ExclusiveMax, ExclusiveMin, ExclusiveMaximum, ExclusiveMinimum, Format, Integer, Max, MaxItems, MaxLength, Maximum, Min, MinItems, MinLength, Minimum, MultipleOf, Pattern, UniqueItems } from '@exprtlabs/golem/tags';
 import { ABase, type AFields } from './a.model.generated.js';
 ${mobxImport}
 export type TA = IModel<{

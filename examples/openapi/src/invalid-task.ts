@@ -1,4 +1,4 @@
-import { LibError, LibErrorKind } from '@exprtlabs/codegen/errors';
+import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 import type { TasksClient } from '../sdk/index.js';
 
 // #region invalid-task

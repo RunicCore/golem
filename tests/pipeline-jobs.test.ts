@@ -3,24 +3,24 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { test, type TestContext } from 'node:test';
-import { runPipeline } from '#codegen/cli';
+import { runPipeline } from '#golem/cli';
 import { workspace } from './support/process.js';
 import { writeFixture } from './support/consumer.js';
-import { generate as generateModels } from '@exprtlabs/model-codegen/generator';
+import { generate as generateModels } from '@exprtlabs/golem-model/generator';
 
 function packageFixture(t: TestContext, { profile = { mobx: false, validation: true }, models = true } = {}): { root: string; config: string } {
-  const root = createFixtureProject(t, 'runic-pipeline-jobs-');
+  const root = createFixtureProject(t, 'golem-pipeline-jobs-');
 
   linkProjectPackages(root, Object.fromEntries(
-    ['codegen', 'model-codegen', 'openapi-to-ts'].map(name => [`@exprtlabs/${name}`, path.join(workspace, 'packages', name)]),
+    ['golem', 'golem-model', 'golem-openapi'].map(name => [`@exprtlabs/${name}`, path.join(workspace, 'packages', name)]),
   ));
-  fs.writeFileSync(path.join(root, 'package.json'), '{"name":"runic-pipeline-jobs-fixture","type":"module"}');
+  fs.writeFileSync(path.join(root, 'package.json'), '{"name":"golem-pipeline-jobs-fixture","type":"module"}');
   writeFixture(root, profile, models);
-  return { root, config: path.join(root, 'runic-codegen.yaml') };
+  return { root, config: path.join(root, 'golem.yaml') };
 }
 
 test('model generation rejects an SDK manifest whose profile differs from the configured global profile', (t: TestContext) => {
-  const root = createFixtureProject(t, 'runic-pipeline-profile-');
+  const root = createFixtureProject(t, 'golem-pipeline-profile-');
 
   fs.mkdirSync(path.join(root, 'src'), { recursive: true });
   fs.writeFileSync(path.join(root, 'tsconfig.json'), JSON.stringify({
@@ -66,7 +66,7 @@ test('a downstream model failure preserves the completed SDK and a later run rep
   await assert.rejects(() => runPipeline(config), /contains any/);
   assert.equal(fs.existsSync(path.join(root, 'sdk/index.ts')), true);
   assert.equal(fs.existsSync(path.join(root, 'src/cart.model.generated.ts')), false);
-  const interruptedInventory = JSON.parse(fs.readFileSync(path.join(root, '.runic-codegen/outputs.json'), 'utf8')) as {
+  const interruptedInventory = JSON.parse(fs.readFileSync(path.join(root, '.golem/outputs.json'), 'utf8')) as {
     files: Record<string, unknown>;
   };
   assert.ok(Object.keys(interruptedInventory.files).some((filename) => filename === 'sdk/index.ts'));
@@ -96,7 +96,7 @@ test('retiring an SDK job removes its unmodified outputs before the model consum
     /Cannot find module|cannot find module|TS2307|sdk[\\/]index/,
   );
   assert.equal(fs.existsSync(path.join(root, 'sdk/index.ts')), false);
-  const inventory = JSON.parse(fs.readFileSync(path.join(root, '.runic-codegen/outputs.json'), 'utf8')) as {
+  const inventory = JSON.parse(fs.readFileSync(path.join(root, '.golem/outputs.json'), 'utf8')) as {
     files: Record<string, unknown>;
   };
   assert.equal(Object.keys(inventory.files).some((filename) => filename.startsWith('sdk/')), false);

@@ -30,7 +30,7 @@ interface TypiaFunctions {
 }
 
 // #region calls
-// Exact variants: unknown properties are rejected, as Codegen and Zod do.
+// Exact variants: unknown properties are rejected, as Golem and Zod do.
 function createFunctions(shape: 'simple' | 'constrained' | 'collection'): TypiaFunctions {
   switch (shape) {
     case 'simple': {
@@ -92,7 +92,7 @@ function verifyChecked(input: FixtureInput, model: TypiaModel, functions: TypiaF
     assert.throws(() => functions.parse(JSON.stringify(invalid)), TypeGuardError);
   }
   assert.throws(() => functions.parse('{"broken":'), SyntaxError);
-  // Exact, like Codegen and Zod: unknown properties are rejected at every depth.
+  // Exact, like Golem and Zod: unknown properties are rejected at every depth.
   for (const extra of unknownPropertyVariants(input)) {
     assert.throws(() => functions.parse(JSON.stringify(extra)), TypeGuardError, 'typia equals rejects an unknown property');
     assert.equal(functions.is(extra), false);

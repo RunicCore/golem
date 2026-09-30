@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Runs one fe-deps test tier inside the test-runner container.
+# Runs one golem test tier inside the test-runner container.
 set -euo pipefail
-tier="${1:?usage: fe-deps-test <prepare|focused|full|acceptance|docs> [args]}"
+tier="${1:?usage: golem-test <prepare|focused|full|acceptance|docs> [args]}"
 
 exec 9>/cache/run.lock
-flock -n 9 || { echo "Another fe-deps test run holds /cache/run.lock; wait for it to finish." >&2; exit 2; }
+flock -n 9 || { echo "Another golem test run holds /cache/run.lock; wait for it to finish." >&2; exit 2; }
 
 mkdir -p /cache/work /cache/npm /cache/packed /cache/go /cache/gomod /cache/linux-lock
 # Copy the read-only source into the work tree, keeping mtimes so incremental
@@ -43,13 +43,13 @@ else
 fi
 
 lock_hash="$(sha256sum package-lock.json | cut -c1-64)"
-if [ "$(cat node_modules/.fe-deps-lock-hash 2>/dev/null || true)" != "$lock_hash" ]; then
+if [ "$(cat node_modules/.golem-lock-hash 2>/dev/null || true)" != "$lock_hash" ]; then
   npm ci --no-audit --no-fund || {
     echo "npm ci failed. If npm reported ENOTCACHED, run: npm run test:prepare" >&2; exit 2; }
-  echo "$lock_hash" > node_modules/.fe-deps-lock-hash
+  echo "$lock_hash" > node_modules/.golem-lock-hash
 fi
 npm run build:tests
-# npm ci ran before packages/*/dist existed, so workspace bins (runic-codegen) were not linked; link them now, without lifecycle scripts.
+# npm ci ran before packages/*/dist existed, so workspace bins (golem) were not linked; link them now, without lifecycle scripts.
 npm rebuild --ignore-scripts --no-audit --no-fund
 # Run-level ceiling (F1: no run exceeds 10 min). --test-timeout only fails a
 # test; a hung file process or a stuck await is ended here.

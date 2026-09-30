@@ -107,14 +107,14 @@ Supported OpenAPI validation constraints work whether you start from TypeScript 
 | `number & Minimum<0>` | `type: number`, `minimum: 0` | Rejects negative numbers. |
 | `string & Pattern<'^[A-Z]+$'>` | `type: string`, `pattern: '^[A-Z]+$'` | Rejects strings that do not match. |
 
-- `@exprtlabs/ts-to-openapi` writes supported validation constraints from controller models into the OpenAPI schemas.
-- `openapi-to-ts` uses supported schemas for model validation and automatic client request/response validation. The document can come from any OpenAPI producer.
+- `@exprtlabs/golem-ts-openapi` writes supported validation constraints from controller models into the OpenAPI schemas.
+- `golem-openapi` uses supported schemas for model validation and automatic client request/response validation. The document can come from any OpenAPI producer.
 - Custom predicates and converters remain TypeScript functions. Sharing them through imports is optional; OpenAPI does not carry executable code. For a field with a `TSerde` serialize formatter, the OpenAPI schema describes the JSON value, not the model value.
 
 Supported keywords, versions and profiles are in [OpenAPI client support](/reference/openapi-support).
 
 ## Ajv and generation settings
 
-Validation is enabled by default. [Validation profiles](/reference/config#validation-profiles) set how validators are supplied in `runic-codegen.yaml`.
+Validation is enabled by default. [Validation profiles](/reference/config#validation-profiles) set how validators are supplied in `golem.yaml`.
 
-Full example: [`examples/model`](https://github.com/exprtlabs/codegen/tree/main/examples/model)
+Full example: [`examples/model`](https://github.com/RunicCore/golem/tree/master/examples/model)

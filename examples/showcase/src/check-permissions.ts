@@ -1,5 +1,5 @@
 // #region permission-errors
-import { validateInstance } from '@exprtlabs/codegen/validation';
+import { validateInstance } from '@exprtlabs/golem/validation';
 import { ProjectAccessEditor } from './project-access.model.js';
 
 export async function checkPermissions(): Promise<string | undefined> {

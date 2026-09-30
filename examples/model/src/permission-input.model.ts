@@ -1,8 +1,8 @@
 // #region serde-tag
-import type { IModel } from '@exprtlabs/codegen/model';
+import type { IModel } from '@exprtlabs/golem/model';
 import type { PermissionBits } from './permission-rules.js';
-import { fromWireFormat, toWireFormat } from '@exprtlabs/codegen/serde';
-import { validateInstance } from '@exprtlabs/codegen/validation';
+import { fromWireFormat, toWireFormat } from '@exprtlabs/golem/serde';
+import { validateInstance } from '@exprtlabs/golem/validation';
 import { PermissionInputBase } from './permission-input.model.generated.js';
 
 export type TPermissionInput = IModel<{

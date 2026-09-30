@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import test from 'node:test';
-import { decodeGeneratedModel } from '@exprtlabs/codegen/conversion';
-import { getValidator } from '@exprtlabs/codegen/validation';
+import { decodeGeneratedModel } from '@exprtlabs/golem/conversion';
+import { getValidator } from '@exprtlabs/golem/validation';
 import {
   compileStrictUnusedSdk,
   generateMaterializedSdk,
@@ -106,7 +106,7 @@ function resourceTypesDocument(): Record<string, unknown> {
 }
 
 test('public generate types URI $id refs, directional imports, nested models, and validation', async t => {
-  const output = path.join(createFixtureProject(t, 'runic-openapi-resource-types-'), 'sdk');
+  const output = path.join(createFixtureProject(t, 'golem-openapi-resource-types-'), 'sdk');
   const result = await generateMaterializedSdk(resourceTypesDocument(), {
     output,
     name: 'ResourceTypes',

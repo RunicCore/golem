@@ -12,21 +12,21 @@ import {
   parse as publicParse,
   stringify as publicStringify,
   toWireFormat as publicToWireFormat,
-} from '@exprtlabs/codegen/serde';
-import { validate as publicValidate } from '@exprtlabs/codegen/validation';
-import { IssueCode, IssueRepresentation, IssueSource, LibError, LibErrorKind } from '@exprtlabs/codegen/errors';
+} from '@exprtlabs/golem/serde';
+import { validate as publicValidate } from '@exprtlabs/golem/validation';
+import { IssueCode, IssueRepresentation, IssueSource, LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 import { generate } from '#model/generator';
 import { writeSdk } from '#openapi/generator';
 import { command, ttscEnv, workspace } from './support/process.js';
 import { generatedCodecId } from './support/consumer.js';
-import type { CodegenProfile } from '@exprtlabs/codegen/generator-api';
+import type { GolemProfile } from '@exprtlabs/golem/generator-api';
 
 function fixture(
   t: TestContext,
-  profile: CodegenProfile = { mobx: false, validation: true },
+  profile: GolemProfile = { mobx: false, validation: true },
 ) {
   const { root } = createModelProject(t, {
-    prefix: 'runic-serde-',
+    prefix: 'golem-serde-',
     name: 'serde-fixture',
     linkTypescript: true,
     linkTtsc: true,
@@ -46,7 +46,7 @@ function enableSerdePlugin(root: string): void {
     compilerOptions: Record<string, unknown>;
     include: string[];
   };
-  tsconfig.compilerOptions.plugins = [{ transform: '@exprtlabs/codegen/ttsc-plugin' }];
+  tsconfig.compilerOptions.plugins = [{ transform: '@exprtlabs/golem/ttsc-plugin' }];
   fs.writeFileSync(path.join(root, 'tsconfig.json'), JSON.stringify(tsconfig));
 }
 
@@ -166,7 +166,7 @@ test('untransformed public serde APIs and validate<T> throw', () => {
 
 test('IObject TSerde stringify/parse convert declared fields in one pass', async (t) => {
   const { root, sourceRoot } = createModelProject(t, {
-    prefix: 'runic-serde-tserde-',
+    prefix: 'golem-serde-tserde-',
     name: 'serde-tserde',
     linkTypescript: true,
     linkTtsc: true,
@@ -177,7 +177,7 @@ test('IObject TSerde stringify/parse convert declared fields in one pass', async
   const generated = fs.readFileSync(path.join(root, 'src/permission.model.generated.ts'), 'utf8');
   assert.doesNotMatch(
     generated,
-    /stringifyPermissionInputCore[\s\S]*__runicSerialize[\s\S]*validatePermissionInputFast/,
+    /stringifyPermissionInputCore[\s\S]*__golemSerialize[\s\S]*validatePermissionInputFast/,
     'budget: TSerde fields convert declared fields in one pass, not through a second interleaved stringify/validate sequence',
   );
   await compile(root);
@@ -241,7 +241,7 @@ test('IObject TSerde stringify/parse convert declared fields in one pass', async
 
 test('same-type TSerde emits one Ajv schema and global validation false rejects { validate: true }', async (t) => {
   const { root: identityRoot, sourceRoot } = createModelProject(t, {
-    prefix: 'runic-serde-identity-',
+    prefix: 'golem-serde-identity-',
     name: 'serde-identity',
     linkTypescript: true,
     linkTtsc: true,
@@ -293,8 +293,8 @@ test('ttsc plugin rewrites serde calls in one project compiled once', async (t) 
   write('use-from-wire.ts', readFixture("models/serde/ttsc-plugin-does-not-rewrite-validation-validate-between-fromwireformat-t-ca/use-from-wire.ts"));
   write('use-comment.ts', readFixture("models/serde/ttsc-plugin-ignores-a-comment-and-string-that-look-like-serde-calls/use-comment.ts"));
   write('ns.ts', 'export class Thing { readonly kind = "thing"; }\n');
-  write('use-heritage.ts', `import { parse, stringify } from '@exprtlabs/codegen/serde';
-import { LibError, LibErrorKind } from '@exprtlabs/codegen/errors';
+  write('use-heritage.ts', `import { parse, stringify } from '@exprtlabs/golem/serde';
+import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 import * as ns from './ns.js';
 import { Payment, type TMoney } from './money.model.js';
 function Mixin<T extends new (...args: any[]) => object>(Target: T) { return class extends Target { readonly mixed = true; }; }
@@ -311,7 +311,7 @@ export const text = stringify<TMoney>({ currency: 'USD', value: '1' });
 export const payment = parse<Payment>('{"id":"p","amount":{"currency":"USD","value":"1"},"note":"n"}');
 export const isPayment = payment instanceof Payment;
 `);
-  write('use-type-only.ts', `import { parse } from '@exprtlabs/codegen/serde';
+  write('use-type-only.ts', `import { parse } from '@exprtlabs/golem/serde';
 import type { TPayment } from './money.model.js';
 export function run(): unknown { return parse<TPayment>('{"id":"p","amount":{"currency":"USD","value":"1"},"note":"n"}'); }
 `);
@@ -489,7 +489,7 @@ test('ttsc plugin resolves OpenAPI codecs through SDK facades without crossing S
   fs.writeFileSync(path.join(root, 'tsconfig.json'), JSON.stringify(tsconfig));
   enableSerdePlugin(root);
   fs.writeFileSync(path.join(root, 'src/use-openapi-codecs.ts'), readFixture("models/serde/ttsc-plugin-resolves-openapi-codecs-through-modular-sdk-facades-without-cros/use-openapi-codecs.ts"));
-  fs.writeFileSync(path.join(root, 'src/use-suffixed.ts'), `import { fromWireFormat, parse, stringify } from '@exprtlabs/codegen/serde';
+  fs.writeFileSync(path.join(root, 'src/use-suffixed.ts'), `import { fromWireFormat, parse, stringify } from '@exprtlabs/golem/serde';
 import type { MoneyModel, PaymentModelModel, Pay$mentModel, TPaymentModel } from '../sdk/index.js';
 export const payment = fromWireFormat<PaymentModelModel>({ id: 'a' });
 export const tpayment = fromWireFormat<TPaymentModel>({ amount: 3 });
@@ -594,7 +594,7 @@ test('nested class-typed IModel fields construct; type-only parse fills like IOb
   const pointId = generatedCodecId(generated, 'Point3D');
   assert.match(generated, new RegExp(`requireIModelClass\\("${pointId}"\\)`));
   await compile(root);
-  const { registerIModelClass } = await import('@exprtlabs/codegen/serde');
+  const { registerIModelClass } = await import('@exprtlabs/golem/serde');
   const { Point3D } = await import(pathToFileURL(path.join(root, 'build/money.model.js')).href) as {
     Point3D: new (values?: object) => object;
   };

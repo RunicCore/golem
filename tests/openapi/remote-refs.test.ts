@@ -92,7 +92,7 @@ async function generateRemote(t: TestContext, options: {
   maxRefDocuments?: number;
   refTimeoutMs?: number;
 }): Promise<void> {
-  const directory = createFixtureProject(t, 'runic-openapi-remote-bytes-');
+  const directory = createFixtureProject(t, 'golem-openapi-remote-bytes-');
   await generateDocument(directory, remoteDocument(), options);
 }
 
@@ -196,7 +196,7 @@ test('HTTP errors cancel the remote response body before rejecting', async (t) =
 });
 
 test('an enabled remote resolver rejects a disallowed host before making a request', async (t) => {
-  const directory = createFixtureProject(t, 'runic-openapi-remote-host-');
+  const directory = createFixtureProject(t, 'golem-openapi-remote-host-');
   let requests = 0;
   const restore = mockFetch(async () => {
     requests += 1;
@@ -214,7 +214,7 @@ test('an enabled remote resolver rejects a disallowed host before making a reque
 });
 
 test('remote reference documents are bounded across a chained reference graph', async (t) => {
-  const directory = createFixtureProject(t, 'runic-openapi-remote-documents-');
+  const directory = createFixtureProject(t, 'golem-openapi-remote-documents-');
   const requests: string[] = [];
   const restore = mockFetch(async (input) => {
     const url = String(input);
@@ -240,7 +240,7 @@ test('remote reference documents are bounded across a chained reference graph', 
 });
 
 test('remote redirects are rejected and the resolver requests redirect errors', async (t) => {
-  const directory = createFixtureProject(t, 'runic-openapi-remote-redirect-');
+  const directory = createFixtureProject(t, 'golem-openapi-remote-redirect-');
   let requestInit: RequestInit | undefined;
   const restore = mockFetch(async (_input, init) => {
     requestInit = init;
@@ -295,7 +295,7 @@ test('local file references cannot escape the input directory by file URL, ../ o
     },
   };
   for (const [spelling, escape] of Object.entries(escapes)) {
-    const directory = createFixtureProject(t, 'runic-openapi-file-escape-');
+    const directory = createFixtureProject(t, 'golem-openapi-file-escape-');
     const input = path.join(directory, 'input');
     mkdirSync(input);
     await assert.rejects(() => escape(directory, input), /local reference escapes the input directory/, spelling);

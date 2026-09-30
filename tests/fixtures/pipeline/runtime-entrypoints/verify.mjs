@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
-const model = await import('@exprtlabs/codegen/model');
-const validation = await import('@exprtlabs/codegen/validation');
+const model = await import('@exprtlabs/golem/model');
+const validation = await import('@exprtlabs/golem/validation');
 class Item {}
 model.registerGeneratedModel(Item, { fields: [] });
 const item = new Item();

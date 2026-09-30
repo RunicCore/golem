@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "files": {
+    "src/generated/models/iobject-plugin-keys.ts": {
+      "job": "models:.",
+      "owner": "@exprtlabs/golem-model",
+      "digest": "3c22759bb013dd60f4b1e97cbdfbf4cfb2c360a82efde763f2feec3345e67904",
+      "destination": "src/generated/models",
+      "destinationKind": "directory"
+    },
+    "src/task.model.generated.ts": {
+      "job": "models:.",
+      "owner": "@exprtlabs/golem-model",
+      "digest": "2363a4657bfeb44058237ae278301b93a2e883f9322e690b253f94982cab3735",
+      "destination": "src",
+      "destinationKind": "directory"
+    }
+  }
+}

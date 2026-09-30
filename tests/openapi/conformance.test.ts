@@ -7,11 +7,11 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import test, { after } from 'node:test';
-import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/codegen/conversion';
-import { requireObjectCodec } from '@exprtlabs/codegen/serde';
-import { LibError, LibErrorKind, IssueSource } from '@exprtlabs/codegen/errors';
-import type { GeneratedModel } from '@exprtlabs/codegen/model';
-import { createOpenApiAjvEngine } from '@exprtlabs/codegen/ajv';
+import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/golem/conversion';
+import { requireObjectCodec } from '@exprtlabs/golem/serde';
+import { LibError, LibErrorKind, IssueSource } from '@exprtlabs/golem/errors';
+import type { GeneratedModel } from '@exprtlabs/golem/model';
+import { createOpenApiAjvEngine } from '@exprtlabs/golem/ajv';
 import { generatedCodecId } from '../support/consumer.js';
 import {
   findRemoteRefs,
@@ -78,7 +78,7 @@ test('finds remote references with a precise JSON Pointer', () => {
 });
 
 test('bundles local multi-document references', async (t) => {
-  const directory = createFixtureProject(t, 'runic-openapi-local-ref-');
+  const directory = createFixtureProject(t, 'golem-openapi-local-ref-');
   copyFixture(directory, 'openapi/conformance/local-reference');
   const filename = path.join(directory, 'openapi.yaml');
   const document = await loadValidatedDocument(filename, {});
@@ -188,7 +188,7 @@ test('complex example projects polymorphic nested models and exact HTTP contract
     openApiFixture('complex-openapi.yaml'),
     {},
   );
-  const output = createFixtureProject(t, 'runic-openapi-complex-');
+  const output = createFixtureProject(t, 'golem-openapi-complex-');
   writeSdk(document, { output, name: 'MerchantPayments' });
 
   const assertFile = copyFixtureFile(output, 'openapi/conformance/complex-response-assert.ts', 'complex-response-assert.ts');
@@ -229,7 +229,7 @@ test('OpenAPI 3.1 generation preserves its dialect', (t) => {
       },
     },
   };
-  const output = createFixtureProject(t, 'runic-openapi-31-');
+  const output = createFixtureProject(t, 'golem-openapi-31-');
   writeSdk(document, { output, name: 'Oas31' });
   assert.match(
     fs.readFileSync(path.join(output, 'schemas.ts'), 'utf8'),
@@ -260,7 +260,7 @@ test('component-root dynamic anchors retain their local recursive scope', (t) =>
       },
     },
   };
-  const output = createFixtureProject(t, 'runic-openapi-dynamic-anchor-');
+  const output = createFixtureProject(t, 'golem-openapi-dynamic-anchor-');
   writeSdk(document, { output, name: 'RecursiveAnchors' });
   const types = fs.readFileSync(path.join(output, 'types.ts'), 'utf8');
   const models = readGeneratedModelSource(output);
@@ -302,7 +302,7 @@ test('generates inheritable object models with serde conversion metadata', async
       },
     },
   };
-  const output = createFixtureProject(t, 'runic-openapi-models-');
+  const output = createFixtureProject(t, 'golem-openapi-models-');
   writeSdk(document, { output, name: 'Models' });
   const models = readGeneratedModelSource(output);
   assert.match(models, /class PaymentModel extends BasePaymentModel/);
@@ -420,7 +420,7 @@ test('normalizes callbacks and webhooks into typed inbound contracts', (t) => {
     [{ sourceKind: 'webhook', method: 'POST' }, { sourceKind: 'callback', method: 'POST' }],
   );
 
-  const output = createFixtureProject(t, 'runic-openapi-inbound-');
+  const output = createFixtureProject(t, 'golem-openapi-inbound-');
   writeSdk(document, { output, name: 'Inbound' });
   const inbound = fs.readFileSync(path.join(output, 'inbound.ts'), 'utf8');
   assert.match(inbound, /interface InboundInboundPort/);
@@ -443,7 +443,7 @@ test('normalizes callbacks and webhooks into typed inbound contracts', (t) => {
 
 test('generation is deterministic', async (t) => {
   const document = await loadValidatedDocument(example, {});
-  const output = createFixtureProject(t, 'runic-openapi-test-');
+  const output = createFixtureProject(t, 'golem-openapi-test-');
   const profile = { mobx: true, validation: true };
   const first = writeSdkFiles(document, { output, name: 'ExamplePayments', profile });
   const second = writeSdkFiles(document, { output, name: 'ExamplePayments', profile });
@@ -474,7 +474,7 @@ test('generation is deterministic', async (t) => {
   }));
   assert.match(
     fs.readFileSync(path.join(output, 'types.ts'), 'utf8'),
-    /@runic-model-manifest \.\/model-manifest\.json/,
+    /@golem-model-manifest \.\/model-manifest\.json/,
   );
   assert.equal(fs.existsSync(path.join(output, 'validation.ts')), false);
 });
@@ -648,7 +648,7 @@ function compileWireClient() {
 
 async function generateWireClient() {
   const document = wireAuthDocument();
-  const output = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'runic-openapi-wire-')));
+  const output = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'golem-openapi-wire-')));
   wireClientRoots.push(output);
   writeSdk(document, { output, name: 'Wire' });
   copyFixtureFile(output, "openapi/conformance/auth-type-test.ts", "auth-type-test.ts");
@@ -1184,7 +1184,7 @@ test('generated client implements path and query style/explode serialization', a
       },
     },
   };
-  const output = createFixtureProject(t, 'runic-openapi-styles-');
+  const output = createFixtureProject(t, 'golem-openapi-styles-');
   writeSdk(document, { output, name: 'Styles' });
   const compiled = spawnSync(process.execPath, [tscBin(), 
     '--target', 'ES2022',
@@ -1365,7 +1365,7 @@ test('generated client implements path and query style/explode serialization', a
 });
 
 test('generated SDK operation validators and client enforce request/response schema constraints at runtime', async (t) => {
-  const sdkOutput = createFixtureProject(t, 'runic-openapi-operation-validation-');
+  const sdkOutput = createFixtureProject(t, 'golem-openapi-operation-validation-');
   writeSdk({
     openapi: '3.2.0',
     info: { title: 'Runtime operations', version: '1' },
@@ -1659,7 +1659,7 @@ test('OpenAPI 3.2 querystring, sequential stream, and binary responses work on t
       },
     },
   };
-  const output = createFixtureProject(t, 'runic-openapi-media-');
+  const output = createFixtureProject(t, 'golem-openapi-media-');
   writeSdk(document, { output, name: 'Media' });
   const compiled = spawnSync(process.execPath, [tscBin(), 
     '--target', 'ES2022',
@@ -1782,7 +1782,7 @@ test('OpenAPI 3.2 querystring, sequential stream, and binary responses work on t
         encoderContext = context;
         return {
           body: new Blob([JSON.stringify(value)]),
-          contentType: 'multipart/form-data; boundary=runic-test',
+          contentType: 'multipart/form-data; boundary=golem-test',
         };
       },
     },
@@ -1801,7 +1801,7 @@ test('OpenAPI 3.2 querystring, sequential stream, and binary responses work on t
   assert.ok(advancedRequest);
   assert.equal(
     advancedRequest.init.headers.get('content-type'),
-    'multipart/form-data; boundary=runic-test',
+    'multipart/form-data; boundary=golem-test',
   );
 
   const missingStreamDecoderClient = new MediaClient({

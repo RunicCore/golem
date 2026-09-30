@@ -1,4 +1,4 @@
-import { getValidator } from '@exprtlabs/codegen/validation';
+import { getValidator } from '@exprtlabs/golem/validation';
 import { UserModel } from './index.js';
 class UserEditor extends UserModel {
   public readonly localOnly = true;

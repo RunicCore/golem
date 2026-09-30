@@ -1,18 +1,18 @@
 # CLI
 
-The `runic-codegen` command comes from `@exprtlabs/codegen`. Run it from the
-directory that contains `runic-codegen.yaml`. It resolves the configuration,
+The `golem` command comes from `@exprtlabs/golem`. Run it from the
+directory that contains `golem.yaml`. It resolves the configuration,
 runs the configured generators, and writes their artifacts to the configured
-destinations. The inventory (`.runic-codegen/outputs.json`) records which
+destinations. The inventory (`.golem/outputs.json`) records which
 generated files each job produced.
 
 ```text
-Usage: runic-codegen <generate|check|watch|exec> [--config runic-codegen.yaml]
-       runic-codegen exec [--watch] -- <command> [args...]
-       runic-codegen --help
+Usage: golem <generate|check|watch|exec> [--config golem.yaml]
+       golem exec [--watch] -- <command> [args...]
+       golem --help
 ```
 
-Running `runic-codegen` with no arguments, or with `--help` or `-h`, prints
+Running `golem` with no arguments, or with `--help` or `-h`, prints
 usage and exits.
 
 ## Commands
@@ -40,16 +40,16 @@ valid only with `exec`; unknown options fail before generation starts.
 | `143` | `watch` stopped on `SIGTERM`. |
 
 `exec` returns the child command's own exit code. If the child was killed by a
-signal instead, `runic-codegen` re-raises that signal on itself, so the shell
+signal instead, `golem` re-raises that signal on itself, so the shell
 sees the same signal exit (`130` for `SIGINT`, `143` for `SIGTERM`).
 
 ## Examples
 
 ```sh
-npx runic-codegen generate
-npx runic-codegen check
-npx runic-codegen watch --config ./frontend/runic-codegen.yaml
-npx runic-codegen exec --watch -- npm run dev
+npx golem generate
+npx golem check
+npx golem watch --config ./frontend/golem.yaml
+npx golem exec --watch -- npm run dev
 ```
 
 `check` is suitable for CI because it leaves generated files, the inventory

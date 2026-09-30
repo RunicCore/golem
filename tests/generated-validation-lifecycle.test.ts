@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { LibError, LibErrorKind } from '@exprtlabs/codegen/errors';
-import { getValidator, validateInstance } from '@exprtlabs/codegen/validation';
+import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
+import { getValidator, validateInstance } from '@exprtlabs/golem/validation';
 import { installCodecModel } from './register-codec-model.js';
 
 test('nested generated-model $ref reports issues at the nested child path', async () => {

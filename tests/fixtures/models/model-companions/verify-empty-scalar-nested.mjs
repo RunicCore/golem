@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/codegen/conversion';
+import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/golem/conversion';
 import { Empty } from './build/empty.model.js';
 import { Scalar } from './build/scalar.model.js';
 import { Nested } from './build/nested.model.js';

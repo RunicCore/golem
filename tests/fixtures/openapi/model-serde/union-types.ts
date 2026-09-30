@@ -1,8 +1,8 @@
 
-import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/codegen/conversion';
+import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/golem/conversion';
 import { CatModel, DogModel, PetModel } from './index.js';
 import type { Cat, Dog, Pet } from './types.js';
-import type { GeneratedModelResult } from '@exprtlabs/codegen/model';
+import type { GeneratedModelResult } from '@exprtlabs/golem/model';
 
 class HandwrittenCat extends CatModel {
   readonly marker = true;

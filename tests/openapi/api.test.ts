@@ -21,7 +21,7 @@ function fixture(directory: string): string {
 }
 
 test('generate returns absolute pure artifacts and local watch inputs', async (t) => {
-  const directory = createFixtureProject(t, 'runic-openapi-api-');
+  const directory = createFixtureProject(t, 'golem-openapi-api-');
   const input = fixture(directory);
   const output = path.join(directory, 'generated');
   const result = await generate({
@@ -44,22 +44,22 @@ test('generate returns absolute pure artifacts and local watch inputs', async (t
   assert.ok(models);
   assert.ok(client);
   assert.ok(schemas);
-  assert.doesNotMatch(models, /@exprtlabs\/codegen\/(mobx|mobx-validation)/);
+  assert.doesNotMatch(models, /@exprtlabs\/golem\/(mobx|mobx-validation)/);
   assert.doesNotMatch(models, /asGenObservable|validation:\s*\{/);
   assert.match(models, /registerGeneratedModel/);
-  assert.doesNotMatch(client, /@exprtlabs\/codegen\/(ajv|validation)/);
+  assert.doesNotMatch(client, /@exprtlabs\/golem\/(ajv|validation)/);
   assert.doesNotMatch(schemas, /schemaRegistry|runtimeSchemaRegistry/);
 });
 
 test('OpenAPI getValidator infers generated fields and rejects handwritten subclass fields', async t => {
-  const directory = createFixtureProject(t, 'runic-openapi-validator-types-');
+  const directory = createFixtureProject(t, 'golem-openapi-validator-types-');
   const input = path.join(directory, 'openapi.yaml');
   const output = path.join(directory, 'sdk');
   copyFixtureFile(directory, 'openapi/api/validator-types/openapi.yaml', 'openapi.yaml');
   const result = await generate({ input, output, name: 'ValidatorTypes', profile: { mobx: false, validation: true } });
   assert.equal(result.artifacts.some(({ path: filename }) => filename.endsWith('/validation.ts')), false);
   writeGeneratedArtifacts(result.artifacts);
-  linkProjectPackages(output, { '@exprtlabs/codegen': path.join(workspace, 'packages/codegen') });
+  linkProjectPackages(output, { '@exprtlabs/golem': path.join(workspace, 'packages/golem') });
   copyFixtureFile(output, "openapi/api/consumer.ts", "consumer.ts");
   await command(directory, process.execPath, [
     tscBin(),
@@ -76,7 +76,7 @@ test('OpenAPI getValidator infers generated fields and rejects handwritten subcl
 });
 
 test('SDK generated with mobx and validation disabled loads and runs an operation without mobx or ajv resolvable', async (t) => {
-  const directory = createFixtureProject(t, 'runic-openapi-no-peer-deps-');
+  const directory = createFixtureProject(t, 'golem-openapi-no-peer-deps-');
   const output = path.join(directory, 'sdk');
   const input = path.join(directory, 'openapi.json');
   writeFileSync(input, JSON.stringify({
@@ -104,23 +104,23 @@ test('SDK generated with mobx and validation disabled loads and runs an operatio
   writeGeneratedArtifacts(result.artifacts);
   writeFileSync(path.join(output, 'package.json'), '{"type":"module"}\n');
 
-  // Copy @exprtlabs/codegen's package.json and dist as real files rather than
+  // Copy @exprtlabs/golem's package.json and dist as real files rather than
   // symlinking (linkProjectPackages/prepareSdkProject's usual behavior): Node
   // resolves a symlink to its real path before walking node_modules, so a
-  // symlinked codegen package would still resolve up into this workspace's own
+  // symlinked golem package would still resolve up into this workspace's own
   // node_modules, where mobx and ajv are installed, defeating the isolation
   // this test exists to prove. A real copy keeps the whole dependency chain
   // rooted under the temp project, where neither package exists at any
   // ancestor directory.
-  const codegenSource = path.join(workspace, 'packages/codegen');
-  const codegenDestination = path.join(output, 'node_modules/@exprtlabs/codegen');
-  mkdirSync(codegenDestination, { recursive: true });
-  cpSync(path.join(codegenSource, 'package.json'), path.join(codegenDestination, 'package.json'));
-  cpSync(path.join(codegenSource, 'dist'), path.join(codegenDestination, 'dist'), { recursive: true });
+  const golemSource = path.join(workspace, 'packages/golem');
+  const golemDestination = path.join(output, 'node_modules/@exprtlabs/golem');
+  mkdirSync(golemDestination, { recursive: true });
+  cpSync(path.join(golemSource, 'package.json'), path.join(golemDestination, 'package.json'));
+  cpSync(path.join(golemSource, 'dist'), path.join(golemDestination, 'dist'), { recursive: true });
 
   compileStrictUnusedSdk(output);
 
-  const probeDirectories = [output, path.join(codegenDestination, 'dist')];
+  const probeDirectories = [output, path.join(golemDestination, 'dist')];
   for (const directory of probeDirectories) {
     for (const missing of ['mobx', 'ajv']) {
       // One file per missing package: Node caches a failed import by URL, so reusing a file returns the first failure.
@@ -151,7 +151,7 @@ test('SDK generated with mobx and validation disabled loads and runs an operatio
 });
 
 test('profile is mandatory and source validation remains enabled for all profiles', async (t) => {
-  const directory = createFixtureProject(t, 'runic-openapi-invalid-');
+  const directory = createFixtureProject(t, 'golem-openapi-invalid-');
   const input = path.join(directory, 'invalid.yaml');
   writeFileSync(input, 'openapi: 2.0\ninfo: {}\npaths: {}\n');
   await assert.rejects(

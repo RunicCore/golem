@@ -4,11 +4,11 @@ import os from 'node:os';
 import path from 'node:path';
 import { test, type TestContext } from 'node:test';
 
-import { decodeGeneratedModel } from '@exprtlabs/codegen/conversion';
-import { requireObjectCodec } from '@exprtlabs/codegen/serde';
-import { IssueCode, IssueRepresentation, IssueSource, LibError, LibErrorKind, type Issue } from '@exprtlabs/codegen/errors';
-import { getValidator } from '@exprtlabs/codegen/validation';
-import type { CodegenProfile } from '#codegen/generator-api';
+import { decodeGeneratedModel } from '@exprtlabs/golem/conversion';
+import { requireObjectCodec } from '@exprtlabs/golem/serde';
+import { IssueCode, IssueRepresentation, IssueSource, LibError, LibErrorKind, type Issue } from '@exprtlabs/golem/errors';
+import { getValidator } from '@exprtlabs/golem/validation';
+import type { GolemProfile } from '#golem/generator-api';
 import { generate } from '#model/generator';
 import { command, workspace } from './support/process.js';
 import { generatedCodecIdFromRoot } from './support/consumer.js';
@@ -16,7 +16,7 @@ import { readFixture, writeGeneratedArtifacts } from './fixture-project.js';
 import { modelAliasSource, referencedPolicyModelSource, taggedProfilePayloadSource } from './fixture-templates/models/profile-options.js';
 import { tsSource, type SourceFragment } from './source-template.js';
 
-function profile(overrides: Partial<CodegenProfile> = {}): CodegenProfile {
+function profile(overrides: Partial<GolemProfile> = {}): GolemProfile {
   return {
     mobx: false,
     validation: true,
@@ -27,13 +27,13 @@ function profile(overrides: Partial<CodegenProfile> = {}): CodegenProfile {
 }
 
 function modelProject(t: TestContext): { root: string; sourceRoot: string; source: string } {
-  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'runic-profile-model-')));
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'golem-profile-model-')));
   const sourceRoot = path.join(root, 'src');
   fs.mkdirSync(sourceRoot, { recursive: true });
   fs.mkdirSync(path.join(root, 'node_modules/@exprtlabs'), { recursive: true });
   fs.symlinkSync(
-    path.join(process.cwd(), 'packages/codegen'),
-    path.join(root, 'node_modules/@exprtlabs/codegen'),
+    path.join(process.cwd(), 'packages/golem'),
+    path.join(root, 'node_modules/@exprtlabs/golem'),
     'dir',
   );
   fs.writeFileSync(path.join(root, 'tsconfig.json'), JSON.stringify({

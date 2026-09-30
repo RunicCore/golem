@@ -1,0 +1,59 @@
+{
+  "name": "@exprtlabs/golem-ts-openapi",
+  "version": "1.0.0-rc",
+  "description": "Generate OpenAPI documents from TypeScript controllers without starting the application",
+  "keywords": [
+    "openapi",
+    "nestjs",
+    "typescript",
+    "golem",
+    "codegen",
+    "controllers"
+  ],
+  "author": "exprtlabs.ai",
+  "license": "MIT",
+  "homepage": "https://exprtlabs.ai",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/RunicCore/golem.git",
+    "directory": "packages/golem-ts-openapi"
+  },
+  "bugs": {
+    "url": "https://github.com/RunicCore/golem/issues"
+  },
+  "publishConfig": {
+    "access": "public",
+    "tag": "rc"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=22.15.0"
+  },
+  "files": [
+    "dist",
+    "ttsc-plugin.cjs",
+    "README.md",
+    "LICENSE"
+  ],
+  "exports": {
+    "./generator": {
+      "types": "./dist/generator.d.ts",
+      "import": "./dist/generator.js",
+      "default": "./dist/generator.js"
+    },
+    "./ttsc-plugin": "./ttsc-plugin.cjs"
+  },
+  "dependencies": {
+    "@exprtlabs/golem": "1.0.0-rc",
+    "yaml": "^2.9.0"
+  },
+  "peerDependencies": {
+    "ttsc": "~0.30.4",
+    "typescript": "~7.0.2"
+  },
+  "scripts": {
+    "build": "ttsc -p tsconfig.json",
+    "clean": "node -e \"for (const target of ['dist', '../../.build/golem-ts-openapi.tsbuildinfo']) require('node:fs').rmSync(target, { recursive: true, force: true })\"",
+    "prepack": "npm run clean && npm run build && ttsc -p ../../tsconfig.package-check.json && node ../../.build/scripts/verify-package.js ."
+  }
+}

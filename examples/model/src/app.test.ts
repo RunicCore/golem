@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { LibError } from '@exprtlabs/codegen/errors';
-import { fromWireFormat, parse, stringify, toWireFormat } from '@exprtlabs/codegen/serde';
-import { validateInstance } from '@exprtlabs/codegen/validation';
+import { LibError } from '@exprtlabs/golem/errors';
+import { fromWireFormat, parse, stringify, toWireFormat } from '@exprtlabs/golem/serde';
+import { validateInstance } from '@exprtlabs/golem/validation';
 import { createTask, saveTask } from './task-app.js';
 import { Task } from './task.model.js';
 import type { TTask } from './task.model.js';

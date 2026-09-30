@@ -1,4 +1,4 @@
-import type { IModel } from '@exprtlabs/codegen/model';
+import type { IModel } from '@exprtlabs/golem/model';
 import { ChildBase, type ChildFields } from './child.model.generated.js';
 export type TChild = IModel<{ name: string }>;
 export class Child extends ChildBase {

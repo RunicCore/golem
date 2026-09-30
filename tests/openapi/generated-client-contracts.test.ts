@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import test, { after } from 'node:test';
-import { LibError, LibErrorKind } from '@exprtlabs/codegen/errors';
+import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 import { generate } from '#openapi/generator';
 import {
   captureRequest,
@@ -447,7 +447,7 @@ function loadContractClient(profile: OpenApiGenerationProfile): Promise<Generate
 
 async function generateContractClient(profile: OpenApiGenerationProfile): Promise<GeneratedClientClass> {
   const name = 'Contract';
-  const root = realpathSync(mkdtempSync(path.join(tmpdir(), 'runic-openapi-client-contracts-')));
+  const root = realpathSync(mkdtempSync(path.join(tmpdir(), 'golem-openapi-client-contracts-')));
   contractClientRoots.push(root);
   const output = path.join(root, 'sdk');
   await generateMaterializedSdk(contractDocument(), { output, name, profile });
@@ -920,7 +920,7 @@ test('response header decoding strips only SP/HTAB around list tokens and keeps 
 });
 
 test('unsupported HTTP Digest authentication fails generation without Bearer fallback', async (t) => {
-  const directory = createFixtureProject(t, 'runic-openapi-r15-');
+  const directory = createFixtureProject(t, 'golem-openapi-r15-');
   const input = writeOpenApiDocument(directory, documentBase('3.1.0', {
     paths: {
       '/secure': {
@@ -948,7 +948,7 @@ test('unsupported HTTP Digest authentication fails generation without Bearer fal
 test('XML object responses require runtime decoders with and without validation, including PDF/ZIP blobs', async (t) => {
   // mobx does not reach the response codec path, so the validation axis is the only profile difference.
   for (const profile of validationProfiles) {
-    const directory = createFixtureProject(t, 'runic-openapi-r16-');
+    const directory = createFixtureProject(t, 'golem-openapi-r16-');
     const input = writeOpenApiDocument(directory, documentBase('3.1.0', {
       paths: {
         '/xml': {

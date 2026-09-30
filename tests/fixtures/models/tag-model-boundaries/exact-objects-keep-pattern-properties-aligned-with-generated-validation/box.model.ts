@@ -1,5 +1,5 @@
-import type { IModel } from '@exprtlabs/codegen/model';
-import type { AdditionalProperties, PatternProperties, TValidation } from '@exprtlabs/codegen/tags';
+import type { IModel } from '@exprtlabs/golem/model';
+import type { AdditionalProperties, PatternProperties, TValidation } from '@exprtlabs/golem/tags';
 import { positive } from './predicates.js';
 import { PatternBoxBase, type PatternBoxFields } from './box.model.generated.js';
 type Payload = { known?: string } & PatternProperties<{ '^x_': number & TValidation<typeof positive> }> & AdditionalProperties<never>;

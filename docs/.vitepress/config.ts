@@ -22,7 +22,7 @@ function docsOutDir(): string {
 
 export default defineConfig({
   lang: 'en-US',
-  title: 'ExprtLabs Codegen',
+  title: 'ExprtLabs Golem',
   description: 'TypeScript models, validation and serialization, with OpenAPI clients and optional MobX integration.',
   srcDir: '.',
   base: docsBase(),
@@ -32,16 +32,16 @@ export default defineConfig({
   lastUpdated: false,
   appearance: 'dark',
   themeConfig: {
-    siteTitle: `Codegen v${releaseVersion}`,
+    siteTitle: `Golem v${releaseVersion}`,
     outline: [2, 3],
     search: {
       provider: 'local',
     },
     nav: NAV.map(item => ({ ...item })),
     sidebar: SIDEBAR.map(group => ({ text: group.text, items: group.items.map(item => ({ ...item })) })),
-    socialLinks: [{ icon: 'github', link: 'https://github.com/exprtlabs/codegen' }],
+    socialLinks: [{ icon: 'github', link: 'https://github.com/RunicCore/golem' }],
     footer: {
-      message: 'Released under the <a href="https://github.com/exprtlabs/codegen/blob/main/LICENSE">MIT License</a>.',
+      message: 'Released under the <a href="https://github.com/RunicCore/golem/blob/master/LICENSE">MIT License</a>.',
       copyright: 'Made by <a href="https://exprtlabs.ai">exprtlabs.ai</a>',
     },
   },
@@ -49,7 +49,7 @@ export default defineConfig({
     // Only this consumer projection enters the browser bundle. The source
     // registry also contains evidence and workspace paths and stays server-side.
     define: {
-      __EXPRTLABS_SUPPORT_PROJECTION__: JSON.stringify(buildSupportProjection()),
+      __GOLEM_SUPPORT_PROJECTION__: JSON.stringify(buildSupportProjection()),
     },
     publicDir: stageDocsPublicAssets(workspaceRoot),
     build: {

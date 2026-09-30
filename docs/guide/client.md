@@ -1,6 +1,6 @@
 # Generate a client
 
-Point `@exprtlabs/openapi-to-ts` at an OpenAPI document and call its operations with typed, validated requests and responses.
+Point `@exprtlabs/golem-openapi` at an OpenAPI document and call its operations with typed, validated requests and responses.
 
 <<< ../../examples/openapi/src/list-tasks.ts#create-and-list
 
@@ -9,17 +9,17 @@ Set `baseUrl` to your service — the client doesn't pick an OpenAPI `servers` U
 ## Install
 
 ```sh
-npm install @exprtlabs/codegen@rc ajv ajv-formats
-npm install --save-dev @exprtlabs/openapi-to-ts@rc typescript@~7.0.2 ttsc@~0.30.4
+npm install @exprtlabs/golem@rc ajv ajv-formats
+npm install --save-dev @exprtlabs/golem-openapi@rc typescript@~7.0.2 ttsc@~0.30.4
 ```
 
 Requests and responses are validated by default; `ajv` and `ajv-formats` supply the validators. Add the ttsc plugin to `tsconfig.json` and compile with `npx ttsc` ([TypeScript setup](/guide/install#typescript-setup)). Include the generated `sdk/` directory in the TypeScript program that builds your app. For precompiled validators, set [`ajvStandalone`](/reference/config#validation-profiles).
 
 ## Point to your OpenAPI document
 
-Add `runic-codegen.yaml` at the project root. Paths are relative to it, and `name: Tasks` names the client `TasksClient`. The [`mobx`](/reference/config#root-keys) and [`validation`](/reference/config#validation-profiles) keys set MobX observability and runtime validation for the generated code.
+Add `golem.yaml` at the project root. Paths are relative to it, and `name: Tasks` names the client `TasksClient`. The [`mobx`](/reference/config#root-keys) and [`validation`](/reference/config#validation-profiles) keys set MobX observability and runtime validation for the generated code.
 
-<<< ../../examples/openapi/runic-codegen.yaml
+<<< ../../examples/openapi/golem.yaml
 
 The document is the contract. Keep it in the project or point `input` at the file your API already owns; any [supported OpenAPI feature](/reference/openapi-support) works:
 
@@ -30,7 +30,7 @@ Generation fails on an invalid document.
 ## Generate the SDK
 
 ```sh
-npx runic-codegen generate
+npx golem generate
 ```
 
 The command writes `sdk/`. Import `TasksClient` from `../sdk/index.js`, the path from a file in `src/`.
@@ -65,4 +65,4 @@ Check the declared status before reading the body:
 
 <<< ../../examples/openapi/src/read-task.ts#read-task
 
-Full example: [`examples/openapi`](https://github.com/exprtlabs/codegen/tree/main/examples/openapi)
+Full example: [`examples/openapi`](https://github.com/RunicCore/golem/tree/master/examples/openapi)

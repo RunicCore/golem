@@ -23,7 +23,7 @@ npm install mobx
 
 Set the profile and regenerate:
 
-<<< ../../examples/model-mobx/runic-codegen.yaml
+<<< ../../examples/model-mobx/golem.yaml
 
 `mobx: true` applies to every generator in the configuration. The example also sets `validation: false`; validation is independent of MobX ([Validation](/guide/validation)). An OpenAPI client
 also gains observable operation loading ([SDK loading state](/guide/client-usage#observe-loading-with-mobx)).
@@ -52,9 +52,9 @@ Dispose the reaction when the observation is no longer needed.
 When an observable generated model contains another generated model,
 `asGenObservable` walks nested values through arrays, records, maps and sets.
 
-One top-level `mobx: true` in `runic-codegen.yaml` applies to both the SDK and the model generator, building a [model with a client](/guide/models-and-client) as observables together.
+One top-level `mobx: true` in `golem.yaml` applies to both the SDK and the model generator, building a [model with a client](/guide/models-and-client) as observables together.
 
-<<< ../../examples/combined-mobx/runic-codegen.yaml
+<<< ../../examples/combined-mobx/golem.yaml
 
 It generates the SDK into `sdk/` from `api.yaml`.
 
@@ -87,6 +87,6 @@ A React component imports a generated model or client like any other module. Wra
 
 <<< ../../examples/react-mobx/src/App.tsx#observer-component
 
-`getValidator` reads the editor's validation issues ([Validation](/guide/validation)) for the form to render; the form's fields call action methods such as `setAmount` on change. [`examples/react-mobx`](https://github.com/exprtlabs/codegen/tree/main/examples/react-mobx) runs this editor against a local demo server.
+`getValidator` reads the editor's validation issues ([Validation](/guide/validation)) for the form to render; the form's fields call action methods such as `setAmount` on change. [`examples/react-mobx`](https://github.com/RunicCore/golem/tree/master/examples/react-mobx) runs this editor against a local demo server.
 
-Full example: [`examples/model-mobx`](https://github.com/exprtlabs/codegen/tree/main/examples/model-mobx)
+Full example: [`examples/model-mobx`](https://github.com/RunicCore/golem/tree/master/examples/model-mobx)

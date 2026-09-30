@@ -13,7 +13,7 @@ import {
 
 test('full-feature fixture compiles with noUnusedLocals for every profile', async (t) => {
   for (const profile of ALL_GENERATION_PROFILES) {
-    const output = path.join(createFixtureProject(t, `runic-openapi-complex-${profile.mobx}-${profile.validation}-`), 'sdk');
+    const output = path.join(createFixtureProject(t, `golem-openapi-complex-${profile.mobx}-${profile.validation}-`), 'sdk');
     const result = await generate({
       input: openApiFixture('complex-openapi.yaml'),
       output,

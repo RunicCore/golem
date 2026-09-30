@@ -45,7 +45,7 @@ The project does not start an API server. Replace the URL with a matching
 | `backend/project-access.model.ts` | Native backend model and tagged fields |
 | `backend/project-access.controller.ts` | Route, request and response declaration |
 | `api.yaml` | Generated OpenAPI shapes and update operation |
-| `runic-codegen.yaml` | Controller, SDK and model generation jobs |
+| `golem.yaml` | Controller, SDK and model generation jobs |
 | `src/project-access.model.ts` | Handwritten editor and model declaration |
 | `src/access-rules.ts` | Validation tags and conversion functions |
 | `src/edit-access.ts` | Decode a wire draft, grant write access, re-encode it |
@@ -67,7 +67,7 @@ Edit authored files and run `npm run generate` again. Generated output under
 The adapter keeps the call explicit:
 
 ```ts
-import { toWireFormat } from '@exprtlabs/codegen/serde';
+import { toWireFormat } from '@exprtlabs/golem/serde';
 import type { ProjectAccessClientPort } from '../sdk/index.js';
 import type { ProjectAccessEditor, TProjectAccessEditor } from './project-access.model.js';
 import type { ProjectAccessEditorJSON } from './project-access.model.generated.js';
@@ -85,4 +85,4 @@ export async function saveProjectAccess(
 
 `toWireFormat` is synchronous, and the generated operation sends the returned
 wire object to the configured API. Those generic serde calls require TypeScript
-7, `ttsc`, and `@exprtlabs/codegen/ttsc-plugin`.
+7, `ttsc`, and `@exprtlabs/golem/ttsc-plugin`.

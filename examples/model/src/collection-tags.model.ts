@@ -1,12 +1,12 @@
 // #region collection-tags
-import type { IModel } from '@exprtlabs/codegen/model';
+import type { IModel } from '@exprtlabs/golem/model';
 import type {
   Contains,
   Format,
   MinContains,
   DependentRequired,
-} from '@exprtlabs/codegen/tags';
-import { validateInstance } from '@exprtlabs/codegen/validation';
+} from '@exprtlabs/golem/tags';
+import { validateInstance } from '@exprtlabs/golem/validation';
 import { ContractsBase } from './collection-tags.model.generated.js';
 
 type Email = string & Format<'email'>;

@@ -1,9 +1,9 @@
-import type { IModel } from '@exprtlabs/codegen/model';
+import type { IModel } from '@exprtlabs/golem/model';
 import {
   fromWireFormat,
   parse,
   type SerdeOptions,
-} from '@exprtlabs/codegen/serde';
+} from '@exprtlabs/golem/serde';
 import { ItemBase, type ItemFields } from "./item.model.generated.js";
 
 export type TItem = IModel<{ title: string; value: number }>;

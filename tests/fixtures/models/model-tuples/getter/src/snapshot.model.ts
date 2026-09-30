@@ -1,4 +1,4 @@
-import type { IModel } from '@exprtlabs/codegen/model';
+import type { IModel } from '@exprtlabs/golem/model';
 import { SnapshotBase } from './snapshot.model.generated.js';
 
 export type TSnapshot = IModel<{

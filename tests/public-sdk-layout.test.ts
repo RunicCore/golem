@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { test } from 'node:test';
 import { parse } from 'yaml';
-import * as ts from '#codegen/typescript-ns';
+import * as ts from '#golem/typescript-ns';
 import { writeSdk } from '#openapi/generator';
 import { createFixtureProject, readFixture, writeGeneratedArtifacts } from './fixture-project.js';
 
@@ -51,7 +51,7 @@ test('the public SDK layout generated from a fixture document matches the frozen
   const document = parse(readFixture('public-sdk-layout/openapi.yaml'));
   const actual: Layout = {};
   for (const [name, profile] of Object.entries(PROFILES)) {
-    const sdk = path.join(createFixtureProject(t, `runic-sdk-layout-${name}-`), 'sdk');
+    const sdk = path.join(createFixtureProject(t, `golem-sdk-layout-${name}-`), 'sdk');
     writeGeneratedArtifacts(writeSdk(document, { output: sdk, name: 'Payments', profile }).artifacts);
     actual[name] = publicLayout(sdk);
   }

@@ -15,7 +15,7 @@ import {
 } from './helpers.js';
 
 test('allows a single Foo-Bar component name and rejects Foo-Bar with Foo.Bar', async (t) => {
-  const allowed = createFixtureProject(t, 'runic-openapi-r6-ok-');
+  const allowed = createFixtureProject(t, 'golem-openapi-r6-ok-');
   const allowedInput = writeOpenApiDocument(allowed, documentBase('3.1.0', {
     components: {
       schemas: {
@@ -31,7 +31,7 @@ test('allows a single Foo-Bar component name and rejects Foo-Bar with Foo.Bar', 
   const types = allowedResult.artifacts.find((artifact) => artifact.path.endsWith('/types.ts'))?.content ?? '';
   assert.match(types, /export type FooBar =/);
 
-  const colliding = createFixtureProject(t, 'runic-openapi-r6-collide-');
+  const colliding = createFixtureProject(t, 'golem-openapi-r6-collide-');
   const collidingInput = writeOpenApiDocument(colliding, documentBase('3.1.0', {
     components: {
       schemas: {
@@ -51,7 +51,7 @@ test('allows a single Foo-Bar component name and rejects Foo-Bar with Foo.Bar', 
 });
 
 test('rejects operation names that collide with actual client helpers', async (t) => {
-  const directory = createFixtureProject(t, 'runic-openapi-r6-url-');
+  const directory = createFixtureProject(t, 'golem-openapi-r6-url-');
   const input = writeOpenApiDocument(directory, documentBase('3.1.0', {
     paths: {
       '/url': {
@@ -90,7 +90,7 @@ test('reserved-word operation names get a deterministic identifier suffix and co
     [reservedDocument, ['delete_', 'new_', 'import_', 'constructor_', 'runtime_']],
     [rootDeleteDocument, ['delete_']],
   ] as const) {
-    const directory = createFixtureProject(t, 'runic-openapi-reserved-operation-');
+    const directory = createFixtureProject(t, 'golem-openapi-reserved-operation-');
     const output = path.join(directory, 'sdk');
     const result = await generateMaterializedSdk(document, { output, name: 'Reserved', profile: { mobx: true, validation: true } });
     compileGeneratedSdk(output);
@@ -116,7 +116,7 @@ test('reserved-word operation names get a deterministic identifier suffix and co
 });
 
 test('an allocated operation name collision names both sources and the requested name', async t => {
-  const directory = createFixtureProject(t, 'runic-openapi-allocated-collision-');
+  const directory = createFixtureProject(t, 'golem-openapi-allocated-collision-');
   const input = writeOpenApiDocument(directory, documentBase('3.1.0', {
     paths: {
       '/a': { get: { operationId: 'delete', responses: { 204: { description: 'ok' } } } },
@@ -130,7 +130,7 @@ test('an allocated operation name collision names both sources and the requested
 });
 
 test('components named Array and Blob do not shadow generated global types', async t => {
-  const directory = createFixtureProject(t, 'runic-openapi-global-shadow-');
+  const directory = createFixtureProject(t, 'golem-openapi-global-shadow-');
   const output = path.join(directory, 'sdk');
   await generateMaterializedSdk(documentBase('3.1.0', {
     paths: {
@@ -169,7 +169,7 @@ test('components named Array and Blob do not shadow generated global types', asy
 });
 
 test('operation module names that differ only by case are rejected', async t => {
-  const directory = createFixtureProject(t, 'runic-openapi-case-operation-');
+  const directory = createFixtureProject(t, 'golem-openapi-case-operation-');
   const input = writeOpenApiDocument(directory, documentBase('3.1.0', {
     paths: {
       '/a': { get: { operationId: 'getURL', responses: { 204: { description: 'ok' } } } },

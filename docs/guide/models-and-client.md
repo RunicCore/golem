@@ -11,8 +11,8 @@ The generated class builds the `money` field as the SDK's runtime class, `MoneyM
 ## Install
 
 ```sh
-npm install @exprtlabs/codegen@rc ajv ajv-formats
-npm install --save-dev @exprtlabs/model-codegen@rc @exprtlabs/openapi-to-ts@rc typescript@~7.0.2 ttsc@~0.30.4
+npm install @exprtlabs/golem@rc ajv ajv-formats
+npm install --save-dev @exprtlabs/golem-model@rc @exprtlabs/golem-openapi@rc typescript@~7.0.2 ttsc@~0.30.4
 ```
 
 Add the ttsc plugin to `tsconfig.json` and compile with `npx ttsc` ([TypeScript setup](/guide/install#typescript-setup)). Include both `src/**/*.ts` and the generated `sdk/**/*.ts` in your TypeScript program.
@@ -21,7 +21,7 @@ Add the ttsc plugin to `tsconfig.json` and compile with `npx ttsc` ([TypeScript 
 
 One configuration runs the OpenAPI job first; its `model-manifest.json` lets the model job resolve SDK types such as `Money`.
 
-<<< ../../examples/combined/runic-codegen.yaml
+<<< ../../examples/combined/golem.yaml
 
 The Payments API sends and returns `Money`, not the whole editor:
 
@@ -33,7 +33,7 @@ Write the declaration before the first generation. The SDK import is type-only, 
 
 <<< ../../examples/combined/src/payment-editor.model.ts#model-declaration
 
-Run `npx runic-codegen generate`. It writes `sdk/` and `src/payment-editor.model.generated.ts`, and shared files under `src/generated/models/`. Then add your `PaymentEditor` class, as at the top of this page; regeneration leaves it alone.
+Run `npx golem generate`. It writes `sdk/` and `src/payment-editor.model.generated.ts`, and shared files under `src/generated/models/`. Then add your `PaymentEditor` class, as at the top of this page; regeneration leaves it alone.
 
 ## Load and edit
 
@@ -53,4 +53,4 @@ Constructing `PaymentEditor` turns `money` into a `MoneyModel`. `toWireFormat(ed
 
 `validateInstance(editor)` returns the issues. `getValidator(editor)` keeps them on the model for a form ([Validation](/guide/validation)).
 
-Full example: [`examples/combined`](https://github.com/exprtlabs/codegen/tree/main/examples/combined)
+Full example: [`examples/combined`](https://github.com/RunicCore/golem/tree/master/examples/combined)

@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 
 /**
  * Writes the official OpenAPI document schemas as TypeScript modules for
- * @exprtlabs/openapi-to-ts. Ajv 8 resolves `$dynamicRef` incorrectly when the
+ * @exprtlabs/golem-openapi. Ajv 8 resolves `$dynamicRef` incorrectly when the
  * matching `$dynamicAnchor` is not at a schema root, so each
  * `{"$dynamicRef": "#meta"}` becomes `{"$ref": "#/$defs/schema"}`. Without the
  * schema-base extension the dynamic scope holds only `$defs/schema`, so the
@@ -25,7 +25,7 @@ const SOURCES = [
 ] as const;
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
-const outputDirectory = path.join(root, 'packages/openapi-to-ts/src/openapi-schemas');
+const outputDirectory = path.join(root, 'packages/golem-openapi/src/openapi-schemas');
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);

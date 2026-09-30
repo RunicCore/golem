@@ -4,11 +4,11 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
-import { generate } from '@exprtlabs/openapi-to-ts/generator';
+import { generate } from '@exprtlabs/golem-openapi/generator';
 import { command, workspace } from './support/process.js';
 
 test('public directional projection handles repeated aliases and allOf requirements without weakening neutral or required-only schemas', async t => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'runic-projection-integration-'));
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'golem-projection-integration-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   fs.symlinkSync(path.join(workspace, 'node_modules'), path.join(root, 'node_modules'), 'dir');
   fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ private: true, type: 'module' }));

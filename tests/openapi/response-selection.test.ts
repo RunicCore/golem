@@ -79,7 +79,7 @@ function loadClient() {
 }
 
 async function generateClient() {
-  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'runic-openapi-select-')));
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'golem-openapi-select-')));
   selectRoots.push(root);
   const output = path.join(root, 'sdk');
   await generateMaterializedSdk(document(), { output, name: 'Select', profile: { mobx: false, validation: false } });

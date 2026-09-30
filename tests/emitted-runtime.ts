@@ -1,8 +1,8 @@
 import { transformSync } from 'esbuild';
 
-import * as ajv from '@exprtlabs/codegen/ajv';
-import * as conversion from '@exprtlabs/codegen/conversion';
-import * as serde from '@exprtlabs/codegen/serde';
+import * as ajv from '@exprtlabs/golem/ajv';
+import * as conversion from '@exprtlabs/golem/conversion';
+import * as serde from '@exprtlabs/golem/serde';
 
 /** Evaluate emitted `stringify*` functions with the public serde exports in scope. */
 export function instantiate(source: string): Record<string, (value: never) => string> {

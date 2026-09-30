@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { LibError, LibErrorKind } from '@exprtlabs/codegen/errors';
-import { ClientRuntime, isUndeclaredResponseError, type RuntimeResponseContract } from '@exprtlabs/codegen/client';
-import type { RuntimeValidationEngine } from '@exprtlabs/codegen/validation';
+import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
+import { ClientRuntime, isUndeclaredResponseError, type RuntimeResponseContract } from '@exprtlabs/golem/client';
+import type { RuntimeValidationEngine } from '@exprtlabs/golem/validation';
 
 // The emitted runtime has no `validate` option: validation is off when the caller passes no operation validators.
 const NO_VALIDATORS = undefined;

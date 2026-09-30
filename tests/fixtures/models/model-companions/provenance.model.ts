@@ -1,7 +1,7 @@
 import type * as ContractNamespace from './contracts.js';
 import type { ReexportedObject } from './contracts.js';
 import { ProvenanceBase, type ProvenanceFields } from './provenance.model.generated.js';
-import { fromWireFormat } from '@exprtlabs/codegen/serde';
+import { fromWireFormat } from '@exprtlabs/golem/serde';
 
 export type TProvenance = ContractNamespace.ReexportedModel<{ title: string }>;
 export type TPlain = ReexportedObject<{ label: string }>;

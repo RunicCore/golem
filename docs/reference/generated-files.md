@@ -10,8 +10,8 @@ Know which generated paths and names you can import and commit, and which may ch
 | `sdk/models/<Name>.js` | One runtime model class per object schema | Yes |
 | `sdk/operations/<name>.js` | One operation factory per endpoint | Yes |
 | `<name>.model.generated.ts` | The generated base beside each model file | Yes |
-| `runic-codegen.yaml` | Your configuration keys | Yes |
-| `.runic-codegen/outputs.json` | The list of files the generator owns | Yes |
+| `golem.yaml` | Your configuration keys | Yes |
+| `.golem/outputs.json` | The list of files the generator owns | Yes |
 
 The SDK folder is the `sdk` output you configure. Import only from the paths above.
 
@@ -39,7 +39,7 @@ Every other file in an SDK is internal and may change in a minor release. Do not
 - `iobject-plugin-keys.ts`
 - `model-manifest.json`
 
-The generator no longer writes `validation.ts`, `client-runtime.ts` or `models.ts`. Their code lives in `@exprtlabs/codegen`.
+The generator no longer writes `validation.ts`, `client-runtime.ts` or `models.ts`. Their code lives in `@exprtlabs/golem`.
 
 ## Derived type names
 
@@ -78,4 +78,4 @@ The id of a codec is the model name plus eight hex characters. The hash covers t
 
 ## Runtime version
 
-Install `@exprtlabs/codegen` at or above the version of each generator package the configuration uses, with the same major version. `generate`, `check`, `exec` and `watch` compare the installed `@exprtlabs/codegen` with each of those generator packages and fail before they write when the runtime is older or has a different major version. The message names both packages and versions. The SDK manifest records `runtime.minimumVersion` for reference.
+Install `@exprtlabs/golem` at or above the version of each generator package the configuration uses, with the same major version. `generate`, `check`, `exec` and `watch` compare the installed `@exprtlabs/golem` with each of those generator packages and fail before they write when the runtime is older or has a different major version. The message names both packages and versions. The SDK manifest records `runtime.minimumVersion` for reference.

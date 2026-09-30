@@ -1,9 +1,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import type { CodegenProfile } from '@exprtlabs/codegen/generator-api';
+import type { GolemProfile } from '@exprtlabs/golem/generator-api';
 import { copyFixtureFile } from '../fixture-project.js';
 
-export function writeFixture(root: string, profile: CodegenProfile, includeModels = true): void {
+export function writeFixture(root: string, profile: GolemProfile, includeModels = true): void {
   copyFixtureFile(root, 'packed/profile/api.json', 'api.json');
   copyFixtureFile(root, 'packed/profile/tsconfig.json', 'tsconfig.json');
   if (includeModels) copyFixtureFile(root, 'packed/profile/src/cart.model.ts', 'src/cart.model.ts');
@@ -21,7 +21,7 @@ export function writeFixture(root: string, profile: CodegenProfile, includeModel
     ...(includeModels ? ['models:', '  root: .'] : []),
     '',
   ].join('\n');
-  fs.writeFileSync(path.join(root, 'runic-codegen.yaml'), configuration);
+  fs.writeFileSync(path.join(root, 'golem.yaml'), configuration);
 }
 
 export function generatedCodecId(source: string, shortName: string): string {

@@ -14,10 +14,10 @@ function writeJson(filename: string, value: unknown): void {
 function releaseFixture(root: string, version = '1.0.0-rc'): void {
   writeJson(path.join(root, 'package.json'), { private: true, version });
   for (const [directory, name, dependencies] of [
-    ['codegen', '@exprtlabs/codegen', {}],
-    ['model-codegen', '@exprtlabs/model-codegen', { '@exprtlabs/codegen': version }],
-    ['openapi-to-ts', '@exprtlabs/openapi-to-ts', { '@exprtlabs/codegen': version }],
-    ['ts-to-openapi', '@exprtlabs/ts-to-openapi', { '@exprtlabs/codegen': version }],
+    ['golem', '@exprtlabs/golem', {}],
+    ['golem-model', '@exprtlabs/golem-model', { '@exprtlabs/golem': version }],
+    ['golem-openapi', '@exprtlabs/golem-openapi', { '@exprtlabs/golem': version }],
+    ['golem-ts-openapi', '@exprtlabs/golem-ts-openapi', { '@exprtlabs/golem': version }],
   ] as const) {
     writeJson(path.join(root, 'packages', directory, 'package.json'), {
       name,
@@ -29,35 +29,35 @@ function releaseFixture(root: string, version = '1.0.0-rc'): void {
   for (const directory of EXAMPLE_NAMES) {
     writeJson(path.join(root, 'examples', directory, 'package.json'), {
       name: `${directory}-example`,
-      dependencies: { '@exprtlabs/codegen': version },
+      dependencies: { '@exprtlabs/golem': version },
     });
   }
 }
 
 test('release consistency rejects public version and internal pin drift', t => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'runic-release-version-'));
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'golem-release-version-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   releaseFixture(root);
 
-  writeJson(path.join(root, 'packages', 'model-codegen', 'package.json'), {
-    name: '@exprtlabs/model-codegen',
+  writeJson(path.join(root, 'packages', 'golem-model', 'package.json'), {
+    name: '@exprtlabs/golem-model',
     version: '1.0.0',
     publishConfig: { access: 'public', tag: 'rc' },
-    dependencies: { '@exprtlabs/codegen': '1.0.0-rc' },
+    dependencies: { '@exprtlabs/golem': '1.0.0-rc' },
   });
-  assert.throws(() => assertReleaseConsistency(root), /@exprtlabs\/model-codegen must use workspace version/);
+  assert.throws(() => assertReleaseConsistency(root), /@exprtlabs\/golem-model must use workspace version/);
 
-  writeJson(path.join(root, 'packages', 'model-codegen', 'package.json'), {
-    name: '@exprtlabs/model-codegen',
+  writeJson(path.join(root, 'packages', 'golem-model', 'package.json'), {
+    name: '@exprtlabs/golem-model',
     version: '1.0.0-rc',
     publishConfig: { access: 'public', tag: 'rc' },
-    dependencies: { '@exprtlabs/codegen': '^1.0.0-rc' },
+    dependencies: { '@exprtlabs/golem': '^1.0.0-rc' },
   });
-  assert.throws(() => assertReleaseConsistency(root), /must pin @exprtlabs\/codegen/);
+  assert.throws(() => assertReleaseConsistency(root), /must pin @exprtlabs\/golem to /);
 });
 
 test('release consistency rejects an example project missing from the maintained inventory', t => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'runic-release-version-'));
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'golem-release-version-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   releaseFixture(root);
   assert.equal(assertReleaseConsistency(root), '1.0.0-rc');

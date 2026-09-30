@@ -53,7 +53,7 @@ Set `API_BASE_URL` when the client should use another address.
 | `src/run-client.ts` | Runnable client entrypoint |
 | `src/app-workflows.ts` | Shared test cases, run against a created Nest application |
 | `src/app.test.ts` | Runs `app-workflows.ts` against the real Nest adapter |
-| `runic-codegen.yaml` | Controller, SDK and model jobs |
+| `golem.yaml` | Controller, SDK and model jobs |
 
 The project archive contains the full source for every file, including the
 generated `api/openapi.yaml` and `sdk/` files.
@@ -67,7 +67,7 @@ register `NestModelInterceptor`:
 import 'reflect-metadata';
 import { Module } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
-import { NestModelInterceptor } from '@exprtlabs/codegen/nest';
+import { NestModelInterceptor } from '@exprtlabs/golem/nest';
 import { PaymentsController } from './payments.controller.js';
 import './payment.model.js';
 
@@ -89,7 +89,7 @@ export async function createApplication() {
 `src/client.ts` sends a model draft through the generated operation:
 
 ```ts
-import { fromWireFormat } from '@exprtlabs/codegen/serde';
+import { fromWireFormat } from '@exprtlabs/golem/serde';
 import { PaymentsClient } from '../sdk/index.js';
 import { Payment, type TPaymentInput } from './payment.model.js';
 
@@ -109,7 +109,7 @@ asynchronous.
 
 ## Generation order
 
-`runic-codegen.yaml` writes the controller document, then the SDK, then model
+`golem.yaml` writes the controller document, then the SDK, then model
 companions:
 
 ```yaml
@@ -130,6 +130,6 @@ models:
   root: .
 ```
 
-Edit the authored files under `src/` or `runic-codegen.yaml` and run
+Edit the authored files under `src/` or `golem.yaml` and run
 `npm run generate`. Generated files under `api/`, `sdk/` and model companion
 paths are replaced.

@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import type { ModelRuntimeValidator } from '@exprtlabs/codegen/model';
-import { runValidation } from '@exprtlabs/codegen/validation';
+import type { ModelRuntimeValidator } from '@exprtlabs/golem/model';
+import { runValidation } from '@exprtlabs/golem/validation';
 
 interface Deferred<T> {
   readonly promise: Promise<T>;

@@ -8,7 +8,7 @@ Start with a [configured model project](/guide/quick-start). Keep validation ena
 npm install ajv ajv-formats
 ```
 
-Run `npx runic-codegen generate` after saving a model file. [Standalone validation](/reference/config#validation-profiles) is an alternative to runtime Ajv.
+Run `npx golem generate` after saving a model file. [Standalone validation](/reference/config#validation-profiles) is an alternative to runtime Ajv.
 
 Tags are type-only annotations on a field type.
 
@@ -123,7 +123,7 @@ The backend declares the same contract, and one configuration generates the docu
 
 <<< ../../examples/showcase/backend/project-access.controller.ts#project-access-controller
 
-<<< ../../examples/showcase/runic-codegen.yaml
+<<< ../../examples/showcase/golem.yaml
 
 ### Define the model
 
@@ -149,4 +149,4 @@ The class as type argument (`ProjectAccessEditor`) builds your class; the `T…`
 
 Run `npm start` in `examples/showcase`; set `PROJECT_ACCESS_API_BASE_URL` to send the save to a real API.
 
-Full example: [`examples/showcase`](https://github.com/exprtlabs/codegen/tree/main/examples/showcase)
+Full example: [`examples/showcase`](https://github.com/RunicCore/golem/tree/master/examples/showcase)

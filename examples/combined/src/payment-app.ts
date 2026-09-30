@@ -11,8 +11,8 @@ export function createPaymentEditor(draft: PaymentDraft): PaymentEditor {
 }
 
 // #region validate-and-save
-import { toWireFormat } from '@exprtlabs/codegen/serde';
-import { validateInstance } from '@exprtlabs/codegen/validation';
+import { toWireFormat } from '@exprtlabs/golem/serde';
+import { validateInstance } from '@exprtlabs/golem/validation';
 import type { TPaymentEditor } from './payment-editor.model.js';
 import type { PaymentEditorJSON } from './payment-editor.model.generated.js';
 

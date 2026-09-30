@@ -3,10 +3,10 @@ import path from 'node:path';
 import { EXAMPLE_NAMES, assertExampleInventory } from './maintained-examples.js';
 
 export const PUBLIC_PACKAGE_NAMES = [
-  '@exprtlabs/codegen',
-  '@exprtlabs/model-codegen',
-  '@exprtlabs/openapi-to-ts',
-  '@exprtlabs/ts-to-openapi',
+  '@exprtlabs/golem',
+  '@exprtlabs/golem-model',
+  '@exprtlabs/golem-openapi',
+  '@exprtlabs/golem-ts-openapi',
 ] as const;
 
 type PublicPackageName = (typeof PUBLIC_PACKAGE_NAMES)[number];

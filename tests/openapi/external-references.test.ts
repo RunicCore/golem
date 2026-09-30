@@ -15,7 +15,7 @@ function write(directory: string, name: string, value: unknown): string {
 const profile = { mobx: false, validation: false };
 
 test('multi-file documents generate with path-based model names and watch every file', async (t) => {
-  const directory = createFixtureProject(t, 'runic-external-generate-');
+  const directory = createFixtureProject(t, 'golem-external-generate-');
   write(directory, 'paths/users.yaml', [
     'get:',
     '  operationId: listUsers',
@@ -42,7 +42,7 @@ test('multi-file documents generate with path-based model names and watch every 
 });
 
 test('validation errors point at the file that contains the problem', async (t) => {
-  const directory = createFixtureProject(t, 'runic-external-location-');
+  const directory = createFixtureProject(t, 'golem-external-location-');
   write(directory, 'schemas/bad.json', { type: 'strng' });
   const input = write(directory, 'api.json', {
     openapi: '3.1.0',
@@ -56,7 +56,7 @@ test('validation errors point at the file that contains the problem', async (t) 
 });
 
 test('an unresolved pointer into another file is reported at the ref', async (t) => {
-  const directory = createFixtureProject(t, 'runic-external-unresolved-');
+  const directory = createFixtureProject(t, 'golem-external-unresolved-');
   write(directory, 'params.json', { Limit: { name: 'limit', in: 'query', schema: { type: 'integer' } } });
   const input = write(directory, 'api.json', {
     openapi: '3.1.0',
@@ -71,7 +71,7 @@ test('an unresolved pointer into another file is reported at the ref', async (t)
 
 test('a root ref to an $id declared in a local file resolves without remote access', async (t) => {
   for (const id of ['https://schemas.example/money', 'urn:example:money']) {
-    const directory = createFixtureProject(t, 'runic-external-id-');
+    const directory = createFixtureProject(t, 'golem-external-id-');
     write(directory, 'money.json', {
       $id: id,
       type: 'object',
@@ -101,7 +101,7 @@ test('a root ref to an $id declared in a local file resolves without remote acce
 });
 
 test('a problem that names a second location reports it in the file that contains it', async (t) => {
-  const directory = createFixtureProject(t, 'runic-external-related-');
+  const directory = createFixtureProject(t, 'golem-external-related-');
   write(directory, 'a.json', { get: { operationId: 'dup', responses: { 200: { description: 'ok' } } } });
   const input = write(directory, 'api.json', {
     openapi: '3.1.0',
@@ -126,7 +126,7 @@ test('a problem that names a second location reports it in the file that contain
 });
 
 test('a 3.2 media type in another file is expanded in place in the loaded document', async (t) => {
-  const directory = createFixtureProject(t, 'runic-external-media-type-');
+  const directory = createFixtureProject(t, 'golem-external-media-type-');
   write(directory, 'media.json', { schema: { type: 'string' } });
   const input = write(directory, 'api.json', {
     openapi: '3.2.0',

@@ -4,8 +4,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import test, { type TestContext } from 'node:test';
 
-import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/codegen/conversion';
-import { requireObjectCodec } from '@exprtlabs/codegen/serde';
+import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/golem/conversion';
+import { requireObjectCodec } from '@exprtlabs/golem/serde';
 import { generatedCodecId, generatedCodecIdFromRoot } from './support/consumer.js';
 import { compileModelProject, createModelProject, writeModelSources } from './model-project.js';
 import { discardedProjectionMetadataSource, projectionPolicyModelSource } from './fixture-templates/models/model-composition.js';
@@ -13,7 +13,7 @@ import { generate } from '#model/generator';
 
 function fixture(t: TestContext, allowJs = false) {
   return createModelProject(t, {
-    prefix: 'runic-model-composition-',
+    prefix: 'golem-model-composition-',
     name: 'model-composition',
     allowJs,
     ttscPlugin: true,
@@ -268,7 +268,7 @@ test('validation-on projection cases share one generated project', async t => {
     fs.writeFileSync(path.join(strict.sourceRoot, 'item.model.ts'), readFixture("models/model-composition/a-projected-child-applies-the-containing-model-allowany-policy/item.model.ts"));
     assert.throws(
       () => generate({ root: strict.root, profile: { mobx: false, validation: true } }),
-      /RUNM1011.*contains any\. .*IModel<Fields, \{ allowAny: true \}>.*allowAny: true in runic-codegen\.yaml/,
+      /RUNM1011.*contains any\. .*IModel<Fields, \{ allowAny: true \}>.*allowAny: true in golem\.yaml/,
     );
     const { Container } = await load('projected-child', 'item.model.js');
     const container = decodeGeneratedModel(Container, { child: { raw: () => 'allowed by containing policy' } });

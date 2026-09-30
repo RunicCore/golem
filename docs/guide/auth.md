@@ -19,7 +19,7 @@ security:
 After saving the security scheme, run:
 
 ```sh
-npx runic-codegen generate
+npx golem generate
 ```
 
 `src/send-payment.ts`:

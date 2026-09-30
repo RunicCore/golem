@@ -1,4 +1,4 @@
-import { fromWireFormat, parse, stringify } from '@exprtlabs/codegen/serde';
+import { fromWireFormat, parse, stringify } from '@exprtlabs/golem/serde';
 import { PaymentsClient } from '../sdk/index.js';
 import type { Payment, TPaymentInput } from './payment.model.js';
 

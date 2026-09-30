@@ -1,5 +1,5 @@
-import type { IModel } from '@exprtlabs/codegen/model';
-import type { TValidation, TSerde } from '@exprtlabs/codegen/tags';
+import type { IModel } from '@exprtlabs/golem/model';
+import type { TValidation, TSerde } from '@exprtlabs/golem/tags';
 import { ItemBase } from './item.model.generated.js';
 export function accepts(value: number): boolean { return value > 0; }
 export function encode(value: number): string { return String(value); }

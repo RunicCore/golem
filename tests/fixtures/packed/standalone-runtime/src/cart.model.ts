@@ -1,5 +1,5 @@
-import type { IModel } from '@exprtlabs/codegen/model';
-import type { Minimum, TSerde, TValidation } from '@exprtlabs/codegen/tags';
+import type { IModel } from '@exprtlabs/golem/model';
+import type { Minimum, TSerde, TValidation } from '@exprtlabs/golem/tags';
 import type { Money } from '../sdk/index.js';
 
 export const positive = (value: number): boolean | string => value > 0 || 'Use a positive count';

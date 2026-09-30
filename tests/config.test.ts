@@ -3,14 +3,14 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { loadConfig } from '#codegen/config';
-import { parseArguments, providersFor } from '#codegen/cli';
+import { loadConfig } from '#golem/config';
+import { parseArguments, providersFor } from '#golem/cli';
 
 function fixture(t: TestContext, yaml: string): { root: string; filename: string } {
-  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'runic-config-')));
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'golem-config-')));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   fs.writeFileSync(path.join(root, 'api.yaml'), 'openapi: 3.1.0');
-  const filename = path.join(root, 'runic-codegen.yaml');
+  const filename = path.join(root, 'golem.yaml');
   fs.writeFileSync(filename, yaml);
   return { root, filename };
 }
@@ -73,17 +73,17 @@ test('configuration errors reject unknown overrides, duplicate keys and overlapp
 
 test('configured provider absence and incompatible API have distinct actionable errors', async (t: TestContext) => {
   const { root, filename } = fixture(t, 'version: 1\nmodels: {}\n');
-  // The hint installs the generator from the same npm channel as the running codegen (1.0.0-rc -> @rc).
-  const { version } = JSON.parse(fs.readFileSync(new URL('../../packages/codegen/package.json', import.meta.url), 'utf8')) as { version: string };
+  // The hint installs the generator from the same npm channel as the running golem (1.0.0-rc -> @rc).
+  const { version } = JSON.parse(fs.readFileSync(new URL('../../packages/golem/package.json', import.meta.url), 'utf8')) as { version: string };
   const channel = /^\d+\.\d+\.\d+-([0-9A-Za-z-]+)/.exec(version)?.[1] ?? 'latest';
   await assert.rejects(
     providersFor(loadConfig(filename)),
-    (error: unknown) => error instanceof Error && error.message.includes('@exprtlabs/model-codegen is not installed')
-      && error.message.includes(`npm install -D @exprtlabs/model-codegen@${channel}.`),
+    (error: unknown) => error instanceof Error && error.message.includes('@exprtlabs/golem-model is not installed')
+      && error.message.includes(`npm install -D @exprtlabs/golem-model@${channel}.`),
   );
-  const provider = path.join(root, 'node_modules/@exprtlabs/model-codegen');
+  const provider = path.join(root, 'node_modules/@exprtlabs/golem-model');
   fs.mkdirSync(provider, { recursive: true });
-  fs.writeFileSync(path.join(provider, 'package.json'), JSON.stringify({ name: '@exprtlabs/model-codegen', version, type: 'module', exports: { './generator': './index.js' } }));
+  fs.writeFileSync(path.join(provider, 'package.json'), JSON.stringify({ name: '@exprtlabs/golem-model', version, type: 'module', exports: { './generator': './index.js' } }));
   fs.writeFileSync(path.join(provider, 'index.js'), 'export const apiVersion = 99;\nexport function generate() {}\n');
   await assert.rejects(providersFor(loadConfig(filename)), /CLI supports API 1.*99/);
 });

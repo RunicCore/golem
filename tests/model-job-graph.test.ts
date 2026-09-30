@@ -2,21 +2,21 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import test, { type TestContext } from 'node:test';
-import type { CodegenProfile } from '@exprtlabs/codegen/generator-api';
-import type { ModelTypeDescriptor } from '@exprtlabs/codegen/model';
-import { createExecutableValidationMemo, hasExecutableValidation } from '@exprtlabs/codegen/schema';
+import type { GolemProfile } from '@exprtlabs/golem/generator-api';
+import type { ModelTypeDescriptor } from '@exprtlabs/golem/model';
+import { createExecutableValidationMemo, hasExecutableValidation } from '@exprtlabs/golem/schema';
 import { generate } from '#model/generator';
 import { writeGeneratedArtifacts } from './fixture-project.js';
 import { compileModelProject, createModelProject, writeModelSources } from './model-project.js';
 import { command, ttscEnv } from './support/process.js';
 
-const profiles: readonly (readonly [string, CodegenProfile])[] = [
+const profiles: readonly (readonly [string, GolemProfile])[] = [
   ['validation off', { mobx: false, validation: false }],
   ['runtime Ajv', { mobx: false, validation: true }],
   ['standalone', { mobx: false, validation: true, ajvStandalone: true }],
 ];
 
-function project(t: TestContext, prefix: string, profile: CodegenProfile) {
+function project(t: TestContext, prefix: string, profile: GolemProfile) {
   return createModelProject(t, {
     prefix, linkTypescript: true, linkTtsc: true, allowJs: profile.ajvStandalone === true,
   });
@@ -44,8 +44,8 @@ function chainSources(count: number, { kind, name, minLabel }: Chain = modelChai
     const fields = index > 0 ? `; prev: T${name}${index - 1}; prevs?: T${name}${index - 1}[]` : '';
     const base = kind === 'IModel' ? `import { ${name}${index}Base } from './${file}-${index}.model.generated.js';\n` : '';
     const cls = kind === 'IModel' ? `export class ${name}${index} extends ${name}${index}Base {}\n` : '';
-    sources[`${file}-${index}.model.ts`] = `import type { ${kind} } from '@exprtlabs/codegen/model';
-import type { MinLength } from '@exprtlabs/codegen/tags';
+    sources[`${file}-${index}.model.ts`] = `import type { ${kind} } from '@exprtlabs/golem/model';
+import type { MinLength } from '@exprtlabs/golem/tags';
 ${previous}${base}export type T${name}${index} = ${kind}<{ label: string & MinLength<${minLabel}>; at: Date; kind: { k: 'a'; a: Date } | { k: 'b'; b: number }${fields} }>;
 ${cls}`;
   }
@@ -80,7 +80,7 @@ for (const [label, profile] of profiles) for (const chain of [modelChain, object
   test(`a companion emits only its own ${kind} models of a chained job and references the rest by codec id (${label})`, (t: TestContext) => {
     const count = 12;
     const last = count - 1;
-    const { root, sourceRoot } = project(t, 'runic-model-chain-', profile);
+    const { root, sourceRoot } = project(t, 'golem-model-chain-', profile);
     writeModelSources(sourceRoot, chainSources(count, chain));
     const { artifacts } = generate({ root, profile });
     const companion = (index: number): string =>
@@ -108,14 +108,14 @@ for (const [label, profile] of profiles) for (const chain of [modelChain, object
 }
 
 const cycleSources = {
-  'a.model.ts': `import type { IModel } from '@exprtlabs/codegen/model';
-import type { MinLength } from '@exprtlabs/codegen/tags';
+  'a.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
+import type { MinLength } from '@exprtlabs/golem/tags';
 import type { TB } from './b.model.js';
 import { ABase } from './a.model.generated.js';
 export type TA = IModel<{ name: string & MinLength<2>; at: Date; b?: TB }>;
 export class A extends ABase {}
 `,
-  'b.model.ts': `import type { IModel } from '@exprtlabs/codegen/model';
+  'b.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
 import type { TA } from './a.model.js';
 import { BBase } from './b.model.generated.js';
 export type TB = IModel<{ at: Date; as: TA[] }>;
@@ -147,8 +147,8 @@ console.log(JSON.stringify({
 `;
 
 test('editing a leaf model regenerates the ids its dependents reference', (t: TestContext) => {
-  const profile: CodegenProfile = { mobx: false, validation: true };
-  const { root, sourceRoot } = project(t, 'runic-model-leaf-edit-', profile);
+  const profile: GolemProfile = { mobx: false, validation: true };
+  const { root, sourceRoot } = project(t, 'golem-model-leaf-edit-', profile);
   writeModelSources(sourceRoot, chainSources(3));
   const ids = (): { readonly owned: string; readonly referenced: readonly string[] } => {
     const artifacts = generate({ root, profile }).artifacts;
@@ -169,14 +169,14 @@ test('editing a leaf model regenerates the ids its dependents reference', (t: Te
 });
 
 const mixedCycleSources = {
-  'order.model.ts': `import type { IModel } from '@exprtlabs/codegen/model';
-import type { MinLength } from '@exprtlabs/codegen/tags';
+  'order.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
+import type { MinLength } from '@exprtlabs/golem/tags';
 import type { TLine } from './line.model.js';
 import { OrderBase } from './order.model.generated.js';
 export type TOrder = IModel<{ id: string & MinLength<2>; at: Date; lines: TLine[] }>;
 export class Order extends OrderBase {}
 `,
-  'line.model.ts': `import type { IObject } from '@exprtlabs/codegen/model';
+  'line.model.ts': `import type { IObject } from '@exprtlabs/golem/model';
 import type { TOrder } from './order.model.js';
 export type TLine = IObject<{ at: Date; qty: number; parent?: TOrder }>;
 `,
@@ -209,7 +209,7 @@ console.log(JSON.stringify({
 // One project per profile holds a short chain of each kind and both cycles, so the profile compiles once.
 for (const [label, profile] of profiles) {
   test(`chained, cyclic and mixed-kind jobs compile in one project (${label})`, async (t: TestContext) => {
-    const { root, sourceRoot } = project(t, 'runic-model-job-graph-', profile);
+    const { root, sourceRoot } = project(t, 'golem-model-job-graph-', profile);
     writeModelSources(sourceRoot, {
       ...chainSources(3, modelChain),
       ...chainSources(3, objectChain),

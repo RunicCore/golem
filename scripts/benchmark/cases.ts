@@ -1,10 +1,10 @@
 import type { Adapter, Operation } from './fixture-contract.js';
 
-export const REPOSITORY_BLOB_URL = 'https://github.com/exprtlabs/codegen/blob/main';
+export const REPOSITORY_BLOB_URL = 'https://github.com/RunicCore/golem/blob/master';
 
 export type PayloadId = 'simple' | 'nested' | 'array' | 'checkout';
 export type OperationId = 'parse' | 'stringify' | 'validate';
-export type AdapterId = 'codegen' | 'codegen-standalone' | 'codegen-runtime' | 'codegen-object' | 'class-transformer' | 'class-validator' | 'typia' | 'zod';
+export type AdapterId = 'golem' | 'golem-standalone' | 'golem-runtime' | 'golem-object' | 'class-transformer' | 'class-validator' | 'typia' | 'zod';
 export type GroupId = 'plain' | 'classes' | 'validated-classes';
 export type Support = 'full' | 'none';
 export type ProjectKind = 'plain' | 'runtime' | 'standalone';
@@ -37,25 +37,25 @@ const F = 'scripts/benchmark/fixtures/upstream';
 
 /** Libraries are compared only within a group, where every adapter does the same job. */
 export const GROUPS: readonly GroupSpec[] = [
-  { id: 'plain', label: 'Plain objects, validated', description: 'JSON text to validated plain objects and back. Codegen uses an IObject declaration.',
-    operations: { parse: ['codegen-object', 'typia', 'zod'], stringify: ['codegen-object', 'typia', 'zod'], validate: ['codegen-object', 'typia', 'zod'] },
+  { id: 'plain', label: 'Plain objects, validated', description: 'JSON text to validated plain objects and back. Golem uses an IObject declaration.',
+    operations: { parse: ['golem-object', 'typia', 'zod'], stringify: ['golem-object', 'typia', 'zod'], validate: ['golem-object', 'typia', 'zod'] },
     operationDescriptions: { parse: 'JSON text to a checked plain object', stringify: 'plain object, checked, to JSON text', validate: 'check a plain object' } },
-  { id: 'classes', label: 'Class instances', description: 'JSON text to class instances and back, without validation. Codegen uses an IModel declaration.',
-    operations: { parse: ['codegen', 'class-transformer'], stringify: ['codegen', 'class-transformer'], validate: [] },
+  { id: 'classes', label: 'Class instances', description: 'JSON text to class instances and back, without validation. Golem uses an IModel declaration.',
+    operations: { parse: ['golem', 'class-transformer'], stringify: ['golem', 'class-transformer'], validate: [] },
     operationDescriptions: { parse: 'JSON text to instances of your classes', stringify: 'instances of your classes to JSON text' } },
   { id: 'validated-classes', label: 'Validated class instances', description: 'Class instances checked against their constraints.',
-    operations: { parse: ['codegen-standalone', 'class-validator'], stringify: ['codegen-standalone', 'class-validator'], validate: ['codegen-standalone', 'codegen-runtime', 'class-validator'] },
+    operations: { parse: ['golem-standalone', 'class-validator'], stringify: ['golem-standalone', 'class-validator'], validate: ['golem-standalone', 'golem-runtime', 'class-validator'] },
     operationDescriptions: { parse: 'JSON text to checked instances of your classes', stringify: 'instances, checked, to JSON text', validate: 'check an instance' } },
 ];
 
 export const BENCH_ADAPTERS: readonly AdapterSpec[] = [
-  { id: 'codegen-object', fixtureAdapter: 'codegen-object', project: 'standalone', group: 'plain', label: 'Codegen (IObject)', library: '@exprtlabs/codegen', checked: true, sourceFile: `${F}/codegen-object.ts` },
+  { id: 'golem-object', fixtureAdapter: 'golem-object', project: 'standalone', group: 'plain', label: 'Golem (IObject)', library: '@exprtlabs/golem', checked: true, sourceFile: `${F}/golem-object.ts` },
   { id: 'typia', fixtureAdapter: 'typia', project: 'plain', group: 'plain', label: 'Typia', library: 'typia', checked: true, sourceFile: `${F}/typia.ts` },
   { id: 'zod', fixtureAdapter: 'zod', project: 'plain', group: 'plain', label: 'Zod', library: 'zod', checked: true, sourceFile: `${F}/zod.ts` },
-  { id: 'codegen', fixtureAdapter: 'codegen', project: 'plain', group: 'classes', label: 'Codegen (IModel)', library: '@exprtlabs/codegen', checked: false, sourceFile: `${F}/codegen.ts` },
+  { id: 'golem', fixtureAdapter: 'golem', project: 'plain', group: 'classes', label: 'Golem (IModel)', library: '@exprtlabs/golem', checked: false, sourceFile: `${F}/golem.ts` },
   { id: 'class-transformer', fixtureAdapter: 'class-transformer', project: 'plain', group: 'classes', label: 'class-transformer', library: 'class-transformer', checked: false, sourceFile: `${F}/class-transformer.ts` },
-  { id: 'codegen-standalone', fixtureAdapter: 'codegen-standalone', project: 'standalone', group: 'validated-classes', label: 'Codegen (IModel, validated)', library: '@exprtlabs/codegen', checked: true, sourceFile: `${F}/codegen.ts` },
-  { id: 'codegen-runtime', fixtureAdapter: 'codegen-runtime', project: 'runtime', group: 'validated-classes', label: 'Codegen (IModel, runtime Ajv)', library: '@exprtlabs/codegen', checked: true, sourceFile: `${F}/codegen.ts` },
+  { id: 'golem-standalone', fixtureAdapter: 'golem-standalone', project: 'standalone', group: 'validated-classes', label: 'Golem (IModel, validated)', library: '@exprtlabs/golem', checked: true, sourceFile: `${F}/golem.ts` },
+  { id: 'golem-runtime', fixtureAdapter: 'golem-runtime', project: 'runtime', group: 'validated-classes', label: 'Golem (IModel, runtime Ajv)', library: '@exprtlabs/golem', checked: true, sourceFile: `${F}/golem.ts` },
   { id: 'class-validator', fixtureAdapter: 'class-validator', project: 'plain', group: 'validated-classes', label: 'class-validator', library: 'class-validator', checked: true, sourceFile: `${F}/class-validator.ts` },
 ];
 

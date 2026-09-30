@@ -29,7 +29,7 @@ test('Typia is not timed on checkout and says why', () => {
 
 test('benchmark fixtures are fair: timed operations do no setup and Typia uses the exact variants', () => {
   const fixtures = path.resolve(import.meta.dirname, '../../scripts/benchmark/fixtures');
-  for (const file of ['upstream/codegen.ts', 'features/comparison-features-codegen.ts', 'upstream/codegen-object.ts', 'features/comparison-features-codegen-object.ts']) {
+  for (const file of ['upstream/golem.ts', 'features/comparison-features-golem.ts', 'upstream/golem-object.ts', 'features/comparison-features-golem-object.ts']) {
     const source = readFileSync(path.join(fixtures, file), 'utf8');
     const timed = [...source.matchAll(/^\s*(?:'(?:object-to-model|model-to-object|text-to-model|model-to-text)'|validate): (?:\(\) => .*|decode),?$/gm)].map(m => m[0]);
     assert.ok(timed.length >= 3, `${file}: timed operations found`);
@@ -42,18 +42,18 @@ test('benchmark fixtures are fair: timed operations do no setup and Typia uses t
   assert.match(typia, /createEquals</, 'upstream/typia.ts');
 });
 
-test('every timed Codegen case has a timed peer for the same payload and operation in its group', () => {
+test('every timed Golem case has a timed peer for the same payload and operation in its group', () => {
   const groupOf = new Map(BENCH_ADAPTERS.map(a => [a.id, a.group]));
-  const codegen = new Set(BENCH_ADAPTERS.filter(a => a.library === '@exprtlabs/codegen').map(a => a.id));
+  const golem = new Set(BENCH_ADAPTERS.filter(a => a.library === '@exprtlabs/golem').map(a => a.id));
   for (const group of GROUPS) {
     for (const [operation, adapters] of Object.entries(group.operations)) {
       if (adapters.length === 0) continue;
-      assert.ok(adapters.some(a => codegen.has(a)), `${group.id}/${operation} has no Codegen adapter`);
+      assert.ok(adapters.some(a => golem.has(a)), `${group.id}/${operation} has no Golem adapter`);
     }
   }
   const timed = timedCases();
-  for (const c of timed.filter(c => codegen.has(c.adapter))) {
-    assert.ok(timed.some(peer => !codegen.has(peer.adapter) && peer.payload === c.payload && peer.operation === c.operation
+  for (const c of timed.filter(c => golem.has(c.adapter))) {
+    assert.ok(timed.some(peer => !golem.has(peer.adapter) && peer.payload === c.payload && peer.operation === c.operation
       && groupOf.get(peer.adapter) === groupOf.get(c.adapter)), `${c.payload}/${c.operation}/${c.adapter} has no timed peer`);
   }
 });

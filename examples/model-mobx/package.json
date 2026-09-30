@@ -3,17 +3,17 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "generate": "runic-codegen generate",
-    "check": "runic-codegen check && ttsc --noEmit",
-    "test": "runic-codegen check && ttsc && node --test .build/src/app.test.js",
-    "start": "runic-codegen check && ttsc && node .build/src/main.js"
+    "generate": "golem generate",
+    "check": "golem check && ttsc --noEmit",
+    "test": "golem check && ttsc && node --test .build/src/app.test.js",
+    "start": "golem check && ttsc && node .build/src/main.js"
   },
   "dependencies": {
-    "@exprtlabs/codegen": "1.0.0-rc",
+    "@exprtlabs/golem": "1.0.0-rc",
     "mobx": "^6.16.1"
   },
   "devDependencies": {
-    "@exprtlabs/model-codegen": "1.0.0-rc",
+    "@exprtlabs/golem-model": "1.0.0-rc",
     "typescript": "7.x",
     "ttsc": "0.30.x",
     "@types/node": "22.20.1"

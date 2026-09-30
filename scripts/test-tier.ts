@@ -8,7 +8,7 @@ import { goBinary } from './go-binary.js';
 export type Tier = 'prepare' | 'focused' | 'full' | 'acceptance' | 'docs';
 export interface Step { readonly label: string; readonly run: () => number }
 
-export const UNIT_FILES = ['.build/tests/*.test.js', '.build/tests/openapi/*.test.js', '.build/tests/ts-to-openapi/*.test.js'] as const;
+export const UNIT_FILES = ['.build/tests/*.test.js', '.build/tests/openapi/*.test.js', '.build/tests/golem-ts-openapi/*.test.js'] as const;
 // The model-only smoke file runs in Full; Acceptance runs the others so it runs once.
 export const PACKED_FILES = ['.build/tests/packed/consumers.test.js', '.build/tests/packed/nest-workflows.test.js'] as const;
 const SMOKE_FILE = '.build/tests/packed/model-only.test.js';
@@ -95,7 +95,7 @@ const pack: Step = { label: 'pack', run: () => run(process.execPath, ['.build/sc
 const prepareSteps: Step[] = [
   pack,
   { label: 'warm', run: () => run(process.execPath, ['.build/scripts/test-warm.js']) },
-  { label: 'goModules', run: () => run(goBinary(), ['mod', 'download'], path.join(root, 'packages/codegen/plugin'), { GOTOOLCHAIN: 'local' }) },
+  { label: 'goModules', run: () => run(goBinary(), ['mod', 'download'], path.join(root, 'packages/golem/plugin'), { GOTOOLCHAIN: 'local' }) },
 ];
 
 function steps(tier: Tier, args: readonly string[], native: boolean): Step[] {
@@ -116,7 +116,7 @@ function steps(tier: Tier, args: readonly string[], native: boolean): Step[] {
   if (tier === 'full') return native ? full : [...full, pack, nodeTest('packed smoke', [SMOKE_FILE], TEST_TIMEOUT_MS.full, 1)];
   return [
     { label: 'public source', run: () => run(process.execPath, ['.build/scripts/public-source.js', 'check']) },
-    { label: 'OpenAPI compliance', run: () => run(process.execPath, ['.build/packages/openapi-to-ts/compliance/generate-matrix.js', '--check']) },
+    { label: 'OpenAPI compliance', run: () => run(process.execPath, ['.build/packages/golem-openapi/compliance/generate-matrix.js', '--check']) },
     ...steps('full', args, false),
     nodeTest('acceptance unit', ACCEPTANCE_UNIT_FILES, TEST_TIMEOUT_MS.acceptance, CONCURRENCY.unit),
     nodeTest('packed', PACKED_FILES, TEST_TIMEOUT_MS.acceptance, CONCURRENCY.packed),
@@ -168,7 +168,7 @@ function main(argv: readonly string[]): void {
   const tier = tierArg as Tier;
   assertContainer(tier, native);
   const { budget, purpose } = tiers[tier];
-  process.stdout.write(`fe-deps ${tier} tier (${budget}): ${purpose}\n`);
+  process.stdout.write(`golem ${tier} tier (${budget}): ${purpose}\n`);
   if (resultsDir) {
     fs.mkdirSync(resultsDir, { recursive: true });
     // A run's results never mix with an earlier run's.

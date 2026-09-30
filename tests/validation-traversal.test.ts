@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import type { ModelField, ModelTypeDescriptor } from '@exprtlabs/codegen/model';
-import { LibError, LibErrorKind } from '@exprtlabs/codegen/errors';
+import type { ModelField, ModelTypeDescriptor } from '@exprtlabs/golem/model';
+import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 import {
   getModelRuntimeValidator,
   getValidator,
-} from '@exprtlabs/codegen/validation';
+} from '@exprtlabs/golem/validation';
 import { installCodecModel } from './register-codec-model.js';
 
 const numberDescriptor: ModelTypeDescriptor = { kind: 'number' };

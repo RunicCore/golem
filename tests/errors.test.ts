@@ -9,7 +9,7 @@ import {
   LibErrorKind,
   mapValidationCode,
   type Issue,
-} from '@exprtlabs/codegen/errors';
+} from '@exprtlabs/golem/errors';
 
 test('exports the stable string enums used by library errors and issues', () => {
   assert.deepEqual(Object.values(LibErrorKind), [

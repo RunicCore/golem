@@ -48,16 +48,16 @@ export function verifyPackage(directory: string): void {
     requireFile(target.types);
     requireFile(target.import);
   }
-  if (manifest.name === '@exprtlabs/codegen') {
-    if (!record(manifest.bin) || Object.keys(manifest.bin).join() !== 'runic-codegen') throw new Error('Shared package must own exactly runic-codegen.');
-    const binary = requireFile(manifest.bin['runic-codegen']);
+  if (manifest.name === '@exprtlabs/golem') {
+    if (!record(manifest.bin) || Object.keys(manifest.bin).join() !== 'golem') throw new Error('Shared package must own exactly golem.');
+    const binary = requireFile(manifest.bin['golem']);
     if (!fs.readFileSync(binary, 'utf8').startsWith('#!/usr/bin/env node\n')) throw new Error('Missing CLI shebang.');
     fs.chmodSync(binary, 0o755);
   } else if (manifest.bin !== undefined) throw new Error('Generator packages must not own executables.');
   assertDistMatchesSource(root);
   const license = fs.readFileSync(path.join(root, 'LICENSE'), 'utf8');
   if (!license.includes('exprtlabs.ai') || !license.includes('MIT License')) throw new Error(`Missing MIT attribution: ${root}`);
-  if (manifest.name === '@exprtlabs/openapi-to-ts') {
+  if (manifest.name === '@exprtlabs/golem-openapi') {
     for (const file of ['THIRD_PARTY_NOTICES.md', 'MATRIX.md', 'LICENSES/Apache-2.0.txt']) {
       if (!fs.statSync(path.join(root, file)).isFile()) throw new Error(`Missing third-party or conformance artifact: ${file}`);
     }
@@ -67,7 +67,7 @@ export function verifyPackage(directory: string): void {
     if (manifest.files.some((file) => file === 'compliance' || file.startsWith('compliance/'))) {
       throw new Error('OpenAPI package must not publish internal compliance records.');
     }
-  } else if (manifest.name === '@exprtlabs/ts-to-openapi') {
+  } else if (manifest.name === '@exprtlabs/golem-ts-openapi') {
     const generator = manifest.exports['./generator'];
     if (!record(generator)) throw new Error('Controller package must export ./generator.');
   }

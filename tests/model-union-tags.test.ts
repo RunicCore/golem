@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import test from 'node:test';
-import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/codegen/conversion';
+import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/golem/conversion';
 import { generate } from '#model/generator';
 import { copyFixtureFile, writeGeneratedArtifacts } from './fixture-project.js';
 import { compileModelProject, createModelProject } from './model-project.js';
@@ -10,7 +10,7 @@ import { isGeneratedModelClass, requireRecord, type GeneratedModelClass } from '
 
 test('an IModel union variant tagged by several literal values is selected by each of them', async (t) => {
   for (const validation of [false, true]) {
-    const { root } = createModelProject(t, { prefix: 'runic-union-multi-tag-', name: 'union-multi-tag' });
+    const { root } = createModelProject(t, { prefix: 'golem-union-multi-tag-', name: 'union-multi-tag' });
     const source = copyFixtureFile(root, 'models/multi-tag/pets.model.ts', 'src/pets.model.ts');
     writeGeneratedArtifacts(generate({ root, sources: [source], profile: { mobx: false, validation } }).artifacts);
     await compileModelProject(root);

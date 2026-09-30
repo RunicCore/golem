@@ -10,7 +10,7 @@ import {
   schemaForDescriptor,
   type JsonSchema,
   type ModelConstraint,
-} from '@exprtlabs/codegen/schema';
+} from '@exprtlabs/golem/schema';
 
 function validator(schema: JsonSchema): ValidateFunction {
   const ajv = new Ajv2020({ allErrors: true, strict: false, validateSchema: false });

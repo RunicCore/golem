@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import type { AFields } from './a.model.generated.js';
-import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/codegen/conversion';
-import { requireObjectCodec } from '@exprtlabs/codegen/serde';
-import { LibError, LibErrorKind } from '@exprtlabs/codegen/errors';
-import { getValidator } from '@exprtlabs/codegen/validation';
+import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/golem/conversion';
+import { requireObjectCodec } from '@exprtlabs/golem/serde';
+import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
+import { getValidator } from '@exprtlabs/golem/validation';
 import { A } from './a.model.js';
 import * as rules from './rules.js';
 

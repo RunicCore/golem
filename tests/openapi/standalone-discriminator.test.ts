@@ -15,7 +15,7 @@ import {
 } from './helpers.js';
 
 // The lowering pass is internal to the built package; load it from dist instead of compiling package source into the tests.
-const distRoot = path.dirname(fileURLToPath(import.meta.resolve('@exprtlabs/codegen/model')));
+const distRoot = path.dirname(fileURLToPath(import.meta.resolve('@exprtlabs/golem/model')));
 const { lowerDiscriminatorMappings } = await import(pathToFileURL(path.join(distRoot, 'discriminator-mapping.js')).href) as {
   readonly lowerDiscriminatorMappings: <Schema>(schema: Schema) => Schema;
 };
@@ -65,7 +65,7 @@ const expected: Readonly<Record<string, boolean>> = {
 
 for (const ajvStandalone of [false, true]) {
   test(`discriminator mapping: validation agrees with encode and round trip (ajvStandalone=${ajvStandalone})`, async (t) => {
-    const output = path.join(createFixtureProject(t, 'runic-openapi-standalone-discriminator-'), 'sdk');
+    const output = path.join(createFixtureProject(t, 'golem-openapi-standalone-discriminator-'), 'sdk');
     await generateMaterializedSdk(petDocument, { output, name: 'Pets', profile: { mobx: false, validation: true, ajvStandalone } });
     compileGeneratedSdk(output, [], { strict: true });
     copyFixtureFile(output, 'openapi/standalone-discriminator/verify.mjs', 'verify.mjs');
@@ -148,7 +148,7 @@ function mappedDocument(cases: readonly MappedNames[]): Record<string, unknown> 
 // generated modules register schemas; standalone lowers them at generation.
 for (const ajvStandalone of [false, true]) {
   test(`discriminator mappings select variants for escaped names and $id references (ajvStandalone=${ajvStandalone})`, async (t) => {
-    const output = path.join(createFixtureProject(t, 'runic-openapi-mapped-names-'), 'sdk');
+    const output = path.join(createFixtureProject(t, 'golem-openapi-mapped-names-'), 'sdk');
     // These component names are outside the OpenAPI component-key pattern, so the document is not re-validated.
     writeGeneratedSdk(writeSdk, mappedDocument(mappedCases), { output, name: 'Names', profile: { mobx: false, validation: true, ajvStandalone } });
     compileGeneratedSdk(output, [], { strict: true });
@@ -223,7 +223,7 @@ const dateDocument = {
 
 for (const ajvStandalone of [false, true]) {
   test(`inherited date fields decode and validate in allOf variants and their union (ajvStandalone=${ajvStandalone})`, async (t) => {
-    const output = path.join(createFixtureProject(t, 'runic-openapi-variant-dates-'), 'sdk');
+    const output = path.join(createFixtureProject(t, 'golem-openapi-variant-dates-'), 'sdk');
     await generateMaterializedSdk(dateDocument, { output, name: 'Dates', profile: { mobx: false, validation: true, ajvStandalone } });
     compileGeneratedSdk(output, [], { strict: true });
     copyFixtureFile(output, 'openapi/standalone-discriminator/verify-dates.mjs', 'verify-dates.mjs');
@@ -270,7 +270,7 @@ test('component names that collide once escaped keep separate validators, not ea
     },
   };
   for (const ajvStandalone of [false, true]) {
-    const output = path.join(createFixtureProject(t, 'runic-openapi-urn-collision-'), 'sdk');
+    const output = path.join(createFixtureProject(t, 'golem-openapi-urn-collision-'), 'sdk');
     writeGeneratedSdk(writeSdk, document, { output, name: 'Collide', profile: { mobx: false, validation: true, ajvStandalone } });
     compileGeneratedSdk(output);
     const module = requireRecord(

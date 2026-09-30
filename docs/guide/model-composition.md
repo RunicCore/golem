@@ -7,8 +7,8 @@ Nest models, derive types with `Pick` and `Omit`, and model unions that convert 
 A field typed with your class, such as `home: Address`, holds an instance of that class. A field typed with the declaration alias (`TAddress`) holds a plain object. `Pick`, `Omit`, `Partial`, `Required` and `Readonly` produce a derived type as a plain object.
 
 ```ts
-import type { IModel } from '@exprtlabs/codegen/model';
-import { parse } from '@exprtlabs/codegen/serde';
+import type { IModel } from '@exprtlabs/golem/model';
+import { parse } from '@exprtlabs/golem/serde';
 import { AddressBase, CustomerBase } from './customer.model.generated.js';
 
 export type TAddress = IModel<{
@@ -53,7 +53,7 @@ Supported:
 A discriminated union of two models:
 
 ```ts
-import type { IModel } from '@exprtlabs/codegen/model';
+import type { IModel } from '@exprtlabs/golem/model';
 import { EmailBase, PhoneBase } from './contact.model.generated.js';
 
 export type TEmail = IModel<{ kind: 'email'; address: string }>;
@@ -77,7 +77,7 @@ Generation fails for:
 The second type argument of `IModel` controls extra properties and `any`:
 
 ```ts
-import type { IModel } from '@exprtlabs/codegen/model';
+import type { IModel } from '@exprtlabs/golem/model';
 
 export type TOpen = IModel<{ name: string }, { exact: false }>;
 export type TExact = IModel<{ name: string }>;

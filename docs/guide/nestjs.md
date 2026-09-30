@@ -21,12 +21,12 @@ export class PaymentsController {
 }
 ```
 
-`@exprtlabs/ts-to-openapi` reads this file; it doesn't start Nest or call handlers. NestJS 11 is supported.
+`@exprtlabs/golem-ts-openapi` reads this file; it doesn't start Nest or call handlers. NestJS 11 is supported.
 
 ## Install
 
 ```sh
-npm install --save-dev @exprtlabs/ts-to-openapi@rc typescript@~7.0.2 ttsc@~0.30.4
+npm install --save-dev @exprtlabs/golem-ts-openapi@rc typescript@~7.0.2 ttsc@~0.30.4
 npm install @nestjs/swagger
 ```
 
@@ -42,7 +42,7 @@ The default document version is OpenAPI 3.2. `class-validator` decorators aren't
 
 ## Configure and generate
 
-Add `runic-codegen.yaml` beside the project's TypeScript configuration and run `npx runic-codegen generate`:
+Add `golem.yaml` beside the project's TypeScript configuration and run `npx golem generate`:
 
 ```yaml
 version: 1
@@ -91,15 +91,15 @@ post:
 
 Add an OpenAPI job that reads `./api/openapi.yaml` ([Generate a client](/guide/client)). One configuration can run both jobs:
 
-<<< ../../examples/nest-openapi/runic-codegen.yaml
+<<< ../../examples/nest-openapi/golem.yaml
 
 `globalPrefix: api` must match `app.setGlobalPrefix()`; the generator reads controllers, not your bootstrap code. The `models` job generates `PaymentBase`.
 
 ### Install the client and runtime packages
 
 ```sh
-npm install --save-dev @exprtlabs/openapi-to-ts@rc @exprtlabs/model-codegen@rc
-npm install @exprtlabs/codegen@rc ajv ajv-formats reflect-metadata
+npm install --save-dev @exprtlabs/golem-openapi@rc @exprtlabs/golem-model@rc
+npm install @exprtlabs/golem@rc ajv ajv-formats reflect-metadata
 ```
 
 <<< ../../examples/nest-openapi/src/client.ts#payment-client
@@ -113,7 +113,7 @@ Add these options to the `tsconfig.json` from [Quick start](/guide/quick-start).
   "compilerOptions": {
     "experimentalDecorators": true,
     "emitDecoratorMetadata": true,
-    "plugins": [{ "transform": "@exprtlabs/codegen/ttsc-plugin", "nest": true }]
+    "plugins": [{ "transform": "@exprtlabs/golem/ttsc-plugin", "nest": true }]
   }
 }
 ```
@@ -130,6 +130,6 @@ To convert `@Body()` and `@Query()` models and stringify `IModel` or `IObject` r
 
 ## Run the example
 
-The example is in the Codegen repository's [`examples/nest-openapi/`](https://github.com/exprtlabs/codegen/tree/main/examples/nest-openapi). There, run `npm install`, `npm run generate` and `npm start`. The API listens at `http://127.0.0.1:3000/api/payments/transactions`: `globalPrefix: api` plus the controller route `payments/transactions`. Set `PORT` to use another port. In a second terminal, `npm run client` prints `Payment 1: USD 12.50` on a fresh server; set `API_BASE_URL` when the API runs elsewhere.
+The example is in the Golem repository's [`examples/nest-openapi/`](https://github.com/RunicCore/golem/tree/master/examples/nest-openapi). There, run `npm install`, `npm run generate` and `npm start`. The API listens at `http://127.0.0.1:3000/api/payments/transactions`: `globalPrefix: api` plus the controller route `payments/transactions`. Set `PORT` to use another port. In a second terminal, `npm run client` prints `Payment 1: USD 12.50` on a fresh server; set `API_BASE_URL` when the API runs elsewhere.
 
-Full example: [`examples/nest-openapi`](https://github.com/exprtlabs/codegen/tree/main/examples/nest-openapi)
+Full example: [`examples/nest-openapi`](https://github.com/RunicCore/golem/tree/master/examples/nest-openapi)

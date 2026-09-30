@@ -1,11 +1,11 @@
-import { createOpenApiSyncAjvEngine } from '@exprtlabs/codegen/ajv';
+import { createOpenApiSyncAjvEngine } from '@exprtlabs/golem/ajv';
 import {
   registerGeneratedModel,
   type GeneratedModelConversion,
   type GeneratedModelValidatorEnhancer,
   type ModelTypeDescriptor,
-} from '@exprtlabs/codegen/model';
-import { GENERATED_MODEL_SCHEMA_REF_PREFIX, schemaForDescriptor } from '@exprtlabs/codegen/schema';
+} from '@exprtlabs/golem/model';
+import { GENERATED_MODEL_SCHEMA_REF_PREFIX, schemaForDescriptor } from '@exprtlabs/golem/schema';
 import {
   createObjectCodec,
   registerIModelClass,
@@ -15,7 +15,7 @@ import {
   validationFailure,
   ajvIssues,
   IssueRepresentation,
-} from '@exprtlabs/codegen/serde';
+} from '@exprtlabs/golem/serde';
 
 function inlineGeneratedModelRefs(schema: object): object {
   const prefix = GENERATED_MODEL_SCHEMA_REF_PREFIX;

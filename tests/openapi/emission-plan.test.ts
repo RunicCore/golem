@@ -157,7 +157,7 @@ function info(title: string): { title: string; version: string } {
 }
 
 function outputDir(t: TestContext, label: string): string {
-  return path.join(createFixtureProject(t, `runic-openapi-${label}-`), 'sdk');
+  return path.join(createFixtureProject(t, `golem-openapi-${label}-`), 'sdk');
 }
 
 test('directional imports follow schema references while literal data and keyword-shaped property names stay distinct', async t => {
@@ -269,7 +269,7 @@ test('generated SDKs import the client runtime instead of copying it', async t =
   }, { output, name: 'Shared', profile: { mobx: false, validation: true } });
   const files = new Map(result.artifacts.map(artifact => [path.relative(output, artifact.path), artifact.content]));
   assert.equal([...files.keys()].some(file => file.endsWith('client-runtime.ts')), false);
-  assert.match(files.get('operations/getItem.ts') ?? '', /from '@exprtlabs\/codegen\/client'/);
+  assert.match(files.get('operations/getItem.ts') ?? '', /from '@exprtlabs\/golem\/client'/);
 });
 
 test('minimal GET without content omits codec options and unused helpers', async (t) => {

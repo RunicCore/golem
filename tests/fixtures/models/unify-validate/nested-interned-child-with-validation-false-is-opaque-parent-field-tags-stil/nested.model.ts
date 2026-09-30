@@ -1,5 +1,5 @@
-import type { IModel, IObject } from '@exprtlabs/codegen/model';
-import type { TValidation } from '@exprtlabs/codegen/tags';
+import type { IModel, IObject } from '@exprtlabs/golem/model';
+import type { TValidation } from '@exprtlabs/golem/tags';
 import { notBlank } from './predicates.js';
 import { ParentBase, type ParentFields } from './nested.model.generated.js';
 export type TChild = IObject<{ secret: string }, { validation: false }>;

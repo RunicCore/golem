@@ -14,18 +14,18 @@ TypeScript 5 and 6 aren't supported.
 
 ## Packages per generator
 
-The `runic-codegen` command comes from `@exprtlabs/codegen`, which every generator depends on. If `npx runic-codegen` isn't found, add `@exprtlabs/codegen` as a direct dependency.
+The `golem` command comes from `@exprtlabs/golem`, which every generator depends on. Install it in the project before you run `npx golem`: an unrelated npm package is also named `golem`, and without a local install `npx` offers to download and run that one, and in CI it runs it without asking. In scripts and CI, run `npx --no-install golem`, which fails instead.
 
 | To generate | Development dependency |
 | --- | --- |
-| TypeScript models | `npm install --save-dev @exprtlabs/model-codegen@rc` |
-| An OpenAPI client | `npm install --save-dev @exprtlabs/openapi-to-ts@rc` |
-| OpenAPI from NestJS controllers | `npm install --save-dev @exprtlabs/ts-to-openapi@rc` |
+| TypeScript models | `npm install --save-dev @exprtlabs/golem-model@rc` |
+| An OpenAPI client | `npm install --save-dev @exprtlabs/golem-openapi@rc` |
+| OpenAPI from NestJS controllers | `npm install --save-dev @exprtlabs/golem-ts-openapi@rc` |
 
 Generated models and clients import the runtime:
 
 ```sh
-npm install @exprtlabs/codegen@rc
+npm install @exprtlabs/golem@rc
 ```
 
 Generating OpenAPI from controllers doesn't need the runtime. A NestJS app that registers `NestModelInterceptor` does.
@@ -34,10 +34,10 @@ The generators declare the compiler as a peer dependency, so npm installs one co
 
 | Package | Peer dependencies |
 | --- | --- |
-| `@exprtlabs/model-codegen` | `typescript` `~7.0.2`, `ttsc` `~0.30.4` |
-| `@exprtlabs/ts-to-openapi` | `typescript` `~7.0.2`, `ttsc` `~0.30.4` |
-| `@exprtlabs/openapi-to-ts` | none; add `typescript` and `ttsc` to compile the SDK |
-| `@exprtlabs/codegen` | optional: `typescript` 7 and `ttsc` 0.30 for the plugin; `ajv`, `ajv-formats`, `mobx`, `esbuild`, `@nestjs/common`, `rxjs` for the features that use them |
+| `@exprtlabs/golem-model` | `typescript` `~7.0.2`, `ttsc` `~0.30.4` |
+| `@exprtlabs/golem-ts-openapi` | `typescript` `~7.0.2`, `ttsc` `~0.30.4` |
+| `@exprtlabs/golem-openapi` | none; add `typescript` and `ttsc` to compile the SDK |
+| `@exprtlabs/golem` | optional: `typescript` 7 and `ttsc` 0.30 for the plugin; `ajv`, `ajv-formats`, `mobx`, `esbuild`, `@nestjs/common`, `rxjs` for the features that use them |
 
 ## TypeScript setup
 
@@ -53,7 +53,7 @@ Add the plugin to `tsconfig.json`:
 {
   "compilerOptions": {
     "plugins": [
-      { "transform": "@exprtlabs/codegen/ttsc-plugin" }
+      { "transform": "@exprtlabs/golem/ttsc-plugin" }
     ]
   }
 }
@@ -71,21 +71,21 @@ A NestJS app needs extra compiler settings ([NestJS setup](/guide/nestjs#set-up-
 - `.js` extensions on relative imports, including generated files
 - `"outDir": ".build"`
 - `"rootDir": "."`
-- `@exprtlabs/*` package subpaths are ESM-only; import them from ESM application code, or invoke the CLI directly. `@exprtlabs/codegen/ttsc-plugin` is CommonJS.
+- `@exprtlabs/*` package subpaths are ESM-only; import them from ESM application code, or invoke the CLI directly. `@exprtlabs/golem/ttsc-plugin` is CommonJS.
 
 ## Runtime dependencies
 
 Validation is on and MobX is off by default.
 
-| Setting in `runic-codegen.yaml` | Extra application dependencies |
+| Setting in `golem.yaml` | Extra application dependencies |
 | --- | --- |
 | Validation on (`validation: true`) | `npm install ajv ajv-formats` |
 | MobX on (`mobx: true`) | `npm install mobx` |
 | Precompiled validators (`ajvStandalone: true`) | none; ship the generated validator JavaScript |
 | Validation off (`validation: false`) | none |
 
-These keys go at the top level of `runic-codegen.yaml` ([all settings](/reference/config#validation-profiles)).
+These keys go at the top level of `golem.yaml` ([all settings](/reference/config#validation-profiles)).
 
-## Add Codegen to your project
+## Add Golem to your project
 
 Next, build your first model in the [quick start](/guide/quick-start).

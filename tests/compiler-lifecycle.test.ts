@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import test, { type TestContext } from 'node:test';
 
-import * as ts from '@exprtlabs/codegen/ts';
+import * as ts from '@exprtlabs/golem/ts';
 import { createFixtureProject, readFixture } from './fixture-project.js';
 import { generate as generateController } from '#controllers/generator';
 import { generate as generateModel } from '#model/generator';
@@ -85,7 +85,7 @@ function trackApiChildren(t: TestContext): ApiChildTracker {
 }
 
 function projectFixture(t: TestContext, name: string): Fixture {
-  const root = createFixtureProject(t, `runic-${name}-`);
+  const root = createFixtureProject(t, `golem-${name}-`);
   const sourceRoot = path.join(root, 'src');
   fs.mkdirSync(sourceRoot, { recursive: true });
   fs.symlinkSync(path.join(workspace, 'node_modules'), path.join(root, 'node_modules'), 'dir');
@@ -122,7 +122,7 @@ function writeManifestFixture(fixture: Fixture): { readonly source: string; read
   const generated = path.join(sdk, 'models.ts');
   const manifest = path.join(sdk, 'model-manifest.json');
   const source = path.join(fixture.sourceRoot, 'aggregate.model.ts');
-  fs.writeFileSync(types, '/* @runic-model-manifest ./model-manifest.json */\nexport interface Money { currency: string }\n');
+  fs.writeFileSync(types, '/* @golem-model-manifest ./model-manifest.json */\nexport interface Money { currency: string }\n');
   fs.writeFileSync(generated, 'export const Other = 1;\n');
   fs.writeFileSync(manifest, JSON.stringify({
     profile: { mobx: false, validation: false, ajvStandalone: false, allowAny: false },
@@ -134,7 +134,7 @@ function writeManifestFixture(fixture: Fixture): { readonly source: string; read
     }],
   }));
   fs.writeFileSync(source, [
-    "import type { IModel } from '@exprtlabs/codegen/model';",
+    "import type { IModel } from '@exprtlabs/golem/model';",
     "import type { Money } from './sdk/types.js';",
     'export type TAggregate = IModel<{ money: Money }>;',
     '',
@@ -182,7 +182,7 @@ test('public model and controller generators close every owned API child across 
   const model = projectFixture(t, 'compiler-lifecycle-model');
   const modelSource = path.join(model.sourceRoot, 'item.model.ts');
   fs.writeFileSync(modelSource, [
-    "import type { IModel } from '@exprtlabs/codegen/model';",
+    "import type { IModel } from '@exprtlabs/golem/model';",
     'export type TItem = IModel<{ value: string }>;',
     '',
   ].join('\n'));

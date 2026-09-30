@@ -11,7 +11,7 @@ const ANSI = /\u001b\[[0-9;]*m/g;
 
 function pluginProject(t: TestContext): string {
   const { root, sourceRoot } = createModelProject(t, {
-    prefix: 'runic-plugin-diagnostics-',
+    prefix: 'golem-plugin-diagnostics-',
     linkTypescript: true,
     linkTtsc: true,
     ttscPlugin: true,
@@ -31,7 +31,7 @@ function runTtsc(root: string, args: readonly string[]): { status: number | null
 
 const modes = [['build', []], ['--noEmit', ['--noEmit']], ['check', ['check']]] as const;
 
-test('ttsc with the codegen plugin reports TypeScript errors with code and line:col and fails', (t) => {
+test('ttsc with the golem plugin reports TypeScript errors with code and line:col and fails', (t) => {
   const root = pluginProject(t);
   for (const [label, args] of modes) {
     assert.equal(runTtsc(root, args).status, 0, `${label}: a clean project compiles`);
@@ -46,8 +46,8 @@ test('ttsc with the codegen plugin reports TypeScript errors with code and line:
 });
 
 test('model generation reports source type errors with path:line:col and TS code', (t) => {
-  const { root, sourceRoot } = createModelProject(t, { prefix: 'runic-generate-diagnostics-', linkTypescript: true });
-  fs.writeFileSync(path.join(sourceRoot, 'broken.model.ts'), `import type { IModel } from '@exprtlabs/codegen/model';
+  const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-generate-diagnostics-', linkTypescript: true });
+  fs.writeFileSync(path.join(sourceRoot, 'broken.model.ts'), `import type { IModel } from '@exprtlabs/golem/model';
 const wrong: string = 5;
 export type TBroken = IModel<{ id: string }>;
 export { wrong };

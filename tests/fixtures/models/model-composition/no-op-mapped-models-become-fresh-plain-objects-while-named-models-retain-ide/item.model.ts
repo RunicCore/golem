@@ -1,5 +1,5 @@
 
-import type { IModel } from '@exprtlabs/codegen/model';
+import type { IModel } from '@exprtlabs/golem/model';
 import { PlaceBase, ContainerBase } from './item.model.generated.js';
 export type TPlace = IModel<{ borough: string }>;
 type Noop<T> = { [K in keyof T]: T[K] };

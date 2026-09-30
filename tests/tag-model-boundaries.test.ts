@@ -4,24 +4,24 @@ import fs from 'node:fs';
 import path from 'node:path';
 import test, { type TestContext } from 'node:test';
 
-import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/codegen/conversion';
-import { requireObjectCodec } from '@exprtlabs/codegen/serde';
-import { getValidator } from '@exprtlabs/codegen/validation';
-import { validationTagKey } from '@exprtlabs/codegen/schema';
-import type { ModelTypeDescriptor } from '@exprtlabs/codegen/model';
+import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/golem/conversion';
+import { requireObjectCodec } from '@exprtlabs/golem/serde';
+import { getValidator } from '@exprtlabs/golem/validation';
+import { validationTagKey } from '@exprtlabs/golem/schema';
+import type { ModelTypeDescriptor } from '@exprtlabs/golem/model';
 import { generatedCodecId } from './support/consumer.js';
-import { generate, type ModelCodegenResult } from '#model/generator';
+import { generate, type GolemModelResult } from '#model/generator';
 import { writeGeneratedArtifacts } from './fixture-project.js';
 import { compileModelProject, createModelProject } from './model-project.js';
 
 function fixture(t: TestContext) {
   return createModelProject(t, {
-    prefix: 'runic-tag-model-boundaries-',
+    prefix: 'golem-tag-model-boundaries-',
     name: 'tag-model-boundaries',
   });
 }
 
-function copyStandaloneArtifacts(result: ModelCodegenResult, root: string, sourceRoot: string): void {
+function copyStandaloneArtifacts(result: GolemModelResult, root: string, sourceRoot: string): void {
   for (const artifact of result.artifacts.filter(item => item.path.endsWith('.generated.js'))) {
     const built = path.join(root, 'build', path.relative(sourceRoot, artifact.path));
     fs.mkdirSync(path.dirname(built), { recursive: true });

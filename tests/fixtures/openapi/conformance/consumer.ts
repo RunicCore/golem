@@ -1,5 +1,5 @@
 import { PaymentModel } from './index.js';
-import { decodeGeneratedModel } from '@exprtlabs/codegen/conversion';
+import { decodeGeneratedModel } from '@exprtlabs/golem/conversion';
 export class ObservablePayment extends PaymentModel {
   settle(): number { this.id = 'settled'; return this.amount; }
 }

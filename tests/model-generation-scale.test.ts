@@ -39,7 +39,7 @@ test('model identity checks grow linearly with the model count', t => {
   const counts: number[] = [];
   for (const count of [10, 100]) {
     const { root, sourceRoot } = createModelProject(t, {
-      prefix: `runic-identity-checks-${count}-`,
+      prefix: `golem-identity-checks-${count}-`,
       name: null,
       linkWorkspaceNodeModules: true,
     });

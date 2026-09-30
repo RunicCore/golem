@@ -3,18 +3,18 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import test from 'node:test';
 
-import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/codegen/conversion';
-import { getValidator } from '@exprtlabs/codegen/validation';
+import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/golem/conversion';
+import { getValidator } from '@exprtlabs/golem/validation';
 import { generate } from '#model/generator';
 import { copyFixtureFile, writeGeneratedArtifacts } from './fixture-project.js';
 import { compileModelProject, createModelProject } from './model-project.js';
 import { isGeneratedModelClass, requireRecord, type GeneratedModelClass } from './openapi/helpers.js';
 
-import { schemaForDescriptor } from '@exprtlabs/codegen/schema';
-import { createOpenApiSyncAjvEngine } from '@exprtlabs/codegen/ajv';
-import { LibError, LibErrorKind } from '@exprtlabs/codegen/errors';
-import { registerIModelClass, requireAjvSchema } from '@exprtlabs/codegen/serde';
-import type { ModelTypeDescriptor, ModelTypeMetadata } from '@exprtlabs/codegen/model';
+import { schemaForDescriptor } from '@exprtlabs/golem/schema';
+import { createOpenApiSyncAjvEngine } from '@exprtlabs/golem/ajv';
+import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
+import { registerIModelClass, requireAjvSchema } from '@exprtlabs/golem/serde';
+import type { ModelTypeDescriptor, ModelTypeMetadata } from '@exprtlabs/golem/model';
 import { installCodecModel } from './register-codec-model.js';
 
 function discriminatedFixture() {
@@ -243,7 +243,7 @@ test('model-plane validation selects the variant class the encoder selects', asy
 });
 
 test('IModel object unions with validation load, validate and reject an unknown tag', async (t) => {
-  const { root } = createModelProject(t, { prefix: 'runic-union-validation-', name: 'union-validation' });
+  const { root } = createModelProject(t, { prefix: 'golem-union-validation-', name: 'union-validation' });
   const source = copyFixtureFile(root, 'models/union-validation/pets.model.ts', 'src/pets.model.ts');
   writeGeneratedArtifacts(generate({ root, sources: [source], profile: { mobx: false, validation: true } }).artifacts);
   await compileModelProject(root);

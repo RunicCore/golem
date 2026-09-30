@@ -4,20 +4,20 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
-import { runPipeline } from '#codegen/cli';
+import { runPipeline } from '#golem/cli';
 import { command, workspace } from './support/process.js';
 import { writeFixture } from './support/consumer.js';
 import { readGeneratedModelSource } from './openapi/helpers.js';
 
 function fixture(t: TestContext): { root: string; config: string } {
-  const root = createFixtureProject(t, 'runic-pipeline-');
+  const root = createFixtureProject(t, 'golem-pipeline-');
 
   linkProjectPackages(root, Object.fromEntries(
-    ['codegen', 'model-codegen', 'openapi-to-ts'].map(name => [`@exprtlabs/${name}`, path.join(workspace, 'packages', name)]),
+    ['golem', 'golem-model', 'golem-openapi'].map(name => [`@exprtlabs/${name}`, path.join(workspace, 'packages', name)]),
   ));
   fs.writeFileSync(path.join(root, 'package.json'), '{"name":"pipeline-fixture","type":"module"}');
   writeFixture(root, { mobx: false, validation: true });
-  return { root, config: path.join(root, 'runic-codegen.yaml') };
+  return { root, config: path.join(root, 'golem.yaml') };
 }
 
 async function until(check: () => boolean, message: string, timeout = 20000): Promise<void> {
@@ -63,21 +63,21 @@ test('global profile changes remove obsolete validation and keep manifest identi
 
 test('a generator package newer than the installed runtime is rejected before any file is written', async (t: TestContext) => {
   const { root, config } = fixture(t);
-  const provider = path.join(root, 'node_modules/@exprtlabs/openapi-to-ts');
+  const provider = path.join(root, 'node_modules/@exprtlabs/golem-openapi');
   fs.rmSync(provider, { recursive: true });
   fs.mkdirSync(path.join(provider, 'dist'), { recursive: true });
-  const source = path.join(workspace, 'packages/openapi-to-ts');
+  const source = path.join(workspace, 'packages/golem-openapi');
   const manifest = JSON.parse(fs.readFileSync(path.join(source, 'package.json'), 'utf8')) as { version: string };
   fs.writeFileSync(path.join(provider, 'package.json'), JSON.stringify({ ...manifest, version: '1.99.0' }));
   fs.copyFileSync(path.join(source, 'dist/generator.js'), path.join(provider, 'dist/generator.js'));
-  await assert.rejects(runPipeline(config), /@exprtlabs\/codegen \S+ is older than @exprtlabs\/openapi-to-ts 1\.99\.0/);
+  await assert.rejects(runPipeline(config), /@exprtlabs\/golem \S+ is older than @exprtlabs\/golem-openapi 1\.99\.0/);
   assert.equal(fs.existsSync(path.join(root, 'sdk')), false);
-  assert.equal(fs.existsSync(path.join(root, '.runic-codegen')), false);
+  assert.equal(fs.existsSync(path.join(root, '.golem')), false);
 });
 
 test('exec forwards child failure and never starts a child after generator failure', async (t: TestContext) => {
   const { root, config } = fixture(t);
-  const binary = path.join(workspace, 'packages/codegen/dist/bin/runic-codegen.js');
+  const binary = path.join(workspace, 'packages/golem/dist/bin/golem.js');
   const result = await command(root, process.execPath, [binary, 'exec', '--config', config, '--', process.execPath, '-e', 'process.exit(7)'], { allowFailure: true });
   assert.equal(result.code, 7);
   fs.writeFileSync(path.join(root, 'api.json'), '{}');
@@ -90,7 +90,7 @@ test('exec forwards child failure and never starts a child after generator failu
 
 test('watch regenerates model edits without rewriting SDKs or looping on outputs', async (t: TestContext) => {
   const { root } = fixture(t);
-  const binary = path.join(workspace, 'packages/codegen/dist/bin/runic-codegen.js');
+  const binary = path.join(workspace, 'packages/golem/dist/bin/golem.js');
   const child = spawn(process.execPath, [binary, 'watch'], { cwd: root, stdio: ['ignore', 'pipe', 'pipe'] });
   let stdout = '';
   let stderr = '';
@@ -139,7 +139,7 @@ test('watch regenerates model edits without rewriting SDKs or looping on outputs
 test('deleting a discovered model cleans its generated companion, and deleting the final one cleans the inventory', async (t: TestContext) => {
   const { root, config } = fixture(t);
   const extra = path.join(root, 'src/extra.model.ts');
-  fs.writeFileSync(extra, "import type {IModel} from '@exprtlabs/codegen/model'; export type TExtra=IModel<{value:string}>;\n");
+  fs.writeFileSync(extra, "import type {IModel} from '@exprtlabs/golem/model'; export type TExtra=IModel<{value:string}>;\n");
   await runPipeline(config);
   const companion = path.join(root, 'src/cart.model.generated.ts');
   const extraCompanion = path.join(root, 'src/extra.model.generated.ts');
@@ -168,7 +168,7 @@ test('deleting a discovered model cleans its generated companion, and deleting t
   await runPipeline(config);
   assert.equal(fs.existsSync(companion), false);
 
-  const inventory = JSON.parse(fs.readFileSync(path.join(root, '.runic-codegen/outputs.json'), 'utf8')) as {
+  const inventory = JSON.parse(fs.readFileSync(path.join(root, '.golem/outputs.json'), 'utf8')) as {
     files: Record<string, unknown>;
   };
   assert.equal(Object.keys(inventory.files).some((f) => f.includes('cart.model.generated')), false);

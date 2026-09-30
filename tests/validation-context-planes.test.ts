@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import type { ModelValidationContext } from '@exprtlabs/codegen/model';
-import { createObjectCodec, objectCodecValidationReference, registerCodecSchemas, resolveModelValidationContextValidator } from '@exprtlabs/codegen/serde';
+import type { ModelValidationContext } from '@exprtlabs/golem/model';
+import { createObjectCodec, objectCodecValidationReference, registerCodecSchemas, resolveModelValidationContextValidator } from '@exprtlabs/golem/serde';
 
 const impl = {
   stringify: () => '{}', parse: () => ({}), validate: Object.assign(() => true, { errors: null }), assert: (v: unknown) => v,

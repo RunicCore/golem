@@ -1,4 +1,4 @@
-import { validateInstance } from '@exprtlabs/codegen/validation';
+import { validateInstance } from '@exprtlabs/golem/validation';
 import { editAccess } from './edit-access.js';
 import { ProjectAccessEditor } from './project-access.model.js';
 

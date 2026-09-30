@@ -5,7 +5,7 @@ export function projectionPolicyModelSource(options: {
   readonly containerExact: boolean;
 }): SourceFragment {
   return tsSource`
-import type { IModel } from '@exprtlabs/codegen/model';
+import type { IModel } from '@exprtlabs/golem/model';
 import { ContainerBase, ItemBase } from './item.model.generated.js';
 export type TItem = IModel<{ id: string; value: string }, { exact: ${literal(options.itemExact)} }>;
 export type TContainer = IModel<{ item: Omit<TItem, 'id'> }, { exact: ${literal(options.containerExact)} }>;
@@ -30,8 +30,8 @@ export function discardedProjectionMetadataSource(options: {
 }): SourceFragment {
   const metadata: SourceFragment = options.metadata === 'serde' ? serdeMetadata : validationMetadata;
   return tsSource`
-import type { IModel } from '@exprtlabs/codegen/model';
-import type { TSerde, TValidation } from '@exprtlabs/codegen/tags';
+import type { IModel } from '@exprtlabs/golem/model';
+import type { TSerde, TValidation } from '@exprtlabs/golem/tags';
 import { AddressBase, ContainerBase } from './item.model.generated.js';
 ${metadata}
 export type TAddress = IModel<AddressFields>;

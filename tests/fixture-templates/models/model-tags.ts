@@ -15,7 +15,7 @@ export function taggedModelSource({ name, fields, options, imports }: TaggedMode
   const generatedModule = literal(`./${name.toLowerCase()}.model.generated.js`);
   const typeOptions = options ? tsSource`, ${options}` : tsSource``;
   const importPrelude = imports ? tsSource`${imports}\n` : tsSource``;
-  return tsSource`${importPrelude}import type { IModel } from '@exprtlabs/codegen/model';
+  return tsSource`${importPrelude}import type { IModel } from '@exprtlabs/golem/model';
 import { ${baseName}, type ${fieldsName} } from ${generatedModule};
 export type ${typeName} = IModel<{ ${fields} }${typeOptions}>;
 export class ${modelName} extends ${baseName} {

@@ -1,5 +1,5 @@
 // #region serde-tag-fn
-import type { Integer, Maximum, Minimum, Pattern, TSerde, TValidation } from '@exprtlabs/codegen/tags';
+import type { Integer, Maximum, Minimum, Pattern, TSerde, TValidation } from '@exprtlabs/golem/tags';
 
 export function hasReadPermission(value: number): boolean | string {
   return (value & 1) !== 0 ? true : 'Read permission is required.';

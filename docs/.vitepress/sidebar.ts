@@ -3,7 +3,7 @@ export interface SidebarGroup { readonly text: string; readonly items: readonly 
 
 export const SIDEBAR: readonly SidebarGroup[] = [
   { text: 'Introduction', items: [
-    { text: 'What is Codegen', link: '/guide/' },
+    { text: 'What is Golem', link: '/guide/' },
     { text: 'Installation', link: '/guide/install' },
     { text: 'Quick start', link: '/guide/quick-start' },
   ] },

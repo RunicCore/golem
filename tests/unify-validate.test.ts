@@ -4,10 +4,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import test, { type TestContext } from 'node:test';
 
-import { decodeGeneratedModel } from '@exprtlabs/codegen/conversion';
-import { requireObjectCodec } from '@exprtlabs/codegen/serde';
-import { getValidator, validateInstance } from '@exprtlabs/codegen/validation';
-import { generate as generateOpenApi } from '@exprtlabs/openapi-to-ts/generator';
+import { decodeGeneratedModel } from '@exprtlabs/golem/conversion';
+import { requireObjectCodec } from '@exprtlabs/golem/serde';
+import { getValidator, validateInstance } from '@exprtlabs/golem/validation';
+import { generate as generateOpenApi } from '@exprtlabs/golem-openapi/generator';
 import { generate } from '#model/generator';
 import { command, workspace } from './support/process.js';
 import { generatedCodecIdFromRoot } from './support/consumer.js';
@@ -19,7 +19,7 @@ interface Fixture {
 }
 
 function fixture(t: TestContext): Fixture {
-  const root = createFixtureProject(t, 'runic-unify-validate-');
+  const root = createFixtureProject(t, 'golem-unify-validate-');
   const sourceRoot = path.join(root, 'src');
   fs.symlinkSync(path.join(workspace, 'node_modules'), path.join(root, 'node_modules'), 'dir');
   writeGeneratedArtifacts([
@@ -38,7 +38,7 @@ function fixture(t: TestContext): Fixture {
           skipLibCheck: true,
           outDir: 'build',
           rootDir: 'src',
-          plugins: [{ transform: '@exprtlabs/codegen/ttsc-plugin' }],
+          plugins: [{ transform: '@exprtlabs/golem/ttsc-plugin' }],
         },
         include: ['src/**/*.ts'],
       }),

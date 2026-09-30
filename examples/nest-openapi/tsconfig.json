@@ -10,7 +10,7 @@
     "types": ["node"],
     "outDir": ".build",
     "rootDir": ".",
-    "plugins": [{ "transform": "@exprtlabs/codegen/ttsc-plugin", "nest": true }]
+    "plugins": [{ "transform": "@exprtlabs/golem/ttsc-plugin", "nest": true }]
   },
   "include": [
     "src/**/*.ts",

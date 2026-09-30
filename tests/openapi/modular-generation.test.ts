@@ -13,7 +13,7 @@ import { build as bundle } from 'esbuild';
 import { parse } from 'yaml';
 import test, { type TestContext } from 'node:test';
 
-import { getValidator } from '@exprtlabs/codegen/validation';
+import { getValidator } from '@exprtlabs/golem/validation';
 import { generate as generateModels } from '#model/generator';
 import { writeSdk } from '#openapi/generator';
 import {
@@ -30,10 +30,10 @@ interface Fixture {
 }
 
 function fixture(t: TestContext): Fixture {
-  const root = createFixtureProject(t, 'runic-openapi-modules-');
+  const root = createFixtureProject(t, 'golem-openapi-modules-');
   const source = path.join(root, 'src');
   mkdirSync(source, { recursive: true });
-  linkProjectPackages(root, { '@exprtlabs/codegen': path.join(repoRoot(), 'packages/codegen') });
+  linkProjectPackages(root, { '@exprtlabs/golem': path.join(repoRoot(), 'packages/golem') });
   writeFileSync(path.join(root, 'package.json'), JSON.stringify({ private: true, type: 'module' }));
   writeFileSync(path.join(root, 'tsconfig.json'), JSON.stringify({
     compilerOptions: {
@@ -516,7 +516,7 @@ test('compact OpenAPI schema closure feeds standalone nested model first/all val
   });
   const standalone = generateCompanion(true);
   const standaloneValidator = standalone.artifacts.find(artifact => artifact.path.endsWith('/models.validators.generated.js'));
-  assert.ok(standaloneValidator, 'standalone model-codegen consumes the transitive OpenAPI closure in one validator module');
+  assert.ok(standaloneValidator, 'standalone golem-model consumes the transitive OpenAPI closure in one validator module');
   writeGeneratedArtifacts(standalone.artifacts);
   compileGeneratedSdk(source, [purchaseSource], {
     strict: true,

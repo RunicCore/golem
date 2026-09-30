@@ -40,6 +40,6 @@ export function manifestScaleTypesSource({ count }: { readonly count: number }):
   }
   const declarations = Array.from({ length: count }, (_, index) => manifestScaleTypeSource({ index }));
   const models = joinSource(declarations);
-  return tsSource`/* @runic-model-manifest ./model-manifest.json */
+  return tsSource`/* @golem-model-manifest ./model-manifest.json */
 ${models}`;
 }

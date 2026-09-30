@@ -4,8 +4,8 @@ import assert from 'node:assert/strict';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import test from 'node:test';
-import { decodeGeneratedModel } from '@exprtlabs/codegen/conversion';
-import type { GeneratedModelConstructor } from '@exprtlabs/codegen/model';
+import { decodeGeneratedModel } from '@exprtlabs/golem/conversion';
+import type { GeneratedModelConstructor } from '@exprtlabs/golem/model';
 import {
   autorun,
   isObservableObject,
@@ -120,7 +120,7 @@ function classBody(models: string, className: string): string {
 }
 
 test('generated MobX models initialize at construction and keep subclass hooks', async t => {
-  const output = path.join(createFixtureProject(t, 'runic-openapi-mobx-lifecycle-'), 'sdk');
+  const output = path.join(createFixtureProject(t, 'golem-openapi-mobx-lifecycle-'), 'sdk');
 
   const enabled = await generateMaterializedSdk(lifecycleDocument(), {
     output,
@@ -128,7 +128,7 @@ test('generated MobX models initialize at construction and keep subclass hooks',
     profile: { mobx: true, validation: false },
   });
   const models = generatedModelSource(enabled.artifacts);
-  // asGenObservable exists in packages/codegen/src/mobx.ts and is exercised for every
+  // asGenObservable exists in packages/golem/src/mobx.ts and is exercised for every
   // concrete class below; PaymentModel is a discriminated union that is never directly
   // constructed, so its own hook can only be proven absent from the emitted text (a rename
   // of the pattern would still fail the positive checks elsewhere in this test).
@@ -249,7 +249,7 @@ test('generated MobX models initialize at construction and keep subclass hooks',
   assert.deepEqual(arrayIds, ['listed', 'listed,pushed', 'listed,changed']);
   disposeUsers();
 
-  const { asGenObservable } = await import('@exprtlabs/codegen/mobx');
+  const { asGenObservable } = await import('@exprtlabs/golem/mobx');
   assert.throws(
     () => asGenObservable(constructed),
     /asGenObservable\(\) may only be called once/,

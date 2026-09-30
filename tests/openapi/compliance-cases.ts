@@ -1,7 +1,7 @@
 import type {
   EvidenceId,
   OpenApiVersion,
-} from '../../packages/openapi-to-ts/compliance/capabilities.js';
+} from '../../packages/golem-openapi/compliance/capabilities.js';
 
 export type NativeRequestCodec = 'none' | 'json' | 'form';
 export type NativeResponseCodec = 'empty' | 'json' | 'binary';

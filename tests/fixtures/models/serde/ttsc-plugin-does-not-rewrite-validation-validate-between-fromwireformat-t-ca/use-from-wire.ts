@@ -1,5 +1,5 @@
-import { fromWireFormat } from '@exprtlabs/codegen/serde';
-import { validateInstance } from '@exprtlabs/codegen/validation';
+import { fromWireFormat } from '@exprtlabs/golem/serde';
+import { validateInstance } from '@exprtlabs/golem/validation';
 import type { TMoney } from './money.model.js';
 import './money.model.js';
 export const first = fromWireFormat<TMoney>({ currency: 'USD', value: '1' });

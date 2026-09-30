@@ -4,26 +4,26 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { test, type TestContext } from 'node:test';
-import { runPipeline } from '#codegen/pipeline';
+import { runPipeline } from '#golem/pipeline';
 import { workspace } from './support/process.js';
 import { writeFixture } from './support/consumer.js';
 
 function fixture(t: TestContext) {
-  const root = createFixtureProject(t, 'runic-validator-transition-');
+  const root = createFixtureProject(t, 'golem-validator-transition-');
 
   linkProjectPackages(root, Object.fromEntries(
-    ['codegen', 'model-codegen', 'openapi-to-ts'].map(name => [`@exprtlabs/${name}`, path.join(workspace, 'packages', name)]),
+    ['golem', 'golem-model', 'golem-openapi'].map(name => [`@exprtlabs/${name}`, path.join(workspace, 'packages', name)]),
   ));
   fs.writeFileSync(path.join(root, 'package.json'), '{"type":"module"}');
   writeFixture(root, { mobx: false, validation: true });
   const model = path.join(root, 'src/cart.model.ts');
   copyFixtureFile(root, 'pipeline/standalone-transition/cart.model.ts', 'src/cart.model.ts');
-  const config = path.join(root, 'runic-codegen.yaml');
+  const config = path.join(root, 'golem.yaml');
   const setStandalone = (enabled: boolean) => {
     const text = fs.readFileSync(config, 'utf8');
     fs.writeFileSync(config, text.replace(/ajvStandalone: (?:true|false)/, `ajvStandalone: ${enabled}`));
   };
-  return { root, model, config, setStandalone, inventory: path.join(root, '.runic-codegen/outputs.json') };
+  return { root, model, config, setStandalone, inventory: path.join(root, '.golem/outputs.json') };
 }
 
 test('JIT to standalone inventory interruption recovers and switching back retires generated validators', async t => {
@@ -59,7 +59,7 @@ test('JIT to standalone inventory interruption recovers and switching back retir
 
 test('watch regenerates SDK then frontend through both validator modes without output loops', async t => {
   const setup = fixture(t);
-  const child = spawn(process.execPath, [path.join(workspace, 'packages/codegen/dist/bin/runic-codegen.js'), 'watch', '--config', setup.config], {
+  const child = spawn(process.execPath, [path.join(workspace, 'packages/golem/dist/bin/golem.js'), 'watch', '--config', setup.config], {
     cwd: setup.root, stdio: ['ignore', 'pipe', 'pipe'],
   });
   let output = '';

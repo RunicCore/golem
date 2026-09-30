@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { toWireFormat } from '@exprtlabs/codegen/serde';
-import { validateInstance } from '@exprtlabs/codegen/validation';
+import { toWireFormat } from '@exprtlabs/golem/serde';
+import { validateInstance } from '@exprtlabs/golem/validation';
 import { MoneyModel, PaymentsClient } from '../sdk/index.js';
 import { createPaymentEditor, savePayment, sendPayment } from './payment-app.js';
 import type { TPaymentEditor } from './payment-editor.model.js';

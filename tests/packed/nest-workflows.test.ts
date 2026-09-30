@@ -29,12 +29,12 @@ for (const { standalone, adapters } of RUNS) {
       fs.writeFileSync(packageFile, JSON.stringify(manifest, null, 2));
     }
     await npm(root, ['install']);
-    fs.appendFileSync(path.join(root, 'runic-codegen.yaml'), `\najvStandalone: ${standalone}\n`);
+    fs.appendFileSync(path.join(root, 'golem.yaml'), `\najvStandalone: ${standalone}\n`);
     await cli(root, ['generate']);
     await cli(root, ['check']);
     await command(root, path.join(root, 'node_modules/.bin/ttsc'), ['-p', 'tsconfig.json']);
     await npm(root, ['prune', '--omit=dev'], { includeOptional: false });
-    for (const name of ['@exprtlabs/model-codegen', '@exprtlabs/openapi-to-ts', '@exprtlabs/ts-to-openapi', 'typescript', 'ttsc']) {
+    for (const name of ['@exprtlabs/golem-model', '@exprtlabs/golem-openapi', '@exprtlabs/golem-ts-openapi', 'typescript', 'ttsc']) {
       assert.equal(fs.existsSync(path.join(root, 'node_modules', name)), false, `${name} must not be a production dependency`);
     }
     for (const adapter of adapters) {

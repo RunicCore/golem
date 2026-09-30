@@ -7,7 +7,7 @@ import { generate } from '#model/generator';
 import { writeGeneratedArtifacts } from './fixture-project.js';
 import { builtinTagsModelSource } from './fixture-templates/models/builtin-tags.js';
 import { compileModelProject, createModelProject, writeModelSources } from './model-project.js';
-import { getValidator } from '@exprtlabs/codegen/validation';
+import { getValidator } from '@exprtlabs/golem/validation';
 
 function materializeStandalone(root: string, sourceRoot: string, result: ReturnType<typeof generate>): void {
   const artifact = result.artifacts.find((item) => item.path.endsWith('/models.validators.generated.js'));
@@ -69,7 +69,7 @@ const profiles = [
 
 for (const { mobx, ajvStandalone } of profiles) {
   test(`all built-in model tags execute independently with mobx=${mobx} and ${ajvStandalone ? 'standalone' : 'runtime'} Ajv`, async t => {
-    const { root, sourceRoot } = createModelProject(t, { prefix: 'runic-builtin-tags-', name: 'builtin-tags' });
+    const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-builtin-tags-', name: 'builtin-tags' });
     writeModelSources(sourceRoot, { 'a.model.ts': builtinTagsModelSource({ mobx }) });
 
     const result = generate({

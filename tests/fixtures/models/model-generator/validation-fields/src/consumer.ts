@@ -1,4 +1,4 @@
-import { getValidator } from '@exprtlabs/codegen/validation';
+import { getValidator } from '@exprtlabs/golem/validation';
 import { Account } from './account.model.js';
 
 class AccountEditor extends Account {

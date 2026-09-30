@@ -1,0 +1,214 @@
+{
+  "name": "@exprtlabs/golem",
+  "version": "1.0.0-rc",
+  "description": "Shared model runtime and independently extensible TypeScript generation CLI",
+  "keywords": [
+    "typescript",
+    "golem",
+    "codegen",
+    "validation",
+    "serialization",
+    "openapi",
+    "nestjs",
+    "models",
+    "ajv",
+    "mobx"
+  ],
+  "author": "exprtlabs.ai",
+  "license": "MIT",
+  "homepage": "https://exprtlabs.ai",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/RunicCore/golem.git",
+    "directory": "packages/golem"
+  },
+  "bugs": {
+    "url": "https://github.com/RunicCore/golem/issues"
+  },
+  "publishConfig": {
+    "access": "public",
+    "tag": "rc"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=22.15.0"
+  },
+  "bin": {
+    "golem": "./dist/bin/golem.js"
+  },
+  "files": [
+    "dist",
+    "plugin",
+    "!plugin/*_test.go",
+    "!plugin/go.work",
+    "!plugin/go.work.sum",
+    "ttsc-plugin.cjs",
+    "README.md",
+    "LICENSE"
+  ],
+  "sideEffects": [
+    "./dist/ajv.js",
+    "./dist/bin/golem.js"
+  ],
+  "exports": {
+    "./model": {
+      "types": "./dist/model.d.ts",
+      "import": "./dist/model.js",
+      "default": "./dist/model.js"
+    },
+    "./validation": {
+      "types": "./dist/validation.d.ts",
+      "import": "./dist/validation.js",
+      "default": "./dist/validation.js"
+    },
+    "./ajv": {
+      "types": "./dist/ajv.d.ts",
+      "import": "./dist/ajv.js",
+      "default": "./dist/ajv.js"
+    },
+    "./mobx": {
+      "types": "./dist/mobx.d.ts",
+      "import": "./dist/mobx.js",
+      "default": "./dist/mobx.js"
+    },
+    "./mobx-validation": {
+      "types": "./dist/mobx-validation.d.ts",
+      "import": "./dist/mobx-validation.js",
+      "default": "./dist/mobx-validation.js"
+    },
+    "./cli": {
+      "types": "./dist/tooling/cli.d.ts",
+      "import": "./dist/tooling/cli.js",
+      "default": "./dist/tooling/cli.js"
+    },
+    "./manifest": {
+      "types": "./dist/tooling/model-manifest.d.ts",
+      "import": "./dist/tooling/model-manifest.js",
+      "default": "./dist/tooling/model-manifest.js"
+    },
+    "./emitter": {
+      "types": "./dist/tooling/model-source-emitter.d.ts",
+      "import": "./dist/tooling/model-source-emitter.js",
+      "default": "./dist/tooling/model-source-emitter.js"
+    },
+    "./generator-api": {
+      "types": "./dist/tooling/generator-api.d.ts",
+      "import": "./dist/tooling/generator-api.js",
+      "default": "./dist/tooling/generator-api.js"
+    },
+    "./generated-paths": {
+      "types": "./dist/tooling/generated-paths.d.ts",
+      "import": "./dist/tooling/generated-paths.js",
+      "default": "./dist/tooling/generated-paths.js"
+    },
+    "./errors": {
+      "types": "./dist/errors.d.ts",
+      "import": "./dist/errors.js",
+      "default": "./dist/errors.js"
+    },
+    "./client": {
+      "types": "./dist/client.d.ts",
+      "import": "./dist/client.js",
+      "default": "./dist/client.js"
+    },
+    "./conversion": {
+      "types": "./dist/conversion.d.ts",
+      "import": "./dist/conversion.js",
+      "default": "./dist/conversion.js"
+    },
+    "./tags": {
+      "types": "./dist/tags.d.ts",
+      "import": "./dist/tags.js",
+      "default": "./dist/tags.js"
+    },
+    "./schema": {
+      "types": "./dist/tooling/schema.d.ts",
+      "import": "./dist/tooling/schema.js",
+      "default": "./dist/tooling/schema.js"
+    },
+    "./schema-graph": {
+      "types": "./dist/tooling/schema-graph.d.ts",
+      "import": "./dist/tooling/schema-graph.js",
+      "default": "./dist/tooling/schema-graph.js"
+    },
+    "./serde": {
+      "types": "./dist/serde.d.ts",
+      "import": "./dist/serde.js",
+      "default": "./dist/serde.js"
+    },
+    "./nest": {
+      "types": "./dist/nest.d.ts",
+      "import": "./dist/nest.js",
+      "default": "./dist/nest.js"
+    },
+    "./ttsc-plugin": "./ttsc-plugin.cjs",
+    "./ajv-tooling": {
+      "types": "./dist/tooling/ajv-tooling.d.ts",
+      "import": "./dist/tooling/ajv-tooling.js",
+      "default": "./dist/tooling/ajv-tooling.js"
+    },
+    "./type-analysis": {
+      "types": "./dist/tooling/type-analysis/index.d.ts",
+      "import": "./dist/tooling/type-analysis/index.js",
+      "default": "./dist/tooling/type-analysis/index.js"
+    },
+    "./ts": {
+      "types": "./dist/tooling/typescript-ns.d.ts",
+      "import": "./dist/tooling/typescript-ns.js",
+      "default": "./dist/tooling/typescript-ns.js"
+    }
+  },
+  "dependencies": {
+    "yaml": "^2.9.0"
+  },
+  "peerDependencies": {
+    "@nestjs/common": "^11.0.0",
+    "ajv": "^8.20.0",
+    "ajv-formats": "^3.0.1",
+    "esbuild": "^0.25.12",
+    "mobx": "^6.13.0",
+    "rxjs": "^7.8.0",
+    "ttsc": "0.30.x",
+    "typescript": "7.x"
+  },
+  "peerDependenciesMeta": {
+    "@nestjs/common": {
+      "optional": true
+    },
+    "mobx": {
+      "optional": true
+    },
+    "ajv": {
+      "optional": true
+    },
+    "ajv-formats": {
+      "optional": true
+    },
+    "esbuild": {
+      "optional": true
+    },
+    "rxjs": {
+      "optional": true
+    },
+    "ttsc": {
+      "optional": true
+    },
+    "typescript": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@nestjs/common": "11.2.3",
+    "ajv": "^8.20.0",
+    "ajv-formats": "^3.0.1",
+    "esbuild": "0.25.12",
+    "mobx": "^6.16.1",
+    "rxjs": "7.8.2",
+    "typescript": "7.x"
+  },
+  "scripts": {
+    "build": "ttsc -p tsconfig.runtime.json && ttsc -p tsconfig.tooling.json",
+    "clean": "node -e \"for (const target of ['dist', '../../.build/golem-runtime.tsbuildinfo', '../../.build/golem-tooling.tsbuildinfo']) require('node:fs').rmSync(target, { recursive: true, force: true })\"",
+    "prepack": "npm run clean && npm run build && ttsc -p ../../tsconfig.package-check.json && node ../../.build/scripts/verify-package.js ."
+  }
+}

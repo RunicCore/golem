@@ -121,10 +121,10 @@ test('each benchmark group shows, per payload, the declarations and timed calls 
       const start = page.indexOf(`<template #${group.id}-${payload.id}-code>`);
       assert.ok(start >= 0, `code for ${group.id}/${payload.id}`);
       const block = page.slice(start, page.indexOf('</template>', start));
-      // Codegen IModel adapters of a group share one declaration and one call snippet.
+      // Golem IModel adapters of a group share one declaration and one call snippet.
       const timed = results.adapters.filter(a => a.group === group.id
         && results.cases.some(c => c.adapter === a.id && c.payload === payload.id && c.opsPerSec !== undefined));
-      const labels = new Set(timed.map(a => a.label.startsWith('Codegen (IModel') ? 'Codegen (IModel)' : a.label));
+      const labels = new Set(timed.map(a => a.label.startsWith('Golem (IModel') ? 'Golem (IModel)' : a.label));
       for (const label of labels) {
         assert.equal((block.match(new RegExp(`\\[${label.replace(/[()]/g, '\\$&')}\\]`, 'g')) ?? []).length, 2, `${group.id}/${payload.id}: declarations and calls for ${label}`);
       }
@@ -137,7 +137,7 @@ test('each benchmark group shows, per payload, the declarations and timed calls 
 });
 
 test('install commands use the generator peer ranges for typescript and ttsc', () => {
-  const peers = JSON.parse(readFileSync(path.join(root, 'packages/model-codegen/package.json'), 'utf8')).peerDependencies as Record<string, string>;
+  const peers = JSON.parse(readFileSync(path.join(root, 'packages/golem-model/package.json'), 'utf8')).peerDependencies as Record<string, string>;
   const files = [...markdownFiles(docs), path.join(root, 'README.md'), ...readdirSync(path.join(root, 'packages')).map(p => path.join(root, 'packages', p, 'README.md'))].filter(existsSync);
   const wrong: string[] = [];
   for (const file of files) {
@@ -174,11 +174,11 @@ test('guide TypeScript is imported except on listed pages', () => {
 const PUBLIC_SUBPATHS = ['model', 'validation', 'ajv', 'mobx', 'mobx-validation', 'errors', 'client', 'conversion', 'tags', 'serde', 'nest', 'ttsc-plugin', 'generator-api', 'manifest'];
 const INTERNAL_SUBPATHS = ['cli', 'emitter', 'schema', 'schema-graph', 'ajv-tooling', 'type-analysis', 'generated-paths', 'ts'];
 
-test('the runtime reference covers every @exprtlabs/codegen subpath', () => {
-  const exports = Object.keys(JSON.parse(readFileSync(path.join(root, 'packages/codegen/package.json'), 'utf8')).exports as Record<string, unknown>).map(key => key.replace(/^\.\//, ''));
+test('the runtime reference covers every @exprtlabs/golem subpath', () => {
+  const exports = Object.keys(JSON.parse(readFileSync(path.join(root, 'packages/golem/package.json'), 'utf8')).exports as Record<string, unknown>).map(key => key.replace(/^\.\//, ''));
   assert.deepEqual([...exports].sort(), [...PUBLIC_SUBPATHS, ...INTERNAL_SUBPATHS].sort(), 'classify every new subpath as public or internal');
   const page = readFileSync(path.join(docs, 'reference/runtime-api.md'), 'utf8');
-  for (const subpath of PUBLIC_SUBPATHS) assert.match(page, new RegExp(`^## \`@exprtlabs/codegen/${subpath}\``, 'm'), `no section for ${subpath}`);
+  for (const subpath of PUBLIC_SUBPATHS) assert.match(page, new RegExp(`^## \`@exprtlabs/golem/${subpath}\``, 'm'), `no section for ${subpath}`);
   for (const subpath of INTERNAL_SUBPATHS) assert.ok(page.includes(`\`${subpath}\``), `internal subpath ${subpath} is not listed as internal`);
 });
 
@@ -190,10 +190,10 @@ function tsFiles(dir: string): string[] {
 }
 
 function emittedDiagnosticCodes(): Record<'NEST' | 'RUNM' | 'OPENAPI', string[]> {
-  const nest = [...readFileSync(path.join(root, 'packages/ts-to-openapi/src/diagnostics.ts'), 'utf8').matchAll(/= '(NEST\d{4})'/g)].map(m => m[1]);
-  const runm = tsFiles(path.join(root, 'packages/codegen/src/tooling/type-analysis'))
+  const nest = [...readFileSync(path.join(root, 'packages/golem-ts-openapi/src/diagnostics.ts'), 'utf8').matchAll(/= '(NEST\d{4})'/g)].map(m => m[1]);
+  const runm = tsFiles(path.join(root, 'packages/golem/src/tooling/type-analysis'))
     .flatMap(f => [...readFileSync(f, 'utf8').matchAll(/\bdiagnostic\([^;]*?'(\d{4})'/gs)].map(m => `RUNM${m[1]}`));
-  const openapi = tsFiles(path.join(root, 'packages/openapi-to-ts/src'))
+  const openapi = tsFiles(path.join(root, 'packages/golem-openapi/src'))
     .flatMap(f => [...readFileSync(f, 'utf8').matchAll(/'(OPENAPI_[A-Z_]+)'/g)].map(m => m[1]));
   return { NEST: [...new Set(nest)], RUNM: [...new Set(runm)], OPENAPI: [...new Set(openapi)] };
 }

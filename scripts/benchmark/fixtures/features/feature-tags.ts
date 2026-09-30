@@ -1,4 +1,4 @@
-import type { Format, Integer, Maximum, MaxLength, MinLength, Minimum, Pattern, TSerde, TValidation } from '@exprtlabs/codegen/tags';
+import type { Format, Integer, Maximum, MaxLength, MinLength, Minimum, Pattern, TSerde, TValidation } from '@exprtlabs/golem/tags';
 
 export type Email = string & MinLength<3> & MaxLength<80> & Format<'email'>;
 export type Phone = string & MinLength<8> & MaxLength<24> & Pattern<'^\\+[0-9][0-9-]+$'>;

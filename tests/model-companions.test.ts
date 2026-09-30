@@ -4,8 +4,8 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import test, { type TestContext } from 'node:test';
 
-import * as ts from '@exprtlabs/codegen/ts';
-import { isModelDeclarationReference } from '@exprtlabs/codegen/type-analysis';
+import * as ts from '@exprtlabs/golem/ts';
+import { isModelDeclarationReference } from '@exprtlabs/golem/type-analysis';
 import { command } from './support/process.js';
 import { generatedCodecId } from './support/consumer.js';
 import {
@@ -19,7 +19,7 @@ import { tsSource } from './source-template.js';
 import { generate } from '#model/generator';
 
 const modelProject = (t: Parameters<typeof createModelProject>[0]) => createModelProject(t, {
-  prefix: 'runic-model-companions-',
+  prefix: 'golem-model-companions-',
   name: 'model-companions',
 });
 
@@ -43,7 +43,7 @@ function writeManifest(
 
 function ttscModelProject(t: TestContext, name: string) {
   return createModelProject(t, {
-    prefix: `runic-${name}-`,
+    prefix: `golem-${name}-`,
     name,
     ttscPlugin: true,
     linkWorkspaceNodeModules: true,
@@ -82,8 +82,8 @@ test('model companions compile with --noUnusedLocals for empty, scalar and neste
 test('generated model names are scoped to their companion modules', (t) => {
   const { root, sourceRoot } = modelProject(t);
   writeModelSources(sourceRoot, {
-    'first.model.ts': tsSource`import type { IModel } from '@exprtlabs/codegen/model';\nexport type TItem = IModel<{ first: string }>;\n`,
-    'second.model.ts': tsSource`import type { IModel } from '@exprtlabs/codegen/model';\nexport type TItem = IModel<{ second: string }>;\n`,
+    'first.model.ts': tsSource`import type { IModel } from '@exprtlabs/golem/model';\nexport type TItem = IModel<{ first: string }>;\n`,
+    'second.model.ts': tsSource`import type { IModel } from '@exprtlabs/golem/model';\nexport type TItem = IModel<{ second: string }>;\n`,
   });
   const result = generate({ root, profile: { mobx: false, validation: false } });
   assert.equal(result.artifacts.length, 3);
@@ -112,7 +112,7 @@ test('same-file duplicate model names still fail as a generated symbol collision
 test('automatic empty discovery returns an empty expected artifact set', (t) => {
   const { root, sourceRoot } = modelProject(t);
   const source = path.join(sourceRoot, 'item.model.ts');
-  writeModelSources(sourceRoot, { 'item.model.ts': tsSource`import type { IModel } from '@exprtlabs/codegen/model';\nexport type TItem = IModel<{ value: string }>;\n` });
+  writeModelSources(sourceRoot, { 'item.model.ts': tsSource`import type { IModel } from '@exprtlabs/golem/model';\nexport type TItem = IModel<{ value: string }>;\n` });
   const first = generate({ root, profile: { mobx: false, validation: false } });
   writeGeneratedArtifacts(first.artifacts);
   fs.rmSync(source);
@@ -126,7 +126,7 @@ test('tsconfig ambient declarations participate in executable validation and wat
   const ambient = path.join(sourceRoot, 'global.d.ts');
   fs.writeFileSync(ambient, 'interface Money { currency: string; }\n');
   const source = path.join(sourceRoot, 'invoice.model.ts');
-  writeModelSources(sourceRoot, { 'invoice.model.ts': tsSource`import type { IModel } from '@exprtlabs/codegen/model';\nexport type TInvoice = IModel<{ money: Money }>;\n` });
+  writeModelSources(sourceRoot, { 'invoice.model.ts': tsSource`import type { IModel } from '@exprtlabs/golem/model';\nexport type TInvoice = IModel<{ money: Money }>;\n` });
   const result = generate({ root, sources: [source], profile: { mobx: false, validation: true } });
   writeGeneratedArtifacts(result.artifacts);
   const invoiceId = generatedCodecId(result.artifacts.map((artifact) => artifact.content).join('\n'), 'Invoice');
@@ -143,7 +143,7 @@ test('missing manifest modules and runtime exports fail before companion emissio
   const types = path.join(sdk, 'types.ts');
   const manifest = path.join(sdk, 'model-manifest.json');
   const source = path.join(sourceRoot, 'aggregate.model.ts');
-  fs.writeFileSync(types, '/* @runic-model-manifest ./model-manifest.json */\nexport interface Money { currency: string }\n');
+  fs.writeFileSync(types, '/* @golem-model-manifest ./model-manifest.json */\nexport interface Money { currency: string }\n');
   writeModelSources(sourceRoot, {
     'aggregate.model.ts': readFixture('models/model-companions/missing-manifest/aggregate.model.ts'),
   });
@@ -237,8 +237,8 @@ test('re-exported IModel and IObject symbols preserve class versus plain-object 
 test('a job without validation or serde bindings writes no shared bindings file', (t) => {
   const { root, sourceRoot } = modelProject(t);
   writeModelSources(sourceRoot, {
-    'item.model.ts': tsSource`import type { IModel } from '@exprtlabs/codegen/model';
-import type { MinLength } from '@exprtlabs/codegen/tags';
+    'item.model.ts': tsSource`import type { IModel } from '@exprtlabs/golem/model';
+import type { MinLength } from '@exprtlabs/golem/tags';
 export type TItem = IModel<{ title: string & MinLength<1> }>;
 `,
   });
@@ -251,8 +251,8 @@ test('a custom validation binding writes the shared file and the companion impor
   writeModelSources(sourceRoot, {
     'rules.ts': tsSource`export function isEven(value: number): boolean | string { return value % 2 === 0 || 'must be even'; }
 `,
-    'item.model.ts': tsSource`import type { IModel } from '@exprtlabs/codegen/model';
-import type { TValidation } from '@exprtlabs/codegen/tags';
+    'item.model.ts': tsSource`import type { IModel } from '@exprtlabs/golem/model';
+import type { TValidation } from '@exprtlabs/golem/tags';
 import { isEven } from './rules.js';
 export type TItem = IModel<{ count: number & TValidation<typeof isEven> }>;
 `,

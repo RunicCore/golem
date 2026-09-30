@@ -14,39 +14,39 @@ the inventory and runs watch mode.
 
 ```ts
 import type {
-  CodegenDiagnostic,
-  CodegenProfile,
-  CodegenProvider,
-  CodegenResult,
-} from '@exprtlabs/codegen/generator-api';
+  GolemDiagnostic,
+  GolemProfile,
+  GolemProvider,
+  GolemResult,
+} from '@exprtlabs/golem/generator-api';
 
-interface CodegenProfile {
+interface GolemProfile {
   readonly mobx: boolean;
   readonly validation: boolean;
   readonly ajvStandalone?: boolean;
   readonly allowAny?: boolean;
 }
 
-interface CodegenArtifact {
+interface GolemArtifact {
   readonly path: string;
   readonly content: string;
 }
 
-interface CodegenResult {
-  readonly artifacts: readonly CodegenArtifact[];
+interface GolemResult {
+  readonly artifacts: readonly GolemArtifact[];
   readonly manifestPaths: readonly string[];
   readonly watchInputs: readonly string[];
-  readonly diagnostics?: readonly CodegenDiagnostic[];
+  readonly diagnostics?: readonly GolemDiagnostic[];
 }
 
-enum CodegenDiagnosticSeverity {
+enum GolemDiagnosticSeverity {
   Error = 'error',
   Warning = 'warning',
 }
 
-interface CodegenDiagnostic {
+interface GolemDiagnostic {
   readonly code: string;
-  readonly severity: CodegenDiagnosticSeverity;
+  readonly severity: GolemDiagnosticSeverity;
   readonly message: string;
   readonly file?: string;
   readonly line?: number;
@@ -60,17 +60,17 @@ interface GeneratorSession {
   retain<Resource extends Disposable>(key: string, create: () => Resource): Resource;
 }
 
-interface CodegenProvider<Context> {
+interface GolemProvider<Context> {
   readonly apiVersion: 1;
-  generate(context: Context): CodegenResult | Promise<CodegenResult>;
+  generate(context: Context): GolemResult | Promise<GolemResult>;
 }
 ```
 
 | Export | Signature | Behavior |
 | --- | --- | --- |
-| `resolveProfile` | `(profile: CodegenProfile): ResolvedCodegenProfile` | Applies the defaults `ajvStandalone: false` and `allowAny: false` and returns a frozen profile. Throws `TypeError` for an unknown key, a non-boolean value, or `ajvStandalone: true` without `validation: true`. |
-| `CodegenProvider` | `{ apiVersion: 1; generate(context) }` | The shape each generator module exports. |
-| `CodegenDiagnosticSeverity` | `Error`, `Warning` | Severity of a returned diagnostic. |
+| `resolveProfile` | `(profile: GolemProfile): ResolvedGolemProfile` | Applies the defaults `ajvStandalone: false` and `allowAny: false` and returns a frozen profile. Throws `TypeError` for an unknown key, a non-boolean value, or `ajvStandalone: true` without `validation: true`. |
+| `GolemProvider` | `{ apiVersion: 1; generate(context) }` | The shape each generator module exports. |
+| `GolemDiagnosticSeverity` | `Error`, `Warning` | Severity of a returned diagnostic. |
 
 Every generator applies `resolveProfile` to the profile you pass. Show
 returned diagnostics to the user; their codes are in
@@ -87,12 +87,12 @@ call starts and closes its own compiler.
 
 ## Generate OpenAPI from controllers
 
-`@exprtlabs/ts-to-openapi/generator` exports `apiVersion` and an
+`@exprtlabs/golem-ts-openapi/generator` exports `apiVersion` and an
 asynchronous `generate()`. It returns one OpenAPI document and no
 manifests:
 
 ```ts
-import { generate } from '@exprtlabs/ts-to-openapi/generator';
+import { generate } from '@exprtlabs/golem-ts-openapi/generator';
 
 const result = await generate({
   root: '/absolute/app/backend',
@@ -111,7 +111,7 @@ console.log(result.artifacts[0]?.path); // /absolute/app/api/payments.yaml
 | `root` | Yes | — | Existing project directory. |
 | `output` | Yes | — | The `.json`, `.yaml` or `.yml` file to generate. |
 | `info` | Yes | — | OpenAPI `info` object. |
-| `profile` | Yes | — | `CodegenProfile`. |
+| `profile` | Yes | — | `GolemProfile`. |
 | `sources` | No | `*.controller.ts` below `<root>/src` | Non-empty list of controller files. |
 | `openapiVersion` | No | `'3.2.0'` | `'3.2.0'` or `'3.1.2'`. |
 | `servers`, `securitySchemes`, `tags`, `globalPrefix`, `uriVersioning` | No | omitted | Same as the [controller job keys](/reference/config#controller-jobs). |
@@ -122,11 +122,11 @@ Diagnostic source locations are not copied into the OpenAPI document.
 
 ## Generate an OpenAPI SDK
 
-`@exprtlabs/openapi-to-ts/generator` exports `apiVersion` and an
+`@exprtlabs/golem-openapi/generator` exports `apiVersion` and an
 asynchronous `generate()` that returns an `OpenApiGenerationResult`:
 
 ```ts
-import { apiVersion, generate } from '@exprtlabs/openapi-to-ts/generator';
+import { apiVersion, generate } from '@exprtlabs/golem-openapi/generator';
 
 const result = await generate({
   input: '/absolute/app/api.yaml',
@@ -144,7 +144,7 @@ console.log(apiVersion, result.artifacts.map(artifact => artifact.path));
 | --- | --- | --- | --- |
 | `input` | Yes | — | OpenAPI document, JSON or YAML. |
 | `output` | Yes | — | SDK directory. |
-| `profile` | Yes | — | `CodegenProfile`. |
+| `profile` | Yes | — | `GolemProfile`. |
 | `name` | No | the document's `info.title`, else `Api` | Prefix of the client name, such as `PaymentsClient`. |
 | `allowRemoteRefs` | No | `false` | Reads HTTPS `$ref` documents when `true`. |
 | `remoteHosts` | No | `[]` | Hosts remote references may use; required with `allowRemoteRefs`. |
@@ -168,8 +168,8 @@ To generate from a document you already loaded, call `writeSdk`:
 ```ts
 function writeSdk(
   document: unknown,
-  options: { readonly output: string; readonly name?: string; readonly profile: CodegenProfile },
-): CodegenResult;
+  options: { readonly output: string; readonly name?: string; readonly profile: GolemProfile },
+): GolemResult;
 ```
 
 Pass a document from `loadValidatedDocument(filename, options?)`, which reads
@@ -179,11 +179,11 @@ fields and `onInput` above. `writeSdk` reads no files and returns empty
 
 ## Generate TypeScript models
 
-`@exprtlabs/model-codegen/generator` exports `apiVersion` and a
+`@exprtlabs/golem-model/generator` exports `apiVersion` and a
 synchronous `generate()`:
 
 ```ts
-import { apiVersion, generate } from '@exprtlabs/model-codegen/generator';
+import { apiVersion, generate } from '@exprtlabs/golem-model/generator';
 
 const result = generate({
   root: '/absolute/app',
@@ -198,7 +198,7 @@ console.log(apiVersion, result.artifacts.length);
 | Field | Required | Default | Effect |
 | --- | --- | --- | --- |
 | `root` | Yes | — | Existing TypeScript project directory. |
-| `profile` | Yes | — | `CodegenProfile`. |
+| `profile` | Yes | — | `GolemProfile`. |
 | `output` | No | `<root>/src/generated/models` | Directory for files shared by all models of the job. |
 | `sources` | No | `*.model.ts` and `*.models.ts` below `<root>/src` | Model files. |
 | `manifestInputs` | No | `[]` | SDK `model-manifest.json` files whose models your declarations use. |
@@ -210,12 +210,12 @@ console.log(apiVersion, result.artifacts.length);
 | `discoverModelSources` | `(root?, onInput?): string[]` | Model files below `<root>/src`, sorted. |
 | `generatedFilename` | `(source: string): string` | The generated file path: `task.model.ts` → `task.model.generated.ts`, `.models.ts` → `.models.generated.ts`. |
 | `isModelSource` | `(filename: string): boolean` | Whether the name ends in `.model.ts` or `.models.ts` and is not a generated file. |
-| `discoverModelManifests` | `(root?, onInput?): string[]` | [`@exprtlabs/codegen/manifest`](/reference/runtime-api#manifest) re-export. |
+| `discoverModelManifests` | `(root?, onInput?): string[]` | [`@exprtlabs/golem/manifest`](/reference/runtime-api#manifest) re-export. |
 
 ## Apply results
 
 A result is an in-memory plan. A host that applies it keeps the artifact
 paths and contents, tracks `manifestPaths` and `watchInputs`, and chooses its
-own write, stale-file and inventory policy. The `runic-codegen` CLI applies
+own write, stale-file and inventory policy. The `golem` CLI applies
 results for normal projects, in the [job order](/reference/config) of the
 configuration.

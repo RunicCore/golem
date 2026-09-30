@@ -111,4 +111,4 @@ export async function npm(root: string, args: readonly string[], options: NpmOpt
   }
 }
 
-export const cli = (root: string, args: readonly string[], options?: CommandOptions): Promise<CommandResult> => command(root, path.join(root, 'node_modules/.bin/runic-codegen'), args, options);
+export const cli = (root: string, args: readonly string[], options?: CommandOptions): Promise<CommandResult> => command(root, path.join(root, 'node_modules/.bin/golem'), args, options);

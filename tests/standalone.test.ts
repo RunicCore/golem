@@ -5,9 +5,9 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import test from 'node:test';
 
-import { createOpenApiAjvEngine } from '@exprtlabs/codegen/ajv';
-import { compileStandaloneValidators } from '@exprtlabs/codegen/ajv-tooling';
-import { LibError, LibErrorKind } from '@exprtlabs/codegen/errors';
+import { createOpenApiAjvEngine } from '@exprtlabs/golem/ajv';
+import { compileStandaloneValidators } from '@exprtlabs/golem/ajv-tooling';
+import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 import { writeSdk } from '#openapi/generator';
 import {
   artifactBasenames,
@@ -151,7 +151,7 @@ test('OpenAPI standalone profile emits self-contained validators while default v
   assert.equal(runtimeNames.includes('validators.generated.NOTICES.txt'), false);
   assert.equal(runtimeNames.includes('validation-engine.ts'), false);
   const runtimeModels = generatedModelSource(runtime.artifacts);
-  assert.match(runtimeModels, /@exprtlabs\/codegen\/ajv/);
+  assert.match(runtimeModels, /@exprtlabs\/golem\/ajv/);
   assert.doesNotMatch(runtimeModels, /validation-engine\.js/);
   const runtimeManifest = JSON.parse(runtime.artifacts.find(item => item.path.endsWith('/model-manifest.json'))?.content ?? '{}') as {
     profile?: { ajvStandalone?: boolean; allowAny?: boolean };
@@ -166,7 +166,7 @@ test('OpenAPI standalone profile emits self-contained validators while default v
   const standaloneModels = generatedModelSource(standalone.artifacts);
   assert.match(standaloneModels, /validators\.generated\.js/);
   assert.match(standaloneModels, /createObjectCodec/);
-  assert.doesNotMatch(standaloneModels, /@exprtlabs\/codegen\/ajv|createOpenApi(?:Sync)?AjvEngine/);
+  assert.doesNotMatch(standaloneModels, /@exprtlabs\/golem\/ajv|createOpenApi(?:Sync)?AjvEngine/);
   const standaloneManifest = JSON.parse(standalone.artifacts.find(item => item.path.endsWith('/model-manifest.json'))?.content ?? '{}') as {
     profile?: { ajvStandalone?: boolean; allowAny?: boolean };
   };
@@ -179,7 +179,7 @@ test('OpenAPI standalone profile emits self-contained validators while default v
 });
 
 test('standalone SDK compiles a no-content operation with no response validators', async t => {
-  const directory = mkdtempSync(path.join(tmpdir(), 'runic-openapi-no-content-'));
+  const directory = mkdtempSync(path.join(tmpdir(), 'golem-openapi-no-content-'));
   const output = path.join(directory, 'sdk');
   t.after(() => rmSync(directory, { recursive: true, force: true }));
   const result = await generateMaterializedSdk({
@@ -203,7 +203,7 @@ test('standalone SDK compiles a no-content operation with no response validators
 });
 
 test('standalone SDK compiles with its generated JavaScript, exposes every model and operation reference, and rejects replacement engines', async t => {
-  const output = path.join(mkdtempSync(path.join(tmpdir(), 'runic-openapi-standalone-')), 'sdk');
+  const output = path.join(mkdtempSync(path.join(tmpdir(), 'golem-openapi-standalone-')), 'sdk');
   t.after(() => rmSync(path.dirname(output), { recursive: true, force: true }));
   const result = await generateMaterializedSdk(standaloneDocument(), {
     output,
@@ -269,7 +269,7 @@ test('standalone SDK compiles with its generated JavaScript, exposes every model
 });
 
 test('custom synchronous validation bindings have identical JIT and standalone behavior and are not called during generation', async () => {
-  const id = 'urn:runic:custom-validation';
+  const id = 'urn:golem:custom-validation';
   const schema = {
     $id: id,
     type: 'object',

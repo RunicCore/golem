@@ -144,7 +144,7 @@ An error prints its code, location when known, and message, then stops generatio
 
 ### NEST1501
 
-**No schema resolver.** The document builder needs a canonical schema for a type, but no `schemaResolver` was supplied in the build context. **Fix:** Pass a `schemaResolver`, or generate through `@exprtlabs/ts-to-openapi/generator`, which always supplies one.
+**No schema resolver.** The document builder needs a canonical schema for a type, but no `schemaResolver` was supplied in the build context. **Fix:** Pass a `schemaResolver`, or generate through `@exprtlabs/golem-ts-openapi/generator`, which always supplies one.
 
 ### NEST1502
 
@@ -152,7 +152,7 @@ An error prints its code, location when known, and message, then stops generatio
 
 ### NEST1503
 
-**Conflicting schema metadata.** Static Swagger metadata — a `required` flag, a `schema`, or an `@ApiProperty()` option — contradicts the schema ts-to-openapi derived from the TypeScript or IModel contract. **Fix:** Change the Swagger option, or the TypeScript type, so the two describe the same shape and requiredness.
+**Conflicting schema metadata.** Static Swagger metadata — a `required` flag, a `schema`, or an `@ApiProperty()` option — contradicts the schema golem-ts-openapi derived from the TypeScript or IModel contract. **Fix:** Change the Swagger option, or the TypeScript type, so the two describe the same shape and requiredness.
 
 ### NEST1504
 
@@ -186,7 +186,7 @@ An error prints its code, location when known, and message, then stops generatio
 
 ### RUNM1011
 
-**Field contains any.** A field's type includes `any`, and the model doesn't allow it. **Fix:** Replace it with a concrete type or `unknown`, or allow it with `{ allowAny: true }` as `IModel`'s second type argument, or `allowAny: true` in `runic-codegen.yaml`.
+**Field contains any.** A field's type includes `any`, and the model doesn't allow it. **Fix:** Replace it with a concrete type or `unknown`, or allow it with `{ allowAny: true }` as `IModel`'s second type argument, or `allowAny: true` in `golem.yaml`.
 
 ### RUNM1021
 

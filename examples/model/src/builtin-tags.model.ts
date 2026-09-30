@@ -1,7 +1,7 @@
 // #region builtin-tags
-import type { IModel } from '@exprtlabs/codegen/model';
-import type { MaxLength, MinLength } from '@exprtlabs/codegen/tags';
-import { validateInstance } from '@exprtlabs/codegen/validation';
+import type { IModel } from '@exprtlabs/golem/model';
+import type { MaxLength, MinLength } from '@exprtlabs/golem/tags';
+import { validateInstance } from '@exprtlabs/golem/validation';
 import { TaggedTaskBase } from './builtin-tags.model.generated.js';
 
 type TaskTitle = string & MinLength<3> & MaxLength<80>;

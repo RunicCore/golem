@@ -1,4 +1,4 @@
-import type { IModel, ModelInit } from '@exprtlabs/codegen/model';
+import type { IModel, ModelInit } from '@exprtlabs/golem/model';
 import { SnapshotBase } from './snapshot.model.generated.js';
 
 type OptionalTuple<T> = readonly [value?: T];

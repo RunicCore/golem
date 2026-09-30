@@ -1,6 +1,6 @@
 import { Body, Controller, Get, Post } from '@nestjs/common';
 import { ApiOkResponse, ApiProperty, ApiSchema, getSchemaPath } from '@nestjs/swagger';
-import type { IModel } from '@exprtlabs/codegen/model';
+import type { IModel } from '@exprtlabs/golem/model';
 
 export type TPayment = IModel<{ amount: number }>;
 

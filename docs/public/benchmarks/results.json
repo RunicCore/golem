@@ -13,9 +13,9 @@
     "cpus": 10
   },
   "packages": {
-    "@exprtlabs/codegen": "1.0.0-rc",
-    "@exprtlabs/model-codegen": "1.0.0-rc",
-    "@exprtlabs/openapi-to-ts": "1.0.0-rc",
+    "@exprtlabs/golem": "1.0.0-rc",
+    "@exprtlabs/golem-model": "1.0.0-rc",
+    "@exprtlabs/golem-openapi": "1.0.0-rc",
     "typescript": "7.0.2",
     "typia": "14.0.6",
     "class-transformer": "0.5.1",
@@ -32,12 +32,12 @@
     {
       "id": "plain",
       "label": "Plain objects, validated",
-      "description": "JSON text to validated plain objects and back. Codegen uses an IObject declaration."
+      "description": "JSON text to validated plain objects and back. Golem uses an IObject declaration."
     },
     {
       "id": "classes",
       "label": "Class instances",
-      "description": "JSON text to class instances and back, without validation. Codegen uses an IModel declaration."
+      "description": "JSON text to class instances and back, without validation. Golem uses an IModel declaration."
     },
     {
       "id": "validated-classes",
@@ -51,28 +51,28 @@
       "label": "Simple object",
       "bytes": 123,
       "description": "Four 3D points. Measures per-call overhead.",
-      "sourceUrl": "https://github.com/exprtlabs/codegen/blob/main/scripts/benchmark/fixtures/upstream/shared.ts"
+      "sourceUrl": "https://github.com/RunicCore/golem/blob/master/scripts/benchmark/fixtures/upstream/shared.ts"
     },
     {
       "id": "nested",
       "label": "Nested object",
       "bytes": 817,
       "description": "A nested API record with integer, length, pattern and array-size constraints.",
-      "sourceUrl": "https://github.com/exprtlabs/codegen/blob/main/scripts/benchmark/fixtures/upstream/shared.ts"
+      "sourceUrl": "https://github.com/RunicCore/golem/blob/master/scripts/benchmark/fixtures/upstream/shared.ts"
     },
     {
       "id": "array",
       "label": "Large array",
       "bytes": 102226,
       "description": "One company, 10 departments, 1,000 employees.",
-      "sourceUrl": "https://github.com/exprtlabs/codegen/blob/main/scripts/benchmark/fixtures/upstream/shared.ts"
+      "sourceUrl": "https://github.com/RunicCore/golem/blob/master/scripts/benchmark/fixtures/upstream/shared.ts"
     },
     {
       "id": "checkout",
       "label": "Checkout",
       "bytes": 347,
       "description": "Money from a generated SDK type, hex code, dates, nested line items, flags, a union and optional fields, with value conversion.",
-      "sourceUrl": "https://github.com/exprtlabs/codegen/blob/main/scripts/benchmark/fixtures/features/payloads.ts"
+      "sourceUrl": "https://github.com/RunicCore/golem/blob/master/scripts/benchmark/fixtures/features/payloads.ts"
     }
   ],
   "operations": [
@@ -94,12 +94,12 @@
   ],
   "adapters": [
     {
-      "id": "codegen-object",
+      "id": "golem-object",
       "group": "plain",
-      "label": "Codegen (IObject)",
-      "library": "@exprtlabs/codegen",
+      "label": "Golem (IObject)",
+      "library": "@exprtlabs/golem",
       "checked": true,
-      "sourceUrl": "https://github.com/exprtlabs/codegen/blob/main/scripts/benchmark/fixtures/upstream/codegen-object.ts"
+      "sourceUrl": "https://github.com/RunicCore/golem/blob/master/scripts/benchmark/fixtures/upstream/golem-object.ts"
     },
     {
       "id": "typia",
@@ -107,7 +107,7 @@
       "label": "Typia",
       "library": "typia",
       "checked": true,
-      "sourceUrl": "https://github.com/exprtlabs/codegen/blob/main/scripts/benchmark/fixtures/upstream/typia.ts"
+      "sourceUrl": "https://github.com/RunicCore/golem/blob/master/scripts/benchmark/fixtures/upstream/typia.ts"
     },
     {
       "id": "zod",
@@ -115,15 +115,15 @@
       "label": "Zod",
       "library": "zod",
       "checked": true,
-      "sourceUrl": "https://github.com/exprtlabs/codegen/blob/main/scripts/benchmark/fixtures/upstream/zod.ts"
+      "sourceUrl": "https://github.com/RunicCore/golem/blob/master/scripts/benchmark/fixtures/upstream/zod.ts"
     },
     {
-      "id": "codegen",
+      "id": "golem",
       "group": "classes",
-      "label": "Codegen (IModel)",
-      "library": "@exprtlabs/codegen",
+      "label": "Golem (IModel)",
+      "library": "@exprtlabs/golem",
       "checked": false,
-      "sourceUrl": "https://github.com/exprtlabs/codegen/blob/main/scripts/benchmark/fixtures/upstream/codegen.ts"
+      "sourceUrl": "https://github.com/RunicCore/golem/blob/master/scripts/benchmark/fixtures/upstream/golem.ts"
     },
     {
       "id": "class-transformer",
@@ -131,23 +131,23 @@
       "label": "class-transformer",
       "library": "class-transformer",
       "checked": false,
-      "sourceUrl": "https://github.com/exprtlabs/codegen/blob/main/scripts/benchmark/fixtures/upstream/class-transformer.ts"
+      "sourceUrl": "https://github.com/RunicCore/golem/blob/master/scripts/benchmark/fixtures/upstream/class-transformer.ts"
     },
     {
-      "id": "codegen-standalone",
+      "id": "golem-standalone",
       "group": "validated-classes",
-      "label": "Codegen (IModel, validated)",
-      "library": "@exprtlabs/codegen",
+      "label": "Golem (IModel, validated)",
+      "library": "@exprtlabs/golem",
       "checked": true,
-      "sourceUrl": "https://github.com/exprtlabs/codegen/blob/main/scripts/benchmark/fixtures/upstream/codegen.ts"
+      "sourceUrl": "https://github.com/RunicCore/golem/blob/master/scripts/benchmark/fixtures/upstream/golem.ts"
     },
     {
-      "id": "codegen-runtime",
+      "id": "golem-runtime",
       "group": "validated-classes",
-      "label": "Codegen (IModel, runtime Ajv)",
-      "library": "@exprtlabs/codegen",
+      "label": "Golem (IModel, runtime Ajv)",
+      "library": "@exprtlabs/golem",
       "checked": true,
-      "sourceUrl": "https://github.com/exprtlabs/codegen/blob/main/scripts/benchmark/fixtures/upstream/codegen.ts"
+      "sourceUrl": "https://github.com/RunicCore/golem/blob/master/scripts/benchmark/fixtures/upstream/golem.ts"
     },
     {
       "id": "class-validator",
@@ -155,14 +155,14 @@
       "label": "class-validator",
       "library": "class-validator",
       "checked": true,
-      "sourceUrl": "https://github.com/exprtlabs/codegen/blob/main/scripts/benchmark/fixtures/upstream/class-validator.ts"
+      "sourceUrl": "https://github.com/RunicCore/golem/blob/master/scripts/benchmark/fixtures/upstream/class-validator.ts"
     }
   ],
   "cases": [
     {
       "payload": "simple",
       "operation": "parse",
-      "adapter": "codegen-object",
+      "adapter": "golem-object",
       "support": "full",
       "opsPerSec": {
         "median": 1509908.2001132101,
@@ -195,7 +195,7 @@
     {
       "payload": "nested",
       "operation": "parse",
-      "adapter": "codegen-object",
+      "adapter": "golem-object",
       "support": "full",
       "opsPerSec": {
         "median": 384391.2704742473,
@@ -228,7 +228,7 @@
     {
       "payload": "array",
       "operation": "parse",
-      "adapter": "codegen-object",
+      "adapter": "golem-object",
       "support": "full",
       "opsPerSec": {
         "median": 3858.4937206246736,
@@ -261,7 +261,7 @@
     {
       "payload": "checkout",
       "operation": "parse",
-      "adapter": "codegen-object",
+      "adapter": "golem-object",
       "support": "full",
       "opsPerSec": {
         "median": 377020.28560926596,
@@ -290,7 +290,7 @@
     {
       "payload": "simple",
       "operation": "stringify",
-      "adapter": "codegen-object",
+      "adapter": "golem-object",
       "support": "full",
       "opsPerSec": {
         "median": 5182420.56592285,
@@ -323,7 +323,7 @@
     {
       "payload": "nested",
       "operation": "stringify",
-      "adapter": "codegen-object",
+      "adapter": "golem-object",
       "support": "full",
       "opsPerSec": {
         "median": 715803.465391121,
@@ -356,7 +356,7 @@
     {
       "payload": "array",
       "operation": "stringify",
-      "adapter": "codegen-object",
+      "adapter": "golem-object",
       "support": "full",
       "opsPerSec": {
         "median": 6935.611235193953,
@@ -389,7 +389,7 @@
     {
       "payload": "checkout",
       "operation": "stringify",
-      "adapter": "codegen-object",
+      "adapter": "golem-object",
       "support": "full",
       "opsPerSec": {
         "median": 356828.40307689767,
@@ -418,7 +418,7 @@
     {
       "payload": "simple",
       "operation": "validate",
-      "adapter": "codegen-object",
+      "adapter": "golem-object",
       "support": "full",
       "opsPerSec": {
         "median": 12274339.56322463,
@@ -451,7 +451,7 @@
     {
       "payload": "nested",
       "operation": "validate",
-      "adapter": "codegen-object",
+      "adapter": "golem-object",
       "support": "full",
       "opsPerSec": {
         "median": 2210468.9476552596,
@@ -484,7 +484,7 @@
     {
       "payload": "array",
       "operation": "validate",
-      "adapter": "codegen-object",
+      "adapter": "golem-object",
       "support": "full",
       "opsPerSec": {
         "median": 37422.53621213843,
@@ -517,7 +517,7 @@
     {
       "payload": "checkout",
       "operation": "validate",
-      "adapter": "codegen-object",
+      "adapter": "golem-object",
       "support": "full",
       "opsPerSec": {
         "median": 7480416.623698029,
@@ -546,7 +546,7 @@
     {
       "payload": "simple",
       "operation": "parse",
-      "adapter": "codegen",
+      "adapter": "golem",
       "support": "full",
       "opsPerSec": {
         "median": 897335.1393299629,
@@ -568,7 +568,7 @@
     {
       "payload": "nested",
       "operation": "parse",
-      "adapter": "codegen",
+      "adapter": "golem",
       "support": "full",
       "opsPerSec": {
         "median": 268167.48469248053,
@@ -590,7 +590,7 @@
     {
       "payload": "array",
       "operation": "parse",
-      "adapter": "codegen",
+      "adapter": "golem",
       "support": "full",
       "opsPerSec": {
         "median": 2187.8782465446693,
@@ -612,7 +612,7 @@
     {
       "payload": "checkout",
       "operation": "parse",
-      "adapter": "codegen",
+      "adapter": "golem",
       "support": "full",
       "opsPerSec": {
         "median": 496717.9311698165,
@@ -634,7 +634,7 @@
     {
       "payload": "simple",
       "operation": "stringify",
-      "adapter": "codegen",
+      "adapter": "golem",
       "support": "full",
       "opsPerSec": {
         "median": 8356333.886456581,
@@ -656,7 +656,7 @@
     {
       "payload": "nested",
       "operation": "stringify",
-      "adapter": "codegen",
+      "adapter": "golem",
       "support": "full",
       "opsPerSec": {
         "median": 1088369.6127204152,
@@ -678,7 +678,7 @@
     {
       "payload": "array",
       "operation": "stringify",
-      "adapter": "codegen",
+      "adapter": "golem",
       "support": "full",
       "opsPerSec": {
         "median": 8283.444125643015,
@@ -700,7 +700,7 @@
     {
       "payload": "checkout",
       "operation": "stringify",
-      "adapter": "codegen",
+      "adapter": "golem",
       "support": "full",
       "opsPerSec": {
         "median": 605326.4528079862,
@@ -722,7 +722,7 @@
     {
       "payload": "simple",
       "operation": "parse",
-      "adapter": "codegen-standalone",
+      "adapter": "golem-standalone",
       "support": "full",
       "opsPerSec": {
         "median": 844434.1945149135,
@@ -744,7 +744,7 @@
     {
       "payload": "nested",
       "operation": "parse",
-      "adapter": "codegen-standalone",
+      "adapter": "golem-standalone",
       "support": "full",
       "opsPerSec": {
         "median": 239826.7100028659,
@@ -766,7 +766,7 @@
     {
       "payload": "array",
       "operation": "parse",
-      "adapter": "codegen-standalone",
+      "adapter": "golem-standalone",
       "support": "full",
       "opsPerSec": {
         "median": 2065.9776108218407,
@@ -788,7 +788,7 @@
     {
       "payload": "checkout",
       "operation": "parse",
-      "adapter": "codegen-standalone",
+      "adapter": "golem-standalone",
       "support": "full",
       "opsPerSec": {
         "median": 317945.69244384003,
@@ -810,7 +810,7 @@
     {
       "payload": "simple",
       "operation": "stringify",
-      "adapter": "codegen-standalone",
+      "adapter": "golem-standalone",
       "support": "full",
       "opsPerSec": {
         "median": 4753239.025585994,
@@ -832,7 +832,7 @@
     {
       "payload": "nested",
       "operation": "stringify",
-      "adapter": "codegen-standalone",
+      "adapter": "golem-standalone",
       "support": "full",
       "opsPerSec": {
         "median": 721582.411428726,
@@ -854,7 +854,7 @@
     {
       "payload": "array",
       "operation": "stringify",
-      "adapter": "codegen-standalone",
+      "adapter": "golem-standalone",
       "support": "full",
       "opsPerSec": {
         "median": 6569.837612726496,
@@ -876,7 +876,7 @@
     {
       "payload": "checkout",
       "operation": "stringify",
-      "adapter": "codegen-standalone",
+      "adapter": "golem-standalone",
       "support": "full",
       "opsPerSec": {
         "median": 351260.60865809786,
@@ -898,7 +898,7 @@
     {
       "payload": "simple",
       "operation": "validate",
-      "adapter": "codegen-standalone",
+      "adapter": "golem-standalone",
       "support": "full",
       "opsPerSec": {
         "median": 10344020.604961386,
@@ -909,7 +909,7 @@
     {
       "payload": "simple",
       "operation": "validate",
-      "adapter": "codegen-runtime",
+      "adapter": "golem-runtime",
       "support": "full",
       "opsPerSec": {
         "median": 9936037.913432054,
@@ -931,7 +931,7 @@
     {
       "payload": "nested",
       "operation": "validate",
-      "adapter": "codegen-standalone",
+      "adapter": "golem-standalone",
       "support": "full",
       "opsPerSec": {
         "median": 2327554.669899801,
@@ -942,7 +942,7 @@
     {
       "payload": "nested",
       "operation": "validate",
-      "adapter": "codegen-runtime",
+      "adapter": "golem-runtime",
       "support": "full",
       "opsPerSec": {
         "median": 2275177.726010059,
@@ -964,7 +964,7 @@
     {
       "payload": "array",
       "operation": "validate",
-      "adapter": "codegen-standalone",
+      "adapter": "golem-standalone",
       "support": "full",
       "opsPerSec": {
         "median": 32707.693730233874,
@@ -975,7 +975,7 @@
     {
       "payload": "array",
       "operation": "validate",
-      "adapter": "codegen-runtime",
+      "adapter": "golem-runtime",
       "support": "full",
       "opsPerSec": {
         "median": 32660.68936741152,
@@ -997,7 +997,7 @@
     {
       "payload": "checkout",
       "operation": "validate",
-      "adapter": "codegen-standalone",
+      "adapter": "golem-standalone",
       "support": "full",
       "opsPerSec": {
         "median": 7272323.638381801,
@@ -1008,7 +1008,7 @@
     {
       "payload": "checkout",
       "operation": "validate",
-      "adapter": "codegen-runtime",
+      "adapter": "golem-runtime",
       "support": "full",
       "opsPerSec": {
         "median": 7132336.249320277,

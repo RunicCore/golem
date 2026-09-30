@@ -4,10 +4,10 @@ export function prototypeFieldsModelSource(options: {
   readonly mobx: boolean;
 }): SourceFragment {
   const mobxImport = options.mobx
-    ? tsSource`import { asGenObservable } from '@exprtlabs/codegen/mobx';\n`
+    ? tsSource`import { asGenObservable } from '@exprtlabs/golem/mobx';\n`
     : tsSource``;
   const mobxInitialization = options.mobx ? tsSource`\n    asGenObservable(this);` : tsSource``;
-  return tsSource`import type { IModel } from '@exprtlabs/codegen/model';
+  return tsSource`import type { IModel } from '@exprtlabs/golem/model';
 import { ItemBase, type ItemFields } from './item.model.generated.js';
 ${mobxImport}export type TItem = IModel<{
   label: string;

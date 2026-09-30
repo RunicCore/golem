@@ -13,7 +13,7 @@ These examples use this contract, generated as `TasksClient` from the [Tasks exa
 <<< ../../examples/openapi/src/list-tasks.ts#list-titles
 
 - Responses contain the HTTP `status` and decoded `body`, including declared error statuses.
-- Requests and responses are validated when `validation: true` (the default) in `runic-codegen.yaml`.
+- Requests and responses are validated when `validation: true` (the default) in `golem.yaml`.
 - With MobX enabled, each operation exposes observable `loading` state.
 
 ## Create a client
@@ -90,7 +90,7 @@ Network failures reject with the underlying `fetch` error.
 
 ## Observe loading with MobX
 
-Set `mobx: true` in `runic-codegen.yaml`, install `mobx`, and generate again.
+Set `mobx: true` in `golem.yaml`, install `mobx`, and generate again.
 
 <<< ../../examples/combined-mobx/src/loading.ts#loading
 
@@ -111,4 +111,4 @@ For a header parameter declared in the API document, use the operation's `header
 
 Check `controller.signal.aborted` before rethrowing a caught error; a failure unrelated to the abort should still propagate.
 
-Full example: [`examples/openapi`](https://github.com/exprtlabs/codegen/tree/main/examples/openapi)
+Full example: [`examples/openapi`](https://github.com/RunicCore/golem/tree/master/examples/openapi)

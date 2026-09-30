@@ -1,5 +1,5 @@
 // #region object-and-model
-import type { IModel, IObject } from '@exprtlabs/codegen/model';
+import type { IModel, IObject } from '@exprtlabs/golem/model';
 import { NotebookBase } from './note.model.generated.js';
 
 export type TNote = IObject<{ text: string }>;

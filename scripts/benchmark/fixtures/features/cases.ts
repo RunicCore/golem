@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { registerIModelClass, requireObjectCodec } from '@exprtlabs/codegen/serde';
+import { registerIModelClass, requireObjectCodec } from '@exprtlabs/golem/serde';
 import {
   Address,
   Checkout,
@@ -330,7 +330,7 @@ export async function createFixtures(validation: boolean): Promise<readonly Fixt
   assert.ok(draft instanceof TaggedAccess);
   assert.ok(draft.member instanceof TaggedMember);
   if (validation) {
-    const { getValidator } = await import('@exprtlabs/codegen/validation');
+    const { getValidator } = await import('@exprtlabs/golem/validation');
     assert.equal(await getValidator(draft).validate(), false);
   } else {
     assert.equal(draft.permissions, 4);

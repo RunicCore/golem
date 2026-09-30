@@ -8,7 +8,7 @@ import { tsSource } from './source-template.js';
 import { generate } from '#model/generator';
 
 const modelProject = (t: Parameters<typeof createModelProject>[0]) => createModelProject(t, {
-  prefix: 'runic-model-field-names-',
+  prefix: 'golem-model-field-names-',
   name: 'model-field-names',
 });
 
@@ -18,7 +18,7 @@ function prototypeDiagnostic(field: string): string {
 
 test('model generation rejects Object.prototype-colliding data fields across validation profiles', t => {
   const { root, sourceRoot } = createModelProject(t, {
-    prefix: 'runic-model-field-names-',
+    prefix: 'golem-model-field-names-',
     name: 'model-field-names',
     compilerOptions: { exactOptionalPropertyTypes: true, noUncheckedIndexedAccess: true },
   });
@@ -47,7 +47,7 @@ test('model generation rejects Object.prototype-colliding data fields across val
   ] as const;
   for (const scenario of cases) {
     fs.writeFileSync(source, [
-      "import type { IModel } from '@exprtlabs/codegen/model';",
+      "import type { IModel } from '@exprtlabs/golem/model';",
       scenario.declaration,
       '',
     ].join('\n'));
@@ -59,7 +59,7 @@ test('model generation rejects Object.prototype-colliding data fields across val
     );
   }
   fs.writeFileSync(source, [
-    "import type { IModel } from '@exprtlabs/codegen/model';",
+    "import type { IModel } from '@exprtlabs/golem/model';",
     'export type TBad = IModel<{ valueOf?: string }>;',
     '',
   ].join('\n'));
@@ -71,7 +71,7 @@ test('model generation rejects Object.prototype-colliding data fields across val
   );
 
   fs.writeFileSync(source, [
-    "import type { IModel } from '@exprtlabs/codegen/model';",
+    "import type { IModel } from '@exprtlabs/golem/model';",
     'export type TMethods = IModel<{ toString(): string; hasOwnProperty(name: PropertyKey): boolean }>;',
     '',
   ].join('\n'));
@@ -82,7 +82,7 @@ test('generated model API members are rejected before emitting companions', (t) 
   const { root, sourceRoot } = modelProject(t);
   const source = path.join(sourceRoot, 'dollar-validator.model.ts');
   writeModelSources(sourceRoot, {
-    'dollar-validator.model.ts': tsSource`import type { IModel } from '@exprtlabs/codegen/model';
+    'dollar-validator.model.ts': tsSource`import type { IModel } from '@exprtlabs/golem/model';
 export type TValidator = IModel<{ '$validator': string }>;
 `,
   });

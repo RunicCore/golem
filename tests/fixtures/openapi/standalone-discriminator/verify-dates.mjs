@@ -1,6 +1,6 @@
 // Runs inside a generated SDK: an allOf variant inherits a date-time field from
 // its base, and the discriminated union selects the variant.
-import { decodeGeneratedModel } from '@exprtlabs/codegen/conversion';
+import { decodeGeneratedModel } from '@exprtlabs/golem/conversion';
 import * as models from './dist/index.js';
 
 const { fromWireFormatPayment, fromWireFormatCardPayment, fromWireFormatPaymentBase, parsePayment, parseCardPayment,

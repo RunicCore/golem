@@ -1,6 +1,6 @@
 // #region model-definition
-import type { IModel } from '@exprtlabs/codegen/model';
-import { asGenObservable } from '@exprtlabs/codegen/mobx';
+import type { IModel } from '@exprtlabs/golem/model';
+import { asGenObservable } from '@exprtlabs/golem/mobx';
 import { action, computed } from 'mobx';
 import { TaskBase } from './task.model.generated.js';
 

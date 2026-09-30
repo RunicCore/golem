@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { cloneConversionInput, decodeGeneratedModel, decodeGeneratedModelTrusted, encodeGeneratedModel } from '@exprtlabs/codegen/conversion';
-import { parseJson } from '@exprtlabs/codegen/serde';
-import { registerGeneratedModel, type GeneratedModel } from '@exprtlabs/codegen/model';
-import { LibError, LibErrorKind, IssueCode, IssueSource, IssueRepresentation } from '@exprtlabs/codegen/errors';
+import { cloneConversionInput, decodeGeneratedModel, decodeGeneratedModelTrusted, encodeGeneratedModel } from '@exprtlabs/golem/conversion';
+import { parseJson } from '@exprtlabs/golem/serde';
+import { registerGeneratedModel, type GeneratedModel } from '@exprtlabs/golem/model';
+import { LibError, LibErrorKind, IssueCode, IssueSource, IssueRepresentation } from '@exprtlabs/golem/errors';
 
 function cycleAt(path: readonly (string | number)[]): (error: unknown) => boolean {
   return error => {

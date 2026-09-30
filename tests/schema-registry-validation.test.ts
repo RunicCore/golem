@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { LibError } from '@exprtlabs/codegen/errors';
-import { createRegistryOperationValidators, createRegistryValidators, type RuntimeValidationEngine, type RuntimeValidator } from '@exprtlabs/codegen/validation';
+import { LibError } from '@exprtlabs/golem/errors';
+import { createRegistryOperationValidators, createRegistryValidators, type RuntimeValidationEngine, type RuntimeValidator } from '@exprtlabs/golem/validation';
 
 function recordingEngine(missing: ReadonlySet<string> = new Set()): RuntimeValidationEngine & { added: string[] } {
   const added: string[] = [];
