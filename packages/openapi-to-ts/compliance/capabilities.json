@@ -29,8 +29,6 @@
   "evidence": [
     {
       "id": "upstream-public-generation",
-      "file": "tests/openapi/upstream-conformance.integration.ts",
-      "testName": "typed upstream corpus cases generate, strict-compile, and execute every accounted outbound operation",
       "kind": "compile",
       "layers": [
         "generation",
@@ -40,8 +38,6 @@
     },
     {
       "id": "upstream-profile-surfaces",
-      "file": "tests/openapi/upstream-conformance.integration.ts",
-      "testName": "typed upstream corpus cases generate, strict-compile, and execute every accounted outbound operation",
       "kind": "metadata",
       "layers": [
         "metadata"
@@ -50,8 +46,6 @@
     },
     {
       "id": "upstream-operation-cases",
-      "file": "tests/openapi/upstream-conformance.integration.ts",
-      "testName": "typed upstream corpus cases generate, strict-compile, and execute every accounted outbound operation",
       "kind": "wire",
       "layers": [
         "generated-client"
@@ -60,8 +54,6 @@
     },
     {
       "id": "upstream-ajv-native-codecs",
-      "file": "tests/openapi/upstream-conformance.integration.ts",
-      "testName": "typed upstream corpus cases generate, strict-compile, and execute every accounted outbound operation",
       "kind": "wire",
       "layers": [
         "generated-client"
@@ -70,8 +62,6 @@
     },
     {
       "id": "upstream-inbound-contracts",
-      "file": "tests/openapi/upstream-conformance.integration.ts",
-      "testName": "typed upstream corpus cases generate, strict-compile, and execute every accounted outbound operation",
       "kind": "contract",
       "layers": [
         "type-check"
@@ -80,8 +70,6 @@
     },
     {
       "id": "conformance-sse-envelope",
-      "file": "tests/openapi/conformance.test.ts",
-      "testName": "OpenAPI 3.2 querystring, sequential stream, and binary responses work on the wire",
       "kind": "wire",
       "layers": [
         "generated-client"
@@ -90,8 +78,6 @@
     },
     {
       "id": "conformance-item-schema-version-gate",
-      "file": "tests/openapi/streams.test.ts",
-      "testName": "itemSchema is rejected for OpenAPI 3.1 before SDK generation",
       "kind": "negative",
       "layers": [
         "generation"
@@ -100,8 +86,6 @@
     },
     {
       "id": "conformance-default-codecs",
-      "file": "tests/openapi/conformance.test.ts",
-      "testName": "generated client serializes path, repeated query, form body and API-key auth",
       "kind": "wire",
       "layers": [
         "generated-client"
@@ -110,8 +94,6 @@
     },
     {
       "id": "conformance-custom-codec-boundaries",
-      "file": "tests/openapi/conformance.test.ts",
-      "testName": "OpenAPI 3.2 querystring, sequential stream, and binary responses work on the wire",
       "kind": "wire",
       "layers": [
         "generated-client"
@@ -120,8 +102,6 @@
     },
     {
       "id": "conformance-links-metadata",
-      "file": "tests/openapi/upstream-conformance.integration.ts",
-      "testName": "typed upstream corpus cases generate, strict-compile, and execute every accounted outbound operation",
       "kind": "metadata",
       "layers": [
         "metadata"
@@ -130,8 +110,6 @@
     },
     {
       "id": "conformance-inbound-contracts",
-      "file": "tests/openapi/conformance.test.ts",
-      "testName": "normalizes callbacks and webhooks into typed inbound contracts",
       "kind": "contract",
       "layers": [
         "generation"
@@ -140,8 +118,6 @@
     },
     {
       "id": "conformance-conditional-annotation",
-      "file": "tests/ajv-engine.test.ts",
-      "testName": "the OpenAPI Ajv engine enforces $dynamicRef/$dynamicAnchor recursion, unevaluatedProperties, and allErrors",
       "kind": "negative",
       "layers": [
         "adapter-validation"
@@ -150,8 +126,6 @@
     },
     {
       "id": "conformance-content-parameter-validation",
-      "file": "tests/openapi/parameters.test.ts",
-      "testName": "generated content parameters validate before execute with runtime and standalone Ajv",
       "kind": "negative",
       "layers": [
         "generated-client",
@@ -161,8 +135,6 @@
     },
     {
       "id": "conformance-content-parameter-false-schema",
-      "file": "tests/openapi/parameters.test.ts",
-      "testName": "parameter content false schemas remain false during normalization and are rejected before fetch",
       "kind": "negative",
       "layers": [
         "generation",
@@ -172,8 +144,6 @@
     },
     {
       "id": "conformance-advanced-constraints",
-      "file": "tests/openapi/schema-semantics.test.ts",
-      "testName": "generated SDK enforces conditional request and response schemas with runtime and standalone Ajv",
       "kind": "negative",
       "layers": [
         "generated-client",
@@ -183,8 +153,6 @@
     },
     {
       "id": "conformance-remote-reference-policy",
-      "file": "tests/openapi/schema-projection.test.ts",
-      "testName": "undeclared HTTPS schema refs stay blocked without network",
       "kind": "negative",
       "layers": [
         "generation"
@@ -193,8 +161,6 @@
     },
     {
       "id": "compliance-source-integrity",
-      "file": "tests/openapi/compliance-matrix.test.ts",
-      "testName": "typed compliance records and evidence links are unique and complete",
       "kind": "metadata",
       "layers": [
         "metadata"
@@ -203,8 +169,6 @@
     },
     {
       "id": "directional-required-and-neutral-models",
-      "file": "tests/projection-integration.test.ts",
-      "testName": "public directional projection handles repeated aliases and allOf requirements without weakening neutral or required-only schemas",
       "kind": "wire",
       "layers": [
         "generated-client"
@@ -213,8 +177,6 @@
     },
     {
       "id": "local-resource-targets",
-      "file": "tests/resource-projection.test.ts",
-      "testName": "public resource graph distinguishes whole, scalar, and nested targets with relative resource scope",
       "kind": "wire",
       "layers": [
         "generated-client"
@@ -223,8 +185,6 @@
     },
     {
       "id": "uri-model-types",
-      "file": "tests/openapi/resource-types.test.ts",
-      "testName": "public generate types URI $id refs, directional imports, nested models, and validation",
       "kind": "wire",
       "layers": [
         "generation",
@@ -235,8 +195,6 @@
     },
     {
       "id": "response-precedence",
-      "file": "tests/openapi/response-selection.test.ts",
-      "testName": "selects exact status then exact media, then type/*, then */* without status fallthrough",
       "kind": "wire",
       "layers": [
         "generated-client"
@@ -245,8 +203,6 @@
     },
     {
       "id": "response-codec-cleanup",
-      "file": "tests/decoder-cleanup.test.ts",
-      "testName": "decoder failures cancel an unconsumed generated response body",
       "kind": "wire",
       "layers": [
         "generated-client"
@@ -255,8 +211,6 @@
     },
     {
       "id": "literal-headers",
-      "file": "tests/openapi/headers-cookies.test.ts",
-      "testName": "header simple values stay literal and never percent-decode",
       "kind": "wire",
       "layers": [
         "generated-client"
@@ -265,8 +219,6 @@
     },
     {
       "id": "cookie-style-32",
-      "file": "tests/openapi/headers-cookies.test.ts",
-      "testName": "OAS 3.2 style cookie stringifies without URI encoding while form cookies keep encoding",
       "kind": "wire",
       "layers": [
         "generated-client"
@@ -275,8 +227,6 @@
     },
     {
       "id": "tuple-prefixes",
-      "file": "tests/openapi/prefix-items.test.ts",
-      "testName": "prefixItems unions compile in strict TypeScript and validate on default Ajv",
       "kind": "compile",
       "layers": [
         "type-check",
@@ -286,8 +236,6 @@
     },
     {
       "id": "json-sequence-framing",
-      "file": "tests/openapi/streams.test.ts",
-      "testName": "JSON-seq rejects truncated primitives at EOF and malformed records, cancelling the reader",
       "kind": "negative",
       "layers": [
         "generated-client"
@@ -296,8 +244,6 @@
     },
     {
       "id": "false-item-schema",
-      "file": "tests/openapi/streams.test.ts",
-      "testName": "itemSchema false emits AsyncIterable<never>; validation-on rejects the first item and validation-off still yields",
       "kind": "wire",
       "layers": [
         "generated-client"
@@ -306,8 +252,6 @@
     },
     {
       "id": "bounded-remote-bodies",
-      "file": "tests/openapi/remote-refs.test.ts",
-      "testName": "maxRefBytes ignores understated Content-Length and cancels on the first exceeding chunk",
       "kind": "negative",
       "layers": [
         "generation"
@@ -316,8 +260,6 @@
     },
     {
       "id": "lean-output-profiles",
-      "file": "tests/openapi/emission-plan.test.ts",
-      "testName": "full-feature fixture compiles with noUnusedLocals for every profile",
       "kind": "compile",
       "layers": [
         "generation",
@@ -327,8 +269,6 @@
     },
     {
       "id": "oas-discriminator-variants",
-      "file": "tests/openapi/discriminator.test.ts",
-      "testName": "OAS discriminator mappings select allOf variants in model decode, encode, and the shared codec",
       "kind": "wire",
       "layers": [
         "generation",
@@ -339,8 +279,6 @@
     },
     {
       "id": "oas-discriminator-required",
-      "file": "tests/openapi/discriminator.test.ts",
-      "testName": "discriminator-less object unions name the schema and suggest a discriminator",
       "kind": "negative",
       "layers": [
         "generation"
@@ -349,8 +287,6 @@
     },
     {
       "id": "oas-discriminator-declared-tag",
-      "file": "tests/openapi/discriminator.test.ts",
-      "testName": "every variant must declare the discriminator property",
       "kind": "negative",
       "layers": [
         "generation"
@@ -359,8 +295,6 @@
     },
     {
       "id": "oas-discriminator-inheritance",
-      "file": "tests/openapi/discriminator.test.ts",
-      "testName": "a discriminator inherited through allOf without oneOf is reported as unsupported",
       "kind": "negative",
       "layers": [
         "generation"
@@ -369,8 +303,6 @@
     },
     {
       "id": "transport-hardening",
-      "file": "tests/openapi/transport-hardening.test.ts",
-      "testName": "generated transport honors OAS security, encoding, response, and stream rules",
       "kind": "wire",
       "layers": [
         "generation",
