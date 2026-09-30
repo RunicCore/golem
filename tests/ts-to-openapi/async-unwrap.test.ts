@@ -2,7 +2,7 @@ import { createFixtureProject, writeGeneratedArtifacts } from '../fixture-projec
 import assert from 'node:assert/strict';
 import path from 'node:path';
 import test from 'node:test';
-import * as ts from '@exprtlabs/codegen/ts';
+import * as ts from '@exprtlabs/golem/ts';
 import { unwrapAsyncType } from '#controllers/nest/analysis-utils';
 
 test('unwrapAsyncType keeps the type argument node only when the syntax spells the wrapper', t => {

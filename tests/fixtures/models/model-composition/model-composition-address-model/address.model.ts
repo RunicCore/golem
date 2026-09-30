@@ -1,6 +1,6 @@
 
-import type { IModel } from '@exprtlabs/codegen/model';
-import type { MinLength } from '@exprtlabs/codegen/tags';
+import type { IModel } from '@exprtlabs/golem/model';
+import type { MinLength } from '@exprtlabs/golem/tags';
 import { AddressBase, CustomerBase } from './address.model.generated.js';
 export type TAddress = IModel<{ id: string; city: string & MinLength<2>; country?: string }>;
 type Identity<T> = T;

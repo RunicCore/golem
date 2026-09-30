@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { autorun, isObservableProp } from 'mobx';
-import { asGenObservable } from '@exprtlabs/codegen/mobx';
-import { fromWireFormat, toWireFormat } from '@exprtlabs/codegen/serde';
+import { asGenObservable } from '@exprtlabs/golem/mobx';
+import { fromWireFormat, toWireFormat } from '@exprtlabs/golem/serde';
 import { createTask, saveTask } from './task-app.js';
 import { Task } from './task.model.js';
 import type { TTask } from './task.model.js';

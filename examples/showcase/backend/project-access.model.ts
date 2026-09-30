@@ -1,6 +1,6 @@
 // #region backend-model
-import type { IModel } from '@exprtlabs/codegen/model';
-import type { Format, MinLength } from '@exprtlabs/codegen/tags';
+import type { IModel } from '@exprtlabs/golem/model';
+import type { Format, MinLength } from '@exprtlabs/golem/tags';
 import type { PermissionBits, ProjectName } from '../src/access-rules.js';
 import {
   MemberBase,

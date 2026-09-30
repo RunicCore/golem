@@ -17,7 +17,7 @@ These calls convert a named [`IObject` or `IModel`](/guide/models#iobject-or-imo
 <<< ../../examples/model/src/read-json.ts#read-json
 
 ::: info ttsc
-`parse`, `stringify`, `fromWireFormat` and `toWireFormat` throw unless `@exprtlabs/codegen/ttsc-plugin` rewrites them. Compile with TypeScript 7 and `ttsc` 0.30.x; `tsc` does not run that transform.
+`parse`, `stringify`, `fromWireFormat` and `toWireFormat` throw unless `@exprtlabs/golem/ttsc-plugin` rewrites them. Compile with TypeScript 7 and `ttsc` 0.30.x; `tsc` does not run that transform.
 :::
 
 - The type argument selects the model.
@@ -26,7 +26,7 @@ These calls convert a named [`IObject` or `IModel`](/guide/models#iobject-or-imo
 
 With validation on, the default, these calls check the value with Ajv. `{ validate: false }` skips that check. `failFast: false` reports every issue instead of the first one. It does not turn Ajv off.
 
-`validate<T>(value)` from `@exprtlabs/codegen/validation` narrows `value` to that model. `validateInstance(model)` returns the issue list and does not throw for an ordinary invalid value.
+`validate<T>(value)` from `@exprtlabs/golem/validation` narrows `value` to that model. `validateInstance(model)` returns the issue list and does not throw for an ordinary invalid value.
 
 `parse<TMoney>` returns a plain object; `parse<Task>` returns a `Task`.
 `new Task(parse<TTask>(text))` parses an IObject and passes it to the `Task` constructor; use it when the constructor takes extra arguments. Nested fields follow the field type, not the root type argument.

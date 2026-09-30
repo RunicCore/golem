@@ -1,5 +1,5 @@
 
-import type { IModel } from '@exprtlabs/codegen/model';
+import type { IModel } from '@exprtlabs/golem/model';
 import { EmailBase, PhoneBase, ContactBookBase } from './contacts.model.generated.js';
 export type TEmail = IModel<{ kind: 'email'; address: string }>;
 export type TPhone = IModel<{ kind: 'phone'; number: string }>;

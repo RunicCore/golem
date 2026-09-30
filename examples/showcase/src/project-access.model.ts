@@ -1,5 +1,5 @@
 // #region model-definition
-import type { IModel } from '@exprtlabs/codegen/model';
+import type { IModel } from '@exprtlabs/golem/model';
 import type { ProjectAccess } from '../sdk/index.js';
 import { ProjectAccessEditorBase } from './project-access.model.generated.js';
 import { WRITE_PERMISSION, type PermissionBits, type ProjectName } from './access-rules.js';

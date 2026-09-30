@@ -9,11 +9,11 @@
     "start": "runic-codegen check && ttsc && node .build/src/main.js"
   },
   "dependencies": {
-    "@exprtlabs/codegen": "1.0.0-rc",
+    "@exprtlabs/golem": "1.0.0-rc",
     "mobx": "^6.16.1"
   },
   "devDependencies": {
-    "@exprtlabs/model-codegen": "1.0.0-rc",
+    "@exprtlabs/golem-model": "1.0.0-rc",
     "typescript": "7.x",
     "ttsc": "0.30.x",
     "@types/node": "22.20.1"

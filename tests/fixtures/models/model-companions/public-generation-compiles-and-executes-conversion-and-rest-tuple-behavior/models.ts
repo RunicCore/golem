@@ -1,6 +1,6 @@
-import { registerGeneratedModel } from "@exprtlabs/codegen/model";
-import { createOpenApiSyncAjvEngine } from "@exprtlabs/codegen/ajv";
-import { ajvIssues, createObjectCodec, registerIModelClass, requireAjvSchema, resolveGeneratedModelSchemaRefs, serdeFailFast, validationFailure, IssueRepresentation } from "@exprtlabs/codegen/serde";
+import { registerGeneratedModel } from "@exprtlabs/golem/model";
+import { createOpenApiSyncAjvEngine } from "@exprtlabs/golem/ajv";
+import { ajvIssues, createObjectCodec, registerIModelClass, requireAjvSchema, resolveGeneratedModelSchemaRefs, serdeFailFast, validationFailure, IssueRepresentation } from "@exprtlabs/golem/serde";
 export class MoneyModel {
   public currency = "USD";
   public amount = 0;

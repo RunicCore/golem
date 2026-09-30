@@ -3,9 +3,9 @@ import { writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import test from 'node:test';
-import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/codegen/conversion';
-import { LibError, LibErrorKind } from '@exprtlabs/codegen/errors';
-import { getValidator } from '@exprtlabs/codegen/validation';
+import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/golem/conversion';
+import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
+import { getValidator } from '@exprtlabs/golem/validation';
 import { createFixtureProject } from '../fixture-project.js';
 import {
   compileGeneratedSdk,

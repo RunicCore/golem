@@ -1,5 +1,5 @@
-import type { IModel } from '@exprtlabs/codegen/model';
-import type { TSerde, TValidation } from '@exprtlabs/codegen/tags';
+import type { IModel } from '@exprtlabs/golem/model';
+import type { TSerde, TValidation } from '@exprtlabs/golem/tags';
 import type { Money as WireMoney } from '../sdk/index.js';
 
 export const positive = (value: number): boolean | string => value > 0 || 'Use a positive count';
@@ -13,7 +13,7 @@ export type TCart = IModel<{
   code: number & TSerde<typeof encode, typeof decode>;
 }>;
 
-import { asGenObservable } from '@exprtlabs/codegen/mobx';
+import { asGenObservable } from '@exprtlabs/golem/mobx';
 import { CartBase, type CartInit } from './cart.model.generated.js';
 
 export class Cart extends CartBase {

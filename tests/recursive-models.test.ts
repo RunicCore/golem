@@ -3,14 +3,14 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import test, { type TestContext } from 'node:test';
-import type { CodegenProfile } from '@exprtlabs/codegen/generator-api';
+import type { CodegenProfile } from '@exprtlabs/golem/generator-api';
 import { generate } from '#model/generator';
 import { writeGeneratedArtifacts } from './fixture-project.js';
 import { compileModelProject, createModelProject, writeModelSources } from './model-project.js';
 import { ttscEnv } from './support/process.js';
 
 const sources = {
-  'tree.model.ts': `import type { IModel } from '@exprtlabs/codegen/model';
+  'tree.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
 import { NodeBase, LeftBase, RightBase } from './tree.model.generated.js';
 export type TNode = IModel<{ at: Date; children: TNode[] }>;
 export type TLeft = IModel<{ at: Date; right?: TRight }>;

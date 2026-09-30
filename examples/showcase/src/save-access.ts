@@ -1,5 +1,5 @@
 // #region api-operations
-import { toWireFormat } from '@exprtlabs/codegen/serde';
+import { toWireFormat } from '@exprtlabs/golem/serde';
 import type { ProjectAccessClientPort } from '../sdk/index.js';
 import type { ProjectAccessEditor, TProjectAccessEditor } from './project-access.model.js';
 import type { ProjectAccessEditorJSON } from './project-access.model.generated.js';

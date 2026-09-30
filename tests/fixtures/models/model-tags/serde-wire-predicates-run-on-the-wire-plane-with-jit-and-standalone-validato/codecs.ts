@@ -1,4 +1,4 @@
-import type { TValidation } from '@exprtlabs/codegen/tags';
+import type { TValidation } from '@exprtlabs/golem/tags';
 export let modelCalls = 0;
 export let wireCalls = 0;
 export let encodeCalls = 0;

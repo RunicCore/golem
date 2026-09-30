@@ -37,9 +37,9 @@ after(async () => {
 for (const standalone of [false, true]) {
   test(`packed browser executes reusable APIs, nested MobX models and custom codecs with standalone=${standalone}`, async t => {
     const root = registry.create(t, `browser-${standalone}`);
-    await npm(root, ['install', '--save-dev', packageSpec(registry, '@exprtlabs/model-codegen'), packageSpec(registry, '@exprtlabs/openapi-to-ts')]);
+    await npm(root, ['install', '--save-dev', packageSpec(registry, '@exprtlabs/golem-model'), packageSpec(registry, '@exprtlabs/golem-openapi')]);
     if (standalone) await npm(root, ['install', '--save-dev', ESBUILD]);
-    await npm(root, ['install', '--save-prod', packageSpec(registry, '@exprtlabs/codegen'), MOBX]);
+    await npm(root, ['install', '--save-prod', packageSpec(registry, '@exprtlabs/golem'), MOBX]);
     await npm(root, ['install', standalone ? '--save-dev' : '--save-prod', AJV, AJV_FORMATS]);
     writeFixture(root, { mobx: true, validation: true, ajvStandalone: standalone });
     const apiFile = path.join(root, 'api.json');
@@ -54,7 +54,7 @@ for (const standalone of [false, true]) {
     copyFixtureFile(root, 'browser/packed-runtime/src/browser.ts', 'src/browser.ts');
     await command(root, path.join(root, 'node_modules/.bin/ttsc'), ['-p', 'tsconfig.json']);
     await npm(root, ['prune', '--omit=dev'], { includeOptional: false });
-    for (const name of ['typescript', '@exprtlabs/model-codegen', '@exprtlabs/openapi-to-ts', ...(standalone ? ['ajv', 'ajv-formats', 'esbuild'] : [])]) {
+    for (const name of ['typescript', '@exprtlabs/golem-model', '@exprtlabs/golem-openapi', ...(standalone ? ['ajv', 'ajv-formats', 'esbuild'] : [])]) {
       assert.equal(fs.existsSync(path.join(root, 'node_modules', name)), false, `${name} is not an application dependency`);
     }
     const bundled = await build({ entryPoints: [path.join(root, 'build/src/browser.js')], bundle: true, platform: 'browser', format: 'esm', write: false, metafile: true });

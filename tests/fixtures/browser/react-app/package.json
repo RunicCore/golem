@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "dependencies": {
-    "@exprtlabs/codegen": "rc",
+    "@exprtlabs/golem": "rc",
     "ajv": "8.20.0",
     "ajv-formats": "3.0.1",
     "mobx": "6.16.1",
@@ -13,8 +13,8 @@
     "react-dom": "18.3.1"
   },
   "devDependencies": {
-    "@exprtlabs/model-codegen": "rc",
-    "@exprtlabs/openapi-to-ts": "rc",
+    "@exprtlabs/golem-model": "rc",
+    "@exprtlabs/golem-openapi": "rc",
     "@types/node": "22.20.1",
     "@types/react": "18.3.31",
     "@types/react-dom": "18.3.7",

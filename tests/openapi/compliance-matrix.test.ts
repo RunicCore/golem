@@ -10,8 +10,8 @@ import {
   OPENAPI_VERSIONS,
   PROFILE_IDS,
   validateCapabilitySource,
-} from '../../packages/openapi-to-ts/compliance/capabilities.js';
-import { renderComplianceMatrix } from '../../packages/openapi-to-ts/compliance/generate-matrix.js';
+} from '../../packages/golem-openapi/compliance/capabilities.js';
+import { renderComplianceMatrix } from '../../packages/golem-openapi/compliance/generate-matrix.js';
 import { assertCaseTableIntegrity, INBOUND_CONTRACT_CASES, UPSTREAM_OPERATION_CASES } from './compliance-cases.js';
 import { repoRoot } from './helpers.js';
 import { buildSupportProjection, consumerCapabilityRecords } from '../../scripts/support-projection.js';
@@ -56,11 +56,11 @@ test('typed compliance records and evidence links are unique and complete', () =
 });
 
 test('standalone OpenAPI compliance matrix and distributable metadata match the typed source', () => {
-  const script = path.join(repoRoot(), '.build/packages/openapi-to-ts/compliance/generate-matrix.js');
+  const script = path.join(repoRoot(), '.build/packages/golem-openapi/compliance/generate-matrix.js');
   const result = spawnSync(process.execPath, [script, '--check'], { encoding: 'utf8' });
   assert.equal(result.status, 0, result.stderr || result.stdout);
 
-  const metadataFilename = path.join(repoRoot(), 'packages/openapi-to-ts/compliance/capabilities.json');
+  const metadataFilename = path.join(repoRoot(), 'packages/golem-openapi/compliance/capabilities.json');
   const metadata: unknown = JSON.parse(readFileSync(metadataFilename, 'utf8'));
   assert.ok(typeof metadata === 'object' && metadata !== null && !Array.isArray(metadata));
   if (typeof metadata === 'object' && metadata !== null) {
@@ -68,7 +68,7 @@ test('standalone OpenAPI compliance matrix and distributable metadata match the 
     assert.ok(Array.isArray(records));
     assert.ok(records.every((record) => typeof record === 'object' && record !== null && !Array.isArray(record)));
   }
-  assert.equal(existsSync(path.join(repoRoot(), 'packages/openapi-to-ts/capabilities.json')), false);
+  assert.equal(existsSync(path.join(repoRoot(), 'packages/golem-openapi/capabilities.json')), false);
 
   const matrix = renderComplianceMatrix();
   assert.match(matrix, /\| Feature \| Version \| Surface \| MobX \| Validation \| Status \| Limitations \|/);

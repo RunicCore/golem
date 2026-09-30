@@ -3,15 +3,15 @@
   "files": {
     "src/generated/models/iobject-plugin-keys.ts": {
       "job": "models:.",
-      "owner": "@exprtlabs/model-codegen",
-      "digest": "9d18717e9e6625b452ba493eaac73399c8ad072f34229aecb5480425fe5c0b2a",
+      "owner": "@exprtlabs/golem-model",
+      "digest": "3c22759bb013dd60f4b1e97cbdfbf4cfb2c360a82efde763f2feec3345e67904",
       "destination": "src/generated/models",
       "destinationKind": "directory"
     },
     "src/task.model.generated.ts": {
       "job": "models:.",
-      "owner": "@exprtlabs/model-codegen",
-      "digest": "79b46e353955a627debb80a6f560fc8318321fc9d6363ad714e9fc69689e2e33",
+      "owner": "@exprtlabs/golem-model",
+      "digest": "a7b54e802b7e59c538f1ebfaa46e4464e062fc912d4c2c90642d9e45ce127f04",
       "destination": "src",
       "destinationKind": "directory"
     }

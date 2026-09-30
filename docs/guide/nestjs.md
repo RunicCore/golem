@@ -21,12 +21,12 @@ export class PaymentsController {
 }
 ```
 
-`@exprtlabs/ts-to-openapi` reads this file; it doesn't start Nest or call handlers. NestJS 11 is supported.
+`@exprtlabs/golem-ts-openapi` reads this file; it doesn't start Nest or call handlers. NestJS 11 is supported.
 
 ## Install
 
 ```sh
-npm install --save-dev @exprtlabs/ts-to-openapi@rc typescript@~7.0.2 ttsc@~0.30.4
+npm install --save-dev @exprtlabs/golem-ts-openapi@rc typescript@~7.0.2 ttsc@~0.30.4
 npm install @nestjs/swagger
 ```
 
@@ -98,8 +98,8 @@ Add an OpenAPI job that reads `./api/openapi.yaml` ([Generate a client](/guide/c
 ### Install the client and runtime packages
 
 ```sh
-npm install --save-dev @exprtlabs/openapi-to-ts@rc @exprtlabs/model-codegen@rc
-npm install @exprtlabs/codegen@rc ajv ajv-formats reflect-metadata
+npm install --save-dev @exprtlabs/golem-openapi@rc @exprtlabs/golem-model@rc
+npm install @exprtlabs/golem@rc ajv ajv-formats reflect-metadata
 ```
 
 <<< ../../examples/nest-openapi/src/client.ts#payment-client
@@ -113,7 +113,7 @@ Add these options to the `tsconfig.json` from [Quick start](/guide/quick-start).
   "compilerOptions": {
     "experimentalDecorators": true,
     "emitDecoratorMetadata": true,
-    "plugins": [{ "transform": "@exprtlabs/codegen/ttsc-plugin", "nest": true }]
+    "plugins": [{ "transform": "@exprtlabs/golem/ttsc-plugin", "nest": true }]
   }
 }
 ```

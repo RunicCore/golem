@@ -95,7 +95,7 @@ const pack: Step = { label: 'pack', run: () => run(process.execPath, ['.build/sc
 const prepareSteps: Step[] = [
   pack,
   { label: 'warm', run: () => run(process.execPath, ['.build/scripts/test-warm.js']) },
-  { label: 'goModules', run: () => run(goBinary(), ['mod', 'download'], path.join(root, 'packages/codegen/plugin'), { GOTOOLCHAIN: 'local' }) },
+  { label: 'goModules', run: () => run(goBinary(), ['mod', 'download'], path.join(root, 'packages/golem/plugin'), { GOTOOLCHAIN: 'local' }) },
 ];
 
 function steps(tier: Tier, args: readonly string[], native: boolean): Step[] {
@@ -116,7 +116,7 @@ function steps(tier: Tier, args: readonly string[], native: boolean): Step[] {
   if (tier === 'full') return native ? full : [...full, pack, nodeTest('packed smoke', [SMOKE_FILE], TEST_TIMEOUT_MS.full, 1)];
   return [
     { label: 'public source', run: () => run(process.execPath, ['.build/scripts/public-source.js', 'check']) },
-    { label: 'OpenAPI compliance', run: () => run(process.execPath, ['.build/packages/openapi-to-ts/compliance/generate-matrix.js', '--check']) },
+    { label: 'OpenAPI compliance', run: () => run(process.execPath, ['.build/packages/golem-openapi/compliance/generate-matrix.js', '--check']) },
     ...steps('full', args, false),
     nodeTest('acceptance unit', ACCEPTANCE_UNIT_FILES, TEST_TIMEOUT_MS.acceptance, CONCURRENCY.unit),
     nodeTest('packed', PACKED_FILES, TEST_TIMEOUT_MS.acceptance, CONCURRENCY.packed),

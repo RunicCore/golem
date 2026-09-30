@@ -47,7 +47,7 @@ test('ttsc with the codegen plugin reports TypeScript errors with code and line:
 
 test('model generation reports source type errors with path:line:col and TS code', (t) => {
   const { root, sourceRoot } = createModelProject(t, { prefix: 'runic-generate-diagnostics-', linkTypescript: true });
-  fs.writeFileSync(path.join(sourceRoot, 'broken.model.ts'), `import type { IModel } from '@exprtlabs/codegen/model';
+  fs.writeFileSync(path.join(sourceRoot, 'broken.model.ts'), `import type { IModel } from '@exprtlabs/golem/model';
 const wrong: string = 5;
 export type TBroken = IModel<{ id: string }>;
 export { wrong };

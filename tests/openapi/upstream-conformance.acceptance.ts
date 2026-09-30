@@ -6,12 +6,12 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
-import { LibError, LibErrorKind, IssueSource } from '@exprtlabs/codegen/errors';
+import { LibError, LibErrorKind, IssueSource } from '@exprtlabs/golem/errors';
 import {
   GENERATION_PROFILES,
   PROFILE_IDS,
-} from '../../packages/openapi-to-ts/compliance/capabilities.js';
-import { generate, loadValidatedDocument, normalizeDocument } from '@exprtlabs/openapi-to-ts/generator';
+} from '../../packages/golem-openapi/compliance/capabilities.js';
+import { generate, loadValidatedDocument, normalizeDocument } from '@exprtlabs/golem-openapi/generator';
 import {
   assertCaseTableIntegrity,
   caseKey,

@@ -4,7 +4,7 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import test, { type TestContext } from 'node:test';
 
-import { IssueRepresentation, LibError, LibErrorKind } from '@exprtlabs/codegen/errors';
+import { IssueRepresentation, LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 import { generate } from '#model/generator';
 import { command, workspace } from './support/process.js';
 
@@ -19,7 +19,7 @@ async function compile(root: string): Promise<void> {
 function generateRoot(t: TestContext): string {
   const root = createFixtureProject(t, 'runic-union-serde-');
   linkProjectPackages(root, {
-    '@exprtlabs/codegen': path.join(workspace, 'packages/codegen'),
+    '@exprtlabs/golem': path.join(workspace, 'packages/golem'),
     typescript: path.join(workspace, 'node_modules/typescript'),
     ttsc: path.join(workspace, 'node_modules/ttsc'),
   });

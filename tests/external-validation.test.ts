@@ -10,16 +10,16 @@ import {
   type generatedModelFieldsBrand,
   type generatedModelWireBrand,
   type ModelTypeDescriptor,
-} from '@exprtlabs/codegen/model';
+} from '@exprtlabs/golem/model';
 import { installCodecModel } from './register-codec-model.js';
-import { enhanceValidatorWithMobX } from '@exprtlabs/codegen/mobx-validation';
+import { enhanceValidatorWithMobX } from '@exprtlabs/golem/mobx-validation';
 import {
   getValidator,
   validateInstance,
   type ModelValidator,
-} from '@exprtlabs/codegen/validation';
-import { LibError, LibErrorKind } from '@exprtlabs/codegen/errors';
-import { encodeGeneratedModel } from '@exprtlabs/codegen/conversion';
+} from '@exprtlabs/golem/validation';
+import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
+import { encodeGeneratedModel } from '@exprtlabs/golem/conversion';
 
 type NumberModel = GeneratedModel<{ value: number }, { value: number }>;
 

@@ -12,7 +12,7 @@ function fixture(t: TestContext) {
   const root = createFixtureProject(t, 'runic-validator-transition-');
 
   linkProjectPackages(root, Object.fromEntries(
-    ['codegen', 'model-codegen', 'openapi-to-ts'].map(name => [`@exprtlabs/${name}`, path.join(workspace, 'packages', name)]),
+    ['golem', 'golem-model', 'golem-openapi'].map(name => [`@exprtlabs/${name}`, path.join(workspace, 'packages', name)]),
   ));
   fs.writeFileSync(path.join(root, 'package.json'), '{"type":"module"}');
   writeFixture(root, { mobx: false, validation: true });
@@ -59,7 +59,7 @@ test('JIT to standalone inventory interruption recovers and switching back retir
 
 test('watch regenerates SDK then frontend through both validator modes without output loops', async t => {
   const setup = fixture(t);
-  const child = spawn(process.execPath, [path.join(workspace, 'packages/codegen/dist/bin/runic-codegen.js'), 'watch', '--config', setup.config], {
+  const child = spawn(process.execPath, [path.join(workspace, 'packages/golem/dist/bin/runic-codegen.js'), 'watch', '--config', setup.config], {
     cwd: setup.root, stdio: ['ignore', 'pipe', 'pipe'],
   });
   let output = '';

@@ -15,7 +15,7 @@ function fixture(t: TestContext): { root: string; config: string } {
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'runic-watch-recovery-')));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   fs.mkdirSync(path.join(root, 'node_modules/@exprtlabs'), { recursive: true });
-  for (const name of ['codegen', 'model-codegen', 'openapi-to-ts']) {
+  for (const name of ['golem', 'golem-model', 'golem-openapi']) {
     fs.symlinkSync(path.join(workspace, 'packages', name), path.join(root, 'node_modules/@exprtlabs', name), 'dir');
   }
   fs.writeFileSync(path.join(root, 'package.json'), '{"name":"watch-recovery-fixture","type":"module"}');
@@ -126,7 +126,7 @@ test('watch keeps model dependencies outside the models root after a run that re
   const shared = path.join(root, 'shared/note.ts');
   fs.writeFileSync(shared, 'export type Note = { text: string };\n');
   fs.writeFileSync(path.join(app, 'src/cart.model.ts'), [
-    "import type { IModel } from '@exprtlabs/codegen/model';",
+    "import type { IModel } from '@exprtlabs/golem/model';",
     "import type { Note } from '../../shared/note.js';",
     '',
     'export type TCart = IModel<{ note: Note }>;',
@@ -206,7 +206,7 @@ test('watch reuses one compiler across edits and tsconfig path-mapping changes',
   const companion = path.join(root, 'src/cart.model.generated.ts');
   const generated = (): string => fs.existsSync(companion) ? fs.readFileSync(companion, 'utf8') : '';
 
-  const binary = path.join(workspace, 'packages/codegen/dist/bin/runic-codegen.js');
+  const binary = path.join(workspace, 'packages/golem/dist/bin/runic-codegen.js');
   const child = spawn(process.execPath, [binary, 'watch', '--config', config], { cwd: root, stdio: ['ignore', 'pipe', 'pipe'] });
   let stdout = '';
   let stderr = '';

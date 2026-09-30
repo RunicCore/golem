@@ -39,7 +39,7 @@ Every other file in an SDK is internal and may change in a minor release. Do not
 - `iobject-plugin-keys.ts`
 - `model-manifest.json`
 
-The generator no longer writes `validation.ts`, `client-runtime.ts` or `models.ts`. Their code lives in `@exprtlabs/codegen`.
+The generator no longer writes `validation.ts`, `client-runtime.ts` or `models.ts`. Their code lives in `@exprtlabs/golem`.
 
 ## Derived type names
 
@@ -78,4 +78,4 @@ The id of a codec is the model name plus eight hex characters. The hash covers t
 
 ## Runtime version
 
-Install `@exprtlabs/codegen` at or above the version of each generator package the configuration uses, with the same major version. `generate`, `check`, `exec` and `watch` compare the installed `@exprtlabs/codegen` with each of those generator packages and fail before they write when the runtime is older or has a different major version. The message names both packages and versions. The SDK manifest records `runtime.minimumVersion` for reference.
+Install `@exprtlabs/golem` at or above the version of each generator package the configuration uses, with the same major version. `generate`, `check`, `exec` and `watch` compare the installed `@exprtlabs/golem` with each of those generator packages and fail before they write when the runtime is older or has a different major version. The message names both packages and versions. The SDK manifest records `runtime.minimumVersion` for reference.

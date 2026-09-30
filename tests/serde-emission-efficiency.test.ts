@@ -5,8 +5,8 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import test, { type TestContext } from 'node:test';
 
-import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/codegen/conversion';
-import type { GeneratedModel } from '@exprtlabs/codegen/model';
+import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/golem/conversion';
+import type { GeneratedModel } from '@exprtlabs/golem/model';
 import { generateModels } from '#openapi/models';
 import { writeSdk } from '#openapi/generator';
 import { generate } from '#model/generator';
@@ -80,7 +80,7 @@ test('model generation preserves imported model identity and detached JSON outpu
   const walletModule = await import(pathToFileURL(path.join(value.root, 'build/wallet.model.js')).href) as {
     readonly Wallet: new (values?: { money?: object }) => object;
   };
-  const serde = await import('@exprtlabs/codegen/serde');
+  const serde = await import('@exprtlabs/golem/serde');
   const wallet = await decodeGeneratedModel(walletModule.Wallet, {
     money: { amount: 7, currency: 'USD' },
   }) as { readonly money: object };
@@ -303,7 +303,7 @@ test('OpenAPI decoder leaves scalar fields in the initializer copy', () => {
 
 test('nested local models decode from the already isolated input without copying it again', async (t) => {
   const value = fixture(t);
-  writeFileSync(path.join(value.sourceRoot, 'team.model.ts'), `import type { IModel } from '@exprtlabs/codegen/model';
+  writeFileSync(path.join(value.sourceRoot, 'team.model.ts'), `import type { IModel } from '@exprtlabs/golem/model';
 import { MemberBase, StampBase, TeamBase } from './team.model.generated.js';
 export type TStamp = IModel<{ time: number }>;
 export class Stamp extends StampBase {}
@@ -324,7 +324,7 @@ export class Team extends TeamBase {}
   const { Team } = await import(pathToFileURL(path.join(value.root, 'build/team.model.js')).href);
   // Nested values are the generated classes; a model file's own subclasses aren't visible to its companion.
   const { MemberBase: Member, StampBase: Stamp } = await import(pathToFileURL(path.join(value.root, 'build/team.model.generated.js')).href);
-  const { requireObjectCodec } = await import('@exprtlabs/codegen/serde');
+  const { requireObjectCodec } = await import('@exprtlabs/golem/serde');
   const input = { lead: { name: 'Ada', joined: { time: 1 } }, members: [{ name: 'Lin', joined: { time: 2 } }] };
   const codec = requireObjectCodec<InstanceType<typeof Team>>('Team');
   for (const team of [codec.fromWireFormat(input, { construct: Team }), codec.parse(JSON.stringify(input), { construct: Team })] as Record<string, any>[]) {

@@ -1,6 +1,6 @@
 
 import { Body, Controller, Post } from '@nestjs/common';
-import type { IModel } from '@exprtlabs/codegen/model';
+import type { IModel } from '@exprtlabs/golem/model';
 
 export type TAddress = IModel<{ id: string; city: string }>;
 export type TEnvelope = IModel<{

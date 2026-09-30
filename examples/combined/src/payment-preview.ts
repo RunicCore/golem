@@ -1,5 +1,5 @@
 // #region payment-example
-import { toWireFormat } from '@exprtlabs/codegen/serde';
+import { toWireFormat } from '@exprtlabs/golem/serde';
 import { PaymentEditor } from './payment-editor.model.js';
 import type { TPaymentEditor } from './payment-editor.model.js';
 
@@ -11,8 +11,8 @@ export function editPayment(report: (summary: string) => void = console.log) {
 }
 // #endregion payment-example
 
-import { fromWireFormat } from '@exprtlabs/codegen/serde';
-import { validateInstance } from '@exprtlabs/codegen/validation';
+import { fromWireFormat } from '@exprtlabs/golem/serde';
+import { validateInstance } from '@exprtlabs/golem/validation';
 
 export async function validateAndCorrectPayment() {
   // #region load-from-wire

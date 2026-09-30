@@ -1,6 +1,6 @@
 // #region server-errors
 import { TaskInput } from './task-input.model.js';
-import { getValidator } from '@exprtlabs/codegen/validation';
+import { getValidator } from '@exprtlabs/golem/validation';
 
 export function checkServerErrors() {
   const task = new TaskInput({ title: 'Write release notes', done: false });

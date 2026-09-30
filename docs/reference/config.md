@@ -65,7 +65,7 @@ representability checks or generation diagnostics.
 
 ## Controller jobs
 
-Install `@exprtlabs/ts-to-openapi` to use `controllers`. A job reads static
+Install `@exprtlabs/golem-ts-openapi` to use `controllers`. A job reads static
 NestJS controller contracts; it does not start Nest or reproduce module
 registration. Use `sources` when discovery should include only selected
 controllers.
@@ -123,7 +123,7 @@ objects, dictionaries and nullable form values are rejected.
 The generator assembles local and allowed remote `$ref`s into one document. Schemas from other files become components named after their path, such as `schemas/user.json` → `schemas.user` (model `SchemasUser`). A root component that is only a `$ref` to an external file, such as `components.schemas.Money: { $ref: './money.json' }`, keeps its own name; a root component with a `$ref` plus other keys is not an alias, so its target still gets the path-based name. Two sources that produce the same name fail generation, naming both locations.
 :::
 
-Install `@exprtlabs/openapi-to-ts` to use `openapi`. Each job reads one YAML or
+Install `@exprtlabs/golem-openapi` to use `openapi`. Each job reads one YAML or
 JSON document and writes one SDK directory.
 
 | Key | Type | Required | Default | Meaning |
@@ -146,7 +146,7 @@ it generated earlier that are no longer produced.
 
 ## TypeScript models {#typescript-models}
 
-Install `@exprtlabs/model-codegen` to use `models`.
+Install `@exprtlabs/golem-model` to use `models`.
 
 | Key | Type | Required | Default | Meaning |
 | --- | --- | --- | --- | --- |

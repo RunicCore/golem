@@ -1,6 +1,6 @@
 import { computed, makeObservable, observable, runInAction } from 'mobx';
-import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/codegen/conversion';
-import { getValidator } from '@exprtlabs/codegen/validation';
+import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/golem/conversion';
+import { getValidator } from '@exprtlabs/golem/validation';
 import {
   MoneyModel,
   PaymentsClient,

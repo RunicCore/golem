@@ -5,15 +5,15 @@ import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 import { autorun } from 'mobx';
 
-import type * as ModelModule from '@exprtlabs/codegen/model';
-import type * as ValidationModule from '@exprtlabs/codegen/validation';
-import type * as AjvModule from '@exprtlabs/codegen/ajv';
-import type * as MobxModule from '@exprtlabs/codegen/mobx';
-import type * as MobxValidationModule from '@exprtlabs/codegen/mobx-validation';
+import type * as ModelModule from '@exprtlabs/golem/model';
+import type * as ValidationModule from '@exprtlabs/golem/validation';
+import type * as AjvModule from '@exprtlabs/golem/ajv';
+import type * as MobxModule from '@exprtlabs/golem/mobx';
+import type * as MobxValidationModule from '@exprtlabs/golem/mobx-validation';
 import { installCodecModel } from './register-codec-model.js';
-import type { GeneratedModelValidatorEnhancer, ModelTypeDescriptor } from '@exprtlabs/codegen/model';
+import type { GeneratedModelValidatorEnhancer, ModelTypeDescriptor } from '@exprtlabs/golem/model';
 
-const distRoot = dirname(fileURLToPath(import.meta.resolve('@exprtlabs/codegen/model')));
+const distRoot = dirname(fileURLToPath(import.meta.resolve('@exprtlabs/golem/model')));
 
 async function runtime(name: 'model'): Promise<typeof ModelModule>;
 async function runtime(name: 'validation'): Promise<typeof ValidationModule>;

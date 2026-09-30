@@ -4,8 +4,8 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import test, { type TestContext } from 'node:test';
 
-import { requireObjectCodec } from '@exprtlabs/codegen/serde';
-import { createSchemaGraph } from '@exprtlabs/codegen/schema-graph';
+import { requireObjectCodec } from '@exprtlabs/golem/serde';
+import { createSchemaGraph } from '@exprtlabs/golem/schema-graph';
 import { command } from './support/process.js';
 import { generatedCodecId } from './support/consumer.js';
 import { copyFixture, readFixture, writeGeneratedArtifacts } from './fixture-project.js';

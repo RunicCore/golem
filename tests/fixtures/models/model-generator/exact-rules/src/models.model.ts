@@ -1,4 +1,4 @@
-import type { IModel } from '@exprtlabs/codegen/model';
+import type { IModel } from '@exprtlabs/golem/model';
 
 export type TMetadata = IModel<{ source: string }>;
 export type TPayment = IModel<{

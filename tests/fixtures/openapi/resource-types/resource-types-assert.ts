@@ -8,7 +8,7 @@ import type {
   GetEmbeddedOperationSuccessBody,
 } from './types.js';
 import { EnvelopeModel, ScopeUserModel, UserModel } from './index.js';
-import { decodeGeneratedModel } from '@exprtlabs/codegen/conversion';
+import { decodeGeneratedModel } from '@exprtlabs/golem/conversion';
 
 const requestUser: InputSchemas.User = { id: 'u1', secret: 's' };
 const replyUser: OutputSchemas.User = { id: 'u1', serverValue: 'ok' };

@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { copyFileSync, cpSync, mkdirSync, symlinkSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { generate } from '@exprtlabs/model-codegen/generator';
+import { generate } from '@exprtlabs/golem-model/generator';
 import type { ProjectKind } from './cases.js';
 import { copyGeneratedJavascript, generateFeatureMoneySdk } from './generate-sdk.js';
 

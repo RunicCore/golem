@@ -13,10 +13,10 @@ import { generate } from '#model/generator';
 import { readFixture, writeGeneratedArtifacts } from './fixture-project.js';
 import { compileModelProject, createModelProject, type ModelProject } from './model-project.js';
 import { duplicateLocalNameReferenceModelSource } from './fixture-templates/models/model-artifact-efficiency.js';
-import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/codegen/conversion';
-import { IssueCode, IssueRepresentation, LibError, LibErrorKind } from '@exprtlabs/codegen/errors';
-import { findCodecIdForConstructor, requireObjectCodec } from '@exprtlabs/codegen/serde';
-import { getValidator } from '@exprtlabs/codegen/validation';
+import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/golem/conversion';
+import { IssueCode, IssueRepresentation, LibError, LibErrorKind } from '@exprtlabs/golem/errors';
+import { findCodecIdForConstructor, requireObjectCodec } from '@exprtlabs/golem/serde';
+import { getValidator } from '@exprtlabs/golem/validation';
 import { generatedCodecIdFromRoot } from './support/consumer.js';
 
 function fixture(t: TestContext, options: { readonly noUnusedLocals?: boolean } = {}) {
@@ -98,7 +98,7 @@ test('codec Ajv compiles equivalent MinLength tags in each companion', async (t)
       const { Item } = await import(`${pathToFileURL(path.join(fixtureValue.root, 'build/item.model.js')).href}?${ajvStandalone}`) as {
         Item: new (values?: { value?: string; extra?: string }) => { value: string; extra: string };
       };
-      const { getValidator } = await import('@exprtlabs/codegen/validation');
+      const { getValidator } = await import('@exprtlabs/golem/validation');
       const valid = new Item({ value: 'ab', extra: 'wxyz' });
       const invalid = new Item({ value: 'x', extra: 'wxyz' });
       assert.equal(await getValidator(valid).validate(), true);

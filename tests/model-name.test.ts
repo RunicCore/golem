@@ -2,10 +2,10 @@ import assert from 'node:assert/strict';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import test from 'node:test';
-import { codecShortName } from '@exprtlabs/codegen/schema-graph';
+import { codecShortName } from '@exprtlabs/golem/schema-graph';
 
 // modelName is internal to the built package; load it from dist instead of compiling package source into the tests.
-const distRoot = dirname(fileURLToPath(import.meta.resolve('@exprtlabs/codegen/model')));
+const distRoot = dirname(fileURLToPath(import.meta.resolve('@exprtlabs/golem/model')));
 const { modelName } = await import(pathToFileURL(join(distRoot, 'model-name.js')).href) as {
   readonly modelName: (aliasName: string) => string;
 };

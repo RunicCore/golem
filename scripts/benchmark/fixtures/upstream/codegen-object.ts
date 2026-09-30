@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
-import { LibError, LibErrorKind } from '@exprtlabs/codegen/errors';
-import { requireObjectCodec, type ObjectCodec } from '@exprtlabs/codegen/serde';
+import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
+import { requireObjectCodec, type ObjectCodec } from '@exprtlabs/golem/serde';
 import type { Adapter, ComparisonFixture } from './fixture-contract.js';
 import './codegen.object.model.generated.js';
 import { createCodegenObjectFeatureFixtures } from './comparison-features-codegen-object.js';

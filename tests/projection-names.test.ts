@@ -20,7 +20,7 @@ test('keys become identifier parts, and keys without ASCII letters or digits giv
   assert.equal(pascalIdentifier('--'), undefined);
 });
 
-const MODELS = `import type { IModel } from '@exprtlabs/codegen/model';
+const MODELS = `import type { IModel } from '@exprtlabs/golem/model';
 export type TMerchant = IModel<{ id: string; name: string; city: string; 'first-name': string }>;
 export type TMoney = IModel<{ amount: string; currency: string }>;
 // A shape of its own: the same shape as another field in one document would share that field's schema and name.
@@ -103,7 +103,7 @@ test('adding an unrelated model and route leaves existing projection names uncha
 
 test('two different shapes that derive the same name fail with RUNM1059', async t => {
   const source = `import { Body, Controller, Post } from '@nestjs/common';
-import type { IModel } from '@exprtlabs/codegen/model';
+import type { IModel } from '@exprtlabs/golem/model';
 import type { TMerchant as TOtherMerchant } from './other.model.js';
 export type TMerchant = IModel<{ id: string; name: string }>;
 export type TOrder = IModel<{ a: Omit<TMerchant, 'id'>; b: Omit<TOtherMerchant, 'id'> }>;
@@ -112,7 +112,7 @@ export type TOrder = IModel<{ a: Omit<TMerchant, 'id'>; b: Omit<TOtherMerchant, 
   const root = createControllerFixture(t, {
     prefix: 'runic-projection-clash-', packageName: 'projection-clash-fixture',
     sourceFile: 'src/order.controller.ts', source,
-    files: { 'src/other.model.ts': "import type { IModel } from '@exprtlabs/codegen/model';\nexport type TMerchant = IModel<{ id: string; total: number }>;\n" },
+    files: { 'src/other.model.ts': "import type { IModel } from '@exprtlabs/golem/model';\nexport type TMerchant = IModel<{ id: string; total: number }>;\n" },
   });
   await assert.rejects(generate({
     root, output: path.join(root, 'api.json'), openapiVersion: '3.2.0',
@@ -138,8 +138,8 @@ async function documentOf(t: TestContext, source: string, files: Record<string, 
 }
 
 const PRELUDE = `import { Body, Controller, Post } from '@nestjs/common';
-import type { IModel } from '@exprtlabs/codegen/model';
-import type { Pattern } from '@exprtlabs/codegen/tags';
+import type { IModel } from '@exprtlabs/golem/model';
+import type { Pattern } from '@exprtlabs/golem/tags';
 `;
 const ROUTE = (body: string, result: string): string => `@Controller('orders')
 export class OrderController { @Post() save(@Body() body: ${body}): ${result} { return body; } }
@@ -178,7 +178,7 @@ export type TMerchant = IModel<{ id: string; name: string }>;
 export type TOrder = IModel<{ a: Omit<TMerchant, 'id'>; b: Omit<TOtherMerchant, 'id'> }>;
 ${ROUTE('TOrder', 'TOrder')}`;
   await assert.rejects(generateSource(t, source, {
-    'src/other.model.ts': "import type { IModel } from '@exprtlabs/codegen/model';\nimport type { Pattern } from '@exprtlabs/codegen/tags';\nexport type TMerchant = IModel<{ id: string; name: string & Pattern<'^x$'> }>;\n",
+    'src/other.model.ts': "import type { IModel } from '@exprtlabs/golem/model';\nimport type { Pattern } from '@exprtlabs/golem/tags';\nexport type TMerchant = IModel<{ id: string; name: string & Pattern<'^x$'> }>;\n",
   }), /RUNM1059.*used by two different types: .*order\.controller\.ts:\d+:\d+ and .*order\.controller\.ts:\d+:\d+/);
 });
 
@@ -285,13 +285,13 @@ function variantShapes(schemas: Schemas, prefix: string): Record<string, string[
 }
 
 const SPLIT_MODELS = {
-  'src/b-merchant.ts': "import type { IModel } from '@exprtlabs/codegen/model';\nexport type TMerchant = IModel<{ id: string; name: string }>;\n",
-  'src/a-money.ts': "import type { IModel } from '@exprtlabs/codegen/model';\nexport type TMoney = IModel<{ amount: string }>;\n",
+  'src/b-merchant.ts': "import type { IModel } from '@exprtlabs/golem/model';\nexport type TMerchant = IModel<{ id: string; name: string }>;\n",
+  'src/a-money.ts': "import type { IModel } from '@exprtlabs/golem/model';\nexport type TMoney = IModel<{ amount: string }>;\n",
 };
 
 function eitherController(union: string): string {
   return `import { Body, Controller, Post } from '@nestjs/common';
-import type { IModel } from '@exprtlabs/codegen/model';
+import type { IModel } from '@exprtlabs/golem/model';
 import type { TMerchant } from './b-merchant.js';
 import type { TMoney } from './a-money.js';
 export type TOrder = IModel<{ either: ${union} }>;

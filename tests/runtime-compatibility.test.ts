@@ -9,8 +9,8 @@ test('release versions order by number, and a prerelease precedes its release', 
   assert.equal(compareReleaseVersions('1.0.0', '1.0.0'), 0);
 });
 
-const runtime = (version: string) => ({ name: '@exprtlabs/codegen', version });
-const generator = (version: string) => ({ name: '@exprtlabs/openapi-to-ts', version });
+const runtime = (version: string) => ({ name: '@exprtlabs/golem', version });
+const generator = (version: string) => ({ name: '@exprtlabs/golem-openapi', version });
 
 test('a runtime at or above the generator version in the same major passes', () => {
   assertRuntimeCompatible(runtime('1.0.0-rc'), generator('1.0.0-rc'));
@@ -19,7 +19,7 @@ test('a runtime at or above the generator version in the same major passes', () 
 
 test('an older runtime fails and names both versions', () => {
   assert.throws(() => assertRuntimeCompatible(runtime('1.0.0-rc'), generator('1.0.0')),
-    /@exprtlabs\/codegen 1\.0\.0-rc is older than @exprtlabs\/openapi-to-ts 1\.0\.0/);
+    /@exprtlabs\/golem 1\.0\.0-rc is older than @exprtlabs\/golem-openapi 1\.0\.0/);
 });
 
 test('a different major fails', () => {

@@ -9,7 +9,7 @@
     "start": "runic-codegen check && ttsc && node .build/src/main.js"
   },
   "dependencies": {
-    "@exprtlabs/codegen": "1.0.0-rc",
+    "@exprtlabs/golem": "1.0.0-rc",
     "ajv": "^8.20.0",
     "ajv-formats": "^3.0.1",
     "@nestjs/common": "11.2.3",
@@ -20,9 +20,9 @@
     "rxjs": "7.8.2"
   },
   "devDependencies": {
-    "@exprtlabs/model-codegen": "1.0.0-rc",
-    "@exprtlabs/openapi-to-ts": "1.0.0-rc",
-    "@exprtlabs/ts-to-openapi": "1.0.0-rc",
+    "@exprtlabs/golem-model": "1.0.0-rc",
+    "@exprtlabs/golem-openapi": "1.0.0-rc",
+    "@exprtlabs/golem-ts-openapi": "1.0.0-rc",
     "typescript": "7.x",
     "ttsc": "0.30.x",
     "@types/node": "22.20.1"

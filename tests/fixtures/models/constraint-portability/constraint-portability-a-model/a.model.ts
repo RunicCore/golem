@@ -1,6 +1,6 @@
 
-import type { IModel } from '@exprtlabs/codegen/model';
-import type { Contains, IfThenElse, MaxContains, Not, OneOf, TValidation, UnevaluatedProperties } from '@exprtlabs/codegen/tags';
+import type { IModel } from '@exprtlabs/golem/model';
+import type { Contains, IfThenElse, MaxContains, Not, OneOf, TValidation, UnevaluatedProperties } from '@exprtlabs/golem/tags';
 import { positive, negative } from './rules.js';
 import { ABase } from './a.model.generated.js';
 type Positive = number & TValidation<typeof positive>;

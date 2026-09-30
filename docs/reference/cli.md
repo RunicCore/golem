@@ -1,6 +1,6 @@
 # CLI
 
-The `runic-codegen` command comes from `@exprtlabs/codegen`. Run it from the
+The `runic-codegen` command comes from `@exprtlabs/golem`. Run it from the
 directory that contains `runic-codegen.yaml`. It resolves the configuration,
 runs the configured generators, and writes their artifacts to the configured
 destinations. The inventory (`.runic-codegen/outputs.json`) records which

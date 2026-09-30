@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import test from 'node:test';
-import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/codegen/conversion';
+import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/golem/conversion';
 import { generate } from '#model/generator';
 import { copyFixtureFile, writeGeneratedArtifacts } from './fixture-project.js';
 import { compileModelProject, createModelProject } from './model-project.js';

@@ -6,18 +6,18 @@ import { spawnSync } from 'node:child_process';
 import test, { type TestContext } from 'node:test';
 import { autorun, observable, runInAction } from 'mobx';
 
-import { LibError, LibErrorKind } from '@exprtlabs/codegen/errors';
-import * as model from '@exprtlabs/codegen/model';
-import * as validation from '@exprtlabs/codegen/validation';
-import * as mobxRuntime from '@exprtlabs/codegen/mobx';
-import * as mobxValidation from '@exprtlabs/codegen/mobx-validation';
-import * as emitter from '@exprtlabs/codegen/emitter';
+import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
+import * as model from '@exprtlabs/golem/model';
+import * as validation from '@exprtlabs/golem/validation';
+import * as mobxRuntime from '@exprtlabs/golem/mobx';
+import * as mobxValidation from '@exprtlabs/golem/mobx-validation';
+import * as emitter from '@exprtlabs/golem/emitter';
 import { installCodecModel } from './register-codec-model.js';
 import { copyFixtureFile, createFixtureProject, linkProjectPackages } from './fixture-project.js';
 import { workspace } from './support/process.js';
-import * as manifest from '@exprtlabs/codegen/manifest';
+import * as manifest from '@exprtlabs/golem/manifest';
 
-const distRoot = dirname(fileURLToPath(import.meta.resolve('@exprtlabs/codegen/model')));
+const distRoot = dirname(fileURLToPath(import.meta.resolve('@exprtlabs/golem/model')));
 const packageRoot = dirname(distRoot);
 
 test('model guards recognize registered constructors and subclasses without treating plain payloads as models', () => {
@@ -237,7 +237,7 @@ test('structural validation delegates nested generated-model validation', async 
 });
 
 test('Ajv integration registers the OpenAPI engine without changing validation imports', async () => {
-  const ajv = await import('@exprtlabs/codegen/ajv');
+  const ajv = await import('@exprtlabs/golem/ajv');
   assert.equal(typeof ajv.createOpenApiAjvEngine, 'function');
   assert.equal(typeof ajv.configureModelValidationEngine, 'function');
 
@@ -298,7 +298,7 @@ test('Ajv integration registers the OpenAPI engine without changing validation i
 });
 
 test('MobX runtime preserves observation and shares validator identity', async () => {
-  const ajv = await import('@exprtlabs/codegen/ajv');
+  const ajv = await import('@exprtlabs/golem/ajv');
   assert.equal(typeof ajv.createOpenApiAjvEngine, 'function');
 
   const registry = {
@@ -427,7 +427,7 @@ test('model manifests validate profile and keep identity independent of profile'
 test('pure runtime entrypoints load in an application without optional integrations', (t: TestContext) => {
   const root = createFixtureProject(t, 'runic-runtime-entrypoints-');
 
-  linkProjectPackages(root, { '@exprtlabs/codegen': join(workspace, 'packages/codegen') });
+  linkProjectPackages(root, { '@exprtlabs/golem': join(workspace, 'packages/golem') });
   fs.writeFileSync(join(root, 'package.json'), '{"type":"module"}');
   copyFixtureFile(root, 'pipeline/runtime-entrypoints/verify.mjs', 'verify.mjs');
   const result = spawnSync(process.execPath, ['verify.mjs'], {

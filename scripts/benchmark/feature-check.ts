@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { copyFileSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { generate } from '@exprtlabs/model-codegen/generator';
+import { generate } from '@exprtlabs/golem-model/generator';
 import { MODES, type Mode } from './fixture-contract.js';
 import { copyGeneratedJavascript, generateFeatureMoneySdk } from './generate-sdk.js';
 import { root } from './project.js';
@@ -20,7 +20,7 @@ function prepare(directory: string, mode: Mode): string {
   writeFileSync(path.join(project, 'tsconfig.json'), JSON.stringify({
     compilerOptions: {
       target: 'ES2022', module: 'NodeNext', moduleResolution: 'NodeNext', strict: true, skipLibCheck: true,
-      rootDir: 'src', outDir: 'build', types: ['node'], plugins: [{ transform: '@exprtlabs/codegen/ttsc-plugin' }],
+      rootDir: 'src', outDir: 'build', types: ['node'], plugins: [{ transform: '@exprtlabs/golem/ttsc-plugin' }],
     },
     include: ['src/**/*.ts'],
   }));

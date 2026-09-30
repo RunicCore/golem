@@ -11,8 +11,8 @@ The generated class builds the `money` field as the SDK's runtime class, `MoneyM
 ## Install
 
 ```sh
-npm install @exprtlabs/codegen@rc ajv ajv-formats
-npm install --save-dev @exprtlabs/model-codegen@rc @exprtlabs/openapi-to-ts@rc typescript@~7.0.2 ttsc@~0.30.4
+npm install @exprtlabs/golem@rc ajv ajv-formats
+npm install --save-dev @exprtlabs/golem-model@rc @exprtlabs/golem-openapi@rc typescript@~7.0.2 ttsc@~0.30.4
 ```
 
 Add the ttsc plugin to `tsconfig.json` and compile with `npx ttsc` ([TypeScript setup](/guide/install#typescript-setup)). Include both `src/**/*.ts` and the generated `sdk/**/*.ts` in your TypeScript program.

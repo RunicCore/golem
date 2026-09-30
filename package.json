@@ -1,5 +1,5 @@
 {
-  "name": "exprtlabs-codegen-workspace",
+  "name": "golem-workspace",
   "private": true,
   "version": "1.0.0-rc",
   "type": "module",
@@ -12,7 +12,7 @@
     "node": ">=22.15.0"
   },
   "scripts": {
-    "build": "ttsc -p packages/codegen/tsconfig.runtime.json && ttsc -p packages/codegen/tsconfig.tooling.json && ttsc -p packages/model-codegen/tsconfig.json && ttsc -p packages/openapi-to-ts/tsconfig.json && ttsc -p packages/ts-to-openapi/tsconfig.json",
+    "build": "ttsc -p packages/golem/tsconfig.runtime.json && ttsc -p packages/golem/tsconfig.tooling.json && ttsc -p packages/golem-model/tsconfig.json && ttsc -p packages/golem-openapi/tsconfig.json && ttsc -p packages/golem-ts-openapi/tsconfig.json",
     "build:tests": "npm run build && npm run build:scripts && node .build/scripts/clean-tests.js && ttsc -p tsconfig.tests.json",
     "build:scripts": "ttsc -p tsconfig.scripts.json",
     "vendor:openapi-schemas": "npm run build:scripts && node .build/scripts/vendor-openapi-schemas.js",
@@ -26,8 +26,8 @@
     "test:go": "npm run build:scripts && node .build/scripts/test-go-plugin.js",
     "check:react": "npm run check --workspace examples/react-mobx && npm test --workspace examples/react-mobx && npm run build --workspace examples/react-mobx",
     "generate:examples": "npm run build && npm run build:scripts && node .build/scripts/examples.js generate",
-    "generate:openapi-compliance": "npm run build:scripts && node .build/packages/openapi-to-ts/compliance/generate-matrix.js",
-    "check:openapi-compliance": "npm run build:scripts && node .build/packages/openapi-to-ts/compliance/generate-matrix.js --check",
+    "generate:openapi-compliance": "npm run build:scripts && node .build/packages/golem-openapi/compliance/generate-matrix.js",
+    "check:openapi-compliance": "npm run build:scripts && node .build/packages/golem-openapi/compliance/generate-matrix.js --check",
     "docs:dev": "vitepress dev docs",
     "docs:build": "npm run generate:openapi-compliance && vitepress build docs",
     "docs:check": "bash scripts/test-runner/run.sh docs",
@@ -55,10 +55,10 @@
     "zod": "4.6.5"
   },
   "imports": {
-    "#codegen/*": "./packages/codegen/dist/tooling/*.js",
-    "#openapi/*": "./packages/openapi-to-ts/dist/*.js",
-    "#model/*": "./packages/model-codegen/dist/*.js",
-    "#controllers/*": "./packages/ts-to-openapi/dist/*.js"
+    "#codegen/*": "./packages/golem/dist/tooling/*.js",
+    "#openapi/*": "./packages/golem-openapi/dist/*.js",
+    "#model/*": "./packages/golem-model/dist/*.js",
+    "#controllers/*": "./packages/golem-ts-openapi/dist/*.js"
   },
   "description": "Generate OpenAPI from TypeScript controllers and generate TypeScript models and API clients, with validation, serialization and optional MobX integration.",
   "license": "MIT"

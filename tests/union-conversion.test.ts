@@ -2,12 +2,12 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { transformSync } from 'esbuild';
 
-import * as conversion from '@exprtlabs/codegen/conversion';
-import { emitCodecRuntime, emitModelFromInit, emitModelFromJSON, emitModelToJSON } from '@exprtlabs/codegen/emitter';
-import { LibError, LibErrorKind } from '@exprtlabs/codegen/errors';
-import type { DiscriminatorValue, ModelTypeDescriptor } from '@exprtlabs/codegen/model';
-import { createSchemaGraph } from '@exprtlabs/codegen/schema-graph';
-import * as serde from '@exprtlabs/codegen/serde';
+import * as conversion from '@exprtlabs/golem/conversion';
+import { emitCodecRuntime, emitModelFromInit, emitModelFromJSON, emitModelToJSON } from '@exprtlabs/golem/emitter';
+import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
+import type { DiscriminatorValue, ModelTypeDescriptor } from '@exprtlabs/golem/model';
+import { createSchemaGraph } from '@exprtlabs/golem/schema-graph';
+import * as serde from '@exprtlabs/golem/serde';
 import { instantiateRuntime, type RuntimeFunction } from './emitted-runtime.js';
 
 function failsWith(kind: LibErrorKind, message: RegExp): (error: unknown) => boolean {

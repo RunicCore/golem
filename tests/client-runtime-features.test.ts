@@ -7,7 +7,7 @@ import {
   encodeBody,
   serializeContentParameter,
   serializePath,
-} from '@exprtlabs/codegen/client';
+} from '@exprtlabs/golem/client';
 
 const runtime = new ClientRuntime('Tasks', { baseUrl: 'https://api.test' });
 const context = { operation: 'listTasks', name: 'filter', in: 'query', contentType: 'application/x-custom' } as const;

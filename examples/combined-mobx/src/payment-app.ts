@@ -1,5 +1,5 @@
-import { toWireFormat } from '@exprtlabs/codegen/serde';
-import { validateInstance } from '@exprtlabs/codegen/validation';
+import { toWireFormat } from '@exprtlabs/golem/serde';
+import { validateInstance } from '@exprtlabs/golem/validation';
 import { type PaymentsClientPort, type Money } from '../sdk/index.js';
 import { PaymentEditor } from './payment-editor.model.js';
 import type { TPaymentEditor } from './payment-editor.model.js';

@@ -7,7 +7,7 @@ import { generate } from '#model/generator';
 import { writeGeneratedArtifacts } from './fixture-project.js';
 import { builtinTagsModelSource } from './fixture-templates/models/builtin-tags.js';
 import { compileModelProject, createModelProject, writeModelSources } from './model-project.js';
-import { getValidator } from '@exprtlabs/codegen/validation';
+import { getValidator } from '@exprtlabs/golem/validation';
 
 function materializeStandalone(root: string, sourceRoot: string, result: ReturnType<typeof generate>): void {
   const artifact = result.artifacts.find((item) => item.path.endsWith('/models.validators.generated.js'));

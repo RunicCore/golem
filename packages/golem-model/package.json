@@ -1,0 +1,59 @@
+{
+  "name": "@exprtlabs/golem-model",
+  "version": "1.0.0-rc",
+  "description": "Generate TypeScript model bases from IModel definitions",
+  "keywords": [
+    "typescript",
+    "codegen",
+    "models",
+    "imodel",
+    "validation",
+    "serialization"
+  ],
+  "author": "exprtlabs.ai",
+  "license": "MIT",
+  "homepage": "https://exprtlabs.ai",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/exprtlabs/codegen.git",
+    "directory": "packages/golem-model"
+  },
+  "bugs": {
+    "url": "https://github.com/exprtlabs/codegen/issues"
+  },
+  "publishConfig": {
+    "access": "public",
+    "tag": "rc"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=22.15.0"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "exports": {
+    "./generator": {
+      "types": "./dist/generator.d.ts",
+      "import": "./dist/generator.js",
+      "default": "./dist/generator.js"
+    }
+  },
+  "dependencies": {
+    "@exprtlabs/golem": "1.0.0-rc",
+    "ajv": "^8.20.0",
+    "ajv-formats": "^3.0.1",
+    "esbuild": "^0.25.12"
+  },
+  "peerDependencies": {
+    "ttsc": "~0.30.4",
+    "typescript": "~7.0.2"
+  },
+  "scripts": {
+    "build": "ttsc -p tsconfig.json",
+    "clean": "node -e \"for (const target of ['dist', '../../.build/golem-model.tsbuildinfo']) require('node:fs').rmSync(target, { recursive: true, force: true })\"",
+    "prepack": "npm run clean && npm run build && ttsc -p ../../tsconfig.package-check.json && node ../../.build/scripts/verify-package.js ."
+  }
+}

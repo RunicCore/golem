@@ -1,7 +1,7 @@
 // #region model-definition
-import type { IModel } from '@exprtlabs/codegen/model';
-import { asGenObservable } from '@exprtlabs/codegen/mobx';
-import { getValidator } from '@exprtlabs/codegen/validation';
+import type { IModel } from '@exprtlabs/golem/model';
+import { asGenObservable } from '@exprtlabs/golem/mobx';
+import { getValidator } from '@exprtlabs/golem/validation';
 import { action, computed } from 'mobx';
 import type { Money } from '../sdk/index.js';
 import { PaymentEditorBase, type PaymentEditorInit } from './payment-editor.model.generated.js';

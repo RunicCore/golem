@@ -3,8 +3,8 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import test from 'node:test';
 
-import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/codegen/conversion';
-import { getValidator } from '@exprtlabs/codegen/validation';
+import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/golem/conversion';
+import { getValidator } from '@exprtlabs/golem/validation';
 import { generate } from '#model/generator';
 import { writeGeneratedArtifacts } from './fixture-project.js';
 import { compileModelProject, createModelProject, writeModelSources } from './model-project.js';

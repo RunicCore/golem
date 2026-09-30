@@ -13,9 +13,9 @@
     "cpus": 10
   },
   "packages": {
-    "@exprtlabs/codegen": "1.0.0-rc",
-    "@exprtlabs/model-codegen": "1.0.0-rc",
-    "@exprtlabs/openapi-to-ts": "1.0.0-rc",
+    "@exprtlabs/golem": "1.0.0-rc",
+    "@exprtlabs/golem-model": "1.0.0-rc",
+    "@exprtlabs/golem-openapi": "1.0.0-rc",
     "typescript": "7.0.2",
     "typia": "14.0.6",
     "class-transformer": "0.5.1",
@@ -97,7 +97,7 @@
       "id": "codegen-object",
       "group": "plain",
       "label": "Codegen (IObject)",
-      "library": "@exprtlabs/codegen",
+      "library": "@exprtlabs/golem",
       "checked": true,
       "sourceUrl": "https://github.com/exprtlabs/codegen/blob/main/scripts/benchmark/fixtures/upstream/codegen-object.ts"
     },
@@ -121,7 +121,7 @@
       "id": "codegen",
       "group": "classes",
       "label": "Codegen (IModel)",
-      "library": "@exprtlabs/codegen",
+      "library": "@exprtlabs/golem",
       "checked": false,
       "sourceUrl": "https://github.com/exprtlabs/codegen/blob/main/scripts/benchmark/fixtures/upstream/codegen.ts"
     },
@@ -137,7 +137,7 @@
       "id": "codegen-standalone",
       "group": "validated-classes",
       "label": "Codegen (IModel, validated)",
-      "library": "@exprtlabs/codegen",
+      "library": "@exprtlabs/golem",
       "checked": true,
       "sourceUrl": "https://github.com/exprtlabs/codegen/blob/main/scripts/benchmark/fixtures/upstream/codegen.ts"
     },
@@ -145,7 +145,7 @@
       "id": "codegen-runtime",
       "group": "validated-classes",
       "label": "Codegen (IModel, runtime Ajv)",
-      "library": "@exprtlabs/codegen",
+      "library": "@exprtlabs/golem",
       "checked": true,
       "sourceUrl": "https://github.com/exprtlabs/codegen/blob/main/scripts/benchmark/fixtures/upstream/codegen.ts"
     },

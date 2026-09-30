@@ -1,5 +1,5 @@
 // #region payment-client
-import { fromWireFormat } from '@exprtlabs/codegen/serde';
+import { fromWireFormat } from '@exprtlabs/golem/serde';
 import { PaymentsClient } from '../sdk/index.js';
 import { Payment, type TPaymentInput } from './payment.model.js';
 

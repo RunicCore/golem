@@ -1,5 +1,5 @@
-import type { IObject, IModel } from '@exprtlabs/codegen/model';
-import type { Integer, Maximum, Pattern, TSerde } from '@exprtlabs/codegen/tags';
+import type { IObject, IModel } from '@exprtlabs/golem/model';
+import type { Integer, Maximum, Pattern, TSerde } from '@exprtlabs/golem/tags';
 import { PermissionBase } from './permission.model.generated.js';
 export type PermissionWire = string & Pattern<'^0x[0-9a-fA-F]+$'>;
 export function serializePermission(value: number): PermissionWire {

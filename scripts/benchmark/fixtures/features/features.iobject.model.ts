@@ -1,5 +1,5 @@
-import type { IObject } from '@exprtlabs/codegen/model';
-import type { Integer, MinLength, Minimum, TSerde, TValidation } from '@exprtlabs/codegen/tags';
+import type { IObject } from '@exprtlabs/golem/model';
+import type { Integer, MinLength, Minimum, TSerde, TValidation } from '@exprtlabs/golem/tags';
 import type { PermissionBits, ProjectName } from './access-rules.js';
 import type { Email, Money, Phone } from './feature-tags.js';
 import { decodeHex, encodeHex, extraMoney, notBlank, positive } from './feature-tags.js';

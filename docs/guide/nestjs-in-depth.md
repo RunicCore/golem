@@ -31,8 +31,8 @@ Add to your controller:
 Use `TSerde` to store a number in the model and send a string in JSON.
 
 ```ts
-import type { IModel } from '@exprtlabs/codegen/model';
-import type { Minimum, Pattern, TSerde } from '@exprtlabs/codegen/tags';
+import type { IModel } from '@exprtlabs/golem/model';
+import type { Minimum, Pattern, TSerde } from '@exprtlabs/golem/tags';
 
 type DecimalText = string & Pattern<'^[0-9]+(?:\\.[0-9]{1,2})?$'>;
 const writeAmount = (amount: number): DecimalText => amount.toFixed(2);
@@ -72,8 +72,8 @@ with the TypeScript contract and its [validation constraints](/guide/validation#
 Add a model and a controller that use it:
 
 ```ts
-import type { IModel } from '@exprtlabs/codegen/model';
-import type { MinLength } from '@exprtlabs/codegen/tags';
+import type { IModel } from '@exprtlabs/golem/model';
+import type { MinLength } from '@exprtlabs/golem/tags';
 import { PaymentDraftBase } from './payment-draft.model.generated.js';
 
 export type TPaymentDraft = IModel<{ note: string & MinLength<2> }>;
@@ -106,7 +106,7 @@ What happens to a request:
 
 `@Param()`, and a `@Body('field')` or `@Query('field')` that names one field, stay as Nest received them. Interfaces and array element types are erased from Nest metadata; for a collection body, declare a model that contains the array field.
 
-Compile-time recording of these types needs the project settings in [Set up TypeScript](/guide/nestjs#set-up-typescript) and a value import of the model module, so the codec exists before the interceptor runs. The full `@exprtlabs/codegen/nest` import is in the [runtime API](/reference/runtime-api#nest).
+Compile-time recording of these types needs the project settings in [Set up TypeScript](/guide/nestjs#set-up-typescript) and a value import of the model module, so the codec exists before the interceptor runs. The full `@exprtlabs/golem/nest` import is in the [runtime API](/reference/runtime-api#nest).
 
 | Declared return type | Response |
 | --- | --- |

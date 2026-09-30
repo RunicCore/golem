@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { ClientRuntime, type RuntimeResponseContract } from '@exprtlabs/codegen/client';
+import { ClientRuntime, type RuntimeResponseContract } from '@exprtlabs/golem/client';
 
 const RS = '\u001e';
 const NO_VALIDATORS = undefined;

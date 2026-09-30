@@ -44,7 +44,7 @@ test('benchmark fixtures are fair: timed operations do no setup and Typia uses t
 
 test('every timed Codegen case has a timed peer for the same payload and operation in its group', () => {
   const groupOf = new Map(BENCH_ADAPTERS.map(a => [a.id, a.group]));
-  const codegen = new Set(BENCH_ADAPTERS.filter(a => a.library === '@exprtlabs/codegen').map(a => a.id));
+  const codegen = new Set(BENCH_ADAPTERS.filter(a => a.library === '@exprtlabs/golem').map(a => a.id));
   for (const group of GROUPS) {
     for (const [operation, adapters] of Object.entries(group.operations)) {
       if (adapters.length === 0) continue;

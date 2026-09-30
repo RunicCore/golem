@@ -3,14 +3,14 @@ import { dirname, join, resolve, basename, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import { linkProjectPackages, writeGeneratedArtifacts } from '../fixture-project.js';
-import { isRecord } from '@exprtlabs/codegen/generator-api';
-import { findGeneratedModelDefinitionForConstructor } from '@exprtlabs/codegen/model';
+import { isRecord } from '@exprtlabs/golem/generator-api';
+import { findGeneratedModelDefinitionForConstructor } from '@exprtlabs/golem/model';
 import { generate, type OpenApiGenerationContext, type OpenApiGenerationProfile, writeSdk as WriteSdk } from '#openapi/generator';
 
 export type { OpenApiGenerationProfile };
 
 export function repoRoot(): string {
-  const codegenDist = dirname(fileURLToPath(import.meta.resolve('@exprtlabs/codegen/model')));
+  const codegenDist = dirname(fileURLToPath(import.meta.resolve('@exprtlabs/golem/model')));
   return dirname(dirname(dirname(codegenDist)));
 }
 
@@ -162,7 +162,7 @@ export function materializeGeneratedSdk(
 function prepareSdkProject(output: string): void {
   const packageManifest = join(output, 'package.json');
   if (!existsSync(packageManifest)) writeFileSync(packageManifest, '{"type":"module"}\n');
-  linkProjectPackages(output, { '@exprtlabs/codegen': join(repoRoot(), 'packages/codegen') });
+  linkProjectPackages(output, { '@exprtlabs/golem': join(repoRoot(), 'packages/golem') });
 }
 
 export function artifactBasenames(artifacts: readonly { path: string }[]): string[] {

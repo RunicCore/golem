@@ -7,11 +7,11 @@ import {
   stringifyJsonNumber,
   stringifyJsonScalar,
   stringifyJsonString,
-} from '@exprtlabs/codegen/serde';
-import { createSchemaGraph } from '@exprtlabs/codegen/schema-graph';
-import { emitCodecRuntime, emitGraphStringify } from '@exprtlabs/codegen/emitter';
-import type { ModelTypeDescriptor } from '@exprtlabs/codegen/model';
-import { LibError, LibErrorKind } from '@exprtlabs/codegen/errors';
+} from '@exprtlabs/golem/serde';
+import { createSchemaGraph } from '@exprtlabs/golem/schema-graph';
+import { emitCodecRuntime, emitGraphStringify } from '@exprtlabs/golem/emitter';
+import type { ModelTypeDescriptor } from '@exprtlabs/golem/model';
+import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 import { instantiate } from './emitted-runtime.js';
 
 const stringCorpus = [

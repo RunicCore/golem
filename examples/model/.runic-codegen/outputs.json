@@ -3,71 +3,71 @@
   "files": {
     "src/builtin-tags.model.generated.ts": {
       "job": "models:.",
-      "owner": "@exprtlabs/model-codegen",
-      "digest": "3d6fbdd798e3ce809b81ddd90652200122f0539653d96117be20389ca62402ac",
+      "owner": "@exprtlabs/golem-model",
+      "digest": "81fe711d43b73db07e65f6ef7406d48d638f05a3c40e749519a0e5618a2a89bb",
       "destination": "src",
       "destinationKind": "directory"
     },
     "src/collection-tags.model.generated.ts": {
       "job": "models:.",
-      "owner": "@exprtlabs/model-codegen",
-      "digest": "f31408f79d6a402ad8681b5ea8429b04627a0ec695eed6a45d0431e491f09378",
+      "owner": "@exprtlabs/golem-model",
+      "digest": "b8124a6e218b726440e98d9899cccf7b02473b310b330532424e334f7a60e05f",
       "destination": "src",
       "destinationKind": "directory"
     },
     "src/generated/models/iobject-plugin-keys.ts": {
       "job": "models:.",
-      "owner": "@exprtlabs/model-codegen",
-      "digest": "3f5066128df8eb2454e82d67d369f5af5770dc18e0bb51cc24c38548fd344078",
+      "owner": "@exprtlabs/golem-model",
+      "digest": "21f9be9ae50bc3c8b3d7499019cc3ba43c4e600f20532beb66587582834fab82",
       "destination": "src/generated/models",
       "destinationKind": "directory"
     },
     "src/generated/models/models.generated.ts": {
       "job": "models:.",
-      "owner": "@exprtlabs/model-codegen",
-      "digest": "ed20252decc4535c6fbda87cc86db9351c46e40050b37faff7abad5990e641a9",
+      "owner": "@exprtlabs/golem-model",
+      "digest": "161b756b30889e183ccede9ac94da5a649818914a604700e9d68c5087b5bb80a",
       "destination": "src/generated/models",
       "destinationKind": "directory"
     },
     "src/money.model.generated.ts": {
       "job": "models:.",
-      "owner": "@exprtlabs/model-codegen",
-      "digest": "2b2cb2efa6326615a2799d2c3ba343571a1b3b80921830764065a050da49313c",
+      "owner": "@exprtlabs/golem-model",
+      "digest": "892322a43edb7cb69be553c89769046fe35c4433e4abcdeab093b6e095e41ae4",
       "destination": "src",
       "destinationKind": "directory"
     },
     "src/note.model.generated.ts": {
       "job": "models:.",
-      "owner": "@exprtlabs/model-codegen",
-      "digest": "40964e8e1134e5f25b45cdda69b1f3983aa4c03caeff7da15b4741c57fef7d27",
+      "owner": "@exprtlabs/golem-model",
+      "digest": "06cc614dab623bda5a89969faaaa1609ba7df9129a42880761226b95add093c9",
       "destination": "src",
       "destinationKind": "directory"
     },
     "src/order-input.model.generated.ts": {
       "job": "models:.",
-      "owner": "@exprtlabs/model-codegen",
-      "digest": "f7b86414fd34c70215da8860e970512a595ee58ef90311914763b52ea8484dce",
+      "owner": "@exprtlabs/golem-model",
+      "digest": "e1bcc527b4ee34350b5df02e4385b9dd69f8de4479efc41644b42e8772fd42a2",
       "destination": "src",
       "destinationKind": "directory"
     },
     "src/permission-input.model.generated.ts": {
       "job": "models:.",
-      "owner": "@exprtlabs/model-codegen",
-      "digest": "764bee5c72ba96d0e6a5869a97ebbc887ca384aef80ee9ca4f412319be862a23",
+      "owner": "@exprtlabs/golem-model",
+      "digest": "84dc24934ba7aecd1b8984627dda04157f513587ad050477f42269edacbdd7d2",
       "destination": "src",
       "destinationKind": "directory"
     },
     "src/task-input.model.generated.ts": {
       "job": "models:.",
-      "owner": "@exprtlabs/model-codegen",
-      "digest": "6a48c3351fe0683b4136e070ee21295bd7ddba7173198161fc5a1de0e5a1c740",
+      "owner": "@exprtlabs/golem-model",
+      "digest": "b4569feababc39784f046841391a8ba5ad2081b61aff0b20dd7220a4478dfc4b",
       "destination": "src",
       "destinationKind": "directory"
     },
     "src/task.model.generated.ts": {
       "job": "models:.",
-      "owner": "@exprtlabs/model-codegen",
-      "digest": "cd2f76686bf7420d5f810de5ce2053012e274246b17cdc4f0ab11c75a4a6c822",
+      "owner": "@exprtlabs/golem-model",
+      "digest": "b81304027eab947e8d248cf0c89df7df30b7ba19fa8b24cff6f5c84ffece6114",
       "destination": "src",
       "destinationKind": "directory"
     }

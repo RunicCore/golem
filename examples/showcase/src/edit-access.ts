@@ -1,5 +1,5 @@
 // #region home-example
-import { fromWireFormat, toWireFormat } from '@exprtlabs/codegen/serde';
+import { fromWireFormat, toWireFormat } from '@exprtlabs/golem/serde';
 import { ProjectAccessEditor } from './project-access.model.js';
 import type { ProjectAccessEditorJSON } from './project-access.model.generated.js';
 

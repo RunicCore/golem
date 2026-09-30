@@ -1,6 +1,6 @@
 // #region instance-rules
 import { TaskInput } from './task-input.model.js';
-import { getValidator } from '@exprtlabs/codegen/validation';
+import { getValidator } from '@exprtlabs/golem/validation';
 
 export async function checkTitleRule() {
   const task = new TaskInput({ title: 'Write release notes', done: false });

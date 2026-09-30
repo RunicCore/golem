@@ -47,7 +47,7 @@ test('model generation rejects Object.prototype-colliding data fields across val
   ] as const;
   for (const scenario of cases) {
     fs.writeFileSync(source, [
-      "import type { IModel } from '@exprtlabs/codegen/model';",
+      "import type { IModel } from '@exprtlabs/golem/model';",
       scenario.declaration,
       '',
     ].join('\n'));
@@ -59,7 +59,7 @@ test('model generation rejects Object.prototype-colliding data fields across val
     );
   }
   fs.writeFileSync(source, [
-    "import type { IModel } from '@exprtlabs/codegen/model';",
+    "import type { IModel } from '@exprtlabs/golem/model';",
     'export type TBad = IModel<{ valueOf?: string }>;',
     '',
   ].join('\n'));
@@ -71,7 +71,7 @@ test('model generation rejects Object.prototype-colliding data fields across val
   );
 
   fs.writeFileSync(source, [
-    "import type { IModel } from '@exprtlabs/codegen/model';",
+    "import type { IModel } from '@exprtlabs/golem/model';",
     'export type TMethods = IModel<{ toString(): string; hasOwnProperty(name: PropertyKey): boolean }>;',
     '',
   ].join('\n'));
@@ -82,7 +82,7 @@ test('generated model API members are rejected before emitting companions', (t) 
   const { root, sourceRoot } = modelProject(t);
   const source = path.join(sourceRoot, 'dollar-validator.model.ts');
   writeModelSources(sourceRoot, {
-    'dollar-validator.model.ts': tsSource`import type { IModel } from '@exprtlabs/codegen/model';
+    'dollar-validator.model.ts': tsSource`import type { IModel } from '@exprtlabs/golem/model';
 export type TValidator = IModel<{ '$validator': string }>;
 `,
   });

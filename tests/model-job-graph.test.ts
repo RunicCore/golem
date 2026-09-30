@@ -2,9 +2,9 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import test, { type TestContext } from 'node:test';
-import type { CodegenProfile } from '@exprtlabs/codegen/generator-api';
-import type { ModelTypeDescriptor } from '@exprtlabs/codegen/model';
-import { createExecutableValidationMemo, hasExecutableValidation } from '@exprtlabs/codegen/schema';
+import type { CodegenProfile } from '@exprtlabs/golem/generator-api';
+import type { ModelTypeDescriptor } from '@exprtlabs/golem/model';
+import { createExecutableValidationMemo, hasExecutableValidation } from '@exprtlabs/golem/schema';
 import { generate } from '#model/generator';
 import { writeGeneratedArtifacts } from './fixture-project.js';
 import { compileModelProject, createModelProject, writeModelSources } from './model-project.js';
@@ -44,8 +44,8 @@ function chainSources(count: number, { kind, name, minLabel }: Chain = modelChai
     const fields = index > 0 ? `; prev: T${name}${index - 1}; prevs?: T${name}${index - 1}[]` : '';
     const base = kind === 'IModel' ? `import { ${name}${index}Base } from './${file}-${index}.model.generated.js';\n` : '';
     const cls = kind === 'IModel' ? `export class ${name}${index} extends ${name}${index}Base {}\n` : '';
-    sources[`${file}-${index}.model.ts`] = `import type { ${kind} } from '@exprtlabs/codegen/model';
-import type { MinLength } from '@exprtlabs/codegen/tags';
+    sources[`${file}-${index}.model.ts`] = `import type { ${kind} } from '@exprtlabs/golem/model';
+import type { MinLength } from '@exprtlabs/golem/tags';
 ${previous}${base}export type T${name}${index} = ${kind}<{ label: string & MinLength<${minLabel}>; at: Date; kind: { k: 'a'; a: Date } | { k: 'b'; b: number }${fields} }>;
 ${cls}`;
   }
@@ -108,14 +108,14 @@ for (const [label, profile] of profiles) for (const chain of [modelChain, object
 }
 
 const cycleSources = {
-  'a.model.ts': `import type { IModel } from '@exprtlabs/codegen/model';
-import type { MinLength } from '@exprtlabs/codegen/tags';
+  'a.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
+import type { MinLength } from '@exprtlabs/golem/tags';
 import type { TB } from './b.model.js';
 import { ABase } from './a.model.generated.js';
 export type TA = IModel<{ name: string & MinLength<2>; at: Date; b?: TB }>;
 export class A extends ABase {}
 `,
-  'b.model.ts': `import type { IModel } from '@exprtlabs/codegen/model';
+  'b.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
 import type { TA } from './a.model.js';
 import { BBase } from './b.model.generated.js';
 export type TB = IModel<{ at: Date; as: TA[] }>;
@@ -169,14 +169,14 @@ test('editing a leaf model regenerates the ids its dependents reference', (t: Te
 });
 
 const mixedCycleSources = {
-  'order.model.ts': `import type { IModel } from '@exprtlabs/codegen/model';
-import type { MinLength } from '@exprtlabs/codegen/tags';
+  'order.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
+import type { MinLength } from '@exprtlabs/golem/tags';
 import type { TLine } from './line.model.js';
 import { OrderBase } from './order.model.generated.js';
 export type TOrder = IModel<{ id: string & MinLength<2>; at: Date; lines: TLine[] }>;
 export class Order extends OrderBase {}
 `,
-  'line.model.ts': `import type { IObject } from '@exprtlabs/codegen/model';
+  'line.model.ts': `import type { IObject } from '@exprtlabs/golem/model';
 import type { TOrder } from './order.model.js';
 export type TLine = IObject<{ at: Date; qty: number; parent?: TOrder }>;
 `,

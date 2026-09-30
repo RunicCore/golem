@@ -326,7 +326,7 @@ test('same-name same-shape class and plain models keep their own codec ids in th
     '',
   ].join('\n');
   const model = (declaration: 'IModel' | 'IObject'): string => [
-    `import type { ${declaration} } from '@exprtlabs/codegen/model';`,
+    `import type { ${declaration} } from '@exprtlabs/golem/model';`,
     `export type TPayment = ${declaration}<{ amount: string }>;`,
     '',
   ].join('\n');

@@ -36,7 +36,7 @@ export function createControllerFixture(t: TestContext, options: ControllerFixtu
     linkProjectPackages(root, {
       '@nestjs/common': path.join(workspace, 'node_modules/@nestjs/common'),
       '@nestjs/swagger': path.join(workspace, 'node_modules/@nestjs/swagger'),
-      '@exprtlabs/codegen': path.join(workspace, 'packages/codegen'),
+      '@exprtlabs/golem': path.join(workspace, 'packages/golem'),
     });
   }
 

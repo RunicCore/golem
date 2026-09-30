@@ -19,7 +19,7 @@
       "DOM.Iterable"
     ],
     "plugins": [
-      { "transform": "@exprtlabs/codegen/ttsc-plugin" }
+      { "transform": "@exprtlabs/golem/ttsc-plugin" }
     ]
   },
   "include": [

@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import test from 'node:test';
-import { decodeGeneratedModel } from '@exprtlabs/codegen/conversion';
-import { getValidator } from '@exprtlabs/codegen/validation';
+import { decodeGeneratedModel } from '@exprtlabs/golem/conversion';
+import { getValidator } from '@exprtlabs/golem/validation';
 import {
   compileStrictUnusedSdk,
   generateMaterializedSdk,

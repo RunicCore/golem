@@ -6,11 +6,11 @@ import { configure, reaction } from 'mobx';
 import {
   createApiOperation,
   type ApiOperation,
-} from '@exprtlabs/codegen/client';
+} from '@exprtlabs/golem/client';
 import {
   createObservableApiOperation,
   type ObservableApiOperation,
-} from '@exprtlabs/codegen/mobx';
+} from '@exprtlabs/golem/mobx';
 
 type Warn = typeof console.warn;
 
@@ -341,8 +341,8 @@ test('stream execute loading ends when the response wrapper is available', async
 });
 
 test('codegen client runtime stays dependency-free of MobX and HTTP types', async () => {
-  const clientUrl = import.meta.resolve('@exprtlabs/codegen/client');
-  const mobxUrl = import.meta.resolve('@exprtlabs/codegen/mobx');
+  const clientUrl = import.meta.resolve('@exprtlabs/golem/client');
+  const mobxUrl = import.meta.resolve('@exprtlabs/golem/mobx');
   const trackedUrl = new URL('./api-operation.js', clientUrl);
   const clientSource = readFileSync(fileURLToPath(clientUrl), 'utf8');
   const clientTypes = readFileSync(fileURLToPath(new URL('./client.d.ts', clientUrl)), 'utf8');
@@ -358,7 +358,7 @@ test('codegen client runtime stays dependency-free of MobX and HTTP types', asyn
   assert.match(mobxSource, /api-operation\.js/);
   assert.doesNotMatch(trackedSource, /mobx/i);
   assert.match(trackedSource, /Concurrent execute\(\) invocation/);
-  const unpublished = '@exprtlabs/codegen/api-operation';
+  const unpublished = '@exprtlabs/golem/api-operation';
   await assert.rejects(
     () => import(unpublished),
     /ERR_PACKAGE_PATH_NOT_EXPORTED/,

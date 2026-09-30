@@ -18,7 +18,7 @@ import type {
   CodegenProfile,
   CodegenProvider,
   CodegenResult,
-} from '@exprtlabs/codegen/generator-api';
+} from '@exprtlabs/golem/generator-api';
 
 interface CodegenProfile {
   readonly mobx: boolean;
@@ -87,12 +87,12 @@ call starts and closes its own compiler.
 
 ## Generate OpenAPI from controllers
 
-`@exprtlabs/ts-to-openapi/generator` exports `apiVersion` and an
+`@exprtlabs/golem-ts-openapi/generator` exports `apiVersion` and an
 asynchronous `generate()`. It returns one OpenAPI document and no
 manifests:
 
 ```ts
-import { generate } from '@exprtlabs/ts-to-openapi/generator';
+import { generate } from '@exprtlabs/golem-ts-openapi/generator';
 
 const result = await generate({
   root: '/absolute/app/backend',
@@ -122,11 +122,11 @@ Diagnostic source locations are not copied into the OpenAPI document.
 
 ## Generate an OpenAPI SDK
 
-`@exprtlabs/openapi-to-ts/generator` exports `apiVersion` and an
+`@exprtlabs/golem-openapi/generator` exports `apiVersion` and an
 asynchronous `generate()` that returns an `OpenApiGenerationResult`:
 
 ```ts
-import { apiVersion, generate } from '@exprtlabs/openapi-to-ts/generator';
+import { apiVersion, generate } from '@exprtlabs/golem-openapi/generator';
 
 const result = await generate({
   input: '/absolute/app/api.yaml',
@@ -179,11 +179,11 @@ fields and `onInput` above. `writeSdk` reads no files and returns empty
 
 ## Generate TypeScript models
 
-`@exprtlabs/model-codegen/generator` exports `apiVersion` and a
+`@exprtlabs/golem-model/generator` exports `apiVersion` and a
 synchronous `generate()`:
 
 ```ts
-import { apiVersion, generate } from '@exprtlabs/model-codegen/generator';
+import { apiVersion, generate } from '@exprtlabs/golem-model/generator';
 
 const result = generate({
   root: '/absolute/app',
@@ -210,7 +210,7 @@ console.log(apiVersion, result.artifacts.length);
 | `discoverModelSources` | `(root?, onInput?): string[]` | Model files below `<root>/src`, sorted. |
 | `generatedFilename` | `(source: string): string` | The generated file path: `task.model.ts` → `task.model.generated.ts`, `.models.ts` → `.models.generated.ts`. |
 | `isModelSource` | `(filename: string): boolean` | Whether the name ends in `.model.ts` or `.models.ts` and is not a generated file. |
-| `discoverModelManifests` | `(root?, onInput?): string[]` | [`@exprtlabs/codegen/manifest`](/reference/runtime-api#manifest) re-export. |
+| `discoverModelManifests` | `(root?, onInput?): string[]` | [`@exprtlabs/golem/manifest`](/reference/runtime-api#manifest) re-export. |
 
 ## Apply results
 

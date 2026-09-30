@@ -1,6 +1,6 @@
 # Runtime API
 
-Find every `@exprtlabs/codegen` import your application, NestJS app or tool can use, with its signature and behavior.
+Find every `@exprtlabs/golem` import your application, NestJS app or tool can use, with its signature and behavior.
 
 | Subpath | Use | Extra dependency |
 | --- | --- | --- |
@@ -23,10 +23,10 @@ Internal subpaths used by the generators: `cli`, `emitter`, `schema`, `schema-gr
 
 Generated files import `ajv` only with `validation: true` and `ajvStandalone: false`. With `ajvStandalone: true` they import precompiled validators instead ([validation profiles](/reference/config#validation-profiles)).
 
-## `@exprtlabs/codegen/model` {#model}
+## `@exprtlabs/golem/model` {#model}
 
 ```ts
-import type { IModel, IObject } from '@exprtlabs/codegen/model';
+import type { IModel, IObject } from '@exprtlabs/golem/model';
 ```
 
 <<< ../../examples/model/src/task.model.ts#model-definition
@@ -55,10 +55,10 @@ Generation writes `task.model.generated.ts` with `TaskBase`, `TaskFields` (field
 
 Used by generated code: `registerGeneratedModel`, `findGeneratedModelDefinition`, `findGeneratedModelDefinitionForConstructor`, `GeneratedModel`, `GeneratedModelWire`, `GeneratedModelFields`, `GeneratedModelConstructor`, `GeneratedModelResult`, `GeneratedModelDefinition`, `RegisteredGeneratedModelDefinition`, `GeneratedModelConversion`, `GeneratedModelProfile`, `GeneratedModelValidation`, `GeneratedModelValidatorEnhancer`, `OpenApiGeneratedModelValidation`, `ModelRuntimeValidator`, `ModelRuntimeSyncValidator`, `ModelRuntimeValidationEngine`, `ModelConstraint`, `ModelTypeMetadata`, `ModelTypeDescriptor`, `UnionDiscriminator`, `DiscriminatorValue`, `ConstraintSchemaValue` and the `generatedModel*Brand` symbols.
 
-## `@exprtlabs/codegen/validation` {#validation}
+## `@exprtlabs/golem/validation` {#validation}
 
 ```ts
-import { getValidator, validate, validateInstance } from '@exprtlabs/codegen/validation';
+import { getValidator, validate, validateInstance } from '@exprtlabs/golem/validation';
 
 function getValidator<Fields extends object, Owner extends object>(
   model: Owner & { readonly [generatedModelFieldsBrand]: Fields },
@@ -122,10 +122,10 @@ A generated SDK binds its schema registry to a validation engine with these func
 
 Types: `SchemaRegistryData`, `RuntimeValidator`, `RuntimeValidationEngine`, `OperationRuntimeValidators` and `ValidationResult`. `RuntimeValidationEngine` is the two-method adapter that [`ajv`](#ajv) implements: `addSchema(schema, id)` and `getSchema(reference)`.
 
-## `@exprtlabs/codegen/ajv` {#ajv}
+## `@exprtlabs/golem/ajv` {#ajv}
 
 ```ts
-import { createOpenApiAjvEngine } from '@exprtlabs/codegen/ajv';
+import { createOpenApiAjvEngine } from '@exprtlabs/golem/ajv';
 import { TasksClient } from '../sdk/index.js';
 
 const client = new TasksClient({
@@ -143,10 +143,10 @@ const client = new TasksClient({
 
 Importing the module registers `createOpenApiAjvEngine()` as the default model engine. A generated SDK creates one shared engine on first use. An engine passed to a client applies to that client's checks only; it does not change the generation profile or the model engine. With `ajvStandalone: true` the SDK uses its precompiled engine.
 
-## `@exprtlabs/codegen/mobx` {#mobx}
+## `@exprtlabs/golem/mobx` {#mobx}
 
 ```ts
-import { asGenObservable } from '@exprtlabs/codegen/mobx';
+import { asGenObservable } from '@exprtlabs/golem/mobx';
 ```
 
 <<< ../../examples/model-mobx/src/task.model.ts#model-definition
@@ -160,10 +160,10 @@ import { asGenObservable } from '@exprtlabs/codegen/mobx';
 
 Call `asGenObservable(this)` in your class constructor after `super(values)` and your field initializers ([MobX](/guide/mobx#initialize-your-class)). Generated clients with `mobx: true` return `ObservableApiOperation`.
 
-## `@exprtlabs/codegen/mobx-validation` {#mobx-validation}
+## `@exprtlabs/golem/mobx-validation` {#mobx-validation}
 
 ```ts
-import { getValidator } from '@exprtlabs/codegen/mobx-validation';
+import { getValidator } from '@exprtlabs/golem/mobx-validation';
 ```
 
 | Member | Signature | Behavior |
@@ -174,10 +174,10 @@ import { getValidator } from '@exprtlabs/codegen/mobx-validation';
 
 Models generated with `mobx: true` and `validation: true` register `enhanceValidatorWithMobX`, so `getValidator` from `validation` already returns an observable validator for them. The module also re-exports `configureModelValidationEngine`, `registerModelValidationEngineFactory` and the validation types.
 
-## `@exprtlabs/codegen/errors` {#errors}
+## `@exprtlabs/golem/errors` {#errors}
 
 ```ts
-import { LibError, LibErrorKind } from '@exprtlabs/codegen/errors';
+import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 ```
 
 <<< ../../examples/openapi/src/invalid-task.ts#invalid-task
@@ -214,10 +214,10 @@ import { LibError, LibErrorKind } from '@exprtlabs/codegen/errors';
 
 Used by generated code: `mapValidationCode`, `snapshotIssues`.
 
-## `@exprtlabs/codegen/client` {#client}
+## `@exprtlabs/golem/client` {#client}
 
 ```ts
-import { createApiOperation, type ApiOperation } from '@exprtlabs/codegen/client';
+import { createApiOperation, type ApiOperation } from '@exprtlabs/golem/client';
 
 interface ApiOperation<Input, Result, Options = unknown> {
   execute(input: Input, options?: Options): Promise<Result>;
@@ -257,10 +257,10 @@ The module also exports the types these functions use, including `ClientOptions`
 
 Generated client options are in [Create a client](/guide/client-usage#create-a-client).
 
-## `@exprtlabs/codegen/conversion` {#conversion}
+## `@exprtlabs/golem/conversion` {#conversion}
 
 ```ts
-import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/codegen/conversion';
+import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/golem/conversion';
 ```
 
 | Member | Signature | Behavior |
@@ -271,8 +271,8 @@ import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/codegen/c
 Use them when the type is known only at runtime:
 
 ```ts
-import { isGeneratedModel } from '@exprtlabs/codegen/model';
-import { encodeGeneratedModel } from '@exprtlabs/codegen/conversion';
+import { isGeneratedModel } from '@exprtlabs/golem/model';
+import { encodeGeneratedModel } from '@exprtlabs/golem/conversion';
 
 export function responseBody(value: unknown): unknown {
   return isGeneratedModel(value) ? encodeGeneratedModel(value) : value;
@@ -283,10 +283,10 @@ Both throw `LibError` for missing generated metadata or cyclic input. With a kno
 
 Used by generated code: `decodeGeneratedModelTrusted`, `deserializeDate`, `serializeDate`, `convertModelField`, `defineModelProperty`, `requireModelObject`, `cloneConversionInput`, `assertAcyclicValue`, `unknownDiscriminatorValue`, `withDiscriminatorValue`, `jsonWithDiscriminator`.
 
-## `@exprtlabs/codegen/tags` {#tags}
+## `@exprtlabs/golem/tags` {#tags}
 
 ```ts
-import type { MinLength, TSerde, TValidation } from '@exprtlabs/codegen/tags';
+import type { MinLength, TSerde, TValidation } from '@exprtlabs/golem/tags';
 ```
 
 Every export is a type. Intersect a tag with a field type; assignment is unchanged and generation never runs your code.
@@ -304,10 +304,10 @@ The `TSerde` deserializer's parameter type sets the JSON schema of the field ([w
 
 Also exported: `ModelValidationFunction`, `ModelSerializeFunction`, `ModelDeserializeFunction`.
 
-## `@exprtlabs/codegen/serde` {#serde}
+## `@exprtlabs/golem/serde` {#serde}
 
 ```ts
-import { fromWireFormat, parse, stringify, toWireFormat } from '@exprtlabs/codegen/serde';
+import { fromWireFormat, parse, stringify, toWireFormat } from '@exprtlabs/golem/serde';
 ```
 
 <<< ../../examples/model/src/read-json.ts#read-json
@@ -365,10 +365,10 @@ Types: `ObjectCodec`, `ObjectCodecImpl`, `SerdeOptions`, `ValidateOptions`, `Val
 
 Used by generated code: `createObjectCodec`, `registerObjectCodec`, `getObjectCodec`, `requireObjectCodec`, `registerIModelClass`, `getIModelClass`, `requireIModelClass`, `findCodecIdForConstructor`, `addNestedCodecSchema`, `resolveGeneratedModelSchemaRefs`, `resolveModelValidationContextValidator`, `runSynchronousValidation`, `lazyAjvSchema`, `requireAjvSchema`, `ajvIssues`, `ajvIssuesFromErrors`, `parseJson`, `serdeValidates`, `serdeFailFast`, `validationFailure`, `validationUnavailable` and the `stringifyJson*` writers.
 
-## `@exprtlabs/codegen/nest` {#nest}
+## `@exprtlabs/golem/nest` {#nest}
 
 ```ts
-import { NestModelInterceptor } from '@exprtlabs/codegen/nest';
+import { NestModelInterceptor } from '@exprtlabs/golem/nest';
 ```
 
 <<< ../../examples/nest-openapi/src/application.ts#global-model-http
@@ -388,12 +388,12 @@ import { NestModelInterceptor } from '@exprtlabs/codegen/nest';
 
 For inbound conversion in your own interceptor or pipe, get the codec with `objectCodecFromMetatype` and call its `fromWireFormat`. The request and response contract is in [NestModelInterceptor](/guide/nestjs-in-depth#nestmodelinterceptor).
 
-## `@exprtlabs/codegen/ttsc-plugin` {#ttsc-plugin}
+## `@exprtlabs/golem/ttsc-plugin` {#ttsc-plugin}
 
 ```json
 {
   "compilerOptions": {
-    "plugins": [{ "transform": "@exprtlabs/codegen/ttsc-plugin" }]
+    "plugins": [{ "transform": "@exprtlabs/golem/ttsc-plugin" }]
   }
 }
 ```
@@ -411,24 +411,24 @@ The subpath is a CommonJS plugin descriptor (`ttsc-plugin.cjs`) that `ttsc` load
 
 The build fails when `T` is not a single type name or `typeof` expression, or has no generated code.
 
-Add `"nest": true` to the same entry in a NestJS app. The plugin then inserts [`nestModelCodec`](#nest) on `@Body()` and `@Query()` parameters and `nestModelReturn` on handlers that return a model. Listing `@exprtlabs/ts-to-openapi/ttsc-plugin` has the same effect. Nest also needs `experimentalDecorators` and `emitDecoratorMetadata` ([Set up TypeScript](/guide/nestjs#set-up-typescript)).
+Add `"nest": true` to the same entry in a NestJS app. The plugin then inserts [`nestModelCodec`](#nest) on `@Body()` and `@Query()` parameters and `nestModelReturn` on handlers that return a model. Listing `@exprtlabs/golem-ts-openapi/ttsc-plugin` has the same effect. Nest also needs `experimentalDecorators` and `emitDecoratorMetadata` ([Set up TypeScript](/guide/nestjs#set-up-typescript)).
 
 Add `"serde": false` to an entry to leave the calls in the table unchanged; they then throw `ValidationUnavailable`. If you list both plugin entries, add it to each.
 
-## `@exprtlabs/codegen/generator-api` {#generator-api}
+## `@exprtlabs/golem/generator-api` {#generator-api}
 
 ```ts
-import type { CodegenProvider, ModelContext } from '@exprtlabs/codegen/generator-api';
+import type { CodegenProvider, ModelContext } from '@exprtlabs/golem/generator-api';
 ```
 
 The contracts, `resolveProfile` and `CodegenDiagnosticSeverity` for tools that embed a generator are in the [generator API](/reference/generator-api).
 
 Used by the generators: `discoverSources`, `isRecord`, `errorMessage`, `hasErrorCode`, `identifier`, `camelIdentifier`, `bindingName`, `propertyName`, `NameScope`, `assertPortableFilenames`, `assertUniquePublicExports`, `RESERVED_BINDING_NAMES`, `RESERVED_MODEL_MEMBERS`.
 
-## `@exprtlabs/codegen/manifest` {#manifest}
+## `@exprtlabs/golem/manifest` {#manifest}
 
 ```ts
-import { discoverModelManifests, readModelManifest } from '@exprtlabs/codegen/manifest';
+import { discoverModelManifests, readModelManifest } from '@exprtlabs/golem/manifest';
 ```
 
 An OpenAPI job writes `model-manifest.json` beside its SDK; a model job reads it to use the SDK models in your declarations.

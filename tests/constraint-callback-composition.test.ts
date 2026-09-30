@@ -6,7 +6,7 @@ import test, { type TestContext } from 'node:test';
 
 import { command, workspace } from './support/process.js';
 import { generate } from '#model/generator';
-import { getValidator } from '@exprtlabs/codegen/validation';
+import { getValidator } from '@exprtlabs/golem/validation';
 
 interface Fixture {
   readonly root: string;
@@ -17,7 +17,7 @@ function fixture(t: TestContext): Fixture {
   const root = createFixtureProject(t, 'runic-constraint-callback-');
   const sourceRoot = path.join(root, 'src');
   linkProjectPackages(root, {
-    '@exprtlabs/codegen': path.join(workspace, 'packages/codegen'),
+    '@exprtlabs/golem': path.join(workspace, 'packages/golem'),
   });
   writeGeneratedArtifacts([
     {

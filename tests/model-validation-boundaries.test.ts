@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import type { GeneratedModel, ModelTypeDescriptor } from '@exprtlabs/codegen/model';
-import { getValidator } from '@exprtlabs/codegen/validation';
-import { schemaForDescriptor } from '@exprtlabs/codegen/schema';
-import { createOpenApiAjvEngine } from '@exprtlabs/codegen/ajv';
-import { encodeGeneratedModel } from '@exprtlabs/codegen/conversion';
+import type { GeneratedModel, ModelTypeDescriptor } from '@exprtlabs/golem/model';
+import { getValidator } from '@exprtlabs/golem/validation';
+import { schemaForDescriptor } from '@exprtlabs/golem/schema';
+import { createOpenApiAjvEngine } from '@exprtlabs/golem/ajv';
+import { encodeGeneratedModel } from '@exprtlabs/golem/conversion';
 import { installCodecModel } from './register-codec-model.js';
 
 function generated<Model extends object>(model: Model): Model & GeneratedModel<unknown> {

@@ -1,5 +1,5 @@
 
-import type { IModel } from '@exprtlabs/codegen/model';
+import type { IModel } from '@exprtlabs/golem/model';
 type Item = IModel<{ id: string; count?: number }>;
 const required: Required<Item> = { id: 'a', count: 1 };
 const keys: keyof Item = 'id';

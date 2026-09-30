@@ -1,5 +1,5 @@
 
-import type { IModel } from '@exprtlabs/codegen/model';
+import type { IModel } from '@exprtlabs/golem/model';
 import { AlphaBase, BetaBase, ContainerBase } from './item.model.generated.js';
 export type TAlpha = IModel<{ value: string }>;
 export type TBeta = IModel<{ value: string }>;

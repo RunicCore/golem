@@ -1,4 +1,4 @@
-import type { IModel } from '@exprtlabs/codegen/model';
+import type { IModel } from '@exprtlabs/golem/model';
 import type {
   Integer,
   MaxItems,
@@ -7,7 +7,7 @@ import type {
   MinLength,
   Minimum,
   Pattern,
-} from '@exprtlabs/codegen/tags';
+} from '@exprtlabs/golem/tags';
 import {
   ConstrainedAccountBase,
   ConstrainedChannelBase,

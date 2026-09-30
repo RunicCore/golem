@@ -1,4 +1,4 @@
-import type { TSerde } from '@exprtlabs/codegen/tags';
+import type { TSerde } from '@exprtlabs/golem/tags';
 export type WireCode = string & { readonly __wireCode?: never };
 export let encodeCalls = 0;
 export function encode(value: number): WireCode { encodeCalls += 1; return String(value) as WireCode; }

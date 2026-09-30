@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { observer } from 'mobx-react-lite';
-import { getValidator } from '@exprtlabs/codegen/validation';
+import { getValidator } from '@exprtlabs/golem/validation';
 import { createPaymentStore, type PaymentStore } from './payment-store.js';
 import './styles.css';
 

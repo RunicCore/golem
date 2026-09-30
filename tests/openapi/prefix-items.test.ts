@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import test from 'node:test';
-import { createOpenApiAjvEngine } from '@exprtlabs/codegen/ajv';
+import { createOpenApiAjvEngine } from '@exprtlabs/golem/ajv';
 import { schemaType } from '#openapi/generator';
 import {
   compileGeneratedSdk,

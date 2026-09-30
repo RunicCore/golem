@@ -1,4 +1,4 @@
-import { toWireFormat } from '@exprtlabs/codegen/serde';
+import { toWireFormat } from '@exprtlabs/golem/serde';
 import { Task } from './task.model.js';
 import type { TTask } from './task.model.js';
 import type { TaskJSON } from './task.model.generated.js';

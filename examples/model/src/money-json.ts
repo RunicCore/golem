@@ -1,6 +1,6 @@
 // #region iobject-json
-import { parse, stringify } from '@exprtlabs/codegen/serde';
-import { validate } from '@exprtlabs/codegen/validation';
+import { parse, stringify } from '@exprtlabs/golem/serde';
+import { validate } from '@exprtlabs/golem/validation';
 import type { TMoney } from './money.model.js';
 // Bare import: the generated file's module-scope code registers TMoney's codec.
 import './money.model.generated.js';

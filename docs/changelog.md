@@ -23,7 +23,7 @@ Supported versions and defaults: [Compatibility and stability](/compatibility).
 
 ## Controller contracts and model composition
 
-`@exprtlabs/ts-to-openapi` generates an OpenAPI document from NestJS
+`@exprtlabs/golem-ts-openapi` generates an OpenAPI document from NestJS
 controllers without starting the application. Use it on its own, or pass its
 document to the SDK and model generators in the same workflow
 ([configure controller jobs](/guide/nestjs#configure-and-generate)).
@@ -43,7 +43,7 @@ Each item names a breaking change and the action to take.
 - A union value with an unknown or missing tag throws instead of serializing as `null` or passing through. Set a mapped tag before `toWireFormat` / `stringify`, and handle `LibError` on decode.
 - `LibErrorKind` gains `response`. Add a case to exhaustive `switch` statements over the kind.
 - `NestModelInterceptor` answers input failures (`causedByInput`) with HTTP 400 instead of 500. A custom validation rule that rejects input returns `false` or a message instead of throwing.
-- Removed exports: replace `getModelValidator` with `getValidator(model)` (also in `mobx-validation`), `isIModelReference` with `isModelDeclarationReference(checker, node)`, and `createProgram` with `createProgramFromSources`. `validationTagKey` and `validationTagSchemaDescriptor` moved to `@exprtlabs/codegen/schema`.
+- Removed exports: replace `getModelValidator` with `getValidator(model)` (also in `mobx-validation`), `isIModelReference` with `isModelDeclarationReference(checker, node)`, and `createProgram` with `createProgramFromSources`. `validationTagKey` and `validationTagSchemaDescriptor` moved to `@exprtlabs/golem/schema`.
 
 ### Controllers
 
@@ -58,7 +58,7 @@ Each item names a breaking change and the action to take.
 
 ### OpenAPI clients
 
-- `@exprtlabs/openapi-to-ts/generator` no longer exports `generateClient`, `generateTypes` and the other per-artifact functions. Call `generate` or `writeSdk`.
+- `@exprtlabs/golem-openapi/generator` no longer exports `generateClient`, `generateTypes` and the other per-artifact functions. Call `generate` or `writeSdk`.
 - Every discriminated-union variant must declare the discriminator property. Add it to each variant schema.
 - An implicit discriminator value is the raw component name (`cat`), not the generated type name (`Cat`). Add an explicit `discriminator.mapping` where senders use another value.
 - A variant shared by two discriminated unions gives neither union a model class. Give each union its own variant schemas if code needs the union class.
@@ -70,7 +70,7 @@ Each item names a breaking change and the action to take.
 - A schema pulled in from another file is named after its path (`schemas/user.json` → `schemas.user`, model `SchemasUser`) instead of its file name with a numeric suffix. A root component that is only a `$ref` to an external file keeps its own name; one with a `$ref` plus other keys is not an alias, so its target still gets the path-based name and can collide with the root name. A name collision fails generation, naming both locations; rename the colliding schema in the source document.
 - An implicit discriminator value for a schema from another file is its path-based component name (for example `schemas.dog`). Add an explicit `discriminator.mapping`, or a root alias, to keep a chosen value.
 - The `spec-ref-siblings`, `path-not-include-query` and `nullable-type-sibling` validation rules are gone, and error lines name the file that contains the problem. A document that relied on their stricter checks to fail generation now passes; every other rule is unchanged.
-- `collectLocalReferenceInputs` from `@exprtlabs/openapi-to-ts/generator` now returns a `Promise`. Await the call.
+- `collectLocalReferenceInputs` from `@exprtlabs/golem-openapi/generator` now returns a `Promise`. Await the call.
 
 ### Packages
 
@@ -82,9 +82,9 @@ Each item names a breaking change and the action to take.
 
 - Regenerate after upgrading. SDKs and OpenAPI documents change.
 - Replace imports of the SDK's `client.js`, `models.js`, `validation.js` and `client-runtime.js` with `sdk/index.js`, `sdk/models/<Name>.js` or `sdk/operations/<name>.js`; the [generated files](/reference/generated-files) page lists the public paths.
-- Code the SDK used to carry now lives in `@exprtlabs/codegen/client` and `@exprtlabs/codegen/validation`.
+- Code the SDK used to carry now lives in `@exprtlabs/golem/client` and `@exprtlabs/golem/validation`.
 - `__Projection<N>` schemas get stable names. Add a named type alias to choose one.
-- Install `@exprtlabs/codegen` at or above the version the SDK was generated for, with the same major version.
+- Install `@exprtlabs/golem` at or above the version the SDK was generated for, with the same major version.
 - The identifiers of codecs in generated files change. A hand-written model and an SDK model with the same name and shape no longer share an id.
 
 ### Known trade-offs

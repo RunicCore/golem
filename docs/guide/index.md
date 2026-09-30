@@ -8,10 +8,10 @@ Each generator installs on its own and runs through the same `runic-codegen` com
 
 | You have | Generator | You get |
 | --- | --- | --- |
-| TypeScript fields and app behavior | [`@exprtlabs/model-codegen`](/guide/models) | A generated class with validation and JSON conversion |
-| An OpenAPI document | [`@exprtlabs/openapi-to-ts`](/guide/client) | Typed operations, request and response models |
-| NestJS controllers | [`@exprtlabs/ts-to-openapi`](/guide/nestjs) | An OpenAPI document from routes and types |
-| An OpenAPI document and app models | [`openapi-to-ts` and `model-codegen`](/guide/models-and-client) | App models that reuse the SDK's types |
+| TypeScript fields and app behavior | [`@exprtlabs/golem-model`](/guide/models) | A generated class with validation and JSON conversion |
+| An OpenAPI document | [`@exprtlabs/golem-openapi`](/guide/client) | Typed operations, request and response models |
+| NestJS controllers | [`@exprtlabs/golem-ts-openapi`](/guide/nestjs) | An OpenAPI document from routes and types |
+| An OpenAPI document and app models | [`golem-openapi` and `golem-model`](/guide/models-and-client) | App models that reuse the SDK's types |
 
 ## IObject or IModel
 

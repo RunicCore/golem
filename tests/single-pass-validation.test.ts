@@ -2,24 +2,24 @@ import assert from 'node:assert/strict';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import test, { type TestContext } from 'node:test';
-import { IssueRepresentation, LibError, LibErrorKind } from '@exprtlabs/codegen/errors';
-import { requireObjectCodec } from '@exprtlabs/codegen/serde';
-import { validateInstance } from '@exprtlabs/codegen/validation';
+import { IssueRepresentation, LibError, LibErrorKind } from '@exprtlabs/golem/errors';
+import { requireObjectCodec } from '@exprtlabs/golem/serde';
+import { validateInstance } from '@exprtlabs/golem/validation';
 import { generate } from '#model/generator';
 import { readFixture, writeGeneratedArtifacts } from './fixture-project.js';
-import { generate as generateOpenApi } from '@exprtlabs/openapi-to-ts/generator';
+import { generate as generateOpenApi } from '@exprtlabs/golem-openapi/generator';
 import { compileModelProject, createModelProject, writeModelSources } from './model-project.js';
 
 const COUNTER = `export let calls = 0;
 export function notBlank(value: string): boolean | string { calls++; return value.trim().length > 0 || 'blank'; }
 export function reset(): void { calls = 0; }
-export type Hex = string & import('@exprtlabs/codegen/tags').Pattern<'^[0-9a-f]+$'>;
+export type Hex = string & import('@exprtlabs/golem/tags').Pattern<'^[0-9a-f]+$'>;
 export function encodeHex(value: number): Hex { return value.toString(16); }
 export function decodeHex(value: Hex): number { return parseInt(value, 16); }
 `;
 
-const ORDER = `import type { IModel, IObject } from '@exprtlabs/codegen/model';
-import type { Minimum, TSerde, TValidation } from '@exprtlabs/codegen/tags';
+const ORDER = `import type { IModel, IObject } from '@exprtlabs/golem/model';
+import type { Minimum, TSerde, TValidation } from '@exprtlabs/golem/tags';
 import { decodeHex, encodeHex, notBlank } from './counter.js';
 import { OrderBase, RuleOnlyBase } from './order.model.generated.js';
 export type TFields = {
@@ -115,8 +115,8 @@ test('a rule on an SDK model runs once per parse and IObject enforces it (standa
   assert.throws(() => plain.parse(JSON.stringify({ ...wire, money: { amount: 12, currency: 'XXX' } })), validationError);
 });
 
-const TOGGLES = `import type { IModel, IObject } from '@exprtlabs/codegen/model';
-import type { TValidation } from '@exprtlabs/codegen/tags';
+const TOGGLES = `import type { IModel, IObject } from '@exprtlabs/golem/model';
+import type { TValidation } from '@exprtlabs/golem/tags';
 import { notBlank } from './counter.js';
 import { InheritBase, OnBase, OffBase, ParentBase, VChildBase, UParentBase } from './toggles.model.generated.js';
 type Fields = { note: string & TValidation<typeof notBlank>; when: Date };
@@ -218,7 +218,7 @@ for (const [label, profile] of [['runtime Ajv', { mobx: false, validation: true 
 
 test('an engine filled by registerCodecSchemas validates parse and stringify through a context, nested residual refs included', async t => {
   const { root, sourceRoot } = createModelProject(t, { prefix: 'runic-single-pass-engine-', name: 'single-pass-engine' });
-  writeModelSources(sourceRoot, { 'visit.model.ts': `import type { IModel } from '@exprtlabs/codegen/model';
+  writeModelSources(sourceRoot, { 'visit.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
 import { StopBase, TripBase } from './visit.model.generated.js';
 export type TStop = IModel<{ at: Date; name: string }>;
 export class Stop extends StopBase {}
@@ -228,8 +228,8 @@ export class Trip extends TripBase {}
   writeGeneratedArtifacts(generate({ root, profile: { mobx: false, validation: true } }).artifacts);
   await compileModelProject(root);
   const { Trip } = await import(pathToFileURL(path.join(root, 'build/visit.model.js')).href) as { Trip: new (v?: object) => object };
-  const { createOpenApiSyncAjvEngine } = await import('@exprtlabs/codegen/ajv');
-  const { registerCodecSchemas } = await import('@exprtlabs/codegen/serde');
+  const { createOpenApiSyncAjvEngine } = await import('@exprtlabs/golem/ajv');
+  const { registerCodecSchemas } = await import('@exprtlabs/golem/serde');
   const engine = createOpenApiSyncAjvEngine({ allErrors: false, validationBindings: {} });
   const registered: string[] = [];
   registerCodecSchemas((schema, id) => { registered.push(id); engine.addSchema(schema, id); }, 'Trip');

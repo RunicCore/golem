@@ -4,8 +4,8 @@ import { writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import test from 'node:test';
-import { LibError, LibErrorKind, IssueSource } from '@exprtlabs/codegen/errors';
-import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/codegen/conversion';
+import { LibError, LibErrorKind, IssueSource } from '@exprtlabs/golem/errors';
+import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/golem/conversion';
 import { generate } from '#openapi/generator';
 import {
   compileGeneratedSdk,

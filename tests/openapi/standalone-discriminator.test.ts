@@ -15,7 +15,7 @@ import {
 } from './helpers.js';
 
 // The lowering pass is internal to the built package; load it from dist instead of compiling package source into the tests.
-const distRoot = path.dirname(fileURLToPath(import.meta.resolve('@exprtlabs/codegen/model')));
+const distRoot = path.dirname(fileURLToPath(import.meta.resolve('@exprtlabs/golem/model')));
 const { lowerDiscriminatorMappings } = await import(pathToFileURL(path.join(distRoot, 'discriminator-mapping.js')).href) as {
   readonly lowerDiscriminatorMappings: <Schema>(schema: Schema) => Schema;
 };

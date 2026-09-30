@@ -21,11 +21,11 @@ import {
   NestModelInterceptor,
   nestModelStringifyInterceptor,
   objectCodecFromMetatype,
-} from '@exprtlabs/codegen/nest';
-import { createOpenApiSyncAjvEngine } from '@exprtlabs/codegen/ajv';
-import { decodeGeneratedModel, deserializeDate, unknownDiscriminatorValue } from '@exprtlabs/codegen/conversion';
-import type { ModelTypeDescriptor } from '@exprtlabs/codegen/model';
-import { schemaForDescriptor } from '@exprtlabs/codegen/schema';
+} from '@exprtlabs/golem/nest';
+import { createOpenApiSyncAjvEngine } from '@exprtlabs/golem/ajv';
+import { decodeGeneratedModel, deserializeDate, unknownDiscriminatorValue } from '@exprtlabs/golem/conversion';
+import type { ModelTypeDescriptor } from '@exprtlabs/golem/model';
+import { schemaForDescriptor } from '@exprtlabs/golem/schema';
 import {
   ajvIssues,
   createObjectCodec,
@@ -34,7 +34,7 @@ import {
   requireAjvSchema,
   runSynchronousValidation,
   validationFailure,
-} from '@exprtlabs/codegen/serde';
+} from '@exprtlabs/golem/serde';
 
 function markerCodec(id: string) {
   return createObjectCodec(id, {

@@ -3,8 +3,8 @@ import fs from 'node:fs';
 import { Cart } from './build/src/cart.model.js';
 import { MoneyModel } from './build/sdk/index.js';
 import { ProfileClient } from './build/sdk/client.js';
-import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/codegen/conversion';
-import { getValidator, validateInstance } from '@exprtlabs/codegen/validation';
+import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/golem/conversion';
+import { getValidator, validateInstance } from '@exprtlabs/golem/validation';
 
 const profile = JSON.parse(fs.readFileSync('./profile.json', 'utf8'));
 const cart = decodeGeneratedModel(Cart, { money: { amount: -1, currency: 'usd' }, note: 'draft' });

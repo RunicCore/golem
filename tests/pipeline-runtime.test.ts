@@ -35,16 +35,16 @@ function linkPackages(root: string, names: readonly string[]): void {
 }
 
 function workspaceReleaseVersion(): string {
-  const { version } = JSON.parse(fs.readFileSync(path.join(workspace, 'packages/codegen/package.json'), 'utf8')) as { version: string };
+  const { version } = JSON.parse(fs.readFileSync(path.join(workspace, 'packages/golem/package.json'), 'utf8')) as { version: string };
   return version;
 }
 
 function installFakeOpenApiProvider(root: string, manifest: unknown): void {
-  const packageRoot = path.join(root, 'node_modules/@exprtlabs/openapi-to-ts');
+  const packageRoot = path.join(root, 'node_modules/@exprtlabs/golem-openapi');
   fs.rmSync(packageRoot, { recursive: true, force: true });
   fs.mkdirSync(packageRoot, { recursive: true });
   fs.writeFileSync(path.join(packageRoot, 'package.json'), JSON.stringify({
-    name: '@exprtlabs/openapi-to-ts',
+    name: '@exprtlabs/golem-openapi',
     version: workspaceReleaseVersion(),
     type: 'module',
     exports: { './generator': './generator.js' },
@@ -56,7 +56,7 @@ function installFakeOpenApiProvider(root: string, manifest: unknown): void {
 function combinedFixture(t: TestContext): CombinedFixture {
   const root = createFixtureProject(t, 'runic-pipeline-runtime-');
 
-  linkPackages(root, ['codegen', 'model-codegen', 'openapi-to-ts']);
+  linkPackages(root, ['golem', 'golem-model', 'golem-openapi']);
   fs.writeFileSync(
     path.join(root, 'package.json'),
     JSON.stringify({ name: 'pipeline-runtime-fixture', private: true, type: 'module' }),
@@ -73,7 +73,7 @@ function combinedFixture(t: TestContext): CombinedFixture {
 function modelWatchFixture(t: TestContext): ModelWatchFixture {
   const root = createFixtureProject(t, 'runic-model-watch-');
 
-  linkPackages(root, ['codegen', 'model-codegen']);
+  linkPackages(root, ['golem', 'golem-model']);
   fs.writeFileSync(
     path.join(root, 'package.json'),
     JSON.stringify({ name: 'model-watch-fixture', private: true, type: 'module' }),
@@ -176,7 +176,7 @@ async function generatedOpenApiFixture(
   });
   writeGeneratedArtifacts(result.artifacts);
   fs.writeFileSync(path.join(output, 'package.json'), '{"type":"module"}');
-  linkProjectPackages(output, { '@exprtlabs/codegen': path.join(workspace, 'packages/codegen') });
+  linkProjectPackages(output, { '@exprtlabs/golem': path.join(workspace, 'packages/golem') });
   return output;
 }
 
@@ -329,7 +329,7 @@ test('initial model watch failures retain missing manifests and declarations in 
 test('exec forwards SIGTERM and SIGINT to its child and preserves the signal result', async (t: TestContext) => {
   for (const signal of ['SIGTERM', 'SIGINT'] as const) {
     const { root, config } = combinedFixture(t);
-    const binary = path.join(workspace, 'packages/codegen/dist/bin/runic-codegen.js');
+    const binary = path.join(workspace, 'packages/golem/dist/bin/runic-codegen.js');
     const ready = path.join(root, `${signal.toLowerCase()}.ready`);
     const received = path.join(root, `${signal.toLowerCase()}.received`);
     const childScript = copyFixtureFile(root, 'pipeline/signal-child/run.cjs', 'signal-child.cjs');
@@ -362,7 +362,7 @@ test('exec forwards SIGTERM and SIGINT to its child and preserves the signal res
 
 test('exec --watch keeps its child alive through generation failure, recovers, and cleans up on signal', async (t: TestContext) => {
   const { root, config } = combinedFixture(t);
-  const binary = path.join(workspace, 'packages/codegen/dist/bin/runic-codegen.js');
+  const binary = path.join(workspace, 'packages/golem/dist/bin/runic-codegen.js');
   const ready = path.join(root, 'watch-child.ready');
   const received = path.join(root, 'watch-child.received');
   const heartbeat = path.join(root, 'watch-child.heartbeat');
@@ -417,7 +417,7 @@ test('exec --watch keeps its child alive through generation failure, recovers, a
 
 test('exec --watch does not start its child or watcher when initial generation fails', async (t: TestContext) => {
   const { root, config } = combinedFixture(t);
-  const binary = path.join(workspace, 'packages/codegen/dist/bin/runic-codegen.js');
+  const binary = path.join(workspace, 'packages/golem/dist/bin/runic-codegen.js');
   const ready = path.join(root, 'never-started.ready');
   const childScript = copyFixtureFile(root, 'pipeline/never-started-child/run.cjs', 'never-started-child.cjs');
   fs.writeFileSync(path.join(root, 'api.json'), JSON.stringify({ openapi: '2.0', info: {}, paths: {} }));
@@ -451,7 +451,7 @@ test('exec --watch does not start its child or watcher when initial generation f
 
 test('exec --watch exits with its child and releases the watcher', async (t: TestContext) => {
   const { root, config } = combinedFixture(t);
-  const binary = path.join(workspace, 'packages/codegen/dist/bin/runic-codegen.js');
+  const binary = path.join(workspace, 'packages/golem/dist/bin/runic-codegen.js');
   const ready = path.join(root, 'watch-child-exit.ready');
   const childScript = copyFixtureFile(root, 'pipeline/exiting-child/run.cjs', 'exiting-child.cjs');
   const parent = spawn(process.execPath, [
@@ -541,7 +541,7 @@ test('pipeline rejects malformed or profile-mismatched returned manifests before
   for (const entry of cases) {
     const root = createFixtureProject(t, `runic-pipeline-manifest-${entry.name}-`);
 
-    linkPackages(root, ['codegen', 'model-codegen', 'openapi-to-ts']);
+    linkPackages(root, ['golem', 'golem-model', 'golem-openapi']);
     fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ name: 'manifest-fixture', private: true, type: 'module' }));
     writeFixture(root, { mobx: false, validation: true }, false);
     installFakeOpenApiProvider(root, entry.manifest);

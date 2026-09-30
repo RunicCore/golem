@@ -1,5 +1,5 @@
-import type { AdditionalProperties, Contains, DependentRequired, DependentSchemas, IfThenElse, MaxContains, MaxProperties, MinContains, MinItems, MinProperties, Not, OneOf, Pattern, PatternProperties, PropertyNames, UnevaluatedProperties } from '@exprtlabs/codegen/tags';
-import type { IModel } from '@exprtlabs/codegen/model';
+import type { AdditionalProperties, Contains, DependentRequired, DependentSchemas, IfThenElse, MaxContains, MaxProperties, MinContains, MinItems, MinProperties, Not, OneOf, Pattern, PatternProperties, PropertyNames, UnevaluatedProperties } from '@exprtlabs/golem/tags';
+import type { IModel } from '@exprtlabs/golem/model';
 import { ABase, type AFields } from './a.model.generated.js';
 
 export type TA = IModel<{

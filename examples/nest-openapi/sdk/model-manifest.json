@@ -1,6 +1,6 @@
 {
   "generator": {
-    "name": "@exprtlabs/openapi-to-ts",
+    "name": "@exprtlabs/golem-openapi",
     "version": "1.0.0-rc"
   },
   "models": [
@@ -25,7 +25,7 @@
         "export": "MerchantModel",
         "module": "./models/Merchant.ts"
       },
-      "id": "openapi:d3839f4869c824cf#/components/schemas/Merchant",
+      "id": "openapi:590e73b6ce4eeac1#/components/schemas/Merchant",
       "inheritance": null,
       "sourceKind": "openapi",
       "type": {
@@ -62,7 +62,7 @@
         "export": "MerchantOmitIdModel",
         "module": "./models/MerchantOmitId.ts"
       },
-      "id": "openapi:d3839f4869c824cf#/components/schemas/MerchantOmitId",
+      "id": "openapi:590e73b6ce4eeac1#/components/schemas/MerchantOmitId",
       "inheritance": null,
       "sourceKind": "openapi",
       "type": {
@@ -105,7 +105,7 @@
         "export": "MoneyModel",
         "module": "./models/Money.ts"
       },
-      "id": "openapi:d3839f4869c824cf#/components/schemas/Money",
+      "id": "openapi:590e73b6ce4eeac1#/components/schemas/Money",
       "inheritance": null,
       "sourceKind": "openapi",
       "type": {
@@ -172,7 +172,7 @@
         "export": "PaymentModel",
         "module": "./models/Payment.ts"
       },
-      "id": "openapi:d3839f4869c824cf#/components/schemas/Payment",
+      "id": "openapi:590e73b6ce4eeac1#/components/schemas/Payment",
       "inheritance": null,
       "sourceKind": "openapi",
       "type": {
@@ -233,7 +233,7 @@
         "export": "PaymentInputModel",
         "module": "./models/PaymentInput.ts"
       },
-      "id": "openapi:d3839f4869c824cf#/components/schemas/PaymentInput",
+      "id": "openapi:590e73b6ce4eeac1#/components/schemas/PaymentInput",
       "inheritance": null,
       "sourceKind": "openapi",
       "type": {
@@ -264,11 +264,11 @@
   },
   "runtime": {
     "minimumVersion": "1.0.0-rc",
-    "name": "@exprtlabs/codegen"
+    "name": "@exprtlabs/golem"
   },
   "source": {
     "dialect": "3.2.0",
-    "digest": "d3839f4869c824cf4c54868d051a37d9bd143d29a2154c4191da4e7122bf6c60",
+    "digest": "590e73b6ce4eeac1bdb347f2cd21e13337de1dad72c898b3a6724e5b61d3ba2d",
     "kind": "openapi"
   },
   "validationSchemaClosure": [
@@ -276,7 +276,7 @@
       "aliases": [
         "Merchant",
         "Merchant_2d893464",
-        "openapi:d3839f4869c824cf#/components/schemas/Merchant"
+        "openapi:590e73b6ce4eeac1#/components/schemas/Merchant"
       ],
       "codecId": "Merchant_2d893464",
       "modelSchema": {
@@ -307,7 +307,7 @@
       "aliases": [
         "MerchantOmitId",
         "MerchantOmitId_1ef82815",
-        "openapi:d3839f4869c824cf#/components/schemas/MerchantOmitId"
+        "openapi:590e73b6ce4eeac1#/components/schemas/MerchantOmitId"
       ],
       "codecId": "MerchantOmitId_1ef82815",
       "modelSchema": {
@@ -334,7 +334,7 @@
       "aliases": [
         "Money",
         "Money_f1820f67",
-        "openapi:d3839f4869c824cf#/components/schemas/Money"
+        "openapi:590e73b6ce4eeac1#/components/schemas/Money"
       ],
       "codecId": "Money_f1820f67",
       "modelSchema": {
@@ -372,7 +372,7 @@
       "aliases": [
         "Payment",
         "Payment_92a78a94",
-        "openapi:d3839f4869c824cf#/components/schemas/Payment"
+        "openapi:590e73b6ce4eeac1#/components/schemas/Payment"
       ],
       "codecId": "Payment_92a78a94",
       "modelSchema": {
@@ -426,7 +426,7 @@
       "aliases": [
         "PaymentInput",
         "PaymentInput_f132a855",
-        "openapi:d3839f4869c824cf#/components/schemas/PaymentInput"
+        "openapi:590e73b6ce4eeac1#/components/schemas/PaymentInput"
       ],
       "codecId": "PaymentInput_f132a855",
       "modelSchema": {

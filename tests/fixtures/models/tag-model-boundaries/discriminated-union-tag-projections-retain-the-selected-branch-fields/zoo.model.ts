@@ -1,5 +1,5 @@
-import type { IModel } from '@exprtlabs/codegen/model';
-import type { Contains } from '@exprtlabs/codegen/tags';
+import type { IModel } from '@exprtlabs/golem/model';
+import type { Contains } from '@exprtlabs/golem/tags';
 import { ZooBase, type ZooFields } from './zoo.model.generated.js';
 type Cat = { kind: 'cat'; name: string; lives: number };
 type Dog = { kind: 'dog'; name: string; bark: boolean };

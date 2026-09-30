@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { defineModelProperty } from '@exprtlabs/codegen/conversion';
+import { defineModelProperty } from '@exprtlabs/golem/conversion';
 
 const ownData = (target: object, name: string) => Object.getOwnPropertyDescriptor(target, name);
 

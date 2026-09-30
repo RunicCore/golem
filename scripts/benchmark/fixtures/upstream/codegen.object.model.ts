@@ -1,5 +1,5 @@
-import type { IObject } from '@exprtlabs/codegen/model';
-import type { Integer, MaxItems, MaxLength, MinItems, MinLength, Minimum, Pattern } from '@exprtlabs/codegen/tags';
+import type { IObject } from '@exprtlabs/golem/model';
+import type { Integer, MaxItems, MaxLength, MinItems, MinLength, Minimum, Pattern } from '@exprtlabs/golem/tags';
 
 // The upstream payloads as IObject declarations: validated plain objects, no classes.
 // #region simple

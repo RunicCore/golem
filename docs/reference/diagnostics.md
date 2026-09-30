@@ -144,7 +144,7 @@ An error prints its code, location when known, and message, then stops generatio
 
 ### NEST1501
 
-**No schema resolver.** The document builder needs a canonical schema for a type, but no `schemaResolver` was supplied in the build context. **Fix:** Pass a `schemaResolver`, or generate through `@exprtlabs/ts-to-openapi/generator`, which always supplies one.
+**No schema resolver.** The document builder needs a canonical schema for a type, but no `schemaResolver` was supplied in the build context. **Fix:** Pass a `schemaResolver`, or generate through `@exprtlabs/golem-ts-openapi/generator`, which always supplies one.
 
 ### NEST1502
 
@@ -152,7 +152,7 @@ An error prints its code, location when known, and message, then stops generatio
 
 ### NEST1503
 
-**Conflicting schema metadata.** Static Swagger metadata — a `required` flag, a `schema`, or an `@ApiProperty()` option — contradicts the schema ts-to-openapi derived from the TypeScript or IModel contract. **Fix:** Change the Swagger option, or the TypeScript type, so the two describe the same shape and requiredness.
+**Conflicting schema metadata.** Static Swagger metadata — a `required` flag, a `schema`, or an `@ApiProperty()` option — contradicts the schema golem-ts-openapi derived from the TypeScript or IModel contract. **Fix:** Change the Swagger option, or the TypeScript type, so the two describe the same shape and requiredness.
 
 ### NEST1504
 

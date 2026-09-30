@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
-import { generate } from '@exprtlabs/openapi-to-ts/generator';
+import { generate } from '@exprtlabs/golem-openapi/generator';
 import { command, workspace } from './support/process.js';
 
 test('public directional projection handles repeated aliases and allOf requirements without weakening neutral or required-only schemas', async t => {

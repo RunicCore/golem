@@ -5,7 +5,7 @@ import { writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import test from 'node:test';
-import { createOpenApiAjvEngine } from '@exprtlabs/codegen/ajv';
+import { createOpenApiAjvEngine } from '@exprtlabs/golem/ajv';
 import { generate, findRemoteRefs, loadValidatedDocument } from '#openapi/generator';
 import { collectCanonicalResources, projectSchema } from '#openapi/schema-projection';
 import { buildSchemaData } from '#openapi/schemas';

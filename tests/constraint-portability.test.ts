@@ -30,7 +30,7 @@ for (const ajvStandalone of [false, true]) {
   test(`model predicates never strengthen wire or OpenAPI contracts with standalone=${ajvStandalone}`, async t => {
     const root = createFixtureProject(t, 'runic-portability-');
     linkProjectPackages(root, {
-      '@exprtlabs/codegen': path.join(workspace, 'packages/codegen'),
+      '@exprtlabs/golem': path.join(workspace, 'packages/golem'),
       '@nestjs/common': path.join(workspace, 'node_modules/@nestjs/common'),
       '@types': path.join(workspace, 'node_modules/@types'),
     });

@@ -1,5 +1,5 @@
 // #region custom-rule-fn
-import type { MinLength, TValidation } from '@exprtlabs/codegen/tags';
+import type { MinLength, TValidation } from '@exprtlabs/golem/tags';
 
 export function notBlank(value: string): boolean | string {
   return value.trim().length > 0 || 'Enter a title.';

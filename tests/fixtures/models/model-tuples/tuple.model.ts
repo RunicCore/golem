@@ -1,4 +1,4 @@
-import type { IModel } from '@exprtlabs/codegen/model';
+import type { IModel } from '@exprtlabs/golem/model';
 import { TupleBase, type TupleFields } from './tuple.model.generated.js';
 export type TTuple = IModel<{
   required: [string, number];

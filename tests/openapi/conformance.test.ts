@@ -7,11 +7,11 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import test, { after } from 'node:test';
-import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/codegen/conversion';
-import { requireObjectCodec } from '@exprtlabs/codegen/serde';
-import { LibError, LibErrorKind, IssueSource } from '@exprtlabs/codegen/errors';
-import type { GeneratedModel } from '@exprtlabs/codegen/model';
-import { createOpenApiAjvEngine } from '@exprtlabs/codegen/ajv';
+import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/golem/conversion';
+import { requireObjectCodec } from '@exprtlabs/golem/serde';
+import { LibError, LibErrorKind, IssueSource } from '@exprtlabs/golem/errors';
+import type { GeneratedModel } from '@exprtlabs/golem/model';
+import { createOpenApiAjvEngine } from '@exprtlabs/golem/ajv';
 import { generatedCodecId } from '../support/consumer.js';
 import {
   findRemoteRefs,

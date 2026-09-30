@@ -1,6 +1,6 @@
 {
   "profile": { "mobx": false, "validation": false, "ajvStandalone": false, "allowAny": false },
-  "generator": { "name": "@exprtlabs/openapi-to-ts", "version": 1 },
+  "generator": { "name": "@exprtlabs/golem-openapi", "version": 1 },
   "models": [{
     "id": "fixture:money",
     "allowAny": false,

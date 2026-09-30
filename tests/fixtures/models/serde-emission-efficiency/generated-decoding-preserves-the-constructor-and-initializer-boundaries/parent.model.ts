@@ -1,8 +1,8 @@
-import type { IModel } from '@exprtlabs/codegen/model';
+import type { IModel } from '@exprtlabs/golem/model';
 import { ParentBase, type ParentFields } from './parent.model.generated.js';
 import { Child } from './child.model.js';
 import type { TChild } from './child.model.js';
-import type { TSerde } from '@exprtlabs/codegen/tags';
+import type { TSerde } from '@exprtlabs/golem/tags';
 import { encodeOptional, decodeOptional } from './optional-codec.js';
 export type TParent = IModel<{ child: TChild; note?: string; code?: string & TSerde<typeof encodeOptional, typeof decodeOptional>; label: string; __serdeAccessorProbe?: string }>;
 export class Parent extends ParentBase {

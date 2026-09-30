@@ -1,7 +1,7 @@
 
 import { Controller, Get, Query } from '@nestjs/common';
-import type { IModel } from '@exprtlabs/codegen/model';
-import type { DependentRequired, Pattern, TSerde } from '@exprtlabs/codegen/tags';
+import type { IModel } from '@exprtlabs/golem/model';
+import type { DependentRequired, Pattern, TSerde } from '@exprtlabs/golem/tags';
 
 type IntegerText = string & Pattern<'^[0-9]+$'>;
 export function encodeInteger(value: number): IntegerText { return String(value) as IntegerText; }

@@ -5,11 +5,11 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import test from 'node:test';
 
-import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/codegen/conversion';
-import { requireObjectCodec } from '@exprtlabs/codegen/serde';
-import { LibError, LibErrorKind, IssueRepresentation, IssueSource } from '@exprtlabs/codegen/errors';
-import type { GeneratedModel } from '@exprtlabs/codegen/model';
-import { getValidator } from '@exprtlabs/codegen/validation';
+import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/golem/conversion';
+import { requireObjectCodec } from '@exprtlabs/golem/serde';
+import { LibError, LibErrorKind, IssueRepresentation, IssueSource } from '@exprtlabs/golem/errors';
+import type { GeneratedModel } from '@exprtlabs/golem/model';
+import { getValidator } from '@exprtlabs/golem/validation';
 import { generatedCodecIdFromRoot } from '../support/consumer.js';
 import {
   compileGeneratedSdk,

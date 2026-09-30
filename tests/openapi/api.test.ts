@@ -44,10 +44,10 @@ test('generate returns absolute pure artifacts and local watch inputs', async (t
   assert.ok(models);
   assert.ok(client);
   assert.ok(schemas);
-  assert.doesNotMatch(models, /@exprtlabs\/codegen\/(mobx|mobx-validation)/);
+  assert.doesNotMatch(models, /@exprtlabs\/golem\/(mobx|mobx-validation)/);
   assert.doesNotMatch(models, /asGenObservable|validation:\s*\{/);
   assert.match(models, /registerGeneratedModel/);
-  assert.doesNotMatch(client, /@exprtlabs\/codegen\/(ajv|validation)/);
+  assert.doesNotMatch(client, /@exprtlabs\/golem\/(ajv|validation)/);
   assert.doesNotMatch(schemas, /schemaRegistry|runtimeSchemaRegistry/);
 });
 
@@ -59,7 +59,7 @@ test('OpenAPI getValidator infers generated fields and rejects handwritten subcl
   const result = await generate({ input, output, name: 'ValidatorTypes', profile: { mobx: false, validation: true } });
   assert.equal(result.artifacts.some(({ path: filename }) => filename.endsWith('/validation.ts')), false);
   writeGeneratedArtifacts(result.artifacts);
-  linkProjectPackages(output, { '@exprtlabs/codegen': path.join(workspace, 'packages/codegen') });
+  linkProjectPackages(output, { '@exprtlabs/golem': path.join(workspace, 'packages/golem') });
   copyFixtureFile(output, "openapi/api/consumer.ts", "consumer.ts");
   await command(directory, process.execPath, [
     tscBin(),
@@ -104,7 +104,7 @@ test('SDK generated with mobx and validation disabled loads and runs an operatio
   writeGeneratedArtifacts(result.artifacts);
   writeFileSync(path.join(output, 'package.json'), '{"type":"module"}\n');
 
-  // Copy @exprtlabs/codegen's package.json and dist as real files rather than
+  // Copy @exprtlabs/golem's package.json and dist as real files rather than
   // symlinking (linkProjectPackages/prepareSdkProject's usual behavior): Node
   // resolves a symlink to its real path before walking node_modules, so a
   // symlinked codegen package would still resolve up into this workspace's own
@@ -112,8 +112,8 @@ test('SDK generated with mobx and validation disabled loads and runs an operatio
   // this test exists to prove. A real copy keeps the whole dependency chain
   // rooted under the temp project, where neither package exists at any
   // ancestor directory.
-  const codegenSource = path.join(workspace, 'packages/codegen');
-  const codegenDestination = path.join(output, 'node_modules/@exprtlabs/codegen');
+  const codegenSource = path.join(workspace, 'packages/golem');
+  const codegenDestination = path.join(output, 'node_modules/@exprtlabs/golem');
   mkdirSync(codegenDestination, { recursive: true });
   cpSync(path.join(codegenSource, 'package.json'), path.join(codegenDestination, 'package.json'));
   cpSync(path.join(codegenSource, 'dist'), path.join(codegenDestination, 'dist'), { recursive: true });

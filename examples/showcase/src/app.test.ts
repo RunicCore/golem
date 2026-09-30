@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { fromWireFormat, toWireFormat } from '@exprtlabs/codegen/serde';
-import { validateInstance } from '@exprtlabs/codegen/validation';
+import { fromWireFormat, toWireFormat } from '@exprtlabs/golem/serde';
+import { validateInstance } from '@exprtlabs/golem/validation';
 import { MemberModel, ProjectAccessClient } from '../sdk/index.js';
 import { checkPermissions } from './check-permissions.js';
 import { editAccess } from './edit-access.js';

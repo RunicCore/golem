@@ -13,13 +13,13 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import test, { type TestContext } from 'node:test';
 
-import { buildCodecValidationPlan, type CodecSchemaClosureEntry } from '@exprtlabs/codegen/ajv-tooling';
-import type { ModelTypeDescriptor } from '@exprtlabs/codegen/model';
-import { createSchemaGraph } from '@exprtlabs/codegen/schema-graph';
+import { buildCodecValidationPlan, type CodecSchemaClosureEntry } from '@exprtlabs/golem/ajv-tooling';
+import type { ModelTypeDescriptor } from '@exprtlabs/golem/model';
+import { createSchemaGraph } from '@exprtlabs/golem/schema-graph';
 import { generate } from '#model/generator';
 import { command, workspace } from './support/process.js';
-import type { ModelValidationContext } from '@exprtlabs/codegen/model';
-import { LibError, LibErrorKind } from '@exprtlabs/codegen/errors';
+import type { ModelValidationContext } from '@exprtlabs/golem/model';
+import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 
 interface Fixture {
   readonly root: string;
@@ -31,7 +31,7 @@ function fixture(t: TestContext): Fixture {
   const sourceRoot = path.join(root, 'src');
   mkdirSync(sourceRoot, { recursive: true });
   mkdirSync(path.join(root, 'node_modules/@exprtlabs'), { recursive: true });
-  symlinkSync(path.join(workspace, 'packages/codegen'), path.join(root, 'node_modules/@exprtlabs/codegen'), 'dir');
+  symlinkSync(path.join(workspace, 'packages/golem'), path.join(root, 'node_modules/@exprtlabs/golem'), 'dir');
   writeFileSync(path.join(root, 'package.json'), JSON.stringify({ name: 'standalone-codecs', private: true, type: 'module' }));
   writeFileSync(path.join(root, 'tsconfig.json'), JSON.stringify({
     compilerOptions: {
@@ -187,7 +187,7 @@ test('standalone object codecs close nested schemas and preserve first/all sync 
   assert.match(generated, /modelValidatorSet\.(?:first|all)\[/, 'object codecs bind directly to precompiled validators');
   assert.doesNotMatch(
     generated,
-    /@exprtlabs\/codegen\/ajv|createOpenApi(?:Sync)?AjvEngine/,
+    /@exprtlabs\/golem\/ajv|createOpenApi(?:Sync)?AjvEngine/,
     'standalone codecs bind to precompiled validators instead of importing a runtime Ajv engine',
   );
 
@@ -208,8 +208,8 @@ test('standalone object codecs close nested schemas and preserve first/all sync 
       readonly schemas: Readonly<Record<string, object | boolean>>;
     };
   }];
-  const { findCodecIdForConstructor, requireObjectCodec } = await import('@exprtlabs/codegen/serde');
-  const { getValidator, validateInstance } = await import('@exprtlabs/codegen/validation');
+  const { findCodecIdForConstructor, requireObjectCodec } = await import('@exprtlabs/golem/serde');
+  const { getValidator, validateInstance } = await import('@exprtlabs/golem/validation');
   const codecId = findCodecIdForConstructor(RootBase);
   assert.ok(codecId, 'generated root model has a registered codec id');
   const codec = requireObjectCodec(codecId);
@@ -351,7 +351,7 @@ test('standalone plans permit equal model names in independent source graphs', a
     { Item: new (values?: never) => object },
     { Item: new (values?: never) => object },
   ];
-  const { getValidator } = await import('@exprtlabs/codegen/validation');
+  const { getValidator } = await import('@exprtlabs/golem/validation');
   assert.equal(await getValidator(new FirstItem({ label: 'first' } as never)).validate(), true);
   assert.equal(await getValidator(new SecondItem({ count: 2 } as never)).validate(), true);
 });

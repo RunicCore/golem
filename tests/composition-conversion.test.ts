@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { transformSync } from 'esbuild';
 
-import { convertModelField, deserializeDate, serializeDate, withDiscriminatorValue } from '@exprtlabs/codegen/conversion';
+import { convertModelField, deserializeDate, serializeDate, withDiscriminatorValue } from '@exprtlabs/golem/conversion';
 import {
   emitModelFromInit,
   emitModelFromJSON,
@@ -11,7 +11,7 @@ import {
   type ModelConversionDescriptor,
   type SerdeResolver,
   type ToJsonModelResolver,
-} from '@exprtlabs/codegen/emitter';
+} from '@exprtlabs/golem/emitter';
 
 type CompiledConversion = (value: unknown) => unknown;
 

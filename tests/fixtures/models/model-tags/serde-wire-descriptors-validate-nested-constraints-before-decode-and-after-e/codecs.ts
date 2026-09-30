@@ -1,4 +1,4 @@
-import type { MinLength } from '@exprtlabs/codegen/tags';
+import type { MinLength } from '@exprtlabs/golem/tags';
 export let encodeCalls = 0;
 export let decodeCalls = 0;
 export type Wire = { code: string & MinLength<3> };

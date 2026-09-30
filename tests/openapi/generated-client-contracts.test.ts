@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import test, { after } from 'node:test';
-import { LibError, LibErrorKind } from '@exprtlabs/codegen/errors';
+import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 import { generate } from '#openapi/generator';
 import {
   captureRequest,

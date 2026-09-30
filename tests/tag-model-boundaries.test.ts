@@ -4,11 +4,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 import test, { type TestContext } from 'node:test';
 
-import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/codegen/conversion';
-import { requireObjectCodec } from '@exprtlabs/codegen/serde';
-import { getValidator } from '@exprtlabs/codegen/validation';
-import { validationTagKey } from '@exprtlabs/codegen/schema';
-import type { ModelTypeDescriptor } from '@exprtlabs/codegen/model';
+import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/golem/conversion';
+import { requireObjectCodec } from '@exprtlabs/golem/serde';
+import { getValidator } from '@exprtlabs/golem/validation';
+import { validationTagKey } from '@exprtlabs/golem/schema';
+import type { ModelTypeDescriptor } from '@exprtlabs/golem/model';
 import { generatedCodecId } from './support/consumer.js';
 import { generate, type ModelCodegenResult } from '#model/generator';
 import { writeGeneratedArtifacts } from './fixture-project.js';

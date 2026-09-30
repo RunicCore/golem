@@ -1,7 +1,7 @@
 // #region nested-field-errors
-import type { IModel } from '@exprtlabs/codegen/model';
-import type { MinLength } from '@exprtlabs/codegen/tags';
-import { getValidator, validateInstance } from '@exprtlabs/codegen/validation';
+import type { IModel } from '@exprtlabs/golem/model';
+import type { MinLength } from '@exprtlabs/golem/tags';
+import { getValidator, validateInstance } from '@exprtlabs/golem/validation';
 import { OrderInputBase } from './order-input.model.generated.js';
 
 export type TOrderInput = IModel<{

@@ -88,7 +88,7 @@ function fixture(t: TestContext): RealFixture {
 }
 
 function startWatch(fixture: RealFixture): WatchCapture {
-  const binary = path.join(workspace, 'packages/codegen/dist/bin/runic-codegen.js');
+  const binary = path.join(workspace, 'packages/golem/dist/bin/runic-codegen.js');
   const child = spawn(process.execPath, [binary, 'watch', '--config', fixture.config], {
     cwd: fixture.root,
     env: { ...process.env, NODE_PATH: '' },

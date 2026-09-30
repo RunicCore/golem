@@ -1,5 +1,5 @@
 
-import { asGenObservable } from '@exprtlabs/codegen/mobx';
+import { asGenObservable } from '@exprtlabs/golem/mobx';
 import { observable } from 'mobx';
 import { CardPaymentModel, EnvelopeModel } from './index.js';
 import type { Envelope } from './types.js';

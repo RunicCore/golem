@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import type { CodegenProfile } from '@exprtlabs/codegen/generator-api';
+import type { CodegenProfile } from '@exprtlabs/golem/generator-api';
 import { copyFixtureFile } from '../fixture-project.js';
 
 export function writeFixture(root: string, profile: CodegenProfile, includeModels = true): void {

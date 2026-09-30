@@ -9,14 +9,14 @@ import {
   type AnySchema,
   type ValidateFunction,
 } from 'ajv/dist/2020.js';
-import { schemaForDescriptor } from '@exprtlabs/codegen/schema';
-import { requireObjectCodec } from '@exprtlabs/codegen/serde';
-import { getValidator } from '@exprtlabs/codegen/validation';
+import { schemaForDescriptor } from '@exprtlabs/golem/schema';
+import { requireObjectCodec } from '@exprtlabs/golem/serde';
+import { getValidator } from '@exprtlabs/golem/validation';
 import { analyzeSourceGraph } from '#model/emit';
 import { generate } from '#model/generator';
-import { collectSpecifications } from '@exprtlabs/codegen/type-analysis';
-import { loadModelManifests } from '@exprtlabs/codegen/type-analysis';
-import { createProgram, generatedFilename } from '@exprtlabs/codegen/type-analysis';
+import { collectSpecifications } from '@exprtlabs/golem/type-analysis';
+import { loadModelManifests } from '@exprtlabs/golem/type-analysis';
+import { createProgram, generatedFilename } from '@exprtlabs/golem/type-analysis';
 import { generate as generateControllers } from '#controllers/generator';
 import { command, workspace } from './support/process.js';
 import { generatedCodecIdFromRoot } from './support/consumer.js';
@@ -31,7 +31,7 @@ function fixture(t: TestContext): Fixture {
   const root = createFixtureProject(t, 'runic-constraint-parity-');
   const sourceRoot = path.join(root, 'src');
   linkProjectPackages(root, {
-    '@exprtlabs/codegen': path.join(workspace, 'packages/codegen'),
+    '@exprtlabs/golem': path.join(workspace, 'packages/golem'),
   });
   writeGeneratedArtifacts([
     {

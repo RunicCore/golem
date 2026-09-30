@@ -1,5 +1,5 @@
-import type { IModel } from '@exprtlabs/codegen/model';
-import { validateInstance, getValidator } from '@exprtlabs/codegen/validation';
+import type { IModel } from '@exprtlabs/golem/model';
+import { validateInstance, getValidator } from '@exprtlabs/golem/validation';
 import { ChildBase, RootBase } from './getter-replay.model.generated.js';
 export type TChild = IModel<{ value: number }>;
 export type TRoot = IModel<{ child: TChild }>;

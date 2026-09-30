@@ -5,7 +5,7 @@ export function paymentModelSource(options: {
   readonly fieldType: 'number' | 'string';
 }): SourceFragment {
   const fieldType = options.fieldType === 'number' ? tsSource`number` : tsSource`string`;
-  return tsSource`import type { IModel } from '@exprtlabs/codegen/model';
+  return tsSource`import type { IModel } from '@exprtlabs/golem/model';
 
 export type TPayment = IModel<{ ${identifier(options.field)}: ${fieldType} }>;
 `;

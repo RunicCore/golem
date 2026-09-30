@@ -1,6 +1,6 @@
-import type { IModel } from '@exprtlabs/codegen/model';
+import type { IModel } from '@exprtlabs/golem/model';
 import { ABase, type AFields } from './a.model.generated.js';
-import type { Contains, IfThenElse, Not, OneOf, TValidation } from '@exprtlabs/codegen/tags';
+import type { Contains, IfThenElse, Not, OneOf, TValidation } from '@exprtlabs/golem/tags';
 import { nestedPositive, nonEmpty, positive } from './predicates.js';
 
 export type TA = IModel<{

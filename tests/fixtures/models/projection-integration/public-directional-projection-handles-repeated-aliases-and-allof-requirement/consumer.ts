@@ -1,8 +1,8 @@
 
 import assert from 'node:assert/strict';
 import { ProjectionClient, UserBaseModel, type InputSchemas, type OutputSchemas } from './sdk/index.js';
-import { decodeGeneratedModel } from '@exprtlabs/codegen/conversion';
-import { getValidator } from '@exprtlabs/codegen/validation';
+import { decodeGeneratedModel } from '@exprtlabs/golem/conversion';
+import { getValidator } from '@exprtlabs/golem/validation';
 const input: InputSchemas.User = { name: 'Ada', secretOne: 'one', secretTwo: 'two' };
 const output: OutputSchemas.User = { name: 'Ada', first: 'id-1', second: 'id-2' };
 let calls = 0;

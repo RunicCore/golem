@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { isObservableProp } from 'mobx';
-import { getValidator } from '@exprtlabs/codegen/validation';
+import { getValidator } from '@exprtlabs/golem/validation';
 import { PaymentsClient } from '../sdk/index.js';
 import { PaymentStore } from '../src/payment-store.js';
 

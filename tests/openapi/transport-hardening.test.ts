@@ -4,8 +4,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import test, { after } from 'node:test';
-import { ClientRuntime } from '@exprtlabs/codegen/client';
-import { LibError, LibErrorKind } from '@exprtlabs/codegen/errors';
+import { ClientRuntime } from '@exprtlabs/golem/client';
+import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 import {
   captureRequest,
   compileGeneratedSdk,

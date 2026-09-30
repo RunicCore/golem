@@ -1,5 +1,5 @@
 // #region task-model
-import { fromWireFormat } from '@exprtlabs/codegen/serde';
+import { fromWireFormat } from '@exprtlabs/golem/serde';
 import { TaskModel } from '../sdk/index.js';
 
 export function loadTask(data: { id: string; title: string }): TaskModel {

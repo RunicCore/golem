@@ -67,7 +67,7 @@ register `NestModelInterceptor`:
 import 'reflect-metadata';
 import { Module } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
-import { NestModelInterceptor } from '@exprtlabs/codegen/nest';
+import { NestModelInterceptor } from '@exprtlabs/golem/nest';
 import { PaymentsController } from './payments.controller.js';
 import './payment.model.js';
 
@@ -89,7 +89,7 @@ export async function createApplication() {
 `src/client.ts` sends a model draft through the generated operation:
 
 ```ts
-import { fromWireFormat } from '@exprtlabs/codegen/serde';
+import { fromWireFormat } from '@exprtlabs/golem/serde';
 import { PaymentsClient } from '../sdk/index.js';
 import { Payment, type TPaymentInput } from './payment.model.js';
 

@@ -24,7 +24,7 @@ function fixture(t: TestContext): string {
         outDir: 'build',
         rootDir: 'src',
         types: ['node'],
-        plugins: [{ transform: '@exprtlabs/ts-to-openapi/ttsc-plugin' }],
+        plugins: [{ transform: '@exprtlabs/golem-ts-openapi/ttsc-plugin' }],
       },
       include: ['src/**/*.ts'],
     },
@@ -94,7 +94,7 @@ test('ttsc nest plugin registers nestModelCodec and nestModelReturn metadata, ke
   assert.doesNotMatch(emitted, /nestModelCodec\("[^"]+"\)\),,/);
   assert.doesNotMatch(emitted, /nestModelPipe/);
   assert.doesNotMatch(emitted, /UseInterceptors|NestModelInterceptor|nestModelStringifyInterceptor/);
-  assert.match(emitted, /from '@exprtlabs\/codegen\/nest'/);
+  assert.match(emitted, /from '@exprtlabs\/golem\/nest'/);
   assert.doesNotMatch(emitted, /OPERATION_CODECS/);
 });
 
@@ -187,8 +187,8 @@ test('serde rewrite and nest codec metadata share one ttsc emit', async (t) => {
     compilerOptions: { plugins: { transform: string }[] };
   };
   tsconfig.compilerOptions.plugins = [
-    { transform: '@exprtlabs/codegen/ttsc-plugin' },
-    { transform: '@exprtlabs/ts-to-openapi/ttsc-plugin' },
+    { transform: '@exprtlabs/golem/ttsc-plugin' },
+    { transform: '@exprtlabs/golem-ts-openapi/ttsc-plugin' },
   ];
   fs.writeFileSync(path.join(root, 'tsconfig.json'), JSON.stringify(tsconfig));
   fs.writeFileSync(

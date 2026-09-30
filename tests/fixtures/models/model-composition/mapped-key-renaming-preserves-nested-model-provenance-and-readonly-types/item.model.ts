@@ -1,5 +1,5 @@
 
-import type { IModel } from '@exprtlabs/codegen/model';
+import type { IModel } from '@exprtlabs/golem/model';
 import { ResidenceBase, ContactBase, ItemBase } from './item.model.generated.js';
 export type TResidence = IModel<{ city: string }>;
 export type TContact = IModel<{ home: TResidence }>;

@@ -1,6 +1,6 @@
 
 import { Body, Controller, Post } from '@nestjs/common';
-import type { IModel } from '@exprtlabs/codegen/model';
+import type { IModel } from '@exprtlabs/golem/model';
 
 export type TPayment = IModel<{ id: string } | { token: string }>;
 

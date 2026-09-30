@@ -1,4 +1,4 @@
-import type { IObject, IModel } from '@exprtlabs/codegen/model';
+import type { IObject, IModel } from '@exprtlabs/golem/model';
 import { PaymentBase } from './money.model.generated.js';
 
 export type TMoney = IObject<{ currency: string; value: string }>;

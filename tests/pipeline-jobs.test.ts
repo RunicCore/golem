@@ -6,13 +6,13 @@ import { test, type TestContext } from 'node:test';
 import { runPipeline } from '#codegen/cli';
 import { workspace } from './support/process.js';
 import { writeFixture } from './support/consumer.js';
-import { generate as generateModels } from '@exprtlabs/model-codegen/generator';
+import { generate as generateModels } from '@exprtlabs/golem-model/generator';
 
 function packageFixture(t: TestContext, { profile = { mobx: false, validation: true }, models = true } = {}): { root: string; config: string } {
   const root = createFixtureProject(t, 'runic-pipeline-jobs-');
 
   linkProjectPackages(root, Object.fromEntries(
-    ['codegen', 'model-codegen', 'openapi-to-ts'].map(name => [`@exprtlabs/${name}`, path.join(workspace, 'packages', name)]),
+    ['golem', 'golem-model', 'golem-openapi'].map(name => [`@exprtlabs/${name}`, path.join(workspace, 'packages', name)]),
   ));
   fs.writeFileSync(path.join(root, 'package.json'), '{"name":"runic-pipeline-jobs-fixture","type":"module"}');
   writeFixture(root, profile, models);

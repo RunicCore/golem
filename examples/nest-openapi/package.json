@@ -10,7 +10,7 @@
     "client": "ttsc && node .build/src/run-client.js"
   },
   "dependencies": {
-    "@exprtlabs/codegen": "1.0.0-rc",
+    "@exprtlabs/golem": "1.0.0-rc",
     "@nestjs/common": "11.2.3",
     "@nestjs/core": "11.2.3",
     "@nestjs/platform-express": "11.2.3",
@@ -21,9 +21,9 @@
     "ajv-formats": "^3.0.1"
   },
   "devDependencies": {
-    "@exprtlabs/model-codegen": "1.0.0-rc",
-    "@exprtlabs/openapi-to-ts": "1.0.0-rc",
-    "@exprtlabs/ts-to-openapi": "1.0.0-rc",
+    "@exprtlabs/golem-model": "1.0.0-rc",
+    "@exprtlabs/golem-openapi": "1.0.0-rc",
+    "@exprtlabs/golem-ts-openapi": "1.0.0-rc",
     "typescript": "7.x",
     "ttsc": "0.30.x",
     "@types/node": "22.20.1"

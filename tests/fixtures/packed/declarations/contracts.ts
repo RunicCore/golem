@@ -5,11 +5,11 @@ import {
   discoverModelManifests,
   generatedFilename,
   isModelSource,
-} from '@exprtlabs/model-codegen/generator';
-import type { ModelCodegenContext, ModelCodegenResult } from '@exprtlabs/model-codegen/generator';
-import { generate as openapi, apiVersion as openapiVersion } from '@exprtlabs/openapi-to-ts/generator';
-import type { OpenApiGenerationContext, OpenApiGenerationResult } from '@exprtlabs/openapi-to-ts/generator';
-import type { CodegenArtifact, CodegenResult } from '@exprtlabs/codegen/generator-api';
+} from '@exprtlabs/golem-model/generator';
+import type { ModelCodegenContext, ModelCodegenResult } from '@exprtlabs/golem-model/generator';
+import { generate as openapi, apiVersion as openapiVersion } from '@exprtlabs/golem-openapi/generator';
+import type { OpenApiGenerationContext, OpenApiGenerationResult } from '@exprtlabs/golem-openapi/generator';
+import type { CodegenArtifact, CodegenResult } from '@exprtlabs/golem/generator-api';
 
 const modelVersion: 1 = modelsVersion;
 const sdkVersion: 1 = openapiVersion;

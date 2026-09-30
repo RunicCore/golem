@@ -1,6 +1,6 @@
 {
   "generator": {
-    "name": "@exprtlabs/openapi-to-ts",
+    "name": "@exprtlabs/golem-openapi",
     "version": "1.0.0-rc"
   },
   "models": [
@@ -31,7 +31,7 @@
         "export": "MemberModel",
         "module": "./models/Member.ts"
       },
-      "id": "openapi:98783e33fb1a145c#/components/schemas/Member",
+      "id": "openapi:6073e63c7e9b1747#/components/schemas/Member",
       "inheritance": null,
       "sourceKind": "openapi",
       "type": {
@@ -82,7 +82,7 @@
         "export": "ProjectAccessModel",
         "module": "./models/ProjectAccess.ts"
       },
-      "id": "openapi:98783e33fb1a145c#/components/schemas/ProjectAccess",
+      "id": "openapi:6073e63c7e9b1747#/components/schemas/ProjectAccess",
       "inheritance": null,
       "sourceKind": "openapi",
       "type": {
@@ -113,11 +113,11 @@
   },
   "runtime": {
     "minimumVersion": "1.0.0-rc",
-    "name": "@exprtlabs/codegen"
+    "name": "@exprtlabs/golem"
   },
   "source": {
     "dialect": "3.2.0",
-    "digest": "98783e33fb1a145cd4a6d69dff3238f88b8132cf4c91a63327b2e437fef36de8",
+    "digest": "6073e63c7e9b174726cd4cbec185ce00f49f2a412e5bc93c2a91d506e21c8bc1",
     "kind": "openapi"
   },
   "validationSchemaClosure": [
@@ -125,7 +125,7 @@
       "aliases": [
         "Member",
         "Member_24b40f77",
-        "openapi:98783e33fb1a145c#/components/schemas/Member"
+        "openapi:6073e63c7e9b1747#/components/schemas/Member"
       ],
       "codecId": "Member_24b40f77",
       "modelSchema": {
@@ -174,7 +174,7 @@
       "aliases": [
         "ProjectAccess",
         "ProjectAccess_87602853",
-        "openapi:98783e33fb1a145c#/components/schemas/ProjectAccess"
+        "openapi:6073e63c7e9b1747#/components/schemas/ProjectAccess"
       ],
       "codecId": "ProjectAccess_87602853",
       "modelSchema": {

@@ -1,4 +1,4 @@
-import { LibError, LibErrorKind, IssueSource } from '@exprtlabs/codegen/errors';
+import { LibError, LibErrorKind, IssueSource } from '@exprtlabs/golem/errors';
 import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';

@@ -7,7 +7,7 @@ import { goBinary } from './go-binary.js';
 const root = fileURLToPath(new URL('../../', import.meta.url));
 
 const result = spawnSync(goBinary(), ['test', './...'], {
-  cwd: path.join(root, 'packages/codegen/plugin'),
+  cwd: path.join(root, 'packages/golem/plugin'),
   env: { ...process.env, GOTOOLCHAIN: 'local' },
   stdio: 'inherit',
 });

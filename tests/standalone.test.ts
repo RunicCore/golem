@@ -5,9 +5,9 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import test from 'node:test';
 
-import { createOpenApiAjvEngine } from '@exprtlabs/codegen/ajv';
-import { compileStandaloneValidators } from '@exprtlabs/codegen/ajv-tooling';
-import { LibError, LibErrorKind } from '@exprtlabs/codegen/errors';
+import { createOpenApiAjvEngine } from '@exprtlabs/golem/ajv';
+import { compileStandaloneValidators } from '@exprtlabs/golem/ajv-tooling';
+import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 import { writeSdk } from '#openapi/generator';
 import {
   artifactBasenames,
@@ -151,7 +151,7 @@ test('OpenAPI standalone profile emits self-contained validators while default v
   assert.equal(runtimeNames.includes('validators.generated.NOTICES.txt'), false);
   assert.equal(runtimeNames.includes('validation-engine.ts'), false);
   const runtimeModels = generatedModelSource(runtime.artifacts);
-  assert.match(runtimeModels, /@exprtlabs\/codegen\/ajv/);
+  assert.match(runtimeModels, /@exprtlabs\/golem\/ajv/);
   assert.doesNotMatch(runtimeModels, /validation-engine\.js/);
   const runtimeManifest = JSON.parse(runtime.artifacts.find(item => item.path.endsWith('/model-manifest.json'))?.content ?? '{}') as {
     profile?: { ajvStandalone?: boolean; allowAny?: boolean };
@@ -166,7 +166,7 @@ test('OpenAPI standalone profile emits self-contained validators while default v
   const standaloneModels = generatedModelSource(standalone.artifacts);
   assert.match(standaloneModels, /validators\.generated\.js/);
   assert.match(standaloneModels, /createObjectCodec/);
-  assert.doesNotMatch(standaloneModels, /@exprtlabs\/codegen\/ajv|createOpenApi(?:Sync)?AjvEngine/);
+  assert.doesNotMatch(standaloneModels, /@exprtlabs\/golem\/ajv|createOpenApi(?:Sync)?AjvEngine/);
   const standaloneManifest = JSON.parse(standalone.artifacts.find(item => item.path.endsWith('/model-manifest.json'))?.content ?? '{}') as {
     profile?: { ajvStandalone?: boolean; allowAny?: boolean };
   };

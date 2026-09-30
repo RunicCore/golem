@@ -1,7 +1,7 @@
 
 import { Controller, Get } from '@nestjs/common';
 import { ApiResponse } from '@nestjs/swagger';
-import type { IModel } from '@exprtlabs/codegen/model';
+import type { IModel } from '@exprtlabs/golem/model';
 
 export type TPayment = IModel<{ id: string; amount: number }>;
 

@@ -1,5 +1,5 @@
 
-import type { IModel } from '@exprtlabs/codegen/model';
+import type { IModel } from '@exprtlabs/golem/model';
 import { TreeBase, BranchBase } from './tree.model.generated.js';
 export type TBranch = IModel<{ id: string; label: string; children?: Projected[] }>;
 type Projected = Omit<TBranch, 'id'>;

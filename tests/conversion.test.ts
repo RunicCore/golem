@@ -5,14 +5,14 @@ import {
   convertModelField,
   deserializeDate,
   serializeDate,
-} from '@exprtlabs/codegen/conversion';
+} from '@exprtlabs/golem/conversion';
 import {
   IssueCode,
   IssueRepresentation,
   IssueSource,
   LibError,
   LibErrorKind,
-} from '@exprtlabs/codegen/errors';
+} from '@exprtlabs/golem/errors';
 
 test('conversion scopes preserve LibError identity and restore paths after failure', () => {
   const original = new LibError(LibErrorKind.Deserialization, 'Explicit callback failure', [{

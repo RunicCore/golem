@@ -2,8 +2,8 @@
 
 One TypeScript-first toolchain for models, validation, JSON conversion,
 OpenAPI documents and typed API clients. Write the type once in
-`@exprtlabs/model-codegen`, `@exprtlabs/openapi-to-ts` or
-`@exprtlabs/ts-to-openapi`; the shared `@exprtlabs/codegen` runtime and
+`@exprtlabs/golem-model`, `@exprtlabs/golem-openapi` or
+`@exprtlabs/golem-ts-openapi`; the shared `@exprtlabs/golem` runtime and
 `runic-codegen` CLI generate the rest, in dependency order when a project uses
 more than one.
 
@@ -14,20 +14,20 @@ dependencies, the generator in development dependencies, alongside the peer
 compiler ([installation](docs/guide/install.md)):
 
 ```sh
-npm install @exprtlabs/codegen@rc ajv ajv-formats
-npm install --save-dev @exprtlabs/model-codegen@rc typescript@~7.0.2 ttsc@~0.30.4
+npm install @exprtlabs/golem@rc ajv ajv-formats
+npm install --save-dev @exprtlabs/golem-model@rc typescript@~7.0.2 ttsc@~0.30.4
 ```
 
 Or, for an existing OpenAPI document:
 
 ```sh
-npm install --save-dev @exprtlabs/openapi-to-ts@rc typescript@~7.0.2 ttsc@~0.30.4
+npm install --save-dev @exprtlabs/golem-openapi@rc typescript@~7.0.2 ttsc@~0.30.4
 ```
 
 Or, for NestJS controllers only:
 
 ```sh
-npm install --save-dev @exprtlabs/ts-to-openapi@rc typescript@~7.0.2 ttsc@~0.30.4
+npm install --save-dev @exprtlabs/golem-ts-openapi@rc typescript@~7.0.2 ttsc@~0.30.4
 ```
 
 ## Quick start
@@ -42,14 +42,14 @@ Add `"type": "module"` to `package.json` and this to `tsconfig.json`:
     "strict": true,
     "rootDir": ".",
     "outDir": ".build",
-    "plugins": [{ "transform": "@exprtlabs/codegen/ttsc-plugin" }]
+    "plugins": [{ "transform": "@exprtlabs/golem/ttsc-plugin" }]
   },
   "include": ["src/**/*.ts"]
 }
 ```
 Declare a model in `src/task.model.ts`, generate its class, then use it:
 ```ts
-import type { IModel } from '@exprtlabs/codegen/model';
+import type { IModel } from '@exprtlabs/golem/model';
 export type TTask = IModel<{ title: string; done: boolean }>;
 ```
 ```sh
@@ -57,7 +57,7 @@ npx runic-codegen generate
 ```
 ```ts
 import { TaskBase } from './task.model.generated.js';
-import { toWireFormat } from '@exprtlabs/codegen/serde';
+import { toWireFormat } from '@exprtlabs/golem/serde';
 export class Task extends TaskBase {
   toggle(): void { this.done = !this.done; }
 }

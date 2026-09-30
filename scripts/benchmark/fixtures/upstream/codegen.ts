@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
-import { LibError, LibErrorKind } from '@exprtlabs/codegen/errors';
-import { registerIModelClass, requireObjectCodec } from '@exprtlabs/codegen/serde';
+import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
+import { registerIModelClass, requireObjectCodec } from '@exprtlabs/golem/serde';
 import type { Adapter, ComparisonFixture } from './fixture-contract.js';
 import {
   Account,

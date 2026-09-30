@@ -1,5 +1,5 @@
-import type { IModel, IObject } from '@exprtlabs/codegen/model';
-import type { MinLength, TSerde, TValidation } from '@exprtlabs/codegen/tags';
+import type { IModel, IObject } from '@exprtlabs/golem/model';
+import type { MinLength, TSerde, TValidation } from '@exprtlabs/golem/tags';
 import type { Money } from './sdk/index.js';
 import { extraMoney, notBlank, positive, encodeHex, decodeHex } from './rules.js';
 import { CheckoutBase, LineItemBase, type CheckoutFields, type LineItemFields } from './checkout.model.generated.js';

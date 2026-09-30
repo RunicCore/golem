@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import test from 'node:test';
-import { LibError, LibErrorKind } from '@exprtlabs/codegen/errors';
+import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 import { compileGeneratedSdk, generateMaterializedSdk, isGeneratedClientClass } from './helpers.js';
 
 test('client validation failures use library errors while network failures preserve their identity', async t => {

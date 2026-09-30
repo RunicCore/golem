@@ -8,7 +8,7 @@ test('a named re-export colliding with an export * name is rejected', () => {
   const modules = new Map([
     ['index.ts', entry],
     ['types.ts', 'export interface ValidationResult { ok: boolean }\n'],
-    ['schemas.ts', "export {\n  validateWith,\n  type ValidationResult,\n} from '@exprtlabs/codegen/validation';\n"],
+    ['schemas.ts', "export {\n  validateWith,\n  type ValidationResult,\n} from '@exprtlabs/golem/validation';\n"],
   ]);
   assert.throws(() => assertUniquePublicExports(modules), /collision.*ValidationResult/);
 });

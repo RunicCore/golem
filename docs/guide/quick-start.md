@@ -5,8 +5,8 @@ Declare a model, generate its class, add a method, and run it.
 ## Install
 
 ```sh
-npm install @exprtlabs/codegen@rc ajv ajv-formats
-npm install --save-dev @exprtlabs/model-codegen@rc typescript@~7.0.2 ttsc@~0.30.4
+npm install @exprtlabs/golem@rc ajv ajv-formats
+npm install --save-dev @exprtlabs/golem-model@rc typescript@~7.0.2 ttsc@~0.30.4
 ```
 
 Add `"type": "module"` to `package.json` and this to `tsconfig.json` ([TypeScript setup](/guide/install#typescript-setup)):
@@ -21,7 +21,7 @@ Add `"type": "module"` to `package.json` and this to `tsconfig.json` ([TypeScrip
     "rootDir": ".",
     "outDir": ".build",
     "plugins": [
-      { "transform": "@exprtlabs/codegen/ttsc-plugin" }
+      { "transform": "@exprtlabs/golem/ttsc-plugin" }
     ]
   },
   "include": [
@@ -35,7 +35,7 @@ Add `"type": "module"` to `package.json` and this to `tsconfig.json` ([TypeScrip
 Mark a type with `IModel` in `src/task.model.ts`:
 
 ```ts
-import type { IModel } from '@exprtlabs/codegen/model';
+import type { IModel } from '@exprtlabs/golem/model';
 
 export type TTask = IModel<{
   title: string;
@@ -72,7 +72,7 @@ You get `src/task.model.generated.ts` beside the declaration, with the generated
 Extend the generated class in `src/task.model.ts`, below the declaration:
 
 ```ts
-import type { IModel } from '@exprtlabs/codegen/model';
+import type { IModel } from '@exprtlabs/golem/model';
 import { TaskBase } from './task.model.generated.js';
 
 export type TTask = IModel<{
@@ -94,8 +94,8 @@ To add a field later, change `TTask` and generate again. Only `task.model.genera
 Create `src/main.ts`:
 
 ```ts
-import { toWireFormat } from '@exprtlabs/codegen/serde';
-import { validateInstance } from '@exprtlabs/codegen/validation';
+import { toWireFormat } from '@exprtlabs/golem/serde';
+import { validateInstance } from '@exprtlabs/golem/validation';
 import { Task } from './task.model.js';
 
 const task = new Task({ title: 'Review the draft', done: false });
@@ -104,7 +104,7 @@ console.log(toWireFormat<Task>(task)); // { title: 'Review the draft', done: tru
 console.log(await validateInstance(task)); // []
 ```
 
-`@exprtlabs/codegen/serde` also exports `parse` and `stringify`. `parse<Task>(text)` builds a `Task`; `parse<TTask>(text)` returns a plain object. `stringify` returns JSON text.
+`@exprtlabs/golem/serde` also exports `parse` and `stringify`. `parse<Task>(text)` builds a `Task`; `parse<TTask>(text)` returns a plain object. `stringify` returns JSON text.
 
 ## Run it
 

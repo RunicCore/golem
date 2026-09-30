@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { Item } from './build/item.model.js';
-import { decodeGeneratedModel } from '@exprtlabs/codegen/conversion';
-import { getValidator } from '@exprtlabs/codegen/validation';
+import { decodeGeneratedModel } from '@exprtlabs/golem/conversion';
+import { getValidator } from '@exprtlabs/golem/validation';
 
 const model = decodeGeneratedModel(Item, { title: 123, count: 'bad' });
 assert.equal(await getValidator(model).validate({ failFast: false }), false);

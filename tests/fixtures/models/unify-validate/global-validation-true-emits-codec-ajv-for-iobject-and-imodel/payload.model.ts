@@ -1,4 +1,4 @@
-import type { IModel, IObject } from '@exprtlabs/codegen/model';
+import type { IModel, IObject } from '@exprtlabs/golem/model';
 import { PayloadBase, type PayloadFields } from './payload.model.generated.js';
 export type TAlias = IObject<{ id: string }>;
 export type TPayload = IModel<{ title: string }>;

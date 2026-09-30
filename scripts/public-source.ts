@@ -17,7 +17,7 @@ const rootFiles = new Set([
   'README.md', 'CHANGELOG.md', 'LICENSE',
   'package.json', 'package-lock.json', '.gitignore',
 ]);
-const packageFolders = new Set(['codegen', 'model-codegen', 'openapi-to-ts', 'ts-to-openapi']);
+const packageFolders = new Set(['golem', 'golem-model', 'golem-openapi', 'golem-ts-openapi']);
 const packageFiles = new Set(['package.json', 'README.md', 'LICENSE', 'MATRIX.md', 'THIRD_PARTY_NOTICES.md']);
 const textExtensions = new Set(['.ts', '.tsx', '.js', '.mjs', '.cjs', '.json', '.md', '.yaml', '.yml', '.txt', '.css', '.html', '.svg', '.vue', '.map', '.go', '.mod', '.sum', '.work']);
 

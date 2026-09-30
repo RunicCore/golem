@@ -15,10 +15,10 @@ The first release candidate includes four independently installable packages:
 
 | Package | Purpose |
 | --- | --- |
-| `@exprtlabs/model-codegen` | Generate model bases from TypeScript declarations |
-| `@exprtlabs/openapi-to-ts` | Generate typed clients and runtime models from OpenAPI |
-| `@exprtlabs/ts-to-openapi` | Generate OpenAPI from NestJS controllers |
-| `@exprtlabs/codegen` | Shared CLI, model runtime, validation and serialization |
+| `@exprtlabs/golem-model` | Generate model bases from TypeScript declarations |
+| `@exprtlabs/golem-openapi` | Generate typed clients and runtime models from OpenAPI |
+| `@exprtlabs/golem-ts-openapi` | Generate OpenAPI from NestJS controllers |
+| `@exprtlabs/golem` | Shared CLI, model runtime, validation and serialization |
 
 ### Models
 
@@ -26,7 +26,7 @@ The first release candidate includes four independently installable packages:
 - Synchronous `parse` / `stringify` convert JSON text; `fromWireFormat` /
   `toWireFormat` convert the object plane. Type-only targets fill a plain
   IObject; class targets construct that class.
-- `toWireFormat<T>` returns `WireFormat<T>` (exported from `@exprtlabs/codegen/serde` and `/model`), which equals the generated `XJSON` type, instead of `unknown`; drop `as XJSON` casts. Generated `toWireFormatX` functions and `ObjectCodec.toWireFormat` report the same type.
+- `toWireFormat<T>` returns `WireFormat<T>` (exported from `@exprtlabs/golem/serde` and `/model`), which equals the generated `XJSON` type, instead of `unknown`; drop `as XJSON` casts. Generated `toWireFormatX` functions and `ObjectCodec.toWireFormat` report the same type.
 - Validated conversion checks each rule once. `parse` / `fromWireFormat` check the full JSON, then only converted values and model `TValidation` rules; `stringify` / `toWireFormat` check the full model, then only the JSON written for converted fields. `IObject` `parse` now enforces those model rules too. Validation contexts resolve by reference (`resolve(reference, mode)`, with `Id`, `Id#wire`, `Id#model-only`, `Id#wire-only`); `registerCodecSchemas` fills an engine.
 - `toWireFormat` and `encodeGeneratedModel` omit an optional field whose value is `undefined`, as `stringify` and `JSON.stringify` do. A nested plain object without a projection keeps an `undefined` key you set on it.
 - Decoding nested models is faster: a nested model in the same companion reuses the input copy the outermost `fromWireFormat` made instead of copying its subtree again, and model fields are assigned directly unless the class or its prototype chain already has a property of that name (inherited setters are still never invoked).
@@ -53,7 +53,7 @@ The first release candidate includes four independently installable packages:
 - Controller decorator metadata is read from literals, `const` declarations, enum members and whole enums, `const` objects, spreads and string templates. **Breaking:** a structural option (`type`, `enum`, `schema`, `format`, bounds, `required`, `nullable`, tags, security, status) that is not a compile-time constant fails generation with `NEST1504`; a non-constant documentation option (`description`, `summary`, `title`, `example`, `externalDocs`) is dropped with a `NEST1504` warning. `let` and `var` route constants are rejected.
 - `getSchemaPath()` and `refs()` become component references and honor `@ApiSchema({ name })`. `@ApiProperty` accepts `type: 'integer'`, `Date` and enums, applies to array and optional nested DTOs, and keeps metadata for every nested property.
 - Inherited routes from generic and mixin base controllers use the derived class's type arguments. `Observable<T>` returns are unwrapped like `Promise<T>`.
-- **Breaking:** `@exprtlabs/ts-to-openapi` declares `typescript` (`~7.0.2`) and `ttsc` (`~0.30.4`) as peer dependencies instead of dependencies; install them in the consuming project.
+- **Breaking:** `@exprtlabs/golem-ts-openapi` declares `typescript` (`~7.0.2`) and `ttsc` (`~0.30.4`) as peer dependencies instead of dependencies; install them in the consuming project.
 - **Breaking:** parameters decorated with `@Header()`, `@Cookie()`, `@Cookies()` or `ApiCookie` are no longer read as OpenAPI parameters. None is a `@nestjs/common` parameter decorator (`@Header()` sets a response header), and `@nestjs/swagger` exports no `ApiCookie`. Use `@Headers('name')` for request headers. No supported decorator produces a cookie parameter; `@ApiCookieAuth()` documents cookie authentication as a security scheme.
 - Emitted paths and object keys are ordered by code unit instead of the host locale, so documents are identical on every machine.
 - **Breaking:** controller security follows `@nestjs/swagger`: class-level security (including base controllers) and method-level security are concatenated; previously a method requirement replaced the class requirement. Class `@ApiTags` and security are also read from base controllers, including a decorated base wrapped by a mixin (`extends Timestamped(BaseController)`).
@@ -68,7 +68,7 @@ The first release candidate includes four independently installable packages:
 - An OpenAPI `discriminator` on a `oneOf`/`anyOf` of `allOf` variant models selects the variant through explicit (reference or component name) and implicit mappings, including several values for one variant. Variant models keep their declared tag type. A discriminator on a base schema without `oneOf`/`anyOf` is reported as unsupported (see the OpenAPI support matrix).
 - **Breaking:** every variant of a discriminated union must declare the discriminator property; generation rejects a variant that does not.
 - **Breaking:** a variant shared by two discriminated unions now gives neither union a model class, with a generation warning; values typed by those unions still decode to the variant models. Previously the result depended on component declaration order.
-- **Breaking:** `@exprtlabs/openapi-to-ts/generator` no longer exports `generateClient`, `generateInbound`, `generateLinks`, `generateSchemas`, `generateTypes`, `generateValidation`, `generatedFiles` or `generateModelManifest`; use `generate` or `writeSdk`.
+- **Breaking:** `@exprtlabs/golem-openapi/generator` no longer exports `generateClient`, `generateInbound`, `generateLinks`, `generateSchemas`, `generateTypes`, `generateValidation`, `generatedFiles` or `generateModelManifest`; use `generate` or `writeSdk`.
 - **Breaking:** decoding or initializing a union model with an unknown discriminator value throws a `LibError` (previously a `TypeError`): kind `validation` when the call validates, otherwise `deserialization`, as described under Models.
 - A discriminated `anyOf` of component models now generates an abstract union model class, as `oneOf` does; without a discriminator, `anyOf` is unchanged.
 - **Breaking:** an implicit discriminator value is the raw component name (`cat`), as OpenAPI specifies, not the generated type name (`Cat`). Generation warns when the two differ.
@@ -89,7 +89,7 @@ The first release candidate includes four independently installable packages:
 - **Breaking:** a schema pulled in from another file is named after its path (`schemas/user.json` → `schemas.user`, model `SchemasUser`) instead of its file name with a numeric suffix. A root component that is only a `$ref` to an external file keeps its own name; a root component with a `$ref` plus other keys is not an alias, so its target still gets the path-based name and can collide with the root name. A name clash now fails generation, naming both locations.
 - **Breaking:** an implicit discriminator value for a schema from another file is now its path-based component name (for example `schemas.dog`). Use an explicit `mapping`, or a root alias, to keep a chosen value.
 - **Breaking:** the `spec-ref-siblings`, `path-not-include-query`, and `nullable-type-sibling` validation rules are gone; error lines name the file that contains the problem.
-- **Breaking:** `collectLocalReferenceInputs` from `@exprtlabs/openapi-to-ts/generator` now returns a `Promise`.
+- **Breaking:** `collectLocalReferenceInputs` from `@exprtlabs/golem-openapi/generator` now returns a `Promise`.
 
 See [OpenAPI client support](docs/reference/openapi-support.md) for supported versions and contract limitations.
 
@@ -101,24 +101,24 @@ See [OpenAPI client support](docs/reference/openapi-support.md) for supported ve
 - Model generation analyzes each model once per job, and a companion emits code only for the models its source declares; models from other sources are referenced by codec id and their companions are imported. Generation time and output size now grow linearly with chains of referencing models (80 chained models: 1.4 s and 4.8 MB, previously 36 s and 284 MB), and models that reference each other across files load in either import order. Companions of referenced models export internal `__runic*` helpers and an `XInit` type; do not import the helpers directly.
 - Validation defaults to on; MobX and standalone Ajv default to off. `allowAny` defaults to false and can be overridden per model.
 - Tooling requires Node.js 22.15 or newer.
-- **Breaking:** `@exprtlabs/model-codegen` declares `typescript` (`~7.0.2`) and `ttsc` (`~0.30.4`) as peer dependencies instead of dependencies, like `@exprtlabs/ts-to-openapi`; install them in the consuming project. `ttsc` builds the Go plugin with its bundled Go toolchain.
-- Packages no longer publish source maps, which referenced unpublished TypeScript sources. `@exprtlabs/codegen` no longer publishes the Go plugin's tests or `go.work` files.
+- **Breaking:** `@exprtlabs/golem-model` declares `typescript` (`~7.0.2`) and `ttsc` (`~0.30.4`) as peer dependencies instead of dependencies, like `@exprtlabs/golem-ts-openapi`; install them in the consuming project. `ttsc` builds the Go plugin with its bundled Go toolchain.
+- Packages no longer publish source maps, which referenced unpublished TypeScript sources. `@exprtlabs/golem` no longer publishes the Go plugin's tests or `go.work` files.
 - **Breaking:** regenerate after upgrading. SDKs and OpenAPI documents change.
-- **Breaking:** the SDK no longer writes `validation.ts`, `client-runtime.ts` or `models.ts`, and `client.ts` is internal. The code the SDK used to carry now lives in `@exprtlabs/codegen/client` and `@exprtlabs/codegen/validation`. Replace imports of `sdk/client.js`, `sdk/models.js`, `sdk/validation.js` and `sdk/client-runtime.js` with `sdk/index.js`, `sdk/models/<Name>.js` or `sdk/operations/<name>.js` ([generated files](docs/reference/generated-files.md)).
+- **Breaking:** the SDK no longer writes `validation.ts`, `client-runtime.ts` or `models.ts`, and `client.ts` is internal. The code the SDK used to carry now lives in `@exprtlabs/golem/client` and `@exprtlabs/golem/validation`. Replace imports of `sdk/client.js`, `sdk/models.js`, `sdk/validation.js` and `sdk/client-runtime.js` with `sdk/index.js`, `sdk/models/<Name>.js` or `sdk/operations/<name>.js` ([generated files](docs/reference/generated-files.md)).
 - **Breaking:** `__Projection<N>` schemas get stable names built from the type's shape. Add a named type alias to choose one.
-- **Breaking:** install `@exprtlabs/codegen` at or above the version the SDK was generated for, with the same major version. Generation commands fail before writing when it is older.
+- **Breaking:** install `@exprtlabs/golem` at or above the version the SDK was generated for, with the same major version. Generation commands fail before writing when it is older.
 - **Breaking:** codec ids in generated files change. A hand-written model and an SDK model with the same name and shape no longer share an id.
 - **Breaking:** the output inventory (`.runic-codegen/outputs.json`) records a `destination` and `destinationKind` for every file; an inventory from an earlier release candidate is rejected. Delete it and regenerate.
 
 ### Removed APIs (pre-1.0)
 
-- `@exprtlabs/codegen/validation`: `getModelValidator` (use `getValidator(model)`), `findCachedModelValidator`, `cacheModelValidator`, `validateGeneratedValue`, `preflightModelValidation`, `formatGeneratedIssues`, `evaluateModel`, `validationTagKey`, `validationTagSchemaDescriptor` and `validationTagGroups` (the first two tag helpers moved to `@exprtlabs/codegen/schema`), and the structural validation helpers `fail`, `pushPath`, `popPath`, `enterActive`, `leaveActive`, `readOwn`, `runTag`, `runNestedModel`, `withNestedScope`, `childPath`, `continueStep`, `getProjection`, `rememberProjection`, `projectNestedModel`, `missingValidation` and `ensureNestedReady`. The `ModelValidator` constructor takes only the model.
-- `@exprtlabs/codegen/mobx-validation`: `getModelValidator` is renamed `getValidator`.
-- `@exprtlabs/codegen/model`: `TypeScriptGeneratedModelValidation`, the `Structural*` validation types, the `model` field of `OpenApiGeneratedModelValidation`, and the `ModelFields` alias.
-- `@exprtlabs/codegen/errors`: `errorOwnerChain`, `invocationOwners`, `attachErrorOwners` and `readErrorOwners`.
-- `@exprtlabs/codegen/serde`: `bindCodecIdToConstructor`, `lookupOperationCodec` and `PUBLIC_SERDE_CALLS` (the call table now lives with the docs).
-- `@exprtlabs/codegen/conversion`: `createJsonValue`.
-- `@exprtlabs/codegen/schema`: `constraintSchema`. `@exprtlabs/codegen/schema-graph`: `jsonSchemaBundle` and `codecDeclarationKey`. Both entries are build-time tooling for the generators.
-- `@exprtlabs/codegen/type-analysis`: `isIModelReference` (use `isModelDeclarationReference(checker, node)`). `@exprtlabs/codegen/ts`: `readConfigFile`, `parseConfigFileTextToJson`, `flattenDiagnosticMessageText`, `createSourceFile`, `createProgram` (use `createProgramFromSources`) and the `errors` result of `parseJsonConfigFileContent`. `@exprtlabs/codegen/emitter`: `generatedVariant`.
+- `@exprtlabs/golem/validation`: `getModelValidator` (use `getValidator(model)`), `findCachedModelValidator`, `cacheModelValidator`, `validateGeneratedValue`, `preflightModelValidation`, `formatGeneratedIssues`, `evaluateModel`, `validationTagKey`, `validationTagSchemaDescriptor` and `validationTagGroups` (the first two tag helpers moved to `@exprtlabs/golem/schema`), and the structural validation helpers `fail`, `pushPath`, `popPath`, `enterActive`, `leaveActive`, `readOwn`, `runTag`, `runNestedModel`, `withNestedScope`, `childPath`, `continueStep`, `getProjection`, `rememberProjection`, `projectNestedModel`, `missingValidation` and `ensureNestedReady`. The `ModelValidator` constructor takes only the model.
+- `@exprtlabs/golem/mobx-validation`: `getModelValidator` is renamed `getValidator`.
+- `@exprtlabs/golem/model`: `TypeScriptGeneratedModelValidation`, the `Structural*` validation types, the `model` field of `OpenApiGeneratedModelValidation`, and the `ModelFields` alias.
+- `@exprtlabs/golem/errors`: `errorOwnerChain`, `invocationOwners`, `attachErrorOwners` and `readErrorOwners`.
+- `@exprtlabs/golem/serde`: `bindCodecIdToConstructor`, `lookupOperationCodec` and `PUBLIC_SERDE_CALLS` (the call table now lives with the docs).
+- `@exprtlabs/golem/conversion`: `createJsonValue`.
+- `@exprtlabs/golem/schema`: `constraintSchema`. `@exprtlabs/golem/schema-graph`: `jsonSchemaBundle` and `codecDeclarationKey`. Both entries are build-time tooling for the generators.
+- `@exprtlabs/golem/type-analysis`: `isIModelReference` (use `isModelDeclarationReference(checker, node)`). `@exprtlabs/golem/ts`: `readConfigFile`, `parseConfigFileTextToJson`, `flattenDiagnosticMessageText`, `createSourceFile`, `createProgram` (use `createProgramFromSources`) and the `errors` result of `parseJsonConfigFileContent`. `@exprtlabs/golem/emitter`: `generatedVariant`.
 
 See [installation](docs/guide/install.md) for npm commands and release availability.

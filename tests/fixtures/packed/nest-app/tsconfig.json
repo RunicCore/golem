@@ -14,7 +14,7 @@
     "rootDir": ".",
     "plugins": [
       {
-        "transform": "@exprtlabs/codegen/ttsc-plugin",
+        "transform": "@exprtlabs/golem/ttsc-plugin",
         "nest": true
       }
     ],

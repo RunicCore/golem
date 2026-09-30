@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { autorun, isObservableProp, runInAction } from 'mobx';
-import { fromWireFormat, toWireFormat } from '@exprtlabs/codegen/serde';
-import { getValidator } from '@exprtlabs/codegen/validation';
+import { fromWireFormat, toWireFormat } from '@exprtlabs/golem/serde';
+import { getValidator } from '@exprtlabs/golem/validation';
 import { MoneyModel, PaymentsClient } from '../sdk/index.js';
 import { createPaymentEditor, savePayment } from './payment-app.js';
 import type { TPaymentEditor } from './payment-editor.model.js';

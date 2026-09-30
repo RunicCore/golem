@@ -45,19 +45,19 @@ function publicFixture(t: TestContext): string {
   writeFixture(root, 'CHANGELOG.md', '# Changes\n');
   writeFixture(root, '.gitignore', 'node_modules\n');
   writeFixture(root, 'tsconfig.json', '{}\n');
-  writeFixture(root, 'packages/codegen/package.json', '{"name":"codegen"}\n');
-  writeFixture(root, 'packages/codegen/README.md', '# Codegen\n');
-  writeFixture(root, 'packages/codegen/LICENSE', 'upstream package license\n');
-  writeFixture(root, 'packages/codegen/MATRIX.md', '# Matrix\n');
-  writeFixture(root, 'packages/codegen/compliance/capabilities.json', '{}\n');
-  writeFixture(root, 'packages/codegen/THIRD_PARTY_NOTICES.md', 'notice\n');
-  writeFixture(root, 'packages/codegen/LICENSES/Apache-2.0.txt', 'bundled license text\n');
-  writeFixture(root, 'packages/codegen/tsconfig.json', '{}\n');
-  writeFixture(root, 'packages/codegen/src/index.ts', 'export const value = 1;\n');
-  writeFixture(root, 'packages/ts-to-openapi/package.json', '{"name":"ts-to-openapi"}\n');
-  writeFixture(root, 'packages/ts-to-openapi/README.md', '# Controller generator\n');
-  writeFixture(root, 'packages/ts-to-openapi/LICENSE', 'upstream package license\n');
-  writeFixture(root, 'packages/ts-to-openapi/src/index.ts', 'export const value = 1;\n');
+  writeFixture(root, 'packages/golem/package.json', '{"name":"codegen"}\n');
+  writeFixture(root, 'packages/golem/README.md', '# Codegen\n');
+  writeFixture(root, 'packages/golem/LICENSE', 'upstream package license\n');
+  writeFixture(root, 'packages/golem/MATRIX.md', '# Matrix\n');
+  writeFixture(root, 'packages/golem/compliance/capabilities.json', '{}\n');
+  writeFixture(root, 'packages/golem/THIRD_PARTY_NOTICES.md', 'notice\n');
+  writeFixture(root, 'packages/golem/LICENSES/Apache-2.0.txt', 'bundled license text\n');
+  writeFixture(root, 'packages/golem/tsconfig.json', '{}\n');
+  writeFixture(root, 'packages/golem/src/index.ts', 'export const value = 1;\n');
+  writeFixture(root, 'packages/golem-ts-openapi/package.json', '{"name":"golem-ts-openapi"}\n');
+  writeFixture(root, 'packages/golem-ts-openapi/README.md', '# Controller generator\n');
+  writeFixture(root, 'packages/golem-ts-openapi/LICENSE', 'upstream package license\n');
+  writeFixture(root, 'packages/golem-ts-openapi/src/index.ts', 'export const value = 1;\n');
   writeFixture(root, 'scripts/check.ts', 'export {};\n');
   writeFixture(root, 'tests/example.test.ts', 'export {};\n');
   writeFixture(root, 'docs/index.md', '# Docs\n');
@@ -111,14 +111,14 @@ test('public source inventory keeps licenses, generated example metadata, and so
   const files = listPublicSourceFiles(root);
   const expected = [
     'LICENSE',
-    'packages/codegen/LICENSE',
-    'packages/codegen/MATRIX.md',
-    'packages/codegen/compliance/capabilities.json',
-    'packages/codegen/THIRD_PARTY_NOTICES.md',
-    'packages/codegen/LICENSES/Apache-2.0.txt',
-    'packages/codegen/src/index.ts',
-    'packages/ts-to-openapi/LICENSE',
-    'packages/ts-to-openapi/src/index.ts',
+    'packages/golem/LICENSE',
+    'packages/golem/MATRIX.md',
+    'packages/golem/compliance/capabilities.json',
+    'packages/golem/THIRD_PARTY_NOTICES.md',
+    'packages/golem/LICENSES/Apache-2.0.txt',
+    'packages/golem/src/index.ts',
+    'packages/golem-ts-openapi/LICENSE',
+    'packages/golem-ts-openapi/src/index.ts',
     'examples/model/sdk/model-manifest.json',
     'examples/model/.runic-codegen/outputs.json',
     '.github/workflows/check.yml',
@@ -192,7 +192,7 @@ test('content scanner reports forbidden paths and payload classes without return
   assert.equal(serialized.includes(keyPayload), false);
   assert.equal(serialized.includes(absolutePath), false);
   // An explicit safe candidate set is scanned without touching the unrelated forbidden files.
-  assert.deepEqual(scanPublicContent(root, ['README.md', 'packages/codegen/src/index.ts']), []);
+  assert.deepEqual(scanPublicContent(root, ['README.md', 'packages/golem/src/index.ts']), []);
 });
 
 test('scanner rejects traversal candidates before reading outside the source root', (t) => {
@@ -292,10 +292,10 @@ test('escaped symlinks are rejected before export and do not mutate the destinat
 test('denied text from the environment rejects content without reporting the value', (t) => {
   const root = publicFixture(t);
   const marker = joinParts('synthetic-', 'environment-', 'marker');
-  writeFixture(root, 'packages/codegen/plugin/main.go', `package main // ${marker}\n`);
+  writeFixture(root, 'packages/golem/plugin/main.go', `package main // ${marker}\n`);
   const env = { PUBLIC_CONTENT_DENIED_TEXT: `\n${marker}\r\n` };
   const issues = scanPublicContent(root, listPublicSourceFiles(root), publicContentOptions(root, env));
-  assert.deepEqual(issues, [{ path: 'packages/codegen/plugin/main.go', category: 'private-reference' }]);
+  assert.deepEqual(issues, [{ path: 'packages/golem/plugin/main.go', category: 'private-reference' }]);
   assert.equal(JSON.stringify(issues).includes(marker), false);
 
   assert.deepEqual(publicContentOptions(root, {}), {});

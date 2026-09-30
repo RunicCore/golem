@@ -4,8 +4,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import test, { type TestContext } from 'node:test';
 
-import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/codegen/conversion';
-import { requireObjectCodec } from '@exprtlabs/codegen/serde';
+import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/golem/conversion';
+import { requireObjectCodec } from '@exprtlabs/golem/serde';
 import { generatedCodecId, generatedCodecIdFromRoot } from './support/consumer.js';
 import { compileModelProject, createModelProject, writeModelSources } from './model-project.js';
 import { discardedProjectionMetadataSource, projectionPolicyModelSource } from './fixture-templates/models/model-composition.js';

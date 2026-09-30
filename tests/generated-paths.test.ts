@@ -35,7 +35,7 @@ test('no package source outside generated-paths.ts spells a default generated pa
 });
 
 test('the Go plugin default registry path equals the TypeScript default', () => {
-  const go = fs.readFileSync(path.join(workspace, 'packages/codegen/plugin/nest.go'), 'utf8');
+  const go = fs.readFileSync(path.join(workspace, 'packages/golem/plugin/nest.go'), 'utf8');
   const match = /const defaultOperationCodecRegistry = "([^"]+)"/.exec(go);
   assert.ok(match, 'nest.go declares defaultOperationCodecRegistry');
   assert.equal(match[1], OPERATION_CODEC_REGISTRY);

@@ -1,4 +1,4 @@
-import { parse as readPayment } from '@exprtlabs/codegen/serde';
+import { parse as readPayment } from '@exprtlabs/golem/serde';
 import { Payment } from './money.model.js';
 export function parse(value: string): string { return value; }
 export const kept = parse('plain');

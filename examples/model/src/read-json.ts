@@ -1,5 +1,5 @@
 // #region read-json
-import { parse, stringify } from '@exprtlabs/codegen/serde';
+import { parse, stringify } from '@exprtlabs/golem/serde';
 import { Task } from './task.model.js';
 import type { TTask } from './task.model.js';
 

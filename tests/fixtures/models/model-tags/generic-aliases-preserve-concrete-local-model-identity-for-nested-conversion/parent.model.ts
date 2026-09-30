@@ -1,4 +1,4 @@
-import type { IModel } from '@exprtlabs/codegen/model';
+import type { IModel } from '@exprtlabs/golem/model';
 import type { TChild } from './child.model.js';
 import { ParentBase, type ParentFields } from './parent.model.generated.js';
 type Box<T> = { value: T };

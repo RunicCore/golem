@@ -1,5 +1,5 @@
-import { validate } from '@exprtlabs/codegen/validation';
-import type { IObject } from '@exprtlabs/codegen/model';
+import { validate } from '@exprtlabs/golem/validation';
+import type { IObject } from '@exprtlabs/golem/model';
 import type { TMoney, TPayment } from './money.model.js';
 export function asMoney(value: unknown): string | undefined {
   if (validate<TMoney>(value)) {

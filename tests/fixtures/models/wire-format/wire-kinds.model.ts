@@ -1,5 +1,5 @@
-import type { IModel, IObject } from '@exprtlabs/codegen/model';
-import type { Maximum, MinLength, TValidation } from '@exprtlabs/codegen/tags';
+import type { IModel, IObject } from '@exprtlabs/golem/model';
+import type { Maximum, MinLength, TValidation } from '@exprtlabs/golem/tags';
 import { isKnown } from './rules.js';
 import { WireKindsBase } from './wire-kinds.model.generated.js';
 

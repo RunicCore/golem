@@ -5,9 +5,9 @@ import path from 'node:path';
 import test, { type TestContext } from 'node:test';
 import { generatedJsonData } from './generated-data.js';
 
-import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/codegen/conversion';
-import { requireObjectCodec } from '@exprtlabs/codegen/serde';
-import { getValidator } from '@exprtlabs/codegen/validation';
+import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/golem/conversion';
+import { requireObjectCodec } from '@exprtlabs/golem/serde';
+import { getValidator } from '@exprtlabs/golem/validation';
 import { generatedCodecIdFromRoot } from './support/consumer.js';
 import { createModelProject, compileModelProject } from './model-project.js';
 import { taggedModelSource } from './fixture-templates/models/model-tags.js';
@@ -29,13 +29,13 @@ test('tag bindings are AST-provenanced, alias-deduplicated, and relocation-stabl
     copyFixture(sourceRoot, 'models/model-tags/tag-bindings-are-ast-provenanced-alias-deduplicated-and-relocation-stable');
     fs.writeFileSync(path.join(sourceRoot, 'one', 'a.model.ts'), taggedModelSource({
       name: 'A',
-      imports: tsSource`import type { TValidation } from '@exprtlabs/codegen/tags';
+      imports: tsSource`import type { TValidation } from '@exprtlabs/golem/tags';
 import { reexported, validateAlias } from './index.js';`,
       fields: tsSource`value: string & TValidation<typeof reexported> & TValidation<typeof validateAlias>`,
     }).text);
     fs.writeFileSync(path.join(sourceRoot, 'two', 'a.model.ts'), taggedModelSource({
       name: 'A',
-      imports: tsSource`import type { TValidation } from '@exprtlabs/codegen/tags';
+      imports: tsSource`import type { TValidation } from '@exprtlabs/golem/tags';
 import { validate } from './validators.js';`,
       fields: tsSource`value: string & TValidation<typeof validate>`,
     }).text);
@@ -65,7 +65,7 @@ test('extended JSON Schema tags preserve sibling keywords in generated validatio
   const { root, sourceRoot } = fixture(t);
   fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), taggedModelSource({
     name: 'A',
-    imports: tsSource`import type { AdditionalProperties, Contains, DependentRequired, DependentSchemas, IfThenElse, MaxContains, MaxProperties, MinContains, MinItems, MinProperties, Not, OneOf, Pattern, PatternProperties, PropertyNames, UnevaluatedProperties } from '@exprtlabs/codegen/tags';
+    imports: tsSource`import type { AdditionalProperties, Contains, DependentRequired, DependentSchemas, IfThenElse, MaxContains, MaxProperties, MinContains, MinItems, MinProperties, Not, OneOf, Pattern, PatternProperties, PropertyNames, UnevaluatedProperties } from '@exprtlabs/golem/tags';
 type ValueObject = { foo?: string; bar?: string; x_value?: number };
 type ValueArray = Array<string>;`,
     fields: tsSource`values: ValueArray & Contains<string & Pattern<'^ok$'>> & MinItems<1> & MinContains<1> & MaxContains<2>; objectValue: ValueObject & MinProperties<1> & MaxProperties<3> & PropertyNames<string & Pattern<'^[a-z_]+$'>> & PatternProperties<{ '^x_': number; '^z_': boolean }> & AdditionalProperties<never> & UnevaluatedProperties<never> & DependentRequired<{ foo: ['bar'] }> & DependentSchemas<{ foo: { bar: string } }> & OneOf<[{ foo: string }, { bar: string }]> & Not<{ forbidden: string }> & IfThenElse<{ bar: string }, { bar: string }, { foo: string }>;`,
@@ -112,7 +112,7 @@ test('validation-on tag cases share one generated project', async t => {
     'predicates.ts': tags('builtin-constraints-run-before-custom-predicates-and-distinct-predicates-com', 'predicates.ts'),
     'a.model.ts': taggedModelSource({
       name: 'A',
-      imports: tsSource`import type { MinLength, TValidation } from '@exprtlabs/codegen/tags';
+      imports: tsSource`import type { MinLength, TValidation } from '@exprtlabs/golem/tags';
 import { first, second } from './predicates.js';`,
       fields: tsSource`value: string & MinLength<3> & TValidation<typeof first> & TValidation<typeof first> & TValidation<typeof second>`,
     }).text,
@@ -120,19 +120,19 @@ import { first, second } from './predicates.js';`,
   write('structural-isolation', {
     'a.model.ts': taggedModelSource({
       name: 'A',
-      imports: tsSource`import type { AdditionalProperties, MinProperties } from '@exprtlabs/codegen/tags';`,
+      imports: tsSource`import type { AdditionalProperties, MinProperties } from '@exprtlabs/golem/tags';`,
       fields: tsSource`value: { a?: string } & MinProperties<1> & AdditionalProperties<never>`,
     }).text,
     'b.model.ts': taggedModelSource({
       name: 'B',
-      imports: tsSource`import type { AdditionalProperties, MinProperties } from '@exprtlabs/codegen/tags';`,
+      imports: tsSource`import type { AdditionalProperties, MinProperties } from '@exprtlabs/golem/tags';`,
       fields: tsSource`value: { b?: string } & MinProperties<1> & AdditionalProperties<never>`,
     }).text,
   });
   write('nested-issues', {
     'a.model.ts': taggedModelSource({
       name: 'A',
-      imports: tsSource`import type { AdditionalProperties, MinLength } from '@exprtlabs/codegen/tags';\ntype Value = { name: string & MinLength<3> };`,
+      imports: tsSource`import type { AdditionalProperties, MinLength } from '@exprtlabs/golem/tags';\ntype Value = { name: string & MinLength<3> };`,
       fields: tsSource`value: Value & AdditionalProperties<never>`,
     }).text,
   });
@@ -141,7 +141,7 @@ import { first, second } from './predicates.js';`,
     'leaf.model.ts': taggedModelSource({ name: 'Leaf', fields: tsSource`name: string` }).text,
     'a.model.ts': taggedModelSource({
       name: 'A',
-      imports: tsSource`import type { Contains } from '@exprtlabs/codegen/tags';\nimport type { TLeaf } from './leaf.model.js';`,
+      imports: tsSource`import type { Contains } from '@exprtlabs/golem/tags';\nimport type { TLeaf } from './leaf.model.js';`,
       fields: tsSource`children: unknown[] & Contains<TLeaf>`,
     }).text,
   });
@@ -149,7 +149,7 @@ import { first, second } from './predicates.js';`,
     'predicates.ts': tags('union-branch-predicates-stay-attached-to-their-checker-constituent', 'predicates.ts'),
     'a.model.ts': taggedModelSource({
       name: 'A',
-      imports: tsSource`import type { TValidation } from '@exprtlabs/codegen/tags';\nimport { numberValue, stringValue } from './predicates.js';`,
+      imports: tsSource`import type { TValidation } from '@exprtlabs/golem/tags';\nimport { numberValue, stringValue } from './predicates.js';`,
       fields: tsSource`value: (string & TValidation<typeof stringValue>) | (number & TValidation<typeof numberValue>)`,
     }).text,
   });
@@ -157,7 +157,7 @@ import { first, second } from './predicates.js';`,
     'predicates.ts': tags('utility-aliases-preserve-two-distinct-same-signature-predicates-and-deduplic', 'predicates.ts'),
     'a.model.ts': taggedModelSource({
       name: 'A',
-      imports: tsSource`import type { TValidation } from '@exprtlabs/codegen/tags';\nimport { first, firstAlias, second } from './predicates.js';\ntype Tagged<T extends string> = T & TValidation<typeof first> & TValidation<typeof firstAlias> & TValidation<typeof second>;\ntype Box<T> = { value: T };\ntype Payload = Partial<Pick<Box<Tagged<string>>, 'value'>>;`,
+      imports: tsSource`import type { TValidation } from '@exprtlabs/golem/tags';\nimport { first, firstAlias, second } from './predicates.js';\ntype Tagged<T extends string> = T & TValidation<typeof first> & TValidation<typeof firstAlias> & TValidation<typeof second>;\ntype Box<T> = { value: T };\ntype Payload = Partial<Pick<Box<Tagged<string>>, 'value'>>;`,
       fields: tsSource`payload: Payload`,
     }).text,
   });
@@ -260,47 +260,47 @@ for (const validation of [true, false] as const) {
     }[] = [
       {
         name: 'wrong direct family',
-        imports: tsSource`import type { MinLength } from '@exprtlabs/codegen/tags';`,
+        imports: tsSource`import type { MinLength } from '@exprtlabs/golem/tags';`,
         field: tsSource`value: number & MinLength<3>`,
         expected: /RUNM1051: Constraint on the model value requires a string type/,
       },
       {
         name: 'schema-valued wrong direct family',
-        imports: tsSource`import type { Contains } from '@exprtlabs/codegen/tags';`,
+        imports: tsSource`import type { Contains } from '@exprtlabs/golem/tags';`,
         field: tsSource`value: string & Contains<string>`,
         expected: /RUNM1051: Constraint on the model value requires an? array type/,
       },
       {
         name: 'wrong family after a generic alias',
-        imports: tsSource`import type { MinLength } from '@exprtlabs/codegen/tags';`,
+        imports: tsSource`import type { MinLength } from '@exprtlabs/golem/tags';`,
         prefix: tsSource`type Tagged<T> = T & MinLength<3>;`,
         field: tsSource`value: Tagged<number>`,
         expected: /RUNM1051: Constraint on the model value requires a string type/,
       },
       {
         name: 'invalid wire family',
-        imports: tsSource`import type { MinLength, TSerde } from '@exprtlabs/codegen/tags';`,
+        imports: tsSource`import type { MinLength, TSerde } from '@exprtlabs/golem/tags';`,
         field: tsSource`value: number & TSerde<typeof encode, typeof decode>`,
-        bindings: tsSource`import type { MinLength } from '@exprtlabs/codegen/tags';
+        bindings: tsSource`import type { MinLength } from '@exprtlabs/golem/tags';
 export function encode(value: number): string { return String(value); }
 export function decode(value: number & MinLength<3>): number { return value; }`,
         expected: /RUNM1051: Constraint on the wire value requires a string type/,
       },
       {
         name: 'invalid minimum',
-        imports: tsSource`import type { Minimum } from '@exprtlabs/codegen/tags';`,
+        imports: tsSource`import type { Minimum } from '@exprtlabs/golem/tags';`,
         field: tsSource`value: string & Minimum<10>`,
         expected: /RUNM1051: Constraint on the model value requires a number type/,
       },
       {
         name: 'negative length',
-        imports: tsSource`import type { MinLength } from '@exprtlabs/codegen/tags';`,
+        imports: tsSource`import type { MinLength } from '@exprtlabs/golem/tags';`,
         field: tsSource`value: string & MinLength<-1>`,
         expected: /RUNM1043: MinLength requires a non-negative integer literal argument/,
       },
       {
         name: 'invalid Unicode pattern',
-        imports: tsSource`import type { Pattern } from '@exprtlabs/codegen/tags';`,
+        imports: tsSource`import type { Pattern } from '@exprtlabs/golem/tags';`,
         field: tsSource`value: string & Pattern<'['>`,
         expected: /RUNM1044: Pattern requires a valid Unicode regular expression/,
       },
@@ -333,7 +333,7 @@ test('nullable and optional tagged branches retain their supported family', t =>
   const { root, sourceRoot } = fixture(t);
   fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), taggedModelSource({
     name: 'A',
-    imports: tsSource`import type { Format, MinItems, MinLength } from '@exprtlabs/codegen/tags';`,
+    imports: tsSource`import type { Format, MinItems, MinLength } from '@exprtlabs/golem/tags';`,
     fields: tsSource`required: (string & MinLength<3>) | null; optional?: string & Format<'domain-specific'>; values: (number[] & MinItems<1>) | undefined`,
   }).text);
   assert.doesNotThrow(() => generate({ root, profile: { mobx: false, validation: true } }));
@@ -344,7 +344,7 @@ test('validation false retains Date and serde conversions without a validator re
   fs.writeFileSync(path.join(sourceRoot, 'codecs.ts'), readFixture("models/model-tags/validation-false-retains-date-and-serde-conversions-without-a-validator-regi/codecs.ts"));
   fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), taggedModelSource({
     name: 'A',
-    imports: tsSource`import type { TSerde } from '@exprtlabs/codegen/tags';\nimport { encode, decode } from './codecs.js';`,
+    imports: tsSource`import type { TSerde } from '@exprtlabs/golem/tags';\nimport { encode, decode } from './codecs.js';`,
     fields: tsSource`when?: Date; token: number & TSerde<typeof encode, typeof decode>`,
   }).text);
   const result = generate({ root, profile: { mobx: false, validation: false } });
@@ -369,7 +369,7 @@ test('generic utility aliases retain nested constraints, predicates, and serde b
   fs.writeFileSync(path.join(sourceRoot, 'bindings.ts'), readFixture("models/model-tags/generic-utility-aliases-retain-nested-constraints-predicates-and-serde-bound/bindings.ts"));
   fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), taggedModelSource({
     name: 'A',
-    imports: tsSource`import type { MinLength, TSerde, TValidation } from '@exprtlabs/codegen/tags';\nimport { encodeDate, decodeDate, valid } from './bindings.js';\ntype Tagged<T extends string> = T & MinLength<3> & TValidation<typeof valid>;\ntype Box<T> = { value: T };\ntype Payload = Partial<Pick<Box<Tagged<string>>, 'value'>> & { when: Date & TSerde<typeof encodeDate, typeof decodeDate> };`,
+    imports: tsSource`import type { MinLength, TSerde, TValidation } from '@exprtlabs/golem/tags';\nimport { encodeDate, decodeDate, valid } from './bindings.js';\ntype Tagged<T extends string> = T & MinLength<3> & TValidation<typeof valid>;\ntype Box<T> = { value: T };\ntype Payload = Partial<Pick<Box<Tagged<string>>, 'value'>> & { when: Date & TSerde<typeof encodeDate, typeof decodeDate> };`,
     fields: tsSource`payload: Payload`,
   }).text);
   const result = generate({ root, profile: { mobx: false, validation: true } });
@@ -398,7 +398,7 @@ test('serde wire descriptors validate nested constraints before decode and after
   fs.writeFileSync(path.join(sourceRoot, 'codecs.ts'), readFixture("models/model-tags/serde-wire-descriptors-validate-nested-constraints-before-decode-and-after-e/codecs.ts"));
   fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), taggedModelSource({
     name: 'A',
-    imports: tsSource`import type { TSerde, MinLength } from '@exprtlabs/codegen/tags';\nimport { encode, decode } from './codecs.js';`,
+    imports: tsSource`import type { TSerde, MinLength } from '@exprtlabs/golem/tags';\nimport { encode, decode } from './codecs.js';`,
     fields: tsSource`value: number & TSerde<typeof encode, typeof decode>`,
   }).text);
   const result = generate({ root, profile: { mobx: false, validation: true } });
@@ -418,7 +418,7 @@ test('serde wire predicates run on the wire plane with JIT and standalone valida
     fs.writeFileSync(path.join(sourceRoot, 'codecs.ts'), readFixture("models/model-tags/serde-wire-predicates-run-on-the-wire-plane-with-jit-and-standalone-validato/codecs.ts"));
     fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), taggedModelSource({
       name: 'A',
-      imports: tsSource`import type { TSerde, TValidation } from '@exprtlabs/codegen/tags';\nimport { encode, decode, positive } from './codecs.js';`,
+      imports: tsSource`import type { TSerde, TValidation } from '@exprtlabs/golem/tags';\nimport { encode, decode, positive } from './codecs.js';`,
       fields: tsSource`value: number & TValidation<typeof positive> & TSerde<typeof encode, typeof decode>`,
     }).text);
     const result = generate({ root, profile: { mobx: false, validation: true, ajvStandalone } });
@@ -515,7 +515,7 @@ export function decode(value: string): Date { return new Date(value); }`,
     fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), taggedModelSource({
       name: 'A',
       fields: item.field,
-      imports: tsSource`import type { TSerde, TValidation } from '@exprtlabs/codegen/tags';
+      imports: tsSource`import type { TSerde, TValidation } from '@exprtlabs/golem/tags';
 import * as bindings from './bindings.js';`,
     }).text);
     assert.throws(
@@ -535,7 +535,7 @@ test('standalone model validators are external generated artifacts with declarat
   );
   fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), taggedModelSource({
     name: 'A',
-    imports: tsSource`import type { TValidation } from '@exprtlabs/codegen/tags';\nimport { valid } from './predicates.js';`,
+    imports: tsSource`import type { TValidation } from '@exprtlabs/golem/tags';\nimport { valid } from './predicates.js';`,
     fields: tsSource`value: string & TValidation<typeof valid>`,
   }).text);
   const result = generate({ root, profile: { mobx: false, validation: true, ajvStandalone: true } });
@@ -562,7 +562,7 @@ test('conflicting serde pairs are rejected during model analysis', t => {
   fs.writeFileSync(path.join(sourceRoot, 'codecs.ts'), readFixture("models/model-tags/conflicting-serde-pairs-are-rejected-during-model-analysis/codecs.ts"));
   fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), taggedModelSource({
     name: 'A',
-    imports: tsSource`import type { TSerde } from '@exprtlabs/codegen/tags';\nimport { encodeA, decodeA, encodeB, decodeB } from './codecs.js';`,
+    imports: tsSource`import type { TSerde } from '@exprtlabs/golem/tags';\nimport { encodeA, decodeA, encodeB, decodeB } from './codecs.js';`,
     fields: tsSource`value: number & TSerde<typeof encodeA, typeof decodeA> & TSerde<typeof encodeB, typeof decodeB>`,
   }).text);
   assert.throws(

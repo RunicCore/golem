@@ -13,7 +13,7 @@ test('generated validation formats nested errors without replaying field getters
   t.after(() => rmSync(root, { recursive: true, force: true }));
   mkdirSync(path.join(root, 'src'));
   mkdirSync(path.join(root, 'node_modules/@exprtlabs'), { recursive: true });
-  symlinkSync(path.join(workspace, 'packages/codegen'), path.join(root, 'node_modules/@exprtlabs/codegen'), 'dir');
+  symlinkSync(path.join(workspace, 'packages/golem'), path.join(root, 'node_modules/@exprtlabs/golem'), 'dir');
   writeFileSync(path.join(root, 'package.json'), JSON.stringify({ private: true, type: 'module' }));
   writeFileSync(path.join(root, 'tsconfig.json'), JSON.stringify({
     compilerOptions: { strict: true, target: 'ES2022', module: 'NodeNext', moduleResolution: 'NodeNext', skipLibCheck: true, outDir: 'build',

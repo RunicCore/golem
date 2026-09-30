@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import test, { type TestContext } from 'node:test';
 
-import * as ts from '@exprtlabs/codegen/ts';
+import * as ts from '@exprtlabs/golem/ts';
 import { createFixtureProject, readFixture } from './fixture-project.js';
 import { generate as generateController } from '#controllers/generator';
 import { generate as generateModel } from '#model/generator';
@@ -134,7 +134,7 @@ function writeManifestFixture(fixture: Fixture): { readonly source: string; read
     }],
   }));
   fs.writeFileSync(source, [
-    "import type { IModel } from '@exprtlabs/codegen/model';",
+    "import type { IModel } from '@exprtlabs/golem/model';",
     "import type { Money } from './sdk/types.js';",
     'export type TAggregate = IModel<{ money: Money }>;',
     '',
@@ -182,7 +182,7 @@ test('public model and controller generators close every owned API child across 
   const model = projectFixture(t, 'compiler-lifecycle-model');
   const modelSource = path.join(model.sourceRoot, 'item.model.ts');
   fs.writeFileSync(modelSource, [
-    "import type { IModel } from '@exprtlabs/codegen/model';",
+    "import type { IModel } from '@exprtlabs/golem/model';",
     'export type TItem = IModel<{ value: string }>;',
     '',
   ].join('\n'));

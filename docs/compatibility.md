@@ -25,7 +25,7 @@ The configuration format (`version: 1`) and the public subpaths listed on this p
 
 ## Public API
 
-Public subpaths of `@exprtlabs/codegen` follow semver from 1.0.0: [`model`](/reference/runtime-api#model), [`validation`](/reference/runtime-api#validation), [`ajv`](/reference/runtime-api#ajv), [`mobx`](/reference/runtime-api#mobx), [`mobx-validation`](/reference/runtime-api#mobx-validation), [`errors`](/reference/runtime-api#errors), [`client`](/reference/runtime-api#client), [`conversion`](/reference/runtime-api#conversion), [`tags`](/reference/runtime-api#tags), [`serde`](/reference/runtime-api#serde), [`nest`](/reference/runtime-api#nest), [`ttsc-plugin`](/reference/runtime-api#ttsc-plugin), [`generator-api`](/reference/runtime-api#generator-api) and [`manifest`](/reference/runtime-api#manifest).
+Public subpaths of `@exprtlabs/golem` follow semver from 1.0.0: [`model`](/reference/runtime-api#model), [`validation`](/reference/runtime-api#validation), [`ajv`](/reference/runtime-api#ajv), [`mobx`](/reference/runtime-api#mobx), [`mobx-validation`](/reference/runtime-api#mobx-validation), [`errors`](/reference/runtime-api#errors), [`client`](/reference/runtime-api#client), [`conversion`](/reference/runtime-api#conversion), [`tags`](/reference/runtime-api#tags), [`serde`](/reference/runtime-api#serde), [`nest`](/reference/runtime-api#nest), [`ttsc-plugin`](/reference/runtime-api#ttsc-plugin), [`generator-api`](/reference/runtime-api#generator-api) and [`manifest`](/reference/runtime-api#manifest).
 
 Internal subpaths `cli`, `emitter`, `schema`, `schema-graph`, `ajv-tooling`, `type-analysis` and `ts` may change in any release.
 

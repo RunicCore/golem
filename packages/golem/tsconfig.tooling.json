@@ -1,0 +1,27 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "composite": true,
+    "sourceMap": false,
+    "rootDir": "src",
+    "outDir": "dist",
+    "tsBuildInfoFile": "../../.build/golem-tooling.tsbuildinfo",
+    "lib": [
+      "ES2023",
+      "DOM",
+      "DOM.Iterable"
+    ],
+    "types": [
+      "node"
+    ]
+  },
+  "include": [
+    "src/tooling/**/*.ts",
+    "src/bin/**/*.ts"
+  ],
+  "references": [
+    {
+      "path": "./tsconfig.runtime.json"
+    }
+  ]
+}

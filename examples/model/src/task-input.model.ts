@@ -1,5 +1,5 @@
 // #region custom-rule
-import type { IModel } from '@exprtlabs/codegen/model';
+import type { IModel } from '@exprtlabs/golem/model';
 import type { TaskTitle } from './task-input-rule.js';
 import { TaskInputBase } from './task-input.model.generated.js';
 

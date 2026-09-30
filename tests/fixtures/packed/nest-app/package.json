@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "dependencies": {
-    "@exprtlabs/codegen": "rc",
+    "@exprtlabs/golem": "rc",
     "@nestjs/common": "11.2.3",
     "@nestjs/core": "11.2.3",
     "@nestjs/platform-express": "11.2.3",
@@ -16,9 +16,9 @@
     "ajv-formats": "^3.0.1"
   },
   "devDependencies": {
-    "@exprtlabs/model-codegen": "rc",
-    "@exprtlabs/openapi-to-ts": "rc",
-    "@exprtlabs/ts-to-openapi": "rc",
+    "@exprtlabs/golem-model": "rc",
+    "@exprtlabs/golem-openapi": "rc",
+    "@exprtlabs/golem-ts-openapi": "rc",
     "typescript": "~7.0.2",
     "ttsc": "~0.30.4",
     "@types/node": "22.20.1"

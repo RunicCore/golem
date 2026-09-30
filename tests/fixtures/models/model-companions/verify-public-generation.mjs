@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import { Wallet } from './build/wallet.model.js';
 import { MoneyModel } from './build/sdk/models.js';
-import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/codegen/conversion';
-import { getValidator } from '@exprtlabs/codegen/validation';
+import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/golem/conversion';
+import { getValidator } from '@exprtlabs/golem/validation';
 
 const wallet = decodeGeneratedModel(Wallet, {
   money: { currency: 'VND', amount: 3 },
