@@ -200,7 +200,7 @@ test('OAS discriminator mappings select allOf variants in model decode, encode, 
         const suffix = `X${caseIndex}${profileIndex}`;
         const catTags = example.cat(suffix);
         const dogTag = example.dog(suffix);
-        const output = path.join(createFixtureProject(t, 'runic-openapi-discriminator-'), 'sdk');
+        const output = path.join(createFixtureProject(t, 'golem-openapi-discriminator-'), 'sdk');
         const result = await generateMaterializedSdk(petDocument(suffix, example.discriminator(suffix), example.shape, catTags[0], dogTag), {
           output,
           name: 'Pets',
@@ -277,7 +277,7 @@ test('OAS discriminator mappings select allOf variants in model decode, encode, 
 test('a union variant used on its own keeps its declared tag type and any tag value', async t => {
   for (const validation of [false, true]) {
     const suffix = validation ? 'SoloV' : 'SoloN';
-    const output = path.join(createFixtureProject(t, 'runic-openapi-discriminator-solo-'), 'sdk');
+    const output = path.join(createFixtureProject(t, 'golem-openapi-discriminator-solo-'), 'sdk');
     await generateMaterializedSdk(petDocument(suffix, explicitMapping(suffix)), {
       output,
       name: 'Pets',
@@ -332,7 +332,7 @@ test('one variant model can be selected by two discriminated unions, in either d
       ? { ...schemas, [`Feline${suffix}`]: feline }
       : { [`Feline${suffix}`]: feline, ...schemas };
     requireRecord(document.components, 'components').schemas = ordered;
-    const output = path.join(createFixtureProject(t, 'runic-openapi-discriminator-twice-'), 'sdk');
+    const output = path.join(createFixtureProject(t, 'golem-openapi-discriminator-twice-'), 'sdk');
     const result = await generateMaterializedSdk(document, { output, name: 'Pets', profile });
     assert.deepEqual(
       (result.diagnostics ?? []).map(diagnostic => diagnostic.code).sort(),
@@ -366,7 +366,7 @@ test('a discriminator over a non-model variant is reported and left to the union
     discriminator: { propertyName: 'kind' },
   };
   delete schemas[`Owner${suffix}`];
-  const output = path.join(createFixtureProject(t, 'runic-openapi-discriminator-inline-'), 'sdk');
+  const output = path.join(createFixtureProject(t, 'golem-openapi-discriminator-inline-'), 'sdk');
   const result = await generateMaterializedSdk(document, { output, name: 'Pets', profile: { mobx: false, validation: false } });
   assert.deepEqual((result.diagnostics ?? []).map(diagnostic => diagnostic.code), ['OPENAPI_DISCRIMINATOR_NOT_LOWERED']);
   assert.match(result.diagnostics?.[0]?.message ?? '', /"PetInline"/);
@@ -378,7 +378,7 @@ test('a discriminator mapping must target one of the union variants', async t =>
     propertyName: 'kind',
     mapping: { feline: `#/components/schemas/cat${suffix}`, stray: `#/components/schemas/Owner${suffix}` },
   });
-  const output = path.join(createFixtureProject(t, 'runic-openapi-discriminator-stray-'), 'sdk');
+  const output = path.join(createFixtureProject(t, 'golem-openapi-discriminator-stray-'), 'sdk');
   await assert.rejects(
     () => generateMaterializedSdk(document, { output, name: 'Pets', profile: { mobx: false, validation: false } }),
     /discriminator mapping "stray" of schema "PetStray" targets "#\/components\/schemas\/OwnerStray", which is not one of its variants/,
@@ -387,7 +387,7 @@ test('a discriminator mapping must target one of the union variants', async t =>
 
 test('every variant must declare the discriminator property', async t => {
   const suffix = 'Untagged';
-  const output = path.join(createFixtureProject(t, 'runic-openapi-discriminator-untagged-'), 'sdk');
+  const output = path.join(createFixtureProject(t, 'golem-openapi-discriminator-untagged-'), 'sdk');
   await assert.rejects(
     () => generateMaterializedSdk(petDocument(suffix, explicitMapping(suffix), { baseWithoutTag: true }), {
       output,
@@ -405,7 +405,7 @@ test('a discriminator inherited through allOf without oneOf is reported as unsup
   delete schemas[`Pet${suffix}`];
   delete schemas[`Owner${suffix}`];
   requireRecord(schemas[`Base${suffix}`], 'base').discriminator = { propertyName: 'kind' };
-  const output = path.join(createFixtureProject(t, 'runic-openapi-discriminator-inherited-'), 'sdk');
+  const output = path.join(createFixtureProject(t, 'golem-openapi-discriminator-inherited-'), 'sdk');
   const result = await generateMaterializedSdk(document, { output, name: 'Pets', profile: { mobx: false, validation: false } });
   assert.deepEqual(
     (result.diagnostics ?? []).map(diagnostic => [diagnostic.code, diagnostic.severity]),
@@ -415,7 +415,7 @@ test('a discriminator inherited through allOf without oneOf is reported as unsup
 });
 
 test('discriminator-less object unions name the schema and suggest a discriminator', async t => {
-  const output = path.join(createFixtureProject(t, 'runic-openapi-undiscriminated-'), 'sdk');
+  const output = path.join(createFixtureProject(t, 'golem-openapi-undiscriminated-'), 'sdk');
   await assert.rejects(
     () => generateMaterializedSdk(petDocument('Plain', undefined), { output, name: 'Pets', profile: { mobx: false, validation: false } }),
     /schema "PetPlain".*discriminator/s,

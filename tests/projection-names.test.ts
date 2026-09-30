@@ -41,7 +41,7 @@ export class OrderController {
 
 async function componentNames(t: TestContext, source: string): Promise<string[]> {
   const root = createControllerFixture(t, {
-    prefix: 'runic-projection-names-', packageName: 'projection-names-fixture',
+    prefix: 'golem-projection-names-', packageName: 'projection-names-fixture',
     sourceFile: 'src/order.controller.ts', source,
   });
   const result = await generate({
@@ -110,7 +110,7 @@ export type TOrder = IModel<{ a: Omit<TMerchant, 'id'>; b: Omit<TOtherMerchant, 
 @Controller('orders') export class OrderController { @Post() save(@Body() body: TOrder): TOrder { return body; } }
 `;
   const root = createControllerFixture(t, {
-    prefix: 'runic-projection-clash-', packageName: 'projection-clash-fixture',
+    prefix: 'golem-projection-clash-', packageName: 'projection-clash-fixture',
     sourceFile: 'src/order.controller.ts', source,
     files: { 'src/other.model.ts': "import type { IModel } from '@exprtlabs/golem/model';\nexport type TMerchant = IModel<{ id: string; total: number }>;\n" },
   });
@@ -124,7 +124,7 @@ const GENERATE_OPTIONS = { openapiVersion: '3.2.0' as const, info: { title: 'Pro
 
 async function generateSource(t: TestContext, source: string, files: Record<string, string> = {}) {
   const root = createControllerFixture(t, {
-    prefix: 'runic-projection-names-', packageName: 'projection-names-fixture',
+    prefix: 'golem-projection-names-', packageName: 'projection-names-fixture',
     sourceFile: 'src/order.controller.ts', source, files,
   });
   return generate({ root, output: path.join(root, 'api.json'), ...GENERATE_OPTIONS });

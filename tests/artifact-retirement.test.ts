@@ -47,7 +47,7 @@ function fixture(
   document: Record<string, unknown>,
   generationProfile: OpenApiGenerationProfile = profile(true),
 ): OpenApiFixture {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'runic-artifact-retirement-'));
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'golem-artifact-retirement-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const input = path.join(root, 'api.json');
   const output = path.join(root, 'sdk');

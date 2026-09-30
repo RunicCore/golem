@@ -21,7 +21,7 @@ function fixture(directory: string): string {
 }
 
 test('generate returns absolute pure artifacts and local watch inputs', async (t) => {
-  const directory = createFixtureProject(t, 'runic-openapi-api-');
+  const directory = createFixtureProject(t, 'golem-openapi-api-');
   const input = fixture(directory);
   const output = path.join(directory, 'generated');
   const result = await generate({
@@ -52,7 +52,7 @@ test('generate returns absolute pure artifacts and local watch inputs', async (t
 });
 
 test('OpenAPI getValidator infers generated fields and rejects handwritten subclass fields', async t => {
-  const directory = createFixtureProject(t, 'runic-openapi-validator-types-');
+  const directory = createFixtureProject(t, 'golem-openapi-validator-types-');
   const input = path.join(directory, 'openapi.yaml');
   const output = path.join(directory, 'sdk');
   copyFixtureFile(directory, 'openapi/api/validator-types/openapi.yaml', 'openapi.yaml');
@@ -76,7 +76,7 @@ test('OpenAPI getValidator infers generated fields and rejects handwritten subcl
 });
 
 test('SDK generated with mobx and validation disabled loads and runs an operation without mobx or ajv resolvable', async (t) => {
-  const directory = createFixtureProject(t, 'runic-openapi-no-peer-deps-');
+  const directory = createFixtureProject(t, 'golem-openapi-no-peer-deps-');
   const output = path.join(directory, 'sdk');
   const input = path.join(directory, 'openapi.json');
   writeFileSync(input, JSON.stringify({
@@ -151,7 +151,7 @@ test('SDK generated with mobx and validation disabled loads and runs an operatio
 });
 
 test('profile is mandatory and source validation remains enabled for all profiles', async (t) => {
-  const directory = createFixtureProject(t, 'runic-openapi-invalid-');
+  const directory = createFixtureProject(t, 'golem-openapi-invalid-');
   const input = path.join(directory, 'invalid.yaml');
   writeFileSync(input, 'openapi: 2.0\ninfo: {}\npaths: {}\n');
   await assert.rejects(

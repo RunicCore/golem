@@ -12,7 +12,7 @@ import { workspace } from './support/process.js';
 import { writeFixture } from './support/consumer.js';
 
 function fixture(t: TestContext): { root: string; config: string } {
-  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'runic-watch-recovery-')));
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'golem-watch-recovery-')));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   fs.mkdirSync(path.join(root, 'node_modules/@exprtlabs'), { recursive: true });
   for (const name of ['golem', 'golem-model', 'golem-openapi']) {

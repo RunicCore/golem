@@ -243,7 +243,7 @@ test('model-plane validation selects the variant class the encoder selects', asy
 });
 
 test('IModel object unions with validation load, validate and reject an unknown tag', async (t) => {
-  const { root } = createModelProject(t, { prefix: 'runic-union-validation-', name: 'union-validation' });
+  const { root } = createModelProject(t, { prefix: 'golem-union-validation-', name: 'union-validation' });
   const source = copyFixtureFile(root, 'models/union-validation/pets.model.ts', 'src/pets.model.ts');
   writeGeneratedArtifacts(generate({ root, sources: [source], profile: { mobx: false, validation: true } }).artifacts);
   await compileModelProject(root);

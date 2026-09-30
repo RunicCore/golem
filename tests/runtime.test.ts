@@ -425,7 +425,7 @@ test('model manifests validate profile and keep identity independent of profile'
 });
 
 test('pure runtime entrypoints load in an application without optional integrations', (t: TestContext) => {
-  const root = createFixtureProject(t, 'runic-runtime-entrypoints-');
+  const root = createFixtureProject(t, 'golem-runtime-entrypoints-');
 
   linkProjectPackages(root, { '@exprtlabs/golem': join(workspace, 'packages/golem') });
   fs.writeFileSync(join(root, 'package.json'), '{"type":"module"}');

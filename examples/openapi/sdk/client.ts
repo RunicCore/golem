@@ -2,17 +2,17 @@
 import { ClientRuntime, isUndeclaredResponseError } from '@exprtlabs/golem/client';
 import type * as Runtime from '@exprtlabs/golem/client';
 import { createOpenApiAjvEngine } from '@exprtlabs/golem/ajv';
-import type { OperationRuntimeValidators as __RunicOperationRuntimeValidators } from '@exprtlabs/golem/validation';
-import type { OperationName as __RunicOperationName } from './schemas.js';
+import type { OperationRuntimeValidators as __GolemOperationRuntimeValidators } from '@exprtlabs/golem/validation';
+import type { OperationName as __GolemOperationName } from './schemas.js';
 import type * as Types from './types.js';
 import type { ApiOperation } from '@exprtlabs/golem/client';
-import { createListTasksOperation as __runicOperationFactory0 } from "./operations/listTasks.js";
-import { createCreateTaskOperation as __runicOperationFactory1 } from "./operations/createTask.js";
-import { createGetTaskOperation as __runicOperationFactory2 } from "./operations/getTask.js";
+import { createListTasksOperation as __golemOperationFactory0 } from "./operations/listTasks.js";
+import { createCreateTaskOperation as __golemOperationFactory1 } from "./operations/createTask.js";
+import { createGetTaskOperation as __golemOperationFactory2 } from "./operations/getTask.js";
 
 export type TasksClientOptions = Omit<Runtime.ClientOptions, "parameterSerializers" | "responseHeaderDecoders" | "streamDecoders" | "mutualTls" | "auth" | "operationValidators"> & {
   /** Overrides generated validators for individual operations. */
-  operationValidators?: ReadonlyMap<__RunicOperationName, __RunicOperationRuntimeValidators>;
+  operationValidators?: ReadonlyMap<__GolemOperationName, __GolemOperationRuntimeValidators>;
 };
 export type TasksRequestOptions = Runtime.RequestOptions;
 export type TasksUndeclaredResponseError = Runtime.UndeclaredResponseError;
@@ -38,15 +38,15 @@ export class TasksClient implements TasksClientPort {
   }
 
   listTasks(): ApiOperation<Types.ListTasksOperationInput, Types.ListTasksOperationHttpResponse, TasksRequestOptions> {
-    return __runicOperationFactory0(this.runtime);
+    return __golemOperationFactory0(this.runtime);
   }
 
   createTask(): ApiOperation<Types.CreateTaskOperationInput, Types.CreateTaskOperationHttpResponse, TasksRequestOptions> {
-    return __runicOperationFactory1(this.runtime);
+    return __golemOperationFactory1(this.runtime);
   }
 
   getTask(): ApiOperation<Types.GetTaskOperationInput, Types.GetTaskOperationHttpResponse, TasksRequestOptions> {
-    return __runicOperationFactory2(this.runtime);
+    return __golemOperationFactory2(this.runtime);
   }
 }
 

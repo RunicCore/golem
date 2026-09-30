@@ -14,7 +14,7 @@ import { generate } from '#model/generator';
 
 function ttscModelProject(t: TestContext, name: string) {
   return createModelProject(t, {
-    prefix: `runic-${name}-`,
+    prefix: `golem-${name}-`,
     name,
     ttscPlugin: true,
     linkWorkspaceNodeModules: true,
@@ -77,7 +77,7 @@ test('generated optional and rest tuples retain exact lengths through every serd
 
 test('readonly array and tuple contracts survive model generation and strict consumer compilation', async (t) => {
   const { root, sourceRoot } = createModelProject(t, {
-    prefix: 'runic-model-tuples-',
+    prefix: 'golem-model-tuples-',
     name: 'model-tuples',
     compilerOptions: { exactOptionalPropertyTypes: true, noUncheckedIndexedAccess: true },
   });
@@ -110,7 +110,7 @@ test('readonly container metadata does not fork semantic runtime codec identity'
 
 test('validation-enabled codec emission compiles and preserves array and tuple getter reads', async (t) => {
   const { root } = createModelProject(t, {
-    prefix: 'runic-model-tuples-',
+    prefix: 'golem-model-tuples-',
     name: 'model-tuples',
     compilerOptions: { exactOptionalPropertyTypes: true, noUncheckedIndexedAccess: true },
   });

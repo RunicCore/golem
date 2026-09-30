@@ -13,7 +13,7 @@ import { createOpenApiSyncAjvEngine } from '@exprtlabs/golem/ajv';
 import { modelSerdeBindings, modelValidationBindings } from "./generated/models/models.generated.js";
 import { MemberModel, stringifyMember, toWireFormatMember } from "../sdk/models/Member.js";
 
-const __runicAbsentField = Symbol();
+const __golemAbsentField = Symbol();
 
 function modelObject(json: unknown, name: string): Record<string, unknown> {
   return requireModelObject(json, name);
@@ -48,13 +48,13 @@ function decodeProjectAccessEditorModel(constructor: GeneratedModelConstructor, 
 
 function encodeProjectAccessEditorModel(model: ProjectAccessEditorBase): ProjectAccessEditorJSON {
   const result: Record<string, unknown> = {
-    ["member"]: Object.prototype.hasOwnProperty.call(model, "member") ? (convertModelField("serialize", "member", () => (model["member"] instanceof MemberModel ? encodeGeneratedModel(model["member"]) : model["member"]))) : __runicAbsentField,
-    ["projectName"]: Object.prototype.hasOwnProperty.call(model, "projectName") ? (model["projectName"]) : __runicAbsentField,
-    ["permissions"]: Object.prototype.hasOwnProperty.call(model, "permissions") ? (convertModelField("serialize", "permissions", () => (modelSerdeBindings["src/access-rules.ts:820:1088\u0000src/access-rules.ts:1090:1502"].serialize(model["permissions"])))) : __runicAbsentField,
+    ["member"]: Object.prototype.hasOwnProperty.call(model, "member") ? (convertModelField("serialize", "member", () => (model["member"] instanceof MemberModel ? encodeGeneratedModel(model["member"]) : model["member"]))) : __golemAbsentField,
+    ["projectName"]: Object.prototype.hasOwnProperty.call(model, "projectName") ? (model["projectName"]) : __golemAbsentField,
+    ["permissions"]: Object.prototype.hasOwnProperty.call(model, "permissions") ? (convertModelField("serialize", "permissions", () => (modelSerdeBindings["src/access-rules.ts:820:1088\u0000src/access-rules.ts:1090:1502"].serialize(model["permissions"])))) : __golemAbsentField,
   };
-  if (result["member"] === __runicAbsentField) delete result["member"];
-  if (result["projectName"] === __runicAbsentField) delete result["projectName"];
-  if (result["permissions"] === __runicAbsentField) delete result["permissions"];
+  if (result["member"] === __golemAbsentField) delete result["member"];
+  if (result["projectName"] === __golemAbsentField) delete result["projectName"];
+  if (result["permissions"] === __golemAbsentField) delete result["permissions"];
   return result as ProjectAccessEditorJSON;
 }
 
@@ -124,7 +124,7 @@ export function stringifyProjectAccessEditor(value: Record<string, unknown>, opt
   }
   if (validates) {
     const wire = { ["member"]: toWireFormatMember(value["member"] as never, { validate: false }), ["projectName"]: value["projectName"], ["permissions"]: modelSerdeBindings["src/access-rules.ts:820:1088\u0000src/access-rules.ts:1090:1502"].serialize(value["permissions"]) };
-    __runicAssertWireOnly_ProjectAccessEditor(wire, options);
+    __golemAssertWireOnly_ProjectAccessEditor(wire, options);
     return stringifyProjectAccessEditorWire(wire as never, { validate: false });
   }
   return stringifyProjectAccessEditorCore(value as never, { validate: false });
@@ -133,7 +133,7 @@ export function stringifyProjectAccessEditor(value: Record<string, unknown>, opt
 function convertFromWireProjectAccessEditor(wire: unknown, options: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object } | undefined, isolated: boolean): unknown {
   const validates = serdeValidates(options, true);
   if (validates) {
-    __runicAssertWire_ProjectAccessEditor(wire, options);
+    __golemAssertWire_ProjectAccessEditor(wire, options);
   }
   const source = isolated || wire === null || typeof wire !== 'object' ? wire : cloneConversionInput(wire);
   let result: unknown = source;
@@ -145,7 +145,7 @@ function convertFromWireProjectAccessEditor(wire: unknown, options: { readonly v
     }
   }
   if (validates) {
-    __runicAssertModelOnly_ProjectAccessEditor(result, options);
+    __golemAssertModelOnly_ProjectAccessEditor(result, options);
   }
   return result;
 }
@@ -162,7 +162,7 @@ export function toWireFormatProjectAccessEditor(value: unknown, options?: { read
   const record = value as Record<string, unknown>;
   const wire = { ["member"]: toWireFormatMember(record["member"] as never, { validate: false }), ["projectName"]: record["projectName"], ["permissions"]: modelSerdeBindings["src/access-rules.ts:820:1088\u0000src/access-rules.ts:1090:1502"].serialize(record["permissions"]) };
   if (validates) {
-    __runicAssertWireOnly_ProjectAccessEditor(wire, options);
+    __golemAssertWireOnly_ProjectAccessEditor(wire, options);
   }
   return wire as ProjectAccessEditorJSON;
 }
@@ -200,7 +200,7 @@ export function assertProjectAccessEditor(value: unknown, options?: { readonly f
   return value as Record<string, unknown>;
 }
 
-function __runicAssertWire_ProjectAccessEditor(value: unknown, options?: { readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext }): Record<string, unknown> {
+function __golemAssertWire_ProjectAccessEditor(value: unknown, options?: { readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext }): Record<string, unknown> {
   if (options?.validationContext === undefined) {
   if (!(options?.failFast !== false ? validateProjectAccessEditorWireFast(value) : validateProjectAccessEditorWireAll(value))) {
     const validator = options?.failFast !== false ? validateProjectAccessEditorWireFast : validateProjectAccessEditorWireAll;
@@ -213,7 +213,7 @@ function __runicAssertWire_ProjectAccessEditor(value: unknown, options?: { reado
   return value as Record<string, unknown>;
 }
 
-function __runicAssertModelOnly_ProjectAccessEditor(value: unknown, options?: { readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext }): Record<string, unknown> {
+function __golemAssertModelOnly_ProjectAccessEditor(value: unknown, options?: { readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext }): Record<string, unknown> {
   if (options?.validationContext === undefined) {
   if (!(options?.failFast !== false ? validateProjectAccessEditorModelOnlyFast(value) : validateProjectAccessEditorModelOnlyAll(value))) {
     const validator = options?.failFast !== false ? validateProjectAccessEditorModelOnlyFast : validateProjectAccessEditorModelOnlyAll;
@@ -226,7 +226,7 @@ function __runicAssertModelOnly_ProjectAccessEditor(value: unknown, options?: { 
   return value as Record<string, unknown>;
 }
 
-function __runicAssertWireOnly_ProjectAccessEditor(value: unknown, options?: { readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext }): Record<string, unknown> {
+function __golemAssertWireOnly_ProjectAccessEditor(value: unknown, options?: { readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext }): Record<string, unknown> {
   if (options?.validationContext === undefined) {
   if (!(options?.failFast !== false ? validateProjectAccessEditorWireOnlyFast(value) : validateProjectAccessEditorWireOnlyAll(value))) {
     const validator = options?.failFast !== false ? validateProjectAccessEditorWireOnlyFast : validateProjectAccessEditorWireOnlyAll;

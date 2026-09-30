@@ -18,7 +18,7 @@ import {
 } from './helpers.js';
 
 test('operation parameters override path parameters by (in, name) and repeated path placeholders share one encoded parameter, observed on the wire', async (t) => {
-  const directory = createFixtureProject(t, 'runic-openapi-r5-');
+  const directory = createFixtureProject(t, 'golem-openapi-r5-');
   const output = path.join(directory, 'sdk');
   await generateMaterializedSdk(documentBase('3.1.0', {
     paths: {
@@ -89,7 +89,7 @@ test('operation parameters override path parameters by (in, name) and repeated p
 
 test('generated content parameters validate before execute with runtime and standalone Ajv', async t => {
   for (const ajvStandalone of [false, true] as const) {
-    const directory = createFixtureProject(t, 'runic-openapi-content-parameters-');
+    const directory = createFixtureProject(t, 'golem-openapi-content-parameters-');
     const output = path.join(directory, 'sdk');
     const contentSchema = (required: string) => ({
       type: 'object',
@@ -238,7 +238,7 @@ test('generated content parameters validate before execute with runtime and stan
 });
 
 test('rejects duplicate parameters within the same level', async (t) => {
-  const directory = createFixtureProject(t, 'runic-openapi-r5-dup-');
+  const directory = createFixtureProject(t, 'golem-openapi-r5-dup-');
   const input = writeOpenApiDocument(directory, documentBase('3.1.0', {
     paths: {
       '/items/{id}': {
@@ -260,7 +260,7 @@ test('rejects duplicate parameters within the same level', async (t) => {
 });
 
 test('a parameter $ref into a separate file resolves to its declared type after bundling', async t => {
-  const directory = createFixtureProject(t, 'runic-openapi-external-parameter-');
+  const directory = createFixtureProject(t, 'golem-openapi-external-parameter-');
   writeFileSync(path.join(directory, 'parameters.json'), JSON.stringify({
     Limit: { name: 'limit', in: 'query', required: true, schema: { type: 'integer' } },
   }));

@@ -9,9 +9,9 @@ import type {
 type OpenApiVersion = SupportProjection['versions'][number];
 type GenerationProfileId = SupportProjectionProfile['id'];
 
-declare const __EXPRTLABS_SUPPORT_PROJECTION__: SupportProjection;
+declare const __GOLEM_SUPPORT_PROJECTION__: SupportProjection;
 
-const metadata = __EXPRTLABS_SUPPORT_PROJECTION__;
+const metadata = __GOLEM_SUPPORT_PROJECTION__;
 const profileIds = metadata.profiles.map((profile) => profile.id);
 const version = ref<OpenApiVersion>('3.1');
 const profile = ref<GenerationProfileId>('profile-2');

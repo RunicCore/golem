@@ -7,7 +7,7 @@ import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 import { compileGeneratedSdk, generateMaterializedSdk, isGeneratedClientClass } from './helpers.js';
 
 test('client validation failures use library errors while network failures preserve their identity', async t => {
-  const directory = createFixtureProject(t, 'runic-validation-errors-');
+  const directory = createFixtureProject(t, 'golem-validation-errors-');
   const output = path.join(directory, 'sdk');
   await generateMaterializedSdk({
     openapi: '3.1.0', info: { title: 'Failures', version: '1' },

@@ -73,7 +73,7 @@ function loadTransportSdk(): Promise<TransportSdk> {
 }
 
 async function generateTransportSdk(): Promise<TransportSdk> {
-  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'runic-openapi-transport-')));
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'golem-openapi-transport-')));
   transportRoots.push(root);
   const output = path.join(root, 'sdk');
   const result = await generateMaterializedSdk(transportDocument(), {

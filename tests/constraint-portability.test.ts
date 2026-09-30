@@ -28,7 +28,7 @@ const rejected = [
 
 for (const ajvStandalone of [false, true]) {
   test(`model predicates never strengthen wire or OpenAPI contracts with standalone=${ajvStandalone}`, async t => {
-    const root = createFixtureProject(t, 'runic-portability-');
+    const root = createFixtureProject(t, 'golem-portability-');
     linkProjectPackages(root, {
       '@exprtlabs/golem': path.join(workspace, 'packages/golem'),
       '@nestjs/common': path.join(workspace, 'node_modules/@nestjs/common'),

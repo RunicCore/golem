@@ -136,7 +136,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Payment'
-            application/vnd.runic.payment+json:
+            application/vnd.golem.payment+json:
               schema:
                 $ref: '#/components/schemas/Payment'
         '304':

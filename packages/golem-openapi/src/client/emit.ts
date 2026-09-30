@@ -217,7 +217,7 @@ function operationSource(
     ['responseContracts', 'response metadata'],
     ...runtimeFunctions.map((name): readonly [string, string] => [name, `client runtime function ${name}`]),
   ];
-  if (surfaces.auth || surfaces.mutualTls) importedNames.push(['__runicSecuritySchemes', 'security metadata'], ['RuntimeSecuritySchemes', 'security scheme type import']);
+  if (surfaces.auth || surfaces.mutualTls) importedNames.push(['__golemSecuritySchemes', 'security metadata'], ['RuntimeSecuritySchemes', 'security scheme type import']);
   if (profile.validation) importedNames.push(['OperationValidationSources', 'validation source type import']);
   if (defaultAjvEngine) importedNames.push(['createOpenApiAjvEngine', 'default validation engine import']);
   if (profile.ajvStandalone && profile.validation) importedNames.push(['createValidatorSet', 'standalone validator import'], ['RuntimeValidator', 'validator type']);
@@ -294,7 +294,7 @@ ${standaloneResponseValidation}
     operationSchemaImports,
   ].filter(Boolean).join('\n');
   const securityDeclaration = surfaces.auth || surfaces.mutualTls
-    ? `export const __runicSecuritySchemes = ${JSON.stringify(securitySchemes, null, 2)} as const;\nconst securitySchemes: RuntimeSecuritySchemes = __runicSecuritySchemes;`
+    ? `export const __golemSecuritySchemes = ${JSON.stringify(securitySchemes, null, 2)} as const;\nconst securitySchemes: RuntimeSecuritySchemes = __golemSecuritySchemes;`
     : '';
   const securityCall = plan.clientSurfaces.auth || plan.clientSurfaces.mutualTls
     ? `    await ${use('applySecurity')}(runtime, ${security}, query, headers, cookies, securitySchemes);\n    if (cookies.length) headers.set('Cookie', cookies.join('; '));`
@@ -448,8 +448,8 @@ function emitClient(
   if (plan.helpers.has('selectResponse')) scope.claim('isUndeclaredResponseError', 'shared undeclared response error guard');
   if (defaultAjvEngine) scope.claim('createOpenApiAjvEngine', 'default validation engine import');
   if (profile.validation) {
-    scope.claim('__RunicOperationName', 'operation name type import');
-    scope.claim('__RunicOperationRuntimeValidators', 'operation validators type import');
+    scope.claim('__GolemOperationName', 'operation name type import');
+    scope.claim('__GolemOperationRuntimeValidators', 'operation validators type import');
   }
   const metadataName = `${clientName[0]?.toLowerCase() ?? 'c'}${clientName.slice(1)}SecuritySchemeMetadata`;
   if (plan.clientSurfaces.auth || plan.clientSurfaces.mutualTls) scope.claim(metadataName, 'security metadata export');
@@ -469,12 +469,12 @@ function emitClient(
       'generated client helper',
     );
     scope.claim(operation.name, `operation ${JSON.stringify(operation.name)}`);
-    let alias = `__runicOperationFactory${index}`;
+    let alias = `__golemOperationFactory${index}`;
     while (scope.has(alias)) alias += '_';
     scope.claim(alias, `operation factory ${JSON.stringify(operation.name)}`);
     aliases.set(operation.name, alias);
     if (plan.clientSurfaces.auth || plan.clientSurfaces.mutualTls) {
-      let securityAlias = `__runicSecuritySchemes${index}`;
+      let securityAlias = `__golemSecuritySchemes${index}`;
       while (scope.has(securityAlias)) securityAlias += '_';
       scope.claim(securityAlias, `security metadata ${JSON.stringify(operation.name)}`);
       securityAliases.set(operation.name, securityAlias);
@@ -483,7 +483,7 @@ function emitClient(
   const imports = operations.map((operation) => {
     const names = [`${operationFactoryName(operation)} as ${aliases.get(operation.name)}`];
     const securityAlias = securityAliases.get(operation.name);
-    if (securityAlias) names.push(`__runicSecuritySchemes as ${securityAlias}`);
+    if (securityAlias) names.push(`__golemSecuritySchemes as ${securityAlias}`);
     return `import { ${names.join(', ')} } from ${JSON.stringify(`./operations/${operation.name}.js`)};`;
   }).join('\n');
   const metadata = plan.clientSurfaces.auth || plan.clientSurfaces.mutualTls
@@ -503,7 +503,7 @@ ${[...securityAliases.values()].map((alias) => `  ...${alias},`).join('\n')}
   const usesAuth = surfaces.auth || surfaces.mutualTls;
   const optionExtensions = [
     ...(surfaces.auth ? [`  /** Values or lazy providers keyed by OpenAPI security-scheme name. */\n  auth?: ${clientName}Auth;`] : []),
-    ...(profile.validation ? ['  /** Overrides generated validators for individual operations. */\n  operationValidators?: ReadonlyMap<__RunicOperationName, __RunicOperationRuntimeValidators>;'] : []),
+    ...(profile.validation ? ['  /** Overrides generated validators for individual operations. */\n  operationValidators?: ReadonlyMap<__GolemOperationName, __GolemOperationRuntimeValidators>;'] : []),
   ];
   const omittedOptions = [
     ...(surfaces.bodyEncoders ? [] : ['bodyEncoders']),
@@ -548,7 +548,7 @@ ${[...securityAliases.values()].map((alias) => `  ...${alias},`).join('\n')}
   return `${generatedBanner()}
 import { ${runtimeValueImports.join(', ')} } from '@exprtlabs/golem/client';
 import type * as Runtime from '@exprtlabs/golem/client';
-${defaultAjvEngine ? "import { createOpenApiAjvEngine } from '@exprtlabs/golem/ajv';\n" : ''}${profile.validation ? "import type { OperationRuntimeValidators as __RunicOperationRuntimeValidators } from '@exprtlabs/golem/validation';\nimport type { OperationName as __RunicOperationName } from './schemas.js';\n" : ''}import type * as Types from './types.js';
+${defaultAjvEngine ? "import { createOpenApiAjvEngine } from '@exprtlabs/golem/ajv';\n" : ''}${profile.validation ? "import type { OperationRuntimeValidators as __GolemOperationRuntimeValidators } from '@exprtlabs/golem/validation';\nimport type { OperationName as __GolemOperationName } from './schemas.js';\n" : ''}import type * as Types from './types.js';
 ${profile.mobx
     ? "import type { ObservableApiOperation as ApiOperation } from '@exprtlabs/golem/mobx';"
     : "import type { ApiOperation } from '@exprtlabs/golem/client';"}
@@ -635,7 +635,7 @@ export function generateClientModules(
     const bundle = validationBundles.get(operation.name);
     const schemaAliases = (bundle?.sharedResources ?? []).map((resource, index) => ({
       id: resource.id,
-      alias: `__runicSchema${index}`,
+      alias: `__golemSchema${index}`,
     }));
     emittedOperations.set(`operations/${operation.name}.ts`, operationSource(
       clientName,

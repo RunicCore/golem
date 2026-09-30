@@ -16,7 +16,7 @@ function write(directory: string, name: string, value: unknown): string {
 }
 
 async function bundle(t: TestContext, files: Record<string, unknown>, document: unknown, rootName = 'api.json'): Promise<BundledDocument> {
-  const directory = createFixtureProject(t, 'runic-bundler-');
+  const directory = createFixtureProject(t, 'golem-bundler-');
   for (const [name, value] of Object.entries(files)) write(directory, name, value);
   const filename = write(directory, rootName, document);
   return bundleReferenceGraph(await loadReferenceGraph(filename, document));
@@ -217,7 +217,7 @@ test('a YAML alias shared by two locations is rewritten in both', async (t) => {
     '        second: *shared',
     '',
   ].join('\n');
-  const directory = createFixtureProject(t, 'runic-bundler-alias-');
+  const directory = createFixtureProject(t, 'golem-bundler-alias-');
   write(directory, 'x.json', { type: 'string' });
   const filename = write(directory, 'api.yaml', yaml);
   const document: unknown = YAML.parse(yaml);

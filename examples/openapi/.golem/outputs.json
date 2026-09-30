@@ -4,7 +4,7 @@
     "sdk/client.ts": {
       "job": "openapi:sdk",
       "owner": "@exprtlabs/golem-openapi",
-      "digest": "c0a187d3c91454b3d07fbdbcb804326823a8075d179eec1fdf562c21de9fc005",
+      "digest": "16cce19f0b4ddd59e0e3202ee481f2b170e8c42b966996fbf0fe1c7a05f4a33e",
       "destination": "sdk",
       "destinationKind": "directory"
     },
@@ -53,21 +53,21 @@
     "sdk/operations/createTask.ts": {
       "job": "openapi:sdk",
       "owner": "@exprtlabs/golem-openapi",
-      "digest": "c3a815f3f9bd473b01f341f2d625f324f2a634a6b92ab4228fab3233403f085a",
+      "digest": "5dcf951194052f7fa1e997327be067e83af6fbc369e5b0804bafc6fd3f140643",
       "destination": "sdk",
       "destinationKind": "directory"
     },
     "sdk/operations/getTask.ts": {
       "job": "openapi:sdk",
       "owner": "@exprtlabs/golem-openapi",
-      "digest": "df69ca77325df7a01177198d73f1c25f28e0a87a08efb2b90c69764b6f056cba",
+      "digest": "3ec8d6670df84082d6116cbe497c443a4dfc044da5d653d1f2b11b8977330616",
       "destination": "sdk",
       "destinationKind": "directory"
     },
     "sdk/operations/listTasks.ts": {
       "job": "openapi:sdk",
       "owner": "@exprtlabs/golem-openapi",
-      "digest": "c911411d14692968c5119ce126fb2ba909680b4ce325018d3d429ecf2d446984",
+      "digest": "bca17c7ef82a70fe69282d1765d9d25ba22903f96533b3e7c73369ac5fa39c91",
       "destination": "sdk",
       "destinationKind": "directory"
     },
@@ -81,28 +81,28 @@
     "sdk/schemas.ts": {
       "job": "openapi:sdk",
       "owner": "@exprtlabs/golem-openapi",
-      "digest": "ace59e3d697d8ba54d23f8620a2a14858adfe0b144434b79f789654502202c4a",
+      "digest": "620b20c412c8e19b075925b4336ffa35d5d0ede3d94547ecaab45f0776d67313",
       "destination": "sdk",
       "destinationKind": "directory"
     },
     "sdk/types.ts": {
       "job": "openapi:sdk",
       "owner": "@exprtlabs/golem-openapi",
-      "digest": "9b06ebf1dec0ec7d2774b00b635c125286366ad8bae4cb753f866b90ecf3c4f7",
+      "digest": "bd6f7926eaf0d4108109317fd91579e39abaaad57afacd468ea99e3c537a8f22",
       "destination": "sdk",
       "destinationKind": "directory"
     },
     "sdk/validation-schemas/Task.input.ts": {
       "job": "openapi:sdk",
       "owner": "@exprtlabs/golem-openapi",
-      "digest": "647250f5b2539a69621448b1d20cb60a3ab7b01e87755425563d9aaf952b6b74",
+      "digest": "fb8b95425837350030f0794bc8b2a5372c5d2a8b26ae2bc9b22bfb3f91c2527f",
       "destination": "sdk",
       "destinationKind": "directory"
     },
     "sdk/validation-schemas/Task.output.ts": {
       "job": "openapi:sdk",
       "owner": "@exprtlabs/golem-openapi",
-      "digest": "32dac304698933d97dc77be14186badbc95cb55387c7319804bd36f94580481f",
+      "digest": "4a1511d4def16c21b34f1b104dbf5a7f290f19c9fbb6deddf861eeabc21e23b8",
       "destination": "sdk",
       "destinationKind": "directory"
     }

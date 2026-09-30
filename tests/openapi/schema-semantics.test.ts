@@ -20,7 +20,7 @@ import {
 
 test('generated SDK enforces conditional request and response schemas with runtime and standalone Ajv', async t => {
   for (const ajvStandalone of [false, true] as const) {
-    const directory = createFixtureProject(t, 'runic-openapi-advanced-');
+    const directory = createFixtureProject(t, 'golem-openapi-advanced-');
     const output = path.join(directory, 'sdk');
     const conditionalPayment = {
       type: 'object',
@@ -136,7 +136,7 @@ test('public generation accepts OAS 3.1/3.2 boolean schemas in direct, nested, a
       ? [{ mobx: false, validation: false }, { mobx: false, validation: true }]
       : [{ mobx: false, validation: false }];
     for (const profile of profiles) {
-      const directory = createFixtureProject(t, 'runic-openapi-r13-');
+      const directory = createFixtureProject(t, 'golem-openapi-r13-');
       const output = path.join(directory, 'sdk');
       const input = writeOpenApiDocument(directory, booleanSchemaDocument(openapi));
       const result = await generate({ input, output, name: 'BooleanSchema', profile });
@@ -175,7 +175,7 @@ test('public generation accepts OAS 3.1/3.2 boolean schemas in direct, nested, a
 });
 
 test('rejects malformed or unresolved documents', async (t) => {
-  const malformed = createFixtureProject(t, 'runic-openapi-r13-malformed-');
+  const malformed = createFixtureProject(t, 'golem-openapi-r13-malformed-');
   const malformedInput = writeOpenApiDocument(malformed, { openapi: '3.1.0', paths: {} });
   await assert.rejects(
     () => generate({
@@ -186,7 +186,7 @@ test('rejects malformed or unresolved documents', async (t) => {
     /OpenAPI validation failed/,
   );
 
-  const unresolved = createFixtureProject(t, 'runic-openapi-r13-ref-');
+  const unresolved = createFixtureProject(t, 'golem-openapi-r13-ref-');
   const unresolvedInput = writeOpenApiDocument(unresolved, documentBase('3.1.0', {
     paths: {
       '/values': {
@@ -213,7 +213,7 @@ test('rejects malformed or unresolved documents', async (t) => {
 });
 
 test('nullable binary response decodes to Blob or null and both pass runtime validation', async (t) => {
-  const output = path.join(createFixtureProject(t, 'runic-openapi-r14-'), 'sdk');
+  const output = path.join(createFixtureProject(t, 'golem-openapi-r14-'), 'sdk');
   const document = documentBase('3.1.0', {
     paths: {
       '/file': {
@@ -276,7 +276,7 @@ test('nullable binary response decodes to Blob or null and both pass runtime val
 
 test('an allOf alias of one model is its own model with its own codec', async t => {
   for (const profile of [{ mobx: false, validation: false }, { mobx: false, validation: true }]) {
-    const directory = createFixtureProject(t, 'runic-openapi-allof-alias-');
+    const directory = createFixtureProject(t, 'golem-openapi-allof-alias-');
     const output = path.join(directory, 'sdk');
     const suffix = profile.validation ? 'V' : 'N';
     await generateMaterializedSdk(documentBase('3.1.0', {

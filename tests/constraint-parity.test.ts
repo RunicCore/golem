@@ -28,7 +28,7 @@ interface Fixture {
 }
 
 function fixture(t: TestContext): Fixture {
-  const root = createFixtureProject(t, 'runic-constraint-parity-');
+  const root = createFixtureProject(t, 'golem-constraint-parity-');
   const sourceRoot = path.join(root, 'src');
   linkProjectPackages(root, {
     '@exprtlabs/golem': path.join(workspace, 'packages/golem'),

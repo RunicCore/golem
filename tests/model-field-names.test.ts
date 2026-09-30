@@ -8,7 +8,7 @@ import { tsSource } from './source-template.js';
 import { generate } from '#model/generator';
 
 const modelProject = (t: Parameters<typeof createModelProject>[0]) => createModelProject(t, {
-  prefix: 'runic-model-field-names-',
+  prefix: 'golem-model-field-names-',
   name: 'model-field-names',
 });
 
@@ -18,7 +18,7 @@ function prototypeDiagnostic(field: string): string {
 
 test('model generation rejects Object.prototype-colliding data fields across validation profiles', t => {
   const { root, sourceRoot } = createModelProject(t, {
-    prefix: 'runic-model-field-names-',
+    prefix: 'golem-model-field-names-',
     name: 'model-field-names',
     compilerOptions: { exactOptionalPropertyTypes: true, noUncheckedIndexedAccess: true },
   });

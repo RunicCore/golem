@@ -11,7 +11,7 @@ interface Project {
 }
 
 function project(t: TestContext): Project {
-  const root = createFixtureProject(t, 'runic-route-eval-');
+  const root = createFixtureProject(t, 'golem-route-eval-');
   writeGeneratedArtifacts([
     {
       path: path.join(root, 'package.json'),

@@ -8,7 +8,7 @@ import { createControllerFixture } from '../fixture-templates/controllers/projec
 
 function fixture(t: TestContext, source: string): string {
   return createControllerFixture(t, {
-    prefix: 'runic-ts-to-openapi-document-',
+    prefix: 'golem-ts-to-openapi-document-',
     packageName: 'ts-to-openapi-document-fixture',
     source,
   });

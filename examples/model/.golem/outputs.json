@@ -4,14 +4,14 @@
     "src/builtin-tags.model.generated.ts": {
       "job": "models:.",
       "owner": "@exprtlabs/golem-model",
-      "digest": "81fe711d43b73db07e65f6ef7406d48d638f05a3c40e749519a0e5618a2a89bb",
+      "digest": "9fda0b156de31df450de9c4a1b5f097e5a57fd77a65830f6d263cfdd8e789792",
       "destination": "src",
       "destinationKind": "directory"
     },
     "src/collection-tags.model.generated.ts": {
       "job": "models:.",
       "owner": "@exprtlabs/golem-model",
-      "digest": "b8124a6e218b726440e98d9899cccf7b02473b310b330532424e334f7a60e05f",
+      "digest": "3c197268caca3eed890e55a99fed3381fb0e1185a42d82536bdff6cdf68ab79a",
       "destination": "src",
       "destinationKind": "directory"
     },
@@ -25,49 +25,49 @@
     "src/generated/models/models.generated.ts": {
       "job": "models:.",
       "owner": "@exprtlabs/golem-model",
-      "digest": "161b756b30889e183ccede9ac94da5a649818914a604700e9d68c5087b5bb80a",
+      "digest": "956a343555f158d4b3043db05af2386c508d6dfab66f9383cfd6a62526f28719",
       "destination": "src/generated/models",
       "destinationKind": "directory"
     },
     "src/money.model.generated.ts": {
       "job": "models:.",
       "owner": "@exprtlabs/golem-model",
-      "digest": "892322a43edb7cb69be553c89769046fe35c4433e4abcdeab093b6e095e41ae4",
+      "digest": "82b756dd35b645365a5161aba823c4752609e7da631b94bbb1c226ca6cf4a333",
       "destination": "src",
       "destinationKind": "directory"
     },
     "src/note.model.generated.ts": {
       "job": "models:.",
       "owner": "@exprtlabs/golem-model",
-      "digest": "06cc614dab623bda5a89969faaaa1609ba7df9129a42880761226b95add093c9",
+      "digest": "2a3f175c8943a9d1d7dc4f1d6e4923245fd7bdc853279d97681c87ca44714c91",
       "destination": "src",
       "destinationKind": "directory"
     },
     "src/order-input.model.generated.ts": {
       "job": "models:.",
       "owner": "@exprtlabs/golem-model",
-      "digest": "e1bcc527b4ee34350b5df02e4385b9dd69f8de4479efc41644b42e8772fd42a2",
+      "digest": "5601a9b3459099efa9c7b16f5333a787dde103df4a8f6bab71e4a5c098d10db9",
       "destination": "src",
       "destinationKind": "directory"
     },
     "src/permission-input.model.generated.ts": {
       "job": "models:.",
       "owner": "@exprtlabs/golem-model",
-      "digest": "84dc24934ba7aecd1b8984627dda04157f513587ad050477f42269edacbdd7d2",
+      "digest": "fa34fe4495c0e3cbdf881b3dd83a9fd28c67a946b105725c4bfa76fe2ddc0a49",
       "destination": "src",
       "destinationKind": "directory"
     },
     "src/task-input.model.generated.ts": {
       "job": "models:.",
       "owner": "@exprtlabs/golem-model",
-      "digest": "b4569feababc39784f046841391a8ba5ad2081b61aff0b20dd7220a4478dfc4b",
+      "digest": "189a52a917c0ad70bcc5b2b662b37067faab5bbb4aed8691adf3be70e3defe60",
       "destination": "src",
       "destinationKind": "directory"
     },
     "src/task.model.generated.ts": {
       "job": "models:.",
       "owner": "@exprtlabs/golem-model",
-      "digest": "b81304027eab947e8d248cf0c89df7df30b7ba19fa8b24cff6f5c84ffece6114",
+      "digest": "77c0a5ee474bdabc9025f8f28c0686be991239d7108b4eb09b1da0ec9bde2d95",
       "destination": "src",
       "destinationKind": "directory"
     }

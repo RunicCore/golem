@@ -21,7 +21,7 @@ import { generatedCodecIdFromRoot } from './support/consumer.js';
 
 function fixture(t: TestContext, options: { readonly noUnusedLocals?: boolean } = {}) {
   return createModelProject(t, {
-    prefix: 'runic-model-efficiency-',
+    prefix: 'golem-model-efficiency-',
     name: 'model-efficiency',
     ...(options.noUnusedLocals ? { compilerOptions: { noUnusedLocals: true } } : {}),
   });

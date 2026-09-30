@@ -13,7 +13,7 @@ import { generate } from '#model/generator';
 
 function fixture(t: TestContext, allowJs = false) {
   return createModelProject(t, {
-    prefix: 'runic-model-composition-',
+    prefix: 'golem-model-composition-',
     name: 'model-composition',
     allowJs,
     ttscPlugin: true,

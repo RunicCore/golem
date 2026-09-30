@@ -375,7 +375,7 @@ test('typed upstream corpus cases generate, strict-compile, and execute every ac
     assert.ok(fs.existsSync(path.join(fixtureRoot, source.licenseFile)));
   }
 
-  const outputRoot = createFixtureProject(t, 'runic-openapi-upstream-');
+  const outputRoot = createFixtureProject(t, 'golem-openapi-upstream-');
   let expectedOutboundOperations = 0;
   for (const [fixtureIndex, fixture] of manifest.fixtures.entries()) {
     const filename = path.join(fixtureRoot, fixture.path);

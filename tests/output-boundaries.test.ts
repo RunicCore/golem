@@ -52,7 +52,7 @@ function modelJob(root: string, output: string, sources?: readonly string[]): Go
 }
 
 function fixture(t: TestContext): string {
-  const directory = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'runic-output-boundaries-')));
+  const directory = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'golem-output-boundaries-')));
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   return directory;
 }
@@ -175,8 +175,8 @@ test('a final symlink is never adopted as an expected generated output', (t: Tes
 
 test('model output changes retire old shared artifacts through recorded destinations', (t: TestContext) => {
   const directory = fixture(t);
-  const oldOutput = path.join(directory, '..', `runic-old-model-output-${path.basename(directory)}`);
-  const newOutput = path.join(directory, '..', `runic-new-model-output-${path.basename(directory)}`);
+  const oldOutput = path.join(directory, '..', `golem-old-model-output-${path.basename(directory)}`);
+  const newOutput = path.join(directory, '..', `golem-new-model-output-${path.basename(directory)}`);
   fs.mkdirSync(oldOutput, { recursive: true });
   fs.mkdirSync(newOutput, { recursive: true });
   t.after(() => {

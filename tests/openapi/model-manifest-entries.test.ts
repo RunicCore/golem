@@ -18,7 +18,7 @@ const document = {
 };
 
 test('model manifest entries carry no top-level additionalProperties; field descriptors own that fact', async t => {
-  const output = path.join(createFixtureProject(t, 'runic-manifest-entries-'), 'sdk');
+  const output = path.join(createFixtureProject(t, 'golem-manifest-entries-'), 'sdk');
   const result = await generateMaterializedSdk(document, { output, name: 'Manifest', profile: { mobx: false, validation: true } });
   const manifest = JSON.parse(result.artifacts.find(item => item.path.endsWith('/model-manifest.json'))?.content ?? '{}') as {
     models?: { id?: unknown; type?: { export?: string } }[];

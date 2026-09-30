@@ -18,7 +18,7 @@ export {
 /** Exact component and operation schemas retained for runtime validation. */
 export const schemaDialect = "https://spec.openapis.org/oas/3.1/dialect/base" as const;
 export const schemaRegistry = {
-  "$id": "urn:runic:openapi:paymentsdemo:d3e401b83a74a4f6d706e7aac6de85392642bd842fc3fac627638ed7cc64f7c9:schemas",
+  "$id": "urn:golem:openapi:paymentsdemo:d3e401b83a74a4f6d706e7aac6de85392642bd842fc3fac627638ed7cc64f7c9:schemas",
   "components": {
     "schemas": {
       "Money": {
@@ -47,7 +47,7 @@ export const schemaRegistry = {
         "type": "object",
         "properties": {
           "body": {
-            "$ref": "urn:runic:openapi:paymentsdemo:d3e401b83a74a4f6d706e7aac6de85392642bd842fc3fac627638ed7cc64f7c9:schemas:input#/components/schemas/Money"
+            "$ref": "urn:golem:openapi:paymentsdemo:d3e401b83a74a4f6d706e7aac6de85392642bd842fc3fac627638ed7cc64f7c9:schemas:input#/components/schemas/Money"
           }
         },
         "required": [
@@ -58,15 +58,15 @@ export const schemaRegistry = {
       "responses": {
         "201": {
           "application/json": {
-            "$ref": "urn:runic:openapi:paymentsdemo:d3e401b83a74a4f6d706e7aac6de85392642bd842fc3fac627638ed7cc64f7c9:schemas:input#/components/schemas/Money"
+            "$ref": "urn:golem:openapi:paymentsdemo:d3e401b83a74a4f6d706e7aac6de85392642bd842fc3fac627638ed7cc64f7c9:schemas:input#/components/schemas/Money"
           }
         }
       }
     }
   },
   "$defs": {
-    "runic-input": {
-      "$id": "urn:runic:openapi:paymentsdemo:d3e401b83a74a4f6d706e7aac6de85392642bd842fc3fac627638ed7cc64f7c9:schemas:input",
+    "golem-input": {
+      "$id": "urn:golem:openapi:paymentsdemo:d3e401b83a74a4f6d706e7aac6de85392642bd842fc3fac627638ed7cc64f7c9:schemas:input",
       "components": {
         "schemas": {
           "Money": {

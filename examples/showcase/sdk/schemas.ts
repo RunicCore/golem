@@ -18,7 +18,7 @@ export {
 /** Exact component and operation schemas retained for runtime validation. */
 export const schemaDialect = "https://spec.openapis.org/oas/3.1/dialect/base" as const;
 export const schemaRegistry = {
-  "$id": "urn:runic:openapi:projectaccessapi:6073e63c7e9b174726cd4cbec185ce00f49f2a412e5bc93c2a91d506e21c8bc1:schemas",
+  "$id": "urn:golem:openapi:projectaccessapi:6073e63c7e9b174726cd4cbec185ce00f49f2a412e5bc93c2a91d506e21c8bc1:schemas",
   "components": {
     "schemas": {
       "Member": {
@@ -125,7 +125,7 @@ export const schemaRegistry = {
             "additionalProperties": false
           },
           "body": {
-            "$ref": "urn:runic:openapi:projectaccessapi:6073e63c7e9b174726cd4cbec185ce00f49f2a412e5bc93c2a91d506e21c8bc1:schemas:input#/components/schemas/ProjectAccess"
+            "$ref": "urn:golem:openapi:projectaccessapi:6073e63c7e9b174726cd4cbec185ce00f49f2a412e5bc93c2a91d506e21c8bc1:schemas:input#/components/schemas/ProjectAccess"
           }
         },
         "required": [
@@ -137,15 +137,15 @@ export const schemaRegistry = {
       "responses": {
         "200": {
           "application/json": {
-            "$ref": "urn:runic:openapi:projectaccessapi:6073e63c7e9b174726cd4cbec185ce00f49f2a412e5bc93c2a91d506e21c8bc1:schemas:input#/components/schemas/ProjectAccess"
+            "$ref": "urn:golem:openapi:projectaccessapi:6073e63c7e9b174726cd4cbec185ce00f49f2a412e5bc93c2a91d506e21c8bc1:schemas:input#/components/schemas/ProjectAccess"
           }
         }
       }
     }
   },
   "$defs": {
-    "runic-input": {
-      "$id": "urn:runic:openapi:projectaccessapi:6073e63c7e9b174726cd4cbec185ce00f49f2a412e5bc93c2a91d506e21c8bc1:schemas:input",
+    "golem-input": {
+      "$id": "urn:golem:openapi:projectaccessapi:6073e63c7e9b174726cd4cbec185ce00f49f2a412e5bc93c2a91d506e21c8bc1:schemas:input",
       "components": {
         "schemas": {
           "Member": {

@@ -368,7 +368,7 @@ export function deduplicateTagSchemas(
     .sort((left, right) => left.schemaKey.localeCompare(right.schemaKey)
       || left.order - right.order)
     .map((group, index) => ({
-      id: `runic:model-tag:${index}`,
+      id: `golem:model-tag:${index}`,
       schema: group.schema,
       keys: [...group.keys].sort(),
     }));
@@ -434,7 +434,7 @@ function tagSchemas(
   descriptors.forEach(visit);
   return [...schemas.entries()]
     .sort(([left], [right]) => left.localeCompare(right))
-    .map(([key, schema], index) => ({ key, schema, id: `runic:model-tag:${index}` }));
+    .map(([key, schema], index) => ({ key, schema, id: `golem:model-tag:${index}` }));
 }
 
 function projectDescriptor(
@@ -1028,10 +1028,10 @@ export function emitSharedSource(options: SharedSourceOptions): string | undefin
   }
   const validations = [...validationMap.values()].sort((left, right) => left.id.localeCompare(right.id));
   const serde = [...serdeMap.values()].sort((left, right) => left.id.localeCompare(right.id));
-  const validationNames = new Map(validations.map((binding, index) => [binding.id, `__runicValidation${index}`] as const));
+  const validationNames = new Map(validations.map((binding, index) => [binding.id, `__golemValidation${index}`] as const));
   const serdeNames = new Map(serde.map((binding, index) => [binding.id, {
-    serialize: `__runicSerialize${index}`,
-    deserialize: `__runicDeserialize${index}`,
+    serialize: `__golemSerialize${index}`,
+    deserialize: `__golemDeserialize${index}`,
   }] as const));
   const hasValidationBindings = validations.length > 0;
   const hasSerdeBindings = serde.length > 0;
@@ -1098,7 +1098,7 @@ export interface SiblingCodecOptions {
 
 /** Export name of an object-only model's conversion helper, keyed by codec id. */
 export function objectHelperExportName(kind: 'decode' | 'init' | 'encode', codecId: string): string {
-  return `__runic${kind[0].toUpperCase()}${kind.slice(1)}_${codecId.replace(/[^A-Za-z0-9_$]/g, '_')}`;
+  return `__golem${kind[0].toUpperCase()}${kind.slice(1)}_${codecId.replace(/[^A-Za-z0-9_$]/g, '_')}`;
 }
 
 export function emitSource(
@@ -1227,10 +1227,10 @@ export function emitSource(
   const serdeBindings = [...registry.serde.values()].sort((left, right) => left.id.localeCompare(right.id));
   const bindingNames = new Map<string, string>();
   const serdeNames = new Map<string, { readonly serialize: string; readonly deserialize: string }>();
-  validationBindings.forEach((binding, index) => bindingNames.set(binding.id, `__runicValidation${index}`));
+  validationBindings.forEach((binding, index) => bindingNames.set(binding.id, `__golemValidation${index}`));
   serdeBindings.forEach((binding, index) => serdeNames.set(binding.id, {
-    serialize: `__runicSerialize${index}`,
-    deserialize: `__runicDeserialize${index}`,
+    serialize: `__golemSerialize${index}`,
+    deserialize: `__golemDeserialize${index}`,
   }));
   const serdeExpression = (id: string, direction: 'serialize' | 'deserialize', value: string): string => {
     if (shared) return `modelSerdeBindings[${JSON.stringify(id)}].${direction}(${value})`;
@@ -1313,7 +1313,7 @@ export function emitSource(
     return `convertModelField(${JSON.stringify(direction)}, ${field}, () => (${converted}))`;
   };
   const importedModelNames = new Set([...concreteNames.values(), ...externalNames.values()]);
-  let absentFieldName = '__runicAbsentField';
+  let absentFieldName = '__golemAbsentField';
   while (importedModelNames.has(absentFieldName)) absentFieldName += '_';
   const rootFieldExpressions = new Map<string, {
     readonly encode: readonly string[];

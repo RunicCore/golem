@@ -19,7 +19,7 @@ import { tsSource } from './source-template.js';
 import { generate } from '#model/generator';
 
 const modelProject = (t: Parameters<typeof createModelProject>[0]) => createModelProject(t, {
-  prefix: 'runic-model-companions-',
+  prefix: 'golem-model-companions-',
   name: 'model-companions',
 });
 
@@ -43,7 +43,7 @@ function writeManifest(
 
 function ttscModelProject(t: TestContext, name: string) {
   return createModelProject(t, {
-    prefix: `runic-${name}-`,
+    prefix: `golem-${name}-`,
     name,
     ttscPlugin: true,
     linkWorkspaceNodeModules: true,
@@ -143,7 +143,7 @@ test('missing manifest modules and runtime exports fail before companion emissio
   const types = path.join(sdk, 'types.ts');
   const manifest = path.join(sdk, 'model-manifest.json');
   const source = path.join(sourceRoot, 'aggregate.model.ts');
-  fs.writeFileSync(types, '/* @runic-model-manifest ./model-manifest.json */\nexport interface Money { currency: string }\n');
+  fs.writeFileSync(types, '/* @golem-model-manifest ./model-manifest.json */\nexport interface Money { currency: string }\n');
   writeModelSources(sourceRoot, {
     'aggregate.model.ts': readFixture('models/model-companions/missing-manifest/aggregate.model.ts'),
   });

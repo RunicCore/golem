@@ -27,7 +27,7 @@ function profile(overrides: Partial<GolemProfile> = {}): GolemProfile {
 }
 
 function modelProject(t: TestContext): { root: string; sourceRoot: string; source: string } {
-  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'runic-profile-model-')));
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'golem-profile-model-')));
   const sourceRoot = path.join(root, 'src');
   fs.mkdirSync(sourceRoot, { recursive: true });
   fs.mkdirSync(path.join(root, 'node_modules/@exprtlabs'), { recursive: true });

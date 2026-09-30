@@ -54,7 +54,7 @@ const FILES: Readonly<Record<string, string>> = {
 
 // One Program serves every test in this file: the fixture files are read-only inputs.
 function createEvaluator(): (name: string) => ReturnType<typeof evaluateStaticValue> {
-  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'runic-static-value-')));
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'golem-static-value-')));
   after(() => fs.rmSync(root, { recursive: true, force: true }));
   writeGeneratedArtifacts([
     { path: path.join(root, 'package.json'), content: '{ "type": "module" }\n' },

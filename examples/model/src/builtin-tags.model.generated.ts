@@ -10,7 +10,7 @@ import { cloneConversionInput, defineModelProperty, requireModelObject } from '@
 import { ajvIssues, createObjectCodec, parseJson, registerIModelClass, requireAjvSchema, resolveGeneratedModelSchemaRefs, resolveModelValidationContextValidator, runSynchronousValidation, serdeValidates, stringifyJsonBoolean, stringifyJsonString, validationFailure, IssueRepresentation, IssueSource } from '@exprtlabs/golem/serde';
 import { createOpenApiSyncAjvEngine } from '@exprtlabs/golem/ajv';
 
-const __runicAbsentField = Symbol();
+const __golemAbsentField = Symbol();
 
 function modelObject(json: unknown, name: string): Record<string, unknown> {
   return requireModelObject(json, name);
@@ -40,11 +40,11 @@ function decodeTaggedTaskModel(constructor: GeneratedModelConstructor, json: unk
 
 function encodeTaggedTaskModel(model: TaggedTaskBase): TaggedTaskJSON {
   const result: Record<string, unknown> = {
-    ["title"]: Object.prototype.hasOwnProperty.call(model, "title") ? (model["title"]) : __runicAbsentField,
-    ["done"]: Object.prototype.hasOwnProperty.call(model, "done") ? (model["done"]) : __runicAbsentField,
+    ["title"]: Object.prototype.hasOwnProperty.call(model, "title") ? (model["title"]) : __golemAbsentField,
+    ["done"]: Object.prototype.hasOwnProperty.call(model, "done") ? (model["done"]) : __golemAbsentField,
   };
-  if (result["title"] === __runicAbsentField) delete result["title"];
-  if (result["done"] === __runicAbsentField) delete result["done"];
+  if (result["title"] === __golemAbsentField) delete result["title"];
+  if (result["done"] === __golemAbsentField) delete result["done"];
   return result as TaggedTaskJSON;
 }
 

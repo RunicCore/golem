@@ -11,7 +11,7 @@ import { ajvIssues, createObjectCodec, parseJson, registerIModelClass, requireAj
 import { createOpenApiSyncAjvEngine } from '@exprtlabs/golem/ajv';
 import { modelSerdeBindings } from "./generated/models/models.generated.js";
 
-const __runicAbsentField = Symbol();
+const __golemAbsentField = Symbol();
 
 function modelObject(json: unknown, name: string): Record<string, unknown> {
   return requireModelObject(json, name);
@@ -45,13 +45,13 @@ function decodeTaskModel(constructor: GeneratedModelConstructor, json: unknown):
 
 function encodeTaskModel(model: TaskBase): TaskJSON {
   const result: Record<string, unknown> = {
-    ["title"]: Object.prototype.hasOwnProperty.call(model, "title") ? (model["title"]) : __runicAbsentField,
-    ["done"]: Object.prototype.hasOwnProperty.call(model, "done") ? (model["done"]) : __runicAbsentField,
-    ["priority"]: Object.prototype.hasOwnProperty.call(model, "priority") ? (convertModelField("serialize", "priority", () => (modelSerdeBindings["src/task.model.ts:321:507\u0000src/task.model.ts:509:616"].serialize(model["priority"])))) : __runicAbsentField,
+    ["title"]: Object.prototype.hasOwnProperty.call(model, "title") ? (model["title"]) : __golemAbsentField,
+    ["done"]: Object.prototype.hasOwnProperty.call(model, "done") ? (model["done"]) : __golemAbsentField,
+    ["priority"]: Object.prototype.hasOwnProperty.call(model, "priority") ? (convertModelField("serialize", "priority", () => (modelSerdeBindings["src/task.model.ts:321:507\u0000src/task.model.ts:509:616"].serialize(model["priority"])))) : __golemAbsentField,
   };
-  if (result["title"] === __runicAbsentField) delete result["title"];
-  if (result["done"] === __runicAbsentField) delete result["done"];
-  if (result["priority"] === __runicAbsentField) delete result["priority"];
+  if (result["title"] === __golemAbsentField) delete result["title"];
+  if (result["done"] === __golemAbsentField) delete result["done"];
+  if (result["priority"] === __golemAbsentField) delete result["priority"];
   return result as TaskJSON;
 }
 
@@ -118,7 +118,7 @@ export function stringifyTask(value: Record<string, unknown>, options?: { readon
   }
   if (validates) {
     const wire = { ["title"]: value["title"], ["done"]: value["done"], ["priority"]: modelSerdeBindings["src/task.model.ts:321:507\u0000src/task.model.ts:509:616"].serialize(value["priority"]) };
-    __runicAssertWireOnly_Task(wire, options);
+    __golemAssertWireOnly_Task(wire, options);
     return stringifyTaskWire(wire as never, { validate: false });
   }
   return stringifyTaskCore(value as never, { validate: false });
@@ -127,7 +127,7 @@ export function stringifyTask(value: Record<string, unknown>, options?: { readon
 function convertFromWireTask(wire: unknown, options: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object } | undefined, isolated: boolean): unknown {
   const validates = serdeValidates(options, true);
   if (validates) {
-    __runicAssertWire_Task(wire, options);
+    __golemAssertWire_Task(wire, options);
   }
   const source = isolated || wire === null || typeof wire !== 'object' ? wire : cloneConversionInput(wire);
   let result: unknown = source;
@@ -139,7 +139,7 @@ function convertFromWireTask(wire: unknown, options: { readonly validate?: boole
     }
   }
   if (validates) {
-    __runicAssertModelOnly_Task(result, options);
+    __golemAssertModelOnly_Task(result, options);
   }
   return result;
 }
@@ -156,7 +156,7 @@ export function toWireFormatTask(value: unknown, options?: { readonly validate?:
   const record = value as Record<string, unknown>;
   const wire = { ["title"]: record["title"], ["done"]: record["done"], ["priority"]: modelSerdeBindings["src/task.model.ts:321:507\u0000src/task.model.ts:509:616"].serialize(record["priority"]) };
   if (validates) {
-    __runicAssertWireOnly_Task(wire, options);
+    __golemAssertWireOnly_Task(wire, options);
   }
   return wire as TaskJSON;
 }
@@ -194,7 +194,7 @@ export function assertTask(value: unknown, options?: { readonly failFast?: boole
   return value as Record<string, unknown>;
 }
 
-function __runicAssertWire_Task(value: unknown, options?: { readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext }): Record<string, unknown> {
+function __golemAssertWire_Task(value: unknown, options?: { readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext }): Record<string, unknown> {
   if (options?.validationContext === undefined) {
   if (!(options?.failFast !== false ? validateTaskWireFast(value) : validateTaskWireAll(value))) {
     const validator = options?.failFast !== false ? validateTaskWireFast : validateTaskWireAll;
@@ -207,7 +207,7 @@ function __runicAssertWire_Task(value: unknown, options?: { readonly failFast?: 
   return value as Record<string, unknown>;
 }
 
-function __runicAssertModelOnly_Task(value: unknown, options?: { readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext }): Record<string, unknown> {
+function __golemAssertModelOnly_Task(value: unknown, options?: { readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext }): Record<string, unknown> {
   if (options?.validationContext === undefined) {
   if (!(options?.failFast !== false ? validateTaskModelOnlyFast(value) : validateTaskModelOnlyAll(value))) {
     const validator = options?.failFast !== false ? validateTaskModelOnlyFast : validateTaskModelOnlyAll;
@@ -220,7 +220,7 @@ function __runicAssertModelOnly_Task(value: unknown, options?: { readonly failFa
   return value as Record<string, unknown>;
 }
 
-function __runicAssertWireOnly_Task(value: unknown, options?: { readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext }): Record<string, unknown> {
+function __golemAssertWireOnly_Task(value: unknown, options?: { readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext }): Record<string, unknown> {
   if (options?.validationContext === undefined) {
   if (!(options?.failFast !== false ? validateTaskWireOnlyFast(value) : validateTaskWireOnlyAll(value))) {
     const validator = options?.failFast !== false ? validateTaskWireOnlyFast : validateTaskWireOnlyAll;

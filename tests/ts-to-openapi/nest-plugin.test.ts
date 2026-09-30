@@ -10,7 +10,7 @@ import { paymentModelSource } from '../fixture-templates/controllers/payment-mod
 
 function fixture(t: TestContext): string {
   return createControllerFixture(t, {
-    prefix: 'runic-nest-plugin-',
+    prefix: 'golem-nest-plugin-',
     links: 'workspace',
     tsconfig: {
       compilerOptions: {

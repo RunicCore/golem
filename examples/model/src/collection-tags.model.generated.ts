@@ -10,7 +10,7 @@ import { cloneConversionInput, convertModelField, defineModelProperty, requireMo
 import { ajvIssues, createObjectCodec, parseJson, registerIModelClass, requireAjvSchema, resolveGeneratedModelSchemaRefs, resolveModelValidationContextValidator, runSynchronousValidation, serdeValidates, stringifyJsonArray, stringifyJsonString, validationFailure, IssueRepresentation, IssueSource } from '@exprtlabs/golem/serde';
 import { createOpenApiSyncAjvEngine } from '@exprtlabs/golem/ajv';
 
-const __runicAbsentField = Symbol();
+const __golemAbsentField = Symbol();
 
 function modelObject(json: unknown, name: string): Record<string, unknown> {
   return requireModelObject(json, name);
@@ -42,11 +42,11 @@ function decodeContractsModel(constructor: GeneratedModelConstructor, json: unkn
 
 function encodeContractsModel(model: ContractsBase): ContractsJSON {
   const result: Record<string, unknown> = {
-    ["destinations"]: Object.prototype.hasOwnProperty.call(model, "destinations") ? (convertModelField("serialize", "destinations", () => (Array.isArray(model["destinations"]) ? (model["destinations"] as readonly unknown[]).map((item) => item) : model["destinations"]))) : __runicAbsentField,
-    ["billing"]: Object.prototype.hasOwnProperty.call(model, "billing") ? (model["billing"]) : __runicAbsentField,
+    ["destinations"]: Object.prototype.hasOwnProperty.call(model, "destinations") ? (convertModelField("serialize", "destinations", () => (Array.isArray(model["destinations"]) ? (model["destinations"] as readonly unknown[]).map((item) => item) : model["destinations"]))) : __golemAbsentField,
+    ["billing"]: Object.prototype.hasOwnProperty.call(model, "billing") ? (model["billing"]) : __golemAbsentField,
   };
-  if (result["destinations"] === __runicAbsentField) delete result["destinations"];
-  if (result["billing"] === __runicAbsentField) delete result["billing"];
+  if (result["destinations"] === __golemAbsentField) delete result["destinations"];
+  if (result["billing"] === __golemAbsentField) delete result["billing"];
   return result as ContractsJSON;
 }
 
@@ -90,18 +90,18 @@ function fill__anon_1(out: Record<string, unknown>, wire: Record<string, unknown
 function stringify__anon_1Core(value: Record<string, unknown>, _options?: { readonly validate?: boolean; readonly failFast?: boolean }): string {
   let out = '{';
   let sep = false;
-  const __runicField0 = value["card"];
-  if (__runicField0 !== undefined) {
+  const __golemField0 = value["card"];
+  if (__golemField0 !== undefined) {
     if (sep) out += ",";
     out += "\"card\":";
-    out += (__runicField0 == null ? 'null' : (stringifyJsonString(__runicField0 as string)));
+    out += (__golemField0 == null ? 'null' : (stringifyJsonString(__golemField0 as string)));
     sep = true;
   }
-  const __runicField1 = value["billingAddress"];
-  if (__runicField1 !== undefined) {
+  const __golemField1 = value["billingAddress"];
+  if (__golemField1 !== undefined) {
     if (sep) out += ",";
     out += "\"billingAddress\":";
-    out += (__runicField1 == null ? 'null' : (stringifyJsonString(__runicField1 as string)));
+    out += (__golemField1 == null ? 'null' : (stringifyJsonString(__golemField1 as string)));
     sep = true;
   }
   return out + '}';
@@ -143,9 +143,9 @@ export function toWireFormat__anon_1(value: unknown, options?: { readonly valida
     assert__anon_1(value, options);
   }
   const record = value as Record<string, unknown>;
-  let __runicField0: unknown;
-  let __runicField1: unknown;
-  const wire = { ...(__runicField0 = record["card"], (__runicField0 !== undefined ? { ["card"]: __runicField0 } : undefined)), ...(__runicField1 = record["billingAddress"], (__runicField1 !== undefined ? { ["billingAddress"]: __runicField1 } : undefined)) };
+  let __golemField0: unknown;
+  let __golemField1: unknown;
+  const wire = { ...(__golemField0 = record["card"], (__golemField0 !== undefined ? { ["card"]: __golemField0 } : undefined)), ...(__golemField1 = record["billingAddress"], (__golemField1 !== undefined ? { ["billingAddress"]: __golemField1 } : undefined)) };
   return wire;
 }
 
@@ -247,8 +247,8 @@ export function toWireFormatContracts(value: unknown, options?: { readonly valid
     assertContracts(value, options);
   }
   const record = value as Record<string, unknown>;
-  let __runicField0: unknown;
-  const wire = { ["destinations"]: (__runicField0 = record["destinations"], Array.isArray(__runicField0) ? (__runicField0 as readonly unknown[]).map((item) => item) : __runicField0), ["billing"]: toWireFormat__anon_1(record["billing"] as never, { validate: false }) };
+  let __golemField0: unknown;
+  const wire = { ["destinations"]: (__golemField0 = record["destinations"], Array.isArray(__golemField0) ? (__golemField0 as readonly unknown[]).map((item) => item) : __golemField0), ["billing"]: toWireFormat__anon_1(record["billing"] as never, { validate: false }) };
   return wire as ContractsJSON;
 }
 

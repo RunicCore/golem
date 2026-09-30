@@ -17,7 +17,7 @@ async function compile(root: string): Promise<void> {
 }
 
 function generateRoot(t: TestContext): string {
-  const root = createFixtureProject(t, 'runic-union-serde-');
+  const root = createFixtureProject(t, 'golem-union-serde-');
   linkProjectPackages(root, {
     '@exprtlabs/golem': path.join(workspace, 'packages/golem'),
     typescript: path.join(workspace, 'node_modules/typescript'),

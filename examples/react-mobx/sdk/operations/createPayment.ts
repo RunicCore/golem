@@ -4,18 +4,18 @@ import type { PaymentsClientOptions as ClientOptions, PaymentsRequestOptions as 
 import type * as Types from '../types.js';
 import { createObservableApiOperation as createApiOperation, type ObservableApiOperation as ApiOperation } from '@exprtlabs/golem/mobx';
 import { createOpenApiAjvEngine } from '@exprtlabs/golem/ajv';
-import { schema as __runicSchema0 } from "../validation-schemas/Money.input.js";
-import { schema as __runicSchema1 } from "../validation-schemas/Money.output.js";
+import { schema as __golemSchema0 } from "../validation-schemas/Money.input.js";
+import { schema as __golemSchema1 } from "../validation-schemas/Money.output.js";
 
 
 const responseContracts: readonly RuntimeResponseContract[] = [{"status":"201","content":[{"contentType":"application/json","framing":"body"}],"headers":[]}];
 const __resolveOperationValidationSources = (): OperationValidationSources => ({
-    inputReference: "urn:runic:openapi:paymentsdemo:d3e401b83a74a4f6d706e7aac6de85392642bd842fc3fac627638ed7cc64f7c9:schemas:operation:createPayment#/operations/createPayment/input",
-    responseReferences: [{"status":"201","contentType":"application/json","reference":"urn:runic:openapi:paymentsdemo:d3e401b83a74a4f6d706e7aac6de85392642bd842fc3fac627638ed7cc64f7c9:schemas:operation:createPayment#/operations/createPayment/responses/201/application~1json"}],
+    inputReference: "urn:golem:openapi:paymentsdemo:d3e401b83a74a4f6d706e7aac6de85392642bd842fc3fac627638ed7cc64f7c9:schemas:operation:createPayment#/operations/createPayment/input",
+    responseReferences: [{"status":"201","contentType":"application/json","reference":"urn:golem:openapi:paymentsdemo:d3e401b83a74a4f6d706e7aac6de85392642bd842fc3fac627638ed7cc64f7c9:schemas:operation:createPayment#/operations/createPayment/responses/201/application~1json"}],
     schemas: new Map([
-      ["urn:runic:openapi:paymentsdemo:d3e401b83a74a4f6d706e7aac6de85392642bd842fc3fac627638ed7cc64f7c9:schemas:operation:createPayment", JSON.parse("{\"$id\":\"urn:runic:openapi:paymentsdemo:d3e401b83a74a4f6d706e7aac6de85392642bd842fc3fac627638ed7cc64f7c9:schemas:operation:createPayment\",\"$schema\":\"https://spec.openapis.org/oas/3.1/dialect/base\",\"operations\":{\"createPayment\":{\"input\":{\"type\":\"object\",\"properties\":{\"body\":{\"$ref\":\"urn:runic:openapi:paymentsdemo:d3e401b83a74a4f6d706e7aac6de85392642bd842fc3fac627638ed7cc64f7c9:schemas:component:Money:input\"}},\"required\":[\"body\"],\"additionalProperties\":false},\"responses\":{\"201\":{\"application/json\":{\"$ref\":\"urn:runic:openapi:paymentsdemo:d3e401b83a74a4f6d706e7aac6de85392642bd842fc3fac627638ed7cc64f7c9:schemas:component:Money:output\"}}}}}}") as object | boolean],
-      ["urn:runic:openapi:paymentsdemo:d3e401b83a74a4f6d706e7aac6de85392642bd842fc3fac627638ed7cc64f7c9:schemas:component:Money:input", __runicSchema0],
-      ["urn:runic:openapi:paymentsdemo:d3e401b83a74a4f6d706e7aac6de85392642bd842fc3fac627638ed7cc64f7c9:schemas:component:Money:output", __runicSchema1],
+      ["urn:golem:openapi:paymentsdemo:d3e401b83a74a4f6d706e7aac6de85392642bd842fc3fac627638ed7cc64f7c9:schemas:operation:createPayment", JSON.parse("{\"$id\":\"urn:golem:openapi:paymentsdemo:d3e401b83a74a4f6d706e7aac6de85392642bd842fc3fac627638ed7cc64f7c9:schemas:operation:createPayment\",\"$schema\":\"https://spec.openapis.org/oas/3.1/dialect/base\",\"operations\":{\"createPayment\":{\"input\":{\"type\":\"object\",\"properties\":{\"body\":{\"$ref\":\"urn:golem:openapi:paymentsdemo:d3e401b83a74a4f6d706e7aac6de85392642bd842fc3fac627638ed7cc64f7c9:schemas:component:Money:input\"}},\"required\":[\"body\"],\"additionalProperties\":false},\"responses\":{\"201\":{\"application/json\":{\"$ref\":\"urn:golem:openapi:paymentsdemo:d3e401b83a74a4f6d706e7aac6de85392642bd842fc3fac627638ed7cc64f7c9:schemas:component:Money:output\"}}}}}}") as object | boolean],
+      ["urn:golem:openapi:paymentsdemo:d3e401b83a74a4f6d706e7aac6de85392642bd842fc3fac627638ed7cc64f7c9:schemas:component:Money:input", __golemSchema0],
+      ["urn:golem:openapi:paymentsdemo:d3e401b83a74a4f6d706e7aac6de85392642bd842fc3fac627638ed7cc64f7c9:schemas:component:Money:output", __golemSchema1],
     ]),
 
   });

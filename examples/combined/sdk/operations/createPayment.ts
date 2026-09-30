@@ -4,18 +4,18 @@ import type { PaymentsClientOptions as ClientOptions, PaymentsRequestOptions as 
 import type * as Types from '../types.js';
 import { createApiOperation, type ApiOperation } from '@exprtlabs/golem/client';
 import { createOpenApiAjvEngine } from '@exprtlabs/golem/ajv';
-import { schema as __runicSchema0 } from "../validation-schemas/Money.input.js";
-import { schema as __runicSchema1 } from "../validation-schemas/Money.output.js";
+import { schema as __golemSchema0 } from "../validation-schemas/Money.input.js";
+import { schema as __golemSchema1 } from "../validation-schemas/Money.output.js";
 
 
 const responseContracts: readonly RuntimeResponseContract[] = [{"status":"201","content":[{"contentType":"application/json","framing":"body"}],"headers":[]}];
 const __resolveOperationValidationSources = (): OperationValidationSources => ({
-    inputReference: "urn:runic:openapi:payments:e3f4dba1e46a0fbad92bcf41e56897807352186da24f1afdd03635f202f97e90:schemas:operation:createPayment#/operations/createPayment/input",
-    responseReferences: [{"status":"201","contentType":"application/json","reference":"urn:runic:openapi:payments:e3f4dba1e46a0fbad92bcf41e56897807352186da24f1afdd03635f202f97e90:schemas:operation:createPayment#/operations/createPayment/responses/201/application~1json"}],
+    inputReference: "urn:golem:openapi:payments:e3f4dba1e46a0fbad92bcf41e56897807352186da24f1afdd03635f202f97e90:schemas:operation:createPayment#/operations/createPayment/input",
+    responseReferences: [{"status":"201","contentType":"application/json","reference":"urn:golem:openapi:payments:e3f4dba1e46a0fbad92bcf41e56897807352186da24f1afdd03635f202f97e90:schemas:operation:createPayment#/operations/createPayment/responses/201/application~1json"}],
     schemas: new Map([
-      ["urn:runic:openapi:payments:e3f4dba1e46a0fbad92bcf41e56897807352186da24f1afdd03635f202f97e90:schemas:operation:createPayment", JSON.parse("{\"$id\":\"urn:runic:openapi:payments:e3f4dba1e46a0fbad92bcf41e56897807352186da24f1afdd03635f202f97e90:schemas:operation:createPayment\",\"$schema\":\"https://spec.openapis.org/oas/3.1/dialect/base\",\"operations\":{\"createPayment\":{\"input\":{\"type\":\"object\",\"properties\":{\"body\":{\"$ref\":\"urn:runic:openapi:payments:e3f4dba1e46a0fbad92bcf41e56897807352186da24f1afdd03635f202f97e90:schemas:component:Money:input\"}},\"required\":[\"body\"],\"additionalProperties\":false},\"responses\":{\"201\":{\"application/json\":{\"$ref\":\"urn:runic:openapi:payments:e3f4dba1e46a0fbad92bcf41e56897807352186da24f1afdd03635f202f97e90:schemas:component:Money:output\"}}}}}}") as object | boolean],
-      ["urn:runic:openapi:payments:e3f4dba1e46a0fbad92bcf41e56897807352186da24f1afdd03635f202f97e90:schemas:component:Money:input", __runicSchema0],
-      ["urn:runic:openapi:payments:e3f4dba1e46a0fbad92bcf41e56897807352186da24f1afdd03635f202f97e90:schemas:component:Money:output", __runicSchema1],
+      ["urn:golem:openapi:payments:e3f4dba1e46a0fbad92bcf41e56897807352186da24f1afdd03635f202f97e90:schemas:operation:createPayment", JSON.parse("{\"$id\":\"urn:golem:openapi:payments:e3f4dba1e46a0fbad92bcf41e56897807352186da24f1afdd03635f202f97e90:schemas:operation:createPayment\",\"$schema\":\"https://spec.openapis.org/oas/3.1/dialect/base\",\"operations\":{\"createPayment\":{\"input\":{\"type\":\"object\",\"properties\":{\"body\":{\"$ref\":\"urn:golem:openapi:payments:e3f4dba1e46a0fbad92bcf41e56897807352186da24f1afdd03635f202f97e90:schemas:component:Money:input\"}},\"required\":[\"body\"],\"additionalProperties\":false},\"responses\":{\"201\":{\"application/json\":{\"$ref\":\"urn:golem:openapi:payments:e3f4dba1e46a0fbad92bcf41e56897807352186da24f1afdd03635f202f97e90:schemas:component:Money:output\"}}}}}}") as object | boolean],
+      ["urn:golem:openapi:payments:e3f4dba1e46a0fbad92bcf41e56897807352186da24f1afdd03635f202f97e90:schemas:component:Money:input", __golemSchema0],
+      ["urn:golem:openapi:payments:e3f4dba1e46a0fbad92bcf41e56897807352186da24f1afdd03635f202f97e90:schemas:component:Money:output", __golemSchema1],
     ]),
 
   });

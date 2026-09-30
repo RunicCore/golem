@@ -23,7 +23,7 @@ test('a TValidation on an unconverted leaf is model-only, never wire-only', () =
 });
 
 test('dates: model-only checks the Date, wire-only checks the ISO string', () => {
-  assert.deepEqual(schemaForDescriptor(obj({ when: date }), opts('model-only')), { properties: { when: { runicModelDate: true } } });
+  assert.deepEqual(schemaForDescriptor(obj({ when: date }), opts('model-only')), { properties: { when: { golemModelDate: true } } });
   assert.deepEqual(schemaForDescriptor(obj({ when: date }), opts('wire-only')), { properties: { when: { type: 'string', format: 'date-time' } } });
 });
 
@@ -34,7 +34,7 @@ test('TSerde: model-only is the decoded value schema, wire-only the decoder para
 
 test('residual objects carry no required list and no exactness; arrays recurse', () => {
   const schema = schemaForDescriptor(obj({ items: { kind: 'array', item: obj({ at: date, sku: str }) } }), opts('model-only'));
-  assert.deepEqual(schema, { properties: { items: { items: { properties: { at: { runicModelDate: true } } } } } });
+  assert.deepEqual(schema, { properties: { items: { items: { properties: { at: { golemModelDate: true } } } } } });
 });
 
 test('a union containing a converted field falls back to the full plane schema; a plain union is true', () => {
@@ -77,7 +77,7 @@ test('graph nodes get residual schemas only when something is left to check', ()
 
 test('optional and nullable converted fields use their own residual, not the union fallback', () => {
   const optional = { kind: 'union', variants: [date, { kind: 'undefined' }] };
-  assert.deepEqual(schemaForDescriptor(obj({ when: optional }), opts('model-only')), { properties: { when: { runicModelDate: true } } });
+  assert.deepEqual(schemaForDescriptor(obj({ when: optional }), opts('model-only')), { properties: { when: { golemModelDate: true } } });
   const nullable = { kind: 'union', variants: [{ kind: 'null' }, date] };
   assert.deepEqual(schemaForDescriptor(obj({ hold: nullable }), opts('wire-only')),
     { properties: { hold: { anyOf: [{ type: 'null' }, { type: 'string', format: 'date-time' }] } } });

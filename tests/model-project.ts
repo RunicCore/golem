@@ -42,7 +42,7 @@ export function createModelProject(t: TestContext, options: ModelProjectOptions)
     private: true,
     type: 'module',
     ...(options.name === null ? {} : {
-      name: options.name ?? options.prefix.replace(/^runic-/, '').replace(/-+$/, ''),
+      name: options.name ?? options.prefix.replace(/^golem-/, '').replace(/-+$/, ''),
     }),
   };
   fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify(packageManifest));

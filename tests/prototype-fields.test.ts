@@ -20,7 +20,7 @@ const profiles = [
 for (const { mobx, validation } of profiles) {
   test(`dictionary data keys survive generation (mobx=${mobx}, validation=${validation})`, async (t) => {
     const { root, sourceRoot } = createModelProject(t, {
-      prefix: 'runic-model-prototype-',
+      prefix: 'golem-model-prototype-',
       name: 'model-prototype',
       linkWorkspaceNodeModules: true,
     });

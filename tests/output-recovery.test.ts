@@ -14,7 +14,7 @@ interface OutputFixture {
 }
 
 function fixture(t: TestContext, inventory = true): OutputFixture {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'runic-recovery-'));
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'golem-recovery-'));
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   const profile = { mobx: false, validation: false };
   const job: GolemJob = {

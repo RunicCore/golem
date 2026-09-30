@@ -49,7 +49,7 @@ export default defineConfig({
     // Only this consumer projection enters the browser bundle. The source
     // registry also contains evidence and workspace paths and stays server-side.
     define: {
-      __EXPRTLABS_SUPPORT_PROJECTION__: JSON.stringify(buildSupportProjection()),
+      __GOLEM_SUPPORT_PROJECTION__: JSON.stringify(buildSupportProjection()),
     },
     publicDir: stageDocsPublicAssets(workspaceRoot),
     build: {

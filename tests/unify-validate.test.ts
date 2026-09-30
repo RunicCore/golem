@@ -19,7 +19,7 @@ interface Fixture {
 }
 
 function fixture(t: TestContext): Fixture {
-  const root = createFixtureProject(t, 'runic-unify-validate-');
+  const root = createFixtureProject(t, 'golem-unify-validate-');
   const sourceRoot = path.join(root, 'src');
   fs.symlinkSync(path.join(workspace, 'node_modules'), path.join(root, 'node_modules'), 'dir');
   writeGeneratedArtifacts([

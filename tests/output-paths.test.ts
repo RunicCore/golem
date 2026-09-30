@@ -10,7 +10,7 @@ import { workspace } from './support/process.js';
 import { writeFixture } from './support/consumer.js';
 
 function pipelineFixture(t: TestContext): { root: string; config: string; external: string; source: string } {
-  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'runic-output-paths-')));
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'golem-output-paths-')));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   fs.mkdirSync(path.join(root, 'node_modules/@exprtlabs'), { recursive: true });
   for (const name of ['golem', 'golem-model', 'golem-openapi']) {
@@ -19,7 +19,7 @@ function pipelineFixture(t: TestContext): { root: string; config: string; extern
   fs.writeFileSync(path.join(root, 'package.json'), '{"name":"output-paths-fixture","type":"module"}');
   writeFixture(root, { mobx: false, validation: true }, false);
 
-  const external = path.join(path.dirname(root), `runic-output-paths-external-${path.basename(root)}`);
+  const external = path.join(path.dirname(root), `golem-output-paths-external-${path.basename(root)}`);
   const sourceDirectory = path.join(external, 'sources');
   const source = path.join(sourceDirectory, 'cart.model.ts');
   fs.mkdirSync(path.join(external, 'model-root'), { recursive: true });
@@ -109,7 +109,7 @@ test('YAML pipeline supports external OpenAPI and model roots, sources, and outp
 });
 
 test('external model companions canonicalize through a symlink and retire safely after retargeting', (t: TestContext) => {
-  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'runic-model-companion-paths-')));
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'golem-model-companion-paths-')));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const firstSourceDirectory = path.join(root, 'source-target-one');
   const secondSourceDirectory = path.join(root, 'source-target-two');

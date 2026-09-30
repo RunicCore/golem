@@ -26,7 +26,7 @@ export interface ModelManifest {
 }
 
 export const MODEL_MANIFEST_FILENAME = 'model-manifest.json';
-export const MODEL_MANIFEST_MARKER = '@runic-model-manifest';
+export const MODEL_MANIFEST_MARKER = '@golem-model-manifest';
 
 function stableValue(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(stableValue);

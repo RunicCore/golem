@@ -11,7 +11,7 @@ import {
 } from './helpers.js';
 
 test('operation schema closures preserve resource references and schema-looking JSON values', async t => {
-  const directory = createFixtureProject(t, 'runic-operation-schema-contracts-');
+  const directory = createFixtureProject(t, 'golem-operation-schema-contracts-');
   const literal = {
     $ref: '#/components/schemas/Unrelated',
     properties: { example: { $ref: 'https://data.example.test/not-a-schema' } },

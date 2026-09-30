@@ -179,7 +179,7 @@ test('OpenAPI standalone profile emits self-contained validators while default v
 });
 
 test('standalone SDK compiles a no-content operation with no response validators', async t => {
-  const directory = mkdtempSync(path.join(tmpdir(), 'runic-openapi-no-content-'));
+  const directory = mkdtempSync(path.join(tmpdir(), 'golem-openapi-no-content-'));
   const output = path.join(directory, 'sdk');
   t.after(() => rmSync(directory, { recursive: true, force: true }));
   const result = await generateMaterializedSdk({
@@ -203,7 +203,7 @@ test('standalone SDK compiles a no-content operation with no response validators
 });
 
 test('standalone SDK compiles with its generated JavaScript, exposes every model and operation reference, and rejects replacement engines', async t => {
-  const output = path.join(mkdtempSync(path.join(tmpdir(), 'runic-openapi-standalone-')), 'sdk');
+  const output = path.join(mkdtempSync(path.join(tmpdir(), 'golem-openapi-standalone-')), 'sdk');
   t.after(() => rmSync(path.dirname(output), { recursive: true, force: true }));
   const result = await generateMaterializedSdk(standaloneDocument(), {
     output,
@@ -269,7 +269,7 @@ test('standalone SDK compiles with its generated JavaScript, exposes every model
 });
 
 test('custom synchronous validation bindings have identical JIT and standalone behavior and are not called during generation', async () => {
-  const id = 'urn:runic:custom-validation';
+  const id = 'urn:golem:custom-validation';
   const schema = {
     $id: id,
     type: 'object',

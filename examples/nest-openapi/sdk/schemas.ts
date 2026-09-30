@@ -18,7 +18,7 @@ export {
 /** Exact component and operation schemas retained for runtime validation. */
 export const schemaDialect = "https://spec.openapis.org/oas/3.1/dialect/base" as const;
 export const schemaRegistry = {
-  "$id": "urn:runic:openapi:paymentsapi:590e73b6ce4eeac1bdb347f2cd21e13337de1dad72c898b3a6724e5b61d3ba2d:schemas",
+  "$id": "urn:golem:openapi:paymentsapi:590e73b6ce4eeac1bdb347f2cd21e13337de1dad72c898b3a6724e5b61d3ba2d:schemas",
   "components": {
     "schemas": {
       "Merchant": {
@@ -216,7 +216,7 @@ export const schemaRegistry = {
         "200": {
           "application/json": {
             "items": {
-              "$ref": "urn:runic:openapi:paymentsapi:590e73b6ce4eeac1bdb347f2cd21e13337de1dad72c898b3a6724e5b61d3ba2d:schemas:input#/components/schemas/Payment"
+              "$ref": "urn:golem:openapi:paymentsapi:590e73b6ce4eeac1bdb347f2cd21e13337de1dad72c898b3a6724e5b61d3ba2d:schemas:input#/components/schemas/Payment"
             },
             "type": "array"
           }
@@ -229,7 +229,7 @@ export const schemaRegistry = {
         "type": "object",
         "properties": {
           "body": {
-            "$ref": "urn:runic:openapi:paymentsapi:590e73b6ce4eeac1bdb347f2cd21e13337de1dad72c898b3a6724e5b61d3ba2d:schemas:input#/components/schemas/PaymentInput"
+            "$ref": "urn:golem:openapi:paymentsapi:590e73b6ce4eeac1bdb347f2cd21e13337de1dad72c898b3a6724e5b61d3ba2d:schemas:input#/components/schemas/PaymentInput"
           }
         },
         "required": [
@@ -240,7 +240,7 @@ export const schemaRegistry = {
       "responses": {
         "201": {
           "application/json": {
-            "$ref": "urn:runic:openapi:paymentsapi:590e73b6ce4eeac1bdb347f2cd21e13337de1dad72c898b3a6724e5b61d3ba2d:schemas:input#/components/schemas/Payment"
+            "$ref": "urn:golem:openapi:paymentsapi:590e73b6ce4eeac1bdb347f2cd21e13337de1dad72c898b3a6724e5b61d3ba2d:schemas:input#/components/schemas/Payment"
           }
         },
         "400": {}
@@ -251,7 +251,7 @@ export const schemaRegistry = {
         "type": "object",
         "properties": {
           "body": {
-            "$ref": "urn:runic:openapi:paymentsapi:590e73b6ce4eeac1bdb347f2cd21e13337de1dad72c898b3a6724e5b61d3ba2d:schemas:input#/components/schemas/Payment"
+            "$ref": "urn:golem:openapi:paymentsapi:590e73b6ce4eeac1bdb347f2cd21e13337de1dad72c898b3a6724e5b61d3ba2d:schemas:input#/components/schemas/Payment"
           }
         },
         "required": [
@@ -262,7 +262,7 @@ export const schemaRegistry = {
       "responses": {
         "201": {
           "application/json": {
-            "$ref": "urn:runic:openapi:paymentsapi:590e73b6ce4eeac1bdb347f2cd21e13337de1dad72c898b3a6724e5b61d3ba2d:schemas:input#/components/schemas/Payment"
+            "$ref": "urn:golem:openapi:paymentsapi:590e73b6ce4eeac1bdb347f2cd21e13337de1dad72c898b3a6724e5b61d3ba2d:schemas:input#/components/schemas/Payment"
           }
         },
         "400": {}
@@ -293,7 +293,7 @@ export const schemaRegistry = {
       "responses": {
         "200": {
           "application/json": {
-            "$ref": "urn:runic:openapi:paymentsapi:590e73b6ce4eeac1bdb347f2cd21e13337de1dad72c898b3a6724e5b61d3ba2d:schemas:input#/components/schemas/Payment"
+            "$ref": "urn:golem:openapi:paymentsapi:590e73b6ce4eeac1bdb347f2cd21e13337de1dad72c898b3a6724e5b61d3ba2d:schemas:input#/components/schemas/Payment"
           }
         },
         "404": {}
@@ -327,8 +327,8 @@ export const schemaRegistry = {
     }
   },
   "$defs": {
-    "runic-input": {
-      "$id": "urn:runic:openapi:paymentsapi:590e73b6ce4eeac1bdb347f2cd21e13337de1dad72c898b3a6724e5b61d3ba2d:schemas:input",
+    "golem-input": {
+      "$id": "urn:golem:openapi:paymentsapi:590e73b6ce4eeac1bdb347f2cd21e13337de1dad72c898b3a6724e5b61d3ba2d:schemas:input",
       "components": {
         "schemas": {
           "Merchant": {

@@ -30,7 +30,7 @@ interface Fixture {
 }
 
 function fixture(t: TestContext): Fixture {
-  const root = createFixtureProject(t, 'runic-openapi-modules-');
+  const root = createFixtureProject(t, 'golem-openapi-modules-');
   const source = path.join(root, 'src');
   mkdirSync(source, { recursive: true });
   linkProjectPackages(root, { '@exprtlabs/golem': path.join(repoRoot(), 'packages/golem') });

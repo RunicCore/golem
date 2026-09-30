@@ -13,7 +13,7 @@ interface OutputFixture {
 }
 
 function fixture(t: TestContext): OutputFixture {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'runic-outputs-'));
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'golem-outputs-'));
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   const job: GolemJob = {
     id: 'models:.',

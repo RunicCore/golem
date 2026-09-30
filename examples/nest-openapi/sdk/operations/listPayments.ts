@@ -4,22 +4,22 @@ import type { PaymentsClientOptions as ClientOptions, PaymentsRequestOptions as 
 import type * as Types from '../types.js';
 import { createApiOperation, type ApiOperation } from '@exprtlabs/golem/client';
 import { createOpenApiAjvEngine } from '@exprtlabs/golem/ajv';
-import { schema as __runicSchema0 } from "../validation-schemas/Merchant.output.js";
-import { schema as __runicSchema1 } from "../validation-schemas/MerchantOmitId.output.js";
-import { schema as __runicSchema2 } from "../validation-schemas/Money.output.js";
-import { schema as __runicSchema3 } from "../validation-schemas/Payment.output.js";
+import { schema as __golemSchema0 } from "../validation-schemas/Merchant.output.js";
+import { schema as __golemSchema1 } from "../validation-schemas/MerchantOmitId.output.js";
+import { schema as __golemSchema2 } from "../validation-schemas/Money.output.js";
+import { schema as __golemSchema3 } from "../validation-schemas/Payment.output.js";
 
 
 const responseContracts: readonly RuntimeResponseContract[] = [{"status":"200","content":[{"contentType":"application/json","framing":"body"}],"headers":[]},{"status":"400","content":[],"headers":[]}];
 const __resolveOperationValidationSources = (): OperationValidationSources => ({
-    inputReference: "urn:runic:openapi:paymentsapi:590e73b6ce4eeac1bdb347f2cd21e13337de1dad72c898b3a6724e5b61d3ba2d:schemas:operation:listPayments#/operations/listPayments/input",
-    responseReferences: [{"status":"200","contentType":"application/json","reference":"urn:runic:openapi:paymentsapi:590e73b6ce4eeac1bdb347f2cd21e13337de1dad72c898b3a6724e5b61d3ba2d:schemas:operation:listPayments#/operations/listPayments/responses/200/application~1json"}],
+    inputReference: "urn:golem:openapi:paymentsapi:590e73b6ce4eeac1bdb347f2cd21e13337de1dad72c898b3a6724e5b61d3ba2d:schemas:operation:listPayments#/operations/listPayments/input",
+    responseReferences: [{"status":"200","contentType":"application/json","reference":"urn:golem:openapi:paymentsapi:590e73b6ce4eeac1bdb347f2cd21e13337de1dad72c898b3a6724e5b61d3ba2d:schemas:operation:listPayments#/operations/listPayments/responses/200/application~1json"}],
     schemas: new Map([
-      ["urn:runic:openapi:paymentsapi:590e73b6ce4eeac1bdb347f2cd21e13337de1dad72c898b3a6724e5b61d3ba2d:schemas:operation:listPayments", JSON.parse("{\"$id\":\"urn:runic:openapi:paymentsapi:590e73b6ce4eeac1bdb347f2cd21e13337de1dad72c898b3a6724e5b61d3ba2d:schemas:operation:listPayments\",\"$schema\":\"https://spec.openapis.org/oas/3.1/dialect/base\",\"operations\":{\"listPayments\":{\"input\":{\"type\":\"object\",\"properties\":{\"querystring\":{\"additionalProperties\":false,\"properties\":{\"limit\":{\"allOf\":[{\"type\":\"number\"},{\"minimum\":1,\"type\":\"integer\"}]},\"status\":{\"anyOf\":[{\"const\":\"paid\"},{\"const\":\"pending\"},{\"items\":{\"anyOf\":[{\"const\":\"paid\"},{\"const\":\"pending\"}]},\"type\":\"array\"}]}},\"type\":\"object\"}},\"required\":[\"querystring\"],\"additionalProperties\":false},\"responses\":{\"200\":{\"application/json\":{\"items\":{\"$ref\":\"urn:runic:openapi:paymentsapi:590e73b6ce4eeac1bdb347f2cd21e13337de1dad72c898b3a6724e5b61d3ba2d:schemas:component:Payment:output\"},\"type\":\"array\"}},\"400\":{}}}}}") as object | boolean],
-      ["urn:runic:openapi:paymentsapi:590e73b6ce4eeac1bdb347f2cd21e13337de1dad72c898b3a6724e5b61d3ba2d:schemas:component:Merchant:output", __runicSchema0],
-      ["urn:runic:openapi:paymentsapi:590e73b6ce4eeac1bdb347f2cd21e13337de1dad72c898b3a6724e5b61d3ba2d:schemas:component:MerchantOmitId:output", __runicSchema1],
-      ["urn:runic:openapi:paymentsapi:590e73b6ce4eeac1bdb347f2cd21e13337de1dad72c898b3a6724e5b61d3ba2d:schemas:component:Money:output", __runicSchema2],
-      ["urn:runic:openapi:paymentsapi:590e73b6ce4eeac1bdb347f2cd21e13337de1dad72c898b3a6724e5b61d3ba2d:schemas:component:Payment:output", __runicSchema3],
+      ["urn:golem:openapi:paymentsapi:590e73b6ce4eeac1bdb347f2cd21e13337de1dad72c898b3a6724e5b61d3ba2d:schemas:operation:listPayments", JSON.parse("{\"$id\":\"urn:golem:openapi:paymentsapi:590e73b6ce4eeac1bdb347f2cd21e13337de1dad72c898b3a6724e5b61d3ba2d:schemas:operation:listPayments\",\"$schema\":\"https://spec.openapis.org/oas/3.1/dialect/base\",\"operations\":{\"listPayments\":{\"input\":{\"type\":\"object\",\"properties\":{\"querystring\":{\"additionalProperties\":false,\"properties\":{\"limit\":{\"allOf\":[{\"type\":\"number\"},{\"minimum\":1,\"type\":\"integer\"}]},\"status\":{\"anyOf\":[{\"const\":\"paid\"},{\"const\":\"pending\"},{\"items\":{\"anyOf\":[{\"const\":\"paid\"},{\"const\":\"pending\"}]},\"type\":\"array\"}]}},\"type\":\"object\"}},\"required\":[\"querystring\"],\"additionalProperties\":false},\"responses\":{\"200\":{\"application/json\":{\"items\":{\"$ref\":\"urn:golem:openapi:paymentsapi:590e73b6ce4eeac1bdb347f2cd21e13337de1dad72c898b3a6724e5b61d3ba2d:schemas:component:Payment:output\"},\"type\":\"array\"}},\"400\":{}}}}}") as object | boolean],
+      ["urn:golem:openapi:paymentsapi:590e73b6ce4eeac1bdb347f2cd21e13337de1dad72c898b3a6724e5b61d3ba2d:schemas:component:Merchant:output", __golemSchema0],
+      ["urn:golem:openapi:paymentsapi:590e73b6ce4eeac1bdb347f2cd21e13337de1dad72c898b3a6724e5b61d3ba2d:schemas:component:MerchantOmitId:output", __golemSchema1],
+      ["urn:golem:openapi:paymentsapi:590e73b6ce4eeac1bdb347f2cd21e13337de1dad72c898b3a6724e5b61d3ba2d:schemas:component:Money:output", __golemSchema2],
+      ["urn:golem:openapi:paymentsapi:590e73b6ce4eeac1bdb347f2cd21e13337de1dad72c898b3a6724e5b61d3ba2d:schemas:component:Payment:output", __golemSchema3],
     ]),
 
   });

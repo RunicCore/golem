@@ -14,7 +14,7 @@ interface Fixture {
 }
 
 function fixture(t: TestContext): Fixture {
-  const root = createFixtureProject(t, 'runic-constraint-callback-');
+  const root = createFixtureProject(t, 'golem-constraint-callback-');
   const sourceRoot = path.join(root, 'src');
   linkProjectPackages(root, {
     '@exprtlabs/golem': path.join(workspace, 'packages/golem'),

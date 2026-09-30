@@ -47,7 +47,7 @@ interface OpenApiDocument {
 
 function fixture(t: TestContext, source: string): string {
   return createControllerFixture(t, {
-    prefix: 'runic-ts-to-openapi-overlay-',
+    prefix: 'golem-ts-to-openapi-overlay-',
     packageName: 'ts-to-openapi-overlay-fixture',
     source,
   });

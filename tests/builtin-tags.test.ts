@@ -69,7 +69,7 @@ const profiles = [
 
 for (const { mobx, ajvStandalone } of profiles) {
   test(`all built-in model tags execute independently with mobx=${mobx} and ${ajvStandalone ? 'standalone' : 'runtime'} Ajv`, async t => {
-    const { root, sourceRoot } = createModelProject(t, { prefix: 'runic-builtin-tags-', name: 'builtin-tags' });
+    const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-builtin-tags-', name: 'builtin-tags' });
     writeModelSources(sourceRoot, { 'a.model.ts': builtinTagsModelSource({ mobx }) });
 
     const result = generate({

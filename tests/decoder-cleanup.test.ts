@@ -83,7 +83,7 @@ const decoderCases: readonly OpenResponseCase[] = [
 test('decoder failures cancel an unconsumed generated response body', async t => {
   const name = 'DecoderCleanup';
   for (const validation of [false, true]) {
-    const root = mkdtempSync(path.join(tmpdir(), `runic-decoder-cleanup-${validation ? 'validated' : 'unvalidated'}-`));
+    const root = mkdtempSync(path.join(tmpdir(), `golem-decoder-cleanup-${validation ? 'validated' : 'unvalidated'}-`));
     t.after(() => rmSync(root, { recursive: true, force: true }));
     const output = path.join(root, 'sdk');
     await generateMaterializedSdk({

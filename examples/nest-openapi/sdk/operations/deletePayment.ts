@@ -8,10 +8,10 @@ import { createOpenApiAjvEngine } from '@exprtlabs/golem/ajv';
 
 const responseContracts: readonly RuntimeResponseContract[] = [{"status":"204","content":[],"headers":[]}];
 const __resolveOperationValidationSources = (): OperationValidationSources => ({
-    inputReference: "urn:runic:openapi:paymentsapi:590e73b6ce4eeac1bdb347f2cd21e13337de1dad72c898b3a6724e5b61d3ba2d:schemas:operation:deletePayment#/operations/deletePayment/input",
+    inputReference: "urn:golem:openapi:paymentsapi:590e73b6ce4eeac1bdb347f2cd21e13337de1dad72c898b3a6724e5b61d3ba2d:schemas:operation:deletePayment#/operations/deletePayment/input",
     responseReferences: [],
     schemas: new Map([
-      ["urn:runic:openapi:paymentsapi:590e73b6ce4eeac1bdb347f2cd21e13337de1dad72c898b3a6724e5b61d3ba2d:schemas:operation:deletePayment", JSON.parse("{\"$id\":\"urn:runic:openapi:paymentsapi:590e73b6ce4eeac1bdb347f2cd21e13337de1dad72c898b3a6724e5b61d3ba2d:schemas:operation:deletePayment\",\"$schema\":\"https://spec.openapis.org/oas/3.1/dialect/base\",\"operations\":{\"deletePayment\":{\"input\":{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\"}},\"required\":[\"id\"],\"additionalProperties\":false}},\"required\":[\"path\"],\"additionalProperties\":false},\"responses\":{\"204\":{}}}}}") as object | boolean],
+      ["urn:golem:openapi:paymentsapi:590e73b6ce4eeac1bdb347f2cd21e13337de1dad72c898b3a6724e5b61d3ba2d:schemas:operation:deletePayment", JSON.parse("{\"$id\":\"urn:golem:openapi:paymentsapi:590e73b6ce4eeac1bdb347f2cd21e13337de1dad72c898b3a6724e5b61d3ba2d:schemas:operation:deletePayment\",\"$schema\":\"https://spec.openapis.org/oas/3.1/dialect/base\",\"operations\":{\"deletePayment\":{\"input\":{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\"}},\"required\":[\"id\"],\"additionalProperties\":false}},\"required\":[\"path\"],\"additionalProperties\":false},\"responses\":{\"204\":{}}}}}") as object | boolean],
 
     ]),
 

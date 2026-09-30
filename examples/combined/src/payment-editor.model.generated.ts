@@ -12,7 +12,7 @@ import { addNestedCodecSchema, ajvIssues, createObjectCodec, parseJson, register
 import { createOpenApiSyncAjvEngine } from '@exprtlabs/golem/ajv';
 import { MoneyModel, stringifyMoney, toWireFormatMoney } from "../sdk/models/Money.js";
 
-const __runicAbsentField = Symbol();
+const __golemAbsentField = Symbol();
 
 function modelObject(json: unknown, name: string): Record<string, unknown> {
   return requireModelObject(json, name);
@@ -44,11 +44,11 @@ function decodePaymentEditorModel(constructor: GeneratedModelConstructor, json: 
 
 function encodePaymentEditorModel(model: PaymentEditorBase): PaymentEditorJSON {
   const result: Record<string, unknown> = {
-    ["money"]: Object.prototype.hasOwnProperty.call(model, "money") ? (convertModelField("serialize", "money", () => (model["money"] instanceof MoneyModel ? encodeGeneratedModel(model["money"]) : model["money"]))) : __runicAbsentField,
-    ["note"]: Object.prototype.hasOwnProperty.call(model, "note") ? (model["note"]) : __runicAbsentField,
+    ["money"]: Object.prototype.hasOwnProperty.call(model, "money") ? (convertModelField("serialize", "money", () => (model["money"] instanceof MoneyModel ? encodeGeneratedModel(model["money"]) : model["money"]))) : __golemAbsentField,
+    ["note"]: Object.prototype.hasOwnProperty.call(model, "note") ? (model["note"]) : __golemAbsentField,
   };
-  if (result["money"] === __runicAbsentField) delete result["money"];
-  if (result["note"] === __runicAbsentField) delete result["note"];
+  if (result["money"] === __golemAbsentField) delete result["money"];
+  if (result["note"] === __golemAbsentField) delete result["note"];
   return result as PaymentEditorJSON;
 }
 

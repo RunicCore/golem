@@ -11,7 +11,7 @@ const ANSI = /\u001b\[[0-9;]*m/g;
 
 function pluginProject(t: TestContext): string {
   const { root, sourceRoot } = createModelProject(t, {
-    prefix: 'runic-plugin-diagnostics-',
+    prefix: 'golem-plugin-diagnostics-',
     linkTypescript: true,
     linkTtsc: true,
     ttscPlugin: true,
@@ -46,7 +46,7 @@ test('ttsc with the codegen plugin reports TypeScript errors with code and line:
 });
 
 test('model generation reports source type errors with path:line:col and TS code', (t) => {
-  const { root, sourceRoot } = createModelProject(t, { prefix: 'runic-generate-diagnostics-', linkTypescript: true });
+  const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-generate-diagnostics-', linkTypescript: true });
   fs.writeFileSync(path.join(sourceRoot, 'broken.model.ts'), `import type { IModel } from '@exprtlabs/golem/model';
 const wrong: string = 5;
 export type TBroken = IModel<{ id: string }>;

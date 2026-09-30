@@ -17,7 +17,7 @@ import {
 } from '#model/generator';
 
 function project(t: TestContext) {
-  return createModelProject(t, { prefix: 'runic-model-generator-', name: 'model-generator' });
+  return createModelProject(t, { prefix: 'golem-model-generator-', name: 'model-generator' });
 }
 
 function profileCases(): readonly [{ mobx: boolean; validation: boolean }, { mobx: boolean; validation: boolean }][] {

@@ -14,7 +14,7 @@ import { compileModelProject, createModelProject } from './model-project.js';
 import { writeGeneratedSdk } from './openapi/helpers.js';
 
 const fixture = (t: TestContext) => createModelProject(t, {
-  prefix: 'runic-serde-emission-',
+  prefix: 'golem-serde-emission-',
   name: 'serde-emission-efficiency',
 });
 

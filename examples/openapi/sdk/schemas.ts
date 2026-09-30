@@ -18,7 +18,7 @@ export {
 /** Exact component and operation schemas retained for runtime validation. */
 export const schemaDialect = "https://spec.openapis.org/oas/3.1/dialect/base" as const;
 export const schemaRegistry = {
-  "$id": "urn:runic:openapi:tasks:cc24c3c3168942b6c3e2684339043b6830cdcb3c57853bd72591b5011d7111a7:schemas",
+  "$id": "urn:golem:openapi:tasks:cc24c3c3168942b6c3e2684339043b6830cdcb3c57853bd72591b5011d7111a7:schemas",
   "components": {
     "schemas": {
       "Task": {
@@ -66,7 +66,7 @@ export const schemaRegistry = {
           "application/json": {
             "type": "array",
             "items": {
-              "$ref": "urn:runic:openapi:tasks:cc24c3c3168942b6c3e2684339043b6830cdcb3c57853bd72591b5011d7111a7:schemas:input#/components/schemas/Task"
+              "$ref": "urn:golem:openapi:tasks:cc24c3c3168942b6c3e2684339043b6830cdcb3c57853bd72591b5011d7111a7:schemas:input#/components/schemas/Task"
             }
           }
         }
@@ -77,7 +77,7 @@ export const schemaRegistry = {
         "type": "object",
         "properties": {
           "body": {
-            "$ref": "urn:runic:openapi:tasks:cc24c3c3168942b6c3e2684339043b6830cdcb3c57853bd72591b5011d7111a7:schemas:input#/components/schemas/Task"
+            "$ref": "urn:golem:openapi:tasks:cc24c3c3168942b6c3e2684339043b6830cdcb3c57853bd72591b5011d7111a7:schemas:input#/components/schemas/Task"
           }
         },
         "required": [
@@ -88,7 +88,7 @@ export const schemaRegistry = {
       "responses": {
         "201": {
           "application/json": {
-            "$ref": "urn:runic:openapi:tasks:cc24c3c3168942b6c3e2684339043b6830cdcb3c57853bd72591b5011d7111a7:schemas:input#/components/schemas/Task"
+            "$ref": "urn:golem:openapi:tasks:cc24c3c3168942b6c3e2684339043b6830cdcb3c57853bd72591b5011d7111a7:schemas:input#/components/schemas/Task"
           }
         }
       }
@@ -118,7 +118,7 @@ export const schemaRegistry = {
       "responses": {
         "200": {
           "application/json": {
-            "$ref": "urn:runic:openapi:tasks:cc24c3c3168942b6c3e2684339043b6830cdcb3c57853bd72591b5011d7111a7:schemas:input#/components/schemas/Task"
+            "$ref": "urn:golem:openapi:tasks:cc24c3c3168942b6c3e2684339043b6830cdcb3c57853bd72591b5011d7111a7:schemas:input#/components/schemas/Task"
           }
         },
         "404": {
@@ -138,8 +138,8 @@ export const schemaRegistry = {
     }
   },
   "$defs": {
-    "runic-input": {
-      "$id": "urn:runic:openapi:tasks:cc24c3c3168942b6c3e2684339043b6830cdcb3c57853bd72591b5011d7111a7:schemas:input",
+    "golem-input": {
+      "$id": "urn:golem:openapi:tasks:cc24c3c3168942b6c3e2684339043b6830cdcb3c57853bd72591b5011d7111a7:schemas:input",
       "components": {
         "schemas": {
           "Task": {

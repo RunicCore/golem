@@ -85,7 +85,7 @@ function trackApiChildren(t: TestContext): ApiChildTracker {
 }
 
 function projectFixture(t: TestContext, name: string): Fixture {
-  const root = createFixtureProject(t, `runic-${name}-`);
+  const root = createFixtureProject(t, `golem-${name}-`);
   const sourceRoot = path.join(root, 'src');
   fs.mkdirSync(sourceRoot, { recursive: true });
   fs.symlinkSync(path.join(workspace, 'node_modules'), path.join(root, 'node_modules'), 'dir');
@@ -122,7 +122,7 @@ function writeManifestFixture(fixture: Fixture): { readonly source: string; read
   const generated = path.join(sdk, 'models.ts');
   const manifest = path.join(sdk, 'model-manifest.json');
   const source = path.join(fixture.sourceRoot, 'aggregate.model.ts');
-  fs.writeFileSync(types, '/* @runic-model-manifest ./model-manifest.json */\nexport interface Money { currency: string }\n');
+  fs.writeFileSync(types, '/* @golem-model-manifest ./model-manifest.json */\nexport interface Money { currency: string }\n');
   fs.writeFileSync(generated, 'export const Other = 1;\n');
   fs.writeFileSync(manifest, JSON.stringify({
     profile: { mobx: false, validation: false, ajvStandalone: false, allowAny: false },

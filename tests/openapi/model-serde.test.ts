@@ -327,7 +327,7 @@ async function assertNestedDateInheritedAndDictionaryConversions(
 }
 
 test('checked model serde validates wire before construction, converts nested nullable values once, and preserves typed HTTP errors', async t => {
-  const output = path.join(createFixtureProject(t, 'runic-openapi-model-serde-runtime-'), 'sdk');
+  const output = path.join(createFixtureProject(t, 'golem-openapi-model-serde-runtime-'), 'sdk');
   await generateMaterializedSdk(modelSerdeDocument(), {
     output,
     name: 'ModelSerde',
@@ -460,7 +460,7 @@ test('checked model serde validates wire before construction, converts nested nu
 });
 
 test('generated nested Date, inherited, and dictionary conversions work in a standalone SDK', async t => {
-  const output = path.join(createFixtureProject(t, 'runic-openapi-model-serde-aot-'), 'sdk');
+  const output = path.join(createFixtureProject(t, 'golem-openapi-model-serde-aot-'), 'sdk');
   await generateMaterializedSdk(modelSerdeDocument(), {
     output,
     name: 'ModelSerde',
@@ -475,7 +475,7 @@ test('generated nested Date, inherited, and dictionary conversions work in a sta
 });
 
 test('generated discriminated unions infer abstract, concrete, and handwritten serde classes', async t => {
-  const output = path.join(createFixtureProject(t, 'runic-openapi-union-serde-'), 'sdk');
+  const output = path.join(createFixtureProject(t, 'golem-openapi-union-serde-'), 'sdk');
   const result = await generateMaterializedSdk(discriminatedUnionSerdeDocument(), {
     output,
     name: 'DiscriminatedSerde',

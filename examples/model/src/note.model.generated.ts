@@ -10,7 +10,7 @@ import { cloneConversionInput, convertModelField, defineModelProperty, requireMo
 import { ajvIssues, createObjectCodec, parseJson, registerIModelClass, requireAjvSchema, resolveGeneratedModelSchemaRefs, resolveModelValidationContextValidator, runSynchronousValidation, serdeValidates, stringifyJsonArray, stringifyJsonString, validationFailure, IssueRepresentation, IssueSource } from '@exprtlabs/golem/serde';
 import { createOpenApiSyncAjvEngine } from '@exprtlabs/golem/ajv';
 
-const __runicAbsentField = Symbol();
+const __golemAbsentField = Symbol();
 
 function modelObject(json: unknown, name: string): Record<string, unknown> {
   return requireModelObject(json, name);
@@ -47,9 +47,9 @@ function decodeNotebookModel(constructor: GeneratedModelConstructor, json: unkno
 
 function encodeNotebookModel(model: NotebookBase): NotebookJSON {
   const result: Record<string, unknown> = {
-    ["notes"]: Object.prototype.hasOwnProperty.call(model, "notes") ? (convertModelField("serialize", "notes", () => (Array.isArray(model["notes"]) ? (model["notes"] as readonly unknown[]).map((item, index) => convertModelField('serialize', index, () => (encodeNote(item)))) : model["notes"]))) : __runicAbsentField,
+    ["notes"]: Object.prototype.hasOwnProperty.call(model, "notes") ? (convertModelField("serialize", "notes", () => (Array.isArray(model["notes"]) ? (model["notes"] as readonly unknown[]).map((item, index) => convertModelField('serialize', index, () => (encodeNote(item)))) : model["notes"]))) : __golemAbsentField,
   };
-  if (result["notes"] === __runicAbsentField) delete result["notes"];
+  if (result["notes"] === __golemAbsentField) delete result["notes"];
   return result as NotebookJSON;
 }
 
@@ -224,8 +224,8 @@ export function toWireFormatNotebook(value: unknown, options?: { readonly valida
     assertNotebook(value, options);
   }
   const record = value as Record<string, unknown>;
-  let __runicField0: unknown;
-  const wire = { ["notes"]: (__runicField0 = record["notes"], Array.isArray(__runicField0) ? (__runicField0 as readonly unknown[]).map((item) => toWireFormatNote(item as never, { validate: false })) : __runicField0) };
+  let __golemField0: unknown;
+  const wire = { ["notes"]: (__golemField0 = record["notes"], Array.isArray(__golemField0) ? (__golemField0 as readonly unknown[]).map((item) => toWireFormatNote(item as never, { validate: false })) : __golemField0) };
   return wire as NotebookJSON;
 }
 

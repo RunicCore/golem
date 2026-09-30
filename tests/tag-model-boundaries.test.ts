@@ -16,7 +16,7 @@ import { compileModelProject, createModelProject } from './model-project.js';
 
 function fixture(t: TestContext) {
   return createModelProject(t, {
-    prefix: 'runic-tag-model-boundaries-',
+    prefix: 'golem-tag-model-boundaries-',
     name: 'tag-model-boundaries',
   });
 }

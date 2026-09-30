@@ -16,7 +16,7 @@ import { generate } from '#model/generator';
 
 function fixture(t: TestContext, allowJs = false) {
   return createModelProject(t, {
-    prefix: 'runic-model-tags-',
+    prefix: 'golem-model-tags-',
     name: 'model-tags',
     allowJs,
     ttscPlugin: true,
@@ -50,7 +50,7 @@ import { validate } from './validators.js';`,
   assert.doesNotMatch(firstShared, new RegExp(first.root.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   const bindingIds = [...firstShared.matchAll(/src\/(?:one|two)\/validators\.ts:\d+:\d+/g)].map(match => match[0]);
   assert.deepEqual(new Set(bindingIds).size, 2, 'same-signature functions from separate declarations remain distinct');
-  assert.equal((firstShared.match(/import \{ validate as __runicValidation\d+ \}/g) ?? []).length, 2);
+  assert.equal((firstShared.match(/import \{ validate as __golemValidation\d+ \}/g) ?? []).length, 2);
 
   const second = fixture(t);
   build(second.sourceRoot);

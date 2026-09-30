@@ -40,7 +40,7 @@ const validationError = (error: unknown): boolean => error instanceof LibError &
 const firstIssue = (error: unknown) => (error as LibError).issues[0];
 
 async function project(t: TestContext, profile: { mobx: false; validation: true; ajvStandalone?: boolean }) {
-  const { root, sourceRoot } = createModelProject(t, { prefix: 'runic-single-pass-', name: 'single-pass', allowJs: profile.ajvStandalone === true });
+  const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-single-pass-', name: 'single-pass', allowJs: profile.ajvStandalone === true });
   writeModelSources(sourceRoot, { 'counter.ts': COUNTER, 'order.model.ts': ORDER });
   const result = generate({ root, profile });
   writeGeneratedArtifacts(result.artifacts);
@@ -86,8 +86,8 @@ for (const [label, profile] of [['runtime Ajv', { mobx: false, validation: true 
     assert.equal(count(() => ruleOnly.parse(JSON.stringify(rule), { construct: RuleOnly })), 1);
     const ruleModel = ruleOnly.parse(JSON.stringify(rule), { construct: RuleOnly });
     assert.equal(count(() => ruleOnly.stringify(ruleModel)), 1);
-    assert.match(source, /__runicAssertModelOnly_RuleOnly/);
-    assert.doesNotMatch(source, /__runicAssertWireOnly_RuleOnly/);
+    assert.match(source, /__golemAssertModelOnly_RuleOnly/);
+    assert.doesNotMatch(source, /__golemAssertWireOnly_RuleOnly/);
   });
 }
 
@@ -95,7 +95,7 @@ const MONEY_FIXTURE = 'models/unify-validate/sdk-money-ref-plus-extra-tvalidatio
 
 test('a rule on an SDK model runs once per parse and IObject enforces it (standalone)', async t => {
   const profile = { mobx: false, validation: true, ajvStandalone: true } as const;
-  const { root, sourceRoot } = createModelProject(t, { prefix: 'runic-single-pass-sdk-', name: 'single-pass-sdk', allowJs: true });
+  const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-single-pass-sdk-', name: 'single-pass-sdk', allowJs: true });
   writeModelSources(root, { 'money.yaml': readFixture(`${MONEY_FIXTURE}/money.yaml`) });
   writeGeneratedArtifacts((await generateOpenApi({ input: path.join(root, 'money.yaml'), output: path.join(sourceRoot, 'sdk'), name: 'Payments', profile })).artifacts);
   writeModelSources(sourceRoot, { 'rules.ts': readFixture(`${MONEY_FIXTURE}/rules.ts`), 'checkout.model.ts': readFixture(`${MONEY_FIXTURE}/checkout.model.ts`) });
@@ -137,7 +137,7 @@ export class UParent extends UParentBase {}
 
 for (const profileValidation of [true, false]) {
   test(`validation toggles behave as the spec states (profile validation ${profileValidation})`, async t => {
-    const { root, sourceRoot } = createModelProject(t, { prefix: 'runic-single-pass-toggles-', name: 'single-pass-toggles' });
+    const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-single-pass-toggles-', name: 'single-pass-toggles' });
     writeModelSources(sourceRoot, { 'counter.ts': COUNTER, 'toggles.model.ts': TOGGLES });
     const result = generate({ root, profile: { mobx: false, validation: profileValidation } });
     writeGeneratedArtifacts(result.artifacts);
@@ -196,7 +196,7 @@ for (const profileValidation of [true, false]) {
 
 for (const [label, profile] of [['runtime Ajv', { mobx: false, validation: true }], ['standalone', { mobx: false, validation: true, ajvStandalone: true }]] as const) {
   test(`rules inside constraints the wire drops (Contains, Not) still run once on parse (${label})`, async t => {
-    const { root, sourceRoot } = createModelProject(t, { prefix: 'runic-single-pass-constraints-', name: 'single-pass-constraints', allowJs: true });
+    const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-single-pass-constraints-', name: 'single-pass-constraints', allowJs: true });
     writeModelSources(sourceRoot, {
       'predicates.ts': readFixture('models/constraint-callback-composition/constraint-callback-composition-predicates/predicates.ts'),
       'a.model.ts': readFixture('models/constraint-callback-composition/nested-value-callbacks/a.model.ts'),
@@ -217,7 +217,7 @@ for (const [label, profile] of [['runtime Ajv', { mobx: false, validation: true 
 }
 
 test('an engine filled by registerCodecSchemas validates parse and stringify through a context, nested residual refs included', async t => {
-  const { root, sourceRoot } = createModelProject(t, { prefix: 'runic-single-pass-engine-', name: 'single-pass-engine' });
+  const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-single-pass-engine-', name: 'single-pass-engine' });
   writeModelSources(sourceRoot, { 'visit.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
 import { StopBase, TripBase } from './visit.model.generated.js';
 export type TStop = IModel<{ at: Date; name: string }>;

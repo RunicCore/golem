@@ -126,7 +126,7 @@ function modelFixtureDirectories(directory: string): string[] {
 
 test('WireFormat<T> equals the generator-emitted JSON type for fixture models and generated SDK models', async t => {
   const { root } = createModelProject(t, {
-    prefix: 'runic-wire-format-',
+    prefix: 'golem-wire-format-',
     name: 'wire-format',
     ttscPlugin: true,
     linkWorkspaceNodeModules: true,
@@ -240,7 +240,7 @@ export type AnyWire = Assert<NotAny<WireFormat<any>>>;
 
 test('WireFormat<T> equals the emitted JSON type for nested and omitted-field SDK models with and without mobx', async t => {
   const { root } = createModelProject(t, {
-    prefix: 'runic-wire-format-sdk-',
+    prefix: 'golem-wire-format-sdk-',
     name: 'wire-format-sdk',
     ttscPlugin: true,
     linkWorkspaceNodeModules: true,
@@ -284,7 +284,7 @@ test('WireFormat<T> equals the emitted JSON type for nested and omitted-field SD
 
 test('toWireFormat<T> returns the emitted JSON type through the ttsc plugin without a cast', async t => {
   const { root, sourceRoot } = createModelProject(t, {
-    prefix: 'runic-wire-format-call-',
+    prefix: 'golem-wire-format-call-',
     name: 'wire-format-call',
     ttscPlugin: true,
     linkWorkspaceNodeModules: true,
@@ -331,7 +331,7 @@ console.log(JSON.stringify({ wire, paidAt }));
 
 test('wire output omits optional fields that are absent or undefined', async t => {
   const { root, sourceRoot } = createModelProject(t, {
-    prefix: 'runic-wire-format-optional-',
+    prefix: 'golem-wire-format-optional-',
     name: 'wire-format-optional',
     linkWorkspaceNodeModules: true,
   });

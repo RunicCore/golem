@@ -61,7 +61,7 @@ const registerBoth = (order: readonly string[]): string => `
 `;
 
 test('a hand-written and an SDK model of the same name and shape keep their own codec in either import order', async (t) => {
-  const root = createFixtureProject(t, 'runic-codec-identity-');
+  const root = createFixtureProject(t, 'golem-codec-identity-');
   linkProjectPackages(root, Object.fromEntries(
     ['golem', 'golem-model', 'golem-openapi'].map((name) => [`@exprtlabs/${name}`, path.join(workspace, 'packages', name)]),
   ));

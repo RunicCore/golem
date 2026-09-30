@@ -80,7 +80,7 @@ for (const [label, profile] of profiles) for (const chain of [modelChain, object
   test(`a companion emits only its own ${kind} models of a chained job and references the rest by codec id (${label})`, (t: TestContext) => {
     const count = 12;
     const last = count - 1;
-    const { root, sourceRoot } = project(t, 'runic-model-chain-', profile);
+    const { root, sourceRoot } = project(t, 'golem-model-chain-', profile);
     writeModelSources(sourceRoot, chainSources(count, chain));
     const { artifacts } = generate({ root, profile });
     const companion = (index: number): string =>
@@ -148,7 +148,7 @@ console.log(JSON.stringify({
 
 test('editing a leaf model regenerates the ids its dependents reference', (t: TestContext) => {
   const profile: GolemProfile = { mobx: false, validation: true };
-  const { root, sourceRoot } = project(t, 'runic-model-leaf-edit-', profile);
+  const { root, sourceRoot } = project(t, 'golem-model-leaf-edit-', profile);
   writeModelSources(sourceRoot, chainSources(3));
   const ids = (): { readonly owned: string; readonly referenced: readonly string[] } => {
     const artifacts = generate({ root, profile }).artifacts;
@@ -209,7 +209,7 @@ console.log(JSON.stringify({
 // One project per profile holds a short chain of each kind and both cycles, so the profile compiles once.
 for (const [label, profile] of profiles) {
   test(`chained, cyclic and mixed-kind jobs compile in one project (${label})`, async (t: TestContext) => {
-    const { root, sourceRoot } = project(t, 'runic-model-job-graph-', profile);
+    const { root, sourceRoot } = project(t, 'golem-model-job-graph-', profile);
     writeModelSources(sourceRoot, {
       ...chainSources(3, modelChain),
       ...chainSources(3, objectChain),

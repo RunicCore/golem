@@ -76,7 +76,7 @@ export async function startRegistry(prepared: PreparedPackages = preparedPackage
     ...prepared, url, distTags, requests,
     npmVersion: version.stdout.trim(),
     create(t, label) {
-      const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), `runic-consumer-${label}-`)));
+      const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), `golem-consumer-${label}-`)));
       t.after(() => fs.rmSync(root, { recursive: true, force: true }));
       fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ name: 'packed-consumer', version: '1.0.0', private: true, type: 'module' }));
       fs.writeFileSync(path.join(root, '.npmrc'), registryNpmrc(url));

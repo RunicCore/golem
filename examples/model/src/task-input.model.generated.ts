@@ -11,7 +11,7 @@ import { ajvIssues, createObjectCodec, parseJson, registerIModelClass, requireAj
 import { createOpenApiSyncAjvEngine } from '@exprtlabs/golem/ajv';
 import { modelValidationBindings } from "./generated/models/models.generated.js";
 
-const __runicAbsentField = Symbol();
+const __golemAbsentField = Symbol();
 
 function modelObject(json: unknown, name: string): Record<string, unknown> {
   return requireModelObject(json, name);
@@ -41,11 +41,11 @@ function decodeTaskInputModel(constructor: GeneratedModelConstructor, json: unkn
 
 function encodeTaskInputModel(model: TaskInputBase): TaskInputJSON {
   const result: Record<string, unknown> = {
-    ["title"]: Object.prototype.hasOwnProperty.call(model, "title") ? (model["title"]) : __runicAbsentField,
-    ["done"]: Object.prototype.hasOwnProperty.call(model, "done") ? (model["done"]) : __runicAbsentField,
+    ["title"]: Object.prototype.hasOwnProperty.call(model, "title") ? (model["title"]) : __golemAbsentField,
+    ["done"]: Object.prototype.hasOwnProperty.call(model, "done") ? (model["done"]) : __golemAbsentField,
   };
-  if (result["title"] === __runicAbsentField) delete result["title"];
-  if (result["done"] === __runicAbsentField) delete result["done"];
+  if (result["title"] === __golemAbsentField) delete result["title"];
+  if (result["done"] === __golemAbsentField) delete result["done"];
   return result as TaskInputJSON;
 }
 
@@ -112,7 +112,7 @@ export function stringifyTaskInput(value: Record<string, unknown>, options?: { r
 function convertFromWireTaskInput(wire: unknown, options: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object } | undefined, isolated: boolean): unknown {
   const validates = serdeValidates(options, true);
   if (validates) {
-    __runicAssertWire_TaskInput(wire, options);
+    __golemAssertWire_TaskInput(wire, options);
   }
   const source = isolated || wire === null || typeof wire !== 'object' ? wire : cloneConversionInput(wire);
   let result: unknown = source;
@@ -124,7 +124,7 @@ function convertFromWireTaskInput(wire: unknown, options: { readonly validate?: 
     }
   }
   if (validates) {
-    __runicAssertModelOnly_TaskInput(result, options);
+    __golemAssertModelOnly_TaskInput(result, options);
   }
   return result;
 }
@@ -176,7 +176,7 @@ export function assertTaskInput(value: unknown, options?: { readonly failFast?: 
   return value as Record<string, unknown>;
 }
 
-function __runicAssertWire_TaskInput(value: unknown, options?: { readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext }): Record<string, unknown> {
+function __golemAssertWire_TaskInput(value: unknown, options?: { readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext }): Record<string, unknown> {
   if (options?.validationContext === undefined) {
   if (!(options?.failFast !== false ? validateTaskInputWireFast(value) : validateTaskInputWireAll(value))) {
     const validator = options?.failFast !== false ? validateTaskInputWireFast : validateTaskInputWireAll;
@@ -189,7 +189,7 @@ function __runicAssertWire_TaskInput(value: unknown, options?: { readonly failFa
   return value as Record<string, unknown>;
 }
 
-function __runicAssertModelOnly_TaskInput(value: unknown, options?: { readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext }): Record<string, unknown> {
+function __golemAssertModelOnly_TaskInput(value: unknown, options?: { readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext }): Record<string, unknown> {
   if (options?.validationContext === undefined) {
   if (!(options?.failFast !== false ? validateTaskInputModelOnlyFast(value) : validateTaskInputModelOnlyAll(value))) {
     const validator = options?.failFast !== false ? validateTaskInputModelOnlyFast : validateTaskInputModelOnlyAll;

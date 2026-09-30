@@ -10,7 +10,7 @@ import { cloneConversionInput, convertModelField, defineModelProperty, requireMo
 import { ajvIssues, createObjectCodec, parseJson, registerIModelClass, requireAjvSchema, resolveGeneratedModelSchemaRefs, resolveModelValidationContextValidator, runSynchronousValidation, serdeValidates, stringifyJsonArray, stringifyJsonString, validationFailure, IssueRepresentation, IssueSource } from '@exprtlabs/golem/serde';
 import { createOpenApiSyncAjvEngine } from '@exprtlabs/golem/ajv';
 
-const __runicAbsentField = Symbol();
+const __golemAbsentField = Symbol();
 
 function modelObject(json: unknown, name: string): Record<string, unknown> {
   return requireModelObject(json, name);
@@ -40,9 +40,9 @@ function decodeOrderInputModel(constructor: GeneratedModelConstructor, json: unk
 
 function encodeOrderInputModel(model: OrderInputBase): OrderInputJSON {
   const result: Record<string, unknown> = {
-    ["items"]: Object.prototype.hasOwnProperty.call(model, "items") ? (convertModelField("serialize", "items", () => (Array.isArray(model["items"]) ? (model["items"] as readonly unknown[]).map((item) => item) : model["items"]))) : __runicAbsentField,
+    ["items"]: Object.prototype.hasOwnProperty.call(model, "items") ? (convertModelField("serialize", "items", () => (Array.isArray(model["items"]) ? (model["items"] as readonly unknown[]).map((item) => item) : model["items"]))) : __golemAbsentField,
   };
-  if (result["items"] === __runicAbsentField) delete result["items"];
+  if (result["items"] === __golemAbsentField) delete result["items"];
   return result as OrderInputJSON;
 }
 
@@ -217,8 +217,8 @@ export function toWireFormatOrderInput(value: unknown, options?: { readonly vali
     assertOrderInput(value, options);
   }
   const record = value as Record<string, unknown>;
-  let __runicField0: unknown;
-  const wire = { ["items"]: (__runicField0 = record["items"], Array.isArray(__runicField0) ? (__runicField0 as readonly unknown[]).map((item) => toWireFormat__anon_1(item as never, { validate: false })) : __runicField0) };
+  let __golemField0: unknown;
+  const wire = { ["items"]: (__golemField0 = record["items"], Array.isArray(__golemField0) ? (__golemField0 as readonly unknown[]).map((item) => toWireFormat__anon_1(item as never, { validate: false })) : __golemField0) };
   return wire as OrderInputJSON;
 }
 

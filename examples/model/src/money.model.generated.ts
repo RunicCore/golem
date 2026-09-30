@@ -10,7 +10,7 @@ import { cloneConversionInput, convertModelField, defineModelProperty, requireMo
 import { ajvIssues, createObjectCodec, parseJson, registerIModelClass, requireAjvSchema, resolveGeneratedModelSchemaRefs, resolveModelValidationContextValidator, runSynchronousValidation, serdeValidates, stringifyJsonNumber, stringifyJsonScalar, validationFailure, IssueRepresentation, IssueSource } from '@exprtlabs/golem/serde';
 import { createOpenApiSyncAjvEngine } from '@exprtlabs/golem/ajv';
 
-const __runicAbsentField = Symbol();
+const __golemAbsentField = Symbol();
 
 function modelObject(json: unknown, name: string): Record<string, unknown> {
   return requireModelObject(json, name);
@@ -47,9 +47,9 @@ function decodeWalletModel(constructor: GeneratedModelConstructor, json: unknown
 
 function encodeWalletModel(model: WalletBase): WalletJSON {
   const result: Record<string, unknown> = {
-    ["balance"]: Object.prototype.hasOwnProperty.call(model, "balance") ? (convertModelField("serialize", "balance", () => (encodeMoney(model["balance"])))) : __runicAbsentField,
+    ["balance"]: Object.prototype.hasOwnProperty.call(model, "balance") ? (convertModelField("serialize", "balance", () => (encodeMoney(model["balance"])))) : __golemAbsentField,
   };
-  if (result["balance"] === __runicAbsentField) delete result["balance"];
+  if (result["balance"] === __golemAbsentField) delete result["balance"];
   return result as WalletJSON;
 }
 

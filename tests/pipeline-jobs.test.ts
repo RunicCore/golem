@@ -9,18 +9,18 @@ import { writeFixture } from './support/consumer.js';
 import { generate as generateModels } from '@exprtlabs/golem-model/generator';
 
 function packageFixture(t: TestContext, { profile = { mobx: false, validation: true }, models = true } = {}): { root: string; config: string } {
-  const root = createFixtureProject(t, 'runic-pipeline-jobs-');
+  const root = createFixtureProject(t, 'golem-pipeline-jobs-');
 
   linkProjectPackages(root, Object.fromEntries(
     ['golem', 'golem-model', 'golem-openapi'].map(name => [`@exprtlabs/${name}`, path.join(workspace, 'packages', name)]),
   ));
-  fs.writeFileSync(path.join(root, 'package.json'), '{"name":"runic-pipeline-jobs-fixture","type":"module"}');
+  fs.writeFileSync(path.join(root, 'package.json'), '{"name":"golem-pipeline-jobs-fixture","type":"module"}');
   writeFixture(root, profile, models);
   return { root, config: path.join(root, 'golem.yaml') };
 }
 
 test('model generation rejects an SDK manifest whose profile differs from the configured global profile', (t: TestContext) => {
-  const root = createFixtureProject(t, 'runic-pipeline-profile-');
+  const root = createFixtureProject(t, 'golem-pipeline-profile-');
 
   fs.mkdirSync(path.join(root, 'src'), { recursive: true });
   fs.writeFileSync(path.join(root, 'tsconfig.json'), JSON.stringify({

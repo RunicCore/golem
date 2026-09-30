@@ -27,7 +27,7 @@ interface Fixture {
 }
 
 function fixture(t: TestContext): Fixture {
-  const root = mkdtempSync(path.join(os.tmpdir(), 'runic-standalone-codecs-'));
+  const root = mkdtempSync(path.join(os.tmpdir(), 'golem-standalone-codecs-'));
   const sourceRoot = path.join(root, 'src');
   mkdirSync(sourceRoot, { recursive: true });
   mkdirSync(path.join(root, 'node_modules/@exprtlabs'), { recursive: true });

@@ -36,7 +36,7 @@ const profiles: readonly (readonly [string, GolemProfile])[] = [
 for (const [label, profile] of profiles) {
   test(`self- and mutually recursive models generate and round-trip (${label})`, async (t: TestContext) => {
     const { root, sourceRoot } = createModelProject(t, {
-      prefix: 'runic-recursive-models-', linkTypescript: true, linkTtsc: true, allowJs: profile.ajvStandalone === true,
+      prefix: 'golem-recursive-models-', linkTypescript: true, linkTtsc: true, allowJs: profile.ajvStandalone === true,
     });
     writeModelSources(sourceRoot, sources);
     writeGeneratedArtifacts(generate({ root, profile }).artifacts);

@@ -6,7 +6,7 @@ import * as ts from '@exprtlabs/golem/ts';
 import { unwrapAsyncType } from '#controllers/nest/analysis-utils';
 
 test('unwrapAsyncType keeps the type argument node only when the syntax spells the wrapper', t => {
-  const root = createFixtureProject(t, 'runic-async-unwrap-');
+  const root = createFixtureProject(t, 'golem-async-unwrap-');
   writeGeneratedArtifacts([
     { path: path.join(root, 'package.json'), content: '{ "type": "module" }\n' },
     {

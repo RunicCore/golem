@@ -10,7 +10,7 @@ import { writeFixture } from './support/consumer.js';
 import { readGeneratedModelSource } from './openapi/helpers.js';
 
 function fixture(t: TestContext): { root: string; config: string } {
-  const root = createFixtureProject(t, 'runic-pipeline-');
+  const root = createFixtureProject(t, 'golem-pipeline-');
 
   linkProjectPackages(root, Object.fromEntries(
     ['golem', 'golem-model', 'golem-openapi'].map(name => [`@exprtlabs/${name}`, path.join(workspace, 'packages', name)]),

@@ -2,15 +2,15 @@
 import { ClientRuntime, isUndeclaredResponseError } from '@exprtlabs/golem/client';
 import type * as Runtime from '@exprtlabs/golem/client';
 import { createOpenApiAjvEngine } from '@exprtlabs/golem/ajv';
-import type { OperationRuntimeValidators as __RunicOperationRuntimeValidators } from '@exprtlabs/golem/validation';
-import type { OperationName as __RunicOperationName } from './schemas.js';
+import type { OperationRuntimeValidators as __GolemOperationRuntimeValidators } from '@exprtlabs/golem/validation';
+import type { OperationName as __GolemOperationName } from './schemas.js';
 import type * as Types from './types.js';
 import type { ApiOperation } from '@exprtlabs/golem/client';
-import { createUpdateProjectAccessOperation as __runicOperationFactory0 } from "./operations/updateProjectAccess.js";
+import { createUpdateProjectAccessOperation as __golemOperationFactory0 } from "./operations/updateProjectAccess.js";
 
 export type ProjectAccessClientOptions = Omit<Runtime.ClientOptions, "parameterSerializers" | "responseHeaderDecoders" | "streamDecoders" | "mutualTls" | "auth" | "operationValidators"> & {
   /** Overrides generated validators for individual operations. */
-  operationValidators?: ReadonlyMap<__RunicOperationName, __RunicOperationRuntimeValidators>;
+  operationValidators?: ReadonlyMap<__GolemOperationName, __GolemOperationRuntimeValidators>;
 };
 export type ProjectAccessRequestOptions = Runtime.RequestOptions;
 export type ProjectAccessUndeclaredResponseError = Runtime.UndeclaredResponseError;
@@ -34,7 +34,7 @@ export class ProjectAccessClient implements ProjectAccessClientPort {
   }
 
   updateProjectAccess(): ApiOperation<Types.UpdateProjectAccessOperationInput, Types.UpdateProjectAccessOperationHttpResponse, ProjectAccessRequestOptions> {
-    return __runicOperationFactory0(this.runtime);
+    return __golemOperationFactory0(this.runtime);
   }
 }
 

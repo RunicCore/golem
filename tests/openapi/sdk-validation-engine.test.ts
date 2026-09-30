@@ -84,7 +84,7 @@ function sharedTitleDocument(marker: string): Record<string, unknown> {
 }
 
 test('same-title SDKs keep their schema contracts when they share a validation engine', async t => {
-  const root = createFixtureProject(t, 'runic-openapi-shared-title-');
+  const root = createFixtureProject(t, 'golem-openapi-shared-title-');
   const engine = createOpenApiAjvEngine();
   let requests = 0;
   const fetchImpl: typeof fetch = async (_url, init) => {

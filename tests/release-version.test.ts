@@ -35,7 +35,7 @@ function releaseFixture(root: string, version = '1.0.0-rc'): void {
 }
 
 test('release consistency rejects public version and internal pin drift', t => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'runic-release-version-'));
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'golem-release-version-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   releaseFixture(root);
 
@@ -57,7 +57,7 @@ test('release consistency rejects public version and internal pin drift', t => {
 });
 
 test('release consistency rejects an example project missing from the maintained inventory', t => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'runic-release-version-'));
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'golem-release-version-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   releaseFixture(root);
   assert.equal(assertReleaseConsistency(root), '1.0.0-rc');

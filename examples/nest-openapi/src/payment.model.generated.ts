@@ -10,7 +10,7 @@ import { cloneConversionInput, convertModelField, defineModelProperty, requireMo
 import { ajvIssues, createObjectCodec, parseJson, registerIModelClass, requireAjvSchema, resolveGeneratedModelSchemaRefs, resolveModelValidationContextValidator, runSynchronousValidation, serdeValidates, stringifyJsonNumber, stringifyJsonScalar, stringifyJsonString, validationFailure, IssueRepresentation, IssueSource } from '@exprtlabs/golem/serde';
 import { createOpenApiSyncAjvEngine } from '@exprtlabs/golem/ajv';
 
-const __runicAbsentField = Symbol();
+const __golemAbsentField = Symbol();
 
 function modelObject(json: unknown, name: string): Record<string, unknown> {
   return requireModelObject(json, name);
@@ -85,17 +85,17 @@ function decodePaymentModel(constructor: GeneratedModelConstructor, json: unknow
 
 function encodePaymentModel(model: PaymentBase): PaymentJSON {
   const result: Record<string, unknown> = {
-    ["id"]: Object.prototype.hasOwnProperty.call(model, "id") ? (model["id"]) : __runicAbsentField,
-    ["merchant"]: Object.prototype.hasOwnProperty.call(model, "merchant") ? (convertModelField("serialize", "merchant", () => (encodeMerchant(model["merchant"])))) : __runicAbsentField,
-    ["billing"]: Object.prototype.hasOwnProperty.call(model, "billing") ? (convertModelField("serialize", "billing", () => (encodeMerchantOmitId(model["billing"])))) : __runicAbsentField,
-    ["money"]: Object.prototype.hasOwnProperty.call(model, "money") ? (convertModelField("serialize", "money", () => (encodeMoney(model["money"])))) : __runicAbsentField,
-    ["note"]: Object.prototype.hasOwnProperty.call(model, "note") ? (model["note"]) : __runicAbsentField,
+    ["id"]: Object.prototype.hasOwnProperty.call(model, "id") ? (model["id"]) : __golemAbsentField,
+    ["merchant"]: Object.prototype.hasOwnProperty.call(model, "merchant") ? (convertModelField("serialize", "merchant", () => (encodeMerchant(model["merchant"])))) : __golemAbsentField,
+    ["billing"]: Object.prototype.hasOwnProperty.call(model, "billing") ? (convertModelField("serialize", "billing", () => (encodeMerchantOmitId(model["billing"])))) : __golemAbsentField,
+    ["money"]: Object.prototype.hasOwnProperty.call(model, "money") ? (convertModelField("serialize", "money", () => (encodeMoney(model["money"])))) : __golemAbsentField,
+    ["note"]: Object.prototype.hasOwnProperty.call(model, "note") ? (model["note"]) : __golemAbsentField,
   };
-  if (result["id"] === __runicAbsentField) delete result["id"];
-  if (result["merchant"] === __runicAbsentField) delete result["merchant"];
-  if (result["billing"] === __runicAbsentField) delete result["billing"];
-  if (result["money"] === __runicAbsentField) delete result["money"];
-  if (result["note"] === __runicAbsentField) delete result["note"];
+  if (result["id"] === __golemAbsentField) delete result["id"];
+  if (result["merchant"] === __golemAbsentField) delete result["merchant"];
+  if (result["billing"] === __golemAbsentField) delete result["billing"];
+  if (result["money"] === __golemAbsentField) delete result["money"];
+  if (result["note"] === __golemAbsentField) delete result["note"];
   return result as PaymentJSON;
 }
 
@@ -667,18 +667,18 @@ function fillPaymentFilter(out: Record<string, unknown>, wire: Record<string, un
 function stringifyPaymentFilterCore(value: Record<string, unknown>, _options?: { readonly validate?: boolean; readonly failFast?: boolean }): string {
   let out = '{';
   let sep = false;
-  const __runicField0 = value["limit"];
-  if (__runicField0 !== undefined) {
+  const __golemField0 = value["limit"];
+  if (__golemField0 !== undefined) {
     if (sep) out += ",";
     out += "\"limit\":";
-    out += stringifyJsonNumber(__runicField0 as number);
+    out += stringifyJsonNumber(__golemField0 as number);
     sep = true;
   }
-  const __runicField1 = value["status"];
-  if (__runicField1 !== undefined) {
+  const __golemField1 = value["status"];
+  if (__golemField1 !== undefined) {
     if (sep) out += ",";
     out += "\"status\":";
-    out += stringifyJsonScalar(__runicField1 as never);
+    out += stringifyJsonScalar(__golemField1 as never);
     sep = true;
   }
   return out + '}';
@@ -720,9 +720,9 @@ export function toWireFormatPaymentFilter(value: unknown, options?: { readonly v
     assertPaymentFilter(value, options);
   }
   const record = value as Record<string, unknown>;
-  let __runicField0: unknown;
-  let __runicField1: unknown;
-  const wire = { ...(__runicField0 = record["limit"], (__runicField0 !== undefined ? { ["limit"]: __runicField0 } : undefined)), ...(__runicField1 = record["status"], (__runicField1 !== undefined ? { ["status"]: __runicField1 } : undefined)) };
+  let __golemField0: unknown;
+  let __golemField1: unknown;
+  const wire = { ...(__golemField0 = record["limit"], (__golemField0 !== undefined ? { ["limit"]: __golemField0 } : undefined)), ...(__golemField1 = record["status"], (__golemField1 !== undefined ? { ["status"]: __golemField1 } : undefined)) };
   return wire as PaymentFilterJSON;
 }
 

@@ -26,7 +26,7 @@ function fixture(
   profile: GolemProfile = { mobx: false, validation: true },
 ) {
   const { root } = createModelProject(t, {
-    prefix: 'runic-serde-',
+    prefix: 'golem-serde-',
     name: 'serde-fixture',
     linkTypescript: true,
     linkTtsc: true,
@@ -166,7 +166,7 @@ test('untransformed public serde APIs and validate<T> throw', () => {
 
 test('IObject TSerde stringify/parse convert declared fields in one pass', async (t) => {
   const { root, sourceRoot } = createModelProject(t, {
-    prefix: 'runic-serde-tserde-',
+    prefix: 'golem-serde-tserde-',
     name: 'serde-tserde',
     linkTypescript: true,
     linkTtsc: true,
@@ -177,7 +177,7 @@ test('IObject TSerde stringify/parse convert declared fields in one pass', async
   const generated = fs.readFileSync(path.join(root, 'src/permission.model.generated.ts'), 'utf8');
   assert.doesNotMatch(
     generated,
-    /stringifyPermissionInputCore[\s\S]*__runicSerialize[\s\S]*validatePermissionInputFast/,
+    /stringifyPermissionInputCore[\s\S]*__golemSerialize[\s\S]*validatePermissionInputFast/,
     'budget: TSerde fields convert declared fields in one pass, not through a second interleaved stringify/validate sequence',
   );
   await compile(root);
@@ -241,7 +241,7 @@ test('IObject TSerde stringify/parse convert declared fields in one pass', async
 
 test('same-type TSerde emits one Ajv schema and global validation false rejects { validate: true }', async (t) => {
   const { root: identityRoot, sourceRoot } = createModelProject(t, {
-    prefix: 'runic-serde-identity-',
+    prefix: 'golem-serde-identity-',
     name: 'serde-identity',
     linkTypescript: true,
     linkTtsc: true,

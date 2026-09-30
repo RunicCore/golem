@@ -4,18 +4,18 @@ import type { TasksClientOptions as ClientOptions, TasksRequestOptions as Reques
 import type * as Types from '../types.js';
 import { createApiOperation, type ApiOperation } from '@exprtlabs/golem/client';
 import { createOpenApiAjvEngine } from '@exprtlabs/golem/ajv';
-import { schema as __runicSchema0 } from "../validation-schemas/Task.input.js";
-import { schema as __runicSchema1 } from "../validation-schemas/Task.output.js";
+import { schema as __golemSchema0 } from "../validation-schemas/Task.input.js";
+import { schema as __golemSchema1 } from "../validation-schemas/Task.output.js";
 
 
 const responseContracts: readonly RuntimeResponseContract[] = [{"status":"201","content":[{"contentType":"application/json","framing":"body"}],"headers":[]}];
 const __resolveOperationValidationSources = (): OperationValidationSources => ({
-    inputReference: "urn:runic:openapi:tasks:cc24c3c3168942b6c3e2684339043b6830cdcb3c57853bd72591b5011d7111a7:schemas:operation:createTask#/operations/createTask/input",
-    responseReferences: [{"status":"201","contentType":"application/json","reference":"urn:runic:openapi:tasks:cc24c3c3168942b6c3e2684339043b6830cdcb3c57853bd72591b5011d7111a7:schemas:operation:createTask#/operations/createTask/responses/201/application~1json"}],
+    inputReference: "urn:golem:openapi:tasks:cc24c3c3168942b6c3e2684339043b6830cdcb3c57853bd72591b5011d7111a7:schemas:operation:createTask#/operations/createTask/input",
+    responseReferences: [{"status":"201","contentType":"application/json","reference":"urn:golem:openapi:tasks:cc24c3c3168942b6c3e2684339043b6830cdcb3c57853bd72591b5011d7111a7:schemas:operation:createTask#/operations/createTask/responses/201/application~1json"}],
     schemas: new Map([
-      ["urn:runic:openapi:tasks:cc24c3c3168942b6c3e2684339043b6830cdcb3c57853bd72591b5011d7111a7:schemas:operation:createTask", JSON.parse("{\"$id\":\"urn:runic:openapi:tasks:cc24c3c3168942b6c3e2684339043b6830cdcb3c57853bd72591b5011d7111a7:schemas:operation:createTask\",\"$schema\":\"https://spec.openapis.org/oas/3.1/dialect/base\",\"operations\":{\"createTask\":{\"input\":{\"type\":\"object\",\"properties\":{\"body\":{\"$ref\":\"urn:runic:openapi:tasks:cc24c3c3168942b6c3e2684339043b6830cdcb3c57853bd72591b5011d7111a7:schemas:component:Task:input\"}},\"required\":[\"body\"],\"additionalProperties\":false},\"responses\":{\"201\":{\"application/json\":{\"$ref\":\"urn:runic:openapi:tasks:cc24c3c3168942b6c3e2684339043b6830cdcb3c57853bd72591b5011d7111a7:schemas:component:Task:output\"}}}}}}") as object | boolean],
-      ["urn:runic:openapi:tasks:cc24c3c3168942b6c3e2684339043b6830cdcb3c57853bd72591b5011d7111a7:schemas:component:Task:input", __runicSchema0],
-      ["urn:runic:openapi:tasks:cc24c3c3168942b6c3e2684339043b6830cdcb3c57853bd72591b5011d7111a7:schemas:component:Task:output", __runicSchema1],
+      ["urn:golem:openapi:tasks:cc24c3c3168942b6c3e2684339043b6830cdcb3c57853bd72591b5011d7111a7:schemas:operation:createTask", JSON.parse("{\"$id\":\"urn:golem:openapi:tasks:cc24c3c3168942b6c3e2684339043b6830cdcb3c57853bd72591b5011d7111a7:schemas:operation:createTask\",\"$schema\":\"https://spec.openapis.org/oas/3.1/dialect/base\",\"operations\":{\"createTask\":{\"input\":{\"type\":\"object\",\"properties\":{\"body\":{\"$ref\":\"urn:golem:openapi:tasks:cc24c3c3168942b6c3e2684339043b6830cdcb3c57853bd72591b5011d7111a7:schemas:component:Task:input\"}},\"required\":[\"body\"],\"additionalProperties\":false},\"responses\":{\"201\":{\"application/json\":{\"$ref\":\"urn:golem:openapi:tasks:cc24c3c3168942b6c3e2684339043b6830cdcb3c57853bd72591b5011d7111a7:schemas:component:Task:output\"}}}}}}") as object | boolean],
+      ["urn:golem:openapi:tasks:cc24c3c3168942b6c3e2684339043b6830cdcb3c57853bd72591b5011d7111a7:schemas:component:Task:input", __golemSchema0],
+      ["urn:golem:openapi:tasks:cc24c3c3168942b6c3e2684339043b6830cdcb3c57853bd72591b5011d7111a7:schemas:component:Task:output", __golemSchema1],
     ]),
 
   });

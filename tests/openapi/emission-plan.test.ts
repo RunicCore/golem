@@ -157,7 +157,7 @@ function info(title: string): { title: string; version: string } {
 }
 
 function outputDir(t: TestContext, label: string): string {
-  return path.join(createFixtureProject(t, `runic-openapi-${label}-`), 'sdk');
+  return path.join(createFixtureProject(t, `golem-openapi-${label}-`), 'sdk');
 }
 
 test('directional imports follow schema references while literal data and keyword-shaped property names stay distinct', async t => {

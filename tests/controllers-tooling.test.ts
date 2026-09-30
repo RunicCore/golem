@@ -18,7 +18,7 @@ function workspaceReleaseVersion(): string {
 }
 
 function fixture(t: TestContext): { root: string; config: string } {
-  const root = createFixtureProject(t, 'runic-controllers-');
+  const root = createFixtureProject(t, 'golem-controllers-');
   writeGeneratedArtifacts([{
     path: path.join(root, 'src/app.controller.ts'),
     content: 'export class AppController {}\n',

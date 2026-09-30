@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { validationSchemaModuleNames } from '#openapi/schemas';
 
-const root = 'urn:runic:openapi:t:0123abcd:schemas';
+const root = 'urn:golem:openapi:t:0123abcd:schemas';
 const entry = (name: string, direction: 'input' | 'output') => ({ id: `${root}:component:${name}:${direction}`, name, direction });
 
 test('schema files are named by component and direction', () => {
@@ -27,7 +27,7 @@ test('awkward component names become short, legal file names', () => {
 
 test('the document digest never appears in a schema file name', () => {
   const before = validationSchemaModuleNames([entry('Money', 'output')], root);
-  const edited = 'urn:runic:openapi:t:ffff0000:schemas';
+  const edited = 'urn:golem:openapi:t:ffff0000:schemas';
   const after = validationSchemaModuleNames([{ id: `${edited}:component:Money:output`, name: 'Money', direction: 'output' }], edited);
   assert.deepEqual([...before.values()], [...after.values()]);
 });

@@ -46,7 +46,7 @@ const FIXTURES = 'controllers/swagger-metadata';
 
 function fixture(t: TestContext, name: string, files: Readonly<Record<string, string>> = {}): string {
   return createControllerFixture(t, {
-    prefix: 'runic-ts-to-openapi-swagger-metadata-',
+    prefix: 'golem-ts-to-openapi-swagger-metadata-',
     packageName: 'ts-to-openapi-swagger-metadata-fixture',
     source: readFixture(`${FIXTURES}/${name}/controller.ts`),
     files: Object.fromEntries(Object.entries(files).map(([target, source]) => [target, readFixture(`${FIXTURES}/${name}/${source}`)])),
@@ -56,7 +56,7 @@ function fixture(t: TestContext, name: string, files: Readonly<Record<string, st
 
 function inlineFixture(t: TestContext, source: string): string {
   return createControllerFixture(t, {
-    prefix: 'runic-ts-to-openapi-swagger-metadata-',
+    prefix: 'golem-ts-to-openapi-swagger-metadata-',
     packageName: 'ts-to-openapi-swagger-metadata-fixture',
     source,
     links: 'workspace',

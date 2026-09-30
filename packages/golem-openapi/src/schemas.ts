@@ -225,7 +225,7 @@ function runtimeRegistry(registry: Record<string, unknown>): Record<string, unkn
 export function buildSchemaData(document: unknown, preparedIr?: NormalizedDocument) {
   const ir = preparedIr ?? normalizeDocument(document);
   const operations = [...ir.operations, ...ir.inboundOperations];
-  const rootId = `urn:runic:openapi:${identifier(asRecord(asRecord(document).info).title, 'api').toLowerCase()}:${sourceDigest(document)}:schemas`;
+  const rootId = `urn:golem:openapi:${identifier(asRecord(asRecord(document).info).title, 'api').toLowerCase()}:${sourceDigest(document)}:schemas`;
   const resources = collectCanonicalResources(document);
   const projections = operations.length
     ? buildRuntimeProjections(document, ir, rootId, resources)
@@ -242,9 +242,9 @@ export function buildSchemaData(document: unknown, preparedIr?: NormalizedDocume
     ),
     ...(projections ? {
       $defs: {
-        'runic-input': projections.inputResource,
+        'golem-input': projections.inputResource,
         ...(projections.outputResourceId !== projections.inputResourceId
-          ? { 'runic-output': projections.outputResource } : {}),
+          ? { 'golem-output': projections.outputResource } : {}),
       },
     } : {}),
   };
@@ -480,10 +480,10 @@ function createOperationValidationSchemaIndex(
   const data = preparedData ?? buildSchemaData(document);
   const rootId = String(data.registry.$id);
   const projectionDefinitions = asRecord(data.normalizedRegistry.$defs);
-  const inputProjection = asRecord(projectionDefinitions['runic-input']);
+  const inputProjection = asRecord(projectionDefinitions['golem-input']);
   const outputProjection = data.outputResourceId === data.inputResourceId
     ? inputProjection
-    : asRecord(projectionDefinitions['runic-output']);
+    : asRecord(projectionDefinitions['golem-output']);
   const directionalResources = {
     input: asRecord(inputProjection.$defs),
     output: asRecord(outputProjection.$defs),

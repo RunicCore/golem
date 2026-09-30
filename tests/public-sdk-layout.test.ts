@@ -51,7 +51,7 @@ test('the public SDK layout generated from a fixture document matches the frozen
   const document = parse(readFixture('public-sdk-layout/openapi.yaml'));
   const actual: Layout = {};
   for (const [name, profile] of Object.entries(PROFILES)) {
-    const sdk = path.join(createFixtureProject(t, `runic-sdk-layout-${name}-`), 'sdk');
+    const sdk = path.join(createFixtureProject(t, `golem-sdk-layout-${name}-`), 'sdk');
     writeGeneratedArtifacts(writeSdk(document, { output: sdk, name: 'Payments', profile }).artifacts);
     actual[name] = publicLayout(sdk);
   }

@@ -95,7 +95,7 @@ export function stringifyFunctionName(id: string): string {
  * the codec as a sibling writes its already encoded wire value with it.
  */
 export function wireStringifyExportName(codecId: string): string {
-  return `__runicStringifyWire_${codecId.replace(/[^A-Za-z0-9_$]/g, '_')}`;
+  return `__golemStringifyWire_${codecId.replace(/[^A-Za-z0-9_$]/g, '_')}`;
 }
 
 export function fillFunctionName(id: string): string {
@@ -201,7 +201,7 @@ function emitInlineObjectField(
     const member = `${memberPrefix(name, leadingComma)} + ${value}`;
     return required ? member : `(${read} !== undefined ? ${member} : '')`;
   }
-  const local = `__runicInlineField${ctx.inlineLocals?.size ?? index}`;
+  const local = `__golemInlineField${ctx.inlineLocals?.size ?? index}`;
   ctx.inlineLocals?.add(local);
   const converted = value.replaceAll(read, local);
   const member = `${memberPrefix(name, leadingComma)} + ${converted}`;
@@ -440,7 +440,7 @@ function emitObjectStringify(
   for (const [index, [name, property]] of properties.entries()) {
     const read = access('value', name);
     const value = emitValue(property, read, ctx);
-    const local = `__runicField${index}`;
+    const local = `__golemField${index}`;
     const needsSnapshot = occurrenceCount(value, read) + (required.has(name) ? 0 : 1) > 1;
     const valueExpr = needsSnapshot ? value.replaceAll(read, local) : value;
     const fieldExpr = needsSnapshot ? local : read;
@@ -1107,14 +1107,14 @@ function emitEncodedRecord(
     const value = emitEncodeValue(property, read, ctx);
     // An optional field whose value is undefined is omitted, as stringify and JSON.stringify do.
     if (!required.has(name) && !value.startsWith('...')) {
-      const local = allocateInlineLocal(ctx, '__runicField') ?? `__runicField${index}`;
+      const local = allocateInlineLocal(ctx, '__golemField') ?? `__golemField${index}`;
       const entry = `(${local} !== undefined ? { [${JSON.stringify(name)}]: ${value.replaceAll(read, local)} } : undefined)`;
       return [name, ctx.inlineLocals ? `...(${local} = ${read}, ${entry})` : `...((${local}) => ${entry})(${read})`] as const;
     }
     if (occurrenceCount(value, read) <= 1) return [name, value] as const;
-    const local = allocateInlineLocal(ctx, '__runicField');
+    const local = allocateInlineLocal(ctx, '__golemField');
     if (!local) {
-      const fallbackLocal = `__runicField${index}`;
+      const fallbackLocal = `__golemField${index}`;
       return [name, `((${fallbackLocal}) => ${value.replaceAll(read, fallbackLocal)})(${read})`] as const;
     }
     return [name, `(${local} = ${read}, ${value.replaceAll(read, local)})`] as const;
@@ -1126,16 +1126,16 @@ function emitEncodedRecord(
   // Bind that object only when its expression would otherwise be evaluated
   // more than once; ordinary top-level `value`/`record` paths stay direct.
   if (/^[A-Za-z_$][\w$]*$/.test(expression) || occurrenceCount(record, expression) <= 1) return record;
-  const local = allocateInlineLocal(ctx, '__runicRecord');
+  const local = allocateInlineLocal(ctx, '__golemRecord');
   if (!local) {
-    return `((__runicRecord) => (${record.replaceAll(expression, '__runicRecord')}))(${expression})`;
+    return `((__golemRecord) => (${record.replaceAll(expression, '__golemRecord')}))(${expression})`;
   }
   return `(${local} = ${expression}, ${record.replaceAll(expression, local)})`;
 }
 
 function allocateInlineLocal(
   ctx: EmitCtx,
-  prefix: '__runicField' | '__runicRecord',
+  prefix: '__golemField' | '__golemRecord',
 ): string | undefined {
   const inlineLocals = ctx.inlineLocals;
   if (!inlineLocals) return undefined;
@@ -1161,11 +1161,11 @@ function residualValidator(id: string, plane: 'model-only' | 'wire-only', failFa
 }
 
 function modelOnlyAssertName(node: SchemaNode): string {
-  return `__runicAssertModelOnly_${node.id}`;
+  return `__golemAssertModelOnly_${node.id}`;
 }
 
 function wireOnlyAssertName(node: SchemaNode): string {
-  return `__runicAssertWireOnly_${node.id}`;
+  return `__golemAssertWireOnly_${node.id}`;
 }
 
 function emitSerdeValidates(validationEnabled: boolean): string {
@@ -1273,7 +1273,7 @@ function emitNodeRuntime(
   const parseName = parseFunctionName(node.id);
   const validateName = validateFunctionName(node.id);
   const assertName = `assert${node.id}`;
-  const wireAssertName = `__runicAssertWire_${node.id}`;
+  const wireAssertName = `__golemAssertWire_${node.id}`;
   const convertName = `convertFromWire${node.id}`;
   // An allOf-style intersection of objects (including referenced models) converts
   // as the merged object, so inherited fields such as dates are decoded too.

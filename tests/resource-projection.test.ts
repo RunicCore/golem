@@ -283,7 +283,7 @@ function schemaProperties(schema: unknown, label: string): Record<string, unknow
 }
 
 test('public directional resources preserve nested scopes and run through strict default Ajv consumers', async (t) => {
-  const root = mkdtempSync(path.join(tmpdir(), 'runic-resource-projection-'));
+  const root = mkdtempSync(path.join(tmpdir(), 'golem-resource-projection-'));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const input = path.join(root, 'openapi.json');
   const output = path.join(root, 'sdk');
@@ -313,8 +313,8 @@ test('public directional resources preserve nested scopes and run through strict
 
   const schemasModule = await import(pathToFileURL(path.join(output, 'build', 'schemas.js')).href);
   const runtimeRegistry = requireRecord(schemasModule.runtimeSchemaRegistry, 'runtime schema registry');
-  const inputSchemas = resourceSchemas(runtimeRegistry, 'runic-input');
-  const outputSchemas = resourceSchemas(runtimeRegistry, 'runic-output');
+  const inputSchemas = resourceSchemas(runtimeRegistry, 'golem-input');
+  const outputSchemas = resourceSchemas(runtimeRegistry, 'golem-output');
   const neutralRegistry = requireRecord(schemasModule.schemaRegistry, 'neutral schema registry');
   const neutralComponents = requireRecord(neutralRegistry.components, 'neutral schema components');
   const neutralSchemas = requireRecord(neutralComponents.schemas, 'neutral component schemas');
@@ -322,14 +322,14 @@ test('public directional resources preserve nested scopes and run through strict
   const outputEnvelope = requireRecord(outputSchemas.Envelope, 'output Envelope');
   const inputEnvelopeProperties = schemaProperties(inputEnvelope, 'input Envelope');
   const outputEnvelopeProperties = schemaProperties(outputEnvelope, 'output Envelope');
-  const inputTree = projectedSchema(runtimeRegistry, 'runic-input', inputSchemas, 'Tree', 'urn:fixture:tree');
-  const outputTree = projectedSchema(runtimeRegistry, 'runic-output', outputSchemas, 'Tree', 'urn:fixture:tree');
-  const inputEmbedded = projectedSchema(runtimeRegistry, 'runic-input', inputSchemas, 'Embedded', 'urn:fixture:embedded');
-  const outputEmbedded = projectedSchema(runtimeRegistry, 'runic-output', outputSchemas, 'Embedded', 'urn:fixture:embedded');
-  const inputChild = projectedSchema(runtimeRegistry, 'runic-input', inputSchemas, 'Child', 'urn:fixture:child');
-  const outputChild = projectedSchema(runtimeRegistry, 'runic-output', outputSchemas, 'Child', 'urn:fixture:child');
-  const inputAnchored = projectedSchema(runtimeRegistry, 'runic-input', inputSchemas, 'Anchored', 'urn:fixture:anchored');
-  const outputAnchored = projectedSchema(runtimeRegistry, 'runic-output', outputSchemas, 'Anchored', 'urn:fixture:anchored');
+  const inputTree = projectedSchema(runtimeRegistry, 'golem-input', inputSchemas, 'Tree', 'urn:fixture:tree');
+  const outputTree = projectedSchema(runtimeRegistry, 'golem-output', outputSchemas, 'Tree', 'urn:fixture:tree');
+  const inputEmbedded = projectedSchema(runtimeRegistry, 'golem-input', inputSchemas, 'Embedded', 'urn:fixture:embedded');
+  const outputEmbedded = projectedSchema(runtimeRegistry, 'golem-output', outputSchemas, 'Embedded', 'urn:fixture:embedded');
+  const inputChild = projectedSchema(runtimeRegistry, 'golem-input', inputSchemas, 'Child', 'urn:fixture:child');
+  const outputChild = projectedSchema(runtimeRegistry, 'golem-output', outputSchemas, 'Child', 'urn:fixture:child');
+  const inputAnchored = projectedSchema(runtimeRegistry, 'golem-input', inputSchemas, 'Anchored', 'urn:fixture:anchored');
+  const outputAnchored = projectedSchema(runtimeRegistry, 'golem-output', outputSchemas, 'Anchored', 'urn:fixture:anchored');
 
   assert.equal(requireRecord(neutralSchemas.Tree, 'neutral Tree').$id, 'urn:fixture:tree');
   assert.equal(requireRecord(neutralSchemas.Embedded, 'neutral Embedded').$id, 'urn:fixture:embedded');
@@ -364,7 +364,7 @@ test('public directional resources preserve nested scopes and run through strict
 });
 
 test('public resource graph distinguishes whole, scalar, and nested targets with relative resource scope', async (t) => {
-  const root = mkdtempSync(path.join(tmpdir(), 'runic-resource-graph-'));
+  const root = mkdtempSync(path.join(tmpdir(), 'golem-resource-graph-'));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const input = path.join(root, 'openapi.json');
   const output = path.join(root, 'sdk');
@@ -412,10 +412,10 @@ test('public resource graph distinguishes whole, scalar, and nested targets with
   assert.equal(requireRecord(neutralSchemas.GraphLeaf, 'graph neutral leaf').$id, graphLeafId);
 
   const runtimeRegistry = requireRecord(schemasModule.runtimeSchemaRegistry, 'graph runtime schema registry');
-  const outputSchemas = resourceSchemas(runtimeRegistry, 'runic-output');
-  const outputWhole = projectedSchema(runtimeRegistry, 'runic-output', outputSchemas, 'GraphWhole', graphWholeId);
+  const outputSchemas = resourceSchemas(runtimeRegistry, 'golem-output');
+  const outputWhole = projectedSchema(runtimeRegistry, 'golem-output', outputSchemas, 'GraphWhole', graphWholeId);
   assert.equal(requireRecord(outputWhole, 'graph output whole').$id, `${graphWholeId}:output`);
-  const outputDefinitions = resourceDefinitions(runtimeRegistry, 'runic-output');
+  const outputDefinitions = resourceDefinitions(runtimeRegistry, 'golem-output');
   const outputNested = requireRecord(outputDefinitions[graphNestedId], 'graph output nested resource');
   assert.equal(outputNested.$id, `${graphNestedId}:output`);
   const outputLeaf = requireRecord(outputDefinitions[graphLeafId], 'graph output leaf resource');

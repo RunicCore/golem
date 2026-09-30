@@ -15,7 +15,7 @@ import {
 } from './helpers.js';
 
 async function loadClient(t: TestContext, document: unknown, name: string) {
-  const output = path.join(createFixtureProject(t, 'runic-openapi-headers-'), 'sdk');
+  const output = path.join(createFixtureProject(t, 'golem-openapi-headers-'), 'sdk');
   await generateMaterializedSdk(document, {
     output,
     name,
@@ -176,7 +176,7 @@ test('header simple values stay literal and never percent-decode, and OAS 3.2 st
 });
 
 test('style cookie is accepted for a cookie parameter and rejected for a header parameter', async (t) => {
-  const directory = createFixtureProject(t, 'runic-openapi-cookie-style-');
+  const directory = createFixtureProject(t, 'golem-openapi-cookie-style-');
   const valid = writeOpenApiDocument(directory, {
     openapi: '3.2.0',
     info: { title: 'ValidCookie', version: '1' },

@@ -54,7 +54,7 @@ function installFakeOpenApiProvider(root: string, manifest: unknown): void {
 }
 
 function combinedFixture(t: TestContext): CombinedFixture {
-  const root = createFixtureProject(t, 'runic-pipeline-runtime-');
+  const root = createFixtureProject(t, 'golem-pipeline-runtime-');
 
   linkPackages(root, ['golem', 'golem-model', 'golem-openapi']);
   fs.writeFileSync(
@@ -71,7 +71,7 @@ function combinedFixture(t: TestContext): CombinedFixture {
 }
 
 function modelWatchFixture(t: TestContext): ModelWatchFixture {
-  const root = createFixtureProject(t, 'runic-model-watch-');
+  const root = createFixtureProject(t, 'golem-model-watch-');
 
   linkPackages(root, ['golem', 'golem-model']);
   fs.writeFileSync(
@@ -163,7 +163,7 @@ async function generatedOpenApiFixture(
   schemaNames: readonly string[],
   validation: boolean,
 ): Promise<string> {
-  const root = createFixtureProject(t, 'runic-openapi-collision-');
+  const root = createFixtureProject(t, 'golem-openapi-collision-');
 
   const input = path.join(root, 'api.json');
   const output = path.join(root, 'sdk');
@@ -481,7 +481,7 @@ test('exec --watch exits with its child and releases the watcher', async (t: Tes
 
 test('public OpenAPI generation rejects names colliding across exported index modules', async (t: TestContext) => {
   for (const schemaName of ['PaymentsClient', 'SchemaName', 'ResponseLink', 'ValidationResult']) {
-    const root = createFixtureProject(t, 'runic-openapi-name-collision-');
+    const root = createFixtureProject(t, 'golem-openapi-name-collision-');
 
     const input = path.join(root, 'api.json');
     fs.writeFileSync(input, JSON.stringify(collisionDocument([schemaName], schemaName === 'ResponseLink')));
@@ -539,7 +539,7 @@ test('pipeline rejects malformed or profile-mismatched returned manifests before
   ] as const;
 
   for (const entry of cases) {
-    const root = createFixtureProject(t, `runic-pipeline-manifest-${entry.name}-`);
+    const root = createFixtureProject(t, `golem-pipeline-manifest-${entry.name}-`);
 
     linkPackages(root, ['golem', 'golem-model', 'golem-openapi']);
     fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ name: 'manifest-fixture', private: true, type: 'module' }));

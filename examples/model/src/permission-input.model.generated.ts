@@ -11,7 +11,7 @@ import { ajvIssues, createObjectCodec, parseJson, registerIModelClass, requireAj
 import { createOpenApiSyncAjvEngine } from '@exprtlabs/golem/ajv';
 import { modelSerdeBindings, modelValidationBindings } from "./generated/models/models.generated.js";
 
-const __runicAbsentField = Symbol();
+const __golemAbsentField = Symbol();
 
 function modelObject(json: unknown, name: string): Record<string, unknown> {
   return requireModelObject(json, name);
@@ -41,9 +41,9 @@ function decodePermissionInputModel(constructor: GeneratedModelConstructor, json
 
 function encodePermissionInputModel(model: PermissionInputBase): PermissionInputJSON {
   const result: Record<string, unknown> = {
-    ["permissions"]: Object.prototype.hasOwnProperty.call(model, "permissions") ? (convertModelField("serialize", "permissions", () => (modelSerdeBindings["src/permission-rules.ts:335:439\u0000src/permission-rules.ts:441:716"].serialize(model["permissions"])))) : __runicAbsentField,
+    ["permissions"]: Object.prototype.hasOwnProperty.call(model, "permissions") ? (convertModelField("serialize", "permissions", () => (modelSerdeBindings["src/permission-rules.ts:335:439\u0000src/permission-rules.ts:441:716"].serialize(model["permissions"])))) : __golemAbsentField,
   };
-  if (result["permissions"] === __runicAbsentField) delete result["permissions"];
+  if (result["permissions"] === __golemAbsentField) delete result["permissions"];
   return result as PermissionInputJSON;
 }
 
@@ -106,7 +106,7 @@ export function stringifyPermissionInput(value: Record<string, unknown>, options
   }
   if (validates) {
     const wire = { ["permissions"]: modelSerdeBindings["src/permission-rules.ts:335:439\u0000src/permission-rules.ts:441:716"].serialize(value["permissions"]) };
-    __runicAssertWireOnly_PermissionInput(wire, options);
+    __golemAssertWireOnly_PermissionInput(wire, options);
     return stringifyPermissionInputWire(wire as never, { validate: false });
   }
   return stringifyPermissionInputCore(value as never, { validate: false });
@@ -115,7 +115,7 @@ export function stringifyPermissionInput(value: Record<string, unknown>, options
 function convertFromWirePermissionInput(wire: unknown, options: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object } | undefined, isolated: boolean): unknown {
   const validates = serdeValidates(options, true);
   if (validates) {
-    __runicAssertWire_PermissionInput(wire, options);
+    __golemAssertWire_PermissionInput(wire, options);
   }
   const source = isolated || wire === null || typeof wire !== 'object' ? wire : cloneConversionInput(wire);
   let result: unknown = source;
@@ -127,7 +127,7 @@ function convertFromWirePermissionInput(wire: unknown, options: { readonly valid
     }
   }
   if (validates) {
-    __runicAssertModelOnly_PermissionInput(result, options);
+    __golemAssertModelOnly_PermissionInput(result, options);
   }
   return result;
 }
@@ -144,7 +144,7 @@ export function toWireFormatPermissionInput(value: unknown, options?: { readonly
   const record = value as Record<string, unknown>;
   const wire = { ["permissions"]: modelSerdeBindings["src/permission-rules.ts:335:439\u0000src/permission-rules.ts:441:716"].serialize(record["permissions"]) };
   if (validates) {
-    __runicAssertWireOnly_PermissionInput(wire, options);
+    __golemAssertWireOnly_PermissionInput(wire, options);
   }
   return wire as PermissionInputJSON;
 }
@@ -182,7 +182,7 @@ export function assertPermissionInput(value: unknown, options?: { readonly failF
   return value as Record<string, unknown>;
 }
 
-function __runicAssertWire_PermissionInput(value: unknown, options?: { readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext }): Record<string, unknown> {
+function __golemAssertWire_PermissionInput(value: unknown, options?: { readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext }): Record<string, unknown> {
   if (options?.validationContext === undefined) {
   if (!(options?.failFast !== false ? validatePermissionInputWireFast(value) : validatePermissionInputWireAll(value))) {
     const validator = options?.failFast !== false ? validatePermissionInputWireFast : validatePermissionInputWireAll;
@@ -195,7 +195,7 @@ function __runicAssertWire_PermissionInput(value: unknown, options?: { readonly 
   return value as Record<string, unknown>;
 }
 
-function __runicAssertModelOnly_PermissionInput(value: unknown, options?: { readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext }): Record<string, unknown> {
+function __golemAssertModelOnly_PermissionInput(value: unknown, options?: { readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext }): Record<string, unknown> {
   if (options?.validationContext === undefined) {
   if (!(options?.failFast !== false ? validatePermissionInputModelOnlyFast(value) : validatePermissionInputModelOnlyAll(value))) {
     const validator = options?.failFast !== false ? validatePermissionInputModelOnlyFast : validatePermissionInputModelOnlyAll;
@@ -208,7 +208,7 @@ function __runicAssertModelOnly_PermissionInput(value: unknown, options?: { read
   return value as Record<string, unknown>;
 }
 
-function __runicAssertWireOnly_PermissionInput(value: unknown, options?: { readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext }): Record<string, unknown> {
+function __golemAssertWireOnly_PermissionInput(value: unknown, options?: { readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext }): Record<string, unknown> {
   if (options?.validationContext === undefined) {
   if (!(options?.failFast !== false ? validatePermissionInputWireOnlyFast(value) : validatePermissionInputWireOnlyAll(value))) {
     const validator = options?.failFast !== false ? validatePermissionInputWireOnlyFast : validatePermissionInputWireOnlyAll;

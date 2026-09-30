@@ -36,7 +36,7 @@ test('the OpenAPI Ajv engine enforces $dynamicRef/$dynamicAnchor recursion, unev
     children: [{ data: 'child', misspelled: true }],
   }), false);
 
-  const closedExtensionId = 'urn:runic:test:closed-extension';
+  const closedExtensionId = 'urn:golem:test:closed-extension';
   engine.addSchema({
     $id: closedExtensionId,
     type: 'object',
@@ -67,7 +67,7 @@ test('the OpenAPI Ajv engine enforces $dynamicRef/$dynamicAnchor recursion, unev
     extra: true,
   }), false);
 
-  const id = 'urn:runic:test:schemas';
+  const id = 'urn:golem:test:schemas';
   engine.addSchema({
     $id: id,
     components: {

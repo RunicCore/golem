@@ -24,7 +24,7 @@ function joinParts(...parts: string[]): string {
   return parts.join('');
 }
 
-function fixtureRoot(t: TestContext, prefix = 'runic-public-source-'): string {
+function fixtureRoot(t: TestContext, prefix = 'golem-public-source-'): string {
   const root = realpathSync(mkdtempSync(path.join(tmpdir(), prefix)));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   return root;
@@ -278,7 +278,7 @@ test('rejected source validation does not create or mutate an export destination
 
 test('escaped symlinks are rejected before export and do not mutate the destination', (t) => {
   const root = publicFixture(t);
-  const outside = fixtureRoot(t, 'runic-public-source-outside-');
+  const outside = fixtureRoot(t, 'golem-public-source-outside-');
   const outsideFile = writeFixture(outside, 'outside.md', 'outside\n');
   const link = path.join(root, 'docs', 'linked.md');
   symlinkSync(outsideFile, link);

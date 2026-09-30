@@ -120,7 +120,7 @@ function classBody(models: string, className: string): string {
 }
 
 test('generated MobX models initialize at construction and keep subclass hooks', async t => {
-  const output = path.join(createFixtureProject(t, 'runic-openapi-mobx-lifecycle-'), 'sdk');
+  const output = path.join(createFixtureProject(t, 'golem-openapi-mobx-lifecycle-'), 'sdk');
 
   const enabled = await generateMaterializedSdk(lifecycleDocument(), {
     output,

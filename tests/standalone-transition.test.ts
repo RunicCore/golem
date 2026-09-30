@@ -9,7 +9,7 @@ import { workspace } from './support/process.js';
 import { writeFixture } from './support/consumer.js';
 
 function fixture(t: TestContext) {
-  const root = createFixtureProject(t, 'runic-validator-transition-');
+  const root = createFixtureProject(t, 'golem-validator-transition-');
 
   linkProjectPackages(root, Object.fromEntries(
     ['golem', 'golem-model', 'golem-openapi'].map(name => [`@exprtlabs/${name}`, path.join(workspace, 'packages', name)]),

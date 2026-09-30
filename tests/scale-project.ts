@@ -8,7 +8,7 @@ import type { TestContext } from 'node:test';
 /** Write `count` scale models into a standalone-validation project and generate their companions. */
 export function generateScaleProject(t: TestContext, count: number): { readonly root: string; readonly result: ReturnType<typeof generate> } {
   const { root, sourceRoot } = createModelProject(t, {
-    prefix: `runic-companions-${count}-`,
+    prefix: `golem-companions-${count}-`,
     name: null,
     allowJs: true,
     linkWorkspaceNodeModules: true,

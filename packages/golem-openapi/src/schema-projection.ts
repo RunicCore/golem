@@ -37,7 +37,7 @@ const SCHEMA_ARRAY_KEYWORDS = ['allOf', 'anyOf', 'oneOf', 'prefixItems'] as cons
 
 /** Schema keywords whose values are literal data, never schemas or references. */
 export const DATA_KEYWORDS: ReadonlySet<string> = new Set(['examples', 'example', 'default', 'enum', 'const']);
-const DOCUMENT_BASE = 'urn:runic:openapi:document';
+const DOCUMENT_BASE = 'urn:golem:openapi:document';
 
 export interface CanonicalResource {
   readonly canonical: string;

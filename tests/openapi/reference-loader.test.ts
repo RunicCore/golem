@@ -32,7 +32,7 @@ function failingFetch(): () => void {
 }
 
 test('loads local documents transitively and records every site', async (t) => {
-  const directory = createFixtureProject(t, 'runic-loader-local-');
+  const directory = createFixtureProject(t, 'golem-loader-local-');
   write(directory, 'schemas/user.json', { type: 'object', properties: { address: { $ref: './address.json' } } });
   write(directory, 'schemas/address.json', { type: 'object' });
   write(directory, 'params.json', { Limit: { name: 'limit', in: 'query', schema: { type: 'integer' } } });
@@ -64,7 +64,7 @@ test('loads local documents transitively and records every site', async (t) => {
 });
 
 test('equivalent spellings of one file resolve to one target', async (t) => {
-  const directory = createFixtureProject(t, 'runic-loader-spellings-');
+  const directory = createFixtureProject(t, 'golem-loader-spellings-');
   write(directory, 'x.json', { type: 'string' });
   const document = root({
     components: { schemas: { A: { $ref: './x.json' }, B: { $ref: './x.json#' }, C: { $ref: 'x.json' } } },
@@ -76,7 +76,7 @@ test('equivalent spellings of one file resolve to one target', async (t) => {
 });
 
 test('a missing referenced file is observed before the error', async (t) => {
-  const directory = createFixtureProject(t, 'runic-loader-missing-');
+  const directory = createFixtureProject(t, 'golem-loader-missing-');
   const document = root({ components: { schemas: { A: { $ref: './later.json' } } } });
   const observed: string[] = [];
   await assert.rejects(
@@ -87,7 +87,7 @@ test('a missing referenced file is observed before the error', async (t) => {
 });
 
 test('a referenced file that fails to parse is observed and named in the error', async (t) => {
-  const directory = createFixtureProject(t, 'runic-loader-parse-');
+  const directory = createFixtureProject(t, 'golem-loader-parse-');
   write(directory, 'broken.yaml', 'type: [unclosed');
   const document = root({ components: { schemas: { A: { $ref: './broken.yaml' } } } });
   const observed: string[] = [];
@@ -99,7 +99,7 @@ test('a referenced file that fails to parse is observed and named in the error',
 });
 
 test('refs to an absolute $id are preserved and never fetched', async (t) => {
-  const directory = createFixtureProject(t, 'runic-loader-id-');
+  const directory = createFixtureProject(t, 'golem-loader-id-');
   write(directory, 'money.json', { $id: 'https://schemas.example/money', type: 'object' });
   write(directory, 'order.json', { type: 'object', properties: { total: { $ref: 'https://schemas.example/money' } } });
   const document = root({
@@ -119,7 +119,7 @@ test('refs to an absolute $id are preserved and never fetched', async (t) => {
 });
 
 test('anchor fragments into external documents are rejected', async (t) => {
-  const directory = createFixtureProject(t, 'runic-loader-anchor-');
+  const directory = createFixtureProject(t, 'golem-loader-anchor-');
   write(directory, 'x.json', { $defs: { a: { $anchor: 'thing', type: 'string' } } });
   const document = root({ components: { schemas: { A: { $ref: './x.json#thing' } } } });
   await assert.rejects(
@@ -129,7 +129,7 @@ test('anchor fragments into external documents are rejected', async (t) => {
 });
 
 test('a remote ref inside a local file is blocked unless remote refs are allowed', async (t) => {
-  const directory = createFixtureProject(t, 'runic-loader-nested-remote-');
+  const directory = createFixtureProject(t, 'golem-loader-nested-remote-');
   write(directory, 'x.json', { $ref: 'https://schemas.example/y.json' });
   const document = root({ components: { schemas: { A: { $ref: './x.json' } } } });
   const filename = write(directory, 'api.json', document);
@@ -144,7 +144,7 @@ test('a remote ref inside a local file is blocked unless remote refs are allowed
 });
 
 test('allowing remote refs without an allowed host fails before any request', async (t) => {
-  const directory = createFixtureProject(t, 'runic-loader-no-hosts-');
+  const directory = createFixtureProject(t, 'golem-loader-no-hosts-');
   const document = root({ components: { schemas: { A: { $ref: 'https://schemas.example/y.json' } } } });
   const filename = write(directory, 'api.json', document);
   const restore = failingFetch();
@@ -163,7 +163,7 @@ test('allowing remote refs without an allowed host fails before any request', as
 // check, blocked/host errors, fetch) is deferred until the local queue drains and every loaded
 // document's `$id`s are registered, then retried.
 test('a site declared before its absolute-$id target still resolves locally without fetching', async (t) => {
-  const directory = createFixtureProject(t, 'runic-loader-id-order-');
+  const directory = createFixtureProject(t, 'golem-loader-id-order-');
   write(directory, 'money.json', { $id: 'https://schemas.example/money', type: 'object' });
   write(directory, 'order.json', { type: 'object', properties: { total: { $ref: 'https://schemas.example/money' } } });
   const document = root({
@@ -187,7 +187,7 @@ test('a site declared before its absolute-$id target still resolves locally with
 });
 
 test('the same declared-before-its-$id case resolves without throwing when remote refs are disabled', async (t) => {
-  const directory = createFixtureProject(t, 'runic-loader-id-order-disabled-');
+  const directory = createFixtureProject(t, 'golem-loader-id-order-disabled-');
   write(directory, 'money.json', { $id: 'https://schemas.example/money', type: 'object' });
   write(directory, 'order.json', { type: 'object', properties: { total: { $ref: 'https://schemas.example/money' } } });
   const document = root({
@@ -223,7 +223,7 @@ function writeSchemaBaseIdFixture(directory: string): void {
 }
 
 test('an identity that only resolves via the enclosing schema\'s own $id still resolves when its target is declared after it', async (t) => {
-  const directory = createFixtureProject(t, 'runic-loader-id-schemabase-order-');
+  const directory = createFixtureProject(t, 'golem-loader-id-schemabase-order-');
   writeSchemaBaseIdFixture(directory);
   const document = root({
     components: { schemas: { Order: { $ref: './order.json' }, Money: { $ref: './money.json' } } },
@@ -240,7 +240,7 @@ test('an identity that only resolves via the enclosing schema\'s own $id still r
 });
 
 test('the same schemaBase-only identity resolves when its target is declared before it', async (t) => {
-  const directory = createFixtureProject(t, 'runic-loader-id-schemabase-money-first-');
+  const directory = createFixtureProject(t, 'golem-loader-id-schemabase-money-first-');
   writeSchemaBaseIdFixture(directory);
   const document = root({
     components: { schemas: { Money: { $ref: './money.json' }, Order: { $ref: './order.json' } } },
@@ -257,7 +257,7 @@ test('the same schemaBase-only identity resolves when its target is declared bef
 });
 
 test('a fetched remote document cannot reference a local file', async (t) => {
-  const directory = createFixtureProject(t, 'runic-loader-remote-file-');
+  const directory = createFixtureProject(t, 'golem-loader-remote-file-');
   const document = root({ components: { schemas: { A: { $ref: 'https://schemas.example/remote.json' } } } });
   const filename = write(directory, 'api.json', document);
   const secret = write(directory, 'secret.json', { type: 'string' });
@@ -283,7 +283,7 @@ test('a fetched remote document cannot reference a local file', async (t) => {
 });
 
 test('a missing reference under a symlinked root directory is watched, not reported as an escape', async (t) => {
-  const directory = createFixtureProject(t, 'runic-loader-symlink-root-');
+  const directory = createFixtureProject(t, 'golem-loader-symlink-root-');
   const real = path.join(directory, 'real');
   mkdirSync(real);
   const linked = path.join(directory, 'linked');
@@ -302,7 +302,7 @@ test('a missing reference under a symlinked root directory is watched, not repor
 // absolute non-`file:` reference waits, like http(s), until every local `$id` is registered.
 for (const order of [['Order', 'Money'], ['Money', 'Order']] as const) {
   test(`a urn: $id reference resolves when components are declared ${order.join(' before ')}`, async (t) => {
-    const directory = createFixtureProject(t, 'runic-loader-urn-order-');
+    const directory = createFixtureProject(t, 'golem-loader-urn-order-');
     write(directory, 'money.json', { $id: 'urn:example:money', type: 'object' });
     write(directory, 'order.json', { type: 'object', properties: { total: { $ref: 'urn:example:money' } } });
     const files = { Order: { $ref: './order.json' }, Money: { $ref: './money.json' } };
@@ -322,7 +322,7 @@ for (const order of [['Order', 'Money'], ['Money', 'Order']] as const) {
 }
 
 test('a root ref to a urn: $id declared in another file resolves to that file', async (t) => {
-  const directory = createFixtureProject(t, 'runic-loader-urn-root-');
+  const directory = createFixtureProject(t, 'golem-loader-urn-root-');
   write(directory, 'money.json', { $id: 'urn:example:money', type: 'object' });
   const document = root({
     components: { schemas: { Price: { type: 'object', properties: { amount: { $ref: 'urn:example:money' } } }, Money: { $ref: './money.json' } } },
@@ -335,7 +335,7 @@ test('a root ref to a urn: $id declared in another file resolves to that file', 
 });
 
 test('a urn: reference that no $id declares fails with an unsupported scheme', async (t) => {
-  const directory = createFixtureProject(t, 'runic-loader-urn-missing-');
+  const directory = createFixtureProject(t, 'golem-loader-urn-missing-');
   const document = root({ components: { schemas: { Price: { $ref: 'urn:example:nothing' } } } });
   await assert.rejects(
     () => loadReferenceGraph(write(directory, 'api.json', document), document),
@@ -348,7 +348,7 @@ test('a urn: reference that no $id declares fails with an unsupported scheme', a
 // document loads, so `inner.json`'s `./money.json` ref is classified with the remote `$id`s
 // already registered.
 test('a remote document cannot shadow a local file with a file: $id', async (t) => {
-  const directory = createFixtureProject(t, 'runic-loader-remote-file-id-');
+  const directory = createFixtureProject(t, 'golem-loader-remote-file-id-');
   write(directory, 'wrapper.json', { $id: 'https://schemas.example/wrapper', type: 'object', properties: { inner: { $ref: 'inner.json' } } });
   write(directory, 'inner.json', { type: 'object', properties: { money: { $ref: './money.json' } } });
   write(directory, 'money.json', { type: 'integer' });
@@ -377,7 +377,7 @@ test('a remote document cannot shadow a local file with a file: $id', async (t) 
 });
 
 test('discriminator mapping values are sites addressed by their mapping key; component names and $id identities stay as written', async (t) => {
-  const directory = createFixtureProject(t, 'runic-loader-mapping-');
+  const directory = createFixtureProject(t, 'golem-loader-mapping-');
   write(directory, 'dog.json', { $id: 'https://schemas.example/dog', type: 'object' });
   write(directory, 'cat.json', { type: 'object' });
   const document = root({
