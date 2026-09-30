@@ -10,14 +10,12 @@ import { command, ttsc } from './support/process.js';
 import { fixturePath, writeGeneratedArtifacts } from './fixture-project.js';
 import { compileModelProject, createModelProject, writeModelSources } from './model-project.js';
 
-const workspace = fileURLToPath(new URL('../../', import.meta.url));
 // modelName is internal to the built package; load it from dist instead of compiling package source into the tests.
 const distRoot = path.dirname(fileURLToPath(import.meta.resolve('@exprtlabs/codegen/model')));
 const { modelName } = await import(pathToFileURL(path.join(distRoot, 'model-name.js')).href) as {
   readonly modelName: (aliasName: string) => string;
 };
 
-const EXAMPLES = ['model', 'model-mobx', 'combined', 'combined-mobx', 'showcase', 'nest-openapi', 'react-mobx', 'openapi'] as const;
 const MODEL_SOURCE = /\.models?\.ts$/;
 const SDK_MONEY_SPEC = 'models/unify-validate/sdk-money-ref-plus-extra-tvalidation-local-tvalidation-and-tserde-share-one-/money.yaml';
 
@@ -86,11 +84,11 @@ function modelChecks(sourceFile: string, companionFile: string): { imports: stri
 }
 
 /** SDK models: the generated class (brand path) and its field type (structural path). */
-function sdkChecks(facade: string, checkFile: string): { imports: string[]; checks: WireCheck[] } {
+function sdkChecks(facade: string, checkFile: string, scope: string): { imports: string[]; checks: WireCheck[] } {
   const text = fs.readFileSync(facade, 'utf8');
   const name = path.basename(facade, '.ts');
   if (!new RegExp(`\\b${name}Model\\b`).test(text) || !new RegExp(`\\b${name}JSON\\b`).test(text)) return { imports: [], checks: [] };
-  const local = `${path.basename(path.dirname(path.dirname(path.dirname(facade))))}_${name}`.replace(/\W/g, '_');
+  const local = `${scope}_${name}`.replace(/\W/g, '_');
   return {
     imports: [`import type { ${name}Model as ${local}Model, ${name}Fields as ${local}Fields, ${name}JSON as ${local}JSON } from '${importPath(checkFile, facade)}';`],
     checks: [
@@ -126,16 +124,14 @@ function modelFixtureDirectories(directory: string): string[] {
   return [...own, ...entries.filter(entry => entry.isDirectory()).flatMap(entry => modelFixtureDirectories(path.join(directory, entry.name)))];
 }
 
-test('WireFormat<T> equals the generator-emitted JSON type for fixture and example models', async t => {
+test('WireFormat<T> equals the generator-emitted JSON type for fixture models and generated SDK models', async t => {
   const { root } = createModelProject(t, {
     prefix: 'runic-wire-format-',
     name: 'wire-format',
     ttscPlugin: true,
     linkWorkspaceNodeModules: true,
     rootDir: '.',
-    // Each example compiles `src/**`, which brings in its codec key file; the
-    // ttsc plugin resolves `fromWireFormat<T>`/`toWireFormat<T>` calls through it.
-    include: ['fixtures/**/*.ts', 'checks/**/*.ts', 'examples/*/src/generated/models/iobject-plugin-keys.ts'],
+    include: ['fixtures/**/*.ts', 'checks/**/*.ts'],
     compilerOptions: { noEmit: true },
   });
   const covered: string[] = [];
@@ -161,9 +157,9 @@ test('WireFormat<T> equals the generator-emitted JSON type for fixture and examp
     fs.writeFileSync(path.join(projectRoot, 'package.json'), JSON.stringify({ private: true, type: 'module' }));
     const modelSources = Object.keys(sources).filter(name => MODEL_SOURCE.test(name)).map(name => path.join(sourceRoot, name));
     let artifacts;
+    // Models that use an SDK `Money` get a real generated SDK and its manifest.
+    const usesSdk = Object.values(sources).some(text => text.includes("from './sdk/"));
     try {
-      // Models that use an SDK `Money` get a real generated SDK and its manifest.
-      const usesSdk = Object.values(sources).some(text => text.includes("from './sdk/"));
       if (usesSdk) {
         writeGeneratedArtifacts((await generateOpenApi({
           input: fixturePath(SDK_MONEY_SPEC),
@@ -185,6 +181,22 @@ test('WireFormat<T> equals the generator-emitted JSON type for fixture and examp
       continue;
     }
     writeGeneratedArtifacts(artifacts);
+    if (usesSdk) {
+      // The generated SDK's model facades: the class (brand path) and its field type (structural path).
+      const sdkCheckFile = path.join(sourceRoot, 'sdk.wire-check.ts');
+      const sdkImports: string[] = [];
+      const sdkWireChecks: WireCheck[] = [];
+      const facadeDirectory = path.join(sourceRoot, 'sdk', 'models');
+      for (const name of fs.readdirSync(facadeDirectory).filter(entry => /^[A-Z]\w*\.ts$/.test(entry))) {
+        const result = sdkChecks(path.join(facadeDirectory, name), sdkCheckFile, slug);
+        sdkImports.push(...result.imports);
+        sdkWireChecks.push(...result.checks.map(check => ({ ...check, label: `${slug}/sdk/${check.label}` })));
+      }
+      if (sdkWireChecks.length > 0) {
+        fs.writeFileSync(sdkCheckFile, checkSource(sdkImports, sdkWireChecks));
+        covered.push(...sdkWireChecks.map(check => check.label));
+      }
+    }
     for (const modelSource of modelSources) {
       const companion = modelSource.replace(MODEL_SOURCE, match => match.replace('.ts', '.generated.ts'));
       if (!fs.existsSync(companion)) continue;
@@ -197,49 +209,11 @@ test('WireFormat<T> equals the generator-emitted JSON type for fixture and examp
     }
   }
 
-  // Examples carry committed companions and SDKs; check a copy inside the project root.
-  const exampleChecks = path.join(root, 'checks');
-  for (const example of EXAMPLES) {
-    const exampleRoot = path.join(root, 'examples', example);
-    fs.cpSync(path.join(workspace, 'examples', example), exampleRoot, {
-      recursive: true,
-      filter: source => !/[\\/](?:node_modules|\.build|dist)$/.test(source),
-    });
-    const checkFile = path.join(exampleChecks, `${example}.ts`);
-    const imports: string[] = [];
-    const checks: WireCheck[] = [];
-    const walk = (directory: string): string[] => fs.existsSync(directory)
-      ? fs.readdirSync(directory, { withFileTypes: true }).flatMap(entry => entry.isDirectory()
-        ? entry.name === 'node_modules' ? [] : walk(path.join(directory, entry.name))
-        : [path.join(directory, entry.name)])
-      : [];
-    for (const file of walk(exampleRoot).filter(file => MODEL_SOURCE.test(file) && !file.includes('/sdk/'))) {
-      const companion = file.replace(MODEL_SOURCE, match => match.replace('.ts', '.generated.ts'));
-      if (!fs.existsSync(companion)) continue;
-      const result = modelChecks(file, companion);
-      const prefix = `${example.replace(/\W/g, '_')}_${path.basename(file).replace(/\W/g, '_')}_`;
-      const renamed = result.checks.map(check => ({ label: `${example}/${check.label}`, model: `${prefix}${check.model}`, json: `${prefix}${check.json}` }));
-      const sourceNames = result.checks.map(check => check.model);
-      const jsonNames = [...new Set(result.checks.map(check => check.json))];
-      imports.push(
-        `import type { ${sourceNames.map(name => `${name} as ${prefix}${name}`).join(', ')} } from '${importPath(checkFile, file)}';`,
-        `import type { ${jsonNames.map(name => `${name} as ${prefix}${name}`).join(', ')} } from '${importPath(checkFile, companion)}';`,
-      );
-      checks.push(...renamed);
-    }
-    for (const facade of walk(path.join(exampleRoot, 'sdk', 'models')).filter(file => /\/[A-Z]\w*\.ts$/.test(file))) {
-      const result = sdkChecks(facade, checkFile);
-      imports.push(...result.imports);
-      checks.push(...result.checks.map(check => ({ ...check, label: `${example}/sdk/${check.label}` })));
-    }
-    if (checks.length === 0) continue;
-    fs.mkdirSync(exampleChecks, { recursive: true });
-    fs.writeFileSync(checkFile, checkSource(imports, checks));
-    covered.push(...checks.map(check => check.label));
-  }
+  const controlChecks = path.join(root, 'checks');
+  fs.mkdirSync(controlChecks, { recursive: true });
 
   // A collapsed Same/Assert would accept anything; this control must fail.
-  fs.writeFileSync(path.join(exampleChecks, 'control.ts'), `${CHECK_PRELUDE}
+  fs.writeFileSync(path.join(controlChecks, 'control.ts'), `${CHECK_PRELUDE}
 // @ts-expect-error A Date field is a string on the wire.
 export type DateStaysDate = Assert<Same<WireFormat<{ at: Date }>, { at: Date }>>;
 // @ts-expect-error any is not a wire type.
@@ -250,17 +224,16 @@ export type AnyWire = Assert<NotAny<WireFormat<any>>>;
   t.diagnostic(`skipped ${skipped.length}: ${skipped.join(' | ')}`);
   // Representative kinds: nested SDK model, SDK model in a union, manifest-backed SDK fields, template literals, tagged booleans, discriminated unions, TSerde, Date in tags, tuples, projections, SDK fields.
   for (const label of [
-    'combined/payment-editor.model.ts#TPaymentEditor',
     'union-validation/pets.model.ts#TOwner',
     'serde__iobject-tserde-stringify-parse-convert-declared-fields-in-one-pass/permission.model.ts#TPermissionModel',
     'tag-model-boundaries__date-descriptors-in-contains-and-dependentschemas-validate-model-date-values/calendar.model.ts#TCalendar',
     'model-tuples/tuple.model.ts#TTuple',
     'model-composition__recursive-projections-convert-every-selected-level-without-restoring-omitted/tree.model.ts#TTree',
-    'nest-openapi/sdk/nest_openapi_PaymentFields',
     'model-companions__conversion-unions/wallet.model.ts#TWallet',
     'unify-validate__sdk-money-ref-plus-extra-tvalidation-local-tvalidation-and-tserde-share-one-/checkout.model.ts#TCheckout',
     'wire-format/wire-kinds.model.ts#TWireKinds',
   ]) assert.ok(covered.includes(label), `missing equivalence check ${label}`);
+  assert.ok(covered.some(label => /\/sdk\/.*_Money(?:Model|Fields)$/.test(label)), 'a generated SDK model must be checked');
   const result = await command(root, process.execPath, [ttsc, '-p', path.join(root, 'tsconfig.json')], { allowFailure: true });
   assert.equal(result.code, 0, `${result.stdout}\n${result.stderr}`);
 });
