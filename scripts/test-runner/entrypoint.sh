@@ -49,6 +49,8 @@ if [ "$(cat node_modules/.fe-deps-lock-hash 2>/dev/null || true)" != "$lock_hash
   echo "$lock_hash" > node_modules/.fe-deps-lock-hash
 fi
 npm run build:tests
+# npm ci ran before packages/*/dist existed, so workspace bins (runic-codegen) were not linked; link them now, without lifecycle scripts.
+npm rebuild --ignore-scripts --no-audit --no-fund
 # Run-level ceiling (F1: no run exceeds 10 min). --test-timeout only fails a
 # test; a hung file process or a stuck await is ended here.
 case "$tier" in
