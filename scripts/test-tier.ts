@@ -13,6 +13,8 @@ export const UNIT_FILES = ['.build/tests/*.test.js', '.build/tests/openapi/*.tes
 export const PACKED_FILES = ['.build/tests/packed/consumers.test.js', '.build/tests/packed/nest-workflows.test.js'] as const;
 const SMOKE_FILE = '.build/tests/packed/model-only.test.js';
 export const BROWSER_FILES = ['.build/tests/browser/*.test.js'] as const;
+// Unit-level tests too slow for Full are named *.acceptance.ts and run only in Acceptance.
+export const ACCEPTANCE_UNIT_FILES = ['.build/tests/*.acceptance.js', '.build/tests/openapi/*.acceptance.js'] as const;
 // On Node 22 --test-timeout also limits each whole file, so each tier allows twice
 // its slowest file (2026-09-30, 694b437): serde about 44 s of tests in Full,
 // packed/consumers 146 s in Acceptance. Focused keeps its 1-minute budget.
@@ -99,6 +101,7 @@ function steps(tier: Tier, args: readonly string[], native: boolean): Step[] {
     { label: 'public source', run: () => run(process.execPath, ['.build/scripts/public-source.js', 'check']) },
     { label: 'OpenAPI compliance', run: () => run(process.execPath, ['.build/packages/openapi-to-ts/compliance/generate-matrix.js', '--check']) },
     ...steps('full', args, false),
+    nodeTest('acceptance unit', ACCEPTANCE_UNIT_FILES, TEST_TIMEOUT_MS.acceptance, CONCURRENCY.unit),
     nodeTest('packed', PACKED_FILES, TEST_TIMEOUT_MS.acceptance, CONCURRENCY.packed),
     nodeTest('browser', BROWSER_FILES, TEST_TIMEOUT_MS.acceptance, CONCURRENCY.packed),
   ];
