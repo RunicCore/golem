@@ -22,6 +22,7 @@ The first release candidate includes four independently installable packages:
 
 ### Models
 
+- `@exprtlabs/golem/temporal` adds Temporal field types (`TemporalInstant`, `TemporalPlainDate`, …) with ISO 8601 wire strings and nanosecond precision.
 - Type aliases of tags accept type parameters as tag arguments, such as `type Varchar<N extends number> = string & MaxLength<N>`.
 - Tag aliases and `TSerde`/`TValidation` functions can come from an installed package; generated files import them through the package's `exports`.
 - A `TSerde` field can hold a class instance, such as `Uint8Array`, or a `bigint`.
@@ -49,6 +50,7 @@ The first release candidate includes four independently installable packages:
 
 ### OpenAPI
 
+- An OpenAPI job's `dates: temporal` maps `format: date-time`, `date` and `duration` to Temporal types.
 - **Breaking:** `ClientRuntime` no longer has `getOperationValidators`, `validateOperationInput`, `responseValidator` or `assertValid`. `@exprtlabs/golem/validation` exports `operationValidators`, `validateOperationInput` and `responseCheck`, and `readResponse` takes an optional response check in place of the validators. An SDK generated with validation off no longer bundles the validation runner. Regenerate the SDK.
 - Client methods create reusable operation objects. `.execute(input, options)` sends the request.
 - Clients support authentication, body codecs, cancellation and supported streaming responses.
@@ -100,6 +102,7 @@ See [OpenAPI client support](docs/reference/openapi-support.md) for supported ve
 ### Generation
 
 - **Breaking:** the packages, CLI and files are renamed to golem. `@exprtlabs/codegen` is `@exprtlabs/golem`, `@exprtlabs/model-codegen` is `@exprtlabs/golem-model`, `@exprtlabs/openapi-to-ts` is `@exprtlabs/golem-openapi` and `@exprtlabs/ts-to-openapi` is `@exprtlabs/golem-ts-openapi`; subpaths are unchanged. The CLI is `golem`, the config file `golem.yaml` and the inventory directory `.golem/`. Generator-API types are renamed from `Codegen*` to `Golem*` (for example `GolemProvider`, `GolemProfile`), and generated internal names from `__runic*` to `__golem*`. Rename `runic-codegen.yaml` to `golem.yaml`, delete `.runic-codegen/` and run `npx golem generate`.
+- `generators` jobs run generators from installed packages before the built-in jobs.
 - Generated files are replaced on regeneration; handwritten behavior belongs in source declarations and subclasses.
 - Identical output keeps its modification time. `check` reports drift without writing files.
 - Watch regenerates when a model imports a project file outside its job root.
