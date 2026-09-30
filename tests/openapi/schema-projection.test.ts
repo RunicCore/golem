@@ -6,12 +6,16 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import test from 'node:test';
 import { createOpenApiAjvEngine } from '@exprtlabs/codegen/ajv';
+import { decodeGeneratedModel } from '@exprtlabs/codegen/conversion';
+import { getValidator } from '@exprtlabs/codegen/validation';
 import { generate, findRemoteRefs, loadValidatedDocument } from '#openapi/generator';
 import { collectCanonicalResources, projectSchema } from '#openapi/schema-projection';
 import { buildSchemaData } from '#openapi/schemas';
 import {
   compileGeneratedSdk,
   generateMaterializedSdk,
+  isGeneratedClientClass,
+  isGeneratedModelClass,
   materializeGeneratedSdk,
   requireRecord,
 } from './helpers.js';
@@ -249,6 +253,33 @@ test('public generation validates repeated aliases, sibling allOf required, and 
   assert.equal(await control({ body: { token: 'present' } }), true);
   assert.equal(await userModel({ name: 'Ada' }), false);
   assert.equal(await userModel({ ...request, ...reply }), true);
+
+  // The generated client reaches the same validators before any fetch and sends the projected wire body.
+  const clientModule = requireRecord(
+    await import(pathToFileURL(path.join(output, 'dist/index.js')).href),
+    'client module',
+  );
+  const Client = clientModule.AliasesClient;
+  assert.equal(isGeneratedClientClass(Client), true);
+  if (!isGeneratedClientClass(Client)) throw new TypeError('AliasesClient');
+  let calls = 0;
+  const client = new Client({ baseUrl: 'https://example.test', fetchImpl: async (url: string | URL | Request, init?: RequestInit) => {
+    calls += 1;
+    const captured = new Request(url, init);
+    if (captured.url.endsWith('/control')) return new Response(null, { status: 204 });
+    assert.deepEqual(await captured.json(), request);
+    return Response.json(reply);
+  } });
+  await assert.rejects(client.control().execute({ body: {} }), /validation/i);
+  assert.equal(calls, 0);
+  assert.deepEqual((await client.createUser().execute({ body: request })).body, reply);
+  assert.equal(calls, 1);
+  assert.equal((await client.control().execute({ body: { token: 'present' } })).status, 204);
+  const UserBaseModel = clientModule.UserBaseModel;
+  assert.equal(isGeneratedModelClass(UserBaseModel), true);
+  if (!isGeneratedModelClass(UserBaseModel)) throw new TypeError('UserBaseModel');
+  assert.equal(await getValidator(decodeGeneratedModel(UserBaseModel, { name: 'Ada' })).validate(), false);
+  assert.equal(await getValidator(decodeGeneratedModel(UserBaseModel, { ...request, ...reply })).validate(), true);
 });
 
 function directionalUserEnvelope(userId: string, envelopeId: string, userRef: string) {

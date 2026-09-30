@@ -71,8 +71,11 @@ test('model companions compile with --noUnusedLocals for empty, scalar and neste
     }
     writeGeneratedArtifacts(result.artifacts);
     await compileModelProject(root, ['--noUnusedLocals', '--noUnusedParameters']);
-    const verifier = copyFixtureFile(root, 'models/model-companions/verify-empty-scalar-nested.mjs', 'verify.mjs');
-    await command(root, process.execPath, [verifier]);
+    // Execution does not depend on the profile, so the verifier runs once.
+    if (mobx && validation) {
+      const verifier = copyFixtureFile(root, 'models/model-companions/verify-empty-scalar-nested.mjs', 'verify.mjs');
+      await command(root, process.execPath, [verifier]);
+    }
   }
 });
 
