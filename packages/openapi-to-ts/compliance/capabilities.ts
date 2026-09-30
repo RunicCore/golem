@@ -257,7 +257,7 @@ export const EVIDENCE_DECLARATIONS = [
     id: 'transport-hardening',
     kind: 'wire',
     layers: ['generation', 'generated-client'],
-    description: 'Cookie parameters and cookie API keys warn at generation and are still sent from Node; optional security, UTF-8 Basic credentials, allowReserved, nested deepObject, body-less and undeclared responses, and SSE framing are exercised on the wire.',
+    description: 'Cookie parameters and cookie API keys warn at generation and are still sent from Node; the generated client wires allowReserved, literal parameter names and its own undeclared-response guard; optional security, UTF-8 Basic credentials, nested deepObject, body-less and undeclared responses, and SSE framing are exercised on the wire through the client runtime that generated SDKs call.',
   },
 ] as const satisfies readonly EvidenceDeclaration[];
 
