@@ -196,11 +196,29 @@ test('generates a static Nest document with evaluated routes, inheritance, URI v
   operationOf(document, '/api/cats/{id}', 'get');
   assert.equal(parameterOf(document, '/api/cats/{id}', 'get').style, 'simple');
   assert.equal(responseSchema(document, '/api/cats/{id}', 'get', '200').type, 'object');
+  assert.equal(operationOf(document, '/api/cats/{id}', 'get').responses['201'], undefined);
   const versionOne = operationOf(document, '/api/v1/cats', 'post');
   assert.ok(operationOf(document, '/api/v2/cats', 'post'));
   assert.ok(responseOf(document, '/api/v1/cats', 'post', '201'));
+  assert.equal(versionOne.responses['200'], undefined);
   assert.ok(responseOf(document, '/api/v1/cats', 'post', '400'));
   assert.match(expectValue(versionOne.operationId, 'version 1 operation ID'), /version_1$/);
+});
+
+test('emits a whole query object as OpenAPI 3.2 querystring content', async (t: TestContext) => {
+  const root = fixture(t, readFixture("controllers/controller/emits-a-whole-query-object-as-openapi-3-2-querystring-content/controller.ts"));
+  const document = documentOf(await generate({
+    root,
+    output: path.join(root, 'openapi.json'),
+    info: { title: 'Search', version: '1' },
+    profile: { mobx: false, validation: false },
+  }));
+  const parameter = parameterOf(document, '/search', 'get');
+  assert.equal(parameter.in, 'querystring');
+  assert.equal(parameter.name, 'query');
+  const querySchema = contentSchema(parameter, 'application/x-www-form-urlencoded', 'querystring parameter');
+  assert.equal(querySchema.type, 'object');
+  assert.equal(propertySchema(querySchema, 'page').type, 'number');
 });
 
 test('emits flattened primitive query parameters with OpenAPI form style and supports 3.1.2', async (t: TestContext) => {
