@@ -41,7 +41,7 @@ async function runProfile(
   writeGeneratedArtifacts(result.artifacts);
   await compileModelProject(root);
   if (ajvStandalone) copyStandaloneArtifacts(result, root, sourceRoot);
-  const moduleValue: unknown = await import(path.toNamespacedPath(path.join(root, `build/${modelName}.model.js`)));
+  const moduleValue: unknown = await import(path.toNamespacedPath(path.join(root, `build/${modelName.toLowerCase()}.model.js`)));
   if (moduleValue === null || typeof moduleValue !== 'object') throw new Error(`Missing generated ${modelName} module.`);
   const modelConstructor: unknown = Reflect.get(moduleValue, modelName);
   if (typeof modelConstructor !== 'function') throw new Error(`Missing generated ${modelName} constructor.`);
