@@ -35,7 +35,6 @@
     "test:all:run": "npm run test:unit:run && npm run test:go:run && npm run test:packed:run && npm run test:browser:run && npm run check:react",
     "check:react": "npm run check --workspace examples/react-mobx && npm test --workspace examples/react-mobx && npm run build --workspace examples/react-mobx",
     "generate:examples": "npm run build && npm run build:scripts && node .build/scripts/examples.js generate",
-    "check:examples": "npm run build && npm run build:scripts && node .build/scripts/examples.js check",
     "release:check": "npm run build:tests && node .build/scripts/release-check.js",
     "generate:openapi-compliance": "npm run build:scripts && node .build/packages/openapi-to-ts/compliance/generate-matrix.js",
     "check:openapi-compliance": "npm run build:scripts && node .build/packages/openapi-to-ts/compliance/generate-matrix.js --check",

@@ -9,7 +9,7 @@ export interface Step { readonly label: string; readonly run: () => number }
 
 export const UNIT_FILES = ['.build/tests/*.test.js', '.build/tests/openapi/*.test.js', '.build/tests/ts-to-openapi/*.test.js'] as const;
 // The model-only smoke file runs in Full; Acceptance runs the others so it runs once.
-export const PACKED_FILES = ['.build/tests/packed/consumers.test.js', '.build/tests/packed/examples.test.js', '.build/tests/packed/nest-workflows.test.js'] as const;
+export const PACKED_FILES = ['.build/tests/packed/consumers.test.js', '.build/tests/packed/nest-workflows.test.js'] as const;
 const SMOKE_FILE = '.build/tests/packed/model-only.test.js';
 export const BROWSER_FILES = ['.build/tests/browser/*.test.js'] as const;
 // Values from the Task 2 baseline replace these in Task 6.
@@ -91,7 +91,6 @@ function steps(tier: Tier, args: readonly string[], native: boolean): Step[] {
     ...steps('full', args, false),
     nodeTest('packed', PACKED_FILES, TEST_TIMEOUT_MS.acceptance, CONCURRENCY.packed),
     nodeTest('browser', BROWSER_FILES, TEST_TIMEOUT_MS.acceptance, CONCURRENCY.packed),
-    npmRun('react example', 'check:react'),
   ];
 }
 

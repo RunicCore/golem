@@ -1,15 +1,7 @@
-import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import type { CodegenProfile } from '@exprtlabs/codegen/generator-api';
 import { copyFixtureFile } from '../fixture-project.js';
-import { copyMaintainedExample, type ExampleName } from '../../scripts/maintained-examples.js';
-import { workspace } from './process.js';
-
-/** Copy a maintained repository consumer, excluding installed/build artifacts. */
-export function copyExample(root: string, name: ExampleName): void {
-  copyMaintainedExample(workspace, root, name);
-}
 
 export function writeFixture(root: string, profile: CodegenProfile, includeModels = true): void {
   copyFixtureFile(root, 'packed/profile/api.json', 'api.json');
@@ -49,24 +41,6 @@ export function generatedCodecIdFromRoot(root: string, shortName: string): strin
       .join('\n'),
     shortName,
   );
-}
-
-export function assertExecutedConsumerTests(output: string, label: string): void {
-  const metric = (name: string): number => {
-    const match = output.match(new RegExp(`^# ${name} (\\d+)$`, 'm'));
-    assert.ok(match, `${label} must report its ${name} count in TAP output`);
-    return Number(match[1]);
-  };
-  const tests = metric('tests');
-  const passed = metric('pass');
-  const failed = metric('fail');
-  const cancelled = metric('cancelled');
-  const skipped = metric('skipped');
-  assert.ok(tests > 0 && passed > 0, `${label} must execute and pass at least one test`);
-  assert.equal(failed, 0, `${label} must have no failures`);
-  assert.equal(cancelled, 0, `${label} must have no cancellations`);
-  assert.equal(skipped, 0, `${label} must have no skipped tests`);
-  assert.equal(passed, tests, `${label} must pass every test it reports`);
 }
 
 export function filesUnder(root: string): string[] {

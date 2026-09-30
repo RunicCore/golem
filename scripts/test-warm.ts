@@ -3,7 +3,6 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { EXAMPLE_NAMES, copyMaintainedExample } from './maintained-examples.js';
 import { preparedPackages, registryNpmrc, startRegistry } from './packed-registry.js';
 import { THIRD_PARTY_INSTALLS } from './third-party-installs.js';
 
@@ -11,6 +10,8 @@ import { THIRD_PARTY_INSTALLS } from './third-party-installs.js';
 // tiers run offline. Runs only in `test:prepare`, which has network access.
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const INSTALL_TIMEOUT_MS = 240_000;
+/** Fixture apps the packed and browser tests install from their own manifests, with `@exprtlabs/*` served by the local registry. */
+const FIXTURE_APPS = ['tests/fixtures/packed/nest-app', 'tests/fixtures/browser/react-app'] as const;
 
 interface WarmInstall { readonly label: string; readonly directory: string; readonly batches: readonly (readonly string[])[] }
 interface WarmResult { readonly label: string; readonly seconds: number; readonly failure?: string }
@@ -71,12 +72,11 @@ async function main(): Promise<void> {
     fs.mkdirSync(thirdParty);
     fs.writeFileSync(path.join(thirdParty, 'package.json'), JSON.stringify({ name: 'warm-third-party', version: '1.0.0', private: true }));
     installs.push({ label: 'third-party installs', directory: thirdParty, batches: installBatches(THIRD_PARTY_INSTALLS) });
-    for (const name of EXAMPLE_NAMES) {
-      const directory = path.join(scratch, name);
-      fs.mkdirSync(directory);
-      copyMaintainedExample(root, directory, name);
+    for (const fixture of FIXTURE_APPS) {
+      const directory = path.join(scratch, path.basename(fixture));
+      fs.cpSync(path.join(root, fixture), directory, { recursive: true });
       fs.writeFileSync(path.join(directory, '.npmrc'), registryNpmrc(registry.url));
-      installs.push({ label: `example ${name}`, directory, batches: [[]] });
+      installs.push({ label: `fixture ${fixture}`, directory, batches: [[]] });
     }
     const results: WarmResult[] = [];
     const queue = [...installs];
