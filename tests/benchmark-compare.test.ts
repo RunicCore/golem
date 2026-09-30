@@ -32,14 +32,6 @@ test('cases present on one side are listed, not dropped', () => {
   assert.match(formatComparison(out), /only in before: simple\/parse\/codegen/);
 });
 
-test('environment and package differences produce warnings', () => {
-  const before = results([c('codegen', 1, 1, 1)]);
-  const after = results([c('codegen', 1, 1, 1)], { environment: { ...before.environment, node: 'v24.0.0' }, packages: { zod: '4.7.0' } });
-  const out = compareResults(before, after);
-  assert.ok(out.warnings.some(w => w.includes('node')));
-  assert.ok(out.warnings.some(w => w.includes('zod')));
-});
-
 test('unsupported cases are skipped without NaN', () => {
   const none: ResultCase = { payload: 'simple', operation: 'validate', adapter: 'class-transformer', support: 'none', note: 'no validation here' };
   const out = compareResults(results([none]), results([none]));
@@ -47,7 +39,13 @@ test('unsupported cases are skipped without NaN', () => {
   assert.doesNotMatch(formatComparison(out), /NaN/);
 });
 
-test('settings, git and support changes produce warnings', () => {
+test('environment, package, settings, git and support changes produce warnings', () => {
+  const envBefore = results([c('codegen', 1, 1, 1)]);
+  const envAfter = results([c('codegen', 1, 1, 1)], { environment: { ...envBefore.environment, node: 'v24.0.0' }, packages: { zod: '4.7.0' } });
+  const envOut = compareResults(envBefore, envAfter);
+  assert.ok(envOut.warnings.some(w => w.includes('node')), 'node');
+  assert.ok(envOut.warnings.some(w => w.includes('zod')), 'zod');
+
   const before = results([c('codegen', 1, 1, 1)]);
   const after = results([{ payload: 'simple', operation: 'parse', adapter: 'codegen', support: 'none', note: 'not supported' }], {
     settings: { warmupMs: 300, batchMs: 100, batches: 5 }, git: { sha: 'b', dirty: true },
