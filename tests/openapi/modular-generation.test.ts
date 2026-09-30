@@ -1,8 +1,7 @@
-import { copyFixtureFile, createFixtureProject, linkProjectPackages, writeGeneratedArtifacts } from '../fixture-project.js';
+import { copyFixtureFile, createFixtureProject, readFixture, linkProjectPackages, writeGeneratedArtifacts } from '../fixture-project.js';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import {
-  copyFileSync,
   mkdirSync,
   readFileSync,
   writeFileSync,
@@ -599,18 +598,17 @@ test('compact OpenAPI schema closure feeds standalone nested model first/all val
   assert.equal(runtimeManifest.source.digest.length, 64);
 });
 
-test('maintained Nest Payment keeps canonical codec identity across repeated compact SDK closure candidates', t => {
+test('a Nest-style Payment keeps canonical codec identity across repeated compact SDK closure candidates', t => {
   const { root, source } = fixture(t);
   const configPath = path.join(root, 'tsconfig.json');
   const projectConfig = requireRecord(JSON.parse(readFileSync(configPath, 'utf8')), 'fixture TypeScript config');
   const compilerOptions = requireRecord(projectConfig.compilerOptions, 'fixture compiler options');
   // The isolated source retains TPaymentInput and TPaymentFilter but omits the
-  // controllers that consume their generated conversion helpers. The maintained
-  // Nest project does not enable noUnusedLocals; keep strict typechecking here.
+  // controllers that consume their generated conversion helpers, so unused
+  // locals are allowed; the rest of strict typechecking stays on.
   compilerOptions.noUnusedLocals = false;
   writeFileSync(configPath, JSON.stringify(projectConfig));
-  const nestExample = path.join(repoRoot(), 'examples/nest-openapi');
-  const document = parse(readFileSync(path.join(nestExample, 'api/openapi.yaml'), 'utf8'));
+  const document = parse(readFixture('openapi/canonical-codec-identity/openapi.yaml'));
   const sdk = path.join(root, 'sdk');
   const sdkResult = writeSdk(document, {
     output: sdk,
@@ -620,8 +618,8 @@ test('maintained Nest Payment keeps canonical codec identity across repeated com
   writeGeneratedArtifacts(sdkResult.artifacts);
 
   const paymentSource = path.join(source, 'payment.model.ts');
-  copyFileSync(path.join(nestExample, 'src/payment.model.ts'), paymentSource);
-  copyFileSync(path.join(nestExample, 'src/payment-status.ts'), path.join(source, 'payment-status.ts'));
+  copyFixtureFile(root, 'openapi/canonical-codec-identity/payment.model.ts', 'src/payment.model.ts');
+  copyFixtureFile(root, 'openapi/canonical-codec-identity/payment-status.ts', 'src/payment-status.ts');
 
   const manifestPath = path.join(sdk, 'model-manifest.json');
   const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as {
@@ -651,7 +649,7 @@ test('maintained Nest Payment keeps canonical codec identity across repeated com
   const secondPaymentClosure = secondManifest.validationSchemaClosure.find(entry => entry.aliases?.includes('Payment'));
   assert.ok(secondPaymentClosure);
   assert.equal(secondPaymentClosure.codecId, paymentClosure.codecId,
-    'the maintained SDK preserves its canonical Payment codec ID across repeated generations');
+    'the SDK preserves its canonical Payment codec ID across repeated generations');
 
   // A second imported closure can carry the same shared component identity.
   // The local full graph plus this compact entry exercise two equal
