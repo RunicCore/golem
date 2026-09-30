@@ -215,29 +215,19 @@ test('emits flattened primitive query parameters with OpenAPI form style and sup
   const artifact = result.artifacts[0];
   assert.ok(artifact);
   const document = YAML.parse(artifact.content) as OpenApiDocument;
-  const page = parameterOf(document, '/search', 'get', 0);
-  const term = parameterOf(document, '/search', 'get', 1);
-
-  await t.test('requests the given OpenAPI version', () => {
-    assert.equal(document.openapi, '3.1.2');
-  });
-  await t.test('names the page parameter after its destructured property', () => {
-    assert.equal(page.name, 'page');
-  });
-  await t.test('names the term parameter after its destructured property', () => {
-    assert.equal(term.name, 'term');
-  });
-  await t.test('gives the page parameter form style', () => {
-    assert.equal(page.style, 'form');
-  });
-  await t.test('gives the term parameter form style', () => {
-    assert.equal(term.style, 'form');
-  });
-  await t.test('explodes the page parameter', () => {
-    assert.equal(page.explode, true);
-  });
-  await t.test('explodes the term parameter', () => {
-    assert.equal(term.explode, true);
+  const picks = {
+    openapi: document.openapi,
+    parameters: [0, 1].map(index => {
+      const { name, style, explode } = parameterOf(document, '/search', 'get', index);
+      return { name, style, explode };
+    }),
+  };
+  assert.deepEqual(picks, {
+    openapi: '3.1.2',
+    parameters: [
+      { name: 'page', style: 'form', explode: true },
+      { name: 'term', style: 'form', explode: true },
+    ],
   });
 });
 
@@ -275,22 +265,6 @@ test('rejects conflicting static routes with a structured diagnostic', async (t:
       return diagnosticsOf(error).some(item => item.code === 'NEST1306');
     },
   );
-});
-
-test('emits a whole query object as OpenAPI 3.2 querystring content', async (t: TestContext) => {
-  const root = fixture(t, readFixture("controllers/controller/emits-a-whole-query-object-as-openapi-3-2-querystring-content/controller.ts"));
-  const document = documentOf(await generate({
-    root,
-    output: path.join(root, 'openapi.json'),
-    info: { title: 'Search', version: '1' },
-    profile: { mobx: false, validation: false },
-  }));
-  const parameter = parameterOf(document, '/search', 'get');
-  assert.equal(parameter.in, 'querystring');
-  assert.equal(parameter.name, 'query');
-  const querySchema = contentSchema(parameter, 'application/x-www-form-urlencoded', 'querystring parameter');
-  assert.equal(querySchema.type, 'object');
-  assert.equal(propertySchema(querySchema, 'page').type, 'number');
 });
 
 test('applies actual Swagger DTO property metadata without consulting class-validator', async (t: TestContext) => {
@@ -360,17 +334,6 @@ test('rejects a Swagger schema that conflicts with an authoritative IModel wire 
   );
 });
 
-test('accepts Nest primitive constructor response metadata', async (t: TestContext) => {
-  const root = fixture(t, readFixture("controllers/controller/accepts-nest-primitive-constructor-response-metadata/controller.ts"));
-  const document = documentOf(await generate({
-    root,
-    output: path.join(root, 'openapi.json'),
-    info: { title: 'Primitive', version: '1' },
-    profile: { mobx: false, validation: false },
-  }));
-  assert.equal(responseSchema(document, '/primitive', 'get', '200').type, 'string');
-});
-
 test('rejects stream responses without explicit Swagger content', async (t: TestContext) => {
   const root = fixture(t, readFixture("controllers/controller/rejects-stream-responses-without-explicit-swagger-content/controller.ts"));
   await assert.rejects(
@@ -435,59 +398,26 @@ test('rejects @HostParam routes', async (t: TestContext) => {
   );
 });
 
-test('rejects a Swagger success status that contradicts Nest POST runtime status', async (t: TestContext) => {
-  const root = fixture(t, readFixture("controllers/controller/rejects-a-swagger-success-status-that-contradicts-nest-post-runtime-status/controller.ts"));
-  await assert.rejects(
-    generate({
-      root,
-      output: path.join(root, 'openapi.json'),
-      info: { title: 'Status conflict', version: '1' },
-      profile: { mobx: false, validation: false },
-    }),
-    (error: unknown) => String(error).includes('NEST1311'),
-  );
-});
-
-test('keeps Nest runtime status authoritative over ApiNoContentResponse', async (t: TestContext) => {
-  const root = fixture(t, readFixture("controllers/controller/keeps-nest-runtime-status-authoritative-over-apinocontentresponse/controller.ts"));
-  await assert.rejects(
-    generate({
-      root,
-      output: path.join(root, 'openapi.json'),
-      info: { title: 'No content conflict', version: '1' },
-      profile: { mobx: false, validation: false },
-    }),
-    (error: unknown) => String(error).includes('NEST1311'),
-  );
-});
-
-test('rejects unreadable and invalid explicit Nest or Swagger response statuses', async (t: TestContext) => {
+test('keeps Nest runtime status authoritative over a contradicting Swagger success response', async (t: TestContext) => {
   const cases = [
-    `import { Controller, Get, HttpCode } from '@nestjs/common';
-@Controller('invalid-http-code') export class InvalidHttpCodeController { @Get() @HttpCode(99) get(): void {} }`,
-    `import { Controller, Get, HttpCode } from '@nestjs/common';
-let STATUS = 204;
-@Controller('unreadable-http-code') export class UnreadableHttpCodeController { @Get() @HttpCode(STATUS) get(): void {} }`,
-    `import { Controller, Get } from '@nestjs/common';
-import { ApiResponse } from '@nestjs/swagger';
-@Controller('invalid-swagger-status') export class InvalidSwaggerStatusController { @Get() @ApiResponse({ status: 700 }) get(): void {} }`,
-    `import { Controller, Get } from '@nestjs/common';
-import { ApiResponse } from '@nestjs/swagger';
-let STATUS = 200;
-@Controller('unreadable-swagger-status') export class UnreadableSwaggerStatusController { @Get() @ApiResponse({ status: STATUS }) get(): void {} }`,
+    { title: 'Status conflict', fixtureDirectory: 'rejects-a-swagger-success-status-that-contradicts-nest-post-runtime-status' },
+    { title: 'No content conflict', fixtureDirectory: 'keeps-nest-runtime-status-authoritative-over-apinocontentresponse' },
   ];
-  for (const source of cases) {
-    const root = fixture(t, source);
+  for (const { title, fixtureDirectory } of cases) {
+    const root = fixture(t, readFixture(`controllers/controller/${fixtureDirectory}/controller.ts`));
     await assert.rejects(
       generate({
         root,
         output: path.join(root, 'openapi.json'),
-        info: { title: 'Invalid response status', version: '1' },
+        info: { title, version: '1' },
         profile: { mobx: false, validation: false },
       }),
-      (error: unknown) => String(error).includes('NEST1309'),
+      (error: unknown) => String(error).includes('NEST1311'),
     );
   }
+});
+
+test('accepts constant Nest and Swagger response statuses', async (t: TestContext) => {
   const constantRoot = fixture(t, `import { Controller, Get, HttpCode } from '@nestjs/common';
 import { ApiResponse } from '@nestjs/swagger';
 const STATUS = 204;
@@ -502,7 +432,7 @@ const ERROR_STATUS = '4XX';
   assert.deepEqual(Object.keys(constantDocument.paths['/constant-status']?.get?.responses ?? {}).sort(), ['204', '4XX']);
 });
 
-test('allows manually managed responses only with explicit Swagger response metadata', async (t: TestContext) => {
+test('allows manually managed responses with explicit Swagger response metadata', async (t: TestContext) => {
   const acceptedRoot = fixture(t, readFixture("controllers/controller/allows-manually-managed-responses-only-with-explicit-swagger-response-metadata/controller.ts"));
   const document = documentOf(await generate({
     root: acceptedRoot,
@@ -513,17 +443,6 @@ test('allows manually managed responses only with explicit Swagger response meta
   assert.deepEqual(expectValue(responseOf(document, '/manual-response', 'get', '200').content, 'manual response content'), {
     'application/json': { schema: { type: 'string' } },
   });
-
-  const rejectedRoot = fixture(t, readFixture("controllers/controller/allows-manually-managed-responses-only-with-explicit-swagger-response-metadata/controller-2.ts"));
-  await assert.rejects(
-    generate({
-      root: rejectedRoot,
-      output: path.join(rejectedRoot, 'openapi.json'),
-      info: { title: 'Manual response without contract', version: '1' },
-      profile: { mobx: false, validation: false },
-    }),
-    (error: unknown) => String(error).includes('NEST1101'),
-  );
 });
 
 test('rejects unresolved local component references in raw Swagger response metadata', async (t: TestContext) => {

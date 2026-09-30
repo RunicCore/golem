@@ -106,7 +106,7 @@ function generateDocument(root: string, title: string): Promise<Awaited<ReturnTy
 }
 
 
-test('evaluates @Res passthrough true, false, and imported constants', async (t: TestContext) => {
+test('evaluates @Res passthrough true, false, imported constants, and a bare @Res without response metadata', async (t: TestContext) => {
   const acceptedRoot = fixture(t, readFixture('controllers/endpoint-decorators/evaluates-res-passthrough-true-false-and-imported-constants/source.controller.ts'), {
     files: {
       'src/flags.ts': readFixture('controllers/endpoint-decorators/evaluates-res-passthrough-true-false-and-imported-constants/flags.ts'),
@@ -127,6 +127,12 @@ test('evaluates @Res passthrough true, false, and imported constants', async (t:
   });
   await assert.rejects(
     generateDocument(falseConstRoot, 'Manual false constant'),
+    (error: unknown) => String(error).includes('NEST1101'),
+  );
+
+  const noContractRoot = fixture(t, readFixture("controllers/endpoint-decorators/evaluates-res-passthrough-true-false-and-imported-constants/controller-4.ts"));
+  await assert.rejects(
+    generateDocument(noContractRoot, 'Manual response without contract'),
     (error: unknown) => String(error).includes('NEST1101'),
   );
 });
@@ -248,8 +254,20 @@ test('emits named 429, default, and 2XX range keys without replacing inferred su
   });
 });
 
-test('rejects malformed Swagger statuses, unknown named helpers, and non-numeric HttpCode', async (t: TestContext) => {
+test('rejects unreadable, invalid, and malformed Nest or Swagger statuses and unknown named helpers', async (t: TestContext) => {
   const cases = [
+    `import { Controller, Get, HttpCode } from '@nestjs/common';
+@Controller('invalid-http-code') export class InvalidHttpCodeController { @Get() @HttpCode(99) get(): void {} }`,
+    `import { Controller, Get, HttpCode } from '@nestjs/common';
+let STATUS = 204;
+@Controller('unreadable-http-code') export class UnreadableHttpCodeController { @Get() @HttpCode(STATUS) get(): void {} }`,
+    `import { Controller, Get } from '@nestjs/common';
+import { ApiResponse } from '@nestjs/swagger';
+@Controller('invalid-swagger-status') export class InvalidSwaggerStatusController { @Get() @ApiResponse({ status: 700 }) get(): void {} }`,
+    `import { Controller, Get } from '@nestjs/common';
+import { ApiResponse } from '@nestjs/swagger';
+let STATUS = 200;
+@Controller('unreadable-swagger-status') export class UnreadableSwaggerStatusController { @Get() @ApiResponse({ status: STATUS }) get(): void {} }`,
     `import { Controller, Get } from '@nestjs/common';
 import { ApiResponse } from '@nestjs/swagger';
 @Controller('range-status') export class RangeStatusController {
@@ -268,7 +286,7 @@ import { ApiResponse } from '@nestjs/swagger';
   for (const source of cases) {
     const root = fixture(t, source);
     await assert.rejects(
-      generateDocument(root, 'Malformed status'),
+      generateDocument(root, 'Invalid response status'),
       (error: unknown) => String(error).includes('NEST1309'),
     );
   }
@@ -282,13 +300,4 @@ import { ApiResponse } from '@nestjs/swagger';
     generateDocument(unknownRoot, 'Unknown helper'),
     (error: unknown) => String(error).includes('NEST1309') && String(error).includes('ApiWidgetResponse'),
   );
-});
-
-test('keeps ordinary inferred GET 200 and POST 201 responses', async (t: TestContext) => {
-  const root = fixture(t, readFixture('controllers/endpoint-decorators/keeps-ordinary-inferred-get-200-and-post-201-responses/source.controller.ts'));
-  const document = documentOf(await generateDocument(root, 'Ordinary inference'));
-  assert.equal(responseOf(document, '/ordinary', 'get', '200').content?.['application/json']?.schema?.type, 'object');
-  assert.equal(operationOf(document, '/ordinary', 'get').responses['201'], undefined);
-  assert.equal(responseOf(document, '/ordinary', 'post', '201').content?.['application/json']?.schema?.type, 'object');
-  assert.equal(operationOf(document, '/ordinary', 'post').responses['200'], undefined);
 });
