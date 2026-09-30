@@ -9,7 +9,7 @@
     "examples/nest-openapi"
   ],
   "engines": {
-    "node": ">=22.12.0"
+    "node": ">=22.15.0"
   },
   "scripts": {
     "build": "ttsc -p packages/codegen/tsconfig.runtime.json && ttsc -p packages/codegen/tsconfig.tooling.json && ttsc -p packages/model-codegen/tsconfig.json && ttsc -p packages/openapi-to-ts/tsconfig.json && ttsc -p packages/ts-to-openapi/tsconfig.json",

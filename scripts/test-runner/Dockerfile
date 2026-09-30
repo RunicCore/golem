@@ -1,7 +1,7 @@
 # fe-deps test runner: the pinned Node/npm baseline, Chromium for the browser
 # tier, rsync and flock for the entrypoint. Tier runs are offline; only
 # `npm run test:prepare` builds this image and fills the caches.
-FROM node:22.12.0-bookworm@sha256:0e910f435308c36ea60b4cfd7b80208044d77a074d16b768a81901ce938a62dc
+FROM node:22.15.0-bookworm@sha256:a1f1274dadd49738bcd4cf552af43354bb781a7e9e3bc984cfeedc55aba2ddd8
 ARG PLAYWRIGHT_VERSION=1.63.0
 ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright \
     FE_DEPS_TEST_CONTAINER=1 \

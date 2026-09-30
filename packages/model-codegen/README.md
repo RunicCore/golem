@@ -6,7 +6,7 @@ conversion metadata and optional validation or MobX support.
 
 ## Install
 
-In an ESM TypeScript project with Node.js 22.12 or newer:
+In an ESM TypeScript project with Node.js 22.15 or newer:
 
 ```sh
 npm install @exprtlabs/codegen@rc ajv ajv-formats

@@ -117,7 +117,7 @@ function assertContainer(tier: Tier, native: boolean): void {
     playwright: installed?.version,
     browsers: process.env.FE_DEPS_PLAYWRIGHT_VERSION,
     browsersPresent: fs.existsSync(process.env.PLAYWRIGHT_BROWSERS_PATH ?? '/ms-playwright'),
-  }, { node: 'v22.12.0', npm: '10.9.8', playwright: manifest?.devDependencies['@playwright/test'] });
+  }, { node: 'v22.15.0', npm: '10.9.8', playwright: manifest?.devDependencies['@playwright/test'] });
   if (mismatches.length) throw new Error(`The test image is stale: ${mismatches.join('; ')}. Run: npm run test:prepare`);
 }
 

@@ -58,6 +58,6 @@ after the first successful generation.
 
 ## Runtime and imports
 
-The CLI requires Node.js 22.12 or newer. Generated application code needs the
+The CLI requires Node.js 22.15 or newer. Generated application code needs the
 ESM and `NodeNext` settings in [run compiled code](/guide/install#run-compiled-code).
 The `./ttsc-plugin` subpath is CommonJS.

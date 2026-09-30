@@ -158,7 +158,7 @@ export const workspace = fileURLToPath(new URL('../../../', import.meta.url));
 export const ttsc = path.join(workspace, 'node_modules/ttsc/lib/launcher/ttsc.js');
 export const ttscEnv = { NODE_PATH: path.join(workspace, 'node_modules') };
 export const versions = { mobx: '^6.13.0', ajv: '^8.20.0', 'ajv-formats': '^3.0.1', typescript: '~7.0.2', ttsc: '~0.30.4' };
-export const baselineNode = '22.12.0';
+export const baselineNode = '22.15.0';
 let npmCli: string | undefined;
 
 function runNpm(root: string, args: readonly string[], options: CommandOptions = {}): Promise<CommandResult> {

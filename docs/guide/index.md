@@ -31,7 +31,7 @@ For an OpenAPI 3.1 or 3.2 document, Codegen resolves its `$ref`s across local fi
 
 ## Requirements
 
-You need Node.js 22.12 or newer, TypeScript 7 and `ttsc` ([requirements](/guide/install#requirements)). Validation is on and MobX is off by default.
+You need Node.js 22.15 or newer, TypeScript 7 and `ttsc` ([requirements](/guide/install#requirements)). Validation is on and MobX is off by default.
 
 ## Planned features
 
