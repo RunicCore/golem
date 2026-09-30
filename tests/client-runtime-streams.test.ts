@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { ClientRuntime, type RuntimeResponseContract } from '@exprtlabs/golem/client';
+import { responseCheck } from '@exprtlabs/golem/validation';
 
 const RS = '\u001e';
 const NO_VALIDATORS = undefined;
@@ -131,10 +132,10 @@ test('JSON-seq yields delimited numbers, booleans and null, and an empty stream 
 test('breaking a live stream cancels the source and releases the reader, with and without item validators', async () => {
   const pass = Object.assign((): boolean => true, { errors: [] as readonly unknown[] });
   const validators = { input: pass, responses: new Map([['200:application/x-ndjson', pass]]) };
-  for (const [label, operationValidators] of [['no validators', NO_VALIDATORS], ['item validators', validators]] as const) {
+  for (const [label, check] of [['no validators', NO_VALIDATORS], ['item validators', responseCheck(validators)]] as const) {
     const source = observed('application/x-ndjson', [encode('{"id":1}\n')], 'hanging');
     const result = await runtime.readResponse<DecodedStream>(
-      'readStream', source.response, [streamContract('application/x-ndjson', 'ndjson')], operationValidators);
+      'readStream', source.response, [streamContract('application/x-ndjson', 'ndjson')], check);
     const iterator = result.body[Symbol.asyncIterator]();
     assert.deepEqual(await iterator.next(), { value: { id: 1 }, done: false });
     await iterator.return?.();

@@ -204,6 +204,9 @@ function operationSource(
   const factoryName = operationFactoryName(operation);
   if (surfaces.auth || surfaces.mutualTls) use('applySecurity');
   if (requestBody) use('encodeBody');
+  const validatesWithSources = profile.validation && validationBundle !== undefined;
+  const validationFunctions = !profile.validation ? []
+    : validatesWithSources ? ['operationValidators', 'responseCheck', 'validateOperationInput'] : ['validateOperationInput'];
   const runtimeFunctions = [...usedFunctions].sort();
   const defaultAjvEngine = profile.validation && !profile.ajvStandalone;
   const importedNames: Array<readonly [string, string]> = [
@@ -216,6 +219,7 @@ function operationSource(
     ['ApiOperation', 'API operation type import'],
     ['responseContracts', 'response metadata'],
     ...runtimeFunctions.map((name): readonly [string, string] => [name, `client runtime function ${name}`]),
+    ...validationFunctions.map((name): readonly [string, string] => [name, `operation validation function ${name}`]),
   ];
   if (surfaces.auth || surfaces.mutualTls) importedNames.push(['__golemSecuritySchemes', 'security metadata'], ['RuntimeSecuritySchemes', 'security scheme type import']);
   if (profile.validation) importedNames.push(['OperationValidationSources', 'validation source type import']);
@@ -241,9 +245,9 @@ function operationSource(
   }
   const inputType = `Types.${operation.typeName}OperationInput`;
   const responseType = `Types.${operation.typeName}OperationHttpResponse`;
-  const validatorSetup = profile.validation && validationBundle
-    ? `  const validators = runtime.getOperationValidators(${JSON.stringify(operation.name)}, ${validationSourcesName});`
-    : '  const validators = undefined;';
+  const validatorSetup = validatesWithSources
+    ? `  const validators = operationValidators(runtime, ${JSON.stringify(operation.name)}, ${validationSourcesName});\n  const checkResponse = responseCheck(validators);`
+    : profile.validation ? '  const validators = undefined;' : '';
   const standaloneResponseValidation = validationBundle?.responseReferences.length
     ? `      for (const item of ${JSON.stringify(validationBundle.responseReferences)}) {
         const validator = validatorSet.all[item.reference];
@@ -289,7 +293,10 @@ ${standaloneResponseValidation}
       ? `import { createValidatorSet } from './${operation.name}.validators.generated.js';`
       : '',
     profile.validation && profile.ajvStandalone
-      ? `import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';\nimport type { RuntimeValidator } from '@exprtlabs/golem/validation';`
+      ? `import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';`
+      : '',
+    validationFunctions.length
+      ? `import { ${validationFunctions.join(', ')}${profile.ajvStandalone ? ', type RuntimeValidator' : ''} } from '@exprtlabs/golem/validation';`
       : '',
     operationSchemaImports,
   ].filter(Boolean).join('\n');
@@ -300,7 +307,7 @@ ${standaloneResponseValidation}
     ? `    await ${use('applySecurity')}(runtime, ${security}, query, headers, cookies, securitySchemes);\n    if (cookies.length) headers.set('Cookie', cookies.join('; '));`
     : '';
   const body = `    return createApiOperation(${JSON.stringify(operation.name)}, async (${inputName}: ${inputType}, options: RequestOptions = {}): Promise<${responseType}> => {
-${profile.validation ? `    await runtime.validateOperationInput(${JSON.stringify(operation.name)}, input, validators);` : ''}
+${profile.validation ? `    await validateOperationInput(${JSON.stringify(operation.name)}, input, validators);` : ''}
     const query: string[] = [];
 ${queryLines.join('\n')}
 ${queryStringLine}
@@ -322,8 +329,7 @@ ${requestBody ? '    if (encodedBody.body !== undefined) request.body = encodedB
     return runtime.readResponse<${responseType}>(
       ${JSON.stringify(operation.name)},
       response,
-      responseContracts,
-      validators,
+      responseContracts,${validatesWithSources ? '\n      checkResponse,' : ''}
     );
     });`;
 
@@ -339,8 +345,7 @@ export function ${operation.name}(options: ClientOptions): ApiOperation<${inputT
 }
 
 export function ${factoryName}(runtime: ClientRuntime): ApiOperation<${inputType}, ${responseType}, RequestOptions> {
-${validatorSetup}
-${body}
+${validatorSetup ? `${validatorSetup}\n` : ''}${body}
 }
 `;
 }

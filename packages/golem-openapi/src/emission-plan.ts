@@ -38,7 +38,7 @@ export type ClientHelperName =
   | 'setQueryString' | 'serializeContentParameter' | 'encodeBody' | 'isEncodedBody'
   | 'decodeHeaderScalar' | 'decodeResponseHeader' | 'responseHeaders'
   | 'readNdjson' | 'readJsonSeq' | 'readServerSentEvents'
-  | 'operationValidators' | 'assertValid' | 'validateOperationInput' | 'responseValidator' | 'validateStreamItems'
+  | 'operationValidators' | 'validateOperationInput' | 'responseCheck'
   | 'auth' | 'authValue' | 'applySecurity' | 'applyAuthScheme' | 'securitySchemes' | 'mutualTls'
   | 'bodyEncoders' | 'responseDecoders' | 'parameterSerializers' | 'responseHeaderDecoders' | 'streamDecoders';
 
@@ -230,9 +230,6 @@ const HELPER_DEPENDENCIES: Partial<Record<ClientHelperName, readonly ClientHelpe
   encodeBody: ['bodyEncoders', 'isEncodedBody'],
   decodeResponseHeader: ['decodeHeaderScalar'],
   responseHeaders: ['decodeResponseHeader'],
-  validateOperationInput: ['operationValidators', 'assertValid'],
-  responseValidator: ['operationValidators'],
-  validateStreamItems: ['responseValidator', 'assertValid'],
   applySecurity: ['authValue', 'applyAuthScheme'],
   authValue: ['auth', 'securitySchemes'],
   applyAuthScheme: ['securitySchemes', 'appendQuery'],
@@ -265,9 +262,7 @@ function computeHelpers(plan: Omit<EmissionPlan, 'helpers'>): Set<ClientHelperNa
   if (plan.streams.jsonSeq) add('readJsonSeq');
   if (plan.streams.sse) add('readServerSentEvents');
   if (plan.profile.validation) {
-    add('validateOperationInput');
-    if (plan.hasResponseContent) add('responseValidator');
-    if (plan.hasItemSchema) add('validateStreamItems');
+    add('validateOperationInput', 'operationValidators', 'responseCheck');
   }
   if (plan.clientSurfaces.auth || plan.clientSurfaces.mutualTls) add('applySecurity');
   if (plan.clientSurfaces.mutualTls) add('mutualTls');

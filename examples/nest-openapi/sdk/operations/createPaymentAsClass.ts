@@ -4,6 +4,7 @@ import type { PaymentsClientOptions as ClientOptions, PaymentsRequestOptions as 
 import type * as Types from '../types.js';
 import { createApiOperation, type ApiOperation } from '@exprtlabs/golem/client';
 import { createOpenApiAjvEngine } from '@exprtlabs/golem/ajv';
+import { operationValidators, responseCheck, validateOperationInput } from '@exprtlabs/golem/validation';
 import { schema as __golemSchema0 } from "../validation-schemas/Merchant.input.js";
 import { schema as __golemSchema1 } from "../validation-schemas/Merchant.output.js";
 import { schema as __golemSchema2 } from "../validation-schemas/MerchantOmitId.input.js";
@@ -37,9 +38,10 @@ export function createPaymentAsClass(options: ClientOptions): ApiOperation<Types
 }
 
 export function createCreatePaymentAsClassOperation(runtime: ClientRuntime): ApiOperation<Types.CreatePaymentAsClassOperationInput, Types.CreatePaymentAsClassOperationHttpResponse, RequestOptions> {
-  const validators = runtime.getOperationValidators("createPaymentAsClass", __resolveOperationValidationSources);
+  const validators = operationValidators(runtime, "createPaymentAsClass", __resolveOperationValidationSources);
+  const checkResponse = responseCheck(validators);
     return createApiOperation("createPaymentAsClass", async (input: Types.CreatePaymentAsClassOperationInput, options: RequestOptions = {}): Promise<Types.CreatePaymentAsClassOperationHttpResponse> => {
-    await runtime.validateOperationInput("createPaymentAsClass", input, validators);
+    await validateOperationInput("createPaymentAsClass", input, validators);
     const query: string[] = [];
 
 
@@ -63,7 +65,7 @@ export function createCreatePaymentAsClassOperation(runtime: ClientRuntime): Api
       "createPaymentAsClass",
       response,
       responseContracts,
-      validators,
+      checkResponse,
     );
     });
 }

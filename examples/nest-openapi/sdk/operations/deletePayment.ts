@@ -4,6 +4,7 @@ import type { PaymentsClientOptions as ClientOptions, PaymentsRequestOptions as 
 import type * as Types from '../types.js';
 import { createApiOperation, type ApiOperation } from '@exprtlabs/golem/client';
 import { createOpenApiAjvEngine } from '@exprtlabs/golem/ajv';
+import { operationValidators, responseCheck, validateOperationInput } from '@exprtlabs/golem/validation';
 
 
 const responseContracts: readonly RuntimeResponseContract[] = [{"status":"204","content":[],"headers":[]}];
@@ -22,9 +23,10 @@ export function deletePayment(options: ClientOptions): ApiOperation<Types.Delete
 }
 
 export function createDeletePaymentOperation(runtime: ClientRuntime): ApiOperation<Types.DeletePaymentOperationInput, Types.DeletePaymentOperationHttpResponse, RequestOptions> {
-  const validators = runtime.getOperationValidators("deletePayment", __resolveOperationValidationSources);
+  const validators = operationValidators(runtime, "deletePayment", __resolveOperationValidationSources);
+  const checkResponse = responseCheck(validators);
     return createApiOperation("deletePayment", async (input: Types.DeletePaymentOperationInput, options: RequestOptions = {}): Promise<Types.DeletePaymentOperationHttpResponse> => {
-    await runtime.validateOperationInput("deletePayment", input, validators);
+    await validateOperationInput("deletePayment", input, validators);
     const query: string[] = [];
 
 
@@ -47,7 +49,7 @@ export function createDeletePaymentOperation(runtime: ClientRuntime): ApiOperati
       "deletePayment",
       response,
       responseContracts,
-      validators,
+      checkResponse,
     );
     });
 }

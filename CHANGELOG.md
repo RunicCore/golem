@@ -46,6 +46,7 @@ The first release candidate includes four independently installable packages:
 
 ### OpenAPI
 
+- **Breaking:** `ClientRuntime` no longer has `getOperationValidators`, `validateOperationInput`, `responseValidator` or `assertValid`. `@exprtlabs/golem/validation` exports `operationValidators`, `validateOperationInput` and `responseCheck`, and `readResponse` takes an optional response check in place of the validators. An SDK generated with validation off no longer bundles the validation runner. Regenerate the SDK.
 - Client methods create reusable operation objects. `.execute(input, options)` sends the request.
 - Clients support authentication, body codecs, cancellation and supported streaming responses.
 - With MobX enabled, each operation exposes observable `loading`. Concurrent executions are allowed and produce a warning.

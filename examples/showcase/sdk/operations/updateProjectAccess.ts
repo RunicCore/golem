@@ -4,6 +4,7 @@ import type { ProjectAccessClientOptions as ClientOptions, ProjectAccessRequestO
 import type * as Types from '../types.js';
 import { createApiOperation, type ApiOperation } from '@exprtlabs/golem/client';
 import { createOpenApiAjvEngine } from '@exprtlabs/golem/ajv';
+import { operationValidators, responseCheck, validateOperationInput } from '@exprtlabs/golem/validation';
 import { schema as __golemSchema0 } from "../validation-schemas/Member.input.js";
 import { schema as __golemSchema1 } from "../validation-schemas/Member.output.js";
 import { schema as __golemSchema2 } from "../validation-schemas/ProjectAccess.input.js";
@@ -29,9 +30,10 @@ export function updateProjectAccess(options: ClientOptions): ApiOperation<Types.
 }
 
 export function createUpdateProjectAccessOperation(runtime: ClientRuntime): ApiOperation<Types.UpdateProjectAccessOperationInput, Types.UpdateProjectAccessOperationHttpResponse, RequestOptions> {
-  const validators = runtime.getOperationValidators("updateProjectAccess", __resolveOperationValidationSources);
+  const validators = operationValidators(runtime, "updateProjectAccess", __resolveOperationValidationSources);
+  const checkResponse = responseCheck(validators);
     return createApiOperation("updateProjectAccess", async (input: Types.UpdateProjectAccessOperationInput, options: RequestOptions = {}): Promise<Types.UpdateProjectAccessOperationHttpResponse> => {
-    await runtime.validateOperationInput("updateProjectAccess", input, validators);
+    await validateOperationInput("updateProjectAccess", input, validators);
     const query: string[] = [];
 
 
@@ -55,7 +57,7 @@ export function createUpdateProjectAccessOperation(runtime: ClientRuntime): ApiO
       "updateProjectAccess",
       response,
       responseContracts,
-      validators,
+      checkResponse,
     );
     });
 }

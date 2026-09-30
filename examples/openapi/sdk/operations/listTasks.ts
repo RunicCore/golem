@@ -4,6 +4,7 @@ import type { TasksClientOptions as ClientOptions, TasksRequestOptions as Reques
 import type * as Types from '../types.js';
 import { createApiOperation, type ApiOperation } from '@exprtlabs/golem/client';
 import { createOpenApiAjvEngine } from '@exprtlabs/golem/ajv';
+import { operationValidators, responseCheck, validateOperationInput } from '@exprtlabs/golem/validation';
 import { schema as __golemSchema0 } from "../validation-schemas/Task.output.js";
 
 
@@ -23,9 +24,10 @@ export function listTasks(options: ClientOptions): ApiOperation<Types.ListTasksO
 }
 
 export function createListTasksOperation(runtime: ClientRuntime): ApiOperation<Types.ListTasksOperationInput, Types.ListTasksOperationHttpResponse, RequestOptions> {
-  const validators = runtime.getOperationValidators("listTasks", __resolveOperationValidationSources);
+  const validators = operationValidators(runtime, "listTasks", __resolveOperationValidationSources);
+  const checkResponse = responseCheck(validators);
     return createApiOperation("listTasks", async (input: Types.ListTasksOperationInput, options: RequestOptions = {}): Promise<Types.ListTasksOperationHttpResponse> => {
-    await runtime.validateOperationInput("listTasks", input, validators);
+    await validateOperationInput("listTasks", input, validators);
     const query: string[] = [];
     addQueryParameter(runtime, query, "limit", input.query?.["limit"], "form", true, false);
     addQueryParameter(runtime, query, "cursor", input.query?.["cursor"], "form", true, false);
@@ -49,7 +51,7 @@ export function createListTasksOperation(runtime: ClientRuntime): ApiOperation<T
       "listTasks",
       response,
       responseContracts,
-      validators,
+      checkResponse,
     );
     });
 }

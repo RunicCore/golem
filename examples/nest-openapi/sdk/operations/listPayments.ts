@@ -4,6 +4,7 @@ import type { PaymentsClientOptions as ClientOptions, PaymentsRequestOptions as 
 import type * as Types from '../types.js';
 import { createApiOperation, type ApiOperation } from '@exprtlabs/golem/client';
 import { createOpenApiAjvEngine } from '@exprtlabs/golem/ajv';
+import { operationValidators, responseCheck, validateOperationInput } from '@exprtlabs/golem/validation';
 import { schema as __golemSchema0 } from "../validation-schemas/Merchant.output.js";
 import { schema as __golemSchema1 } from "../validation-schemas/MerchantOmitId.output.js";
 import { schema as __golemSchema2 } from "../validation-schemas/Money.output.js";
@@ -29,9 +30,10 @@ export function listPayments(options: ClientOptions): ApiOperation<Types.ListPay
 }
 
 export function createListPaymentsOperation(runtime: ClientRuntime): ApiOperation<Types.ListPaymentsOperationInput, Types.ListPaymentsOperationHttpResponse, RequestOptions> {
-  const validators = runtime.getOperationValidators("listPayments", __resolveOperationValidationSources);
+  const validators = operationValidators(runtime, "listPayments", __resolveOperationValidationSources);
+  const checkResponse = responseCheck(validators);
     return createApiOperation("listPayments", async (input: Types.ListPaymentsOperationInput, options: RequestOptions = {}): Promise<Types.ListPaymentsOperationHttpResponse> => {
-    await runtime.validateOperationInput("listPayments", input, validators);
+    await validateOperationInput("listPayments", input, validators);
     const query: string[] = [];
 
     setQueryString(runtime, query, input.querystring, { operation: "listPayments", name: "filter", in: 'querystring', contentType: "application/x-www-form-urlencoded" });
@@ -54,7 +56,7 @@ export function createListPaymentsOperation(runtime: ClientRuntime): ApiOperatio
       "listPayments",
       response,
       responseContracts,
-      validators,
+      checkResponse,
     );
     });
 }

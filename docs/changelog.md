@@ -58,6 +58,7 @@ Each item names a breaking change and the action to take.
 
 ### OpenAPI clients
 
+- `ClientRuntime` no longer has `getOperationValidators`, `validateOperationInput`, `responseValidator` or `assertValid`; use `operationValidators`, `validateOperationInput` and `responseCheck` from `@exprtlabs/golem/validation`. Regenerate the SDK.
 - `@exprtlabs/golem-openapi/generator` no longer exports `generateClient`, `generateTypes` and the other per-artifact functions. Call `generate` or `writeSdk`.
 - Every discriminated-union variant must declare the discriminator property. Add it to each variant schema.
 - An implicit discriminator value is the raw component name (`cat`), not the generated type name (`Cat`). Add an explicit `discriminator.mapping` where senders use another value.
