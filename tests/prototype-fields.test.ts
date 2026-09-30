@@ -18,7 +18,7 @@ const profiles = [
 ] as const;
 
 for (const { mobx, validation } of profiles) {
-  test(`dictionary data keys survive every generated profile (mobx=${mobx}, validation=${validation})`, async (t) => {
+  test(`dictionary data keys survive generation (mobx=${mobx}, validation=${validation})`, async (t) => {
     const { root, sourceRoot } = createModelProject(t, {
       prefix: 'runic-model-prototype-',
       name: 'model-prototype',

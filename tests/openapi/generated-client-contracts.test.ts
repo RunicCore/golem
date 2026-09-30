@@ -945,7 +945,7 @@ test('unsupported HTTP Digest authentication fails generation without Bearer fal
   );
 });
 
-test('XML object responses require runtime decoders in every profile, including PDF/ZIP blobs', async (t) => {
+test('XML object responses require runtime decoders with and without validation, including PDF/ZIP blobs', async (t) => {
   // mobx does not reach the response codec path, so the validation axis is the only profile difference.
   for (const profile of validationProfiles) {
     const directory = createFixtureProject(t, 'runic-openapi-r16-');
