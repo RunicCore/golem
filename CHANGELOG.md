@@ -22,6 +22,9 @@ The first release candidate includes four independently installable packages:
 
 ### Models
 
+- Type aliases of tags accept type parameters as tag arguments, such as `type Varchar<N extends number> = string & MaxLength<N>`.
+- Tag aliases and `TSerde`/`TValidation` functions can come from an installed package; generated files import them through the package's `exports`.
+- A `TSerde` field can hold a class instance, such as `Uint8Array`, or a `bigint`.
 - `IModel` / `IObject` `exact` defaults to `true`. Opt out with `{ exact: false }`.
 - Synchronous `parse` / `stringify` convert JSON text; `fromWireFormat` /
   `toWireFormat` convert the object plane. Type-only targets fill a plain

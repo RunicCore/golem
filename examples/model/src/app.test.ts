@@ -11,6 +11,7 @@ import { readTask, readTaskData, writeTask } from './read-json.js';
 import { Notebook } from './note.model.js';
 import type { TNote } from './note.model.js';
 import { validateTaskTitles } from './builtin-tags.model.js';
+import { validateHandles } from './tag-aliases.model.js';
 import { checkContracts } from './collection-tags.model.js';
 import { checkTaskInput } from './task-input-checks.js';
 import { checkPermissionInput } from './permission-input.model.js';
@@ -80,6 +81,10 @@ test('IObject stays a plain object; IModel nesting it builds a class instance', 
 
 test('a short title fails MinLength, a title over 80 characters fails MaxLength, and a normal one passes', async () => {
   assert.deepEqual(await validateTaskTitles(), [false, true, false]);
+});
+
+test('a generic tag alias checks each field with its own argument', async () => {
+  assert.deepEqual(await validateHandles(), [true, false]);
 });
 
 test('DependentRequired blocks billing without an address when a card is present', async () => {

@@ -276,6 +276,18 @@ An error prints its code, location when known, and message, then stops generatio
 
 **Generated type name clash.** Two different inline types derive the same generated name, such as `Omit<TMerchant, 'id'>` over two unrelated `TMerchant` types, or an inline type whose derived name is also the name of a model. The message lists both places. **Fix:** Declare a named type alias for one of the inline types, for example `type TBillingMerchant = Omit<TMerchant, 'id'>`, and use it in the field.
 
+### RUNM1060
+
+**Codec not exported by its package.** A `TSerde` or `TValidation` function, or a `TSerde` class, lives in another package, and no `exports` entry in that package's `package.json` reaches its file. The message names the function, the package and the file. **Fix:** Add an `exports` entry for that file to the package.
+
+### RUNM1061
+
+**Function reference through a type parameter.** A `TSerde` or `TValidation` inside a type alias receives its function through the alias's type parameter. **Fix:** Write `typeof` an exported function directly in the alias.
+
+### RUNM1062
+
+**Repeated tag in a generic alias.** A type alias holds more than one tag of the same kind, and one of them depends on a type parameter. **Fix:** Keep one tag of that kind in the alias, and add the other where you use the alias.
+
 ## Client generator (OPENAPI)
 
 ### OPENAPI_BROWSER_COOKIE

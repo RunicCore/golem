@@ -18,7 +18,7 @@
     "src/generated/models/iobject-plugin-keys.ts": {
       "job": "models:.",
       "owner": "@exprtlabs/golem-model",
-      "digest": "21f9be9ae50bc3c8b3d7499019cc3ba43c4e600f20532beb66587582834fab82",
+      "digest": "36836c48033c32a20fa018472eef2f690fa8e0721e9da4df18c43ea43cb40cf8",
       "destination": "src/generated/models",
       "destinationKind": "directory"
     },
@@ -54,6 +54,13 @@
       "job": "models:.",
       "owner": "@exprtlabs/golem-model",
       "digest": "fa34fe4495c0e3cbdf881b3dd83a9fd28c67a946b105725c4bfa76fe2ddc0a49",
+      "destination": "src",
+      "destinationKind": "directory"
+    },
+    "src/tag-aliases.model.generated.ts": {
+      "job": "models:.",
+      "owner": "@exprtlabs/golem-model",
+      "digest": "67905bb9a73f1ed73400f0062fa7b90751f06a393a6ebcfe0d8238879d8aca74",
       "destination": "src",
       "destinationKind": "directory"
     },
