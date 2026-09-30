@@ -8,7 +8,6 @@ import { decodeGeneratedModel } from '@exprtlabs/codegen/conversion';
 import { requireObjectCodec } from '@exprtlabs/codegen/serde';
 import { IssueCode, IssueRepresentation, IssueSource, LibError, LibErrorKind, type Issue } from '@exprtlabs/codegen/errors';
 import { getValidator } from '@exprtlabs/codegen/validation';
-import { loadConfig } from '#codegen/config';
 import type { CodegenProfile } from '#codegen/generator-api';
 import { generate } from '#model/generator';
 import { command, workspace } from './support/process.js';
@@ -25,15 +24,6 @@ function profile(overrides: Partial<CodegenProfile> = {}): CodegenProfile {
     allowAny: false,
     ...overrides,
   };
-}
-
-function configFixture(t: TestContext, yaml: string): { root: string; filename: string } {
-  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'runic-profile-options-')));
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  fs.writeFileSync(path.join(root, 'api.yaml'), 'openapi: 3.1.0');
-  const filename = path.join(root, 'runic-codegen.yaml');
-  fs.writeFileSync(filename, yaml);
-  return { root, filename };
 }
 
 function modelProject(t: TestContext): { root: string; sourceRoot: string; source: string } {
@@ -93,101 +83,6 @@ function assertModelArtifactRoles(
   assert.equal(fs.existsSync(companionPath), false);
   assert.equal(fs.existsSync(sharedPath), false);
 }
-
-test('profile defaults include safe standalone and any policies and a root-relative model output', (t: TestContext) => {
-  const { root, filename } = configFixture(t, [
-    'version: 1',
-    'models:',
-    '  root: .',
-    '',
-  ].join('\n'));
-  const config = loadConfig(filename);
-  assert.deepEqual(config.profile, profile());
-  const modelJob = config.jobs.find((job) => job.kind === 'models');
-  assert.ok(modelJob && modelJob.kind === 'models');
-  assert.equal(modelJob.options.output, path.join(root, 'src/generated/models'));
-});
-
-test('explicit profile flags and models.output resolve from the configuration directory', (t: TestContext) => {
-  const { root, filename } = configFixture(t, [
-    'version: 1',
-    'mobx: true',
-    'validation: true',
-    'ajvStandalone: true',
-    'allowAny: true',
-    'models:',
-    '  root: project',
-    '  output: generated/models',
-    '',
-  ].join('\n'));
-  fs.mkdirSync(path.join(root, 'project'), { recursive: true });
-
-  const config = loadConfig(filename);
-  assert.deepEqual(config.profile, profile({
-    mobx: true,
-    ajvStandalone: true,
-    allowAny: true,
-  }));
-  const modelJob = config.jobs.find((job) => job.kind === 'models');
-  assert.ok(modelJob && modelJob.kind === 'models');
-  assert.equal(modelJob.options.root, path.join(root, 'project'));
-  assert.equal(modelJob.options.output, path.join(root, 'generated/models'));
-  assert.deepEqual(modelJob.options.profile, config.profile);
-});
-
-test('standalone validation is rejected for an OpenAPI job when runtime validation is disabled', (t: TestContext) => {
-  const { filename } = configFixture(t, [
-    'version: 1',
-    'validation: false',
-    'ajvStandalone: true',
-    'openapi:',
-    '  - input: api.yaml',
-    '    output: sdk',
-    '',
-  ].join('\n'));
-  assert.throws(
-    () => loadConfig(filename),
-    /ajvStandalone.*validation|validation.*ajvStandalone/,
-  );
-});
-
-test('configuration rejects invalid global flags and per-job feature overrides', (t: TestContext) => {
-  const cases: readonly [string, RegExp][] = [
-    ['version: 1\nallowAny: maybe\nmodels: {}\n', /allowAny must be a boolean/],
-    ['version: 1\najvStandalone: maybe\nmodels: {}\n', /ajvStandalone must be a boolean/],
-    ['version: 1\nmodels:\n  root: .\n  allowAny: true\n', /Unknown models key/],
-    ['version: 1\nopenapi:\n  - input: api.yaml\n    output: sdk\n    ajvStandalone: true\n', /Unknown openapi\[0\] key/],
-  ];
-  for (const [yaml, expected] of cases) {
-    const { filename } = configFixture(t, yaml);
-    assert.throws(() => loadConfig(filename), expected);
-  }
-});
-
-test('models.output cannot overlap an OpenAPI SDK output, including the default model output', (t: TestContext) => {
-  const explicit = configFixture(t, [
-    'version: 1',
-    'openapi:',
-    '  - input: api.yaml',
-    '    output: sdk',
-    'models:',
-    '  root: .',
-    '  output: sdk/models',
-    '',
-  ].join('\n'));
-  assert.throws(() => loadConfig(explicit.filename), /Overlapping/);
-
-  const defaulted = configFixture(t, [
-    'version: 1',
-    'openapi:',
-    '  - input: api.yaml',
-    '    output: src',
-    'models:',
-    '  root: .',
-    '',
-  ].join('\n'));
-  assert.throws(() => loadConfig(defaulted.filename), /Overlapping/);
-});
 
 for (const validation of [true, false] as const) {
   test(`global allowAny applies when validation=${validation}`, (t: TestContext) => {

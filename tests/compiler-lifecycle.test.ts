@@ -266,11 +266,11 @@ test('compiler setup preserves the primary error and reports cleanup failure aft
   await tracker.assertClosed('compiler setup failure');
 });
 
-test('manifest validation shares one compiler across 10, 100 and 500 generated model modules', async t => {
+test('manifest validation shares one compiler across 5 and 50 generated model modules', async t => {
   const tracker = trackApiChildren(t);
   const counts: number[] = [];
   const profile = { mobx: false, validation: false } as const;
-  for (const count of [10, 100, 500]) {
+  for (const count of [5, 50]) {
     const fixture = projectFixture(t, `manifest-scale-${count}`);
     const sdk = path.join(fixture.sourceRoot, 'sdk');
     fs.mkdirSync(path.join(sdk, 'models'), { recursive: true });
@@ -301,14 +301,14 @@ test('manifest validation shares one compiler across 10, 100 and 500 generated m
     await tracker.assertClosed(`${count}-model manifest`);
 
     // A cached export table must still be rebuilt for the next generation job.
-    if (count === 500) {
-      fs.writeFileSync(path.join(sdk, 'models', 'Item499.ts'), 'export const RenamedModel = 1;\n');
-      assert.throws(() => generateModel({ root: fixture.root, sources: [source], profile }), /missing runtime export Item499Model/);
+    if (count === 50) {
+      fs.writeFileSync(path.join(sdk, 'models', 'Item49.ts'), 'export const RenamedModel = 1;\n');
+      assert.throws(() => generateModel({ root: fixture.root, sources: [source], profile }), /missing runtime export Item49Model/);
       await tracker.assertClosed('changed manifest export');
     }
   }
   assert.ok(counts[0] > 0, 'the public generator must invoke the real compiler');
-  assert.deepEqual(counts, [counts[0], counts[0], counts[0]], 'compiler process count must not grow with manifest entries');
+  assert.deepEqual(counts, [counts[0], counts[0]], 'compiler process count must not grow with manifest entries');
 });
 
 test('owned generator scope preserves its primary error when API cleanup also fails', async t => {

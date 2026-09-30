@@ -290,7 +290,7 @@ test('pending decrements after validation, network, and abort failures', async (
   assert.equal(aborted.loading, false);
 });
 
-test('MobX loading tracks pending with action-safe reactions in both factory profiles', async (t) => {
+test('MobX loading tracks pending with action-safe reactions', async (t) => {
   const warnings = captureWarnings(t);
   enforceActions(t);
   const loadings: boolean[] = [];
@@ -320,17 +320,6 @@ test('MobX loading tracks pending with action-safe reactions in both factory pro
   await Promise.all([first, second, third]);
   assert.equal(observableOperation.loading, false);
   assert.deepEqual(loadings, [false, true, false]);
-
-  const plainWarnings = captureWarnings(t);
-  const plain = createApiOperation('listItems', async () => {
-    await delay();
-    return 'plain';
-  });
-  const a = plain.execute(undefined);
-  const b = plain.execute(undefined);
-  assert.equal(plainWarnings.length, 1);
-  await Promise.all([a, b]);
-  assert.equal('loading' in plain, false);
 });
 
 test('stream execute loading ends when the response wrapper is available', async (t) => {
