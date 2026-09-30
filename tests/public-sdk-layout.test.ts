@@ -2,8 +2,10 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { test } from 'node:test';
+import { parse } from 'yaml';
 import * as ts from '#codegen/typescript-ns';
-import { workspace } from './support/process.js';
+import { writeSdk } from '#openapi/generator';
+import { createFixtureProject, readFixture, writeGeneratedArtifacts } from './fixture-project.js';
 
 type Layout = Record<string, Record<string, string[]>>;
 
@@ -30,22 +32,28 @@ function exportedNames(program: ts.Program, file: string): string[] {
   return [...new Set(names)].sort();
 }
 
-function publicLayout(): Layout {
-  const layout: Layout = {};
-  for (const example of fs.readdirSync(path.join(workspace, 'examples')).sort()) {
-    const sdk = path.join(workspace, 'examples', example, 'sdk');
-    if (!fs.existsSync(path.join(sdk, 'index.ts'))) continue;
-    const files = ['index.ts',
-      ...fs.readdirSync(path.join(sdk, 'models')).filter(f => f.endsWith('.ts') && !f.startsWith('_')).map(f => `models/${f}`),
-      ...(fs.existsSync(path.join(sdk, 'operations')) ? fs.readdirSync(path.join(sdk, 'operations')).filter(f => f.endsWith('.ts')).map(f => `operations/${f}`) : [])];
-    using program = ts.createProgramFromSources({ root: sdk, sources: files.map(file => path.join(sdk, file)) });
-    layout[example] = Object.fromEntries(files.sort().map(file => [file, exportedNames(program, path.join(sdk, file))]));
-  }
-  return layout;
+/** The generated SDK profiles whose public layout is frozen. */
+const PROFILES = {
+  'mobx-off': { mobx: false, validation: true },
+  'mobx-on': { mobx: true, validation: true },
+} as const;
+
+function publicLayout(sdk: string): Record<string, string[]> {
+  const files = ['index.ts',
+    ...fs.readdirSync(path.join(sdk, 'models')).filter(f => f.endsWith('.ts') && !f.startsWith('_')).map(f => `models/${f}`),
+    ...(fs.existsSync(path.join(sdk, 'operations')) ? fs.readdirSync(path.join(sdk, 'operations')).filter(f => f.endsWith('.ts')).map(f => `operations/${f}`) : [])];
+  using program = ts.createProgramFromSources({ root: sdk, sources: files.map(file => path.join(sdk, file)) });
+  return Object.fromEntries(files.sort().map(file => [file, exportedNames(program, path.join(sdk, file))]));
 }
 
-test('the public SDK layout of every example matches the frozen list', () => {
-  const expected = JSON.parse(fs.readFileSync(path.join(workspace, 'tests/fixtures/public-sdk-layout.json'), 'utf8')) as Layout;
-  const actual = publicLayout();
+test('the public SDK layout generated from a fixture document matches the frozen list', t => {
+  const expected = JSON.parse(readFixture('public-sdk-layout.json')) as Layout;
+  const document = parse(readFixture('public-sdk-layout/openapi.yaml'));
+  const actual: Layout = {};
+  for (const [name, profile] of Object.entries(PROFILES)) {
+    const sdk = path.join(createFixtureProject(t, `runic-sdk-layout-${name}-`), 'sdk');
+    writeGeneratedArtifacts(writeSdk(document, { output: sdk, name: 'Payments', profile }).artifacts);
+    actual[name] = publicLayout(sdk);
+  }
   assert.deepEqual(actual, expected, `Public SDK layout changed. If intended (major release), replace tests/fixtures/public-sdk-layout.json with:\n${JSON.stringify(actual, null, 2)}`);
 });
