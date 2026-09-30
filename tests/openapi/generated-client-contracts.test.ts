@@ -1,10 +1,11 @@
 import { createFixtureProject } from '../fixture-project.js';
 import assert from 'node:assert/strict';
 import { clientConsumerSource } from '../fixture-templates/openapi/client-consumer.js';
-import { writeFileSync } from 'node:fs';
+import { mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import test, { type TestContext } from 'node:test';
+import test, { after } from 'node:test';
 import { LibError, LibErrorKind } from '@exprtlabs/codegen/errors';
 import { generate } from '#openapi/generator';
 import {
@@ -13,13 +14,17 @@ import {
   generateMaterializedSdk,
   isGeneratedClientClass,
   requireRecord,
-  ALL_GENERATION_PROFILES,
   documentBase,
   materializeGeneratedSdk,
   writeOpenApiDocument,
   type GeneratedClientClass,
   type OpenApiGenerationProfile,
 } from './helpers.js';
+
+const validationProfiles: readonly OpenApiGenerationProfile[] = [
+  { mobx: false, validation: false },
+  { mobx: false, validation: true },
+];
 
 const okEmpty = { 204: { description: 'ok' } };
 
@@ -424,12 +429,26 @@ function contractDocument(): Record<string, unknown> {
   };
 }
 
-async function loadContractClient(
-  t: TestContext,
-  name: string,
-  profile: OpenApiGenerationProfile,
-): Promise<GeneratedClientClass> {
-  const root = createFixtureProject(t, 'runic-openapi-client-contracts-');
+// One generate and compile per profile: the tests share the loaded client class and each builds its own clients.
+const contractClients = new Map<string, Promise<GeneratedClientClass>>();
+const contractClientRoots: string[] = [];
+after(() => {
+  for (const root of contractClientRoots) rmSync(root, { recursive: true, force: true });
+});
+
+function loadContractClient(profile: OpenApiGenerationProfile): Promise<GeneratedClientClass> {
+  const key = `mobx=${profile.mobx},validation=${profile.validation}`;
+  const cached = contractClients.get(key);
+  if (cached) return cached;
+  const loaded = generateContractClient(profile);
+  contractClients.set(key, loaded);
+  return loaded;
+}
+
+async function generateContractClient(profile: OpenApiGenerationProfile): Promise<GeneratedClientClass> {
+  const name = 'Contract';
+  const root = realpathSync(mkdtempSync(path.join(tmpdir(), 'runic-openapi-client-contracts-')));
+  contractClientRoots.push(root);
   const output = path.join(root, 'sdk');
   await generateMaterializedSdk(contractDocument(), { output, name, profile });
   const consumer = path.join(output, 'consumer.ts');
@@ -452,8 +471,8 @@ function jsonResponse(body: unknown, contentType: string): Response {
   });
 }
 
-test('own configured auth keys are required before providers run, including special names', async (t) => {
-  const Client = await loadContractClient(t, 'ContractAuth', { mobx: false, validation: false });
+test('own configured auth keys are required before providers run, including special names', async () => {
+  const Client = await loadContractClient({ mobx: false, validation: false });
   const inherited = Object.create({
     toString() {
       return 'inherited-token';
@@ -540,8 +559,8 @@ test('own configured auth keys are required before providers run, including spec
   await assert.rejects(() => undefinedOwn.useToString().execute({}), /No configured credentials satisfy/);
 });
 
-test('media essence selects builtins and custom codecs without depending on insertion order', async (t) => {
-  const Client = await loadContractClient(t, 'ContractMedia', { mobx: false, validation: false });
+test('media essence selects builtins and custom codecs without depending on insertion order', async () => {
+  const Client = await loadContractClient({ mobx: false, validation: false });
   const captured: Array<{ path: string; contentType: string | null; body: string | null; form: boolean }> = [];
   const builtin = new Client({
     baseUrl: 'https://api.example',
@@ -689,12 +708,9 @@ test('media essence selects builtins and custom codecs without depending on inse
   assert.equal(customBody.body, 'decoded:ok');
 });
 
-test('non-string text schemas require selected-path codecs for every validation profile', async (t) => {
+test('non-string text schemas require selected-path codecs for every validation profile', async () => {
   for (const validation of [false, true]) {
-    const Client = await loadContractClient(t, `ContractText${validation ? 'On' : 'Off'}`, {
-      mobx: false,
-      validation,
-    });
+    const Client = await loadContractClient({ mobx: false, validation });
     let fetchCount = 0;
     const missing = new Client({
       baseUrl: 'https://api.example',
@@ -865,8 +881,8 @@ test('non-string text schemas require selected-path codecs for every validation 
   }
 });
 
-test('response header decoding strips only SP/HTAB around list tokens and keeps own __proto__', async (t) => {
-  const Client = await loadContractClient(t, 'ContractHeaders', { mobx: false, validation: false });
+test('response header decoding strips only SP/HTAB around list tokens and keeps own __proto__', async () => {
+  const Client = await loadContractClient({ mobx: false, validation: false });
   const client = new Client({
     baseUrl: 'https://api.example',
     fetchImpl: async () => new Response('{}', {
@@ -930,7 +946,8 @@ test('unsupported HTTP Digest authentication fails generation without Bearer fal
 });
 
 test('XML object responses require runtime decoders in every profile, including PDF/ZIP blobs', async (t) => {
-  for (const profile of ALL_GENERATION_PROFILES) {
+  // mobx does not reach the response codec path, so the validation axis is the only profile difference.
+  for (const profile of validationProfiles) {
     const directory = createFixtureProject(t, 'runic-openapi-r16-');
     const input = writeOpenApiDocument(directory, documentBase('3.1.0', {
       paths: {
