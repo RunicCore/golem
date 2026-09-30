@@ -1,4 +1,5 @@
 import { IssueCode, IssueRepresentation, IssueSource, LibError, LibErrorKind, type IssuePath } from './errors.js';
+import { activeConversionPath, conversionError } from './conversion-error.js';
 import {
   findGeneratedModelDefinition,
   findGeneratedModelDefinitionForConstructor,
@@ -7,22 +8,6 @@ import {
   type GeneratedModelResult,
   type GeneratedModelWire,
 } from './model.js';
-
-const activeConversionPath: (string | number)[] = [];
-
-function conversionError(
-  kind: LibErrorKind.Serialization | LibErrorKind.Deserialization,
-  message: string,
-  path: IssuePath = activeConversionPath,
-  cause?: unknown,
-  causedByInput = false,
-): LibError {
-  return new LibError(kind, message, [{
-    code: kind === LibErrorKind.Serialization ? IssueCode.Serialization : IssueCode.Deserialization,
-    message, path, source: IssueSource.Serde,
-    representation: kind === LibErrorKind.Serialization ? IssueRepresentation.Model : IssueRepresentation.Wire,
-  }], { ...(cause === undefined ? {} : { cause }), causedByInput });
-}
 
 /**
  * Generated union conversions call this when an object's tag selects no
