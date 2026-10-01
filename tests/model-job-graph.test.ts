@@ -42,8 +42,8 @@ function chainSources(count: number, { kind, name, minLabel }: Chain = modelChai
       ? `import type { T${name}${index - 1} } from './${file}-${index - 1}.model.js';\n`
       : '';
     const fields = index > 0 ? `; prev: T${name}${index - 1}; prevs?: T${name}${index - 1}[]` : '';
-    const base = kind === 'IModel' ? `import { ${name}${index}Base } from './${file}-${index}.model.generated.js';\n` : '';
-    const cls = kind === 'IModel' ? `export class ${name}${index} extends ${name}${index}Base {}\n` : '';
+    const base = kind === 'IModel' ? `import { ${name}${index}BaseModel } from './${file}-${index}.model.generated.js';\n` : '';
+    const cls = kind === 'IModel' ? `export class ${name}${index} extends ${name}${index}BaseModel {}\n` : '';
     sources[`${file}-${index}.model.ts`] = `import type { ${kind} } from '@exprtlabs/golem/model';
 import type { MinLength } from '@exprtlabs/golem/tags';
 ${previous}${base}export type T${name}${index} = ${kind}<{ label: string & MinLength<${minLabel}>; at: Date; kind: { k: 'a'; a: Date } | { k: 'b'; b: number }${fields} }>;
@@ -92,7 +92,7 @@ for (const [label, profile] of profiles) for (const chain of [modelChain, object
         [`function fill${name}${index}(`]: true,
         [`function stringify${name}${index}Core(`]: true,
         [`__resolvedModelSchema_${name}${index} `]: profile.validation === true && profile.ajvStandalone !== true,
-        [`class ${name}${index}Base`]: kind === 'IModel',
+        [`class ${name}${index}BaseModel`]: kind === 'IModel',
         [`function decode${name}${index}(`]: kind === 'IObject',
         [`function encode${name}${index}(`]: kind === 'IObject',
       };
@@ -101,7 +101,7 @@ for (const [label, profile] of profiles) for (const chain of [modelChain, object
         if (expected) assert.ok(owner.includes(owned), `${name.toLowerCase()}-${index} emits its own ${owned}`);
       }
     }
-    assert.ok(lastCompanion.includes(kind === 'IModel' ? `class ${name}${last}Base` : `function stringify${name}${last}Core(`));
+    assert.ok(lastCompanion.includes(kind === 'IModel' ? `class ${name}${last}BaseModel` : `function stringify${name}${last}Core(`));
     // Each companion carries its own model; its size does not grow with the chain behind it.
     assert.ok(lastCompanion.length < companion(1).length * 1.5, `${name.toLowerCase()}-${last} ${lastCompanion.length} B vs ${name.toLowerCase()}-1 ${companion(1).length} B`);
   });
@@ -111,15 +111,15 @@ const cycleSources = {
   'a.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
 import type { MinLength } from '@exprtlabs/golem/tags';
 import type { TB } from './b.model.js';
-import { ABase } from './a.model.generated.js';
+import { ABaseModel } from './a.model.generated.js';
 export type TA = IModel<{ name: string & MinLength<2>; at: Date; b?: TB }>;
-export class A extends ABase {}
+export class A extends ABaseModel {}
 `,
   'b.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
 import type { TA } from './a.model.js';
-import { BBase } from './b.model.generated.js';
+import { BBaseModel } from './b.model.generated.js';
 export type TB = IModel<{ at: Date; as: TA[] }>;
-export class B extends BBase {}
+export class B extends BBaseModel {}
 `,
 };
 
@@ -172,9 +172,9 @@ const mixedCycleSources = {
   'order.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
 import type { MinLength } from '@exprtlabs/golem/tags';
 import type { TLine } from './line.model.js';
-import { OrderBase } from './order.model.generated.js';
+import { OrderBaseModel } from './order.model.generated.js';
 export type TOrder = IModel<{ id: string & MinLength<2>; at: Date; lines: TLine[] }>;
-export class Order extends OrderBase {}
+export class Order extends OrderBaseModel {}
 `,
   'line.model.ts': `import type { IObject } from '@exprtlabs/golem/model';
 import type { TOrder } from './order.model.js';
@@ -237,8 +237,8 @@ for (const [label, profile] of profiles) {
     await t.test(`models of two sources that reference each other load in either import order (${label})`, async () => {
       const companionA = generated('a.model.generated.ts');
       const companionB = generated('b.model.generated.ts');
-      assert.equal(companionA.includes('class BBase'), false);
-      assert.ok(companionB.includes('class BBase'), 'b.model.generated.ts emits its own BBase');
+      assert.equal(companionA.includes('class BBaseModel'), false);
+      assert.ok(companionB.includes('class BBaseModel'), 'b.model.generated.ts emits its own BBaseModel');
       assert.equal(companionA.includes('function fillB('), false);
       assert.ok(companionB.includes('function fillB('), 'b.model.generated.ts emits its own fillB');
       fs.writeFileSync(path.join(root, 'verify-cycle.mjs'), cycleVerifier);

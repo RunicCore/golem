@@ -1,5 +1,5 @@
 // #region task-model
-import { TaskBase } from './task.model.generated.js';
+import { TaskBaseModel } from './task.model.generated.js';
 // #region task-declaration
 import type { IModel } from '@exprtlabs/golem/model';
 
@@ -9,7 +9,7 @@ export type TTask = IModel<{
 }>;
 // #endregion task-declaration
 
-export class Task extends TaskBase {
+export class Task extends TaskBaseModel {
   toggle(): void {
     this.done = !this.done;
   }

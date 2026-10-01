@@ -6,7 +6,7 @@ import { fromWireFormat, toWireFormat } from '@exprtlabs/golem/serde';
 import { createTask, saveTask } from './task-app.js';
 import { Task } from './task.model.js';
 import type { TTask } from './task.model.js';
-import { TaskBase } from './task.model.generated.js';
+import { TaskBaseModel } from './task.model.generated.js';
 import { observeTask } from './observe-task.js';
 
 test('model-mobx app creates observable tasks and disposes reactions', async () => {
@@ -43,7 +43,7 @@ test('observeTask logs the label through autorun and stops the reaction', () => 
 });
 
 test('asGenObservable(this) annotates declared IModel fields', () => {
-  class BareTask extends TaskBase {
+  class BareTask extends TaskBaseModel {
     constructor(values?: TTask) {
       super(values);
       asGenObservable(this);

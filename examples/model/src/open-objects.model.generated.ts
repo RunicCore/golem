@@ -12,7 +12,7 @@ export type OpenFields = { name: string };
 export type OpenJSON = { name: string };
 export type OpenInit = Partial<{ name: string }>;
 
-export abstract class OpenBase implements GeneratedModel<OpenJSON, OpenFields> {
+export abstract class OpenBaseModel implements GeneratedModel<OpenJSON, OpenFields> {
   declare readonly [generatedModelWireBrand]: OpenJSON;
   declare readonly [generatedModelFieldsBrand]: OpenFields;
   declare name: OpenFields["name"];
@@ -23,34 +23,34 @@ export abstract class OpenBase implements GeneratedModel<OpenJSON, OpenFields> {
 
 }
 
-function decodeOpenModel(constructor: GeneratedModelConstructor, json: unknown): OpenBase {
-  const values = modelObject(json, "OpenBase");
-  return Reflect.construct(constructor, [values]) as OpenBase;
+function decodeOpenModel(constructor: GeneratedModelConstructor, json: unknown): OpenBaseModel {
+  const values = modelObject(json, "OpenBaseModel");
+  return Reflect.construct(constructor, [values]) as OpenBaseModel;
 }
 
-function encodeOpenModel(model: OpenBase): OpenJSON {
+function encodeOpenModel(model: OpenBaseModel): OpenJSON {
   const result: Record<string, unknown> = {};
   if (Object.prototype.hasOwnProperty.call(model, "name")) defineModelProperty(result, "name", (model["name"]));
   return result as OpenJSON;
 }
 
-registerGeneratedModel(OpenBase, {
+registerGeneratedModel(OpenBaseModel, {
   fields: ["name"],
   conversion: {
-    decode: (value, constructor) => decodeOpenModel(constructor ?? OpenBase, value),
+    decode: (value, constructor) => decodeOpenModel(constructor ?? OpenBaseModel, value),
     encode: encodeOpenModel,
   },
   codecId: "Open_76e5211c",
   profile: { validation: true, mobx: false },
 });
 
-registerIModelClass("Open_76e5211c", OpenBase);
+registerIModelClass("Open_76e5211c", OpenBaseModel);
 
 export type ExactFields = { name: string };
 export type ExactJSON = { name: string };
 export type ExactInit = Partial<{ name: string }>;
 
-export abstract class ExactBase implements GeneratedModel<ExactJSON, ExactFields> {
+export abstract class ExactBaseModel implements GeneratedModel<ExactJSON, ExactFields> {
   declare readonly [generatedModelWireBrand]: ExactJSON;
   declare readonly [generatedModelFieldsBrand]: ExactFields;
   declare name: ExactFields["name"];
@@ -61,34 +61,34 @@ export abstract class ExactBase implements GeneratedModel<ExactJSON, ExactFields
 
 }
 
-function decodeExactModel(constructor: GeneratedModelConstructor, json: unknown): ExactBase {
-  const values = modelObject(json, "ExactBase");
-  return Reflect.construct(constructor, [values]) as ExactBase;
+function decodeExactModel(constructor: GeneratedModelConstructor, json: unknown): ExactBaseModel {
+  const values = modelObject(json, "ExactBaseModel");
+  return Reflect.construct(constructor, [values]) as ExactBaseModel;
 }
 
-function encodeExactModel(model: ExactBase): ExactJSON {
+function encodeExactModel(model: ExactBaseModel): ExactJSON {
   const result: Record<string, unknown> = {};
   if (Object.prototype.hasOwnProperty.call(model, "name")) defineModelProperty(result, "name", (model["name"]));
   return result as ExactJSON;
 }
 
-registerGeneratedModel(ExactBase, {
+registerGeneratedModel(ExactBaseModel, {
   fields: ["name"],
   conversion: {
-    decode: (value, constructor) => decodeExactModel(constructor ?? ExactBase, value),
+    decode: (value, constructor) => decodeExactModel(constructor ?? ExactBaseModel, value),
     encode: encodeExactModel,
   },
   codecId: "Exact_5505c45b",
   profile: { validation: true, mobx: false },
 });
 
-registerIModelClass("Exact_5505c45b", ExactBase);
+registerIModelClass("Exact_5505c45b", ExactBaseModel);
 
 export type ExternalFields = { payload: any };
 export type ExternalJSON = { payload: any };
 export type ExternalInit = Partial<{ payload: any }>;
 
-export abstract class ExternalBase implements GeneratedModel<ExternalJSON, ExternalFields> {
+export abstract class ExternalBaseModel implements GeneratedModel<ExternalJSON, ExternalFields> {
   declare readonly [generatedModelWireBrand]: ExternalJSON;
   declare readonly [generatedModelFieldsBrand]: ExternalFields;
   declare payload: ExternalFields["payload"];
@@ -99,28 +99,28 @@ export abstract class ExternalBase implements GeneratedModel<ExternalJSON, Exter
 
 }
 
-function decodeExternalModel(constructor: GeneratedModelConstructor, json: unknown): ExternalBase {
-  const values = modelObject(json, "ExternalBase");
-  return Reflect.construct(constructor, [values]) as ExternalBase;
+function decodeExternalModel(constructor: GeneratedModelConstructor, json: unknown): ExternalBaseModel {
+  const values = modelObject(json, "ExternalBaseModel");
+  return Reflect.construct(constructor, [values]) as ExternalBaseModel;
 }
 
-function encodeExternalModel(model: ExternalBase): ExternalJSON {
+function encodeExternalModel(model: ExternalBaseModel): ExternalJSON {
   const result: Record<string, unknown> = {};
   if (Object.prototype.hasOwnProperty.call(model, "payload")) defineModelProperty(result, "payload", (model["payload"]));
   return result as ExternalJSON;
 }
 
-registerGeneratedModel(ExternalBase, {
+registerGeneratedModel(ExternalBaseModel, {
   fields: ["payload"],
   conversion: {
-    decode: (value, constructor) => decodeExternalModel(constructor ?? ExternalBase, value),
+    decode: (value, constructor) => decodeExternalModel(constructor ?? ExternalBaseModel, value),
     encode: encodeExternalModel,
   },
   codecId: "External_1c1723fa",
   profile: { validation: true, mobx: false },
 });
 
-registerIModelClass("External_1c1723fa", ExternalBase);
+registerIModelClass("External_1c1723fa", ExternalBaseModel);
 
 const objectAjvFast = createOpenApiSyncAjvEngine({ allErrors: false, validationBindings: {} });
 const objectAjvAll = createOpenApiSyncAjvEngine({ allErrors: true, validationBindings: {} });

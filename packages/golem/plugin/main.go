@@ -344,7 +344,7 @@ func importSpecifierTypeOnly(node *shimast.Node) bool {
 var generatedModelModule = regexp.MustCompile(`(?:^|[/\\.])models?\.generated\.(?:d\.)?[cm]?[jt]s$`)
 
 // classExtendsGeneratedBase reports whether a class declaration directly extends a
-// generated model base: an `XBase` class declared in a generated model module.
+// generated model base: an `XBaseModel` class declared in a generated model module.
 func classExtendsGeneratedBase(checker *shimchecker.Checker, node *shimast.Node) bool {
 	if checker == nil || node == nil || node.Kind != shimast.KindClassDeclaration {
 		return false
@@ -373,14 +373,14 @@ func classExtendsGeneratedBase(checker *shimchecker.Checker, node *shimast.Node)
 	return false
 }
 
-// isGeneratedBaseExpression resolves `Base` or `ns.Base`; calls such as `Mixin(Base)` never qualify.
+// isGeneratedBaseExpression resolves `XBaseModel` or `ns.XBaseModel`; calls such as `Mixin(XBaseModel)` never qualify.
 func isGeneratedBaseExpression(checker *shimchecker.Checker, expression *shimast.Node) bool {
 	expression = unwrapParentheses(expression)
 	if expression == nil || (expression.Kind != shimast.KindIdentifier && expression.Kind != shimast.KindPropertyAccessExpression) {
 		return false
 	}
 	symbol := symbolAt(checker, expression)
-	if symbol == nil || symbol.Flags&shimast.SymbolFlagsClass == 0 || !strings.HasSuffix(symbol.Name, "Base") {
+	if symbol == nil || symbol.Flags&shimast.SymbolFlagsClass == 0 || !strings.HasSuffix(symbol.Name, "BaseModel") {
 		return false
 	}
 	for _, declaration := range symbol.Declarations {

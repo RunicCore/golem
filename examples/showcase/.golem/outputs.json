@@ -11,7 +11,7 @@
     "backend/project-access.model.generated.ts": {
       "job": "models:.",
       "owner": "@exprtlabs/golem-model",
-      "digest": "7abc556739ef5a8330b4d62dc03990181e311a55d181d3229ae4918696d80655",
+      "digest": "1e2859654b2b4565b145ce0fefcbd9d0797b676a7457cdbaa1173ffc099ce5f4",
       "destination": "backend",
       "destinationKind": "directory"
     },
@@ -151,7 +151,7 @@
     "src/project-access.model.generated.ts": {
       "job": "models:.",
       "owner": "@exprtlabs/golem-model",
-      "digest": "57e3f4b83361d4a507ef2be418a125bcb3861d19de7df6cd67cabd9defd8ab5d",
+      "digest": "65eb022ff84f1fc64ea1879ed961816e883b556973693bce4fc14d03ca1331e1",
       "destination": "src",
       "destinationKind": "directory"
     }

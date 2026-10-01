@@ -59,7 +59,7 @@ function modelChecks(sourceFile: string, companionFile: string): { imports: stri
   const companion = fs.readFileSync(companionFile, 'utf8');
   const exported = new Set([...companion.matchAll(/^export type (\w+)JSON = /gm)].map(match => match[1]!));
   const aliases = [...source.matchAll(/^export type (\w+)\s*=\s*I(?:Model|Object)</gm)].map(match => match[1]!);
-  const classes = [...source.matchAll(/^export (?:abstract )?class (\w+) extends (\w+)Base\b/gm)];
+  const classes = [...source.matchAll(/^export (?:abstract )?class (\w+) extends (\w+)BaseModel\b/gm)];
   const sourceTypes: string[] = [];
   const jsonTypes = new Set<string>();
   const checks: WireCheck[] = [];
@@ -292,11 +292,11 @@ test('toWireFormat<T> returns the emitted JSON type through the ttsc plugin with
   writeModelSources(sourceRoot, {
     'payment-editor.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
 import type { Minimum } from '@exprtlabs/golem/tags';
-import { PaymentEditorBase } from './payment-editor.model.generated.js';
+import { PaymentEditorBaseModel } from './payment-editor.model.generated.js';
 
 export type TPaymentEditor = IModel<{ amount: number & Minimum<0>; note: string; paidAt: Date }>;
 
-export class PaymentEditor extends PaymentEditorBase {
+export class PaymentEditor extends PaymentEditorBaseModel {
   public get summary(): string {
     return \`\${this.amount}: \${this.note}\`;
   }
@@ -337,7 +337,7 @@ test('wire output omits optional fields that are absent or undefined', async t =
   });
   writeModelSources(sourceRoot, {
     'visit.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
-import { SlotBase, VisitBase } from './visit.model.generated.js';
+import { SlotBaseModel, VisitBaseModel } from './visit.model.generated.js';
 
 export type TSlot = IModel<{ at: Date; room?: string }>;
 export type TVisit = IModel<{
@@ -347,8 +347,8 @@ export type TVisit = IModel<{
   detail?: { at: Date; memo?: string };
   window?: Partial<Pick<TSlot, 'at' | 'room'>>;
 }>;
-export class Slot extends SlotBase {}
-export class Visit extends VisitBase {}
+export class Slot extends SlotBaseModel {}
+export class Visit extends VisitBaseModel {}
 `,
   });
   writeGeneratedArtifacts(generate({ root, profile: { mobx: false, validation: true } }).artifacts);

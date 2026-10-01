@@ -12,7 +12,7 @@ export type EmailFields = { kind: "email"; address: string };
 export type EmailJSON = { kind: "email"; address: string };
 export type EmailInit = Partial<{ kind: "email"; address: string }>;
 
-export abstract class EmailBase implements GeneratedModel<EmailJSON, EmailFields> {
+export abstract class EmailBaseModel implements GeneratedModel<EmailJSON, EmailFields> {
   declare readonly [generatedModelWireBrand]: EmailJSON;
   declare readonly [generatedModelFieldsBrand]: EmailFields;
   declare kind: EmailFields["kind"];
@@ -25,35 +25,35 @@ export abstract class EmailBase implements GeneratedModel<EmailJSON, EmailFields
 
 }
 
-function decodeEmailModel(constructor: GeneratedModelConstructor, json: unknown): EmailBase {
-  const values = modelObject(json, "EmailBase");
-  return Reflect.construct(constructor, [values]) as EmailBase;
+function decodeEmailModel(constructor: GeneratedModelConstructor, json: unknown): EmailBaseModel {
+  const values = modelObject(json, "EmailBaseModel");
+  return Reflect.construct(constructor, [values]) as EmailBaseModel;
 }
 
-function encodeEmailModel(model: EmailBase): EmailJSON {
+function encodeEmailModel(model: EmailBaseModel): EmailJSON {
   const result: Record<string, unknown> = {};
   if (Object.prototype.hasOwnProperty.call(model, "kind")) defineModelProperty(result, "kind", (model["kind"]));
   if (Object.prototype.hasOwnProperty.call(model, "address")) defineModelProperty(result, "address", (model["address"]));
   return result as EmailJSON;
 }
 
-registerGeneratedModel(EmailBase, {
+registerGeneratedModel(EmailBaseModel, {
   fields: ["kind", "address"],
   conversion: {
-    decode: (value, constructor) => decodeEmailModel(constructor ?? EmailBase, value),
+    decode: (value, constructor) => decodeEmailModel(constructor ?? EmailBaseModel, value),
     encode: encodeEmailModel,
   },
   codecId: "Email_3d5e923d",
   profile: { validation: true, mobx: false },
 });
 
-registerIModelClass("Email_3d5e923d", EmailBase);
+registerIModelClass("Email_3d5e923d", EmailBaseModel);
 
 export type PhoneFields = { kind: "phone"; number: string };
 export type PhoneJSON = { kind: "phone"; number: string };
 export type PhoneInit = Partial<{ kind: "phone"; number: string }>;
 
-export abstract class PhoneBase implements GeneratedModel<PhoneJSON, PhoneFields> {
+export abstract class PhoneBaseModel implements GeneratedModel<PhoneJSON, PhoneFields> {
   declare readonly [generatedModelWireBrand]: PhoneJSON;
   declare readonly [generatedModelFieldsBrand]: PhoneFields;
   declare kind: PhoneFields["kind"];
@@ -66,69 +66,69 @@ export abstract class PhoneBase implements GeneratedModel<PhoneJSON, PhoneFields
 
 }
 
-function decodePhoneModel(constructor: GeneratedModelConstructor, json: unknown): PhoneBase {
-  const values = modelObject(json, "PhoneBase");
-  return Reflect.construct(constructor, [values]) as PhoneBase;
+function decodePhoneModel(constructor: GeneratedModelConstructor, json: unknown): PhoneBaseModel {
+  const values = modelObject(json, "PhoneBaseModel");
+  return Reflect.construct(constructor, [values]) as PhoneBaseModel;
 }
 
-function encodePhoneModel(model: PhoneBase): PhoneJSON {
+function encodePhoneModel(model: PhoneBaseModel): PhoneJSON {
   const result: Record<string, unknown> = {};
   if (Object.prototype.hasOwnProperty.call(model, "kind")) defineModelProperty(result, "kind", (model["kind"]));
   if (Object.prototype.hasOwnProperty.call(model, "number")) defineModelProperty(result, "number", (model["number"]));
   return result as PhoneJSON;
 }
 
-registerGeneratedModel(PhoneBase, {
+registerGeneratedModel(PhoneBaseModel, {
   fields: ["kind", "number"],
   conversion: {
-    decode: (value, constructor) => decodePhoneModel(constructor ?? PhoneBase, value),
+    decode: (value, constructor) => decodePhoneModel(constructor ?? PhoneBaseModel, value),
     encode: encodePhoneModel,
   },
   codecId: "Phone_6ba1ec97",
   profile: { validation: true, mobx: false },
 });
 
-registerIModelClass("Phone_6ba1ec97", PhoneBase);
+registerIModelClass("Phone_6ba1ec97", PhoneBaseModel);
 
-export type ContactFields = { value: EmailBase | PhoneBase };
+export type ContactFields = { value: EmailBaseModel | PhoneBaseModel };
 export type ContactJSON = { value: EmailJSON | PhoneJSON };
-export type ContactInit = Partial<{ value: EmailInit | EmailBase | PhoneInit | PhoneBase }>;
+export type ContactInit = Partial<{ value: EmailInit | EmailBaseModel | PhoneInit | PhoneBaseModel }>;
 
-export abstract class ContactBase implements GeneratedModel<ContactJSON, ContactFields> {
+export abstract class ContactBaseModel implements GeneratedModel<ContactJSON, ContactFields> {
   declare readonly [generatedModelWireBrand]: ContactJSON;
   declare readonly [generatedModelFieldsBrand]: ContactFields;
   declare value: ContactFields["value"];
 
   public constructor(values: ContactInit = {}) {
-    if (Object.prototype.hasOwnProperty.call(values, "value")) defineModelProperty(this, "value", ((values["value"] as object) instanceof EmailBase && !((values["value"] as object) instanceof PhoneBase && PhoneBase.prototype instanceof EmailBase) ? (((values["value"] as unknown as Record<string, unknown>)["kind"] === "email") ? (values["value"] == null || values["value"] instanceof EmailBase ? values["value"] : new (requireIModelClass("Email_3d5e923d") as unknown as new (values?: EmailInit) => EmailBase)(values["value"] as unknown as EmailInit)) : unknownDiscriminatorValue("kind", (values["value"] as unknown as Record<string, unknown>)["kind"], 'deserialize')) : ((values["value"] as object) instanceof PhoneBase && !((values["value"] as object) instanceof EmailBase && EmailBase.prototype instanceof PhoneBase) ? (((values["value"] as unknown as Record<string, unknown>)["kind"] === "phone") ? (values["value"] == null || values["value"] instanceof PhoneBase ? values["value"] : new (requireIModelClass("Phone_6ba1ec97") as unknown as new (values?: PhoneInit) => PhoneBase)(values["value"] as unknown as PhoneInit)) : unknownDiscriminatorValue("kind", (values["value"] as unknown as Record<string, unknown>)["kind"], 'deserialize')) : (typeof values["value"] === 'object' && values["value"] !== null && !Array.isArray(values["value"]) && ((values["value"] as unknown as Record<string, unknown>)["kind"] === "email") ? (values["value"] == null || values["value"] instanceof EmailBase ? values["value"] : new (requireIModelClass("Email_3d5e923d") as unknown as new (values?: EmailInit) => EmailBase)(values["value"] as unknown as EmailInit)) : (typeof values["value"] === 'object' && values["value"] !== null && !Array.isArray(values["value"]) && ((values["value"] as unknown as Record<string, unknown>)["kind"] === "phone") ? (values["value"] == null || values["value"] instanceof PhoneBase ? values["value"] : new (requireIModelClass("Phone_6ba1ec97") as unknown as new (values?: PhoneInit) => PhoneBase)(values["value"] as unknown as PhoneInit)) : ((typeof values["value"] === 'object' && values["value"] !== null && !Array.isArray(values["value"]) ? unknownDiscriminatorValue("kind", (values["value"] as unknown as Record<string, unknown>)["kind"], 'deserialize') : values["value"])))))));
+    if (Object.prototype.hasOwnProperty.call(values, "value")) defineModelProperty(this, "value", ((values["value"] as object) instanceof EmailBaseModel && !((values["value"] as object) instanceof PhoneBaseModel && PhoneBaseModel.prototype instanceof EmailBaseModel) ? (((values["value"] as unknown as Record<string, unknown>)["kind"] === "email") ? (values["value"] == null || values["value"] instanceof EmailBaseModel ? values["value"] : new (requireIModelClass("Email_3d5e923d") as unknown as new (values?: EmailInit) => EmailBaseModel)(values["value"] as unknown as EmailInit)) : unknownDiscriminatorValue("kind", (values["value"] as unknown as Record<string, unknown>)["kind"], 'deserialize')) : ((values["value"] as object) instanceof PhoneBaseModel && !((values["value"] as object) instanceof EmailBaseModel && EmailBaseModel.prototype instanceof PhoneBaseModel) ? (((values["value"] as unknown as Record<string, unknown>)["kind"] === "phone") ? (values["value"] == null || values["value"] instanceof PhoneBaseModel ? values["value"] : new (requireIModelClass("Phone_6ba1ec97") as unknown as new (values?: PhoneInit) => PhoneBaseModel)(values["value"] as unknown as PhoneInit)) : unknownDiscriminatorValue("kind", (values["value"] as unknown as Record<string, unknown>)["kind"], 'deserialize')) : (typeof values["value"] === 'object' && values["value"] !== null && !Array.isArray(values["value"]) && ((values["value"] as unknown as Record<string, unknown>)["kind"] === "email") ? (values["value"] == null || values["value"] instanceof EmailBaseModel ? values["value"] : new (requireIModelClass("Email_3d5e923d") as unknown as new (values?: EmailInit) => EmailBaseModel)(values["value"] as unknown as EmailInit)) : (typeof values["value"] === 'object' && values["value"] !== null && !Array.isArray(values["value"]) && ((values["value"] as unknown as Record<string, unknown>)["kind"] === "phone") ? (values["value"] == null || values["value"] instanceof PhoneBaseModel ? values["value"] : new (requireIModelClass("Phone_6ba1ec97") as unknown as new (values?: PhoneInit) => PhoneBaseModel)(values["value"] as unknown as PhoneInit)) : ((typeof values["value"] === 'object' && values["value"] !== null && !Array.isArray(values["value"]) ? unknownDiscriminatorValue("kind", (values["value"] as unknown as Record<string, unknown>)["kind"], 'deserialize') : values["value"])))))));
   }
 
 }
 
-function decodeContactModel(constructor: GeneratedModelConstructor, json: unknown): ContactBase {
-  const values = modelObject(json, "ContactBase");
+function decodeContactModel(constructor: GeneratedModelConstructor, json: unknown): ContactBaseModel {
+  const values = modelObject(json, "ContactBaseModel");
   const result: Record<string, unknown> = { ...values };
-  if (Object.prototype.hasOwnProperty.call(values, "value")) defineModelProperty(result, "value", convertModelField("deserialize", "value", () => (((values["value"] as object) instanceof EmailBase && !((values["value"] as object) instanceof PhoneBase && PhoneBase.prototype instanceof EmailBase) ? (((values["value"] as unknown as Record<string, unknown>)["kind"] === "email") ? (values["value"] == null || values["value"] instanceof EmailBase ? values["value"] : decodeGeneratedModelTrusted(requireIModelClass("Email_3d5e923d"), values["value"])) : unknownDiscriminatorValue("kind", (values["value"] as unknown as Record<string, unknown>)["kind"], 'deserialize')) : ((values["value"] as object) instanceof PhoneBase && !((values["value"] as object) instanceof EmailBase && EmailBase.prototype instanceof PhoneBase) ? (((values["value"] as unknown as Record<string, unknown>)["kind"] === "phone") ? (values["value"] == null || values["value"] instanceof PhoneBase ? values["value"] : decodeGeneratedModelTrusted(requireIModelClass("Phone_6ba1ec97"), values["value"])) : unknownDiscriminatorValue("kind", (values["value"] as unknown as Record<string, unknown>)["kind"], 'deserialize')) : (typeof values["value"] === 'object' && values["value"] !== null && !Array.isArray(values["value"]) && ((values["value"] as unknown as Record<string, unknown>)["kind"] === "email") ? (values["value"] == null || values["value"] instanceof EmailBase ? values["value"] : decodeGeneratedModelTrusted(requireIModelClass("Email_3d5e923d"), values["value"])) : (typeof values["value"] === 'object' && values["value"] !== null && !Array.isArray(values["value"]) && ((values["value"] as unknown as Record<string, unknown>)["kind"] === "phone") ? (values["value"] == null || values["value"] instanceof PhoneBase ? values["value"] : decodeGeneratedModelTrusted(requireIModelClass("Phone_6ba1ec97"), values["value"])) : ((typeof values["value"] === 'object' && values["value"] !== null && !Array.isArray(values["value"]) ? unknownDiscriminatorValue("kind", (values["value"] as unknown as Record<string, unknown>)["kind"], 'deserialize') : values["value"])))))))));
-  return Reflect.construct(constructor, [result]) as ContactBase;
+  if (Object.prototype.hasOwnProperty.call(values, "value")) defineModelProperty(result, "value", convertModelField("deserialize", "value", () => (((values["value"] as object) instanceof EmailBaseModel && !((values["value"] as object) instanceof PhoneBaseModel && PhoneBaseModel.prototype instanceof EmailBaseModel) ? (((values["value"] as unknown as Record<string, unknown>)["kind"] === "email") ? (values["value"] == null || values["value"] instanceof EmailBaseModel ? values["value"] : decodeGeneratedModelTrusted(requireIModelClass("Email_3d5e923d"), values["value"])) : unknownDiscriminatorValue("kind", (values["value"] as unknown as Record<string, unknown>)["kind"], 'deserialize')) : ((values["value"] as object) instanceof PhoneBaseModel && !((values["value"] as object) instanceof EmailBaseModel && EmailBaseModel.prototype instanceof PhoneBaseModel) ? (((values["value"] as unknown as Record<string, unknown>)["kind"] === "phone") ? (values["value"] == null || values["value"] instanceof PhoneBaseModel ? values["value"] : decodeGeneratedModelTrusted(requireIModelClass("Phone_6ba1ec97"), values["value"])) : unknownDiscriminatorValue("kind", (values["value"] as unknown as Record<string, unknown>)["kind"], 'deserialize')) : (typeof values["value"] === 'object' && values["value"] !== null && !Array.isArray(values["value"]) && ((values["value"] as unknown as Record<string, unknown>)["kind"] === "email") ? (values["value"] == null || values["value"] instanceof EmailBaseModel ? values["value"] : decodeGeneratedModelTrusted(requireIModelClass("Email_3d5e923d"), values["value"])) : (typeof values["value"] === 'object' && values["value"] !== null && !Array.isArray(values["value"]) && ((values["value"] as unknown as Record<string, unknown>)["kind"] === "phone") ? (values["value"] == null || values["value"] instanceof PhoneBaseModel ? values["value"] : decodeGeneratedModelTrusted(requireIModelClass("Phone_6ba1ec97"), values["value"])) : ((typeof values["value"] === 'object' && values["value"] !== null && !Array.isArray(values["value"]) ? unknownDiscriminatorValue("kind", (values["value"] as unknown as Record<string, unknown>)["kind"], 'deserialize') : values["value"])))))))));
+  return Reflect.construct(constructor, [result]) as ContactBaseModel;
 }
 
-function encodeContactModel(model: ContactBase): ContactJSON {
+function encodeContactModel(model: ContactBaseModel): ContactJSON {
   const result: Record<string, unknown> = {};
-  if (Object.prototype.hasOwnProperty.call(model, "value")) defineModelProperty(result, "value", (convertModelField("serialize", "value", () => (((model["value"] as object) instanceof EmailBase && !((model["value"] as object) instanceof PhoneBase && PhoneBase.prototype instanceof EmailBase) ? (((model["value"] as unknown as Record<string, unknown>)["kind"] === "email") ? (withDiscriminatorValue(model["value"] instanceof EmailBase ? encodeGeneratedModel(model["value"]) : model["value"], "kind", (model["value"] as unknown as Record<string, unknown>)["kind"])) : unknownDiscriminatorValue("kind", (model["value"] as unknown as Record<string, unknown>)["kind"], 'serialize')) : ((model["value"] as object) instanceof PhoneBase && !((model["value"] as object) instanceof EmailBase && EmailBase.prototype instanceof PhoneBase) ? (((model["value"] as unknown as Record<string, unknown>)["kind"] === "phone") ? (withDiscriminatorValue(model["value"] instanceof PhoneBase ? encodeGeneratedModel(model["value"]) : model["value"], "kind", (model["value"] as unknown as Record<string, unknown>)["kind"])) : unknownDiscriminatorValue("kind", (model["value"] as unknown as Record<string, unknown>)["kind"], 'serialize')) : (typeof model["value"] === 'object' && model["value"] !== null && !Array.isArray(model["value"]) && ((model["value"] as unknown as Record<string, unknown>)["kind"] === "email") ? (withDiscriminatorValue(model["value"] instanceof EmailBase ? encodeGeneratedModel(model["value"]) : model["value"], "kind", (model["value"] as unknown as Record<string, unknown>)["kind"])) : (typeof model["value"] === 'object' && model["value"] !== null && !Array.isArray(model["value"]) && ((model["value"] as unknown as Record<string, unknown>)["kind"] === "phone") ? (withDiscriminatorValue(model["value"] instanceof PhoneBase ? encodeGeneratedModel(model["value"]) : model["value"], "kind", (model["value"] as unknown as Record<string, unknown>)["kind"])) : ((model["value"] == null ? model["value"] : unknownDiscriminatorValue("kind", (model["value"] as unknown as Record<string, unknown>)["kind"], 'serialize')))))))))));
+  if (Object.prototype.hasOwnProperty.call(model, "value")) defineModelProperty(result, "value", (convertModelField("serialize", "value", () => (((model["value"] as object) instanceof EmailBaseModel && !((model["value"] as object) instanceof PhoneBaseModel && PhoneBaseModel.prototype instanceof EmailBaseModel) ? (((model["value"] as unknown as Record<string, unknown>)["kind"] === "email") ? (withDiscriminatorValue(model["value"] instanceof EmailBaseModel ? encodeGeneratedModel(model["value"]) : model["value"], "kind", (model["value"] as unknown as Record<string, unknown>)["kind"])) : unknownDiscriminatorValue("kind", (model["value"] as unknown as Record<string, unknown>)["kind"], 'serialize')) : ((model["value"] as object) instanceof PhoneBaseModel && !((model["value"] as object) instanceof EmailBaseModel && EmailBaseModel.prototype instanceof PhoneBaseModel) ? (((model["value"] as unknown as Record<string, unknown>)["kind"] === "phone") ? (withDiscriminatorValue(model["value"] instanceof PhoneBaseModel ? encodeGeneratedModel(model["value"]) : model["value"], "kind", (model["value"] as unknown as Record<string, unknown>)["kind"])) : unknownDiscriminatorValue("kind", (model["value"] as unknown as Record<string, unknown>)["kind"], 'serialize')) : (typeof model["value"] === 'object' && model["value"] !== null && !Array.isArray(model["value"]) && ((model["value"] as unknown as Record<string, unknown>)["kind"] === "email") ? (withDiscriminatorValue(model["value"] instanceof EmailBaseModel ? encodeGeneratedModel(model["value"]) : model["value"], "kind", (model["value"] as unknown as Record<string, unknown>)["kind"])) : (typeof model["value"] === 'object' && model["value"] !== null && !Array.isArray(model["value"]) && ((model["value"] as unknown as Record<string, unknown>)["kind"] === "phone") ? (withDiscriminatorValue(model["value"] instanceof PhoneBaseModel ? encodeGeneratedModel(model["value"]) : model["value"], "kind", (model["value"] as unknown as Record<string, unknown>)["kind"])) : ((model["value"] == null ? model["value"] : unknownDiscriminatorValue("kind", (model["value"] as unknown as Record<string, unknown>)["kind"], 'serialize')))))))))));
   return result as ContactJSON;
 }
 
-registerGeneratedModel(ContactBase, {
+registerGeneratedModel(ContactBaseModel, {
   fields: ["value"],
   conversion: {
-    decode: (value, constructor) => decodeContactModel(constructor ?? ContactBase, value),
+    decode: (value, constructor) => decodeContactModel(constructor ?? ContactBaseModel, value),
     encode: encodeContactModel,
   },
   codecId: "Contact_82fcfbf0",
   profile: { validation: true, mobx: false },
 });
 
-registerIModelClass("Contact_82fcfbf0", ContactBase);
+registerIModelClass("Contact_82fcfbf0", ContactBaseModel);
 
 const objectAjvFast = createOpenApiSyncAjvEngine({ allErrors: false, validationBindings: {} });
 const objectAjvAll = createOpenApiSyncAjvEngine({ allErrors: true, validationBindings: {} });

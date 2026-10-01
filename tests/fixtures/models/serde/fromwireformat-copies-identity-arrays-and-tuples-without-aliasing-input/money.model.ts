@@ -1,4 +1,4 @@
 import type { IModel } from '@exprtlabs/golem/model';
-import { MemberBase } from './money.model.generated.js';
+import { MemberBaseModel } from './money.model.generated.js';
 export type TMember = IModel<{ id: number; emails: string[]; ip: [number, number, number, number] }>;
-export class Member extends MemberBase {}
+export class Member extends MemberBaseModel {}

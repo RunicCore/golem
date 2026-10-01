@@ -11,7 +11,7 @@
     "src/task.model.generated.ts": {
       "job": "models:.",
       "owner": "@exprtlabs/golem-model",
-      "digest": "2a192c908e0c829451b7fdb31509bb6d190a8b61ec33e229992052fcbb4200c7",
+      "digest": "e4afcd31e19b1de9a334793dff30f4accbbecdce301234cb0c10f9debdaa2909",
       "destination": "src",
       "destinationKind": "directory"
     }

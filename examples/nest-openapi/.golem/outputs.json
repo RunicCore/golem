@@ -291,21 +291,21 @@
     "src/payment-draft.model.generated.ts": {
       "job": "models:.",
       "owner": "@exprtlabs/golem-model",
-      "digest": "5b169782af63a1f1efdf1f58bde638be941637c21f7f19504b2c9454a5ac6435",
+      "digest": "e26f738662f8214074e88c6b5430e4d3f9dec0c2466d9f68af80ba02727c7083",
       "destination": "src",
       "destinationKind": "directory"
     },
     "src/payment.model.generated.ts": {
       "job": "models:.",
       "owner": "@exprtlabs/golem-model",
-      "digest": "0fe0de5975f60db75c60b5580f2023a6bf500528ad53c2423ee8270245f0bf5e",
+      "digest": "d1c2eb1223bf0e0ee0303a960c510c1ee9ee0178189cb64a58698ce0ce3b61dd",
       "destination": "src",
       "destinationKind": "directory"
     },
     "src/price.model.generated.ts": {
       "job": "models:.",
       "owner": "@exprtlabs/golem-model",
-      "digest": "445652524f1227985a44656a98dadd2bce469d1f43cff1b827c87d8fa44f7d4f",
+      "digest": "a5f13c8af966b1900ce046f37baff355bdf125a22c76d531f3cb31a2446ddf11",
       "destination": "src",
       "destinationKind": "directory"
     }

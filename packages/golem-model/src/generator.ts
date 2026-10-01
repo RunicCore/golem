@@ -470,7 +470,7 @@ export function generate(context: GolemModelContext): GolemModelResult {
     );
     if (content !== undefined) artifacts.push({ path: output, content });
   }
-  const codecEntries = graphSchemaPairs.flatMap(({ graph, schemaGraph }) => codecEntriesForGraph(graph, schemaGraph));
+  const codecEntries = graphSchemaPairs.flatMap(({ graph, schemaGraph }) => codecEntriesForGraph(graph, schemaGraph, checker, specifications));
   if (codecEntries.length > 0) {
     artifacts.push({
       path: join(normalized.output, 'iobject-plugin-keys.ts'),

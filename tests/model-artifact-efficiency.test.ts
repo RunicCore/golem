@@ -173,9 +173,9 @@ test('generated tag schemas retain distinct reference closures for duplicate loc
   await compileModelProject(fixtureValue.root);
   const [
     { Parent: OneParent, Child: OneChild },
-    { ParentBase: OneParentBase },
+    { ParentBaseModel: OneParentBaseModel },
     { Parent: TwoParent, Child: TwoChild },
-    { ParentBase: TwoParentBase },
+    { ParentBaseModel: TwoParentBaseModel },
   ] = await Promise.all([
     import(pathToFileURL(path.join(fixtureValue.root, 'build/one/things.model.js')).href),
     import(pathToFileURL(path.join(fixtureValue.root, 'build/one/things.model.generated.js')).href),
@@ -183,12 +183,12 @@ test('generated tag schemas retain distinct reference closures for duplicate loc
     import(pathToFileURL(path.join(fixtureValue.root, 'build/two/things.model.generated.js')).href),
   ]) as [
     { Parent: new (values?: never) => object; Child: new (values?: never) => object },
-    { ParentBase: abstract new (...args: never[]) => object },
+    { ParentBaseModel: abstract new (...args: never[]) => object },
     { Parent: new (values?: never) => object; Child: new (values?: never) => object },
-    { ParentBase: abstract new (...args: never[]) => object },
+    { ParentBaseModel: abstract new (...args: never[]) => object },
   ];
-  const oneCodecId = findCodecIdForConstructor(OneParentBase);
-  const twoCodecId = findCodecIdForConstructor(TwoParentBase);
+  const oneCodecId = findCodecIdForConstructor(OneParentBaseModel);
+  const twoCodecId = findCodecIdForConstructor(TwoParentBaseModel);
   assert.ok(oneCodecId, 'the "one" Parent model has a registered codec id');
   assert.ok(twoCodecId, 'the "two" Parent model has a registered codec id');
   const oneCodec = requireObjectCodec(oneCodecId);

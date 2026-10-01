@@ -2,7 +2,7 @@
 import type { IModel } from '@exprtlabs/golem/model';
 import type { Contains, IfThenElse, MaxContains, Not, OneOf, TValidation, UnevaluatedProperties } from '@exprtlabs/golem/tags';
 import { positive, negative } from './rules.js';
-import { ABase } from './a.model.generated.js';
+import { ABaseModel } from './a.model.generated.js';
 type Positive = number & TValidation<typeof positive>;
 type Negative = number & TValidation<typeof negative>;
 export type TA = IModel<{
@@ -13,4 +13,4 @@ export type TA = IModel<{
   annotated?: unknown & OneOf<[{ a: Positive }, { b: string }]> & UnevaluatedProperties<never>;
   builtin?: unknown & Not<number>;
 }>;
-export class A extends ABase {}
+export class A extends ABaseModel {}

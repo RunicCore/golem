@@ -95,7 +95,7 @@
     "src/payment-editor.model.generated.ts": {
       "job": "models:.",
       "owner": "@exprtlabs/golem-model",
-      "digest": "5a08362a939b9e6b7cc9e32afa3a0c29a1fcc5deb78d6a1a442dc5441281a08a",
+      "digest": "da6d8687de585a5874b857dc458d0b6ce7220634003197f3f586c5b31772f6ab",
       "destination": "src",
       "destinationKind": "directory"
     }

@@ -6,11 +6,11 @@ export function projectionPolicyModelSource(options: {
 }): SourceFragment {
   return tsSource`
 import type { IModel } from '@exprtlabs/golem/model';
-import { ContainerBase, ItemBase } from './item.model.generated.js';
+import { ContainerBaseModel, ItemBaseModel } from './item.model.generated.js';
 export type TItem = IModel<{ id: string; value: string }, { exact: ${literal(options.itemExact)} }>;
 export type TContainer = IModel<{ item: Omit<TItem, 'id'> }, { exact: ${literal(options.containerExact)} }>;
-export class Container extends ContainerBase {}
-export class Item extends ItemBase {}
+export class Container extends ContainerBaseModel {}
+export class Item extends ItemBaseModel {}
 `;
 }
 
@@ -47,11 +47,11 @@ export function discardedProjectionMetadataSource(options: {
   return tsSource`
 import type { IModel } from '@exprtlabs/golem/model';
 import type { TSerde, TValidation } from '@exprtlabs/golem/tags';
-import { AddressBase, ContainerBase } from './item.model.generated.js';
+import { AddressBaseModel, ContainerBaseModel } from './item.model.generated.js';
 ${metadata}
 export type TAddress = IModel<AddressFields>;
 export type TContainer = IModel<{ projected: Omit<TAddress, 'id'> }>;
-export class Address extends AddressBase {}
-export class Container extends ContainerBase {}
+export class Address extends AddressBaseModel {}
+export class Container extends ContainerBaseModel {}
 `;
 }

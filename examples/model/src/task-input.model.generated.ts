@@ -13,7 +13,7 @@ export type TaskInputFields = { title: string; done: boolean };
 export type TaskInputJSON = { title: string; done: boolean };
 export type TaskInputInit = Partial<{ title: string; done: boolean }>;
 
-export abstract class TaskInputBase implements GeneratedModel<TaskInputJSON, TaskInputFields> {
+export abstract class TaskInputBaseModel implements GeneratedModel<TaskInputJSON, TaskInputFields> {
   declare readonly [generatedModelWireBrand]: TaskInputJSON;
   declare readonly [generatedModelFieldsBrand]: TaskInputFields;
   declare title: TaskInputFields["title"];
@@ -26,29 +26,29 @@ export abstract class TaskInputBase implements GeneratedModel<TaskInputJSON, Tas
 
 }
 
-function decodeTaskInputModel(constructor: GeneratedModelConstructor, json: unknown): TaskInputBase {
-  const values = modelObject(json, "TaskInputBase");
-  return Reflect.construct(constructor, [values]) as TaskInputBase;
+function decodeTaskInputModel(constructor: GeneratedModelConstructor, json: unknown): TaskInputBaseModel {
+  const values = modelObject(json, "TaskInputBaseModel");
+  return Reflect.construct(constructor, [values]) as TaskInputBaseModel;
 }
 
-function encodeTaskInputModel(model: TaskInputBase): TaskInputJSON {
+function encodeTaskInputModel(model: TaskInputBaseModel): TaskInputJSON {
   const result: Record<string, unknown> = {};
   if (Object.prototype.hasOwnProperty.call(model, "title")) defineModelProperty(result, "title", (model["title"]));
   if (Object.prototype.hasOwnProperty.call(model, "done")) defineModelProperty(result, "done", (model["done"]));
   return result as TaskInputJSON;
 }
 
-registerGeneratedModel(TaskInputBase, {
+registerGeneratedModel(TaskInputBaseModel, {
   fields: ["title", "done"],
   conversion: {
-    decode: (value, constructor) => decodeTaskInputModel(constructor ?? TaskInputBase, value),
+    decode: (value, constructor) => decodeTaskInputModel(constructor ?? TaskInputBaseModel, value),
     encode: encodeTaskInputModel,
   },
   codecId: "TaskInput_b47fc3de",
   profile: { validation: true, mobx: false },
 });
 
-registerIModelClass("TaskInput_b47fc3de", TaskInputBase);
+registerIModelClass("TaskInput_b47fc3de", TaskInputBaseModel);
 
 const objectAjvFast = createOpenApiSyncAjvEngine({ allErrors: false, validationBindings: modelValidationBindings });
 const objectAjvAll = createOpenApiSyncAjvEngine({ allErrors: true, validationBindings: modelValidationBindings });

@@ -19,7 +19,7 @@ export type NotebookFields = { notes: Array<NoteFields> };
 export type NotebookJSON = { notes: Array<NoteJSON> };
 export type NotebookInit = Partial<{ notes: Array<NoteInit> }>;
 
-export abstract class NotebookBase implements GeneratedModel<NotebookJSON, NotebookFields> {
+export abstract class NotebookBaseModel implements GeneratedModel<NotebookJSON, NotebookFields> {
   declare readonly [generatedModelWireBrand]: NotebookJSON;
   declare readonly [generatedModelFieldsBrand]: NotebookFields;
   declare notes: NotebookFields["notes"];
@@ -30,30 +30,30 @@ export abstract class NotebookBase implements GeneratedModel<NotebookJSON, Noteb
 
 }
 
-function decodeNotebookModel(constructor: GeneratedModelConstructor, json: unknown): NotebookBase {
-  const values = modelObject(json, "NotebookBase");
+function decodeNotebookModel(constructor: GeneratedModelConstructor, json: unknown): NotebookBaseModel {
+  const values = modelObject(json, "NotebookBaseModel");
   const result: Record<string, unknown> = { ...values };
   if (Object.prototype.hasOwnProperty.call(values, "notes")) defineModelProperty(result, "notes", convertModelField("deserialize", "notes", () => (Array.isArray(values["notes"]) ? (values["notes"] as readonly unknown[]).map((item, index) => convertModelField('deserialize', index, () => (decodeNote(item)))) : values["notes"])));
-  return Reflect.construct(constructor, [result]) as NotebookBase;
+  return Reflect.construct(constructor, [result]) as NotebookBaseModel;
 }
 
-function encodeNotebookModel(model: NotebookBase): NotebookJSON {
+function encodeNotebookModel(model: NotebookBaseModel): NotebookJSON {
   const result: Record<string, unknown> = {};
   if (Object.prototype.hasOwnProperty.call(model, "notes")) defineModelProperty(result, "notes", (convertModelField("serialize", "notes", () => (Array.isArray(model["notes"]) ? (model["notes"] as readonly unknown[]).map((item, index) => convertModelField('serialize', index, () => (encodeNote(item)))) : model["notes"]))));
   return result as NotebookJSON;
 }
 
-registerGeneratedModel(NotebookBase, {
+registerGeneratedModel(NotebookBaseModel, {
   fields: ["notes"],
   conversion: {
-    decode: (value, constructor) => decodeNotebookModel(constructor ?? NotebookBase, value),
+    decode: (value, constructor) => decodeNotebookModel(constructor ?? NotebookBaseModel, value),
     encode: encodeNotebookModel,
   },
   codecId: "Notebook_5213e3e5",
   profile: { validation: true, mobx: false },
 });
 
-registerIModelClass("Notebook_5213e3e5", NotebookBase);
+registerIModelClass("Notebook_5213e3e5", NotebookBaseModel);
 
 const objectAjvFast = createOpenApiSyncAjvEngine({ allErrors: false, validationBindings: {} });
 const objectAjvAll = createOpenApiSyncAjvEngine({ allErrors: true, validationBindings: {} });

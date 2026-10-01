@@ -330,21 +330,21 @@ test('type-only IModel parse fills nested models from the generated base', async
   const result = generate({ root, profile: { mobx: false, validation: false } });
   writeGeneratedArtifacts(result.artifacts);
   await compile(root);
-  const { IsolatedPointBase } = await import(pathToFileURL(path.join(root, 'build/money.model.generated.js')).href) as {
-    IsolatedPointBase: new (values?: object) => object;
+  const { IsolatedPointBaseModel } = await import(pathToFileURL(path.join(root, 'build/money.model.generated.js')).href) as {
+    IsolatedPointBaseModel: new (values?: object) => object;
   };
   const codecs = await import(pathToFileURL(path.join(root, 'build/money.model.generated.js')).href) as {
     parseObjectClassField: (text: string, options?: { validate?: boolean }) => { scale: object };
     fromWireFormatObjectClassField: (wire: unknown, options?: { validate?: boolean }) => { scale: object };
   };
   const parsed = codecs.parseObjectClassField('{"id":"1","scale":{"x":1,"y":2,"z":3}}', { validate: false });
-  assert.ok(parsed.scale instanceof IsolatedPointBase);
+  assert.ok(parsed.scale instanceof IsolatedPointBaseModel);
   assert.equal(Reflect.get(parsed.scale, 'x'), 1);
   const constructed = codecs.fromWireFormatObjectClassField(
     { id: '1', scale: { x: 1, y: 2, z: 3 } },
     { validate: false },
   );
-  assert.ok(constructed.scale instanceof IsolatedPointBase);
+  assert.ok(constructed.scale instanceof IsolatedPointBaseModel);
 });
 
 test('toWireFormat encodes nullable nested IModel fields to plain objects, not class instances', async (t) => {

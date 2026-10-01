@@ -6,7 +6,7 @@ export function builtinTagsModelSource({ mobx }: { readonly mobx: boolean }): So
   const emailPattern = literal('^\\p{Letter}+$');
   return tsSource`import type { IModel } from '@exprtlabs/golem/model';
 import type { ExclusiveMax, ExclusiveMin, ExclusiveMaximum, ExclusiveMinimum, Format, Integer, Max, MaxItems, MaxLength, Maximum, Min, MinItems, MinLength, Minimum, MultipleOf, Pattern, UniqueItems } from '@exprtlabs/golem/tags';
-import { ABase, type AFields } from './a.model.generated.js';
+import { ABaseModel, type AFields } from './a.model.generated.js';
 ${mobxImport}
 export type TA = IModel<{
   integer: number & Integer;
@@ -28,7 +28,7 @@ export type TA = IModel<{
   aliasExclusiveMax: number & ExclusiveMax<7>;
 }>;
 
-export class A extends ABase {
+export class A extends ABaseModel {
   constructor(values: Partial<AFields> = {}) {
     super(values);
     ${mobxInitialization}

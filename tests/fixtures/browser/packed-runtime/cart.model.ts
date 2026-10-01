@@ -11,9 +11,9 @@ export type TCart = IModel<{
 }>;
 
 import { asGenObservable } from '@exprtlabs/golem/mobx';
-import { CartBase, type CartInit } from './cart.model.generated.js';
+import { CartBaseModel, type CartInit } from './cart.model.generated.js';
 
-export class Cart extends CartBase {
+export class Cart extends CartBaseModel {
   constructor(values: CartInit = {}) {
     super(values);
     asGenObservable(this);

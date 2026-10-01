@@ -1,1 +1,1 @@
-export declare abstract class PaymentBase { readonly id: string; }
+export declare abstract class PaymentBaseModel { readonly id: string; }

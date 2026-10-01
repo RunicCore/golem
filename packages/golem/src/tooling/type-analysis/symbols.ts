@@ -67,7 +67,7 @@ export function modelSpecificationForClass(
   const expected = new Set(specifications.map(specification => canonicalFilename(generatedFilename(specification.sourceFile.fileName))));
   const match = (filename: string, name: string | undefined): ModelSpecification | undefined => specifications.find(specification =>
     canonicalFilename(generatedFilename(specification.sourceFile.fileName)) === canonicalFilename(filename)
-      && name === `${specification.name}Base`);
+      && name === `${specification.name}BaseModel`);
   const host: ts.ModuleResolutionHost = {
     ...ts.sys,
     fileExists: filename => expected.has(canonicalFilename(filename)) || ts.sys.fileExists(filename),

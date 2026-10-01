@@ -13,7 +13,7 @@ export type AttachmentFields = { name: string; content: Uint8Array };
 export type AttachmentJSON = { name: string; content: string };
 export type AttachmentInit = Partial<{ name: string; content: Uint8Array }>;
 
-export abstract class AttachmentBase implements GeneratedModel<AttachmentJSON, AttachmentFields> {
+export abstract class AttachmentBaseModel implements GeneratedModel<AttachmentJSON, AttachmentFields> {
   declare readonly [generatedModelWireBrand]: AttachmentJSON;
   declare readonly [generatedModelFieldsBrand]: AttachmentFields;
   declare name: AttachmentFields["name"];
@@ -26,31 +26,31 @@ export abstract class AttachmentBase implements GeneratedModel<AttachmentJSON, A
 
 }
 
-function decodeAttachmentModel(constructor: GeneratedModelConstructor, json: unknown): AttachmentBase {
-  const values = modelObject(json, "AttachmentBase");
+function decodeAttachmentModel(constructor: GeneratedModelConstructor, json: unknown): AttachmentBaseModel {
+  const values = modelObject(json, "AttachmentBaseModel");
   const result: Record<string, unknown> = { ...values };
   if (Object.prototype.hasOwnProperty.call(values, "content")) defineModelProperty(result, "content", convertModelField("deserialize", "content", () => (modelSerdeBindings["src/base64-codec.ts#encodeBase64\u0000src/base64-codec.ts#decodeBase64"].deserialize(values["content"]))));
-  return Reflect.construct(constructor, [result]) as AttachmentBase;
+  return Reflect.construct(constructor, [result]) as AttachmentBaseModel;
 }
 
-function encodeAttachmentModel(model: AttachmentBase): AttachmentJSON {
+function encodeAttachmentModel(model: AttachmentBaseModel): AttachmentJSON {
   const result: Record<string, unknown> = {};
   if (Object.prototype.hasOwnProperty.call(model, "name")) defineModelProperty(result, "name", (model["name"]));
   if (Object.prototype.hasOwnProperty.call(model, "content")) defineModelProperty(result, "content", (convertModelField("serialize", "content", () => (modelSerdeBindings["src/base64-codec.ts#encodeBase64\u0000src/base64-codec.ts#decodeBase64"].serialize(model["content"])))));
   return result as AttachmentJSON;
 }
 
-registerGeneratedModel(AttachmentBase, {
+registerGeneratedModel(AttachmentBaseModel, {
   fields: ["name", "content"],
   conversion: {
-    decode: (value, constructor) => decodeAttachmentModel(constructor ?? AttachmentBase, value),
+    decode: (value, constructor) => decodeAttachmentModel(constructor ?? AttachmentBaseModel, value),
     encode: encodeAttachmentModel,
   },
   codecId: "Attachment_88b1059a",
   profile: { validation: true, mobx: false },
 });
 
-registerIModelClass("Attachment_88b1059a", AttachmentBase);
+registerIModelClass("Attachment_88b1059a", AttachmentBaseModel);
 
 const objectAjvFast = createOpenApiSyncAjvEngine({ allErrors: false, validationBindings: {} });
 const objectAjvAll = createOpenApiSyncAjvEngine({ allErrors: true, validationBindings: {} });

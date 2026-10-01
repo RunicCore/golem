@@ -13,7 +13,7 @@ export type ReminderFields = { title: string; remindAt: Date };
 export type ReminderJSON = { title: string; remindAt: string };
 export type ReminderInit = Partial<{ title: string; remindAt: Date }>;
 
-export abstract class ReminderBase implements GeneratedModel<ReminderJSON, ReminderFields> {
+export abstract class ReminderBaseModel implements GeneratedModel<ReminderJSON, ReminderFields> {
   declare readonly [generatedModelWireBrand]: ReminderJSON;
   declare readonly [generatedModelFieldsBrand]: ReminderFields;
   declare title: ReminderFields["title"];
@@ -26,31 +26,31 @@ export abstract class ReminderBase implements GeneratedModel<ReminderJSON, Remin
 
 }
 
-function decodeReminderModel(constructor: GeneratedModelConstructor, json: unknown): ReminderBase {
-  const values = modelObject(json, "ReminderBase");
+function decodeReminderModel(constructor: GeneratedModelConstructor, json: unknown): ReminderBaseModel {
+  const values = modelObject(json, "ReminderBaseModel");
   const result: Record<string, unknown> = { ...values };
   if (Object.prototype.hasOwnProperty.call(values, "remindAt")) defineModelProperty(result, "remindAt", convertModelField("deserialize", "remindAt", () => (deserializeDate(values["remindAt"]))));
-  return Reflect.construct(constructor, [result]) as ReminderBase;
+  return Reflect.construct(constructor, [result]) as ReminderBaseModel;
 }
 
-function encodeReminderModel(model: ReminderBase): ReminderJSON {
+function encodeReminderModel(model: ReminderBaseModel): ReminderJSON {
   const result: Record<string, unknown> = {};
   if (Object.prototype.hasOwnProperty.call(model, "title")) defineModelProperty(result, "title", (model["title"]));
   if (Object.prototype.hasOwnProperty.call(model, "remindAt")) defineModelProperty(result, "remindAt", (convertModelField("serialize", "remindAt", () => (serializeDate(model["remindAt"])))));
   return result as ReminderJSON;
 }
 
-registerGeneratedModel(ReminderBase, {
+registerGeneratedModel(ReminderBaseModel, {
   fields: ["title", "remindAt"],
   conversion: {
-    decode: (value, constructor) => decodeReminderModel(constructor ?? ReminderBase, value),
+    decode: (value, constructor) => decodeReminderModel(constructor ?? ReminderBaseModel, value),
     encode: encodeReminderModel,
   },
   codecId: "Reminder_5f93e659",
   profile: { validation: true, mobx: false },
 });
 
-registerIModelClass("Reminder_5f93e659", ReminderBase);
+registerIModelClass("Reminder_5f93e659", ReminderBaseModel);
 
 const objectAjvFast = createOpenApiSyncAjvEngine({ allErrors: false, validationBindings: {} });
 const objectAjvAll = createOpenApiSyncAjvEngine({ allErrors: true, validationBindings: {} });

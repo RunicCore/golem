@@ -1,21 +1,21 @@
 // #region nested-and-derived
 import type { IModel } from '@exprtlabs/golem/model';
 import { parse } from '@exprtlabs/golem/serde';
-import { AddressBase, CustomerBase } from './customer.model.generated.js';
+import { AddressBaseModel, CustomerBaseModel } from './customer.model.generated.js';
 
 export type TAddress = IModel<{
   id: string;
   city: string;
   country: string;
 }>;
-export class Address extends AddressBase {}
+export class Address extends AddressBaseModel {}
 
 export type TCustomer = IModel<{
   home: Address;
   shipping: Omit<TAddress, 'id'>;
   draft: Partial<Pick<TAddress, 'city' | 'country'>>;
 }>;
-export class Customer extends CustomerBase {}
+export class Customer extends CustomerBaseModel {}
 
 export function loadCustomer(): Customer {
   const customer = parse<Customer>(JSON.stringify({

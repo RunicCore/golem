@@ -1,13 +1,13 @@
 {
   "src/payment.model.generated.ts": [
-    "MerchantBase",
+    "MerchantBaseModel",
     "MerchantFields",
     "MerchantInit",
     "MerchantJSON",
     "MoneyFields",
     "MoneyInit",
     "MoneyJSON",
-    "PaymentBase",
+    "PaymentBaseModel",
     "PaymentFields",
     "PaymentInit",
     "PaymentJSON",

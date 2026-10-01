@@ -13,7 +13,7 @@ export type PriceFields = { amount: number; currency: "EUR" | "USD" };
 export type PriceJSON = { amount: string; currency: "EUR" | "USD" };
 export type PriceInit = Partial<{ amount: number; currency: "EUR" | "USD" }>;
 
-export abstract class PriceBase implements GeneratedModel<PriceJSON, PriceFields> {
+export abstract class PriceBaseModel implements GeneratedModel<PriceJSON, PriceFields> {
   declare readonly [generatedModelWireBrand]: PriceJSON;
   declare readonly [generatedModelFieldsBrand]: PriceFields;
   declare amount: PriceFields["amount"];
@@ -26,31 +26,31 @@ export abstract class PriceBase implements GeneratedModel<PriceJSON, PriceFields
 
 }
 
-function decodePriceModel(constructor: GeneratedModelConstructor, json: unknown): PriceBase {
-  const values = modelObject(json, "PriceBase");
+function decodePriceModel(constructor: GeneratedModelConstructor, json: unknown): PriceBaseModel {
+  const values = modelObject(json, "PriceBaseModel");
   const result: Record<string, unknown> = { ...values };
   if (Object.prototype.hasOwnProperty.call(values, "amount")) defineModelProperty(result, "amount", convertModelField("deserialize", "amount", () => (modelSerdeBindings["src/decimal-text.ts#writeAmount\u0000src/decimal-text.ts#readAmount"].deserialize(values["amount"]))));
-  return Reflect.construct(constructor, [result]) as PriceBase;
+  return Reflect.construct(constructor, [result]) as PriceBaseModel;
 }
 
-function encodePriceModel(model: PriceBase): PriceJSON {
+function encodePriceModel(model: PriceBaseModel): PriceJSON {
   const result: Record<string, unknown> = {};
   if (Object.prototype.hasOwnProperty.call(model, "amount")) defineModelProperty(result, "amount", (convertModelField("serialize", "amount", () => (modelSerdeBindings["src/decimal-text.ts#writeAmount\u0000src/decimal-text.ts#readAmount"].serialize(model["amount"])))));
   if (Object.prototype.hasOwnProperty.call(model, "currency")) defineModelProperty(result, "currency", (model["currency"]));
   return result as PriceJSON;
 }
 
-registerGeneratedModel(PriceBase, {
+registerGeneratedModel(PriceBaseModel, {
   fields: ["amount", "currency"],
   conversion: {
-    decode: (value, constructor) => decodePriceModel(constructor ?? PriceBase, value),
+    decode: (value, constructor) => decodePriceModel(constructor ?? PriceBaseModel, value),
     encode: encodePriceModel,
   },
   codecId: "Price_cdf316b7",
   profile: { validation: true, mobx: false },
 });
 
-registerIModelClass("Price_cdf316b7", PriceBase);
+registerIModelClass("Price_cdf316b7", PriceBaseModel);
 
 const objectAjvFast = createOpenApiSyncAjvEngine({ allErrors: false, validationBindings: {} });
 const objectAjvAll = createOpenApiSyncAjvEngine({ allErrors: true, validationBindings: {} });

@@ -14,7 +14,7 @@ export type ProjectAccessEditorFields = { member: InstanceType<typeof MemberMode
 export type ProjectAccessEditorJSON = { member: GeneratedModelWire<InstanceType<typeof MemberModel>>; projectName: string; permissions: string };
 export type ProjectAccessEditorInit = Partial<{ member: (ConstructorParameters<typeof MemberModel> extends [] ? never : ConstructorParameters<typeof MemberModel> extends [(infer Initializer)?, ...unknown[]] ? Initializer : never) | InstanceType<typeof MemberModel>; projectName: string; permissions: number }>;
 
-export abstract class ProjectAccessEditorBase implements GeneratedModel<ProjectAccessEditorJSON, ProjectAccessEditorFields> {
+export abstract class ProjectAccessEditorBaseModel implements GeneratedModel<ProjectAccessEditorJSON, ProjectAccessEditorFields> {
   declare readonly [generatedModelWireBrand]: ProjectAccessEditorJSON;
   declare readonly [generatedModelFieldsBrand]: ProjectAccessEditorFields;
   declare member: ProjectAccessEditorFields["member"];
@@ -29,15 +29,15 @@ export abstract class ProjectAccessEditorBase implements GeneratedModel<ProjectA
 
 }
 
-function decodeProjectAccessEditorModel(constructor: GeneratedModelConstructor, json: unknown): ProjectAccessEditorBase {
-  const values = modelObject(json, "ProjectAccessEditorBase");
+function decodeProjectAccessEditorModel(constructor: GeneratedModelConstructor, json: unknown): ProjectAccessEditorBaseModel {
+  const values = modelObject(json, "ProjectAccessEditorBaseModel");
   const result: Record<string, unknown> = { ...values };
   if (Object.prototype.hasOwnProperty.call(values, "member")) defineModelProperty(result, "member", convertModelField("deserialize", "member", () => (values["member"] == null || values["member"] instanceof MemberModel ? values["member"] : decodeGeneratedModelTrusted(MemberModel, values["member"]))));
   if (Object.prototype.hasOwnProperty.call(values, "permissions")) defineModelProperty(result, "permissions", convertModelField("deserialize", "permissions", () => (modelSerdeBindings["src/access-rules.ts#serializePermissions\u0000src/access-rules.ts#deserializePermissions"].deserialize(values["permissions"]))));
-  return Reflect.construct(constructor, [result]) as ProjectAccessEditorBase;
+  return Reflect.construct(constructor, [result]) as ProjectAccessEditorBaseModel;
 }
 
-function encodeProjectAccessEditorModel(model: ProjectAccessEditorBase): ProjectAccessEditorJSON {
+function encodeProjectAccessEditorModel(model: ProjectAccessEditorBaseModel): ProjectAccessEditorJSON {
   const result: Record<string, unknown> = {};
   if (Object.prototype.hasOwnProperty.call(model, "member")) defineModelProperty(result, "member", (convertModelField("serialize", "member", () => (model["member"] instanceof MemberModel ? encodeGeneratedModel(model["member"]) : model["member"]))));
   if (Object.prototype.hasOwnProperty.call(model, "projectName")) defineModelProperty(result, "projectName", (model["projectName"]));
@@ -45,17 +45,17 @@ function encodeProjectAccessEditorModel(model: ProjectAccessEditorBase): Project
   return result as ProjectAccessEditorJSON;
 }
 
-registerGeneratedModel(ProjectAccessEditorBase, {
+registerGeneratedModel(ProjectAccessEditorBaseModel, {
   fields: ["member", "projectName", "permissions"],
   conversion: {
-    decode: (value, constructor) => decodeProjectAccessEditorModel(constructor ?? ProjectAccessEditorBase, value),
+    decode: (value, constructor) => decodeProjectAccessEditorModel(constructor ?? ProjectAccessEditorBaseModel, value),
     encode: encodeProjectAccessEditorModel,
   },
   codecId: "ProjectAccessEditor_dbff379b",
   profile: { validation: true, mobx: false },
 });
 
-registerIModelClass("ProjectAccessEditor_dbff379b", ProjectAccessEditorBase);
+registerIModelClass("ProjectAccessEditor_dbff379b", ProjectAccessEditorBaseModel);
 
 const __golemTrusted = Object.freeze({ validate: false });
 

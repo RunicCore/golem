@@ -13,7 +13,7 @@ export type ScheduleFields = { startsAt: Temporal.Instant; day: Temporal.PlainDa
 export type ScheduleJSON = { startsAt: string; day: string; length: string };
 export type ScheduleInit = Partial<{ startsAt: Temporal.Instant; day: Temporal.PlainDate; length: Temporal.Duration }>;
 
-export abstract class ScheduleBase implements GeneratedModel<ScheduleJSON, ScheduleFields> {
+export abstract class ScheduleBaseModel implements GeneratedModel<ScheduleJSON, ScheduleFields> {
   declare readonly [generatedModelWireBrand]: ScheduleJSON;
   declare readonly [generatedModelFieldsBrand]: ScheduleFields;
   declare startsAt: ScheduleFields["startsAt"];
@@ -28,16 +28,16 @@ export abstract class ScheduleBase implements GeneratedModel<ScheduleJSON, Sched
 
 }
 
-function decodeScheduleModel(constructor: GeneratedModelConstructor, json: unknown): ScheduleBase {
-  const values = modelObject(json, "ScheduleBase");
+function decodeScheduleModel(constructor: GeneratedModelConstructor, json: unknown): ScheduleBaseModel {
+  const values = modelObject(json, "ScheduleBaseModel");
   const result: Record<string, unknown> = { ...values };
   if (Object.prototype.hasOwnProperty.call(values, "startsAt")) defineModelProperty(result, "startsAt", convertModelField("deserialize", "startsAt", () => (modelSerdeBindings["@exprtlabs/golem/temporal#serializeTemporalInstant\u0000@exprtlabs/golem/temporal#deserializeTemporalInstant"].deserialize(values["startsAt"]))));
   if (Object.prototype.hasOwnProperty.call(values, "day")) defineModelProperty(result, "day", convertModelField("deserialize", "day", () => (modelSerdeBindings["@exprtlabs/golem/temporal#serializeTemporalPlainDate\u0000@exprtlabs/golem/temporal#deserializeTemporalPlainDate"].deserialize(values["day"]))));
   if (Object.prototype.hasOwnProperty.call(values, "length")) defineModelProperty(result, "length", convertModelField("deserialize", "length", () => (modelSerdeBindings["@exprtlabs/golem/temporal#serializeTemporalDuration\u0000@exprtlabs/golem/temporal#deserializeTemporalDuration"].deserialize(values["length"]))));
-  return Reflect.construct(constructor, [result]) as ScheduleBase;
+  return Reflect.construct(constructor, [result]) as ScheduleBaseModel;
 }
 
-function encodeScheduleModel(model: ScheduleBase): ScheduleJSON {
+function encodeScheduleModel(model: ScheduleBaseModel): ScheduleJSON {
   const result: Record<string, unknown> = {};
   if (Object.prototype.hasOwnProperty.call(model, "startsAt")) defineModelProperty(result, "startsAt", (convertModelField("serialize", "startsAt", () => (modelSerdeBindings["@exprtlabs/golem/temporal#serializeTemporalInstant\u0000@exprtlabs/golem/temporal#deserializeTemporalInstant"].serialize(model["startsAt"])))));
   if (Object.prototype.hasOwnProperty.call(model, "day")) defineModelProperty(result, "day", (convertModelField("serialize", "day", () => (modelSerdeBindings["@exprtlabs/golem/temporal#serializeTemporalPlainDate\u0000@exprtlabs/golem/temporal#deserializeTemporalPlainDate"].serialize(model["day"])))));
@@ -45,17 +45,17 @@ function encodeScheduleModel(model: ScheduleBase): ScheduleJSON {
   return result as ScheduleJSON;
 }
 
-registerGeneratedModel(ScheduleBase, {
+registerGeneratedModel(ScheduleBaseModel, {
   fields: ["startsAt", "day", "length"],
   conversion: {
-    decode: (value, constructor) => decodeScheduleModel(constructor ?? ScheduleBase, value),
+    decode: (value, constructor) => decodeScheduleModel(constructor ?? ScheduleBaseModel, value),
     encode: encodeScheduleModel,
   },
   codecId: "Schedule_a6c75486",
   profile: { validation: true, mobx: false },
 });
 
-registerIModelClass("Schedule_a6c75486", ScheduleBase);
+registerIModelClass("Schedule_a6c75486", ScheduleBaseModel);
 
 const objectAjvFast = createOpenApiSyncAjvEngine({ allErrors: false, validationBindings: {} });
 const objectAjvAll = createOpenApiSyncAjvEngine({ allErrors: true, validationBindings: {} });

@@ -2,7 +2,7 @@
 import type { IModel } from '@exprtlabs/golem/model';
 import type { MinLength, TSerde } from '@exprtlabs/golem/tags';
 import type { fromPriorityWord, toPriorityWord } from './priority-word.js';
-import { TaskBase } from './task.model.generated.js';
+import { TaskBaseModel } from './task.model.generated.js';
 
 export type TTask = IModel<{
   title: string & MinLength<1>;
@@ -11,7 +11,7 @@ export type TTask = IModel<{
   priority: number & TSerde<typeof toPriorityWord, typeof fromPriorityWord>;
 }>;
 
-export class Task extends TaskBase {
+export class Task extends TaskBaseModel {
   public toggle(): void {
     this.done = !this.done;
   }

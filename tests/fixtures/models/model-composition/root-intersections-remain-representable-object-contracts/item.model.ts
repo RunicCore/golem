@@ -1,8 +1,8 @@
 
 import type { IModel } from '@exprtlabs/golem/model';
-import { ItemBase } from './item.model.generated.js';
+import { ItemBaseModel } from './item.model.generated.js';
 export type TItem = IModel<
   { id: string; count: number } &
   { nested: { enabled: boolean } }
 >;
-export class Item extends ItemBase {}
+export class Item extends ItemBaseModel {}

@@ -199,7 +199,7 @@ function assertGeneratedNames(
   const reserved = new Set(RESERVED_MODEL_MEMBERS);
   const used = new Map<string, string>();
   for (const specification of specifications) {
-    for (const name of [specification.name, `${specification.name}Base`, `${specification.name}Fields`]) {
+    for (const name of [specification.name, `${specification.name}BaseModel`, `${specification.name}Fields`]) {
       if (used.has(name)) {
         throw new Error(`Generated model symbol collision for "${name}" between ${used.get(name)} and ${specification.sourceFile.fileName}.`);
       }
@@ -261,7 +261,7 @@ function resolveLocalModel(
   codecId?: string,
 ): FromJsonModelResolver {
   if (localNames.has(name)) {
-    const className = `${name}Base`;
+    const className = `${name}BaseModel`;
     const initType = `${name}Init`;
     // Same-file handwritten classes would TDZ if this companion imported them.
     // The ttsc plugin registers the class under the hashed codec id.
@@ -596,8 +596,8 @@ function descriptorType(
     case 'reference': return descriptor.projection ? `${descriptor.name}${mode === 'wire' ? 'JSON' : mode === 'init' ? 'Init' : 'Fields'}` : mode === 'wire'
       ? `${descriptor.name}JSON`
       : mode === 'init'
-        ? `${descriptor.name}Init | ${descriptor.name}Base`
-        : `${descriptor.name}Base`;
+        ? `${descriptor.name}Init | ${descriptor.name}BaseModel`
+        : `${descriptor.name}BaseModel`;
     case 'generated-model': {
       const className = externalNames.get(descriptor.id) ?? 'object';
       return mode === 'wire'
@@ -654,21 +654,37 @@ function fieldDescriptors(
   );
 }
 
+/**
+ * The exported class of the model's file whose base is the model's generated base, whatever its
+ * name. A class that extends another candidate is a subclass, not the model's class.
+ */
 function exportedConcreteClass(
   checker: ts.TypeChecker,
   specification: ModelSpecification,
   specifications: readonly ModelSpecification[],
   compilerOptions?: ts.CompilerOptions,
 ): string | undefined {
-  const declaration = specification.sourceFile.statements.find((statement) =>
+  const candidates = specification.sourceFile.statements.filter((statement): statement is ts.ClassDeclaration & { readonly name: ts.Identifier } =>
     ts.isClassDeclaration(statement)
-      && statement.name?.text === specification.name
-      && statement.modifiers?.some((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword),
-  );
-  return declaration && ts.isClassDeclaration(declaration) && declaration.name
-    && modelSpecificationForClass(checker, checker.getTypeAtLocation(declaration), specifications, compilerOptions) === specification
-    ? declaration.name.text
-    : undefined;
+      && statement.name !== undefined
+      && statement.modifiers?.some((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword) === true
+      && modelSpecificationForClass(checker, checker.getTypeAtLocation(statement), specifications, compilerOptions) === specification);
+  const extendsCandidate = (candidate: ts.ClassDeclaration): boolean => (candidate.heritageClauses ?? [])
+    .filter((clause) => clause.token === ts.SyntaxKind.ExtendsKeyword)
+    .flatMap((clause) => clause.types)
+    .some((base) => {
+      const symbol = checker.getSymbolAtLocation(base.expression);
+      const resolved = symbol && symbol.flags & ts.SymbolFlags.Alias ? checker.getAliasedSymbol(symbol) : symbol;
+      return (resolved?.declarations ?? []).some((declaration) => candidates.some((other) => other === declaration));
+    });
+  const direct = candidates.filter((candidate) => !extendsCandidate(candidate));
+  if (direct.length > 1) {
+    throw new Error(
+      `Model ${specification.name} has several classes extending ${specification.name}BaseModel in ${specification.sourceFile.fileName}: `
+      + `${direct.map((candidate) => candidate.name.text).join(', ')}. Export one.`,
+    );
+  }
+  return direct[0]?.name.text;
 }
 
 function descriptorReferences(
@@ -991,20 +1007,29 @@ export function internSourceDefinitions(
   return schemaGraph;
 }
 
-export function codecEntriesForGraph(graph: SourceModelGraph, schemaGraph?: SchemaGraph): ReadonlyArray<{
+/** One entry per exact name that resolves to the model's codec: the model and, when it has one, its class. */
+export function codecEntriesForGraph(
+  graph: SourceModelGraph,
+  schemaGraph: SchemaGraph | undefined,
+  checker: ts.TypeChecker,
+  specifications: readonly ModelSpecification[],
+): ReadonlyArray<{
   readonly source: string;
   readonly name: string;
   readonly codecId: string;
+  readonly className?: string;
 }> {
   const internedSchemaGraph = schemaGraph ?? internSourceDefinitions(graph.definitions, graph.emitted);
-  return graph.emitted.map((specification) => {
+  return graph.emitted.flatMap((specification) => {
     const descriptor = graph.definitions[specification.name];
     const node = descriptor ? internedSchemaGraph.nodeFor(descriptor, specification.name, specification.emitClass) : undefined;
-    return {
+    const entry = {
       source: portableRelativeFilename(specification.sourceFile.fileName, graph.identityRoot),
       name: specification.name,
       codecId: node?.codecId ?? codecPublicId(specification.name, descriptor ?? { kind: 'unknown' }, undefined, { source: 'typescript', constructs: specification.emitClass }),
     };
+    const className = exportedConcreteClass(checker, specification, specifications, graph.compilerOptions);
+    return className ? [entry, { ...entry, className }] : [entry];
   });
 }
 
@@ -1231,7 +1256,7 @@ export function emitSource(
     const cls = registered ?? concreteNames.get(id) ?? (classModelNames.has(id) ? id : undefined);
     if (!cls) return resolveFromJsonModel(externalNames, id);
     // A class looked up by codec id is a value, not a type name.
-    const instance = registered ? `${id}Base` : cls;
+    const instance = registered ? `${id}BaseModel` : cls;
     return {
       className: cls,
       discriminators: discriminators(id),
@@ -1291,7 +1316,7 @@ export function emitSource(
     };
     const encodeResolver = (id: string): ToJsonModelResolver => projectionNames.has(id) ? resolveProjection(id)
       : siblingObjectNames.has(id) ? resolveSiblingObject(id)
-      : localNames.has(id) ? { className: `${id}Base`, discriminators: discriminators(id), encode: value => `encodeGeneratedModel(${value})` }
+      : localNames.has(id) ? { className: `${id}BaseModel`, discriminators: discriminators(id), encode: value => `encodeGeneratedModel(${value})` }
       : resolveToJsonModel(externalNames, id);
     const decode = emitModelFromJSON(descriptor, 'data', resolveFromAny, serde);
     const init = emitModelFromInit(descriptor, 'data', resolveFromAny);
@@ -1370,7 +1395,7 @@ export function emitSource(
         (id) => projectionNames.has(id) ? resolveProjection(id)
           : siblingObjectNames.has(id) ? resolveSiblingObject(id)
           : localNames.has(id)
-            ? { className: `${id}Base`, discriminators: discriminators(id), encode: (value: string) => `encodeGeneratedModel(${value})` }
+            ? { className: `${id}BaseModel`, discriminators: discriminators(id), encode: (value: string) => `encodeGeneratedModel(${value})` }
             : resolveToJsonModel(externalNames, id),
         {
           deserialize: (_id, value) => value,
@@ -1465,7 +1490,7 @@ export function emitSource(
     ...[...new Set(graph.siblings.map((item) => sourceImportPath(generatedFilename(item.sourceFile.fileName), output)))]
       .sort()
       .map((path) => `import ${JSON.stringify(path)};`),
-    ...localImports.map((item) => `import { ${item.name}Base, type ${item.name}JSON, type ${item.name}Init } from ${JSON.stringify(sourceImportPath(generatedFilename(item.sourceFile.fileName), output))};`),
+    ...localImports.map((item) => `import { ${item.name}BaseModel, type ${item.name}JSON, type ${item.name}Init } from ${JSON.stringify(sourceImportPath(generatedFilename(item.sourceFile.fileName), output))};`),
     ...siblingObjects.map((item) => {
       const codecId = siblingObjectCodecId(item.name);
       const helpers = (['decode', 'init', 'encode'] as const).map((kind) => objectHelperExportName(kind, codecId));
@@ -1584,7 +1609,7 @@ export function emitSource(
     if (collision) {
       throw new Error(`Model ${specification.name} field "${collision}" collides with a generated API member.`);
     }
-    const baseName = `${specification.name}Base`;
+    const baseName = `${specification.name}BaseModel`;
     const fieldsName = `${specification.name}Fields`;
     const definition = definitions[specification.name] ?? { kind: 'unknown' } as ModelConversionDescriptor;
     const fieldType = descriptorType(definition, 'model', localNames, externalNames, classNames);

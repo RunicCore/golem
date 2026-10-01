@@ -1,5 +1,5 @@
 import type { IModel, ModelInit } from '@exprtlabs/golem/model';
-import { SnapshotBase } from './snapshot.model.generated.js';
+import { SnapshotBaseModel } from './snapshot.model.generated.js';
 
 type OptionalTuple<T> = readonly [value?: T];
 
@@ -15,7 +15,7 @@ export type TSnapshot = IModel<{
   nested: { choice?: string | { kind: 'nested'; value: number } };
 }>;
 
-export class Snapshot extends SnapshotBase {}
+export class Snapshot extends SnapshotBaseModel {}
 
 type DeepInit = ModelInit<{ readonly values: readonly [head: { code: string }, ...tail: { label: string }[]] }>;
 const deepInit: DeepInit = { values: [{}, { label: 'tail' }] };

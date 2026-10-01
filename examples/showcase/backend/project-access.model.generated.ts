@@ -13,7 +13,7 @@ export type MemberFields = { id: string; name: string; email: string };
 export type MemberJSON = { id: string; name: string; email: string };
 export type MemberInit = Partial<{ id: string; name: string; email: string }>;
 
-export abstract class MemberBase implements GeneratedModel<MemberJSON, MemberFields> {
+export abstract class MemberBaseModel implements GeneratedModel<MemberJSON, MemberFields> {
   declare readonly [generatedModelWireBrand]: MemberJSON;
   declare readonly [generatedModelFieldsBrand]: MemberFields;
   declare id: MemberFields["id"];
@@ -28,12 +28,12 @@ export abstract class MemberBase implements GeneratedModel<MemberJSON, MemberFie
 
 }
 
-function decodeMemberModel(constructor: GeneratedModelConstructor, json: unknown): MemberBase {
-  const values = modelObject(json, "MemberBase");
-  return Reflect.construct(constructor, [values]) as MemberBase;
+function decodeMemberModel(constructor: GeneratedModelConstructor, json: unknown): MemberBaseModel {
+  const values = modelObject(json, "MemberBaseModel");
+  return Reflect.construct(constructor, [values]) as MemberBaseModel;
 }
 
-function encodeMemberModel(model: MemberBase): MemberJSON {
+function encodeMemberModel(model: MemberBaseModel): MemberJSON {
   const result: Record<string, unknown> = {};
   if (Object.prototype.hasOwnProperty.call(model, "id")) defineModelProperty(result, "id", (model["id"]));
   if (Object.prototype.hasOwnProperty.call(model, "name")) defineModelProperty(result, "name", (model["name"]));
@@ -41,23 +41,23 @@ function encodeMemberModel(model: MemberBase): MemberJSON {
   return result as MemberJSON;
 }
 
-registerGeneratedModel(MemberBase, {
+registerGeneratedModel(MemberBaseModel, {
   fields: ["id", "name", "email"],
   conversion: {
-    decode: (value, constructor) => decodeMemberModel(constructor ?? MemberBase, value),
+    decode: (value, constructor) => decodeMemberModel(constructor ?? MemberBaseModel, value),
     encode: encodeMemberModel,
   },
   codecId: "Member_5f7b88d4",
   profile: { validation: true, mobx: false },
 });
 
-registerIModelClass("Member_5f7b88d4", MemberBase);
+registerIModelClass("Member_5f7b88d4", MemberBaseModel);
 
-export type ProjectAccessFields = { projectName: string; member: MemberBase; permissions: number };
+export type ProjectAccessFields = { projectName: string; member: MemberBaseModel; permissions: number };
 export type ProjectAccessJSON = { projectName: string; member: MemberJSON; permissions: string };
-export type ProjectAccessInit = Partial<{ projectName: string; member: MemberInit | MemberBase; permissions: number }>;
+export type ProjectAccessInit = Partial<{ projectName: string; member: MemberInit | MemberBaseModel; permissions: number }>;
 
-export abstract class ProjectAccessBase implements GeneratedModel<ProjectAccessJSON, ProjectAccessFields> {
+export abstract class ProjectAccessBaseModel implements GeneratedModel<ProjectAccessJSON, ProjectAccessFields> {
   declare readonly [generatedModelWireBrand]: ProjectAccessJSON;
   declare readonly [generatedModelFieldsBrand]: ProjectAccessFields;
   declare projectName: ProjectAccessFields["projectName"];
@@ -66,39 +66,39 @@ export abstract class ProjectAccessBase implements GeneratedModel<ProjectAccessJ
 
   public constructor(values: ProjectAccessInit = {}) {
     if (Object.prototype.hasOwnProperty.call(values, "projectName")) defineModelProperty(this, "projectName", values["projectName"]);
-    if (Object.prototype.hasOwnProperty.call(values, "member")) defineModelProperty(this, "member", values["member"] == null || values["member"] instanceof MemberBase ? values["member"] : new (requireIModelClass("Member_5f7b88d4") as unknown as new (values?: MemberInit) => MemberBase)(values["member"] as unknown as MemberInit));
+    if (Object.prototype.hasOwnProperty.call(values, "member")) defineModelProperty(this, "member", values["member"] == null || values["member"] instanceof MemberBaseModel ? values["member"] : new (requireIModelClass("Member_5f7b88d4") as unknown as new (values?: MemberInit) => MemberBaseModel)(values["member"] as unknown as MemberInit));
     if (Object.prototype.hasOwnProperty.call(values, "permissions")) defineModelProperty(this, "permissions", values["permissions"]);
   }
 
 }
 
-function decodeProjectAccessModel(constructor: GeneratedModelConstructor, json: unknown): ProjectAccessBase {
-  const values = modelObject(json, "ProjectAccessBase");
+function decodeProjectAccessModel(constructor: GeneratedModelConstructor, json: unknown): ProjectAccessBaseModel {
+  const values = modelObject(json, "ProjectAccessBaseModel");
   const result: Record<string, unknown> = { ...values };
-  if (Object.prototype.hasOwnProperty.call(values, "member")) defineModelProperty(result, "member", convertModelField("deserialize", "member", () => (values["member"] == null || values["member"] instanceof MemberBase ? values["member"] : decodeGeneratedModelTrusted(requireIModelClass("Member_5f7b88d4"), values["member"]))));
+  if (Object.prototype.hasOwnProperty.call(values, "member")) defineModelProperty(result, "member", convertModelField("deserialize", "member", () => (values["member"] == null || values["member"] instanceof MemberBaseModel ? values["member"] : decodeGeneratedModelTrusted(requireIModelClass("Member_5f7b88d4"), values["member"]))));
   if (Object.prototype.hasOwnProperty.call(values, "permissions")) defineModelProperty(result, "permissions", convertModelField("deserialize", "permissions", () => (modelSerdeBindings["src/access-rules.ts#serializePermissions\u0000src/access-rules.ts#deserializePermissions"].deserialize(values["permissions"]))));
-  return Reflect.construct(constructor, [result]) as ProjectAccessBase;
+  return Reflect.construct(constructor, [result]) as ProjectAccessBaseModel;
 }
 
-function encodeProjectAccessModel(model: ProjectAccessBase): ProjectAccessJSON {
+function encodeProjectAccessModel(model: ProjectAccessBaseModel): ProjectAccessJSON {
   const result: Record<string, unknown> = {};
   if (Object.prototype.hasOwnProperty.call(model, "projectName")) defineModelProperty(result, "projectName", (model["projectName"]));
-  if (Object.prototype.hasOwnProperty.call(model, "member")) defineModelProperty(result, "member", (convertModelField("serialize", "member", () => (model["member"] instanceof MemberBase ? encodeGeneratedModel(model["member"]) : model["member"]))));
+  if (Object.prototype.hasOwnProperty.call(model, "member")) defineModelProperty(result, "member", (convertModelField("serialize", "member", () => (model["member"] instanceof MemberBaseModel ? encodeGeneratedModel(model["member"]) : model["member"]))));
   if (Object.prototype.hasOwnProperty.call(model, "permissions")) defineModelProperty(result, "permissions", (convertModelField("serialize", "permissions", () => (modelSerdeBindings["src/access-rules.ts#serializePermissions\u0000src/access-rules.ts#deserializePermissions"].serialize(model["permissions"])))));
   return result as ProjectAccessJSON;
 }
 
-registerGeneratedModel(ProjectAccessBase, {
+registerGeneratedModel(ProjectAccessBaseModel, {
   fields: ["projectName", "member", "permissions"],
   conversion: {
-    decode: (value, constructor) => decodeProjectAccessModel(constructor ?? ProjectAccessBase, value),
+    decode: (value, constructor) => decodeProjectAccessModel(constructor ?? ProjectAccessBaseModel, value),
     encode: encodeProjectAccessModel,
   },
   codecId: "ProjectAccess_65c0e448",
   profile: { validation: true, mobx: false },
 });
 
-registerIModelClass("ProjectAccess_65c0e448", ProjectAccessBase);
+registerIModelClass("ProjectAccess_65c0e448", ProjectAccessBaseModel);
 
 const objectAjvFast = createOpenApiSyncAjvEngine({ allErrors: false, validationBindings: modelValidationBindings });
 const objectAjvAll = createOpenApiSyncAjvEngine({ allErrors: true, validationBindings: modelValidationBindings });

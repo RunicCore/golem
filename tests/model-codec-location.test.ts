@@ -15,9 +15,9 @@ function generateWith(t: TestContext, sources: Record<string, string>): () => un
 
 const model = (imports: string, field: string) => `import type { IModel } from '@exprtlabs/golem/model';
 import type { TSerde, TValidation } from '@exprtlabs/golem/tags';
-${imports}import { TaskBase } from './task.model.generated.js';
+${imports}import { TaskBaseModel } from './task.model.generated.js';
 export type TTask = IModel<{ ${field} }>;
-export class Task extends TaskBase {}
+export class Task extends TaskBaseModel {}
 `;
 
 test('a TSerde function declared in a model file is a generation error naming the function and the fix', t => {

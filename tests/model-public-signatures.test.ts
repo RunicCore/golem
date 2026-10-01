@@ -11,9 +11,9 @@ test('model companion functions use the model types instead of unknown', t => {
   const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-public-signatures-', name: null, linkWorkspaceNodeModules: true });
   writeModelSources(sourceRoot, {
     'task.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
-import { TaskBase } from './task.model.generated.js';
+import { TaskBaseModel } from './task.model.generated.js';
 export type TTask = IModel<{ title: string; done: boolean }>;
-export class Task extends TaskBase {}
+export class Task extends TaskBaseModel {}
 `,
   });
   const result = generate({ root, profile: { mobx: false, validation: true, ajvStandalone: false } });
@@ -37,10 +37,10 @@ export function short(value: string): boolean { return value.length < 20; }
   'task.model.ts': `${preamble}import type { IModel } from '@exprtlabs/golem/model';
 import type { TSerde, TValidation } from '@exprtlabs/golem/tags';
 import type { fromWord, short, toWord } from './rules.js';
-import { TaskBase } from './task.model.generated.js';
+import { TaskBaseModel } from './task.model.generated.js';
 
 export type TTask = IModel<{ title: string & TValidation<typeof short>; priority: number & TSerde<typeof toWord, typeof fromWord> }>;
-export class Task extends TaskBase {}
+export class Task extends TaskBaseModel {}
 `,
 });
 

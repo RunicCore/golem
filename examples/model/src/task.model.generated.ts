@@ -13,7 +13,7 @@ export type TaskFields = { title: string; done: boolean; priority: number };
 export type TaskJSON = { title: string; done: boolean; priority: "high" | "low" | "normal" };
 export type TaskInit = Partial<{ title: string; done: boolean; priority: number }>;
 
-export abstract class TaskBase implements GeneratedModel<TaskJSON, TaskFields> {
+export abstract class TaskBaseModel implements GeneratedModel<TaskJSON, TaskFields> {
   declare readonly [generatedModelWireBrand]: TaskJSON;
   declare readonly [generatedModelFieldsBrand]: TaskFields;
   declare title: TaskFields["title"];
@@ -28,14 +28,14 @@ export abstract class TaskBase implements GeneratedModel<TaskJSON, TaskFields> {
 
 }
 
-function decodeTaskModel(constructor: GeneratedModelConstructor, json: unknown): TaskBase {
-  const values = modelObject(json, "TaskBase");
+function decodeTaskModel(constructor: GeneratedModelConstructor, json: unknown): TaskBaseModel {
+  const values = modelObject(json, "TaskBaseModel");
   const result: Record<string, unknown> = { ...values };
   if (Object.prototype.hasOwnProperty.call(values, "priority")) defineModelProperty(result, "priority", convertModelField("deserialize", "priority", () => (modelSerdeBindings["src/priority-word.ts#toPriorityWord\u0000src/priority-word.ts#fromPriorityWord"].deserialize(values["priority"]))));
-  return Reflect.construct(constructor, [result]) as TaskBase;
+  return Reflect.construct(constructor, [result]) as TaskBaseModel;
 }
 
-function encodeTaskModel(model: TaskBase): TaskJSON {
+function encodeTaskModel(model: TaskBaseModel): TaskJSON {
   const result: Record<string, unknown> = {};
   if (Object.prototype.hasOwnProperty.call(model, "title")) defineModelProperty(result, "title", (model["title"]));
   if (Object.prototype.hasOwnProperty.call(model, "done")) defineModelProperty(result, "done", (model["done"]));
@@ -43,17 +43,17 @@ function encodeTaskModel(model: TaskBase): TaskJSON {
   return result as TaskJSON;
 }
 
-registerGeneratedModel(TaskBase, {
+registerGeneratedModel(TaskBaseModel, {
   fields: ["title", "done", "priority"],
   conversion: {
-    decode: (value, constructor) => decodeTaskModel(constructor ?? TaskBase, value),
+    decode: (value, constructor) => decodeTaskModel(constructor ?? TaskBaseModel, value),
     encode: encodeTaskModel,
   },
   codecId: "Task_895d5b8e",
   profile: { validation: true, mobx: false },
 });
 
-registerIModelClass("Task_895d5b8e", TaskBase);
+registerIModelClass("Task_895d5b8e", TaskBaseModel);
 
 const objectAjvFast = createOpenApiSyncAjvEngine({ allErrors: false, validationBindings: {} });
 const objectAjvAll = createOpenApiSyncAjvEngine({ allErrors: true, validationBindings: {} });

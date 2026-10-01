@@ -12,7 +12,7 @@ export type OrderInputFields = { items: Array<{ sku: string }> };
 export type OrderInputJSON = { items: Array<{ sku: string }> };
 export type OrderInputInit = Partial<{ items: Array<{ sku: string }> }>;
 
-export abstract class OrderInputBase implements GeneratedModel<OrderInputJSON, OrderInputFields> {
+export abstract class OrderInputBaseModel implements GeneratedModel<OrderInputJSON, OrderInputFields> {
   declare readonly [generatedModelWireBrand]: OrderInputJSON;
   declare readonly [generatedModelFieldsBrand]: OrderInputFields;
   declare items: OrderInputFields["items"];
@@ -23,30 +23,30 @@ export abstract class OrderInputBase implements GeneratedModel<OrderInputJSON, O
 
 }
 
-function decodeOrderInputModel(constructor: GeneratedModelConstructor, json: unknown): OrderInputBase {
-  const values = modelObject(json, "OrderInputBase");
+function decodeOrderInputModel(constructor: GeneratedModelConstructor, json: unknown): OrderInputBaseModel {
+  const values = modelObject(json, "OrderInputBaseModel");
   const result: Record<string, unknown> = { ...values };
   if (Object.prototype.hasOwnProperty.call(values, "items")) defineModelProperty(result, "items", convertModelField("deserialize", "items", () => (Array.isArray(values["items"]) ? (values["items"] as readonly unknown[]).slice() : values["items"])));
-  return Reflect.construct(constructor, [result]) as OrderInputBase;
+  return Reflect.construct(constructor, [result]) as OrderInputBaseModel;
 }
 
-function encodeOrderInputModel(model: OrderInputBase): OrderInputJSON {
+function encodeOrderInputModel(model: OrderInputBaseModel): OrderInputJSON {
   const result: Record<string, unknown> = {};
   if (Object.prototype.hasOwnProperty.call(model, "items")) defineModelProperty(result, "items", (convertModelField("serialize", "items", () => (Array.isArray(model["items"]) ? (model["items"] as readonly unknown[]).slice() : model["items"]))));
   return result as OrderInputJSON;
 }
 
-registerGeneratedModel(OrderInputBase, {
+registerGeneratedModel(OrderInputBaseModel, {
   fields: ["items"],
   conversion: {
-    decode: (value, constructor) => decodeOrderInputModel(constructor ?? OrderInputBase, value),
+    decode: (value, constructor) => decodeOrderInputModel(constructor ?? OrderInputBaseModel, value),
     encode: encodeOrderInputModel,
   },
   codecId: "OrderInput_bbcddf3d",
   profile: { validation: true, mobx: false },
 });
 
-registerIModelClass("OrderInput_bbcddf3d", OrderInputBase);
+registerIModelClass("OrderInput_bbcddf3d", OrderInputBaseModel);
 
 const objectAjvFast = createOpenApiSyncAjvEngine({ allErrors: false, validationBindings: {} });
 const objectAjvAll = createOpenApiSyncAjvEngine({ allErrors: true, validationBindings: {} });

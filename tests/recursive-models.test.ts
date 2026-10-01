@@ -11,13 +11,13 @@ import { ttscEnv } from './support/process.js';
 
 const sources = {
   'tree.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
-import { NodeBase, LeftBase, RightBase } from './tree.model.generated.js';
+import { NodeBaseModel, LeftBaseModel, RightBaseModel } from './tree.model.generated.js';
 export type TNode = IModel<{ at: Date; children: TNode[] }>;
 export type TLeft = IModel<{ at: Date; right?: TRight }>;
 export type TRight = IModel<{ at: Date; lefts: TLeft[] }>;
-export class Node extends NodeBase {}
-export class Left extends LeftBase {}
-export class Right extends RightBase {}
+export class Node extends NodeBaseModel {}
+export class Left extends LeftBaseModel {}
+export class Right extends RightBaseModel {}
 `,
 };
 

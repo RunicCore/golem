@@ -9,9 +9,9 @@ export type TPaymentEditor = IModel<{
 // #endregion model-declaration
 
 import { getValidator } from '@exprtlabs/golem/validation';
-import { PaymentEditorBase, type PaymentEditorInit } from './payment-editor.model.generated.js';
+import { PaymentEditorBaseModel, type PaymentEditorInit } from './payment-editor.model.generated.js';
 
-export class PaymentEditor extends PaymentEditorBase {
+export class PaymentEditor extends PaymentEditorBaseModel {
   public constructor(values: PaymentEditorInit = {}) {
     super(values);
     getValidator(this).extend({

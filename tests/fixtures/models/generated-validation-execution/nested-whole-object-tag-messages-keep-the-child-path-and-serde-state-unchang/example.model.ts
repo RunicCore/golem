@@ -3,11 +3,11 @@ import type { IModel } from '@exprtlabs/golem/model';
 import type { MinProperties } from '@exprtlabs/golem/tags';
 import { getValidator, validateInstance } from '@exprtlabs/golem/validation';
 import { encodeGeneratedModel } from '@exprtlabs/golem/conversion';
-import { TagChildBase, TagRootBase } from './tag-message.model.generated.js';
+import { TagChildBaseModel, TagRootBaseModel } from './tag-message.model.generated.js';
 export type TTagChild = IModel<{ value: number } & MinProperties<2>>;
 export type TTagRoot = IModel<{ child: TTagChild }>;
-export class TagChild extends TagChildBase {}
-export class TagRoot extends TagRootBase {}
+export class TagChild extends TagChildBaseModel {}
+export class TagRoot extends TagRootBaseModel {}
 export async function exercise() {
   const child = new TagChild({ value: 1 });
   const root = new TagRoot({ child });

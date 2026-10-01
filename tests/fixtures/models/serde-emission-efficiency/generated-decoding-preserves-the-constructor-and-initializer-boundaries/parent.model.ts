@@ -1,11 +1,11 @@
 import type { IModel } from '@exprtlabs/golem/model';
-import { ParentBase, type ParentFields } from './parent.model.generated.js';
+import { ParentBaseModel, type ParentFields } from './parent.model.generated.js';
 import { Child } from './child.model.js';
 import type { TChild } from './child.model.js';
 import type { TSerde } from '@exprtlabs/golem/tags';
 import { encodeOptional, decodeOptional } from './optional-codec.js';
 export type TParent = IModel<{ child: TChild; note?: string; code?: string & TSerde<typeof encodeOptional, typeof decodeOptional>; label: string; __serdeAccessorProbe?: string }>;
-export class Parent extends ParentBase {
+export class Parent extends ParentBaseModel {
   public static constructed = 0;
   public static setterCalls = 0;
   public static sawChildInstance = false;

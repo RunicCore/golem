@@ -8,13 +8,13 @@ export function prototypeFieldsModelSource(options: {
     : tsSource``;
   const mobxInitialization = options.mobx ? tsSource`\n    asGenObservable(this);` : tsSource``;
   return tsSource`import type { IModel } from '@exprtlabs/golem/model';
-import { ItemBase, type ItemFields } from './item.model.generated.js';
+import { ItemBaseModel, type ItemFields } from './item.model.generated.js';
 ${mobxImport}export type TItem = IModel<{
   label: string;
   dictionary: Record<string, string>;
   nested: { value: number };
 }>;
-export class Item extends ItemBase {
+export class Item extends ItemBaseModel {
   constructor(values: Partial<ItemFields> = {}) {
     super(values);
     ${mobxInitialization}

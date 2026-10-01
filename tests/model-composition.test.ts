@@ -28,8 +28,8 @@ test('an unrelated same-name class does not become a model constructor', async t
   await compileModelProject(root);
   const generated = await import(`${path.join(root, 'build/item.model.generated.js')}?${Date.now()}`);
   const authored = await import(`${path.join(root, 'build/item.model.js')}?${Date.now()}`);
-  const parent = new generated.ParentBase({ child: { id: 'child' } });
-  assert.ok(parent.child instanceof generated.ItemBase);
+  const parent = new generated.ParentBaseModel({ child: { id: 'child' } });
+  assert.ok(parent.child instanceof generated.ItemBaseModel);
   assert.equal(parent.child instanceof authored.Item, false);
   assert.deepEqual(encodeGeneratedModel(parent), { child: { id: 'child' } });
 });
@@ -47,7 +47,7 @@ test('first generation resolves model class bases through project path aliases',
   await compileModelProject(root);
   const generated = await import(`${path.join(root, 'build/parent.model.generated.js')}?${Date.now()}`);
   const authored = await import(path.join(root, 'build/item.model.js'));
-  const parent = new generated.ParentBase({ child: { id: 'nested' } });
+  const parent = new generated.ParentBaseModel({ child: { id: 'nested' } });
   assert.ok(parent.child instanceof authored.Item);
   assert.equal(parent.child.label, 'nested');
   assert.deepEqual(encodeGeneratedModel(parent), { child: { id: 'nested' } });

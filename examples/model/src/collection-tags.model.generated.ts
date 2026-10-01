@@ -12,7 +12,7 @@ export type ContractsFields = { destinations: Array<string>; billing: { card?: u
 export type ContractsJSON = { destinations: Array<string>; billing: { card?: undefined | string; billingAddress?: undefined | string } };
 export type ContractsInit = Partial<{ destinations: Array<string>; billing: { card?: undefined | string; billingAddress?: undefined | string } }>;
 
-export abstract class ContractsBase implements GeneratedModel<ContractsJSON, ContractsFields> {
+export abstract class ContractsBaseModel implements GeneratedModel<ContractsJSON, ContractsFields> {
   declare readonly [generatedModelWireBrand]: ContractsJSON;
   declare readonly [generatedModelFieldsBrand]: ContractsFields;
   declare destinations: ContractsFields["destinations"];
@@ -25,31 +25,31 @@ export abstract class ContractsBase implements GeneratedModel<ContractsJSON, Con
 
 }
 
-function decodeContractsModel(constructor: GeneratedModelConstructor, json: unknown): ContractsBase {
-  const values = modelObject(json, "ContractsBase");
+function decodeContractsModel(constructor: GeneratedModelConstructor, json: unknown): ContractsBaseModel {
+  const values = modelObject(json, "ContractsBaseModel");
   const result: Record<string, unknown> = { ...values };
   if (Object.prototype.hasOwnProperty.call(values, "destinations")) defineModelProperty(result, "destinations", convertModelField("deserialize", "destinations", () => (Array.isArray(values["destinations"]) ? (values["destinations"] as readonly unknown[]).slice() : values["destinations"])));
-  return Reflect.construct(constructor, [result]) as ContractsBase;
+  return Reflect.construct(constructor, [result]) as ContractsBaseModel;
 }
 
-function encodeContractsModel(model: ContractsBase): ContractsJSON {
+function encodeContractsModel(model: ContractsBaseModel): ContractsJSON {
   const result: Record<string, unknown> = {};
   if (Object.prototype.hasOwnProperty.call(model, "destinations")) defineModelProperty(result, "destinations", (convertModelField("serialize", "destinations", () => (Array.isArray(model["destinations"]) ? (model["destinations"] as readonly unknown[]).slice() : model["destinations"]))));
   if (Object.prototype.hasOwnProperty.call(model, "billing")) defineModelProperty(result, "billing", (model["billing"]));
   return result as ContractsJSON;
 }
 
-registerGeneratedModel(ContractsBase, {
+registerGeneratedModel(ContractsBaseModel, {
   fields: ["destinations", "billing"],
   conversion: {
-    decode: (value, constructor) => decodeContractsModel(constructor ?? ContractsBase, value),
+    decode: (value, constructor) => decodeContractsModel(constructor ?? ContractsBaseModel, value),
     encode: encodeContractsModel,
   },
   codecId: "Contracts_87aa2f02",
   profile: { validation: true, mobx: false },
 });
 
-registerIModelClass("Contracts_87aa2f02", ContractsBase);
+registerIModelClass("Contracts_87aa2f02", ContractsBaseModel);
 
 const objectAjvFast = createOpenApiSyncAjvEngine({ allErrors: false, validationBindings: {} });
 const objectAjvAll = createOpenApiSyncAjvEngine({ allErrors: true, validationBindings: {} });

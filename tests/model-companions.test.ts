@@ -87,7 +87,7 @@ test('generated model names are scoped to their companion modules', (t) => {
   });
   const result = generate({ root, profile: { mobx: false, validation: false } });
   assert.equal(result.artifacts.length, 3);
-  assert.equal(result.artifacts.filter((artifact) => artifact.content.includes('export abstract class ItemBase')).length, 2);
+  assert.equal(result.artifacts.filter((artifact) => artifact.content.includes('export abstract class ItemBaseModel')).length, 2);
   assert.equal(result.artifacts.some((artifact) => artifact.content.includes('first')), true);
   assert.equal(result.artifacts.some((artifact) => artifact.content.includes('second')), true);
   const keys = result.artifacts.find((artifact) => artifact.path.endsWith('iobject-plugin-keys.ts'))?.content ?? '';
@@ -214,8 +214,8 @@ test('re-exported IModel and IObject symbols preserve class versus plain-object 
   const result = generate({ root, sources: [sourceFile], profile: { mobx: false, validation: false } });
   writeGeneratedArtifacts(result.artifacts);
   const generated = result.artifacts.find(artifact => artifact.path.endsWith('provenance.model.generated.ts'))?.content ?? '';
-  assert.match(generated, /export abstract class ProvenanceBase/);
-  assert.doesNotMatch(generated, /export abstract class PlainBase/);
+  assert.match(generated, /export abstract class ProvenanceBaseModel/);
+  assert.doesNotMatch(generated, /export abstract class PlainBaseModel/);
   {
     using program = ts.createProgramFromSources({ root, sources: [sourceFile] });
     const aliases = program.getSourceFile(sourceFile)?.statements.filter(ts.isTypeAliasDeclaration) ?? [];

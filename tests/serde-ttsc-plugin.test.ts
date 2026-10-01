@@ -189,6 +189,50 @@ export function run(): unknown { return parse<TPayment>('{"id":"p","amount":{"cu
   });
 });
 
+test('ttsc plugin links a class to its model through extends when the class name differs from the alias', async (t) => {
+  const { root } = createModelProject(t, {
+    prefix: 'golem-serde-',
+    name: 'serde-class-link',
+    linkTypescript: true,
+    linkTtsc: true,
+  });
+  const fixtureDirectory = 'models/serde/a-class-named-apart-from-its-alias-registers-and-parses';
+  copyFixtureFile(root, `${fixtureDirectory}/order.model.ts`, 'src/order.model.ts');
+  copyFixtureFile(root, `${fixtureDirectory}/use-order.ts`, 'src/use-order.ts');
+  const { artifacts } = generate({ root, profile: { mobx: false, validation: true } });
+  writeGeneratedArtifacts(artifacts);
+  const keys = artifacts.find((artifact) => artifact.path.endsWith('iobject-plugin-keys.ts'))?.content ?? '';
+  assert.match(keys, /order\.model\.ts#Order": "Order_[0-9a-f]{8}"/);
+  assert.match(keys, /order\.model\.ts#PurchaseOrder": "Order_[0-9a-f]{8}"/);
+  assert.doesNotMatch(keys, /#RushOrder/, 'a subclass of the model class is not the model class');
+  enableSerdePlugin(root);
+  await compile(root);
+  const emittedOf = (file: string): string => fs.readFileSync(path.join(root, 'build', file), 'utf8');
+  assert.match(emittedOf('order.model.js'), /registerIModelClass\("Order_[0-9a-f]{8}", PurchaseOrder\)/);
+  assert.match(emittedOf('use-order.js'), /requireObjectCodec\("Order_[0-9a-f]{8}"\)\.parse\([^;]+construct: PurchaseOrder/);
+  const { PurchaseOrder } = await import(pathToFileURL(path.join(root, 'build/order.model.js')).href) as {
+    PurchaseOrder: new (values?: object) => object;
+  };
+  const { order } = await import(pathToFileURL(path.join(root, 'build/use-order.js')).href) as { order: object };
+  assert.ok(order instanceof PurchaseOrder);
+  assert.deepEqual({ ...order }, { id: 'o-1', total: 3 });
+});
+
+test('two classes extending one generated base are rejected', (t) => {
+  const { root } = createModelProject(t, { prefix: 'golem-serde-', name: 'serde-class-link-ambiguous', linkTypescript: true });
+  fs.writeFileSync(path.join(root, 'src/order.model.ts'), `import type { IModel } from '@exprtlabs/golem/model';
+import { OrderBaseModel } from './order.model.generated.js';
+
+export type TOrder = IModel<{ id: string }>;
+export class PurchaseOrder extends OrderBaseModel {}
+export class SalesOrder extends OrderBaseModel {}
+`);
+  assert.throws(
+    () => generate({ root, profile: { mobx: false, validation: true } }),
+    /several classes extending OrderBaseModel .*: PurchaseOrder, SalesOrder\. Export one\./,
+  );
+});
+
 test('ttsc plugin resolves OpenAPI codecs through SDK facades without crossing SDK identities and for Model-suffixed class names', async (t) => {
   const { root } = fixture(t, { mobx: false, validation: false });
   const writeGeneratedSdk = (sdkName: string, property: string, type: 'number' | 'string'): string => {

@@ -4,14 +4,14 @@ import {
   parse,
   type SerdeOptions,
 } from '@exprtlabs/golem/serde';
-import { ItemBase, type ItemFields } from "./item.model.generated.js";
+import { ItemBaseModel, type ItemFields } from "./item.model.generated.js";
 
 export type TItem = IModel<{ title: string; value: number }>;
 export const café = "prélude";
 function optionsFor(value: unknown): SerdeOptions {
   return { validate: value !== undefined };
 }
-export class Item extends ItemBase {
+export class Item extends ItemBaseModel {
   constructor(values: Partial<ItemFields> = {}) { super(values); }
 
   parseItem(text: string): Item {

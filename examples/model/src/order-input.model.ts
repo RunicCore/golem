@@ -2,12 +2,12 @@
 import type { IModel } from '@exprtlabs/golem/model';
 import type { MinLength } from '@exprtlabs/golem/tags';
 import { getValidator, validateInstance } from '@exprtlabs/golem/validation';
-import { OrderInputBase } from './order-input.model.generated.js';
+import { OrderInputBaseModel } from './order-input.model.generated.js';
 
 export type TOrderInput = IModel<{
   items: Array<{ sku: string & MinLength<3> }>;
 }>;
-export class OrderInput extends OrderInputBase {}
+export class OrderInput extends OrderInputBaseModel {}
 
 export async function checkOrderInput() {
   const order = new OrderInput({ items: [{ sku: 'x' }] });

@@ -26,7 +26,7 @@ export type AddressFields = { id: string; city: string; country: string };
 export type AddressJSON = { id: string; city: string; country: string };
 export type AddressInit = Partial<{ id: string; city: string; country: string }>;
 
-export abstract class AddressBase implements GeneratedModel<AddressJSON, AddressFields> {
+export abstract class AddressBaseModel implements GeneratedModel<AddressJSON, AddressFields> {
   declare readonly [generatedModelWireBrand]: AddressJSON;
   declare readonly [generatedModelFieldsBrand]: AddressFields;
   declare id: AddressFields["id"];
@@ -41,12 +41,12 @@ export abstract class AddressBase implements GeneratedModel<AddressJSON, Address
 
 }
 
-function decodeAddressModel(constructor: GeneratedModelConstructor, json: unknown): AddressBase {
-  const values = modelObject(json, "AddressBase");
-  return Reflect.construct(constructor, [values]) as AddressBase;
+function decodeAddressModel(constructor: GeneratedModelConstructor, json: unknown): AddressBaseModel {
+  const values = modelObject(json, "AddressBaseModel");
+  return Reflect.construct(constructor, [values]) as AddressBaseModel;
 }
 
-function encodeAddressModel(model: AddressBase): AddressJSON {
+function encodeAddressModel(model: AddressBaseModel): AddressJSON {
   const result: Record<string, unknown> = {};
   if (Object.prototype.hasOwnProperty.call(model, "id")) defineModelProperty(result, "id", (model["id"]));
   if (Object.prototype.hasOwnProperty.call(model, "city")) defineModelProperty(result, "city", (model["city"]));
@@ -54,23 +54,23 @@ function encodeAddressModel(model: AddressBase): AddressJSON {
   return result as AddressJSON;
 }
 
-registerGeneratedModel(AddressBase, {
+registerGeneratedModel(AddressBaseModel, {
   fields: ["id", "city", "country"],
   conversion: {
-    decode: (value, constructor) => decodeAddressModel(constructor ?? AddressBase, value),
+    decode: (value, constructor) => decodeAddressModel(constructor ?? AddressBaseModel, value),
     encode: encodeAddressModel,
   },
   codecId: "Address_420813af",
   profile: { validation: true, mobx: false },
 });
 
-registerIModelClass("Address_420813af", AddressBase);
+registerIModelClass("Address_420813af", AddressBaseModel);
 
-export type CustomerFields = { home: AddressBase; shipping: AddressOmitIdFields; draft: AddressPickCityCountryPartialFields };
+export type CustomerFields = { home: AddressBaseModel; shipping: AddressOmitIdFields; draft: AddressPickCityCountryPartialFields };
 export type CustomerJSON = { home: AddressJSON; shipping: AddressOmitIdJSON; draft: AddressPickCityCountryPartialJSON };
-export type CustomerInit = Partial<{ home: AddressInit | AddressBase; shipping: AddressOmitIdInit; draft: AddressPickCityCountryPartialInit }>;
+export type CustomerInit = Partial<{ home: AddressInit | AddressBaseModel; shipping: AddressOmitIdInit; draft: AddressPickCityCountryPartialInit }>;
 
-export abstract class CustomerBase implements GeneratedModel<CustomerJSON, CustomerFields> {
+export abstract class CustomerBaseModel implements GeneratedModel<CustomerJSON, CustomerFields> {
   declare readonly [generatedModelWireBrand]: CustomerJSON;
   declare readonly [generatedModelFieldsBrand]: CustomerFields;
   declare home: CustomerFields["home"];
@@ -78,41 +78,41 @@ export abstract class CustomerBase implements GeneratedModel<CustomerJSON, Custo
   declare draft: CustomerFields["draft"];
 
   public constructor(values: CustomerInit = {}) {
-    if (Object.prototype.hasOwnProperty.call(values, "home")) defineModelProperty(this, "home", values["home"] == null || values["home"] instanceof AddressBase ? values["home"] : new (requireIModelClass("Address_420813af") as unknown as new (values?: AddressInit) => AddressBase)(values["home"] as unknown as AddressInit));
+    if (Object.prototype.hasOwnProperty.call(values, "home")) defineModelProperty(this, "home", values["home"] == null || values["home"] instanceof AddressBaseModel ? values["home"] : new (requireIModelClass("Address_420813af") as unknown as new (values?: AddressInit) => AddressBaseModel)(values["home"] as unknown as AddressInit));
     if (Object.prototype.hasOwnProperty.call(values, "shipping")) defineModelProperty(this, "shipping", initAddressOmitId(values["shipping"]));
     if (Object.prototype.hasOwnProperty.call(values, "draft")) defineModelProperty(this, "draft", initAddressPickCityCountryPartial(values["draft"]));
   }
 
 }
 
-function decodeCustomerModel(constructor: GeneratedModelConstructor, json: unknown): CustomerBase {
-  const values = modelObject(json, "CustomerBase");
+function decodeCustomerModel(constructor: GeneratedModelConstructor, json: unknown): CustomerBaseModel {
+  const values = modelObject(json, "CustomerBaseModel");
   const result: Record<string, unknown> = { ...values };
-  if (Object.prototype.hasOwnProperty.call(values, "home")) defineModelProperty(result, "home", convertModelField("deserialize", "home", () => (values["home"] == null || values["home"] instanceof AddressBase ? values["home"] : decodeGeneratedModelTrusted(requireIModelClass("Address_420813af"), values["home"]))));
+  if (Object.prototype.hasOwnProperty.call(values, "home")) defineModelProperty(result, "home", convertModelField("deserialize", "home", () => (values["home"] == null || values["home"] instanceof AddressBaseModel ? values["home"] : decodeGeneratedModelTrusted(requireIModelClass("Address_420813af"), values["home"]))));
   if (Object.prototype.hasOwnProperty.call(values, "shipping")) defineModelProperty(result, "shipping", convertModelField("deserialize", "shipping", () => (decodeAddressOmitId(values["shipping"]))));
   if (Object.prototype.hasOwnProperty.call(values, "draft")) defineModelProperty(result, "draft", convertModelField("deserialize", "draft", () => (decodeAddressPickCityCountryPartial(values["draft"]))));
-  return Reflect.construct(constructor, [result]) as CustomerBase;
+  return Reflect.construct(constructor, [result]) as CustomerBaseModel;
 }
 
-function encodeCustomerModel(model: CustomerBase): CustomerJSON {
+function encodeCustomerModel(model: CustomerBaseModel): CustomerJSON {
   const result: Record<string, unknown> = {};
-  if (Object.prototype.hasOwnProperty.call(model, "home")) defineModelProperty(result, "home", (convertModelField("serialize", "home", () => (model["home"] instanceof AddressBase ? encodeGeneratedModel(model["home"]) : model["home"]))));
+  if (Object.prototype.hasOwnProperty.call(model, "home")) defineModelProperty(result, "home", (convertModelField("serialize", "home", () => (model["home"] instanceof AddressBaseModel ? encodeGeneratedModel(model["home"]) : model["home"]))));
   if (Object.prototype.hasOwnProperty.call(model, "shipping")) defineModelProperty(result, "shipping", (convertModelField("serialize", "shipping", () => (encodeAddressOmitId(model["shipping"])))));
   if (Object.prototype.hasOwnProperty.call(model, "draft")) defineModelProperty(result, "draft", (convertModelField("serialize", "draft", () => (encodeAddressPickCityCountryPartial(model["draft"])))));
   return result as CustomerJSON;
 }
 
-registerGeneratedModel(CustomerBase, {
+registerGeneratedModel(CustomerBaseModel, {
   fields: ["home", "shipping", "draft"],
   conversion: {
-    decode: (value, constructor) => decodeCustomerModel(constructor ?? CustomerBase, value),
+    decode: (value, constructor) => decodeCustomerModel(constructor ?? CustomerBaseModel, value),
     encode: encodeCustomerModel,
   },
   codecId: "Customer_fdc3234c",
   profile: { validation: true, mobx: false },
 });
 
-registerIModelClass("Customer_fdc3234c", CustomerBase);
+registerIModelClass("Customer_fdc3234c", CustomerBaseModel);
 
 const objectAjvFast = createOpenApiSyncAjvEngine({ allErrors: false, validationBindings: {} });
 const objectAjvAll = createOpenApiSyncAjvEngine({ allErrors: true, validationBindings: {} });

@@ -9,7 +9,7 @@ export interface TaggedModelSourceOptions {
 
 export function taggedModelSource({ name, fields, options, imports }: TaggedModelSourceOptions): SourceFragment {
   const modelName = identifier(name);
-  const baseName = identifier(`${name}Base`);
+  const baseName = identifier(`${name}BaseModel`);
   const fieldsName = identifier(`${name}Fields`);
   const typeName = identifier(`T${name}`);
   const generatedModule = literal(`./${name.toLowerCase()}.model.generated.js`);

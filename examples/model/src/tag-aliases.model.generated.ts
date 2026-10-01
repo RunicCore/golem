@@ -12,7 +12,7 @@ export type AccountFields = { displayName: string; handle: string };
 export type AccountJSON = { displayName: string; handle: string };
 export type AccountInit = Partial<{ displayName: string; handle: string }>;
 
-export abstract class AccountBase implements GeneratedModel<AccountJSON, AccountFields> {
+export abstract class AccountBaseModel implements GeneratedModel<AccountJSON, AccountFields> {
   declare readonly [generatedModelWireBrand]: AccountJSON;
   declare readonly [generatedModelFieldsBrand]: AccountFields;
   declare displayName: AccountFields["displayName"];
@@ -25,29 +25,29 @@ export abstract class AccountBase implements GeneratedModel<AccountJSON, Account
 
 }
 
-function decodeAccountModel(constructor: GeneratedModelConstructor, json: unknown): AccountBase {
-  const values = modelObject(json, "AccountBase");
-  return Reflect.construct(constructor, [values]) as AccountBase;
+function decodeAccountModel(constructor: GeneratedModelConstructor, json: unknown): AccountBaseModel {
+  const values = modelObject(json, "AccountBaseModel");
+  return Reflect.construct(constructor, [values]) as AccountBaseModel;
 }
 
-function encodeAccountModel(model: AccountBase): AccountJSON {
+function encodeAccountModel(model: AccountBaseModel): AccountJSON {
   const result: Record<string, unknown> = {};
   if (Object.prototype.hasOwnProperty.call(model, "displayName")) defineModelProperty(result, "displayName", (model["displayName"]));
   if (Object.prototype.hasOwnProperty.call(model, "handle")) defineModelProperty(result, "handle", (model["handle"]));
   return result as AccountJSON;
 }
 
-registerGeneratedModel(AccountBase, {
+registerGeneratedModel(AccountBaseModel, {
   fields: ["displayName", "handle"],
   conversion: {
-    decode: (value, constructor) => decodeAccountModel(constructor ?? AccountBase, value),
+    decode: (value, constructor) => decodeAccountModel(constructor ?? AccountBaseModel, value),
     encode: encodeAccountModel,
   },
   codecId: "Account_7bb17507",
   profile: { validation: true, mobx: false },
 });
 
-registerIModelClass("Account_7bb17507", AccountBase);
+registerIModelClass("Account_7bb17507", AccountBaseModel);
 
 const objectAjvFast = createOpenApiSyncAjvEngine({ allErrors: false, validationBindings: {} });
 const objectAjvAll = createOpenApiSyncAjvEngine({ allErrors: true, validationBindings: {} });

@@ -12,7 +12,7 @@ export type TaggedTaskFields = { title: string; done: boolean };
 export type TaggedTaskJSON = { title: string; done: boolean };
 export type TaggedTaskInit = Partial<{ title: string; done: boolean }>;
 
-export abstract class TaggedTaskBase implements GeneratedModel<TaggedTaskJSON, TaggedTaskFields> {
+export abstract class TaggedTaskBaseModel implements GeneratedModel<TaggedTaskJSON, TaggedTaskFields> {
   declare readonly [generatedModelWireBrand]: TaggedTaskJSON;
   declare readonly [generatedModelFieldsBrand]: TaggedTaskFields;
   declare title: TaggedTaskFields["title"];
@@ -25,29 +25,29 @@ export abstract class TaggedTaskBase implements GeneratedModel<TaggedTaskJSON, T
 
 }
 
-function decodeTaggedTaskModel(constructor: GeneratedModelConstructor, json: unknown): TaggedTaskBase {
-  const values = modelObject(json, "TaggedTaskBase");
-  return Reflect.construct(constructor, [values]) as TaggedTaskBase;
+function decodeTaggedTaskModel(constructor: GeneratedModelConstructor, json: unknown): TaggedTaskBaseModel {
+  const values = modelObject(json, "TaggedTaskBaseModel");
+  return Reflect.construct(constructor, [values]) as TaggedTaskBaseModel;
 }
 
-function encodeTaggedTaskModel(model: TaggedTaskBase): TaggedTaskJSON {
+function encodeTaggedTaskModel(model: TaggedTaskBaseModel): TaggedTaskJSON {
   const result: Record<string, unknown> = {};
   if (Object.prototype.hasOwnProperty.call(model, "title")) defineModelProperty(result, "title", (model["title"]));
   if (Object.prototype.hasOwnProperty.call(model, "done")) defineModelProperty(result, "done", (model["done"]));
   return result as TaggedTaskJSON;
 }
 
-registerGeneratedModel(TaggedTaskBase, {
+registerGeneratedModel(TaggedTaskBaseModel, {
   fields: ["title", "done"],
   conversion: {
-    decode: (value, constructor) => decodeTaggedTaskModel(constructor ?? TaggedTaskBase, value),
+    decode: (value, constructor) => decodeTaggedTaskModel(constructor ?? TaggedTaskBaseModel, value),
     encode: encodeTaggedTaskModel,
   },
   codecId: "TaggedTask_94b6f172",
   profile: { validation: true, mobx: false },
 });
 
-registerIModelClass("TaggedTask_94b6f172", TaggedTaskBase);
+registerIModelClass("TaggedTask_94b6f172", TaggedTaskBaseModel);
 
 const objectAjvFast = createOpenApiSyncAjvEngine({ allErrors: false, validationBindings: {} });
 const objectAjvAll = createOpenApiSyncAjvEngine({ allErrors: true, validationBindings: {} });

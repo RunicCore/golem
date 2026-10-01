@@ -1,6 +1,6 @@
 import type { IModel } from '@exprtlabs/golem/model';
 import type { Money } from './sdk/types.js';
-import { WalletBase, type WalletFields, type WalletInit, type WalletJSON } from './wallet.model.generated.js';
+import { WalletBaseModel, type WalletFields, type WalletInit, type WalletJSON } from './wallet.model.generated.js';
 
 export type TWallet = IModel<{
   money: Money | string;
@@ -8,7 +8,7 @@ export type TWallet = IModel<{
   values: [string, ...number[], boolean];
 }>;
 
-export class Wallet extends WalletBase {}
+export class Wallet extends WalletBaseModel {}
 
 export const tupleValues: [WalletFields['values'], WalletInit['values'], WalletJSON['values']] = [
   ['x', 1, 2, true],

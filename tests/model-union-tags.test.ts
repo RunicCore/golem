@@ -23,7 +23,7 @@ test('an IModel union variant tagged by several literal values is selected by ea
       if (!isGeneratedModelClass(value)) throw new TypeError(`${name} must be a generated model class`);
       return value;
     };
-    const [Owner, Cat, Dog] = [model('Owner'), model('CatBase'), model('DogBase')];
+    const [Owner, Cat, Dog] = [model('Owner'), model('CatBaseModel'), model('DogBaseModel')];
     const json = {
       pet: { kind: 'kitty', name: 'Miso' },
       pets: [{ kind: 'cat', name: 'Tama' }, { kind: 'kitty', name: 'Miso' }, { kind: 'dog', bark: false }],

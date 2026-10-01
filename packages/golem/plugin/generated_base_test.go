@@ -59,13 +59,15 @@ func sortedKeys(set map[string]bool) []string {
 }
 
 var heritageFixture = map[string]string{
-	"payment.model.generated.ts": "export abstract class PaymentBase {}\n",
-	"fake.ts":                    "export class FakeBase {}\n",
+	"payment.model.generated.ts": "export abstract class PaymentBaseModel {}\n",
+	"legacy.model.generated.ts":  "export abstract class PaymentBase {}\n",
+	"fake.ts":                    "export class FakeBaseModel {}\n",
 	"ns.ts":                      "export class Thing {}\n",
 	"lookalike.ts":               "export class Payment {}\n",
-	"main.ts": `import { PaymentBase } from './payment.model.generated.js';
+	"main.ts": `import { PaymentBaseModel } from './payment.model.generated.js';
 import * as generated from './payment.model.generated.js';
-import { FakeBase } from './fake.js';
+import { PaymentBase } from './legacy.model.generated.js';
+import { FakeBaseModel } from './fake.js';
 import * as ns from './ns.js';
 function Mixin<T extends new (...args: any[]) => object>(Target: T) { return class extends Target {}; }
 class Plain {}
@@ -73,9 +75,10 @@ export class WithError extends Error {}
 export class WithNamespace extends ns.Thing {}
 export class WithMixin extends Mixin(Plain) {}
 export class WithParentheses extends (Plain) {}
-export class NameOnlyBase extends FakeBase {}
-export class Payment extends PaymentBase {}
-export class Qualified extends generated.PaymentBase {}
+export class NameOnlyBaseModel extends FakeBaseModel {}
+export class Payment extends PaymentBaseModel {}
+export class Qualified extends generated.PaymentBaseModel {}
+export class LegacySuffix extends PaymentBase {}
 `,
 	"consumer.ts": `import { Payment, WithError } from './main.js';
 export const values = [Payment, WithError];
@@ -102,7 +105,7 @@ func TestGeneratedBaseDetectionHandlesEveryHeritageShape(t *testing.T) {
 	walk(main.AsNode())
 	want := map[string]bool{
 		"Plain": false, "WithError": false, "WithNamespace": false, "WithMixin": false,
-		"WithParentheses": false, "NameOnlyBase": false, "Payment": true, "Qualified": true,
+		"WithParentheses": false, "NameOnlyBaseModel": false, "LegacySuffix": false, "Payment": true, "Qualified": true,
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("classExtendsGeneratedBase = %v, want %v", got, want)

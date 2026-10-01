@@ -11,7 +11,7 @@ export type TaskFields = { title: string; done: boolean };
 export type TaskJSON = { title: string; done: boolean };
 export type TaskInit = Partial<{ title: string; done: boolean }>;
 
-export abstract class TaskBase implements GeneratedModel<TaskJSON, TaskFields> {
+export abstract class TaskBaseModel implements GeneratedModel<TaskJSON, TaskFields> {
   declare readonly [generatedModelWireBrand]: TaskJSON;
   declare readonly [generatedModelFieldsBrand]: TaskFields;
   declare title: TaskFields["title"];
@@ -24,29 +24,29 @@ export abstract class TaskBase implements GeneratedModel<TaskJSON, TaskFields> {
 
 }
 
-function decodeTaskModel(constructor: GeneratedModelConstructor, json: unknown): TaskBase {
-  const values = modelObject(json, "TaskBase");
-  return Reflect.construct(constructor, [values]) as TaskBase;
+function decodeTaskModel(constructor: GeneratedModelConstructor, json: unknown): TaskBaseModel {
+  const values = modelObject(json, "TaskBaseModel");
+  return Reflect.construct(constructor, [values]) as TaskBaseModel;
 }
 
-function encodeTaskModel(model: TaskBase): TaskJSON {
+function encodeTaskModel(model: TaskBaseModel): TaskJSON {
   const result: Record<string, unknown> = {};
   if (Object.prototype.hasOwnProperty.call(model, "title")) defineModelProperty(result, "title", (model["title"]));
   if (Object.prototype.hasOwnProperty.call(model, "done")) defineModelProperty(result, "done", (model["done"]));
   return result as TaskJSON;
 }
 
-registerGeneratedModel(TaskBase, {
+registerGeneratedModel(TaskBaseModel, {
   fields: ["title", "done"],
   conversion: {
-    decode: (value, constructor) => decodeTaskModel(constructor ?? TaskBase, value),
+    decode: (value, constructor) => decodeTaskModel(constructor ?? TaskBaseModel, value),
     encode: encodeTaskModel,
   },
   codecId: "Task_d553b631",
   profile: { validation: false, mobx: true },
 });
 
-registerIModelClass("Task_d553b631", TaskBase);
+registerIModelClass("Task_d553b631", TaskBaseModel);
 
 function fillTask(out: Record<string, unknown>, wire: Record<string, unknown>, copyIdentity = true): Record<string, unknown> {
   if (copyIdentity) {

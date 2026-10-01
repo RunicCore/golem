@@ -21,7 +21,7 @@ export function decodeHex(value: Hex): number { return parseInt(value, 16); }
 const ORDER = `import type { IModel, IObject } from '@exprtlabs/golem/model';
 import type { Minimum, TSerde, TValidation } from '@exprtlabs/golem/tags';
 import { decodeHex, encodeHex, notBlank } from './counter.js';
-import { OrderBase, RuleOnlyBase } from './order.model.generated.js';
+import { OrderBaseModel, RuleOnlyBaseModel } from './order.model.generated.js';
 export type TFields = {
   note: string & TValidation<typeof notBlank>;
   code: number & Minimum<1> & TSerde<typeof encodeHex, typeof decodeHex>;
@@ -29,10 +29,10 @@ export type TFields = {
   sku: string;
 };
 export type TOrder = IModel<TFields>;
-export class Order extends OrderBase {}
+export class Order extends OrderBaseModel {}
 export type TPlainOrder = IObject<TFields>;
 export type TRuleOnly = IModel<{ note: string & TValidation<typeof notBlank>; sku: string }>;
-export class RuleOnly extends RuleOnlyBase {}
+export class RuleOnly extends RuleOnlyBaseModel {}
 `;
 
 const good = { note: 'hi', code: 'ff', when: '2026-01-02T03:04:05.000Z', sku: 'A' };
@@ -118,21 +118,21 @@ test('a rule on an SDK model runs once per parse and IObject enforces it (standa
 const TOGGLES = `import type { IModel, IObject } from '@exprtlabs/golem/model';
 import type { TValidation } from '@exprtlabs/golem/tags';
 import { notBlank } from './counter.js';
-import { InheritBase, OnBase, OffBase, ParentBase, VChildBase, UParentBase } from './toggles.model.generated.js';
+import { InheritBaseModel, OnBaseModel, OffBaseModel, ParentBaseModel, VChildBaseModel, UParentBaseModel } from './toggles.model.generated.js';
 type Fields = { note: string & TValidation<typeof notBlank>; when: Date };
 export type TInherit = IModel<Fields>;
-export class Inherit extends InheritBase {}
+export class Inherit extends InheritBaseModel {}
 export type TOn = IModel<Fields, { validation: true }>;
-export class On extends OnBase {}
+export class On extends OnBaseModel {}
 export type TOff = IModel<Fields, { validation: false }>;
-export class Off extends OffBase {}
+export class Off extends OffBaseModel {}
 export type TChild = IObject<{ secret: string }, { validation: false }>;
 export type TParent = IModel<{ child: TChild; note: string & TValidation<typeof notBlank>; when: Date }>;
-export class Parent extends ParentBase {}
+export class Parent extends ParentBaseModel {}
 export type TVChild = IModel<{ note: string & TValidation<typeof notBlank>; when: Date }, { validation: true }>;
-export class VChild extends VChildBase {}
+export class VChild extends VChildBaseModel {}
 export type TUParent = IModel<{ child: VChild; when: Date }, { validation: false }>;
-export class UParent extends UParentBase {}
+export class UParent extends UParentBaseModel {}
 `;
 
 for (const profileValidation of [true, false]) {
@@ -219,11 +219,11 @@ for (const [label, profile] of [['runtime Ajv', { mobx: false, validation: true 
 test('an engine filled by registerCodecSchemas validates parse and stringify through a context, nested residual refs included', async t => {
   const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-single-pass-engine-', name: 'single-pass-engine' });
   writeModelSources(sourceRoot, { 'visit.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
-import { StopBase, TripBase } from './visit.model.generated.js';
+import { StopBaseModel, TripBaseModel } from './visit.model.generated.js';
 export type TStop = IModel<{ at: Date; name: string }>;
-export class Stop extends StopBase {}
+export class Stop extends StopBaseModel {}
 export type TTrip = IModel<{ at: Date; stop: Stop }>;
-export class Trip extends TripBase {}
+export class Trip extends TripBaseModel {}
 ` });
   writeGeneratedArtifacts(generate({ root, profile: { mobx: false, validation: true } }).artifacts);
   await compileModelProject(root);

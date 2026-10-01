@@ -7,7 +7,7 @@ import type {
   DependentRequired,
 } from '@exprtlabs/golem/tags';
 import { validateInstance } from '@exprtlabs/golem/validation';
-import { ContractsBase } from './collection-tags.model.generated.js';
+import { ContractsBaseModel } from './collection-tags.model.generated.js';
 
 type Email = string & Format<'email'>;
 type Destinations = string[] & Contains<Email> & MinContains<1>;
@@ -21,7 +21,7 @@ export type TContracts = IModel<{
   destinations: Destinations;
   billing: BillingDetails;
 }>;
-export class Contracts extends ContractsBase {}
+export class Contracts extends ContractsBaseModel {}
 
 export async function checkContracts(): Promise<[boolean, boolean]> {
   const accepted = {

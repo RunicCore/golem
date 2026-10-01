@@ -1,7 +1,7 @@
 // #region model-definition
 import type { IModel } from '@exprtlabs/golem/model';
 import type { ProjectAccess } from '../sdk/index.js';
-import { ProjectAccessEditorBase } from './project-access.model.generated.js';
+import { ProjectAccessEditorBaseModel } from './project-access.model.generated.js';
 import { WRITE_PERMISSION, type PermissionBits, type ProjectName } from './access-rules.js';
 
 export type TProjectAccessEditor = IModel<
@@ -11,7 +11,7 @@ export type TProjectAccessEditor = IModel<
   }
 >;
 
-export class ProjectAccessEditor extends ProjectAccessEditorBase {
+export class ProjectAccessEditor extends ProjectAccessEditorBaseModel {
   public canWrite(): boolean {
     return (this.permissions & WRITE_PERMISSION) !== 0;
   }

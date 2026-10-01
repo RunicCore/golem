@@ -41,7 +41,7 @@ export type PaymentFields = { id: string; merchant: MerchantFields; billing: Mer
 export type PaymentJSON = { id: string; merchant: MerchantJSON; billing: MerchantOmitIdJSON; money: MoneyJSON; note: string };
 export type PaymentInit = Partial<{ id: string; merchant: MerchantInit; billing: MerchantOmitIdInit; money: MoneyInit; note: string }>;
 
-export abstract class PaymentBase implements GeneratedModel<PaymentJSON, PaymentFields> {
+export abstract class PaymentBaseModel implements GeneratedModel<PaymentJSON, PaymentFields> {
   declare readonly [generatedModelWireBrand]: PaymentJSON;
   declare readonly [generatedModelFieldsBrand]: PaymentFields;
   declare id: PaymentFields["id"];
@@ -60,16 +60,16 @@ export abstract class PaymentBase implements GeneratedModel<PaymentJSON, Payment
 
 }
 
-function decodePaymentModel(constructor: GeneratedModelConstructor, json: unknown): PaymentBase {
-  const values = modelObject(json, "PaymentBase");
+function decodePaymentModel(constructor: GeneratedModelConstructor, json: unknown): PaymentBaseModel {
+  const values = modelObject(json, "PaymentBaseModel");
   const result: Record<string, unknown> = { ...values };
   if (Object.prototype.hasOwnProperty.call(values, "merchant")) defineModelProperty(result, "merchant", convertModelField("deserialize", "merchant", () => (decodeMerchant(values["merchant"]))));
   if (Object.prototype.hasOwnProperty.call(values, "billing")) defineModelProperty(result, "billing", convertModelField("deserialize", "billing", () => (decodeMerchantOmitId(values["billing"]))));
   if (Object.prototype.hasOwnProperty.call(values, "money")) defineModelProperty(result, "money", convertModelField("deserialize", "money", () => (decodeMoney(values["money"]))));
-  return Reflect.construct(constructor, [result]) as PaymentBase;
+  return Reflect.construct(constructor, [result]) as PaymentBaseModel;
 }
 
-function encodePaymentModel(model: PaymentBase): PaymentJSON {
+function encodePaymentModel(model: PaymentBaseModel): PaymentJSON {
   const result: Record<string, unknown> = {};
   if (Object.prototype.hasOwnProperty.call(model, "id")) defineModelProperty(result, "id", (model["id"]));
   if (Object.prototype.hasOwnProperty.call(model, "merchant")) defineModelProperty(result, "merchant", (convertModelField("serialize", "merchant", () => (encodeMerchant(model["merchant"])))));
@@ -79,17 +79,17 @@ function encodePaymentModel(model: PaymentBase): PaymentJSON {
   return result as PaymentJSON;
 }
 
-registerGeneratedModel(PaymentBase, {
+registerGeneratedModel(PaymentBaseModel, {
   fields: ["id", "merchant", "billing", "money", "note"],
   conversion: {
-    decode: (value, constructor) => decodePaymentModel(constructor ?? PaymentBase, value),
+    decode: (value, constructor) => decodePaymentModel(constructor ?? PaymentBaseModel, value),
     encode: encodePaymentModel,
   },
   codecId: "Payment_dd0a0a3a",
   profile: { validation: true, mobx: false },
 });
 
-registerIModelClass("Payment_dd0a0a3a", PaymentBase);
+registerIModelClass("Payment_dd0a0a3a", PaymentBaseModel);
 
 const objectAjvFast = createOpenApiSyncAjvEngine({ allErrors: false, validationBindings: {} });
 const objectAjvAll = createOpenApiSyncAjvEngine({ allErrors: true, validationBindings: {} });

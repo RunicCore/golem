@@ -19,7 +19,7 @@ export type WalletFields = { balance: MoneyFields };
 export type WalletJSON = { balance: MoneyJSON };
 export type WalletInit = Partial<{ balance: MoneyInit }>;
 
-export abstract class WalletBase implements GeneratedModel<WalletJSON, WalletFields> {
+export abstract class WalletBaseModel implements GeneratedModel<WalletJSON, WalletFields> {
   declare readonly [generatedModelWireBrand]: WalletJSON;
   declare readonly [generatedModelFieldsBrand]: WalletFields;
   declare balance: WalletFields["balance"];
@@ -30,30 +30,30 @@ export abstract class WalletBase implements GeneratedModel<WalletJSON, WalletFie
 
 }
 
-function decodeWalletModel(constructor: GeneratedModelConstructor, json: unknown): WalletBase {
-  const values = modelObject(json, "WalletBase");
+function decodeWalletModel(constructor: GeneratedModelConstructor, json: unknown): WalletBaseModel {
+  const values = modelObject(json, "WalletBaseModel");
   const result: Record<string, unknown> = { ...values };
   if (Object.prototype.hasOwnProperty.call(values, "balance")) defineModelProperty(result, "balance", convertModelField("deserialize", "balance", () => (decodeMoney(values["balance"]))));
-  return Reflect.construct(constructor, [result]) as WalletBase;
+  return Reflect.construct(constructor, [result]) as WalletBaseModel;
 }
 
-function encodeWalletModel(model: WalletBase): WalletJSON {
+function encodeWalletModel(model: WalletBaseModel): WalletJSON {
   const result: Record<string, unknown> = {};
   if (Object.prototype.hasOwnProperty.call(model, "balance")) defineModelProperty(result, "balance", (convertModelField("serialize", "balance", () => (encodeMoney(model["balance"])))));
   return result as WalletJSON;
 }
 
-registerGeneratedModel(WalletBase, {
+registerGeneratedModel(WalletBaseModel, {
   fields: ["balance"],
   conversion: {
-    decode: (value, constructor) => decodeWalletModel(constructor ?? WalletBase, value),
+    decode: (value, constructor) => decodeWalletModel(constructor ?? WalletBaseModel, value),
     encode: encodeWalletModel,
   },
   codecId: "Wallet_f39079e2",
   profile: { validation: true, mobx: false },
 });
 
-registerIModelClass("Wallet_f39079e2", WalletBase);
+registerIModelClass("Wallet_f39079e2", WalletBaseModel);
 
 const objectAjvFast = createOpenApiSyncAjvEngine({ allErrors: false, validationBindings: {} });
 const objectAjvAll = createOpenApiSyncAjvEngine({ allErrors: true, validationBindings: {} });

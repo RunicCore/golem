@@ -1,11 +1,11 @@
 // #region discriminated-union
 import type { IModel } from '@exprtlabs/golem/model';
-import { EmailBase, PhoneBase } from './contact.model.generated.js';
+import { EmailBaseModel, PhoneBaseModel } from './contact.model.generated.js';
 
 export type TEmail = IModel<{ kind: 'email'; address: string }>;
-export class Email extends EmailBase {}
+export class Email extends EmailBaseModel {}
 export type TPhone = IModel<{ kind: 'phone'; number: string }>;
-export class Phone extends PhoneBase {}
+export class Phone extends PhoneBaseModel {}
 export type TContact = IModel<{ value: TEmail | TPhone }>;
 // #endregion discriminated-union
 

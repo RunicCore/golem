@@ -1,7 +1,7 @@
 import type { IModel, IObject } from '@exprtlabs/golem/model';
 import type { MinLength, TSerde } from '@exprtlabs/golem/tags';
 import type { fromCents, toCents } from './codecs.js';
-import { MerchantBase, PaymentBase } from './payment.model.generated.js';
+import { MerchantBaseModel, PaymentBaseModel } from './payment.model.generated.js';
 
 export type TMoney = IObject<{ amount: number & TSerde<typeof toCents, typeof fromCents>; currency: 'EUR' | 'USD' }>;
 export type TMerchant = IModel<{ id: string; name: string & MinLength<2> }>;
@@ -9,5 +9,5 @@ export type TMerchant = IModel<{ id: string; name: string & MinLength<2> }>;
 type TBilling = Omit<TMerchant, 'id'>;
 export type TPayment = IModel<{ id: string; merchant: TMerchant; billing: TBilling; shipping: Omit<TMerchant, 'id' | 'name'>; money: TMoney }>;
 
-export class Merchant extends MerchantBase {}
-export class Payment extends PaymentBase {}
+export class Merchant extends MerchantBaseModel {}
+export class Payment extends PaymentBaseModel {}

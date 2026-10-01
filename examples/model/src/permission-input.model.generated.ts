@@ -13,7 +13,7 @@ export type PermissionInputFields = { permissions: number };
 export type PermissionInputJSON = { permissions: string };
 export type PermissionInputInit = Partial<{ permissions: number }>;
 
-export abstract class PermissionInputBase implements GeneratedModel<PermissionInputJSON, PermissionInputFields> {
+export abstract class PermissionInputBaseModel implements GeneratedModel<PermissionInputJSON, PermissionInputFields> {
   declare readonly [generatedModelWireBrand]: PermissionInputJSON;
   declare readonly [generatedModelFieldsBrand]: PermissionInputFields;
   declare permissions: PermissionInputFields["permissions"];
@@ -24,30 +24,30 @@ export abstract class PermissionInputBase implements GeneratedModel<PermissionIn
 
 }
 
-function decodePermissionInputModel(constructor: GeneratedModelConstructor, json: unknown): PermissionInputBase {
-  const values = modelObject(json, "PermissionInputBase");
+function decodePermissionInputModel(constructor: GeneratedModelConstructor, json: unknown): PermissionInputBaseModel {
+  const values = modelObject(json, "PermissionInputBaseModel");
   const result: Record<string, unknown> = { ...values };
   if (Object.prototype.hasOwnProperty.call(values, "permissions")) defineModelProperty(result, "permissions", convertModelField("deserialize", "permissions", () => (modelSerdeBindings["src/permission-rules.ts#encodePermissions\u0000src/permission-rules.ts#decodePermissions"].deserialize(values["permissions"]))));
-  return Reflect.construct(constructor, [result]) as PermissionInputBase;
+  return Reflect.construct(constructor, [result]) as PermissionInputBaseModel;
 }
 
-function encodePermissionInputModel(model: PermissionInputBase): PermissionInputJSON {
+function encodePermissionInputModel(model: PermissionInputBaseModel): PermissionInputJSON {
   const result: Record<string, unknown> = {};
   if (Object.prototype.hasOwnProperty.call(model, "permissions")) defineModelProperty(result, "permissions", (convertModelField("serialize", "permissions", () => (modelSerdeBindings["src/permission-rules.ts#encodePermissions\u0000src/permission-rules.ts#decodePermissions"].serialize(model["permissions"])))));
   return result as PermissionInputJSON;
 }
 
-registerGeneratedModel(PermissionInputBase, {
+registerGeneratedModel(PermissionInputBaseModel, {
   fields: ["permissions"],
   conversion: {
-    decode: (value, constructor) => decodePermissionInputModel(constructor ?? PermissionInputBase, value),
+    decode: (value, constructor) => decodePermissionInputModel(constructor ?? PermissionInputBaseModel, value),
     encode: encodePermissionInputModel,
   },
   codecId: "PermissionInput_8f46e801",
   profile: { validation: true, mobx: false },
 });
 
-registerIModelClass("PermissionInput_8f46e801", PermissionInputBase);
+registerIModelClass("PermissionInput_8f46e801", PermissionInputBaseModel);
 
 const objectAjvFast = createOpenApiSyncAjvEngine({ allErrors: false, validationBindings: modelValidationBindings });
 const objectAjvAll = createOpenApiSyncAjvEngine({ allErrors: true, validationBindings: modelValidationBindings });

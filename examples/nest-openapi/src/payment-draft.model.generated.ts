@@ -12,7 +12,7 @@ export type PaymentDraftFields = { note: string };
 export type PaymentDraftJSON = { note: string };
 export type PaymentDraftInit = Partial<{ note: string }>;
 
-export abstract class PaymentDraftBase implements GeneratedModel<PaymentDraftJSON, PaymentDraftFields> {
+export abstract class PaymentDraftBaseModel implements GeneratedModel<PaymentDraftJSON, PaymentDraftFields> {
   declare readonly [generatedModelWireBrand]: PaymentDraftJSON;
   declare readonly [generatedModelFieldsBrand]: PaymentDraftFields;
   declare note: PaymentDraftFields["note"];
@@ -23,28 +23,28 @@ export abstract class PaymentDraftBase implements GeneratedModel<PaymentDraftJSO
 
 }
 
-function decodePaymentDraftModel(constructor: GeneratedModelConstructor, json: unknown): PaymentDraftBase {
-  const values = modelObject(json, "PaymentDraftBase");
-  return Reflect.construct(constructor, [values]) as PaymentDraftBase;
+function decodePaymentDraftModel(constructor: GeneratedModelConstructor, json: unknown): PaymentDraftBaseModel {
+  const values = modelObject(json, "PaymentDraftBaseModel");
+  return Reflect.construct(constructor, [values]) as PaymentDraftBaseModel;
 }
 
-function encodePaymentDraftModel(model: PaymentDraftBase): PaymentDraftJSON {
+function encodePaymentDraftModel(model: PaymentDraftBaseModel): PaymentDraftJSON {
   const result: Record<string, unknown> = {};
   if (Object.prototype.hasOwnProperty.call(model, "note")) defineModelProperty(result, "note", (model["note"]));
   return result as PaymentDraftJSON;
 }
 
-registerGeneratedModel(PaymentDraftBase, {
+registerGeneratedModel(PaymentDraftBaseModel, {
   fields: ["note"],
   conversion: {
-    decode: (value, constructor) => decodePaymentDraftModel(constructor ?? PaymentDraftBase, value),
+    decode: (value, constructor) => decodePaymentDraftModel(constructor ?? PaymentDraftBaseModel, value),
     encode: encodePaymentDraftModel,
   },
   codecId: "PaymentDraft_a427e4ae",
   profile: { validation: true, mobx: false },
 });
 
-registerIModelClass("PaymentDraft_a427e4ae", PaymentDraftBase);
+registerIModelClass("PaymentDraft_a427e4ae", PaymentDraftBaseModel);
 
 const objectAjvFast = createOpenApiSyncAjvEngine({ allErrors: false, validationBindings: {} });
 const objectAjvAll = createOpenApiSyncAjvEngine({ allErrors: true, validationBindings: {} });

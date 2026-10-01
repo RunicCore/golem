@@ -1,2 +1,2 @@
-import { PaymentBase } from './payment.model.generated.js';
-export abstract class PaymentDomainBase extends PaymentBase {}
+import { PaymentBaseModel } from './payment.model.generated.js';
+export abstract class PaymentDomainBase extends PaymentBaseModel {}

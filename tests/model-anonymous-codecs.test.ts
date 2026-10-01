@@ -7,20 +7,20 @@ import { createModelProject, writeModelSources } from './model-project.js';
 // `billing` is an unnamed object type with its own constraint, so it gets its own codec.
 const contracts = (property: string) => `import type { IModel } from '@exprtlabs/golem/model';
 import type { DependentRequired } from '@exprtlabs/golem/tags';
-import { ContractsBase } from './contracts.model.generated.js';
+import { ContractsBaseModel } from './contracts.model.generated.js';
 
 type BillingDetails = { card?: string; ${property}?: string } & DependentRequired<{ card: ['${property}'] }>;
 
 export type TContracts = IModel<{ billing: BillingDetails }>;
-export class Contracts extends ContractsBase {}
+export class Contracts extends ContractsBaseModel {}
 `;
 
 const other = `import type { IModel } from '@exprtlabs/golem/model';
 import type { DependentRequired } from '@exprtlabs/golem/tags';
-import { OtherBase } from './other.model.generated.js';
+import { OtherBaseModel } from './other.model.generated.js';
 
 export type TOther = IModel<{ extra: { a?: string; b?: string } & DependentRequired<{ a: ['b'] }> }>;
-export class Other extends OtherBase {}
+export class Other extends OtherBaseModel {}
 `;
 
 function companion(t: TestContext, sources: Record<string, string>, ajvStandalone: boolean): string {

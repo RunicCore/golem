@@ -304,13 +304,13 @@ test('OpenAPI decoder leaves scalar fields in the initializer copy', () => {
 test('nested local models decode from the already isolated input without copying it again', async (t) => {
   const value = fixture(t);
   writeFileSync(path.join(value.sourceRoot, 'team.model.ts'), `import type { IModel } from '@exprtlabs/golem/model';
-import { MemberBase, StampBase, TeamBase } from './team.model.generated.js';
+import { MemberBaseModel, StampBaseModel, TeamBaseModel } from './team.model.generated.js';
 export type TStamp = IModel<{ time: number }>;
-export class Stamp extends StampBase {}
+export class Stamp extends StampBaseModel {}
 export type TMember = IModel<{ name: string; joined: Stamp }>;
-export class Member extends MemberBase {}
+export class Member extends MemberBaseModel {}
 export type TTeam = IModel<{ lead: Member; members: Member[] }>;
-export class Team extends TeamBase {}
+export class Team extends TeamBaseModel {}
 `);
   const result = generate({ root: value.root, profile: { mobx: false, validation: false } });
   const generated = modelArtifact(result, 'team');
@@ -323,7 +323,7 @@ export class Team extends TeamBase {}
   await compileModelProject(value.root);
   const { Team } = await import(pathToFileURL(path.join(value.root, 'build/team.model.js')).href);
   // Nested values are the generated classes; a model file's own subclasses aren't visible to its companion.
-  const { MemberBase: Member, StampBase: Stamp } = await import(pathToFileURL(path.join(value.root, 'build/team.model.generated.js')).href);
+  const { MemberBaseModel: Member, StampBaseModel: Stamp } = await import(pathToFileURL(path.join(value.root, 'build/team.model.generated.js')).href);
   const { requireObjectCodec } = await import('@exprtlabs/golem/serde');
   const input = { lead: { name: 'Ada', joined: { time: 1 } }, members: [{ name: 'Lin', joined: { time: 2 } }] };
   const codec = requireObjectCodec<InstanceType<typeof Team>>('Team');
@@ -344,9 +344,9 @@ export class Team extends TeamBase {}
 test('model encoding assigns present fields in declaration order without deleting keys', async (t) => {
   const value = fixture(t);
   writeFileSync(path.join(value.sourceRoot, 'note.model.ts'), `import type { IModel } from '@exprtlabs/golem/model';
-import { NoteBase } from './note.model.generated.js';
+import { NoteBaseModel } from './note.model.generated.js';
 export type TNote = IModel<{ title: string; body?: string; pinned: boolean }>;
-export class Note extends NoteBase {}
+export class Note extends NoteBaseModel {}
 `);
   const result = generate({ root: value.root, profile: { mobx: false, validation: false } });
   const generated = modelArtifact(result, 'note');

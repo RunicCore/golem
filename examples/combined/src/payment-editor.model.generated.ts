@@ -13,7 +13,7 @@ export type PaymentEditorFields = { money: InstanceType<typeof MoneyModel>; note
 export type PaymentEditorJSON = { money: GeneratedModelWire<InstanceType<typeof MoneyModel>>; note: string };
 export type PaymentEditorInit = Partial<{ money: (ConstructorParameters<typeof MoneyModel> extends [] ? never : ConstructorParameters<typeof MoneyModel> extends [(infer Initializer)?, ...unknown[]] ? Initializer : never) | InstanceType<typeof MoneyModel>; note: string }>;
 
-export abstract class PaymentEditorBase implements GeneratedModel<PaymentEditorJSON, PaymentEditorFields> {
+export abstract class PaymentEditorBaseModel implements GeneratedModel<PaymentEditorJSON, PaymentEditorFields> {
   declare readonly [generatedModelWireBrand]: PaymentEditorJSON;
   declare readonly [generatedModelFieldsBrand]: PaymentEditorFields;
   declare money: PaymentEditorFields["money"];
@@ -26,31 +26,31 @@ export abstract class PaymentEditorBase implements GeneratedModel<PaymentEditorJ
 
 }
 
-function decodePaymentEditorModel(constructor: GeneratedModelConstructor, json: unknown): PaymentEditorBase {
-  const values = modelObject(json, "PaymentEditorBase");
+function decodePaymentEditorModel(constructor: GeneratedModelConstructor, json: unknown): PaymentEditorBaseModel {
+  const values = modelObject(json, "PaymentEditorBaseModel");
   const result: Record<string, unknown> = { ...values };
   if (Object.prototype.hasOwnProperty.call(values, "money")) defineModelProperty(result, "money", convertModelField("deserialize", "money", () => (values["money"] == null || values["money"] instanceof MoneyModel ? values["money"] : decodeGeneratedModelTrusted(MoneyModel, values["money"]))));
-  return Reflect.construct(constructor, [result]) as PaymentEditorBase;
+  return Reflect.construct(constructor, [result]) as PaymentEditorBaseModel;
 }
 
-function encodePaymentEditorModel(model: PaymentEditorBase): PaymentEditorJSON {
+function encodePaymentEditorModel(model: PaymentEditorBaseModel): PaymentEditorJSON {
   const result: Record<string, unknown> = {};
   if (Object.prototype.hasOwnProperty.call(model, "money")) defineModelProperty(result, "money", (convertModelField("serialize", "money", () => (model["money"] instanceof MoneyModel ? encodeGeneratedModel(model["money"]) : model["money"]))));
   if (Object.prototype.hasOwnProperty.call(model, "note")) defineModelProperty(result, "note", (model["note"]));
   return result as PaymentEditorJSON;
 }
 
-registerGeneratedModel(PaymentEditorBase, {
+registerGeneratedModel(PaymentEditorBaseModel, {
   fields: ["money", "note"],
   conversion: {
-    decode: (value, constructor) => decodePaymentEditorModel(constructor ?? PaymentEditorBase, value),
+    decode: (value, constructor) => decodePaymentEditorModel(constructor ?? PaymentEditorBaseModel, value),
     encode: encodePaymentEditorModel,
   },
   codecId: "PaymentEditor_ec0e7711",
   profile: { validation: true, mobx: false },
 });
 
-registerIModelClass("PaymentEditor_ec0e7711", PaymentEditorBase);
+registerIModelClass("PaymentEditor_ec0e7711", PaymentEditorBaseModel);
 
 const __golemTrusted = Object.freeze({ validate: false });
 

@@ -12,7 +12,7 @@ export type PaymentCapturedFields = { paymentId: string; amount: number };
 export type PaymentCapturedJSON = { paymentId: string; amount: number };
 export type PaymentCapturedInit = Partial<{ paymentId: string; amount: number }>;
 
-export abstract class PaymentCapturedBase implements GeneratedModel<PaymentCapturedJSON, PaymentCapturedFields> {
+export abstract class PaymentCapturedBaseModel implements GeneratedModel<PaymentCapturedJSON, PaymentCapturedFields> {
   declare readonly [generatedModelWireBrand]: PaymentCapturedJSON;
   declare readonly [generatedModelFieldsBrand]: PaymentCapturedFields;
   declare paymentId: PaymentCapturedFields["paymentId"];
@@ -25,35 +25,35 @@ export abstract class PaymentCapturedBase implements GeneratedModel<PaymentCaptu
 
 }
 
-function decodePaymentCapturedModel(constructor: GeneratedModelConstructor, json: unknown): PaymentCapturedBase {
-  const values = modelObject(json, "PaymentCapturedBase");
-  return Reflect.construct(constructor, [values]) as PaymentCapturedBase;
+function decodePaymentCapturedModel(constructor: GeneratedModelConstructor, json: unknown): PaymentCapturedBaseModel {
+  const values = modelObject(json, "PaymentCapturedBaseModel");
+  return Reflect.construct(constructor, [values]) as PaymentCapturedBaseModel;
 }
 
-function encodePaymentCapturedModel(model: PaymentCapturedBase): PaymentCapturedJSON {
+function encodePaymentCapturedModel(model: PaymentCapturedBaseModel): PaymentCapturedJSON {
   const result: Record<string, unknown> = {};
   if (Object.prototype.hasOwnProperty.call(model, "paymentId")) defineModelProperty(result, "paymentId", (model["paymentId"]));
   if (Object.prototype.hasOwnProperty.call(model, "amount")) defineModelProperty(result, "amount", (model["amount"]));
   return result as PaymentCapturedJSON;
 }
 
-registerGeneratedModel(PaymentCapturedBase, {
+registerGeneratedModel(PaymentCapturedBaseModel, {
   fields: ["paymentId", "amount"],
   conversion: {
-    decode: (value, constructor) => decodePaymentCapturedModel(constructor ?? PaymentCapturedBase, value),
+    decode: (value, constructor) => decodePaymentCapturedModel(constructor ?? PaymentCapturedBaseModel, value),
     encode: encodePaymentCapturedModel,
   },
   codecId: "PaymentCaptured_0cbf3f68",
   profile: { validation: true, mobx: false },
 });
 
-registerIModelClass("PaymentCaptured_0cbf3f68", PaymentCapturedBase);
+registerIModelClass("PaymentCaptured_0cbf3f68", PaymentCapturedBaseModel);
 
 export type PaymentRefundedFields = { paymentId: string; reason: string };
 export type PaymentRefundedJSON = { paymentId: string; reason: string };
 export type PaymentRefundedInit = Partial<{ paymentId: string; reason: string }>;
 
-export abstract class PaymentRefundedBase implements GeneratedModel<PaymentRefundedJSON, PaymentRefundedFields> {
+export abstract class PaymentRefundedBaseModel implements GeneratedModel<PaymentRefundedJSON, PaymentRefundedFields> {
   declare readonly [generatedModelWireBrand]: PaymentRefundedJSON;
   declare readonly [generatedModelFieldsBrand]: PaymentRefundedFields;
   declare paymentId: PaymentRefundedFields["paymentId"];
@@ -66,29 +66,29 @@ export abstract class PaymentRefundedBase implements GeneratedModel<PaymentRefun
 
 }
 
-function decodePaymentRefundedModel(constructor: GeneratedModelConstructor, json: unknown): PaymentRefundedBase {
-  const values = modelObject(json, "PaymentRefundedBase");
-  return Reflect.construct(constructor, [values]) as PaymentRefundedBase;
+function decodePaymentRefundedModel(constructor: GeneratedModelConstructor, json: unknown): PaymentRefundedBaseModel {
+  const values = modelObject(json, "PaymentRefundedBaseModel");
+  return Reflect.construct(constructor, [values]) as PaymentRefundedBaseModel;
 }
 
-function encodePaymentRefundedModel(model: PaymentRefundedBase): PaymentRefundedJSON {
+function encodePaymentRefundedModel(model: PaymentRefundedBaseModel): PaymentRefundedJSON {
   const result: Record<string, unknown> = {};
   if (Object.prototype.hasOwnProperty.call(model, "paymentId")) defineModelProperty(result, "paymentId", (model["paymentId"]));
   if (Object.prototype.hasOwnProperty.call(model, "reason")) defineModelProperty(result, "reason", (model["reason"]));
   return result as PaymentRefundedJSON;
 }
 
-registerGeneratedModel(PaymentRefundedBase, {
+registerGeneratedModel(PaymentRefundedBaseModel, {
   fields: ["paymentId", "reason"],
   conversion: {
-    decode: (value, constructor) => decodePaymentRefundedModel(constructor ?? PaymentRefundedBase, value),
+    decode: (value, constructor) => decodePaymentRefundedModel(constructor ?? PaymentRefundedBaseModel, value),
     encode: encodePaymentRefundedModel,
   },
   codecId: "PaymentRefunded_1b8a5bca",
   profile: { validation: true, mobx: false },
 });
 
-registerIModelClass("PaymentRefunded_1b8a5bca", PaymentRefundedBase);
+registerIModelClass("PaymentRefunded_1b8a5bca", PaymentRefundedBaseModel);
 
 const objectAjvFast = createOpenApiSyncAjvEngine({ allErrors: false, validationBindings: {} });
 const objectAjvAll = createOpenApiSyncAjvEngine({ allErrors: true, validationBindings: {} });
