@@ -26,11 +26,21 @@ export function adapterRounds(adapters: readonly AdapterId[], rounds: number): A
   return Array.from({ length: rounds }, (_, round) => round % 2 === 0 ? [...adapters] : [...adapters].reverse());
 }
 
+function adapterJob(id: AdapterId, mode: WorkerJob['mode'], settings: Settings): WorkerJob {
+  const mine = timedCases().filter(c => c.adapter === id);
+  return { mode, settings: { ...settings, batches: settings.batches / settings.rounds }, cases: mine.map(c => ({ fixture: payloadSpec(c.payload).fixture, operation: operationSpec(c.operation).fixtureOperation })) };
+}
+
+/** Each library's own checks, invalid inputs included, in a process that times nothing. */
+function verifyAdapter(id: AdapterId, projects: Record<ProjectKind, string>, settings: Settings): void {
+  const adapter = adapterSpec(id);
+  runWorker(projects[adapter.project], adapter.fixtureAdapter, adapterJob(id, 'verify', settings));
+}
+
 function measureAdapter(id: AdapterId, projects: Record<ProjectKind, string>, settings: Settings): MeasuredCase[] {
   const adapter = adapterSpec(id);
   const mine = timedCases().filter(c => c.adapter === id);
-  const job: WorkerJob = { settings: { ...settings, batches: settings.batches / settings.rounds }, cases: mine.map(c => ({ fixture: payloadSpec(c.payload).fixture, operation: operationSpec(c.operation).fixtureOperation })) };
-  const output = runWorker(projects[adapter.project], adapter.fixtureAdapter, job);
+  const output = runWorker(projects[adapter.project], adapter.fixtureAdapter, adapterJob(id, 'measure', settings));
   return mine.map(c => {
     const fixture = payloadSpec(c.payload).fixture;
     const operation = operationSpec(c.operation).fixtureOperation;
@@ -49,6 +59,10 @@ export function runBenchmark(options: RunOptions): BenchmarkResults {
     const projects = prepareProjects(directory);
     const { batches, rounds } = options.settings;
     if (!(rounds >= 1) || !Number.isInteger(batches / rounds)) throw new Error(`settings.batches (${batches}) must split evenly across settings.rounds (${rounds})`);
+    for (const adapter of BENCH_ADAPTERS) {
+      log(`Verifying ${adapter.id}`);
+      verifyAdapter(adapter.id, projects, options.settings);
+    }
     const byCase = new Map<string, MeasuredCase>();
     for (const [round, order] of adapterRounds(BENCH_ADAPTERS.map(a => a.id), rounds).entries()) {
       for (const id of order) {

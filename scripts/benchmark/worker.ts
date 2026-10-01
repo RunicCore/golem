@@ -32,8 +32,8 @@ const isThenable = (value: unknown): value is PromiseLike<unknown> =>
   value !== null && (typeof value === 'object' || typeof value === 'function') && 'then' in value;
 const call = async (item: Runnable): Promise<unknown> => { const value = item.run(); return isThenable(value) ? await value : value; };
 
-// Correctness before any timing: library checks, then each call's result.
-for (const fixture of fixtures) await fixture.verify();
+// Correctness: library checks run in their own verify process; a measuring process checks each call's result on valid input only.
+if (job.mode === 'verify') for (const fixture of fixtures) await fixture.verify();
 const originals = new Map(fixtures.map(f => [f.name, structuredClone(f.payload)]));
 async function verifyCalls(): Promise<void> {
   for (const item of runnables) {
@@ -52,6 +52,11 @@ async function verifyCalls(): Promise<void> {
   for (const fixture of fixtures) assert.deepEqual(fixture.payload, originals.get(fixture.name), `Payload mutated: ${fixtureAdapter}/${fixture.name}`);
 }
 await verifyCalls();
+if (job.mode === 'verify') {
+  const verified: WorkerOutput = { fixtureAdapter, checksum: 1, cases: runnables.map(r => ({ fixture: r.fixture.name, operation: r.operation, payloadBytes: Buffer.byteLength(JSON.stringify(r.fixture.payload)), samples: [] })) };
+  process.stdout.write(JSON.stringify(verified));
+  process.exit(0);
+}
 
 // Synchronous calls are timed without a per-call await; only calls that return a thenable use the async loop.
 const asynchronous = new Map<string, boolean>();
