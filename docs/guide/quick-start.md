@@ -34,14 +34,7 @@ Add `"type": "module"` to `package.json` and this to `tsconfig.json` ([TypeScrip
 
 Mark a type with `IModel` in `src/task.model.ts`:
 
-```ts
-import type { IModel } from '@exprtlabs/golem/model';
-
-export type TTask = IModel<{
-  title: string;
-  done: boolean;
-}>;
-```
+<<< ../../examples/model/src/quick-start/task.model.ts#task-declaration
 
 The generator reads `src/**/*.model.ts` and `src/**/*.models.ts`; [`models.sources`](/reference/config#typescript-models) changes that.
 
@@ -51,11 +44,7 @@ An `IObject` gives plain objects with the same validation and conversion; an `IM
 
 Add `golem.yaml` at the project root and run the generator:
 
-```yaml
-version: 1
-models:
-  root: .
-```
+<<< ../../examples/model/golem.yaml
 
 ```sh
 npx golem generate
@@ -71,21 +60,7 @@ You get `src/task.model.generated.ts` beside the declaration, with the generated
 
 Extend the generated class in `src/task.model.ts`, below the declaration:
 
-```ts
-import type { IModel } from '@exprtlabs/golem/model';
-import { TaskBase } from './task.model.generated.js';
-
-export type TTask = IModel<{
-  title: string;
-  done: boolean;
-}>;
-
-export class Task extends TaskBase {
-  toggle(): void {
-    this.done = !this.done;
-  }
-}
-```
+<<< ../../examples/model/src/quick-start/task.model.ts#task-model
 
 To add a field later, change `TTask` and generate again. Only `task.model.generated.ts` is replaced; `toggle()` stays.
 
@@ -93,16 +68,7 @@ To add a field later, change `TTask` and generate again. Only `task.model.genera
 
 Create `src/main.ts`:
 
-```ts
-import { toWireFormat } from '@exprtlabs/golem/serde';
-import { validateInstance } from '@exprtlabs/golem/validation';
-import { Task } from './task.model.js';
-
-const task = new Task({ title: 'Review the draft', done: false });
-task.toggle();
-console.log(toWireFormat<Task>(task)); // { title: 'Review the draft', done: true }
-console.log(await validateInstance(task)); // []
-```
+<<< ../../examples/model/src/quick-start/main.ts#use-task
 
 `@exprtlabs/golem/serde` also exports `parse` and `stringify`. `parse<Task>(text)` builds a `Task`; `parse<TTask>(text)` returns a plain object. `stringify` returns JSON text.
 

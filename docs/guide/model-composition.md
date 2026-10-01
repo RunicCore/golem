@@ -6,33 +6,7 @@ Nest models, derive types with `Pick` and `Omit`, and model unions that convert 
 
 A field typed with your class, such as `home: Address`, holds an instance of that class. A field typed with the declaration alias (`TAddress`) holds a plain object. `Pick`, `Omit`, `Partial`, `Required` and `Readonly` produce a derived type as a plain object.
 
-```ts
-import type { IModel } from '@exprtlabs/golem/model';
-import { parse } from '@exprtlabs/golem/serde';
-import { AddressBase, CustomerBase } from './customer.model.generated.js';
-
-export type TAddress = IModel<{
-  id: string;
-  city: string;
-  country: string;
-}>;
-export class Address extends AddressBase {}
-
-export type TCustomer = IModel<{
-  home: Address;
-  shipping: Omit<TAddress, 'id'>;
-  draft: Partial<Pick<TAddress, 'city' | 'country'>>;
-}>;
-export class Customer extends CustomerBase {}
-
-const customer = parse<Customer>(JSON.stringify({
-  home: { id: 'address-1', city: 'Hanoi', country: 'VN' },
-  shipping: { city: 'Da Nang', country: 'VN' },
-  draft: { city: 'Hue' },
-}));
-console.log(customer.home instanceof Address); // true
-console.log(Object.getPrototypeOf(customer.shipping) === Object.prototype); // true
-```
+<<< ../../examples/model/src/customer.model.ts#nested-and-derived
 
 A derived type keeps field conversion and validation, but not `Address` methods, constructor defaults or rules added with [`getValidator(model).extend()`](/guide/validation#instance-rules). `Readonly` keeps TypeScript's modifier and doesn't freeze the value.
 
@@ -52,16 +26,7 @@ Supported:
 
 A discriminated union of two models:
 
-```ts
-import type { IModel } from '@exprtlabs/golem/model';
-import { EmailBase, PhoneBase } from './contact.model.generated.js';
-
-export type TEmail = IModel<{ kind: 'email'; address: string }>;
-export class Email extends EmailBase {}
-export type TPhone = IModel<{ kind: 'phone'; number: string }>;
-export class Phone extends PhoneBase {}
-export type TContact = IModel<{ value: TEmail | TPhone }>;
-```
+<<< ../../examples/model/src/contact.model.ts#discriminated-union
 
 Generation fails for:
 
@@ -76,13 +41,7 @@ Generation fails for:
 
 The second type argument of `IModel` controls extra properties and `any`:
 
-```ts
-import type { IModel } from '@exprtlabs/golem/model';
-
-export type TOpen = IModel<{ name: string }, { exact: false }>;
-export type TExact = IModel<{ name: string }>;
-export type TExternal = IModel<{ payload: any }, { allowAny: true }>;
-```
+<<< ../../examples/model/src/open-objects.model.ts#exact-and-any
 
 `exact` defaults to `true`: extra properties fail validation, including in nested plain objects. Constructors still assign declared fields only, and extra keys added to an instance aren't serialized.
 

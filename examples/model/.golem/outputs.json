@@ -15,10 +15,24 @@
       "destination": "src",
       "destinationKind": "directory"
     },
+    "src/contact.model.generated.ts": {
+      "job": "models:.",
+      "owner": "@exprtlabs/golem-model",
+      "digest": "23dd332d32b5bb6af84d724b93d72ec745504eadde7edba68bf0aafab413c0de",
+      "destination": "src",
+      "destinationKind": "directory"
+    },
+    "src/customer.model.generated.ts": {
+      "job": "models:.",
+      "owner": "@exprtlabs/golem-model",
+      "digest": "03925ead1fcf00d51e57e1c0eafb324671c6f8190953e68313fe76be11ce1653",
+      "destination": "src",
+      "destinationKind": "directory"
+    },
     "src/generated/models/iobject-plugin-keys.ts": {
       "job": "models:.",
       "owner": "@exprtlabs/golem-model",
-      "digest": "59342777b5d4deaa73fdde320cea856e30f7c0641e3dbc9c158f66d4f0431618",
+      "digest": "0c1c23cfbc7914fb68ebf82532de54764117f6e35988738161541f870964c3fb",
       "destination": "src/generated/models",
       "destinationKind": "directory"
     },
@@ -43,6 +57,13 @@
       "destination": "src",
       "destinationKind": "directory"
     },
+    "src/open-objects.model.generated.ts": {
+      "job": "models:.",
+      "owner": "@exprtlabs/golem-model",
+      "digest": "dd27cf43b93b0adc7cbe6acdd0cee15a516e18b1cef429dc61a9a3862080a658",
+      "destination": "src",
+      "destinationKind": "directory"
+    },
     "src/order-input.model.generated.ts": {
       "job": "models:.",
       "owner": "@exprtlabs/golem-model",
@@ -54,6 +75,13 @@
       "job": "models:.",
       "owner": "@exprtlabs/golem-model",
       "digest": "6045fa696cd232cb9dfe14a98a3440dd537f7a6cf6b4fbc0639b3c228eba4a79",
+      "destination": "src",
+      "destinationKind": "directory"
+    },
+    "src/quick-start/task.model.generated.ts": {
+      "job": "models:.",
+      "owner": "@exprtlabs/golem-model",
+      "digest": "0738b08a067f9f0326e0b22e71164634a55f534fe311b3e48fe88613ecf5372c",
       "destination": "src",
       "destinationKind": "directory"
     },

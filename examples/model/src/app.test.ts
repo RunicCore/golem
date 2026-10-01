@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { test } from 'node:test';
+import { mock, test } from 'node:test';
 import { LibError } from '@exprtlabs/golem/errors';
 import { fromWireFormat, parse, stringify, toWireFormat } from '@exprtlabs/golem/serde';
 import { validateInstance } from '@exprtlabs/golem/validation';
@@ -21,6 +21,9 @@ import { checkServerErrors } from './server-errors.js';
 import { loadInvalidTask } from './load-task.js';
 import { isMoney, readMoney, writeMoney } from './money-json.js';
 import { Wallet } from './money.model.js';
+import { Address, loadCustomer } from './customer.model.js';
+import { readContactKind } from './contact.model.js';
+import { readOpenName, readExternalPayload, rejectsExtraProperty } from './open-objects.model.js';
 
 test('model app creates, converts, validates, and saves a task', async () => {
   const task = createTask({ title: 'Ship the generators' });
@@ -144,4 +147,41 @@ test('the Wallet IModel nests the TMoney IObject', async () => {
   const wallet = new Wallet({ balance: { amount: 5, currency: 'USD' } });
   assert.deepEqual(await validateInstance(wallet), []);
   assert.deepEqual(toWireFormat<Wallet>(wallet), { balance: { amount: 5, currency: 'USD' } });
+});
+
+test('quick start toggles a task, serializes it and validates it', async () => {
+  const log = mock.method(console, 'log', () => undefined);
+  try {
+    await import('./quick-start/main.js');
+    assert.deepEqual(log.mock.calls.map(call => call.arguments), [
+      [{ title: 'Review the draft', done: true }],
+      [[]],
+    ]);
+  } finally {
+    log.mock.restore();
+  }
+});
+
+test('a field typed with a class holds an instance and a derived type stays a plain object', () => {
+  const log = mock.method(console, 'log', () => undefined);
+  try {
+    const customer = loadCustomer();
+    assert.ok(customer.home instanceof Address);
+    assert.equal(Object.getPrototypeOf(customer.shipping), Object.prototype);
+    assert.deepEqual(log.mock.calls.map(call => call.arguments), [[true], [true]]);
+  } finally {
+    log.mock.restore();
+  }
+});
+
+test('a discriminated union converts by its kind', () => {
+  assert.equal(readContactKind('{"value":{"kind":"email","address":"a@example.test"}}'), 'email');
+  assert.equal(readContactKind('{"value":{"kind":"phone","number":"555"}}'), 'phone');
+});
+
+test('exact models reject extra properties, open models accept them and allowAny skips structure', () => {
+  const text = '{"name":"Ada","extra":1}';
+  assert.equal(rejectsExtraProperty(text), true);
+  assert.equal(readOpenName(text), 'Ada');
+  assert.deepEqual(readExternalPayload('{"payload":{"anything":[1,"two"]}}'), { anything: [1, 'two'] });
 });
