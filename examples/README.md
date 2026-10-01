@@ -20,7 +20,7 @@ The guides walk through them: [models](../docs/guide/models.md),
 [an API client](../docs/guide/client.md),
 [models with a client](../docs/guide/models-and-client.md),
 [NestJS](../docs/guide/nestjs.md) and
-[type tags](../docs/guide/tags.md#worked-example-permissions).
+[type tags end to end](../docs/guide/tags-example.md).
 
 ## Install and run
 

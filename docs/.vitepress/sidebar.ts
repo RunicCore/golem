@@ -6,10 +6,13 @@ export const SIDEBAR: readonly SidebarGroup[] = [
     { text: 'What is Golem', link: '/guide/' },
     { text: 'Installation', link: '/guide/install' },
     { text: 'Quick start', link: '/guide/quick-start' },
+    { text: 'Generate, watch and check', link: '/guide/watch' },
+    { text: 'Migrating to 1.0', link: '/migrating' },
   ] },
   { text: 'Models', items: [
     { text: 'Defining models', link: '/guide/models' },
     { text: 'Type tags', link: '/guide/tags' },
+    { text: 'Example: permissions', link: '/guide/tags-example' },
     { text: 'Validation', link: '/guide/validation' },
     { text: 'Serialization', link: '/guide/serialization' },
     { text: 'Composing models', link: '/guide/model-composition' },
@@ -28,9 +31,6 @@ export const SIDEBAR: readonly SidebarGroup[] = [
   ] },
   { text: 'Integrations', items: [
     { text: 'MobX and React', link: '/guide/mobx' },
-  ] },
-  { text: 'Workflow', items: [
-    { text: 'Generate, watch and check', link: '/guide/watch' },
   ] },
   { text: 'Reference', items: [
     { text: 'Configuration', link: '/reference/config' },

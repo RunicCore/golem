@@ -1,11 +1,16 @@
 # ExprtLabs Golem
 
-One TypeScript-first toolchain for models, validation, JSON conversion,
-OpenAPI documents and typed API clients. Write the type once in
-`@exprtlabs/golem-model`, `@exprtlabs/golem-openapi` or
-`@exprtlabs/golem-ts-openapi`; the shared `@exprtlabs/golem` runtime and
-`golem` CLI generate the rest, in dependency order when a project uses
-more than one.
+One toolchain for a TypeScript app's API contract, end to end. Write models
+as TypeScript types; Golem generates validation, JSON conversion, OpenAPI
+documents and typed API clients from them. Tags on a field's type, such as
+`string & MinLength<2>` or `TSerde<typeof encode, typeof decode>`, drive both
+its validation and its JSON form.
+
+Start from what you have: TypeScript models (`@exprtlabs/golem-model`), an
+OpenAPI document (`@exprtlabs/golem-openapi`) or NestJS controllers
+(`@exprtlabs/golem-ts-openapi`). The shared `@exprtlabs/golem` runtime and
+`golem` CLI run them in dependency order when a project uses more than one.
+Golem compiles with TypeScript 7 through `ttsc`.
 
 ## Install
 

@@ -6,7 +6,7 @@ This file is the complete list of changes. The documentation site's
 ## Migrating to 1.0
 
 Every breaking change, one bullet per change, with the action to take:
-[Migrating to 1.0](docs/changelog.md#migrating). Details for each package are
+[Migrating to 1.0](docs/migrating.md). Details for each package are
 in the sections below.
 
 ## Release candidate

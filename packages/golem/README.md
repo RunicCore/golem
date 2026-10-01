@@ -13,6 +13,10 @@ Use npm with Node.js 22.15 or newer:
 npm install @exprtlabs/golem@rc ajv ajv-formats
 ```
 
+`parse<T>`, `stringify<T>`, `fromWireFormat<T>` and `toWireFormat<T>` need
+TypeScript 7 and `ttsc` 0.30, which run the `@exprtlabs/golem/ttsc-plugin`
+compiler plugin ([installation](../../docs/guide/install.md)).
+
 [Runtime API](../../docs/reference/runtime-api.md) lists every subpath, its
 signature and its extra dependency. [Compatibility and
 stability](../../docs/compatibility.md) has supported versions.

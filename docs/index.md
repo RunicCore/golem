@@ -3,7 +3,7 @@ layout: home
 hero:
   name: Golem
   text: 'Write the type once. <span class="clip">Generate the rest.</span>'
-  tagline: One TypeScript-first toolchain for models, validation, JSON conversion, OpenAPI documents and typed API clients.
+  tagline: One toolchain for a TypeScript app's API contract, end to end. Models, validation, JSON conversion, OpenAPI documents and typed API clients come from the types you already write.
   actions:
     - theme: brand
       text: Quick start →
@@ -20,7 +20,7 @@ features:
     link: /reference/config
     linkText: Configuration
   - title: TypeScript is the schema
-    details: Constraints are types, such as <code>string & MinLength&lt;2&gt;</code>. No decorators, no schema language, no second copy of your fields.
+    details: Tags on a field's type drive both its validation, such as <code>string & MinLength&lt;2&gt;</code>, and its JSON form, with <code>TSerde</code>. No decorators, no schema language, no second copy of your fields.
     link: /guide/tags
     linkText: Type tags
   - title: Fast
@@ -52,6 +52,14 @@ A typical TypeScript API stack assembles a library for each job and keeps their 
 | Custom wire formats | hand-written mappers | a serde tag on the field type |
 | OpenAPI from NestJS | `@ApiProperty` on every DTO field | read from the controller's types |
 | API client | openapi-generator or orval | typed operations with validated models |
+
+## Start where you are
+
+- Have TypeScript types? Generate [models](/guide/models) with validation and JSON conversion.
+- Have an OpenAPI document? Generate a [typed client](/guide/client).
+- Have NestJS controllers? Generate the [OpenAPI document](/guide/nestjs) from them, then the client.
+
+Golem compiles with TypeScript 7 through `ttsc` on Node.js 22.15 or newer ([Installation](/guide/install)).
 
 ## Your types are the schema
 
