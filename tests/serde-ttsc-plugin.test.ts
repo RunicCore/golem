@@ -218,19 +218,33 @@ test('ttsc plugin links a class to its model through extends when the class name
   assert.deepEqual({ ...order }, { id: 'o-1', total: 3 });
 });
 
-test('two classes extending one generated base are rejected', (t) => {
-  const { root } = createModelProject(t, { prefix: 'golem-serde-', name: 'serde-class-link-ambiguous', linkTypescript: true });
-  fs.writeFileSync(path.join(root, 'src/order.model.ts'), `import type { IModel } from '@exprtlabs/golem/model';
-import { TOrderBaseModel } from './order.model.generated.js';
-
-export type TOrder = IModel<{ id: string }>;
-export class PurchaseOrder extends TOrderBaseModel {}
-export class SalesOrder extends TOrderBaseModel {}
-`);
-  assert.throws(
-    () => generate({ root, profile: { mobx: false, validation: true } }),
-    /several classes extending TOrderBaseModel .*: PurchaseOrder, SalesOrder\. Export one\./,
-  );
+test('every class that extends a generated base links to its model and parses to itself', async (t) => {
+  const { root } = createModelProject(t, { prefix: 'golem-serde-', name: 'serde-class-link-many', linkTypescript: true, linkTtsc: true });
+  const directory = 'models/serde/two-classes-link-to-one-model';
+  copyFixtureFile(root, `${directory}/payment.model.ts`, 'src/payment.model.ts');
+  copyFixtureFile(root, `${directory}/use-payment.ts`, 'src/use-payment.ts');
+  const { artifacts } = generate({ root, profile: { mobx: false, validation: true } });
+  writeGeneratedArtifacts(artifacts);
+  const keys = artifacts.find((artifact) => artifact.path.endsWith('iobject-plugin-keys.ts'))?.content ?? '';
+  for (const name of ['TPayment', 'Payment', 'AdminPayment']) {
+    assert.match(keys, new RegExp(`payment\\.model\\.ts#${name}": "TPayment_[0-9a-f]{8}"`), `${name} has a key`);
+  }
+  assert.doesNotMatch(keys, /#RushPayment/, 'a subclass of a linked class is not linked');
+  enableSerdePlugin(root);
+  await compile(root);
+  const emittedModel = fs.readFileSync(path.join(root, 'build/payment.model.js'), 'utf8');
+  assert.match(emittedModel, /registerIModelClass\("TPayment_[0-9a-f]{8}#Payment", Payment\)/);
+  assert.match(emittedModel, /registerIModelClass\("TPayment_[0-9a-f]{8}#AdminPayment", AdminPayment\)/);
+  assert.doesNotMatch(emittedModel, /registerIModelClass\("TPayment_[0-9a-f]{8}", /, 'a model with several classes has no default class');
+  const load = (file: string): Promise<Record<string, unknown>> => import(pathToFileURL(path.join(root, 'build', file)).href) as Promise<Record<string, unknown>>;
+  const models = await load('payment.model.js') as { Payment: new () => object; AdminPayment: new () => object };
+  const used = await load('use-payment.js') as { plain: object; admin: object; ledger: { first: object; second: object; third: object }; base: new () => object };
+  assert.ok(used.plain instanceof models.Payment && !(used.plain instanceof models.AdminPayment));
+  assert.ok(used.admin instanceof models.AdminPayment && !(used.admin instanceof models.Payment));
+  assert.ok(used.ledger.first instanceof models.Payment && !(used.ledger.first instanceof models.AdminPayment), 'a field typed by one class constructs it');
+  assert.ok(used.ledger.second instanceof models.AdminPayment, 'a field typed by the other class constructs that one');
+  assert.ok(used.ledger.third instanceof used.base, 'a field typed by the alias constructs the generated base');
+  assert.ok(!(used.ledger.third instanceof models.Payment) && !(used.ledger.third instanceof models.AdminPayment));
 });
 
 test('ttsc plugin resolves OpenAPI codecs through SDK facades without crossing SDK identities and for Model-suffixed class names', async (t) => {

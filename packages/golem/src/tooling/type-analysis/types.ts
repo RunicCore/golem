@@ -689,7 +689,7 @@ export function descriptorBuilder(
         kind: 'reference',
         name: generatedName,
         ...(!localModel?.emitClass ? { projection: true as const } : {}),
-        ...(classMatch ? { construct: true as const } : {}),
+        ...(classMatch ? { construct: true as const, ...(type.getSymbol()?.getName() ? { className: type.getSymbol()!.getName() } : {}) } : {}),
       }, metadata);
     }
     const externalModel = manifestIndex.externalModelForType(type);

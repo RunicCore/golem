@@ -144,7 +144,7 @@ export type ModelTypeDescriptor = ModelTypeMetadata & (
       readonly discriminator?: UnionDiscriminator;
     }
   | { readonly kind: 'intersection'; readonly variants: readonly ModelTypeDescriptor[] }
-  | { readonly kind: 'reference'; readonly name: string; readonly projection?: true; readonly construct?: true }
+  | { readonly kind: 'reference'; readonly name: string; readonly projection?: true; readonly construct?: true; readonly className?: string }
   | { readonly kind: 'generated-model'; readonly id: string });
 
 /**

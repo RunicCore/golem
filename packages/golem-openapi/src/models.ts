@@ -1826,7 +1826,7 @@ export function generateModels(
 export function collectOpenApiCodecEntries(
   document: unknown,
   analysis?: OpenApiModelAnalysis,
-): ReadonlyArray<{ readonly source: string; readonly name: string; readonly codecId: string; readonly className: string }> {
+): ReadonlyArray<{ readonly source: string; readonly name: string; readonly codecId: string; readonly classNames: readonly string[] }> {
   const modelAnalysis = analysis ?? analyzeOpenApiModels(document);
   const { ordered, schemaGraph } = modelAnalysis;
   const groupForModel = new Map<string, string>();
@@ -1838,7 +1838,7 @@ export function collectOpenApiCodecEntries(
     const codecId = node?.codecId ?? codecPublicId(definition.name, { kind: 'unknown' }, undefined, { source: 'openapi', constructs: true });
     const source = groupForModel.get(definition.name);
     if (!source) throw new Error(`Internal error: model ${definition.name} has no output group.`);
-    return { source, name: definition.name, codecId, className: `${definition.name}Model` };
+    return { source, name: definition.name, codecId, classNames: [`${definition.name}Model`] };
   });
 }
 

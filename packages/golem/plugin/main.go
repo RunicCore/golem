@@ -260,9 +260,19 @@ func registerIModelClassEdits(text string, env rewriteEnv) []sourceEdit {
 		})
 	}
 	walk(env.file.AsNode())
+	// A model with one linked class registers it as the model's class. With several, each registers
+	// as <id>#<class>: the model has no default class and a type that names a class selects it.
+	linked := map[string]int{}
+	for _, place := range places {
+		linked[place.id]++
+	}
 	var edits []sourceEdit
 	for _, place := range places {
-		stmt := fmt.Sprintf("registerIModelClass(%q, %s);", place.id, place.name)
+		key := place.id
+		if linked[place.id] > 1 {
+			key = place.id + "#" + place.name
+		}
+		stmt := fmt.Sprintf("registerIModelClass(%q, %s);", key, place.name)
 		if strings.Contains(text, stmt) || place.end < 0 || place.end > len(text) {
 			continue
 		}

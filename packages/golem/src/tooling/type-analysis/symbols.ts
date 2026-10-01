@@ -97,20 +97,20 @@ export function modelSpecificationForClass(
 }
 
 /**
- * The exported class of the model's file whose base is the model's generated base, whatever its
- * name. A class that extends another candidate is a subclass, not the model's class.
+ * Every exported class of the model's file that extends the model's generated base, whatever its
+ * name. A class that extends another such class is a subclass and does not link.
  */
-export function exportedConcreteClass(
+export function linkedClassNames(
   checker: ts.TypeChecker,
   specification: ModelSpecification,
   specifications: readonly ModelSpecification[],
   compilerOptions?: ts.CompilerOptions,
-): string | undefined {
+): string[] {
   const candidates = specification.sourceFile.statements.filter((statement): statement is ts.ClassDeclaration & { readonly name: ts.Identifier } =>
     ts.isClassDeclaration(statement)
       && statement.name !== undefined
       && statement.modifiers?.some((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword) === true
-      && modelSpecificationForClass(checker, checker.getTypeAtLocation(statement), specifications, compilerOptions) === specification);
+      && modelSpecificationForClass(checker, checker.getTypeAtLocation(statement.name), specifications, compilerOptions) === specification);
   const extendsCandidate = (candidate: ts.ClassDeclaration): boolean => (candidate.heritageClauses ?? [])
     .filter((clause) => clause.token === ts.SyntaxKind.ExtendsKeyword)
     .flatMap((clause) => clause.types)
@@ -119,12 +119,16 @@ export function exportedConcreteClass(
       const resolved = symbol && symbol.flags & ts.SymbolFlags.Alias ? checker.getAliasedSymbol(symbol) : symbol;
       return (resolved?.declarations ?? []).some((declaration) => candidates.some((other) => other === declaration));
     });
-  const direct = candidates.filter((candidate) => !extendsCandidate(candidate));
-  if (direct.length > 1) {
-    throw new Error(
-      `Model ${specification.name} has several classes extending ${specification.name}BaseModel in ${specification.sourceFile.fileName}: `
-      + `${direct.map((candidate) => candidate.name.text).join(', ')}. Export one.`,
-    );
-  }
-  return direct[0]?.name.text;
+  return candidates.filter((candidate) => !extendsCandidate(candidate)).map((candidate) => candidate.name.text);
+}
+
+/** The model's default class: its only linked class. A model with several has none. */
+export function exportedConcreteClass(
+  checker: ts.TypeChecker,
+  specification: ModelSpecification,
+  specifications: readonly ModelSpecification[],
+  compilerOptions?: ts.CompilerOptions,
+): string | undefined {
+  const linked = linkedClassNames(checker, specification, specifications, compilerOptions);
+  return linked.length === 1 ? linked[0] : undefined;
 }

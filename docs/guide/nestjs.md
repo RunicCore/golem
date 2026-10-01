@@ -79,10 +79,11 @@ A model's component name comes from the types it was declared with:
 | Declaration | Component |
 | --- | --- |
 | `class Payment extends TPaymentBaseModel {}` for `type TPayment = IModel<…>` | `Payment`, the class name |
+| Two or more classes extending `TPaymentBaseModel` | `TPayment`, the exact alias |
 | `type TMerchant = IModel<…>` with no class | `TMerchant`, the exact alias |
 | `type TPaymentInput = IObject<…>` | `TPaymentInput`, the exact alias |
 
-`@ApiSchema({ name })` on a class still sets its name. A type derived from a model, such as `Omit<TMerchant, 'id'>`, is named from the model's component, as in `TMerchantOmitId`. Two models with the same component name and an identical schema share one component. Two with the same name and different schemas fail generation with an error that names both models; rename one alias or class, or set `@ApiSchema({ name })`.
+`@ApiSchema({ name })` on a class still sets its name. A type derived from a model, such as `Omit<TMerchant, 'id'>`, is named from the model's component, as in `TMerchantOmitId`. Two models with the same component name and an identical schema share one component. Two with the same name and different schemas are qualified by where they are declared. Each takes the shortest trailing run of its file's directory segments, relative to the project root, that tells the models apart, joined with `.`: `orders.Payment` and `billing.Payment`. Models in the same directory add the file name without `.model.ts` or `.ts`: `billing.payment.Payment` and `billing.refund.Payment`. Characters other than letters, digits and underscores in a segment become `_`.
 
 ## Generate a client from the document
 

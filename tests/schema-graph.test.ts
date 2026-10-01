@@ -435,23 +435,24 @@ test('codec declaration table maps source#Name to hashed ids and rejects conflic
     /maps to both/,
   );
   const exact = emitCodecDeclarationTable([
-    { source: 'src/payment.model.ts', name: 'Payment', codecId: 'Payment_aaaaaaaa', className: 'PaymentModel' },
-    { source: 'src/payment.model.ts', name: 'TPayment', codecId: 'TPayment_bbbbbbbb', className: 'Payment2' },
+    { source: 'src/payment.model.ts', name: 'Payment', codecId: 'Payment_aaaaaaaa', classNames: ['PaymentModel'] },
+    { source: 'src/payment.model.ts', name: 'TPayment', codecId: 'TPayment_bbbbbbbb', classNames: ['Payment2', 'Payment3'] },
   ]);
-  for (const [name, id] of [['Payment', 'Payment_aaaaaaaa'], ['PaymentModel', 'Payment_aaaaaaaa'], ['TPayment', 'TPayment_bbbbbbbb'], ['Payment2', 'TPayment_bbbbbbbb']]) {
+  for (const [name, id] of [['Payment', 'Payment_aaaaaaaa'], ['PaymentModel', 'Payment_aaaaaaaa'], ['TPayment', 'TPayment_bbbbbbbb'], ['Payment2', 'TPayment_bbbbbbbb'], ['Payment3', 'TPayment_bbbbbbbb']]) {
     assert.match(exact, new RegExp(`"src/payment\\.model\\.ts#${name}": "${id}"`), `${name} keeps its own exact entry`);
   }
 });
 
 test('codec declaration table lists the model and its class when the class name differs', () => {
   const table = emitCodecDeclarationTable([
-    { source: 'src/order.model.ts', name: 'TOrder', codecId: 'TOrder_aaaaaaaa', className: 'PurchaseOrder' },
+    { source: 'src/order.model.ts', name: 'TOrder', codecId: 'TOrder_aaaaaaaa', classNames: ['PurchaseOrder', 'RushOrder'] },
     { source: 'src/order.model.ts', name: 'TInvoice', codecId: 'TInvoice_bbbbbbbb' },
   ]);
   assert.match(table, /"src\/order\.model\.ts#TOrder": "TOrder_aaaaaaaa"/);
   assert.match(table, /"src\/order\.model\.ts#PurchaseOrder": "TOrder_aaaaaaaa"/);
   assert.match(table, /"src\/order\.model\.ts#TInvoice": "TInvoice_bbbbbbbb"/);
-  assert.equal(table.match(/TOrder_aaaaaaaa/g)?.length, 2);
+  assert.match(table, /"src\/order\.model\.ts#RushOrder": "TOrder_aaaaaaaa"/);
+  assert.equal(table.match(/TOrder_aaaaaaaa/g)?.length, 3);
 });
 
 test('nested IModel refs keep construct on the hashed codec id', () => {

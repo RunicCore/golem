@@ -90,3 +90,42 @@ export class Ledger extends TPaymentBaseModel {}
 		}
 	}
 }
+
+// Several classes extend one generated base: each registers under <id>#<class>, none as the default.
+func TestSeveralLinkedClassesRegisterUnderTheirOwnKeys(t *testing.T) {
+	prog, dir := loadTestProgram(t, map[string]string{
+		"payment.model.generated.ts": "export abstract class TPaymentBaseModel {}\n",
+		"payment.model.ts": `import { TPaymentBaseModel } from './payment.model.generated.js';
+export class Payment extends TPaymentBaseModel {}
+export class AdminPayment extends TPaymentBaseModel {}
+export class RushPayment extends AdminPayment {}
+`,
+		"iobject-plugin-keys.ts": `export const IOBJECT_PLUGIN_KEYS = {
+  "payment.model.ts#TPayment": "TPayment_aaaaaaaa",
+  "payment.model.ts#Payment": "TPayment_aaaaaaaa",
+  "payment.model.ts#AdminPayment": "TPayment_aaaaaaaa",
+} as const;
+`,
+	})
+	rewritten, errs := rewriteProgramSources(dir, prog, true, true)
+	if len(errs) > 0 {
+		t.Fatalf("rewrite errors: %v", errs)
+	}
+	var text string
+	for name, content := range rewritten {
+		if strings.HasSuffix(name, "payment.model.ts") {
+			text = content
+		}
+	}
+	for _, want := range []string{
+		`registerIModelClass("TPayment_aaaaaaaa#Payment", Payment);`,
+		`registerIModelClass("TPayment_aaaaaaaa#AdminPayment", AdminPayment);`,
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("rewritten payment.model.ts lacks %s:\n%s", want, text)
+		}
+	}
+	if strings.Contains(text, `registerIModelClass("TPayment_aaaaaaaa", `) || strings.Contains(text, "RushPayment);") {
+		t.Fatalf("a default class or a subclass registered:\n%s", text)
+	}
+}

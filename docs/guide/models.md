@@ -41,7 +41,7 @@ Put declarations in `src/**/*.model.ts` or `src/**/*.models.ts`. Generation writ
 
 Each name is the exact type alias plus a suffix: nothing is dropped from the alias. `type TTask = IModel<…>` gives `TTaskBaseModel`, `TTaskFields`, `TTaskInit` and `TTaskJSON`; `type Task = IModel<…>` gives `TaskBaseModel`; `type TPermissionModel = IModel<…>` gives `TPermissionModelBaseModel`. The generated functions use the alias too, such as `parseTTask`.
 
-Your class links to its model through `extends <Alias>BaseModel`, so it can have any name: `class PurchaseOrder extends TOrderBaseModel`. A file can't export two classes that extend the same generated class directly.
+Your class links to its model through `extends <Alias>BaseModel`, so it can have any name: `class PurchaseOrder extends TOrderBaseModel`. A file can export several classes that extend the generated class directly: each links to the model, and `parse<AdminPayment>` builds an `AdminPayment`. With one class, the model uses it as its default class. With several, the model has no default class, so decoding builds the generated class unless the type names one. A class that extends another linked class does not link.
 
 Don't edit the generated file; generation replaces it.
 

@@ -1,4 +1,4 @@
-import { deduplicateProjections, exportedConcreteClass } from '@exprtlabs/golem/type-analysis';
+import { deduplicateProjections, exportedConcreteClass, linkedClassNames } from '@exprtlabs/golem/type-analysis';
 import { dirname, relative } from 'node:path';
 import * as ts from '@exprtlabs/golem/ts';
 import {
@@ -974,7 +974,7 @@ export function internSourceDefinitions(
   return schemaGraph;
 }
 
-/** One entry per model; its class name, when it has one, is a second exact name for the codec. */
+/** One entry per model; the names of its linked classes are more exact names for the codec. */
 export function codecEntriesForGraph(
   graph: SourceModelGraph,
   schemaGraph: SchemaGraph | undefined,
@@ -984,17 +984,16 @@ export function codecEntriesForGraph(
   readonly source: string;
   readonly name: string;
   readonly codecId: string;
-  readonly className?: string;
+  readonly classNames: readonly string[];
 }> {
   const internedSchemaGraph = schemaGraph ?? internSourceDefinitions(graph.definitions, graph.emitted);
   return graph.emitted.map((specification) => {
     const descriptor = graph.definitions[specification.name];
     const node = descriptor ? internedSchemaGraph.nodeFor(descriptor, specification.name, specification.emitClass) : undefined;
-    const className = exportedConcreteClass(checker, specification, specifications, graph.compilerOptions);
     return {
       source: portableRelativeFilename(specification.sourceFile.fileName, graph.identityRoot),
       name: specification.name,
-      ...(className ? { className } : {}),
+      classNames: linkedClassNames(checker, specification, specifications, graph.compilerOptions),
       codecId: node?.codecId ?? codecPublicId(specification.name, descriptor ?? { kind: 'unknown' }, undefined, { source: 'typescript', constructs: specification.emitClass }),
     };
   });
@@ -1169,6 +1168,11 @@ export function emitSource(
       .map((specification) => [specification.name, exportedConcreteClass(checker, specification, specifications, graph.compilerOptions)] as const)
       .filter((entry): entry is readonly [string, string] => entry[1] !== undefined),
   );
+  const linkedByName = new Map(
+    [...emitted]
+      .filter((specification) => !cyclicSiblings?.has(specification.name))
+      .map((specification) => [specification.name, linkedClassNames(checker, specification, specifications, graph.compilerOptions)] as const),
+  );
   const referenceNames = [...Object.values(definitions)].reduce(
     (found, descriptor) => descriptorReferences(descriptor, found),
     new Set<string>(),
@@ -1220,7 +1224,7 @@ export function emitSource(
   };
   const resolveImportedModel = (id: string): FromJsonModelResolver => {
     const registered = siblingClass(id);
-    const cls = registered ?? concreteNames.get(id) ?? (classModelNames.has(id) ? id : undefined);
+    const cls = registered ?? concreteNames.get(id) ?? (classModelNames.has(id) ? `${id}BaseModel` : undefined);
     if (!cls) return resolveFromJsonModel(externalNames, id);
     // A class looked up by codec id is a value, not a type name.
     const instance = registered ? `${id}BaseModel` : cls;
@@ -1465,8 +1469,8 @@ export function emitSource(
     }),
     ...localImports
       .filter((item) => !cyclicSiblings?.has(item.name))
-      .filter((item) => classModelNames.has(item.name) || (referenceNames.has(item.name) && concreteNames.has(item.name)))
-      .map((item) => `import { ${concreteNames.get(item.name) ?? item.name} } from ${JSON.stringify(sourceImportPath(item.sourceFile.fileName, output))};`),
+      .filter((item) => concreteNames.has(item.name) && (classModelNames.has(item.name) || referenceNames.has(item.name)))
+      .map((item) => `import { ${concreteNames.get(item.name)} } from ${JSON.stringify(sourceImportPath(item.sourceFile.fileName, output))};`),
     // Same-file nested class fields look up `requireIModelClass(id)` at decode
     // time. This module never imports the handwritten class (ESM TDZ if the user
     // file extends this companion). The ttsc plugin registers the class under
@@ -1649,12 +1653,16 @@ export function emitSource(
       '',
     );
   }
-  const nestedConstruct = (name: string): string => {
+  const nestedConstruct = (name: string, className?: string): string => {
     const node = [...schemaGraph.nodes.values()].find((item) => item.codecId === name || item.name === name);
     const short = node?.name ?? name;
     const id = node?.codecId ?? name;
     const cls = concreteNames.get(short);
     if (cls && localImports.some((item) => item.name === short)) return cls;
+    // A model with several linked classes registers each under `<id>#<class>`; the type names which one.
+    if (className !== undefined && linkedByName.get(short)?.includes(className) && (linkedByName.get(short)?.length ?? 0) > 1) {
+      return `requireIModelClass(${JSON.stringify(`${id}#${className}`)})`;
+    }
     return `requireIModelClass(${JSON.stringify(id)})`;
   };
   const nestedGenerated = (id: string): string => {

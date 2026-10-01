@@ -313,19 +313,19 @@ export function codecPublicId(
   return `${codecShortName(name)}_${hash8(key)}`;
 }
 
-/** `<file>#<name>` for every exact name that resolves to the codec: the model and, when given, its class. */
-function codecDeclarationKeys(source: string, name: string, className?: string): string[] {
+/** `<file>#<name>` for every exact name that resolves to the codec: the model and each class linked to it. */
+function codecDeclarationKeys(source: string, name: string, classNames: readonly string[] = []): string[] {
   const file = source.replace(/\\/g, '/');
-  return [...new Set([codecShortName(name), ...(className === undefined ? [] : [className])])].map((declared) => `${file}#${declared}`);
+  return [...new Set([codecShortName(name), ...classNames])].map((declared) => `${file}#${declared}`);
 }
 
 export function emitCodecDeclarationTable(
-  entries: ReadonlyArray<{ readonly source: string; readonly name: string; readonly codecId: string; readonly className?: string }>,
+  entries: ReadonlyArray<{ readonly source: string; readonly name: string; readonly codecId: string; readonly classNames?: readonly string[] }>,
   owner = '@exprtlabs/golem',
 ): string {
   const seen = new Map<string, string>();
   for (const entry of entries) {
-    for (const key of codecDeclarationKeys(entry.source, entry.name, entry.className)) {
+    for (const key of codecDeclarationKeys(entry.source, entry.name, entry.classNames)) {
       const previous = seen.get(key);
       if (previous !== undefined && previous !== entry.codecId) {
         throw new TypeError(`Codec declaration ${JSON.stringify(key)} maps to both ${previous} and ${entry.codecId}.`);
@@ -377,6 +377,7 @@ function namedReference(
     kind: 'reference',
     name: node.codecId,
     ...(construct ? { construct: true as const } : {}),
+    ...(construct && original.kind === 'reference' && original.className !== undefined ? { className: original.className } : {}),
     ...(projection ? { projection: true as const } : {}),
     ...(original.validations ? { validations: original.validations } : {}),
     ...(original.constraints ? { constraints: original.constraints } : {}),

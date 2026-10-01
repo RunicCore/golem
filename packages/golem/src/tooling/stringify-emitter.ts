@@ -47,7 +47,7 @@ export interface CodecRuntimeOptions {
   /** Module-local output from `createValidatorSet` for standalone profiles. */
   readonly validatorSetExpr?: string;
   readonly serde?: StringifySerdeResolver;
-  readonly nestedConstruct?: (name: string) => string;
+  readonly nestedConstruct?: (name: string, className?: string) => string;
   readonly nestedGenerated?: (id: string) => string;
   readonly nestedImportedSerde?: (id: string) => NestedImportedSerde | undefined;
   /** Internal fill helpers needed by other generated graph modules. */
@@ -71,7 +71,7 @@ interface EmitCtx {
   readonly graph: SchemaGraph;
   readonly validatorSetExpr?: string;
   readonly serde?: StringifySerdeResolver;
-  readonly nestedConstruct?: (name: string) => string;
+  readonly nestedConstruct?: (name: string, className?: string) => string;
   readonly nestedGenerated?: (id: string) => string;
   readonly nestedImportedSerde?: (id: string) => NestedImportedSerde | undefined;
   readonly exportedFillFunctionIds?: ReadonlySet<string>;
@@ -580,7 +580,7 @@ function nestedFromWireOptions(descriptor: ModelTypeDescriptor, ctx: EmitCtx): s
   const id = node?.codecId
     ?? (descriptor.kind === 'reference' ? descriptor.name : descriptor.kind === 'generated-model' ? descriptor.id : undefined);
   if (!id) return trustedOptions(ctx);
-  const ctor = ctx.nestedConstruct?.(id) ?? `requireIModelClass(${JSON.stringify(id)})`;
+  const ctor = ctx.nestedConstruct?.(id, descriptor.kind === 'reference' ? descriptor.className : undefined) ?? `requireIModelClass(${JSON.stringify(id)})`;
   return `{ validate: false, construct: ${ctor} }`;
 }
 
@@ -744,7 +744,7 @@ function variantClassName(variant: ModelTypeDescriptor, ctx: EmitCtx): string | 
   const name = variant.kind === 'generated-model'
     ? ctx.nestedGenerated?.(variant.id)
     : variant.kind === 'reference' && shouldConstructNested(variant, ctx)
-      ? ctx.nestedConstruct?.(ctx.graph.nodeFor(variant)?.codecId ?? variant.name)
+      ? ctx.nestedConstruct?.(ctx.graph.nodeFor(variant)?.codecId ?? variant.name, variant.kind === 'reference' ? variant.className : undefined)
       : undefined;
   // A resolver answers 'undefined' for a model it emits no class for.
   return name === 'undefined' ? undefined : name;

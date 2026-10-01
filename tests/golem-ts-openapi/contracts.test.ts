@@ -358,28 +358,47 @@ test('same-name same-shape class and plain models share one component and keep t
   assert.deepEqual(Object.keys(expectValue(document.components, 'OpenAPI components').schemas ?? {}), ['TPayment'], 'one shared component');
 });
 
-test('two models with one component name and different contracts are rejected with both named', async t => {
-  const controller = (directory: string, route: string): string => [
-    "import { Body, Controller, Post } from '@nestjs/common';",
-    `import { type TPayment } from './${directory}/payment.model.js';`,
-    `@Controller('${route}')`,
-    `export class ${route[0]?.toUpperCase()}${route.slice(1)}Controller {`,
-    '  @Post()',
-    '  create(@Body() input: TPayment): TPayment { return input; }',
-    '}',
-    '',
-  ].join('\n');
-  const model = (field: string): string => `import type { IObject } from '@exprtlabs/golem/model';\nexport type TPayment = IObject<{ ${field}: string }>;\n`;
-  const root = fixture(t, controller('billing', 'billing'), {
-    files: {
-      'src/billing/payment.model.ts': model('amount'),
-      'src/payout/payment.model.ts': model('destination'),
-      'src/payout.controller.ts': controller('payout', 'payout'),
-    },
+/** One route per model file; every model is `TPayment` and `field` makes its schema differ. */
+async function clashComponents(t: TestContext, models: Record<string, string>): Promise<string[]> {
+  const files: Record<string, string> = {};
+  const imports: string[] = [];
+  const routes: string[] = [];
+  Object.entries(models).forEach(([file, field], index) => {
+    files[`src/${file}`] = `import type { IObject } from '@exprtlabs/golem/model';\nexport type TPayment = IObject<{ ${field}: string }>;\n`;
+    imports.push(`import { type TPayment as TPayment${index} } from './${file.replace(/\.ts$/, '.js')}';`);
+    routes.push(`  @Post('r${index}') create${index}(@Body() input: TPayment${index}): TPayment${index} { return input; }`);
   });
-  await assert.rejects(
-    generateFixture(root),
-    /src\/billing\/payment\.model\.ts \(TPayment\) and .*src\/payout\/payment\.model\.ts \(TPayment\) both map to the OpenAPI component name "TPayment" with different schemas/,
+  const controller = ["import { Body, Controller, Post } from '@nestjs/common';", ...imports, "@Controller('payments')", 'export class PaymentController {', ...routes, '}', ''].join('\n');
+  const root = fixture(t, controller, { files });
+  const document = documentOf(await generateFixture(root));
+  return Object.keys(expectValue(document.components, 'OpenAPI components').schemas ?? {}).sort();
+}
+
+test('models with one name and different schemas in different directories are qualified by directory', async t => {
+  assert.deepEqual(
+    await clashComponents(t, { 'orders/payment.model.ts': 'amount', 'billing/payment.model.ts': 'destination' }),
+    ['billing.TPayment', 'orders.TPayment'],
+  );
+});
+
+test('models with one name and different schemas in one directory are qualified by file', async t => {
+  assert.deepEqual(
+    await clashComponents(t, { 'shared/payment.model.ts': 'amount', 'shared/refund.model.ts': 'destination' }),
+    ['shared.payment.TPayment', 'shared.refund.TPayment'],
+  );
+});
+
+test('a three-way name clash qualifies by the shortest distinguishing directory run and then by file', async t => {
+  assert.deepEqual(
+    await clashComponents(t, { 'orders/payment.model.ts': 'amount', 'billing/payment.model.ts': 'destination', 'billing/refund.model.ts': 'reason' }),
+    ['billing.payment.TPayment', 'billing.refund.TPayment', 'orders.TPayment'],
+  );
+});
+
+test('directory qualification adds parent segments only when the last segment does not distinguish', async t => {
+  assert.deepEqual(
+    await clashComponents(t, { 'eu/billing/payment.model.ts': 'amount', 'us/billing/payment.model.ts': 'destination' }),
+    ['eu.billing.TPayment', 'us.billing.TPayment'],
   );
 });
 

@@ -1,10 +1,12 @@
+import * as path from 'node:path';
 import * as ts from '../typescript-ns.js';
 import { collectSpecifications, type ModelSpecification, type TypeAnalysisContext } from './models.js';
 import { descriptorBuilder, type ModelConversionDescriptor } from './types.js';
 import { pascalIdentifier } from './projection-names.js';
 import { fieldProvenance } from './projections.js';
+import { canonicalDescriptorKey } from '../schema.js';
 import { deduplicateProjections } from './graph.js';
-import { exportedConcreteClass, modelSpecificationForClass } from './symbols.js';
+import { linkedClassNames, modelSpecificationForClass } from './symbols.js';
 import type { ManifestIndex } from './provenance.js';
 import { codecPublicId, createSchemaGraph, internDescriptors } from '../schema-graph.js';
 
@@ -34,23 +36,29 @@ export function createContractAnalysis(
   const emptyManifests: ManifestIndex = {
     byId: new Map(), byProvenance: new Map(), files: [], localFiles: [], validationSchemaClosure: [], runtimeExports: () => new Set(), externalModelForType: () => undefined,
   };
-  // A model with a class is named by that class, any other model by its alias.
-  const componentNames = new Map(specifications.map((specification) => [
-    specification,
-    exportedConcreteClass(checker, specification, specifications, program.getCompilerOptions()) ?? specification.name,
-  ] as const));
-  const componentName = (specification: ModelSpecification): string => componentNames.get(specification) ?? specification.name;
+  // A model with exactly one linked class is named by that class, any other model by its alias.
+  const baseNames = new Map(specifications.map((specification) => {
+    const linked = linkedClassNames(checker, specification, specifications, program.getCompilerOptions());
+    return [specification, linked.length === 1 ? linked[0]! : specification.name] as const;
+  }));
   // OpenAPI describes the full contract even when runtime validation is omitted.
   const buildDescribe = (nameFor?: (specification: ModelSpecification) => string) => descriptorBuilder(checker, specifications, emptyManifests, true, options.allowAny ?? false, options.root, program.getCompilerOptions(), false, nameFor);
+  const describeAll = (builder: ReturnType<typeof buildDescribe>): Map<ModelSpecification, ModelConversionDescriptor> => new Map(
+    specifications.map((specification) => [specification, builder(specification.fieldsType, specification, undefined, specification.fieldsNode)] as const),
+  );
+  const baseName = (specification: ModelSpecification): string => baseNames.get(specification) ?? specification.name;
+  let describe = buildDescribe(baseName);
+  let described = describeAll(describe);
+  // Models whose names are equal but whose schemas differ are qualified by where they are declared.
+  const componentNames = qualifiedComponentNames(specifications, described, baseName, options.root);
+  const componentName = (specification: ModelSpecification): string => componentNames.get(specification) ?? baseName(specification);
+  if (specifications.some((specification) => componentName(specification) !== baseName(specification))) {
+    describe = buildDescribe(componentName);
+    described = describeAll(describe);
+  }
   // Codec ids hash descriptors named by alias, as the generated companions do; the document uses component names.
   const describeForIds = buildDescribe();
-  const describe = buildDescribe(componentName);
-  const described = new Map<ModelSpecification, ModelConversionDescriptor>();
-  const describedForIds = new Map<ModelSpecification, ModelConversionDescriptor>();
-  for (const specification of specifications) {
-    described.set(specification, describe(specification.fieldsType, specification, undefined, specification.fieldsNode));
-    describedForIds.set(specification, describeForIds(specification.fieldsType, specification, undefined, specification.fieldsNode));
-  }
+  const describedForIds = describeAll(describeForIds);
   const internGraph = createSchemaGraph();
   internDescriptors(internGraph, [
     ...specifications.flatMap((specification) => {
@@ -62,7 +70,6 @@ export function createContractAnalysis(
   const definitions: Record<string, ModelConversionDescriptor> = {};
   const codecIds: Record<string, string> = {};
   const codecBySpec = new Map<ModelSpecification, string>();
-  const owners = new Map<string, ModelSpecification>();
   for (const specification of specifications) {
     const descriptor = described.get(specification);
     const idDescriptor = describedForIds.get(specification);
@@ -71,14 +78,6 @@ export function createContractAnalysis(
     const publicId = node?.codecId ?? codecPublicId(specification.name, idDescriptor, undefined, { source: 'typescript', constructs: specification.emitClass });
     codecBySpec.set(specification, publicId);
     const name = componentName(specification);
-    const other = owners.get(name);
-    if (other !== undefined && JSON.stringify(described.get(other)) !== JSON.stringify(descriptor)) {
-      throw new Error(
-        `Models ${other.sourceFile.fileName} (${other.aliasName}) and ${specification.sourceFile.fileName} (${specification.aliasName}) `
-        + `both map to the OpenAPI component name "${name}" with different schemas. Rename one of them or its class.`,
-      );
-    }
-    owners.set(name, specification);
     codecIds[publicId] = publicId;
     codecIds[name] = publicId;
     codecIds[specification.name] = publicId;
@@ -170,4 +169,56 @@ function controllerOwnerName(node: ts.Node): string {
   const controller = method?.parent && ts.isClassDeclaration(method.parent) ? method.parent.name?.text : undefined;
   const controllerPart = controller ? pascalIdentifier(controller.replace(/(?<=.)Controller$/, '')) ?? '' : '';
   return `${controllerPart}${methodPart || 'Controller'}${role}`;
+}
+
+/**
+ * Component names for the models of one project. Models that share a name and a schema share one
+ * component. Models that share a name but not a schema are qualified: `<directory>.<Name>`, where
+ * `<directory>` is the shortest trailing run of the declaring file's directory segments, relative
+ * to `root`, that tells the different directories apart, joined with `.`. Models of one directory
+ * that clash add the file name without `.model.ts` or `.ts`: `<directory>.<file>.<Name>`. Characters
+ * other than letters, digits and underscores in a segment become `_`.
+ */
+function qualifiedComponentNames(
+  specifications: readonly ModelSpecification[],
+  described: ReadonlyMap<ModelSpecification, ModelConversionDescriptor>,
+  baseName: (specification: ModelSpecification) => string,
+  root: string,
+): Map<ModelSpecification, string> {
+  const names = new Map<ModelSpecification, string>();
+  const groups = new Map<string, ModelSpecification[]>();
+  for (const specification of specifications) {
+    const name = baseName(specification);
+    groups.set(name, [...(groups.get(name) ?? []), specification]);
+  }
+  const clean = (segment: string): string => segment.replace(/[^A-Za-z0-9_]/g, '_');
+  const place = (specification: ModelSpecification): { readonly directory: readonly string[]; readonly stem: string } => {
+    const relative = path.relative(root, specification.sourceFile.fileName).split(path.sep);
+    const file = relative.pop() ?? '';
+    return { directory: relative.filter((segment) => segment !== '' && segment !== '..').map(clean), stem: clean(file.replace(/\.model\.ts$|\.ts$/, '')) };
+  };
+  for (const [name, members] of groups) {
+    const representatives = new Map<string, ModelSpecification>();
+    for (const member of members) {
+      const schema = canonicalDescriptorKey(described.get(member));
+      if (!representatives.has(schema)) representatives.set(schema, member);
+    }
+    if (representatives.size === 1) continue;
+    const reps = [...representatives.values()];
+    const places = reps.map(place);
+    const directories = new Set(places.map((item) => item.directory.join('/')));
+    const longest = Math.max(0, ...places.map((item) => item.directory.length));
+    let run = 1;
+    const tail = (item: { readonly directory: readonly string[] }): string => item.directory.slice(-run).join('/');
+    while (run < longest && new Set(places.map(tail)).size < directories.size) run += 1;
+    reps.forEach((rep, index) => {
+      const item = places[index]!;
+      const shared = places.some((other, otherIndex) => otherIndex !== index && other.directory.join('/') === item.directory.join('/'));
+      const qualified = [...item.directory.slice(-run), ...(shared ? [item.stem] : []), name].join('.');
+      for (const member of members) {
+        if (canonicalDescriptorKey(described.get(member)) === canonicalDescriptorKey(described.get(rep))) names.set(member, qualified);
+      }
+    });
+  }
+  return names;
 }

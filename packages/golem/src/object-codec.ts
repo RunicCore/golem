@@ -153,6 +153,13 @@ function markModelCodecId(ctor: abstract new (values?: never) => object, name: s
 
 export function registerIModelClass(name: string, ctor: abstract new (values?: never) => object): void {
   iModelClasses.set(name, ctor);
+  // `<codec id>#<class>` names one of several classes linked to a model; the model has no default class.
+  const variant = name.indexOf('#');
+  if (variant > 0) {
+    markModelCodecId(ctor, name.slice(0, variant));
+    codecIdByConstructor.set(ctor, name.slice(0, variant));
+    return;
+  }
   markModelCodecId(ctor, name);
   codecIdByConstructor.set(ctor, name);
   if (name.includes('_') && HASHED_CODEC_SUFFIX.test(name.slice(name.lastIndexOf('_') + 1))) return;
