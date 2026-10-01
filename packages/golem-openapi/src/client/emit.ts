@@ -174,6 +174,9 @@ function operationSource(
   ));
   const security = JSON.stringify(operation.security || []);
   const surfaces = plan.clientSurfaces;
+  // An empty effective requirement list (an operation-level `security: []` or no
+  // security anywhere) is a no-op in applySecurity, so the call is not emitted.
+  const appliesSecurity = (surfaces.auth || surfaces.mutualTls) && operation.security.length > 0;
   const queryLines = queryParameters.map((parameter) => {
     if (parameter.content) {
       const contentType = Object.keys(parameter.content)[0] || 'text/plain';
@@ -203,7 +206,7 @@ function operationSource(
     : '';
   const inputName = profile.validation || operation.parameters.length || requestBody ? 'input' : '_input';
   const factoryName = operationFactoryName(operation);
-  if (surfaces.auth || surfaces.mutualTls) use('applySecurity');
+  if (appliesSecurity) use('applySecurity');
   if (requestBody) use('encodeBody');
   const validatesWithSources = profile.validation && validationBundle !== undefined;
   const validationFunctions = !profile.validation ? []
@@ -222,7 +225,8 @@ function operationSource(
     ...runtimeFunctions.map((name): readonly [string, string] => [name, `client runtime function ${name}`]),
     ...validationFunctions.map((name): readonly [string, string] => [name, `operation validation function ${name}`]),
   ];
-  if (surfaces.auth || surfaces.mutualTls) importedNames.push(['__golemSecuritySchemes', 'security metadata'], ['RuntimeSecuritySchemes', 'security scheme type import']);
+  if (surfaces.auth || surfaces.mutualTls) importedNames.push(['__golemSecuritySchemes', 'security metadata']);
+  if (appliesSecurity) importedNames.push(['RuntimeSecuritySchemes', 'security scheme type import']);
   if (profile.validation) importedNames.push(['OperationValidationSources', 'validation source type import']);
   if (defaultAjvEngine) importedNames.push(['createOpenApiAjvEngine', 'default validation engine import']);
   if (profile.ajvStandalone && profile.validation) importedNames.push(['createValidatorSet', 'standalone validator import'], ['RuntimeValidator', 'validator type']);
@@ -244,6 +248,15 @@ function operationSource(
   if (profile.validation && validationBundle) {
     moduleScope.claim(validationSourcesName, 'operation validation source resolver');
   }
+  // The sources and the standalone validator set are built on first use and shared by every runtime of this module.
+  const claimModuleName = (base: string, origin: string): string => {
+    let name = base;
+    for (let suffix = 1; moduleScope.has(name); suffix += 1) name = `${base}${suffix}`;
+    if (profile.validation && validationBundle) moduleScope.claim(name, origin);
+    return name;
+  };
+  const validationSourcesCacheName = claimModuleName('__operationValidationSources', 'operation validation source cache');
+  const validatorSetCacheName = claimModuleName('__operationValidatorSet', 'operation validator set cache');
   const inputType = `Types.${operation.typeName}OperationInput`;
   const responseType = `Types.${operation.typeName}OperationHttpResponse`;
   const validatorSetup = validatesWithSources
@@ -258,7 +271,9 @@ function operationSource(
     : '';
   const validationSources = profile.validation && validationBundle
     ? [
-      `const ${validationSourcesName} = (): OperationValidationSources => ({`,
+      `let ${validationSourcesCacheName}: OperationValidationSources | undefined;`,
+      ...(profile.ajvStandalone ? [`let ${validatorSetCacheName}: ReturnType<typeof createValidatorSet> | undefined;`] : []),
+      `const ${validationSourcesName} = (): OperationValidationSources => ${validationSourcesCacheName} ??= {`,
       `  inputReference: ${JSON.stringify(validationBundle.inputReference)},`,
       `  responseReferences: ${JSON.stringify(validationBundle.responseReferences)},`,
       '  schemas: new Map([',
@@ -269,7 +284,7 @@ function operationSource(
       '  ]),',
       ...(profile.ajvStandalone ? [
         '  standaloneValidators: () => {',
-        '    const validatorSet = createValidatorSet();',
+        `    const validatorSet = ${validatorSetCacheName} ??= createValidatorSet();`,
         `    const input = validatorSet.all[${JSON.stringify(validationBundle.inputReference)}];`,
         `    if (!input) throw new LibError(LibErrorKind.ValidationUnavailable, ${JSON.stringify(`Runtime validator could not compile operation input: ${operation.name}`)});`,
         '    const responses = new Map<string, RuntimeValidator>();',
@@ -277,7 +292,7 @@ function operationSource(
         '    return { input, responses };',
         '  },',
       ] : []),
-      '});',
+      '};',
     ].filter(Boolean).join('\n')
     : '';
   const operationSchemaImports = profile.validation && !profile.ajvStandalone
@@ -289,7 +304,7 @@ function operationSource(
     }).filter(Boolean).join('\n')
     : '';
   const runtimeImports = [
-    `import { ClientRuntime${runtimeFunctions.map(name => `, ${name}`).join('')}${profile.mobx ? '' : ', createApiOperation, type ApiOperation'}, type RuntimeResponseContract${surfaces.auth || surfaces.mutualTls ? ', type RuntimeSecuritySchemes' : ''}${profile.validation ? ', type OperationValidationSources' : ''} } from '@exprtlabs/golem/client';`,
+    `import { ClientRuntime${runtimeFunctions.map(name => `, ${name}`).join('')}${profile.mobx ? '' : ', createApiOperation, type ApiOperation'}, type RuntimeResponseContract${appliesSecurity ? ', type RuntimeSecuritySchemes' : ''}${profile.validation ? ', type OperationValidationSources' : ''} } from '@exprtlabs/golem/client';`,
     `import type { ${clientName}ClientOptions as ClientOptions, ${clientName}RequestOptions as RequestOptions } from '../client.js';`,
     `import type * as Types from '../types.js';`,
     profile.mobx
@@ -307,10 +322,11 @@ function operationSource(
       : '',
     operationSchemaImports,
   ].filter(Boolean).join('\n');
+  // The client module imports `__golemSecuritySchemes` from every operation module.
   const securityDeclaration = surfaces.auth || surfaces.mutualTls
-    ? `export const __golemSecuritySchemes = ${JSON.stringify(securitySchemes, null, 2)} as const;\nconst securitySchemes: RuntimeSecuritySchemes = __golemSecuritySchemes;`
+    ? `export const __golemSecuritySchemes = ${JSON.stringify(securitySchemes, null, 2)} as const;${appliesSecurity ? '\nconst securitySchemes: RuntimeSecuritySchemes = __golemSecuritySchemes;' : ''}`
     : '';
-  const securityCall = plan.clientSurfaces.auth || plan.clientSurfaces.mutualTls
+  const securityCall = appliesSecurity
     ? `    await ${use('applySecurity')}(runtime, ${security}, query, headers, cookies, securitySchemes);`
     : '';
   const usesQuery = queryLines.length > 0 || queryStringLine !== '' || securityCall !== '';

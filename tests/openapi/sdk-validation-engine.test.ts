@@ -92,6 +92,47 @@ for (const ajvStandalone of [false, true]) {
   });
 }
 
+for (const ajvStandalone of [false, true]) {
+  test(`operation validation sources and standalone validators are built once per module (${ajvStandalone ? 'standalone' : 'runtime Ajv'})`, async (t) => {
+    const root = createFixtureProject(t, 'golem-sdk-sources-');
+    const output = path.join(root, 'S');
+    writeGeneratedSdk(writeSdk, sdkDocument('S'), { output, name: 'Engine', profile: { mobx: false, validation: true, ajvStandalone } });
+    compileGeneratedSdk(output, []);
+    const module: Record<string, unknown> = await import(pathToFileURL(path.join(output, 'dist/client.js')).href);
+    const Client = module.EngineClient;
+    assert.ok(isGeneratedClientClass(Client));
+    const options = { baseUrl: 'https://fixture.invalid' };
+    if (ajvStandalone) {
+      const validatorsOf = (client: PayloadClient): { input: unknown } => {
+        client.sendPayload();
+        const runtime: unknown = Reflect.get(client, 'runtime');
+        if (!(runtime instanceof ClientRuntime)) throw new TypeError('the generated client holds a ClientRuntime');
+        const validators = runtime.operationValidatorCache.get('sendPayload');
+        assert.ok(validators);
+        return validators;
+      };
+      const first = validatorsOf(new Client(options) as unknown as PayloadClient);
+      const second = validatorsOf(new Client(options) as unknown as PayloadClient);
+      assert.ok(first.input);
+      assert.equal(second.input, first.input, 'both runtimes use the validators of one generated set');
+      return;
+    }
+    const recorded = [new Map<string, unknown>(), new Map<string, unknown>()];
+    for (const schemas of recorded) {
+      const engine = {
+        addSchema: (schema: unknown, id: string) => { schemas.set(id, schema); },
+        getSchema: (reference: string) => [...schemas.keys()].some((id) => reference === id || reference.startsWith(`${id}#`))
+          ? Object.assign(() => true, { errors: null })
+          : undefined,
+      };
+      (new Client({ ...options, validationEngine: engine }) as unknown as PayloadClient).sendPayload();
+    }
+    assert.ok(recorded[0].size > 0, 'the operation hands its schemas to the engine');
+    assert.deepEqual([...recorded[1].keys()], [...recorded[0].keys()]);
+    for (const [id, schema] of recorded[0]) assert.strictEqual(recorded[1].get(id), schema, `${id} is the same schema object in both runtimes`);
+  });
+}
+
 function sharedTitleDocument(marker: string): Record<string, unknown> {
   return {
     openapi: '3.1.0', info: { title: 'Shared title', version: '1' },

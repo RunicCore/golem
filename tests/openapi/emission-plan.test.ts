@@ -431,6 +431,48 @@ test('stream and mutual-TLS surfaces are emitted only when they are used', async
   assert.doesNotMatch(plainClient, /StreamDecoder|MutualTlsTransport|applySecurity/);
 });
 
+test('an operation with no effective security requirement omits the security call and keeps the call for the others', async t => {
+  const output = outputDir(t, 'unsecured-operations');
+  const respond = { 200: { description: 'ok', content: { 'application/json': { schema: { type: 'object' } } } } };
+  const result = await generateMaterializedSdk({
+    openapi: '3.1.0',
+    info: info('Unsecured'),
+    components: { securitySchemes: { bearer: { type: 'http', scheme: 'bearer' } } },
+    security: [{ bearer: [] }],
+    paths: {
+      '/inherits': { get: { operationId: 'inherits', responses: respond } },
+      '/open': { get: { operationId: 'open', security: [], responses: respond } },
+      '/optional': { get: { operationId: 'optionalAuth', security: [{}], responses: respond } },
+    },
+  }, { output, name: 'Unsecured', profile: { mobx: false, validation: false } });
+  const operation = (name: string): string => {
+    const artifact = result.artifacts.find(({ path: file }) => file.endsWith(`operations/${name}.ts`));
+    assert.ok(artifact, `operation ${name} is emitted`);
+    return artifact.content;
+  };
+  assert.doesNotMatch(operation('open'), /applySecurity|securitySchemes: RuntimeSecuritySchemes|const query|const cookies/);
+  assert.match(operation('open'), /export const __golemSecuritySchemes = \{\} as const;/, 'the client still imports the metadata of every operation');
+  for (const name of ['inherits', 'optionalAuth']) {
+    assert.equal(operation(name).match(/await applySecurity\(/g)?.length, 1, `${name} keeps its security call`);
+  }
+  compileStrictUnusedSdk(output);
+
+  const module = requireRecord(await import(pathToFileURL(path.join(output, 'dist/client.js')).href), 'unsecured client');
+  const Client = module.UnsecuredClient;
+  assert.ok(isGeneratedClientClass(Client));
+  const seen: Record<string, string | null> = {};
+  const fetchImpl: typeof fetch = async (url, init) => {
+    seen[new URL(String(url)).pathname] = new Headers(init?.headers).get('authorization');
+    return new Response('{}', { headers: { 'content-type': 'application/json' } });
+  };
+  const client = new Client({ baseUrl: 'https://fixture.invalid', fetchImpl, auth: { bearer: 'secret' } });
+  await client.open().execute({});
+  await client.inherits().execute({});
+  await client.optionalAuth().execute({});
+  // An empty requirement object makes authentication optional and names no scheme to apply.
+  assert.deepEqual(seen, { '/open': null, '/inherits': 'Bearer secret', '/optional': null });
+});
+
 test('the SDK entry re-exports each model module directly', async t => {
   const output = outputDir(t, 'direct-models');
   const result = await generateMaterializedSdk({
