@@ -4,8 +4,6 @@ import { cloneConversionInput, convertModelField, defineModelProperty, requireMo
 import { assertModelValue, createObjectCodec, parseJson, registerIModelClass, requireAjvSchema, resolveGeneratedModelSchemaRefs, resolveModelValidationContextValidator, runSynchronousValidation, serdeValidates, stringifyJsonArray, stringifyJsonString, IssueRepresentation, IssueSource, type SerdeOptions as __GolemSerdeOptions, type ValidateOptions as __GolemValidateOptions } from '@exprtlabs/golem/serde';
 import { createOpenApiSyncAjvEngine } from '@exprtlabs/golem/ajv';
 
-const __golemAbsentField = Symbol();
-
 function modelObject(json: unknown, name: string): Record<string, unknown> {
   return requireModelObject(json, name);
 }
@@ -21,7 +19,7 @@ export abstract class ContractsBase implements GeneratedModel<ContractsJSON, Con
   declare billing: ContractsFields["billing"];
 
   public constructor(values: ContractsInit = {}) {
-    if (Object.prototype.hasOwnProperty.call(values, "destinations")) defineModelProperty(this, "destinations", Array.isArray(values["destinations"]) ? (values["destinations"] as readonly unknown[]).map((item) => item) : values["destinations"]);
+    if (Object.prototype.hasOwnProperty.call(values, "destinations")) defineModelProperty(this, "destinations", Array.isArray(values["destinations"]) ? (values["destinations"] as readonly unknown[]).slice() : values["destinations"]);
     if (Object.prototype.hasOwnProperty.call(values, "billing")) defineModelProperty(this, "billing", values["billing"]);
   }
 
@@ -30,17 +28,14 @@ export abstract class ContractsBase implements GeneratedModel<ContractsJSON, Con
 function decodeContractsModel(constructor: GeneratedModelConstructor, json: unknown): ContractsBase {
   const values = modelObject(json, "ContractsBase");
   const result: Record<string, unknown> = { ...values };
-  if (Object.prototype.hasOwnProperty.call(values, "destinations")) defineModelProperty(result, "destinations", convertModelField("deserialize", "destinations", () => (Array.isArray(values["destinations"]) ? (values["destinations"] as readonly unknown[]).map((item) => item) : values["destinations"])));
+  if (Object.prototype.hasOwnProperty.call(values, "destinations")) defineModelProperty(result, "destinations", convertModelField("deserialize", "destinations", () => (Array.isArray(values["destinations"]) ? (values["destinations"] as readonly unknown[]).slice() : values["destinations"])));
   return Reflect.construct(constructor, [result]) as ContractsBase;
 }
 
 function encodeContractsModel(model: ContractsBase): ContractsJSON {
-  const result: Record<string, unknown> = {
-    ["destinations"]: Object.prototype.hasOwnProperty.call(model, "destinations") ? (convertModelField("serialize", "destinations", () => (Array.isArray(model["destinations"]) ? (model["destinations"] as readonly unknown[]).map((item) => item) : model["destinations"]))) : __golemAbsentField,
-    ["billing"]: Object.prototype.hasOwnProperty.call(model, "billing") ? (model["billing"]) : __golemAbsentField,
-  };
-  if (result["destinations"] === __golemAbsentField) delete result["destinations"];
-  if (result["billing"] === __golemAbsentField) delete result["billing"];
+  const result: Record<string, unknown> = {};
+  if (Object.prototype.hasOwnProperty.call(model, "destinations")) defineModelProperty(result, "destinations", (convertModelField("serialize", "destinations", () => (Array.isArray(model["destinations"]) ? (model["destinations"] as readonly unknown[]).slice() : model["destinations"]))));
+  if (Object.prototype.hasOwnProperty.call(model, "billing")) defineModelProperty(result, "billing", (model["billing"]));
   return result as ContractsJSON;
 }
 
@@ -81,7 +76,7 @@ function fillAnonymous_fa67afd9(out: Record<string, unknown>, wire: Record<strin
   return out;
 }
 
-function stringifyAnonymous_fa67afd9Core(value: Record<string, unknown>, _options?: { readonly validate?: boolean; readonly failFast?: boolean }): string {
+function stringifyAnonymous_fa67afd9Core(value: Record<string, unknown>): string {
   let out = '{';
   let sep = false;
   const __golemField0 = value["card"];
@@ -106,7 +101,7 @@ function stringifyAnonymous_fa67afd9(value: Record<string, unknown>, options?: _
   if (validates) {
     assertAnonymous_fa67afd9(value, options);
   }
-  return stringifyAnonymous_fa67afd9Core(value as never, { validate: false });
+  return stringifyAnonymous_fa67afd9Core(value as never);
 }
 
 function convertFromWireAnonymous_fa67afd9(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
@@ -130,16 +125,20 @@ function fromWireFormatAnonymous_fa67afd9(wire: unknown, options?: __GolemSerdeO
   return convertFromWireAnonymous_fa67afd9(wire, options, false);
 }
 
-function toWireFormatAnonymous_fa67afd9(value: unknown, options?: __GolemSerdeOptions): unknown {
-  const validates = serdeValidates(options, true);
-  if (validates) {
-    assertAnonymous_fa67afd9(value, options);
-  }
+function toWireFormatAnonymous_fa67afd9Core(value: unknown): unknown {
   const record = value as Record<string, unknown>;
   let __golemField0: unknown;
   let __golemField1: unknown;
   const wire = { ...(__golemField0 = record["card"], (__golemField0 !== undefined ? { ["card"]: __golemField0 } : undefined)), ...(__golemField1 = record["billingAddress"], (__golemField1 !== undefined ? { ["billingAddress"]: __golemField1 } : undefined)) };
   return wire;
+}
+
+function toWireFormatAnonymous_fa67afd9(value: unknown, options?: __GolemSerdeOptions): unknown {
+  const validates = serdeValidates(options, true);
+  if (validates) {
+    assertAnonymous_fa67afd9(value, options);
+  }
+  return toWireFormatAnonymous_fa67afd9Core(value);
 }
 
 function parseAnonymous_fa67afd9(text: string, options?: __GolemSerdeOptions): unknown {
@@ -151,8 +150,9 @@ function validateAnonymous_fa67afd9(value: unknown, options?: __GolemValidateOpt
   let ok: boolean;
   let errors: readonly unknown[] | null | undefined;
   if (options?.validationContext === undefined) {
-    ok = failFast ? validateAnonymous_fa67afd9Fast(value) : validateAnonymous_fa67afd9All(value);
-    errors = failFast ? validateAnonymous_fa67afd9Fast.errors : validateAnonymous_fa67afd9All.errors;
+    const validator = failFast ? validateAnonymous_fa67afd9Fast : validateAnonymous_fa67afd9All;
+    ok = validator(value);
+    errors = validator.errors;
   } else {
     const validator = resolveModelValidationContextValidator(options.validationContext, "Anonymous_fa67afd9", failFast ? 'first' : 'all');
     ok = runSynchronousValidation(validator, value);
@@ -183,7 +183,7 @@ const validateContractsAll = requireAjvSchema(objectAjvAll.getSchema("Contracts_
 
 function fillContracts(out: Record<string, unknown>, wire: Record<string, unknown>): Record<string, unknown> {
   if (Object.prototype.hasOwnProperty.call(wire, "destinations")) {
-    out["destinations"] = Array.isArray(wire["destinations"]) ? (wire["destinations"] as readonly unknown[]).map((item) => item) : wire["destinations"];
+    out["destinations"] = Array.isArray(wire["destinations"]) ? (wire["destinations"] as readonly unknown[]).slice() : wire["destinations"];
   }
   if (Object.prototype.hasOwnProperty.call(wire, "billing")) {
     out["billing"] = fillAnonymous_fa67afd9({} as Record<string, unknown>, (wire["billing"] as Record<string, unknown>));
@@ -191,8 +191,8 @@ function fillContracts(out: Record<string, unknown>, wire: Record<string, unknow
   return out;
 }
 
-function stringifyContractsCore(value: Record<string, unknown>, _options?: { readonly validate?: boolean; readonly failFast?: boolean }): string {
-  return '{' + "\"destinations\":" + stringifyJsonArray(value["destinations"] as ArrayLike<unknown>, (item) => stringifyJsonString(item as string)) + ",\"billing\":" + stringifyAnonymous_fa67afd9(value["billing"] as never, { validate: false }) + '}';
+function stringifyContractsCore(value: Record<string, unknown>): string {
+  return '{' + "\"destinations\":" + stringifyJsonArray(value["destinations"] as ArrayLike<unknown>, (item) => stringifyJsonString(item as string)) + ",\"billing\":" + stringifyAnonymous_fa67afd9Core(value["billing"] as never) + '}';
 }
 
 export function stringifyContracts(value: ContractsFields, options?: __GolemSerdeOptions): string {
@@ -200,7 +200,7 @@ export function stringifyContracts(value: ContractsFields, options?: __GolemSerd
   if (validates) {
     assertContracts(value, options);
   }
-  return stringifyContractsCore(value as never, { validate: false });
+  return stringifyContractsCore(value as never);
 }
 
 function convertFromWireContracts(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
@@ -224,15 +224,19 @@ export function fromWireFormatContracts(wire: unknown, options?: __GolemSerdeOpt
   return convertFromWireContracts(wire, options, false) as ContractsFields;
 }
 
+function toWireFormatContractsCore(value: ContractsFields): ContractsJSON {
+  const record = value as Record<string, unknown>;
+  let __golemField0: unknown;
+  const wire = { ["destinations"]: (__golemField0 = record["destinations"], Array.isArray(__golemField0) ? (__golemField0 as readonly unknown[]).slice() : __golemField0), ["billing"]: toWireFormatAnonymous_fa67afd9Core(record["billing"] as never) };
+  return wire as ContractsJSON;
+}
+
 export function toWireFormatContracts(value: ContractsFields, options?: __GolemSerdeOptions): ContractsJSON {
   const validates = serdeValidates(options, true);
   if (validates) {
     assertContracts(value, options);
   }
-  const record = value as Record<string, unknown>;
-  let __golemField0: unknown;
-  const wire = { ["destinations"]: (__golemField0 = record["destinations"], Array.isArray(__golemField0) ? (__golemField0 as readonly unknown[]).map((item) => item) : __golemField0), ["billing"]: toWireFormatAnonymous_fa67afd9(record["billing"] as never, { validate: false }) };
-  return wire as ContractsJSON;
+  return toWireFormatContractsCore(value);
 }
 
 export function parseContracts(text: string, options?: __GolemSerdeOptions): ContractsFields {
@@ -244,8 +248,9 @@ export function validateContracts(value: unknown, options?: __GolemValidateOptio
   let ok: boolean;
   let errors: readonly unknown[] | null | undefined;
   if (options?.validationContext === undefined) {
-    ok = failFast ? validateContractsFast(value) : validateContractsAll(value);
-    errors = failFast ? validateContractsFast.errors : validateContractsAll.errors;
+    const validator = failFast ? validateContractsFast : validateContractsAll;
+    ok = validator(value);
+    errors = validator.errors;
   } else {
     const validator = resolveModelValidationContextValidator(options.validationContext, "Contracts_87aa2f02", failFast ? 'first' : 'all');
     ok = runSynchronousValidation(validator, value);

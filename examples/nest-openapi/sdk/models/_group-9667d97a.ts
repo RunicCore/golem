@@ -68,7 +68,7 @@ export function fillMerchantOmitId(out: Record<string, unknown>, wire: Record<st
   return out;
 }
 
-function stringifyMerchantOmitIdCore(value: Record<string, unknown>, _options?: { readonly validate?: boolean; readonly failFast?: boolean }): string {
+function stringifyMerchantOmitIdCore(value: Record<string, unknown>): string {
   return '{' + "\"name\":" + stringifyJsonString(value["name"] as string) + '}';
 }
 
@@ -78,7 +78,7 @@ export function stringifyMerchantOmitId(value: MerchantOmitIdFields, options?: _
   if (validates) {
     assertMerchantOmitId(value, options);
   }
-  return stringifyMerchantOmitIdCore(value as never, { validate: false });
+  return stringifyMerchantOmitIdCore(value as never);
 }
 
 function convertFromWireMerchantOmitId(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
@@ -102,14 +102,18 @@ export function fromWireFormatMerchantOmitId(wire: unknown, options?: __GolemSer
   return convertFromWireMerchantOmitId(wire, options, false) as MerchantOmitIdFields;
 }
 
+function toWireFormatMerchantOmitIdCore(value: MerchantOmitIdFields): Types.MerchantOmitId {
+  const record = value as Record<string, unknown>;
+  const wire = { ["name"]: record["name"] };
+  return wire as Types.MerchantOmitId;
+}
+
 export function toWireFormatMerchantOmitId(value: MerchantOmitIdFields, options?: __GolemSerdeOptions): Types.MerchantOmitId {
   const validates = serdeValidates(options, true);
   if (validates) {
     assertMerchantOmitId(value, options);
   }
-  const record = value as Record<string, unknown>;
-  const wire = { ["name"]: record["name"] };
-  return wire as Types.MerchantOmitId;
+  return toWireFormatMerchantOmitIdCore(value);
 }
 
 export function parseMerchantOmitId(text: string, options?: __GolemSerdeOptions): MerchantOmitIdFields {
@@ -121,8 +125,9 @@ export function validateMerchantOmitId(value: unknown, options?: __GolemValidate
   let ok: boolean;
   let errors: readonly unknown[] | null | undefined;
   if (options?.validationContext === undefined) {
-    ok = failFast ? validateMerchantOmitIdFast(value) : validateMerchantOmitIdAll(value);
-    errors = failFast ? validateMerchantOmitIdFast.errors : validateMerchantOmitIdAll.errors;
+    const validator = failFast ? validateMerchantOmitIdFast : validateMerchantOmitIdAll;
+    ok = validator(value);
+    errors = validator.errors;
   } else {
     const validator = resolveModelValidationContextValidator(options.validationContext, "MerchantOmitId_1ef82815", failFast ? 'first' : 'all');
     ok = runSynchronousValidation(validator, value);

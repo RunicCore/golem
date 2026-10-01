@@ -5,8 +5,6 @@ import { assertModelValue, createObjectCodec, parseJson, registerIModelClass, re
 import { createOpenApiSyncAjvEngine } from '@exprtlabs/golem/ajv';
 import { modelSerdeBindings } from "./generated/models/models.generated.js";
 
-const __golemAbsentField = Symbol();
-
 function modelObject(json: unknown, name: string): Record<string, unknown> {
   return requireModelObject(json, name);
 }
@@ -38,14 +36,10 @@ function decodeTaskModel(constructor: GeneratedModelConstructor, json: unknown):
 }
 
 function encodeTaskModel(model: TaskBase): TaskJSON {
-  const result: Record<string, unknown> = {
-    ["title"]: Object.prototype.hasOwnProperty.call(model, "title") ? (model["title"]) : __golemAbsentField,
-    ["done"]: Object.prototype.hasOwnProperty.call(model, "done") ? (model["done"]) : __golemAbsentField,
-    ["priority"]: Object.prototype.hasOwnProperty.call(model, "priority") ? (convertModelField("serialize", "priority", () => (modelSerdeBindings["src/priority-word.ts#toPriorityWord\u0000src/priority-word.ts#fromPriorityWord"].serialize(model["priority"])))) : __golemAbsentField,
-  };
-  if (result["title"] === __golemAbsentField) delete result["title"];
-  if (result["done"] === __golemAbsentField) delete result["done"];
-  if (result["priority"] === __golemAbsentField) delete result["priority"];
+  const result: Record<string, unknown> = {};
+  if (Object.prototype.hasOwnProperty.call(model, "title")) defineModelProperty(result, "title", (model["title"]));
+  if (Object.prototype.hasOwnProperty.call(model, "done")) defineModelProperty(result, "done", (model["done"]));
+  if (Object.prototype.hasOwnProperty.call(model, "priority")) defineModelProperty(result, "priority", (convertModelField("serialize", "priority", () => (modelSerdeBindings["src/priority-word.ts#toPriorityWord\u0000src/priority-word.ts#fromPriorityWord"].serialize(model["priority"])))));
   return result as TaskJSON;
 }
 
@@ -97,11 +91,11 @@ function fillTask(out: Record<string, unknown>, wire: Record<string, unknown>, c
   return out;
 }
 
-function stringifyTaskCore(value: Record<string, unknown>, _options?: { readonly validate?: boolean; readonly failFast?: boolean }): string {
+function stringifyTaskCore(value: Record<string, unknown>): string {
   return '{' + "\"title\":" + stringifyJsonString(value["title"] as string) + ",\"done\":" + stringifyJsonBoolean(value["done"] as boolean) + ",\"priority\":" + stringifyJsonScalar(modelSerdeBindings["src/priority-word.ts#toPriorityWord\u0000src/priority-word.ts#fromPriorityWord"].serialize(value["priority"]) as never) + '}';
 }
 
-function stringifyTaskWire(value: Record<string, unknown>, _options?: { readonly validate?: boolean; readonly failFast?: boolean }): string {
+function stringifyTaskWire(value: Record<string, unknown>): string {
   return '{' + "\"title\":" + stringifyJsonString(value["title"] as string) + ",\"done\":" + stringifyJsonBoolean(value["done"] as boolean) + ",\"priority\":" + stringifyJsonScalar(value["priority"] as never) + '}';
 }
 
@@ -109,13 +103,11 @@ export function stringifyTask(value: TaskFields, options?: __GolemSerdeOptions):
   const validates = serdeValidates(options, true);
   if (validates) {
     assertTask(value, options);
-  }
-  if (validates) {
     const wire = { ["title"]: value["title"], ["done"]: value["done"], ["priority"]: modelSerdeBindings["src/priority-word.ts#toPriorityWord\u0000src/priority-word.ts#fromPriorityWord"].serialize(value["priority"]) };
     __golemAssertWireOnly_Task(wire, options);
-    return stringifyTaskWire(wire as never, { validate: false });
+    return stringifyTaskWire(wire as never);
   }
-  return stringifyTaskCore(value as never, { validate: false });
+  return stringifyTaskCore(value as never);
 }
 
 function convertFromWireTask(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
@@ -142,17 +134,22 @@ export function fromWireFormatTask(wire: unknown, options?: __GolemSerdeOptions)
   return convertFromWireTask(wire, options, false) as TaskFields;
 }
 
+function toWireFormatTaskCore(value: TaskFields): TaskJSON {
+  const record = value as Record<string, unknown>;
+  const wire = { ["title"]: record["title"], ["done"]: record["done"], ["priority"]: modelSerdeBindings["src/priority-word.ts#toPriorityWord\u0000src/priority-word.ts#fromPriorityWord"].serialize(record["priority"]) };
+  return wire as TaskJSON;
+}
+
 export function toWireFormatTask(value: TaskFields, options?: __GolemSerdeOptions): TaskJSON {
   const validates = serdeValidates(options, true);
   if (validates) {
     assertTask(value, options);
   }
-  const record = value as Record<string, unknown>;
-  const wire = { ["title"]: record["title"], ["done"]: record["done"], ["priority"]: modelSerdeBindings["src/priority-word.ts#toPriorityWord\u0000src/priority-word.ts#fromPriorityWord"].serialize(record["priority"]) };
+  const wire = toWireFormatTaskCore(value);
   if (validates) {
     __golemAssertWireOnly_Task(wire, options);
   }
-  return wire as TaskJSON;
+  return wire;
 }
 
 export function parseTask(text: string, options?: __GolemSerdeOptions): TaskFields {
@@ -164,8 +161,9 @@ export function validateTask(value: unknown, options?: __GolemValidateOptions): 
   let ok: boolean;
   let errors: readonly unknown[] | null | undefined;
   if (options?.validationContext === undefined) {
-    ok = failFast ? validateTaskFast(value) : validateTaskAll(value);
-    errors = failFast ? validateTaskFast.errors : validateTaskAll.errors;
+    const validator = failFast ? validateTaskFast : validateTaskAll;
+    ok = validator(value);
+    errors = validator.errors;
   } else {
     const validator = resolveModelValidationContextValidator(options.validationContext, "Task_895d5b8e", failFast ? 'first' : 'all');
     ok = runSynchronousValidation(validator, value);

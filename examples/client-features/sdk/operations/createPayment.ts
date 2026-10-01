@@ -15,7 +15,8 @@ export const __golemSecuritySchemes = {
 } as const;
 const securitySchemes: RuntimeSecuritySchemes = __golemSecuritySchemes;
 const responseContracts: readonly RuntimeResponseContract[] = [{"status":"201","content":[{"contentType":"application/json","framing":"body"}],"headers":[]}];
-const __resolveOperationValidationSources = (): OperationValidationSources => ({
+let __operationValidationSources: OperationValidationSources | undefined;
+const __resolveOperationValidationSources = (): OperationValidationSources => __operationValidationSources ??= {
   inputReference: "urn:golem:openapi:payments:2590496eb3092a18beec4e22db89747a7bb3f2f6a2337579d8291aaf996c8082:schemas:operation:createPayment#/operations/createPayment/input",
   responseReferences: [{"status":"201","contentType":"application/json","reference":"urn:golem:openapi:payments:2590496eb3092a18beec4e22db89747a7bb3f2f6a2337579d8291aaf996c8082:schemas:operation:createPayment#/operations/createPayment/responses/201/application~1json"}],
   schemas: new Map([
@@ -23,7 +24,7 @@ const __resolveOperationValidationSources = (): OperationValidationSources => ({
     ["urn:golem:openapi:payments:2590496eb3092a18beec4e22db89747a7bb3f2f6a2337579d8291aaf996c8082:schemas:component:Money:input", __golemSchema0],
     ["urn:golem:openapi:payments:2590496eb3092a18beec4e22db89747a7bb3f2f6a2337579d8291aaf996c8082:schemas:component:Money:output", __golemSchema1],
   ]),
-});
+};
 
 export function createPayment(options: ClientOptions): ApiOperation<Types.CreatePaymentOperationInput, Types.CreatePaymentOperationHttpResponse, RequestOptions> {
   return createCreatePaymentOperation(new ClientRuntime("Payments", options, { createValidationEngine: createOpenApiAjvEngine }));

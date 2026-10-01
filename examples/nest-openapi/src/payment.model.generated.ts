@@ -4,8 +4,6 @@ import { cloneConversionInput, convertModelField, defineModelProperty, requireMo
 import { assertModelValue, createObjectCodec, parseJson, registerIModelClass, requireAjvSchema, resolveGeneratedModelSchemaRefs, resolveModelValidationContextValidator, runSynchronousValidation, serdeValidates, stringifyJsonNumber, stringifyJsonScalar, stringifyJsonString, IssueRepresentation, IssueSource, type SerdeOptions as __GolemSerdeOptions, type ValidateOptions as __GolemValidateOptions } from '@exprtlabs/golem/serde';
 import { createOpenApiSyncAjvEngine } from '@exprtlabs/golem/ajv';
 
-const __golemAbsentField = Symbol();
-
 function modelObject(json: unknown, name: string): Record<string, unknown> {
   return requireModelObject(json, name);
 }
@@ -72,18 +70,12 @@ function decodePaymentModel(constructor: GeneratedModelConstructor, json: unknow
 }
 
 function encodePaymentModel(model: PaymentBase): PaymentJSON {
-  const result: Record<string, unknown> = {
-    ["id"]: Object.prototype.hasOwnProperty.call(model, "id") ? (model["id"]) : __golemAbsentField,
-    ["merchant"]: Object.prototype.hasOwnProperty.call(model, "merchant") ? (convertModelField("serialize", "merchant", () => (encodeMerchant(model["merchant"])))) : __golemAbsentField,
-    ["billing"]: Object.prototype.hasOwnProperty.call(model, "billing") ? (convertModelField("serialize", "billing", () => (encodeMerchantOmitId(model["billing"])))) : __golemAbsentField,
-    ["money"]: Object.prototype.hasOwnProperty.call(model, "money") ? (convertModelField("serialize", "money", () => (encodeMoney(model["money"])))) : __golemAbsentField,
-    ["note"]: Object.prototype.hasOwnProperty.call(model, "note") ? (model["note"]) : __golemAbsentField,
-  };
-  if (result["id"] === __golemAbsentField) delete result["id"];
-  if (result["merchant"] === __golemAbsentField) delete result["merchant"];
-  if (result["billing"] === __golemAbsentField) delete result["billing"];
-  if (result["money"] === __golemAbsentField) delete result["money"];
-  if (result["note"] === __golemAbsentField) delete result["note"];
+  const result: Record<string, unknown> = {};
+  if (Object.prototype.hasOwnProperty.call(model, "id")) defineModelProperty(result, "id", (model["id"]));
+  if (Object.prototype.hasOwnProperty.call(model, "merchant")) defineModelProperty(result, "merchant", (convertModelField("serialize", "merchant", () => (encodeMerchant(model["merchant"])))));
+  if (Object.prototype.hasOwnProperty.call(model, "billing")) defineModelProperty(result, "billing", (convertModelField("serialize", "billing", () => (encodeMerchantOmitId(model["billing"])))));
+  if (Object.prototype.hasOwnProperty.call(model, "money")) defineModelProperty(result, "money", (convertModelField("serialize", "money", () => (encodeMoney(model["money"])))));
+  if (Object.prototype.hasOwnProperty.call(model, "note")) defineModelProperty(result, "note", (model["note"]));
   return result as PaymentJSON;
 }
 
@@ -132,7 +124,7 @@ function fillMerchant(out: Record<string, unknown>, wire: Record<string, unknown
   return out;
 }
 
-function stringifyMerchantCore(value: Record<string, unknown>, _options?: { readonly validate?: boolean; readonly failFast?: boolean }): string {
+function stringifyMerchantCore(value: Record<string, unknown>): string {
   return '{' + "\"id\":" + stringifyJsonString(value["id"] as string) + ",\"name\":" + stringifyJsonString(value["name"] as string) + '}';
 }
 
@@ -141,7 +133,7 @@ export function stringifyMerchant(value: MerchantFields, options?: __GolemSerdeO
   if (validates) {
     assertMerchant(value, options);
   }
-  return stringifyMerchantCore(value as never, { validate: false });
+  return stringifyMerchantCore(value as never);
 }
 
 function convertFromWireMerchant(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
@@ -165,14 +157,18 @@ export function fromWireFormatMerchant(wire: unknown, options?: __GolemSerdeOpti
   return convertFromWireMerchant(wire, options, false) as MerchantFields;
 }
 
+function toWireFormatMerchantCore(value: MerchantFields): MerchantJSON {
+  const record = value as Record<string, unknown>;
+  const wire = { ["id"]: record["id"], ["name"]: record["name"] };
+  return wire as MerchantJSON;
+}
+
 export function toWireFormatMerchant(value: MerchantFields, options?: __GolemSerdeOptions): MerchantJSON {
   const validates = serdeValidates(options, true);
   if (validates) {
     assertMerchant(value, options);
   }
-  const record = value as Record<string, unknown>;
-  const wire = { ["id"]: record["id"], ["name"]: record["name"] };
-  return wire as MerchantJSON;
+  return toWireFormatMerchantCore(value);
 }
 
 export function parseMerchant(text: string, options?: __GolemSerdeOptions): MerchantFields {
@@ -184,8 +180,9 @@ export function validateMerchant(value: unknown, options?: __GolemValidateOption
   let ok: boolean;
   let errors: readonly unknown[] | null | undefined;
   if (options?.validationContext === undefined) {
-    ok = failFast ? validateMerchantFast(value) : validateMerchantAll(value);
-    errors = failFast ? validateMerchantFast.errors : validateMerchantAll.errors;
+    const validator = failFast ? validateMerchantFast : validateMerchantAll;
+    ok = validator(value);
+    errors = validator.errors;
   } else {
     const validator = resolveModelValidationContextValidator(options.validationContext, "Merchant_1d5f9479", failFast ? 'first' : 'all');
     ok = runSynchronousValidation(validator, value);
@@ -222,7 +219,7 @@ function fillMoney(out: Record<string, unknown>, wire: Record<string, unknown>, 
   return out;
 }
 
-function stringifyMoneyCore(value: Record<string, unknown>, _options?: { readonly validate?: boolean; readonly failFast?: boolean }): string {
+function stringifyMoneyCore(value: Record<string, unknown>): string {
   return '{' + "\"amount\":" + stringifyJsonString(value["amount"] as string) + ",\"currency\":" + stringifyJsonScalar(value["currency"] as never) + '}';
 }
 
@@ -231,7 +228,7 @@ export function stringifyMoney(value: MoneyFields, options?: __GolemSerdeOptions
   if (validates) {
     assertMoney(value, options);
   }
-  return stringifyMoneyCore(value as never, { validate: false });
+  return stringifyMoneyCore(value as never);
 }
 
 function convertFromWireMoney(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
@@ -255,14 +252,18 @@ export function fromWireFormatMoney(wire: unknown, options?: __GolemSerdeOptions
   return convertFromWireMoney(wire, options, false) as MoneyFields;
 }
 
+function toWireFormatMoneyCore(value: MoneyFields): MoneyJSON {
+  const record = value as Record<string, unknown>;
+  const wire = { ["amount"]: record["amount"], ["currency"]: record["currency"] };
+  return wire as MoneyJSON;
+}
+
 export function toWireFormatMoney(value: MoneyFields, options?: __GolemSerdeOptions): MoneyJSON {
   const validates = serdeValidates(options, true);
   if (validates) {
     assertMoney(value, options);
   }
-  const record = value as Record<string, unknown>;
-  const wire = { ["amount"]: record["amount"], ["currency"]: record["currency"] };
-  return wire as MoneyJSON;
+  return toWireFormatMoneyCore(value);
 }
 
 export function parseMoney(text: string, options?: __GolemSerdeOptions): MoneyFields {
@@ -274,8 +275,9 @@ export function validateMoney(value: unknown, options?: __GolemValidateOptions):
   let ok: boolean;
   let errors: readonly unknown[] | null | undefined;
   if (options?.validationContext === undefined) {
-    ok = failFast ? validateMoneyFast(value) : validateMoneyAll(value);
-    errors = failFast ? validateMoneyFast.errors : validateMoneyAll.errors;
+    const validator = failFast ? validateMoneyFast : validateMoneyAll;
+    ok = validator(value);
+    errors = validator.errors;
   } else {
     const validator = resolveModelValidationContextValidator(options.validationContext, "Money_48468300", failFast ? 'first' : 'all');
     ok = runSynchronousValidation(validator, value);
@@ -311,7 +313,7 @@ function fillMerchantOmitId(out: Record<string, unknown>, wire: Record<string, u
   return out;
 }
 
-function stringifyMerchantOmitIdCore(value: Record<string, unknown>, _options?: { readonly validate?: boolean; readonly failFast?: boolean }): string {
+function stringifyMerchantOmitIdCore(value: Record<string, unknown>): string {
   return '{' + "\"name\":" + stringifyJsonString(value["name"] as string) + '}';
 }
 
@@ -320,7 +322,7 @@ function stringifyMerchantOmitId(value: MerchantOmitIdFields, options?: __GolemS
   if (validates) {
     assertMerchantOmitId(value, options);
   }
-  return stringifyMerchantOmitIdCore(value as never, { validate: false });
+  return stringifyMerchantOmitIdCore(value as never);
 }
 
 function convertFromWireMerchantOmitId(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
@@ -344,14 +346,18 @@ function fromWireFormatMerchantOmitId(wire: unknown, options?: __GolemSerdeOptio
   return convertFromWireMerchantOmitId(wire, options, false) as MerchantOmitIdFields;
 }
 
+function toWireFormatMerchantOmitIdCore(value: MerchantOmitIdFields): MerchantOmitIdJSON {
+  const record = value as Record<string, unknown>;
+  const wire = { ["name"]: record["name"] };
+  return wire as MerchantOmitIdJSON;
+}
+
 function toWireFormatMerchantOmitId(value: MerchantOmitIdFields, options?: __GolemSerdeOptions): MerchantOmitIdJSON {
   const validates = serdeValidates(options, true);
   if (validates) {
     assertMerchantOmitId(value, options);
   }
-  const record = value as Record<string, unknown>;
-  const wire = { ["name"]: record["name"] };
-  return wire as MerchantOmitIdJSON;
+  return toWireFormatMerchantOmitIdCore(value);
 }
 
 function parseMerchantOmitId(text: string, options?: __GolemSerdeOptions): MerchantOmitIdFields {
@@ -363,8 +369,9 @@ function validateMerchantOmitId(value: unknown, options?: __GolemValidateOptions
   let ok: boolean;
   let errors: readonly unknown[] | null | undefined;
   if (options?.validationContext === undefined) {
-    ok = failFast ? validateMerchantOmitIdFast(value) : validateMerchantOmitIdAll(value);
-    errors = failFast ? validateMerchantOmitIdFast.errors : validateMerchantOmitIdAll.errors;
+    const validator = failFast ? validateMerchantOmitIdFast : validateMerchantOmitIdAll;
+    ok = validator(value);
+    errors = validator.errors;
   } else {
     const validator = resolveModelValidationContextValidator(options.validationContext, "MerchantOmitId_aeec4ba8", failFast ? 'first' : 'all');
     ok = runSynchronousValidation(validator, value);
@@ -410,8 +417,8 @@ function fillPayment(out: Record<string, unknown>, wire: Record<string, unknown>
   return out;
 }
 
-function stringifyPaymentCore(value: Record<string, unknown>, _options?: { readonly validate?: boolean; readonly failFast?: boolean }): string {
-  return '{' + "\"id\":" + stringifyJsonString(value["id"] as string) + ",\"merchant\":" + stringifyMerchant(value["merchant"] as never, { validate: false }) + ",\"billing\":" + stringifyMerchantOmitId(value["billing"] as never, { validate: false }) + ",\"money\":" + stringifyMoney(value["money"] as never, { validate: false }) + ",\"note\":" + stringifyJsonString(value["note"] as string) + '}';
+function stringifyPaymentCore(value: Record<string, unknown>): string {
+  return '{' + "\"id\":" + stringifyJsonString(value["id"] as string) + ",\"merchant\":" + stringifyMerchantCore(value["merchant"] as never) + ",\"billing\":" + stringifyMerchantOmitIdCore(value["billing"] as never) + ",\"money\":" + stringifyMoneyCore(value["money"] as never) + ",\"note\":" + stringifyJsonString(value["note"] as string) + '}';
 }
 
 export function stringifyPayment(value: PaymentFields, options?: __GolemSerdeOptions): string {
@@ -419,7 +426,7 @@ export function stringifyPayment(value: PaymentFields, options?: __GolemSerdeOpt
   if (validates) {
     assertPayment(value, options);
   }
-  return stringifyPaymentCore(value as never, { validate: false });
+  return stringifyPaymentCore(value as never);
 }
 
 function convertFromWirePayment(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
@@ -443,14 +450,18 @@ export function fromWireFormatPayment(wire: unknown, options?: __GolemSerdeOptio
   return convertFromWirePayment(wire, options, false) as PaymentFields;
 }
 
+function toWireFormatPaymentCore(value: PaymentFields): PaymentJSON {
+  const record = value as Record<string, unknown>;
+  const wire = { ["id"]: record["id"], ["merchant"]: toWireFormatMerchantCore(record["merchant"] as never), ["billing"]: toWireFormatMerchantOmitIdCore(record["billing"] as never), ["money"]: toWireFormatMoneyCore(record["money"] as never), ["note"]: record["note"] };
+  return wire as PaymentJSON;
+}
+
 export function toWireFormatPayment(value: PaymentFields, options?: __GolemSerdeOptions): PaymentJSON {
   const validates = serdeValidates(options, true);
   if (validates) {
     assertPayment(value, options);
   }
-  const record = value as Record<string, unknown>;
-  const wire = { ["id"]: record["id"], ["merchant"]: toWireFormatMerchant(record["merchant"] as never, { validate: false }), ["billing"]: toWireFormatMerchantOmitId(record["billing"] as never, { validate: false }), ["money"]: toWireFormatMoney(record["money"] as never, { validate: false }), ["note"]: record["note"] };
-  return wire as PaymentJSON;
+  return toWireFormatPaymentCore(value);
 }
 
 export function parsePayment(text: string, options?: __GolemSerdeOptions): PaymentFields {
@@ -462,8 +473,9 @@ export function validatePayment(value: unknown, options?: __GolemValidateOptions
   let ok: boolean;
   let errors: readonly unknown[] | null | undefined;
   if (options?.validationContext === undefined) {
-    ok = failFast ? validatePaymentFast(value) : validatePaymentAll(value);
-    errors = failFast ? validatePaymentFast.errors : validatePaymentAll.errors;
+    const validator = failFast ? validatePaymentFast : validatePaymentAll;
+    ok = validator(value);
+    errors = validator.errors;
   } else {
     const validator = resolveModelValidationContextValidator(options.validationContext, "Payment_dd0a0a3a", failFast ? 'first' : 'all');
     ok = runSynchronousValidation(validator, value);
@@ -508,8 +520,8 @@ function fillPaymentInput(out: Record<string, unknown>, wire: Record<string, unk
   return out;
 }
 
-function stringifyPaymentInputCore(value: Record<string, unknown>, _options?: { readonly validate?: boolean; readonly failFast?: boolean }): string {
-  return '{' + "\"merchant\":" + stringifyMerchant(value["merchant"] as never, { validate: false }) + ",\"billing\":" + stringifyMerchantOmitId(value["billing"] as never, { validate: false }) + ",\"money\":" + stringifyMoney(value["money"] as never, { validate: false }) + ",\"note\":" + stringifyJsonString(value["note"] as string) + '}';
+function stringifyPaymentInputCore(value: Record<string, unknown>): string {
+  return '{' + "\"merchant\":" + stringifyMerchantCore(value["merchant"] as never) + ",\"billing\":" + stringifyMerchantOmitIdCore(value["billing"] as never) + ",\"money\":" + stringifyMoneyCore(value["money"] as never) + ",\"note\":" + stringifyJsonString(value["note"] as string) + '}';
 }
 
 export function stringifyPaymentInput(value: PaymentInputFields, options?: __GolemSerdeOptions): string {
@@ -517,7 +529,7 @@ export function stringifyPaymentInput(value: PaymentInputFields, options?: __Gol
   if (validates) {
     assertPaymentInput(value, options);
   }
-  return stringifyPaymentInputCore(value as never, { validate: false });
+  return stringifyPaymentInputCore(value as never);
 }
 
 function convertFromWirePaymentInput(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
@@ -541,14 +553,18 @@ export function fromWireFormatPaymentInput(wire: unknown, options?: __GolemSerde
   return convertFromWirePaymentInput(wire, options, false) as PaymentInputFields;
 }
 
+function toWireFormatPaymentInputCore(value: PaymentInputFields): PaymentInputJSON {
+  const record = value as Record<string, unknown>;
+  const wire = { ["merchant"]: toWireFormatMerchantCore(record["merchant"] as never), ["billing"]: toWireFormatMerchantOmitIdCore(record["billing"] as never), ["money"]: toWireFormatMoneyCore(record["money"] as never), ["note"]: record["note"] };
+  return wire as PaymentInputJSON;
+}
+
 export function toWireFormatPaymentInput(value: PaymentInputFields, options?: __GolemSerdeOptions): PaymentInputJSON {
   const validates = serdeValidates(options, true);
   if (validates) {
     assertPaymentInput(value, options);
   }
-  const record = value as Record<string, unknown>;
-  const wire = { ["merchant"]: toWireFormatMerchant(record["merchant"] as never, { validate: false }), ["billing"]: toWireFormatMerchantOmitId(record["billing"] as never, { validate: false }), ["money"]: toWireFormatMoney(record["money"] as never, { validate: false }), ["note"]: record["note"] };
-  return wire as PaymentInputJSON;
+  return toWireFormatPaymentInputCore(value);
 }
 
 export function parsePaymentInput(text: string, options?: __GolemSerdeOptions): PaymentInputFields {
@@ -560,8 +576,9 @@ export function validatePaymentInput(value: unknown, options?: __GolemValidateOp
   let ok: boolean;
   let errors: readonly unknown[] | null | undefined;
   if (options?.validationContext === undefined) {
-    ok = failFast ? validatePaymentInputFast(value) : validatePaymentInputAll(value);
-    errors = failFast ? validatePaymentInputFast.errors : validatePaymentInputAll.errors;
+    const validator = failFast ? validatePaymentInputFast : validatePaymentInputAll;
+    ok = validator(value);
+    errors = validator.errors;
   } else {
     const validator = resolveModelValidationContextValidator(options.validationContext, "PaymentInput_fa237a1b", failFast ? 'first' : 'all');
     ok = runSynchronousValidation(validator, value);
@@ -602,7 +619,7 @@ function fillPaymentFilter(out: Record<string, unknown>, wire: Record<string, un
   return out;
 }
 
-function stringifyPaymentFilterCore(value: Record<string, unknown>, _options?: { readonly validate?: boolean; readonly failFast?: boolean }): string {
+function stringifyPaymentFilterCore(value: Record<string, unknown>): string {
   let out = '{';
   let sep = false;
   const __golemField0 = value["limit"];
@@ -627,7 +644,7 @@ export function stringifyPaymentFilter(value: PaymentFilterFields, options?: __G
   if (validates) {
     assertPaymentFilter(value, options);
   }
-  return stringifyPaymentFilterCore(value as never, { validate: false });
+  return stringifyPaymentFilterCore(value as never);
 }
 
 function convertFromWirePaymentFilter(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
@@ -651,16 +668,20 @@ export function fromWireFormatPaymentFilter(wire: unknown, options?: __GolemSerd
   return convertFromWirePaymentFilter(wire, options, false) as PaymentFilterFields;
 }
 
-export function toWireFormatPaymentFilter(value: PaymentFilterFields, options?: __GolemSerdeOptions): PaymentFilterJSON {
-  const validates = serdeValidates(options, true);
-  if (validates) {
-    assertPaymentFilter(value, options);
-  }
+function toWireFormatPaymentFilterCore(value: PaymentFilterFields): PaymentFilterJSON {
   const record = value as Record<string, unknown>;
   let __golemField0: unknown;
   let __golemField1: unknown;
   const wire = { ...(__golemField0 = record["limit"], (__golemField0 !== undefined ? { ["limit"]: __golemField0 } : undefined)), ...(__golemField1 = record["status"], (__golemField1 !== undefined ? { ["status"]: __golemField1 } : undefined)) };
   return wire as PaymentFilterJSON;
+}
+
+export function toWireFormatPaymentFilter(value: PaymentFilterFields, options?: __GolemSerdeOptions): PaymentFilterJSON {
+  const validates = serdeValidates(options, true);
+  if (validates) {
+    assertPaymentFilter(value, options);
+  }
+  return toWireFormatPaymentFilterCore(value);
 }
 
 export function parsePaymentFilter(text: string, options?: __GolemSerdeOptions): PaymentFilterFields {
@@ -672,8 +693,9 @@ export function validatePaymentFilter(value: unknown, options?: __GolemValidateO
   let ok: boolean;
   let errors: readonly unknown[] | null | undefined;
   if (options?.validationContext === undefined) {
-    ok = failFast ? validatePaymentFilterFast(value) : validatePaymentFilterAll(value);
-    errors = failFast ? validatePaymentFilterFast.errors : validatePaymentFilterAll.errors;
+    const validator = failFast ? validatePaymentFilterFast : validatePaymentFilterAll;
+    ok = validator(value);
+    errors = validator.errors;
   } else {
     const validator = resolveModelValidationContextValidator(options.validationContext, "PaymentFilter_c6d9b450", failFast ? 'first' : 'all');
     ok = runSynchronousValidation(validator, value);

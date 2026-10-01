@@ -10,7 +10,8 @@ import { schema as __golemSchema2 } from "../validation-schemas/ProjectAccess.in
 import { schema as __golemSchema3 } from "../validation-schemas/ProjectAccess.output.js";
 
 const responseContracts: readonly RuntimeResponseContract[] = [{"status":"200","content":[{"contentType":"application/json","framing":"body"}],"headers":[]}];
-const __resolveOperationValidationSources = (): OperationValidationSources => ({
+let __operationValidationSources: OperationValidationSources | undefined;
+const __resolveOperationValidationSources = (): OperationValidationSources => __operationValidationSources ??= {
   inputReference: "urn:golem:openapi:projectaccessapi:6073e63c7e9b174726cd4cbec185ce00f49f2a412e5bc93c2a91d506e21c8bc1:schemas:operation:updateProjectAccess#/operations/updateProjectAccess/input",
   responseReferences: [{"status":"200","contentType":"application/json","reference":"urn:golem:openapi:projectaccessapi:6073e63c7e9b174726cd4cbec185ce00f49f2a412e5bc93c2a91d506e21c8bc1:schemas:operation:updateProjectAccess#/operations/updateProjectAccess/responses/200/application~1json"}],
   schemas: new Map([
@@ -20,7 +21,7 @@ const __resolveOperationValidationSources = (): OperationValidationSources => ({
     ["urn:golem:openapi:projectaccessapi:6073e63c7e9b174726cd4cbec185ce00f49f2a412e5bc93c2a91d506e21c8bc1:schemas:component:ProjectAccess:input", __golemSchema2],
     ["urn:golem:openapi:projectaccessapi:6073e63c7e9b174726cd4cbec185ce00f49f2a412e5bc93c2a91d506e21c8bc1:schemas:component:ProjectAccess:output", __golemSchema3],
   ]),
-});
+};
 
 export function updateProjectAccess(options: ClientOptions): ApiOperation<Types.UpdateProjectAccessOperationInput, Types.UpdateProjectAccessOperationHttpResponse, RequestOptions> {
   return createUpdateProjectAccessOperation(new ClientRuntime("ProjectAccess", options, { createValidationEngine: createOpenApiAjvEngine }));

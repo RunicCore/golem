@@ -5,8 +5,6 @@ import { addNestedCodecSchema, assertModelValue, createObjectCodec, parseJson, r
 import { createOpenApiSyncAjvEngine } from '@exprtlabs/golem/ajv';
 import { MoneyModel, stringifyMoney, toWireFormatMoney } from "../sdk/models/Money.js";
 
-const __golemAbsentField = Symbol();
-
 function modelObject(json: unknown, name: string): Record<string, unknown> {
   return requireModelObject(json, name);
 }
@@ -36,12 +34,9 @@ function decodePaymentEditorModel(constructor: GeneratedModelConstructor, json: 
 }
 
 function encodePaymentEditorModel(model: PaymentEditorBase): PaymentEditorJSON {
-  const result: Record<string, unknown> = {
-    ["money"]: Object.prototype.hasOwnProperty.call(model, "money") ? (convertModelField("serialize", "money", () => (model["money"] instanceof MoneyModel ? encodeGeneratedModel(model["money"]) : model["money"]))) : __golemAbsentField,
-    ["note"]: Object.prototype.hasOwnProperty.call(model, "note") ? (model["note"]) : __golemAbsentField,
-  };
-  if (result["money"] === __golemAbsentField) delete result["money"];
-  if (result["note"] === __golemAbsentField) delete result["note"];
+  const result: Record<string, unknown> = {};
+  if (Object.prototype.hasOwnProperty.call(model, "money")) defineModelProperty(result, "money", (convertModelField("serialize", "money", () => (model["money"] instanceof MoneyModel ? encodeGeneratedModel(model["money"]) : model["money"]))));
+  if (Object.prototype.hasOwnProperty.call(model, "note")) defineModelProperty(result, "note", (model["note"]));
   return result as PaymentEditorJSON;
 }
 
@@ -56,6 +51,8 @@ registerGeneratedModel(PaymentEditorBase, {
 });
 
 registerIModelClass("PaymentEditor_ec0e7711", PaymentEditorBase);
+
+const __golemTrusted = Object.freeze({ validate: false });
 
 const objectAjvFast = createOpenApiSyncAjvEngine({ allErrors: false, validationBindings: {} });
 const objectAjvAll = createOpenApiSyncAjvEngine({ allErrors: true, validationBindings: {} });
@@ -78,8 +75,8 @@ function fillPaymentEditor(out: Record<string, unknown>, wire: Record<string, un
   return out;
 }
 
-function stringifyPaymentEditorCore(value: Record<string, unknown>, _options?: { readonly validate?: boolean; readonly failFast?: boolean }): string {
-  return '{' + "\"money\":" + stringifyMoney(value["money"] as never, { validate: false }) + ",\"note\":" + stringifyJsonString(value["note"] as string) + '}';
+function stringifyPaymentEditorCore(value: Record<string, unknown>): string {
+  return '{' + "\"money\":" + stringifyMoney(value["money"] as never, __golemTrusted) + ",\"note\":" + stringifyJsonString(value["note"] as string) + '}';
 }
 
 export function stringifyPaymentEditor(value: PaymentEditorFields, options?: __GolemSerdeOptions): string {
@@ -87,7 +84,7 @@ export function stringifyPaymentEditor(value: PaymentEditorFields, options?: __G
   if (validates) {
     assertPaymentEditor(value, options);
   }
-  return stringifyPaymentEditorCore(value as never, { validate: false });
+  return stringifyPaymentEditorCore(value as never);
 }
 
 function convertFromWirePaymentEditor(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
@@ -111,14 +108,18 @@ export function fromWireFormatPaymentEditor(wire: unknown, options?: __GolemSerd
   return convertFromWirePaymentEditor(wire, options, false) as PaymentEditorFields;
 }
 
+function toWireFormatPaymentEditorCore(value: PaymentEditorFields): PaymentEditorJSON {
+  const record = value as Record<string, unknown>;
+  const wire = { ["money"]: toWireFormatMoney(record["money"] as never, __golemTrusted), ["note"]: record["note"] };
+  return wire as PaymentEditorJSON;
+}
+
 export function toWireFormatPaymentEditor(value: PaymentEditorFields, options?: __GolemSerdeOptions): PaymentEditorJSON {
   const validates = serdeValidates(options, true);
   if (validates) {
     assertPaymentEditor(value, options);
   }
-  const record = value as Record<string, unknown>;
-  const wire = { ["money"]: toWireFormatMoney(record["money"] as never, { validate: false }), ["note"]: record["note"] };
-  return wire as PaymentEditorJSON;
+  return toWireFormatPaymentEditorCore(value);
 }
 
 export function parsePaymentEditor(text: string, options?: __GolemSerdeOptions): PaymentEditorFields {
@@ -130,8 +131,9 @@ export function validatePaymentEditor(value: unknown, options?: __GolemValidateO
   let ok: boolean;
   let errors: readonly unknown[] | null | undefined;
   if (options?.validationContext === undefined) {
-    ok = failFast ? validatePaymentEditorFast(value) : validatePaymentEditorAll(value);
-    errors = failFast ? validatePaymentEditorFast.errors : validatePaymentEditorAll.errors;
+    const validator = failFast ? validatePaymentEditorFast : validatePaymentEditorAll;
+    ok = validator(value);
+    errors = validator.errors;
   } else {
     const validator = resolveModelValidationContextValidator(options.validationContext, "PaymentEditor_ec0e7711", failFast ? 'first' : 'all');
     ok = runSynchronousValidation(validator, value);

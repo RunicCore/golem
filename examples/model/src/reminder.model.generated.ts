@@ -5,8 +5,6 @@ import { deserializeDate, serializeDate } from '@exprtlabs/golem/conversion';
 import { assertModelValue, createObjectCodec, parseJson, registerIModelClass, requireAjvSchema, resolveGeneratedModelSchemaRefs, resolveModelValidationContextValidator, runSynchronousValidation, serdeValidates, stringifyJsonString, IssueRepresentation, IssueSource, type SerdeOptions as __GolemSerdeOptions, type ValidateOptions as __GolemValidateOptions } from '@exprtlabs/golem/serde';
 import { createOpenApiSyncAjvEngine } from '@exprtlabs/golem/ajv';
 
-const __golemAbsentField = Symbol();
-
 function modelObject(json: unknown, name: string): Record<string, unknown> {
   return requireModelObject(json, name);
 }
@@ -36,12 +34,9 @@ function decodeReminderModel(constructor: GeneratedModelConstructor, json: unkno
 }
 
 function encodeReminderModel(model: ReminderBase): ReminderJSON {
-  const result: Record<string, unknown> = {
-    ["title"]: Object.prototype.hasOwnProperty.call(model, "title") ? (model["title"]) : __golemAbsentField,
-    ["remindAt"]: Object.prototype.hasOwnProperty.call(model, "remindAt") ? (convertModelField("serialize", "remindAt", () => (serializeDate(model["remindAt"])))) : __golemAbsentField,
-  };
-  if (result["title"] === __golemAbsentField) delete result["title"];
-  if (result["remindAt"] === __golemAbsentField) delete result["remindAt"];
+  const result: Record<string, unknown> = {};
+  if (Object.prototype.hasOwnProperty.call(model, "title")) defineModelProperty(result, "title", (model["title"]));
+  if (Object.prototype.hasOwnProperty.call(model, "remindAt")) defineModelProperty(result, "remindAt", (convertModelField("serialize", "remindAt", () => (serializeDate(model["remindAt"])))));
   return result as ReminderJSON;
 }
 
@@ -92,11 +87,11 @@ function fillReminder(out: Record<string, unknown>, wire: Record<string, unknown
   return out;
 }
 
-function stringifyReminderCore(value: Record<string, unknown>, _options?: { readonly validate?: boolean; readonly failFast?: boolean }): string {
+function stringifyReminderCore(value: Record<string, unknown>): string {
   return '{' + "\"title\":" + stringifyJsonString(value["title"] as string) + ",\"remindAt\":" + stringifyJsonString(serializeDate(value["remindAt"])) + '}';
 }
 
-function stringifyReminderWire(value: Record<string, unknown>, _options?: { readonly validate?: boolean; readonly failFast?: boolean }): string {
+function stringifyReminderWire(value: Record<string, unknown>): string {
   return '{' + "\"title\":" + stringifyJsonString(value["title"] as string) + ",\"remindAt\":" + stringifyJsonString(value["remindAt"] as string) + '}';
 }
 
@@ -104,13 +99,11 @@ export function stringifyReminder(value: ReminderFields, options?: __GolemSerdeO
   const validates = serdeValidates(options, true);
   if (validates) {
     assertReminder(value, options);
-  }
-  if (validates) {
     const wire = { ["title"]: value["title"], ["remindAt"]: serializeDate(value["remindAt"]) };
     __golemAssertWireOnly_Reminder(wire, options);
-    return stringifyReminderWire(wire as never, { validate: false });
+    return stringifyReminderWire(wire as never);
   }
-  return stringifyReminderCore(value as never, { validate: false });
+  return stringifyReminderCore(value as never);
 }
 
 function convertFromWireReminder(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
@@ -137,17 +130,22 @@ export function fromWireFormatReminder(wire: unknown, options?: __GolemSerdeOpti
   return convertFromWireReminder(wire, options, false) as ReminderFields;
 }
 
+function toWireFormatReminderCore(value: ReminderFields): ReminderJSON {
+  const record = value as Record<string, unknown>;
+  const wire = { ["title"]: record["title"], ["remindAt"]: serializeDate(record["remindAt"]) };
+  return wire as ReminderJSON;
+}
+
 export function toWireFormatReminder(value: ReminderFields, options?: __GolemSerdeOptions): ReminderJSON {
   const validates = serdeValidates(options, true);
   if (validates) {
     assertReminder(value, options);
   }
-  const record = value as Record<string, unknown>;
-  const wire = { ["title"]: record["title"], ["remindAt"]: serializeDate(record["remindAt"]) };
+  const wire = toWireFormatReminderCore(value);
   if (validates) {
     __golemAssertWireOnly_Reminder(wire, options);
   }
-  return wire as ReminderJSON;
+  return wire;
 }
 
 export function parseReminder(text: string, options?: __GolemSerdeOptions): ReminderFields {
@@ -159,8 +157,9 @@ export function validateReminder(value: unknown, options?: __GolemValidateOption
   let ok: boolean;
   let errors: readonly unknown[] | null | undefined;
   if (options?.validationContext === undefined) {
-    ok = failFast ? validateReminderFast(value) : validateReminderAll(value);
-    errors = failFast ? validateReminderFast.errors : validateReminderAll.errors;
+    const validator = failFast ? validateReminderFast : validateReminderAll;
+    ok = validator(value);
+    errors = validator.errors;
   } else {
     const validator = resolveModelValidationContextValidator(options.validationContext, "Reminder_5f93e659", failFast ? 'first' : 'all');
     ok = runSynchronousValidation(validator, value);

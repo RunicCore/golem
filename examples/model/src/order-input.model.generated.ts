@@ -4,8 +4,6 @@ import { cloneConversionInput, convertModelField, defineModelProperty, requireMo
 import { assertModelValue, createObjectCodec, parseJson, registerIModelClass, requireAjvSchema, resolveGeneratedModelSchemaRefs, resolveModelValidationContextValidator, runSynchronousValidation, serdeValidates, stringifyJsonArray, stringifyJsonString, IssueRepresentation, IssueSource, type SerdeOptions as __GolemSerdeOptions, type ValidateOptions as __GolemValidateOptions } from '@exprtlabs/golem/serde';
 import { createOpenApiSyncAjvEngine } from '@exprtlabs/golem/ajv';
 
-const __golemAbsentField = Symbol();
-
 function modelObject(json: unknown, name: string): Record<string, unknown> {
   return requireModelObject(json, name);
 }
@@ -20,7 +18,7 @@ export abstract class OrderInputBase implements GeneratedModel<OrderInputJSON, O
   declare items: OrderInputFields["items"];
 
   public constructor(values: OrderInputInit = {}) {
-    if (Object.prototype.hasOwnProperty.call(values, "items")) defineModelProperty(this, "items", Array.isArray(values["items"]) ? (values["items"] as readonly unknown[]).map((item) => item) : values["items"]);
+    if (Object.prototype.hasOwnProperty.call(values, "items")) defineModelProperty(this, "items", Array.isArray(values["items"]) ? (values["items"] as readonly unknown[]).slice() : values["items"]);
   }
 
 }
@@ -28,15 +26,13 @@ export abstract class OrderInputBase implements GeneratedModel<OrderInputJSON, O
 function decodeOrderInputModel(constructor: GeneratedModelConstructor, json: unknown): OrderInputBase {
   const values = modelObject(json, "OrderInputBase");
   const result: Record<string, unknown> = { ...values };
-  if (Object.prototype.hasOwnProperty.call(values, "items")) defineModelProperty(result, "items", convertModelField("deserialize", "items", () => (Array.isArray(values["items"]) ? (values["items"] as readonly unknown[]).map((item) => item) : values["items"])));
+  if (Object.prototype.hasOwnProperty.call(values, "items")) defineModelProperty(result, "items", convertModelField("deserialize", "items", () => (Array.isArray(values["items"]) ? (values["items"] as readonly unknown[]).slice() : values["items"])));
   return Reflect.construct(constructor, [result]) as OrderInputBase;
 }
 
 function encodeOrderInputModel(model: OrderInputBase): OrderInputJSON {
-  const result: Record<string, unknown> = {
-    ["items"]: Object.prototype.hasOwnProperty.call(model, "items") ? (convertModelField("serialize", "items", () => (Array.isArray(model["items"]) ? (model["items"] as readonly unknown[]).map((item) => item) : model["items"]))) : __golemAbsentField,
-  };
-  if (result["items"] === __golemAbsentField) delete result["items"];
+  const result: Record<string, unknown> = {};
+  if (Object.prototype.hasOwnProperty.call(model, "items")) defineModelProperty(result, "items", (convertModelField("serialize", "items", () => (Array.isArray(model["items"]) ? (model["items"] as readonly unknown[]).slice() : model["items"]))));
   return result as OrderInputJSON;
 }
 
@@ -72,7 +68,7 @@ function fillAnonymous_39128e39(out: Record<string, unknown>, wire: Record<strin
   return out;
 }
 
-function stringifyAnonymous_39128e39Core(value: Record<string, unknown>, _options?: { readonly validate?: boolean; readonly failFast?: boolean }): string {
+function stringifyAnonymous_39128e39Core(value: Record<string, unknown>): string {
   return '{' + "\"sku\":" + stringifyJsonString(value["sku"] as string) + '}';
 }
 
@@ -81,7 +77,7 @@ function stringifyAnonymous_39128e39(value: Record<string, unknown>, options?: _
   if (validates) {
     assertAnonymous_39128e39(value, options);
   }
-  return stringifyAnonymous_39128e39Core(value as never, { validate: false });
+  return stringifyAnonymous_39128e39Core(value as never);
 }
 
 function convertFromWireAnonymous_39128e39(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
@@ -105,14 +101,18 @@ function fromWireFormatAnonymous_39128e39(wire: unknown, options?: __GolemSerdeO
   return convertFromWireAnonymous_39128e39(wire, options, false);
 }
 
+function toWireFormatAnonymous_39128e39Core(value: unknown): unknown {
+  const record = value as Record<string, unknown>;
+  const wire = { ["sku"]: record["sku"] };
+  return wire;
+}
+
 function toWireFormatAnonymous_39128e39(value: unknown, options?: __GolemSerdeOptions): unknown {
   const validates = serdeValidates(options, true);
   if (validates) {
     assertAnonymous_39128e39(value, options);
   }
-  const record = value as Record<string, unknown>;
-  const wire = { ["sku"]: record["sku"] };
-  return wire;
+  return toWireFormatAnonymous_39128e39Core(value);
 }
 
 function parseAnonymous_39128e39(text: string, options?: __GolemSerdeOptions): unknown {
@@ -124,8 +124,9 @@ function validateAnonymous_39128e39(value: unknown, options?: __GolemValidateOpt
   let ok: boolean;
   let errors: readonly unknown[] | null | undefined;
   if (options?.validationContext === undefined) {
-    ok = failFast ? validateAnonymous_39128e39Fast(value) : validateAnonymous_39128e39All(value);
-    errors = failFast ? validateAnonymous_39128e39Fast.errors : validateAnonymous_39128e39All.errors;
+    const validator = failFast ? validateAnonymous_39128e39Fast : validateAnonymous_39128e39All;
+    ok = validator(value);
+    errors = validator.errors;
   } else {
     const validator = resolveModelValidationContextValidator(options.validationContext, "Anonymous_39128e39", failFast ? 'first' : 'all');
     ok = runSynchronousValidation(validator, value);
@@ -161,8 +162,8 @@ function fillOrderInput(out: Record<string, unknown>, wire: Record<string, unkno
   return out;
 }
 
-function stringifyOrderInputCore(value: Record<string, unknown>, _options?: { readonly validate?: boolean; readonly failFast?: boolean }): string {
-  return '{' + "\"items\":" + stringifyJsonArray(value["items"] as ArrayLike<unknown>, (item) => stringifyAnonymous_39128e39(item as never, { validate: false })) + '}';
+function stringifyOrderInputCore(value: Record<string, unknown>): string {
+  return '{' + "\"items\":" + stringifyJsonArray(value["items"] as ArrayLike<unknown>, (item) => stringifyAnonymous_39128e39Core(item as never)) + '}';
 }
 
 export function stringifyOrderInput(value: OrderInputFields, options?: __GolemSerdeOptions): string {
@@ -170,7 +171,7 @@ export function stringifyOrderInput(value: OrderInputFields, options?: __GolemSe
   if (validates) {
     assertOrderInput(value, options);
   }
-  return stringifyOrderInputCore(value as never, { validate: false });
+  return stringifyOrderInputCore(value as never);
 }
 
 function convertFromWireOrderInput(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
@@ -194,15 +195,19 @@ export function fromWireFormatOrderInput(wire: unknown, options?: __GolemSerdeOp
   return convertFromWireOrderInput(wire, options, false) as OrderInputFields;
 }
 
+function toWireFormatOrderInputCore(value: OrderInputFields): OrderInputJSON {
+  const record = value as Record<string, unknown>;
+  let __golemField0: unknown;
+  const wire = { ["items"]: (__golemField0 = record["items"], Array.isArray(__golemField0) ? (__golemField0 as readonly unknown[]).map((item) => toWireFormatAnonymous_39128e39Core(item as never)) : __golemField0) };
+  return wire as OrderInputJSON;
+}
+
 export function toWireFormatOrderInput(value: OrderInputFields, options?: __GolemSerdeOptions): OrderInputJSON {
   const validates = serdeValidates(options, true);
   if (validates) {
     assertOrderInput(value, options);
   }
-  const record = value as Record<string, unknown>;
-  let __golemField0: unknown;
-  const wire = { ["items"]: (__golemField0 = record["items"], Array.isArray(__golemField0) ? (__golemField0 as readonly unknown[]).map((item) => toWireFormatAnonymous_39128e39(item as never, { validate: false })) : __golemField0) };
-  return wire as OrderInputJSON;
+  return toWireFormatOrderInputCore(value);
 }
 
 export function parseOrderInput(text: string, options?: __GolemSerdeOptions): OrderInputFields {
@@ -214,8 +219,9 @@ export function validateOrderInput(value: unknown, options?: __GolemValidateOpti
   let ok: boolean;
   let errors: readonly unknown[] | null | undefined;
   if (options?.validationContext === undefined) {
-    ok = failFast ? validateOrderInputFast(value) : validateOrderInputAll(value);
-    errors = failFast ? validateOrderInputFast.errors : validateOrderInputAll.errors;
+    const validator = failFast ? validateOrderInputFast : validateOrderInputAll;
+    ok = validator(value);
+    errors = validator.errors;
   } else {
     const validator = resolveModelValidationContextValidator(options.validationContext, "OrderInput_bbcddf3d", failFast ? 'first' : 'all');
     ok = runSynchronousValidation(validator, value);

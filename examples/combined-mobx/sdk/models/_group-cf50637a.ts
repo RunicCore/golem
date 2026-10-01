@@ -77,7 +77,7 @@ function fillMoney(out: Record<string, unknown>, wire: Record<string, unknown>, 
   return out;
 }
 
-function stringifyMoneyCore(value: Record<string, unknown>, _options?: { readonly validate?: boolean; readonly failFast?: boolean }): string {
+function stringifyMoneyCore(value: Record<string, unknown>): string {
   return '{' + "\"amount\":" + stringifyJsonNumber(value["amount"] as number) + ",\"currency\":" + stringifyJsonString(value["currency"] as string) + '}';
 }
 
@@ -87,7 +87,7 @@ export function stringifyMoney(value: MoneyFields, options?: __GolemSerdeOptions
   if (validates) {
     assertMoney(value, options);
   }
-  return stringifyMoneyCore(value as never, { validate: false });
+  return stringifyMoneyCore(value as never);
 }
 
 function convertFromWireMoney(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
@@ -111,14 +111,18 @@ export function fromWireFormatMoney(wire: unknown, options?: __GolemSerdeOptions
   return convertFromWireMoney(wire, options, false) as MoneyFields;
 }
 
+function toWireFormatMoneyCore(value: MoneyFields): Types.Money {
+  const record = value as Record<string, unknown>;
+  const wire = { ["amount"]: record["amount"], ["currency"]: record["currency"] };
+  return wire as Types.Money;
+}
+
 export function toWireFormatMoney(value: MoneyFields, options?: __GolemSerdeOptions): Types.Money {
   const validates = serdeValidates(options, true);
   if (validates) {
     assertMoney(value, options);
   }
-  const record = value as Record<string, unknown>;
-  const wire = { ["amount"]: record["amount"], ["currency"]: record["currency"] };
-  return wire as Types.Money;
+  return toWireFormatMoneyCore(value);
 }
 
 export function parseMoney(text: string, options?: __GolemSerdeOptions): MoneyFields {
@@ -130,8 +134,9 @@ export function validateMoney(value: unknown, options?: __GolemValidateOptions):
   let ok: boolean;
   let errors: readonly unknown[] | null | undefined;
   if (options?.validationContext === undefined) {
-    ok = failFast ? validateMoneyFast(value) : validateMoneyAll(value);
-    errors = failFast ? validateMoneyFast.errors : validateMoneyAll.errors;
+    const validator = failFast ? validateMoneyFast : validateMoneyAll;
+    ok = validator(value);
+    errors = validator.errors;
   } else {
     const validator = resolveModelValidationContextValidator(options.validationContext, "Money_a0f85026", failFast ? 'first' : 'all');
     ok = runSynchronousValidation(validator, value);

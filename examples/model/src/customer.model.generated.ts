@@ -4,8 +4,6 @@ import { cloneConversionInput, decodeGeneratedModelTrusted, encodeGeneratedModel
 import { assertModelValue, createObjectCodec, parseJson, registerIModelClass, requireAjvSchema, requireIModelClass, resolveGeneratedModelSchemaRefs, resolveModelValidationContextValidator, runSynchronousValidation, serdeValidates, stringifyJsonString, IssueRepresentation, IssueSource, type SerdeOptions as __GolemSerdeOptions, type ValidateOptions as __GolemValidateOptions } from '@exprtlabs/golem/serde';
 import { createOpenApiSyncAjvEngine } from '@exprtlabs/golem/ajv';
 
-const __golemAbsentField = Symbol();
-
 function modelObject(json: unknown, name: string): Record<string, unknown> {
   return requireModelObject(json, name);
 }
@@ -49,14 +47,10 @@ function decodeAddressModel(constructor: GeneratedModelConstructor, json: unknow
 }
 
 function encodeAddressModel(model: AddressBase): AddressJSON {
-  const result: Record<string, unknown> = {
-    ["id"]: Object.prototype.hasOwnProperty.call(model, "id") ? (model["id"]) : __golemAbsentField,
-    ["city"]: Object.prototype.hasOwnProperty.call(model, "city") ? (model["city"]) : __golemAbsentField,
-    ["country"]: Object.prototype.hasOwnProperty.call(model, "country") ? (model["country"]) : __golemAbsentField,
-  };
-  if (result["id"] === __golemAbsentField) delete result["id"];
-  if (result["city"] === __golemAbsentField) delete result["city"];
-  if (result["country"] === __golemAbsentField) delete result["country"];
+  const result: Record<string, unknown> = {};
+  if (Object.prototype.hasOwnProperty.call(model, "id")) defineModelProperty(result, "id", (model["id"]));
+  if (Object.prototype.hasOwnProperty.call(model, "city")) defineModelProperty(result, "city", (model["city"]));
+  if (Object.prototype.hasOwnProperty.call(model, "country")) defineModelProperty(result, "country", (model["country"]));
   return result as AddressJSON;
 }
 
@@ -101,14 +95,10 @@ function decodeCustomerModel(constructor: GeneratedModelConstructor, json: unkno
 }
 
 function encodeCustomerModel(model: CustomerBase): CustomerJSON {
-  const result: Record<string, unknown> = {
-    ["home"]: Object.prototype.hasOwnProperty.call(model, "home") ? (convertModelField("serialize", "home", () => (model["home"] instanceof AddressBase ? encodeGeneratedModel(model["home"]) : model["home"]))) : __golemAbsentField,
-    ["shipping"]: Object.prototype.hasOwnProperty.call(model, "shipping") ? (convertModelField("serialize", "shipping", () => (encodeAddressOmitId(model["shipping"])))) : __golemAbsentField,
-    ["draft"]: Object.prototype.hasOwnProperty.call(model, "draft") ? (convertModelField("serialize", "draft", () => (encodeAddressPickCityCountryPartial(model["draft"])))) : __golemAbsentField,
-  };
-  if (result["home"] === __golemAbsentField) delete result["home"];
-  if (result["shipping"] === __golemAbsentField) delete result["shipping"];
-  if (result["draft"] === __golemAbsentField) delete result["draft"];
+  const result: Record<string, unknown> = {};
+  if (Object.prototype.hasOwnProperty.call(model, "home")) defineModelProperty(result, "home", (convertModelField("serialize", "home", () => (model["home"] instanceof AddressBase ? encodeGeneratedModel(model["home"]) : model["home"]))));
+  if (Object.prototype.hasOwnProperty.call(model, "shipping")) defineModelProperty(result, "shipping", (convertModelField("serialize", "shipping", () => (encodeAddressOmitId(model["shipping"])))));
+  if (Object.prototype.hasOwnProperty.call(model, "draft")) defineModelProperty(result, "draft", (convertModelField("serialize", "draft", () => (encodeAddressPickCityCountryPartial(model["draft"])))));
   return result as CustomerJSON;
 }
 
@@ -152,7 +142,7 @@ function fillAddress(out: Record<string, unknown>, wire: Record<string, unknown>
   return out;
 }
 
-function stringifyAddressCore(value: Record<string, unknown>, _options?: { readonly validate?: boolean; readonly failFast?: boolean }): string {
+function stringifyAddressCore(value: Record<string, unknown>): string {
   return '{' + "\"id\":" + stringifyJsonString(value["id"] as string) + ",\"city\":" + stringifyJsonString(value["city"] as string) + ",\"country\":" + stringifyJsonString(value["country"] as string) + '}';
 }
 
@@ -161,7 +151,7 @@ export function stringifyAddress(value: AddressFields, options?: __GolemSerdeOpt
   if (validates) {
     assertAddress(value, options);
   }
-  return stringifyAddressCore(value as never, { validate: false });
+  return stringifyAddressCore(value as never);
 }
 
 function convertFromWireAddress(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
@@ -185,14 +175,18 @@ export function fromWireFormatAddress(wire: unknown, options?: __GolemSerdeOptio
   return convertFromWireAddress(wire, options, false) as AddressFields;
 }
 
+function toWireFormatAddressCore(value: AddressFields): AddressJSON {
+  const record = value as Record<string, unknown>;
+  const wire = { ["id"]: record["id"], ["city"]: record["city"], ["country"]: record["country"] };
+  return wire as AddressJSON;
+}
+
 export function toWireFormatAddress(value: AddressFields, options?: __GolemSerdeOptions): AddressJSON {
   const validates = serdeValidates(options, true);
   if (validates) {
     assertAddress(value, options);
   }
-  const record = value as Record<string, unknown>;
-  const wire = { ["id"]: record["id"], ["city"]: record["city"], ["country"]: record["country"] };
-  return wire as AddressJSON;
+  return toWireFormatAddressCore(value);
 }
 
 export function parseAddress(text: string, options?: __GolemSerdeOptions): AddressFields {
@@ -204,8 +198,9 @@ export function validateAddress(value: unknown, options?: __GolemValidateOptions
   let ok: boolean;
   let errors: readonly unknown[] | null | undefined;
   if (options?.validationContext === undefined) {
-    ok = failFast ? validateAddressFast(value) : validateAddressAll(value);
-    errors = failFast ? validateAddressFast.errors : validateAddressAll.errors;
+    const validator = failFast ? validateAddressFast : validateAddressAll;
+    ok = validator(value);
+    errors = validator.errors;
   } else {
     const validator = resolveModelValidationContextValidator(options.validationContext, "Address_420813af", failFast ? 'first' : 'all');
     ok = runSynchronousValidation(validator, value);
@@ -242,7 +237,7 @@ function fillAddressOmitId(out: Record<string, unknown>, wire: Record<string, un
   return out;
 }
 
-function stringifyAddressOmitIdCore(value: Record<string, unknown>, _options?: { readonly validate?: boolean; readonly failFast?: boolean }): string {
+function stringifyAddressOmitIdCore(value: Record<string, unknown>): string {
   return '{' + "\"city\":" + stringifyJsonString(value["city"] as string) + ",\"country\":" + stringifyJsonString(value["country"] as string) + '}';
 }
 
@@ -251,7 +246,7 @@ function stringifyAddressOmitId(value: AddressOmitIdFields, options?: __GolemSer
   if (validates) {
     assertAddressOmitId(value, options);
   }
-  return stringifyAddressOmitIdCore(value as never, { validate: false });
+  return stringifyAddressOmitIdCore(value as never);
 }
 
 function convertFromWireAddressOmitId(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
@@ -275,14 +270,18 @@ function fromWireFormatAddressOmitId(wire: unknown, options?: __GolemSerdeOption
   return convertFromWireAddressOmitId(wire, options, false) as AddressOmitIdFields;
 }
 
+function toWireFormatAddressOmitIdCore(value: AddressOmitIdFields): AddressOmitIdJSON {
+  const record = value as Record<string, unknown>;
+  const wire = { ["city"]: record["city"], ["country"]: record["country"] };
+  return wire as AddressOmitIdJSON;
+}
+
 function toWireFormatAddressOmitId(value: AddressOmitIdFields, options?: __GolemSerdeOptions): AddressOmitIdJSON {
   const validates = serdeValidates(options, true);
   if (validates) {
     assertAddressOmitId(value, options);
   }
-  const record = value as Record<string, unknown>;
-  const wire = { ["city"]: record["city"], ["country"]: record["country"] };
-  return wire as AddressOmitIdJSON;
+  return toWireFormatAddressOmitIdCore(value);
 }
 
 function parseAddressOmitId(text: string, options?: __GolemSerdeOptions): AddressOmitIdFields {
@@ -294,8 +293,9 @@ function validateAddressOmitId(value: unknown, options?: __GolemValidateOptions)
   let ok: boolean;
   let errors: readonly unknown[] | null | undefined;
   if (options?.validationContext === undefined) {
-    ok = failFast ? validateAddressOmitIdFast(value) : validateAddressOmitIdAll(value);
-    errors = failFast ? validateAddressOmitIdFast.errors : validateAddressOmitIdAll.errors;
+    const validator = failFast ? validateAddressOmitIdFast : validateAddressOmitIdAll;
+    ok = validator(value);
+    errors = validator.errors;
   } else {
     const validator = resolveModelValidationContextValidator(options.validationContext, "AddressOmitId_d99d3454", failFast ? 'first' : 'all');
     ok = runSynchronousValidation(validator, value);
@@ -336,7 +336,7 @@ function fillAddressPickCityCountryPartial(out: Record<string, unknown>, wire: R
   return out;
 }
 
-function stringifyAddressPickCityCountryPartialCore(value: Record<string, unknown>, _options?: { readonly validate?: boolean; readonly failFast?: boolean }): string {
+function stringifyAddressPickCityCountryPartialCore(value: Record<string, unknown>): string {
   let out = '{';
   let sep = false;
   const __golemField0 = value["city"];
@@ -361,7 +361,7 @@ function stringifyAddressPickCityCountryPartial(value: AddressPickCityCountryPar
   if (validates) {
     assertAddressPickCityCountryPartial(value, options);
   }
-  return stringifyAddressPickCityCountryPartialCore(value as never, { validate: false });
+  return stringifyAddressPickCityCountryPartialCore(value as never);
 }
 
 function convertFromWireAddressPickCityCountryPartial(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
@@ -385,16 +385,20 @@ function fromWireFormatAddressPickCityCountryPartial(wire: unknown, options?: __
   return convertFromWireAddressPickCityCountryPartial(wire, options, false) as AddressPickCityCountryPartialFields;
 }
 
-function toWireFormatAddressPickCityCountryPartial(value: AddressPickCityCountryPartialFields, options?: __GolemSerdeOptions): AddressPickCityCountryPartialJSON {
-  const validates = serdeValidates(options, true);
-  if (validates) {
-    assertAddressPickCityCountryPartial(value, options);
-  }
+function toWireFormatAddressPickCityCountryPartialCore(value: AddressPickCityCountryPartialFields): AddressPickCityCountryPartialJSON {
   const record = value as Record<string, unknown>;
   let __golemField0: unknown;
   let __golemField1: unknown;
   const wire = { ...(__golemField0 = record["city"], (__golemField0 !== undefined ? { ["city"]: __golemField0 } : undefined)), ...(__golemField1 = record["country"], (__golemField1 !== undefined ? { ["country"]: __golemField1 } : undefined)) };
   return wire as AddressPickCityCountryPartialJSON;
+}
+
+function toWireFormatAddressPickCityCountryPartial(value: AddressPickCityCountryPartialFields, options?: __GolemSerdeOptions): AddressPickCityCountryPartialJSON {
+  const validates = serdeValidates(options, true);
+  if (validates) {
+    assertAddressPickCityCountryPartial(value, options);
+  }
+  return toWireFormatAddressPickCityCountryPartialCore(value);
 }
 
 function parseAddressPickCityCountryPartial(text: string, options?: __GolemSerdeOptions): AddressPickCityCountryPartialFields {
@@ -406,8 +410,9 @@ function validateAddressPickCityCountryPartial(value: unknown, options?: __Golem
   let ok: boolean;
   let errors: readonly unknown[] | null | undefined;
   if (options?.validationContext === undefined) {
-    ok = failFast ? validateAddressPickCityCountryPartialFast(value) : validateAddressPickCityCountryPartialAll(value);
-    errors = failFast ? validateAddressPickCityCountryPartialFast.errors : validateAddressPickCityCountryPartialAll.errors;
+    const validator = failFast ? validateAddressPickCityCountryPartialFast : validateAddressPickCityCountryPartialAll;
+    ok = validator(value);
+    errors = validator.errors;
   } else {
     const validator = resolveModelValidationContextValidator(options.validationContext, "AddressPickCityCountryPartial_dd79d8cd", failFast ? 'first' : 'all');
     ok = runSynchronousValidation(validator, value);
@@ -449,8 +454,8 @@ function fillCustomer(out: Record<string, unknown>, wire: Record<string, unknown
   return out;
 }
 
-function stringifyCustomerCore(value: Record<string, unknown>, _options?: { readonly validate?: boolean; readonly failFast?: boolean }): string {
-  return '{' + "\"home\":" + stringifyAddress(value["home"] as never, { validate: false }) + ",\"shipping\":" + stringifyAddressOmitId(value["shipping"] as never, { validate: false }) + ",\"draft\":" + stringifyAddressPickCityCountryPartial(value["draft"] as never, { validate: false }) + '}';
+function stringifyCustomerCore(value: Record<string, unknown>): string {
+  return '{' + "\"home\":" + stringifyAddressCore(value["home"] as never) + ",\"shipping\":" + stringifyAddressOmitIdCore(value["shipping"] as never) + ",\"draft\":" + stringifyAddressPickCityCountryPartialCore(value["draft"] as never) + '}';
 }
 
 export function stringifyCustomer(value: CustomerFields, options?: __GolemSerdeOptions): string {
@@ -458,7 +463,7 @@ export function stringifyCustomer(value: CustomerFields, options?: __GolemSerdeO
   if (validates) {
     assertCustomer(value, options);
   }
-  return stringifyCustomerCore(value as never, { validate: false });
+  return stringifyCustomerCore(value as never);
 }
 
 function convertFromWireCustomer(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
@@ -482,14 +487,18 @@ export function fromWireFormatCustomer(wire: unknown, options?: __GolemSerdeOpti
   return convertFromWireCustomer(wire, options, false) as CustomerFields;
 }
 
+function toWireFormatCustomerCore(value: CustomerFields): CustomerJSON {
+  const record = value as Record<string, unknown>;
+  const wire = { ["home"]: toWireFormatAddressCore(record["home"] as never), ["shipping"]: toWireFormatAddressOmitIdCore(record["shipping"] as never), ["draft"]: toWireFormatAddressPickCityCountryPartialCore(record["draft"] as never) };
+  return wire as CustomerJSON;
+}
+
 export function toWireFormatCustomer(value: CustomerFields, options?: __GolemSerdeOptions): CustomerJSON {
   const validates = serdeValidates(options, true);
   if (validates) {
     assertCustomer(value, options);
   }
-  const record = value as Record<string, unknown>;
-  const wire = { ["home"]: toWireFormatAddress(record["home"] as never, { validate: false }), ["shipping"]: toWireFormatAddressOmitId(record["shipping"] as never, { validate: false }), ["draft"]: toWireFormatAddressPickCityCountryPartial(record["draft"] as never, { validate: false }) };
-  return wire as CustomerJSON;
+  return toWireFormatCustomerCore(value);
 }
 
 export function parseCustomer(text: string, options?: __GolemSerdeOptions): CustomerFields {
@@ -501,8 +510,9 @@ export function validateCustomer(value: unknown, options?: __GolemValidateOption
   let ok: boolean;
   let errors: readonly unknown[] | null | undefined;
   if (options?.validationContext === undefined) {
-    ok = failFast ? validateCustomerFast(value) : validateCustomerAll(value);
-    errors = failFast ? validateCustomerFast.errors : validateCustomerAll.errors;
+    const validator = failFast ? validateCustomerFast : validateCustomerAll;
+    ok = validator(value);
+    errors = validator.errors;
   } else {
     const validator = resolveModelValidationContextValidator(options.validationContext, "Customer_fdc3234c", failFast ? 'first' : 'all');
     ok = runSynchronousValidation(validator, value);

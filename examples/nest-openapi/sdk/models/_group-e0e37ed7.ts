@@ -76,6 +76,8 @@ registerGeneratedModel(PaymentInputModel, {
 
 registerIModelClass("PaymentInput_f132a855", PaymentInputModel);
 
+const __golemTrusted = Object.freeze({ validate: false });
+
 const objectAjvFast = createOpenApiSyncAjvEngine({ allErrors: false, validationBindings: {} });
 const objectAjvAll = createOpenApiSyncAjvEngine({ allErrors: true, validationBindings: {} });
 
@@ -105,8 +107,8 @@ function fillPaymentInput(out: Record<string, unknown>, wire: Record<string, unk
   return out;
 }
 
-function stringifyPaymentInputCore(value: Record<string, unknown>, _options?: { readonly validate?: boolean; readonly failFast?: boolean }): string {
-  return '{' + "\"billing\":" + stringifyMerchantOmitId(value["billing"] as never, { validate: false }) + ",\"merchant\":" + stringifyMerchant(value["merchant"] as never, { validate: false }) + ",\"money\":" + stringifyMoney(value["money"] as never, { validate: false }) + ",\"note\":" + stringifyJsonString(value["note"] as string) + '}';
+function stringifyPaymentInputCore(value: Record<string, unknown>): string {
+  return '{' + "\"billing\":" + stringifyMerchantOmitId(value["billing"] as never, __golemTrusted) + ",\"merchant\":" + stringifyMerchant(value["merchant"] as never, __golemTrusted) + ",\"money\":" + stringifyMoney(value["money"] as never, __golemTrusted) + ",\"note\":" + stringifyJsonString(value["note"] as string) + '}';
 }
 
 
@@ -115,7 +117,7 @@ export function stringifyPaymentInput(value: PaymentInputFields, options?: __Gol
   if (validates) {
     assertPaymentInput(value, options);
   }
-  return stringifyPaymentInputCore(value as never, { validate: false });
+  return stringifyPaymentInputCore(value as never);
 }
 
 function convertFromWirePaymentInput(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
@@ -139,14 +141,18 @@ export function fromWireFormatPaymentInput(wire: unknown, options?: __GolemSerde
   return convertFromWirePaymentInput(wire, options, false) as PaymentInputFields;
 }
 
+function toWireFormatPaymentInputCore(value: PaymentInputFields): Types.PaymentInput {
+  const record = value as Record<string, unknown>;
+  const wire = { ["billing"]: toWireFormatMerchantOmitId(record["billing"] as never, __golemTrusted), ["merchant"]: toWireFormatMerchant(record["merchant"] as never, __golemTrusted), ["money"]: toWireFormatMoney(record["money"] as never, __golemTrusted), ["note"]: record["note"] };
+  return wire as Types.PaymentInput;
+}
+
 export function toWireFormatPaymentInput(value: PaymentInputFields, options?: __GolemSerdeOptions): Types.PaymentInput {
   const validates = serdeValidates(options, true);
   if (validates) {
     assertPaymentInput(value, options);
   }
-  const record = value as Record<string, unknown>;
-  const wire = { ["billing"]: toWireFormatMerchantOmitId(record["billing"] as never, { validate: false }), ["merchant"]: toWireFormatMerchant(record["merchant"] as never, { validate: false }), ["money"]: toWireFormatMoney(record["money"] as never, { validate: false }), ["note"]: record["note"] };
-  return wire as Types.PaymentInput;
+  return toWireFormatPaymentInputCore(value);
 }
 
 export function parsePaymentInput(text: string, options?: __GolemSerdeOptions): PaymentInputFields {
@@ -158,8 +164,9 @@ export function validatePaymentInput(value: unknown, options?: __GolemValidateOp
   let ok: boolean;
   let errors: readonly unknown[] | null | undefined;
   if (options?.validationContext === undefined) {
-    ok = failFast ? validatePaymentInputFast(value) : validatePaymentInputAll(value);
-    errors = failFast ? validatePaymentInputFast.errors : validatePaymentInputAll.errors;
+    const validator = failFast ? validatePaymentInputFast : validatePaymentInputAll;
+    ok = validator(value);
+    errors = validator.errors;
   } else {
     const validator = resolveModelValidationContextValidator(options.validationContext, "PaymentInput_f132a855", failFast ? 'first' : 'all');
     ok = runSynchronousValidation(validator, value);

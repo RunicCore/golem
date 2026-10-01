@@ -4,8 +4,6 @@ import { cloneConversionInput, defineModelProperty, requireModelObject } from '@
 import { assertModelValue, createObjectCodec, parseJson, registerIModelClass, requireAjvSchema, resolveGeneratedModelSchemaRefs, resolveModelValidationContextValidator, runSynchronousValidation, serdeValidates, stringifyJsonString, IssueRepresentation, IssueSource, type SerdeOptions as __GolemSerdeOptions, type ValidateOptions as __GolemValidateOptions } from '@exprtlabs/golem/serde';
 import { createOpenApiSyncAjvEngine } from '@exprtlabs/golem/ajv';
 
-const __golemAbsentField = Symbol();
-
 function modelObject(json: unknown, name: string): Record<string, unknown> {
   return requireModelObject(json, name);
 }
@@ -31,10 +29,8 @@ function decodePaymentDraftModel(constructor: GeneratedModelConstructor, json: u
 }
 
 function encodePaymentDraftModel(model: PaymentDraftBase): PaymentDraftJSON {
-  const result: Record<string, unknown> = {
-    ["note"]: Object.prototype.hasOwnProperty.call(model, "note") ? (model["note"]) : __golemAbsentField,
-  };
-  if (result["note"] === __golemAbsentField) delete result["note"];
+  const result: Record<string, unknown> = {};
+  if (Object.prototype.hasOwnProperty.call(model, "note")) defineModelProperty(result, "note", (model["note"]));
   return result as PaymentDraftJSON;
 }
 
@@ -67,7 +63,7 @@ function fillPaymentDraft(out: Record<string, unknown>, wire: Record<string, unk
   return out;
 }
 
-function stringifyPaymentDraftCore(value: Record<string, unknown>, _options?: { readonly validate?: boolean; readonly failFast?: boolean }): string {
+function stringifyPaymentDraftCore(value: Record<string, unknown>): string {
   return '{' + "\"note\":" + stringifyJsonString(value["note"] as string) + '}';
 }
 
@@ -76,7 +72,7 @@ export function stringifyPaymentDraft(value: PaymentDraftFields, options?: __Gol
   if (validates) {
     assertPaymentDraft(value, options);
   }
-  return stringifyPaymentDraftCore(value as never, { validate: false });
+  return stringifyPaymentDraftCore(value as never);
 }
 
 function convertFromWirePaymentDraft(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
@@ -100,14 +96,18 @@ export function fromWireFormatPaymentDraft(wire: unknown, options?: __GolemSerde
   return convertFromWirePaymentDraft(wire, options, false) as PaymentDraftFields;
 }
 
+function toWireFormatPaymentDraftCore(value: PaymentDraftFields): PaymentDraftJSON {
+  const record = value as Record<string, unknown>;
+  const wire = { ["note"]: record["note"] };
+  return wire as PaymentDraftJSON;
+}
+
 export function toWireFormatPaymentDraft(value: PaymentDraftFields, options?: __GolemSerdeOptions): PaymentDraftJSON {
   const validates = serdeValidates(options, true);
   if (validates) {
     assertPaymentDraft(value, options);
   }
-  const record = value as Record<string, unknown>;
-  const wire = { ["note"]: record["note"] };
-  return wire as PaymentDraftJSON;
+  return toWireFormatPaymentDraftCore(value);
 }
 
 export function parsePaymentDraft(text: string, options?: __GolemSerdeOptions): PaymentDraftFields {
@@ -119,8 +119,9 @@ export function validatePaymentDraft(value: unknown, options?: __GolemValidateOp
   let ok: boolean;
   let errors: readonly unknown[] | null | undefined;
   if (options?.validationContext === undefined) {
-    ok = failFast ? validatePaymentDraftFast(value) : validatePaymentDraftAll(value);
-    errors = failFast ? validatePaymentDraftFast.errors : validatePaymentDraftAll.errors;
+    const validator = failFast ? validatePaymentDraftFast : validatePaymentDraftAll;
+    ok = validator(value);
+    errors = validator.errors;
   } else {
     const validator = resolveModelValidationContextValidator(options.validationContext, "PaymentDraft_a427e4ae", failFast ? 'first' : 'all');
     ok = runSynchronousValidation(validator, value);

@@ -8,7 +8,8 @@ import { schema as __golemSchema0 } from "../validation-schemas/Task.input.js";
 import { schema as __golemSchema1 } from "../validation-schemas/Task.output.js";
 
 const responseContracts: readonly RuntimeResponseContract[] = [{"status":"201","content":[{"contentType":"application/json","framing":"body"}],"headers":[]}];
-const __resolveOperationValidationSources = (): OperationValidationSources => ({
+let __operationValidationSources: OperationValidationSources | undefined;
+const __resolveOperationValidationSources = (): OperationValidationSources => __operationValidationSources ??= {
   inputReference: "urn:golem:openapi:tasks:cc24c3c3168942b6c3e2684339043b6830cdcb3c57853bd72591b5011d7111a7:schemas:operation:createTask#/operations/createTask/input",
   responseReferences: [{"status":"201","contentType":"application/json","reference":"urn:golem:openapi:tasks:cc24c3c3168942b6c3e2684339043b6830cdcb3c57853bd72591b5011d7111a7:schemas:operation:createTask#/operations/createTask/responses/201/application~1json"}],
   schemas: new Map([
@@ -16,7 +17,7 @@ const __resolveOperationValidationSources = (): OperationValidationSources => ({
     ["urn:golem:openapi:tasks:cc24c3c3168942b6c3e2684339043b6830cdcb3c57853bd72591b5011d7111a7:schemas:component:Task:input", __golemSchema0],
     ["urn:golem:openapi:tasks:cc24c3c3168942b6c3e2684339043b6830cdcb3c57853bd72591b5011d7111a7:schemas:component:Task:output", __golemSchema1],
   ]),
-});
+};
 
 export function createTask(options: ClientOptions): ApiOperation<Types.CreateTaskOperationInput, Types.CreateTaskOperationHttpResponse, RequestOptions> {
   return createCreateTaskOperation(new ClientRuntime("Tasks", options, { createValidationEngine: createOpenApiAjvEngine }));

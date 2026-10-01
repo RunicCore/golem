@@ -6,13 +6,14 @@ import { createOpenApiAjvEngine } from '@exprtlabs/golem/ajv';
 import { operationValidators, responseCheck, validateOperationInput } from '@exprtlabs/golem/validation';
 
 const responseContracts: readonly RuntimeResponseContract[] = [{"status":"200","content":[{"contentType":"application/json","framing":"body"}],"headers":[]}];
-const __resolveOperationValidationSources = (): OperationValidationSources => ({
+let __operationValidationSources: OperationValidationSources | undefined;
+const __resolveOperationValidationSources = (): OperationValidationSources => __operationValidationSources ??= {
   inputReference: "urn:golem:openapi:paymentsapi:159ea8699d69a0f1a103e84e63a6861b2bf30d342cfb3c2e2107d739d65f9551:schemas:operation:paymentNotesController_get#/operations/paymentNotesController_get/input",
   responseReferences: [{"status":"200","contentType":"application/json","reference":"urn:golem:openapi:paymentsapi:159ea8699d69a0f1a103e84e63a6861b2bf30d342cfb3c2e2107d739d65f9551:schemas:operation:paymentNotesController_get#/operations/paymentNotesController_get/responses/200/application~1json"}],
   schemas: new Map([
     ["urn:golem:openapi:paymentsapi:159ea8699d69a0f1a103e84e63a6861b2bf30d342cfb3c2e2107d739d65f9551:schemas:operation:paymentNotesController_get", JSON.parse("{\"$id\":\"urn:golem:openapi:paymentsapi:159ea8699d69a0f1a103e84e63a6861b2bf30d342cfb3c2e2107d739d65f9551:schemas:operation:paymentNotesController_get\",\"$schema\":\"https://spec.openapis.org/oas/3.1/dialect/base\",\"operations\":{\"paymentNotesController_get\":{\"input\":{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\"}},\"required\":[\"id\"],\"additionalProperties\":false}},\"required\":[\"path\"],\"additionalProperties\":false},\"responses\":{\"200\":{\"application/json\":{\"additionalProperties\":true,\"properties\":{\"id\":{\"type\":\"string\"},\"note\":{\"type\":\"string\"}},\"required\":[\"id\",\"note\"],\"type\":\"object\"}}}}}}") as object | boolean],
   ]),
-});
+};
 
 export function paymentNotesController_get(options: ClientOptions): ApiOperation<Types.PaymentNotesController_getOperationInput, Types.PaymentNotesController_getOperationHttpResponse, RequestOptions> {
   return createPaymentNotesController_getOperation(new ClientRuntime("Payments", options, { createValidationEngine: createOpenApiAjvEngine }));

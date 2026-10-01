@@ -4,8 +4,6 @@ import { cloneConversionInput, defineModelProperty, requireModelObject } from '@
 import { assertModelValue, createObjectCodec, parseJson, registerIModelClass, requireAjvSchema, resolveGeneratedModelSchemaRefs, resolveModelValidationContextValidator, runSynchronousValidation, serdeValidates, stringifyJsonScalar, stringifyJsonString, IssueRepresentation, IssueSource, type SerdeOptions as __GolemSerdeOptions, type ValidateOptions as __GolemValidateOptions } from '@exprtlabs/golem/serde';
 import { createOpenApiSyncAjvEngine } from '@exprtlabs/golem/ajv';
 
-const __golemAbsentField = Symbol();
-
 function modelObject(json: unknown, name: string): Record<string, unknown> {
   return requireModelObject(json, name);
 }
@@ -31,10 +29,8 @@ function decodeOpenModel(constructor: GeneratedModelConstructor, json: unknown):
 }
 
 function encodeOpenModel(model: OpenBase): OpenJSON {
-  const result: Record<string, unknown> = {
-    ["name"]: Object.prototype.hasOwnProperty.call(model, "name") ? (model["name"]) : __golemAbsentField,
-  };
-  if (result["name"] === __golemAbsentField) delete result["name"];
+  const result: Record<string, unknown> = {};
+  if (Object.prototype.hasOwnProperty.call(model, "name")) defineModelProperty(result, "name", (model["name"]));
   return result as OpenJSON;
 }
 
@@ -71,10 +67,8 @@ function decodeExactModel(constructor: GeneratedModelConstructor, json: unknown)
 }
 
 function encodeExactModel(model: ExactBase): ExactJSON {
-  const result: Record<string, unknown> = {
-    ["name"]: Object.prototype.hasOwnProperty.call(model, "name") ? (model["name"]) : __golemAbsentField,
-  };
-  if (result["name"] === __golemAbsentField) delete result["name"];
+  const result: Record<string, unknown> = {};
+  if (Object.prototype.hasOwnProperty.call(model, "name")) defineModelProperty(result, "name", (model["name"]));
   return result as ExactJSON;
 }
 
@@ -111,10 +105,8 @@ function decodeExternalModel(constructor: GeneratedModelConstructor, json: unkno
 }
 
 function encodeExternalModel(model: ExternalBase): ExternalJSON {
-  const result: Record<string, unknown> = {
-    ["payload"]: Object.prototype.hasOwnProperty.call(model, "payload") ? (model["payload"]) : __golemAbsentField,
-  };
-  if (result["payload"] === __golemAbsentField) delete result["payload"];
+  const result: Record<string, unknown> = {};
+  if (Object.prototype.hasOwnProperty.call(model, "payload")) defineModelProperty(result, "payload", (model["payload"]));
   return result as ExternalJSON;
 }
 
@@ -153,7 +145,7 @@ function fillOpen(out: Record<string, unknown>, wire: Record<string, unknown>, c
   return out;
 }
 
-function stringifyOpenCore(value: Record<string, unknown>, _options?: { readonly validate?: boolean; readonly failFast?: boolean }): string {
+function stringifyOpenCore(value: Record<string, unknown>): string {
   return '{' + "\"name\":" + stringifyJsonString(value["name"] as string) + '}';
 }
 
@@ -162,7 +154,7 @@ export function stringifyOpen(value: OpenFields, options?: __GolemSerdeOptions):
   if (validates) {
     assertOpen(value, options);
   }
-  return stringifyOpenCore(value as never, { validate: false });
+  return stringifyOpenCore(value as never);
 }
 
 function convertFromWireOpen(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
@@ -186,14 +178,18 @@ export function fromWireFormatOpen(wire: unknown, options?: __GolemSerdeOptions)
   return convertFromWireOpen(wire, options, false) as OpenFields;
 }
 
+function toWireFormatOpenCore(value: OpenFields): OpenJSON {
+  const record = value as Record<string, unknown>;
+  const wire = { ["name"]: record["name"] };
+  return wire as OpenJSON;
+}
+
 export function toWireFormatOpen(value: OpenFields, options?: __GolemSerdeOptions): OpenJSON {
   const validates = serdeValidates(options, true);
   if (validates) {
     assertOpen(value, options);
   }
-  const record = value as Record<string, unknown>;
-  const wire = { ["name"]: record["name"] };
-  return wire as OpenJSON;
+  return toWireFormatOpenCore(value);
 }
 
 export function parseOpen(text: string, options?: __GolemSerdeOptions): OpenFields {
@@ -205,8 +201,9 @@ export function validateOpen(value: unknown, options?: __GolemValidateOptions): 
   let ok: boolean;
   let errors: readonly unknown[] | null | undefined;
   if (options?.validationContext === undefined) {
-    ok = failFast ? validateOpenFast(value) : validateOpenAll(value);
-    errors = failFast ? validateOpenFast.errors : validateOpenAll.errors;
+    const validator = failFast ? validateOpenFast : validateOpenAll;
+    ok = validator(value);
+    errors = validator.errors;
   } else {
     const validator = resolveModelValidationContextValidator(options.validationContext, "Open_76e5211c", failFast ? 'first' : 'all');
     ok = runSynchronousValidation(validator, value);
@@ -242,7 +239,7 @@ function fillExact(out: Record<string, unknown>, wire: Record<string, unknown>, 
   return out;
 }
 
-function stringifyExactCore(value: Record<string, unknown>, _options?: { readonly validate?: boolean; readonly failFast?: boolean }): string {
+function stringifyExactCore(value: Record<string, unknown>): string {
   return '{' + "\"name\":" + stringifyJsonString(value["name"] as string) + '}';
 }
 
@@ -251,7 +248,7 @@ export function stringifyExact(value: ExactFields, options?: __GolemSerdeOptions
   if (validates) {
     assertExact(value, options);
   }
-  return stringifyExactCore(value as never, { validate: false });
+  return stringifyExactCore(value as never);
 }
 
 function convertFromWireExact(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
@@ -275,14 +272,18 @@ export function fromWireFormatExact(wire: unknown, options?: __GolemSerdeOptions
   return convertFromWireExact(wire, options, false) as ExactFields;
 }
 
+function toWireFormatExactCore(value: ExactFields): ExactJSON {
+  const record = value as Record<string, unknown>;
+  const wire = { ["name"]: record["name"] };
+  return wire as ExactJSON;
+}
+
 export function toWireFormatExact(value: ExactFields, options?: __GolemSerdeOptions): ExactJSON {
   const validates = serdeValidates(options, true);
   if (validates) {
     assertExact(value, options);
   }
-  const record = value as Record<string, unknown>;
-  const wire = { ["name"]: record["name"] };
-  return wire as ExactJSON;
+  return toWireFormatExactCore(value);
 }
 
 export function parseExact(text: string, options?: __GolemSerdeOptions): ExactFields {
@@ -294,8 +295,9 @@ export function validateExact(value: unknown, options?: __GolemValidateOptions):
   let ok: boolean;
   let errors: readonly unknown[] | null | undefined;
   if (options?.validationContext === undefined) {
-    ok = failFast ? validateExactFast(value) : validateExactAll(value);
-    errors = failFast ? validateExactFast.errors : validateExactAll.errors;
+    const validator = failFast ? validateExactFast : validateExactAll;
+    ok = validator(value);
+    errors = validator.errors;
   } else {
     const validator = resolveModelValidationContextValidator(options.validationContext, "Exact_5505c45b", failFast ? 'first' : 'all');
     ok = runSynchronousValidation(validator, value);
@@ -331,7 +333,7 @@ function fillExternal(out: Record<string, unknown>, wire: Record<string, unknown
   return out;
 }
 
-function stringifyExternalCore(value: Record<string, unknown>, _options?: { readonly validate?: boolean; readonly failFast?: boolean }): string {
+function stringifyExternalCore(value: Record<string, unknown>): string {
   return '{' + "\"payload\":" + stringifyJsonScalar(value["payload"] as never) + '}';
 }
 
@@ -340,7 +342,7 @@ export function stringifyExternal(value: ExternalFields, options?: __GolemSerdeO
   if (validates) {
     assertExternal(value, options);
   }
-  return stringifyExternalCore(value as never, { validate: false });
+  return stringifyExternalCore(value as never);
 }
 
 function convertFromWireExternal(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
@@ -364,14 +366,18 @@ export function fromWireFormatExternal(wire: unknown, options?: __GolemSerdeOpti
   return convertFromWireExternal(wire, options, false) as ExternalFields;
 }
 
+function toWireFormatExternalCore(value: ExternalFields): ExternalJSON {
+  const record = value as Record<string, unknown>;
+  const wire = { ["payload"]: record["payload"] };
+  return wire as ExternalJSON;
+}
+
 export function toWireFormatExternal(value: ExternalFields, options?: __GolemSerdeOptions): ExternalJSON {
   const validates = serdeValidates(options, true);
   if (validates) {
     assertExternal(value, options);
   }
-  const record = value as Record<string, unknown>;
-  const wire = { ["payload"]: record["payload"] };
-  return wire as ExternalJSON;
+  return toWireFormatExternalCore(value);
 }
 
 export function parseExternal(text: string, options?: __GolemSerdeOptions): ExternalFields {
@@ -383,8 +389,9 @@ export function validateExternal(value: unknown, options?: __GolemValidateOption
   let ok: boolean;
   let errors: readonly unknown[] | null | undefined;
   if (options?.validationContext === undefined) {
-    ok = failFast ? validateExternalFast(value) : validateExternalAll(value);
-    errors = failFast ? validateExternalFast.errors : validateExternalAll.errors;
+    const validator = failFast ? validateExternalFast : validateExternalAll;
+    ok = validator(value);
+    errors = validator.errors;
   } else {
     const validator = resolveModelValidationContextValidator(options.validationContext, "External_1c1723fa", failFast ? 'first' : 'all');
     ok = runSynchronousValidation(validator, value);

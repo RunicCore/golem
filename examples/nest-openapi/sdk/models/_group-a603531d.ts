@@ -68,7 +68,7 @@ function fillPaymentDraft(out: Record<string, unknown>, wire: Record<string, unk
   return out;
 }
 
-function stringifyPaymentDraftCore(value: Record<string, unknown>, _options?: { readonly validate?: boolean; readonly failFast?: boolean }): string {
+function stringifyPaymentDraftCore(value: Record<string, unknown>): string {
   return '{' + "\"note\":" + stringifyJsonString(value["note"] as string) + '}';
 }
 
@@ -78,7 +78,7 @@ export function stringifyPaymentDraft(value: PaymentDraftFields, options?: __Gol
   if (validates) {
     assertPaymentDraft(value, options);
   }
-  return stringifyPaymentDraftCore(value as never, { validate: false });
+  return stringifyPaymentDraftCore(value as never);
 }
 
 function convertFromWirePaymentDraft(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
@@ -102,14 +102,18 @@ export function fromWireFormatPaymentDraft(wire: unknown, options?: __GolemSerde
   return convertFromWirePaymentDraft(wire, options, false) as PaymentDraftFields;
 }
 
+function toWireFormatPaymentDraftCore(value: PaymentDraftFields): Types.PaymentDraft {
+  const record = value as Record<string, unknown>;
+  const wire = { ["note"]: record["note"] };
+  return wire as Types.PaymentDraft;
+}
+
 export function toWireFormatPaymentDraft(value: PaymentDraftFields, options?: __GolemSerdeOptions): Types.PaymentDraft {
   const validates = serdeValidates(options, true);
   if (validates) {
     assertPaymentDraft(value, options);
   }
-  const record = value as Record<string, unknown>;
-  const wire = { ["note"]: record["note"] };
-  return wire as Types.PaymentDraft;
+  return toWireFormatPaymentDraftCore(value);
 }
 
 export function parsePaymentDraft(text: string, options?: __GolemSerdeOptions): PaymentDraftFields {
@@ -121,8 +125,9 @@ export function validatePaymentDraft(value: unknown, options?: __GolemValidateOp
   let ok: boolean;
   let errors: readonly unknown[] | null | undefined;
   if (options?.validationContext === undefined) {
-    ok = failFast ? validatePaymentDraftFast(value) : validatePaymentDraftAll(value);
-    errors = failFast ? validatePaymentDraftFast.errors : validatePaymentDraftAll.errors;
+    const validator = failFast ? validatePaymentDraftFast : validatePaymentDraftAll;
+    ok = validator(value);
+    errors = validator.errors;
   } else {
     const validator = resolveModelValidationContextValidator(options.validationContext, "PaymentDraft_8be34727", failFast ? 'first' : 'all');
     ok = runSynchronousValidation(validator, value);

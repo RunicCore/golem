@@ -73,7 +73,7 @@ function fillTask(out: Record<string, unknown>, wire: Record<string, unknown>, c
   return out;
 }
 
-function stringifyTaskCore(value: Record<string, unknown>, _options?: { readonly validate?: boolean; readonly failFast?: boolean }): string {
+function stringifyTaskCore(value: Record<string, unknown>): string {
   return '{' + "\"id\":" + stringifyJsonString(value["id"] as string) + ",\"title\":" + stringifyJsonString(value["title"] as string) + '}';
 }
 
@@ -83,7 +83,7 @@ export function stringifyTask(value: TaskFields, options?: __GolemSerdeOptions):
   if (validates) {
     assertTask(value, options);
   }
-  return stringifyTaskCore(value as never, { validate: false });
+  return stringifyTaskCore(value as never);
 }
 
 function convertFromWireTask(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
@@ -107,14 +107,18 @@ export function fromWireFormatTask(wire: unknown, options?: __GolemSerdeOptions)
   return convertFromWireTask(wire, options, false) as TaskFields;
 }
 
+function toWireFormatTaskCore(value: TaskFields): Types.Task {
+  const record = value as Record<string, unknown>;
+  const wire = { ["id"]: record["id"], ["title"]: record["title"] };
+  return wire as Types.Task;
+}
+
 export function toWireFormatTask(value: TaskFields, options?: __GolemSerdeOptions): Types.Task {
   const validates = serdeValidates(options, true);
   if (validates) {
     assertTask(value, options);
   }
-  const record = value as Record<string, unknown>;
-  const wire = { ["id"]: record["id"], ["title"]: record["title"] };
-  return wire as Types.Task;
+  return toWireFormatTaskCore(value);
 }
 
 export function parseTask(text: string, options?: __GolemSerdeOptions): TaskFields {
@@ -126,8 +130,9 @@ export function validateTask(value: unknown, options?: __GolemValidateOptions): 
   let ok: boolean;
   let errors: readonly unknown[] | null | undefined;
   if (options?.validationContext === undefined) {
-    ok = failFast ? validateTaskFast(value) : validateTaskAll(value);
-    errors = failFast ? validateTaskFast.errors : validateTaskAll.errors;
+    const validator = failFast ? validateTaskFast : validateTaskAll;
+    ok = validator(value);
+    errors = validator.errors;
   } else {
     const validator = resolveModelValidationContextValidator(options.validationContext, "Task_ec1995c6", failFast ? 'first' : 'all');
     ok = runSynchronousValidation(validator, value);

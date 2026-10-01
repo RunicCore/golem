@@ -4,8 +4,6 @@ import { cloneConversionInput, defineModelProperty, requireModelObject } from '@
 import { assertModelValue, createObjectCodec, parseJson, registerIModelClass, requireAjvSchema, resolveGeneratedModelSchemaRefs, resolveModelValidationContextValidator, runSynchronousValidation, serdeValidates, stringifyJsonNumber, stringifyJsonString, IssueRepresentation, IssueSource, type SerdeOptions as __GolemSerdeOptions, type ValidateOptions as __GolemValidateOptions } from '@exprtlabs/golem/serde';
 import { createOpenApiSyncAjvEngine } from '@exprtlabs/golem/ajv';
 
-const __golemAbsentField = Symbol();
-
 function modelObject(json: unknown, name: string): Record<string, unknown> {
   return requireModelObject(json, name);
 }
@@ -33,12 +31,9 @@ function decodePaymentCapturedModel(constructor: GeneratedModelConstructor, json
 }
 
 function encodePaymentCapturedModel(model: PaymentCapturedBase): PaymentCapturedJSON {
-  const result: Record<string, unknown> = {
-    ["paymentId"]: Object.prototype.hasOwnProperty.call(model, "paymentId") ? (model["paymentId"]) : __golemAbsentField,
-    ["amount"]: Object.prototype.hasOwnProperty.call(model, "amount") ? (model["amount"]) : __golemAbsentField,
-  };
-  if (result["paymentId"] === __golemAbsentField) delete result["paymentId"];
-  if (result["amount"] === __golemAbsentField) delete result["amount"];
+  const result: Record<string, unknown> = {};
+  if (Object.prototype.hasOwnProperty.call(model, "paymentId")) defineModelProperty(result, "paymentId", (model["paymentId"]));
+  if (Object.prototype.hasOwnProperty.call(model, "amount")) defineModelProperty(result, "amount", (model["amount"]));
   return result as PaymentCapturedJSON;
 }
 
@@ -77,12 +72,9 @@ function decodePaymentRefundedModel(constructor: GeneratedModelConstructor, json
 }
 
 function encodePaymentRefundedModel(model: PaymentRefundedBase): PaymentRefundedJSON {
-  const result: Record<string, unknown> = {
-    ["paymentId"]: Object.prototype.hasOwnProperty.call(model, "paymentId") ? (model["paymentId"]) : __golemAbsentField,
-    ["reason"]: Object.prototype.hasOwnProperty.call(model, "reason") ? (model["reason"]) : __golemAbsentField,
-  };
-  if (result["paymentId"] === __golemAbsentField) delete result["paymentId"];
-  if (result["reason"] === __golemAbsentField) delete result["reason"];
+  const result: Record<string, unknown> = {};
+  if (Object.prototype.hasOwnProperty.call(model, "paymentId")) defineModelProperty(result, "paymentId", (model["paymentId"]));
+  if (Object.prototype.hasOwnProperty.call(model, "reason")) defineModelProperty(result, "reason", (model["reason"]));
   return result as PaymentRefundedJSON;
 }
 
@@ -119,7 +111,7 @@ function fillPaymentCaptured(out: Record<string, unknown>, wire: Record<string, 
   return out;
 }
 
-function stringifyPaymentCapturedCore(value: Record<string, unknown>, _options?: { readonly validate?: boolean; readonly failFast?: boolean }): string {
+function stringifyPaymentCapturedCore(value: Record<string, unknown>): string {
   return '{' + "\"paymentId\":" + stringifyJsonString(value["paymentId"] as string) + ",\"amount\":" + stringifyJsonNumber(value["amount"] as number) + '}';
 }
 
@@ -128,7 +120,7 @@ export function stringifyPaymentCaptured(value: PaymentCapturedFields, options?:
   if (validates) {
     assertPaymentCaptured(value, options);
   }
-  return stringifyPaymentCapturedCore(value as never, { validate: false });
+  return stringifyPaymentCapturedCore(value as never);
 }
 
 function convertFromWirePaymentCaptured(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
@@ -152,14 +144,18 @@ export function fromWireFormatPaymentCaptured(wire: unknown, options?: __GolemSe
   return convertFromWirePaymentCaptured(wire, options, false) as PaymentCapturedFields;
 }
 
+function toWireFormatPaymentCapturedCore(value: PaymentCapturedFields): PaymentCapturedJSON {
+  const record = value as Record<string, unknown>;
+  const wire = { ["paymentId"]: record["paymentId"], ["amount"]: record["amount"] };
+  return wire as PaymentCapturedJSON;
+}
+
 export function toWireFormatPaymentCaptured(value: PaymentCapturedFields, options?: __GolemSerdeOptions): PaymentCapturedJSON {
   const validates = serdeValidates(options, true);
   if (validates) {
     assertPaymentCaptured(value, options);
   }
-  const record = value as Record<string, unknown>;
-  const wire = { ["paymentId"]: record["paymentId"], ["amount"]: record["amount"] };
-  return wire as PaymentCapturedJSON;
+  return toWireFormatPaymentCapturedCore(value);
 }
 
 export function parsePaymentCaptured(text: string, options?: __GolemSerdeOptions): PaymentCapturedFields {
@@ -171,8 +167,9 @@ export function validatePaymentCaptured(value: unknown, options?: __GolemValidat
   let ok: boolean;
   let errors: readonly unknown[] | null | undefined;
   if (options?.validationContext === undefined) {
-    ok = failFast ? validatePaymentCapturedFast(value) : validatePaymentCapturedAll(value);
-    errors = failFast ? validatePaymentCapturedFast.errors : validatePaymentCapturedAll.errors;
+    const validator = failFast ? validatePaymentCapturedFast : validatePaymentCapturedAll;
+    ok = validator(value);
+    errors = validator.errors;
   } else {
     const validator = resolveModelValidationContextValidator(options.validationContext, "PaymentCaptured_0cbf3f68", failFast ? 'first' : 'all');
     ok = runSynchronousValidation(validator, value);
@@ -209,7 +206,7 @@ function fillPaymentRefunded(out: Record<string, unknown>, wire: Record<string, 
   return out;
 }
 
-function stringifyPaymentRefundedCore(value: Record<string, unknown>, _options?: { readonly validate?: boolean; readonly failFast?: boolean }): string {
+function stringifyPaymentRefundedCore(value: Record<string, unknown>): string {
   return '{' + "\"paymentId\":" + stringifyJsonString(value["paymentId"] as string) + ",\"reason\":" + stringifyJsonString(value["reason"] as string) + '}';
 }
 
@@ -218,7 +215,7 @@ export function stringifyPaymentRefunded(value: PaymentRefundedFields, options?:
   if (validates) {
     assertPaymentRefunded(value, options);
   }
-  return stringifyPaymentRefundedCore(value as never, { validate: false });
+  return stringifyPaymentRefundedCore(value as never);
 }
 
 function convertFromWirePaymentRefunded(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
@@ -242,14 +239,18 @@ export function fromWireFormatPaymentRefunded(wire: unknown, options?: __GolemSe
   return convertFromWirePaymentRefunded(wire, options, false) as PaymentRefundedFields;
 }
 
+function toWireFormatPaymentRefundedCore(value: PaymentRefundedFields): PaymentRefundedJSON {
+  const record = value as Record<string, unknown>;
+  const wire = { ["paymentId"]: record["paymentId"], ["reason"]: record["reason"] };
+  return wire as PaymentRefundedJSON;
+}
+
 export function toWireFormatPaymentRefunded(value: PaymentRefundedFields, options?: __GolemSerdeOptions): PaymentRefundedJSON {
   const validates = serdeValidates(options, true);
   if (validates) {
     assertPaymentRefunded(value, options);
   }
-  const record = value as Record<string, unknown>;
-  const wire = { ["paymentId"]: record["paymentId"], ["reason"]: record["reason"] };
-  return wire as PaymentRefundedJSON;
+  return toWireFormatPaymentRefundedCore(value);
 }
 
 export function parsePaymentRefunded(text: string, options?: __GolemSerdeOptions): PaymentRefundedFields {
@@ -261,8 +262,9 @@ export function validatePaymentRefunded(value: unknown, options?: __GolemValidat
   let ok: boolean;
   let errors: readonly unknown[] | null | undefined;
   if (options?.validationContext === undefined) {
-    ok = failFast ? validatePaymentRefundedFast(value) : validatePaymentRefundedAll(value);
-    errors = failFast ? validatePaymentRefundedFast.errors : validatePaymentRefundedAll.errors;
+    const validator = failFast ? validatePaymentRefundedFast : validatePaymentRefundedAll;
+    ok = validator(value);
+    errors = validator.errors;
   } else {
     const validator = resolveModelValidationContextValidator(options.validationContext, "PaymentRefunded_1b8a5bca", failFast ? 'first' : 'all');
     ok = runSynchronousValidation(validator, value);

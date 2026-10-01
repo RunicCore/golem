@@ -39,7 +39,7 @@
     "sdk/models/_group-cf50637a.ts": {
       "job": "openapi:sdk",
       "owner": "@exprtlabs/golem-openapi",
-      "digest": "e47fadfc2ff336aa023bc5bf9daa53ae8004ece8279778e73a9392864ebcf03b",
+      "digest": "24c0a23bbedb11d2bd768b4c968fade993eed491c71c405f9177a24500aff9aa",
       "destination": "sdk",
       "destinationKind": "directory"
     },
@@ -53,7 +53,7 @@
     "sdk/operations/createPayment.ts": {
       "job": "openapi:sdk",
       "owner": "@exprtlabs/golem-openapi",
-      "digest": "b803af51ac54e7075709ef14acc868b2813c3505aaf612f1fa6b400d690536dd",
+      "digest": "a68a1ddcb33f0ef7c71bbd9c725739813d2b4b4aad18325ca480f9c4c4ada538",
       "destination": "sdk",
       "destinationKind": "directory"
     },
@@ -95,7 +95,7 @@
     "src/payment-editor.model.generated.ts": {
       "job": "models:.",
       "owner": "@exprtlabs/golem-model",
-      "digest": "a782ac20a1681a9e9593a689993c145ce662fc44e820a5f61b1f6e96ca4d2c67",
+      "digest": "5a08362a939b9e6b7cc9e32afa3a0c29a1fcc5deb78d6a1a442dc5441281a08a",
       "destination": "src",
       "destinationKind": "directory"
     }

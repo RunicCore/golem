@@ -5,8 +5,6 @@ import { assertModelValue, createObjectCodec, parseJson, registerIModelClass, re
 import { createOpenApiSyncAjvEngine } from '@exprtlabs/golem/ajv';
 import { modelSerdeBindings, modelValidationBindings } from "./generated/models/models.generated.js";
 
-const __golemAbsentField = Symbol();
-
 function modelObject(json: unknown, name: string): Record<string, unknown> {
   return requireModelObject(json, name);
 }
@@ -34,10 +32,8 @@ function decodePermissionInputModel(constructor: GeneratedModelConstructor, json
 }
 
 function encodePermissionInputModel(model: PermissionInputBase): PermissionInputJSON {
-  const result: Record<string, unknown> = {
-    ["permissions"]: Object.prototype.hasOwnProperty.call(model, "permissions") ? (convertModelField("serialize", "permissions", () => (modelSerdeBindings["src/permission-rules.ts#encodePermissions\u0000src/permission-rules.ts#decodePermissions"].serialize(model["permissions"])))) : __golemAbsentField,
-  };
-  if (result["permissions"] === __golemAbsentField) delete result["permissions"];
+  const result: Record<string, unknown> = {};
+  if (Object.prototype.hasOwnProperty.call(model, "permissions")) defineModelProperty(result, "permissions", (convertModelField("serialize", "permissions", () => (modelSerdeBindings["src/permission-rules.ts#encodePermissions\u0000src/permission-rules.ts#decodePermissions"].serialize(model["permissions"])))));
   return result as PermissionInputJSON;
 }
 
@@ -85,11 +81,11 @@ function fillPermissionInput(out: Record<string, unknown>, wire: Record<string, 
   return out;
 }
 
-function stringifyPermissionInputCore(value: Record<string, unknown>, _options?: { readonly validate?: boolean; readonly failFast?: boolean }): string {
+function stringifyPermissionInputCore(value: Record<string, unknown>): string {
   return '{' + "\"permissions\":" + stringifyJsonString(modelSerdeBindings["src/permission-rules.ts#encodePermissions\u0000src/permission-rules.ts#decodePermissions"].serialize(value["permissions"]) as string) + '}';
 }
 
-function stringifyPermissionInputWire(value: Record<string, unknown>, _options?: { readonly validate?: boolean; readonly failFast?: boolean }): string {
+function stringifyPermissionInputWire(value: Record<string, unknown>): string {
   return '{' + "\"permissions\":" + stringifyJsonString(value["permissions"] as string) + '}';
 }
 
@@ -97,13 +93,11 @@ export function stringifyPermissionInput(value: PermissionInputFields, options?:
   const validates = serdeValidates(options, true);
   if (validates) {
     assertPermissionInput(value, options);
-  }
-  if (validates) {
     const wire = { ["permissions"]: modelSerdeBindings["src/permission-rules.ts#encodePermissions\u0000src/permission-rules.ts#decodePermissions"].serialize(value["permissions"]) };
     __golemAssertWireOnly_PermissionInput(wire, options);
-    return stringifyPermissionInputWire(wire as never, { validate: false });
+    return stringifyPermissionInputWire(wire as never);
   }
-  return stringifyPermissionInputCore(value as never, { validate: false });
+  return stringifyPermissionInputCore(value as never);
 }
 
 function convertFromWirePermissionInput(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
@@ -130,17 +124,22 @@ export function fromWireFormatPermissionInput(wire: unknown, options?: __GolemSe
   return convertFromWirePermissionInput(wire, options, false) as PermissionInputFields;
 }
 
+function toWireFormatPermissionInputCore(value: PermissionInputFields): PermissionInputJSON {
+  const record = value as Record<string, unknown>;
+  const wire = { ["permissions"]: modelSerdeBindings["src/permission-rules.ts#encodePermissions\u0000src/permission-rules.ts#decodePermissions"].serialize(record["permissions"]) };
+  return wire as PermissionInputJSON;
+}
+
 export function toWireFormatPermissionInput(value: PermissionInputFields, options?: __GolemSerdeOptions): PermissionInputJSON {
   const validates = serdeValidates(options, true);
   if (validates) {
     assertPermissionInput(value, options);
   }
-  const record = value as Record<string, unknown>;
-  const wire = { ["permissions"]: modelSerdeBindings["src/permission-rules.ts#encodePermissions\u0000src/permission-rules.ts#decodePermissions"].serialize(record["permissions"]) };
+  const wire = toWireFormatPermissionInputCore(value);
   if (validates) {
     __golemAssertWireOnly_PermissionInput(wire, options);
   }
-  return wire as PermissionInputJSON;
+  return wire;
 }
 
 export function parsePermissionInput(text: string, options?: __GolemSerdeOptions): PermissionInputFields {
@@ -152,8 +151,9 @@ export function validatePermissionInput(value: unknown, options?: __GolemValidat
   let ok: boolean;
   let errors: readonly unknown[] | null | undefined;
   if (options?.validationContext === undefined) {
-    ok = failFast ? validatePermissionInputFast(value) : validatePermissionInputAll(value);
-    errors = failFast ? validatePermissionInputFast.errors : validatePermissionInputAll.errors;
+    const validator = failFast ? validatePermissionInputFast : validatePermissionInputAll;
+    ok = validator(value);
+    errors = validator.errors;
   } else {
     const validator = resolveModelValidationContextValidator(options.validationContext, "PermissionInput_8f46e801", failFast ? 'first' : 'all');
     ok = runSynchronousValidation(validator, value);

@@ -5,8 +5,6 @@ import { assertModelValue, createObjectCodec, parseJson, registerIModelClass, re
 import { createOpenApiSyncAjvEngine } from '@exprtlabs/golem/ajv';
 import { modelSerdeBindings } from "./generated/models/models.generated.js";
 
-const __golemAbsentField = Symbol();
-
 function modelObject(json: unknown, name: string): Record<string, unknown> {
   return requireModelObject(json, name);
 }
@@ -36,12 +34,9 @@ function decodePriceModel(constructor: GeneratedModelConstructor, json: unknown)
 }
 
 function encodePriceModel(model: PriceBase): PriceJSON {
-  const result: Record<string, unknown> = {
-    ["amount"]: Object.prototype.hasOwnProperty.call(model, "amount") ? (convertModelField("serialize", "amount", () => (modelSerdeBindings["src/decimal-text.ts#writeAmount\u0000src/decimal-text.ts#readAmount"].serialize(model["amount"])))) : __golemAbsentField,
-    ["currency"]: Object.prototype.hasOwnProperty.call(model, "currency") ? (model["currency"]) : __golemAbsentField,
-  };
-  if (result["amount"] === __golemAbsentField) delete result["amount"];
-  if (result["currency"] === __golemAbsentField) delete result["currency"];
+  const result: Record<string, unknown> = {};
+  if (Object.prototype.hasOwnProperty.call(model, "amount")) defineModelProperty(result, "amount", (convertModelField("serialize", "amount", () => (modelSerdeBindings["src/decimal-text.ts#writeAmount\u0000src/decimal-text.ts#readAmount"].serialize(model["amount"])))));
+  if (Object.prototype.hasOwnProperty.call(model, "currency")) defineModelProperty(result, "currency", (model["currency"]));
   return result as PriceJSON;
 }
 
@@ -92,11 +87,11 @@ function fillPrice(out: Record<string, unknown>, wire: Record<string, unknown>, 
   return out;
 }
 
-function stringifyPriceCore(value: Record<string, unknown>, _options?: { readonly validate?: boolean; readonly failFast?: boolean }): string {
+function stringifyPriceCore(value: Record<string, unknown>): string {
   return '{' + "\"amount\":" + stringifyJsonString(modelSerdeBindings["src/decimal-text.ts#writeAmount\u0000src/decimal-text.ts#readAmount"].serialize(value["amount"]) as string) + ",\"currency\":" + stringifyJsonScalar(value["currency"] as never) + '}';
 }
 
-function stringifyPriceWire(value: Record<string, unknown>, _options?: { readonly validate?: boolean; readonly failFast?: boolean }): string {
+function stringifyPriceWire(value: Record<string, unknown>): string {
   return '{' + "\"amount\":" + stringifyJsonString(value["amount"] as string) + ",\"currency\":" + stringifyJsonScalar(value["currency"] as never) + '}';
 }
 
@@ -104,13 +99,11 @@ export function stringifyPrice(value: PriceFields, options?: __GolemSerdeOptions
   const validates = serdeValidates(options, true);
   if (validates) {
     assertPrice(value, options);
-  }
-  if (validates) {
     const wire = { ["amount"]: modelSerdeBindings["src/decimal-text.ts#writeAmount\u0000src/decimal-text.ts#readAmount"].serialize(value["amount"]), ["currency"]: value["currency"] };
     __golemAssertWireOnly_Price(wire, options);
-    return stringifyPriceWire(wire as never, { validate: false });
+    return stringifyPriceWire(wire as never);
   }
-  return stringifyPriceCore(value as never, { validate: false });
+  return stringifyPriceCore(value as never);
 }
 
 function convertFromWirePrice(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
@@ -137,17 +130,22 @@ export function fromWireFormatPrice(wire: unknown, options?: __GolemSerdeOptions
   return convertFromWirePrice(wire, options, false) as PriceFields;
 }
 
+function toWireFormatPriceCore(value: PriceFields): PriceJSON {
+  const record = value as Record<string, unknown>;
+  const wire = { ["amount"]: modelSerdeBindings["src/decimal-text.ts#writeAmount\u0000src/decimal-text.ts#readAmount"].serialize(record["amount"]), ["currency"]: record["currency"] };
+  return wire as PriceJSON;
+}
+
 export function toWireFormatPrice(value: PriceFields, options?: __GolemSerdeOptions): PriceJSON {
   const validates = serdeValidates(options, true);
   if (validates) {
     assertPrice(value, options);
   }
-  const record = value as Record<string, unknown>;
-  const wire = { ["amount"]: modelSerdeBindings["src/decimal-text.ts#writeAmount\u0000src/decimal-text.ts#readAmount"].serialize(record["amount"]), ["currency"]: record["currency"] };
+  const wire = toWireFormatPriceCore(value);
   if (validates) {
     __golemAssertWireOnly_Price(wire, options);
   }
-  return wire as PriceJSON;
+  return wire;
 }
 
 export function parsePrice(text: string, options?: __GolemSerdeOptions): PriceFields {
@@ -159,8 +157,9 @@ export function validatePrice(value: unknown, options?: __GolemValidateOptions):
   let ok: boolean;
   let errors: readonly unknown[] | null | undefined;
   if (options?.validationContext === undefined) {
-    ok = failFast ? validatePriceFast(value) : validatePriceAll(value);
-    errors = failFast ? validatePriceFast.errors : validatePriceAll.errors;
+    const validator = failFast ? validatePriceFast : validatePriceAll;
+    ok = validator(value);
+    errors = validator.errors;
   } else {
     const validator = resolveModelValidationContextValidator(options.validationContext, "Price_cdf316b7", failFast ? 'first' : 'all');
     ok = runSynchronousValidation(validator, value);

@@ -78,7 +78,7 @@ export function fillMember(out: Record<string, unknown>, wire: Record<string, un
   return out;
 }
 
-function stringifyMemberCore(value: Record<string, unknown>, _options?: { readonly validate?: boolean; readonly failFast?: boolean }): string {
+function stringifyMemberCore(value: Record<string, unknown>): string {
   return '{' + "\"email\":" + stringifyJsonString(value["email"] as string) + ",\"id\":" + stringifyJsonString(value["id"] as string) + ",\"name\":" + stringifyJsonString(value["name"] as string) + '}';
 }
 
@@ -88,7 +88,7 @@ export function stringifyMember(value: MemberFields, options?: __GolemSerdeOptio
   if (validates) {
     assertMember(value, options);
   }
-  return stringifyMemberCore(value as never, { validate: false });
+  return stringifyMemberCore(value as never);
 }
 
 function convertFromWireMember(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
@@ -112,14 +112,18 @@ export function fromWireFormatMember(wire: unknown, options?: __GolemSerdeOption
   return convertFromWireMember(wire, options, false) as MemberFields;
 }
 
+function toWireFormatMemberCore(value: MemberFields): Types.Member {
+  const record = value as Record<string, unknown>;
+  const wire = { ["email"]: record["email"], ["id"]: record["id"], ["name"]: record["name"] };
+  return wire as Types.Member;
+}
+
 export function toWireFormatMember(value: MemberFields, options?: __GolemSerdeOptions): Types.Member {
   const validates = serdeValidates(options, true);
   if (validates) {
     assertMember(value, options);
   }
-  const record = value as Record<string, unknown>;
-  const wire = { ["email"]: record["email"], ["id"]: record["id"], ["name"]: record["name"] };
-  return wire as Types.Member;
+  return toWireFormatMemberCore(value);
 }
 
 export function parseMember(text: string, options?: __GolemSerdeOptions): MemberFields {
@@ -131,8 +135,9 @@ export function validateMember(value: unknown, options?: __GolemValidateOptions)
   let ok: boolean;
   let errors: readonly unknown[] | null | undefined;
   if (options?.validationContext === undefined) {
-    ok = failFast ? validateMemberFast(value) : validateMemberAll(value);
-    errors = failFast ? validateMemberFast.errors : validateMemberAll.errors;
+    const validator = failFast ? validateMemberFast : validateMemberAll;
+    ok = validator(value);
+    errors = validator.errors;
   } else {
     const validator = resolveModelValidationContextValidator(options.validationContext, "Member_24b40f77", failFast ? 'first' : 'all');
     ok = runSynchronousValidation(validator, value);

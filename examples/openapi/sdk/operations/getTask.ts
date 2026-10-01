@@ -7,14 +7,15 @@ import { operationValidators, responseCheck, validateOperationInput } from '@exp
 import { schema as __golemSchema0 } from "../validation-schemas/Task.output.js";
 
 const responseContracts: readonly RuntimeResponseContract[] = [{"status":"200","content":[{"contentType":"application/json","framing":"body"}],"headers":[]},{"status":"404","content":[{"contentType":"application/json","framing":"body"}],"headers":[]}];
-const __resolveOperationValidationSources = (): OperationValidationSources => ({
+let __operationValidationSources: OperationValidationSources | undefined;
+const __resolveOperationValidationSources = (): OperationValidationSources => __operationValidationSources ??= {
   inputReference: "urn:golem:openapi:tasks:cc24c3c3168942b6c3e2684339043b6830cdcb3c57853bd72591b5011d7111a7:schemas:operation:getTask#/operations/getTask/input",
   responseReferences: [{"status":"200","contentType":"application/json","reference":"urn:golem:openapi:tasks:cc24c3c3168942b6c3e2684339043b6830cdcb3c57853bd72591b5011d7111a7:schemas:operation:getTask#/operations/getTask/responses/200/application~1json"},{"status":"404","contentType":"application/json","reference":"urn:golem:openapi:tasks:cc24c3c3168942b6c3e2684339043b6830cdcb3c57853bd72591b5011d7111a7:schemas:operation:getTask#/operations/getTask/responses/404/application~1json"}],
   schemas: new Map([
     ["urn:golem:openapi:tasks:cc24c3c3168942b6c3e2684339043b6830cdcb3c57853bd72591b5011d7111a7:schemas:operation:getTask", JSON.parse("{\"$id\":\"urn:golem:openapi:tasks:cc24c3c3168942b6c3e2684339043b6830cdcb3c57853bd72591b5011d7111a7:schemas:operation:getTask\",\"$schema\":\"https://spec.openapis.org/oas/3.1/dialect/base\",\"operations\":{\"getTask\":{\"input\":{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\"}},\"required\":[\"id\"],\"additionalProperties\":false}},\"required\":[\"path\"],\"additionalProperties\":false},\"responses\":{\"200\":{\"application/json\":{\"$ref\":\"urn:golem:openapi:tasks:cc24c3c3168942b6c3e2684339043b6830cdcb3c57853bd72591b5011d7111a7:schemas:component:Task:output\"}},\"404\":{\"application/json\":{\"type\":\"object\",\"required\":[\"message\"],\"properties\":{\"message\":{\"type\":\"string\"}}}}}}}}") as object | boolean],
     ["urn:golem:openapi:tasks:cc24c3c3168942b6c3e2684339043b6830cdcb3c57853bd72591b5011d7111a7:schemas:component:Task:output", __golemSchema0],
   ]),
-});
+};
 
 export function getTask(options: ClientOptions): ApiOperation<Types.GetTaskOperationInput, Types.GetTaskOperationHttpResponse, RequestOptions> {
   return createGetTaskOperation(new ClientRuntime("Tasks", options, { createValidationEngine: createOpenApiAjvEngine }));

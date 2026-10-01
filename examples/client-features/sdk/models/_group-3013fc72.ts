@@ -111,11 +111,11 @@ function fillPayment(out: Record<string, unknown>, wire: Record<string, unknown>
   return out;
 }
 
-function stringifyPaymentCore(value: Record<string, unknown>, _options?: { readonly validate?: boolean; readonly failFast?: boolean }): string {
+function stringifyPaymentCore(value: Record<string, unknown>): string {
   return '{' + "\"id\":" + stringifyJsonString(value["id"] as string) + ",\"amount\":" + stringifyJsonNumber(value["amount"] as number) + ",\"currency\":" + stringifyJsonString(value["currency"] as string) + ",\"createdAt\":" + stringifyJsonString(serializeTemporalInstant((value["createdAt"]) as never) as string) + ",\"dueOn\":" + stringifyJsonString(serializeTemporalPlainDate((value["dueOn"]) as never) as string) + '}';
 }
 
-function stringifyPaymentWire(value: Record<string, unknown>, _options?: { readonly validate?: boolean; readonly failFast?: boolean }): string {
+function stringifyPaymentWire(value: Record<string, unknown>): string {
   return '{' + "\"id\":" + stringifyJsonString(value["id"] as string) + ",\"amount\":" + stringifyJsonNumber(value["amount"] as number) + ",\"currency\":" + stringifyJsonString(value["currency"] as string) + ",\"createdAt\":" + stringifyJsonString(value["createdAt"] as string) + ",\"dueOn\":" + stringifyJsonString(value["dueOn"] as string) + '}';
 }
 
@@ -123,13 +123,11 @@ export function stringifyPayment(value: PaymentFields, options?: __GolemSerdeOpt
   const validates = serdeValidates(options, true);
   if (validates) {
     assertPayment(value, options);
-  }
-  if (validates) {
     const wire = { ["id"]: value["id"], ["amount"]: value["amount"], ["currency"]: value["currency"], ["createdAt"]: serializeTemporalInstant((value["createdAt"]) as never), ["dueOn"]: serializeTemporalPlainDate((value["dueOn"]) as never) };
     __golemAssertWireOnly_Payment(wire, options);
-    return stringifyPaymentWire(wire as never, { validate: false });
+    return stringifyPaymentWire(wire as never);
   }
-  return stringifyPaymentCore(value as never, { validate: false });
+  return stringifyPaymentCore(value as never);
 }
 
 function convertFromWirePayment(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
@@ -156,17 +154,22 @@ export function fromWireFormatPayment(wire: unknown, options?: __GolemSerdeOptio
   return convertFromWirePayment(wire, options, false) as PaymentFields;
 }
 
+function toWireFormatPaymentCore(value: PaymentFields): Types.Payment {
+  const record = value as Record<string, unknown>;
+  const wire = { ["id"]: record["id"], ["amount"]: record["amount"], ["currency"]: record["currency"], ["createdAt"]: serializeTemporalInstant((record["createdAt"]) as never), ["dueOn"]: serializeTemporalPlainDate((record["dueOn"]) as never) };
+  return wire as Types.Payment;
+}
+
 export function toWireFormatPayment(value: PaymentFields, options?: __GolemSerdeOptions): Types.Payment {
   const validates = serdeValidates(options, true);
   if (validates) {
     assertPayment(value, options);
   }
-  const record = value as Record<string, unknown>;
-  const wire = { ["id"]: record["id"], ["amount"]: record["amount"], ["currency"]: record["currency"], ["createdAt"]: serializeTemporalInstant((record["createdAt"]) as never), ["dueOn"]: serializeTemporalPlainDate((record["dueOn"]) as never) };
+  const wire = toWireFormatPaymentCore(value);
   if (validates) {
     __golemAssertWireOnly_Payment(wire, options);
   }
-  return wire as Types.Payment;
+  return wire;
 }
 
 export function parsePayment(text: string, options?: __GolemSerdeOptions): PaymentFields {
@@ -178,8 +181,9 @@ export function validatePayment(value: unknown, options?: __GolemValidateOptions
   let ok: boolean;
   let errors: readonly unknown[] | null | undefined;
   if (options?.validationContext === undefined) {
-    ok = failFast ? validatePaymentFast(value) : validatePaymentAll(value);
-    errors = failFast ? validatePaymentFast.errors : validatePaymentAll.errors;
+    const validator = failFast ? validatePaymentFast : validatePaymentAll;
+    ok = validator(value);
+    errors = validator.errors;
   } else {
     const validator = resolveModelValidationContextValidator(options.validationContext, "Payment_88039251", failFast ? 'first' : 'all');
     ok = runSynchronousValidation(validator, value);

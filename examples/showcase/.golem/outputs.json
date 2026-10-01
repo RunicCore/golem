@@ -11,7 +11,7 @@
     "backend/project-access.model.generated.ts": {
       "job": "models:.",
       "owner": "@exprtlabs/golem-model",
-      "digest": "7c8dd5e5dcd6ff31b001c45a6c6ae6ba13ad8d3d887225a86fa0aa85f9811595",
+      "digest": "7abc556739ef5a8330b4d62dc03990181e311a55d181d3229ae4918696d80655",
       "destination": "backend",
       "destinationKind": "directory"
     },
@@ -53,14 +53,14 @@
     "sdk/models/_group-053503fe.ts": {
       "job": "openapi:sdk",
       "owner": "@exprtlabs/golem-openapi",
-      "digest": "fbab85e10a7530b56e19292aacaaaccb30cd5c9a0ea44cb60041d0fe8f4fbc7b",
+      "digest": "34a228b14d8d1c69cf1fc224310f268a523c70ddb46779da032c49fc11c5c812",
       "destination": "sdk",
       "destinationKind": "directory"
     },
     "sdk/models/_group-28875f0c.ts": {
       "job": "openapi:sdk",
       "owner": "@exprtlabs/golem-openapi",
-      "digest": "0f80cba3ed33383821aa8de271397ee55222375683dafa0e416548272799abd6",
+      "digest": "b69e4377022c8ac8340dabff27664ee1352ea142045f31afa76d0908b7d219a8",
       "destination": "sdk",
       "destinationKind": "directory"
     },
@@ -81,7 +81,7 @@
     "sdk/operations/updateProjectAccess.ts": {
       "job": "openapi:sdk",
       "owner": "@exprtlabs/golem-openapi",
-      "digest": "f8d5195c4ff8ff4ba50f5114d0a1acf98e53a5a3a5871d007245894ce2f999c8",
+      "digest": "e9559a9d216b3d93e6f5dae88a23b899bfd20e128c145fb7c6e8916d2f0994e8",
       "destination": "sdk",
       "destinationKind": "directory"
     },
@@ -151,7 +151,7 @@
     "src/project-access.model.generated.ts": {
       "job": "models:.",
       "owner": "@exprtlabs/golem-model",
-      "digest": "5d36008dc94db930c230bb02ff879bab7efd924743124074c63cb6cbd34dd226",
+      "digest": "57e3f4b83361d4a507ef2be418a125bcb3861d19de7df6cd67cabd9defd8ab5d",
       "destination": "src",
       "destinationKind": "directory"
     }

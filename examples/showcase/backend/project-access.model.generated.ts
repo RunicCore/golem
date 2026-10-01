@@ -5,8 +5,6 @@ import { assertModelValue, createObjectCodec, parseJson, registerIModelClass, re
 import { createOpenApiSyncAjvEngine } from '@exprtlabs/golem/ajv';
 import { modelSerdeBindings, modelValidationBindings } from "../src/generated/models/models.generated.js";
 
-const __golemAbsentField = Symbol();
-
 function modelObject(json: unknown, name: string): Record<string, unknown> {
   return requireModelObject(json, name);
 }
@@ -36,14 +34,10 @@ function decodeMemberModel(constructor: GeneratedModelConstructor, json: unknown
 }
 
 function encodeMemberModel(model: MemberBase): MemberJSON {
-  const result: Record<string, unknown> = {
-    ["id"]: Object.prototype.hasOwnProperty.call(model, "id") ? (model["id"]) : __golemAbsentField,
-    ["name"]: Object.prototype.hasOwnProperty.call(model, "name") ? (model["name"]) : __golemAbsentField,
-    ["email"]: Object.prototype.hasOwnProperty.call(model, "email") ? (model["email"]) : __golemAbsentField,
-  };
-  if (result["id"] === __golemAbsentField) delete result["id"];
-  if (result["name"] === __golemAbsentField) delete result["name"];
-  if (result["email"] === __golemAbsentField) delete result["email"];
+  const result: Record<string, unknown> = {};
+  if (Object.prototype.hasOwnProperty.call(model, "id")) defineModelProperty(result, "id", (model["id"]));
+  if (Object.prototype.hasOwnProperty.call(model, "name")) defineModelProperty(result, "name", (model["name"]));
+  if (Object.prototype.hasOwnProperty.call(model, "email")) defineModelProperty(result, "email", (model["email"]));
   return result as MemberJSON;
 }
 
@@ -87,14 +81,10 @@ function decodeProjectAccessModel(constructor: GeneratedModelConstructor, json: 
 }
 
 function encodeProjectAccessModel(model: ProjectAccessBase): ProjectAccessJSON {
-  const result: Record<string, unknown> = {
-    ["projectName"]: Object.prototype.hasOwnProperty.call(model, "projectName") ? (model["projectName"]) : __golemAbsentField,
-    ["member"]: Object.prototype.hasOwnProperty.call(model, "member") ? (convertModelField("serialize", "member", () => (model["member"] instanceof MemberBase ? encodeGeneratedModel(model["member"]) : model["member"]))) : __golemAbsentField,
-    ["permissions"]: Object.prototype.hasOwnProperty.call(model, "permissions") ? (convertModelField("serialize", "permissions", () => (modelSerdeBindings["src/access-rules.ts#serializePermissions\u0000src/access-rules.ts#deserializePermissions"].serialize(model["permissions"])))) : __golemAbsentField,
-  };
-  if (result["projectName"] === __golemAbsentField) delete result["projectName"];
-  if (result["member"] === __golemAbsentField) delete result["member"];
-  if (result["permissions"] === __golemAbsentField) delete result["permissions"];
+  const result: Record<string, unknown> = {};
+  if (Object.prototype.hasOwnProperty.call(model, "projectName")) defineModelProperty(result, "projectName", (model["projectName"]));
+  if (Object.prototype.hasOwnProperty.call(model, "member")) defineModelProperty(result, "member", (convertModelField("serialize", "member", () => (model["member"] instanceof MemberBase ? encodeGeneratedModel(model["member"]) : model["member"]))));
+  if (Object.prototype.hasOwnProperty.call(model, "permissions")) defineModelProperty(result, "permissions", (convertModelField("serialize", "permissions", () => (modelSerdeBindings["src/access-rules.ts#serializePermissions\u0000src/access-rules.ts#deserializePermissions"].serialize(model["permissions"])))));
   return result as ProjectAccessJSON;
 }
 
@@ -141,7 +131,7 @@ function fillMember(out: Record<string, unknown>, wire: Record<string, unknown>,
   return out;
 }
 
-function stringifyMemberCore(value: Record<string, unknown>, _options?: { readonly validate?: boolean; readonly failFast?: boolean }): string {
+function stringifyMemberCore(value: Record<string, unknown>): string {
   return '{' + "\"id\":" + stringifyJsonString(value["id"] as string) + ",\"name\":" + stringifyJsonString(value["name"] as string) + ",\"email\":" + stringifyJsonString(value["email"] as string) + '}';
 }
 
@@ -150,7 +140,7 @@ export function stringifyMember(value: MemberFields, options?: __GolemSerdeOptio
   if (validates) {
     assertMember(value, options);
   }
-  return stringifyMemberCore(value as never, { validate: false });
+  return stringifyMemberCore(value as never);
 }
 
 function convertFromWireMember(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
@@ -174,14 +164,18 @@ export function fromWireFormatMember(wire: unknown, options?: __GolemSerdeOption
   return convertFromWireMember(wire, options, false) as MemberFields;
 }
 
+function toWireFormatMemberCore(value: MemberFields): MemberJSON {
+  const record = value as Record<string, unknown>;
+  const wire = { ["id"]: record["id"], ["name"]: record["name"], ["email"]: record["email"] };
+  return wire as MemberJSON;
+}
+
 export function toWireFormatMember(value: MemberFields, options?: __GolemSerdeOptions): MemberJSON {
   const validates = serdeValidates(options, true);
   if (validates) {
     assertMember(value, options);
   }
-  const record = value as Record<string, unknown>;
-  const wire = { ["id"]: record["id"], ["name"]: record["name"], ["email"]: record["email"] };
-  return wire as MemberJSON;
+  return toWireFormatMemberCore(value);
 }
 
 export function parseMember(text: string, options?: __GolemSerdeOptions): MemberFields {
@@ -193,8 +187,9 @@ export function validateMember(value: unknown, options?: __GolemValidateOptions)
   let ok: boolean;
   let errors: readonly unknown[] | null | undefined;
   if (options?.validationContext === undefined) {
-    ok = failFast ? validateMemberFast(value) : validateMemberAll(value);
-    errors = failFast ? validateMemberFast.errors : validateMemberAll.errors;
+    const validator = failFast ? validateMemberFast : validateMemberAll;
+    ok = validator(value);
+    errors = validator.errors;
   } else {
     const validator = resolveModelValidationContextValidator(options.validationContext, "Member_5f7b88d4", failFast ? 'first' : 'all');
     ok = runSynchronousValidation(validator, value);
@@ -242,25 +237,23 @@ function fillProjectAccess(out: Record<string, unknown>, wire: Record<string, un
   return out;
 }
 
-function stringifyProjectAccessCore(value: Record<string, unknown>, _options?: { readonly validate?: boolean; readonly failFast?: boolean }): string {
-  return '{' + "\"projectName\":" + stringifyJsonString(value["projectName"] as string) + ",\"member\":" + stringifyMember(value["member"] as never, { validate: false }) + ",\"permissions\":" + stringifyJsonString(modelSerdeBindings["src/access-rules.ts#serializePermissions\u0000src/access-rules.ts#deserializePermissions"].serialize(value["permissions"]) as string) + '}';
+function stringifyProjectAccessCore(value: Record<string, unknown>): string {
+  return '{' + "\"projectName\":" + stringifyJsonString(value["projectName"] as string) + ",\"member\":" + stringifyMemberCore(value["member"] as never) + ",\"permissions\":" + stringifyJsonString(modelSerdeBindings["src/access-rules.ts#serializePermissions\u0000src/access-rules.ts#deserializePermissions"].serialize(value["permissions"]) as string) + '}';
 }
 
-function stringifyProjectAccessWire(value: Record<string, unknown>, _options?: { readonly validate?: boolean; readonly failFast?: boolean }): string {
-  return '{' + "\"projectName\":" + stringifyJsonString(value["projectName"] as string) + ",\"member\":" + stringifyMember(value["member"] as never, { validate: false }) + ",\"permissions\":" + stringifyJsonString(value["permissions"] as string) + '}';
+function stringifyProjectAccessWire(value: Record<string, unknown>): string {
+  return '{' + "\"projectName\":" + stringifyJsonString(value["projectName"] as string) + ",\"member\":" + stringifyMemberCore(value["member"] as never) + ",\"permissions\":" + stringifyJsonString(value["permissions"] as string) + '}';
 }
 
 export function stringifyProjectAccess(value: ProjectAccessFields, options?: __GolemSerdeOptions): string {
   const validates = serdeValidates(options, true);
   if (validates) {
     assertProjectAccess(value, options);
-  }
-  if (validates) {
-    const wire = { ["projectName"]: value["projectName"], ["member"]: toWireFormatMember(value["member"] as never, { validate: false }), ["permissions"]: modelSerdeBindings["src/access-rules.ts#serializePermissions\u0000src/access-rules.ts#deserializePermissions"].serialize(value["permissions"]) };
+    const wire = { ["projectName"]: value["projectName"], ["member"]: toWireFormatMemberCore(value["member"] as never), ["permissions"]: modelSerdeBindings["src/access-rules.ts#serializePermissions\u0000src/access-rules.ts#deserializePermissions"].serialize(value["permissions"]) };
     __golemAssertWireOnly_ProjectAccess(wire, options);
-    return stringifyProjectAccessWire(wire as never, { validate: false });
+    return stringifyProjectAccessWire(wire as never);
   }
-  return stringifyProjectAccessCore(value as never, { validate: false });
+  return stringifyProjectAccessCore(value as never);
 }
 
 function convertFromWireProjectAccess(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
@@ -287,17 +280,22 @@ export function fromWireFormatProjectAccess(wire: unknown, options?: __GolemSerd
   return convertFromWireProjectAccess(wire, options, false) as ProjectAccessFields;
 }
 
+function toWireFormatProjectAccessCore(value: ProjectAccessFields): ProjectAccessJSON {
+  const record = value as Record<string, unknown>;
+  const wire = { ["projectName"]: record["projectName"], ["member"]: toWireFormatMemberCore(record["member"] as never), ["permissions"]: modelSerdeBindings["src/access-rules.ts#serializePermissions\u0000src/access-rules.ts#deserializePermissions"].serialize(record["permissions"]) };
+  return wire as ProjectAccessJSON;
+}
+
 export function toWireFormatProjectAccess(value: ProjectAccessFields, options?: __GolemSerdeOptions): ProjectAccessJSON {
   const validates = serdeValidates(options, true);
   if (validates) {
     assertProjectAccess(value, options);
   }
-  const record = value as Record<string, unknown>;
-  const wire = { ["projectName"]: record["projectName"], ["member"]: toWireFormatMember(record["member"] as never, { validate: false }), ["permissions"]: modelSerdeBindings["src/access-rules.ts#serializePermissions\u0000src/access-rules.ts#deserializePermissions"].serialize(record["permissions"]) };
+  const wire = toWireFormatProjectAccessCore(value);
   if (validates) {
     __golemAssertWireOnly_ProjectAccess(wire, options);
   }
-  return wire as ProjectAccessJSON;
+  return wire;
 }
 
 export function parseProjectAccess(text: string, options?: __GolemSerdeOptions): ProjectAccessFields {
@@ -309,8 +307,9 @@ export function validateProjectAccess(value: unknown, options?: __GolemValidateO
   let ok: boolean;
   let errors: readonly unknown[] | null | undefined;
   if (options?.validationContext === undefined) {
-    ok = failFast ? validateProjectAccessFast(value) : validateProjectAccessAll(value);
-    errors = failFast ? validateProjectAccessFast.errors : validateProjectAccessAll.errors;
+    const validator = failFast ? validateProjectAccessFast : validateProjectAccessAll;
+    ok = validator(value);
+    errors = validator.errors;
   } else {
     const validator = resolveModelValidationContextValidator(options.validationContext, "ProjectAccess_65c0e448", failFast ? 'first' : 'all');
     ok = runSynchronousValidation(validator, value);

@@ -5,8 +5,6 @@ import { assertModelValue, createObjectCodec, parseJson, registerIModelClass, re
 import { createOpenApiSyncAjvEngine } from '@exprtlabs/golem/ajv';
 import { modelValidationBindings } from "./generated/models/models.generated.js";
 
-const __golemAbsentField = Symbol();
-
 function modelObject(json: unknown, name: string): Record<string, unknown> {
   return requireModelObject(json, name);
 }
@@ -34,12 +32,9 @@ function decodeTaskInputModel(constructor: GeneratedModelConstructor, json: unkn
 }
 
 function encodeTaskInputModel(model: TaskInputBase): TaskInputJSON {
-  const result: Record<string, unknown> = {
-    ["title"]: Object.prototype.hasOwnProperty.call(model, "title") ? (model["title"]) : __golemAbsentField,
-    ["done"]: Object.prototype.hasOwnProperty.call(model, "done") ? (model["done"]) : __golemAbsentField,
-  };
-  if (result["title"] === __golemAbsentField) delete result["title"];
-  if (result["done"] === __golemAbsentField) delete result["done"];
+  const result: Record<string, unknown> = {};
+  if (Object.prototype.hasOwnProperty.call(model, "title")) defineModelProperty(result, "title", (model["title"]));
+  if (Object.prototype.hasOwnProperty.call(model, "done")) defineModelProperty(result, "done", (model["done"]));
   return result as TaskInputJSON;
 }
 
@@ -83,11 +78,11 @@ function fillTaskInput(out: Record<string, unknown>, wire: Record<string, unknow
   return out;
 }
 
-function stringifyTaskInputCore(value: Record<string, unknown>, _options?: { readonly validate?: boolean; readonly failFast?: boolean }): string {
+function stringifyTaskInputCore(value: Record<string, unknown>): string {
   return '{' + "\"title\":" + stringifyJsonString(value["title"] as string) + ",\"done\":" + stringifyJsonBoolean(value["done"] as boolean) + '}';
 }
 
-function stringifyTaskInputWire(value: Record<string, unknown>, _options?: { readonly validate?: boolean; readonly failFast?: boolean }): string {
+function stringifyTaskInputWire(value: Record<string, unknown>): string {
   return '{' + "\"title\":" + stringifyJsonString(value["title"] as string) + ",\"done\":" + stringifyJsonBoolean(value["done"] as boolean) + '}';
 }
 
@@ -95,12 +90,10 @@ export function stringifyTaskInput(value: TaskInputFields, options?: __GolemSerd
   const validates = serdeValidates(options, true);
   if (validates) {
     assertTaskInput(value, options);
-  }
-  if (validates) {
     const wire = { ["title"]: value["title"], ["done"]: value["done"] };
-    return stringifyTaskInputWire(wire as never, { validate: false });
+    return stringifyTaskInputWire(wire as never);
   }
-  return stringifyTaskInputCore(value as never, { validate: false });
+  return stringifyTaskInputCore(value as never);
 }
 
 function convertFromWireTaskInput(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
@@ -127,14 +120,18 @@ export function fromWireFormatTaskInput(wire: unknown, options?: __GolemSerdeOpt
   return convertFromWireTaskInput(wire, options, false) as TaskInputFields;
 }
 
+function toWireFormatTaskInputCore(value: TaskInputFields): TaskInputJSON {
+  const record = value as Record<string, unknown>;
+  const wire = { ["title"]: record["title"], ["done"]: record["done"] };
+  return wire as TaskInputJSON;
+}
+
 export function toWireFormatTaskInput(value: TaskInputFields, options?: __GolemSerdeOptions): TaskInputJSON {
   const validates = serdeValidates(options, true);
   if (validates) {
     assertTaskInput(value, options);
   }
-  const record = value as Record<string, unknown>;
-  const wire = { ["title"]: record["title"], ["done"]: record["done"] };
-  return wire as TaskInputJSON;
+  return toWireFormatTaskInputCore(value);
 }
 
 export function parseTaskInput(text: string, options?: __GolemSerdeOptions): TaskInputFields {
@@ -146,8 +143,9 @@ export function validateTaskInput(value: unknown, options?: __GolemValidateOptio
   let ok: boolean;
   let errors: readonly unknown[] | null | undefined;
   if (options?.validationContext === undefined) {
-    ok = failFast ? validateTaskInputFast(value) : validateTaskInputAll(value);
-    errors = failFast ? validateTaskInputFast.errors : validateTaskInputAll.errors;
+    const validator = failFast ? validateTaskInputFast : validateTaskInputAll;
+    ok = validator(value);
+    errors = validator.errors;
   } else {
     const validator = resolveModelValidationContextValidator(options.validationContext, "TaskInput_b47fc3de", failFast ? 'first' : 'all');
     ok = runSynchronousValidation(validator, value);

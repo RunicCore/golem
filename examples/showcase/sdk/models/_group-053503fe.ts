@@ -64,6 +64,8 @@ registerGeneratedModel(ProjectAccessModel, {
 
 registerIModelClass("ProjectAccess_91a94489", ProjectAccessModel);
 
+const __golemTrusted = Object.freeze({ validate: false });
+
 const objectAjvFast = createOpenApiSyncAjvEngine({ allErrors: false, validationBindings: {} });
 const objectAjvAll = createOpenApiSyncAjvEngine({ allErrors: true, validationBindings: {} });
 
@@ -86,8 +88,8 @@ function fillProjectAccess(out: Record<string, unknown>, wire: Record<string, un
   return out;
 }
 
-function stringifyProjectAccessCore(value: Record<string, unknown>, _options?: { readonly validate?: boolean; readonly failFast?: boolean }): string {
-  return '{' + "\"member\":" + stringifyMember(value["member"] as never, { validate: false }) + ",\"permissions\":" + stringifyJsonString(value["permissions"] as string) + ",\"projectName\":" + stringifyJsonString(value["projectName"] as string) + '}';
+function stringifyProjectAccessCore(value: Record<string, unknown>): string {
+  return '{' + "\"member\":" + stringifyMember(value["member"] as never, __golemTrusted) + ",\"permissions\":" + stringifyJsonString(value["permissions"] as string) + ",\"projectName\":" + stringifyJsonString(value["projectName"] as string) + '}';
 }
 
 
@@ -96,7 +98,7 @@ export function stringifyProjectAccess(value: ProjectAccessFields, options?: __G
   if (validates) {
     assertProjectAccess(value, options);
   }
-  return stringifyProjectAccessCore(value as never, { validate: false });
+  return stringifyProjectAccessCore(value as never);
 }
 
 function convertFromWireProjectAccess(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
@@ -120,14 +122,18 @@ export function fromWireFormatProjectAccess(wire: unknown, options?: __GolemSerd
   return convertFromWireProjectAccess(wire, options, false) as ProjectAccessFields;
 }
 
+function toWireFormatProjectAccessCore(value: ProjectAccessFields): Types.ProjectAccess {
+  const record = value as Record<string, unknown>;
+  const wire = { ["member"]: toWireFormatMember(record["member"] as never, __golemTrusted), ["permissions"]: record["permissions"], ["projectName"]: record["projectName"] };
+  return wire as Types.ProjectAccess;
+}
+
 export function toWireFormatProjectAccess(value: ProjectAccessFields, options?: __GolemSerdeOptions): Types.ProjectAccess {
   const validates = serdeValidates(options, true);
   if (validates) {
     assertProjectAccess(value, options);
   }
-  const record = value as Record<string, unknown>;
-  const wire = { ["member"]: toWireFormatMember(record["member"] as never, { validate: false }), ["permissions"]: record["permissions"], ["projectName"]: record["projectName"] };
-  return wire as Types.ProjectAccess;
+  return toWireFormatProjectAccessCore(value);
 }
 
 export function parseProjectAccess(text: string, options?: __GolemSerdeOptions): ProjectAccessFields {
@@ -139,8 +145,9 @@ export function validateProjectAccess(value: unknown, options?: __GolemValidateO
   let ok: boolean;
   let errors: readonly unknown[] | null | undefined;
   if (options?.validationContext === undefined) {
-    ok = failFast ? validateProjectAccessFast(value) : validateProjectAccessAll(value);
-    errors = failFast ? validateProjectAccessFast.errors : validateProjectAccessAll.errors;
+    const validator = failFast ? validateProjectAccessFast : validateProjectAccessAll;
+    ok = validator(value);
+    errors = validator.errors;
   } else {
     const validator = resolveModelValidationContextValidator(options.validationContext, "ProjectAccess_91a94489", failFast ? 'first' : 'all');
     ok = runSynchronousValidation(validator, value);

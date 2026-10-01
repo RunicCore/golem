@@ -5,8 +5,6 @@ import { assertModelValue, createObjectCodec, parseJson, registerIModelClass, re
 import { createOpenApiSyncAjvEngine } from '@exprtlabs/golem/ajv';
 import { modelSerdeBindings } from "./generated/models/models.generated.js";
 
-const __golemAbsentField = Symbol();
-
 function modelObject(json: unknown, name: string): Record<string, unknown> {
   return requireModelObject(json, name);
 }
@@ -40,14 +38,10 @@ function decodeScheduleModel(constructor: GeneratedModelConstructor, json: unkno
 }
 
 function encodeScheduleModel(model: ScheduleBase): ScheduleJSON {
-  const result: Record<string, unknown> = {
-    ["startsAt"]: Object.prototype.hasOwnProperty.call(model, "startsAt") ? (convertModelField("serialize", "startsAt", () => (modelSerdeBindings["@exprtlabs/golem/temporal#serializeTemporalInstant\u0000@exprtlabs/golem/temporal#deserializeTemporalInstant"].serialize(model["startsAt"])))) : __golemAbsentField,
-    ["day"]: Object.prototype.hasOwnProperty.call(model, "day") ? (convertModelField("serialize", "day", () => (modelSerdeBindings["@exprtlabs/golem/temporal#serializeTemporalPlainDate\u0000@exprtlabs/golem/temporal#deserializeTemporalPlainDate"].serialize(model["day"])))) : __golemAbsentField,
-    ["length"]: Object.prototype.hasOwnProperty.call(model, "length") ? (convertModelField("serialize", "length", () => (modelSerdeBindings["@exprtlabs/golem/temporal#serializeTemporalDuration\u0000@exprtlabs/golem/temporal#deserializeTemporalDuration"].serialize(model["length"])))) : __golemAbsentField,
-  };
-  if (result["startsAt"] === __golemAbsentField) delete result["startsAt"];
-  if (result["day"] === __golemAbsentField) delete result["day"];
-  if (result["length"] === __golemAbsentField) delete result["length"];
+  const result: Record<string, unknown> = {};
+  if (Object.prototype.hasOwnProperty.call(model, "startsAt")) defineModelProperty(result, "startsAt", (convertModelField("serialize", "startsAt", () => (modelSerdeBindings["@exprtlabs/golem/temporal#serializeTemporalInstant\u0000@exprtlabs/golem/temporal#deserializeTemporalInstant"].serialize(model["startsAt"])))));
+  if (Object.prototype.hasOwnProperty.call(model, "day")) defineModelProperty(result, "day", (convertModelField("serialize", "day", () => (modelSerdeBindings["@exprtlabs/golem/temporal#serializeTemporalPlainDate\u0000@exprtlabs/golem/temporal#deserializeTemporalPlainDate"].serialize(model["day"])))));
+  if (Object.prototype.hasOwnProperty.call(model, "length")) defineModelProperty(result, "length", (convertModelField("serialize", "length", () => (modelSerdeBindings["@exprtlabs/golem/temporal#serializeTemporalDuration\u0000@exprtlabs/golem/temporal#deserializeTemporalDuration"].serialize(model["length"])))));
   return result as ScheduleJSON;
 }
 
@@ -101,11 +95,11 @@ function fillSchedule(out: Record<string, unknown>, wire: Record<string, unknown
   return out;
 }
 
-function stringifyScheduleCore(value: Record<string, unknown>, _options?: { readonly validate?: boolean; readonly failFast?: boolean }): string {
+function stringifyScheduleCore(value: Record<string, unknown>): string {
   return '{' + "\"startsAt\":" + stringifyJsonString(modelSerdeBindings["@exprtlabs/golem/temporal#serializeTemporalInstant\u0000@exprtlabs/golem/temporal#deserializeTemporalInstant"].serialize(value["startsAt"]) as string) + ",\"day\":" + stringifyJsonString(modelSerdeBindings["@exprtlabs/golem/temporal#serializeTemporalPlainDate\u0000@exprtlabs/golem/temporal#deserializeTemporalPlainDate"].serialize(value["day"]) as string) + ",\"length\":" + stringifyJsonString(modelSerdeBindings["@exprtlabs/golem/temporal#serializeTemporalDuration\u0000@exprtlabs/golem/temporal#deserializeTemporalDuration"].serialize(value["length"]) as string) + '}';
 }
 
-function stringifyScheduleWire(value: Record<string, unknown>, _options?: { readonly validate?: boolean; readonly failFast?: boolean }): string {
+function stringifyScheduleWire(value: Record<string, unknown>): string {
   return '{' + "\"startsAt\":" + stringifyJsonString(value["startsAt"] as string) + ",\"day\":" + stringifyJsonString(value["day"] as string) + ",\"length\":" + stringifyJsonString(value["length"] as string) + '}';
 }
 
@@ -113,13 +107,11 @@ export function stringifySchedule(value: ScheduleFields, options?: __GolemSerdeO
   const validates = serdeValidates(options, true);
   if (validates) {
     assertSchedule(value, options);
-  }
-  if (validates) {
     const wire = { ["startsAt"]: modelSerdeBindings["@exprtlabs/golem/temporal#serializeTemporalInstant\u0000@exprtlabs/golem/temporal#deserializeTemporalInstant"].serialize(value["startsAt"]), ["day"]: modelSerdeBindings["@exprtlabs/golem/temporal#serializeTemporalPlainDate\u0000@exprtlabs/golem/temporal#deserializeTemporalPlainDate"].serialize(value["day"]), ["length"]: modelSerdeBindings["@exprtlabs/golem/temporal#serializeTemporalDuration\u0000@exprtlabs/golem/temporal#deserializeTemporalDuration"].serialize(value["length"]) };
     __golemAssertWireOnly_Schedule(wire, options);
-    return stringifyScheduleWire(wire as never, { validate: false });
+    return stringifyScheduleWire(wire as never);
   }
-  return stringifyScheduleCore(value as never, { validate: false });
+  return stringifyScheduleCore(value as never);
 }
 
 function convertFromWireSchedule(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
@@ -146,17 +138,22 @@ export function fromWireFormatSchedule(wire: unknown, options?: __GolemSerdeOpti
   return convertFromWireSchedule(wire, options, false) as ScheduleFields;
 }
 
+function toWireFormatScheduleCore(value: ScheduleFields): ScheduleJSON {
+  const record = value as Record<string, unknown>;
+  const wire = { ["startsAt"]: modelSerdeBindings["@exprtlabs/golem/temporal#serializeTemporalInstant\u0000@exprtlabs/golem/temporal#deserializeTemporalInstant"].serialize(record["startsAt"]), ["day"]: modelSerdeBindings["@exprtlabs/golem/temporal#serializeTemporalPlainDate\u0000@exprtlabs/golem/temporal#deserializeTemporalPlainDate"].serialize(record["day"]), ["length"]: modelSerdeBindings["@exprtlabs/golem/temporal#serializeTemporalDuration\u0000@exprtlabs/golem/temporal#deserializeTemporalDuration"].serialize(record["length"]) };
+  return wire as ScheduleJSON;
+}
+
 export function toWireFormatSchedule(value: ScheduleFields, options?: __GolemSerdeOptions): ScheduleJSON {
   const validates = serdeValidates(options, true);
   if (validates) {
     assertSchedule(value, options);
   }
-  const record = value as Record<string, unknown>;
-  const wire = { ["startsAt"]: modelSerdeBindings["@exprtlabs/golem/temporal#serializeTemporalInstant\u0000@exprtlabs/golem/temporal#deserializeTemporalInstant"].serialize(record["startsAt"]), ["day"]: modelSerdeBindings["@exprtlabs/golem/temporal#serializeTemporalPlainDate\u0000@exprtlabs/golem/temporal#deserializeTemporalPlainDate"].serialize(record["day"]), ["length"]: modelSerdeBindings["@exprtlabs/golem/temporal#serializeTemporalDuration\u0000@exprtlabs/golem/temporal#deserializeTemporalDuration"].serialize(record["length"]) };
+  const wire = toWireFormatScheduleCore(value);
   if (validates) {
     __golemAssertWireOnly_Schedule(wire, options);
   }
-  return wire as ScheduleJSON;
+  return wire;
 }
 
 export function parseSchedule(text: string, options?: __GolemSerdeOptions): ScheduleFields {
@@ -168,8 +165,9 @@ export function validateSchedule(value: unknown, options?: __GolemValidateOption
   let ok: boolean;
   let errors: readonly unknown[] | null | undefined;
   if (options?.validationContext === undefined) {
-    ok = failFast ? validateScheduleFast(value) : validateScheduleAll(value);
-    errors = failFast ? validateScheduleFast.errors : validateScheduleAll.errors;
+    const validator = failFast ? validateScheduleFast : validateScheduleAll;
+    ok = validator(value);
+    errors = validator.errors;
   } else {
     const validator = resolveModelValidationContextValidator(options.validationContext, "Schedule_a6c75486", failFast ? 'first' : 'all');
     ok = runSynchronousValidation(validator, value);

@@ -9,7 +9,8 @@ import { schema as __golemSchema0 } from "../validation-schemas/Money.input.js";
 import { schema as __golemSchema1 } from "../validation-schemas/Money.output.js";
 
 const responseContracts: readonly RuntimeResponseContract[] = [{"status":"201","content":[{"contentType":"application/json","framing":"body"}],"headers":[]}];
-const __resolveOperationValidationSources = (): OperationValidationSources => ({
+let __operationValidationSources: OperationValidationSources | undefined;
+const __resolveOperationValidationSources = (): OperationValidationSources => __operationValidationSources ??= {
   inputReference: "urn:golem:openapi:paymentsdemo:d3e401b83a74a4f6d706e7aac6de85392642bd842fc3fac627638ed7cc64f7c9:schemas:operation:createPayment#/operations/createPayment/input",
   responseReferences: [{"status":"201","contentType":"application/json","reference":"urn:golem:openapi:paymentsdemo:d3e401b83a74a4f6d706e7aac6de85392642bd842fc3fac627638ed7cc64f7c9:schemas:operation:createPayment#/operations/createPayment/responses/201/application~1json"}],
   schemas: new Map([
@@ -17,7 +18,7 @@ const __resolveOperationValidationSources = (): OperationValidationSources => ({
     ["urn:golem:openapi:paymentsdemo:d3e401b83a74a4f6d706e7aac6de85392642bd842fc3fac627638ed7cc64f7c9:schemas:component:Money:input", __golemSchema0],
     ["urn:golem:openapi:paymentsdemo:d3e401b83a74a4f6d706e7aac6de85392642bd842fc3fac627638ed7cc64f7c9:schemas:component:Money:output", __golemSchema1],
   ]),
-});
+};
 
 export function createPayment(options: ClientOptions): ApiOperation<Types.CreatePaymentOperationInput, Types.CreatePaymentOperationHttpResponse, RequestOptions> {
   return createCreatePaymentOperation(new ClientRuntime("Payments", options, { createValidationEngine: createOpenApiAjvEngine }));

@@ -6,8 +6,6 @@ import { createOpenApiSyncAjvEngine } from '@exprtlabs/golem/ajv';
 import { modelSerdeBindings, modelValidationBindings } from "./generated/models/models.generated.js";
 import { MemberModel, stringifyMember, toWireFormatMember } from "../sdk/models/Member.js";
 
-const __golemAbsentField = Symbol();
-
 function modelObject(json: unknown, name: string): Record<string, unknown> {
   return requireModelObject(json, name);
 }
@@ -40,14 +38,10 @@ function decodeProjectAccessEditorModel(constructor: GeneratedModelConstructor, 
 }
 
 function encodeProjectAccessEditorModel(model: ProjectAccessEditorBase): ProjectAccessEditorJSON {
-  const result: Record<string, unknown> = {
-    ["member"]: Object.prototype.hasOwnProperty.call(model, "member") ? (convertModelField("serialize", "member", () => (model["member"] instanceof MemberModel ? encodeGeneratedModel(model["member"]) : model["member"]))) : __golemAbsentField,
-    ["projectName"]: Object.prototype.hasOwnProperty.call(model, "projectName") ? (model["projectName"]) : __golemAbsentField,
-    ["permissions"]: Object.prototype.hasOwnProperty.call(model, "permissions") ? (convertModelField("serialize", "permissions", () => (modelSerdeBindings["src/access-rules.ts#serializePermissions\u0000src/access-rules.ts#deserializePermissions"].serialize(model["permissions"])))) : __golemAbsentField,
-  };
-  if (result["member"] === __golemAbsentField) delete result["member"];
-  if (result["projectName"] === __golemAbsentField) delete result["projectName"];
-  if (result["permissions"] === __golemAbsentField) delete result["permissions"];
+  const result: Record<string, unknown> = {};
+  if (Object.prototype.hasOwnProperty.call(model, "member")) defineModelProperty(result, "member", (convertModelField("serialize", "member", () => (model["member"] instanceof MemberModel ? encodeGeneratedModel(model["member"]) : model["member"]))));
+  if (Object.prototype.hasOwnProperty.call(model, "projectName")) defineModelProperty(result, "projectName", (model["projectName"]));
+  if (Object.prototype.hasOwnProperty.call(model, "permissions")) defineModelProperty(result, "permissions", (convertModelField("serialize", "permissions", () => (modelSerdeBindings["src/access-rules.ts#serializePermissions\u0000src/access-rules.ts#deserializePermissions"].serialize(model["permissions"])))));
   return result as ProjectAccessEditorJSON;
 }
 
@@ -62,6 +56,8 @@ registerGeneratedModel(ProjectAccessEditorBase, {
 });
 
 registerIModelClass("ProjectAccessEditor_dbff379b", ProjectAccessEditorBase);
+
+const __golemTrusted = Object.freeze({ validate: false });
 
 const objectAjvFast = createOpenApiSyncAjvEngine({ allErrors: false, validationBindings: modelValidationBindings });
 const objectAjvAll = createOpenApiSyncAjvEngine({ allErrors: true, validationBindings: modelValidationBindings });
@@ -102,25 +98,23 @@ function fillProjectAccessEditor(out: Record<string, unknown>, wire: Record<stri
   return out;
 }
 
-function stringifyProjectAccessEditorCore(value: Record<string, unknown>, _options?: { readonly validate?: boolean; readonly failFast?: boolean }): string {
-  return '{' + "\"member\":" + stringifyMember(value["member"] as never, { validate: false }) + ",\"projectName\":" + stringifyJsonString(value["projectName"] as string) + ",\"permissions\":" + stringifyJsonString(modelSerdeBindings["src/access-rules.ts#serializePermissions\u0000src/access-rules.ts#deserializePermissions"].serialize(value["permissions"]) as string) + '}';
+function stringifyProjectAccessEditorCore(value: Record<string, unknown>): string {
+  return '{' + "\"member\":" + stringifyMember(value["member"] as never, __golemTrusted) + ",\"projectName\":" + stringifyJsonString(value["projectName"] as string) + ",\"permissions\":" + stringifyJsonString(modelSerdeBindings["src/access-rules.ts#serializePermissions\u0000src/access-rules.ts#deserializePermissions"].serialize(value["permissions"]) as string) + '}';
 }
 
-function stringifyProjectAccessEditorWire(value: Record<string, unknown>, _options?: { readonly validate?: boolean; readonly failFast?: boolean }): string {
-  return '{' + "\"member\":" + stringifyMember(value["member"] as never, { validate: false }) + ",\"projectName\":" + stringifyJsonString(value["projectName"] as string) + ",\"permissions\":" + stringifyJsonString(value["permissions"] as string) + '}';
+function stringifyProjectAccessEditorWire(value: Record<string, unknown>): string {
+  return '{' + "\"member\":" + stringifyMember(value["member"] as never, __golemTrusted) + ",\"projectName\":" + stringifyJsonString(value["projectName"] as string) + ",\"permissions\":" + stringifyJsonString(value["permissions"] as string) + '}';
 }
 
 export function stringifyProjectAccessEditor(value: ProjectAccessEditorFields, options?: __GolemSerdeOptions): string {
   const validates = serdeValidates(options, true);
   if (validates) {
     assertProjectAccessEditor(value, options);
-  }
-  if (validates) {
-    const wire = { ["member"]: toWireFormatMember(value["member"] as never, { validate: false }), ["projectName"]: value["projectName"], ["permissions"]: modelSerdeBindings["src/access-rules.ts#serializePermissions\u0000src/access-rules.ts#deserializePermissions"].serialize(value["permissions"]) };
+    const wire = { ["member"]: toWireFormatMember(value["member"] as never, __golemTrusted), ["projectName"]: value["projectName"], ["permissions"]: modelSerdeBindings["src/access-rules.ts#serializePermissions\u0000src/access-rules.ts#deserializePermissions"].serialize(value["permissions"]) };
     __golemAssertWireOnly_ProjectAccessEditor(wire, options);
-    return stringifyProjectAccessEditorWire(wire as never, { validate: false });
+    return stringifyProjectAccessEditorWire(wire as never);
   }
-  return stringifyProjectAccessEditorCore(value as never, { validate: false });
+  return stringifyProjectAccessEditorCore(value as never);
 }
 
 function convertFromWireProjectAccessEditor(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
@@ -147,17 +141,22 @@ export function fromWireFormatProjectAccessEditor(wire: unknown, options?: __Gol
   return convertFromWireProjectAccessEditor(wire, options, false) as ProjectAccessEditorFields;
 }
 
+function toWireFormatProjectAccessEditorCore(value: ProjectAccessEditorFields): ProjectAccessEditorJSON {
+  const record = value as Record<string, unknown>;
+  const wire = { ["member"]: toWireFormatMember(record["member"] as never, __golemTrusted), ["projectName"]: record["projectName"], ["permissions"]: modelSerdeBindings["src/access-rules.ts#serializePermissions\u0000src/access-rules.ts#deserializePermissions"].serialize(record["permissions"]) };
+  return wire as ProjectAccessEditorJSON;
+}
+
 export function toWireFormatProjectAccessEditor(value: ProjectAccessEditorFields, options?: __GolemSerdeOptions): ProjectAccessEditorJSON {
   const validates = serdeValidates(options, true);
   if (validates) {
     assertProjectAccessEditor(value, options);
   }
-  const record = value as Record<string, unknown>;
-  const wire = { ["member"]: toWireFormatMember(record["member"] as never, { validate: false }), ["projectName"]: record["projectName"], ["permissions"]: modelSerdeBindings["src/access-rules.ts#serializePermissions\u0000src/access-rules.ts#deserializePermissions"].serialize(record["permissions"]) };
+  const wire = toWireFormatProjectAccessEditorCore(value);
   if (validates) {
     __golemAssertWireOnly_ProjectAccessEditor(wire, options);
   }
-  return wire as ProjectAccessEditorJSON;
+  return wire;
 }
 
 export function parseProjectAccessEditor(text: string, options?: __GolemSerdeOptions): ProjectAccessEditorFields {
@@ -169,8 +168,9 @@ export function validateProjectAccessEditor(value: unknown, options?: __GolemVal
   let ok: boolean;
   let errors: readonly unknown[] | null | undefined;
   if (options?.validationContext === undefined) {
-    ok = failFast ? validateProjectAccessEditorFast(value) : validateProjectAccessEditorAll(value);
-    errors = failFast ? validateProjectAccessEditorFast.errors : validateProjectAccessEditorAll.errors;
+    const validator = failFast ? validateProjectAccessEditorFast : validateProjectAccessEditorAll;
+    ok = validator(value);
+    errors = validator.errors;
   } else {
     const validator = resolveModelValidationContextValidator(options.validationContext, "ProjectAccessEditor_dbff379b", failFast ? 'first' : 'all');
     ok = runSynchronousValidation(validator, value);

@@ -4,8 +4,6 @@ import { cloneConversionInput, defineModelProperty, requireModelObject } from '@
 import { assertModelValue, createObjectCodec, parseJson, registerIModelClass, requireAjvSchema, resolveGeneratedModelSchemaRefs, resolveModelValidationContextValidator, runSynchronousValidation, serdeValidates, stringifyJsonString, IssueRepresentation, IssueSource, type SerdeOptions as __GolemSerdeOptions, type ValidateOptions as __GolemValidateOptions } from '@exprtlabs/golem/serde';
 import { createOpenApiSyncAjvEngine } from '@exprtlabs/golem/ajv';
 
-const __golemAbsentField = Symbol();
-
 function modelObject(json: unknown, name: string): Record<string, unknown> {
   return requireModelObject(json, name);
 }
@@ -33,12 +31,9 @@ function decodeAccountModel(constructor: GeneratedModelConstructor, json: unknow
 }
 
 function encodeAccountModel(model: AccountBase): AccountJSON {
-  const result: Record<string, unknown> = {
-    ["displayName"]: Object.prototype.hasOwnProperty.call(model, "displayName") ? (model["displayName"]) : __golemAbsentField,
-    ["handle"]: Object.prototype.hasOwnProperty.call(model, "handle") ? (model["handle"]) : __golemAbsentField,
-  };
-  if (result["displayName"] === __golemAbsentField) delete result["displayName"];
-  if (result["handle"] === __golemAbsentField) delete result["handle"];
+  const result: Record<string, unknown> = {};
+  if (Object.prototype.hasOwnProperty.call(model, "displayName")) defineModelProperty(result, "displayName", (model["displayName"]));
+  if (Object.prototype.hasOwnProperty.call(model, "handle")) defineModelProperty(result, "handle", (model["handle"]));
   return result as AccountJSON;
 }
 
@@ -72,7 +67,7 @@ function fillAccount(out: Record<string, unknown>, wire: Record<string, unknown>
   return out;
 }
 
-function stringifyAccountCore(value: Record<string, unknown>, _options?: { readonly validate?: boolean; readonly failFast?: boolean }): string {
+function stringifyAccountCore(value: Record<string, unknown>): string {
   return '{' + "\"displayName\":" + stringifyJsonString(value["displayName"] as string) + ",\"handle\":" + stringifyJsonString(value["handle"] as string) + '}';
 }
 
@@ -81,7 +76,7 @@ export function stringifyAccount(value: AccountFields, options?: __GolemSerdeOpt
   if (validates) {
     assertAccount(value, options);
   }
-  return stringifyAccountCore(value as never, { validate: false });
+  return stringifyAccountCore(value as never);
 }
 
 function convertFromWireAccount(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
@@ -105,14 +100,18 @@ export function fromWireFormatAccount(wire: unknown, options?: __GolemSerdeOptio
   return convertFromWireAccount(wire, options, false) as AccountFields;
 }
 
+function toWireFormatAccountCore(value: AccountFields): AccountJSON {
+  const record = value as Record<string, unknown>;
+  const wire = { ["displayName"]: record["displayName"], ["handle"]: record["handle"] };
+  return wire as AccountJSON;
+}
+
 export function toWireFormatAccount(value: AccountFields, options?: __GolemSerdeOptions): AccountJSON {
   const validates = serdeValidates(options, true);
   if (validates) {
     assertAccount(value, options);
   }
-  const record = value as Record<string, unknown>;
-  const wire = { ["displayName"]: record["displayName"], ["handle"]: record["handle"] };
-  return wire as AccountJSON;
+  return toWireFormatAccountCore(value);
 }
 
 export function parseAccount(text: string, options?: __GolemSerdeOptions): AccountFields {
@@ -124,8 +123,9 @@ export function validateAccount(value: unknown, options?: __GolemValidateOptions
   let ok: boolean;
   let errors: readonly unknown[] | null | undefined;
   if (options?.validationContext === undefined) {
-    ok = failFast ? validateAccountFast(value) : validateAccountAll(value);
-    errors = failFast ? validateAccountFast.errors : validateAccountAll.errors;
+    const validator = failFast ? validateAccountFast : validateAccountAll;
+    ok = validator(value);
+    errors = validator.errors;
   } else {
     const validator = resolveModelValidationContextValidator(options.validationContext, "Account_7bb17507", failFast ? 'first' : 'all');
     ok = runSynchronousValidation(validator, value);

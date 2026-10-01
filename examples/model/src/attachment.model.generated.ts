@@ -5,8 +5,6 @@ import { assertModelValue, createObjectCodec, parseJson, registerIModelClass, re
 import { createOpenApiSyncAjvEngine } from '@exprtlabs/golem/ajv';
 import { modelSerdeBindings } from "./generated/models/models.generated.js";
 
-const __golemAbsentField = Symbol();
-
 function modelObject(json: unknown, name: string): Record<string, unknown> {
   return requireModelObject(json, name);
 }
@@ -36,12 +34,9 @@ function decodeAttachmentModel(constructor: GeneratedModelConstructor, json: unk
 }
 
 function encodeAttachmentModel(model: AttachmentBase): AttachmentJSON {
-  const result: Record<string, unknown> = {
-    ["name"]: Object.prototype.hasOwnProperty.call(model, "name") ? (model["name"]) : __golemAbsentField,
-    ["content"]: Object.prototype.hasOwnProperty.call(model, "content") ? (convertModelField("serialize", "content", () => (modelSerdeBindings["src/base64-codec.ts#encodeBase64\u0000src/base64-codec.ts#decodeBase64"].serialize(model["content"])))) : __golemAbsentField,
-  };
-  if (result["name"] === __golemAbsentField) delete result["name"];
-  if (result["content"] === __golemAbsentField) delete result["content"];
+  const result: Record<string, unknown> = {};
+  if (Object.prototype.hasOwnProperty.call(model, "name")) defineModelProperty(result, "name", (model["name"]));
+  if (Object.prototype.hasOwnProperty.call(model, "content")) defineModelProperty(result, "content", (convertModelField("serialize", "content", () => (modelSerdeBindings["src/base64-codec.ts#encodeBase64\u0000src/base64-codec.ts#decodeBase64"].serialize(model["content"])))));
   return result as AttachmentJSON;
 }
 
@@ -92,11 +87,11 @@ function fillAttachment(out: Record<string, unknown>, wire: Record<string, unkno
   return out;
 }
 
-function stringifyAttachmentCore(value: Record<string, unknown>, _options?: { readonly validate?: boolean; readonly failFast?: boolean }): string {
+function stringifyAttachmentCore(value: Record<string, unknown>): string {
   return '{' + "\"name\":" + stringifyJsonString(value["name"] as string) + ",\"content\":" + stringifyJsonString(modelSerdeBindings["src/base64-codec.ts#encodeBase64\u0000src/base64-codec.ts#decodeBase64"].serialize(value["content"]) as string) + '}';
 }
 
-function stringifyAttachmentWire(value: Record<string, unknown>, _options?: { readonly validate?: boolean; readonly failFast?: boolean }): string {
+function stringifyAttachmentWire(value: Record<string, unknown>): string {
   return '{' + "\"name\":" + stringifyJsonString(value["name"] as string) + ",\"content\":" + stringifyJsonString(value["content"] as string) + '}';
 }
 
@@ -104,13 +99,11 @@ export function stringifyAttachment(value: AttachmentFields, options?: __GolemSe
   const validates = serdeValidates(options, true);
   if (validates) {
     assertAttachment(value, options);
-  }
-  if (validates) {
     const wire = { ["name"]: value["name"], ["content"]: modelSerdeBindings["src/base64-codec.ts#encodeBase64\u0000src/base64-codec.ts#decodeBase64"].serialize(value["content"]) };
     __golemAssertWireOnly_Attachment(wire, options);
-    return stringifyAttachmentWire(wire as never, { validate: false });
+    return stringifyAttachmentWire(wire as never);
   }
-  return stringifyAttachmentCore(value as never, { validate: false });
+  return stringifyAttachmentCore(value as never);
 }
 
 function convertFromWireAttachment(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
@@ -137,17 +130,22 @@ export function fromWireFormatAttachment(wire: unknown, options?: __GolemSerdeOp
   return convertFromWireAttachment(wire, options, false) as AttachmentFields;
 }
 
+function toWireFormatAttachmentCore(value: AttachmentFields): AttachmentJSON {
+  const record = value as Record<string, unknown>;
+  const wire = { ["name"]: record["name"], ["content"]: modelSerdeBindings["src/base64-codec.ts#encodeBase64\u0000src/base64-codec.ts#decodeBase64"].serialize(record["content"]) };
+  return wire as AttachmentJSON;
+}
+
 export function toWireFormatAttachment(value: AttachmentFields, options?: __GolemSerdeOptions): AttachmentJSON {
   const validates = serdeValidates(options, true);
   if (validates) {
     assertAttachment(value, options);
   }
-  const record = value as Record<string, unknown>;
-  const wire = { ["name"]: record["name"], ["content"]: modelSerdeBindings["src/base64-codec.ts#encodeBase64\u0000src/base64-codec.ts#decodeBase64"].serialize(record["content"]) };
+  const wire = toWireFormatAttachmentCore(value);
   if (validates) {
     __golemAssertWireOnly_Attachment(wire, options);
   }
-  return wire as AttachmentJSON;
+  return wire;
 }
 
 export function parseAttachment(text: string, options?: __GolemSerdeOptions): AttachmentFields {
@@ -159,8 +157,9 @@ export function validateAttachment(value: unknown, options?: __GolemValidateOpti
   let ok: boolean;
   let errors: readonly unknown[] | null | undefined;
   if (options?.validationContext === undefined) {
-    ok = failFast ? validateAttachmentFast(value) : validateAttachmentAll(value);
-    errors = failFast ? validateAttachmentFast.errors : validateAttachmentAll.errors;
+    const validator = failFast ? validateAttachmentFast : validateAttachmentAll;
+    ok = validator(value);
+    errors = validator.errors;
   } else {
     const validator = resolveModelValidationContextValidator(options.validationContext, "Attachment_88b1059a", failFast ? 'first' : 'all');
     ok = runSynchronousValidation(validator, value);

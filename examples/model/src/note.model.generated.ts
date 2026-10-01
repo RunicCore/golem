@@ -4,8 +4,6 @@ import { cloneConversionInput, convertModelField, defineModelProperty, requireMo
 import { assertModelValue, createObjectCodec, parseJson, registerIModelClass, requireAjvSchema, resolveGeneratedModelSchemaRefs, resolveModelValidationContextValidator, runSynchronousValidation, serdeValidates, stringifyJsonArray, stringifyJsonString, IssueRepresentation, IssueSource, type SerdeOptions as __GolemSerdeOptions, type ValidateOptions as __GolemValidateOptions } from '@exprtlabs/golem/serde';
 import { createOpenApiSyncAjvEngine } from '@exprtlabs/golem/ajv';
 
-const __golemAbsentField = Symbol();
-
 function modelObject(json: unknown, name: string): Record<string, unknown> {
   return requireModelObject(json, name);
 }
@@ -40,10 +38,8 @@ function decodeNotebookModel(constructor: GeneratedModelConstructor, json: unkno
 }
 
 function encodeNotebookModel(model: NotebookBase): NotebookJSON {
-  const result: Record<string, unknown> = {
-    ["notes"]: Object.prototype.hasOwnProperty.call(model, "notes") ? (convertModelField("serialize", "notes", () => (Array.isArray(model["notes"]) ? (model["notes"] as readonly unknown[]).map((item, index) => convertModelField('serialize', index, () => (encodeNote(item)))) : model["notes"]))) : __golemAbsentField,
-  };
-  if (result["notes"] === __golemAbsentField) delete result["notes"];
+  const result: Record<string, unknown> = {};
+  if (Object.prototype.hasOwnProperty.call(model, "notes")) defineModelProperty(result, "notes", (convertModelField("serialize", "notes", () => (Array.isArray(model["notes"]) ? (model["notes"] as readonly unknown[]).map((item, index) => convertModelField('serialize', index, () => (encodeNote(item)))) : model["notes"]))));
   return result as NotebookJSON;
 }
 
@@ -79,7 +75,7 @@ function fillNote(out: Record<string, unknown>, wire: Record<string, unknown>, c
   return out;
 }
 
-function stringifyNoteCore(value: Record<string, unknown>, _options?: { readonly validate?: boolean; readonly failFast?: boolean }): string {
+function stringifyNoteCore(value: Record<string, unknown>): string {
   return '{' + "\"text\":" + stringifyJsonString(value["text"] as string) + '}';
 }
 
@@ -88,7 +84,7 @@ export function stringifyNote(value: NoteFields, options?: __GolemSerdeOptions):
   if (validates) {
     assertNote(value, options);
   }
-  return stringifyNoteCore(value as never, { validate: false });
+  return stringifyNoteCore(value as never);
 }
 
 function convertFromWireNote(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
@@ -112,14 +108,18 @@ export function fromWireFormatNote(wire: unknown, options?: __GolemSerdeOptions)
   return convertFromWireNote(wire, options, false) as NoteFields;
 }
 
+function toWireFormatNoteCore(value: NoteFields): NoteJSON {
+  const record = value as Record<string, unknown>;
+  const wire = { ["text"]: record["text"] };
+  return wire as NoteJSON;
+}
+
 export function toWireFormatNote(value: NoteFields, options?: __GolemSerdeOptions): NoteJSON {
   const validates = serdeValidates(options, true);
   if (validates) {
     assertNote(value, options);
   }
-  const record = value as Record<string, unknown>;
-  const wire = { ["text"]: record["text"] };
-  return wire as NoteJSON;
+  return toWireFormatNoteCore(value);
 }
 
 export function parseNote(text: string, options?: __GolemSerdeOptions): NoteFields {
@@ -131,8 +131,9 @@ export function validateNote(value: unknown, options?: __GolemValidateOptions): 
   let ok: boolean;
   let errors: readonly unknown[] | null | undefined;
   if (options?.validationContext === undefined) {
-    ok = failFast ? validateNoteFast(value) : validateNoteAll(value);
-    errors = failFast ? validateNoteFast.errors : validateNoteAll.errors;
+    const validator = failFast ? validateNoteFast : validateNoteAll;
+    ok = validator(value);
+    errors = validator.errors;
   } else {
     const validator = resolveModelValidationContextValidator(options.validationContext, "Note_3fe96627", failFast ? 'first' : 'all');
     ok = runSynchronousValidation(validator, value);
@@ -168,8 +169,8 @@ function fillNotebook(out: Record<string, unknown>, wire: Record<string, unknown
   return out;
 }
 
-function stringifyNotebookCore(value: Record<string, unknown>, _options?: { readonly validate?: boolean; readonly failFast?: boolean }): string {
-  return '{' + "\"notes\":" + stringifyJsonArray(value["notes"] as ArrayLike<unknown>, (item) => stringifyNote(item as never, { validate: false })) + '}';
+function stringifyNotebookCore(value: Record<string, unknown>): string {
+  return '{' + "\"notes\":" + stringifyJsonArray(value["notes"] as ArrayLike<unknown>, (item) => stringifyNoteCore(item as never)) + '}';
 }
 
 export function stringifyNotebook(value: NotebookFields, options?: __GolemSerdeOptions): string {
@@ -177,7 +178,7 @@ export function stringifyNotebook(value: NotebookFields, options?: __GolemSerdeO
   if (validates) {
     assertNotebook(value, options);
   }
-  return stringifyNotebookCore(value as never, { validate: false });
+  return stringifyNotebookCore(value as never);
 }
 
 function convertFromWireNotebook(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
@@ -201,15 +202,19 @@ export function fromWireFormatNotebook(wire: unknown, options?: __GolemSerdeOpti
   return convertFromWireNotebook(wire, options, false) as NotebookFields;
 }
 
+function toWireFormatNotebookCore(value: NotebookFields): NotebookJSON {
+  const record = value as Record<string, unknown>;
+  let __golemField0: unknown;
+  const wire = { ["notes"]: (__golemField0 = record["notes"], Array.isArray(__golemField0) ? (__golemField0 as readonly unknown[]).map((item) => toWireFormatNoteCore(item as never)) : __golemField0) };
+  return wire as NotebookJSON;
+}
+
 export function toWireFormatNotebook(value: NotebookFields, options?: __GolemSerdeOptions): NotebookJSON {
   const validates = serdeValidates(options, true);
   if (validates) {
     assertNotebook(value, options);
   }
-  const record = value as Record<string, unknown>;
-  let __golemField0: unknown;
-  const wire = { ["notes"]: (__golemField0 = record["notes"], Array.isArray(__golemField0) ? (__golemField0 as readonly unknown[]).map((item) => toWireFormatNote(item as never, { validate: false })) : __golemField0) };
-  return wire as NotebookJSON;
+  return toWireFormatNotebookCore(value);
 }
 
 export function parseNotebook(text: string, options?: __GolemSerdeOptions): NotebookFields {
@@ -221,8 +226,9 @@ export function validateNotebook(value: unknown, options?: __GolemValidateOption
   let ok: boolean;
   let errors: readonly unknown[] | null | undefined;
   if (options?.validationContext === undefined) {
-    ok = failFast ? validateNotebookFast(value) : validateNotebookAll(value);
-    errors = failFast ? validateNotebookFast.errors : validateNotebookAll.errors;
+    const validator = failFast ? validateNotebookFast : validateNotebookAll;
+    ok = validator(value);
+    errors = validator.errors;
   } else {
     const validator = resolveModelValidationContextValidator(options.validationContext, "Notebook_5213e3e5", failFast ? 'first' : 'all');
     ok = runSynchronousValidation(validator, value);

@@ -6,13 +6,14 @@ import { createOpenApiAjvEngine } from '@exprtlabs/golem/ajv';
 import { operationValidators, responseCheck, validateOperationInput } from '@exprtlabs/golem/validation';
 
 const responseContracts: readonly RuntimeResponseContract[] = [{"status":"204","content":[],"headers":[]}];
-const __resolveOperationValidationSources = (): OperationValidationSources => ({
+let __operationValidationSources: OperationValidationSources | undefined;
+const __resolveOperationValidationSources = (): OperationValidationSources => __operationValidationSources ??= {
   inputReference: "urn:golem:openapi:paymentsapi:159ea8699d69a0f1a103e84e63a6861b2bf30d342cfb3c2e2107d739d65f9551:schemas:operation:deletePayment#/operations/deletePayment/input",
   responseReferences: [],
   schemas: new Map([
     ["urn:golem:openapi:paymentsapi:159ea8699d69a0f1a103e84e63a6861b2bf30d342cfb3c2e2107d739d65f9551:schemas:operation:deletePayment", JSON.parse("{\"$id\":\"urn:golem:openapi:paymentsapi:159ea8699d69a0f1a103e84e63a6861b2bf30d342cfb3c2e2107d739d65f9551:schemas:operation:deletePayment\",\"$schema\":\"https://spec.openapis.org/oas/3.1/dialect/base\",\"operations\":{\"deletePayment\":{\"input\":{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\"}},\"required\":[\"id\"],\"additionalProperties\":false}},\"required\":[\"path\"],\"additionalProperties\":false},\"responses\":{\"204\":{}}}}}") as object | boolean],
   ]),
-});
+};
 
 export function deletePayment(options: ClientOptions): ApiOperation<Types.DeletePaymentOperationInput, Types.DeletePaymentOperationHttpResponse, RequestOptions> {
   return createDeletePaymentOperation(new ClientRuntime("Payments", options, { createValidationEngine: createOpenApiAjvEngine }));

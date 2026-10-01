@@ -7,14 +7,15 @@ import { operationValidators, responseCheck, validateOperationInput } from '@exp
 import { schema as __golemSchema0 } from "../validation-schemas/Task.output.js";
 
 const responseContracts: readonly RuntimeResponseContract[] = [{"status":"200","content":[{"contentType":"application/json","framing":"body"}],"headers":[]}];
-const __resolveOperationValidationSources = (): OperationValidationSources => ({
+let __operationValidationSources: OperationValidationSources | undefined;
+const __resolveOperationValidationSources = (): OperationValidationSources => __operationValidationSources ??= {
   inputReference: "urn:golem:openapi:tasks:cc24c3c3168942b6c3e2684339043b6830cdcb3c57853bd72591b5011d7111a7:schemas:operation:listTasks#/operations/listTasks/input",
   responseReferences: [{"status":"200","contentType":"application/json","reference":"urn:golem:openapi:tasks:cc24c3c3168942b6c3e2684339043b6830cdcb3c57853bd72591b5011d7111a7:schemas:operation:listTasks#/operations/listTasks/responses/200/application~1json"}],
   schemas: new Map([
     ["urn:golem:openapi:tasks:cc24c3c3168942b6c3e2684339043b6830cdcb3c57853bd72591b5011d7111a7:schemas:operation:listTasks", JSON.parse("{\"$id\":\"urn:golem:openapi:tasks:cc24c3c3168942b6c3e2684339043b6830cdcb3c57853bd72591b5011d7111a7:schemas:operation:listTasks\",\"$schema\":\"https://spec.openapis.org/oas/3.1/dialect/base\",\"operations\":{\"listTasks\":{\"input\":{\"type\":\"object\",\"properties\":{\"query\":{\"type\":\"object\",\"properties\":{\"limit\":{\"type\":\"integer\",\"minimum\":1,\"maximum\":100},\"cursor\":{\"type\":\"string\"}},\"additionalProperties\":false}},\"additionalProperties\":false},\"responses\":{\"200\":{\"application/json\":{\"type\":\"array\",\"items\":{\"$ref\":\"urn:golem:openapi:tasks:cc24c3c3168942b6c3e2684339043b6830cdcb3c57853bd72591b5011d7111a7:schemas:component:Task:output\"}}}}}}}") as object | boolean],
     ["urn:golem:openapi:tasks:cc24c3c3168942b6c3e2684339043b6830cdcb3c57853bd72591b5011d7111a7:schemas:component:Task:output", __golemSchema0],
   ]),
-});
+};
 
 export function listTasks(options: ClientOptions): ApiOperation<Types.ListTasksOperationInput, Types.ListTasksOperationHttpResponse, RequestOptions> {
   return createListTasksOperation(new ClientRuntime("Tasks", options, { createValidationEngine: createOpenApiAjvEngine }));

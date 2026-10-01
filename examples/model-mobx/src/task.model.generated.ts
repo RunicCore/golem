@@ -3,8 +3,6 @@ import { registerGeneratedModel, type GeneratedModel, type GeneratedModelConstru
 import { cloneConversionInput, defineModelProperty, requireModelObject } from '@exprtlabs/golem/conversion';
 import { createObjectCodec, parseJson, registerIModelClass, serdeValidates, stringifyJsonBoolean, stringifyJsonString, validationUnavailable, IssueSource, type SerdeOptions as __GolemSerdeOptions, type ValidateOptions as __GolemValidateOptions } from '@exprtlabs/golem/serde';
 
-const __golemAbsentField = Symbol();
-
 function modelObject(json: unknown, name: string): Record<string, unknown> {
   return requireModelObject(json, name);
 }
@@ -32,12 +30,9 @@ function decodeTaskModel(constructor: GeneratedModelConstructor, json: unknown):
 }
 
 function encodeTaskModel(model: TaskBase): TaskJSON {
-  const result: Record<string, unknown> = {
-    ["title"]: Object.prototype.hasOwnProperty.call(model, "title") ? (model["title"]) : __golemAbsentField,
-    ["done"]: Object.prototype.hasOwnProperty.call(model, "done") ? (model["done"]) : __golemAbsentField,
-  };
-  if (result["title"] === __golemAbsentField) delete result["title"];
-  if (result["done"] === __golemAbsentField) delete result["done"];
+  const result: Record<string, unknown> = {};
+  if (Object.prototype.hasOwnProperty.call(model, "title")) defineModelProperty(result, "title", (model["title"]));
+  if (Object.prototype.hasOwnProperty.call(model, "done")) defineModelProperty(result, "done", (model["done"]));
   return result as TaskJSON;
 }
 
@@ -61,13 +56,13 @@ function fillTask(out: Record<string, unknown>, wire: Record<string, unknown>, c
   return out;
 }
 
-function stringifyTaskCore(value: Record<string, unknown>, _options?: { readonly validate?: boolean; readonly failFast?: boolean }): string {
+function stringifyTaskCore(value: Record<string, unknown>): string {
   return '{' + "\"title\":" + stringifyJsonString(value["title"] as string) + ",\"done\":" + stringifyJsonBoolean(value["done"] as boolean) + '}';
 }
 
 export function stringifyTask(value: TaskFields, options?: __GolemSerdeOptions): string {
   serdeValidates(options, false);
-  return stringifyTaskCore(value as never, { validate: false });
+  return stringifyTaskCore(value as never);
 }
 
 function convertFromWireTask(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
@@ -88,11 +83,15 @@ export function fromWireFormatTask(wire: unknown, options?: __GolemSerdeOptions)
   return convertFromWireTask(wire, options, false) as TaskFields;
 }
 
-export function toWireFormatTask(value: TaskFields, options?: __GolemSerdeOptions): TaskJSON {
-  serdeValidates(options, false);
+function toWireFormatTaskCore(value: TaskFields): TaskJSON {
   const record = value as Record<string, unknown>;
   const wire = { ["title"]: record["title"], ["done"]: record["done"] };
   return wire as TaskJSON;
+}
+
+export function toWireFormatTask(value: TaskFields, options?: __GolemSerdeOptions): TaskJSON {
+  serdeValidates(options, false);
+  return toWireFormatTaskCore(value);
 }
 
 export function parseTask(text: string, options?: __GolemSerdeOptions): TaskFields {

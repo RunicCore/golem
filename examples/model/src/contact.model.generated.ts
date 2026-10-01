@@ -4,8 +4,6 @@ import { cloneConversionInput, decodeGeneratedModelTrusted, encodeGeneratedModel
 import { assertModelValue, createObjectCodec, parseJson, registerIModelClass, requireAjvSchema, requireIModelClass, resolveGeneratedModelSchemaRefs, resolveModelValidationContextValidator, runSynchronousValidation, serdeValidates, stringifyJsonString, IssueRepresentation, IssueSource, type SerdeOptions as __GolemSerdeOptions, type ValidateOptions as __GolemValidateOptions } from '@exprtlabs/golem/serde';
 import { createOpenApiSyncAjvEngine } from '@exprtlabs/golem/ajv';
 
-const __golemAbsentField = Symbol();
-
 function modelObject(json: unknown, name: string): Record<string, unknown> {
   return requireModelObject(json, name);
 }
@@ -33,12 +31,9 @@ function decodeEmailModel(constructor: GeneratedModelConstructor, json: unknown)
 }
 
 function encodeEmailModel(model: EmailBase): EmailJSON {
-  const result: Record<string, unknown> = {
-    ["kind"]: Object.prototype.hasOwnProperty.call(model, "kind") ? (model["kind"]) : __golemAbsentField,
-    ["address"]: Object.prototype.hasOwnProperty.call(model, "address") ? (model["address"]) : __golemAbsentField,
-  };
-  if (result["kind"] === __golemAbsentField) delete result["kind"];
-  if (result["address"] === __golemAbsentField) delete result["address"];
+  const result: Record<string, unknown> = {};
+  if (Object.prototype.hasOwnProperty.call(model, "kind")) defineModelProperty(result, "kind", (model["kind"]));
+  if (Object.prototype.hasOwnProperty.call(model, "address")) defineModelProperty(result, "address", (model["address"]));
   return result as EmailJSON;
 }
 
@@ -77,12 +72,9 @@ function decodePhoneModel(constructor: GeneratedModelConstructor, json: unknown)
 }
 
 function encodePhoneModel(model: PhoneBase): PhoneJSON {
-  const result: Record<string, unknown> = {
-    ["kind"]: Object.prototype.hasOwnProperty.call(model, "kind") ? (model["kind"]) : __golemAbsentField,
-    ["number"]: Object.prototype.hasOwnProperty.call(model, "number") ? (model["number"]) : __golemAbsentField,
-  };
-  if (result["kind"] === __golemAbsentField) delete result["kind"];
-  if (result["number"] === __golemAbsentField) delete result["number"];
+  const result: Record<string, unknown> = {};
+  if (Object.prototype.hasOwnProperty.call(model, "kind")) defineModelProperty(result, "kind", (model["kind"]));
+  if (Object.prototype.hasOwnProperty.call(model, "number")) defineModelProperty(result, "number", (model["number"]));
   return result as PhoneJSON;
 }
 
@@ -121,10 +113,8 @@ function decodeContactModel(constructor: GeneratedModelConstructor, json: unknow
 }
 
 function encodeContactModel(model: ContactBase): ContactJSON {
-  const result: Record<string, unknown> = {
-    ["value"]: Object.prototype.hasOwnProperty.call(model, "value") ? (convertModelField("serialize", "value", () => (((model["value"] as object) instanceof EmailBase && !((model["value"] as object) instanceof PhoneBase && PhoneBase.prototype instanceof EmailBase) ? (((model["value"] as unknown as Record<string, unknown>)["kind"] === "email") ? (withDiscriminatorValue(model["value"] instanceof EmailBase ? encodeGeneratedModel(model["value"]) : model["value"], "kind", (model["value"] as unknown as Record<string, unknown>)["kind"])) : unknownDiscriminatorValue("kind", (model["value"] as unknown as Record<string, unknown>)["kind"], 'serialize')) : ((model["value"] as object) instanceof PhoneBase && !((model["value"] as object) instanceof EmailBase && EmailBase.prototype instanceof PhoneBase) ? (((model["value"] as unknown as Record<string, unknown>)["kind"] === "phone") ? (withDiscriminatorValue(model["value"] instanceof PhoneBase ? encodeGeneratedModel(model["value"]) : model["value"], "kind", (model["value"] as unknown as Record<string, unknown>)["kind"])) : unknownDiscriminatorValue("kind", (model["value"] as unknown as Record<string, unknown>)["kind"], 'serialize')) : (typeof model["value"] === 'object' && model["value"] !== null && !Array.isArray(model["value"]) && ((model["value"] as unknown as Record<string, unknown>)["kind"] === "email") ? (withDiscriminatorValue(model["value"] instanceof EmailBase ? encodeGeneratedModel(model["value"]) : model["value"], "kind", (model["value"] as unknown as Record<string, unknown>)["kind"])) : (typeof model["value"] === 'object' && model["value"] !== null && !Array.isArray(model["value"]) && ((model["value"] as unknown as Record<string, unknown>)["kind"] === "phone") ? (withDiscriminatorValue(model["value"] instanceof PhoneBase ? encodeGeneratedModel(model["value"]) : model["value"], "kind", (model["value"] as unknown as Record<string, unknown>)["kind"])) : ((model["value"] == null ? model["value"] : unknownDiscriminatorValue("kind", (model["value"] as unknown as Record<string, unknown>)["kind"], 'serialize')))))))))) : __golemAbsentField,
-  };
-  if (result["value"] === __golemAbsentField) delete result["value"];
+  const result: Record<string, unknown> = {};
+  if (Object.prototype.hasOwnProperty.call(model, "value")) defineModelProperty(result, "value", (convertModelField("serialize", "value", () => (((model["value"] as object) instanceof EmailBase && !((model["value"] as object) instanceof PhoneBase && PhoneBase.prototype instanceof EmailBase) ? (((model["value"] as unknown as Record<string, unknown>)["kind"] === "email") ? (withDiscriminatorValue(model["value"] instanceof EmailBase ? encodeGeneratedModel(model["value"]) : model["value"], "kind", (model["value"] as unknown as Record<string, unknown>)["kind"])) : unknownDiscriminatorValue("kind", (model["value"] as unknown as Record<string, unknown>)["kind"], 'serialize')) : ((model["value"] as object) instanceof PhoneBase && !((model["value"] as object) instanceof EmailBase && EmailBase.prototype instanceof PhoneBase) ? (((model["value"] as unknown as Record<string, unknown>)["kind"] === "phone") ? (withDiscriminatorValue(model["value"] instanceof PhoneBase ? encodeGeneratedModel(model["value"]) : model["value"], "kind", (model["value"] as unknown as Record<string, unknown>)["kind"])) : unknownDiscriminatorValue("kind", (model["value"] as unknown as Record<string, unknown>)["kind"], 'serialize')) : (typeof model["value"] === 'object' && model["value"] !== null && !Array.isArray(model["value"]) && ((model["value"] as unknown as Record<string, unknown>)["kind"] === "email") ? (withDiscriminatorValue(model["value"] instanceof EmailBase ? encodeGeneratedModel(model["value"]) : model["value"], "kind", (model["value"] as unknown as Record<string, unknown>)["kind"])) : (typeof model["value"] === 'object' && model["value"] !== null && !Array.isArray(model["value"]) && ((model["value"] as unknown as Record<string, unknown>)["kind"] === "phone") ? (withDiscriminatorValue(model["value"] instanceof PhoneBase ? encodeGeneratedModel(model["value"]) : model["value"], "kind", (model["value"] as unknown as Record<string, unknown>)["kind"])) : ((model["value"] == null ? model["value"] : unknownDiscriminatorValue("kind", (model["value"] as unknown as Record<string, unknown>)["kind"], 'serialize')))))))))));
   return result as ContactJSON;
 }
 
@@ -164,7 +154,7 @@ function fillEmail(out: Record<string, unknown>, wire: Record<string, unknown>, 
   return out;
 }
 
-function stringifyEmailCore(value: Record<string, unknown>, _options?: { readonly validate?: boolean; readonly failFast?: boolean }): string {
+function stringifyEmailCore(value: Record<string, unknown>): string {
   return '{' + "\"kind\":" + "\"email\"" + ",\"address\":" + stringifyJsonString(value["address"] as string) + '}';
 }
 
@@ -173,7 +163,7 @@ export function stringifyEmail(value: EmailFields, options?: __GolemSerdeOptions
   if (validates) {
     assertEmail(value, options);
   }
-  return stringifyEmailCore(value as never, { validate: false });
+  return stringifyEmailCore(value as never);
 }
 
 function convertFromWireEmail(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
@@ -197,14 +187,18 @@ export function fromWireFormatEmail(wire: unknown, options?: __GolemSerdeOptions
   return convertFromWireEmail(wire, options, false) as EmailFields;
 }
 
+function toWireFormatEmailCore(value: EmailFields): EmailJSON {
+  const record = value as Record<string, unknown>;
+  const wire = { ["kind"]: record["kind"], ["address"]: record["address"] };
+  return wire as EmailJSON;
+}
+
 export function toWireFormatEmail(value: EmailFields, options?: __GolemSerdeOptions): EmailJSON {
   const validates = serdeValidates(options, true);
   if (validates) {
     assertEmail(value, options);
   }
-  const record = value as Record<string, unknown>;
-  const wire = { ["kind"]: record["kind"], ["address"]: record["address"] };
-  return wire as EmailJSON;
+  return toWireFormatEmailCore(value);
 }
 
 export function parseEmail(text: string, options?: __GolemSerdeOptions): EmailFields {
@@ -216,8 +210,9 @@ export function validateEmail(value: unknown, options?: __GolemValidateOptions):
   let ok: boolean;
   let errors: readonly unknown[] | null | undefined;
   if (options?.validationContext === undefined) {
-    ok = failFast ? validateEmailFast(value) : validateEmailAll(value);
-    errors = failFast ? validateEmailFast.errors : validateEmailAll.errors;
+    const validator = failFast ? validateEmailFast : validateEmailAll;
+    ok = validator(value);
+    errors = validator.errors;
   } else {
     const validator = resolveModelValidationContextValidator(options.validationContext, "Email_3d5e923d", failFast ? 'first' : 'all');
     ok = runSynchronousValidation(validator, value);
@@ -254,7 +249,7 @@ function fillPhone(out: Record<string, unknown>, wire: Record<string, unknown>, 
   return out;
 }
 
-function stringifyPhoneCore(value: Record<string, unknown>, _options?: { readonly validate?: boolean; readonly failFast?: boolean }): string {
+function stringifyPhoneCore(value: Record<string, unknown>): string {
   return '{' + "\"kind\":" + "\"phone\"" + ",\"number\":" + stringifyJsonString(value["number"] as string) + '}';
 }
 
@@ -263,7 +258,7 @@ export function stringifyPhone(value: PhoneFields, options?: __GolemSerdeOptions
   if (validates) {
     assertPhone(value, options);
   }
-  return stringifyPhoneCore(value as never, { validate: false });
+  return stringifyPhoneCore(value as never);
 }
 
 function convertFromWirePhone(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
@@ -287,14 +282,18 @@ export function fromWireFormatPhone(wire: unknown, options?: __GolemSerdeOptions
   return convertFromWirePhone(wire, options, false) as PhoneFields;
 }
 
+function toWireFormatPhoneCore(value: PhoneFields): PhoneJSON {
+  const record = value as Record<string, unknown>;
+  const wire = { ["kind"]: record["kind"], ["number"]: record["number"] };
+  return wire as PhoneJSON;
+}
+
 export function toWireFormatPhone(value: PhoneFields, options?: __GolemSerdeOptions): PhoneJSON {
   const validates = serdeValidates(options, true);
   if (validates) {
     assertPhone(value, options);
   }
-  const record = value as Record<string, unknown>;
-  const wire = { ["kind"]: record["kind"], ["number"]: record["number"] };
-  return wire as PhoneJSON;
+  return toWireFormatPhoneCore(value);
 }
 
 export function parsePhone(text: string, options?: __GolemSerdeOptions): PhoneFields {
@@ -306,8 +305,9 @@ export function validatePhone(value: unknown, options?: __GolemValidateOptions):
   let ok: boolean;
   let errors: readonly unknown[] | null | undefined;
   if (options?.validationContext === undefined) {
-    ok = failFast ? validatePhoneFast(value) : validatePhoneAll(value);
-    errors = failFast ? validatePhoneFast.errors : validatePhoneAll.errors;
+    const validator = failFast ? validatePhoneFast : validatePhoneAll;
+    ok = validator(value);
+    errors = validator.errors;
   } else {
     const validator = resolveModelValidationContextValidator(options.validationContext, "Phone_6ba1ec97", failFast ? 'first' : 'all');
     ok = runSynchronousValidation(validator, value);
@@ -343,9 +343,9 @@ function fillContact(out: Record<string, unknown>, wire: Record<string, unknown>
   return out;
 }
 
-function stringifyContactCore(value: Record<string, unknown>, _options?: { readonly validate?: boolean; readonly failFast?: boolean }): string {
+function stringifyContactCore(value: Record<string, unknown>): string {
   let __golemInlineField0: unknown;
-  return '{' + (__golemInlineField0 = value["value"], "\"value\":" + (typeof __golemInlineField0 === 'object' && __golemInlineField0 !== null && !Array.isArray(__golemInlineField0) && ((__golemInlineField0 as unknown as Record<string, unknown>)["kind"] === "email") ? (stringifyEmail(__golemInlineField0 as never, { validate: false })) : (typeof __golemInlineField0 === 'object' && __golemInlineField0 !== null && !Array.isArray(__golemInlineField0) && ((__golemInlineField0 as unknown as Record<string, unknown>)["kind"] === "phone") ? (stringifyPhone(__golemInlineField0 as never, { validate: false })) : ((__golemInlineField0 == null ? 'null' : unknownDiscriminatorValue("kind", (__golemInlineField0 as unknown as Record<string, unknown>)["kind"], 'serialize')))))) + '}';
+  return '{' + (__golemInlineField0 = value["value"], "\"value\":" + (typeof __golemInlineField0 === 'object' && __golemInlineField0 !== null && !Array.isArray(__golemInlineField0) && ((__golemInlineField0 as unknown as Record<string, unknown>)["kind"] === "email") ? (stringifyEmailCore(__golemInlineField0 as never)) : (typeof __golemInlineField0 === 'object' && __golemInlineField0 !== null && !Array.isArray(__golemInlineField0) && ((__golemInlineField0 as unknown as Record<string, unknown>)["kind"] === "phone") ? (stringifyPhoneCore(__golemInlineField0 as never)) : ((__golemInlineField0 == null ? 'null' : unknownDiscriminatorValue("kind", (__golemInlineField0 as unknown as Record<string, unknown>)["kind"], 'serialize')))))) + '}';
 }
 
 export function stringifyContact(value: ContactFields, options?: __GolemSerdeOptions): string {
@@ -353,7 +353,7 @@ export function stringifyContact(value: ContactFields, options?: __GolemSerdeOpt
   if (validates) {
     assertContact(value, options);
   }
-  return stringifyContactCore(value as never, { validate: false });
+  return stringifyContactCore(value as never);
 }
 
 function convertFromWireContact(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
@@ -377,15 +377,19 @@ export function fromWireFormatContact(wire: unknown, options?: __GolemSerdeOptio
   return convertFromWireContact(wire, options, false) as ContactFields;
 }
 
+function toWireFormatContactCore(value: ContactFields): ContactJSON {
+  const record = value as Record<string, unknown>;
+  let __golemField0: unknown;
+  const wire = { ["value"]: (__golemField0 = record["value"], (typeof __golemField0 === 'object' && __golemField0 !== null && !Array.isArray(__golemField0) && ((__golemField0 as unknown as Record<string, unknown>)["kind"] === "email") ? (withDiscriminatorValue(toWireFormatEmailCore(__golemField0 as never), "kind", (__golemField0 as unknown as Record<string, unknown>)["kind"])) : (typeof __golemField0 === 'object' && __golemField0 !== null && !Array.isArray(__golemField0) && ((__golemField0 as unknown as Record<string, unknown>)["kind"] === "phone") ? (withDiscriminatorValue(toWireFormatPhoneCore(__golemField0 as never), "kind", (__golemField0 as unknown as Record<string, unknown>)["kind"])) : ((__golemField0 == null ? __golemField0 : unknownDiscriminatorValue("kind", (__golemField0 as unknown as Record<string, unknown>)["kind"], 'serialize')))))) };
+  return wire as ContactJSON;
+}
+
 export function toWireFormatContact(value: ContactFields, options?: __GolemSerdeOptions): ContactJSON {
   const validates = serdeValidates(options, true);
   if (validates) {
     assertContact(value, options);
   }
-  const record = value as Record<string, unknown>;
-  let __golemField0: unknown;
-  const wire = { ["value"]: (__golemField0 = record["value"], (typeof __golemField0 === 'object' && __golemField0 !== null && !Array.isArray(__golemField0) && ((__golemField0 as unknown as Record<string, unknown>)["kind"] === "email") ? (withDiscriminatorValue(toWireFormatEmail(__golemField0 as never, { validate: false }), "kind", (__golemField0 as unknown as Record<string, unknown>)["kind"])) : (typeof __golemField0 === 'object' && __golemField0 !== null && !Array.isArray(__golemField0) && ((__golemField0 as unknown as Record<string, unknown>)["kind"] === "phone") ? (withDiscriminatorValue(toWireFormatPhone(__golemField0 as never, { validate: false }), "kind", (__golemField0 as unknown as Record<string, unknown>)["kind"])) : ((__golemField0 == null ? __golemField0 : unknownDiscriminatorValue("kind", (__golemField0 as unknown as Record<string, unknown>)["kind"], 'serialize')))))) };
-  return wire as ContactJSON;
+  return toWireFormatContactCore(value);
 }
 
 export function parseContact(text: string, options?: __GolemSerdeOptions): ContactFields {
@@ -397,8 +401,9 @@ export function validateContact(value: unknown, options?: __GolemValidateOptions
   let ok: boolean;
   let errors: readonly unknown[] | null | undefined;
   if (options?.validationContext === undefined) {
-    ok = failFast ? validateContactFast(value) : validateContactAll(value);
-    errors = failFast ? validateContactFast.errors : validateContactAll.errors;
+    const validator = failFast ? validateContactFast : validateContactAll;
+    ok = validator(value);
+    errors = validator.errors;
   } else {
     const validator = resolveModelValidationContextValidator(options.validationContext, "Contact_82fcfbf0", failFast ? 'first' : 'all');
     ok = runSynchronousValidation(validator, value);

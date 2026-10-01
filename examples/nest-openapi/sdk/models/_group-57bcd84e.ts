@@ -73,7 +73,7 @@ export function fillMerchant(out: Record<string, unknown>, wire: Record<string, 
   return out;
 }
 
-function stringifyMerchantCore(value: Record<string, unknown>, _options?: { readonly validate?: boolean; readonly failFast?: boolean }): string {
+function stringifyMerchantCore(value: Record<string, unknown>): string {
   return '{' + "\"id\":" + stringifyJsonString(value["id"] as string) + ",\"name\":" + stringifyJsonString(value["name"] as string) + '}';
 }
 
@@ -83,7 +83,7 @@ export function stringifyMerchant(value: MerchantFields, options?: __GolemSerdeO
   if (validates) {
     assertMerchant(value, options);
   }
-  return stringifyMerchantCore(value as never, { validate: false });
+  return stringifyMerchantCore(value as never);
 }
 
 function convertFromWireMerchant(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
@@ -107,14 +107,18 @@ export function fromWireFormatMerchant(wire: unknown, options?: __GolemSerdeOpti
   return convertFromWireMerchant(wire, options, false) as MerchantFields;
 }
 
+function toWireFormatMerchantCore(value: MerchantFields): Types.Merchant {
+  const record = value as Record<string, unknown>;
+  const wire = { ["id"]: record["id"], ["name"]: record["name"] };
+  return wire as Types.Merchant;
+}
+
 export function toWireFormatMerchant(value: MerchantFields, options?: __GolemSerdeOptions): Types.Merchant {
   const validates = serdeValidates(options, true);
   if (validates) {
     assertMerchant(value, options);
   }
-  const record = value as Record<string, unknown>;
-  const wire = { ["id"]: record["id"], ["name"]: record["name"] };
-  return wire as Types.Merchant;
+  return toWireFormatMerchantCore(value);
 }
 
 export function parseMerchant(text: string, options?: __GolemSerdeOptions): MerchantFields {
@@ -126,8 +130,9 @@ export function validateMerchant(value: unknown, options?: __GolemValidateOption
   let ok: boolean;
   let errors: readonly unknown[] | null | undefined;
   if (options?.validationContext === undefined) {
-    ok = failFast ? validateMerchantFast(value) : validateMerchantAll(value);
-    errors = failFast ? validateMerchantFast.errors : validateMerchantAll.errors;
+    const validator = failFast ? validateMerchantFast : validateMerchantAll;
+    ok = validator(value);
+    errors = validator.errors;
   } else {
     const validator = resolveModelValidationContextValidator(options.validationContext, "Merchant_2d893464", failFast ? 'first' : 'all');
     ok = runSynchronousValidation(validator, value);

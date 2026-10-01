@@ -4,8 +4,6 @@ import { cloneConversionInput, convertModelField, defineModelProperty, requireMo
 import { assertModelValue, createObjectCodec, parseJson, registerIModelClass, requireAjvSchema, resolveGeneratedModelSchemaRefs, resolveModelValidationContextValidator, runSynchronousValidation, serdeValidates, stringifyJsonNumber, stringifyJsonScalar, IssueRepresentation, IssueSource, type SerdeOptions as __GolemSerdeOptions, type ValidateOptions as __GolemValidateOptions } from '@exprtlabs/golem/serde';
 import { createOpenApiSyncAjvEngine } from '@exprtlabs/golem/ajv';
 
-const __golemAbsentField = Symbol();
-
 function modelObject(json: unknown, name: string): Record<string, unknown> {
   return requireModelObject(json, name);
 }
@@ -40,10 +38,8 @@ function decodeWalletModel(constructor: GeneratedModelConstructor, json: unknown
 }
 
 function encodeWalletModel(model: WalletBase): WalletJSON {
-  const result: Record<string, unknown> = {
-    ["balance"]: Object.prototype.hasOwnProperty.call(model, "balance") ? (convertModelField("serialize", "balance", () => (encodeMoney(model["balance"])))) : __golemAbsentField,
-  };
-  if (result["balance"] === __golemAbsentField) delete result["balance"];
+  const result: Record<string, unknown> = {};
+  if (Object.prototype.hasOwnProperty.call(model, "balance")) defineModelProperty(result, "balance", (convertModelField("serialize", "balance", () => (encodeMoney(model["balance"])))));
   return result as WalletJSON;
 }
 
@@ -80,7 +76,7 @@ function fillMoney(out: Record<string, unknown>, wire: Record<string, unknown>, 
   return out;
 }
 
-function stringifyMoneyCore(value: Record<string, unknown>, _options?: { readonly validate?: boolean; readonly failFast?: boolean }): string {
+function stringifyMoneyCore(value: Record<string, unknown>): string {
   return '{' + "\"amount\":" + stringifyJsonNumber(value["amount"] as number) + ",\"currency\":" + stringifyJsonScalar(value["currency"] as never) + '}';
 }
 
@@ -89,7 +85,7 @@ export function stringifyMoney(value: MoneyFields, options?: __GolemSerdeOptions
   if (validates) {
     assertMoney(value, options);
   }
-  return stringifyMoneyCore(value as never, { validate: false });
+  return stringifyMoneyCore(value as never);
 }
 
 function convertFromWireMoney(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
@@ -113,14 +109,18 @@ export function fromWireFormatMoney(wire: unknown, options?: __GolemSerdeOptions
   return convertFromWireMoney(wire, options, false) as MoneyFields;
 }
 
+function toWireFormatMoneyCore(value: MoneyFields): MoneyJSON {
+  const record = value as Record<string, unknown>;
+  const wire = { ["amount"]: record["amount"], ["currency"]: record["currency"] };
+  return wire as MoneyJSON;
+}
+
 export function toWireFormatMoney(value: MoneyFields, options?: __GolemSerdeOptions): MoneyJSON {
   const validates = serdeValidates(options, true);
   if (validates) {
     assertMoney(value, options);
   }
-  const record = value as Record<string, unknown>;
-  const wire = { ["amount"]: record["amount"], ["currency"]: record["currency"] };
-  return wire as MoneyJSON;
+  return toWireFormatMoneyCore(value);
 }
 
 export function parseMoney(text: string, options?: __GolemSerdeOptions): MoneyFields {
@@ -132,8 +132,9 @@ export function validateMoney(value: unknown, options?: __GolemValidateOptions):
   let ok: boolean;
   let errors: readonly unknown[] | null | undefined;
   if (options?.validationContext === undefined) {
-    ok = failFast ? validateMoneyFast(value) : validateMoneyAll(value);
-    errors = failFast ? validateMoneyFast.errors : validateMoneyAll.errors;
+    const validator = failFast ? validateMoneyFast : validateMoneyAll;
+    ok = validator(value);
+    errors = validator.errors;
   } else {
     const validator = resolveModelValidationContextValidator(options.validationContext, "Money_64c4561b", failFast ? 'first' : 'all');
     ok = runSynchronousValidation(validator, value);
@@ -169,8 +170,8 @@ function fillWallet(out: Record<string, unknown>, wire: Record<string, unknown>)
   return out;
 }
 
-function stringifyWalletCore(value: Record<string, unknown>, _options?: { readonly validate?: boolean; readonly failFast?: boolean }): string {
-  return '{' + "\"balance\":" + stringifyMoney(value["balance"] as never, { validate: false }) + '}';
+function stringifyWalletCore(value: Record<string, unknown>): string {
+  return '{' + "\"balance\":" + stringifyMoneyCore(value["balance"] as never) + '}';
 }
 
 export function stringifyWallet(value: WalletFields, options?: __GolemSerdeOptions): string {
@@ -178,7 +179,7 @@ export function stringifyWallet(value: WalletFields, options?: __GolemSerdeOptio
   if (validates) {
     assertWallet(value, options);
   }
-  return stringifyWalletCore(value as never, { validate: false });
+  return stringifyWalletCore(value as never);
 }
 
 function convertFromWireWallet(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
@@ -202,14 +203,18 @@ export function fromWireFormatWallet(wire: unknown, options?: __GolemSerdeOption
   return convertFromWireWallet(wire, options, false) as WalletFields;
 }
 
+function toWireFormatWalletCore(value: WalletFields): WalletJSON {
+  const record = value as Record<string, unknown>;
+  const wire = { ["balance"]: toWireFormatMoneyCore(record["balance"] as never) };
+  return wire as WalletJSON;
+}
+
 export function toWireFormatWallet(value: WalletFields, options?: __GolemSerdeOptions): WalletJSON {
   const validates = serdeValidates(options, true);
   if (validates) {
     assertWallet(value, options);
   }
-  const record = value as Record<string, unknown>;
-  const wire = { ["balance"]: toWireFormatMoney(record["balance"] as never, { validate: false }) };
-  return wire as WalletJSON;
+  return toWireFormatWalletCore(value);
 }
 
 export function parseWallet(text: string, options?: __GolemSerdeOptions): WalletFields {
@@ -221,8 +226,9 @@ export function validateWallet(value: unknown, options?: __GolemValidateOptions)
   let ok: boolean;
   let errors: readonly unknown[] | null | undefined;
   if (options?.validationContext === undefined) {
-    ok = failFast ? validateWalletFast(value) : validateWalletAll(value);
-    errors = failFast ? validateWalletFast.errors : validateWalletAll.errors;
+    const validator = failFast ? validateWalletFast : validateWalletAll;
+    ok = validator(value);
+    errors = validator.errors;
   } else {
     const validator = resolveModelValidationContextValidator(options.validationContext, "Wallet_f39079e2", failFast ? 'first' : 'all');
     ok = runSynchronousValidation(validator, value);

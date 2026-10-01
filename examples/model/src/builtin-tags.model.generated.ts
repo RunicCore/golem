@@ -4,8 +4,6 @@ import { cloneConversionInput, defineModelProperty, requireModelObject } from '@
 import { assertModelValue, createObjectCodec, parseJson, registerIModelClass, requireAjvSchema, resolveGeneratedModelSchemaRefs, resolveModelValidationContextValidator, runSynchronousValidation, serdeValidates, stringifyJsonBoolean, stringifyJsonString, IssueRepresentation, IssueSource, type SerdeOptions as __GolemSerdeOptions, type ValidateOptions as __GolemValidateOptions } from '@exprtlabs/golem/serde';
 import { createOpenApiSyncAjvEngine } from '@exprtlabs/golem/ajv';
 
-const __golemAbsentField = Symbol();
-
 function modelObject(json: unknown, name: string): Record<string, unknown> {
   return requireModelObject(json, name);
 }
@@ -33,12 +31,9 @@ function decodeTaggedTaskModel(constructor: GeneratedModelConstructor, json: unk
 }
 
 function encodeTaggedTaskModel(model: TaggedTaskBase): TaggedTaskJSON {
-  const result: Record<string, unknown> = {
-    ["title"]: Object.prototype.hasOwnProperty.call(model, "title") ? (model["title"]) : __golemAbsentField,
-    ["done"]: Object.prototype.hasOwnProperty.call(model, "done") ? (model["done"]) : __golemAbsentField,
-  };
-  if (result["title"] === __golemAbsentField) delete result["title"];
-  if (result["done"] === __golemAbsentField) delete result["done"];
+  const result: Record<string, unknown> = {};
+  if (Object.prototype.hasOwnProperty.call(model, "title")) defineModelProperty(result, "title", (model["title"]));
+  if (Object.prototype.hasOwnProperty.call(model, "done")) defineModelProperty(result, "done", (model["done"]));
   return result as TaggedTaskJSON;
 }
 
@@ -72,7 +67,7 @@ function fillTaggedTask(out: Record<string, unknown>, wire: Record<string, unkno
   return out;
 }
 
-function stringifyTaggedTaskCore(value: Record<string, unknown>, _options?: { readonly validate?: boolean; readonly failFast?: boolean }): string {
+function stringifyTaggedTaskCore(value: Record<string, unknown>): string {
   return '{' + "\"title\":" + stringifyJsonString(value["title"] as string) + ",\"done\":" + stringifyJsonBoolean(value["done"] as boolean) + '}';
 }
 
@@ -81,7 +76,7 @@ export function stringifyTaggedTask(value: TaggedTaskFields, options?: __GolemSe
   if (validates) {
     assertTaggedTask(value, options);
   }
-  return stringifyTaggedTaskCore(value as never, { validate: false });
+  return stringifyTaggedTaskCore(value as never);
 }
 
 function convertFromWireTaggedTask(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
@@ -105,14 +100,18 @@ export function fromWireFormatTaggedTask(wire: unknown, options?: __GolemSerdeOp
   return convertFromWireTaggedTask(wire, options, false) as TaggedTaskFields;
 }
 
+function toWireFormatTaggedTaskCore(value: TaggedTaskFields): TaggedTaskJSON {
+  const record = value as Record<string, unknown>;
+  const wire = { ["title"]: record["title"], ["done"]: record["done"] };
+  return wire as TaggedTaskJSON;
+}
+
 export function toWireFormatTaggedTask(value: TaggedTaskFields, options?: __GolemSerdeOptions): TaggedTaskJSON {
   const validates = serdeValidates(options, true);
   if (validates) {
     assertTaggedTask(value, options);
   }
-  const record = value as Record<string, unknown>;
-  const wire = { ["title"]: record["title"], ["done"]: record["done"] };
-  return wire as TaggedTaskJSON;
+  return toWireFormatTaggedTaskCore(value);
 }
 
 export function parseTaggedTask(text: string, options?: __GolemSerdeOptions): TaggedTaskFields {
@@ -124,8 +123,9 @@ export function validateTaggedTask(value: unknown, options?: __GolemValidateOpti
   let ok: boolean;
   let errors: readonly unknown[] | null | undefined;
   if (options?.validationContext === undefined) {
-    ok = failFast ? validateTaggedTaskFast(value) : validateTaggedTaskAll(value);
-    errors = failFast ? validateTaggedTaskFast.errors : validateTaggedTaskAll.errors;
+    const validator = failFast ? validateTaggedTaskFast : validateTaggedTaskAll;
+    ok = validator(value);
+    errors = validator.errors;
   } else {
     const validator = resolveModelValidationContextValidator(options.validationContext, "TaggedTask_94b6f172", failFast ? 'first' : 'all');
     ok = runSynchronousValidation(validator, value);
