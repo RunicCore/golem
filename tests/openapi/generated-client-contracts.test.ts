@@ -765,7 +765,7 @@ test('non-string text schemas require selected-path codecs for every validation 
     );
     await assert.rejects(
       () => missing.sendTextNullableUnion().execute({ body: null }),
-      /Custom bodyEncoders required for operation sendTextNullableUnion media text\/plain type \(string\) \| \(null\)/,
+      /Custom bodyEncoders required for operation sendTextNullableUnion media text\/plain type string \| null/,
     );
     await assert.rejects(
       () => missing.sendTextEnumNull().execute({ body: null }),
