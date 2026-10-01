@@ -124,3 +124,17 @@ test('an edited package.json is read again by the next generation in the same pr
   writeCodecPackage(packageRoot, { name: '@fixture/pg', exports: EXPORTS, files: {} });
   assert.doesNotThrow(() => generate({ root, profile: { mobx: false, validation: true } }));
 });
+
+test('a malformed package.json names its path and keeps the parse error as the cause', t => {
+  const { root, sourceRoot } = project(t);
+  const packageRoot = path.join(root, 'node_modules/@fixture/pg');
+  writeCodecPackage(packageRoot, { name: '@fixture/pg', exports: EXPORTS, files: COUNT_DIST_FILES });
+  fs.writeFileSync(path.join(packageRoot, 'dist/package.json'), '{"type": ');
+  fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), model);
+  assert.throws(() => generate({ root, profile: { mobx: false, validation: true } }), (error: unknown) => {
+    assert.ok(error instanceof Error);
+    assert.ok(error.message.includes(path.join(packageRoot, 'dist/package.json')), error.message);
+    assert.ok(error.cause instanceof SyntaxError);
+    return true;
+  });
+});

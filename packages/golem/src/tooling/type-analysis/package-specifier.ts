@@ -16,7 +16,9 @@ function readManifest(filename: string): { readonly name?: string; readonly expo
   try { mtimeMs = fs.statSync(filename).mtimeMs; } catch { return undefined; }
   const cached = manifests.get(filename);
   if (cached?.mtimeMs === mtimeMs) return cached;
-  const json = JSON.parse(fs.readFileSync(filename, 'utf8')) as { name?: string; exports?: unknown };
+  let json: { name?: string; exports?: unknown };
+  try { json = JSON.parse(fs.readFileSync(filename, 'utf8')) as { name?: string; exports?: unknown }; }
+  catch (error) { throw new Error(`Cannot read ${filename} to resolve a package import: ${error instanceof Error ? error.message : String(error)}`, { cause: error }); }
   const manifest = { mtimeMs, name: json.name, exports: json.exports };
   manifests.set(filename, manifest);
   return manifest;
