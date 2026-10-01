@@ -212,7 +212,7 @@ function stringifyContractsCore(value: Record<string, unknown>, _options?: { rea
 }
 
 
-export function stringifyContracts(value: Record<string, unknown>, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): string {
+export function stringifyContracts(value: ContractsFields, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): string {
   const validates = serdeValidates(options, true);
   if (validates) {
     assertContracts(value, options);
@@ -237,11 +237,11 @@ function convertFromWireContracts(wire: unknown, options: { readonly validate?: 
   return result;
 }
 
-export function fromWireFormatContracts(wire: unknown, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): unknown {
-  return convertFromWireContracts(wire, options, false);
+export function fromWireFormatContracts(wire: unknown, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): ContractsFields {
+  return convertFromWireContracts(wire, options, false) as ContractsFields;
 }
 
-export function toWireFormatContracts(value: unknown, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): ContractsJSON {
+export function toWireFormatContracts(value: ContractsFields, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): ContractsJSON {
   const validates = serdeValidates(options, true);
   if (validates) {
     assertContracts(value, options);
@@ -252,11 +252,11 @@ export function toWireFormatContracts(value: unknown, options?: { readonly valid
   return wire as ContractsJSON;
 }
 
-export function parseContracts(text: string, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): unknown {
-  return convertFromWireContracts(parseJson(text), options, true);
+export function parseContracts(text: string, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): ContractsFields {
+  return convertFromWireContracts(parseJson(text), options, true) as ContractsFields;
 }
 
-export function validateContracts(value: unknown, options?: { readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext }): value is Record<string, unknown> {
+export function validateContracts(value: unknown, options?: { readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext }): value is ContractsFields {
   const failFast = options?.failFast !== false;
   let ok: boolean;
   let errors: readonly unknown[] | null | undefined;
@@ -272,7 +272,7 @@ export function validateContracts(value: unknown, options?: { readonly failFast?
   return ok;
 }
 
-export function assertContracts(value: unknown, options?: { readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext }): Record<string, unknown> {
+export function assertContracts(value: unknown, options?: { readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext }): ContractsFields {
   if (options?.validationContext === undefined) {
   if (!(options?.failFast !== false ? validateContractsFast(value) : validateContractsAll(value))) {
     const validator = options?.failFast !== false ? validateContractsFast : validateContractsAll;
@@ -282,7 +282,7 @@ export function assertContracts(value: unknown, options?: { readonly failFast?: 
   const validator = resolveModelValidationContextValidator(options.validationContext, "Contracts_87aa2f02", options?.failFast !== false ? 'first' : 'all');
   if (!runSynchronousValidation(validator, value)) validationFailure(ajvIssues(validator, value, IssueRepresentation.Model, IssueSource.TypeScript));
 }
-  return value as Record<string, unknown>;
+  return value as ContractsFields;
 }
 
 

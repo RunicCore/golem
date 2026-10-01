@@ -90,7 +90,7 @@ function stringifyNoteCore(value: Record<string, unknown>, _options?: { readonly
 }
 
 
-export function stringifyNote(value: Record<string, unknown>, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): string {
+export function stringifyNote(value: NoteFields, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): string {
   const validates = serdeValidates(options, true);
   if (validates) {
     assertNote(value, options);
@@ -115,11 +115,11 @@ function convertFromWireNote(wire: unknown, options: { readonly validate?: boole
   return result;
 }
 
-export function fromWireFormatNote(wire: unknown, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): unknown {
-  return convertFromWireNote(wire, options, false);
+export function fromWireFormatNote(wire: unknown, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): NoteFields {
+  return convertFromWireNote(wire, options, false) as NoteFields;
 }
 
-export function toWireFormatNote(value: unknown, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): NoteJSON {
+export function toWireFormatNote(value: NoteFields, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): NoteJSON {
   const validates = serdeValidates(options, true);
   if (validates) {
     assertNote(value, options);
@@ -129,11 +129,11 @@ export function toWireFormatNote(value: unknown, options?: { readonly validate?:
   return wire as NoteJSON;
 }
 
-export function parseNote(text: string, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): unknown {
-  return convertFromWireNote(parseJson(text), options, true);
+export function parseNote(text: string, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): NoteFields {
+  return convertFromWireNote(parseJson(text), options, true) as NoteFields;
 }
 
-export function validateNote(value: unknown, options?: { readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext }): value is Record<string, unknown> {
+export function validateNote(value: unknown, options?: { readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext }): value is NoteFields {
   const failFast = options?.failFast !== false;
   let ok: boolean;
   let errors: readonly unknown[] | null | undefined;
@@ -149,7 +149,7 @@ export function validateNote(value: unknown, options?: { readonly failFast?: boo
   return ok;
 }
 
-export function assertNote(value: unknown, options?: { readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext }): Record<string, unknown> {
+export function assertNote(value: unknown, options?: { readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext }): NoteFields {
   if (options?.validationContext === undefined) {
   if (!(options?.failFast !== false ? validateNoteFast(value) : validateNoteAll(value))) {
     const validator = options?.failFast !== false ? validateNoteFast : validateNoteAll;
@@ -159,7 +159,7 @@ export function assertNote(value: unknown, options?: { readonly failFast?: boole
   const validator = resolveModelValidationContextValidator(options.validationContext, "Note_3fe96627", options?.failFast !== false ? 'first' : 'all');
   if (!runSynchronousValidation(validator, value)) validationFailure(ajvIssues(validator, value, IssueRepresentation.Model, IssueSource.TypeScript));
 }
-  return value as Record<string, unknown>;
+  return value as NoteFields;
 }
 
 
@@ -189,7 +189,7 @@ function stringifyNotebookCore(value: Record<string, unknown>, _options?: { read
 }
 
 
-export function stringifyNotebook(value: Record<string, unknown>, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): string {
+export function stringifyNotebook(value: NotebookFields, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): string {
   const validates = serdeValidates(options, true);
   if (validates) {
     assertNotebook(value, options);
@@ -214,11 +214,11 @@ function convertFromWireNotebook(wire: unknown, options: { readonly validate?: b
   return result;
 }
 
-export function fromWireFormatNotebook(wire: unknown, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): unknown {
-  return convertFromWireNotebook(wire, options, false);
+export function fromWireFormatNotebook(wire: unknown, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): NotebookFields {
+  return convertFromWireNotebook(wire, options, false) as NotebookFields;
 }
 
-export function toWireFormatNotebook(value: unknown, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): NotebookJSON {
+export function toWireFormatNotebook(value: NotebookFields, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): NotebookJSON {
   const validates = serdeValidates(options, true);
   if (validates) {
     assertNotebook(value, options);
@@ -229,11 +229,11 @@ export function toWireFormatNotebook(value: unknown, options?: { readonly valida
   return wire as NotebookJSON;
 }
 
-export function parseNotebook(text: string, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): unknown {
-  return convertFromWireNotebook(parseJson(text), options, true);
+export function parseNotebook(text: string, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): NotebookFields {
+  return convertFromWireNotebook(parseJson(text), options, true) as NotebookFields;
 }
 
-export function validateNotebook(value: unknown, options?: { readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext }): value is Record<string, unknown> {
+export function validateNotebook(value: unknown, options?: { readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext }): value is NotebookFields {
   const failFast = options?.failFast !== false;
   let ok: boolean;
   let errors: readonly unknown[] | null | undefined;
@@ -249,7 +249,7 @@ export function validateNotebook(value: unknown, options?: { readonly failFast?:
   return ok;
 }
 
-export function assertNotebook(value: unknown, options?: { readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext }): Record<string, unknown> {
+export function assertNotebook(value: unknown, options?: { readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext }): NotebookFields {
   if (options?.validationContext === undefined) {
   if (!(options?.failFast !== false ? validateNotebookFast(value) : validateNotebookAll(value))) {
     const validator = options?.failFast !== false ? validateNotebookFast : validateNotebookAll;
@@ -259,7 +259,7 @@ export function assertNotebook(value: unknown, options?: { readonly failFast?: b
   const validator = resolveModelValidationContextValidator(options.validationContext, "Notebook_5213e3e5", options?.failFast !== false ? 'first' : 'all');
   if (!runSynchronousValidation(validator, value)) validationFailure(ajvIssues(validator, value, IssueRepresentation.Model, IssueSource.TypeScript));
 }
-  return value as Record<string, unknown>;
+  return value as NotebookFields;
 }
 
 

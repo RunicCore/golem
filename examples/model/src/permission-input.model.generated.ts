@@ -99,7 +99,7 @@ function stringifyPermissionInputWire(value: Record<string, unknown>, _options?:
   return '{' + "\"permissions\":" + stringifyJsonString(value["permissions"] as string) + '}';
 }
 
-export function stringifyPermissionInput(value: Record<string, unknown>, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): string {
+export function stringifyPermissionInput(value: PermissionInputFields, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): string {
   const validates = serdeValidates(options, true);
   if (validates) {
     assertPermissionInput(value, options);
@@ -132,11 +132,11 @@ function convertFromWirePermissionInput(wire: unknown, options: { readonly valid
   return result;
 }
 
-export function fromWireFormatPermissionInput(wire: unknown, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): unknown {
-  return convertFromWirePermissionInput(wire, options, false);
+export function fromWireFormatPermissionInput(wire: unknown, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): PermissionInputFields {
+  return convertFromWirePermissionInput(wire, options, false) as PermissionInputFields;
 }
 
-export function toWireFormatPermissionInput(value: unknown, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): PermissionInputJSON {
+export function toWireFormatPermissionInput(value: PermissionInputFields, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): PermissionInputJSON {
   const validates = serdeValidates(options, true);
   if (validates) {
     assertPermissionInput(value, options);
@@ -149,11 +149,11 @@ export function toWireFormatPermissionInput(value: unknown, options?: { readonly
   return wire as PermissionInputJSON;
 }
 
-export function parsePermissionInput(text: string, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): unknown {
-  return convertFromWirePermissionInput(parseJson(text), options, true);
+export function parsePermissionInput(text: string, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): PermissionInputFields {
+  return convertFromWirePermissionInput(parseJson(text), options, true) as PermissionInputFields;
 }
 
-export function validatePermissionInput(value: unknown, options?: { readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext }): value is Record<string, unknown> {
+export function validatePermissionInput(value: unknown, options?: { readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext }): value is PermissionInputFields {
   const failFast = options?.failFast !== false;
   let ok: boolean;
   let errors: readonly unknown[] | null | undefined;
@@ -169,7 +169,7 @@ export function validatePermissionInput(value: unknown, options?: { readonly fai
   return ok;
 }
 
-export function assertPermissionInput(value: unknown, options?: { readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext }): Record<string, unknown> {
+export function assertPermissionInput(value: unknown, options?: { readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext }): PermissionInputFields {
   if (options?.validationContext === undefined) {
   if (!(options?.failFast !== false ? validatePermissionInputFast(value) : validatePermissionInputAll(value))) {
     const validator = options?.failFast !== false ? validatePermissionInputFast : validatePermissionInputAll;
@@ -179,7 +179,7 @@ export function assertPermissionInput(value: unknown, options?: { readonly failF
   const validator = resolveModelValidationContextValidator(options.validationContext, "PermissionInput_b09a0376", options?.failFast !== false ? 'first' : 'all');
   if (!runSynchronousValidation(validator, value)) validationFailure(ajvIssues(validator, value, IssueRepresentation.Model, IssueSource.TypeScript));
 }
-  return value as Record<string, unknown>;
+  return value as PermissionInputFields;
 }
 
 function __golemAssertWire_PermissionInput(value: unknown, options?: { readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext }): Record<string, unknown> {

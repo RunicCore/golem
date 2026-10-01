@@ -83,7 +83,7 @@ function stringifyTaggedTaskCore(value: Record<string, unknown>, _options?: { re
 }
 
 
-export function stringifyTaggedTask(value: Record<string, unknown>, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): string {
+export function stringifyTaggedTask(value: TaggedTaskFields, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): string {
   const validates = serdeValidates(options, true);
   if (validates) {
     assertTaggedTask(value, options);
@@ -108,11 +108,11 @@ function convertFromWireTaggedTask(wire: unknown, options: { readonly validate?:
   return result;
 }
 
-export function fromWireFormatTaggedTask(wire: unknown, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): unknown {
-  return convertFromWireTaggedTask(wire, options, false);
+export function fromWireFormatTaggedTask(wire: unknown, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): TaggedTaskFields {
+  return convertFromWireTaggedTask(wire, options, false) as TaggedTaskFields;
 }
 
-export function toWireFormatTaggedTask(value: unknown, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): TaggedTaskJSON {
+export function toWireFormatTaggedTask(value: TaggedTaskFields, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): TaggedTaskJSON {
   const validates = serdeValidates(options, true);
   if (validates) {
     assertTaggedTask(value, options);
@@ -122,11 +122,11 @@ export function toWireFormatTaggedTask(value: unknown, options?: { readonly vali
   return wire as TaggedTaskJSON;
 }
 
-export function parseTaggedTask(text: string, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): unknown {
-  return convertFromWireTaggedTask(parseJson(text), options, true);
+export function parseTaggedTask(text: string, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): TaggedTaskFields {
+  return convertFromWireTaggedTask(parseJson(text), options, true) as TaggedTaskFields;
 }
 
-export function validateTaggedTask(value: unknown, options?: { readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext }): value is Record<string, unknown> {
+export function validateTaggedTask(value: unknown, options?: { readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext }): value is TaggedTaskFields {
   const failFast = options?.failFast !== false;
   let ok: boolean;
   let errors: readonly unknown[] | null | undefined;
@@ -142,7 +142,7 @@ export function validateTaggedTask(value: unknown, options?: { readonly failFast
   return ok;
 }
 
-export function assertTaggedTask(value: unknown, options?: { readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext }): Record<string, unknown> {
+export function assertTaggedTask(value: unknown, options?: { readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext }): TaggedTaskFields {
   if (options?.validationContext === undefined) {
   if (!(options?.failFast !== false ? validateTaggedTaskFast(value) : validateTaggedTaskAll(value))) {
     const validator = options?.failFast !== false ? validateTaggedTaskFast : validateTaggedTaskAll;
@@ -152,7 +152,7 @@ export function assertTaggedTask(value: unknown, options?: { readonly failFast?:
   const validator = resolveModelValidationContextValidator(options.validationContext, "TaggedTask_3d906944", options?.failFast !== false ? 'first' : 'all');
   if (!runSynchronousValidation(validator, value)) validationFailure(ajvIssues(validator, value, IssueRepresentation.Model, IssueSource.TypeScript));
 }
-  return value as Record<string, unknown>;
+  return value as TaggedTaskFields;
 }
 
 

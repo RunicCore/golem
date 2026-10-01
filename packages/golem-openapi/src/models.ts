@@ -1787,6 +1787,10 @@ export function generateModels(
       const modelName = analysis.definitionNameByNodeId.get(node.id);
       return modelName !== undefined && definitions.has(modelName) ? `Types.${modelName}` : undefined;
     },
+    fieldsType: (node) => {
+      const modelName = analysis.definitionNameByNodeId.get(node.id);
+      return modelName !== undefined && definitions.has(modelName) ? `${modelName}Fields` : undefined;
+    },
     ...(helpers.exportedFillFunctionIds ? { exportedFillFunctionIds: helpers.exportedFillFunctionIds } : {}),
     nestedConstruct: (codecId) => {
       const node = analysis.nodesByCodecId.get(codecId)

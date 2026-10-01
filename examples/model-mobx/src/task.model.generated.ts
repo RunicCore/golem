@@ -72,7 +72,7 @@ function stringifyTaskCore(value: Record<string, unknown>, _options?: { readonly
 }
 
 
-export function stringifyTask(value: Record<string, unknown>, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): string {
+export function stringifyTask(value: TaskFields, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): string {
   serdeValidates(options, false);
   return stringifyTaskCore(value as never, { validate: false });
 }
@@ -91,26 +91,26 @@ function convertFromWireTask(wire: unknown, options: { readonly validate?: boole
   return result;
 }
 
-export function fromWireFormatTask(wire: unknown, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): unknown {
-  return convertFromWireTask(wire, options, false);
+export function fromWireFormatTask(wire: unknown, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): TaskFields {
+  return convertFromWireTask(wire, options, false) as TaskFields;
 }
 
-export function toWireFormatTask(value: unknown, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): TaskJSON {
+export function toWireFormatTask(value: TaskFields, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): TaskJSON {
   serdeValidates(options, false);
   const record = value as Record<string, unknown>;
   const wire = { ["title"]: record["title"], ["done"]: record["done"] };
   return wire as TaskJSON;
 }
 
-export function parseTask(text: string, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): unknown {
-  return convertFromWireTask(parseJson(text), options, true);
+export function parseTask(text: string, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): TaskFields {
+  return convertFromWireTask(parseJson(text), options, true) as TaskFields;
 }
 
-export function validateTask(_value: unknown, _options?: { readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext }): _value is Record<string, unknown> {
+export function validateTask(_value: unknown, _options?: { readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext }): _value is TaskFields {
   validationUnavailable();
 }
 
-export function assertTask(_value: unknown): Record<string, unknown> {
+export function assertTask(_value: unknown): TaskFields {
   validationUnavailable();
 }
 

@@ -1691,6 +1691,7 @@ export function emitSource(
       nestedGenerated,
       nestedImportedSerde,
       wireType: (node) => Object.hasOwn(definitions, node.name) || localNames.has(node.name) ? `${node.name}JSON` : undefined,
+      fieldsType: (node) => Object.hasOwn(definitions, node.name) || localNames.has(node.name) ? `${node.name}Fields` : undefined,
       ...(siblingWireCodecIds ? { siblingWireCodecIds } : {}),
       ...(referencedWireCodecIds ? { exportedWireStringifyIds: referencedWireCodecIds } : {}),
     },

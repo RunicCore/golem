@@ -182,7 +182,7 @@ function stringifyOrderInputCore(value: Record<string, unknown>, _options?: { re
 }
 
 
-export function stringifyOrderInput(value: Record<string, unknown>, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): string {
+export function stringifyOrderInput(value: OrderInputFields, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): string {
   const validates = serdeValidates(options, true);
   if (validates) {
     assertOrderInput(value, options);
@@ -207,11 +207,11 @@ function convertFromWireOrderInput(wire: unknown, options: { readonly validate?:
   return result;
 }
 
-export function fromWireFormatOrderInput(wire: unknown, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): unknown {
-  return convertFromWireOrderInput(wire, options, false);
+export function fromWireFormatOrderInput(wire: unknown, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): OrderInputFields {
+  return convertFromWireOrderInput(wire, options, false) as OrderInputFields;
 }
 
-export function toWireFormatOrderInput(value: unknown, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): OrderInputJSON {
+export function toWireFormatOrderInput(value: OrderInputFields, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): OrderInputJSON {
   const validates = serdeValidates(options, true);
   if (validates) {
     assertOrderInput(value, options);
@@ -222,11 +222,11 @@ export function toWireFormatOrderInput(value: unknown, options?: { readonly vali
   return wire as OrderInputJSON;
 }
 
-export function parseOrderInput(text: string, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): unknown {
-  return convertFromWireOrderInput(parseJson(text), options, true);
+export function parseOrderInput(text: string, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): OrderInputFields {
+  return convertFromWireOrderInput(parseJson(text), options, true) as OrderInputFields;
 }
 
-export function validateOrderInput(value: unknown, options?: { readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext }): value is Record<string, unknown> {
+export function validateOrderInput(value: unknown, options?: { readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext }): value is OrderInputFields {
   const failFast = options?.failFast !== false;
   let ok: boolean;
   let errors: readonly unknown[] | null | undefined;
@@ -242,7 +242,7 @@ export function validateOrderInput(value: unknown, options?: { readonly failFast
   return ok;
 }
 
-export function assertOrderInput(value: unknown, options?: { readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext }): Record<string, unknown> {
+export function assertOrderInput(value: unknown, options?: { readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext }): OrderInputFields {
   if (options?.validationContext === undefined) {
   if (!(options?.failFast !== false ? validateOrderInputFast(value) : validateOrderInputAll(value))) {
     const validator = options?.failFast !== false ? validateOrderInputFast : validateOrderInputAll;
@@ -252,7 +252,7 @@ export function assertOrderInput(value: unknown, options?: { readonly failFast?:
   const validator = resolveModelValidationContextValidator(options.validationContext, "OrderInput_bbcddf3d", options?.failFast !== false ? 'first' : 'all');
   if (!runSynchronousValidation(validator, value)) validationFailure(ajvIssues(validator, value, IssueRepresentation.Model, IssueSource.TypeScript));
 }
-  return value as Record<string, unknown>;
+  return value as OrderInputFields;
 }
 
 

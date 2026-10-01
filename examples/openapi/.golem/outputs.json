@@ -39,7 +39,7 @@
     "sdk/models/_group-b28cd4ec.ts": {
       "job": "openapi:sdk",
       "owner": "@exprtlabs/golem-openapi",
-      "digest": "871269b2b1ed8bf3ec34a5615578ac2b2f59cf6bbf5b30a8c8f35b575139da32",
+      "digest": "a91a0a25bbcdebe56db17273b2442ab62386a174c674a6716869d10116993853",
       "destination": "sdk",
       "destinationKind": "directory"
     },

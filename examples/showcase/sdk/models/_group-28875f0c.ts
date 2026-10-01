@@ -83,7 +83,7 @@ function stringifyMemberCore(value: Record<string, unknown>, _options?: { readon
 }
 
 
-export function stringifyMember(value: Record<string, unknown>, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): string {
+export function stringifyMember(value: MemberFields, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): string {
   const validates = serdeValidates(options, true);
   if (validates) {
     assertMember(value, options);
@@ -108,11 +108,11 @@ function convertFromWireMember(wire: unknown, options: { readonly validate?: boo
   return result;
 }
 
-export function fromWireFormatMember(wire: unknown, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): unknown {
-  return convertFromWireMember(wire, options, false);
+export function fromWireFormatMember(wire: unknown, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): MemberFields {
+  return convertFromWireMember(wire, options, false) as MemberFields;
 }
 
-export function toWireFormatMember(value: unknown, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): Types.Member {
+export function toWireFormatMember(value: MemberFields, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): Types.Member {
   const validates = serdeValidates(options, true);
   if (validates) {
     assertMember(value, options);
@@ -122,11 +122,11 @@ export function toWireFormatMember(value: unknown, options?: { readonly validate
   return wire as Types.Member;
 }
 
-export function parseMember(text: string, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): unknown {
-  return convertFromWireMember(parseJson(text), options, true);
+export function parseMember(text: string, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): MemberFields {
+  return convertFromWireMember(parseJson(text), options, true) as MemberFields;
 }
 
-export function validateMember(value: unknown, options?: { readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext }): value is Record<string, unknown> {
+export function validateMember(value: unknown, options?: { readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext }): value is MemberFields {
   const failFast = options?.failFast !== false;
   let ok: boolean;
   let errors: readonly unknown[] | null | undefined;
@@ -142,7 +142,7 @@ export function validateMember(value: unknown, options?: { readonly failFast?: b
   return ok;
 }
 
-export function assertMember(value: unknown, options?: { readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext }): Record<string, unknown> {
+export function assertMember(value: unknown, options?: { readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext }): MemberFields {
   if (options?.validationContext === undefined) {
   if (!(options?.failFast !== false ? validateMemberFast(value) : validateMemberAll(value))) {
     const validator = options?.failFast !== false ? validateMemberFast : validateMemberAll;
@@ -152,7 +152,7 @@ export function assertMember(value: unknown, options?: { readonly failFast?: boo
   const validator = resolveModelValidationContextValidator(options.validationContext, "Member_24b40f77", options?.failFast !== false ? 'first' : 'all');
   if (!runSynchronousValidation(validator, value)) validationFailure(ajvIssues(validator, value, IssueRepresentation.Model, IssueSource.OpenAPI));
 }
-  return value as Record<string, unknown>;
+  return value as MemberFields;
 }
 
 

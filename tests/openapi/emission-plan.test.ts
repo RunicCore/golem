@@ -450,3 +450,15 @@ test('an operation module declares only the request locals it uses and imports t
   assert.equal(session.match(/if \(cookies\.length\)/g)?.length, 1);
   assert.doesNotMatch(session, /const query/);
 });
+
+test('SDK model functions use the model types instead of unknown', async t => {
+  const output = outputDir(t, 'typed-functions');
+  const result = await generateMaterializedSdk({
+    openapi: '3.1.0', info: info('Typed'), paths: {},
+    components: { schemas: { Money: { type: 'object', properties: { amount: { type: 'string' } }, required: ['amount'] } } },
+  }, { output, name: 'Typed', profile: { mobx: false, validation: true } });
+  const group = result.artifacts.find(artifact => /models\/_group-[0-9a-f]{8}\.ts$/.test(artifact.path))?.content ?? '';
+  assert.match(group, /^export function parseMoney\(text: string, options\?: \{[^}]*\}\): MoneyFields \{/m);
+  assert.match(group, /^export function validateMoney\(value: unknown, options\?: \{[^}]*\}\): value is MoneyFields \{/m);
+  assert.match(group, /^export function toWireFormatMoney\(value: MoneyFields, options\?: \{[^}]*\}\): Types\.Money \{/m);
+});

@@ -83,7 +83,7 @@ function stringifyAccountCore(value: Record<string, unknown>, _options?: { reado
 }
 
 
-export function stringifyAccount(value: Record<string, unknown>, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): string {
+export function stringifyAccount(value: AccountFields, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): string {
   const validates = serdeValidates(options, true);
   if (validates) {
     assertAccount(value, options);
@@ -108,11 +108,11 @@ function convertFromWireAccount(wire: unknown, options: { readonly validate?: bo
   return result;
 }
 
-export function fromWireFormatAccount(wire: unknown, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): unknown {
-  return convertFromWireAccount(wire, options, false);
+export function fromWireFormatAccount(wire: unknown, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): AccountFields {
+  return convertFromWireAccount(wire, options, false) as AccountFields;
 }
 
-export function toWireFormatAccount(value: unknown, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): AccountJSON {
+export function toWireFormatAccount(value: AccountFields, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): AccountJSON {
   const validates = serdeValidates(options, true);
   if (validates) {
     assertAccount(value, options);
@@ -122,11 +122,11 @@ export function toWireFormatAccount(value: unknown, options?: { readonly validat
   return wire as AccountJSON;
 }
 
-export function parseAccount(text: string, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): unknown {
-  return convertFromWireAccount(parseJson(text), options, true);
+export function parseAccount(text: string, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): AccountFields {
+  return convertFromWireAccount(parseJson(text), options, true) as AccountFields;
 }
 
-export function validateAccount(value: unknown, options?: { readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext }): value is Record<string, unknown> {
+export function validateAccount(value: unknown, options?: { readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext }): value is AccountFields {
   const failFast = options?.failFast !== false;
   let ok: boolean;
   let errors: readonly unknown[] | null | undefined;
@@ -142,7 +142,7 @@ export function validateAccount(value: unknown, options?: { readonly failFast?: 
   return ok;
 }
 
-export function assertAccount(value: unknown, options?: { readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext }): Record<string, unknown> {
+export function assertAccount(value: unknown, options?: { readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext }): AccountFields {
   if (options?.validationContext === undefined) {
   if (!(options?.failFast !== false ? validateAccountFast(value) : validateAccountAll(value))) {
     const validator = options?.failFast !== false ? validateAccountFast : validateAccountAll;
@@ -152,7 +152,7 @@ export function assertAccount(value: unknown, options?: { readonly failFast?: bo
   const validator = resolveModelValidationContextValidator(options.validationContext, "Account_7bb17507", options?.failFast !== false ? 'first' : 'all');
   if (!runSynchronousValidation(validator, value)) validationFailure(ajvIssues(validator, value, IssueRepresentation.Model, IssueSource.TypeScript));
 }
-  return value as Record<string, unknown>;
+  return value as AccountFields;
 }
 
 

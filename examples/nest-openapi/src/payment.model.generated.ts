@@ -149,7 +149,7 @@ function stringifyMerchantCore(value: Record<string, unknown>, _options?: { read
 }
 
 
-export function stringifyMerchant(value: Record<string, unknown>, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): string {
+export function stringifyMerchant(value: MerchantFields, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): string {
   const validates = serdeValidates(options, true);
   if (validates) {
     assertMerchant(value, options);
@@ -174,11 +174,11 @@ function convertFromWireMerchant(wire: unknown, options: { readonly validate?: b
   return result;
 }
 
-export function fromWireFormatMerchant(wire: unknown, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): unknown {
-  return convertFromWireMerchant(wire, options, false);
+export function fromWireFormatMerchant(wire: unknown, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): MerchantFields {
+  return convertFromWireMerchant(wire, options, false) as MerchantFields;
 }
 
-export function toWireFormatMerchant(value: unknown, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): MerchantJSON {
+export function toWireFormatMerchant(value: MerchantFields, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): MerchantJSON {
   const validates = serdeValidates(options, true);
   if (validates) {
     assertMerchant(value, options);
@@ -188,11 +188,11 @@ export function toWireFormatMerchant(value: unknown, options?: { readonly valida
   return wire as MerchantJSON;
 }
 
-export function parseMerchant(text: string, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): unknown {
-  return convertFromWireMerchant(parseJson(text), options, true);
+export function parseMerchant(text: string, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): MerchantFields {
+  return convertFromWireMerchant(parseJson(text), options, true) as MerchantFields;
 }
 
-export function validateMerchant(value: unknown, options?: { readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext }): value is Record<string, unknown> {
+export function validateMerchant(value: unknown, options?: { readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext }): value is MerchantFields {
   const failFast = options?.failFast !== false;
   let ok: boolean;
   let errors: readonly unknown[] | null | undefined;
@@ -208,7 +208,7 @@ export function validateMerchant(value: unknown, options?: { readonly failFast?:
   return ok;
 }
 
-export function assertMerchant(value: unknown, options?: { readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext }): Record<string, unknown> {
+export function assertMerchant(value: unknown, options?: { readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext }): MerchantFields {
   if (options?.validationContext === undefined) {
   if (!(options?.failFast !== false ? validateMerchantFast(value) : validateMerchantAll(value))) {
     const validator = options?.failFast !== false ? validateMerchantFast : validateMerchantAll;
@@ -218,7 +218,7 @@ export function assertMerchant(value: unknown, options?: { readonly failFast?: b
   const validator = resolveModelValidationContextValidator(options.validationContext, "Merchant_1d5f9479", options?.failFast !== false ? 'first' : 'all');
   if (!runSynchronousValidation(validator, value)) validationFailure(ajvIssues(validator, value, IssueRepresentation.Model, IssueSource.TypeScript));
 }
-  return value as Record<string, unknown>;
+  return value as MerchantFields;
 }
 
 
@@ -249,7 +249,7 @@ function stringifyMoneyCore(value: Record<string, unknown>, _options?: { readonl
 }
 
 
-export function stringifyMoney(value: Record<string, unknown>, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): string {
+export function stringifyMoney(value: MoneyFields, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): string {
   const validates = serdeValidates(options, true);
   if (validates) {
     assertMoney(value, options);
@@ -274,11 +274,11 @@ function convertFromWireMoney(wire: unknown, options: { readonly validate?: bool
   return result;
 }
 
-export function fromWireFormatMoney(wire: unknown, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): unknown {
-  return convertFromWireMoney(wire, options, false);
+export function fromWireFormatMoney(wire: unknown, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): MoneyFields {
+  return convertFromWireMoney(wire, options, false) as MoneyFields;
 }
 
-export function toWireFormatMoney(value: unknown, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): MoneyJSON {
+export function toWireFormatMoney(value: MoneyFields, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): MoneyJSON {
   const validates = serdeValidates(options, true);
   if (validates) {
     assertMoney(value, options);
@@ -288,11 +288,11 @@ export function toWireFormatMoney(value: unknown, options?: { readonly validate?
   return wire as MoneyJSON;
 }
 
-export function parseMoney(text: string, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): unknown {
-  return convertFromWireMoney(parseJson(text), options, true);
+export function parseMoney(text: string, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): MoneyFields {
+  return convertFromWireMoney(parseJson(text), options, true) as MoneyFields;
 }
 
-export function validateMoney(value: unknown, options?: { readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext }): value is Record<string, unknown> {
+export function validateMoney(value: unknown, options?: { readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext }): value is MoneyFields {
   const failFast = options?.failFast !== false;
   let ok: boolean;
   let errors: readonly unknown[] | null | undefined;
@@ -308,7 +308,7 @@ export function validateMoney(value: unknown, options?: { readonly failFast?: bo
   return ok;
 }
 
-export function assertMoney(value: unknown, options?: { readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext }): Record<string, unknown> {
+export function assertMoney(value: unknown, options?: { readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext }): MoneyFields {
   if (options?.validationContext === undefined) {
   if (!(options?.failFast !== false ? validateMoneyFast(value) : validateMoneyAll(value))) {
     const validator = options?.failFast !== false ? validateMoneyFast : validateMoneyAll;
@@ -318,7 +318,7 @@ export function assertMoney(value: unknown, options?: { readonly failFast?: bool
   const validator = resolveModelValidationContextValidator(options.validationContext, "Money_48468300", options?.failFast !== false ? 'first' : 'all');
   if (!runSynchronousValidation(validator, value)) validationFailure(ajvIssues(validator, value, IssueRepresentation.Model, IssueSource.TypeScript));
 }
-  return value as Record<string, unknown>;
+  return value as MoneyFields;
 }
 
 
@@ -348,7 +348,7 @@ function stringifyMerchantOmitIdCore(value: Record<string, unknown>, _options?: 
 }
 
 
-export function stringifyMerchantOmitId(value: Record<string, unknown>, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): string {
+export function stringifyMerchantOmitId(value: MerchantOmitIdFields, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): string {
   const validates = serdeValidates(options, true);
   if (validates) {
     assertMerchantOmitId(value, options);
@@ -373,11 +373,11 @@ function convertFromWireMerchantOmitId(wire: unknown, options: { readonly valida
   return result;
 }
 
-export function fromWireFormatMerchantOmitId(wire: unknown, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): unknown {
-  return convertFromWireMerchantOmitId(wire, options, false);
+export function fromWireFormatMerchantOmitId(wire: unknown, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): MerchantOmitIdFields {
+  return convertFromWireMerchantOmitId(wire, options, false) as MerchantOmitIdFields;
 }
 
-export function toWireFormatMerchantOmitId(value: unknown, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): MerchantOmitIdJSON {
+export function toWireFormatMerchantOmitId(value: MerchantOmitIdFields, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): MerchantOmitIdJSON {
   const validates = serdeValidates(options, true);
   if (validates) {
     assertMerchantOmitId(value, options);
@@ -387,11 +387,11 @@ export function toWireFormatMerchantOmitId(value: unknown, options?: { readonly 
   return wire as MerchantOmitIdJSON;
 }
 
-export function parseMerchantOmitId(text: string, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): unknown {
-  return convertFromWireMerchantOmitId(parseJson(text), options, true);
+export function parseMerchantOmitId(text: string, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): MerchantOmitIdFields {
+  return convertFromWireMerchantOmitId(parseJson(text), options, true) as MerchantOmitIdFields;
 }
 
-export function validateMerchantOmitId(value: unknown, options?: { readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext }): value is Record<string, unknown> {
+export function validateMerchantOmitId(value: unknown, options?: { readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext }): value is MerchantOmitIdFields {
   const failFast = options?.failFast !== false;
   let ok: boolean;
   let errors: readonly unknown[] | null | undefined;
@@ -407,7 +407,7 @@ export function validateMerchantOmitId(value: unknown, options?: { readonly fail
   return ok;
 }
 
-export function assertMerchantOmitId(value: unknown, options?: { readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext }): Record<string, unknown> {
+export function assertMerchantOmitId(value: unknown, options?: { readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext }): MerchantOmitIdFields {
   if (options?.validationContext === undefined) {
   if (!(options?.failFast !== false ? validateMerchantOmitIdFast(value) : validateMerchantOmitIdAll(value))) {
     const validator = options?.failFast !== false ? validateMerchantOmitIdFast : validateMerchantOmitIdAll;
@@ -417,7 +417,7 @@ export function assertMerchantOmitId(value: unknown, options?: { readonly failFa
   const validator = resolveModelValidationContextValidator(options.validationContext, "MerchantOmitId_aeec4ba8", options?.failFast !== false ? 'first' : 'all');
   if (!runSynchronousValidation(validator, value)) validationFailure(ajvIssues(validator, value, IssueRepresentation.Model, IssueSource.TypeScript));
 }
-  return value as Record<string, unknown>;
+  return value as MerchantOmitIdFields;
 }
 
 
@@ -457,7 +457,7 @@ function stringifyPaymentCore(value: Record<string, unknown>, _options?: { reado
 }
 
 
-export function stringifyPayment(value: Record<string, unknown>, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): string {
+export function stringifyPayment(value: PaymentFields, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): string {
   const validates = serdeValidates(options, true);
   if (validates) {
     assertPayment(value, options);
@@ -482,11 +482,11 @@ function convertFromWirePayment(wire: unknown, options: { readonly validate?: bo
   return result;
 }
 
-export function fromWireFormatPayment(wire: unknown, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): unknown {
-  return convertFromWirePayment(wire, options, false);
+export function fromWireFormatPayment(wire: unknown, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): PaymentFields {
+  return convertFromWirePayment(wire, options, false) as PaymentFields;
 }
 
-export function toWireFormatPayment(value: unknown, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): PaymentJSON {
+export function toWireFormatPayment(value: PaymentFields, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): PaymentJSON {
   const validates = serdeValidates(options, true);
   if (validates) {
     assertPayment(value, options);
@@ -496,11 +496,11 @@ export function toWireFormatPayment(value: unknown, options?: { readonly validat
   return wire as PaymentJSON;
 }
 
-export function parsePayment(text: string, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): unknown {
-  return convertFromWirePayment(parseJson(text), options, true);
+export function parsePayment(text: string, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): PaymentFields {
+  return convertFromWirePayment(parseJson(text), options, true) as PaymentFields;
 }
 
-export function validatePayment(value: unknown, options?: { readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext }): value is Record<string, unknown> {
+export function validatePayment(value: unknown, options?: { readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext }): value is PaymentFields {
   const failFast = options?.failFast !== false;
   let ok: boolean;
   let errors: readonly unknown[] | null | undefined;
@@ -516,7 +516,7 @@ export function validatePayment(value: unknown, options?: { readonly failFast?: 
   return ok;
 }
 
-export function assertPayment(value: unknown, options?: { readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext }): Record<string, unknown> {
+export function assertPayment(value: unknown, options?: { readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext }): PaymentFields {
   if (options?.validationContext === undefined) {
   if (!(options?.failFast !== false ? validatePaymentFast(value) : validatePaymentAll(value))) {
     const validator = options?.failFast !== false ? validatePaymentFast : validatePaymentAll;
@@ -526,7 +526,7 @@ export function assertPayment(value: unknown, options?: { readonly failFast?: bo
   const validator = resolveModelValidationContextValidator(options.validationContext, "Payment_dd0a0a3a", options?.failFast !== false ? 'first' : 'all');
   if (!runSynchronousValidation(validator, value)) validationFailure(ajvIssues(validator, value, IssueRepresentation.Model, IssueSource.TypeScript));
 }
-  return value as Record<string, unknown>;
+  return value as PaymentFields;
 }
 
 
@@ -565,7 +565,7 @@ function stringifyPaymentInputCore(value: Record<string, unknown>, _options?: { 
 }
 
 
-export function stringifyPaymentInput(value: Record<string, unknown>, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): string {
+export function stringifyPaymentInput(value: PaymentInputFields, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): string {
   const validates = serdeValidates(options, true);
   if (validates) {
     assertPaymentInput(value, options);
@@ -590,11 +590,11 @@ function convertFromWirePaymentInput(wire: unknown, options: { readonly validate
   return result;
 }
 
-export function fromWireFormatPaymentInput(wire: unknown, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): unknown {
-  return convertFromWirePaymentInput(wire, options, false);
+export function fromWireFormatPaymentInput(wire: unknown, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): PaymentInputFields {
+  return convertFromWirePaymentInput(wire, options, false) as PaymentInputFields;
 }
 
-export function toWireFormatPaymentInput(value: unknown, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): PaymentInputJSON {
+export function toWireFormatPaymentInput(value: PaymentInputFields, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): PaymentInputJSON {
   const validates = serdeValidates(options, true);
   if (validates) {
     assertPaymentInput(value, options);
@@ -604,11 +604,11 @@ export function toWireFormatPaymentInput(value: unknown, options?: { readonly va
   return wire as PaymentInputJSON;
 }
 
-export function parsePaymentInput(text: string, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): unknown {
-  return convertFromWirePaymentInput(parseJson(text), options, true);
+export function parsePaymentInput(text: string, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): PaymentInputFields {
+  return convertFromWirePaymentInput(parseJson(text), options, true) as PaymentInputFields;
 }
 
-export function validatePaymentInput(value: unknown, options?: { readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext }): value is Record<string, unknown> {
+export function validatePaymentInput(value: unknown, options?: { readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext }): value is PaymentInputFields {
   const failFast = options?.failFast !== false;
   let ok: boolean;
   let errors: readonly unknown[] | null | undefined;
@@ -624,7 +624,7 @@ export function validatePaymentInput(value: unknown, options?: { readonly failFa
   return ok;
 }
 
-export function assertPaymentInput(value: unknown, options?: { readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext }): Record<string, unknown> {
+export function assertPaymentInput(value: unknown, options?: { readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext }): PaymentInputFields {
   if (options?.validationContext === undefined) {
   if (!(options?.failFast !== false ? validatePaymentInputFast(value) : validatePaymentInputAll(value))) {
     const validator = options?.failFast !== false ? validatePaymentInputFast : validatePaymentInputAll;
@@ -634,7 +634,7 @@ export function assertPaymentInput(value: unknown, options?: { readonly failFast
   const validator = resolveModelValidationContextValidator(options.validationContext, "PaymentInput_fa237a1b", options?.failFast !== false ? 'first' : 'all');
   if (!runSynchronousValidation(validator, value)) validationFailure(ajvIssues(validator, value, IssueRepresentation.Model, IssueSource.TypeScript));
 }
-  return value as Record<string, unknown>;
+  return value as PaymentInputFields;
 }
 
 
@@ -685,7 +685,7 @@ function stringifyPaymentFilterCore(value: Record<string, unknown>, _options?: {
 }
 
 
-export function stringifyPaymentFilter(value: Record<string, unknown>, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): string {
+export function stringifyPaymentFilter(value: PaymentFilterFields, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): string {
   const validates = serdeValidates(options, true);
   if (validates) {
     assertPaymentFilter(value, options);
@@ -710,11 +710,11 @@ function convertFromWirePaymentFilter(wire: unknown, options: { readonly validat
   return result;
 }
 
-export function fromWireFormatPaymentFilter(wire: unknown, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): unknown {
-  return convertFromWirePaymentFilter(wire, options, false);
+export function fromWireFormatPaymentFilter(wire: unknown, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): PaymentFilterFields {
+  return convertFromWirePaymentFilter(wire, options, false) as PaymentFilterFields;
 }
 
-export function toWireFormatPaymentFilter(value: unknown, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): PaymentFilterJSON {
+export function toWireFormatPaymentFilter(value: PaymentFilterFields, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): PaymentFilterJSON {
   const validates = serdeValidates(options, true);
   if (validates) {
     assertPaymentFilter(value, options);
@@ -726,11 +726,11 @@ export function toWireFormatPaymentFilter(value: unknown, options?: { readonly v
   return wire as PaymentFilterJSON;
 }
 
-export function parsePaymentFilter(text: string, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): unknown {
-  return convertFromWirePaymentFilter(parseJson(text), options, true);
+export function parsePaymentFilter(text: string, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): PaymentFilterFields {
+  return convertFromWirePaymentFilter(parseJson(text), options, true) as PaymentFilterFields;
 }
 
-export function validatePaymentFilter(value: unknown, options?: { readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext }): value is Record<string, unknown> {
+export function validatePaymentFilter(value: unknown, options?: { readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext }): value is PaymentFilterFields {
   const failFast = options?.failFast !== false;
   let ok: boolean;
   let errors: readonly unknown[] | null | undefined;
@@ -746,7 +746,7 @@ export function validatePaymentFilter(value: unknown, options?: { readonly failF
   return ok;
 }
 
-export function assertPaymentFilter(value: unknown, options?: { readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext }): Record<string, unknown> {
+export function assertPaymentFilter(value: unknown, options?: { readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext }): PaymentFilterFields {
   if (options?.validationContext === undefined) {
   if (!(options?.failFast !== false ? validatePaymentFilterFast(value) : validatePaymentFilterAll(value))) {
     const validator = options?.failFast !== false ? validatePaymentFilterFast : validatePaymentFilterAll;
@@ -756,7 +756,7 @@ export function assertPaymentFilter(value: unknown, options?: { readonly failFas
   const validator = resolveModelValidationContextValidator(options.validationContext, "PaymentFilter_c6d9b450", options?.failFast !== false ? 'first' : 'all');
   if (!runSynchronousValidation(validator, value)) validationFailure(ajvIssues(validator, value, IssueRepresentation.Model, IssueSource.TypeScript));
 }
-  return value as Record<string, unknown>;
+  return value as PaymentFilterFields;
 }
 
 

@@ -55,6 +55,8 @@ export interface CodecRuntimeOptions {
   readonly issueSource?: 'TypeScript' | 'OpenAPI';
   /** Type expression of a local node's emitted JSON type; `toWireFormat${id}` returns it. */
   readonly wireType?: (node: SchemaNode) => string | undefined;
+  /** Type expression of a local node's decoded value: parse, fromWireFormat, validate and assert produce it; stringify and toWireFormat accept it. */
+  readonly fieldsType?: (node: SchemaNode) => string | undefined;
   /** Codec ids of sibling models that register a separate wire schema (`${id}#wire`). */
   readonly siblingWireCodecIds?: ReadonlySet<string>;
   /** Local codecs whose wire stringify other generated modules import. */
@@ -73,6 +75,7 @@ interface EmitCtx {
   readonly exportedFillFunctionIds?: ReadonlySet<string>;
   readonly issueSource: 'TypeScript' | 'OpenAPI';
   readonly wireType?: (node: SchemaNode) => string | undefined;
+  readonly fieldsType?: (node: SchemaNode) => string | undefined;
   readonly wireIdentity?: boolean;
   /** Nodes whose `stringify<Id>Wire` function this module emits; wire stringify calls them instead of inlining. */
   readonly wireStringifyIds?: ReadonlySet<string>;
@@ -1277,6 +1280,8 @@ function emitNodeRuntime(
   const validateName = validateFunctionName(node.id);
   const assertName = `assert${node.id}`;
   const exported = node.anonymous && !ctx.exportAnonymousCodecs ? '' : 'export ';
+  const fieldsType = ctx.fieldsType?.(node);
+  const modelType = fieldsType ?? 'Record<string, unknown>';
   const wireAssertName = `__golemAssertWire_${node.id}`;
   const convertName = `convertFromWire${node.id}`;
   // An allOf-style intersection of objects (including referenced models) converts
@@ -1306,7 +1311,7 @@ function emitNodeRuntime(
   const wrappedStringify = [
     stringifySrc.replace(`function ${stringifyName}(`, `function ${stringifyName}Core(`),
     wireStringifySrc,
-    `${exported}function ${stringifyName}(value: Record<string, unknown>, options?: ${SERDE_OPTIONS}): string {`,
+    `${exported}function ${stringifyName}(value: ${modelType}, options?: ${SERDE_OPTIONS}): string {`,
     emitSerdeValidates(validationEnabled),
     ...(emitsValidatedWire ? inlineLocalDeclarations(encodedStringifyContext) : []),
     ...(validationEnabled ? [
@@ -1379,8 +1384,8 @@ function emitNodeRuntime(
   convertLines.push('  return result;', '}', '');
 
   const fromWireLines = [
-    `${exported}function ${fromWire}(wire: unknown, options?: ${SERDE_OPTIONS}): unknown {`,
-    `  return ${convertName}(wire, options, false);`,
+    `${exported}function ${fromWire}(wire: unknown, options?: ${SERDE_OPTIONS}): ${fieldsType ?? 'unknown'} {`,
+    `  return ${convertName}(wire, options, false)${fieldsType ? ` as ${fieldsType}` : ''};`,
     '}',
     '',
   ];
@@ -1389,7 +1394,7 @@ function emitNodeRuntime(
   const wireType = ctx.wireType?.(node);
 
   const toWireLines = [
-    `${exported}function ${toWire}(${valueParam}: unknown, options?: ${SERDE_OPTIONS}): ${wireType ?? 'unknown'} {`,
+    `${exported}function ${toWire}(${valueParam}: ${fieldsType ?? 'unknown'}, options?: ${SERDE_OPTIONS}): ${wireType ?? 'unknown'} {`,
     emitSerdeValidates(validationEnabled),
     ...(validationEnabled ? [
       '  if (validates) {',
@@ -1410,15 +1415,15 @@ function emitNodeRuntime(
   ];
 
   const parseLines = [
-    `${exported}function ${parseName}(text: string, options?: ${SERDE_OPTIONS}): unknown {`,
-    `  return ${convertName}(parseJson(text), options, true);`,
+    `${exported}function ${parseName}(text: string, options?: ${SERDE_OPTIONS}): ${fieldsType ?? 'unknown'} {`,
+    `  return ${convertName}(parseJson(text), options, true)${fieldsType ? ` as ${fieldsType}` : ''};`,
     '}',
     '',
   ];
 
   const validateLines = validationEnabled
     ? [
-      `${exported}function ${validateName}(value: unknown, options?: ${VALIDATE_OPTIONS}): value is Record<string, unknown> {`,
+      `${exported}function ${validateName}(value: unknown, options?: ${VALIDATE_OPTIONS}): value is ${modelType} {`,
       '  const failFast = options?.failFast !== false;',
       '  let ok: boolean;',
       '  let errors: readonly unknown[] | null | undefined;',
@@ -1434,18 +1439,18 @@ function emitNodeRuntime(
       '  return ok;',
       '}',
       '',
-      `${exported}function ${assertName}(value: unknown, options?: ${VALIDATE_OPTIONS}): Record<string, unknown> {`,
+      `${exported}function ${assertName}(value: unknown, options?: ${VALIDATE_OPTIONS}): ${modelType} {`,
       `  ${emitAjvGuard(node, 'dynamic', 'value', 'model', ctx.issueSource)}`,
-      '  return value as Record<string, unknown>;',
+      `  return value as ${modelType};`,
       '}',
       '',
     ]
     : [
-      `${exported}function ${validateName}(_value: unknown, _options?: ${VALIDATE_OPTIONS}): _value is Record<string, unknown> {`,
+      `${exported}function ${validateName}(_value: unknown, _options?: ${VALIDATE_OPTIONS}): _value is ${modelType} {`,
       '  validationUnavailable();',
       '}',
       '',
-      `${exported}function ${assertName}(_value: unknown): Record<string, unknown> {`,
+      `${exported}function ${assertName}(_value: unknown): ${modelType} {`,
       '  validationUnavailable();',
       '}',
       '',
@@ -1704,6 +1709,7 @@ export function emitCodecRuntime(
     exportedFillFunctionIds: options.exportedFillFunctionIds,
     issueSource: options.issueSource ?? 'TypeScript',
     wireType: options.wireType,
+    fieldsType: options.fieldsType,
     exportAnonymousCodecs: options.exportAnonymousCodecs,
   };
   const anyValidation = nodes.some((node) => !isExternalCodecNode(node) && validates(node));
