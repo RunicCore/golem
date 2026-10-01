@@ -8,7 +8,7 @@ import type { BenchmarkResults } from './results-schema.js';
 import { buildResults, environment, gitState, packageVersions, writeFilesTogether, type MeasuredCase, type Settings } from './results.js';
 import { parseWorkerOutput, type WorkerJob, type WorkerOutput } from './worker-protocol.js';
 
-export const DEFAULT_SETTINGS: Settings = { warmupMs: 300, batchMs: 200, batches: 5 };
+export const DEFAULT_SETTINGS: Settings = { warmupMs: 300, batchMs: 200, batches: 6, rounds: 2 };
 export interface RunOptions { readonly settings: Settings; readonly outputFile: string; readonly rawFile: string; readonly log?: (line: string) => void }
 
 function runWorker(modulePath: string, fixtureAdapter: string, job: WorkerJob): WorkerOutput {
@@ -18,10 +18,18 @@ function runWorker(modulePath: string, fixtureAdapter: string, job: WorkerJob): 
   return parseWorkerOutput(stdout);
 }
 
+/**
+ * Adapter order per round: forward, then reversed. Each adapter runs in its own process, so a single pass
+ * would give the first adapter the host's state right after the project compiles; alternating spreads it.
+ */
+export function adapterRounds(adapters: readonly AdapterId[], rounds: number): AdapterId[][] {
+  return Array.from({ length: rounds }, (_, round) => round % 2 === 0 ? [...adapters] : [...adapters].reverse());
+}
+
 function measureAdapter(id: AdapterId, projects: Record<ProjectKind, string>, settings: Settings): MeasuredCase[] {
   const adapter = adapterSpec(id);
   const mine = timedCases().filter(c => c.adapter === id);
-  const job: WorkerJob = { settings, cases: mine.map(c => ({ fixture: payloadSpec(c.payload).fixture, operation: operationSpec(c.operation).fixtureOperation })) };
+  const job: WorkerJob = { settings: { ...settings, batches: settings.batches / settings.rounds }, cases: mine.map(c => ({ fixture: payloadSpec(c.payload).fixture, operation: operationSpec(c.operation).fixtureOperation })) };
   const output = runWorker(projects[adapter.project], adapter.fixtureAdapter, job);
   return mine.map(c => {
     const fixture = payloadSpec(c.payload).fixture;
@@ -39,11 +47,20 @@ export function runBenchmark(options: RunOptions): BenchmarkResults {
   try {
     log('Preparing projects (generation and compile)…');
     const projects = prepareProjects(directory);
-    const measured: MeasuredCase[] = [];
-    for (const adapter of BENCH_ADAPTERS) {
-      log(`Measuring ${adapter.id}`);
-      measured.push(...measureAdapter(adapter.id, projects, options.settings));
+    const { batches, rounds } = options.settings;
+    if (!(rounds >= 1) || !Number.isInteger(batches / rounds)) throw new Error(`settings.batches (${batches}) must split evenly across settings.rounds (${rounds})`);
+    const byCase = new Map<string, MeasuredCase>();
+    for (const [round, order] of adapterRounds(BENCH_ADAPTERS.map(a => a.id), rounds).entries()) {
+      for (const id of order) {
+        log(`Measuring ${id} (round ${round + 1} of ${rounds})`);
+        for (const result of measureAdapter(id, projects, options.settings)) {
+          const key = `${result.payload}/${result.operation}/${result.adapter}`;
+          const previous = byCase.get(key);
+          byCase.set(key, previous ? { ...previous, samples: [...previous.samples, ...result.samples] } : result);
+        }
+      }
     }
+    const measured = [...byCase.values()];
     // Everything below runs only after every worker succeeded.
     const results = buildResults({
       measured, settings: options.settings, environment: environment(), git: gitState(root),

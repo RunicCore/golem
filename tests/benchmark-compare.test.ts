@@ -53,6 +53,9 @@ test('environment, package, settings, git and support changes produce warnings',
   const out = compareResults(before, after);
   assert.ok(out.warnings.some(w => w.includes('batchMs')), 'settings');
   assert.ok(out.warnings.some(w => w.includes('git')), 'git');
+  // A file from before alternating rounds has no `rounds`; it counts as one round.
+  const rounds = compareResults(before, results([c('golem', 1, 1, 1)], { settings: { warmupMs: 300, batchMs: 200, batches: 6, rounds: 2 } }));
+  assert.ok(rounds.warnings.some(w => w.includes('settings.rounds')), 'rounds');
   assert.ok(out.warnings.some(w => w.includes('simple/parse/golem') && w.includes('none')), 'support');
 });
 

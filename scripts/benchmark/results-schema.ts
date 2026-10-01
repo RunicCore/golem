@@ -15,7 +15,8 @@ export interface BenchmarkResults {
   readonly git: { readonly sha: string; readonly dirty: boolean };
   readonly environment: { readonly node: string; readonly os: string; readonly arch: string; readonly cpu: string; readonly cpus: number };
   readonly packages: Readonly<Record<string, string>>;
-  readonly settings: { readonly warmupMs: number; readonly batchMs: number; readonly batches: number };
+  /** `rounds` is absent in files measured before adapters alternated (one round). */
+  readonly settings: { readonly warmupMs: number; readonly batchMs: number; readonly batches: number; readonly rounds?: number };
   readonly groups: readonly { readonly id: string; readonly label: string; readonly description: string }[];
   readonly payloads: readonly { readonly id: string; readonly label: string; readonly bytes: number; readonly description: string; readonly sourceUrl: string }[];
   readonly operations: readonly { readonly id: 'parse' | 'stringify' | 'validate'; readonly label: string; readonly description: string }[];
@@ -40,7 +41,7 @@ function hasMetadata(value: Record<string, unknown>): boolean {
     && isObject(git) && isString(git.sha) && typeof git.dirty === 'boolean'
     && isObject(env) && [env.node, env.os, env.arch, env.cpu].every(isString) && isCount(env.cpus)
     && isObject(packages) && Object.values(packages).every(isString)
-    && isObject(settings) && [settings.warmupMs, settings.batchMs, settings.batches].every(isCount);
+    && isObject(settings) && [settings.warmupMs, settings.batchMs, settings.batches, settings.rounds ?? 1].every(isCount);
 }
 
 /** Structural check used by the docs page and bench:compare before trusting a file. */

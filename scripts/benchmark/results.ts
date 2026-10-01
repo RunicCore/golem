@@ -7,7 +7,8 @@ import type { BenchmarkResults, OpsPerSec, ResultCase } from './results-schema.j
 
 export interface BatchSample { readonly iterations: number; readonly elapsedMs: number }
 export interface MeasuredCase { readonly payload: PayloadId; readonly operation: OperationId; readonly adapter: AdapterId; readonly payloadBytes: number; readonly samples: readonly BatchSample[] }
-export interface Settings { readonly warmupMs: number; readonly batchMs: number; readonly batches: number }
+/** `batches` is the total per case, split evenly across `rounds`; each round runs every adapter once, in alternating order. */
+export interface Settings { readonly warmupMs: number; readonly batchMs: number; readonly batches: number; readonly rounds: number }
 export interface BuildInput {
   readonly measured: readonly MeasuredCase[];
   readonly settings: Settings;

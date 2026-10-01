@@ -1,9 +1,18 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { adapterRounds } from '../scripts/benchmark/run.js';
 import { WARMUP_ROUNDS, sampleAsync, sampleSync, schedule } from '../scripts/benchmark/sampling.js';
 
+test('adapters alternate order across rounds so none is always measured first', () => {
+  assert.deepEqual(adapterRounds(['golem-object', 'typia', 'zod'], 3), [
+    ['golem-object', 'typia', 'zod'],
+    ['zod', 'typia', 'golem-object'],
+    ['golem-object', 'typia', 'zod'],
+  ]);
+});
+
 test('warmup runs untimed full rotations in the same interleaving as the timed batches', () => {
-  const steps = schedule(3, { warmupMs: 300, batchMs: 200, batches: 2 });
+  const steps = schedule(3, { warmupMs: 300, batchMs: 200, batches: 2, rounds: 1 });
   const warm = steps.filter(s => !s.timed);
   const timed = steps.filter(s => s.timed);
   assert.equal(warm.length, 3 * WARMUP_ROUNDS);
@@ -13,7 +22,7 @@ test('warmup runs untimed full rotations in the same interleaving as the timed b
   assert.ok(steps.findIndex(s => s.timed) === warm.length, 'all warmup precedes timing');
   assert.deepEqual(timed.map(s => s.index), [0, 1, 2, 1, 2, 0]);
   assert.ok(timed.every(s => s.durationMs === 200));
-  assert.ok(schedule(2, { warmupMs: 0, batchMs: 1, batches: 1 }).every(s => s.timed), 'no warmup steps when warmupMs is zero');
+  assert.ok(schedule(2, { warmupMs: 0, batchMs: 1, batches: 1, rounds: 1 }).every(s => s.timed), 'no warmup steps when warmupMs is zero');
 });
 
 test('sampleSync measures without awaiting and consumes every result', () => {
