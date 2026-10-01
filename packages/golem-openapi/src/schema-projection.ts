@@ -51,6 +51,13 @@ export interface ResourceIndex {
   readonly byPointer: ReadonlyMap<string, CanonicalResource>;
 }
 
+/** A JSON Schema `$id` declared by two different schemas; pointers are plain JSON Pointers to the `$id` keywords. */
+export interface DuplicateSchemaId {
+  readonly canonical: string;
+  readonly pointer: string;
+  readonly firstPointer: string;
+}
+
 export interface ProjectionContext {
   readonly document: unknown;
   readonly direction: SchemaDirection;
@@ -126,49 +133,71 @@ function pointerSchemaName(ref: string): string | null {
   }
 }
 
-export function collectCanonicalResources(document: unknown): ResourceIndex {
+/** Every repeat of a schema `$id`, once per repeating `$id` keyword. */
+export function findDuplicateSchemaIds(document: unknown): DuplicateSchemaId[] {
+  const duplicates = new Map<string, DuplicateSchemaId>();
+  collectCanonicalResources(document, (duplicate) => { duplicates.set(duplicate.pointer, duplicate); });
+  return [...duplicates.values()];
+}
+
+/**
+ * Index every schema resource. A `$id` declared by two different schemas
+ * throws unless `onDuplicate` is given; then each repeat is reported to it and
+ * the first declaration stays indexed.
+ */
+export function collectCanonicalResources(
+  document: unknown,
+  onDuplicate?: (duplicate: DuplicateSchemaId) => void,
+): ResourceIndex {
+  const idPointers = new Map<string, string>();
   const byCanonical = new Map<string, CanonicalResource>();
   const byPointer = new Map<string, CanonicalResource>();
   const seen = new WeakSet<object>();
   const base = documentBase(document);
 
-  const register = (schema: unknown, canonical: string, hasId: boolean, pointer: string | null): CanonicalResource => {
+  const register = (schema: unknown, canonical: string, hasId: boolean, pointer: string | null, schemaPointer: string): CanonicalResource => {
     const existing = byCanonical.get(canonical);
     if (existing) {
       if (hasId && existing.hasId && existing.schema !== schema) {
-        throw new Error(`duplicate JSON Schema $id ${JSON.stringify(canonical)}`);
+        if (!onDuplicate) throw new Error(`duplicate JSON Schema $id ${JSON.stringify(canonical)}`);
+        onDuplicate({
+          canonical,
+          pointer: jsonPointerJoin(schemaPointer, '$id'),
+          firstPointer: jsonPointerJoin(idPointers.get(canonical) ?? '', '$id'),
+        });
       }
       if (pointer && !byPointer.has(pointer)) byPointer.set(pointer, existing);
       return existing;
     }
     const record: CanonicalResource = { canonical, hasId, pointer, schema };
     byCanonical.set(canonical, record);
+    if (hasId) idPointers.set(canonical, schemaPointer);
     if (pointer) byPointer.set(pointer, record);
     return record;
   };
 
-  const walk = (schema: unknown, currentBase: string): void => {
+  const walk = (schema: unknown, currentBase: string, schemaPointer: string): void => {
     if (typeof schema === 'boolean' || !isJsonObject(schema)) return;
     if (seen.has(schema)) return;
     seen.add(schema);
     let nextBase = currentBase;
     if (typeof schema.$id === 'string') {
       const canonical = stripFragment(resolveHref(schema.$id, currentBase));
-      register(schema, canonical, true, null);
+      register(schema, canonical, true, null, schemaPointer);
       nextBase = canonical;
     }
     for (const [key, value] of objectEntries(schema)) {
       if (DATA_KEYWORDS.has(key) || key === '$ref' || key === '$dynamicRef' || key === '$id') continue;
       if ((SCHEMA_MAP_KEYWORDS as readonly string[]).includes(key) && isJsonObject(value)) {
-        for (const child of Object.values(value)) walk(child, nextBase);
+        for (const [childKey, child] of objectEntries(value)) walk(child, nextBase, jsonPointerJoin(jsonPointerJoin(schemaPointer, key), childKey));
         continue;
       }
       if ((SCHEMA_SINGLE_KEYWORDS as readonly string[]).includes(key) && typeof value !== 'boolean') {
-        walk(value, nextBase);
+        walk(value, nextBase, jsonPointerJoin(schemaPointer, key));
         continue;
       }
       if ((SCHEMA_ARRAY_KEYWORDS as readonly string[]).includes(key) && Array.isArray(value)) {
-        for (const child of value) walk(child, nextBase);
+        value.forEach((child, index) => walk(child, nextBase, jsonPointerJoin(jsonPointerJoin(schemaPointer, key), String(index))));
       }
     }
   };
@@ -176,13 +205,14 @@ export function collectCanonicalResources(document: unknown): ResourceIndex {
   const schemas = asRecord(asRecord(asRecord(document).components).schemas);
   for (const [name, schema] of objectEntries(schemas)) {
     const pointer = componentPointer(name);
+    const schemaPointer = jsonPointerJoin('/components/schemas', name);
     if (isJsonObject(schema) && typeof schema.$id === 'string') {
       const canonical = stripFragment(resolveHref(schema.$id, base));
-      register(schema, canonical, true, pointer);
-      walk(schema, canonical);
+      register(schema, canonical, true, pointer, schemaPointer);
+      walk(schema, canonical, schemaPointer);
     } else {
-      register(schema, `${base}${pointer}`, false, pointer);
-      walk(schema, base);
+      register(schema, `${base}${pointer}`, false, pointer, schemaPointer);
+      walk(schema, base, schemaPointer);
     }
   }
   return { byCanonical, byPointer };

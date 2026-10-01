@@ -118,10 +118,7 @@ export function checkSchemaObjects(document: unknown): OpenApiProblem[] {
 
 /**
  * Runs the structure, Schema Object and hand-written rule checks and returns
- * the found problems. The one exception: a JSON Schema `$id` declared twice
- * is not caught by the official OpenAPI schema, so the rule checks'
- * `collectCanonicalResources` throws `duplicate JSON Schema $id "…"` instead
- * of returning a problem.
+ * the found problems.
  */
 export function validateOpenApiDocument(document: unknown): OpenApiProblem[] {
   const structure = checkOpenApiStructure(document);

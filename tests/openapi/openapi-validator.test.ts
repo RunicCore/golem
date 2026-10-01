@@ -157,3 +157,20 @@ test('wrapper and parent errors collapse to the most specific error', () => {
     { ruleId: 'schema', message: 'first', pointer: '/s/type' },
   ]);
 });
+
+test('a JSON Schema $id declared twice is a problem with both locations, not a throw', () => {
+  const problems = validateOpenApiDocument(documentBase('3.1.0', {
+    components: {
+      schemas: {
+        One: { $id: 'https://schemas.example.test/shared', type: 'string' },
+        Two: { type: 'object', properties: { inner: { $id: 'https://schemas.example.test/shared', type: 'number' } } },
+      },
+    },
+  }));
+  assert.deepEqual(problems, [{
+    ruleId: 'schema-id-unique',
+    message: 'JSON Schema $id "https://schemas.example.test/shared" is declared more than once',
+    pointer: '/components/schemas/Two/properties/inner/$id',
+    relatedPointer: '/components/schemas/One/$id',
+  }]);
+});

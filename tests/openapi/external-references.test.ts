@@ -223,3 +223,26 @@ test('an unresolvable discriminator mapping pointer in another file is reported 
     },
   );
 });
+
+test('a JSON Schema $id declared in two files is reported with both files', async (t) => {
+  const directory = createFixtureProject(t, 'golem-external-duplicate-id-');
+  write(directory, 'a.json', { $id: 'https://schemas.example/dup', type: 'string' });
+  write(directory, 'b.json', { $id: 'https://schemas.example/dup', type: 'number' });
+  const input = write(directory, 'api.json', {
+    openapi: '3.1.0',
+    info: { title: 'Duplicate', version: '1' },
+    components: { schemas: { A: { $ref: './a.json' }, B: { $ref: './b.json' } } },
+  });
+  await assert.rejects(
+    () => generate({ input, output: path.join(directory, 'sdk'), profile }),
+    (error: unknown) => {
+      assert.ok(error instanceof Error);
+      assert.equal(
+        error.message,
+        'OpenAPI validation failed with 1 error(s):\n'
+          + 'schema-id-unique: JSON Schema $id "https://schemas.example/dup" is declared more than once (also at a.json#/$id) (b.json#/$id)',
+      );
+      return true;
+    },
+  );
+});

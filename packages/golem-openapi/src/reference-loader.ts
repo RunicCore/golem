@@ -288,7 +288,8 @@ export async function loadReferenceGraph(
   const documents = new Map<string, LoadedDocument>([[rootUri, { uri: rootUri, document: rootDocument }]]);
   const localFiles = new Set<string>([rootFile]);
   const absoluteIds = new Map<string, ReferenceTarget>();
-  const rootResources = collectCanonicalResources(rootDocument);
+  // A repeated `$id` is reported by the document rules after bundling, not here.
+  const rootResources = collectCanonicalResources(rootDocument, () => {});
   const sites: ReferenceSite[] = [];
   const seenSiteKeys = new Set<string>();
   const walked = new Set<string>();

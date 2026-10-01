@@ -9,7 +9,7 @@ import {
 } from './json.js';
 import type { OpenApiProblem } from './openapi-validator.js';
 import { isMappingComponentName } from './reference-loader.js';
-import { collectCanonicalResources, lookupCanonicalResource, visitOpenApiSchemaTree } from './schema-projection.js';
+import { collectCanonicalResources, findDuplicateSchemaIds, lookupCanonicalResource, visitOpenApiSchemaTree } from './schema-projection.js';
 
 const HTTP_METHODS = ['get', 'put', 'post', 'delete', 'options', 'head', 'patch', 'trace', 'query'] as const;
 const TEMPLATE = /\{([^{}]*)\}/g;
@@ -411,6 +411,16 @@ function checkDiscriminatorDefaults(document: unknown): OpenApiProblem[] {
 }
 
 export function checkOpenApiRules(document: unknown): OpenApiProblem[] {
+  // Every other rule indexes schema resources, which needs each `$id` to be unique.
+  const duplicates = findDuplicateSchemaIds(document);
+  if (duplicates.length) {
+    return duplicates.map((duplicate) => ({
+      ruleId: 'schema-id-unique',
+      message: `JSON Schema $id ${JSON.stringify(duplicate.canonical)} is declared more than once`,
+      pointer: duplicate.pointer,
+      relatedPointer: duplicate.firstPointer,
+    }));
+  }
   const line = openApiLine(document);
   const operations = collectRuleOperations(document);
   return [

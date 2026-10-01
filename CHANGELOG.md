@@ -113,6 +113,7 @@ The first release candidate includes four independently installable packages:
 - **Breaking:** the `spec-ref-siblings`, `path-not-include-query`, and `nullable-type-sibling` validation rules are gone; error lines name the file that contains the problem.
 - A discriminator `mapping` value in another file that is a bare name no root component declares fails generation with a message naming the mapping and its file; use `#/components/schemas/Dog` or a root alias. Documented as unsupported.
 - `no-unresolved-refs` reports a discriminator `mapping` pointer that resolves to nothing, at the location in the file that contains it. Previously it failed later as a variant error.
+- A JSON Schema `$id` declared twice, also across files, is reported as a validation error (`schema-id-unique`) that names both locations. It threw an unformatted `duplicate JSON Schema $id` error.
 - An `x-` key under `paths` or `webhooks` is an extension, not a path item: validation and schema generation skip it.
 - **Breaking:** `collectLocalReferenceInputs` from `@exprtlabs/golem-openapi/generator` now returns a `Promise`.
 
