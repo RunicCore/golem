@@ -1,9 +1,9 @@
 {
   "schema": 2,
-  "measuredAt": "2026-09-27T22:29:30.473Z",
+  "measuredAt": "2026-10-01T06:57:50.716Z",
   "git": {
-    "sha": "uncommitted",
-    "dirty": true
+    "sha": "6db43598066b68eac975aa50c8e05ec39647e1ed",
+    "dirty": false
   },
   "environment": {
     "node": "v24.21.0",
@@ -165,9 +165,9 @@
       "adapter": "golem-object",
       "support": "full",
       "opsPerSec": {
-        "median": 1509908.2001132101,
-        "min": 1025703.7142131205,
-        "max": 1514675.2666397907
+        "median": 1404630.048196112,
+        "min": 943995.1602298885,
+        "max": 1506127.3622200524
       }
     },
     {
@@ -176,9 +176,9 @@
       "adapter": "typia",
       "support": "full",
       "opsPerSec": {
-        "median": 1720221.0087600644,
-        "min": 1714687.4980984728,
-        "max": 1729718.2010930676
+        "median": 1687958.2445234226,
+        "min": 1662214.7177141414,
+        "max": 1711181.8186931766
       }
     },
     {
@@ -187,9 +187,9 @@
       "adapter": "zod",
       "support": "full",
       "opsPerSec": {
-        "median": 1278406.441830901,
-        "min": 1270132.7429513359,
-        "max": 1283094.6011423725
+        "median": 1306549.9265000669,
+        "min": 1295743.8032024566,
+        "max": 1321225.413671434
       }
     },
     {
@@ -198,9 +198,9 @@
       "adapter": "golem-object",
       "support": "full",
       "opsPerSec": {
-        "median": 384391.2704742473,
-        "min": 303654.3791617578,
-        "max": 388418.8797234151
+        "median": 378810.168699214,
+        "min": 232033.9091098862,
+        "max": 381674.116493495
       }
     },
     {
@@ -209,9 +209,9 @@
       "adapter": "typia",
       "support": "full",
       "opsPerSec": {
-        "median": 335294.2242565119,
-        "min": 232139.01115130683,
-        "max": 337837.18412706954
+        "median": 341572.9593766718,
+        "min": 336699.16673905763,
+        "max": 344657.3094860314
       }
     },
     {
@@ -220,9 +220,9 @@
       "adapter": "zod",
       "support": "full",
       "opsPerSec": {
-        "median": 248708.49723200293,
-        "min": 248281.3090822002,
-        "max": 249039.2217524313
+        "median": 248523.18750285098,
+        "min": 239708.81398819582,
+        "max": 249477.19338157275
       }
     },
     {
@@ -231,9 +231,9 @@
       "adapter": "golem-object",
       "support": "full",
       "opsPerSec": {
-        "median": 3858.4937206246736,
-        "min": 2638.1723316971475,
-        "max": 3881.386665190159
+        "median": 2888.8730000873875,
+        "min": 2438.239551913706,
+        "max": 3825.4306751294175
       }
     },
     {
@@ -242,9 +242,9 @@
       "adapter": "typia",
       "support": "full",
       "opsPerSec": {
-        "median": 4152.750854289967,
-        "min": 4129.001521080482,
-        "max": 4167.0559432766795
+        "median": 4155.230999829204,
+        "min": 3728.051382542397,
+        "max": 4199.5984134017035
       }
     },
     {
@@ -253,9 +253,9 @@
       "adapter": "zod",
       "support": "full",
       "opsPerSec": {
-        "median": 3229.251967652255,
-        "min": 3198.4154570063515,
-        "max": 3249.027282834927
+        "median": 3230.680150056518,
+        "min": 3169.409258017771,
+        "max": 3242.358247223644
       }
     },
     {
@@ -264,9 +264,9 @@
       "adapter": "golem-object",
       "support": "full",
       "opsPerSec": {
-        "median": 377020.28560926596,
-        "min": 232388.57461572892,
-        "max": 386849.05207583465
+        "median": 361476.15931580734,
+        "min": 219093.84567217305,
+        "max": 378655.7016636258
       }
     },
     {
@@ -282,9 +282,9 @@
       "adapter": "zod",
       "support": "full",
       "opsPerSec": {
-        "median": 381523.91356063524,
-        "min": 380574.70890771743,
-        "max": 382879.92150961736
+        "median": 386891.86909219675,
+        "min": 366279.924912615,
+        "max": 390477.47751549364
       }
     },
     {
@@ -293,9 +293,9 @@
       "adapter": "golem-object",
       "support": "full",
       "opsPerSec": {
-        "median": 5182420.56592285,
-        "min": 3842517.598426527,
-        "max": 5258895.887962322
+        "median": 5018242.363182291,
+        "min": 2959215.9563703565,
+        "max": 5092305.155930447
       }
     },
     {
@@ -304,9 +304,9 @@
       "adapter": "typia",
       "support": "full",
       "opsPerSec": {
-        "median": 5950531.467201616,
-        "min": 5923532.870219455,
-        "max": 6008469.995897458
+        "median": 5936886.60501284,
+        "min": 5840618.097682156,
+        "max": 6012116.242427334
       }
     },
     {
@@ -315,9 +315,9 @@
       "adapter": "zod",
       "support": "full",
       "opsPerSec": {
-        "median": 2088869.9838684278,
-        "min": 2065439.5662576852,
-        "max": 2103603.186944221
+        "median": 2138946.63158356,
+        "min": 2102528.4620730625,
+        "max": 2167664.6420959965
       }
     },
     {
@@ -326,9 +326,9 @@
       "adapter": "golem-object",
       "support": "full",
       "opsPerSec": {
-        "median": 715803.465391121,
-        "min": 593921.6765788974,
-        "max": 731402.3620344499
+        "median": 707955.1328084626,
+        "min": 396358.6781438079,
+        "max": 723175.2891003721
       }
     },
     {
@@ -337,9 +337,9 @@
       "adapter": "typia",
       "support": "full",
       "opsPerSec": {
-        "median": 551848.9584960808,
-        "min": 548843.9821136702,
-        "max": 559769.2126933032
+        "median": 572822.4573122452,
+        "min": 563327.7269545255,
+        "max": 594307.9980501708
       }
     },
     {
@@ -348,9 +348,9 @@
       "adapter": "zod",
       "support": "full",
       "opsPerSec": {
-        "median": 281395.13467812125,
-        "min": 276930.40306317224,
-        "max": 282041.74808791484
+        "median": 276191.9448619266,
+        "min": 272902.03349462355,
+        "max": 279574.604840769
       }
     },
     {
@@ -359,9 +359,9 @@
       "adapter": "golem-object",
       "support": "full",
       "opsPerSec": {
-        "median": 6935.611235193953,
-        "min": 4618.019198399657,
-        "max": 7086.704324471264
+        "median": 6288.630237129215,
+        "min": 4219.998074227745,
+        "max": 6814.157308407866
       }
     },
     {
@@ -370,9 +370,9 @@
       "adapter": "typia",
       "support": "full",
       "opsPerSec": {
-        "median": 7407.23686543953,
-        "min": 7163.004585546622,
-        "max": 7578.492881374554
+        "median": 7524.62643016673,
+        "min": 7212.186527206222,
+        "max": 7712.766081001141
       }
     },
     {
@@ -381,9 +381,9 @@
       "adapter": "zod",
       "support": "full",
       "opsPerSec": {
-        "median": 4124.523938474193,
-        "min": 4111.777308855524,
-        "max": 4144.327520943879
+        "median": 4006.094260978429,
+        "min": 3885.2841892854835,
+        "max": 4015.5461671070098
       }
     },
     {
@@ -392,155 +392,155 @@
       "adapter": "golem-object",
       "support": "full",
       "opsPerSec": {
-        "median": 356828.40307689767,
-        "min": 260475.875364515,
-        "max": 357797.9873863197
+        "median": 346098.07987811096,
+        "min": 220114.22200167328,
+        "max": 350598.6852549284
       }
     },
     {
       "payload": "checkout",
       "operation": "stringify",
-      "adapter": "typia",
-      "support": "none",
-      "note": "Typia checks JSON shapes but does not convert values, so the hex code and the dates would stay strings."
-    },
-    {
-      "payload": "checkout",
-      "operation": "stringify",
-      "adapter": "zod",
-      "support": "full",
-      "opsPerSec": {
-        "median": 297970.3891925741,
-        "min": 293658.342697227,
-        "max": 299368.503439754
-      }
-    },
-    {
-      "payload": "simple",
-      "operation": "validate",
-      "adapter": "golem-object",
-      "support": "full",
-      "opsPerSec": {
-        "median": 12274339.56322463,
-        "min": 5596815.513932134,
-        "max": 12782712.010804962
-      }
-    },
-    {
-      "payload": "simple",
-      "operation": "validate",
-      "adapter": "typia",
-      "support": "full",
-      "opsPerSec": {
-        "median": 25066149.59754804,
-        "min": 24683664.572709583,
-        "max": 25103400
-      }
-    },
-    {
-      "payload": "simple",
-      "operation": "validate",
-      "adapter": "zod",
-      "support": "full",
-      "opsPerSec": {
-        "median": 4661037.086851809,
-        "min": 4538996.209938161,
-        "max": 4680254.656421054
-      }
-    },
-    {
-      "payload": "nested",
-      "operation": "validate",
-      "adapter": "golem-object",
-      "support": "full",
-      "opsPerSec": {
-        "median": 2210468.9476552596,
-        "min": 1255113.203562002,
-        "max": 2260948.2204597727
-      }
-    },
-    {
-      "payload": "nested",
-      "operation": "validate",
-      "adapter": "typia",
-      "support": "full",
-      "opsPerSec": {
-        "median": 1173033.6421576622,
-        "min": 1157872.520143515,
-        "max": 1202441.6721716945
-      }
-    },
-    {
-      "payload": "nested",
-      "operation": "validate",
-      "adapter": "zod",
-      "support": "full",
-      "opsPerSec": {
-        "median": 446011.75184569694,
-        "min": 444268.70891076303,
-        "max": 446679.1624765712
-      }
-    },
-    {
-      "payload": "array",
-      "operation": "validate",
-      "adapter": "golem-object",
-      "support": "full",
-      "opsPerSec": {
-        "median": 37422.53621213843,
-        "min": 20941.767573606277,
-        "max": 37852.84834114899
-      }
-    },
-    {
-      "payload": "array",
-      "operation": "validate",
-      "adapter": "typia",
-      "support": "full",
-      "opsPerSec": {
-        "median": 73843.53975224729,
-        "min": 63378.015750786435,
-        "max": 74554.4550124085
-      }
-    },
-    {
-      "payload": "array",
-      "operation": "validate",
-      "adapter": "zod",
-      "support": "full",
-      "opsPerSec": {
-        "median": 11625.463346249904,
-        "min": 11599.852565873878,
-        "max": 11704.199330903255
-      }
-    },
-    {
-      "payload": "checkout",
-      "operation": "validate",
-      "adapter": "golem-object",
-      "support": "full",
-      "opsPerSec": {
-        "median": 7480416.623698029,
-        "min": 4255049.852971783,
-        "max": 7907593.436697455
-      }
-    },
-    {
-      "payload": "checkout",
-      "operation": "validate",
       "adapter": "typia",
       "support": "none",
       "note": "Typia checks JSON shapes but does not convert values, so the hex code and the dates would stay strings."
     },
     {
       "payload": "checkout",
+      "operation": "stringify",
+      "adapter": "zod",
+      "support": "full",
+      "opsPerSec": {
+        "median": 306814.6248964494,
+        "min": 305580.26409864315,
+        "max": 307773.90385069227
+      }
+    },
+    {
+      "payload": "simple",
+      "operation": "validate",
+      "adapter": "golem-object",
+      "support": "full",
+      "opsPerSec": {
+        "median": 12442721.116496475,
+        "min": 9017064.941501534,
+        "max": 12606432.120979894
+      }
+    },
+    {
+      "payload": "simple",
+      "operation": "validate",
+      "adapter": "typia",
+      "support": "full",
+      "opsPerSec": {
+        "median": 25206653.659046948,
+        "min": 24928744.419534903,
+        "max": 25356584.15213496
+      }
+    },
+    {
+      "payload": "simple",
       "operation": "validate",
       "adapter": "zod",
       "support": "full",
       "opsPerSec": {
-        "median": 373919.84295366553,
-        "min": 372342.5464431362,
-        "max": 375748.0230317677
+        "median": 4969630.681942481,
+        "min": 4903243.2256758,
+        "max": 5094909.402588423
+      }
+    },
+    {
+      "payload": "nested",
+      "operation": "validate",
+      "adapter": "golem-object",
+      "support": "full",
+      "opsPerSec": {
+        "median": 2238779.0114467684,
+        "min": 1738255.7339499441,
+        "max": 2277956.2072029156
+      }
+    },
+    {
+      "payload": "nested",
+      "operation": "validate",
+      "adapter": "typia",
+      "support": "full",
+      "opsPerSec": {
+        "median": 1135034.8015406143,
+        "min": 1110734.0810202237,
+        "max": 1159925.9271758902
+      }
+    },
+    {
+      "payload": "nested",
+      "operation": "validate",
+      "adapter": "zod",
+      "support": "full",
+      "opsPerSec": {
+        "median": 446207.09222695173,
+        "min": 427060.959487121,
+        "max": 448852.50778389873
+      }
+    },
+    {
+      "payload": "array",
+      "operation": "validate",
+      "adapter": "golem-object",
+      "support": "full",
+      "opsPerSec": {
+        "median": 33032.33021845347,
+        "min": 32321.678609798313,
+        "max": 37649.25317265767
+      }
+    },
+    {
+      "payload": "array",
+      "operation": "validate",
+      "adapter": "typia",
+      "support": "full",
+      "opsPerSec": {
+        "median": 74993.40695462764,
+        "min": 71579.27171659992,
+        "max": 75412.0975239163
+      }
+    },
+    {
+      "payload": "array",
+      "operation": "validate",
+      "adapter": "zod",
+      "support": "full",
+      "opsPerSec": {
+        "median": 11906.818140239175,
+        "min": 11727.061615686947,
+        "max": 11986.135996077413
+      }
+    },
+    {
+      "payload": "checkout",
+      "operation": "validate",
+      "adapter": "golem-object",
+      "support": "full",
+      "opsPerSec": {
+        "median": 6443371.810248339,
+        "min": 4921433.848207667,
+        "max": 7724231.966798775
+      }
+    },
+    {
+      "payload": "checkout",
+      "operation": "validate",
+      "adapter": "typia",
+      "support": "none",
+      "note": "Typia checks JSON shapes but does not convert values, so the hex code and the dates would stay strings."
+    },
+    {
+      "payload": "checkout",
+      "operation": "validate",
+      "adapter": "zod",
+      "support": "full",
+      "opsPerSec": {
+        "median": 372470.533661387,
+        "min": 369386.9163154227,
+        "max": 372886.8279877812
       }
     },
     {
@@ -549,9 +549,9 @@
       "adapter": "golem",
       "support": "full",
       "opsPerSec": {
-        "median": 897335.1393299629,
-        "min": 893021.7644955683,
-        "max": 898223.342448112
+        "median": 926989.7660329835,
+        "min": 520222.0107228685,
+        "max": 932123.1019070072
       }
     },
     {
@@ -560,9 +560,9 @@
       "adapter": "class-transformer",
       "support": "full",
       "opsPerSec": {
-        "median": 236192.91421257434,
-        "min": 235704.6308795433,
-        "max": 237533.92115079763
+        "median": 233625.64253613792,
+        "min": 205848.35081606213,
+        "max": 234766.93777215347
       }
     },
     {
@@ -571,9 +571,9 @@
       "adapter": "golem",
       "support": "full",
       "opsPerSec": {
-        "median": 268167.48469248053,
-        "min": 266319.4447239563,
-        "max": 268760.4707099682
+        "median": 260432.73002034132,
+        "min": 214238.25931414322,
+        "max": 261544.4171836243
       }
     },
     {
@@ -582,9 +582,9 @@
       "adapter": "class-transformer",
       "support": "full",
       "opsPerSec": {
-        "median": 73036.08964776034,
-        "min": 72711.88062785006,
-        "max": 73328.25509844397
+        "median": 71049.30066292355,
+        "min": 67991.17508542961,
+        "max": 71512.4318393386
       }
     },
     {
@@ -593,9 +593,9 @@
       "adapter": "golem",
       "support": "full",
       "opsPerSec": {
-        "median": 2187.8782465446693,
-        "min": 2170.945958864274,
-        "max": 2209.9547480687847
+        "median": 2182.577574511461,
+        "min": 1284.6741397037242,
+        "max": 2205.018755579472
       }
     },
     {
@@ -604,9 +604,9 @@
       "adapter": "class-transformer",
       "support": "full",
       "opsPerSec": {
-        "median": 580.0716388474,
-        "min": 569.1696239218348,
-        "max": 580.7640071506534
+        "median": 570.7077132336433,
+        "min": 549.8651845940874,
+        "max": 577.2094838288785
       }
     },
     {
@@ -615,9 +615,9 @@
       "adapter": "golem",
       "support": "full",
       "opsPerSec": {
-        "median": 496717.9311698165,
-        "min": 494871.44367273856,
-        "max": 499308.453492014
+        "median": 491139.3304012823,
+        "min": 325148.1795088913,
+        "max": 495690.87816090777
       }
     },
     {
@@ -626,9 +626,9 @@
       "adapter": "class-transformer",
       "support": "full",
       "opsPerSec": {
-        "median": 159961.47567800587,
-        "min": 158316.90015509524,
-        "max": 160757.95676636972
+        "median": 157232.04012796868,
+        "min": 155504.02818126534,
+        "max": 158141.15510925124
       }
     },
     {
@@ -637,9 +637,9 @@
       "adapter": "golem",
       "support": "full",
       "opsPerSec": {
-        "median": 8356333.886456581,
-        "min": 8089674.943953141,
-        "max": 8444911.17506783
+        "median": 8069776.147151323,
+        "min": 4876985.759201575,
+        "max": 8124511.550507935
       }
     },
     {
@@ -648,9 +648,9 @@
       "adapter": "class-transformer",
       "support": "full",
       "opsPerSec": {
-        "median": 252928.48890421021,
-        "min": 251988.13513865674,
-        "max": 254935.78110079514
+        "median": 250199.8949160444,
+        "min": 240967.8211571634,
+        "max": 252601.68790199584
       }
     },
     {
@@ -659,9 +659,9 @@
       "adapter": "golem",
       "support": "full",
       "opsPerSec": {
-        "median": 1088369.6127204152,
-        "min": 1074976.936369834,
-        "max": 1098738.255969913
+        "median": 1046201.8607111683,
+        "min": 889465.9153072278,
+        "max": 1065460.4647823833
       }
     },
     {
@@ -670,9 +670,9 @@
       "adapter": "class-transformer",
       "support": "full",
       "opsPerSec": {
-        "median": 76134.93866224056,
-        "min": 75631.34966438227,
-        "max": 76437.96178174924
+        "median": 74756.77611402994,
+        "min": 71883.02516892855,
+        "max": 76027.34486831004
       }
     },
     {
@@ -681,9 +681,9 @@
       "adapter": "golem",
       "support": "full",
       "opsPerSec": {
-        "median": 8283.444125643015,
-        "min": 8102.335207756686,
-        "max": 8307.765112779576
+        "median": 8010.700861598708,
+        "min": 4357.015320726448,
+        "max": 8128.502054538678
       }
     },
     {
@@ -692,9 +692,9 @@
       "adapter": "class-transformer",
       "support": "full",
       "opsPerSec": {
-        "median": 535.2926753088178,
-        "min": 516.8629648427566,
-        "max": 537.8768998886657
+        "median": 528.3770733545841,
+        "min": 469.9180078248994,
+        "max": 540.4015514523242
       }
     },
     {
@@ -703,9 +703,9 @@
       "adapter": "golem",
       "support": "full",
       "opsPerSec": {
-        "median": 605326.4528079862,
-        "min": 597671.1574552243,
-        "max": 606946.3437072666
+        "median": 587687.3098933873,
+        "min": 446610.41206020105,
+        "max": 597711.407898511
       }
     },
     {
@@ -714,9 +714,9 @@
       "adapter": "class-transformer",
       "support": "full",
       "opsPerSec": {
-        "median": 124781.41318459914,
-        "min": 123991.03606804747,
-        "max": 124862.25957015964
+        "median": 121074.51119576355,
+        "min": 119086.50691992791,
+        "max": 122429.03219515072
       }
     },
     {
@@ -725,9 +725,9 @@
       "adapter": "golem-standalone",
       "support": "full",
       "opsPerSec": {
-        "median": 844434.1945149135,
-        "min": 843554.7277829541,
-        "max": 847055.8207915954
+        "median": 850061.5791655825,
+        "min": 830741.6530705915,
+        "max": 851604.8712990633
       }
     },
     {
@@ -736,9 +736,9 @@
       "adapter": "class-validator",
       "support": "full",
       "opsPerSec": {
-        "median": 96981.54503245818,
-        "min": 92461.57106263765,
-        "max": 98623.78791364613
+        "median": 81436.89521836973,
+        "min": 67199.034013886,
+        "max": 91033.23623104786
       }
     },
     {
@@ -747,9 +747,9 @@
       "adapter": "golem-standalone",
       "support": "full",
       "opsPerSec": {
-        "median": 239826.7100028659,
-        "min": 237903.99144041448,
-        "max": 240218.38034576885
+        "median": 236061.410163949,
+        "min": 232597.28675265014,
+        "max": 237758.2667422347
       }
     },
     {
@@ -758,9 +758,9 @@
       "adapter": "class-validator",
       "support": "full",
       "opsPerSec": {
-        "median": 23827.92994858578,
-        "min": 23775.98985088615,
-        "max": 24034.584442034982
+        "median": 21503.651506014063,
+        "min": 15430.795108332964,
+        "max": 22547.646589387215
       }
     },
     {
@@ -769,9 +769,9 @@
       "adapter": "golem-standalone",
       "support": "full",
       "opsPerSec": {
-        "median": 2065.9776108218407,
-        "min": 2033.3695175093703,
-        "max": 2071.689933753226
+        "median": 2020.6418369702626,
+        "min": 1276.9438456012917,
+        "max": 2051.043541618133
       }
     },
     {
@@ -780,9 +780,9 @@
       "adapter": "class-validator",
       "support": "full",
       "opsPerSec": {
-        "median": 194.4259176209098,
-        "min": 172.41113899108757,
-        "max": 196.55814404886436
+        "median": 181.83508488599844,
+        "min": 121.70385435035729,
+        "max": 185.9344275329759
       }
     },
     {
@@ -791,9 +791,9 @@
       "adapter": "golem-standalone",
       "support": "full",
       "opsPerSec": {
-        "median": 317945.69244384003,
-        "min": 316122.0653521586,
-        "max": 322211.6051022997
+        "median": 315641.7284404274,
+        "min": 199983.6263405941,
+        "max": 322456.958838007
       }
     },
     {
@@ -802,9 +802,9 @@
       "adapter": "class-validator",
       "support": "full",
       "opsPerSec": {
-        "median": 54608.11165149901,
-        "min": 54460.16666020891,
-        "max": 54818.675032624626
+        "median": 49277.56692013338,
+        "min": 34921.13684923582,
+        "max": 53904.326195922906
       }
     },
     {
@@ -813,9 +813,9 @@
       "adapter": "golem-standalone",
       "support": "full",
       "opsPerSec": {
-        "median": 4753239.025585994,
-        "min": 4744210.348685293,
-        "max": 4766198.295764904
+        "median": 4570803.799233898,
+        "min": 3768849.3780988054,
+        "max": 4607629.448528552
       }
     },
     {
@@ -824,9 +824,9 @@
       "adapter": "class-validator",
       "support": "full",
       "opsPerSec": {
-        "median": 101028.86342528669,
-        "min": 100580.36877691976,
-        "max": 101887.87716607968
+        "median": 92115.54805556251,
+        "min": 63706.41651407093,
+        "max": 94806.0299974937
       }
     },
     {
@@ -835,9 +835,9 @@
       "adapter": "golem-standalone",
       "support": "full",
       "opsPerSec": {
-        "median": 721582.411428726,
-        "min": 704352.016018907,
-        "max": 735343.9143518787
+        "median": 711854.3447694113,
+        "min": 659696.91060813,
+        "max": 720491.3316499164
       }
     },
     {
@@ -846,9 +846,9 @@
       "adapter": "class-validator",
       "support": "full",
       "opsPerSec": {
-        "median": 24562.543745625382,
-        "min": 24506.497531372854,
-        "max": 24603.359694009174
+        "median": 21892.815206506344,
+        "min": 19372.961867546728,
+        "max": 23306.78564465781
       }
     },
     {
@@ -857,9 +857,9 @@
       "adapter": "golem-standalone",
       "support": "full",
       "opsPerSec": {
-        "median": 6569.837612726496,
-        "min": 6370.924692434916,
-        "max": 6773.297696225149
+        "median": 6428.467618373692,
+        "min": 5688.756892048299,
+        "max": 6633.278266967357
       }
     },
     {
@@ -868,9 +868,9 @@
       "adapter": "class-validator",
       "support": "full",
       "opsPerSec": {
-        "median": 193.7229223164428,
-        "min": 190.4828962183937,
-        "max": 195.75764600491087
+        "median": 159.43447237455726,
+        "min": 149.63366902359797,
+        "max": 183.90454224983876
       }
     },
     {
@@ -879,9 +879,9 @@
       "adapter": "golem-standalone",
       "support": "full",
       "opsPerSec": {
-        "median": 351260.60865809786,
-        "min": 349061.67426210066,
-        "max": 352243.82279817975
+        "median": 344786.55808349716,
+        "min": 321536.0182360792,
+        "max": 347744.5688347588
       }
     },
     {
@@ -890,9 +890,9 @@
       "adapter": "class-validator",
       "support": "full",
       "opsPerSec": {
-        "median": 49893.24350836233,
-        "min": 49631.184602683454,
-        "max": 50336.874835125884
+        "median": 41727.72193797209,
+        "min": 40943.720508734026,
+        "max": 46943.22977080549
       }
     },
     {
@@ -901,9 +901,9 @@
       "adapter": "golem-standalone",
       "support": "full",
       "opsPerSec": {
-        "median": 10344020.604961386,
-        "min": 10287987.140016025,
-        "max": 10430349.152436908
+        "median": 10423837.810993982,
+        "min": 9786745.71135123,
+        "max": 10531971.45835736
       }
     },
     {
@@ -912,9 +912,9 @@
       "adapter": "golem-runtime",
       "support": "full",
       "opsPerSec": {
-        "median": 9936037.913432054,
-        "min": 9874929.14084644,
-        "max": 10060372.786691595
+        "median": 9983932.943541689,
+        "min": 9632305.936833346,
+        "max": 10052437.888988037
       }
     },
     {
@@ -923,9 +923,9 @@
       "adapter": "class-validator",
       "support": "full",
       "opsPerSec": {
-        "median": 177946.51491750535,
-        "min": 177221.04974280173,
-        "max": 179608.39070881924
+        "median": 145956.13800058863,
+        "min": 123588.86730803209,
+        "max": 168580.15332059335
       }
     },
     {
@@ -934,9 +934,9 @@
       "adapter": "golem-standalone",
       "support": "full",
       "opsPerSec": {
-        "median": 2327554.669899801,
-        "min": 2301510.886016883,
-        "max": 2349056.027883217
+        "median": 2280425.268452777,
+        "min": 2264349.6179569983,
+        "max": 2321959.036387001
       }
     },
     {
@@ -945,9 +945,9 @@
       "adapter": "golem-runtime",
       "support": "full",
       "opsPerSec": {
-        "median": 2275177.726010059,
-        "min": 2253758.1293807547,
-        "max": 2305536.944630549
+        "median": 2286182.8536285996,
+        "min": 2199014.7992903986,
+        "max": 2368339.2770313215
       }
     },
     {
@@ -956,9 +956,9 @@
       "adapter": "class-validator",
       "support": "full",
       "opsPerSec": {
-        "median": 38745.729833114994,
-        "min": 32252.587828956166,
-        "max": 38847.37780199836
+        "median": 33144.040148597305,
+        "min": 30304.70952935922,
+        "max": 36160.53272778666
       }
     },
     {
@@ -967,9 +967,9 @@
       "adapter": "golem-standalone",
       "support": "full",
       "opsPerSec": {
-        "median": 32707.693730233874,
-        "min": 32425.516656602595,
-        "max": 32748.81758874616
+        "median": 31901.144987760676,
+        "min": 28263.459940608176,
+        "max": 32844.78759589009
       }
     },
     {
@@ -978,9 +978,9 @@
       "adapter": "golem-runtime",
       "support": "full",
       "opsPerSec": {
-        "median": 32660.68936741152,
-        "min": 32254.37792853301,
-        "max": 32736.450216125777
+        "median": 32632.018697706808,
+        "min": 30526.833968600655,
+        "max": 33330.05144892083
       }
     },
     {
@@ -989,9 +989,9 @@
       "adapter": "class-validator",
       "support": "full",
       "opsPerSec": {
-        "median": 303.61047504716686,
-        "min": 297.56935383216523,
-        "max": 304.1067502834599
+        "median": 252.90116913632886,
+        "min": 204.98495793535318,
+        "max": 294.6176113829206
       }
     },
     {
@@ -1000,9 +1000,9 @@
       "adapter": "golem-standalone",
       "support": "full",
       "opsPerSec": {
-        "median": 7272323.638381801,
-        "min": 7126114.085325316,
-        "max": 7361717.044381033
+        "median": 7143874.034865175,
+        "min": 6979309.810207656,
+        "max": 7469032.232206498
       }
     },
     {
@@ -1011,9 +1011,9 @@
       "adapter": "golem-runtime",
       "support": "full",
       "opsPerSec": {
-        "median": 7132336.249320277,
-        "min": 6970549.857849947,
-        "max": 7201670.997911251
+        "median": 7070508.192251309,
+        "min": 6704566.477167607,
+        "max": 7114731.861235491
       }
     },
     {
@@ -1022,9 +1022,9 @@
       "adapter": "class-validator",
       "support": "full",
       "opsPerSec": {
-        "median": 91163.23371234667,
-        "min": 90472.62509359122,
-        "max": 92008.56236621295
+        "median": 77342.24468253316,
+        "min": 53968.347219366435,
+        "max": 86295.90094470586
       }
     }
   ]
