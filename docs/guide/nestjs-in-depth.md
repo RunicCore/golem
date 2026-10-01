@@ -38,16 +38,7 @@ The model references them by type:
 
 <<< ../../examples/nest-openapi/src/price.model.ts#decimal-price
 
-Generated OpenAPI:
-
-```yaml
-amount:
-  allOf:
-    - type: string
-    - pattern: '^[0-9]+(?:\.[0-9]{1,2})?$'
-```
-
-- A controller parameter or return type using that model appears in OpenAPI as its JSON value, including a `Pattern` declared on the decoder's parameter type.
+- A controller parameter or return type using that model appears in OpenAPI as its JSON value: `amount` is a string schema with the `Pattern` declared on the decoder's parameter type.
 - The decoder's parameter type supplies the JSON type. Generation reads that type; it never calls a converter to infer a schema.
 - A validation constraint on the model value, such as `Minimum<0>` on a number, is not copied onto the string JSON field.
 - Custom predicates and converters stay in TypeScript. OpenAPI carries only the JSON schema. Class-validator decorators are not interpreted.
