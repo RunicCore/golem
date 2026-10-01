@@ -438,8 +438,6 @@ function emitClient(
   const scope = new NameScope(`${clientName}Client`);
   const surfaces = plan.clientSurfaces;
   const defaultAjvEngine = profile.validation && !profile.ajvStandalone;
-  const helperNames = plan.helpers;
-  for (const helper of helperNames) scope.claim(helper, `generated client runtime helper ${helper}`);
   scope.claim('ClientRuntime', 'shared client runtime');
   scope.claim('Runtime', 'shared client runtime types');
   scope.claim('ClientOptions', 'client options import');
@@ -458,21 +456,9 @@ function emitClient(
   }
   const metadataName = `${clientName[0]?.toLowerCase() ?? 'c'}${clientName.slice(1)}SecuritySchemeMetadata`;
   if (plan.clientSurfaces.auth || plan.clientSurfaces.mutualTls) scope.claim(metadataName, 'security metadata export');
-  const reservedClientNames = new Set<string>([
-    ...helperNames,
-    'ClientRuntime',
-    'createApiOperation',
-    'ApiOperation',
-  ]);
   const aliases = new Map<string, string>();
   const securityAliases = new Map<string, string>();
   operations.forEach((operation, index) => {
-    scope.rejectReserved(
-      operation.name,
-      `operation ${JSON.stringify(operation.name)}`,
-      reservedClientNames,
-      'generated client helper',
-    );
     scope.claim(operation.name, `operation ${JSON.stringify(operation.name)}`);
     let alias = `__golemOperationFactory${index}`;
     while (scope.has(alias)) alias += '_';

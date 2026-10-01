@@ -4,6 +4,7 @@ import { convertModelField, decodeGeneratedModelTrusted, cloneConversionInput, e
 import { addNestedCodecSchema, ajvIssues, createObjectCodec, parseJson, registerIModelClass, requireAjvSchema, resolveGeneratedModelSchemaRefs, resolveModelValidationContextValidator, runSynchronousValidation, serdeValidates, stringifyJsonString, validationFailure, IssueRepresentation, IssueSource } from '@exprtlabs/golem/serde';
 import { createOpenApiSyncAjvEngine } from '@exprtlabs/golem/ajv';
 import type * as Types from '../types.js';
+import type {} from '../iobject-plugin-keys.js';
 import { fromWireFormatMember, stringifyMember, toWireFormatMember } from "./_group-28875f0c.js";
 import { MemberModel, type MemberInit } from "./Member.js";
 import "./_group-28875f0c.js";

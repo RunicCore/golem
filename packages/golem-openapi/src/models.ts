@@ -983,7 +983,6 @@ export function internOpenApiSchemaGraph(
   dates: OpenApiDates = 'date',
 ): { readonly schemaGraph: SchemaGraph; readonly nodeIdByDefinition: ReadonlyMap<string, string> } {
   const schemaGraph = createSchemaGraph({}, {
-    anonymousCodecPrefix: `openapi_${sourceDigest(document)}_`,
     codecSource: 'openapi',
   });
   const sharedSchemaContext = schemaContext(document, resources ? { resources } : {});
@@ -1267,6 +1266,11 @@ function pruneGeneratedImports(source: string): string {
     if (named) {
       const [, prefix, typeOnly, contents, suffix, newline] = named;
       const imported = (contents ?? '').split(',').map((specifier) => specifier.trim()).filter(Boolean);
+      // An empty import list is deliberate: it only keeps a module in the program.
+      if (imported.length === 0) {
+        pruned.set(line, line);
+        continue;
+      }
       const retained = imported.filter((specifier) => {
         const withoutKind = specifier.replace(/^type\s+/, '');
         const localName = withoutKind.split(/\s+as\s+/).at(-1);
@@ -1513,6 +1517,8 @@ function emitSchemaCodecRuntime(
   options: CodecRuntimeOptions,
   definitions: ReadonlyMap<string, ModelDefinition>,
 ): string {
+  // Group modules import each other's codec functions, anonymous ones included.
+  options = { ...options, exportAnonymousCodecs: true };
   try {
     return emitCodecRuntime(graph, options);
   } catch (error) {
@@ -1593,6 +1599,8 @@ export function generateModels(
       "import { asGenObservable } from '@exprtlabs/golem/mobx';",
     ] : []),
     `import type * as Types from '${helpers.moduleFile?.includes('/') ? '../types.js' : './types.js'}';`,
+    // Keeps the internal codec-key table in the program for the ttsc plugin; erased from the emitted JavaScript.
+    `import type {} from '${helpers.moduleFile?.includes('/') ? '../iobject-plugin-keys.js' : './iobject-plugin-keys.js'}';`,
     ...(helpers.moduleImports ?? []),
     '',
     ...(emitObjectFromJSON ? [

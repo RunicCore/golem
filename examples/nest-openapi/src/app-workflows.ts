@@ -5,20 +5,10 @@ import type { INestApplication } from '@nestjs/common';
 import { nestModelConstruct, objectCodecFromMetatype } from '@exprtlabs/golem/nest';
 import { getObjectCodec, parse, stringify } from '@exprtlabs/golem/serde';
 import { decodeGeneratedModel } from '@exprtlabs/golem/conversion';
-import { IOBJECT_PLUGIN_KEYS as sdkCodecKeys, PaymentsClient } from '../sdk/index.js';
+import { PaymentsClient } from '../sdk/index.js';
 import { Payment, type TPaymentInput } from './payment.model.js';
 import { PaymentsController } from './payments.controller.js';
 import { submitPayment } from './client.js';
-import { IOBJECT_PLUGIN_KEYS as modelCodecKeys } from './generated/models/iobject-plugin-keys.js';
-import {
-  OPERATION_CODECS,
-  OPERATION_OUTPUT_CODECS,
-  OPERATION_QUERY_CODECS,
-} from './generated/operation-codecs.js';
-
-function sdkCodecId(model: string): string | undefined {
-  return Object.entries(sdkCodecKeys).find(([key]) => key.endsWith(`#${model}Model`))?.[1];
-}
 
 export type ApplicationFactory = () => Promise<INestApplication>;
 
@@ -164,20 +154,4 @@ export function registerApplicationTests(
     assert.equal((classParsed as Payment).money.amount, '12.50');
   });
 
-  test('handwritten and SDK models with the same shape get different hashed codec ids', () => {
-    for (const model of ['Payment', 'Merchant', 'Money', 'PaymentInput'] as const) {
-      const modelId = modelCodecKeys[`src/payment.model.ts#${model}`];
-      const sdkId = sdkCodecId(model);
-      assert.match(modelId ?? '', new RegExp(`^${model}_[0-9a-f]{8}$`));
-      assert.match(sdkId ?? '', new RegExp(`^${model}_[0-9a-f]{8}$`));
-      assert.notEqual(sdkId, modelId, `${model}: handwritten and SDK ids differ`);
-      assert.equal(getObjectCodec(modelId!)?.issueSource, 'typescript', `${model}: handwritten codec keeps its source`);
-      assert.equal(getObjectCodec(sdkId!)?.issueSource, 'openapi', `${model}: SDK codec keeps its source`);
-    }
-    assert.equal(OPERATION_CODECS['POST /api/payments/transactions'], modelCodecKeys['src/payment.model.ts#PaymentInput']);
-    assert.equal(OPERATION_CODECS['POST /api/payments/transactions/as-class'], modelCodecKeys['src/payment.model.ts#Payment']);
-    assert.equal(OPERATION_OUTPUT_CODECS['GET /api/payments/transactions/{id}'], modelCodecKeys['src/payment.model.ts#Payment']);
-    assert.equal(OPERATION_QUERY_CODECS['GET /api/payments/transactions'], modelCodecKeys['src/payment.model.ts#PaymentFilter']);
-    assert.match(OPERATION_CODECS['POST /api/payments/transactions'] ?? '', /^PaymentInput_[0-9a-f]{8}$/);
-  });
 }

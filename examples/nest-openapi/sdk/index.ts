@@ -12,8 +12,6 @@ export { PaymentModel, stringifyPayment, parsePayment, fromWireFormatPayment, to
 export type { PaymentFields, PaymentJSON, PaymentInit } from './models/Payment.js';
 export { PaymentInputModel, stringifyPaymentInput, parsePaymentInput, fromWireFormatPaymentInput, toWireFormatPaymentInput, validatePaymentInput, assertPaymentInput, encodePaymentInput } from './models/PaymentInput.js';
 export type { PaymentInputFields, PaymentInputJSON, PaymentInputInit } from './models/PaymentInput.js';
-export * from './iobject-plugin-keys.js';
 export * from './client.js';
 
 
-export * from './schemas.js';

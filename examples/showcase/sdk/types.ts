@@ -3,8 +3,6 @@
 import type * as InputSchemas from './input-schemas.js';
 import type * as OutputSchemas from './output-schemas.js';
 
-type __OpenApiRecord<K extends string | number | symbol, V> = { [P in K]: V };
-
 export type Member = {
   email: (string);
   id: (string);
@@ -28,4 +26,4 @@ export type UpdateProjectAccessOperationSuccessBody = (OutputSchemas.ProjectAcce
 
 export type UpdateProjectAccessOperationErrorBody = unknown;
 
-export type UpdateProjectAccessOperationHttpResponse = { matched: 'status'; status: 200; contentType: "application/json"; body: OutputSchemas.ProjectAccess; headers: __OpenApiRecord<string, never> };
+export type UpdateProjectAccessOperationHttpResponse = { matched: 'status'; status: 200; contentType: "application/json"; body: OutputSchemas.ProjectAccess; headers: { [key: string]: never } };

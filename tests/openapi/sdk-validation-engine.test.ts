@@ -40,11 +40,14 @@ async function loadSdk(root: string, marker: string, profile: GolemProfile): Pro
     return runtime.validationEngine;
   };
   const shared = engineOf(new Client(options));
+  const index: Record<string, unknown> = await import(pathToFileURL(path.join(output, 'dist/index.js')).href);
+  for (const internal of ['createRuntimeValidators', 'createOperationRuntimeValidators', 'schemaRegistry', 'IOBJECT_PLUGIN_KEYS']) {
+    assert.equal(internal in index, false, `${internal} is internal to the SDK`);
+  }
   if (profile.ajvStandalone) {
     assert.equal(shared, undefined);
-    const index: Record<string, unknown> = await import(pathToFileURL(path.join(output, 'dist/index.js')).href);
-    assert.equal(typeof index.createRuntimeValidators, 'function');
-    assert.equal(typeof index.createOperationRuntimeValidators, 'function');
+    const schemas: Record<string, unknown> = await import(pathToFileURL(path.join(output, 'dist/schemas.js')).href);
+    assert.equal(typeof schemas.createOperationRuntimeValidators, 'function');
   } else {
     assert.ok(shared);
     assert.equal(engineOf(new Client(options)), shared, 'clients of one SDK share one default engine');

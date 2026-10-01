@@ -3,8 +3,6 @@
 import type * as InputSchemas from './input-schemas.js';
 import type * as OutputSchemas from './output-schemas.js';
 
-type __OpenApiRecord<K extends string | number | symbol, V> = { [P in K]: V };
-
 export type Merchant = {
   id: string;
   name: (string);
@@ -45,7 +43,7 @@ export type ListPaymentsOperationSuccessBody = (OutputSchemas.Payment[]);
 
 export type ListPaymentsOperationErrorBody = void;
 
-export type ListPaymentsOperationHttpResponse = { matched: 'status'; status: 200; contentType: "application/json"; body: OutputSchemas.Payment[]; headers: __OpenApiRecord<string, never> } | { matched: 'status'; status: 400; contentType: null; body: void; headers: __OpenApiRecord<string, never> };
+export type ListPaymentsOperationHttpResponse = { matched: 'status'; status: 200; contentType: "application/json"; body: OutputSchemas.Payment[]; headers: { [key: string]: never } } | { matched: 'status'; status: 400; contentType: null; body: void; headers: { [key: string]: never } };
 
 export type CreatePaymentOperationInput = {
   body: InputSchemas.PaymentInput;
@@ -55,7 +53,7 @@ export type CreatePaymentOperationSuccessBody = (OutputSchemas.Payment);
 
 export type CreatePaymentOperationErrorBody = void;
 
-export type CreatePaymentOperationHttpResponse = { matched: 'status'; status: 201; contentType: "application/json"; body: OutputSchemas.Payment; headers: __OpenApiRecord<string, never> } | { matched: 'status'; status: 400; contentType: null; body: void; headers: __OpenApiRecord<string, never> };
+export type CreatePaymentOperationHttpResponse = { matched: 'status'; status: 201; contentType: "application/json"; body: OutputSchemas.Payment; headers: { [key: string]: never } } | { matched: 'status'; status: 400; contentType: null; body: void; headers: { [key: string]: never } };
 
 export type CreatePaymentAsClassOperationInput = {
   body: InputSchemas.Payment;
@@ -65,7 +63,7 @@ export type CreatePaymentAsClassOperationSuccessBody = (OutputSchemas.Payment);
 
 export type CreatePaymentAsClassOperationErrorBody = void;
 
-export type CreatePaymentAsClassOperationHttpResponse = { matched: 'status'; status: 201; contentType: "application/json"; body: OutputSchemas.Payment; headers: __OpenApiRecord<string, never> } | { matched: 'status'; status: 400; contentType: null; body: void; headers: __OpenApiRecord<string, never> };
+export type CreatePaymentAsClassOperationHttpResponse = { matched: 'status'; status: 201; contentType: "application/json"; body: OutputSchemas.Payment; headers: { [key: string]: never } } | { matched: 'status'; status: 400; contentType: null; body: void; headers: { [key: string]: never } };
 
 export type GetPaymentOperationInput = {
   path: {
@@ -77,7 +75,7 @@ export type GetPaymentOperationSuccessBody = (OutputSchemas.Payment);
 
 export type GetPaymentOperationErrorBody = void;
 
-export type GetPaymentOperationHttpResponse = { matched: 'status'; status: 200; contentType: "application/json"; body: OutputSchemas.Payment; headers: __OpenApiRecord<string, never> } | { matched: 'status'; status: 404; contentType: null; body: void; headers: __OpenApiRecord<string, never> };
+export type GetPaymentOperationHttpResponse = { matched: 'status'; status: 200; contentType: "application/json"; body: OutputSchemas.Payment; headers: { [key: string]: never } } | { matched: 'status'; status: 404; contentType: null; body: void; headers: { [key: string]: never } };
 
 export type DeletePaymentOperationInput = {
   path: {
@@ -89,4 +87,4 @@ export type DeletePaymentOperationSuccessBody = void;
 
 export type DeletePaymentOperationErrorBody = unknown;
 
-export type DeletePaymentOperationHttpResponse = { matched: 'status'; status: 204; contentType: null; body: void; headers: __OpenApiRecord<string, never> };
+export type DeletePaymentOperationHttpResponse = { matched: 'status'; status: 204; contentType: null; body: void; headers: { [key: string]: never } };

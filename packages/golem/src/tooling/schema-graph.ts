@@ -48,6 +48,8 @@ export interface SchemaNode {
    * codec id. Its schema is referenced by id; its code is not emitted here.
    */
   readonly siblingCodec?: true;
+  /** An unnamed object type; model companions keep its codec functions module-private. */
+  readonly anonymous?: true;
 }
 
 /** Deserialize-param descriptor attached by TSerde. */
@@ -87,8 +89,6 @@ export interface SchemaGraph {
 }
 
 export interface SchemaGraphOptions {
-  /** Prefix for deterministic anonymous object codec ids in generated SDKs. */
-  readonly anonymousCodecPrefix?: string;
   /** Where the interned models come from; part of every computed codec id. Defaults to `typescript`. */
   readonly codecSource?: CodecBuildIdentity['source'];
   /**
@@ -666,7 +666,7 @@ export function createSchemaGraph(
         if (existing) return existing;
       }
     }
-    const stackKey = named ?? `__anon_stack_${(anonymous + 1).toString(36)}`;
+    const stackKey = named ?? `__anon_stack_${(anonymous += 1).toString(36)}`;
     internStack.add(stackKey);
     const nestedEdges: string[] = [];
     const internNested = (child: ModelTypeDescriptor): void => {
@@ -687,13 +687,10 @@ export function createSchemaGraph(
         if (isTypeDescriptor(value)) internNested(value);
       }
     }
-    const nextAnonymous = anonymous + 1;
-    const computedId = named ? codecPublicId(named, descriptor, internLookup(), { source: codecSource, constructs: emitClass }) : undefined;
-    const publicId = named
-      ? options.codecIds?.get(named) ?? computedId
-      : options.anonymousCodecPrefix === undefined
-        ? undefined
-        : `${options.anonymousCodecPrefix}__anon_${nextAnonymous.toString(36)}`;
+    // An unnamed object type is identified by its shape, so its id is stable across unrelated edits
+    // and two files' anonymous types never share an id unless they are the same codec.
+    const computedId = codecPublicId(named ?? 'Anonymous', descriptor, internLookup(), { source: codecSource, constructs: emitClass });
+    const publicId = named ? options.codecIds?.get(named) ?? computedId : computedId;
     internStack.delete(stackKey);
     if (named && publicId) {
       const hashedId = byPublicId.get(publicId);
@@ -711,7 +708,7 @@ export function createSchemaGraph(
     }
     const shortExistingId = named ? byName.get(named) : undefined;
     const shortExisting = shortExistingId ? nodes.get(shortExistingId) : undefined;
-    const preferredId = named ? identifierFromName(named) : `__anon_${(anonymous += 1).toString(36)}`;
+    const preferredId = identifierFromName(named ?? computedId);
     const taken = nodes.get(preferredId);
     const cycleHit = Boolean(named && shortExisting && shortExisting.codecId === named && shortExisting.kind !== 'reference');
     const id = cycleHit && shortExisting
@@ -733,6 +730,7 @@ export function createSchemaGraph(
       emitClass,
       kind: nodeKind(descriptor),
       ...(validationEnabled === undefined ? {} : { validationEnabled }),
+      ...(named ? {} : { anonymous: true as const }),
     };
     if (shortExisting?.kind === 'reference' && shortExisting.id !== id) {
       nodes.delete(shortExisting.id);

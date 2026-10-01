@@ -4,6 +4,7 @@ import { cloneConversionInput, requireModelObject } from '@exprtlabs/golem/conve
 import { ajvIssues, createObjectCodec, parseJson, registerIModelClass, requireAjvSchema, resolveGeneratedModelSchemaRefs, resolveModelValidationContextValidator, runSynchronousValidation, serdeValidates, stringifyJsonString, validationFailure, IssueRepresentation, IssueSource } from '@exprtlabs/golem/serde';
 import { createOpenApiSyncAjvEngine } from '@exprtlabs/golem/ajv';
 import type * as Types from '../types.js';
+import type {} from '../iobject-plugin-keys.js';
 
 function objectFromJSON<T extends object>(json: unknown, modelName: string): Partial<T> {
   return requireModelObject(json, modelName) as Partial<T>;

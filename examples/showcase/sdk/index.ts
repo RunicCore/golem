@@ -6,8 +6,6 @@ export { MemberModel, stringifyMember, parseMember, fromWireFormatMember, toWire
 export type { MemberFields, MemberJSON, MemberInit } from './models/Member.js';
 export { ProjectAccessModel, stringifyProjectAccess, parseProjectAccess, fromWireFormatProjectAccess, toWireFormatProjectAccess, validateProjectAccess, assertProjectAccess, encodeProjectAccess } from './models/ProjectAccess.js';
 export type { ProjectAccessFields, ProjectAccessJSON, ProjectAccessInit } from './models/ProjectAccess.js';
-export * from './iobject-plugin-keys.js';
 export * from './client.js';
 
 
-export * from './schemas.js';

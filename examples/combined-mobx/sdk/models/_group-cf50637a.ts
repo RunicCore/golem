@@ -6,6 +6,7 @@ import { ajvIssues, createObjectCodec, parseJson, registerIModelClass, requireAj
 import { createOpenApiSyncAjvEngine } from '@exprtlabs/golem/ajv';
 import { asGenObservable } from '@exprtlabs/golem/mobx';
 import type * as Types from '../types.js';
+import type {} from '../iobject-plugin-keys.js';
 
 function objectFromJSON<T extends object>(json: unknown, modelName: string): Partial<T> {
   return requireModelObject(json, modelName) as Partial<T>;

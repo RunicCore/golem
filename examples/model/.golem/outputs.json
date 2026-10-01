@@ -11,7 +11,7 @@
     "src/collection-tags.model.generated.ts": {
       "job": "models:.",
       "owner": "@exprtlabs/golem-model",
-      "digest": "3c197268caca3eed890e55a99fed3381fb0e1185a42d82536bdff6cdf68ab79a",
+      "digest": "6044419b823e77299dcdc63e238a3b7cd01b4b07790bc3dc0c58dbff49aeda22",
       "destination": "src",
       "destinationKind": "directory"
     },
@@ -46,7 +46,7 @@
     "src/order-input.model.generated.ts": {
       "job": "models:.",
       "owner": "@exprtlabs/golem-model",
-      "digest": "5601a9b3459099efa9c7b16f5333a787dde103df4a8f6bab71e4a5c098d10db9",
+      "digest": "0a1e92f3a1e1e5dcc0c566f5fa0ec39c0294e8ecec122f3c0f8a6fac51884486",
       "destination": "src",
       "destinationKind": "directory"
     },

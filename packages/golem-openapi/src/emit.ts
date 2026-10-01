@@ -119,11 +119,10 @@ export function generateIndex(profile: OpenApiGenerationProfile, plan?: Emission
 export * from './types.js';
 ${include('input-schemas.ts') ? "export type * as InputSchemas from './input-schemas.js';" : ''}
 ${include('output-schemas.ts') ? "export type * as OutputSchemas from './output-schemas.js';" : ''}
-${modelReexports ? `${modelReexports}\nexport * from './iobject-plugin-keys.js';` : ''}
+${modelReexports}
 ${include('client.ts') ? "export * from './client.js';" : ''}
 ${include('inbound.ts') ? "export * from './inbound.js';" : ''}
 ${include('links.ts') ? "export * from './links.js';" : ''}
-${include('schemas.ts') ? "export * from './schemas.js';" : ''}
 `;
 }
 

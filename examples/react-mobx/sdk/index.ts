@@ -4,8 +4,6 @@ export type * as InputSchemas from './input-schemas.js';
 export type * as OutputSchemas from './output-schemas.js';
 export { MoneyModel, stringifyMoney, parseMoney, fromWireFormatMoney, toWireFormatMoney, validateMoney, assertMoney, encodeMoney } from './models/Money.js';
 export type { MoneyFields, MoneyJSON, MoneyInit } from './models/Money.js';
-export * from './iobject-plugin-keys.js';
 export * from './client.js';
 
 
-export * from './schemas.js';

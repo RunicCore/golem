@@ -260,19 +260,15 @@ const checks: readonly Check[] = [
   },
 ];
 
-// The runtime engine holds every scenario in one project. Standalone validation cannot: models in one
-// project each name their first anonymous structural schema `__anon_1`, and generate() throws "Conflicting
-// standalone schema identity" when two models carry different ones. So each standalone check keeps its own
-// project.
+// Both engines hold every scenario in one project. Anonymous structural schemas are identified by their
+// shape, so models in one standalone project never claim the same id for different schemas (omec-yw4n:
+// counter ids made generate() throw "Conflicting standalone schema identity").
 test('tag boundary scenarios share one runtime project', async t => {
   const project = await buildScenarioProject(t, false, checks.map(check => check.directory));
   for (const check of checks) await t.test(check.title, () => check.run(project, 'JIT'));
 });
 
-test('tag boundary scenarios each compile in their own standalone project', async t => {
-  for (const check of checks) {
-    await t.test(check.title, async subtest => {
-      await check.run(await buildScenarioProject(subtest, true, [check.directory]), 'AOT');
-    });
-  }
+test('tag boundary scenarios share one standalone project', async t => {
+  const project = await buildScenarioProject(t, true, checks.map(check => check.directory));
+  for (const check of checks) await t.test(check.title, () => check.run(project, 'AOT'));
 });

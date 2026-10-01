@@ -230,28 +230,12 @@ export interface SchemaTypeContext {
   readonly direction?: 'input' | 'output';
   readonly qualifier?: string;
   readonly anchors?: ReadonlyMap<string, string>;
-  readonly recordType?: { readonly name: string; used: boolean };
   /** Present only when a component shadows the global `Blob` in the emitted module. */
   readonly blobType?: { readonly name: string; used: boolean };
   readonly document?: unknown;
   readonly resources?: ResourceIndex;
   readonly currentBase?: string;
   readonly inlining?: ReadonlySet<string>;
-}
-
-function generatedRecordType(
-  scope: NameScope,
-  declaredNames: readonly string[],
-): { readonly name: string; used: boolean } {
-  const reserved = new Set(declaredNames);
-  let name = '__OpenApiRecord';
-  let suffix = 0;
-  while (reserved.has(name) || scope.has(name)) {
-    suffix += 1;
-    name = `__OpenApiRecord${suffix}`;
-  }
-  scope.claim(name, 'internal mapped Record utility type');
-  return { name, used: false };
 }
 
 /** Alias the global `Blob` when a component named `Blob` shadows it in the emitted module. */
@@ -279,20 +263,9 @@ function arrayType(item: string): string {
   return /^[\w$.]+$/.test(item) ? `${item}[]` : `(${item})[]`;
 }
 
-function recordType(context: SchemaTypeContext, valueType: string): string {
-  const utility = context.recordType;
-  if (!utility) return `Record<string, ${valueType}>`;
-  utility.used = true;
-  return `${utility.name}<string, ${valueType}>`;
-}
-
-function emitRecordType(
-  output: string[],
-  index: number,
-  utility: { readonly name: string; used: boolean },
-): void {
-  if (!utility.used) return;
-  output.splice(index, 0, `type ${utility.name}<K extends string | number | symbol, V> = { [P in K]: V };`, '');
+/** An inline index signature: a component named `Record` cannot shadow it, so no helper alias is needed. */
+function recordType(valueType: string): string {
+  return `{ [key: string]: ${valueType} }`;
 }
 
 function emitBlobType(output: string[], index: number, utility: { readonly name: string; used: boolean } | undefined): void {
@@ -574,7 +547,7 @@ function objectType(schema: JsonObjectLike, context: SchemaTypeContext): string 
     members.push(`  [key: string]: ${indexTypes.join(' | ')};`);
   }
   if (members.length) return `{\n${members.join('\n')}\n}`;
-  return schema.additionalProperties === false ? recordType(context, 'never') : recordType(context, 'unknown');
+  return schema.additionalProperties === false ? recordType('never') : recordType('unknown');
 }
 
 type JsonObjectLike = { readonly [key: string]: unknown };
@@ -612,7 +585,7 @@ function inputType(operation: NormalizedOperation, context: SchemaTypeContext = 
     ).join(' | ');
     lines.push(`  body${operation.requestBody?.required ? '' : '?'}: ${variants};`);
   }
-  return lines.length ? `{\n${lines.join('\n')}\n}` : recordType(context, 'never');
+  return lines.length ? `{\n${lines.join('\n')}\n}` : recordType('never');
 }
 
 function responseBodyType(response: NormalizedResponse, context: SchemaTypeContext = {}): string {
@@ -640,7 +613,7 @@ function responseHeadersType(document: unknown, response: NormalizedResponse, co
     const header = resolveLocal(document, rawHeader);
     return `readonly ${propertyName(name)}?: ${schemaType(parameterSchema(header), context)}`;
   });
-  return members.length ? `{ ${members.join('; ')} }` : recordType(context, 'never');
+  return members.length ? `{ ${members.join('; ')} }` : recordType('never');
 }
 
 function responseMatchType(status: string): string {
@@ -681,17 +654,8 @@ export function generateTypes(
   const useOutput = plan ? plan.typesUsesOutputSchemas : Object.keys(schemas).length > 0 && operations.length > 0;
   if (useInput) scope.claim('InputSchemas', 'import binding InputSchemas');
   if (useOutput) scope.claim('OutputSchemas', 'import binding OutputSchemas');
-  const recordTypeName = generatedRecordType(scope, [
-    ...objectEntries(schemas).map(([name]) => identifier(name)),
-    ...operations.flatMap((operation) => [
-      `${operation.typeName}OperationInput`,
-      `${operation.typeName}OperationSuccessBody`,
-      `${operation.typeName}OperationErrorBody`,
-      `${operation.typeName}OperationHttpResponse`,
-    ]),
-  ]);
   const blobTypeName = generatedBlobType(scope, objectEntries(schemas).map(([name]) => identifier(name)));
-  const baseContext = schemaContext(document, { recordType: recordTypeName, blobType: blobTypeName });
+  const baseContext = schemaContext(document, { blobType: blobTypeName });
   const output = [
     generatedBanner(),
     manifestMarker(),
@@ -699,7 +663,7 @@ export function generateTypes(
     ...(useOutput ? ["import type * as OutputSchemas from './output-schemas.js';"] : []),
     '',
   ];
-  const recordTypeIndex = output.length;
+  const blobTypeIndex = output.length;
   for (const [name, rawSchema] of objectEntries(schemas)) {
     const schema = resolveLocal(document, rawSchema);
     const typeName = identifier(name);
@@ -718,13 +682,11 @@ export function generateTypes(
     const inputContext = schemaContext(document, {
       direction: 'input',
       qualifier: useInput ? 'InputSchemas.' : '',
-      recordType: recordTypeName,
       blobType: blobTypeName,
     });
     const outputContext = schemaContext(document, {
       direction: 'output',
       qualifier: useOutput ? 'OutputSchemas.' : '',
-      recordType: recordTypeName,
       blobType: blobTypeName,
     });
     scope.claim(`${operation.typeName}OperationInput`, `operation ${JSON.stringify(operation.name)} input type`);
@@ -739,23 +701,21 @@ export function generateTypes(
       '',
     );
   }
-  emitRecordType(output, recordTypeIndex, recordTypeName);
-  emitBlobType(output, recordTypeIndex, blobTypeName);
+  emitBlobType(output, blobTypeIndex, blobTypeName);
   return `${output.join('\n').trim()}\n`;
 }
 
 export function generateDirectionalSchemas(document: unknown, direction: 'input' | 'output'): string {
   const schemas = asRecord(asRecord(asRecord(document).components).schemas);
   const scope = new NameScope(`${direction}-schemas.ts`);
-  const recordTypeName = generatedRecordType(scope, objectEntries(schemas).map(([name]) => identifier(name)));
   const blobTypeName = generatedBlobType(scope, objectEntries(schemas).map(([name]) => identifier(name)));
-  const baseContext = schemaContext(document, { direction, recordType: recordTypeName, blobType: blobTypeName });
+  const baseContext = schemaContext(document, { direction, blobType: blobTypeName });
   const output = [
     generatedBanner(),
     `/** Component schemas projected for ${direction === 'input' ? 'request' : 'response'} data. */`,
     '',
   ];
-  const recordTypeIndex = output.length;
+  const blobTypeIndex = output.length;
   for (const [name, rawSchema] of objectEntries(schemas)) {
     const schema = resolveLocal(document, rawSchema);
     const typeName = identifier(name);
@@ -764,7 +724,6 @@ export function generateDirectionalSchemas(document: unknown, direction: 'input'
     output.push(`export type ${typeName} = ${schemaType(schema, context)};`, '');
   }
   if (Object.keys(schemas).length === 0) output.push('export {};');
-  emitRecordType(output, recordTypeIndex, recordTypeName);
-  emitBlobType(output, recordTypeIndex, blobTypeName);
+  emitBlobType(output, blobTypeIndex, blobTypeName);
   return `${output.join('\n').trim()}\n`;
 }

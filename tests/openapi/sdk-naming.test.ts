@@ -50,22 +50,15 @@ test('allows a single Foo-Bar component name and rejects Foo-Bar with Foo.Bar', 
   );
 });
 
-test('rejects operation names that collide with actual client helpers', async (t) => {
-  const directory = createFixtureProject(t, 'golem-openapi-r6-url-');
+test('operation names that were client helpers before the shared runtime generate client methods', async (t) => {
+  const directory = createFixtureProject(t, 'golem-openapi-former-helpers-');
+  const names = ['url', 'entries', 'formValue', 'matchesStatus', 'readNdjson'];
   const input = writeOpenApiDocument(directory, documentBase('3.1.0', {
-    paths: {
-      '/url': {
-        get: {
-          operationId: 'url',
-          responses: { 200: { description: 'ok' } },
-        },
-      },
-    },
+    paths: Object.fromEntries(names.map(name => [`/${name}`, { get: { operationId: name, responses: { 200: { description: 'ok' } } } }])),
   }));
-  await assert.rejects(
-    () => generate({ input, output: path.join(directory, 'sdk'), profile: { mobx: false, validation: false } }),
-    /collides with generated client helper/,
-  );
+  const result = await generate({ input, output: path.join(directory, 'sdk'), profile: { mobx: false, validation: false } });
+  const client = result.artifacts.find(artifact => artifact.path.endsWith('client.ts'))?.content ?? '';
+  for (const name of names) assert.match(client, new RegExp(`^  ${name}\\(\\): ApiOperation<`, 'm'), name);
 });
 
 test('reserved-word operation names get a deterministic identifier suffix and compile', async t => {

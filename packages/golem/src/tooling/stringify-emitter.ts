@@ -59,6 +59,8 @@ export interface CodecRuntimeOptions {
   readonly siblingWireCodecIds?: ReadonlySet<string>;
   /** Local codecs whose wire stringify other generated modules import. */
   readonly exportedWireStringifyIds?: ReadonlySet<string>;
+  /** Export anonymous codecs' functions: OpenAPI group modules import them from each other. Model companions keep them private. */
+  readonly exportAnonymousCodecs?: boolean;
 }
 
 interface EmitCtx {
@@ -77,6 +79,7 @@ interface EmitCtx {
   /** Sibling codecs whose companion exports a wire stringify (`wireStringifyExportName`). */
   readonly siblingWireCodecIds?: ReadonlySet<string>;
   readonly exportedWireStringifyIds?: ReadonlySet<string>;
+  readonly exportAnonymousCodecs?: boolean;
   /** Nodes being inlined into the current wire stringify, to reject unbounded expansion. */
   readonly wireInlining?: ReadonlySet<string>;
   readonly inlineLocals?: Set<string>;
@@ -1273,6 +1276,7 @@ function emitNodeRuntime(
   const parseName = parseFunctionName(node.id);
   const validateName = validateFunctionName(node.id);
   const assertName = `assert${node.id}`;
+  const exported = node.anonymous && !ctx.exportAnonymousCodecs ? '' : 'export ';
   const wireAssertName = `__golemAssertWire_${node.id}`;
   const convertName = `convertFromWire${node.id}`;
   // An allOf-style intersection of objects (including referenced models) converts
@@ -1302,7 +1306,7 @@ function emitNodeRuntime(
   const wrappedStringify = [
     stringifySrc.replace(`function ${stringifyName}(`, `function ${stringifyName}Core(`),
     wireStringifySrc,
-    `export function ${stringifyName}(value: Record<string, unknown>, options?: ${SERDE_OPTIONS}): string {`,
+    `${exported}function ${stringifyName}(value: Record<string, unknown>, options?: ${SERDE_OPTIONS}): string {`,
     emitSerdeValidates(validationEnabled),
     ...(emitsValidatedWire ? inlineLocalDeclarations(encodedStringifyContext) : []),
     ...(validationEnabled ? [
@@ -1375,7 +1379,7 @@ function emitNodeRuntime(
   convertLines.push('  return result;', '}', '');
 
   const fromWireLines = [
-    `export function ${fromWire}(wire: unknown, options?: ${SERDE_OPTIONS}): unknown {`,
+    `${exported}function ${fromWire}(wire: unknown, options?: ${SERDE_OPTIONS}): unknown {`,
     `  return ${convertName}(wire, options, false);`,
     '}',
     '',
@@ -1385,7 +1389,7 @@ function emitNodeRuntime(
   const wireType = ctx.wireType?.(node);
 
   const toWireLines = [
-    `export function ${toWire}(${valueParam}: unknown, options?: ${SERDE_OPTIONS}): ${wireType ?? 'unknown'} {`,
+    `${exported}function ${toWire}(${valueParam}: unknown, options?: ${SERDE_OPTIONS}): ${wireType ?? 'unknown'} {`,
     emitSerdeValidates(validationEnabled),
     ...(validationEnabled ? [
       '  if (validates) {',
@@ -1406,7 +1410,7 @@ function emitNodeRuntime(
   ];
 
   const parseLines = [
-    `export function ${parseName}(text: string, options?: ${SERDE_OPTIONS}): unknown {`,
+    `${exported}function ${parseName}(text: string, options?: ${SERDE_OPTIONS}): unknown {`,
     `  return ${convertName}(parseJson(text), options, true);`,
     '}',
     '',
@@ -1414,7 +1418,7 @@ function emitNodeRuntime(
 
   const validateLines = validationEnabled
     ? [
-      `export function ${validateName}(value: unknown, options?: ${VALIDATE_OPTIONS}): value is Record<string, unknown> {`,
+      `${exported}function ${validateName}(value: unknown, options?: ${VALIDATE_OPTIONS}): value is Record<string, unknown> {`,
       '  const failFast = options?.failFast !== false;',
       '  let ok: boolean;',
       '  let errors: readonly unknown[] | null | undefined;',
@@ -1430,18 +1434,18 @@ function emitNodeRuntime(
       '  return ok;',
       '}',
       '',
-      `export function ${assertName}(value: unknown, options?: ${VALIDATE_OPTIONS}): Record<string, unknown> {`,
+      `${exported}function ${assertName}(value: unknown, options?: ${VALIDATE_OPTIONS}): Record<string, unknown> {`,
       `  ${emitAjvGuard(node, 'dynamic', 'value', 'model', ctx.issueSource)}`,
       '  return value as Record<string, unknown>;',
       '}',
       '',
     ]
     : [
-      `export function ${validateName}(_value: unknown, _options?: ${VALIDATE_OPTIONS}): _value is Record<string, unknown> {`,
+      `${exported}function ${validateName}(_value: unknown, _options?: ${VALIDATE_OPTIONS}): _value is Record<string, unknown> {`,
       '  validationUnavailable();',
       '}',
       '',
-      `export function ${assertName}(_value: unknown): Record<string, unknown> {`,
+      `${exported}function ${assertName}(_value: unknown): Record<string, unknown> {`,
       '  validationUnavailable();',
       '}',
       '',
@@ -1700,6 +1704,7 @@ export function emitCodecRuntime(
     exportedFillFunctionIds: options.exportedFillFunctionIds,
     issueSource: options.issueSource ?? 'TypeScript',
     wireType: options.wireType,
+    exportAnonymousCodecs: options.exportAnonymousCodecs,
   };
   const anyValidation = nodes.some((node) => !isExternalCodecNode(node) && validates(node));
   // Validators compile on first use when a sibling module's codec schema must be added first.

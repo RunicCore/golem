@@ -3,8 +3,6 @@
 import type * as InputSchemas from './input-schemas.js';
 import type * as OutputSchemas from './output-schemas.js';
 
-type __OpenApiRecord<K extends string | number | symbol, V> = { [P in K]: V };
-
 export type Money = {
   amount: number;
   currency: string;
@@ -18,4 +16,4 @@ export type CreatePaymentOperationSuccessBody = (OutputSchemas.Money);
 
 export type CreatePaymentOperationErrorBody = unknown;
 
-export type CreatePaymentOperationHttpResponse = { matched: 'status'; status: 201; contentType: "application/json"; body: OutputSchemas.Money; headers: __OpenApiRecord<string, never> };
+export type CreatePaymentOperationHttpResponse = { matched: 'status'; status: 201; contentType: "application/json"; body: OutputSchemas.Money; headers: { [key: string]: never } };

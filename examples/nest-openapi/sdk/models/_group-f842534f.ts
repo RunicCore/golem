@@ -4,6 +4,7 @@ import { convertModelField, decodeGeneratedModelTrusted, cloneConversionInput, e
 import { addNestedCodecSchema, ajvIssues, createObjectCodec, parseJson, registerIModelClass, requireAjvSchema, resolveGeneratedModelSchemaRefs, resolveModelValidationContextValidator, runSynchronousValidation, serdeValidates, stringifyJsonString, validationFailure, IssueRepresentation, IssueSource } from '@exprtlabs/golem/serde';
 import { createOpenApiSyncAjvEngine } from '@exprtlabs/golem/ajv';
 import type * as Types from '../types.js';
+import type {} from '../iobject-plugin-keys.js';
 import { fromWireFormatMoney, stringifyMoney, toWireFormatMoney } from "./_group-1246ba12.js";
 import { fromWireFormatMerchant, stringifyMerchant, toWireFormatMerchant } from "./_group-57bcd84e.js";
 import { fromWireFormatMerchantOmitId, stringifyMerchantOmitId, toWireFormatMerchantOmitId } from "./_group-9667d97a.js";

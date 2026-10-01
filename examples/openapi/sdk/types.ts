@@ -3,8 +3,6 @@
 import type * as InputSchemas from './input-schemas.js';
 import type * as OutputSchemas from './output-schemas.js';
 
-type __OpenApiRecord<K extends string | number | symbol, V> = { [P in K]: V };
-
 export type Task = {
   id: string;
   title: string;
@@ -21,7 +19,7 @@ export type ListTasksOperationSuccessBody = (OutputSchemas.Task[]);
 
 export type ListTasksOperationErrorBody = unknown;
 
-export type ListTasksOperationHttpResponse = { matched: 'status'; status: 200; contentType: "application/json"; body: OutputSchemas.Task[]; headers: __OpenApiRecord<string, never> };
+export type ListTasksOperationHttpResponse = { matched: 'status'; status: 200; contentType: "application/json"; body: OutputSchemas.Task[]; headers: { [key: string]: never } };
 
 export type CreateTaskOperationInput = {
   body: InputSchemas.Task;
@@ -31,7 +29,7 @@ export type CreateTaskOperationSuccessBody = (OutputSchemas.Task);
 
 export type CreateTaskOperationErrorBody = unknown;
 
-export type CreateTaskOperationHttpResponse = { matched: 'status'; status: 201; contentType: "application/json"; body: OutputSchemas.Task; headers: __OpenApiRecord<string, never> };
+export type CreateTaskOperationHttpResponse = { matched: 'status'; status: 201; contentType: "application/json"; body: OutputSchemas.Task; headers: { [key: string]: never } };
 
 export type GetTaskOperationInput = {
   path: {
@@ -45,6 +43,6 @@ export type GetTaskOperationErrorBody = ({
   message: string;
 });
 
-export type GetTaskOperationHttpResponse = { matched: 'status'; status: 200; contentType: "application/json"; body: OutputSchemas.Task; headers: __OpenApiRecord<string, never> } | { matched: 'status'; status: 404; contentType: "application/json"; body: {
+export type GetTaskOperationHttpResponse = { matched: 'status'; status: 200; contentType: "application/json"; body: OutputSchemas.Task; headers: { [key: string]: never } } | { matched: 'status'; status: 404; contentType: "application/json"; body: {
   message: string;
-}; headers: __OpenApiRecord<string, never> };
+}; headers: { [key: string]: never } };

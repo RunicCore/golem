@@ -61,40 +61,40 @@ registerIModelClass("OrderInput_bbcddf3d", OrderInputBase);
 const objectAjvFast = createOpenApiSyncAjvEngine({ allErrors: false, validationBindings: {} });
 const objectAjvAll = createOpenApiSyncAjvEngine({ allErrors: true, validationBindings: {} });
 
-const __resolvedModelSchema___anon_1 = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"__anon_1\",\"type\":\"object\",\"properties\":{\"sku\":{\"allOf\":[{\"type\":\"string\"},{\"minLength\":3}]}},\"required\":[\"sku\"],\"additionalProperties\":false}") as object) as object;
-objectAjvFast.addSchema(structuredClone(__resolvedModelSchema___anon_1) as object, "__anon_1");
-objectAjvAll.addSchema(structuredClone(__resolvedModelSchema___anon_1) as object, "__anon_1");
+const __resolvedModelSchema_Anonymous_39128e39 = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"Anonymous_39128e39\",\"type\":\"object\",\"properties\":{\"sku\":{\"allOf\":[{\"type\":\"string\"},{\"minLength\":3}]}},\"required\":[\"sku\"],\"additionalProperties\":false}") as object) as object;
+objectAjvFast.addSchema(structuredClone(__resolvedModelSchema_Anonymous_39128e39) as object, "Anonymous_39128e39");
+objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_Anonymous_39128e39) as object, "Anonymous_39128e39");
 const __resolvedModelSchema_OrderInput = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"OrderInput_bbcddf3d\",\"type\":\"object\",\"properties\":{\"items\":{\"type\":\"array\",\"items\":{\"type\":\"object\",\"properties\":{\"sku\":{\"allOf\":[{\"type\":\"string\"},{\"minLength\":3}]}},\"required\":[\"sku\"],\"additionalProperties\":false}}},\"required\":[\"items\"],\"additionalProperties\":false}") as object) as object;
 objectAjvFast.addSchema(structuredClone(__resolvedModelSchema_OrderInput) as object, "OrderInput_bbcddf3d");
 objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_OrderInput) as object, "OrderInput_bbcddf3d");
 
-const validate__anon_1Fast = requireAjvSchema(objectAjvFast.getSchema("__anon_1"), "__anon_1");
-const validate__anon_1All = requireAjvSchema(objectAjvAll.getSchema("__anon_1"), "__anon_1");
+const validateAnonymous_39128e39Fast = requireAjvSchema(objectAjvFast.getSchema("Anonymous_39128e39"), "Anonymous_39128e39");
+const validateAnonymous_39128e39All = requireAjvSchema(objectAjvAll.getSchema("Anonymous_39128e39"), "Anonymous_39128e39");
 
-function fill__anon_1(out: Record<string, unknown>, wire: Record<string, unknown>, copyIdentity = true): Record<string, unknown> {
+function fillAnonymous_39128e39(out: Record<string, unknown>, wire: Record<string, unknown>, copyIdentity = true): Record<string, unknown> {
   if (copyIdentity) {
     out["sku"] = wire["sku"];
   }
   return out;
 }
 
-function stringify__anon_1Core(value: Record<string, unknown>, _options?: { readonly validate?: boolean; readonly failFast?: boolean }): string {
+function stringifyAnonymous_39128e39Core(value: Record<string, unknown>, _options?: { readonly validate?: boolean; readonly failFast?: boolean }): string {
   return '{' + "\"sku\":" + stringifyJsonString(value["sku"] as string) + '}';
 }
 
 
-export function stringify__anon_1(value: Record<string, unknown>, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): string {
+function stringifyAnonymous_39128e39(value: Record<string, unknown>, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): string {
   const validates = serdeValidates(options, true);
   if (validates) {
-    assert__anon_1(value, options);
+    assertAnonymous_39128e39(value, options);
   }
-  return stringify__anon_1Core(value as never, { validate: false });
+  return stringifyAnonymous_39128e39Core(value as never, { validate: false });
 }
 
-function convertFromWire__anon_1(wire: unknown, options: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object } | undefined, isolated: boolean): unknown {
+function convertFromWireAnonymous_39128e39(wire: unknown, options: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object } | undefined, isolated: boolean): unknown {
   const validates = serdeValidates(options, true);
   if (validates) {
-    assert__anon_1(wire, options);
+    assertAnonymous_39128e39(wire, options);
   }
   const source = isolated || wire === null || typeof wire !== 'object' ? wire : cloneConversionInput(wire);
   let result: unknown = source;
@@ -102,68 +102,68 @@ function convertFromWire__anon_1(wire: unknown, options: { readonly validate?: b
     if (options?.construct) {
       result = Reflect.construct(options.construct, [{ ...(source as Record<string, unknown>) }]);
     } else {
-      result = fill__anon_1({} as Record<string, unknown>, source as Record<string, unknown>);
+      result = fillAnonymous_39128e39({} as Record<string, unknown>, source as Record<string, unknown>);
     }
   }
   return result;
 }
 
-export function fromWireFormat__anon_1(wire: unknown, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): unknown {
-  return convertFromWire__anon_1(wire, options, false);
+function fromWireFormatAnonymous_39128e39(wire: unknown, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): unknown {
+  return convertFromWireAnonymous_39128e39(wire, options, false);
 }
 
-export function toWireFormat__anon_1(value: unknown, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): unknown {
+function toWireFormatAnonymous_39128e39(value: unknown, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): unknown {
   const validates = serdeValidates(options, true);
   if (validates) {
-    assert__anon_1(value, options);
+    assertAnonymous_39128e39(value, options);
   }
   const record = value as Record<string, unknown>;
   const wire = { ["sku"]: record["sku"] };
   return wire;
 }
 
-export function parse__anon_1(text: string, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): unknown {
-  return convertFromWire__anon_1(parseJson(text), options, true);
+function parseAnonymous_39128e39(text: string, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): unknown {
+  return convertFromWireAnonymous_39128e39(parseJson(text), options, true);
 }
 
-export function validate__anon_1(value: unknown, options?: { readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext }): value is Record<string, unknown> {
+function validateAnonymous_39128e39(value: unknown, options?: { readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext }): value is Record<string, unknown> {
   const failFast = options?.failFast !== false;
   let ok: boolean;
   let errors: readonly unknown[] | null | undefined;
   if (options?.validationContext === undefined) {
-    ok = failFast ? validate__anon_1Fast(value) : validate__anon_1All(value);
-    errors = failFast ? validate__anon_1Fast.errors : validate__anon_1All.errors;
+    ok = failFast ? validateAnonymous_39128e39Fast(value) : validateAnonymous_39128e39All(value);
+    errors = failFast ? validateAnonymous_39128e39Fast.errors : validateAnonymous_39128e39All.errors;
   } else {
-    const validator = resolveModelValidationContextValidator(options.validationContext, "__anon_1", failFast ? 'first' : 'all');
+    const validator = resolveModelValidationContextValidator(options.validationContext, "Anonymous_39128e39", failFast ? 'first' : 'all');
     ok = runSynchronousValidation(validator, value);
     errors = validator.errors;
   }
-  (validate__anon_1 as { errors?: unknown }).errors = errors;
+  (validateAnonymous_39128e39 as { errors?: unknown }).errors = errors;
   return ok;
 }
 
-export function assert__anon_1(value: unknown, options?: { readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext }): Record<string, unknown> {
+function assertAnonymous_39128e39(value: unknown, options?: { readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext }): Record<string, unknown> {
   if (options?.validationContext === undefined) {
-  if (!(options?.failFast !== false ? validate__anon_1Fast(value) : validate__anon_1All(value))) {
-    const validator = options?.failFast !== false ? validate__anon_1Fast : validate__anon_1All;
+  if (!(options?.failFast !== false ? validateAnonymous_39128e39Fast(value) : validateAnonymous_39128e39All(value))) {
+    const validator = options?.failFast !== false ? validateAnonymous_39128e39Fast : validateAnonymous_39128e39All;
     validationFailure(ajvIssues(validator, value, IssueRepresentation.Model, IssueSource.TypeScript));
   }
 } else {
-  const validator = resolveModelValidationContextValidator(options.validationContext, "__anon_1", options?.failFast !== false ? 'first' : 'all');
+  const validator = resolveModelValidationContextValidator(options.validationContext, "Anonymous_39128e39", options?.failFast !== false ? 'first' : 'all');
   if (!runSynchronousValidation(validator, value)) validationFailure(ajvIssues(validator, value, IssueRepresentation.Model, IssueSource.TypeScript));
 }
   return value as Record<string, unknown>;
 }
 
 
-createObjectCodec("__anon_1", {
-  stringify: stringify__anon_1 as (value: never, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }) => string,
-  parse: parse__anon_1 as (text: string, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }) => never,
-  validate: validate__anon_1,
-  assert: assert__anon_1,
-  toWireFormat: toWireFormat__anon_1,
-  fromWireFormat: fromWireFormat__anon_1,
-  schema: __resolvedModelSchema___anon_1,
+createObjectCodec("Anonymous_39128e39", {
+  stringify: stringifyAnonymous_39128e39 as (value: never, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }) => string,
+  parse: parseAnonymous_39128e39 as (text: string, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }) => never,
+  validate: validateAnonymous_39128e39,
+  assert: assertAnonymous_39128e39,
+  toWireFormat: toWireFormatAnonymous_39128e39,
+  fromWireFormat: fromWireFormatAnonymous_39128e39,
+  schema: __resolvedModelSchema_Anonymous_39128e39,
   issueSource: IssueSource.TypeScript,
 });
 
@@ -178,7 +178,7 @@ function fillOrderInput(out: Record<string, unknown>, wire: Record<string, unkno
 }
 
 function stringifyOrderInputCore(value: Record<string, unknown>, _options?: { readonly validate?: boolean; readonly failFast?: boolean }): string {
-  return '{' + "\"items\":" + stringifyJsonArray(value["items"] as ArrayLike<unknown>, (item) => stringify__anon_1(item as never, { validate: false })) + '}';
+  return '{' + "\"items\":" + stringifyJsonArray(value["items"] as ArrayLike<unknown>, (item) => stringifyAnonymous_39128e39(item as never, { validate: false })) + '}';
 }
 
 
@@ -218,7 +218,7 @@ export function toWireFormatOrderInput(value: unknown, options?: { readonly vali
   }
   const record = value as Record<string, unknown>;
   let __golemField0: unknown;
-  const wire = { ["items"]: (__golemField0 = record["items"], Array.isArray(__golemField0) ? (__golemField0 as readonly unknown[]).map((item) => toWireFormat__anon_1(item as never, { validate: false })) : __golemField0) };
+  const wire = { ["items"]: (__golemField0 = record["items"], Array.isArray(__golemField0) ? (__golemField0 as readonly unknown[]).map((item) => toWireFormatAnonymous_39128e39(item as never, { validate: false })) : __golemField0) };
   return wire as OrderInputJSON;
 }
 
