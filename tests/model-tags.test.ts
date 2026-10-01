@@ -570,3 +570,26 @@ test('conflicting serde pairs are rejected during model analysis', t => {
     /Conflicting serde tags/,
   );
 });
+
+test('constraint tag order does not change the generated files or the codec id', t => {
+  const generated = (type: SourceFragment) => {
+    const { root, sourceRoot } = fixture(t);
+    fs.writeFileSync(path.join(sourceRoot, 'rules.ts'), `export function notBlank(value: string): boolean { return value.trim() !== ''; }
+export function noDigits(value: string): boolean | string { return !/\\d/.test(value) || 'digits'; }
+`);
+    fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), taggedModelSource({
+      name: 'A',
+      imports: tsSource`import type { MaxLength, MinLength, Pattern, TValidation } from '@exprtlabs/golem/tags';\nimport { notBlank, noDigits } from './rules.js';`,
+      fields: tsSource`value: ${type}`,
+    }).text);
+    return generate({ root, profile: { mobx: false, validation: true } }).artifacts
+      .map(artifact => [path.relative(root, artifact.path), artifact.content] as const)
+      .sort(([left], [right]) => left.localeCompare(right));
+  };
+  const forward = generated(tsSource`string & MinLength<2> & MaxLength<4> & Pattern<'^[a-z0-9 ]+$'> & TValidation<typeof notBlank> & TValidation<typeof noDigits>`);
+  const constraintsReordered = generated(tsSource`string & Pattern<'^[a-z0-9 ]+$'> & TValidation<typeof notBlank> & MaxLength<4> & TValidation<typeof noDigits> & MinLength<2>`);
+  assert.deepEqual(constraintsReordered, forward);
+  const predicates = generated(tsSource`string & TValidation<typeof noDigits> & TValidation<typeof notBlank>`).map(([, content]) => content).join('\n');
+  assert.match(predicates, /noDigits/);
+  assert.match(predicates, /notBlank/);
+});

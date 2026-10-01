@@ -67,3 +67,61 @@ test('dates: temporal rejects a date-time union with another string branch', asy
     /one Temporal branch and optional null/,
   );
 });
+
+const TEMPORAL_LIB = { strict: true, lib: ['ES2023', 'DOM', 'DOM.Iterable', 'esnext.temporal'] };
+
+async function generateTemporalModels(t: Parameters<typeof createFixtureProject>[0], prefix: string, doc: unknown): Promise<Record<string, unknown>> {
+  const output = path.join(createFixtureProject(t, prefix), 'sdk');
+  await generateMaterializedSdk(doc, { output, name: 'Events', profile: PROFILE, dates: 'temporal' });
+  compileGeneratedSdk(output, [], TEMPORAL_LIB);
+  return requireRecord(await import(pathToFileURL(path.join(output, 'dist/index.js')).href), 'generated models');
+}
+
+test('dates: temporal converts array items, nullable items and nested arrays', async t => {
+  const models = await generateTemporalModels(t, 'golem-openapi-temporal-arrays-', document({
+    required: ['instants', 'days', 'spans', 'grid'],
+    properties: {
+      instants: { type: 'array', items: { type: 'string', format: 'date-time' } },
+      days: { type: 'array', items: { type: ['string', 'null'], format: 'date' } },
+      spans: { type: 'array', items: { type: 'string', format: 'duration' } },
+      grid: { type: 'array', items: { type: 'array', items: { type: 'string', format: 'date-time' } } },
+    },
+  }));
+  const wire = { instants: ['2025-01-02T03:04:05Z'], days: ['2025-01-02', null], spans: ['P1D', 'PT1H'], grid: [['2025-01-02T03:04:05Z'], []] };
+  const model = decodeGeneratedModel(models.EventModel as unknown as EventConstructor, wire) as Record<string, unknown[]>;
+  assert.ok(model.instants![0] instanceof Temporal.Instant);
+  assert.ok(model.days![0] instanceof Temporal.PlainDate);
+  assert.equal(model.days![1], null);
+  assert.ok(model.spans!.every(item => item instanceof Temporal.Duration));
+  assert.ok((model.grid![0] as unknown[])[0] instanceof Temporal.Instant);
+  assert.deepEqual(encodeGeneratedModel(model as never), wire);
+});
+
+test('dates: temporal converts fields of models that reference each other across groups', async t => {
+  const models = await generateTemporalModels(t, 'golem-openapi-temporal-groups-', {
+    openapi: '3.1.0',
+    info: { title: 'Events', version: '1.0.0' },
+    paths: {},
+    components: { schemas: {
+      Venue: { type: 'object', additionalProperties: false, required: ['opens', 'closes'], properties: {
+        opens: { type: 'string', format: 'date' },
+        closes: { type: 'array', items: { type: 'string', format: 'date-time' } },
+      } },
+      Event: { type: 'object', additionalProperties: false, required: ['at', 'venue'], properties: {
+        at: { type: 'string', format: 'date-time' },
+        venue: { $ref: '#/components/schemas/Venue' },
+      } },
+      Booking: { type: 'object', additionalProperties: false, required: ['events', 'span'], properties: {
+        events: { type: 'array', items: { $ref: '#/components/schemas/Event' } },
+        span: { type: 'string', format: 'duration' },
+      } },
+    } },
+  });
+  const wire = { events: [{ at: '2025-01-02T03:04:05Z', venue: { opens: '2025-01-02', closes: ['2025-01-02T10:00:00Z'] } }], span: 'P1D' };
+  const model = decodeGeneratedModel(models.BookingModel as unknown as EventConstructor, wire) as { events: { at: unknown; venue: { opens: unknown; closes: unknown[] } }[]; span: unknown };
+  assert.ok(model.events[0]!.at instanceof Temporal.Instant);
+  assert.ok(model.events[0]!.venue.opens instanceof Temporal.PlainDate);
+  assert.ok(model.events[0]!.venue.closes[0] instanceof Temporal.Instant);
+  assert.ok(model.span instanceof Temporal.Duration);
+  assert.deepEqual(encodeGeneratedModel(model as never), wire);
+});

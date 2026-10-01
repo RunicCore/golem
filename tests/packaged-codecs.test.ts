@@ -180,3 +180,16 @@ test('exports: conditions golem does not use are skipped', t => {
   const generated = generatedFor(t, { './tags': EXPORTS['./tags'], './codecs': { custom: './dist/nowhere.d.ts', types: './dist/codecs.d.ts' } });
   assert.match(generated, /from "@fixture\/pg\/codecs"/);
 });
+
+test('one package installed at two paths collapses to one binding', t => {
+  const { root, sourceRoot } = project(t);
+  // `dep` carries its own copy of @fixture/pg, so the same package is reached by two file paths.
+  writeCodecPackage(path.join(root, 'node_modules/@fixture/pg'), { name: '@fixture/pg', exports: EXPORTS, files: COUNT_DIST_FILES });
+  writeCodecPackage(path.join(root, 'node_modules/dep'), { name: 'dep', exports: { '.': { types: './index.d.ts' } }, files: { 'index.d.ts': "export type { PkgCount as DepCount } from '@fixture/pg/tags';\n" } });
+  writeCodecPackage(path.join(root, 'node_modules/dep/node_modules/@fixture/pg'), { name: '@fixture/pg', exports: EXPORTS, files: COUNT_DIST_FILES });
+  fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), taggedModelSource({ name: 'A', imports: tsSource`import type { PkgCount } from '@fixture/pg/tags';\nimport type { DepCount } from 'dep';`, fields: tsSource`one: PkgCount; two: DepCount` }).text);
+  const generated = generate({ root, profile: { mobx: false, validation: true } }).artifacts.find(a => a.path.endsWith(SHARED_MODELS))?.content ?? '';
+  assert.equal([...generated.matchAll(/import \{ encodeCount as /g)].length, 1);
+  assert.equal([...generated.matchAll(/import \{ decodeCount as /g)].length, 1);
+  assert.doesNotMatch(generated, /__golemSerialize1/);
+});
