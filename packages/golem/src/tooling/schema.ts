@@ -338,13 +338,21 @@ function isTypeOnlyBrand(value: unknown): boolean {
 
 type ResidualPlane = 'model-only' | 'wire-only';
 
-function ownValidationBindings(value: Record<string, unknown>): string[] | undefined {
-  if (!Array.isArray(value.validations) || value.validations.length === 0) return undefined;
-  return value.validations.map((binding) => {
+/**
+ * Binding ids in a fixed order, like constraints: the codec id ignores predicate order, so types that differ only
+ * in that order must also produce the same bindings.
+ */
+function validationBindingIds(validations: readonly unknown[]): string[] {
+  return [...new Set(validations.map((binding) => {
     if (typeof binding === 'string') return binding;
     if (isRecord(binding) && typeof binding.id === 'string') return binding.id;
     throw new TypeError('Validation bindings must have declaration identifiers.');
-  });
+  }))].sort();
+}
+
+function ownValidationBindings(value: Record<string, unknown>): string[] | undefined {
+  if (!Array.isArray(value.validations) || value.validations.length === 0) return undefined;
+  return validationBindingIds(value.validations);
 }
 
 /** What is left to check after the full check of the other plane; `true` when nothing is. */
@@ -618,11 +626,7 @@ function descriptorSchema(
       && Array.isArray(value.validations)
       && value.validations.length > 0
     ) {
-      const validations = value.validations.map((binding) => {
-        if (typeof binding === 'string') return binding;
-        if (isRecord(binding) && typeof binding.id === 'string') return binding.id;
-        throw new TypeError('Validation bindings must have declaration identifiers.');
-      });
+      const validations = validationBindingIds(value.validations);
       schema = {
         [VALIDATION_KEYWORD]: {
           schema,

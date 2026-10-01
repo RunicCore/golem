@@ -571,7 +571,7 @@ test('conflicting serde pairs are rejected during model analysis', t => {
   );
 });
 
-test('constraint tag order does not change the generated files or the codec id', t => {
+test('constraint and predicate tag order does not change the generated files or the codec id', t => {
   const generated = (type: SourceFragment) => {
     const { root, sourceRoot } = fixture(t);
     fs.writeFileSync(path.join(sourceRoot, 'rules.ts'), `export function notBlank(value: string): boolean { return value.trim() !== ''; }
@@ -589,7 +589,8 @@ export function noDigits(value: string): boolean | string { return !/\\d/.test(v
   const forward = generated(tsSource`string & MinLength<2> & MaxLength<4> & Pattern<'^[a-z0-9 ]+$'> & TValidation<typeof notBlank> & TValidation<typeof noDigits>`);
   const constraintsReordered = generated(tsSource`string & Pattern<'^[a-z0-9 ]+$'> & TValidation<typeof notBlank> & MaxLength<4> & TValidation<typeof noDigits> & MinLength<2>`);
   assert.deepEqual(constraintsReordered, forward);
-  const predicates = generated(tsSource`string & TValidation<typeof noDigits> & TValidation<typeof notBlank>`).map(([, content]) => content).join('\n');
-  assert.match(predicates, /noDigits/);
-  assert.match(predicates, /notBlank/);
+  // Predicates run in a fixed order too: types that differ only in predicate order share a codec id, so they must
+  // also share the generated bindings, whichever is generated first.
+  const predicatesReordered = generated(tsSource`string & MinLength<2> & MaxLength<4> & Pattern<'^[a-z0-9 ]+$'> & TValidation<typeof noDigits> & TValidation<typeof notBlank>`);
+  assert.deepEqual(predicatesReordered, forward);
 });

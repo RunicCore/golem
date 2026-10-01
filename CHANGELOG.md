@@ -22,6 +22,7 @@ The first release candidate includes four independently installable packages:
 
 ### Models
 
+- Several `TValidation` predicates on one value run in a fixed order, not in written order, so types that differ only in that order generate the same code.
 - `@exprtlabs/golem/temporal` adds Temporal field types (`TemporalInstant`, `TemporalPlainDate`, …) with ISO 8601 wire strings and nanosecond precision.
 - Type aliases of tags accept type parameters as tag arguments, such as `type Varchar<N extends number> = string & MaxLength<N>`.
 - The order of constraint tags (`MinLength<2> & MaxLength<4>`) no longer changes a model's codec id.

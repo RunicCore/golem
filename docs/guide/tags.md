@@ -76,6 +76,7 @@ Use `TValidation<typeof predicate>` when a built-in tag cannot express the valid
 
 - Extra `TValidation` on a nested SDK type, such as `Money & TValidation<typeof extra>`, is compiled into the parent model's Ajv validator next to the nested SDK schema; it does not create a second validator.
 - Export a synchronous function with one required value.
+- Built-in constraints run first. Several predicates on one value run in a fixed order that doesn't follow the order you wrote them, so keep each predicate independent of the others.
 - Return `true` to accept, `false` for a default message, or a string for a custom message.
 - Generated checks run before the predicate. A predicate on the model field type checks the model value; a predicate on the `TSerde` decoder's parameter type checks the JSON value.
 - For rules that depend on another field or an asynchronous lookup, use an [instance validator rule](/guide/validation#instance-rules).
