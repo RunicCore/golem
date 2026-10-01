@@ -88,12 +88,9 @@ function directionalComponents(openapi: string): Record<string, unknown> {
   };
 }
 
-function runtimeRegistryFromArtifact(artifacts: readonly { path: string; content: string }[]): Record<string, unknown> {
-  const text = artifacts.find((artifact) => artifact.path.endsWith('/schemas.ts'))?.content ?? '';
-  const literal = (name: string) => new RegExp(`^export const ${name} = (\\{[\\s\\S]*?\\}) as const;$`, 'm').exec(text)?.[1];
-  const json = literal('runtimeSchemaRegistry') ?? literal('schemaRegistry');
-  assert.ok(json, 'schemas.ts carries the registry literal');
-  return requireRecord(JSON.parse(json), 'runtimeSchemaRegistry');
+/** The registry the operation schemas are built from, in the JSON form of a loaded document. */
+function runtimeRegistry(document: unknown): Record<string, unknown> {
+  return requireRecord(JSON.parse(JSON.stringify(buildSchemaData(document).normalizedRegistry)), 'runtimeSchemaRegistry');
 }
 
 async function generateProjection(t: TestContext, openapi: string) {
@@ -104,10 +101,10 @@ async function generateProjection(t: TestContext, openapi: string) {
     profile: standaloneProfile,
   });
   const manifest = result.artifacts.find((artifact) => artifact.path.endsWith('/model-manifest.json'))?.content ?? '';
-  return { output, manifest, registry: runtimeRegistryFromArtifact(result.artifacts), artifacts: result.artifacts };
+  return { output, manifest, registry: runtimeRegistry(directionalComponents(openapi)), artifacts: result.artifacts };
 }
 
-/** Only a standalone SDK emits the registries; its operations validate with the standalone validators. */
+/** Operations of a standalone SDK validate with their generated validator modules. */
 const standaloneProfile = { mobx: false, validation: true, ajvStandalone: true } as const;
 
 interface OperationProbe {
@@ -285,11 +282,11 @@ test('public generation validates repeated aliases, sibling allOf required, and 
       },
     },
   };
-  const generated = await generateMaterializedSdk(document, { output, name: 'Aliases', profile: standaloneProfile });
+  await generateMaterializedSdk(document, { output, name: 'Aliases', profile: standaloneProfile });
   copyFixtureFile(output, "openapi/schema-projection/alias-assert.ts", "alias-assert.ts");
   compileGeneratedSdk(output, [path.join(output, 'alias-assert.ts')], { strict: true });
   const probe = await operationProbe(output, 'Aliases', document);
-  const userModel = componentValidator(runtimeRegistryFromArtifact(generated.artifacts), 'UserBase');
+  const userModel = componentValidator(runtimeRegistry(document), 'UserBase');
 
   const request = { name: 'Ada', secretOne: 'one', secretTwo: 'two' };
   const reply = { name: 'Ada', first: 'id-1', second: 'id-2' };
@@ -355,12 +352,11 @@ function directionalUserEnvelope(userId: string, envelopeId: string, userRef: st
 async function assertDirectionalEnvelope(
   document: unknown,
   output: string,
-  artifacts: readonly { path: string; content: string }[],
   userId: string,
 ): Promise<void> {
   compileGeneratedSdk(output);
   const escaped = userId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const schemasText = artifacts.find((artifact) => artifact.path.endsWith('/schemas.ts'))?.content ?? '';
+  const schemasText = JSON.stringify(buildSchemaData(document).registry, null, 2);
   assert.match(schemasText, new RegExp(`${escaped}:input`));
   assert.match(schemasText, new RegExp(`${escaped}:output`));
   const inputPack = schemasText.split('golem-input')[1]?.split('golem-output')[0] ?? '';
@@ -368,7 +364,7 @@ async function assertDirectionalEnvelope(
   assert.match(inputPack, new RegExp(`${escaped}:input`));
 
   const probe = await operationProbe(output, 'Absolute', document);
-  const userModel = componentValidator(runtimeRegistryFromArtifact(artifacts), 'User');
+  const userModel = componentValidator(runtimeRegistry(document), 'User');
 
   const requestUser = { id: 'u1', secret: 's' };
   const replyUser = { id: 'u1', serverValue: 'ok' };
@@ -396,12 +392,12 @@ test('absolute and relative $id refs remap onto directional resources for Ajv', 
     return originalFetch(...args);
   };
   try {
-    const result = await generateMaterializedSdk(document, {
+    await generateMaterializedSdk(document, {
       output,
       name: 'Absolute',
       profile: standaloneProfile,
     });
-    await assertDirectionalEnvelope(document, output, result.artifacts, 'https://schemas.example.test/user');
+    await assertDirectionalEnvelope(document, output, 'https://schemas.example.test/user');
     assert.equal(fetched, false);
   } finally {
     globalThis.fetch = originalFetch;
@@ -509,11 +505,12 @@ test('literal example and default $ref values are not treated as schema referenc
     const result = await generateMaterializedSdk(document, {
       output,
       name: 'LiteralRef',
-      profile: standaloneProfile,
+      profile: { mobx: false, validation: true },
     });
-    const schemasText = result.artifacts.find((artifact) => artifact.path.endsWith('/schemas.ts'))?.content ?? '';
-    assert.match(schemasText, /https:\/\/evil\.example\/not-a-schema/);
-    assert.match(schemasText, /https:\/\/evil\.example\/default-ref/);
+    const schemaModules = result.artifacts.filter((artifact) => /[\\/](?:validation-schemas|operations)[\\/]/.test(artifact.path))
+      .map((artifact) => artifact.content).join('\n');
+    assert.match(schemaModules, /https:\/\/evil\.example\/not-a-schema/);
+    assert.match(schemaModules, /https:\/\/evil\.example\/default-ref/);
     assert.equal(fetched, false);
   } finally {
     globalThis.fetch = originalFetch;
@@ -621,11 +618,11 @@ test('an external ./nested.json $ref projects directionally without cloning comp
     input: path.join(directory, 'openapi.json'),
     output,
     name: 'External',
-    profile: standaloneProfile,
+    profile: { mobx: false, validation: true },
   });
   const inputSchemas = result.artifacts.find((artifact) => artifact.path.endsWith('/input-schemas.ts'))?.content ?? '';
   assert.doesNotMatch(inputSchemas, /hidden/);
-  const registry = runtimeRegistryFromArtifact(result.artifacts);
+  const registry = runtimeRegistry(await loadValidatedDocument(path.join(directory, 'openapi.json'), {}));
   const defs = requireRecord(registry.$defs, '$defs');
   const inputResource = requireRecord(defs['golem-input'] as object, 'input');
   const outputResource = requireRecord(defs['golem-output'] as object, 'output');

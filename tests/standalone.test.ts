@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -97,41 +97,8 @@ const profile = Object.freeze({
 
 function compileStandaloneSdk(output: string): string {
   const outDir = path.join(output, 'dist');
-  const generatedJavascript = path.join(output, 'validators.generated.js');
-  compileGeneratedSdk(
-    output,
-    [path.join(output, 'validation-engine.ts'), ...(existsSync(generatedJavascript) ? [generatedJavascript] : [])],
-    { strict: true, skipLibCheck: true, outDir },
-  );
+  compileGeneratedSdk(output, [], { strict: true, skipLibCheck: true, outDir });
   return outDir;
-}
-
-/** Every reference the standalone validators expose: the registry, its resources, each component and each operation input and response. */
-function generatedReferenceSet(schemas: { schemaRegistry: Record<string, unknown> }): Set<string> {
-  const registry = schemas.schemaRegistry;
-  const id = registry.$id as string;
-  const token = (value: string): string => encodeURIComponent(value.replace(/~/g, '~0').replace(/\//g, '~1'));
-  const references = new Set<string>([id]);
-  const defs = registry.$defs;
-  if (defs && typeof defs === 'object') {
-    for (const definition of Object.values(defs as Record<string, unknown>)) {
-      if (definition && typeof definition === 'object' && typeof Reflect.get(definition, '$id') === 'string') {
-        references.add(Reflect.get(definition, '$id') as string);
-      }
-    }
-  }
-  const components = (registry.components as { schemas: Record<string, unknown> }).schemas;
-  for (const name of Object.keys(components)) references.add(`${id}#/components/schemas/${token(name)}`);
-  const operations = registry.operations as Record<string, { responses: Record<string, Record<string, unknown>> }>;
-  for (const [name, operation] of Object.entries(operations)) {
-    references.add(`${id}#/operations/${token(name)}/input`);
-    for (const [status, media] of Object.entries(operation.responses)) {
-      for (const contentType of Object.keys(media)) {
-        references.add(`${id}#/operations/${token(name)}/responses/${token(status)}/${token(contentType)}`);
-      }
-    }
-  }
-  return references;
 }
 
 test('OpenAPI standalone profile emits self-contained validators while default validation stays runtime based', () => {
@@ -148,13 +115,11 @@ test('OpenAPI standalone profile emits self-contained validators while default v
   });
 
   const runtimeNames = artifactBasenames(runtime.artifacts);
-  assert.equal(runtimeNames.includes('validators.generated.js'), false);
-  assert.equal(runtimeNames.includes('validators.generated.d.ts'), false);
-  assert.equal(runtimeNames.includes('validators.generated.NOTICES.txt'), false);
-  assert.equal(runtimeNames.includes('validation-engine.ts'), false);
+  for (const name of ['getTask.validators.generated.js', 'getTask.validators.generated.d.ts', 'getTask.validators.generated.NOTICES.txt']) {
+    assert.equal(runtimeNames.includes(name), false, name);
+  }
   const runtimeModels = generatedModelSource(runtime.artifacts);
   assert.match(runtimeModels, /@exprtlabs\/golem\/ajv/);
-  assert.doesNotMatch(runtimeModels, /validation-engine\.js/);
   const runtimeManifest = JSON.parse(runtime.artifacts.find(item => item.path.endsWith('/model-manifest.json'))?.content ?? '{}') as {
     profile?: { ajvStandalone?: boolean; allowAny?: boolean };
   };
@@ -162,8 +127,12 @@ test('OpenAPI standalone profile emits self-contained validators while default v
   assert.equal(runtimeManifest.profile?.allowAny, false);
 
   const standaloneNames = artifactBasenames(standalone.artifacts);
-  for (const name of ['validators.generated.js', 'validators.generated.d.ts', 'validators.generated.NOTICES.txt', 'validation-engine.ts']) {
+  for (const name of ['getTask.validators.generated.js', 'getTask.validators.generated.d.ts', 'getTask.validators.generated.NOTICES.txt']) {
     assert.equal(standaloneNames.includes(name), true, name);
+  }
+  // One validator module per operation and model group; no SDK-wide registry, validator module or engine.
+  for (const name of ['schemas.ts', 'validators.generated.js', 'validators.generated.d.ts', 'validators.generated.NOTICES.txt', 'validation-engine.ts']) {
+    assert.equal(standaloneNames.includes(name), false, name);
   }
   const standaloneModels = generatedModelSource(standalone.artifacts);
   assert.match(standaloneModels, /validators\.generated\.js/);
@@ -174,7 +143,7 @@ test('OpenAPI standalone profile emits self-contained validators while default v
   };
   assert.equal(standaloneManifest.profile?.ajvStandalone, true);
   assert.equal(standaloneManifest.profile?.allowAny, false);
-  const notices = standalone.artifacts.find(item => item.path.endsWith('validators.generated.NOTICES.txt'))?.content ?? '';
+  const notices = standalone.artifacts.find(item => item.path.endsWith('/operations/getTask.validators.generated.NOTICES.txt'))?.content ?? '';
   assert.match(notices, /ajv/);
   assert.match(notices, /ajv-formats/);
   assert.match(notices, /fast-deep-equal/);
@@ -204,7 +173,7 @@ test('standalone SDK compiles a no-content operation with no response validators
   compileGeneratedSdk(output, [], { strict: true, skipLibCheck: true });
 });
 
-test('standalone SDK compiles with its generated JavaScript, exposes every model and operation reference, and rejects replacement engines', async t => {
+test('standalone SDK compiles with its generated JavaScript, exposes every operation reference, and validates through its client', async t => {
   const output = path.join(mkdtempSync(path.join(tmpdir(), 'golem-openapi-standalone-')), 'sdk');
   t.after(() => rmSync(path.dirname(output), { recursive: true, force: true }));
   const result = await generateMaterializedSdk(standaloneDocument(), {
@@ -213,46 +182,51 @@ test('standalone SDK compiles with its generated JavaScript, exposes every model
     profile,
   });
   const compiled = compileStandaloneSdk(output);
-  const generatedCode = readFileSync(path.join(output, 'validators.generated.js'), 'utf8');
-  assert.doesNotMatch(generatedCode, /(?:from|require\s*\()\s*['"](?:ajv|ajv-formats|fast-deep-equal)/);
-  assert.doesNotMatch(generatedCode, /new\s+Function|\beval\s*\(/);
-  assert.match(readFileSync(path.join(output, 'validators.generated.NOTICES.txt'), 'utf8'), /ajv/);
-  assert.ok(result.artifacts.some(item => item.path.endsWith('/validators.generated.d.ts')));
+  const operationModules = ['createTask', 'getTask'];
+  for (const operation of operationModules) {
+    const generatedCode = readFileSync(path.join(output, `operations/${operation}.validators.generated.js`), 'utf8');
+    assert.doesNotMatch(generatedCode, /(?:from|require\s*\()\s*['"](?:ajv|ajv-formats|fast-deep-equal)/);
+    assert.doesNotMatch(generatedCode, /new\s+Function|\beval\s*\(/);
+    assert.match(readFileSync(path.join(output, `operations/${operation}.validators.generated.NOTICES.txt`), 'utf8'), /ajv/);
+    assert.ok(result.artifacts.some(item => item.path.endsWith(`/operations/${operation}.validators.generated.d.ts`)));
+  }
+  assert.ok(result.artifacts.some(item => /\/models\/_[^/]*\.validators\.generated\.js$/.test(item.path)), 'model groups carry their own validators');
 
-  const generated = await import(pathToFileURL(path.join(compiled, 'validators.generated.js')).href);
-  const schemas = await import(pathToFileURL(path.join(compiled, 'schemas.js')).href) as {
-    schemaRegistry: Record<string, unknown>;
-    runtimeSchemaRegistry: object;
+  const fragment = (reference: string): string => reference.slice(reference.indexOf('#'));
+  const expected: Record<string, string[]> = {
+    createTask: ['#/operations/createTask/input', '#/operations/createTask/responses/201/application~1json', '#/operations/createTask/responses/400/application~1json'],
+    getTask: ['#/operations/getTask/input', '#/operations/getTask/responses/200/application~1json'],
   };
-  const validators = generated.createValidators() as Record<string, GeneratedValidator>;
-  const expected = generatedReferenceSet(schemas);
-  assert.deepEqual(new Set(Object.keys(validators)), expected);
-  for (const reference of expected) assert.equal(typeof validators[reference], 'function', reference);
-
   const task = { id: 'task-1', when: '2025-01-02T03:04:05Z', child: { id: 'child-1' }, labels: ['one'] };
-  const inputReference = `${schemas.schemaRegistry.$id}#/operations/createTask/input`;
-  const inputValidator = validators[inputReference];
+  for (const operation of operationModules) {
+    const module = await import(pathToFileURL(path.join(compiled, `operations/${operation}.validators.generated.js`)).href);
+    const set = module.createValidatorSet() as { first: Record<string, GeneratedValidator>; all: Record<string, GeneratedValidator> };
+    assert.deepEqual(Object.keys(set.first).map(fragment).sort(), [...expected[operation] ?? []].sort(), `${operation} first-error validators`);
+    assert.deepEqual(Object.keys(set.all).sort(), Object.keys(set.first).sort(), `${operation} all-error validators`);
+    for (const reference of Object.keys(set.first)) assert.equal(typeof set.first[reference], 'function', reference);
+  }
+
+  const createModule = await import(pathToFileURL(path.join(compiled, 'operations/createTask.validators.generated.js')).href);
+  const created = createModule.createValidatorSet().first as Record<string, GeneratedValidator>;
+  const inputReference = Object.keys(created).find(reference => fragment(reference) === '#/operations/createTask/input') ?? '';
+  const inputValidator = created[inputReference];
+  assert.ok(inputValidator);
   assert.equal(inputValidator({ body: task }), true);
   assert.equal(inputValidator({ body: { ...task, labels: [] } }), false);
   assert.ok(inputValidator.errors?.some((error: { keyword?: string }) => error.keyword === 'minItems'));
 
+  const generatedCode = readFileSync(path.join(output, 'operations/createTask.validators.generated.js'), 'utf8');
   const browserModule = await import(`data:text/javascript;charset=utf-8,${encodeURIComponent(generatedCode)}`);
-  const browserValidators = browserModule.createValidators() as Record<string, GeneratedValidator>;
+  const browserValidators = browserModule.createValidatorSet().first as Record<string, GeneratedValidator>;
   assert.equal(browserValidators[inputReference]({ body: task }), true);
   assert.equal(browserValidators[inputReference]({ body: { ...task, when: 'not-a-date' } }), false);
-
-  const engineModule = await import(pathToFileURL(path.join(compiled, 'validation-engine.js')).href);
-  for (const operation of ['createTask', 'getTask']) {
-    const reference = `${schemas.schemaRegistry.$id}#/operations/${operation}/input`;
-    assert.equal(typeof engineModule.defaultValidationEngine.getSchema(reference), 'function', reference);
-  }
 
   const clientModule = await import(pathToFileURL(path.join(compiled, 'client.js')).href);
   const respond = (status: number, body: unknown): typeof fetch => async () =>
     new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
-  const created = await new clientModule.StandaloneClient({ baseUrl: 'https://api.example', fetchImpl: respond(201, task) })
+  const createdTask = await new clientModule.StandaloneClient({ baseUrl: 'https://api.example', fetchImpl: respond(201, task) })
     .createTask().execute({ body: task });
-  assert.deepEqual(created.body, task);
+  assert.deepEqual(createdTask.body, task);
   const fetched = await new clientModule.StandaloneClient({ baseUrl: 'https://api.example', fetchImpl: respond(200, task) })
     .getTask().execute({ path: { id: 'task-1' } });
   assert.deepEqual(fetched.body, task);
@@ -261,12 +235,49 @@ test('standalone SDK compiles with its generated JavaScript, exposes every model
       .createTask().execute({ body: { ...task, labels: [] } }),
     (error: unknown) => error instanceof LibError && error.kind === LibErrorKind.Validation,
   );
+});
 
-  const unknown = `${schemas.schemaRegistry.$id}#/unknown`;
-  assert.equal(engineModule.defaultValidationEngine.getSchema(unknown), undefined);
-  assert.throws(
-    () => engineModule.defaultValidationEngine.addSchema({ changed: true }, schemas.schemaRegistry.$id),
-    (error: unknown) => error instanceof LibError && error.kind === LibErrorKind.ValidationUnavailable,
+test('standalone SDK validates a response whose $id schema refers to a component by local pointer', async t => {
+  const output = path.join(mkdtempSync(path.join(tmpdir(), 'golem-openapi-embedded-id-')), 'sdk');
+  t.after(() => rmSync(path.dirname(output), { recursive: true, force: true }));
+  await generateMaterializedSdk({
+    openapi: '3.1.0',
+    info: { title: 'Fixture', version: '1' },
+    paths: {
+      '/embedded': {
+        get: {
+          operationId: 'getEmbedded',
+          responses: { 200: { description: 'ok', content: { 'application/json': { schema: { $ref: 'urn:fixture:embedded' } } } } },
+        },
+      },
+    },
+    components: {
+      schemas: {
+        Child: {
+          type: 'object',
+          required: ['value'],
+          properties: { value: { type: 'integer' }, serverValue: { type: 'string', readOnly: true } },
+        },
+        Embedded: {
+          $id: 'urn:fixture:embedded',
+          type: 'object',
+          additionalProperties: false,
+          required: ['code', 'child'],
+          properties: { code: { type: 'string' }, child: { $ref: '#/components/schemas/Child' } },
+        },
+      },
+    },
+  }, { output, name: 'Fixture', profile });
+  compileGeneratedSdk(output, [], { strict: true, skipLibCheck: true });
+  const { FixtureClient } = await import(pathToFileURL(path.join(output, 'dist/client.js')).href);
+  const call = (body: unknown) => new FixtureClient({
+    baseUrl: 'https://api.example',
+    fetchImpl: async () => new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } }),
+  }).getEmbedded().execute({});
+  assert.deepEqual((await call({ code: 'c', child: { value: 1 } })).body, { code: 'c', child: { value: 1 } });
+  await assert.rejects(
+    () => call({ code: 'c', child: { value: 'one' } }),
+    (error: unknown) => error instanceof LibError && error.kind === LibErrorKind.Validation,
   );
 });
 

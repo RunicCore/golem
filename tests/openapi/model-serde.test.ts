@@ -55,7 +55,7 @@ function generated<Model extends object>(model: Model): Model & GeneratedModel<u
 }
 
 function compileStandaloneModelSerdeSdk(output: string): void {
-  compileGeneratedSdk(output, [path.join(output, 'validators.generated.js')], {
+  compileGeneratedSdk(output, [], {
     strict: true,
     skipLibCheck: true,
   });

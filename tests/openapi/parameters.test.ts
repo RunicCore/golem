@@ -164,18 +164,19 @@ test('generated content parameters validate before execute with runtime and stan
       profile: { mobx: false, validation: true, ajvStandalone },
     });
     copyFixtureFile(output, 'openapi/parameters/parameters-content-false-assert.ts', 'parameters-content-false-assert.ts');
-    compileGeneratedSdk(output, [
-      path.join(output, 'parameters-content-false-assert.ts'),
-      ...(ajvStandalone ? [path.join(output, 'schemas.ts')] : []),
-    ]);
+    compileGeneratedSdk(output, [path.join(output, 'parameters-content-false-assert.ts')]);
     // A `false` parameter content schema stays `false` through normalization into the schemas the SDK validates with.
     if (ajvStandalone) {
-      const schemas = requireRecord(
-        await import(pathToFileURL(path.join(output, 'dist/schemas.js')).href),
-        'content false schemas',
+      const validators = requireRecord(
+        await import(pathToFileURL(path.join(output, 'dist/operations/blocked.validators.generated.js')).href),
+        'blocked standalone validators',
       );
-      const registry = requireRecord(schemas.runtimeSchemaRegistry, 'content false runtime registry');
-      const operation = requireRecord(requireRecord(registry.operations, 'content false operations').blocked, 'blocked operation');
+      if (typeof validators.createValidatorSet !== 'function') throw new TypeError('createValidatorSet');
+      const schemas = requireRecord(requireRecord(validators.createValidatorSet(), 'blocked validator set').schemas, 'blocked schemas');
+      const root = Object.values(schemas).map((schema) => requireRecord(schema, 'blocked schema'))
+        .find((schema) => 'blocked' in requireRecord(schema.operations ?? {}, 'operations'));
+      assert.ok(root, 'the operation schema root is embedded in the validator module');
+      const operation = requireRecord(requireRecord(root.operations, 'content false operations').blocked, 'blocked operation');
       const input = requireRecord(operation.input, 'blocked input');
       const query = requireRecord(requireRecord(input.properties, 'blocked input properties').query, 'blocked query');
       assert.equal(requireRecord(query.properties, 'blocked query properties').queryValue, false);

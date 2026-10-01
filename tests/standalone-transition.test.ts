@@ -8,6 +8,12 @@ import { runPipeline } from '#golem/pipeline';
 import { workspace } from './support/process.js';
 import { writeFixture } from './support/consumer.js';
 
+/** Standalone SDK model groups carry their own validator modules; nothing is written at the SDK root. */
+function sdkValidatorModules(root: string): string[] {
+  const directory = path.join(root, 'sdk/models');
+  return fs.existsSync(directory) ? fs.readdirSync(directory).filter(name => name.endsWith('.validators.generated.js')) : [];
+}
+
 function fixture(t: TestContext) {
   const root = createFixtureProject(t, 'golem-validator-transition-');
 
@@ -39,7 +45,7 @@ test('JIT to standalone inventory interruption recovers and switching back retir
   await assert.rejects(runPipeline(setup.config), /interrupted inventory replacement/);
   fault.mock.restore();
   assert.equal(fs.readFileSync(setup.inventory, 'utf8'), originalInventory);
-  assert.ok(fs.existsSync(path.join(setup.root, 'sdk/validators.generated.js')));
+  assert.ok(sdkValidatorModules(setup.root).length > 0);
   const standalone = await runPipeline(setup.config);
   await runPipeline(setup.config, { check: true });
   const files: Record<string, unknown> = JSON.parse(fs.readFileSync(setup.inventory, 'utf8')).files;
@@ -77,11 +83,11 @@ test('watch regenerates SDK then frontend through both validator modes without o
   await untilRun(1);
   setup.setStandalone(true);
   await untilRun(2);
-  assert.ok(fs.existsSync(path.join(setup.root, 'sdk/validators.generated.js')));
+  assert.ok(sdkValidatorModules(setup.root).length > 0);
   await runPipeline(setup.config, { check: true });
   setup.setStandalone(false);
   await untilRun(3);
-  assert.equal(fs.existsSync(path.join(setup.root, 'sdk/validators.generated.js')), false);
+  assert.equal(sdkValidatorModules(setup.root).length, 0);
   const before = fs.statSync(setup.inventory).mtimeMs;
   await runPipeline(setup.config, { check: true });
   assert.equal(fs.statSync(setup.inventory).mtimeMs, before, 'check leaves the inventory untouched');

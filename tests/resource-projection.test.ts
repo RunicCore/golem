@@ -13,7 +13,7 @@ import {
   requireRecord,
 } from './openapi/helpers.js';
 
-/** The registries every SDK's operation schemas are built from; only a standalone SDK emits them as `schemas.ts`. */
+/** The registries every SDK's operation schemas are built from. */
 function schemaRegistries(document: unknown): Record<string, unknown> {
   const data = buildSchemaData(document);
   return { schemaRegistry: data.registry, runtimeSchemaRegistry: data.normalizedRegistry };

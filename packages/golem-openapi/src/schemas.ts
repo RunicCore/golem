@@ -1,4 +1,4 @@
-import { asRecord, isJsonObject, jsonLiteral, objectEntries } from './json.js';
+import { asRecord, isJsonObject, objectEntries } from './json.js';
 import { identifier } from '@exprtlabs/golem/generator-api';
 import { sourceDigest } from '@exprtlabs/golem/manifest';
 import { escapePointerToken, unescapePointerToken } from '@exprtlabs/golem/schema';
@@ -248,20 +248,9 @@ export function buildSchemaData(document: unknown, preparedIr?: NormalizedDocume
   };
   registry.$schema = ir.schemaDialect;
   const normalizedRegistry = runtimeRegistry(registry);
-  const schemaNames = Object.keys(ir.schemas);
-  const operationNames = operations.map((operation) => operation.name);
-  const responseSchemaEntries = operations.flatMap((operation) =>
-    operation.responses.flatMap((response) =>
-      response.content.map((media) => [operation.name, response.status, media.contentType])
-    )
-  );
   return {
     registry,
     normalizedRegistry,
-    schemaNames,
-    operationNames,
-    responseSchemaEntries,
-    schemaDialect: ir.schemaDialect,
     inputResourceId: projections?.inputResourceId ?? `${rootId}:input`,
     outputResourceId: projections?.outputResourceId ?? `${rootId}:output`,
   };
@@ -825,18 +814,6 @@ export function buildOperationValidationSchemaBundle(
 ): OpenApiOperationValidationSchemaBundle {
   return buildOperationValidationSchemaBundles(document, [operation], preparedData).get(operation.name)
     ?? (() => { throw new Error(`Missing OpenAPI operation ${JSON.stringify(operation.name)}.`); })();
-}
-
-/** The registries the standalone validation engine registers; no other generated file reads them. */
-export function generateSchemas(data: ReturnType<typeof buildSchemaData>): string {
-  const { registry, normalizedRegistry } = data;
-  const normalizedRegistryIsSame = JSON.stringify(registry) === JSON.stringify(normalizedRegistry);
-  return `${generatedBanner()}
-/** Exact component and operation schemas. */
-export const schemaRegistry = ${jsonLiteral(registry, 2)} as const;
-/** JSON Schema 2020-compatible evaluation form; differs from schemaRegistry only where a binary-format string is widened to accept a Blob/File runtime value. */
-export const runtimeSchemaRegistry = ${normalizedRegistryIsSame ? 'schemaRegistry' : `${jsonLiteral(normalizedRegistry, 2)} as const`};
-`;
 }
 
 export type { OpenApiSchema };

@@ -233,7 +233,7 @@ test('schema-only documents emit types, directional files, and models without a 
   ]);
 });
 
-test('schemas.ts exists only for ajvStandalone SDKs and holds only the registries', async t => {
+test('no SDK emits schemas.ts, whatever the validation profile', async t => {
   const document = {
     openapi: '3.2.0',
     info: info('Registries'),
@@ -250,14 +250,8 @@ test('schemas.ts exists only for ajvStandalone SDKs and holds only the registrie
   ] as const) {
     const output = outputDir(t, `registries-${profile.validation}-${'ajvStandalone' in profile}`);
     const result = await generateMaterializedSdk(document, { output, name: 'Registries', profile });
-    const schemas = result.artifacts.find(artifact => artifact.path.endsWith('/schemas.ts'));
-    if (!('ajvStandalone' in profile)) {
-      assert.equal(schemas, undefined, 'only the standalone validation engine reads schemas.ts');
-      continue;
-    }
-    assert.ok(schemas);
-    assert.deepEqual([...schemas.content.matchAll(/^export const (\w+)/gm)].map(match => match[1]), ['schemaRegistry', 'runtimeSchemaRegistry']);
-    assert.doesNotMatch(schemas.content, /^import /m);
+    const names = emittedFiles(result.artifacts, output);
+    for (const name of ['schemas.ts', 'validation-engine.ts', 'validators.generated.js']) assert.equal(names.includes(name), false, name);
   }
 });
 

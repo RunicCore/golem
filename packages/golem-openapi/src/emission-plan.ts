@@ -27,8 +27,7 @@ export type ArtifactFile =
   | 'output-schemas.ts'
   | 'client.ts'
   | 'inbound.ts'
-  | 'links.ts'
-  | 'schemas.ts';
+  | 'links.ts';
 
 export type ClientHelperName =
   | 'constructor' | 'baseUrl' | 'fetchImpl' | 'defaultHeaders' | 'url'
@@ -349,9 +348,6 @@ export function buildEmissionPlan(
     auth: hasNonTlsAuth,
     mutualTls: hasMutualTls,
   };
-  // Only the standalone validation engine reads the schema registries.
-  const needsSchemas = profile.validation && profile.ajvStandalone === true
-    && (hasModels || hasOutboundOperations || hasInboundOperations);
   const artifacts = new Set<ArtifactFile>(ALWAYS_ARTIFACTS);
   if (hasComponentSchemas) {
     artifacts.add('input-schemas.ts');
@@ -360,7 +356,6 @@ export function buildEmissionPlan(
   if (hasOutboundOperations) artifacts.add('client.ts');
   if (hasInboundOperations) artifacts.add('inbound.ts');
   if (links) artifacts.add('links.ts');
-  if (needsSchemas) artifacts.add('schemas.ts');
 
   const partial = {
     profile,

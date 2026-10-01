@@ -2,7 +2,6 @@ import path from 'node:path';
 import type { GolemArtifact, GolemDiagnostic, GolemResult } from '@exprtlabs/golem/generator-api';
 import { isRecord } from '@exprtlabs/golem/generator-api';
 import { stableJson } from '@exprtlabs/golem/manifest';
-import { compileStandaloneValidators } from '@exprtlabs/golem/ajv-tooling';
 import { generateClientModules } from './client/emit.js';
 import { browserCookieDiagnostics, normalizeAndValidate, unsupportedHttpAuthSchemes } from './document.js';
 import { buildEmissionPlan, type ArtifactFile, type EmissionPlan } from './emission-plan.js';
@@ -21,7 +20,7 @@ import {
   collectOpenApiCodecEntries,
   type OpenApiDates,
 } from './models.js';
-import { buildSchemaData, generateSchemas } from './schemas.js';
+import { buildSchemaData } from './schemas.js';
 import { generateDirectionalSchemas, generateTypes } from './types.js';
 
 export interface OpenApiArtifact extends GolemArtifact {}
@@ -161,7 +160,7 @@ export function generatedFiles(document: unknown, options: WriteSdkOptions): {
   const output = path.resolve(options.output);
   const plan = buildEmissionPlan(document, ir, profile);
   const modelAnalysis = analyzeOpenApiModels(document, profile.validation, options.dates ?? 'date');
-  const schemaData = profile.validation && (plan.hasOutboundOperations || plan.artifacts.has('schemas.ts'))
+  const schemaData = profile.validation && plan.hasOutboundOperations
     ? buildSchemaData(document, ir)
     : undefined;
   const files = new Map<string, string>();
@@ -200,28 +199,6 @@ export function generatedFiles(document: unknown, options: WriteSdkOptions): {
   }
   if (plan.artifacts.has('links.ts')) {
     files.set('links.ts', generateLinks(operations));
-  }
-  if (plan.artifacts.has('schemas.ts')) {
-    const data = schemaData ?? buildSchemaData(document, ir);
-    files.set('schemas.ts', generateSchemas(data));
-    const rootId = String(data.registry.$id);
-    if (!isRecord(data.normalizedRegistry)) throw new Error('Generated schema registry must be an object.');
-    const schemas: Record<string, object | boolean> = { [rootId]: data.normalizedRegistry };
-    for (const resource of Object.values(isRecord(data.normalizedRegistry.$defs) ? data.normalizedRegistry.$defs : {})) {
-      if (isRecord(resource) && typeof resource.$id === 'string') schemas[resource.$id] = resource;
-    }
-    const token = (value: string) => encodeURIComponent(value.replace(/~/g, '~0').replace(/\//g, '~1'));
-    const references = [rootId, ...Object.keys(schemas),
-      ...data.schemaNames.map(name => `${rootId}#/components/schemas/${token(name)}`),
-      ...data.operationNames.map(name => `${rootId}#/operations/${token(name)}/input`),
-      ...data.responseSchemaEntries.map(([name, status, media]) => `${rootId}#/operations/${token(name)}/responses/${token(status)}/${token(media)}`),
-    ];
-    // Nested resources are already registered when Ajv sees the root schema.
-    const compiled = compileStandaloneValidators({ schemas: { [rootId]: data.normalizedRegistry }, references, owner: '@exprtlabs/golem-openapi' });
-    files.set('validators.generated.js', compiled.code);
-    files.set('validators.generated.d.ts', compiled.declarations);
-    files.set('validators.generated.NOTICES.txt', compiled.notices);
-    files.set('validation-engine.ts', `${generatedBanner()}\nimport { configureModelValidationEngine, createStaticValidationEngine } from '@exprtlabs/golem/validation';\nimport { createValidators } from './validators.generated.js';\nimport { runtimeSchemaRegistry, schemaRegistry } from './schemas.js';\nexport const defaultValidationEngine = createStaticValidationEngine(createValidators(), { [schemaRegistry.$id]: runtimeSchemaRegistry });\nconfigureModelValidationEngine(runtimeSchemaRegistry, schemaRegistry.$id, defaultValidationEngine);\n`);
   }
   files.set('index.ts', generateIndex(profile, plan, modelReexports));
   assertUniquePublicExports(files);

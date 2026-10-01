@@ -31,7 +31,7 @@ type PayloadClient = { sendPayload(): { execute(input: { body: { marker: string 
 async function loadSdk(root: string, marker: string, profile: GolemProfile): Promise<PayloadClient> {
   const output = path.join(root, marker);
   writeGeneratedSdk(writeSdk, sdkDocument(marker), { output, name: 'Engine', profile });
-  compileGeneratedSdk(output, profile.ajvStandalone ? [path.join(output, 'validation-engine.ts')] : []);
+  compileGeneratedSdk(output, []);
   const module: Record<string, unknown> = await import(pathToFileURL(path.join(output, 'dist/client.js')).href);
   const Client = module.EngineClient;
   assert.ok(isGeneratedClientClass(Client));
@@ -46,12 +46,14 @@ async function loadSdk(root: string, marker: string, profile: GolemProfile): Pro
   for (const internal of ['createRuntimeValidators', 'createOperationRuntimeValidators', 'schemaRegistry', 'schemaId', 'IOBJECT_PLUGIN_KEYS']) {
     assert.equal(internal in index, false, `${internal} is internal to the SDK`);
   }
+  for (const name of ['schemas.ts', 'validation-engine.ts', 'validators.generated.js']) {
+    assert.equal(existsSync(path.join(output, name)), false, `no SDK emits ${name}`);
+  }
   if (profile.ajvStandalone) {
     assert.equal(shared, undefined);
-    const schemas: Record<string, unknown> = await import(pathToFileURL(path.join(output, 'dist/schemas.js')).href);
-    assert.deepEqual(Object.keys(schemas).sort(), ['runtimeSchemaRegistry', 'schemaRegistry']);
+    assert.equal(existsSync(path.join(output, 'operations/sendPayload.validators.generated.js')), true, 'a standalone SDK validates with per-operation validators');
   } else {
-    assert.equal(existsSync(path.join(output, 'schemas.ts')), false, 'only a standalone SDK emits schemas.ts');
+    assert.equal(existsSync(path.join(output, 'operations/sendPayload.validators.generated.js')), false);
     assert.ok(shared);
     assert.equal(engineOf(new Client(options)), shared, 'clients of one SDK share one default engine');
   }
