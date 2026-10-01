@@ -14,7 +14,7 @@ const BANNED: readonly [RegExp, string][] = [
   [/\b(simply|just|easily|seamlessly|robust|leverage|powerful)\b/i, 'filler word'],
   [/^#+ Next steps\b/m, 'signpost heading; link inline instead'],
   [/\bcurrently supports?\b/i, 'hedge; state what is supported'],
-  [/\ba base class for your class\b/i, 'say "the generated class (TaskBase) that your class extends"'],
+  [/\ba base class for your class\b/i, 'say "the generated class (TTaskBaseModel) that your class extends"'],
 ];
 
 function pages(dir: string): string[] {

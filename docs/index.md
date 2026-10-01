@@ -28,7 +28,7 @@ features:
     link: /guide/serialization
     linkText: Serialization
   - title: Your code survives regeneration
-    details: Generation owns the generated class, <code>TaskBase</code>. Your class, <code>Task</code>, extends it and keeps its methods.
+    details: Generation owns the generated class, <code>TTaskBaseModel</code>. Your class, <code>Task</code>, extends it and keeps its methods.
     link: /guide/models
     linkText: Defining models
   - title: Types end to end

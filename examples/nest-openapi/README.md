@@ -45,7 +45,7 @@ Set `API_BASE_URL` when the client should use another address.
 
 | File | Purpose |
 | --- | --- |
-| `src/payment.model.ts` | Model declarations and the `Payment` class that extends the generated `PaymentBase` |
+| `src/payment.model.ts` | Model declarations and the `Payment` class that extends the generated `TPaymentBaseModel` |
 | `src/payments.controller.ts` | Payments routes and in-memory store |
 | `src/payment-draft.model.ts` | Class model used as a `@Body()` type by the `drafts` route |
 | `src/payment-notes.controller.ts` | Controller without Swagger decorators, so its operation ID is the default |

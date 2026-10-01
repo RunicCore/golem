@@ -67,7 +67,7 @@ onBeforeUnmount(() => {
       <span class="link down" :class="{ on: step >= 3 }" aria-hidden="true" />
       <div class="hud panel call" :class="{ on: step >= 3 }">
         <div class="fname">Your code, compiled with ttsc</div>
-        <pre><code><span class="ln step" :class="{ on: step >= 3 }"><del v-if="step >= 4">parse&lt;TTask&gt;(text)</del><template v-else>parse&lt;TTask&gt;(text)</template></span><span class="ln step" :class="{ on: step >= 4 }"><ins>requireObjectCodec("Task_…").parse(text)</ins></span></code></pre>
+        <pre><code><span class="ln step" :class="{ on: step >= 3 }"><del v-if="step >= 4">parse&lt;TTask&gt;(text)</del><template v-else>parse&lt;TTask&gt;(text)</template></span><span class="ln step" :class="{ on: step >= 4 }"><ins>requireObjectCodec("TTask_…").parse(text)</ins></span></code></pre>
       </div>
     </div>
     <button class="replay" type="button" aria-label="Replay illustration" @click="play"><span aria-hidden="true">↻</span> Replay</button>

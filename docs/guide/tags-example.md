@@ -38,7 +38,7 @@ The check returns: "A project access record must include the read permission bit
 
 <<< ../../examples/showcase/src/save-access.ts#api-operations
 
-The class as type argument (`ProjectAccessEditor`) builds your class; the `T…` type (`TProjectAccessEditor`) gives or takes a plain object, here typed as [`ProjectAccessEditorJSON`](/guide/models#declare-fields).
+The class as type argument (`ProjectAccessEditor`) builds your class; the `T…` type (`TProjectAccessEditor`) gives or takes a plain object, here typed as [`TProjectAccessEditorJSON`](/guide/models#declare-fields).
 
 Run `npm start` in `examples/showcase`; set `PROJECT_ACCESS_API_BASE_URL` to send the save to a real API.
 

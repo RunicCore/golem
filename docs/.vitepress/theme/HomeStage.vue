@@ -11,7 +11,7 @@ const LINES: readonly (readonly Segment[])[] = [
   [['', '}>;']],
 ];
 const OUTPUTS = [
-  { ix: '01', name: 'Generated class', file: 'class TaskBase' },
+  { ix: '01', name: 'Generated class', file: 'class TTaskBaseModel' },
   { ix: '02', name: 'Validation', file: 'title: MinLength<1>' },
   { ix: '03', name: 'JSON conversion', file: 'priority 2 → "normal"' },
 ] as const;

@@ -42,7 +42,7 @@ Every other file in an SDK is internal and may change in a minor release. Do not
 
 ## Internal model files
 
-In the model output (`src/generated/models/` by default), every file is internal: `models.generated.ts`, `models.validators.generated.js` and `.d.ts` with `ajvStandalone: true`, `models.generated.NOTICES.txt` and `iobject-plugin-keys.ts`. Each `<name>.model.generated.ts` is public for the models its source declares: `<Name>Base` for an `IModel`, the `<Name>Fields`, `<Name>JSON` and `<Name>Init` types, and `parse`, `stringify`, `validate`, `assert`, `toWireFormat` and `fromWireFormat` functions. Codecs of [derived types](#derived-type-names) and exports that start with `__golem` are internal.
+In the model output (`src/generated/models/` by default), every file is internal: `models.generated.ts`, `models.validators.generated.js` and `.d.ts` with `ajvStandalone: true`, `models.generated.NOTICES.txt` and `iobject-plugin-keys.ts`. Each `<name>.model.generated.ts` is public for the models its source declares: `<Alias>BaseModel` for an `IModel`, the `<Alias>Fields`, `<Alias>JSON` and `<Alias>Init` types, and `parse<Alias>`, `stringify<Alias>`, `validate<Alias>`, `assert<Alias>`, `toWireFormat<Alias>` and `fromWireFormat<Alias>` functions. `<Alias>` is the exact type alias: `type TPayment = IModel<…>` gives `TPaymentBaseModel` and `parseTPayment`, `type Payment = IModel<…>` gives `PaymentBaseModel`, and `type TPermissionModel = IModel<…>` gives `TPermissionModelBaseModel`. A class links to its model through `extends <Alias>BaseModel` and can have any name; a file can't export two classes that extend the same generated class directly. Codecs of [derived types](#derived-type-names) and exports that start with `__golem` are internal.
 
 The generator no longer writes `validation.ts`, `client-runtime.ts` or `models.ts`. Their code lives in `@exprtlabs/golem`.
 
@@ -52,20 +52,20 @@ A type built from a model, such as `Omit<TMerchant, 'id'>`, gets a schema name f
 
 | Type | Name |
 | --- | --- |
-| `Omit<TMerchant, 'id'>` | `MerchantOmitId` |
-| `Pick<TMerchant, 'name' \| 'id'>` | `MerchantPickIdName` |
-| `Partial<Omit<TMerchant, 'id'>>` | `MerchantOmitIdPartial` |
-| `TMerchant & TMoney` | `MerchantAndMoney` |
-| The `billing` property of `TPayment` | `PaymentBilling` |
+| `Omit<TMerchant, 'id'>` | `TMerchantOmitId` |
+| `Pick<TMerchant, 'name' \| 'id'>` | `TMerchantPickIdName` |
+| `Partial<Omit<TMerchant, 'id'>>` | `TMerchantOmitIdPartial` |
+| `TMerchant & TMoney` | `TMerchantAndTMoney` |
+| The `billing` property of `TPayment` | `TPaymentBilling` |
 
 The first matching rule gives the name:
 
 1. An intersection of named models. The sorted names join with `And`.
-2. A type alias that names the type, such as `type TBilling = Omit<TMerchant, 'id'>`, which gives `Billing`. A leading `T` is dropped from the alias name only before an uppercase letter. The alias needs no type parameters, must be declared in your own source rather than a `.d.ts` file, and must have an ASCII identifier name.
+2. A type alias that names the type, such as `type TBilling = Omit<TMerchant, 'id'>`, which gives `TBilling`. The alias name is used as written. The alias needs no type parameters, must be declared in your own source rather than a `.d.ts` file, and must have an ASCII identifier name.
 3. A named model wrapped in up to three levels of `Pick`, `Omit`, `Partial`, `Required` and `Readonly`, each key list with at most three string-literal keys. Keys are sorted and written in PascalCase, innermost wrapper first.
-4. Anything else: the owner plus the property, such as `TPayment.billing` giving `PaymentBilling`. The owner of a model field is the model. The owner of a controller parameter is the controller class name without a trailing `Controller`, the method name, and `Body` or `Query`, such as `PaymentsCreateBody` for `PaymentsController.create`. Other parameters use the parameter name instead. The owner of a controller response ends in `Response`. Underscores and other characters outside letters and digits are dropped and the next letter is capitalized, so `Order_V2` becomes `OrderV2`. A property name that contains a non-ASCII character gives the part `Field`, such as `OrderField`. An owner name that contains a non-ASCII character, or does not start with a letter after cleanup, becomes `Model`, such as `ModelShape`.
+4. Anything else: the owner plus the property, such as `TPayment.billing` giving `TPaymentBilling`. The owner of a model field is the model. The owner of a controller parameter is the controller class name without a trailing `Controller`, the method name, and `Body` or `Query`, such as `PaymentsCreateBody` for `PaymentsController.create`. Other parameters use the parameter name instead. The owner of a controller response ends in `Response`. Underscores and other characters outside letters and digits are dropped and the next letter is capitalized, so `Order_V2` becomes `OrderV2`. A property name that contains a non-ASCII character gives the part `Field`, such as `OrderField`. An owner name that contains a non-ASCII character, or does not start with a letter after cleanup, becomes `Model`, such as `ModelShape`.
 
-When the members of a union fall back to the owner plus the property, each member adds a part. The part is the discriminant value: the PascalCase value of a string-literal property that every member has, with values that stay different. If several properties qualify, the first in code-unit order wins, such as `OrderEitherCard`. Otherwise the part is the member's position in the union as written, such as `OrderEither1`. A union written through a type alias counts the alias's members in place. Members named by rules 1 to 3 keep those names.
+When the members of a union fall back to the owner plus the property, each member adds a part. The part is the discriminant value: the PascalCase value of a string-literal property that every member has, with values that stay different. If several properties qualify, the first in code-unit order wins, such as `TOrderEitherCard`. Otherwise the part is the member's position in the union as written, such as `TOrderEither1`. A union written through a type alias counts the alias's members in place. Members named by rules 1 to 3 keep those names.
 
 Non-default settings add suffixes, in this order: `Loose` for `exact: false`, `Any` for `allowAny: true`, and `Wire` for the wire representation. Controller signatures use `exact: false`, so their names end in `Loose`, such as `PaymentsCreateBodyMerchantLoose` for the `merchant` field of an inline body.
 

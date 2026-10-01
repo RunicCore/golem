@@ -54,7 +54,7 @@ npx golem generate
 Generated configured outputs.
 ```
 
-You get `src/task.model.generated.ts` beside the declaration, with the generated class `TaskBase` and the `TaskFields` type. Shared files go to `models.output` (default `src/generated/models/`).
+You get `src/task.model.generated.ts` beside the declaration, with the generated class `TTaskBaseModel` and the `TTaskFields` type. Shared files go to `models.output` (default `src/generated/models/`).
 
 ## Add methods
 

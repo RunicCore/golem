@@ -15,7 +15,7 @@ Each generator installs on its own and runs through the same `golem` command and
 
 ## IObject or IModel
 
-You declare data in one of two ways. An `IObject` is a field declaration whose values stay plain objects; Golem generates validation and JSON conversion for it. An `IModel` is an IObject plus a generated class, such as `TaskBase`, that your class extends to add methods ([IObject or IModel](/guide/models#iobject-or-imodel)).
+You declare data in one of two ways. An `IObject` is a field declaration whose values stay plain objects; Golem generates validation and JSON conversion for it. An `IModel` is an IObject plus a generated class, such as `TTaskBaseModel`, that your class extends to add methods ([IObject or IModel](/guide/models#iobject-or-imodel)).
 
 ## How it works
 

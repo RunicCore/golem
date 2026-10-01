@@ -50,7 +50,7 @@ Set `openapiVersion: '3.1.2'` in the controller job when a downstream tool doesn
 
 <<< ../../examples/nest-openapi/src/payment.model.ts#payment-class
 
-`Payment` extends the generated `PaymentBase`, which the `models` job writes ([Generate a client from the document](#generate-a-client-from-the-document)). `@ApiOperation({ operationId: 'createPayment' })` replaces the default, so the client method is `createPayment()`. `@ApiBadRequestResponse` from `@nestjs/swagger` produces the `400` response. The controller above produces this operation in `api/openapi.yaml`:
+`Payment` extends the generated `TPaymentBaseModel`, which the `models` job writes ([Generate a client from the document](#generate-a-client-from-the-document)). `@ApiOperation({ operationId: 'createPayment' })` replaces the default, so the client method is `createPayment()`. `@ApiBadRequestResponse` from `@nestjs/swagger` produces the `400` response. The controller above produces this operation in `api/openapi.yaml`:
 
 ```yaml
 post:
@@ -59,7 +59,7 @@ post:
     content:
       application/json:
         schema:
-          $ref: "#/components/schemas/PaymentInput"
+          $ref: "#/components/schemas/TPaymentInput"
     required: true
   responses:
     "201":
@@ -72,13 +72,25 @@ post:
       description: Invalid payment input.
 ```
 
+### Component names
+
+A model's component name comes from the types it was declared with:
+
+| Declaration | Component |
+| --- | --- |
+| `class Payment extends TPaymentBaseModel {}` for `type TPayment = IModel<…>` | `Payment`, the class name |
+| `type TMerchant = IModel<…>` with no class | `TMerchant`, the exact alias |
+| `type TPaymentInput = IObject<…>` | `TPaymentInput`, the exact alias |
+
+`@ApiSchema({ name })` on a class still sets its name. A type derived from a model, such as `Omit<TMerchant, 'id'>`, is named from the model's component, as in `TMerchantOmitId`. Two models with the same component name and an identical schema share one component. Two with the same name and different schemas fail generation with an error that names both models; rename one alias or class, or set `@ApiSchema({ name })`.
+
 ## Generate a client from the document
 
 Add an OpenAPI job that reads `./api/openapi.yaml` ([Generate a client](/guide/client)). One configuration can run both jobs:
 
 <<< ../../examples/nest-openapi/golem.yaml
 
-`globalPrefix: api` must match `app.setGlobalPrefix()`; the generator reads controllers, not your bootstrap code. The `models` job generates `PaymentBase`.
+`globalPrefix: api` must match `app.setGlobalPrefix()`; the generator reads controllers, not your bootstrap code. The `models` job generates `TPaymentBaseModel`.
 
 ### Install the client and runtime packages
 

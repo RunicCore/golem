@@ -35,7 +35,7 @@ Call `asGenObservable(this, annotations)` once in your constructor, after `super
 - Extra annotations are optional: `asGenObservable(this, { label: computed, toggle: action })`.
 - Annotate writable state with `observable`, derived getters with `computed` and state-changing methods with `action`.
 - Use `observable.ref`, `observable.shallow`, `observable.struct`, or `false` when a field should not be deeply observable.
-- `asGenObservable` runs once per instance. An [SDK model class](/guide/models-and-client) such as `MoneyModel`, created with `new` or with `fromWireFormat`, initializes itself. An empty `class Payment extends PaymentBase {}` is not observable until its constructor calls `asGenObservable(this)`.
+- `asGenObservable` runs once per instance. An [SDK model class](/guide/models-and-client) such as `MoneyModel`, created with `new` or with `fromWireFormat`, initializes itself. An empty `class Payment extends TPaymentBaseModel {}` is not observable until its constructor calls `asGenObservable(this)`.
 
 ## Observe a model
 

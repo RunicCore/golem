@@ -61,9 +61,9 @@ export type TTask = IModel<{ title: string; done: boolean }>;
 npx golem generate
 ```
 ```ts
-import { TaskBase } from './task.model.generated.js';
+import { TTaskBaseModel } from './task.model.generated.js';
 import { toWireFormat } from '@exprtlabs/golem/serde';
-export class Task extends TaskBase {
+export class Task extends TTaskBaseModel {
   toggle(): void { this.done = !this.done; }
 }
 const task = new Task({ title: 'Review the draft', done: false });

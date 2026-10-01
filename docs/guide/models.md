@@ -14,7 +14,7 @@ Declare fields as a type, generate validation and JSON conversion, and add behav
 
 ## IObject or IModel
 
-Both declare fields. `IObject` stops there: values stay plain objects, and you call the generated validation and conversion as functions. `IModel` is an `IObject` plus a **generated class** (`TaskBase`) that **your class** (`Task`) extends.
+Both declare fields. `IObject` stops there: values stay plain objects, and you call the generated validation and conversion as functions. `IModel` is an `IObject` plus a **generated class** (`TTaskBaseModel`) that **your class** (`Task`) extends.
 
 <<< ../../examples/model/src/note.model.ts#object-and-model
 
@@ -22,7 +22,7 @@ Both declare fields. `IObject` stops there: values stay plain objects, and you c
 
 | | `IObject` | `IModel` |
 | --- | --- | --- |
-| Generates | validation and JSON conversion | the same, plus a class (`TaskBase`) |
+| Generates | validation and JSON conversion | the same, plus a class (`TTaskBaseModel`) |
 | Value from `parse` | plain object: `parse<TNote>(json)` | your class with `parse<Task>(json)`; a plain object with `parse<TTask>(json)` |
 | Methods and getters | no | yes, on your class |
 | [MobX](/guide/mobx) (`mobx: true`) | observable only as a field of a generated model | observable fields once your constructor calls `asGenObservable(this)` |
@@ -34,10 +34,14 @@ Put declarations in `src/**/*.model.ts` or `src/**/*.models.ts`. Generation writ
 
 | Export | What it is |
 | --- | --- |
-| `TaskBase` | the generated class your `Task` extends |
-| `TaskFields` | constructed field values, with nested model instances |
-| `TaskInit` | constructor input, with optional fields and nested initializers |
-| `TaskJSON` | the plain data `toWireFormat` returns |
+| `TTaskBaseModel` | the generated class your `Task` extends |
+| `TTaskFields` | constructed field values, with nested model instances |
+| `TTaskInit` | constructor input, with optional fields and nested initializers |
+| `TTaskJSON` | the plain data `toWireFormat` returns |
+
+Each name is the exact type alias plus a suffix: nothing is dropped from the alias. `type TTask = IModel<…>` gives `TTaskBaseModel`, `TTaskFields`, `TTaskInit` and `TTaskJSON`; `type Task = IModel<…>` gives `TaskBaseModel`; `type TPermissionModel = IModel<…>` gives `TPermissionModelBaseModel`. The generated functions use the alias too, such as `parseTTask`.
+
+Your class links to its model through `extends <Alias>BaseModel`, so it can have any name: `class PurchaseOrder extends TOrderBaseModel`. A file can't export two classes that extend the same generated class directly.
 
 Don't edit the generated file; generation replaces it.
 
@@ -49,7 +53,7 @@ Your class holds methods, getters, defaults and extra constructor state. The bas
 
 ## Load the generated class before parse
 
-A file that exports only types compiles to an empty module: TypeScript erases the type-only export, so nothing runs when another module imports it. Importing `task.model.ts` loads its generated file, because that file also imports the value `TaskBase`. A file that exports nothing but `export type TLabel = IObject<{ text: string }>` does not: add `import './label.model.generated.js';` beside the type-only import before calling `parse`, `stringify`, `validate` or a wire-format function on `TLabel`.
+A file that exports only types compiles to an empty module: TypeScript erases the type-only export, so nothing runs when another module imports it. Importing `task.model.ts` loads its generated file, because that file also imports the value `TTaskBaseModel`. A file that exports nothing but `export type TLabel = IObject<{ text: string }>` does not: add `import './label.model.generated.js';` beside the type-only import before calling `parse`, `stringify`, `validate` or a wire-format function on `TLabel`.
 
 Skip that import and the call throws a `LibError` of kind `validation_unavailable`:
 

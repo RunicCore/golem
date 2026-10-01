@@ -35,10 +35,10 @@ import type { IModel, IObject } from '@exprtlabs/golem/model';
 | Member | Signature | Behavior |
 | --- | --- | --- |
 | `IObject` | `IObject<Fields, Options = {}>` | Declares fields whose values stay plain objects. The type is `Fields`. |
-| `IModel` | `IModel<Fields, Options = {}>` | An `IObject` plus a generated class, such as `TaskBase`, that your class extends. |
+| `IModel` | `IModel<Fields, Options = {}>` | An `IObject` plus a generated class, such as `TTaskBaseModel`, that your class extends. |
 | `IModelOptions` | `{ exact?, allowAny?, validation? }` | The second type argument of `IObject` and `IModel`. |
 | `ModelInit` | `ModelInit<Value>` | Constructor values: nested models or their initializers. |
-| `WireFormat` | `WireFormat<Value>` | The JSON shape `toWireFormat<Value>` returns, such as `TaskJSON` for `Task`. |
+| `WireFormat` | `WireFormat<Value>` | The JSON shape `toWireFormat<Value>` returns, such as `TTaskJSON` for `Task`. |
 | `ModelField` | `ModelField<Model>` | String field names, without methods and `$`-prefixed keys. |
 | `ModelValidationContext` | `{ resolve?, engine? }` | Validator source for one call ([validation context](#validation-context)). |
 | `isGeneratedModel` | `(value: unknown): value is GeneratedModel<unknown>` | Recognizes a generated instance, including instances of your class. |
@@ -52,7 +52,7 @@ import type { IModel, IObject } from '@exprtlabs/golem/model';
 
 `allowAny` does not change `unknown`, remove validation constraints or skip JSON checks.
 
-Generation writes `task.model.generated.ts` with `TaskBase`, `TaskFields` (field types), `TaskJSON` (JSON shape) and `TaskInit` (constructor values). The `TaskBase` constructor copies the values it receives and does not validate, so an incomplete draft is valid state.
+Generation writes `task.model.generated.ts` with `TTaskBaseModel`, `TTaskFields` (field types), `TTaskJSON` (JSON shape) and `TTaskInit` (constructor values). The `TTaskBaseModel` constructor copies the values it receives and does not validate, so an incomplete draft is valid state.
 
 Used by generated code: `registerGeneratedModel`, `findGeneratedModelDefinition`, `findGeneratedModelDefinitionForConstructor`, `GeneratedModel`, `GeneratedModelWire`, `GeneratedModelFields`, `GeneratedModelConstructor`, `GeneratedModelResult`, `GeneratedModelDefinition`, `RegisteredGeneratedModelDefinition`, `GeneratedModelConversion`, `GeneratedModelProfile`, `GeneratedModelValidation`, `GeneratedModelValidatorEnhancer`, `OpenApiGeneratedModelValidation`, `ModelRuntimeValidator`, `ModelRuntimeSyncValidator`, `ModelRuntimeValidationEngine`, `ModelConstraint`, `ModelTypeMetadata`, `ModelTypeDescriptor`, `UnionDiscriminator`, `DiscriminatorValue`, `ConstraintSchemaValue` and the `generatedModel*Brand` symbols.
 
@@ -339,7 +339,7 @@ import { fromWireFormat, parse, stringify, toWireFormat } from '@exprtlabs/golem
 | `parse` | `<T>(text: string, options?: SerdeOptions): T` | JSON text to a value. Checks the JSON, runs `TSerde` decoders, checks the result. |
 | `stringify` | `<T>(value: T, options?: SerdeOptions): string` | Value to JSON text of the declared fields, with `TSerde` applied and both sides checked. |
 | `fromWireFormat` | `<T>(wire: unknown, options?: SerdeOptions): T` | `parse` for a plain object instead of text. |
-| `toWireFormat` | `<T>(value: T, options?: SerdeOptions): WireFormat<T>` | `stringify` that returns the plain object, such as `TaskJSON`. |
+| `toWireFormat` | `<T>(value: T, options?: SerdeOptions): WireFormat<T>` | `stringify` that returns the plain object, such as `TTaskJSON`. |
 | `assertValue` | `<T>(value: unknown, options?: ValidateOptions): T` | Checks the value and returns it unchanged, typed as `T`. Throws `LibError` `Validation` with the issues. |
 
 | Option | In | Default | Effect |

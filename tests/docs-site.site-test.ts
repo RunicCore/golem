@@ -19,7 +19,7 @@ const homeHtml = path.join(dist, 'index.html');
 test('the built home page server-renders the hero and the final stage state', () => {
   assert.ok(existsSync(homeHtml), 'run npm run docs:build first');
   const html = readFileSync(homeHtml, 'utf8');
-  for (const text of ['Write the type once', 'Quick start', 'TTask = IModel', 'task.model.ts', 'class TaskBase', 'MinLength&lt;1&gt;', 'TSerde&lt;typeof toPriorityWord', 'priority 2 → &quot;normal&quot;']) {
+  for (const text of ['Write the type once', 'Quick start', 'TTask = IModel', 'task.model.ts', 'class TTaskBaseModel', 'MinLength&lt;1&gt;', 'TSerde&lt;typeof toPriorityWord', 'priority 2 → &quot;normal&quot;']) {
     assert.ok(html.includes(text), `home HTML lacks "${text}"`);
   }
   const stage = html.slice(html.indexOf('home-stage'));
