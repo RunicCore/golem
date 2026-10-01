@@ -77,9 +77,10 @@ export interface ClientOptions {
   /** Credentials keyed by OpenAPI security-scheme name: values or lazy providers. */
   auth?: object;
   /**
-   * Explicit transport used when a mutualTLS security requirement is selected.
-   * The application owns certificate/agent configuration; the client
-   * guarantees requests use this fetch implementation.
+   * Transport for a mutualTLS security scheme. When set, `mutualTls.fetchImpl`
+   * replaces `fetchImpl` for every request from this client, not only for
+   * operations that select a mutualTLS requirement. The application owns
+   * certificate and agent configuration.
    */
   mutualTls?: MutualTlsTransport;
   /** Request codecs; configured codecs override built-in encoders. */
