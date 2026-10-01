@@ -8,7 +8,17 @@ export interface CommandResult { readonly code: number | null; readonly signal: 
 
 export const workspace = fileURLToPath(new URL('../../../', import.meta.url));
 export const ttsc = path.join(workspace, 'node_modules/ttsc/lib/launcher/ttsc.js');
-export const ttscEnv = { NODE_PATH: path.join(workspace, 'node_modules') };
+/**
+ * Fixture projects share the workspace's ttsc caches. The plugin binary cache is keyed by the plugin sources and
+ * guarded by a cross-process build lock, so every fixture reuses one build of the golem plugin instead of building
+ * its own in a temporary directory.
+ */
+const ttscCacheDir = path.join(workspace, 'node_modules/.cache/ttsc');
+export const ttscEnv = {
+  NODE_PATH: path.join(workspace, 'node_modules'),
+  TTSC_CACHE_DIR: ttscCacheDir,
+  TTSC_GO_CACHE_DIR: path.join(ttscCacheDir, 'go-build'),
+};
 /** Time a timed-out command's process group gets to exit after SIGTERM before SIGKILL. */
 export const KILL_GRACE_MS = 5000;
 
@@ -43,12 +53,10 @@ export function command(cwd: string, executable: string, args: readonly string[]
       && args[0].includes(`${path.sep}ttsc${path.sep}`)
     ) {
       if (!options.env?.NODE_PATH) env.NODE_PATH = path.join(workspace, 'node_modules');
-      // Temporary projects still build their own plugin binaries. Reuse Go's
-      // content-addressed dependency cache instead of rebuilding the compiler
-      // dependencies for every isolated fixture.
-      if (args[1] !== 'clean' && !env.TTSC_GO_CACHE_DIR && !env.GOCACHE) {
-        env.TTSC_GO_CACHE_DIR = path.join(workspace, 'node_modules/.cache/ttsc/go-build');
-      }
+      // Reuse the workspace's content-addressed plugin and Go caches instead of
+      // building the plugin again for every isolated fixture.
+      if (args[1] !== 'clean' && !env.TTSC_CACHE_DIR) env.TTSC_CACHE_DIR = ttscEnv.TTSC_CACHE_DIR;
+      if (args[1] !== 'clean' && !env.TTSC_GO_CACHE_DIR && !env.GOCACHE) env.TTSC_GO_CACHE_DIR = ttscEnv.TTSC_GO_CACHE_DIR;
     }
     // A Node test worker's private context marker makes a nested `node --test`
     // skip its requested files. Child consumer commands run independently.
