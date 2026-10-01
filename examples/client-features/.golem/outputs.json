@@ -133,6 +133,27 @@
       "digest": "ca9029133f670117b4804be1e025bb5ac5dc089c4cf0a62d179695bce9dcb57f",
       "destination": "sdk",
       "destinationKind": "directory"
+    },
+    "src/event-models/payment-events.model.generated.ts": {
+      "job": "models:.",
+      "owner": "@exprtlabs/golem-model",
+      "digest": "09f33545d3cd16f8db4331a1ad580686c6fadfc81e4d4afee04caa09a17a253e",
+      "destination": "src",
+      "destinationKind": "directory"
+    },
+    "src/event-models/payment-events.model.ts": {
+      "job": "generator:src/event-models",
+      "owner": "client-features-example",
+      "digest": "aad36d5c46d423eeed030284968890f4f020d0414e0651dfa25ce3cd8633acb1",
+      "destination": "src/event-models",
+      "destinationKind": "directory"
+    },
+    "src/generated/models/iobject-plugin-keys.ts": {
+      "job": "models:.",
+      "owner": "@exprtlabs/golem-model",
+      "digest": "33e1564f166c5dc6a8436c7870e51c86ee6f5b6558455b87005eef6493cdfb01",
+      "destination": "src/generated/models",
+      "destinationKind": "directory"
     }
   }
 }

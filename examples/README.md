@@ -10,7 +10,7 @@ pages explain the examples and show source regions from these maintained files.
 | [model](model/) | Validation on, MobX off | Model methods, synchronous serde and the stateful `getValidator` validator |
 | [openapi](openapi/) | Validation on, MobX off | Typed operations, request arguments and responses |
 | [combined](combined/) | Validation on, MobX off | Nested SDK types, stateless checks and application model rules |
-| [client-features](client-features/) | Validation on, MobX off | Authentication, custom body codecs, streaming responses and Temporal dates for the generated client |
+| [client-features](client-features/) | Validation on, MobX off | Authentication, custom body codecs, streaming responses and Temporal dates for the generated client, and a local generator job |
 | [model-mobx](model-mobx/) | Validation off, MobX on | Observable fields, actions and computed values |
 | [combined-mobx](combined-mobx/) | Validation on, MobX on | Observable nested SDK models and stateful editor errors |
 | [nest-openapi](nest-openapi/) | Validation on, MobX off | Nest interceptor, OpenAPI and SDK |

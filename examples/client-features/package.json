@@ -2,6 +2,9 @@
   "name": "client-features-example",
   "private": true,
   "type": "module",
+  "exports": {
+    "./generator": "./generators/event-models.js"
+  },
   "scripts": {
     "generate": "golem generate",
     "check": "golem check && ttsc --noEmit",

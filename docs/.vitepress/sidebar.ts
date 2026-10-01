@@ -32,6 +32,7 @@ export const SIDEBAR: readonly SidebarGroup[] = [
   ] },
   { text: 'Integrations', items: [
     { text: 'MobX and React', link: '/guide/mobx' },
+    { text: 'Run your own generator', link: '/guide/generators' },
   ] },
   { text: 'Reference', items: [
     { text: 'Configuration', link: '/reference/config' },

@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import { mock, test } from 'node:test';
 import { PaymentsClient } from '../sdk/index.js';
 import { describePayment, readDueDate } from './payment-dates.js';
+import { PaymentRefunded } from './event-models/payment-events.model.js';
+import { readCaptured } from './read-event.js';
 
 type Responder = (request: Request) => Response | Promise<Response>;
 
@@ -141,4 +143,12 @@ test('dates: temporal reads date fields as Temporal values and writes them back 
     createdAt: '2025-01-02T03:04:05Z',
     dueOn: '2025-02-01',
   });
+});
+
+test('a generator job writes model declarations that the models job turns into classes', () => {
+  const captured = readCaptured('{"paymentId":"payment-1","amount":25}');
+  assert.equal(captured.constructor.name, 'PaymentCaptured');
+  assert.equal(captured.amount, 25);
+  assert.equal(new PaymentRefunded({ paymentId: 'payment-1', reason: 'duplicate' }).reason, 'duplicate');
+  assert.throws(() => readCaptured('{"paymentId":"payment-1"}'));
 });
