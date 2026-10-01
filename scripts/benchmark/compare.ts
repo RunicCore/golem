@@ -25,8 +25,8 @@ export function compareResults(before: BenchmarkResults, after: BenchmarkResults
   for (const field of ['node', 'os', 'arch', 'cpu', 'cpus'] as const) {
     if (before.environment[field] !== after.environment[field]) warnings.push(`${field} differs: ${before.environment[field]} → ${after.environment[field]}`);
   }
-  for (const field of ['warmupMs', 'batchMs', 'batches'] as const) {
-    if (before.settings[field] !== after.settings[field]) warnings.push(`settings.${field} differs: ${before.settings[field]} → ${after.settings[field]}`);
+  for (const field of ['warmupMs', 'batchMs', 'batches', 'rounds'] as const) {
+    if ((before.settings[field] ?? 1) !== (after.settings[field] ?? 1)) warnings.push(`settings.${field} differs: ${before.settings[field]} → ${after.settings[field]}`);
   }
   if (before.git.sha !== after.git.sha || before.git.dirty !== after.git.dirty) {
     warnings.push(`git differs: ${before.git.sha}${before.git.dirty ? ' (dirty)' : ''} → ${after.git.sha}${after.git.dirty ? ' (dirty)' : ''}`);

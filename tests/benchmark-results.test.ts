@@ -7,7 +7,7 @@ import { timedCases } from '../scripts/benchmark/cases.js';
 import { isBenchmarkResults } from '../scripts/benchmark/results-schema.js';
 import { buildResults, summarize, writeFilesTogether, type MeasuredCase } from '../scripts/benchmark/results.js';
 
-const settings = { warmupMs: 300, batchMs: 200, batches: 5 };
+const settings = { warmupMs: 300, batchMs: 200, batches: 6, rounds: 2 };
 const env = { node: 'v22.12.0', os: 'darwin', arch: 'arm64', cpu: 'Test CPU', cpus: 8 };
 
 function measuredAll(): MeasuredCase[] {
