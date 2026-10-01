@@ -111,17 +111,15 @@ function registerModelValidationEngineFactory(factory: () => ModelRuntimeValidat
 
 Used by generated code: `createStaticValidationEngine`, `runValidation`, `issuesFromErrors`, `getModelRuntimeValidator`, and in operation modules `operationValidators` (resolves an operation's input and response validators once per client), `validateOperationInput` and `responseCheck` (the response check `ClientRuntime.readResponse` runs on each decoded body or stream item).
 
-### Schema registry validators {#registry-validators}
+### Runtime validators {#runtime-validators}
 
-A generated SDK binds its schema registry to a validation engine with these functions.
+```ts
+function validateWith(validator: RuntimeValidator, value: unknown): Promise<ValidationResult>;
+```
 
-| Member | Signature | Behavior |
-| --- | --- | --- |
-| `createRegistryValidators` | `(engine: RuntimeValidationEngine, data: SchemaRegistryData): ReadonlyMap<Schema, RuntimeValidator>` | Adds the registry to `engine` if missing and returns one validator per schema name. Throws `LibError` when a schema does not compile. |
-| `createRegistryOperationValidators` | `(engine, data): ReadonlyMap<Operation, OperationRuntimeValidators>` | Returns the input validator and the response validators, keyed `status:contentType`, for each operation. |
-| `validateWith` | `(validator: RuntimeValidator, value: unknown): Promise<ValidationResult>` | Runs one validator and returns `{ valid, errors }`. |
+`validateWith` runs one validator and returns `{ valid, errors }`.
 
-Types: `SchemaRegistryData`, `RuntimeValidator`, `RuntimeValidationEngine`, `OperationRuntimeValidators` and `ValidationResult`. `RuntimeValidationEngine` is the two-method adapter that [`ajv`](#ajv) implements: `addSchema(schema, id)` and `getSchema(reference)`.
+Types: `RuntimeValidator`, `RuntimeValidationEngine`, `OperationRuntimeValidators` and `ValidationResult`. `RuntimeValidationEngine` is the two-method adapter that [`ajv`](#ajv) implements: `addSchema(schema, id)` and `getSchema(reference)`. `OperationRuntimeValidators` is the value type of a client's `operationValidators` option: the input validator and the response validators keyed `status:contentType`.
 
 ## `@exprtlabs/golem/ajv` {#ajv}
 

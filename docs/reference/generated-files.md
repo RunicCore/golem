@@ -6,7 +6,7 @@ Know which generated paths and names you can import and commit, and which may ch
 
 | Path | What it holds | Stable |
 | --- | --- | --- |
-| `sdk/index.js` | The client, its types, and the schema and validation helpers | Yes |
+| `sdk/index.js` | The client and its types | Yes |
 | `sdk/models/<Name>.js` | One runtime model class per object schema | Yes |
 | `sdk/operations/<name>.js` | One operation factory per endpoint | Yes |
 | `<name>.model.generated.ts` | The generated base beside each model file | Yes |
@@ -31,7 +31,7 @@ Every other file in an SDK is internal and may change in a minor release. Do not
 
 - `models/_group-*.ts`
 - `types.ts`
-- `schemas.ts`
+- `schemas.ts`, written only for an `ajvStandalone` job
 - `input-schemas.ts`
 - `output-schemas.ts`
 - `validation-schemas/*`

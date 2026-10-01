@@ -90,6 +90,7 @@ Each item names a breaking change and the action to take.
 - Install `@exprtlabs/golem` at or above the version the SDK was generated for, with the same major version.
 - The identifiers of codecs in generated files change. A hand-written model and an SDK model with the same name and shape no longer share an id.
 - `sdk/index.js` no longer exports `IOBJECT_PLUGIN_KEYS` or the schema helpers (`schemaRegistry`, `createRuntimeValidators`, …). Validate with the generated `validate<Name>` functions or the client's validation engine.
+- `schemas.ts` exists only in `ajvStandalone` SDKs and holds only `schemaRegistry` and `runtimeSchemaRegistry`; `validation-schemas/` modules export only `schema`. `@exprtlabs/golem/validation` no longer exports `createRegistryValidators`, `createRegistryOperationValidators` or `SchemaRegistryData`. Validate with the client's validation engine or the generated `validate<Name>` functions.
 - Generated `parse<Name>`, `fromWireFormat<Name>` and `assert<Name>` return `<Name>Fields`, and `stringify<Name>` and `toWireFormat<Name>` accept it, instead of `unknown`.
 - `generate` and `check` stop when a file golem did not generate sits at an output path. Remove or rename it.
 
