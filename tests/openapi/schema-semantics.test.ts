@@ -142,7 +142,7 @@ test('public generation accepts OAS 3.1/3.2 boolean schemas in direct, nested, a
       const result = await generate({ input, output, name: 'BooleanSchema', profile });
       const types = result.artifacts.find((artifact) => artifact.path.endsWith('/types.ts'))?.content ?? '';
       assert.match(types, /body: never/, types);
-      assert.match(types, /Record<string, never>/, types);
+      assert.match(types, /body: \{ \[key: string\]: never \}/, types);
       assert.match(types, /body: InputSchemas\.Never/, types);
       assert.match(types, /body: unknown/, types);
       // The 3.1 document is checked on its emitted types only; 3.2 also compiles and runs.
