@@ -138,3 +138,45 @@ test('a malformed package.json names its path and keeps the parse error as the c
     return true;
   });
 });
+
+// The codec files one directory deeper, for the exports rules that depend on where a file sits.
+const NESTED_FILES = Object.fromEntries(Object.entries(COUNT_DIST_FILES).map(([name, text]) => [name.replace('dist/', 'dist/sub/'), text]));
+const NESTED_TAGS = { './sub/tags': { types: './dist/sub/tags.d.ts', import: './dist/sub/tags.js' } };
+
+function generatedFor(t: TestContext, exports: Record<string, unknown>, nested = false): string {
+  const { root, sourceRoot } = project(t);
+  writeCodecPackage(path.join(root, 'node_modules/@fixture/pg'), { name: '@fixture/pg', exports, files: nested ? NESTED_FILES : COUNT_DIST_FILES });
+  fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), nested ? model.replace('@fixture/pg/tags', '@fixture/pg/sub/tags') : model);
+  return generate({ root, profile: { mobx: false, validation: true } }).artifacts.find(a => a.path.endsWith(SHARED_MODELS))?.content ?? '';
+}
+
+function rejected(t: TestContext, exports: Record<string, unknown>, nested = false): void {
+  assert.throws(() => generatedFor(t, exports, nested), /RUNM1060: .*encodeCount.*@fixture\/pg/);
+}
+
+test('exports: the most specific pattern decides, so a file the specific pattern sends elsewhere is not exported', t => {
+  rejected(t, { ...NESTED_TAGS, './*': './dist/*.d.ts', './sub/*': './dist/legacy/*.d.ts' }, true);
+});
+
+test('exports: a file reached through the most specific pattern gets that pattern\'s subpath', t => {
+  const generated = generatedFor(t, { ...NESTED_TAGS, './*': './dist/legacy/*.d.ts', './sub/*': './dist/sub/*.d.ts' }, true);
+  assert.match(generated, /from "@fixture\/pg\/sub\/codecs"/);
+});
+
+test('exports: a null target excludes the file even when a pattern would reach it', t => {
+  rejected(t, { './tags': EXPORTS['./tags'], './*': './dist/*.d.ts', './codecs': null });
+});
+
+test('exports: a null condition excludes the file', t => {
+  rejected(t, { './tags': EXPORTS['./tags'], './codecs': { import: null, types: './dist/codecs.d.ts' } });
+});
+
+test('exports: the first matching condition wins, as in Node', t => {
+  rejected(t, { './tags': EXPORTS['./tags'], './codecs': { default: './dist/other.d.ts', types: './dist/codecs.d.ts' } });
+});
+
+test('exports: conditions golem does not use are skipped', t => {
+  rejected(t, { './tags': EXPORTS['./tags'], './codecs': { custom: './dist/codecs.d.ts', require: './dist/codecs.js' } });
+  const generated = generatedFor(t, { './tags': EXPORTS['./tags'], './codecs': { custom: './dist/nowhere.d.ts', types: './dist/codecs.d.ts' } });
+  assert.match(generated, /from "@fixture\/pg\/codecs"/);
+});

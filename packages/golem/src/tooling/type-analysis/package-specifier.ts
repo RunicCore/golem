@@ -36,13 +36,60 @@ function nearestManifest(file: string): PackageManifest | undefined {
   }
 }
 
-/** Every file target reachable from one exports entry, after condition nesting. */
-function targets(entry: unknown): string[] {
-  if (typeof entry === 'string') return [entry];
-  if (Array.isArray(entry)) return entry.flatMap(targets);
-  if (entry && typeof entry === 'object') {
-    return Object.entries(entry).filter(([condition]) => ['types', 'import', 'default', 'node'].includes(condition)).flatMap(([, value]) => targets(value));
+/** Conditions a generated TypeScript file matches under Node's ESM rules, besides `default`. */
+const CONDITIONS: ReadonlySet<string> = new Set(['types', 'import', 'node', 'default']);
+
+/**
+ * The file one exports target names for a subpath, after Node's target rules: the first matching condition (in
+ * object order) decides, the first resolvable array item wins, and `null` excludes. `undefined` means no target
+ * applies. `capture` fills each `*` of a pattern target.
+ */
+function resolveTarget(target: unknown, capture: string | undefined): string | null | undefined {
+  if (target === null) return null;
+  if (typeof target === 'string') {
+    if (!target.startsWith('./')) return undefined;
+    return capture === undefined ? target : target.replaceAll('*', capture);
   }
+  if (Array.isArray(target)) {
+    let excluded: null | undefined;
+    for (const item of target) {
+      const resolved = resolveTarget(item, capture);
+      if (resolved === null) excluded = null;
+      else if (resolved !== undefined) return resolved;
+    }
+    return excluded;
+  }
+  if (target && typeof target === 'object') {
+    for (const [condition, value] of Object.entries(target)) {
+      if (!CONDITIONS.has(condition)) continue;
+      const resolved = resolveTarget(value, capture);
+      if (resolved !== undefined) return resolved;
+    }
+  }
+  return undefined;
+}
+
+/** Node's PACKAGE_EXPORTS_RESOLVE for one subpath: an exact key, else the pattern key with the longest prefix. */
+function resolveSubpath(map: Readonly<Record<string, unknown>>, subpath: string): string | null | undefined {
+  if (Object.hasOwn(map, subpath) && !subpath.includes('*')) return resolveTarget(map[subpath], undefined);
+  let best: { readonly key: string; readonly base: string; readonly capture: string } | undefined;
+  for (const key of Object.keys(map)) {
+    const star = key.indexOf('*');
+    if (star === -1 || star !== key.lastIndexOf('*')) continue;
+    const base = key.slice(0, star);
+    const trailer = key.slice(star + 1);
+    if (subpath.length < key.length || !subpath.startsWith(base) || !subpath.endsWith(trailer)) continue;
+    if (best && (best.base.length > base.length || (best.base.length === base.length && best.key.length >= key.length))) continue;
+    best = { key, base, capture: subpath.slice(base.length, subpath.length - trailer.length) };
+  }
+  return best ? resolveTarget(map[best.key], best.capture) : undefined;
+}
+
+/** Every string target in one exports entry, whatever condition holds it, in object order. */
+function targetStrings(entry: unknown): string[] {
+  if (typeof entry === 'string') return [entry];
+  if (Array.isArray(entry)) return entry.flatMap(targetStrings);
+  if (entry && typeof entry === 'object') return Object.values(entry).flatMap(targetStrings);
   return [];
 }
 
@@ -54,24 +101,35 @@ function exportCandidates(relativeFile: string): readonly string[] {
   return runtime === relativeFile ? [relativeFile] : [relativeFile, runtime];
 }
 
+/**
+ * The subpath through which Node resolves to `relativeFile`. Each exports entry proposes a subpath for the file;
+ * the proposal stands only if resolving that subpath forward, with Node's precedence, `null` and condition rules,
+ * lands on the file again.
+ */
 function subpathFor(exportsField: unknown, relativeFile: string): string | undefined {
   const map: Record<string, unknown> = typeof exportsField === 'string' || Array.isArray(exportsField)
     || (exportsField && typeof exportsField === 'object' && !Object.keys(exportsField).some((key) => key.startsWith('.')))
     ? { '.': exportsField }
     : (exportsField as Record<string, unknown> | undefined) ?? {};
   const candidates = exportCandidates(relativeFile);
-  for (const [subpath, entry] of Object.entries(map)) {
-    for (const target of targets(entry)) {
-      const normalized = target.replace(/^\.\//, '');
+  for (const [key, entry] of Object.entries(map)) {
+    for (const target of targetStrings(entry)) {
+      if (!target.startsWith('./')) continue;
+      const normalized = target.slice(2);
       for (const candidate of candidates) {
+        let subpath: string | undefined;
         if (!normalized.includes('*')) {
-          if (normalized === candidate) return subpath;
-          continue;
+          if (normalized === candidate && !key.includes('*')) subpath = key;
+        } else if (key.indexOf('*') !== -1 && key.indexOf('*') === key.lastIndexOf('*')) {
+          const prefix = normalized.slice(0, normalized.indexOf('*'));
+          const suffix = normalized.slice(normalized.lastIndexOf('*') + 1);
+          if (candidate.startsWith(prefix) && candidate.endsWith(suffix) && candidate.length >= prefix.length + suffix.length) {
+            subpath = key.replace('*', candidate.slice(prefix.length, candidate.length - suffix.length));
+          }
         }
-        const [prefix, suffix] = normalized.split('*') as [string, string];
-        if (candidate.startsWith(prefix) && candidate.endsWith(suffix) && candidate.length >= prefix.length + suffix.length) {
-          return subpath.replace('*', candidate.slice(prefix.length, candidate.length - suffix.length));
-        }
+        if (subpath === undefined) continue;
+        const resolved = resolveSubpath(map, subpath);
+        if (resolved && candidates.includes(resolved.slice(2))) return subpath;
       }
     }
   }

@@ -27,6 +27,7 @@ The first release candidate includes four independently installable packages:
 - A tag argument that depends on a type parameter and sits behind another alias of the tag fails with `RUNM1064`, which names the tag. It was reported as a repeated tag (`RUNM1062`).
 - Tag aliases and `TSerde`/`TValidation` functions can come from an installed package; generated files import them through the package's `exports`.
 - A malformed `package.json` met while resolving a package import fails with an error that names the file and keeps the parse error as its cause.
+- A package's `exports` are read as Node reads them for an ES module import: the most specific pattern key wins, a `null` target or condition excludes the file (RUNM1060), the first matching condition among `types`, `import`, `node` and `default` decides, and other conditions are skipped.
 - **Breaking:** a `TSerde`/`TValidation` function in another package, including a sibling workspace package, is imported by its package name, so that package must export the file (RUNM1060). Earlier releases wrote a relative path into the other package. Add an `exports` entry for the codec file.
 - A `TSerde` field can hold a class instance, such as `Uint8Array`, or a `bigint`.
 - A class held by a `TSerde` field is imported under its exported name, including `export { A as B }` and default exports, and under a generated alias, so two classes with the same name from different modules both compile. An anonymous, unexported, generic or `declare module` class fails with `RUNM1063` instead of producing a broken import.
