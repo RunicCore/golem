@@ -110,3 +110,19 @@ test('visitOpenApiSchemaTree reports discriminator mapping and defaultMapping va
     'defaultMapping #/components/schemas/Pet/discriminator defaultMapping Dog https://schemas.example/pet',
   ]);
 });
+
+test('visitOpenApiSchemaTree skips x- extension keys under paths and webhooks', () => {
+  const refs: string[] = [];
+  const pathItem = () => ({ get: { responses: { 200: { description: 'ok', content: { 'application/json': { schema: { $ref: './ext.json' } } } } } } });
+  visitOpenApiSchemaTree({
+    openapi: '3.2.0',
+    paths: { '/a': pathItem(), 'x-notes': pathItem() },
+    webhooks: { event: pathItem(), 'x-notes': pathItem() },
+  }, {
+    onSchemaRef(_keyword, reference, _base, pointer) { refs.push(`${pointer} ${reference}`); },
+  });
+  assert.deepEqual(refs, [
+    '#/paths/~1a/get/responses/200/content/application~1json/schema/$ref ./ext.json',
+    '#/webhooks/event/get/responses/200/content/application~1json/schema/$ref ./ext.json',
+  ]);
+});

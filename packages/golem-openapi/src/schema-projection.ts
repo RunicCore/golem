@@ -789,7 +789,7 @@ function visitPathMap(
 ): void {
   if (!isJsonObject(map)) return;
   for (const [name, item] of objectEntries(map)) {
-    if (OPENAPI_LITERAL_KEYS.has(name)) continue;
+    if (OPENAPI_LITERAL_KEYS.has(name) || name.startsWith('x-')) continue;
     visitPathItem(item, currentBase, jsonPointerJoin(pointer, name), seen, handlers);
   }
 }

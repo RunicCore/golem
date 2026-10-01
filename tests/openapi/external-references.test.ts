@@ -51,7 +51,14 @@ test('validation errors point at the file that contains the problem', async (t) 
   });
   await assert.rejects(
     () => generate({ input, output: path.join(directory, 'sdk'), profile }),
-    /OpenAPI validation failed with 1 error\(s\):\nschema: must be equal to one of the allowed values \(schemas\/bad\.json#\/type\)/,
+    (error: unknown) => {
+      assert.ok(error instanceof Error);
+      assert.match(
+        error.message,
+        /^OpenAPI validation failed with 1 error\(s\):\nschema: must be equal to one of the allowed values \(schemas\/bad\.json#\/type\)$/,
+      );
+      return true;
+    },
   );
 });
 
@@ -65,7 +72,15 @@ test('an unresolved pointer into another file is reported at the ref', async (t)
   });
   await assert.rejects(
     () => generate({ input, output: path.join(directory, 'sdk'), profile }),
-    /no-unresolved-refs: Can't resolve \$ref \.\/params\.json#\/Nope \(api\.json#\/paths\/~1a\/get\/parameters\/0\/\$ref\)/,
+    (error: unknown) => {
+      assert.ok(error instanceof Error);
+      assert.equal(
+        error.message,
+        'OpenAPI validation failed with 1 error(s):\n'
+          + "no-unresolved-refs: Can't resolve $ref ./params.json#/Nope (api.json#/paths/~1a/get/parameters/0/$ref)",
+      );
+      return true;
+    },
   );
 });
 
@@ -141,4 +156,25 @@ test('a 3.2 media type in another file is expanded in place in the loaded docume
   const result = await generate({ input, output: path.join(directory, 'sdk'), profile });
   const client = result.artifacts.find((artifact) => artifact.path.endsWith('/client.ts'))?.content ?? '';
   assert.match(client, /getA/);
+});
+
+test('the root document is reported to the input observer once, also when it fails to parse', async (t) => {
+  const directory = createFixtureProject(t, 'golem-external-observer-');
+  write(directory, 'schemas/user.json', { type: 'object' });
+  const input = write(directory, 'api.json', {
+    openapi: '3.1.0',
+    info: { title: 'Observed', version: '1' },
+    components: { schemas: { User: { $ref: './schemas/user.json' } } },
+  });
+  const observed: string[] = [];
+  await generate({ input, output: path.join(directory, 'sdk'), profile, onInput: (file) => { observed.push(file); } });
+  assert.deepEqual(observed.filter((file) => file === input), [input]);
+  assert.ok(observed.includes(path.join(directory, 'schemas/user.json')));
+
+  const broken = write(directory, 'broken.json', '{ not json');
+  const observedBroken: string[] = [];
+  await assert.rejects(
+    () => generate({ input: broken, output: path.join(directory, 'sdk'), profile, onInput: (file) => { observedBroken.push(file); } }),
+  );
+  assert.deepEqual(observedBroken, [broken]);
 });

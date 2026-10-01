@@ -296,7 +296,6 @@ export async function loadReferenceGraph(
   const rootSchemaNames = new Set(Object.keys(asRecord(asRecord(asRecord(rootDocument).components).schemas)));
   let externalDocuments = 0;
 
-  onInput?.(rootFile);
   registerAbsoluteIds(rootUri, rootDocument, '', absoluteIds);
 
   const loadDocument = async (uri: string): Promise<LoadedDocument> => {

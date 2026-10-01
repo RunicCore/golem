@@ -227,3 +227,12 @@ test('spec-discriminator-defaultMapping follows a $ref chain before checking req
   });
   assert.deepEqual(found(document, 'spec-discriminator-defaultMapping'), []);
 });
+
+test('rules skip x- extension keys under paths and webhooks as path items', () => {
+  const operation = { operationId: 'same', responses: ok };
+  const document = documentBase('3.1.0', {
+    paths: { '/a': { get: operation }, 'x-notes': { get: operation } },
+    webhooks: { event: { post: { operationId: 'other', responses: ok } }, 'x-notes': { post: { operationId: 'other', responses: ok } } },
+  });
+  assert.deepEqual(found(document, 'operation-operationId-unique'), []);
+});

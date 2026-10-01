@@ -90,9 +90,11 @@ function collectRuleOperations(document: unknown): OperationEntry[] {
   const visited = new Set<string>();
   const root = asRecord(document);
   for (const [route, item] of objectEntries(root.paths)) {
+    if (route.startsWith('x-')) continue;
     collectPathItemOperations(document, item, pointerJoin('/paths', route), route, out, visited);
   }
   for (const [name, item] of objectEntries(root.webhooks)) {
+    if (name.startsWith('x-')) continue;
     collectPathItemOperations(document, item, pointerJoin('/webhooks', name), null, out, visited);
   }
   return out;
