@@ -596,7 +596,11 @@ function instantiatedTag(context: TagAnalysisContext, name: string): TagMetadata
   const atUseSite: TagAnalysisContext = { ...context, diagnostic: (_node, code, message) => context.diagnostic(useSite.node, code, message) };
   const members = (useSite.type.isIntersection() ? useSite.type.types : [useSite.type])
     .filter((member) => member.aliasSymbol?.getName() === name && isGolemTagSymbol(context.checker, member.aliasSymbol));
-  if (members.length !== 1) {
+  if (members.length === 0) {
+    // The checker names an instantiated tag by the alias that wrote it last, so a tag behind `type Inner<N> = MaxLength<N>` is not found as `MaxLength`.
+    throw atUseSite.diagnostic(useSite.node, '1064', `${useSite.node.getText()} has a ${name} tag that depends on a type parameter, but the type shows no ${name} tag because another type alias wraps it. Write ${name} directly in the alias that declares the type parameter.`);
+  }
+  if (members.length > 1) {
     throw atUseSite.diagnostic(useSite.node, '1062', `${useSite.node.getText()} holds more than one ${name} tag, and one depends on a type parameter. Keep one ${name} per alias.`);
   }
   return parseCheckerTag(atUseSite, members[0]!)!;

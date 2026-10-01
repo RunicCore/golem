@@ -24,6 +24,7 @@ The first release candidate includes four independently installable packages:
 
 - `@exprtlabs/golem/temporal` adds Temporal field types (`TemporalInstant`, `TemporalPlainDate`, …) with ISO 8601 wire strings and nanosecond precision.
 - Type aliases of tags accept type parameters as tag arguments, such as `type Varchar<N extends number> = string & MaxLength<N>`.
+- A tag argument that depends on a type parameter and sits behind another alias of the tag fails with `RUNM1064`, which names the tag. It was reported as a repeated tag (`RUNM1062`).
 - Tag aliases and `TSerde`/`TValidation` functions can come from an installed package; generated files import them through the package's `exports`.
 - **Breaking:** a `TSerde`/`TValidation` function in another package, including a sibling workspace package, is imported by its package name, so that package must export the file (RUNM1060). Earlier releases wrote a relative path into the other package. Add an `exports` entry for the codec file.
 - A `TSerde` field can hold a class instance, such as `Uint8Array`, or a `bigint`.

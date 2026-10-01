@@ -79,6 +79,7 @@ test('generic alias with predicate', async t => {
 for (const item of [
   { name: 'non-literal argument', prelude: tsSource`type V<N extends number> = string & MaxLength<N>;`, field: tsSource`value: V<number>`, expected: /a\.model\.ts:\d+:\d+ RUNM1043: MaxLength requires a finite numeric literal argument/ },
   { name: 'typeof depends on a parameter', prelude: tsSource`type V<F extends (value: string) => boolean> = string & TValidation<F>;`, field: tsSource`value: V<typeof notBlank>`, expected: /RUNM1061: /},
+  { name: 'a tag reached through another alias of it', prelude: tsSource`type Inner<N extends number> = MaxLength<N>;\ntype V<N extends number> = string & Inner<N>;`, field: tsSource`value: V<3>`, expected: /a\.model\.ts:\d+:\d+ RUNM1064: .*MaxLength.*no MaxLength tag/ },
   { name: 'two same-kind tags, one parameter-dependent', prelude: tsSource`type V<N extends number> = string & MaxLength<N> & MaxLength<9>;`, field: tsSource`value: V<3>`, expected: /RUNM1062: / },
 ] as const) {
   test(`generic alias diagnostic: ${item.name}`, t => {

@@ -292,6 +292,10 @@ An error prints its code, location when known, and message, then stops generatio
 
 **Class cannot be imported.** A `TSerde` field holds a class that generated code cannot import and name: an anonymous class, a class that its module doesn't export, a generic class with a type parameter that has no default, or a class declared inside `declare module "name"`. The message names the class and the file. **Fix:** Name the class and export it from a module file, or declare a non-generic subclass such as `class StringBox extends Box<string> {}` and use that. A class exported under another name or as the default export needs no change.
 
+### RUNM1064
+
+**Tag hidden behind another alias.** A type alias passes its type parameter to a tag through a second alias, such as `type Inner<N extends number> = MaxLength<N>` used in `type V<N extends number> = string & Inner<N>`, so the generator can't find the tag on the instantiated type. **Fix:** Write the tag directly in the alias that declares the type parameter.
+
 ## Client generator (OPENAPI)
 
 ### OPENAPI_BROWSER_COOKIE
