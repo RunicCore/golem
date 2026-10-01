@@ -4,12 +4,13 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { exportPublicSource, packedSetDigest } from './public-source.js';
 import { assertReleaseConsistency } from './release-version.js';
+import { ttscCacheEnv } from './ttsc-cache.js';
 import { readManifest, readPack, verifyPackedArchive, type PackedPackage } from './packed-archive.js';
 
 export const PACKAGE_FOLDERS = ['golem', 'golem-model', 'golem-openapi', 'golem-ts-openapi'] as const;
 
-function npm(cwd: string, args: readonly string[]): string {
-  const result = spawnSync('npm', args, { cwd, encoding: 'utf8', timeout: 240_000, killSignal: 'SIGKILL' });
+function npm(cwd: string, args: readonly string[], env: NodeJS.ProcessEnv): string {
+  const result = spawnSync('npm', args, { cwd, env, encoding: 'utf8', timeout: 240_000, killSignal: 'SIGKILL' });
   if (result.error) throw result.error;
   if (result.status !== 0) {
     const hint = /ENOTCACHED/.test(result.stderr) ? '\nThe npm cache is missing a package. Run: npm run test:prepare' : '';
@@ -30,12 +31,14 @@ export function packPublicSource(workspace: string, packedRoot: string): { reado
     exportPublicSource(workspace, source);
     const workspaceVersion = assertReleaseConsistency(source);
     // An ordinary source checkout must be sufficient for npm pack.
-    npm(source, ['ci', '--ignore-scripts', '--no-audit', '--no-fund']);
+    // prepack runs ttsc in this staging copy, whose path is new every run; the shared caches keep that build out of it.
+    const env = { ...process.env, ...ttscCacheEnv(workspace) };
+    npm(source, ['ci', '--ignore-scripts', '--no-audit', '--no-fund'], env);
     const packages: PackedPackage[] = [];
     for (const folder of PACKAGE_FOLDERS) {
       const packageRoot = path.join(source, 'packages', folder);
       const manifest = readManifest(path.join(packageRoot, 'package.json'));
-      const pack = readPack(npm(packageRoot, ['pack', '--json', '--silent', '--pack-destination', staging]));
+      const pack = readPack(npm(packageRoot, ['pack', '--json', '--silent', '--pack-destination', staging], env));
       packages.push({ manifest, pack, filename: path.join(staging, pack.filename) });
     }
     for (const entry of packages) verifyPackedArchive(entry, staging, workspace);

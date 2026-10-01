@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { ttscCacheEnv } from '../../scripts/ttsc-cache.js';
 
 export interface CommandOptions { readonly env?: NodeJS.ProcessEnv; readonly timeout?: number; readonly allowFailure?: boolean }
 export interface NpmOptions { readonly includeOptional?: boolean; readonly env?: NodeJS.ProcessEnv }
@@ -8,16 +9,10 @@ export interface CommandResult { readonly code: number | null; readonly signal: 
 
 export const workspace = fileURLToPath(new URL('../../../', import.meta.url));
 export const ttsc = path.join(workspace, 'node_modules/ttsc/lib/launcher/ttsc.js');
-/**
- * Fixture projects share the workspace's ttsc caches. The plugin binary cache is keyed by the plugin sources and
- * guarded by a cross-process build lock, so every fixture reuses one build of the golem plugin instead of building
- * its own in a temporary directory.
- */
-const ttscCacheDir = path.join(workspace, 'node_modules/.cache/ttsc');
+/** Fixture projects share the workspace's ttsc caches, so every fixture reuses one build of the golem plugin instead of building its own in a temporary directory. */
 export const ttscEnv = {
   NODE_PATH: path.join(workspace, 'node_modules'),
-  TTSC_CACHE_DIR: ttscCacheDir,
-  TTSC_GO_CACHE_DIR: path.join(ttscCacheDir, 'go-build'),
+  ...ttscCacheEnv(workspace),
 };
 /** Time a timed-out command's process group gets to exit after SIGTERM before SIGKILL. */
 export const KILL_GRACE_MS = 5000;

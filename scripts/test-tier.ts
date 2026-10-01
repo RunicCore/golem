@@ -24,9 +24,10 @@ export const TEST_TIMEOUT_MS = { focused: 60_000, full: 90_000, acceptance: 300_
 // files, so two at once is the most that helps.
 const UNIT_CAP = 8;
 const PACKED_CAP = 2;
-// The container's Go build cache (GOCACHE=/cache/go) grows with every plugin
-// build. A fresh prepare fills 4.3 GiB (2026-09-30), so Full and Acceptance clear
-// it past twice that; the next run then rebuilds the ttsc plugin from source.
+// The container's Go build cache (GOCACHE=/cache/go) is a backstop: a repeat Full run adds nothing to it, because
+// the pack step builds ttsc through the workspace's shared caches (2026-10-01: +0 MiB over two Full runs that each
+// rebuilt the packed set, against +1.6 GiB per run before). A fresh prepare fills 4.3 GiB (2026-09-30), so Full and
+// Acceptance clear it past twice that; the next run then rebuilds the ttsc plugin from source.
 const GO_CACHE_LIMIT_BYTES = 9 * 1024 ** 3;
 
 export function trimGoCache(limitBytes: number): void {
