@@ -53,36 +53,36 @@ registerGeneratedModel(PermissionInputBase, {
     decode: (value, constructor) => decodePermissionInputModel(constructor ?? PermissionInputBase, value),
     encode: encodePermissionInputModel,
   },
-  codecId: "PermissionInput_f5c43df9",
+  codecId: "PermissionInput_8f46e801",
   profile: { validation: true, mobx: false },
 });
 
-registerIModelClass("PermissionInput_f5c43df9", PermissionInputBase);
+registerIModelClass("PermissionInput_8f46e801", PermissionInputBase);
 
 const objectAjvFast = createOpenApiSyncAjvEngine({ allErrors: false, validationBindings: modelValidationBindings });
 const objectAjvAll = createOpenApiSyncAjvEngine({ allErrors: true, validationBindings: modelValidationBindings });
 
-const __resolvedModelSchema_PermissionInput = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"PermissionInput_f5c43df9\",\"type\":\"object\",\"properties\":{\"permissions\":{\"exprtValidation\":{\"schema\":{\"allOf\":[{\"type\":\"number\"},{\"type\":\"integer\",\"maximum\":255,\"minimum\":0}]},\"bindings\":[\"src/permission-rules.ts#hasReadPermission\"]}}},\"required\":[\"permissions\"],\"additionalProperties\":false}") as object) as object;
-objectAjvFast.addSchema(structuredClone(__resolvedModelSchema_PermissionInput) as object, "PermissionInput_f5c43df9");
-objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_PermissionInput) as object, "PermissionInput_f5c43df9");
-const __resolvedWireSchema_PermissionInput = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"PermissionInput_f5c43df9#wire\",\"type\":\"object\",\"properties\":{\"permissions\":{\"allOf\":[{\"type\":\"string\"},{\"pattern\":\"^0x[0-9a-fA-F]+$\"}]}},\"required\":[\"permissions\"],\"additionalProperties\":false}") as object, 'wire') as object;
-objectAjvFast.addSchema(structuredClone(__resolvedWireSchema_PermissionInput) as object, "PermissionInput_f5c43df9#wire");
-objectAjvAll.addSchema(structuredClone(__resolvedWireSchema_PermissionInput) as object, "PermissionInput_f5c43df9#wire");
-const __resolvedModelOnlySchema_PermissionInput = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"PermissionInput_f5c43df9#model-only\",\"properties\":{\"permissions\":{\"exprtValidation\":{\"schema\":{\"allOf\":[{\"type\":\"number\"},{\"type\":\"integer\",\"maximum\":255,\"minimum\":0}]},\"bindings\":[\"src/permission-rules.ts#hasReadPermission\"]}}}}") as object, 'model-only') as object;
-objectAjvFast.addSchema(structuredClone(__resolvedModelOnlySchema_PermissionInput) as object, "PermissionInput_f5c43df9#model-only");
-objectAjvAll.addSchema(structuredClone(__resolvedModelOnlySchema_PermissionInput) as object, "PermissionInput_f5c43df9#model-only");
-const __resolvedWireOnlySchema_PermissionInput = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"PermissionInput_f5c43df9#wire-only\",\"properties\":{\"permissions\":{\"allOf\":[{\"type\":\"string\"},{\"pattern\":\"^0x[0-9a-fA-F]+$\"}]}}}") as object, 'wire-only') as object;
-objectAjvFast.addSchema(structuredClone(__resolvedWireOnlySchema_PermissionInput) as object, "PermissionInput_f5c43df9#wire-only");
-objectAjvAll.addSchema(structuredClone(__resolvedWireOnlySchema_PermissionInput) as object, "PermissionInput_f5c43df9#wire-only");
+const __resolvedModelSchema_PermissionInput = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"PermissionInput_8f46e801\",\"type\":\"object\",\"properties\":{\"permissions\":{\"exprtValidation\":{\"schema\":{\"allOf\":[{\"type\":\"number\"},{\"type\":\"integer\",\"maximum\":255,\"minimum\":0}]},\"bindings\":[\"src/permission-rules.ts#hasReadPermission\"]}}},\"required\":[\"permissions\"],\"additionalProperties\":false}") as object) as object;
+objectAjvFast.addSchema(structuredClone(__resolvedModelSchema_PermissionInput) as object, "PermissionInput_8f46e801");
+objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_PermissionInput) as object, "PermissionInput_8f46e801");
+const __resolvedWireSchema_PermissionInput = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"PermissionInput_8f46e801#wire\",\"type\":\"object\",\"properties\":{\"permissions\":{\"allOf\":[{\"type\":\"string\"},{\"pattern\":\"^0x[0-9a-fA-F]+$\"}]}},\"required\":[\"permissions\"],\"additionalProperties\":false}") as object, 'wire') as object;
+objectAjvFast.addSchema(structuredClone(__resolvedWireSchema_PermissionInput) as object, "PermissionInput_8f46e801#wire");
+objectAjvAll.addSchema(structuredClone(__resolvedWireSchema_PermissionInput) as object, "PermissionInput_8f46e801#wire");
+const __resolvedModelOnlySchema_PermissionInput = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"PermissionInput_8f46e801#model-only\",\"properties\":{\"permissions\":{\"exprtValidation\":{\"schema\":{\"allOf\":[{\"type\":\"number\"},{\"type\":\"integer\",\"maximum\":255,\"minimum\":0}]},\"bindings\":[\"src/permission-rules.ts#hasReadPermission\"]}}}}") as object, 'model-only') as object;
+objectAjvFast.addSchema(structuredClone(__resolvedModelOnlySchema_PermissionInput) as object, "PermissionInput_8f46e801#model-only");
+objectAjvAll.addSchema(structuredClone(__resolvedModelOnlySchema_PermissionInput) as object, "PermissionInput_8f46e801#model-only");
+const __resolvedWireOnlySchema_PermissionInput = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"PermissionInput_8f46e801#wire-only\",\"properties\":{\"permissions\":{\"allOf\":[{\"type\":\"string\"},{\"pattern\":\"^0x[0-9a-fA-F]+$\"}]}}}") as object, 'wire-only') as object;
+objectAjvFast.addSchema(structuredClone(__resolvedWireOnlySchema_PermissionInput) as object, "PermissionInput_8f46e801#wire-only");
+objectAjvAll.addSchema(structuredClone(__resolvedWireOnlySchema_PermissionInput) as object, "PermissionInput_8f46e801#wire-only");
 
-const validatePermissionInputFast = requireAjvSchema(objectAjvFast.getSchema("PermissionInput_f5c43df9"), "PermissionInput_f5c43df9");
-const validatePermissionInputAll = requireAjvSchema(objectAjvAll.getSchema("PermissionInput_f5c43df9"), "PermissionInput_f5c43df9");
-const validatePermissionInputWireFast = requireAjvSchema(objectAjvFast.getSchema("PermissionInput_f5c43df9#wire"), "PermissionInput_f5c43df9#wire");
-const validatePermissionInputWireAll = requireAjvSchema(objectAjvAll.getSchema("PermissionInput_f5c43df9#wire"), "PermissionInput_f5c43df9#wire");
-const validatePermissionInputModelOnlyFast = requireAjvSchema(objectAjvFast.getSchema("PermissionInput_f5c43df9#model-only"), "PermissionInput_f5c43df9#model-only");
-const validatePermissionInputModelOnlyAll = requireAjvSchema(objectAjvAll.getSchema("PermissionInput_f5c43df9#model-only"), "PermissionInput_f5c43df9#model-only");
-const validatePermissionInputWireOnlyFast = requireAjvSchema(objectAjvFast.getSchema("PermissionInput_f5c43df9#wire-only"), "PermissionInput_f5c43df9#wire-only");
-const validatePermissionInputWireOnlyAll = requireAjvSchema(objectAjvAll.getSchema("PermissionInput_f5c43df9#wire-only"), "PermissionInput_f5c43df9#wire-only");
+const validatePermissionInputFast = requireAjvSchema(objectAjvFast.getSchema("PermissionInput_8f46e801"), "PermissionInput_8f46e801");
+const validatePermissionInputAll = requireAjvSchema(objectAjvAll.getSchema("PermissionInput_8f46e801"), "PermissionInput_8f46e801");
+const validatePermissionInputWireFast = requireAjvSchema(objectAjvFast.getSchema("PermissionInput_8f46e801#wire"), "PermissionInput_8f46e801#wire");
+const validatePermissionInputWireAll = requireAjvSchema(objectAjvAll.getSchema("PermissionInput_8f46e801#wire"), "PermissionInput_8f46e801#wire");
+const validatePermissionInputModelOnlyFast = requireAjvSchema(objectAjvFast.getSchema("PermissionInput_8f46e801#model-only"), "PermissionInput_8f46e801#model-only");
+const validatePermissionInputModelOnlyAll = requireAjvSchema(objectAjvAll.getSchema("PermissionInput_8f46e801#model-only"), "PermissionInput_8f46e801#model-only");
+const validatePermissionInputWireOnlyFast = requireAjvSchema(objectAjvFast.getSchema("PermissionInput_8f46e801#wire-only"), "PermissionInput_8f46e801#wire-only");
+const validatePermissionInputWireOnlyAll = requireAjvSchema(objectAjvAll.getSchema("PermissionInput_8f46e801#wire-only"), "PermissionInput_8f46e801#wire-only");
 
 function fillPermissionInput(out: Record<string, unknown>, wire: Record<string, unknown>): Record<string, unknown> {
   if (Object.prototype.hasOwnProperty.call(wire, "permissions")) {
@@ -161,7 +161,7 @@ export function validatePermissionInput(value: unknown, options?: __GolemValidat
     ok = failFast ? validatePermissionInputFast(value) : validatePermissionInputAll(value);
     errors = failFast ? validatePermissionInputFast.errors : validatePermissionInputAll.errors;
   } else {
-    const validator = resolveModelValidationContextValidator(options.validationContext, "PermissionInput_f5c43df9", failFast ? 'first' : 'all');
+    const validator = resolveModelValidationContextValidator(options.validationContext, "PermissionInput_8f46e801", failFast ? 'first' : 'all');
     ok = runSynchronousValidation(validator, value);
     errors = validator.errors;
   }
@@ -170,26 +170,26 @@ export function validatePermissionInput(value: unknown, options?: __GolemValidat
 }
 
 export function assertPermissionInput(value: unknown, options?: __GolemValidateOptions): PermissionInputFields {
-  assertModelValue(value, options, validatePermissionInputFast, validatePermissionInputAll, "PermissionInput_f5c43df9", IssueRepresentation.Model, IssueSource.TypeScript);
+  assertModelValue(value, options, validatePermissionInputFast, validatePermissionInputAll, "PermissionInput_8f46e801", IssueRepresentation.Model, IssueSource.TypeScript);
   return value as PermissionInputFields;
 }
 
 function __golemAssertWire_PermissionInput(value: unknown, options?: __GolemValidateOptions): Record<string, unknown> {
-  assertModelValue(value, options, validatePermissionInputWireFast, validatePermissionInputWireAll, "PermissionInput_f5c43df9#wire", IssueRepresentation.Wire, IssueSource.TypeScript);
+  assertModelValue(value, options, validatePermissionInputWireFast, validatePermissionInputWireAll, "PermissionInput_8f46e801#wire", IssueRepresentation.Wire, IssueSource.TypeScript);
   return value as Record<string, unknown>;
 }
 
 function __golemAssertModelOnly_PermissionInput(value: unknown, options?: __GolemValidateOptions): Record<string, unknown> {
-  assertModelValue(value, options, validatePermissionInputModelOnlyFast, validatePermissionInputModelOnlyAll, "PermissionInput_f5c43df9#model-only", IssueRepresentation.Model, IssueSource.TypeScript);
+  assertModelValue(value, options, validatePermissionInputModelOnlyFast, validatePermissionInputModelOnlyAll, "PermissionInput_8f46e801#model-only", IssueRepresentation.Model, IssueSource.TypeScript);
   return value as Record<string, unknown>;
 }
 
 function __golemAssertWireOnly_PermissionInput(value: unknown, options?: __GolemValidateOptions): Record<string, unknown> {
-  assertModelValue(value, options, validatePermissionInputWireOnlyFast, validatePermissionInputWireOnlyAll, "PermissionInput_f5c43df9#wire-only", IssueRepresentation.Wire, IssueSource.TypeScript);
+  assertModelValue(value, options, validatePermissionInputWireOnlyFast, validatePermissionInputWireOnlyAll, "PermissionInput_8f46e801#wire-only", IssueRepresentation.Wire, IssueSource.TypeScript);
   return value as Record<string, unknown>;
 }
 
-createObjectCodec("PermissionInput_f5c43df9", {
+createObjectCodec("PermissionInput_8f46e801", {
   stringify: stringifyPermissionInput as (value: never, options?: __GolemSerdeOptions) => string,
   parse: parsePermissionInput as (text: string, options?: __GolemSerdeOptions) => never,
   validate: validatePermissionInput,

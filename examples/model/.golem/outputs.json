@@ -4,7 +4,7 @@
     "src/builtin-tags.model.generated.ts": {
       "job": "models:.",
       "owner": "@exprtlabs/golem-model",
-      "digest": "eed76f9ad2f5678078f36c4572b7d1221d4babca4fad7504439ee399b236ec24",
+      "digest": "5b87305e338b67f3b9e1ccb74cb481ec8457759af77c76bdbd24adcef7a45c0c",
       "destination": "src",
       "destinationKind": "directory"
     },
@@ -18,7 +18,7 @@
     "src/generated/models/iobject-plugin-keys.ts": {
       "job": "models:.",
       "owner": "@exprtlabs/golem-model",
-      "digest": "19212a26184102b2c96eeedeabb2e6585adbef3632866b3ec7b45e6a328a958f",
+      "digest": "9d9bb8d311ef1b45cda8960a125e25c22a18d8389ec7ba7fc48ee23e3d607b29",
       "destination": "src/generated/models",
       "destinationKind": "directory"
     },
@@ -53,7 +53,7 @@
     "src/permission-input.model.generated.ts": {
       "job": "models:.",
       "owner": "@exprtlabs/golem-model",
-      "digest": "9991bcd74c1e3a27d3a9f14b422d9e1f233786f395223605b0052a557c9d5ef8",
+      "digest": "885ef35a186fdc07db0d3b108c5bc51f4ea6cc141665a025de2d39b519519b50",
       "destination": "src",
       "destinationKind": "directory"
     },

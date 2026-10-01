@@ -54,21 +54,21 @@ registerGeneratedModel(TaggedTaskBase, {
     decode: (value, constructor) => decodeTaggedTaskModel(constructor ?? TaggedTaskBase, value),
     encode: encodeTaggedTaskModel,
   },
-  codecId: "TaggedTask_3d906944",
+  codecId: "TaggedTask_94b6f172",
   profile: { validation: true, mobx: false },
 });
 
-registerIModelClass("TaggedTask_3d906944", TaggedTaskBase);
+registerIModelClass("TaggedTask_94b6f172", TaggedTaskBase);
 
 const objectAjvFast = createOpenApiSyncAjvEngine({ allErrors: false, validationBindings: {} });
 const objectAjvAll = createOpenApiSyncAjvEngine({ allErrors: true, validationBindings: {} });
 
-const __resolvedModelSchema_TaggedTask = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"TaggedTask_3d906944\",\"type\":\"object\",\"properties\":{\"done\":{\"type\":\"boolean\"},\"title\":{\"allOf\":[{\"type\":\"string\"},{\"maxLength\":80,\"minLength\":3}]}},\"required\":[\"done\",\"title\"],\"additionalProperties\":false}") as object) as object;
-objectAjvFast.addSchema(structuredClone(__resolvedModelSchema_TaggedTask) as object, "TaggedTask_3d906944");
-objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_TaggedTask) as object, "TaggedTask_3d906944");
+const __resolvedModelSchema_TaggedTask = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"TaggedTask_94b6f172\",\"type\":\"object\",\"properties\":{\"done\":{\"type\":\"boolean\"},\"title\":{\"allOf\":[{\"type\":\"string\"},{\"maxLength\":80,\"minLength\":3}]}},\"required\":[\"done\",\"title\"],\"additionalProperties\":false}") as object) as object;
+objectAjvFast.addSchema(structuredClone(__resolvedModelSchema_TaggedTask) as object, "TaggedTask_94b6f172");
+objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_TaggedTask) as object, "TaggedTask_94b6f172");
 
-const validateTaggedTaskFast = requireAjvSchema(objectAjvFast.getSchema("TaggedTask_3d906944"), "TaggedTask_3d906944");
-const validateTaggedTaskAll = requireAjvSchema(objectAjvAll.getSchema("TaggedTask_3d906944"), "TaggedTask_3d906944");
+const validateTaggedTaskFast = requireAjvSchema(objectAjvFast.getSchema("TaggedTask_94b6f172"), "TaggedTask_94b6f172");
+const validateTaggedTaskAll = requireAjvSchema(objectAjvAll.getSchema("TaggedTask_94b6f172"), "TaggedTask_94b6f172");
 
 function fillTaggedTask(out: Record<string, unknown>, wire: Record<string, unknown>, copyIdentity = true): Record<string, unknown> {
   if (copyIdentity) {
@@ -134,7 +134,7 @@ export function validateTaggedTask(value: unknown, options?: __GolemValidateOpti
     ok = failFast ? validateTaggedTaskFast(value) : validateTaggedTaskAll(value);
     errors = failFast ? validateTaggedTaskFast.errors : validateTaggedTaskAll.errors;
   } else {
-    const validator = resolveModelValidationContextValidator(options.validationContext, "TaggedTask_3d906944", failFast ? 'first' : 'all');
+    const validator = resolveModelValidationContextValidator(options.validationContext, "TaggedTask_94b6f172", failFast ? 'first' : 'all');
     ok = runSynchronousValidation(validator, value);
     errors = validator.errors;
   }
@@ -143,12 +143,12 @@ export function validateTaggedTask(value: unknown, options?: __GolemValidateOpti
 }
 
 export function assertTaggedTask(value: unknown, options?: __GolemValidateOptions): TaggedTaskFields {
-  assertModelValue(value, options, validateTaggedTaskFast, validateTaggedTaskAll, "TaggedTask_3d906944", IssueRepresentation.Model, IssueSource.TypeScript);
+  assertModelValue(value, options, validateTaggedTaskFast, validateTaggedTaskAll, "TaggedTask_94b6f172", IssueRepresentation.Model, IssueSource.TypeScript);
   return value as TaggedTaskFields;
 }
 
 
-createObjectCodec("TaggedTask_3d906944", {
+createObjectCodec("TaggedTask_94b6f172", {
   stringify: stringifyTaggedTask as (value: never, options?: __GolemSerdeOptions) => string,
   parse: parseTaggedTask as (text: string, options?: __GolemSerdeOptions) => never,
   validate: validateTaggedTask,
