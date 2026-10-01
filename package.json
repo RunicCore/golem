@@ -6,7 +6,8 @@
   "workspaces": [
     "packages/*",
     "examples/react-mobx",
-    "examples/nest-openapi"
+    "examples/nest-openapi",
+    "examples/payments"
   ],
   "engines": {
     "node": ">=22.15.0"
