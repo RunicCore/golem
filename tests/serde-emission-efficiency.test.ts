@@ -340,3 +340,29 @@ export class Team extends TeamBase {}
   assert.equal(detached.lead.joined.time, 1);
   assert.equal(detached.members[0].name, 'Lin');
 });
+
+test('model encoding assigns present fields in declaration order without deleting keys', async (t) => {
+  const value = fixture(t);
+  writeFileSync(path.join(value.sourceRoot, 'note.model.ts'), `import type { IModel } from '@exprtlabs/golem/model';
+import { NoteBase } from './note.model.generated.js';
+export type TNote = IModel<{ title: string; body?: string; pinned: boolean }>;
+export class Note extends NoteBase {}
+`);
+  const result = generate({ root: value.root, profile: { mobx: false, validation: false } });
+  const generated = modelArtifact(result, 'note');
+  const encode = functionBody(generated, 'encodeNoteModel');
+  assert.doesNotMatch(generated, /AbsentField/, 'budget: no sentinel value stands in for an absent field');
+  assert.doesNotMatch(encode, /\bdelete\b/, 'budget: absent fields are never added and then deleted, which turns the result into a dictionary-mode object');
+  const positions = ['title', 'body', 'pinned'].map((name) => encode.indexOf(`defineModelProperty(result, "${name}"`));
+  assert.ok(positions.every((position) => position >= 0), 'every field is assigned conditionally');
+  assert.deepEqual(positions, [...positions].sort((a, b) => a - b), 'fields are assigned in declaration order');
+
+  writeGeneratedArtifacts(result.artifacts);
+  await compileModelProject(value.root);
+  const { Note } = await import(pathToFileURL(path.join(value.root, 'build/note.model.js')).href);
+  const keys = (init: object) => Object.keys(encodeGeneratedModel(new Note(init) as never));
+  assert.deepEqual(keys({ title: 't', pinned: true }), ['title', 'pinned']);
+  assert.deepEqual(keys({ title: 't', body: undefined, pinned: true }), ['title', 'pinned'], 'an undefined optional field is omitted');
+  assert.deepEqual(keys({ pinned: false, body: 'b', title: 't' }), ['title', 'body', 'pinned'], 'declaration order, not initializer order');
+  assert.deepEqual(encodeGeneratedModel(new Note({ title: 't', body: 'b', pinned: false }) as never), { title: 't', body: 'b', pinned: false });
+});

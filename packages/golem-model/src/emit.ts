@@ -1353,9 +1353,6 @@ export function emitSource(
     conversionHelpers.add('field');
     return `convertModelField(${JSON.stringify(direction)}, ${field}, () => (${converted}))`;
   };
-  const importedModelNames = new Set([...concreteNames.values(), ...externalNames.values()]);
-  let absentFieldName = '__golemAbsentField';
-  while (importedModelNames.has(absentFieldName)) absentFieldName += '_';
   const rootFieldExpressions = new Map<string, {
     readonly encode: readonly string[];
     readonly decode: readonly string[];
@@ -1385,7 +1382,7 @@ export function emitSource(
       const present = (field.flags & ts.SymbolFlags.Optional) !== 0
         ? `Object.prototype.hasOwnProperty.call(model, ${name}) && ${input} !== undefined`
         : `Object.prototype.hasOwnProperty.call(model, ${name})`;
-      return `    [${name}]: ${present} ? (${converted}) : ${absentFieldName},`;
+      return `  if (${present}) defineModelProperty(result, ${name}, (${converted}));`;
     });
     const decode: string[] = [];
     const init: string[] = [];
@@ -1533,10 +1530,6 @@ export function emitSource(
       '',
     );
   }
-  if (localEmissions.some(({ fields }) => fields.length > 0)) lines.push(
-    `const ${absentFieldName} = Symbol();`,
-    '',
-  );
   lines.push(
     'function modelObject(json: unknown, name: string): Record<string, unknown> {',
     '  return requireModelObject(json, name);',
@@ -1639,12 +1632,11 @@ export function emitSource(
       '}',
       '',
       `function encode${specification.name}Model(${encodeFields.length > 0 ? 'model' : '_model'}: ${baseName}): ${specification.name}JSON {`,
-      '  const result: Record<string, unknown> = {',
+      '  const result: Record<string, unknown> = {};',
+      // An absent field stays absent, distinct from a present undefined value.
+      // defineModelProperty defines an own data property even when
+      // Object.prototype gains an accessor of that name after generation.
       ...encodeFields,
-      '  };',
-      // Keep absent fields distinct from present undefined values. Computed
-      // literal keys define own data properties without inherited setters.
-      ...fieldNames.map((name) => `  if (result[${JSON.stringify(name)}] === ${absentFieldName}) delete result[${JSON.stringify(name)}];`),
       `  return result as ${specification.name}JSON;`,
       '}',
       '',
@@ -1738,7 +1730,7 @@ export function emitSource(
 }
 
 /** Module-local helpers a companion may not need, such as the projection decoders of a file without classes. */
-const LOCAL_HELPER = /^(?:function ((?:decode|init|encode)\w+)\(.*\}|const (init\w+) = decode\w+;|const (__golemAbsentField) = Symbol\(\);|function (modelObject)\(json: unknown, name: string\): Record<string, unknown> \{\n {2}return requireModelObject\(json, name\);\n\})\n/gm;
+const LOCAL_HELPER = /^(?:function ((?:decode|init|encode)\w+)\(.*\}|const (init\w+) = decode\w+;|function (modelObject)\(json: unknown, name: string\): Record<string, unknown> \{\n {2}return requireModelObject\(json, name\);\n\})\n/gm;
 
 /** Remove local helpers nothing references, repeating because removing one can leave another unused. */
 function pruneUnusedHelpers(source: string): string {
@@ -1747,7 +1739,7 @@ function pruneUnusedHelpers(source: string): string {
     let removed = false;
     const before = current;
     current = before.replace(LOCAL_HELPER, (declaration: string, ...captures: unknown[]) => {
-      const name = captures.slice(0, 4).find((capture): capture is string => typeof capture === 'string');
+      const name = captures.slice(0, 3).find((capture): capture is string => typeof capture === 'string');
       if (!name || (before.match(new RegExp(`\\b${name}\\b`, 'g'))?.length ?? 0) > 1) return declaration;
       removed = true;
       return '';
