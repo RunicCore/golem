@@ -89,8 +89,10 @@ interface EmitCtx {
 }
 
 const TRUSTED = '{ validate: false }';
-const VALIDATE_OPTIONS = "{ readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext }";
-const SERDE_OPTIONS = "{ readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }";
+// Generated modules import these as `type ValidateOptions as __GolemValidateOptions` and
+// `type SerdeOptions as __GolemSerdeOptions` from @exprtlabs/golem/serde.
+const VALIDATE_OPTIONS = '__GolemValidateOptions';
+const SERDE_OPTIONS = '__GolemSerdeOptions';
 
 export function stringifyFunctionName(id: string): string {
   return `stringify${id}`;
@@ -1182,11 +1184,9 @@ function emitSerdeValidates(validationEnabled: boolean): string {
 
 function emitAjvGuard(
   node: SchemaNode,
-  failFast: 'true' | 'false' | 'dynamic',
   value: string,
   plane: SchemaPlane,
   issueSource: 'TypeScript' | 'OpenAPI',
-  options = 'options',
 ): string {
   const wire = plane === 'wire' && !node.sameSchema;
   const representation = plane === 'wire' || plane === 'wire-only' ? 'Wire' : 'Model';
@@ -1196,29 +1196,7 @@ function emitAjvGuard(
   const validator = (fast: boolean): string => plane === 'model-only' || plane === 'wire-only'
     ? residualValidator(node.id, plane, fast)
     : wire ? wireValidator(node.id, fast, false) : modelValidator(node.id, fast);
-  const first = failFast === 'false' ? undefined : validator(true);
-  const all = failFast === 'true' ? undefined : validator(false);
-  const mode = failFast === 'dynamic' ? `${options}?.failFast !== false` : failFast;
-  const defaultCondition = first && all
-    ? `${mode} ? ${first}(${value}) : ${all}(${value})`
-    : `${first ?? all}(${value})`;
-  const defaultFunction = first && all
-    ? `${mode} ? ${first} : ${all}`
-    : first ?? all;
-  const contextMode = failFast === 'dynamic'
-    ? `${options}?.failFast !== false ? 'first' : 'all'`
-    : `'${failFast === 'true' ? 'first' : 'all'}'`;
-  return [
-    `if (${options}?.validationContext === undefined) {`,
-    `  if (!(${defaultCondition})) {`,
-    `    const validator = ${defaultFunction};`,
-    `    validationFailure(ajvIssues(validator, ${value}, IssueRepresentation.${representation}, IssueSource.${issueSource}));`,
-    '  }',
-    '} else {',
-    `  const validator = resolveModelValidationContextValidator(${options}.validationContext, ${JSON.stringify(reference)}, ${contextMode});`,
-    `  if (!runSynchronousValidation(validator, ${value})) validationFailure(ajvIssues(validator, ${value}, IssueRepresentation.${representation}, IssueSource.${issueSource}));`,
-    '}',
-  ].join('\n');
+  return `assertModelValue(${value}, options, ${validator(true)}, ${validator(false)}, ${JSON.stringify(reference)}, IssueRepresentation.${representation}, IssueSource.${issueSource});`;
 }
 
 function hoistedModelSchemaName(node: SchemaNode): string {
@@ -1440,7 +1418,7 @@ function emitNodeRuntime(
       '}',
       '',
       `${exported}function ${assertName}(value: unknown, options?: ${VALIDATE_OPTIONS}): ${modelType} {`,
-      `  ${emitAjvGuard(node, 'dynamic', 'value', 'model', ctx.issueSource)}`,
+      `  ${emitAjvGuard(node, 'value', 'model', ctx.issueSource)}`,
       `  return value as ${modelType};`,
       '}',
       '',
@@ -1458,7 +1436,7 @@ function emitNodeRuntime(
 
   const planeAssert = (name: string, plane: SchemaPlane): string[] => [
     `function ${name}(value: unknown, options?: ${VALIDATE_OPTIONS}): Record<string, unknown> {`,
-    `  ${emitAjvGuard(node, 'dynamic', 'value', plane, ctx.issueSource)}`,
+    `  ${emitAjvGuard(node, 'value', plane, ctx.issueSource)}`,
     '  return value as Record<string, unknown>;',
     '}',
     '',
@@ -1630,10 +1608,12 @@ export function pruneNamedImport(source: string, moduleName: string): string {
     new RegExp(`import \\{([^}]+)\\} from '${escaped}';\\n?`),
     (statement, names: string) => {
       const body = source.replace(statement, '');
+      // A specifier is used when its local name is: `type A as B` binds B.
+      const localName = (specifier: string): string => specifier.replace(/^type\s+/, '').split(/\s+as\s+/).at(-1) ?? specifier;
       const used = names
         .split(',')
         .map((name) => name.trim())
-        .filter((name) => name.length > 0 && new RegExp(`\\b${name}\\b`).test(body));
+        .filter((name) => name.length > 0 && new RegExp(`\\b${localName(name).replace(/\$/g, '\\$')}\\b`).test(body));
       return used.length > 0 ? `import { ${used.join(', ')} } from '${moduleName}';\n` : '';
     },
   );

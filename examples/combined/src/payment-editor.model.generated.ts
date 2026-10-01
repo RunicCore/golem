@@ -8,7 +8,7 @@ import {
   type GeneratedModelWire,
 } from '@exprtlabs/golem/model';
 import { cloneConversionInput, decodeGeneratedModelTrusted, encodeGeneratedModel, convertModelField, defineModelProperty, requireModelObject } from '@exprtlabs/golem/conversion';
-import { addNestedCodecSchema, ajvIssues, createObjectCodec, parseJson, registerIModelClass, requireAjvSchema, resolveGeneratedModelSchemaRefs, resolveModelValidationContextValidator, runSynchronousValidation, serdeValidates, stringifyJsonString, validationFailure, IssueRepresentation, IssueSource } from '@exprtlabs/golem/serde';
+import { addNestedCodecSchema, assertModelValue, createObjectCodec, parseJson, registerIModelClass, requireAjvSchema, resolveGeneratedModelSchemaRefs, resolveModelValidationContextValidator, runSynchronousValidation, serdeValidates, stringifyJsonString, IssueRepresentation, IssueSource, type SerdeOptions as __GolemSerdeOptions, type ValidateOptions as __GolemValidateOptions } from '@exprtlabs/golem/serde';
 import { createOpenApiSyncAjvEngine } from '@exprtlabs/golem/ajv';
 import { MoneyModel, stringifyMoney, toWireFormatMoney } from "../sdk/models/Money.js";
 
@@ -90,7 +90,7 @@ function stringifyPaymentEditorCore(value: Record<string, unknown>, _options?: {
 }
 
 
-export function stringifyPaymentEditor(value: PaymentEditorFields, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): string {
+export function stringifyPaymentEditor(value: PaymentEditorFields, options?: __GolemSerdeOptions): string {
   const validates = serdeValidates(options, true);
   if (validates) {
     assertPaymentEditor(value, options);
@@ -98,7 +98,7 @@ export function stringifyPaymentEditor(value: PaymentEditorFields, options?: { r
   return stringifyPaymentEditorCore(value as never, { validate: false });
 }
 
-function convertFromWirePaymentEditor(wire: unknown, options: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object } | undefined, isolated: boolean): unknown {
+function convertFromWirePaymentEditor(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
   const validates = serdeValidates(options, true);
   if (validates) {
     assertPaymentEditor(wire, options);
@@ -115,11 +115,11 @@ function convertFromWirePaymentEditor(wire: unknown, options: { readonly validat
   return result;
 }
 
-export function fromWireFormatPaymentEditor(wire: unknown, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): PaymentEditorFields {
+export function fromWireFormatPaymentEditor(wire: unknown, options?: __GolemSerdeOptions): PaymentEditorFields {
   return convertFromWirePaymentEditor(wire, options, false) as PaymentEditorFields;
 }
 
-export function toWireFormatPaymentEditor(value: PaymentEditorFields, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): PaymentEditorJSON {
+export function toWireFormatPaymentEditor(value: PaymentEditorFields, options?: __GolemSerdeOptions): PaymentEditorJSON {
   const validates = serdeValidates(options, true);
   if (validates) {
     assertPaymentEditor(value, options);
@@ -129,11 +129,11 @@ export function toWireFormatPaymentEditor(value: PaymentEditorFields, options?: 
   return wire as PaymentEditorJSON;
 }
 
-export function parsePaymentEditor(text: string, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): PaymentEditorFields {
+export function parsePaymentEditor(text: string, options?: __GolemSerdeOptions): PaymentEditorFields {
   return convertFromWirePaymentEditor(parseJson(text), options, true) as PaymentEditorFields;
 }
 
-export function validatePaymentEditor(value: unknown, options?: { readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext }): value is PaymentEditorFields {
+export function validatePaymentEditor(value: unknown, options?: __GolemValidateOptions): value is PaymentEditorFields {
   const failFast = options?.failFast !== false;
   let ok: boolean;
   let errors: readonly unknown[] | null | undefined;
@@ -149,23 +149,15 @@ export function validatePaymentEditor(value: unknown, options?: { readonly failF
   return ok;
 }
 
-export function assertPaymentEditor(value: unknown, options?: { readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext }): PaymentEditorFields {
-  if (options?.validationContext === undefined) {
-  if (!(options?.failFast !== false ? validatePaymentEditorFast(value) : validatePaymentEditorAll(value))) {
-    const validator = options?.failFast !== false ? validatePaymentEditorFast : validatePaymentEditorAll;
-    validationFailure(ajvIssues(validator, value, IssueRepresentation.Model, IssueSource.TypeScript));
-  }
-} else {
-  const validator = resolveModelValidationContextValidator(options.validationContext, "PaymentEditor_ec0e7711", options?.failFast !== false ? 'first' : 'all');
-  if (!runSynchronousValidation(validator, value)) validationFailure(ajvIssues(validator, value, IssueRepresentation.Model, IssueSource.TypeScript));
-}
+export function assertPaymentEditor(value: unknown, options?: __GolemValidateOptions): PaymentEditorFields {
+  assertModelValue(value, options, validatePaymentEditorFast, validatePaymentEditorAll, "PaymentEditor_ec0e7711", IssueRepresentation.Model, IssueSource.TypeScript);
   return value as PaymentEditorFields;
 }
 
 
 createObjectCodec("PaymentEditor_ec0e7711", {
-  stringify: stringifyPaymentEditor as (value: never, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }) => string,
-  parse: parsePaymentEditor as (text: string, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }) => never,
+  stringify: stringifyPaymentEditor as (value: never, options?: __GolemSerdeOptions) => string,
+  parse: parsePaymentEditor as (text: string, options?: __GolemSerdeOptions) => never,
   validate: validatePaymentEditor,
   assert: assertPaymentEditor,
   toWireFormat: toWireFormatPaymentEditor,

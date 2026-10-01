@@ -39,7 +39,7 @@
     "sdk/models/_group-cf50637a.ts": {
       "job": "openapi:sdk",
       "owner": "@exprtlabs/golem-openapi",
-      "digest": "02a97c2127e095b0e02d68455f19710da04fe9468283167788cd0f9c01df0aad",
+      "digest": "e47fadfc2ff336aa023bc5bf9daa53ae8004ece8279778e73a9392864ebcf03b",
       "destination": "sdk",
       "destinationKind": "directory"
     },
@@ -102,7 +102,7 @@
     "src/payment-editor.model.generated.ts": {
       "job": "models:.",
       "owner": "@exprtlabs/golem-model",
-      "digest": "5d90fefe91413a6fc8a9f1296b02256aef93aef7240291f904b018aee359b992",
+      "digest": "ad7728490186a7324e7f254a288b829bfd88e09eec0197f94ede7573845eecd1",
       "destination": "src",
       "destinationKind": "directory"
     }

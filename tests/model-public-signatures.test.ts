@@ -4,7 +4,7 @@ import test from 'node:test';
 import { generate } from '#model/generator';
 import { createModelProject, writeModelSources } from './model-project.js';
 
-const OPTIONS = String.raw`options\?: \{[^}]*\}`;
+const OPTIONS = String.raw`options\?: __Golem(?:Serde|Validate)Options`;
 
 test('model companion functions use the model types instead of unknown', t => {
   const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-public-signatures-', name: null, linkWorkspaceNodeModules: true });
@@ -50,4 +50,15 @@ test('reformatting a model source leaves every generated file unchanged', t => {
   const after = generated('// A comment and blank lines shift every declaration.\n\n\n');
   assert.deepEqual([...after.keys()].sort(), [...before.keys()].sort());
   for (const [file, content] of before) assert.equal(after.get(file), content, file);
+});
+
+test('model companion assert functions share one runtime helper and named option types', t => {
+  const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-assert-helper-', name: null, linkWorkspaceNodeModules: true });
+  writeModelSources(sourceRoot, { 'task.model.ts': priority('') });
+  const result = generate({ root, profile: { mobx: false, validation: true, ajvStandalone: false } });
+  const companion = result.artifacts.find(artifact => artifact.path.endsWith('task.model.generated.ts'))?.content ?? '';
+  assert.doesNotMatch(companion, /import\('@exprtlabs\/golem\/model'\)/);
+  assert.doesNotMatch(companion, /validationContext === undefined\) \{\n\s+if \(!\(/);
+  assert.match(companion, /^export function assertTask\(value: unknown, options\?: __GolemValidateOptions\): TaskFields \{\n  assertModelValue\(value, options, /m);
+  assert.match(companion, /type SerdeOptions as __GolemSerdeOptions, type ValidateOptions as __GolemValidateOptions \} from '@exprtlabs\/golem\/serde';/);
 });

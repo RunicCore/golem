@@ -1447,7 +1447,7 @@ export function emitSource(
   }
   if (hasDate) lines.push("import { deserializeDate, serializeDate } from '@exprtlabs/golem/conversion';");
   lines.push(...[...classValueImports.keys()].sort());
-    lines.push("import { addNestedCodecSchema, ajvIssues, createObjectCodec, lazyAjvSchema, parseJson, registerIModelClass, requireAjvSchema, requireIModelClass, requireObjectCodec, resolveGeneratedModelSchemaRefs, resolveModelValidationContextValidator, runSynchronousValidation, serdeValidates, stringifyJsonArray, stringifyJsonBoolean, stringifyJsonNumber, stringifyJsonScalar, stringifyJsonString, validationFailure, validationUnavailable, IssueRepresentation, IssueSource } from '@exprtlabs/golem/serde';");
+    lines.push("import { addNestedCodecSchema, ajvIssues, assertModelValue, createObjectCodec, lazyAjvSchema, parseJson, registerIModelClass, requireAjvSchema, requireIModelClass, requireObjectCodec, resolveGeneratedModelSchemaRefs, resolveModelValidationContextValidator, runSynchronousValidation, serdeValidates, stringifyJsonArray, stringifyJsonBoolean, stringifyJsonNumber, stringifyJsonScalar, stringifyJsonString, validationFailure, validationUnavailable, IssueRepresentation, IssueSource, type SerdeOptions as __GolemSerdeOptions, type ValidateOptions as __GolemValidateOptions } from '@exprtlabs/golem/serde';");
   if (anyCodecValidation && !shared?.validationSetName) lines.push("import { createOpenApiSyncAjvEngine } from '@exprtlabs/golem/ajv';");
   if (anyCodecValidation && profile.mobx) lines.push("import { enhanceValidatorWithMobX } from '@exprtlabs/golem/mobx-validation';");
   lines.push(

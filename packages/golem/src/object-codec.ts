@@ -347,6 +347,29 @@ export function ajvIssuesFromErrors(
   });
 }
 
+/**
+ * The body of a generated assert function: checks `value` with the module's own fail-fast or all-errors
+ * validator, or with the validation context's validator for `reference`, and throws the validation error.
+ */
+export function assertModelValue(
+  value: unknown,
+  options: ValidateOptions | undefined,
+  first: ModelRuntimeSyncValidator,
+  all: ModelRuntimeSyncValidator,
+  reference: string,
+  representation: IssueRepresentation,
+  source: IssueSource,
+): void {
+  const failFast = options?.failFast !== false;
+  if (options?.validationContext === undefined) {
+    const validator = failFast ? first : all;
+    if (!validator(value)) validationFailure(ajvIssues(validator, value, representation, source));
+    return;
+  }
+  const validator = resolveModelValidationContextValidator(options.validationContext, reference, failFast ? 'first' : 'all');
+  if (!runSynchronousValidation(validator, value)) validationFailure(ajvIssues(validator, value, representation, source));
+}
+
 export function validationFailure(issues: readonly Issue[]): never {
   throw new LibError(LibErrorKind.Validation, 'Model validation failed.', issues);
 }

@@ -7,7 +7,7 @@ import {
   type generatedModelFieldsBrand,
 } from '@exprtlabs/golem/model';
 import { cloneConversionInput, defineModelProperty, requireModelObject } from '@exprtlabs/golem/conversion';
-import { ajvIssues, createObjectCodec, parseJson, registerIModelClass, requireAjvSchema, resolveGeneratedModelSchemaRefs, resolveModelValidationContextValidator, runSynchronousValidation, serdeValidates, stringifyJsonString, validationFailure, IssueRepresentation, IssueSource } from '@exprtlabs/golem/serde';
+import { assertModelValue, createObjectCodec, parseJson, registerIModelClass, requireAjvSchema, resolveGeneratedModelSchemaRefs, resolveModelValidationContextValidator, runSynchronousValidation, serdeValidates, stringifyJsonString, IssueRepresentation, IssueSource, type SerdeOptions as __GolemSerdeOptions, type ValidateOptions as __GolemValidateOptions } from '@exprtlabs/golem/serde';
 import { createOpenApiSyncAjvEngine } from '@exprtlabs/golem/ajv';
 
 const __golemAbsentField = Symbol();
@@ -83,7 +83,7 @@ function stringifyAccountCore(value: Record<string, unknown>, _options?: { reado
 }
 
 
-export function stringifyAccount(value: AccountFields, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): string {
+export function stringifyAccount(value: AccountFields, options?: __GolemSerdeOptions): string {
   const validates = serdeValidates(options, true);
   if (validates) {
     assertAccount(value, options);
@@ -91,7 +91,7 @@ export function stringifyAccount(value: AccountFields, options?: { readonly vali
   return stringifyAccountCore(value as never, { validate: false });
 }
 
-function convertFromWireAccount(wire: unknown, options: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object } | undefined, isolated: boolean): unknown {
+function convertFromWireAccount(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
   const validates = serdeValidates(options, true);
   if (validates) {
     assertAccount(wire, options);
@@ -108,11 +108,11 @@ function convertFromWireAccount(wire: unknown, options: { readonly validate?: bo
   return result;
 }
 
-export function fromWireFormatAccount(wire: unknown, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): AccountFields {
+export function fromWireFormatAccount(wire: unknown, options?: __GolemSerdeOptions): AccountFields {
   return convertFromWireAccount(wire, options, false) as AccountFields;
 }
 
-export function toWireFormatAccount(value: AccountFields, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): AccountJSON {
+export function toWireFormatAccount(value: AccountFields, options?: __GolemSerdeOptions): AccountJSON {
   const validates = serdeValidates(options, true);
   if (validates) {
     assertAccount(value, options);
@@ -122,11 +122,11 @@ export function toWireFormatAccount(value: AccountFields, options?: { readonly v
   return wire as AccountJSON;
 }
 
-export function parseAccount(text: string, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): AccountFields {
+export function parseAccount(text: string, options?: __GolemSerdeOptions): AccountFields {
   return convertFromWireAccount(parseJson(text), options, true) as AccountFields;
 }
 
-export function validateAccount(value: unknown, options?: { readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext }): value is AccountFields {
+export function validateAccount(value: unknown, options?: __GolemValidateOptions): value is AccountFields {
   const failFast = options?.failFast !== false;
   let ok: boolean;
   let errors: readonly unknown[] | null | undefined;
@@ -142,23 +142,15 @@ export function validateAccount(value: unknown, options?: { readonly failFast?: 
   return ok;
 }
 
-export function assertAccount(value: unknown, options?: { readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext }): AccountFields {
-  if (options?.validationContext === undefined) {
-  if (!(options?.failFast !== false ? validateAccountFast(value) : validateAccountAll(value))) {
-    const validator = options?.failFast !== false ? validateAccountFast : validateAccountAll;
-    validationFailure(ajvIssues(validator, value, IssueRepresentation.Model, IssueSource.TypeScript));
-  }
-} else {
-  const validator = resolveModelValidationContextValidator(options.validationContext, "Account_7bb17507", options?.failFast !== false ? 'first' : 'all');
-  if (!runSynchronousValidation(validator, value)) validationFailure(ajvIssues(validator, value, IssueRepresentation.Model, IssueSource.TypeScript));
-}
+export function assertAccount(value: unknown, options?: __GolemValidateOptions): AccountFields {
+  assertModelValue(value, options, validateAccountFast, validateAccountAll, "Account_7bb17507", IssueRepresentation.Model, IssueSource.TypeScript);
   return value as AccountFields;
 }
 
 
 createObjectCodec("Account_7bb17507", {
-  stringify: stringifyAccount as (value: never, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }) => string,
-  parse: parseAccount as (text: string, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }) => never,
+  stringify: stringifyAccount as (value: never, options?: __GolemSerdeOptions) => string,
+  parse: parseAccount as (text: string, options?: __GolemSerdeOptions) => never,
   validate: validateAccount,
   assert: assertAccount,
   toWireFormat: toWireFormatAccount,

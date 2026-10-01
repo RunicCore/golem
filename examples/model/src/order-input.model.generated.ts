@@ -7,7 +7,7 @@ import {
   type generatedModelFieldsBrand,
 } from '@exprtlabs/golem/model';
 import { cloneConversionInput, convertModelField, defineModelProperty, requireModelObject } from '@exprtlabs/golem/conversion';
-import { ajvIssues, createObjectCodec, parseJson, registerIModelClass, requireAjvSchema, resolveGeneratedModelSchemaRefs, resolveModelValidationContextValidator, runSynchronousValidation, serdeValidates, stringifyJsonArray, stringifyJsonString, validationFailure, IssueRepresentation, IssueSource } from '@exprtlabs/golem/serde';
+import { assertModelValue, createObjectCodec, parseJson, registerIModelClass, requireAjvSchema, resolveGeneratedModelSchemaRefs, resolveModelValidationContextValidator, runSynchronousValidation, serdeValidates, stringifyJsonArray, stringifyJsonString, IssueRepresentation, IssueSource, type SerdeOptions as __GolemSerdeOptions, type ValidateOptions as __GolemValidateOptions } from '@exprtlabs/golem/serde';
 import { createOpenApiSyncAjvEngine } from '@exprtlabs/golem/ajv';
 
 const __golemAbsentField = Symbol();
@@ -83,7 +83,7 @@ function stringifyAnonymous_39128e39Core(value: Record<string, unknown>, _option
 }
 
 
-function stringifyAnonymous_39128e39(value: Record<string, unknown>, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): string {
+function stringifyAnonymous_39128e39(value: Record<string, unknown>, options?: __GolemSerdeOptions): string {
   const validates = serdeValidates(options, true);
   if (validates) {
     assertAnonymous_39128e39(value, options);
@@ -91,7 +91,7 @@ function stringifyAnonymous_39128e39(value: Record<string, unknown>, options?: {
   return stringifyAnonymous_39128e39Core(value as never, { validate: false });
 }
 
-function convertFromWireAnonymous_39128e39(wire: unknown, options: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object } | undefined, isolated: boolean): unknown {
+function convertFromWireAnonymous_39128e39(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
   const validates = serdeValidates(options, true);
   if (validates) {
     assertAnonymous_39128e39(wire, options);
@@ -108,11 +108,11 @@ function convertFromWireAnonymous_39128e39(wire: unknown, options: { readonly va
   return result;
 }
 
-function fromWireFormatAnonymous_39128e39(wire: unknown, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): unknown {
+function fromWireFormatAnonymous_39128e39(wire: unknown, options?: __GolemSerdeOptions): unknown {
   return convertFromWireAnonymous_39128e39(wire, options, false);
 }
 
-function toWireFormatAnonymous_39128e39(value: unknown, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): unknown {
+function toWireFormatAnonymous_39128e39(value: unknown, options?: __GolemSerdeOptions): unknown {
   const validates = serdeValidates(options, true);
   if (validates) {
     assertAnonymous_39128e39(value, options);
@@ -122,11 +122,11 @@ function toWireFormatAnonymous_39128e39(value: unknown, options?: { readonly val
   return wire;
 }
 
-function parseAnonymous_39128e39(text: string, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): unknown {
+function parseAnonymous_39128e39(text: string, options?: __GolemSerdeOptions): unknown {
   return convertFromWireAnonymous_39128e39(parseJson(text), options, true);
 }
 
-function validateAnonymous_39128e39(value: unknown, options?: { readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext }): value is Record<string, unknown> {
+function validateAnonymous_39128e39(value: unknown, options?: __GolemValidateOptions): value is Record<string, unknown> {
   const failFast = options?.failFast !== false;
   let ok: boolean;
   let errors: readonly unknown[] | null | undefined;
@@ -142,23 +142,15 @@ function validateAnonymous_39128e39(value: unknown, options?: { readonly failFas
   return ok;
 }
 
-function assertAnonymous_39128e39(value: unknown, options?: { readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext }): Record<string, unknown> {
-  if (options?.validationContext === undefined) {
-  if (!(options?.failFast !== false ? validateAnonymous_39128e39Fast(value) : validateAnonymous_39128e39All(value))) {
-    const validator = options?.failFast !== false ? validateAnonymous_39128e39Fast : validateAnonymous_39128e39All;
-    validationFailure(ajvIssues(validator, value, IssueRepresentation.Model, IssueSource.TypeScript));
-  }
-} else {
-  const validator = resolveModelValidationContextValidator(options.validationContext, "Anonymous_39128e39", options?.failFast !== false ? 'first' : 'all');
-  if (!runSynchronousValidation(validator, value)) validationFailure(ajvIssues(validator, value, IssueRepresentation.Model, IssueSource.TypeScript));
-}
+function assertAnonymous_39128e39(value: unknown, options?: __GolemValidateOptions): Record<string, unknown> {
+  assertModelValue(value, options, validateAnonymous_39128e39Fast, validateAnonymous_39128e39All, "Anonymous_39128e39", IssueRepresentation.Model, IssueSource.TypeScript);
   return value as Record<string, unknown>;
 }
 
 
 createObjectCodec("Anonymous_39128e39", {
-  stringify: stringifyAnonymous_39128e39 as (value: never, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }) => string,
-  parse: parseAnonymous_39128e39 as (text: string, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }) => never,
+  stringify: stringifyAnonymous_39128e39 as (value: never, options?: __GolemSerdeOptions) => string,
+  parse: parseAnonymous_39128e39 as (text: string, options?: __GolemSerdeOptions) => never,
   validate: validateAnonymous_39128e39,
   assert: assertAnonymous_39128e39,
   toWireFormat: toWireFormatAnonymous_39128e39,
@@ -182,7 +174,7 @@ function stringifyOrderInputCore(value: Record<string, unknown>, _options?: { re
 }
 
 
-export function stringifyOrderInput(value: OrderInputFields, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): string {
+export function stringifyOrderInput(value: OrderInputFields, options?: __GolemSerdeOptions): string {
   const validates = serdeValidates(options, true);
   if (validates) {
     assertOrderInput(value, options);
@@ -190,7 +182,7 @@ export function stringifyOrderInput(value: OrderInputFields, options?: { readonl
   return stringifyOrderInputCore(value as never, { validate: false });
 }
 
-function convertFromWireOrderInput(wire: unknown, options: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object } | undefined, isolated: boolean): unknown {
+function convertFromWireOrderInput(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
   const validates = serdeValidates(options, true);
   if (validates) {
     assertOrderInput(wire, options);
@@ -207,11 +199,11 @@ function convertFromWireOrderInput(wire: unknown, options: { readonly validate?:
   return result;
 }
 
-export function fromWireFormatOrderInput(wire: unknown, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): OrderInputFields {
+export function fromWireFormatOrderInput(wire: unknown, options?: __GolemSerdeOptions): OrderInputFields {
   return convertFromWireOrderInput(wire, options, false) as OrderInputFields;
 }
 
-export function toWireFormatOrderInput(value: OrderInputFields, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): OrderInputJSON {
+export function toWireFormatOrderInput(value: OrderInputFields, options?: __GolemSerdeOptions): OrderInputJSON {
   const validates = serdeValidates(options, true);
   if (validates) {
     assertOrderInput(value, options);
@@ -222,11 +214,11 @@ export function toWireFormatOrderInput(value: OrderInputFields, options?: { read
   return wire as OrderInputJSON;
 }
 
-export function parseOrderInput(text: string, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): OrderInputFields {
+export function parseOrderInput(text: string, options?: __GolemSerdeOptions): OrderInputFields {
   return convertFromWireOrderInput(parseJson(text), options, true) as OrderInputFields;
 }
 
-export function validateOrderInput(value: unknown, options?: { readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext }): value is OrderInputFields {
+export function validateOrderInput(value: unknown, options?: __GolemValidateOptions): value is OrderInputFields {
   const failFast = options?.failFast !== false;
   let ok: boolean;
   let errors: readonly unknown[] | null | undefined;
@@ -242,23 +234,15 @@ export function validateOrderInput(value: unknown, options?: { readonly failFast
   return ok;
 }
 
-export function assertOrderInput(value: unknown, options?: { readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext }): OrderInputFields {
-  if (options?.validationContext === undefined) {
-  if (!(options?.failFast !== false ? validateOrderInputFast(value) : validateOrderInputAll(value))) {
-    const validator = options?.failFast !== false ? validateOrderInputFast : validateOrderInputAll;
-    validationFailure(ajvIssues(validator, value, IssueRepresentation.Model, IssueSource.TypeScript));
-  }
-} else {
-  const validator = resolveModelValidationContextValidator(options.validationContext, "OrderInput_bbcddf3d", options?.failFast !== false ? 'first' : 'all');
-  if (!runSynchronousValidation(validator, value)) validationFailure(ajvIssues(validator, value, IssueRepresentation.Model, IssueSource.TypeScript));
-}
+export function assertOrderInput(value: unknown, options?: __GolemValidateOptions): OrderInputFields {
+  assertModelValue(value, options, validateOrderInputFast, validateOrderInputAll, "OrderInput_bbcddf3d", IssueRepresentation.Model, IssueSource.TypeScript);
   return value as OrderInputFields;
 }
 
 
 createObjectCodec("OrderInput_bbcddf3d", {
-  stringify: stringifyOrderInput as (value: never, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }) => string,
-  parse: parseOrderInput as (text: string, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }) => never,
+  stringify: stringifyOrderInput as (value: never, options?: __GolemSerdeOptions) => string,
+  parse: parseOrderInput as (text: string, options?: __GolemSerdeOptions) => never,
   validate: validateOrderInput,
   assert: assertOrderInput,
   toWireFormat: toWireFormatOrderInput,

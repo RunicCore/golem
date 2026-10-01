@@ -46,35 +46,35 @@
     "sdk/models/_group-1246ba12.ts": {
       "job": "openapi:sdk",
       "owner": "@exprtlabs/golem-openapi",
-      "digest": "50d3b3337fe4ea318888e92c407439080d4fba3e3aa7ca63186c2e47219bcb0a",
+      "digest": "08f015695be5b43c9d29aafdb26c7a684138a6150c61cb08303da4a971e39198",
       "destination": "sdk",
       "destinationKind": "directory"
     },
     "sdk/models/_group-57bcd84e.ts": {
       "job": "openapi:sdk",
       "owner": "@exprtlabs/golem-openapi",
-      "digest": "4c0b6014d82c8422e6ce817f28a525658525de9b7665213aa9a1def6a26e0108",
+      "digest": "7a80a8752e498ee12a4aa14edd771bed055b4727c1ccd336d20e291496cf2356",
       "destination": "sdk",
       "destinationKind": "directory"
     },
     "sdk/models/_group-9667d97a.ts": {
       "job": "openapi:sdk",
       "owner": "@exprtlabs/golem-openapi",
-      "digest": "5651a76e56465b11288f6febb8054545a56eb0d9d22b3bfb9cd37325e3e91659",
+      "digest": "e99a08d79a496df9e254a2c6ad20d42ee7754e503dc86b5b2528d9751134ed0f",
       "destination": "sdk",
       "destinationKind": "directory"
     },
     "sdk/models/_group-e0e37ed7.ts": {
       "job": "openapi:sdk",
       "owner": "@exprtlabs/golem-openapi",
-      "digest": "03091682602667b08b3158dbfc654159e372a395cec8bd1e8ea641026a042e55",
+      "digest": "0d9ce1c2eaaad8fabe042879d5da2d457e351d14a3fdd303293f2e524edf112e",
       "destination": "sdk",
       "destinationKind": "directory"
     },
     "sdk/models/_group-f842534f.ts": {
       "job": "openapi:sdk",
       "owner": "@exprtlabs/golem-openapi",
-      "digest": "90e0df5ab6d3935f8b8be7f7b9a695374ac8ed916b6d27a2c2f3f80ff541017e",
+      "digest": "0b696e12f7e01c6a5d4c841660cea56ab736edf31f8749f947c55b6a55ed2f19",
       "destination": "sdk",
       "destinationKind": "directory"
     },
@@ -249,7 +249,7 @@
     "src/payment.model.generated.ts": {
       "job": "models:.",
       "owner": "@exprtlabs/golem-model",
-      "digest": "016e8a0a9ce3de6d99057aeb7641c67d8e206de25d9129d421c8776f7e926264",
+      "digest": "bcad419e4289965cc9ee1eb3c0f7e703cf91ea44e2262f1f056e7d297d5ceb44",
       "destination": "src",
       "destinationKind": "directory"
     }

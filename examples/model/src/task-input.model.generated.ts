@@ -7,7 +7,7 @@ import {
   type generatedModelFieldsBrand,
 } from '@exprtlabs/golem/model';
 import { cloneConversionInput, defineModelProperty, requireModelObject } from '@exprtlabs/golem/conversion';
-import { ajvIssues, createObjectCodec, parseJson, registerIModelClass, requireAjvSchema, resolveGeneratedModelSchemaRefs, resolveModelValidationContextValidator, runSynchronousValidation, serdeValidates, stringifyJsonBoolean, stringifyJsonString, validationFailure, IssueRepresentation, IssueSource } from '@exprtlabs/golem/serde';
+import { assertModelValue, createObjectCodec, parseJson, registerIModelClass, requireAjvSchema, resolveGeneratedModelSchemaRefs, resolveModelValidationContextValidator, runSynchronousValidation, serdeValidates, stringifyJsonBoolean, stringifyJsonString, IssueRepresentation, IssueSource, type SerdeOptions as __GolemSerdeOptions, type ValidateOptions as __GolemValidateOptions } from '@exprtlabs/golem/serde';
 import { createOpenApiSyncAjvEngine } from '@exprtlabs/golem/ajv';
 import { modelValidationBindings } from "./generated/models/models.generated.js";
 
@@ -97,7 +97,7 @@ function stringifyTaskInputWire(value: Record<string, unknown>, _options?: { rea
   return '{' + "\"title\":" + stringifyJsonString(value["title"] as string) + ",\"done\":" + stringifyJsonBoolean(value["done"] as boolean) + '}';
 }
 
-export function stringifyTaskInput(value: TaskInputFields, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): string {
+export function stringifyTaskInput(value: TaskInputFields, options?: __GolemSerdeOptions): string {
   const validates = serdeValidates(options, true);
   if (validates) {
     assertTaskInput(value, options);
@@ -109,7 +109,7 @@ export function stringifyTaskInput(value: TaskInputFields, options?: { readonly 
   return stringifyTaskInputCore(value as never, { validate: false });
 }
 
-function convertFromWireTaskInput(wire: unknown, options: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object } | undefined, isolated: boolean): unknown {
+function convertFromWireTaskInput(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
   const validates = serdeValidates(options, true);
   if (validates) {
     __golemAssertWire_TaskInput(wire, options);
@@ -129,11 +129,11 @@ function convertFromWireTaskInput(wire: unknown, options: { readonly validate?: 
   return result;
 }
 
-export function fromWireFormatTaskInput(wire: unknown, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): TaskInputFields {
+export function fromWireFormatTaskInput(wire: unknown, options?: __GolemSerdeOptions): TaskInputFields {
   return convertFromWireTaskInput(wire, options, false) as TaskInputFields;
 }
 
-export function toWireFormatTaskInput(value: TaskInputFields, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): TaskInputJSON {
+export function toWireFormatTaskInput(value: TaskInputFields, options?: __GolemSerdeOptions): TaskInputJSON {
   const validates = serdeValidates(options, true);
   if (validates) {
     assertTaskInput(value, options);
@@ -143,11 +143,11 @@ export function toWireFormatTaskInput(value: TaskInputFields, options?: { readon
   return wire as TaskInputJSON;
 }
 
-export function parseTaskInput(text: string, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): TaskInputFields {
+export function parseTaskInput(text: string, options?: __GolemSerdeOptions): TaskInputFields {
   return convertFromWireTaskInput(parseJson(text), options, true) as TaskInputFields;
 }
 
-export function validateTaskInput(value: unknown, options?: { readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext }): value is TaskInputFields {
+export function validateTaskInput(value: unknown, options?: __GolemValidateOptions): value is TaskInputFields {
   const failFast = options?.failFast !== false;
   let ok: boolean;
   let errors: readonly unknown[] | null | undefined;
@@ -163,48 +163,24 @@ export function validateTaskInput(value: unknown, options?: { readonly failFast?
   return ok;
 }
 
-export function assertTaskInput(value: unknown, options?: { readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext }): TaskInputFields {
-  if (options?.validationContext === undefined) {
-  if (!(options?.failFast !== false ? validateTaskInputFast(value) : validateTaskInputAll(value))) {
-    const validator = options?.failFast !== false ? validateTaskInputFast : validateTaskInputAll;
-    validationFailure(ajvIssues(validator, value, IssueRepresentation.Model, IssueSource.TypeScript));
-  }
-} else {
-  const validator = resolveModelValidationContextValidator(options.validationContext, "TaskInput_b47fc3de", options?.failFast !== false ? 'first' : 'all');
-  if (!runSynchronousValidation(validator, value)) validationFailure(ajvIssues(validator, value, IssueRepresentation.Model, IssueSource.TypeScript));
-}
+export function assertTaskInput(value: unknown, options?: __GolemValidateOptions): TaskInputFields {
+  assertModelValue(value, options, validateTaskInputFast, validateTaskInputAll, "TaskInput_b47fc3de", IssueRepresentation.Model, IssueSource.TypeScript);
   return value as TaskInputFields;
 }
 
-function __golemAssertWire_TaskInput(value: unknown, options?: { readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext }): Record<string, unknown> {
-  if (options?.validationContext === undefined) {
-  if (!(options?.failFast !== false ? validateTaskInputWireFast(value) : validateTaskInputWireAll(value))) {
-    const validator = options?.failFast !== false ? validateTaskInputWireFast : validateTaskInputWireAll;
-    validationFailure(ajvIssues(validator, value, IssueRepresentation.Wire, IssueSource.TypeScript));
-  }
-} else {
-  const validator = resolveModelValidationContextValidator(options.validationContext, "TaskInput_b47fc3de#wire", options?.failFast !== false ? 'first' : 'all');
-  if (!runSynchronousValidation(validator, value)) validationFailure(ajvIssues(validator, value, IssueRepresentation.Wire, IssueSource.TypeScript));
-}
+function __golemAssertWire_TaskInput(value: unknown, options?: __GolemValidateOptions): Record<string, unknown> {
+  assertModelValue(value, options, validateTaskInputWireFast, validateTaskInputWireAll, "TaskInput_b47fc3de#wire", IssueRepresentation.Wire, IssueSource.TypeScript);
   return value as Record<string, unknown>;
 }
 
-function __golemAssertModelOnly_TaskInput(value: unknown, options?: { readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext }): Record<string, unknown> {
-  if (options?.validationContext === undefined) {
-  if (!(options?.failFast !== false ? validateTaskInputModelOnlyFast(value) : validateTaskInputModelOnlyAll(value))) {
-    const validator = options?.failFast !== false ? validateTaskInputModelOnlyFast : validateTaskInputModelOnlyAll;
-    validationFailure(ajvIssues(validator, value, IssueRepresentation.Model, IssueSource.TypeScript));
-  }
-} else {
-  const validator = resolveModelValidationContextValidator(options.validationContext, "TaskInput_b47fc3de#model-only", options?.failFast !== false ? 'first' : 'all');
-  if (!runSynchronousValidation(validator, value)) validationFailure(ajvIssues(validator, value, IssueRepresentation.Model, IssueSource.TypeScript));
-}
+function __golemAssertModelOnly_TaskInput(value: unknown, options?: __GolemValidateOptions): Record<string, unknown> {
+  assertModelValue(value, options, validateTaskInputModelOnlyFast, validateTaskInputModelOnlyAll, "TaskInput_b47fc3de#model-only", IssueRepresentation.Model, IssueSource.TypeScript);
   return value as Record<string, unknown>;
 }
 
 createObjectCodec("TaskInput_b47fc3de", {
-  stringify: stringifyTaskInput as (value: never, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }) => string,
-  parse: parseTaskInput as (text: string, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }) => never,
+  stringify: stringifyTaskInput as (value: never, options?: __GolemSerdeOptions) => string,
+  parse: parseTaskInput as (text: string, options?: __GolemSerdeOptions) => never,
   validate: validateTaskInput,
   assert: assertTaskInput,
   toWireFormat: toWireFormatTaskInput,

@@ -458,7 +458,7 @@ test('SDK model functions use the model types instead of unknown', async t => {
     components: { schemas: { Money: { type: 'object', properties: { amount: { type: 'string' } }, required: ['amount'] } } },
   }, { output, name: 'Typed', profile: { mobx: false, validation: true } });
   const group = result.artifacts.find(artifact => /models\/_group-[0-9a-f]{8}\.ts$/.test(artifact.path))?.content ?? '';
-  assert.match(group, /^export function parseMoney\(text: string, options\?: \{[^}]*\}\): MoneyFields \{/m);
-  assert.match(group, /^export function validateMoney\(value: unknown, options\?: \{[^}]*\}\): value is MoneyFields \{/m);
-  assert.match(group, /^export function toWireFormatMoney\(value: MoneyFields, options\?: \{[^}]*\}\): Types\.Money \{/m);
+  assert.match(group, /^export function parseMoney\(text: string, options\?: __Golem(?:Serde|Validate)Options\): MoneyFields \{/m);
+  assert.match(group, /^export function validateMoney\(value: unknown, options\?: __Golem(?:Serde|Validate)Options\): value is MoneyFields \{/m);
+  assert.match(group, /^export function toWireFormatMoney\(value: MoneyFields, options\?: __Golem(?:Serde|Validate)Options\): Types\.Money \{/m);
 });

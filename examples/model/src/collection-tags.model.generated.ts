@@ -7,7 +7,7 @@ import {
   type generatedModelFieldsBrand,
 } from '@exprtlabs/golem/model';
 import { cloneConversionInput, convertModelField, defineModelProperty, requireModelObject } from '@exprtlabs/golem/conversion';
-import { ajvIssues, createObjectCodec, parseJson, registerIModelClass, requireAjvSchema, resolveGeneratedModelSchemaRefs, resolveModelValidationContextValidator, runSynchronousValidation, serdeValidates, stringifyJsonArray, stringifyJsonString, validationFailure, IssueRepresentation, IssueSource } from '@exprtlabs/golem/serde';
+import { assertModelValue, createObjectCodec, parseJson, registerIModelClass, requireAjvSchema, resolveGeneratedModelSchemaRefs, resolveModelValidationContextValidator, runSynchronousValidation, serdeValidates, stringifyJsonArray, stringifyJsonString, IssueRepresentation, IssueSource, type SerdeOptions as __GolemSerdeOptions, type ValidateOptions as __GolemValidateOptions } from '@exprtlabs/golem/serde';
 import { createOpenApiSyncAjvEngine } from '@exprtlabs/golem/ajv';
 
 const __golemAbsentField = Symbol();
@@ -108,7 +108,7 @@ function stringifyAnonymous_fa67afd9Core(value: Record<string, unknown>, _option
 }
 
 
-function stringifyAnonymous_fa67afd9(value: Record<string, unknown>, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): string {
+function stringifyAnonymous_fa67afd9(value: Record<string, unknown>, options?: __GolemSerdeOptions): string {
   const validates = serdeValidates(options, true);
   if (validates) {
     assertAnonymous_fa67afd9(value, options);
@@ -116,7 +116,7 @@ function stringifyAnonymous_fa67afd9(value: Record<string, unknown>, options?: {
   return stringifyAnonymous_fa67afd9Core(value as never, { validate: false });
 }
 
-function convertFromWireAnonymous_fa67afd9(wire: unknown, options: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object } | undefined, isolated: boolean): unknown {
+function convertFromWireAnonymous_fa67afd9(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
   const validates = serdeValidates(options, true);
   if (validates) {
     assertAnonymous_fa67afd9(wire, options);
@@ -133,11 +133,11 @@ function convertFromWireAnonymous_fa67afd9(wire: unknown, options: { readonly va
   return result;
 }
 
-function fromWireFormatAnonymous_fa67afd9(wire: unknown, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): unknown {
+function fromWireFormatAnonymous_fa67afd9(wire: unknown, options?: __GolemSerdeOptions): unknown {
   return convertFromWireAnonymous_fa67afd9(wire, options, false);
 }
 
-function toWireFormatAnonymous_fa67afd9(value: unknown, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): unknown {
+function toWireFormatAnonymous_fa67afd9(value: unknown, options?: __GolemSerdeOptions): unknown {
   const validates = serdeValidates(options, true);
   if (validates) {
     assertAnonymous_fa67afd9(value, options);
@@ -149,11 +149,11 @@ function toWireFormatAnonymous_fa67afd9(value: unknown, options?: { readonly val
   return wire;
 }
 
-function parseAnonymous_fa67afd9(text: string, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): unknown {
+function parseAnonymous_fa67afd9(text: string, options?: __GolemSerdeOptions): unknown {
   return convertFromWireAnonymous_fa67afd9(parseJson(text), options, true);
 }
 
-function validateAnonymous_fa67afd9(value: unknown, options?: { readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext }): value is Record<string, unknown> {
+function validateAnonymous_fa67afd9(value: unknown, options?: __GolemValidateOptions): value is Record<string, unknown> {
   const failFast = options?.failFast !== false;
   let ok: boolean;
   let errors: readonly unknown[] | null | undefined;
@@ -169,23 +169,15 @@ function validateAnonymous_fa67afd9(value: unknown, options?: { readonly failFas
   return ok;
 }
 
-function assertAnonymous_fa67afd9(value: unknown, options?: { readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext }): Record<string, unknown> {
-  if (options?.validationContext === undefined) {
-  if (!(options?.failFast !== false ? validateAnonymous_fa67afd9Fast(value) : validateAnonymous_fa67afd9All(value))) {
-    const validator = options?.failFast !== false ? validateAnonymous_fa67afd9Fast : validateAnonymous_fa67afd9All;
-    validationFailure(ajvIssues(validator, value, IssueRepresentation.Model, IssueSource.TypeScript));
-  }
-} else {
-  const validator = resolveModelValidationContextValidator(options.validationContext, "Anonymous_fa67afd9", options?.failFast !== false ? 'first' : 'all');
-  if (!runSynchronousValidation(validator, value)) validationFailure(ajvIssues(validator, value, IssueRepresentation.Model, IssueSource.TypeScript));
-}
+function assertAnonymous_fa67afd9(value: unknown, options?: __GolemValidateOptions): Record<string, unknown> {
+  assertModelValue(value, options, validateAnonymous_fa67afd9Fast, validateAnonymous_fa67afd9All, "Anonymous_fa67afd9", IssueRepresentation.Model, IssueSource.TypeScript);
   return value as Record<string, unknown>;
 }
 
 
 createObjectCodec("Anonymous_fa67afd9", {
-  stringify: stringifyAnonymous_fa67afd9 as (value: never, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }) => string,
-  parse: parseAnonymous_fa67afd9 as (text: string, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }) => never,
+  stringify: stringifyAnonymous_fa67afd9 as (value: never, options?: __GolemSerdeOptions) => string,
+  parse: parseAnonymous_fa67afd9 as (text: string, options?: __GolemSerdeOptions) => never,
   validate: validateAnonymous_fa67afd9,
   assert: assertAnonymous_fa67afd9,
   toWireFormat: toWireFormatAnonymous_fa67afd9,
@@ -212,7 +204,7 @@ function stringifyContractsCore(value: Record<string, unknown>, _options?: { rea
 }
 
 
-export function stringifyContracts(value: ContractsFields, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): string {
+export function stringifyContracts(value: ContractsFields, options?: __GolemSerdeOptions): string {
   const validates = serdeValidates(options, true);
   if (validates) {
     assertContracts(value, options);
@@ -220,7 +212,7 @@ export function stringifyContracts(value: ContractsFields, options?: { readonly 
   return stringifyContractsCore(value as never, { validate: false });
 }
 
-function convertFromWireContracts(wire: unknown, options: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object } | undefined, isolated: boolean): unknown {
+function convertFromWireContracts(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
   const validates = serdeValidates(options, true);
   if (validates) {
     assertContracts(wire, options);
@@ -237,11 +229,11 @@ function convertFromWireContracts(wire: unknown, options: { readonly validate?: 
   return result;
 }
 
-export function fromWireFormatContracts(wire: unknown, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): ContractsFields {
+export function fromWireFormatContracts(wire: unknown, options?: __GolemSerdeOptions): ContractsFields {
   return convertFromWireContracts(wire, options, false) as ContractsFields;
 }
 
-export function toWireFormatContracts(value: ContractsFields, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): ContractsJSON {
+export function toWireFormatContracts(value: ContractsFields, options?: __GolemSerdeOptions): ContractsJSON {
   const validates = serdeValidates(options, true);
   if (validates) {
     assertContracts(value, options);
@@ -252,11 +244,11 @@ export function toWireFormatContracts(value: ContractsFields, options?: { readon
   return wire as ContractsJSON;
 }
 
-export function parseContracts(text: string, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): ContractsFields {
+export function parseContracts(text: string, options?: __GolemSerdeOptions): ContractsFields {
   return convertFromWireContracts(parseJson(text), options, true) as ContractsFields;
 }
 
-export function validateContracts(value: unknown, options?: { readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext }): value is ContractsFields {
+export function validateContracts(value: unknown, options?: __GolemValidateOptions): value is ContractsFields {
   const failFast = options?.failFast !== false;
   let ok: boolean;
   let errors: readonly unknown[] | null | undefined;
@@ -272,23 +264,15 @@ export function validateContracts(value: unknown, options?: { readonly failFast?
   return ok;
 }
 
-export function assertContracts(value: unknown, options?: { readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext }): ContractsFields {
-  if (options?.validationContext === undefined) {
-  if (!(options?.failFast !== false ? validateContractsFast(value) : validateContractsAll(value))) {
-    const validator = options?.failFast !== false ? validateContractsFast : validateContractsAll;
-    validationFailure(ajvIssues(validator, value, IssueRepresentation.Model, IssueSource.TypeScript));
-  }
-} else {
-  const validator = resolveModelValidationContextValidator(options.validationContext, "Contracts_87aa2f02", options?.failFast !== false ? 'first' : 'all');
-  if (!runSynchronousValidation(validator, value)) validationFailure(ajvIssues(validator, value, IssueRepresentation.Model, IssueSource.TypeScript));
-}
+export function assertContracts(value: unknown, options?: __GolemValidateOptions): ContractsFields {
+  assertModelValue(value, options, validateContractsFast, validateContractsAll, "Contracts_87aa2f02", IssueRepresentation.Model, IssueSource.TypeScript);
   return value as ContractsFields;
 }
 
 
 createObjectCodec("Contracts_87aa2f02", {
-  stringify: stringifyContracts as (value: never, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }) => string,
-  parse: parseContracts as (text: string, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }) => never,
+  stringify: stringifyContracts as (value: never, options?: __GolemSerdeOptions) => string,
+  parse: parseContracts as (text: string, options?: __GolemSerdeOptions) => never,
   validate: validateContracts,
   assert: assertContracts,
   toWireFormat: toWireFormatContracts,

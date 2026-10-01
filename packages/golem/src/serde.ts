@@ -16,6 +16,7 @@ export {
   ajvIssues,
   ajvIssuesFromErrors,
   addNestedCodecSchema,
+  assertModelValue,
   createObjectCodec,
   findCodecIdForConstructor,
   getIModelClass,

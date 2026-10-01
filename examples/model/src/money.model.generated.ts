@@ -7,7 +7,7 @@ import {
   type generatedModelFieldsBrand,
 } from '@exprtlabs/golem/model';
 import { cloneConversionInput, convertModelField, defineModelProperty, requireModelObject } from '@exprtlabs/golem/conversion';
-import { ajvIssues, createObjectCodec, parseJson, registerIModelClass, requireAjvSchema, resolveGeneratedModelSchemaRefs, resolveModelValidationContextValidator, runSynchronousValidation, serdeValidates, stringifyJsonNumber, stringifyJsonScalar, validationFailure, IssueRepresentation, IssueSource } from '@exprtlabs/golem/serde';
+import { assertModelValue, createObjectCodec, parseJson, registerIModelClass, requireAjvSchema, resolveGeneratedModelSchemaRefs, resolveModelValidationContextValidator, runSynchronousValidation, serdeValidates, stringifyJsonNumber, stringifyJsonScalar, IssueRepresentation, IssueSource, type SerdeOptions as __GolemSerdeOptions, type ValidateOptions as __GolemValidateOptions } from '@exprtlabs/golem/serde';
 import { createOpenApiSyncAjvEngine } from '@exprtlabs/golem/ajv';
 
 const __golemAbsentField = Symbol();
@@ -91,7 +91,7 @@ function stringifyMoneyCore(value: Record<string, unknown>, _options?: { readonl
 }
 
 
-export function stringifyMoney(value: MoneyFields, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): string {
+export function stringifyMoney(value: MoneyFields, options?: __GolemSerdeOptions): string {
   const validates = serdeValidates(options, true);
   if (validates) {
     assertMoney(value, options);
@@ -99,7 +99,7 @@ export function stringifyMoney(value: MoneyFields, options?: { readonly validate
   return stringifyMoneyCore(value as never, { validate: false });
 }
 
-function convertFromWireMoney(wire: unknown, options: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object } | undefined, isolated: boolean): unknown {
+function convertFromWireMoney(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
   const validates = serdeValidates(options, true);
   if (validates) {
     assertMoney(wire, options);
@@ -116,11 +116,11 @@ function convertFromWireMoney(wire: unknown, options: { readonly validate?: bool
   return result;
 }
 
-export function fromWireFormatMoney(wire: unknown, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): MoneyFields {
+export function fromWireFormatMoney(wire: unknown, options?: __GolemSerdeOptions): MoneyFields {
   return convertFromWireMoney(wire, options, false) as MoneyFields;
 }
 
-export function toWireFormatMoney(value: MoneyFields, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): MoneyJSON {
+export function toWireFormatMoney(value: MoneyFields, options?: __GolemSerdeOptions): MoneyJSON {
   const validates = serdeValidates(options, true);
   if (validates) {
     assertMoney(value, options);
@@ -130,11 +130,11 @@ export function toWireFormatMoney(value: MoneyFields, options?: { readonly valid
   return wire as MoneyJSON;
 }
 
-export function parseMoney(text: string, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): MoneyFields {
+export function parseMoney(text: string, options?: __GolemSerdeOptions): MoneyFields {
   return convertFromWireMoney(parseJson(text), options, true) as MoneyFields;
 }
 
-export function validateMoney(value: unknown, options?: { readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext }): value is MoneyFields {
+export function validateMoney(value: unknown, options?: __GolemValidateOptions): value is MoneyFields {
   const failFast = options?.failFast !== false;
   let ok: boolean;
   let errors: readonly unknown[] | null | undefined;
@@ -150,23 +150,15 @@ export function validateMoney(value: unknown, options?: { readonly failFast?: bo
   return ok;
 }
 
-export function assertMoney(value: unknown, options?: { readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext }): MoneyFields {
-  if (options?.validationContext === undefined) {
-  if (!(options?.failFast !== false ? validateMoneyFast(value) : validateMoneyAll(value))) {
-    const validator = options?.failFast !== false ? validateMoneyFast : validateMoneyAll;
-    validationFailure(ajvIssues(validator, value, IssueRepresentation.Model, IssueSource.TypeScript));
-  }
-} else {
-  const validator = resolveModelValidationContextValidator(options.validationContext, "Money_64c4561b", options?.failFast !== false ? 'first' : 'all');
-  if (!runSynchronousValidation(validator, value)) validationFailure(ajvIssues(validator, value, IssueRepresentation.Model, IssueSource.TypeScript));
-}
+export function assertMoney(value: unknown, options?: __GolemValidateOptions): MoneyFields {
+  assertModelValue(value, options, validateMoneyFast, validateMoneyAll, "Money_64c4561b", IssueRepresentation.Model, IssueSource.TypeScript);
   return value as MoneyFields;
 }
 
 
 createObjectCodec("Money_64c4561b", {
-  stringify: stringifyMoney as (value: never, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }) => string,
-  parse: parseMoney as (text: string, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }) => never,
+  stringify: stringifyMoney as (value: never, options?: __GolemSerdeOptions) => string,
+  parse: parseMoney as (text: string, options?: __GolemSerdeOptions) => never,
   validate: validateMoney,
   assert: assertMoney,
   toWireFormat: toWireFormatMoney,
@@ -190,7 +182,7 @@ function stringifyWalletCore(value: Record<string, unknown>, _options?: { readon
 }
 
 
-export function stringifyWallet(value: WalletFields, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): string {
+export function stringifyWallet(value: WalletFields, options?: __GolemSerdeOptions): string {
   const validates = serdeValidates(options, true);
   if (validates) {
     assertWallet(value, options);
@@ -198,7 +190,7 @@ export function stringifyWallet(value: WalletFields, options?: { readonly valida
   return stringifyWalletCore(value as never, { validate: false });
 }
 
-function convertFromWireWallet(wire: unknown, options: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object } | undefined, isolated: boolean): unknown {
+function convertFromWireWallet(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
   const validates = serdeValidates(options, true);
   if (validates) {
     assertWallet(wire, options);
@@ -215,11 +207,11 @@ function convertFromWireWallet(wire: unknown, options: { readonly validate?: boo
   return result;
 }
 
-export function fromWireFormatWallet(wire: unknown, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): WalletFields {
+export function fromWireFormatWallet(wire: unknown, options?: __GolemSerdeOptions): WalletFields {
   return convertFromWireWallet(wire, options, false) as WalletFields;
 }
 
-export function toWireFormatWallet(value: WalletFields, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): WalletJSON {
+export function toWireFormatWallet(value: WalletFields, options?: __GolemSerdeOptions): WalletJSON {
   const validates = serdeValidates(options, true);
   if (validates) {
     assertWallet(value, options);
@@ -229,11 +221,11 @@ export function toWireFormatWallet(value: WalletFields, options?: { readonly val
   return wire as WalletJSON;
 }
 
-export function parseWallet(text: string, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): WalletFields {
+export function parseWallet(text: string, options?: __GolemSerdeOptions): WalletFields {
   return convertFromWireWallet(parseJson(text), options, true) as WalletFields;
 }
 
-export function validateWallet(value: unknown, options?: { readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext }): value is WalletFields {
+export function validateWallet(value: unknown, options?: __GolemValidateOptions): value is WalletFields {
   const failFast = options?.failFast !== false;
   let ok: boolean;
   let errors: readonly unknown[] | null | undefined;
@@ -249,23 +241,15 @@ export function validateWallet(value: unknown, options?: { readonly failFast?: b
   return ok;
 }
 
-export function assertWallet(value: unknown, options?: { readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext }): WalletFields {
-  if (options?.validationContext === undefined) {
-  if (!(options?.failFast !== false ? validateWalletFast(value) : validateWalletAll(value))) {
-    const validator = options?.failFast !== false ? validateWalletFast : validateWalletAll;
-    validationFailure(ajvIssues(validator, value, IssueRepresentation.Model, IssueSource.TypeScript));
-  }
-} else {
-  const validator = resolveModelValidationContextValidator(options.validationContext, "Wallet_f39079e2", options?.failFast !== false ? 'first' : 'all');
-  if (!runSynchronousValidation(validator, value)) validationFailure(ajvIssues(validator, value, IssueRepresentation.Model, IssueSource.TypeScript));
-}
+export function assertWallet(value: unknown, options?: __GolemValidateOptions): WalletFields {
+  assertModelValue(value, options, validateWalletFast, validateWalletAll, "Wallet_f39079e2", IssueRepresentation.Model, IssueSource.TypeScript);
   return value as WalletFields;
 }
 
 
 createObjectCodec("Wallet_f39079e2", {
-  stringify: stringifyWallet as (value: never, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }) => string,
-  parse: parseWallet as (text: string, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }) => never,
+  stringify: stringifyWallet as (value: never, options?: __GolemSerdeOptions) => string,
+  parse: parseWallet as (text: string, options?: __GolemSerdeOptions) => never,
   validate: validateWallet,
   assert: assertWallet,
   toWireFormat: toWireFormatWallet,

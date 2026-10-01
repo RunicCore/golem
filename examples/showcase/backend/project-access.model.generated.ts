@@ -7,7 +7,7 @@ import {
   type generatedModelFieldsBrand,
 } from '@exprtlabs/golem/model';
 import { cloneConversionInput, decodeGeneratedModelTrusted, encodeGeneratedModel, convertModelField, defineModelProperty, requireModelObject } from '@exprtlabs/golem/conversion';
-import { ajvIssues, createObjectCodec, parseJson, registerIModelClass, requireAjvSchema, requireIModelClass, resolveGeneratedModelSchemaRefs, resolveModelValidationContextValidator, runSynchronousValidation, serdeValidates, stringifyJsonString, validationFailure, IssueRepresentation, IssueSource } from '@exprtlabs/golem/serde';
+import { assertModelValue, createObjectCodec, parseJson, registerIModelClass, requireAjvSchema, requireIModelClass, resolveGeneratedModelSchemaRefs, resolveModelValidationContextValidator, runSynchronousValidation, serdeValidates, stringifyJsonString, IssueRepresentation, IssueSource, type SerdeOptions as __GolemSerdeOptions, type ValidateOptions as __GolemValidateOptions } from '@exprtlabs/golem/serde';
 import { createOpenApiSyncAjvEngine } from '@exprtlabs/golem/ajv';
 import { modelSerdeBindings, modelValidationBindings } from "../src/generated/models/models.generated.js";
 
@@ -152,7 +152,7 @@ function stringifyMemberCore(value: Record<string, unknown>, _options?: { readon
 }
 
 
-export function stringifyMember(value: MemberFields, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): string {
+export function stringifyMember(value: MemberFields, options?: __GolemSerdeOptions): string {
   const validates = serdeValidates(options, true);
   if (validates) {
     assertMember(value, options);
@@ -160,7 +160,7 @@ export function stringifyMember(value: MemberFields, options?: { readonly valida
   return stringifyMemberCore(value as never, { validate: false });
 }
 
-function convertFromWireMember(wire: unknown, options: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object } | undefined, isolated: boolean): unknown {
+function convertFromWireMember(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
   const validates = serdeValidates(options, true);
   if (validates) {
     assertMember(wire, options);
@@ -177,11 +177,11 @@ function convertFromWireMember(wire: unknown, options: { readonly validate?: boo
   return result;
 }
 
-export function fromWireFormatMember(wire: unknown, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): MemberFields {
+export function fromWireFormatMember(wire: unknown, options?: __GolemSerdeOptions): MemberFields {
   return convertFromWireMember(wire, options, false) as MemberFields;
 }
 
-export function toWireFormatMember(value: MemberFields, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): MemberJSON {
+export function toWireFormatMember(value: MemberFields, options?: __GolemSerdeOptions): MemberJSON {
   const validates = serdeValidates(options, true);
   if (validates) {
     assertMember(value, options);
@@ -191,11 +191,11 @@ export function toWireFormatMember(value: MemberFields, options?: { readonly val
   return wire as MemberJSON;
 }
 
-export function parseMember(text: string, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): MemberFields {
+export function parseMember(text: string, options?: __GolemSerdeOptions): MemberFields {
   return convertFromWireMember(parseJson(text), options, true) as MemberFields;
 }
 
-export function validateMember(value: unknown, options?: { readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext }): value is MemberFields {
+export function validateMember(value: unknown, options?: __GolemValidateOptions): value is MemberFields {
   const failFast = options?.failFast !== false;
   let ok: boolean;
   let errors: readonly unknown[] | null | undefined;
@@ -211,23 +211,15 @@ export function validateMember(value: unknown, options?: { readonly failFast?: b
   return ok;
 }
 
-export function assertMember(value: unknown, options?: { readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext }): MemberFields {
-  if (options?.validationContext === undefined) {
-  if (!(options?.failFast !== false ? validateMemberFast(value) : validateMemberAll(value))) {
-    const validator = options?.failFast !== false ? validateMemberFast : validateMemberAll;
-    validationFailure(ajvIssues(validator, value, IssueRepresentation.Model, IssueSource.TypeScript));
-  }
-} else {
-  const validator = resolveModelValidationContextValidator(options.validationContext, "Member_5f7b88d4", options?.failFast !== false ? 'first' : 'all');
-  if (!runSynchronousValidation(validator, value)) validationFailure(ajvIssues(validator, value, IssueRepresentation.Model, IssueSource.TypeScript));
-}
+export function assertMember(value: unknown, options?: __GolemValidateOptions): MemberFields {
+  assertModelValue(value, options, validateMemberFast, validateMemberAll, "Member_5f7b88d4", IssueRepresentation.Model, IssueSource.TypeScript);
   return value as MemberFields;
 }
 
 
 createObjectCodec("Member_5f7b88d4", {
-  stringify: stringifyMember as (value: never, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }) => string,
-  parse: parseMember as (text: string, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }) => never,
+  stringify: stringifyMember as (value: never, options?: __GolemSerdeOptions) => string,
+  parse: parseMember as (text: string, options?: __GolemSerdeOptions) => never,
   validate: validateMember,
   assert: assertMember,
   toWireFormat: toWireFormatMember,
@@ -266,7 +258,7 @@ function stringifyProjectAccessWire(value: Record<string, unknown>, _options?: {
   return '{' + "\"projectName\":" + stringifyJsonString(value["projectName"] as string) + ",\"member\":" + stringifyMember(value["member"] as never, { validate: false }) + ",\"permissions\":" + stringifyJsonString(value["permissions"] as string) + '}';
 }
 
-export function stringifyProjectAccess(value: ProjectAccessFields, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): string {
+export function stringifyProjectAccess(value: ProjectAccessFields, options?: __GolemSerdeOptions): string {
   const validates = serdeValidates(options, true);
   if (validates) {
     assertProjectAccess(value, options);
@@ -279,7 +271,7 @@ export function stringifyProjectAccess(value: ProjectAccessFields, options?: { r
   return stringifyProjectAccessCore(value as never, { validate: false });
 }
 
-function convertFromWireProjectAccess(wire: unknown, options: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object } | undefined, isolated: boolean): unknown {
+function convertFromWireProjectAccess(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
   const validates = serdeValidates(options, true);
   if (validates) {
     __golemAssertWire_ProjectAccess(wire, options);
@@ -299,11 +291,11 @@ function convertFromWireProjectAccess(wire: unknown, options: { readonly validat
   return result;
 }
 
-export function fromWireFormatProjectAccess(wire: unknown, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): ProjectAccessFields {
+export function fromWireFormatProjectAccess(wire: unknown, options?: __GolemSerdeOptions): ProjectAccessFields {
   return convertFromWireProjectAccess(wire, options, false) as ProjectAccessFields;
 }
 
-export function toWireFormatProjectAccess(value: ProjectAccessFields, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): ProjectAccessJSON {
+export function toWireFormatProjectAccess(value: ProjectAccessFields, options?: __GolemSerdeOptions): ProjectAccessJSON {
   const validates = serdeValidates(options, true);
   if (validates) {
     assertProjectAccess(value, options);
@@ -316,11 +308,11 @@ export function toWireFormatProjectAccess(value: ProjectAccessFields, options?: 
   return wire as ProjectAccessJSON;
 }
 
-export function parseProjectAccess(text: string, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }): ProjectAccessFields {
+export function parseProjectAccess(text: string, options?: __GolemSerdeOptions): ProjectAccessFields {
   return convertFromWireProjectAccess(parseJson(text), options, true) as ProjectAccessFields;
 }
 
-export function validateProjectAccess(value: unknown, options?: { readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext }): value is ProjectAccessFields {
+export function validateProjectAccess(value: unknown, options?: __GolemValidateOptions): value is ProjectAccessFields {
   const failFast = options?.failFast !== false;
   let ok: boolean;
   let errors: readonly unknown[] | null | undefined;
@@ -336,61 +328,29 @@ export function validateProjectAccess(value: unknown, options?: { readonly failF
   return ok;
 }
 
-export function assertProjectAccess(value: unknown, options?: { readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext }): ProjectAccessFields {
-  if (options?.validationContext === undefined) {
-  if (!(options?.failFast !== false ? validateProjectAccessFast(value) : validateProjectAccessAll(value))) {
-    const validator = options?.failFast !== false ? validateProjectAccessFast : validateProjectAccessAll;
-    validationFailure(ajvIssues(validator, value, IssueRepresentation.Model, IssueSource.TypeScript));
-  }
-} else {
-  const validator = resolveModelValidationContextValidator(options.validationContext, "ProjectAccess_7d34ac66", options?.failFast !== false ? 'first' : 'all');
-  if (!runSynchronousValidation(validator, value)) validationFailure(ajvIssues(validator, value, IssueRepresentation.Model, IssueSource.TypeScript));
-}
+export function assertProjectAccess(value: unknown, options?: __GolemValidateOptions): ProjectAccessFields {
+  assertModelValue(value, options, validateProjectAccessFast, validateProjectAccessAll, "ProjectAccess_7d34ac66", IssueRepresentation.Model, IssueSource.TypeScript);
   return value as ProjectAccessFields;
 }
 
-function __golemAssertWire_ProjectAccess(value: unknown, options?: { readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext }): Record<string, unknown> {
-  if (options?.validationContext === undefined) {
-  if (!(options?.failFast !== false ? validateProjectAccessWireFast(value) : validateProjectAccessWireAll(value))) {
-    const validator = options?.failFast !== false ? validateProjectAccessWireFast : validateProjectAccessWireAll;
-    validationFailure(ajvIssues(validator, value, IssueRepresentation.Wire, IssueSource.TypeScript));
-  }
-} else {
-  const validator = resolveModelValidationContextValidator(options.validationContext, "ProjectAccess_7d34ac66#wire", options?.failFast !== false ? 'first' : 'all');
-  if (!runSynchronousValidation(validator, value)) validationFailure(ajvIssues(validator, value, IssueRepresentation.Wire, IssueSource.TypeScript));
-}
+function __golemAssertWire_ProjectAccess(value: unknown, options?: __GolemValidateOptions): Record<string, unknown> {
+  assertModelValue(value, options, validateProjectAccessWireFast, validateProjectAccessWireAll, "ProjectAccess_7d34ac66#wire", IssueRepresentation.Wire, IssueSource.TypeScript);
   return value as Record<string, unknown>;
 }
 
-function __golemAssertModelOnly_ProjectAccess(value: unknown, options?: { readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext }): Record<string, unknown> {
-  if (options?.validationContext === undefined) {
-  if (!(options?.failFast !== false ? validateProjectAccessModelOnlyFast(value) : validateProjectAccessModelOnlyAll(value))) {
-    const validator = options?.failFast !== false ? validateProjectAccessModelOnlyFast : validateProjectAccessModelOnlyAll;
-    validationFailure(ajvIssues(validator, value, IssueRepresentation.Model, IssueSource.TypeScript));
-  }
-} else {
-  const validator = resolveModelValidationContextValidator(options.validationContext, "ProjectAccess_7d34ac66#model-only", options?.failFast !== false ? 'first' : 'all');
-  if (!runSynchronousValidation(validator, value)) validationFailure(ajvIssues(validator, value, IssueRepresentation.Model, IssueSource.TypeScript));
-}
+function __golemAssertModelOnly_ProjectAccess(value: unknown, options?: __GolemValidateOptions): Record<string, unknown> {
+  assertModelValue(value, options, validateProjectAccessModelOnlyFast, validateProjectAccessModelOnlyAll, "ProjectAccess_7d34ac66#model-only", IssueRepresentation.Model, IssueSource.TypeScript);
   return value as Record<string, unknown>;
 }
 
-function __golemAssertWireOnly_ProjectAccess(value: unknown, options?: { readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext }): Record<string, unknown> {
-  if (options?.validationContext === undefined) {
-  if (!(options?.failFast !== false ? validateProjectAccessWireOnlyFast(value) : validateProjectAccessWireOnlyAll(value))) {
-    const validator = options?.failFast !== false ? validateProjectAccessWireOnlyFast : validateProjectAccessWireOnlyAll;
-    validationFailure(ajvIssues(validator, value, IssueRepresentation.Wire, IssueSource.TypeScript));
-  }
-} else {
-  const validator = resolveModelValidationContextValidator(options.validationContext, "ProjectAccess_7d34ac66#wire-only", options?.failFast !== false ? 'first' : 'all');
-  if (!runSynchronousValidation(validator, value)) validationFailure(ajvIssues(validator, value, IssueRepresentation.Wire, IssueSource.TypeScript));
-}
+function __golemAssertWireOnly_ProjectAccess(value: unknown, options?: __GolemValidateOptions): Record<string, unknown> {
+  assertModelValue(value, options, validateProjectAccessWireOnlyFast, validateProjectAccessWireOnlyAll, "ProjectAccess_7d34ac66#wire-only", IssueRepresentation.Wire, IssueSource.TypeScript);
   return value as Record<string, unknown>;
 }
 
 createObjectCodec("ProjectAccess_7d34ac66", {
-  stringify: stringifyProjectAccess as (value: never, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }) => string,
-  parse: parseProjectAccess as (text: string, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }) => never,
+  stringify: stringifyProjectAccess as (value: never, options?: __GolemSerdeOptions) => string,
+  parse: parseProjectAccess as (text: string, options?: __GolemSerdeOptions) => never,
   validate: validateProjectAccess,
   assert: assertProjectAccess,
   toWireFormat: toWireFormatProjectAccess,
