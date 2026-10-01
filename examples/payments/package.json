@@ -1,0 +1,45 @@
+{
+  "name": "payments-example",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./generator": "./generators/event-models.js"
+  },
+  "scripts": {
+    "generate": "golem generate --config server/golem.yaml && golem generate --config web/golem.yaml",
+    "check": "golem check --config server/golem.yaml && golem check --config web/golem.yaml && ttsc -p server/tsconfig.json --noEmit && ttsc -p web/tsconfig.json --noEmit",
+    "test": "npm run check && ttsc -p server/tsconfig.json && ttsc -p web/tsconfig.json && node --test \".build/**/*.test.js\"",
+    "start": "ttsc -p server/tsconfig.json && node .build/server/src/main.js",
+    "demo": "ttsc -p server/tsconfig.json && ttsc -p web/tsconfig.json && node scripts/demo.js",
+    "dev": "ttsc -p server/tsconfig.json && ttsc -p tsconfig.node.json && node scripts/dev.js",
+    "build": "vite build"
+  },
+  "dependencies": {
+    "@exprtlabs/golem": "1.0.0-rc",
+    "@nestjs/common": "11.2.3",
+    "@nestjs/core": "11.2.3",
+    "@nestjs/platform-express": "11.2.3",
+    "@nestjs/swagger": "11.4.7",
+    "ajv": "8.20.0",
+    "ajv-formats": "3.0.1",
+    "mobx": "6.16.1",
+    "mobx-react-lite": "4.1.1",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "reflect-metadata": "0.2.2",
+    "rxjs": "7.8.2",
+    "temporal-polyfill": "^1.0.5"
+  },
+  "devDependencies": {
+    "@exprtlabs/golem-model": "1.0.0-rc",
+    "@exprtlabs/golem-openapi": "1.0.0-rc",
+    "@exprtlabs/golem-ts-openapi": "1.0.0-rc",
+    "@types/node": "22.20.1",
+    "@types/react": "18.3.31",
+    "@types/react-dom": "18.3.7",
+    "@vitejs/plugin-react": "4.3.4",
+    "ttsc": "0.30.x",
+    "typescript": "7.x",
+    "vite": "5.4.21"
+  }
+}
