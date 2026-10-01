@@ -2,13 +2,13 @@
 /** Component schemas projected for request data. */
 
 export type Member = {
-  email: (string);
-  id: (string);
-  name: (string);
+  email: string;
+  id: string;
+  name: string;
 };
 
 export type ProjectAccess = {
   member: Member;
-  permissions: (string);
-  projectName: (string);
+  permissions: string;
+  projectName: string;
 };

@@ -3,16 +3,16 @@
 
 export type Merchant = {
   id: string;
-  name: (string);
+  name: string;
 };
 
 export type MerchantOmitId = {
-  name: (string);
+  name: string;
 };
 
 export type Money = {
-  amount: (string);
-  currency: ("EUR") | ("USD");
+  amount: string;
+  currency: "EUR" | "USD";
 };
 
 export type Payment = {
@@ -20,12 +20,12 @@ export type Payment = {
   id: string;
   merchant: Merchant;
   money: Money;
-  note: (string);
+  note: string;
 };
 
 export type PaymentInput = {
   billing: MerchantOmitId;
   merchant: Merchant;
   money: Money;
-  note: (string);
+  note: string;
 };

@@ -32,14 +32,14 @@
     "src/money.model.generated.ts": {
       "job": "models:.",
       "owner": "@exprtlabs/golem-model",
-      "digest": "3eb02c299ebc51da0ec962168548d3e0b354e5ecbf7220e460248762378b2089",
+      "digest": "05346970ba34e55abd6bae7ba9e84e060a47b6e340f750b293bfc115085cc02f",
       "destination": "src",
       "destinationKind": "directory"
     },
     "src/note.model.generated.ts": {
       "job": "models:.",
       "owner": "@exprtlabs/golem-model",
-      "digest": "9e766fbedba0d18662655a921493738acdcf1940fb7a7857c964fb55f7fba927",
+      "digest": "6ae9eba699ce29478c6aafc356830ea3e4e7e01e128ec675f26e5d476bc94939",
       "destination": "src",
       "destinationKind": "directory"
     },

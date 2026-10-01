@@ -12,7 +12,7 @@ function objectFromJSON<T extends object>(json: unknown, modelName: string): Par
 
 export type MerchantFields = {
   id: string;
-  name: (string);
+  name: string;
 };
 export type MerchantJSON = Types.Merchant;
 export type MerchantInit = ModelInit<MerchantFields>;
@@ -24,12 +24,12 @@ function deserializeMerchantFields(json: unknown): MerchantInit {
 
 export class MerchantModel implements MerchantFields {
   declare id: string;
-  declare name: (string);
+  declare name: string;
   declare readonly [generatedModelWireBrand]: Types.Merchant;
   declare readonly [generatedModelFieldsBrand]: MerchantFields;
   constructor(values: MerchantInit = {}) {
     if (values["id"] !== undefined) this["id"] = (values["id"]) as string;
-    if (values["name"] !== undefined) this["name"] = (values["name"]) as (string);
+    if (values["name"] !== undefined) this["name"] = (values["name"]) as string;
   }
 
 }

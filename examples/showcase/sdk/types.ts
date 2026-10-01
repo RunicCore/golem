@@ -4,25 +4,25 @@ import type * as InputSchemas from './input-schemas.js';
 import type * as OutputSchemas from './output-schemas.js';
 
 export type Member = {
-  email: (string);
-  id: (string);
-  name: (string);
+  email: string;
+  id: string;
+  name: string;
 };
 
 export type ProjectAccess = {
   member: Member;
-  permissions: (string);
-  projectName: (string);
+  permissions: string;
+  projectName: string;
 };
 
 export type UpdateProjectAccessOperationInput = {
   path: {
-    projectId: (string);
+    projectId: string;
   };
   body: InputSchemas.ProjectAccess;
 };
 
-export type UpdateProjectAccessOperationSuccessBody = (OutputSchemas.ProjectAccess);
+export type UpdateProjectAccessOperationSuccessBody = OutputSchemas.ProjectAccess;
 
 export type UpdateProjectAccessOperationErrorBody = unknown;
 

@@ -1553,7 +1553,9 @@ export function emitSource(
       `${exported}type ${name}Init = ${initType};`,
       ...(expressions ? [
         `function decode${name}(value: unknown): ${name}Fields { const data = modelObject(value, ${JSON.stringify(name)}); return (${expressions.decode}) as ${name}Fields; }`,
-        `function init${name}(value: unknown): ${name}Fields { const data = modelObject(value, ${JSON.stringify(name)}); return (${expressions.init}) as ${name}Fields; }`,
+        expressions.init === expressions.decode
+          ? `const init${name} = decode${name};`
+          : `function init${name}(value: unknown): ${name}Fields { const data = modelObject(value, ${JSON.stringify(name)}); return (${expressions.init}) as ${name}Fields; }`,
         `function encode${name}(value: unknown): ${name}JSON { const data = value as Record<string, unknown>; return (${expressions.encode}) as ${name}JSON; }`,
       ] : []),
       '',

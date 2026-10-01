@@ -5,16 +5,16 @@ import type * as OutputSchemas from './output-schemas.js';
 
 export type Merchant = {
   id: string;
-  name: (string);
+  name: string;
 };
 
 export type MerchantOmitId = {
-  name: (string);
+  name: string;
 };
 
 export type Money = {
-  amount: (string);
-  currency: ("EUR") | ("USD");
+  amount: string;
+  currency: "EUR" | "USD";
 };
 
 export type Payment = {
@@ -22,48 +22,54 @@ export type Payment = {
   id: string;
   merchant: Merchant;
   money: Money;
-  note: (string);
+  note: string;
 };
 
 export type PaymentInput = {
   billing: MerchantOmitId;
   merchant: Merchant;
   money: Money;
-  note: (string);
+  note: string;
 };
 
 export type ListPaymentsOperationInput = {
   querystring: {
-  limit?: (number) & (number);
-  status?: ("paid") | ("pending") | ((("paid") | ("pending"))[]);
-};
+    limit?: number;
+    status?: "paid" | "pending" | ("paid" | "pending")[];
+  };
 };
 
-export type ListPaymentsOperationSuccessBody = (OutputSchemas.Payment[]);
+export type ListPaymentsOperationSuccessBody = OutputSchemas.Payment[];
 
 export type ListPaymentsOperationErrorBody = void;
 
-export type ListPaymentsOperationHttpResponse = { matched: 'status'; status: 200; contentType: "application/json"; body: OutputSchemas.Payment[]; headers: { [key: string]: never } } | { matched: 'status'; status: 400; contentType: null; body: void; headers: { [key: string]: never } };
+export type ListPaymentsOperationHttpResponse =
+  | { matched: 'status'; status: 200; contentType: "application/json"; body: OutputSchemas.Payment[]; headers: { [key: string]: never } }
+  | { matched: 'status'; status: 400; contentType: null; body: void; headers: { [key: string]: never } };
 
 export type CreatePaymentOperationInput = {
   body: InputSchemas.PaymentInput;
 };
 
-export type CreatePaymentOperationSuccessBody = (OutputSchemas.Payment);
+export type CreatePaymentOperationSuccessBody = OutputSchemas.Payment;
 
 export type CreatePaymentOperationErrorBody = void;
 
-export type CreatePaymentOperationHttpResponse = { matched: 'status'; status: 201; contentType: "application/json"; body: OutputSchemas.Payment; headers: { [key: string]: never } } | { matched: 'status'; status: 400; contentType: null; body: void; headers: { [key: string]: never } };
+export type CreatePaymentOperationHttpResponse =
+  | { matched: 'status'; status: 201; contentType: "application/json"; body: OutputSchemas.Payment; headers: { [key: string]: never } }
+  | { matched: 'status'; status: 400; contentType: null; body: void; headers: { [key: string]: never } };
 
 export type CreatePaymentAsClassOperationInput = {
   body: InputSchemas.Payment;
 };
 
-export type CreatePaymentAsClassOperationSuccessBody = (OutputSchemas.Payment);
+export type CreatePaymentAsClassOperationSuccessBody = OutputSchemas.Payment;
 
 export type CreatePaymentAsClassOperationErrorBody = void;
 
-export type CreatePaymentAsClassOperationHttpResponse = { matched: 'status'; status: 201; contentType: "application/json"; body: OutputSchemas.Payment; headers: { [key: string]: never } } | { matched: 'status'; status: 400; contentType: null; body: void; headers: { [key: string]: never } };
+export type CreatePaymentAsClassOperationHttpResponse =
+  | { matched: 'status'; status: 201; contentType: "application/json"; body: OutputSchemas.Payment; headers: { [key: string]: never } }
+  | { matched: 'status'; status: 400; contentType: null; body: void; headers: { [key: string]: never } };
 
 export type GetPaymentOperationInput = {
   path: {
@@ -71,11 +77,13 @@ export type GetPaymentOperationInput = {
   };
 };
 
-export type GetPaymentOperationSuccessBody = (OutputSchemas.Payment);
+export type GetPaymentOperationSuccessBody = OutputSchemas.Payment;
 
 export type GetPaymentOperationErrorBody = void;
 
-export type GetPaymentOperationHttpResponse = { matched: 'status'; status: 200; contentType: "application/json"; body: OutputSchemas.Payment; headers: { [key: string]: never } } | { matched: 'status'; status: 404; contentType: null; body: void; headers: { [key: string]: never } };
+export type GetPaymentOperationHttpResponse =
+  | { matched: 'status'; status: 200; contentType: "application/json"; body: OutputSchemas.Payment; headers: { [key: string]: never } }
+  | { matched: 'status'; status: 404; contentType: null; body: void; headers: { [key: string]: never } };
 
 export type DeletePaymentOperationInput = {
   path: {

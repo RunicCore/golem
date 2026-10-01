@@ -32,7 +32,7 @@
     "sdk/input-schemas.ts": {
       "job": "openapi:sdk",
       "owner": "@exprtlabs/golem-openapi",
-      "digest": "5c4f95c07e25646269caa74327aff74b6e3c2cb6858a2af0611472e28337c640",
+      "digest": "1c2bc6da27663926d49842123a8980a31c7b3047f93764db7743b3eeda2d31a0",
       "destination": "sdk",
       "destinationKind": "directory"
     },
@@ -46,21 +46,21 @@
     "sdk/model-manifest.json": {
       "job": "openapi:sdk",
       "owner": "@exprtlabs/golem-openapi",
-      "digest": "a9b3f4ffe7980d681005c2cd9aa10480209969100fe9921d3efa93a91b5e7b19",
+      "digest": "a7a2a2e3d4fdecec021fb3b1a06b8405fbda70ff3817773b51adb384172e25c6",
       "destination": "sdk",
       "destinationKind": "directory"
     },
     "sdk/models/_group-28875f0c.ts": {
       "job": "openapi:sdk",
       "owner": "@exprtlabs/golem-openapi",
-      "digest": "42c525de5bf3b091a5e675df1a24e9ffff2f4e560217d04659f7d58550e6e65e",
+      "digest": "0f80cba3ed33383821aa8de271397ee55222375683dafa0e416548272799abd6",
       "destination": "sdk",
       "destinationKind": "directory"
     },
     "sdk/models/_group-b69ea038.ts": {
       "job": "openapi:sdk",
       "owner": "@exprtlabs/golem-openapi",
-      "digest": "3f432920c32d181abdf3229584445ea254f155360d69b4d6cc84d42d052c6f97",
+      "digest": "0105534c961d39c438667100f0f38d38b6e9c0daa20a3cf49a647a2682e4c1ad",
       "destination": "sdk",
       "destinationKind": "directory"
     },
@@ -88,7 +88,7 @@
     "sdk/output-schemas.ts": {
       "job": "openapi:sdk",
       "owner": "@exprtlabs/golem-openapi",
-      "digest": "ff4302e0499e779fe57d124ba7d119403e2d488d9f26d1493c094b0d6b9711e7",
+      "digest": "2e76b623e0b3483464c0353a81c3ccd5dfb056e29cecb5ec5837530df5103794",
       "destination": "sdk",
       "destinationKind": "directory"
     },
@@ -102,7 +102,7 @@
     "sdk/types.ts": {
       "job": "openapi:sdk",
       "owner": "@exprtlabs/golem-openapi",
-      "digest": "8022ab3616e466b83c62f06a93f0f7c1e3ae440d6d9a5c336d86205bfeca2dde",
+      "digest": "b206c5f881dabefa0e3fd6b8b8a96237a9e9ef100712b828cb73fb19db98708d",
       "destination": "sdk",
       "destinationKind": "directory"
     },

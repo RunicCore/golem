@@ -11,7 +11,7 @@ function objectFromJSON<T extends object>(json: unknown, modelName: string): Par
 }
 
 export type MoneyFields = {
-  amount: (string);
+  amount: string;
   currency: ("EUR") | ("USD");
 };
 export type MoneyJSON = Types.Money;
@@ -23,12 +23,12 @@ function deserializeMoneyFields(json: unknown): MoneyInit {
 }
 
 export class MoneyModel implements MoneyFields {
-  declare amount: (string);
+  declare amount: string;
   declare currency: ("EUR") | ("USD");
   declare readonly [generatedModelWireBrand]: Types.Money;
   declare readonly [generatedModelFieldsBrand]: MoneyFields;
   constructor(values: MoneyInit = {}) {
-    if (values["amount"] !== undefined) this["amount"] = (values["amount"]) as (string);
+    if (values["amount"] !== undefined) this["amount"] = (values["amount"]) as string;
     if (values["currency"] !== undefined) this["currency"] = (values["currency"]) as ("EUR") | ("USD");
   }
 

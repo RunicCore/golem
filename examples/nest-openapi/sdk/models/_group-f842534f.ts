@@ -24,7 +24,7 @@ export type PaymentFields = {
   id: string;
   merchant: MerchantModel;
   money: MoneyModel;
-  note: (string);
+  note: string;
 };
 export type PaymentJSON = Types.Payment;
 export type PaymentInit = ModelInit<PaymentFields>;
@@ -43,7 +43,7 @@ export class PaymentModel implements PaymentFields {
   declare id: string;
   declare merchant: MerchantModel;
   declare money: MoneyModel;
-  declare note: (string);
+  declare note: string;
   declare readonly [generatedModelWireBrand]: Types.Payment;
   declare readonly [generatedModelFieldsBrand]: PaymentFields;
   constructor(values: PaymentInit = {}) {
@@ -51,7 +51,7 @@ export class PaymentModel implements PaymentFields {
     if (values["id"] !== undefined) this["id"] = (values["id"]) as string;
     if (values["merchant"] !== undefined) this["merchant"] = (values["merchant"] == null || values["merchant"] instanceof MerchantModel ? values["merchant"] : new MerchantModel(values["merchant"] as MerchantInit)) as MerchantModel;
     if (values["money"] !== undefined) this["money"] = (values["money"] == null || values["money"] instanceof MoneyModel ? values["money"] : new MoneyModel(values["money"] as MoneyInit)) as MoneyModel;
-    if (values["note"] !== undefined) this["note"] = (values["note"]) as (string);
+    if (values["note"] !== undefined) this["note"] = (values["note"]) as string;
   }
 
 }

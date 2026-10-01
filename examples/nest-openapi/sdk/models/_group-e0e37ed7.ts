@@ -23,7 +23,7 @@ export type PaymentInputFields = {
   billing: MerchantOmitIdModel;
   merchant: MerchantModel;
   money: MoneyModel;
-  note: (string);
+  note: string;
 };
 export type PaymentInputJSON = Types.PaymentInput;
 export type PaymentInputInit = ModelInit<PaymentInputFields>;
@@ -41,14 +41,14 @@ export class PaymentInputModel implements PaymentInputFields {
   declare billing: MerchantOmitIdModel;
   declare merchant: MerchantModel;
   declare money: MoneyModel;
-  declare note: (string);
+  declare note: string;
   declare readonly [generatedModelWireBrand]: Types.PaymentInput;
   declare readonly [generatedModelFieldsBrand]: PaymentInputFields;
   constructor(values: PaymentInputInit = {}) {
     if (values["billing"] !== undefined) this["billing"] = (values["billing"] == null || values["billing"] instanceof MerchantOmitIdModel ? values["billing"] : new MerchantOmitIdModel(values["billing"] as MerchantOmitIdInit)) as MerchantOmitIdModel;
     if (values["merchant"] !== undefined) this["merchant"] = (values["merchant"] == null || values["merchant"] instanceof MerchantModel ? values["merchant"] : new MerchantModel(values["merchant"] as MerchantInit)) as MerchantModel;
     if (values["money"] !== undefined) this["money"] = (values["money"] == null || values["money"] instanceof MoneyModel ? values["money"] : new MoneyModel(values["money"] as MoneyInit)) as MoneyModel;
-    if (values["note"] !== undefined) this["note"] = (values["note"]) as (string);
+    if (values["note"] !== undefined) this["note"] = (values["note"]) as string;
   }
 
 }

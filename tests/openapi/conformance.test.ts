@@ -97,7 +97,16 @@ test('models OpenAPI 3.1 type unions', () => {
   assert.equal(schemaType({ type: ['string', 'null'] }), 'string | null');
   assert.equal(schemaType(true), 'unknown');
   assert.equal(schemaType(false), 'never');
-  assert.equal(schemaType({ type: ['string', 'number'] }), '(string) | (number)');
+  assert.equal(schemaType({ type: ['string', 'number'] }), 'string | number');
+  // Members are parenthesized only where precedence needs it, and repeated members collapse.
+  assert.equal(schemaType({ allOf: [{ type: 'number' }, { type: 'number' }] }), 'number');
+  assert.equal(schemaType({ type: 'number', allOf: [{ type: 'number', minimum: 0 }] }), 'number');
+  assert.equal(schemaType({ allOf: [{ type: ['string', 'number'] }, { type: 'string' }] }), '(string | number) & string');
+  assert.equal(schemaType({ type: 'array', items: { enum: ['a', 'b'] } }), '("a" | "b")[]');
+  assert.equal(
+    schemaType({ type: 'object', properties: { inner: { type: 'object', properties: { x: { type: 'string' } }, required: ['x'] } } }),
+    '{\n  inner?: {\n    x: string;\n  };\n}',
+  );
   assert.equal(schemaType({ type: 'string', not: true }), 'never');
   assert.equal(
     schemaType({

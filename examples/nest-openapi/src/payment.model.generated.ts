@@ -20,21 +20,21 @@ type MerchantOmitIdFields = { name: string };
 type MerchantOmitIdJSON = { name: string };
 type MerchantOmitIdInit = { name: string };
 function decodeMerchantOmitId(value: unknown): MerchantOmitIdFields { const data = modelObject(value, "MerchantOmitId"); return (typeof data === 'object' && data !== null && !Array.isArray(data) ? Object.fromEntries([...(Object.hasOwn(data, "name") ? [["name", data["name"] === undefined ? undefined : (data["name"])]] : [])]) : data) as MerchantOmitIdFields; }
-function initMerchantOmitId(value: unknown): MerchantOmitIdFields { const data = modelObject(value, "MerchantOmitId"); return (typeof data === 'object' && data !== null && !Array.isArray(data) ? Object.fromEntries([...(Object.hasOwn(data, "name") ? [["name", data["name"] === undefined ? undefined : (data["name"])]] : [])]) : data) as MerchantOmitIdFields; }
+const initMerchantOmitId = decodeMerchantOmitId;
 function encodeMerchantOmitId(value: unknown): MerchantOmitIdJSON { const data = value as Record<string, unknown>; return (typeof data === 'object' && data !== null && !Array.isArray(data) ? Object.fromEntries([...(Object.hasOwn(data, "name") ? [["name", data["name"] === undefined ? undefined : (data["name"])]] : [])]) : data) as MerchantOmitIdJSON; }
 
 export type MerchantFields = { id: string; name: string };
 export type MerchantJSON = { id: string; name: string };
 export type MerchantInit = { id: string; name: string };
 function decodeMerchant(value: unknown): MerchantFields { const data = modelObject(value, "Merchant"); return (data) as MerchantFields; }
-function initMerchant(value: unknown): MerchantFields { const data = modelObject(value, "Merchant"); return (data) as MerchantFields; }
+const initMerchant = decodeMerchant;
 function encodeMerchant(value: unknown): MerchantJSON { const data = value as Record<string, unknown>; return (data) as MerchantJSON; }
 
 export type MoneyFields = { amount: string; currency: "EUR" | "USD" };
 export type MoneyJSON = { amount: string; currency: "EUR" | "USD" };
 export type MoneyInit = { amount: string; currency: "EUR" | "USD" };
 function decodeMoney(value: unknown): MoneyFields { const data = modelObject(value, "Money"); return (data) as MoneyFields; }
-function initMoney(value: unknown): MoneyFields { const data = modelObject(value, "Money"); return (data) as MoneyFields; }
+const initMoney = decodeMoney;
 function encodeMoney(value: unknown): MoneyJSON { const data = value as Record<string, unknown>; return (data) as MoneyJSON; }
 
 export type PaymentInputFields = { merchant: MerchantFields; billing: MerchantOmitIdFields; money: MoneyFields; note: string };
@@ -48,7 +48,7 @@ export type PaymentFilterFields = { limit?: number; status?: undefined | "paid" 
 export type PaymentFilterJSON = { limit?: number; status?: undefined | "paid" | "pending" | Array<"paid" | "pending"> };
 export type PaymentFilterInit = { limit?: number; status?: undefined | "paid" | "pending" | Array<"paid" | "pending"> };
 function decodePaymentFilter(value: unknown): PaymentFilterFields { const data = modelObject(value, "PaymentFilter"); return (data) as PaymentFilterFields; }
-function initPaymentFilter(value: unknown): PaymentFilterFields { const data = modelObject(value, "PaymentFilter"); return (data) as PaymentFilterFields; }
+const initPaymentFilter = decodePaymentFilter;
 function encodePaymentFilter(value: unknown): PaymentFilterJSON { const data = value as Record<string, unknown>; return (data) as PaymentFilterJSON; }
 
 export type PaymentFields = { id: string; merchant: MerchantFields; billing: MerchantOmitIdFields; money: MoneyFields; note: string };

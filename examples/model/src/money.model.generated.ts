@@ -20,7 +20,7 @@ export type MoneyFields = { amount: number; currency: "EUR" | "USD" };
 export type MoneyJSON = { amount: number; currency: "EUR" | "USD" };
 export type MoneyInit = { amount: number; currency: "EUR" | "USD" };
 function decodeMoney(value: unknown): MoneyFields { const data = modelObject(value, "Money"); return (data) as MoneyFields; }
-function initMoney(value: unknown): MoneyFields { const data = modelObject(value, "Money"); return (data) as MoneyFields; }
+const initMoney = decodeMoney;
 function encodeMoney(value: unknown): MoneyJSON { const data = value as Record<string, unknown>; return (data) as MoneyJSON; }
 
 export type WalletFields = { balance: MoneyFields };

@@ -15,7 +15,7 @@ export type ListTasksOperationInput = {
   };
 };
 
-export type ListTasksOperationSuccessBody = (OutputSchemas.Task[]);
+export type ListTasksOperationSuccessBody = OutputSchemas.Task[];
 
 export type ListTasksOperationErrorBody = unknown;
 
@@ -25,7 +25,7 @@ export type CreateTaskOperationInput = {
   body: InputSchemas.Task;
 };
 
-export type CreateTaskOperationSuccessBody = (OutputSchemas.Task);
+export type CreateTaskOperationSuccessBody = OutputSchemas.Task;
 
 export type CreateTaskOperationErrorBody = unknown;
 
@@ -37,12 +37,14 @@ export type GetTaskOperationInput = {
   };
 };
 
-export type GetTaskOperationSuccessBody = (OutputSchemas.Task);
+export type GetTaskOperationSuccessBody = OutputSchemas.Task;
 
-export type GetTaskOperationErrorBody = ({
+export type GetTaskOperationErrorBody = {
   message: string;
-});
+};
 
-export type GetTaskOperationHttpResponse = { matched: 'status'; status: 200; contentType: "application/json"; body: OutputSchemas.Task; headers: { [key: string]: never } } | { matched: 'status'; status: 404; contentType: "application/json"; body: {
-  message: string;
-}; headers: { [key: string]: never } };
+export type GetTaskOperationHttpResponse =
+  | { matched: 'status'; status: 200; contentType: "application/json"; body: OutputSchemas.Task; headers: { [key: string]: never } }
+  | { matched: 'status'; status: 404; contentType: "application/json"; body: {
+    message: string;
+  }; headers: { [key: string]: never } };

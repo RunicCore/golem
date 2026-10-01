@@ -20,7 +20,7 @@ export type NoteFields = { text: string };
 export type NoteJSON = { text: string };
 export type NoteInit = { text: string };
 function decodeNote(value: unknown): NoteFields { const data = modelObject(value, "Note"); return (data) as NoteFields; }
-function initNote(value: unknown): NoteFields { const data = modelObject(value, "Note"); return (data) as NoteFields; }
+const initNote = decodeNote;
 function encodeNote(value: unknown): NoteJSON { const data = value as Record<string, unknown>; return (data) as NoteJSON; }
 
 export type NotebookFields = { notes: Array<NoteFields> };

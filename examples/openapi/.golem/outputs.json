@@ -88,7 +88,7 @@
     "sdk/types.ts": {
       "job": "openapi:sdk",
       "owner": "@exprtlabs/golem-openapi",
-      "digest": "6fa0eb060ca8408688d657e6c2c4b2df17cb6b725955023a103dd3fa31ba324f",
+      "digest": "54574e19c1a087540e874e0b39ce6dde5d78f0e2efa267b26afa4db1dcfc695b",
       "destination": "sdk",
       "destinationKind": "directory"
     },

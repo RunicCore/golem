@@ -18,7 +18,7 @@
           "modelReferences": [],
           "name": "name",
           "required": true,
-          "type": "(string)"
+          "type": "string"
         }
       ],
       "generated": {
@@ -55,7 +55,7 @@
           "modelReferences": [],
           "name": "name",
           "required": true,
-          "type": "(string)"
+          "type": "string"
         }
       ],
       "generated": {
@@ -92,7 +92,7 @@
           "modelReferences": [],
           "name": "amount",
           "required": true,
-          "type": "(string)"
+          "type": "string"
         },
         {
           "modelReferences": [],
@@ -165,7 +165,7 @@
           "modelReferences": [],
           "name": "note",
           "required": true,
-          "type": "(string)"
+          "type": "string"
         }
       ],
       "generated": {
@@ -226,7 +226,7 @@
           "modelReferences": [],
           "name": "note",
           "required": true,
-          "type": "(string)"
+          "type": "string"
         }
       ],
       "generated": {

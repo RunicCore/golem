@@ -259,8 +259,53 @@ function blobType(context: SchemaTypeContext): string {
 }
 
 /** `T[]` never names the global `Array`, which a component may shadow. */
+/** Whether `type` contains one of `tokens` outside brackets, braces, parentheses, generics and string literals. */
+function hasTopLevel(type: string, tokens: readonly string[]): boolean {
+  let depth = 0;
+  let quote: string | undefined;
+  for (let index = 0; index < type.length; index += 1) {
+    const char = type[index]!;
+    if (quote) {
+      if (char === '\\') index += 1;
+      else if (char === quote) quote = undefined;
+      continue;
+    }
+    if (char === '"' || char === "'" || char === '`') quote = char;
+    else if ('([{<'.includes(char)) depth += 1;
+    else if (')]}>'.includes(char) && !(char === '>' && type[index - 1] === '=')) depth -= 1;
+    else if (depth === 0 && tokens.some((token) => type.startsWith(token, index))) return true;
+  }
+  return false;
+}
+
+/** A union of distinct member types; a member is parenthesized only where precedence needs it. */
+function unionType(types: readonly string[]): string {
+  const members = [...new Set(types)];
+  if (members.length === 1) return members[0]!;
+  return members.map((type) => hasTopLevel(type, ['=>', '?']) ? `(${type})` : type).join(' | ');
+}
+
+/** An intersection of distinct member types; a member is parenthesized only where precedence needs it. */
+function intersectionType(types: readonly string[]): string {
+  const members = [...new Set(types)];
+  if (members.length === 1) return members[0]!;
+  return members.map((type) => hasTopLevel(type, ['|', '=>', '?']) ? `(${type})` : type).join(' & ');
+}
+
+/** The right-hand side after `=`: one response variant per line when there are several. */
+function responseUnion(variants: readonly string[]): string {
+  if (variants.length === 0) return ' never';
+  if (variants.length === 1) return ` ${variants[0]!}`;
+  return `\n${variants.map((variant) => `  | ${nested(variant, '  ')}`).join('\n')}`;
+}
+
+/** Indent the continuation lines of a multi-line type written after `indent` on a member line. */
+function nested(type: string, indent: string): string {
+  return type.replace(/\n/g, `\n${indent}`);
+}
+
 function arrayType(item: string): string {
-  return /^[\w$.]+$/.test(item) ? `${item}[]` : `(${item})[]`;
+  return hasTopLevel(item, [' ']) ? `(${item})[]` : `${item}[]`;
 }
 
 /** An inline index signature: a component named `Record` cannot shadow it, so no helper alias is needed. */
@@ -503,24 +548,17 @@ function schemaTypeNode(schema: unknown, context: SchemaTypeContext = {}): strin
       : Array.isArray(schema.prefixItems) || schema.items
         ? [primitiveType('array')]
         : [];
-  let result = baseParts.length === 1
-    ? baseParts[0]
-    : baseParts.map((part) => `(${part})`).join(' | ');
+  let result = baseParts.length ? unionType(baseParts) : '';
   if (schema.oneOf || schema.anyOf) {
     const variants = Array.isArray(schema.oneOf) ? schema.oneOf : Array.isArray(schema.anyOf) ? schema.anyOf : [];
-    const union = variants
-      .map((item) => `(${schemaTypeNode(item, inner)})`)
-      .join(' | ');
-    result = result ? `(${result}) & (${union})` : union;
+    const union = unionType(variants.map((item) => schemaTypeNode(item, inner)));
+    result = result ? intersectionType([result, union]) : union;
   }
   if (Array.isArray(schema.allOf)) {
     const parts = schema.allOf
       .map((item) => schemaTypeNode(item, inner))
       .filter((part) => part !== 'unknown');
-    if (parts.length) {
-      const intersection = parts.map((part) => `(${part})`).join(' & ');
-      result = result ? `(${result}) & ${intersection}` : intersection;
-    }
+    if (parts.length) result = intersectionType(result ? [result, ...parts] : parts);
   }
   if (!result) result = 'unknown';
   return nullable && result !== 'unknown' && result !== 'null' ? `${result} | null` : result;
@@ -534,7 +572,7 @@ function objectType(schema: JsonObjectLike, context: SchemaTypeContext): string 
     const description = isJsonObject(value) && value.description
       ? `  /** ${String(value.description).replace(/\*\//g, '*\\/').replace(/\s+/g, ' ')} */\n`
       : '';
-    return `${description}  ${propertyName(name)}${required.has(name) ? '' : '?'}: ${schemaTypeNode(value, context)};`;
+    return `${description}  ${propertyName(name)}${required.has(name) ? '' : '?'}: ${nested(schemaTypeNode(value, context), '  ')};`;
   });
   if (schema.additionalProperties) {
     const additionalType = schema.additionalProperties === true
@@ -544,7 +582,7 @@ function objectType(schema: JsonObjectLike, context: SchemaTypeContext): string 
     const indexTypes = additionalType === 'unknown'
       ? ['unknown']
       : [...new Set([additionalType, ...propertyTypes, ...(optional ? ['undefined'] : [])])];
-    members.push(`  [key: string]: ${indexTypes.join(' | ')};`);
+    members.push(`  [key: string]: ${nested(indexTypes.join(' | '), '  ')};`);
   }
   if (members.length) return `{\n${members.join('\n')}\n}`;
   return schema.additionalProperties === false ? recordType('never') : recordType('unknown');
@@ -567,23 +605,23 @@ function inputType(operation: NormalizedOperation, context: SchemaTypeContext = 
   }
   if (queryString) {
     const schema = parameterSchema(queryString);
-    lines.push(`  querystring${queryString.required ? '' : '?'}: ${schemaType(schema, context)};`);
+    lines.push(`  querystring${queryString.required ? '' : '?'}: ${nested(schemaType(schema, context), '  ')};`);
   }
   for (const [location, parameters] of Object.entries(groups)) {
     if (!parameters.length) continue;
     const requiredGroup = location === 'path' || parameters.some((parameter) => parameter.required);
     const fields = parameters.map((parameter) =>
-      `    ${propertyName(parameter.name)}${parameter.required || location === 'path' ? '' : '?'}: ${schemaType(parameterSchema(parameter), context)};`
+      `    ${propertyName(parameter.name)}${parameter.required || location === 'path' ? '' : '?'}: ${nested(schemaType(parameterSchema(parameter), context), '    ')};`
     );
     lines.push(`  ${location}${requiredGroup ? '' : '?'}: {\n${fields.join('\n')}\n  };`);
   }
   if (operation.requestContent.length === 1) {
-    lines.push(`  body${operation.requestBody?.required ? '' : '?'}: ${schemaType(operation.requestContent[0]?.schema ?? null, context)};`);
+    lines.push(`  body${operation.requestBody?.required ? '' : '?'}: ${nested(schemaType(operation.requestContent[0]?.schema ?? null, context), '  ')};`);
   } else if (operation.requestContent.length > 1) {
     const variants = operation.requestContent.map((media) =>
       `{ contentType: ${JSON.stringify(media.contentType)}; value: ${schemaType(media.schema, context)} }`
     ).join(' | ');
-    lines.push(`  body${operation.requestBody?.required ? '' : '?'}: ${variants};`);
+    lines.push(`  body${operation.requestBody?.required ? '' : '?'}: ${nested(variants, '  ')};`);
   }
   return lines.length ? `{\n${lines.join('\n')}\n}` : recordType('never');
 }
@@ -591,7 +629,7 @@ function inputType(operation: NormalizedOperation, context: SchemaTypeContext = 
 function responseBodyType(response: NormalizedResponse, context: SchemaTypeContext = {}): string {
   if (!response.content || response.content.length === 0) return 'void';
   const types = response.content.map((media) => mediaBodyType(media, context));
-  return [...new Set(types)].map((type) => `(${type})`).join(' | ');
+  return unionType(types);
 }
 
 export function mediaBodyType(media: OpenApiMediaType, context: SchemaTypeContext = {}): string {
@@ -697,7 +735,7 @@ export function generateTypes(
     output.push(`export type ${operation.typeName}OperationSuccessBody = ${operationBodyType(operation, true, outputContext)};`, '');
     output.push(`export type ${operation.typeName}OperationErrorBody = ${operationBodyType(operation, false, outputContext)};`, '');
     output.push(
-      `export type ${operation.typeName}OperationHttpResponse = ${operation.responses.flatMap((response) => responseVariantTypes(document, response, outputContext)).join(' | ') || 'never'};`,
+      `export type ${operation.typeName}OperationHttpResponse =${responseUnion(operation.responses.flatMap((response) => responseVariantTypes(document, response, outputContext)))};`,
       '',
     );
   }

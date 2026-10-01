@@ -11,7 +11,7 @@ function objectFromJSON<T extends object>(json: unknown, modelName: string): Par
 }
 
 export type MerchantOmitIdFields = {
-  name: (string);
+  name: string;
 };
 export type MerchantOmitIdJSON = Types.MerchantOmitId;
 export type MerchantOmitIdInit = ModelInit<MerchantOmitIdFields>;
@@ -22,11 +22,11 @@ function deserializeMerchantOmitIdFields(json: unknown): MerchantOmitIdInit {
 }
 
 export class MerchantOmitIdModel implements MerchantOmitIdFields {
-  declare name: (string);
+  declare name: string;
   declare readonly [generatedModelWireBrand]: Types.MerchantOmitId;
   declare readonly [generatedModelFieldsBrand]: MerchantOmitIdFields;
   constructor(values: MerchantOmitIdInit = {}) {
-    if (values["name"] !== undefined) this["name"] = (values["name"]) as (string);
+    if (values["name"] !== undefined) this["name"] = (values["name"]) as string;
   }
 
 }

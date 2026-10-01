@@ -15,8 +15,8 @@ function objectFromJSON<T extends object>(json: unknown, modelName: string): Par
 
 export type ProjectAccessFields = {
   member: MemberModel;
-  permissions: (string);
-  projectName: (string);
+  permissions: string;
+  projectName: string;
 };
 export type ProjectAccessJSON = Types.ProjectAccess;
 export type ProjectAccessInit = ModelInit<ProjectAccessFields>;
@@ -30,14 +30,14 @@ function deserializeProjectAccessFields(json: unknown): ProjectAccessInit {
 
 export class ProjectAccessModel implements ProjectAccessFields {
   declare member: MemberModel;
-  declare permissions: (string);
-  declare projectName: (string);
+  declare permissions: string;
+  declare projectName: string;
   declare readonly [generatedModelWireBrand]: Types.ProjectAccess;
   declare readonly [generatedModelFieldsBrand]: ProjectAccessFields;
   constructor(values: ProjectAccessInit = {}) {
     if (values["member"] !== undefined) this["member"] = (values["member"] == null || values["member"] instanceof MemberModel ? values["member"] : new MemberModel(values["member"] as MemberInit)) as MemberModel;
-    if (values["permissions"] !== undefined) this["permissions"] = (values["permissions"]) as (string);
-    if (values["projectName"] !== undefined) this["projectName"] = (values["projectName"]) as (string);
+    if (values["permissions"] !== undefined) this["permissions"] = (values["permissions"]) as string;
+    if (values["projectName"] !== undefined) this["projectName"] = (values["projectName"]) as string;
   }
 
 }

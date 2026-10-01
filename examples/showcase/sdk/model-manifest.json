@@ -12,19 +12,19 @@
           "modelReferences": [],
           "name": "email",
           "required": true,
-          "type": "(string)"
+          "type": "string"
         },
         {
           "modelReferences": [],
           "name": "id",
           "required": true,
-          "type": "(string)"
+          "type": "string"
         },
         {
           "modelReferences": [],
           "name": "name",
           "required": true,
-          "type": "(string)"
+          "type": "string"
         }
       ],
       "generated": {
@@ -69,13 +69,13 @@
           "modelReferences": [],
           "name": "permissions",
           "required": true,
-          "type": "(string)"
+          "type": "string"
         },
         {
           "modelReferences": [],
           "name": "projectName",
           "required": true,
-          "type": "(string)"
+          "type": "string"
         }
       ],
       "generated": {

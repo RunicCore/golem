@@ -11,9 +11,9 @@ function objectFromJSON<T extends object>(json: unknown, modelName: string): Par
 }
 
 export type MemberFields = {
-  email: (string);
-  id: (string);
-  name: (string);
+  email: string;
+  id: string;
+  name: string;
 };
 export type MemberJSON = Types.Member;
 export type MemberInit = ModelInit<MemberFields>;
@@ -24,15 +24,15 @@ function deserializeMemberFields(json: unknown): MemberInit {
 }
 
 export class MemberModel implements MemberFields {
-  declare email: (string);
-  declare id: (string);
-  declare name: (string);
+  declare email: string;
+  declare id: string;
+  declare name: string;
   declare readonly [generatedModelWireBrand]: Types.Member;
   declare readonly [generatedModelFieldsBrand]: MemberFields;
   constructor(values: MemberInit = {}) {
-    if (values["email"] !== undefined) this["email"] = (values["email"]) as (string);
-    if (values["id"] !== undefined) this["id"] = (values["id"]) as (string);
-    if (values["name"] !== undefined) this["name"] = (values["name"]) as (string);
+    if (values["email"] !== undefined) this["email"] = (values["email"]) as string;
+    if (values["id"] !== undefined) this["id"] = (values["id"]) as string;
+    if (values["name"] !== undefined) this["name"] = (values["name"]) as string;
   }
 
 }

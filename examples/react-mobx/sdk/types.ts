@@ -12,7 +12,7 @@ export type CreatePaymentOperationInput = {
   body: InputSchemas.Money;
 };
 
-export type CreatePaymentOperationSuccessBody = (OutputSchemas.Money);
+export type CreatePaymentOperationSuccessBody = OutputSchemas.Money;
 
 export type CreatePaymentOperationErrorBody = unknown;
 
