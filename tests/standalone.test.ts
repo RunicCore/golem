@@ -6,7 +6,7 @@ import { pathToFileURL } from 'node:url';
 import test from 'node:test';
 
 import { createOpenApiAjvEngine } from '@exprtlabs/golem/ajv';
-import { compileStandaloneValidators } from '@exprtlabs/golem/ajv-tooling';
+import { compileStandaloneValidatorSet } from '@exprtlabs/golem/ajv-tooling';
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 import { writeSdk } from '#openapi/generator';
 import {
@@ -297,7 +297,7 @@ test('custom synchronous validation bindings have identical JIT and standalone b
     calls++;
     return typeof value === 'number' && value % 2 === 0 ? true : 'must be even';
   };
-  const compiled = compileStandaloneValidators({ schemas: { [id]: schema }, references: [id], owner: 'standalone.test' });
+  const compiled = compileStandaloneValidatorSet({ schemas: { [id]: schema }, references: [id], owner: 'standalone.test' });
   assert.equal(calls, 0);
   assert.doesNotMatch(compiled.code, /(?:from|require\s*\()\s*['"](?:ajv|ajv-formats|fast-deep-equal)/);
   const standaloneModule = await import(`data:text/javascript;charset=utf-8,${encodeURIComponent(compiled.code)}`);

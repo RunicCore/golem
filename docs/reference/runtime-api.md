@@ -109,7 +109,7 @@ function registerModelValidationEngineFactory(factory: () => ModelRuntimeValidat
 
 `configureModelValidationEngine` adds the registry schema to `engine` if missing and uses that engine for models of that registry. `registerModelValidationEngineFactory` sets the engine created for a registry on its first validation; importing [`ajv`](#ajv) registers one. Register a factory during startup: a registry keeps the engine it already created.
 
-Used by generated code: `createStaticValidationEngine`, `runValidation`, `issuesFromErrors`, `getModelRuntimeValidator`, and in operation modules `operationValidators` (resolves an operation's input and response validators once per client), `validateOperationInput` and `responseCheck` (the response check `ClientRuntime.readResponse` runs on each decoded body or stream item).
+Used by generated code: `runValidation`, `issuesFromErrors`, `getModelRuntimeValidator`, and in operation modules `operationValidators` (resolves an operation's input and response validators once per client), `validateOperationInput` and `responseCheck` (the response check `ClientRuntime.readResponse` runs on each decoded body or stream item).
 
 ### Runtime validators {#runtime-validators}
 

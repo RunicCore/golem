@@ -15,7 +15,6 @@ import type {
   RegisteredGeneratedModelDefinition,
 } from './model.js';
 export { runValidation } from './validation-runner.js';
-export { createStaticValidationEngine } from './static-validation.js';
 export * from './schema-registry-validation.js';
 export { operationValidators, responseCheck, validateOperationInput } from './client-runtime/validation.js';
 
