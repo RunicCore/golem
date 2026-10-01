@@ -10,14 +10,16 @@ export type TMoney = IObject<{
   amount: string & Pattern<'^[0-9]+(?:\\.[0-9]{1,2})?$'>;
   currency: string & Pattern<'^[A-Z]{3}$'>;
 }>;
+export type TCharge = IObject<{ id: string; status: 'pending' | 'captured'; settlesOn: string }>;
 export type TPayment = IModel<{
   id: string;
   merchant: TMerchant;
   billing: Omit<TMerchant, 'id'>;
   money: TMoney;
   note: string & MaxLength<140>;
+  charge?: TCharge; // The provider's charge for this payment.
 }, { exact: true }>;
-export type TPaymentInput = IObject<Omit<TPayment, 'id'>, { exact: true }>;
+export type TPaymentInput = IObject<Omit<TPayment, 'id' | 'charge'>, { exact: true }>;
 // #endregion payment-types
 // #region payment-filter
 // Query object: NestModelInterceptor decodes limit to a number before validation;

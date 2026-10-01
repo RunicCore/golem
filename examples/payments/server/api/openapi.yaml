@@ -6,6 +6,9 @@ components:
       properties:
         billing:
           $ref: "#/components/schemas/TMerchantOmitId"
+        charge:
+          anyOf:
+            - $ref: "#/components/schemas/TCharge"
         id:
           type: string
         merchant:
@@ -32,6 +35,22 @@ components:
             - minLength: 2
       required:
         - note
+      type: object
+    TCharge:
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        settlesOn:
+          type: string
+        status:
+          anyOf:
+            - const: captured
+            - const: pending
+      required:
+        - id
+        - settlesOn
+        - status
       type: object
     TMerchant:
       additionalProperties: false

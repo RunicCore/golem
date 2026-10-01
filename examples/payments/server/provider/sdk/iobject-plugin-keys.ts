@@ -4,6 +4,6 @@ export const IOBJECT_PLUGIN_KEYS = {
   "models/_group-65c6812f.ts#ProblemModel": "Problem_62094fb7",
   "models/_group-a615bcf1.ts#Money": "Money_3a1d334f",
   "models/_group-a615bcf1.ts#MoneyModel": "Money_3a1d334f",
-  "models/_group-f35ddea9.ts#Charge": "Charge_0e1232ee",
-  "models/_group-f35ddea9.ts#ChargeModel": "Charge_0e1232ee",
+  "models/_group-dd3afb2e.ts#Charge": "Charge_33b8be7b",
+  "models/_group-dd3afb2e.ts#ChargeModel": "Charge_33b8be7b",
 } as const;

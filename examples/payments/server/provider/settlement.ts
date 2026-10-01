@@ -15,6 +15,7 @@ export async function readSettlementDate(client: ProviderClient, id: string): Pr
 export function describeCharge() {
   const charge = fromWireFormat<ChargeModel>({
     id: 'charge-1',
+    status: 'pending',
     money: { amount: '25.00', currency: 'USD' },
     createdAt: '2025-01-02T03:04:05Z',
     settlesOn: '2025-02-01',

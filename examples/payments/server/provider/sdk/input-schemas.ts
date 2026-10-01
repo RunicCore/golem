@@ -12,6 +12,7 @@ export type Problem = {
 
 export type Charge = {
   id: string;
+  status: "pending" | "captured";
   money: Money;
   createdAt: string;
   settlesOn: string;

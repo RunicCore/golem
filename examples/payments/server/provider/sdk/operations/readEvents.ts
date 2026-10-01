@@ -15,10 +15,10 @@ const securitySchemes: RuntimeSecuritySchemes = __golemSecuritySchemes;
 const responseContracts: readonly RuntimeResponseContract[] = [{"status":"200","content":[{"contentType":"application/x-ndjson","framing":"ndjson"}],"headers":[]}];
 let __operationValidationSources: OperationValidationSources | undefined;
 const __resolveOperationValidationSources = (): OperationValidationSources => __operationValidationSources ??= {
-  inputReference: "urn:golem:openapi:provider:84c5fa76f8fdfe81527c66a9398eabf9445a3fce4269c447c014f321e26f8a76:schemas:operation:readEvents#/operations/readEvents/input",
-  responseReferences: [{"status":"200","contentType":"application/x-ndjson","reference":"urn:golem:openapi:provider:84c5fa76f8fdfe81527c66a9398eabf9445a3fce4269c447c014f321e26f8a76:schemas:operation:readEvents#/operations/readEvents/responses/200/application~1x-ndjson"}],
+  inputReference: "urn:golem:openapi:provider:59a4e96e04b2966a3d6827033bb3b17a231b30d0b99218385761221b6b244cda:schemas:operation:readEvents#/operations/readEvents/input",
+  responseReferences: [{"status":"200","contentType":"application/x-ndjson","reference":"urn:golem:openapi:provider:59a4e96e04b2966a3d6827033bb3b17a231b30d0b99218385761221b6b244cda:schemas:operation:readEvents#/operations/readEvents/responses/200/application~1x-ndjson"}],
   schemas: new Map([
-    ["urn:golem:openapi:provider:84c5fa76f8fdfe81527c66a9398eabf9445a3fce4269c447c014f321e26f8a76:schemas:operation:readEvents", JSON.parse("{\"$id\":\"urn:golem:openapi:provider:84c5fa76f8fdfe81527c66a9398eabf9445a3fce4269c447c014f321e26f8a76:schemas:operation:readEvents\",\"$schema\":\"https://spec.openapis.org/oas/3.1/dialect/base\",\"operations\":{\"readEvents\":{\"input\":{\"type\":\"object\",\"additionalProperties\":false},\"responses\":{\"200\":{\"application/x-ndjson\":{\"type\":\"object\",\"required\":[\"id\"],\"properties\":{\"id\":{\"type\":\"integer\"}}}}}}}}") as object | boolean],
+    ["urn:golem:openapi:provider:59a4e96e04b2966a3d6827033bb3b17a231b30d0b99218385761221b6b244cda:schemas:operation:readEvents", JSON.parse("{\"$id\":\"urn:golem:openapi:provider:59a4e96e04b2966a3d6827033bb3b17a231b30d0b99218385761221b6b244cda:schemas:operation:readEvents\",\"$schema\":\"https://spec.openapis.org/oas/3.1/dialect/base\",\"operations\":{\"readEvents\":{\"input\":{\"type\":\"object\",\"additionalProperties\":false},\"responses\":{\"200\":{\"application/x-ndjson\":{\"type\":\"object\",\"required\":[\"id\"],\"properties\":{\"id\":{\"type\":\"integer\"}}}}}}}}") as object | boolean],
   ]),
 };
 

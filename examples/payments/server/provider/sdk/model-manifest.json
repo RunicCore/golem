@@ -25,7 +25,7 @@
         "export": "MoneyModel",
         "module": "./models/Money.ts"
       },
-      "id": "openapi:84c5fa76f8fdfe81#/components/schemas/Money",
+      "id": "openapi:59a4e96e04b2966a#/components/schemas/Money",
       "inheritance": null,
       "sourceKind": "openapi",
       "type": {
@@ -55,7 +55,7 @@
         "export": "ProblemModel",
         "module": "./models/Problem.ts"
       },
-      "id": "openapi:84c5fa76f8fdfe81#/components/schemas/Problem",
+      "id": "openapi:59a4e96e04b2966a#/components/schemas/Problem",
       "inheritance": null,
       "sourceKind": "openapi",
       "type": {
@@ -79,6 +79,12 @@
           "name": "id",
           "required": true,
           "type": "string"
+        },
+        {
+          "modelReferences": [],
+          "name": "status",
+          "required": true,
+          "type": "\"pending\" | \"captured\""
         },
         {
           "modelReferences": [
@@ -105,7 +111,7 @@
         "export": "ChargeModel",
         "module": "./models/Charge.ts"
       },
-      "id": "openapi:84c5fa76f8fdfe81#/components/schemas/Charge",
+      "id": "openapi:59a4e96e04b2966a#/components/schemas/Charge",
       "inheritance": null,
       "sourceKind": "openapi",
       "type": {
@@ -133,17 +139,17 @@
   },
   "source": {
     "dialect": "3.2.0",
-    "digest": "84c5fa76f8fdfe81527c66a9398eabf9445a3fce4269c447c014f321e26f8a76",
+    "digest": "59a4e96e04b2966a3d6827033bb3b17a231b30d0b99218385761221b6b244cda",
     "kind": "openapi"
   },
   "validationSchemaClosure": [
     {
       "aliases": [
         "Charge",
-        "Charge_0e1232ee",
-        "openapi:84c5fa76f8fdfe81#/components/schemas/Charge"
+        "Charge_33b8be7b",
+        "openapi:59a4e96e04b2966a#/components/schemas/Charge"
       ],
-      "codecId": "Charge_0e1232ee",
+      "codecId": "Charge_33b8be7b",
       "modelOnlySchema": {
         "properties": {
           "createdAt": {},
@@ -165,13 +171,17 @@
           "money": {
             "$ref": "#/$defs/Money_3a1d334f"
           },
-          "settlesOn": {}
+          "settlesOn": {},
+          "status": {
+            "type": "string"
+          }
         },
         "required": [
           "createdAt",
           "id",
           "money",
-          "settlesOn"
+          "settlesOn",
+          "status"
         ],
         "type": "object"
       },
@@ -204,13 +214,17 @@
           },
           "settlesOn": {
             "type": "string"
+          },
+          "status": {
+            "type": "string"
           }
         },
         "required": [
           "createdAt",
           "id",
           "money",
-          "settlesOn"
+          "settlesOn",
+          "status"
         ],
         "type": "object"
       }
@@ -219,7 +233,7 @@
       "aliases": [
         "Money",
         "Money_3a1d334f",
-        "openapi:84c5fa76f8fdfe81#/components/schemas/Money"
+        "openapi:59a4e96e04b2966a#/components/schemas/Money"
       ],
       "codecId": "Money_3a1d334f",
       "modelSchema": {
@@ -257,7 +271,7 @@
       "aliases": [
         "Problem",
         "Problem_62094fb7",
-        "openapi:84c5fa76f8fdfe81#/components/schemas/Problem"
+        "openapi:59a4e96e04b2966a#/components/schemas/Problem"
       ],
       "codecId": "Problem_62094fb7",
       "modelSchema": {

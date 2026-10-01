@@ -9,7 +9,7 @@ import { PaymentCaptured } from '../src/events/payment-events.model.js';
 
 type Handler = (request: Request) => Response | Promise<Response>;
 const base = 'https://provider.test';
-const charge = { id: 'charge-1', money: { amount: '25.00', currency: 'USD' }, createdAt: '2025-01-02T03:04:05Z', settlesOn: '2025-02-01' };
+const charge = { id: 'charge-1', status: 'pending', money: { amount: '25.00', currency: 'USD' }, createdAt: '2025-01-02T03:04:05Z', settlesOn: '2025-02-01' };
 
 async function withFetch<T>(handler: Handler, run: () => Promise<T>): Promise<T> {
   const original = globalThis.fetch;

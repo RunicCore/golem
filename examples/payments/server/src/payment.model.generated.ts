@@ -29,6 +29,13 @@ function decodeTMoney(value: unknown): TMoneyFields { const data = modelObject(v
 const initTMoney = decodeTMoney;
 function encodeTMoney(value: unknown): TMoneyJSON { const data = value as Record<string, unknown>; return (data) as TMoneyJSON; }
 
+export type TChargeFields = { id: string; status: "captured" | "pending"; settlesOn: string };
+export type TChargeJSON = { id: string; status: "captured" | "pending"; settlesOn: string };
+export type TChargeInit = { id: string; status: "captured" | "pending"; settlesOn: string };
+function decodeTCharge(value: unknown): TChargeFields { const data = modelObject(value, "TCharge"); return (data) as TChargeFields; }
+const initTCharge = decodeTCharge;
+function encodeTCharge(value: unknown): TChargeJSON { const data = value as Record<string, unknown>; return (data) as TChargeJSON; }
+
 export type TPaymentInputFields = { merchant: TMerchantFields; billing: TMerchantOmitIdFields; money: TMoneyFields; note: string };
 export type TPaymentInputJSON = { merchant: TMerchantJSON; billing: TMerchantOmitIdJSON; money: TMoneyJSON; note: string };
 export type TPaymentInputInit = { merchant: TMerchantInit; billing: TMerchantOmitIdInit; money: TMoneyInit; note: string };
@@ -37,9 +44,9 @@ export type TPaymentFilterFields = { limit?: number; status?: undefined | "paid"
 export type TPaymentFilterJSON = { limit?: number; status?: undefined | "paid" | "pending" | Array<"paid" | "pending"> };
 export type TPaymentFilterInit = { limit?: number; status?: undefined | "paid" | "pending" | Array<"paid" | "pending"> };
 
-export type TPaymentFields = { id: string; merchant: TMerchantFields; billing: TMerchantOmitIdFields; money: TMoneyFields; note: string };
-export type TPaymentJSON = { id: string; merchant: TMerchantJSON; billing: TMerchantOmitIdJSON; money: TMoneyJSON; note: string };
-export type TPaymentInit = Partial<{ id: string; merchant: TMerchantInit; billing: TMerchantOmitIdInit; money: TMoneyInit; note: string }>;
+export type TPaymentFields = { id: string; merchant: TMerchantFields; billing: TMerchantOmitIdFields; money: TMoneyFields; note: string; charge?: undefined | TChargeFields };
+export type TPaymentJSON = { id: string; merchant: TMerchantJSON; billing: TMerchantOmitIdJSON; money: TMoneyJSON; note: string; charge?: undefined | TChargeJSON };
+export type TPaymentInit = Partial<{ id: string; merchant: TMerchantInit; billing: TMerchantOmitIdInit; money: TMoneyInit; note: string; charge?: undefined | TChargeInit }>;
 
 export abstract class TPaymentBaseModel implements GeneratedModel<TPaymentJSON, TPaymentFields> {
   declare readonly [generatedModelWireBrand]: TPaymentJSON;
@@ -49,6 +56,7 @@ export abstract class TPaymentBaseModel implements GeneratedModel<TPaymentJSON, 
   declare billing: TPaymentFields["billing"];
   declare money: TPaymentFields["money"];
   declare note: TPaymentFields["note"];
+  declare charge?: TPaymentFields["charge"];
 
   public constructor(values: TPaymentInit = {}) {
     if (Object.prototype.hasOwnProperty.call(values, "id")) defineModelProperty(this, "id", values["id"]);
@@ -56,6 +64,7 @@ export abstract class TPaymentBaseModel implements GeneratedModel<TPaymentJSON, 
     if (Object.prototype.hasOwnProperty.call(values, "billing")) defineModelProperty(this, "billing", initTMerchantOmitId(values["billing"]));
     if (Object.prototype.hasOwnProperty.call(values, "money")) defineModelProperty(this, "money", initTMoney(values["money"]));
     if (Object.prototype.hasOwnProperty.call(values, "note")) defineModelProperty(this, "note", values["note"]);
+    if (Object.prototype.hasOwnProperty.call(values, "charge")) defineModelProperty(this, "charge", values["charge"] == null ? values["charge"] : (initTCharge(values["charge"])));
   }
 
 }
@@ -66,6 +75,7 @@ function decodeTPaymentModel(constructor: GeneratedModelConstructor, json: unkno
   if (Object.prototype.hasOwnProperty.call(values, "merchant")) defineModelProperty(result, "merchant", convertModelField("deserialize", "merchant", () => (decodeTMerchant(values["merchant"]))));
   if (Object.prototype.hasOwnProperty.call(values, "billing")) defineModelProperty(result, "billing", convertModelField("deserialize", "billing", () => (decodeTMerchantOmitId(values["billing"]))));
   if (Object.prototype.hasOwnProperty.call(values, "money")) defineModelProperty(result, "money", convertModelField("deserialize", "money", () => (decodeTMoney(values["money"]))));
+  if (Object.prototype.hasOwnProperty.call(values, "charge")) defineModelProperty(result, "charge", convertModelField("deserialize", "charge", () => (values["charge"] == null ? values["charge"] : (decodeTCharge(values["charge"])))));
   return Reflect.construct(constructor, [result]) as TPaymentBaseModel;
 }
 
@@ -76,20 +86,21 @@ function encodeTPaymentModel(model: TPaymentBaseModel): TPaymentJSON {
   if (Object.prototype.hasOwnProperty.call(model, "billing")) defineModelProperty(result, "billing", (convertModelField("serialize", "billing", () => (encodeTMerchantOmitId(model["billing"])))));
   if (Object.prototype.hasOwnProperty.call(model, "money")) defineModelProperty(result, "money", (convertModelField("serialize", "money", () => (encodeTMoney(model["money"])))));
   if (Object.prototype.hasOwnProperty.call(model, "note")) defineModelProperty(result, "note", (model["note"]));
+  if (Object.prototype.hasOwnProperty.call(model, "charge") && model["charge"] !== undefined) defineModelProperty(result, "charge", (convertModelField("serialize", "charge", () => (model["charge"] == null ? model["charge"] : (encodeTCharge(model["charge"]))))));
   return result as TPaymentJSON;
 }
 
 registerGeneratedModel(TPaymentBaseModel, {
-  fields: ["id", "merchant", "billing", "money", "note"],
+  fields: ["id", "merchant", "billing", "money", "note", "charge"],
   conversion: {
     decode: (value, constructor) => decodeTPaymentModel(constructor ?? TPaymentBaseModel, value),
     encode: encodeTPaymentModel,
   },
-  codecId: "TPayment_3709dee6",
+  codecId: "TPayment_49a56904",
   profile: { validation: true, mobx: false },
 });
 
-registerIModelClass("TPayment_3709dee6", TPaymentBaseModel);
+registerIModelClass("TPayment_49a56904", TPaymentBaseModel);
 
 const objectAjvFast = createOpenApiSyncAjvEngine({ allErrors: false, validationBindings: {} });
 const objectAjvAll = createOpenApiSyncAjvEngine({ allErrors: true, validationBindings: {} });
@@ -100,12 +111,15 @@ objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_TMerchant) as objec
 const __resolvedModelSchema_TMoney = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"TMoney_f5bd7d30\",\"type\":\"object\",\"properties\":{\"amount\":{\"allOf\":[{\"type\":\"string\"},{\"pattern\":\"^[0-9]+(?:\\\\.[0-9]{1,2})?$\"}]},\"currency\":{\"allOf\":[{\"type\":\"string\"},{\"pattern\":\"^[A-Z]{3}$\"}]}},\"required\":[\"amount\",\"currency\"],\"additionalProperties\":false}") as object) as object;
 objectAjvFast.addSchema(structuredClone(__resolvedModelSchema_TMoney) as object, "TMoney_f5bd7d30");
 objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_TMoney) as object, "TMoney_f5bd7d30");
+const __resolvedModelSchema_TCharge = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"TCharge_e13352dc\",\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\"},\"settlesOn\":{\"type\":\"string\"},\"status\":{\"anyOf\":[{\"const\":\"captured\"},{\"const\":\"pending\"}]}},\"required\":[\"id\",\"settlesOn\",\"status\"],\"additionalProperties\":false}") as object) as object;
+objectAjvFast.addSchema(structuredClone(__resolvedModelSchema_TCharge) as object, "TCharge_e13352dc");
+objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_TCharge) as object, "TCharge_e13352dc");
 const __resolvedModelSchema_TMerchantOmitId = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"TMerchantOmitId_aeec4ba8\",\"type\":\"object\",\"properties\":{\"name\":{\"allOf\":[{\"type\":\"string\"},{\"minLength\":2}]}},\"required\":[\"name\"],\"additionalProperties\":false}") as object) as object;
 objectAjvFast.addSchema(structuredClone(__resolvedModelSchema_TMerchantOmitId) as object, "TMerchantOmitId_aeec4ba8");
 objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_TMerchantOmitId) as object, "TMerchantOmitId_aeec4ba8");
-const __resolvedModelSchema_TPayment = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"TPayment_3709dee6\",\"type\":\"object\",\"properties\":{\"billing\":{\"$ref\":\"#/$defs/TMerchantOmitId_aeec4ba8\"},\"id\":{\"type\":\"string\"},\"merchant\":{\"$ref\":\"#/$defs/TMerchant_1d5f9479\"},\"money\":{\"$ref\":\"#/$defs/TMoney_f5bd7d30\"},\"note\":{\"allOf\":[{\"type\":\"string\"},{\"maxLength\":140}]}},\"required\":[\"billing\",\"id\",\"merchant\",\"money\",\"note\"],\"additionalProperties\":false,\"$defs\":{\"TMerchantOmitId_aeec4ba8\":{\"type\":\"object\",\"properties\":{\"name\":{\"allOf\":[{\"type\":\"string\"},{\"minLength\":2}]}},\"required\":[\"name\"],\"additionalProperties\":false},\"TMerchant_1d5f9479\":{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\"},\"name\":{\"allOf\":[{\"type\":\"string\"},{\"minLength\":2}]}},\"required\":[\"id\",\"name\"],\"additionalProperties\":false},\"TMoney_f5bd7d30\":{\"type\":\"object\",\"properties\":{\"amount\":{\"allOf\":[{\"type\":\"string\"},{\"pattern\":\"^[0-9]+(?:\\\\.[0-9]{1,2})?$\"}]},\"currency\":{\"allOf\":[{\"type\":\"string\"},{\"pattern\":\"^[A-Z]{3}$\"}]}},\"required\":[\"amount\",\"currency\"],\"additionalProperties\":false}}}") as object) as object;
-objectAjvFast.addSchema(structuredClone(__resolvedModelSchema_TPayment) as object, "TPayment_3709dee6");
-objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_TPayment) as object, "TPayment_3709dee6");
+const __resolvedModelSchema_TPayment = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"TPayment_49a56904\",\"type\":\"object\",\"properties\":{\"billing\":{\"$ref\":\"#/$defs/TMerchantOmitId_aeec4ba8\"},\"charge\":{\"anyOf\":[{\"$ref\":\"#/$defs/TCharge_e13352dc\"}]},\"id\":{\"type\":\"string\"},\"merchant\":{\"$ref\":\"#/$defs/TMerchant_1d5f9479\"},\"money\":{\"$ref\":\"#/$defs/TMoney_f5bd7d30\"},\"note\":{\"allOf\":[{\"type\":\"string\"},{\"maxLength\":140}]}},\"required\":[\"billing\",\"id\",\"merchant\",\"money\",\"note\"],\"additionalProperties\":false,\"$defs\":{\"TMerchantOmitId_aeec4ba8\":{\"type\":\"object\",\"properties\":{\"name\":{\"allOf\":[{\"type\":\"string\"},{\"minLength\":2}]}},\"required\":[\"name\"],\"additionalProperties\":false},\"TCharge_e13352dc\":{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\"},\"settlesOn\":{\"type\":\"string\"},\"status\":{\"anyOf\":[{\"const\":\"captured\"},{\"const\":\"pending\"}]}},\"required\":[\"id\",\"settlesOn\",\"status\"],\"additionalProperties\":false},\"TMerchant_1d5f9479\":{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\"},\"name\":{\"allOf\":[{\"type\":\"string\"},{\"minLength\":2}]}},\"required\":[\"id\",\"name\"],\"additionalProperties\":false},\"TMoney_f5bd7d30\":{\"type\":\"object\",\"properties\":{\"amount\":{\"allOf\":[{\"type\":\"string\"},{\"pattern\":\"^[0-9]+(?:\\\\.[0-9]{1,2})?$\"}]},\"currency\":{\"allOf\":[{\"type\":\"string\"},{\"pattern\":\"^[A-Z]{3}$\"}]}},\"required\":[\"amount\",\"currency\"],\"additionalProperties\":false}}}") as object) as object;
+objectAjvFast.addSchema(structuredClone(__resolvedModelSchema_TPayment) as object, "TPayment_49a56904");
+objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_TPayment) as object, "TPayment_49a56904");
 const __resolvedModelSchema_TPaymentInput = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"TPaymentInput_8e39d58f\",\"type\":\"object\",\"properties\":{\"billing\":{\"$ref\":\"#/$defs/TMerchantOmitId_aeec4ba8\"},\"merchant\":{\"$ref\":\"#/$defs/TMerchant_1d5f9479\"},\"money\":{\"$ref\":\"#/$defs/TMoney_f5bd7d30\"},\"note\":{\"allOf\":[{\"type\":\"string\"},{\"maxLength\":140}]}},\"required\":[\"billing\",\"merchant\",\"money\",\"note\"],\"additionalProperties\":false,\"$defs\":{\"TMerchantOmitId_aeec4ba8\":{\"type\":\"object\",\"properties\":{\"name\":{\"allOf\":[{\"type\":\"string\"},{\"minLength\":2}]}},\"required\":[\"name\"],\"additionalProperties\":false},\"TMerchant_1d5f9479\":{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\"},\"name\":{\"allOf\":[{\"type\":\"string\"},{\"minLength\":2}]}},\"required\":[\"id\",\"name\"],\"additionalProperties\":false},\"TMoney_f5bd7d30\":{\"type\":\"object\",\"properties\":{\"amount\":{\"allOf\":[{\"type\":\"string\"},{\"pattern\":\"^[0-9]+(?:\\\\.[0-9]{1,2})?$\"}]},\"currency\":{\"allOf\":[{\"type\":\"string\"},{\"pattern\":\"^[A-Z]{3}$\"}]}},\"required\":[\"amount\",\"currency\"],\"additionalProperties\":false}}}") as object) as object;
 objectAjvFast.addSchema(structuredClone(__resolvedModelSchema_TPaymentInput) as object, "TPaymentInput_8e39d58f");
 objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_TPaymentInput) as object, "TPaymentInput_8e39d58f");
@@ -303,6 +317,102 @@ createObjectCodec("TMoney_f5bd7d30", {
   issueSource: IssueSource.TypeScript,
 });
 
+const validateTChargeFast = requireAjvSchema(objectAjvFast.getSchema("TCharge_e13352dc"), "TCharge_e13352dc");
+const validateTChargeAll = requireAjvSchema(objectAjvAll.getSchema("TCharge_e13352dc"), "TCharge_e13352dc");
+
+function fillTCharge(out: Record<string, unknown>, wire: Record<string, unknown>, copyIdentity = true): Record<string, unknown> {
+  if (copyIdentity) {
+    out["id"] = wire["id"];
+    out["status"] = wire["status"];
+    out["settlesOn"] = wire["settlesOn"];
+  }
+  return out;
+}
+
+function stringifyTChargeCore(value: Record<string, unknown>): string {
+  return '{' + "\"id\":" + stringifyJsonString(value["id"] as string) + ",\"status\":" + stringifyJsonScalar(value["status"] as never) + ",\"settlesOn\":" + stringifyJsonString(value["settlesOn"] as string) + '}';
+}
+
+export function stringifyTCharge(value: TChargeFields, options?: __GolemSerdeOptions): string {
+  const validates = serdeValidates(options, true);
+  if (validates) {
+    assertTCharge(value, options);
+  }
+  return stringifyTChargeCore(value as never);
+}
+
+function convertFromWireTCharge(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
+  const validates = serdeValidates(options, true);
+  if (validates) {
+    assertTCharge(wire, options);
+  }
+  const source = isolated || wire === null || typeof wire !== 'object' ? wire : cloneConversionInput(wire);
+  let result: unknown = source;
+  if (source !== null && typeof source === 'object' && !Array.isArray(source)) {
+    if (options?.construct) {
+      result = Reflect.construct(options.construct, [{ ...(source as Record<string, unknown>) }]);
+    } else {
+      result = fillTCharge({} as Record<string, unknown>, source as Record<string, unknown>);
+    }
+  }
+  return result;
+}
+
+export function fromWireFormatTCharge(wire: unknown, options?: __GolemSerdeOptions): TChargeFields {
+  return convertFromWireTCharge(wire, options, false) as TChargeFields;
+}
+
+function toWireFormatTChargeCore(value: TChargeFields): TChargeJSON {
+  const record = value as Record<string, unknown>;
+  const wire = { ["id"]: record["id"], ["status"]: record["status"], ["settlesOn"]: record["settlesOn"] };
+  return wire as TChargeJSON;
+}
+
+export function toWireFormatTCharge(value: TChargeFields, options?: __GolemSerdeOptions): TChargeJSON {
+  const validates = serdeValidates(options, true);
+  if (validates) {
+    assertTCharge(value, options);
+  }
+  return toWireFormatTChargeCore(value);
+}
+
+export function parseTCharge(text: string, options?: __GolemSerdeOptions): TChargeFields {
+  return convertFromWireTCharge(parseJson(text), options, true) as TChargeFields;
+}
+
+export function validateTCharge(value: unknown, options?: __GolemValidateOptions): value is TChargeFields {
+  const failFast = options?.failFast !== false;
+  let ok: boolean;
+  let errors: readonly unknown[] | null | undefined;
+  if (options?.validationContext === undefined) {
+    const validator = failFast ? validateTChargeFast : validateTChargeAll;
+    ok = validator(value);
+    errors = validator.errors;
+  } else {
+    const validator = resolveModelValidationContextValidator(options.validationContext, "TCharge_e13352dc", failFast ? 'first' : 'all');
+    ok = runSynchronousValidation(validator, value);
+    errors = validator.errors;
+  }
+  (validateTCharge as { errors?: unknown }).errors = errors;
+  return ok;
+}
+
+export function assertTCharge(value: unknown, options?: __GolemValidateOptions): TChargeFields {
+  assertModelValue(value, options, validateTChargeFast, validateTChargeAll, "TCharge_e13352dc", IssueRepresentation.Model, IssueSource.TypeScript);
+  return value as TChargeFields;
+}
+
+createObjectCodec("TCharge_e13352dc", {
+  stringify: stringifyTCharge as (value: never, options?: __GolemSerdeOptions) => string,
+  parse: parseTCharge as (text: string, options?: __GolemSerdeOptions) => never,
+  validate: validateTCharge,
+  assert: assertTCharge,
+  toWireFormat: toWireFormatTCharge,
+  fromWireFormat: fromWireFormatTCharge,
+  schema: __resolvedModelSchema_TCharge,
+  issueSource: IssueSource.TypeScript,
+});
+
 const validateTMerchantOmitIdFast = requireAjvSchema(objectAjvFast.getSchema("TMerchantOmitId_aeec4ba8"), "TMerchantOmitId_aeec4ba8");
 const validateTMerchantOmitIdAll = requireAjvSchema(objectAjvAll.getSchema("TMerchantOmitId_aeec4ba8"), "TMerchantOmitId_aeec4ba8");
 
@@ -397,8 +507,8 @@ createObjectCodec("TMerchantOmitId_aeec4ba8", {
   issueSource: IssueSource.TypeScript,
 });
 
-const validateTPaymentFast = requireAjvSchema(objectAjvFast.getSchema("TPayment_3709dee6"), "TPayment_3709dee6");
-const validateTPaymentAll = requireAjvSchema(objectAjvAll.getSchema("TPayment_3709dee6"), "TPayment_3709dee6");
+const validateTPaymentFast = requireAjvSchema(objectAjvFast.getSchema("TPayment_49a56904"), "TPayment_49a56904");
+const validateTPaymentAll = requireAjvSchema(objectAjvAll.getSchema("TPayment_49a56904"), "TPayment_49a56904");
 
 function fillTPayment(out: Record<string, unknown>, wire: Record<string, unknown>, copyIdentity = true): Record<string, unknown> {
   if (copyIdentity) {
@@ -414,11 +524,43 @@ function fillTPayment(out: Record<string, unknown>, wire: Record<string, unknown
   if (Object.prototype.hasOwnProperty.call(wire, "money")) {
     out["money"] = ({ ["amount"]: (wire["money"] as Record<string, unknown>)["amount"], ["currency"]: (wire["money"] as Record<string, unknown>)["currency"] });
   }
+  if (Object.prototype.hasOwnProperty.call(wire, "charge")) {
+    out["charge"] = wire["charge"] == null ? wire["charge"] : (({ ["id"]: (wire["charge"] as Record<string, unknown>)["id"], ["status"]: (wire["charge"] as Record<string, unknown>)["status"], ["settlesOn"]: (wire["charge"] as Record<string, unknown>)["settlesOn"] }));
+  }
   return out;
 }
 
 function stringifyTPaymentCore(value: Record<string, unknown>): string {
-  return '{' + "\"id\":" + stringifyJsonString(value["id"] as string) + ",\"merchant\":" + stringifyTMerchantCore(value["merchant"] as never) + ",\"billing\":" + stringifyTMerchantOmitIdCore(value["billing"] as never) + ",\"money\":" + stringifyTMoneyCore(value["money"] as never) + ",\"note\":" + stringifyJsonString(value["note"] as string) + '}';
+  let out = '{';
+  let sep = false;
+  if (sep) out += ",";
+  out += "\"id\":";
+  out += stringifyJsonString(value["id"] as string);
+  sep = true;
+  if (sep) out += ",";
+  out += "\"merchant\":";
+  out += stringifyTMerchantCore(value["merchant"] as never);
+  sep = true;
+  if (sep) out += ",";
+  out += "\"billing\":";
+  out += stringifyTMerchantOmitIdCore(value["billing"] as never);
+  sep = true;
+  if (sep) out += ",";
+  out += "\"money\":";
+  out += stringifyTMoneyCore(value["money"] as never);
+  sep = true;
+  if (sep) out += ",";
+  out += "\"note\":";
+  out += stringifyJsonString(value["note"] as string);
+  sep = true;
+  const __golemField5 = value["charge"];
+  if (__golemField5 !== undefined) {
+    if (sep) out += ",";
+    out += "\"charge\":";
+    out += (__golemField5 == null ? 'null' : (stringifyTChargeCore(__golemField5 as never)));
+    sep = true;
+  }
+  return out + '}';
 }
 
 export function stringifyTPayment(value: TPaymentFields, options?: __GolemSerdeOptions): string {
@@ -452,7 +594,8 @@ export function fromWireFormatTPayment(wire: unknown, options?: __GolemSerdeOpti
 
 function toWireFormatTPaymentCore(value: TPaymentFields): TPaymentJSON {
   const record = value as Record<string, unknown>;
-  const wire = { ["id"]: record["id"], ["merchant"]: toWireFormatTMerchantCore(record["merchant"] as never), ["billing"]: toWireFormatTMerchantOmitIdCore(record["billing"] as never), ["money"]: toWireFormatTMoneyCore(record["money"] as never), ["note"]: record["note"] };
+  let __golemField0: unknown;
+  const wire = { ["id"]: record["id"], ["merchant"]: toWireFormatTMerchantCore(record["merchant"] as never), ["billing"]: toWireFormatTMerchantOmitIdCore(record["billing"] as never), ["money"]: toWireFormatTMoneyCore(record["money"] as never), ["note"]: record["note"], ...(__golemField0 = record["charge"], (__golemField0 !== undefined ? { ["charge"]: __golemField0 == null ? __golemField0 : (toWireFormatTChargeCore(__golemField0 as never)) } : undefined)) };
   return wire as TPaymentJSON;
 }
 
@@ -477,7 +620,7 @@ export function validateTPayment(value: unknown, options?: __GolemValidateOption
     ok = validator(value);
     errors = validator.errors;
   } else {
-    const validator = resolveModelValidationContextValidator(options.validationContext, "TPayment_3709dee6", failFast ? 'first' : 'all');
+    const validator = resolveModelValidationContextValidator(options.validationContext, "TPayment_49a56904", failFast ? 'first' : 'all');
     ok = runSynchronousValidation(validator, value);
     errors = validator.errors;
   }
@@ -486,11 +629,11 @@ export function validateTPayment(value: unknown, options?: __GolemValidateOption
 }
 
 export function assertTPayment(value: unknown, options?: __GolemValidateOptions): TPaymentFields {
-  assertModelValue(value, options, validateTPaymentFast, validateTPaymentAll, "TPayment_3709dee6", IssueRepresentation.Model, IssueSource.TypeScript);
+  assertModelValue(value, options, validateTPaymentFast, validateTPaymentAll, "TPayment_49a56904", IssueRepresentation.Model, IssueSource.TypeScript);
   return value as TPaymentFields;
 }
 
-createObjectCodec("TPayment_3709dee6", {
+createObjectCodec("TPayment_49a56904", {
   stringify: stringifyTPayment as (value: never, options?: __GolemSerdeOptions) => string,
   parse: parseTPayment as (text: string, options?: __GolemSerdeOptions) => never,
   validate: validateTPayment,

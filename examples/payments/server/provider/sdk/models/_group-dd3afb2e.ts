@@ -16,6 +16,7 @@ function objectFromJSON<T extends object>(json: unknown, modelName: string): Par
 
 export type ChargeFields = {
   id: string;
+  status: "pending" | "captured";
   money: MoneyModel;
   createdAt: Temporal.Instant;
   settlesOn: Temporal.PlainDate;
@@ -34,6 +35,7 @@ function deserializeChargeFields(json: unknown): ChargeInit {
 
 export class ChargeModel implements ChargeFields {
   declare id: string;
+  declare status: "pending" | "captured";
   declare money: MoneyModel;
   declare createdAt: Temporal.Instant;
   declare settlesOn: Temporal.PlainDate;
@@ -41,6 +43,7 @@ export class ChargeModel implements ChargeFields {
   declare readonly [generatedModelFieldsBrand]: ChargeFields;
   constructor(values: ChargeInit = {}) {
     if (values["id"] !== undefined) this["id"] = (values["id"]) as string;
+    if (values["status"] !== undefined) this["status"] = (values["status"]) as "pending" | "captured";
     if (values["money"] !== undefined) this["money"] = (values["money"] == null || values["money"] instanceof MoneyModel ? values["money"] : new MoneyModel(values["money"] as MoneyInit)) as MoneyModel;
     if (values["createdAt"] !== undefined) this["createdAt"] = (values["createdAt"]) as Temporal.Instant;
     if (values["settlesOn"] !== undefined) this["settlesOn"] = (values["settlesOn"]) as Temporal.PlainDate;
@@ -55,6 +58,7 @@ function decodeCharge(json: unknown, constructor: GeneratedModelConstructor = Ch
 export function encodeCharge(model: ChargeModel): Types.Charge {
   const result: Record<string, unknown> = {};
   if (model["id"] !== undefined) result["id"] = model["id"];
+  if (model["status"] !== undefined) result["status"] = model["status"];
   if (model["money"] !== undefined) result["money"] = convertModelField('serialize', "money", () => (model["money"] instanceof MoneyModel ? encodeGeneratedModel(model["money"]) : model["money"]));
   if (model["createdAt"] !== undefined) result["createdAt"] = convertModelField('serialize', "createdAt", () => (serializeTemporalInstant((model["createdAt"]) as never)));
   if (model["settlesOn"] !== undefined) result["settlesOn"] = convertModelField('serialize', "settlesOn", () => (serializeTemporalPlainDate((model["settlesOn"]) as never)));
@@ -63,13 +67,13 @@ export function encodeCharge(model: ChargeModel): Types.Charge {
 
 
 registerGeneratedModel(ChargeModel, {
-  fields: ["id", "money", "createdAt", "settlesOn"] as const,
+  fields: ["id", "status", "money", "createdAt", "settlesOn"] as const,
   conversion: { decode: decodeCharge, encode: encodeCharge },
-  codecId: "Charge_0e1232ee",
+  codecId: "Charge_33b8be7b",
   profile: {"mobx":false,"validation":true,"ajvStandalone":false,"allowAny":false},
 });
 
-registerIModelClass("Charge_0e1232ee", ChargeModel);
+registerIModelClass("Charge_33b8be7b", ChargeModel);
 
 const __golemTrusted = Object.freeze({ validate: false });
 
@@ -77,31 +81,32 @@ const objectAjvFast = createOpenApiSyncAjvEngine({ allErrors: false, validationB
 const objectAjvAll = createOpenApiSyncAjvEngine({ allErrors: true, validationBindings: {} });
 
 addNestedCodecSchema([(schema, id) => objectAjvFast.addSchema(schema, id), (schema, id) => objectAjvAll.addSchema(schema, id)], "Money_3a1d334f", MoneyModel);
-const __resolvedModelSchema_Charge = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"Charge_0e1232ee\",\"type\":\"object\",\"properties\":{\"createdAt\":{},\"id\":{\"type\":\"string\"},\"money\":{\"$ref\":\"#/$defs/Money_3a1d334f\"},\"settlesOn\":{}},\"required\":[\"createdAt\",\"id\",\"money\",\"settlesOn\"],\"additionalProperties\":false,\"$defs\":{\"Money_3a1d334f\":{\"type\":\"object\",\"properties\":{\"amount\":{\"allOf\":[{\"type\":\"string\"},{\"pattern\":\"^[0-9]+(?:\\\\.[0-9]{1,2})?$\"}]},\"currency\":{\"allOf\":[{\"type\":\"string\"},{\"pattern\":\"^[A-Z]{3}$\"}]}},\"required\":[\"amount\",\"currency\"],\"additionalProperties\":false}}}") as object) as object;
-objectAjvFast.addSchema(structuredClone(__resolvedModelSchema_Charge) as object, "Charge_0e1232ee");
-objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_Charge) as object, "Charge_0e1232ee");
-const __resolvedWireSchema_Charge = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"Charge_0e1232ee#wire\",\"type\":\"object\",\"properties\":{\"createdAt\":{\"type\":\"string\"},\"id\":{\"type\":\"string\"},\"money\":{\"$ref\":\"#/$defs/Money_3a1d334f\"},\"settlesOn\":{\"type\":\"string\"}},\"required\":[\"createdAt\",\"id\",\"money\",\"settlesOn\"],\"additionalProperties\":false,\"$defs\":{\"Money_3a1d334f\":{\"type\":\"object\",\"properties\":{\"amount\":{\"allOf\":[{\"type\":\"string\"},{\"pattern\":\"^[0-9]+(?:\\\\.[0-9]{1,2})?$\"}]},\"currency\":{\"allOf\":[{\"type\":\"string\"},{\"pattern\":\"^[A-Z]{3}$\"}]}},\"required\":[\"amount\",\"currency\"],\"additionalProperties\":false}}}") as object, 'wire') as object;
-objectAjvFast.addSchema(structuredClone(__resolvedWireSchema_Charge) as object, "Charge_0e1232ee#wire");
-objectAjvAll.addSchema(structuredClone(__resolvedWireSchema_Charge) as object, "Charge_0e1232ee#wire");
-const __resolvedModelOnlySchema_Charge = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"Charge_0e1232ee#model-only\",\"properties\":{\"createdAt\":{},\"settlesOn\":{}}}") as object, 'model-only') as object;
-objectAjvFast.addSchema(structuredClone(__resolvedModelOnlySchema_Charge) as object, "Charge_0e1232ee#model-only");
-objectAjvAll.addSchema(structuredClone(__resolvedModelOnlySchema_Charge) as object, "Charge_0e1232ee#model-only");
-const __resolvedWireOnlySchema_Charge = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"Charge_0e1232ee#wire-only\",\"properties\":{\"createdAt\":{\"type\":\"string\"},\"settlesOn\":{\"type\":\"string\"}}}") as object, 'wire-only') as object;
-objectAjvFast.addSchema(structuredClone(__resolvedWireOnlySchema_Charge) as object, "Charge_0e1232ee#wire-only");
-objectAjvAll.addSchema(structuredClone(__resolvedWireOnlySchema_Charge) as object, "Charge_0e1232ee#wire-only");
+const __resolvedModelSchema_Charge = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"Charge_33b8be7b\",\"type\":\"object\",\"properties\":{\"createdAt\":{},\"id\":{\"type\":\"string\"},\"money\":{\"$ref\":\"#/$defs/Money_3a1d334f\"},\"settlesOn\":{},\"status\":{\"type\":\"string\"}},\"required\":[\"createdAt\",\"id\",\"money\",\"settlesOn\",\"status\"],\"additionalProperties\":false,\"$defs\":{\"Money_3a1d334f\":{\"type\":\"object\",\"properties\":{\"amount\":{\"allOf\":[{\"type\":\"string\"},{\"pattern\":\"^[0-9]+(?:\\\\.[0-9]{1,2})?$\"}]},\"currency\":{\"allOf\":[{\"type\":\"string\"},{\"pattern\":\"^[A-Z]{3}$\"}]}},\"required\":[\"amount\",\"currency\"],\"additionalProperties\":false}}}") as object) as object;
+objectAjvFast.addSchema(structuredClone(__resolvedModelSchema_Charge) as object, "Charge_33b8be7b");
+objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_Charge) as object, "Charge_33b8be7b");
+const __resolvedWireSchema_Charge = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"Charge_33b8be7b#wire\",\"type\":\"object\",\"properties\":{\"createdAt\":{\"type\":\"string\"},\"id\":{\"type\":\"string\"},\"money\":{\"$ref\":\"#/$defs/Money_3a1d334f\"},\"settlesOn\":{\"type\":\"string\"},\"status\":{\"type\":\"string\"}},\"required\":[\"createdAt\",\"id\",\"money\",\"settlesOn\",\"status\"],\"additionalProperties\":false,\"$defs\":{\"Money_3a1d334f\":{\"type\":\"object\",\"properties\":{\"amount\":{\"allOf\":[{\"type\":\"string\"},{\"pattern\":\"^[0-9]+(?:\\\\.[0-9]{1,2})?$\"}]},\"currency\":{\"allOf\":[{\"type\":\"string\"},{\"pattern\":\"^[A-Z]{3}$\"}]}},\"required\":[\"amount\",\"currency\"],\"additionalProperties\":false}}}") as object, 'wire') as object;
+objectAjvFast.addSchema(structuredClone(__resolvedWireSchema_Charge) as object, "Charge_33b8be7b#wire");
+objectAjvAll.addSchema(structuredClone(__resolvedWireSchema_Charge) as object, "Charge_33b8be7b#wire");
+const __resolvedModelOnlySchema_Charge = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"Charge_33b8be7b#model-only\",\"properties\":{\"createdAt\":{},\"settlesOn\":{}}}") as object, 'model-only') as object;
+objectAjvFast.addSchema(structuredClone(__resolvedModelOnlySchema_Charge) as object, "Charge_33b8be7b#model-only");
+objectAjvAll.addSchema(structuredClone(__resolvedModelOnlySchema_Charge) as object, "Charge_33b8be7b#model-only");
+const __resolvedWireOnlySchema_Charge = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"Charge_33b8be7b#wire-only\",\"properties\":{\"createdAt\":{\"type\":\"string\"},\"settlesOn\":{\"type\":\"string\"}}}") as object, 'wire-only') as object;
+objectAjvFast.addSchema(structuredClone(__resolvedWireOnlySchema_Charge) as object, "Charge_33b8be7b#wire-only");
+objectAjvAll.addSchema(structuredClone(__resolvedWireOnlySchema_Charge) as object, "Charge_33b8be7b#wire-only");
 
-const validateChargeFast = requireAjvSchema(objectAjvFast.getSchema("Charge_0e1232ee"), "Charge_0e1232ee");
-const validateChargeAll = requireAjvSchema(objectAjvAll.getSchema("Charge_0e1232ee"), "Charge_0e1232ee");
-const validateChargeWireFast = requireAjvSchema(objectAjvFast.getSchema("Charge_0e1232ee#wire"), "Charge_0e1232ee#wire");
-const validateChargeWireAll = requireAjvSchema(objectAjvAll.getSchema("Charge_0e1232ee#wire"), "Charge_0e1232ee#wire");
-const validateChargeModelOnlyFast = requireAjvSchema(objectAjvFast.getSchema("Charge_0e1232ee#model-only"), "Charge_0e1232ee#model-only");
-const validateChargeModelOnlyAll = requireAjvSchema(objectAjvAll.getSchema("Charge_0e1232ee#model-only"), "Charge_0e1232ee#model-only");
-const validateChargeWireOnlyFast = requireAjvSchema(objectAjvFast.getSchema("Charge_0e1232ee#wire-only"), "Charge_0e1232ee#wire-only");
-const validateChargeWireOnlyAll = requireAjvSchema(objectAjvAll.getSchema("Charge_0e1232ee#wire-only"), "Charge_0e1232ee#wire-only");
+const validateChargeFast = requireAjvSchema(objectAjvFast.getSchema("Charge_33b8be7b"), "Charge_33b8be7b");
+const validateChargeAll = requireAjvSchema(objectAjvAll.getSchema("Charge_33b8be7b"), "Charge_33b8be7b");
+const validateChargeWireFast = requireAjvSchema(objectAjvFast.getSchema("Charge_33b8be7b#wire"), "Charge_33b8be7b#wire");
+const validateChargeWireAll = requireAjvSchema(objectAjvAll.getSchema("Charge_33b8be7b#wire"), "Charge_33b8be7b#wire");
+const validateChargeModelOnlyFast = requireAjvSchema(objectAjvFast.getSchema("Charge_33b8be7b#model-only"), "Charge_33b8be7b#model-only");
+const validateChargeModelOnlyAll = requireAjvSchema(objectAjvAll.getSchema("Charge_33b8be7b#model-only"), "Charge_33b8be7b#model-only");
+const validateChargeWireOnlyFast = requireAjvSchema(objectAjvFast.getSchema("Charge_33b8be7b#wire-only"), "Charge_33b8be7b#wire-only");
+const validateChargeWireOnlyAll = requireAjvSchema(objectAjvAll.getSchema("Charge_33b8be7b#wire-only"), "Charge_33b8be7b#wire-only");
 
 function fillCharge(out: Record<string, unknown>, wire: Record<string, unknown>, copyIdentity = true): Record<string, unknown> {
   if (copyIdentity) {
     out["id"] = wire["id"];
+    out["status"] = wire["status"];
   }
   if (Object.prototype.hasOwnProperty.call(wire, "money")) {
     out["money"] = fromWireFormatMoney(wire["money"], { validate: false, construct: MoneyModel });
@@ -116,18 +121,18 @@ function fillCharge(out: Record<string, unknown>, wire: Record<string, unknown>,
 }
 
 function stringifyChargeCore(value: Record<string, unknown>): string {
-  return '{' + "\"id\":" + stringifyJsonString(value["id"] as string) + ",\"money\":" + stringifyMoney(value["money"] as never, __golemTrusted) + ",\"createdAt\":" + stringifyJsonString(serializeTemporalInstant((value["createdAt"]) as never) as string) + ",\"settlesOn\":" + stringifyJsonString(serializeTemporalPlainDate((value["settlesOn"]) as never) as string) + '}';
+  return '{' + "\"id\":" + stringifyJsonString(value["id"] as string) + ",\"status\":" + stringifyJsonString(value["status"] as string) + ",\"money\":" + stringifyMoney(value["money"] as never, __golemTrusted) + ",\"createdAt\":" + stringifyJsonString(serializeTemporalInstant((value["createdAt"]) as never) as string) + ",\"settlesOn\":" + stringifyJsonString(serializeTemporalPlainDate((value["settlesOn"]) as never) as string) + '}';
 }
 
 function stringifyChargeWire(value: Record<string, unknown>): string {
-  return '{' + "\"id\":" + stringifyJsonString(value["id"] as string) + ",\"money\":" + stringifyMoney(value["money"] as never, __golemTrusted) + ",\"createdAt\":" + stringifyJsonString(value["createdAt"] as string) + ",\"settlesOn\":" + stringifyJsonString(value["settlesOn"] as string) + '}';
+  return '{' + "\"id\":" + stringifyJsonString(value["id"] as string) + ",\"status\":" + stringifyJsonString(value["status"] as string) + ",\"money\":" + stringifyMoney(value["money"] as never, __golemTrusted) + ",\"createdAt\":" + stringifyJsonString(value["createdAt"] as string) + ",\"settlesOn\":" + stringifyJsonString(value["settlesOn"] as string) + '}';
 }
 
 export function stringifyCharge(value: ChargeFields, options?: __GolemSerdeOptions): string {
   const validates = serdeValidates(options, true);
   if (validates) {
     assertCharge(value, options);
-    const wire = { ["id"]: value["id"], ["money"]: toWireFormatMoney(value["money"] as never, __golemTrusted), ["createdAt"]: serializeTemporalInstant((value["createdAt"]) as never), ["settlesOn"]: serializeTemporalPlainDate((value["settlesOn"]) as never) };
+    const wire = { ["id"]: value["id"], ["status"]: value["status"], ["money"]: toWireFormatMoney(value["money"] as never, __golemTrusted), ["createdAt"]: serializeTemporalInstant((value["createdAt"]) as never), ["settlesOn"]: serializeTemporalPlainDate((value["settlesOn"]) as never) };
     __golemAssertWireOnly_Charge(wire, options);
     return stringifyChargeWire(wire as never);
   }
@@ -160,7 +165,7 @@ export function fromWireFormatCharge(wire: unknown, options?: __GolemSerdeOption
 
 function toWireFormatChargeCore(value: ChargeFields): Types.Charge {
   const record = value as Record<string, unknown>;
-  const wire = { ["id"]: record["id"], ["money"]: toWireFormatMoney(record["money"] as never, __golemTrusted), ["createdAt"]: serializeTemporalInstant((record["createdAt"]) as never), ["settlesOn"]: serializeTemporalPlainDate((record["settlesOn"]) as never) };
+  const wire = { ["id"]: record["id"], ["status"]: record["status"], ["money"]: toWireFormatMoney(record["money"] as never, __golemTrusted), ["createdAt"]: serializeTemporalInstant((record["createdAt"]) as never), ["settlesOn"]: serializeTemporalPlainDate((record["settlesOn"]) as never) };
   return wire as Types.Charge;
 }
 
@@ -189,7 +194,7 @@ export function validateCharge(value: unknown, options?: __GolemValidateOptions)
     ok = validator(value);
     errors = validator.errors;
   } else {
-    const validator = resolveModelValidationContextValidator(options.validationContext, "Charge_0e1232ee", failFast ? 'first' : 'all');
+    const validator = resolveModelValidationContextValidator(options.validationContext, "Charge_33b8be7b", failFast ? 'first' : 'all');
     ok = runSynchronousValidation(validator, value);
     errors = validator.errors;
   }
@@ -198,26 +203,26 @@ export function validateCharge(value: unknown, options?: __GolemValidateOptions)
 }
 
 export function assertCharge(value: unknown, options?: __GolemValidateOptions): ChargeFields {
-  assertModelValue(value, options, validateChargeFast, validateChargeAll, "Charge_0e1232ee", IssueRepresentation.Model, IssueSource.OpenAPI);
+  assertModelValue(value, options, validateChargeFast, validateChargeAll, "Charge_33b8be7b", IssueRepresentation.Model, IssueSource.OpenAPI);
   return value as ChargeFields;
 }
 
 function __golemAssertWire_Charge(value: unknown, options?: __GolemValidateOptions): Record<string, unknown> {
-  assertModelValue(value, options, validateChargeWireFast, validateChargeWireAll, "Charge_0e1232ee#wire", IssueRepresentation.Wire, IssueSource.OpenAPI);
+  assertModelValue(value, options, validateChargeWireFast, validateChargeWireAll, "Charge_33b8be7b#wire", IssueRepresentation.Wire, IssueSource.OpenAPI);
   return value as Record<string, unknown>;
 }
 
 function __golemAssertModelOnly_Charge(value: unknown, options?: __GolemValidateOptions): Record<string, unknown> {
-  assertModelValue(value, options, validateChargeModelOnlyFast, validateChargeModelOnlyAll, "Charge_0e1232ee#model-only", IssueRepresentation.Model, IssueSource.OpenAPI);
+  assertModelValue(value, options, validateChargeModelOnlyFast, validateChargeModelOnlyAll, "Charge_33b8be7b#model-only", IssueRepresentation.Model, IssueSource.OpenAPI);
   return value as Record<string, unknown>;
 }
 
 function __golemAssertWireOnly_Charge(value: unknown, options?: __GolemValidateOptions): Record<string, unknown> {
-  assertModelValue(value, options, validateChargeWireOnlyFast, validateChargeWireOnlyAll, "Charge_0e1232ee#wire-only", IssueRepresentation.Wire, IssueSource.OpenAPI);
+  assertModelValue(value, options, validateChargeWireOnlyFast, validateChargeWireOnlyAll, "Charge_33b8be7b#wire-only", IssueRepresentation.Wire, IssueSource.OpenAPI);
   return value as Record<string, unknown>;
 }
 
-createObjectCodec("Charge_0e1232ee", {
+createObjectCodec("Charge_33b8be7b", {
   stringify: stringifyCharge as (value: never, options?: __GolemSerdeOptions) => string,
   parse: parseCharge as (text: string, options?: __GolemSerdeOptions) => never,
   validate: validateCharge,

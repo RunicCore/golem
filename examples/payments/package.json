@@ -10,7 +10,7 @@
     "check": "golem check --config server/golem.yaml && golem check --config web/golem.yaml && ttsc -p server/tsconfig.json --noEmit && ttsc -p web/tsconfig.json --noEmit",
     "test": "npm run check && ttsc -p server/tsconfig.json && ttsc -p web/tsconfig.json && node --test \".build/**/*.test.js\"",
     "start": "ttsc -p server/tsconfig.json && node .build/server/src/main.js",
-    "demo": "ttsc -p server/tsconfig.json && ttsc -p web/tsconfig.json && node scripts/demo.js",
+    "demo": "ttsc -p server/tsconfig.json && ttsc -p web/tsconfig.json && ttsc -p tsconfig.node.json && node scripts/demo.js",
     "dev": "ttsc -p server/tsconfig.json && ttsc -p tsconfig.node.json && node scripts/dev.js",
     "build": "vite build"
   },

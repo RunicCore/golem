@@ -1,10 +1,11 @@
 // A local stand-in for a third-party payment provider. Only `npm run dev` starts it.
-import { createServer } from 'node:http';
+import { createServer, type Server } from 'node:http';
+import { pathToFileURL } from 'node:url';
 
-const port = Number(process.env.PROVIDER_PORT ?? '3001');
-const charges = new Map<string, { id: string; money: { amount: string; currency: string }; createdAt: string; settlesOn: string }>();
+const charges = new Map<string, { id: string; status: string; money: { amount: string; currency: string }; createdAt: string; settlesOn: string }>();
 
-const server = createServer(async (request, response) => {
+export function createStandIn(): Server {
+  return createServer(async (request, response) => {
   const url = new URL(request.url ?? '/', 'http://localhost');
   const json = (status: number, body: unknown) => {
     response.writeHead(status, { 'content-type': 'application/json' });
@@ -28,13 +29,18 @@ const server = createServer(async (request, response) => {
     let text = '';
     for await (const chunk of request) text += chunk;
     const id = `charge-${charges.size + 1}`;
-    const charge = { id, money: JSON.parse(text), createdAt: new Date().toISOString().replace(/\.\d+Z$/, 'Z'), settlesOn: new Date(Date.now() + 2 * 86_400_000).toISOString().slice(0, 10) };
+    const charge = { id, status: 'pending', money: JSON.parse(text), createdAt: new Date().toISOString().replace(/\.\d+Z$/, 'Z'), settlesOn: new Date(Date.now() + 2 * 86_400_000).toISOString().slice(0, 10) };
     charges.set(id, charge);
     return json(201, charge);
   }
   return json(404, { message: 'Not part of the stand-in provider.' });
-});
+  });
+}
 
-server.listen(port, '127.0.0.1', () => console.log(`Stand-in provider: http://127.0.0.1:${port} (token: dev-token)`));
-process.once('SIGINT', () => server.close(() => process.exit(0)));
-process.once('SIGTERM', () => server.close(() => process.exit(0)));
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  const port = Number(process.env.PROVIDER_PORT ?? '3001');
+  const server = createStandIn();
+  server.listen(port, '127.0.0.1', () => console.log(`Stand-in provider: http://127.0.0.1:${port} (token: dev-token)`));
+  process.once('SIGINT', () => server.close(() => process.exit(0)));
+  process.once('SIGTERM', () => server.close(() => process.exit(0)));
+}

@@ -125,10 +125,11 @@ components:
         message: { type: string }
     Charge:
       type: object
-      required: [id, money, createdAt, settlesOn]
+      required: [id, status, money, createdAt, settlesOn]
       additionalProperties: false
       properties:
         id: { type: string }
+        status: { type: string, enum: [pending, captured] }
         money: { $ref: '#/components/schemas/Money' }
         createdAt: { type: string, format: date-time }
         settlesOn: { type: string, format: date }

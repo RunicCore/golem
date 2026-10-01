@@ -3,8 +3,17 @@ import test from 'node:test';
 import { createApplication } from './application.js';
 import { writePrice } from './price.model.js';
 
+const charged: Request[] = [];
+const provider = {
+  baseUrl: 'https://provider.test',
+  fetchImpl: (async (url: RequestInfo | URL, init?: RequestInit) => {
+    charged.push(new Request(url, init));
+    return Response.json({ id: 'charge-1', status: 'pending', money: { amount: '12.50', currency: 'USD' }, createdAt: '2025-01-02T03:04:05Z', settlesOn: '2025-01-04' }, { status: 201 });
+  }) as typeof fetch,
+};
+
 async function withApi(run: (api: string) => Promise<void>): Promise<void> {
-  const application = await createApplication();
+  const application = await createApplication(undefined, provider);
   await application.listen(0, '127.0.0.1');
   try {
     await run(`${await application.getUrl()}/api`);
@@ -32,6 +41,15 @@ test('a created payment keeps its decimal amount exact on the wire', () => withA
   assert.equal(payment.money.amount, '12.50');
   const found = await fetch(`${api}/payments/transactions/${payment.id}`);
   assert.deepEqual(await found.json(), payment);
+}));
+
+test('a saved payment is charged through the provider with a bearer token and its own idempotency key', () => withApi(async api => {
+  charged.length = 0;
+  const created = await post(`${api}/payments/transactions`, input);
+  assert.deepEqual((await created.json()).charge, { id: 'charge-1', status: 'pending', settlesOn: '2025-01-04' });
+  assert.equal(charged[0]?.headers.get('authorization'), 'Bearer dev-token');
+  assert.match(charged[0]?.headers.get('idempotency-key') ?? '', /^payment-\d+$/);
+  assert.equal(await charged[0]?.text(), JSON.stringify({ amount: '12.50', currency: 'USD' }));
 }));
 
 test('a float amount and a bad currency are rejected before the handler', () => withApi(async api => {

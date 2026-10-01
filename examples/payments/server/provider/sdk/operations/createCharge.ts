@@ -18,13 +18,13 @@ const securitySchemes: RuntimeSecuritySchemes = __golemSecuritySchemes;
 const responseContracts: readonly RuntimeResponseContract[] = [{"status":"201","content":[{"contentType":"application/json","framing":"body"}],"headers":[]}];
 let __operationValidationSources: OperationValidationSources | undefined;
 const __resolveOperationValidationSources = (): OperationValidationSources => __operationValidationSources ??= {
-  inputReference: "urn:golem:openapi:provider:84c5fa76f8fdfe81527c66a9398eabf9445a3fce4269c447c014f321e26f8a76:schemas:operation:createCharge#/operations/createCharge/input",
-  responseReferences: [{"status":"201","contentType":"application/json","reference":"urn:golem:openapi:provider:84c5fa76f8fdfe81527c66a9398eabf9445a3fce4269c447c014f321e26f8a76:schemas:operation:createCharge#/operations/createCharge/responses/201/application~1json"}],
+  inputReference: "urn:golem:openapi:provider:59a4e96e04b2966a3d6827033bb3b17a231b30d0b99218385761221b6b244cda:schemas:operation:createCharge#/operations/createCharge/input",
+  responseReferences: [{"status":"201","contentType":"application/json","reference":"urn:golem:openapi:provider:59a4e96e04b2966a3d6827033bb3b17a231b30d0b99218385761221b6b244cda:schemas:operation:createCharge#/operations/createCharge/responses/201/application~1json"}],
   schemas: new Map([
-    ["urn:golem:openapi:provider:84c5fa76f8fdfe81527c66a9398eabf9445a3fce4269c447c014f321e26f8a76:schemas:operation:createCharge", JSON.parse("{\"$id\":\"urn:golem:openapi:provider:84c5fa76f8fdfe81527c66a9398eabf9445a3fce4269c447c014f321e26f8a76:schemas:operation:createCharge\",\"$schema\":\"https://spec.openapis.org/oas/3.1/dialect/base\",\"operations\":{\"createCharge\":{\"input\":{\"type\":\"object\",\"properties\":{\"body\":{\"$ref\":\"urn:golem:openapi:provider:84c5fa76f8fdfe81527c66a9398eabf9445a3fce4269c447c014f321e26f8a76:schemas:component:Money:input\"}},\"required\":[\"body\"],\"additionalProperties\":false},\"responses\":{\"201\":{\"application/json\":{\"$ref\":\"urn:golem:openapi:provider:84c5fa76f8fdfe81527c66a9398eabf9445a3fce4269c447c014f321e26f8a76:schemas:component:Charge:output\"}}}}}}") as object | boolean],
-    ["urn:golem:openapi:provider:84c5fa76f8fdfe81527c66a9398eabf9445a3fce4269c447c014f321e26f8a76:schemas:component:Charge:output", __golemSchema0],
-    ["urn:golem:openapi:provider:84c5fa76f8fdfe81527c66a9398eabf9445a3fce4269c447c014f321e26f8a76:schemas:component:Money:input", __golemSchema1],
-    ["urn:golem:openapi:provider:84c5fa76f8fdfe81527c66a9398eabf9445a3fce4269c447c014f321e26f8a76:schemas:component:Money:output", __golemSchema2],
+    ["urn:golem:openapi:provider:59a4e96e04b2966a3d6827033bb3b17a231b30d0b99218385761221b6b244cda:schemas:operation:createCharge", JSON.parse("{\"$id\":\"urn:golem:openapi:provider:59a4e96e04b2966a3d6827033bb3b17a231b30d0b99218385761221b6b244cda:schemas:operation:createCharge\",\"$schema\":\"https://spec.openapis.org/oas/3.1/dialect/base\",\"operations\":{\"createCharge\":{\"input\":{\"type\":\"object\",\"properties\":{\"body\":{\"$ref\":\"urn:golem:openapi:provider:59a4e96e04b2966a3d6827033bb3b17a231b30d0b99218385761221b6b244cda:schemas:component:Money:input\"}},\"required\":[\"body\"],\"additionalProperties\":false},\"responses\":{\"201\":{\"application/json\":{\"$ref\":\"urn:golem:openapi:provider:59a4e96e04b2966a3d6827033bb3b17a231b30d0b99218385761221b6b244cda:schemas:component:Charge:output\"}}}}}}") as object | boolean],
+    ["urn:golem:openapi:provider:59a4e96e04b2966a3d6827033bb3b17a231b30d0b99218385761221b6b244cda:schemas:component:Charge:output", __golemSchema0],
+    ["urn:golem:openapi:provider:59a4e96e04b2966a3d6827033bb3b17a231b30d0b99218385761221b6b244cda:schemas:component:Money:input", __golemSchema1],
+    ["urn:golem:openapi:provider:59a4e96e04b2966a3d6827033bb3b17a231b30d0b99218385761221b6b244cda:schemas:component:Money:output", __golemSchema2],
   ]),
 };
 

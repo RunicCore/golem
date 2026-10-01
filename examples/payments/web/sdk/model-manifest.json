@@ -1,0 +1,587 @@
+{
+  "generator": {
+    "name": "@exprtlabs/golem-openapi",
+    "version": "1.0.0-rc"
+  },
+  "models": [
+    {
+      "allowAny": false,
+      "discriminator": null,
+      "fields": [
+        {
+          "modelReferences": [
+            "TMerchantOmitId"
+          ],
+          "name": "billing",
+          "required": true,
+          "type": "TMerchantOmitIdModel"
+        },
+        {
+          "modelReferences": [],
+          "name": "charge",
+          "required": false,
+          "type": "(TChargeModel)"
+        },
+        {
+          "modelReferences": [],
+          "name": "id",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "modelReferences": [
+            "TMerchant"
+          ],
+          "name": "merchant",
+          "required": true,
+          "type": "TMerchantModel"
+        },
+        {
+          "modelReferences": [
+            "TMoney"
+          ],
+          "name": "money",
+          "required": true,
+          "type": "TMoneyModel"
+        },
+        {
+          "modelReferences": [],
+          "name": "note",
+          "required": true,
+          "type": "string"
+        }
+      ],
+      "generated": {
+        "export": "PaymentModel",
+        "module": "./models/Payment.ts"
+      },
+      "id": "openapi:c621a88db3635b73#/components/schemas/Payment",
+      "inheritance": null,
+      "sourceKind": "openapi",
+      "type": {
+        "aliases": [
+          {
+            "export": "Payment",
+            "module": "./index.ts"
+          }
+        ],
+        "export": "Payment",
+        "module": "./types.ts"
+      },
+      "variants": []
+    },
+    {
+      "allowAny": false,
+      "discriminator": null,
+      "fields": [
+        {
+          "modelReferences": [],
+          "name": "note",
+          "required": true,
+          "type": "string"
+        }
+      ],
+      "generated": {
+        "export": "PaymentDraftModel",
+        "module": "./models/PaymentDraft.ts"
+      },
+      "id": "openapi:c621a88db3635b73#/components/schemas/PaymentDraft",
+      "inheritance": null,
+      "sourceKind": "openapi",
+      "type": {
+        "aliases": [
+          {
+            "export": "PaymentDraft",
+            "module": "./index.ts"
+          }
+        ],
+        "export": "PaymentDraft",
+        "module": "./types.ts"
+      },
+      "variants": []
+    },
+    {
+      "allowAny": false,
+      "discriminator": null,
+      "fields": [
+        {
+          "modelReferences": [],
+          "name": "id",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "modelReferences": [],
+          "name": "settlesOn",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "modelReferences": [],
+          "name": "status",
+          "required": true,
+          "type": "(\"captured\") | (\"pending\")"
+        }
+      ],
+      "generated": {
+        "export": "TChargeModel",
+        "module": "./models/TCharge.ts"
+      },
+      "id": "openapi:c621a88db3635b73#/components/schemas/TCharge",
+      "inheritance": null,
+      "sourceKind": "openapi",
+      "type": {
+        "aliases": [
+          {
+            "export": "TCharge",
+            "module": "./index.ts"
+          }
+        ],
+        "export": "TCharge",
+        "module": "./types.ts"
+      },
+      "variants": []
+    },
+    {
+      "allowAny": false,
+      "discriminator": null,
+      "fields": [
+        {
+          "modelReferences": [],
+          "name": "id",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "modelReferences": [],
+          "name": "name",
+          "required": true,
+          "type": "string"
+        }
+      ],
+      "generated": {
+        "export": "TMerchantModel",
+        "module": "./models/TMerchant.ts"
+      },
+      "id": "openapi:c621a88db3635b73#/components/schemas/TMerchant",
+      "inheritance": null,
+      "sourceKind": "openapi",
+      "type": {
+        "aliases": [
+          {
+            "export": "TMerchant",
+            "module": "./index.ts"
+          }
+        ],
+        "export": "TMerchant",
+        "module": "./types.ts"
+      },
+      "variants": []
+    },
+    {
+      "allowAny": false,
+      "discriminator": null,
+      "fields": [
+        {
+          "modelReferences": [],
+          "name": "name",
+          "required": true,
+          "type": "string"
+        }
+      ],
+      "generated": {
+        "export": "TMerchantOmitIdModel",
+        "module": "./models/TMerchantOmitId.ts"
+      },
+      "id": "openapi:c621a88db3635b73#/components/schemas/TMerchantOmitId",
+      "inheritance": null,
+      "sourceKind": "openapi",
+      "type": {
+        "aliases": [
+          {
+            "export": "TMerchantOmitId",
+            "module": "./index.ts"
+          }
+        ],
+        "export": "TMerchantOmitId",
+        "module": "./types.ts"
+      },
+      "variants": []
+    },
+    {
+      "allowAny": false,
+      "discriminator": null,
+      "fields": [
+        {
+          "modelReferences": [],
+          "name": "amount",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "modelReferences": [],
+          "name": "currency",
+          "required": true,
+          "type": "string"
+        }
+      ],
+      "generated": {
+        "export": "TMoneyModel",
+        "module": "./models/TMoney.ts"
+      },
+      "id": "openapi:c621a88db3635b73#/components/schemas/TMoney",
+      "inheritance": null,
+      "sourceKind": "openapi",
+      "type": {
+        "aliases": [
+          {
+            "export": "TMoney",
+            "module": "./index.ts"
+          }
+        ],
+        "export": "TMoney",
+        "module": "./types.ts"
+      },
+      "variants": []
+    },
+    {
+      "allowAny": false,
+      "discriminator": null,
+      "fields": [
+        {
+          "modelReferences": [
+            "TMerchantOmitId"
+          ],
+          "name": "billing",
+          "required": true,
+          "type": "TMerchantOmitIdModel"
+        },
+        {
+          "modelReferences": [
+            "TMerchant"
+          ],
+          "name": "merchant",
+          "required": true,
+          "type": "TMerchantModel"
+        },
+        {
+          "modelReferences": [
+            "TMoney"
+          ],
+          "name": "money",
+          "required": true,
+          "type": "TMoneyModel"
+        },
+        {
+          "modelReferences": [],
+          "name": "note",
+          "required": true,
+          "type": "string"
+        }
+      ],
+      "generated": {
+        "export": "TPaymentInputModel",
+        "module": "./models/TPaymentInput.ts"
+      },
+      "id": "openapi:c621a88db3635b73#/components/schemas/TPaymentInput",
+      "inheritance": null,
+      "sourceKind": "openapi",
+      "type": {
+        "aliases": [
+          {
+            "export": "TPaymentInput",
+            "module": "./index.ts"
+          }
+        ],
+        "export": "TPaymentInput",
+        "module": "./types.ts"
+      },
+      "variants": []
+    }
+  ],
+  "profile": {
+    "ajvStandalone": false,
+    "allowAny": false,
+    "mobx": true,
+    "validation": true
+  },
+  "runtime": {
+    "minimumVersion": "1.0.0-rc",
+    "name": "@exprtlabs/golem"
+  },
+  "source": {
+    "dialect": "3.2.0",
+    "digest": "c621a88db3635b7371448e1af25cd046e19e27d0efbbb1f7e63d88e1fdb5d681",
+    "kind": "openapi"
+  },
+  "validationSchemaClosure": [
+    {
+      "aliases": [
+        "Payment",
+        "Payment_4199d1df",
+        "openapi:c621a88db3635b73#/components/schemas/Payment"
+      ],
+      "codecId": "Payment_4199d1df",
+      "modelSchema": {
+        "$defs": {
+          "TCharge_633183f5": {
+            "$ref": "TCharge_633183f5"
+          },
+          "TMerchantOmitId_1ef82815": {
+            "$ref": "TMerchantOmitId_1ef82815"
+          },
+          "TMerchant_2d893464": {
+            "$ref": "TMerchant_2d893464"
+          },
+          "TMoney_3a1d334f": {
+            "$ref": "TMoney_3a1d334f"
+          }
+        },
+        "additionalProperties": false,
+        "properties": {
+          "billing": {
+            "$ref": "#/$defs/TMerchantOmitId_1ef82815"
+          },
+          "charge": {
+            "$ref": "#/$defs/TCharge_633183f5"
+          },
+          "id": {
+            "type": "string"
+          },
+          "merchant": {
+            "$ref": "#/$defs/TMerchant_2d893464"
+          },
+          "money": {
+            "$ref": "#/$defs/TMoney_3a1d334f"
+          },
+          "note": {
+            "allOf": [
+              {
+                "type": "string"
+              },
+              {
+                "maxLength": 140
+              }
+            ]
+          }
+        },
+        "required": [
+          "billing",
+          "id",
+          "merchant",
+          "money",
+          "note"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "aliases": [
+        "PaymentDraft",
+        "PaymentDraft_8be34727",
+        "openapi:c621a88db3635b73#/components/schemas/PaymentDraft"
+      ],
+      "codecId": "PaymentDraft_8be34727",
+      "modelSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "note": {
+            "allOf": [
+              {
+                "type": "string"
+              },
+              {
+                "minLength": 2
+              }
+            ]
+          }
+        },
+        "required": [
+          "note"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "aliases": [
+        "TCharge",
+        "TCharge_633183f5",
+        "openapi:c621a88db3635b73#/components/schemas/TCharge"
+      ],
+      "codecId": "TCharge_633183f5",
+      "modelSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "settlesOn": {
+            "type": "string"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "const": "captured"
+              },
+              {
+                "const": "pending"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "settlesOn",
+          "status"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "aliases": [
+        "TMerchant",
+        "TMerchant_2d893464",
+        "openapi:c621a88db3635b73#/components/schemas/TMerchant"
+      ],
+      "codecId": "TMerchant_2d893464",
+      "modelSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "allOf": [
+              {
+                "type": "string"
+              },
+              {
+                "minLength": 2
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "aliases": [
+        "TMerchantOmitId",
+        "TMerchantOmitId_1ef82815",
+        "openapi:c621a88db3635b73#/components/schemas/TMerchantOmitId"
+      ],
+      "codecId": "TMerchantOmitId_1ef82815",
+      "modelSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "allOf": [
+              {
+                "type": "string"
+              },
+              {
+                "minLength": 2
+              }
+            ]
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "aliases": [
+        "TMoney",
+        "TMoney_3a1d334f",
+        "openapi:c621a88db3635b73#/components/schemas/TMoney"
+      ],
+      "codecId": "TMoney_3a1d334f",
+      "modelSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "amount": {
+            "allOf": [
+              {
+                "type": "string"
+              },
+              {
+                "pattern": "^[0-9]+(?:\\.[0-9]{1,2})?$"
+              }
+            ]
+          },
+          "currency": {
+            "allOf": [
+              {
+                "type": "string"
+              },
+              {
+                "pattern": "^[A-Z]{3}$"
+              }
+            ]
+          }
+        },
+        "required": [
+          "amount",
+          "currency"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "aliases": [
+        "TPaymentInput",
+        "TPaymentInput_0e8e9b2a",
+        "openapi:c621a88db3635b73#/components/schemas/TPaymentInput"
+      ],
+      "codecId": "TPaymentInput_0e8e9b2a",
+      "modelSchema": {
+        "$defs": {
+          "TMerchantOmitId_1ef82815": {
+            "$ref": "TMerchantOmitId_1ef82815"
+          },
+          "TMerchant_2d893464": {
+            "$ref": "TMerchant_2d893464"
+          },
+          "TMoney_3a1d334f": {
+            "$ref": "TMoney_3a1d334f"
+          }
+        },
+        "additionalProperties": false,
+        "properties": {
+          "billing": {
+            "$ref": "#/$defs/TMerchantOmitId_1ef82815"
+          },
+          "merchant": {
+            "$ref": "#/$defs/TMerchant_2d893464"
+          },
+          "money": {
+            "$ref": "#/$defs/TMoney_3a1d334f"
+          },
+          "note": {
+            "allOf": [
+              {
+                "type": "string"
+              },
+              {
+                "maxLength": 140
+              }
+            ]
+          }
+        },
+        "required": [
+          "billing",
+          "merchant",
+          "money",
+          "note"
+        ],
+        "type": "object"
+      }
+    }
+  ]
+}

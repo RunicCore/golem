@@ -2,6 +2,7 @@ import { Body, Controller, Delete, Get, HttpCode, NotFoundException, Param, Post
 import { ApiBadRequestResponse, ApiNotFoundResponse, ApiOperation } from '@nestjs/swagger';
 import { PaymentDraft } from './payment-draft.model.js';
 import { Payment, type TPaymentFilter, type TPaymentInput, type TPayment } from './payment.model.js';
+import { ProviderCharges } from './provider-charges.js';
 import { routes } from './routes.js';
 
 const payments = new Map<string, TPayment>();
@@ -11,13 +12,17 @@ let nextPaymentId = 1;
 @Controller(routes.resource({ service: 'payments', resource: 'transactions' }))
 // #endregion route-helper-method
 export class PaymentsController {
+  public constructor(private readonly provider: ProviderCharges) {}
+
   // TPaymentInput is an IObject, so input arrives as a validated plain object.
   // #region create-payment
   @Post()
   @ApiOperation({ operationId: 'createPayment' })
   @ApiBadRequestResponse({ description: 'Invalid payment input.' })
-  create(@Body() input: TPaymentInput): TPayment {
-    const payment = { id: String(nextPaymentId++), ...input };
+  async create(@Body() input: TPaymentInput): Promise<TPayment> {
+    const id = String(nextPaymentId++);
+    const charge = await this.provider.charge(input.money, `payment-${id}`);
+    const payment = { id, ...input, charge };
     payments.set(payment.id, payment);
     return payment;
   }

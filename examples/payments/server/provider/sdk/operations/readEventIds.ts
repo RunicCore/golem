@@ -15,10 +15,10 @@ const securitySchemes: RuntimeSecuritySchemes = __golemSecuritySchemes;
 const responseContracts: readonly RuntimeResponseContract[] = [{"status":"200","content":[{"contentType":"application/vnd.provider.events","framing":"custom-stream"}],"headers":[]}];
 let __operationValidationSources: OperationValidationSources | undefined;
 const __resolveOperationValidationSources = (): OperationValidationSources => __operationValidationSources ??= {
-  inputReference: "urn:golem:openapi:provider:84c5fa76f8fdfe81527c66a9398eabf9445a3fce4269c447c014f321e26f8a76:schemas:operation:readEventIds#/operations/readEventIds/input",
-  responseReferences: [{"status":"200","contentType":"application/vnd.provider.events","reference":"urn:golem:openapi:provider:84c5fa76f8fdfe81527c66a9398eabf9445a3fce4269c447c014f321e26f8a76:schemas:operation:readEventIds#/operations/readEventIds/responses/200/application~1vnd.provider.events"}],
+  inputReference: "urn:golem:openapi:provider:59a4e96e04b2966a3d6827033bb3b17a231b30d0b99218385761221b6b244cda:schemas:operation:readEventIds#/operations/readEventIds/input",
+  responseReferences: [{"status":"200","contentType":"application/vnd.provider.events","reference":"urn:golem:openapi:provider:59a4e96e04b2966a3d6827033bb3b17a231b30d0b99218385761221b6b244cda:schemas:operation:readEventIds#/operations/readEventIds/responses/200/application~1vnd.provider.events"}],
   schemas: new Map([
-    ["urn:golem:openapi:provider:84c5fa76f8fdfe81527c66a9398eabf9445a3fce4269c447c014f321e26f8a76:schemas:operation:readEventIds", JSON.parse("{\"$id\":\"urn:golem:openapi:provider:84c5fa76f8fdfe81527c66a9398eabf9445a3fce4269c447c014f321e26f8a76:schemas:operation:readEventIds\",\"$schema\":\"https://spec.openapis.org/oas/3.1/dialect/base\",\"operations\":{\"readEventIds\":{\"input\":{\"type\":\"object\",\"additionalProperties\":false},\"responses\":{\"200\":{\"application/vnd.provider.events\":{\"type\":\"object\",\"required\":[\"id\"],\"properties\":{\"id\":{\"type\":\"integer\"}}}}}}}}") as object | boolean],
+    ["urn:golem:openapi:provider:59a4e96e04b2966a3d6827033bb3b17a231b30d0b99218385761221b6b244cda:schemas:operation:readEventIds", JSON.parse("{\"$id\":\"urn:golem:openapi:provider:59a4e96e04b2966a3d6827033bb3b17a231b30d0b99218385761221b6b244cda:schemas:operation:readEventIds\",\"$schema\":\"https://spec.openapis.org/oas/3.1/dialect/base\",\"operations\":{\"readEventIds\":{\"input\":{\"type\":\"object\",\"additionalProperties\":false},\"responses\":{\"200\":{\"application/vnd.provider.events\":{\"type\":\"object\",\"required\":[\"id\"],\"properties\":{\"id\":{\"type\":\"integer\"}}}}}}}}") as object | boolean],
   ]),
 };
 
