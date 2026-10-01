@@ -48,7 +48,20 @@ function publicLayout(sdk: string): Record<string, string[]> {
 
 test('the public SDK layout generated from a fixture document matches the frozen list', t => {
   const expected = JSON.parse(readFixture('public-sdk-layout.json')) as Layout;
-  const document = parse(readFixture('public-sdk-layout/openapi.yaml'));
+  const document = parse(readFixture('public-sdk-layout/openapi.yaml')) as Record<string, any>;
+  // A response link and a webhook freeze the names that links.ts and inbound.ts add to sdk/index.js.
+  document.paths['/api/payments/transactions'].post.responses['201'].links = {
+    getCreated: { operationId: 'getPayment', parameters: { id: '$response.body#/id' } },
+  };
+  document.webhooks = {
+    paymentSettled: {
+      post: {
+        operationId: 'paymentSettled',
+        requestBody: { required: true, content: { 'application/json': { schema: { $ref: '#/components/schemas/Payment' } } } },
+        responses: { 204: { description: 'Received' } },
+      },
+    },
+  };
   const actual: Layout = {};
   for (const [name, profile] of Object.entries(PROFILES)) {
     const sdk = path.join(createFixtureProject(t, `golem-sdk-layout-${name}-`), 'sdk');

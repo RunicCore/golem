@@ -315,7 +315,7 @@ function stringifyMerchantOmitIdCore(value: Record<string, unknown>, _options?: 
   return '{' + "\"name\":" + stringifyJsonString(value["name"] as string) + '}';
 }
 
-export function stringifyMerchantOmitId(value: MerchantOmitIdFields, options?: __GolemSerdeOptions): string {
+function stringifyMerchantOmitId(value: MerchantOmitIdFields, options?: __GolemSerdeOptions): string {
   const validates = serdeValidates(options, true);
   if (validates) {
     assertMerchantOmitId(value, options);
@@ -340,11 +340,11 @@ function convertFromWireMerchantOmitId(wire: unknown, options: __GolemSerdeOptio
   return result;
 }
 
-export function fromWireFormatMerchantOmitId(wire: unknown, options?: __GolemSerdeOptions): MerchantOmitIdFields {
+function fromWireFormatMerchantOmitId(wire: unknown, options?: __GolemSerdeOptions): MerchantOmitIdFields {
   return convertFromWireMerchantOmitId(wire, options, false) as MerchantOmitIdFields;
 }
 
-export function toWireFormatMerchantOmitId(value: MerchantOmitIdFields, options?: __GolemSerdeOptions): MerchantOmitIdJSON {
+function toWireFormatMerchantOmitId(value: MerchantOmitIdFields, options?: __GolemSerdeOptions): MerchantOmitIdJSON {
   const validates = serdeValidates(options, true);
   if (validates) {
     assertMerchantOmitId(value, options);
@@ -354,11 +354,11 @@ export function toWireFormatMerchantOmitId(value: MerchantOmitIdFields, options?
   return wire as MerchantOmitIdJSON;
 }
 
-export function parseMerchantOmitId(text: string, options?: __GolemSerdeOptions): MerchantOmitIdFields {
+function parseMerchantOmitId(text: string, options?: __GolemSerdeOptions): MerchantOmitIdFields {
   return convertFromWireMerchantOmitId(parseJson(text), options, true) as MerchantOmitIdFields;
 }
 
-export function validateMerchantOmitId(value: unknown, options?: __GolemValidateOptions): value is MerchantOmitIdFields {
+function validateMerchantOmitId(value: unknown, options?: __GolemValidateOptions): value is MerchantOmitIdFields {
   const failFast = options?.failFast !== false;
   let ok: boolean;
   let errors: readonly unknown[] | null | undefined;
@@ -374,7 +374,7 @@ export function validateMerchantOmitId(value: unknown, options?: __GolemValidate
   return ok;
 }
 
-export function assertMerchantOmitId(value: unknown, options?: __GolemValidateOptions): MerchantOmitIdFields {
+function assertMerchantOmitId(value: unknown, options?: __GolemValidateOptions): MerchantOmitIdFields {
   assertModelValue(value, options, validateMerchantOmitIdFast, validateMerchantOmitIdAll, "MerchantOmitId_aeec4ba8", IssueRepresentation.Model, IssueSource.TypeScript);
   return value as MerchantOmitIdFields;
 }

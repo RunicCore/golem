@@ -1707,6 +1707,8 @@ export function emitSource(
       nestedImportedSerde,
       wireType: (node) => Object.hasOwn(definitions, node.name) || localNames.has(node.name) ? `${node.name}JSON` : undefined,
       fieldsType: (node) => Object.hasOwn(definitions, node.name) || localNames.has(node.name) ? `${node.name}Fields` : undefined,
+      // A derived projection (an Omit, Pick or alias of a model) is not a model the user declared; other files reach it by codec id.
+      privateCodec: (node) => Object.hasOwn(definitions, node.name) && !localNames.has(node.name),
       ...(siblingWireCodecIds ? { siblingWireCodecIds } : {}),
       ...(referencedWireCodecIds ? { exportedWireStringifyIds: referencedWireCodecIds } : {}),
     },

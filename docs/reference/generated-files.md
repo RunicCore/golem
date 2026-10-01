@@ -35,8 +35,14 @@ Every other file in an SDK is internal and may change in a minor release. Do not
 - `output-schemas.ts`
 - `validation-schemas/*`
 - `client.ts`
+- `inbound.ts` and `links.ts` (their names are public through `sdk/index.js`)
 - `iobject-plugin-keys.ts`
 - `model-manifest.json`
+- `operations/<name>.validators.generated.*` and `models/*.validators.generated.*` (with `ajvStandalone: true`)
+
+## Internal model files
+
+In the model output (`src/generated/models/` by default), every file is internal: `models.generated.ts`, `models.validators.generated.js` and `.d.ts` with `ajvStandalone: true`, `models.generated.NOTICES.txt` and `iobject-plugin-keys.ts`. Each `<name>.model.generated.ts` is public for the models its source declares: `<Name>Base` for an `IModel`, the `<Name>Fields`, `<Name>JSON` and `<Name>Init` types, and `parse`, `stringify`, `validate`, `assert`, `toWireFormat` and `fromWireFormat` functions. Codecs of [derived types](#derived-type-names) and exports that start with `__golem` are internal.
 
 The generator no longer writes `validation.ts`, `client-runtime.ts` or `models.ts`. Their code lives in `@exprtlabs/golem`.
 
@@ -74,6 +80,8 @@ Each SDK writes its validation schemas as `<Component>.<input|output>.ts`. Chara
 ## Codec identity
 
 The id of a codec is the model name plus eight hex characters. The hash covers the contract shape and how the codec builds values: its source (`typescript` or `openapi`) and whether it builds a plain object or a class. A hand-written model and an SDK model with the same name and shape have different ids. Import order does not decide which codec `parse` uses.
+
+A model that both the model job and an SDK generate has two independent codecs: the functions in `<name>.model.generated.ts` return your class or its plain fields, and the SDK's functions return the SDK's values.
 
 ## Runtime version
 

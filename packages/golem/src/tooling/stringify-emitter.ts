@@ -63,6 +63,8 @@ export interface CodecRuntimeOptions {
   readonly exportedWireStringifyIds?: ReadonlySet<string>;
   /** Export anonymous codecs' functions: OpenAPI group modules import them from each other. Model companions keep them private. */
   readonly exportAnonymousCodecs?: boolean;
+  /** Codecs whose functions stay module-private, such as a model job's derived projections. */
+  readonly privateCodec?: (node: SchemaNode) => boolean;
 }
 
 interface EmitCtx {
@@ -83,6 +85,7 @@ interface EmitCtx {
   readonly siblingWireCodecIds?: ReadonlySet<string>;
   readonly exportedWireStringifyIds?: ReadonlySet<string>;
   readonly exportAnonymousCodecs?: boolean;
+  readonly privateCodec?: (node: SchemaNode) => boolean;
   /** Nodes being inlined into the current wire stringify, to reject unbounded expansion. */
   readonly wireInlining?: ReadonlySet<string>;
   readonly inlineLocals?: Set<string>;
@@ -1257,7 +1260,7 @@ function emitNodeRuntime(
   const parseName = parseFunctionName(node.id);
   const validateName = validateFunctionName(node.id);
   const assertName = `assert${node.id}`;
-  const exported = node.anonymous && !ctx.exportAnonymousCodecs ? '' : 'export ';
+  const exported = (node.anonymous && !ctx.exportAnonymousCodecs) || ctx.privateCodec?.(node) ? '' : 'export ';
   const fieldsType = ctx.fieldsType?.(node);
   const modelType = fieldsType ?? 'Record<string, unknown>';
   const wireAssertName = `__golemAssertWire_${node.id}`;
@@ -1691,6 +1694,7 @@ export function emitCodecRuntime(
     wireType: options.wireType,
     fieldsType: options.fieldsType,
     exportAnonymousCodecs: options.exportAnonymousCodecs,
+    privateCodec: options.privateCodec,
   };
   const anyValidation = nodes.some((node) => !isExternalCodecNode(node) && validates(node));
   // Validators compile on first use when a sibling module's codec schema must be added first.

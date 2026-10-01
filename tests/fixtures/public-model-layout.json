@@ -1,0 +1,33 @@
+{
+  "src/payment.model.generated.ts": [
+    "MerchantBase",
+    "MerchantFields",
+    "MerchantInit",
+    "MerchantJSON",
+    "MoneyFields",
+    "MoneyInit",
+    "MoneyJSON",
+    "PaymentBase",
+    "PaymentFields",
+    "PaymentInit",
+    "PaymentJSON",
+    "assertMerchant",
+    "assertMoney",
+    "assertPayment",
+    "fromWireFormatMerchant",
+    "fromWireFormatMoney",
+    "fromWireFormatPayment",
+    "parseMerchant",
+    "parseMoney",
+    "parsePayment",
+    "stringifyMerchant",
+    "stringifyMoney",
+    "stringifyPayment",
+    "toWireFormatMerchant",
+    "toWireFormatMoney",
+    "toWireFormatPayment",
+    "validateMerchant",
+    "validateMoney",
+    "validatePayment"
+  ]
+}
