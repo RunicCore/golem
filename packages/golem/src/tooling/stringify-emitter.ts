@@ -919,7 +919,7 @@ function emitDecodeValue(descriptor: ModelTypeDescriptor, expression: string, ct
   }
   if (descriptor.kind === 'array') {
     const item = emitDecodeValue(descriptor.item, 'item', ctx);
-    return `Array.isArray(${expression}) ? (${expression} as readonly unknown[]).map((item) => ${item}) : ${expression}`;
+    return `Array.isArray(${expression}) ? ${emitArrayCopy(expression, item)} : ${expression}`;
   }
   if (descriptor.kind === 'tuple') {
     const item = emitTupleItem(descriptor, item => emitDecodeValue(item, '_item', ctx));
@@ -931,6 +931,12 @@ function emitDecodeValue(descriptor: ModelTypeDescriptor, expression: string, ct
     return emitDecodedRecord(descriptor, expression, ctx);
   }
   return expression;
+}
+
+/** A new array of `expression` whose items are `item`; an unchanged item is copied without a callback. */
+function emitArrayCopy(expression: string, item: string): string {
+  const array = `(${expression} as readonly unknown[])`;
+  return item === 'item' ? `${array}.slice()` : `${array}.map((item) => ${item})`;
 }
 
 function emitComputedRecord(fields: readonly (readonly [string, string])[]): string {
@@ -1085,7 +1091,7 @@ function emitEncodeValue(descriptor: ModelTypeDescriptor, expression: string, ct
   }
   if (descriptor.kind === 'array') {
     const item = emitEncodeValue(descriptor.item, 'item', ctx);
-    return `Array.isArray(${expression}) ? (${expression} as readonly unknown[]).map((item) => ${item}) : ${expression}`;
+    return `Array.isArray(${expression}) ? ${emitArrayCopy(expression, item)} : ${expression}`;
   }
   if (descriptor.kind === 'tuple') {
     const item = emitTupleItem(descriptor, item => emitEncodeValue(item, '_item', ctx));

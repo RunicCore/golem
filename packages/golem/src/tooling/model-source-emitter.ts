@@ -436,7 +436,11 @@ function emitNested(
   if (descriptor.kind === 'array') {
     const item = atField(emitNested(descriptor.item, 'item', direction, resolveModel, resolveSerde), 'item', 'index', direction);
     const indexParam = direction !== 'fromInit' && item.includes('index') ? ', index' : '';
-    return `Array.isArray(${expression}) ? (${expression} as readonly unknown[]).map((item${indexParam}) => ${item}) : ${expression}`;
+    // An unchanged item needs no callback: slice copies the same way map does.
+    const copy = item === 'item'
+      ? `(${expression} as readonly unknown[]).slice()`
+      : `(${expression} as readonly unknown[]).map((item${indexParam}) => ${item})`;
+    return `Array.isArray(${expression}) ? ${copy} : ${expression}`;
   }
   if (descriptor.kind === 'tuple') {
     return emitTuple(descriptor, expression, direction !== 'fromInit', (item, value, index) => atField(emitNested(item, value, direction, resolveModel, resolveSerde), value, index, direction));

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { createSchemaGraph } from '@exprtlabs/golem/schema-graph';
-import { emitCodecRuntime } from '@exprtlabs/golem/emitter';
+import { emitCodecRuntime, emitModelFromInit, emitModelFromJSON, emitModelToJSON } from '@exprtlabs/golem/emitter';
 import type { ModelTypeDescriptor } from '@exprtlabs/golem/model';
 import { instantiateRuntime } from './emitted-runtime.js';
 
@@ -71,4 +71,37 @@ test('stringify checks the model, builds the wire, checks the wire and writes it
   assert.equal(runtime.stringifyPayment(value), JSON.stringify(wire));
   assert.equal(runtime.stringifyPayment(value, { validate: false }), JSON.stringify(wire));
   assert.throws(() => runtime.stringifyPayment({ ...value, id: 7 }), /validation/i);
+});
+
+test('identity arrays are copied with slice, not a map callback that returns its item', () => {
+  const source = paymentRuntimeSource();
+  assert.doesNotMatch(source, /\.map\(\(item\) => item\)/);
+  assert.match(functionBody(source, 'fillPayment'), /\(wire\["list"\] as readonly unknown\[\]\)\.map\(\(item\) => Array\.isArray\(item\) \? \(item as readonly unknown\[\]\)\.slice\(\) : item\)/);
+  assert.match(functionBody(source, 'fillMoney'), /\(wire\["tags"\] as readonly unknown\[\]\)\.slice\(\)/);
+  assert.match(functionBody(source, 'toWireFormatMoney'), /\(__golemField0 as readonly unknown\[\]\)\.slice\(\)/);
+
+  const runtime = instantiateRuntime(source);
+  const wire = { id: 'p1', amount: { currency: 'USD', at: '1970-01-01T00:00:00.000Z', tags: ['a'] }, list: [['x']] };
+  const decoded = runtime.fromWireFormatPayment(wire, { validate: false }) as { list: string[][]; amount: { tags: string[] } };
+  assert.deepEqual(decoded.list, [['x']]);
+  assert.notEqual(decoded.list, wire.list);
+  assert.notEqual(decoded.list[0], wire.list[0]);
+  assert.notEqual(decoded.amount.tags, wire.amount.tags);
+  const encoded = runtime.toWireFormatPayment(decoded, { validate: false }) as { amount: { tags: string[] } };
+  assert.deepEqual(encoded.amount.tags, ['a']);
+  assert.notEqual(encoded.amount.tags, decoded.amount.tags);
+});
+
+test('model initializers, fromJSON and toJSON copy an unchanged array with slice', () => {
+  const strings: ModelTypeDescriptor = { kind: 'array', item: { kind: 'string' } };
+  const unusedModel = (id: string): never => { throw new Error(`No model expected: ${id}`); };
+  const copied = 'Array.isArray(values) ? (values as readonly unknown[]).slice() : values';
+  assert.equal(emitModelFromInit(strings, 'values', unusedModel), copied);
+  assert.equal(emitModelFromJSON(strings, 'values', unusedModel), copied);
+  assert.equal(emitModelToJSON(strings, 'values', unusedModel), copied);
+  const nested: ModelTypeDescriptor = { kind: 'array', item: strings };
+  assert.equal(
+    emitModelFromInit(nested, 'values', unusedModel),
+    'Array.isArray(values) ? (values as readonly unknown[]).map((item) => Array.isArray(item) ? (item as readonly unknown[]).slice() : item) : values',
+  );
 });
