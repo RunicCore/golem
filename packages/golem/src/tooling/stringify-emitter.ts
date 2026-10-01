@@ -1298,14 +1298,12 @@ function emitNodeRuntime(
     ...(validationEnabled ? [
       '  if (validates) {',
       `    ${assertName}(value, options);`,
-      '  }',
-    ] : []),
-    ...(emitsValidatedWire ? [
-      '  if (validates) {',
-      `    const wire = ${encodedExpr};`,
-      // The full model check already ran; check only the JSON encoding produced.
-      ...(node.wireOnlyJsonSchema !== undefined ? [`    ${wireOnlyAssertName(node)}(wire, options);`] : []),
-      `    return ${stringifyName}Wire(wire as never, ${TRUSTED});`,
+      ...(emitsValidatedWire ? [
+        `    const wire = ${encodedExpr};`,
+        // The full model check already ran; check only the JSON encoding produced.
+        ...(node.wireOnlyJsonSchema !== undefined ? [`    ${wireOnlyAssertName(node)}(wire, options);`] : []),
+        `    return ${stringifyName}Wire(wire as never, ${TRUSTED});`,
+      ] : []),
       '  }',
     ] : []),
     `  return ${stringifyName}Core(value as never, ${TRUSTED});`,
@@ -1409,8 +1407,9 @@ function emitNodeRuntime(
       '  let ok: boolean;',
       '  let errors: readonly unknown[] | null | undefined;',
       '  if (options?.validationContext === undefined) {',
-      `    ok = failFast ? ${modelValidator(node.id, true)}(value) : ${modelValidator(node.id, false)}(value);`,
-      `    errors = failFast ? ${modelValidator(node.id, true)}.errors : ${modelValidator(node.id, false)}.errors;`,
+      `    const validator = failFast ? ${modelValidator(node.id, true)} : ${modelValidator(node.id, false)};`,
+      '    ok = validator(value);',
+      '    errors = validator.errors;',
       '  } else {',
       `    const validator = resolveModelValidationContextValidator(options.validationContext, ${JSON.stringify(node.codecId)}, failFast ? 'first' : 'all');`,
       '    ok = runSynchronousValidation(validator, value);',
