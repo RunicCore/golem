@@ -1,8 +1,7 @@
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { identifier } from '@exprtlabs/golem/generator-api';
 import { escapePointerToken } from '@exprtlabs/golem/schema';
 import { escapeJsonPointerToken, isJsonObject, resolveJsonPointer, unescapeJsonPointerToken } from './json.js';
+import { displayLocation, displayUri } from './origin.js';
 import type { ReferenceGraph, ReferenceSite, ReferenceTarget } from './reference-loader.js';
 import type { OpenApiComponentKind } from './schema-projection.js';
 
@@ -29,17 +28,6 @@ interface Hoist {
 }
 
 const NAMED_DEFINITION_CONTAINERS = new Set(['$defs', 'definitions']);
-
-function displayUri(uri: string, rootDirectory: string): string {
-  const url = new URL(uri);
-  return url.protocol === 'file:'
-    ? path.relative(rootDirectory, fileURLToPath(url)).split(path.sep).join('/')
-    : uri;
-}
-
-export function displayLocation(uri: string, pointer: string, rootDirectory: string): string {
-  return `${displayUri(uri, rootDirectory)}#${pointer}`;
-}
 
 function siteLocation(site: ReferenceSite, rootDirectory: string): string {
   return displayLocation(site.documentUri, site.ownerPointer, rootDirectory);

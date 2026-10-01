@@ -1,6 +1,7 @@
 import path from 'node:path';
-import { bundleReferenceGraph, displayLocation } from './bundler.js';
+import { bundleReferenceGraph } from './bundler.js';
 import { expandOas32MediaTypes, parseSourceDocument, validate, validateSourceDocument } from './document.js';
+import { displayLocation, type OriginLocator } from './origin.js';
 import { formatOpenApiProblems, validateOpenApiDocument } from './openapi-validator.js';
 import { loadReferenceGraph, type ReferenceResolutionOptions } from './reference-loader.js';
 
@@ -10,6 +11,8 @@ export interface LoadedOpenApiInput {
   readonly document: unknown;
   /** Local files the document depends on; generation watches them. */
   readonly localInputs: readonly string[];
+  /** Names where a pointer into `document` came from, for generator-stage errors. */
+  readonly locate: OriginLocator;
 }
 
 /**
@@ -27,16 +30,15 @@ export async function loadOpenApiInput(
   validateSourceDocument(parsed);
   const graph = await loadReferenceGraph(rootFile, parsed, options);
   const bundled = bundleReferenceGraph(graph);
+  const locate: OriginLocator = (pointer) => {
+    const origin = bundled.originOf(pointer);
+    return displayLocation(origin.uri, origin.pointer, graph.rootDirectory);
+  };
   const problems = validateOpenApiDocument(bundled.document);
-  if (problems.length) {
-    throw new Error(formatOpenApiProblems(problems, (pointer) => {
-      const origin = bundled.originOf(pointer);
-      return displayLocation(origin.uri, origin.pointer, graph.rootDirectory);
-    }));
-  }
+  if (problems.length) throw new Error(formatOpenApiProblems(problems, locate));
   const document = expandOas32MediaTypes(bundled.document);
-  validate(document);
-  return { document, localInputs: graph.localFiles };
+  validate(document, undefined, locate);
+  return { document, localInputs: graph.localFiles, locate };
 }
 
 export async function loadValidatedDocument(

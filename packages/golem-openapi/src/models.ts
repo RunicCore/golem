@@ -24,6 +24,7 @@ import {
   RESERVED_MODEL_MEMBERS,
   type GolemDiagnostic,
 } from '@exprtlabs/golem/generator-api';
+import { componentOrigin, ComponentNameScope, LocatedError } from './origin.js';
 import { effectiveSchemaTypes, resolveLocal, type OpenApiSchema } from './normalize.js';
 import { generatedBanner, GENERATOR_NAME, PACKAGE_VERSION } from './package-info.js';
 import type { OpenApiGenerationProfile } from './profile.js';
@@ -628,8 +629,11 @@ function discriminatorSelection(
     const variant = definitions.get(typeName);
     // OAS: the discriminator property must be declared by every schema it selects.
     if (variant && !modelSchemaProperties(nested, variant.rawSchema).has(property)) {
-      throw new Error(
-        `discriminator property ${JSON.stringify(property)} of schema ${JSON.stringify(schemaName)} is not declared by variant ${JSON.stringify(variant.schemaName)}`,
+      const named = `schema ${JSON.stringify(schemaName)}`;
+      const variantNamed = `variant ${JSON.stringify(variant.schemaName)}`;
+      throw new LocatedError(
+        `discriminator property ${JSON.stringify(property)} of ${named} is not declared by ${variantNamed}`,
+        [componentOrigin('schemas', schemaName, named), componentOrigin('schemas', variant.schemaName, variantNamed)],
       );
     }
   }
@@ -643,8 +647,10 @@ function discriminatorSelection(
       : null;
     const variant = resolved ? variants.get(resolved.typeName) : undefined;
     if (!variant) {
-      throw new Error(
-        `discriminator mapping ${JSON.stringify(value)} of schema ${JSON.stringify(schemaName)} targets ${JSON.stringify(target)}, which is not one of its variants`,
+      const named = `schema ${JSON.stringify(schemaName)}`;
+      throw new LocatedError(
+        `discriminator mapping ${JSON.stringify(value)} of ${named} targets ${JSON.stringify(target)}, which is not one of its variants`,
+        [componentOrigin('schemas', schemaName, named)],
       );
     }
     variant.values.push(value);
@@ -660,8 +666,10 @@ function discriminatorSelection(
     for (const value of variant.values) {
       const previous = selected.get(value);
       if (previous !== undefined && previous !== typeName) {
-        throw new Error(
-          `discriminator value ${JSON.stringify(value)} of schema ${JSON.stringify(schemaName)} selects both ${previous} and ${typeName}`,
+        const named = `schema ${JSON.stringify(schemaName)}`;
+        throw new LocatedError(
+          `discriminator value ${JSON.stringify(value)} of ${named} selects both ${previous} and ${typeName}`,
+          [componentOrigin('schemas', schemaName, named)],
         );
       }
       selected.set(value, typeName);
@@ -695,12 +703,12 @@ export function collectOpenApiModelDefinitions(document: unknown, resources?: Re
   const schemas = asRecord(asRecord(asRecord(document).components).schemas);
   const env = modelEnv(document, undefined, undefined, resources, selections);
   const definitions = new Map<string, ModelDefinition>();
-  const schemaScope = new NameScope('models.ts schema identifiers');
+  const schemaScope = new ComponentNameScope('models.ts schema identifiers');
   for (const [rawName, rawSchema] of objectEntries(schemas)) {
     const name = identifier(rawName);
     const schema = resolveLocal(document, rawSchema);
     if (!isModelSchema(env, schema)) continue;
-    schemaScope.claim(name, `component schema ${JSON.stringify(rawName)}`);
+    schemaScope.claim(name, `component schema ${JSON.stringify(rawName)}`, rawName);
     definitions.set(name, {
       name,
       schemaName: rawName,
@@ -795,7 +803,7 @@ export function collectOpenApiModelDefinitions(document: unknown, resources?: Re
       warn('OPENAPI_UNION_SHARED_VARIANT', `schema ${JSON.stringify(union.schemaName)} gets no union model class because ${shared.map((variant) => definitions.get(variant)?.schemaName ?? variant).map((name) => JSON.stringify(name)).join(', ')} is also a variant of another union; values typed by it still decode to the variant models`);
       continue;
     }
-    schemaScope.claim(union.name, `union schema ${JSON.stringify(union.schemaName)}`);
+    schemaScope.claim(union.name, `union schema ${JSON.stringify(union.schemaName)}`, union.schemaName);
     definitions.set(union.name, union);
     for (const variant of union.variants ?? []) {
       const child = definitions.get(variant);
@@ -1017,7 +1025,9 @@ function nodesByDefinitionName(
     if (!node) throw new Error(`Internal error: model ${definitionName} has no schema node.`);
     const other = definitionNameByNodeId.get(node.id);
     if (other !== undefined) {
-      throw new Error(`OpenAPI components "${other}" and "${definitionName}" both map to the model name "${node.name}" once characters that are not letters, digits or underscores are replaced. Rename one of them.`);
+      const otherNamed = JSON.stringify(other);
+      const named = JSON.stringify(definitionName);
+      throw new LocatedError(`OpenAPI components ${otherNamed} and ${named} both map to the model name "${node.name}" once characters that are not letters, digits or underscores are replaced. Rename one of them.`, [componentOrigin('schemas', other, otherNamed), componentOrigin('schemas', definitionName, named)]);
     }
     definitionNameByNodeId.set(node.id, definitionName);
     nodesByName.set(definitionName, node);
@@ -1491,8 +1501,10 @@ function unionConversion(
       : emitModelFromInit(descriptor, 'value', resolve);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    throw new Error(
-      `schema ${JSON.stringify(definition.schemaName)}: ${message} Declare an OpenAPI discriminator (propertyName and mapping) on the oneOf/anyOf, or give each variant a required const tag.`,
+    const named = `schema ${JSON.stringify(definition.schemaName)}`;
+    throw new LocatedError(
+      `${named}: ${message} Declare an OpenAPI discriminator (propertyName and mapping) on the oneOf/anyOf, or give each variant a required const tag.`,
+      [componentOrigin('schemas', definition.schemaName, named)],
       { cause: error },
     );
   }
@@ -1527,7 +1539,8 @@ function emitSchemaCodecRuntime(
     const advice = /union/i.test(message)
       ? ' Declare an OpenAPI discriminator (propertyName and mapping) on the oneOf/anyOf, or give each object variant a required const tag.'
       : '';
-    throw new Error(`schema ${JSON.stringify(schemaName)}: ${message}${advice}`, { cause: error });
+    const named = `schema ${JSON.stringify(schemaName)}`;
+    throw new LocatedError(`${named}: ${message}${advice}`, [componentOrigin('schemas', schemaName, named)], { cause: error });
   }
 }
 
@@ -1556,7 +1569,7 @@ export function generateModels(
   const ordered = helpers.onlyNames
     ? analysis.ordered.filter((definition) => helpers.onlyNames?.has(definition.name))
     : analysis.ordered;
-  const moduleScope = new NameScope('models.ts');
+  const moduleScope = new ComponentNameScope('models.ts');
   const emitObjectFromJSON = helpers.objectFromJSON !== false;
   const emitCopy = helpers.copyAdditionalProperties === true
     || (helpers.copyAdditionalProperties === undefined
@@ -1623,12 +1636,12 @@ export function generateModels(
     const typeName = definition.name;
     const className = `${typeName}Model`;
     const variantUnion = (definition.variants ?? []).map(variant => `${variant}Model`).join(' | ');
-    moduleScope.claim(className, `generated model ${JSON.stringify(definition.schemaName)}`);
+    moduleScope.claim(className, `generated model ${JSON.stringify(definition.schemaName)}`, definition.schemaName);
     for (const suffix of ['Fields', 'JSON', 'Init']) {
-      moduleScope.claim(`${typeName}${suffix}`, `generated ${suffix} type for ${JSON.stringify(definition.schemaName)}`);
+      moduleScope.claim(`${typeName}${suffix}`, `generated ${suffix} type for ${JSON.stringify(definition.schemaName)}`, definition.schemaName);
     }
-    moduleScope.claim(`decode${typeName}`, `internal decoder for ${JSON.stringify(definition.schemaName)}`);
-    moduleScope.claim(`encode${typeName}`, `internal encoder for ${JSON.stringify(definition.schemaName)}`);
+    moduleScope.claim(`decode${typeName}`, `internal decoder for ${JSON.stringify(definition.schemaName)}`, definition.schemaName);
+    moduleScope.claim(`encode${typeName}`, `internal encoder for ${JSON.stringify(definition.schemaName)}`, definition.schemaName);
     const classScope = new NameScope(`${className} members`);
     const baseClass = definition.baseName ? `${definition.baseName}Model` : null;
     const fields = [...definition.properties.entries()];

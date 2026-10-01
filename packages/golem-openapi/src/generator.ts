@@ -59,7 +59,7 @@ export async function generate(context: OpenApiGenerationContext): Promise<OpenA
   const input = path.resolve(context.input);
   const output = path.resolve(context.output);
   const loaded = await loadOpenApiInput(input, context);
-  const result = writeSdk(loaded.document, { output, name: context.name, profile, ...(context.dates === undefined ? {} : { dates: context.dates }) });
+  const result = writeSdk(loaded.document, { output, name: context.name, profile, locate: loaded.locate, ...(context.dates === undefined ? {} : { dates: context.dates }) });
   return {
     apiVersion: API_VERSION,
     artifacts: result.artifacts,

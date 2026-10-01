@@ -13,6 +13,7 @@ import {
 } from './normalize.js';
 import { manifestMarker } from '@exprtlabs/golem/manifest';
 import { generatedBanner } from './package-info.js';
+import { ComponentNameScope } from './origin.js';
 import { projectSchema, collectCanonicalResources, nextSchemaBase, resolveSchemaTarget, schemaDocumentBase, schemaTargetIdentity, type ResolvedSchemaTarget, type ResourceIndex } from './schema-projection.js';
 
 export type TextSchemaKind = 'string' | 'unknown' | 'non-string' | 'ambiguous';
@@ -687,7 +688,7 @@ export function generateTypes(
   },
 ): string {
   const schemas = asRecord(asRecord(asRecord(document).components).schemas);
-  const scope = new NameScope('types.ts');
+  const scope = new ComponentNameScope('types.ts');
   const useInput = plan ? plan.typesUsesInputSchemas : Object.keys(schemas).length > 0 && operations.length > 0;
   const useOutput = plan ? plan.typesUsesOutputSchemas : Object.keys(schemas).length > 0 && operations.length > 0;
   if (useInput) scope.claim('InputSchemas', 'import binding InputSchemas');
@@ -705,7 +706,7 @@ export function generateTypes(
   for (const [name, rawSchema] of objectEntries(schemas)) {
     const schema = resolveLocal(document, rawSchema);
     const typeName = identifier(name);
-    scope.claim(typeName, `component schema ${JSON.stringify(name)}`);
+    scope.claim(typeName, `component schema ${JSON.stringify(name)}`, name);
     const type = schemaType(
       schema,
       schemaContext(document, baseContext, name, schema),
@@ -745,7 +746,7 @@ export function generateTypes(
 
 export function generateDirectionalSchemas(document: unknown, direction: 'input' | 'output'): string {
   const schemas = asRecord(asRecord(asRecord(document).components).schemas);
-  const scope = new NameScope(`${direction}-schemas.ts`);
+  const scope = new ComponentNameScope(`${direction}-schemas.ts`);
   const blobTypeName = generatedBlobType(scope, objectEntries(schemas).map(([name]) => identifier(name)));
   const baseContext = schemaContext(document, { direction, blobType: blobTypeName });
   const output = [
@@ -757,7 +758,7 @@ export function generateDirectionalSchemas(document: unknown, direction: 'input'
   for (const [name, rawSchema] of objectEntries(schemas)) {
     const schema = resolveLocal(document, rawSchema);
     const typeName = identifier(name);
-    scope.claim(typeName, `component schema ${JSON.stringify(name)}`);
+    scope.claim(typeName, `component schema ${JSON.stringify(name)}`, name);
     const context = schemaContext(document, baseContext, name, schema);
     output.push(`export type ${typeName} = ${schemaType(schema, context)};`, '');
   }

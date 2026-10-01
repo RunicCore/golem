@@ -20,6 +20,7 @@ import {
   collectOpenApiCodecEntries,
   type OpenApiDates,
 } from './models.js';
+import { withOrigins, type OriginLocator } from './origin.js';
 import { buildSchemaData } from './schemas.js';
 import { generateDirectionalSchemas, generateTypes } from './types.js';
 
@@ -33,6 +34,8 @@ export interface WriteSdkOptions {
   readonly profile: OpenApiGenerationProfile;
   /** `temporal` maps date formats to Temporal types; the default keeps `Date`. */
   readonly dates?: OpenApiDates;
+  /** Names where a bundled component came from; generator errors that name one append it. */
+  readonly locate?: OriginLocator;
 }
 
 export function generateLinks(operations: readonly NormalizedOperation[]): string {
@@ -143,16 +146,22 @@ ${methods}
 `;
 }
 
-export function generatedFiles(document: unknown, options: WriteSdkOptions): {
+export function generatedFiles(document: unknown, options: WriteSdkOptions): GeneratedFiles {
+  return withOrigins(options.locate, () => buildGeneratedFiles(document, options));
+}
+
+interface GeneratedFiles {
   files: Map<string, string>;
   output: string;
   clientName: string;
   operations: readonly NormalizedOperation[];
   inboundOperations: readonly NormalizedOperation[];
   diagnostics: readonly GolemDiagnostic[];
-} {
+}
+
+function buildGeneratedFiles(document: unknown, options: WriteSdkOptions): GeneratedFiles {
   const profile = requireProfile(options.profile);
-  const ir = normalizeAndValidate(document);
+  const ir = normalizeAndValidate(document, options.locate);
   unsupportedHttpAuthSchemes(document);
   const operations = ir.operations;
   const inboundOperations = ir.inboundOperations;

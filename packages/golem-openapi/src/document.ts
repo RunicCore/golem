@@ -3,6 +3,7 @@ import path from 'node:path';
 import YAML from 'yaml';
 import { asRecord, isJsonObject, objectEntries } from './json.js';
 import { assertSupportedModelFieldName } from '@exprtlabs/golem/schema';
+import { componentOrigin, LocatedError, type OriginLocator } from './origin.js';
 import { normalizeDocument, resolveLocalPointer, type NormalizedDocument, type NormalizedOperation } from './normalize.js';
 import { GolemDiagnosticSeverity, type GolemDiagnostic } from '@exprtlabs/golem/generator-api';
 import {
@@ -31,7 +32,7 @@ function validateDocumentHeader(document: unknown): asserts document is Record<s
   }
 }
 
-function validateDeclaredSchemaFields(document: unknown): void {
+function validateDeclaredSchemaFields(document: unknown, locate?: OriginLocator): void {
   visitOpenApiSchemaTree(document, {
     onSchema(schema, _currentBase, pointer) {
       if (!isJsonObject(schema)) return;
@@ -40,7 +41,7 @@ function validateDeclaredSchemaFields(document: unknown): void {
           assertSupportedModelFieldName(name);
         } catch (error) {
           const detail = error instanceof Error ? error.message : String(error);
-          throw new TypeError(`${detail} (at ${pointer || '<schema>'})`);
+          throw new TypeError(`${detail} (at ${locate && pointer.startsWith('#') ? locate(pointer.slice(1)) : pointer || '<schema>'})`);
         }
       }
     },
@@ -73,17 +74,17 @@ export function validateSourceDocument(document: unknown): void {
 }
 
 /** Validate one normalized view and return it so generation can reuse its analysis. */
-export function normalizeAndValidate(document: unknown): NormalizedDocument {
+export function normalizeAndValidate(document: unknown, locate?: OriginLocator): NormalizedDocument {
   validateDocumentHeader(document);
-  validateDeclaredSchemaFields(document);
+  validateDeclaredSchemaFields(document, locate);
   const normalized = normalizeDocument(document);
   validateNormalizedOperationFields(normalized);
   return normalized;
 }
 
-export function validate(document: unknown, preparedIr?: NormalizedDocument): void {
+export function validate(document: unknown, preparedIr?: NormalizedDocument, locate?: OriginLocator): void {
   validateDocumentHeader(document);
-  validateDeclaredSchemaFields(document);
+  validateDeclaredSchemaFields(document, locate);
   validateNormalizedOperationFields(preparedIr ?? normalizeDocument(document));
 }
 
@@ -181,8 +182,10 @@ export function unsupportedHttpAuthSchemes(document: unknown): void {
     if (scheme.type !== 'http') continue;
     const httpScheme = String(scheme.scheme ?? '').toLowerCase();
     if (httpScheme === 'basic' || httpScheme === 'bearer') continue;
-    throw new Error(
-      `unsupported HTTP authentication scheme ${JSON.stringify(String(scheme.scheme ?? ''))} in security scheme ${JSON.stringify(name)}`,
+    const named = `security scheme ${JSON.stringify(name)}`;
+    throw new LocatedError(
+      `unsupported HTTP authentication scheme ${JSON.stringify(String(scheme.scheme ?? ''))} in ${named}`,
+      [componentOrigin('securitySchemes', name, named)],
     );
   }
 }

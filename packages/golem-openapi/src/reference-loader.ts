@@ -3,7 +3,7 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import type { InputObserver } from '@exprtlabs/golem/generator-api';
 import YAML from 'yaml';
-import { displayLocation } from './bundler.js';
+import { displayLocation } from './origin.js';
 import { asRecord, escapeJsonPointerToken, isJsonObject, jsonPointerJoin, objectEntries, resolveJsonPointer } from './json.js';
 import {
   collectCanonicalResources,

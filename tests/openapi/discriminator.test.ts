@@ -381,7 +381,7 @@ test('a discriminator mapping must target one of the union variants', async t =>
   const output = path.join(createFixtureProject(t, 'golem-openapi-discriminator-stray-'), 'sdk');
   await assert.rejects(
     () => generateMaterializedSdk(document, { output, name: 'Pets', profile: { mobx: false, validation: false } }),
-    /discriminator mapping "stray" of schema "PetStray" targets "#\/components\/schemas\/OwnerStray", which is not one of its variants/,
+    /discriminator mapping "stray" of schema "PetStray" \(openapi\.json#\/components\/schemas\/PetStray\) targets "#\/components\/schemas\/OwnerStray", which is not one of its variants/,
   );
 });
 
@@ -394,7 +394,7 @@ test('every variant must declare the discriminator property', async t => {
       name: 'Pets',
       profile: { mobx: false, validation: false },
     }),
-    /discriminator property "kind" of schema "PetUntagged" is not declared by variant "catUntagged"/,
+    /discriminator property "kind" of schema "PetUntagged" \(openapi\.json#\/components\/schemas\/PetUntagged\) is not declared by variant "catUntagged" \(openapi\.json#\/components\/schemas\/catUntagged\)/,
   );
 });
 
