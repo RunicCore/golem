@@ -12,6 +12,8 @@ not require a hosted API.
 
 ## Install and run
 
+Use Node.js 22.15 or newer. The `package.json` pins `@exprtlabs/golem` and the generator packages at `1.0.0-rc`, so `npm install` fetches the release-candidate packages from the registry until they are published.
+
 ```sh
 npm install
 npm run generate
@@ -43,7 +45,7 @@ Set `API_BASE_URL` when the client should use another address.
 
 | File | Purpose |
 | --- | --- |
-| `src/payment.model.ts` | Model fields, codecs and generated model subclasses |
+| `src/payment.model.ts` | Model declarations and the `Payment` class that extends the generated `PaymentBase` |
 | `src/payments.controller.ts` | Payments routes and in-memory store |
 | `src/payment-draft.model.ts` | Class model used as a `@Body()` type by the `drafts` route |
 | `src/payment-notes.controller.ts` | Controller without Swagger decorators, so its operation ID is the default |
@@ -58,34 +60,16 @@ Set `API_BASE_URL` when the client should use another address.
 | `src/app.test.ts` | Runs `app-workflows.ts` against the real Nest adapter |
 | `golem.yaml` | Controller, SDK and model jobs |
 
-The project archive contains the full source for every file, including the
-generated `api/openapi.yaml` and `sdk/` files.
+The directory also holds the generated `api/openapi.yaml`, `sdk/` and
+`*.model.generated.ts` files.
 
 ## Nest bootstrap
 
-`src/application.ts` creates the Nest application. Load the model module, then
-register `NestModelInterceptor`:
+`src/application.ts` creates the Nest application with both controllers, sets the `api` global prefix and registers `NestModelInterceptor` with `useGlobalInterceptors`. It imports `src/payment.model.ts` so the generated codec is registered before requests arrive.
 
-```ts
-import 'reflect-metadata';
-import { Module } from '@nestjs/common';
-import { NestFactory } from '@nestjs/core';
-import { NestModelInterceptor } from '@exprtlabs/golem/nest';
-import { PaymentsController } from './payments.controller.js';
-import './payment.model.js';
+The interceptor runs `fromWireFormat` on a whole `@Body()` or `@Query()` model before the handler, and writes an `IModel` or `IObject` return value, a `Promise` of one or an array of one with `stringify`. `@Param()` and field bindings such as `@Body('field')` stay as Nest received them.
 
-@Module({ controllers: [PaymentsController] })
-class PaymentsModule {}
-
-export async function createApplication() {
-  const application = await NestFactory.create(PaymentsModule, { logger: false });
-  application.setGlobalPrefix('api');
-  application.useGlobalInterceptors(new NestModelInterceptor());
-  return application;
-}
-```
-
-`@Body()` and `@Query()` convert through that interceptor, and it writes an `IModel` or `IObject` return value with `stringify`.
+`tsconfig.json` enables `experimentalDecorators`, `emitDecoratorMetadata` and the `@exprtlabs/golem/ttsc-plugin` with `"nest": true`. The plugin records the `@Body()`, `@Query()` and return types that TypeScript erases, and `npm start` and `npm test` compile through `ttsc`. [Generate OpenAPI](../../docs/guide/nestjs.md#set-up-typescript) lists the settings, and [NestModelInterceptor](../../docs/guide/nestjs-in-depth.md#nestmodelinterceptor) has the full request and response contract.
 
 ## Generated client call
 
@@ -112,8 +96,8 @@ asynchronous.
 
 ## Generation order
 
-`golem.yaml` writes the controller document, then the SDK, then model
-companions:
+`golem.yaml` writes the controller document, then the SDK, then the
+`*.model.generated.ts` files:
 
 ```yaml
 version: 1
@@ -134,5 +118,5 @@ models:
 ```
 
 Edit the authored files under `src/` or `golem.yaml` and run
-`npm run generate`. Generated files under `api/`, `sdk/` and model companion
-paths are replaced.
+`npm run generate`. Generated files under `api/`, `sdk/` and the
+`*.model.generated.ts` files are replaced.

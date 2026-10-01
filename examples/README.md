@@ -51,7 +51,7 @@ The package manifests use the release-candidate packages;
   `VITE_API_BASE_URL` and `PAYMENT_DEMO_PORT` must agree on the same port, and
   `PAYMENT_DEMO_ORIGIN` must match the page's origin.
 
-Generated files under `sdk/` and generated model companions are generated output.
+Files under `sdk/` and the `*.model.generated.ts` files are generated output.
 Edit the authored contract or handwritten source, then run `npm run generate`.
 
 [Quick start](../docs/guide/quick-start.md) shows how to add the packages to an existing application.

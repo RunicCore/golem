@@ -10,9 +10,9 @@ hexadecimal string required by the API.
 - A serde pair converts `number` in the model to `0x...` on the wire.
 - The normal command runs offline.
 
-## Install and run from the download
+## Install and run
 
-Use Node.js 22.15 or newer:
+Use Node.js 22.15 or newer. The `package.json` pins `@exprtlabs/golem` and the generator packages at `1.0.0-rc`, so `npm install` fetches the release-candidate packages from the registry until they are published.
 
 ```sh
 npm install
@@ -42,7 +42,7 @@ The project does not start an API server. Replace the URL with a matching
 
 | File | Responsibility |
 | --- | --- |
-| `backend/project-access.model.ts` | Native backend model and tagged fields |
+| `backend/project-access.model.ts` | Backend model with tagged fields |
 | `backend/project-access.controller.ts` | Route, request and response declaration |
 | `api.yaml` | Generated OpenAPI shapes and update operation |
 | `golem.yaml` | Controller, SDK and model generation jobs |
@@ -56,11 +56,11 @@ The project does not start an API server. Replace the URL with a matching
 | `src/main.ts` | Offline run and optional HTTP call |
 | `src/app.test.ts` | Tests for the offline demo and the request boundary |
 
-The project archive contains the full source for every file, including the
-generated SDK and model companions.
+The directory also holds the generated `sdk/` files and the
+`*.model.generated.ts` files.
 
 Edit authored files and run `npm run generate` again. Generated output under
-`sdk/`, `api.yaml` and model companions is replaced.
+`sdk/`, `api.yaml` and the `*.model.generated.ts` files is replaced.
 
 ## Request boundary
 
