@@ -78,7 +78,7 @@ test('identity arrays are copied with slice, not a map callback that returns its
   assert.doesNotMatch(source, /\.map\(\(item\) => item\)/);
   assert.match(functionBody(source, 'fillPayment'), /\(wire\["list"\] as readonly unknown\[\]\)\.map\(\(item\) => Array\.isArray\(item\) \? \(item as readonly unknown\[\]\)\.slice\(\) : item\)/);
   assert.match(functionBody(source, 'fillMoney'), /\(wire\["tags"\] as readonly unknown\[\]\)\.slice\(\)/);
-  assert.match(functionBody(source, 'toWireFormatMoney'), /\(__golemField0 as readonly unknown\[\]\)\.slice\(\)/);
+  assert.match(functionBody(source, 'toWireFormatMoneyCore'), /\(__golemField0 as readonly unknown\[\]\)\.slice\(\)/);
 
   const runtime = instantiateRuntime(source);
   const wire = { id: 'p1', amount: { currency: 'USD', at: '1970-01-01T00:00:00.000Z', tags: ['a'] }, list: [['x']] };
@@ -104,4 +104,57 @@ test('model initializers, fromJSON and toJSON copy an unchanged array with slice
     emitModelFromInit(nested, 'values', unusedModel),
     'Array.isArray(values) ? (values as readonly unknown[]).map((item) => Array.isArray(item) ? (item as readonly unknown[]).slice() : item) : values',
   );
+});
+
+const TRUSTED_LITERAL = '{ validate: false }';
+
+test('a nested trusted call to a model of the same module runs its core and passes no options', () => {
+  const source = paymentRuntimeSource();
+  assert.equal(occurrences(source, TRUSTED_LITERAL), 0, 'no per-call options literal');
+  assert.doesNotMatch(source, /__golemTrusted/, 'no constant when every callee is in this module');
+  assert.match(functionBody(source, 'stringifyPaymentCore'), /out \+= stringifyMoneyCore\(value\["amount"\] as never\);/);
+  assert.match(functionBody(source, 'stringifyPaymentWire'), /stringifyMoneyWire\(value\["amount"\] as never\)/);
+  assert.match(functionBody(source, 'stringifyPayment'), /stringifyPaymentWire\(wire as never\);/);
+  assert.match(functionBody(source, 'stringifyPayment'), /return stringifyPaymentCore\(value as never\);/);
+  assert.match(functionBody(source, 'stringifyPayment'), /toWireFormatMoneyCore\(value\["amount"\] as never\)/);
+  assert.match(functionBody(source, 'toWireFormatPaymentCore'), /toWireFormatMoneyCore\(record\["amount"\] as never\)/);
+  assert.doesNotMatch(source, /function \w+Core\([^)]*options/, 'a core function takes no options');
+  assert.doesNotMatch(source, /function stringify\w+Wire\([^)]*options/, 'a wire stringify takes no options');
+});
+
+test('the public toWireFormat validates, builds the wire through its core and checks the wire-only schema last', () => {
+  const source = paymentRuntimeSource();
+  const body = functionBody(source, 'toWireFormatPayment');
+  const order = ['assertPayment(value, options)', 'const wire = toWireFormatPaymentCore(value);', '__golemAssertWireOnly_Payment(wire, options)', 'return wire;']
+    .map((step) => body.indexOf(step));
+  assert.ok(order.every((index) => index >= 0), `every step is emitted: ${order.join(', ')}`);
+  assert.deepEqual(order, [...order].sort((a, b) => a - b));
+  assert.doesNotMatch(body, /\bMoney\b|record\[/, 'the wrapper builds nothing itself');
+
+  const runtime = instantiateRuntime(source);
+  const value = { id: 'p1', amount: { currency: 'USD', at: new Date(0), tags: ['a'] }, list: [['x']] };
+  const wire = { id: 'p1', amount: { currency: 'USD', at: '1970-01-01T00:00:00.000Z', tags: ['a'] }, list: [['x']] };
+  assert.deepEqual(runtime.toWireFormatPayment(value), wire);
+  assert.deepEqual(runtime.toWireFormatPayment(value, { validate: false }), wire);
+  assert.throws(() => runtime.toWireFormatPayment({ ...value, id: 7 }), /validation/i, 'the model check runs first');
+  assert.deepEqual(runtime.toWireFormatPayment({ ...value, id: 7 }, { validate: false }), { ...wire, id: 7 }, 'trusted input skips it');
+});
+
+test('a nested trusted call to a model of another module shares one frozen options constant', () => {
+  const owner: ModelTypeDescriptor = {
+    kind: 'object',
+    properties: { pet: { kind: 'generated-model', id: 'Pet' }, pets: { kind: 'array', item: { kind: 'generated-model', id: 'Pet' } } },
+    required: ['pet', 'pets'],
+    additionalProperties: false,
+  };
+  const graph = createSchemaGraph();
+  graph.intern({ kind: 'generated-model', id: 'Pet' }, 'Pet');
+  graph.intern(owner, 'Owner');
+  graph.seal();
+  const source = emitCodecRuntime(graph, { validationEnabled: false, nestedGenerated: (id) => `${id}Model` });
+  assert.equal(occurrences(source, TRUSTED_LITERAL), 1, 'the options literal appears once, in the constant');
+  assert.match(source, /^const __golemTrusted = Object\.freeze\(\{ validate: false \}\);\n/);
+  assert.match(functionBody(source, 'stringifyOwnerCore'), /stringifyPet\(value\["pet"\] as never, __golemTrusted\)/);
+  assert.match(functionBody(source, 'stringifyOwnerCore'), /stringifyPet\(item as never, __golemTrusted\)/);
+  assert.match(functionBody(source, 'toWireFormatOwnerCore'), /toWireFormatPet\(record\["pet"\] as never, __golemTrusted\)/);
 });

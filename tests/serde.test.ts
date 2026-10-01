@@ -58,7 +58,7 @@ test('IObject stringify/parse compose nested Money by call; invalid JSON fails b
   const paymentFnStart = generated.indexOf('function stringifyPayment');
   const paymentFnEnd = generated.indexOf('\n}', paymentFnStart);
   const paymentFn = generated.slice(paymentFnStart, paymentFnEnd);
-  assert.match(paymentFn, /stringifyMoney\(/, 'one stringify function per interned node: Payment calls stringifyMoney instead of inlining its fields');
+  assert.match(paymentFn, /stringifyMoneyCore\(/, 'one stringify function per interned node: Payment calls the stringifyMoney core instead of inlining its fields');
   assert.doesNotMatch(
     paymentFn,
     /stringifyJsonString\([^;]*?\["currency"\]/,

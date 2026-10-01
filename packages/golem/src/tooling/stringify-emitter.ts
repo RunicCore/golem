@@ -89,13 +89,43 @@ interface EmitCtx {
   /** Nodes being inlined into the current wire stringify, to reject unbounded expansion. */
   readonly wireInlining?: ReadonlySet<string>;
   readonly inlineLocals?: Set<string>;
+  /**
+   * Nodes whose `stringify<Id>Core` and `toWireFormat<Id>Core` this module emits.
+   * A nested trusted call to one skips its validating wrapper.
+   */
+  readonly localCoreIds?: ReadonlySet<string>;
+  /** Expression of the trusted options passed to a nested call; the module-level constant when the module declares one. */
+  readonly trustedOptions?: string;
+  /** Emit stringify functions that take no options; they only run trusted. */
+  readonly withoutOptions?: boolean;
 }
 
 const TRUSTED = '{ validate: false }';
+const STRINGIFY_OPTIONS = '_options?: { readonly validate?: boolean; readonly failFast?: boolean }';
+/** Declared once per emitted module that passes trusted options to a function in another module. */
+const TRUSTED_CONSTANT = '__golemTrusted';
 // Generated modules import these as `type ValidateOptions as __GolemValidateOptions` and
 // `type SerdeOptions as __GolemSerdeOptions` from @exprtlabs/golem/serde.
 const VALIDATE_OPTIONS = '__GolemValidateOptions';
 const SERDE_OPTIONS = '__GolemSerdeOptions';
+
+function trustedOptions(ctx: EmitCtx): string {
+  return ctx.trustedOptions ?? TRUSTED;
+}
+
+/** A nested stringify call that skips validation: the node's Core function when this module emits it. */
+function nestedStringifyCall(id: string, expression: string, ctx: EmitCtx): string {
+  return ctx.localCoreIds?.has(id)
+    ? `${stringifyFunctionName(id)}Core(${expression} as never)`
+    : `${stringifyFunctionName(id)}(${expression} as never, ${trustedOptions(ctx)})`;
+}
+
+/** A nested toWireFormat call that skips validation: the node's Core function when this module emits it. */
+function nestedToWireCall(id: string, expression: string, ctx: EmitCtx): string {
+  return ctx.localCoreIds?.has(id)
+    ? `${toWireFunctionName(id)}Core(${expression} as never)`
+    : `${toWireFunctionName(id)}(${expression} as never, ${trustedOptions(ctx)})`;
+}
 
 export function stringifyFunctionName(id: string): string {
   return `stringify${id}`;
@@ -233,7 +263,7 @@ function emitValue(
   if (descriptor.kind === 'generated-model') {
     const named = ctx.graph.nodeFor(descriptor);
     if (named) {
-      return `${stringifyFunctionName(named.id)}(${expression} as never, ${TRUSTED})`;
+      return nestedStringifyCall(named.id, expression, ctx);
     }
     return `stringifyJsonScalar(encodeGeneratedModel(${expression}) as never)`;
   }
@@ -251,7 +281,7 @@ function emitValue(
     // An encoded wire value of a sibling codec: its companion's wire stringify writes it.
     return ctx.siblingWireCodecIds?.has(named.codecId)
       ? `${wireStringifyExportName(named.codecId)}(${expression} as never)`
-      : `stringify${named.id}(${expression} as never, ${TRUSTED})`;
+      : nestedStringifyCall(named.id, expression, ctx);
   }
   if (named && isObjectish(descriptor)) {
     if (
@@ -267,7 +297,7 @@ function emitValue(
       }
       return emitObjectInline(named.descriptor, expression, { ...ctx, wireInlining: new Set([...(ctx.wireInlining ?? []), named.id]) });
     }
-    return `${stringifyFunctionName(named.id)}(${expression} as never, ${TRUSTED})`;
+    return nestedStringifyCall(named.id, expression, ctx);
   }
   if (descriptor.kind === 'date' || tags.date) {
     if (ctx.wireIdentity) return `stringifyJsonString(${expression} as string)`;
@@ -281,7 +311,7 @@ function emitValue(
   if (descriptor.kind === 'array') {
     const itemNode = ctx.graph.nodeFor(descriptor.item);
     const item = itemNode && isObjectish(descriptor.item) && !ctx.wireIdentity
-      ? `${stringifyFunctionName(itemNode.id)}(item as never, ${TRUSTED})`
+      ? nestedStringifyCall(itemNode.id, 'item', ctx)
       : emitValue(descriptor.item, 'item', ctx);
     return `stringifyJsonArray(${expression} as ArrayLike<unknown>, (item) => ${item})`;
   }
@@ -316,7 +346,7 @@ function emitValue(
         if (!ctx.wireIdentity) {
           const node = ctx.graph.nodeFor(variant);
           if (node && isObjectish(variant)) {
-            return `${stringifyFunctionName(node.id)}(${expression} as never, ${TRUSTED})`;
+            return nestedStringifyCall(node.id, expression, ctx);
           }
         }
         return emitValue(variant, expression, ctx);
@@ -370,7 +400,7 @@ function emitValue(
   }
   if (descriptor.kind === 'object') {
     const node = ctx.graph.nodeFor(descriptor);
-    if (node) return `${stringifyFunctionName(node.id)}(${expression} as never, ${TRUSTED})`;
+    if (node) return nestedStringifyCall(node.id, expression, ctx);
     return emitObjectInline(descriptor, expression, ctx);
   }
   return `stringifyJsonScalar(${expression} as never)`;
@@ -420,6 +450,10 @@ function emitObjectInline(
   return `'{' + [${parts.join(', ')}].filter(Boolean).join(',') + '}'`;
 }
 
+function stringifyParameters(value: string, ctx: EmitCtx): string {
+  return ctx.withoutOptions ? value : `${value}, ${STRINGIFY_OPTIONS}`;
+}
+
 function emitObjectStringify(
   fn: string,
   descriptor: Extract<ModelTypeDescriptor, { kind: 'object' }>,
@@ -429,14 +463,14 @@ function emitObjectStringify(
   const properties = Object.entries(descriptor.properties);
   if (properties.length === 0) {
     if (descriptor.additionalProperties === false) {
-      return `function ${fn}(_value: Record<string, unknown>, _options?: { readonly validate?: boolean; readonly failFast?: boolean }): string {\n  return '{}';\n}\n`;
+      return `function ${fn}(${stringifyParameters('_value: Record<string, unknown>', ctx)}): string {\n  return '{}';\n}\n`;
     }
-    return `function ${fn}(value: Record<string, unknown>, _options?: { readonly validate?: boolean; readonly failFast?: boolean }): string {\n  return stringifyJsonScalar(value as never);\n}\n`;
+    return `function ${fn}(${stringifyParameters('value: Record<string, unknown>', ctx)}): string {\n  return stringifyJsonScalar(value as never);\n}\n`;
   }
   if (properties.every(([name]) => required.has(name))) {
     const concatenated = emitRequiredObjectConcat(properties, 'value', ctx);
     return [
-      `function ${fn}(value: Record<string, unknown>, _options?: { readonly validate?: boolean; readonly failFast?: boolean }): string {`,
+      `function ${fn}(${stringifyParameters('value: Record<string, unknown>', ctx)}): string {`,
       ...inlineLocalDeclarations(ctx),
       `  return '{' + ${concatenated};`,
       '}',
@@ -444,7 +478,7 @@ function emitObjectStringify(
     ].join('\n');
   }
   const lines: string[] = [
-    `function ${fn}(value: Record<string, unknown>, _options?: { readonly validate?: boolean; readonly failFast?: boolean }): string {`,
+    `function ${fn}(${stringifyParameters('value: Record<string, unknown>', ctx)}): string {`,
     "  let out = '{';",
     '  let sep = false;',
   ];
@@ -496,6 +530,9 @@ export function emitStringifyFunction(
     wireIdentity: extra?.wireIdentity,
     wireStringifyIds: extra?.wireStringifyIds,
     siblingWireCodecIds: extra?.siblingWireCodecIds,
+    localCoreIds: extra?.localCoreIds,
+    trustedOptions: extra?.trustedOptions,
+    withoutOptions: extra?.withoutOptions,
     wireInlining: extra?.wireIdentity ? new Set([node.id]) : undefined,
     inlineLocals: new Set(),
   };
@@ -507,7 +544,7 @@ export function emitStringifyFunction(
   } else {
     const value = emitValue(node.descriptor, '(value as never)', ctx);
     source = [
-      `function ${fn}(value: unknown, _options?: { readonly validate?: boolean; readonly failFast?: boolean }): string {`,
+      `function ${fn}(${stringifyParameters('value: unknown', ctx)}): string {`,
       ...inlineLocalDeclarations(ctx),
       `  return ${value};`,
       '}',
@@ -538,11 +575,11 @@ function shouldConstructNested(descriptor: ModelTypeDescriptor, ctx: EmitCtx): b
 }
 
 function nestedFromWireOptions(descriptor: ModelTypeDescriptor, ctx: EmitCtx): string {
-  if (!shouldConstructNested(descriptor, ctx)) return TRUSTED;
+  if (!shouldConstructNested(descriptor, ctx)) return trustedOptions(ctx);
   const node = ctx.graph.nodeFor(descriptor);
   const id = node?.codecId
     ?? (descriptor.kind === 'reference' ? descriptor.name : descriptor.kind === 'generated-model' ? descriptor.id : undefined);
-  if (!id) return TRUSTED;
+  if (!id) return trustedOptions(ctx);
   const ctor = ctx.nestedConstruct?.(id) ?? `requireIModelClass(${JSON.stringify(id)})`;
   return `{ validate: false, construct: ${ctor} }`;
 }
@@ -589,7 +626,7 @@ function emitInternedObjectDecode(
     const imported = ctx.nestedImportedSerde?.(node.codecId) ?? ctx.nestedImportedSerde?.(node.id);
     return `${imported?.fill ?? fillFunctionName(node.id)}({} as Record<string, unknown>, ${asRecord(expression)})`;
   }
-  return `${fromWireFunctionName(node.id)}(${expression}, ${TRUSTED})`;
+  return `${fromWireFunctionName(node.id)}(${expression}, ${trustedOptions(ctx)})`;
 }
 
 function mergeResolvedObjects(
@@ -1076,7 +1113,7 @@ function emitEncodeValue(descriptor: ModelTypeDescriptor, expression: string, ct
   if (descriptor.kind === 'generated-model') {
     const named = ctx.graph.nodeFor(descriptor);
     if (named) {
-      return `${toWireFunctionName(named.id)}(${expression} as never, ${TRUSTED})`;
+      return nestedToWireCall(named.id, expression, ctx);
     }
     return `encodeGeneratedModel(${expression})`;
   }
@@ -1087,7 +1124,7 @@ function emitEncodeValue(descriptor: ModelTypeDescriptor, expression: string, ct
   if (descriptor.kind === 'date' || tags.date) return `serializeDate(${expression})`;
   const named = ctx.graph.nodeFor(descriptor);
   if (named && isObjectish(descriptor)) {
-    return `${toWireFunctionName(named.id)}(${expression} as never, ${TRUSTED})`;
+    return nestedToWireCall(named.id, expression, ctx);
   }
   if (descriptor.kind === 'array') {
     const item = emitEncodeValue(descriptor.item, 'item', ctx);
@@ -1102,7 +1139,7 @@ function emitEncodeValue(descriptor: ModelTypeDescriptor, expression: string, ct
   }
   if (descriptor.kind === 'object') {
     const node = ctx.graph.nodeFor(descriptor);
-    if (node) return `${toWireFunctionName(node.id)}(${expression} as never, ${TRUSTED})`;
+    if (node) return nestedToWireCall(node.id, expression, ctx);
     return emitEncodedRecord(descriptor, expression, ctx);
   }
   return expression;
@@ -1258,7 +1295,7 @@ function emitNodeRuntime(
     ].join('\n');
   }
 
-  const stringifySrc = emitStringifyFunction(node, ctx.graph, ctx.serde, ctx);
+  const stringifySrc = emitStringifyFunction(node, ctx.graph, ctx.serde, { ...ctx, withoutOptions: true });
   const stringifyName = stringifyFunctionName(node.id);
   const fillName = fillFunctionName(node.id);
   const fromWire = fromWireFunctionName(node.id);
@@ -1289,7 +1326,7 @@ function emitNodeRuntime(
     ? emitEncodedRecord(objectDescriptor, 'record', encodedWireContext)
     : emitEncodeValue(node.descriptor, '(value as never)', encodedWireContext);
   const wireStringifySrc = emitsValidatedWire
-    ? `${emitStringifyFunction(node, ctx.graph, ctx.serde, { ...ctx, wireIdentity: true })
+    ? `${emitStringifyFunction(node, ctx.graph, ctx.serde, { ...ctx, wireIdentity: true, withoutOptions: true })
       .replace(`function ${stringifyName}(`, `function ${stringifyName}Wire(`)}${ctx.exportedWireStringifyIds?.has(node.codecId)
       ? `export { ${stringifyName}Wire as ${wireStringifyExportName(node.codecId)} };\n`
       : ''}`
@@ -1308,11 +1345,11 @@ function emitNodeRuntime(
         `    const wire = ${encodedExpr};`,
         // The full model check already ran; check only the JSON encoding produced.
         ...(node.wireOnlyJsonSchema !== undefined ? [`    ${wireOnlyAssertName(node)}(wire, options);`] : []),
-        `    return ${stringifyName}Wire(wire as never, ${TRUSTED});`,
+        `    return ${stringifyName}Wire(wire as never);`,
       ] : []),
       '  }',
     ] : []),
-    `  return ${stringifyName}Core(value as never, ${TRUSTED});`,
+    `  return ${stringifyName}Core(value as never);`,
     '}',
     '',
   ].join('\n');
@@ -1375,26 +1412,35 @@ function emitNodeRuntime(
     '',
   ];
 
-  const valueParam = validationEnabled || encodedExpr.includes('value') ? 'value' : '_value';
   const wireType = ctx.wireType?.(node);
 
+  // The wire encoding without validation: nested trusted calls and the validating wrapper both run it.
+  const toWireCore = `${toWire}Core`;
+  const toWireCoreLines = [
+    `function ${toWireCore}(value: ${fieldsType ?? 'unknown'}): ${wireType ?? 'unknown'} {`,
+    ...(objectDescriptor ? ['  const record = value as Record<string, unknown>;'] : []),
+    ...inlineLocalDeclarations(encodedWireContext),
+    `  const wire = ${encodedRecordExpr};`,
+    wireType ? `  return wire as ${wireType};` : '  return wire;',
+    '}',
+    '',
+  ];
   const toWireLines = [
-    `${exported}function ${toWire}(${valueParam}: ${fieldsType ?? 'unknown'}, options?: ${SERDE_OPTIONS}): ${wireType ?? 'unknown'} {`,
+    ...toWireCoreLines,
+    `${exported}function ${toWire}(value: ${fieldsType ?? 'unknown'}, options?: ${SERDE_OPTIONS}): ${wireType ?? 'unknown'} {`,
     emitSerdeValidates(validationEnabled),
     ...(validationEnabled ? [
       '  if (validates) {',
       `    ${assertName}(value, options);`,
       '  }',
     ] : []),
-    ...(objectDescriptor ? ['  const record = value as Record<string, unknown>;'] : []),
-    ...inlineLocalDeclarations(encodedWireContext),
-    `  const wire = ${encodedRecordExpr};`,
     ...(validationEnabled && node.wireOnlyJsonSchema !== undefined ? [
+      `  const wire = ${toWireCore}(value);`,
       '  if (validates) {',
       `    ${wireOnlyAssertName(node)}(wire, options);`,
       '  }',
-    ] : []),
-    wireType ? `  return wire as ${wireType};` : '  return wire;',
+      '  return wire;',
+    ] : [`  return ${toWireCore}(value);`]),
     '}',
     '',
   ];
@@ -1687,6 +1733,9 @@ export function emitCodecRuntime(
     graph,
     // emitNodeRuntime emits stringify<Id>Wire exactly for these nodes.
     wireStringifyIds: new Set(nodes.filter((node) => !isExternalCodecNode(node) && validates(node) && !node.sameSchema).map((node) => node.id)),
+    // emitNodeRuntime emits stringify<Id>Core and toWireFormat<Id>Core for every node that is not external.
+    localCoreIds: new Set(nodes.filter((node) => !isExternalCodecNode(node)).map((node) => node.id)),
+    trustedOptions: TRUSTED_CONSTANT,
     siblingWireCodecIds: options.siblingWireCodecIds,
     exportedWireStringifyIds: options.exportedWireStringifyIds,
     validatorSetExpr: options.validatorSetExpr,
@@ -1800,7 +1849,11 @@ export function emitCodecRuntime(
     if (enabled) lines.push(emitAjvPair(node, true, ctx.validatorSetExpr, lazyNestedSchemas));
     lines.push(emitNodeRuntime(node, ctx, enabled, anyValidation && enabled && !ctx.validatorSetExpr));
   }
-  return lines.join('\n');
+  const runtime = lines.join('\n');
+  // One frozen object serves every nested call that passes trusted options to another module's function.
+  return runtime.includes(TRUSTED_CONSTANT)
+    ? `const ${TRUSTED_CONSTANT} = Object.freeze({ validate: false });\n\n${runtime}`
+    : runtime;
 }
 
 export function emitCodecRegistration(node: SchemaNode, graph: SchemaGraph): string {
