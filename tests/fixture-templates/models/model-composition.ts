@@ -14,16 +14,31 @@ export class Item extends ItemBase {}
 `;
 }
 
-const serdeMetadata = tsSource`
+const serdeCodecs = tsSource`
 export function encodeAddress(value: { id: string; city: string }): string { return value.city; }
 export function decodeAddress(value: string): { id: string; city: string } { return { id: 'decoded', city: value }; }
+`;
+
+const validationCodecs = tsSource`
+export function validAddress(_value: unknown): boolean { return true; }
+`;
+
+const serdeMetadata = tsSource`
+import type { encodeAddress, decodeAddress } from './codecs.js';
 type AddressFields = { id: string; city: string } & TSerde<typeof encodeAddress, typeof decodeAddress>;
 `;
 
 const validationMetadata = tsSource`
-export function validAddress(_value: unknown): boolean { return true; }
+import type { validAddress } from './codecs.js';
 type AddressFields = { id: string; city: string } & TValidation<typeof validAddress>;
 `;
+
+/** The module a whole-object serde or validation function lives in; a model file cannot declare it. */
+export function discardedProjectionCodecsSource(options: {
+  readonly metadata: 'serde' | 'validation';
+}): SourceFragment {
+  return options.metadata === 'serde' ? serdeCodecs : validationCodecs;
+}
 
 export function discardedProjectionMetadataSource(options: {
   readonly metadata: 'serde' | 'validation';

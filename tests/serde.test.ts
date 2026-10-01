@@ -162,6 +162,7 @@ test('IObject TSerde stringify/parse convert declared fields in one pass', async
     linkTypescript: true,
     linkTtsc: true,
   });
+  fs.writeFileSync(path.join(sourceRoot, 'codecs.ts'), readFixture("models/serde/iobject-tserde-stringify-parse-convert-declared-fields-in-one-pass/codecs.ts"));
   fs.writeFileSync(path.join(sourceRoot, 'permission.model.ts'), readFixture("models/serde/iobject-tserde-stringify-parse-convert-declared-fields-in-one-pass/permission.model.ts"));
   const result = generate({ root, profile: { mobx: false, validation: true } });
   writeGeneratedArtifacts(result.artifacts);
@@ -172,7 +173,7 @@ test('IObject TSerde stringify/parse convert declared fields in one pass', async
     'budget: TSerde fields convert declared fields in one pass, not through a second interleaved stringify/validate sequence',
   );
   await compile(root);
-  const permissionModule = await import(pathToFileURL(path.join(root, 'build/permission.model.js')).href) as {
+  const permissionCodecs = await import(pathToFileURL(path.join(root, 'build/codecs.js')).href) as {
     deserializeCalls: number;
   };
   const codecs = await import(pathToFileURL(path.join(root, 'build/permission.model.generated.js')).href) as {
@@ -211,21 +212,21 @@ test('IObject TSerde stringify/parse convert declared fields in one pass', async
   assert.equal(codecs.fromWireFormatPermissionInput({ permissions: '0x5' }).permissions, 5);
   assert.equal(codecs.validatePermissionInput({ permissions: 5 }), true);
   assert.equal(codecs.validatePermissionInput({ permissions: '0x5' }), false);
-  const beforeInvalid = permissionModule.deserializeCalls;
+  const beforeInvalid = permissionCodecs.deserializeCalls;
   assert.throws(
     () => codecs.parsePermissionInput('{"permissions":"nope"}'),
     (error: unknown) => error instanceof LibError
       && error.kind === LibErrorKind.Validation
       && error.issues[0]?.representation === IssueRepresentation.Wire,
   );
-  assert.equal(permissionModule.deserializeCalls, beforeInvalid);
+  assert.equal(permissionCodecs.deserializeCalls, beforeInvalid);
   assert.throws(
     () => codecs.parsePermission('{"permissions":"0x100"}', { construct: Permission }),
     (error: unknown) => error instanceof LibError
       && error.kind === LibErrorKind.Validation
       && error.issues[0]?.representation === IssueRepresentation.Model,
   );
-  assert.ok(permissionModule.deserializeCalls > beforeInvalid);
+  assert.ok(permissionCodecs.deserializeCalls > beforeInvalid);
   const trusted = codecs.parsePermissionInput('{"permissions":"nope"}', { validate: false });
   assert.ok(trusted.permissions === Number.parseInt('nope', 16) || Number.isNaN(trusted.permissions));
 });
@@ -237,6 +238,7 @@ test('same-type TSerde emits one Ajv schema and global validation false rejects 
     linkTypescript: true,
     linkTtsc: true,
   });
+  fs.writeFileSync(path.join(sourceRoot, 'codecs.ts'), readFixture("models/serde/same-type-tserde-emits-one-ajv-schema-and-global-validation-false-rejects-va/codecs.ts"));
   fs.writeFileSync(path.join(sourceRoot, 'label.model.ts'), readFixture("models/serde/same-type-tserde-emits-one-ajv-schema-and-global-validation-false-rejects-va/label.model.ts"));
   const generatedArtifacts = generate({ root: identityRoot, profile: { mobx: false, validation: true } });
   writeGeneratedArtifacts(generatedArtifacts.artifacts);

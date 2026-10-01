@@ -117,6 +117,7 @@ test('codec Ajv compiles equivalent MinLength tags in each companion', async (t)
 test('standalone validator bindings survive strict companion regeneration', async (t) => {
   const fixtureValue = fixture(t, { noUnusedLocals: true });
   const source = path.join(fixtureValue.sourceRoot, 'cart.model.ts');
+  writeFileSync(path.join(fixtureValue.sourceRoot, 'rules.ts'), readFixture('models/model-artifact-efficiency/standalone-validator-regeneration/rules.ts'));
   writeFileSync(source, readFixture('models/model-artifact-efficiency/standalone-validator-regeneration/cart-initial.model.ts'));
   const profile = { mobx: false, validation: true, ajvStandalone: true } as const;
 
@@ -232,6 +233,7 @@ for (const ajvStandalone of [false, true]) {
 
 test('validation-disabled serde artifacts omit executable predicate bindings', t => {
   const value = fixture(t);
+  writeFileSync(path.join(value.sourceRoot, 'codecs.ts'), readFixture("models/model-artifact-efficiency/validation-disabled-serde-artifacts-omit-executable-predicate-bindings/codecs.ts"));
   writeFileSync(path.join(value.sourceRoot, 'item.model.ts'), readFixture("models/model-artifact-efficiency/validation-disabled-serde-artifacts-omit-executable-predicate-bindings/item.model.ts"));
   const result = generate({ root: value.root, profile: { mobx: false, validation: false } });
   const output = result.artifacts.filter(item => item.path.endsWith('.ts')).map(item => item.content).join('\n');

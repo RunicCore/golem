@@ -1,4 +1,4 @@
 import type { IModel } from '@exprtlabs/golem/model';
 import type { Minimum, TValidation } from '@exprtlabs/golem/tags';
-export function acceptsCount(value: number): boolean { return value % 2 === 0; }
+import type { acceptsCount } from './rules.js';
 export type TCart = IModel<{ count: number & Minimum<1> & TValidation<typeof acceptsCount> }>;

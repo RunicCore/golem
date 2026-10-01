@@ -1,10 +1,7 @@
 import type { IModel } from '@exprtlabs/golem/model';
 import type { Minimum, TSerde, TValidation } from '@exprtlabs/golem/tags';
 import type { Money } from '../sdk/index.js';
-
-export const positive = (value: number): boolean | string => value > 0 || 'Use a positive count';
-export const encode = (value: number): string => value.toString(16);
-export const decode = (value: string): number => Number.parseInt(value, 16);
+import type { positive, encode, decode } from './codecs.js';
 
 export type TCart = IModel<{
   money: Money;

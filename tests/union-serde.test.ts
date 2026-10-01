@@ -44,6 +44,7 @@ function generateRoot(t: TestContext): string {
       }),
     },
   ]);
+  copyFixtureFile(root, 'models/union-serde/nested-serde/codecs.ts', 'src/codecs.ts');
   copyFixtureFile(root, 'models/union-serde/nested-serde/order.model.ts', 'src/order.model.ts');
   const result = generate({ root, profile: { mobx: false, validation: true } });
   writeGeneratedArtifacts(result.artifacts);

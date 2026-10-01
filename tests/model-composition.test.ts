@@ -8,7 +8,7 @@ import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/golem/con
 import { requireObjectCodec } from '@exprtlabs/golem/serde';
 import { generatedCodecId, generatedCodecIdFromRoot } from './support/consumer.js';
 import { compileModelProject, createModelProject, writeModelSources } from './model-project.js';
-import { discardedProjectionMetadataSource, projectionPolicyModelSource } from './fixture-templates/models/model-composition.js';
+import { discardedProjectionCodecsSource, discardedProjectionMetadataSource, projectionPolicyModelSource } from './fixture-templates/models/model-composition.js';
 import { generate } from '#model/generator';
 
 function fixture(t: TestContext, allowJs = false) {
@@ -136,6 +136,7 @@ test('anonymous nested IModel declarations fail with an actionable diagnostic', 
 for (const tag of ['serde', 'validation'] as const) {
   test(`projection rejects discarded whole-object ${tag} metadata`, async t => {
     const { root, sourceRoot } = fixture(t);
+    fs.writeFileSync(path.join(sourceRoot, 'codecs.ts'), discardedProjectionCodecsSource({ metadata: tag }).text);
     fs.writeFileSync(path.join(sourceRoot, 'item.model.ts'), discardedProjectionMetadataSource({ metadata: tag }).text);
     assert.throws(
       () => generate({ root, profile: { mobx: false, validation: true } }),

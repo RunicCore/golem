@@ -49,6 +49,7 @@ for (const standalone of [false, true]) {
     ];
     fs.writeFileSync(apiFile, JSON.stringify(apiDocument));
     await cli(root, ['generate']);
+    copyFixtureFile(root, 'browser/packed-runtime/codecs.ts', 'src/codecs.ts');
     copyFixtureFile(root, 'browser/packed-runtime/cart.model.ts', 'src/cart.model.ts');
     await cli(root, ['generate']);
     copyFixtureFile(root, 'browser/packed-runtime/src/browser.ts', 'src/browser.ts');
