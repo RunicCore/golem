@@ -1198,6 +1198,16 @@ function schemaGraphGroups(
       const model = definitionNameByNodeId.get(id);
       return model === undefined ? [] : [model];
     }));
+    // The ttsc plugin finds a class by file and model name, so one file cannot hold two classes that shorten alike.
+    const byModelName = new Map<string, string>();
+    for (const model of [...models].sort()) {
+      const modelName = codecShortName(model);
+      const other = byModelName.get(modelName);
+      if (other !== undefined) {
+        throw new Error(`OpenAPI components "${other}" and "${model}" both map to the model name "${modelName}". They are part of one reference cycle, so they share one file. Rename one of them.`);
+      }
+      byModelName.set(modelName, model);
+    }
     const id = `group-${hashGroup([...ids].map((nodeId) => schemaGraph.nodes.get(nodeId)?.codecId ?? nodeId))}`;
     for (const nodeId of ids) owner.set(nodeId, id);
     return { id, filename: `models/_${id}.ts`, nodes: new Set(ids), models };

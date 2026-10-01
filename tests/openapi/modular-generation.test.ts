@@ -866,3 +866,39 @@ test('a holder of Payment and TPayment compiles and round-trips its nested class
   const { sdk } = await generateShortened(t, { Payment: idObject, TPayment: amountObject, Holder: holderOf('Payment', 'TPayment') });
   assertHolderRoundTrip(sdk, ['PaymentModel', 'TPaymentModel'], [{ id: 'a' }, { amount: 2 }]);
 });
+
+function optionalRef(target: string): Record<string, unknown> {
+  return { $ref: `#/components/schemas/${target}` };
+}
+
+test('a cycle through a schema whose name shortens like another compiles and round-trips', async t => {
+  const holder = { type: 'object', properties: { t: optionalRef('TPayment') } };
+  const tPayment = { ...amountObject, properties: { amount: { type: 'number' }, h: optionalRef('Holder') } };
+  const { sdk } = await generateShortened(t, { Payment: idObject, TPayment: tPayment, Holder: holder });
+  roundTrip(sdk, 'Payment', 'PaymentModel', { id: 'a' });
+  roundTrip(sdk, 'TPayment', 'TPaymentModel', { amount: 1, h: { t: { amount: 2 } } });
+  const parsed = (sdk.parseTPayment as (text: string, options: { construct: unknown }) => { h: { t: unknown } })(
+    JSON.stringify({ amount: 1, h: { t: { amount: 2 } } }),
+    { construct: sdk.TPaymentModel },
+  );
+  assert.ok(parsed.h instanceof (sdk.HolderModel as new () => object), 'h is a HolderModel');
+  assert.ok(parsed.h.t instanceof (sdk.TPaymentModel as new () => object), 't is a TPaymentModel');
+});
+
+test('a cycle through schemas that shorten alike with a Model suffix compiles and round-trips', async t => {
+  const holder = { type: 'object', properties: { t: optionalRef('TPaymentModel') } };
+  const tPayment = { type: 'object', properties: { flag: { type: 'boolean' }, h: optionalRef('Holder') }, required: ['flag'] };
+  const { sdk } = await generateShortened(t, { PaymentModel: idObject, TPaymentModel: tPayment, Holder: holder });
+  roundTrip(sdk, 'PaymentModel', 'PaymentModelModel', { id: 'a' });
+  roundTrip(sdk, 'TPaymentModel', 'TPaymentModelModel', { flag: true, h: { t: { flag: false } } });
+});
+
+test('two schemas that shorten alike and reference each other are rejected with both names', t => {
+  const payment = { type: 'object', properties: { id: { type: 'string' }, t: optionalRef('TPayment') }, required: ['id'] };
+  const tPayment = { type: 'object', properties: { amount: { type: 'number' }, p: optionalRef('Payment') }, required: ['amount'] };
+  const { source } = fixture(t);
+  assert.throws(
+    () => writeGeneratedSdk(writeSdk, shortenedDocument({ Payment: payment, TPayment: tPayment }), { output: source, name: 'Shortened', profile: { mobx: false, validation: false } }),
+    /^Error: OpenAPI components "Payment" and "TPayment" both map to the model name "Payment"\. They are part of one reference cycle, so they share one file\. Rename one of them\.$/,
+  );
+});

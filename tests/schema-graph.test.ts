@@ -434,6 +434,13 @@ test('codec declaration table maps source#Name to hashed ids and rejects conflic
     ]),
     /maps to both/,
   );
+  assert.throws(
+    () => emitCodecDeclarationTable([
+      { source: 'src/payment.model.ts', name: 'Payment', codecId: 'Payment_aaaaaaaa', className: 'PaymentModel' },
+      { source: 'src/payment.model.ts', name: 'TPayment', codecId: 'Payment_bbbbbbbb', className: 'TPaymentModel' },
+    ]),
+    /declaration "src\/payment\.model\.ts#TPaymentModel" maps to both .*same as "src\/payment\.model\.ts#PaymentModel"/,
+  );
 });
 
 test('nested IModel refs keep construct on the hashed codec id', () => {
