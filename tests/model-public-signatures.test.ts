@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { generate } from '#model/generator';
-import { createModelProject, writeModelSources } from './model-project.js';
+import { writeGeneratedArtifacts } from './fixture-project.js';
+import { compileModelProject, createModelProject, writeModelSources } from './model-project.js';
 
 const OPTIONS = String.raw`options\?: __Golem(?:Serde|Validate)Options`;
 
@@ -61,4 +62,23 @@ test('model companion assert functions share one runtime helper and named option
   assert.doesNotMatch(companion, /validationContext === undefined\) \{\n\s+if \(!\(/);
   assert.match(companion, /^export function assertTask\(value: unknown, options\?: __GolemValidateOptions\): TaskFields \{\n  assertModelValue\(value, options, /m);
   assert.match(companion, /type SerdeOptions as __GolemSerdeOptions, type ValidateOptions as __GolemValidateOptions \} from '@exprtlabs\/golem\/serde';/);
+});
+
+test('a model file that declares only IObject types compiles under noUnusedLocals', async t => {
+  const { root, sourceRoot } = createModelProject(t, {
+    prefix: 'golem-object-only-', name: null, linkWorkspaceNodeModules: true,
+    compilerOptions: { noUnusedLocals: true, noUnusedParameters: true },
+  });
+  writeModelSources(sourceRoot, {
+    'note.model.ts': `import type { IObject } from '@exprtlabs/golem/model';
+import type { MinLength } from '@exprtlabs/golem/tags';
+export type TAuthor = IObject<{ name: string & MinLength<1> }>;
+export type TNote = IObject<{ text: string; author: TAuthor; at: Date }>;
+`,
+  });
+  for (const ajvStandalone of [false, true]) {
+    const result = generate({ root, profile: { mobx: false, validation: true, ajvStandalone } });
+    writeGeneratedArtifacts(result.artifacts);
+    await compileModelProject(root, ['--noEmit']);
+  }
 });

@@ -1723,13 +1723,35 @@ export function emitSource(
   lines.splice(1, 0, ...siblingWireImports);
   const companion = pruneExternalCodecImports(pruneNamedImport(
     pruneNamedImport(
-      pruneNamedImport(`${lines.join('\n').trim()}\n`, '@exprtlabs/golem/serde'),
-      '@exprtlabs/golem/ajv',
+      pruneNamedImport(
+        pruneNamedImport(pruneUnusedHelpers(`${lines.join('\n').trim()}\n`), '@exprtlabs/golem/serde'),
+        '@exprtlabs/golem/ajv',
+      ),
+      '@exprtlabs/golem/conversion',
     ),
-    '@exprtlabs/golem/conversion',
+    '@exprtlabs/golem/model',
   ));
   assertExternalImportsExported(companion, externalIds, manifestIndex, source, output);
   return companion;
+}
+
+/** Module-local helpers a companion may not need, such as the projection decoders of a file without classes. */
+const LOCAL_HELPER = /^(?:function ((?:decode|init|encode)\w+)\(.*\}|const (init\w+) = decode\w+;|const (__golemAbsentField) = Symbol\(\);|function (modelObject)\(json: unknown, name: string\): Record<string, unknown> \{\n {2}return requireModelObject\(json, name\);\n\})\n/gm;
+
+/** Remove local helpers nothing references, repeating because removing one can leave another unused. */
+function pruneUnusedHelpers(source: string): string {
+  let current = source;
+  for (;;) {
+    let removed = false;
+    const before = current;
+    current = before.replace(LOCAL_HELPER, (declaration: string, ...captures: unknown[]) => {
+      const name = captures.slice(0, 4).find((capture): capture is string => typeof capture === 'string');
+      if (!name || (before.match(new RegExp(`\\b${name}\\b`, 'g'))?.length ?? 0) > 1) return declaration;
+      removed = true;
+      return '';
+    });
+    if (!removed) return current.replace(/\n{3,}/g, '\n\n');
+  }
 }
 
 /**
