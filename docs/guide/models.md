@@ -84,7 +84,7 @@ The field type decides construction, conversion and validation.
 | another type-only `IModel` | a nested plain object, still converted |
 | your class (extends a `*Base`) | a nested instance of that class |
 | `Date` | an ISO date-time string in JSON, restored with `Date` parsing; add format checks with [tags](/guide/tags) |
-| `TemporalInstant`, `TemporalPlainDate` and the other [`@exprtlabs/golem/temporal`](/reference/runtime-api#temporal) types | an ISO 8601 string in JSON; needs a `Temporal` global |
+| `TemporalInstant`, `TemporalPlainDate` and the other [`@exprtlabs/golem/temporal`](/reference/runtime-api#temporal) types | an ISO 8601 string in JSON; needs a `Temporal` global ([Dates and times](/guide/dates)) |
 | `unknown` | accepted without structural checks |
 
 `any` is accepted only when `allowAny` is `true`, set in `golem.yaml` or per model ([strict objects](/guide/model-composition#strict-objects-and-any)).

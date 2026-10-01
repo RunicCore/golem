@@ -1,3 +1,4 @@
+import 'temporal-polyfill/global';
 import assert from 'node:assert/strict';
 import { mock, test } from 'node:test';
 import { LibError } from '@exprtlabs/golem/errors';
@@ -21,6 +22,9 @@ import { checkServerErrors } from './server-errors.js';
 import { loadInvalidTask } from './load-task.js';
 import { isMoney, readMoney, writeMoney } from './money-json.js';
 import { Wallet } from './money.model.js';
+import { describeAttachment } from './attachment-json.js';
+import { readReminder } from './read-reminder.js';
+import { readSchedule, writeSchedule } from './read-schedule.js';
 import { Address, loadCustomer } from './customer.model.js';
 import { readContactKind } from './contact.model.js';
 import { readOpenName, readExternalPayload, rejectsExtraProperty } from './open-objects.model.js';
@@ -184,4 +188,40 @@ test('exact models reject extra properties, open models accept them and allowAny
   assert.equal(rejectsExtraProperty(text), true);
   assert.equal(readOpenName(text), 'Ada');
   assert.deepEqual(readExternalPayload('{"payload":{"anything":[1,"two"]}}'), { anything: [1, 'two'] });
+});
+
+test('a Date field is an ISO string in JSON and a Date in the model', () => {
+  const log = mock.method(console, 'log', () => undefined);
+  try {
+    const reminder = readReminder('{"title":"Call","remindAt":"2025-01-02T03:04:05.000Z"}');
+    assert.equal(reminder.remindAt.toISOString(), '2025-01-02T03:04:05.000Z');
+    assert.deepEqual(log.mock.calls.map(call => call.arguments), [[true]]);
+  } finally {
+    log.mock.restore();
+  }
+});
+
+test('Temporal fields hold Temporal values and write ISO 8601 strings', () => {
+  const log = mock.method(console, 'log', () => undefined);
+  try {
+    const text = '{"startsAt":"2025-01-02T03:04:05Z","day":"2025-01-02","length":"PT1H30M"}';
+    const schedule = readSchedule(text);
+    assert.ok(schedule.day instanceof Temporal.PlainDate);
+    assert.equal(writeSchedule(schedule), text);
+    assert.deepEqual(log.mock.calls.map(call => call.arguments), [[true], ['2025-01-02T04:34:05Z']]);
+  } finally {
+    log.mock.restore();
+  }
+});
+
+test('a TSerde field can hold a class instance such as Uint8Array', () => {
+  const log = mock.method(console, 'log', () => undefined);
+  try {
+    const { wire, copy } = describeAttachment();
+    assert.deepEqual(wire, { name: 'checksum.bin', content: 'AQID' });
+    assert.deepEqual([...copy.content], [1, 2, 3]);
+    assert.deepEqual(log.mock.calls.map(call => call.arguments), [[true]]);
+  } finally {
+    log.mock.restore();
+  }
 });

@@ -16,6 +16,7 @@ export const SIDEBAR: readonly SidebarGroup[] = [
     { text: 'Validation', link: '/guide/validation' },
     { text: 'Serialization', link: '/guide/serialization' },
     { text: 'Composing models', link: '/guide/model-composition' },
+    { text: 'Dates and times', link: '/guide/dates' },
   ] },
   { text: 'API clients', items: [
     { text: 'Generate a client', link: '/guide/client' },

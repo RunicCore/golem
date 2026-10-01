@@ -16,7 +16,8 @@
     "lib": [
       "ES2023",
       "DOM",
-      "DOM.Iterable"
+      "DOM.Iterable",
+      "esnext.temporal"
     ],
     "plugins": [
       { "transform": "@exprtlabs/golem/ttsc-plugin" }
