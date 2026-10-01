@@ -6,6 +6,11 @@ runs the configured generators, and writes their artifacts to the configured
 destinations. The inventory (`.golem/outputs.json`) records which
 generated files each job produced.
 
+A job replaces a file at one of its output paths only when the inventory
+records it or the file starts with that generator's marker comment. Any other
+file there stops `generate` and `check` with an error naming it; remove or
+rename the file, or change the job's output path.
+
 ```text
 Usage: golem <generate|check|watch|exec> [--config golem.yaml]
        golem exec [--watch] -- <command> [args...]
