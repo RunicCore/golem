@@ -86,7 +86,7 @@ for (const [label, profile] of [['runtime Ajv', { mobx: false, validation: true 
     assert.equal(count(() => ruleOnly.parse(JSON.stringify(rule), { construct: RuleOnly })), 1);
     const ruleModel = ruleOnly.parse(JSON.stringify(rule), { construct: RuleOnly });
     assert.equal(count(() => ruleOnly.stringify(ruleModel)), 1);
-    assert.match(source, /__golemAssertModelOnly_RuleOnly/);
+    assert.match(source, /__golemAssertModelOnly_TRuleOnly/);
     assert.doesNotMatch(source, /__golemAssertWireOnly_RuleOnly/);
   });
 }
@@ -108,7 +108,7 @@ test('a rule on an SDK model runs once per parse and IObject enforces it (standa
     primary: { sku: 'ABC', quantity: 1, price: 2 }, flags: { rush: 'yes' }, channel: { kind: 'hold', until: '2026-01-03T00:00:00.000Z' },
     span: ['2026-01-01T00:00:00.000Z', '2026-01-02T00:00:00.000Z'], hold: null, bag: { lane: 'A' },
   };
-  const plain = requireObjectCodec('JsonCheckout');
+  const plain = requireObjectCodec('TJsonCheckout');
   const before = rules.extraMoneyCalls;
   plain.parse(JSON.stringify(wire));
   assert.equal(rules.extraMoneyCalls - before, 1, 'extraMoney runs once per parse');
@@ -147,9 +147,9 @@ for (const profileValidation of [true, false]) {
     const value = { note: 'hi', when: '2026-01-02T03:04:05.000Z' };
     const unavailable = (e: unknown): boolean => e instanceof LibError && e.kind === LibErrorKind.ValidationUnavailable;
     let cells = 0;
-    for (const [name, declaration] of [['Inherit', 'inherit'], ['On', 'on'], ['Off', 'off']] as const) {
+    for (const [name, declaration] of [['TInherit', 'inherit'], ['TOn', 'on'], ['TOff', 'off']] as const) {
       const codec = requireObjectCodec(name);
-      const construct = models[name];
+      const construct = models[name.slice(1)];
       const effective = declaration === 'on' || (declaration === 'inherit' && profileValidation);
       const model = codec.parse(JSON.stringify(value), { validate: false, construct });
       if (declaration === 'off') assert.throws(() => codec.validate(model), unavailable, `${name} codec.validate`);
@@ -205,7 +205,7 @@ for (const [label, profile] of [['runtime Ajv', { mobx: false, validation: true 
     await compileModelProject(root);
     const predicates = await import(pathToFileURL(path.join(root, 'build/predicates.js')).href) as { positiveCalls: number; reset(): void };
     const { A } = await import(pathToFileURL(path.join(root, 'build/a.model.js')).href) as { A: new (v?: object) => object };
-    const codec = requireObjectCodec('A');
+    const codec = requireObjectCodec('TA');
     for (const options of [{ construct: A }, {}]) {
       assert.throws(() => codec.parse(JSON.stringify({ values: [-1] }), options), validationError, 'no positive element for Contains');
       assert.throws(() => codec.parse(JSON.stringify({ blocked: 5 }), options), validationError, 'Not<positive> rejects a positive number');
@@ -232,7 +232,7 @@ export class Trip extends TTripBaseModel {}
   const { registerCodecSchemas } = await import('@exprtlabs/golem/serde');
   const engine = createOpenApiSyncAjvEngine({ allErrors: false, validationBindings: {} });
   const registered: string[] = [];
-  registerCodecSchemas((schema, id) => { registered.push(id); engine.addSchema(schema, id); }, 'Trip');
+  registerCodecSchemas((schema, id) => { registered.push(id); engine.addSchema(schema, id); }, 'TTrip');
   assert.ok(registered.some(id => id.startsWith('Stop') && id.endsWith('#model-only')), 'the nested codec residual schema is registered');
   const context = { engine };
   const codec = requireObjectCodec('TTrip');

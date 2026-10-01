@@ -321,7 +321,7 @@ test('names getSchemaPath() components by @ApiSchema and rejects a clash with a 
   await rejectsWith(
     inlineFixture(t, readFixture(`${FIXTURES}/schema-path-component-names/conflict.controller.ts`)),
     'NEST1504',
-    /components\.schemas\.Payment, but that component is a different contract/,
+    /components\.schemas\.TPayment, but that component is a different contract/,
   );
 });
 

@@ -4,7 +4,7 @@ import { descriptorBuilder, type ModelConversionDescriptor } from './types.js';
 import { pascalIdentifier } from './projection-names.js';
 import { fieldProvenance } from './projections.js';
 import { deduplicateProjections } from './graph.js';
-import { modelSpecificationForClass } from './symbols.js';
+import { exportedConcreteClass, modelSpecificationForClass } from './symbols.js';
 import type { ManifestIndex } from './provenance.js';
 import { codecPublicId, createSchemaGraph, internDescriptors } from '../schema-graph.js';
 
@@ -32,37 +32,55 @@ export function createContractAnalysis(
   const emptyManifests: ManifestIndex = {
     byId: new Map(), byProvenance: new Map(), files: [], localFiles: [], validationSchemaClosure: [], runtimeExports: () => new Set(), externalModelForType: () => undefined,
   };
+  // A model with a class is named by that class, any other model by its alias.
+  const componentNames = new Map(specifications.map((specification) => [
+    specification,
+    exportedConcreteClass(checker, specification, specifications, program.getCompilerOptions()) ?? specification.name,
+  ] as const));
+  const componentName = (specification: ModelSpecification): string => componentNames.get(specification) ?? specification.name;
   // OpenAPI describes the full contract even when runtime validation is omitted.
-  const describe = descriptorBuilder(checker, specifications, emptyManifests, true, options.allowAny ?? false, options.root, program.getCompilerOptions(), false);
+  const buildDescribe = (nameFor?: (specification: ModelSpecification) => string) => descriptorBuilder(checker, specifications, emptyManifests, true, options.allowAny ?? false, options.root, program.getCompilerOptions(), false, nameFor);
+  // Codec ids hash descriptors named by alias, as the generated companions do; the document uses component names.
+  const describeForIds = buildDescribe();
+  const describe = buildDescribe(componentName);
   const described = new Map<ModelSpecification, ModelConversionDescriptor>();
+  const describedForIds = new Map<ModelSpecification, ModelConversionDescriptor>();
   for (const specification of specifications) {
     described.set(specification, describe(specification.fieldsType, specification, undefined, specification.fieldsNode));
+    describedForIds.set(specification, describeForIds(specification.fieldsType, specification, undefined, specification.fieldsNode));
   }
   const internGraph = createSchemaGraph();
   internDescriptors(internGraph, [
     ...specifications.flatMap((specification) => {
-      const descriptor = described.get(specification);
+      const descriptor = describedForIds.get(specification);
       return descriptor ? [{ name: specification.name, descriptor, emitClass: specification.emitClass }] : [];
     }),
-    ...[...describe.projections].map(([name, descriptor]) => ({ name, descriptor, emitClass: false })),
+    ...[...describeForIds.projections].map(([name, descriptor]) => ({ name, descriptor, emitClass: false })),
   ]);
   const definitions: Record<string, ModelConversionDescriptor> = {};
   const codecIds: Record<string, string> = {};
   const codecBySpec = new Map<ModelSpecification, string>();
-  const nameCounts = new Map<string, number>();
-  for (const specification of specifications) {
-    nameCounts.set(specification.name, (nameCounts.get(specification.name) ?? 0) + 1);
-  }
+  const owners = new Map<string, ModelSpecification>();
   for (const specification of specifications) {
     const descriptor = described.get(specification);
-    if (!descriptor) continue;
-    const node = internGraph.nodeFor(descriptor, specification.name, specification.emitClass);
-    const publicId = node?.codecId ?? codecPublicId(specification.name, descriptor, undefined, { source: 'typescript', constructs: specification.emitClass });
+    const idDescriptor = describedForIds.get(specification);
+    if (!descriptor || !idDescriptor) continue;
+    const node = internGraph.nodeFor(idDescriptor, specification.name, specification.emitClass);
+    const publicId = node?.codecId ?? codecPublicId(specification.name, idDescriptor, undefined, { source: 'typescript', constructs: specification.emitClass });
     codecBySpec.set(specification, publicId);
+    const name = componentName(specification);
+    const other = owners.get(name);
+    if (other !== undefined && codecBySpec.get(other) !== publicId) {
+      throw new Error(
+        `Models ${other.sourceFile.fileName} (${other.aliasName}) and ${specification.sourceFile.fileName} (${specification.aliasName}) `
+        + `both map to the OpenAPI component name "${name}" with different contracts. Rename one of them or its class.`,
+      );
+    }
+    owners.set(name, specification);
     codecIds[publicId] = publicId;
-    const collided = (nameCounts.get(specification.name) ?? 0) > 1;
-    definitions[collided ? publicId : specification.name] = descriptor;
-    if (!collided) codecIds[specification.name] = publicId;
+    codecIds[name] = publicId;
+    codecIds[specification.name] = publicId;
+    definitions[name] = descriptor;
   }
   const syncProjections = (root?: ModelConversionDescriptor): ModelConversionDescriptor | undefined => {
     const graph = deduplicateProjections({
@@ -87,7 +105,7 @@ export function createContractAnalysis(
     specFor(name) {
       const hashed = codecIds[name];
       const matches = specifications.filter((item) => (
-        item.name === name || codecBySpec.get(item) === name || (hashed !== undefined && codecBySpec.get(item) === hashed)
+        item.name === name || componentName(item) === name || codecBySpec.get(item) === name || (hashed !== undefined && codecBySpec.get(item) === hashed)
       ));
       if (matches.length === 1) return matches[0];
       if (hashed) return specifications.find((item) => codecBySpec.get(item) === hashed);
@@ -102,9 +120,7 @@ export function createContractAnalysis(
         && checker.getPropertiesOfType(type).length === checker.getPropertiesOfType(candidate.fieldsType).length;
       const intact = sameFields ? candidate : !type.isUnion() ? modelSpecificationForClass(checker, type, specifications, program.getCompilerOptions()) : undefined;
       if (intact) {
-        const publicId = codecBySpec.get(intact);
-        const collided = (nameCounts.get(intact.name) ?? 0) > 1;
-        return { kind: 'reference', name: collided && publicId ? publicId : intact.name };
+        return { kind: 'reference', name: componentName(intact) };
       }
       const location = syntax ?? checker.typeToTypeNode(type, node, ts.NodeBuilderFlags.NoTruncation);
       if (!location) throw new Error('The controller field has no representable TypeScript type. Add an explicit type annotation.');

@@ -4,30 +4,30 @@ import type { PaymentsClientOptions as ClientOptions, PaymentsRequestOptions as 
 import type * as Types from '../types.js';
 import { createOpenApiAjvEngine } from '@exprtlabs/golem/ajv';
 import { operationValidators, responseCheck, validateOperationInput } from '@exprtlabs/golem/validation';
-import { schema as __golemSchema0 } from "../validation-schemas/TMerchant.input.js";
-import { schema as __golemSchema1 } from "../validation-schemas/TMerchant.output.js";
-import { schema as __golemSchema2 } from "../validation-schemas/TMerchantOmitId.input.js";
-import { schema as __golemSchema3 } from "../validation-schemas/TMerchantOmitId.output.js";
-import { schema as __golemSchema4 } from "../validation-schemas/TMoney.input.js";
-import { schema as __golemSchema5 } from "../validation-schemas/TMoney.output.js";
-import { schema as __golemSchema6 } from "../validation-schemas/TPayment.input.js";
-import { schema as __golemSchema7 } from "../validation-schemas/TPayment.output.js";
+import { schema as __golemSchema0 } from "../validation-schemas/Payment.input.js";
+import { schema as __golemSchema1 } from "../validation-schemas/Payment.output.js";
+import { schema as __golemSchema2 } from "../validation-schemas/TMerchant.input.js";
+import { schema as __golemSchema3 } from "../validation-schemas/TMerchant.output.js";
+import { schema as __golemSchema4 } from "../validation-schemas/TMerchantOmitId.input.js";
+import { schema as __golemSchema5 } from "../validation-schemas/TMerchantOmitId.output.js";
+import { schema as __golemSchema6 } from "../validation-schemas/TMoney.input.js";
+import { schema as __golemSchema7 } from "../validation-schemas/TMoney.output.js";
 
 const responseContracts: readonly RuntimeResponseContract[] = [{"status":"201","content":[{"contentType":"application/json","framing":"body"}],"headers":[]},{"status":"400","content":[],"headers":[]}];
 let __operationValidationSources: OperationValidationSources | undefined;
 const __resolveOperationValidationSources = (): OperationValidationSources => __operationValidationSources ??= {
-  inputReference: "urn:golem:openapi:paymentsapi:053aa0b0dc74e79ea279e02c9fa919fc62f9db8f1eff89155220aaf069ddc507:schemas:operation:createPaymentAsClass#/operations/createPaymentAsClass/input",
-  responseReferences: [{"status":"201","contentType":"application/json","reference":"urn:golem:openapi:paymentsapi:053aa0b0dc74e79ea279e02c9fa919fc62f9db8f1eff89155220aaf069ddc507:schemas:operation:createPaymentAsClass#/operations/createPaymentAsClass/responses/201/application~1json"}],
+  inputReference: "urn:golem:openapi:paymentsapi:cf608f74b3c5cdb877bfe702905536e415a7ae35fb9cb68336106206bf182642:schemas:operation:createPaymentAsClass#/operations/createPaymentAsClass/input",
+  responseReferences: [{"status":"201","contentType":"application/json","reference":"urn:golem:openapi:paymentsapi:cf608f74b3c5cdb877bfe702905536e415a7ae35fb9cb68336106206bf182642:schemas:operation:createPaymentAsClass#/operations/createPaymentAsClass/responses/201/application~1json"}],
   schemas: new Map([
-    ["urn:golem:openapi:paymentsapi:053aa0b0dc74e79ea279e02c9fa919fc62f9db8f1eff89155220aaf069ddc507:schemas:operation:createPaymentAsClass", JSON.parse("{\"$id\":\"urn:golem:openapi:paymentsapi:053aa0b0dc74e79ea279e02c9fa919fc62f9db8f1eff89155220aaf069ddc507:schemas:operation:createPaymentAsClass\",\"$schema\":\"https://spec.openapis.org/oas/3.1/dialect/base\",\"operations\":{\"createPaymentAsClass\":{\"input\":{\"type\":\"object\",\"properties\":{\"body\":{\"$ref\":\"urn:golem:openapi:paymentsapi:053aa0b0dc74e79ea279e02c9fa919fc62f9db8f1eff89155220aaf069ddc507:schemas:component:TPayment:input\"}},\"required\":[\"body\"],\"additionalProperties\":false},\"responses\":{\"201\":{\"application/json\":{\"$ref\":\"urn:golem:openapi:paymentsapi:053aa0b0dc74e79ea279e02c9fa919fc62f9db8f1eff89155220aaf069ddc507:schemas:component:TPayment:output\"}},\"400\":{}}}}}") as object | boolean],
-    ["urn:golem:openapi:paymentsapi:053aa0b0dc74e79ea279e02c9fa919fc62f9db8f1eff89155220aaf069ddc507:schemas:component:TMerchant:input", __golemSchema0],
-    ["urn:golem:openapi:paymentsapi:053aa0b0dc74e79ea279e02c9fa919fc62f9db8f1eff89155220aaf069ddc507:schemas:component:TMerchant:output", __golemSchema1],
-    ["urn:golem:openapi:paymentsapi:053aa0b0dc74e79ea279e02c9fa919fc62f9db8f1eff89155220aaf069ddc507:schemas:component:TMerchantOmitId:input", __golemSchema2],
-    ["urn:golem:openapi:paymentsapi:053aa0b0dc74e79ea279e02c9fa919fc62f9db8f1eff89155220aaf069ddc507:schemas:component:TMerchantOmitId:output", __golemSchema3],
-    ["urn:golem:openapi:paymentsapi:053aa0b0dc74e79ea279e02c9fa919fc62f9db8f1eff89155220aaf069ddc507:schemas:component:TMoney:input", __golemSchema4],
-    ["urn:golem:openapi:paymentsapi:053aa0b0dc74e79ea279e02c9fa919fc62f9db8f1eff89155220aaf069ddc507:schemas:component:TMoney:output", __golemSchema5],
-    ["urn:golem:openapi:paymentsapi:053aa0b0dc74e79ea279e02c9fa919fc62f9db8f1eff89155220aaf069ddc507:schemas:component:TPayment:input", __golemSchema6],
-    ["urn:golem:openapi:paymentsapi:053aa0b0dc74e79ea279e02c9fa919fc62f9db8f1eff89155220aaf069ddc507:schemas:component:TPayment:output", __golemSchema7],
+    ["urn:golem:openapi:paymentsapi:cf608f74b3c5cdb877bfe702905536e415a7ae35fb9cb68336106206bf182642:schemas:operation:createPaymentAsClass", JSON.parse("{\"$id\":\"urn:golem:openapi:paymentsapi:cf608f74b3c5cdb877bfe702905536e415a7ae35fb9cb68336106206bf182642:schemas:operation:createPaymentAsClass\",\"$schema\":\"https://spec.openapis.org/oas/3.1/dialect/base\",\"operations\":{\"createPaymentAsClass\":{\"input\":{\"type\":\"object\",\"properties\":{\"body\":{\"$ref\":\"urn:golem:openapi:paymentsapi:cf608f74b3c5cdb877bfe702905536e415a7ae35fb9cb68336106206bf182642:schemas:component:Payment:input\"}},\"required\":[\"body\"],\"additionalProperties\":false},\"responses\":{\"201\":{\"application/json\":{\"$ref\":\"urn:golem:openapi:paymentsapi:cf608f74b3c5cdb877bfe702905536e415a7ae35fb9cb68336106206bf182642:schemas:component:Payment:output\"}},\"400\":{}}}}}") as object | boolean],
+    ["urn:golem:openapi:paymentsapi:cf608f74b3c5cdb877bfe702905536e415a7ae35fb9cb68336106206bf182642:schemas:component:Payment:input", __golemSchema0],
+    ["urn:golem:openapi:paymentsapi:cf608f74b3c5cdb877bfe702905536e415a7ae35fb9cb68336106206bf182642:schemas:component:Payment:output", __golemSchema1],
+    ["urn:golem:openapi:paymentsapi:cf608f74b3c5cdb877bfe702905536e415a7ae35fb9cb68336106206bf182642:schemas:component:TMerchant:input", __golemSchema2],
+    ["urn:golem:openapi:paymentsapi:cf608f74b3c5cdb877bfe702905536e415a7ae35fb9cb68336106206bf182642:schemas:component:TMerchant:output", __golemSchema3],
+    ["urn:golem:openapi:paymentsapi:cf608f74b3c5cdb877bfe702905536e415a7ae35fb9cb68336106206bf182642:schemas:component:TMerchantOmitId:input", __golemSchema4],
+    ["urn:golem:openapi:paymentsapi:cf608f74b3c5cdb877bfe702905536e415a7ae35fb9cb68336106206bf182642:schemas:component:TMerchantOmitId:output", __golemSchema5],
+    ["urn:golem:openapi:paymentsapi:cf608f74b3c5cdb877bfe702905536e415a7ae35fb9cb68336106206bf182642:schemas:component:TMoney:input", __golemSchema6],
+    ["urn:golem:openapi:paymentsapi:cf608f74b3c5cdb877bfe702905536e415a7ae35fb9cb68336106206bf182642:schemas:component:TMoney:output", __golemSchema7],
   ]),
 };
 

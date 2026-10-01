@@ -29,7 +29,7 @@ test('an unrelated same-name class does not become a model constructor', async t
   const generated = await import(`${path.join(root, 'build/item.model.generated.js')}?${Date.now()}`);
   const authored = await import(`${path.join(root, 'build/item.model.js')}?${Date.now()}`);
   const parent = new generated.TParentBaseModel({ child: { id: 'child' } });
-  assert.ok(parent.child instanceof generated.ItemBaseModel);
+  assert.ok(parent.child instanceof generated.TItemBaseModel);
   assert.equal(parent.child instanceof authored.Item, false);
   assert.deepEqual(encodeGeneratedModel(parent), { child: { id: 'child' } });
 });

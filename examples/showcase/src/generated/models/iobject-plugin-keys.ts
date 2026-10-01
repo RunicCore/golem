@@ -4,6 +4,6 @@ export const IOBJECT_PLUGIN_KEYS = {
   "backend/project-access.model.ts#ProjectAccess": "TProjectAccess_cd3cd096",
   "backend/project-access.model.ts#TMember": "TMember_5f7b88d4",
   "backend/project-access.model.ts#TProjectAccess": "TProjectAccess_cd3cd096",
-  "src/project-access.model.ts#ProjectAccessEditor": "TProjectAccessEditor_4b31b1cd",
-  "src/project-access.model.ts#TProjectAccessEditor": "TProjectAccessEditor_4b31b1cd",
+  "src/project-access.model.ts#ProjectAccessEditor": "TProjectAccessEditor_dbff379b",
+  "src/project-access.model.ts#TProjectAccessEditor": "TProjectAccessEditor_dbff379b",
 } as const;

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { SnapshotBaseModel } from './build/snapshot.model.generated.js';
+import { TSnapshotBaseModel } from './build/snapshot.model.generated.js';
 import { requireObjectCodec } from '@exprtlabs/golem/serde';
 
 const codecId = process.argv[2];
@@ -29,7 +29,7 @@ function getterModel(onChoiceRead, label = 'first-label') {
     },
   });
   Object.defineProperty(nested, 'label', { value: label, enumerable: true });
-  const prototype = Object.create(SnapshotBaseModel.prototype);
+  const prototype = Object.create(TSnapshotBaseModel.prototype);
   Object.defineProperties(prototype, {
     names: { get() { reads.names++; order.push('names:get'); return reads.names === 1 ? names : ['later-names']; } },
     pair: { get() { reads.pair++; order.push('pair:get'); return reads.pair === 1 ? pair : ['later-pair']; } },

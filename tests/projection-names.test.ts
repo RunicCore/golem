@@ -168,7 +168,7 @@ export class OrderController { @Post() save(@Body() body: TOrder): TPayment { re
   assert.ok(names.includes('TOrderShape'), 'the smallest candidate survives');
   assert.equal(names.includes('TPaymentShape'), false);
   assert.equal(names.filter(name => name === 'TMerchantOmitId').length, 1);
-  assert.equal(forward.components.schemas.TOrder?.properties?.same?.$ref, forward.components.schemas.Payment?.properties?.same?.$ref);
+  assert.equal(forward.components.schemas.TOrder?.properties?.same?.$ref, forward.components.schemas.TPayment?.properties?.same?.$ref);
 });
 
 test('a projection whose name is shared with a different tagged shape fails instead of merging', async t => {

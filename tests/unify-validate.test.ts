@@ -111,8 +111,8 @@ test('I* validation option overrides the global flag in both directions and mixe
   writeArtifacts(generate({ root, profile: { mobx: false, validation: false } }));
   await compile(root);
   const { Checked } = await import(pathToFileURL(path.join(root, 'build/mixed.model.js')).href);
-  const checkedCodec = requireObjectCodec(generatedCodecIdFromRoot(root, 'Checked'));
-  const trustedCodec = requireObjectCodec(generatedCodecIdFromRoot(root, 'Trusted'));
+  const checkedCodec = requireObjectCodec(generatedCodecIdFromRoot(root, 'TChecked'));
+  const trustedCodec = requireObjectCodec(generatedCodecIdFromRoot(root, 'TTrusted'));
   assert.equal(checkedCodec.validate(new Checked({ title: 'ok' })), true);
   assert.equal(checkedCodec.validate({ title: 5 }), false, 'the per-type override still runs a real Ajv schema check');
   assert.throws(() => trustedCodec.validate({ id: '1' }));
@@ -134,7 +134,7 @@ test('nested interned child with validation false is opaque; parent field tags s
   writeArtifacts(generate({ root, profile: { mobx: false, validation: true } }));
   await compile(root);
   const { Parent } = await import(pathToFileURL(path.join(root, 'build/nested.model.js')).href);
-  const codec = requireObjectCodec(generatedCodecIdFromRoot(root, 'Parent'));
+  const codec = requireObjectCodec(generatedCodecIdFromRoot(root, 'TParent'));
   const valid = new Parent({ child: { secret: 7 as never }, note: 'ok' });
   assert.equal(codec.validate(valid), true);
   const blank = new Parent({ child: { secret: 'x' }, note: '  ' });
@@ -176,7 +176,7 @@ test('SDK Money $ref plus extra TValidation, local TValidation, and TSerde compi
   assert.equal((companion.match(/createOpenApiSyncAjvEngine\(\{ allErrors: false/g) ?? []).length, 1, 'one fast engine in the parent companion');
   await compile(root);
   const { Checkout } = await import(pathToFileURL(path.join(root, 'build/checkout.model.js')).href);
-  const codec = requireObjectCodec(generatedCodecIdFromRoot(root, 'Checkout'));
+  const codec = requireObjectCodec(generatedCodecIdFromRoot(root, 'TCheckout'));
   const validWire = {
     money: { amount: 12, currency: 'USD' },
     note: 'ok',

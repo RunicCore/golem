@@ -1,4 +1,4 @@
-import { deduplicateProjections, modelSpecificationForClass } from '@exprtlabs/golem/type-analysis';
+import { deduplicateProjections, exportedConcreteClass } from '@exprtlabs/golem/type-analysis';
 import { dirname, relative } from 'node:path';
 import * as ts from '@exprtlabs/golem/ts';
 import {
@@ -652,39 +652,6 @@ function fieldDescriptors(
       ),
     ]),
   );
-}
-
-/**
- * The exported class of the model's file whose base is the model's generated base, whatever its
- * name. A class that extends another candidate is a subclass, not the model's class.
- */
-function exportedConcreteClass(
-  checker: ts.TypeChecker,
-  specification: ModelSpecification,
-  specifications: readonly ModelSpecification[],
-  compilerOptions?: ts.CompilerOptions,
-): string | undefined {
-  const candidates = specification.sourceFile.statements.filter((statement): statement is ts.ClassDeclaration & { readonly name: ts.Identifier } =>
-    ts.isClassDeclaration(statement)
-      && statement.name !== undefined
-      && statement.modifiers?.some((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword) === true
-      && modelSpecificationForClass(checker, checker.getTypeAtLocation(statement), specifications, compilerOptions) === specification);
-  const extendsCandidate = (candidate: ts.ClassDeclaration): boolean => (candidate.heritageClauses ?? [])
-    .filter((clause) => clause.token === ts.SyntaxKind.ExtendsKeyword)
-    .flatMap((clause) => clause.types)
-    .some((base) => {
-      const symbol = checker.getSymbolAtLocation(base.expression);
-      const resolved = symbol && symbol.flags & ts.SymbolFlags.Alias ? checker.getAliasedSymbol(symbol) : symbol;
-      return (resolved?.declarations ?? []).some((declaration) => candidates.some((other) => other === declaration));
-    });
-  const direct = candidates.filter((candidate) => !extendsCandidate(candidate));
-  if (direct.length > 1) {
-    throw new Error(
-      `Model ${specification.name} has several classes extending ${specification.name}BaseModel in ${specification.sourceFile.fileName}: `
-      + `${direct.map((candidate) => candidate.name.text).join(', ')}. Export one.`,
-    );
-  }
-  return direct[0]?.name.text;
 }
 
 function descriptorReferences(

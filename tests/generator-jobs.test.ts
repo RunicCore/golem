@@ -47,7 +47,7 @@ test('a generator job writes model sources that the models job then generates', 
   const { root, config } = project(t);
   await runPipeline(config);
   assert.equal(fs.readFileSync(path.join(root, 'src/gen/item.model.ts'), 'utf8'), ITEM);
-  assert.match(fs.readFileSync(path.join(root, 'src/gen/item.model.generated.ts'), 'utf8'), /export[^\n]*\bItemBaseModel\b/);
+  assert.match(fs.readFileSync(path.join(root, 'src/gen/item.model.generated.ts'), 'utf8'), /export[^\n]*\bTItemBaseModel\b/);
 });
 
 test('a configured generator that is not installed names the package and the install command', async t => {

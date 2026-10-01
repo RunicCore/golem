@@ -817,12 +817,10 @@ test('a single schema with a dollar sign in its name generates and round-trips',
   roundTrip(model.sdk, 'Pay$ment', 'Pay$mentModel', { amount: 1 });
 });
 
-test('two schemas of equal shape that shorten alike are rejected with both names', t => {
-  const { source } = fixture(t);
-  assert.throws(
-    () => writeGeneratedSdk(writeSdk, shortenedDocument({ PaymentModel: idObject, TPayment: idObject }), { output: source, name: 'Shortened', profile: { mobx: false, validation: false } }),
-    /OpenAPI components "PaymentModel" and "TPayment" both map to the model name "Payment"\. Rename one of them\./,
-  );
+test('two schemas of equal shape whose names once shortened alike each keep their own class', async t => {
+  const { sdk } = await generateShortened(t, { PaymentModel: idObject, TPayment: idObject });
+  roundTrip(sdk, 'PaymentModel', 'PaymentModelModel', { id: 'a' });
+  roundTrip(sdk, 'TPayment', 'TPaymentModel', { id: 'b' });
 });
 
 function holderOf(...targets: string[]): Record<string, unknown> {
@@ -850,10 +848,10 @@ test('a holder of both compiles and round-trips its nested classes', async t => 
   const { result, sdk } = await generateShortened(t, { PaymentModel: idObject, TPayment: amountObject, Holder: holderOf('PaymentModel', 'TPayment') });
   const keys = result.artifacts.find((artifact) => artifact.path.endsWith('iobject-plugin-keys.ts'))?.content ?? '';
   const entries = [...keys.matchAll(/"([^"]+)#(\w+)": "(\w+_[0-9a-f]+)"/g)];
-  assert.deepEqual(entries.map((entry) => entry[2]).sort(), ['HolderModel', 'PaymentModelModel', 'TPaymentModel'], 'keys are the emitted class names');
+  assert.deepEqual(entries.map((entry) => entry[2]).sort(), ['Holder', 'HolderModel', 'PaymentModel', 'PaymentModelModel', 'TPayment', 'TPaymentModel'], 'keys are the exact component names and the emitted class names');
   assert.equal(new Set(entries.map((entry) => entry[1])).size, 3, 'three files');
   assert.equal(new Set(entries.map((entry) => entry[3])).size, 3, 'three codec ids');
-  for (const entry of entries) {
+  for (const entry of entries.filter((item) => item[2].endsWith('Model') && ['HolderModel', 'PaymentModelModel', 'TPaymentModel'].includes(item[2]))) {
     const declaring = result.artifacts.find((artifact) => artifact.path.endsWith(`/${entry[1]}`))?.content ?? '';
     assert.match(declaring, new RegExp(`export class ${entry[2]}\\b`), `${entry[2]} is declared in the file its plugin key names`);
   }
@@ -893,12 +891,14 @@ test('a cycle through schemas that shorten alike with a Model suffix compiles an
   roundTrip(sdk, 'TPaymentModel', 'TPaymentModelModel', { flag: true, h: { t: { flag: false } } });
 });
 
-test('two schemas that shorten alike and reference each other are rejected with both names', t => {
+test('two schemas that once shortened alike and reference each other compile and round-trip', async t => {
   const payment = { type: 'object', properties: { id: { type: 'string' }, t: optionalRef('TPayment') }, required: ['id'] };
   const tPayment = { type: 'object', properties: { amount: { type: 'number' }, p: optionalRef('Payment') }, required: ['amount'] };
-  const { source } = fixture(t);
-  assert.throws(
-    () => writeGeneratedSdk(writeSdk, shortenedDocument({ Payment: payment, TPayment: tPayment }), { output: source, name: 'Shortened', profile: { mobx: false, validation: false } }),
-    /^Error: OpenAPI components "Payment" and "TPayment" both map to the model name "Payment"\. They are part of one reference cycle, so they share one file\. Rename one of them\.$/,
-  );
+  const { sdk } = await generateShortened(t, { Payment: payment, TPayment: tPayment });
+  const wire = { id: 'a', t: { amount: 1, p: { id: 'b' } } };
+  roundTrip(sdk, 'Payment', 'PaymentModel', wire);
+  const parsed = (sdk.parsePayment as (text: string, options: { construct: unknown }) => { t: { p: unknown } })(JSON.stringify(wire), { construct: sdk.PaymentModel });
+  assert.ok(parsed.t instanceof (sdk.TPaymentModel as new () => object), 't is a TPaymentModel');
+  assert.ok(parsed.t.p instanceof (sdk.PaymentModel as new () => object), 'p is a PaymentModel');
+  roundTrip(sdk, 'TPayment', 'TPaymentModel', { amount: 2, p: { id: 'c' } });
 });

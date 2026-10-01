@@ -533,6 +533,8 @@ export function descriptorBuilder(
   identityRoot?: string,
   compilerOptions?: ts.CompilerOptions,
   allowUnresolved = true,
+  /** Name that references to a model and its derived projections use; the model's own name when omitted. */
+  nameFor?: (specification: ModelSpecification) => string,
 ): {
   (type: ts.Type, context: TypeAnalysisContext, seen?: ReadonlySet<ts.Type>, node?: ts.TypeNode): ModelConversionDescriptor;
   readonly projections: ReadonlyMap<string, ModelConversionDescriptor>;
@@ -547,7 +549,7 @@ export function descriptorBuilder(
     return `${sourceFile.fileName}:${position.line + 1}:${position.character + 1}`;
   };
   const modelNames = new Map(
-    specifications.map((specification) => [specification.declaration, specification.name] as const),
+    specifications.map((specification) => [specification.declaration, nameFor?.(specification) ?? specification.name] as const),
   );
   const modelLocations = new Map(specifications.map((specification) =>
     [specification.name, sourceLocation(specification.declaration)] as const));

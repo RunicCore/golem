@@ -28,20 +28,20 @@
         }
       ],
       "generated": {
-        "export": "TMemberModel",
-        "module": "./models/TMember.ts"
+        "export": "MemberModel",
+        "module": "./models/Member.ts"
       },
-      "id": "openapi:11c074e12b1ead7e#/components/schemas/TMember",
+      "id": "openapi:6073e63c7e9b1747#/components/schemas/Member",
       "inheritance": null,
       "sourceKind": "openapi",
       "type": {
         "aliases": [
           {
-            "export": "TMember",
+            "export": "Member",
             "module": "./index.ts"
           }
         ],
-        "export": "TMember",
+        "export": "Member",
         "module": "./types.ts"
       },
       "variants": []
@@ -52,11 +52,11 @@
       "fields": [
         {
           "modelReferences": [
-            "TMember"
+            "Member"
           ],
           "name": "member",
           "required": true,
-          "type": "TMemberModel"
+          "type": "MemberModel"
         },
         {
           "modelReferences": [],
@@ -72,20 +72,20 @@
         }
       ],
       "generated": {
-        "export": "TProjectAccessModel",
-        "module": "./models/TProjectAccess.ts"
+        "export": "ProjectAccessModel",
+        "module": "./models/ProjectAccess.ts"
       },
-      "id": "openapi:11c074e12b1ead7e#/components/schemas/TProjectAccess",
+      "id": "openapi:6073e63c7e9b1747#/components/schemas/ProjectAccess",
       "inheritance": null,
       "sourceKind": "openapi",
       "type": {
         "aliases": [
           {
-            "export": "TProjectAccess",
+            "export": "ProjectAccess",
             "module": "./index.ts"
           }
         ],
-        "export": "TProjectAccess",
+        "export": "ProjectAccess",
         "module": "./types.ts"
       },
       "variants": []
@@ -103,17 +103,17 @@
   },
   "source": {
     "dialect": "3.2.0",
-    "digest": "11c074e12b1ead7e69572a7f081d1dea26f13132340efbab23711503d8d92072",
+    "digest": "6073e63c7e9b174726cd4cbec185ce00f49f2a412e5bc93c2a91d506e21c8bc1",
     "kind": "openapi"
   },
   "validationSchemaClosure": [
     {
       "aliases": [
-        "TMember",
-        "TMember_24b40f77",
-        "openapi:11c074e12b1ead7e#/components/schemas/TMember"
+        "Member",
+        "Member_24b40f77",
+        "openapi:6073e63c7e9b1747#/components/schemas/Member"
       ],
-      "codecId": "TMember_24b40f77",
+      "codecId": "Member_24b40f77",
       "modelSchema": {
         "additionalProperties": false,
         "properties": {
@@ -158,21 +158,21 @@
     },
     {
       "aliases": [
-        "TProjectAccess",
-        "TProjectAccess_2a88cf85",
-        "openapi:11c074e12b1ead7e#/components/schemas/TProjectAccess"
+        "ProjectAccess",
+        "ProjectAccess_91a94489",
+        "openapi:6073e63c7e9b1747#/components/schemas/ProjectAccess"
       ],
-      "codecId": "TProjectAccess_2a88cf85",
+      "codecId": "ProjectAccess_91a94489",
       "modelSchema": {
         "$defs": {
-          "TMember_24b40f77": {
-            "$ref": "TMember_24b40f77"
+          "Member_24b40f77": {
+            "$ref": "Member_24b40f77"
           }
         },
         "additionalProperties": false,
         "properties": {
           "member": {
-            "$ref": "#/$defs/TMember_24b40f77"
+            "$ref": "#/$defs/Member_24b40f77"
           },
           "permissions": {
             "allOf": [

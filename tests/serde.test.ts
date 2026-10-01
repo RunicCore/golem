@@ -169,7 +169,7 @@ test('IObject TSerde stringify/parse convert declared fields in one pass', async
   const generated = fs.readFileSync(path.join(root, 'src/permission.model.generated.ts'), 'utf8');
   assert.doesNotMatch(
     generated,
-    /stringifyTPermissionInputCore[\s\S]*__golemSerialize[\s\S]*validatePermissionInputFast/,
+    /stringifyTPermissionInputCore[\s\S]*__golemSerialize[\s\S]*validateTPermissionInputFast/,
     'budget: TSerde fields convert declared fields in one pass, not through a second interleaved stringify/validate sequence',
   );
   await compile(root);
@@ -179,8 +179,8 @@ test('IObject TSerde stringify/parse convert declared fields in one pass', async
   const codecs = await import(pathToFileURL(path.join(root, 'build/permission.model.generated.js')).href) as {
     stringifyTPermissionInput: (value: object, options?: { validate?: boolean }) => string;
     parseTPermissionInput: (text: string, options?: { validate?: boolean }) => { permissions: number };
-    stringifyPermission: (value: object, options?: { validate?: boolean }) => string;
-    parsePermission: (text: string, options?: { validate?: boolean; construct?: new (values?: never) => object }) => { permissions: number };
+    stringifyTPermissionModel: (value: object, options?: { validate?: boolean }) => string;
+    parseTPermissionModel: (text: string, options?: { validate?: boolean; construct?: new (values?: never) => object }) => { permissions: number };
     toWireFormatTPermissionInput: (value: unknown, options?: { validate?: boolean }) => unknown;
     fromWireFormatTPermissionInput: (wire: unknown, options?: { validate?: boolean }) => { permissions: number };
     validateTPermissionInput: (value: unknown) => boolean;
@@ -201,13 +201,13 @@ test('IObject TSerde stringify/parse convert declared fields in one pass', async
       && error.kind === LibErrorKind.Validation
       && error.issues[0]?.path?.[0] === 'extra',
   );
-  const model = codecs.parsePermission('{"permissions":"0x5"}');
+  const model = codecs.parseTPermissionModel('{"permissions":"0x5"}');
   assert.equal(Object.getPrototypeOf(model), Object.prototype);
   assert.equal(model.permissions, 5);
-  const constructed = codecs.parsePermission('{"permissions":"0x5"}', { construct: Permission });
+  const constructed = codecs.parseTPermissionModel('{"permissions":"0x5"}', { construct: Permission });
   assert.ok(constructed instanceof Permission);
   assert.equal(constructed.permissions, 5);
-  assert.equal(codecs.stringifyPermission(constructed), '{"permissions":"0x5"}');
+  assert.equal(codecs.stringifyTPermissionModel(constructed), '{"permissions":"0x5"}');
   assert.deepEqual(codecs.toWireFormatTPermissionInput({ permissions: 5 }), { permissions: '0x5' });
   assert.equal(codecs.fromWireFormatTPermissionInput({ permissions: '0x5' }).permissions, 5);
   assert.equal(codecs.validateTPermissionInput({ permissions: 5 }), true);
@@ -221,7 +221,7 @@ test('IObject TSerde stringify/parse convert declared fields in one pass', async
   );
   assert.equal(permissionCodecs.deserializeCalls, beforeInvalid);
   assert.throws(
-    () => codecs.parsePermission('{"permissions":"0x100"}', { construct: Permission }),
+    () => codecs.parseTPermissionModel('{"permissions":"0x100"}', { construct: Permission }),
     (error: unknown) => error instanceof LibError
       && error.kind === LibErrorKind.Validation
       && error.issues[0]?.representation === IssueRepresentation.Model,
@@ -303,7 +303,7 @@ test('nested class-typed IModel fields construct; type-only parse fills like IOb
   writeGeneratedArtifacts(result.artifacts);
   const generated = fs.readFileSync(path.join(root, 'src/money.model.generated.ts'), 'utf8');
   assert.doesNotMatch(generated, /from ['"]\.\/money\.model\.js['"]/);
-  const pointId = generatedCodecId(generated, 'Point3D');
+  const pointId = generatedCodecId(generated, 'TPoint3D');
   assert.match(generated, new RegExp(`requireIModelClass\\("${pointId}"\\)`));
   await compile(root);
   const { registerIModelClass } = await import('@exprtlabs/golem/serde');

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import type { AFields } from './a.model.generated.js';
+import type { TAFields } from './a.model.generated.js';
 import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/golem/conversion';
 import { requireObjectCodec } from '@exprtlabs/golem/serde';
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
@@ -11,8 +11,8 @@ const [codecIdJson, acceptedJson, rejectedJson] = process.argv.slice(2);
 if (!codecIdJson || !acceptedJson || !rejectedJson) {
   throw new Error('codec id and case data are passed to the verifier');
 }
-const accepted = JSON.parse(acceptedJson) as Partial<AFields>[];
-const rejected = JSON.parse(rejectedJson) as Partial<AFields>[];
+const accepted = JSON.parse(acceptedJson) as Partial<TAFields>[];
+const rejected = JSON.parse(rejectedJson) as Partial<TAFields>[];
 const aCodec = requireObjectCodec(JSON.parse(codecIdJson) as string);
 for (const value of accepted) {
   const model = new A(value);

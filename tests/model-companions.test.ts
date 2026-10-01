@@ -205,7 +205,7 @@ test('ttsc rewrites nested model serde calls and preserves class construction in
     readonly Item: new (values?: object) => object;
   };
   const item = new loaded.Item();
-  const parsed = (item as { parseTItem(text: string): object }).parseTItem('{"title":"nested","value":7}');
+  const parsed = (item as { parseItem(text: string): object }).parseItem('{"title":"nested","value":7}');
   assert.ok(parsed instanceof loaded.Item);
   const wired = (item as { fromWireItem(value: unknown): object }).fromWireItem({ title: 'wire', value: 8 });
   assert.deepEqual({ ...wired }, { title: 'wire', value: 8 });
@@ -221,7 +221,7 @@ test('re-exported IModel and IObject symbols preserve class versus plain-object 
   const result = generate({ root, sources: [sourceFile], profile: { mobx: false, validation: false } });
   writeGeneratedArtifacts(result.artifacts);
   const generated = result.artifacts.find(artifact => artifact.path.endsWith('provenance.model.generated.ts'))?.content ?? '';
-  assert.match(generated, /export abstract class ProvenanceBaseModel/);
+  assert.match(generated, /export abstract class TProvenanceBaseModel/);
   assert.doesNotMatch(generated, /export abstract class PlainBaseModel/);
   {
     using program = ts.createProgramFromSources({ root, sources: [sourceFile] });

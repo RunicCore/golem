@@ -80,13 +80,13 @@ test('a hand-written and an SDK model of the same name and shape keep their own 
   ].join('\n'));
   await runPipeline(path.join(root, 'golem.yaml'));
 
-  const keyOf = (file: string): string => {
-    const match = fs.readFileSync(path.join(root, file), 'utf8').match(/#Money(?:Model)?": "(TMoney_[0-9a-f]{8})"/);
+  const keyOf = (file: string, key: RegExp): string => {
+    const match = fs.readFileSync(path.join(root, file), 'utf8').match(key);
     assert.ok(match, `${file} names the Money codec`);
     return match[1];
   };
-  const handId = keyOf('src/generated/models/iobject-plugin-keys.ts');
-  const sdkId = keyOf('sdk/iobject-plugin-keys.ts');
+  const handId = keyOf('src/generated/models/iobject-plugin-keys.ts', /#TMoney": "(TMoney_[0-9a-f]{8})"/);
+  const sdkId = keyOf('sdk/iobject-plugin-keys.ts', /#MoneyModel": "(Money_[0-9a-f]{8})"/);
   assert.notEqual(handId, sdkId);
 
   await command(root, process.execPath, [tscBin(), '-p', path.join(root, 'tsconfig.json')]);

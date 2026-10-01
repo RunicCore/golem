@@ -4,7 +4,7 @@ import type { IModel } from '@exprtlabs/golem/model';
 
 export type TPayment = IModel<{ amount: number }>;
 
-@ApiSchema({ name: 'Payment' })
+@ApiSchema({ name: 'TPayment' })
 class PaymentSummary {
   @ApiProperty()
   count!: number;

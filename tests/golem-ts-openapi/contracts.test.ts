@@ -211,8 +211,8 @@ test('resolves a nullable model class through an imported base chain before runt
   const response = contentSchema(responseOf(document, '/payments/{id}', 'get', '200'), 'application/json', 'class response');
   const variants = anyOfSchemas(response, 'class nullable response');
   assert.equal(variants.filter(item => item.type === 'null').length, 1);
-  assert.equal(variants.filter(item => item.$ref === '#/components/schemas/TPayment').length, 1);
-  assert.equal(schemaOf(document, 'TPayment').type, 'object');
+  assert.equal(variants.filter(item => item.$ref === '#/components/schemas/Payment').length, 1);
+  assert.equal(schemaOf(document, 'Payment').type, 'object');
 });
 
 test('deduplicates equivalent nested model projections in the emitted components graph', async t => {
@@ -221,13 +221,13 @@ test('deduplicates equivalent nested model projections in the emitted components
   const document = documentOf(await generateFixture(root));
   const schemas = expectValue(expectValue(document.components, 'OpenAPI components').schemas, 'OpenAPI component schemas');
   assert.ok(schemas.TAddressOmitId, 'the smallest derived name survives deduplication');
-  assert.equal(schemas.AddressPickCity, undefined, 'the equivalent projection redirects to it');
-  const envelope = schemaOf(document, 'Envelope');
+  assert.equal(schemas.TAddressPickCity, undefined, 'the equivalent projection redirects to it');
+  const envelope = schemaOf(document, 'TEnvelope');
   const omitted = propertySchema(envelope, 'omitted');
   const selected = propertySchema(envelope, 'selected');
-  assert.equal(omitted.$ref, '#/components/schemas/AddressOmitId');
+  assert.equal(omitted.$ref, '#/components/schemas/TAddressOmitId');
   assert.equal(omitted.$ref, selected.$ref, 'all equivalent projection references redirect to one component');
-  assert.equal(schemas.Address, undefined, 'unreferenced source model is not emitted');
+  assert.equal(schemas.TAddress, undefined, 'unreferenced source model is not emitted');
 });
 
 test('emits a lossless whole querystring schema in 3.2 and rejects cross-field flattening in 3.1.2', async t => {
@@ -314,7 +314,7 @@ test('unresolved controller contract types fail instead of becoming unrestricted
   await assert.rejects(generateFixture(root), /RUNM1058.*could not be resolved/);
 });
 
-test('same-name same-shape class and plain models keep their own codec ids in the operation registry', async t => {
+test('same-alias class and plain models keep their own codec ids in the operation registry', async t => {
   const controller = (directory: string, route: string): string => [
     "import { Body, Controller, Post } from '@nestjs/common';",
     `import { type TPayment } from './${directory}/payment.model.js';`,
@@ -327,7 +327,9 @@ test('same-name same-shape class and plain models keep their own codec ids in th
   ].join('\n');
   const model = (declaration: 'IModel' | 'IObject'): string => [
     `import type { ${declaration} } from '@exprtlabs/golem/model';`,
+    ...(declaration === 'IModel' ? ["import { TPaymentBaseModel } from './payment.model.generated.js';"] : []),
     `export type TPayment = ${declaration}<{ amount: string }>;`,
+    ...(declaration === 'IModel' ? ['export class Payment extends TPaymentBaseModel {}'] : []),
     '',
   ].join('\n');
   const root = fixture(t, controller('billing', 'billing'), {
@@ -354,4 +356,58 @@ test('same-name same-shape class and plain models keep their own codec ids in th
   assert.notEqual(keyOf('billing'), keyOf('payout'));
   assert.equal(routeId('billing'), keyOf('billing'), 'the class model route uses the class codec');
   assert.equal(routeId('payout'), keyOf('payout'), 'the plain model route uses the plain codec');
+});
+
+test('two models with one component name and different contracts are rejected with both named', async t => {
+  const controller = (directory: string, route: string): string => [
+    "import { Body, Controller, Post } from '@nestjs/common';",
+    `import { type TPayment } from './${directory}/payment.model.js';`,
+    `@Controller('${route}')`,
+    `export class ${route[0]?.toUpperCase()}${route.slice(1)}Controller {`,
+    '  @Post()',
+    '  create(@Body() input: TPayment): TPayment { return input; }',
+    '}',
+    '',
+  ].join('\n');
+  const model = (field: string): string => `import type { IObject } from '@exprtlabs/golem/model';\nexport type TPayment = IObject<{ ${field}: string }>;\n`;
+  const root = fixture(t, controller('billing', 'billing'), {
+    files: {
+      'src/billing/payment.model.ts': model('amount'),
+      'src/payout/payment.model.ts': model('destination'),
+      'src/payout.controller.ts': controller('payout', 'payout'),
+    },
+  });
+  await assert.rejects(
+    generateFixture(root),
+    /src\/billing\/payment\.model\.ts \(TPayment\) and .*src\/payout\/payment\.model\.ts \(TPayment\) both map to the OpenAPI component name "TPayment"/,
+  );
+});
+
+test('a model with a class is the component named by the class; a model without one keeps its alias', async t => {
+  const root = fixture(t, [
+    "import { Body, Controller, Post } from '@nestjs/common';",
+    "import { type TOrder, PurchaseOrder, type TInvoice } from './order.model.js';",
+    "@Controller('orders')",
+    'export class OrderController {',
+    '  @Post()',
+    '  create(@Body() input: PurchaseOrder): TInvoice { return input as never; }',
+    '}',
+    '',
+  ].join('\n'), {
+    files: {
+      'src/order.model.ts': [
+        "import type { IModel } from '@exprtlabs/golem/model';",
+        "import { TOrderBaseModel } from './order.model.generated.js';",
+        'export type TOrder = IModel<{ id: string; total: number }>;',
+        'export type TInvoice = IModel<{ id: string }>;',
+        'export class PurchaseOrder extends TOrderBaseModel {}',
+        '',
+      ].join('\n'),
+    },
+  });
+  const document = documentOf(await generateFixture(root));
+  const schemas = expectValue(expectValue(document.components, 'OpenAPI components').schemas, 'OpenAPI component schemas');
+  assert.ok(schemas.PurchaseOrder, 'the class names its model');
+  assert.equal(schemas.TOrder, undefined, 'the alias of a model with a class is not a component');
+  assert.ok(schemas.TInvoice, 'a model without a class keeps its alias');
 });

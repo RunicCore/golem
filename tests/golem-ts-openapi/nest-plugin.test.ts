@@ -55,8 +55,8 @@ test('ttsc nest plugin registers nestModelCodec and nestModelReturn metadata, ke
     path.join(root, 'tsconfig.json'),
   ]);
   const emitted = fs.readFileSync(path.join(root, 'build/payments.controller.js'), 'utf8');
-  const model = /nestModelReturn\("Payment_[0-9a-f]{8}"\)/;
-  const modelArray = /nestModelReturn\("Payment_[0-9a-f]{8}", true\)/;
+  const model = /nestModelReturn\("TPayment_[0-9a-f]{8}"\)/;
+  const modelArray = /nestModelReturn\("TPayment_[0-9a-f]{8}", true\)/;
 
   const create = decoratorsOf(emitted, 'create');
   assert.match(create, /__param\(0, Body\(\)\)/);
@@ -64,10 +64,10 @@ test('ttsc nest plugin registers nestModelCodec and nestModelReturn metadata, ke
   assert.match(create, model);
   const createAsClass = decoratorsOf(emitted, 'createAsClass');
   assert.match(createAsClass, /__param\(0, Body\(\)\)/);
-  assert.match(createAsClass, /__param\(0, nestModelCodec\("Payment_[0-9a-f]{8}"\)\)/);
+  assert.match(createAsClass, /__param\(0, nestModelCodec\("TPayment_[0-9a-f]{8}"\)\)/);
   const list = decoratorsOf(emitted, 'list');
   assert.match(list, /__param\(0, Query\(\)\)/);
-  assert.match(list, /__param\(0, nestModelCodec\("PaymentFilter_[0-9a-f]{8}"\)\)/);
+  assert.match(list, /__param\(0, nestModelCodec\("TPaymentFilter_[0-9a-f]{8}"\)\)/);
   assert.match(list, modelArray);
 
   // Promise-wrapped model returns are recorded like direct ones.
@@ -89,7 +89,7 @@ test('ttsc nest plugin registers nestModelCodec and nestModelReturn metadata, ke
   assert.match(createPiped, /nestModelCodec\("TPaymentInput_[0-9a-f]{8}"\)/);
   const listPiped = decoratorsOf(emitted, 'listPiped');
   assert.match(listPiped, /Query\(customPipe\)/);
-  assert.match(listPiped, /nestModelCodec\("PaymentFilter_[0-9a-f]{8}"\)/);
+  assert.match(listPiped, /nestModelCodec\("TPaymentFilter_[0-9a-f]{8}"\)/);
 
   assert.doesNotMatch(emitted, /nestModelCodec\("[^"]+"\)\),,/);
   assert.doesNotMatch(emitted, /nestModelPipe/);
@@ -115,8 +115,8 @@ test('two Payment contracts keep distinct hashed nestModelCodec ids', async (t) 
   const result = generate({ root, profile: { mobx: false, validation: true } });
   writeGeneratedArtifacts(result.artifacts);
   const keys = result.artifacts.find((artifact) => artifact.path.endsWith('iobject-plugin-keys.ts'))?.content ?? '';
-  const billingId = keys.match(/src\/billing\/payment\.model\.ts#Payment": "([^"]+)"/)?.[1];
-  const payoutId = keys.match(/src\/payout\/payment\.model\.ts#Payment": "([^"]+)"/)?.[1];
+  const billingId = keys.match(/src\/billing\/payment\.model\.ts#TPayment": "([^"]+)"/)?.[1];
+  const payoutId = keys.match(/src\/payout\/payment\.model\.ts#TPayment": "([^"]+)"/)?.[1];
   assert.ok(billingId);
   assert.ok(payoutId);
   await command(root, process.execPath, [

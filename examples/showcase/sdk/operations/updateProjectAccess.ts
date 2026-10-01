@@ -4,22 +4,22 @@ import type { ProjectAccessClientOptions as ClientOptions, ProjectAccessRequestO
 import type * as Types from '../types.js';
 import { createOpenApiAjvEngine } from '@exprtlabs/golem/ajv';
 import { operationValidators, responseCheck, validateOperationInput } from '@exprtlabs/golem/validation';
-import { schema as __golemSchema0 } from "../validation-schemas/TMember.input.js";
-import { schema as __golemSchema1 } from "../validation-schemas/TMember.output.js";
-import { schema as __golemSchema2 } from "../validation-schemas/TProjectAccess.input.js";
-import { schema as __golemSchema3 } from "../validation-schemas/TProjectAccess.output.js";
+import { schema as __golemSchema0 } from "../validation-schemas/Member.input.js";
+import { schema as __golemSchema1 } from "../validation-schemas/Member.output.js";
+import { schema as __golemSchema2 } from "../validation-schemas/ProjectAccess.input.js";
+import { schema as __golemSchema3 } from "../validation-schemas/ProjectAccess.output.js";
 
 const responseContracts: readonly RuntimeResponseContract[] = [{"status":"200","content":[{"contentType":"application/json","framing":"body"}],"headers":[]}];
 let __operationValidationSources: OperationValidationSources | undefined;
 const __resolveOperationValidationSources = (): OperationValidationSources => __operationValidationSources ??= {
-  inputReference: "urn:golem:openapi:projectaccessapi:11c074e12b1ead7e69572a7f081d1dea26f13132340efbab23711503d8d92072:schemas:operation:updateProjectAccess#/operations/updateProjectAccess/input",
-  responseReferences: [{"status":"200","contentType":"application/json","reference":"urn:golem:openapi:projectaccessapi:11c074e12b1ead7e69572a7f081d1dea26f13132340efbab23711503d8d92072:schemas:operation:updateProjectAccess#/operations/updateProjectAccess/responses/200/application~1json"}],
+  inputReference: "urn:golem:openapi:projectaccessapi:6073e63c7e9b174726cd4cbec185ce00f49f2a412e5bc93c2a91d506e21c8bc1:schemas:operation:updateProjectAccess#/operations/updateProjectAccess/input",
+  responseReferences: [{"status":"200","contentType":"application/json","reference":"urn:golem:openapi:projectaccessapi:6073e63c7e9b174726cd4cbec185ce00f49f2a412e5bc93c2a91d506e21c8bc1:schemas:operation:updateProjectAccess#/operations/updateProjectAccess/responses/200/application~1json"}],
   schemas: new Map([
-    ["urn:golem:openapi:projectaccessapi:11c074e12b1ead7e69572a7f081d1dea26f13132340efbab23711503d8d92072:schemas:operation:updateProjectAccess", JSON.parse("{\"$id\":\"urn:golem:openapi:projectaccessapi:11c074e12b1ead7e69572a7f081d1dea26f13132340efbab23711503d8d92072:schemas:operation:updateProjectAccess\",\"$schema\":\"https://spec.openapis.org/oas/3.1/dialect/base\",\"operations\":{\"updateProjectAccess\":{\"input\":{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"object\",\"properties\":{\"projectId\":{\"allOf\":[{\"type\":\"string\"},{\"minLength\":1}]}},\"required\":[\"projectId\"],\"additionalProperties\":false},\"body\":{\"$ref\":\"urn:golem:openapi:projectaccessapi:11c074e12b1ead7e69572a7f081d1dea26f13132340efbab23711503d8d92072:schemas:component:TProjectAccess:input\"}},\"required\":[\"path\",\"body\"],\"additionalProperties\":false},\"responses\":{\"200\":{\"application/json\":{\"$ref\":\"urn:golem:openapi:projectaccessapi:11c074e12b1ead7e69572a7f081d1dea26f13132340efbab23711503d8d92072:schemas:component:TProjectAccess:output\"}}}}}}") as object | boolean],
-    ["urn:golem:openapi:projectaccessapi:11c074e12b1ead7e69572a7f081d1dea26f13132340efbab23711503d8d92072:schemas:component:TMember:input", __golemSchema0],
-    ["urn:golem:openapi:projectaccessapi:11c074e12b1ead7e69572a7f081d1dea26f13132340efbab23711503d8d92072:schemas:component:TMember:output", __golemSchema1],
-    ["urn:golem:openapi:projectaccessapi:11c074e12b1ead7e69572a7f081d1dea26f13132340efbab23711503d8d92072:schemas:component:TProjectAccess:input", __golemSchema2],
-    ["urn:golem:openapi:projectaccessapi:11c074e12b1ead7e69572a7f081d1dea26f13132340efbab23711503d8d92072:schemas:component:TProjectAccess:output", __golemSchema3],
+    ["urn:golem:openapi:projectaccessapi:6073e63c7e9b174726cd4cbec185ce00f49f2a412e5bc93c2a91d506e21c8bc1:schemas:operation:updateProjectAccess", JSON.parse("{\"$id\":\"urn:golem:openapi:projectaccessapi:6073e63c7e9b174726cd4cbec185ce00f49f2a412e5bc93c2a91d506e21c8bc1:schemas:operation:updateProjectAccess\",\"$schema\":\"https://spec.openapis.org/oas/3.1/dialect/base\",\"operations\":{\"updateProjectAccess\":{\"input\":{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"object\",\"properties\":{\"projectId\":{\"allOf\":[{\"type\":\"string\"},{\"minLength\":1}]}},\"required\":[\"projectId\"],\"additionalProperties\":false},\"body\":{\"$ref\":\"urn:golem:openapi:projectaccessapi:6073e63c7e9b174726cd4cbec185ce00f49f2a412e5bc93c2a91d506e21c8bc1:schemas:component:ProjectAccess:input\"}},\"required\":[\"path\",\"body\"],\"additionalProperties\":false},\"responses\":{\"200\":{\"application/json\":{\"$ref\":\"urn:golem:openapi:projectaccessapi:6073e63c7e9b174726cd4cbec185ce00f49f2a412e5bc93c2a91d506e21c8bc1:schemas:component:ProjectAccess:output\"}}}}}}") as object | boolean],
+    ["urn:golem:openapi:projectaccessapi:6073e63c7e9b174726cd4cbec185ce00f49f2a412e5bc93c2a91d506e21c8bc1:schemas:component:Member:input", __golemSchema0],
+    ["urn:golem:openapi:projectaccessapi:6073e63c7e9b174726cd4cbec185ce00f49f2a412e5bc93c2a91d506e21c8bc1:schemas:component:Member:output", __golemSchema1],
+    ["urn:golem:openapi:projectaccessapi:6073e63c7e9b174726cd4cbec185ce00f49f2a412e5bc93c2a91d506e21c8bc1:schemas:component:ProjectAccess:input", __golemSchema2],
+    ["urn:golem:openapi:projectaccessapi:6073e63c7e9b174726cd4cbec185ce00f49f2a412e5bc93c2a91d506e21c8bc1:schemas:component:ProjectAccess:output", __golemSchema3],
   ]),
 };
 

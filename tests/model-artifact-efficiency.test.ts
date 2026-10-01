@@ -173,9 +173,9 @@ test('generated tag schemas retain distinct reference closures for duplicate loc
   await compileModelProject(fixtureValue.root);
   const [
     { Parent: OneParent, Child: OneChild },
-    { ParentBaseModel: OneParentBaseModel },
+    { TParentBaseModel: OneParentBaseModel },
     { Parent: TwoParent, Child: TwoChild },
-    { ParentBaseModel: TwoParentBaseModel },
+    { TParentBaseModel: TwoParentBaseModel },
   ] = await Promise.all([
     import(pathToFileURL(path.join(fixtureValue.root, 'build/one/things.model.js')).href),
     import(pathToFileURL(path.join(fixtureValue.root, 'build/one/things.model.generated.js')).href),
@@ -183,9 +183,9 @@ test('generated tag schemas retain distinct reference closures for duplicate loc
     import(pathToFileURL(path.join(fixtureValue.root, 'build/two/things.model.generated.js')).href),
   ]) as [
     { Parent: new (values?: never) => object; Child: new (values?: never) => object },
-    { ParentBaseModel: abstract new (...args: never[]) => object },
+    { TParentBaseModel: abstract new (...args: never[]) => object },
     { Parent: new (values?: never) => object; Child: new (values?: never) => object },
-    { ParentBaseModel: abstract new (...args: never[]) => object },
+    { TParentBaseModel: abstract new (...args: never[]) => object },
   ];
   const oneCodecId = findCodecIdForConstructor(OneParentBaseModel);
   const twoCodecId = findCodecIdForConstructor(TwoParentBaseModel);

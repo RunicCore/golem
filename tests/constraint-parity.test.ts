@@ -127,7 +127,7 @@ function canonicalModelValidator(root: string, sourceRoot: string): ValidateFunc
     programInfo.options,
   );
   assert.ok(graph, 'model source graph');
-  const descriptor = graph.definitions.A;
+  const descriptor = graph.definitions.TA;
   assert.ok(descriptor, 'generated root descriptor');
   const schema = schemaForDescriptor(descriptor, { definitions: graph.definitions });
   const ajv = new Ajv2020({ allErrors: true, strict: false, validateSchema: false });

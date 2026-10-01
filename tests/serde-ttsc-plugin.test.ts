@@ -150,7 +150,7 @@ export function run(): unknown { return parse<TPayment>('{"id":"p","amount":{"cu
     const result = await command(root, process.execPath, ['--input-type=module', '-e', probe]);
     const failure = JSON.parse(result.stdout.trim()) as { kind: string; message: string };
     assert.equal(failure.kind, LibErrorKind.ValidationUnavailable);
-    assert.match(failure.message, /IObject codec "TPayment_[0-9a-f]{8}" for model Payment is not registered\./);
+    assert.match(failure.message, /IObject codec "TPayment_[0-9a-f]{8}" for model TPayment is not registered\./);
     assert.match(failure.message, /type-only import such as `import type \{ TPayment \}` does not load it/);
     assert.match(failure.message, /\.model\.generated\.js/);
     assert.match(failure.message, /Import the model's \.model\.generated\.js file, or a value from its model file,/);
@@ -202,7 +202,7 @@ test('ttsc plugin links a class to its model through extends when the class name
   const { artifacts } = generate({ root, profile: { mobx: false, validation: true } });
   writeGeneratedArtifacts(artifacts);
   const keys = artifacts.find((artifact) => artifact.path.endsWith('iobject-plugin-keys.ts'))?.content ?? '';
-  assert.match(keys, /order\.model\.ts#Order": "TOrder_[0-9a-f]{8}"/);
+  assert.match(keys, /order\.model\.ts#TOrder": "TOrder_[0-9a-f]{8}"/);
   assert.match(keys, /order\.model\.ts#PurchaseOrder": "TOrder_[0-9a-f]{8}"/);
   assert.doesNotMatch(keys, /#RushOrder/, 'a subclass of the model class is not the model class');
   enableSerdePlugin(root);
@@ -253,14 +253,14 @@ test('ttsc plugin resolves OpenAPI codecs through SDK facades without crossing S
     writeGeneratedArtifacts(generated.artifacts);
     const keys = fs.readFileSync(path.join(output, 'iobject-plugin-keys.ts'), 'utf8');
     assert.doesNotMatch(keys, /"models\.ts#/);
-    assert.match(keys, /"models\/_group-[0-9a-f]{8}\.ts#MoneyModel": "TMoney_[0-9a-f]{8}"/);
+    assert.match(keys, /"models\/_group-[0-9a-f]{8}\.ts#MoneyModel": "Money_[0-9a-f]{8}"/);
     return keys;
   };
 
   const firstKeys = writeGeneratedSdk('sdk-first', 'cents', 'number');
   const secondKeys = writeGeneratedSdk('sdk-second', 'code', 'string');
-  const firstId = firstKeys.match(/"models\/_group-[0-9a-f]{8}\.ts#MoneyModel": "(TMoney_[0-9a-f]{8})"/)?.[1];
-  const secondId = secondKeys.match(/"models\/_group-[0-9a-f]{8}\.ts#MoneyModel": "(TMoney_[0-9a-f]{8})"/)?.[1];
+  const firstId = firstKeys.match(/"models\/_group-[0-9a-f]{8}\.ts#MoneyModel": "(Money_[0-9a-f]{8})"/)?.[1];
+  const secondId = secondKeys.match(/"models\/_group-[0-9a-f]{8}\.ts#MoneyModel": "(Money_[0-9a-f]{8})"/)?.[1];
   assert.ok(firstId);
   assert.ok(secondId);
   assert.notEqual(firstId, secondId);

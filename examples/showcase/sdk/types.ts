@@ -3,14 +3,14 @@
 import type * as InputSchemas from './input-schemas.js';
 import type * as OutputSchemas from './output-schemas.js';
 
-export type TMember = {
+export type Member = {
   email: string;
   id: string;
   name: string;
 };
 
-export type TProjectAccess = {
-  member: TMember;
+export type ProjectAccess = {
+  member: Member;
   permissions: string;
   projectName: string;
 };
@@ -19,11 +19,11 @@ export type UpdateProjectAccessOperationInput = {
   path: {
     projectId: string;
   };
-  body: InputSchemas.TProjectAccess;
+  body: InputSchemas.ProjectAccess;
 };
 
-export type UpdateProjectAccessOperationSuccessBody = OutputSchemas.TProjectAccess;
+export type UpdateProjectAccessOperationSuccessBody = OutputSchemas.ProjectAccess;
 
 export type UpdateProjectAccessOperationErrorBody = unknown;
 
-export type UpdateProjectAccessOperationHttpResponse = { matched: 'status'; status: 200; contentType: "application/json"; body: OutputSchemas.TProjectAccess; headers: { [key: string]: never } };
+export type UpdateProjectAccessOperationHttpResponse = { matched: 'status'; status: 200; contentType: "application/json"; body: OutputSchemas.ProjectAccess; headers: { [key: string]: never } };
