@@ -1,0 +1,134 @@
+openapi: 3.2.0
+info:
+  title: Provider
+  version: '1'
+# Every operation requires the bearer token.
+security:
+  - bearerAuth: []
+paths:
+  /charges:
+    get:
+      operationId: listCharges
+      parameters:
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 100 }
+        - in: query
+          name: cursor
+          schema: { type: string }
+      responses:
+        '200':
+          description: Charges
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Charge'
+    post:
+      operationId: createCharge
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Money'
+      responses:
+        '201':
+          description: Created charge
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Charge'
+  /charges/{id}:
+    get:
+      operationId: getCharge
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Charge
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Charge'
+        '404':
+          description: Unknown charge
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+  /charges/text:
+    post:
+      operationId: createChargeText
+      requestBody:
+        required: true
+        content:
+          application/vnd.provider.money:
+            schema:
+              $ref: '#/components/schemas/Money'
+      responses:
+        '201':
+          description: Created charge amount
+          content:
+            application/vnd.provider.money:
+              schema:
+                $ref: '#/components/schemas/Money'
+  # region events-operation
+  /events:
+    get:
+      operationId: readEvents
+      responses:
+        '200':
+          description: Events as they happen
+          content:
+            application/x-ndjson:
+              itemSchema:
+                type: object
+                required: [id]
+                properties:
+                  id: { type: integer }
+  # endregion events-operation
+  /events/lines:
+    get:
+      operationId: readEventIds
+      responses:
+        '200':
+          description: Event identifiers, one per line
+          content:
+            application/vnd.provider.events:
+              itemSchema:
+                type: object
+                required: [id]
+                properties:
+                  id: { type: integer }
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+  schemas:
+    Money:
+      type: object
+      required: [amount, currency]
+      additionalProperties: false
+      properties:
+        amount: { type: string, pattern: '^[0-9]+(?:\.[0-9]{1,2})?$' }
+        currency: { type: string, pattern: '^[A-Z]{3}$' }
+    Problem:
+      type: object
+      required: [message]
+      properties:
+        message: { type: string }
+    Charge:
+      type: object
+      required: [id, money, createdAt, settlesOn]
+      additionalProperties: false
+      properties:
+        id: { type: string }
+        money: { $ref: '#/components/schemas/Money' }
+        createdAt: { type: string, format: date-time }
+        settlesOn: { type: string, format: date }
