@@ -15,6 +15,8 @@ export interface ContractAnalysis {
   readonly codecIds: Readonly<Record<string, string>>;
   describe(type: ts.Type, node: ts.Node, typeNode?: ts.TypeNode): ModelConversionDescriptor;
   codecId(name: string): string | undefined;
+  /** Codec id of the model a controller type is, even when other models share its component name. */
+  modelCodecId(type: ts.Type, node: ts.Node, typeNode?: ts.TypeNode): string | undefined;
   /** Resolve a unique short name or a hashed codec id to its model spec. */
   specFor(name: string): ModelSpecification | undefined;
 }
@@ -70,10 +72,10 @@ export function createContractAnalysis(
     codecBySpec.set(specification, publicId);
     const name = componentName(specification);
     const other = owners.get(name);
-    if (other !== undefined && codecBySpec.get(other) !== publicId) {
+    if (other !== undefined && JSON.stringify(described.get(other)) !== JSON.stringify(descriptor)) {
       throw new Error(
         `Models ${other.sourceFile.fileName} (${other.aliasName}) and ${specification.sourceFile.fileName} (${specification.aliasName}) `
-        + `both map to the OpenAPI component name "${name}" with different contracts. Rename one of them or its class.`,
+        + `both map to the OpenAPI component name "${name}" with different schemas. Rename one of them or its class.`,
       );
     }
     owners.set(name, specification);
@@ -95,6 +97,16 @@ export function createContractAnalysis(
   };
   syncProjections();
 
+  const intactModel = (type: ts.Type, node: ts.Node, typeNode?: ts.TypeNode): ModelSpecification | undefined => {
+    const syntax = typeNode ?? (ts.isTypeNode(node) ? node : undefined);
+    const provenance = fieldProvenance(checker, syntax, specifications);
+    const candidate = !provenance.projection && !type.isUnion() && provenance.models.length === 1 ? provenance.models[0] : undefined;
+    const sameFields = candidate && checker.isTypeAssignableTo(type, candidate.fieldsType)
+      && checker.isTypeAssignableTo(candidate.fieldsType, type)
+      && checker.getPropertiesOfType(type).length === checker.getPropertiesOfType(candidate.fieldsType).length;
+    return sameFields ? candidate : !type.isUnion() ? modelSpecificationForClass(checker, type, specifications, program.getCompilerOptions()) : undefined;
+  };
+
   return {
     specifications,
     definitions,
@@ -111,14 +123,13 @@ export function createContractAnalysis(
       if (hashed) return specifications.find((item) => codecBySpec.get(item) === hashed);
       return undefined;
     },
+    modelCodecId(type, node, typeNode) {
+      const intact = intactModel(type, node, typeNode);
+      return intact ? codecBySpec.get(intact) : undefined;
+    },
     describe(type, node, typeNode) {
       const syntax = typeNode ?? (ts.isTypeNode(node) ? node : undefined);
-      const provenance = fieldProvenance(checker, syntax, specifications);
-      const candidate = !provenance.projection && !type.isUnion() && provenance.models.length === 1 ? provenance.models[0] : undefined;
-      const sameFields = candidate && checker.isTypeAssignableTo(type, candidate.fieldsType)
-        && checker.isTypeAssignableTo(candidate.fieldsType, type)
-        && checker.getPropertiesOfType(type).length === checker.getPropertiesOfType(candidate.fieldsType).length;
-      const intact = sameFields ? candidate : !type.isUnion() ? modelSpecificationForClass(checker, type, specifications, program.getCompilerOptions()) : undefined;
+      const intact = intactModel(type, node, typeNode);
       if (intact) {
         return { kind: 'reference', name: componentName(intact) };
       }

@@ -314,7 +314,7 @@ test('unresolved controller contract types fail instead of becoming unrestricted
   await assert.rejects(generateFixture(root), /RUNM1058.*could not be resolved/);
 });
 
-test('same-alias class and plain models keep their own codec ids in the operation registry', async t => {
+test('same-name same-shape class and plain models share one component and keep their own codec ids in the operation registry', async t => {
   const controller = (directory: string, route: string): string => [
     "import { Body, Controller, Post } from '@nestjs/common';",
     `import { type TPayment } from './${directory}/payment.model.js';`,
@@ -327,9 +327,7 @@ test('same-alias class and plain models keep their own codec ids in the operatio
   ].join('\n');
   const model = (declaration: 'IModel' | 'IObject'): string => [
     `import type { ${declaration} } from '@exprtlabs/golem/model';`,
-    ...(declaration === 'IModel' ? ["import { TPaymentBaseModel } from './payment.model.generated.js';"] : []),
     `export type TPayment = ${declaration}<{ amount: string }>;`,
-    ...(declaration === 'IModel' ? ['export class Payment extends TPaymentBaseModel {}'] : []),
     '',
   ].join('\n');
   const root = fixture(t, controller('billing', 'billing'), {
@@ -356,6 +354,8 @@ test('same-alias class and plain models keep their own codec ids in the operatio
   assert.notEqual(keyOf('billing'), keyOf('payout'));
   assert.equal(routeId('billing'), keyOf('billing'), 'the class model route uses the class codec');
   assert.equal(routeId('payout'), keyOf('payout'), 'the plain model route uses the plain codec');
+  const document = documentOf(contracts);
+  assert.deepEqual(Object.keys(expectValue(document.components, 'OpenAPI components').schemas ?? {}), ['TPayment'], 'one shared component');
 });
 
 test('two models with one component name and different contracts are rejected with both named', async t => {
@@ -379,7 +379,7 @@ test('two models with one component name and different contracts are rejected wi
   });
   await assert.rejects(
     generateFixture(root),
-    /src\/billing\/payment\.model\.ts \(TPayment\) and .*src\/payout\/payment\.model\.ts \(TPayment\) both map to the OpenAPI component name "TPayment"/,
+    /src\/billing\/payment\.model\.ts \(TPayment\) and .*src\/payout\/payment\.model\.ts \(TPayment\) both map to the OpenAPI component name "TPayment" with different schemas/,
   );
 });
 

@@ -296,7 +296,7 @@ test('OpenAPI decoder leaves scalar fields in the initializer copy', () => {
   );
   assert.match(
     child,
-    /return value as TChildInit/,
+    /return value as ChildInit/,
     'budget: pairs with the no-copy check above — the input is cast and returned directly, not rebuilt field by field',
   );
 });
@@ -316,8 +316,8 @@ export class Team extends TTeamBaseModel {}
   const generated = modelArtifact(result, 'team');
   // Only the outermost call copies the input; nested models reuse that copy.
   assert.doesNotMatch(functionBody(generated, 'fillTTeam'), /fromWireFormat(Member|Stamp)\(/);
-  assert.match(functionBody(generated, 'fillTTeam'), /convertFromWireMember\([^;]*, true\)/);
-  assert.match(functionBody(generated, 'fillTMember'), /convertFromWireStamp\([^;]*, true\)/);
+  assert.match(functionBody(generated, 'fillTTeam'), /convertFromWireTMember\([^;]*, true\)/);
+  assert.match(functionBody(generated, 'fillTMember'), /convertFromWireTStamp\([^;]*, true\)/);
 
   writeGeneratedArtifacts(result.artifacts);
   await compileModelProject(value.root);
@@ -326,7 +326,7 @@ export class Team extends TTeamBaseModel {}
   const { TMemberBaseModel: Member, TStampBaseModel: Stamp } = await import(pathToFileURL(path.join(value.root, 'build/team.model.generated.js')).href);
   const { requireObjectCodec } = await import('@exprtlabs/golem/serde');
   const input = { lead: { name: 'Ada', joined: { time: 1 } }, members: [{ name: 'Lin', joined: { time: 2 } }] };
-  const codec = requireObjectCodec<InstanceType<typeof Team>>('Team');
+  const codec = requireObjectCodec<InstanceType<typeof Team>>('TTeam');
   for (const team of [codec.fromWireFormat(input, { construct: Team }), codec.parse(JSON.stringify(input), { construct: Team })] as Record<string, any>[]) {
     assert.ok(team instanceof Team);
     assert.ok(team.lead instanceof Member && team.lead.joined instanceof Stamp);

@@ -181,7 +181,7 @@ for (const profileValidation of [true, false]) {
       assert.equal(parentCodec.validate(blank), false, 'a blank parent note is rejected');
       assert.ok((await validateInstance(blank)).some(issue => issue.path[0] === 'note'));
       const source = result.artifacts.map(a => a.content).join('\n');
-      const parentModelOnly = source.split('\n').find(line => line.includes('const __resolvedModelOnlySchema_Parent')) ?? '';
+      const parentModelOnly = source.split('\n').find(line => line.includes('const __resolvedModelOnlySchema_TParent')) ?? '';
       assert.ok(parentModelOnly.length > 0 && !parentModelOnly.includes('Child'), 'the parent residual does not reference the opaque child');
     } else {
       // A validated child inside an unvalidated parent: the codec you call decides.
@@ -233,7 +233,7 @@ export class Trip extends TTripBaseModel {}
   const engine = createOpenApiSyncAjvEngine({ allErrors: false, validationBindings: {} });
   const registered: string[] = [];
   registerCodecSchemas((schema, id) => { registered.push(id); engine.addSchema(schema, id); }, 'TTrip');
-  assert.ok(registered.some(id => id.startsWith('Stop') && id.endsWith('#model-only')), 'the nested codec residual schema is registered');
+  assert.ok(registered.some(id => id.startsWith('TStop') && id.endsWith('#model-only')), 'the nested codec residual schema is registered');
   const context = { engine };
   const codec = requireObjectCodec('TTrip');
   const good = { at: '2026-01-02T03:04:05.000Z', stop: { at: '2026-01-03T00:00:00.000Z', name: 'A' } };

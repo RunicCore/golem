@@ -83,7 +83,7 @@ async function assertNestedProjections(root: string, buildFile: string, validati
   assert.deepEqual(decoded.address, { city: 'Paris' });
   assert.ok(decoded.intact instanceof Address);
   assert.equal(input.address.id, 'strip');
-  if (validation) assert.throws(() => requireObjectCodec(generatedCodecIdFromRoot(root, 'Customer')).assert( { ...input, address: { city: 'x' } }));
+  if (validation) assert.throws(() => requireObjectCodec(generatedCodecIdFromRoot(root, 'TCustomer')).assert( { ...input, address: { city: 'x' } }));
 }
 
 test('nested projections strip omitted fields and retain intact child models with validation=false', async t => {
@@ -101,9 +101,9 @@ test('equivalent projections share helpers and execute only retained field codec
   const result = generate({ root, profile: { mobx: false, validation: false } });
   writeGeneratedArtifacts(result.artifacts);
   const companion = result.artifacts.find(artifact => artifact.path.endsWith('item.model.generated.ts'))!.content;
-  assert.equal([...companion.matchAll(/function decodeItemOmitId\(/g)].length, 1);
-  assert.equal([...companion.matchAll(/function initItemOmitId\(/g)].length, 1);
-  assert.equal([...companion.matchAll(/function encodeItemOmitId\(/g)].length, 1);
+  assert.equal([...companion.matchAll(/function decodeTItemOmitId\(/g)].length, 1);
+  assert.equal([...companion.matchAll(/function initTItemOmitId\(/g)].length, 1);
+  assert.equal([...companion.matchAll(/function encodeTItemOmitId\(/g)].length, 1);
   await compileModelProject(root);
   const { Container } = await import(path.join(root, 'build/item.model.js'));
   const codecs = await import(path.join(root, 'build/codecs.js'));

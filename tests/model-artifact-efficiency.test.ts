@@ -216,7 +216,7 @@ for (const ajvStandalone of [false, true]) {
     const result = generate({ root: value.root, profile: { mobx: false, validation: true, ajvStandalone } });
     writeGeneratedArtifacts(result.artifacts);
     const companion = result.artifacts.find(item => item.path.endsWith('/item.model.generated.ts'))?.content ?? '';
-    assert.equal((companion.match(/function decodeShortPickValue\(/g) ?? []).length, 1);
+    assert.equal((companion.match(/function decodeTShortPickValue\(/g) ?? []).length, 1);
     await compileModelProject(value.root);
     if (ajvStandalone) copyStandalone(result, value);
     const { Container } = await import(pathToFileURL(path.join(value.root, 'build/item.model.js')).href);

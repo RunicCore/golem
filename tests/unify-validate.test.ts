@@ -224,7 +224,7 @@ test('SDK Money $ref plus extra TValidation, local TValidation, and TSerde compi
     getValidator(combined).issues.map((issue) => issue.path.join('.')).sort(),
   );
 
-  const jsonCodec = requireObjectCodec(generatedCodecIdFromRoot(root, 'JsonCheckout'));
+  const jsonCodec = requireObjectCodec(generatedCodecIdFromRoot(root, 'TJsonCheckout'));
   const text = codec.stringify(valid);
   const parsed = codec.parse(text) as { note: string };
   assert.equal(codec.validate(parsed), true);

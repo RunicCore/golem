@@ -175,7 +175,7 @@ for (const item of [
     assert.equal(await getValidator(admitted).validate({ failFast: false }), true, 'an explicit any tag must not infer a string base type');
 
     assert.throws(
-      () => requireObjectCodec(generatedCodecIdFromRoot(root, 'Payload')).assert( {
+      () => requireObjectCodec(generatedCodecIdFromRoot(root, 'TPayload')).assert( {
         nested: { text: 'bad', payload: 'x', opaque: 1 },
       }),
       (error: unknown) => {
@@ -193,7 +193,7 @@ for (const item of [
       },
     );
     assert.throws(
-      () => requireObjectCodec(generatedCodecIdFromRoot(root, 'Payload')).assert( {
+      () => requireObjectCodec(generatedCodecIdFromRoot(root, 'TPayload')).assert( {
         nested: { text: 'ok', payload: 'ok', opaque: 1 },
         extra: true,
       }),

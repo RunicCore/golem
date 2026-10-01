@@ -140,6 +140,8 @@ export function authoritativeTypeReference(
   const node = reference.sourceNode ?? reference.declaration ?? reference.sourceFile;
   const descriptor = context.contractAnalysis.describe(reference.type, node, reference.node);
   const fromReference = (): string | undefined => {
+    const own = context.contractAnalysis!.modelCodecId(reference.type, node, reference.node);
+    if (own) return own;
     if (descriptor.kind !== 'reference') return undefined;
     const spec = context.contractAnalysis!.specFor(descriptor.name);
     if (!spec) return undefined;

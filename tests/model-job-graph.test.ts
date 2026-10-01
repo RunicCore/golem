@@ -155,8 +155,8 @@ test('editing a leaf model regenerates the ids its dependents reference', (t: Te
     writeGeneratedArtifacts(artifacts);
     const text = (index: number): string =>
       artifacts.find((artifact) => artifact.path.endsWith(`item-${index}.model.generated.ts`))?.content ?? '';
-    const owned = text(0).match(/registerIModelClass\("(Item0_[0-9a-f]{8})"/)?.[1] ?? '';
-    return { owned, referenced: [...new Set(text(1).match(/Item0_[0-9a-f]{8}/g) ?? [])] };
+    const owned = text(0).match(/registerIModelClass\("(TItem0_[0-9a-f]{8})"/)?.[1] ?? '';
+    return { owned, referenced: [...new Set(text(1).match(/TItem0_[0-9a-f]{8}/g) ?? [])] };
   };
   const before = ids();
   assert.ok(before.owned);
