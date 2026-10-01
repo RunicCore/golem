@@ -30,7 +30,7 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          node-version: '22.12.0'
+          node-version: '22.15.0'
           cache: npm
       - run: npm ci
       - run: npx playwright install --with-deps chromium
@@ -38,7 +38,7 @@ jobs:
       - run: npm run docs:check
 
   # Unit suites on the other supported runtimes and on Windows. The baseline
-  # (ubuntu, Node 22.12.0) runs in `check`; packed and browser suites run there only.
+  # (ubuntu, Node 22.15.0) runs in `check`; packed and browser suites run there only.
   unit:
     name: unit (${{ matrix.os }}, Node ${{ matrix.node }})
     runs-on: ${{ matrix.os }}
@@ -49,10 +49,10 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest]
-        node: ['22.12.0', '24']
+        node: ['22.15.0', '24']
         exclude:
           - os: ubuntu-latest
-            node: '22.12.0'
+            node: '22.15.0'
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
@@ -78,7 +78,7 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          node-version: '22.12.0'
+          node-version: '22.15.0'
           cache: npm
       - uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5.0.0
         id: pages

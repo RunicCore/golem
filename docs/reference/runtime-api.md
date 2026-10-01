@@ -109,7 +109,7 @@ function registerModelValidationEngineFactory(factory: () => ModelRuntimeValidat
 
 `configureModelValidationEngine` adds the registry schema to `engine` if missing and uses that engine for models of that registry. `registerModelValidationEngineFactory` sets the engine created for a registry on its first validation; importing [`ajv`](#ajv) registers one. Register a factory during startup: a registry keeps the engine it already created.
 
-Used by generated code: `createStaticValidationEngine`, `runValidation`, `issuesFromErrors`, `getModelRuntimeValidator`.
+Used by generated code: `createStaticValidationEngine`, `runValidation`, `issuesFromErrors`, `getModelRuntimeValidator`, and in operation modules `operationValidators` (resolves an operation's input and response validators once per client), `validateOperationInput` and `responseCheck` (the response check `ClientRuntime.readResponse` runs on each decoded body or stream item).
 
 ### Schema registry validators {#registry-validators}
 
@@ -240,7 +240,7 @@ Generated SDKs call the request runtime. Application code rarely does.
 
 | Member | Behavior |
 | --- | --- |
-| `ClientRuntime` | Holds a client's options and sends its requests. `new ClientRuntime(client, options, defaults)` |
+| `ClientRuntime` | Holds a client's options and sends its requests. `new ClientRuntime(client, options, defaults)`. `readResponse` selects the declared response, decodes it and runs the operation's response check. |
 | `isUndeclaredResponseError` | `(error, client?)`: true for a status or media type the operation does not declare |
 | `serializePath` | Writes a path parameter |
 | `addQueryParameter` | Adds a query parameter |
@@ -355,7 +355,7 @@ import { fromWireFormat, parse, stringify, toWireFormat } from '@exprtlabs/golem
 - `JSON.stringify(model)` does not convert or validate.
 - A `Date` field decodes with ECMAScript `Date` parsing; a non-string or unparsable value throws `Deserialization` with `causedByInput: true`. Put format rules on `Format<'date-time'>` or `TValidation`.
 - A `Date` encodes as UTC ISO text with milliseconds; years outside 0000–9999 throw `Serialization`.
-- Conversion rejects non-finite numbers, `bigint`, functions, symbols, cycles, array holes and non-plain objects.
+- Conversion rejects non-finite numbers, `bigint`, functions, symbols, cycles, array holes and non-plain objects, except in a field whose [`TSerde`](/guide/tags#convert-a-field-to-a-different-json-value) codec converts the value.
 
 ### Validation context {#validation-context}
 

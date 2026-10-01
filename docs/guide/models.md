@@ -70,7 +70,7 @@ The field type decides construction, conversion and validation.
 | TypeScript shape | Runtime and JSON |
 | --- | --- |
 | `string`, `number`, `boolean`, `null`, `undefined` | stored as is; an `undefined` property is left out of JSON |
-| `bigint` | allowed in a model; `stringify` rejects it |
+| `bigint` | needs a [`TSerde`](/guide/tags#convert-a-field-to-a-different-json-value) codec that writes it as JSON, such as a string; without one, `stringify` rejects it |
 | string, number and boolean literals | kept and checked |
 | arrays and tuples | items convert recursively; tuple length and optional or rest positions are checked |
 | object types | known properties convert; extra properties fail validation unless [`{ exact: false }`](/guide/model-composition#strict-objects-and-any) |
@@ -78,6 +78,7 @@ The field type decides construction, conversion and validation.
 | another type-only `IModel` | a nested plain object, still converted |
 | your class (extends a `*Base`) | a nested instance of that class |
 | `Date` | an ISO date-time string in JSON, restored with `Date` parsing; add format checks with [tags](/guide/tags) |
+| `TemporalInstant`, `TemporalPlainDate` and the other [`@exprtlabs/golem/temporal`](/reference/runtime-api#temporal) types | an ISO 8601 string in JSON; needs a `Temporal` global |
 | `unknown` | accepted without structural checks |
 
 `any` is accepted only when `allowAny` is `true`, set in `golem.yaml` or per model ([strict objects](/guide/model-composition#strict-objects-and-any)).

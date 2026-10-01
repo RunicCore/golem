@@ -154,6 +154,7 @@ console.log(apiVersion, result.artifacts.map(artifact => artifact.path));
 | `output` | Yes | — | SDK directory. |
 | `profile` | Yes | — | `GolemProfile`. |
 | `name` | No | the document's `info.title`, else `Api` | Prefix of the client name, such as `PaymentsClient`. |
+| `dates` | No | `'date'` | `'temporal'` maps date and date-time strings to Temporal types ([`dates`](/reference/config)). |
 | `allowRemoteRefs` | No | `false` | Reads HTTPS `$ref` documents when `true`. |
 | `remoteHosts` | No | `[]` | Hosts remote references may use; required with `allowRemoteRefs`. |
 | `maxRefBytes` | No | `5242880` | Maximum bytes read from one referenced document. |
