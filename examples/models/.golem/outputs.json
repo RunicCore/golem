@@ -1,0 +1,124 @@
+{
+  "version": 1,
+  "files": {
+    "src/assignee.model.generated.ts": {
+      "job": "models:.",
+      "owner": "@exprtlabs/golem-model",
+      "digest": "b643b0609c991eebecc5d1ffd07db5f14246ed8f4d612f51137e3262554ce7d3",
+      "destination": "src",
+      "destinationKind": "directory"
+    },
+    "src/attachment.model.generated.ts": {
+      "job": "models:.",
+      "owner": "@exprtlabs/golem-model",
+      "digest": "ccff40b86528e2bb10c1dded30fc66aad7d0e75e515297962b4981240c341283",
+      "destination": "src",
+      "destinationKind": "directory"
+    },
+    "src/builtin-tags.model.generated.ts": {
+      "job": "models:.",
+      "owner": "@exprtlabs/golem-model",
+      "digest": "4c23e3366f173563972f5b70aa2070011bdc6b1e334eaf86d039abd757832ee5",
+      "destination": "src",
+      "destinationKind": "directory"
+    },
+    "src/checklist-input.model.generated.ts": {
+      "job": "models:.",
+      "owner": "@exprtlabs/golem-model",
+      "digest": "ddd796df0c56c330daca10d1edf2cb6913d597da6b7970c4f6594b6e181d16f5",
+      "destination": "src",
+      "destinationKind": "directory"
+    },
+    "src/collection-tags.model.generated.ts": {
+      "job": "models:.",
+      "owner": "@exprtlabs/golem-model",
+      "digest": "c911f90511fd4f3f2bdcd985479709080abb916385908b62817ba3e19ba82c96",
+      "destination": "src",
+      "destinationKind": "directory"
+    },
+    "src/comment.model.generated.ts": {
+      "job": "models:.",
+      "owner": "@exprtlabs/golem-model",
+      "digest": "4851897a0e580949768714e9c1817565a3c16b9629ff52ac503fb4e4c3e9235c",
+      "destination": "src",
+      "destinationKind": "directory"
+    },
+    "src/contact.model.generated.ts": {
+      "job": "models:.",
+      "owner": "@exprtlabs/golem-model",
+      "digest": "10032cea14f68788d2d2d3fa9074f74f3020c7059b54f846406e7e1d5b7c1ef2",
+      "destination": "src",
+      "destinationKind": "directory"
+    },
+    "src/estimate.model.generated.ts": {
+      "job": "models:.",
+      "owner": "@exprtlabs/golem-model",
+      "digest": "8e2850695afb6ee316c618500669b1c9fed13655055e04472ca10017efb17480",
+      "destination": "src",
+      "destinationKind": "directory"
+    },
+    "src/generated/models/iobject-plugin-keys.ts": {
+      "job": "models:.",
+      "owner": "@exprtlabs/golem-model",
+      "digest": "9aff79d7bef2bf750fc130ed3de3fb45cadacd82e21214ca76cc8b78975564ec",
+      "destination": "src/generated/models",
+      "destinationKind": "directory"
+    },
+    "src/generated/models/models.generated.ts": {
+      "job": "models:.",
+      "owner": "@exprtlabs/golem-model",
+      "digest": "17eb4d1f87850159b501d0844475129cc9baa89c6743ecec7d52e80264b94545",
+      "destination": "src/generated/models",
+      "destinationKind": "directory"
+    },
+    "src/metadata.model.generated.ts": {
+      "job": "models:.",
+      "owner": "@exprtlabs/golem-model",
+      "digest": "fc972a87f1c115885f92f1e060ebddb5b92d00310bbb67265f36105841d8908e",
+      "destination": "src",
+      "destinationKind": "directory"
+    },
+    "src/permission-input.model.generated.ts": {
+      "job": "models:.",
+      "owner": "@exprtlabs/golem-model",
+      "digest": "43b09360ee4e3a796ae49a43309ac30b0166cd1617cf9751970ccd4476a79bb6",
+      "destination": "src",
+      "destinationKind": "directory"
+    },
+    "src/reminder.model.generated.ts": {
+      "job": "models:.",
+      "owner": "@exprtlabs/golem-model",
+      "digest": "c34daafe310e29b49dd4704eef0b34597bd126a9d392862545499f4b633be359",
+      "destination": "src",
+      "destinationKind": "directory"
+    },
+    "src/schedule.model.generated.ts": {
+      "job": "models:.",
+      "owner": "@exprtlabs/golem-model",
+      "digest": "e51b9873857746657902ed98f8735907a359f904b23160ea0752fdbfcbc3ae17",
+      "destination": "src",
+      "destinationKind": "directory"
+    },
+    "src/tag-aliases.model.generated.ts": {
+      "job": "models:.",
+      "owner": "@exprtlabs/golem-model",
+      "digest": "3493df89424704ce58f93aaab6a394370023c3afb5d007daa82f1329b7d6d54d",
+      "destination": "src",
+      "destinationKind": "directory"
+    },
+    "src/task-input.model.generated.ts": {
+      "job": "models:.",
+      "owner": "@exprtlabs/golem-model",
+      "digest": "a7f563f4d8ff9e4ac7ea81a00361b0754185d582804f3d1c2f30f349a287f7fc",
+      "destination": "src",
+      "destinationKind": "directory"
+    },
+    "src/task.model.generated.ts": {
+      "job": "models:.",
+      "owner": "@exprtlabs/golem-model",
+      "digest": "37b41aea38921eedd56d13ad318e11fa85c555a23d86cf2ec6fdd1b9ea783953",
+      "destination": "src",
+      "destinationKind": "directory"
+    }
+  }
+}
