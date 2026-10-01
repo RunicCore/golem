@@ -53,21 +53,21 @@
     "sdk/operations/createTask.ts": {
       "job": "openapi:sdk",
       "owner": "@exprtlabs/golem-openapi",
-      "digest": "be3ea6dc6f254cb62659dd18650809e4f8ffe9a472e2634c152991d5cc50faaf",
+      "digest": "b7e34347dae065c808112dc718c34118378153df2930d32a858d1a6c3d9c4df7",
       "destination": "sdk",
       "destinationKind": "directory"
     },
     "sdk/operations/getTask.ts": {
       "job": "openapi:sdk",
       "owner": "@exprtlabs/golem-openapi",
-      "digest": "e2f65e86fa086d982a0b3bf907d13b44930ca888f27d1f4ab9b48b0aedcf475c",
+      "digest": "f899ea9a33146253df918cebe8547a27f7c4e1c2e632a33b5afa9fe7f3057683",
       "destination": "sdk",
       "destinationKind": "directory"
     },
     "sdk/operations/listTasks.ts": {
       "job": "openapi:sdk",
       "owner": "@exprtlabs/golem-openapi",
-      "digest": "d24cbed439f802693c6cc4a8bcb67e5565beaabcbe38837d3ad8558ad61c89aa",
+      "digest": "b91f2e1cdbbe9f91b5067fe73e7f7968b8eb1f4e072d66336280f9c8dfca1131",
       "destination": "sdk",
       "destinationKind": "directory"
     },

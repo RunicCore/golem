@@ -249,29 +249,35 @@ function operationSource(
     ? `  const validators = operationValidators(runtime, ${JSON.stringify(operation.name)}, ${validationSourcesName});\n  const checkResponse = responseCheck(validators);`
     : profile.validation ? '  const validators = undefined;' : '';
   const standaloneResponseValidation = validationBundle?.responseReferences.length
-    ? `      for (const item of ${JSON.stringify(validationBundle.responseReferences)}) {
-        const validator = validatorSet.all[item.reference];
-        if (!validator) throw new LibError(LibErrorKind.ValidationUnavailable, \`Runtime validator could not compile operation response: ${JSON.stringify(operation.name)} \${item.status} \${item.contentType}\`);
-        responses.set(\`\${item.status}:\${item.contentType}\`, validator);
-      }`
+    ? `    for (const item of ${JSON.stringify(validationBundle.responseReferences)}) {
+      const validator = validatorSet.all[item.reference];
+      if (!validator) throw new LibError(LibErrorKind.ValidationUnavailable, \`Runtime validator could not compile operation response: ${JSON.stringify(operation.name)} \${item.status} \${item.contentType}\`);
+      responses.set(\`\${item.status}:\${item.contentType}\`, validator);
+    }`
     : '';
   const validationSources = profile.validation && validationBundle
-    ? `const ${validationSourcesName} = (): OperationValidationSources => ({
-    inputReference: ${JSON.stringify(validationBundle.inputReference)},
-    responseReferences: ${JSON.stringify(validationBundle.responseReferences)},
-    schemas: new Map([
-${profile.ajvStandalone ? '' : `      [${JSON.stringify(validationBundle.operationRootId)}, JSON.parse(${JSON.stringify(JSON.stringify(validationBundle.operationSchema))}) as object | boolean],
-${sharedSchemaAliases.map(({ id, alias }) => `      [${JSON.stringify(id)}, ${alias}],`).join('\n')}`}
-    ]),
-${profile.ajvStandalone ? `    standaloneValidators: () => {
-      const validatorSet = createValidatorSet();
-      const input = validatorSet.all[${JSON.stringify(validationBundle.inputReference)}];
-      if (!input) throw new LibError(LibErrorKind.ValidationUnavailable, ${JSON.stringify(`Runtime validator could not compile operation input: ${operation.name}`)});
-      const responses = new Map<string, RuntimeValidator>();
-${standaloneResponseValidation}
-      return { input, responses };
-    },` : ''}
-  });`
+    ? [
+      `const ${validationSourcesName} = (): OperationValidationSources => ({`,
+      `  inputReference: ${JSON.stringify(validationBundle.inputReference)},`,
+      `  responseReferences: ${JSON.stringify(validationBundle.responseReferences)},`,
+      '  schemas: new Map([',
+      ...(profile.ajvStandalone ? [] : [
+        `    [${JSON.stringify(validationBundle.operationRootId)}, JSON.parse(${JSON.stringify(JSON.stringify(validationBundle.operationSchema))}) as object | boolean],`,
+        ...sharedSchemaAliases.map(({ id, alias }) => `    [${JSON.stringify(id)}, ${alias}],`),
+      ]),
+      '  ]),',
+      ...(profile.ajvStandalone ? [
+        '  standaloneValidators: () => {',
+        '    const validatorSet = createValidatorSet();',
+        `    const input = validatorSet.all[${JSON.stringify(validationBundle.inputReference)}];`,
+        `    if (!input) throw new LibError(LibErrorKind.ValidationUnavailable, ${JSON.stringify(`Runtime validator could not compile operation input: ${operation.name}`)});`,
+        '    const responses = new Map<string, RuntimeValidator>();',
+        standaloneResponseValidation,
+        '    return { input, responses };',
+        '  },',
+      ] : []),
+      '});',
+    ].filter(Boolean).join('\n')
     : '';
   const operationSchemaImports = profile.validation && !profile.ajvStandalone
     ? sharedSchemaAliases.map(({ id: _id, alias }, index) => {
@@ -282,12 +288,12 @@ ${standaloneResponseValidation}
     }).filter(Boolean).join('\n')
     : '';
   const runtimeImports = [
-    `import { ClientRuntime${runtimeFunctions.map(name => `, ${name}`).join('')}, type RuntimeResponseContract${surfaces.auth || surfaces.mutualTls ? ', type RuntimeSecuritySchemes' : ''}${profile.validation ? ', type OperationValidationSources' : ''} } from '@exprtlabs/golem/client';`,
+    `import { ClientRuntime${runtimeFunctions.map(name => `, ${name}`).join('')}${profile.mobx ? '' : ', createApiOperation, type ApiOperation'}, type RuntimeResponseContract${surfaces.auth || surfaces.mutualTls ? ', type RuntimeSecuritySchemes' : ''}${profile.validation ? ', type OperationValidationSources' : ''} } from '@exprtlabs/golem/client';`,
     `import type { ${clientName}ClientOptions as ClientOptions, ${clientName}RequestOptions as RequestOptions } from '../client.js';`,
     `import type * as Types from '../types.js';`,
     profile.mobx
       ? `import { createObservableApiOperation as createApiOperation, type ObservableApiOperation as ApiOperation } from '@exprtlabs/golem/mobx';`
-      : `import { createApiOperation, type ApiOperation } from '@exprtlabs/golem/client';`,
+      : '',
     defaultAjvEngine ? `import { createOpenApiAjvEngine } from '@exprtlabs/golem/ajv';` : '',
     profile.ajvStandalone && profile.validation
       ? `import { createValidatorSet } from './${operation.name}.validators.generated.js';`
@@ -304,41 +310,48 @@ ${standaloneResponseValidation}
     ? `export const __golemSecuritySchemes = ${JSON.stringify(securitySchemes, null, 2)} as const;\nconst securitySchemes: RuntimeSecuritySchemes = __golemSecuritySchemes;`
     : '';
   const securityCall = plan.clientSurfaces.auth || plan.clientSurfaces.mutualTls
-    ? `    await ${use('applySecurity')}(runtime, ${security}, query, headers, cookies, securitySchemes);\n    if (cookies.length) headers.set('Cookie', cookies.join('; '));`
+    ? `    await ${use('applySecurity')}(runtime, ${security}, query, headers, cookies, securitySchemes);`
     : '';
-  const body = `    return createApiOperation(${JSON.stringify(operation.name)}, async (${inputName}: ${inputType}, options: RequestOptions = {}): Promise<${responseType}> => {
-${profile.validation ? `    await validateOperationInput(${JSON.stringify(operation.name)}, input, validators);` : ''}
-    const query: string[] = [];
-${queryLines.join('\n')}
-${queryStringLine}
-    const headers = new Headers(runtime.defaultHeaders);
-${headerLines.join('\n')}
-    const cookies: string[] = [];
-${cookieLines.join('\n')}
-    if (cookies.length) headers.set('Cookie', cookies.join('; '));
-${securityCall}
-${requestBody ? `    const encodedBody = ${use('encodeBody')}(runtime, ${JSON.stringify(operation.name)}, ${bodyValue}, ${bodyContentType}, ${bodyEncodings});\n    if (encodedBody.contentType) headers.set('Content-Type', encodedBody.contentType);` : ''}
-${route.declarations}
-    const request: RequestInit = {
-      method: ${JSON.stringify(operation.method)},
-      headers,
-    };
-    if (options.signal !== undefined) request.signal = options.signal;
-${requestBody ? '    if (encodedBody.body !== undefined) request.body = encodedBody.body;' : ''}
-    const response = await runtime.fetchImpl(runtime.url(${route.expression}, query), request);
-    return runtime.readResponse<${responseType}>(
-      ${JSON.stringify(operation.name)},
-      response,
-      responseContracts,${validatesWithSources ? '\n      checkResponse,' : ''}
-    );
-    });`;
+  const usesQuery = queryLines.length > 0 || queryStringLine !== '' || securityCall !== '';
+  const usesCookies = cookieLines.length > 0 || securityCall !== '';
+  const bodyLines = [
+    profile.validation ? `    await validateOperationInput(${JSON.stringify(operation.name)}, input, validators);` : '',
+    usesQuery ? '    const query: string[] = [];' : '',
+    ...queryLines,
+    queryStringLine,
+    '    const headers = new Headers(runtime.defaultHeaders);',
+    ...headerLines,
+    usesCookies ? '    const cookies: string[] = [];' : '',
+    ...cookieLines,
+    securityCall,
+    usesCookies ? "    if (cookies.length) headers.set('Cookie', cookies.join('; '));" : '',
+    requestBody ? `    const encodedBody = ${use('encodeBody')}(runtime, ${JSON.stringify(operation.name)}, ${bodyValue}, ${bodyContentType}, ${bodyEncodings});\n    if (encodedBody.contentType) headers.set('Content-Type', encodedBody.contentType);` : '',
+    route.declarations,
+    '    const request: RequestInit = {',
+    `      method: ${JSON.stringify(operation.method)},`,
+    '      headers,',
+    '    };',
+    '    if (options.signal !== undefined) request.signal = options.signal;',
+    requestBody ? '    if (encodedBody.body !== undefined) request.body = encodedBody.body;' : '',
+    `    const response = await runtime.fetchImpl(runtime.url(${route.expression}, ${usesQuery ? 'query' : '[]'}), request);`,
+    `    return runtime.readResponse<${responseType}>(`,
+    `      ${JSON.stringify(operation.name)},`,
+    '      response,',
+    `      responseContracts,${validatesWithSources ? '\n      checkResponse,' : ''}`,
+    '    );',
+  ].filter(line => line.trim() !== '');
+  const body = `  return createApiOperation(${JSON.stringify(operation.name)}, async (${inputName}: ${inputType}, options: RequestOptions = {}): Promise<${responseType}> => {
+${bodyLines.join('\n')}
+  });`;
 
-  return `${generatedBanner()}
-${runtimeImports}
-
-${securityDeclaration}
-const responseContracts: readonly RuntimeResponseContract[] = ${JSON.stringify(responseContracts)};
-${validationSources}
+  return `${[
+    generatedBanner().trimEnd(),
+    runtimeImports,
+    '',
+    securityDeclaration,
+    `const responseContracts: readonly RuntimeResponseContract[] = ${JSON.stringify(responseContracts)};`,
+    validationSources,
+  ].filter((part, index) => part !== '' || index === 2).join('\n')}
 
 export function ${operation.name}(options: ClientOptions): ApiOperation<${inputType}, ${responseType}, RequestOptions> {
   return ${factoryName}(new ClientRuntime(${JSON.stringify(clientName)}, options${defaultAjvEngine ? ', { createValidationEngine: createOpenApiAjvEngine }' : ''}));

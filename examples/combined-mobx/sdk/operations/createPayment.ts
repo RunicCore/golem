@@ -8,18 +8,16 @@ import { operationValidators, responseCheck, validateOperationInput } from '@exp
 import { schema as __golemSchema0 } from "../validation-schemas/Money.input.js";
 import { schema as __golemSchema1 } from "../validation-schemas/Money.output.js";
 
-
 const responseContracts: readonly RuntimeResponseContract[] = [{"status":"201","content":[{"contentType":"application/json","framing":"body"}],"headers":[]}];
 const __resolveOperationValidationSources = (): OperationValidationSources => ({
-    inputReference: "urn:golem:openapi:payments:e3f4dba1e46a0fbad92bcf41e56897807352186da24f1afdd03635f202f97e90:schemas:operation:createPayment#/operations/createPayment/input",
-    responseReferences: [{"status":"201","contentType":"application/json","reference":"urn:golem:openapi:payments:e3f4dba1e46a0fbad92bcf41e56897807352186da24f1afdd03635f202f97e90:schemas:operation:createPayment#/operations/createPayment/responses/201/application~1json"}],
-    schemas: new Map([
-      ["urn:golem:openapi:payments:e3f4dba1e46a0fbad92bcf41e56897807352186da24f1afdd03635f202f97e90:schemas:operation:createPayment", JSON.parse("{\"$id\":\"urn:golem:openapi:payments:e3f4dba1e46a0fbad92bcf41e56897807352186da24f1afdd03635f202f97e90:schemas:operation:createPayment\",\"$schema\":\"https://spec.openapis.org/oas/3.1/dialect/base\",\"operations\":{\"createPayment\":{\"input\":{\"type\":\"object\",\"properties\":{\"body\":{\"$ref\":\"urn:golem:openapi:payments:e3f4dba1e46a0fbad92bcf41e56897807352186da24f1afdd03635f202f97e90:schemas:component:Money:input\"}},\"required\":[\"body\"],\"additionalProperties\":false},\"responses\":{\"201\":{\"application/json\":{\"$ref\":\"urn:golem:openapi:payments:e3f4dba1e46a0fbad92bcf41e56897807352186da24f1afdd03635f202f97e90:schemas:component:Money:output\"}}}}}}") as object | boolean],
-      ["urn:golem:openapi:payments:e3f4dba1e46a0fbad92bcf41e56897807352186da24f1afdd03635f202f97e90:schemas:component:Money:input", __golemSchema0],
-      ["urn:golem:openapi:payments:e3f4dba1e46a0fbad92bcf41e56897807352186da24f1afdd03635f202f97e90:schemas:component:Money:output", __golemSchema1],
-    ]),
-
-  });
+  inputReference: "urn:golem:openapi:payments:e3f4dba1e46a0fbad92bcf41e56897807352186da24f1afdd03635f202f97e90:schemas:operation:createPayment#/operations/createPayment/input",
+  responseReferences: [{"status":"201","contentType":"application/json","reference":"urn:golem:openapi:payments:e3f4dba1e46a0fbad92bcf41e56897807352186da24f1afdd03635f202f97e90:schemas:operation:createPayment#/operations/createPayment/responses/201/application~1json"}],
+  schemas: new Map([
+    ["urn:golem:openapi:payments:e3f4dba1e46a0fbad92bcf41e56897807352186da24f1afdd03635f202f97e90:schemas:operation:createPayment", JSON.parse("{\"$id\":\"urn:golem:openapi:payments:e3f4dba1e46a0fbad92bcf41e56897807352186da24f1afdd03635f202f97e90:schemas:operation:createPayment\",\"$schema\":\"https://spec.openapis.org/oas/3.1/dialect/base\",\"operations\":{\"createPayment\":{\"input\":{\"type\":\"object\",\"properties\":{\"body\":{\"$ref\":\"urn:golem:openapi:payments:e3f4dba1e46a0fbad92bcf41e56897807352186da24f1afdd03635f202f97e90:schemas:component:Money:input\"}},\"required\":[\"body\"],\"additionalProperties\":false},\"responses\":{\"201\":{\"application/json\":{\"$ref\":\"urn:golem:openapi:payments:e3f4dba1e46a0fbad92bcf41e56897807352186da24f1afdd03635f202f97e90:schemas:component:Money:output\"}}}}}}") as object | boolean],
+    ["urn:golem:openapi:payments:e3f4dba1e46a0fbad92bcf41e56897807352186da24f1afdd03635f202f97e90:schemas:component:Money:input", __golemSchema0],
+    ["urn:golem:openapi:payments:e3f4dba1e46a0fbad92bcf41e56897807352186da24f1afdd03635f202f97e90:schemas:component:Money:output", __golemSchema1],
+  ]),
+});
 
 export function createPayment(options: ClientOptions): ApiOperation<Types.CreatePaymentOperationInput, Types.CreatePaymentOperationHttpResponse, RequestOptions> {
   return createCreatePaymentOperation(new ClientRuntime("Payments", options, { createValidationEngine: createOpenApiAjvEngine }));
@@ -28,32 +26,23 @@ export function createPayment(options: ClientOptions): ApiOperation<Types.Create
 export function createCreatePaymentOperation(runtime: ClientRuntime): ApiOperation<Types.CreatePaymentOperationInput, Types.CreatePaymentOperationHttpResponse, RequestOptions> {
   const validators = operationValidators(runtime, "createPayment", __resolveOperationValidationSources);
   const checkResponse = responseCheck(validators);
-    return createApiOperation("createPayment", async (input: Types.CreatePaymentOperationInput, options: RequestOptions = {}): Promise<Types.CreatePaymentOperationHttpResponse> => {
+  return createApiOperation("createPayment", async (input: Types.CreatePaymentOperationInput, options: RequestOptions = {}): Promise<Types.CreatePaymentOperationHttpResponse> => {
     await validateOperationInput("createPayment", input, validators);
-    const query: string[] = [];
-
-
     const headers = new Headers(runtime.defaultHeaders);
-
-    const cookies: string[] = [];
-
-    if (cookies.length) headers.set('Cookie', cookies.join('; '));
-
     const encodedBody = encodeBody(runtime, "createPayment", input.body, "application/json", {"application/json":{"encoding":{},"prefixEncoding":[],"itemEncoding":null}});
     if (encodedBody.contentType) headers.set('Content-Type', encodedBody.contentType);
-
     const request: RequestInit = {
       method: "POST",
       headers,
     };
     if (options.signal !== undefined) request.signal = options.signal;
     if (encodedBody.body !== undefined) request.body = encodedBody.body;
-    const response = await runtime.fetchImpl(runtime.url("/payments", query), request);
+    const response = await runtime.fetchImpl(runtime.url("/payments", []), request);
     return runtime.readResponse<Types.CreatePaymentOperationHttpResponse>(
       "createPayment",
       response,
       responseContracts,
       checkResponse,
     );
-    });
+  });
 }

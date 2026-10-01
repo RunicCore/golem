@@ -81,7 +81,7 @@
     "sdk/operations/updateProjectAccess.ts": {
       "job": "openapi:sdk",
       "owner": "@exprtlabs/golem-openapi",
-      "digest": "82923428a76d286450c17cb9c5192c574f4abd5b57676bb029da12a4dbcd125e",
+      "digest": "f8d5195c4ff8ff4ba50f5114d0a1acf98e53a5a3a5871d007245894ce2f999c8",
       "destination": "sdk",
       "destinationKind": "directory"
     },

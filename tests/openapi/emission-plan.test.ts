@@ -423,3 +423,30 @@ test('an ajvStandalone validation SDK with operations compiles under strict unus
   }, { output, name: 'Standalone', profile: { mobx: false, validation: true, ajvStandalone: true } });
   compileStrictUnusedSdk(output);
 });
+
+test('an operation module declares only the request locals it uses and imports the client module once', async t => {
+  const output = outputDir(t, 'operation-locals');
+  const result = await generateMaterializedSdk({
+    openapi: '3.1.0', info: info('Locals'),
+    paths: {
+      '/plain': { get: { operationId: 'plain', responses: { 204: { description: 'ok' } } } },
+      '/session': {
+        get: {
+          operationId: 'session',
+          parameters: [{ name: 'sid', in: 'cookie', schema: { type: 'string' } }],
+          responses: { 204: { description: 'ok' } },
+        },
+      },
+    },
+  }, { output, name: 'Locals', profile: { mobx: false, validation: false } });
+  const file = (name: string) => result.artifacts.find(artifact => artifact.path.endsWith(`operations/${name}.ts`))?.content ?? '';
+  const plain = file('plain');
+  assert.doesNotMatch(plain, /const query|const cookies/);
+  assert.match(plain, /runtime\.url\("\/plain", \[\]\)/);
+  assert.equal(plain.match(/from '@exprtlabs\/golem\/client'/g)?.length, 1);
+  assert.doesNotMatch(plain, /\n\n\n/);
+  const session = file('session');
+  assert.match(session, /const cookies: string\[\] = \[\];/);
+  assert.equal(session.match(/if \(cookies\.length\)/g)?.length, 1);
+  assert.doesNotMatch(session, /const query/);
+});
