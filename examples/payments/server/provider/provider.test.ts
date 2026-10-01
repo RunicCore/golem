@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createAuthorizedClient, createClientWithIdempotencyKey, createMoneyTextClient, createRefreshingClient } from './client.js';
 import { createChargeWithAmount, fetchCharge, readCharge, readTwoCharges } from './charges.js';
-import { createEventLinesClient, firstEvent, firstEventId, readCaptured, readEvents } from './events.js';
+import { createEventLinesClient, firstEvent, firstEventId, readCaptured, readEvents, readUntilClosed } from './events.js';
 import { describeCharge, readSettlementDate } from './settlement.js';
 import { PaymentCaptured } from '../src/events/payment-events.model.js';
 
@@ -95,6 +95,28 @@ test('NDJSON events arrive one by one and can stop early', async () => {
     assert.deepEqual(await readEvents(client), [1, 2]);
     assert.equal(await firstEvent(client), 1);
   });
+});
+
+test('aborting while events are read ends the read', async () => {
+  const controller = new AbortController();
+  const events = (signal: AbortSignal) => new Response(new ReadableStream<Uint8Array>({
+    start(stream) {
+      stream.enqueue(new TextEncoder().encode('{"id":1}\n'));
+      signal.addEventListener('abort', () => stream.error(signal.reason));
+    },
+  }), { headers: { 'content-type': 'application/x-ndjson' } });
+  let timer: NodeJS.Timeout | undefined;
+  const hardTimeout = new Promise<never>((_resolve, reject) => { timer = setTimeout(() => reject(new Error('the read did not end after abort')), 3000); });
+  try {
+    // The stub takes the signal that reaches fetch, so the abort ends the stream as a real fetch would.
+    const original = globalThis.fetch;
+    globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => events(init?.signal as AbortSignal)) as typeof fetch;
+    const read = readUntilClosed(createAuthorizedClient(base, 't'), controller).finally(() => { globalThis.fetch = original; });
+    setTimeout(() => controller.abort(), 20);
+    assert.deepEqual(await Promise.race([read, hardTimeout]), [1]);
+  } finally {
+    clearTimeout(timer);
+  }
 });
 
 test('a custom stream decoder reads integer lines, and event models parse JSON', async () => {

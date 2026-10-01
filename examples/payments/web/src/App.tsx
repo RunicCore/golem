@@ -6,7 +6,7 @@ import { PaymentStore } from './payment-store.js';
 import { observeSummary } from './summary.js';
 import './styles.css';
 
-const apiUrl = import.meta.env.VITE_API_BASE_URL ?? 'http://127.0.0.1:3000';
+const apiUrl = window.location.origin; // The Vite dev server proxies /api to the API.
 
 // #region observer-component
 const PaymentEditorView = observer(function PaymentEditorView({ store }: { store: PaymentStore }) {

@@ -15,6 +15,11 @@ export class PaymentEditor extends TPaymentEditorBaseModel {
     super({ money: { amount: '0.00', currency: 'USD' }, note: '', ...values });
     asGenObservable(this, { summary: computed, setAmount: action, setCurrency: action, setNote: action });
     getValidator(this).extend({ note: value => value.length <= 100 || 'Keep the note within 100 characters' });
+    // Readable messages for the generated pattern checks of the nested money model.
+    getValidator(this.money).messages({
+      'amount.pattern': 'Enter an amount like 12.50',
+      'currency.pattern': 'Use a three-letter currency code like USD',
+    });
   }
 
   // #region model-methods

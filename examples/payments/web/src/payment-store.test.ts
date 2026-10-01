@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { getValidator } from '@exprtlabs/golem/validation';
 import { PaymentsClient } from '../sdk/index.js';
 import { PaymentStore } from './payment-store.js';
 import { examplePayment, observeSummary } from './summary.js';
@@ -34,6 +35,7 @@ test('validation blocks a bad amount before fetch', async () => {
   store.editor.setNote('x'.repeat(101));
   assert.equal(await store.save(), false);
   assert.equal(calls, 0);
+  assert.equal(getValidator(store.editor).errors['/money/amount']?.[0], 'Enter an amount like 12.50');
   assert.equal(store.saveState, 'idle');
 });
 

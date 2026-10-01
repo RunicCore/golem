@@ -196,6 +196,8 @@ paths:
           description: Created
         "400":
           description: Invalid payment input.
+        "502":
+          description: The payment provider declined or is unavailable.
   /api/payments/transactions/as-class:
     post:
       operationId: createPaymentAsClass

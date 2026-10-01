@@ -88,7 +88,8 @@ export type CreatePaymentOperationErrorBody = void;
 
 export type CreatePaymentOperationHttpResponse =
   | { matched: 'status'; status: 201; contentType: "application/json"; body: OutputSchemas.Payment; headers: { [key: string]: never } }
-  | { matched: 'status'; status: 400; contentType: null; body: void; headers: { [key: string]: never } };
+  | { matched: 'status'; status: 400; contentType: null; body: void; headers: { [key: string]: never } }
+  | { matched: 'status'; status: 502; contentType: null; body: void; headers: { [key: string]: never } };
 
 export type CreatePaymentAsClassOperationInput = {
   body: InputSchemas.Payment;

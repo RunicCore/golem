@@ -1,5 +1,5 @@
 import { Body, Controller, Delete, Get, HttpCode, NotFoundException, Param, Post, Query } from '@nestjs/common';
-import { ApiBadRequestResponse, ApiNotFoundResponse, ApiOperation } from '@nestjs/swagger';
+import { ApiBadGatewayResponse, ApiBadRequestResponse, ApiNotFoundResponse, ApiOperation } from '@nestjs/swagger';
 import { PaymentDraft } from './payment-draft.model.js';
 import { Payment, type TPaymentFilter, type TPaymentInput, type TPayment } from './payment.model.js';
 import { ProviderCharges } from './provider-charges.js';
@@ -19,6 +19,7 @@ export class PaymentsController {
   @Post()
   @ApiOperation({ operationId: 'createPayment' })
   @ApiBadRequestResponse({ description: 'Invalid payment input.' })
+  @ApiBadGatewayResponse({ description: 'The payment provider declined or is unavailable.' })
   async create(@Body() input: TPaymentInput): Promise<TPayment> {
     const id = String(nextPaymentId++);
     const charge = await this.provider.charge(input.money, `payment-${id}`);

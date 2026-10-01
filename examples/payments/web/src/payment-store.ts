@@ -10,6 +10,8 @@ export type SaveState = 'idle' | 'saving' | 'success' | 'error';
 const merchant = { id: 'merchant-1', name: 'Book shop' };
 const billing = { name: 'Accounts' };
 
+const providerDown = 'The payment provider declined or is unavailable.';
+
 function receipt(payment: { id: string; charge?: { id: string; status: string; settlesOn: string } }): string {
   const { charge } = payment;
   return `Payment ${payment.id} saved.${charge ? ` Charge ${charge.id} is ${charge.status}, settles ${charge.settlesOn}.` : ''}`;
@@ -59,7 +61,7 @@ export class PaymentStore {
       const saved = response.status === 201;
       runInAction(() => {
         this.saveState = saved ? 'success' : 'error';
-        this.message = saved ? receipt(response.body) : 'The API rejected the payment.';
+        this.message = saved ? receipt(response.body) : response.status === 502 ? providerDown : 'The API rejected the payment.';
       });
       return saved;
     } catch (error: unknown) {

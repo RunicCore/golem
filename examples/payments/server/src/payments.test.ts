@@ -12,8 +12,8 @@ const provider = {
   }) as typeof fetch,
 };
 
-async function withApi(run: (api: string) => Promise<void>): Promise<void> {
-  const application = await createApplication(undefined, provider);
+async function withApi(run: (api: string) => Promise<void>, options = provider): Promise<void> {
+  const application = await createApplication(undefined, options);
   await application.listen(0, '127.0.0.1');
   try {
     await run(`${await application.getUrl()}/api`);
@@ -51,6 +51,12 @@ test('a saved payment is charged through the provider with a bearer token and it
   assert.match(charged[0]?.headers.get('idempotency-key') ?? '', /^payment-\d+$/);
   assert.equal(await charged[0]?.text(), JSON.stringify({ amount: '12.50', currency: 'USD' }));
 }));
+
+test('a failing provider is a 502 with a clear message and no payment', () => withApi(async api => {
+  const created = await post(`${api}/payments/transactions`, input);
+  assert.equal(created.status, 502);
+  assert.equal((await created.json()).message, 'The payment provider declined or is unavailable.');
+}, { ...provider, fetchImpl: (async () => new Response('down', { status: 500 })) as typeof fetch }));
 
 test('a float amount and a bad currency are rejected before the handler', () => withApi(async api => {
   const float = await post(`${api}/payments/transactions`, { ...input, money: { amount: 12.5, currency: 'USD' } });

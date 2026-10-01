@@ -4,7 +4,7 @@
     "api/openapi.yaml": {
       "job": "controllers:api/openapi.yaml",
       "owner": "@exprtlabs/golem-ts-openapi",
-      "digest": "f0ab41641c3d98b0950c180b45f60c8e7eacba628f2eaafeb123afc074225374",
+      "digest": "83dbc09b8180f6629e8890f10816d5af170fea531ce3c7330c52b7dded2879b8",
       "destination": "api/openapi.yaml",
       "destinationKind": "file"
     },
