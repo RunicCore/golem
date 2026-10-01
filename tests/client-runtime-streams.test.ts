@@ -177,3 +177,20 @@ test('SSE: a multi-byte UTF-8 character split across chunks decodes intact insid
 test('SSE: a CR at the end of the stream still ends the blank line that dispatches', async () => {
   assert.deepEqual(await readEvents(['data: a\n', '\r']), [{ data: 'a' }]);
 });
+
+test('SSE: each event is a new plain object with its fields in dispatch order, and a retry beyond a double reads as null', async () => {
+  const events = await readEvents([
+    'id: 7\nevent: settled\nretry: 1500\ndata: one\n\n',
+    'data: two\n\n',
+    `retry: ${'9'.repeat(400)}\ndata: three\n\n`,
+  ]) as Record<string, unknown>[];
+  assert.deepEqual(events, [
+    { data: 'one', event: 'settled', id: '7', retry: 1500 },
+    // The last event id carries over; the retry belonged to the first event.
+    { data: 'two', id: '7' },
+    { data: 'three', id: '7', retry: null },
+  ]);
+  assert.deepEqual(Object.keys(events[0]), ['data', 'event', 'id', 'retry']);
+  assert.equal(Object.getPrototypeOf(events[0]), Object.prototype);
+  assert.notEqual(events[0], events[1]);
+});

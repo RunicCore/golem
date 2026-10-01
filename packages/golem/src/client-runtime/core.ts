@@ -615,11 +615,12 @@ export class ClientRuntime {
       const value: Record<string, unknown> = { data: data.join('\n') };
       if (event) value.event = event;
       if (id) value.id = id;
-      if (retry !== undefined) value.retry = retry;
+      // A retry too large for a double is Infinity, which JSON writes as null.
+      if (retry !== undefined) value.retry = Number.isFinite(retry) ? retry : null;
       event = '';
       data = [];
       retry = undefined;
-      return JSON.parse(JSON.stringify(value));
+      return value as T;
     };
     const consume = (line: string): T | undefined => {
       if (line === '') return emit();
