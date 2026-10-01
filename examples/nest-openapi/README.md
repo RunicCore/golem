@@ -82,7 +82,7 @@ export async function createApplication() {
 }
 ```
 
-`@Body()` and `@Query()` convert through that interceptor. Responses use Nest JSON.
+`@Body()` and `@Query()` convert through that interceptor, and it writes an `IModel` or `IObject` return value with `stringify`.
 
 ## Generated client call
 
