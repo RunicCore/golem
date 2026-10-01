@@ -8,7 +8,7 @@ import type { BenchmarkResults } from './results-schema.js';
 import { buildResults, environment, gitState, packageVersions, writeFilesTogether, type MeasuredCase, type Settings } from './results.js';
 import { parseWorkerOutput, type WorkerJob, type WorkerOutput } from './worker-protocol.js';
 
-export const DEFAULT_SETTINGS: Settings = { warmupMs: 300, batchMs: 200, batches: 6, rounds: 2 };
+export const DEFAULT_SETTINGS: Settings = { warmupMs: 1000, batchMs: 200, batches: 6, rounds: 2 };
 export interface RunOptions { readonly settings: Settings; readonly outputFile: string; readonly rawFile: string; readonly log?: (line: string) => void }
 
 function runWorker(modulePath: string, fixtureAdapter: string, job: WorkerJob): WorkerOutput {
