@@ -31,7 +31,6 @@ Every other file in an SDK is internal and may change in a minor release. Do not
 
 - `models/_group-*.ts`
 - `types.ts`
-- `schemas.ts`, written only for an `ajvStandalone` job
 - `input-schemas.ts`
 - `output-schemas.ts`
 - `validation-schemas/*`
