@@ -8,9 +8,9 @@ import { assertValidText, consumeValue, createFixtureInputs, invalidIpLength, in
 
 function codecId(input: FixtureInput): string {
   switch (input.name) {
-    case 'ObjectSimple': return 'PlainObjectSimple';
-    case 'ObjectHierarchical-Constrained': return 'PlainConstrainedObjectHierarchical';
-    case 'ArrayHierarchical-1000': return 'PlainCollection';
+    case 'ObjectSimple': return 'TPlainObjectSimple';
+    case 'ObjectHierarchical-Constrained': return 'TPlainConstrainedObjectHierarchical';
+    case 'ArrayHierarchical-1000': return 'TPlainCollection';
   }
 }
 

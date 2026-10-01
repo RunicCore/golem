@@ -143,7 +143,7 @@ await withApplication(async baseUrl => {
 {
   const types = Reflect.getMetadata('design:paramtypes', PaymentsController.prototype, 'create');
   const codec = objectCodecFromMetatype(types[0]);
-  assert.match(codec?.id ?? '', /^PaymentInput_[0-9a-f]{8}$/);
+  assert.match(codec?.id ?? '', /^TPaymentInput_[0-9a-f]{8}$/);
   assert.equal(codec, getObjectCodec(codec.id));
   const parsed = codec.parse(JSON.stringify(input));
   assert.equal(Object.getPrototypeOf(parsed), Object.prototype);
@@ -151,7 +151,7 @@ await withApplication(async baseUrl => {
 
   const classTypes = Reflect.getMetadata('design:paramtypes', PaymentsController.prototype, 'createAsClass');
   const classCodec = objectCodecFromMetatype(classTypes[0]);
-  assert.match(classCodec?.id ?? '', /^Payment_[0-9a-f]{8}$/);
+  assert.match(classCodec?.id ?? '', /^TPayment_[0-9a-f]{8}$/);
   assert.equal(classCodec, getObjectCodec(classCodec.id));
   const classParsed = classCodec.parse(JSON.stringify({ id: 'class-1', ...input }), {
     construct: nestModelConstruct(classTypes[0]),
@@ -161,18 +161,19 @@ await withApplication(async baseUrl => {
   assert.equal(classParsed.money.amount, '12.50');
 }
 
-// Handwritten and SDK models with the same shape get different hashed codec ids.
-for (const model of ['Payment', 'Merchant', 'Money', 'PaymentInput']) {
-  const modelId = modelCodecKeys[`src/payment.model.ts#${model}`];
-  const sdkId = sdkCodecId(model);
-  assert.match(modelId ?? '', new RegExp(`^${model}_[0-9a-f]{8}$`));
-  assert.match(sdkId ?? '', new RegExp(`^${model}_[0-9a-f]{8}$`));
-  assert.notEqual(sdkId, modelId, `${model}: handwritten and SDK ids differ`);
-  assert.equal(getObjectCodec(modelId)?.issueSource, 'typescript', `${model}: handwritten codec keeps its source`);
-  assert.equal(getObjectCodec(sdkId)?.issueSource, 'openapi', `${model}: SDK codec keeps its source`);
+// Handwritten and SDK models with the same shape get different hashed codec ids. The OpenAPI component is named
+// after the model's class when it has exactly one, otherwise after the exact alias.
+for (const [alias, component] of [['TPayment', 'Payment'], ['TMerchant', 'TMerchant'], ['TMoney', 'TMoney'], ['TPaymentInput', 'TPaymentInput']]) {
+  const modelId = modelCodecKeys[`src/payment.model.ts#${alias}`];
+  const sdkId = sdkCodecId(component);
+  assert.match(modelId ?? '', new RegExp(`^${alias}_[0-9a-f]{8}$`));
+  assert.match(sdkId ?? '', new RegExp(`^${component}_[0-9a-f]{8}$`));
+  assert.notEqual(sdkId, modelId, `${alias}: handwritten and SDK ids differ`);
+  assert.equal(getObjectCodec(modelId)?.issueSource, 'typescript', `${alias}: handwritten codec keeps its source`);
+  assert.equal(getObjectCodec(sdkId)?.issueSource, 'openapi', `${alias}: SDK codec keeps its source`);
 }
-assert.equal(OPERATION_CODECS['POST /api/payments/transactions'], modelCodecKeys['src/payment.model.ts#PaymentInput']);
-assert.equal(OPERATION_CODECS['POST /api/payments/transactions/as-class'], modelCodecKeys['src/payment.model.ts#Payment']);
-assert.equal(OPERATION_OUTPUT_CODECS['GET /api/payments/transactions/{id}'], modelCodecKeys['src/payment.model.ts#Payment']);
-assert.equal(OPERATION_QUERY_CODECS['GET /api/payments/transactions'], modelCodecKeys['src/payment.model.ts#PaymentFilter']);
-assert.match(OPERATION_CODECS['POST /api/payments/transactions'] ?? '', /^PaymentInput_[0-9a-f]{8}$/);
+assert.equal(OPERATION_CODECS['POST /api/payments/transactions'], modelCodecKeys['src/payment.model.ts#TPaymentInput']);
+assert.equal(OPERATION_CODECS['POST /api/payments/transactions/as-class'], modelCodecKeys['src/payment.model.ts#TPayment']);
+assert.equal(OPERATION_OUTPUT_CODECS['GET /api/payments/transactions/{id}'], modelCodecKeys['src/payment.model.ts#TPayment']);
+assert.equal(OPERATION_QUERY_CODECS['GET /api/payments/transactions'], modelCodecKeys['src/payment.model.ts#TPaymentFilter']);
+assert.match(OPERATION_CODECS['POST /api/payments/transactions'] ?? '', /^TPaymentInput_[0-9a-f]{8}$/);

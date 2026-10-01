@@ -12,7 +12,7 @@ export async function createGolemObjectFeatureFixtures(adapter: Adapter): Promis
   const input = checkoutInput();
   // #region calls
   // Resolve the codec once, as the other libraries' fixtures do; timed calls do only the conversion.
-  const checkout = requireObjectCodec<TJsonCheckout>('JsonCheckout');
+  const checkout = requireObjectCodec<TJsonCheckout>('TJsonCheckout');
   const model = checkout.parse(input.text);
   return [featureComparison(input.name, input.payload, {
     'text-to-model': () => checkout.parse(input.text),

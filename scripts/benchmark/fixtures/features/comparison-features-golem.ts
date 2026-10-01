@@ -5,8 +5,8 @@ import { Checkout, LineItem } from './features.model.js';
 import './sdk/index.js';
 import { assertFeatureWire, checkoutInput, featureComparison } from './payloads.js';
 
-registerIModelClass('LineItem', LineItem);
-registerIModelClass('Checkout', Checkout);
+registerIModelClass('TLineItem', LineItem);
+registerIModelClass('TCheckout', Checkout);
 
 function options(validation: boolean, construct?: new (values?: never) => object): { readonly validate?: false; readonly construct?: new (values?: never) => object } {
   return { ...(validation ? {} : { validate: false as const }), ...(construct ? { construct } : {}) };
@@ -18,7 +18,7 @@ function validationFor(adapter: Adapter): boolean {
   throw new TypeError(`Unsupported golem adapter: ${adapter}`);
 }
 
-const codec = () => requireObjectCodec('Checkout');
+const codec = () => requireObjectCodec('TCheckout');
 
 function checkConverted(model: object): void {
   assert.ok(model instanceof Checkout);

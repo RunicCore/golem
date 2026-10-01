@@ -28,20 +28,20 @@ import './features.iobject.model.generated.js';
 import './sdk/index.js';
 import type { Fixture, Operation } from './fixture-contract.js';
 
-registerIModelClass('ReuseContact', ReuseContact);
-registerIModelClass('Address', Address);
-registerIModelClass('Customer', Customer);
-registerIModelClass('LineItem', LineItem);
-registerIModelClass('ContactEmail', ContactEmail);
-registerIModelClass('ContactPhone', ContactPhone);
-registerIModelClass('Contact', Contact);
-registerIModelClass('NestedOrder', NestedOrder);
-registerIModelClass('ComposeCustomer', ComposeCustomer);
+registerIModelClass('TReuseContact', ReuseContact);
+registerIModelClass('TAddress', Address);
+registerIModelClass('TCustomer', Customer);
+registerIModelClass('TLineItem', LineItem);
+registerIModelClass('TContactEmail', ContactEmail);
+registerIModelClass('TContactPhone', ContactPhone);
+registerIModelClass('TContact', Contact);
+registerIModelClass('TNestedOrder', NestedOrder);
+registerIModelClass('TComposeCustomer', ComposeCustomer);
 registerIModelClass('TaggedMember', TaggedMember);
 registerIModelClass('TaggedAccess', TaggedAccess);
 registerIModelClass('TaggedLineItem', TaggedLineItem);
-registerIModelClass('CombinedOrder', CombinedOrder);
-registerIModelClass('Checkout', Checkout);
+registerIModelClass('TCombinedOrder', CombinedOrder);
+registerIModelClass('TCheckout', Checkout);
 
 const reuseWire = {
   givenName: 'Ada',
@@ -186,9 +186,9 @@ export async function createFixtures(validation: boolean): Promise<readonly Fixt
   fixtures.push(await fixture(
     'reuse',
     structuredClone(reuseWire),
-    input => Promise.resolve(codec('JsonReuseContact').fromWireFormat(typeof input === 'string' ? JSON.parse(input) : input, { validate: false }) as TJsonReuseContact),
-    model => Promise.resolve(codec('JsonReuseContact').toWireFormat(model, { validate: false }) as never),
-    model => Promise.resolve(codec('JsonReuseContact').stringify(model, { validate: false })),
+    input => Promise.resolve(codec('TJsonReuseContact').fromWireFormat(typeof input === 'string' ? JSON.parse(input) : input, { validate: false }) as TJsonReuseContact),
+    model => Promise.resolve(codec('TJsonReuseContact').toWireFormat(model, { validate: false }) as never),
+    model => Promise.resolve(codec('TJsonReuseContact').stringify(model, { validate: false })),
     model => {
       assertRecord(model);
       assert.equal(model.workEmail, 'ada@example.com');
@@ -196,16 +196,16 @@ export async function createFixtures(validation: boolean): Promise<readonly Fixt
     },
     model => model.workEmail.length + model.homePhone.length,
     wire => wire.workEmail.length + wire.homePhone.length,
-    validation ? model => codec('JsonReuseContact').validate(model) : undefined,
+    validation ? model => codec('TJsonReuseContact').validate(model) : undefined,
   ));
   for (const count of [10, 200]) {
     const wire = nestedWire(count);
     fixtures.push(await fixture(
       `nested-${count}`,
       wire,
-      input => Promise.resolve(codec('JsonNestedOrder').fromWireFormat(typeof input === 'string' ? JSON.parse(input) : input, { validate: false }) as TJsonNestedOrder),
-      model => Promise.resolve(codec('JsonNestedOrder').toWireFormat(model, { validate: false }) as never),
-      model => Promise.resolve(codec('JsonNestedOrder').stringify(model, { validate: false })),
+      input => Promise.resolve(codec('TJsonNestedOrder').fromWireFormat(typeof input === 'string' ? JSON.parse(input) : input, { validate: false }) as TJsonNestedOrder),
+      model => Promise.resolve(codec('TJsonNestedOrder').toWireFormat(model, { validate: false }) as never),
+      model => Promise.resolve(codec('TJsonNestedOrder').stringify(model, { validate: false })),
       model => {
         assertRecord(model);
         assertRecord(model.customer);
@@ -218,15 +218,15 @@ export async function createFixtures(validation: boolean): Promise<readonly Fixt
       },
       model => model.items.length + model.customer.home.city.length,
       output => output.items.length + output.customer.home.city.length,
-      validation ? model => codec('JsonNestedOrder').validate(model) : undefined,
+      validation ? model => codec('TJsonNestedOrder').validate(model) : undefined,
     ));
   }
   fixtures.push(await fixture(
     'compose',
     structuredClone(composeWire),
-    input => Promise.resolve(codec('JsonComposeCustomer').fromWireFormat(typeof input === 'string' ? JSON.parse(input) : input, { validate: false }) as TJsonComposeCustomer),
-    model => Promise.resolve(codec('JsonComposeCustomer').toWireFormat(model, { validate: false }) as never),
-    model => Promise.resolve(codec('JsonComposeCustomer').stringify(model, { validate: false })),
+    input => Promise.resolve(codec('TJsonComposeCustomer').fromWireFormat(typeof input === 'string' ? JSON.parse(input) : input, { validate: false }) as TJsonComposeCustomer),
+    model => Promise.resolve(codec('TJsonComposeCustomer').toWireFormat(model, { validate: false }) as never),
+    model => Promise.resolve(codec('TJsonComposeCustomer').stringify(model, { validate: false })),
     model => {
       assertRecord(model);
       assertRecord(model.home);
@@ -241,14 +241,14 @@ export async function createFixtures(validation: boolean): Promise<readonly Fixt
     },
     model => model.home.city.length + model.shipping.city.length + model.draft.city!.length,
     wire => wire.home.city.length + wire.shipping.city.length + wire.draft.city.length,
-    validation ? model => codec('JsonComposeCustomer').validate(model) : undefined,
+    validation ? model => codec('TJsonComposeCustomer').validate(model) : undefined,
   ));
   fixtures.push(await fixture(
     'tagged',
     structuredClone(taggedWire),
-    input => Promise.resolve(codec('JsonTaggedAccess').fromWireFormat(typeof input === 'string' ? JSON.parse(input) : input, { validate: false }) as TJsonTaggedAccess),
-    model => Promise.resolve(codec('JsonTaggedAccess').toWireFormat(model, { validate: false }) as never),
-    model => Promise.resolve(codec('JsonTaggedAccess').stringify(model, { validate: false })),
+    input => Promise.resolve(codec('TJsonTaggedAccess').fromWireFormat(typeof input === 'string' ? JSON.parse(input) : input, { validate: false }) as TJsonTaggedAccess),
+    model => Promise.resolve(codec('TJsonTaggedAccess').toWireFormat(model, { validate: false }) as never),
+    model => Promise.resolve(codec('TJsonTaggedAccess').stringify(model, { validate: false })),
     model => {
       assertRecord(model);
       assertRecord(model.member);
@@ -258,14 +258,14 @@ export async function createFixtures(validation: boolean): Promise<readonly Fixt
     },
     model => model.permissions + model.budget + model.member.name.length,
     wire => wire.permissions.length + wire.budget.length + wire.member.name.length,
-    validation ? validateConvertedWire('JsonTaggedAccess') : undefined,
+    validation ? validateConvertedWire('TJsonTaggedAccess') : undefined,
   ));
   fixtures.push(await fixture(
     'combined',
     structuredClone(combinedWire),
-    input => Promise.resolve(codec('JsonCombinedOrder').fromWireFormat(typeof input === 'string' ? JSON.parse(input) : input, { validate: false }) as TJsonCombinedOrder),
-    model => Promise.resolve(codec('JsonCombinedOrder').toWireFormat(model, { validate: false }) as never),
-    model => Promise.resolve(codec('JsonCombinedOrder').stringify(model, { validate: false })),
+    input => Promise.resolve(codec('TJsonCombinedOrder').fromWireFormat(typeof input === 'string' ? JSON.parse(input) : input, { validate: false }) as TJsonCombinedOrder),
+    model => Promise.resolve(codec('TJsonCombinedOrder').toWireFormat(model, { validate: false }) as never),
+    model => Promise.resolve(codec('TJsonCombinedOrder').stringify(model, { validate: false })),
     model => {
       assertRecord(model);
       assertRecord(model.billing);
@@ -277,14 +277,14 @@ export async function createFixtures(validation: boolean): Promise<readonly Fixt
     },
     model => model.items.length + model.items[0].amount + model.permissions,
     wire => wire.items.length + wire.items[0].amount.length + wire.permissions.length,
-    validation ? validateConvertedWire('JsonCombinedOrder') : undefined,
+    validation ? validateConvertedWire('TJsonCombinedOrder') : undefined,
   ));
   fixtures.push(await fixture(
     'sdk-extend',
     structuredClone(sdkExtendWire),
-    input => Promise.resolve(codec('JsonCheckout').fromWireFormat(typeof input === 'string' ? JSON.parse(input) : input, { validate: false }) as TJsonCheckout),
-    model => Promise.resolve(codec('JsonCheckout').toWireFormat(model, { validate: false }) as never),
-    model => Promise.resolve(codec('JsonCheckout').stringify(model, { validate: false })),
+    input => Promise.resolve(codec('TJsonCheckout').fromWireFormat(typeof input === 'string' ? JSON.parse(input) : input, { validate: false }) as TJsonCheckout),
+    model => Promise.resolve(codec('TJsonCheckout').toWireFormat(model, { validate: false }) as never),
+    model => Promise.resolve(codec('TJsonCheckout').stringify(model, { validate: false })),
     model => {
       assertRecord(model);
       assertRecord(model.money);
@@ -305,11 +305,11 @@ export async function createFixtures(validation: boolean): Promise<readonly Fixt
     },
     model => model.note.length + model.code + model.items.length,
     wire => wire.note.length + wire.code.length + wire.items.length,
-    validation ? (model) => codec('JsonCheckout').validate(model) : undefined,
+    validation ? (model) => codec('TJsonCheckout').validate(model) : undefined,
   ));
 
   if (validation) {
-    const checkoutCodec = codec('JsonCheckout');
+    const checkoutCodec = codec('TJsonCheckout');
     const extra = checkoutCodec.fromWireFormat({ ...sdkExtendWire, money: { amount: 12, currency: 'XXX' } }, { validate: false }) as TJsonCheckout;
     assert.equal(checkoutCodec.validate(extra, { failFast: false }), false);
     const nested = checkoutCodec.fromWireFormat({ ...sdkExtendWire, money: { amount: 12, currency: 'usd' } }, { validate: false }) as TJsonCheckout;
@@ -326,7 +326,7 @@ export async function createFixtures(validation: boolean): Promise<readonly Fixt
   }
 
   const invalid = { ...taggedWire, permissions: '0x4' };
-  const draft = codec('TaggedAccess').fromWireFormat(invalid, { validate: false, construct: TaggedAccess }) as InstanceType<typeof TaggedAccess>;
+  const draft = codec('TTaggedAccess').fromWireFormat(invalid, { validate: false, construct: TaggedAccess }) as InstanceType<typeof TaggedAccess>;
   assert.ok(draft instanceof TaggedAccess);
   assert.ok(draft.member instanceof TaggedMember);
   if (validation) {
@@ -335,7 +335,7 @@ export async function createFixtures(validation: boolean): Promise<readonly Fixt
   } else {
     assert.equal(draft.permissions, 4);
     assert.deepEqual(
-      JSON.parse(JSON.stringify(codec('TaggedAccess').toWireFormat(draft, { validate: false }))),
+      JSON.parse(JSON.stringify(codec('TTaggedAccess').toWireFormat(draft, { validate: false }))),
       invalid,
     );
   }

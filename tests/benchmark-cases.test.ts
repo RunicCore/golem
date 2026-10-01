@@ -35,7 +35,7 @@ test('benchmark fixtures are fair: timed operations do no setup and Typia uses t
     assert.ok(timed.length >= 3, `${file}: timed operations found`);
     // Each timed call goes straight to a codec resolved once per fixture (or the decode helper built on it).
     for (const line of timed) assert.match(line, /: (?:\(\) => (?:codec|checkout)\.\w+\([^()]*\),?|decode,?|\(\) => \{)$/, `${file}: ${line.trim()}`);
-    assert.match(source, /const decode = \(\): object => checkout\.fromWireFormat\(input\.payload, decodeOptions\)|const codec = requireObjectCodec\(codecId\(input\)\);|const checkout = requireObjectCodec<TJsonCheckout>\('JsonCheckout'\);/, file);
+    assert.match(source, /const decode = \(\): object => checkout\.fromWireFormat\(input\.payload, decodeOptions\)|const codec = requireObjectCodec\(codecId\(input\)\);|const checkout = requireObjectCodec<TJsonCheckout>\('TJsonCheckout'\);/, file);
   }
   const typia = readFileSync(path.join(fixtures, 'upstream/typia.ts'), 'utf8');
   assert.doesNotMatch(typia, /createIs<|createAssertParse<|createAssertStringify</, 'upstream/typia.ts');

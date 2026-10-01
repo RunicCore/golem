@@ -52,23 +52,23 @@ function trusted(validation: boolean, construct?: new (values?: never) => object
 }
 
 function registerHandwrittenClasses(): void {
-  registerIModelClass('Point3D', Point3D);
-  registerIModelClass('Timestamp', Timestamp);
-  registerIModelClass('Account', Account);
-  registerIModelClass('Enterprise', Enterprise);
-  registerIModelClass('Channel', Channel);
-  registerIModelClass('Member', Member);
-  registerIModelClass('ObjectSimple', ObjectSimple);
-  registerIModelClass('Employee', Employee);
-  registerIModelClass('Department', Department);
-  registerIModelClass('Company', Company);
-  registerIModelClass('Collection', Collection);
-  registerIModelClass('ConstrainedTimestamp', ConstrainedTimestamp);
-  registerIModelClass('ConstrainedAccount', ConstrainedAccount);
-  registerIModelClass('ConstrainedEnterprise', ConstrainedEnterprise);
-  registerIModelClass('ConstrainedChannel', ConstrainedChannel);
-  registerIModelClass('ConstrainedMember', ConstrainedMember);
-  registerIModelClass('ConstrainedObjectHierarchical', ConstrainedObjectHierarchical);
+  registerIModelClass('TPoint3D', Point3D);
+  registerIModelClass('TTimestamp', Timestamp);
+  registerIModelClass('TAccount', Account);
+  registerIModelClass('TEnterprise', Enterprise);
+  registerIModelClass('TChannel', Channel);
+  registerIModelClass('TMember', Member);
+  registerIModelClass('TObjectSimple', ObjectSimple);
+  registerIModelClass('TEmployee', Employee);
+  registerIModelClass('TDepartment', Department);
+  registerIModelClass('TCompany', Company);
+  registerIModelClass('TCollection', Collection);
+  registerIModelClass('TConstrainedTimestamp', ConstrainedTimestamp);
+  registerIModelClass('TConstrainedAccount', ConstrainedAccount);
+  registerIModelClass('TConstrainedEnterprise', ConstrainedEnterprise);
+  registerIModelClass('TConstrainedChannel', ConstrainedChannel);
+  registerIModelClass('TConstrainedMember', ConstrainedMember);
+  registerIModelClass('TConstrainedObjectHierarchical', ConstrainedObjectHierarchical);
 }
 
 registerHandwrittenClasses();
@@ -87,7 +87,7 @@ function constructFor(input: FixtureInput): new (values?: never) => object {
  * IModel tagValidators stay on the class editor path and are not the JSON hot path.
  */
 async function verifyPublicTagInvocation(input: FixtureInput): Promise<void> {
-  const codec = requireObjectCodec('ConstrainedObjectHierarchical');
+  const codec = requireObjectCodec('TConstrainedObjectHierarchical');
   const model = codec.fromWireFormat(input.payload, { construct: ConstrainedObjectHierarchical }) as InstanceType<typeof ConstrainedObjectHierarchical>;
   assert.ok(model instanceof ConstrainedObjectHierarchical);
   codec.toWireFormat(model);
@@ -110,10 +110,10 @@ function validationFor(adapter: Adapter): boolean {
 
 function codecId(input: FixtureInput): string {
   switch (input.name) {
-    case 'ObjectSimple': return 'ObjectSimple';
-    case 'ObjectHierarchical-Constrained': return 'ConstrainedObjectHierarchical';
+    case 'ObjectSimple': return 'TObjectSimple';
+    case 'ObjectHierarchical-Constrained': return 'TConstrainedObjectHierarchical';
     case 'ArrayHierarchical-1000':
-      return 'Collection';
+      return 'TCollection';
   }
 }
 
@@ -134,9 +134,9 @@ function encodeText(model: GolemModel, _payload: unknown, validation: boolean, i
 }
 
 function codecIdFromModel(model: GolemModel): string {
-  if (model instanceof ObjectSimple) return 'ObjectSimple';
-  if (model instanceof Collection) return 'Collection';
-  return 'ConstrainedObjectHierarchical';
+  if (model instanceof ObjectSimple) return 'TObjectSimple';
+  if (model instanceof Collection) return 'TCollection';
+  return 'TConstrainedObjectHierarchical';
 }
 
 function assertNestedInstances(input: FixtureInput, value: GolemModel): void {
