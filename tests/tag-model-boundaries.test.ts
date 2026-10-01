@@ -261,7 +261,7 @@ const checks: readonly Check[] = [
 ];
 
 // Both engines hold every scenario in one project. Anonymous structural schemas are identified by their
-// shape, so models in one standalone project never claim the same id for different schemas (omec-yw4n:
+// shape, so models in one standalone project never claim the same id for different schemas (earlier
 // counter ids made generate() throw "Conflicting standalone schema identity").
 test('tag boundary scenarios share one runtime project', async t => {
   const project = await buildScenarioProject(t, false, checks.map(check => check.directory));

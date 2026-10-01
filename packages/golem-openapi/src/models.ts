@@ -1590,8 +1590,8 @@ export function generateModels(
       "import { asGenObservable } from '@exprtlabs/golem/mobx';",
     ] : []),
     `import type * as Types from '${helpers.moduleFile?.includes('/') ? '../types.js' : './types.js'}';`,
-    // Keeps the internal codec-key table in the program for the ttsc plugin; erased from the emitted JavaScript.
-    `import type {} from '${helpers.moduleFile?.includes('/') ? '../iobject-plugin-keys.js' : './iobject-plugin-keys.js'}';`,
+    // An SDK group keeps the internal codec-key table in the program for the ttsc plugin; erased from the emitted JavaScript.
+    ...(helpers.moduleFile ? [`import type {} from '${helpers.moduleFile.includes('/') ? '../iobject-plugin-keys.js' : './iobject-plugin-keys.js'}';`] : []),
     ...(helpers.moduleImports ?? []),
     '',
     ...(emitObjectFromJSON ? [

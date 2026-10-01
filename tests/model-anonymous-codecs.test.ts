@@ -49,7 +49,7 @@ test('an unrelated unnamed type elsewhere in the job does not change a codec id'
 });
 
 test('unnamed object types with different shapes in one standalone project generate with distinct ids', t => {
-  // omec-yw4n: per-file counter ids named both `__anon_1`, and standalone generation threw a schema identity conflict.
+  // Per-file counter ids used to name both `__anon_1`, and standalone generation threw a schema identity conflict.
   const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-anonymous-standalone-', name: null, linkWorkspaceNodeModules: true });
   writeModelSources(sourceRoot, { 'contracts.model.ts': contracts('billingAddress'), 'other.model.ts': other });
   const result = generate({ root, profile: { mobx: false, validation: true, ajvStandalone: true } });
