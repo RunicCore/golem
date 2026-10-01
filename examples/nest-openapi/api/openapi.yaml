@@ -61,6 +61,16 @@ components:
         - money
         - note
       type: object
+    PaymentDraft:
+      additionalProperties: false
+      properties:
+        note:
+          allOf:
+            - type: string
+            - minLength: 2
+      required:
+        - note
+      type: object
     PaymentInput:
       additionalProperties: false
       properties:
@@ -85,6 +95,33 @@ info:
   version: "1"
 openapi: 3.2.0
 paths:
+  /api/payment-notes/{id}:
+    get:
+      operationId: PaymentNotesController_get
+      parameters:
+        - explode: false
+          in: path
+          name: id
+          required: true
+          schema:
+            type: string
+          style: simple
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                properties:
+                  id:
+                    type: string
+                  note:
+                    type: string
+                required:
+                  - id
+                  - note
+                type: object
+          description: Success
   /api/payments/transactions:
     get:
       operationId: listPayments
@@ -158,6 +195,22 @@ paths:
           description: Created
         "400":
           description: Invalid payment.
+  /api/payments/transactions/drafts:
+    post:
+      operationId: PaymentsController_createDraft
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PaymentDraft"
+        required: true
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaymentDraft"
+          description: Created
   /api/payments/transactions/{id}:
     delete:
       operationId: deletePayment

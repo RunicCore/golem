@@ -5,13 +5,15 @@ import { createOpenApiAjvEngine } from '@exprtlabs/golem/ajv';
 import type { OperationRuntimeValidators as __GolemOperationRuntimeValidators } from '@exprtlabs/golem/validation';
 import type * as Types from './types.js';
 import type { ApiOperation } from '@exprtlabs/golem/client';
-import { createListPaymentsOperation as __golemOperationFactory0 } from "./operations/listPayments.js";
-import { createCreatePaymentOperation as __golemOperationFactory1 } from "./operations/createPayment.js";
-import { createCreatePaymentAsClassOperation as __golemOperationFactory2 } from "./operations/createPaymentAsClass.js";
-import { createGetPaymentOperation as __golemOperationFactory3 } from "./operations/getPayment.js";
-import { createDeletePaymentOperation as __golemOperationFactory4 } from "./operations/deletePayment.js";
+import { createPaymentNotesController_getOperation as __golemOperationFactory0 } from "./operations/paymentNotesController_get.js";
+import { createListPaymentsOperation as __golemOperationFactory1 } from "./operations/listPayments.js";
+import { createCreatePaymentOperation as __golemOperationFactory2 } from "./operations/createPayment.js";
+import { createCreatePaymentAsClassOperation as __golemOperationFactory3 } from "./operations/createPaymentAsClass.js";
+import { createPaymentsController_createDraftOperation as __golemOperationFactory4 } from "./operations/paymentsController_createDraft.js";
+import { createGetPaymentOperation as __golemOperationFactory5 } from "./operations/getPayment.js";
+import { createDeletePaymentOperation as __golemOperationFactory6 } from "./operations/deletePayment.js";
 
-type __GolemOperationName = "listPayments" | "createPayment" | "createPaymentAsClass" | "getPayment" | "deletePayment";
+type __GolemOperationName = "paymentNotesController_get" | "listPayments" | "createPayment" | "createPaymentAsClass" | "paymentsController_createDraft" | "getPayment" | "deletePayment";
 
 export type PaymentsClientOptions = Omit<Runtime.ClientOptions, "responseHeaderDecoders" | "streamDecoders" | "mutualTls" | "auth" | "operationValidators"> & {
   /** Overrides generated validators for individual operations. */
@@ -30,9 +32,11 @@ export type PaymentsBodyEncoderContext = Runtime.BodyEncoderContext;
 export type PaymentsBodyEncoder = Runtime.BodyEncoder;
 
 export interface PaymentsClientPort {
+  paymentNotesController_get(): ApiOperation<Types.PaymentNotesController_getOperationInput, Types.PaymentNotesController_getOperationHttpResponse, PaymentsRequestOptions>;
   listPayments(): ApiOperation<Types.ListPaymentsOperationInput, Types.ListPaymentsOperationHttpResponse, PaymentsRequestOptions>;
   createPayment(): ApiOperation<Types.CreatePaymentOperationInput, Types.CreatePaymentOperationHttpResponse, PaymentsRequestOptions>;
   createPaymentAsClass(): ApiOperation<Types.CreatePaymentAsClassOperationInput, Types.CreatePaymentAsClassOperationHttpResponse, PaymentsRequestOptions>;
+  paymentsController_createDraft(): ApiOperation<Types.PaymentsController_createDraftOperationInput, Types.PaymentsController_createDraftOperationHttpResponse, PaymentsRequestOptions>;
   getPayment(): ApiOperation<Types.GetPaymentOperationInput, Types.GetPaymentOperationHttpResponse, PaymentsRequestOptions>;
   deletePayment(): ApiOperation<Types.DeletePaymentOperationInput, Types.DeletePaymentOperationHttpResponse, PaymentsRequestOptions>;
 }
@@ -44,24 +48,32 @@ export class PaymentsClient implements PaymentsClientPort {
     this.runtime = new ClientRuntime("Payments", options, { createValidationEngine: createOpenApiAjvEngine });
   }
 
-  listPayments(): ApiOperation<Types.ListPaymentsOperationInput, Types.ListPaymentsOperationHttpResponse, PaymentsRequestOptions> {
+  paymentNotesController_get(): ApiOperation<Types.PaymentNotesController_getOperationInput, Types.PaymentNotesController_getOperationHttpResponse, PaymentsRequestOptions> {
     return __golemOperationFactory0(this.runtime);
   }
 
-  createPayment(): ApiOperation<Types.CreatePaymentOperationInput, Types.CreatePaymentOperationHttpResponse, PaymentsRequestOptions> {
+  listPayments(): ApiOperation<Types.ListPaymentsOperationInput, Types.ListPaymentsOperationHttpResponse, PaymentsRequestOptions> {
     return __golemOperationFactory1(this.runtime);
   }
 
-  createPaymentAsClass(): ApiOperation<Types.CreatePaymentAsClassOperationInput, Types.CreatePaymentAsClassOperationHttpResponse, PaymentsRequestOptions> {
+  createPayment(): ApiOperation<Types.CreatePaymentOperationInput, Types.CreatePaymentOperationHttpResponse, PaymentsRequestOptions> {
     return __golemOperationFactory2(this.runtime);
   }
 
-  getPayment(): ApiOperation<Types.GetPaymentOperationInput, Types.GetPaymentOperationHttpResponse, PaymentsRequestOptions> {
+  createPaymentAsClass(): ApiOperation<Types.CreatePaymentAsClassOperationInput, Types.CreatePaymentAsClassOperationHttpResponse, PaymentsRequestOptions> {
     return __golemOperationFactory3(this.runtime);
   }
 
-  deletePayment(): ApiOperation<Types.DeletePaymentOperationInput, Types.DeletePaymentOperationHttpResponse, PaymentsRequestOptions> {
+  paymentsController_createDraft(): ApiOperation<Types.PaymentsController_createDraftOperationInput, Types.PaymentsController_createDraftOperationHttpResponse, PaymentsRequestOptions> {
     return __golemOperationFactory4(this.runtime);
+  }
+
+  getPayment(): ApiOperation<Types.GetPaymentOperationInput, Types.GetPaymentOperationHttpResponse, PaymentsRequestOptions> {
+    return __golemOperationFactory5(this.runtime);
+  }
+
+  deletePayment(): ApiOperation<Types.DeletePaymentOperationInput, Types.DeletePaymentOperationHttpResponse, PaymentsRequestOptions> {
+    return __golemOperationFactory6(this.runtime);
   }
 }
 

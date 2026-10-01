@@ -10,6 +10,8 @@ export { MoneyModel, stringifyMoney, parseMoney, fromWireFormatMoney, toWireForm
 export type { MoneyFields, MoneyJSON, MoneyInit } from './models/Money.js';
 export { PaymentModel, stringifyPayment, parsePayment, fromWireFormatPayment, toWireFormatPayment, validatePayment, assertPayment, encodePayment } from './models/Payment.js';
 export type { PaymentFields, PaymentJSON, PaymentInit } from './models/Payment.js';
+export { PaymentDraftModel, stringifyPaymentDraft, parsePaymentDraft, fromWireFormatPaymentDraft, toWireFormatPaymentDraft, validatePaymentDraft, assertPaymentDraft, encodePaymentDraft } from './models/PaymentDraft.js';
+export type { PaymentDraftFields, PaymentDraftJSON, PaymentDraftInit } from './models/PaymentDraft.js';
 export { PaymentInputModel, stringifyPaymentInput, parsePaymentInput, fromWireFormatPaymentInput, toWireFormatPaymentInput, validatePaymentInput, assertPaymentInput, encodePaymentInput } from './models/PaymentInput.js';
 export type { PaymentInputFields, PaymentInputJSON, PaymentInputInit } from './models/PaymentInput.js';
 export * from './client.js';

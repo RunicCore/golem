@@ -3,12 +3,13 @@ import 'reflect-metadata';
 import { Module } from '@nestjs/common';
 import { NestFactory, type AbstractHttpAdapter } from '@nestjs/core';
 import { NestModelInterceptor } from '@exprtlabs/golem/nest';
+import { PaymentNotesController } from './payment-notes.controller.js';
 import { PaymentsController } from './payments.controller.js';
 // Load the model module so its generated codec is registered before requests arrive.
 import './payment.model.js';
 
 @Module({
-  controllers: [PaymentsController],
+  controllers: [PaymentsController, PaymentNotesController],
 })
 class PaymentsModule {}
 

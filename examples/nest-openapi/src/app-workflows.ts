@@ -154,4 +154,36 @@ export function registerApplicationTests(
     assert.equal((classParsed as Payment).money.amount, '12.50');
   });
 
+  test('a class body is constructed, returned as JSON and rejected before the handler when invalid', async () => {
+    const application = await createApplication();
+    await application.listen(0, '127.0.0.1');
+    try {
+      const baseUrl = await application.getUrl();
+      const post = (note: string) => fetch(`${baseUrl}/api/payments/transactions/drafts`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ note }),
+      });
+      const accepted = await post('Lunch');
+      assert.equal(accepted.status, 201);
+      assert.deepEqual(await accepted.json(), { note: 'Lunch' });
+      assert.equal((await post('')).status, 400);
+    } finally {
+      await application.close();
+    }
+  });
+
+  test('a controller without Swagger decorators gets a default operation ID and its JSON response', async () => {
+    const application = await createApplication();
+    await application.listen(0, '127.0.0.1');
+    try {
+      const client = new PaymentsClient({ baseUrl: await application.getUrl() });
+      const response = await client.paymentNotesController_get().execute({ path: { id: 'note-1' } });
+      assert.equal(response.status, 200);
+      assert.deepEqual(response.body, { id: 'note-1', note: 'Order 123' });
+    } finally {
+      await application.close();
+    }
+  });
+
 }

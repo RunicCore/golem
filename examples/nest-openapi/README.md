@@ -45,6 +45,9 @@ Set `API_BASE_URL` when the client should use another address.
 | --- | --- |
 | `src/payment.model.ts` | Model fields, codecs and generated model subclasses |
 | `src/payments.controller.ts` | Payments routes and in-memory store |
+| `src/payment-draft.model.ts` | Class model used as a `@Body()` type by the `drafts` route |
+| `src/payment-notes.controller.ts` | Controller without Swagger decorators, so its operation ID is the default |
+| `src/price.model.ts`, `src/decimal-text.ts` | `TSerde` pair that stores a number and writes a decimal string |
 | `src/routes.ts` | Route path helper shared by the controller and the OpenAPI generator |
 | `src/payment-status.ts` | `PaymentStatus` query type |
 | `src/application.ts` | Nest bootstrap; model module load registers codecs |

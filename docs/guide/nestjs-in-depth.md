@@ -30,19 +30,13 @@ Add to your controller:
 
 Use `TSerde` to store a number in the model and send a string in JSON.
 
-```ts
-import type { IModel } from '@exprtlabs/golem/model';
-import type { Minimum, Pattern, TSerde } from '@exprtlabs/golem/tags';
+The converters live in their own module, because generated files import them:
 
-type DecimalText = string & Pattern<'^[0-9]+(?:\\.[0-9]{1,2})?$'>;
-const writeAmount = (amount: number): DecimalText => amount.toFixed(2);
-const readAmount = (text: DecimalText): number => Number(text);
+<<< ../../examples/nest-openapi/src/decimal-text.ts#decimal-text
 
-export type TMoney = IModel<{
-  amount: number & Minimum<0> & TSerde<typeof writeAmount, typeof readAmount>;
-  currency: 'USD' | 'EUR';
-}>;
-```
+The model references them by type:
+
+<<< ../../examples/nest-openapi/src/price.model.ts#decimal-price
 
 Generated OpenAPI:
 
@@ -69,32 +63,13 @@ with the TypeScript contract and its [validation constraints](/guide/validation#
 
 <<< @/../examples/nest-openapi/src/application.ts#global-model-http
 
-Add a model and a controller that use it:
+Declare a model and use it as a `@Body()` type:
 
-```ts
-import type { IModel } from '@exprtlabs/golem/model';
-import type { MinLength } from '@exprtlabs/golem/tags';
-import { PaymentDraftBase } from './payment-draft.model.generated.js';
+<<< ../../examples/nest-openapi/src/payment-draft.model.ts#payment-draft
 
-export type TPaymentDraft = IModel<{ note: string & MinLength<2> }>;
-export class PaymentDraft extends PaymentDraftBase {}
-```
+Add a method to your controller:
 
-```ts
-import { Body, Controller, Post } from '@nestjs/common';
-import { PaymentDraft } from './payment-draft.model.js';
-
-@Controller('payments')
-export class PaymentsController {
-  @Post()
-  create(@Body() input: PaymentDraft): PaymentDraft {
-    // { note: 'Lunch' } is a PaymentDraft instance.
-    // The HTTP response is that type's JSON.
-    // { note: '' } is HTTP 400 before this method runs.
-    return input;
-  }
-}
-```
+<<< ../../examples/nest-openapi/src/payments.controller.ts#draft-method
 
 What happens to a request:
 

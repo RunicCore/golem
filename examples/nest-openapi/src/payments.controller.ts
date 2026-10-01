@@ -1,5 +1,6 @@
 import { Body, Controller, Delete, Get, HttpCode, NotFoundException, Param, Post, Query } from '@nestjs/common';
 import { ApiBadRequestResponse, ApiNotFoundResponse, ApiOperation } from '@nestjs/swagger';
+import { PaymentDraft } from './payment-draft.model.js';
 import { Payment, type TPaymentFilter, type TPaymentInput, type TPayment } from './payment.model.js';
 import { routes } from './routes.js';
 
@@ -37,6 +38,16 @@ export class PaymentsController {
     payments.set(payment.id, payment);
     return payment;
   }
+
+  // #region draft-method
+  @Post('drafts')
+  createDraft(@Body() input: PaymentDraft): PaymentDraft {
+    // { note: 'Lunch' } is a PaymentDraft instance.
+    // The HTTP response is that type's JSON.
+    // { note: '' } is HTTP 400 before this method runs.
+    return input;
+  }
+  // #endregion draft-method
 
   // @Param() stays a string; the interceptor does not convert it.
   @Get(':id')

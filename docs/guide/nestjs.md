@@ -2,24 +2,9 @@
 
 Turn NestJS controller decorators and TypeScript types into an OpenAPI document, then generate a client from it.
 
-A controller in your NestJS project, `src/payments.controller.ts`:
+A controller in your NestJS project, `src/payment-notes.controller.ts`:
 
-```ts
-import { Controller, Get, Param } from '@nestjs/common';
-
-interface Payment {
-  id: string;
-  note: string;
-}
-
-@Controller('payments')
-export class PaymentsController {
-  @Get(':id')
-  public get(@Param('id') id: string): Payment {
-    return { id, note: 'Order 123' };
-  }
-}
-```
+<<< ../../examples/nest-openapi/src/payment-notes.controller.ts#payment-note-controller
 
 `@exprtlabs/golem-ts-openapi` reads this file; it doesn't start Nest or call handlers. NestJS 11 is supported.
 
@@ -34,9 +19,9 @@ npm install @nestjs/swagger
 
 The generator reads every `*.controller.ts` under `src/`. To choose files yourself, list them under `sources` in the [controller job](/reference/config#controller-jobs). From the controller above it writes:
 
-- `GET /payments/{id}` with a required string path parameter `id`
+- `GET /payment-notes/{id}` with a required string path parameter `id`
 - a JSON response with `id` and `note`
-- the operation ID `PaymentsController_get`, which becomes the client method `paymentsController_get`
+- the operation ID `PaymentNotesController_get`, which becomes the client method `paymentNotesController_get`
 
 The default document version is OpenAPI 3.2. `class-validator` decorators aren't read; put constraints on the types ([type tags](/guide/tags)).
 

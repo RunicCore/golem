@@ -23,6 +23,10 @@ export type Payment = {
   note: string;
 };
 
+export type PaymentDraft = {
+  note: string;
+};
+
 export type PaymentInput = {
   billing: MerchantOmitId;
   merchant: Merchant;

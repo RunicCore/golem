@@ -3,6 +3,7 @@ export const IOBJECT_PLUGIN_KEYS = {
   "models/_group-1246ba12.ts#MoneyModel": "Money_f1820f67",
   "models/_group-57bcd84e.ts#MerchantModel": "Merchant_2d893464",
   "models/_group-9667d97a.ts#MerchantOmitIdModel": "MerchantOmitId_1ef82815",
+  "models/_group-a603531d.ts#PaymentDraftModel": "PaymentDraft_8be34727",
   "models/_group-e0e37ed7.ts#PaymentInputModel": "PaymentInput_f132a855",
   "models/_group-f842534f.ts#PaymentModel": "Payment_92a78a94",
 } as const;

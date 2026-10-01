@@ -25,12 +25,36 @@ export type Payment = {
   note: string;
 };
 
+export type PaymentDraft = {
+  note: string;
+};
+
 export type PaymentInput = {
   billing: MerchantOmitId;
   merchant: Merchant;
   money: Money;
   note: string;
 };
+
+export type PaymentNotesController_getOperationInput = {
+  path: {
+    id: string;
+  };
+};
+
+export type PaymentNotesController_getOperationSuccessBody = {
+  id: string;
+  note: string;
+  [key: string]: unknown;
+};
+
+export type PaymentNotesController_getOperationErrorBody = unknown;
+
+export type PaymentNotesController_getOperationHttpResponse = { matched: 'status'; status: 200; contentType: "application/json"; body: {
+  id: string;
+  note: string;
+  [key: string]: unknown;
+}; headers: { [key: string]: never } };
 
 export type ListPaymentsOperationInput = {
   querystring: {
@@ -70,6 +94,16 @@ export type CreatePaymentAsClassOperationErrorBody = void;
 export type CreatePaymentAsClassOperationHttpResponse =
   | { matched: 'status'; status: 201; contentType: "application/json"; body: OutputSchemas.Payment; headers: { [key: string]: never } }
   | { matched: 'status'; status: 400; contentType: null; body: void; headers: { [key: string]: never } };
+
+export type PaymentsController_createDraftOperationInput = {
+  body: InputSchemas.PaymentDraft;
+};
+
+export type PaymentsController_createDraftOperationSuccessBody = OutputSchemas.PaymentDraft;
+
+export type PaymentsController_createDraftOperationErrorBody = unknown;
+
+export type PaymentsController_createDraftOperationHttpResponse = { matched: 'status'; status: 201; contentType: "application/json"; body: OutputSchemas.PaymentDraft; headers: { [key: string]: never } };
 
 export type GetPaymentOperationInput = {
   path: {
