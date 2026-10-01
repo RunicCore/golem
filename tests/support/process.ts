@@ -42,16 +42,17 @@ function installExitCleanup(): void {
 export function command(cwd: string, executable: string, args: readonly string[] = [], options: CommandOptions = {}): Promise<CommandResult> {
   return new Promise((resolve, reject) => {
     const env: NodeJS.ProcessEnv = { ...process.env, NODE_PATH: '', ...options.env };
-    if (
-      executable === process.execPath
-      && typeof args[0] === 'string'
-      && args[0].includes(`${path.sep}ttsc${path.sep}`)
-    ) {
-      if (!options.env?.NODE_PATH) env.NODE_PATH = path.join(workspace, 'node_modules');
+    const ttscScript = executable === process.execPath && typeof args[0] === 'string' && args[0].includes(`${path.sep}ttsc${path.sep}`);
+    // A consumer project's own `node_modules/.bin/ttsc` is a ttsc run too: its plugin and Go builds would otherwise
+    // land in the project's throwaway directory and write Go cache entries keyed by that path.
+    const ttscBin = path.basename(executable) === 'ttsc';
+    if (ttscScript || ttscBin) {
+      if (ttscScript && !options.env?.NODE_PATH) env.NODE_PATH = path.join(workspace, 'node_modules');
       // Reuse the workspace's content-addressed plugin and Go caches instead of
       // building the plugin again for every isolated fixture.
-      if (args[1] !== 'clean' && !env.TTSC_CACHE_DIR) env.TTSC_CACHE_DIR = ttscEnv.TTSC_CACHE_DIR;
-      if (args[1] !== 'clean' && !env.TTSC_GO_CACHE_DIR && !env.GOCACHE) env.TTSC_GO_CACHE_DIR = ttscEnv.TTSC_GO_CACHE_DIR;
+      const subcommand = ttscScript ? args[1] : args[0];
+      if (subcommand !== 'clean' && !env.TTSC_CACHE_DIR) env.TTSC_CACHE_DIR = ttscEnv.TTSC_CACHE_DIR;
+      if (subcommand !== 'clean' && !env.TTSC_GO_CACHE_DIR) env.TTSC_GO_CACHE_DIR = ttscEnv.TTSC_GO_CACHE_DIR;
     }
     // A Node test worker's private context marker makes a nested `node --test`
     // skip its requested files. Child consumer commands run independently.
