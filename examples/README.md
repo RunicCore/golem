@@ -10,6 +10,7 @@ pages explain the examples and show source regions from these maintained files.
 | [model](model/) | Validation on, MobX off | Model methods, synchronous serde and the stateful `getValidator` validator |
 | [openapi](openapi/) | Validation on, MobX off | Typed operations, request arguments and responses |
 | [combined](combined/) | Validation on, MobX off | Nested SDK types, stateless checks and application model rules |
+| [client-features](client-features/) | Validation on, MobX off | Authentication, custom body codecs, streaming responses and Temporal dates for the generated client |
 | [model-mobx](model-mobx/) | Validation off, MobX on | Observable fields, actions and computed values |
 | [combined-mobx](combined-mobx/) | Validation on, MobX on | Observable nested SDK models and stateful editor errors |
 | [nest-openapi](nest-openapi/) | Validation on, MobX off | Nest interceptor, OpenAPI and SDK |
@@ -38,6 +39,8 @@ The package manifests use the release-candidate packages;
 - `model` and `model-mobx` run with local data.
 - `openapi` reads `TASKS_API_BASE_URL` and `combined` reads `PAYMENTS_API_BASE_URL`
   to call an existing API.
+- `client-features` runs against a mocked `fetch` in `npm test`, and reads
+  `PAYMENTS_API_BASE_URL` to call an existing API.
 - `combined-mobx` calls a service only when `PAYMENTS_API_BASE_URL` is set.
 - `nest-openapi` starts a local in-memory API; use `npm run client` in a second
   terminal.

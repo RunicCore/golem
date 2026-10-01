@@ -1,0 +1,32 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "strict": true,
+    "skipLibCheck": true,
+    "noEmit": false,
+    "lib": [
+      "ES2023",
+      "DOM",
+      "DOM.Iterable",
+      "esnext.temporal"
+    ],
+    "rootDir": ".",
+    "outDir": ".build",
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "types": [
+      "node"
+    ],
+    "plugins": [
+      {
+        "transform": "@exprtlabs/golem/ttsc-plugin"
+      }
+    ]
+  },
+  "include": [
+    "sdk/**/*.ts",
+    "src/**/*.ts"
+  ]
+}

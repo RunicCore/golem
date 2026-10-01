@@ -2,9 +2,9 @@
 
 Pass credentials once and let each operation apply what its security requirement asks for.
 
-This page uses the `PaymentsClient` from [Models with a client](/guide/models-and-client).
+This page uses a `PaymentsClient` for the [payments contract](/guide/models-and-client) with a bearer security scheme.
 
-Add a security scheme to `api.yaml`:
+Add the security scheme to `api.yaml`:
 
 ```yaml
 components:
@@ -24,19 +24,7 @@ npx golem generate
 
 `src/send-payment.ts`:
 
-```ts
-import { PaymentsClient } from '../sdk/index.js';
-
-const client = new PaymentsClient({
-  baseUrl: 'https://api.example.com', // Your API address.
-  auth: { bearerAuth: 'access-token' }, // Keyed by security scheme name.
-});
-
-await client.createPayment().execute({
-  body: { amount: 25, currency: 'USD' },
-});
-// The request includes: Authorization: Bearer access-token
-```
+<<< ../../examples/client-features/src/send-payment.ts#send-payment
 
 - A callback is evaluated for each `.execute()` call, for example `auth: { oauth: ({ scopes }) => tokens.get(scopes) }`.
 - Your application obtains and stores the token. Return `undefined` when no credential is available; the client then tries the next security requirement.
@@ -48,23 +36,7 @@ Only credentials declared directly on the `auth` object are used; inherited prop
 Pass a callback when the token can change while the client is alive.
 `src/current-token.ts`:
 
-```ts
-import { PaymentsClient } from '../sdk/index.js';
-
-let accessToken = 'first-token';
-const client = new PaymentsClient({
-  baseUrl: 'https://api.example.com',
-  auth: { bearerAuth: () => accessToken },
-});
-const createPayment = client.createPayment(); // No token lookup or request yet.
-
-await createPayment.execute({ body: { amount: 25, currency: 'USD' } });
-// Authorization: Bearer first-token
-
-accessToken = 'refreshed-token';
-await createPayment.execute({ body: { amount: 30, currency: 'EUR' } });
-// Authorization: Bearer refreshed-token — the same operation reads the new value.
-```
+<<< ../../examples/client-features/src/current-token.ts#current-token
 
 An async callback works too. Token refresh and sign-in remain application
 responsibilities.

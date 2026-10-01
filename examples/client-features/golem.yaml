@@ -1,0 +1,12 @@
+version: 1
+mobx: false
+validation: true
+# region openapi-dates-job
+# region openapi-job
+openapi:
+  - input: api.yaml
+    output: sdk
+    name: Payments
+# endregion openapi-job
+    dates: temporal
+# endregion openapi-dates-job

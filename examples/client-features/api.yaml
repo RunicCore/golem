@@ -1,0 +1,110 @@
+openapi: 3.2.0
+info:
+  title: Payments
+  version: '1'
+# Every operation requires the bearer token unless it declares `security: []`.
+security:
+  - bearerAuth: []
+paths:
+  /payments:
+    post:
+      operationId: createPayment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Money'
+      responses:
+        '201':
+          description: Created payment
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Money'
+  /payments/{id}:
+    get:
+      operationId: getPayment
+      security: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Payment
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Payment'
+  /payments/text:
+    post:
+      operationId: createPaymentText
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/vnd.example.money:
+            schema:
+              $ref: '#/components/schemas/Money'
+      responses:
+        '201':
+          description: Created payment
+          content:
+            application/vnd.example.money:
+              schema:
+                $ref: '#/components/schemas/Money'
+  # region events-operation
+  /events:
+    get:
+      operationId: readEvents
+      security: []
+      responses:
+        '200':
+          description: Events as they happen
+          content:
+            application/x-ndjson:
+              itemSchema:
+                type: object
+                required: [id]
+                properties:
+                  id: { type: integer }
+  # endregion events-operation
+  /events/lines:
+    get:
+      operationId: readEventIds
+      security: []
+      responses:
+        '200':
+          description: Event identifiers, one per line
+          content:
+            application/vnd.example.events:
+              itemSchema:
+                type: object
+                required: [id]
+                properties:
+                  id: { type: integer }
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+  schemas:
+    Money:
+      type: object
+      required: [amount, currency]
+      additionalProperties: false
+      properties:
+        amount: { type: number, minimum: 0 }
+        currency: { type: string, pattern: '^[A-Z]{3}$' }
+    Payment:
+      type: object
+      required: [id, amount, currency, createdAt, dueOn]
+      additionalProperties: false
+      properties:
+        id: { type: string }
+        amount: { type: number, minimum: 0 }
+        currency: { type: string, pattern: '^[A-Z]{3}$' }
+        createdAt: { type: string, format: date-time }
+        dueOn: { type: string, format: date }
