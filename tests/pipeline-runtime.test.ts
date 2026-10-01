@@ -498,10 +498,12 @@ test('public OpenAPI generation rejects names colliding across exported index mo
   }
 });
 
-test('public OpenAPI generation permits ValidationResult and repeated fields', async (t: TestContext) => {
-  for (const validation of [false, true]) {
-    const sdk = await generatedOpenApiFixture(t, ['ValidationResult'], validation);
-    compileGeneratedSdk(sdk, [], { noEmit: true, skipLibCheck: true });
+test('public OpenAPI generation permits SchemaName, ValidationResult and repeated fields', async (t: TestContext) => {
+  for (const name of ['SchemaName', 'ValidationResult']) {
+    for (const validation of [false, true]) {
+      const sdk = await generatedOpenApiFixture(t, [name], validation);
+      compileGeneratedSdk(sdk, [], { noEmit: true, skipLibCheck: true });
+    }
   }
 
   const repeatedFields = await generatedOpenApiFixture(t, ['First', 'Second'], false);

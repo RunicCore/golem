@@ -117,7 +117,7 @@ interface OperationProbe {
   acceptsResponse(operation: string, input: unknown, reply: unknown): Promise<boolean>;
 }
 
-async function operationProbe(output: string, clientName: string): Promise<OperationProbe> {
+async function clientProbe(output: string, clientName: string): Promise<OperationProbe> {
   const module = requireRecord(await import(pathToFileURL(path.join(output, 'dist/client.js')).href), 'generated client module');
   const Client = module[`${clientName}Client`];
   assert.ok(isGeneratedClientClass(Client), `${clientName}Client`);
@@ -147,6 +147,23 @@ async function operationProbe(output: string, clientName: string): Promise<Opera
         throw error;
       }
     },
+  };
+}
+
+/** Probes the standalone SDK and a default-Ajv SDK of the same document; the two must agree. */
+async function operationProbe(output: string, clientName: string, document: unknown): Promise<OperationProbe> {
+  const ajvOutput = `${output}-ajv`;
+  await generateMaterializedSdk(document, { output: ajvOutput, name: clientName, profile: { mobx: false, validation: true } });
+  compileGeneratedSdk(ajvOutput);
+  const probes = [await clientProbe(output, clientName), await clientProbe(ajvOutput, clientName)];
+  const agreed = async (operation: string, check: (probe: OperationProbe) => Promise<boolean>): Promise<boolean> => {
+    const [standalone, ajv] = await Promise.all(probes.map(check));
+    assert.equal(standalone, ajv, `the standalone and Ajv SDKs agree on ${operation}`);
+    return standalone === true;
+  };
+  return {
+    acceptsInput: (operation, input) => agreed(operation, (probe) => probe.acceptsInput(operation, input)),
+    acceptsResponse: (operation, input, reply) => agreed(operation, (probe) => probe.acceptsResponse(operation, input, reply)),
   };
 }
 
@@ -208,7 +225,7 @@ test('repeated readOnly aliases drop every matching property and required entry'
 
 test('public generation validates repeated aliases, sibling allOf required, and required-only control', async (t) => {
   const output = path.join(createFixtureProject(t, 'golem-openapi-alias-'), 'sdk');
-  const generated = await generateMaterializedSdk({
+  const document = {
     openapi: '3.1.0',
     info: { title: 'Aliases', version: '1' },
     paths: {
@@ -267,10 +284,11 @@ test('public generation validates repeated aliases, sibling allOf required, and 
         },
       },
     },
-  }, { output, name: 'Aliases', profile: standaloneProfile });
+  };
+  const generated = await generateMaterializedSdk(document, { output, name: 'Aliases', profile: standaloneProfile });
   copyFixtureFile(output, "openapi/schema-projection/alias-assert.ts", "alias-assert.ts");
   compileGeneratedSdk(output, [path.join(output, 'alias-assert.ts')], { strict: true });
-  const probe = await operationProbe(output, 'Aliases');
+  const probe = await operationProbe(output, 'Aliases', document);
   const userModel = componentValidator(runtimeRegistryFromArtifact(generated.artifacts), 'UserBase');
 
   const request = { name: 'Ada', secretOne: 'one', secretTwo: 'two' };
@@ -335,6 +353,7 @@ function directionalUserEnvelope(userId: string, envelopeId: string, userRef: st
 }
 
 async function assertDirectionalEnvelope(
+  document: unknown,
   output: string,
   artifacts: readonly { path: string; content: string }[],
   userId: string,
@@ -348,7 +367,7 @@ async function assertDirectionalEnvelope(
   assert.doesNotMatch(inputPack, new RegExp(`"user": \\{\\s*"\\$ref": "${escaped}"`));
   assert.match(inputPack, new RegExp(`${escaped}:input`));
 
-  const probe = await operationProbe(output, 'Absolute');
+  const probe = await operationProbe(output, 'Absolute', document);
   const userModel = componentValidator(runtimeRegistryFromArtifact(artifacts), 'User');
 
   const requestUser = { id: 'u1', secret: 's' };
@@ -382,7 +401,7 @@ test('absolute and relative $id refs remap onto directional resources for Ajv', 
       name: 'Absolute',
       profile: standaloneProfile,
     });
-    await assertDirectionalEnvelope(output, result.artifacts, 'https://schemas.example.test/user');
+    await assertDirectionalEnvelope(document, output, result.artifacts, 'https://schemas.example.test/user');
     assert.equal(fetched, false);
   } finally {
     globalThis.fetch = originalFetch;
@@ -550,7 +569,7 @@ test('directional projection is consistent on OAS 3.1 and 3.2 and keeps neutral 
       continue;
     }
     compileGeneratedSdk(generated.output);
-    const probe = await operationProbe(generated.output, 'Projection');
+    const probe = await operationProbe(generated.output, 'Projection', directionalComponents(openapi));
     const widgetModel = componentValidator(generated.registry, 'Widget');
     const widgetRequest = { body: { id: 'w1', secret: 's' } };
 
