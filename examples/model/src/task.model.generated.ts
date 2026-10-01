@@ -9,18 +9,18 @@ function modelObject(json: unknown, name: string): Record<string, unknown> {
   return requireModelObject(json, name);
 }
 
-export type TaskFields = { title: string; done: boolean; priority: number };
-export type TaskJSON = { title: string; done: boolean; priority: "high" | "low" | "normal" };
-export type TaskInit = Partial<{ title: string; done: boolean; priority: number }>;
+export type TTaskFields = { title: string; done: boolean; priority: number };
+export type TTaskJSON = { title: string; done: boolean; priority: "high" | "low" | "normal" };
+export type TTaskInit = Partial<{ title: string; done: boolean; priority: number }>;
 
-export abstract class TaskBaseModel implements GeneratedModel<TaskJSON, TaskFields> {
-  declare readonly [generatedModelWireBrand]: TaskJSON;
-  declare readonly [generatedModelFieldsBrand]: TaskFields;
-  declare title: TaskFields["title"];
-  declare done: TaskFields["done"];
-  declare priority: TaskFields["priority"];
+export abstract class TTaskBaseModel implements GeneratedModel<TTaskJSON, TTaskFields> {
+  declare readonly [generatedModelWireBrand]: TTaskJSON;
+  declare readonly [generatedModelFieldsBrand]: TTaskFields;
+  declare title: TTaskFields["title"];
+  declare done: TTaskFields["done"];
+  declare priority: TTaskFields["priority"];
 
-  public constructor(values: TaskInit = {}) {
+  public constructor(values: TTaskInit = {}) {
     if (Object.prototype.hasOwnProperty.call(values, "title")) defineModelProperty(this, "title", values["title"]);
     if (Object.prototype.hasOwnProperty.call(values, "done")) defineModelProperty(this, "done", values["done"]);
     if (Object.prototype.hasOwnProperty.call(values, "priority")) defineModelProperty(this, "priority", values["priority"]);
@@ -28,59 +28,59 @@ export abstract class TaskBaseModel implements GeneratedModel<TaskJSON, TaskFiel
 
 }
 
-function decodeTaskModel(constructor: GeneratedModelConstructor, json: unknown): TaskBaseModel {
-  const values = modelObject(json, "TaskBaseModel");
+function decodeTTaskModel(constructor: GeneratedModelConstructor, json: unknown): TTaskBaseModel {
+  const values = modelObject(json, "TTaskBaseModel");
   const result: Record<string, unknown> = { ...values };
   if (Object.prototype.hasOwnProperty.call(values, "priority")) defineModelProperty(result, "priority", convertModelField("deserialize", "priority", () => (modelSerdeBindings["src/priority-word.ts#toPriorityWord\u0000src/priority-word.ts#fromPriorityWord"].deserialize(values["priority"]))));
-  return Reflect.construct(constructor, [result]) as TaskBaseModel;
+  return Reflect.construct(constructor, [result]) as TTaskBaseModel;
 }
 
-function encodeTaskModel(model: TaskBaseModel): TaskJSON {
+function encodeTTaskModel(model: TTaskBaseModel): TTaskJSON {
   const result: Record<string, unknown> = {};
   if (Object.prototype.hasOwnProperty.call(model, "title")) defineModelProperty(result, "title", (model["title"]));
   if (Object.prototype.hasOwnProperty.call(model, "done")) defineModelProperty(result, "done", (model["done"]));
   if (Object.prototype.hasOwnProperty.call(model, "priority")) defineModelProperty(result, "priority", (convertModelField("serialize", "priority", () => (modelSerdeBindings["src/priority-word.ts#toPriorityWord\u0000src/priority-word.ts#fromPriorityWord"].serialize(model["priority"])))));
-  return result as TaskJSON;
+  return result as TTaskJSON;
 }
 
-registerGeneratedModel(TaskBaseModel, {
+registerGeneratedModel(TTaskBaseModel, {
   fields: ["title", "done", "priority"],
   conversion: {
-    decode: (value, constructor) => decodeTaskModel(constructor ?? TaskBaseModel, value),
-    encode: encodeTaskModel,
+    decode: (value, constructor) => decodeTTaskModel(constructor ?? TTaskBaseModel, value),
+    encode: encodeTTaskModel,
   },
-  codecId: "Task_895d5b8e",
+  codecId: "TTask_895d5b8e",
   profile: { validation: true, mobx: false },
 });
 
-registerIModelClass("Task_895d5b8e", TaskBaseModel);
+registerIModelClass("TTask_895d5b8e", TTaskBaseModel);
 
 const objectAjvFast = createOpenApiSyncAjvEngine({ allErrors: false, validationBindings: {} });
 const objectAjvAll = createOpenApiSyncAjvEngine({ allErrors: true, validationBindings: {} });
 
-const __resolvedModelSchema_Task = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"Task_895d5b8e\",\"type\":\"object\",\"properties\":{\"done\":{\"type\":\"boolean\"},\"priority\":{\"type\":\"number\"},\"title\":{\"allOf\":[{\"type\":\"string\"},{\"minLength\":1}]}},\"required\":[\"done\",\"priority\",\"title\"],\"additionalProperties\":false}") as object) as object;
-objectAjvFast.addSchema(structuredClone(__resolvedModelSchema_Task) as object, "Task_895d5b8e");
-objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_Task) as object, "Task_895d5b8e");
-const __resolvedWireSchema_Task = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"Task_895d5b8e#wire\",\"type\":\"object\",\"properties\":{\"done\":{\"type\":\"boolean\"},\"priority\":{\"anyOf\":[{\"const\":\"high\"},{\"const\":\"low\"},{\"const\":\"normal\"}]},\"title\":{\"allOf\":[{\"type\":\"string\"},{\"minLength\":1}]}},\"required\":[\"done\",\"priority\",\"title\"],\"additionalProperties\":false}") as object, 'wire') as object;
-objectAjvFast.addSchema(structuredClone(__resolvedWireSchema_Task) as object, "Task_895d5b8e#wire");
-objectAjvAll.addSchema(structuredClone(__resolvedWireSchema_Task) as object, "Task_895d5b8e#wire");
-const __resolvedModelOnlySchema_Task = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"Task_895d5b8e#model-only\",\"properties\":{\"priority\":{\"type\":\"number\"}}}") as object, 'model-only') as object;
-objectAjvFast.addSchema(structuredClone(__resolvedModelOnlySchema_Task) as object, "Task_895d5b8e#model-only");
-objectAjvAll.addSchema(structuredClone(__resolvedModelOnlySchema_Task) as object, "Task_895d5b8e#model-only");
-const __resolvedWireOnlySchema_Task = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"Task_895d5b8e#wire-only\",\"properties\":{\"priority\":{\"anyOf\":[{\"const\":\"high\"},{\"const\":\"low\"},{\"const\":\"normal\"}]}}}") as object, 'wire-only') as object;
-objectAjvFast.addSchema(structuredClone(__resolvedWireOnlySchema_Task) as object, "Task_895d5b8e#wire-only");
-objectAjvAll.addSchema(structuredClone(__resolvedWireOnlySchema_Task) as object, "Task_895d5b8e#wire-only");
+const __resolvedModelSchema_TTask = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"TTask_895d5b8e\",\"type\":\"object\",\"properties\":{\"done\":{\"type\":\"boolean\"},\"priority\":{\"type\":\"number\"},\"title\":{\"allOf\":[{\"type\":\"string\"},{\"minLength\":1}]}},\"required\":[\"done\",\"priority\",\"title\"],\"additionalProperties\":false}") as object) as object;
+objectAjvFast.addSchema(structuredClone(__resolvedModelSchema_TTask) as object, "TTask_895d5b8e");
+objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_TTask) as object, "TTask_895d5b8e");
+const __resolvedWireSchema_TTask = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"TTask_895d5b8e#wire\",\"type\":\"object\",\"properties\":{\"done\":{\"type\":\"boolean\"},\"priority\":{\"anyOf\":[{\"const\":\"high\"},{\"const\":\"low\"},{\"const\":\"normal\"}]},\"title\":{\"allOf\":[{\"type\":\"string\"},{\"minLength\":1}]}},\"required\":[\"done\",\"priority\",\"title\"],\"additionalProperties\":false}") as object, 'wire') as object;
+objectAjvFast.addSchema(structuredClone(__resolvedWireSchema_TTask) as object, "TTask_895d5b8e#wire");
+objectAjvAll.addSchema(structuredClone(__resolvedWireSchema_TTask) as object, "TTask_895d5b8e#wire");
+const __resolvedModelOnlySchema_TTask = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"TTask_895d5b8e#model-only\",\"properties\":{\"priority\":{\"type\":\"number\"}}}") as object, 'model-only') as object;
+objectAjvFast.addSchema(structuredClone(__resolvedModelOnlySchema_TTask) as object, "TTask_895d5b8e#model-only");
+objectAjvAll.addSchema(structuredClone(__resolvedModelOnlySchema_TTask) as object, "TTask_895d5b8e#model-only");
+const __resolvedWireOnlySchema_TTask = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"TTask_895d5b8e#wire-only\",\"properties\":{\"priority\":{\"anyOf\":[{\"const\":\"high\"},{\"const\":\"low\"},{\"const\":\"normal\"}]}}}") as object, 'wire-only') as object;
+objectAjvFast.addSchema(structuredClone(__resolvedWireOnlySchema_TTask) as object, "TTask_895d5b8e#wire-only");
+objectAjvAll.addSchema(structuredClone(__resolvedWireOnlySchema_TTask) as object, "TTask_895d5b8e#wire-only");
 
-const validateTaskFast = requireAjvSchema(objectAjvFast.getSchema("Task_895d5b8e"), "Task_895d5b8e");
-const validateTaskAll = requireAjvSchema(objectAjvAll.getSchema("Task_895d5b8e"), "Task_895d5b8e");
-const validateTaskWireFast = requireAjvSchema(objectAjvFast.getSchema("Task_895d5b8e#wire"), "Task_895d5b8e#wire");
-const validateTaskWireAll = requireAjvSchema(objectAjvAll.getSchema("Task_895d5b8e#wire"), "Task_895d5b8e#wire");
-const validateTaskModelOnlyFast = requireAjvSchema(objectAjvFast.getSchema("Task_895d5b8e#model-only"), "Task_895d5b8e#model-only");
-const validateTaskModelOnlyAll = requireAjvSchema(objectAjvAll.getSchema("Task_895d5b8e#model-only"), "Task_895d5b8e#model-only");
-const validateTaskWireOnlyFast = requireAjvSchema(objectAjvFast.getSchema("Task_895d5b8e#wire-only"), "Task_895d5b8e#wire-only");
-const validateTaskWireOnlyAll = requireAjvSchema(objectAjvAll.getSchema("Task_895d5b8e#wire-only"), "Task_895d5b8e#wire-only");
+const validateTTaskFast = requireAjvSchema(objectAjvFast.getSchema("TTask_895d5b8e"), "TTask_895d5b8e");
+const validateTTaskAll = requireAjvSchema(objectAjvAll.getSchema("TTask_895d5b8e"), "TTask_895d5b8e");
+const validateTTaskWireFast = requireAjvSchema(objectAjvFast.getSchema("TTask_895d5b8e#wire"), "TTask_895d5b8e#wire");
+const validateTTaskWireAll = requireAjvSchema(objectAjvAll.getSchema("TTask_895d5b8e#wire"), "TTask_895d5b8e#wire");
+const validateTTaskModelOnlyFast = requireAjvSchema(objectAjvFast.getSchema("TTask_895d5b8e#model-only"), "TTask_895d5b8e#model-only");
+const validateTTaskModelOnlyAll = requireAjvSchema(objectAjvAll.getSchema("TTask_895d5b8e#model-only"), "TTask_895d5b8e#model-only");
+const validateTTaskWireOnlyFast = requireAjvSchema(objectAjvFast.getSchema("TTask_895d5b8e#wire-only"), "TTask_895d5b8e#wire-only");
+const validateTTaskWireOnlyAll = requireAjvSchema(objectAjvAll.getSchema("TTask_895d5b8e#wire-only"), "TTask_895d5b8e#wire-only");
 
-function fillTask(out: Record<string, unknown>, wire: Record<string, unknown>, copyIdentity = true): Record<string, unknown> {
+function fillTTask(out: Record<string, unknown>, wire: Record<string, unknown>, copyIdentity = true): Record<string, unknown> {
   if (copyIdentity) {
     out["title"] = wire["title"];
     out["done"] = wire["done"];
@@ -91,118 +91,118 @@ function fillTask(out: Record<string, unknown>, wire: Record<string, unknown>, c
   return out;
 }
 
-function stringifyTaskCore(value: Record<string, unknown>): string {
+function stringifyTTaskCore(value: Record<string, unknown>): string {
   return '{' + "\"title\":" + stringifyJsonString(value["title"] as string) + ",\"done\":" + stringifyJsonBoolean(value["done"] as boolean) + ",\"priority\":" + stringifyJsonScalar(modelSerdeBindings["src/priority-word.ts#toPriorityWord\u0000src/priority-word.ts#fromPriorityWord"].serialize(value["priority"]) as never) + '}';
 }
 
-function stringifyTaskWire(value: Record<string, unknown>): string {
+function stringifyTTaskWire(value: Record<string, unknown>): string {
   return '{' + "\"title\":" + stringifyJsonString(value["title"] as string) + ",\"done\":" + stringifyJsonBoolean(value["done"] as boolean) + ",\"priority\":" + stringifyJsonScalar(value["priority"] as never) + '}';
 }
 
-export function stringifyTask(value: TaskFields, options?: __GolemSerdeOptions): string {
+export function stringifyTTask(value: TTaskFields, options?: __GolemSerdeOptions): string {
   const validates = serdeValidates(options, true);
   if (validates) {
-    assertTask(value, options);
+    assertTTask(value, options);
     const wire = { ["title"]: value["title"], ["done"]: value["done"], ["priority"]: modelSerdeBindings["src/priority-word.ts#toPriorityWord\u0000src/priority-word.ts#fromPriorityWord"].serialize(value["priority"]) };
-    __golemAssertWireOnly_Task(wire, options);
-    return stringifyTaskWire(wire as never);
+    __golemAssertWireOnly_TTask(wire, options);
+    return stringifyTTaskWire(wire as never);
   }
-  return stringifyTaskCore(value as never);
+  return stringifyTTaskCore(value as never);
 }
 
-function convertFromWireTask(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
+function convertFromWireTTask(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
   const validates = serdeValidates(options, true);
   if (validates) {
-    __golemAssertWire_Task(wire, options);
+    __golemAssertWire_TTask(wire, options);
   }
   const source = isolated || wire === null || typeof wire !== 'object' ? wire : cloneConversionInput(wire);
   let result: unknown = source;
   if (source !== null && typeof source === 'object' && !Array.isArray(source)) {
     if (options?.construct) {
-      result = Reflect.construct(options.construct, [fillTask({ ...(source as Record<string, unknown>) }, (source as Record<string, unknown>), false)]);
+      result = Reflect.construct(options.construct, [fillTTask({ ...(source as Record<string, unknown>) }, (source as Record<string, unknown>), false)]);
     } else {
-      result = fillTask({} as Record<string, unknown>, source as Record<string, unknown>);
+      result = fillTTask({} as Record<string, unknown>, source as Record<string, unknown>);
     }
   }
   if (validates) {
-    __golemAssertModelOnly_Task(result, options);
+    __golemAssertModelOnly_TTask(result, options);
   }
   return result;
 }
 
-export function fromWireFormatTask(wire: unknown, options?: __GolemSerdeOptions): TaskFields {
-  return convertFromWireTask(wire, options, false) as TaskFields;
+export function fromWireFormatTTask(wire: unknown, options?: __GolemSerdeOptions): TTaskFields {
+  return convertFromWireTTask(wire, options, false) as TTaskFields;
 }
 
-function toWireFormatTaskCore(value: TaskFields): TaskJSON {
+function toWireFormatTTaskCore(value: TTaskFields): TTaskJSON {
   const record = value as Record<string, unknown>;
   const wire = { ["title"]: record["title"], ["done"]: record["done"], ["priority"]: modelSerdeBindings["src/priority-word.ts#toPriorityWord\u0000src/priority-word.ts#fromPriorityWord"].serialize(record["priority"]) };
-  return wire as TaskJSON;
+  return wire as TTaskJSON;
 }
 
-export function toWireFormatTask(value: TaskFields, options?: __GolemSerdeOptions): TaskJSON {
+export function toWireFormatTTask(value: TTaskFields, options?: __GolemSerdeOptions): TTaskJSON {
   const validates = serdeValidates(options, true);
   if (validates) {
-    assertTask(value, options);
+    assertTTask(value, options);
   }
-  const wire = toWireFormatTaskCore(value);
+  const wire = toWireFormatTTaskCore(value);
   if (validates) {
-    __golemAssertWireOnly_Task(wire, options);
+    __golemAssertWireOnly_TTask(wire, options);
   }
   return wire;
 }
 
-export function parseTask(text: string, options?: __GolemSerdeOptions): TaskFields {
-  return convertFromWireTask(parseJson(text), options, true) as TaskFields;
+export function parseTTask(text: string, options?: __GolemSerdeOptions): TTaskFields {
+  return convertFromWireTTask(parseJson(text), options, true) as TTaskFields;
 }
 
-export function validateTask(value: unknown, options?: __GolemValidateOptions): value is TaskFields {
+export function validateTTask(value: unknown, options?: __GolemValidateOptions): value is TTaskFields {
   const failFast = options?.failFast !== false;
   let ok: boolean;
   let errors: readonly unknown[] | null | undefined;
   if (options?.validationContext === undefined) {
-    const validator = failFast ? validateTaskFast : validateTaskAll;
+    const validator = failFast ? validateTTaskFast : validateTTaskAll;
     ok = validator(value);
     errors = validator.errors;
   } else {
-    const validator = resolveModelValidationContextValidator(options.validationContext, "Task_895d5b8e", failFast ? 'first' : 'all');
+    const validator = resolveModelValidationContextValidator(options.validationContext, "TTask_895d5b8e", failFast ? 'first' : 'all');
     ok = runSynchronousValidation(validator, value);
     errors = validator.errors;
   }
-  (validateTask as { errors?: unknown }).errors = errors;
+  (validateTTask as { errors?: unknown }).errors = errors;
   return ok;
 }
 
-export function assertTask(value: unknown, options?: __GolemValidateOptions): TaskFields {
-  assertModelValue(value, options, validateTaskFast, validateTaskAll, "Task_895d5b8e", IssueRepresentation.Model, IssueSource.TypeScript);
-  return value as TaskFields;
+export function assertTTask(value: unknown, options?: __GolemValidateOptions): TTaskFields {
+  assertModelValue(value, options, validateTTaskFast, validateTTaskAll, "TTask_895d5b8e", IssueRepresentation.Model, IssueSource.TypeScript);
+  return value as TTaskFields;
 }
 
-function __golemAssertWire_Task(value: unknown, options?: __GolemValidateOptions): Record<string, unknown> {
-  assertModelValue(value, options, validateTaskWireFast, validateTaskWireAll, "Task_895d5b8e#wire", IssueRepresentation.Wire, IssueSource.TypeScript);
+function __golemAssertWire_TTask(value: unknown, options?: __GolemValidateOptions): Record<string, unknown> {
+  assertModelValue(value, options, validateTTaskWireFast, validateTTaskWireAll, "TTask_895d5b8e#wire", IssueRepresentation.Wire, IssueSource.TypeScript);
   return value as Record<string, unknown>;
 }
 
-function __golemAssertModelOnly_Task(value: unknown, options?: __GolemValidateOptions): Record<string, unknown> {
-  assertModelValue(value, options, validateTaskModelOnlyFast, validateTaskModelOnlyAll, "Task_895d5b8e#model-only", IssueRepresentation.Model, IssueSource.TypeScript);
+function __golemAssertModelOnly_TTask(value: unknown, options?: __GolemValidateOptions): Record<string, unknown> {
+  assertModelValue(value, options, validateTTaskModelOnlyFast, validateTTaskModelOnlyAll, "TTask_895d5b8e#model-only", IssueRepresentation.Model, IssueSource.TypeScript);
   return value as Record<string, unknown>;
 }
 
-function __golemAssertWireOnly_Task(value: unknown, options?: __GolemValidateOptions): Record<string, unknown> {
-  assertModelValue(value, options, validateTaskWireOnlyFast, validateTaskWireOnlyAll, "Task_895d5b8e#wire-only", IssueRepresentation.Wire, IssueSource.TypeScript);
+function __golemAssertWireOnly_TTask(value: unknown, options?: __GolemValidateOptions): Record<string, unknown> {
+  assertModelValue(value, options, validateTTaskWireOnlyFast, validateTTaskWireOnlyAll, "TTask_895d5b8e#wire-only", IssueRepresentation.Wire, IssueSource.TypeScript);
   return value as Record<string, unknown>;
 }
 
-createObjectCodec("Task_895d5b8e", {
-  stringify: stringifyTask as (value: never, options?: __GolemSerdeOptions) => string,
-  parse: parseTask as (text: string, options?: __GolemSerdeOptions) => never,
-  validate: validateTask,
-  assert: assertTask,
-  toWireFormat: toWireFormatTask,
-  fromWireFormat: fromWireFormatTask,
-  schema: __resolvedModelSchema_Task,
-  wireSchema: __resolvedWireSchema_Task,
-  modelOnlySchema: __resolvedModelOnlySchema_Task,
-  wireOnlySchema: __resolvedWireOnlySchema_Task,
+createObjectCodec("TTask_895d5b8e", {
+  stringify: stringifyTTask as (value: never, options?: __GolemSerdeOptions) => string,
+  parse: parseTTask as (text: string, options?: __GolemSerdeOptions) => never,
+  validate: validateTTask,
+  assert: assertTTask,
+  toWireFormat: toWireFormatTTask,
+  fromWireFormat: fromWireFormatTTask,
+  schema: __resolvedModelSchema_TTask,
+  wireSchema: __resolvedWireSchema_TTask,
+  modelOnlySchema: __resolvedModelOnlySchema_TTask,
+  wireOnlySchema: __resolvedWireOnlySchema_TTask,
   issueSource: IssueSource.TypeScript,
 });

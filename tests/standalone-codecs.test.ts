@@ -193,14 +193,14 @@ test('standalone object codecs close nested schemas and preserve first/all sync 
 
   await compile(value.root);
   const validatorsPath = copyStandalone(result, value);
-  const [{ Root }, { LeafBaseModel, MiddleBaseModel, RootBaseModel }, validators] = await Promise.all([
+  const [{ Root }, { TLeafBaseModel, TMiddleBaseModel, TRootBaseModel }, validators] = await Promise.all([
     import(pathToFileURL(path.join(value.root, 'build/root.model.js')).href),
     import(pathToFileURL(path.join(value.root, 'build/root.model.generated.js')).href),
     import(pathToFileURL(validatorsPath).href),
   ]) as [{ Root: new (values?: never) => object }, {
-    LeafBaseModel: abstract new (...args: never[]) => object;
-    MiddleBaseModel: abstract new (...args: never[]) => object;
-    RootBaseModel: abstract new (...args: never[]) => object;
+    TLeafBaseModel: abstract new (...args: never[]) => object;
+    TMiddleBaseModel: abstract new (...args: never[]) => object;
+    TRootBaseModel: abstract new (...args: never[]) => object;
   }, {
     createValidatorSet(bindings?: Readonly<Record<string, (value: unknown) => boolean | string>>): {
       readonly first: Readonly<Record<string, ((input: unknown) => boolean) & { readonly errors?: readonly unknown[] | null }>>;
@@ -210,7 +210,7 @@ test('standalone object codecs close nested schemas and preserve first/all sync 
   }];
   const { findCodecIdForConstructor, requireObjectCodec } = await import('@exprtlabs/golem/serde');
   const { getValidator, validateInstance } = await import('@exprtlabs/golem/validation');
-  const codecId = findCodecIdForConstructor(RootBaseModel);
+  const codecId = findCodecIdForConstructor(TRootBaseModel);
   assert.ok(codecId, 'generated root model has a registered codec id');
   const codec = requireObjectCodec(codecId);
   const wire = {
@@ -220,8 +220,8 @@ test('standalone object codecs close nested schemas and preserve first/all sync 
   };
   const invalid = new Root(wire as never);
   const standalone = validators.createValidatorSet();
-  const leafId = findCodecIdForConstructor(LeafBaseModel);
-  const middleId = findCodecIdForConstructor(MiddleBaseModel);
+  const leafId = findCodecIdForConstructor(TLeafBaseModel);
+  const middleId = findCodecIdForConstructor(TMiddleBaseModel);
   assert.ok(Object.hasOwn(standalone.schemas, codecId));
   assert.ok(leafId);
   assert.ok(middleId);

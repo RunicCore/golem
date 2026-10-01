@@ -9,75 +9,75 @@ function modelObject(json: unknown, name: string): Record<string, unknown> {
   return requireModelObject(json, name);
 }
 
-export type PriceFields = { amount: number; currency: "EUR" | "USD" };
-export type PriceJSON = { amount: string; currency: "EUR" | "USD" };
-export type PriceInit = Partial<{ amount: number; currency: "EUR" | "USD" }>;
+export type TPriceFields = { amount: number; currency: "EUR" | "USD" };
+export type TPriceJSON = { amount: string; currency: "EUR" | "USD" };
+export type TPriceInit = Partial<{ amount: number; currency: "EUR" | "USD" }>;
 
-export abstract class PriceBaseModel implements GeneratedModel<PriceJSON, PriceFields> {
-  declare readonly [generatedModelWireBrand]: PriceJSON;
-  declare readonly [generatedModelFieldsBrand]: PriceFields;
-  declare amount: PriceFields["amount"];
-  declare currency: PriceFields["currency"];
+export abstract class TPriceBaseModel implements GeneratedModel<TPriceJSON, TPriceFields> {
+  declare readonly [generatedModelWireBrand]: TPriceJSON;
+  declare readonly [generatedModelFieldsBrand]: TPriceFields;
+  declare amount: TPriceFields["amount"];
+  declare currency: TPriceFields["currency"];
 
-  public constructor(values: PriceInit = {}) {
+  public constructor(values: TPriceInit = {}) {
     if (Object.prototype.hasOwnProperty.call(values, "amount")) defineModelProperty(this, "amount", values["amount"]);
     if (Object.prototype.hasOwnProperty.call(values, "currency")) defineModelProperty(this, "currency", values["currency"]);
   }
 
 }
 
-function decodePriceModel(constructor: GeneratedModelConstructor, json: unknown): PriceBaseModel {
-  const values = modelObject(json, "PriceBaseModel");
+function decodeTPriceModel(constructor: GeneratedModelConstructor, json: unknown): TPriceBaseModel {
+  const values = modelObject(json, "TPriceBaseModel");
   const result: Record<string, unknown> = { ...values };
   if (Object.prototype.hasOwnProperty.call(values, "amount")) defineModelProperty(result, "amount", convertModelField("deserialize", "amount", () => (modelSerdeBindings["src/decimal-text.ts#writeAmount\u0000src/decimal-text.ts#readAmount"].deserialize(values["amount"]))));
-  return Reflect.construct(constructor, [result]) as PriceBaseModel;
+  return Reflect.construct(constructor, [result]) as TPriceBaseModel;
 }
 
-function encodePriceModel(model: PriceBaseModel): PriceJSON {
+function encodeTPriceModel(model: TPriceBaseModel): TPriceJSON {
   const result: Record<string, unknown> = {};
   if (Object.prototype.hasOwnProperty.call(model, "amount")) defineModelProperty(result, "amount", (convertModelField("serialize", "amount", () => (modelSerdeBindings["src/decimal-text.ts#writeAmount\u0000src/decimal-text.ts#readAmount"].serialize(model["amount"])))));
   if (Object.prototype.hasOwnProperty.call(model, "currency")) defineModelProperty(result, "currency", (model["currency"]));
-  return result as PriceJSON;
+  return result as TPriceJSON;
 }
 
-registerGeneratedModel(PriceBaseModel, {
+registerGeneratedModel(TPriceBaseModel, {
   fields: ["amount", "currency"],
   conversion: {
-    decode: (value, constructor) => decodePriceModel(constructor ?? PriceBaseModel, value),
-    encode: encodePriceModel,
+    decode: (value, constructor) => decodeTPriceModel(constructor ?? TPriceBaseModel, value),
+    encode: encodeTPriceModel,
   },
-  codecId: "Price_cdf316b7",
+  codecId: "TPrice_cdf316b7",
   profile: { validation: true, mobx: false },
 });
 
-registerIModelClass("Price_cdf316b7", PriceBaseModel);
+registerIModelClass("TPrice_cdf316b7", TPriceBaseModel);
 
 const objectAjvFast = createOpenApiSyncAjvEngine({ allErrors: false, validationBindings: {} });
 const objectAjvAll = createOpenApiSyncAjvEngine({ allErrors: true, validationBindings: {} });
 
-const __resolvedModelSchema_Price = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"Price_cdf316b7\",\"type\":\"object\",\"properties\":{\"amount\":{\"allOf\":[{\"type\":\"number\"},{\"minimum\":0}]},\"currency\":{\"anyOf\":[{\"const\":\"EUR\"},{\"const\":\"USD\"}]}},\"required\":[\"amount\",\"currency\"],\"additionalProperties\":false}") as object) as object;
-objectAjvFast.addSchema(structuredClone(__resolvedModelSchema_Price) as object, "Price_cdf316b7");
-objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_Price) as object, "Price_cdf316b7");
-const __resolvedWireSchema_Price = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"Price_cdf316b7#wire\",\"type\":\"object\",\"properties\":{\"amount\":{\"allOf\":[{\"type\":\"string\"},{\"pattern\":\"^[0-9]+(?:\\\\.[0-9]{1,2})?$\"}]},\"currency\":{\"anyOf\":[{\"const\":\"EUR\"},{\"const\":\"USD\"}]}},\"required\":[\"amount\",\"currency\"],\"additionalProperties\":false}") as object, 'wire') as object;
-objectAjvFast.addSchema(structuredClone(__resolvedWireSchema_Price) as object, "Price_cdf316b7#wire");
-objectAjvAll.addSchema(structuredClone(__resolvedWireSchema_Price) as object, "Price_cdf316b7#wire");
-const __resolvedModelOnlySchema_Price = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"Price_cdf316b7#model-only\",\"properties\":{\"amount\":{\"allOf\":[{\"type\":\"number\"},{\"minimum\":0}]}}}") as object, 'model-only') as object;
-objectAjvFast.addSchema(structuredClone(__resolvedModelOnlySchema_Price) as object, "Price_cdf316b7#model-only");
-objectAjvAll.addSchema(structuredClone(__resolvedModelOnlySchema_Price) as object, "Price_cdf316b7#model-only");
-const __resolvedWireOnlySchema_Price = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"Price_cdf316b7#wire-only\",\"properties\":{\"amount\":{\"allOf\":[{\"type\":\"string\"},{\"pattern\":\"^[0-9]+(?:\\\\.[0-9]{1,2})?$\"}]}}}") as object, 'wire-only') as object;
-objectAjvFast.addSchema(structuredClone(__resolvedWireOnlySchema_Price) as object, "Price_cdf316b7#wire-only");
-objectAjvAll.addSchema(structuredClone(__resolvedWireOnlySchema_Price) as object, "Price_cdf316b7#wire-only");
+const __resolvedModelSchema_TPrice = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"TPrice_cdf316b7\",\"type\":\"object\",\"properties\":{\"amount\":{\"allOf\":[{\"type\":\"number\"},{\"minimum\":0}]},\"currency\":{\"anyOf\":[{\"const\":\"EUR\"},{\"const\":\"USD\"}]}},\"required\":[\"amount\",\"currency\"],\"additionalProperties\":false}") as object) as object;
+objectAjvFast.addSchema(structuredClone(__resolvedModelSchema_TPrice) as object, "TPrice_cdf316b7");
+objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_TPrice) as object, "TPrice_cdf316b7");
+const __resolvedWireSchema_TPrice = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"TPrice_cdf316b7#wire\",\"type\":\"object\",\"properties\":{\"amount\":{\"allOf\":[{\"type\":\"string\"},{\"pattern\":\"^[0-9]+(?:\\\\.[0-9]{1,2})?$\"}]},\"currency\":{\"anyOf\":[{\"const\":\"EUR\"},{\"const\":\"USD\"}]}},\"required\":[\"amount\",\"currency\"],\"additionalProperties\":false}") as object, 'wire') as object;
+objectAjvFast.addSchema(structuredClone(__resolvedWireSchema_TPrice) as object, "TPrice_cdf316b7#wire");
+objectAjvAll.addSchema(structuredClone(__resolvedWireSchema_TPrice) as object, "TPrice_cdf316b7#wire");
+const __resolvedModelOnlySchema_TPrice = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"TPrice_cdf316b7#model-only\",\"properties\":{\"amount\":{\"allOf\":[{\"type\":\"number\"},{\"minimum\":0}]}}}") as object, 'model-only') as object;
+objectAjvFast.addSchema(structuredClone(__resolvedModelOnlySchema_TPrice) as object, "TPrice_cdf316b7#model-only");
+objectAjvAll.addSchema(structuredClone(__resolvedModelOnlySchema_TPrice) as object, "TPrice_cdf316b7#model-only");
+const __resolvedWireOnlySchema_TPrice = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"TPrice_cdf316b7#wire-only\",\"properties\":{\"amount\":{\"allOf\":[{\"type\":\"string\"},{\"pattern\":\"^[0-9]+(?:\\\\.[0-9]{1,2})?$\"}]}}}") as object, 'wire-only') as object;
+objectAjvFast.addSchema(structuredClone(__resolvedWireOnlySchema_TPrice) as object, "TPrice_cdf316b7#wire-only");
+objectAjvAll.addSchema(structuredClone(__resolvedWireOnlySchema_TPrice) as object, "TPrice_cdf316b7#wire-only");
 
-const validatePriceFast = requireAjvSchema(objectAjvFast.getSchema("Price_cdf316b7"), "Price_cdf316b7");
-const validatePriceAll = requireAjvSchema(objectAjvAll.getSchema("Price_cdf316b7"), "Price_cdf316b7");
-const validatePriceWireFast = requireAjvSchema(objectAjvFast.getSchema("Price_cdf316b7#wire"), "Price_cdf316b7#wire");
-const validatePriceWireAll = requireAjvSchema(objectAjvAll.getSchema("Price_cdf316b7#wire"), "Price_cdf316b7#wire");
-const validatePriceModelOnlyFast = requireAjvSchema(objectAjvFast.getSchema("Price_cdf316b7#model-only"), "Price_cdf316b7#model-only");
-const validatePriceModelOnlyAll = requireAjvSchema(objectAjvAll.getSchema("Price_cdf316b7#model-only"), "Price_cdf316b7#model-only");
-const validatePriceWireOnlyFast = requireAjvSchema(objectAjvFast.getSchema("Price_cdf316b7#wire-only"), "Price_cdf316b7#wire-only");
-const validatePriceWireOnlyAll = requireAjvSchema(objectAjvAll.getSchema("Price_cdf316b7#wire-only"), "Price_cdf316b7#wire-only");
+const validateTPriceFast = requireAjvSchema(objectAjvFast.getSchema("TPrice_cdf316b7"), "TPrice_cdf316b7");
+const validateTPriceAll = requireAjvSchema(objectAjvAll.getSchema("TPrice_cdf316b7"), "TPrice_cdf316b7");
+const validateTPriceWireFast = requireAjvSchema(objectAjvFast.getSchema("TPrice_cdf316b7#wire"), "TPrice_cdf316b7#wire");
+const validateTPriceWireAll = requireAjvSchema(objectAjvAll.getSchema("TPrice_cdf316b7#wire"), "TPrice_cdf316b7#wire");
+const validateTPriceModelOnlyFast = requireAjvSchema(objectAjvFast.getSchema("TPrice_cdf316b7#model-only"), "TPrice_cdf316b7#model-only");
+const validateTPriceModelOnlyAll = requireAjvSchema(objectAjvAll.getSchema("TPrice_cdf316b7#model-only"), "TPrice_cdf316b7#model-only");
+const validateTPriceWireOnlyFast = requireAjvSchema(objectAjvFast.getSchema("TPrice_cdf316b7#wire-only"), "TPrice_cdf316b7#wire-only");
+const validateTPriceWireOnlyAll = requireAjvSchema(objectAjvAll.getSchema("TPrice_cdf316b7#wire-only"), "TPrice_cdf316b7#wire-only");
 
-function fillPrice(out: Record<string, unknown>, wire: Record<string, unknown>, copyIdentity = true): Record<string, unknown> {
+function fillTPrice(out: Record<string, unknown>, wire: Record<string, unknown>, copyIdentity = true): Record<string, unknown> {
   if (copyIdentity) {
     out["currency"] = wire["currency"];
   }
@@ -87,118 +87,118 @@ function fillPrice(out: Record<string, unknown>, wire: Record<string, unknown>, 
   return out;
 }
 
-function stringifyPriceCore(value: Record<string, unknown>): string {
+function stringifyTPriceCore(value: Record<string, unknown>): string {
   return '{' + "\"amount\":" + stringifyJsonString(modelSerdeBindings["src/decimal-text.ts#writeAmount\u0000src/decimal-text.ts#readAmount"].serialize(value["amount"]) as string) + ",\"currency\":" + stringifyJsonScalar(value["currency"] as never) + '}';
 }
 
-function stringifyPriceWire(value: Record<string, unknown>): string {
+function stringifyTPriceWire(value: Record<string, unknown>): string {
   return '{' + "\"amount\":" + stringifyJsonString(value["amount"] as string) + ",\"currency\":" + stringifyJsonScalar(value["currency"] as never) + '}';
 }
 
-export function stringifyPrice(value: PriceFields, options?: __GolemSerdeOptions): string {
+export function stringifyTPrice(value: TPriceFields, options?: __GolemSerdeOptions): string {
   const validates = serdeValidates(options, true);
   if (validates) {
-    assertPrice(value, options);
+    assertTPrice(value, options);
     const wire = { ["amount"]: modelSerdeBindings["src/decimal-text.ts#writeAmount\u0000src/decimal-text.ts#readAmount"].serialize(value["amount"]), ["currency"]: value["currency"] };
-    __golemAssertWireOnly_Price(wire, options);
-    return stringifyPriceWire(wire as never);
+    __golemAssertWireOnly_TPrice(wire, options);
+    return stringifyTPriceWire(wire as never);
   }
-  return stringifyPriceCore(value as never);
+  return stringifyTPriceCore(value as never);
 }
 
-function convertFromWirePrice(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
+function convertFromWireTPrice(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
   const validates = serdeValidates(options, true);
   if (validates) {
-    __golemAssertWire_Price(wire, options);
+    __golemAssertWire_TPrice(wire, options);
   }
   const source = isolated || wire === null || typeof wire !== 'object' ? wire : cloneConversionInput(wire);
   let result: unknown = source;
   if (source !== null && typeof source === 'object' && !Array.isArray(source)) {
     if (options?.construct) {
-      result = Reflect.construct(options.construct, [fillPrice({ ...(source as Record<string, unknown>) }, (source as Record<string, unknown>), false)]);
+      result = Reflect.construct(options.construct, [fillTPrice({ ...(source as Record<string, unknown>) }, (source as Record<string, unknown>), false)]);
     } else {
-      result = fillPrice({} as Record<string, unknown>, source as Record<string, unknown>);
+      result = fillTPrice({} as Record<string, unknown>, source as Record<string, unknown>);
     }
   }
   if (validates) {
-    __golemAssertModelOnly_Price(result, options);
+    __golemAssertModelOnly_TPrice(result, options);
   }
   return result;
 }
 
-export function fromWireFormatPrice(wire: unknown, options?: __GolemSerdeOptions): PriceFields {
-  return convertFromWirePrice(wire, options, false) as PriceFields;
+export function fromWireFormatTPrice(wire: unknown, options?: __GolemSerdeOptions): TPriceFields {
+  return convertFromWireTPrice(wire, options, false) as TPriceFields;
 }
 
-function toWireFormatPriceCore(value: PriceFields): PriceJSON {
+function toWireFormatTPriceCore(value: TPriceFields): TPriceJSON {
   const record = value as Record<string, unknown>;
   const wire = { ["amount"]: modelSerdeBindings["src/decimal-text.ts#writeAmount\u0000src/decimal-text.ts#readAmount"].serialize(record["amount"]), ["currency"]: record["currency"] };
-  return wire as PriceJSON;
+  return wire as TPriceJSON;
 }
 
-export function toWireFormatPrice(value: PriceFields, options?: __GolemSerdeOptions): PriceJSON {
+export function toWireFormatTPrice(value: TPriceFields, options?: __GolemSerdeOptions): TPriceJSON {
   const validates = serdeValidates(options, true);
   if (validates) {
-    assertPrice(value, options);
+    assertTPrice(value, options);
   }
-  const wire = toWireFormatPriceCore(value);
+  const wire = toWireFormatTPriceCore(value);
   if (validates) {
-    __golemAssertWireOnly_Price(wire, options);
+    __golemAssertWireOnly_TPrice(wire, options);
   }
   return wire;
 }
 
-export function parsePrice(text: string, options?: __GolemSerdeOptions): PriceFields {
-  return convertFromWirePrice(parseJson(text), options, true) as PriceFields;
+export function parseTPrice(text: string, options?: __GolemSerdeOptions): TPriceFields {
+  return convertFromWireTPrice(parseJson(text), options, true) as TPriceFields;
 }
 
-export function validatePrice(value: unknown, options?: __GolemValidateOptions): value is PriceFields {
+export function validateTPrice(value: unknown, options?: __GolemValidateOptions): value is TPriceFields {
   const failFast = options?.failFast !== false;
   let ok: boolean;
   let errors: readonly unknown[] | null | undefined;
   if (options?.validationContext === undefined) {
-    const validator = failFast ? validatePriceFast : validatePriceAll;
+    const validator = failFast ? validateTPriceFast : validateTPriceAll;
     ok = validator(value);
     errors = validator.errors;
   } else {
-    const validator = resolveModelValidationContextValidator(options.validationContext, "Price_cdf316b7", failFast ? 'first' : 'all');
+    const validator = resolveModelValidationContextValidator(options.validationContext, "TPrice_cdf316b7", failFast ? 'first' : 'all');
     ok = runSynchronousValidation(validator, value);
     errors = validator.errors;
   }
-  (validatePrice as { errors?: unknown }).errors = errors;
+  (validateTPrice as { errors?: unknown }).errors = errors;
   return ok;
 }
 
-export function assertPrice(value: unknown, options?: __GolemValidateOptions): PriceFields {
-  assertModelValue(value, options, validatePriceFast, validatePriceAll, "Price_cdf316b7", IssueRepresentation.Model, IssueSource.TypeScript);
-  return value as PriceFields;
+export function assertTPrice(value: unknown, options?: __GolemValidateOptions): TPriceFields {
+  assertModelValue(value, options, validateTPriceFast, validateTPriceAll, "TPrice_cdf316b7", IssueRepresentation.Model, IssueSource.TypeScript);
+  return value as TPriceFields;
 }
 
-function __golemAssertWire_Price(value: unknown, options?: __GolemValidateOptions): Record<string, unknown> {
-  assertModelValue(value, options, validatePriceWireFast, validatePriceWireAll, "Price_cdf316b7#wire", IssueRepresentation.Wire, IssueSource.TypeScript);
+function __golemAssertWire_TPrice(value: unknown, options?: __GolemValidateOptions): Record<string, unknown> {
+  assertModelValue(value, options, validateTPriceWireFast, validateTPriceWireAll, "TPrice_cdf316b7#wire", IssueRepresentation.Wire, IssueSource.TypeScript);
   return value as Record<string, unknown>;
 }
 
-function __golemAssertModelOnly_Price(value: unknown, options?: __GolemValidateOptions): Record<string, unknown> {
-  assertModelValue(value, options, validatePriceModelOnlyFast, validatePriceModelOnlyAll, "Price_cdf316b7#model-only", IssueRepresentation.Model, IssueSource.TypeScript);
+function __golemAssertModelOnly_TPrice(value: unknown, options?: __GolemValidateOptions): Record<string, unknown> {
+  assertModelValue(value, options, validateTPriceModelOnlyFast, validateTPriceModelOnlyAll, "TPrice_cdf316b7#model-only", IssueRepresentation.Model, IssueSource.TypeScript);
   return value as Record<string, unknown>;
 }
 
-function __golemAssertWireOnly_Price(value: unknown, options?: __GolemValidateOptions): Record<string, unknown> {
-  assertModelValue(value, options, validatePriceWireOnlyFast, validatePriceWireOnlyAll, "Price_cdf316b7#wire-only", IssueRepresentation.Wire, IssueSource.TypeScript);
+function __golemAssertWireOnly_TPrice(value: unknown, options?: __GolemValidateOptions): Record<string, unknown> {
+  assertModelValue(value, options, validateTPriceWireOnlyFast, validateTPriceWireOnlyAll, "TPrice_cdf316b7#wire-only", IssueRepresentation.Wire, IssueSource.TypeScript);
   return value as Record<string, unknown>;
 }
 
-createObjectCodec("Price_cdf316b7", {
-  stringify: stringifyPrice as (value: never, options?: __GolemSerdeOptions) => string,
-  parse: parsePrice as (text: string, options?: __GolemSerdeOptions) => never,
-  validate: validatePrice,
-  assert: assertPrice,
-  toWireFormat: toWireFormatPrice,
-  fromWireFormat: fromWireFormatPrice,
-  schema: __resolvedModelSchema_Price,
-  wireSchema: __resolvedWireSchema_Price,
-  modelOnlySchema: __resolvedModelOnlySchema_Price,
-  wireOnlySchema: __resolvedWireOnlySchema_Price,
+createObjectCodec("TPrice_cdf316b7", {
+  stringify: stringifyTPrice as (value: never, options?: __GolemSerdeOptions) => string,
+  parse: parseTPrice as (text: string, options?: __GolemSerdeOptions) => never,
+  validate: validateTPrice,
+  assert: assertTPrice,
+  toWireFormat: toWireFormatTPrice,
+  fromWireFormat: fromWireFormatTPrice,
+  schema: __resolvedModelSchema_TPrice,
+  wireSchema: __resolvedWireSchema_TPrice,
+  modelOnlySchema: __resolvedModelOnlySchema_TPrice,
+  wireOnlySchema: __resolvedWireOnlySchema_TPrice,
   issueSource: IssueSource.TypeScript,
 });

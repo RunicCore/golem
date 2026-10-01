@@ -81,7 +81,7 @@ test('a hand-written and an SDK model of the same name and shape keep their own 
   await runPipeline(path.join(root, 'golem.yaml'));
 
   const keyOf = (file: string): string => {
-    const match = fs.readFileSync(path.join(root, file), 'utf8').match(/#Money(?:Model)?": "(Money_[0-9a-f]{8})"/);
+    const match = fs.readFileSync(path.join(root, file), 'utf8').match(/#Money(?:Model)?": "(TMoney_[0-9a-f]{8})"/);
     assert.ok(match, `${file} names the Money codec`);
     return match[1];
   };

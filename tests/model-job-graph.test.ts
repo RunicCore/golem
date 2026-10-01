@@ -42,8 +42,8 @@ function chainSources(count: number, { kind, name, minLabel }: Chain = modelChai
       ? `import type { T${name}${index - 1} } from './${file}-${index - 1}.model.js';\n`
       : '';
     const fields = index > 0 ? `; prev: T${name}${index - 1}; prevs?: T${name}${index - 1}[]` : '';
-    const base = kind === 'IModel' ? `import { ${name}${index}BaseModel } from './${file}-${index}.model.generated.js';\n` : '';
-    const cls = kind === 'IModel' ? `export class ${name}${index} extends ${name}${index}BaseModel {}\n` : '';
+    const base = kind === 'IModel' ? `import { T${name}${index}BaseModel } from './${file}-${index}.model.generated.js';\n` : '';
+    const cls = kind === 'IModel' ? `export class ${name}${index} extends T${name}${index}BaseModel {}\n` : '';
     sources[`${file}-${index}.model.ts`] = `import type { ${kind} } from '@exprtlabs/golem/model';
 import type { MinLength } from '@exprtlabs/golem/tags';
 ${previous}${base}export type T${name}${index} = ${kind}<{ label: string & MinLength<${minLabel}>; at: Date; kind: { k: 'a'; a: Date } | { k: 'b'; b: number }${fields} }>;
@@ -56,7 +56,7 @@ const chainVerifier = (last: number, name = 'Item') => `
 const codecs = await import('./build/${name.toLowerCase()}-${last}.model.generated.js');
 const item = (index) => ({ label: 'abc', at: '2024-01-01T00:00:00.000Z', kind: { k: 'a', a: '2024-01-02T00:00:00.000Z' }, ...(index > 0 ? { prev: item(index - 1), prevs: [item(index - 1)] } : {}) });
 const wire = item(${last});
-const model = codecs.fromWireFormat${name}${last}(wire);
+const model = codecs.fromWireFormatT${name}${last}(wire);
 let deepest = model;
 while (deepest.prev) deepest = deepest.prev;
 const invalid = structuredClone(wire);
@@ -65,12 +65,12 @@ while (leaf.prev) leaf = leaf.prev;
 leaf.label = 'x';
 let rejected = null;
 if (process.argv[2] === 'validate') {
-  try { codecs.fromWireFormat${name}${last}(invalid); rejected = false; } catch { rejected = true; }
+  try { codecs.fromWireFormatT${name}${last}(invalid); rejected = false; } catch { rejected = true; }
 }
 console.log(JSON.stringify({
   date: deepest.at instanceof Date && deepest.kind.a instanceof Date,
-  wire: JSON.stringify(codecs.toWireFormat${name}${last}(model)) === JSON.stringify(wire),
-  text: codecs.stringify${name}${last}(model) === JSON.stringify(wire),
+  wire: JSON.stringify(codecs.toWireFormatT${name}${last}(model)) === JSON.stringify(wire),
+  text: codecs.stringifyT${name}${last}(model) === JSON.stringify(wire),
   rejected,
 }));
 `;
@@ -89,19 +89,19 @@ for (const [label, profile] of profiles) for (const chain of [modelChain, object
     for (const index of [0, 5, last - 1]) {
       const owner = companion(index);
       const expectations: Readonly<Record<string, boolean>> = {
-        [`function fill${name}${index}(`]: true,
-        [`function stringify${name}${index}Core(`]: true,
-        [`__resolvedModelSchema_${name}${index} `]: profile.validation === true && profile.ajvStandalone !== true,
-        [`class ${name}${index}BaseModel`]: kind === 'IModel',
-        [`function decode${name}${index}(`]: kind === 'IObject',
-        [`function encode${name}${index}(`]: kind === 'IObject',
+        [`function fillT${name}${index}(`]: true,
+        [`function stringifyT${name}${index}Core(`]: true,
+        [`__resolvedModelSchema_T${name}${index} `]: profile.validation === true && profile.ajvStandalone !== true,
+        [`class T${name}${index}BaseModel`]: kind === 'IModel',
+        [`function decodeT${name}${index}(`]: kind === 'IObject',
+        [`function encodeT${name}${index}(`]: kind === 'IObject',
       };
       for (const [owned, expected] of Object.entries(expectations)) {
         assert.equal(lastCompanion.includes(owned), false, `${name.toLowerCase()}-${last} does not emit ${owned}`);
         if (expected) assert.ok(owner.includes(owned), `${name.toLowerCase()}-${index} emits its own ${owned}`);
       }
     }
-    assert.ok(lastCompanion.includes(kind === 'IModel' ? `class ${name}${last}BaseModel` : `function stringify${name}${last}Core(`));
+    assert.ok(lastCompanion.includes(kind === 'IModel' ? `class T${name}${last}BaseModel` : `function stringifyT${name}${last}Core(`));
     // Each companion carries its own model; its size does not grow with the chain behind it.
     assert.ok(lastCompanion.length < companion(1).length * 1.5, `${name.toLowerCase()}-${last} ${lastCompanion.length} B vs ${name.toLowerCase()}-1 ${companion(1).length} B`);
   });
@@ -111,15 +111,15 @@ const cycleSources = {
   'a.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
 import type { MinLength } from '@exprtlabs/golem/tags';
 import type { TB } from './b.model.js';
-import { ABaseModel } from './a.model.generated.js';
+import { TABaseModel } from './a.model.generated.js';
 export type TA = IModel<{ name: string & MinLength<2>; at: Date; b?: TB }>;
-export class A extends ABaseModel {}
+export class A extends TABaseModel {}
 `,
   'b.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
 import type { TA } from './a.model.js';
-import { BBaseModel } from './b.model.generated.js';
+import { TBBaseModel } from './b.model.generated.js';
 export type TB = IModel<{ at: Date; as: TA[] }>;
-export class B extends BBaseModel {}
+export class B extends TBBaseModel {}
 `,
 };
 
@@ -130,18 +130,18 @@ for (const name of first === 'a' ? ['a', 'b'] : ['b', 'a']) loaded[name] = await
 const { a, b } = loaded;
 const wireA = { name: 'aa', at: '2024-01-01T00:00:00.000Z', b: { at: '2024-01-02T00:00:00.000Z', as: [{ name: 'cc', at: '2024-01-03T00:00:00.000Z' }] } };
 const wireB = { at: '2024-01-02T00:00:00.000Z', as: [wireA] };
-const modelA = a.fromWireFormatA(wireA);
-const modelB = b.fromWireFormatB(wireB);
+const modelA = a.fromWireFormatTA(wireA);
+const modelB = b.fromWireFormatTB(wireB);
 let rejected = null;
 if (validation === 'validate') {
   const invalid = structuredClone(wireB);
   invalid.as[0].b.as[0].name = 'x';
-  try { b.fromWireFormatB(invalid); rejected = false; } catch { rejected = true; }
+  try { b.fromWireFormatTB(invalid); rejected = false; } catch { rejected = true; }
 }
 console.log(JSON.stringify({
-  a: modelA.b.as[0].at instanceof Date && a.stringifyA(modelA) === JSON.stringify(wireA)
-    && JSON.stringify(a.toWireFormatA(modelA)) === JSON.stringify(wireA),
-  b: modelB.as[0].b.as[0].at instanceof Date && b.stringifyB(modelB) === JSON.stringify(wireB),
+  a: modelA.b.as[0].at instanceof Date && a.stringifyTA(modelA) === JSON.stringify(wireA)
+    && JSON.stringify(a.toWireFormatTA(modelA)) === JSON.stringify(wireA),
+  b: modelB.as[0].b.as[0].at instanceof Date && b.stringifyTB(modelB) === JSON.stringify(wireB),
   rejected,
 }));
 `;
@@ -172,9 +172,9 @@ const mixedCycleSources = {
   'order.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
 import type { MinLength } from '@exprtlabs/golem/tags';
 import type { TLine } from './line.model.js';
-import { OrderBaseModel } from './order.model.generated.js';
+import { TOrderBaseModel } from './order.model.generated.js';
 export type TOrder = IModel<{ id: string & MinLength<2>; at: Date; lines: TLine[] }>;
-export class Order extends OrderBaseModel {}
+export class Order extends TOrderBaseModel {}
 `,
   'line.model.ts': `import type { IObject } from '@exprtlabs/golem/model';
 import type { TOrder } from './order.model.js';
@@ -188,20 +188,20 @@ const loaded = {};
 for (const name of first === 'order' ? ['order', 'line'] : ['line', 'order']) loaded[name] = await import('./build/' + name + '.model.generated.js');
 const { order, line } = loaded;
 const wireOrder = { id: 'o1', at: '2024-01-01T00:00:00.000Z', lines: [{ at: '2024-01-02T00:00:00.000Z', qty: 1, parent: { id: 'o2', at: '2024-01-03T00:00:00.000Z', lines: [] } }] };
-const model = order.fromWireFormatOrder(wireOrder);
+const model = order.fromWireFormatTOrder(wireOrder);
 const wireLine = { at: '2024-01-04T00:00:00.000Z', qty: 2, parent: wireOrder };
-const plain = line.fromWireFormatLine(wireLine);
+const plain = line.fromWireFormatTLine(wireLine);
 let rejected = null;
 if (validation === 'validate') {
   const invalid = structuredClone(wireLine);
   invalid.parent.lines[0].parent.id = 'x';
-  try { line.fromWireFormatLine(invalid); rejected = false; } catch { rejected = true; }
+  try { line.fromWireFormatTLine(invalid); rejected = false; } catch { rejected = true; }
 }
 console.log(JSON.stringify({
   order: model.lines[0].at instanceof Date && model.lines[0].parent.at instanceof Date
-    && order.stringifyOrder(model) === JSON.stringify(wireOrder),
-  line: plain.parent.lines[0].parent.at instanceof Date && line.stringifyLine(plain) === JSON.stringify(wireLine)
-    && JSON.stringify(line.toWireFormatLine(plain)) === JSON.stringify(wireLine),
+    && order.stringifyTOrder(model) === JSON.stringify(wireOrder),
+  line: plain.parent.lines[0].parent.at instanceof Date && line.stringifyTLine(plain) === JSON.stringify(wireLine)
+    && JSON.stringify(line.toWireFormatTLine(plain)) === JSON.stringify(wireLine),
   rejected,
 }));
 `;
@@ -237,10 +237,10 @@ for (const [label, profile] of profiles) {
     await t.test(`models of two sources that reference each other load in either import order (${label})`, async () => {
       const companionA = generated('a.model.generated.ts');
       const companionB = generated('b.model.generated.ts');
-      assert.equal(companionA.includes('class BBaseModel'), false);
-      assert.ok(companionB.includes('class BBaseModel'), 'b.model.generated.ts emits its own BBaseModel');
-      assert.equal(companionA.includes('function fillB('), false);
-      assert.ok(companionB.includes('function fillB('), 'b.model.generated.ts emits its own fillB');
+      assert.equal(companionA.includes('class TBBaseModel'), false);
+      assert.ok(companionB.includes('class TBBaseModel'), 'b.model.generated.ts emits its own TBBaseModel');
+      assert.equal(companionA.includes('function fillTB('), false);
+      assert.ok(companionB.includes('function fillTB('), 'b.model.generated.ts emits its own fillTB');
       fs.writeFileSync(path.join(root, 'verify-cycle.mjs'), cycleVerifier);
       for (const first of ['a', 'b']) {
         const result = await command(root, process.execPath, ['verify-cycle.mjs', first, validation]);
@@ -251,10 +251,10 @@ for (const [label, profile] of profiles) {
     await t.test(`an IModel and an IObject of two sources that reference each other load in either order (${label})`, async () => {
       const orderCompanion = generated('order.model.generated.ts');
       const lineCompanion = generated('line.model.generated.ts');
-      assert.equal(orderCompanion.includes('function decodeLine('), false);
-      assert.ok(lineCompanion.includes('function decodeLine('), 'line.model.generated.ts emits its own decodeLine');
-      assert.equal(orderCompanion.includes('function fillLine('), false);
-      assert.ok(lineCompanion.includes('function fillLine('), 'line.model.generated.ts emits its own fillLine');
+      assert.equal(orderCompanion.includes('function decodeTLine('), false);
+      assert.ok(lineCompanion.includes('function decodeTLine('), 'line.model.generated.ts emits its own decodeTLine');
+      assert.equal(orderCompanion.includes('function fillTLine('), false);
+      assert.ok(lineCompanion.includes('function fillTLine('), 'line.model.generated.ts emits its own fillTLine');
       fs.writeFileSync(path.join(root, 'verify-mixed-cycle.mjs'), mixedCycleVerifier);
       for (const first of ['order', 'line']) {
         const result = await command(root, process.execPath, ['verify-mixed-cycle.mjs', first, validation]);

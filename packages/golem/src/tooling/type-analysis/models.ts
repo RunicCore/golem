@@ -1,4 +1,3 @@
-import { modelName } from '../../model-name.js';
 import { diagnostic, modelDeclarationKind, propertyType } from './symbols.js';
 import * as ts from '../typescript-ns.js';
 import type { ModelConversionDescriptor } from './types.js';
@@ -42,7 +41,6 @@ export interface CollectedSpecifications {
   readonly specifications: readonly ModelSpecification[];
 }
 
-export { modelName } from '../../model-name.js';
 
 function readOptionalBooleanOption(
   checker: ts.TypeChecker,
@@ -89,7 +87,7 @@ export function collectSpecifications(
         sourceFile,
         declaration: statement,
         aliasName: statement.name.text,
-        name: modelName(statement.name.text),
+        name: statement.name.text,
         fieldsNode,
         fieldsType,
         exact: readOptionalBooleanOption(checker, optionsNode, 'exact') ?? true,

@@ -1,7 +1,7 @@
 // #region temporal-fields
 import type { IModel } from '@exprtlabs/golem/model';
 import type { TemporalDuration, TemporalInstant, TemporalPlainDate } from '@exprtlabs/golem/temporal';
-import { ScheduleBaseModel } from './schedule.model.generated.js';
+import { TScheduleBaseModel } from './schedule.model.generated.js';
 
 export type TSchedule = IModel<{
   startsAt: TemporalInstant;
@@ -9,7 +9,7 @@ export type TSchedule = IModel<{
   length: TemporalDuration;
 }>;
 
-export class Schedule extends ScheduleBaseModel {
+export class Schedule extends TScheduleBaseModel {
   public get endsAt(): Temporal.Instant {
     return this.startsAt.add(this.length);
   }

@@ -2,11 +2,11 @@
 import type { IModel } from '@exprtlabs/golem/model';
 import { asGenObservable } from '@exprtlabs/golem/mobx';
 import { action, computed } from 'mobx';
-import { TaskBaseModel } from './task.model.generated.js';
+import { TTaskBaseModel } from './task.model.generated.js';
 
 export type TTask = IModel<{ title: string; done: boolean }>;
 
-export class Task extends TaskBaseModel {
+export class Task extends TTaskBaseModel {
   public constructor(values?: TTask) {
     super({ title: 'New task', done: false, ...values });
     asGenObservable(this, { label: computed, toggle: action });

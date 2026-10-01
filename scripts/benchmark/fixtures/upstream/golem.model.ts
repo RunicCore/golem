@@ -1,16 +1,16 @@
 import type { IModel } from '@exprtlabs/golem/model';
 import {
-  AccountBaseModel,
-  ChannelBaseModel,
-  CollectionBaseModel,
-  CompanyBaseModel,
-  DepartmentBaseModel,
-  EmployeeBaseModel,
-  EnterpriseBaseModel,
-  MemberBaseModel,
-  ObjectSimpleBaseModel,
-  Point3DBaseModel,
-  TimestampBaseModel,
+  TAccountBaseModel,
+  TChannelBaseModel,
+  TCollectionBaseModel,
+  TCompanyBaseModel,
+  TDepartmentBaseModel,
+  TEmployeeBaseModel,
+  TEnterpriseBaseModel,
+  TMemberBaseModel,
+  TObjectSimpleBaseModel,
+  TPoint3DBaseModel,
+  TTimestampBaseModel,
 } from './golem.model.generated.js';
 
 // #region simple
@@ -19,7 +19,7 @@ export type TPoint3D = IModel<{
   y: number;
   z: number;
 }>;
-export class Point3D extends Point3DBaseModel {}
+export class Point3D extends TPoint3DBaseModel {}
 
 export type TObjectSimple = IModel<{
   scale: Point3D;
@@ -27,7 +27,7 @@ export type TObjectSimple = IModel<{
   rotate: Point3D;
   pivot: Point3D;
 }>;
-export class ObjectSimple extends ObjectSimpleBaseModel {}
+export class ObjectSimple extends TObjectSimpleBaseModel {}
 // #endregion simple
 
 export type TAccount = IModel<{
@@ -35,7 +35,7 @@ export type TAccount = IModel<{
   code: string;
   created_at: Timestamp;
 }>;
-export class Account extends AccountBaseModel {}
+export class Account extends TAccountBaseModel {}
 
 export type TEnterprise = IModel<{
   id: number;
@@ -44,7 +44,7 @@ export type TEnterprise = IModel<{
   grade: number;
   created_at: Timestamp;
 }>;
-export class Enterprise extends EnterpriseBaseModel {}
+export class Enterprise extends TEnterpriseBaseModel {}
 
 export type TChannel = IModel<{
   id: number;
@@ -55,7 +55,7 @@ export type TChannel = IModel<{
   priority: number;
   created_at: Timestamp;
 }>;
-export class Channel extends ChannelBaseModel {}
+export class Channel extends TChannelBaseModel {}
 
 export type TMember = IModel<{
   id: number;
@@ -65,14 +65,14 @@ export type TMember = IModel<{
   created_at: Timestamp;
   authorized: boolean;
 }>;
-export class Member extends MemberBaseModel {}
+export class Member extends TMemberBaseModel {}
 
 // #region array
 export type TTimestamp = IModel<{
   time: number;
   zone: number;
 }>;
-export class Timestamp extends TimestampBaseModel {}
+export class Timestamp extends TTimestampBaseModel {}
 
 export type TEmployee = IModel<{
   id: number;
@@ -81,7 +81,7 @@ export type TEmployee = IModel<{
   grade: number;
   employed_at: Timestamp;
 }>;
-export class Employee extends EmployeeBaseModel {}
+export class Employee extends TEmployeeBaseModel {}
 
 export type TDepartment = IModel<{
   id: number;
@@ -90,7 +90,7 @@ export type TDepartment = IModel<{
   created_at: Timestamp;
   employees: Employee[];
 }>;
-export class Department extends DepartmentBaseModel {}
+export class Department extends TDepartmentBaseModel {}
 
 export type TCompany = IModel<{
   id: number;
@@ -99,10 +99,10 @@ export type TCompany = IModel<{
   established_at: Timestamp;
   departments: Department[];
 }>;
-export class Company extends CompanyBaseModel {}
+export class Company extends TCompanyBaseModel {}
 
 export type TCollection = IModel<{
   data: Company[];
 }>;
-export class Collection extends CollectionBaseModel {}
+export class Collection extends TCollectionBaseModel {}
 // #endregion array

@@ -2,7 +2,7 @@
 import type { IModel } from '@exprtlabs/golem/model';
 import type { MaxLength, MinLength } from '@exprtlabs/golem/tags';
 import { validateInstance } from '@exprtlabs/golem/validation';
-import { TaggedTaskBaseModel } from './builtin-tags.model.generated.js';
+import { TTaggedTaskBaseModel } from './builtin-tags.model.generated.js';
 
 type TaskTitle = string & MinLength<3> & MaxLength<80>;
 
@@ -11,7 +11,7 @@ export type TTaggedTask = IModel<{
   done: boolean;
 }>;
 
-export class TaggedTask extends TaggedTaskBaseModel {}
+export class TaggedTask extends TTaggedTaskBaseModel {}
 
 export async function validateTaskTitles(): Promise<[boolean, boolean, boolean]> {
   const short = new TaggedTask({ title: 'x', done: false });

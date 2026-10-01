@@ -149,12 +149,9 @@ export function authoritativeTypeReference(
   const fromAlias = (): string | undefined => {
     const alias = reference.type.aliasSymbol?.getName() ?? reference.type.getSymbol?.()?.getName();
     if (!alias) return undefined;
-    const short = alias.replace(/^T(?=[A-Z])/, '').replace(/Model$/, '');
-    const spec = context.contractAnalysis!.specFor(alias) ?? context.contractAnalysis!.specFor(short);
-    if (!spec) return context.contractAnalysis!.codecId(alias) ?? context.contractAnalysis!.codecId(short);
-    return context.contractAnalysis!.codecId(spec.name)
-      ?? context.contractAnalysis!.codecId(alias)
-      ?? context.contractAnalysis!.codecId(short);
+    const spec = context.contractAnalysis!.specFor(alias);
+    if (!spec) return context.contractAnalysis!.codecId(alias);
+    return context.contractAnalysis!.codecId(spec.name) ?? context.contractAnalysis!.codecId(alias);
   };
   const codecId = fromReference() ?? fromAlias();
   if (!codecId) return reference;

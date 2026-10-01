@@ -8,115 +8,115 @@ function modelObject(json: unknown, name: string): Record<string, unknown> {
   return requireModelObject(json, name);
 }
 
-type MerchantOmitIdFields = { name: string };
-type MerchantOmitIdJSON = { name: string };
-type MerchantOmitIdInit = { name: string };
-function decodeMerchantOmitId(value: unknown): MerchantOmitIdFields { const data = modelObject(value, "MerchantOmitId"); return (typeof data === 'object' && data !== null && !Array.isArray(data) ? Object.fromEntries([...(Object.hasOwn(data, "name") ? [["name", data["name"] === undefined ? undefined : (data["name"])]] : [])]) : data) as MerchantOmitIdFields; }
-const initMerchantOmitId = decodeMerchantOmitId;
-function encodeMerchantOmitId(value: unknown): MerchantOmitIdJSON { const data = value as Record<string, unknown>; return (typeof data === 'object' && data !== null && !Array.isArray(data) ? Object.fromEntries([...(Object.hasOwn(data, "name") ? [["name", data["name"] === undefined ? undefined : (data["name"])]] : [])]) : data) as MerchantOmitIdJSON; }
+type TMerchantOmitIdFields = { name: string };
+type TMerchantOmitIdJSON = { name: string };
+type TMerchantOmitIdInit = { name: string };
+function decodeTMerchantOmitId(value: unknown): TMerchantOmitIdFields { const data = modelObject(value, "TMerchantOmitId"); return (typeof data === 'object' && data !== null && !Array.isArray(data) ? Object.fromEntries([...(Object.hasOwn(data, "name") ? [["name", data["name"] === undefined ? undefined : (data["name"])]] : [])]) : data) as TMerchantOmitIdFields; }
+const initTMerchantOmitId = decodeTMerchantOmitId;
+function encodeTMerchantOmitId(value: unknown): TMerchantOmitIdJSON { const data = value as Record<string, unknown>; return (typeof data === 'object' && data !== null && !Array.isArray(data) ? Object.fromEntries([...(Object.hasOwn(data, "name") ? [["name", data["name"] === undefined ? undefined : (data["name"])]] : [])]) : data) as TMerchantOmitIdJSON; }
 
-export type MerchantFields = { id: string; name: string };
-export type MerchantJSON = { id: string; name: string };
-export type MerchantInit = { id: string; name: string };
-function decodeMerchant(value: unknown): MerchantFields { const data = modelObject(value, "Merchant"); return (data) as MerchantFields; }
-const initMerchant = decodeMerchant;
-function encodeMerchant(value: unknown): MerchantJSON { const data = value as Record<string, unknown>; return (data) as MerchantJSON; }
+export type TMerchantFields = { id: string; name: string };
+export type TMerchantJSON = { id: string; name: string };
+export type TMerchantInit = { id: string; name: string };
+function decodeTMerchant(value: unknown): TMerchantFields { const data = modelObject(value, "TMerchant"); return (data) as TMerchantFields; }
+const initTMerchant = decodeTMerchant;
+function encodeTMerchant(value: unknown): TMerchantJSON { const data = value as Record<string, unknown>; return (data) as TMerchantJSON; }
 
-export type MoneyFields = { amount: string; currency: "EUR" | "USD" };
-export type MoneyJSON = { amount: string; currency: "EUR" | "USD" };
-export type MoneyInit = { amount: string; currency: "EUR" | "USD" };
-function decodeMoney(value: unknown): MoneyFields { const data = modelObject(value, "Money"); return (data) as MoneyFields; }
-const initMoney = decodeMoney;
-function encodeMoney(value: unknown): MoneyJSON { const data = value as Record<string, unknown>; return (data) as MoneyJSON; }
+export type TMoneyFields = { amount: string; currency: "EUR" | "USD" };
+export type TMoneyJSON = { amount: string; currency: "EUR" | "USD" };
+export type TMoneyInit = { amount: string; currency: "EUR" | "USD" };
+function decodeTMoney(value: unknown): TMoneyFields { const data = modelObject(value, "TMoney"); return (data) as TMoneyFields; }
+const initTMoney = decodeTMoney;
+function encodeTMoney(value: unknown): TMoneyJSON { const data = value as Record<string, unknown>; return (data) as TMoneyJSON; }
 
-export type PaymentInputFields = { merchant: MerchantFields; billing: MerchantOmitIdFields; money: MoneyFields; note: string };
-export type PaymentInputJSON = { merchant: MerchantJSON; billing: MerchantOmitIdJSON; money: MoneyJSON; note: string };
-export type PaymentInputInit = { merchant: MerchantInit; billing: MerchantOmitIdInit; money: MoneyInit; note: string };
+export type TPaymentInputFields = { merchant: TMerchantFields; billing: TMerchantOmitIdFields; money: TMoneyFields; note: string };
+export type TPaymentInputJSON = { merchant: TMerchantJSON; billing: TMerchantOmitIdJSON; money: TMoneyJSON; note: string };
+export type TPaymentInputInit = { merchant: TMerchantInit; billing: TMerchantOmitIdInit; money: TMoneyInit; note: string };
 
-export type PaymentFilterFields = { limit?: number; status?: undefined | "paid" | "pending" | Array<"paid" | "pending"> };
-export type PaymentFilterJSON = { limit?: number; status?: undefined | "paid" | "pending" | Array<"paid" | "pending"> };
-export type PaymentFilterInit = { limit?: number; status?: undefined | "paid" | "pending" | Array<"paid" | "pending"> };
+export type TPaymentFilterFields = { limit?: number; status?: undefined | "paid" | "pending" | Array<"paid" | "pending"> };
+export type TPaymentFilterJSON = { limit?: number; status?: undefined | "paid" | "pending" | Array<"paid" | "pending"> };
+export type TPaymentFilterInit = { limit?: number; status?: undefined | "paid" | "pending" | Array<"paid" | "pending"> };
 
-export type PaymentFields = { id: string; merchant: MerchantFields; billing: MerchantOmitIdFields; money: MoneyFields; note: string };
-export type PaymentJSON = { id: string; merchant: MerchantJSON; billing: MerchantOmitIdJSON; money: MoneyJSON; note: string };
-export type PaymentInit = Partial<{ id: string; merchant: MerchantInit; billing: MerchantOmitIdInit; money: MoneyInit; note: string }>;
+export type TPaymentFields = { id: string; merchant: TMerchantFields; billing: TMerchantOmitIdFields; money: TMoneyFields; note: string };
+export type TPaymentJSON = { id: string; merchant: TMerchantJSON; billing: TMerchantOmitIdJSON; money: TMoneyJSON; note: string };
+export type TPaymentInit = Partial<{ id: string; merchant: TMerchantInit; billing: TMerchantOmitIdInit; money: TMoneyInit; note: string }>;
 
-export abstract class PaymentBaseModel implements GeneratedModel<PaymentJSON, PaymentFields> {
-  declare readonly [generatedModelWireBrand]: PaymentJSON;
-  declare readonly [generatedModelFieldsBrand]: PaymentFields;
-  declare id: PaymentFields["id"];
-  declare merchant: PaymentFields["merchant"];
-  declare billing: PaymentFields["billing"];
-  declare money: PaymentFields["money"];
-  declare note: PaymentFields["note"];
+export abstract class TPaymentBaseModel implements GeneratedModel<TPaymentJSON, TPaymentFields> {
+  declare readonly [generatedModelWireBrand]: TPaymentJSON;
+  declare readonly [generatedModelFieldsBrand]: TPaymentFields;
+  declare id: TPaymentFields["id"];
+  declare merchant: TPaymentFields["merchant"];
+  declare billing: TPaymentFields["billing"];
+  declare money: TPaymentFields["money"];
+  declare note: TPaymentFields["note"];
 
-  public constructor(values: PaymentInit = {}) {
+  public constructor(values: TPaymentInit = {}) {
     if (Object.prototype.hasOwnProperty.call(values, "id")) defineModelProperty(this, "id", values["id"]);
-    if (Object.prototype.hasOwnProperty.call(values, "merchant")) defineModelProperty(this, "merchant", initMerchant(values["merchant"]));
-    if (Object.prototype.hasOwnProperty.call(values, "billing")) defineModelProperty(this, "billing", initMerchantOmitId(values["billing"]));
-    if (Object.prototype.hasOwnProperty.call(values, "money")) defineModelProperty(this, "money", initMoney(values["money"]));
+    if (Object.prototype.hasOwnProperty.call(values, "merchant")) defineModelProperty(this, "merchant", initTMerchant(values["merchant"]));
+    if (Object.prototype.hasOwnProperty.call(values, "billing")) defineModelProperty(this, "billing", initTMerchantOmitId(values["billing"]));
+    if (Object.prototype.hasOwnProperty.call(values, "money")) defineModelProperty(this, "money", initTMoney(values["money"]));
     if (Object.prototype.hasOwnProperty.call(values, "note")) defineModelProperty(this, "note", values["note"]);
   }
 
 }
 
-function decodePaymentModel(constructor: GeneratedModelConstructor, json: unknown): PaymentBaseModel {
-  const values = modelObject(json, "PaymentBaseModel");
+function decodeTPaymentModel(constructor: GeneratedModelConstructor, json: unknown): TPaymentBaseModel {
+  const values = modelObject(json, "TPaymentBaseModel");
   const result: Record<string, unknown> = { ...values };
-  if (Object.prototype.hasOwnProperty.call(values, "merchant")) defineModelProperty(result, "merchant", convertModelField("deserialize", "merchant", () => (decodeMerchant(values["merchant"]))));
-  if (Object.prototype.hasOwnProperty.call(values, "billing")) defineModelProperty(result, "billing", convertModelField("deserialize", "billing", () => (decodeMerchantOmitId(values["billing"]))));
-  if (Object.prototype.hasOwnProperty.call(values, "money")) defineModelProperty(result, "money", convertModelField("deserialize", "money", () => (decodeMoney(values["money"]))));
-  return Reflect.construct(constructor, [result]) as PaymentBaseModel;
+  if (Object.prototype.hasOwnProperty.call(values, "merchant")) defineModelProperty(result, "merchant", convertModelField("deserialize", "merchant", () => (decodeTMerchant(values["merchant"]))));
+  if (Object.prototype.hasOwnProperty.call(values, "billing")) defineModelProperty(result, "billing", convertModelField("deserialize", "billing", () => (decodeTMerchantOmitId(values["billing"]))));
+  if (Object.prototype.hasOwnProperty.call(values, "money")) defineModelProperty(result, "money", convertModelField("deserialize", "money", () => (decodeTMoney(values["money"]))));
+  return Reflect.construct(constructor, [result]) as TPaymentBaseModel;
 }
 
-function encodePaymentModel(model: PaymentBaseModel): PaymentJSON {
+function encodeTPaymentModel(model: TPaymentBaseModel): TPaymentJSON {
   const result: Record<string, unknown> = {};
   if (Object.prototype.hasOwnProperty.call(model, "id")) defineModelProperty(result, "id", (model["id"]));
-  if (Object.prototype.hasOwnProperty.call(model, "merchant")) defineModelProperty(result, "merchant", (convertModelField("serialize", "merchant", () => (encodeMerchant(model["merchant"])))));
-  if (Object.prototype.hasOwnProperty.call(model, "billing")) defineModelProperty(result, "billing", (convertModelField("serialize", "billing", () => (encodeMerchantOmitId(model["billing"])))));
-  if (Object.prototype.hasOwnProperty.call(model, "money")) defineModelProperty(result, "money", (convertModelField("serialize", "money", () => (encodeMoney(model["money"])))));
+  if (Object.prototype.hasOwnProperty.call(model, "merchant")) defineModelProperty(result, "merchant", (convertModelField("serialize", "merchant", () => (encodeTMerchant(model["merchant"])))));
+  if (Object.prototype.hasOwnProperty.call(model, "billing")) defineModelProperty(result, "billing", (convertModelField("serialize", "billing", () => (encodeTMerchantOmitId(model["billing"])))));
+  if (Object.prototype.hasOwnProperty.call(model, "money")) defineModelProperty(result, "money", (convertModelField("serialize", "money", () => (encodeTMoney(model["money"])))));
   if (Object.prototype.hasOwnProperty.call(model, "note")) defineModelProperty(result, "note", (model["note"]));
-  return result as PaymentJSON;
+  return result as TPaymentJSON;
 }
 
-registerGeneratedModel(PaymentBaseModel, {
+registerGeneratedModel(TPaymentBaseModel, {
   fields: ["id", "merchant", "billing", "money", "note"],
   conversion: {
-    decode: (value, constructor) => decodePaymentModel(constructor ?? PaymentBaseModel, value),
-    encode: encodePaymentModel,
+    decode: (value, constructor) => decodeTPaymentModel(constructor ?? TPaymentBaseModel, value),
+    encode: encodeTPaymentModel,
   },
-  codecId: "Payment_dd0a0a3a",
+  codecId: "TPayment_76906c3a",
   profile: { validation: true, mobx: false },
 });
 
-registerIModelClass("Payment_dd0a0a3a", PaymentBaseModel);
+registerIModelClass("TPayment_76906c3a", TPaymentBaseModel);
 
 const objectAjvFast = createOpenApiSyncAjvEngine({ allErrors: false, validationBindings: {} });
 const objectAjvAll = createOpenApiSyncAjvEngine({ allErrors: true, validationBindings: {} });
 
-const __resolvedModelSchema_Merchant = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"Merchant_1d5f9479\",\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\"},\"name\":{\"allOf\":[{\"type\":\"string\"},{\"minLength\":2}]}},\"required\":[\"id\",\"name\"],\"additionalProperties\":false}") as object) as object;
-objectAjvFast.addSchema(structuredClone(__resolvedModelSchema_Merchant) as object, "Merchant_1d5f9479");
-objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_Merchant) as object, "Merchant_1d5f9479");
-const __resolvedModelSchema_Money = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"Money_48468300\",\"type\":\"object\",\"properties\":{\"amount\":{\"allOf\":[{\"type\":\"string\"},{\"pattern\":\"^[0-9]+(?:\\\\.[0-9]{1,2})?$\"}]},\"currency\":{\"anyOf\":[{\"const\":\"EUR\"},{\"const\":\"USD\"}]}},\"required\":[\"amount\",\"currency\"],\"additionalProperties\":false}") as object) as object;
-objectAjvFast.addSchema(structuredClone(__resolvedModelSchema_Money) as object, "Money_48468300");
-objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_Money) as object, "Money_48468300");
-const __resolvedModelSchema_MerchantOmitId = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"MerchantOmitId_aeec4ba8\",\"type\":\"object\",\"properties\":{\"name\":{\"allOf\":[{\"type\":\"string\"},{\"minLength\":2}]}},\"required\":[\"name\"],\"additionalProperties\":false}") as object) as object;
-objectAjvFast.addSchema(structuredClone(__resolvedModelSchema_MerchantOmitId) as object, "MerchantOmitId_aeec4ba8");
-objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_MerchantOmitId) as object, "MerchantOmitId_aeec4ba8");
-const __resolvedModelSchema_Payment = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"Payment_dd0a0a3a\",\"type\":\"object\",\"properties\":{\"billing\":{\"$ref\":\"#/$defs/MerchantOmitId_aeec4ba8\"},\"id\":{\"type\":\"string\"},\"merchant\":{\"$ref\":\"#/$defs/Merchant_1d5f9479\"},\"money\":{\"$ref\":\"#/$defs/Money_48468300\"},\"note\":{\"allOf\":[{\"type\":\"string\"},{\"maxLength\":140}]}},\"required\":[\"billing\",\"id\",\"merchant\",\"money\",\"note\"],\"additionalProperties\":false,\"$defs\":{\"MerchantOmitId_aeec4ba8\":{\"type\":\"object\",\"properties\":{\"name\":{\"allOf\":[{\"type\":\"string\"},{\"minLength\":2}]}},\"required\":[\"name\"],\"additionalProperties\":false},\"Merchant_1d5f9479\":{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\"},\"name\":{\"allOf\":[{\"type\":\"string\"},{\"minLength\":2}]}},\"required\":[\"id\",\"name\"],\"additionalProperties\":false},\"Money_48468300\":{\"type\":\"object\",\"properties\":{\"amount\":{\"allOf\":[{\"type\":\"string\"},{\"pattern\":\"^[0-9]+(?:\\\\.[0-9]{1,2})?$\"}]},\"currency\":{\"anyOf\":[{\"const\":\"EUR\"},{\"const\":\"USD\"}]}},\"required\":[\"amount\",\"currency\"],\"additionalProperties\":false}}}") as object) as object;
-objectAjvFast.addSchema(structuredClone(__resolvedModelSchema_Payment) as object, "Payment_dd0a0a3a");
-objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_Payment) as object, "Payment_dd0a0a3a");
-const __resolvedModelSchema_PaymentInput = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"PaymentInput_fa237a1b\",\"type\":\"object\",\"properties\":{\"billing\":{\"$ref\":\"#/$defs/MerchantOmitId_aeec4ba8\"},\"merchant\":{\"$ref\":\"#/$defs/Merchant_1d5f9479\"},\"money\":{\"$ref\":\"#/$defs/Money_48468300\"},\"note\":{\"allOf\":[{\"type\":\"string\"},{\"maxLength\":140}]}},\"required\":[\"billing\",\"merchant\",\"money\",\"note\"],\"additionalProperties\":false,\"$defs\":{\"MerchantOmitId_aeec4ba8\":{\"type\":\"object\",\"properties\":{\"name\":{\"allOf\":[{\"type\":\"string\"},{\"minLength\":2}]}},\"required\":[\"name\"],\"additionalProperties\":false},\"Merchant_1d5f9479\":{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\"},\"name\":{\"allOf\":[{\"type\":\"string\"},{\"minLength\":2}]}},\"required\":[\"id\",\"name\"],\"additionalProperties\":false},\"Money_48468300\":{\"type\":\"object\",\"properties\":{\"amount\":{\"allOf\":[{\"type\":\"string\"},{\"pattern\":\"^[0-9]+(?:\\\\.[0-9]{1,2})?$\"}]},\"currency\":{\"anyOf\":[{\"const\":\"EUR\"},{\"const\":\"USD\"}]}},\"required\":[\"amount\",\"currency\"],\"additionalProperties\":false}}}") as object) as object;
-objectAjvFast.addSchema(structuredClone(__resolvedModelSchema_PaymentInput) as object, "PaymentInput_fa237a1b");
-objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_PaymentInput) as object, "PaymentInput_fa237a1b");
-const __resolvedModelSchema_PaymentFilter = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"PaymentFilter_c6d9b450\",\"type\":\"object\",\"properties\":{\"limit\":{\"allOf\":[{\"type\":\"number\"},{\"type\":\"integer\",\"minimum\":1}]},\"status\":{\"anyOf\":[{\"const\":\"paid\"},{\"const\":\"pending\"},{\"type\":\"array\",\"items\":{\"anyOf\":[{\"const\":\"paid\"},{\"const\":\"pending\"}]}}]}},\"additionalProperties\":false}") as object) as object;
-objectAjvFast.addSchema(structuredClone(__resolvedModelSchema_PaymentFilter) as object, "PaymentFilter_c6d9b450");
-objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_PaymentFilter) as object, "PaymentFilter_c6d9b450");
+const __resolvedModelSchema_TMerchant = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"TMerchant_1d5f9479\",\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\"},\"name\":{\"allOf\":[{\"type\":\"string\"},{\"minLength\":2}]}},\"required\":[\"id\",\"name\"],\"additionalProperties\":false}") as object) as object;
+objectAjvFast.addSchema(structuredClone(__resolvedModelSchema_TMerchant) as object, "TMerchant_1d5f9479");
+objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_TMerchant) as object, "TMerchant_1d5f9479");
+const __resolvedModelSchema_TMoney = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"TMoney_48468300\",\"type\":\"object\",\"properties\":{\"amount\":{\"allOf\":[{\"type\":\"string\"},{\"pattern\":\"^[0-9]+(?:\\\\.[0-9]{1,2})?$\"}]},\"currency\":{\"anyOf\":[{\"const\":\"EUR\"},{\"const\":\"USD\"}]}},\"required\":[\"amount\",\"currency\"],\"additionalProperties\":false}") as object) as object;
+objectAjvFast.addSchema(structuredClone(__resolvedModelSchema_TMoney) as object, "TMoney_48468300");
+objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_TMoney) as object, "TMoney_48468300");
+const __resolvedModelSchema_TMerchantOmitId = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"TMerchantOmitId_aeec4ba8\",\"type\":\"object\",\"properties\":{\"name\":{\"allOf\":[{\"type\":\"string\"},{\"minLength\":2}]}},\"required\":[\"name\"],\"additionalProperties\":false}") as object) as object;
+objectAjvFast.addSchema(structuredClone(__resolvedModelSchema_TMerchantOmitId) as object, "TMerchantOmitId_aeec4ba8");
+objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_TMerchantOmitId) as object, "TMerchantOmitId_aeec4ba8");
+const __resolvedModelSchema_TPayment = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"TPayment_76906c3a\",\"type\":\"object\",\"properties\":{\"billing\":{\"$ref\":\"#/$defs/TMerchantOmitId_aeec4ba8\"},\"id\":{\"type\":\"string\"},\"merchant\":{\"$ref\":\"#/$defs/TMerchant_1d5f9479\"},\"money\":{\"$ref\":\"#/$defs/TMoney_48468300\"},\"note\":{\"allOf\":[{\"type\":\"string\"},{\"maxLength\":140}]}},\"required\":[\"billing\",\"id\",\"merchant\",\"money\",\"note\"],\"additionalProperties\":false,\"$defs\":{\"TMerchantOmitId_aeec4ba8\":{\"type\":\"object\",\"properties\":{\"name\":{\"allOf\":[{\"type\":\"string\"},{\"minLength\":2}]}},\"required\":[\"name\"],\"additionalProperties\":false},\"TMerchant_1d5f9479\":{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\"},\"name\":{\"allOf\":[{\"type\":\"string\"},{\"minLength\":2}]}},\"required\":[\"id\",\"name\"],\"additionalProperties\":false},\"TMoney_48468300\":{\"type\":\"object\",\"properties\":{\"amount\":{\"allOf\":[{\"type\":\"string\"},{\"pattern\":\"^[0-9]+(?:\\\\.[0-9]{1,2})?$\"}]},\"currency\":{\"anyOf\":[{\"const\":\"EUR\"},{\"const\":\"USD\"}]}},\"required\":[\"amount\",\"currency\"],\"additionalProperties\":false}}}") as object) as object;
+objectAjvFast.addSchema(structuredClone(__resolvedModelSchema_TPayment) as object, "TPayment_76906c3a");
+objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_TPayment) as object, "TPayment_76906c3a");
+const __resolvedModelSchema_TPaymentInput = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"TPaymentInput_eb1813cb\",\"type\":\"object\",\"properties\":{\"billing\":{\"$ref\":\"#/$defs/TMerchantOmitId_aeec4ba8\"},\"merchant\":{\"$ref\":\"#/$defs/TMerchant_1d5f9479\"},\"money\":{\"$ref\":\"#/$defs/TMoney_48468300\"},\"note\":{\"allOf\":[{\"type\":\"string\"},{\"maxLength\":140}]}},\"required\":[\"billing\",\"merchant\",\"money\",\"note\"],\"additionalProperties\":false,\"$defs\":{\"TMerchantOmitId_aeec4ba8\":{\"type\":\"object\",\"properties\":{\"name\":{\"allOf\":[{\"type\":\"string\"},{\"minLength\":2}]}},\"required\":[\"name\"],\"additionalProperties\":false},\"TMerchant_1d5f9479\":{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\"},\"name\":{\"allOf\":[{\"type\":\"string\"},{\"minLength\":2}]}},\"required\":[\"id\",\"name\"],\"additionalProperties\":false},\"TMoney_48468300\":{\"type\":\"object\",\"properties\":{\"amount\":{\"allOf\":[{\"type\":\"string\"},{\"pattern\":\"^[0-9]+(?:\\\\.[0-9]{1,2})?$\"}]},\"currency\":{\"anyOf\":[{\"const\":\"EUR\"},{\"const\":\"USD\"}]}},\"required\":[\"amount\",\"currency\"],\"additionalProperties\":false}}}") as object) as object;
+objectAjvFast.addSchema(structuredClone(__resolvedModelSchema_TPaymentInput) as object, "TPaymentInput_eb1813cb");
+objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_TPaymentInput) as object, "TPaymentInput_eb1813cb");
+const __resolvedModelSchema_TPaymentFilter = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"TPaymentFilter_c6d9b450\",\"type\":\"object\",\"properties\":{\"limit\":{\"allOf\":[{\"type\":\"number\"},{\"type\":\"integer\",\"minimum\":1}]},\"status\":{\"anyOf\":[{\"const\":\"paid\"},{\"const\":\"pending\"},{\"type\":\"array\",\"items\":{\"anyOf\":[{\"const\":\"paid\"},{\"const\":\"pending\"}]}}]}},\"additionalProperties\":false}") as object) as object;
+objectAjvFast.addSchema(structuredClone(__resolvedModelSchema_TPaymentFilter) as object, "TPaymentFilter_c6d9b450");
+objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_TPaymentFilter) as object, "TPaymentFilter_c6d9b450");
 
-const validateMerchantFast = requireAjvSchema(objectAjvFast.getSchema("Merchant_1d5f9479"), "Merchant_1d5f9479");
-const validateMerchantAll = requireAjvSchema(objectAjvAll.getSchema("Merchant_1d5f9479"), "Merchant_1d5f9479");
+const validateTMerchantFast = requireAjvSchema(objectAjvFast.getSchema("TMerchant_1d5f9479"), "TMerchant_1d5f9479");
+const validateTMerchantAll = requireAjvSchema(objectAjvAll.getSchema("TMerchant_1d5f9479"), "TMerchant_1d5f9479");
 
-function fillMerchant(out: Record<string, unknown>, wire: Record<string, unknown>, copyIdentity = true): Record<string, unknown> {
+function fillTMerchant(out: Record<string, unknown>, wire: Record<string, unknown>, copyIdentity = true): Record<string, unknown> {
   if (copyIdentity) {
     out["id"] = wire["id"];
     out["name"] = wire["name"];
@@ -124,22 +124,22 @@ function fillMerchant(out: Record<string, unknown>, wire: Record<string, unknown
   return out;
 }
 
-function stringifyMerchantCore(value: Record<string, unknown>): string {
+function stringifyTMerchantCore(value: Record<string, unknown>): string {
   return '{' + "\"id\":" + stringifyJsonString(value["id"] as string) + ",\"name\":" + stringifyJsonString(value["name"] as string) + '}';
 }
 
-export function stringifyMerchant(value: MerchantFields, options?: __GolemSerdeOptions): string {
+export function stringifyTMerchant(value: TMerchantFields, options?: __GolemSerdeOptions): string {
   const validates = serdeValidates(options, true);
   if (validates) {
-    assertMerchant(value, options);
+    assertTMerchant(value, options);
   }
-  return stringifyMerchantCore(value as never);
+  return stringifyTMerchantCore(value as never);
 }
 
-function convertFromWireMerchant(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
+function convertFromWireTMerchant(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
   const validates = serdeValidates(options, true);
   if (validates) {
-    assertMerchant(wire, options);
+    assertTMerchant(wire, options);
   }
   const source = isolated || wire === null || typeof wire !== 'object' ? wire : cloneConversionInput(wire);
   let result: unknown = source;
@@ -147,71 +147,71 @@ function convertFromWireMerchant(wire: unknown, options: __GolemSerdeOptions | u
     if (options?.construct) {
       result = Reflect.construct(options.construct, [{ ...(source as Record<string, unknown>) }]);
     } else {
-      result = fillMerchant({} as Record<string, unknown>, source as Record<string, unknown>);
+      result = fillTMerchant({} as Record<string, unknown>, source as Record<string, unknown>);
     }
   }
   return result;
 }
 
-export function fromWireFormatMerchant(wire: unknown, options?: __GolemSerdeOptions): MerchantFields {
-  return convertFromWireMerchant(wire, options, false) as MerchantFields;
+export function fromWireFormatTMerchant(wire: unknown, options?: __GolemSerdeOptions): TMerchantFields {
+  return convertFromWireTMerchant(wire, options, false) as TMerchantFields;
 }
 
-function toWireFormatMerchantCore(value: MerchantFields): MerchantJSON {
+function toWireFormatTMerchantCore(value: TMerchantFields): TMerchantJSON {
   const record = value as Record<string, unknown>;
   const wire = { ["id"]: record["id"], ["name"]: record["name"] };
-  return wire as MerchantJSON;
+  return wire as TMerchantJSON;
 }
 
-export function toWireFormatMerchant(value: MerchantFields, options?: __GolemSerdeOptions): MerchantJSON {
+export function toWireFormatTMerchant(value: TMerchantFields, options?: __GolemSerdeOptions): TMerchantJSON {
   const validates = serdeValidates(options, true);
   if (validates) {
-    assertMerchant(value, options);
+    assertTMerchant(value, options);
   }
-  return toWireFormatMerchantCore(value);
+  return toWireFormatTMerchantCore(value);
 }
 
-export function parseMerchant(text: string, options?: __GolemSerdeOptions): MerchantFields {
-  return convertFromWireMerchant(parseJson(text), options, true) as MerchantFields;
+export function parseTMerchant(text: string, options?: __GolemSerdeOptions): TMerchantFields {
+  return convertFromWireTMerchant(parseJson(text), options, true) as TMerchantFields;
 }
 
-export function validateMerchant(value: unknown, options?: __GolemValidateOptions): value is MerchantFields {
+export function validateTMerchant(value: unknown, options?: __GolemValidateOptions): value is TMerchantFields {
   const failFast = options?.failFast !== false;
   let ok: boolean;
   let errors: readonly unknown[] | null | undefined;
   if (options?.validationContext === undefined) {
-    const validator = failFast ? validateMerchantFast : validateMerchantAll;
+    const validator = failFast ? validateTMerchantFast : validateTMerchantAll;
     ok = validator(value);
     errors = validator.errors;
   } else {
-    const validator = resolveModelValidationContextValidator(options.validationContext, "Merchant_1d5f9479", failFast ? 'first' : 'all');
+    const validator = resolveModelValidationContextValidator(options.validationContext, "TMerchant_1d5f9479", failFast ? 'first' : 'all');
     ok = runSynchronousValidation(validator, value);
     errors = validator.errors;
   }
-  (validateMerchant as { errors?: unknown }).errors = errors;
+  (validateTMerchant as { errors?: unknown }).errors = errors;
   return ok;
 }
 
-export function assertMerchant(value: unknown, options?: __GolemValidateOptions): MerchantFields {
-  assertModelValue(value, options, validateMerchantFast, validateMerchantAll, "Merchant_1d5f9479", IssueRepresentation.Model, IssueSource.TypeScript);
-  return value as MerchantFields;
+export function assertTMerchant(value: unknown, options?: __GolemValidateOptions): TMerchantFields {
+  assertModelValue(value, options, validateTMerchantFast, validateTMerchantAll, "TMerchant_1d5f9479", IssueRepresentation.Model, IssueSource.TypeScript);
+  return value as TMerchantFields;
 }
 
-createObjectCodec("Merchant_1d5f9479", {
-  stringify: stringifyMerchant as (value: never, options?: __GolemSerdeOptions) => string,
-  parse: parseMerchant as (text: string, options?: __GolemSerdeOptions) => never,
-  validate: validateMerchant,
-  assert: assertMerchant,
-  toWireFormat: toWireFormatMerchant,
-  fromWireFormat: fromWireFormatMerchant,
-  schema: __resolvedModelSchema_Merchant,
+createObjectCodec("TMerchant_1d5f9479", {
+  stringify: stringifyTMerchant as (value: never, options?: __GolemSerdeOptions) => string,
+  parse: parseTMerchant as (text: string, options?: __GolemSerdeOptions) => never,
+  validate: validateTMerchant,
+  assert: assertTMerchant,
+  toWireFormat: toWireFormatTMerchant,
+  fromWireFormat: fromWireFormatTMerchant,
+  schema: __resolvedModelSchema_TMerchant,
   issueSource: IssueSource.TypeScript,
 });
 
-const validateMoneyFast = requireAjvSchema(objectAjvFast.getSchema("Money_48468300"), "Money_48468300");
-const validateMoneyAll = requireAjvSchema(objectAjvAll.getSchema("Money_48468300"), "Money_48468300");
+const validateTMoneyFast = requireAjvSchema(objectAjvFast.getSchema("TMoney_48468300"), "TMoney_48468300");
+const validateTMoneyAll = requireAjvSchema(objectAjvAll.getSchema("TMoney_48468300"), "TMoney_48468300");
 
-function fillMoney(out: Record<string, unknown>, wire: Record<string, unknown>, copyIdentity = true): Record<string, unknown> {
+function fillTMoney(out: Record<string, unknown>, wire: Record<string, unknown>, copyIdentity = true): Record<string, unknown> {
   if (copyIdentity) {
     out["amount"] = wire["amount"];
     out["currency"] = wire["currency"];
@@ -219,22 +219,22 @@ function fillMoney(out: Record<string, unknown>, wire: Record<string, unknown>, 
   return out;
 }
 
-function stringifyMoneyCore(value: Record<string, unknown>): string {
+function stringifyTMoneyCore(value: Record<string, unknown>): string {
   return '{' + "\"amount\":" + stringifyJsonString(value["amount"] as string) + ",\"currency\":" + stringifyJsonScalar(value["currency"] as never) + '}';
 }
 
-export function stringifyMoney(value: MoneyFields, options?: __GolemSerdeOptions): string {
+export function stringifyTMoney(value: TMoneyFields, options?: __GolemSerdeOptions): string {
   const validates = serdeValidates(options, true);
   if (validates) {
-    assertMoney(value, options);
+    assertTMoney(value, options);
   }
-  return stringifyMoneyCore(value as never);
+  return stringifyTMoneyCore(value as never);
 }
 
-function convertFromWireMoney(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
+function convertFromWireTMoney(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
   const validates = serdeValidates(options, true);
   if (validates) {
-    assertMoney(wire, options);
+    assertTMoney(wire, options);
   }
   const source = isolated || wire === null || typeof wire !== 'object' ? wire : cloneConversionInput(wire);
   let result: unknown = source;
@@ -242,93 +242,93 @@ function convertFromWireMoney(wire: unknown, options: __GolemSerdeOptions | unde
     if (options?.construct) {
       result = Reflect.construct(options.construct, [{ ...(source as Record<string, unknown>) }]);
     } else {
-      result = fillMoney({} as Record<string, unknown>, source as Record<string, unknown>);
+      result = fillTMoney({} as Record<string, unknown>, source as Record<string, unknown>);
     }
   }
   return result;
 }
 
-export function fromWireFormatMoney(wire: unknown, options?: __GolemSerdeOptions): MoneyFields {
-  return convertFromWireMoney(wire, options, false) as MoneyFields;
+export function fromWireFormatTMoney(wire: unknown, options?: __GolemSerdeOptions): TMoneyFields {
+  return convertFromWireTMoney(wire, options, false) as TMoneyFields;
 }
 
-function toWireFormatMoneyCore(value: MoneyFields): MoneyJSON {
+function toWireFormatTMoneyCore(value: TMoneyFields): TMoneyJSON {
   const record = value as Record<string, unknown>;
   const wire = { ["amount"]: record["amount"], ["currency"]: record["currency"] };
-  return wire as MoneyJSON;
+  return wire as TMoneyJSON;
 }
 
-export function toWireFormatMoney(value: MoneyFields, options?: __GolemSerdeOptions): MoneyJSON {
+export function toWireFormatTMoney(value: TMoneyFields, options?: __GolemSerdeOptions): TMoneyJSON {
   const validates = serdeValidates(options, true);
   if (validates) {
-    assertMoney(value, options);
+    assertTMoney(value, options);
   }
-  return toWireFormatMoneyCore(value);
+  return toWireFormatTMoneyCore(value);
 }
 
-export function parseMoney(text: string, options?: __GolemSerdeOptions): MoneyFields {
-  return convertFromWireMoney(parseJson(text), options, true) as MoneyFields;
+export function parseTMoney(text: string, options?: __GolemSerdeOptions): TMoneyFields {
+  return convertFromWireTMoney(parseJson(text), options, true) as TMoneyFields;
 }
 
-export function validateMoney(value: unknown, options?: __GolemValidateOptions): value is MoneyFields {
+export function validateTMoney(value: unknown, options?: __GolemValidateOptions): value is TMoneyFields {
   const failFast = options?.failFast !== false;
   let ok: boolean;
   let errors: readonly unknown[] | null | undefined;
   if (options?.validationContext === undefined) {
-    const validator = failFast ? validateMoneyFast : validateMoneyAll;
+    const validator = failFast ? validateTMoneyFast : validateTMoneyAll;
     ok = validator(value);
     errors = validator.errors;
   } else {
-    const validator = resolveModelValidationContextValidator(options.validationContext, "Money_48468300", failFast ? 'first' : 'all');
+    const validator = resolveModelValidationContextValidator(options.validationContext, "TMoney_48468300", failFast ? 'first' : 'all');
     ok = runSynchronousValidation(validator, value);
     errors = validator.errors;
   }
-  (validateMoney as { errors?: unknown }).errors = errors;
+  (validateTMoney as { errors?: unknown }).errors = errors;
   return ok;
 }
 
-export function assertMoney(value: unknown, options?: __GolemValidateOptions): MoneyFields {
-  assertModelValue(value, options, validateMoneyFast, validateMoneyAll, "Money_48468300", IssueRepresentation.Model, IssueSource.TypeScript);
-  return value as MoneyFields;
+export function assertTMoney(value: unknown, options?: __GolemValidateOptions): TMoneyFields {
+  assertModelValue(value, options, validateTMoneyFast, validateTMoneyAll, "TMoney_48468300", IssueRepresentation.Model, IssueSource.TypeScript);
+  return value as TMoneyFields;
 }
 
-createObjectCodec("Money_48468300", {
-  stringify: stringifyMoney as (value: never, options?: __GolemSerdeOptions) => string,
-  parse: parseMoney as (text: string, options?: __GolemSerdeOptions) => never,
-  validate: validateMoney,
-  assert: assertMoney,
-  toWireFormat: toWireFormatMoney,
-  fromWireFormat: fromWireFormatMoney,
-  schema: __resolvedModelSchema_Money,
+createObjectCodec("TMoney_48468300", {
+  stringify: stringifyTMoney as (value: never, options?: __GolemSerdeOptions) => string,
+  parse: parseTMoney as (text: string, options?: __GolemSerdeOptions) => never,
+  validate: validateTMoney,
+  assert: assertTMoney,
+  toWireFormat: toWireFormatTMoney,
+  fromWireFormat: fromWireFormatTMoney,
+  schema: __resolvedModelSchema_TMoney,
   issueSource: IssueSource.TypeScript,
 });
 
-const validateMerchantOmitIdFast = requireAjvSchema(objectAjvFast.getSchema("MerchantOmitId_aeec4ba8"), "MerchantOmitId_aeec4ba8");
-const validateMerchantOmitIdAll = requireAjvSchema(objectAjvAll.getSchema("MerchantOmitId_aeec4ba8"), "MerchantOmitId_aeec4ba8");
+const validateTMerchantOmitIdFast = requireAjvSchema(objectAjvFast.getSchema("TMerchantOmitId_aeec4ba8"), "TMerchantOmitId_aeec4ba8");
+const validateTMerchantOmitIdAll = requireAjvSchema(objectAjvAll.getSchema("TMerchantOmitId_aeec4ba8"), "TMerchantOmitId_aeec4ba8");
 
-function fillMerchantOmitId(out: Record<string, unknown>, wire: Record<string, unknown>, copyIdentity = true): Record<string, unknown> {
+function fillTMerchantOmitId(out: Record<string, unknown>, wire: Record<string, unknown>, copyIdentity = true): Record<string, unknown> {
   if (copyIdentity) {
     out["name"] = wire["name"];
   }
   return out;
 }
 
-function stringifyMerchantOmitIdCore(value: Record<string, unknown>): string {
+function stringifyTMerchantOmitIdCore(value: Record<string, unknown>): string {
   return '{' + "\"name\":" + stringifyJsonString(value["name"] as string) + '}';
 }
 
-function stringifyMerchantOmitId(value: MerchantOmitIdFields, options?: __GolemSerdeOptions): string {
+function stringifyTMerchantOmitId(value: TMerchantOmitIdFields, options?: __GolemSerdeOptions): string {
   const validates = serdeValidates(options, true);
   if (validates) {
-    assertMerchantOmitId(value, options);
+    assertTMerchantOmitId(value, options);
   }
-  return stringifyMerchantOmitIdCore(value as never);
+  return stringifyTMerchantOmitIdCore(value as never);
 }
 
-function convertFromWireMerchantOmitId(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
+function convertFromWireTMerchantOmitId(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
   const validates = serdeValidates(options, true);
   if (validates) {
-    assertMerchantOmitId(wire, options);
+    assertTMerchantOmitId(wire, options);
   }
   const source = isolated || wire === null || typeof wire !== 'object' ? wire : cloneConversionInput(wire);
   let result: unknown = source;
@@ -336,71 +336,71 @@ function convertFromWireMerchantOmitId(wire: unknown, options: __GolemSerdeOptio
     if (options?.construct) {
       result = Reflect.construct(options.construct, [{ ...(source as Record<string, unknown>) }]);
     } else {
-      result = fillMerchantOmitId({} as Record<string, unknown>, source as Record<string, unknown>);
+      result = fillTMerchantOmitId({} as Record<string, unknown>, source as Record<string, unknown>);
     }
   }
   return result;
 }
 
-function fromWireFormatMerchantOmitId(wire: unknown, options?: __GolemSerdeOptions): MerchantOmitIdFields {
-  return convertFromWireMerchantOmitId(wire, options, false) as MerchantOmitIdFields;
+function fromWireFormatTMerchantOmitId(wire: unknown, options?: __GolemSerdeOptions): TMerchantOmitIdFields {
+  return convertFromWireTMerchantOmitId(wire, options, false) as TMerchantOmitIdFields;
 }
 
-function toWireFormatMerchantOmitIdCore(value: MerchantOmitIdFields): MerchantOmitIdJSON {
+function toWireFormatTMerchantOmitIdCore(value: TMerchantOmitIdFields): TMerchantOmitIdJSON {
   const record = value as Record<string, unknown>;
   const wire = { ["name"]: record["name"] };
-  return wire as MerchantOmitIdJSON;
+  return wire as TMerchantOmitIdJSON;
 }
 
-function toWireFormatMerchantOmitId(value: MerchantOmitIdFields, options?: __GolemSerdeOptions): MerchantOmitIdJSON {
+function toWireFormatTMerchantOmitId(value: TMerchantOmitIdFields, options?: __GolemSerdeOptions): TMerchantOmitIdJSON {
   const validates = serdeValidates(options, true);
   if (validates) {
-    assertMerchantOmitId(value, options);
+    assertTMerchantOmitId(value, options);
   }
-  return toWireFormatMerchantOmitIdCore(value);
+  return toWireFormatTMerchantOmitIdCore(value);
 }
 
-function parseMerchantOmitId(text: string, options?: __GolemSerdeOptions): MerchantOmitIdFields {
-  return convertFromWireMerchantOmitId(parseJson(text), options, true) as MerchantOmitIdFields;
+function parseTMerchantOmitId(text: string, options?: __GolemSerdeOptions): TMerchantOmitIdFields {
+  return convertFromWireTMerchantOmitId(parseJson(text), options, true) as TMerchantOmitIdFields;
 }
 
-function validateMerchantOmitId(value: unknown, options?: __GolemValidateOptions): value is MerchantOmitIdFields {
+function validateTMerchantOmitId(value: unknown, options?: __GolemValidateOptions): value is TMerchantOmitIdFields {
   const failFast = options?.failFast !== false;
   let ok: boolean;
   let errors: readonly unknown[] | null | undefined;
   if (options?.validationContext === undefined) {
-    const validator = failFast ? validateMerchantOmitIdFast : validateMerchantOmitIdAll;
+    const validator = failFast ? validateTMerchantOmitIdFast : validateTMerchantOmitIdAll;
     ok = validator(value);
     errors = validator.errors;
   } else {
-    const validator = resolveModelValidationContextValidator(options.validationContext, "MerchantOmitId_aeec4ba8", failFast ? 'first' : 'all');
+    const validator = resolveModelValidationContextValidator(options.validationContext, "TMerchantOmitId_aeec4ba8", failFast ? 'first' : 'all');
     ok = runSynchronousValidation(validator, value);
     errors = validator.errors;
   }
-  (validateMerchantOmitId as { errors?: unknown }).errors = errors;
+  (validateTMerchantOmitId as { errors?: unknown }).errors = errors;
   return ok;
 }
 
-function assertMerchantOmitId(value: unknown, options?: __GolemValidateOptions): MerchantOmitIdFields {
-  assertModelValue(value, options, validateMerchantOmitIdFast, validateMerchantOmitIdAll, "MerchantOmitId_aeec4ba8", IssueRepresentation.Model, IssueSource.TypeScript);
-  return value as MerchantOmitIdFields;
+function assertTMerchantOmitId(value: unknown, options?: __GolemValidateOptions): TMerchantOmitIdFields {
+  assertModelValue(value, options, validateTMerchantOmitIdFast, validateTMerchantOmitIdAll, "TMerchantOmitId_aeec4ba8", IssueRepresentation.Model, IssueSource.TypeScript);
+  return value as TMerchantOmitIdFields;
 }
 
-createObjectCodec("MerchantOmitId_aeec4ba8", {
-  stringify: stringifyMerchantOmitId as (value: never, options?: __GolemSerdeOptions) => string,
-  parse: parseMerchantOmitId as (text: string, options?: __GolemSerdeOptions) => never,
-  validate: validateMerchantOmitId,
-  assert: assertMerchantOmitId,
-  toWireFormat: toWireFormatMerchantOmitId,
-  fromWireFormat: fromWireFormatMerchantOmitId,
-  schema: __resolvedModelSchema_MerchantOmitId,
+createObjectCodec("TMerchantOmitId_aeec4ba8", {
+  stringify: stringifyTMerchantOmitId as (value: never, options?: __GolemSerdeOptions) => string,
+  parse: parseTMerchantOmitId as (text: string, options?: __GolemSerdeOptions) => never,
+  validate: validateTMerchantOmitId,
+  assert: assertTMerchantOmitId,
+  toWireFormat: toWireFormatTMerchantOmitId,
+  fromWireFormat: fromWireFormatTMerchantOmitId,
+  schema: __resolvedModelSchema_TMerchantOmitId,
   issueSource: IssueSource.TypeScript,
 });
 
-const validatePaymentFast = requireAjvSchema(objectAjvFast.getSchema("Payment_dd0a0a3a"), "Payment_dd0a0a3a");
-const validatePaymentAll = requireAjvSchema(objectAjvAll.getSchema("Payment_dd0a0a3a"), "Payment_dd0a0a3a");
+const validateTPaymentFast = requireAjvSchema(objectAjvFast.getSchema("TPayment_76906c3a"), "TPayment_76906c3a");
+const validateTPaymentAll = requireAjvSchema(objectAjvAll.getSchema("TPayment_76906c3a"), "TPayment_76906c3a");
 
-function fillPayment(out: Record<string, unknown>, wire: Record<string, unknown>, copyIdentity = true): Record<string, unknown> {
+function fillTPayment(out: Record<string, unknown>, wire: Record<string, unknown>, copyIdentity = true): Record<string, unknown> {
   if (copyIdentity) {
     out["id"] = wire["id"];
     out["note"] = wire["note"];
@@ -417,94 +417,94 @@ function fillPayment(out: Record<string, unknown>, wire: Record<string, unknown>
   return out;
 }
 
-function stringifyPaymentCore(value: Record<string, unknown>): string {
-  return '{' + "\"id\":" + stringifyJsonString(value["id"] as string) + ",\"merchant\":" + stringifyMerchantCore(value["merchant"] as never) + ",\"billing\":" + stringifyMerchantOmitIdCore(value["billing"] as never) + ",\"money\":" + stringifyMoneyCore(value["money"] as never) + ",\"note\":" + stringifyJsonString(value["note"] as string) + '}';
+function stringifyTPaymentCore(value: Record<string, unknown>): string {
+  return '{' + "\"id\":" + stringifyJsonString(value["id"] as string) + ",\"merchant\":" + stringifyTMerchantCore(value["merchant"] as never) + ",\"billing\":" + stringifyTMerchantOmitIdCore(value["billing"] as never) + ",\"money\":" + stringifyTMoneyCore(value["money"] as never) + ",\"note\":" + stringifyJsonString(value["note"] as string) + '}';
 }
 
-export function stringifyPayment(value: PaymentFields, options?: __GolemSerdeOptions): string {
+export function stringifyTPayment(value: TPaymentFields, options?: __GolemSerdeOptions): string {
   const validates = serdeValidates(options, true);
   if (validates) {
-    assertPayment(value, options);
+    assertTPayment(value, options);
   }
-  return stringifyPaymentCore(value as never);
+  return stringifyTPaymentCore(value as never);
 }
 
-function convertFromWirePayment(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
+function convertFromWireTPayment(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
   const validates = serdeValidates(options, true);
   if (validates) {
-    assertPayment(wire, options);
+    assertTPayment(wire, options);
   }
   const source = isolated || wire === null || typeof wire !== 'object' ? wire : cloneConversionInput(wire);
   let result: unknown = source;
   if (source !== null && typeof source === 'object' && !Array.isArray(source)) {
     if (options?.construct) {
-      result = Reflect.construct(options.construct, [fillPayment({ ...(source as Record<string, unknown>) }, (source as Record<string, unknown>), false)]);
+      result = Reflect.construct(options.construct, [fillTPayment({ ...(source as Record<string, unknown>) }, (source as Record<string, unknown>), false)]);
     } else {
-      result = fillPayment({} as Record<string, unknown>, source as Record<string, unknown>);
+      result = fillTPayment({} as Record<string, unknown>, source as Record<string, unknown>);
     }
   }
   return result;
 }
 
-export function fromWireFormatPayment(wire: unknown, options?: __GolemSerdeOptions): PaymentFields {
-  return convertFromWirePayment(wire, options, false) as PaymentFields;
+export function fromWireFormatTPayment(wire: unknown, options?: __GolemSerdeOptions): TPaymentFields {
+  return convertFromWireTPayment(wire, options, false) as TPaymentFields;
 }
 
-function toWireFormatPaymentCore(value: PaymentFields): PaymentJSON {
+function toWireFormatTPaymentCore(value: TPaymentFields): TPaymentJSON {
   const record = value as Record<string, unknown>;
-  const wire = { ["id"]: record["id"], ["merchant"]: toWireFormatMerchantCore(record["merchant"] as never), ["billing"]: toWireFormatMerchantOmitIdCore(record["billing"] as never), ["money"]: toWireFormatMoneyCore(record["money"] as never), ["note"]: record["note"] };
-  return wire as PaymentJSON;
+  const wire = { ["id"]: record["id"], ["merchant"]: toWireFormatTMerchantCore(record["merchant"] as never), ["billing"]: toWireFormatTMerchantOmitIdCore(record["billing"] as never), ["money"]: toWireFormatTMoneyCore(record["money"] as never), ["note"]: record["note"] };
+  return wire as TPaymentJSON;
 }
 
-export function toWireFormatPayment(value: PaymentFields, options?: __GolemSerdeOptions): PaymentJSON {
+export function toWireFormatTPayment(value: TPaymentFields, options?: __GolemSerdeOptions): TPaymentJSON {
   const validates = serdeValidates(options, true);
   if (validates) {
-    assertPayment(value, options);
+    assertTPayment(value, options);
   }
-  return toWireFormatPaymentCore(value);
+  return toWireFormatTPaymentCore(value);
 }
 
-export function parsePayment(text: string, options?: __GolemSerdeOptions): PaymentFields {
-  return convertFromWirePayment(parseJson(text), options, true) as PaymentFields;
+export function parseTPayment(text: string, options?: __GolemSerdeOptions): TPaymentFields {
+  return convertFromWireTPayment(parseJson(text), options, true) as TPaymentFields;
 }
 
-export function validatePayment(value: unknown, options?: __GolemValidateOptions): value is PaymentFields {
+export function validateTPayment(value: unknown, options?: __GolemValidateOptions): value is TPaymentFields {
   const failFast = options?.failFast !== false;
   let ok: boolean;
   let errors: readonly unknown[] | null | undefined;
   if (options?.validationContext === undefined) {
-    const validator = failFast ? validatePaymentFast : validatePaymentAll;
+    const validator = failFast ? validateTPaymentFast : validateTPaymentAll;
     ok = validator(value);
     errors = validator.errors;
   } else {
-    const validator = resolveModelValidationContextValidator(options.validationContext, "Payment_dd0a0a3a", failFast ? 'first' : 'all');
+    const validator = resolveModelValidationContextValidator(options.validationContext, "TPayment_76906c3a", failFast ? 'first' : 'all');
     ok = runSynchronousValidation(validator, value);
     errors = validator.errors;
   }
-  (validatePayment as { errors?: unknown }).errors = errors;
+  (validateTPayment as { errors?: unknown }).errors = errors;
   return ok;
 }
 
-export function assertPayment(value: unknown, options?: __GolemValidateOptions): PaymentFields {
-  assertModelValue(value, options, validatePaymentFast, validatePaymentAll, "Payment_dd0a0a3a", IssueRepresentation.Model, IssueSource.TypeScript);
-  return value as PaymentFields;
+export function assertTPayment(value: unknown, options?: __GolemValidateOptions): TPaymentFields {
+  assertModelValue(value, options, validateTPaymentFast, validateTPaymentAll, "TPayment_76906c3a", IssueRepresentation.Model, IssueSource.TypeScript);
+  return value as TPaymentFields;
 }
 
-createObjectCodec("Payment_dd0a0a3a", {
-  stringify: stringifyPayment as (value: never, options?: __GolemSerdeOptions) => string,
-  parse: parsePayment as (text: string, options?: __GolemSerdeOptions) => never,
-  validate: validatePayment,
-  assert: assertPayment,
-  toWireFormat: toWireFormatPayment,
-  fromWireFormat: fromWireFormatPayment,
-  schema: __resolvedModelSchema_Payment,
+createObjectCodec("TPayment_76906c3a", {
+  stringify: stringifyTPayment as (value: never, options?: __GolemSerdeOptions) => string,
+  parse: parseTPayment as (text: string, options?: __GolemSerdeOptions) => never,
+  validate: validateTPayment,
+  assert: assertTPayment,
+  toWireFormat: toWireFormatTPayment,
+  fromWireFormat: fromWireFormatTPayment,
+  schema: __resolvedModelSchema_TPayment,
   issueSource: IssueSource.TypeScript,
 });
 
-const validatePaymentInputFast = requireAjvSchema(objectAjvFast.getSchema("PaymentInput_fa237a1b"), "PaymentInput_fa237a1b");
-const validatePaymentInputAll = requireAjvSchema(objectAjvAll.getSchema("PaymentInput_fa237a1b"), "PaymentInput_fa237a1b");
+const validateTPaymentInputFast = requireAjvSchema(objectAjvFast.getSchema("TPaymentInput_eb1813cb"), "TPaymentInput_eb1813cb");
+const validateTPaymentInputAll = requireAjvSchema(objectAjvAll.getSchema("TPaymentInput_eb1813cb"), "TPaymentInput_eb1813cb");
 
-function fillPaymentInput(out: Record<string, unknown>, wire: Record<string, unknown>, copyIdentity = true): Record<string, unknown> {
+function fillTPaymentInput(out: Record<string, unknown>, wire: Record<string, unknown>, copyIdentity = true): Record<string, unknown> {
   if (copyIdentity) {
     out["note"] = wire["note"];
   }
@@ -520,94 +520,94 @@ function fillPaymentInput(out: Record<string, unknown>, wire: Record<string, unk
   return out;
 }
 
-function stringifyPaymentInputCore(value: Record<string, unknown>): string {
-  return '{' + "\"merchant\":" + stringifyMerchantCore(value["merchant"] as never) + ",\"billing\":" + stringifyMerchantOmitIdCore(value["billing"] as never) + ",\"money\":" + stringifyMoneyCore(value["money"] as never) + ",\"note\":" + stringifyJsonString(value["note"] as string) + '}';
+function stringifyTPaymentInputCore(value: Record<string, unknown>): string {
+  return '{' + "\"merchant\":" + stringifyTMerchantCore(value["merchant"] as never) + ",\"billing\":" + stringifyTMerchantOmitIdCore(value["billing"] as never) + ",\"money\":" + stringifyTMoneyCore(value["money"] as never) + ",\"note\":" + stringifyJsonString(value["note"] as string) + '}';
 }
 
-export function stringifyPaymentInput(value: PaymentInputFields, options?: __GolemSerdeOptions): string {
+export function stringifyTPaymentInput(value: TPaymentInputFields, options?: __GolemSerdeOptions): string {
   const validates = serdeValidates(options, true);
   if (validates) {
-    assertPaymentInput(value, options);
+    assertTPaymentInput(value, options);
   }
-  return stringifyPaymentInputCore(value as never);
+  return stringifyTPaymentInputCore(value as never);
 }
 
-function convertFromWirePaymentInput(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
+function convertFromWireTPaymentInput(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
   const validates = serdeValidates(options, true);
   if (validates) {
-    assertPaymentInput(wire, options);
+    assertTPaymentInput(wire, options);
   }
   const source = isolated || wire === null || typeof wire !== 'object' ? wire : cloneConversionInput(wire);
   let result: unknown = source;
   if (source !== null && typeof source === 'object' && !Array.isArray(source)) {
     if (options?.construct) {
-      result = Reflect.construct(options.construct, [fillPaymentInput({ ...(source as Record<string, unknown>) }, (source as Record<string, unknown>), false)]);
+      result = Reflect.construct(options.construct, [fillTPaymentInput({ ...(source as Record<string, unknown>) }, (source as Record<string, unknown>), false)]);
     } else {
-      result = fillPaymentInput({} as Record<string, unknown>, source as Record<string, unknown>);
+      result = fillTPaymentInput({} as Record<string, unknown>, source as Record<string, unknown>);
     }
   }
   return result;
 }
 
-export function fromWireFormatPaymentInput(wire: unknown, options?: __GolemSerdeOptions): PaymentInputFields {
-  return convertFromWirePaymentInput(wire, options, false) as PaymentInputFields;
+export function fromWireFormatTPaymentInput(wire: unknown, options?: __GolemSerdeOptions): TPaymentInputFields {
+  return convertFromWireTPaymentInput(wire, options, false) as TPaymentInputFields;
 }
 
-function toWireFormatPaymentInputCore(value: PaymentInputFields): PaymentInputJSON {
+function toWireFormatTPaymentInputCore(value: TPaymentInputFields): TPaymentInputJSON {
   const record = value as Record<string, unknown>;
-  const wire = { ["merchant"]: toWireFormatMerchantCore(record["merchant"] as never), ["billing"]: toWireFormatMerchantOmitIdCore(record["billing"] as never), ["money"]: toWireFormatMoneyCore(record["money"] as never), ["note"]: record["note"] };
-  return wire as PaymentInputJSON;
+  const wire = { ["merchant"]: toWireFormatTMerchantCore(record["merchant"] as never), ["billing"]: toWireFormatTMerchantOmitIdCore(record["billing"] as never), ["money"]: toWireFormatTMoneyCore(record["money"] as never), ["note"]: record["note"] };
+  return wire as TPaymentInputJSON;
 }
 
-export function toWireFormatPaymentInput(value: PaymentInputFields, options?: __GolemSerdeOptions): PaymentInputJSON {
+export function toWireFormatTPaymentInput(value: TPaymentInputFields, options?: __GolemSerdeOptions): TPaymentInputJSON {
   const validates = serdeValidates(options, true);
   if (validates) {
-    assertPaymentInput(value, options);
+    assertTPaymentInput(value, options);
   }
-  return toWireFormatPaymentInputCore(value);
+  return toWireFormatTPaymentInputCore(value);
 }
 
-export function parsePaymentInput(text: string, options?: __GolemSerdeOptions): PaymentInputFields {
-  return convertFromWirePaymentInput(parseJson(text), options, true) as PaymentInputFields;
+export function parseTPaymentInput(text: string, options?: __GolemSerdeOptions): TPaymentInputFields {
+  return convertFromWireTPaymentInput(parseJson(text), options, true) as TPaymentInputFields;
 }
 
-export function validatePaymentInput(value: unknown, options?: __GolemValidateOptions): value is PaymentInputFields {
+export function validateTPaymentInput(value: unknown, options?: __GolemValidateOptions): value is TPaymentInputFields {
   const failFast = options?.failFast !== false;
   let ok: boolean;
   let errors: readonly unknown[] | null | undefined;
   if (options?.validationContext === undefined) {
-    const validator = failFast ? validatePaymentInputFast : validatePaymentInputAll;
+    const validator = failFast ? validateTPaymentInputFast : validateTPaymentInputAll;
     ok = validator(value);
     errors = validator.errors;
   } else {
-    const validator = resolveModelValidationContextValidator(options.validationContext, "PaymentInput_fa237a1b", failFast ? 'first' : 'all');
+    const validator = resolveModelValidationContextValidator(options.validationContext, "TPaymentInput_eb1813cb", failFast ? 'first' : 'all');
     ok = runSynchronousValidation(validator, value);
     errors = validator.errors;
   }
-  (validatePaymentInput as { errors?: unknown }).errors = errors;
+  (validateTPaymentInput as { errors?: unknown }).errors = errors;
   return ok;
 }
 
-export function assertPaymentInput(value: unknown, options?: __GolemValidateOptions): PaymentInputFields {
-  assertModelValue(value, options, validatePaymentInputFast, validatePaymentInputAll, "PaymentInput_fa237a1b", IssueRepresentation.Model, IssueSource.TypeScript);
-  return value as PaymentInputFields;
+export function assertTPaymentInput(value: unknown, options?: __GolemValidateOptions): TPaymentInputFields {
+  assertModelValue(value, options, validateTPaymentInputFast, validateTPaymentInputAll, "TPaymentInput_eb1813cb", IssueRepresentation.Model, IssueSource.TypeScript);
+  return value as TPaymentInputFields;
 }
 
-createObjectCodec("PaymentInput_fa237a1b", {
-  stringify: stringifyPaymentInput as (value: never, options?: __GolemSerdeOptions) => string,
-  parse: parsePaymentInput as (text: string, options?: __GolemSerdeOptions) => never,
-  validate: validatePaymentInput,
-  assert: assertPaymentInput,
-  toWireFormat: toWireFormatPaymentInput,
-  fromWireFormat: fromWireFormatPaymentInput,
-  schema: __resolvedModelSchema_PaymentInput,
+createObjectCodec("TPaymentInput_eb1813cb", {
+  stringify: stringifyTPaymentInput as (value: never, options?: __GolemSerdeOptions) => string,
+  parse: parseTPaymentInput as (text: string, options?: __GolemSerdeOptions) => never,
+  validate: validateTPaymentInput,
+  assert: assertTPaymentInput,
+  toWireFormat: toWireFormatTPaymentInput,
+  fromWireFormat: fromWireFormatTPaymentInput,
+  schema: __resolvedModelSchema_TPaymentInput,
   issueSource: IssueSource.TypeScript,
 });
 
-const validatePaymentFilterFast = requireAjvSchema(objectAjvFast.getSchema("PaymentFilter_c6d9b450"), "PaymentFilter_c6d9b450");
-const validatePaymentFilterAll = requireAjvSchema(objectAjvAll.getSchema("PaymentFilter_c6d9b450"), "PaymentFilter_c6d9b450");
+const validateTPaymentFilterFast = requireAjvSchema(objectAjvFast.getSchema("TPaymentFilter_c6d9b450"), "TPaymentFilter_c6d9b450");
+const validateTPaymentFilterAll = requireAjvSchema(objectAjvAll.getSchema("TPaymentFilter_c6d9b450"), "TPaymentFilter_c6d9b450");
 
-function fillPaymentFilter(out: Record<string, unknown>, wire: Record<string, unknown>, copyIdentity = true): Record<string, unknown> {
+function fillTPaymentFilter(out: Record<string, unknown>, wire: Record<string, unknown>, copyIdentity = true): Record<string, unknown> {
   if (copyIdentity) {
     if (Object.prototype.hasOwnProperty.call(wire, "limit")) {
       out["limit"] = wire["limit"];
@@ -619,7 +619,7 @@ function fillPaymentFilter(out: Record<string, unknown>, wire: Record<string, un
   return out;
 }
 
-function stringifyPaymentFilterCore(value: Record<string, unknown>): string {
+function stringifyTPaymentFilterCore(value: Record<string, unknown>): string {
   let out = '{';
   let sep = false;
   const __golemField0 = value["limit"];
@@ -639,18 +639,18 @@ function stringifyPaymentFilterCore(value: Record<string, unknown>): string {
   return out + '}';
 }
 
-export function stringifyPaymentFilter(value: PaymentFilterFields, options?: __GolemSerdeOptions): string {
+export function stringifyTPaymentFilter(value: TPaymentFilterFields, options?: __GolemSerdeOptions): string {
   const validates = serdeValidates(options, true);
   if (validates) {
-    assertPaymentFilter(value, options);
+    assertTPaymentFilter(value, options);
   }
-  return stringifyPaymentFilterCore(value as never);
+  return stringifyTPaymentFilterCore(value as never);
 }
 
-function convertFromWirePaymentFilter(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
+function convertFromWireTPaymentFilter(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
   const validates = serdeValidates(options, true);
   if (validates) {
-    assertPaymentFilter(wire, options);
+    assertTPaymentFilter(wire, options);
   }
   const source = isolated || wire === null || typeof wire !== 'object' ? wire : cloneConversionInput(wire);
   let result: unknown = source;
@@ -658,65 +658,65 @@ function convertFromWirePaymentFilter(wire: unknown, options: __GolemSerdeOption
     if (options?.construct) {
       result = Reflect.construct(options.construct, [{ ...(source as Record<string, unknown>) }]);
     } else {
-      result = fillPaymentFilter({} as Record<string, unknown>, source as Record<string, unknown>);
+      result = fillTPaymentFilter({} as Record<string, unknown>, source as Record<string, unknown>);
     }
   }
   return result;
 }
 
-export function fromWireFormatPaymentFilter(wire: unknown, options?: __GolemSerdeOptions): PaymentFilterFields {
-  return convertFromWirePaymentFilter(wire, options, false) as PaymentFilterFields;
+export function fromWireFormatTPaymentFilter(wire: unknown, options?: __GolemSerdeOptions): TPaymentFilterFields {
+  return convertFromWireTPaymentFilter(wire, options, false) as TPaymentFilterFields;
 }
 
-function toWireFormatPaymentFilterCore(value: PaymentFilterFields): PaymentFilterJSON {
+function toWireFormatTPaymentFilterCore(value: TPaymentFilterFields): TPaymentFilterJSON {
   const record = value as Record<string, unknown>;
   let __golemField0: unknown;
   let __golemField1: unknown;
   const wire = { ...(__golemField0 = record["limit"], (__golemField0 !== undefined ? { ["limit"]: __golemField0 } : undefined)), ...(__golemField1 = record["status"], (__golemField1 !== undefined ? { ["status"]: __golemField1 } : undefined)) };
-  return wire as PaymentFilterJSON;
+  return wire as TPaymentFilterJSON;
 }
 
-export function toWireFormatPaymentFilter(value: PaymentFilterFields, options?: __GolemSerdeOptions): PaymentFilterJSON {
+export function toWireFormatTPaymentFilter(value: TPaymentFilterFields, options?: __GolemSerdeOptions): TPaymentFilterJSON {
   const validates = serdeValidates(options, true);
   if (validates) {
-    assertPaymentFilter(value, options);
+    assertTPaymentFilter(value, options);
   }
-  return toWireFormatPaymentFilterCore(value);
+  return toWireFormatTPaymentFilterCore(value);
 }
 
-export function parsePaymentFilter(text: string, options?: __GolemSerdeOptions): PaymentFilterFields {
-  return convertFromWirePaymentFilter(parseJson(text), options, true) as PaymentFilterFields;
+export function parseTPaymentFilter(text: string, options?: __GolemSerdeOptions): TPaymentFilterFields {
+  return convertFromWireTPaymentFilter(parseJson(text), options, true) as TPaymentFilterFields;
 }
 
-export function validatePaymentFilter(value: unknown, options?: __GolemValidateOptions): value is PaymentFilterFields {
+export function validateTPaymentFilter(value: unknown, options?: __GolemValidateOptions): value is TPaymentFilterFields {
   const failFast = options?.failFast !== false;
   let ok: boolean;
   let errors: readonly unknown[] | null | undefined;
   if (options?.validationContext === undefined) {
-    const validator = failFast ? validatePaymentFilterFast : validatePaymentFilterAll;
+    const validator = failFast ? validateTPaymentFilterFast : validateTPaymentFilterAll;
     ok = validator(value);
     errors = validator.errors;
   } else {
-    const validator = resolveModelValidationContextValidator(options.validationContext, "PaymentFilter_c6d9b450", failFast ? 'first' : 'all');
+    const validator = resolveModelValidationContextValidator(options.validationContext, "TPaymentFilter_c6d9b450", failFast ? 'first' : 'all');
     ok = runSynchronousValidation(validator, value);
     errors = validator.errors;
   }
-  (validatePaymentFilter as { errors?: unknown }).errors = errors;
+  (validateTPaymentFilter as { errors?: unknown }).errors = errors;
   return ok;
 }
 
-export function assertPaymentFilter(value: unknown, options?: __GolemValidateOptions): PaymentFilterFields {
-  assertModelValue(value, options, validatePaymentFilterFast, validatePaymentFilterAll, "PaymentFilter_c6d9b450", IssueRepresentation.Model, IssueSource.TypeScript);
-  return value as PaymentFilterFields;
+export function assertTPaymentFilter(value: unknown, options?: __GolemValidateOptions): TPaymentFilterFields {
+  assertModelValue(value, options, validateTPaymentFilterFast, validateTPaymentFilterAll, "TPaymentFilter_c6d9b450", IssueRepresentation.Model, IssueSource.TypeScript);
+  return value as TPaymentFilterFields;
 }
 
-createObjectCodec("PaymentFilter_c6d9b450", {
-  stringify: stringifyPaymentFilter as (value: never, options?: __GolemSerdeOptions) => string,
-  parse: parsePaymentFilter as (text: string, options?: __GolemSerdeOptions) => never,
-  validate: validatePaymentFilter,
-  assert: assertPaymentFilter,
-  toWireFormat: toWireFormatPaymentFilter,
-  fromWireFormat: fromWireFormatPaymentFilter,
-  schema: __resolvedModelSchema_PaymentFilter,
+createObjectCodec("TPaymentFilter_c6d9b450", {
+  stringify: stringifyTPaymentFilter as (value: never, options?: __GolemSerdeOptions) => string,
+  parse: parseTPaymentFilter as (text: string, options?: __GolemSerdeOptions) => never,
+  validate: validateTPaymentFilter,
+  assert: assertTPaymentFilter,
+  toWireFormat: toWireFormatTPaymentFilter,
+  fromWireFormat: fromWireFormatTPaymentFilter,
+  schema: __resolvedModelSchema_TPaymentFilter,
   issueSource: IssueSource.TypeScript,
 });

@@ -8,77 +8,77 @@ function modelObject(json: unknown, name: string): Record<string, unknown> {
   return requireModelObject(json, name);
 }
 
-export type PaymentDraftFields = { note: string };
-export type PaymentDraftJSON = { note: string };
-export type PaymentDraftInit = Partial<{ note: string }>;
+export type TPaymentDraftFields = { note: string };
+export type TPaymentDraftJSON = { note: string };
+export type TPaymentDraftInit = Partial<{ note: string }>;
 
-export abstract class PaymentDraftBaseModel implements GeneratedModel<PaymentDraftJSON, PaymentDraftFields> {
-  declare readonly [generatedModelWireBrand]: PaymentDraftJSON;
-  declare readonly [generatedModelFieldsBrand]: PaymentDraftFields;
-  declare note: PaymentDraftFields["note"];
+export abstract class TPaymentDraftBaseModel implements GeneratedModel<TPaymentDraftJSON, TPaymentDraftFields> {
+  declare readonly [generatedModelWireBrand]: TPaymentDraftJSON;
+  declare readonly [generatedModelFieldsBrand]: TPaymentDraftFields;
+  declare note: TPaymentDraftFields["note"];
 
-  public constructor(values: PaymentDraftInit = {}) {
+  public constructor(values: TPaymentDraftInit = {}) {
     if (Object.prototype.hasOwnProperty.call(values, "note")) defineModelProperty(this, "note", values["note"]);
   }
 
 }
 
-function decodePaymentDraftModel(constructor: GeneratedModelConstructor, json: unknown): PaymentDraftBaseModel {
-  const values = modelObject(json, "PaymentDraftBaseModel");
-  return Reflect.construct(constructor, [values]) as PaymentDraftBaseModel;
+function decodeTPaymentDraftModel(constructor: GeneratedModelConstructor, json: unknown): TPaymentDraftBaseModel {
+  const values = modelObject(json, "TPaymentDraftBaseModel");
+  return Reflect.construct(constructor, [values]) as TPaymentDraftBaseModel;
 }
 
-function encodePaymentDraftModel(model: PaymentDraftBaseModel): PaymentDraftJSON {
+function encodeTPaymentDraftModel(model: TPaymentDraftBaseModel): TPaymentDraftJSON {
   const result: Record<string, unknown> = {};
   if (Object.prototype.hasOwnProperty.call(model, "note")) defineModelProperty(result, "note", (model["note"]));
-  return result as PaymentDraftJSON;
+  return result as TPaymentDraftJSON;
 }
 
-registerGeneratedModel(PaymentDraftBaseModel, {
+registerGeneratedModel(TPaymentDraftBaseModel, {
   fields: ["note"],
   conversion: {
-    decode: (value, constructor) => decodePaymentDraftModel(constructor ?? PaymentDraftBaseModel, value),
-    encode: encodePaymentDraftModel,
+    decode: (value, constructor) => decodeTPaymentDraftModel(constructor ?? TPaymentDraftBaseModel, value),
+    encode: encodeTPaymentDraftModel,
   },
-  codecId: "PaymentDraft_a427e4ae",
+  codecId: "TPaymentDraft_a427e4ae",
   profile: { validation: true, mobx: false },
 });
 
-registerIModelClass("PaymentDraft_a427e4ae", PaymentDraftBaseModel);
+registerIModelClass("TPaymentDraft_a427e4ae", TPaymentDraftBaseModel);
 
 const objectAjvFast = createOpenApiSyncAjvEngine({ allErrors: false, validationBindings: {} });
 const objectAjvAll = createOpenApiSyncAjvEngine({ allErrors: true, validationBindings: {} });
 
-const __resolvedModelSchema_PaymentDraft = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"PaymentDraft_a427e4ae\",\"type\":\"object\",\"properties\":{\"note\":{\"allOf\":[{\"type\":\"string\"},{\"minLength\":2}]}},\"required\":[\"note\"],\"additionalProperties\":false}") as object) as object;
-objectAjvFast.addSchema(structuredClone(__resolvedModelSchema_PaymentDraft) as object, "PaymentDraft_a427e4ae");
-objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_PaymentDraft) as object, "PaymentDraft_a427e4ae");
+const __resolvedModelSchema_TPaymentDraft = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"TPaymentDraft_a427e4ae\",\"type\":\"object\",\"properties\":{\"note\":{\"allOf\":[{\"type\":\"string\"},{\"minLength\":2}]}},\"required\":[\"note\"],\"additionalProperties\":false}") as object) as object;
+objectAjvFast.addSchema(structuredClone(__resolvedModelSchema_TPaymentDraft) as object, "TPaymentDraft_a427e4ae");
+objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_TPaymentDraft) as object, "TPaymentDraft_a427e4ae");
 
-const validatePaymentDraftFast = requireAjvSchema(objectAjvFast.getSchema("PaymentDraft_a427e4ae"), "PaymentDraft_a427e4ae");
-const validatePaymentDraftAll = requireAjvSchema(objectAjvAll.getSchema("PaymentDraft_a427e4ae"), "PaymentDraft_a427e4ae");
+const validateTPaymentDraftFast = requireAjvSchema(objectAjvFast.getSchema("TPaymentDraft_a427e4ae"), "TPaymentDraft_a427e4ae");
+const validateTPaymentDraftAll = requireAjvSchema(objectAjvAll.getSchema("TPaymentDraft_a427e4ae"), "TPaymentDraft_a427e4ae");
 
-function fillPaymentDraft(out: Record<string, unknown>, wire: Record<string, unknown>, copyIdentity = true): Record<string, unknown> {
+function fillTPaymentDraft(out: Record<string, unknown>, wire: Record<string, unknown>, copyIdentity = true): Record<string, unknown> {
   if (copyIdentity) {
     out["note"] = wire["note"];
   }
   return out;
 }
 
-function stringifyPaymentDraftCore(value: Record<string, unknown>): string {
+function stringifyTPaymentDraftCore(value: Record<string, unknown>): string {
   return '{' + "\"note\":" + stringifyJsonString(value["note"] as string) + '}';
 }
 
-export function stringifyPaymentDraft(value: PaymentDraftFields, options?: __GolemSerdeOptions): string {
+export function stringifyTPaymentDraft(value: TPaymentDraftFields, options?: __GolemSerdeOptions): string {
   const validates = serdeValidates(options, true);
   if (validates) {
-    assertPaymentDraft(value, options);
+    assertTPaymentDraft(value, options);
   }
-  return stringifyPaymentDraftCore(value as never);
+  return stringifyTPaymentDraftCore(value as never);
 }
 
-function convertFromWirePaymentDraft(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
+function convertFromWireTPaymentDraft(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
   const validates = serdeValidates(options, true);
   if (validates) {
-    assertPaymentDraft(wire, options);
+    assertTPaymentDraft(wire, options);
   }
   const source = isolated || wire === null || typeof wire !== 'object' ? wire : cloneConversionInput(wire);
   let result: unknown = source;
@@ -86,63 +86,63 @@ function convertFromWirePaymentDraft(wire: unknown, options: __GolemSerdeOptions
     if (options?.construct) {
       result = Reflect.construct(options.construct, [{ ...(source as Record<string, unknown>) }]);
     } else {
-      result = fillPaymentDraft({} as Record<string, unknown>, source as Record<string, unknown>);
+      result = fillTPaymentDraft({} as Record<string, unknown>, source as Record<string, unknown>);
     }
   }
   return result;
 }
 
-export function fromWireFormatPaymentDraft(wire: unknown, options?: __GolemSerdeOptions): PaymentDraftFields {
-  return convertFromWirePaymentDraft(wire, options, false) as PaymentDraftFields;
+export function fromWireFormatTPaymentDraft(wire: unknown, options?: __GolemSerdeOptions): TPaymentDraftFields {
+  return convertFromWireTPaymentDraft(wire, options, false) as TPaymentDraftFields;
 }
 
-function toWireFormatPaymentDraftCore(value: PaymentDraftFields): PaymentDraftJSON {
+function toWireFormatTPaymentDraftCore(value: TPaymentDraftFields): TPaymentDraftJSON {
   const record = value as Record<string, unknown>;
   const wire = { ["note"]: record["note"] };
-  return wire as PaymentDraftJSON;
+  return wire as TPaymentDraftJSON;
 }
 
-export function toWireFormatPaymentDraft(value: PaymentDraftFields, options?: __GolemSerdeOptions): PaymentDraftJSON {
+export function toWireFormatTPaymentDraft(value: TPaymentDraftFields, options?: __GolemSerdeOptions): TPaymentDraftJSON {
   const validates = serdeValidates(options, true);
   if (validates) {
-    assertPaymentDraft(value, options);
+    assertTPaymentDraft(value, options);
   }
-  return toWireFormatPaymentDraftCore(value);
+  return toWireFormatTPaymentDraftCore(value);
 }
 
-export function parsePaymentDraft(text: string, options?: __GolemSerdeOptions): PaymentDraftFields {
-  return convertFromWirePaymentDraft(parseJson(text), options, true) as PaymentDraftFields;
+export function parseTPaymentDraft(text: string, options?: __GolemSerdeOptions): TPaymentDraftFields {
+  return convertFromWireTPaymentDraft(parseJson(text), options, true) as TPaymentDraftFields;
 }
 
-export function validatePaymentDraft(value: unknown, options?: __GolemValidateOptions): value is PaymentDraftFields {
+export function validateTPaymentDraft(value: unknown, options?: __GolemValidateOptions): value is TPaymentDraftFields {
   const failFast = options?.failFast !== false;
   let ok: boolean;
   let errors: readonly unknown[] | null | undefined;
   if (options?.validationContext === undefined) {
-    const validator = failFast ? validatePaymentDraftFast : validatePaymentDraftAll;
+    const validator = failFast ? validateTPaymentDraftFast : validateTPaymentDraftAll;
     ok = validator(value);
     errors = validator.errors;
   } else {
-    const validator = resolveModelValidationContextValidator(options.validationContext, "PaymentDraft_a427e4ae", failFast ? 'first' : 'all');
+    const validator = resolveModelValidationContextValidator(options.validationContext, "TPaymentDraft_a427e4ae", failFast ? 'first' : 'all');
     ok = runSynchronousValidation(validator, value);
     errors = validator.errors;
   }
-  (validatePaymentDraft as { errors?: unknown }).errors = errors;
+  (validateTPaymentDraft as { errors?: unknown }).errors = errors;
   return ok;
 }
 
-export function assertPaymentDraft(value: unknown, options?: __GolemValidateOptions): PaymentDraftFields {
-  assertModelValue(value, options, validatePaymentDraftFast, validatePaymentDraftAll, "PaymentDraft_a427e4ae", IssueRepresentation.Model, IssueSource.TypeScript);
-  return value as PaymentDraftFields;
+export function assertTPaymentDraft(value: unknown, options?: __GolemValidateOptions): TPaymentDraftFields {
+  assertModelValue(value, options, validateTPaymentDraftFast, validateTPaymentDraftAll, "TPaymentDraft_a427e4ae", IssueRepresentation.Model, IssueSource.TypeScript);
+  return value as TPaymentDraftFields;
 }
 
-createObjectCodec("PaymentDraft_a427e4ae", {
-  stringify: stringifyPaymentDraft as (value: never, options?: __GolemSerdeOptions) => string,
-  parse: parsePaymentDraft as (text: string, options?: __GolemSerdeOptions) => never,
-  validate: validatePaymentDraft,
-  assert: assertPaymentDraft,
-  toWireFormat: toWireFormatPaymentDraft,
-  fromWireFormat: fromWireFormatPaymentDraft,
-  schema: __resolvedModelSchema_PaymentDraft,
+createObjectCodec("TPaymentDraft_a427e4ae", {
+  stringify: stringifyTPaymentDraft as (value: never, options?: __GolemSerdeOptions) => string,
+  parse: parseTPaymentDraft as (text: string, options?: __GolemSerdeOptions) => never,
+  validate: validateTPaymentDraft,
+  assert: assertTPaymentDraft,
+  toWireFormat: toWireFormatTPaymentDraft,
+  fromWireFormat: fromWireFormatTPaymentDraft,
+  schema: __resolvedModelSchema_TPaymentDraft,
   issueSource: IssueSource.TypeScript,
 });

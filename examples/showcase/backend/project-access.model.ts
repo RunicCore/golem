@@ -3,8 +3,8 @@ import type { IModel } from '@exprtlabs/golem/model';
 import type { Format, MinLength } from '@exprtlabs/golem/tags';
 import type { PermissionBits, ProjectName } from '../src/access-rules.js';
 import {
-  MemberBaseModel,
-  ProjectAccessBaseModel,
+  TMemberBaseModel,
+  TProjectAccessBaseModel,
 } from './project-access.model.generated.js';
 
 export type TMember = IModel<{
@@ -13,7 +13,7 @@ export type TMember = IModel<{
   email: string & Format<'email'>;
 }, { exact: true }>;
 
-export class Member extends MemberBaseModel {}
+export class Member extends TMemberBaseModel {}
 
 export type TProjectAccess = IModel<{
   projectName: ProjectName;
@@ -21,5 +21,5 @@ export type TProjectAccess = IModel<{
   permissions: PermissionBits;
 }, { exact: true }>;
 
-export class ProjectAccess extends ProjectAccessBaseModel {}
+export class ProjectAccess extends TProjectAccessBaseModel {}
 // #endregion backend-model

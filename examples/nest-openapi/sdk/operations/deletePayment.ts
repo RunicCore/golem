@@ -8,10 +8,10 @@ import { operationValidators, responseCheck, validateOperationInput } from '@exp
 const responseContracts: readonly RuntimeResponseContract[] = [{"status":"204","content":[],"headers":[]}];
 let __operationValidationSources: OperationValidationSources | undefined;
 const __resolveOperationValidationSources = (): OperationValidationSources => __operationValidationSources ??= {
-  inputReference: "urn:golem:openapi:paymentsapi:159ea8699d69a0f1a103e84e63a6861b2bf30d342cfb3c2e2107d739d65f9551:schemas:operation:deletePayment#/operations/deletePayment/input",
+  inputReference: "urn:golem:openapi:paymentsapi:053aa0b0dc74e79ea279e02c9fa919fc62f9db8f1eff89155220aaf069ddc507:schemas:operation:deletePayment#/operations/deletePayment/input",
   responseReferences: [],
   schemas: new Map([
-    ["urn:golem:openapi:paymentsapi:159ea8699d69a0f1a103e84e63a6861b2bf30d342cfb3c2e2107d739d65f9551:schemas:operation:deletePayment", JSON.parse("{\"$id\":\"urn:golem:openapi:paymentsapi:159ea8699d69a0f1a103e84e63a6861b2bf30d342cfb3c2e2107d739d65f9551:schemas:operation:deletePayment\",\"$schema\":\"https://spec.openapis.org/oas/3.1/dialect/base\",\"operations\":{\"deletePayment\":{\"input\":{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\"}},\"required\":[\"id\"],\"additionalProperties\":false}},\"required\":[\"path\"],\"additionalProperties\":false},\"responses\":{\"204\":{}}}}}") as object | boolean],
+    ["urn:golem:openapi:paymentsapi:053aa0b0dc74e79ea279e02c9fa919fc62f9db8f1eff89155220aaf069ddc507:schemas:operation:deletePayment", JSON.parse("{\"$id\":\"urn:golem:openapi:paymentsapi:053aa0b0dc74e79ea279e02c9fa919fc62f9db8f1eff89155220aaf069ddc507:schemas:operation:deletePayment\",\"$schema\":\"https://spec.openapis.org/oas/3.1/dialect/base\",\"operations\":{\"deletePayment\":{\"input\":{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\"}},\"required\":[\"id\"],\"additionalProperties\":false}},\"required\":[\"path\"],\"additionalProperties\":false},\"responses\":{\"204\":{}}}}}") as object | boolean],
   ]),
 };
 

@@ -54,19 +54,19 @@ async function componentNames(t: TestContext, source: string): Promise<string[]>
 
 // Projections that name themselves from their own expression; the field that holds each one is irrelevant.
 const namedProjections: readonly [field: string, expected: string][] = [
-  ["Omit<TMerchant, 'id'>", 'MerchantOmitId'],
-  ["Pick<TMerchant, 'name' | 'id'>", 'MerchantPickIdName'],
-  ["Partial<Omit<TMerchant, 'id'>>", 'MerchantOmitIdPartial'],
-  ['TMerchant & TMoney', 'MerchantAndMoney'],
-  ["Omit<TMerchant, 'first-name'>", 'MerchantOmitFirstName'],
-  ['TBilling', 'Billing'],
+  ["Omit<TMerchant, 'id'>", 'TMerchantOmitId'],
+  ["Pick<TMerchant, 'name' | 'id'>", 'TMerchantPickIdName'],
+  ["Partial<Omit<TMerchant, 'id'>>", 'TMerchantOmitIdPartial'],
+  ['TMerchant & TMoney', 'TMerchantAndTMoney'],
+  ["Omit<TMerchant, 'first-name'>", 'TMerchantOmitFirstName'],
+  ['TBilling', 'TBilling'],
 ];
 
 // Projections with no name of their own fall back to the owner and the field, so each sits in its own field.
 const ownerFieldFallbacks: readonly [field: string, expected: string][] = [
-  ['TMerchant & { note: string }', 'OrderShape1'],
-  ["Pick<TMerchant, 'id' | 'name' | 'city' | 'first-name'>", 'OrderShape2'],
-  ["Partial<Readonly<Required<Omit<TMerchant, 'id'>>>>", 'OrderShape3'],
+  ['TMerchant & { note: string }', 'TOrderShape1'],
+  ["Pick<TMerchant, 'id' | 'name' | 'city' | 'first-name'>", 'TOrderShape2'],
+  ["Partial<Readonly<Required<Omit<TMerchant, 'id'>>>>", 'TOrderShape3'],
 ];
 
 test('projections over a model are named from their own expressions', async t => {
@@ -87,7 +87,7 @@ test('an optional field and the members of a union are named from their own expr
   const names = await componentNames(t, controller(
     "optional?: Omit<TMerchant, 'id'>; either: Pick<TMoney, 'amount'> | Pick<TMerchant, 'id'>",
   ));
-  for (const expected of ['MerchantOmitId', 'MoneyPickAmount', 'MerchantPickId']) {
+  for (const expected of ['TMerchantOmitId', 'TMoneyPickAmount', 'TMerchantPickId']) {
     assert.ok(names.includes(expected), `${expected} in ${names.join(', ')}`);
   }
 });
@@ -151,7 +151,7 @@ export type TMerchant = IModel<{ id: string; name: string }>;
 export type TMerchantOmitId = IModel<{ other: string }>;
 export type TOrder = IModel<{ shape: Omit<TMerchant, 'id'> }>;
 ${ROUTE('TOrder', 'TOrder')}`;
-  await assert.rejects(generateSource(t, source), /RUNM1059.*MerchantOmitId.*order\.controller\.ts:\d+:\d+ and .*order\.controller\.ts:\d+:\d+/);
+  await assert.rejects(generateSource(t, source), /RUNM1059.*TMerchantOmitId.*order\.controller\.ts:\d+:\d+ and .*order\.controller\.ts:\d+:\d+/);
 });
 
 test('one expression used by two owners yields one schema, named the same whichever model is declared first', async t => {
@@ -165,10 +165,10 @@ export class OrderController { @Post() save(@Body() body: TOrder): TPayment { re
   const swapped = await documentOf(t, build(payment, order));
   assert.deepEqual(Object.keys(forward.components.schemas).sort(), Object.keys(swapped.components.schemas).sort());
   const names = Object.keys(forward.components.schemas);
-  assert.ok(names.includes('OrderShape'), 'the smallest candidate survives');
-  assert.equal(names.includes('PaymentShape'), false);
-  assert.equal(names.filter(name => name === 'MerchantOmitId').length, 1);
-  assert.equal(forward.components.schemas.Order?.properties?.same?.$ref, forward.components.schemas.Payment?.properties?.same?.$ref);
+  assert.ok(names.includes('TOrderShape'), 'the smallest candidate survives');
+  assert.equal(names.includes('TPaymentShape'), false);
+  assert.equal(names.filter(name => name === 'TMerchantOmitId').length, 1);
+  assert.equal(forward.components.schemas.TOrder?.properties?.same?.$ref, forward.components.schemas.Payment?.properties?.same?.$ref);
 });
 
 test('a projection whose name is shared with a different tagged shape fails instead of merging', async t => {
@@ -188,8 +188,8 @@ type TCode = string & Pattern<'^[A-Z]+$'>;
 export type TOrder = IModel<{ a: Record<string, string>; b: Record<string, TCode>; c: Record<string, number> }>;
 ${ROUTE('TOrder', 'TOrder')}`;
   const document = await documentOf(t, source);
-  const properties = document.components.schemas.Order?.properties ?? {};
-  assert.deepEqual(Object.keys(document.components.schemas).sort(), ['Order', 'OrderA', 'OrderB', 'OrderC']);
+  const properties = document.components.schemas.TOrder?.properties ?? {};
+  assert.deepEqual(Object.keys(document.components.schemas).sort(), ['TOrder', 'TOrderA', 'TOrderB', 'TOrderC']);
   assert.equal(new Set(Object.values(properties).map(property => property.$ref)).size, 3);
 });
 
@@ -201,12 +201,12 @@ type TWithout<T, K extends keyof T> = Omit<T, K>;
 export type TOrder = IModel<{ a: TWithout<TMerchant, 'id'>; b: TWithout<TMoney, 'id'> }>;
 ${ROUTE('TOrder', 'TOrder')}`;
   const names = Object.keys((await documentOf(t, source)).components.schemas).sort();
-  assert.deepEqual(names, ['Order', 'OrderA', 'OrderB']);
+  assert.deepEqual(names, ['TOrder', 'TOrderA', 'TOrderB']);
 });
 
 test('a union of projection arrays names each item from its own expression', async t => {
   const names = await componentNames(t, controller("x: Pick<TMerchant, 'id'>[] | Pick<TMoney, 'amount'>[]"));
-  for (const expected of ['MerchantPickId', 'MoneyPickAmount']) {
+  for (const expected of ['TMerchantPickId', 'TMoneyPickAmount']) {
     assert.ok(names.includes(expected), `${expected} in ${names.join(', ')}`);
   }
 });
@@ -263,7 +263,7 @@ test('union members that fall back to owner and property are told apart by a lit
   const names = await componentNames(t, controller(
     "either: (TMerchant & { kind: 'card'; a: string }) | (TMoney & { kind: 'bank-transfer'; b: string })",
   ));
-  for (const expected of ['OrderEitherCard', 'OrderEitherBankTransfer']) {
+  for (const expected of ['TOrderEitherCard', 'TOrderEitherBankTransfer']) {
     assert.ok(names.includes(expected), `${expected} in ${names.join(', ')}`);
   }
 });
@@ -272,7 +272,7 @@ test('union members without a discriminant are told apart by position', async t 
   const names = await componentNames(t, controller(
     'either: (TMerchant & { a: string }) | (TMoney & { b: string })',
   ));
-  for (const expected of ['OrderEither1', 'OrderEither2']) {
+  for (const expected of ['TOrderEither1', 'TOrderEither2']) {
     assert.ok(names.includes(expected), `${expected} in ${names.join(', ')}`);
   }
 });
@@ -307,32 +307,32 @@ import type { TMerchant } from './b-merchant.js';
 @Controller('users') export class UserController { @Post() save(@Body() body: TMerchant): TMerchant { return body; } }
 `;
   const after = await documentOf(t, source, { ...SPLIT_MODELS, 'src/0-user.controller.ts': unrelated });
-  const expected = variantShapes(before.components.schemas, 'OrderEither');
-  assert.deepEqual(Object.keys(expected), ['OrderEither1', 'OrderEither2']);
-  assert.ok(expected.OrderEither1?.includes('a'), 'member 1 is the first authored member');
-  assert.ok(expected.OrderEither2?.includes('b'), 'member 2 is the second authored member');
-  assert.deepEqual(variantShapes(after.components.schemas, 'OrderEither'), expected);
+  const expected = variantShapes(before.components.schemas, 'TOrderEither');
+  assert.deepEqual(Object.keys(expected), ['TOrderEither1', 'TOrderEither2']);
+  assert.ok(expected.TOrderEither1?.includes('a'), 'member 1 is the first authored member');
+  assert.ok(expected.TOrderEither2?.includes('b'), 'member 2 is the second authored member');
+  assert.deepEqual(variantShapes(after.components.schemas, 'TOrderEither'), expected);
 });
 
 test('union member positions follow the authored order', async t => {
   const document = await documentOf(t, eitherController('(TMoney & { b: string }) | (TMerchant & { a: string })'), SPLIT_MODELS);
-  const shapes = variantShapes(document.components.schemas, 'OrderEither');
-  assert.ok(shapes.OrderEither1?.includes('b'));
-  assert.ok(shapes.OrderEither2?.includes('a'));
+  const shapes = variantShapes(document.components.schemas, 'TOrderEither');
+  assert.ok(shapes.TOrderEither1?.includes('b'));
+  assert.ok(shapes.TOrderEither2?.includes('a'));
 });
 
 test('the discriminant is chosen by sorted property name, not by declaration order', async t => {
   const names = await componentNames(t, controller(
     "either: (TMerchant & { type: 'x'; kind: 'card' }) | (TMoney & { kind: 'bank'; type: 'y' })",
   ));
-  for (const expected of ['OrderEitherCard', 'OrderEitherBank']) assert.ok(names.includes(expected), `${expected} in ${names.join(', ')}`);
+  for (const expected of ['TOrderEitherCard', 'TOrderEitherBank']) assert.ok(names.includes(expected), `${expected} in ${names.join(', ')}`);
 });
 
 test('discriminant values that collide after PascalCase fall back to positions', async t => {
   const names = await componentNames(t, controller(
     "either: (TMerchant & { kind: 'bank-transfer' }) | (TMoney & { kind: 'bank_transfer' })",
   ));
-  for (const expected of ['OrderEither1', 'OrderEither2']) assert.ok(names.includes(expected), `${expected} in ${names.join(', ')}`);
+  for (const expected of ['TOrderEither1', 'TOrderEither2']) assert.ok(names.includes(expected), `${expected} in ${names.join(', ')}`);
 });
 
 test('underscores in model names become part of the derived name instead of dropping it', async t => {
@@ -345,7 +345,7 @@ export type TPay_V2 = IModel<{ shape: TMerchant & { y: string } }>;
 export class OrderController { @Post() save(@Body() body: TOrder_V2): TPay_V2 { return body as never; } }
 `;
   const names = await componentNames(t, source);
-  for (const expected of ['OrderV2Shape', 'PayV2Shape', 'ShopOwnerOmitId']) assert.ok(names.includes(expected), `${expected} in ${names.join(', ')}`);
+  for (const expected of ['TOrderV2Shape', 'TPayV2Shape', 'TShopOwnerOmitId']) assert.ok(names.includes(expected), `${expected} in ${names.join(', ')}`);
 });
 
 test('the same method name on two controllers keeps distinct names', async t => {
@@ -366,7 +366,7 @@ type TEither = (TMerchant & { a: string }) | (TMoney & { b: string });
 export type TOrder = IModel<{ either: TEither | null }>;
 @Controller('orders') export class OrderController { @Post() save(@Body() body: TOrder): TOrder { return body; } }
 `;
-  const shapes = variantShapes((await documentOf(t, source)).components.schemas, 'OrderEither');
-  assert.ok(shapes.OrderEither1?.includes('a'), 'member 1 is the first authored member');
-  assert.ok(shapes.OrderEither2?.includes('b'), 'member 2 is the second authored member');
+  const shapes = variantShapes((await documentOf(t, source)).components.schemas, 'TOrderEither');
+  assert.ok(shapes.TOrderEither1?.includes('a'), 'member 1 is the first authored member');
+  assert.ok(shapes.TOrderEither2?.includes('b'), 'member 2 is the second authored member');
 });

@@ -11,20 +11,20 @@ test('model companion functions use the model types instead of unknown', t => {
   const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-public-signatures-', name: null, linkWorkspaceNodeModules: true });
   writeModelSources(sourceRoot, {
     'task.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
-import { TaskBaseModel } from './task.model.generated.js';
+import { TTaskBaseModel } from './task.model.generated.js';
 export type TTask = IModel<{ title: string; done: boolean }>;
-export class Task extends TaskBaseModel {}
+export class Task extends TTaskBaseModel {}
 `,
   });
   const result = generate({ root, profile: { mobx: false, validation: true, ajvStandalone: false } });
   const companion = result.artifacts.find(artifact => artifact.path.endsWith('task.model.generated.ts'))?.content ?? '';
   for (const signature of [
-    `export function stringifyTask\\(value: TaskFields, ${OPTIONS}\\): string \\{`,
-    `export function toWireFormatTask\\(value: TaskFields, ${OPTIONS}\\): TaskJSON \\{`,
-    `export function fromWireFormatTask\\(wire: unknown, ${OPTIONS}\\): TaskFields \\{`,
-    `export function parseTask\\(text: string, ${OPTIONS}\\): TaskFields \\{`,
-    `export function validateTask\\(value: unknown, ${OPTIONS}\\): value is TaskFields \\{`,
-    `export function assertTask\\(value: unknown, ${OPTIONS}\\): TaskFields \\{`,
+    `export function stringifyTTask\\(value: TTaskFields, ${OPTIONS}\\): string \\{`,
+    `export function toWireFormatTTask\\(value: TTaskFields, ${OPTIONS}\\): TTaskJSON \\{`,
+    `export function fromWireFormatTTask\\(wire: unknown, ${OPTIONS}\\): TTaskFields \\{`,
+    `export function parseTTask\\(text: string, ${OPTIONS}\\): TTaskFields \\{`,
+    `export function validateTTask\\(value: unknown, ${OPTIONS}\\): value is TTaskFields \\{`,
+    `export function assertTTask\\(value: unknown, ${OPTIONS}\\): TTaskFields \\{`,
   ]) assert.match(companion, new RegExp(`^${signature}`, 'm'), signature);
 });
 
@@ -37,10 +37,10 @@ export function short(value: string): boolean { return value.length < 20; }
   'task.model.ts': `${preamble}import type { IModel } from '@exprtlabs/golem/model';
 import type { TSerde, TValidation } from '@exprtlabs/golem/tags';
 import type { fromWord, short, toWord } from './rules.js';
-import { TaskBaseModel } from './task.model.generated.js';
+import { TTaskBaseModel } from './task.model.generated.js';
 
 export type TTask = IModel<{ title: string & TValidation<typeof short>; priority: number & TSerde<typeof toWord, typeof fromWord> }>;
-export class Task extends TaskBaseModel {}
+export class Task extends TTaskBaseModel {}
 `,
 });
 
@@ -64,7 +64,7 @@ test('model companion assert functions share one runtime helper and named option
   const companion = result.artifacts.find(artifact => artifact.path.endsWith('task.model.generated.ts'))?.content ?? '';
   assert.doesNotMatch(companion, /import\('@exprtlabs\/golem\/model'\)/);
   assert.doesNotMatch(companion, /validationContext === undefined\) \{\n\s+if \(!\(/);
-  assert.match(companion, /^export function assertTask\(value: unknown, options\?: __GolemValidateOptions\): TaskFields \{\n  assertModelValue\(value, options, /m);
+  assert.match(companion, /^export function assertTTask\(value: unknown, options\?: __GolemValidateOptions\): TTaskFields \{\n  assertModelValue\(value, options, /m);
   assert.match(companion, /type SerdeOptions as __GolemSerdeOptions, type ValidateOptions as __GolemValidateOptions \} from '@exprtlabs\/golem\/serde';/);
 });
 

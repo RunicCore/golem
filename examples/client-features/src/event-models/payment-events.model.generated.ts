@@ -8,102 +8,102 @@ function modelObject(json: unknown, name: string): Record<string, unknown> {
   return requireModelObject(json, name);
 }
 
-export type PaymentCapturedFields = { paymentId: string; amount: number };
-export type PaymentCapturedJSON = { paymentId: string; amount: number };
-export type PaymentCapturedInit = Partial<{ paymentId: string; amount: number }>;
+export type TPaymentCapturedFields = { paymentId: string; amount: number };
+export type TPaymentCapturedJSON = { paymentId: string; amount: number };
+export type TPaymentCapturedInit = Partial<{ paymentId: string; amount: number }>;
 
-export abstract class PaymentCapturedBaseModel implements GeneratedModel<PaymentCapturedJSON, PaymentCapturedFields> {
-  declare readonly [generatedModelWireBrand]: PaymentCapturedJSON;
-  declare readonly [generatedModelFieldsBrand]: PaymentCapturedFields;
-  declare paymentId: PaymentCapturedFields["paymentId"];
-  declare amount: PaymentCapturedFields["amount"];
+export abstract class TPaymentCapturedBaseModel implements GeneratedModel<TPaymentCapturedJSON, TPaymentCapturedFields> {
+  declare readonly [generatedModelWireBrand]: TPaymentCapturedJSON;
+  declare readonly [generatedModelFieldsBrand]: TPaymentCapturedFields;
+  declare paymentId: TPaymentCapturedFields["paymentId"];
+  declare amount: TPaymentCapturedFields["amount"];
 
-  public constructor(values: PaymentCapturedInit = {}) {
+  public constructor(values: TPaymentCapturedInit = {}) {
     if (Object.prototype.hasOwnProperty.call(values, "paymentId")) defineModelProperty(this, "paymentId", values["paymentId"]);
     if (Object.prototype.hasOwnProperty.call(values, "amount")) defineModelProperty(this, "amount", values["amount"]);
   }
 
 }
 
-function decodePaymentCapturedModel(constructor: GeneratedModelConstructor, json: unknown): PaymentCapturedBaseModel {
-  const values = modelObject(json, "PaymentCapturedBaseModel");
-  return Reflect.construct(constructor, [values]) as PaymentCapturedBaseModel;
+function decodeTPaymentCapturedModel(constructor: GeneratedModelConstructor, json: unknown): TPaymentCapturedBaseModel {
+  const values = modelObject(json, "TPaymentCapturedBaseModel");
+  return Reflect.construct(constructor, [values]) as TPaymentCapturedBaseModel;
 }
 
-function encodePaymentCapturedModel(model: PaymentCapturedBaseModel): PaymentCapturedJSON {
+function encodeTPaymentCapturedModel(model: TPaymentCapturedBaseModel): TPaymentCapturedJSON {
   const result: Record<string, unknown> = {};
   if (Object.prototype.hasOwnProperty.call(model, "paymentId")) defineModelProperty(result, "paymentId", (model["paymentId"]));
   if (Object.prototype.hasOwnProperty.call(model, "amount")) defineModelProperty(result, "amount", (model["amount"]));
-  return result as PaymentCapturedJSON;
+  return result as TPaymentCapturedJSON;
 }
 
-registerGeneratedModel(PaymentCapturedBaseModel, {
+registerGeneratedModel(TPaymentCapturedBaseModel, {
   fields: ["paymentId", "amount"],
   conversion: {
-    decode: (value, constructor) => decodePaymentCapturedModel(constructor ?? PaymentCapturedBaseModel, value),
-    encode: encodePaymentCapturedModel,
+    decode: (value, constructor) => decodeTPaymentCapturedModel(constructor ?? TPaymentCapturedBaseModel, value),
+    encode: encodeTPaymentCapturedModel,
   },
-  codecId: "PaymentCaptured_0cbf3f68",
+  codecId: "TPaymentCaptured_0cbf3f68",
   profile: { validation: true, mobx: false },
 });
 
-registerIModelClass("PaymentCaptured_0cbf3f68", PaymentCapturedBaseModel);
+registerIModelClass("TPaymentCaptured_0cbf3f68", TPaymentCapturedBaseModel);
 
-export type PaymentRefundedFields = { paymentId: string; reason: string };
-export type PaymentRefundedJSON = { paymentId: string; reason: string };
-export type PaymentRefundedInit = Partial<{ paymentId: string; reason: string }>;
+export type TPaymentRefundedFields = { paymentId: string; reason: string };
+export type TPaymentRefundedJSON = { paymentId: string; reason: string };
+export type TPaymentRefundedInit = Partial<{ paymentId: string; reason: string }>;
 
-export abstract class PaymentRefundedBaseModel implements GeneratedModel<PaymentRefundedJSON, PaymentRefundedFields> {
-  declare readonly [generatedModelWireBrand]: PaymentRefundedJSON;
-  declare readonly [generatedModelFieldsBrand]: PaymentRefundedFields;
-  declare paymentId: PaymentRefundedFields["paymentId"];
-  declare reason: PaymentRefundedFields["reason"];
+export abstract class TPaymentRefundedBaseModel implements GeneratedModel<TPaymentRefundedJSON, TPaymentRefundedFields> {
+  declare readonly [generatedModelWireBrand]: TPaymentRefundedJSON;
+  declare readonly [generatedModelFieldsBrand]: TPaymentRefundedFields;
+  declare paymentId: TPaymentRefundedFields["paymentId"];
+  declare reason: TPaymentRefundedFields["reason"];
 
-  public constructor(values: PaymentRefundedInit = {}) {
+  public constructor(values: TPaymentRefundedInit = {}) {
     if (Object.prototype.hasOwnProperty.call(values, "paymentId")) defineModelProperty(this, "paymentId", values["paymentId"]);
     if (Object.prototype.hasOwnProperty.call(values, "reason")) defineModelProperty(this, "reason", values["reason"]);
   }
 
 }
 
-function decodePaymentRefundedModel(constructor: GeneratedModelConstructor, json: unknown): PaymentRefundedBaseModel {
-  const values = modelObject(json, "PaymentRefundedBaseModel");
-  return Reflect.construct(constructor, [values]) as PaymentRefundedBaseModel;
+function decodeTPaymentRefundedModel(constructor: GeneratedModelConstructor, json: unknown): TPaymentRefundedBaseModel {
+  const values = modelObject(json, "TPaymentRefundedBaseModel");
+  return Reflect.construct(constructor, [values]) as TPaymentRefundedBaseModel;
 }
 
-function encodePaymentRefundedModel(model: PaymentRefundedBaseModel): PaymentRefundedJSON {
+function encodeTPaymentRefundedModel(model: TPaymentRefundedBaseModel): TPaymentRefundedJSON {
   const result: Record<string, unknown> = {};
   if (Object.prototype.hasOwnProperty.call(model, "paymentId")) defineModelProperty(result, "paymentId", (model["paymentId"]));
   if (Object.prototype.hasOwnProperty.call(model, "reason")) defineModelProperty(result, "reason", (model["reason"]));
-  return result as PaymentRefundedJSON;
+  return result as TPaymentRefundedJSON;
 }
 
-registerGeneratedModel(PaymentRefundedBaseModel, {
+registerGeneratedModel(TPaymentRefundedBaseModel, {
   fields: ["paymentId", "reason"],
   conversion: {
-    decode: (value, constructor) => decodePaymentRefundedModel(constructor ?? PaymentRefundedBaseModel, value),
-    encode: encodePaymentRefundedModel,
+    decode: (value, constructor) => decodeTPaymentRefundedModel(constructor ?? TPaymentRefundedBaseModel, value),
+    encode: encodeTPaymentRefundedModel,
   },
-  codecId: "PaymentRefunded_1b8a5bca",
+  codecId: "TPaymentRefunded_1b8a5bca",
   profile: { validation: true, mobx: false },
 });
 
-registerIModelClass("PaymentRefunded_1b8a5bca", PaymentRefundedBaseModel);
+registerIModelClass("TPaymentRefunded_1b8a5bca", TPaymentRefundedBaseModel);
 
 const objectAjvFast = createOpenApiSyncAjvEngine({ allErrors: false, validationBindings: {} });
 const objectAjvAll = createOpenApiSyncAjvEngine({ allErrors: true, validationBindings: {} });
 
-const __resolvedModelSchema_PaymentCaptured = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"PaymentCaptured_0cbf3f68\",\"type\":\"object\",\"properties\":{\"amount\":{\"type\":\"number\"},\"paymentId\":{\"type\":\"string\"}},\"required\":[\"amount\",\"paymentId\"],\"additionalProperties\":false}") as object) as object;
-objectAjvFast.addSchema(structuredClone(__resolvedModelSchema_PaymentCaptured) as object, "PaymentCaptured_0cbf3f68");
-objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_PaymentCaptured) as object, "PaymentCaptured_0cbf3f68");
-const __resolvedModelSchema_PaymentRefunded = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"PaymentRefunded_1b8a5bca\",\"type\":\"object\",\"properties\":{\"paymentId\":{\"type\":\"string\"},\"reason\":{\"type\":\"string\"}},\"required\":[\"paymentId\",\"reason\"],\"additionalProperties\":false}") as object) as object;
-objectAjvFast.addSchema(structuredClone(__resolvedModelSchema_PaymentRefunded) as object, "PaymentRefunded_1b8a5bca");
-objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_PaymentRefunded) as object, "PaymentRefunded_1b8a5bca");
+const __resolvedModelSchema_TPaymentCaptured = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"TPaymentCaptured_0cbf3f68\",\"type\":\"object\",\"properties\":{\"amount\":{\"type\":\"number\"},\"paymentId\":{\"type\":\"string\"}},\"required\":[\"amount\",\"paymentId\"],\"additionalProperties\":false}") as object) as object;
+objectAjvFast.addSchema(structuredClone(__resolvedModelSchema_TPaymentCaptured) as object, "TPaymentCaptured_0cbf3f68");
+objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_TPaymentCaptured) as object, "TPaymentCaptured_0cbf3f68");
+const __resolvedModelSchema_TPaymentRefunded = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"TPaymentRefunded_1b8a5bca\",\"type\":\"object\",\"properties\":{\"paymentId\":{\"type\":\"string\"},\"reason\":{\"type\":\"string\"}},\"required\":[\"paymentId\",\"reason\"],\"additionalProperties\":false}") as object) as object;
+objectAjvFast.addSchema(structuredClone(__resolvedModelSchema_TPaymentRefunded) as object, "TPaymentRefunded_1b8a5bca");
+objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_TPaymentRefunded) as object, "TPaymentRefunded_1b8a5bca");
 
-const validatePaymentCapturedFast = requireAjvSchema(objectAjvFast.getSchema("PaymentCaptured_0cbf3f68"), "PaymentCaptured_0cbf3f68");
-const validatePaymentCapturedAll = requireAjvSchema(objectAjvAll.getSchema("PaymentCaptured_0cbf3f68"), "PaymentCaptured_0cbf3f68");
+const validateTPaymentCapturedFast = requireAjvSchema(objectAjvFast.getSchema("TPaymentCaptured_0cbf3f68"), "TPaymentCaptured_0cbf3f68");
+const validateTPaymentCapturedAll = requireAjvSchema(objectAjvAll.getSchema("TPaymentCaptured_0cbf3f68"), "TPaymentCaptured_0cbf3f68");
 
-function fillPaymentCaptured(out: Record<string, unknown>, wire: Record<string, unknown>, copyIdentity = true): Record<string, unknown> {
+function fillTPaymentCaptured(out: Record<string, unknown>, wire: Record<string, unknown>, copyIdentity = true): Record<string, unknown> {
   if (copyIdentity) {
     out["paymentId"] = wire["paymentId"];
     out["amount"] = wire["amount"];
@@ -111,22 +111,22 @@ function fillPaymentCaptured(out: Record<string, unknown>, wire: Record<string, 
   return out;
 }
 
-function stringifyPaymentCapturedCore(value: Record<string, unknown>): string {
+function stringifyTPaymentCapturedCore(value: Record<string, unknown>): string {
   return '{' + "\"paymentId\":" + stringifyJsonString(value["paymentId"] as string) + ",\"amount\":" + stringifyJsonNumber(value["amount"] as number) + '}';
 }
 
-export function stringifyPaymentCaptured(value: PaymentCapturedFields, options?: __GolemSerdeOptions): string {
+export function stringifyTPaymentCaptured(value: TPaymentCapturedFields, options?: __GolemSerdeOptions): string {
   const validates = serdeValidates(options, true);
   if (validates) {
-    assertPaymentCaptured(value, options);
+    assertTPaymentCaptured(value, options);
   }
-  return stringifyPaymentCapturedCore(value as never);
+  return stringifyTPaymentCapturedCore(value as never);
 }
 
-function convertFromWirePaymentCaptured(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
+function convertFromWireTPaymentCaptured(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
   const validates = serdeValidates(options, true);
   if (validates) {
-    assertPaymentCaptured(wire, options);
+    assertTPaymentCaptured(wire, options);
   }
   const source = isolated || wire === null || typeof wire !== 'object' ? wire : cloneConversionInput(wire);
   let result: unknown = source;
@@ -134,71 +134,71 @@ function convertFromWirePaymentCaptured(wire: unknown, options: __GolemSerdeOpti
     if (options?.construct) {
       result = Reflect.construct(options.construct, [{ ...(source as Record<string, unknown>) }]);
     } else {
-      result = fillPaymentCaptured({} as Record<string, unknown>, source as Record<string, unknown>);
+      result = fillTPaymentCaptured({} as Record<string, unknown>, source as Record<string, unknown>);
     }
   }
   return result;
 }
 
-export function fromWireFormatPaymentCaptured(wire: unknown, options?: __GolemSerdeOptions): PaymentCapturedFields {
-  return convertFromWirePaymentCaptured(wire, options, false) as PaymentCapturedFields;
+export function fromWireFormatTPaymentCaptured(wire: unknown, options?: __GolemSerdeOptions): TPaymentCapturedFields {
+  return convertFromWireTPaymentCaptured(wire, options, false) as TPaymentCapturedFields;
 }
 
-function toWireFormatPaymentCapturedCore(value: PaymentCapturedFields): PaymentCapturedJSON {
+function toWireFormatTPaymentCapturedCore(value: TPaymentCapturedFields): TPaymentCapturedJSON {
   const record = value as Record<string, unknown>;
   const wire = { ["paymentId"]: record["paymentId"], ["amount"]: record["amount"] };
-  return wire as PaymentCapturedJSON;
+  return wire as TPaymentCapturedJSON;
 }
 
-export function toWireFormatPaymentCaptured(value: PaymentCapturedFields, options?: __GolemSerdeOptions): PaymentCapturedJSON {
+export function toWireFormatTPaymentCaptured(value: TPaymentCapturedFields, options?: __GolemSerdeOptions): TPaymentCapturedJSON {
   const validates = serdeValidates(options, true);
   if (validates) {
-    assertPaymentCaptured(value, options);
+    assertTPaymentCaptured(value, options);
   }
-  return toWireFormatPaymentCapturedCore(value);
+  return toWireFormatTPaymentCapturedCore(value);
 }
 
-export function parsePaymentCaptured(text: string, options?: __GolemSerdeOptions): PaymentCapturedFields {
-  return convertFromWirePaymentCaptured(parseJson(text), options, true) as PaymentCapturedFields;
+export function parseTPaymentCaptured(text: string, options?: __GolemSerdeOptions): TPaymentCapturedFields {
+  return convertFromWireTPaymentCaptured(parseJson(text), options, true) as TPaymentCapturedFields;
 }
 
-export function validatePaymentCaptured(value: unknown, options?: __GolemValidateOptions): value is PaymentCapturedFields {
+export function validateTPaymentCaptured(value: unknown, options?: __GolemValidateOptions): value is TPaymentCapturedFields {
   const failFast = options?.failFast !== false;
   let ok: boolean;
   let errors: readonly unknown[] | null | undefined;
   if (options?.validationContext === undefined) {
-    const validator = failFast ? validatePaymentCapturedFast : validatePaymentCapturedAll;
+    const validator = failFast ? validateTPaymentCapturedFast : validateTPaymentCapturedAll;
     ok = validator(value);
     errors = validator.errors;
   } else {
-    const validator = resolveModelValidationContextValidator(options.validationContext, "PaymentCaptured_0cbf3f68", failFast ? 'first' : 'all');
+    const validator = resolveModelValidationContextValidator(options.validationContext, "TPaymentCaptured_0cbf3f68", failFast ? 'first' : 'all');
     ok = runSynchronousValidation(validator, value);
     errors = validator.errors;
   }
-  (validatePaymentCaptured as { errors?: unknown }).errors = errors;
+  (validateTPaymentCaptured as { errors?: unknown }).errors = errors;
   return ok;
 }
 
-export function assertPaymentCaptured(value: unknown, options?: __GolemValidateOptions): PaymentCapturedFields {
-  assertModelValue(value, options, validatePaymentCapturedFast, validatePaymentCapturedAll, "PaymentCaptured_0cbf3f68", IssueRepresentation.Model, IssueSource.TypeScript);
-  return value as PaymentCapturedFields;
+export function assertTPaymentCaptured(value: unknown, options?: __GolemValidateOptions): TPaymentCapturedFields {
+  assertModelValue(value, options, validateTPaymentCapturedFast, validateTPaymentCapturedAll, "TPaymentCaptured_0cbf3f68", IssueRepresentation.Model, IssueSource.TypeScript);
+  return value as TPaymentCapturedFields;
 }
 
-createObjectCodec("PaymentCaptured_0cbf3f68", {
-  stringify: stringifyPaymentCaptured as (value: never, options?: __GolemSerdeOptions) => string,
-  parse: parsePaymentCaptured as (text: string, options?: __GolemSerdeOptions) => never,
-  validate: validatePaymentCaptured,
-  assert: assertPaymentCaptured,
-  toWireFormat: toWireFormatPaymentCaptured,
-  fromWireFormat: fromWireFormatPaymentCaptured,
-  schema: __resolvedModelSchema_PaymentCaptured,
+createObjectCodec("TPaymentCaptured_0cbf3f68", {
+  stringify: stringifyTPaymentCaptured as (value: never, options?: __GolemSerdeOptions) => string,
+  parse: parseTPaymentCaptured as (text: string, options?: __GolemSerdeOptions) => never,
+  validate: validateTPaymentCaptured,
+  assert: assertTPaymentCaptured,
+  toWireFormat: toWireFormatTPaymentCaptured,
+  fromWireFormat: fromWireFormatTPaymentCaptured,
+  schema: __resolvedModelSchema_TPaymentCaptured,
   issueSource: IssueSource.TypeScript,
 });
 
-const validatePaymentRefundedFast = requireAjvSchema(objectAjvFast.getSchema("PaymentRefunded_1b8a5bca"), "PaymentRefunded_1b8a5bca");
-const validatePaymentRefundedAll = requireAjvSchema(objectAjvAll.getSchema("PaymentRefunded_1b8a5bca"), "PaymentRefunded_1b8a5bca");
+const validateTPaymentRefundedFast = requireAjvSchema(objectAjvFast.getSchema("TPaymentRefunded_1b8a5bca"), "TPaymentRefunded_1b8a5bca");
+const validateTPaymentRefundedAll = requireAjvSchema(objectAjvAll.getSchema("TPaymentRefunded_1b8a5bca"), "TPaymentRefunded_1b8a5bca");
 
-function fillPaymentRefunded(out: Record<string, unknown>, wire: Record<string, unknown>, copyIdentity = true): Record<string, unknown> {
+function fillTPaymentRefunded(out: Record<string, unknown>, wire: Record<string, unknown>, copyIdentity = true): Record<string, unknown> {
   if (copyIdentity) {
     out["paymentId"] = wire["paymentId"];
     out["reason"] = wire["reason"];
@@ -206,22 +206,22 @@ function fillPaymentRefunded(out: Record<string, unknown>, wire: Record<string, 
   return out;
 }
 
-function stringifyPaymentRefundedCore(value: Record<string, unknown>): string {
+function stringifyTPaymentRefundedCore(value: Record<string, unknown>): string {
   return '{' + "\"paymentId\":" + stringifyJsonString(value["paymentId"] as string) + ",\"reason\":" + stringifyJsonString(value["reason"] as string) + '}';
 }
 
-export function stringifyPaymentRefunded(value: PaymentRefundedFields, options?: __GolemSerdeOptions): string {
+export function stringifyTPaymentRefunded(value: TPaymentRefundedFields, options?: __GolemSerdeOptions): string {
   const validates = serdeValidates(options, true);
   if (validates) {
-    assertPaymentRefunded(value, options);
+    assertTPaymentRefunded(value, options);
   }
-  return stringifyPaymentRefundedCore(value as never);
+  return stringifyTPaymentRefundedCore(value as never);
 }
 
-function convertFromWirePaymentRefunded(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
+function convertFromWireTPaymentRefunded(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
   const validates = serdeValidates(options, true);
   if (validates) {
-    assertPaymentRefunded(wire, options);
+    assertTPaymentRefunded(wire, options);
   }
   const source = isolated || wire === null || typeof wire !== 'object' ? wire : cloneConversionInput(wire);
   let result: unknown = source;
@@ -229,63 +229,63 @@ function convertFromWirePaymentRefunded(wire: unknown, options: __GolemSerdeOpti
     if (options?.construct) {
       result = Reflect.construct(options.construct, [{ ...(source as Record<string, unknown>) }]);
     } else {
-      result = fillPaymentRefunded({} as Record<string, unknown>, source as Record<string, unknown>);
+      result = fillTPaymentRefunded({} as Record<string, unknown>, source as Record<string, unknown>);
     }
   }
   return result;
 }
 
-export function fromWireFormatPaymentRefunded(wire: unknown, options?: __GolemSerdeOptions): PaymentRefundedFields {
-  return convertFromWirePaymentRefunded(wire, options, false) as PaymentRefundedFields;
+export function fromWireFormatTPaymentRefunded(wire: unknown, options?: __GolemSerdeOptions): TPaymentRefundedFields {
+  return convertFromWireTPaymentRefunded(wire, options, false) as TPaymentRefundedFields;
 }
 
-function toWireFormatPaymentRefundedCore(value: PaymentRefundedFields): PaymentRefundedJSON {
+function toWireFormatTPaymentRefundedCore(value: TPaymentRefundedFields): TPaymentRefundedJSON {
   const record = value as Record<string, unknown>;
   const wire = { ["paymentId"]: record["paymentId"], ["reason"]: record["reason"] };
-  return wire as PaymentRefundedJSON;
+  return wire as TPaymentRefundedJSON;
 }
 
-export function toWireFormatPaymentRefunded(value: PaymentRefundedFields, options?: __GolemSerdeOptions): PaymentRefundedJSON {
+export function toWireFormatTPaymentRefunded(value: TPaymentRefundedFields, options?: __GolemSerdeOptions): TPaymentRefundedJSON {
   const validates = serdeValidates(options, true);
   if (validates) {
-    assertPaymentRefunded(value, options);
+    assertTPaymentRefunded(value, options);
   }
-  return toWireFormatPaymentRefundedCore(value);
+  return toWireFormatTPaymentRefundedCore(value);
 }
 
-export function parsePaymentRefunded(text: string, options?: __GolemSerdeOptions): PaymentRefundedFields {
-  return convertFromWirePaymentRefunded(parseJson(text), options, true) as PaymentRefundedFields;
+export function parseTPaymentRefunded(text: string, options?: __GolemSerdeOptions): TPaymentRefundedFields {
+  return convertFromWireTPaymentRefunded(parseJson(text), options, true) as TPaymentRefundedFields;
 }
 
-export function validatePaymentRefunded(value: unknown, options?: __GolemValidateOptions): value is PaymentRefundedFields {
+export function validateTPaymentRefunded(value: unknown, options?: __GolemValidateOptions): value is TPaymentRefundedFields {
   const failFast = options?.failFast !== false;
   let ok: boolean;
   let errors: readonly unknown[] | null | undefined;
   if (options?.validationContext === undefined) {
-    const validator = failFast ? validatePaymentRefundedFast : validatePaymentRefundedAll;
+    const validator = failFast ? validateTPaymentRefundedFast : validateTPaymentRefundedAll;
     ok = validator(value);
     errors = validator.errors;
   } else {
-    const validator = resolveModelValidationContextValidator(options.validationContext, "PaymentRefunded_1b8a5bca", failFast ? 'first' : 'all');
+    const validator = resolveModelValidationContextValidator(options.validationContext, "TPaymentRefunded_1b8a5bca", failFast ? 'first' : 'all');
     ok = runSynchronousValidation(validator, value);
     errors = validator.errors;
   }
-  (validatePaymentRefunded as { errors?: unknown }).errors = errors;
+  (validateTPaymentRefunded as { errors?: unknown }).errors = errors;
   return ok;
 }
 
-export function assertPaymentRefunded(value: unknown, options?: __GolemValidateOptions): PaymentRefundedFields {
-  assertModelValue(value, options, validatePaymentRefundedFast, validatePaymentRefundedAll, "PaymentRefunded_1b8a5bca", IssueRepresentation.Model, IssueSource.TypeScript);
-  return value as PaymentRefundedFields;
+export function assertTPaymentRefunded(value: unknown, options?: __GolemValidateOptions): TPaymentRefundedFields {
+  assertModelValue(value, options, validateTPaymentRefundedFast, validateTPaymentRefundedAll, "TPaymentRefunded_1b8a5bca", IssueRepresentation.Model, IssueSource.TypeScript);
+  return value as TPaymentRefundedFields;
 }
 
-createObjectCodec("PaymentRefunded_1b8a5bca", {
-  stringify: stringifyPaymentRefunded as (value: never, options?: __GolemSerdeOptions) => string,
-  parse: parsePaymentRefunded as (text: string, options?: __GolemSerdeOptions) => never,
-  validate: validatePaymentRefunded,
-  assert: assertPaymentRefunded,
-  toWireFormat: toWireFormatPaymentRefunded,
-  fromWireFormat: fromWireFormatPaymentRefunded,
-  schema: __resolvedModelSchema_PaymentRefunded,
+createObjectCodec("TPaymentRefunded_1b8a5bca", {
+  stringify: stringifyTPaymentRefunded as (value: never, options?: __GolemSerdeOptions) => string,
+  parse: parseTPaymentRefunded as (text: string, options?: __GolemSerdeOptions) => never,
+  validate: validateTPaymentRefunded,
+  assert: assertTPaymentRefunded,
+  toWireFormat: toWireFormatTPaymentRefunded,
+  fromWireFormat: fromWireFormatTPaymentRefunded,
+  schema: __resolvedModelSchema_TPaymentRefunded,
   issueSource: IssueSource.TypeScript,
 });

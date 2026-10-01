@@ -2,10 +2,10 @@
 export * from './types.js';
 export type * as InputSchemas from './input-schemas.js';
 export type * as OutputSchemas from './output-schemas.js';
-export { MemberModel, stringifyMember, parseMember, fromWireFormatMember, toWireFormatMember, validateMember, assertMember, encodeMember } from './models/Member.js';
-export type { MemberFields, MemberJSON, MemberInit } from './models/Member.js';
-export { ProjectAccessModel, stringifyProjectAccess, parseProjectAccess, fromWireFormatProjectAccess, toWireFormatProjectAccess, validateProjectAccess, assertProjectAccess, encodeProjectAccess } from './models/ProjectAccess.js';
-export type { ProjectAccessFields, ProjectAccessJSON, ProjectAccessInit } from './models/ProjectAccess.js';
+export { TMemberModel, stringifyTMember, parseTMember, fromWireFormatTMember, toWireFormatTMember, validateTMember, assertTMember, encodeTMember } from './models/TMember.js';
+export type { TMemberFields, TMemberJSON, TMemberInit } from './models/TMember.js';
+export { TProjectAccessModel, stringifyTProjectAccess, parseTProjectAccess, fromWireFormatTProjectAccess, toWireFormatTProjectAccess, validateTProjectAccess, assertTProjectAccess, encodeTProjectAccess } from './models/TProjectAccess.js';
+export type { TProjectAccessFields, TProjectAccessJSON, TProjectAccessInit } from './models/TProjectAccess.js';
 export * from './client.js';
 
 

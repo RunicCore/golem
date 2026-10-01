@@ -94,7 +94,7 @@ for (const ajvStandalone of [false, true]) {
         fs.copyFileSync(artifact.path, built);
       }
     }
-    const aId = generatedCodecId(modelResult.artifacts.map((artifact) => artifact.content).join('\n'), 'A');
+    const aId = generatedCodecId(modelResult.artifacts.map((artifact) => artifact.content).join('\n'), 'TA');
     writeGeneratedArtifacts([{
       path: path.join(root, 'src/verify.ts'),
       content: readFixture('models/constraint-portability/verifier/verify.ts'),

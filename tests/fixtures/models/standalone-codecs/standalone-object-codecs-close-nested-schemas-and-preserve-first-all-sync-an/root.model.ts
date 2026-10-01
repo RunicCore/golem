@@ -1,9 +1,9 @@
 import type { IModel } from '@exprtlabs/golem/model';
 import type { MinLength } from '@exprtlabs/golem/tags';
-import { LeafBaseModel, MiddleBaseModel, RootBaseModel } from './root.model.generated.js';
+import { TLeafBaseModel, TMiddleBaseModel, TRootBaseModel } from './root.model.generated.js';
 export type TLeaf = IModel<{ code: string & MinLength<3> }>;
 export type TMiddle = IModel<{ child: TLeaf; label: string }>;
 export type TRoot = IModel<{ label: string & MinLength<3>; first: TMiddle; second: TMiddle }>;
-export class Leaf extends LeafBaseModel {}
-export class Middle extends MiddleBaseModel {}
-export class Root extends RootBaseModel {}
+export class Leaf extends TLeafBaseModel {}
+export class Middle extends TMiddleBaseModel {}
+export class Root extends TRootBaseModel {}

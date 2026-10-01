@@ -11,7 +11,7 @@ export type TMoney = IObject<{
 // Wallet uses TMoney as a field. Without a model that nests TMoney somewhere,
 // the generated file's helper functions for TMoney go unused and fail the build.
 import type { IModel } from '@exprtlabs/golem/model';
-import { WalletBaseModel } from './money.model.generated.js';
+import { TWalletBaseModel } from './money.model.generated.js';
 
 export type TWallet = IModel<{ balance: TMoney }>;
-export class Wallet extends WalletBaseModel {}
+export class Wallet extends TWalletBaseModel {}

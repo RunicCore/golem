@@ -6,17 +6,17 @@ export function projectionPolicyModelSource(options: {
 }): SourceFragment {
   return tsSource`
 import type { IModel } from '@exprtlabs/golem/model';
-import { ContainerBaseModel, ItemBaseModel } from './item.model.generated.js';
+import { TContainerBaseModel, TItemBaseModel } from './item.model.generated.js';
 export type TItem = IModel<{ id: string; value: string }, { exact: ${literal(options.itemExact)} }>;
 export type TContainer = IModel<{ item: Omit<TItem, 'id'> }, { exact: ${literal(options.containerExact)} }>;
-export class Container extends ContainerBaseModel {}
-export class Item extends ItemBaseModel {}
+export class Container extends TContainerBaseModel {}
+export class Item extends TItemBaseModel {}
 `;
 }
 
 const serdeCodecs = tsSource`
-export function encodeAddress(value: { id: string; city: string }): string { return value.city; }
-export function decodeAddress(value: string): { id: string; city: string } { return { id: 'decoded', city: value }; }
+export function encodeTAddress(value: { id: string; city: string }): string { return value.city; }
+export function decodeTAddress(value: string): { id: string; city: string } { return { id: 'decoded', city: value }; }
 `;
 
 const validationCodecs = tsSource`
@@ -24,13 +24,13 @@ export function validAddress(_value: unknown): boolean { return true; }
 `;
 
 const serdeMetadata = tsSource`
-import type { encodeAddress, decodeAddress } from './codecs.js';
-type AddressFields = { id: string; city: string } & TSerde<typeof encodeAddress, typeof decodeAddress>;
+import type { encodeTAddress, decodeTAddress } from './codecs.js';
+type TAddressFields = { id: string; city: string } & TSerde<typeof encodeTAddress, typeof decodeTAddress>;
 `;
 
 const validationMetadata = tsSource`
 import type { validAddress } from './codecs.js';
-type AddressFields = { id: string; city: string } & TValidation<typeof validAddress>;
+type TAddressFields = { id: string; city: string } & TValidation<typeof validAddress>;
 `;
 
 /** The module a whole-object serde or validation function lives in; a model file cannot declare it. */
@@ -47,11 +47,11 @@ export function discardedProjectionMetadataSource(options: {
   return tsSource`
 import type { IModel } from '@exprtlabs/golem/model';
 import type { TSerde, TValidation } from '@exprtlabs/golem/tags';
-import { AddressBaseModel, ContainerBaseModel } from './item.model.generated.js';
+import { TAddressBaseModel, TContainerBaseModel } from './item.model.generated.js';
 ${metadata}
-export type TAddress = IModel<AddressFields>;
+export type TAddress = IModel<TAddressFields>;
 export type TContainer = IModel<{ projected: Omit<TAddress, 'id'> }>;
-export class Address extends AddressBaseModel {}
-export class Container extends ContainerBaseModel {}
+export class Address extends TAddressBaseModel {}
+export class Container extends TContainerBaseModel {}
 `;
 }

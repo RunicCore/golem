@@ -82,7 +82,7 @@ export function run(): unknown { return parse<TPayment>('{"id":"p","amount":{"cu
 
   await t.test('ttsc plugin rewrites stringify<TMoney> to the generated codec', async () => {
     const emitted = emittedOf('use-stringify.js');
-    assert.match(emitted, /requireObjectCodec\("Money_[0-9a-f]{8}"\)\.stringify\(/);
+    assert.match(emitted, /requireObjectCodec\("TMoney_[0-9a-f]{8}"\)\.stringify\(/);
     assert.doesNotMatch(emitted, /construct:/);
     const { text } = await importBuilt('use-stringify.js') as { text: string };
     assert.equal(text, '{"currency":"USD","value":"1"}');
@@ -90,11 +90,11 @@ export function run(): unknown { return parse<TPayment>('{"id":"p","amount":{"cu
 
   await t.test('ttsc plugin rewrites parse<Payment> to construct the handwritten class', async () => {
     const emitted = emittedOf('use-parse-class.js');
-    assert.match(emitted, /requireObjectCodec\("Payment_[0-9a-f]{8}"\)\.parse\([^;]+construct: Payment/);
+    assert.match(emitted, /requireObjectCodec\("TPayment_[0-9a-f]{8}"\)\.parse\([^;]+construct: Payment/);
     assert.match(emitted, /\.\.\.\{ validate: false \}, construct: Payment/);
     assert.doesNotMatch(emitted.split('typed')[1]?.split('\n')[0] ?? '', /construct:/);
     const modelJs = emittedOf('money.model.js');
-    assert.match(modelJs, /registerIModelClass\("Payment_[0-9a-f]{8}", Payment\)/);
+    assert.match(modelJs, /registerIModelClass\("TPayment_[0-9a-f]{8}", Payment\)/);
     const { parsed, trusted, typed, wrapped, wire } = await importBuilt('use-parse-class.js') as {
       parsed: object;
       trusted: object;
@@ -114,9 +114,9 @@ export function run(): unknown { return parse<TPayment>('{"id":"p","amount":{"cu
 
   await t.test('ttsc plugin does not rewrite validation validate between fromWireFormat<T> calls', async () => {
     const emitted = emittedOf('use-from-wire.js');
-    assert.equal([...emitted.matchAll(/requireObjectCodec\("Money_[0-9a-f]{8}"\)\.fromWireFormat\(/g)].length, 2);
+    assert.equal([...emitted.matchAll(/requireObjectCodec\("TMoney_[0-9a-f]{8}"\)\.fromWireFormat\(/g)].length, 2);
     assert.match(emitted, /validateInstance\(value\)/);
-    assert.doesNotMatch(emitted, /requireObjectCodec\("Money_[0-9a-f]{8}"\)\.validate\(/);
+    assert.doesNotMatch(emitted, /requireObjectCodec\("TMoney_[0-9a-f]{8}"\)\.validate\(/);
     const { first, second } = await importBuilt('use-from-wire.js') as {
       first: { currency: string; value: string };
       second: { currency: string; value: string };
@@ -128,15 +128,15 @@ export function run(): unknown { return parse<TPayment>('{"id":"p","amount":{"cu
   await t.test('ttsc plugin ignores a comment and string that look like serde calls', async () => {
     const emitted = emittedOf('use-comment.js');
     assert.match(emitted, /parse<Foo>\(/);
-    assert.match(emitted, /requireObjectCodec\("Money_[0-9a-f]{8}"\)\.stringify\(/);
+    assert.match(emitted, /requireObjectCodec\("TMoney_[0-9a-f]{8}"\)\.stringify\(/);
     const { text } = await importBuilt('use-comment.js') as { text: string };
     assert.equal(text, '{"currency":"USD","value":"1"}');
   });
 
   await t.test('ttsc plugin compiles classes that extend non-generated bases next to serde calls', async () => {
     const emitted = emittedOf('use-heritage.js');
-    assert.match(emitted, /requireObjectCodec\("Money_[0-9a-f]{8}"\)\.stringify\(/);
-    assert.match(emitted, /requireObjectCodec\("Payment_[0-9a-f]{8}"\)\.parse\([\s\S]*construct: Payment/);
+    assert.match(emitted, /requireObjectCodec\("TMoney_[0-9a-f]{8}"\)\.stringify\(/);
+    assert.match(emitted, /requireObjectCodec\("TPayment_[0-9a-f]{8}"\)\.parse\([\s\S]*construct: Payment/);
     const module = await importBuilt('use-heritage.js') as Record<string, unknown>;
     assert.deepEqual(
       [module.errorName, module.kind, module.mixed, module.libError, module.text, module.isPayment],
@@ -150,7 +150,7 @@ export function run(): unknown { return parse<TPayment>('{"id":"p","amount":{"cu
     const result = await command(root, process.execPath, ['--input-type=module', '-e', probe]);
     const failure = JSON.parse(result.stdout.trim()) as { kind: string; message: string };
     assert.equal(failure.kind, LibErrorKind.ValidationUnavailable);
-    assert.match(failure.message, /IObject codec "Payment_[0-9a-f]{8}" for model Payment is not registered\./);
+    assert.match(failure.message, /IObject codec "TPayment_[0-9a-f]{8}" for model Payment is not registered\./);
     assert.match(failure.message, /type-only import such as `import type \{ TPayment \}` does not load it/);
     assert.match(failure.message, /\.model\.generated\.js/);
     assert.match(failure.message, /Import the model's \.model\.generated\.js file, or a value from its model file,/);
@@ -158,13 +158,13 @@ export function run(): unknown { return parse<TPayment>('{"id":"p","amount":{"cu
   });
 
   await t.test('ttsc plugin rewrites a serde call whose type argument is split across lines', async () => {
-    assert.match(emittedOf('use-multiline.js'), /requireObjectCodec\("Money_[0-9a-f]{8}"\)\.stringify\(/);
+    assert.match(emittedOf('use-multiline.js'), /requireObjectCodec\("TMoney_[0-9a-f]{8}"\)\.stringify\(/);
     const { text } = await importBuilt('use-multiline.js') as { text: string };
     assert.equal(text, '{"currency":"USD","value":"1"}');
   });
 
   await t.test('ttsc plugin rewrites a qualified type argument that resolves to one model', async () => {
-    assert.match(emittedOf('use-qualified.js'), /requireObjectCodec\("Money_[0-9a-f]{8}"\)\.stringify\(/);
+    assert.match(emittedOf('use-qualified.js'), /requireObjectCodec\("TMoney_[0-9a-f]{8}"\)\.stringify\(/);
     const { text } = await importBuilt('use-qualified.js') as { text: string };
     assert.equal(text, '{"currency":"USD","value":"1"}');
   });
@@ -172,7 +172,7 @@ export function run(): unknown { return parse<TPayment>('{"id":"p","amount":{"cu
   await t.test('ttsc plugin leaves an earlier unrelated parse call in the emitted JavaScript', async () => {
     const emitted = emittedOf('use-unrelated-parse.js');
     const kept = emitted.indexOf("parse('plain')");
-    const rewritten = emitted.search(/requireObjectCodec\("Payment_[0-9a-f]{8}"\)\.parse\(/);
+    const rewritten = emitted.search(/requireObjectCodec\("TPayment_[0-9a-f]{8}"\)\.parse\(/);
     assert.ok(kept >= 0, emitted);
     assert.ok(rewritten > kept, emitted);
     const loaded = await importBuilt('use-unrelated-parse.js') as {
@@ -202,14 +202,14 @@ test('ttsc plugin links a class to its model through extends when the class name
   const { artifacts } = generate({ root, profile: { mobx: false, validation: true } });
   writeGeneratedArtifacts(artifacts);
   const keys = artifacts.find((artifact) => artifact.path.endsWith('iobject-plugin-keys.ts'))?.content ?? '';
-  assert.match(keys, /order\.model\.ts#Order": "Order_[0-9a-f]{8}"/);
-  assert.match(keys, /order\.model\.ts#PurchaseOrder": "Order_[0-9a-f]{8}"/);
+  assert.match(keys, /order\.model\.ts#Order": "TOrder_[0-9a-f]{8}"/);
+  assert.match(keys, /order\.model\.ts#PurchaseOrder": "TOrder_[0-9a-f]{8}"/);
   assert.doesNotMatch(keys, /#RushOrder/, 'a subclass of the model class is not the model class');
   enableSerdePlugin(root);
   await compile(root);
   const emittedOf = (file: string): string => fs.readFileSync(path.join(root, 'build', file), 'utf8');
-  assert.match(emittedOf('order.model.js'), /registerIModelClass\("Order_[0-9a-f]{8}", PurchaseOrder\)/);
-  assert.match(emittedOf('use-order.js'), /requireObjectCodec\("Order_[0-9a-f]{8}"\)\.parse\([^;]+construct: PurchaseOrder/);
+  assert.match(emittedOf('order.model.js'), /registerIModelClass\("TOrder_[0-9a-f]{8}", PurchaseOrder\)/);
+  assert.match(emittedOf('use-order.js'), /requireObjectCodec\("TOrder_[0-9a-f]{8}"\)\.parse\([^;]+construct: PurchaseOrder/);
   const { PurchaseOrder } = await import(pathToFileURL(path.join(root, 'build/order.model.js')).href) as {
     PurchaseOrder: new (values?: object) => object;
   };
@@ -221,15 +221,15 @@ test('ttsc plugin links a class to its model through extends when the class name
 test('two classes extending one generated base are rejected', (t) => {
   const { root } = createModelProject(t, { prefix: 'golem-serde-', name: 'serde-class-link-ambiguous', linkTypescript: true });
   fs.writeFileSync(path.join(root, 'src/order.model.ts'), `import type { IModel } from '@exprtlabs/golem/model';
-import { OrderBaseModel } from './order.model.generated.js';
+import { TOrderBaseModel } from './order.model.generated.js';
 
 export type TOrder = IModel<{ id: string }>;
-export class PurchaseOrder extends OrderBaseModel {}
-export class SalesOrder extends OrderBaseModel {}
+export class PurchaseOrder extends TOrderBaseModel {}
+export class SalesOrder extends TOrderBaseModel {}
 `);
   assert.throws(
     () => generate({ root, profile: { mobx: false, validation: true } }),
-    /several classes extending OrderBaseModel .*: PurchaseOrder, SalesOrder\. Export one\./,
+    /several classes extending TOrderBaseModel .*: PurchaseOrder, SalesOrder\. Export one\./,
   );
 });
 
@@ -253,14 +253,14 @@ test('ttsc plugin resolves OpenAPI codecs through SDK facades without crossing S
     writeGeneratedArtifacts(generated.artifacts);
     const keys = fs.readFileSync(path.join(output, 'iobject-plugin-keys.ts'), 'utf8');
     assert.doesNotMatch(keys, /"models\.ts#/);
-    assert.match(keys, /"models\/_group-[0-9a-f]{8}\.ts#MoneyModel": "Money_[0-9a-f]{8}"/);
+    assert.match(keys, /"models\/_group-[0-9a-f]{8}\.ts#MoneyModel": "TMoney_[0-9a-f]{8}"/);
     return keys;
   };
 
   const firstKeys = writeGeneratedSdk('sdk-first', 'cents', 'number');
   const secondKeys = writeGeneratedSdk('sdk-second', 'code', 'string');
-  const firstId = firstKeys.match(/"models\/_group-[0-9a-f]{8}\.ts#MoneyModel": "(Money_[0-9a-f]{8})"/)?.[1];
-  const secondId = secondKeys.match(/"models\/_group-[0-9a-f]{8}\.ts#MoneyModel": "(Money_[0-9a-f]{8})"/)?.[1];
+  const firstId = firstKeys.match(/"models\/_group-[0-9a-f]{8}\.ts#MoneyModel": "(TMoney_[0-9a-f]{8})"/)?.[1];
+  const secondId = secondKeys.match(/"models\/_group-[0-9a-f]{8}\.ts#MoneyModel": "(TMoney_[0-9a-f]{8})"/)?.[1];
   assert.ok(firstId);
   assert.ok(secondId);
   assert.notEqual(firstId, secondId);

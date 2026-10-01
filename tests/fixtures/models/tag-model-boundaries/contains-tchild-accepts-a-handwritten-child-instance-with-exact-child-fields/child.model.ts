@@ -1,7 +1,7 @@
 import type { IModel } from '@exprtlabs/golem/model';
-import { ChildBaseModel, type ChildFields } from './child.model.generated.js';
+import { TChildBaseModel, type TChildFields } from './child.model.generated.js';
 export type TChild = IModel<{ name: string }, { exact: true }>;
-export class Child extends ChildBaseModel {
-  constructor(values: Partial<ChildFields> = {}) { super(values); }
+export class Child extends TChildBaseModel {
+  constructor(values: Partial<TChildFields> = {}) { super(values); }
 }
 Object.defineProperty(Child.prototype, "savingState", { value: { dirty: true } });

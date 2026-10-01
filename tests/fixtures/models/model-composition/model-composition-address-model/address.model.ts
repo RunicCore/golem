@@ -1,7 +1,7 @@
 
 import type { IModel } from '@exprtlabs/golem/model';
 import type { MinLength } from '@exprtlabs/golem/tags';
-import { AddressBaseModel, CustomerBaseModel } from './address.model.generated.js';
+import { TAddressBaseModel, TCustomerBaseModel } from './address.model.generated.js';
 export type TAddress = IModel<{ id: string; city: string & MinLength<2>; country?: string }>;
 type Identity<T> = T;
 export type TCustomer = IModel<{
@@ -10,5 +10,5 @@ export type TCustomer = IModel<{
   intact: Identity<TAddress>;
   readonlyAddress: Readonly<TAddress>;
 }>;
-export class Address extends AddressBaseModel { label() { return this.city; } }
-export class Customer extends CustomerBaseModel {}
+export class Address extends TAddressBaseModel { label() { return this.city; } }
+export class Customer extends TCustomerBaseModel {}

@@ -21,7 +21,7 @@ export function decodeHex(value: Hex): number { return parseInt(value, 16); }
 const ORDER = `import type { IModel, IObject } from '@exprtlabs/golem/model';
 import type { Minimum, TSerde, TValidation } from '@exprtlabs/golem/tags';
 import { decodeHex, encodeHex, notBlank } from './counter.js';
-import { OrderBaseModel, RuleOnlyBaseModel } from './order.model.generated.js';
+import { TOrderBaseModel, TRuleOnlyBaseModel } from './order.model.generated.js';
 export type TFields = {
   note: string & TValidation<typeof notBlank>;
   code: number & Minimum<1> & TSerde<typeof encodeHex, typeof decodeHex>;
@@ -29,10 +29,10 @@ export type TFields = {
   sku: string;
 };
 export type TOrder = IModel<TFields>;
-export class Order extends OrderBaseModel {}
+export class Order extends TOrderBaseModel {}
 export type TPlainOrder = IObject<TFields>;
 export type TRuleOnly = IModel<{ note: string & TValidation<typeof notBlank>; sku: string }>;
-export class RuleOnly extends RuleOnlyBaseModel {}
+export class RuleOnly extends TRuleOnlyBaseModel {}
 `;
 
 const good = { note: 'hi', code: 'ff', when: '2026-01-02T03:04:05.000Z', sku: 'A' };
@@ -48,7 +48,7 @@ async function project(t: TestContext, profile: { mobx: false; validation: true;
   const source = result.artifacts.map(a => a.content).join('\n');
   const counter = await import(pathToFileURL(path.join(root, 'build/counter.js')).href) as { calls: number; reset(): void };
   const models = await import(pathToFileURL(path.join(root, 'build/order.model.js')).href) as { Order: new (v?: object) => object; RuleOnly: new (v?: object) => object };
-  return { source, counter, ...models, order: requireObjectCodec('Order'), plain: requireObjectCodec('PlainOrder'), ruleOnly: requireObjectCodec('RuleOnly') };
+  return { source, counter, ...models, order: requireObjectCodec('TOrder'), plain: requireObjectCodec('TPlainOrder'), ruleOnly: requireObjectCodec('TRuleOnly') };
 }
 
 for (const [label, profile] of [['runtime Ajv', { mobx: false, validation: true }], ['standalone', { mobx: false, validation: true, ajvStandalone: true }]] as const) {
@@ -118,21 +118,21 @@ test('a rule on an SDK model runs once per parse and IObject enforces it (standa
 const TOGGLES = `import type { IModel, IObject } from '@exprtlabs/golem/model';
 import type { TValidation } from '@exprtlabs/golem/tags';
 import { notBlank } from './counter.js';
-import { InheritBaseModel, OnBaseModel, OffBaseModel, ParentBaseModel, VChildBaseModel, UParentBaseModel } from './toggles.model.generated.js';
+import { TInheritBaseModel, TOnBaseModel, TOffBaseModel, TParentBaseModel, TVChildBaseModel, TUParentBaseModel } from './toggles.model.generated.js';
 type Fields = { note: string & TValidation<typeof notBlank>; when: Date };
 export type TInherit = IModel<Fields>;
-export class Inherit extends InheritBaseModel {}
+export class Inherit extends TInheritBaseModel {}
 export type TOn = IModel<Fields, { validation: true }>;
-export class On extends OnBaseModel {}
+export class On extends TOnBaseModel {}
 export type TOff = IModel<Fields, { validation: false }>;
-export class Off extends OffBaseModel {}
+export class Off extends TOffBaseModel {}
 export type TChild = IObject<{ secret: string }, { validation: false }>;
 export type TParent = IModel<{ child: TChild; note: string & TValidation<typeof notBlank>; when: Date }>;
-export class Parent extends ParentBaseModel {}
+export class Parent extends TParentBaseModel {}
 export type TVChild = IModel<{ note: string & TValidation<typeof notBlank>; when: Date }, { validation: true }>;
-export class VChild extends VChildBaseModel {}
+export class VChild extends TVChildBaseModel {}
 export type TUParent = IModel<{ child: VChild; when: Date }, { validation: false }>;
-export class UParent extends UParentBaseModel {}
+export class UParent extends TUParentBaseModel {}
 `;
 
 for (const profileValidation of [true, false]) {
@@ -174,9 +174,9 @@ for (const profileValidation of [true, false]) {
     if (profileValidation) {
       // An opaque child inside a validated parent: parent rules run once, child contents unchecked.
       counter.reset();
-      requireObjectCodec('Parent').parse(JSON.stringify({ child: { secret: 7 }, ...value }), { construct: models.Parent });
+      requireObjectCodec('TParent').parse(JSON.stringify({ child: { secret: 7 }, ...value }), { construct: models.Parent });
       assert.equal(counter.calls, 1);
-      const parentCodec = requireObjectCodec('Parent');
+      const parentCodec = requireObjectCodec('TParent');
       const blank = new models.Parent({ child: { secret: 'x' }, note: '  ', when: new Date(value.when) });
       assert.equal(parentCodec.validate(blank), false, 'a blank parent note is rejected');
       assert.ok((await validateInstance(blank)).some(issue => issue.path[0] === 'note'));
@@ -186,9 +186,9 @@ for (const profileValidation of [true, false]) {
     } else {
       // A validated child inside an unvalidated parent: the codec you call decides.
       counter.reset();
-      requireObjectCodec('UParent').parse(JSON.stringify({ child: value, when: value.when }), { construct: models.UParent });
+      requireObjectCodec('TUParent').parse(JSON.stringify({ child: value, when: value.when }), { construct: models.UParent });
       assert.equal(counter.calls, 0, 'converting the unvalidated parent runs no checks');
-      requireObjectCodec('VChild').parse(JSON.stringify(value), { construct: models.VChild });
+      requireObjectCodec('TVChild').parse(JSON.stringify(value), { construct: models.VChild });
       assert.equal(counter.calls, 1, 'converting the validated child directly validates it');
     }
   });
@@ -219,11 +219,11 @@ for (const [label, profile] of [['runtime Ajv', { mobx: false, validation: true 
 test('an engine filled by registerCodecSchemas validates parse and stringify through a context, nested residual refs included', async t => {
   const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-single-pass-engine-', name: 'single-pass-engine' });
   writeModelSources(sourceRoot, { 'visit.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
-import { StopBaseModel, TripBaseModel } from './visit.model.generated.js';
+import { TStopBaseModel, TTripBaseModel } from './visit.model.generated.js';
 export type TStop = IModel<{ at: Date; name: string }>;
-export class Stop extends StopBaseModel {}
+export class Stop extends TStopBaseModel {}
 export type TTrip = IModel<{ at: Date; stop: Stop }>;
-export class Trip extends TripBaseModel {}
+export class Trip extends TTripBaseModel {}
 ` });
   writeGeneratedArtifacts(generate({ root, profile: { mobx: false, validation: true } }).artifacts);
   await compileModelProject(root);
@@ -235,7 +235,7 @@ export class Trip extends TripBaseModel {}
   registerCodecSchemas((schema, id) => { registered.push(id); engine.addSchema(schema, id); }, 'Trip');
   assert.ok(registered.some(id => id.startsWith('Stop') && id.endsWith('#model-only')), 'the nested codec residual schema is registered');
   const context = { engine };
-  const codec = requireObjectCodec('Trip');
+  const codec = requireObjectCodec('TTrip');
   const good = { at: '2026-01-02T03:04:05.000Z', stop: { at: '2026-01-03T00:00:00.000Z', name: 'A' } };
   const trip = codec.parse(JSON.stringify(good), { construct: Trip, validationContext: context });
   assert.equal(codec.stringify(trip as never, { validationContext: context }), JSON.stringify(good));

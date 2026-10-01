@@ -9,75 +9,75 @@ function modelObject(json: unknown, name: string): Record<string, unknown> {
   return requireModelObject(json, name);
 }
 
-export type AttachmentFields = { name: string; content: Uint8Array };
-export type AttachmentJSON = { name: string; content: string };
-export type AttachmentInit = Partial<{ name: string; content: Uint8Array }>;
+export type TAttachmentFields = { name: string; content: Uint8Array };
+export type TAttachmentJSON = { name: string; content: string };
+export type TAttachmentInit = Partial<{ name: string; content: Uint8Array }>;
 
-export abstract class AttachmentBaseModel implements GeneratedModel<AttachmentJSON, AttachmentFields> {
-  declare readonly [generatedModelWireBrand]: AttachmentJSON;
-  declare readonly [generatedModelFieldsBrand]: AttachmentFields;
-  declare name: AttachmentFields["name"];
-  declare content: AttachmentFields["content"];
+export abstract class TAttachmentBaseModel implements GeneratedModel<TAttachmentJSON, TAttachmentFields> {
+  declare readonly [generatedModelWireBrand]: TAttachmentJSON;
+  declare readonly [generatedModelFieldsBrand]: TAttachmentFields;
+  declare name: TAttachmentFields["name"];
+  declare content: TAttachmentFields["content"];
 
-  public constructor(values: AttachmentInit = {}) {
+  public constructor(values: TAttachmentInit = {}) {
     if (Object.prototype.hasOwnProperty.call(values, "name")) defineModelProperty(this, "name", values["name"]);
     if (Object.prototype.hasOwnProperty.call(values, "content")) defineModelProperty(this, "content", values["content"]);
   }
 
 }
 
-function decodeAttachmentModel(constructor: GeneratedModelConstructor, json: unknown): AttachmentBaseModel {
-  const values = modelObject(json, "AttachmentBaseModel");
+function decodeTAttachmentModel(constructor: GeneratedModelConstructor, json: unknown): TAttachmentBaseModel {
+  const values = modelObject(json, "TAttachmentBaseModel");
   const result: Record<string, unknown> = { ...values };
   if (Object.prototype.hasOwnProperty.call(values, "content")) defineModelProperty(result, "content", convertModelField("deserialize", "content", () => (modelSerdeBindings["src/base64-codec.ts#encodeBase64\u0000src/base64-codec.ts#decodeBase64"].deserialize(values["content"]))));
-  return Reflect.construct(constructor, [result]) as AttachmentBaseModel;
+  return Reflect.construct(constructor, [result]) as TAttachmentBaseModel;
 }
 
-function encodeAttachmentModel(model: AttachmentBaseModel): AttachmentJSON {
+function encodeTAttachmentModel(model: TAttachmentBaseModel): TAttachmentJSON {
   const result: Record<string, unknown> = {};
   if (Object.prototype.hasOwnProperty.call(model, "name")) defineModelProperty(result, "name", (model["name"]));
   if (Object.prototype.hasOwnProperty.call(model, "content")) defineModelProperty(result, "content", (convertModelField("serialize", "content", () => (modelSerdeBindings["src/base64-codec.ts#encodeBase64\u0000src/base64-codec.ts#decodeBase64"].serialize(model["content"])))));
-  return result as AttachmentJSON;
+  return result as TAttachmentJSON;
 }
 
-registerGeneratedModel(AttachmentBaseModel, {
+registerGeneratedModel(TAttachmentBaseModel, {
   fields: ["name", "content"],
   conversion: {
-    decode: (value, constructor) => decodeAttachmentModel(constructor ?? AttachmentBaseModel, value),
-    encode: encodeAttachmentModel,
+    decode: (value, constructor) => decodeTAttachmentModel(constructor ?? TAttachmentBaseModel, value),
+    encode: encodeTAttachmentModel,
   },
-  codecId: "Attachment_88b1059a",
+  codecId: "TAttachment_88b1059a",
   profile: { validation: true, mobx: false },
 });
 
-registerIModelClass("Attachment_88b1059a", AttachmentBaseModel);
+registerIModelClass("TAttachment_88b1059a", TAttachmentBaseModel);
 
 const objectAjvFast = createOpenApiSyncAjvEngine({ allErrors: false, validationBindings: {} });
 const objectAjvAll = createOpenApiSyncAjvEngine({ allErrors: true, validationBindings: {} });
 
-const __resolvedModelSchema_Attachment = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"Attachment_88b1059a\",\"type\":\"object\",\"properties\":{\"content\":{},\"name\":{\"type\":\"string\"}},\"required\":[\"content\",\"name\"],\"additionalProperties\":false}") as object) as object;
-objectAjvFast.addSchema(structuredClone(__resolvedModelSchema_Attachment) as object, "Attachment_88b1059a");
-objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_Attachment) as object, "Attachment_88b1059a");
-const __resolvedWireSchema_Attachment = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"Attachment_88b1059a#wire\",\"type\":\"object\",\"properties\":{\"content\":{\"allOf\":[{\"type\":\"string\"},{\"pattern\":\"^[A-Za-z0-9+/]*={0,2}$\"}]},\"name\":{\"type\":\"string\"}},\"required\":[\"content\",\"name\"],\"additionalProperties\":false}") as object, 'wire') as object;
-objectAjvFast.addSchema(structuredClone(__resolvedWireSchema_Attachment) as object, "Attachment_88b1059a#wire");
-objectAjvAll.addSchema(structuredClone(__resolvedWireSchema_Attachment) as object, "Attachment_88b1059a#wire");
-const __resolvedModelOnlySchema_Attachment = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"Attachment_88b1059a#model-only\",\"properties\":{\"content\":{}}}") as object, 'model-only') as object;
-objectAjvFast.addSchema(structuredClone(__resolvedModelOnlySchema_Attachment) as object, "Attachment_88b1059a#model-only");
-objectAjvAll.addSchema(structuredClone(__resolvedModelOnlySchema_Attachment) as object, "Attachment_88b1059a#model-only");
-const __resolvedWireOnlySchema_Attachment = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"Attachment_88b1059a#wire-only\",\"properties\":{\"content\":{\"allOf\":[{\"type\":\"string\"},{\"pattern\":\"^[A-Za-z0-9+/]*={0,2}$\"}]}}}") as object, 'wire-only') as object;
-objectAjvFast.addSchema(structuredClone(__resolvedWireOnlySchema_Attachment) as object, "Attachment_88b1059a#wire-only");
-objectAjvAll.addSchema(structuredClone(__resolvedWireOnlySchema_Attachment) as object, "Attachment_88b1059a#wire-only");
+const __resolvedModelSchema_TAttachment = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"TAttachment_88b1059a\",\"type\":\"object\",\"properties\":{\"content\":{},\"name\":{\"type\":\"string\"}},\"required\":[\"content\",\"name\"],\"additionalProperties\":false}") as object) as object;
+objectAjvFast.addSchema(structuredClone(__resolvedModelSchema_TAttachment) as object, "TAttachment_88b1059a");
+objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_TAttachment) as object, "TAttachment_88b1059a");
+const __resolvedWireSchema_TAttachment = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"TAttachment_88b1059a#wire\",\"type\":\"object\",\"properties\":{\"content\":{\"allOf\":[{\"type\":\"string\"},{\"pattern\":\"^[A-Za-z0-9+/]*={0,2}$\"}]},\"name\":{\"type\":\"string\"}},\"required\":[\"content\",\"name\"],\"additionalProperties\":false}") as object, 'wire') as object;
+objectAjvFast.addSchema(structuredClone(__resolvedWireSchema_TAttachment) as object, "TAttachment_88b1059a#wire");
+objectAjvAll.addSchema(structuredClone(__resolvedWireSchema_TAttachment) as object, "TAttachment_88b1059a#wire");
+const __resolvedModelOnlySchema_TAttachment = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"TAttachment_88b1059a#model-only\",\"properties\":{\"content\":{}}}") as object, 'model-only') as object;
+objectAjvFast.addSchema(structuredClone(__resolvedModelOnlySchema_TAttachment) as object, "TAttachment_88b1059a#model-only");
+objectAjvAll.addSchema(structuredClone(__resolvedModelOnlySchema_TAttachment) as object, "TAttachment_88b1059a#model-only");
+const __resolvedWireOnlySchema_TAttachment = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"TAttachment_88b1059a#wire-only\",\"properties\":{\"content\":{\"allOf\":[{\"type\":\"string\"},{\"pattern\":\"^[A-Za-z0-9+/]*={0,2}$\"}]}}}") as object, 'wire-only') as object;
+objectAjvFast.addSchema(structuredClone(__resolvedWireOnlySchema_TAttachment) as object, "TAttachment_88b1059a#wire-only");
+objectAjvAll.addSchema(structuredClone(__resolvedWireOnlySchema_TAttachment) as object, "TAttachment_88b1059a#wire-only");
 
-const validateAttachmentFast = requireAjvSchema(objectAjvFast.getSchema("Attachment_88b1059a"), "Attachment_88b1059a");
-const validateAttachmentAll = requireAjvSchema(objectAjvAll.getSchema("Attachment_88b1059a"), "Attachment_88b1059a");
-const validateAttachmentWireFast = requireAjvSchema(objectAjvFast.getSchema("Attachment_88b1059a#wire"), "Attachment_88b1059a#wire");
-const validateAttachmentWireAll = requireAjvSchema(objectAjvAll.getSchema("Attachment_88b1059a#wire"), "Attachment_88b1059a#wire");
-const validateAttachmentModelOnlyFast = requireAjvSchema(objectAjvFast.getSchema("Attachment_88b1059a#model-only"), "Attachment_88b1059a#model-only");
-const validateAttachmentModelOnlyAll = requireAjvSchema(objectAjvAll.getSchema("Attachment_88b1059a#model-only"), "Attachment_88b1059a#model-only");
-const validateAttachmentWireOnlyFast = requireAjvSchema(objectAjvFast.getSchema("Attachment_88b1059a#wire-only"), "Attachment_88b1059a#wire-only");
-const validateAttachmentWireOnlyAll = requireAjvSchema(objectAjvAll.getSchema("Attachment_88b1059a#wire-only"), "Attachment_88b1059a#wire-only");
+const validateTAttachmentFast = requireAjvSchema(objectAjvFast.getSchema("TAttachment_88b1059a"), "TAttachment_88b1059a");
+const validateTAttachmentAll = requireAjvSchema(objectAjvAll.getSchema("TAttachment_88b1059a"), "TAttachment_88b1059a");
+const validateTAttachmentWireFast = requireAjvSchema(objectAjvFast.getSchema("TAttachment_88b1059a#wire"), "TAttachment_88b1059a#wire");
+const validateTAttachmentWireAll = requireAjvSchema(objectAjvAll.getSchema("TAttachment_88b1059a#wire"), "TAttachment_88b1059a#wire");
+const validateTAttachmentModelOnlyFast = requireAjvSchema(objectAjvFast.getSchema("TAttachment_88b1059a#model-only"), "TAttachment_88b1059a#model-only");
+const validateTAttachmentModelOnlyAll = requireAjvSchema(objectAjvAll.getSchema("TAttachment_88b1059a#model-only"), "TAttachment_88b1059a#model-only");
+const validateTAttachmentWireOnlyFast = requireAjvSchema(objectAjvFast.getSchema("TAttachment_88b1059a#wire-only"), "TAttachment_88b1059a#wire-only");
+const validateTAttachmentWireOnlyAll = requireAjvSchema(objectAjvAll.getSchema("TAttachment_88b1059a#wire-only"), "TAttachment_88b1059a#wire-only");
 
-function fillAttachment(out: Record<string, unknown>, wire: Record<string, unknown>, copyIdentity = true): Record<string, unknown> {
+function fillTAttachment(out: Record<string, unknown>, wire: Record<string, unknown>, copyIdentity = true): Record<string, unknown> {
   if (copyIdentity) {
     out["name"] = wire["name"];
   }
@@ -87,118 +87,118 @@ function fillAttachment(out: Record<string, unknown>, wire: Record<string, unkno
   return out;
 }
 
-function stringifyAttachmentCore(value: Record<string, unknown>): string {
+function stringifyTAttachmentCore(value: Record<string, unknown>): string {
   return '{' + "\"name\":" + stringifyJsonString(value["name"] as string) + ",\"content\":" + stringifyJsonString(modelSerdeBindings["src/base64-codec.ts#encodeBase64\u0000src/base64-codec.ts#decodeBase64"].serialize(value["content"]) as string) + '}';
 }
 
-function stringifyAttachmentWire(value: Record<string, unknown>): string {
+function stringifyTAttachmentWire(value: Record<string, unknown>): string {
   return '{' + "\"name\":" + stringifyJsonString(value["name"] as string) + ",\"content\":" + stringifyJsonString(value["content"] as string) + '}';
 }
 
-export function stringifyAttachment(value: AttachmentFields, options?: __GolemSerdeOptions): string {
+export function stringifyTAttachment(value: TAttachmentFields, options?: __GolemSerdeOptions): string {
   const validates = serdeValidates(options, true);
   if (validates) {
-    assertAttachment(value, options);
+    assertTAttachment(value, options);
     const wire = { ["name"]: value["name"], ["content"]: modelSerdeBindings["src/base64-codec.ts#encodeBase64\u0000src/base64-codec.ts#decodeBase64"].serialize(value["content"]) };
-    __golemAssertWireOnly_Attachment(wire, options);
-    return stringifyAttachmentWire(wire as never);
+    __golemAssertWireOnly_TAttachment(wire, options);
+    return stringifyTAttachmentWire(wire as never);
   }
-  return stringifyAttachmentCore(value as never);
+  return stringifyTAttachmentCore(value as never);
 }
 
-function convertFromWireAttachment(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
+function convertFromWireTAttachment(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
   const validates = serdeValidates(options, true);
   if (validates) {
-    __golemAssertWire_Attachment(wire, options);
+    __golemAssertWire_TAttachment(wire, options);
   }
   const source = isolated || wire === null || typeof wire !== 'object' ? wire : cloneConversionInput(wire);
   let result: unknown = source;
   if (source !== null && typeof source === 'object' && !Array.isArray(source)) {
     if (options?.construct) {
-      result = Reflect.construct(options.construct, [fillAttachment({ ...(source as Record<string, unknown>) }, (source as Record<string, unknown>), false)]);
+      result = Reflect.construct(options.construct, [fillTAttachment({ ...(source as Record<string, unknown>) }, (source as Record<string, unknown>), false)]);
     } else {
-      result = fillAttachment({} as Record<string, unknown>, source as Record<string, unknown>);
+      result = fillTAttachment({} as Record<string, unknown>, source as Record<string, unknown>);
     }
   }
   if (validates) {
-    __golemAssertModelOnly_Attachment(result, options);
+    __golemAssertModelOnly_TAttachment(result, options);
   }
   return result;
 }
 
-export function fromWireFormatAttachment(wire: unknown, options?: __GolemSerdeOptions): AttachmentFields {
-  return convertFromWireAttachment(wire, options, false) as AttachmentFields;
+export function fromWireFormatTAttachment(wire: unknown, options?: __GolemSerdeOptions): TAttachmentFields {
+  return convertFromWireTAttachment(wire, options, false) as TAttachmentFields;
 }
 
-function toWireFormatAttachmentCore(value: AttachmentFields): AttachmentJSON {
+function toWireFormatTAttachmentCore(value: TAttachmentFields): TAttachmentJSON {
   const record = value as Record<string, unknown>;
   const wire = { ["name"]: record["name"], ["content"]: modelSerdeBindings["src/base64-codec.ts#encodeBase64\u0000src/base64-codec.ts#decodeBase64"].serialize(record["content"]) };
-  return wire as AttachmentJSON;
+  return wire as TAttachmentJSON;
 }
 
-export function toWireFormatAttachment(value: AttachmentFields, options?: __GolemSerdeOptions): AttachmentJSON {
+export function toWireFormatTAttachment(value: TAttachmentFields, options?: __GolemSerdeOptions): TAttachmentJSON {
   const validates = serdeValidates(options, true);
   if (validates) {
-    assertAttachment(value, options);
+    assertTAttachment(value, options);
   }
-  const wire = toWireFormatAttachmentCore(value);
+  const wire = toWireFormatTAttachmentCore(value);
   if (validates) {
-    __golemAssertWireOnly_Attachment(wire, options);
+    __golemAssertWireOnly_TAttachment(wire, options);
   }
   return wire;
 }
 
-export function parseAttachment(text: string, options?: __GolemSerdeOptions): AttachmentFields {
-  return convertFromWireAttachment(parseJson(text), options, true) as AttachmentFields;
+export function parseTAttachment(text: string, options?: __GolemSerdeOptions): TAttachmentFields {
+  return convertFromWireTAttachment(parseJson(text), options, true) as TAttachmentFields;
 }
 
-export function validateAttachment(value: unknown, options?: __GolemValidateOptions): value is AttachmentFields {
+export function validateTAttachment(value: unknown, options?: __GolemValidateOptions): value is TAttachmentFields {
   const failFast = options?.failFast !== false;
   let ok: boolean;
   let errors: readonly unknown[] | null | undefined;
   if (options?.validationContext === undefined) {
-    const validator = failFast ? validateAttachmentFast : validateAttachmentAll;
+    const validator = failFast ? validateTAttachmentFast : validateTAttachmentAll;
     ok = validator(value);
     errors = validator.errors;
   } else {
-    const validator = resolveModelValidationContextValidator(options.validationContext, "Attachment_88b1059a", failFast ? 'first' : 'all');
+    const validator = resolveModelValidationContextValidator(options.validationContext, "TAttachment_88b1059a", failFast ? 'first' : 'all');
     ok = runSynchronousValidation(validator, value);
     errors = validator.errors;
   }
-  (validateAttachment as { errors?: unknown }).errors = errors;
+  (validateTAttachment as { errors?: unknown }).errors = errors;
   return ok;
 }
 
-export function assertAttachment(value: unknown, options?: __GolemValidateOptions): AttachmentFields {
-  assertModelValue(value, options, validateAttachmentFast, validateAttachmentAll, "Attachment_88b1059a", IssueRepresentation.Model, IssueSource.TypeScript);
-  return value as AttachmentFields;
+export function assertTAttachment(value: unknown, options?: __GolemValidateOptions): TAttachmentFields {
+  assertModelValue(value, options, validateTAttachmentFast, validateTAttachmentAll, "TAttachment_88b1059a", IssueRepresentation.Model, IssueSource.TypeScript);
+  return value as TAttachmentFields;
 }
 
-function __golemAssertWire_Attachment(value: unknown, options?: __GolemValidateOptions): Record<string, unknown> {
-  assertModelValue(value, options, validateAttachmentWireFast, validateAttachmentWireAll, "Attachment_88b1059a#wire", IssueRepresentation.Wire, IssueSource.TypeScript);
+function __golemAssertWire_TAttachment(value: unknown, options?: __GolemValidateOptions): Record<string, unknown> {
+  assertModelValue(value, options, validateTAttachmentWireFast, validateTAttachmentWireAll, "TAttachment_88b1059a#wire", IssueRepresentation.Wire, IssueSource.TypeScript);
   return value as Record<string, unknown>;
 }
 
-function __golemAssertModelOnly_Attachment(value: unknown, options?: __GolemValidateOptions): Record<string, unknown> {
-  assertModelValue(value, options, validateAttachmentModelOnlyFast, validateAttachmentModelOnlyAll, "Attachment_88b1059a#model-only", IssueRepresentation.Model, IssueSource.TypeScript);
+function __golemAssertModelOnly_TAttachment(value: unknown, options?: __GolemValidateOptions): Record<string, unknown> {
+  assertModelValue(value, options, validateTAttachmentModelOnlyFast, validateTAttachmentModelOnlyAll, "TAttachment_88b1059a#model-only", IssueRepresentation.Model, IssueSource.TypeScript);
   return value as Record<string, unknown>;
 }
 
-function __golemAssertWireOnly_Attachment(value: unknown, options?: __GolemValidateOptions): Record<string, unknown> {
-  assertModelValue(value, options, validateAttachmentWireOnlyFast, validateAttachmentWireOnlyAll, "Attachment_88b1059a#wire-only", IssueRepresentation.Wire, IssueSource.TypeScript);
+function __golemAssertWireOnly_TAttachment(value: unknown, options?: __GolemValidateOptions): Record<string, unknown> {
+  assertModelValue(value, options, validateTAttachmentWireOnlyFast, validateTAttachmentWireOnlyAll, "TAttachment_88b1059a#wire-only", IssueRepresentation.Wire, IssueSource.TypeScript);
   return value as Record<string, unknown>;
 }
 
-createObjectCodec("Attachment_88b1059a", {
-  stringify: stringifyAttachment as (value: never, options?: __GolemSerdeOptions) => string,
-  parse: parseAttachment as (text: string, options?: __GolemSerdeOptions) => never,
-  validate: validateAttachment,
-  assert: assertAttachment,
-  toWireFormat: toWireFormatAttachment,
-  fromWireFormat: fromWireFormatAttachment,
-  schema: __resolvedModelSchema_Attachment,
-  wireSchema: __resolvedWireSchema_Attachment,
-  modelOnlySchema: __resolvedModelOnlySchema_Attachment,
-  wireOnlySchema: __resolvedWireOnlySchema_Attachment,
+createObjectCodec("TAttachment_88b1059a", {
+  stringify: stringifyTAttachment as (value: never, options?: __GolemSerdeOptions) => string,
+  parse: parseTAttachment as (text: string, options?: __GolemSerdeOptions) => never,
+  validate: validateTAttachment,
+  assert: assertTAttachment,
+  toWireFormat: toWireFormatTAttachment,
+  fromWireFormat: fromWireFormatTAttachment,
+  schema: __resolvedModelSchema_TAttachment,
+  wireSchema: __resolvedWireSchema_TAttachment,
+  modelOnlySchema: __resolvedModelOnlySchema_TAttachment,
+  wireOnlySchema: __resolvedWireOnlySchema_TAttachment,
   issueSource: IssueSource.TypeScript,
 });

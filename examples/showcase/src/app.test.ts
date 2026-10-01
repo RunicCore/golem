@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { fromWireFormat, toWireFormat } from '@exprtlabs/golem/serde';
 import { validateInstance } from '@exprtlabs/golem/validation';
-import { MemberModel, ProjectAccessClient } from '../sdk/index.js';
+import { TMemberModel, ProjectAccessClient } from '../sdk/index.js';
 import { checkPermissions } from './check-permissions.js';
 import { editAccess } from './edit-access.js';
 import { runHomeDemo } from './home-demo.js';
@@ -34,13 +34,13 @@ test('home demo keeps the wire-to-model-to-wire path and custom failure visible'
   assert.equal(example.after, true);
   assert.equal(example.wire.permissions, '0x5');
   assert.equal(example.customFailure, 'A project access record must include the read permission bit.');
-  assert.ok(example.access.member instanceof MemberModel);
+  assert.ok(example.access.member instanceof TMemberModel);
 });
 
 test('project access deserializes nested SDK members and serializes numeric permissions as hex', async () => {
   const access = fromWireFormat<ProjectAccessEditor>({ ...validWire, permissions: '0x1' });
 
-  assert.ok(access.member instanceof MemberModel);
+  assert.ok(access.member instanceof TMemberModel);
   assert.equal(access.permissions, 1);
   assert.equal(access.canWrite(), false);
   access.grantWrite();

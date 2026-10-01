@@ -22,20 +22,20 @@
         }
       ],
       "generated": {
-        "export": "MerchantModel",
-        "module": "./models/Merchant.ts"
+        "export": "TMerchantModel",
+        "module": "./models/TMerchant.ts"
       },
-      "id": "openapi:159ea8699d69a0f1#/components/schemas/Merchant",
+      "id": "openapi:053aa0b0dc74e79e#/components/schemas/TMerchant",
       "inheritance": null,
       "sourceKind": "openapi",
       "type": {
         "aliases": [
           {
-            "export": "Merchant",
+            "export": "TMerchant",
             "module": "./index.ts"
           }
         ],
-        "export": "Merchant",
+        "export": "TMerchant",
         "module": "./types.ts"
       },
       "variants": []
@@ -52,20 +52,20 @@
         }
       ],
       "generated": {
-        "export": "MerchantOmitIdModel",
-        "module": "./models/MerchantOmitId.ts"
+        "export": "TMerchantOmitIdModel",
+        "module": "./models/TMerchantOmitId.ts"
       },
-      "id": "openapi:159ea8699d69a0f1#/components/schemas/MerchantOmitId",
+      "id": "openapi:053aa0b0dc74e79e#/components/schemas/TMerchantOmitId",
       "inheritance": null,
       "sourceKind": "openapi",
       "type": {
         "aliases": [
           {
-            "export": "MerchantOmitId",
+            "export": "TMerchantOmitId",
             "module": "./index.ts"
           }
         ],
-        "export": "MerchantOmitId",
+        "export": "TMerchantOmitId",
         "module": "./types.ts"
       },
       "variants": []
@@ -88,20 +88,20 @@
         }
       ],
       "generated": {
-        "export": "MoneyModel",
-        "module": "./models/Money.ts"
+        "export": "TMoneyModel",
+        "module": "./models/TMoney.ts"
       },
-      "id": "openapi:159ea8699d69a0f1#/components/schemas/Money",
+      "id": "openapi:053aa0b0dc74e79e#/components/schemas/TMoney",
       "inheritance": null,
       "sourceKind": "openapi",
       "type": {
         "aliases": [
           {
-            "export": "Money",
+            "export": "TMoney",
             "module": "./index.ts"
           }
         ],
-        "export": "Money",
+        "export": "TMoney",
         "module": "./types.ts"
       },
       "variants": []
@@ -112,11 +112,11 @@
       "fields": [
         {
           "modelReferences": [
-            "MerchantOmitId"
+            "TMerchantOmitId"
           ],
           "name": "billing",
           "required": true,
-          "type": "MerchantOmitIdModel"
+          "type": "TMerchantOmitIdModel"
         },
         {
           "modelReferences": [],
@@ -126,19 +126,19 @@
         },
         {
           "modelReferences": [
-            "Merchant"
+            "TMerchant"
           ],
           "name": "merchant",
           "required": true,
-          "type": "MerchantModel"
+          "type": "TMerchantModel"
         },
         {
           "modelReferences": [
-            "Money"
+            "TMoney"
           ],
           "name": "money",
           "required": true,
-          "type": "MoneyModel"
+          "type": "TMoneyModel"
         },
         {
           "modelReferences": [],
@@ -148,20 +148,20 @@
         }
       ],
       "generated": {
-        "export": "PaymentModel",
-        "module": "./models/Payment.ts"
+        "export": "TPaymentModel",
+        "module": "./models/TPayment.ts"
       },
-      "id": "openapi:159ea8699d69a0f1#/components/schemas/Payment",
+      "id": "openapi:053aa0b0dc74e79e#/components/schemas/TPayment",
       "inheritance": null,
       "sourceKind": "openapi",
       "type": {
         "aliases": [
           {
-            "export": "Payment",
+            "export": "TPayment",
             "module": "./index.ts"
           }
         ],
-        "export": "Payment",
+        "export": "TPayment",
         "module": "./types.ts"
       },
       "variants": []
@@ -178,20 +178,20 @@
         }
       ],
       "generated": {
-        "export": "PaymentDraftModel",
-        "module": "./models/PaymentDraft.ts"
+        "export": "TPaymentDraftModel",
+        "module": "./models/TPaymentDraft.ts"
       },
-      "id": "openapi:159ea8699d69a0f1#/components/schemas/PaymentDraft",
+      "id": "openapi:053aa0b0dc74e79e#/components/schemas/TPaymentDraft",
       "inheritance": null,
       "sourceKind": "openapi",
       "type": {
         "aliases": [
           {
-            "export": "PaymentDraft",
+            "export": "TPaymentDraft",
             "module": "./index.ts"
           }
         ],
-        "export": "PaymentDraft",
+        "export": "TPaymentDraft",
         "module": "./types.ts"
       },
       "variants": []
@@ -202,27 +202,27 @@
       "fields": [
         {
           "modelReferences": [
-            "MerchantOmitId"
+            "TMerchantOmitId"
           ],
           "name": "billing",
           "required": true,
-          "type": "MerchantOmitIdModel"
+          "type": "TMerchantOmitIdModel"
         },
         {
           "modelReferences": [
-            "Merchant"
+            "TMerchant"
           ],
           "name": "merchant",
           "required": true,
-          "type": "MerchantModel"
+          "type": "TMerchantModel"
         },
         {
           "modelReferences": [
-            "Money"
+            "TMoney"
           ],
           "name": "money",
           "required": true,
-          "type": "MoneyModel"
+          "type": "TMoneyModel"
         },
         {
           "modelReferences": [],
@@ -232,20 +232,20 @@
         }
       ],
       "generated": {
-        "export": "PaymentInputModel",
-        "module": "./models/PaymentInput.ts"
+        "export": "TPaymentInputModel",
+        "module": "./models/TPaymentInput.ts"
       },
-      "id": "openapi:159ea8699d69a0f1#/components/schemas/PaymentInput",
+      "id": "openapi:053aa0b0dc74e79e#/components/schemas/TPaymentInput",
       "inheritance": null,
       "sourceKind": "openapi",
       "type": {
         "aliases": [
           {
-            "export": "PaymentInput",
+            "export": "TPaymentInput",
             "module": "./index.ts"
           }
         ],
-        "export": "PaymentInput",
+        "export": "TPaymentInput",
         "module": "./types.ts"
       },
       "variants": []
@@ -263,17 +263,17 @@
   },
   "source": {
     "dialect": "3.2.0",
-    "digest": "159ea8699d69a0f1a103e84e63a6861b2bf30d342cfb3c2e2107d739d65f9551",
+    "digest": "053aa0b0dc74e79ea279e02c9fa919fc62f9db8f1eff89155220aaf069ddc507",
     "kind": "openapi"
   },
   "validationSchemaClosure": [
     {
       "aliases": [
-        "Merchant",
-        "Merchant_2d893464",
-        "openapi:159ea8699d69a0f1#/components/schemas/Merchant"
+        "TMerchant",
+        "TMerchant_2d893464",
+        "openapi:053aa0b0dc74e79e#/components/schemas/TMerchant"
       ],
-      "codecId": "Merchant_2d893464",
+      "codecId": "TMerchant_2d893464",
       "modelSchema": {
         "additionalProperties": false,
         "properties": {
@@ -300,11 +300,11 @@
     },
     {
       "aliases": [
-        "MerchantOmitId",
-        "MerchantOmitId_1ef82815",
-        "openapi:159ea8699d69a0f1#/components/schemas/MerchantOmitId"
+        "TMerchantOmitId",
+        "TMerchantOmitId_1ef82815",
+        "openapi:053aa0b0dc74e79e#/components/schemas/TMerchantOmitId"
       ],
-      "codecId": "MerchantOmitId_1ef82815",
+      "codecId": "TMerchantOmitId_1ef82815",
       "modelSchema": {
         "additionalProperties": false,
         "properties": {
@@ -327,11 +327,11 @@
     },
     {
       "aliases": [
-        "Money",
-        "Money_f1820f67",
-        "openapi:159ea8699d69a0f1#/components/schemas/Money"
+        "TMoney",
+        "TMoney_f1820f67",
+        "openapi:053aa0b0dc74e79e#/components/schemas/TMoney"
       ],
-      "codecId": "Money_f1820f67",
+      "codecId": "TMoney_f1820f67",
       "modelSchema": {
         "additionalProperties": false,
         "properties": {
@@ -365,36 +365,36 @@
     },
     {
       "aliases": [
-        "Payment",
-        "Payment_92a78a94",
-        "openapi:159ea8699d69a0f1#/components/schemas/Payment"
+        "TPayment",
+        "TPayment_9b3f91d0",
+        "openapi:053aa0b0dc74e79e#/components/schemas/TPayment"
       ],
-      "codecId": "Payment_92a78a94",
+      "codecId": "TPayment_9b3f91d0",
       "modelSchema": {
         "$defs": {
-          "MerchantOmitId_1ef82815": {
-            "$ref": "MerchantOmitId_1ef82815"
+          "TMerchantOmitId_1ef82815": {
+            "$ref": "TMerchantOmitId_1ef82815"
           },
-          "Merchant_2d893464": {
-            "$ref": "Merchant_2d893464"
+          "TMerchant_2d893464": {
+            "$ref": "TMerchant_2d893464"
           },
-          "Money_f1820f67": {
-            "$ref": "Money_f1820f67"
+          "TMoney_f1820f67": {
+            "$ref": "TMoney_f1820f67"
           }
         },
         "additionalProperties": false,
         "properties": {
           "billing": {
-            "$ref": "#/$defs/MerchantOmitId_1ef82815"
+            "$ref": "#/$defs/TMerchantOmitId_1ef82815"
           },
           "id": {
             "type": "string"
           },
           "merchant": {
-            "$ref": "#/$defs/Merchant_2d893464"
+            "$ref": "#/$defs/TMerchant_2d893464"
           },
           "money": {
-            "$ref": "#/$defs/Money_f1820f67"
+            "$ref": "#/$defs/TMoney_f1820f67"
           },
           "note": {
             "allOf": [
@@ -419,11 +419,11 @@
     },
     {
       "aliases": [
-        "PaymentDraft",
-        "PaymentDraft_8be34727",
-        "openapi:159ea8699d69a0f1#/components/schemas/PaymentDraft"
+        "TPaymentDraft",
+        "TPaymentDraft_8be34727",
+        "openapi:053aa0b0dc74e79e#/components/schemas/TPaymentDraft"
       ],
-      "codecId": "PaymentDraft_8be34727",
+      "codecId": "TPaymentDraft_8be34727",
       "modelSchema": {
         "additionalProperties": false,
         "properties": {
@@ -446,33 +446,33 @@
     },
     {
       "aliases": [
-        "PaymentInput",
-        "PaymentInput_f132a855",
-        "openapi:159ea8699d69a0f1#/components/schemas/PaymentInput"
+        "TPaymentInput",
+        "TPaymentInput_3a8bdba1",
+        "openapi:053aa0b0dc74e79e#/components/schemas/TPaymentInput"
       ],
-      "codecId": "PaymentInput_f132a855",
+      "codecId": "TPaymentInput_3a8bdba1",
       "modelSchema": {
         "$defs": {
-          "MerchantOmitId_1ef82815": {
-            "$ref": "MerchantOmitId_1ef82815"
+          "TMerchantOmitId_1ef82815": {
+            "$ref": "TMerchantOmitId_1ef82815"
           },
-          "Merchant_2d893464": {
-            "$ref": "Merchant_2d893464"
+          "TMerchant_2d893464": {
+            "$ref": "TMerchant_2d893464"
           },
-          "Money_f1820f67": {
-            "$ref": "Money_f1820f67"
+          "TMoney_f1820f67": {
+            "$ref": "TMoney_f1820f67"
           }
         },
         "additionalProperties": false,
         "properties": {
           "billing": {
-            "$ref": "#/$defs/MerchantOmitId_1ef82815"
+            "$ref": "#/$defs/TMerchantOmitId_1ef82815"
           },
           "merchant": {
-            "$ref": "#/$defs/Merchant_2d893464"
+            "$ref": "#/$defs/TMerchant_2d893464"
           },
           "money": {
-            "$ref": "#/$defs/Money_f1820f67"
+            "$ref": "#/$defs/TMoney_f1820f67"
           },
           "note": {
             "allOf": [

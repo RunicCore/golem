@@ -111,7 +111,7 @@ test('fills a response media schema from the declared contract while preserving 
   const document = documentOf(result);
   const media = document.paths['/payments']?.get?.responses['200']?.content?.['application/json'];
   assert.deepEqual(media?.example, { id: 'p-1' });
-  assert.equal(media?.schema?.$ref, '#/components/schemas/Payment');
+  assert.equal(media?.schema?.$ref, '#/components/schemas/TPayment');
 });
 
 test('normalizes ordinary DTO nullable properties, enums, and response overlays', async t => {

@@ -60,7 +60,7 @@ test('ttsc nest plugin registers nestModelCodec and nestModelReturn metadata, ke
 
   const create = decoratorsOf(emitted, 'create');
   assert.match(create, /__param\(0, Body\(\)\)/);
-  assert.match(create, /__param\(0, nestModelCodec\("PaymentInput_[0-9a-f]{8}"\)\)/);
+  assert.match(create, /__param\(0, nestModelCodec\("TPaymentInput_[0-9a-f]{8}"\)\)/);
   assert.match(create, model);
   const createAsClass = decoratorsOf(emitted, 'createAsClass');
   assert.match(createAsClass, /__param\(0, Body\(\)\)/);
@@ -81,12 +81,12 @@ test('ttsc nest plugin registers nestModelCodec and nestModelReturn metadata, ke
   // An array @Body() is stamped with the element codec.
   const createBatch = decoratorsOf(emitted, 'createBatch');
   assert.match(createBatch, /__param\(0, Body\(\)\)/);
-  assert.match(createBatch, /__param\(0, nestModelCodec\("PaymentInput_[0-9a-f]{8}"\)\)/);
+  assert.match(createBatch, /__param\(0, nestModelCodec\("TPaymentInput_[0-9a-f]{8}"\)\)/);
 
   // A pipe already passed to @Body()/@Query() is kept and the codec metadata is still registered.
   const createPiped = decoratorsOf(emitted, 'createPiped');
   assert.match(createPiped, /Body\(customPipe\)/);
-  assert.match(createPiped, /nestModelCodec\("PaymentInput_[0-9a-f]{8}"\)/);
+  assert.match(createPiped, /nestModelCodec\("TPaymentInput_[0-9a-f]{8}"\)/);
   const listPiped = decoratorsOf(emitted, 'listPiped');
   assert.match(listPiped, /Query\(customPipe\)/);
   assert.match(listPiped, /nestModelCodec\("PaymentFilter_[0-9a-f]{8}"\)/);
@@ -206,6 +206,6 @@ test('serde rewrite and nest codec metadata share one ttsc emit', async (t) => {
   assert.equal(compiled.code, 0, compiled.stderr);
   const controller = fs.readFileSync(path.join(root, 'build/payments.controller.js'), 'utf8');
   const reader = fs.readFileSync(path.join(root, 'build/read.js'), 'utf8');
-  assert.match(controller, /nestModelCodec\("PaymentInput_[0-9a-f]{8}"\)/);
-  assert.match(reader, /requireObjectCodec\("PaymentInput_[0-9a-f]{8}"\)\.parse\(/);
+  assert.match(controller, /nestModelCodec\("TPaymentInput_[0-9a-f]{8}"\)/);
+  assert.match(reader, /requireObjectCodec\("TPaymentInput_[0-9a-f]{8}"\)\.parse\(/);
 });

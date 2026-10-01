@@ -1,6 +1,6 @@
 import type { AdditionalProperties, Contains, DependentRequired, DependentSchemas, IfThenElse, MaxContains, MaxProperties, MinContains, MinItems, MinProperties, Not, OneOf, Pattern, PatternProperties, PropertyNames, UnevaluatedProperties } from '@exprtlabs/golem/tags';
 import type { IModel } from '@exprtlabs/golem/model';
-import { ABaseModel, type AFields } from './a.model.generated.js';
+import { TABaseModel, type TAFields } from './a.model.generated.js';
 
 export type TA = IModel<{
   counts: { one?: string; two?: string; three?: string } & MinProperties<1> & MaxProperties<2>;
@@ -21,6 +21,6 @@ export type TA = IModel<{
   literalAdditional: { known?: string } & AdditionalProperties<false>;
 }>;
 
-export class A extends ABaseModel {
-  constructor(values: Partial<AFields> = {}) { super(values); }
+export class A extends TABaseModel {
+  constructor(values: Partial<TAFields> = {}) { super(values); }
 }

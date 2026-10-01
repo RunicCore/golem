@@ -67,7 +67,7 @@ test('model companions compile with --noUnusedLocals for empty, scalar and neste
         assert.ok(base === 'models.generated.ts' || base === 'iobject-plugin-keys.ts', base);
         continue;
       }
-      assert.match(artifact.content, new RegExp(`function fill${modelName}\\(`), `${modelName}: shared fill`);
+      assert.match(artifact.content, new RegExp(`function fillT${modelName}\\(`), `${modelName}: shared fill`);
     }
     writeGeneratedArtifacts(result.artifacts);
     await compileModelProject(root, ['--noUnusedLocals', '--noUnusedParameters']);
@@ -87,26 +87,33 @@ test('generated model names are scoped to their companion modules', (t) => {
   });
   const result = generate({ root, profile: { mobx: false, validation: false } });
   assert.equal(result.artifacts.length, 3);
-  assert.equal(result.artifacts.filter((artifact) => artifact.content.includes('export abstract class ItemBaseModel')).length, 2);
+  assert.equal(result.artifacts.filter((artifact) => artifact.content.includes('export abstract class TItemBaseModel')).length, 2);
   assert.equal(result.artifacts.some((artifact) => artifact.content.includes('first')), true);
   assert.equal(result.artifacts.some((artifact) => artifact.content.includes('second')), true);
   const keys = result.artifacts.find((artifact) => artifact.path.endsWith('iobject-plugin-keys.ts'))?.content ?? '';
-  const firstId = keys.match(/src\/first\.model\.ts#Item": "([^"]+)"/)?.[1];
-  const secondId = keys.match(/src\/second\.model\.ts#Item": "([^"]+)"/)?.[1];
-  assert.match(firstId ?? '', /^Item_[0-9a-f]{8}$/);
-  assert.match(secondId ?? '', /^Item_[0-9a-f]{8}$/);
+  const firstId = keys.match(/src\/first\.model\.ts#TItem": "([^"]+)"/)?.[1];
+  const secondId = keys.match(/src\/second\.model\.ts#TItem": "([^"]+)"/)?.[1];
+  assert.match(firstId ?? '', /^TItem_[0-9a-f]{8}$/);
+  assert.match(secondId ?? '', /^TItem_[0-9a-f]{8}$/);
   assert.notEqual(firstId, secondId);
 });
 
-test('same-file duplicate model names still fail as a generated symbol collision', (t) => {
+test('same-file aliases that differ only by the T prefix generate two separate models', async (t) => {
   const { root, sourceRoot } = modelProject(t);
   writeModelSources(sourceRoot, {
     'payment.model.ts': readFixture('models/model-companions/duplicate-model/payment.model.ts'),
   });
-  assert.throws(
-    () => generate({ root, profile: { mobx: false, validation: false } }),
-    /already declared in this model source/,
-  );
+  const result = generate({ root, profile: { mobx: false, validation: false } });
+  writeGeneratedArtifacts(result.artifacts);
+  await compileModelProject(root);
+  const companion = result.artifacts.find((artifact) => artifact.path.endsWith('payment.model.generated.ts'))?.content ?? '';
+  assert.match(companion, /export abstract class TPaymentBaseModel\b/);
+  assert.match(companion, /export abstract class PaymentBaseModel\b/);
+  const keys = result.artifacts.find((artifact) => artifact.path.endsWith('iobject-plugin-keys.ts'))?.content ?? '';
+  const tId = keys.match(/payment\.model\.ts#TPayment": "([^"]+)"/)?.[1];
+  const id = keys.match(/payment\.model\.ts#Payment": "([^"]+)"/)?.[1];
+  assert.match(tId ?? '', /^TPayment_[0-9a-f]{8}$/);
+  assert.match(id ?? '', /^Payment_[0-9a-f]{8}$/);
 });
 
 test('automatic empty discovery returns an empty expected artifact set', (t) => {
@@ -129,7 +136,7 @@ test('tsconfig ambient declarations participate in executable validation and wat
   writeModelSources(sourceRoot, { 'invoice.model.ts': tsSource`import type { IModel } from '@exprtlabs/golem/model';\nexport type TInvoice = IModel<{ money: Money }>;\n` });
   const result = generate({ root, sources: [source], profile: { mobx: false, validation: true } });
   writeGeneratedArtifacts(result.artifacts);
-  const invoiceId = generatedCodecId(result.artifacts.map((artifact) => artifact.content).join('\n'), 'Invoice');
+  const invoiceId = generatedCodecId(result.artifacts.map((artifact) => artifact.content).join('\n'), 'TInvoice');
   await compileModelProject(root);
   const verifier = copyFixtureFile(root, 'models/model-companions/verify-ambient-validation.mjs', 'verify-ambient-validation.mjs');
   await command(root, process.execPath, [verifier, invoiceId]);
@@ -187,8 +194,8 @@ test('ttsc rewrites nested model serde calls and preserves class construction in
   await compileModelProject(root);
 
   const emitted = fs.readFileSync(path.join(root, 'build/item.model.js'), 'utf8');
-  assert.match(emitted, /requireObjectCodec\("Item_[0-9a-f]{8}"\)\.parse\(/);
-  assert.match(emitted, /requireObjectCodec\("Item_[0-9a-f]{8}"\)\.fromWireFormat\(/);
+  assert.match(emitted, /requireObjectCodec\("TItem_[0-9a-f]{8}"\)\.parse\(/);
+  assert.match(emitted, /requireObjectCodec\("TItem_[0-9a-f]{8}"\)\.fromWireFormat\(/);
   assert.match(emitted, /construct: Item/);
   const firstEmit = emitted;
   await compileModelProject(root);
@@ -198,7 +205,7 @@ test('ttsc rewrites nested model serde calls and preserves class construction in
     readonly Item: new (values?: object) => object;
   };
   const item = new loaded.Item();
-  const parsed = (item as { parseItem(text: string): object }).parseItem('{"title":"nested","value":7}');
+  const parsed = (item as { parseTItem(text: string): object }).parseTItem('{"title":"nested","value":7}');
   assert.ok(parsed instanceof loaded.Item);
   const wired = (item as { fromWireItem(value: unknown): object }).fromWireItem({ title: 'wire', value: 8 });
   assert.deepEqual({ ...wired }, { title: 'wire', value: 8 });

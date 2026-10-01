@@ -8,58 +8,58 @@ function modelObject(json: unknown, name: string): Record<string, unknown> {
   return requireModelObject(json, name);
 }
 
-export type TaggedTaskFields = { title: string; done: boolean };
-export type TaggedTaskJSON = { title: string; done: boolean };
-export type TaggedTaskInit = Partial<{ title: string; done: boolean }>;
+export type TTaggedTaskFields = { title: string; done: boolean };
+export type TTaggedTaskJSON = { title: string; done: boolean };
+export type TTaggedTaskInit = Partial<{ title: string; done: boolean }>;
 
-export abstract class TaggedTaskBaseModel implements GeneratedModel<TaggedTaskJSON, TaggedTaskFields> {
-  declare readonly [generatedModelWireBrand]: TaggedTaskJSON;
-  declare readonly [generatedModelFieldsBrand]: TaggedTaskFields;
-  declare title: TaggedTaskFields["title"];
-  declare done: TaggedTaskFields["done"];
+export abstract class TTaggedTaskBaseModel implements GeneratedModel<TTaggedTaskJSON, TTaggedTaskFields> {
+  declare readonly [generatedModelWireBrand]: TTaggedTaskJSON;
+  declare readonly [generatedModelFieldsBrand]: TTaggedTaskFields;
+  declare title: TTaggedTaskFields["title"];
+  declare done: TTaggedTaskFields["done"];
 
-  public constructor(values: TaggedTaskInit = {}) {
+  public constructor(values: TTaggedTaskInit = {}) {
     if (Object.prototype.hasOwnProperty.call(values, "title")) defineModelProperty(this, "title", values["title"]);
     if (Object.prototype.hasOwnProperty.call(values, "done")) defineModelProperty(this, "done", values["done"]);
   }
 
 }
 
-function decodeTaggedTaskModel(constructor: GeneratedModelConstructor, json: unknown): TaggedTaskBaseModel {
-  const values = modelObject(json, "TaggedTaskBaseModel");
-  return Reflect.construct(constructor, [values]) as TaggedTaskBaseModel;
+function decodeTTaggedTaskModel(constructor: GeneratedModelConstructor, json: unknown): TTaggedTaskBaseModel {
+  const values = modelObject(json, "TTaggedTaskBaseModel");
+  return Reflect.construct(constructor, [values]) as TTaggedTaskBaseModel;
 }
 
-function encodeTaggedTaskModel(model: TaggedTaskBaseModel): TaggedTaskJSON {
+function encodeTTaggedTaskModel(model: TTaggedTaskBaseModel): TTaggedTaskJSON {
   const result: Record<string, unknown> = {};
   if (Object.prototype.hasOwnProperty.call(model, "title")) defineModelProperty(result, "title", (model["title"]));
   if (Object.prototype.hasOwnProperty.call(model, "done")) defineModelProperty(result, "done", (model["done"]));
-  return result as TaggedTaskJSON;
+  return result as TTaggedTaskJSON;
 }
 
-registerGeneratedModel(TaggedTaskBaseModel, {
+registerGeneratedModel(TTaggedTaskBaseModel, {
   fields: ["title", "done"],
   conversion: {
-    decode: (value, constructor) => decodeTaggedTaskModel(constructor ?? TaggedTaskBaseModel, value),
-    encode: encodeTaggedTaskModel,
+    decode: (value, constructor) => decodeTTaggedTaskModel(constructor ?? TTaggedTaskBaseModel, value),
+    encode: encodeTTaggedTaskModel,
   },
-  codecId: "TaggedTask_94b6f172",
+  codecId: "TTaggedTask_94b6f172",
   profile: { validation: true, mobx: false },
 });
 
-registerIModelClass("TaggedTask_94b6f172", TaggedTaskBaseModel);
+registerIModelClass("TTaggedTask_94b6f172", TTaggedTaskBaseModel);
 
 const objectAjvFast = createOpenApiSyncAjvEngine({ allErrors: false, validationBindings: {} });
 const objectAjvAll = createOpenApiSyncAjvEngine({ allErrors: true, validationBindings: {} });
 
-const __resolvedModelSchema_TaggedTask = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"TaggedTask_94b6f172\",\"type\":\"object\",\"properties\":{\"done\":{\"type\":\"boolean\"},\"title\":{\"allOf\":[{\"type\":\"string\"},{\"maxLength\":80,\"minLength\":3}]}},\"required\":[\"done\",\"title\"],\"additionalProperties\":false}") as object) as object;
-objectAjvFast.addSchema(structuredClone(__resolvedModelSchema_TaggedTask) as object, "TaggedTask_94b6f172");
-objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_TaggedTask) as object, "TaggedTask_94b6f172");
+const __resolvedModelSchema_TTaggedTask = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"TTaggedTask_94b6f172\",\"type\":\"object\",\"properties\":{\"done\":{\"type\":\"boolean\"},\"title\":{\"allOf\":[{\"type\":\"string\"},{\"maxLength\":80,\"minLength\":3}]}},\"required\":[\"done\",\"title\"],\"additionalProperties\":false}") as object) as object;
+objectAjvFast.addSchema(structuredClone(__resolvedModelSchema_TTaggedTask) as object, "TTaggedTask_94b6f172");
+objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_TTaggedTask) as object, "TTaggedTask_94b6f172");
 
-const validateTaggedTaskFast = requireAjvSchema(objectAjvFast.getSchema("TaggedTask_94b6f172"), "TaggedTask_94b6f172");
-const validateTaggedTaskAll = requireAjvSchema(objectAjvAll.getSchema("TaggedTask_94b6f172"), "TaggedTask_94b6f172");
+const validateTTaggedTaskFast = requireAjvSchema(objectAjvFast.getSchema("TTaggedTask_94b6f172"), "TTaggedTask_94b6f172");
+const validateTTaggedTaskAll = requireAjvSchema(objectAjvAll.getSchema("TTaggedTask_94b6f172"), "TTaggedTask_94b6f172");
 
-function fillTaggedTask(out: Record<string, unknown>, wire: Record<string, unknown>, copyIdentity = true): Record<string, unknown> {
+function fillTTaggedTask(out: Record<string, unknown>, wire: Record<string, unknown>, copyIdentity = true): Record<string, unknown> {
   if (copyIdentity) {
     out["title"] = wire["title"];
     out["done"] = wire["done"];
@@ -67,22 +67,22 @@ function fillTaggedTask(out: Record<string, unknown>, wire: Record<string, unkno
   return out;
 }
 
-function stringifyTaggedTaskCore(value: Record<string, unknown>): string {
+function stringifyTTaggedTaskCore(value: Record<string, unknown>): string {
   return '{' + "\"title\":" + stringifyJsonString(value["title"] as string) + ",\"done\":" + stringifyJsonBoolean(value["done"] as boolean) + '}';
 }
 
-export function stringifyTaggedTask(value: TaggedTaskFields, options?: __GolemSerdeOptions): string {
+export function stringifyTTaggedTask(value: TTaggedTaskFields, options?: __GolemSerdeOptions): string {
   const validates = serdeValidates(options, true);
   if (validates) {
-    assertTaggedTask(value, options);
+    assertTTaggedTask(value, options);
   }
-  return stringifyTaggedTaskCore(value as never);
+  return stringifyTTaggedTaskCore(value as never);
 }
 
-function convertFromWireTaggedTask(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
+function convertFromWireTTaggedTask(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
   const validates = serdeValidates(options, true);
   if (validates) {
-    assertTaggedTask(wire, options);
+    assertTTaggedTask(wire, options);
   }
   const source = isolated || wire === null || typeof wire !== 'object' ? wire : cloneConversionInput(wire);
   let result: unknown = source;
@@ -90,63 +90,63 @@ function convertFromWireTaggedTask(wire: unknown, options: __GolemSerdeOptions |
     if (options?.construct) {
       result = Reflect.construct(options.construct, [{ ...(source as Record<string, unknown>) }]);
     } else {
-      result = fillTaggedTask({} as Record<string, unknown>, source as Record<string, unknown>);
+      result = fillTTaggedTask({} as Record<string, unknown>, source as Record<string, unknown>);
     }
   }
   return result;
 }
 
-export function fromWireFormatTaggedTask(wire: unknown, options?: __GolemSerdeOptions): TaggedTaskFields {
-  return convertFromWireTaggedTask(wire, options, false) as TaggedTaskFields;
+export function fromWireFormatTTaggedTask(wire: unknown, options?: __GolemSerdeOptions): TTaggedTaskFields {
+  return convertFromWireTTaggedTask(wire, options, false) as TTaggedTaskFields;
 }
 
-function toWireFormatTaggedTaskCore(value: TaggedTaskFields): TaggedTaskJSON {
+function toWireFormatTTaggedTaskCore(value: TTaggedTaskFields): TTaggedTaskJSON {
   const record = value as Record<string, unknown>;
   const wire = { ["title"]: record["title"], ["done"]: record["done"] };
-  return wire as TaggedTaskJSON;
+  return wire as TTaggedTaskJSON;
 }
 
-export function toWireFormatTaggedTask(value: TaggedTaskFields, options?: __GolemSerdeOptions): TaggedTaskJSON {
+export function toWireFormatTTaggedTask(value: TTaggedTaskFields, options?: __GolemSerdeOptions): TTaggedTaskJSON {
   const validates = serdeValidates(options, true);
   if (validates) {
-    assertTaggedTask(value, options);
+    assertTTaggedTask(value, options);
   }
-  return toWireFormatTaggedTaskCore(value);
+  return toWireFormatTTaggedTaskCore(value);
 }
 
-export function parseTaggedTask(text: string, options?: __GolemSerdeOptions): TaggedTaskFields {
-  return convertFromWireTaggedTask(parseJson(text), options, true) as TaggedTaskFields;
+export function parseTTaggedTask(text: string, options?: __GolemSerdeOptions): TTaggedTaskFields {
+  return convertFromWireTTaggedTask(parseJson(text), options, true) as TTaggedTaskFields;
 }
 
-export function validateTaggedTask(value: unknown, options?: __GolemValidateOptions): value is TaggedTaskFields {
+export function validateTTaggedTask(value: unknown, options?: __GolemValidateOptions): value is TTaggedTaskFields {
   const failFast = options?.failFast !== false;
   let ok: boolean;
   let errors: readonly unknown[] | null | undefined;
   if (options?.validationContext === undefined) {
-    const validator = failFast ? validateTaggedTaskFast : validateTaggedTaskAll;
+    const validator = failFast ? validateTTaggedTaskFast : validateTTaggedTaskAll;
     ok = validator(value);
     errors = validator.errors;
   } else {
-    const validator = resolveModelValidationContextValidator(options.validationContext, "TaggedTask_94b6f172", failFast ? 'first' : 'all');
+    const validator = resolveModelValidationContextValidator(options.validationContext, "TTaggedTask_94b6f172", failFast ? 'first' : 'all');
     ok = runSynchronousValidation(validator, value);
     errors = validator.errors;
   }
-  (validateTaggedTask as { errors?: unknown }).errors = errors;
+  (validateTTaggedTask as { errors?: unknown }).errors = errors;
   return ok;
 }
 
-export function assertTaggedTask(value: unknown, options?: __GolemValidateOptions): TaggedTaskFields {
-  assertModelValue(value, options, validateTaggedTaskFast, validateTaggedTaskAll, "TaggedTask_94b6f172", IssueRepresentation.Model, IssueSource.TypeScript);
-  return value as TaggedTaskFields;
+export function assertTTaggedTask(value: unknown, options?: __GolemValidateOptions): TTaggedTaskFields {
+  assertModelValue(value, options, validateTTaggedTaskFast, validateTTaggedTaskAll, "TTaggedTask_94b6f172", IssueRepresentation.Model, IssueSource.TypeScript);
+  return value as TTaggedTaskFields;
 }
 
-createObjectCodec("TaggedTask_94b6f172", {
-  stringify: stringifyTaggedTask as (value: never, options?: __GolemSerdeOptions) => string,
-  parse: parseTaggedTask as (text: string, options?: __GolemSerdeOptions) => never,
-  validate: validateTaggedTask,
-  assert: assertTaggedTask,
-  toWireFormat: toWireFormatTaggedTask,
-  fromWireFormat: fromWireFormatTaggedTask,
-  schema: __resolvedModelSchema_TaggedTask,
+createObjectCodec("TTaggedTask_94b6f172", {
+  stringify: stringifyTTaggedTask as (value: never, options?: __GolemSerdeOptions) => string,
+  parse: parseTTaggedTask as (text: string, options?: __GolemSerdeOptions) => never,
+  validate: validateTTaggedTask,
+  assert: assertTTaggedTask,
+  toWireFormat: toWireFormatTTaggedTask,
+  fromWireFormat: fromWireFormatTTaggedTask,
+  schema: __resolvedModelSchema_TTaggedTask,
   issueSource: IssueSource.TypeScript,
 });

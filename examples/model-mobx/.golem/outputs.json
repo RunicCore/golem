@@ -4,14 +4,14 @@
     "src/generated/models/iobject-plugin-keys.ts": {
       "job": "models:.",
       "owner": "@exprtlabs/golem-model",
-      "digest": "3c22759bb013dd60f4b1e97cbdfbf4cfb2c360a82efde763f2feec3345e67904",
+      "digest": "58f26e39640cf0730bf7805babcd36edde648ebf3156c1e0924bbef1e6fdd611",
       "destination": "src/generated/models",
       "destinationKind": "directory"
     },
     "src/task.model.generated.ts": {
       "job": "models:.",
       "owner": "@exprtlabs/golem-model",
-      "digest": "e4afcd31e19b1de9a334793dff30f4accbbecdce301234cb0c10f9debdaa2909",
+      "digest": "aaff61af8f07dad19ba0a3b616126571913f087f3ecb24e6107f95f1dbd388a8",
       "destination": "src",
       "destinationKind": "directory"
     }

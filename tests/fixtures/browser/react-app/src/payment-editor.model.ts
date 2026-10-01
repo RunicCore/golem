@@ -3,15 +3,15 @@ import { asGenObservable } from '@exprtlabs/golem/mobx';
 import { getValidator } from '@exprtlabs/golem/validation';
 import { action, computed, observable } from 'mobx';
 import type { Money } from '../sdk/index.js';
-import { PaymentEditorBaseModel, type PaymentEditorInit } from './payment-editor.model.generated.js';
+import { TPaymentEditorBaseModel, type TPaymentEditorInit } from './payment-editor.model.generated.js';
 
 export type TPaymentEditor = IModel<{ money: Money; note: string }>;
-export type { PaymentEditorFields, PaymentEditorInit } from './payment-editor.model.generated.js';
+export type { TPaymentEditorFields, TPaymentEditorInit } from './payment-editor.model.generated.js';
 
-export class PaymentEditor extends PaymentEditorBaseModel {
+export class PaymentEditor extends TPaymentEditorBaseModel {
   public edits = 0;
 
-  public constructor(values: PaymentEditorInit = {}) {
+  public constructor(values: TPaymentEditorInit = {}) {
     super({ money: { amount: 0, currency: 'USD' }, note: '', ...values });
     asGenObservable(this, {
       edits: observable,

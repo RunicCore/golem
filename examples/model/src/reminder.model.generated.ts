@@ -9,75 +9,75 @@ function modelObject(json: unknown, name: string): Record<string, unknown> {
   return requireModelObject(json, name);
 }
 
-export type ReminderFields = { title: string; remindAt: Date };
-export type ReminderJSON = { title: string; remindAt: string };
-export type ReminderInit = Partial<{ title: string; remindAt: Date }>;
+export type TReminderFields = { title: string; remindAt: Date };
+export type TReminderJSON = { title: string; remindAt: string };
+export type TReminderInit = Partial<{ title: string; remindAt: Date }>;
 
-export abstract class ReminderBaseModel implements GeneratedModel<ReminderJSON, ReminderFields> {
-  declare readonly [generatedModelWireBrand]: ReminderJSON;
-  declare readonly [generatedModelFieldsBrand]: ReminderFields;
-  declare title: ReminderFields["title"];
-  declare remindAt: ReminderFields["remindAt"];
+export abstract class TReminderBaseModel implements GeneratedModel<TReminderJSON, TReminderFields> {
+  declare readonly [generatedModelWireBrand]: TReminderJSON;
+  declare readonly [generatedModelFieldsBrand]: TReminderFields;
+  declare title: TReminderFields["title"];
+  declare remindAt: TReminderFields["remindAt"];
 
-  public constructor(values: ReminderInit = {}) {
+  public constructor(values: TReminderInit = {}) {
     if (Object.prototype.hasOwnProperty.call(values, "title")) defineModelProperty(this, "title", values["title"]);
     if (Object.prototype.hasOwnProperty.call(values, "remindAt")) defineModelProperty(this, "remindAt", values["remindAt"]);
   }
 
 }
 
-function decodeReminderModel(constructor: GeneratedModelConstructor, json: unknown): ReminderBaseModel {
-  const values = modelObject(json, "ReminderBaseModel");
+function decodeTReminderModel(constructor: GeneratedModelConstructor, json: unknown): TReminderBaseModel {
+  const values = modelObject(json, "TReminderBaseModel");
   const result: Record<string, unknown> = { ...values };
   if (Object.prototype.hasOwnProperty.call(values, "remindAt")) defineModelProperty(result, "remindAt", convertModelField("deserialize", "remindAt", () => (deserializeDate(values["remindAt"]))));
-  return Reflect.construct(constructor, [result]) as ReminderBaseModel;
+  return Reflect.construct(constructor, [result]) as TReminderBaseModel;
 }
 
-function encodeReminderModel(model: ReminderBaseModel): ReminderJSON {
+function encodeTReminderModel(model: TReminderBaseModel): TReminderJSON {
   const result: Record<string, unknown> = {};
   if (Object.prototype.hasOwnProperty.call(model, "title")) defineModelProperty(result, "title", (model["title"]));
   if (Object.prototype.hasOwnProperty.call(model, "remindAt")) defineModelProperty(result, "remindAt", (convertModelField("serialize", "remindAt", () => (serializeDate(model["remindAt"])))));
-  return result as ReminderJSON;
+  return result as TReminderJSON;
 }
 
-registerGeneratedModel(ReminderBaseModel, {
+registerGeneratedModel(TReminderBaseModel, {
   fields: ["title", "remindAt"],
   conversion: {
-    decode: (value, constructor) => decodeReminderModel(constructor ?? ReminderBaseModel, value),
-    encode: encodeReminderModel,
+    decode: (value, constructor) => decodeTReminderModel(constructor ?? TReminderBaseModel, value),
+    encode: encodeTReminderModel,
   },
-  codecId: "Reminder_5f93e659",
+  codecId: "TReminder_5f93e659",
   profile: { validation: true, mobx: false },
 });
 
-registerIModelClass("Reminder_5f93e659", ReminderBaseModel);
+registerIModelClass("TReminder_5f93e659", TReminderBaseModel);
 
 const objectAjvFast = createOpenApiSyncAjvEngine({ allErrors: false, validationBindings: {} });
 const objectAjvAll = createOpenApiSyncAjvEngine({ allErrors: true, validationBindings: {} });
 
-const __resolvedModelSchema_Reminder = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"Reminder_5f93e659\",\"type\":\"object\",\"properties\":{\"remindAt\":{\"golemModelDate\":true},\"title\":{\"type\":\"string\"}},\"required\":[\"remindAt\",\"title\"],\"additionalProperties\":false}") as object) as object;
-objectAjvFast.addSchema(structuredClone(__resolvedModelSchema_Reminder) as object, "Reminder_5f93e659");
-objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_Reminder) as object, "Reminder_5f93e659");
-const __resolvedWireSchema_Reminder = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"Reminder_5f93e659#wire\",\"type\":\"object\",\"properties\":{\"remindAt\":{\"type\":\"string\",\"format\":\"date-time\"},\"title\":{\"type\":\"string\"}},\"required\":[\"remindAt\",\"title\"],\"additionalProperties\":false}") as object, 'wire') as object;
-objectAjvFast.addSchema(structuredClone(__resolvedWireSchema_Reminder) as object, "Reminder_5f93e659#wire");
-objectAjvAll.addSchema(structuredClone(__resolvedWireSchema_Reminder) as object, "Reminder_5f93e659#wire");
-const __resolvedModelOnlySchema_Reminder = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"Reminder_5f93e659#model-only\",\"properties\":{\"remindAt\":{\"golemModelDate\":true}}}") as object, 'model-only') as object;
-objectAjvFast.addSchema(structuredClone(__resolvedModelOnlySchema_Reminder) as object, "Reminder_5f93e659#model-only");
-objectAjvAll.addSchema(structuredClone(__resolvedModelOnlySchema_Reminder) as object, "Reminder_5f93e659#model-only");
-const __resolvedWireOnlySchema_Reminder = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"Reminder_5f93e659#wire-only\",\"properties\":{\"remindAt\":{\"type\":\"string\",\"format\":\"date-time\"}}}") as object, 'wire-only') as object;
-objectAjvFast.addSchema(structuredClone(__resolvedWireOnlySchema_Reminder) as object, "Reminder_5f93e659#wire-only");
-objectAjvAll.addSchema(structuredClone(__resolvedWireOnlySchema_Reminder) as object, "Reminder_5f93e659#wire-only");
+const __resolvedModelSchema_TReminder = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"TReminder_5f93e659\",\"type\":\"object\",\"properties\":{\"remindAt\":{\"golemModelDate\":true},\"title\":{\"type\":\"string\"}},\"required\":[\"remindAt\",\"title\"],\"additionalProperties\":false}") as object) as object;
+objectAjvFast.addSchema(structuredClone(__resolvedModelSchema_TReminder) as object, "TReminder_5f93e659");
+objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_TReminder) as object, "TReminder_5f93e659");
+const __resolvedWireSchema_TReminder = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"TReminder_5f93e659#wire\",\"type\":\"object\",\"properties\":{\"remindAt\":{\"type\":\"string\",\"format\":\"date-time\"},\"title\":{\"type\":\"string\"}},\"required\":[\"remindAt\",\"title\"],\"additionalProperties\":false}") as object, 'wire') as object;
+objectAjvFast.addSchema(structuredClone(__resolvedWireSchema_TReminder) as object, "TReminder_5f93e659#wire");
+objectAjvAll.addSchema(structuredClone(__resolvedWireSchema_TReminder) as object, "TReminder_5f93e659#wire");
+const __resolvedModelOnlySchema_TReminder = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"TReminder_5f93e659#model-only\",\"properties\":{\"remindAt\":{\"golemModelDate\":true}}}") as object, 'model-only') as object;
+objectAjvFast.addSchema(structuredClone(__resolvedModelOnlySchema_TReminder) as object, "TReminder_5f93e659#model-only");
+objectAjvAll.addSchema(structuredClone(__resolvedModelOnlySchema_TReminder) as object, "TReminder_5f93e659#model-only");
+const __resolvedWireOnlySchema_TReminder = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"TReminder_5f93e659#wire-only\",\"properties\":{\"remindAt\":{\"type\":\"string\",\"format\":\"date-time\"}}}") as object, 'wire-only') as object;
+objectAjvFast.addSchema(structuredClone(__resolvedWireOnlySchema_TReminder) as object, "TReminder_5f93e659#wire-only");
+objectAjvAll.addSchema(structuredClone(__resolvedWireOnlySchema_TReminder) as object, "TReminder_5f93e659#wire-only");
 
-const validateReminderFast = requireAjvSchema(objectAjvFast.getSchema("Reminder_5f93e659"), "Reminder_5f93e659");
-const validateReminderAll = requireAjvSchema(objectAjvAll.getSchema("Reminder_5f93e659"), "Reminder_5f93e659");
-const validateReminderWireFast = requireAjvSchema(objectAjvFast.getSchema("Reminder_5f93e659#wire"), "Reminder_5f93e659#wire");
-const validateReminderWireAll = requireAjvSchema(objectAjvAll.getSchema("Reminder_5f93e659#wire"), "Reminder_5f93e659#wire");
-const validateReminderModelOnlyFast = requireAjvSchema(objectAjvFast.getSchema("Reminder_5f93e659#model-only"), "Reminder_5f93e659#model-only");
-const validateReminderModelOnlyAll = requireAjvSchema(objectAjvAll.getSchema("Reminder_5f93e659#model-only"), "Reminder_5f93e659#model-only");
-const validateReminderWireOnlyFast = requireAjvSchema(objectAjvFast.getSchema("Reminder_5f93e659#wire-only"), "Reminder_5f93e659#wire-only");
-const validateReminderWireOnlyAll = requireAjvSchema(objectAjvAll.getSchema("Reminder_5f93e659#wire-only"), "Reminder_5f93e659#wire-only");
+const validateTReminderFast = requireAjvSchema(objectAjvFast.getSchema("TReminder_5f93e659"), "TReminder_5f93e659");
+const validateTReminderAll = requireAjvSchema(objectAjvAll.getSchema("TReminder_5f93e659"), "TReminder_5f93e659");
+const validateTReminderWireFast = requireAjvSchema(objectAjvFast.getSchema("TReminder_5f93e659#wire"), "TReminder_5f93e659#wire");
+const validateTReminderWireAll = requireAjvSchema(objectAjvAll.getSchema("TReminder_5f93e659#wire"), "TReminder_5f93e659#wire");
+const validateTReminderModelOnlyFast = requireAjvSchema(objectAjvFast.getSchema("TReminder_5f93e659#model-only"), "TReminder_5f93e659#model-only");
+const validateTReminderModelOnlyAll = requireAjvSchema(objectAjvAll.getSchema("TReminder_5f93e659#model-only"), "TReminder_5f93e659#model-only");
+const validateTReminderWireOnlyFast = requireAjvSchema(objectAjvFast.getSchema("TReminder_5f93e659#wire-only"), "TReminder_5f93e659#wire-only");
+const validateTReminderWireOnlyAll = requireAjvSchema(objectAjvAll.getSchema("TReminder_5f93e659#wire-only"), "TReminder_5f93e659#wire-only");
 
-function fillReminder(out: Record<string, unknown>, wire: Record<string, unknown>, copyIdentity = true): Record<string, unknown> {
+function fillTReminder(out: Record<string, unknown>, wire: Record<string, unknown>, copyIdentity = true): Record<string, unknown> {
   if (copyIdentity) {
     out["title"] = wire["title"];
   }
@@ -87,118 +87,118 @@ function fillReminder(out: Record<string, unknown>, wire: Record<string, unknown
   return out;
 }
 
-function stringifyReminderCore(value: Record<string, unknown>): string {
+function stringifyTReminderCore(value: Record<string, unknown>): string {
   return '{' + "\"title\":" + stringifyJsonString(value["title"] as string) + ",\"remindAt\":" + stringifyJsonString(serializeDate(value["remindAt"])) + '}';
 }
 
-function stringifyReminderWire(value: Record<string, unknown>): string {
+function stringifyTReminderWire(value: Record<string, unknown>): string {
   return '{' + "\"title\":" + stringifyJsonString(value["title"] as string) + ",\"remindAt\":" + stringifyJsonString(value["remindAt"] as string) + '}';
 }
 
-export function stringifyReminder(value: ReminderFields, options?: __GolemSerdeOptions): string {
+export function stringifyTReminder(value: TReminderFields, options?: __GolemSerdeOptions): string {
   const validates = serdeValidates(options, true);
   if (validates) {
-    assertReminder(value, options);
+    assertTReminder(value, options);
     const wire = { ["title"]: value["title"], ["remindAt"]: serializeDate(value["remindAt"]) };
-    __golemAssertWireOnly_Reminder(wire, options);
-    return stringifyReminderWire(wire as never);
+    __golemAssertWireOnly_TReminder(wire, options);
+    return stringifyTReminderWire(wire as never);
   }
-  return stringifyReminderCore(value as never);
+  return stringifyTReminderCore(value as never);
 }
 
-function convertFromWireReminder(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
+function convertFromWireTReminder(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
   const validates = serdeValidates(options, true);
   if (validates) {
-    __golemAssertWire_Reminder(wire, options);
+    __golemAssertWire_TReminder(wire, options);
   }
   const source = isolated || wire === null || typeof wire !== 'object' ? wire : cloneConversionInput(wire);
   let result: unknown = source;
   if (source !== null && typeof source === 'object' && !Array.isArray(source)) {
     if (options?.construct) {
-      result = Reflect.construct(options.construct, [fillReminder({ ...(source as Record<string, unknown>) }, (source as Record<string, unknown>), false)]);
+      result = Reflect.construct(options.construct, [fillTReminder({ ...(source as Record<string, unknown>) }, (source as Record<string, unknown>), false)]);
     } else {
-      result = fillReminder({} as Record<string, unknown>, source as Record<string, unknown>);
+      result = fillTReminder({} as Record<string, unknown>, source as Record<string, unknown>);
     }
   }
   if (validates) {
-    __golemAssertModelOnly_Reminder(result, options);
+    __golemAssertModelOnly_TReminder(result, options);
   }
   return result;
 }
 
-export function fromWireFormatReminder(wire: unknown, options?: __GolemSerdeOptions): ReminderFields {
-  return convertFromWireReminder(wire, options, false) as ReminderFields;
+export function fromWireFormatTReminder(wire: unknown, options?: __GolemSerdeOptions): TReminderFields {
+  return convertFromWireTReminder(wire, options, false) as TReminderFields;
 }
 
-function toWireFormatReminderCore(value: ReminderFields): ReminderJSON {
+function toWireFormatTReminderCore(value: TReminderFields): TReminderJSON {
   const record = value as Record<string, unknown>;
   const wire = { ["title"]: record["title"], ["remindAt"]: serializeDate(record["remindAt"]) };
-  return wire as ReminderJSON;
+  return wire as TReminderJSON;
 }
 
-export function toWireFormatReminder(value: ReminderFields, options?: __GolemSerdeOptions): ReminderJSON {
+export function toWireFormatTReminder(value: TReminderFields, options?: __GolemSerdeOptions): TReminderJSON {
   const validates = serdeValidates(options, true);
   if (validates) {
-    assertReminder(value, options);
+    assertTReminder(value, options);
   }
-  const wire = toWireFormatReminderCore(value);
+  const wire = toWireFormatTReminderCore(value);
   if (validates) {
-    __golemAssertWireOnly_Reminder(wire, options);
+    __golemAssertWireOnly_TReminder(wire, options);
   }
   return wire;
 }
 
-export function parseReminder(text: string, options?: __GolemSerdeOptions): ReminderFields {
-  return convertFromWireReminder(parseJson(text), options, true) as ReminderFields;
+export function parseTReminder(text: string, options?: __GolemSerdeOptions): TReminderFields {
+  return convertFromWireTReminder(parseJson(text), options, true) as TReminderFields;
 }
 
-export function validateReminder(value: unknown, options?: __GolemValidateOptions): value is ReminderFields {
+export function validateTReminder(value: unknown, options?: __GolemValidateOptions): value is TReminderFields {
   const failFast = options?.failFast !== false;
   let ok: boolean;
   let errors: readonly unknown[] | null | undefined;
   if (options?.validationContext === undefined) {
-    const validator = failFast ? validateReminderFast : validateReminderAll;
+    const validator = failFast ? validateTReminderFast : validateTReminderAll;
     ok = validator(value);
     errors = validator.errors;
   } else {
-    const validator = resolveModelValidationContextValidator(options.validationContext, "Reminder_5f93e659", failFast ? 'first' : 'all');
+    const validator = resolveModelValidationContextValidator(options.validationContext, "TReminder_5f93e659", failFast ? 'first' : 'all');
     ok = runSynchronousValidation(validator, value);
     errors = validator.errors;
   }
-  (validateReminder as { errors?: unknown }).errors = errors;
+  (validateTReminder as { errors?: unknown }).errors = errors;
   return ok;
 }
 
-export function assertReminder(value: unknown, options?: __GolemValidateOptions): ReminderFields {
-  assertModelValue(value, options, validateReminderFast, validateReminderAll, "Reminder_5f93e659", IssueRepresentation.Model, IssueSource.TypeScript);
-  return value as ReminderFields;
+export function assertTReminder(value: unknown, options?: __GolemValidateOptions): TReminderFields {
+  assertModelValue(value, options, validateTReminderFast, validateTReminderAll, "TReminder_5f93e659", IssueRepresentation.Model, IssueSource.TypeScript);
+  return value as TReminderFields;
 }
 
-function __golemAssertWire_Reminder(value: unknown, options?: __GolemValidateOptions): Record<string, unknown> {
-  assertModelValue(value, options, validateReminderWireFast, validateReminderWireAll, "Reminder_5f93e659#wire", IssueRepresentation.Wire, IssueSource.TypeScript);
+function __golemAssertWire_TReminder(value: unknown, options?: __GolemValidateOptions): Record<string, unknown> {
+  assertModelValue(value, options, validateTReminderWireFast, validateTReminderWireAll, "TReminder_5f93e659#wire", IssueRepresentation.Wire, IssueSource.TypeScript);
   return value as Record<string, unknown>;
 }
 
-function __golemAssertModelOnly_Reminder(value: unknown, options?: __GolemValidateOptions): Record<string, unknown> {
-  assertModelValue(value, options, validateReminderModelOnlyFast, validateReminderModelOnlyAll, "Reminder_5f93e659#model-only", IssueRepresentation.Model, IssueSource.TypeScript);
+function __golemAssertModelOnly_TReminder(value: unknown, options?: __GolemValidateOptions): Record<string, unknown> {
+  assertModelValue(value, options, validateTReminderModelOnlyFast, validateTReminderModelOnlyAll, "TReminder_5f93e659#model-only", IssueRepresentation.Model, IssueSource.TypeScript);
   return value as Record<string, unknown>;
 }
 
-function __golemAssertWireOnly_Reminder(value: unknown, options?: __GolemValidateOptions): Record<string, unknown> {
-  assertModelValue(value, options, validateReminderWireOnlyFast, validateReminderWireOnlyAll, "Reminder_5f93e659#wire-only", IssueRepresentation.Wire, IssueSource.TypeScript);
+function __golemAssertWireOnly_TReminder(value: unknown, options?: __GolemValidateOptions): Record<string, unknown> {
+  assertModelValue(value, options, validateTReminderWireOnlyFast, validateTReminderWireOnlyAll, "TReminder_5f93e659#wire-only", IssueRepresentation.Wire, IssueSource.TypeScript);
   return value as Record<string, unknown>;
 }
 
-createObjectCodec("Reminder_5f93e659", {
-  stringify: stringifyReminder as (value: never, options?: __GolemSerdeOptions) => string,
-  parse: parseReminder as (text: string, options?: __GolemSerdeOptions) => never,
-  validate: validateReminder,
-  assert: assertReminder,
-  toWireFormat: toWireFormatReminder,
-  fromWireFormat: fromWireFormatReminder,
-  schema: __resolvedModelSchema_Reminder,
-  wireSchema: __resolvedWireSchema_Reminder,
-  modelOnlySchema: __resolvedModelOnlySchema_Reminder,
-  wireOnlySchema: __resolvedWireOnlySchema_Reminder,
+createObjectCodec("TReminder_5f93e659", {
+  stringify: stringifyTReminder as (value: never, options?: __GolemSerdeOptions) => string,
+  parse: parseTReminder as (text: string, options?: __GolemSerdeOptions) => never,
+  validate: validateTReminder,
+  assert: assertTReminder,
+  toWireFormat: toWireFormatTReminder,
+  fromWireFormat: fromWireFormatTReminder,
+  schema: __resolvedModelSchema_TReminder,
+  wireSchema: __resolvedWireSchema_TReminder,
+  modelOnlySchema: __resolvedModelOnlySchema_TReminder,
+  wireOnlySchema: __resolvedWireOnlySchema_TReminder,
   issueSource: IssueSource.TypeScript,
 });

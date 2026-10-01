@@ -109,7 +109,7 @@ test('keeps custom TValidation server-side with a typed warning and no executabl
   assert.ok(operation);
   const responseSchema = operation.responses['200']?.content?.['application/json']?.schema;
   assert.ok(responseSchema && typeof responseSchema === 'object' && '$ref' in responseSchema);
-  const item = schemaOf(document, 'CatalogItem');
+  const item = schemaOf(document, 'TCatalogItem');
   const value = item.properties?.value;
   assert.ok(value && typeof value === 'object' && !Array.isArray(value));
   assert.equal(value.type, 'number');

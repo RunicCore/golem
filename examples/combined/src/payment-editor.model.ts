@@ -9,10 +9,10 @@ export type TPaymentEditor = IModel<{
 // #endregion model-declaration
 
 import { getValidator } from '@exprtlabs/golem/validation';
-import { PaymentEditorBaseModel, type PaymentEditorInit } from './payment-editor.model.generated.js';
+import { TPaymentEditorBaseModel, type TPaymentEditorInit } from './payment-editor.model.generated.js';
 
-export class PaymentEditor extends PaymentEditorBaseModel {
-  public constructor(values: PaymentEditorInit = {}) {
+export class PaymentEditor extends TPaymentEditorBaseModel {
+  public constructor(values: TPaymentEditorInit = {}) {
     super(values);
     getValidator(this).extend({
       note: value => value.length <= 100 || 'Keep the note within 100 characters',

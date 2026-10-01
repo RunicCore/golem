@@ -177,8 +177,8 @@ test('uses the IModel wire TSerde contract before any model companion exists', a
 
   assert.equal(fs.existsSync(path.join(root, 'src/payment.model.generated.ts')), false);
   const document = documentOf(await generateFixture(root));
-  const amount = propertySchema(schemaOf(document, 'Payment'), 'amount');
-  const amountVariants = allOfSchemas(amount, 'Payment.amount');
+  const amount = propertySchema(schemaOf(document, 'TPayment'), 'amount');
+  const amountVariants = allOfSchemas(amount, 'TPayment.amount');
   assert.equal(amountVariants[0]?.type, 'string');
   assert.equal(amountVariants[1]?.pattern, '^[0-9]+$');
   assert.doesNotMatch(JSON.stringify(amount), /"minimum"/, 'model-side numeric bounds must not leak across the wire boundary');
@@ -194,7 +194,7 @@ test('retains a nullable IModel alias through a generic Maybe wrapper', async t 
   for (const [label, schema] of [['request', request], ['response', response]] as const) {
     const variants = anyOfSchemas(schema, `nullable ${label}`);
     assert.equal(variants.filter(item => item.type === 'null').length, 1, `${label} keeps its null branch`);
-    assert.equal(variants.filter(item => item.$ref === '#/components/schemas/Payment').length, 1, `${label} keeps its model reference`);
+    assert.equal(variants.filter(item => item.$ref === '#/components/schemas/TPayment').length, 1, `${label} keeps its model reference`);
   }
 });
 
@@ -211,8 +211,8 @@ test('resolves a nullable model class through an imported base chain before runt
   const response = contentSchema(responseOf(document, '/payments/{id}', 'get', '200'), 'application/json', 'class response');
   const variants = anyOfSchemas(response, 'class nullable response');
   assert.equal(variants.filter(item => item.type === 'null').length, 1);
-  assert.equal(variants.filter(item => item.$ref === '#/components/schemas/Payment').length, 1);
-  assert.equal(schemaOf(document, 'Payment').type, 'object');
+  assert.equal(variants.filter(item => item.$ref === '#/components/schemas/TPayment').length, 1);
+  assert.equal(schemaOf(document, 'TPayment').type, 'object');
 });
 
 test('deduplicates equivalent nested model projections in the emitted components graph', async t => {
@@ -220,7 +220,7 @@ test('deduplicates equivalent nested model projections in the emitted components
 
   const document = documentOf(await generateFixture(root));
   const schemas = expectValue(expectValue(document.components, 'OpenAPI components').schemas, 'OpenAPI component schemas');
-  assert.ok(schemas.AddressOmitId, 'the smallest derived name survives deduplication');
+  assert.ok(schemas.TAddressOmitId, 'the smallest derived name survives deduplication');
   assert.equal(schemas.AddressPickCity, undefined, 'the equivalent projection redirects to it');
   const envelope = schemaOf(document, 'Envelope');
   const omitted = propertySchema(envelope, 'omitted');
@@ -342,7 +342,7 @@ test('same-name same-shape class and plain models keep their own codec ids in th
   const models = await generateModels({ root, profile: { mobx: false, validation: true } });
   const keys = models.artifacts.find(artifact => artifact.path.endsWith('iobject-plugin-keys.ts'))?.content ?? '';
   const keyOf = (directory: string): string => {
-    const id = keys.match(new RegExp(`src/${directory}/payment\\.model\\.ts#Payment": "([^"]+)"`))?.[1];
+    const id = keys.match(new RegExp(`src/${directory}/payment\\.model\\.ts#TPayment": "([^"]+)"`))?.[1];
     assert.ok(id, `${directory} model has a plugin key`);
     return id;
   };

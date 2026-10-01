@@ -8,67 +8,67 @@ function modelObject(json: unknown, name: string): Record<string, unknown> {
   return requireModelObject(json, name);
 }
 
-export type MoneyFields = { amount: number; currency: "EUR" | "USD" };
-export type MoneyJSON = { amount: number; currency: "EUR" | "USD" };
-export type MoneyInit = { amount: number; currency: "EUR" | "USD" };
-function decodeMoney(value: unknown): MoneyFields { const data = modelObject(value, "Money"); return (data) as MoneyFields; }
-const initMoney = decodeMoney;
-function encodeMoney(value: unknown): MoneyJSON { const data = value as Record<string, unknown>; return (data) as MoneyJSON; }
+export type TMoneyFields = { amount: number; currency: "EUR" | "USD" };
+export type TMoneyJSON = { amount: number; currency: "EUR" | "USD" };
+export type TMoneyInit = { amount: number; currency: "EUR" | "USD" };
+function decodeTMoney(value: unknown): TMoneyFields { const data = modelObject(value, "TMoney"); return (data) as TMoneyFields; }
+const initTMoney = decodeTMoney;
+function encodeTMoney(value: unknown): TMoneyJSON { const data = value as Record<string, unknown>; return (data) as TMoneyJSON; }
 
-export type WalletFields = { balance: MoneyFields };
-export type WalletJSON = { balance: MoneyJSON };
-export type WalletInit = Partial<{ balance: MoneyInit }>;
+export type TWalletFields = { balance: TMoneyFields };
+export type TWalletJSON = { balance: TMoneyJSON };
+export type TWalletInit = Partial<{ balance: TMoneyInit }>;
 
-export abstract class WalletBaseModel implements GeneratedModel<WalletJSON, WalletFields> {
-  declare readonly [generatedModelWireBrand]: WalletJSON;
-  declare readonly [generatedModelFieldsBrand]: WalletFields;
-  declare balance: WalletFields["balance"];
+export abstract class TWalletBaseModel implements GeneratedModel<TWalletJSON, TWalletFields> {
+  declare readonly [generatedModelWireBrand]: TWalletJSON;
+  declare readonly [generatedModelFieldsBrand]: TWalletFields;
+  declare balance: TWalletFields["balance"];
 
-  public constructor(values: WalletInit = {}) {
-    if (Object.prototype.hasOwnProperty.call(values, "balance")) defineModelProperty(this, "balance", initMoney(values["balance"]));
+  public constructor(values: TWalletInit = {}) {
+    if (Object.prototype.hasOwnProperty.call(values, "balance")) defineModelProperty(this, "balance", initTMoney(values["balance"]));
   }
 
 }
 
-function decodeWalletModel(constructor: GeneratedModelConstructor, json: unknown): WalletBaseModel {
-  const values = modelObject(json, "WalletBaseModel");
+function decodeTWalletModel(constructor: GeneratedModelConstructor, json: unknown): TWalletBaseModel {
+  const values = modelObject(json, "TWalletBaseModel");
   const result: Record<string, unknown> = { ...values };
-  if (Object.prototype.hasOwnProperty.call(values, "balance")) defineModelProperty(result, "balance", convertModelField("deserialize", "balance", () => (decodeMoney(values["balance"]))));
-  return Reflect.construct(constructor, [result]) as WalletBaseModel;
+  if (Object.prototype.hasOwnProperty.call(values, "balance")) defineModelProperty(result, "balance", convertModelField("deserialize", "balance", () => (decodeTMoney(values["balance"]))));
+  return Reflect.construct(constructor, [result]) as TWalletBaseModel;
 }
 
-function encodeWalletModel(model: WalletBaseModel): WalletJSON {
+function encodeTWalletModel(model: TWalletBaseModel): TWalletJSON {
   const result: Record<string, unknown> = {};
-  if (Object.prototype.hasOwnProperty.call(model, "balance")) defineModelProperty(result, "balance", (convertModelField("serialize", "balance", () => (encodeMoney(model["balance"])))));
-  return result as WalletJSON;
+  if (Object.prototype.hasOwnProperty.call(model, "balance")) defineModelProperty(result, "balance", (convertModelField("serialize", "balance", () => (encodeTMoney(model["balance"])))));
+  return result as TWalletJSON;
 }
 
-registerGeneratedModel(WalletBaseModel, {
+registerGeneratedModel(TWalletBaseModel, {
   fields: ["balance"],
   conversion: {
-    decode: (value, constructor) => decodeWalletModel(constructor ?? WalletBaseModel, value),
-    encode: encodeWalletModel,
+    decode: (value, constructor) => decodeTWalletModel(constructor ?? TWalletBaseModel, value),
+    encode: encodeTWalletModel,
   },
-  codecId: "Wallet_f39079e2",
+  codecId: "TWallet_042070c8",
   profile: { validation: true, mobx: false },
 });
 
-registerIModelClass("Wallet_f39079e2", WalletBaseModel);
+registerIModelClass("TWallet_042070c8", TWalletBaseModel);
 
 const objectAjvFast = createOpenApiSyncAjvEngine({ allErrors: false, validationBindings: {} });
 const objectAjvAll = createOpenApiSyncAjvEngine({ allErrors: true, validationBindings: {} });
 
-const __resolvedModelSchema_Money = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"Money_64c4561b\",\"type\":\"object\",\"properties\":{\"amount\":{\"allOf\":[{\"type\":\"number\"},{\"minimum\":0}]},\"currency\":{\"anyOf\":[{\"const\":\"EUR\"},{\"const\":\"USD\"}]}},\"required\":[\"amount\",\"currency\"],\"additionalProperties\":false}") as object) as object;
-objectAjvFast.addSchema(structuredClone(__resolvedModelSchema_Money) as object, "Money_64c4561b");
-objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_Money) as object, "Money_64c4561b");
-const __resolvedModelSchema_Wallet = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"Wallet_f39079e2\",\"type\":\"object\",\"properties\":{\"balance\":{\"$ref\":\"#/$defs/Money_64c4561b\"}},\"required\":[\"balance\"],\"additionalProperties\":false,\"$defs\":{\"Money_64c4561b\":{\"type\":\"object\",\"properties\":{\"amount\":{\"allOf\":[{\"type\":\"number\"},{\"minimum\":0}]},\"currency\":{\"anyOf\":[{\"const\":\"EUR\"},{\"const\":\"USD\"}]}},\"required\":[\"amount\",\"currency\"],\"additionalProperties\":false}}}") as object) as object;
-objectAjvFast.addSchema(structuredClone(__resolvedModelSchema_Wallet) as object, "Wallet_f39079e2");
-objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_Wallet) as object, "Wallet_f39079e2");
+const __resolvedModelSchema_TMoney = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"TMoney_64c4561b\",\"type\":\"object\",\"properties\":{\"amount\":{\"allOf\":[{\"type\":\"number\"},{\"minimum\":0}]},\"currency\":{\"anyOf\":[{\"const\":\"EUR\"},{\"const\":\"USD\"}]}},\"required\":[\"amount\",\"currency\"],\"additionalProperties\":false}") as object) as object;
+objectAjvFast.addSchema(structuredClone(__resolvedModelSchema_TMoney) as object, "TMoney_64c4561b");
+objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_TMoney) as object, "TMoney_64c4561b");
+const __resolvedModelSchema_TWallet = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"TWallet_042070c8\",\"type\":\"object\",\"properties\":{\"balance\":{\"$ref\":\"#/$defs/TMoney_64c4561b\"}},\"required\":[\"balance\"],\"additionalProperties\":false,\"$defs\":{\"TMoney_64c4561b\":{\"type\":\"object\",\"properties\":{\"amount\":{\"allOf\":[{\"type\":\"number\"},{\"minimum\":0}]},\"currency\":{\"anyOf\":[{\"const\":\"EUR\"},{\"const\":\"USD\"}]}},\"required\":[\"amount\",\"currency\"],\"additionalProperties\":false}}}") as object) as object;
+objectAjvFast.addSchema(structuredClone(__resolvedModelSchema_TWallet) as object, "TWallet_042070c8");
+objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_TWallet) as object, "TWallet_042070c8");
 
-const validateMoneyFast = requireAjvSchema(objectAjvFast.getSchema("Money_64c4561b"), "Money_64c4561b");
-const validateMoneyAll = requireAjvSchema(objectAjvAll.getSchema("Money_64c4561b"), "Money_64c4561b");
+const validateTMoneyFast = requireAjvSchema(objectAjvFast.getSchema("TMoney_64c4561b"), "TMoney_64c4561b");
+const validateTMoneyAll = requireAjvSchema(objectAjvAll.getSchema("TMoney_64c4561b"), "TMoney_64c4561b");
 
-function fillMoney(out: Record<string, unknown>, wire: Record<string, unknown>, copyIdentity = true): Record<string, unknown> {
+function fillTMoney(out: Record<string, unknown>, wire: Record<string, unknown>, copyIdentity = true): Record<string, unknown> {
   if (copyIdentity) {
     out["amount"] = wire["amount"];
     out["currency"] = wire["currency"];
@@ -76,22 +76,22 @@ function fillMoney(out: Record<string, unknown>, wire: Record<string, unknown>, 
   return out;
 }
 
-function stringifyMoneyCore(value: Record<string, unknown>): string {
+function stringifyTMoneyCore(value: Record<string, unknown>): string {
   return '{' + "\"amount\":" + stringifyJsonNumber(value["amount"] as number) + ",\"currency\":" + stringifyJsonScalar(value["currency"] as never) + '}';
 }
 
-export function stringifyMoney(value: MoneyFields, options?: __GolemSerdeOptions): string {
+export function stringifyTMoney(value: TMoneyFields, options?: __GolemSerdeOptions): string {
   const validates = serdeValidates(options, true);
   if (validates) {
-    assertMoney(value, options);
+    assertTMoney(value, options);
   }
-  return stringifyMoneyCore(value as never);
+  return stringifyTMoneyCore(value as never);
 }
 
-function convertFromWireMoney(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
+function convertFromWireTMoney(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
   const validates = serdeValidates(options, true);
   if (validates) {
-    assertMoney(wire, options);
+    assertTMoney(wire, options);
   }
   const source = isolated || wire === null || typeof wire !== 'object' ? wire : cloneConversionInput(wire);
   let result: unknown = source;
@@ -99,157 +99,157 @@ function convertFromWireMoney(wire: unknown, options: __GolemSerdeOptions | unde
     if (options?.construct) {
       result = Reflect.construct(options.construct, [{ ...(source as Record<string, unknown>) }]);
     } else {
-      result = fillMoney({} as Record<string, unknown>, source as Record<string, unknown>);
+      result = fillTMoney({} as Record<string, unknown>, source as Record<string, unknown>);
     }
   }
   return result;
 }
 
-export function fromWireFormatMoney(wire: unknown, options?: __GolemSerdeOptions): MoneyFields {
-  return convertFromWireMoney(wire, options, false) as MoneyFields;
+export function fromWireFormatTMoney(wire: unknown, options?: __GolemSerdeOptions): TMoneyFields {
+  return convertFromWireTMoney(wire, options, false) as TMoneyFields;
 }
 
-function toWireFormatMoneyCore(value: MoneyFields): MoneyJSON {
+function toWireFormatTMoneyCore(value: TMoneyFields): TMoneyJSON {
   const record = value as Record<string, unknown>;
   const wire = { ["amount"]: record["amount"], ["currency"]: record["currency"] };
-  return wire as MoneyJSON;
+  return wire as TMoneyJSON;
 }
 
-export function toWireFormatMoney(value: MoneyFields, options?: __GolemSerdeOptions): MoneyJSON {
+export function toWireFormatTMoney(value: TMoneyFields, options?: __GolemSerdeOptions): TMoneyJSON {
   const validates = serdeValidates(options, true);
   if (validates) {
-    assertMoney(value, options);
+    assertTMoney(value, options);
   }
-  return toWireFormatMoneyCore(value);
+  return toWireFormatTMoneyCore(value);
 }
 
-export function parseMoney(text: string, options?: __GolemSerdeOptions): MoneyFields {
-  return convertFromWireMoney(parseJson(text), options, true) as MoneyFields;
+export function parseTMoney(text: string, options?: __GolemSerdeOptions): TMoneyFields {
+  return convertFromWireTMoney(parseJson(text), options, true) as TMoneyFields;
 }
 
-export function validateMoney(value: unknown, options?: __GolemValidateOptions): value is MoneyFields {
+export function validateTMoney(value: unknown, options?: __GolemValidateOptions): value is TMoneyFields {
   const failFast = options?.failFast !== false;
   let ok: boolean;
   let errors: readonly unknown[] | null | undefined;
   if (options?.validationContext === undefined) {
-    const validator = failFast ? validateMoneyFast : validateMoneyAll;
+    const validator = failFast ? validateTMoneyFast : validateTMoneyAll;
     ok = validator(value);
     errors = validator.errors;
   } else {
-    const validator = resolveModelValidationContextValidator(options.validationContext, "Money_64c4561b", failFast ? 'first' : 'all');
+    const validator = resolveModelValidationContextValidator(options.validationContext, "TMoney_64c4561b", failFast ? 'first' : 'all');
     ok = runSynchronousValidation(validator, value);
     errors = validator.errors;
   }
-  (validateMoney as { errors?: unknown }).errors = errors;
+  (validateTMoney as { errors?: unknown }).errors = errors;
   return ok;
 }
 
-export function assertMoney(value: unknown, options?: __GolemValidateOptions): MoneyFields {
-  assertModelValue(value, options, validateMoneyFast, validateMoneyAll, "Money_64c4561b", IssueRepresentation.Model, IssueSource.TypeScript);
-  return value as MoneyFields;
+export function assertTMoney(value: unknown, options?: __GolemValidateOptions): TMoneyFields {
+  assertModelValue(value, options, validateTMoneyFast, validateTMoneyAll, "TMoney_64c4561b", IssueRepresentation.Model, IssueSource.TypeScript);
+  return value as TMoneyFields;
 }
 
-createObjectCodec("Money_64c4561b", {
-  stringify: stringifyMoney as (value: never, options?: __GolemSerdeOptions) => string,
-  parse: parseMoney as (text: string, options?: __GolemSerdeOptions) => never,
-  validate: validateMoney,
-  assert: assertMoney,
-  toWireFormat: toWireFormatMoney,
-  fromWireFormat: fromWireFormatMoney,
-  schema: __resolvedModelSchema_Money,
+createObjectCodec("TMoney_64c4561b", {
+  stringify: stringifyTMoney as (value: never, options?: __GolemSerdeOptions) => string,
+  parse: parseTMoney as (text: string, options?: __GolemSerdeOptions) => never,
+  validate: validateTMoney,
+  assert: assertTMoney,
+  toWireFormat: toWireFormatTMoney,
+  fromWireFormat: fromWireFormatTMoney,
+  schema: __resolvedModelSchema_TMoney,
   issueSource: IssueSource.TypeScript,
 });
 
-const validateWalletFast = requireAjvSchema(objectAjvFast.getSchema("Wallet_f39079e2"), "Wallet_f39079e2");
-const validateWalletAll = requireAjvSchema(objectAjvAll.getSchema("Wallet_f39079e2"), "Wallet_f39079e2");
+const validateTWalletFast = requireAjvSchema(objectAjvFast.getSchema("TWallet_042070c8"), "TWallet_042070c8");
+const validateTWalletAll = requireAjvSchema(objectAjvAll.getSchema("TWallet_042070c8"), "TWallet_042070c8");
 
-function fillWallet(out: Record<string, unknown>, wire: Record<string, unknown>): Record<string, unknown> {
+function fillTWallet(out: Record<string, unknown>, wire: Record<string, unknown>): Record<string, unknown> {
   if (Object.prototype.hasOwnProperty.call(wire, "balance")) {
     out["balance"] = ({ ["amount"]: (wire["balance"] as Record<string, unknown>)["amount"], ["currency"]: (wire["balance"] as Record<string, unknown>)["currency"] });
   }
   return out;
 }
 
-function stringifyWalletCore(value: Record<string, unknown>): string {
-  return '{' + "\"balance\":" + stringifyMoneyCore(value["balance"] as never) + '}';
+function stringifyTWalletCore(value: Record<string, unknown>): string {
+  return '{' + "\"balance\":" + stringifyTMoneyCore(value["balance"] as never) + '}';
 }
 
-export function stringifyWallet(value: WalletFields, options?: __GolemSerdeOptions): string {
+export function stringifyTWallet(value: TWalletFields, options?: __GolemSerdeOptions): string {
   const validates = serdeValidates(options, true);
   if (validates) {
-    assertWallet(value, options);
+    assertTWallet(value, options);
   }
-  return stringifyWalletCore(value as never);
+  return stringifyTWalletCore(value as never);
 }
 
-function convertFromWireWallet(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
+function convertFromWireTWallet(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
   const validates = serdeValidates(options, true);
   if (validates) {
-    assertWallet(wire, options);
+    assertTWallet(wire, options);
   }
   const source = isolated || wire === null || typeof wire !== 'object' ? wire : cloneConversionInput(wire);
   let result: unknown = source;
   if (source !== null && typeof source === 'object' && !Array.isArray(source)) {
     if (options?.construct) {
-      result = Reflect.construct(options.construct, [fillWallet({ ...(source as Record<string, unknown>) }, (source as Record<string, unknown>))]);
+      result = Reflect.construct(options.construct, [fillTWallet({ ...(source as Record<string, unknown>) }, (source as Record<string, unknown>))]);
     } else {
-      result = fillWallet({} as Record<string, unknown>, source as Record<string, unknown>);
+      result = fillTWallet({} as Record<string, unknown>, source as Record<string, unknown>);
     }
   }
   return result;
 }
 
-export function fromWireFormatWallet(wire: unknown, options?: __GolemSerdeOptions): WalletFields {
-  return convertFromWireWallet(wire, options, false) as WalletFields;
+export function fromWireFormatTWallet(wire: unknown, options?: __GolemSerdeOptions): TWalletFields {
+  return convertFromWireTWallet(wire, options, false) as TWalletFields;
 }
 
-function toWireFormatWalletCore(value: WalletFields): WalletJSON {
+function toWireFormatTWalletCore(value: TWalletFields): TWalletJSON {
   const record = value as Record<string, unknown>;
-  const wire = { ["balance"]: toWireFormatMoneyCore(record["balance"] as never) };
-  return wire as WalletJSON;
+  const wire = { ["balance"]: toWireFormatTMoneyCore(record["balance"] as never) };
+  return wire as TWalletJSON;
 }
 
-export function toWireFormatWallet(value: WalletFields, options?: __GolemSerdeOptions): WalletJSON {
+export function toWireFormatTWallet(value: TWalletFields, options?: __GolemSerdeOptions): TWalletJSON {
   const validates = serdeValidates(options, true);
   if (validates) {
-    assertWallet(value, options);
+    assertTWallet(value, options);
   }
-  return toWireFormatWalletCore(value);
+  return toWireFormatTWalletCore(value);
 }
 
-export function parseWallet(text: string, options?: __GolemSerdeOptions): WalletFields {
-  return convertFromWireWallet(parseJson(text), options, true) as WalletFields;
+export function parseTWallet(text: string, options?: __GolemSerdeOptions): TWalletFields {
+  return convertFromWireTWallet(parseJson(text), options, true) as TWalletFields;
 }
 
-export function validateWallet(value: unknown, options?: __GolemValidateOptions): value is WalletFields {
+export function validateTWallet(value: unknown, options?: __GolemValidateOptions): value is TWalletFields {
   const failFast = options?.failFast !== false;
   let ok: boolean;
   let errors: readonly unknown[] | null | undefined;
   if (options?.validationContext === undefined) {
-    const validator = failFast ? validateWalletFast : validateWalletAll;
+    const validator = failFast ? validateTWalletFast : validateTWalletAll;
     ok = validator(value);
     errors = validator.errors;
   } else {
-    const validator = resolveModelValidationContextValidator(options.validationContext, "Wallet_f39079e2", failFast ? 'first' : 'all');
+    const validator = resolveModelValidationContextValidator(options.validationContext, "TWallet_042070c8", failFast ? 'first' : 'all');
     ok = runSynchronousValidation(validator, value);
     errors = validator.errors;
   }
-  (validateWallet as { errors?: unknown }).errors = errors;
+  (validateTWallet as { errors?: unknown }).errors = errors;
   return ok;
 }
 
-export function assertWallet(value: unknown, options?: __GolemValidateOptions): WalletFields {
-  assertModelValue(value, options, validateWalletFast, validateWalletAll, "Wallet_f39079e2", IssueRepresentation.Model, IssueSource.TypeScript);
-  return value as WalletFields;
+export function assertTWallet(value: unknown, options?: __GolemValidateOptions): TWalletFields {
+  assertModelValue(value, options, validateTWalletFast, validateTWalletAll, "TWallet_042070c8", IssueRepresentation.Model, IssueSource.TypeScript);
+  return value as TWalletFields;
 }
 
-createObjectCodec("Wallet_f39079e2", {
-  stringify: stringifyWallet as (value: never, options?: __GolemSerdeOptions) => string,
-  parse: parseWallet as (text: string, options?: __GolemSerdeOptions) => never,
-  validate: validateWallet,
-  assert: assertWallet,
-  toWireFormat: toWireFormatWallet,
-  fromWireFormat: fromWireFormatWallet,
-  schema: __resolvedModelSchema_Wallet,
+createObjectCodec("TWallet_042070c8", {
+  stringify: stringifyTWallet as (value: never, options?: __GolemSerdeOptions) => string,
+  parse: parseTWallet as (text: string, options?: __GolemSerdeOptions) => never,
+  validate: validateTWallet,
+  assert: assertTWallet,
+  toWireFormat: toWireFormatTWallet,
+  fromWireFormat: fromWireFormatTWallet,
+  schema: __resolvedModelSchema_TWallet,
   issueSource: IssueSource.TypeScript,
 });

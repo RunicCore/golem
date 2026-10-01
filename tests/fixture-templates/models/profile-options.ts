@@ -24,9 +24,9 @@ export function taggedProfilePayloadSource(options: {
 import type { Format, MinLength, TValidation } from '@exprtlabs/golem/tags';
 import { validText } from './validators.js';
 export type TPayload = IModel<{ nested: { text: string & TValidation<typeof validText>; payload: any & MinLength<3>; opaque: unknown & Format<'domain-specific'> } }, ${options.modelOptions}>;
-import { PayloadBaseModel, type PayloadFields } from './payload.model.generated.js';
-export class Payload extends PayloadBaseModel {
-  constructor(values: Partial<PayloadFields> = {}) { super(values); }
+import { TPayloadBaseModel, type TPayloadFields } from './payload.model.generated.js';
+export class Payload extends TPayloadBaseModel {
+  constructor(values: Partial<TPayloadFields> = {}) { super(values); }
 }
 `;
 }

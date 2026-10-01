@@ -27,9 +27,9 @@ function independentSources(count: number): Record<string, string> {
   for (let index = 0; index < count; index++) {
     sources[`item-${index}.model.ts`] = `import type { IModel } from '@exprtlabs/golem/model';
 import type { MinLength } from '@exprtlabs/golem/tags';
-import { Item${index}BaseModel } from './item-${index}.model.generated.js';
+import { TItem${index}BaseModel } from './item-${index}.model.generated.js';
 export type TItem${index} = IModel<{ label: string & MinLength<3>; count: number }>;
-export class Item${index} extends Item${index}BaseModel {}
+export class Item${index} extends TItem${index}BaseModel {}
 `;
   }
   return sources;
@@ -43,9 +43,9 @@ function chainSources(count: number): Record<string, string> {
     const fields = index > 0 ? `; prev: TItem${index - 1}; prevs?: TItem${index - 1}[]` : '';
     sources[`item-${index}.model.ts`] = `import type { IModel } from '@exprtlabs/golem/model';
 import type { MinLength } from '@exprtlabs/golem/tags';
-${previous}import { Item${index}BaseModel } from './item-${index}.model.generated.js';
+${previous}import { TItem${index}BaseModel } from './item-${index}.model.generated.js';
 export type TItem${index} = IModel<{ label: string & MinLength<3>; at: Date; kind: { k: 'a'; a: Date } | { k: 'b'; b: number }${fields} }>;
-export class Item${index} extends Item${index}BaseModel {}
+export class Item${index} extends TItem${index}BaseModel {}
 `;
   }
   return sources;

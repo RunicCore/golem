@@ -10,6 +10,6 @@ export type TCart = IModel<{
   code: number & TSerde<typeof encode, typeof decode>;
 }>;
 
-import { CartBaseModel } from './cart.model.generated.js';
+import { TCartBaseModel } from './cart.model.generated.js';
 
-export class Cart extends CartBaseModel {}
+export class Cart extends TCartBaseModel {}

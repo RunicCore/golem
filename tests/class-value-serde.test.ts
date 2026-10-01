@@ -96,9 +96,9 @@ test('optional class-value field', async t => {
 test('invalid wire value is rejected before decoding', async t => {
   const { root } = await build(t, tsSource`bytes: Bytes`);
   // parse<Model> runs JSON validation by default; decodeGeneratedModel does not validate.
-  const codecs = await import(path.toNamespacedPath(path.join(root, 'build/a.model.generated.js'))) as { parseA: (text: string) => unknown };
-  assert.throws(() => codecs.parseA('{"bytes":"***"}'));
-  assert.doesNotThrow(() => codecs.parseA('{"bytes":"AQID"}'));
+  const codecs = await import(path.toNamespacedPath(path.join(root, 'build/a.model.generated.js'))) as { parseTA: (text: string) => unknown };
+  assert.throws(() => codecs.parseTA('{"bytes":"***"}'));
+  assert.doesNotThrow(() => codecs.parseTA('{"bytes":"AQID"}'));
 });
 
 test('generated model type names the class', async t => {

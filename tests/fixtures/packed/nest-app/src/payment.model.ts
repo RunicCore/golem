@@ -21,6 +21,6 @@ export type TPaymentFilter = IObject<{
   status?: PaymentStatus | PaymentStatus[];
 }, { exact: true }>;
 
-import { PaymentBaseModel } from './payment.model.generated.js';
+import { TPaymentBaseModel } from './payment.model.generated.js';
 
-export class Payment extends PaymentBaseModel {}
+export class Payment extends TPaymentBaseModel {}

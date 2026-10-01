@@ -2,13 +2,13 @@ import { toWireFormat } from '@exprtlabs/golem/serde';
 import { validateInstance } from '@exprtlabs/golem/validation';
 import { Task } from './task.model.js';
 import type { TTask } from './task.model.js';
-import type { TaskJSON } from './task.model.generated.js';
+import type { TTaskJSON } from './task.model.generated.js';
 
 export function createTask(draft: { title: string; done?: boolean; priority?: number }): Task {
   return new Task({ title: draft.title, done: draft.done ?? false, priority: draft.priority ?? 2 });
 }
 
-export async function saveTask(task: Task): Promise<TaskJSON> {
+export async function saveTask(task: Task): Promise<TTaskJSON> {
   if ((await validateInstance(task)).length > 0) {
     throw new Error('Cannot save an invalid task.');
   }

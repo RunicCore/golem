@@ -257,7 +257,7 @@ test('IModel object unions with validation load, validate and reject an unknown 
     return value;
   };
   // Without the ttsc plugin, nested values construct the generated bases.
-  const [Owner, Cat, Dog] = [model('Owner'), model('CatBaseModel'), model('DogBaseModel')];
+  const [Owner, Cat, Dog] = [model('Owner'), model('TCatBaseModel'), model('TDogBaseModel')];
   const json = { pet: { kind: 'dog', bark: true }, pets: [{ kind: 'cat', name: 'Miso' }, { kind: 'dog', bark: false }] };
   const owner = decodeGeneratedModel(Owner, json);
   const fields = requireRecord(owner, 'owner');

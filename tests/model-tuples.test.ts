@@ -33,7 +33,7 @@ test('generated optional and rest tuples retain exact lengths through every serd
     const loaded = await import(pathToFileURL(path.join(root, 'build/tuple.model.js')).href) as {
       readonly Tuple: new (values?: object) => object;
     };
-    const codecId = generatedCodecId(result.artifacts.map(artifact => artifact.content).join('\n'), 'Tuple');
+    const codecId = generatedCodecId(result.artifacts.map(artifact => artifact.content).join('\n'), 'TTuple');
     const codec = requireObjectCodec(codecId);
     const omitted = new loaded.Tuple({ required: ['required', 9], maybe: ['x'], rest: ['prefix', true] });
     const full = new loaded.Tuple({ required: ['required', 9], maybe: ['x', 2], nested: ['inner'], rest: ['prefix', 1, 2, true] });
@@ -120,7 +120,7 @@ test('validation-enabled codec emission compiles and preserves array and tuple g
   const result = generate({ root, sources: [model], profile: { mobx: false, validation: true } });
   writeGeneratedArtifacts(result.artifacts);
   await compileModelProject(root);
-  const codecId = generatedCodecId(result.artifacts.map((artifact) => artifact.content).join('\n'), 'Snapshot');
+  const codecId = generatedCodecId(result.artifacts.map((artifact) => artifact.content).join('\n'), 'TSnapshot');
   const verifier = path.join(root, 'verify-array-getters.mjs');
   await command(root, process.execPath, [verifier, codecId]);
 });

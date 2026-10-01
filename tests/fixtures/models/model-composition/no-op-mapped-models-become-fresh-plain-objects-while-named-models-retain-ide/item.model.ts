@@ -1,6 +1,6 @@
 
 import type { IModel } from '@exprtlabs/golem/model';
-import { PlaceBaseModel, ContainerBaseModel } from './item.model.generated.js';
+import { TPlaceBaseModel, TContainerBaseModel } from './item.model.generated.js';
 export type TPlace = IModel<{ borough: string }>;
 type Noop<T> = { [K in keyof T]: T[K] };
 export type TContainer = IModel<{
@@ -8,5 +8,5 @@ export type TContainer = IModel<{
   intact: TPlace;
   plain: { borough: string };
 }>;
-export class Place extends PlaceBaseModel {}
-export class Container extends ContainerBaseModel {}
+export class Place extends TPlaceBaseModel {}
+export class Container extends TContainerBaseModel {}

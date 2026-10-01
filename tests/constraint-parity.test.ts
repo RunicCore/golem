@@ -214,7 +214,7 @@ for (const ajvStandalone of [false, true] as const) {
     if (ajvStandalone) materializeStandalone(root, sourceRoot, result);
 
     const { A } = await import(path.toNamespacedPath(path.join(root, 'build/a.model.js')));
-    const codec = requireObjectCodec(generatedCodecIdFromRoot(root, 'A'));
+    const codec = requireObjectCodec(generatedCodecIdFromRoot(root, 'TA'));
     const canonical = ajvStandalone ? undefined : canonicalModelValidator(root, sourceRoot);
     const valid = validModelValues();
     assert.equal(codec.validate(valid), true);

@@ -14,13 +14,13 @@ export function createPaymentEditor(draft: PaymentDraft): PaymentEditor {
 import { toWireFormat } from '@exprtlabs/golem/serde';
 import { validateInstance } from '@exprtlabs/golem/validation';
 import type { TPaymentEditor } from './payment-editor.model.js';
-import type { PaymentEditorJSON } from './payment-editor.model.generated.js';
+import type { TPaymentEditorJSON } from './payment-editor.model.generated.js';
 
 export async function savePayment(client: PaymentsClient, editor: PaymentEditor) {
   if ((await validateInstance(editor)).length > 0) {
     throw new Error('Cannot save an invalid payment.');
   }
-  const wire: PaymentEditorJSON = toWireFormat<TPaymentEditor>(editor);
+  const wire: TPaymentEditorJSON = toWireFormat<TPaymentEditor>(editor);
   return client.createPayment().execute({ body: wire.money });
 }
 // #endregion validate-and-save

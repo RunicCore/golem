@@ -317,7 +317,7 @@ test('names getSchemaPath() components by @ApiSchema and rejects a clash with a 
   const components = document.components?.schemas ?? {};
   assert.equal(property(document, objectSchema(document, components.PageMetadata), 'total').description, 'Total rows');
   assert.equal(components.PageMeta, undefined);
-  assert.ok(components.Payment, 'the IModel component keeps its own name');
+  assert.ok(components.TPayment, 'the IModel component keeps its own name');
   await rejectsWith(
     inlineFixture(t, readFixture(`${FIXTURES}/schema-path-component-names/conflict.controller.ts`)),
     'NEST1504',

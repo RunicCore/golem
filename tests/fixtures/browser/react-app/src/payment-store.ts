@@ -6,7 +6,7 @@ import {
   PaymentsClient,
   type PaymentsClientPort,
 } from '../sdk/index.js';
-import { PaymentEditor, type PaymentEditorInit } from './payment-editor.model.js';
+import { PaymentEditor, type TPaymentEditorInit } from './payment-editor.model.js';
 
 export type SaveState = 'idle' | 'saving' | 'success' | 'error';
 
@@ -31,7 +31,7 @@ export class PaymentStore {
 
   public constructor(
     client: PaymentsClientPort,
-    values: PaymentEditorInit = {},
+    values: TPaymentEditorInit = {},
   ) {
     this.client = client;
     this.editor = new PaymentEditor(values);

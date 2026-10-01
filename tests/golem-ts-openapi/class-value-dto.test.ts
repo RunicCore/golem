@@ -43,8 +43,8 @@ test('a controller DTO with a class-valued TSerde field and Temporal fields docu
   });
   const result = await generate({ root, output: path.join(root, 'openapi.json'), openapiVersion: '3.2.0', info: { title: 'Orders', version: '1' }, profile: { mobx: false, validation: false } });
   const document = JSON.parse(result.artifacts[0]!.content) as { components: { schemas: Record<string, Schema> } };
-  const order = document.components.schemas.Order;
-  assert.ok(order, 'Order component');
+  const order = document.components.schemas.TOrder;
+  assert.ok(order, 'TOrder component');
   assert.deepEqual(order.required, ['placedAt', 'price', 'prices']);
   assert.deepEqual(order.properties?.price, { type: 'string' }, 'a class value is documented by its codec wire type');
   assert.deepEqual(order.properties?.prices, { type: 'array', items: { type: 'string' } });

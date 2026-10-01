@@ -1,3 +1,3 @@
 import { parse } from '@exprtlabs/golem/serde';
-import type { PaymentInput } from './payment.model.js';
-export function read(text: string): PaymentInput { return parse<PaymentInput>(text); }
+import type { TPaymentInput } from './payment.model.js';
+export function read(text: string): TPaymentInput { return parse<TPaymentInput>(text); }

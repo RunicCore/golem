@@ -148,7 +148,7 @@ test('wire-only serde predicates do not create model-plane tag validators', asyn
   const { Item } = await import(pathToFileURL(path.join(fixtureValue.root, 'build/item.model.js')).href) as {
     Item: new (values?: { value?: number }) => { value: number };
   };
-  const codec = requireObjectCodec(generatedCodecIdFromRoot(fixtureValue.root, 'Item'));
+  const codec = requireObjectCodec(generatedCodecIdFromRoot(fixtureValue.root, 'TItem'));
   const model = new Item({ value: -5 });
   assert.equal(codec.validate(model), true, 'the model-plane number field carries no tag validator derived from the wire-only predicate');
   assert.throws(

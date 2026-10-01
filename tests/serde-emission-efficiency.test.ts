@@ -101,7 +101,7 @@ test('model decoder leaves unchanged fields in the initializer copy', (t) => {
   );
 
   const result = generate({ root: value.root, profile: { mobx: false, validation: false } });
-  const decode = functionBody(modelArtifact(result, 'item'), 'decodeItemModel');
+  const decode = functionBody(modelArtifact(result, 'item'), 'decodeTItemModel');
   assert.match(
     decode,
     /const result: Record<string, unknown> = \{ \.\.\.values \};/,
@@ -296,7 +296,7 @@ test('OpenAPI decoder leaves scalar fields in the initializer copy', () => {
   );
   assert.match(
     child,
-    /return value as ChildInit/,
+    /return value as TChildInit/,
     'budget: pairs with the no-copy check above — the input is cast and returned directly, not rebuilt field by field',
   );
 });
@@ -304,26 +304,26 @@ test('OpenAPI decoder leaves scalar fields in the initializer copy', () => {
 test('nested local models decode from the already isolated input without copying it again', async (t) => {
   const value = fixture(t);
   writeFileSync(path.join(value.sourceRoot, 'team.model.ts'), `import type { IModel } from '@exprtlabs/golem/model';
-import { MemberBaseModel, StampBaseModel, TeamBaseModel } from './team.model.generated.js';
+import { TMemberBaseModel, TStampBaseModel, TTeamBaseModel } from './team.model.generated.js';
 export type TStamp = IModel<{ time: number }>;
-export class Stamp extends StampBaseModel {}
+export class Stamp extends TStampBaseModel {}
 export type TMember = IModel<{ name: string; joined: Stamp }>;
-export class Member extends MemberBaseModel {}
+export class Member extends TMemberBaseModel {}
 export type TTeam = IModel<{ lead: Member; members: Member[] }>;
-export class Team extends TeamBaseModel {}
+export class Team extends TTeamBaseModel {}
 `);
   const result = generate({ root: value.root, profile: { mobx: false, validation: false } });
   const generated = modelArtifact(result, 'team');
   // Only the outermost call copies the input; nested models reuse that copy.
-  assert.doesNotMatch(functionBody(generated, 'fillTeam'), /fromWireFormat(Member|Stamp)\(/);
-  assert.match(functionBody(generated, 'fillTeam'), /convertFromWireMember\([^;]*, true\)/);
-  assert.match(functionBody(generated, 'fillMember'), /convertFromWireStamp\([^;]*, true\)/);
+  assert.doesNotMatch(functionBody(generated, 'fillTTeam'), /fromWireFormat(Member|Stamp)\(/);
+  assert.match(functionBody(generated, 'fillTTeam'), /convertFromWireMember\([^;]*, true\)/);
+  assert.match(functionBody(generated, 'fillTMember'), /convertFromWireStamp\([^;]*, true\)/);
 
   writeGeneratedArtifacts(result.artifacts);
   await compileModelProject(value.root);
   const { Team } = await import(pathToFileURL(path.join(value.root, 'build/team.model.js')).href);
   // Nested values are the generated classes; a model file's own subclasses aren't visible to its companion.
-  const { MemberBaseModel: Member, StampBaseModel: Stamp } = await import(pathToFileURL(path.join(value.root, 'build/team.model.generated.js')).href);
+  const { TMemberBaseModel: Member, TStampBaseModel: Stamp } = await import(pathToFileURL(path.join(value.root, 'build/team.model.generated.js')).href);
   const { requireObjectCodec } = await import('@exprtlabs/golem/serde');
   const input = { lead: { name: 'Ada', joined: { time: 1 } }, members: [{ name: 'Lin', joined: { time: 2 } }] };
   const codec = requireObjectCodec<InstanceType<typeof Team>>('Team');
@@ -344,13 +344,13 @@ export class Team extends TeamBaseModel {}
 test('model encoding assigns present fields in declaration order without deleting keys', async (t) => {
   const value = fixture(t);
   writeFileSync(path.join(value.sourceRoot, 'note.model.ts'), `import type { IModel } from '@exprtlabs/golem/model';
-import { NoteBaseModel } from './note.model.generated.js';
+import { TNoteBaseModel } from './note.model.generated.js';
 export type TNote = IModel<{ title: string; body?: string; pinned: boolean }>;
-export class Note extends NoteBaseModel {}
+export class Note extends TNoteBaseModel {}
 `);
   const result = generate({ root: value.root, profile: { mobx: false, validation: false } });
   const generated = modelArtifact(result, 'note');
-  const encode = functionBody(generated, 'encodeNoteModel');
+  const encode = functionBody(generated, 'encodeTNoteModel');
   assert.doesNotMatch(generated, /AbsentField/, 'budget: no sentinel value stands in for an absent field');
   assert.doesNotMatch(encode, /\bdelete\b/, 'budget: absent fields are never added and then deleted, which turns the result into a dictionary-mode object');
   const positions = ['title', 'body', 'pinned'].map((name) => encode.indexOf(`defineModelProperty(result, "${name}"`));

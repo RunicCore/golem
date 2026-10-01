@@ -8,48 +8,48 @@ function modelObject(json: unknown, name: string): Record<string, unknown> {
   return requireModelObject(json, name);
 }
 
-export type ContractsFields = { destinations: Array<string>; billing: { card?: undefined | string; billingAddress?: undefined | string } };
-export type ContractsJSON = { destinations: Array<string>; billing: { card?: undefined | string; billingAddress?: undefined | string } };
-export type ContractsInit = Partial<{ destinations: Array<string>; billing: { card?: undefined | string; billingAddress?: undefined | string } }>;
+export type TContractsFields = { destinations: Array<string>; billing: { card?: undefined | string; billingAddress?: undefined | string } };
+export type TContractsJSON = { destinations: Array<string>; billing: { card?: undefined | string; billingAddress?: undefined | string } };
+export type TContractsInit = Partial<{ destinations: Array<string>; billing: { card?: undefined | string; billingAddress?: undefined | string } }>;
 
-export abstract class ContractsBaseModel implements GeneratedModel<ContractsJSON, ContractsFields> {
-  declare readonly [generatedModelWireBrand]: ContractsJSON;
-  declare readonly [generatedModelFieldsBrand]: ContractsFields;
-  declare destinations: ContractsFields["destinations"];
-  declare billing: ContractsFields["billing"];
+export abstract class TContractsBaseModel implements GeneratedModel<TContractsJSON, TContractsFields> {
+  declare readonly [generatedModelWireBrand]: TContractsJSON;
+  declare readonly [generatedModelFieldsBrand]: TContractsFields;
+  declare destinations: TContractsFields["destinations"];
+  declare billing: TContractsFields["billing"];
 
-  public constructor(values: ContractsInit = {}) {
+  public constructor(values: TContractsInit = {}) {
     if (Object.prototype.hasOwnProperty.call(values, "destinations")) defineModelProperty(this, "destinations", Array.isArray(values["destinations"]) ? (values["destinations"] as readonly unknown[]).slice() : values["destinations"]);
     if (Object.prototype.hasOwnProperty.call(values, "billing")) defineModelProperty(this, "billing", values["billing"]);
   }
 
 }
 
-function decodeContractsModel(constructor: GeneratedModelConstructor, json: unknown): ContractsBaseModel {
-  const values = modelObject(json, "ContractsBaseModel");
+function decodeTContractsModel(constructor: GeneratedModelConstructor, json: unknown): TContractsBaseModel {
+  const values = modelObject(json, "TContractsBaseModel");
   const result: Record<string, unknown> = { ...values };
   if (Object.prototype.hasOwnProperty.call(values, "destinations")) defineModelProperty(result, "destinations", convertModelField("deserialize", "destinations", () => (Array.isArray(values["destinations"]) ? (values["destinations"] as readonly unknown[]).slice() : values["destinations"])));
-  return Reflect.construct(constructor, [result]) as ContractsBaseModel;
+  return Reflect.construct(constructor, [result]) as TContractsBaseModel;
 }
 
-function encodeContractsModel(model: ContractsBaseModel): ContractsJSON {
+function encodeTContractsModel(model: TContractsBaseModel): TContractsJSON {
   const result: Record<string, unknown> = {};
   if (Object.prototype.hasOwnProperty.call(model, "destinations")) defineModelProperty(result, "destinations", (convertModelField("serialize", "destinations", () => (Array.isArray(model["destinations"]) ? (model["destinations"] as readonly unknown[]).slice() : model["destinations"]))));
   if (Object.prototype.hasOwnProperty.call(model, "billing")) defineModelProperty(result, "billing", (model["billing"]));
-  return result as ContractsJSON;
+  return result as TContractsJSON;
 }
 
-registerGeneratedModel(ContractsBaseModel, {
+registerGeneratedModel(TContractsBaseModel, {
   fields: ["destinations", "billing"],
   conversion: {
-    decode: (value, constructor) => decodeContractsModel(constructor ?? ContractsBaseModel, value),
-    encode: encodeContractsModel,
+    decode: (value, constructor) => decodeTContractsModel(constructor ?? TContractsBaseModel, value),
+    encode: encodeTContractsModel,
   },
-  codecId: "Contracts_87aa2f02",
+  codecId: "TContracts_87aa2f02",
   profile: { validation: true, mobx: false },
 });
 
-registerIModelClass("Contracts_87aa2f02", ContractsBaseModel);
+registerIModelClass("TContracts_87aa2f02", TContractsBaseModel);
 
 const objectAjvFast = createOpenApiSyncAjvEngine({ allErrors: false, validationBindings: {} });
 const objectAjvAll = createOpenApiSyncAjvEngine({ allErrors: true, validationBindings: {} });
@@ -57,9 +57,9 @@ const objectAjvAll = createOpenApiSyncAjvEngine({ allErrors: true, validationBin
 const __resolvedModelSchema_Anonymous_fa67afd9 = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"Anonymous_fa67afd9\",\"type\":\"object\",\"properties\":{\"billingAddress\":{\"anyOf\":[{\"type\":\"string\"}]},\"card\":{\"anyOf\":[{\"type\":\"string\"}]}},\"additionalProperties\":false,\"dependentRequired\":{\"card\":[\"billingAddress\"]}}") as object) as object;
 objectAjvFast.addSchema(structuredClone(__resolvedModelSchema_Anonymous_fa67afd9) as object, "Anonymous_fa67afd9");
 objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_Anonymous_fa67afd9) as object, "Anonymous_fa67afd9");
-const __resolvedModelSchema_Contracts = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"Contracts_87aa2f02\",\"type\":\"object\",\"properties\":{\"billing\":{\"type\":\"object\",\"properties\":{\"billingAddress\":{\"anyOf\":[{\"type\":\"string\"}]},\"card\":{\"anyOf\":[{\"type\":\"string\"}]}},\"additionalProperties\":false,\"dependentRequired\":{\"card\":[\"billingAddress\"]}},\"destinations\":{\"type\":\"array\",\"items\":{\"type\":\"string\"},\"contains\":{\"allOf\":[{\"type\":\"string\"},{\"format\":\"email\"}]},\"minContains\":1}},\"required\":[\"billing\",\"destinations\"],\"additionalProperties\":false}") as object) as object;
-objectAjvFast.addSchema(structuredClone(__resolvedModelSchema_Contracts) as object, "Contracts_87aa2f02");
-objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_Contracts) as object, "Contracts_87aa2f02");
+const __resolvedModelSchema_TContracts = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"TContracts_87aa2f02\",\"type\":\"object\",\"properties\":{\"billing\":{\"type\":\"object\",\"properties\":{\"billingAddress\":{\"anyOf\":[{\"type\":\"string\"}]},\"card\":{\"anyOf\":[{\"type\":\"string\"}]}},\"additionalProperties\":false,\"dependentRequired\":{\"card\":[\"billingAddress\"]}},\"destinations\":{\"type\":\"array\",\"items\":{\"type\":\"string\"},\"contains\":{\"allOf\":[{\"type\":\"string\"},{\"format\":\"email\"}]},\"minContains\":1}},\"required\":[\"billing\",\"destinations\"],\"additionalProperties\":false}") as object) as object;
+objectAjvFast.addSchema(structuredClone(__resolvedModelSchema_TContracts) as object, "TContracts_87aa2f02");
+objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_TContracts) as object, "TContracts_87aa2f02");
 
 const validateAnonymous_fa67afd9Fast = requireAjvSchema(objectAjvFast.getSchema("Anonymous_fa67afd9"), "Anonymous_fa67afd9");
 const validateAnonymous_fa67afd9All = requireAjvSchema(objectAjvAll.getSchema("Anonymous_fa67afd9"), "Anonymous_fa67afd9");
@@ -178,10 +178,10 @@ createObjectCodec("Anonymous_fa67afd9", {
   issueSource: IssueSource.TypeScript,
 });
 
-const validateContractsFast = requireAjvSchema(objectAjvFast.getSchema("Contracts_87aa2f02"), "Contracts_87aa2f02");
-const validateContractsAll = requireAjvSchema(objectAjvAll.getSchema("Contracts_87aa2f02"), "Contracts_87aa2f02");
+const validateTContractsFast = requireAjvSchema(objectAjvFast.getSchema("TContracts_87aa2f02"), "TContracts_87aa2f02");
+const validateTContractsAll = requireAjvSchema(objectAjvAll.getSchema("TContracts_87aa2f02"), "TContracts_87aa2f02");
 
-function fillContracts(out: Record<string, unknown>, wire: Record<string, unknown>): Record<string, unknown> {
+function fillTContracts(out: Record<string, unknown>, wire: Record<string, unknown>): Record<string, unknown> {
   if (Object.prototype.hasOwnProperty.call(wire, "destinations")) {
     out["destinations"] = Array.isArray(wire["destinations"]) ? (wire["destinations"] as readonly unknown[]).slice() : wire["destinations"];
   }
@@ -191,87 +191,87 @@ function fillContracts(out: Record<string, unknown>, wire: Record<string, unknow
   return out;
 }
 
-function stringifyContractsCore(value: Record<string, unknown>): string {
+function stringifyTContractsCore(value: Record<string, unknown>): string {
   return '{' + "\"destinations\":" + stringifyJsonArray(value["destinations"] as ArrayLike<unknown>, (item) => stringifyJsonString(item as string)) + ",\"billing\":" + stringifyAnonymous_fa67afd9Core(value["billing"] as never) + '}';
 }
 
-export function stringifyContracts(value: ContractsFields, options?: __GolemSerdeOptions): string {
+export function stringifyTContracts(value: TContractsFields, options?: __GolemSerdeOptions): string {
   const validates = serdeValidates(options, true);
   if (validates) {
-    assertContracts(value, options);
+    assertTContracts(value, options);
   }
-  return stringifyContractsCore(value as never);
+  return stringifyTContractsCore(value as never);
 }
 
-function convertFromWireContracts(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
+function convertFromWireTContracts(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
   const validates = serdeValidates(options, true);
   if (validates) {
-    assertContracts(wire, options);
+    assertTContracts(wire, options);
   }
   const source = isolated || wire === null || typeof wire !== 'object' ? wire : cloneConversionInput(wire);
   let result: unknown = source;
   if (source !== null && typeof source === 'object' && !Array.isArray(source)) {
     if (options?.construct) {
-      result = Reflect.construct(options.construct, [fillContracts({ ...(source as Record<string, unknown>) }, (source as Record<string, unknown>))]);
+      result = Reflect.construct(options.construct, [fillTContracts({ ...(source as Record<string, unknown>) }, (source as Record<string, unknown>))]);
     } else {
-      result = fillContracts({} as Record<string, unknown>, source as Record<string, unknown>);
+      result = fillTContracts({} as Record<string, unknown>, source as Record<string, unknown>);
     }
   }
   return result;
 }
 
-export function fromWireFormatContracts(wire: unknown, options?: __GolemSerdeOptions): ContractsFields {
-  return convertFromWireContracts(wire, options, false) as ContractsFields;
+export function fromWireFormatTContracts(wire: unknown, options?: __GolemSerdeOptions): TContractsFields {
+  return convertFromWireTContracts(wire, options, false) as TContractsFields;
 }
 
-function toWireFormatContractsCore(value: ContractsFields): ContractsJSON {
+function toWireFormatTContractsCore(value: TContractsFields): TContractsJSON {
   const record = value as Record<string, unknown>;
   let __golemField0: unknown;
   const wire = { ["destinations"]: (__golemField0 = record["destinations"], Array.isArray(__golemField0) ? (__golemField0 as readonly unknown[]).slice() : __golemField0), ["billing"]: toWireFormatAnonymous_fa67afd9Core(record["billing"] as never) };
-  return wire as ContractsJSON;
+  return wire as TContractsJSON;
 }
 
-export function toWireFormatContracts(value: ContractsFields, options?: __GolemSerdeOptions): ContractsJSON {
+export function toWireFormatTContracts(value: TContractsFields, options?: __GolemSerdeOptions): TContractsJSON {
   const validates = serdeValidates(options, true);
   if (validates) {
-    assertContracts(value, options);
+    assertTContracts(value, options);
   }
-  return toWireFormatContractsCore(value);
+  return toWireFormatTContractsCore(value);
 }
 
-export function parseContracts(text: string, options?: __GolemSerdeOptions): ContractsFields {
-  return convertFromWireContracts(parseJson(text), options, true) as ContractsFields;
+export function parseTContracts(text: string, options?: __GolemSerdeOptions): TContractsFields {
+  return convertFromWireTContracts(parseJson(text), options, true) as TContractsFields;
 }
 
-export function validateContracts(value: unknown, options?: __GolemValidateOptions): value is ContractsFields {
+export function validateTContracts(value: unknown, options?: __GolemValidateOptions): value is TContractsFields {
   const failFast = options?.failFast !== false;
   let ok: boolean;
   let errors: readonly unknown[] | null | undefined;
   if (options?.validationContext === undefined) {
-    const validator = failFast ? validateContractsFast : validateContractsAll;
+    const validator = failFast ? validateTContractsFast : validateTContractsAll;
     ok = validator(value);
     errors = validator.errors;
   } else {
-    const validator = resolveModelValidationContextValidator(options.validationContext, "Contracts_87aa2f02", failFast ? 'first' : 'all');
+    const validator = resolveModelValidationContextValidator(options.validationContext, "TContracts_87aa2f02", failFast ? 'first' : 'all');
     ok = runSynchronousValidation(validator, value);
     errors = validator.errors;
   }
-  (validateContracts as { errors?: unknown }).errors = errors;
+  (validateTContracts as { errors?: unknown }).errors = errors;
   return ok;
 }
 
-export function assertContracts(value: unknown, options?: __GolemValidateOptions): ContractsFields {
-  assertModelValue(value, options, validateContractsFast, validateContractsAll, "Contracts_87aa2f02", IssueRepresentation.Model, IssueSource.TypeScript);
-  return value as ContractsFields;
+export function assertTContracts(value: unknown, options?: __GolemValidateOptions): TContractsFields {
+  assertModelValue(value, options, validateTContractsFast, validateTContractsAll, "TContracts_87aa2f02", IssueRepresentation.Model, IssueSource.TypeScript);
+  return value as TContractsFields;
 }
 
-createObjectCodec("Contracts_87aa2f02", {
-  stringify: stringifyContracts as (value: never, options?: __GolemSerdeOptions) => string,
-  parse: parseContracts as (text: string, options?: __GolemSerdeOptions) => never,
-  validate: validateContracts,
-  assert: assertContracts,
-  toWireFormat: toWireFormatContracts,
-  fromWireFormat: fromWireFormatContracts,
-  schema: __resolvedModelSchema_Contracts,
+createObjectCodec("TContracts_87aa2f02", {
+  stringify: stringifyTContracts as (value: never, options?: __GolemSerdeOptions) => string,
+  parse: parseTContracts as (text: string, options?: __GolemSerdeOptions) => never,
+  validate: validateTContracts,
+  assert: assertTContracts,
+  toWireFormat: toWireFormatTContracts,
+  fromWireFormat: fromWireFormatTContracts,
+  schema: __resolvedModelSchema_TContracts,
   issueSource: IssueSource.TypeScript,
 });

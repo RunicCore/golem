@@ -5,7 +5,7 @@ import { validateInstance } from '@exprtlabs/golem/validation';
 import { MoneyModel, PaymentsClient } from '../sdk/index.js';
 import { createPaymentEditor, savePayment, sendPayment } from './payment-app.js';
 import type { TPaymentEditor } from './payment-editor.model.js';
-import type { PaymentEditorJSON } from './payment-editor.model.generated.js';
+import type { TPaymentEditorJSON } from './payment-editor.model.generated.js';
 import { editPayment, validateAndCorrectPayment } from './payment-preview.js';
 
 test('payment preview edits nested money and returns the serialized result', () => {
@@ -75,7 +75,7 @@ test('combined app saves a valid payment through the generated client', async ()
   const result = await savePayment(client, editor);
   assert.equal(calls, 1);
   assert.equal(result.status, 201);
-  const wire: PaymentEditorJSON = toWireFormat<TPaymentEditor>(editor);
+  const wire: TPaymentEditorJSON = toWireFormat<TPaymentEditor>(editor);
   assert.deepEqual(result.body, wire.money);
   assert.deepEqual(wire, { money: { amount: 25, currency: 'USD' }, note: 'Lunch' });
 });

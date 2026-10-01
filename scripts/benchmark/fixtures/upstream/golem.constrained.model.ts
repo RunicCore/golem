@@ -9,12 +9,12 @@ import type {
   Pattern,
 } from '@exprtlabs/golem/tags';
 import {
-  ConstrainedAccountBaseModel,
-  ConstrainedChannelBaseModel,
-  ConstrainedEnterpriseBaseModel,
-  ConstrainedMemberBaseModel,
-  ConstrainedObjectHierarchicalBaseModel,
-  ConstrainedTimestampBaseModel,
+  TConstrainedAccountBaseModel,
+  TConstrainedChannelBaseModel,
+  TConstrainedEnterpriseBaseModel,
+  TConstrainedMemberBaseModel,
+  TConstrainedObjectHierarchicalBaseModel,
+  TConstrainedTimestampBaseModel,
 } from './golem.constrained.model.generated.js';
 
 // #region nested
@@ -22,14 +22,14 @@ export type TConstrainedTimestamp = IModel<{
   time: number;
   zone: number;
 }>;
-export class ConstrainedTimestamp extends ConstrainedTimestampBaseModel {}
+export class ConstrainedTimestamp extends TConstrainedTimestampBaseModel {}
 
 export type TConstrainedAccount = IModel<{
   id: number & Integer & Minimum<1>;
   code: string & MinLength<3>;
   created_at: ConstrainedTimestamp;
 }>;
-export class ConstrainedAccount extends ConstrainedAccountBaseModel {}
+export class ConstrainedAccount extends TConstrainedAccountBaseModel {}
 
 export type TConstrainedEnterprise = IModel<{
   id: number & Integer & Minimum<1>;
@@ -38,7 +38,7 @@ export type TConstrainedEnterprise = IModel<{
   grade: number & Integer & Minimum<1>;
   created_at: ConstrainedTimestamp;
 }>;
-export class ConstrainedEnterprise extends ConstrainedEnterpriseBaseModel {}
+export class ConstrainedEnterprise extends TConstrainedEnterpriseBaseModel {}
 
 export type TConstrainedChannel = IModel<{
   id: number & Integer & Minimum<1>;
@@ -49,7 +49,7 @@ export type TConstrainedChannel = IModel<{
   priority: number & Integer & Minimum<0>;
   created_at: ConstrainedTimestamp;
 }>;
-export class ConstrainedChannel extends ConstrainedChannelBaseModel {}
+export class ConstrainedChannel extends TConstrainedChannelBaseModel {}
 
 export type TConstrainedMember = IModel<{
   id: number & Integer & Minimum<1>;
@@ -59,7 +59,7 @@ export type TConstrainedMember = IModel<{
   created_at: ConstrainedTimestamp;
   authorized: boolean;
 }>;
-export class ConstrainedMember extends ConstrainedMemberBaseModel {}
+export class ConstrainedMember extends TConstrainedMemberBaseModel {}
 
 export type TConstrainedObjectHierarchical = IModel<{
   id: number & Integer & Minimum<1>;
@@ -71,5 +71,5 @@ export type TConstrainedObjectHierarchical = IModel<{
   ip: [number, number, number, number] & MinItems<4> & MaxItems<4>;
   created_at: ConstrainedTimestamp;
 }>;
-export class ConstrainedObjectHierarchical extends ConstrainedObjectHierarchicalBaseModel {}
+export class ConstrainedObjectHierarchical extends TConstrainedObjectHierarchicalBaseModel {}
 // #endregion nested

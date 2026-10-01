@@ -1,10 +1,10 @@
 import type { IModel } from '@exprtlabs/golem/model';
 import { validateInstance, getValidator } from '@exprtlabs/golem/validation';
-import { ChildBaseModel, RootBaseModel } from './getter-replay.model.generated.js';
+import { TChildBaseModel, TRootBaseModel } from './getter-replay.model.generated.js';
 export type TChild = IModel<{ value: number }>;
 export type TRoot = IModel<{ child: TChild }>;
-export class Child extends ChildBaseModel {}
-export class Root extends RootBaseModel {}
+export class Child extends TChildBaseModel {}
+export class Root extends TRootBaseModel {}
 export async function exercise() {
   const child = new Child({ value: 1 });
   const root = new Root({ child });

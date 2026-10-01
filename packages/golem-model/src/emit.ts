@@ -1007,7 +1007,7 @@ export function internSourceDefinitions(
   return schemaGraph;
 }
 
-/** One entry per exact name that resolves to the model's codec: the model and, when it has one, its class. */
+/** One entry per model; its class name, when it has one, is a second exact name for the codec. */
 export function codecEntriesForGraph(
   graph: SourceModelGraph,
   schemaGraph: SchemaGraph | undefined,
@@ -1020,16 +1020,16 @@ export function codecEntriesForGraph(
   readonly className?: string;
 }> {
   const internedSchemaGraph = schemaGraph ?? internSourceDefinitions(graph.definitions, graph.emitted);
-  return graph.emitted.flatMap((specification) => {
+  return graph.emitted.map((specification) => {
     const descriptor = graph.definitions[specification.name];
     const node = descriptor ? internedSchemaGraph.nodeFor(descriptor, specification.name, specification.emitClass) : undefined;
-    const entry = {
+    const className = exportedConcreteClass(checker, specification, specifications, graph.compilerOptions);
+    return {
       source: portableRelativeFilename(specification.sourceFile.fileName, graph.identityRoot),
       name: specification.name,
+      ...(className ? { className } : {}),
       codecId: node?.codecId ?? codecPublicId(specification.name, descriptor ?? { kind: 'unknown' }, undefined, { source: 'typescript', constructs: specification.emitClass }),
     };
-    const className = exportedConcreteClass(checker, specification, specifications, graph.compilerOptions);
-    return className ? [entry, { ...entry, className }] : [entry];
   });
 }
 

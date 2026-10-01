@@ -21,8 +21,8 @@ async function build(t: TestContext) {
   writeGeneratedArtifacts(generate({ root, profile: { mobx: false, validation: true } }).artifacts);
   await compileModelProject(root);
   return import(path.toNamespacedPath(path.join(root, 'build/a.model.generated.js'))) as Promise<{
-    parseA: (text: string) => Record<string, unknown>;
-    stringifyA: (value: object) => string;
+    parseTA: (text: string) => Record<string, unknown>;
+    stringifyTA: (value: object) => string;
   }>;
 }
 
@@ -39,19 +39,19 @@ const WIRE = {
 test('nanosecond precision survives a round trip', async t => {
   const codecs = await build(t);
   const wire = { ...WIRE, at: '2025-01-02T03:04:05.123456789Z', time: '03:04:05.123456789' };
-  assert.deepEqual(JSON.parse(codecs.stringifyA(codecs.parseA(JSON.stringify(wire)))), wire);
+  assert.deepEqual(JSON.parse(codecs.stringifyTA(codecs.parseTA(JSON.stringify(wire)))), wire);
 });
 
 test('Temporal tags round-trip through parse and stringify', async t => {
   const codecs = await build(t);
-  const model = codecs.parseA(JSON.stringify(WIRE));
+  const model = codecs.parseTA(JSON.stringify(WIRE));
   assert.ok(model.at instanceof Temporal.Instant);
   assert.ok(model.zoned instanceof Temporal.ZonedDateTime);
   assert.ok(model.day instanceof Temporal.PlainDate);
   assert.ok(model.local instanceof Temporal.PlainDateTime);
   assert.ok(model.time instanceof Temporal.PlainTime);
   assert.ok(model.span instanceof Temporal.Duration);
-  assert.deepEqual(JSON.parse(codecs.stringifyA(model)), WIRE);
+  assert.deepEqual(JSON.parse(codecs.stringifyTA(model)), WIRE);
 });
 
 for (const [field, bad] of [
@@ -65,7 +65,7 @@ for (const [field, bad] of [
 ] as const) {
   test(`Temporal tag ${field} rejects ${bad}`, async t => {
     const codecs = await build(t);
-    assert.throws(() => codecs.parseA(JSON.stringify({ ...WIRE, [field]: bad })));
+    assert.throws(() => codecs.parseTA(JSON.stringify({ ...WIRE, [field]: bad })));
   });
 }
 
@@ -90,6 +90,6 @@ for (const [field, value] of [
   test(`Temporal tag ${field} round-trips ${value}`, async t => {
     const codecs = await build(t);
     const wire = { ...WIRE, [field]: value };
-    assert.deepEqual(JSON.parse(codecs.stringifyA(codecs.parseA(JSON.stringify(wire)))), wire);
+    assert.deepEqual(JSON.parse(codecs.stringifyTA(codecs.parseTA(JSON.stringify(wire)))), wire);
   });
 }

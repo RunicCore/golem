@@ -9,18 +9,18 @@ function modelObject(json: unknown, name: string): Record<string, unknown> {
   return requireModelObject(json, name);
 }
 
-export type ScheduleFields = { startsAt: Temporal.Instant; day: Temporal.PlainDate; length: Temporal.Duration };
-export type ScheduleJSON = { startsAt: string; day: string; length: string };
-export type ScheduleInit = Partial<{ startsAt: Temporal.Instant; day: Temporal.PlainDate; length: Temporal.Duration }>;
+export type TScheduleFields = { startsAt: Temporal.Instant; day: Temporal.PlainDate; length: Temporal.Duration };
+export type TScheduleJSON = { startsAt: string; day: string; length: string };
+export type TScheduleInit = Partial<{ startsAt: Temporal.Instant; day: Temporal.PlainDate; length: Temporal.Duration }>;
 
-export abstract class ScheduleBaseModel implements GeneratedModel<ScheduleJSON, ScheduleFields> {
-  declare readonly [generatedModelWireBrand]: ScheduleJSON;
-  declare readonly [generatedModelFieldsBrand]: ScheduleFields;
-  declare startsAt: ScheduleFields["startsAt"];
-  declare day: ScheduleFields["day"];
-  declare length: ScheduleFields["length"];
+export abstract class TScheduleBaseModel implements GeneratedModel<TScheduleJSON, TScheduleFields> {
+  declare readonly [generatedModelWireBrand]: TScheduleJSON;
+  declare readonly [generatedModelFieldsBrand]: TScheduleFields;
+  declare startsAt: TScheduleFields["startsAt"];
+  declare day: TScheduleFields["day"];
+  declare length: TScheduleFields["length"];
 
-  public constructor(values: ScheduleInit = {}) {
+  public constructor(values: TScheduleInit = {}) {
     if (Object.prototype.hasOwnProperty.call(values, "startsAt")) defineModelProperty(this, "startsAt", values["startsAt"]);
     if (Object.prototype.hasOwnProperty.call(values, "day")) defineModelProperty(this, "day", values["day"]);
     if (Object.prototype.hasOwnProperty.call(values, "length")) defineModelProperty(this, "length", values["length"]);
@@ -28,61 +28,61 @@ export abstract class ScheduleBaseModel implements GeneratedModel<ScheduleJSON, 
 
 }
 
-function decodeScheduleModel(constructor: GeneratedModelConstructor, json: unknown): ScheduleBaseModel {
-  const values = modelObject(json, "ScheduleBaseModel");
+function decodeTScheduleModel(constructor: GeneratedModelConstructor, json: unknown): TScheduleBaseModel {
+  const values = modelObject(json, "TScheduleBaseModel");
   const result: Record<string, unknown> = { ...values };
   if (Object.prototype.hasOwnProperty.call(values, "startsAt")) defineModelProperty(result, "startsAt", convertModelField("deserialize", "startsAt", () => (modelSerdeBindings["@exprtlabs/golem/temporal#serializeTemporalInstant\u0000@exprtlabs/golem/temporal#deserializeTemporalInstant"].deserialize(values["startsAt"]))));
   if (Object.prototype.hasOwnProperty.call(values, "day")) defineModelProperty(result, "day", convertModelField("deserialize", "day", () => (modelSerdeBindings["@exprtlabs/golem/temporal#serializeTemporalPlainDate\u0000@exprtlabs/golem/temporal#deserializeTemporalPlainDate"].deserialize(values["day"]))));
   if (Object.prototype.hasOwnProperty.call(values, "length")) defineModelProperty(result, "length", convertModelField("deserialize", "length", () => (modelSerdeBindings["@exprtlabs/golem/temporal#serializeTemporalDuration\u0000@exprtlabs/golem/temporal#deserializeTemporalDuration"].deserialize(values["length"]))));
-  return Reflect.construct(constructor, [result]) as ScheduleBaseModel;
+  return Reflect.construct(constructor, [result]) as TScheduleBaseModel;
 }
 
-function encodeScheduleModel(model: ScheduleBaseModel): ScheduleJSON {
+function encodeTScheduleModel(model: TScheduleBaseModel): TScheduleJSON {
   const result: Record<string, unknown> = {};
   if (Object.prototype.hasOwnProperty.call(model, "startsAt")) defineModelProperty(result, "startsAt", (convertModelField("serialize", "startsAt", () => (modelSerdeBindings["@exprtlabs/golem/temporal#serializeTemporalInstant\u0000@exprtlabs/golem/temporal#deserializeTemporalInstant"].serialize(model["startsAt"])))));
   if (Object.prototype.hasOwnProperty.call(model, "day")) defineModelProperty(result, "day", (convertModelField("serialize", "day", () => (modelSerdeBindings["@exprtlabs/golem/temporal#serializeTemporalPlainDate\u0000@exprtlabs/golem/temporal#deserializeTemporalPlainDate"].serialize(model["day"])))));
   if (Object.prototype.hasOwnProperty.call(model, "length")) defineModelProperty(result, "length", (convertModelField("serialize", "length", () => (modelSerdeBindings["@exprtlabs/golem/temporal#serializeTemporalDuration\u0000@exprtlabs/golem/temporal#deserializeTemporalDuration"].serialize(model["length"])))));
-  return result as ScheduleJSON;
+  return result as TScheduleJSON;
 }
 
-registerGeneratedModel(ScheduleBaseModel, {
+registerGeneratedModel(TScheduleBaseModel, {
   fields: ["startsAt", "day", "length"],
   conversion: {
-    decode: (value, constructor) => decodeScheduleModel(constructor ?? ScheduleBaseModel, value),
-    encode: encodeScheduleModel,
+    decode: (value, constructor) => decodeTScheduleModel(constructor ?? TScheduleBaseModel, value),
+    encode: encodeTScheduleModel,
   },
-  codecId: "Schedule_a6c75486",
+  codecId: "TSchedule_a6c75486",
   profile: { validation: true, mobx: false },
 });
 
-registerIModelClass("Schedule_a6c75486", ScheduleBaseModel);
+registerIModelClass("TSchedule_a6c75486", TScheduleBaseModel);
 
 const objectAjvFast = createOpenApiSyncAjvEngine({ allErrors: false, validationBindings: {} });
 const objectAjvAll = createOpenApiSyncAjvEngine({ allErrors: true, validationBindings: {} });
 
-const __resolvedModelSchema_Schedule = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"Schedule_a6c75486\",\"type\":\"object\",\"properties\":{\"day\":{},\"length\":{},\"startsAt\":{}},\"required\":[\"day\",\"length\",\"startsAt\"],\"additionalProperties\":false}") as object) as object;
-objectAjvFast.addSchema(structuredClone(__resolvedModelSchema_Schedule) as object, "Schedule_a6c75486");
-objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_Schedule) as object, "Schedule_a6c75486");
-const __resolvedWireSchema_Schedule = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"Schedule_a6c75486#wire\",\"type\":\"object\",\"properties\":{\"day\":{\"allOf\":[{\"type\":\"string\"},{\"format\":\"date\"}]},\"length\":{\"allOf\":[{\"type\":\"string\"},{\"pattern\":\"^-?P(?!$)(?:\\\\d+Y)?(?:\\\\d+M)?(?:\\\\d+W)?(?:\\\\d+D)?(?:T(?=\\\\d)(?:\\\\d+H)?(?:\\\\d+M)?(?:\\\\d+(?:\\\\.\\\\d{1,9})?S)?)?$\"}]},\"startsAt\":{\"allOf\":[{\"type\":\"string\"},{\"format\":\"date-time\"}]}},\"required\":[\"day\",\"length\",\"startsAt\"],\"additionalProperties\":false}") as object, 'wire') as object;
-objectAjvFast.addSchema(structuredClone(__resolvedWireSchema_Schedule) as object, "Schedule_a6c75486#wire");
-objectAjvAll.addSchema(structuredClone(__resolvedWireSchema_Schedule) as object, "Schedule_a6c75486#wire");
-const __resolvedModelOnlySchema_Schedule = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"Schedule_a6c75486#model-only\",\"properties\":{\"day\":{},\"length\":{},\"startsAt\":{}}}") as object, 'model-only') as object;
-objectAjvFast.addSchema(structuredClone(__resolvedModelOnlySchema_Schedule) as object, "Schedule_a6c75486#model-only");
-objectAjvAll.addSchema(structuredClone(__resolvedModelOnlySchema_Schedule) as object, "Schedule_a6c75486#model-only");
-const __resolvedWireOnlySchema_Schedule = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"Schedule_a6c75486#wire-only\",\"properties\":{\"day\":{\"allOf\":[{\"type\":\"string\"},{\"format\":\"date\"}]},\"length\":{\"allOf\":[{\"type\":\"string\"},{\"pattern\":\"^-?P(?!$)(?:\\\\d+Y)?(?:\\\\d+M)?(?:\\\\d+W)?(?:\\\\d+D)?(?:T(?=\\\\d)(?:\\\\d+H)?(?:\\\\d+M)?(?:\\\\d+(?:\\\\.\\\\d{1,9})?S)?)?$\"}]},\"startsAt\":{\"allOf\":[{\"type\":\"string\"},{\"format\":\"date-time\"}]}}}") as object, 'wire-only') as object;
-objectAjvFast.addSchema(structuredClone(__resolvedWireOnlySchema_Schedule) as object, "Schedule_a6c75486#wire-only");
-objectAjvAll.addSchema(structuredClone(__resolvedWireOnlySchema_Schedule) as object, "Schedule_a6c75486#wire-only");
+const __resolvedModelSchema_TSchedule = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"TSchedule_a6c75486\",\"type\":\"object\",\"properties\":{\"day\":{},\"length\":{},\"startsAt\":{}},\"required\":[\"day\",\"length\",\"startsAt\"],\"additionalProperties\":false}") as object) as object;
+objectAjvFast.addSchema(structuredClone(__resolvedModelSchema_TSchedule) as object, "TSchedule_a6c75486");
+objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_TSchedule) as object, "TSchedule_a6c75486");
+const __resolvedWireSchema_TSchedule = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"TSchedule_a6c75486#wire\",\"type\":\"object\",\"properties\":{\"day\":{\"allOf\":[{\"type\":\"string\"},{\"format\":\"date\"}]},\"length\":{\"allOf\":[{\"type\":\"string\"},{\"pattern\":\"^-?P(?!$)(?:\\\\d+Y)?(?:\\\\d+M)?(?:\\\\d+W)?(?:\\\\d+D)?(?:T(?=\\\\d)(?:\\\\d+H)?(?:\\\\d+M)?(?:\\\\d+(?:\\\\.\\\\d{1,9})?S)?)?$\"}]},\"startsAt\":{\"allOf\":[{\"type\":\"string\"},{\"format\":\"date-time\"}]}},\"required\":[\"day\",\"length\",\"startsAt\"],\"additionalProperties\":false}") as object, 'wire') as object;
+objectAjvFast.addSchema(structuredClone(__resolvedWireSchema_TSchedule) as object, "TSchedule_a6c75486#wire");
+objectAjvAll.addSchema(structuredClone(__resolvedWireSchema_TSchedule) as object, "TSchedule_a6c75486#wire");
+const __resolvedModelOnlySchema_TSchedule = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"TSchedule_a6c75486#model-only\",\"properties\":{\"day\":{},\"length\":{},\"startsAt\":{}}}") as object, 'model-only') as object;
+objectAjvFast.addSchema(structuredClone(__resolvedModelOnlySchema_TSchedule) as object, "TSchedule_a6c75486#model-only");
+objectAjvAll.addSchema(structuredClone(__resolvedModelOnlySchema_TSchedule) as object, "TSchedule_a6c75486#model-only");
+const __resolvedWireOnlySchema_TSchedule = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"TSchedule_a6c75486#wire-only\",\"properties\":{\"day\":{\"allOf\":[{\"type\":\"string\"},{\"format\":\"date\"}]},\"length\":{\"allOf\":[{\"type\":\"string\"},{\"pattern\":\"^-?P(?!$)(?:\\\\d+Y)?(?:\\\\d+M)?(?:\\\\d+W)?(?:\\\\d+D)?(?:T(?=\\\\d)(?:\\\\d+H)?(?:\\\\d+M)?(?:\\\\d+(?:\\\\.\\\\d{1,9})?S)?)?$\"}]},\"startsAt\":{\"allOf\":[{\"type\":\"string\"},{\"format\":\"date-time\"}]}}}") as object, 'wire-only') as object;
+objectAjvFast.addSchema(structuredClone(__resolvedWireOnlySchema_TSchedule) as object, "TSchedule_a6c75486#wire-only");
+objectAjvAll.addSchema(structuredClone(__resolvedWireOnlySchema_TSchedule) as object, "TSchedule_a6c75486#wire-only");
 
-const validateScheduleFast = requireAjvSchema(objectAjvFast.getSchema("Schedule_a6c75486"), "Schedule_a6c75486");
-const validateScheduleAll = requireAjvSchema(objectAjvAll.getSchema("Schedule_a6c75486"), "Schedule_a6c75486");
-const validateScheduleWireFast = requireAjvSchema(objectAjvFast.getSchema("Schedule_a6c75486#wire"), "Schedule_a6c75486#wire");
-const validateScheduleWireAll = requireAjvSchema(objectAjvAll.getSchema("Schedule_a6c75486#wire"), "Schedule_a6c75486#wire");
-const validateScheduleModelOnlyFast = requireAjvSchema(objectAjvFast.getSchema("Schedule_a6c75486#model-only"), "Schedule_a6c75486#model-only");
-const validateScheduleModelOnlyAll = requireAjvSchema(objectAjvAll.getSchema("Schedule_a6c75486#model-only"), "Schedule_a6c75486#model-only");
-const validateScheduleWireOnlyFast = requireAjvSchema(objectAjvFast.getSchema("Schedule_a6c75486#wire-only"), "Schedule_a6c75486#wire-only");
-const validateScheduleWireOnlyAll = requireAjvSchema(objectAjvAll.getSchema("Schedule_a6c75486#wire-only"), "Schedule_a6c75486#wire-only");
+const validateTScheduleFast = requireAjvSchema(objectAjvFast.getSchema("TSchedule_a6c75486"), "TSchedule_a6c75486");
+const validateTScheduleAll = requireAjvSchema(objectAjvAll.getSchema("TSchedule_a6c75486"), "TSchedule_a6c75486");
+const validateTScheduleWireFast = requireAjvSchema(objectAjvFast.getSchema("TSchedule_a6c75486#wire"), "TSchedule_a6c75486#wire");
+const validateTScheduleWireAll = requireAjvSchema(objectAjvAll.getSchema("TSchedule_a6c75486#wire"), "TSchedule_a6c75486#wire");
+const validateTScheduleModelOnlyFast = requireAjvSchema(objectAjvFast.getSchema("TSchedule_a6c75486#model-only"), "TSchedule_a6c75486#model-only");
+const validateTScheduleModelOnlyAll = requireAjvSchema(objectAjvAll.getSchema("TSchedule_a6c75486#model-only"), "TSchedule_a6c75486#model-only");
+const validateTScheduleWireOnlyFast = requireAjvSchema(objectAjvFast.getSchema("TSchedule_a6c75486#wire-only"), "TSchedule_a6c75486#wire-only");
+const validateTScheduleWireOnlyAll = requireAjvSchema(objectAjvAll.getSchema("TSchedule_a6c75486#wire-only"), "TSchedule_a6c75486#wire-only");
 
-function fillSchedule(out: Record<string, unknown>, wire: Record<string, unknown>): Record<string, unknown> {
+function fillTSchedule(out: Record<string, unknown>, wire: Record<string, unknown>): Record<string, unknown> {
   if (Object.prototype.hasOwnProperty.call(wire, "startsAt")) {
     out["startsAt"] = (typeof wire["startsAt"] === 'string' ? modelSerdeBindings["@exprtlabs/golem/temporal#serializeTemporalInstant\u0000@exprtlabs/golem/temporal#deserializeTemporalInstant"].deserialize(wire["startsAt"]) : wire["startsAt"]);
   }
@@ -95,118 +95,118 @@ function fillSchedule(out: Record<string, unknown>, wire: Record<string, unknown
   return out;
 }
 
-function stringifyScheduleCore(value: Record<string, unknown>): string {
+function stringifyTScheduleCore(value: Record<string, unknown>): string {
   return '{' + "\"startsAt\":" + stringifyJsonString(modelSerdeBindings["@exprtlabs/golem/temporal#serializeTemporalInstant\u0000@exprtlabs/golem/temporal#deserializeTemporalInstant"].serialize(value["startsAt"]) as string) + ",\"day\":" + stringifyJsonString(modelSerdeBindings["@exprtlabs/golem/temporal#serializeTemporalPlainDate\u0000@exprtlabs/golem/temporal#deserializeTemporalPlainDate"].serialize(value["day"]) as string) + ",\"length\":" + stringifyJsonString(modelSerdeBindings["@exprtlabs/golem/temporal#serializeTemporalDuration\u0000@exprtlabs/golem/temporal#deserializeTemporalDuration"].serialize(value["length"]) as string) + '}';
 }
 
-function stringifyScheduleWire(value: Record<string, unknown>): string {
+function stringifyTScheduleWire(value: Record<string, unknown>): string {
   return '{' + "\"startsAt\":" + stringifyJsonString(value["startsAt"] as string) + ",\"day\":" + stringifyJsonString(value["day"] as string) + ",\"length\":" + stringifyJsonString(value["length"] as string) + '}';
 }
 
-export function stringifySchedule(value: ScheduleFields, options?: __GolemSerdeOptions): string {
+export function stringifyTSchedule(value: TScheduleFields, options?: __GolemSerdeOptions): string {
   const validates = serdeValidates(options, true);
   if (validates) {
-    assertSchedule(value, options);
+    assertTSchedule(value, options);
     const wire = { ["startsAt"]: modelSerdeBindings["@exprtlabs/golem/temporal#serializeTemporalInstant\u0000@exprtlabs/golem/temporal#deserializeTemporalInstant"].serialize(value["startsAt"]), ["day"]: modelSerdeBindings["@exprtlabs/golem/temporal#serializeTemporalPlainDate\u0000@exprtlabs/golem/temporal#deserializeTemporalPlainDate"].serialize(value["day"]), ["length"]: modelSerdeBindings["@exprtlabs/golem/temporal#serializeTemporalDuration\u0000@exprtlabs/golem/temporal#deserializeTemporalDuration"].serialize(value["length"]) };
-    __golemAssertWireOnly_Schedule(wire, options);
-    return stringifyScheduleWire(wire as never);
+    __golemAssertWireOnly_TSchedule(wire, options);
+    return stringifyTScheduleWire(wire as never);
   }
-  return stringifyScheduleCore(value as never);
+  return stringifyTScheduleCore(value as never);
 }
 
-function convertFromWireSchedule(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
+function convertFromWireTSchedule(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
   const validates = serdeValidates(options, true);
   if (validates) {
-    __golemAssertWire_Schedule(wire, options);
+    __golemAssertWire_TSchedule(wire, options);
   }
   const source = isolated || wire === null || typeof wire !== 'object' ? wire : cloneConversionInput(wire);
   let result: unknown = source;
   if (source !== null && typeof source === 'object' && !Array.isArray(source)) {
     if (options?.construct) {
-      result = Reflect.construct(options.construct, [fillSchedule({ ...(source as Record<string, unknown>) }, (source as Record<string, unknown>))]);
+      result = Reflect.construct(options.construct, [fillTSchedule({ ...(source as Record<string, unknown>) }, (source as Record<string, unknown>))]);
     } else {
-      result = fillSchedule({} as Record<string, unknown>, source as Record<string, unknown>);
+      result = fillTSchedule({} as Record<string, unknown>, source as Record<string, unknown>);
     }
   }
   if (validates) {
-    __golemAssertModelOnly_Schedule(result, options);
+    __golemAssertModelOnly_TSchedule(result, options);
   }
   return result;
 }
 
-export function fromWireFormatSchedule(wire: unknown, options?: __GolemSerdeOptions): ScheduleFields {
-  return convertFromWireSchedule(wire, options, false) as ScheduleFields;
+export function fromWireFormatTSchedule(wire: unknown, options?: __GolemSerdeOptions): TScheduleFields {
+  return convertFromWireTSchedule(wire, options, false) as TScheduleFields;
 }
 
-function toWireFormatScheduleCore(value: ScheduleFields): ScheduleJSON {
+function toWireFormatTScheduleCore(value: TScheduleFields): TScheduleJSON {
   const record = value as Record<string, unknown>;
   const wire = { ["startsAt"]: modelSerdeBindings["@exprtlabs/golem/temporal#serializeTemporalInstant\u0000@exprtlabs/golem/temporal#deserializeTemporalInstant"].serialize(record["startsAt"]), ["day"]: modelSerdeBindings["@exprtlabs/golem/temporal#serializeTemporalPlainDate\u0000@exprtlabs/golem/temporal#deserializeTemporalPlainDate"].serialize(record["day"]), ["length"]: modelSerdeBindings["@exprtlabs/golem/temporal#serializeTemporalDuration\u0000@exprtlabs/golem/temporal#deserializeTemporalDuration"].serialize(record["length"]) };
-  return wire as ScheduleJSON;
+  return wire as TScheduleJSON;
 }
 
-export function toWireFormatSchedule(value: ScheduleFields, options?: __GolemSerdeOptions): ScheduleJSON {
+export function toWireFormatTSchedule(value: TScheduleFields, options?: __GolemSerdeOptions): TScheduleJSON {
   const validates = serdeValidates(options, true);
   if (validates) {
-    assertSchedule(value, options);
+    assertTSchedule(value, options);
   }
-  const wire = toWireFormatScheduleCore(value);
+  const wire = toWireFormatTScheduleCore(value);
   if (validates) {
-    __golemAssertWireOnly_Schedule(wire, options);
+    __golemAssertWireOnly_TSchedule(wire, options);
   }
   return wire;
 }
 
-export function parseSchedule(text: string, options?: __GolemSerdeOptions): ScheduleFields {
-  return convertFromWireSchedule(parseJson(text), options, true) as ScheduleFields;
+export function parseTSchedule(text: string, options?: __GolemSerdeOptions): TScheduleFields {
+  return convertFromWireTSchedule(parseJson(text), options, true) as TScheduleFields;
 }
 
-export function validateSchedule(value: unknown, options?: __GolemValidateOptions): value is ScheduleFields {
+export function validateTSchedule(value: unknown, options?: __GolemValidateOptions): value is TScheduleFields {
   const failFast = options?.failFast !== false;
   let ok: boolean;
   let errors: readonly unknown[] | null | undefined;
   if (options?.validationContext === undefined) {
-    const validator = failFast ? validateScheduleFast : validateScheduleAll;
+    const validator = failFast ? validateTScheduleFast : validateTScheduleAll;
     ok = validator(value);
     errors = validator.errors;
   } else {
-    const validator = resolveModelValidationContextValidator(options.validationContext, "Schedule_a6c75486", failFast ? 'first' : 'all');
+    const validator = resolveModelValidationContextValidator(options.validationContext, "TSchedule_a6c75486", failFast ? 'first' : 'all');
     ok = runSynchronousValidation(validator, value);
     errors = validator.errors;
   }
-  (validateSchedule as { errors?: unknown }).errors = errors;
+  (validateTSchedule as { errors?: unknown }).errors = errors;
   return ok;
 }
 
-export function assertSchedule(value: unknown, options?: __GolemValidateOptions): ScheduleFields {
-  assertModelValue(value, options, validateScheduleFast, validateScheduleAll, "Schedule_a6c75486", IssueRepresentation.Model, IssueSource.TypeScript);
-  return value as ScheduleFields;
+export function assertTSchedule(value: unknown, options?: __GolemValidateOptions): TScheduleFields {
+  assertModelValue(value, options, validateTScheduleFast, validateTScheduleAll, "TSchedule_a6c75486", IssueRepresentation.Model, IssueSource.TypeScript);
+  return value as TScheduleFields;
 }
 
-function __golemAssertWire_Schedule(value: unknown, options?: __GolemValidateOptions): Record<string, unknown> {
-  assertModelValue(value, options, validateScheduleWireFast, validateScheduleWireAll, "Schedule_a6c75486#wire", IssueRepresentation.Wire, IssueSource.TypeScript);
+function __golemAssertWire_TSchedule(value: unknown, options?: __GolemValidateOptions): Record<string, unknown> {
+  assertModelValue(value, options, validateTScheduleWireFast, validateTScheduleWireAll, "TSchedule_a6c75486#wire", IssueRepresentation.Wire, IssueSource.TypeScript);
   return value as Record<string, unknown>;
 }
 
-function __golemAssertModelOnly_Schedule(value: unknown, options?: __GolemValidateOptions): Record<string, unknown> {
-  assertModelValue(value, options, validateScheduleModelOnlyFast, validateScheduleModelOnlyAll, "Schedule_a6c75486#model-only", IssueRepresentation.Model, IssueSource.TypeScript);
+function __golemAssertModelOnly_TSchedule(value: unknown, options?: __GolemValidateOptions): Record<string, unknown> {
+  assertModelValue(value, options, validateTScheduleModelOnlyFast, validateTScheduleModelOnlyAll, "TSchedule_a6c75486#model-only", IssueRepresentation.Model, IssueSource.TypeScript);
   return value as Record<string, unknown>;
 }
 
-function __golemAssertWireOnly_Schedule(value: unknown, options?: __GolemValidateOptions): Record<string, unknown> {
-  assertModelValue(value, options, validateScheduleWireOnlyFast, validateScheduleWireOnlyAll, "Schedule_a6c75486#wire-only", IssueRepresentation.Wire, IssueSource.TypeScript);
+function __golemAssertWireOnly_TSchedule(value: unknown, options?: __GolemValidateOptions): Record<string, unknown> {
+  assertModelValue(value, options, validateTScheduleWireOnlyFast, validateTScheduleWireOnlyAll, "TSchedule_a6c75486#wire-only", IssueRepresentation.Wire, IssueSource.TypeScript);
   return value as Record<string, unknown>;
 }
 
-createObjectCodec("Schedule_a6c75486", {
-  stringify: stringifySchedule as (value: never, options?: __GolemSerdeOptions) => string,
-  parse: parseSchedule as (text: string, options?: __GolemSerdeOptions) => never,
-  validate: validateSchedule,
-  assert: assertSchedule,
-  toWireFormat: toWireFormatSchedule,
-  fromWireFormat: fromWireFormatSchedule,
-  schema: __resolvedModelSchema_Schedule,
-  wireSchema: __resolvedWireSchema_Schedule,
-  modelOnlySchema: __resolvedModelOnlySchema_Schedule,
-  wireOnlySchema: __resolvedWireOnlySchema_Schedule,
+createObjectCodec("TSchedule_a6c75486", {
+  stringify: stringifyTSchedule as (value: never, options?: __GolemSerdeOptions) => string,
+  parse: parseTSchedule as (text: string, options?: __GolemSerdeOptions) => never,
+  validate: validateTSchedule,
+  assert: assertTSchedule,
+  toWireFormat: toWireFormatTSchedule,
+  fromWireFormat: fromWireFormatTSchedule,
+  schema: __resolvedModelSchema_TSchedule,
+  wireSchema: __resolvedWireSchema_TSchedule,
+  modelOnlySchema: __resolvedModelOnlySchema_TSchedule,
+  wireOnlySchema: __resolvedWireOnlySchema_TSchedule,
   issueSource: IssueSource.TypeScript,
 });

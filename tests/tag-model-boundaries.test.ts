@@ -177,7 +177,7 @@ const checks: readonly Check[] = [
       assert.equal(predicates.calls, 1, 'pattern predicate runs once');
       const invalidPattern = Reflect.construct(Box, [{ payload: { known: 'yes', x_count: -1 } }]);
       assert.equal(await getValidator(invalidPattern).validate(), false, 'pattern predicate rejects invalid value');
-      const patternBoxCodec = generatedCodecId(fs.readFileSync(path.join(project.sourceRoot, 'patterns/box.model.generated.ts'), 'utf8'), 'PatternBox');
+      const patternBoxCodec = generatedCodecId(fs.readFileSync(path.join(project.sourceRoot, 'patterns/box.model.generated.ts'), 'utf8'), 'TPatternBox');
       assert.throws(
         () => requireObjectCodec(patternBoxCodec).fromWireFormat({
           payload: { known: 'yes', other: 2 },

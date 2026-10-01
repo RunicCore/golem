@@ -5,20 +5,20 @@ import type { Email, Money, Phone } from './feature-tags.js';
 import { decodeHex, encodeHex, extraMoney, notBlank, positive } from './feature-tags.js';
 import type { Money as PaymentMoney } from './sdk/index.js';
 import {
-  AddressBaseModel,
-  CheckoutBaseModel,
-  CombinedOrderBaseModel,
-  ComposeCustomerBaseModel,
-  ContactBaseModel,
-  ContactEmailBaseModel,
-  ContactPhoneBaseModel,
-  CustomerBaseModel,
-  LineItemBaseModel,
-  NestedOrderBaseModel,
-  ReuseContactBaseModel,
-  TaggedAccessBaseModel,
-  TaggedLineItemBaseModel,
-  TaggedMemberBaseModel,
+  TAddressBaseModel,
+  TCheckoutBaseModel,
+  TCombinedOrderBaseModel,
+  TComposeCustomerBaseModel,
+  TContactBaseModel,
+  TContactEmailBaseModel,
+  TContactPhoneBaseModel,
+  TCustomerBaseModel,
+  TLineItemBaseModel,
+  TNestedOrderBaseModel,
+  TReuseContactBaseModel,
+  TTaggedAccessBaseModel,
+  TTaggedLineItemBaseModel,
+  TTaggedMemberBaseModel,
 } from './features.model.generated.js';
 
 export type TReuseContact = IModel<{
@@ -32,35 +32,35 @@ export type TReuseContact = IModel<{
   homePhone: Phone;
   workPhone: Phone;
 }>;
-export class ReuseContact extends ReuseContactBaseModel {}
+export class ReuseContact extends TReuseContactBaseModel {}
 
 export type TAddress = IModel<{
   id: string;
   city: string;
   country: string;
 }>;
-export class Address extends AddressBaseModel {}
+export class Address extends TAddressBaseModel {}
 
 export type TCustomer = IModel<{
   id: string;
   name: string & MinLength<2>;
   home: Address;
 }>;
-export class Customer extends CustomerBaseModel {}
+export class Customer extends TCustomerBaseModel {}
 
 export type TNestedOrder = IModel<{
   id: string;
   customer: Customer;
   items: LineItem[];
 }>;
-export class NestedOrder extends NestedOrderBaseModel {}
+export class NestedOrder extends TNestedOrderBaseModel {}
 
 export type TContactEmail = IModel<{ kind: 'email'; address: Email }>;
-export class ContactEmail extends ContactEmailBaseModel {}
+export class ContactEmail extends TContactEmailBaseModel {}
 export type TContactPhone = IModel<{ kind: 'phone'; number: Phone }>;
-export class ContactPhone extends ContactPhoneBaseModel {}
+export class ContactPhone extends TContactPhoneBaseModel {}
 export type TContact = IModel<{ value: ContactEmail | ContactPhone }>;
-export class Contact extends ContactBaseModel {}
+export class Contact extends TContactBaseModel {}
 
 export type TComposeCustomer = IModel<{
   home: Address;
@@ -68,13 +68,13 @@ export type TComposeCustomer = IModel<{
   draft: Partial<Pick<TAddress, 'city' | 'country'>>;
   contact: Contact;
 }>;
-export class ComposeCustomer extends ComposeCustomerBaseModel {}
+export class ComposeCustomer extends TComposeCustomerBaseModel {}
 
 export type TTaggedMember = IModel<{
   id: string;
   name: string & MinLength<2>;
 }>;
-export class TaggedMember extends TaggedMemberBaseModel {}
+export class TaggedMember extends TTaggedMemberBaseModel {}
 
 export type TTaggedAccess = IModel<{
   projectName: ProjectName;
@@ -82,14 +82,14 @@ export type TTaggedAccess = IModel<{
   permissions: PermissionBits;
   budget: Money;
 }>;
-export class TaggedAccess extends TaggedAccessBaseModel {}
+export class TaggedAccess extends TTaggedAccessBaseModel {}
 
 export type TTaggedLineItem = IModel<{
   sku: string & MinLength<3>;
   quantity: number & Integer & Minimum<0>;
   amount: Money;
 }>;
-export class TaggedLineItem extends TaggedLineItemBaseModel {}
+export class TaggedLineItem extends TTaggedLineItemBaseModel {}
 
 export type TCombinedOrder = IModel<{
   id: string;
@@ -99,7 +99,7 @@ export type TCombinedOrder = IModel<{
   permissions: PermissionBits;
   items: TaggedLineItem[];
 }>;
-export class CombinedOrder extends CombinedOrderBaseModel {}
+export class CombinedOrder extends TCombinedOrderBaseModel {}
 
 // #region checkout
 export type TLineItem = IModel<{
@@ -107,7 +107,7 @@ export type TLineItem = IModel<{
   quantity: number & Integer & Minimum<0>;
   price: number & Minimum<0>;
 }>;
-export class LineItem extends LineItemBaseModel {}
+export class LineItem extends TLineItemBaseModel {}
 
 export type TCheckout = IModel<{
   money: PaymentMoney & TValidation<typeof extraMoney>;
@@ -123,5 +123,5 @@ export type TCheckout = IModel<{
   bag?: { lane: string };
   memo?: string;
 }>;
-export class Checkout extends CheckoutBaseModel {}
+export class Checkout extends TCheckoutBaseModel {}
 // #endregion checkout

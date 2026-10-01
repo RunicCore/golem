@@ -25,7 +25,7 @@
     "sdk/iobject-plugin-keys.ts": {
       "job": "openapi:sdk",
       "owner": "@exprtlabs/golem-openapi",
-      "digest": "52bfddcf89fa5d418e3652c7ee06957f981a5b79f420db4441b7baf09377c532",
+      "digest": "38fc6970503ed54785d37417c7645c7097be6412437b639bbd05a4736ae8aca9",
       "destination": "sdk",
       "destinationKind": "directory"
     },

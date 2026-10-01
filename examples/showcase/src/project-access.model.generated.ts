@@ -4,93 +4,93 @@ import { cloneConversionInput, decodeGeneratedModelTrusted, encodeGeneratedModel
 import { addNestedCodecSchema, assertModelValue, createObjectCodec, parseJson, registerIModelClass, requireAjvSchema, resolveGeneratedModelSchemaRefs, resolveModelValidationContextValidator, runSynchronousValidation, serdeValidates, stringifyJsonString, IssueRepresentation, IssueSource, type SerdeOptions as __GolemSerdeOptions, type ValidateOptions as __GolemValidateOptions } from '@exprtlabs/golem/serde';
 import { createOpenApiSyncAjvEngine } from '@exprtlabs/golem/ajv';
 import { modelSerdeBindings, modelValidationBindings } from "./generated/models/models.generated.js";
-import { MemberModel, stringifyMember, toWireFormatMember } from "../sdk/models/Member.js";
+import { TMemberModel, stringifyTMember, toWireFormatTMember } from "../sdk/models/TMember.js";
 
 function modelObject(json: unknown, name: string): Record<string, unknown> {
   return requireModelObject(json, name);
 }
 
-export type ProjectAccessEditorFields = { member: InstanceType<typeof MemberModel>; projectName: string; permissions: number };
-export type ProjectAccessEditorJSON = { member: GeneratedModelWire<InstanceType<typeof MemberModel>>; projectName: string; permissions: string };
-export type ProjectAccessEditorInit = Partial<{ member: (ConstructorParameters<typeof MemberModel> extends [] ? never : ConstructorParameters<typeof MemberModel> extends [(infer Initializer)?, ...unknown[]] ? Initializer : never) | InstanceType<typeof MemberModel>; projectName: string; permissions: number }>;
+export type TProjectAccessEditorFields = { member: InstanceType<typeof TMemberModel>; projectName: string; permissions: number };
+export type TProjectAccessEditorJSON = { member: GeneratedModelWire<InstanceType<typeof TMemberModel>>; projectName: string; permissions: string };
+export type TProjectAccessEditorInit = Partial<{ member: (ConstructorParameters<typeof TMemberModel> extends [] ? never : ConstructorParameters<typeof TMemberModel> extends [(infer Initializer)?, ...unknown[]] ? Initializer : never) | InstanceType<typeof TMemberModel>; projectName: string; permissions: number }>;
 
-export abstract class ProjectAccessEditorBaseModel implements GeneratedModel<ProjectAccessEditorJSON, ProjectAccessEditorFields> {
-  declare readonly [generatedModelWireBrand]: ProjectAccessEditorJSON;
-  declare readonly [generatedModelFieldsBrand]: ProjectAccessEditorFields;
-  declare member: ProjectAccessEditorFields["member"];
-  declare projectName: ProjectAccessEditorFields["projectName"];
-  declare permissions: ProjectAccessEditorFields["permissions"];
+export abstract class TProjectAccessEditorBaseModel implements GeneratedModel<TProjectAccessEditorJSON, TProjectAccessEditorFields> {
+  declare readonly [generatedModelWireBrand]: TProjectAccessEditorJSON;
+  declare readonly [generatedModelFieldsBrand]: TProjectAccessEditorFields;
+  declare member: TProjectAccessEditorFields["member"];
+  declare projectName: TProjectAccessEditorFields["projectName"];
+  declare permissions: TProjectAccessEditorFields["permissions"];
 
-  public constructor(values: ProjectAccessEditorInit = {}) {
-    if (Object.prototype.hasOwnProperty.call(values, "member")) defineModelProperty(this, "member", values["member"] == null || values["member"] instanceof MemberModel ? values["member"] : new (MemberModel as unknown as new (values?: unknown) => MemberModel)(values["member"]));
+  public constructor(values: TProjectAccessEditorInit = {}) {
+    if (Object.prototype.hasOwnProperty.call(values, "member")) defineModelProperty(this, "member", values["member"] == null || values["member"] instanceof TMemberModel ? values["member"] : new (TMemberModel as unknown as new (values?: unknown) => TMemberModel)(values["member"]));
     if (Object.prototype.hasOwnProperty.call(values, "projectName")) defineModelProperty(this, "projectName", values["projectName"]);
     if (Object.prototype.hasOwnProperty.call(values, "permissions")) defineModelProperty(this, "permissions", values["permissions"]);
   }
 
 }
 
-function decodeProjectAccessEditorModel(constructor: GeneratedModelConstructor, json: unknown): ProjectAccessEditorBaseModel {
-  const values = modelObject(json, "ProjectAccessEditorBaseModel");
+function decodeTProjectAccessEditorModel(constructor: GeneratedModelConstructor, json: unknown): TProjectAccessEditorBaseModel {
+  const values = modelObject(json, "TProjectAccessEditorBaseModel");
   const result: Record<string, unknown> = { ...values };
-  if (Object.prototype.hasOwnProperty.call(values, "member")) defineModelProperty(result, "member", convertModelField("deserialize", "member", () => (values["member"] == null || values["member"] instanceof MemberModel ? values["member"] : decodeGeneratedModelTrusted(MemberModel, values["member"]))));
+  if (Object.prototype.hasOwnProperty.call(values, "member")) defineModelProperty(result, "member", convertModelField("deserialize", "member", () => (values["member"] == null || values["member"] instanceof TMemberModel ? values["member"] : decodeGeneratedModelTrusted(TMemberModel, values["member"]))));
   if (Object.prototype.hasOwnProperty.call(values, "permissions")) defineModelProperty(result, "permissions", convertModelField("deserialize", "permissions", () => (modelSerdeBindings["src/access-rules.ts#serializePermissions\u0000src/access-rules.ts#deserializePermissions"].deserialize(values["permissions"]))));
-  return Reflect.construct(constructor, [result]) as ProjectAccessEditorBaseModel;
+  return Reflect.construct(constructor, [result]) as TProjectAccessEditorBaseModel;
 }
 
-function encodeProjectAccessEditorModel(model: ProjectAccessEditorBaseModel): ProjectAccessEditorJSON {
+function encodeTProjectAccessEditorModel(model: TProjectAccessEditorBaseModel): TProjectAccessEditorJSON {
   const result: Record<string, unknown> = {};
-  if (Object.prototype.hasOwnProperty.call(model, "member")) defineModelProperty(result, "member", (convertModelField("serialize", "member", () => (model["member"] instanceof MemberModel ? encodeGeneratedModel(model["member"]) : model["member"]))));
+  if (Object.prototype.hasOwnProperty.call(model, "member")) defineModelProperty(result, "member", (convertModelField("serialize", "member", () => (model["member"] instanceof TMemberModel ? encodeGeneratedModel(model["member"]) : model["member"]))));
   if (Object.prototype.hasOwnProperty.call(model, "projectName")) defineModelProperty(result, "projectName", (model["projectName"]));
   if (Object.prototype.hasOwnProperty.call(model, "permissions")) defineModelProperty(result, "permissions", (convertModelField("serialize", "permissions", () => (modelSerdeBindings["src/access-rules.ts#serializePermissions\u0000src/access-rules.ts#deserializePermissions"].serialize(model["permissions"])))));
-  return result as ProjectAccessEditorJSON;
+  return result as TProjectAccessEditorJSON;
 }
 
-registerGeneratedModel(ProjectAccessEditorBaseModel, {
+registerGeneratedModel(TProjectAccessEditorBaseModel, {
   fields: ["member", "projectName", "permissions"],
   conversion: {
-    decode: (value, constructor) => decodeProjectAccessEditorModel(constructor ?? ProjectAccessEditorBaseModel, value),
-    encode: encodeProjectAccessEditorModel,
+    decode: (value, constructor) => decodeTProjectAccessEditorModel(constructor ?? TProjectAccessEditorBaseModel, value),
+    encode: encodeTProjectAccessEditorModel,
   },
-  codecId: "ProjectAccessEditor_dbff379b",
+  codecId: "TProjectAccessEditor_4b31b1cd",
   profile: { validation: true, mobx: false },
 });
 
-registerIModelClass("ProjectAccessEditor_dbff379b", ProjectAccessEditorBaseModel);
+registerIModelClass("TProjectAccessEditor_4b31b1cd", TProjectAccessEditorBaseModel);
 
 const __golemTrusted = Object.freeze({ validate: false });
 
 const objectAjvFast = createOpenApiSyncAjvEngine({ allErrors: false, validationBindings: modelValidationBindings });
 const objectAjvAll = createOpenApiSyncAjvEngine({ allErrors: true, validationBindings: modelValidationBindings });
 
-addNestedCodecSchema([(schema, id) => objectAjvFast.addSchema(schema, id), (schema, id) => objectAjvAll.addSchema(schema, id)], "Member", MemberModel);
-const __resolvedModelSchema_ProjectAccessEditor = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"ProjectAccessEditor_dbff379b\",\"type\":\"object\",\"properties\":{\"member\":{\"$ref\":\"__exprtGeneratedModel:Member\"},\"permissions\":{\"exprtValidation\":{\"schema\":{\"allOf\":[{\"type\":\"number\"},{\"type\":\"integer\",\"maximum\":255,\"minimum\":0}]},\"bindings\":[\"src/access-rules.ts#hasReadPermission\"]}},\"projectName\":{\"allOf\":[{\"type\":\"string\"},{\"maxLength\":48,\"minLength\":3,\"pattern\":\"^[A-Za-z][A-Za-z0-9 -]*$\"}]}},\"required\":[\"member\",\"permissions\",\"projectName\"],\"additionalProperties\":false}") as object) as object;
-objectAjvFast.addSchema(structuredClone(__resolvedModelSchema_ProjectAccessEditor) as object, "ProjectAccessEditor_dbff379b");
-objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_ProjectAccessEditor) as object, "ProjectAccessEditor_dbff379b");
-const __resolvedWireSchema_ProjectAccessEditor = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"ProjectAccessEditor_dbff379b#wire\",\"type\":\"object\",\"properties\":{\"member\":{\"$ref\":\"__exprtGeneratedModel:Member\"},\"permissions\":{\"allOf\":[{\"type\":\"string\"},{\"pattern\":\"^0x[0-9a-fA-F]+$\"}]},\"projectName\":{\"allOf\":[{\"type\":\"string\"},{\"maxLength\":48,\"minLength\":3,\"pattern\":\"^[A-Za-z][A-Za-z0-9 -]*$\"}]}},\"required\":[\"member\",\"permissions\",\"projectName\"],\"additionalProperties\":false}") as object, 'wire') as object;
-objectAjvFast.addSchema(structuredClone(__resolvedWireSchema_ProjectAccessEditor) as object, "ProjectAccessEditor_dbff379b#wire");
-objectAjvAll.addSchema(structuredClone(__resolvedWireSchema_ProjectAccessEditor) as object, "ProjectAccessEditor_dbff379b#wire");
-const __resolvedModelOnlySchema_ProjectAccessEditor = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"ProjectAccessEditor_dbff379b#model-only\",\"properties\":{\"permissions\":{\"exprtValidation\":{\"schema\":{\"allOf\":[{\"type\":\"number\"},{\"type\":\"integer\",\"maximum\":255,\"minimum\":0}]},\"bindings\":[\"src/access-rules.ts#hasReadPermission\"]}}}}") as object, 'model-only') as object;
-objectAjvFast.addSchema(structuredClone(__resolvedModelOnlySchema_ProjectAccessEditor) as object, "ProjectAccessEditor_dbff379b#model-only");
-objectAjvAll.addSchema(structuredClone(__resolvedModelOnlySchema_ProjectAccessEditor) as object, "ProjectAccessEditor_dbff379b#model-only");
-const __resolvedWireOnlySchema_ProjectAccessEditor = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"ProjectAccessEditor_dbff379b#wire-only\",\"properties\":{\"permissions\":{\"allOf\":[{\"type\":\"string\"},{\"pattern\":\"^0x[0-9a-fA-F]+$\"}]}}}") as object, 'wire-only') as object;
-objectAjvFast.addSchema(structuredClone(__resolvedWireOnlySchema_ProjectAccessEditor) as object, "ProjectAccessEditor_dbff379b#wire-only");
-objectAjvAll.addSchema(structuredClone(__resolvedWireOnlySchema_ProjectAccessEditor) as object, "ProjectAccessEditor_dbff379b#wire-only");
+addNestedCodecSchema([(schema, id) => objectAjvFast.addSchema(schema, id), (schema, id) => objectAjvAll.addSchema(schema, id)], "TMember", TMemberModel);
+const __resolvedModelSchema_TProjectAccessEditor = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"TProjectAccessEditor_4b31b1cd\",\"type\":\"object\",\"properties\":{\"member\":{\"$ref\":\"__exprtGeneratedModel:TMember\"},\"permissions\":{\"exprtValidation\":{\"schema\":{\"allOf\":[{\"type\":\"number\"},{\"type\":\"integer\",\"maximum\":255,\"minimum\":0}]},\"bindings\":[\"src/access-rules.ts#hasReadPermission\"]}},\"projectName\":{\"allOf\":[{\"type\":\"string\"},{\"maxLength\":48,\"minLength\":3,\"pattern\":\"^[A-Za-z][A-Za-z0-9 -]*$\"}]}},\"required\":[\"member\",\"permissions\",\"projectName\"],\"additionalProperties\":false}") as object) as object;
+objectAjvFast.addSchema(structuredClone(__resolvedModelSchema_TProjectAccessEditor) as object, "TProjectAccessEditor_4b31b1cd");
+objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_TProjectAccessEditor) as object, "TProjectAccessEditor_4b31b1cd");
+const __resolvedWireSchema_TProjectAccessEditor = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"TProjectAccessEditor_4b31b1cd#wire\",\"type\":\"object\",\"properties\":{\"member\":{\"$ref\":\"__exprtGeneratedModel:TMember\"},\"permissions\":{\"allOf\":[{\"type\":\"string\"},{\"pattern\":\"^0x[0-9a-fA-F]+$\"}]},\"projectName\":{\"allOf\":[{\"type\":\"string\"},{\"maxLength\":48,\"minLength\":3,\"pattern\":\"^[A-Za-z][A-Za-z0-9 -]*$\"}]}},\"required\":[\"member\",\"permissions\",\"projectName\"],\"additionalProperties\":false}") as object, 'wire') as object;
+objectAjvFast.addSchema(structuredClone(__resolvedWireSchema_TProjectAccessEditor) as object, "TProjectAccessEditor_4b31b1cd#wire");
+objectAjvAll.addSchema(structuredClone(__resolvedWireSchema_TProjectAccessEditor) as object, "TProjectAccessEditor_4b31b1cd#wire");
+const __resolvedModelOnlySchema_TProjectAccessEditor = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"TProjectAccessEditor_4b31b1cd#model-only\",\"properties\":{\"permissions\":{\"exprtValidation\":{\"schema\":{\"allOf\":[{\"type\":\"number\"},{\"type\":\"integer\",\"maximum\":255,\"minimum\":0}]},\"bindings\":[\"src/access-rules.ts#hasReadPermission\"]}}}}") as object, 'model-only') as object;
+objectAjvFast.addSchema(structuredClone(__resolvedModelOnlySchema_TProjectAccessEditor) as object, "TProjectAccessEditor_4b31b1cd#model-only");
+objectAjvAll.addSchema(structuredClone(__resolvedModelOnlySchema_TProjectAccessEditor) as object, "TProjectAccessEditor_4b31b1cd#model-only");
+const __resolvedWireOnlySchema_TProjectAccessEditor = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"TProjectAccessEditor_4b31b1cd#wire-only\",\"properties\":{\"permissions\":{\"allOf\":[{\"type\":\"string\"},{\"pattern\":\"^0x[0-9a-fA-F]+$\"}]}}}") as object, 'wire-only') as object;
+objectAjvFast.addSchema(structuredClone(__resolvedWireOnlySchema_TProjectAccessEditor) as object, "TProjectAccessEditor_4b31b1cd#wire-only");
+objectAjvAll.addSchema(structuredClone(__resolvedWireOnlySchema_TProjectAccessEditor) as object, "TProjectAccessEditor_4b31b1cd#wire-only");
 
-const validateProjectAccessEditorFast = requireAjvSchema(objectAjvFast.getSchema("ProjectAccessEditor_dbff379b"), "ProjectAccessEditor_dbff379b");
-const validateProjectAccessEditorAll = requireAjvSchema(objectAjvAll.getSchema("ProjectAccessEditor_dbff379b"), "ProjectAccessEditor_dbff379b");
-const validateProjectAccessEditorWireFast = requireAjvSchema(objectAjvFast.getSchema("ProjectAccessEditor_dbff379b#wire"), "ProjectAccessEditor_dbff379b#wire");
-const validateProjectAccessEditorWireAll = requireAjvSchema(objectAjvAll.getSchema("ProjectAccessEditor_dbff379b#wire"), "ProjectAccessEditor_dbff379b#wire");
-const validateProjectAccessEditorModelOnlyFast = requireAjvSchema(objectAjvFast.getSchema("ProjectAccessEditor_dbff379b#model-only"), "ProjectAccessEditor_dbff379b#model-only");
-const validateProjectAccessEditorModelOnlyAll = requireAjvSchema(objectAjvAll.getSchema("ProjectAccessEditor_dbff379b#model-only"), "ProjectAccessEditor_dbff379b#model-only");
-const validateProjectAccessEditorWireOnlyFast = requireAjvSchema(objectAjvFast.getSchema("ProjectAccessEditor_dbff379b#wire-only"), "ProjectAccessEditor_dbff379b#wire-only");
-const validateProjectAccessEditorWireOnlyAll = requireAjvSchema(objectAjvAll.getSchema("ProjectAccessEditor_dbff379b#wire-only"), "ProjectAccessEditor_dbff379b#wire-only");
+const validateTProjectAccessEditorFast = requireAjvSchema(objectAjvFast.getSchema("TProjectAccessEditor_4b31b1cd"), "TProjectAccessEditor_4b31b1cd");
+const validateTProjectAccessEditorAll = requireAjvSchema(objectAjvAll.getSchema("TProjectAccessEditor_4b31b1cd"), "TProjectAccessEditor_4b31b1cd");
+const validateTProjectAccessEditorWireFast = requireAjvSchema(objectAjvFast.getSchema("TProjectAccessEditor_4b31b1cd#wire"), "TProjectAccessEditor_4b31b1cd#wire");
+const validateTProjectAccessEditorWireAll = requireAjvSchema(objectAjvAll.getSchema("TProjectAccessEditor_4b31b1cd#wire"), "TProjectAccessEditor_4b31b1cd#wire");
+const validateTProjectAccessEditorModelOnlyFast = requireAjvSchema(objectAjvFast.getSchema("TProjectAccessEditor_4b31b1cd#model-only"), "TProjectAccessEditor_4b31b1cd#model-only");
+const validateTProjectAccessEditorModelOnlyAll = requireAjvSchema(objectAjvAll.getSchema("TProjectAccessEditor_4b31b1cd#model-only"), "TProjectAccessEditor_4b31b1cd#model-only");
+const validateTProjectAccessEditorWireOnlyFast = requireAjvSchema(objectAjvFast.getSchema("TProjectAccessEditor_4b31b1cd#wire-only"), "TProjectAccessEditor_4b31b1cd#wire-only");
+const validateTProjectAccessEditorWireOnlyAll = requireAjvSchema(objectAjvAll.getSchema("TProjectAccessEditor_4b31b1cd#wire-only"), "TProjectAccessEditor_4b31b1cd#wire-only");
 
-function fillProjectAccessEditor(out: Record<string, unknown>, wire: Record<string, unknown>, copyIdentity = true): Record<string, unknown> {
+function fillTProjectAccessEditor(out: Record<string, unknown>, wire: Record<string, unknown>, copyIdentity = true): Record<string, unknown> {
   if (copyIdentity) {
     out["projectName"] = wire["projectName"];
   }
   if (Object.prototype.hasOwnProperty.call(wire, "member")) {
-    out["member"] = decodeGeneratedModelTrusted(MemberModel, wire["member"]);
+    out["member"] = decodeGeneratedModelTrusted(TMemberModel, wire["member"]);
   }
   if (Object.prototype.hasOwnProperty.call(wire, "permissions")) {
     out["permissions"] = (typeof wire["permissions"] === 'string' ? modelSerdeBindings["src/access-rules.ts#serializePermissions\u0000src/access-rules.ts#deserializePermissions"].deserialize(wire["permissions"]) : wire["permissions"]);
@@ -98,118 +98,118 @@ function fillProjectAccessEditor(out: Record<string, unknown>, wire: Record<stri
   return out;
 }
 
-function stringifyProjectAccessEditorCore(value: Record<string, unknown>): string {
-  return '{' + "\"member\":" + stringifyMember(value["member"] as never, __golemTrusted) + ",\"projectName\":" + stringifyJsonString(value["projectName"] as string) + ",\"permissions\":" + stringifyJsonString(modelSerdeBindings["src/access-rules.ts#serializePermissions\u0000src/access-rules.ts#deserializePermissions"].serialize(value["permissions"]) as string) + '}';
+function stringifyTProjectAccessEditorCore(value: Record<string, unknown>): string {
+  return '{' + "\"member\":" + stringifyTMember(value["member"] as never, __golemTrusted) + ",\"projectName\":" + stringifyJsonString(value["projectName"] as string) + ",\"permissions\":" + stringifyJsonString(modelSerdeBindings["src/access-rules.ts#serializePermissions\u0000src/access-rules.ts#deserializePermissions"].serialize(value["permissions"]) as string) + '}';
 }
 
-function stringifyProjectAccessEditorWire(value: Record<string, unknown>): string {
-  return '{' + "\"member\":" + stringifyMember(value["member"] as never, __golemTrusted) + ",\"projectName\":" + stringifyJsonString(value["projectName"] as string) + ",\"permissions\":" + stringifyJsonString(value["permissions"] as string) + '}';
+function stringifyTProjectAccessEditorWire(value: Record<string, unknown>): string {
+  return '{' + "\"member\":" + stringifyTMember(value["member"] as never, __golemTrusted) + ",\"projectName\":" + stringifyJsonString(value["projectName"] as string) + ",\"permissions\":" + stringifyJsonString(value["permissions"] as string) + '}';
 }
 
-export function stringifyProjectAccessEditor(value: ProjectAccessEditorFields, options?: __GolemSerdeOptions): string {
+export function stringifyTProjectAccessEditor(value: TProjectAccessEditorFields, options?: __GolemSerdeOptions): string {
   const validates = serdeValidates(options, true);
   if (validates) {
-    assertProjectAccessEditor(value, options);
-    const wire = { ["member"]: toWireFormatMember(value["member"] as never, __golemTrusted), ["projectName"]: value["projectName"], ["permissions"]: modelSerdeBindings["src/access-rules.ts#serializePermissions\u0000src/access-rules.ts#deserializePermissions"].serialize(value["permissions"]) };
-    __golemAssertWireOnly_ProjectAccessEditor(wire, options);
-    return stringifyProjectAccessEditorWire(wire as never);
+    assertTProjectAccessEditor(value, options);
+    const wire = { ["member"]: toWireFormatTMember(value["member"] as never, __golemTrusted), ["projectName"]: value["projectName"], ["permissions"]: modelSerdeBindings["src/access-rules.ts#serializePermissions\u0000src/access-rules.ts#deserializePermissions"].serialize(value["permissions"]) };
+    __golemAssertWireOnly_TProjectAccessEditor(wire, options);
+    return stringifyTProjectAccessEditorWire(wire as never);
   }
-  return stringifyProjectAccessEditorCore(value as never);
+  return stringifyTProjectAccessEditorCore(value as never);
 }
 
-function convertFromWireProjectAccessEditor(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
+function convertFromWireTProjectAccessEditor(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
   const validates = serdeValidates(options, true);
   if (validates) {
-    __golemAssertWire_ProjectAccessEditor(wire, options);
+    __golemAssertWire_TProjectAccessEditor(wire, options);
   }
   const source = isolated || wire === null || typeof wire !== 'object' ? wire : cloneConversionInput(wire);
   let result: unknown = source;
   if (source !== null && typeof source === 'object' && !Array.isArray(source)) {
     if (options?.construct) {
-      result = Reflect.construct(options.construct, [fillProjectAccessEditor({ ...(source as Record<string, unknown>) }, (source as Record<string, unknown>), false)]);
+      result = Reflect.construct(options.construct, [fillTProjectAccessEditor({ ...(source as Record<string, unknown>) }, (source as Record<string, unknown>), false)]);
     } else {
-      result = fillProjectAccessEditor({} as Record<string, unknown>, source as Record<string, unknown>);
+      result = fillTProjectAccessEditor({} as Record<string, unknown>, source as Record<string, unknown>);
     }
   }
   if (validates) {
-    __golemAssertModelOnly_ProjectAccessEditor(result, options);
+    __golemAssertModelOnly_TProjectAccessEditor(result, options);
   }
   return result;
 }
 
-export function fromWireFormatProjectAccessEditor(wire: unknown, options?: __GolemSerdeOptions): ProjectAccessEditorFields {
-  return convertFromWireProjectAccessEditor(wire, options, false) as ProjectAccessEditorFields;
+export function fromWireFormatTProjectAccessEditor(wire: unknown, options?: __GolemSerdeOptions): TProjectAccessEditorFields {
+  return convertFromWireTProjectAccessEditor(wire, options, false) as TProjectAccessEditorFields;
 }
 
-function toWireFormatProjectAccessEditorCore(value: ProjectAccessEditorFields): ProjectAccessEditorJSON {
+function toWireFormatTProjectAccessEditorCore(value: TProjectAccessEditorFields): TProjectAccessEditorJSON {
   const record = value as Record<string, unknown>;
-  const wire = { ["member"]: toWireFormatMember(record["member"] as never, __golemTrusted), ["projectName"]: record["projectName"], ["permissions"]: modelSerdeBindings["src/access-rules.ts#serializePermissions\u0000src/access-rules.ts#deserializePermissions"].serialize(record["permissions"]) };
-  return wire as ProjectAccessEditorJSON;
+  const wire = { ["member"]: toWireFormatTMember(record["member"] as never, __golemTrusted), ["projectName"]: record["projectName"], ["permissions"]: modelSerdeBindings["src/access-rules.ts#serializePermissions\u0000src/access-rules.ts#deserializePermissions"].serialize(record["permissions"]) };
+  return wire as TProjectAccessEditorJSON;
 }
 
-export function toWireFormatProjectAccessEditor(value: ProjectAccessEditorFields, options?: __GolemSerdeOptions): ProjectAccessEditorJSON {
+export function toWireFormatTProjectAccessEditor(value: TProjectAccessEditorFields, options?: __GolemSerdeOptions): TProjectAccessEditorJSON {
   const validates = serdeValidates(options, true);
   if (validates) {
-    assertProjectAccessEditor(value, options);
+    assertTProjectAccessEditor(value, options);
   }
-  const wire = toWireFormatProjectAccessEditorCore(value);
+  const wire = toWireFormatTProjectAccessEditorCore(value);
   if (validates) {
-    __golemAssertWireOnly_ProjectAccessEditor(wire, options);
+    __golemAssertWireOnly_TProjectAccessEditor(wire, options);
   }
   return wire;
 }
 
-export function parseProjectAccessEditor(text: string, options?: __GolemSerdeOptions): ProjectAccessEditorFields {
-  return convertFromWireProjectAccessEditor(parseJson(text), options, true) as ProjectAccessEditorFields;
+export function parseTProjectAccessEditor(text: string, options?: __GolemSerdeOptions): TProjectAccessEditorFields {
+  return convertFromWireTProjectAccessEditor(parseJson(text), options, true) as TProjectAccessEditorFields;
 }
 
-export function validateProjectAccessEditor(value: unknown, options?: __GolemValidateOptions): value is ProjectAccessEditorFields {
+export function validateTProjectAccessEditor(value: unknown, options?: __GolemValidateOptions): value is TProjectAccessEditorFields {
   const failFast = options?.failFast !== false;
   let ok: boolean;
   let errors: readonly unknown[] | null | undefined;
   if (options?.validationContext === undefined) {
-    const validator = failFast ? validateProjectAccessEditorFast : validateProjectAccessEditorAll;
+    const validator = failFast ? validateTProjectAccessEditorFast : validateTProjectAccessEditorAll;
     ok = validator(value);
     errors = validator.errors;
   } else {
-    const validator = resolveModelValidationContextValidator(options.validationContext, "ProjectAccessEditor_dbff379b", failFast ? 'first' : 'all');
+    const validator = resolveModelValidationContextValidator(options.validationContext, "TProjectAccessEditor_4b31b1cd", failFast ? 'first' : 'all');
     ok = runSynchronousValidation(validator, value);
     errors = validator.errors;
   }
-  (validateProjectAccessEditor as { errors?: unknown }).errors = errors;
+  (validateTProjectAccessEditor as { errors?: unknown }).errors = errors;
   return ok;
 }
 
-export function assertProjectAccessEditor(value: unknown, options?: __GolemValidateOptions): ProjectAccessEditorFields {
-  assertModelValue(value, options, validateProjectAccessEditorFast, validateProjectAccessEditorAll, "ProjectAccessEditor_dbff379b", IssueRepresentation.Model, IssueSource.TypeScript);
-  return value as ProjectAccessEditorFields;
+export function assertTProjectAccessEditor(value: unknown, options?: __GolemValidateOptions): TProjectAccessEditorFields {
+  assertModelValue(value, options, validateTProjectAccessEditorFast, validateTProjectAccessEditorAll, "TProjectAccessEditor_4b31b1cd", IssueRepresentation.Model, IssueSource.TypeScript);
+  return value as TProjectAccessEditorFields;
 }
 
-function __golemAssertWire_ProjectAccessEditor(value: unknown, options?: __GolemValidateOptions): Record<string, unknown> {
-  assertModelValue(value, options, validateProjectAccessEditorWireFast, validateProjectAccessEditorWireAll, "ProjectAccessEditor_dbff379b#wire", IssueRepresentation.Wire, IssueSource.TypeScript);
+function __golemAssertWire_TProjectAccessEditor(value: unknown, options?: __GolemValidateOptions): Record<string, unknown> {
+  assertModelValue(value, options, validateTProjectAccessEditorWireFast, validateTProjectAccessEditorWireAll, "TProjectAccessEditor_4b31b1cd#wire", IssueRepresentation.Wire, IssueSource.TypeScript);
   return value as Record<string, unknown>;
 }
 
-function __golemAssertModelOnly_ProjectAccessEditor(value: unknown, options?: __GolemValidateOptions): Record<string, unknown> {
-  assertModelValue(value, options, validateProjectAccessEditorModelOnlyFast, validateProjectAccessEditorModelOnlyAll, "ProjectAccessEditor_dbff379b#model-only", IssueRepresentation.Model, IssueSource.TypeScript);
+function __golemAssertModelOnly_TProjectAccessEditor(value: unknown, options?: __GolemValidateOptions): Record<string, unknown> {
+  assertModelValue(value, options, validateTProjectAccessEditorModelOnlyFast, validateTProjectAccessEditorModelOnlyAll, "TProjectAccessEditor_4b31b1cd#model-only", IssueRepresentation.Model, IssueSource.TypeScript);
   return value as Record<string, unknown>;
 }
 
-function __golemAssertWireOnly_ProjectAccessEditor(value: unknown, options?: __GolemValidateOptions): Record<string, unknown> {
-  assertModelValue(value, options, validateProjectAccessEditorWireOnlyFast, validateProjectAccessEditorWireOnlyAll, "ProjectAccessEditor_dbff379b#wire-only", IssueRepresentation.Wire, IssueSource.TypeScript);
+function __golemAssertWireOnly_TProjectAccessEditor(value: unknown, options?: __GolemValidateOptions): Record<string, unknown> {
+  assertModelValue(value, options, validateTProjectAccessEditorWireOnlyFast, validateTProjectAccessEditorWireOnlyAll, "TProjectAccessEditor_4b31b1cd#wire-only", IssueRepresentation.Wire, IssueSource.TypeScript);
   return value as Record<string, unknown>;
 }
 
-createObjectCodec("ProjectAccessEditor_dbff379b", {
-  stringify: stringifyProjectAccessEditor as (value: never, options?: __GolemSerdeOptions) => string,
-  parse: parseProjectAccessEditor as (text: string, options?: __GolemSerdeOptions) => never,
-  validate: validateProjectAccessEditor,
-  assert: assertProjectAccessEditor,
-  toWireFormat: toWireFormatProjectAccessEditor,
-  fromWireFormat: fromWireFormatProjectAccessEditor,
-  schema: __resolvedModelSchema_ProjectAccessEditor,
-  wireSchema: __resolvedWireSchema_ProjectAccessEditor,
-  modelOnlySchema: __resolvedModelOnlySchema_ProjectAccessEditor,
-  wireOnlySchema: __resolvedWireOnlySchema_ProjectAccessEditor,
+createObjectCodec("TProjectAccessEditor_4b31b1cd", {
+  stringify: stringifyTProjectAccessEditor as (value: never, options?: __GolemSerdeOptions) => string,
+  parse: parseTProjectAccessEditor as (text: string, options?: __GolemSerdeOptions) => never,
+  validate: validateTProjectAccessEditor,
+  assert: assertTProjectAccessEditor,
+  toWireFormat: toWireFormatTProjectAccessEditor,
+  fromWireFormat: fromWireFormatTProjectAccessEditor,
+  schema: __resolvedModelSchema_TProjectAccessEditor,
+  wireSchema: __resolvedWireSchema_TProjectAccessEditor,
+  modelOnlySchema: __resolvedModelOnlySchema_TProjectAccessEditor,
+  wireOnlySchema: __resolvedWireOnlySchema_TProjectAccessEditor,
   issueSource: IssueSource.TypeScript,
 });

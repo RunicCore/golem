@@ -4,12 +4,12 @@ import { asGenObservable } from '@exprtlabs/golem/mobx';
 import { getValidator } from '@exprtlabs/golem/validation';
 import { action, computed } from 'mobx';
 import type { Money } from '../sdk/index.js';
-import { PaymentEditorBaseModel, type PaymentEditorInit } from './payment-editor.model.generated.js';
+import { TPaymentEditorBaseModel, type TPaymentEditorInit } from './payment-editor.model.generated.js';
 
 export type TPaymentEditor = IModel<{ money: Money; note: string }>;
 
-export class PaymentEditor extends PaymentEditorBaseModel {
-  public constructor(values: PaymentEditorInit = {}) {
+export class PaymentEditor extends TPaymentEditorBaseModel {
+  public constructor(values: TPaymentEditorInit = {}) {
     super({ money: { amount: 0, currency: 'USD' }, note: '', ...values });
     asGenObservable(this, { summary: computed, setNote: action, setAmount: action });
     getValidator(this).extend({ note: value => value.length <= 100 || 'Keep the note within 100 characters' });

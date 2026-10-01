@@ -422,18 +422,6 @@ func isGeneratedModelClass(checker *shimchecker.Checker, node *shimast.Node) boo
 	return false
 }
 
-// modelName matches packages/golem/src/model-name.ts. Plugin tests lock the same examples.
-func modelName(alias string) string {
-	withoutPrefix := alias
-	if len(alias) >= 2 && alias[0] == 'T' && alias[1] >= 'A' && alias[1] <= 'Z' {
-		withoutPrefix = alias[1:]
-	}
-	if strings.HasSuffix(withoutPrefix, "Model") && len(withoutPrefix) > 5 {
-		return withoutPrefix[:len(withoutPrefix)-5]
-	}
-	return withoutPrefix
-}
-
 func ensureSerdeImport(text string) string {
 	body := serdeImport.ReplaceAllString(text, "")
 	keep := []string{}

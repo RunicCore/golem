@@ -9,68 +9,68 @@ function modelObject(json: unknown, name: string): Record<string, unknown> {
   return requireModelObject(json, name);
 }
 
-export type TaskInputFields = { title: string; done: boolean };
-export type TaskInputJSON = { title: string; done: boolean };
-export type TaskInputInit = Partial<{ title: string; done: boolean }>;
+export type TTaskInputFields = { title: string; done: boolean };
+export type TTaskInputJSON = { title: string; done: boolean };
+export type TTaskInputInit = Partial<{ title: string; done: boolean }>;
 
-export abstract class TaskInputBaseModel implements GeneratedModel<TaskInputJSON, TaskInputFields> {
-  declare readonly [generatedModelWireBrand]: TaskInputJSON;
-  declare readonly [generatedModelFieldsBrand]: TaskInputFields;
-  declare title: TaskInputFields["title"];
-  declare done: TaskInputFields["done"];
+export abstract class TTaskInputBaseModel implements GeneratedModel<TTaskInputJSON, TTaskInputFields> {
+  declare readonly [generatedModelWireBrand]: TTaskInputJSON;
+  declare readonly [generatedModelFieldsBrand]: TTaskInputFields;
+  declare title: TTaskInputFields["title"];
+  declare done: TTaskInputFields["done"];
 
-  public constructor(values: TaskInputInit = {}) {
+  public constructor(values: TTaskInputInit = {}) {
     if (Object.prototype.hasOwnProperty.call(values, "title")) defineModelProperty(this, "title", values["title"]);
     if (Object.prototype.hasOwnProperty.call(values, "done")) defineModelProperty(this, "done", values["done"]);
   }
 
 }
 
-function decodeTaskInputModel(constructor: GeneratedModelConstructor, json: unknown): TaskInputBaseModel {
-  const values = modelObject(json, "TaskInputBaseModel");
-  return Reflect.construct(constructor, [values]) as TaskInputBaseModel;
+function decodeTTaskInputModel(constructor: GeneratedModelConstructor, json: unknown): TTaskInputBaseModel {
+  const values = modelObject(json, "TTaskInputBaseModel");
+  return Reflect.construct(constructor, [values]) as TTaskInputBaseModel;
 }
 
-function encodeTaskInputModel(model: TaskInputBaseModel): TaskInputJSON {
+function encodeTTaskInputModel(model: TTaskInputBaseModel): TTaskInputJSON {
   const result: Record<string, unknown> = {};
   if (Object.prototype.hasOwnProperty.call(model, "title")) defineModelProperty(result, "title", (model["title"]));
   if (Object.prototype.hasOwnProperty.call(model, "done")) defineModelProperty(result, "done", (model["done"]));
-  return result as TaskInputJSON;
+  return result as TTaskInputJSON;
 }
 
-registerGeneratedModel(TaskInputBaseModel, {
+registerGeneratedModel(TTaskInputBaseModel, {
   fields: ["title", "done"],
   conversion: {
-    decode: (value, constructor) => decodeTaskInputModel(constructor ?? TaskInputBaseModel, value),
-    encode: encodeTaskInputModel,
+    decode: (value, constructor) => decodeTTaskInputModel(constructor ?? TTaskInputBaseModel, value),
+    encode: encodeTTaskInputModel,
   },
-  codecId: "TaskInput_b47fc3de",
+  codecId: "TTaskInput_b47fc3de",
   profile: { validation: true, mobx: false },
 });
 
-registerIModelClass("TaskInput_b47fc3de", TaskInputBaseModel);
+registerIModelClass("TTaskInput_b47fc3de", TTaskInputBaseModel);
 
 const objectAjvFast = createOpenApiSyncAjvEngine({ allErrors: false, validationBindings: modelValidationBindings });
 const objectAjvAll = createOpenApiSyncAjvEngine({ allErrors: true, validationBindings: modelValidationBindings });
 
-const __resolvedModelSchema_TaskInput = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"TaskInput_b47fc3de\",\"type\":\"object\",\"properties\":{\"done\":{\"type\":\"boolean\"},\"title\":{\"exprtValidation\":{\"schema\":{\"allOf\":[{\"type\":\"string\"},{\"minLength\":1}]},\"bindings\":[\"src/task-input-rule.ts#notBlank\"]}}},\"required\":[\"done\",\"title\"],\"additionalProperties\":false}") as object) as object;
-objectAjvFast.addSchema(structuredClone(__resolvedModelSchema_TaskInput) as object, "TaskInput_b47fc3de");
-objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_TaskInput) as object, "TaskInput_b47fc3de");
-const __resolvedWireSchema_TaskInput = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"TaskInput_b47fc3de#wire\",\"type\":\"object\",\"properties\":{\"done\":{\"type\":\"boolean\"},\"title\":{\"allOf\":[{\"type\":\"string\"},{\"minLength\":1}]}},\"required\":[\"done\",\"title\"],\"additionalProperties\":false}") as object, 'wire') as object;
-objectAjvFast.addSchema(structuredClone(__resolvedWireSchema_TaskInput) as object, "TaskInput_b47fc3de#wire");
-objectAjvAll.addSchema(structuredClone(__resolvedWireSchema_TaskInput) as object, "TaskInput_b47fc3de#wire");
-const __resolvedModelOnlySchema_TaskInput = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"TaskInput_b47fc3de#model-only\",\"properties\":{\"title\":{\"exprtValidation\":{\"schema\":true,\"bindings\":[\"src/task-input-rule.ts#notBlank\"]}}}}") as object, 'model-only') as object;
-objectAjvFast.addSchema(structuredClone(__resolvedModelOnlySchema_TaskInput) as object, "TaskInput_b47fc3de#model-only");
-objectAjvAll.addSchema(structuredClone(__resolvedModelOnlySchema_TaskInput) as object, "TaskInput_b47fc3de#model-only");
+const __resolvedModelSchema_TTaskInput = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"TTaskInput_b47fc3de\",\"type\":\"object\",\"properties\":{\"done\":{\"type\":\"boolean\"},\"title\":{\"exprtValidation\":{\"schema\":{\"allOf\":[{\"type\":\"string\"},{\"minLength\":1}]},\"bindings\":[\"src/task-input-rule.ts#notBlank\"]}}},\"required\":[\"done\",\"title\"],\"additionalProperties\":false}") as object) as object;
+objectAjvFast.addSchema(structuredClone(__resolvedModelSchema_TTaskInput) as object, "TTaskInput_b47fc3de");
+objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_TTaskInput) as object, "TTaskInput_b47fc3de");
+const __resolvedWireSchema_TTaskInput = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"TTaskInput_b47fc3de#wire\",\"type\":\"object\",\"properties\":{\"done\":{\"type\":\"boolean\"},\"title\":{\"allOf\":[{\"type\":\"string\"},{\"minLength\":1}]}},\"required\":[\"done\",\"title\"],\"additionalProperties\":false}") as object, 'wire') as object;
+objectAjvFast.addSchema(structuredClone(__resolvedWireSchema_TTaskInput) as object, "TTaskInput_b47fc3de#wire");
+objectAjvAll.addSchema(structuredClone(__resolvedWireSchema_TTaskInput) as object, "TTaskInput_b47fc3de#wire");
+const __resolvedModelOnlySchema_TTaskInput = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"TTaskInput_b47fc3de#model-only\",\"properties\":{\"title\":{\"exprtValidation\":{\"schema\":true,\"bindings\":[\"src/task-input-rule.ts#notBlank\"]}}}}") as object, 'model-only') as object;
+objectAjvFast.addSchema(structuredClone(__resolvedModelOnlySchema_TTaskInput) as object, "TTaskInput_b47fc3de#model-only");
+objectAjvAll.addSchema(structuredClone(__resolvedModelOnlySchema_TTaskInput) as object, "TTaskInput_b47fc3de#model-only");
 
-const validateTaskInputFast = requireAjvSchema(objectAjvFast.getSchema("TaskInput_b47fc3de"), "TaskInput_b47fc3de");
-const validateTaskInputAll = requireAjvSchema(objectAjvAll.getSchema("TaskInput_b47fc3de"), "TaskInput_b47fc3de");
-const validateTaskInputWireFast = requireAjvSchema(objectAjvFast.getSchema("TaskInput_b47fc3de#wire"), "TaskInput_b47fc3de#wire");
-const validateTaskInputWireAll = requireAjvSchema(objectAjvAll.getSchema("TaskInput_b47fc3de#wire"), "TaskInput_b47fc3de#wire");
-const validateTaskInputModelOnlyFast = requireAjvSchema(objectAjvFast.getSchema("TaskInput_b47fc3de#model-only"), "TaskInput_b47fc3de#model-only");
-const validateTaskInputModelOnlyAll = requireAjvSchema(objectAjvAll.getSchema("TaskInput_b47fc3de#model-only"), "TaskInput_b47fc3de#model-only");
+const validateTTaskInputFast = requireAjvSchema(objectAjvFast.getSchema("TTaskInput_b47fc3de"), "TTaskInput_b47fc3de");
+const validateTTaskInputAll = requireAjvSchema(objectAjvAll.getSchema("TTaskInput_b47fc3de"), "TTaskInput_b47fc3de");
+const validateTTaskInputWireFast = requireAjvSchema(objectAjvFast.getSchema("TTaskInput_b47fc3de#wire"), "TTaskInput_b47fc3de#wire");
+const validateTTaskInputWireAll = requireAjvSchema(objectAjvAll.getSchema("TTaskInput_b47fc3de#wire"), "TTaskInput_b47fc3de#wire");
+const validateTTaskInputModelOnlyFast = requireAjvSchema(objectAjvFast.getSchema("TTaskInput_b47fc3de#model-only"), "TTaskInput_b47fc3de#model-only");
+const validateTTaskInputModelOnlyAll = requireAjvSchema(objectAjvAll.getSchema("TTaskInput_b47fc3de#model-only"), "TTaskInput_b47fc3de#model-only");
 
-function fillTaskInput(out: Record<string, unknown>, wire: Record<string, unknown>, copyIdentity = true): Record<string, unknown> {
+function fillTTaskInput(out: Record<string, unknown>, wire: Record<string, unknown>, copyIdentity = true): Record<string, unknown> {
   if (copyIdentity) {
     out["title"] = wire["title"];
     out["done"] = wire["done"];
@@ -78,28 +78,28 @@ function fillTaskInput(out: Record<string, unknown>, wire: Record<string, unknow
   return out;
 }
 
-function stringifyTaskInputCore(value: Record<string, unknown>): string {
+function stringifyTTaskInputCore(value: Record<string, unknown>): string {
   return '{' + "\"title\":" + stringifyJsonString(value["title"] as string) + ",\"done\":" + stringifyJsonBoolean(value["done"] as boolean) + '}';
 }
 
-function stringifyTaskInputWire(value: Record<string, unknown>): string {
+function stringifyTTaskInputWire(value: Record<string, unknown>): string {
   return '{' + "\"title\":" + stringifyJsonString(value["title"] as string) + ",\"done\":" + stringifyJsonBoolean(value["done"] as boolean) + '}';
 }
 
-export function stringifyTaskInput(value: TaskInputFields, options?: __GolemSerdeOptions): string {
+export function stringifyTTaskInput(value: TTaskInputFields, options?: __GolemSerdeOptions): string {
   const validates = serdeValidates(options, true);
   if (validates) {
-    assertTaskInput(value, options);
+    assertTTaskInput(value, options);
     const wire = { ["title"]: value["title"], ["done"]: value["done"] };
-    return stringifyTaskInputWire(wire as never);
+    return stringifyTTaskInputWire(wire as never);
   }
-  return stringifyTaskInputCore(value as never);
+  return stringifyTTaskInputCore(value as never);
 }
 
-function convertFromWireTaskInput(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
+function convertFromWireTTaskInput(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
   const validates = serdeValidates(options, true);
   if (validates) {
-    __golemAssertWire_TaskInput(wire, options);
+    __golemAssertWire_TTaskInput(wire, options);
   }
   const source = isolated || wire === null || typeof wire !== 'object' ? wire : cloneConversionInput(wire);
   let result: unknown = source;
@@ -107,78 +107,78 @@ function convertFromWireTaskInput(wire: unknown, options: __GolemSerdeOptions | 
     if (options?.construct) {
       result = Reflect.construct(options.construct, [{ ...(source as Record<string, unknown>) }]);
     } else {
-      result = fillTaskInput({} as Record<string, unknown>, source as Record<string, unknown>);
+      result = fillTTaskInput({} as Record<string, unknown>, source as Record<string, unknown>);
     }
   }
   if (validates) {
-    __golemAssertModelOnly_TaskInput(result, options);
+    __golemAssertModelOnly_TTaskInput(result, options);
   }
   return result;
 }
 
-export function fromWireFormatTaskInput(wire: unknown, options?: __GolemSerdeOptions): TaskInputFields {
-  return convertFromWireTaskInput(wire, options, false) as TaskInputFields;
+export function fromWireFormatTTaskInput(wire: unknown, options?: __GolemSerdeOptions): TTaskInputFields {
+  return convertFromWireTTaskInput(wire, options, false) as TTaskInputFields;
 }
 
-function toWireFormatTaskInputCore(value: TaskInputFields): TaskInputJSON {
+function toWireFormatTTaskInputCore(value: TTaskInputFields): TTaskInputJSON {
   const record = value as Record<string, unknown>;
   const wire = { ["title"]: record["title"], ["done"]: record["done"] };
-  return wire as TaskInputJSON;
+  return wire as TTaskInputJSON;
 }
 
-export function toWireFormatTaskInput(value: TaskInputFields, options?: __GolemSerdeOptions): TaskInputJSON {
+export function toWireFormatTTaskInput(value: TTaskInputFields, options?: __GolemSerdeOptions): TTaskInputJSON {
   const validates = serdeValidates(options, true);
   if (validates) {
-    assertTaskInput(value, options);
+    assertTTaskInput(value, options);
   }
-  return toWireFormatTaskInputCore(value);
+  return toWireFormatTTaskInputCore(value);
 }
 
-export function parseTaskInput(text: string, options?: __GolemSerdeOptions): TaskInputFields {
-  return convertFromWireTaskInput(parseJson(text), options, true) as TaskInputFields;
+export function parseTTaskInput(text: string, options?: __GolemSerdeOptions): TTaskInputFields {
+  return convertFromWireTTaskInput(parseJson(text), options, true) as TTaskInputFields;
 }
 
-export function validateTaskInput(value: unknown, options?: __GolemValidateOptions): value is TaskInputFields {
+export function validateTTaskInput(value: unknown, options?: __GolemValidateOptions): value is TTaskInputFields {
   const failFast = options?.failFast !== false;
   let ok: boolean;
   let errors: readonly unknown[] | null | undefined;
   if (options?.validationContext === undefined) {
-    const validator = failFast ? validateTaskInputFast : validateTaskInputAll;
+    const validator = failFast ? validateTTaskInputFast : validateTTaskInputAll;
     ok = validator(value);
     errors = validator.errors;
   } else {
-    const validator = resolveModelValidationContextValidator(options.validationContext, "TaskInput_b47fc3de", failFast ? 'first' : 'all');
+    const validator = resolveModelValidationContextValidator(options.validationContext, "TTaskInput_b47fc3de", failFast ? 'first' : 'all');
     ok = runSynchronousValidation(validator, value);
     errors = validator.errors;
   }
-  (validateTaskInput as { errors?: unknown }).errors = errors;
+  (validateTTaskInput as { errors?: unknown }).errors = errors;
   return ok;
 }
 
-export function assertTaskInput(value: unknown, options?: __GolemValidateOptions): TaskInputFields {
-  assertModelValue(value, options, validateTaskInputFast, validateTaskInputAll, "TaskInput_b47fc3de", IssueRepresentation.Model, IssueSource.TypeScript);
-  return value as TaskInputFields;
+export function assertTTaskInput(value: unknown, options?: __GolemValidateOptions): TTaskInputFields {
+  assertModelValue(value, options, validateTTaskInputFast, validateTTaskInputAll, "TTaskInput_b47fc3de", IssueRepresentation.Model, IssueSource.TypeScript);
+  return value as TTaskInputFields;
 }
 
-function __golemAssertWire_TaskInput(value: unknown, options?: __GolemValidateOptions): Record<string, unknown> {
-  assertModelValue(value, options, validateTaskInputWireFast, validateTaskInputWireAll, "TaskInput_b47fc3de#wire", IssueRepresentation.Wire, IssueSource.TypeScript);
+function __golemAssertWire_TTaskInput(value: unknown, options?: __GolemValidateOptions): Record<string, unknown> {
+  assertModelValue(value, options, validateTTaskInputWireFast, validateTTaskInputWireAll, "TTaskInput_b47fc3de#wire", IssueRepresentation.Wire, IssueSource.TypeScript);
   return value as Record<string, unknown>;
 }
 
-function __golemAssertModelOnly_TaskInput(value: unknown, options?: __GolemValidateOptions): Record<string, unknown> {
-  assertModelValue(value, options, validateTaskInputModelOnlyFast, validateTaskInputModelOnlyAll, "TaskInput_b47fc3de#model-only", IssueRepresentation.Model, IssueSource.TypeScript);
+function __golemAssertModelOnly_TTaskInput(value: unknown, options?: __GolemValidateOptions): Record<string, unknown> {
+  assertModelValue(value, options, validateTTaskInputModelOnlyFast, validateTTaskInputModelOnlyAll, "TTaskInput_b47fc3de#model-only", IssueRepresentation.Model, IssueSource.TypeScript);
   return value as Record<string, unknown>;
 }
 
-createObjectCodec("TaskInput_b47fc3de", {
-  stringify: stringifyTaskInput as (value: never, options?: __GolemSerdeOptions) => string,
-  parse: parseTaskInput as (text: string, options?: __GolemSerdeOptions) => never,
-  validate: validateTaskInput,
-  assert: assertTaskInput,
-  toWireFormat: toWireFormatTaskInput,
-  fromWireFormat: fromWireFormatTaskInput,
-  schema: __resolvedModelSchema_TaskInput,
-  wireSchema: __resolvedWireSchema_TaskInput,
-  modelOnlySchema: __resolvedModelOnlySchema_TaskInput,
+createObjectCodec("TTaskInput_b47fc3de", {
+  stringify: stringifyTTaskInput as (value: never, options?: __GolemSerdeOptions) => string,
+  parse: parseTTaskInput as (text: string, options?: __GolemSerdeOptions) => never,
+  validate: validateTTaskInput,
+  assert: assertTTaskInput,
+  toWireFormat: toWireFormatTTaskInput,
+  fromWireFormat: fromWireFormatTTaskInput,
+  schema: __resolvedModelSchema_TTaskInput,
+  wireSchema: __resolvedWireSchema_TTaskInput,
+  modelOnlySchema: __resolvedModelOnlySchema_TTaskInput,
   issueSource: IssueSource.TypeScript,
 });

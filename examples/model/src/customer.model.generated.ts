@@ -8,32 +8,32 @@ function modelObject(json: unknown, name: string): Record<string, unknown> {
   return requireModelObject(json, name);
 }
 
-type AddressOmitIdFields = { city: string; country: string };
-type AddressOmitIdJSON = { city: string; country: string };
-type AddressOmitIdInit = { city: string; country: string };
-function decodeAddressOmitId(value: unknown): AddressOmitIdFields { const data = modelObject(value, "AddressOmitId"); return (typeof data === 'object' && data !== null && !Array.isArray(data) ? Object.fromEntries([...(Object.hasOwn(data, "city") ? [["city", data["city"] === undefined ? undefined : (data["city"])]] : []), ...(Object.hasOwn(data, "country") ? [["country", data["country"] === undefined ? undefined : (data["country"])]] : [])]) : data) as AddressOmitIdFields; }
-const initAddressOmitId = decodeAddressOmitId;
-function encodeAddressOmitId(value: unknown): AddressOmitIdJSON { const data = value as Record<string, unknown>; return (typeof data === 'object' && data !== null && !Array.isArray(data) ? Object.fromEntries([...(Object.hasOwn(data, "city") ? [["city", data["city"] === undefined ? undefined : (data["city"])]] : []), ...(Object.hasOwn(data, "country") ? [["country", data["country"] === undefined ? undefined : (data["country"])]] : [])]) : data) as AddressOmitIdJSON; }
+type TAddressOmitIdFields = { city: string; country: string };
+type TAddressOmitIdJSON = { city: string; country: string };
+type TAddressOmitIdInit = { city: string; country: string };
+function decodeTAddressOmitId(value: unknown): TAddressOmitIdFields { const data = modelObject(value, "TAddressOmitId"); return (typeof data === 'object' && data !== null && !Array.isArray(data) ? Object.fromEntries([...(Object.hasOwn(data, "city") ? [["city", data["city"] === undefined ? undefined : (data["city"])]] : []), ...(Object.hasOwn(data, "country") ? [["country", data["country"] === undefined ? undefined : (data["country"])]] : [])]) : data) as TAddressOmitIdFields; }
+const initTAddressOmitId = decodeTAddressOmitId;
+function encodeTAddressOmitId(value: unknown): TAddressOmitIdJSON { const data = value as Record<string, unknown>; return (typeof data === 'object' && data !== null && !Array.isArray(data) ? Object.fromEntries([...(Object.hasOwn(data, "city") ? [["city", data["city"] === undefined ? undefined : (data["city"])]] : []), ...(Object.hasOwn(data, "country") ? [["country", data["country"] === undefined ? undefined : (data["country"])]] : [])]) : data) as TAddressOmitIdJSON; }
 
-type AddressPickCityCountryPartialFields = { city?: undefined | string; country?: undefined | string };
-type AddressPickCityCountryPartialJSON = { city?: undefined | string; country?: undefined | string };
-type AddressPickCityCountryPartialInit = { city?: undefined | string; country?: undefined | string };
-function decodeAddressPickCityCountryPartial(value: unknown): AddressPickCityCountryPartialFields { const data = modelObject(value, "AddressPickCityCountryPartial"); return (typeof data === 'object' && data !== null && !Array.isArray(data) ? Object.fromEntries([...(Object.hasOwn(data, "city") ? [["city", data["city"] === undefined ? undefined : (data["city"])]] : []), ...(Object.hasOwn(data, "country") ? [["country", data["country"] === undefined ? undefined : (data["country"])]] : [])]) : data) as AddressPickCityCountryPartialFields; }
-const initAddressPickCityCountryPartial = decodeAddressPickCityCountryPartial;
-function encodeAddressPickCityCountryPartial(value: unknown): AddressPickCityCountryPartialJSON { const data = value as Record<string, unknown>; return (typeof data === 'object' && data !== null && !Array.isArray(data) ? Object.fromEntries([...(data["city"] !== undefined ? [["city", data["city"]]] : []), ...(data["country"] !== undefined ? [["country", data["country"]]] : [])]) : data) as AddressPickCityCountryPartialJSON; }
+type TAddressPickCityCountryPartialFields = { city?: undefined | string; country?: undefined | string };
+type TAddressPickCityCountryPartialJSON = { city?: undefined | string; country?: undefined | string };
+type TAddressPickCityCountryPartialInit = { city?: undefined | string; country?: undefined | string };
+function decodeTAddressPickCityCountryPartial(value: unknown): TAddressPickCityCountryPartialFields { const data = modelObject(value, "TAddressPickCityCountryPartial"); return (typeof data === 'object' && data !== null && !Array.isArray(data) ? Object.fromEntries([...(Object.hasOwn(data, "city") ? [["city", data["city"] === undefined ? undefined : (data["city"])]] : []), ...(Object.hasOwn(data, "country") ? [["country", data["country"] === undefined ? undefined : (data["country"])]] : [])]) : data) as TAddressPickCityCountryPartialFields; }
+const initTAddressPickCityCountryPartial = decodeTAddressPickCityCountryPartial;
+function encodeTAddressPickCityCountryPartial(value: unknown): TAddressPickCityCountryPartialJSON { const data = value as Record<string, unknown>; return (typeof data === 'object' && data !== null && !Array.isArray(data) ? Object.fromEntries([...(data["city"] !== undefined ? [["city", data["city"]]] : []), ...(data["country"] !== undefined ? [["country", data["country"]]] : [])]) : data) as TAddressPickCityCountryPartialJSON; }
 
-export type AddressFields = { id: string; city: string; country: string };
-export type AddressJSON = { id: string; city: string; country: string };
-export type AddressInit = Partial<{ id: string; city: string; country: string }>;
+export type TAddressFields = { id: string; city: string; country: string };
+export type TAddressJSON = { id: string; city: string; country: string };
+export type TAddressInit = Partial<{ id: string; city: string; country: string }>;
 
-export abstract class AddressBaseModel implements GeneratedModel<AddressJSON, AddressFields> {
-  declare readonly [generatedModelWireBrand]: AddressJSON;
-  declare readonly [generatedModelFieldsBrand]: AddressFields;
-  declare id: AddressFields["id"];
-  declare city: AddressFields["city"];
-  declare country: AddressFields["country"];
+export abstract class TAddressBaseModel implements GeneratedModel<TAddressJSON, TAddressFields> {
+  declare readonly [generatedModelWireBrand]: TAddressJSON;
+  declare readonly [generatedModelFieldsBrand]: TAddressFields;
+  declare id: TAddressFields["id"];
+  declare city: TAddressFields["city"];
+  declare country: TAddressFields["country"];
 
-  public constructor(values: AddressInit = {}) {
+  public constructor(values: TAddressInit = {}) {
     if (Object.prototype.hasOwnProperty.call(values, "id")) defineModelProperty(this, "id", values["id"]);
     if (Object.prototype.hasOwnProperty.call(values, "city")) defineModelProperty(this, "city", values["city"]);
     if (Object.prototype.hasOwnProperty.call(values, "country")) defineModelProperty(this, "country", values["country"]);
@@ -41,99 +41,99 @@ export abstract class AddressBaseModel implements GeneratedModel<AddressJSON, Ad
 
 }
 
-function decodeAddressModel(constructor: GeneratedModelConstructor, json: unknown): AddressBaseModel {
-  const values = modelObject(json, "AddressBaseModel");
-  return Reflect.construct(constructor, [values]) as AddressBaseModel;
+function decodeTAddressModel(constructor: GeneratedModelConstructor, json: unknown): TAddressBaseModel {
+  const values = modelObject(json, "TAddressBaseModel");
+  return Reflect.construct(constructor, [values]) as TAddressBaseModel;
 }
 
-function encodeAddressModel(model: AddressBaseModel): AddressJSON {
+function encodeTAddressModel(model: TAddressBaseModel): TAddressJSON {
   const result: Record<string, unknown> = {};
   if (Object.prototype.hasOwnProperty.call(model, "id")) defineModelProperty(result, "id", (model["id"]));
   if (Object.prototype.hasOwnProperty.call(model, "city")) defineModelProperty(result, "city", (model["city"]));
   if (Object.prototype.hasOwnProperty.call(model, "country")) defineModelProperty(result, "country", (model["country"]));
-  return result as AddressJSON;
+  return result as TAddressJSON;
 }
 
-registerGeneratedModel(AddressBaseModel, {
+registerGeneratedModel(TAddressBaseModel, {
   fields: ["id", "city", "country"],
   conversion: {
-    decode: (value, constructor) => decodeAddressModel(constructor ?? AddressBaseModel, value),
-    encode: encodeAddressModel,
+    decode: (value, constructor) => decodeTAddressModel(constructor ?? TAddressBaseModel, value),
+    encode: encodeTAddressModel,
   },
-  codecId: "Address_420813af",
+  codecId: "TAddress_420813af",
   profile: { validation: true, mobx: false },
 });
 
-registerIModelClass("Address_420813af", AddressBaseModel);
+registerIModelClass("TAddress_420813af", TAddressBaseModel);
 
-export type CustomerFields = { home: AddressBaseModel; shipping: AddressOmitIdFields; draft: AddressPickCityCountryPartialFields };
-export type CustomerJSON = { home: AddressJSON; shipping: AddressOmitIdJSON; draft: AddressPickCityCountryPartialJSON };
-export type CustomerInit = Partial<{ home: AddressInit | AddressBaseModel; shipping: AddressOmitIdInit; draft: AddressPickCityCountryPartialInit }>;
+export type TCustomerFields = { home: TAddressBaseModel; shipping: TAddressOmitIdFields; draft: TAddressPickCityCountryPartialFields };
+export type TCustomerJSON = { home: TAddressJSON; shipping: TAddressOmitIdJSON; draft: TAddressPickCityCountryPartialJSON };
+export type TCustomerInit = Partial<{ home: TAddressInit | TAddressBaseModel; shipping: TAddressOmitIdInit; draft: TAddressPickCityCountryPartialInit }>;
 
-export abstract class CustomerBaseModel implements GeneratedModel<CustomerJSON, CustomerFields> {
-  declare readonly [generatedModelWireBrand]: CustomerJSON;
-  declare readonly [generatedModelFieldsBrand]: CustomerFields;
-  declare home: CustomerFields["home"];
-  declare shipping: CustomerFields["shipping"];
-  declare draft: CustomerFields["draft"];
+export abstract class TCustomerBaseModel implements GeneratedModel<TCustomerJSON, TCustomerFields> {
+  declare readonly [generatedModelWireBrand]: TCustomerJSON;
+  declare readonly [generatedModelFieldsBrand]: TCustomerFields;
+  declare home: TCustomerFields["home"];
+  declare shipping: TCustomerFields["shipping"];
+  declare draft: TCustomerFields["draft"];
 
-  public constructor(values: CustomerInit = {}) {
-    if (Object.prototype.hasOwnProperty.call(values, "home")) defineModelProperty(this, "home", values["home"] == null || values["home"] instanceof AddressBaseModel ? values["home"] : new (requireIModelClass("Address_420813af") as unknown as new (values?: AddressInit) => AddressBaseModel)(values["home"] as unknown as AddressInit));
-    if (Object.prototype.hasOwnProperty.call(values, "shipping")) defineModelProperty(this, "shipping", initAddressOmitId(values["shipping"]));
-    if (Object.prototype.hasOwnProperty.call(values, "draft")) defineModelProperty(this, "draft", initAddressPickCityCountryPartial(values["draft"]));
+  public constructor(values: TCustomerInit = {}) {
+    if (Object.prototype.hasOwnProperty.call(values, "home")) defineModelProperty(this, "home", values["home"] == null || values["home"] instanceof TAddressBaseModel ? values["home"] : new (requireIModelClass("TAddress_420813af") as unknown as new (values?: TAddressInit) => TAddressBaseModel)(values["home"] as unknown as TAddressInit));
+    if (Object.prototype.hasOwnProperty.call(values, "shipping")) defineModelProperty(this, "shipping", initTAddressOmitId(values["shipping"]));
+    if (Object.prototype.hasOwnProperty.call(values, "draft")) defineModelProperty(this, "draft", initTAddressPickCityCountryPartial(values["draft"]));
   }
 
 }
 
-function decodeCustomerModel(constructor: GeneratedModelConstructor, json: unknown): CustomerBaseModel {
-  const values = modelObject(json, "CustomerBaseModel");
+function decodeTCustomerModel(constructor: GeneratedModelConstructor, json: unknown): TCustomerBaseModel {
+  const values = modelObject(json, "TCustomerBaseModel");
   const result: Record<string, unknown> = { ...values };
-  if (Object.prototype.hasOwnProperty.call(values, "home")) defineModelProperty(result, "home", convertModelField("deserialize", "home", () => (values["home"] == null || values["home"] instanceof AddressBaseModel ? values["home"] : decodeGeneratedModelTrusted(requireIModelClass("Address_420813af"), values["home"]))));
-  if (Object.prototype.hasOwnProperty.call(values, "shipping")) defineModelProperty(result, "shipping", convertModelField("deserialize", "shipping", () => (decodeAddressOmitId(values["shipping"]))));
-  if (Object.prototype.hasOwnProperty.call(values, "draft")) defineModelProperty(result, "draft", convertModelField("deserialize", "draft", () => (decodeAddressPickCityCountryPartial(values["draft"]))));
-  return Reflect.construct(constructor, [result]) as CustomerBaseModel;
+  if (Object.prototype.hasOwnProperty.call(values, "home")) defineModelProperty(result, "home", convertModelField("deserialize", "home", () => (values["home"] == null || values["home"] instanceof TAddressBaseModel ? values["home"] : decodeGeneratedModelTrusted(requireIModelClass("TAddress_420813af"), values["home"]))));
+  if (Object.prototype.hasOwnProperty.call(values, "shipping")) defineModelProperty(result, "shipping", convertModelField("deserialize", "shipping", () => (decodeTAddressOmitId(values["shipping"]))));
+  if (Object.prototype.hasOwnProperty.call(values, "draft")) defineModelProperty(result, "draft", convertModelField("deserialize", "draft", () => (decodeTAddressPickCityCountryPartial(values["draft"]))));
+  return Reflect.construct(constructor, [result]) as TCustomerBaseModel;
 }
 
-function encodeCustomerModel(model: CustomerBaseModel): CustomerJSON {
+function encodeTCustomerModel(model: TCustomerBaseModel): TCustomerJSON {
   const result: Record<string, unknown> = {};
-  if (Object.prototype.hasOwnProperty.call(model, "home")) defineModelProperty(result, "home", (convertModelField("serialize", "home", () => (model["home"] instanceof AddressBaseModel ? encodeGeneratedModel(model["home"]) : model["home"]))));
-  if (Object.prototype.hasOwnProperty.call(model, "shipping")) defineModelProperty(result, "shipping", (convertModelField("serialize", "shipping", () => (encodeAddressOmitId(model["shipping"])))));
-  if (Object.prototype.hasOwnProperty.call(model, "draft")) defineModelProperty(result, "draft", (convertModelField("serialize", "draft", () => (encodeAddressPickCityCountryPartial(model["draft"])))));
-  return result as CustomerJSON;
+  if (Object.prototype.hasOwnProperty.call(model, "home")) defineModelProperty(result, "home", (convertModelField("serialize", "home", () => (model["home"] instanceof TAddressBaseModel ? encodeGeneratedModel(model["home"]) : model["home"]))));
+  if (Object.prototype.hasOwnProperty.call(model, "shipping")) defineModelProperty(result, "shipping", (convertModelField("serialize", "shipping", () => (encodeTAddressOmitId(model["shipping"])))));
+  if (Object.prototype.hasOwnProperty.call(model, "draft")) defineModelProperty(result, "draft", (convertModelField("serialize", "draft", () => (encodeTAddressPickCityCountryPartial(model["draft"])))));
+  return result as TCustomerJSON;
 }
 
-registerGeneratedModel(CustomerBaseModel, {
+registerGeneratedModel(TCustomerBaseModel, {
   fields: ["home", "shipping", "draft"],
   conversion: {
-    decode: (value, constructor) => decodeCustomerModel(constructor ?? CustomerBaseModel, value),
-    encode: encodeCustomerModel,
+    decode: (value, constructor) => decodeTCustomerModel(constructor ?? TCustomerBaseModel, value),
+    encode: encodeTCustomerModel,
   },
-  codecId: "Customer_fdc3234c",
+  codecId: "TCustomer_aa5ed068",
   profile: { validation: true, mobx: false },
 });
 
-registerIModelClass("Customer_fdc3234c", CustomerBaseModel);
+registerIModelClass("TCustomer_aa5ed068", TCustomerBaseModel);
 
 const objectAjvFast = createOpenApiSyncAjvEngine({ allErrors: false, validationBindings: {} });
 const objectAjvAll = createOpenApiSyncAjvEngine({ allErrors: true, validationBindings: {} });
 
-const __resolvedModelSchema_Address = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"Address_420813af\",\"type\":\"object\",\"properties\":{\"city\":{\"type\":\"string\"},\"country\":{\"type\":\"string\"},\"id\":{\"type\":\"string\"}},\"required\":[\"city\",\"country\",\"id\"],\"additionalProperties\":false}") as object) as object;
-objectAjvFast.addSchema(structuredClone(__resolvedModelSchema_Address) as object, "Address_420813af");
-objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_Address) as object, "Address_420813af");
-const __resolvedModelSchema_AddressOmitId = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"AddressOmitId_d99d3454\",\"type\":\"object\",\"properties\":{\"city\":{\"type\":\"string\"},\"country\":{\"type\":\"string\"}},\"required\":[\"city\",\"country\"],\"additionalProperties\":false}") as object) as object;
-objectAjvFast.addSchema(structuredClone(__resolvedModelSchema_AddressOmitId) as object, "AddressOmitId_d99d3454");
-objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_AddressOmitId) as object, "AddressOmitId_d99d3454");
-const __resolvedModelSchema_AddressPickCityCountryPartial = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"AddressPickCityCountryPartial_dd79d8cd\",\"type\":\"object\",\"properties\":{\"city\":{\"anyOf\":[{\"type\":\"string\"}]},\"country\":{\"anyOf\":[{\"type\":\"string\"}]}},\"additionalProperties\":false}") as object) as object;
-objectAjvFast.addSchema(structuredClone(__resolvedModelSchema_AddressPickCityCountryPartial) as object, "AddressPickCityCountryPartial_dd79d8cd");
-objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_AddressPickCityCountryPartial) as object, "AddressPickCityCountryPartial_dd79d8cd");
-const __resolvedModelSchema_Customer = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"Customer_fdc3234c\",\"type\":\"object\",\"properties\":{\"draft\":{\"$ref\":\"#/$defs/AddressPickCityCountryPartial_dd79d8cd\"},\"home\":{\"$ref\":\"#/$defs/Address_420813af\"},\"shipping\":{\"$ref\":\"#/$defs/AddressOmitId_d99d3454\"}},\"required\":[\"draft\",\"home\",\"shipping\"],\"additionalProperties\":false,\"$defs\":{\"AddressPickCityCountryPartial_dd79d8cd\":{\"type\":\"object\",\"properties\":{\"city\":{\"anyOf\":[{\"type\":\"string\"}]},\"country\":{\"anyOf\":[{\"type\":\"string\"}]}},\"additionalProperties\":false},\"Address_420813af\":{\"type\":\"object\",\"properties\":{\"city\":{\"type\":\"string\"},\"country\":{\"type\":\"string\"},\"id\":{\"type\":\"string\"}},\"required\":[\"city\",\"country\",\"id\"],\"additionalProperties\":false},\"AddressOmitId_d99d3454\":{\"type\":\"object\",\"properties\":{\"city\":{\"type\":\"string\"},\"country\":{\"type\":\"string\"}},\"required\":[\"city\",\"country\"],\"additionalProperties\":false}}}") as object) as object;
-objectAjvFast.addSchema(structuredClone(__resolvedModelSchema_Customer) as object, "Customer_fdc3234c");
-objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_Customer) as object, "Customer_fdc3234c");
+const __resolvedModelSchema_TAddress = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"TAddress_420813af\",\"type\":\"object\",\"properties\":{\"city\":{\"type\":\"string\"},\"country\":{\"type\":\"string\"},\"id\":{\"type\":\"string\"}},\"required\":[\"city\",\"country\",\"id\"],\"additionalProperties\":false}") as object) as object;
+objectAjvFast.addSchema(structuredClone(__resolvedModelSchema_TAddress) as object, "TAddress_420813af");
+objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_TAddress) as object, "TAddress_420813af");
+const __resolvedModelSchema_TAddressOmitId = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"TAddressOmitId_d99d3454\",\"type\":\"object\",\"properties\":{\"city\":{\"type\":\"string\"},\"country\":{\"type\":\"string\"}},\"required\":[\"city\",\"country\"],\"additionalProperties\":false}") as object) as object;
+objectAjvFast.addSchema(structuredClone(__resolvedModelSchema_TAddressOmitId) as object, "TAddressOmitId_d99d3454");
+objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_TAddressOmitId) as object, "TAddressOmitId_d99d3454");
+const __resolvedModelSchema_TAddressPickCityCountryPartial = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"TAddressPickCityCountryPartial_dd79d8cd\",\"type\":\"object\",\"properties\":{\"city\":{\"anyOf\":[{\"type\":\"string\"}]},\"country\":{\"anyOf\":[{\"type\":\"string\"}]}},\"additionalProperties\":false}") as object) as object;
+objectAjvFast.addSchema(structuredClone(__resolvedModelSchema_TAddressPickCityCountryPartial) as object, "TAddressPickCityCountryPartial_dd79d8cd");
+objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_TAddressPickCityCountryPartial) as object, "TAddressPickCityCountryPartial_dd79d8cd");
+const __resolvedModelSchema_TCustomer = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"TCustomer_aa5ed068\",\"type\":\"object\",\"properties\":{\"draft\":{\"$ref\":\"#/$defs/TAddressPickCityCountryPartial_dd79d8cd\"},\"home\":{\"$ref\":\"#/$defs/TAddress_420813af\"},\"shipping\":{\"$ref\":\"#/$defs/TAddressOmitId_d99d3454\"}},\"required\":[\"draft\",\"home\",\"shipping\"],\"additionalProperties\":false,\"$defs\":{\"TAddressPickCityCountryPartial_dd79d8cd\":{\"type\":\"object\",\"properties\":{\"city\":{\"anyOf\":[{\"type\":\"string\"}]},\"country\":{\"anyOf\":[{\"type\":\"string\"}]}},\"additionalProperties\":false},\"TAddress_420813af\":{\"type\":\"object\",\"properties\":{\"city\":{\"type\":\"string\"},\"country\":{\"type\":\"string\"},\"id\":{\"type\":\"string\"}},\"required\":[\"city\",\"country\",\"id\"],\"additionalProperties\":false},\"TAddressOmitId_d99d3454\":{\"type\":\"object\",\"properties\":{\"city\":{\"type\":\"string\"},\"country\":{\"type\":\"string\"}},\"required\":[\"city\",\"country\"],\"additionalProperties\":false}}}") as object) as object;
+objectAjvFast.addSchema(structuredClone(__resolvedModelSchema_TCustomer) as object, "TCustomer_aa5ed068");
+objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_TCustomer) as object, "TCustomer_aa5ed068");
 
-const validateAddressFast = requireAjvSchema(objectAjvFast.getSchema("Address_420813af"), "Address_420813af");
-const validateAddressAll = requireAjvSchema(objectAjvAll.getSchema("Address_420813af"), "Address_420813af");
+const validateTAddressFast = requireAjvSchema(objectAjvFast.getSchema("TAddress_420813af"), "TAddress_420813af");
+const validateTAddressAll = requireAjvSchema(objectAjvAll.getSchema("TAddress_420813af"), "TAddress_420813af");
 
-function fillAddress(out: Record<string, unknown>, wire: Record<string, unknown>, copyIdentity = true): Record<string, unknown> {
+function fillTAddress(out: Record<string, unknown>, wire: Record<string, unknown>, copyIdentity = true): Record<string, unknown> {
   if (copyIdentity) {
     out["id"] = wire["id"];
     out["city"] = wire["city"];
@@ -142,22 +142,22 @@ function fillAddress(out: Record<string, unknown>, wire: Record<string, unknown>
   return out;
 }
 
-function stringifyAddressCore(value: Record<string, unknown>): string {
+function stringifyTAddressCore(value: Record<string, unknown>): string {
   return '{' + "\"id\":" + stringifyJsonString(value["id"] as string) + ",\"city\":" + stringifyJsonString(value["city"] as string) + ",\"country\":" + stringifyJsonString(value["country"] as string) + '}';
 }
 
-export function stringifyAddress(value: AddressFields, options?: __GolemSerdeOptions): string {
+export function stringifyTAddress(value: TAddressFields, options?: __GolemSerdeOptions): string {
   const validates = serdeValidates(options, true);
   if (validates) {
-    assertAddress(value, options);
+    assertTAddress(value, options);
   }
-  return stringifyAddressCore(value as never);
+  return stringifyTAddressCore(value as never);
 }
 
-function convertFromWireAddress(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
+function convertFromWireTAddress(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
   const validates = serdeValidates(options, true);
   if (validates) {
-    assertAddress(wire, options);
+    assertTAddress(wire, options);
   }
   const source = isolated || wire === null || typeof wire !== 'object' ? wire : cloneConversionInput(wire);
   let result: unknown = source;
@@ -165,71 +165,71 @@ function convertFromWireAddress(wire: unknown, options: __GolemSerdeOptions | un
     if (options?.construct) {
       result = Reflect.construct(options.construct, [{ ...(source as Record<string, unknown>) }]);
     } else {
-      result = fillAddress({} as Record<string, unknown>, source as Record<string, unknown>);
+      result = fillTAddress({} as Record<string, unknown>, source as Record<string, unknown>);
     }
   }
   return result;
 }
 
-export function fromWireFormatAddress(wire: unknown, options?: __GolemSerdeOptions): AddressFields {
-  return convertFromWireAddress(wire, options, false) as AddressFields;
+export function fromWireFormatTAddress(wire: unknown, options?: __GolemSerdeOptions): TAddressFields {
+  return convertFromWireTAddress(wire, options, false) as TAddressFields;
 }
 
-function toWireFormatAddressCore(value: AddressFields): AddressJSON {
+function toWireFormatTAddressCore(value: TAddressFields): TAddressJSON {
   const record = value as Record<string, unknown>;
   const wire = { ["id"]: record["id"], ["city"]: record["city"], ["country"]: record["country"] };
-  return wire as AddressJSON;
+  return wire as TAddressJSON;
 }
 
-export function toWireFormatAddress(value: AddressFields, options?: __GolemSerdeOptions): AddressJSON {
+export function toWireFormatTAddress(value: TAddressFields, options?: __GolemSerdeOptions): TAddressJSON {
   const validates = serdeValidates(options, true);
   if (validates) {
-    assertAddress(value, options);
+    assertTAddress(value, options);
   }
-  return toWireFormatAddressCore(value);
+  return toWireFormatTAddressCore(value);
 }
 
-export function parseAddress(text: string, options?: __GolemSerdeOptions): AddressFields {
-  return convertFromWireAddress(parseJson(text), options, true) as AddressFields;
+export function parseTAddress(text: string, options?: __GolemSerdeOptions): TAddressFields {
+  return convertFromWireTAddress(parseJson(text), options, true) as TAddressFields;
 }
 
-export function validateAddress(value: unknown, options?: __GolemValidateOptions): value is AddressFields {
+export function validateTAddress(value: unknown, options?: __GolemValidateOptions): value is TAddressFields {
   const failFast = options?.failFast !== false;
   let ok: boolean;
   let errors: readonly unknown[] | null | undefined;
   if (options?.validationContext === undefined) {
-    const validator = failFast ? validateAddressFast : validateAddressAll;
+    const validator = failFast ? validateTAddressFast : validateTAddressAll;
     ok = validator(value);
     errors = validator.errors;
   } else {
-    const validator = resolveModelValidationContextValidator(options.validationContext, "Address_420813af", failFast ? 'first' : 'all');
+    const validator = resolveModelValidationContextValidator(options.validationContext, "TAddress_420813af", failFast ? 'first' : 'all');
     ok = runSynchronousValidation(validator, value);
     errors = validator.errors;
   }
-  (validateAddress as { errors?: unknown }).errors = errors;
+  (validateTAddress as { errors?: unknown }).errors = errors;
   return ok;
 }
 
-export function assertAddress(value: unknown, options?: __GolemValidateOptions): AddressFields {
-  assertModelValue(value, options, validateAddressFast, validateAddressAll, "Address_420813af", IssueRepresentation.Model, IssueSource.TypeScript);
-  return value as AddressFields;
+export function assertTAddress(value: unknown, options?: __GolemValidateOptions): TAddressFields {
+  assertModelValue(value, options, validateTAddressFast, validateTAddressAll, "TAddress_420813af", IssueRepresentation.Model, IssueSource.TypeScript);
+  return value as TAddressFields;
 }
 
-createObjectCodec("Address_420813af", {
-  stringify: stringifyAddress as (value: never, options?: __GolemSerdeOptions) => string,
-  parse: parseAddress as (text: string, options?: __GolemSerdeOptions) => never,
-  validate: validateAddress,
-  assert: assertAddress,
-  toWireFormat: toWireFormatAddress,
-  fromWireFormat: fromWireFormatAddress,
-  schema: __resolvedModelSchema_Address,
+createObjectCodec("TAddress_420813af", {
+  stringify: stringifyTAddress as (value: never, options?: __GolemSerdeOptions) => string,
+  parse: parseTAddress as (text: string, options?: __GolemSerdeOptions) => never,
+  validate: validateTAddress,
+  assert: assertTAddress,
+  toWireFormat: toWireFormatTAddress,
+  fromWireFormat: fromWireFormatTAddress,
+  schema: __resolvedModelSchema_TAddress,
   issueSource: IssueSource.TypeScript,
 });
 
-const validateAddressOmitIdFast = requireAjvSchema(objectAjvFast.getSchema("AddressOmitId_d99d3454"), "AddressOmitId_d99d3454");
-const validateAddressOmitIdAll = requireAjvSchema(objectAjvAll.getSchema("AddressOmitId_d99d3454"), "AddressOmitId_d99d3454");
+const validateTAddressOmitIdFast = requireAjvSchema(objectAjvFast.getSchema("TAddressOmitId_d99d3454"), "TAddressOmitId_d99d3454");
+const validateTAddressOmitIdAll = requireAjvSchema(objectAjvAll.getSchema("TAddressOmitId_d99d3454"), "TAddressOmitId_d99d3454");
 
-function fillAddressOmitId(out: Record<string, unknown>, wire: Record<string, unknown>, copyIdentity = true): Record<string, unknown> {
+function fillTAddressOmitId(out: Record<string, unknown>, wire: Record<string, unknown>, copyIdentity = true): Record<string, unknown> {
   if (copyIdentity) {
     out["city"] = wire["city"];
     out["country"] = wire["country"];
@@ -237,22 +237,22 @@ function fillAddressOmitId(out: Record<string, unknown>, wire: Record<string, un
   return out;
 }
 
-function stringifyAddressOmitIdCore(value: Record<string, unknown>): string {
+function stringifyTAddressOmitIdCore(value: Record<string, unknown>): string {
   return '{' + "\"city\":" + stringifyJsonString(value["city"] as string) + ",\"country\":" + stringifyJsonString(value["country"] as string) + '}';
 }
 
-function stringifyAddressOmitId(value: AddressOmitIdFields, options?: __GolemSerdeOptions): string {
+function stringifyTAddressOmitId(value: TAddressOmitIdFields, options?: __GolemSerdeOptions): string {
   const validates = serdeValidates(options, true);
   if (validates) {
-    assertAddressOmitId(value, options);
+    assertTAddressOmitId(value, options);
   }
-  return stringifyAddressOmitIdCore(value as never);
+  return stringifyTAddressOmitIdCore(value as never);
 }
 
-function convertFromWireAddressOmitId(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
+function convertFromWireTAddressOmitId(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
   const validates = serdeValidates(options, true);
   if (validates) {
-    assertAddressOmitId(wire, options);
+    assertTAddressOmitId(wire, options);
   }
   const source = isolated || wire === null || typeof wire !== 'object' ? wire : cloneConversionInput(wire);
   let result: unknown = source;
@@ -260,71 +260,71 @@ function convertFromWireAddressOmitId(wire: unknown, options: __GolemSerdeOption
     if (options?.construct) {
       result = Reflect.construct(options.construct, [{ ...(source as Record<string, unknown>) }]);
     } else {
-      result = fillAddressOmitId({} as Record<string, unknown>, source as Record<string, unknown>);
+      result = fillTAddressOmitId({} as Record<string, unknown>, source as Record<string, unknown>);
     }
   }
   return result;
 }
 
-function fromWireFormatAddressOmitId(wire: unknown, options?: __GolemSerdeOptions): AddressOmitIdFields {
-  return convertFromWireAddressOmitId(wire, options, false) as AddressOmitIdFields;
+function fromWireFormatTAddressOmitId(wire: unknown, options?: __GolemSerdeOptions): TAddressOmitIdFields {
+  return convertFromWireTAddressOmitId(wire, options, false) as TAddressOmitIdFields;
 }
 
-function toWireFormatAddressOmitIdCore(value: AddressOmitIdFields): AddressOmitIdJSON {
+function toWireFormatTAddressOmitIdCore(value: TAddressOmitIdFields): TAddressOmitIdJSON {
   const record = value as Record<string, unknown>;
   const wire = { ["city"]: record["city"], ["country"]: record["country"] };
-  return wire as AddressOmitIdJSON;
+  return wire as TAddressOmitIdJSON;
 }
 
-function toWireFormatAddressOmitId(value: AddressOmitIdFields, options?: __GolemSerdeOptions): AddressOmitIdJSON {
+function toWireFormatTAddressOmitId(value: TAddressOmitIdFields, options?: __GolemSerdeOptions): TAddressOmitIdJSON {
   const validates = serdeValidates(options, true);
   if (validates) {
-    assertAddressOmitId(value, options);
+    assertTAddressOmitId(value, options);
   }
-  return toWireFormatAddressOmitIdCore(value);
+  return toWireFormatTAddressOmitIdCore(value);
 }
 
-function parseAddressOmitId(text: string, options?: __GolemSerdeOptions): AddressOmitIdFields {
-  return convertFromWireAddressOmitId(parseJson(text), options, true) as AddressOmitIdFields;
+function parseTAddressOmitId(text: string, options?: __GolemSerdeOptions): TAddressOmitIdFields {
+  return convertFromWireTAddressOmitId(parseJson(text), options, true) as TAddressOmitIdFields;
 }
 
-function validateAddressOmitId(value: unknown, options?: __GolemValidateOptions): value is AddressOmitIdFields {
+function validateTAddressOmitId(value: unknown, options?: __GolemValidateOptions): value is TAddressOmitIdFields {
   const failFast = options?.failFast !== false;
   let ok: boolean;
   let errors: readonly unknown[] | null | undefined;
   if (options?.validationContext === undefined) {
-    const validator = failFast ? validateAddressOmitIdFast : validateAddressOmitIdAll;
+    const validator = failFast ? validateTAddressOmitIdFast : validateTAddressOmitIdAll;
     ok = validator(value);
     errors = validator.errors;
   } else {
-    const validator = resolveModelValidationContextValidator(options.validationContext, "AddressOmitId_d99d3454", failFast ? 'first' : 'all');
+    const validator = resolveModelValidationContextValidator(options.validationContext, "TAddressOmitId_d99d3454", failFast ? 'first' : 'all');
     ok = runSynchronousValidation(validator, value);
     errors = validator.errors;
   }
-  (validateAddressOmitId as { errors?: unknown }).errors = errors;
+  (validateTAddressOmitId as { errors?: unknown }).errors = errors;
   return ok;
 }
 
-function assertAddressOmitId(value: unknown, options?: __GolemValidateOptions): AddressOmitIdFields {
-  assertModelValue(value, options, validateAddressOmitIdFast, validateAddressOmitIdAll, "AddressOmitId_d99d3454", IssueRepresentation.Model, IssueSource.TypeScript);
-  return value as AddressOmitIdFields;
+function assertTAddressOmitId(value: unknown, options?: __GolemValidateOptions): TAddressOmitIdFields {
+  assertModelValue(value, options, validateTAddressOmitIdFast, validateTAddressOmitIdAll, "TAddressOmitId_d99d3454", IssueRepresentation.Model, IssueSource.TypeScript);
+  return value as TAddressOmitIdFields;
 }
 
-createObjectCodec("AddressOmitId_d99d3454", {
-  stringify: stringifyAddressOmitId as (value: never, options?: __GolemSerdeOptions) => string,
-  parse: parseAddressOmitId as (text: string, options?: __GolemSerdeOptions) => never,
-  validate: validateAddressOmitId,
-  assert: assertAddressOmitId,
-  toWireFormat: toWireFormatAddressOmitId,
-  fromWireFormat: fromWireFormatAddressOmitId,
-  schema: __resolvedModelSchema_AddressOmitId,
+createObjectCodec("TAddressOmitId_d99d3454", {
+  stringify: stringifyTAddressOmitId as (value: never, options?: __GolemSerdeOptions) => string,
+  parse: parseTAddressOmitId as (text: string, options?: __GolemSerdeOptions) => never,
+  validate: validateTAddressOmitId,
+  assert: assertTAddressOmitId,
+  toWireFormat: toWireFormatTAddressOmitId,
+  fromWireFormat: fromWireFormatTAddressOmitId,
+  schema: __resolvedModelSchema_TAddressOmitId,
   issueSource: IssueSource.TypeScript,
 });
 
-const validateAddressPickCityCountryPartialFast = requireAjvSchema(objectAjvFast.getSchema("AddressPickCityCountryPartial_dd79d8cd"), "AddressPickCityCountryPartial_dd79d8cd");
-const validateAddressPickCityCountryPartialAll = requireAjvSchema(objectAjvAll.getSchema("AddressPickCityCountryPartial_dd79d8cd"), "AddressPickCityCountryPartial_dd79d8cd");
+const validateTAddressPickCityCountryPartialFast = requireAjvSchema(objectAjvFast.getSchema("TAddressPickCityCountryPartial_dd79d8cd"), "TAddressPickCityCountryPartial_dd79d8cd");
+const validateTAddressPickCityCountryPartialAll = requireAjvSchema(objectAjvAll.getSchema("TAddressPickCityCountryPartial_dd79d8cd"), "TAddressPickCityCountryPartial_dd79d8cd");
 
-function fillAddressPickCityCountryPartial(out: Record<string, unknown>, wire: Record<string, unknown>, copyIdentity = true): Record<string, unknown> {
+function fillTAddressPickCityCountryPartial(out: Record<string, unknown>, wire: Record<string, unknown>, copyIdentity = true): Record<string, unknown> {
   if (copyIdentity) {
     if (Object.prototype.hasOwnProperty.call(wire, "city")) {
       out["city"] = wire["city"];
@@ -336,7 +336,7 @@ function fillAddressPickCityCountryPartial(out: Record<string, unknown>, wire: R
   return out;
 }
 
-function stringifyAddressPickCityCountryPartialCore(value: Record<string, unknown>): string {
+function stringifyTAddressPickCityCountryPartialCore(value: Record<string, unknown>): string {
   let out = '{';
   let sep = false;
   const __golemField0 = value["city"];
@@ -356,18 +356,18 @@ function stringifyAddressPickCityCountryPartialCore(value: Record<string, unknow
   return out + '}';
 }
 
-function stringifyAddressPickCityCountryPartial(value: AddressPickCityCountryPartialFields, options?: __GolemSerdeOptions): string {
+function stringifyTAddressPickCityCountryPartial(value: TAddressPickCityCountryPartialFields, options?: __GolemSerdeOptions): string {
   const validates = serdeValidates(options, true);
   if (validates) {
-    assertAddressPickCityCountryPartial(value, options);
+    assertTAddressPickCityCountryPartial(value, options);
   }
-  return stringifyAddressPickCityCountryPartialCore(value as never);
+  return stringifyTAddressPickCityCountryPartialCore(value as never);
 }
 
-function convertFromWireAddressPickCityCountryPartial(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
+function convertFromWireTAddressPickCityCountryPartial(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
   const validates = serdeValidates(options, true);
   if (validates) {
-    assertAddressPickCityCountryPartial(wire, options);
+    assertTAddressPickCityCountryPartial(wire, options);
   }
   const source = isolated || wire === null || typeof wire !== 'object' ? wire : cloneConversionInput(wire);
   let result: unknown = source;
@@ -375,165 +375,165 @@ function convertFromWireAddressPickCityCountryPartial(wire: unknown, options: __
     if (options?.construct) {
       result = Reflect.construct(options.construct, [{ ...(source as Record<string, unknown>) }]);
     } else {
-      result = fillAddressPickCityCountryPartial({} as Record<string, unknown>, source as Record<string, unknown>);
+      result = fillTAddressPickCityCountryPartial({} as Record<string, unknown>, source as Record<string, unknown>);
     }
   }
   return result;
 }
 
-function fromWireFormatAddressPickCityCountryPartial(wire: unknown, options?: __GolemSerdeOptions): AddressPickCityCountryPartialFields {
-  return convertFromWireAddressPickCityCountryPartial(wire, options, false) as AddressPickCityCountryPartialFields;
+function fromWireFormatTAddressPickCityCountryPartial(wire: unknown, options?: __GolemSerdeOptions): TAddressPickCityCountryPartialFields {
+  return convertFromWireTAddressPickCityCountryPartial(wire, options, false) as TAddressPickCityCountryPartialFields;
 }
 
-function toWireFormatAddressPickCityCountryPartialCore(value: AddressPickCityCountryPartialFields): AddressPickCityCountryPartialJSON {
+function toWireFormatTAddressPickCityCountryPartialCore(value: TAddressPickCityCountryPartialFields): TAddressPickCityCountryPartialJSON {
   const record = value as Record<string, unknown>;
   let __golemField0: unknown;
   let __golemField1: unknown;
   const wire = { ...(__golemField0 = record["city"], (__golemField0 !== undefined ? { ["city"]: __golemField0 } : undefined)), ...(__golemField1 = record["country"], (__golemField1 !== undefined ? { ["country"]: __golemField1 } : undefined)) };
-  return wire as AddressPickCityCountryPartialJSON;
+  return wire as TAddressPickCityCountryPartialJSON;
 }
 
-function toWireFormatAddressPickCityCountryPartial(value: AddressPickCityCountryPartialFields, options?: __GolemSerdeOptions): AddressPickCityCountryPartialJSON {
+function toWireFormatTAddressPickCityCountryPartial(value: TAddressPickCityCountryPartialFields, options?: __GolemSerdeOptions): TAddressPickCityCountryPartialJSON {
   const validates = serdeValidates(options, true);
   if (validates) {
-    assertAddressPickCityCountryPartial(value, options);
+    assertTAddressPickCityCountryPartial(value, options);
   }
-  return toWireFormatAddressPickCityCountryPartialCore(value);
+  return toWireFormatTAddressPickCityCountryPartialCore(value);
 }
 
-function parseAddressPickCityCountryPartial(text: string, options?: __GolemSerdeOptions): AddressPickCityCountryPartialFields {
-  return convertFromWireAddressPickCityCountryPartial(parseJson(text), options, true) as AddressPickCityCountryPartialFields;
+function parseTAddressPickCityCountryPartial(text: string, options?: __GolemSerdeOptions): TAddressPickCityCountryPartialFields {
+  return convertFromWireTAddressPickCityCountryPartial(parseJson(text), options, true) as TAddressPickCityCountryPartialFields;
 }
 
-function validateAddressPickCityCountryPartial(value: unknown, options?: __GolemValidateOptions): value is AddressPickCityCountryPartialFields {
+function validateTAddressPickCityCountryPartial(value: unknown, options?: __GolemValidateOptions): value is TAddressPickCityCountryPartialFields {
   const failFast = options?.failFast !== false;
   let ok: boolean;
   let errors: readonly unknown[] | null | undefined;
   if (options?.validationContext === undefined) {
-    const validator = failFast ? validateAddressPickCityCountryPartialFast : validateAddressPickCityCountryPartialAll;
+    const validator = failFast ? validateTAddressPickCityCountryPartialFast : validateTAddressPickCityCountryPartialAll;
     ok = validator(value);
     errors = validator.errors;
   } else {
-    const validator = resolveModelValidationContextValidator(options.validationContext, "AddressPickCityCountryPartial_dd79d8cd", failFast ? 'first' : 'all');
+    const validator = resolveModelValidationContextValidator(options.validationContext, "TAddressPickCityCountryPartial_dd79d8cd", failFast ? 'first' : 'all');
     ok = runSynchronousValidation(validator, value);
     errors = validator.errors;
   }
-  (validateAddressPickCityCountryPartial as { errors?: unknown }).errors = errors;
+  (validateTAddressPickCityCountryPartial as { errors?: unknown }).errors = errors;
   return ok;
 }
 
-function assertAddressPickCityCountryPartial(value: unknown, options?: __GolemValidateOptions): AddressPickCityCountryPartialFields {
-  assertModelValue(value, options, validateAddressPickCityCountryPartialFast, validateAddressPickCityCountryPartialAll, "AddressPickCityCountryPartial_dd79d8cd", IssueRepresentation.Model, IssueSource.TypeScript);
-  return value as AddressPickCityCountryPartialFields;
+function assertTAddressPickCityCountryPartial(value: unknown, options?: __GolemValidateOptions): TAddressPickCityCountryPartialFields {
+  assertModelValue(value, options, validateTAddressPickCityCountryPartialFast, validateTAddressPickCityCountryPartialAll, "TAddressPickCityCountryPartial_dd79d8cd", IssueRepresentation.Model, IssueSource.TypeScript);
+  return value as TAddressPickCityCountryPartialFields;
 }
 
-createObjectCodec("AddressPickCityCountryPartial_dd79d8cd", {
-  stringify: stringifyAddressPickCityCountryPartial as (value: never, options?: __GolemSerdeOptions) => string,
-  parse: parseAddressPickCityCountryPartial as (text: string, options?: __GolemSerdeOptions) => never,
-  validate: validateAddressPickCityCountryPartial,
-  assert: assertAddressPickCityCountryPartial,
-  toWireFormat: toWireFormatAddressPickCityCountryPartial,
-  fromWireFormat: fromWireFormatAddressPickCityCountryPartial,
-  schema: __resolvedModelSchema_AddressPickCityCountryPartial,
+createObjectCodec("TAddressPickCityCountryPartial_dd79d8cd", {
+  stringify: stringifyTAddressPickCityCountryPartial as (value: never, options?: __GolemSerdeOptions) => string,
+  parse: parseTAddressPickCityCountryPartial as (text: string, options?: __GolemSerdeOptions) => never,
+  validate: validateTAddressPickCityCountryPartial,
+  assert: assertTAddressPickCityCountryPartial,
+  toWireFormat: toWireFormatTAddressPickCityCountryPartial,
+  fromWireFormat: fromWireFormatTAddressPickCityCountryPartial,
+  schema: __resolvedModelSchema_TAddressPickCityCountryPartial,
   issueSource: IssueSource.TypeScript,
 });
 
-const validateCustomerFast = requireAjvSchema(objectAjvFast.getSchema("Customer_fdc3234c"), "Customer_fdc3234c");
-const validateCustomerAll = requireAjvSchema(objectAjvAll.getSchema("Customer_fdc3234c"), "Customer_fdc3234c");
+const validateTCustomerFast = requireAjvSchema(objectAjvFast.getSchema("TCustomer_aa5ed068"), "TCustomer_aa5ed068");
+const validateTCustomerAll = requireAjvSchema(objectAjvAll.getSchema("TCustomer_aa5ed068"), "TCustomer_aa5ed068");
 
-function fillCustomer(out: Record<string, unknown>, wire: Record<string, unknown>): Record<string, unknown> {
+function fillTCustomer(out: Record<string, unknown>, wire: Record<string, unknown>): Record<string, unknown> {
   if (Object.prototype.hasOwnProperty.call(wire, "home")) {
-    out["home"] = convertFromWireAddress(wire["home"], { validate: false, construct: requireIModelClass("Address_420813af") }, true);
+    out["home"] = convertFromWireTAddress(wire["home"], { validate: false, construct: requireIModelClass("TAddress_420813af") }, true);
   }
   if (Object.prototype.hasOwnProperty.call(wire, "shipping")) {
     out["shipping"] = ({ ["city"]: (wire["shipping"] as Record<string, unknown>)["city"], ["country"]: (wire["shipping"] as Record<string, unknown>)["country"] });
   }
   if (Object.prototype.hasOwnProperty.call(wire, "draft")) {
-    out["draft"] = fillAddressPickCityCountryPartial({} as Record<string, unknown>, (wire["draft"] as Record<string, unknown>));
+    out["draft"] = fillTAddressPickCityCountryPartial({} as Record<string, unknown>, (wire["draft"] as Record<string, unknown>));
   }
   return out;
 }
 
-function stringifyCustomerCore(value: Record<string, unknown>): string {
-  return '{' + "\"home\":" + stringifyAddressCore(value["home"] as never) + ",\"shipping\":" + stringifyAddressOmitIdCore(value["shipping"] as never) + ",\"draft\":" + stringifyAddressPickCityCountryPartialCore(value["draft"] as never) + '}';
+function stringifyTCustomerCore(value: Record<string, unknown>): string {
+  return '{' + "\"home\":" + stringifyTAddressCore(value["home"] as never) + ",\"shipping\":" + stringifyTAddressOmitIdCore(value["shipping"] as never) + ",\"draft\":" + stringifyTAddressPickCityCountryPartialCore(value["draft"] as never) + '}';
 }
 
-export function stringifyCustomer(value: CustomerFields, options?: __GolemSerdeOptions): string {
+export function stringifyTCustomer(value: TCustomerFields, options?: __GolemSerdeOptions): string {
   const validates = serdeValidates(options, true);
   if (validates) {
-    assertCustomer(value, options);
+    assertTCustomer(value, options);
   }
-  return stringifyCustomerCore(value as never);
+  return stringifyTCustomerCore(value as never);
 }
 
-function convertFromWireCustomer(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
+function convertFromWireTCustomer(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
   const validates = serdeValidates(options, true);
   if (validates) {
-    assertCustomer(wire, options);
+    assertTCustomer(wire, options);
   }
   const source = isolated || wire === null || typeof wire !== 'object' ? wire : cloneConversionInput(wire);
   let result: unknown = source;
   if (source !== null && typeof source === 'object' && !Array.isArray(source)) {
     if (options?.construct) {
-      result = Reflect.construct(options.construct, [fillCustomer({ ...(source as Record<string, unknown>) }, (source as Record<string, unknown>))]);
+      result = Reflect.construct(options.construct, [fillTCustomer({ ...(source as Record<string, unknown>) }, (source as Record<string, unknown>))]);
     } else {
-      result = fillCustomer({} as Record<string, unknown>, source as Record<string, unknown>);
+      result = fillTCustomer({} as Record<string, unknown>, source as Record<string, unknown>);
     }
   }
   return result;
 }
 
-export function fromWireFormatCustomer(wire: unknown, options?: __GolemSerdeOptions): CustomerFields {
-  return convertFromWireCustomer(wire, options, false) as CustomerFields;
+export function fromWireFormatTCustomer(wire: unknown, options?: __GolemSerdeOptions): TCustomerFields {
+  return convertFromWireTCustomer(wire, options, false) as TCustomerFields;
 }
 
-function toWireFormatCustomerCore(value: CustomerFields): CustomerJSON {
+function toWireFormatTCustomerCore(value: TCustomerFields): TCustomerJSON {
   const record = value as Record<string, unknown>;
-  const wire = { ["home"]: toWireFormatAddressCore(record["home"] as never), ["shipping"]: toWireFormatAddressOmitIdCore(record["shipping"] as never), ["draft"]: toWireFormatAddressPickCityCountryPartialCore(record["draft"] as never) };
-  return wire as CustomerJSON;
+  const wire = { ["home"]: toWireFormatTAddressCore(record["home"] as never), ["shipping"]: toWireFormatTAddressOmitIdCore(record["shipping"] as never), ["draft"]: toWireFormatTAddressPickCityCountryPartialCore(record["draft"] as never) };
+  return wire as TCustomerJSON;
 }
 
-export function toWireFormatCustomer(value: CustomerFields, options?: __GolemSerdeOptions): CustomerJSON {
+export function toWireFormatTCustomer(value: TCustomerFields, options?: __GolemSerdeOptions): TCustomerJSON {
   const validates = serdeValidates(options, true);
   if (validates) {
-    assertCustomer(value, options);
+    assertTCustomer(value, options);
   }
-  return toWireFormatCustomerCore(value);
+  return toWireFormatTCustomerCore(value);
 }
 
-export function parseCustomer(text: string, options?: __GolemSerdeOptions): CustomerFields {
-  return convertFromWireCustomer(parseJson(text), options, true) as CustomerFields;
+export function parseTCustomer(text: string, options?: __GolemSerdeOptions): TCustomerFields {
+  return convertFromWireTCustomer(parseJson(text), options, true) as TCustomerFields;
 }
 
-export function validateCustomer(value: unknown, options?: __GolemValidateOptions): value is CustomerFields {
+export function validateTCustomer(value: unknown, options?: __GolemValidateOptions): value is TCustomerFields {
   const failFast = options?.failFast !== false;
   let ok: boolean;
   let errors: readonly unknown[] | null | undefined;
   if (options?.validationContext === undefined) {
-    const validator = failFast ? validateCustomerFast : validateCustomerAll;
+    const validator = failFast ? validateTCustomerFast : validateTCustomerAll;
     ok = validator(value);
     errors = validator.errors;
   } else {
-    const validator = resolveModelValidationContextValidator(options.validationContext, "Customer_fdc3234c", failFast ? 'first' : 'all');
+    const validator = resolveModelValidationContextValidator(options.validationContext, "TCustomer_aa5ed068", failFast ? 'first' : 'all');
     ok = runSynchronousValidation(validator, value);
     errors = validator.errors;
   }
-  (validateCustomer as { errors?: unknown }).errors = errors;
+  (validateTCustomer as { errors?: unknown }).errors = errors;
   return ok;
 }
 
-export function assertCustomer(value: unknown, options?: __GolemValidateOptions): CustomerFields {
-  assertModelValue(value, options, validateCustomerFast, validateCustomerAll, "Customer_fdc3234c", IssueRepresentation.Model, IssueSource.TypeScript);
-  return value as CustomerFields;
+export function assertTCustomer(value: unknown, options?: __GolemValidateOptions): TCustomerFields {
+  assertModelValue(value, options, validateTCustomerFast, validateTCustomerAll, "TCustomer_aa5ed068", IssueRepresentation.Model, IssueSource.TypeScript);
+  return value as TCustomerFields;
 }
 
-createObjectCodec("Customer_fdc3234c", {
-  stringify: stringifyCustomer as (value: never, options?: __GolemSerdeOptions) => string,
-  parse: parseCustomer as (text: string, options?: __GolemSerdeOptions) => never,
-  validate: validateCustomer,
-  assert: assertCustomer,
-  toWireFormat: toWireFormatCustomer,
-  fromWireFormat: fromWireFormatCustomer,
-  schema: __resolvedModelSchema_Customer,
+createObjectCodec("TCustomer_aa5ed068", {
+  stringify: stringifyTCustomer as (value: never, options?: __GolemSerdeOptions) => string,
+  parse: parseTCustomer as (text: string, options?: __GolemSerdeOptions) => never,
+  validate: validateTCustomer,
+  assert: assertTCustomer,
+  toWireFormat: toWireFormatTCustomer,
+  fromWireFormat: fromWireFormatTCustomer,
+  schema: __resolvedModelSchema_TCustomer,
   issueSource: IssueSource.TypeScript,
 });

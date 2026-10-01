@@ -8,159 +8,159 @@ function modelObject(json: unknown, name: string): Record<string, unknown> {
   return requireModelObject(json, name);
 }
 
-export type OpenFields = { name: string };
-export type OpenJSON = { name: string };
-export type OpenInit = Partial<{ name: string }>;
+export type TOpenFields = { name: string };
+export type TOpenJSON = { name: string };
+export type TOpenInit = Partial<{ name: string }>;
 
-export abstract class OpenBaseModel implements GeneratedModel<OpenJSON, OpenFields> {
-  declare readonly [generatedModelWireBrand]: OpenJSON;
-  declare readonly [generatedModelFieldsBrand]: OpenFields;
-  declare name: OpenFields["name"];
+export abstract class TOpenBaseModel implements GeneratedModel<TOpenJSON, TOpenFields> {
+  declare readonly [generatedModelWireBrand]: TOpenJSON;
+  declare readonly [generatedModelFieldsBrand]: TOpenFields;
+  declare name: TOpenFields["name"];
 
-  public constructor(values: OpenInit = {}) {
+  public constructor(values: TOpenInit = {}) {
     if (Object.prototype.hasOwnProperty.call(values, "name")) defineModelProperty(this, "name", values["name"]);
   }
 
 }
 
-function decodeOpenModel(constructor: GeneratedModelConstructor, json: unknown): OpenBaseModel {
-  const values = modelObject(json, "OpenBaseModel");
-  return Reflect.construct(constructor, [values]) as OpenBaseModel;
+function decodeTOpenModel(constructor: GeneratedModelConstructor, json: unknown): TOpenBaseModel {
+  const values = modelObject(json, "TOpenBaseModel");
+  return Reflect.construct(constructor, [values]) as TOpenBaseModel;
 }
 
-function encodeOpenModel(model: OpenBaseModel): OpenJSON {
+function encodeTOpenModel(model: TOpenBaseModel): TOpenJSON {
   const result: Record<string, unknown> = {};
   if (Object.prototype.hasOwnProperty.call(model, "name")) defineModelProperty(result, "name", (model["name"]));
-  return result as OpenJSON;
+  return result as TOpenJSON;
 }
 
-registerGeneratedModel(OpenBaseModel, {
+registerGeneratedModel(TOpenBaseModel, {
   fields: ["name"],
   conversion: {
-    decode: (value, constructor) => decodeOpenModel(constructor ?? OpenBaseModel, value),
-    encode: encodeOpenModel,
+    decode: (value, constructor) => decodeTOpenModel(constructor ?? TOpenBaseModel, value),
+    encode: encodeTOpenModel,
   },
-  codecId: "Open_76e5211c",
+  codecId: "TOpen_76e5211c",
   profile: { validation: true, mobx: false },
 });
 
-registerIModelClass("Open_76e5211c", OpenBaseModel);
+registerIModelClass("TOpen_76e5211c", TOpenBaseModel);
 
-export type ExactFields = { name: string };
-export type ExactJSON = { name: string };
-export type ExactInit = Partial<{ name: string }>;
+export type TExactFields = { name: string };
+export type TExactJSON = { name: string };
+export type TExactInit = Partial<{ name: string }>;
 
-export abstract class ExactBaseModel implements GeneratedModel<ExactJSON, ExactFields> {
-  declare readonly [generatedModelWireBrand]: ExactJSON;
-  declare readonly [generatedModelFieldsBrand]: ExactFields;
-  declare name: ExactFields["name"];
+export abstract class TExactBaseModel implements GeneratedModel<TExactJSON, TExactFields> {
+  declare readonly [generatedModelWireBrand]: TExactJSON;
+  declare readonly [generatedModelFieldsBrand]: TExactFields;
+  declare name: TExactFields["name"];
 
-  public constructor(values: ExactInit = {}) {
+  public constructor(values: TExactInit = {}) {
     if (Object.prototype.hasOwnProperty.call(values, "name")) defineModelProperty(this, "name", values["name"]);
   }
 
 }
 
-function decodeExactModel(constructor: GeneratedModelConstructor, json: unknown): ExactBaseModel {
-  const values = modelObject(json, "ExactBaseModel");
-  return Reflect.construct(constructor, [values]) as ExactBaseModel;
+function decodeTExactModel(constructor: GeneratedModelConstructor, json: unknown): TExactBaseModel {
+  const values = modelObject(json, "TExactBaseModel");
+  return Reflect.construct(constructor, [values]) as TExactBaseModel;
 }
 
-function encodeExactModel(model: ExactBaseModel): ExactJSON {
+function encodeTExactModel(model: TExactBaseModel): TExactJSON {
   const result: Record<string, unknown> = {};
   if (Object.prototype.hasOwnProperty.call(model, "name")) defineModelProperty(result, "name", (model["name"]));
-  return result as ExactJSON;
+  return result as TExactJSON;
 }
 
-registerGeneratedModel(ExactBaseModel, {
+registerGeneratedModel(TExactBaseModel, {
   fields: ["name"],
   conversion: {
-    decode: (value, constructor) => decodeExactModel(constructor ?? ExactBaseModel, value),
-    encode: encodeExactModel,
+    decode: (value, constructor) => decodeTExactModel(constructor ?? TExactBaseModel, value),
+    encode: encodeTExactModel,
   },
-  codecId: "Exact_5505c45b",
+  codecId: "TExact_5505c45b",
   profile: { validation: true, mobx: false },
 });
 
-registerIModelClass("Exact_5505c45b", ExactBaseModel);
+registerIModelClass("TExact_5505c45b", TExactBaseModel);
 
-export type ExternalFields = { payload: any };
-export type ExternalJSON = { payload: any };
-export type ExternalInit = Partial<{ payload: any }>;
+export type TExternalFields = { payload: any };
+export type TExternalJSON = { payload: any };
+export type TExternalInit = Partial<{ payload: any }>;
 
-export abstract class ExternalBaseModel implements GeneratedModel<ExternalJSON, ExternalFields> {
-  declare readonly [generatedModelWireBrand]: ExternalJSON;
-  declare readonly [generatedModelFieldsBrand]: ExternalFields;
-  declare payload: ExternalFields["payload"];
+export abstract class TExternalBaseModel implements GeneratedModel<TExternalJSON, TExternalFields> {
+  declare readonly [generatedModelWireBrand]: TExternalJSON;
+  declare readonly [generatedModelFieldsBrand]: TExternalFields;
+  declare payload: TExternalFields["payload"];
 
-  public constructor(values: ExternalInit = {}) {
+  public constructor(values: TExternalInit = {}) {
     if (Object.prototype.hasOwnProperty.call(values, "payload")) defineModelProperty(this, "payload", values["payload"]);
   }
 
 }
 
-function decodeExternalModel(constructor: GeneratedModelConstructor, json: unknown): ExternalBaseModel {
-  const values = modelObject(json, "ExternalBaseModel");
-  return Reflect.construct(constructor, [values]) as ExternalBaseModel;
+function decodeTExternalModel(constructor: GeneratedModelConstructor, json: unknown): TExternalBaseModel {
+  const values = modelObject(json, "TExternalBaseModel");
+  return Reflect.construct(constructor, [values]) as TExternalBaseModel;
 }
 
-function encodeExternalModel(model: ExternalBaseModel): ExternalJSON {
+function encodeTExternalModel(model: TExternalBaseModel): TExternalJSON {
   const result: Record<string, unknown> = {};
   if (Object.prototype.hasOwnProperty.call(model, "payload")) defineModelProperty(result, "payload", (model["payload"]));
-  return result as ExternalJSON;
+  return result as TExternalJSON;
 }
 
-registerGeneratedModel(ExternalBaseModel, {
+registerGeneratedModel(TExternalBaseModel, {
   fields: ["payload"],
   conversion: {
-    decode: (value, constructor) => decodeExternalModel(constructor ?? ExternalBaseModel, value),
-    encode: encodeExternalModel,
+    decode: (value, constructor) => decodeTExternalModel(constructor ?? TExternalBaseModel, value),
+    encode: encodeTExternalModel,
   },
-  codecId: "External_1c1723fa",
+  codecId: "TExternal_1c1723fa",
   profile: { validation: true, mobx: false },
 });
 
-registerIModelClass("External_1c1723fa", ExternalBaseModel);
+registerIModelClass("TExternal_1c1723fa", TExternalBaseModel);
 
 const objectAjvFast = createOpenApiSyncAjvEngine({ allErrors: false, validationBindings: {} });
 const objectAjvAll = createOpenApiSyncAjvEngine({ allErrors: true, validationBindings: {} });
 
-const __resolvedModelSchema_Open = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"Open_76e5211c\",\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\"}},\"required\":[\"name\"],\"additionalProperties\":true}") as object) as object;
-objectAjvFast.addSchema(structuredClone(__resolvedModelSchema_Open) as object, "Open_76e5211c");
-objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_Open) as object, "Open_76e5211c");
-const __resolvedModelSchema_Exact = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"Exact_5505c45b\",\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\"}},\"required\":[\"name\"],\"additionalProperties\":false}") as object) as object;
-objectAjvFast.addSchema(structuredClone(__resolvedModelSchema_Exact) as object, "Exact_5505c45b");
-objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_Exact) as object, "Exact_5505c45b");
-const __resolvedModelSchema_External = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"External_1c1723fa\",\"type\":\"object\",\"properties\":{\"payload\":true},\"required\":[\"payload\"],\"additionalProperties\":false}") as object) as object;
-objectAjvFast.addSchema(structuredClone(__resolvedModelSchema_External) as object, "External_1c1723fa");
-objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_External) as object, "External_1c1723fa");
+const __resolvedModelSchema_TOpen = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"TOpen_76e5211c\",\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\"}},\"required\":[\"name\"],\"additionalProperties\":true}") as object) as object;
+objectAjvFast.addSchema(structuredClone(__resolvedModelSchema_TOpen) as object, "TOpen_76e5211c");
+objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_TOpen) as object, "TOpen_76e5211c");
+const __resolvedModelSchema_TExact = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"TExact_5505c45b\",\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\"}},\"required\":[\"name\"],\"additionalProperties\":false}") as object) as object;
+objectAjvFast.addSchema(structuredClone(__resolvedModelSchema_TExact) as object, "TExact_5505c45b");
+objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_TExact) as object, "TExact_5505c45b");
+const __resolvedModelSchema_TExternal = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"TExternal_1c1723fa\",\"type\":\"object\",\"properties\":{\"payload\":true},\"required\":[\"payload\"],\"additionalProperties\":false}") as object) as object;
+objectAjvFast.addSchema(structuredClone(__resolvedModelSchema_TExternal) as object, "TExternal_1c1723fa");
+objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_TExternal) as object, "TExternal_1c1723fa");
 
-const validateOpenFast = requireAjvSchema(objectAjvFast.getSchema("Open_76e5211c"), "Open_76e5211c");
-const validateOpenAll = requireAjvSchema(objectAjvAll.getSchema("Open_76e5211c"), "Open_76e5211c");
+const validateTOpenFast = requireAjvSchema(objectAjvFast.getSchema("TOpen_76e5211c"), "TOpen_76e5211c");
+const validateTOpenAll = requireAjvSchema(objectAjvAll.getSchema("TOpen_76e5211c"), "TOpen_76e5211c");
 
-function fillOpen(out: Record<string, unknown>, wire: Record<string, unknown>, copyIdentity = true): Record<string, unknown> {
+function fillTOpen(out: Record<string, unknown>, wire: Record<string, unknown>, copyIdentity = true): Record<string, unknown> {
   if (copyIdentity) {
     out["name"] = wire["name"];
   }
   return out;
 }
 
-function stringifyOpenCore(value: Record<string, unknown>): string {
+function stringifyTOpenCore(value: Record<string, unknown>): string {
   return '{' + "\"name\":" + stringifyJsonString(value["name"] as string) + '}';
 }
 
-export function stringifyOpen(value: OpenFields, options?: __GolemSerdeOptions): string {
+export function stringifyTOpen(value: TOpenFields, options?: __GolemSerdeOptions): string {
   const validates = serdeValidates(options, true);
   if (validates) {
-    assertOpen(value, options);
+    assertTOpen(value, options);
   }
-  return stringifyOpenCore(value as never);
+  return stringifyTOpenCore(value as never);
 }
 
-function convertFromWireOpen(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
+function convertFromWireTOpen(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
   const validates = serdeValidates(options, true);
   if (validates) {
-    assertOpen(wire, options);
+    assertTOpen(wire, options);
   }
   const source = isolated || wire === null || typeof wire !== 'object' ? wire : cloneConversionInput(wire);
   let result: unknown = source;
@@ -168,93 +168,93 @@ function convertFromWireOpen(wire: unknown, options: __GolemSerdeOptions | undef
     if (options?.construct) {
       result = Reflect.construct(options.construct, [{ ...(source as Record<string, unknown>) }]);
     } else {
-      result = fillOpen({} as Record<string, unknown>, source as Record<string, unknown>);
+      result = fillTOpen({} as Record<string, unknown>, source as Record<string, unknown>);
     }
   }
   return result;
 }
 
-export function fromWireFormatOpen(wire: unknown, options?: __GolemSerdeOptions): OpenFields {
-  return convertFromWireOpen(wire, options, false) as OpenFields;
+export function fromWireFormatTOpen(wire: unknown, options?: __GolemSerdeOptions): TOpenFields {
+  return convertFromWireTOpen(wire, options, false) as TOpenFields;
 }
 
-function toWireFormatOpenCore(value: OpenFields): OpenJSON {
+function toWireFormatTOpenCore(value: TOpenFields): TOpenJSON {
   const record = value as Record<string, unknown>;
   const wire = { ["name"]: record["name"] };
-  return wire as OpenJSON;
+  return wire as TOpenJSON;
 }
 
-export function toWireFormatOpen(value: OpenFields, options?: __GolemSerdeOptions): OpenJSON {
+export function toWireFormatTOpen(value: TOpenFields, options?: __GolemSerdeOptions): TOpenJSON {
   const validates = serdeValidates(options, true);
   if (validates) {
-    assertOpen(value, options);
+    assertTOpen(value, options);
   }
-  return toWireFormatOpenCore(value);
+  return toWireFormatTOpenCore(value);
 }
 
-export function parseOpen(text: string, options?: __GolemSerdeOptions): OpenFields {
-  return convertFromWireOpen(parseJson(text), options, true) as OpenFields;
+export function parseTOpen(text: string, options?: __GolemSerdeOptions): TOpenFields {
+  return convertFromWireTOpen(parseJson(text), options, true) as TOpenFields;
 }
 
-export function validateOpen(value: unknown, options?: __GolemValidateOptions): value is OpenFields {
+export function validateTOpen(value: unknown, options?: __GolemValidateOptions): value is TOpenFields {
   const failFast = options?.failFast !== false;
   let ok: boolean;
   let errors: readonly unknown[] | null | undefined;
   if (options?.validationContext === undefined) {
-    const validator = failFast ? validateOpenFast : validateOpenAll;
+    const validator = failFast ? validateTOpenFast : validateTOpenAll;
     ok = validator(value);
     errors = validator.errors;
   } else {
-    const validator = resolveModelValidationContextValidator(options.validationContext, "Open_76e5211c", failFast ? 'first' : 'all');
+    const validator = resolveModelValidationContextValidator(options.validationContext, "TOpen_76e5211c", failFast ? 'first' : 'all');
     ok = runSynchronousValidation(validator, value);
     errors = validator.errors;
   }
-  (validateOpen as { errors?: unknown }).errors = errors;
+  (validateTOpen as { errors?: unknown }).errors = errors;
   return ok;
 }
 
-export function assertOpen(value: unknown, options?: __GolemValidateOptions): OpenFields {
-  assertModelValue(value, options, validateOpenFast, validateOpenAll, "Open_76e5211c", IssueRepresentation.Model, IssueSource.TypeScript);
-  return value as OpenFields;
+export function assertTOpen(value: unknown, options?: __GolemValidateOptions): TOpenFields {
+  assertModelValue(value, options, validateTOpenFast, validateTOpenAll, "TOpen_76e5211c", IssueRepresentation.Model, IssueSource.TypeScript);
+  return value as TOpenFields;
 }
 
-createObjectCodec("Open_76e5211c", {
-  stringify: stringifyOpen as (value: never, options?: __GolemSerdeOptions) => string,
-  parse: parseOpen as (text: string, options?: __GolemSerdeOptions) => never,
-  validate: validateOpen,
-  assert: assertOpen,
-  toWireFormat: toWireFormatOpen,
-  fromWireFormat: fromWireFormatOpen,
-  schema: __resolvedModelSchema_Open,
+createObjectCodec("TOpen_76e5211c", {
+  stringify: stringifyTOpen as (value: never, options?: __GolemSerdeOptions) => string,
+  parse: parseTOpen as (text: string, options?: __GolemSerdeOptions) => never,
+  validate: validateTOpen,
+  assert: assertTOpen,
+  toWireFormat: toWireFormatTOpen,
+  fromWireFormat: fromWireFormatTOpen,
+  schema: __resolvedModelSchema_TOpen,
   issueSource: IssueSource.TypeScript,
 });
 
-const validateExactFast = requireAjvSchema(objectAjvFast.getSchema("Exact_5505c45b"), "Exact_5505c45b");
-const validateExactAll = requireAjvSchema(objectAjvAll.getSchema("Exact_5505c45b"), "Exact_5505c45b");
+const validateTExactFast = requireAjvSchema(objectAjvFast.getSchema("TExact_5505c45b"), "TExact_5505c45b");
+const validateTExactAll = requireAjvSchema(objectAjvAll.getSchema("TExact_5505c45b"), "TExact_5505c45b");
 
-function fillExact(out: Record<string, unknown>, wire: Record<string, unknown>, copyIdentity = true): Record<string, unknown> {
+function fillTExact(out: Record<string, unknown>, wire: Record<string, unknown>, copyIdentity = true): Record<string, unknown> {
   if (copyIdentity) {
     out["name"] = wire["name"];
   }
   return out;
 }
 
-function stringifyExactCore(value: Record<string, unknown>): string {
+function stringifyTExactCore(value: Record<string, unknown>): string {
   return '{' + "\"name\":" + stringifyJsonString(value["name"] as string) + '}';
 }
 
-export function stringifyExact(value: ExactFields, options?: __GolemSerdeOptions): string {
+export function stringifyTExact(value: TExactFields, options?: __GolemSerdeOptions): string {
   const validates = serdeValidates(options, true);
   if (validates) {
-    assertExact(value, options);
+    assertTExact(value, options);
   }
-  return stringifyExactCore(value as never);
+  return stringifyTExactCore(value as never);
 }
 
-function convertFromWireExact(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
+function convertFromWireTExact(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
   const validates = serdeValidates(options, true);
   if (validates) {
-    assertExact(wire, options);
+    assertTExact(wire, options);
   }
   const source = isolated || wire === null || typeof wire !== 'object' ? wire : cloneConversionInput(wire);
   let result: unknown = source;
@@ -262,93 +262,93 @@ function convertFromWireExact(wire: unknown, options: __GolemSerdeOptions | unde
     if (options?.construct) {
       result = Reflect.construct(options.construct, [{ ...(source as Record<string, unknown>) }]);
     } else {
-      result = fillExact({} as Record<string, unknown>, source as Record<string, unknown>);
+      result = fillTExact({} as Record<string, unknown>, source as Record<string, unknown>);
     }
   }
   return result;
 }
 
-export function fromWireFormatExact(wire: unknown, options?: __GolemSerdeOptions): ExactFields {
-  return convertFromWireExact(wire, options, false) as ExactFields;
+export function fromWireFormatTExact(wire: unknown, options?: __GolemSerdeOptions): TExactFields {
+  return convertFromWireTExact(wire, options, false) as TExactFields;
 }
 
-function toWireFormatExactCore(value: ExactFields): ExactJSON {
+function toWireFormatTExactCore(value: TExactFields): TExactJSON {
   const record = value as Record<string, unknown>;
   const wire = { ["name"]: record["name"] };
-  return wire as ExactJSON;
+  return wire as TExactJSON;
 }
 
-export function toWireFormatExact(value: ExactFields, options?: __GolemSerdeOptions): ExactJSON {
+export function toWireFormatTExact(value: TExactFields, options?: __GolemSerdeOptions): TExactJSON {
   const validates = serdeValidates(options, true);
   if (validates) {
-    assertExact(value, options);
+    assertTExact(value, options);
   }
-  return toWireFormatExactCore(value);
+  return toWireFormatTExactCore(value);
 }
 
-export function parseExact(text: string, options?: __GolemSerdeOptions): ExactFields {
-  return convertFromWireExact(parseJson(text), options, true) as ExactFields;
+export function parseTExact(text: string, options?: __GolemSerdeOptions): TExactFields {
+  return convertFromWireTExact(parseJson(text), options, true) as TExactFields;
 }
 
-export function validateExact(value: unknown, options?: __GolemValidateOptions): value is ExactFields {
+export function validateTExact(value: unknown, options?: __GolemValidateOptions): value is TExactFields {
   const failFast = options?.failFast !== false;
   let ok: boolean;
   let errors: readonly unknown[] | null | undefined;
   if (options?.validationContext === undefined) {
-    const validator = failFast ? validateExactFast : validateExactAll;
+    const validator = failFast ? validateTExactFast : validateTExactAll;
     ok = validator(value);
     errors = validator.errors;
   } else {
-    const validator = resolveModelValidationContextValidator(options.validationContext, "Exact_5505c45b", failFast ? 'first' : 'all');
+    const validator = resolveModelValidationContextValidator(options.validationContext, "TExact_5505c45b", failFast ? 'first' : 'all');
     ok = runSynchronousValidation(validator, value);
     errors = validator.errors;
   }
-  (validateExact as { errors?: unknown }).errors = errors;
+  (validateTExact as { errors?: unknown }).errors = errors;
   return ok;
 }
 
-export function assertExact(value: unknown, options?: __GolemValidateOptions): ExactFields {
-  assertModelValue(value, options, validateExactFast, validateExactAll, "Exact_5505c45b", IssueRepresentation.Model, IssueSource.TypeScript);
-  return value as ExactFields;
+export function assertTExact(value: unknown, options?: __GolemValidateOptions): TExactFields {
+  assertModelValue(value, options, validateTExactFast, validateTExactAll, "TExact_5505c45b", IssueRepresentation.Model, IssueSource.TypeScript);
+  return value as TExactFields;
 }
 
-createObjectCodec("Exact_5505c45b", {
-  stringify: stringifyExact as (value: never, options?: __GolemSerdeOptions) => string,
-  parse: parseExact as (text: string, options?: __GolemSerdeOptions) => never,
-  validate: validateExact,
-  assert: assertExact,
-  toWireFormat: toWireFormatExact,
-  fromWireFormat: fromWireFormatExact,
-  schema: __resolvedModelSchema_Exact,
+createObjectCodec("TExact_5505c45b", {
+  stringify: stringifyTExact as (value: never, options?: __GolemSerdeOptions) => string,
+  parse: parseTExact as (text: string, options?: __GolemSerdeOptions) => never,
+  validate: validateTExact,
+  assert: assertTExact,
+  toWireFormat: toWireFormatTExact,
+  fromWireFormat: fromWireFormatTExact,
+  schema: __resolvedModelSchema_TExact,
   issueSource: IssueSource.TypeScript,
 });
 
-const validateExternalFast = requireAjvSchema(objectAjvFast.getSchema("External_1c1723fa"), "External_1c1723fa");
-const validateExternalAll = requireAjvSchema(objectAjvAll.getSchema("External_1c1723fa"), "External_1c1723fa");
+const validateTExternalFast = requireAjvSchema(objectAjvFast.getSchema("TExternal_1c1723fa"), "TExternal_1c1723fa");
+const validateTExternalAll = requireAjvSchema(objectAjvAll.getSchema("TExternal_1c1723fa"), "TExternal_1c1723fa");
 
-function fillExternal(out: Record<string, unknown>, wire: Record<string, unknown>, copyIdentity = true): Record<string, unknown> {
+function fillTExternal(out: Record<string, unknown>, wire: Record<string, unknown>, copyIdentity = true): Record<string, unknown> {
   if (copyIdentity) {
     out["payload"] = wire["payload"];
   }
   return out;
 }
 
-function stringifyExternalCore(value: Record<string, unknown>): string {
+function stringifyTExternalCore(value: Record<string, unknown>): string {
   return '{' + "\"payload\":" + stringifyJsonScalar(value["payload"] as never) + '}';
 }
 
-export function stringifyExternal(value: ExternalFields, options?: __GolemSerdeOptions): string {
+export function stringifyTExternal(value: TExternalFields, options?: __GolemSerdeOptions): string {
   const validates = serdeValidates(options, true);
   if (validates) {
-    assertExternal(value, options);
+    assertTExternal(value, options);
   }
-  return stringifyExternalCore(value as never);
+  return stringifyTExternalCore(value as never);
 }
 
-function convertFromWireExternal(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
+function convertFromWireTExternal(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
   const validates = serdeValidates(options, true);
   if (validates) {
-    assertExternal(wire, options);
+    assertTExternal(wire, options);
   }
   const source = isolated || wire === null || typeof wire !== 'object' ? wire : cloneConversionInput(wire);
   let result: unknown = source;
@@ -356,63 +356,63 @@ function convertFromWireExternal(wire: unknown, options: __GolemSerdeOptions | u
     if (options?.construct) {
       result = Reflect.construct(options.construct, [{ ...(source as Record<string, unknown>) }]);
     } else {
-      result = fillExternal({} as Record<string, unknown>, source as Record<string, unknown>);
+      result = fillTExternal({} as Record<string, unknown>, source as Record<string, unknown>);
     }
   }
   return result;
 }
 
-export function fromWireFormatExternal(wire: unknown, options?: __GolemSerdeOptions): ExternalFields {
-  return convertFromWireExternal(wire, options, false) as ExternalFields;
+export function fromWireFormatTExternal(wire: unknown, options?: __GolemSerdeOptions): TExternalFields {
+  return convertFromWireTExternal(wire, options, false) as TExternalFields;
 }
 
-function toWireFormatExternalCore(value: ExternalFields): ExternalJSON {
+function toWireFormatTExternalCore(value: TExternalFields): TExternalJSON {
   const record = value as Record<string, unknown>;
   const wire = { ["payload"]: record["payload"] };
-  return wire as ExternalJSON;
+  return wire as TExternalJSON;
 }
 
-export function toWireFormatExternal(value: ExternalFields, options?: __GolemSerdeOptions): ExternalJSON {
+export function toWireFormatTExternal(value: TExternalFields, options?: __GolemSerdeOptions): TExternalJSON {
   const validates = serdeValidates(options, true);
   if (validates) {
-    assertExternal(value, options);
+    assertTExternal(value, options);
   }
-  return toWireFormatExternalCore(value);
+  return toWireFormatTExternalCore(value);
 }
 
-export function parseExternal(text: string, options?: __GolemSerdeOptions): ExternalFields {
-  return convertFromWireExternal(parseJson(text), options, true) as ExternalFields;
+export function parseTExternal(text: string, options?: __GolemSerdeOptions): TExternalFields {
+  return convertFromWireTExternal(parseJson(text), options, true) as TExternalFields;
 }
 
-export function validateExternal(value: unknown, options?: __GolemValidateOptions): value is ExternalFields {
+export function validateTExternal(value: unknown, options?: __GolemValidateOptions): value is TExternalFields {
   const failFast = options?.failFast !== false;
   let ok: boolean;
   let errors: readonly unknown[] | null | undefined;
   if (options?.validationContext === undefined) {
-    const validator = failFast ? validateExternalFast : validateExternalAll;
+    const validator = failFast ? validateTExternalFast : validateTExternalAll;
     ok = validator(value);
     errors = validator.errors;
   } else {
-    const validator = resolveModelValidationContextValidator(options.validationContext, "External_1c1723fa", failFast ? 'first' : 'all');
+    const validator = resolveModelValidationContextValidator(options.validationContext, "TExternal_1c1723fa", failFast ? 'first' : 'all');
     ok = runSynchronousValidation(validator, value);
     errors = validator.errors;
   }
-  (validateExternal as { errors?: unknown }).errors = errors;
+  (validateTExternal as { errors?: unknown }).errors = errors;
   return ok;
 }
 
-export function assertExternal(value: unknown, options?: __GolemValidateOptions): ExternalFields {
-  assertModelValue(value, options, validateExternalFast, validateExternalAll, "External_1c1723fa", IssueRepresentation.Model, IssueSource.TypeScript);
-  return value as ExternalFields;
+export function assertTExternal(value: unknown, options?: __GolemValidateOptions): TExternalFields {
+  assertModelValue(value, options, validateTExternalFast, validateTExternalAll, "TExternal_1c1723fa", IssueRepresentation.Model, IssueSource.TypeScript);
+  return value as TExternalFields;
 }
 
-createObjectCodec("External_1c1723fa", {
-  stringify: stringifyExternal as (value: never, options?: __GolemSerdeOptions) => string,
-  parse: parseExternal as (text: string, options?: __GolemSerdeOptions) => never,
-  validate: validateExternal,
-  assert: assertExternal,
-  toWireFormat: toWireFormatExternal,
-  fromWireFormat: fromWireFormatExternal,
-  schema: __resolvedModelSchema_External,
+createObjectCodec("TExternal_1c1723fa", {
+  stringify: stringifyTExternal as (value: never, options?: __GolemSerdeOptions) => string,
+  parse: parseTExternal as (text: string, options?: __GolemSerdeOptions) => never,
+  validate: validateTExternal,
+  assert: assertTExternal,
+  toWireFormat: toWireFormatTExternal,
+  fromWireFormat: fromWireFormatTExternal,
+  schema: __resolvedModelSchema_TExternal,
   issueSource: IssueSource.TypeScript,
 });

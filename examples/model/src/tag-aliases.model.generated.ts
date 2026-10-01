@@ -8,58 +8,58 @@ function modelObject(json: unknown, name: string): Record<string, unknown> {
   return requireModelObject(json, name);
 }
 
-export type AccountFields = { displayName: string; handle: string };
-export type AccountJSON = { displayName: string; handle: string };
-export type AccountInit = Partial<{ displayName: string; handle: string }>;
+export type TAccountFields = { displayName: string; handle: string };
+export type TAccountJSON = { displayName: string; handle: string };
+export type TAccountInit = Partial<{ displayName: string; handle: string }>;
 
-export abstract class AccountBaseModel implements GeneratedModel<AccountJSON, AccountFields> {
-  declare readonly [generatedModelWireBrand]: AccountJSON;
-  declare readonly [generatedModelFieldsBrand]: AccountFields;
-  declare displayName: AccountFields["displayName"];
-  declare handle: AccountFields["handle"];
+export abstract class TAccountBaseModel implements GeneratedModel<TAccountJSON, TAccountFields> {
+  declare readonly [generatedModelWireBrand]: TAccountJSON;
+  declare readonly [generatedModelFieldsBrand]: TAccountFields;
+  declare displayName: TAccountFields["displayName"];
+  declare handle: TAccountFields["handle"];
 
-  public constructor(values: AccountInit = {}) {
+  public constructor(values: TAccountInit = {}) {
     if (Object.prototype.hasOwnProperty.call(values, "displayName")) defineModelProperty(this, "displayName", values["displayName"]);
     if (Object.prototype.hasOwnProperty.call(values, "handle")) defineModelProperty(this, "handle", values["handle"]);
   }
 
 }
 
-function decodeAccountModel(constructor: GeneratedModelConstructor, json: unknown): AccountBaseModel {
-  const values = modelObject(json, "AccountBaseModel");
-  return Reflect.construct(constructor, [values]) as AccountBaseModel;
+function decodeTAccountModel(constructor: GeneratedModelConstructor, json: unknown): TAccountBaseModel {
+  const values = modelObject(json, "TAccountBaseModel");
+  return Reflect.construct(constructor, [values]) as TAccountBaseModel;
 }
 
-function encodeAccountModel(model: AccountBaseModel): AccountJSON {
+function encodeTAccountModel(model: TAccountBaseModel): TAccountJSON {
   const result: Record<string, unknown> = {};
   if (Object.prototype.hasOwnProperty.call(model, "displayName")) defineModelProperty(result, "displayName", (model["displayName"]));
   if (Object.prototype.hasOwnProperty.call(model, "handle")) defineModelProperty(result, "handle", (model["handle"]));
-  return result as AccountJSON;
+  return result as TAccountJSON;
 }
 
-registerGeneratedModel(AccountBaseModel, {
+registerGeneratedModel(TAccountBaseModel, {
   fields: ["displayName", "handle"],
   conversion: {
-    decode: (value, constructor) => decodeAccountModel(constructor ?? AccountBaseModel, value),
-    encode: encodeAccountModel,
+    decode: (value, constructor) => decodeTAccountModel(constructor ?? TAccountBaseModel, value),
+    encode: encodeTAccountModel,
   },
-  codecId: "Account_7bb17507",
+  codecId: "TAccount_7bb17507",
   profile: { validation: true, mobx: false },
 });
 
-registerIModelClass("Account_7bb17507", AccountBaseModel);
+registerIModelClass("TAccount_7bb17507", TAccountBaseModel);
 
 const objectAjvFast = createOpenApiSyncAjvEngine({ allErrors: false, validationBindings: {} });
 const objectAjvAll = createOpenApiSyncAjvEngine({ allErrors: true, validationBindings: {} });
 
-const __resolvedModelSchema_Account = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"Account_7bb17507\",\"type\":\"object\",\"properties\":{\"displayName\":{\"allOf\":[{\"type\":\"string\"},{\"maxLength\":80}]},\"handle\":{\"allOf\":[{\"type\":\"string\"},{\"maxLength\":20,\"pattern\":\"^[a-z0-9_]+$\"}]}},\"required\":[\"displayName\",\"handle\"],\"additionalProperties\":false}") as object) as object;
-objectAjvFast.addSchema(structuredClone(__resolvedModelSchema_Account) as object, "Account_7bb17507");
-objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_Account) as object, "Account_7bb17507");
+const __resolvedModelSchema_TAccount = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"TAccount_7bb17507\",\"type\":\"object\",\"properties\":{\"displayName\":{\"allOf\":[{\"type\":\"string\"},{\"maxLength\":80}]},\"handle\":{\"allOf\":[{\"type\":\"string\"},{\"maxLength\":20,\"pattern\":\"^[a-z0-9_]+$\"}]}},\"required\":[\"displayName\",\"handle\"],\"additionalProperties\":false}") as object) as object;
+objectAjvFast.addSchema(structuredClone(__resolvedModelSchema_TAccount) as object, "TAccount_7bb17507");
+objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_TAccount) as object, "TAccount_7bb17507");
 
-const validateAccountFast = requireAjvSchema(objectAjvFast.getSchema("Account_7bb17507"), "Account_7bb17507");
-const validateAccountAll = requireAjvSchema(objectAjvAll.getSchema("Account_7bb17507"), "Account_7bb17507");
+const validateTAccountFast = requireAjvSchema(objectAjvFast.getSchema("TAccount_7bb17507"), "TAccount_7bb17507");
+const validateTAccountAll = requireAjvSchema(objectAjvAll.getSchema("TAccount_7bb17507"), "TAccount_7bb17507");
 
-function fillAccount(out: Record<string, unknown>, wire: Record<string, unknown>, copyIdentity = true): Record<string, unknown> {
+function fillTAccount(out: Record<string, unknown>, wire: Record<string, unknown>, copyIdentity = true): Record<string, unknown> {
   if (copyIdentity) {
     out["displayName"] = wire["displayName"];
     out["handle"] = wire["handle"];
@@ -67,22 +67,22 @@ function fillAccount(out: Record<string, unknown>, wire: Record<string, unknown>
   return out;
 }
 
-function stringifyAccountCore(value: Record<string, unknown>): string {
+function stringifyTAccountCore(value: Record<string, unknown>): string {
   return '{' + "\"displayName\":" + stringifyJsonString(value["displayName"] as string) + ",\"handle\":" + stringifyJsonString(value["handle"] as string) + '}';
 }
 
-export function stringifyAccount(value: AccountFields, options?: __GolemSerdeOptions): string {
+export function stringifyTAccount(value: TAccountFields, options?: __GolemSerdeOptions): string {
   const validates = serdeValidates(options, true);
   if (validates) {
-    assertAccount(value, options);
+    assertTAccount(value, options);
   }
-  return stringifyAccountCore(value as never);
+  return stringifyTAccountCore(value as never);
 }
 
-function convertFromWireAccount(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
+function convertFromWireTAccount(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
   const validates = serdeValidates(options, true);
   if (validates) {
-    assertAccount(wire, options);
+    assertTAccount(wire, options);
   }
   const source = isolated || wire === null || typeof wire !== 'object' ? wire : cloneConversionInput(wire);
   let result: unknown = source;
@@ -90,63 +90,63 @@ function convertFromWireAccount(wire: unknown, options: __GolemSerdeOptions | un
     if (options?.construct) {
       result = Reflect.construct(options.construct, [{ ...(source as Record<string, unknown>) }]);
     } else {
-      result = fillAccount({} as Record<string, unknown>, source as Record<string, unknown>);
+      result = fillTAccount({} as Record<string, unknown>, source as Record<string, unknown>);
     }
   }
   return result;
 }
 
-export function fromWireFormatAccount(wire: unknown, options?: __GolemSerdeOptions): AccountFields {
-  return convertFromWireAccount(wire, options, false) as AccountFields;
+export function fromWireFormatTAccount(wire: unknown, options?: __GolemSerdeOptions): TAccountFields {
+  return convertFromWireTAccount(wire, options, false) as TAccountFields;
 }
 
-function toWireFormatAccountCore(value: AccountFields): AccountJSON {
+function toWireFormatTAccountCore(value: TAccountFields): TAccountJSON {
   const record = value as Record<string, unknown>;
   const wire = { ["displayName"]: record["displayName"], ["handle"]: record["handle"] };
-  return wire as AccountJSON;
+  return wire as TAccountJSON;
 }
 
-export function toWireFormatAccount(value: AccountFields, options?: __GolemSerdeOptions): AccountJSON {
+export function toWireFormatTAccount(value: TAccountFields, options?: __GolemSerdeOptions): TAccountJSON {
   const validates = serdeValidates(options, true);
   if (validates) {
-    assertAccount(value, options);
+    assertTAccount(value, options);
   }
-  return toWireFormatAccountCore(value);
+  return toWireFormatTAccountCore(value);
 }
 
-export function parseAccount(text: string, options?: __GolemSerdeOptions): AccountFields {
-  return convertFromWireAccount(parseJson(text), options, true) as AccountFields;
+export function parseTAccount(text: string, options?: __GolemSerdeOptions): TAccountFields {
+  return convertFromWireTAccount(parseJson(text), options, true) as TAccountFields;
 }
 
-export function validateAccount(value: unknown, options?: __GolemValidateOptions): value is AccountFields {
+export function validateTAccount(value: unknown, options?: __GolemValidateOptions): value is TAccountFields {
   const failFast = options?.failFast !== false;
   let ok: boolean;
   let errors: readonly unknown[] | null | undefined;
   if (options?.validationContext === undefined) {
-    const validator = failFast ? validateAccountFast : validateAccountAll;
+    const validator = failFast ? validateTAccountFast : validateTAccountAll;
     ok = validator(value);
     errors = validator.errors;
   } else {
-    const validator = resolveModelValidationContextValidator(options.validationContext, "Account_7bb17507", failFast ? 'first' : 'all');
+    const validator = resolveModelValidationContextValidator(options.validationContext, "TAccount_7bb17507", failFast ? 'first' : 'all');
     ok = runSynchronousValidation(validator, value);
     errors = validator.errors;
   }
-  (validateAccount as { errors?: unknown }).errors = errors;
+  (validateTAccount as { errors?: unknown }).errors = errors;
   return ok;
 }
 
-export function assertAccount(value: unknown, options?: __GolemValidateOptions): AccountFields {
-  assertModelValue(value, options, validateAccountFast, validateAccountAll, "Account_7bb17507", IssueRepresentation.Model, IssueSource.TypeScript);
-  return value as AccountFields;
+export function assertTAccount(value: unknown, options?: __GolemValidateOptions): TAccountFields {
+  assertModelValue(value, options, validateTAccountFast, validateTAccountAll, "TAccount_7bb17507", IssueRepresentation.Model, IssueSource.TypeScript);
+  return value as TAccountFields;
 }
 
-createObjectCodec("Account_7bb17507", {
-  stringify: stringifyAccount as (value: never, options?: __GolemSerdeOptions) => string,
-  parse: parseAccount as (text: string, options?: __GolemSerdeOptions) => never,
-  validate: validateAccount,
-  assert: assertAccount,
-  toWireFormat: toWireFormatAccount,
-  fromWireFormat: fromWireFormatAccount,
-  schema: __resolvedModelSchema_Account,
+createObjectCodec("TAccount_7bb17507", {
+  stringify: stringifyTAccount as (value: never, options?: __GolemSerdeOptions) => string,
+  parse: parseTAccount as (text: string, options?: __GolemSerdeOptions) => never,
+  validate: validateTAccount,
+  assert: assertTAccount,
+  toWireFormat: toWireFormatTAccount,
+  fromWireFormat: fromWireFormatTAccount,
+  schema: __resolvedModelSchema_TAccount,
   issueSource: IssueSource.TypeScript,
 });

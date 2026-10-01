@@ -14,11 +14,11 @@ export function companionModelSource({ name, mobx }: { readonly name: CompanionM
   const mobxImport = mobx ? tsSource`import { asGenObservable } from '@exprtlabs/golem/mobx';\n` : tsSource``;
   const observable = mobx ? tsSource`    asGenObservable(this);\n` : tsSource``;
   return tsSource`import type { IModel } from '@exprtlabs/golem/model';
-import { ${modelName}BaseModel, type ${modelName}Fields } from ${generatedModule};
+import { T${modelName}BaseModel, type T${modelName}Fields } from ${generatedModule};
 ${mobxImport}
 export type T${modelName} = IModel<${fields[name]}>;
-export class ${modelName} extends ${modelName}BaseModel {
-  constructor(values: Partial<${modelName}Fields> = {}) {
+export class ${modelName} extends T${modelName}BaseModel {
+  constructor(values: Partial<T${modelName}Fields> = {}) {
     super(values);
 ${observable}  }
 }

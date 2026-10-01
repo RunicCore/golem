@@ -9,190 +9,190 @@ function modelObject(json: unknown, name: string): Record<string, unknown> {
   return requireModelObject(json, name);
 }
 
-export type PermissionInputFields = { permissions: number };
-export type PermissionInputJSON = { permissions: string };
-export type PermissionInputInit = Partial<{ permissions: number }>;
+export type TPermissionInputFields = { permissions: number };
+export type TPermissionInputJSON = { permissions: string };
+export type TPermissionInputInit = Partial<{ permissions: number }>;
 
-export abstract class PermissionInputBaseModel implements GeneratedModel<PermissionInputJSON, PermissionInputFields> {
-  declare readonly [generatedModelWireBrand]: PermissionInputJSON;
-  declare readonly [generatedModelFieldsBrand]: PermissionInputFields;
-  declare permissions: PermissionInputFields["permissions"];
+export abstract class TPermissionInputBaseModel implements GeneratedModel<TPermissionInputJSON, TPermissionInputFields> {
+  declare readonly [generatedModelWireBrand]: TPermissionInputJSON;
+  declare readonly [generatedModelFieldsBrand]: TPermissionInputFields;
+  declare permissions: TPermissionInputFields["permissions"];
 
-  public constructor(values: PermissionInputInit = {}) {
+  public constructor(values: TPermissionInputInit = {}) {
     if (Object.prototype.hasOwnProperty.call(values, "permissions")) defineModelProperty(this, "permissions", values["permissions"]);
   }
 
 }
 
-function decodePermissionInputModel(constructor: GeneratedModelConstructor, json: unknown): PermissionInputBaseModel {
-  const values = modelObject(json, "PermissionInputBaseModel");
+function decodeTPermissionInputModel(constructor: GeneratedModelConstructor, json: unknown): TPermissionInputBaseModel {
+  const values = modelObject(json, "TPermissionInputBaseModel");
   const result: Record<string, unknown> = { ...values };
   if (Object.prototype.hasOwnProperty.call(values, "permissions")) defineModelProperty(result, "permissions", convertModelField("deserialize", "permissions", () => (modelSerdeBindings["src/permission-rules.ts#encodePermissions\u0000src/permission-rules.ts#decodePermissions"].deserialize(values["permissions"]))));
-  return Reflect.construct(constructor, [result]) as PermissionInputBaseModel;
+  return Reflect.construct(constructor, [result]) as TPermissionInputBaseModel;
 }
 
-function encodePermissionInputModel(model: PermissionInputBaseModel): PermissionInputJSON {
+function encodeTPermissionInputModel(model: TPermissionInputBaseModel): TPermissionInputJSON {
   const result: Record<string, unknown> = {};
   if (Object.prototype.hasOwnProperty.call(model, "permissions")) defineModelProperty(result, "permissions", (convertModelField("serialize", "permissions", () => (modelSerdeBindings["src/permission-rules.ts#encodePermissions\u0000src/permission-rules.ts#decodePermissions"].serialize(model["permissions"])))));
-  return result as PermissionInputJSON;
+  return result as TPermissionInputJSON;
 }
 
-registerGeneratedModel(PermissionInputBaseModel, {
+registerGeneratedModel(TPermissionInputBaseModel, {
   fields: ["permissions"],
   conversion: {
-    decode: (value, constructor) => decodePermissionInputModel(constructor ?? PermissionInputBaseModel, value),
-    encode: encodePermissionInputModel,
+    decode: (value, constructor) => decodeTPermissionInputModel(constructor ?? TPermissionInputBaseModel, value),
+    encode: encodeTPermissionInputModel,
   },
-  codecId: "PermissionInput_8f46e801",
+  codecId: "TPermissionInput_8f46e801",
   profile: { validation: true, mobx: false },
 });
 
-registerIModelClass("PermissionInput_8f46e801", PermissionInputBaseModel);
+registerIModelClass("TPermissionInput_8f46e801", TPermissionInputBaseModel);
 
 const objectAjvFast = createOpenApiSyncAjvEngine({ allErrors: false, validationBindings: modelValidationBindings });
 const objectAjvAll = createOpenApiSyncAjvEngine({ allErrors: true, validationBindings: modelValidationBindings });
 
-const __resolvedModelSchema_PermissionInput = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"PermissionInput_8f46e801\",\"type\":\"object\",\"properties\":{\"permissions\":{\"exprtValidation\":{\"schema\":{\"allOf\":[{\"type\":\"number\"},{\"type\":\"integer\",\"maximum\":255,\"minimum\":0}]},\"bindings\":[\"src/permission-rules.ts#hasReadPermission\"]}}},\"required\":[\"permissions\"],\"additionalProperties\":false}") as object) as object;
-objectAjvFast.addSchema(structuredClone(__resolvedModelSchema_PermissionInput) as object, "PermissionInput_8f46e801");
-objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_PermissionInput) as object, "PermissionInput_8f46e801");
-const __resolvedWireSchema_PermissionInput = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"PermissionInput_8f46e801#wire\",\"type\":\"object\",\"properties\":{\"permissions\":{\"allOf\":[{\"type\":\"string\"},{\"pattern\":\"^0x[0-9a-fA-F]+$\"}]}},\"required\":[\"permissions\"],\"additionalProperties\":false}") as object, 'wire') as object;
-objectAjvFast.addSchema(structuredClone(__resolvedWireSchema_PermissionInput) as object, "PermissionInput_8f46e801#wire");
-objectAjvAll.addSchema(structuredClone(__resolvedWireSchema_PermissionInput) as object, "PermissionInput_8f46e801#wire");
-const __resolvedModelOnlySchema_PermissionInput = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"PermissionInput_8f46e801#model-only\",\"properties\":{\"permissions\":{\"exprtValidation\":{\"schema\":{\"allOf\":[{\"type\":\"number\"},{\"type\":\"integer\",\"maximum\":255,\"minimum\":0}]},\"bindings\":[\"src/permission-rules.ts#hasReadPermission\"]}}}}") as object, 'model-only') as object;
-objectAjvFast.addSchema(structuredClone(__resolvedModelOnlySchema_PermissionInput) as object, "PermissionInput_8f46e801#model-only");
-objectAjvAll.addSchema(structuredClone(__resolvedModelOnlySchema_PermissionInput) as object, "PermissionInput_8f46e801#model-only");
-const __resolvedWireOnlySchema_PermissionInput = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"PermissionInput_8f46e801#wire-only\",\"properties\":{\"permissions\":{\"allOf\":[{\"type\":\"string\"},{\"pattern\":\"^0x[0-9a-fA-F]+$\"}]}}}") as object, 'wire-only') as object;
-objectAjvFast.addSchema(structuredClone(__resolvedWireOnlySchema_PermissionInput) as object, "PermissionInput_8f46e801#wire-only");
-objectAjvAll.addSchema(structuredClone(__resolvedWireOnlySchema_PermissionInput) as object, "PermissionInput_8f46e801#wire-only");
+const __resolvedModelSchema_TPermissionInput = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"TPermissionInput_8f46e801\",\"type\":\"object\",\"properties\":{\"permissions\":{\"exprtValidation\":{\"schema\":{\"allOf\":[{\"type\":\"number\"},{\"type\":\"integer\",\"maximum\":255,\"minimum\":0}]},\"bindings\":[\"src/permission-rules.ts#hasReadPermission\"]}}},\"required\":[\"permissions\"],\"additionalProperties\":false}") as object) as object;
+objectAjvFast.addSchema(structuredClone(__resolvedModelSchema_TPermissionInput) as object, "TPermissionInput_8f46e801");
+objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_TPermissionInput) as object, "TPermissionInput_8f46e801");
+const __resolvedWireSchema_TPermissionInput = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"TPermissionInput_8f46e801#wire\",\"type\":\"object\",\"properties\":{\"permissions\":{\"allOf\":[{\"type\":\"string\"},{\"pattern\":\"^0x[0-9a-fA-F]+$\"}]}},\"required\":[\"permissions\"],\"additionalProperties\":false}") as object, 'wire') as object;
+objectAjvFast.addSchema(structuredClone(__resolvedWireSchema_TPermissionInput) as object, "TPermissionInput_8f46e801#wire");
+objectAjvAll.addSchema(structuredClone(__resolvedWireSchema_TPermissionInput) as object, "TPermissionInput_8f46e801#wire");
+const __resolvedModelOnlySchema_TPermissionInput = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"TPermissionInput_8f46e801#model-only\",\"properties\":{\"permissions\":{\"exprtValidation\":{\"schema\":{\"allOf\":[{\"type\":\"number\"},{\"type\":\"integer\",\"maximum\":255,\"minimum\":0}]},\"bindings\":[\"src/permission-rules.ts#hasReadPermission\"]}}}}") as object, 'model-only') as object;
+objectAjvFast.addSchema(structuredClone(__resolvedModelOnlySchema_TPermissionInput) as object, "TPermissionInput_8f46e801#model-only");
+objectAjvAll.addSchema(structuredClone(__resolvedModelOnlySchema_TPermissionInput) as object, "TPermissionInput_8f46e801#model-only");
+const __resolvedWireOnlySchema_TPermissionInput = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"TPermissionInput_8f46e801#wire-only\",\"properties\":{\"permissions\":{\"allOf\":[{\"type\":\"string\"},{\"pattern\":\"^0x[0-9a-fA-F]+$\"}]}}}") as object, 'wire-only') as object;
+objectAjvFast.addSchema(structuredClone(__resolvedWireOnlySchema_TPermissionInput) as object, "TPermissionInput_8f46e801#wire-only");
+objectAjvAll.addSchema(structuredClone(__resolvedWireOnlySchema_TPermissionInput) as object, "TPermissionInput_8f46e801#wire-only");
 
-const validatePermissionInputFast = requireAjvSchema(objectAjvFast.getSchema("PermissionInput_8f46e801"), "PermissionInput_8f46e801");
-const validatePermissionInputAll = requireAjvSchema(objectAjvAll.getSchema("PermissionInput_8f46e801"), "PermissionInput_8f46e801");
-const validatePermissionInputWireFast = requireAjvSchema(objectAjvFast.getSchema("PermissionInput_8f46e801#wire"), "PermissionInput_8f46e801#wire");
-const validatePermissionInputWireAll = requireAjvSchema(objectAjvAll.getSchema("PermissionInput_8f46e801#wire"), "PermissionInput_8f46e801#wire");
-const validatePermissionInputModelOnlyFast = requireAjvSchema(objectAjvFast.getSchema("PermissionInput_8f46e801#model-only"), "PermissionInput_8f46e801#model-only");
-const validatePermissionInputModelOnlyAll = requireAjvSchema(objectAjvAll.getSchema("PermissionInput_8f46e801#model-only"), "PermissionInput_8f46e801#model-only");
-const validatePermissionInputWireOnlyFast = requireAjvSchema(objectAjvFast.getSchema("PermissionInput_8f46e801#wire-only"), "PermissionInput_8f46e801#wire-only");
-const validatePermissionInputWireOnlyAll = requireAjvSchema(objectAjvAll.getSchema("PermissionInput_8f46e801#wire-only"), "PermissionInput_8f46e801#wire-only");
+const validateTPermissionInputFast = requireAjvSchema(objectAjvFast.getSchema("TPermissionInput_8f46e801"), "TPermissionInput_8f46e801");
+const validateTPermissionInputAll = requireAjvSchema(objectAjvAll.getSchema("TPermissionInput_8f46e801"), "TPermissionInput_8f46e801");
+const validateTPermissionInputWireFast = requireAjvSchema(objectAjvFast.getSchema("TPermissionInput_8f46e801#wire"), "TPermissionInput_8f46e801#wire");
+const validateTPermissionInputWireAll = requireAjvSchema(objectAjvAll.getSchema("TPermissionInput_8f46e801#wire"), "TPermissionInput_8f46e801#wire");
+const validateTPermissionInputModelOnlyFast = requireAjvSchema(objectAjvFast.getSchema("TPermissionInput_8f46e801#model-only"), "TPermissionInput_8f46e801#model-only");
+const validateTPermissionInputModelOnlyAll = requireAjvSchema(objectAjvAll.getSchema("TPermissionInput_8f46e801#model-only"), "TPermissionInput_8f46e801#model-only");
+const validateTPermissionInputWireOnlyFast = requireAjvSchema(objectAjvFast.getSchema("TPermissionInput_8f46e801#wire-only"), "TPermissionInput_8f46e801#wire-only");
+const validateTPermissionInputWireOnlyAll = requireAjvSchema(objectAjvAll.getSchema("TPermissionInput_8f46e801#wire-only"), "TPermissionInput_8f46e801#wire-only");
 
-function fillPermissionInput(out: Record<string, unknown>, wire: Record<string, unknown>): Record<string, unknown> {
+function fillTPermissionInput(out: Record<string, unknown>, wire: Record<string, unknown>): Record<string, unknown> {
   if (Object.prototype.hasOwnProperty.call(wire, "permissions")) {
     out["permissions"] = (typeof wire["permissions"] === 'string' ? modelSerdeBindings["src/permission-rules.ts#encodePermissions\u0000src/permission-rules.ts#decodePermissions"].deserialize(wire["permissions"]) : wire["permissions"]);
   }
   return out;
 }
 
-function stringifyPermissionInputCore(value: Record<string, unknown>): string {
+function stringifyTPermissionInputCore(value: Record<string, unknown>): string {
   return '{' + "\"permissions\":" + stringifyJsonString(modelSerdeBindings["src/permission-rules.ts#encodePermissions\u0000src/permission-rules.ts#decodePermissions"].serialize(value["permissions"]) as string) + '}';
 }
 
-function stringifyPermissionInputWire(value: Record<string, unknown>): string {
+function stringifyTPermissionInputWire(value: Record<string, unknown>): string {
   return '{' + "\"permissions\":" + stringifyJsonString(value["permissions"] as string) + '}';
 }
 
-export function stringifyPermissionInput(value: PermissionInputFields, options?: __GolemSerdeOptions): string {
+export function stringifyTPermissionInput(value: TPermissionInputFields, options?: __GolemSerdeOptions): string {
   const validates = serdeValidates(options, true);
   if (validates) {
-    assertPermissionInput(value, options);
+    assertTPermissionInput(value, options);
     const wire = { ["permissions"]: modelSerdeBindings["src/permission-rules.ts#encodePermissions\u0000src/permission-rules.ts#decodePermissions"].serialize(value["permissions"]) };
-    __golemAssertWireOnly_PermissionInput(wire, options);
-    return stringifyPermissionInputWire(wire as never);
+    __golemAssertWireOnly_TPermissionInput(wire, options);
+    return stringifyTPermissionInputWire(wire as never);
   }
-  return stringifyPermissionInputCore(value as never);
+  return stringifyTPermissionInputCore(value as never);
 }
 
-function convertFromWirePermissionInput(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
+function convertFromWireTPermissionInput(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
   const validates = serdeValidates(options, true);
   if (validates) {
-    __golemAssertWire_PermissionInput(wire, options);
+    __golemAssertWire_TPermissionInput(wire, options);
   }
   const source = isolated || wire === null || typeof wire !== 'object' ? wire : cloneConversionInput(wire);
   let result: unknown = source;
   if (source !== null && typeof source === 'object' && !Array.isArray(source)) {
     if (options?.construct) {
-      result = Reflect.construct(options.construct, [fillPermissionInput({ ...(source as Record<string, unknown>) }, (source as Record<string, unknown>))]);
+      result = Reflect.construct(options.construct, [fillTPermissionInput({ ...(source as Record<string, unknown>) }, (source as Record<string, unknown>))]);
     } else {
-      result = fillPermissionInput({} as Record<string, unknown>, source as Record<string, unknown>);
+      result = fillTPermissionInput({} as Record<string, unknown>, source as Record<string, unknown>);
     }
   }
   if (validates) {
-    __golemAssertModelOnly_PermissionInput(result, options);
+    __golemAssertModelOnly_TPermissionInput(result, options);
   }
   return result;
 }
 
-export function fromWireFormatPermissionInput(wire: unknown, options?: __GolemSerdeOptions): PermissionInputFields {
-  return convertFromWirePermissionInput(wire, options, false) as PermissionInputFields;
+export function fromWireFormatTPermissionInput(wire: unknown, options?: __GolemSerdeOptions): TPermissionInputFields {
+  return convertFromWireTPermissionInput(wire, options, false) as TPermissionInputFields;
 }
 
-function toWireFormatPermissionInputCore(value: PermissionInputFields): PermissionInputJSON {
+function toWireFormatTPermissionInputCore(value: TPermissionInputFields): TPermissionInputJSON {
   const record = value as Record<string, unknown>;
   const wire = { ["permissions"]: modelSerdeBindings["src/permission-rules.ts#encodePermissions\u0000src/permission-rules.ts#decodePermissions"].serialize(record["permissions"]) };
-  return wire as PermissionInputJSON;
+  return wire as TPermissionInputJSON;
 }
 
-export function toWireFormatPermissionInput(value: PermissionInputFields, options?: __GolemSerdeOptions): PermissionInputJSON {
+export function toWireFormatTPermissionInput(value: TPermissionInputFields, options?: __GolemSerdeOptions): TPermissionInputJSON {
   const validates = serdeValidates(options, true);
   if (validates) {
-    assertPermissionInput(value, options);
+    assertTPermissionInput(value, options);
   }
-  const wire = toWireFormatPermissionInputCore(value);
+  const wire = toWireFormatTPermissionInputCore(value);
   if (validates) {
-    __golemAssertWireOnly_PermissionInput(wire, options);
+    __golemAssertWireOnly_TPermissionInput(wire, options);
   }
   return wire;
 }
 
-export function parsePermissionInput(text: string, options?: __GolemSerdeOptions): PermissionInputFields {
-  return convertFromWirePermissionInput(parseJson(text), options, true) as PermissionInputFields;
+export function parseTPermissionInput(text: string, options?: __GolemSerdeOptions): TPermissionInputFields {
+  return convertFromWireTPermissionInput(parseJson(text), options, true) as TPermissionInputFields;
 }
 
-export function validatePermissionInput(value: unknown, options?: __GolemValidateOptions): value is PermissionInputFields {
+export function validateTPermissionInput(value: unknown, options?: __GolemValidateOptions): value is TPermissionInputFields {
   const failFast = options?.failFast !== false;
   let ok: boolean;
   let errors: readonly unknown[] | null | undefined;
   if (options?.validationContext === undefined) {
-    const validator = failFast ? validatePermissionInputFast : validatePermissionInputAll;
+    const validator = failFast ? validateTPermissionInputFast : validateTPermissionInputAll;
     ok = validator(value);
     errors = validator.errors;
   } else {
-    const validator = resolveModelValidationContextValidator(options.validationContext, "PermissionInput_8f46e801", failFast ? 'first' : 'all');
+    const validator = resolveModelValidationContextValidator(options.validationContext, "TPermissionInput_8f46e801", failFast ? 'first' : 'all');
     ok = runSynchronousValidation(validator, value);
     errors = validator.errors;
   }
-  (validatePermissionInput as { errors?: unknown }).errors = errors;
+  (validateTPermissionInput as { errors?: unknown }).errors = errors;
   return ok;
 }
 
-export function assertPermissionInput(value: unknown, options?: __GolemValidateOptions): PermissionInputFields {
-  assertModelValue(value, options, validatePermissionInputFast, validatePermissionInputAll, "PermissionInput_8f46e801", IssueRepresentation.Model, IssueSource.TypeScript);
-  return value as PermissionInputFields;
+export function assertTPermissionInput(value: unknown, options?: __GolemValidateOptions): TPermissionInputFields {
+  assertModelValue(value, options, validateTPermissionInputFast, validateTPermissionInputAll, "TPermissionInput_8f46e801", IssueRepresentation.Model, IssueSource.TypeScript);
+  return value as TPermissionInputFields;
 }
 
-function __golemAssertWire_PermissionInput(value: unknown, options?: __GolemValidateOptions): Record<string, unknown> {
-  assertModelValue(value, options, validatePermissionInputWireFast, validatePermissionInputWireAll, "PermissionInput_8f46e801#wire", IssueRepresentation.Wire, IssueSource.TypeScript);
+function __golemAssertWire_TPermissionInput(value: unknown, options?: __GolemValidateOptions): Record<string, unknown> {
+  assertModelValue(value, options, validateTPermissionInputWireFast, validateTPermissionInputWireAll, "TPermissionInput_8f46e801#wire", IssueRepresentation.Wire, IssueSource.TypeScript);
   return value as Record<string, unknown>;
 }
 
-function __golemAssertModelOnly_PermissionInput(value: unknown, options?: __GolemValidateOptions): Record<string, unknown> {
-  assertModelValue(value, options, validatePermissionInputModelOnlyFast, validatePermissionInputModelOnlyAll, "PermissionInput_8f46e801#model-only", IssueRepresentation.Model, IssueSource.TypeScript);
+function __golemAssertModelOnly_TPermissionInput(value: unknown, options?: __GolemValidateOptions): Record<string, unknown> {
+  assertModelValue(value, options, validateTPermissionInputModelOnlyFast, validateTPermissionInputModelOnlyAll, "TPermissionInput_8f46e801#model-only", IssueRepresentation.Model, IssueSource.TypeScript);
   return value as Record<string, unknown>;
 }
 
-function __golemAssertWireOnly_PermissionInput(value: unknown, options?: __GolemValidateOptions): Record<string, unknown> {
-  assertModelValue(value, options, validatePermissionInputWireOnlyFast, validatePermissionInputWireOnlyAll, "PermissionInput_8f46e801#wire-only", IssueRepresentation.Wire, IssueSource.TypeScript);
+function __golemAssertWireOnly_TPermissionInput(value: unknown, options?: __GolemValidateOptions): Record<string, unknown> {
+  assertModelValue(value, options, validateTPermissionInputWireOnlyFast, validateTPermissionInputWireOnlyAll, "TPermissionInput_8f46e801#wire-only", IssueRepresentation.Wire, IssueSource.TypeScript);
   return value as Record<string, unknown>;
 }
 
-createObjectCodec("PermissionInput_8f46e801", {
-  stringify: stringifyPermissionInput as (value: never, options?: __GolemSerdeOptions) => string,
-  parse: parsePermissionInput as (text: string, options?: __GolemSerdeOptions) => never,
-  validate: validatePermissionInput,
-  assert: assertPermissionInput,
-  toWireFormat: toWireFormatPermissionInput,
-  fromWireFormat: fromWireFormatPermissionInput,
-  schema: __resolvedModelSchema_PermissionInput,
-  wireSchema: __resolvedWireSchema_PermissionInput,
-  modelOnlySchema: __resolvedModelOnlySchema_PermissionInput,
-  wireOnlySchema: __resolvedWireOnlySchema_PermissionInput,
+createObjectCodec("TPermissionInput_8f46e801", {
+  stringify: stringifyTPermissionInput as (value: never, options?: __GolemSerdeOptions) => string,
+  parse: parseTPermissionInput as (text: string, options?: __GolemSerdeOptions) => never,
+  validate: validateTPermissionInput,
+  assert: assertTPermissionInput,
+  toWireFormat: toWireFormatTPermissionInput,
+  fromWireFormat: fromWireFormatTPermissionInput,
+  schema: __resolvedModelSchema_TPermissionInput,
+  wireSchema: __resolvedWireSchema_TPermissionInput,
+  modelOnlySchema: __resolvedModelOnlySchema_TPermissionInput,
+  wireOnlySchema: __resolvedWireOnlySchema_TPermissionInput,
   issueSource: IssueSource.TypeScript,
 });

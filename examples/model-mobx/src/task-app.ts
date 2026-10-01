@@ -1,7 +1,7 @@
 import { toWireFormat } from '@exprtlabs/golem/serde';
 import { Task } from './task.model.js';
 import type { TTask } from './task.model.js';
-import type { TaskJSON } from './task.model.generated.js';
+import type { TTaskJSON } from './task.model.generated.js';
 
 export interface TaskDraft {
   title: string;
@@ -15,6 +15,6 @@ export function createTask(draft: TaskDraft): Task {
   });
 }
 
-export function saveTask(task: Task): TaskJSON {
+export function saveTask(task: Task): TTaskJSON {
   return toWireFormat<TTask>(task);
 }

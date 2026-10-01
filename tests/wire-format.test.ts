@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { pathToFileURL } from 'node:url';
 import test from 'node:test';
 
 import { generate as generateOpenApi } from '@exprtlabs/golem-openapi/generator';
@@ -9,12 +9,6 @@ import { generate } from '#model/generator';
 import { command, ttsc } from './support/process.js';
 import { fixturePath, writeGeneratedArtifacts } from './fixture-project.js';
 import { compileModelProject, createModelProject, writeModelSources } from './model-project.js';
-
-// modelName is internal to the built package; load it from dist instead of compiling package source into the tests.
-const distRoot = path.dirname(fileURLToPath(import.meta.resolve('@exprtlabs/golem/model')));
-const { modelName } = await import(pathToFileURL(path.join(distRoot, 'model-name.js')).href) as {
-  readonly modelName: (aliasName: string) => string;
-};
 
 const MODEL_SOURCE = /\.models?\.ts$/;
 const SDK_MONEY_SPEC = 'models/unify-validate/sdk-money-ref-plus-extra-tvalidation-local-tvalidation-and-tserde-share-one-/money.yaml';
@@ -64,11 +58,10 @@ function modelChecks(sourceFile: string, companionFile: string): { imports: stri
   const jsonTypes = new Set<string>();
   const checks: WireCheck[] = [];
   for (const alias of aliases) {
-    const name = modelName(alias);
-    if (!exported.has(name)) continue;
+    if (!exported.has(alias)) continue;
     sourceTypes.push(alias);
-    jsonTypes.add(`${name}JSON`);
-    checks.push({ label: `${path.basename(sourceFile)}#${alias}`, model: alias, json: `${name}JSON` });
+    jsonTypes.add(`${alias}JSON`);
+    checks.push({ label: `${path.basename(sourceFile)}#${alias}`, model: alias, json: `${alias}JSON` });
   }
   for (const [, className, base] of classes) {
     if (!className || !base || !exported.has(base)) continue;
@@ -292,11 +285,11 @@ test('toWireFormat<T> returns the emitted JSON type through the ttsc plugin with
   writeModelSources(sourceRoot, {
     'payment-editor.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
 import type { Minimum } from '@exprtlabs/golem/tags';
-import { PaymentEditorBaseModel } from './payment-editor.model.generated.js';
+import { TPaymentEditorBaseModel } from './payment-editor.model.generated.js';
 
 export type TPaymentEditor = IModel<{ amount: number & Minimum<0>; note: string; paidAt: Date }>;
 
-export class PaymentEditor extends PaymentEditorBaseModel {
+export class PaymentEditor extends TPaymentEditorBaseModel {
   public get summary(): string {
     return \`\${this.amount}: \${this.note}\`;
   }
@@ -307,10 +300,10 @@ export class PaymentEditor extends PaymentEditorBaseModel {
   writeModelSources(sourceRoot, {
     'main.ts': `import { toWireFormat } from '@exprtlabs/golem/serde';
 import { PaymentEditor, type TPaymentEditor } from './payment-editor.model.js';
-import type { PaymentEditorJSON } from './payment-editor.model.generated.js';
+import type { TPaymentEditorJSON } from './payment-editor.model.generated.js';
 
 const editor = new PaymentEditor({ amount: 30, note: 'Lunch', paidAt: new Date('2026-01-02T03:04:05.000Z') });
-const wire: PaymentEditorJSON = toWireFormat<TPaymentEditor>(editor);
+const wire: TPaymentEditorJSON = toWireFormat<TPaymentEditor>(editor);
 const fromClass = toWireFormat<PaymentEditor>(editor);
 const paidAt: string = fromClass.paidAt;
 // @ts-expect-error summary is a model getter, not a wire field.
@@ -337,7 +330,7 @@ test('wire output omits optional fields that are absent or undefined', async t =
   });
   writeModelSources(sourceRoot, {
     'visit.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
-import { SlotBaseModel, VisitBaseModel } from './visit.model.generated.js';
+import { TSlotBaseModel, TVisitBaseModel } from './visit.model.generated.js';
 
 export type TSlot = IModel<{ at: Date; room?: string }>;
 export type TVisit = IModel<{
@@ -347,15 +340,15 @@ export type TVisit = IModel<{
   detail?: { at: Date; memo?: string };
   window?: Partial<Pick<TSlot, 'at' | 'room'>>;
 }>;
-export class Slot extends SlotBaseModel {}
-export class Visit extends VisitBaseModel {}
+export class Slot extends TSlotBaseModel {}
+export class Visit extends TVisitBaseModel {}
 `,
   });
   writeGeneratedArtifacts(generate({ root, profile: { mobx: false, validation: true } }).artifacts);
   await compileModelProject(root);
   const generated = await import(pathToFileURL(path.join(root, 'build/visit.model.generated.js')).href) as {
-    readonly toWireFormatVisit: (value: unknown) => Record<string, unknown>;
-    readonly stringifyVisit: (value: unknown) => string;
+    readonly toWireFormatTVisit: (value: unknown) => Record<string, unknown>;
+    readonly stringifyTVisit: (value: unknown) => string;
   };
   const { Visit } = await import(pathToFileURL(path.join(root, 'build/visit.model.js')).href) as {
     readonly Visit: new (values: object) => object;
@@ -363,7 +356,7 @@ export class Visit extends VisitBaseModel {}
   const { encodeGeneratedModel } = await import('@exprtlabs/golem/conversion');
   const at = new Date('2026-01-02T03:04:05.000Z');
   const encoders = [
-    ['toWireFormat', generated.toWireFormatVisit],
+    ['toWireFormat', generated.toWireFormatTVisit],
     ['encodeGeneratedModel', (value: unknown) => encodeGeneratedModel(value as never) as Record<string, unknown>],
   ] as const;
   const visits = [
@@ -378,7 +371,7 @@ export class Visit extends VisitBaseModel {}
       assert.deepEqual(Object.keys(wire.window as object), [], `${label}: projection`);
       // A nested plain object keeps an authored undefined key; an absent one stays absent.
       if (visitName === 'absent') assert.deepEqual(Object.keys(wire.detail as object), ['at'], `${label}: nested object`);
-      assert.equal(JSON.stringify(wire), generated.stringifyVisit(visit), `${label}: matches stringify`);
+      assert.equal(JSON.stringify(wire), generated.stringifyTVisit(visit), `${label}: matches stringify`);
     }
   }
 });

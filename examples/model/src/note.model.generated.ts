@@ -8,89 +8,89 @@ function modelObject(json: unknown, name: string): Record<string, unknown> {
   return requireModelObject(json, name);
 }
 
-export type NoteFields = { text: string };
-export type NoteJSON = { text: string };
-export type NoteInit = { text: string };
-function decodeNote(value: unknown): NoteFields { const data = modelObject(value, "Note"); return (data) as NoteFields; }
-const initNote = decodeNote;
-function encodeNote(value: unknown): NoteJSON { const data = value as Record<string, unknown>; return (data) as NoteJSON; }
+export type TNoteFields = { text: string };
+export type TNoteJSON = { text: string };
+export type TNoteInit = { text: string };
+function decodeTNote(value: unknown): TNoteFields { const data = modelObject(value, "TNote"); return (data) as TNoteFields; }
+const initTNote = decodeTNote;
+function encodeTNote(value: unknown): TNoteJSON { const data = value as Record<string, unknown>; return (data) as TNoteJSON; }
 
-export type NotebookFields = { notes: Array<NoteFields> };
-export type NotebookJSON = { notes: Array<NoteJSON> };
-export type NotebookInit = Partial<{ notes: Array<NoteInit> }>;
+export type TNotebookFields = { notes: Array<TNoteFields> };
+export type TNotebookJSON = { notes: Array<TNoteJSON> };
+export type TNotebookInit = Partial<{ notes: Array<TNoteInit> }>;
 
-export abstract class NotebookBaseModel implements GeneratedModel<NotebookJSON, NotebookFields> {
-  declare readonly [generatedModelWireBrand]: NotebookJSON;
-  declare readonly [generatedModelFieldsBrand]: NotebookFields;
-  declare notes: NotebookFields["notes"];
+export abstract class TNotebookBaseModel implements GeneratedModel<TNotebookJSON, TNotebookFields> {
+  declare readonly [generatedModelWireBrand]: TNotebookJSON;
+  declare readonly [generatedModelFieldsBrand]: TNotebookFields;
+  declare notes: TNotebookFields["notes"];
 
-  public constructor(values: NotebookInit = {}) {
-    if (Object.prototype.hasOwnProperty.call(values, "notes")) defineModelProperty(this, "notes", Array.isArray(values["notes"]) ? (values["notes"] as readonly unknown[]).map((item) => initNote(item)) : values["notes"]);
+  public constructor(values: TNotebookInit = {}) {
+    if (Object.prototype.hasOwnProperty.call(values, "notes")) defineModelProperty(this, "notes", Array.isArray(values["notes"]) ? (values["notes"] as readonly unknown[]).map((item) => initTNote(item)) : values["notes"]);
   }
 
 }
 
-function decodeNotebookModel(constructor: GeneratedModelConstructor, json: unknown): NotebookBaseModel {
-  const values = modelObject(json, "NotebookBaseModel");
+function decodeTNotebookModel(constructor: GeneratedModelConstructor, json: unknown): TNotebookBaseModel {
+  const values = modelObject(json, "TNotebookBaseModel");
   const result: Record<string, unknown> = { ...values };
-  if (Object.prototype.hasOwnProperty.call(values, "notes")) defineModelProperty(result, "notes", convertModelField("deserialize", "notes", () => (Array.isArray(values["notes"]) ? (values["notes"] as readonly unknown[]).map((item, index) => convertModelField('deserialize', index, () => (decodeNote(item)))) : values["notes"])));
-  return Reflect.construct(constructor, [result]) as NotebookBaseModel;
+  if (Object.prototype.hasOwnProperty.call(values, "notes")) defineModelProperty(result, "notes", convertModelField("deserialize", "notes", () => (Array.isArray(values["notes"]) ? (values["notes"] as readonly unknown[]).map((item, index) => convertModelField('deserialize', index, () => (decodeTNote(item)))) : values["notes"])));
+  return Reflect.construct(constructor, [result]) as TNotebookBaseModel;
 }
 
-function encodeNotebookModel(model: NotebookBaseModel): NotebookJSON {
+function encodeTNotebookModel(model: TNotebookBaseModel): TNotebookJSON {
   const result: Record<string, unknown> = {};
-  if (Object.prototype.hasOwnProperty.call(model, "notes")) defineModelProperty(result, "notes", (convertModelField("serialize", "notes", () => (Array.isArray(model["notes"]) ? (model["notes"] as readonly unknown[]).map((item, index) => convertModelField('serialize', index, () => (encodeNote(item)))) : model["notes"]))));
-  return result as NotebookJSON;
+  if (Object.prototype.hasOwnProperty.call(model, "notes")) defineModelProperty(result, "notes", (convertModelField("serialize", "notes", () => (Array.isArray(model["notes"]) ? (model["notes"] as readonly unknown[]).map((item, index) => convertModelField('serialize', index, () => (encodeTNote(item)))) : model["notes"]))));
+  return result as TNotebookJSON;
 }
 
-registerGeneratedModel(NotebookBaseModel, {
+registerGeneratedModel(TNotebookBaseModel, {
   fields: ["notes"],
   conversion: {
-    decode: (value, constructor) => decodeNotebookModel(constructor ?? NotebookBaseModel, value),
-    encode: encodeNotebookModel,
+    decode: (value, constructor) => decodeTNotebookModel(constructor ?? TNotebookBaseModel, value),
+    encode: encodeTNotebookModel,
   },
-  codecId: "Notebook_5213e3e5",
+  codecId: "TNotebook_3630608b",
   profile: { validation: true, mobx: false },
 });
 
-registerIModelClass("Notebook_5213e3e5", NotebookBaseModel);
+registerIModelClass("TNotebook_3630608b", TNotebookBaseModel);
 
 const objectAjvFast = createOpenApiSyncAjvEngine({ allErrors: false, validationBindings: {} });
 const objectAjvAll = createOpenApiSyncAjvEngine({ allErrors: true, validationBindings: {} });
 
-const __resolvedModelSchema_Note = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"Note_3fe96627\",\"type\":\"object\",\"properties\":{\"text\":{\"type\":\"string\"}},\"required\":[\"text\"],\"additionalProperties\":false}") as object) as object;
-objectAjvFast.addSchema(structuredClone(__resolvedModelSchema_Note) as object, "Note_3fe96627");
-objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_Note) as object, "Note_3fe96627");
-const __resolvedModelSchema_Notebook = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"Notebook_5213e3e5\",\"type\":\"object\",\"properties\":{\"notes\":{\"type\":\"array\",\"items\":{\"$ref\":\"#/$defs/Note_3fe96627\"}}},\"required\":[\"notes\"],\"additionalProperties\":false,\"$defs\":{\"Note_3fe96627\":{\"type\":\"object\",\"properties\":{\"text\":{\"type\":\"string\"}},\"required\":[\"text\"],\"additionalProperties\":false}}}") as object) as object;
-objectAjvFast.addSchema(structuredClone(__resolvedModelSchema_Notebook) as object, "Notebook_5213e3e5");
-objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_Notebook) as object, "Notebook_5213e3e5");
+const __resolvedModelSchema_TNote = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"TNote_3fe96627\",\"type\":\"object\",\"properties\":{\"text\":{\"type\":\"string\"}},\"required\":[\"text\"],\"additionalProperties\":false}") as object) as object;
+objectAjvFast.addSchema(structuredClone(__resolvedModelSchema_TNote) as object, "TNote_3fe96627");
+objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_TNote) as object, "TNote_3fe96627");
+const __resolvedModelSchema_TNotebook = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"TNotebook_3630608b\",\"type\":\"object\",\"properties\":{\"notes\":{\"type\":\"array\",\"items\":{\"$ref\":\"#/$defs/TNote_3fe96627\"}}},\"required\":[\"notes\"],\"additionalProperties\":false,\"$defs\":{\"TNote_3fe96627\":{\"type\":\"object\",\"properties\":{\"text\":{\"type\":\"string\"}},\"required\":[\"text\"],\"additionalProperties\":false}}}") as object) as object;
+objectAjvFast.addSchema(structuredClone(__resolvedModelSchema_TNotebook) as object, "TNotebook_3630608b");
+objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_TNotebook) as object, "TNotebook_3630608b");
 
-const validateNoteFast = requireAjvSchema(objectAjvFast.getSchema("Note_3fe96627"), "Note_3fe96627");
-const validateNoteAll = requireAjvSchema(objectAjvAll.getSchema("Note_3fe96627"), "Note_3fe96627");
+const validateTNoteFast = requireAjvSchema(objectAjvFast.getSchema("TNote_3fe96627"), "TNote_3fe96627");
+const validateTNoteAll = requireAjvSchema(objectAjvAll.getSchema("TNote_3fe96627"), "TNote_3fe96627");
 
-function fillNote(out: Record<string, unknown>, wire: Record<string, unknown>, copyIdentity = true): Record<string, unknown> {
+function fillTNote(out: Record<string, unknown>, wire: Record<string, unknown>, copyIdentity = true): Record<string, unknown> {
   if (copyIdentity) {
     out["text"] = wire["text"];
   }
   return out;
 }
 
-function stringifyNoteCore(value: Record<string, unknown>): string {
+function stringifyTNoteCore(value: Record<string, unknown>): string {
   return '{' + "\"text\":" + stringifyJsonString(value["text"] as string) + '}';
 }
 
-export function stringifyNote(value: NoteFields, options?: __GolemSerdeOptions): string {
+export function stringifyTNote(value: TNoteFields, options?: __GolemSerdeOptions): string {
   const validates = serdeValidates(options, true);
   if (validates) {
-    assertNote(value, options);
+    assertTNote(value, options);
   }
-  return stringifyNoteCore(value as never);
+  return stringifyTNoteCore(value as never);
 }
 
-function convertFromWireNote(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
+function convertFromWireTNote(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
   const validates = serdeValidates(options, true);
   if (validates) {
-    assertNote(wire, options);
+    assertTNote(wire, options);
   }
   const source = isolated || wire === null || typeof wire !== 'object' ? wire : cloneConversionInput(wire);
   let result: unknown = source;
@@ -98,158 +98,158 @@ function convertFromWireNote(wire: unknown, options: __GolemSerdeOptions | undef
     if (options?.construct) {
       result = Reflect.construct(options.construct, [{ ...(source as Record<string, unknown>) }]);
     } else {
-      result = fillNote({} as Record<string, unknown>, source as Record<string, unknown>);
+      result = fillTNote({} as Record<string, unknown>, source as Record<string, unknown>);
     }
   }
   return result;
 }
 
-export function fromWireFormatNote(wire: unknown, options?: __GolemSerdeOptions): NoteFields {
-  return convertFromWireNote(wire, options, false) as NoteFields;
+export function fromWireFormatTNote(wire: unknown, options?: __GolemSerdeOptions): TNoteFields {
+  return convertFromWireTNote(wire, options, false) as TNoteFields;
 }
 
-function toWireFormatNoteCore(value: NoteFields): NoteJSON {
+function toWireFormatTNoteCore(value: TNoteFields): TNoteJSON {
   const record = value as Record<string, unknown>;
   const wire = { ["text"]: record["text"] };
-  return wire as NoteJSON;
+  return wire as TNoteJSON;
 }
 
-export function toWireFormatNote(value: NoteFields, options?: __GolemSerdeOptions): NoteJSON {
+export function toWireFormatTNote(value: TNoteFields, options?: __GolemSerdeOptions): TNoteJSON {
   const validates = serdeValidates(options, true);
   if (validates) {
-    assertNote(value, options);
+    assertTNote(value, options);
   }
-  return toWireFormatNoteCore(value);
+  return toWireFormatTNoteCore(value);
 }
 
-export function parseNote(text: string, options?: __GolemSerdeOptions): NoteFields {
-  return convertFromWireNote(parseJson(text), options, true) as NoteFields;
+export function parseTNote(text: string, options?: __GolemSerdeOptions): TNoteFields {
+  return convertFromWireTNote(parseJson(text), options, true) as TNoteFields;
 }
 
-export function validateNote(value: unknown, options?: __GolemValidateOptions): value is NoteFields {
+export function validateTNote(value: unknown, options?: __GolemValidateOptions): value is TNoteFields {
   const failFast = options?.failFast !== false;
   let ok: boolean;
   let errors: readonly unknown[] | null | undefined;
   if (options?.validationContext === undefined) {
-    const validator = failFast ? validateNoteFast : validateNoteAll;
+    const validator = failFast ? validateTNoteFast : validateTNoteAll;
     ok = validator(value);
     errors = validator.errors;
   } else {
-    const validator = resolveModelValidationContextValidator(options.validationContext, "Note_3fe96627", failFast ? 'first' : 'all');
+    const validator = resolveModelValidationContextValidator(options.validationContext, "TNote_3fe96627", failFast ? 'first' : 'all');
     ok = runSynchronousValidation(validator, value);
     errors = validator.errors;
   }
-  (validateNote as { errors?: unknown }).errors = errors;
+  (validateTNote as { errors?: unknown }).errors = errors;
   return ok;
 }
 
-export function assertNote(value: unknown, options?: __GolemValidateOptions): NoteFields {
-  assertModelValue(value, options, validateNoteFast, validateNoteAll, "Note_3fe96627", IssueRepresentation.Model, IssueSource.TypeScript);
-  return value as NoteFields;
+export function assertTNote(value: unknown, options?: __GolemValidateOptions): TNoteFields {
+  assertModelValue(value, options, validateTNoteFast, validateTNoteAll, "TNote_3fe96627", IssueRepresentation.Model, IssueSource.TypeScript);
+  return value as TNoteFields;
 }
 
-createObjectCodec("Note_3fe96627", {
-  stringify: stringifyNote as (value: never, options?: __GolemSerdeOptions) => string,
-  parse: parseNote as (text: string, options?: __GolemSerdeOptions) => never,
-  validate: validateNote,
-  assert: assertNote,
-  toWireFormat: toWireFormatNote,
-  fromWireFormat: fromWireFormatNote,
-  schema: __resolvedModelSchema_Note,
+createObjectCodec("TNote_3fe96627", {
+  stringify: stringifyTNote as (value: never, options?: __GolemSerdeOptions) => string,
+  parse: parseTNote as (text: string, options?: __GolemSerdeOptions) => never,
+  validate: validateTNote,
+  assert: assertTNote,
+  toWireFormat: toWireFormatTNote,
+  fromWireFormat: fromWireFormatTNote,
+  schema: __resolvedModelSchema_TNote,
   issueSource: IssueSource.TypeScript,
 });
 
-const validateNotebookFast = requireAjvSchema(objectAjvFast.getSchema("Notebook_5213e3e5"), "Notebook_5213e3e5");
-const validateNotebookAll = requireAjvSchema(objectAjvAll.getSchema("Notebook_5213e3e5"), "Notebook_5213e3e5");
+const validateTNotebookFast = requireAjvSchema(objectAjvFast.getSchema("TNotebook_3630608b"), "TNotebook_3630608b");
+const validateTNotebookAll = requireAjvSchema(objectAjvAll.getSchema("TNotebook_3630608b"), "TNotebook_3630608b");
 
-function fillNotebook(out: Record<string, unknown>, wire: Record<string, unknown>): Record<string, unknown> {
+function fillTNotebook(out: Record<string, unknown>, wire: Record<string, unknown>): Record<string, unknown> {
   if (Object.prototype.hasOwnProperty.call(wire, "notes")) {
     out["notes"] = Array.isArray(wire["notes"]) ? (wire["notes"] as readonly unknown[]).map((item) => ({ ["text"]: (item as Record<string, unknown>)["text"] })) : wire["notes"];
   }
   return out;
 }
 
-function stringifyNotebookCore(value: Record<string, unknown>): string {
-  return '{' + "\"notes\":" + stringifyJsonArray(value["notes"] as ArrayLike<unknown>, (item) => stringifyNoteCore(item as never)) + '}';
+function stringifyTNotebookCore(value: Record<string, unknown>): string {
+  return '{' + "\"notes\":" + stringifyJsonArray(value["notes"] as ArrayLike<unknown>, (item) => stringifyTNoteCore(item as never)) + '}';
 }
 
-export function stringifyNotebook(value: NotebookFields, options?: __GolemSerdeOptions): string {
+export function stringifyTNotebook(value: TNotebookFields, options?: __GolemSerdeOptions): string {
   const validates = serdeValidates(options, true);
   if (validates) {
-    assertNotebook(value, options);
+    assertTNotebook(value, options);
   }
-  return stringifyNotebookCore(value as never);
+  return stringifyTNotebookCore(value as never);
 }
 
-function convertFromWireNotebook(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
+function convertFromWireTNotebook(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
   const validates = serdeValidates(options, true);
   if (validates) {
-    assertNotebook(wire, options);
+    assertTNotebook(wire, options);
   }
   const source = isolated || wire === null || typeof wire !== 'object' ? wire : cloneConversionInput(wire);
   let result: unknown = source;
   if (source !== null && typeof source === 'object' && !Array.isArray(source)) {
     if (options?.construct) {
-      result = Reflect.construct(options.construct, [fillNotebook({ ...(source as Record<string, unknown>) }, (source as Record<string, unknown>))]);
+      result = Reflect.construct(options.construct, [fillTNotebook({ ...(source as Record<string, unknown>) }, (source as Record<string, unknown>))]);
     } else {
-      result = fillNotebook({} as Record<string, unknown>, source as Record<string, unknown>);
+      result = fillTNotebook({} as Record<string, unknown>, source as Record<string, unknown>);
     }
   }
   return result;
 }
 
-export function fromWireFormatNotebook(wire: unknown, options?: __GolemSerdeOptions): NotebookFields {
-  return convertFromWireNotebook(wire, options, false) as NotebookFields;
+export function fromWireFormatTNotebook(wire: unknown, options?: __GolemSerdeOptions): TNotebookFields {
+  return convertFromWireTNotebook(wire, options, false) as TNotebookFields;
 }
 
-function toWireFormatNotebookCore(value: NotebookFields): NotebookJSON {
+function toWireFormatTNotebookCore(value: TNotebookFields): TNotebookJSON {
   const record = value as Record<string, unknown>;
   let __golemField0: unknown;
-  const wire = { ["notes"]: (__golemField0 = record["notes"], Array.isArray(__golemField0) ? (__golemField0 as readonly unknown[]).map((item) => toWireFormatNoteCore(item as never)) : __golemField0) };
-  return wire as NotebookJSON;
+  const wire = { ["notes"]: (__golemField0 = record["notes"], Array.isArray(__golemField0) ? (__golemField0 as readonly unknown[]).map((item) => toWireFormatTNoteCore(item as never)) : __golemField0) };
+  return wire as TNotebookJSON;
 }
 
-export function toWireFormatNotebook(value: NotebookFields, options?: __GolemSerdeOptions): NotebookJSON {
+export function toWireFormatTNotebook(value: TNotebookFields, options?: __GolemSerdeOptions): TNotebookJSON {
   const validates = serdeValidates(options, true);
   if (validates) {
-    assertNotebook(value, options);
+    assertTNotebook(value, options);
   }
-  return toWireFormatNotebookCore(value);
+  return toWireFormatTNotebookCore(value);
 }
 
-export function parseNotebook(text: string, options?: __GolemSerdeOptions): NotebookFields {
-  return convertFromWireNotebook(parseJson(text), options, true) as NotebookFields;
+export function parseTNotebook(text: string, options?: __GolemSerdeOptions): TNotebookFields {
+  return convertFromWireTNotebook(parseJson(text), options, true) as TNotebookFields;
 }
 
-export function validateNotebook(value: unknown, options?: __GolemValidateOptions): value is NotebookFields {
+export function validateTNotebook(value: unknown, options?: __GolemValidateOptions): value is TNotebookFields {
   const failFast = options?.failFast !== false;
   let ok: boolean;
   let errors: readonly unknown[] | null | undefined;
   if (options?.validationContext === undefined) {
-    const validator = failFast ? validateNotebookFast : validateNotebookAll;
+    const validator = failFast ? validateTNotebookFast : validateTNotebookAll;
     ok = validator(value);
     errors = validator.errors;
   } else {
-    const validator = resolveModelValidationContextValidator(options.validationContext, "Notebook_5213e3e5", failFast ? 'first' : 'all');
+    const validator = resolveModelValidationContextValidator(options.validationContext, "TNotebook_3630608b", failFast ? 'first' : 'all');
     ok = runSynchronousValidation(validator, value);
     errors = validator.errors;
   }
-  (validateNotebook as { errors?: unknown }).errors = errors;
+  (validateTNotebook as { errors?: unknown }).errors = errors;
   return ok;
 }
 
-export function assertNotebook(value: unknown, options?: __GolemValidateOptions): NotebookFields {
-  assertModelValue(value, options, validateNotebookFast, validateNotebookAll, "Notebook_5213e3e5", IssueRepresentation.Model, IssueSource.TypeScript);
-  return value as NotebookFields;
+export function assertTNotebook(value: unknown, options?: __GolemValidateOptions): TNotebookFields {
+  assertModelValue(value, options, validateTNotebookFast, validateTNotebookAll, "TNotebook_3630608b", IssueRepresentation.Model, IssueSource.TypeScript);
+  return value as TNotebookFields;
 }
 
-createObjectCodec("Notebook_5213e3e5", {
-  stringify: stringifyNotebook as (value: never, options?: __GolemSerdeOptions) => string,
-  parse: parseNotebook as (text: string, options?: __GolemSerdeOptions) => never,
-  validate: validateNotebook,
-  assert: assertNotebook,
-  toWireFormat: toWireFormatNotebook,
-  fromWireFormat: fromWireFormatNotebook,
-  schema: __resolvedModelSchema_Notebook,
+createObjectCodec("TNotebook_3630608b", {
+  stringify: stringifyTNotebook as (value: never, options?: __GolemSerdeOptions) => string,
+  parse: parseTNotebook as (text: string, options?: __GolemSerdeOptions) => never,
+  validate: validateTNotebook,
+  assert: assertTNotebook,
+  toWireFormat: toWireFormatTNotebook,
+  fromWireFormat: fromWireFormatTNotebook,
+  schema: __resolvedModelSchema_TNotebook,
   issueSource: IssueSource.TypeScript,
 });

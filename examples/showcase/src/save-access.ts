@@ -2,7 +2,7 @@
 import { toWireFormat } from '@exprtlabs/golem/serde';
 import type { ProjectAccessClientPort } from '../sdk/index.js';
 import type { ProjectAccessEditor, TProjectAccessEditor } from './project-access.model.js';
-import type { ProjectAccessEditorJSON } from './project-access.model.generated.js';
+import type { TProjectAccessEditorJSON } from './project-access.model.generated.js';
 
 export async function saveProjectAccess(
   client: ProjectAccessClientPort,
@@ -10,7 +10,7 @@ export async function saveProjectAccess(
   access: ProjectAccessEditor,
 ) {
   const updateAccess = client.updateProjectAccess();
-  const body: ProjectAccessEditorJSON = toWireFormat<TProjectAccessEditor>(access);
+  const body: TProjectAccessEditorJSON = toWireFormat<TProjectAccessEditor>(access);
   return updateAccess.execute({ path: { projectId }, body });
 }
 // #endregion api-operations

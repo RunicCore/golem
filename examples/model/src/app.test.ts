@@ -7,7 +7,7 @@ import { validateInstance } from '@exprtlabs/golem/validation';
 import { createTask, saveTask } from './task-app.js';
 import { Task } from './task.model.js';
 import type { TTask } from './task.model.js';
-import type { TaskJSON } from './task.model.generated.js';
+import type { TTaskJSON } from './task.model.generated.js';
 import { readTask, readTaskData, writeTask } from './read-json.js';
 import { Notebook } from './note.model.js';
 import type { TNote } from './note.model.js';
@@ -47,7 +47,7 @@ test('priority is a number in the model and a word in JSON', () => {
 });
 
 test('an unknown priority word fails conversion', () => {
-  const wire = { title: 'Plan the release', done: false, priority: 'urgent' } as unknown as TaskJSON;
+  const wire = { title: 'Plan the release', done: false, priority: 'urgent' } as unknown as TTaskJSON;
   assert.throws(() => fromWireFormat<Task>(wire), (error: unknown) => error instanceof LibError);
 });
 

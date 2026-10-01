@@ -179,8 +179,8 @@ test('generated validation executes local references and exact-object rules', as
     profile: { mobx: false, validation: true },
   });
   writeGeneratedArtifacts(result.artifacts);
-  const paymentId = generatedCodecId(result.artifacts.map((artifact) => artifact.content).join('\n'), 'Payment');
-  assert.match(result.artifacts.map(artifact => artifact.content).join('\n'), /export abstract class PaymentBaseModel/);
+  const paymentId = generatedCodecId(result.artifacts.map((artifact) => artifact.content).join('\n'), 'TPayment');
+  assert.match(result.artifacts.map(artifact => artifact.content).join('\n'), /export abstract class TPaymentBaseModel/);
   await compileModelProject(root);
   const verifier = path.join(root, 'verify.mjs');
   await command(root, process.execPath, [verifier, paymentId]);

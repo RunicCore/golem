@@ -82,12 +82,11 @@ function readable(
 /**
  * A type alias names its projection only when it is a concrete, authored alias: no type
  * parameters, not declared in a `.d.ts` file (so lib aliases such as `Record` never name),
- * and a name that survives the same identifier check as keys. `TBilling` becomes `Billing`.
+ * and a name that survives the same identifier check as keys. `TBilling` stays `TBilling`.
  */
 function aliasProjectionName(declaration: ts.TypeAliasDeclaration): string | undefined {
   if (declaration.typeParameters?.length || declaration.getSourceFile().isDeclarationFile) return undefined;
-  const alias = declaration.name.text;
-  return pascalIdentifier(/^T[A-Z]/.test(alias) ? alias.slice(1) : alias);
+  return pascalIdentifier(declaration.name.text);
 }
 
 /**

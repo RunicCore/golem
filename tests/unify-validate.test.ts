@@ -86,11 +86,11 @@ test('global validation true emits codec Ajv for IObject and IModel', async (t: 
   writeArtifacts(generate({ root, profile: { mobx: false, validation: true } }));
   const source = generatedText(root);
   assertAjvEngineCreated(source);
-  assert.match(source, /export function validatePayload\b/);
-  assert.match(source, /export function validateAlias\b/);
+  assert.match(source, /export function validateTPayload\b/);
+  assert.match(source, /export function validateTAlias\b/);
   await compile(root);
   const { Payload } = await import(pathToFileURL(path.join(root, 'build/payload.model.js')).href);
-  const codec = requireObjectCodec(generatedCodecIdFromRoot(root, 'Payload'));
+  const codec = requireObjectCodec(generatedCodecIdFromRoot(root, 'TPayload'));
   const model = new Payload({ title: 'ok' });
   assert.equal(codec.validate(model), false, 'interned Ajv sees handwritten extra keys');
   assert.deepEqual((await validateInstance(model)).map((issue) => issue.path), []);
@@ -235,7 +235,7 @@ test('SDK Money $ref plus extra TValidation, local TValidation, and TSerde compi
   assert.equal(rules.extraMoneyCalls - callsBefore, 1, 'extraMoney runs once per parse');
   assert.equal(jsonCodec.validate(jsonValue), true);
   assert.throws(() => codec.parse(JSON.stringify({ ...validWire, code: 'gg' })));
-  assert.equal((companion.match(/function validateCheckout\b/g) ?? []).length, 1);
+  assert.equal((companion.match(/function validateTCheckout\b/g) ?? []).length, 1);
   assert.doesNotMatch(companion, /function validateMoney\b/, 'the parent companion does not duplicate the interned Money validator');
   const nestedCalls = companion.match(/addNestedCodecSchema\([\s\S]*?\);/g) ?? [];
   assert.ok(nestedCalls.length >= 1, 'interned Money codec schema is registered on the parent Ajv engines');
@@ -245,12 +245,12 @@ test('SDK Money $ref plus extra TValidation, local TValidation, and TSerde compi
     (companion.match(/const __resolved(?:Model|Wire|ModelOnly|WireOnly)Schema_/g) ?? []).length,
     'interned $ref rewrite runs once per hoisted schema, residual schemas included',
   );
-  const validateCheckout = companion.match(/export function validateCheckout[\s\S]*?\n\}/)?.[0] ?? '';
-  assert.notEqual(validateCheckout, '', 'validateCheckout is found in the companion');
-  assert.match(validateCheckout, /runSynchronousValidation\(validator, value\)/);
+  const validateTCheckout = companion.match(/export function validateTCheckout[\s\S]*?\n\}/)?.[0] ?? '';
+  assert.notEqual(validateTCheckout, '', 'validateTCheckout is found in the companion');
+  assert.match(validateTCheckout, /runSynchronousValidation\(validator, value\)/);
   assert.doesNotMatch(
-    validateCheckout,
+    validateTCheckout,
     /addNestedCodecSchema|resolveGeneratedModelSchemaRefs|createOpenApiSyncAjvEngine/,
-    'engine setup and schema ref resolution run once at module scope, not on every validateCheckout call',
+    'engine setup and schema ref resolution run once at module scope, not on every validateTCheckout call',
   );
 });

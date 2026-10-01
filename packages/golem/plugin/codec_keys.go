@@ -31,7 +31,6 @@ func loadCodecKeys(prog *driver.Program, cwd string) codecKeys {
 		dir = filepath.ToSlash(dir)
 		collectCodecKeyProperties(file.AsNode(), func(source, short, id string) {
 			source = filepath.ToSlash(source)
-			short = modelName(short)
 			if openAPIKeys {
 				keySource := filepath.ToSlash(filepath.Join(dir, filepath.FromSlash(source)))
 				keys.add(keySource+"#"+short, id)
@@ -126,7 +125,7 @@ func (k codecKeys) idForSymbol(symbol *shimast.Symbol, cwd string) string {
 	if symbol == nil {
 		return ""
 	}
-	short := modelName(symbol.Name)
+	short := symbol.Name
 	if short == "" {
 		return ""
 	}
@@ -158,7 +157,7 @@ func (k codecKeys) idForSymbol(symbol *shimast.Symbol, cwd string) string {
 }
 
 func (k codecKeys) resolve(ident string, checker *shimchecker.Checker, file *shimast.SourceFile, cwd string) string {
-	short := modelName(ident)
+	short := ident
 	if short == "" {
 		return ""
 	}
@@ -183,8 +182,7 @@ func (k codecKeys) resolve(ident string, checker *shimchecker.Checker, file *shi
 }
 
 func (k codecKeys) known(ident string) bool {
-	short := modelName(ident)
-	return short != "" && len(k.byShort[short]) > 0
+	return ident != "" && len(k.byShort[ident]) > 0
 }
 
 func portableRel(cwd, filename string) string {

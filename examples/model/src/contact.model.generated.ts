@@ -8,145 +8,145 @@ function modelObject(json: unknown, name: string): Record<string, unknown> {
   return requireModelObject(json, name);
 }
 
-export type EmailFields = { kind: "email"; address: string };
-export type EmailJSON = { kind: "email"; address: string };
-export type EmailInit = Partial<{ kind: "email"; address: string }>;
+export type TEmailFields = { kind: "email"; address: string };
+export type TEmailJSON = { kind: "email"; address: string };
+export type TEmailInit = Partial<{ kind: "email"; address: string }>;
 
-export abstract class EmailBaseModel implements GeneratedModel<EmailJSON, EmailFields> {
-  declare readonly [generatedModelWireBrand]: EmailJSON;
-  declare readonly [generatedModelFieldsBrand]: EmailFields;
-  declare kind: EmailFields["kind"];
-  declare address: EmailFields["address"];
+export abstract class TEmailBaseModel implements GeneratedModel<TEmailJSON, TEmailFields> {
+  declare readonly [generatedModelWireBrand]: TEmailJSON;
+  declare readonly [generatedModelFieldsBrand]: TEmailFields;
+  declare kind: TEmailFields["kind"];
+  declare address: TEmailFields["address"];
 
-  public constructor(values: EmailInit = {}) {
+  public constructor(values: TEmailInit = {}) {
     if (Object.prototype.hasOwnProperty.call(values, "kind")) defineModelProperty(this, "kind", values["kind"]);
     if (Object.prototype.hasOwnProperty.call(values, "address")) defineModelProperty(this, "address", values["address"]);
   }
 
 }
 
-function decodeEmailModel(constructor: GeneratedModelConstructor, json: unknown): EmailBaseModel {
-  const values = modelObject(json, "EmailBaseModel");
-  return Reflect.construct(constructor, [values]) as EmailBaseModel;
+function decodeTEmailModel(constructor: GeneratedModelConstructor, json: unknown): TEmailBaseModel {
+  const values = modelObject(json, "TEmailBaseModel");
+  return Reflect.construct(constructor, [values]) as TEmailBaseModel;
 }
 
-function encodeEmailModel(model: EmailBaseModel): EmailJSON {
+function encodeTEmailModel(model: TEmailBaseModel): TEmailJSON {
   const result: Record<string, unknown> = {};
   if (Object.prototype.hasOwnProperty.call(model, "kind")) defineModelProperty(result, "kind", (model["kind"]));
   if (Object.prototype.hasOwnProperty.call(model, "address")) defineModelProperty(result, "address", (model["address"]));
-  return result as EmailJSON;
+  return result as TEmailJSON;
 }
 
-registerGeneratedModel(EmailBaseModel, {
+registerGeneratedModel(TEmailBaseModel, {
   fields: ["kind", "address"],
   conversion: {
-    decode: (value, constructor) => decodeEmailModel(constructor ?? EmailBaseModel, value),
-    encode: encodeEmailModel,
+    decode: (value, constructor) => decodeTEmailModel(constructor ?? TEmailBaseModel, value),
+    encode: encodeTEmailModel,
   },
-  codecId: "Email_3d5e923d",
+  codecId: "TEmail_3d5e923d",
   profile: { validation: true, mobx: false },
 });
 
-registerIModelClass("Email_3d5e923d", EmailBaseModel);
+registerIModelClass("TEmail_3d5e923d", TEmailBaseModel);
 
-export type PhoneFields = { kind: "phone"; number: string };
-export type PhoneJSON = { kind: "phone"; number: string };
-export type PhoneInit = Partial<{ kind: "phone"; number: string }>;
+export type TPhoneFields = { kind: "phone"; number: string };
+export type TPhoneJSON = { kind: "phone"; number: string };
+export type TPhoneInit = Partial<{ kind: "phone"; number: string }>;
 
-export abstract class PhoneBaseModel implements GeneratedModel<PhoneJSON, PhoneFields> {
-  declare readonly [generatedModelWireBrand]: PhoneJSON;
-  declare readonly [generatedModelFieldsBrand]: PhoneFields;
-  declare kind: PhoneFields["kind"];
-  declare number: PhoneFields["number"];
+export abstract class TPhoneBaseModel implements GeneratedModel<TPhoneJSON, TPhoneFields> {
+  declare readonly [generatedModelWireBrand]: TPhoneJSON;
+  declare readonly [generatedModelFieldsBrand]: TPhoneFields;
+  declare kind: TPhoneFields["kind"];
+  declare number: TPhoneFields["number"];
 
-  public constructor(values: PhoneInit = {}) {
+  public constructor(values: TPhoneInit = {}) {
     if (Object.prototype.hasOwnProperty.call(values, "kind")) defineModelProperty(this, "kind", values["kind"]);
     if (Object.prototype.hasOwnProperty.call(values, "number")) defineModelProperty(this, "number", values["number"]);
   }
 
 }
 
-function decodePhoneModel(constructor: GeneratedModelConstructor, json: unknown): PhoneBaseModel {
-  const values = modelObject(json, "PhoneBaseModel");
-  return Reflect.construct(constructor, [values]) as PhoneBaseModel;
+function decodeTPhoneModel(constructor: GeneratedModelConstructor, json: unknown): TPhoneBaseModel {
+  const values = modelObject(json, "TPhoneBaseModel");
+  return Reflect.construct(constructor, [values]) as TPhoneBaseModel;
 }
 
-function encodePhoneModel(model: PhoneBaseModel): PhoneJSON {
+function encodeTPhoneModel(model: TPhoneBaseModel): TPhoneJSON {
   const result: Record<string, unknown> = {};
   if (Object.prototype.hasOwnProperty.call(model, "kind")) defineModelProperty(result, "kind", (model["kind"]));
   if (Object.prototype.hasOwnProperty.call(model, "number")) defineModelProperty(result, "number", (model["number"]));
-  return result as PhoneJSON;
+  return result as TPhoneJSON;
 }
 
-registerGeneratedModel(PhoneBaseModel, {
+registerGeneratedModel(TPhoneBaseModel, {
   fields: ["kind", "number"],
   conversion: {
-    decode: (value, constructor) => decodePhoneModel(constructor ?? PhoneBaseModel, value),
-    encode: encodePhoneModel,
+    decode: (value, constructor) => decodeTPhoneModel(constructor ?? TPhoneBaseModel, value),
+    encode: encodeTPhoneModel,
   },
-  codecId: "Phone_6ba1ec97",
+  codecId: "TPhone_6ba1ec97",
   profile: { validation: true, mobx: false },
 });
 
-registerIModelClass("Phone_6ba1ec97", PhoneBaseModel);
+registerIModelClass("TPhone_6ba1ec97", TPhoneBaseModel);
 
-export type ContactFields = { value: EmailBaseModel | PhoneBaseModel };
-export type ContactJSON = { value: EmailJSON | PhoneJSON };
-export type ContactInit = Partial<{ value: EmailInit | EmailBaseModel | PhoneInit | PhoneBaseModel }>;
+export type TContactFields = { value: TEmailBaseModel | TPhoneBaseModel };
+export type TContactJSON = { value: TEmailJSON | TPhoneJSON };
+export type TContactInit = Partial<{ value: TEmailInit | TEmailBaseModel | TPhoneInit | TPhoneBaseModel }>;
 
-export abstract class ContactBaseModel implements GeneratedModel<ContactJSON, ContactFields> {
-  declare readonly [generatedModelWireBrand]: ContactJSON;
-  declare readonly [generatedModelFieldsBrand]: ContactFields;
-  declare value: ContactFields["value"];
+export abstract class TContactBaseModel implements GeneratedModel<TContactJSON, TContactFields> {
+  declare readonly [generatedModelWireBrand]: TContactJSON;
+  declare readonly [generatedModelFieldsBrand]: TContactFields;
+  declare value: TContactFields["value"];
 
-  public constructor(values: ContactInit = {}) {
-    if (Object.prototype.hasOwnProperty.call(values, "value")) defineModelProperty(this, "value", ((values["value"] as object) instanceof EmailBaseModel && !((values["value"] as object) instanceof PhoneBaseModel && PhoneBaseModel.prototype instanceof EmailBaseModel) ? (((values["value"] as unknown as Record<string, unknown>)["kind"] === "email") ? (values["value"] == null || values["value"] instanceof EmailBaseModel ? values["value"] : new (requireIModelClass("Email_3d5e923d") as unknown as new (values?: EmailInit) => EmailBaseModel)(values["value"] as unknown as EmailInit)) : unknownDiscriminatorValue("kind", (values["value"] as unknown as Record<string, unknown>)["kind"], 'deserialize')) : ((values["value"] as object) instanceof PhoneBaseModel && !((values["value"] as object) instanceof EmailBaseModel && EmailBaseModel.prototype instanceof PhoneBaseModel) ? (((values["value"] as unknown as Record<string, unknown>)["kind"] === "phone") ? (values["value"] == null || values["value"] instanceof PhoneBaseModel ? values["value"] : new (requireIModelClass("Phone_6ba1ec97") as unknown as new (values?: PhoneInit) => PhoneBaseModel)(values["value"] as unknown as PhoneInit)) : unknownDiscriminatorValue("kind", (values["value"] as unknown as Record<string, unknown>)["kind"], 'deserialize')) : (typeof values["value"] === 'object' && values["value"] !== null && !Array.isArray(values["value"]) && ((values["value"] as unknown as Record<string, unknown>)["kind"] === "email") ? (values["value"] == null || values["value"] instanceof EmailBaseModel ? values["value"] : new (requireIModelClass("Email_3d5e923d") as unknown as new (values?: EmailInit) => EmailBaseModel)(values["value"] as unknown as EmailInit)) : (typeof values["value"] === 'object' && values["value"] !== null && !Array.isArray(values["value"]) && ((values["value"] as unknown as Record<string, unknown>)["kind"] === "phone") ? (values["value"] == null || values["value"] instanceof PhoneBaseModel ? values["value"] : new (requireIModelClass("Phone_6ba1ec97") as unknown as new (values?: PhoneInit) => PhoneBaseModel)(values["value"] as unknown as PhoneInit)) : ((typeof values["value"] === 'object' && values["value"] !== null && !Array.isArray(values["value"]) ? unknownDiscriminatorValue("kind", (values["value"] as unknown as Record<string, unknown>)["kind"], 'deserialize') : values["value"])))))));
+  public constructor(values: TContactInit = {}) {
+    if (Object.prototype.hasOwnProperty.call(values, "value")) defineModelProperty(this, "value", ((values["value"] as object) instanceof TEmailBaseModel && !((values["value"] as object) instanceof TPhoneBaseModel && TPhoneBaseModel.prototype instanceof TEmailBaseModel) ? (((values["value"] as unknown as Record<string, unknown>)["kind"] === "email") ? (values["value"] == null || values["value"] instanceof TEmailBaseModel ? values["value"] : new (requireIModelClass("TEmail_3d5e923d") as unknown as new (values?: TEmailInit) => TEmailBaseModel)(values["value"] as unknown as TEmailInit)) : unknownDiscriminatorValue("kind", (values["value"] as unknown as Record<string, unknown>)["kind"], 'deserialize')) : ((values["value"] as object) instanceof TPhoneBaseModel && !((values["value"] as object) instanceof TEmailBaseModel && TEmailBaseModel.prototype instanceof TPhoneBaseModel) ? (((values["value"] as unknown as Record<string, unknown>)["kind"] === "phone") ? (values["value"] == null || values["value"] instanceof TPhoneBaseModel ? values["value"] : new (requireIModelClass("TPhone_6ba1ec97") as unknown as new (values?: TPhoneInit) => TPhoneBaseModel)(values["value"] as unknown as TPhoneInit)) : unknownDiscriminatorValue("kind", (values["value"] as unknown as Record<string, unknown>)["kind"], 'deserialize')) : (typeof values["value"] === 'object' && values["value"] !== null && !Array.isArray(values["value"]) && ((values["value"] as unknown as Record<string, unknown>)["kind"] === "email") ? (values["value"] == null || values["value"] instanceof TEmailBaseModel ? values["value"] : new (requireIModelClass("TEmail_3d5e923d") as unknown as new (values?: TEmailInit) => TEmailBaseModel)(values["value"] as unknown as TEmailInit)) : (typeof values["value"] === 'object' && values["value"] !== null && !Array.isArray(values["value"]) && ((values["value"] as unknown as Record<string, unknown>)["kind"] === "phone") ? (values["value"] == null || values["value"] instanceof TPhoneBaseModel ? values["value"] : new (requireIModelClass("TPhone_6ba1ec97") as unknown as new (values?: TPhoneInit) => TPhoneBaseModel)(values["value"] as unknown as TPhoneInit)) : ((typeof values["value"] === 'object' && values["value"] !== null && !Array.isArray(values["value"]) ? unknownDiscriminatorValue("kind", (values["value"] as unknown as Record<string, unknown>)["kind"], 'deserialize') : values["value"])))))));
   }
 
 }
 
-function decodeContactModel(constructor: GeneratedModelConstructor, json: unknown): ContactBaseModel {
-  const values = modelObject(json, "ContactBaseModel");
+function decodeTContactModel(constructor: GeneratedModelConstructor, json: unknown): TContactBaseModel {
+  const values = modelObject(json, "TContactBaseModel");
   const result: Record<string, unknown> = { ...values };
-  if (Object.prototype.hasOwnProperty.call(values, "value")) defineModelProperty(result, "value", convertModelField("deserialize", "value", () => (((values["value"] as object) instanceof EmailBaseModel && !((values["value"] as object) instanceof PhoneBaseModel && PhoneBaseModel.prototype instanceof EmailBaseModel) ? (((values["value"] as unknown as Record<string, unknown>)["kind"] === "email") ? (values["value"] == null || values["value"] instanceof EmailBaseModel ? values["value"] : decodeGeneratedModelTrusted(requireIModelClass("Email_3d5e923d"), values["value"])) : unknownDiscriminatorValue("kind", (values["value"] as unknown as Record<string, unknown>)["kind"], 'deserialize')) : ((values["value"] as object) instanceof PhoneBaseModel && !((values["value"] as object) instanceof EmailBaseModel && EmailBaseModel.prototype instanceof PhoneBaseModel) ? (((values["value"] as unknown as Record<string, unknown>)["kind"] === "phone") ? (values["value"] == null || values["value"] instanceof PhoneBaseModel ? values["value"] : decodeGeneratedModelTrusted(requireIModelClass("Phone_6ba1ec97"), values["value"])) : unknownDiscriminatorValue("kind", (values["value"] as unknown as Record<string, unknown>)["kind"], 'deserialize')) : (typeof values["value"] === 'object' && values["value"] !== null && !Array.isArray(values["value"]) && ((values["value"] as unknown as Record<string, unknown>)["kind"] === "email") ? (values["value"] == null || values["value"] instanceof EmailBaseModel ? values["value"] : decodeGeneratedModelTrusted(requireIModelClass("Email_3d5e923d"), values["value"])) : (typeof values["value"] === 'object' && values["value"] !== null && !Array.isArray(values["value"]) && ((values["value"] as unknown as Record<string, unknown>)["kind"] === "phone") ? (values["value"] == null || values["value"] instanceof PhoneBaseModel ? values["value"] : decodeGeneratedModelTrusted(requireIModelClass("Phone_6ba1ec97"), values["value"])) : ((typeof values["value"] === 'object' && values["value"] !== null && !Array.isArray(values["value"]) ? unknownDiscriminatorValue("kind", (values["value"] as unknown as Record<string, unknown>)["kind"], 'deserialize') : values["value"])))))))));
-  return Reflect.construct(constructor, [result]) as ContactBaseModel;
+  if (Object.prototype.hasOwnProperty.call(values, "value")) defineModelProperty(result, "value", convertModelField("deserialize", "value", () => (((values["value"] as object) instanceof TEmailBaseModel && !((values["value"] as object) instanceof TPhoneBaseModel && TPhoneBaseModel.prototype instanceof TEmailBaseModel) ? (((values["value"] as unknown as Record<string, unknown>)["kind"] === "email") ? (values["value"] == null || values["value"] instanceof TEmailBaseModel ? values["value"] : decodeGeneratedModelTrusted(requireIModelClass("TEmail_3d5e923d"), values["value"])) : unknownDiscriminatorValue("kind", (values["value"] as unknown as Record<string, unknown>)["kind"], 'deserialize')) : ((values["value"] as object) instanceof TPhoneBaseModel && !((values["value"] as object) instanceof TEmailBaseModel && TEmailBaseModel.prototype instanceof TPhoneBaseModel) ? (((values["value"] as unknown as Record<string, unknown>)["kind"] === "phone") ? (values["value"] == null || values["value"] instanceof TPhoneBaseModel ? values["value"] : decodeGeneratedModelTrusted(requireIModelClass("TPhone_6ba1ec97"), values["value"])) : unknownDiscriminatorValue("kind", (values["value"] as unknown as Record<string, unknown>)["kind"], 'deserialize')) : (typeof values["value"] === 'object' && values["value"] !== null && !Array.isArray(values["value"]) && ((values["value"] as unknown as Record<string, unknown>)["kind"] === "email") ? (values["value"] == null || values["value"] instanceof TEmailBaseModel ? values["value"] : decodeGeneratedModelTrusted(requireIModelClass("TEmail_3d5e923d"), values["value"])) : (typeof values["value"] === 'object' && values["value"] !== null && !Array.isArray(values["value"]) && ((values["value"] as unknown as Record<string, unknown>)["kind"] === "phone") ? (values["value"] == null || values["value"] instanceof TPhoneBaseModel ? values["value"] : decodeGeneratedModelTrusted(requireIModelClass("TPhone_6ba1ec97"), values["value"])) : ((typeof values["value"] === 'object' && values["value"] !== null && !Array.isArray(values["value"]) ? unknownDiscriminatorValue("kind", (values["value"] as unknown as Record<string, unknown>)["kind"], 'deserialize') : values["value"])))))))));
+  return Reflect.construct(constructor, [result]) as TContactBaseModel;
 }
 
-function encodeContactModel(model: ContactBaseModel): ContactJSON {
+function encodeTContactModel(model: TContactBaseModel): TContactJSON {
   const result: Record<string, unknown> = {};
-  if (Object.prototype.hasOwnProperty.call(model, "value")) defineModelProperty(result, "value", (convertModelField("serialize", "value", () => (((model["value"] as object) instanceof EmailBaseModel && !((model["value"] as object) instanceof PhoneBaseModel && PhoneBaseModel.prototype instanceof EmailBaseModel) ? (((model["value"] as unknown as Record<string, unknown>)["kind"] === "email") ? (withDiscriminatorValue(model["value"] instanceof EmailBaseModel ? encodeGeneratedModel(model["value"]) : model["value"], "kind", (model["value"] as unknown as Record<string, unknown>)["kind"])) : unknownDiscriminatorValue("kind", (model["value"] as unknown as Record<string, unknown>)["kind"], 'serialize')) : ((model["value"] as object) instanceof PhoneBaseModel && !((model["value"] as object) instanceof EmailBaseModel && EmailBaseModel.prototype instanceof PhoneBaseModel) ? (((model["value"] as unknown as Record<string, unknown>)["kind"] === "phone") ? (withDiscriminatorValue(model["value"] instanceof PhoneBaseModel ? encodeGeneratedModel(model["value"]) : model["value"], "kind", (model["value"] as unknown as Record<string, unknown>)["kind"])) : unknownDiscriminatorValue("kind", (model["value"] as unknown as Record<string, unknown>)["kind"], 'serialize')) : (typeof model["value"] === 'object' && model["value"] !== null && !Array.isArray(model["value"]) && ((model["value"] as unknown as Record<string, unknown>)["kind"] === "email") ? (withDiscriminatorValue(model["value"] instanceof EmailBaseModel ? encodeGeneratedModel(model["value"]) : model["value"], "kind", (model["value"] as unknown as Record<string, unknown>)["kind"])) : (typeof model["value"] === 'object' && model["value"] !== null && !Array.isArray(model["value"]) && ((model["value"] as unknown as Record<string, unknown>)["kind"] === "phone") ? (withDiscriminatorValue(model["value"] instanceof PhoneBaseModel ? encodeGeneratedModel(model["value"]) : model["value"], "kind", (model["value"] as unknown as Record<string, unknown>)["kind"])) : ((model["value"] == null ? model["value"] : unknownDiscriminatorValue("kind", (model["value"] as unknown as Record<string, unknown>)["kind"], 'serialize')))))))))));
-  return result as ContactJSON;
+  if (Object.prototype.hasOwnProperty.call(model, "value")) defineModelProperty(result, "value", (convertModelField("serialize", "value", () => (((model["value"] as object) instanceof TEmailBaseModel && !((model["value"] as object) instanceof TPhoneBaseModel && TPhoneBaseModel.prototype instanceof TEmailBaseModel) ? (((model["value"] as unknown as Record<string, unknown>)["kind"] === "email") ? (withDiscriminatorValue(model["value"] instanceof TEmailBaseModel ? encodeGeneratedModel(model["value"]) : model["value"], "kind", (model["value"] as unknown as Record<string, unknown>)["kind"])) : unknownDiscriminatorValue("kind", (model["value"] as unknown as Record<string, unknown>)["kind"], 'serialize')) : ((model["value"] as object) instanceof TPhoneBaseModel && !((model["value"] as object) instanceof TEmailBaseModel && TEmailBaseModel.prototype instanceof TPhoneBaseModel) ? (((model["value"] as unknown as Record<string, unknown>)["kind"] === "phone") ? (withDiscriminatorValue(model["value"] instanceof TPhoneBaseModel ? encodeGeneratedModel(model["value"]) : model["value"], "kind", (model["value"] as unknown as Record<string, unknown>)["kind"])) : unknownDiscriminatorValue("kind", (model["value"] as unknown as Record<string, unknown>)["kind"], 'serialize')) : (typeof model["value"] === 'object' && model["value"] !== null && !Array.isArray(model["value"]) && ((model["value"] as unknown as Record<string, unknown>)["kind"] === "email") ? (withDiscriminatorValue(model["value"] instanceof TEmailBaseModel ? encodeGeneratedModel(model["value"]) : model["value"], "kind", (model["value"] as unknown as Record<string, unknown>)["kind"])) : (typeof model["value"] === 'object' && model["value"] !== null && !Array.isArray(model["value"]) && ((model["value"] as unknown as Record<string, unknown>)["kind"] === "phone") ? (withDiscriminatorValue(model["value"] instanceof TPhoneBaseModel ? encodeGeneratedModel(model["value"]) : model["value"], "kind", (model["value"] as unknown as Record<string, unknown>)["kind"])) : ((model["value"] == null ? model["value"] : unknownDiscriminatorValue("kind", (model["value"] as unknown as Record<string, unknown>)["kind"], 'serialize')))))))))));
+  return result as TContactJSON;
 }
 
-registerGeneratedModel(ContactBaseModel, {
+registerGeneratedModel(TContactBaseModel, {
   fields: ["value"],
   conversion: {
-    decode: (value, constructor) => decodeContactModel(constructor ?? ContactBaseModel, value),
-    encode: encodeContactModel,
+    decode: (value, constructor) => decodeTContactModel(constructor ?? TContactBaseModel, value),
+    encode: encodeTContactModel,
   },
-  codecId: "Contact_82fcfbf0",
+  codecId: "TContact_ae9ed7ac",
   profile: { validation: true, mobx: false },
 });
 
-registerIModelClass("Contact_82fcfbf0", ContactBaseModel);
+registerIModelClass("TContact_ae9ed7ac", TContactBaseModel);
 
 const objectAjvFast = createOpenApiSyncAjvEngine({ allErrors: false, validationBindings: {} });
 const objectAjvAll = createOpenApiSyncAjvEngine({ allErrors: true, validationBindings: {} });
 
-const __resolvedModelSchema_Email = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"Email_3d5e923d\",\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\"},\"kind\":{\"const\":\"email\"}},\"required\":[\"address\",\"kind\"],\"additionalProperties\":false}") as object) as object;
-objectAjvFast.addSchema(structuredClone(__resolvedModelSchema_Email) as object, "Email_3d5e923d");
-objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_Email) as object, "Email_3d5e923d");
-const __resolvedModelSchema_Phone = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"Phone_6ba1ec97\",\"type\":\"object\",\"properties\":{\"kind\":{\"const\":\"phone\"},\"number\":{\"type\":\"string\"}},\"required\":[\"kind\",\"number\"],\"additionalProperties\":false}") as object) as object;
-objectAjvFast.addSchema(structuredClone(__resolvedModelSchema_Phone) as object, "Phone_6ba1ec97");
-objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_Phone) as object, "Phone_6ba1ec97");
-const __resolvedModelSchema_Contact = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"Contact_82fcfbf0\",\"type\":\"object\",\"properties\":{\"value\":{\"anyOf\":[{\"$ref\":\"#/$defs/Email_3d5e923d\"},{\"$ref\":\"#/$defs/Phone_6ba1ec97\"}]}},\"required\":[\"value\"],\"additionalProperties\":false,\"$defs\":{\"Email_3d5e923d\":{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\"},\"kind\":{\"const\":\"email\"}},\"required\":[\"address\",\"kind\"],\"additionalProperties\":false},\"Phone_6ba1ec97\":{\"type\":\"object\",\"properties\":{\"kind\":{\"const\":\"phone\"},\"number\":{\"type\":\"string\"}},\"required\":[\"kind\",\"number\"],\"additionalProperties\":false}}}") as object) as object;
-objectAjvFast.addSchema(structuredClone(__resolvedModelSchema_Contact) as object, "Contact_82fcfbf0");
-objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_Contact) as object, "Contact_82fcfbf0");
+const __resolvedModelSchema_TEmail = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"TEmail_3d5e923d\",\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\"},\"kind\":{\"const\":\"email\"}},\"required\":[\"address\",\"kind\"],\"additionalProperties\":false}") as object) as object;
+objectAjvFast.addSchema(structuredClone(__resolvedModelSchema_TEmail) as object, "TEmail_3d5e923d");
+objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_TEmail) as object, "TEmail_3d5e923d");
+const __resolvedModelSchema_TPhone = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"TPhone_6ba1ec97\",\"type\":\"object\",\"properties\":{\"kind\":{\"const\":\"phone\"},\"number\":{\"type\":\"string\"}},\"required\":[\"kind\",\"number\"],\"additionalProperties\":false}") as object) as object;
+objectAjvFast.addSchema(structuredClone(__resolvedModelSchema_TPhone) as object, "TPhone_6ba1ec97");
+objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_TPhone) as object, "TPhone_6ba1ec97");
+const __resolvedModelSchema_TContact = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"TContact_ae9ed7ac\",\"type\":\"object\",\"properties\":{\"value\":{\"anyOf\":[{\"$ref\":\"#/$defs/TEmail_3d5e923d\"},{\"$ref\":\"#/$defs/TPhone_6ba1ec97\"}]}},\"required\":[\"value\"],\"additionalProperties\":false,\"$defs\":{\"TEmail_3d5e923d\":{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\"},\"kind\":{\"const\":\"email\"}},\"required\":[\"address\",\"kind\"],\"additionalProperties\":false},\"TPhone_6ba1ec97\":{\"type\":\"object\",\"properties\":{\"kind\":{\"const\":\"phone\"},\"number\":{\"type\":\"string\"}},\"required\":[\"kind\",\"number\"],\"additionalProperties\":false}}}") as object) as object;
+objectAjvFast.addSchema(structuredClone(__resolvedModelSchema_TContact) as object, "TContact_ae9ed7ac");
+objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_TContact) as object, "TContact_ae9ed7ac");
 
-const validateEmailFast = requireAjvSchema(objectAjvFast.getSchema("Email_3d5e923d"), "Email_3d5e923d");
-const validateEmailAll = requireAjvSchema(objectAjvAll.getSchema("Email_3d5e923d"), "Email_3d5e923d");
+const validateTEmailFast = requireAjvSchema(objectAjvFast.getSchema("TEmail_3d5e923d"), "TEmail_3d5e923d");
+const validateTEmailAll = requireAjvSchema(objectAjvAll.getSchema("TEmail_3d5e923d"), "TEmail_3d5e923d");
 
-function fillEmail(out: Record<string, unknown>, wire: Record<string, unknown>, copyIdentity = true): Record<string, unknown> {
+function fillTEmail(out: Record<string, unknown>, wire: Record<string, unknown>, copyIdentity = true): Record<string, unknown> {
   if (copyIdentity) {
     out["kind"] = wire["kind"];
     out["address"] = wire["address"];
@@ -154,22 +154,22 @@ function fillEmail(out: Record<string, unknown>, wire: Record<string, unknown>, 
   return out;
 }
 
-function stringifyEmailCore(value: Record<string, unknown>): string {
+function stringifyTEmailCore(value: Record<string, unknown>): string {
   return '{' + "\"kind\":" + "\"email\"" + ",\"address\":" + stringifyJsonString(value["address"] as string) + '}';
 }
 
-export function stringifyEmail(value: EmailFields, options?: __GolemSerdeOptions): string {
+export function stringifyTEmail(value: TEmailFields, options?: __GolemSerdeOptions): string {
   const validates = serdeValidates(options, true);
   if (validates) {
-    assertEmail(value, options);
+    assertTEmail(value, options);
   }
-  return stringifyEmailCore(value as never);
+  return stringifyTEmailCore(value as never);
 }
 
-function convertFromWireEmail(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
+function convertFromWireTEmail(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
   const validates = serdeValidates(options, true);
   if (validates) {
-    assertEmail(wire, options);
+    assertTEmail(wire, options);
   }
   const source = isolated || wire === null || typeof wire !== 'object' ? wire : cloneConversionInput(wire);
   let result: unknown = source;
@@ -177,71 +177,71 @@ function convertFromWireEmail(wire: unknown, options: __GolemSerdeOptions | unde
     if (options?.construct) {
       result = Reflect.construct(options.construct, [{ ...(source as Record<string, unknown>) }]);
     } else {
-      result = fillEmail({} as Record<string, unknown>, source as Record<string, unknown>);
+      result = fillTEmail({} as Record<string, unknown>, source as Record<string, unknown>);
     }
   }
   return result;
 }
 
-export function fromWireFormatEmail(wire: unknown, options?: __GolemSerdeOptions): EmailFields {
-  return convertFromWireEmail(wire, options, false) as EmailFields;
+export function fromWireFormatTEmail(wire: unknown, options?: __GolemSerdeOptions): TEmailFields {
+  return convertFromWireTEmail(wire, options, false) as TEmailFields;
 }
 
-function toWireFormatEmailCore(value: EmailFields): EmailJSON {
+function toWireFormatTEmailCore(value: TEmailFields): TEmailJSON {
   const record = value as Record<string, unknown>;
   const wire = { ["kind"]: record["kind"], ["address"]: record["address"] };
-  return wire as EmailJSON;
+  return wire as TEmailJSON;
 }
 
-export function toWireFormatEmail(value: EmailFields, options?: __GolemSerdeOptions): EmailJSON {
+export function toWireFormatTEmail(value: TEmailFields, options?: __GolemSerdeOptions): TEmailJSON {
   const validates = serdeValidates(options, true);
   if (validates) {
-    assertEmail(value, options);
+    assertTEmail(value, options);
   }
-  return toWireFormatEmailCore(value);
+  return toWireFormatTEmailCore(value);
 }
 
-export function parseEmail(text: string, options?: __GolemSerdeOptions): EmailFields {
-  return convertFromWireEmail(parseJson(text), options, true) as EmailFields;
+export function parseTEmail(text: string, options?: __GolemSerdeOptions): TEmailFields {
+  return convertFromWireTEmail(parseJson(text), options, true) as TEmailFields;
 }
 
-export function validateEmail(value: unknown, options?: __GolemValidateOptions): value is EmailFields {
+export function validateTEmail(value: unknown, options?: __GolemValidateOptions): value is TEmailFields {
   const failFast = options?.failFast !== false;
   let ok: boolean;
   let errors: readonly unknown[] | null | undefined;
   if (options?.validationContext === undefined) {
-    const validator = failFast ? validateEmailFast : validateEmailAll;
+    const validator = failFast ? validateTEmailFast : validateTEmailAll;
     ok = validator(value);
     errors = validator.errors;
   } else {
-    const validator = resolveModelValidationContextValidator(options.validationContext, "Email_3d5e923d", failFast ? 'first' : 'all');
+    const validator = resolveModelValidationContextValidator(options.validationContext, "TEmail_3d5e923d", failFast ? 'first' : 'all');
     ok = runSynchronousValidation(validator, value);
     errors = validator.errors;
   }
-  (validateEmail as { errors?: unknown }).errors = errors;
+  (validateTEmail as { errors?: unknown }).errors = errors;
   return ok;
 }
 
-export function assertEmail(value: unknown, options?: __GolemValidateOptions): EmailFields {
-  assertModelValue(value, options, validateEmailFast, validateEmailAll, "Email_3d5e923d", IssueRepresentation.Model, IssueSource.TypeScript);
-  return value as EmailFields;
+export function assertTEmail(value: unknown, options?: __GolemValidateOptions): TEmailFields {
+  assertModelValue(value, options, validateTEmailFast, validateTEmailAll, "TEmail_3d5e923d", IssueRepresentation.Model, IssueSource.TypeScript);
+  return value as TEmailFields;
 }
 
-createObjectCodec("Email_3d5e923d", {
-  stringify: stringifyEmail as (value: never, options?: __GolemSerdeOptions) => string,
-  parse: parseEmail as (text: string, options?: __GolemSerdeOptions) => never,
-  validate: validateEmail,
-  assert: assertEmail,
-  toWireFormat: toWireFormatEmail,
-  fromWireFormat: fromWireFormatEmail,
-  schema: __resolvedModelSchema_Email,
+createObjectCodec("TEmail_3d5e923d", {
+  stringify: stringifyTEmail as (value: never, options?: __GolemSerdeOptions) => string,
+  parse: parseTEmail as (text: string, options?: __GolemSerdeOptions) => never,
+  validate: validateTEmail,
+  assert: assertTEmail,
+  toWireFormat: toWireFormatTEmail,
+  fromWireFormat: fromWireFormatTEmail,
+  schema: __resolvedModelSchema_TEmail,
   issueSource: IssueSource.TypeScript,
 });
 
-const validatePhoneFast = requireAjvSchema(objectAjvFast.getSchema("Phone_6ba1ec97"), "Phone_6ba1ec97");
-const validatePhoneAll = requireAjvSchema(objectAjvAll.getSchema("Phone_6ba1ec97"), "Phone_6ba1ec97");
+const validateTPhoneFast = requireAjvSchema(objectAjvFast.getSchema("TPhone_6ba1ec97"), "TPhone_6ba1ec97");
+const validateTPhoneAll = requireAjvSchema(objectAjvAll.getSchema("TPhone_6ba1ec97"), "TPhone_6ba1ec97");
 
-function fillPhone(out: Record<string, unknown>, wire: Record<string, unknown>, copyIdentity = true): Record<string, unknown> {
+function fillTPhone(out: Record<string, unknown>, wire: Record<string, unknown>, copyIdentity = true): Record<string, unknown> {
   if (copyIdentity) {
     out["kind"] = wire["kind"];
     out["number"] = wire["number"];
@@ -249,22 +249,22 @@ function fillPhone(out: Record<string, unknown>, wire: Record<string, unknown>, 
   return out;
 }
 
-function stringifyPhoneCore(value: Record<string, unknown>): string {
+function stringifyTPhoneCore(value: Record<string, unknown>): string {
   return '{' + "\"kind\":" + "\"phone\"" + ",\"number\":" + stringifyJsonString(value["number"] as string) + '}';
 }
 
-export function stringifyPhone(value: PhoneFields, options?: __GolemSerdeOptions): string {
+export function stringifyTPhone(value: TPhoneFields, options?: __GolemSerdeOptions): string {
   const validates = serdeValidates(options, true);
   if (validates) {
-    assertPhone(value, options);
+    assertTPhone(value, options);
   }
-  return stringifyPhoneCore(value as never);
+  return stringifyTPhoneCore(value as never);
 }
 
-function convertFromWirePhone(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
+function convertFromWireTPhone(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
   const validates = serdeValidates(options, true);
   if (validates) {
-    assertPhone(wire, options);
+    assertTPhone(wire, options);
   }
   const source = isolated || wire === null || typeof wire !== 'object' ? wire : cloneConversionInput(wire);
   let result: unknown = source;
@@ -272,159 +272,159 @@ function convertFromWirePhone(wire: unknown, options: __GolemSerdeOptions | unde
     if (options?.construct) {
       result = Reflect.construct(options.construct, [{ ...(source as Record<string, unknown>) }]);
     } else {
-      result = fillPhone({} as Record<string, unknown>, source as Record<string, unknown>);
+      result = fillTPhone({} as Record<string, unknown>, source as Record<string, unknown>);
     }
   }
   return result;
 }
 
-export function fromWireFormatPhone(wire: unknown, options?: __GolemSerdeOptions): PhoneFields {
-  return convertFromWirePhone(wire, options, false) as PhoneFields;
+export function fromWireFormatTPhone(wire: unknown, options?: __GolemSerdeOptions): TPhoneFields {
+  return convertFromWireTPhone(wire, options, false) as TPhoneFields;
 }
 
-function toWireFormatPhoneCore(value: PhoneFields): PhoneJSON {
+function toWireFormatTPhoneCore(value: TPhoneFields): TPhoneJSON {
   const record = value as Record<string, unknown>;
   const wire = { ["kind"]: record["kind"], ["number"]: record["number"] };
-  return wire as PhoneJSON;
+  return wire as TPhoneJSON;
 }
 
-export function toWireFormatPhone(value: PhoneFields, options?: __GolemSerdeOptions): PhoneJSON {
+export function toWireFormatTPhone(value: TPhoneFields, options?: __GolemSerdeOptions): TPhoneJSON {
   const validates = serdeValidates(options, true);
   if (validates) {
-    assertPhone(value, options);
+    assertTPhone(value, options);
   }
-  return toWireFormatPhoneCore(value);
+  return toWireFormatTPhoneCore(value);
 }
 
-export function parsePhone(text: string, options?: __GolemSerdeOptions): PhoneFields {
-  return convertFromWirePhone(parseJson(text), options, true) as PhoneFields;
+export function parseTPhone(text: string, options?: __GolemSerdeOptions): TPhoneFields {
+  return convertFromWireTPhone(parseJson(text), options, true) as TPhoneFields;
 }
 
-export function validatePhone(value: unknown, options?: __GolemValidateOptions): value is PhoneFields {
+export function validateTPhone(value: unknown, options?: __GolemValidateOptions): value is TPhoneFields {
   const failFast = options?.failFast !== false;
   let ok: boolean;
   let errors: readonly unknown[] | null | undefined;
   if (options?.validationContext === undefined) {
-    const validator = failFast ? validatePhoneFast : validatePhoneAll;
+    const validator = failFast ? validateTPhoneFast : validateTPhoneAll;
     ok = validator(value);
     errors = validator.errors;
   } else {
-    const validator = resolveModelValidationContextValidator(options.validationContext, "Phone_6ba1ec97", failFast ? 'first' : 'all');
+    const validator = resolveModelValidationContextValidator(options.validationContext, "TPhone_6ba1ec97", failFast ? 'first' : 'all');
     ok = runSynchronousValidation(validator, value);
     errors = validator.errors;
   }
-  (validatePhone as { errors?: unknown }).errors = errors;
+  (validateTPhone as { errors?: unknown }).errors = errors;
   return ok;
 }
 
-export function assertPhone(value: unknown, options?: __GolemValidateOptions): PhoneFields {
-  assertModelValue(value, options, validatePhoneFast, validatePhoneAll, "Phone_6ba1ec97", IssueRepresentation.Model, IssueSource.TypeScript);
-  return value as PhoneFields;
+export function assertTPhone(value: unknown, options?: __GolemValidateOptions): TPhoneFields {
+  assertModelValue(value, options, validateTPhoneFast, validateTPhoneAll, "TPhone_6ba1ec97", IssueRepresentation.Model, IssueSource.TypeScript);
+  return value as TPhoneFields;
 }
 
-createObjectCodec("Phone_6ba1ec97", {
-  stringify: stringifyPhone as (value: never, options?: __GolemSerdeOptions) => string,
-  parse: parsePhone as (text: string, options?: __GolemSerdeOptions) => never,
-  validate: validatePhone,
-  assert: assertPhone,
-  toWireFormat: toWireFormatPhone,
-  fromWireFormat: fromWireFormatPhone,
-  schema: __resolvedModelSchema_Phone,
+createObjectCodec("TPhone_6ba1ec97", {
+  stringify: stringifyTPhone as (value: never, options?: __GolemSerdeOptions) => string,
+  parse: parseTPhone as (text: string, options?: __GolemSerdeOptions) => never,
+  validate: validateTPhone,
+  assert: assertTPhone,
+  toWireFormat: toWireFormatTPhone,
+  fromWireFormat: fromWireFormatTPhone,
+  schema: __resolvedModelSchema_TPhone,
   issueSource: IssueSource.TypeScript,
 });
 
-const validateContactFast = requireAjvSchema(objectAjvFast.getSchema("Contact_82fcfbf0"), "Contact_82fcfbf0");
-const validateContactAll = requireAjvSchema(objectAjvAll.getSchema("Contact_82fcfbf0"), "Contact_82fcfbf0");
+const validateTContactFast = requireAjvSchema(objectAjvFast.getSchema("TContact_ae9ed7ac"), "TContact_ae9ed7ac");
+const validateTContactAll = requireAjvSchema(objectAjvAll.getSchema("TContact_ae9ed7ac"), "TContact_ae9ed7ac");
 
-function fillContact(out: Record<string, unknown>, wire: Record<string, unknown>): Record<string, unknown> {
+function fillTContact(out: Record<string, unknown>, wire: Record<string, unknown>): Record<string, unknown> {
   if (Object.prototype.hasOwnProperty.call(wire, "value")) {
     out["value"] = (typeof wire["value"] === 'object' && wire["value"] !== null && !Array.isArray(wire["value"]) && ((wire["value"] as unknown as Record<string, unknown>)["kind"] === "email") ? (({ ["kind"]: (wire["value"] as Record<string, unknown>)["kind"], ["address"]: (wire["value"] as Record<string, unknown>)["address"] })) : (typeof wire["value"] === 'object' && wire["value"] !== null && !Array.isArray(wire["value"]) && ((wire["value"] as unknown as Record<string, unknown>)["kind"] === "phone") ? (({ ["kind"]: (wire["value"] as Record<string, unknown>)["kind"], ["number"]: (wire["value"] as Record<string, unknown>)["number"] })) : ((typeof wire["value"] === 'object' && wire["value"] !== null && !Array.isArray(wire["value"]) ? unknownDiscriminatorValue("kind", (wire["value"] as unknown as Record<string, unknown>)["kind"], 'deserialize') : wire["value"]))));
   }
   return out;
 }
 
-function stringifyContactCore(value: Record<string, unknown>): string {
+function stringifyTContactCore(value: Record<string, unknown>): string {
   let __golemInlineField0: unknown;
-  return '{' + (__golemInlineField0 = value["value"], "\"value\":" + (typeof __golemInlineField0 === 'object' && __golemInlineField0 !== null && !Array.isArray(__golemInlineField0) && ((__golemInlineField0 as unknown as Record<string, unknown>)["kind"] === "email") ? (stringifyEmailCore(__golemInlineField0 as never)) : (typeof __golemInlineField0 === 'object' && __golemInlineField0 !== null && !Array.isArray(__golemInlineField0) && ((__golemInlineField0 as unknown as Record<string, unknown>)["kind"] === "phone") ? (stringifyPhoneCore(__golemInlineField0 as never)) : ((__golemInlineField0 == null ? 'null' : unknownDiscriminatorValue("kind", (__golemInlineField0 as unknown as Record<string, unknown>)["kind"], 'serialize')))))) + '}';
+  return '{' + (__golemInlineField0 = value["value"], "\"value\":" + (typeof __golemInlineField0 === 'object' && __golemInlineField0 !== null && !Array.isArray(__golemInlineField0) && ((__golemInlineField0 as unknown as Record<string, unknown>)["kind"] === "email") ? (stringifyTEmailCore(__golemInlineField0 as never)) : (typeof __golemInlineField0 === 'object' && __golemInlineField0 !== null && !Array.isArray(__golemInlineField0) && ((__golemInlineField0 as unknown as Record<string, unknown>)["kind"] === "phone") ? (stringifyTPhoneCore(__golemInlineField0 as never)) : ((__golemInlineField0 == null ? 'null' : unknownDiscriminatorValue("kind", (__golemInlineField0 as unknown as Record<string, unknown>)["kind"], 'serialize')))))) + '}';
 }
 
-export function stringifyContact(value: ContactFields, options?: __GolemSerdeOptions): string {
+export function stringifyTContact(value: TContactFields, options?: __GolemSerdeOptions): string {
   const validates = serdeValidates(options, true);
   if (validates) {
-    assertContact(value, options);
+    assertTContact(value, options);
   }
-  return stringifyContactCore(value as never);
+  return stringifyTContactCore(value as never);
 }
 
-function convertFromWireContact(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
+function convertFromWireTContact(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
   const validates = serdeValidates(options, true);
   if (validates) {
-    assertContact(wire, options);
+    assertTContact(wire, options);
   }
   const source = isolated || wire === null || typeof wire !== 'object' ? wire : cloneConversionInput(wire);
   let result: unknown = source;
   if (source !== null && typeof source === 'object' && !Array.isArray(source)) {
     if (options?.construct) {
-      result = Reflect.construct(options.construct, [fillContact({ ...(source as Record<string, unknown>) }, (source as Record<string, unknown>))]);
+      result = Reflect.construct(options.construct, [fillTContact({ ...(source as Record<string, unknown>) }, (source as Record<string, unknown>))]);
     } else {
-      result = fillContact({} as Record<string, unknown>, source as Record<string, unknown>);
+      result = fillTContact({} as Record<string, unknown>, source as Record<string, unknown>);
     }
   }
   return result;
 }
 
-export function fromWireFormatContact(wire: unknown, options?: __GolemSerdeOptions): ContactFields {
-  return convertFromWireContact(wire, options, false) as ContactFields;
+export function fromWireFormatTContact(wire: unknown, options?: __GolemSerdeOptions): TContactFields {
+  return convertFromWireTContact(wire, options, false) as TContactFields;
 }
 
-function toWireFormatContactCore(value: ContactFields): ContactJSON {
+function toWireFormatTContactCore(value: TContactFields): TContactJSON {
   const record = value as Record<string, unknown>;
   let __golemField0: unknown;
-  const wire = { ["value"]: (__golemField0 = record["value"], (typeof __golemField0 === 'object' && __golemField0 !== null && !Array.isArray(__golemField0) && ((__golemField0 as unknown as Record<string, unknown>)["kind"] === "email") ? (withDiscriminatorValue(toWireFormatEmailCore(__golemField0 as never), "kind", (__golemField0 as unknown as Record<string, unknown>)["kind"])) : (typeof __golemField0 === 'object' && __golemField0 !== null && !Array.isArray(__golemField0) && ((__golemField0 as unknown as Record<string, unknown>)["kind"] === "phone") ? (withDiscriminatorValue(toWireFormatPhoneCore(__golemField0 as never), "kind", (__golemField0 as unknown as Record<string, unknown>)["kind"])) : ((__golemField0 == null ? __golemField0 : unknownDiscriminatorValue("kind", (__golemField0 as unknown as Record<string, unknown>)["kind"], 'serialize')))))) };
-  return wire as ContactJSON;
+  const wire = { ["value"]: (__golemField0 = record["value"], (typeof __golemField0 === 'object' && __golemField0 !== null && !Array.isArray(__golemField0) && ((__golemField0 as unknown as Record<string, unknown>)["kind"] === "email") ? (withDiscriminatorValue(toWireFormatTEmailCore(__golemField0 as never), "kind", (__golemField0 as unknown as Record<string, unknown>)["kind"])) : (typeof __golemField0 === 'object' && __golemField0 !== null && !Array.isArray(__golemField0) && ((__golemField0 as unknown as Record<string, unknown>)["kind"] === "phone") ? (withDiscriminatorValue(toWireFormatTPhoneCore(__golemField0 as never), "kind", (__golemField0 as unknown as Record<string, unknown>)["kind"])) : ((__golemField0 == null ? __golemField0 : unknownDiscriminatorValue("kind", (__golemField0 as unknown as Record<string, unknown>)["kind"], 'serialize')))))) };
+  return wire as TContactJSON;
 }
 
-export function toWireFormatContact(value: ContactFields, options?: __GolemSerdeOptions): ContactJSON {
+export function toWireFormatTContact(value: TContactFields, options?: __GolemSerdeOptions): TContactJSON {
   const validates = serdeValidates(options, true);
   if (validates) {
-    assertContact(value, options);
+    assertTContact(value, options);
   }
-  return toWireFormatContactCore(value);
+  return toWireFormatTContactCore(value);
 }
 
-export function parseContact(text: string, options?: __GolemSerdeOptions): ContactFields {
-  return convertFromWireContact(parseJson(text), options, true) as ContactFields;
+export function parseTContact(text: string, options?: __GolemSerdeOptions): TContactFields {
+  return convertFromWireTContact(parseJson(text), options, true) as TContactFields;
 }
 
-export function validateContact(value: unknown, options?: __GolemValidateOptions): value is ContactFields {
+export function validateTContact(value: unknown, options?: __GolemValidateOptions): value is TContactFields {
   const failFast = options?.failFast !== false;
   let ok: boolean;
   let errors: readonly unknown[] | null | undefined;
   if (options?.validationContext === undefined) {
-    const validator = failFast ? validateContactFast : validateContactAll;
+    const validator = failFast ? validateTContactFast : validateTContactAll;
     ok = validator(value);
     errors = validator.errors;
   } else {
-    const validator = resolveModelValidationContextValidator(options.validationContext, "Contact_82fcfbf0", failFast ? 'first' : 'all');
+    const validator = resolveModelValidationContextValidator(options.validationContext, "TContact_ae9ed7ac", failFast ? 'first' : 'all');
     ok = runSynchronousValidation(validator, value);
     errors = validator.errors;
   }
-  (validateContact as { errors?: unknown }).errors = errors;
+  (validateTContact as { errors?: unknown }).errors = errors;
   return ok;
 }
 
-export function assertContact(value: unknown, options?: __GolemValidateOptions): ContactFields {
-  assertModelValue(value, options, validateContactFast, validateContactAll, "Contact_82fcfbf0", IssueRepresentation.Model, IssueSource.TypeScript);
-  return value as ContactFields;
+export function assertTContact(value: unknown, options?: __GolemValidateOptions): TContactFields {
+  assertModelValue(value, options, validateTContactFast, validateTContactAll, "TContact_ae9ed7ac", IssueRepresentation.Model, IssueSource.TypeScript);
+  return value as TContactFields;
 }
 
-createObjectCodec("Contact_82fcfbf0", {
-  stringify: stringifyContact as (value: never, options?: __GolemSerdeOptions) => string,
-  parse: parseContact as (text: string, options?: __GolemSerdeOptions) => never,
-  validate: validateContact,
-  assert: assertContact,
-  toWireFormat: toWireFormatContact,
-  fromWireFormat: fromWireFormatContact,
-  schema: __resolvedModelSchema_Contact,
+createObjectCodec("TContact_ae9ed7ac", {
+  stringify: stringifyTContact as (value: never, options?: __GolemSerdeOptions) => string,
+  parse: parseTContact as (text: string, options?: __GolemSerdeOptions) => never,
+  validate: validateTContact,
+  assert: assertTContact,
+  toWireFormat: toWireFormatTContact,
+  fromWireFormat: fromWireFormatTContact,
+  schema: __resolvedModelSchema_TContact,
   issueSource: IssueSource.TypeScript,
 });

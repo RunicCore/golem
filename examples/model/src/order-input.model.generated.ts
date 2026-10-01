@@ -8,45 +8,45 @@ function modelObject(json: unknown, name: string): Record<string, unknown> {
   return requireModelObject(json, name);
 }
 
-export type OrderInputFields = { items: Array<{ sku: string }> };
-export type OrderInputJSON = { items: Array<{ sku: string }> };
-export type OrderInputInit = Partial<{ items: Array<{ sku: string }> }>;
+export type TOrderInputFields = { items: Array<{ sku: string }> };
+export type TOrderInputJSON = { items: Array<{ sku: string }> };
+export type TOrderInputInit = Partial<{ items: Array<{ sku: string }> }>;
 
-export abstract class OrderInputBaseModel implements GeneratedModel<OrderInputJSON, OrderInputFields> {
-  declare readonly [generatedModelWireBrand]: OrderInputJSON;
-  declare readonly [generatedModelFieldsBrand]: OrderInputFields;
-  declare items: OrderInputFields["items"];
+export abstract class TOrderInputBaseModel implements GeneratedModel<TOrderInputJSON, TOrderInputFields> {
+  declare readonly [generatedModelWireBrand]: TOrderInputJSON;
+  declare readonly [generatedModelFieldsBrand]: TOrderInputFields;
+  declare items: TOrderInputFields["items"];
 
-  public constructor(values: OrderInputInit = {}) {
+  public constructor(values: TOrderInputInit = {}) {
     if (Object.prototype.hasOwnProperty.call(values, "items")) defineModelProperty(this, "items", Array.isArray(values["items"]) ? (values["items"] as readonly unknown[]).slice() : values["items"]);
   }
 
 }
 
-function decodeOrderInputModel(constructor: GeneratedModelConstructor, json: unknown): OrderInputBaseModel {
-  const values = modelObject(json, "OrderInputBaseModel");
+function decodeTOrderInputModel(constructor: GeneratedModelConstructor, json: unknown): TOrderInputBaseModel {
+  const values = modelObject(json, "TOrderInputBaseModel");
   const result: Record<string, unknown> = { ...values };
   if (Object.prototype.hasOwnProperty.call(values, "items")) defineModelProperty(result, "items", convertModelField("deserialize", "items", () => (Array.isArray(values["items"]) ? (values["items"] as readonly unknown[]).slice() : values["items"])));
-  return Reflect.construct(constructor, [result]) as OrderInputBaseModel;
+  return Reflect.construct(constructor, [result]) as TOrderInputBaseModel;
 }
 
-function encodeOrderInputModel(model: OrderInputBaseModel): OrderInputJSON {
+function encodeTOrderInputModel(model: TOrderInputBaseModel): TOrderInputJSON {
   const result: Record<string, unknown> = {};
   if (Object.prototype.hasOwnProperty.call(model, "items")) defineModelProperty(result, "items", (convertModelField("serialize", "items", () => (Array.isArray(model["items"]) ? (model["items"] as readonly unknown[]).slice() : model["items"]))));
-  return result as OrderInputJSON;
+  return result as TOrderInputJSON;
 }
 
-registerGeneratedModel(OrderInputBaseModel, {
+registerGeneratedModel(TOrderInputBaseModel, {
   fields: ["items"],
   conversion: {
-    decode: (value, constructor) => decodeOrderInputModel(constructor ?? OrderInputBaseModel, value),
-    encode: encodeOrderInputModel,
+    decode: (value, constructor) => decodeTOrderInputModel(constructor ?? TOrderInputBaseModel, value),
+    encode: encodeTOrderInputModel,
   },
-  codecId: "OrderInput_bbcddf3d",
+  codecId: "TOrderInput_bbcddf3d",
   profile: { validation: true, mobx: false },
 });
 
-registerIModelClass("OrderInput_bbcddf3d", OrderInputBaseModel);
+registerIModelClass("TOrderInput_bbcddf3d", TOrderInputBaseModel);
 
 const objectAjvFast = createOpenApiSyncAjvEngine({ allErrors: false, validationBindings: {} });
 const objectAjvAll = createOpenApiSyncAjvEngine({ allErrors: true, validationBindings: {} });
@@ -54,9 +54,9 @@ const objectAjvAll = createOpenApiSyncAjvEngine({ allErrors: true, validationBin
 const __resolvedModelSchema_Anonymous_39128e39 = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"Anonymous_39128e39\",\"type\":\"object\",\"properties\":{\"sku\":{\"allOf\":[{\"type\":\"string\"},{\"minLength\":3}]}},\"required\":[\"sku\"],\"additionalProperties\":false}") as object) as object;
 objectAjvFast.addSchema(structuredClone(__resolvedModelSchema_Anonymous_39128e39) as object, "Anonymous_39128e39");
 objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_Anonymous_39128e39) as object, "Anonymous_39128e39");
-const __resolvedModelSchema_OrderInput = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"OrderInput_bbcddf3d\",\"type\":\"object\",\"properties\":{\"items\":{\"type\":\"array\",\"items\":{\"type\":\"object\",\"properties\":{\"sku\":{\"allOf\":[{\"type\":\"string\"},{\"minLength\":3}]}},\"required\":[\"sku\"],\"additionalProperties\":false}}},\"required\":[\"items\"],\"additionalProperties\":false}") as object) as object;
-objectAjvFast.addSchema(structuredClone(__resolvedModelSchema_OrderInput) as object, "OrderInput_bbcddf3d");
-objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_OrderInput) as object, "OrderInput_bbcddf3d");
+const __resolvedModelSchema_TOrderInput = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"TOrderInput_bbcddf3d\",\"type\":\"object\",\"properties\":{\"items\":{\"type\":\"array\",\"items\":{\"type\":\"object\",\"properties\":{\"sku\":{\"allOf\":[{\"type\":\"string\"},{\"minLength\":3}]}},\"required\":[\"sku\"],\"additionalProperties\":false}}},\"required\":[\"items\"],\"additionalProperties\":false}") as object) as object;
+objectAjvFast.addSchema(structuredClone(__resolvedModelSchema_TOrderInput) as object, "TOrderInput_bbcddf3d");
+objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_TOrderInput) as object, "TOrderInput_bbcddf3d");
 
 const validateAnonymous_39128e39Fast = requireAjvSchema(objectAjvFast.getSchema("Anonymous_39128e39"), "Anonymous_39128e39");
 const validateAnonymous_39128e39All = requireAjvSchema(objectAjvAll.getSchema("Anonymous_39128e39"), "Anonymous_39128e39");
@@ -152,97 +152,97 @@ createObjectCodec("Anonymous_39128e39", {
   issueSource: IssueSource.TypeScript,
 });
 
-const validateOrderInputFast = requireAjvSchema(objectAjvFast.getSchema("OrderInput_bbcddf3d"), "OrderInput_bbcddf3d");
-const validateOrderInputAll = requireAjvSchema(objectAjvAll.getSchema("OrderInput_bbcddf3d"), "OrderInput_bbcddf3d");
+const validateTOrderInputFast = requireAjvSchema(objectAjvFast.getSchema("TOrderInput_bbcddf3d"), "TOrderInput_bbcddf3d");
+const validateTOrderInputAll = requireAjvSchema(objectAjvAll.getSchema("TOrderInput_bbcddf3d"), "TOrderInput_bbcddf3d");
 
-function fillOrderInput(out: Record<string, unknown>, wire: Record<string, unknown>): Record<string, unknown> {
+function fillTOrderInput(out: Record<string, unknown>, wire: Record<string, unknown>): Record<string, unknown> {
   if (Object.prototype.hasOwnProperty.call(wire, "items")) {
     out["items"] = Array.isArray(wire["items"]) ? (wire["items"] as readonly unknown[]).map((item) => ({ ["sku"]: (item as Record<string, unknown>)["sku"] })) : wire["items"];
   }
   return out;
 }
 
-function stringifyOrderInputCore(value: Record<string, unknown>): string {
+function stringifyTOrderInputCore(value: Record<string, unknown>): string {
   return '{' + "\"items\":" + stringifyJsonArray(value["items"] as ArrayLike<unknown>, (item) => stringifyAnonymous_39128e39Core(item as never)) + '}';
 }
 
-export function stringifyOrderInput(value: OrderInputFields, options?: __GolemSerdeOptions): string {
+export function stringifyTOrderInput(value: TOrderInputFields, options?: __GolemSerdeOptions): string {
   const validates = serdeValidates(options, true);
   if (validates) {
-    assertOrderInput(value, options);
+    assertTOrderInput(value, options);
   }
-  return stringifyOrderInputCore(value as never);
+  return stringifyTOrderInputCore(value as never);
 }
 
-function convertFromWireOrderInput(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
+function convertFromWireTOrderInput(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
   const validates = serdeValidates(options, true);
   if (validates) {
-    assertOrderInput(wire, options);
+    assertTOrderInput(wire, options);
   }
   const source = isolated || wire === null || typeof wire !== 'object' ? wire : cloneConversionInput(wire);
   let result: unknown = source;
   if (source !== null && typeof source === 'object' && !Array.isArray(source)) {
     if (options?.construct) {
-      result = Reflect.construct(options.construct, [fillOrderInput({ ...(source as Record<string, unknown>) }, (source as Record<string, unknown>))]);
+      result = Reflect.construct(options.construct, [fillTOrderInput({ ...(source as Record<string, unknown>) }, (source as Record<string, unknown>))]);
     } else {
-      result = fillOrderInput({} as Record<string, unknown>, source as Record<string, unknown>);
+      result = fillTOrderInput({} as Record<string, unknown>, source as Record<string, unknown>);
     }
   }
   return result;
 }
 
-export function fromWireFormatOrderInput(wire: unknown, options?: __GolemSerdeOptions): OrderInputFields {
-  return convertFromWireOrderInput(wire, options, false) as OrderInputFields;
+export function fromWireFormatTOrderInput(wire: unknown, options?: __GolemSerdeOptions): TOrderInputFields {
+  return convertFromWireTOrderInput(wire, options, false) as TOrderInputFields;
 }
 
-function toWireFormatOrderInputCore(value: OrderInputFields): OrderInputJSON {
+function toWireFormatTOrderInputCore(value: TOrderInputFields): TOrderInputJSON {
   const record = value as Record<string, unknown>;
   let __golemField0: unknown;
   const wire = { ["items"]: (__golemField0 = record["items"], Array.isArray(__golemField0) ? (__golemField0 as readonly unknown[]).map((item) => toWireFormatAnonymous_39128e39Core(item as never)) : __golemField0) };
-  return wire as OrderInputJSON;
+  return wire as TOrderInputJSON;
 }
 
-export function toWireFormatOrderInput(value: OrderInputFields, options?: __GolemSerdeOptions): OrderInputJSON {
+export function toWireFormatTOrderInput(value: TOrderInputFields, options?: __GolemSerdeOptions): TOrderInputJSON {
   const validates = serdeValidates(options, true);
   if (validates) {
-    assertOrderInput(value, options);
+    assertTOrderInput(value, options);
   }
-  return toWireFormatOrderInputCore(value);
+  return toWireFormatTOrderInputCore(value);
 }
 
-export function parseOrderInput(text: string, options?: __GolemSerdeOptions): OrderInputFields {
-  return convertFromWireOrderInput(parseJson(text), options, true) as OrderInputFields;
+export function parseTOrderInput(text: string, options?: __GolemSerdeOptions): TOrderInputFields {
+  return convertFromWireTOrderInput(parseJson(text), options, true) as TOrderInputFields;
 }
 
-export function validateOrderInput(value: unknown, options?: __GolemValidateOptions): value is OrderInputFields {
+export function validateTOrderInput(value: unknown, options?: __GolemValidateOptions): value is TOrderInputFields {
   const failFast = options?.failFast !== false;
   let ok: boolean;
   let errors: readonly unknown[] | null | undefined;
   if (options?.validationContext === undefined) {
-    const validator = failFast ? validateOrderInputFast : validateOrderInputAll;
+    const validator = failFast ? validateTOrderInputFast : validateTOrderInputAll;
     ok = validator(value);
     errors = validator.errors;
   } else {
-    const validator = resolveModelValidationContextValidator(options.validationContext, "OrderInput_bbcddf3d", failFast ? 'first' : 'all');
+    const validator = resolveModelValidationContextValidator(options.validationContext, "TOrderInput_bbcddf3d", failFast ? 'first' : 'all');
     ok = runSynchronousValidation(validator, value);
     errors = validator.errors;
   }
-  (validateOrderInput as { errors?: unknown }).errors = errors;
+  (validateTOrderInput as { errors?: unknown }).errors = errors;
   return ok;
 }
 
-export function assertOrderInput(value: unknown, options?: __GolemValidateOptions): OrderInputFields {
-  assertModelValue(value, options, validateOrderInputFast, validateOrderInputAll, "OrderInput_bbcddf3d", IssueRepresentation.Model, IssueSource.TypeScript);
-  return value as OrderInputFields;
+export function assertTOrderInput(value: unknown, options?: __GolemValidateOptions): TOrderInputFields {
+  assertModelValue(value, options, validateTOrderInputFast, validateTOrderInputAll, "TOrderInput_bbcddf3d", IssueRepresentation.Model, IssueSource.TypeScript);
+  return value as TOrderInputFields;
 }
 
-createObjectCodec("OrderInput_bbcddf3d", {
-  stringify: stringifyOrderInput as (value: never, options?: __GolemSerdeOptions) => string,
-  parse: parseOrderInput as (text: string, options?: __GolemSerdeOptions) => never,
-  validate: validateOrderInput,
-  assert: assertOrderInput,
-  toWireFormat: toWireFormatOrderInput,
-  fromWireFormat: fromWireFormatOrderInput,
-  schema: __resolvedModelSchema_OrderInput,
+createObjectCodec("TOrderInput_bbcddf3d", {
+  stringify: stringifyTOrderInput as (value: never, options?: __GolemSerdeOptions) => string,
+  parse: parseTOrderInput as (text: string, options?: __GolemSerdeOptions) => never,
+  validate: validateTOrderInput,
+  assert: assertTOrderInput,
+  toWireFormat: toWireFormatTOrderInput,
+  fromWireFormat: fromWireFormatTOrderInput,
+  schema: __resolvedModelSchema_TOrderInput,
   issueSource: IssueSource.TypeScript,
 });

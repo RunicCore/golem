@@ -1,5 +1,5 @@
 import type { IModel } from '@exprtlabs/golem/model';
-import { SnapshotBaseModel } from './snapshot.model.generated.js';
+import { TSnapshotBaseModel } from './snapshot.model.generated.js';
 
 export type TSnapshot = IModel<{
   names: string[];
@@ -11,4 +11,4 @@ export type TSnapshot = IModel<{
   createdAt: Date;
 }>;
 
-export class Snapshot extends SnapshotBaseModel {}
+export class Snapshot extends TSnapshotBaseModel {}

@@ -42,27 +42,27 @@ async function compile(root: string): Promise<void> {
 
 
 interface PaymentCodecs {
-  stringifyPayment: (value: object, options?: { validate?: boolean; failFast?: boolean }) => string;
-  parsePayment: (text: string, options?: { validate?: boolean; failFast?: boolean }) => unknown;
-  validatePayment: (value: unknown, options?: { failFast?: boolean }) => value is object;
-  toWireFormatPayment: (value: unknown, options?: { validate?: boolean; failFast?: boolean }) => unknown;
-  fromWireFormatPayment: (wire: unknown, options?: { validate?: boolean; failFast?: boolean }) => unknown;
-  stringifyMoney: (value: object, options?: { validate?: boolean; failFast?: boolean }) => string;
-  parseMoney: (text: string, options?: { validate?: boolean; failFast?: boolean }) => unknown;
+  stringifyTPayment: (value: object, options?: { validate?: boolean; failFast?: boolean }) => string;
+  parseTPayment: (text: string, options?: { validate?: boolean; failFast?: boolean }) => unknown;
+  validateTPayment: (value: unknown, options?: { failFast?: boolean }) => value is object;
+  toWireFormatTPayment: (value: unknown, options?: { validate?: boolean; failFast?: boolean }) => unknown;
+  fromWireFormatTPayment: (wire: unknown, options?: { validate?: boolean; failFast?: boolean }) => unknown;
+  stringifyTMoney: (value: object, options?: { validate?: boolean; failFast?: boolean }) => string;
+  parseTMoney: (text: string, options?: { validate?: boolean; failFast?: boolean }) => unknown;
 }
 
 test('IObject stringify/parse compose nested Money by call; invalid JSON fails before Ajv; validate<T> narrows', async (t) => {
   const { root } = fixture(t);
   fs.writeFileSync(path.join(root, 'src/narrow.ts'), readFixture("models/serde/validate-t-type-predicate-narrows-to-iobject-fields-for-imodel-and-iobject/narrow.ts"));
   const generated = fs.readFileSync(path.join(root, 'src/money.model.generated.ts'), 'utf8');
-  const paymentFnStart = generated.indexOf('function stringifyPayment');
+  const paymentFnStart = generated.indexOf('function stringifyTPayment');
   const paymentFnEnd = generated.indexOf('\n}', paymentFnStart);
   const paymentFn = generated.slice(paymentFnStart, paymentFnEnd);
-  assert.match(paymentFn, /stringifyMoneyCore\(/, 'one stringify function per interned node: Payment calls the stringifyMoney core instead of inlining its fields');
+  assert.match(paymentFn, /stringifyTMoneyCore\(/, 'one stringify function per interned node: Payment calls the stringifyTMoney core instead of inlining its fields');
   assert.doesNotMatch(
     paymentFn,
     /stringifyJsonString\([^;]*?\["currency"\]/,
-    'Money fields are not inlined into stringifyPayment',
+    'Money fields are not inlined into stringifyTPayment',
   );
   assert.match(
     generated,
@@ -79,46 +79,46 @@ test('IObject stringify/parse compose nested Money by call; invalid JSON fails b
     Payment: new (values?: object) => { id: string; amount: { currency: string; value: string }; note: string };
   };
   const codecs = await import(pathToFileURL(path.join(root, 'build/money.model.generated.js')).href) as PaymentCodecs & {
-    parsePayment: (text: string, options?: { validate?: boolean; failFast?: boolean; construct?: new (values?: never) => object }) => unknown;
+    parseTPayment: (text: string, options?: { validate?: boolean; failFast?: boolean; construct?: new (values?: never) => object }) => unknown;
   };
   const wire = { id: '1', amount: { currency: 'USD', value: '12.50' }, note: 'ok' };
-  const text = codecs.stringifyPayment(wire, { validate: false });
+  const text = codecs.stringifyTPayment(wire, { validate: false });
   assert.equal(text, '{"id":"1","amount":{"currency":"USD","value":"12.50"},"note":"ok"}');
   assert.equal(
-    codecs.stringifyPayment({ ...wire, extra: true }, { validate: false }),
+    codecs.stringifyTPayment({ ...wire, extra: true }, { validate: false }),
     text,
   );
-  const money = codecs.parseMoney('{"currency":"USD","value":"12.50"}', { validate: false }) as {
+  const money = codecs.parseTMoney('{"currency":"USD","value":"12.50"}', { validate: false }) as {
     currency: string;
     value: string;
   };
   assert.equal(Object.getPrototypeOf(money), Object.prototype);
   assert.equal(money.currency, 'USD');
-  const parsed = codecs.parsePayment(text, { validate: false }) as { id: string; amount: unknown };
+  const parsed = codecs.parseTPayment(text, { validate: false }) as { id: string; amount: unknown };
   assert.equal(Object.getPrototypeOf(parsed), Object.prototype);
   assert.equal(parsed.id, '1');
   assert.deepEqual(parsed.amount, wire.amount);
-  const constructed = codecs.parsePayment(text, { validate: false, construct: Payment }) as InstanceType<typeof Payment>;
+  const constructed = codecs.parseTPayment(text, { validate: false, construct: Payment }) as InstanceType<typeof Payment>;
   assert.ok(constructed instanceof Payment);
   assert.equal(constructed.id, '1');
-  assert.equal(codecs.validatePayment(wire), true);
-  const defaultText = codecs.stringifyPayment(wire);
+  assert.equal(codecs.validateTPayment(wire), true);
+  const defaultText = codecs.stringifyTPayment(wire);
   assert.equal(defaultText, text);
-  const defaultParsed = codecs.parsePayment(text) as { id: string };
+  const defaultParsed = codecs.parseTPayment(text) as { id: string };
   assert.equal(defaultParsed.id, '1');
-  const model = codecs.fromWireFormatPayment(wire) as { id: string };
+  const model = codecs.fromWireFormatTPayment(wire) as { id: string };
   assert.equal(Object.getPrototypeOf(model), Object.prototype);
   assert.equal(model.id, '1');
-  assert.deepEqual(codecs.toWireFormatPayment(model), wire);
+  assert.deepEqual(codecs.toWireFormatTPayment(model), wire);
   assert.throws(
-    () => codecs.parsePayment('{"id":'),
+    () => codecs.parseTPayment('{"id":'),
     (error: unknown) => error instanceof LibError && error.kind === LibErrorKind.InvalidJson
       && error.issues[0]?.code === IssueCode.InvalidJson
       && error.issues[0]?.source === IssueSource.JSON
       && error.issues[0]?.representation === IssueRepresentation.Wire,
   );
   try {
-    codecs.parsePayment(JSON.stringify({
+    codecs.parseTPayment(JSON.stringify({
       id: 1,
       amount: { currency: 1, value: 2 },
       note: false,
@@ -130,7 +130,7 @@ test('IObject stringify/parse compose nested Money by call; invalid JSON fails b
     assert.equal(error.issues.length, 1);
   }
   try {
-    codecs.parsePayment(JSON.stringify({
+    codecs.parseTPayment(JSON.stringify({
       id: 1,
       amount: { currency: 1, value: 2 },
       note: false,
@@ -169,7 +169,7 @@ test('IObject TSerde stringify/parse convert declared fields in one pass', async
   const generated = fs.readFileSync(path.join(root, 'src/permission.model.generated.ts'), 'utf8');
   assert.doesNotMatch(
     generated,
-    /stringifyPermissionInputCore[\s\S]*__golemSerialize[\s\S]*validatePermissionInputFast/,
+    /stringifyTPermissionInputCore[\s\S]*__golemSerialize[\s\S]*validatePermissionInputFast/,
     'budget: TSerde fields convert declared fields in one pass, not through a second interleaved stringify/validate sequence',
   );
   await compile(root);
@@ -177,26 +177,26 @@ test('IObject TSerde stringify/parse convert declared fields in one pass', async
     deserializeCalls: number;
   };
   const codecs = await import(pathToFileURL(path.join(root, 'build/permission.model.generated.js')).href) as {
-    stringifyPermissionInput: (value: object, options?: { validate?: boolean }) => string;
-    parsePermissionInput: (text: string, options?: { validate?: boolean }) => { permissions: number };
+    stringifyTPermissionInput: (value: object, options?: { validate?: boolean }) => string;
+    parseTPermissionInput: (text: string, options?: { validate?: boolean }) => { permissions: number };
     stringifyPermission: (value: object, options?: { validate?: boolean }) => string;
     parsePermission: (text: string, options?: { validate?: boolean; construct?: new (values?: never) => object }) => { permissions: number };
-    toWireFormatPermissionInput: (value: unknown, options?: { validate?: boolean }) => unknown;
-    fromWireFormatPermissionInput: (wire: unknown, options?: { validate?: boolean }) => { permissions: number };
-    validatePermissionInput: (value: unknown) => boolean;
+    toWireFormatTPermissionInput: (value: unknown, options?: { validate?: boolean }) => unknown;
+    fromWireFormatTPermissionInput: (wire: unknown, options?: { validate?: boolean }) => { permissions: number };
+    validateTPermissionInput: (value: unknown) => boolean;
   };
   const { Permission } = await import(pathToFileURL(path.join(root, 'build/permission.model.js')).href) as {
     Permission: new (values?: object) => { permissions: number };
   };
-  assert.equal(codecs.stringifyPermissionInput({ permissions: 5 }), '{"permissions":"0x5"}');
-  const parsed = codecs.parsePermissionInput('{"permissions":"0x5"}');
+  assert.equal(codecs.stringifyTPermissionInput({ permissions: 5 }), '{"permissions":"0x5"}');
+  const parsed = codecs.parseTPermissionInput('{"permissions":"0x5"}');
   assert.equal(parsed.permissions, 5);
   assert.equal(Object.getPrototypeOf(parsed), Object.prototype);
-  const dropped = codecs.parsePermissionInput('{"permissions":"0x5","extra":true}', { validate: false });
+  const dropped = codecs.parseTPermissionInput('{"permissions":"0x5","extra":true}', { validate: false });
   assert.equal(dropped.permissions, 5);
   assert.equal(Reflect.get(dropped, 'extra'), undefined);
   assert.throws(
-    () => codecs.parsePermissionInput('{"permissions":"0x5","extra":true}'),
+    () => codecs.parseTPermissionInput('{"permissions":"0x5","extra":true}'),
     (error: unknown) => error instanceof LibError
       && error.kind === LibErrorKind.Validation
       && error.issues[0]?.path?.[0] === 'extra',
@@ -208,13 +208,13 @@ test('IObject TSerde stringify/parse convert declared fields in one pass', async
   assert.ok(constructed instanceof Permission);
   assert.equal(constructed.permissions, 5);
   assert.equal(codecs.stringifyPermission(constructed), '{"permissions":"0x5"}');
-  assert.deepEqual(codecs.toWireFormatPermissionInput({ permissions: 5 }), { permissions: '0x5' });
-  assert.equal(codecs.fromWireFormatPermissionInput({ permissions: '0x5' }).permissions, 5);
-  assert.equal(codecs.validatePermissionInput({ permissions: 5 }), true);
-  assert.equal(codecs.validatePermissionInput({ permissions: '0x5' }), false);
+  assert.deepEqual(codecs.toWireFormatTPermissionInput({ permissions: 5 }), { permissions: '0x5' });
+  assert.equal(codecs.fromWireFormatTPermissionInput({ permissions: '0x5' }).permissions, 5);
+  assert.equal(codecs.validateTPermissionInput({ permissions: 5 }), true);
+  assert.equal(codecs.validateTPermissionInput({ permissions: '0x5' }), false);
   const beforeInvalid = permissionCodecs.deserializeCalls;
   assert.throws(
-    () => codecs.parsePermissionInput('{"permissions":"nope"}'),
+    () => codecs.parseTPermissionInput('{"permissions":"nope"}'),
     (error: unknown) => error instanceof LibError
       && error.kind === LibErrorKind.Validation
       && error.issues[0]?.representation === IssueRepresentation.Wire,
@@ -227,7 +227,7 @@ test('IObject TSerde stringify/parse convert declared fields in one pass', async
       && error.issues[0]?.representation === IssueRepresentation.Model,
   );
   assert.ok(permissionCodecs.deserializeCalls > beforeInvalid);
-  const trusted = codecs.parsePermissionInput('{"permissions":"nope"}', { validate: false });
+  const trusted = codecs.parseTPermissionInput('{"permissions":"nope"}', { validate: false });
   assert.ok(trusted.permissions === Number.parseInt('nope', 16) || Number.isNaN(trusted.permissions));
 });
 
@@ -247,13 +247,13 @@ test('same-type TSerde emits one Ajv schema and global validation false rejects 
   assert.doesNotMatch(generated, /validateLabelWireFast/, 'budget: no separate wire-plane validator is emitted when the wire and model schemas are identical');
   await compile(identityRoot);
   const codecs = await import(pathToFileURL(path.join(identityRoot, 'build/label.model.generated.js')).href) as {
-    stringifyLabel: (value: object, options?: { validate?: boolean }) => string;
-    parseLabel: (text: string, options?: { validate?: boolean }) => { name: string };
+    stringifyTLabel: (value: object, options?: { validate?: boolean }) => string;
+    parseTLabel: (text: string, options?: { validate?: boolean }) => { name: string };
   };
-  assert.equal(codecs.stringifyLabel({ name: 'ok' }), '{"name":"ok"}');
-  assert.equal(codecs.parseLabel('{"name":"ok"}').name, 'ok');
+  assert.equal(codecs.stringifyTLabel({ name: 'ok' }), '{"name":"ok"}');
+  assert.equal(codecs.parseTLabel('{"name":"ok"}').name, 'ok');
   assert.throws(
-    () => codecs.parseLabel('{"name":1}'),
+    () => codecs.parseTLabel('{"name":1}'),
     (error: unknown) => error instanceof LibError
       && error.kind === LibErrorKind.Validation
       && error.issues[0]?.representation === IssueRepresentation.Model,
@@ -262,17 +262,17 @@ test('same-type TSerde emits one Ajv schema and global validation false rejects 
   const { root } = fixture(t, { mobx: false, validation: false });
   await compile(root);
   const off = await import(pathToFileURL(path.join(root, 'build/money.model.generated.js')).href) as PaymentCodecs;
-  const trusted = off.stringifyPayment(
+  const trusted = off.stringifyTPayment(
     { id: '1', amount: { currency: 'USD', value: '1' }, note: 'x' },
     { validate: false },
   );
   assert.equal(trusted, '{"id":"1","amount":{"currency":"USD","value":"1"},"note":"x"}');
   assert.throws(
-    () => off.parsePayment('{"id":"1","amount":{"currency":"USD","value":"1"},"note":"x"}', { validate: true }),
+    () => off.parseTPayment('{"id":"1","amount":{"currency":"USD","value":"1"},"note":"x"}', { validate: true }),
     (error: unknown) => error instanceof LibError && error.kind === LibErrorKind.ValidationUnavailable,
   );
   assert.throws(
-    () => off.stringifyPayment({ id: '1', amount: { currency: 'USD', value: '1' }, note: 'x' }, { validate: true }),
+    () => off.stringifyTPayment({ id: '1', amount: { currency: 'USD', value: '1' }, note: 'x' }, { validate: true }),
     (error: unknown) => error instanceof LibError && error.kind === LibErrorKind.ValidationUnavailable,
   );
 });
@@ -312,15 +312,15 @@ test('nested class-typed IModel fields construct; type-only parse fills like IOb
   };
   registerIModelClass(pointId, Point3D);
   const codecs = await import(pathToFileURL(path.join(root, 'build/money.model.generated.js')).href) as {
-    parseObjectTypeField: (text: string, options?: { validate?: boolean }) => { scale: object };
-    parseObjectClassField: (text: string, options?: { validate?: boolean }) => { scale: object };
-    fromWireFormatObjectClassField: (wire: unknown, options?: { validate?: boolean }) => { scale: object };
+    parseTObjectTypeField: (text: string, options?: { validate?: boolean }) => { scale: object };
+    parseTObjectClassField: (text: string, options?: { validate?: boolean }) => { scale: object };
+    fromWireFormatTObjectClassField: (wire: unknown, options?: { validate?: boolean }) => { scale: object };
   };
   const wire = '{"id":"1","scale":{"x":1,"y":2,"z":3}}';
-  const typedParsed = codecs.parseObjectTypeField(wire, { validate: false });
+  const typedParsed = codecs.parseTObjectTypeField(wire, { validate: false });
   assert.equal(Object.getPrototypeOf(typedParsed.scale), Object.prototype);
   assert.equal(Reflect.get(typedParsed.scale, 'x'), 1);
-  const classified = codecs.fromWireFormatObjectClassField(JSON.parse(wire) as object, { validate: false });
+  const classified = codecs.fromWireFormatTObjectClassField(JSON.parse(wire) as object, { validate: false });
   assert.ok(classified.scale instanceof Point3D);
 });
 
@@ -330,21 +330,21 @@ test('type-only IModel parse fills nested models from the generated base', async
   const result = generate({ root, profile: { mobx: false, validation: false } });
   writeGeneratedArtifacts(result.artifacts);
   await compile(root);
-  const { IsolatedPointBaseModel } = await import(pathToFileURL(path.join(root, 'build/money.model.generated.js')).href) as {
-    IsolatedPointBaseModel: new (values?: object) => object;
+  const { TIsolatedPointBaseModel } = await import(pathToFileURL(path.join(root, 'build/money.model.generated.js')).href) as {
+    TIsolatedPointBaseModel: new (values?: object) => object;
   };
   const codecs = await import(pathToFileURL(path.join(root, 'build/money.model.generated.js')).href) as {
-    parseObjectClassField: (text: string, options?: { validate?: boolean }) => { scale: object };
-    fromWireFormatObjectClassField: (wire: unknown, options?: { validate?: boolean }) => { scale: object };
+    parseTObjectClassField: (text: string, options?: { validate?: boolean }) => { scale: object };
+    fromWireFormatTObjectClassField: (wire: unknown, options?: { validate?: boolean }) => { scale: object };
   };
-  const parsed = codecs.parseObjectClassField('{"id":"1","scale":{"x":1,"y":2,"z":3}}', { validate: false });
-  assert.ok(parsed.scale instanceof IsolatedPointBaseModel);
+  const parsed = codecs.parseTObjectClassField('{"id":"1","scale":{"x":1,"y":2,"z":3}}', { validate: false });
+  assert.ok(parsed.scale instanceof TIsolatedPointBaseModel);
   assert.equal(Reflect.get(parsed.scale, 'x'), 1);
-  const constructed = codecs.fromWireFormatObjectClassField(
+  const constructed = codecs.fromWireFormatTObjectClassField(
     { id: '1', scale: { x: 1, y: 2, z: 3 } },
     { validate: false },
   );
-  assert.ok(constructed.scale instanceof IsolatedPointBaseModel);
+  assert.ok(constructed.scale instanceof TIsolatedPointBaseModel);
 });
 
 test('toWireFormat encodes nullable nested IModel fields to plain objects, not class instances', async (t) => {
@@ -354,15 +354,15 @@ test('toWireFormat encodes nullable nested IModel fields to plain objects, not c
   writeGeneratedArtifacts(result.artifacts);
   await compile(root);
   const codecs = await import(pathToFileURL(path.join(root, 'build/money.model.generated.js')).href) as {
-    fromWireFormatCustomer: (wire: unknown, options?: { validate?: boolean }) => { id: number; account: object | null };
-    toWireFormatCustomer: (value: unknown, options?: { validate?: boolean }) => unknown;
+    fromWireFormatTCustomer: (wire: unknown, options?: { validate?: boolean }) => { id: number; account: object | null };
+    toWireFormatTCustomer: (value: unknown, options?: { validate?: boolean }) => unknown;
   };
   const present = { id: 101, account: { id: 601, code: 'customer-account-601' } };
   const missing = { id: 101, account: null };
-  const presentModel = codecs.fromWireFormatCustomer(present, { validate: false });
-  const missingModel = codecs.fromWireFormatCustomer(missing, { validate: false });
-  const presentWire = codecs.toWireFormatCustomer(presentModel, { validate: false }) as typeof present;
-  const missingWire = codecs.toWireFormatCustomer(missingModel, { validate: false }) as typeof missing;
+  const presentModel = codecs.fromWireFormatTCustomer(present, { validate: false });
+  const missingModel = codecs.fromWireFormatTCustomer(missing, { validate: false });
+  const presentWire = codecs.toWireFormatTCustomer(presentModel, { validate: false }) as typeof present;
+  const missingWire = codecs.toWireFormatTCustomer(missingModel, { validate: false }) as typeof missing;
   assert.deepEqual(presentWire, present);
   assert.deepEqual(missingWire, missing);
   assert.equal(Object.getPrototypeOf(presentWire.account), Object.prototype);
@@ -375,16 +375,16 @@ test('fromWireFormat copies identity arrays and tuples instead of aliasing the i
   writeGeneratedArtifacts(result.artifacts);
   await compile(root);
   const codecs = await import(pathToFileURL(path.join(root, 'build/money.model.generated.js')).href) as {
-    fromWireFormatMember: (wire: unknown, options?: { validate?: boolean }) => { emails: string[]; ip: [number, number, number, number] };
-    toWireFormatMember: (value: unknown, options?: { validate?: boolean }) => { emails: string[]; ip: [number, number, number, number] };
+    fromWireFormatTMember: (wire: unknown, options?: { validate?: boolean }) => { emails: string[]; ip: [number, number, number, number] };
+    toWireFormatTMember: (value: unknown, options?: { validate?: boolean }) => { emails: string[]; ip: [number, number, number, number] };
   };
   const wire = { id: 1, emails: ['a@example.com', 'b@example.com'], ip: [127, 0, 0, 1] as [number, number, number, number] };
-  const model = codecs.fromWireFormatMember(wire, { validate: false });
+  const model = codecs.fromWireFormatTMember(wire, { validate: false });
   assert.notEqual(model.emails, wire.emails);
   assert.deepEqual(model.emails, wire.emails);
   assert.notEqual(model.ip, wire.ip);
   assert.deepEqual(model.ip, wire.ip);
-  const encoded = codecs.toWireFormatMember(model, { validate: false });
+  const encoded = codecs.toWireFormatTMember(model, { validate: false });
   assert.notEqual(encoded.emails, model.emails);
   assert.deepEqual(encoded.emails, wire.emails);
   assert.notEqual(encoded.ip, model.ip);

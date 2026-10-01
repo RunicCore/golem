@@ -8,7 +8,7 @@ import {
   type FromJsonModelResolver,
   type ModelDiscriminators,
 } from '@exprtlabs/golem/emitter';
-import { createSchemaGraph, codecPublicId, codecShortName, internDescriptors, type SchemaGraph, type SchemaNode } from '@exprtlabs/golem/schema-graph';
+import { createSchemaGraph, codecPublicId, internDescriptors, type SchemaGraph, type SchemaNode } from '@exprtlabs/golem/schema-graph';
 import type { CodecSchemaClosureEntry } from '@exprtlabs/golem/ajv-tooling';
 import { assertSupportedModelFieldName, type JsonSchema } from '@exprtlabs/golem/schema';
 import { sourceDigest } from '@exprtlabs/golem/manifest';
@@ -1017,7 +1017,7 @@ function nodesByDefinitionName(
     if (!node) throw new Error(`Internal error: model ${definitionName} has no schema node.`);
     const other = definitionNameByNodeId.get(node.id);
     if (other !== undefined) {
-      throw new Error(`OpenAPI components "${other}" and "${definitionName}" both map to the model name "${node.name}". Rename one of them.`);
+      throw new Error(`OpenAPI components "${other}" and "${definitionName}" both map to the model name "${node.name}" once characters that are not letters, digits or underscores are replaced. Rename one of them.`);
     }
     definitionNameByNodeId.set(node.id, definitionName);
     nodesByName.set(definitionName, node);
@@ -1084,7 +1084,6 @@ function openApiValidationSchemaClosure(
       aliases: [...new Set([
         node.id,
         node.name,
-        codecShortName(node.name),
         node.codecId,
         ...(idsByName.has(node.name) ? [idsByName.get(node.name) ?? ''] : []),
       ].filter(Boolean))],
@@ -1198,16 +1197,6 @@ function schemaGraphGroups(
       const model = definitionNameByNodeId.get(id);
       return model === undefined ? [] : [model];
     }));
-    // The ttsc plugin finds a class by file and model name, so one file cannot hold two classes that shorten alike.
-    const byModelName = new Map<string, string>();
-    for (const model of [...models].sort()) {
-      const modelName = codecShortName(model);
-      const other = byModelName.get(modelName);
-      if (other !== undefined) {
-        throw new Error(`OpenAPI components "${other}" and "${model}" both map to the model name "${modelName}". They are part of one reference cycle, so they share one file. Rename one of them.`);
-      }
-      byModelName.set(modelName, model);
-    }
     const id = `group-${hashGroup([...ids].map((nodeId) => schemaGraph.nodes.get(nodeId)?.codecId ?? nodeId))}`;
     for (const nodeId of ids) owner.set(nodeId, id);
     return { id, filename: `models/_${id}.ts`, nodes: new Set(ids), models };
@@ -1802,7 +1791,6 @@ export function generateModels(
     },
     nestedGenerated: (name) => {
       const node = analysis.nodesByName.get(name)
-        ?? analysis.nodesByName.get(codecShortName(name))
         ?? analysis.nodesById.get(name)
         ?? analysis.nodesByCodecId.get(name);
       const modelName = node ? analysis.definitionNameByNodeId.get(node.id) ?? node.name : name;

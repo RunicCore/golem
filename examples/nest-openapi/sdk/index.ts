@@ -2,18 +2,18 @@
 export * from './types.js';
 export type * as InputSchemas from './input-schemas.js';
 export type * as OutputSchemas from './output-schemas.js';
-export { MerchantModel, stringifyMerchant, parseMerchant, fromWireFormatMerchant, toWireFormatMerchant, validateMerchant, assertMerchant, encodeMerchant } from './models/Merchant.js';
-export type { MerchantFields, MerchantJSON, MerchantInit } from './models/Merchant.js';
-export { MerchantOmitIdModel, stringifyMerchantOmitId, parseMerchantOmitId, fromWireFormatMerchantOmitId, toWireFormatMerchantOmitId, validateMerchantOmitId, assertMerchantOmitId, encodeMerchantOmitId } from './models/MerchantOmitId.js';
-export type { MerchantOmitIdFields, MerchantOmitIdJSON, MerchantOmitIdInit } from './models/MerchantOmitId.js';
-export { MoneyModel, stringifyMoney, parseMoney, fromWireFormatMoney, toWireFormatMoney, validateMoney, assertMoney, encodeMoney } from './models/Money.js';
-export type { MoneyFields, MoneyJSON, MoneyInit } from './models/Money.js';
-export { PaymentModel, stringifyPayment, parsePayment, fromWireFormatPayment, toWireFormatPayment, validatePayment, assertPayment, encodePayment } from './models/Payment.js';
-export type { PaymentFields, PaymentJSON, PaymentInit } from './models/Payment.js';
-export { PaymentDraftModel, stringifyPaymentDraft, parsePaymentDraft, fromWireFormatPaymentDraft, toWireFormatPaymentDraft, validatePaymentDraft, assertPaymentDraft, encodePaymentDraft } from './models/PaymentDraft.js';
-export type { PaymentDraftFields, PaymentDraftJSON, PaymentDraftInit } from './models/PaymentDraft.js';
-export { PaymentInputModel, stringifyPaymentInput, parsePaymentInput, fromWireFormatPaymentInput, toWireFormatPaymentInput, validatePaymentInput, assertPaymentInput, encodePaymentInput } from './models/PaymentInput.js';
-export type { PaymentInputFields, PaymentInputJSON, PaymentInputInit } from './models/PaymentInput.js';
+export { TMerchantModel, stringifyTMerchant, parseTMerchant, fromWireFormatTMerchant, toWireFormatTMerchant, validateTMerchant, assertTMerchant, encodeTMerchant } from './models/TMerchant.js';
+export type { TMerchantFields, TMerchantJSON, TMerchantInit } from './models/TMerchant.js';
+export { TMerchantOmitIdModel, stringifyTMerchantOmitId, parseTMerchantOmitId, fromWireFormatTMerchantOmitId, toWireFormatTMerchantOmitId, validateTMerchantOmitId, assertTMerchantOmitId, encodeTMerchantOmitId } from './models/TMerchantOmitId.js';
+export type { TMerchantOmitIdFields, TMerchantOmitIdJSON, TMerchantOmitIdInit } from './models/TMerchantOmitId.js';
+export { TMoneyModel, stringifyTMoney, parseTMoney, fromWireFormatTMoney, toWireFormatTMoney, validateTMoney, assertTMoney, encodeTMoney } from './models/TMoney.js';
+export type { TMoneyFields, TMoneyJSON, TMoneyInit } from './models/TMoney.js';
+export { TPaymentModel, stringifyTPayment, parseTPayment, fromWireFormatTPayment, toWireFormatTPayment, validateTPayment, assertTPayment, encodeTPayment } from './models/TPayment.js';
+export type { TPaymentFields, TPaymentJSON, TPaymentInit } from './models/TPayment.js';
+export { TPaymentDraftModel, stringifyTPaymentDraft, parseTPaymentDraft, fromWireFormatTPaymentDraft, toWireFormatTPaymentDraft, validateTPaymentDraft, assertTPaymentDraft, encodeTPaymentDraft } from './models/TPaymentDraft.js';
+export type { TPaymentDraftFields, TPaymentDraftJSON, TPaymentDraftInit } from './models/TPaymentDraft.js';
+export { TPaymentInputModel, stringifyTPaymentInput, parseTPaymentInput, fromWireFormatTPaymentInput, toWireFormatTPaymentInput, validateTPaymentInput, assertTPaymentInput, encodeTPaymentInput } from './models/TPaymentInput.js';
+export type { TPaymentInputFields, TPaymentInputJSON, TPaymentInputInit } from './models/TPaymentInput.js';
 export * from './client.js';
 
 

@@ -3,7 +3,7 @@ import { validateInstance } from '@exprtlabs/golem/validation';
 import { type PaymentsClientPort, type Money } from '../sdk/index.js';
 import { PaymentEditor } from './payment-editor.model.js';
 import type { TPaymentEditor } from './payment-editor.model.js';
-import type { PaymentEditorJSON } from './payment-editor.model.generated.js';
+import type { TPaymentEditorJSON } from './payment-editor.model.generated.js';
 
 export interface PaymentDraft {
   money: Money;
@@ -19,7 +19,7 @@ export async function savePayment(client: PaymentsClientPort, editor: PaymentEdi
   if ((await validateInstance(editor)).length > 0) {
     throw new Error('Cannot save an invalid payment.');
   }
-  const wire: PaymentEditorJSON = toWireFormat<TPaymentEditor>(editor);
+  const wire: TPaymentEditorJSON = toWireFormat<TPaymentEditor>(editor);
   return client.createPayment().execute({ body: wire.money });
 }
 // #endregion validate-and-save

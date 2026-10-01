@@ -10,49 +10,49 @@ function modelObject(json: unknown, name: string): Record<string, unknown> {
   return requireModelObject(json, name);
 }
 
-export type PaymentEditorFields = { money: InstanceType<typeof MoneyModel>; note: string };
-export type PaymentEditorJSON = { money: GeneratedModelWire<InstanceType<typeof MoneyModel>>; note: string };
-export type PaymentEditorInit = Partial<{ money: (ConstructorParameters<typeof MoneyModel> extends [] ? never : ConstructorParameters<typeof MoneyModel> extends [(infer Initializer)?, ...unknown[]] ? Initializer : never) | InstanceType<typeof MoneyModel>; note: string }>;
+export type TPaymentEditorFields = { money: InstanceType<typeof MoneyModel>; note: string };
+export type TPaymentEditorJSON = { money: GeneratedModelWire<InstanceType<typeof MoneyModel>>; note: string };
+export type TPaymentEditorInit = Partial<{ money: (ConstructorParameters<typeof MoneyModel> extends [] ? never : ConstructorParameters<typeof MoneyModel> extends [(infer Initializer)?, ...unknown[]] ? Initializer : never) | InstanceType<typeof MoneyModel>; note: string }>;
 
-export abstract class PaymentEditorBaseModel implements GeneratedModel<PaymentEditorJSON, PaymentEditorFields> {
-  declare readonly [generatedModelWireBrand]: PaymentEditorJSON;
-  declare readonly [generatedModelFieldsBrand]: PaymentEditorFields;
-  declare money: PaymentEditorFields["money"];
-  declare note: PaymentEditorFields["note"];
+export abstract class TPaymentEditorBaseModel implements GeneratedModel<TPaymentEditorJSON, TPaymentEditorFields> {
+  declare readonly [generatedModelWireBrand]: TPaymentEditorJSON;
+  declare readonly [generatedModelFieldsBrand]: TPaymentEditorFields;
+  declare money: TPaymentEditorFields["money"];
+  declare note: TPaymentEditorFields["note"];
 
-  public constructor(values: PaymentEditorInit = {}) {
+  public constructor(values: TPaymentEditorInit = {}) {
     if (Object.prototype.hasOwnProperty.call(values, "money")) defineModelProperty(this, "money", values["money"] == null || values["money"] instanceof MoneyModel ? values["money"] : new (MoneyModel as unknown as new (values?: unknown) => MoneyModel)(values["money"]));
     if (Object.prototype.hasOwnProperty.call(values, "note")) defineModelProperty(this, "note", values["note"]);
   }
 
 }
 
-function decodePaymentEditorModel(constructor: GeneratedModelConstructor, json: unknown): PaymentEditorBaseModel {
-  const values = modelObject(json, "PaymentEditorBaseModel");
+function decodeTPaymentEditorModel(constructor: GeneratedModelConstructor, json: unknown): TPaymentEditorBaseModel {
+  const values = modelObject(json, "TPaymentEditorBaseModel");
   const result: Record<string, unknown> = { ...values };
   if (Object.prototype.hasOwnProperty.call(values, "money")) defineModelProperty(result, "money", convertModelField("deserialize", "money", () => (values["money"] == null || values["money"] instanceof MoneyModel ? values["money"] : decodeGeneratedModelTrusted(MoneyModel, values["money"]))));
-  return Reflect.construct(constructor, [result]) as PaymentEditorBaseModel;
+  return Reflect.construct(constructor, [result]) as TPaymentEditorBaseModel;
 }
 
-function encodePaymentEditorModel(model: PaymentEditorBaseModel): PaymentEditorJSON {
+function encodeTPaymentEditorModel(model: TPaymentEditorBaseModel): TPaymentEditorJSON {
   const result: Record<string, unknown> = {};
   if (Object.prototype.hasOwnProperty.call(model, "money")) defineModelProperty(result, "money", (convertModelField("serialize", "money", () => (model["money"] instanceof MoneyModel ? encodeGeneratedModel(model["money"]) : model["money"]))));
   if (Object.prototype.hasOwnProperty.call(model, "note")) defineModelProperty(result, "note", (model["note"]));
-  return result as PaymentEditorJSON;
+  return result as TPaymentEditorJSON;
 }
 
-registerGeneratedModel(PaymentEditorBaseModel, {
+registerGeneratedModel(TPaymentEditorBaseModel, {
   fields: ["money", "note"],
   conversion: {
-    decode: (value, constructor) => decodePaymentEditorModel(constructor ?? PaymentEditorBaseModel, value),
-    encode: encodePaymentEditorModel,
+    decode: (value, constructor) => decodeTPaymentEditorModel(constructor ?? TPaymentEditorBaseModel, value),
+    encode: encodeTPaymentEditorModel,
   },
-  codecId: "PaymentEditor_ec0e7711",
+  codecId: "TPaymentEditor_ec0e7711",
   profile: { validation: true, mobx: true },
   enhanceValidator: enhanceValidatorWithMobX,
 });
 
-registerIModelClass("PaymentEditor_ec0e7711", PaymentEditorBaseModel);
+registerIModelClass("TPaymentEditor_ec0e7711", TPaymentEditorBaseModel);
 
 const __golemTrusted = Object.freeze({ validate: false });
 
@@ -60,14 +60,14 @@ const objectAjvFast = createOpenApiSyncAjvEngine({ allErrors: false, validationB
 const objectAjvAll = createOpenApiSyncAjvEngine({ allErrors: true, validationBindings: {} });
 
 addNestedCodecSchema([(schema, id) => objectAjvFast.addSchema(schema, id), (schema, id) => objectAjvAll.addSchema(schema, id)], "Money", MoneyModel);
-const __resolvedModelSchema_PaymentEditor = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"PaymentEditor_ec0e7711\",\"type\":\"object\",\"properties\":{\"money\":{\"$ref\":\"__exprtGeneratedModel:Money\"},\"note\":{\"type\":\"string\"}},\"required\":[\"money\",\"note\"],\"additionalProperties\":false}") as object) as object;
-objectAjvFast.addSchema(structuredClone(__resolvedModelSchema_PaymentEditor) as object, "PaymentEditor_ec0e7711");
-objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_PaymentEditor) as object, "PaymentEditor_ec0e7711");
+const __resolvedModelSchema_TPaymentEditor = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"TPaymentEditor_ec0e7711\",\"type\":\"object\",\"properties\":{\"money\":{\"$ref\":\"__exprtGeneratedModel:Money\"},\"note\":{\"type\":\"string\"}},\"required\":[\"money\",\"note\"],\"additionalProperties\":false}") as object) as object;
+objectAjvFast.addSchema(structuredClone(__resolvedModelSchema_TPaymentEditor) as object, "TPaymentEditor_ec0e7711");
+objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_TPaymentEditor) as object, "TPaymentEditor_ec0e7711");
 
-const validatePaymentEditorFast = requireAjvSchema(objectAjvFast.getSchema("PaymentEditor_ec0e7711"), "PaymentEditor_ec0e7711");
-const validatePaymentEditorAll = requireAjvSchema(objectAjvAll.getSchema("PaymentEditor_ec0e7711"), "PaymentEditor_ec0e7711");
+const validateTPaymentEditorFast = requireAjvSchema(objectAjvFast.getSchema("TPaymentEditor_ec0e7711"), "TPaymentEditor_ec0e7711");
+const validateTPaymentEditorAll = requireAjvSchema(objectAjvAll.getSchema("TPaymentEditor_ec0e7711"), "TPaymentEditor_ec0e7711");
 
-function fillPaymentEditor(out: Record<string, unknown>, wire: Record<string, unknown>, copyIdentity = true): Record<string, unknown> {
+function fillTPaymentEditor(out: Record<string, unknown>, wire: Record<string, unknown>, copyIdentity = true): Record<string, unknown> {
   if (copyIdentity) {
     out["note"] = wire["note"];
   }
@@ -77,86 +77,86 @@ function fillPaymentEditor(out: Record<string, unknown>, wire: Record<string, un
   return out;
 }
 
-function stringifyPaymentEditorCore(value: Record<string, unknown>): string {
+function stringifyTPaymentEditorCore(value: Record<string, unknown>): string {
   return '{' + "\"money\":" + stringifyMoney(value["money"] as never, __golemTrusted) + ",\"note\":" + stringifyJsonString(value["note"] as string) + '}';
 }
 
-export function stringifyPaymentEditor(value: PaymentEditorFields, options?: __GolemSerdeOptions): string {
+export function stringifyTPaymentEditor(value: TPaymentEditorFields, options?: __GolemSerdeOptions): string {
   const validates = serdeValidates(options, true);
   if (validates) {
-    assertPaymentEditor(value, options);
+    assertTPaymentEditor(value, options);
   }
-  return stringifyPaymentEditorCore(value as never);
+  return stringifyTPaymentEditorCore(value as never);
 }
 
-function convertFromWirePaymentEditor(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
+function convertFromWireTPaymentEditor(wire: unknown, options: __GolemSerdeOptions | undefined, isolated: boolean): unknown {
   const validates = serdeValidates(options, true);
   if (validates) {
-    assertPaymentEditor(wire, options);
+    assertTPaymentEditor(wire, options);
   }
   const source = isolated || wire === null || typeof wire !== 'object' ? wire : cloneConversionInput(wire);
   let result: unknown = source;
   if (source !== null && typeof source === 'object' && !Array.isArray(source)) {
     if (options?.construct) {
-      result = Reflect.construct(options.construct, [fillPaymentEditor({ ...(source as Record<string, unknown>) }, (source as Record<string, unknown>), false)]);
+      result = Reflect.construct(options.construct, [fillTPaymentEditor({ ...(source as Record<string, unknown>) }, (source as Record<string, unknown>), false)]);
     } else {
-      result = fillPaymentEditor({} as Record<string, unknown>, source as Record<string, unknown>);
+      result = fillTPaymentEditor({} as Record<string, unknown>, source as Record<string, unknown>);
     }
   }
   return result;
 }
 
-export function fromWireFormatPaymentEditor(wire: unknown, options?: __GolemSerdeOptions): PaymentEditorFields {
-  return convertFromWirePaymentEditor(wire, options, false) as PaymentEditorFields;
+export function fromWireFormatTPaymentEditor(wire: unknown, options?: __GolemSerdeOptions): TPaymentEditorFields {
+  return convertFromWireTPaymentEditor(wire, options, false) as TPaymentEditorFields;
 }
 
-function toWireFormatPaymentEditorCore(value: PaymentEditorFields): PaymentEditorJSON {
+function toWireFormatTPaymentEditorCore(value: TPaymentEditorFields): TPaymentEditorJSON {
   const record = value as Record<string, unknown>;
   const wire = { ["money"]: toWireFormatMoney(record["money"] as never, __golemTrusted), ["note"]: record["note"] };
-  return wire as PaymentEditorJSON;
+  return wire as TPaymentEditorJSON;
 }
 
-export function toWireFormatPaymentEditor(value: PaymentEditorFields, options?: __GolemSerdeOptions): PaymentEditorJSON {
+export function toWireFormatTPaymentEditor(value: TPaymentEditorFields, options?: __GolemSerdeOptions): TPaymentEditorJSON {
   const validates = serdeValidates(options, true);
   if (validates) {
-    assertPaymentEditor(value, options);
+    assertTPaymentEditor(value, options);
   }
-  return toWireFormatPaymentEditorCore(value);
+  return toWireFormatTPaymentEditorCore(value);
 }
 
-export function parsePaymentEditor(text: string, options?: __GolemSerdeOptions): PaymentEditorFields {
-  return convertFromWirePaymentEditor(parseJson(text), options, true) as PaymentEditorFields;
+export function parseTPaymentEditor(text: string, options?: __GolemSerdeOptions): TPaymentEditorFields {
+  return convertFromWireTPaymentEditor(parseJson(text), options, true) as TPaymentEditorFields;
 }
 
-export function validatePaymentEditor(value: unknown, options?: __GolemValidateOptions): value is PaymentEditorFields {
+export function validateTPaymentEditor(value: unknown, options?: __GolemValidateOptions): value is TPaymentEditorFields {
   const failFast = options?.failFast !== false;
   let ok: boolean;
   let errors: readonly unknown[] | null | undefined;
   if (options?.validationContext === undefined) {
-    const validator = failFast ? validatePaymentEditorFast : validatePaymentEditorAll;
+    const validator = failFast ? validateTPaymentEditorFast : validateTPaymentEditorAll;
     ok = validator(value);
     errors = validator.errors;
   } else {
-    const validator = resolveModelValidationContextValidator(options.validationContext, "PaymentEditor_ec0e7711", failFast ? 'first' : 'all');
+    const validator = resolveModelValidationContextValidator(options.validationContext, "TPaymentEditor_ec0e7711", failFast ? 'first' : 'all');
     ok = runSynchronousValidation(validator, value);
     errors = validator.errors;
   }
-  (validatePaymentEditor as { errors?: unknown }).errors = errors;
+  (validateTPaymentEditor as { errors?: unknown }).errors = errors;
   return ok;
 }
 
-export function assertPaymentEditor(value: unknown, options?: __GolemValidateOptions): PaymentEditorFields {
-  assertModelValue(value, options, validatePaymentEditorFast, validatePaymentEditorAll, "PaymentEditor_ec0e7711", IssueRepresentation.Model, IssueSource.TypeScript);
-  return value as PaymentEditorFields;
+export function assertTPaymentEditor(value: unknown, options?: __GolemValidateOptions): TPaymentEditorFields {
+  assertModelValue(value, options, validateTPaymentEditorFast, validateTPaymentEditorAll, "TPaymentEditor_ec0e7711", IssueRepresentation.Model, IssueSource.TypeScript);
+  return value as TPaymentEditorFields;
 }
 
-createObjectCodec("PaymentEditor_ec0e7711", {
-  stringify: stringifyPaymentEditor as (value: never, options?: __GolemSerdeOptions) => string,
-  parse: parsePaymentEditor as (text: string, options?: __GolemSerdeOptions) => never,
-  validate: validatePaymentEditor,
-  assert: assertPaymentEditor,
-  toWireFormat: toWireFormatPaymentEditor,
-  fromWireFormat: fromWireFormatPaymentEditor,
-  schema: __resolvedModelSchema_PaymentEditor,
+createObjectCodec("TPaymentEditor_ec0e7711", {
+  stringify: stringifyTPaymentEditor as (value: never, options?: __GolemSerdeOptions) => string,
+  parse: parseTPaymentEditor as (text: string, options?: __GolemSerdeOptions) => never,
+  validate: validateTPaymentEditor,
+  assert: assertTPaymentEditor,
+  toWireFormat: toWireFormatTPaymentEditor,
+  fromWireFormat: fromWireFormatTPaymentEditor,
+  schema: __resolvedModelSchema_TPaymentEditor,
   issueSource: IssueSource.TypeScript,
 });

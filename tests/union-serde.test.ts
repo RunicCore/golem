@@ -55,24 +55,24 @@ test('nested TSerde with exact and T|T[] fail-fast reports one issue', async (t)
   const root = generateRoot(t);
   await compile(root);
   const codecs = await import(pathToFileURL(path.join(root, 'build/order.model.generated.js')).href) as {
-    fromWireFormatOrder: (wire: unknown, options?: { validate?: boolean; failFast?: boolean }) => {
+    fromWireFormatTOrder: (wire: unknown, options?: { validate?: boolean; failFast?: boolean }) => {
       money: { amount: number; currency: string };
       tag?: 'open' | 'closed' | Array<'open' | 'closed'>;
     };
   };
-  const loaded = codecs.fromWireFormatOrder({
+  const loaded = codecs.fromWireFormatTOrder({
     money: { amount: '12.50', currency: 'USD' },
     tag: 'open',
   });
   assert.equal(loaded.money.amount, 12.5);
   assert.equal(loaded.tag, 'open');
-  const listed = codecs.fromWireFormatOrder({
+  const listed = codecs.fromWireFormatTOrder({
     money: { amount: '12.50', currency: 'USD' },
     tag: ['open', 'closed'],
   });
   assert.deepEqual(listed.tag, ['open', 'closed']);
   try {
-    codecs.fromWireFormatOrder({
+    codecs.fromWireFormatTOrder({
       money: { amount: 1, currency: 1 },
       tag: 'refunded',
     });
@@ -84,7 +84,7 @@ test('nested TSerde with exact and T|T[] fail-fast reports one issue', async (t)
     assert.equal(error.issues[0]?.representation, IssueRepresentation.Wire);
   }
   try {
-    codecs.fromWireFormatOrder({
+    codecs.fromWireFormatTOrder({
       money: { amount: 1, currency: 1 },
       tag: 'refunded',
     }, { failFast: false });
@@ -95,7 +95,7 @@ test('nested TSerde with exact and T|T[] fail-fast reports one issue', async (t)
     assert.ok(error.issues.length > 1);
   }
   try {
-    codecs.fromWireFormatOrder({
+    codecs.fromWireFormatTOrder({
       money: { amount: '12.50', currency: 'USD' },
       extra: true,
     });
