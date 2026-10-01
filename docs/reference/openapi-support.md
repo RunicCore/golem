@@ -27,6 +27,12 @@ An operation name that is a JavaScript reserved word receives a `_` suffix (`ope
 
 A security scheme named `constructor` keeps that name on the generated `auth` option; it is not renamed. TypeScript requires `constructor: undefined` when supplying an `auth` object that omits that credential, for example `auth: { bearerAuth: 'token', constructor: undefined }`. This avoids a conflict with JavaScript's inherited constructor property while leaving the credential unavailable.
 
+## References between files
+
+A discriminator `mapping` value inside a referenced file must be a pointer such as `#/components/schemas/Dog`, or the name of a root alias. A bare name in another file names a root component, so generation fails when the root declares none by that name and reports the mapping and its file.
+
+`#/…` always means the containing document root, also inside a schema that declares its own `$id`. Pointers relative to an `$id` resource, such as `#/properties/x`, are unsupported; the `no-unresolved-refs` rule reports them.
+
 ## Response matching
 
 When several response declarations could match, the client selects an exact status before a status range or `default`, then the most specific media type. It does not switch to another status declaration to make a media type match. Status and media-type matching runs even with `validation: false`.

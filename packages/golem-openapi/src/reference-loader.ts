@@ -3,6 +3,7 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import type { InputObserver } from '@exprtlabs/golem/generator-api';
 import YAML from 'yaml';
+import { displayLocation } from './bundler.js';
 import { asRecord, escapeJsonPointerToken, isJsonObject, jsonPointerJoin, objectEntries, resolveJsonPointer } from './json.js';
 import {
   collectCanonicalResources,
@@ -204,7 +205,7 @@ const DOCUMENT_EXTENSION = /\.(?:json|ya?ml)$/i;
  * extension. In the root document, a value equal to a `components.schemas`
  * key is always a name. Names are kept as written; they name root components.
  */
-function isMappingComponentName(value: string, rootSchemaNames: ReadonlySet<string> | undefined): boolean {
+export function isMappingComponentName(value: string, rootSchemaNames: ReadonlySet<string> | undefined): boolean {
   if (rootSchemaNames?.has(value)) return true;
   return /^[^/:#]+$/.test(value) && !DOCUMENT_EXTENSION.test(value);
 }
@@ -472,7 +473,14 @@ export async function loadReferenceGraph(
         record('$ref', keywordOwner(pointer, '$ref'), '$ref', reference, documentUri, pointer, kind);
       },
       onDiscriminatorMapping(keyword, reference, currentBase, ownerPointer, property) {
-        if (isMappingComponentName(reference, mappingNames)) return;
+        if (isMappingComponentName(reference, mappingNames)) {
+          if (documentUri === rootUri || rootSchemaNames.has(reference)) return;
+          const location = displayLocation(documentUri, jsonPointerJoin(ownerPointer, property).slice(1), rootDirectory);
+          throw new Error(
+            `unsupported discriminator ${keyword} ${JSON.stringify(reference)} at ${location}: a bare name in another file names a root component, and the root document declares no component ${JSON.stringify(reference)}. `
+            + `Use '#/components/schemas/${reference}' or a root alias.`,
+          );
+        }
         record(keyword, ownerPointer.slice(1), property, reference, currentBase, jsonPointerJoin(ownerPointer, property), 'schemas');
       },
     };

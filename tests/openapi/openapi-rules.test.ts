@@ -236,3 +236,43 @@ test('rules skip x- extension keys under paths and webhooks as path items', () =
   });
   assert.deepEqual(found(document, 'operation-operationId-unique'), []);
 });
+
+test('no-unresolved-refs resolves "#/…" against the document root, also inside a schema with its own $id', () => {
+  const document = documentBase('3.1.0', {
+    paths: {},
+    components: {
+      schemas: {
+        Shared: { type: 'string' },
+        Money: {
+          $id: 'https://rules.example/money',
+          type: 'object',
+          properties: {
+            amount: { type: 'number' },
+            viaRoot: { $ref: '#/components/schemas/Shared' },
+            viaResource: { $ref: '#/properties/amount' },
+          },
+        },
+      },
+    },
+  });
+  assert.deepEqual(found(document, 'no-unresolved-refs'), ['/components/schemas/Money/properties/viaResource/$ref']);
+});
+
+test('no-unresolved-refs reports a discriminator mapping pointer that resolves to nothing', () => {
+  const document = documentBase('3.1.0', {
+    paths: {},
+    components: {
+      schemas: {
+        Dog: { type: 'object' },
+        Pet: {
+          oneOf: [{ $ref: '#/components/schemas/Dog' }],
+          discriminator: { propertyName: 'kind', mapping: { dog: '#/components/schemas/Dog', named: 'Dog', cat: '#/components/schemas/Cat' } },
+        },
+      },
+    },
+  });
+  const problems = checkOpenApiRules(document).filter((problem) => problem.ruleId === 'no-unresolved-refs');
+  assert.deepEqual(problems.map((problem) => [problem.pointer, problem.message]), [
+    ['/components/schemas/Pet/discriminator/mapping/cat', "Can't resolve discriminator mapping #/components/schemas/Cat"],
+  ]);
+});

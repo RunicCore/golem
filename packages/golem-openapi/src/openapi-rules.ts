@@ -8,6 +8,7 @@ import {
   type JsonObject,
 } from './json.js';
 import type { OpenApiProblem } from './openapi-validator.js';
+import { isMappingComponentName } from './reference-loader.js';
 import { collectCanonicalResources, lookupCanonicalResource, visitOpenApiSchemaTree } from './schema-projection.js';
 
 const HTTP_METHODS = ['get', 'put', 'post', 'delete', 'options', 'head', 'patch', 'trace', 'query'] as const;
@@ -122,7 +123,8 @@ function checkUnresolvedRefs(document: unknown): OpenApiProblem[] {
   const resources = collectCanonicalResources(document);
   const problems: OpenApiProblem[] = [];
   const resolvesPointer = (pointer: string): boolean => resolveJsonPointer(document, decodeRefFragment(pointer)) !== undefined;
-  const check = (reference: string, currentBase: string | null, walkerPointer: string): void => {
+  const rootSchemaNames = new Set(Object.keys(asRecord(asRecord(asRecord(document).components).schemas)));
+  const check = (reference: string, currentBase: string | null, walkerPointer: string, label = '$ref'): void => {
     if (reference === '#') return;
     if (reference.startsWith('#/')) {
       if (resolvesPointer(reference.slice(1))) return;
@@ -131,11 +133,15 @@ function checkUnresolvedRefs(document: unknown): OpenApiProblem[] {
     } else if (currentBase !== null && lookupCanonicalResource(reference, currentBase, resources)?.hasId) {
       return;
     }
-    problems.push({ ruleId: 'no-unresolved-refs', message: `Can't resolve $ref ${reference}`, pointer: walkerPointer.slice(1) });
+    problems.push({ ruleId: 'no-unresolved-refs', message: `Can't resolve ${label} ${reference}`, pointer: walkerPointer.slice(1) });
   };
   visitOpenApiSchemaTree(document, {
     onSchemaRef(_keyword, reference, currentBase, pointer) { check(reference, currentBase, pointer); },
     onOpenApiRef(reference, pointer) { check(reference, null, pointer); },
+    onDiscriminatorMapping(keyword, reference, currentBase, ownerPointer, property) {
+      if (keyword !== 'mapping' || isMappingComponentName(reference, rootSchemaNames)) return;
+      check(reference, currentBase, pointerJoin(ownerPointer, property), 'discriminator mapping');
+    },
   });
   return problems;
 }

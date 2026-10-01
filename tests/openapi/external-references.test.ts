@@ -178,3 +178,48 @@ test('the root document is reported to the input observer once, also when it fai
   );
   assert.deepEqual(observedBroken, [broken]);
 });
+
+function petsInput(directory: string, mapping: Record<string, string>): string {
+  write(directory, 'pets.json', {
+    Pet: { oneOf: [{ $ref: '#/Dog' }], discriminator: { propertyName: 'kind', mapping } },
+    Dog: { type: 'object', required: ['kind'], properties: { kind: { type: 'string' } } },
+  });
+  return write(directory, 'api.json', {
+    openapi: '3.1.0',
+    info: { title: 'Pets', version: '1' },
+    paths: { '/pets': { get: { operationId: 'listPets', responses: { 200: { description: 'ok', content: { 'application/json': { schema: { $ref: './pets.json#/Pet' } } } } } } } },
+  });
+}
+
+test('a bare-name discriminator mapping in another file is reported with the mapping, the file and the fix', async (t) => {
+  const directory = createFixtureProject(t, 'golem-external-bare-mapping-');
+  const input = petsInput(directory, { dog: 'Dog' });
+  await assert.rejects(
+    () => generate({ input, output: path.join(directory, 'sdk'), profile }),
+    (error: unknown) => {
+      assert.ok(error instanceof Error);
+      assert.equal(
+        error.message,
+        'unsupported discriminator mapping "Dog" at pets.json#/Pet/discriminator/mapping/dog: a bare name in another file names a root component, '
+          + 'and the root document declares no component "Dog". Use \'#/components/schemas/Dog\' or a root alias.',
+      );
+      return true;
+    },
+  );
+});
+
+test('an unresolvable discriminator mapping pointer in another file is reported at the mapping in that file', async (t) => {
+  const directory = createFixtureProject(t, 'golem-external-missing-mapping-');
+  const input = petsInput(directory, { dog: '#/Dog', cat: './pets.json#/Cat' });
+  await assert.rejects(
+    () => generate({ input, output: path.join(directory, 'sdk'), profile }),
+    (error: unknown) => {
+      assert.ok(error instanceof Error);
+      assert.equal(
+        error.message,
+        "OpenAPI validation failed with 1 error(s):\nno-unresolved-refs: Can't resolve discriminator mapping ./pets.json#/Cat (pets.json#/Pet/discriminator/mapping/cat)",
+      );
+      return true;
+    },
+  );
+});

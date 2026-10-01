@@ -111,6 +111,8 @@ The first release candidate includes four independently installable packages:
 - **Breaking:** a schema pulled in from another file is named after its path (`schemas/user.json` → `schemas.user`, model `SchemasUser`) instead of its file name with a numeric suffix. A root component that is only a `$ref` to an external file keeps its own name; a root component with a `$ref` plus other keys is not an alias, so its target still gets the path-based name and can collide with the root name. A name clash now fails generation, naming both locations.
 - **Breaking:** an implicit discriminator value for a schema from another file is now its path-based component name (for example `schemas.dog`). Use an explicit `mapping`, or a root alias, to keep a chosen value.
 - **Breaking:** the `spec-ref-siblings`, `path-not-include-query`, and `nullable-type-sibling` validation rules are gone; error lines name the file that contains the problem.
+- A discriminator `mapping` value in another file that is a bare name no root component declares fails generation with a message naming the mapping and its file; use `#/components/schemas/Dog` or a root alias. Documented as unsupported.
+- `no-unresolved-refs` reports a discriminator `mapping` pointer that resolves to nothing, at the location in the file that contains it. Previously it failed later as a variant error.
 - An `x-` key under `paths` or `webhooks` is an extension, not a path item: validation and schema generation skip it.
 - **Breaking:** `collectLocalReferenceInputs` from `@exprtlabs/golem-openapi/generator` now returns a `Promise`.
 
