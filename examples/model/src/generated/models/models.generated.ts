@@ -7,11 +7,11 @@ import { toPriorityWord as __golemSerialize1Source } from "../../task.model.js";
 import { fromPriorityWord as __golemDeserialize1Source } from "../../task.model.js";
 
 export const modelValidationBindings = Object.freeze({
-  "src/permission-rules.ts:127:265": (value: unknown): boolean | string => ((__golemValidation0) as (value: unknown) => boolean | string)(value),
-  "src/task-input-rule.ts:96:211": (value: unknown): boolean | string => ((__golemValidation1) as (value: unknown) => boolean | string)(value),
+  "src/permission-rules.ts#hasReadPermission": (value: unknown): boolean | string => ((__golemValidation0) as (value: unknown) => boolean | string)(value),
+  "src/task-input-rule.ts#notBlank": (value: unknown): boolean | string => ((__golemValidation1) as (value: unknown) => boolean | string)(value),
 });
 
 export const modelSerdeBindings = Object.freeze({
-  "src/permission-rules.ts:335:439\u0000src/permission-rules.ts:441:716": { serialize: (value: unknown): unknown => ((__golemSerialize0Source) as (value: unknown) => unknown)(value), deserialize: (value: unknown): unknown => ((__golemDeserialize0Source) as (value: unknown) => unknown)(value) },
-  "src/task.model.ts:321:507\u0000src/task.model.ts:509:616": { serialize: (value: unknown): unknown => ((__golemSerialize1Source) as (value: unknown) => unknown)(value), deserialize: (value: unknown): unknown => ((__golemDeserialize1Source) as (value: unknown) => unknown)(value) },
+  "src/permission-rules.ts#encodePermissions\u0000src/permission-rules.ts#decodePermissions": { serialize: (value: unknown): unknown => ((__golemSerialize0Source) as (value: unknown) => unknown)(value), deserialize: (value: unknown): unknown => ((__golemDeserialize0Source) as (value: unknown) => unknown)(value) },
+  "src/task.model.ts#toPriorityWord\u0000src/task.model.ts#fromPriorityWord": { serialize: (value: unknown): unknown => ((__golemSerialize1Source) as (value: unknown) => unknown)(value), deserialize: (value: unknown): unknown => ((__golemDeserialize1Source) as (value: unknown) => unknown)(value) },
 });

@@ -18,14 +18,14 @@
     "src/generated/models/iobject-plugin-keys.ts": {
       "job": "models:.",
       "owner": "@exprtlabs/golem-model",
-      "digest": "36836c48033c32a20fa018472eef2f690fa8e0721e9da4df18c43ea43cb40cf8",
+      "digest": "19212a26184102b2c96eeedeabb2e6585adbef3632866b3ec7b45e6a328a958f",
       "destination": "src/generated/models",
       "destinationKind": "directory"
     },
     "src/generated/models/models.generated.ts": {
       "job": "models:.",
       "owner": "@exprtlabs/golem-model",
-      "digest": "956a343555f158d4b3043db05af2386c508d6dfab66f9383cfd6a62526f28719",
+      "digest": "33d63301afc3a47e016594b61867c2da6ee8ed8605be27faafa8797ed7a40e88",
       "destination": "src/generated/models",
       "destinationKind": "directory"
     },
@@ -53,7 +53,7 @@
     "src/permission-input.model.generated.ts": {
       "job": "models:.",
       "owner": "@exprtlabs/golem-model",
-      "digest": "905633f25b1f169227c2149fd280273439922180469c03ade51cb90c40db5a1e",
+      "digest": "4310473d6ee50537399c216b1ea4f920412e5e989a57c937147a6bde7d681cce",
       "destination": "src",
       "destinationKind": "directory"
     },
@@ -67,14 +67,14 @@
     "src/task-input.model.generated.ts": {
       "job": "models:.",
       "owner": "@exprtlabs/golem-model",
-      "digest": "61ede572e2295410eb67a1dbc8209f91fa24d6ab3b2ac3888dab2eacee8d8217",
+      "digest": "67df7cc48df343230d34a031fb66d0c9a94a9a5065d2728a6bde9fd4e94dd929",
       "destination": "src",
       "destinationKind": "directory"
     },
     "src/task.model.generated.ts": {
       "job": "models:.",
       "owner": "@exprtlabs/golem-model",
-      "digest": "e027ff0023bc056bf30667cc350f5494ae9b1a172db8c58824afb7b09d215488",
+      "digest": "558c66eefd09f7c726c72582a87888051f54e438ede4a06c18c36479fe71a0c5",
       "destination": "src",
       "destinationKind": "directory"
     }

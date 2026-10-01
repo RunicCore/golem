@@ -7,8 +7,8 @@ export const IOBJECT_PLUGIN_KEYS = {
   "src/note.model.ts#Note": "Note_3fe96627",
   "src/note.model.ts#Notebook": "Notebook_5213e3e5",
   "src/order-input.model.ts#OrderInput": "OrderInput_bbcddf3d",
-  "src/permission-input.model.ts#PermissionInput": "PermissionInput_b09a0376",
+  "src/permission-input.model.ts#PermissionInput": "PermissionInput_f5c43df9",
   "src/tag-aliases.model.ts#Account": "Account_7bb17507",
-  "src/task-input.model.ts#TaskInput": "TaskInput_a03ca16f",
-  "src/task.model.ts#Task": "Task_b603ea42",
+  "src/task-input.model.ts#TaskInput": "TaskInput_b47fc3de",
+  "src/task.model.ts#Task": "Task_0b259136",
 } as const;

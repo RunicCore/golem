@@ -4,9 +4,9 @@ import { serializePermissions as __golemSerialize0Source } from "../../access-ru
 import { deserializePermissions as __golemDeserialize0Source } from "../../access-rules.js";
 
 export const modelValidationBindings = Object.freeze({
-  "src/access-rules.ts:625:818": (value: unknown): boolean | string => ((__golemValidation0) as (value: unknown) => boolean | string)(value),
+  "src/access-rules.ts#hasReadPermission": (value: unknown): boolean | string => ((__golemValidation0) as (value: unknown) => boolean | string)(value),
 });
 
 export const modelSerdeBindings = Object.freeze({
-  "src/access-rules.ts:820:1088\u0000src/access-rules.ts:1090:1502": { serialize: (value: unknown): unknown => ((__golemSerialize0Source) as (value: unknown) => unknown)(value), deserialize: (value: unknown): unknown => ((__golemDeserialize0Source) as (value: unknown) => unknown)(value) },
+  "src/access-rules.ts#serializePermissions\u0000src/access-rules.ts#deserializePermissions": { serialize: (value: unknown): unknown => ((__golemSerialize0Source) as (value: unknown) => unknown)(value), deserialize: (value: unknown): unknown => ((__golemDeserialize0Source) as (value: unknown) => unknown)(value) },
 });

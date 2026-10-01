@@ -183,11 +183,12 @@ function canonicalValue(
   return declaration ? { symbol: resolved, declaration } : undefined;
 }
 
-function canonicalIdentity(declaration: ts.Declaration, identityRoot?: string): string {
+/** A project function is identified by its file and export name, like a packaged one, so reformatting the file keeps the id. */
+function canonicalIdentity(declaration: ts.Declaration, exportName: string, identityRoot?: string): string {
   const source = identityRoot
     ? portableRelativeFilename(declaration.getSourceFile().fileName, identityRoot)
     : declaration.getSourceFile().fileName.replace(/\\/g, '/').split('/').pop() ?? 'source.ts';
-  return `${source}:${declaration.getStart(declaration.getSourceFile())}:${declaration.getEnd()}`;
+  return `${source}#${exportName}`;
 }
 
 function isGolemTagsSource(filename: string): boolean {
@@ -260,7 +261,7 @@ function valueBindingForSymbol(
     return { id: `${resolved.specifier}#${exportName}`, module: canonicalFilename(sourceFile.fileName), exportName, declaration, specifier: resolved.specifier };
   }
   return {
-    id: canonicalIdentity(declaration, context.identityRoot),
+    id: canonicalIdentity(declaration, exportName, context.identityRoot),
     module: canonicalFilename(sourceFile.fileName),
     exportName,
     declaration,

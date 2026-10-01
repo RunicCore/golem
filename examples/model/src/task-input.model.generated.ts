@@ -55,31 +55,31 @@ registerGeneratedModel(TaskInputBase, {
     decode: (value, constructor) => decodeTaskInputModel(constructor ?? TaskInputBase, value),
     encode: encodeTaskInputModel,
   },
-  codecId: "TaskInput_a03ca16f",
+  codecId: "TaskInput_b47fc3de",
   profile: { validation: true, mobx: false },
 });
 
-registerIModelClass("TaskInput_a03ca16f", TaskInputBase);
+registerIModelClass("TaskInput_b47fc3de", TaskInputBase);
 
 const objectAjvFast = createOpenApiSyncAjvEngine({ allErrors: false, validationBindings: modelValidationBindings });
 const objectAjvAll = createOpenApiSyncAjvEngine({ allErrors: true, validationBindings: modelValidationBindings });
 
-const __resolvedModelSchema_TaskInput = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"TaskInput_a03ca16f\",\"type\":\"object\",\"properties\":{\"done\":{\"type\":\"boolean\"},\"title\":{\"exprtValidation\":{\"schema\":{\"allOf\":[{\"type\":\"string\"},{\"minLength\":1}]},\"bindings\":[\"src/task-input-rule.ts:96:211\"]}}},\"required\":[\"done\",\"title\"],\"additionalProperties\":false}") as object) as object;
-objectAjvFast.addSchema(structuredClone(__resolvedModelSchema_TaskInput) as object, "TaskInput_a03ca16f");
-objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_TaskInput) as object, "TaskInput_a03ca16f");
-const __resolvedWireSchema_TaskInput = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"TaskInput_a03ca16f#wire\",\"type\":\"object\",\"properties\":{\"done\":{\"type\":\"boolean\"},\"title\":{\"allOf\":[{\"type\":\"string\"},{\"minLength\":1}]}},\"required\":[\"done\",\"title\"],\"additionalProperties\":false}") as object, 'wire') as object;
-objectAjvFast.addSchema(structuredClone(__resolvedWireSchema_TaskInput) as object, "TaskInput_a03ca16f#wire");
-objectAjvAll.addSchema(structuredClone(__resolvedWireSchema_TaskInput) as object, "TaskInput_a03ca16f#wire");
-const __resolvedModelOnlySchema_TaskInput = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"TaskInput_a03ca16f#model-only\",\"properties\":{\"title\":{\"exprtValidation\":{\"schema\":true,\"bindings\":[\"src/task-input-rule.ts:96:211\"]}}}}") as object, 'model-only') as object;
-objectAjvFast.addSchema(structuredClone(__resolvedModelOnlySchema_TaskInput) as object, "TaskInput_a03ca16f#model-only");
-objectAjvAll.addSchema(structuredClone(__resolvedModelOnlySchema_TaskInput) as object, "TaskInput_a03ca16f#model-only");
+const __resolvedModelSchema_TaskInput = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"TaskInput_b47fc3de\",\"type\":\"object\",\"properties\":{\"done\":{\"type\":\"boolean\"},\"title\":{\"exprtValidation\":{\"schema\":{\"allOf\":[{\"type\":\"string\"},{\"minLength\":1}]},\"bindings\":[\"src/task-input-rule.ts#notBlank\"]}}},\"required\":[\"done\",\"title\"],\"additionalProperties\":false}") as object) as object;
+objectAjvFast.addSchema(structuredClone(__resolvedModelSchema_TaskInput) as object, "TaskInput_b47fc3de");
+objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_TaskInput) as object, "TaskInput_b47fc3de");
+const __resolvedWireSchema_TaskInput = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"TaskInput_b47fc3de#wire\",\"type\":\"object\",\"properties\":{\"done\":{\"type\":\"boolean\"},\"title\":{\"allOf\":[{\"type\":\"string\"},{\"minLength\":1}]}},\"required\":[\"done\",\"title\"],\"additionalProperties\":false}") as object, 'wire') as object;
+objectAjvFast.addSchema(structuredClone(__resolvedWireSchema_TaskInput) as object, "TaskInput_b47fc3de#wire");
+objectAjvAll.addSchema(structuredClone(__resolvedWireSchema_TaskInput) as object, "TaskInput_b47fc3de#wire");
+const __resolvedModelOnlySchema_TaskInput = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"TaskInput_b47fc3de#model-only\",\"properties\":{\"title\":{\"exprtValidation\":{\"schema\":true,\"bindings\":[\"src/task-input-rule.ts#notBlank\"]}}}}") as object, 'model-only') as object;
+objectAjvFast.addSchema(structuredClone(__resolvedModelOnlySchema_TaskInput) as object, "TaskInput_b47fc3de#model-only");
+objectAjvAll.addSchema(structuredClone(__resolvedModelOnlySchema_TaskInput) as object, "TaskInput_b47fc3de#model-only");
 
-const validateTaskInputFast = requireAjvSchema(objectAjvFast.getSchema("TaskInput_a03ca16f"), "TaskInput_a03ca16f");
-const validateTaskInputAll = requireAjvSchema(objectAjvAll.getSchema("TaskInput_a03ca16f"), "TaskInput_a03ca16f");
-const validateTaskInputWireFast = requireAjvSchema(objectAjvFast.getSchema("TaskInput_a03ca16f#wire"), "TaskInput_a03ca16f#wire");
-const validateTaskInputWireAll = requireAjvSchema(objectAjvAll.getSchema("TaskInput_a03ca16f#wire"), "TaskInput_a03ca16f#wire");
-const validateTaskInputModelOnlyFast = requireAjvSchema(objectAjvFast.getSchema("TaskInput_a03ca16f#model-only"), "TaskInput_a03ca16f#model-only");
-const validateTaskInputModelOnlyAll = requireAjvSchema(objectAjvAll.getSchema("TaskInput_a03ca16f#model-only"), "TaskInput_a03ca16f#model-only");
+const validateTaskInputFast = requireAjvSchema(objectAjvFast.getSchema("TaskInput_b47fc3de"), "TaskInput_b47fc3de");
+const validateTaskInputAll = requireAjvSchema(objectAjvAll.getSchema("TaskInput_b47fc3de"), "TaskInput_b47fc3de");
+const validateTaskInputWireFast = requireAjvSchema(objectAjvFast.getSchema("TaskInput_b47fc3de#wire"), "TaskInput_b47fc3de#wire");
+const validateTaskInputWireAll = requireAjvSchema(objectAjvAll.getSchema("TaskInput_b47fc3de#wire"), "TaskInput_b47fc3de#wire");
+const validateTaskInputModelOnlyFast = requireAjvSchema(objectAjvFast.getSchema("TaskInput_b47fc3de#model-only"), "TaskInput_b47fc3de#model-only");
+const validateTaskInputModelOnlyAll = requireAjvSchema(objectAjvAll.getSchema("TaskInput_b47fc3de#model-only"), "TaskInput_b47fc3de#model-only");
 
 function fillTaskInput(out: Record<string, unknown>, wire: Record<string, unknown>, copyIdentity = true): Record<string, unknown> {
   if (copyIdentity) {
@@ -155,7 +155,7 @@ export function validateTaskInput(value: unknown, options?: { readonly failFast?
     ok = failFast ? validateTaskInputFast(value) : validateTaskInputAll(value);
     errors = failFast ? validateTaskInputFast.errors : validateTaskInputAll.errors;
   } else {
-    const validator = resolveModelValidationContextValidator(options.validationContext, "TaskInput_a03ca16f", failFast ? 'first' : 'all');
+    const validator = resolveModelValidationContextValidator(options.validationContext, "TaskInput_b47fc3de", failFast ? 'first' : 'all');
     ok = runSynchronousValidation(validator, value);
     errors = validator.errors;
   }
@@ -170,7 +170,7 @@ export function assertTaskInput(value: unknown, options?: { readonly failFast?: 
     validationFailure(ajvIssues(validator, value, IssueRepresentation.Model, IssueSource.TypeScript));
   }
 } else {
-  const validator = resolveModelValidationContextValidator(options.validationContext, "TaskInput_a03ca16f", options?.failFast !== false ? 'first' : 'all');
+  const validator = resolveModelValidationContextValidator(options.validationContext, "TaskInput_b47fc3de", options?.failFast !== false ? 'first' : 'all');
   if (!runSynchronousValidation(validator, value)) validationFailure(ajvIssues(validator, value, IssueRepresentation.Model, IssueSource.TypeScript));
 }
   return value as TaskInputFields;
@@ -183,7 +183,7 @@ function __golemAssertWire_TaskInput(value: unknown, options?: { readonly failFa
     validationFailure(ajvIssues(validator, value, IssueRepresentation.Wire, IssueSource.TypeScript));
   }
 } else {
-  const validator = resolveModelValidationContextValidator(options.validationContext, "TaskInput_a03ca16f#wire", options?.failFast !== false ? 'first' : 'all');
+  const validator = resolveModelValidationContextValidator(options.validationContext, "TaskInput_b47fc3de#wire", options?.failFast !== false ? 'first' : 'all');
   if (!runSynchronousValidation(validator, value)) validationFailure(ajvIssues(validator, value, IssueRepresentation.Wire, IssueSource.TypeScript));
 }
   return value as Record<string, unknown>;
@@ -196,13 +196,13 @@ function __golemAssertModelOnly_TaskInput(value: unknown, options?: { readonly f
     validationFailure(ajvIssues(validator, value, IssueRepresentation.Model, IssueSource.TypeScript));
   }
 } else {
-  const validator = resolveModelValidationContextValidator(options.validationContext, "TaskInput_a03ca16f#model-only", options?.failFast !== false ? 'first' : 'all');
+  const validator = resolveModelValidationContextValidator(options.validationContext, "TaskInput_b47fc3de#model-only", options?.failFast !== false ? 'first' : 'all');
   if (!runSynchronousValidation(validator, value)) validationFailure(ajvIssues(validator, value, IssueRepresentation.Model, IssueSource.TypeScript));
 }
   return value as Record<string, unknown>;
 }
 
-createObjectCodec("TaskInput_a03ca16f", {
+createObjectCodec("TaskInput_b47fc3de", {
   stringify: stringifyTaskInput as (value: never, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }) => string,
   parse: parseTaskInput as (text: string, options?: { readonly validate?: boolean; readonly failFast?: boolean; readonly validationContext?: import('@exprtlabs/golem/model').ModelValidationContext; readonly construct?: abstract new (values?: never) => object }) => never,
   validate: validateTaskInput,

@@ -48,7 +48,7 @@ import { validate } from './validators.js';`,
   const firstShared = firstResult.artifacts.find((artifact) => artifact.path.endsWith('/models.generated.ts'))?.content ?? '';
   assert.ok(firstShared);
   assert.doesNotMatch(firstShared, new RegExp(first.root.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
-  const bindingIds = [...firstShared.matchAll(/src\/(?:one|two)\/validators\.ts:\d+:\d+/g)].map(match => match[0]);
+  const bindingIds = [...firstShared.matchAll(/src\/(?:one|two)\/validators\.ts#\w+/g)].map(match => match[0]);
   assert.deepEqual(new Set(bindingIds).size, 2, 'same-signature functions from separate declarations remain distinct');
   assert.equal((firstShared.match(/import \{ validate as __golemValidation\d+ \}/g) ?? []).length, 2);
 
@@ -224,7 +224,7 @@ import { first, second } from './predicates.js';`,
 
   await t.test('utility aliases preserve two distinct same-signature predicates and deduplicate an alias', async () => {
     const shared = result.artifacts.find((artifact) => artifact.path.endsWith('/models.generated.ts'))?.content ?? '';
-    assert.equal(new Set([...shared.matchAll(/src\/utility-aliases\/predicates\.ts:\d+:\d+/g)].map((match) => match[0])).size, 2);
+    assert.equal(new Set([...shared.matchAll(/src\/utility-aliases\/predicates\.ts#\w+/g)].map((match) => match[0])).size, 2);
     const { A } = await load('utility-aliases', 'a.model.js');
     const predicates = await load('utility-aliases', 'predicates.js');
     assert.equal(await getValidator(new A({ payload: { value: 'ok' } })).validate({ failFast: false }), true);

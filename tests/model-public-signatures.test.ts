@@ -26,3 +26,28 @@ export class Task extends TaskBase {}
     `export function assertTask\\(value: unknown, ${OPTIONS}\\): TaskFields \\{`,
   ]) assert.match(companion, new RegExp(`^${signature}`, 'm'), signature);
 });
+
+const priority = (preamble: string) => `${preamble}import type { IModel } from '@exprtlabs/golem/model';
+import type { TSerde, TValidation } from '@exprtlabs/golem/tags';
+import { TaskBase } from './task.model.generated.js';
+
+export function toWord(value: number): string { return String(value); }
+export function fromWord(word: string): number { return Number(word); }
+export function short(value: string): boolean { return value.length < 20; }
+
+export type TTask = IModel<{ title: string & TValidation<typeof short>; priority: number & TSerde<typeof toWord, typeof fromWord> }>;
+export class Task extends TaskBase {}
+`;
+
+test('reformatting a model source leaves every generated file unchanged', t => {
+  const generated = (preamble: string) => {
+    const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-reformat-', name: null, linkWorkspaceNodeModules: true });
+    writeModelSources(sourceRoot, { 'task.model.ts': priority(preamble) });
+    const result = generate({ root, profile: { mobx: false, validation: true, ajvStandalone: false } });
+    return new Map(result.artifacts.map(artifact => [artifact.path.slice(root.length), artifact.content]));
+  };
+  const before = generated('');
+  const after = generated('// A comment and blank lines shift every declaration.\n\n\n');
+  assert.deepEqual([...after.keys()].sort(), [...before.keys()].sort());
+  for (const [file, content] of before) assert.equal(after.get(file), content, file);
+});
