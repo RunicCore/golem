@@ -296,6 +296,10 @@ An error prints its code, location when known, and message, then stops generatio
 
 **Tag hidden behind another alias.** A type alias passes its type parameter to a tag through a second alias, such as `type Inner<N extends number> = MaxLength<N>` used in `type V<N extends number> = string & Inner<N>`, so the generator can't find the tag on the instantiated type. **Fix:** Write the tag directly in the alias that declares the type parameter.
 
+### RUNM1065
+
+**Codec or predicate declared in a model file.** A `TSerde` or `TValidation` function is declared in a `*.model.ts` or `*.models.ts` file. Generated code imports the function, and the model file imports its `*.model.generated.ts` file, so the two import each other; when the generated file loads first, the model class extends a base class that isn't initialized yet and start-up fails. **Fix:** Move the function to its own module, export it there, and import it into the model file.
+
 ## Client generator (OPENAPI)
 
 ### OPENAPI_BROWSER_COOKIE

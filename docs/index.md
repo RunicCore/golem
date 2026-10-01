@@ -67,6 +67,8 @@ Declare the fields, run `npx golem generate`, then extend the generated class. G
 
 <<< ../examples/model/src/task.model.ts#model-definition [task.model.ts]
 
+<<< ../examples/model/src/priority-word.ts#priority-word [priority-word.ts]
+
 <<< ../examples/model/src/task-app.ts [task-app.ts]
 
 :::

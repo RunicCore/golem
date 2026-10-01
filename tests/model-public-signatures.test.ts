@@ -28,22 +28,26 @@ export class Task extends TaskBase {}
   ]) assert.match(companion, new RegExp(`^${signature}`, 'm'), signature);
 });
 
-const priority = (preamble: string) => `${preamble}import type { IModel } from '@exprtlabs/golem/model';
-import type { TSerde, TValidation } from '@exprtlabs/golem/tags';
-import { TaskBase } from './task.model.generated.js';
-
-export function toWord(value: number): string { return String(value); }
+// The codec and predicate live in their own module (RUNM1065); the preamble shifts every declaration in both files.
+const priority = (preamble: string): Record<string, string> => ({
+  'rules.ts': `${preamble}export function toWord(value: number): string { return String(value); }
 export function fromWord(word: string): number { return Number(word); }
 export function short(value: string): boolean { return value.length < 20; }
+`,
+  'task.model.ts': `${preamble}import type { IModel } from '@exprtlabs/golem/model';
+import type { TSerde, TValidation } from '@exprtlabs/golem/tags';
+import type { fromWord, short, toWord } from './rules.js';
+import { TaskBase } from './task.model.generated.js';
 
 export type TTask = IModel<{ title: string & TValidation<typeof short>; priority: number & TSerde<typeof toWord, typeof fromWord> }>;
 export class Task extends TaskBase {}
-`;
+`,
+});
 
-test('reformatting a model source leaves every generated file unchanged', t => {
+test('reformatting model and codec sources leaves every generated file unchanged', t => {
   const generated = (preamble: string) => {
     const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-reformat-', name: null, linkWorkspaceNodeModules: true });
-    writeModelSources(sourceRoot, { 'task.model.ts': priority(preamble) });
+    writeModelSources(sourceRoot, priority(preamble));
     const result = generate({ root, profile: { mobx: false, validation: true, ajvStandalone: false } });
     return new Map(result.artifacts.map(artifact => [artifact.path.slice(root.length), artifact.content]));
   };
@@ -55,7 +59,7 @@ test('reformatting a model source leaves every generated file unchanged', t => {
 
 test('model companion assert functions share one runtime helper and named option types', t => {
   const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-assert-helper-', name: null, linkWorkspaceNodeModules: true });
-  writeModelSources(sourceRoot, { 'task.model.ts': priority('') });
+  writeModelSources(sourceRoot, priority(''));
   const result = generate({ root, profile: { mobx: false, validation: true, ajvStandalone: false } });
   const companion = result.artifacts.find(artifact => artifact.path.endsWith('task.model.generated.ts'))?.content ?? '';
   assert.doesNotMatch(companion, /import\('@exprtlabs\/golem\/model'\)/);

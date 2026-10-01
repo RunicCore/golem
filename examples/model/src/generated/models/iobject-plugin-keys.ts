@@ -10,5 +10,5 @@ export const IOBJECT_PLUGIN_KEYS = {
   "src/permission-input.model.ts#PermissionInput": "PermissionInput_8f46e801",
   "src/tag-aliases.model.ts#Account": "Account_7bb17507",
   "src/task-input.model.ts#TaskInput": "TaskInput_b47fc3de",
-  "src/task.model.ts#Task": "Task_0b259136",
+  "src/task.model.ts#Task": "Task_895d5b8e",
 } as const;

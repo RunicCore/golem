@@ -22,6 +22,7 @@ The first release candidate includes four independently installable packages:
 
 ### Models
 
+- **Breaking:** a `TSerde` or `TValidation` function declared in a `*.model.ts` file is a generation error (RUNM1065). It closed an import cycle with the generated companion that crashed start-up whenever the companion loaded first. Move the function to its own module.
 - Several `TValidation` predicates on one value run in a fixed order, not in written order, so types that differ only in that order generate the same code.
 - `@exprtlabs/golem/temporal` adds Temporal field types (`TemporalInstant`, `TemporalPlainDate`, …) with ISO 8601 wire strings and nanosecond precision.
 - Type aliases of tags accept type parameters as tag arguments, such as `type Varchar<N extends number> = string & MaxLength<N>`.

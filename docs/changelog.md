@@ -78,6 +78,7 @@ Each item names a breaking change and the action to take.
 - `typescript` (`~7.0.2`) and `ttsc` (`~0.30.4`) are peer dependencies of both generators. Install them in the consuming project.
 - Several pre-1.0 exports are removed with no replacement ([Removed APIs](https://github.com/RunicCore/golem/blob/master/CHANGELOG.md#removed-apis-pre-10)).
 - The packages are renamed: `@exprtlabs/codegen` is `@exprtlabs/golem`, `@exprtlabs/model-codegen` is `@exprtlabs/golem-model`, `@exprtlabs/openapi-to-ts` is `@exprtlabs/golem-openapi` and `@exprtlabs/ts-to-openapi` is `@exprtlabs/golem-ts-openapi`. Subpaths are unchanged. Replace the dependencies and imports.
+- A `TSerde` or `TValidation` function declared in a `*.model.ts` file is a generation error (RUNM1065). Move it to its own module.
 - A `TSerde` or `TValidation` function in another package, including a sibling workspace package, is imported by its package name, so that package's `exports` must reach the file (RUNM1060). Add an `exports` entry for the codec file.
 - The CLI is `golem` (was `runic-codegen`) and generator-API types are `Golem*` (was `Codegen*`, for example `GolemProvider`). Rename `runic-codegen.yaml` to `golem.yaml`, delete `.runic-codegen/` and run `npx golem generate`.
 

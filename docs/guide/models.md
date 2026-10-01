@@ -2,7 +2,13 @@
 
 Declare fields as a type, generate validation and JSON conversion, and add behavior in your own class.
 
-<<< ../../examples/model/src/task.model.ts#model-definition
+::: code-group
+
+<<< ../../examples/model/src/task.model.ts#model-definition [task.model.ts]
+
+<<< ../../examples/model/src/priority-word.ts#priority-word [priority-word.ts]
+
+:::
 
 `priority` is a number in your class and a word in JSON; `TSerde` converts between them ([Type tags](/guide/tags#convert-a-field-to-a-different-json-value)).
 

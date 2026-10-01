@@ -18,14 +18,14 @@
     "src/generated/models/iobject-plugin-keys.ts": {
       "job": "models:.",
       "owner": "@exprtlabs/golem-model",
-      "digest": "9d9bb8d311ef1b45cda8960a125e25c22a18d8389ec7ba7fc48ee23e3d607b29",
+      "digest": "59342777b5d4deaa73fdde320cea856e30f7c0641e3dbc9c158f66d4f0431618",
       "destination": "src/generated/models",
       "destinationKind": "directory"
     },
     "src/generated/models/models.generated.ts": {
       "job": "models:.",
       "owner": "@exprtlabs/golem-model",
-      "digest": "33d63301afc3a47e016594b61867c2da6ee8ed8605be27faafa8797ed7a40e88",
+      "digest": "5ad8190078213fcec8cf9873af7abe0ea89fe152019007d04fedba1cbecf4e71",
       "destination": "src/generated/models",
       "destinationKind": "directory"
     },
@@ -74,7 +74,7 @@
     "src/task.model.generated.ts": {
       "job": "models:.",
       "owner": "@exprtlabs/golem-model",
-      "digest": "46e22d51c183e682b88399b2540a805ab8a491893092fe275524878365e57b18",
+      "digest": "080ec24f10f28ca09b76db15c1b2f3c225f88219fbc7701ea4f3c5a9f49877ef",
       "destination": "src",
       "destinationKind": "directory"
     }

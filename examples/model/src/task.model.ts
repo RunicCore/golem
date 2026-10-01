@@ -1,20 +1,8 @@
 // #region model-definition
 import type { IModel } from '@exprtlabs/golem/model';
 import type { MinLength, TSerde } from '@exprtlabs/golem/tags';
+import type { fromPriorityWord, toPriorityWord } from './priority-word.js';
 import { TaskBase } from './task.model.generated.js';
-
-const PRIORITY_WORDS = ['low', 'normal', 'high'] as const;
-export type PriorityWord = (typeof PRIORITY_WORDS)[number];
-
-export function toPriorityWord(value: number): PriorityWord {
-  const word = PRIORITY_WORDS[value - 1];
-  if (!word) throw new RangeError('Priority must be 1, 2 or 3.');
-  return word;
-}
-
-export function fromPriorityWord(word: PriorityWord): number {
-  return PRIORITY_WORDS.indexOf(word) + 1;
-}
 
 export type TTask = IModel<{
   title: string & MinLength<1>;

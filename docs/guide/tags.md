@@ -68,7 +68,7 @@ Schema-valued tags describe another TypeScript contract:
 
 ## Add a custom field rule
 
-Use `TValidation<typeof predicate>` when a built-in tag cannot express the validation constraint. Declare the predicate in its own module and import it into the model file, not the other way around. Every project predicate is collected into one generated module, which the model's own generated file needs at start-up; a predicate declared in the model file itself creates a cycle between those two files, and loading throws before either one finishes.
+Use `TValidation<typeof predicate>` when a built-in tag cannot express the validation constraint. Declare the predicate in its own module and import it into the model file; a predicate declared in a model file is a generation error ([RUNM1065](/reference/diagnostics#runm1065)).
 
 <<< ../../examples/model/src/task-input-rule.ts#custom-rule-fn
 
@@ -94,6 +94,7 @@ The generated file imports your predicate. OpenAPI documents carry only the JSON
 <<< ../../examples/model/src/permission-input.model.ts#serde-tag
 
 - The same behavior applies when the field is nested.
+- Declare the encoder and decoder in their own module, like a `TValidation` predicate; in a model file they are a generation error ([RUNM1065](/reference/diagnostics#runm1065)).
 - `TSerde` encoders and decoders run during conversion, never during generation.
 - Their return values and exceptions are observed by `stringify` / `parse` and `fromWireFormat` / `toWireFormat`.
 - An encoder must return JSON-compatible data; non-finite numbers, cycles and other unrepresentable values still fail with validation disabled.

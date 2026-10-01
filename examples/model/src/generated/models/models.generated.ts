@@ -3,8 +3,8 @@ import { hasReadPermission as __golemValidation0 } from "../../permission-rules.
 import { notBlank as __golemValidation1 } from "../../task-input-rule.js";
 import { encodePermissions as __golemSerialize0Source } from "../../permission-rules.js";
 import { decodePermissions as __golemDeserialize0Source } from "../../permission-rules.js";
-import { toPriorityWord as __golemSerialize1Source } from "../../task.model.js";
-import { fromPriorityWord as __golemDeserialize1Source } from "../../task.model.js";
+import { toPriorityWord as __golemSerialize1Source } from "../../priority-word.js";
+import { fromPriorityWord as __golemDeserialize1Source } from "../../priority-word.js";
 
 export const modelValidationBindings = Object.freeze({
   "src/permission-rules.ts#hasReadPermission": (value: unknown): boolean | string => ((__golemValidation0) as (value: unknown) => boolean | string)(value),
@@ -13,5 +13,5 @@ export const modelValidationBindings = Object.freeze({
 
 export const modelSerdeBindings = Object.freeze({
   "src/permission-rules.ts#encodePermissions\u0000src/permission-rules.ts#decodePermissions": { serialize: (value: unknown): unknown => ((__golemSerialize0Source) as (value: unknown) => unknown)(value), deserialize: (value: unknown): unknown => ((__golemDeserialize0Source) as (value: unknown) => unknown)(value) },
-  "src/task.model.ts#toPriorityWord\u0000src/task.model.ts#fromPriorityWord": { serialize: (value: unknown): unknown => ((__golemSerialize1Source) as (value: unknown) => unknown)(value), deserialize: (value: unknown): unknown => ((__golemDeserialize1Source) as (value: unknown) => unknown)(value) },
+  "src/priority-word.ts#toPriorityWord\u0000src/priority-word.ts#fromPriorityWord": { serialize: (value: unknown): unknown => ((__golemSerialize1Source) as (value: unknown) => unknown)(value), deserialize: (value: unknown): unknown => ((__golemDeserialize1Source) as (value: unknown) => unknown)(value) },
 });

@@ -33,7 +33,7 @@ export abstract class TaskBase implements GeneratedModel<TaskJSON, TaskFields> {
 function decodeTaskModel(constructor: GeneratedModelConstructor, json: unknown): TaskBase {
   const values = modelObject(json, "TaskBase");
   const result: Record<string, unknown> = { ...values };
-  if (Object.prototype.hasOwnProperty.call(values, "priority")) defineModelProperty(result, "priority", convertModelField("deserialize", "priority", () => (modelSerdeBindings["src/task.model.ts#toPriorityWord\u0000src/task.model.ts#fromPriorityWord"].deserialize(values["priority"]))));
+  if (Object.prototype.hasOwnProperty.call(values, "priority")) defineModelProperty(result, "priority", convertModelField("deserialize", "priority", () => (modelSerdeBindings["src/priority-word.ts#toPriorityWord\u0000src/priority-word.ts#fromPriorityWord"].deserialize(values["priority"]))));
   return Reflect.construct(constructor, [result]) as TaskBase;
 }
 
@@ -41,7 +41,7 @@ function encodeTaskModel(model: TaskBase): TaskJSON {
   const result: Record<string, unknown> = {
     ["title"]: Object.prototype.hasOwnProperty.call(model, "title") ? (model["title"]) : __golemAbsentField,
     ["done"]: Object.prototype.hasOwnProperty.call(model, "done") ? (model["done"]) : __golemAbsentField,
-    ["priority"]: Object.prototype.hasOwnProperty.call(model, "priority") ? (convertModelField("serialize", "priority", () => (modelSerdeBindings["src/task.model.ts#toPriorityWord\u0000src/task.model.ts#fromPriorityWord"].serialize(model["priority"])))) : __golemAbsentField,
+    ["priority"]: Object.prototype.hasOwnProperty.call(model, "priority") ? (convertModelField("serialize", "priority", () => (modelSerdeBindings["src/priority-word.ts#toPriorityWord\u0000src/priority-word.ts#fromPriorityWord"].serialize(model["priority"])))) : __golemAbsentField,
   };
   if (result["title"] === __golemAbsentField) delete result["title"];
   if (result["done"] === __golemAbsentField) delete result["done"];
@@ -55,36 +55,36 @@ registerGeneratedModel(TaskBase, {
     decode: (value, constructor) => decodeTaskModel(constructor ?? TaskBase, value),
     encode: encodeTaskModel,
   },
-  codecId: "Task_0b259136",
+  codecId: "Task_895d5b8e",
   profile: { validation: true, mobx: false },
 });
 
-registerIModelClass("Task_0b259136", TaskBase);
+registerIModelClass("Task_895d5b8e", TaskBase);
 
 const objectAjvFast = createOpenApiSyncAjvEngine({ allErrors: false, validationBindings: {} });
 const objectAjvAll = createOpenApiSyncAjvEngine({ allErrors: true, validationBindings: {} });
 
-const __resolvedModelSchema_Task = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"Task_0b259136\",\"type\":\"object\",\"properties\":{\"done\":{\"type\":\"boolean\"},\"priority\":{\"type\":\"number\"},\"title\":{\"allOf\":[{\"type\":\"string\"},{\"minLength\":1}]}},\"required\":[\"done\",\"priority\",\"title\"],\"additionalProperties\":false}") as object) as object;
-objectAjvFast.addSchema(structuredClone(__resolvedModelSchema_Task) as object, "Task_0b259136");
-objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_Task) as object, "Task_0b259136");
-const __resolvedWireSchema_Task = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"Task_0b259136#wire\",\"type\":\"object\",\"properties\":{\"done\":{\"type\":\"boolean\"},\"priority\":{\"anyOf\":[{\"const\":\"high\"},{\"const\":\"low\"},{\"const\":\"normal\"}]},\"title\":{\"allOf\":[{\"type\":\"string\"},{\"minLength\":1}]}},\"required\":[\"done\",\"priority\",\"title\"],\"additionalProperties\":false}") as object, 'wire') as object;
-objectAjvFast.addSchema(structuredClone(__resolvedWireSchema_Task) as object, "Task_0b259136#wire");
-objectAjvAll.addSchema(structuredClone(__resolvedWireSchema_Task) as object, "Task_0b259136#wire");
-const __resolvedModelOnlySchema_Task = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"Task_0b259136#model-only\",\"properties\":{\"priority\":{\"type\":\"number\"}}}") as object, 'model-only') as object;
-objectAjvFast.addSchema(structuredClone(__resolvedModelOnlySchema_Task) as object, "Task_0b259136#model-only");
-objectAjvAll.addSchema(structuredClone(__resolvedModelOnlySchema_Task) as object, "Task_0b259136#model-only");
-const __resolvedWireOnlySchema_Task = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"Task_0b259136#wire-only\",\"properties\":{\"priority\":{\"anyOf\":[{\"const\":\"high\"},{\"const\":\"low\"},{\"const\":\"normal\"}]}}}") as object, 'wire-only') as object;
-objectAjvFast.addSchema(structuredClone(__resolvedWireOnlySchema_Task) as object, "Task_0b259136#wire-only");
-objectAjvAll.addSchema(structuredClone(__resolvedWireOnlySchema_Task) as object, "Task_0b259136#wire-only");
+const __resolvedModelSchema_Task = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"Task_895d5b8e\",\"type\":\"object\",\"properties\":{\"done\":{\"type\":\"boolean\"},\"priority\":{\"type\":\"number\"},\"title\":{\"allOf\":[{\"type\":\"string\"},{\"minLength\":1}]}},\"required\":[\"done\",\"priority\",\"title\"],\"additionalProperties\":false}") as object) as object;
+objectAjvFast.addSchema(structuredClone(__resolvedModelSchema_Task) as object, "Task_895d5b8e");
+objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_Task) as object, "Task_895d5b8e");
+const __resolvedWireSchema_Task = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"Task_895d5b8e#wire\",\"type\":\"object\",\"properties\":{\"done\":{\"type\":\"boolean\"},\"priority\":{\"anyOf\":[{\"const\":\"high\"},{\"const\":\"low\"},{\"const\":\"normal\"}]},\"title\":{\"allOf\":[{\"type\":\"string\"},{\"minLength\":1}]}},\"required\":[\"done\",\"priority\",\"title\"],\"additionalProperties\":false}") as object, 'wire') as object;
+objectAjvFast.addSchema(structuredClone(__resolvedWireSchema_Task) as object, "Task_895d5b8e#wire");
+objectAjvAll.addSchema(structuredClone(__resolvedWireSchema_Task) as object, "Task_895d5b8e#wire");
+const __resolvedModelOnlySchema_Task = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"Task_895d5b8e#model-only\",\"properties\":{\"priority\":{\"type\":\"number\"}}}") as object, 'model-only') as object;
+objectAjvFast.addSchema(structuredClone(__resolvedModelOnlySchema_Task) as object, "Task_895d5b8e#model-only");
+objectAjvAll.addSchema(structuredClone(__resolvedModelOnlySchema_Task) as object, "Task_895d5b8e#model-only");
+const __resolvedWireOnlySchema_Task = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"Task_895d5b8e#wire-only\",\"properties\":{\"priority\":{\"anyOf\":[{\"const\":\"high\"},{\"const\":\"low\"},{\"const\":\"normal\"}]}}}") as object, 'wire-only') as object;
+objectAjvFast.addSchema(structuredClone(__resolvedWireOnlySchema_Task) as object, "Task_895d5b8e#wire-only");
+objectAjvAll.addSchema(structuredClone(__resolvedWireOnlySchema_Task) as object, "Task_895d5b8e#wire-only");
 
-const validateTaskFast = requireAjvSchema(objectAjvFast.getSchema("Task_0b259136"), "Task_0b259136");
-const validateTaskAll = requireAjvSchema(objectAjvAll.getSchema("Task_0b259136"), "Task_0b259136");
-const validateTaskWireFast = requireAjvSchema(objectAjvFast.getSchema("Task_0b259136#wire"), "Task_0b259136#wire");
-const validateTaskWireAll = requireAjvSchema(objectAjvAll.getSchema("Task_0b259136#wire"), "Task_0b259136#wire");
-const validateTaskModelOnlyFast = requireAjvSchema(objectAjvFast.getSchema("Task_0b259136#model-only"), "Task_0b259136#model-only");
-const validateTaskModelOnlyAll = requireAjvSchema(objectAjvAll.getSchema("Task_0b259136#model-only"), "Task_0b259136#model-only");
-const validateTaskWireOnlyFast = requireAjvSchema(objectAjvFast.getSchema("Task_0b259136#wire-only"), "Task_0b259136#wire-only");
-const validateTaskWireOnlyAll = requireAjvSchema(objectAjvAll.getSchema("Task_0b259136#wire-only"), "Task_0b259136#wire-only");
+const validateTaskFast = requireAjvSchema(objectAjvFast.getSchema("Task_895d5b8e"), "Task_895d5b8e");
+const validateTaskAll = requireAjvSchema(objectAjvAll.getSchema("Task_895d5b8e"), "Task_895d5b8e");
+const validateTaskWireFast = requireAjvSchema(objectAjvFast.getSchema("Task_895d5b8e#wire"), "Task_895d5b8e#wire");
+const validateTaskWireAll = requireAjvSchema(objectAjvAll.getSchema("Task_895d5b8e#wire"), "Task_895d5b8e#wire");
+const validateTaskModelOnlyFast = requireAjvSchema(objectAjvFast.getSchema("Task_895d5b8e#model-only"), "Task_895d5b8e#model-only");
+const validateTaskModelOnlyAll = requireAjvSchema(objectAjvAll.getSchema("Task_895d5b8e#model-only"), "Task_895d5b8e#model-only");
+const validateTaskWireOnlyFast = requireAjvSchema(objectAjvFast.getSchema("Task_895d5b8e#wire-only"), "Task_895d5b8e#wire-only");
+const validateTaskWireOnlyAll = requireAjvSchema(objectAjvAll.getSchema("Task_895d5b8e#wire-only"), "Task_895d5b8e#wire-only");
 
 function fillTask(out: Record<string, unknown>, wire: Record<string, unknown>, copyIdentity = true): Record<string, unknown> {
   if (copyIdentity) {
@@ -92,13 +92,13 @@ function fillTask(out: Record<string, unknown>, wire: Record<string, unknown>, c
     out["done"] = wire["done"];
   }
   if (Object.prototype.hasOwnProperty.call(wire, "priority")) {
-    out["priority"] = modelSerdeBindings["src/task.model.ts#toPriorityWord\u0000src/task.model.ts#fromPriorityWord"].deserialize(wire["priority"]);
+    out["priority"] = modelSerdeBindings["src/priority-word.ts#toPriorityWord\u0000src/priority-word.ts#fromPriorityWord"].deserialize(wire["priority"]);
   }
   return out;
 }
 
 function stringifyTaskCore(value: Record<string, unknown>, _options?: { readonly validate?: boolean; readonly failFast?: boolean }): string {
-  return '{' + "\"title\":" + stringifyJsonString(value["title"] as string) + ",\"done\":" + stringifyJsonBoolean(value["done"] as boolean) + ",\"priority\":" + stringifyJsonScalar(modelSerdeBindings["src/task.model.ts#toPriorityWord\u0000src/task.model.ts#fromPriorityWord"].serialize(value["priority"]) as never) + '}';
+  return '{' + "\"title\":" + stringifyJsonString(value["title"] as string) + ",\"done\":" + stringifyJsonBoolean(value["done"] as boolean) + ",\"priority\":" + stringifyJsonScalar(modelSerdeBindings["src/priority-word.ts#toPriorityWord\u0000src/priority-word.ts#fromPriorityWord"].serialize(value["priority"]) as never) + '}';
 }
 
 function stringifyTaskWire(value: Record<string, unknown>, _options?: { readonly validate?: boolean; readonly failFast?: boolean }): string {
@@ -111,7 +111,7 @@ export function stringifyTask(value: TaskFields, options?: __GolemSerdeOptions):
     assertTask(value, options);
   }
   if (validates) {
-    const wire = { ["title"]: value["title"], ["done"]: value["done"], ["priority"]: modelSerdeBindings["src/task.model.ts#toPriorityWord\u0000src/task.model.ts#fromPriorityWord"].serialize(value["priority"]) };
+    const wire = { ["title"]: value["title"], ["done"]: value["done"], ["priority"]: modelSerdeBindings["src/priority-word.ts#toPriorityWord\u0000src/priority-word.ts#fromPriorityWord"].serialize(value["priority"]) };
     __golemAssertWireOnly_Task(wire, options);
     return stringifyTaskWire(wire as never, { validate: false });
   }
@@ -148,7 +148,7 @@ export function toWireFormatTask(value: TaskFields, options?: __GolemSerdeOption
     assertTask(value, options);
   }
   const record = value as Record<string, unknown>;
-  const wire = { ["title"]: record["title"], ["done"]: record["done"], ["priority"]: modelSerdeBindings["src/task.model.ts#toPriorityWord\u0000src/task.model.ts#fromPriorityWord"].serialize(record["priority"]) };
+  const wire = { ["title"]: record["title"], ["done"]: record["done"], ["priority"]: modelSerdeBindings["src/priority-word.ts#toPriorityWord\u0000src/priority-word.ts#fromPriorityWord"].serialize(record["priority"]) };
   if (validates) {
     __golemAssertWireOnly_Task(wire, options);
   }
@@ -167,7 +167,7 @@ export function validateTask(value: unknown, options?: __GolemValidateOptions): 
     ok = failFast ? validateTaskFast(value) : validateTaskAll(value);
     errors = failFast ? validateTaskFast.errors : validateTaskAll.errors;
   } else {
-    const validator = resolveModelValidationContextValidator(options.validationContext, "Task_0b259136", failFast ? 'first' : 'all');
+    const validator = resolveModelValidationContextValidator(options.validationContext, "Task_895d5b8e", failFast ? 'first' : 'all');
     ok = runSynchronousValidation(validator, value);
     errors = validator.errors;
   }
@@ -176,26 +176,26 @@ export function validateTask(value: unknown, options?: __GolemValidateOptions): 
 }
 
 export function assertTask(value: unknown, options?: __GolemValidateOptions): TaskFields {
-  assertModelValue(value, options, validateTaskFast, validateTaskAll, "Task_0b259136", IssueRepresentation.Model, IssueSource.TypeScript);
+  assertModelValue(value, options, validateTaskFast, validateTaskAll, "Task_895d5b8e", IssueRepresentation.Model, IssueSource.TypeScript);
   return value as TaskFields;
 }
 
 function __golemAssertWire_Task(value: unknown, options?: __GolemValidateOptions): Record<string, unknown> {
-  assertModelValue(value, options, validateTaskWireFast, validateTaskWireAll, "Task_0b259136#wire", IssueRepresentation.Wire, IssueSource.TypeScript);
+  assertModelValue(value, options, validateTaskWireFast, validateTaskWireAll, "Task_895d5b8e#wire", IssueRepresentation.Wire, IssueSource.TypeScript);
   return value as Record<string, unknown>;
 }
 
 function __golemAssertModelOnly_Task(value: unknown, options?: __GolemValidateOptions): Record<string, unknown> {
-  assertModelValue(value, options, validateTaskModelOnlyFast, validateTaskModelOnlyAll, "Task_0b259136#model-only", IssueRepresentation.Model, IssueSource.TypeScript);
+  assertModelValue(value, options, validateTaskModelOnlyFast, validateTaskModelOnlyAll, "Task_895d5b8e#model-only", IssueRepresentation.Model, IssueSource.TypeScript);
   return value as Record<string, unknown>;
 }
 
 function __golemAssertWireOnly_Task(value: unknown, options?: __GolemValidateOptions): Record<string, unknown> {
-  assertModelValue(value, options, validateTaskWireOnlyFast, validateTaskWireOnlyAll, "Task_0b259136#wire-only", IssueRepresentation.Wire, IssueSource.TypeScript);
+  assertModelValue(value, options, validateTaskWireOnlyFast, validateTaskWireOnlyAll, "Task_895d5b8e#wire-only", IssueRepresentation.Wire, IssueSource.TypeScript);
   return value as Record<string, unknown>;
 }
 
-createObjectCodec("Task_0b259136", {
+createObjectCodec("Task_895d5b8e", {
   stringify: stringifyTask as (value: never, options?: __GolemSerdeOptions) => string,
   parse: parseTask as (text: string, options?: __GolemSerdeOptions) => never,
   validate: validateTask,

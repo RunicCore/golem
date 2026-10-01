@@ -1,6 +1,6 @@
 import path from 'node:path';
 import * as ts from '../typescript-ns.js';
-import { canonicalFilename, portableRelativeFilename } from './project.js';
+import { canonicalFilename, isModelSource, portableRelativeFilename } from './project.js';
 import { packageSpecifier } from './package-specifier.js';
 import { canonicalConstraintKey } from '../schema.js';
 import type { ConstraintSchemaValue, ModelConstraint } from '../schema.js';
@@ -252,6 +252,15 @@ function valueBindingForSymbol(
     );
   }
   const resolved = packageSpecifier(canonicalFilename(sourceFile.fileName), context.sourceFile.fileName);
+  if (resolved.kind !== 'package' && isModelSource(canonicalFilename(sourceFile.fileName))) {
+    // The shared generated module imports this function; from a model file that would close a cycle with the
+    // file's generated companion, which breaks start-up whenever the companion loads first.
+    throw context.diagnostic(
+      node,
+      '1065',
+      `${kind} function ${exportName} is declared in the model file ${path.basename(sourceFile.fileName)}. Move it to its own module and import it from there.`,
+    );
+  }
   if (resolved.kind === 'unexported') {
     throw context.diagnostic(
       node,
