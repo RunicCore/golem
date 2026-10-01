@@ -288,6 +288,10 @@ An error prints its code, location when known, and message, then stops generatio
 
 **Repeated tag in a generic alias.** A type alias holds more than one tag of the same kind, and one of them depends on a type parameter. **Fix:** Keep one tag of that kind in the alias, and add the other where you use the alias.
 
+### RUNM1063
+
+**Class cannot be imported.** A `TSerde` field holds a class that generated code cannot import and name: an anonymous class, a class that its module doesn't export, a generic class with a type parameter that has no default, or a class declared inside `declare module "name"`. The message names the class and the file. **Fix:** Name the class and export it from a module file, or declare a non-generic subclass such as `class StringBox extends Box<string> {}` and use that. A class exported under another name or as the default export needs no change.
+
 ## Client generator (OPENAPI)
 
 ### OPENAPI_BROWSER_COOKIE

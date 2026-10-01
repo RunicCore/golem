@@ -1,3 +1,4 @@
+import path from 'node:path';
 import { fieldProvenance, isPropertyMapping, isReadonlySequenceType, readonlyPropertyNames, instantiatedTypeSource, substituteTypeNode, authoredPropertyTypeNode, type TypeSubstitutions } from './projections.js';
 import * as ts from '../typescript-ns.js';
 import { diagnostic, modelSpecificationForClass, propertyType, resolveSymbol } from './symbols.js';
@@ -16,6 +17,7 @@ import {
   analyzeNode,
   isDateType,
   mergeTagMetadata,
+  publicExportName,
   type ModelConstraint,
   type SerdeBinding,
   type TagMetadata,
@@ -140,31 +142,58 @@ function classValueReference(
   checker: ts.TypeChecker,
   type: ts.Type,
   context: TypeAnalysisContext,
+  node: ts.Node,
 ): { typeName: string; typeImport?: { exportName: string; module: string; specifier?: string } } {
   // The class's own symbol, never a local alias such as `type Bytes = Uint8Array & TSerde<…>`,
   // which the model file need not export.
   const symbol = type.getSymbol();
   const declaration = symbol?.declarations?.[0];
   if (!symbol || !declaration) throw diagnostic(context.sourceFile, context.declaration, '1004', `A TSerde class type in ${context.name} has no declaration.`);
+  const declaredName = (declaration as ts.NamedDeclaration).name;
+  // A class expression or type literal carries an internal `__class` / `__type` name; `export default class {}` is named `default`.
+  if (!declaredName && symbol.getName().startsWith('__')) {
+    throw diagnostic(context.sourceFile, node, '1063', `The class of a TSerde field in ${context.name} has no name, so generated code cannot import it. Name the class and export it.`);
+  }
   // TS 7's API has no getFullyQualifiedName: qualify by the enclosing namespaces instead.
-  const names = [symbol.getName()];
+  const names = [declaredName && ts.isIdentifier(declaredName) ? declaredName.text : symbol.getName()];
   let augmentsGlobal = false;
+  let outermost: ts.ModuleDeclaration | undefined;
   for (let parent: ts.Node | undefined = declaration.parent; parent && !ts.isSourceFile(parent); parent = parent.parent) {
-    if (!ts.isModuleDeclaration(parent) || !ts.isIdentifier(parent.name)) continue;
+    if (!ts.isModuleDeclaration(parent)) continue;
+    if (ts.isStringLiteral(parent.name)) {
+      throw diagnostic(context.sourceFile, node, '1063', `Class ${names.join('.')} is declared inside declare module ${JSON.stringify(parent.name.text)}, which generated code cannot import from. Move it into a module file and export it.`);
+    }
     if (parent.name.text === 'global') { augmentsGlobal = true; break; }
     names.unshift(parent.name.text);
+    outermost = parent;
   }
   const typeName = names.join('.');
+  if (hasRequiredTypeParameter(symbol)) {
+    throw diagnostic(context.sourceFile, node, '1063', `Class ${typeName} has type parameters, so generated code cannot write its type. Use a non-generic class, such as one declared as \`class Named extends ${typeName}<string> {}\`.`);
+  }
   // A script file (a TypeScript lib, an ambient .d.ts) or a `declare global` block declares a global name.
   if (augmentsGlobal || !isModuleFile(declaration.getSourceFile())) return { typeName };
   const sourceFile = declaration.getSourceFile();
-  const exportName = typeName.split('.')[0]!; // `Temporal` for `Temporal.Instant` imported from a module
+  // `Temporal` for `Temporal.Instant` imported from a module: the outermost namespace is what the module exports.
+  const exportName = publicExportName(checker, outermost ?? declaration, (outermost && checker.getSymbolAtLocation(outermost.name)) || symbol, true);
+  if (!exportName) {
+    throw diagnostic(context.sourceFile, node, '1063', `Class ${typeName} is not exported from ${path.relative(path.dirname(context.sourceFile.fileName), sourceFile.fileName)}, so generated code cannot import it. Export it.`);
+  }
   const module = canonicalFilename(sourceFile.fileName);
   const resolved = packageSpecifier(module, context.sourceFile.fileName);
   if (resolved.kind === 'unexported') {
-    throw diagnostic(context.sourceFile, context.declaration, '1060', `Class ${typeName} is in package ${resolved.packageName}, but no "exports" entry reaches ${module}. Export that file from the package.`);
+    throw diagnostic(context.sourceFile, node, '1060', `Class ${typeName} is in package ${resolved.packageName}, but no "exports" entry reaches ${module}. Export that file from the package.`);
   }
   return { typeName, typeImport: { exportName, module, ...(resolved.kind === 'package' ? { specifier: resolved.specifier } : {}) } };
+}
+
+/** Whether writing the class's bare name would omit a type argument: some type parameter has no default in any merged declaration. */
+function hasRequiredTypeParameter(symbol: ts.Symbol): boolean {
+  const lists = (symbol.declarations ?? [])
+    .filter((item): item is ts.ClassLikeDeclaration | ts.InterfaceDeclaration => ts.isClassLike(item) || ts.isInterfaceDeclaration(item))
+    .map((item) => item.typeParameters ?? []);
+  const count = Math.max(0, ...lists.map((list) => list.length));
+  return Array.from({ length: count }, (_, index) => lists.some((list) => list[index]?.defaultType)).some((defaulted) => !defaulted);
 }
 
 /** A file with a top-level import or export is a module; any other file declares globals. */
@@ -617,7 +646,7 @@ export function descriptorBuilder(
       return withMetadata({ kind: 'class-value', typeName: 'bigint' } as ModelConversionDescriptor, metadata);
     }
     if (metadata.serde && isClassValueType(checker, type)) {
-      return withMetadata({ kind: 'class-value', ...classValueReference(checker, type, context) } as ModelConversionDescriptor, metadata);
+      return withMetadata({ kind: 'class-value', ...classValueReference(checker, type, context, node ?? context.declaration) } as ModelConversionDescriptor, metadata);
     }
 
     const provenance = fieldProvenance(checker, node ?? provenanceNode ?? analysis.baseNode, specifications);

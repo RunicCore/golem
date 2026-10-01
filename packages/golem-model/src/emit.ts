@@ -557,21 +557,31 @@ function projectDescriptor(
   return { ...projected, ...metadata } as ModelConversionDescriptor;
 }
 
+/** Identifies an imported class across descriptors: its module (or package specifier) and export name. */
+function classImportKey(typeImport: { readonly exportName: string; readonly module: string; readonly specifier?: string }): string {
+  return `${typeImport.specifier ?? typeImport.module}\0${typeImport.exportName}`;
+}
+
 function descriptorType(
   descriptor: ModelConversionDescriptor,
   mode: 'model' | 'wire' | 'init',
   localNames: ReadonlySet<string>,
   externalNames: ReadonlyMap<string, string>,
+  classNames: ReadonlyMap<string, string>,
 ): string {
   const rich = richDescriptor(descriptor);
   if (mode === 'wire' && rich.serde) {
     return rich.serde.wireDescriptor
-      ? descriptorType(rich.serde.wireDescriptor, 'wire', localNames, externalNames)
+      ? descriptorType(rich.serde.wireDescriptor, 'wire', localNames, externalNames, classNames)
       : 'unknown';
   }
   if (mode === 'wire' && descriptor.kind === 'date') return 'string';
   if ((mode === 'model' || mode === 'init') && descriptor.kind === 'date') return 'Date';
-  if ((mode === 'model' || mode === 'init') && descriptor.kind === 'class-value') return descriptor.typeName;
+  if ((mode === 'model' || mode === 'init') && descriptor.kind === 'class-value') {
+    // `Temporal.Instant` imported from a module is `<alias>.Instant`: the import brings in the outermost name.
+    const alias = descriptor.typeImport && classNames.get(classImportKey(descriptor.typeImport));
+    return alias ? [alias, ...descriptor.typeName.split('.').slice(1)].join('.') : descriptor.typeName;
+  }
   switch (descriptor.kind) {
     case 'any': return 'any';
     case 'unknown': return 'unknown';
@@ -596,24 +606,24 @@ function descriptorType(
           ? `(ConstructorParameters<typeof ${className}> extends [] ? never : ConstructorParameters<typeof ${className}> extends [(infer Initializer)?, ...unknown[]] ? Initializer : never) | InstanceType<typeof ${className}>`
           : `InstanceType<typeof ${className}>`;
     }
-    case 'array': return `${descriptor.isReadonly ? 'ReadonlyArray' : 'Array'}<${descriptorType(descriptor.item, mode, localNames, externalNames)}>`;
+    case 'array': return `${descriptor.isReadonly ? 'ReadonlyArray' : 'Array'}<${descriptorType(descriptor.item, mode, localNames, externalNames, classNames)}>`;
     case 'tuple': {
       const items = descriptor.items.map((item, index) => {
-        const type = descriptorType(item, mode, localNames, externalNames);
+        const type = descriptorType(item, mode, localNames, externalNames, classNames);
         return descriptor.optionalFrom !== undefined && index >= descriptor.optionalFrom ? `(${type})?` : type;
       });
       if (!descriptor.rest) return `${descriptor.isReadonly ? 'readonly ' : ''}[${items.join(', ')}]`;
-      const restType = descriptorType(descriptor.rest.item, mode, localNames, externalNames);
+      const restType = descriptorType(descriptor.rest.item, mode, localNames, externalNames, classNames);
       return `${descriptor.isReadonly ? 'readonly ' : ''}[${[...items.slice(0, descriptor.rest.index), `...Array<${restType}>`, ...items.slice(descriptor.rest.index)].join(', ')}]`;
     }
-    case 'union': return descriptor.variants.map((item) => descriptorType(item, mode, localNames, externalNames)).join(' | ') || 'never';
-    case 'intersection': return descriptor.variants.map((item) => descriptorType(item, mode, localNames, externalNames)).join(' & ') || 'unknown';
+    case 'union': return descriptor.variants.map((item) => descriptorType(item, mode, localNames, externalNames, classNames)).join(' | ') || 'never';
+    case 'intersection': return descriptor.variants.map((item) => descriptorType(item, mode, localNames, externalNames, classNames)).join(' & ') || 'unknown';
     case 'object': {
       const properties = Object.entries(descriptor.properties).map(([name, item]) => {
         const optional = descriptor.required.includes(name) ? '' : '?';
-        return `${descriptor.readonlyProperties?.includes(name) ? "readonly " : ""}${propertyName(name)}${optional}: ${descriptorType(item, mode, localNames, externalNames)}`;
+        return `${descriptor.readonlyProperties?.includes(name) ? "readonly " : ""}${propertyName(name)}${optional}: ${descriptorType(item, mode, localNames, externalNames, classNames)}`;
       });
-      if (typeof descriptor.additionalProperties === 'object') properties.push(`[key: string]: ${descriptorType(descriptor.additionalProperties, mode, localNames, externalNames)}`);
+      if (typeof descriptor.additionalProperties === 'object') properties.push(`[key: string]: ${descriptorType(descriptor.additionalProperties, mode, localNames, externalNames, classNames)}`);
       return `{ ${properties.join('; ')} }`;
     }
   }
@@ -1129,6 +1139,30 @@ export function emitSource(
   const local = emitted.filter(item => canonicalFilename(item.sourceFile.fileName) === canonicalFilename(source));
   const localNames = new Set([...emitted].map((specification) => specification.name));
   const fileLocalNames = new Set(local.map((specification) => specification.name));
+  // A class-valued TSerde field names its class in the generated types. Each class is imported once under a
+  // generated name, so two classes called `Money` from different modules do not collide.
+  const classImports = new Map<string, { readonly importPath: string; readonly exportName: string }>();
+  for (const descriptor of Object.values(definitions)) {
+    const visit = (item: ModelConversionDescriptor): void => {
+      if (item.kind === 'class-value' && item.typeImport) {
+        const importPath = item.typeImport.specifier ?? sourceImportPath(item.typeImport.module, output);
+        classImports.set(classImportKey(item.typeImport), { importPath, exportName: item.typeImport.exportName });
+      }
+      const rich = richDescriptor(item);
+      if (rich.serde?.wireDescriptor) visit(rich.serde.wireDescriptor);
+      if (item.kind === 'array') visit(item.item);
+      if (item.kind === 'tuple') { item.items.forEach(visit); if (item.rest) visit(item.rest.item); }
+      if (item.kind === 'union' || item.kind === 'intersection') item.variants.forEach(visit);
+      if (item.kind === 'object') {
+        Object.values(item.properties).forEach(visit);
+        if (typeof item.additionalProperties === 'object') visit(item.additionalProperties);
+      }
+    };
+    visit(descriptor);
+  }
+  const classEntries = [...classImports].sort(([, left], [, right]) => `${left.importPath}\0${left.exportName}`.localeCompare(`${right.importPath}\0${right.exportName}`));
+  const classNames = new Map(classEntries.map(([key], index) => [key, `__golemClass${index}`] as const));
+  const classValueImports = classEntries.map(([key, item]) => `import type { ${item.exportName} as ${classNames.get(key)} } from ${JSON.stringify(item.importPath)};`);
   // Object-only models of another source convert through their companion's exported helpers.
   const siblingObjects = graph.siblings.filter((specification) => !specification.emitClass);
   const siblingObjectNames = new Set(siblingObjects.map((specification) => specification.name));
@@ -1271,9 +1305,9 @@ export function emitSource(
     const expressions = initialProjectionExpressions.get(name);
     if (!expressions) throw new Error(`Generated projection expressions are missing: ${name}`);
     const key = canonicalSchemaKey({
-      model: descriptorType(definitions[name], 'model', localNames, externalNames),
-      wire: descriptorType(definitions[name], 'wire', localNames, externalNames),
-      init: descriptorType(definitions[name], 'init', localNames, externalNames),
+      model: descriptorType(definitions[name], 'model', localNames, externalNames, classNames),
+      wire: descriptorType(definitions[name], 'wire', localNames, externalNames, classNames),
+      init: descriptorType(definitions[name], 'init', localNames, externalNames, classNames),
       expressions,
     });
     const representative = projectionRepresentativeByKey.get(key) ?? name;
@@ -1392,27 +1426,6 @@ export function emitSource(
     };
     return visit(descriptor);
   });
-  // A class-valued TSerde field names its class in the generated types; import each class once.
-  const classValueImports = new Map<string, string>();
-  for (const descriptor of Object.values(definitions)) {
-    const visit = (item: ModelConversionDescriptor): void => {
-      if (item.kind === 'class-value' && item.typeImport) {
-        const importPath = item.typeImport.specifier ?? sourceImportPath(item.typeImport.module, output);
-        classValueImports.set(`import type { ${item.typeImport.exportName} } from ${JSON.stringify(importPath)};`, importPath);
-      }
-      const rich = richDescriptor(item);
-      if (rich.serde?.wireDescriptor) visit(rich.serde.wireDescriptor);
-      if (item.kind === 'array') visit(item.item);
-      if (item.kind === 'tuple') { item.items.forEach(visit); if (item.rest) visit(item.rest.item); }
-      if (item.kind === 'union' || item.kind === 'intersection') item.variants.forEach(visit);
-      if (item.kind === 'object') {
-        Object.values(item.properties).forEach(visit);
-        if (typeof item.additionalProperties === 'object') visit(item.additionalProperties);
-      }
-    };
-    visit(descriptor);
-  }
-
   const anyCodecValidation = [...schemaGraph.nodes.values()].some(
     (node) => node.kind !== 'reference' && node.validationEnabled !== false,
   );
@@ -1446,7 +1459,7 @@ export function emitSource(
     lines.push(`import { ${conversionImports.join(', ')} } from '@exprtlabs/golem/conversion';`);
   }
   if (hasDate) lines.push("import { deserializeDate, serializeDate } from '@exprtlabs/golem/conversion';");
-  lines.push(...[...classValueImports.keys()].sort());
+  lines.push(...classValueImports);
     lines.push("import { addNestedCodecSchema, ajvIssues, assertModelValue, createObjectCodec, lazyAjvSchema, parseJson, registerIModelClass, requireAjvSchema, requireIModelClass, requireObjectCodec, resolveGeneratedModelSchemaRefs, resolveModelValidationContextValidator, runSynchronousValidation, serdeValidates, stringifyJsonArray, stringifyJsonBoolean, stringifyJsonNumber, stringifyJsonScalar, stringifyJsonString, validationFailure, validationUnavailable, IssueRepresentation, IssueSource, type SerdeOptions as __GolemSerdeOptions, type ValidateOptions as __GolemValidateOptions } from '@exprtlabs/golem/serde';");
   if (anyCodecValidation && !shared?.validationSetName) lines.push("import { createOpenApiSyncAjvEngine } from '@exprtlabs/golem/ajv';");
   if (anyCodecValidation && profile.mobx) lines.push("import { enhanceValidatorWithMobX } from '@exprtlabs/golem/mobx-validation';");
@@ -1538,13 +1551,13 @@ export function emitSource(
     const expressions = representative === name ? projectionExpressions.get(name) : undefined;
     if (representative === name && !expressions) throw new Error(`Generated projection expressions are missing: ${name}`);
     const fieldsType = representative === name
-      ? descriptorType(descriptor, 'model', localNames, externalNames)
+      ? descriptorType(descriptor, 'model', localNames, externalNames, classNames)
       : `${representative}Fields`;
     const jsonType = representative === name
-      ? descriptorType(descriptor, 'wire', localNames, externalNames)
+      ? descriptorType(descriptor, 'wire', localNames, externalNames, classNames)
       : `${representative}JSON`;
     const initType = representative === name
-      ? descriptorType(descriptor, 'init', localNames, externalNames)
+      ? descriptorType(descriptor, 'init', localNames, externalNames, classNames)
       : `${representative}Init`;
     const exported = objectOnlyNames.has(name) ? 'export ' : '';
     lines.push(
@@ -1581,8 +1594,8 @@ export function emitSource(
     const baseName = `${specification.name}Base`;
     const fieldsName = `${specification.name}Fields`;
     const definition = definitions[specification.name] ?? { kind: 'unknown' } as ModelConversionDescriptor;
-    const fieldType = descriptorType(definition, 'model', localNames, externalNames);
-    const initType = descriptorType(definition, 'init', localNames, externalNames);
+    const fieldType = descriptorType(definition, 'model', localNames, externalNames, classNames);
+    const initType = descriptorType(definition, 'init', localNames, externalNames, classNames);
     const fieldExpressions = rootFieldExpressions.get(specification.name);
     if (!fieldExpressions) throw new Error(`Generated model field expressions are missing: ${specification.name}`);
     const encodeFields = fieldExpressions.encode;
@@ -1593,7 +1606,7 @@ export function emitSource(
     }
     lines.push(
       `export type ${fieldsName} = ${fieldType};`,
-      `export type ${specification.name}JSON = ${descriptorType(definition, 'wire', localNames, externalNames)};`,
+      `export type ${specification.name}JSON = ${descriptorType(definition, 'wire', localNames, externalNames, classNames)};`,
       `export type ${specification.name}Init = Partial<${initType}>;`,
       '',
       `export abstract class ${baseName} implements GeneratedModel<${specification.name}JSON, ${fieldsName}> {`,

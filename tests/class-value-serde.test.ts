@@ -104,7 +104,7 @@ test('invalid wire value is rejected before decoding', async t => {
 test('generated model type names the class', async t => {
   const { result } = await build(t, tsSource`price: Price; when: When; bytes: Bytes`);
   const generated = result.artifacts.find(a => a.path.endsWith('a.model.generated.ts'))?.content ?? '';
-  assert.match(generated, /import type \{ Money \} from "\.\/money\.js"/);
+  assert.match(generated, /import type \{ Money as __golemClass\d+ \} from "\.\/money\.js"/);
   assert.match(generated, /Temporal\.Instant/);
   assert.match(generated, /Uint8Array/);
 });
@@ -143,7 +143,7 @@ import { type Money, encodeMoney, decodeMoney } from '@fixture/money';
 type Price = Money & TSerde<typeof encodeMoney, typeof decodeMoney>;`, fields: tsSource`price: Price` }).text);
   const result = generate({ root, profile: { mobx: false, validation: true } });
   const generated = result.artifacts.find(a => a.path.endsWith('a.model.generated.ts'))?.content ?? '';
-  assert.match(generated, /import type \{ Money \} from "@fixture\/money"/);
+  assert.match(generated, /import type \{ Money as __golemClass\d+ \} from "@fixture\/money"/);
   assert.doesNotMatch(generated, /import type \{ Price \}/);
 });
 
@@ -168,4 +168,89 @@ type Price = Money & TSerde<typeof encodeMoney, typeof decodeMoney>;`, fields: t
       .sort(([left], [right]) => left.localeCompare(right));
   });
   assert.deepEqual(outputs[1], outputs[0]);
+});
+
+const SHAPES = `export const anonymous = new (class { run(): void {} })();
+export function encodeAnonymous(value: typeof anonymous): string { return String(value); }
+export function decodeAnonymous(_value: string): typeof anonymous { return anonymous; }
+
+class Hidden { run(): void {} }
+export function makeHidden(): Hidden { return new Hidden(); }
+export function encodeHidden(value: Hidden): string { return String(value); }
+export function decodeHidden(_value: string): Hidden { return new Hidden(); }
+
+export class Box<T> { constructor(readonly item: T) {} run(): void {} }
+export function encodeBox(value: Box<string>): string { return value.item; }
+export function decodeBox(value: string): Box<string> { return new Box(value); }
+`;
+const AMBIENT = `declare module 'legacy-money' { export class Legacy { run(): void; } }
+`;
+const LEGACY_CODECS = `import type { Legacy } from 'legacy-money';
+export function encodeLegacy(_value: Legacy): string { return ''; }
+export function decodeLegacy(_value: string): Legacy { throw new Error('unused'); }
+`;
+const SHAPES_IMPORTS = tsSource`import type { TSerde } from '@exprtlabs/golem/tags';
+import { anonymous, makeHidden, encodeAnonymous, decodeAnonymous, encodeHidden, decodeHidden, encodeBox, decodeBox, type Box } from './shapes.js';
+import { encodeLegacy, decodeLegacy } from './legacy.js';
+import type { Legacy } from 'legacy-money';
+type Anonymous = typeof anonymous & TSerde<typeof encodeAnonymous, typeof decodeAnonymous>;
+type Hidden = ReturnType<typeof makeHidden> & TSerde<typeof encodeHidden, typeof decodeHidden>;
+type Boxed = Box<string> & TSerde<typeof encodeBox, typeof decodeBox>;
+type Old = Legacy & TSerde<typeof encodeLegacy, typeof decodeLegacy>;`;
+
+for (const item of [
+  { name: 'an anonymous class', field: tsSource`value: Anonymous`, expected: /a\.model\.ts:\d+:\d+ RUNM1063: .*no name.*Name the class and export it/ },
+  { name: 'a class that is not exported', field: tsSource`value: Hidden`, expected: /a\.model\.ts:\d+:\d+ RUNM1063: .*Class Hidden is not exported from .*shapes\.ts.*Export it/ },
+  { name: 'a generic class', field: tsSource`value: Boxed`, expected: /a\.model\.ts:\d+:\d+ RUNM1063: .*Class Box has type parameters.*extends Box<string>/ },
+  { name: 'a class declared in an ambient module of a script file', field: tsSource`value: Old`, expected: /a\.model\.ts:\d+:\d+ RUNM1063: .*Class Legacy is declared inside declare module "legacy-money".*Move it into a module file/ },
+] as const) {
+  test(`class-valued TSerde diagnostic: ${item.name}`, t => {
+    const { root, sourceRoot } = fixture(t);
+    fs.writeFileSync(path.join(sourceRoot, 'shapes.ts'), SHAPES);
+    fs.writeFileSync(path.join(sourceRoot, 'ambient.d.ts'), AMBIENT);
+    fs.writeFileSync(path.join(sourceRoot, 'legacy.ts'), LEGACY_CODECS);
+    fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), taggedModelSource({ name: 'A', imports: SHAPES_IMPORTS, fields: item.field }).text);
+    assert.throws(() => generate({ root, profile: { mobx: false, validation: true } }), error => { assert.match(String(error), item.expected); return true; });
+  });
+}
+
+/** A module declaring `Money` with its codec, so one project can hold several classes of the same name. */
+function moneyModule(options: { readonly exports: string; readonly prefix: string }): string {
+  return `class Money { constructor(readonly text: string) {} run(): void {} }
+export function encode${options.prefix}(value: Money): string { return value.text; }
+export function decode${options.prefix}(value: string): Money { return new Money(value); }
+${options.exports}
+`;
+}
+
+test('class-valued TSerde fields import renamed and default exports and keep same-named classes apart', async t => {
+  const { root, sourceRoot } = fixture(t);
+  fs.mkdirSync(path.join(sourceRoot, 'first'), { recursive: true });
+  fs.mkdirSync(path.join(sourceRoot, 'second'), { recursive: true });
+  fs.writeFileSync(path.join(sourceRoot, 'first/money.ts'), moneyModule({ prefix: 'First', exports: 'export { Money as Cash };' }));
+  fs.writeFileSync(path.join(sourceRoot, 'second/money.ts'), moneyModule({ prefix: 'Second', exports: 'export default Money;' }));
+  fs.writeFileSync(path.join(sourceRoot, 'third.ts'), `export class Money { constructor(readonly text: string) {} run(): void {} }
+export function encodeThird(value: Money): string { return value.text; }
+export function decodeThird(value: string): Money { return new Money(value); }
+`);
+  fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), taggedModelSource({ name: 'A', imports: tsSource`import type { TSerde } from '@exprtlabs/golem/tags';
+import type { Cash } from './first/money.js';
+import type SecondMoney from './second/money.js';
+import type { Money as ThirdMoney } from './third.js';
+import { encodeFirst, decodeFirst } from './first/money.js';
+import { encodeSecond, decodeSecond } from './second/money.js';
+import { encodeThird, decodeThird } from './third.js';
+type First = Cash & TSerde<typeof encodeFirst, typeof decodeFirst>;
+type Second = SecondMoney & TSerde<typeof encodeSecond, typeof decodeSecond>;
+type Third = ThirdMoney & TSerde<typeof encodeThird, typeof decodeThird>;`, fields: tsSource`first: First; second: Second; third: Third` }).text);
+  const result = generate({ root, profile: { mobx: false, validation: true } });
+  writeGeneratedArtifacts(result.artifacts);
+  const generated = result.artifacts.find(a => a.path.endsWith('a.model.generated.ts'))?.content ?? '';
+  assert.match(generated, /import type \{ Cash as __golemClass\d+ \} from "\.\/first\/money\.js"/);
+  assert.match(generated, /import type \{ default as __golemClass\d+ \} from "\.\/second\/money\.js"/);
+  assert.match(generated, /import type \{ Money as __golemClass\d+ \} from "\.\/third\.js"/);
+  await compileModelProject(root);
+  const { A } = await import(path.toNamespacedPath(path.join(root, 'build/a.model.js')));
+  const wire = { first: 'a', second: 'b', third: 'c' };
+  assert.deepEqual(encodeGeneratedModel(decodeGeneratedModel(A, wire)), wire);
 });

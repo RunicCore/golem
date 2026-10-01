@@ -202,10 +202,15 @@ function isGolemTagSymbol(checker: ts.TypeChecker, symbol: ts.Symbol | undefined
   return Boolean(target?.declarations?.some((declaration) => isGolemTagsSource(declaration.getSourceFile().fileName)));
 }
 
-function publicExportName(
+/**
+ * The name `declaration`'s module exports `symbol` under. A function must be exported by name; a class can also be
+ * the default export (`allowDefault`), which generated code imports as `default`.
+ */
+export function publicExportName(
   checker: ts.TypeChecker,
   declaration: ts.Declaration,
   symbol: ts.Symbol,
+  allowDefault = false,
 ): string | undefined {
   const sourceFile = declaration.getSourceFile();
   const moduleSymbol = checker.getSymbolAtLocation(sourceFile);
@@ -216,9 +221,8 @@ function publicExportName(
         return resolved === symbol || (resolved && resolved.declarations?.some((item) => item === declaration));
       })
       .map((candidate) => candidate.getName())
-      .filter((name) => name !== 'default')
       .sort();
-    if (candidates[0]) return candidates[0];
+    return candidates.find((name) => name !== 'default') ?? (allowDefault ? candidates[0] : undefined);
   }
   return undefined;
 }

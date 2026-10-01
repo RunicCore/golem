@@ -38,6 +38,7 @@ Give a combination of tags a type alias and use the alias as the field type. A t
 - `TSerde` and `TValidation` inside an alias take `typeof` an exported function, not a type parameter ([RUNM1061](/reference/diagnostics#runm1061)).
 - An alias or codec can come from an installed package. The generated file imports the codec through the package's `exports` ([RUNM1060](/reference/diagnostics#runm1060)).
 - A `TSerde` field can hold a class instance or a `bigint`, such as `Uint8Array & TSerde<typeof encode, typeof decode>`. The codec does all conversion; validation checks the JSON value.
+- The class must have a name, be exported from a module (under any name, or as the default export), and have no type parameter without a default ([RUNM1063](/reference/diagnostics#runm1063)).
 
 ## Built-in validation constraints
 

@@ -27,6 +27,7 @@ The first release candidate includes four independently installable packages:
 - Tag aliases and `TSerde`/`TValidation` functions can come from an installed package; generated files import them through the package's `exports`.
 - **Breaking:** a `TSerde`/`TValidation` function in another package, including a sibling workspace package, is imported by its package name, so that package must export the file (RUNM1060). Earlier releases wrote a relative path into the other package. Add an `exports` entry for the codec file.
 - A `TSerde` field can hold a class instance, such as `Uint8Array`, or a `bigint`.
+- A class held by a `TSerde` field is imported under its exported name, including `export { A as B }` and default exports, and under a generated alias, so two classes with the same name from different modules both compile. An anonymous, unexported, generic or `declare module` class fails with `RUNM1063` instead of producing a broken import.
 - `IModel` / `IObject` `exact` defaults to `true`. Opt out with `{ exact: false }`.
 - Synchronous `parse` / `stringify` convert JSON text; `fromWireFormat` /
   `toWireFormat` convert the object plane. Type-only targets fill a plain
