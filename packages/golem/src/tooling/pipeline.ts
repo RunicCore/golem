@@ -151,7 +151,8 @@ export async function providersFor(config: GolemConfig): Promise<ReadonlyMap<str
       if (hasErrorCode(error, 'MODULE_NOT_FOUND')) throw new Error(`${job.kind} is configured but ${job.package} is not installed in ${config.directory}. Install it with npm install -D ${job.package}@${golemDistTag()}.`);
       throw new Error(`Cannot resolve ${job.package}/generator: ${errorMessage(error)}`);
     }
-    assertRuntimeCompatible({ name: '@exprtlabs/golem', version: golemVersion() }, { name: job.package, version: packageVersion(job.package, filename) });
+    // golem publishes its own packages in lockstep; a third-party generator versions on its own.
+    if (job.kind !== 'generator') assertRuntimeCompatible({ name: '@exprtlabs/golem', version: golemVersion() }, { name: job.package, version: packageVersion(job.package, filename) });
     const imported: unknown = await import(pathToFileURL(filename).href);
     if (!isRecord(imported) || imported.apiVersion !== 1 || typeof imported.generate !== 'function') {
       throw new Error(`Incompatible generator ${job.package}: CLI supports API 1; installed provider reports ${isRecord(imported) ? String(imported.apiVersion) : 'unknown'}.`);

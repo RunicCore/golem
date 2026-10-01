@@ -183,6 +183,6 @@ Install a package that provides a generator and list it under `generators`. Its 
 
 | Key | Type | Required | Meaning |
 | --- | --- | --- | --- |
-| `package` | string | Yes | Installed package that exports `./generator`. |
+| `package` | string | Yes | Installed third-party package that exports `./generator`; its version is independent of golem's. Name the built-in packages through `models`, `openapi` or `controllers` instead. |
 | `output` | path | Yes | Config-relative directory the generator owns. |
 | `options` | object | No | Passed to the generator as-is; the generator validates it. |

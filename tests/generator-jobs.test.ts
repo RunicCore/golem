@@ -27,7 +27,7 @@ export function generate(context) {
 `;
 }
 
-function project(t: TestContext, { install = true, apiVersion = 1, yaml = CONFIG } = {}): { root: string; config: string } {
+function project(t: TestContext, { install = true, apiVersion = 1, yaml = CONFIG, version = VERSION } = {}): { root: string; config: string } {
   const root = createFixtureProject(t, 'golem-generator-jobs-');
   linkProjectPackages(root, Object.fromEntries(['golem', 'golem-model'].map(name => [`@exprtlabs/${name}`, path.join(workspace, 'packages', name)])));
   fs.writeFileSync(path.join(root, 'package.json'), '{"name":"golem-generator-jobs-fixture","type":"module"}');
@@ -36,7 +36,7 @@ function project(t: TestContext, { install = true, apiVersion = 1, yaml = CONFIG
   if (install) {
     const provider = path.join(root, 'node_modules/@fixture/gen');
     fs.mkdirSync(provider, { recursive: true });
-    fs.writeFileSync(path.join(provider, 'package.json'), JSON.stringify({ name: '@fixture/gen', version: VERSION, type: 'module', exports: { './generator': './index.js' } }));
+    fs.writeFileSync(path.join(provider, 'package.json'), JSON.stringify({ name: '@fixture/gen', version, type: 'module', exports: { './generator': './index.js' } }));
     fs.writeFileSync(path.join(provider, 'index.js'), providerSource(apiVersion));
   }
   fs.writeFileSync(path.join(root, 'golem.yaml'), yaml);
@@ -74,6 +74,23 @@ test('a generator output may not overlap the models output or another generator'
 test('an unknown generator entry key is a config error naming the key', t => {
   const { config } = project(t, { yaml: CONFIG.replace("  - package: '@fixture/gen'", "  - packge: '@fixture/gen'") });
   assert.throws(() => loadConfig(config), /packge/);
+});
+
+test('a third-party generator is not held to the version of golem', async t => {
+  for (const version of ['0.1.0', '99.0.0']) {
+    const { root, config } = project(t, { version });
+    await runPipeline(config);
+    assert.equal(fs.readFileSync(path.join(root, 'src/gen/item.model.ts'), 'utf8'), ITEM);
+  }
+});
+
+test('a built-in package named as a generator is a config error naming the job to use', t => {
+  for (const [name, section] of [['@exprtlabs/golem-model', 'models'], ['@exprtlabs/golem-openapi', 'openapi'], ['@exprtlabs/golem-ts-openapi', 'controllers']] as const) {
+    const { config } = project(t, { yaml: CONFIG.replace('@fixture/gen', name) });
+    assert.throws(() => loadConfig(config), new RegExp(`generators\\[0\\]\\.package.*${name}.*\\b${section}\\b job`));
+  }
+  const { config } = project(t, { yaml: CONFIG.replace('@fixture/gen', '@exprtlabs/golem') });
+  assert.throws(() => loadConfig(config), /generators\[0\]\.package.*@exprtlabs\/golem is the CLI/);
 });
 
 test('an unrelated model change does not rerun the generator', async t => {

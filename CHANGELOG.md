@@ -106,6 +106,7 @@ See [OpenAPI client support](docs/reference/openapi-support.md) for supported ve
 
 - **Breaking:** the packages, CLI and files are renamed to golem. `@exprtlabs/codegen` is `@exprtlabs/golem`, `@exprtlabs/model-codegen` is `@exprtlabs/golem-model`, `@exprtlabs/openapi-to-ts` is `@exprtlabs/golem-openapi` and `@exprtlabs/ts-to-openapi` is `@exprtlabs/golem-ts-openapi`; subpaths are unchanged. The CLI is `golem`, the config file `golem.yaml` and the inventory directory `.golem/`. Generator-API types are renamed from `Codegen*` to `Golem*` (for example `GolemProvider`, `GolemProfile`), and generated internal names from `__runic*` to `__golem*`. Rename `runic-codegen.yaml` to `golem.yaml`, delete `.runic-codegen/` and run `npx golem generate`.
 - `generators` jobs run generators from installed packages before the built-in jobs.
+- A `generators` package is a third-party package: its version is not compared with `@exprtlabs/golem`, and naming a built-in package (`@exprtlabs/golem-model`, `-openapi`, `-ts-openapi`) is a configuration error that names the `models`, `openapi` or `controllers` job to use.
 - Generated files are replaced on regeneration; handwritten behavior belongs in source declarations and subclasses.
 - `generate` and `check` stop with an error instead of replacing a file at an output path that golem did not generate.
 - Identical output keeps its modification time. `check` reports drift without writing files.

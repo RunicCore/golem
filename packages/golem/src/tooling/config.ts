@@ -28,6 +28,13 @@ export interface GolemConfig {
   readonly inventoryFile: string;
 }
 
+/** The job section that runs each built-in package; a `generators` entry names a third-party package instead. */
+const BUILT_IN_JOB_SECTIONS: Readonly<Record<string, string>> = {
+  '@exprtlabs/golem-model': 'models',
+  '@exprtlabs/golem-openapi': 'openapi',
+  '@exprtlabs/golem-ts-openapi': 'controllers',
+};
+
 function keys(value: unknown, allowed: readonly string[], label: string): asserts value is Record<string, unknown> {
   if (!isRecord(value)) throw new TypeError(`${label} must be an object.`);
   for (const key of Object.keys(value)) {
@@ -169,6 +176,9 @@ export function resolveConfig(filename = 'golem.yaml', onInput?: InputObserver):
       const label = `generators[${index}]`;
       keys(entry, ['package', 'output', 'options'], label);
       const packageName = nonempty(entry.package, `${label}.package`);
+      const section = BUILT_IN_JOB_SECTIONS[packageName];
+      if (section) throw new Error(`${label}.package must be a third-party generator, but ${packageName} is built in. Configure it with the ${section} job instead.`);
+      if (packageName === '@exprtlabs/golem') throw new Error(`${label}.package must be a third-party generator, but @exprtlabs/golem is the CLI, not a generator.`);
       const output = canonicalPath(path.resolve(directory, nonempty(entry.output, `${label}.output`)));
       if (fs.existsSync(output) && !fs.statSync(output).isDirectory()) throw new Error(`${label}.output must be a directory.`);
       for (const previous of outputs) {
