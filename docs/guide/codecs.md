@@ -6,17 +6,7 @@ This page uses the `PaymentsClient` from [Models with a client](/guide/models-an
 
 `src/create-payment.ts`:
 
-```ts
-import { PaymentsClient } from '../sdk/index.js';
-
-const client = new PaymentsClient({ baseUrl: 'https://api.example.com' });
-const response = await client.createPayment().execute({
-  body: { amount: 25, currency: 'USD' },
-});
-// Request body: {"amount":25,"currency":"USD"}
-// Content-Type: application/json
-response.body; // Already decoded.
-```
+<<< ../../examples/combined/src/create-payment.ts#create-payment
 
 - Validation checks the request value or decoded response value; codecs still run when validation is disabled.
 

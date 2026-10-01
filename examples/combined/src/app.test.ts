@@ -125,3 +125,20 @@ test('combined generated client rejects an invalid request before fetch', async 
   await assert.rejects(client.createPayment().execute({ body: { amount: -1, currency: 'USD' } }), /validation/i);
   assert.equal(calls, 0);
 });
+
+test('createPayment sends a JSON body and returns the decoded response body', async () => {
+  const originalFetch = globalThis.fetch;
+  let received: { body: string; contentType: string | null } | undefined;
+  globalThis.fetch = (async (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
+    const request = new Request(input, init);
+    received = { body: await request.text(), contentType: request.headers.get('content-type') };
+    return Response.json({ amount: 25, currency: 'USD' }, { status: 201 });
+  }) as typeof fetch;
+  try {
+    const { createdPayment } = await import('./create-payment.js');
+    assert.deepEqual(received, { body: '{"amount":25,"currency":"USD"}', contentType: 'application/json' });
+    assert.deepEqual(createdPayment, { amount: 25, currency: 'USD' });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
