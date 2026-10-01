@@ -1,10 +1,12 @@
 import assert from 'node:assert/strict';
+import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import test from 'node:test';
 import type { GolemProfile } from '@exprtlabs/golem/generator-api';
 import { createOpenApiAjvEngine } from '@exprtlabs/golem/ajv';
 import { ClientRuntime } from '@exprtlabs/golem/client';
+import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 import { writeSdk } from '#openapi/generator';
 import { createFixtureProject } from '../fixture-project.js';
 import { compileGeneratedSdk, isGeneratedClientClass, writeGeneratedSdk } from './helpers.js';
@@ -29,7 +31,7 @@ type PayloadClient = { sendPayload(): { execute(input: { body: { marker: string 
 async function loadSdk(root: string, marker: string, profile: GolemProfile): Promise<PayloadClient> {
   const output = path.join(root, marker);
   writeGeneratedSdk(writeSdk, sdkDocument(marker), { output, name: 'Engine', profile });
-  compileGeneratedSdk(output, []);
+  compileGeneratedSdk(output, profile.ajvStandalone ? [path.join(output, 'validation-engine.ts')] : []);
   const module: Record<string, unknown> = await import(pathToFileURL(path.join(output, 'dist/client.js')).href);
   const Client = module.EngineClient;
   assert.ok(isGeneratedClientClass(Client));
@@ -41,14 +43,15 @@ async function loadSdk(root: string, marker: string, profile: GolemProfile): Pro
   };
   const shared = engineOf(new Client(options));
   const index: Record<string, unknown> = await import(pathToFileURL(path.join(output, 'dist/index.js')).href);
-  for (const internal of ['createRuntimeValidators', 'createOperationRuntimeValidators', 'schemaRegistry', 'IOBJECT_PLUGIN_KEYS']) {
+  for (const internal of ['createRuntimeValidators', 'createOperationRuntimeValidators', 'schemaRegistry', 'schemaId', 'IOBJECT_PLUGIN_KEYS']) {
     assert.equal(internal in index, false, `${internal} is internal to the SDK`);
   }
   if (profile.ajvStandalone) {
     assert.equal(shared, undefined);
     const schemas: Record<string, unknown> = await import(pathToFileURL(path.join(output, 'dist/schemas.js')).href);
-    assert.equal(typeof schemas.createOperationRuntimeValidators, 'function');
+    assert.deepEqual(Object.keys(schemas).sort(), ['runtimeSchemaRegistry', 'schemaRegistry']);
   } else {
+    assert.equal(existsSync(path.join(output, 'schemas.ts')), false, 'only a standalone SDK emits schemas.ts');
     assert.ok(shared);
     assert.equal(engineOf(new Client(options)), shared, 'clients of one SDK share one default engine');
   }
@@ -56,6 +59,21 @@ async function loadSdk(root: string, marker: string, profile: GolemProfile): Pro
   assert.equal(engineOf(new Client({ ...options, validationEngine: supplied })), supplied);
   const fetchImpl: typeof fetch = async (_url, init) =>
     new Response(String(init?.body), { headers: { 'content-type': 'application/json' } });
+  if (!profile.ajvStandalone) {
+    const unusable = new Client({ ...options, validationEngine: supplied, fetchImpl }) as unknown as PayloadClient;
+    await assert.rejects(
+      async () => unusable.sendPayload().execute({ body: { marker } }),
+      (error: unknown) => error instanceof LibError && error.kind === LibErrorKind.ValidationUnavailable,
+      'an engine that compiles no schema is reported, not silently skipped',
+    );
+    const inputOnly = { addSchema() {}, getSchema: (reference: string) => reference.includes('/input') ? Object.assign(() => true, { errors: null }) : undefined };
+    const noResponses = new Client({ ...options, validationEngine: inputOnly, fetchImpl }) as unknown as PayloadClient;
+    await assert.rejects(
+      async () => noResponses.sendPayload().execute({ body: { marker } }),
+      (error: unknown) => error instanceof LibError && error.kind === LibErrorKind.ValidationUnavailable && /operation response: sendPayload/.test(error.message),
+      'a response the engine cannot compile is reported by operation',
+    );
+  }
   return new Client({ baseUrl: 'https://fixture.invalid', fetchImpl }) as unknown as PayloadClient;
 }
 

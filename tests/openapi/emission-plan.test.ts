@@ -230,8 +230,59 @@ test('schema-only documents emit types, directional files, and models without a 
     'models/Widget.ts',
     'models/_group-<hash>.ts',
     'iobject-plugin-keys.ts',
-    ...(profile.validation ? ['schemas.ts'] : []),
   ]);
+});
+
+test('schemas.ts exists only for ajvStandalone SDKs and holds only the registries', async t => {
+  const document = {
+    openapi: '3.2.0',
+    info: info('Registries'),
+    components: { schemas: { Widget: { type: 'object', required: ['id'], properties: { id: { type: 'string' } } } } },
+    paths: { '/widgets': { get: {
+      operationId: 'listWidgets',
+      responses: { '200': { description: 'ok', content: { 'application/json': { schema: { $ref: '#/components/schemas/Widget' } } } } },
+    } } },
+  };
+  for (const profile of [
+    { mobx: false, validation: false },
+    { mobx: false, validation: true },
+    { mobx: false, validation: true, ajvStandalone: true },
+  ] as const) {
+    const output = outputDir(t, `registries-${profile.validation}-${'ajvStandalone' in profile}`);
+    const result = await generateMaterializedSdk(document, { output, name: 'Registries', profile });
+    const schemas = result.artifacts.find(artifact => artifact.path.endsWith('/schemas.ts'));
+    if (!('ajvStandalone' in profile)) {
+      assert.equal(schemas, undefined, 'only the standalone validation engine reads schemas.ts');
+      continue;
+    }
+    assert.ok(schemas);
+    assert.deepEqual([...schemas.content.matchAll(/^export const (\w+)/gm)].map(match => match[1]), ['schemaRegistry', 'runtimeSchemaRegistry']);
+    assert.doesNotMatch(schemas.content, /^import /m);
+  }
+});
+
+test('operation names are typed inside client.ts and links.ts without a schemas.ts', async t => {
+  const output = outputDir(t, 'operation-name-types');
+  const result = await generateMaterializedSdk({
+    openapi: '3.2.0',
+    info: info('Names'),
+    paths: {
+      '/a': { get: {
+        operationId: 'getA',
+        responses: { '200': {
+          description: 'ok',
+          links: { toB: { operationId: 'getB' } },
+          content: { 'application/json': { schema: { type: 'object' } } },
+        } },
+      } },
+      '/b': { get: { operationId: 'getB', responses: { '204': { description: 'ok' } } } },
+    },
+  }, { output, name: 'Names', profile: { mobx: false, validation: true } });
+  const file = (name: string) => result.artifacts.find(artifact => artifact.path.endsWith(`/${name}`))?.content ?? '';
+  assert.match(file('client.ts'), /^type __GolemOperationName = "getA" \| "getB";$/m);
+  assert.match(file('links.ts'), /^type OperationName = "getA" \| "getB";$/m);
+  assert.doesNotMatch(file('client.ts') + file('links.ts'), /schemas\.js/);
+  compileStrictUnusedSdk(output);
 });
 
 test('empty component documents emit only always-on artifacts', async (t) => {
@@ -279,7 +330,6 @@ test('minimal GET without content omits codec options and unused helpers', async
     'model-manifest.json',
     'client.ts',
     'operations/ping.ts',
-    'schemas.ts',
   ], false);
 
   const output = outputDir(t, 'codec-omit');

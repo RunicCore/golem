@@ -40,15 +40,13 @@ test('generate returns absolute pure artifacts and local watch inputs', async (t
 
   const models = generatedModelSource(result.artifacts);
   const client = generatedClientSource(result.artifacts);
-  const schemas = result.artifacts.find(({ path: filename }) => filename.endsWith('/schemas.ts'))?.content;
   assert.ok(models);
   assert.ok(client);
-  assert.ok(schemas);
   assert.doesNotMatch(models, /@exprtlabs\/golem\/(mobx|mobx-validation)/);
   assert.doesNotMatch(models, /asGenObservable|validation:\s*\{/);
   assert.match(models, /registerGeneratedModel/);
   assert.doesNotMatch(client, /@exprtlabs\/golem\/(ajv|validation)/);
-  assert.doesNotMatch(schemas, /schemaRegistry|runtimeSchemaRegistry/);
+  assert.equal(result.artifacts.some(({ path: filename }) => filename.endsWith('/schemas.ts')), false);
 });
 
 test('OpenAPI getValidator infers generated fields and rejects handwritten subclass fields', async t => {

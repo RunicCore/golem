@@ -38,13 +38,6 @@
         "export": "Merchant",
         "module": "./types.ts"
       },
-      "validation": {
-        "authority": "openapi",
-        "reference": "#/components/schemas/Merchant",
-        "registryExport": "runtimeSchemaRegistry",
-        "registryIdExport": "schemaRegistry",
-        "registryModule": "./schemas.ts"
-      },
       "variants": []
     },
     {
@@ -74,13 +67,6 @@
         ],
         "export": "MerchantOmitId",
         "module": "./types.ts"
-      },
-      "validation": {
-        "authority": "openapi",
-        "reference": "#/components/schemas/MerchantOmitId",
-        "registryExport": "runtimeSchemaRegistry",
-        "registryIdExport": "schemaRegistry",
-        "registryModule": "./schemas.ts"
       },
       "variants": []
     },
@@ -117,13 +103,6 @@
         ],
         "export": "Money",
         "module": "./types.ts"
-      },
-      "validation": {
-        "authority": "openapi",
-        "reference": "#/components/schemas/Money",
-        "registryExport": "runtimeSchemaRegistry",
-        "registryIdExport": "schemaRegistry",
-        "registryModule": "./schemas.ts"
       },
       "variants": []
     },
@@ -185,13 +164,6 @@
         "export": "Payment",
         "module": "./types.ts"
       },
-      "validation": {
-        "authority": "openapi",
-        "reference": "#/components/schemas/Payment",
-        "registryExport": "runtimeSchemaRegistry",
-        "registryIdExport": "schemaRegistry",
-        "registryModule": "./schemas.ts"
-      },
       "variants": []
     },
     {
@@ -245,13 +217,6 @@
         ],
         "export": "PaymentInput",
         "module": "./types.ts"
-      },
-      "validation": {
-        "authority": "openapi",
-        "reference": "#/components/schemas/PaymentInput",
-        "registryExport": "runtimeSchemaRegistry",
-        "registryIdExport": "schemaRegistry",
-        "registryModule": "./schemas.ts"
       },
       "variants": []
     }

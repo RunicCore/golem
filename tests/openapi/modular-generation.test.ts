@@ -732,6 +732,19 @@ test('sequential same-title generation jobs keep schema and resource contexts is
   assert.notEqual(firstOperation, secondOperation, 'operation references carry each job’s digest-qualified schema context');
 });
 
+test('validation-schemas modules export only their schema', () => {
+  const result = writeSdk(contextDocument('alpha'), {
+    output: path.join(tmpdir(), 'openapi-schema-exports'),
+    name: 'Context',
+    profile: { mobx: false, validation: true },
+  });
+  const modules = schemaClosureArtifacts(result.artifacts);
+  assert.ok(modules.length > 0);
+  for (const artifact of modules) {
+    assert.deepEqual([...artifact.content.matchAll(/^export const (\w+)/gm)].map(match => match[1]), ['schema'], artifact.path);
+  }
+});
+
 test('schemas whose names the codec rule shortens still get output files and exports', t => {
   const { source } = fixture(t);
   const object = { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] };

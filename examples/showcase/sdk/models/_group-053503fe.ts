@@ -58,22 +58,22 @@ export function encodeProjectAccess(model: ProjectAccessModel): Types.ProjectAcc
 registerGeneratedModel(ProjectAccessModel, {
   fields: ["member", "permissions", "projectName"] as const,
   conversion: { decode: decodeProjectAccess, encode: encodeProjectAccess },
-  codecId: "ProjectAccess_87602853",
+  codecId: "ProjectAccess_91a94489",
   profile: {"mobx":false,"validation":true,"ajvStandalone":false,"allowAny":false},
 });
 
-registerIModelClass("ProjectAccess_87602853", ProjectAccessModel);
+registerIModelClass("ProjectAccess_91a94489", ProjectAccessModel);
 
 const objectAjvFast = createOpenApiSyncAjvEngine({ allErrors: false, validationBindings: {} });
 const objectAjvAll = createOpenApiSyncAjvEngine({ allErrors: true, validationBindings: {} });
 
 addNestedCodecSchema([(schema, id) => objectAjvFast.addSchema(schema, id), (schema, id) => objectAjvAll.addSchema(schema, id)], "Member_24b40f77", MemberModel);
-const __resolvedModelSchema_ProjectAccess = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"ProjectAccess_87602853\",\"type\":\"object\",\"properties\":{\"member\":{\"$ref\":\"#/$defs/Member_24b40f77\"},\"permissions\":{\"allOf\":[{\"type\":\"string\"},{\"pattern\":\"^0x[0-9a-fA-F]+$\"}]},\"projectName\":{\"allOf\":[{\"type\":\"string\"},{\"maxLength\":48,\"minLength\":3,\"pattern\":\"^[A-Za-z][A-Za-z0-9 -]*$\"}]}},\"required\":[\"member\",\"permissions\",\"projectName\"],\"additionalProperties\":false,\"$defs\":{\"Member_24b40f77\":{\"type\":\"object\",\"properties\":{\"email\":{\"allOf\":[{\"type\":\"string\"},{\"format\":\"email\"}]},\"id\":{\"allOf\":[{\"type\":\"string\"},{\"minLength\":1}]},\"name\":{\"allOf\":[{\"type\":\"string\"},{\"minLength\":2}]}},\"required\":[\"email\",\"id\",\"name\"],\"additionalProperties\":false}}}") as object) as object;
-objectAjvFast.addSchema(structuredClone(__resolvedModelSchema_ProjectAccess) as object, "ProjectAccess_87602853");
-objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_ProjectAccess) as object, "ProjectAccess_87602853");
+const __resolvedModelSchema_ProjectAccess = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"ProjectAccess_91a94489\",\"type\":\"object\",\"properties\":{\"member\":{\"$ref\":\"#/$defs/Member_24b40f77\"},\"permissions\":{\"allOf\":[{\"type\":\"string\"},{\"pattern\":\"^0x[0-9a-fA-F]+$\"}]},\"projectName\":{\"allOf\":[{\"type\":\"string\"},{\"maxLength\":48,\"minLength\":3,\"pattern\":\"^[A-Za-z][A-Za-z0-9 -]*$\"}]}},\"required\":[\"member\",\"permissions\",\"projectName\"],\"additionalProperties\":false,\"$defs\":{\"Member_24b40f77\":{\"type\":\"object\",\"properties\":{\"email\":{\"allOf\":[{\"type\":\"string\"},{\"format\":\"email\"}]},\"id\":{\"allOf\":[{\"type\":\"string\"},{\"minLength\":1}]},\"name\":{\"allOf\":[{\"type\":\"string\"},{\"minLength\":2}]}},\"required\":[\"email\",\"id\",\"name\"],\"additionalProperties\":false}}}") as object) as object;
+objectAjvFast.addSchema(structuredClone(__resolvedModelSchema_ProjectAccess) as object, "ProjectAccess_91a94489");
+objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_ProjectAccess) as object, "ProjectAccess_91a94489");
 
-const validateProjectAccessFast = requireAjvSchema(objectAjvFast.getSchema("ProjectAccess_87602853"), "ProjectAccess_87602853");
-const validateProjectAccessAll = requireAjvSchema(objectAjvAll.getSchema("ProjectAccess_87602853"), "ProjectAccess_87602853");
+const validateProjectAccessFast = requireAjvSchema(objectAjvFast.getSchema("ProjectAccess_91a94489"), "ProjectAccess_91a94489");
+const validateProjectAccessAll = requireAjvSchema(objectAjvAll.getSchema("ProjectAccess_91a94489"), "ProjectAccess_91a94489");
 
 function fillProjectAccess(out: Record<string, unknown>, wire: Record<string, unknown>, copyIdentity = true): Record<string, unknown> {
   if (copyIdentity) {
@@ -142,7 +142,7 @@ export function validateProjectAccess(value: unknown, options?: __GolemValidateO
     ok = failFast ? validateProjectAccessFast(value) : validateProjectAccessAll(value);
     errors = failFast ? validateProjectAccessFast.errors : validateProjectAccessAll.errors;
   } else {
-    const validator = resolveModelValidationContextValidator(options.validationContext, "ProjectAccess_87602853", failFast ? 'first' : 'all');
+    const validator = resolveModelValidationContextValidator(options.validationContext, "ProjectAccess_91a94489", failFast ? 'first' : 'all');
     ok = runSynchronousValidation(validator, value);
     errors = validator.errors;
   }
@@ -151,12 +151,12 @@ export function validateProjectAccess(value: unknown, options?: __GolemValidateO
 }
 
 export function assertProjectAccess(value: unknown, options?: __GolemValidateOptions): ProjectAccessFields {
-  assertModelValue(value, options, validateProjectAccessFast, validateProjectAccessAll, "ProjectAccess_87602853", IssueRepresentation.Model, IssueSource.OpenAPI);
+  assertModelValue(value, options, validateProjectAccessFast, validateProjectAccessAll, "ProjectAccess_91a94489", IssueRepresentation.Model, IssueSource.OpenAPI);
   return value as ProjectAccessFields;
 }
 
 
-createObjectCodec("ProjectAccess_87602853", {
+createObjectCodec("ProjectAccess_91a94489", {
   stringify: stringifyProjectAccess as (value: never, options?: __GolemSerdeOptions) => string,
   parse: parseProjectAccess as (text: string, options?: __GolemSerdeOptions) => never,
   validate: validateProjectAccess,

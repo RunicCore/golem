@@ -6,12 +6,14 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import test from 'node:test';
 import { createOpenApiAjvEngine } from '@exprtlabs/golem/ajv';
+import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 import { generate, findRemoteRefs, loadValidatedDocument } from '#openapi/generator';
 import { collectCanonicalResources, projectSchema } from '#openapi/schema-projection';
 import { buildSchemaData } from '#openapi/schemas';
 import {
   compileGeneratedSdk,
   generateMaterializedSdk,
+  isGeneratedClientClass,
   requireRecord,
 } from './helpers.js';
 
@@ -99,29 +101,72 @@ async function generateProjection(t: TestContext, openapi: string) {
   const result = await generateMaterializedSdk(directionalComponents(openapi), {
     output,
     name: 'Projection',
-    profile: { mobx: false, validation: true },
+    profile: standaloneProfile,
   });
   const manifest = result.artifacts.find((artifact) => artifact.path.endsWith('/model-manifest.json'))?.content ?? '';
   return { output, manifest, registry: runtimeRegistryFromArtifact(result.artifacts), artifacts: result.artifacts };
 }
 
-type OperationValidators = Map<string, {
-  input: (value: unknown) => boolean | Promise<boolean>;
-  responses: Map<string, (value: unknown) => boolean | Promise<boolean>>;
-}>;
+/** Only a standalone SDK emits the registries; its operations validate with the standalone validators. */
+const standaloneProfile = { mobx: false, validation: true, ajvStandalone: true } as const;
 
-function operationValidators(validation: Record<string, unknown>): OperationValidators {
-  const create = validation.createOperationRuntimeValidators as (
-    engine: ReturnType<typeof createOpenApiAjvEngine>,
-  ) => OperationValidators;
-  return create(createOpenApiAjvEngine());
+interface OperationProbe {
+  /** True when the client let the input through to the transport. */
+  acceptsInput(operation: string, input: unknown): Promise<boolean>;
+  /** True when the response check passed for a valid input and the given reply body. */
+  acceptsResponse(operation: string, input: unknown, reply: unknown): Promise<boolean>;
 }
 
-function modelValidators(validation: Record<string, unknown>): Map<string, (value: unknown) => boolean | Promise<boolean>> {
-  const create = validation.createRuntimeValidators as (
-    engine: ReturnType<typeof createOpenApiAjvEngine>,
-  ) => Map<string, (value: unknown) => boolean | Promise<boolean>>;
-  return create(createOpenApiAjvEngine());
+async function operationProbe(output: string, clientName: string): Promise<OperationProbe> {
+  const module = requireRecord(await import(pathToFileURL(path.join(output, 'dist/client.js')).href), 'generated client module');
+  const Client = module[`${clientName}Client`];
+  assert.ok(isGeneratedClientClass(Client), `${clientName}Client`);
+  if (!isGeneratedClientClass(Client)) throw new TypeError(`${clientName}Client`);
+  let fetches = 0;
+  let reply: unknown = {};
+  const client = new Client({
+    baseUrl: 'https://api.example',
+    fetchImpl: async () => {
+      fetches += 1;
+      return new Response(JSON.stringify(reply), { status: 200, headers: { 'content-type': 'application/json' } });
+    },
+  });
+  return {
+    async acceptsInput(operation, input) {
+      const before = fetches;
+      await client[operation]().execute(input).catch(() => undefined);
+      return fetches > before;
+    },
+    async acceptsResponse(operation, input, body) {
+      reply = body;
+      try {
+        await client[operation]().execute(input);
+        return true;
+      } catch (error) {
+        if (error instanceof LibError && error.kind === LibErrorKind.Validation) return false;
+        throw error;
+      }
+    },
+  };
+}
+
+/** Validates a value against one neutral component schema of the emitted registry. */
+function componentValidator(registry: Record<string, unknown>, name: string): (value: unknown) => boolean | Promise<boolean> {
+  const engine = createOpenApiAjvEngine();
+  const id = String(registry.$id);
+  if (!engine.getSchema(id)) engine.addSchema(registry, id);
+  for (const resource of Object.values(requireRecord(registry.$defs ?? {}, 'registry resources'))) {
+    const resourceId = isRecordWithId(resource) ? resource.$id : undefined;
+    if (resourceId !== undefined && !engine.getSchema(resourceId)) engine.addSchema(resource as object, resourceId);
+  }
+  const token = encodeURIComponent(name.replace(/~/g, '~0').replace(/\//g, '~1'));
+  const validator = engine.getSchema(`${id}#/components/schemas/${token}`);
+  assert.ok(validator, `component schema ${name} compiles`);
+  return validator;
+}
+
+function isRecordWithId(value: unknown): value is { $id: string } {
+  return typeof value === 'object' && value !== null && typeof Reflect.get(value, '$id') === 'string';
 }
 
 test('repeated readOnly aliases drop every matching property and required entry', () => {
@@ -163,7 +208,7 @@ test('repeated readOnly aliases drop every matching property and required entry'
 
 test('public generation validates repeated aliases, sibling allOf required, and required-only control', async (t) => {
   const output = path.join(createFixtureProject(t, 'golem-openapi-alias-'), 'sdk');
-  await generateMaterializedSdk({
+  const generated = await generateMaterializedSdk({
     openapi: '3.1.0',
     info: { title: 'Aliases', version: '1' },
     paths: {
@@ -222,29 +267,20 @@ test('public generation validates repeated aliases, sibling allOf required, and 
         },
       },
     },
-  }, { output, name: 'Aliases', profile: { mobx: false, validation: true } });
+  }, { output, name: 'Aliases', profile: standaloneProfile });
   copyFixtureFile(output, "openapi/schema-projection/alias-assert.ts", "alias-assert.ts");
   compileGeneratedSdk(output, [path.join(output, 'alias-assert.ts')], { strict: true });
-  const validation = requireRecord(
-    await import(pathToFileURL(path.join(output, 'dist/schemas.js')).href),
-    'validation',
-  );
-  const operations = operationValidators(validation);
-  const models = modelValidators(validation);
-  const input = operations.get('createUser')?.input;
-  const response = operations.get('createUser')?.responses.get('200:application/json');
-  const control = operations.get('control')?.input;
-  const userModel = models.get('UserBase');
-  assert.ok(input && response && control && userModel);
+  const probe = await operationProbe(output, 'Aliases');
+  const userModel = componentValidator(runtimeRegistryFromArtifact(generated.artifacts), 'UserBase');
 
   const request = { name: 'Ada', secretOne: 'one', secretTwo: 'two' };
   const reply = { name: 'Ada', first: 'id-1', second: 'id-2' };
-  assert.equal(await input({ body: request }), true);
-  assert.equal(await input({ body: { name: 'Ada', first: 'id-1', second: 'id-2' } }), false);
-  assert.equal(await response(reply), true);
-  assert.equal(await response({ name: 'Ada', secretOne: 'one', secretTwo: 'two' }), false);
-  assert.equal(await control({ body: {} }), false);
-  assert.equal(await control({ body: { token: 'present' } }), true);
+  assert.equal(await probe.acceptsInput('createUser', { body: request }), true);
+  assert.equal(await probe.acceptsInput('createUser', { body: { name: 'Ada', first: 'id-1', second: 'id-2' } }), false);
+  assert.equal(await probe.acceptsResponse('createUser', { body: request }, reply), true);
+  assert.equal(await probe.acceptsResponse('createUser', { body: request }, { name: 'Ada', secretOne: 'one', secretTwo: 'two' }), false);
+  assert.equal(await probe.acceptsInput('control', { body: {} }), false);
+  assert.equal(await probe.acceptsInput('control', { body: { token: 'present' } }), true);
   assert.equal(await userModel({ name: 'Ada' }), false);
   assert.equal(await userModel({ ...request, ...reply }), true);
 });
@@ -312,23 +348,16 @@ async function assertDirectionalEnvelope(
   assert.doesNotMatch(inputPack, new RegExp(`"user": \\{\\s*"\\$ref": "${escaped}"`));
   assert.match(inputPack, new RegExp(`${escaped}:input`));
 
-  const validation = requireRecord(
-    await import(pathToFileURL(path.join(output, 'dist/schemas.js')).href),
-    'validation',
-  );
-  const operations = operationValidators(validation);
-  const models = modelValidators(validation);
-  const input = operations.get('putEnvelope')?.input;
-  const response = operations.get('putEnvelope')?.responses.get('200:application/json');
-  const userModel = models.get('User');
-  assert.ok(input && response && userModel);
+  const probe = await operationProbe(output, 'Absolute');
+  const userModel = componentValidator(runtimeRegistryFromArtifact(artifacts), 'User');
 
   const requestUser = { id: 'u1', secret: 's' };
   const replyUser = { id: 'u1', serverValue: 'ok' };
-  assert.equal(await input({ body: { user: requestUser, relative: requestUser } }), true);
-  assert.equal(await input({ body: { user: replyUser, relative: replyUser } }), false);
-  assert.equal(await response({ user: replyUser, relative: replyUser }), true);
-  assert.equal(await response({ user: requestUser, relative: requestUser }), false);
+  const requestBody = { body: { user: requestUser, relative: requestUser } };
+  assert.equal(await probe.acceptsInput('putEnvelope', requestBody), true);
+  assert.equal(await probe.acceptsInput('putEnvelope', { body: { user: replyUser, relative: replyUser } }), false);
+  assert.equal(await probe.acceptsResponse('putEnvelope', requestBody, { user: replyUser, relative: replyUser }), true);
+  assert.equal(await probe.acceptsResponse('putEnvelope', requestBody, { user: requestUser, relative: requestUser }), false);
   assert.equal(await userModel({ id: 'u1', secret: 's', serverValue: 'ok' }), true);
   assert.equal(await userModel({ id: 'u1', secret: 's' }), false);
 }
@@ -351,7 +380,7 @@ test('absolute and relative $id refs remap onto directional resources for Ajv', 
     const result = await generateMaterializedSdk(document, {
       output,
       name: 'Absolute',
-      profile: { mobx: false, validation: true },
+      profile: standaloneProfile,
     });
     await assertDirectionalEnvelope(output, result.artifacts, 'https://schemas.example.test/user');
     assert.equal(fetched, false);
@@ -461,7 +490,7 @@ test('literal example and default $ref values are not treated as schema referenc
     const result = await generateMaterializedSdk(document, {
       output,
       name: 'LiteralRef',
-      profile: { mobx: false, validation: true },
+      profile: standaloneProfile,
     });
     const schemasText = result.artifacts.find((artifact) => artifact.path.endsWith('/schemas.ts'))?.content ?? '';
     assert.match(schemasText, /https:\/\/evil\.example\/not-a-schema/);
@@ -521,26 +550,18 @@ test('directional projection is consistent on OAS 3.1 and 3.2 and keeps neutral 
       continue;
     }
     compileGeneratedSdk(generated.output);
-    const validation = requireRecord(
-      await import(pathToFileURL(path.join(generated.output, 'dist/schemas.js')).href),
-      'validation',
-    );
-    const operations = operationValidators(validation);
-    const models = modelValidators(validation);
-    const widgetInput = operations.get('putWidget')?.input;
-    const widgetResponse = operations.get('putWidget')?.responses.get('200:application/json');
-    const widgetModel = models.get('Widget');
-    assert.ok(widgetInput && widgetResponse && widgetModel);
+    const probe = await operationProbe(generated.output, 'Projection');
+    const widgetModel = componentValidator(generated.registry, 'Widget');
+    const widgetRequest = { body: { id: 'w1', secret: 's' } };
 
-    assert.equal(await widgetInput({ body: { id: 'w1', secret: 's' } }), true);
-    assert.equal(await widgetInput({ body: { id: 'w1', serverValue: 'no' } }), false);
-    assert.equal(await widgetResponse({ id: 'w1', serverValue: 'ok' }), true);
-    assert.equal(await widgetResponse({ id: 'w1', secret: 'no' }), false);
+    assert.equal(await probe.acceptsInput('putWidget', widgetRequest), true);
+    assert.equal(await probe.acceptsInput('putWidget', { body: { id: 'w1', serverValue: 'no' } }), false);
+    assert.equal(await probe.acceptsResponse('putWidget', widgetRequest, { id: 'w1', serverValue: 'ok' }), true);
+    assert.equal(await probe.acceptsResponse('putWidget', widgetRequest, { id: 'w1', secret: 'no' }), false);
 
     assert.equal(await widgetModel({ id: 'w1', secret: 's', serverValue: 'ok' }), true);
 
-    const requiredOnly = models.get('RequiredOnly');
-    assert.ok(requiredOnly);
+    const requiredOnly = componentValidator(generated.registry, 'RequiredOnly');
     assert.equal(await requiredOnly({ ghost: 1 }), true);
     assert.equal(await requiredOnly({}), false);
   }
@@ -581,7 +602,7 @@ test('an external ./nested.json $ref projects directionally without cloning comp
     input: path.join(directory, 'openapi.json'),
     output,
     name: 'External',
-    profile: { mobx: false, validation: true },
+    profile: standaloneProfile,
   });
   const inputSchemas = result.artifacts.find((artifact) => artifact.path.endsWith('/input-schemas.ts'))?.content ?? '';
   assert.doesNotMatch(inputSchemas, /hidden/);

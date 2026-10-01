@@ -1,6 +1,6 @@
 import { copyFixtureFile, createFixtureProject } from '../fixture-project.js';
 import assert from 'node:assert/strict';
-import { writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import test from 'node:test';
@@ -164,9 +164,12 @@ test('generated content parameters validate before execute with runtime and stan
       profile: { mobx: false, validation: true, ajvStandalone },
     });
     copyFixtureFile(output, 'openapi/parameters/parameters-content-false-assert.ts', 'parameters-content-false-assert.ts');
-    compileGeneratedSdk(output, [path.join(output, 'parameters-content-false-assert.ts')]);
-    if (!ajvStandalone) {
-      // A `false` parameter content schema stays `false` through normalization into the emitted runtime registry.
+    compileGeneratedSdk(output, [
+      path.join(output, 'parameters-content-false-assert.ts'),
+      ...(ajvStandalone ? [path.join(output, 'schemas.ts')] : []),
+    ]);
+    // A `false` parameter content schema stays `false` through normalization into the schemas the SDK validates with.
+    if (ajvStandalone) {
       const schemas = requireRecord(
         await import(pathToFileURL(path.join(output, 'dist/schemas.js')).href),
         'content false schemas',
@@ -176,6 +179,8 @@ test('generated content parameters validate before execute with runtime and stan
       const input = requireRecord(operation.input, 'blocked input');
       const query = requireRecord(requireRecord(input.properties, 'blocked input properties').query, 'blocked query');
       assert.equal(requireRecord(query.properties, 'blocked query properties').queryValue, false);
+    } else {
+      assert.match(readFileSync(path.join(output, 'operations/blocked.ts'), 'utf8'), /\\"queryValue\\":false/);
     }
     const module = requireRecord(
       await import(pathToFileURL(path.join(output, 'dist/client.js')).href),

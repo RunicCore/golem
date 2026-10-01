@@ -241,7 +241,7 @@ test('OpenAPI 3.1 generation preserves its dialect', (t) => {
   const output = createFixtureProject(t, 'golem-openapi-31-');
   writeSdk(document, { output, name: 'Oas31' });
   assert.match(
-    fs.readFileSync(path.join(output, 'schemas.ts'), 'utf8'),
+    fs.readFileSync(path.join(output, 'operations/getValues.ts'), 'utf8'),
     /https:\/\/json-schema\.org\/draft\/2020-12\/schema/,
   );
 });
@@ -458,7 +458,10 @@ test('generation is deterministic', async (t) => {
   const second = writeSdkFiles(document, { output, name: 'ExamplePayments', profile });
   assert.deepEqual(second.artifacts, first.artifacts, 'repeated generation from the same document produces identical artifacts');
   writeSdk(document, { output, name: 'ExamplePayments' });
-  assert.match(fs.readFileSync(path.join(output, 'schemas.ts'), 'utf8'), /minimum/);
+  assert.equal(fs.existsSync(path.join(output, 'schemas.ts')), false);
+  const schemaModules = fs.readdirSync(path.join(output, 'validation-schemas'))
+    .map((name) => fs.readFileSync(path.join(output, 'validation-schemas', name), 'utf8'));
+  assert.ok(schemaModules.some((source) => /minimum/.test(source)));
   assert.ok(fs.existsSync(path.join(output, 'input-schemas.ts')));
   assert.ok(fs.existsSync(path.join(output, 'output-schemas.ts')));
   const manifestText = fs.readFileSync(path.join(output, 'model-manifest.json'), 'utf8');
@@ -472,10 +475,10 @@ test('generation is deterministic', async (t) => {
   assert.ok(manifest.models.every((model: unknown) => {
     if (typeof model !== 'object' || model === null) return false;
     const record = requireRecord(model, 'model');
-    const validation = requireRecord(record.validation, 'validation');
     const type = requireRecord(record.type, 'type');
     const generated = requireRecord(record.generated, 'generated');
-    return validation.authority === 'openapi'
+    return record.sourceKind === 'openapi'
+      && !Object.hasOwn(record, 'validation')
       && type.module === './types.ts'
       && generated.module === `./models/${String(type.export)}.ts`
       && generated.export === `${String(type.export)}Model`
@@ -1428,27 +1431,6 @@ test('generated SDK operation validators and client enforce request/response sch
     path.join(sdkOutput, 'index.ts'),
   ], { encoding: 'utf8' });
   assert.equal(compiled.status, 0, compiled.stderr || compiled.stdout);
-  const generatedValidation = await import(
-    pathToFileURL(path.join(sdkOutput, 'dist/schemas.js')).href
-  );
-  const operationValidators = generatedValidation.createOperationRuntimeValidators(
-    createOpenApiAjvEngine(),
-  );
-  const putMoney = operationValidators.get('putMoney');
-  assert.ok(putMoney);
-  assert.equal(await putMoney.input({
-    path: { id: 'pay_7' },
-    body: { amount: 25, currency: 'VND' },
-  }), true);
-  assert.equal(await putMoney.input({
-    path: { id: 'invalid' },
-    body: { amount: 0, currency: 'vnd' },
-  }), false);
-  const responseValidator = putMoney.responses.get('200:application/json');
-  assert.ok(responseValidator);
-  assert.equal(await responseValidator({ amount: 25, currency: 'VND' }), true);
-  assert.equal(await responseValidator({ amount: 0, currency: 'vnd' }), false);
-
   const runtimeClientModule = requireRecord(
     await import(pathToFileURL(path.join(sdkOutput, 'dist/client.js')).href),
     'runtime client',
@@ -1462,7 +1444,7 @@ test('generated SDK operation validators and client enforce request/response sch
   let responseBody = { amount: 0, currency: 'vnd' };
   const client = new RuntimeOperationsClient({
     baseUrl: 'https://api.example',
-    operationValidators,
+    validationEngine: createOpenApiAjvEngine(),
     fetchImpl: async () => {
       fetchCount += 1;
       return new Response(JSON.stringify(responseBody), {

@@ -106,17 +106,13 @@ function compileStandaloneSdk(output: string): string {
   return outDir;
 }
 
-function generatedReferenceSet(schemas: {
-  schemaRegistry: Record<string, unknown>;
-  schemaNames: readonly string[];
-  operationNames: readonly string[];
-  operationResponseSchemaEntries: readonly (readonly [string, string, string])[];
-  schemaReference: (name: string) => string;
-  operationInputReference: (name: string) => string;
-  operationResponseReference: (name: string, status: string, contentType: string) => string;
-}): Set<string> {
-  const references = new Set<string>([schemas.schemaRegistry.$id as string]);
-  const defs = schemas.schemaRegistry.$defs;
+/** Every reference the standalone validators expose: the registry, its resources, each component and each operation input and response. */
+function generatedReferenceSet(schemas: { schemaRegistry: Record<string, unknown> }): Set<string> {
+  const registry = schemas.schemaRegistry;
+  const id = registry.$id as string;
+  const token = (value: string): string => encodeURIComponent(value.replace(/~/g, '~0').replace(/\//g, '~1'));
+  const references = new Set<string>([id]);
+  const defs = registry.$defs;
   if (defs && typeof defs === 'object') {
     for (const definition of Object.values(defs as Record<string, unknown>)) {
       if (definition && typeof definition === 'object' && typeof Reflect.get(definition, '$id') === 'string') {
@@ -124,10 +120,16 @@ function generatedReferenceSet(schemas: {
       }
     }
   }
-  for (const name of schemas.schemaNames) references.add(schemas.schemaReference(name));
-  for (const name of schemas.operationNames) references.add(schemas.operationInputReference(name));
-  for (const [name, status, contentType] of schemas.operationResponseSchemaEntries) {
-    references.add(schemas.operationResponseReference(name, status, contentType));
+  const components = (registry.components as { schemas: Record<string, unknown> }).schemas;
+  for (const name of Object.keys(components)) references.add(`${id}#/components/schemas/${token(name)}`);
+  const operations = registry.operations as Record<string, { responses: Record<string, Record<string, unknown>> }>;
+  for (const [name, operation] of Object.entries(operations)) {
+    references.add(`${id}#/operations/${token(name)}/input`);
+    for (const [status, media] of Object.entries(operation.responses)) {
+      for (const contentType of Object.keys(media)) {
+        references.add(`${id}#/operations/${token(name)}/responses/${token(status)}/${token(contentType)}`);
+      }
+    }
   }
   return references;
 }
@@ -221,14 +223,6 @@ test('standalone SDK compiles with its generated JavaScript, exposes every model
   const schemas = await import(pathToFileURL(path.join(compiled, 'schemas.js')).href) as {
     schemaRegistry: Record<string, unknown>;
     runtimeSchemaRegistry: object;
-    schemaNames: readonly string[];
-    operationNames: readonly string[];
-    operationResponseSchemaEntries: readonly (readonly [string, string, string])[];
-    schemaReference: (name: string) => string;
-    operationInputReference: (name: string) => string;
-    operationResponseReference: (name: string, status: string, contentType: string) => string;
-    createRuntimeValidators: (engine: object) => unknown;
-    createOperationRuntimeValidators: (engine: object) => ReadonlyMap<string, { input: (value: unknown) => boolean }>;
   };
   const validators = generated.createValidators() as Record<string, GeneratedValidator>;
   const expected = generatedReferenceSet(schemas);
@@ -236,7 +230,7 @@ test('standalone SDK compiles with its generated JavaScript, exposes every model
   for (const reference of expected) assert.equal(typeof validators[reference], 'function', reference);
 
   const task = { id: 'task-1', when: '2025-01-02T03:04:05Z', child: { id: 'child-1' }, labels: ['one'] };
-  const inputReference = schemas.operationInputReference('createTask');
+  const inputReference = `${schemas.schemaRegistry.$id}#/operations/createTask/input`;
   const inputValidator = validators[inputReference];
   assert.equal(inputValidator({ body: task }), true);
   assert.equal(inputValidator({ body: { ...task, labels: [] } }), false);
@@ -248,23 +242,31 @@ test('standalone SDK compiles with its generated JavaScript, exposes every model
   assert.equal(browserValidators[inputReference]({ body: { ...task, when: 'not-a-date' } }), false);
 
   const engineModule = await import(pathToFileURL(path.join(compiled, 'validation-engine.js')).href);
-  const operationValidators = schemas.createOperationRuntimeValidators(engineModule.defaultValidationEngine);
-  assert.equal(operationValidators.size, 2);
-  assert.equal(operationValidators.get('createTask')?.input({ body: task }), true);
-  assert.equal(operationValidators.get('getTask')?.input({ path: { id: 'task-1' } }), true);
+  for (const operation of ['createTask', 'getTask']) {
+    const reference = `${schemas.schemaRegistry.$id}#/operations/${operation}/input`;
+    assert.equal(typeof engineModule.defaultValidationEngine.getSchema(reference), 'function', reference);
+  }
+
+  const clientModule = await import(pathToFileURL(path.join(compiled, 'client.js')).href);
+  const respond = (status: number, body: unknown): typeof fetch => async () =>
+    new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
+  const created = await new clientModule.StandaloneClient({ baseUrl: 'https://api.example', fetchImpl: respond(201, task) })
+    .createTask().execute({ body: task });
+  assert.deepEqual(created.body, task);
+  const fetched = await new clientModule.StandaloneClient({ baseUrl: 'https://api.example', fetchImpl: respond(200, task) })
+    .getTask().execute({ path: { id: 'task-1' } });
+  assert.deepEqual(fetched.body, task);
+  await assert.rejects(
+    () => new clientModule.StandaloneClient({ baseUrl: 'https://api.example', fetchImpl: respond(201, task) })
+      .createTask().execute({ body: { ...task, labels: [] } }),
+    (error: unknown) => error instanceof LibError && error.kind === LibErrorKind.Validation,
+  );
 
   const unknown = `${schemas.schemaRegistry.$id}#/unknown`;
   assert.equal(engineModule.defaultValidationEngine.getSchema(unknown), undefined);
   assert.throws(
     () => engineModule.defaultValidationEngine.addSchema({ changed: true }, schemas.schemaRegistry.$id),
     (error: unknown) => error instanceof LibError && error.kind === LibErrorKind.ValidationUnavailable,
-  );
-  assert.throws(
-    () => schemas.createRuntimeValidators({
-      addSchema() { /* replacement engines cannot silently compile schemas */ },
-      getSchema() { return undefined; },
-    }),
-    /Runtime validator could not compile schema/,
   );
 });
 

@@ -8,7 +8,7 @@ import { browserCookieDiagnostics, normalizeAndValidate, unsupportedHttpAuthSche
 import { buildEmissionPlan, type ArtifactFile, type EmissionPlan } from './emission-plan.js';
 import { asRecord, readString } from './json.js';
 import { assertPortableFilenames, assertUniquePublicExports, identifier } from '@exprtlabs/golem/generator-api';
-import { operationName } from './names.js';
+import { operationName, operationNameType } from './names.js';
 import type { NormalizedOperation } from './normalize.js';
 import { generatedBanner } from './package-info.js';
 import type { OpenApiGenerationProfile } from './profile.js';
@@ -74,7 +74,7 @@ export function generateLinks(operations: readonly NormalizedOperation[]): strin
     if (Object.keys(responses).length) links[operation.name] = responses;
   }
   return `${generatedBanner()}
-import type { OperationName } from './schemas.js';
+${operationNameType('OperationName', operations)}
 
 export interface LinkServer {
   readonly url: string;
@@ -161,7 +161,7 @@ export function generatedFiles(document: unknown, options: WriteSdkOptions): {
   const output = path.resolve(options.output);
   const plan = buildEmissionPlan(document, ir, profile);
   const modelAnalysis = analyzeOpenApiModels(document, profile.validation, options.dates ?? 'date');
-  const schemaData = plan.artifacts.has('schemas.ts')
+  const schemaData = profile.validation && (plan.hasOutboundOperations || plan.artifacts.has('schemas.ts'))
     ? buildSchemaData(document, ir)
     : undefined;
   const files = new Map<string, string>();
@@ -202,10 +202,8 @@ export function generatedFiles(document: unknown, options: WriteSdkOptions): {
     files.set('links.ts', generateLinks(operations));
   }
   if (plan.artifacts.has('schemas.ts')) {
-    files.set('schemas.ts', generateSchemas(document, profile, schemaData));
-  }
-  if (profile.ajvStandalone && profile.validation && plan.artifacts.has('schemas.ts')) {
     const data = schemaData ?? buildSchemaData(document, ir);
+    files.set('schemas.ts', generateSchemas(data));
     const rootId = String(data.registry.$id);
     if (!isRecord(data.normalizedRegistry)) throw new Error('Generated schema registry must be an object.');
     const schemas: Record<string, object | boolean> = { [rootId]: data.normalizedRegistry };

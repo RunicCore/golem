@@ -44,13 +44,6 @@
         "export": "Member",
         "module": "./types.ts"
       },
-      "validation": {
-        "authority": "openapi",
-        "reference": "#/components/schemas/Member",
-        "registryExport": "runtimeSchemaRegistry",
-        "registryIdExport": "schemaRegistry",
-        "registryModule": "./schemas.ts"
-      },
       "variants": []
     },
     {
@@ -94,13 +87,6 @@
         ],
         "export": "ProjectAccess",
         "module": "./types.ts"
-      },
-      "validation": {
-        "authority": "openapi",
-        "reference": "#/components/schemas/ProjectAccess",
-        "registryExport": "runtimeSchemaRegistry",
-        "registryIdExport": "schemaRegistry",
-        "registryModule": "./schemas.ts"
       },
       "variants": []
     }
@@ -173,10 +159,10 @@
     {
       "aliases": [
         "ProjectAccess",
-        "ProjectAccess_87602853",
+        "ProjectAccess_91a94489",
         "openapi:6073e63c7e9b1747#/components/schemas/ProjectAccess"
       ],
-      "codecId": "ProjectAccess_87602853",
+      "codecId": "ProjectAccess_91a94489",
       "modelSchema": {
         "$defs": {
           "Member_24b40f77": {

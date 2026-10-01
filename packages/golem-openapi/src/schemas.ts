@@ -10,8 +10,6 @@ import {
   type OpenApiSchema,
 } from './normalize.js';
 import { generatedBanner } from './package-info.js';
-import type { OpenApiGenerationProfile } from './profile.js';
-import { requireProfile } from './profile.js';
 import {
   buildRuntimeProjections,
   collectCanonicalResources,
@@ -778,7 +776,7 @@ function operationBundleFromIndex(
       if (schemaJson === undefined) throw new TypeError(`OpenAPI schema resource ${JSON.stringify(baseId)} is not serializable.`);
       module = {
         moduleName,
-        source: `${generatedBanner()}\nexport const schemaId = ${JSON.stringify(baseId)} as const;\nexport const schema = JSON.parse(${JSON.stringify(schemaJson)}) as object | boolean;\n`,
+        source: `${generatedBanner()}\nexport const schema = JSON.parse(${JSON.stringify(schemaJson)}) as object | boolean;\n`,
       };
       index.moduleSources.set(baseId, module);
     }
@@ -829,100 +827,15 @@ export function buildOperationValidationSchemaBundle(
     ?? (() => { throw new Error(`Missing OpenAPI operation ${JSON.stringify(operation.name)}.`); })();
 }
 
-export function generateSchemas(
-  document: unknown,
-  profile: OpenApiGenerationProfile,
-  preparedData?: ReturnType<typeof buildSchemaData>,
-): string {
-  requireProfile(profile);
-  const { registry, normalizedRegistry, schemaNames, operationNames, responseSchemaEntries, schemaDialect } =
-    preparedData ?? buildSchemaData(document);
-  const registryJson = jsonLiteral(registry, 2);
-  const normalizedRegistryJson = jsonLiteral(normalizedRegistry, 2);
+/** The registries the standalone validation engine registers; no other generated file reads them. */
+export function generateSchemas(data: ReturnType<typeof buildSchemaData>): string {
+  const { registry, normalizedRegistry } = data;
   const normalizedRegistryIsSame = JSON.stringify(registry) === JSON.stringify(normalizedRegistry);
-  if (!profile.validation) {
-    return `${generatedBanner()}
-/** Protocol metadata retained for generated routing and response matching. */
-export const schemaDialect = ${JSON.stringify(schemaDialect)} as const;
-export const schemaNames = ${JSON.stringify(schemaNames)} as const;
-export type SchemaName = (typeof schemaNames)[number];
-export const operationNames = ${JSON.stringify(operationNames)} as const;
-export type OperationName = (typeof operationNames)[number];
-export const operationResponseSchemaEntries: ReadonlyArray<
-  readonly [OperationName, string, string]
-> = ${JSON.stringify(responseSchemaEntries)};
-`;
-  }
   return `${generatedBanner()}
-import {
-  createRegistryOperationValidators,
-  createRegistryValidators,
-  type OperationRuntimeValidators,
-  type RuntimeValidationEngine,
-  type RuntimeValidator,
-} from '@exprtlabs/golem/validation';
-
-export {
-  validateWith,
-  type OperationRuntimeValidators,
-  type RuntimeValidationEngine,
-  type RuntimeValidator,
-  type ValidationResult,
-} from '@exprtlabs/golem/validation';
-
-/** Exact component and operation schemas retained for runtime validation. */
-export const schemaDialect = ${JSON.stringify(schemaDialect)} as const;
-export const schemaRegistry = ${registryJson} as const;
+/** Exact component and operation schemas. */
+export const schemaRegistry = ${jsonLiteral(registry, 2)} as const;
 /** JSON Schema 2020-compatible evaluation form; differs from schemaRegistry only where a binary-format string is widened to accept a Blob/File runtime value. */
-export const runtimeSchemaRegistry = ${normalizedRegistryIsSame ? 'schemaRegistry' : `${normalizedRegistryJson} as const`};
-export const schemaNames = ${JSON.stringify(schemaNames)} as const;
-export type SchemaName = (typeof schemaNames)[number];
-export const operationNames = ${JSON.stringify(operationNames)} as const;
-export type OperationName = (typeof operationNames)[number];
-export const operationResponseSchemaEntries: ReadonlyArray<
-  readonly [OperationName, string, string]
-> = ${JSON.stringify(responseSchemaEntries)};
-
-function pointerToken(value: string): string {
-  return encodeURIComponent(value.replace(/~/g, '~0').replace(/\\//g, '~1'));
-}
-
-export function schemaReference(name: SchemaName): string {
-  return \`\${schemaRegistry.$id}#/components/schemas/\${pointerToken(String(name))}\`;
-}
-
-export function operationInputReference(name: OperationName): string {
-  return \`\${schemaRegistry.$id}#/operations/\${pointerToken(String(name))}/input\`;
-}
-
-export function operationResponseReference(
-  name: OperationName,
-  status: string,
-  contentType: string,
-): string {
-  return \`\${schemaRegistry.$id}#/operations/\${pointerToken(String(name))}/responses/\${pointerToken(status)}/\${pointerToken(contentType)}\`;
-}
-
-const registryData = {
-  schemaRegistry,
-  runtimeSchemaRegistry,
-  schemaNames,
-  operationNames,
-  operationResponseSchemaEntries,
-  schemaReference,
-  operationInputReference,
-  operationResponseReference,
-};
-
-export function createRuntimeValidators(engine: RuntimeValidationEngine): ReadonlyMap<SchemaName, RuntimeValidator> {
-  return createRegistryValidators(engine, registryData);
-}
-
-export function createOperationRuntimeValidators(
-  engine: RuntimeValidationEngine,
-): ReadonlyMap<OperationName, OperationRuntimeValidators> {
-  return createRegistryOperationValidators(engine, registryData);
-}
+export const runtimeSchemaRegistry = ${normalizedRegistryIsSame ? 'schemaRegistry' : `${jsonLiteral(normalizedRegistry, 2)} as const`};
 `;
 }
 

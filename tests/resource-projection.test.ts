@@ -2,16 +2,22 @@ import assert from 'node:assert/strict';
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
 import test from 'node:test';
 import { spawnSync } from 'node:child_process';
 import { readFixture } from './fixture-project.js';
 import { generate } from '#openapi/generator';
+import { buildSchemaData } from '#openapi/schemas';
 import {
   compileGeneratedSdk,
   materializeGeneratedSdk,
   requireRecord,
 } from './openapi/helpers.js';
+
+/** The registries every SDK's operation schemas are built from; only a standalone SDK emits them as `schemas.ts`. */
+function schemaRegistries(document: unknown): Record<string, unknown> {
+  const data = buildSchemaData(document);
+  return { schemaRegistry: data.registry, runtimeSchemaRegistry: data.normalizedRegistry };
+}
 
 const literalDefault = {
   $id: 'literal-default-id',
@@ -311,7 +317,7 @@ test('public directional resources preserve nested scopes and run through strict
   });
   assert.equal(execution.status, 0, `${execution.stdout}\n${execution.stderr}`);
 
-  const schemasModule = await import(pathToFileURL(path.join(output, 'build', 'schemas.js')).href);
+  const schemasModule = schemaRegistries(projectionDocument());
   const runtimeRegistry = requireRecord(schemasModule.runtimeSchemaRegistry, 'runtime schema registry');
   const inputSchemas = resourceSchemas(runtimeRegistry, 'golem-input');
   const outputSchemas = resourceSchemas(runtimeRegistry, 'golem-output');
@@ -404,7 +410,7 @@ test('public resource graph distinguishes whole, scalar, and nested targets with
   });
   assert.equal(execution.status, 0, `${execution.stdout}\n${execution.stderr}`);
 
-  const schemasModule = await import(pathToFileURL(path.join(output, 'build', 'schemas.js')).href);
+  const schemasModule = schemaRegistries(resourceGraphDocument());
   const neutralRegistry = requireRecord(schemasModule.schemaRegistry, 'graph neutral schema registry');
   const neutralComponents = requireRecord(neutralRegistry.components, 'graph neutral components');
   const neutralSchemas = requireRecord(neutralComponents.schemas, 'graph neutral schemas');

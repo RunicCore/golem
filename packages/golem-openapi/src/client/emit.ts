@@ -8,6 +8,7 @@ import {
   resolveLocal,
   type NormalizedOperation,
 } from '../normalize.js';
+import { operationNameType } from '../names.js';
 import { generatedBanner } from '../package-info.js';
 import type { OpenApiGenerationProfile } from '../profile.js';
 import { requireProfile } from '../profile.js';
@@ -464,7 +465,7 @@ function emitClient(
   if (plan.helpers.has('selectResponse')) scope.claim('isUndeclaredResponseError', 'shared undeclared response error guard');
   if (defaultAjvEngine) scope.claim('createOpenApiAjvEngine', 'default validation engine import');
   if (profile.validation) {
-    scope.claim('__GolemOperationName', 'operation name type import');
+    scope.claim('__GolemOperationName', 'operation name type');
     scope.claim('__GolemOperationRuntimeValidators', 'operation validators type import');
   }
   const metadataName = `${clientName[0]?.toLowerCase() ?? 'c'}${clientName.slice(1)}SecuritySchemeMetadata`;
@@ -552,12 +553,12 @@ ${[...securityAliases.values()].map((alias) => `  ...${alias},`).join('\n')}
   return `${generatedBanner()}
 import { ${runtimeValueImports.join(', ')} } from '@exprtlabs/golem/client';
 import type * as Runtime from '@exprtlabs/golem/client';
-${defaultAjvEngine ? "import { createOpenApiAjvEngine } from '@exprtlabs/golem/ajv';\n" : ''}${profile.validation ? "import type { OperationRuntimeValidators as __GolemOperationRuntimeValidators } from '@exprtlabs/golem/validation';\nimport type { OperationName as __GolemOperationName } from './schemas.js';\n" : ''}import type * as Types from './types.js';
+${defaultAjvEngine ? "import { createOpenApiAjvEngine } from '@exprtlabs/golem/ajv';\n" : ''}${profile.validation ? "import type { OperationRuntimeValidators as __GolemOperationRuntimeValidators } from '@exprtlabs/golem/validation';\n" : ''}import type * as Types from './types.js';
 ${profile.mobx
     ? "import type { ObservableApiOperation as ApiOperation } from '@exprtlabs/golem/mobx';"
     : "import type { ApiOperation } from '@exprtlabs/golem/client';"}
 ${imports}
-
+${profile.validation ? `\n${operationNameType('__GolemOperationName', operations)}\n` : ''}
 ${aliases_}
 ${usesAuth ? `\n${emitSecurityTypes(clientName, rawSecuritySchemes)}` : ''}
 export interface ${clientName}ClientPort {

@@ -4,10 +4,12 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import test from 'node:test';
 import { createOpenApiAjvEngine } from '@exprtlabs/golem/ajv';
+import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 import { schemaType } from '#openapi/generator';
 import {
   compileGeneratedSdk,
   generateMaterializedSdk,
+  isGeneratedClientClass,
   requireRecord,
 } from './helpers.js';
 
@@ -98,27 +100,34 @@ test('prefixItems closed and rest tuples compile in strict TypeScript and valida
   copyFixtureFile(output, "openapi/prefix-items/prefix-assert.ts", "prefix-assert.ts");
   copyFixtureFile(output, "openapi/prefix-items/prefix-rest-assert.ts", "prefix-rest-assert.ts");
   compileGeneratedSdk(output, [path.join(output, 'prefix-assert.ts'), path.join(output, 'prefix-rest-assert.ts')], { strict: true });
-  const validation = requireRecord(
-    await import(pathToFileURL(path.join(output, 'dist/schemas.js')).href),
-    'validation',
-  );
-  const createOperationRuntimeValidators = validation.createOperationRuntimeValidators as (
-    engine: ReturnType<typeof createOpenApiAjvEngine>,
-  ) => Map<string, { responses: Map<string, (value: unknown) => boolean | Promise<boolean>> }>;
-  const validators = createOperationRuntimeValidators(createOpenApiAjvEngine());
-  const closed = validators.get('putTuple')?.responses.get('200:application/json');
-  assert.ok(closed);
-  assert.equal(await closed([]), true);
-  assert.equal(await closed(['a']), true);
-  assert.equal(await closed(['a', 1]), true);
-  assert.equal(await closed([1]), false);
-  assert.equal(await closed(['a', 1, true]), false);
-  const rest = validators.get('putRestTuple')?.responses.get('200:application/json');
-  assert.ok(rest);
-  assert.equal(await rest([]), true);
-  assert.equal(await rest(['a']), true);
-  assert.equal(await rest(['a', 1]), true);
-  assert.equal(await rest(['a', 1, true]), true);
-  assert.equal(await rest([1]), false);
-  assert.equal(await rest(['a', 1, 'nope']), false);
+  const module = requireRecord(await import(pathToFileURL(path.join(output, 'dist/client.js')).href), 'prefix client');
+  const Client = module.PrefixClient;
+  assert.ok(isGeneratedClientClass(Client));
+  if (!isGeneratedClientClass(Client)) throw new TypeError('PrefixClient');
+  // The request body is valid for both tuples; only the response varies.
+  const acceptsResponse = async (operation: 'putTuple' | 'putRestTuple', reply: unknown): Promise<boolean> => {
+    const client = new Client({
+      baseUrl: 'https://api.example',
+      validationEngine: createOpenApiAjvEngine(),
+      fetchImpl: async () => new Response(JSON.stringify(reply), { status: 200, headers: { 'content-type': 'application/json' } }),
+    });
+    try {
+      await client[operation]().execute({ body: ['a'] });
+      return true;
+    } catch (error) {
+      if (error instanceof LibError && error.kind === LibErrorKind.Validation) return false;
+      throw error;
+    }
+  };
+  assert.equal(await acceptsResponse('putTuple', []), true);
+  assert.equal(await acceptsResponse('putTuple', ['a']), true);
+  assert.equal(await acceptsResponse('putTuple', ['a', 1]), true);
+  assert.equal(await acceptsResponse('putTuple', [1]), false);
+  assert.equal(await acceptsResponse('putTuple', ['a', 1, true]), false);
+  assert.equal(await acceptsResponse('putRestTuple', []), true);
+  assert.equal(await acceptsResponse('putRestTuple', ['a']), true);
+  assert.equal(await acceptsResponse('putRestTuple', ['a', 1]), true);
+  assert.equal(await acceptsResponse('putRestTuple', ['a', 1, true]), true);
+  assert.equal(await acceptsResponse('putRestTuple', [1]), false);
+  assert.equal(await acceptsResponse('putRestTuple', ['a', 1, 'nope']), false);
 });

@@ -891,15 +891,6 @@ export function generateModelManifest(
         : null,
       discriminator: definition.discriminator || null,
       variants: definition.variants || [],
-      ...(profile.validation ? {
-        validation: {
-          authority: 'openapi',
-          registryModule: './schemas.ts',
-          registryExport: 'runtimeSchemaRegistry',
-          registryIdExport: 'schemaRegistry',
-          reference: `#/components/schemas/${definition.schemaName}`,
-        },
-      } : {}),
     };
   });
   return {

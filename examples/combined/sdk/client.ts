@@ -3,10 +3,11 @@ import { ClientRuntime, isUndeclaredResponseError } from '@exprtlabs/golem/clien
 import type * as Runtime from '@exprtlabs/golem/client';
 import { createOpenApiAjvEngine } from '@exprtlabs/golem/ajv';
 import type { OperationRuntimeValidators as __GolemOperationRuntimeValidators } from '@exprtlabs/golem/validation';
-import type { OperationName as __GolemOperationName } from './schemas.js';
 import type * as Types from './types.js';
 import type { ApiOperation } from '@exprtlabs/golem/client';
 import { createCreatePaymentOperation as __golemOperationFactory0 } from "./operations/createPayment.js";
+
+type __GolemOperationName = "createPayment";
 
 export type PaymentsClientOptions = Omit<Runtime.ClientOptions, "parameterSerializers" | "responseHeaderDecoders" | "streamDecoders" | "mutualTls" | "auth" | "operationValidators"> & {
   /** Overrides generated validators for individual operations. */

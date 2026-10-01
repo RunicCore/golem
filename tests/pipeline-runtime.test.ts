@@ -480,7 +480,7 @@ test('exec --watch exits with its child and releases the watcher', async (t: Tes
 });
 
 test('public OpenAPI generation rejects names colliding across exported index modules', async (t: TestContext) => {
-  for (const schemaName of ['PaymentsClient', 'SchemaName', 'ResponseLink', 'ValidationResult']) {
+  for (const schemaName of ['PaymentsClient', 'ResponseLink']) {
     const root = createFixtureProject(t, 'golem-openapi-name-collision-');
 
     const input = path.join(root, 'api.json');
@@ -498,9 +498,11 @@ test('public OpenAPI generation rejects names colliding across exported index mo
   }
 });
 
-test('public OpenAPI generation permits validation-off ValidationResult and repeated fields', async (t: TestContext) => {
-  const validationOff = await generatedOpenApiFixture(t, ['ValidationResult'], false);
-  compileGeneratedSdk(validationOff, [], { noEmit: true, skipLibCheck: true });
+test('public OpenAPI generation permits ValidationResult and repeated fields', async (t: TestContext) => {
+  for (const validation of [false, true]) {
+    const sdk = await generatedOpenApiFixture(t, ['ValidationResult'], validation);
+    compileGeneratedSdk(sdk, [], { noEmit: true, skipLibCheck: true });
+  }
 
   const repeatedFields = await generatedOpenApiFixture(t, ['First', 'Second'], false);
   compileGeneratedSdk(repeatedFields, [], { noEmit: true, skipLibCheck: true });

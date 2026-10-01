@@ -38,13 +38,6 @@
         "export": "Money",
         "module": "./types.ts"
       },
-      "validation": {
-        "authority": "openapi",
-        "reference": "#/components/schemas/Money",
-        "registryExport": "runtimeSchemaRegistry",
-        "registryIdExport": "schemaRegistry",
-        "registryModule": "./schemas.ts"
-      },
       "variants": []
     }
   ],

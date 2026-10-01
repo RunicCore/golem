@@ -26,6 +26,11 @@ export function operationName(
   return { name: bindingName(requested, RESERVED_OPERATION_NAMES), requested };
 }
 
+/** A file-private union of client operation names, for emitted files that type a name without importing it. */
+export function operationNameType(typeName: string, operations: readonly { readonly name: string }[]): string {
+  return `type ${typeName} = ${operations.map((operation) => JSON.stringify(operation.name)).join(' | ')};`;
+}
+
 export function inboundOperationName(
   sourceKind: string,
   sourceName: string,

@@ -349,8 +349,9 @@ export function buildEmissionPlan(
     auth: hasNonTlsAuth,
     mutualTls: hasMutualTls,
   };
-  const needsSchemas = hasOutboundOperations
-    || (profile.validation && (hasModels || hasOutboundOperations || hasInboundOperations));
+  // Only the standalone validation engine reads the schema registries.
+  const needsSchemas = profile.validation && profile.ajvStandalone === true
+    && (hasModels || hasOutboundOperations || hasInboundOperations);
   const artifacts = new Set<ArtifactFile>(ALWAYS_ARTIFACTS);
   if (hasComponentSchemas) {
     artifacts.add('input-schemas.ts');
