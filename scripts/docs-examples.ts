@@ -8,6 +8,34 @@ const packageSnippetSources = new Set([
 /** The benchmark page shows the fixtures it times; they are in the public source inventory. */
 const benchmarkSnippetPrefix = 'scripts/benchmark/fixtures/';
 
+/**
+ * Region marker forms VitePress accepts in `<<<` includes. VitePress renders the whole
+ * file when a region is missing, so the docs check needs the same forms to catch it.
+ */
+const regionMarkers: readonly RegExp[] = [
+  /^\/\/ ?#?((?:end)?region) ([\w*-]+)$/,
+  /^\/\* ?#((?:end)?region) ([\w*-]+) ?\*\/$/,
+  /^#pragma ((?:end)?region) ([\w*-]+)$/,
+  /^<!-- #?((?:end)?region) ([\w*-]+) -->$/,
+  /^#((?:End )Region) ([\w*-]+)$/,
+  /^::#((?:end)region) ([\w*-]+)$/,
+  /^# ?((?:end)?region) ([\w*-]+)$/,
+];
+
+/** True when the text opens and closes the named region with one marker form. */
+function hasRegion(text: string, name: string): boolean {
+  const marks = (line: string, marker: RegExp, end: boolean): boolean => {
+    const [, tag, found] = marker.exec(line.trim()) ?? [];
+    return found === name && new RegExp(end ? '^[Ee]nd ?[rR]egion$' : '^[rR]egion$').test(tag ?? '');
+  };
+  let open: RegExp | undefined;
+  for (const line of text.replace(/\r\n/g, '\n').split('\n')) {
+    if (!open) open = regionMarkers.find(marker => marks(line, marker, false));
+    else if (marks(line, open, true)) return true;
+  }
+  return false;
+}
+
 /** Complete source for the maintained files embedded in documentation snippets. */
 export function docExampleSources(root: string): readonly { source: string }[] {
   const allowed = new Set(listPublicSourceFiles(root));
@@ -26,6 +54,10 @@ export function docExampleSources(root: string): readonly { source: string }[] {
           const relative = path.relative(root, absolute).split(path.sep).join('/');
           if ((!relative.startsWith('examples/') && !relative.startsWith(benchmarkSnippetPrefix) && !packageSnippetSources.has(relative)) || !allowed.has(relative)) {
             throw new Error(`Documentation source is outside the public snippet inventory: ${path.relative(root, filename)} -> ${relative}`);
+          }
+          const region = /^[^#{]*#([\w-]+)/.exec(match[1])?.[1];
+          if (region && !hasRegion(readFileSync(absolute, 'utf8'), region)) {
+            throw new Error(`Documentation region is missing: ${path.relative(root, filename)} -> ${relative}#${region}`);
           }
           sources.add(relative);
         }
