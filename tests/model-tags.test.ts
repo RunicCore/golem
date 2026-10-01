@@ -364,6 +364,21 @@ test('validation false retains Date and serde conversions without a validator re
   assert.deepEqual(encodeGeneratedModel(dated), { when: '2025-01-02T03:04:05.000Z', token: '5' });
 });
 
+test('a MobX model generated with validation false has no validator', async t => {
+  const { root, sourceRoot } = fixture(t);
+  fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), taggedModelSource({
+    name: 'A',
+    fields: tsSource`title: string; done: boolean`,
+  }).text);
+  const result = generate({ root, profile: { mobx: true, validation: false } });
+  writeGeneratedArtifacts(result.artifacts);
+  await compileModelProject(root);
+  const { A } = await import(path.toNamespacedPath(path.join(root, 'build/a.model.js')));
+  const model = decodeGeneratedModel(A, { title: 'Write', done: false });
+  assert.equal('$validator' in model, false);
+  assert.deepEqual(encodeGeneratedModel(model), { title: 'Write', done: false });
+});
+
 test('generic utility aliases retain nested constraints, predicates, and serde boundaries', async t => {
   const { root, sourceRoot } = fixture(t);
   fs.writeFileSync(path.join(sourceRoot, 'bindings.ts'), readFixture("models/model-tags/generic-utility-aliases-retain-nested-constraints-predicates-and-serde-bound/bindings.ts"));

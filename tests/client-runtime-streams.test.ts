@@ -144,6 +144,26 @@ test('breaking a live stream cancels the source and releases the reader, with an
   }
 });
 
+test('aborting the signal while an NDJSON stream is read surfaces the abort and releases the source', async () => {
+  const controller = new AbortController();
+  let locked = () => false;
+  const source = new ReadableStream<Uint8Array>({
+    start(stream) {
+      stream.enqueue(encode('{"id":1}\n'));
+      // A fetch response body errors with the signal's reason when the request is aborted.
+      controller.signal.addEventListener('abort', () => stream.error(controller.signal.reason));
+    },
+  });
+  locked = () => source.locked;
+  const response = new Response(source, { status: 200, headers: { 'content-type': 'application/x-ndjson' } });
+  const iterator = (await readBody(response, 'application/x-ndjson', 'ndjson'))[Symbol.asyncIterator]();
+  assert.deepEqual(await iterator.next(), { value: { id: 1 }, done: false });
+  controller.abort(new DOMException('Activity feed closed', 'AbortError'));
+  await assert.rejects(iterator.next(), (error: unknown) => error instanceof DOMException && error.name === 'AbortError');
+  assert.equal(locked(), false, 'the reader lock is released after the abort');
+  assert.deepEqual(await iterator.next(), { value: undefined, done: true });
+});
+
 const readEvents = async (chunks: readonly (string | Uint8Array)[]): Promise<unknown[]> => {
   const source = new ReadableStream<Uint8Array>({
     start(controller) {

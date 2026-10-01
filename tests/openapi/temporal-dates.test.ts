@@ -5,7 +5,14 @@ import { pathToFileURL } from 'node:url';
 import test from 'node:test';
 import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/golem/conversion';
 import { createFixtureProject } from '../fixture-project.js';
-import { compileGeneratedSdk, generateMaterializedSdk, requireRecord } from './helpers.js';
+import {
+  captureRequest,
+  compileGeneratedSdk,
+  generateMaterializedSdk,
+  isGeneratedClientClass,
+  requireRecord,
+  type CapturedRequest,
+} from './helpers.js';
 
 const PROFILE = { mobx: false, validation: true, ajvStandalone: false, allowAny: false } as const;
 
@@ -45,6 +52,42 @@ test('dates: temporal maps date-time, date and duration to Temporal and keeps ti
   assert.equal(model.clock, '03:04:05Z');
   assert.equal(model.maybe, null);
   assert.deepEqual(encodeGeneratedModel(model as never), wire);
+});
+
+test('dates: temporal models encode to the ISO strings the generated client sends and validates', async t => {
+  const output = path.join(createFixtureProject(t, 'golem-openapi-temporal-request-'), 'sdk');
+  const event = { $ref: '#/components/schemas/Event' };
+  const withOperation = {
+    ...(EVENT as Record<string, unknown>),
+    paths: {
+      '/events': {
+        post: {
+          operationId: 'createEvent',
+          requestBody: { required: true, content: { 'application/json': { schema: event } } },
+          responses: { 201: { description: 'Created', content: { 'application/json': { schema: event } } } },
+        },
+      },
+    },
+  };
+  await generateMaterializedSdk(withOperation, { output, name: 'Events', profile: PROFILE, dates: 'temporal' });
+  compileGeneratedSdk(output, [], { strict: true, lib: ['ES2023', 'DOM', 'DOM.Iterable', 'esnext.temporal'] });
+  const models = requireRecord(await import(pathToFileURL(path.join(output, 'dist/index.js')).href), 'generated models');
+  const EventModel = models.EventModel as unknown as EventConstructor;
+  assert.ok(isGeneratedClientClass(models.EventsClient), 'generated client');
+  const wire = { at: '2025-01-02T03:04:05Z', day: '2025-01-02', span: 'P1D', clock: '03:04:05Z', maybe: null };
+  const requests: CapturedRequest[] = [];
+  const client = new models.EventsClient({
+    baseUrl: 'https://api.test',
+    fetchImpl: async (url: RequestInfo | URL, init?: RequestInit) => {
+      requests.push(captureRequest(url, init));
+      return Response.json(wire, { status: 201 });
+    },
+  });
+  const model = decodeGeneratedModel(EventModel, wire);
+  assert.ok((model as Record<string, unknown>).at instanceof Temporal.Instant);
+  const response = await client.createEvent().execute({ body: encodeGeneratedModel(model as never) });
+  assert.equal(response.status, 201);
+  assert.deepEqual(JSON.parse(String(requests[0]?.init.body)), wire);
 });
 
 test('dates omitted and dates: date generate the same SDK, with Date values', async t => {
