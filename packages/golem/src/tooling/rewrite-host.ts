@@ -13,7 +13,11 @@ import type { SourceMapV3 } from './source-map.js';
 /** Paths a host's bundler can strip types from; `.tsx` is a bundler's to handle, not Node's. */
 export const BUNDLER_TYPESCRIPT_FILE = /\.(?:ts|mts|cts|tsx)$/;
 export interface GolemBundlerOptions {
-  /** The project root that holds `.golem/rewrites.json`. Default: the nearest ancestor directory of each file that holds one. */
+  /**
+   * The project root that holds `.golem/rewrites.json`. A relative path resolves against Vite's `root`, or against
+   * esbuild's `absWorkingDir` (default: the current directory). Default: the nearest ancestor directory of each file
+   * that holds one.
+   */
   readonly root?: string;
 }
 
@@ -21,8 +25,8 @@ export const NODE_MODULES = /[\\/]node_modules[\\/]/;
 
 const indexes = new Map<string, { readonly stamp: string; readonly index: RewriteIndex | undefined }>();
 
-/** The index of `root`, read again only when the index file changes. */
-function indexOf(root: string): RewriteIndex | undefined {
+/** The index of `root`, read again only when the index file changes; `undefined` when `root` has none. */
+export function rewriteIndexOf(root: string): RewriteIndex | undefined {
   const filename = path.join(root, REWRITE_INDEX_PATH);
   let stamp = 'absent';
   try {
@@ -63,7 +67,7 @@ export interface RewriteHostIndex {
  */
 export function findRewriteIndex(file: string, root?: string): RewriteHostIndex {
   const owner = root ?? ancestorsOf(file).find((directory) => existsSync(path.join(directory, REWRITE_INDEX_PATH)));
-  const index = owner === undefined ? undefined : indexOf(owner);
+  const index = owner === undefined ? undefined : rewriteIndexOf(owner);
   if (owner === undefined || index === undefined) {
     throw new Error(`no golem rewrite index at ${path.join(owner ?? expectedRoot(file), REWRITE_INDEX_PATH)}; run golem generate`);
   }
