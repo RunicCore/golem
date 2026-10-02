@@ -9,7 +9,7 @@ import { load } from '#golem/loader';
 import { runPipeline } from '#golem/cli';
 import { sha256Hex, type RewriteEdit, type RewriteIndex } from '#golem/rewrite';
 import { GOLEM_VERSION } from '#golem/version';
-import { copyFixtureFile, createFixtureProject, snapshotFilesystem, writeGeneratedArtifacts } from './fixture-project.js';
+import { copyFixtureFile, createFixtureProject, linkProjectPackages, snapshotFilesystem, writeGeneratedArtifacts } from './fixture-project.js';
 import { createModelProject } from './model-project.js';
 import { command, workspace, type CommandResult } from './support/process.js';
 
@@ -107,13 +107,13 @@ test('a project without an index fails the run instead of loading its sources un
   assert.ok(result.stderr.includes(`no golem rewrite index at ${path.join(root, '.golem/rewrites.json')}; run golem generate`), result.stderr);
 });
 
-test('a file the index does not list loads untouched and a file it lists loads rewritten, for every TypeScript extension', async (t) => {
+test('a file the index does not list loads untouched and a file it lists loads rewritten, for every extension Node strips', async (t) => {
   const root = createFixtureProject(t, 'golem-loader-hook-');
   fs.writeFileSync(path.join(root, 'tsconfig.json'), '{}');
   const call = 'parse<T>(text)';
   const rewritten = '__golem_parse(text)';
   const files: Record<string, { sha256: string; edits: RewriteEdit[]; imports: { from: string; names: string[] }[] }> = {};
-    const extensions = ['.ts', '.mts', '.cts', '.tsx'];
+  const extensions = ['.ts', '.mts', '.cts'];
   for (const extension of extensions) {
     const text = `export const value = ${call};\n`;
     write(root, `src/listed${extension}`, text);
@@ -136,18 +136,66 @@ test('a file the index does not list loads untouched and a file it lists loads r
   assert.deepEqual(snapshotFilesystem(root), before);
 });
 
-test('files under node_modules, other schemes and non-TypeScript files pass through with no index', async (t) => {
+test('files under node_modules, .tsx files, other schemes and non-TypeScript files pass through with no index', async (t) => {
   const root = createFixtureProject(t, 'golem-loader-passthrough-');
   fs.writeFileSync(path.join(root, 'tsconfig.json'), '{}');
+  const before = snapshotFilesystem(root);
   const next = { format: 'module', source: 'marker' };
   const nextLoad = () => next;
   for (const url of [
     pathToFileURL(path.join(root, 'node_modules/dep/index.ts')).href,
+    pathToFileURL(path.join(root, 'src/view.tsx')).href,
     pathToFileURL(path.join(root, 'src/plain.js')).href,
     pathToFileURL(path.join(root, 'src/data.json')).href,
     'node:fs',
     'data:text/javascript,export default 1',
   ]) assert.equal(await load(url, {}, nextLoad), next, url);
+  assert.deepEqual(snapshotFilesystem(root), before);
+});
+
+/** A project with no golem.yaml: `src/<file>` is listed in a hand-written index, so Node's own format choice decides how it loads. */
+function indexedProject(t: TestContext, packageJson: string, sources: Readonly<Record<string, string>>, listed: readonly string[]): string {
+  const root = createFixtureProject(t, 'golem-loader-format-');
+  linkProjectPackages(root, { '@exprtlabs/golem': path.join(workspace, 'packages/golem') });
+  write(root, 'package.json', packageJson);
+  write(root, 'tsconfig.json', '{}');
+  const call = 'parse<string>(text)';
+  const files: Record<string, RewriteIndex['files'][string]> = {};
+  for (const [file, text] of Object.entries(sources)) {
+    write(root, file, text);
+    const start = text.indexOf(call);
+    if (listed.includes(file)) files[file] = { sha256: sha256Hex(text), edits: [{ start, end: start + call.length, expect: call, text: '__golem_parse(text)' }], imports: [{ from: SERDE, names: ['parse'] }] };
+  }
+  write(root, '.golem/rewrites.json', JSON.stringify({ version: 1, golem: GOLEM_VERSION, files } satisfies RewriteIndex));
+  return root;
+}
+
+const CJS_CALL = "const text: string = 'x';\nconst value = parse<string>(text);\nconsole.log(typeof require, value);\n";
+const CJS_PLAIN = "const count: number = 7;\nconsole.log('cjs ran', count, typeof require);\n";
+
+test('a listed .cts file fails the run: a rewrite cannot give CommonJS an import', async (t) => {
+  const root = indexedProject(t, '{"type":"module"}', { 'src/listed.cts': CJS_CALL }, ['src/listed.cts']);
+  const result = await run(root, 'src/listed.cts');
+  assert.notEqual(result.code, 0);
+  assert.ok(result.stderr.includes('golem rewrites need ES modules; src/listed.cts loads as CommonJS'), result.stderr);
+  assert.doesNotMatch(result.stderr, /Cannot use import statement/);
+});
+
+test('a listed .ts file in a package without "type" loads as CommonJS and fails the run', async (t) => {
+  const root = indexedProject(t, '{}', { 'src/listed.ts': CJS_CALL }, ['src/listed.ts']);
+  const result = await run(root, 'src/listed.ts');
+  assert.notEqual(result.code, 0);
+  assert.ok(result.stderr.includes('golem rewrites need ES modules; src/listed.ts loads as CommonJS'), result.stderr);
+  assert.doesNotMatch(result.stderr, /Cannot use import statement/);
+});
+
+test('CommonJS TypeScript the index does not list still runs', async (t) => {
+  const root = indexedProject(t, '{}', { 'src/plain.cts': CJS_PLAIN, 'src/plain.ts': CJS_PLAIN, 'src/other.ts': CJS_CALL }, ['src/other.ts']);
+  for (const file of ['src/plain.cts', 'src/plain.ts']) {
+    const result = await run(root, file);
+    assert.equal(result.code, 0, `${file}: ${result.stderr}`);
+    assert.equal(result.stdout, 'cjs ran 7 function\n', file);
+  }
 });
 
 test('a file in a nested directory is checked against the index of its nearest ancestor', async (t) => {
@@ -155,9 +203,11 @@ test('a file in a nested directory is checked against the index of its nearest a
   fs.writeFileSync(path.join(root, 'tsconfig.json'), '{}');
   write(root, '.golem/rewrites.json', JSON.stringify({ version: 1, golem: GOLEM_VERSION, files: {} } satisfies RewriteIndex));
   write(root, 'packages/inner/src/file.ts', 'export {};\n');
+  const before = snapshotFilesystem(root);
   const nextLoad = (url: string) => ({ format: 'module-typescript', source: fs.readFileSync(new URL(url)) });
   const loaded = await load(pathToFileURL(path.join(root, 'packages/inner/src/file.ts')).href, {}, nextLoad);
   assert.equal(Buffer.from(loaded.source as Uint8Array).toString('utf8'), 'export {};\n');
+  assert.deepEqual(snapshotFilesystem(root), before);
 });
 
 test('the loader module graph imports only Node built-ins and relative files, so no TypeScript and no checker', () => {

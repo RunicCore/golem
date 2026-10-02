@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -7,11 +7,11 @@ import { applyRewrites, readRewriteIndex, REWRITE_INDEX_PATH, type RewriteIndex 
 /**
  * Node module `load` hook that applies golem's rewrite index to TypeScript sources in memory, before Node strips
  * their types. The project root is the nearest ancestor directory that holds `.golem/rewrites.json`. A TypeScript
- * file outside `node_modules` with no index above it fails instead of loading unrewritten. This module imports
- * neither TypeScript nor the checker.
+ * file outside `node_modules` with no index above it fails instead of loading unrewritten. `.tsx` goes straight to
+ * Node, which cannot strip it. This module imports neither TypeScript nor the checker.
  */
 
-const TYPESCRIPT_FILE = /\.(?:ts|mts|cts|tsx)$/;
+const TYPESCRIPT_FILE = /\.(?:ts|mts|cts)$/;
 const NODE_MODULES = /[\\/]node_modules[\\/]/;
 const INLINE_MAP_PREFIX = '\n//# sourceMappingURL=data:application/json;base64,';
 
@@ -68,7 +68,12 @@ export async function load(url: string, context: LoadContext, nextLoad: NextLoad
   }
 
   const loaded = await nextLoad(url, context);
-  const applied = applyRewrites(path.relative(root, file).split(path.sep).join('/'), sourceText(loaded.source), index);
+  const relative = path.relative(root, file).split(path.sep).join('/');
+  // The rewrite prepends ES imports, which CommonJS cannot run.
+  if (loaded.format === 'commonjs-typescript' && relative in index.files) {
+    throw new Error(`golem rewrites need ES modules; ${relative} loads as CommonJS. Use .mts, or .ts with "type": "module", or build with golem build`);
+  }
+  const applied = applyRewrites(relative, sourceText(loaded.source), index);
   if (!applied) return loaded;
   // The map's source is the module's own file name: an inline map resolves `sources` against the module's URL.
   const map = JSON.stringify({ ...applied.map, sources: [path.basename(file)] });
