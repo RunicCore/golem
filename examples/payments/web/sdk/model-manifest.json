@@ -55,7 +55,7 @@
         "export": "PaymentModel",
         "module": "./models/Payment.ts"
       },
-      "id": "openapi:96370e66664c41c4#/components/schemas/Payment",
+      "id": "openapi:d40be2a279c752f8#/components/schemas/Payment",
       "inheritance": null,
       "sourceKind": "openapi",
       "type": {
@@ -85,7 +85,7 @@
         "export": "PaymentDraftModel",
         "module": "./models/PaymentDraft.ts"
       },
-      "id": "openapi:96370e66664c41c4#/components/schemas/PaymentDraft",
+      "id": "openapi:d40be2a279c752f8#/components/schemas/PaymentDraft",
       "inheritance": null,
       "sourceKind": "openapi",
       "type": {
@@ -127,7 +127,7 @@
         "export": "TChargeModel",
         "module": "./models/TCharge.ts"
       },
-      "id": "openapi:96370e66664c41c4#/components/schemas/TCharge",
+      "id": "openapi:d40be2a279c752f8#/components/schemas/TCharge",
       "inheritance": null,
       "sourceKind": "openapi",
       "type": {
@@ -163,7 +163,7 @@
         "export": "TMerchantModel",
         "module": "./models/TMerchant.ts"
       },
-      "id": "openapi:96370e66664c41c4#/components/schemas/TMerchant",
+      "id": "openapi:d40be2a279c752f8#/components/schemas/TMerchant",
       "inheritance": null,
       "sourceKind": "openapi",
       "type": {
@@ -193,7 +193,7 @@
         "export": "TMerchantOmitIdModel",
         "module": "./models/TMerchantOmitId.ts"
       },
-      "id": "openapi:96370e66664c41c4#/components/schemas/TMerchantOmitId",
+      "id": "openapi:d40be2a279c752f8#/components/schemas/TMerchantOmitId",
       "inheritance": null,
       "sourceKind": "openapi",
       "type": {
@@ -229,7 +229,7 @@
         "export": "TMoneyModel",
         "module": "./models/TMoney.ts"
       },
-      "id": "openapi:96370e66664c41c4#/components/schemas/TMoney",
+      "id": "openapi:d40be2a279c752f8#/components/schemas/TMoney",
       "inheritance": null,
       "sourceKind": "openapi",
       "type": {
@@ -283,7 +283,7 @@
         "export": "TPaymentInputModel",
         "module": "./models/TPaymentInput.ts"
       },
-      "id": "openapi:96370e66664c41c4#/components/schemas/TPaymentInput",
+      "id": "openapi:d40be2a279c752f8#/components/schemas/TPaymentInput",
       "inheritance": null,
       "sourceKind": "openapi",
       "type": {
@@ -311,7 +311,7 @@
   },
   "source": {
     "dialect": "3.2.0",
-    "digest": "96370e66664c41c4052c140d6d342d0d6c2f1dccfea257ec44208049b7e011b1",
+    "digest": "d40be2a279c752f80757ab48e4c85dad3ec5a51db497b663883504e1738c8a85",
     "kind": "openapi"
   },
   "validationSchemaClosure": [
@@ -319,7 +319,7 @@
       "aliases": [
         "Payment",
         "Payment_4199d1df",
-        "openapi:96370e66664c41c4#/components/schemas/Payment"
+        "openapi:d40be2a279c752f8#/components/schemas/Payment"
       ],
       "codecId": "Payment_4199d1df",
       "modelSchema": {
@@ -379,7 +379,7 @@
       "aliases": [
         "PaymentDraft",
         "PaymentDraft_8be34727",
-        "openapi:96370e66664c41c4#/components/schemas/PaymentDraft"
+        "openapi:d40be2a279c752f8#/components/schemas/PaymentDraft"
       ],
       "codecId": "PaymentDraft_8be34727",
       "modelSchema": {
@@ -406,7 +406,7 @@
       "aliases": [
         "TCharge",
         "TCharge_633183f5",
-        "openapi:96370e66664c41c4#/components/schemas/TCharge"
+        "openapi:d40be2a279c752f8#/components/schemas/TCharge"
       ],
       "codecId": "TCharge_633183f5",
       "modelSchema": {
@@ -441,7 +441,7 @@
       "aliases": [
         "TMerchant",
         "TMerchant_2d893464",
-        "openapi:96370e66664c41c4#/components/schemas/TMerchant"
+        "openapi:d40be2a279c752f8#/components/schemas/TMerchant"
       ],
       "codecId": "TMerchant_2d893464",
       "modelSchema": {
@@ -472,7 +472,7 @@
       "aliases": [
         "TMerchantOmitId",
         "TMerchantOmitId_1ef82815",
-        "openapi:96370e66664c41c4#/components/schemas/TMerchantOmitId"
+        "openapi:d40be2a279c752f8#/components/schemas/TMerchantOmitId"
       ],
       "codecId": "TMerchantOmitId_1ef82815",
       "modelSchema": {
@@ -499,7 +499,7 @@
       "aliases": [
         "TMoney",
         "TMoney_3a1d334f",
-        "openapi:96370e66664c41c4#/components/schemas/TMoney"
+        "openapi:d40be2a279c752f8#/components/schemas/TMoney"
       ],
       "codecId": "TMoney_3a1d334f",
       "modelSchema": {
@@ -537,7 +537,7 @@
       "aliases": [
         "TPaymentInput",
         "TPaymentInput_0e8e9b2a",
-        "openapi:96370e66664c41c4#/components/schemas/TPaymentInput"
+        "openapi:d40be2a279c752f8#/components/schemas/TPaymentInput"
       ],
       "codecId": "TPaymentInput_0e8e9b2a",
       "modelSchema": {

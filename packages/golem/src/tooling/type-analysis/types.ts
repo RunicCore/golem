@@ -6,7 +6,7 @@ import { projectionIdentity } from './graph.js';
 import { isProjectionName, pascalIdentifier, policySuffix, projectionBaseName, safeNameHint, unionVariantNaming } from './projection-names.js';
 import { commonDirectory, canonicalFilename } from './project.js';
 import { packageSpecifier } from './package-specifier.js';
-import { assertSupportedModelFieldName } from '../schema.js';
+import { assertSupportedModelFieldName, canonicalDescriptorKey, compareText } from '../schema.js';
 import type {
   ModelConversionDescriptor,
   TupleConversionDescriptor,
@@ -729,10 +729,10 @@ export function descriptorBuilder(
     if (type.flags & ts.TypeFlags.TemplateLiteral) return withMetadata({ kind: 'string' }, metadata);
     if (type.isUnion()) {
       const variantNaming = unionVariantNaming(checker, node, type.types, context.declaration);
-      const descriptor: Extract<ModelConversionDescriptor, { readonly kind: 'union' }> = {
-        kind: 'union',
-        variants: type.types.map((variant) => describe(variant, context, seen, undefined, representation, node ?? provenanceNode, childSubstitutions, `${nameHint}${variantNaming.get(variant)?.part ?? ''}`, variantNaming.get(variant)?.node)),
-      };
+      const variants = type.types.map((variant) => describe(variant, context, seen, undefined, representation, node ?? provenanceNode, childSubstitutions, `${nameHint}${variantNaming.get(variant)?.part ?? ''}`, variantNaming.get(variant)?.node));
+      // Checker member order differs between TypeScript backends and runs; output must not.
+      variants.sort((left, right) => compareText(canonicalDescriptorKey(left), canonicalDescriptorKey(right)));
+      const descriptor: Extract<ModelConversionDescriptor, { readonly kind: 'union' }> = { kind: 'union', variants };
       rejectAmbiguousGeneratedModelUnion(descriptor, context);
       return withMetadata(descriptor, metadata);
     }

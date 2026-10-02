@@ -4,7 +4,7 @@
     "api/openapi.yaml": {
       "job": "controllers:api/openapi.yaml",
       "owner": "@exprtlabs/golem-ts-openapi",
-      "digest": "83dbc09b8180f6629e8890f10816d5af170fea531ce3c7330c52b7dded2879b8",
+      "digest": "6888a3ad7acc9f6d8de93a7c637f32b0d3b78117e15f7e95e530a376232a81ee",
       "destination": "api/openapi.yaml",
       "destinationKind": "file"
     },
@@ -214,7 +214,7 @@
     "src/payment.model.generated.ts": {
       "job": "models:.",
       "owner": "@exprtlabs/golem-model",
-      "digest": "a05414f81ebfa20cb0879eff8fa4e2ce2ca25fcf6145590d3f9b3aaa558956b4",
+      "digest": "7bd1ec75bb13db968616155eaecfa8eb3a996959a7142438972d3ba72a2dc130",
       "destination": "src",
       "destinationKind": "directory"
     },

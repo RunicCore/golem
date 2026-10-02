@@ -7,6 +7,7 @@ import type { ModelTypeDescriptor } from '../model.js';
 import {
   canonicalDescriptorKey,
   canonicalSchemaKey,
+  compareText,
   constraintSchemaValues,
   GENERATED_MODEL_SCHEMA_REF_PREFIX,
   schemaForDescriptor,
@@ -230,7 +231,7 @@ function codecShapeDescriptor(
     });
     // Sort for a stable identity; an explicit tag table follows its variants.
     const order = variants.map((_, index) => index)
-      .sort((left, right) => variants[left].key.localeCompare(variants[right].key));
+      .sort((left, right) => compareText(variants[left].key, variants[right].key));
     const discriminator = descriptor.kind === 'union' ? descriptor.discriminator : undefined;
     return {
       ...descriptor,

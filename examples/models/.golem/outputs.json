@@ -4,7 +4,7 @@
     "src/assignee.model.generated.ts": {
       "job": "models:.",
       "owner": "@exprtlabs/golem-model",
-      "digest": "7497eafae35cbf217d4ab033c1d1b31425b0f7ef013268b269bcaf3f9bb18b9f",
+      "digest": "ce1b2a0e30112a5e720d43b167515e43d8accd1bf6f042c0725c8acc9d8d0884",
       "destination": "src",
       "destinationKind": "directory"
     },
@@ -32,7 +32,7 @@
     "src/collection-tags.model.generated.ts": {
       "job": "models:.",
       "owner": "@exprtlabs/golem-model",
-      "digest": "fe52bde2956530a1d34e136efbce81bf64682267ca001143ab5f193b15861e7f",
+      "digest": "98f1296bdc621996ceae7d50c768e4bd184ec3e2a73743684dbf50cfe777da54",
       "destination": "src",
       "destinationKind": "directory"
     },

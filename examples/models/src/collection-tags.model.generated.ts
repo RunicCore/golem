@@ -8,9 +8,9 @@ function modelObject(json: unknown, name: string): Record<string, unknown> {
   return requireModelObject(json, name);
 }
 
-export type TSubscriptionFields = { watchers: Array<string>; reminders: { dueOn?: undefined | string; remindOn?: undefined | string } };
-export type TSubscriptionJSON = { watchers: Array<string>; reminders: { dueOn?: undefined | string; remindOn?: undefined | string } };
-export type TSubscriptionInit = Partial<{ watchers: Array<string>; reminders: { dueOn?: undefined | string; remindOn?: undefined | string } }>;
+export type TSubscriptionFields = { watchers: Array<string>; reminders: { dueOn?: string | undefined; remindOn?: string | undefined } };
+export type TSubscriptionJSON = { watchers: Array<string>; reminders: { dueOn?: string | undefined; remindOn?: string | undefined } };
+export type TSubscriptionInit = Partial<{ watchers: Array<string>; reminders: { dueOn?: string | undefined; remindOn?: string | undefined } }>;
 
 export abstract class TSubscriptionBaseModel implements GeneratedModel<TSubscriptionJSON, TSubscriptionFields> {
   declare readonly [generatedModelWireBrand]: TSubscriptionJSON;

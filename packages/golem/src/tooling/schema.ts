@@ -224,6 +224,11 @@ function canonicalSchemaValue(value: unknown): unknown {
   return isRecord(value) ? canonicalDescriptorValue(value) : value;
 }
 
+/** Canonical text order: by UTF-16 code unit, so output does not depend on the machine's ICU data. */
+export function compareText(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0;
+}
+
 /** Stable intern key for model descriptors. Keeps serde ids; skips checker graphs. */
 export function canonicalDescriptorKey(value: unknown): string {
   return JSON.stringify(canonicalDescriptorValue(value));

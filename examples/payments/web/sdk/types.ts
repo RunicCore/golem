@@ -66,7 +66,7 @@ export type PaymentNotesController_getOperationHttpResponse = { matched: 'status
 export type ListPaymentsOperationInput = {
   querystring: {
     limit?: number;
-    status?: "paid" | "pending" | ("paid" | "pending")[];
+    status?: ("paid" | "pending")[] | "paid" | "pending";
   };
 };
 

@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict';
+import { writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import test from 'node:test';
 import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/golem/conversion';
 import { generate } from '#model/generator';
-import { copyFixtureFile, writeGeneratedArtifacts } from './fixture-project.js';
+import { copyFixtureFile, readFixture, writeGeneratedArtifacts } from './fixture-project.js';
 import { compileModelProject, createModelProject } from './model-project.js';
 import { isGeneratedModelClass, requireRecord, type GeneratedModelClass } from './openapi/helpers.js';
 
@@ -36,4 +37,24 @@ test('an IModel union variant tagged by several literal values is selected by ea
     assert.deepEqual(encodeGeneratedModel(owner), json);
     assert.throws(() => decodeGeneratedModel(Owner, { pet: { kind: 'bird', name: 'Miso' }, pets: [] }));
   }
+});
+
+test('union members are emitted in canonical order regardless of declaration order', t => {
+  const project = createModelProject(t, { prefix: 'golem-union-order-', name: 'union-order' });
+  for (const name of ['a.model.ts', 'b.model.ts']) {
+    writeFileSync(path.join(project.sourceRoot, name), readFixture(`models/union-order/${name}`));
+  }
+  const result = generate({ root: project.root, profile: { mobx: false, validation: true } });
+  const text = (file: string): string => {
+    const artifact = result.artifacts.find(candidate => candidate.path.endsWith(file));
+    assert.ok(artifact, `${file} must be generated`);
+    return artifact.content;
+  };
+  // Every generated type alias that mentions a field, with the alias name normalised (codec-id lines carry hashes and are excluded).
+  const fieldLines = (file: string): string[] => text(file).split('\n')
+    .filter(line => /^(export )?type \w+ = /.test(line) && /\b(priority|mixed)\b/.test(line))
+    .map(line => line.replace(/\bT[AB](?![a-z])/g, 'T')); // TA, TAJSON, TABaseModel -> T, TJSON, TBaseModel
+  const fromA = fieldLines('a.model.generated.ts');
+  assert.ok(fromA.length > 0, 'generated type aliases must mention the union fields');
+  assert.deepEqual(fromA, fieldLines('b.model.generated.ts'));
 });

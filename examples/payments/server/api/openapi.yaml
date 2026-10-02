@@ -157,13 +157,13 @@ paths:
                         type: integer
                   status:
                     anyOf:
-                      - const: paid
-                      - const: pending
                       - items:
                           anyOf:
                             - const: paid
                             - const: pending
                         type: array
+                      - const: paid
+                      - const: pending
                 type: object
           in: querystring
           name: filter

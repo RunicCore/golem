@@ -40,13 +40,13 @@ export type TPaymentInputFields = { merchant: TMerchantFields; billing: TMerchan
 export type TPaymentInputJSON = { merchant: TMerchantJSON; billing: TMerchantOmitIdJSON; money: TMoneyJSON; note: string };
 export type TPaymentInputInit = { merchant: TMerchantInit; billing: TMerchantOmitIdInit; money: TMoneyInit; note: string };
 
-export type TPaymentFilterFields = { limit?: number; status?: undefined | "paid" | "pending" | Array<"paid" | "pending"> };
-export type TPaymentFilterJSON = { limit?: number; status?: undefined | "paid" | "pending" | Array<"paid" | "pending"> };
-export type TPaymentFilterInit = { limit?: number; status?: undefined | "paid" | "pending" | Array<"paid" | "pending"> };
+export type TPaymentFilterFields = { limit?: number; status?: Array<"paid" | "pending"> | "paid" | "pending" | undefined };
+export type TPaymentFilterJSON = { limit?: number; status?: Array<"paid" | "pending"> | "paid" | "pending" | undefined };
+export type TPaymentFilterInit = { limit?: number; status?: Array<"paid" | "pending"> | "paid" | "pending" | undefined };
 
-export type TPaymentFields = { id: string; merchant: TMerchantFields; billing: TMerchantOmitIdFields; money: TMoneyFields; note: string; charge?: undefined | TChargeFields };
-export type TPaymentJSON = { id: string; merchant: TMerchantJSON; billing: TMerchantOmitIdJSON; money: TMoneyJSON; note: string; charge?: undefined | TChargeJSON };
-export type TPaymentInit = Partial<{ id: string; merchant: TMerchantInit; billing: TMerchantOmitIdInit; money: TMoneyInit; note: string; charge?: undefined | TChargeInit }>;
+export type TPaymentFields = { id: string; merchant: TMerchantFields; billing: TMerchantOmitIdFields; money: TMoneyFields; note: string; charge?: TChargeFields | undefined };
+export type TPaymentJSON = { id: string; merchant: TMerchantJSON; billing: TMerchantOmitIdJSON; money: TMoneyJSON; note: string; charge?: TChargeJSON | undefined };
+export type TPaymentInit = Partial<{ id: string; merchant: TMerchantInit; billing: TMerchantOmitIdInit; money: TMoneyInit; note: string; charge?: TChargeInit | undefined }>;
 
 export abstract class TPaymentBaseModel implements GeneratedModel<TPaymentJSON, TPaymentFields> {
   declare readonly [generatedModelWireBrand]: TPaymentJSON;
@@ -127,7 +127,7 @@ objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_TPayment) as object
 const __resolvedModelSchema_TPaymentInput = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"TPaymentInput_8e39d58f\",\"type\":\"object\",\"properties\":{\"billing\":{\"$ref\":\"#/$defs/TMerchantOmitId_aeec4ba8\"},\"merchant\":{\"$ref\":\"#/$defs/TMerchant_1d5f9479\"},\"money\":{\"$ref\":\"#/$defs/TMoney_f5bd7d30\"},\"note\":{\"allOf\":[{\"type\":\"string\"},{\"maxLength\":140}]}},\"required\":[\"billing\",\"merchant\",\"money\",\"note\"],\"additionalProperties\":false,\"$defs\":{\"TMerchantOmitId_aeec4ba8\":{\"type\":\"object\",\"properties\":{\"name\":{\"allOf\":[{\"type\":\"string\"},{\"minLength\":2}]}},\"required\":[\"name\"],\"additionalProperties\":false},\"TMerchant_1d5f9479\":{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\"},\"name\":{\"allOf\":[{\"type\":\"string\"},{\"minLength\":2}]}},\"required\":[\"id\",\"name\"],\"additionalProperties\":false},\"TMoney_f5bd7d30\":{\"type\":\"object\",\"properties\":{\"amount\":{\"allOf\":[{\"type\":\"string\"},{\"pattern\":\"^[0-9]+(?:\\\\.[0-9]{1,2})?$\"}]},\"currency\":{\"allOf\":[{\"type\":\"string\"},{\"pattern\":\"^[A-Z]{3}$\"}]}},\"required\":[\"amount\",\"currency\"],\"additionalProperties\":false}}}") as object) as object;
 objectAjvFast.addSchema(structuredClone(__resolvedModelSchema_TPaymentInput) as object, "TPaymentInput_8e39d58f");
 objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_TPaymentInput) as object, "TPaymentInput_8e39d58f");
-const __resolvedModelSchema_TPaymentFilter = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"TPaymentFilter_c6d9b450\",\"type\":\"object\",\"properties\":{\"limit\":{\"allOf\":[{\"type\":\"number\"},{\"type\":\"integer\",\"minimum\":1}]},\"status\":{\"anyOf\":[{\"const\":\"paid\"},{\"const\":\"pending\"},{\"type\":\"array\",\"items\":{\"anyOf\":[{\"const\":\"paid\"},{\"const\":\"pending\"}]}}]}},\"additionalProperties\":false}") as object) as object;
+const __resolvedModelSchema_TPaymentFilter = resolveGeneratedModelSchemaRefs(JSON.parse("{\"$id\":\"TPaymentFilter_c6d9b450\",\"type\":\"object\",\"properties\":{\"limit\":{\"allOf\":[{\"type\":\"number\"},{\"type\":\"integer\",\"minimum\":1}]},\"status\":{\"anyOf\":[{\"type\":\"array\",\"items\":{\"anyOf\":[{\"const\":\"paid\"},{\"const\":\"pending\"}]}},{\"const\":\"paid\"},{\"const\":\"pending\"}]}},\"additionalProperties\":false}") as object) as object;
 objectAjvFast.addSchema(structuredClone(__resolvedModelSchema_TPaymentFilter) as object, "TPaymentFilter_c6d9b450");
 objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_TPaymentFilter) as object, "TPaymentFilter_c6d9b450");
 
