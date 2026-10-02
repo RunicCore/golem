@@ -48,7 +48,8 @@
   ],
   "sideEffects": [
     "./dist/ajv.js",
-    "./dist/bin/golem.js"
+    "./dist/bin/golem.js",
+    "./dist/tooling/register.js"
   ],
   "exports": {
     "./model": {
@@ -105,6 +106,16 @@
       "types": "./dist/tooling/rewrite.d.ts",
       "import": "./dist/tooling/rewrite.js",
       "default": "./dist/tooling/rewrite.js"
+    },
+    "./loader": {
+      "types": "./dist/tooling/loader.d.ts",
+      "import": "./dist/tooling/loader.js",
+      "default": "./dist/tooling/loader.js"
+    },
+    "./register": {
+      "types": "./dist/tooling/register.d.ts",
+      "import": "./dist/tooling/register.js",
+      "default": "./dist/tooling/register.js"
     },
     "./errors": {
       "types": "./dist/errors.d.ts",
