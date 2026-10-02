@@ -217,6 +217,23 @@ test('-b and --build are rejected', async (t) => {
   assert.deepEqual(parseArguments(['build']), { action: 'build', project: 'tsconfig.json', watch: false });
 });
 
+// A configuration with nothing to emit
+
+test('a noEmit or emitDeclarationOnly project is checked and writes no JavaScript, no stage and no index', async (t) => {
+  const root = serdeProject(t, 'build-no-js');
+  write(root, 'src/use.ts', USE);
+  editTsconfig(root, (tsconfig) => { tsconfig.compilerOptions.emitDeclarationOnly = true; });
+  assert.equal((await build(root)).exitCode, 0);
+  assert.ok(fs.existsSync(path.join(root, 'build/use.d.ts')), 'the declarations are written from the originals');
+  assert.deepEqual([...mtimes(path.join(root, 'build'), '.js').keys()], []);
+
+  editTsconfig(root, (tsconfig) => { delete tsconfig.compilerOptions.emitDeclarationOnly; tsconfig.compilerOptions.declaration = false; tsconfig.compilerOptions.noEmit = true; tsconfig.compilerOptions.outDir = 'unused'; });
+  assert.equal((await build(root)).exitCode, 0);
+  assert.equal(fs.existsSync(path.join(root, 'unused')), false);
+  assert.equal(fs.existsSync(path.join(root, '.golem/stage')), false, 'a check-only build stages nothing');
+  assert.equal(readRewriteIndex(root), undefined, 'and indexes nothing');
+});
+
 // Decorator metadata
 
 test('a Nest controller builds with the design:paramtypes of a plain tsc emit of the original', async (t) => {
