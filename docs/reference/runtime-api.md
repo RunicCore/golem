@@ -20,7 +20,7 @@ Find every `@exprtlabs/golem` import your application, NestJS app or tool can us
 | [`generator-api`](#generator-api) | Contracts shared by the generators | none |
 | [`manifest`](#manifest) | Read and find `model-manifest.json` files | none |
 
-Internal subpaths used by the generators: `cli`, `emitter`, `schema`, `schema-graph`, `ajv-tooling`, `type-analysis`, `generated-paths`, [`ts`](#ts). Don't import them; they may change in any release.
+Internal subpaths used by the generators: `cli`, `emitter`, `schema`, `schema-graph`, `ajv-tooling`, `type-analysis`, `generated-paths`, `rewrite`, [`ts`](#ts). Don't import them; they may change in any release.
 
 Generated files import `ajv` only with `validation: true` and `ajvStandalone: false`. With `ajvStandalone: true` they import precompiled validators instead ([validation profiles](/reference/config#validation-profiles)).
 

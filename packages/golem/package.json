@@ -101,6 +101,11 @@
       "import": "./dist/tooling/generated-paths.js",
       "default": "./dist/tooling/generated-paths.js"
     },
+    "./rewrite": {
+      "types": "./dist/tooling/rewrite.d.ts",
+      "import": "./dist/tooling/rewrite.js",
+      "default": "./dist/tooling/rewrite.js"
+    },
     "./errors": {
       "types": "./dist/errors.d.ts",
       "import": "./dist/errors.js",
