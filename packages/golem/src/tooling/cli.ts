@@ -1,11 +1,12 @@
 import { spawn } from 'node:child_process';
-import { BUILD_REFERENCES_REJECTION, runBuild } from './build.js';
 import { runPipeline } from './pipeline.js';
 import { watchPipeline } from './watch.js';
 export { providersFor, runPipeline } from './pipeline.js';
 export { watchPipeline } from './watch.js';
-export { runBuild } from './build.js';
 export type { PipelineOptions, PipelineState } from './pipeline.js';
+// `golem build` loads its compiler seam only when it runs: no other command needs TypeScript to start.
+const BUILD_REFERENCES_REJECTION = 'golem build does not support project references (-b); run golem build -p <tsconfig> per project.';
+
 export type Arguments =
   | { action: 'help' }
   | { action: 'build'; project?: string; watch: boolean; config?: string }
@@ -60,6 +61,7 @@ export async function main(argv = process.argv.slice(2)) {
     const controller = new AbortController();
     let signalled: number | undefined;
     for (const signal of ['SIGINT', 'SIGTERM'] as const) process.once(signal, () => { signalled = signal === 'SIGINT' ? 130 : 143; controller.abort(); });
+    const { runBuild } = await import('./build.js');
     const { exitCode } = await runBuild({ watch: options.watch, signal: controller.signal, ...(options.project === undefined ? {} : { project: options.project }), ...(options.config === undefined ? {} : { config: options.config }) });
     process.exitCode = signalled ?? exitCode;
     return;

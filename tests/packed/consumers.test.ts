@@ -125,23 +125,25 @@ test('CLI resolves configured providers from a project with spaces outside cwd a
   await npm(root, ['install', '--save-prod', packageSpec(registry, '@exprtlabs/golem')]);
   writeFixture(root, { mobx: false, validation: false }, false);
   const config = path.join(root, 'golem.yaml');
+  // The project has no TypeScript and the command runs from the workspace, whose own TypeScript is not the project's: name the project as the TypeScript root.
+  const projectTypeScript = { env: { GOLEM_TYPESCRIPT_ROOT: root } };
   const binary = path.join(root, 'node_modules/.bin/golem');
   const before = registry.requests.length;
-  const missing = await command(workspace, binary, ['generate', '--config', config], { allowFailure: true });
+  const missing = await command(workspace, binary, ['generate', '--config', config], { allowFailure: true, ...projectTypeScript });
   assert.notEqual(missing.code, 0);
   assert.match(missing.stderr, /openapi is configured.*not installed/);
   assert.equal(registry.requests.length, before);
   assert.equal(fs.existsSync(path.join(root, 'sdk')), false);
 
   await npm(root, ['install', '--save-dev', packageSpec(registry, '@exprtlabs/golem-openapi')]);
-  await command(workspace, binary, ['generate', '--config', config]);
-  await command(workspace, process.execPath, [binary, 'check', '--config', config]);
+  await command(workspace, binary, ['generate', '--config', config], projectTypeScript);
+  await command(workspace, process.execPath, [binary, 'check', '--config', config], projectTypeScript);
 
   // Executable loading does not inherit the consuming project's module format.
   const manifest: Record<string, unknown> = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
   manifest.type = 'commonjs';
   fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify(manifest));
-  await command(workspace, binary, ['check', '--config', config]);
+  await command(workspace, binary, ['check', '--config', config], projectTypeScript);
 
   const provider = path.join(root, 'node_modules/@exprtlabs/golem-openapi');
   copyFixtureFile(provider, 'packed/incompatible-provider/package.json', 'package.json');
@@ -151,7 +153,7 @@ test('CLI resolves configured providers from a project with spaces outside cwd a
   fs.writeFileSync(path.join(provider, 'package.json'), JSON.stringify({ ...providerManifest, version: packedRelease.version }));
   copyFixtureFile(provider, 'packed/incompatible-provider/incompatible.js', 'incompatible.js');
   const beforeIncompatible = registry.requests.length;
-  const incompatible = await command(workspace, binary, ['check', '--config', config], { allowFailure: true });
+  const incompatible = await command(workspace, binary, ['check', '--config', config], { allowFailure: true, ...projectTypeScript });
   assert.match(incompatible.stderr, /Incompatible generator.*API 1.*99/);
   assert.equal(registry.requests.length, beforeIncompatible);
 });

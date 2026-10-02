@@ -31,8 +31,6 @@ export interface BuildOptions {
 
 export const NO_GOLEM_YAML = 'golem build needs a golem.yaml; run it next to one or pass --config';
 
-export const BUILD_REFERENCES_REJECTION = 'golem build does not support project references (-b); run golem build -p <tsconfig> per project.';
-
 const GOLEM_DIRECTORY = '.golem';
 const POLL_MS = 200;
 

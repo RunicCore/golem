@@ -3,6 +3,8 @@ import { createRequire } from 'node:module';
 import path from 'node:path';
 
 export class UnsupportedTypeScriptError extends Error {}
+/** No TypeScript resolves at all, as opposed to one golem does not support: only commands that need a compiler treat it as an error. */
+export class TypeScriptNotInstalledError extends UnsupportedTypeScriptError {}
 
 export function resolveTypeScript(root: string, golemUrl = import.meta.url): { readonly version: string; readonly major: 6 | 7; readonly packageDir: string } {
   const manifest = resolveManifest(root, golemUrl);
@@ -22,7 +24,7 @@ function resolveManifest(root: string, golemUrl: string): string {
     try {
       return createRequire(golemUrl).resolve('typescript/package.json');
     } catch {
-      throw new UnsupportedTypeScriptError(`golem needs TypeScript 6.0+ or 7.x installed in ${root}.`);
+      throw new TypeScriptNotInstalledError(`golem needs TypeScript 6.0+ or 7.x installed in ${root}.`);
     }
   }
 }

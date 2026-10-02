@@ -10,7 +10,7 @@ import { validateModelManifest } from './model-manifest.js';
 import type { GolemArtifact, GolemDiagnostic, GolemResult, GeneratorSession } from './generator-api.js';
 import { assertRuntimeCompatible } from './runtime-compatibility.js';
 import { REWRITE_INDEX_PATH } from './rewrite.js';
-import { assertRewriteIndexCurrent, checkNestCodecs, scanProjectRewrites, writeRewriteIndex } from './rewrite-scan.js';
+import { TypeScriptNotInstalledError, resolveTypeScript } from './typescript-version.js';
 
 export type InputKind = 'config' | 'controllers' | 'openapi' | 'models' | 'generator';
 
@@ -283,6 +283,24 @@ function rewriteRoot(config: GolemConfig): RewriteRoot {
   };
 }
 
+/**
+ * The rewrite scan needs TypeScript, so its module (and the compiler seam behind it) loads only when a scan runs. A config with
+ * a models or controllers job has a compiler by construction. One without scans only when TypeScript is installed: an
+ * OpenAPI-only project need not have it, and without TypeScript it has no sources to rewrite and no index. A TypeScript
+ * that is installed but unsupported still fails here.
+ */
+async function loadRewriteScan(hasCompilerJob: boolean): Promise<typeof import('./rewrite-scan.js') | undefined> {
+  if (!hasCompilerJob) {
+    try {
+      resolveTypeScript(process.env.GOLEM_TYPESCRIPT_ROOT ?? process.cwd());
+    } catch (error) {
+      if (error instanceof TypeScriptNotInstalledError) return undefined;
+      throw error;
+    }
+  }
+  return import('./rewrite-scan.js');
+}
+
 /** Select source consumers and then follow generated-artifact edges in pipeline order. */
 function affectedJobs(config: GolemConfig, options: PipelineOptions): ReadonlySet<string> | undefined {
   const previous = options.previous;
@@ -412,7 +430,9 @@ export async function runPipeline(filename: string, options: PipelineOptions = {
     results.set(job.id, result);
   }
   // A yaml without a tsconfig, an openapi-only one for instance, has no project to scan and no index to own.
-  if (fs.existsSync(config.tsconfig)) {
+  const rewriteScan = fs.existsSync(config.tsconfig) ? await loadRewriteScan(rewriteRoot(config).job !== undefined) : undefined;
+  if (rewriteScan) {
+    const { assertRewriteIndexCurrent, checkNestCodecs, scanProjectRewrites, writeRewriteIndex } = rewriteScan;
     const { job, root, controllerRoots } = rewriteRoot(config);
     const indexRoot = path.dirname(config.tsconfig);
     const nest = controllerRoots.length > 0;
