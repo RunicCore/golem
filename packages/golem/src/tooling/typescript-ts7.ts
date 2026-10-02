@@ -1226,9 +1226,10 @@ export class ProgramSession implements Disposable {
       replaceAll(this.openProjects, projects);
       replaceAll(this.openFiles, files);
       try {
-        // The project of the program's own configuration, base or derived, so every run of a job sees the same files.
-        const project = snapshot.getProject(request.configPath) ?? snapshot.getProjects()[0];
-        if (!project) throw new Error(`No TypeScript project could be opened for ${options.root}.`);
+        // The project of the request's own configuration (the derived one when roots were added), so every run of a job
+        // sees the same files. Another project would be the wrong program.
+        const project = snapshot.getProject(request.configPath);
+        if (!project) throw new Error(`The compiler did not open the TypeScript project ${request.configPath} for ${options.root}.`);
         const program = new CompatProgram(this, snapshot, project);
         this.held.set(program, request);
         return program;

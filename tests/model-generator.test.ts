@@ -308,3 +308,12 @@ test('a solution tsconfig whose references hold no model source names the soluti
       && error.message.includes(path.join(sourceRoot, 'item.model.ts')),
   );
 });
+
+test('a project root reached through a symlink opens its own project', (t: TestContext) => {
+  const { root, sourceRoot } = project(t);
+  writeModelSources(sourceRoot, { 'item.model.ts': taggedModelSource({ name: 'Item', fields: tsSource`id: string` }) });
+  const alias = path.join(createFixtureProject(t, 'golem-root-alias-'), 'alias');
+  fs.symlinkSync(root, alias, 'dir');
+  const result = generate({ root: alias, profile: { mobx: false, validation: true } });
+  assert.ok(result.artifacts.some(artifact => artifact.path.endsWith('item.model.generated.ts')));
+});
