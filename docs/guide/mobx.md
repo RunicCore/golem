@@ -73,10 +73,10 @@ With `mobx: false`, generated files omit MobX imports; all other model and valid
 
 A React component imports a generated model or client like any other module. Wrap a component that reads observable fields in `observer` from `mobx-react-lite`; it re-renders when a field it read changes. Operation `loading` is in [SDK clients](/guide/client-usage#observe-loading-with-mobx).
 
-`src/App.tsx`:
+The amount field in [`src/App.tsx`](https://github.com/RunicCore/golem/blob/master/examples/payments/web/src/App.tsx), which wraps every field of the form the same way:
 
 <<< ../../examples/payments/web/src/App.tsx#observer-component
 
-`getValidator` reads the editor's validation issues ([Validation](/guide/validation)) for the form to render; the form's fields call action methods such as `setAmount` on change. [`examples/payments`](https://github.com/RunicCore/golem/tree/master/examples/payments) runs this editor against a local demo server.
+`getValidator` reads the editor's validation issues ([Validation](/guide/validation)) for the field to render; the field calls an action method, `setAmount`, on change. [`examples/payments`](https://github.com/RunicCore/golem/tree/master/examples/payments) runs this editor against a local demo server.
 
 Full example: [`examples/payments`](https://github.com/RunicCore/golem/tree/master/examples/payments)

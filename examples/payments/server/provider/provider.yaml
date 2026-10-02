@@ -6,7 +6,6 @@ info:
 security:
   - bearerAuth: []
 paths:
-  # region charges-operations
   /charges:
     get:
       operationId: listCharges
@@ -26,6 +25,7 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/Charge'
+    # region create-charge-operation
     post:
       operationId: createCharge
       requestBody:
@@ -41,6 +41,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Charge'
+    # endregion create-charge-operation
   /charges/{id}:
     get:
       operationId: getCharge
@@ -78,7 +79,6 @@ paths:
             application/vnd.provider.money:
               schema:
                 $ref: '#/components/schemas/Money'
-  # endregion charges-operations
   # region events-operation
   /events:
     get:

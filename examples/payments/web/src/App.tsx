@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { observer } from 'mobx-react-lite';
 import { getValidator } from '@exprtlabs/golem/validation';
 import { PaymentsClient } from '../sdk/index.js';
+import type { PaymentEditor } from './payment-editor.model.js';
 import { PaymentStore } from './payment-store.js';
 import { observeSummary } from './summary.js';
 import './styles.css';
@@ -9,9 +10,27 @@ import './styles.css';
 const apiUrl = window.location.origin; // The Vite dev server proxies /api to the API.
 
 // #region observer-component
+const AmountField = observer(function AmountField({ editor }: { editor: PaymentEditor }) {
+  const error = getValidator(editor).errors['/money/amount']?.[0]; // Re-renders when the validation errors change.
+  return (
+    <label className="field">
+      <span>Amount</span>
+      <input
+        aria-invalid={error ? true : undefined}
+        inputMode="decimal"
+        name="amount"
+        onChange={event => editor.setAmount(event.currentTarget.value)}
+        type="text"
+        value={editor.money.amount} // Re-renders when the amount changes.
+      />
+      {error && <span className="field-error">{error}</span>}
+    </label>
+  );
+});
+// #endregion observer-component
+
 const PaymentEditorView = observer(function PaymentEditorView({ store }: { store: PaymentStore }) {
   const validator = getValidator(store.editor);
-  const amountError = validator.errors['/money/amount']?.[0];
   const currencyError = validator.errors['/money/currency']?.[0];
   const noteError = validator.error(['note']);
 
@@ -27,18 +46,7 @@ const PaymentEditorView = observer(function PaymentEditorView({ store }: { store
         </div>
         <form className="payment-form" noValidate onSubmit={event => { event.preventDefault(); void store.save(); }}>
           <div className="field-grid">
-            <label className="field">
-              <span>Amount</span>
-              <input
-                aria-invalid={amountError ? true : undefined}
-                inputMode="decimal"
-                name="amount"
-                onChange={event => store.editor.setAmount(event.currentTarget.value)}
-                type="text"
-                value={store.editor.money.amount}
-              />
-              {amountError && <span className="field-error">{amountError}</span>}
-            </label>
+            <AmountField editor={store.editor} />
             <label className="field">
               <span>Currency</span>
               <input
@@ -77,7 +85,6 @@ const PaymentEditorView = observer(function PaymentEditorView({ store }: { store
     </main>
   );
 });
-// #endregion observer-component
 
 export function App() {
   const [store, setStore] = useState<PaymentStore | null>(null);

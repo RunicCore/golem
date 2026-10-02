@@ -21,9 +21,9 @@ Add `golem.yaml` at the project root (the example keeps it in `server/`). Paths 
 
 <<< ../../examples/payments/server/golem.yaml#openapi-job
 
-The document is the contract. Keep it in the project or point `input` at the file your API already owns; any [supported OpenAPI feature](/reference/openapi-support) works. The example's `provider.yaml` declares its charge operations:
+The document is the contract. Keep it in the project or point `input` at the file your API already owns; any [supported OpenAPI feature](/reference/openapi-support) works. The example's [`provider.yaml`](https://github.com/RunicCore/golem/blob/master/examples/payments/server/provider/provider.yaml) declares `createCharge` (`POST /charges`), plus list, get, text and event operations:
 
-<<< ../../examples/payments/server/provider/provider.yaml#charges-operations
+<<< ../../examples/payments/server/provider/provider.yaml#create-charge-operation
 
 Generation fails on an invalid document.
 
