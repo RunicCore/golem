@@ -511,9 +511,33 @@ function requiredKeysType(type: string, names: readonly string[]): string {
 }
 
 /**
+ * Applies required names inside the oneOf/anyOf branches of a schema. An inline branch gains them
+ * in its `required`; a referenced branch is intersected with a `required` part so the allOf
+ * machinery adds the required-key type. A branch that does not declare a name keeps its shape.
+ */
+function withUnionRequired(schema: JsonObjectLike, names: readonly string[]): JsonObjectLike {
+  if (!names.length) return schema;
+  const next: Record<string, unknown> = { ...schema };
+  for (const keyword of ['oneOf', 'anyOf'] as const) {
+    const branches = schema[keyword];
+    if (Array.isArray(branches)) next[keyword] = branches.map((branch) => withBranchRequired(branch, names));
+  }
+  return next;
+}
+
+function withBranchRequired(branch: unknown, names: readonly string[]): unknown {
+  if (!isJsonObject(branch)) return branch;
+  if (isSchemaReference(branch)) return { allOf: [branch, { required: [...names] }] };
+  const declares = branch.properties !== undefined || Array.isArray(branch.allOf);
+  const required = Array.isArray(branch.required) ? branch.required : [];
+  return withUnionRequired(declares ? { ...branch, required: [...required, ...names] } : branch, names);
+}
+
+/**
  * The types an allOf member contributes. Every member's `required` names bind the intersection:
  * an inline member declaring the property emits it required, and a referenced member intersects
- * with a required-key part so the shared component's own type is unchanged.
+ * with a required-key part so the shared component's own type is unchanged. The names that no inline
+ * member declares also apply inside the member's oneOf/anyOf branches.
  */
 function allOfMemberTypes(item: unknown, requirements: AllOfRequirements, context: SchemaTypeContext): string[] {
   if (!isJsonObject(item)) return [schemaTypeNode(item, context)];
@@ -522,10 +546,12 @@ function allOfMemberTypes(item: unknown, requirements: AllOfRequirements, contex
     const undeclared = [...requirements.required].filter((name) => !requirements.declared.has(name));
     return undeclared.length && type !== 'unknown' ? [type, requiredKeysType(type, undeclared)] : [type];
   }
-  if (requirements.required.size && (item.properties !== undefined || Array.isArray(item.allOf))) {
-    return [schemaTypeNode({ ...item, required: [...requirements.required] }, context)];
+  const undeclared = [...requirements.required].filter((name) => !requirements.declared.has(name));
+  const member = withUnionRequired(item, undeclared);
+  if (requirements.required.size && (member.properties !== undefined || Array.isArray(member.allOf))) {
+    return [schemaTypeNode({ ...member, required: [...requirements.required] }, context)];
   }
-  return [schemaTypeNode(item, context)];
+  return [schemaTypeNode(member, context)];
 }
 
 function schemaTypeNode(rawSchema: unknown, context: SchemaTypeContext = {}): string {

@@ -117,7 +117,7 @@ The first release candidate includes four independently installable packages:
 - A JSON Schema `$id` declared twice, also across files, is reported as a validation error (`schema-id-unique`) that names both locations. It threw an unformatted `duplicate JSON Schema $id` error.
 - An `x-` key under `paths` or `webhooks` is an extension, not a path item: validation and schema generation skip it.
 - **Breaking:** `collectLocalReferenceInputs` from `@exprtlabs/golem-openapi/generator` now returns a `Promise`.
-- A name in the `required` list of any `allOf` member is required in the generated TypeScript type wherever a member declares the property, as the validator already required it (`allOf: [{ $ref: Pet }, { required: [name] }]` makes `name` required in that type; `Pet` itself is unchanged).
+- A name in the `required` list of any `allOf` member is required in the generated TypeScript type wherever a member declares the property, as the validator already required it (`allOf: [{ $ref: Pet }, { required: [name] }]` makes `name` required in that type; `Pet` itself is unchanged), including inside the `oneOf` and `anyOf` branches of an `allOf` member.
 
 See [OpenAPI client support](docs/reference/openapi-support.md) for supported versions and contract limitations.
 
