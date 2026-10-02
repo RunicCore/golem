@@ -16,7 +16,7 @@ Find every `@exprtlabs/golem` import your application, NestJS app or tool can us
 | [`temporal`](#temporal) | Temporal field types and their codecs | a `Temporal` global, such as `temporal-polyfill` |
 | [`serde`](#serde) | `parse<T>`, `stringify<T>`, `assertValue<T>`, `toWireFormat<T>`, `fromWireFormat<T>` | none |
 | [`nest`](#nest) | `NestModelInterceptor` and the decorators the plugin inserts | `@nestjs/common`, `rxjs` |
-| [`ttsc-plugin`](#ttsc-plugin) | The compile-time transform for the generic calls | `typescript` `>=6.0.0 <8`, `ttsc` 0.30 |
+| [`ttsc-plugin`](#ttsc-plugin) | The compile-time transform for the generic calls | `typescript` 7 (`~7.0.2`), `ttsc` 0.30 |
 | [`generator-api`](#generator-api) | Contracts shared by the generators | none |
 | [`manifest`](#manifest) | Read and find `model-manifest.json` files | none |
 

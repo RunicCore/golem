@@ -37,11 +37,11 @@ The generators declare the compiler as a peer dependency, so npm installs one co
 | `@exprtlabs/golem-model` | `typescript` `>=6.0.0 <8`, `ttsc` `~0.30.4` |
 | `@exprtlabs/golem-ts-openapi` | `typescript` `>=6.0.0 <8`, `ttsc` `~0.30.4` |
 | `@exprtlabs/golem-openapi` | none; add `typescript` and `ttsc` to compile the SDK |
-| `@exprtlabs/golem` | optional: `typescript` `>=6.0.0 <8` and `ttsc` 0.30 for the plugin; `ajv`, `ajv-formats`, `mobx`, `esbuild`, `@nestjs/common`, `rxjs` for the features that use them |
+| `@exprtlabs/golem` | optional: `typescript` 7 (`~7.0.2`) and `ttsc` 0.30 for the plugin; `ajv`, `ajv-formats`, `mobx`, `esbuild`, `@nestjs/common`, `rxjs` for the features that use them |
 
 ## TypeScript setup
 
-`parse<T>`, `stringify<T>`, `fromWireFormat<T>` and `toWireFormat<T>` need **`ttsc` 0.30** and the TypeScript 7 it compiles with. `tsc` doesn't run the plugin, so an untransformed call throws at runtime. Generation alone also runs on TypeScript 6.0+: install that version instead of 7 when your project stays on it, and keep `ttsc` for the calls.
+`parse<T>`, `stringify<T>`, `fromWireFormat<T>` and `toWireFormat<T>` need **TypeScript 7** and **`ttsc` 0.30**. `tsc` doesn't run the plugin, so an untransformed call throws at runtime. On TypeScript 6 generation works, but `parse<T>()` and the other generic serde calls don't, until Golem's own rewrite replaces `ttsc`.
 
 ```sh
 npm install --save-dev typescript@~7.0.2 ttsc@~0.30.4
