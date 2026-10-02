@@ -2,11 +2,11 @@ import { fromWireFormat } from '@exprtlabs/golem/serde';
 import { autorun } from 'mobx';
 import { PaymentEditor } from './payment-editor.model.js';
 
-// #region observe-task
+// #region observe-payment
 export function observeSummary(editor: PaymentEditor, report: (summary: string) => void): () => void {
   return autorun(() => report(editor.summary)); // Runs again when the amount, currency or note changes.
 }
-// #endregion observe-task
+// #endregion observe-payment
 
 // #region payment-example
 export function examplePayment(): PaymentEditor {

@@ -21,7 +21,9 @@ Add `golem.yaml` at the project root (the example keeps it in `server/`). Paths 
 
 <<< ../../examples/payments/server/golem.yaml#openapi-job
 
-The document is the contract. Keep it in the project or point `input` at the file your API already owns; any [supported OpenAPI feature](/reference/openapi-support) works. The example's contract is [`provider.yaml`](https://github.com/RunicCore/golem/blob/master/examples/payments/server/provider/provider.yaml).
+The document is the contract. Keep it in the project or point `input` at the file your API already owns; any [supported OpenAPI feature](/reference/openapi-support) works. The example's `provider.yaml` declares its charge operations:
+
+<<< ../../examples/payments/server/provider/provider.yaml#charges-operations
 
 Generation fails on an invalid document.
 
@@ -47,7 +49,7 @@ Import only the public [generated files](/reference/generated-files); the others
 
 For a schema named `Charge` you get `Charge`, the JSON data type, and `ChargeModel`, its runtime class. Use `ChargeModel` when you want an instance rather than response data:
 
-<<< ../../examples/payments/server/provider/charges.ts#task-model
+<<< ../../examples/payments/server/provider/charges.ts#charge-model
 
 Build your own model around SDK types the same way in [Models with a client](/guide/models-and-client).
 
@@ -61,6 +63,6 @@ Pass query parameters and a request body:
 
 Check the declared status before reading the body:
 
-<<< ../../examples/payments/server/provider/charges.ts#read-task
+<<< ../../examples/payments/server/provider/charges.ts#read-charge
 
 Full example: [`examples/payments`](https://github.com/RunicCore/golem/tree/master/examples/payments)

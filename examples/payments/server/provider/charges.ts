@@ -11,7 +11,7 @@ export async function listCharges(baseUrl: string, token: string) {
 }
 // #endregion create-and-list
 
-// #region list-titles
+// #region list-charge-ids
 export async function logChargeIds(client: ProviderClient): Promise<string[]> {
   const response = await client.listCharges().execute({});
   for (const charge of response.body) {
@@ -19,7 +19,7 @@ export async function logChargeIds(client: ProviderClient): Promise<string[]> {
   }
   return response.body.map(charge => charge.id);
 }
-// #endregion list-titles
+// #endregion list-charge-ids
 
 // #region request-arguments
 export async function readChargePage(client: ProviderClient, cursor?: string) {
@@ -31,7 +31,7 @@ export async function createCharge(client: ProviderClient, amount: string) {
 }
 // #endregion request-arguments
 
-// #region read-task
+// #region read-charge
 export async function readCharge(client: ProviderClient, id: string) {
   const response = await client.getCharge().execute({ path: { id } });
   if (response.status === 404) {
@@ -39,17 +39,17 @@ export async function readCharge(client: ProviderClient, id: string) {
   }
   return response.body.money.amount; // Status 200 narrows body to the charge type.
 }
-// #endregion read-task
+// #endregion read-charge
 
-// #region task-model
+// #region charge-model
 export function loadCharge(data: unknown): ChargeModel {
   const charge = fromWireFormat<ChargeModel>(data);
   console.log(charge instanceof ChargeModel); // true
   return charge;
 }
-// #endregion task-model
+// #endregion charge-model
 
-// #region invalid-task
+// #region invalid-charge
 export async function createChargeWithAmount(client: ProviderClient, amount: string) {
   try {
     return await client.createCharge().execute({ body: { amount, currency: 'USD' } });
@@ -61,7 +61,7 @@ export async function createChargeWithAmount(client: ProviderClient, amount: str
     throw error;
   }
 }
-// #endregion invalid-task
+// #endregion invalid-charge
 
 // #region handle-errors
 export async function fetchCharge(client: ProviderClient, id: string) {

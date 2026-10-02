@@ -26,7 +26,7 @@ npm run dev        # API :3000, stand-in provider :3001, editor http://127.0.0.1
 `npm run demo` prints:
 
 ```text
-Payment 1: USD 12.50
+Payment 1: USD 12.50, charge charge-1 is pending
 ```
 
 `dev/provider.ts` is a local stand-in for the third-party provider (token `dev-token`). Only `npm run dev` starts it; tests mock `fetch`.

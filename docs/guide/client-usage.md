@@ -10,7 +10,7 @@ These examples use this contract, generated as `ProviderClient` from the [client
 | `getCharge` | `GET /charges/{id}` | `200`: charge; `404`: `{ message }` |
 | `createCharge` | `POST /charges`, body `{ amount, currency }` | `201`: charge |
 
-<<< ../../examples/payments/server/provider/charges.ts#list-titles
+<<< ../../examples/payments/server/provider/charges.ts#list-charge-ids
 
 - Responses contain the HTTP `status` and decoded `body`, including declared error statuses.
 - Requests and responses are validated when `validation: true` (the default) in `golem.yaml`.
@@ -52,7 +52,7 @@ A client resolves an operation's validators when that operation is first created
 
 Models have corresponding public entries:
 
-<<< ../../examples/payments/server/provider/charges.ts#task-model
+<<< ../../examples/payments/server/provider/charges.ts#charge-model
 
 Each entry loads the models, schemas and runtime helpers its dependency graph needs. `index.js` re-exports every client, operation type and model; per-file imports let a bundler drop unused ones. Operation factories are exported from their individual operation modules.
 
@@ -60,7 +60,7 @@ Each entry loads the models, schemas and runtime helpers its dependency graph ne
 
 Assume `getCharge` declares `200` (charge) and `404` (`{ message: string }`).
 
-<<< ../../examples/payments/server/provider/charges.ts#read-task
+<<< ../../examples/payments/server/provider/charges.ts#read-charge
 
 - Read response data from `body`; `contentType` and declared response `headers` are available too.
 - Connection failures, undeclared status/media types and validation failures reject `.execute()`.
@@ -68,7 +68,7 @@ Assume `getCharge` declares `200` (charge) and `404` (`{ message: string }`).
 
 `Money.amount` declares a decimal `pattern`, so `'12,50'` fails before `fetch` runs:
 
-<<< ../../examples/payments/server/provider/charges.ts#invalid-task
+<<< ../../examples/payments/server/provider/charges.ts#invalid-charge
 
 Choose the validation profile in [validation](/guide/validation); find issue shapes and codes in the [runtime API](/reference/runtime-api#errors).
 

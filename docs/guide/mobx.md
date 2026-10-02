@@ -43,7 +43,7 @@ Call `asGenObservable(this, annotations)` once in your constructor, after `super
 
 `src/summary.ts`:
 
-<<< ../../examples/payments/web/src/summary.ts#observe-task
+<<< ../../examples/payments/web/src/summary.ts#observe-payment
 
 Dispose the reaction when the observation is no longer needed.
 

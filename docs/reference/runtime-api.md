@@ -179,7 +179,7 @@ Models generated with `mobx: true` and `validation: true` register `enhanceValid
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 ```
 
-<<< ../../examples/payments/server/provider/charges.ts#invalid-task
+<<< ../../examples/payments/server/provider/charges.ts#invalid-charge
 
 | `LibError` member | Type | Meaning |
 | --- | --- | --- |
