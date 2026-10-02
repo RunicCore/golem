@@ -12,7 +12,6 @@ export const SIDEBAR: readonly SidebarGroup[] = [
   { text: 'Models', items: [
     { text: 'Defining models', link: '/guide/models' },
     { text: 'Type tags', link: '/guide/tags' },
-    { text: 'Example: permissions', link: '/guide/tags-example' },
     { text: 'Validation', link: '/guide/validation' },
     { text: 'Serialization', link: '/guide/serialization' },
     { text: 'Composing models', link: '/guide/model-composition' },

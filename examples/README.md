@@ -1,57 +1,42 @@
 # Golem examples
 
-Each directory is a complete TypeScript project with its source contract,
-configuration, generated files and runnable entrypoint. Browse the folders below
-in the [Golem repository](https://github.com/RunicCore/golem). The documentation
-pages explain the examples and show source regions from these maintained files.
+Two complete TypeScript projects, each with its source contract, configuration,
+generated files and a runnable entrypoint. Browse them in the
+[Golem repository](https://github.com/RunicCore/golem). The documentation pages
+explain the examples and show source regions from these maintained files.
 
-| Example | Profile | Shows |
-| --- | --- | --- |
-| [model](model/) | Validation on, MobX off | Model methods, synchronous serde and the stateful `getValidator` validator |
-| [openapi](openapi/) | Validation on, MobX off | Typed operations, request arguments and responses |
-| [combined](combined/) | Validation on, MobX off | Nested SDK types, stateless checks and application model rules |
-| [client-features](client-features/) | Validation on, MobX off | Authentication, custom body codecs, streaming responses and Temporal dates for the generated client, and a local generator job |
-| [model-mobx](model-mobx/) | Validation off, MobX on | Observable fields, actions and computed values |
-| [combined-mobx](combined-mobx/) | Validation on, MobX on | Observable nested SDK models and stateful editor errors |
-| [nest-openapi](nest-openapi/) | Validation on, MobX off | Nest interceptor, OpenAPI and SDK |
-| [showcase](showcase/) | Validation on, MobX off | Custom number-to-hexadecimal conversion |
-| [react-mobx](react-mobx/) | Validation on, MobX on | React form bound to an observable model editor, saved over the SDK |
+| Example | Shows |
+| --- | --- |
+| [models](models/) | An offline task tracker: models, tags, validation, serialization, composition and dates. Start here to define models without a server. |
+| [payments](payments/) | A merchant payments app: NestJS controllers that produce an OpenAPI document, a typed client, a React and MobX editor, and a client for a third-party provider with auth, streams, codecs and dates. |
 
 The guides walk through them: [models](../docs/guide/models.md),
+[type tags](../docs/guide/tags.md),
+[NestJS](../docs/guide/nestjs.md),
 [an API client](../docs/guide/client.md),
-[models with a client](../docs/guide/models-and-client.md),
-[NestJS](../docs/guide/nestjs.md) and
-[type tags end to end](../docs/guide/tags-example.md).
+[models with a client](../docs/guide/models-and-client.md) and
+[MobX and React](../docs/guide/mobx.md).
 
 ## Install and run
 
-From the selected `examples/<name>/` directory in your checkout:
+Both examples depend on `1.0.0-rc` of `@exprtlabs/golem*`, which is not
+published yet. Run them from this repository checkout: run `npm install` once at
+the repository root, then in the example directory:
 
 ```sh
-npm install
-npm run generate
-npm start
+npm run generate   # write the generated files
+npm test           # offline
 ```
 
-The package manifests use the release-candidate packages;
-[Installation](../docs/guide/install.md) explains the `@rc` tag and profiles.
-
-- `model` and `model-mobx` run with local data.
-- `openapi` reads `TASKS_API_BASE_URL` and `combined` reads `PAYMENTS_API_BASE_URL`
-  to call an existing API.
-- `client-features` runs against a mocked `fetch` in `npm test`, and reads
-  `PAYMENTS_API_BASE_URL` to call an existing API.
-- `combined-mobx` calls a service only when `PAYMENTS_API_BASE_URL` is set.
-- `nest-openapi` starts a local in-memory API; use `npm run client` in a second
-  terminal.
-- `showcase` runs offline and can call its optional adapter when
-  `PROJECT_ACCESS_API_BASE_URL` is set.
-- `react-mobx` runs with `npm run dev`. It reads `VITE_API_BASE_URL` in the
-  browser and `PAYMENT_DEMO_PORT` and `PAYMENT_DEMO_ORIGIN` in the server;
-  `VITE_API_BASE_URL` and `PAYMENT_DEMO_PORT` must agree on the same port, and
-  `PAYMENT_DEMO_ORIGIN` must match the page's origin.
+- `models`: `npm start` prints a walkthrough, one line per feature. It needs no
+  server, browser or network.
+- `payments`: `npm run demo` starts the API and a stand-in provider on free
+  ports and submits one payment. `npm run dev` starts the API on port 3000, the
+  provider on 3001 and the editor at `http://127.0.0.1:5173`. `API_PORT` sets
+  the API port.
 
 Files under `sdk/` and the `*.model.generated.ts` files are generated output.
 Edit the authored contract or handwritten source, then run `npm run generate`.
+See [Installation](../docs/guide/install.md) for the `@rc` tag and profiles.
 
 [Quick start](../docs/guide/quick-start.md) shows how to add the packages to an existing application.
