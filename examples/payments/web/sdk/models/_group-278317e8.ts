@@ -65,6 +65,7 @@ objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_TMerchantOmitId) as
 const validateTMerchantOmitIdFast = requireAjvSchema(objectAjvFast.getSchema("TMerchantOmitId_1ef82815"), "TMerchantOmitId_1ef82815");
 const validateTMerchantOmitIdAll = requireAjvSchema(objectAjvAll.getSchema("TMerchantOmitId_1ef82815"), "TMerchantOmitId_1ef82815");
 
+
 export function fillTMerchantOmitId(out: Record<string, unknown>, wire: Record<string, unknown>, copyIdentity = true): Record<string, unknown> {
   if (copyIdentity) {
     out["name"] = wire["name"];

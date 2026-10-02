@@ -107,18 +107,30 @@ objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_TPaymentInput) as o
 const validateTPaymentInputFast = requireAjvSchema(objectAjvFast.getSchema("TPaymentInput_0e8e9b2a"), "TPaymentInput_0e8e9b2a");
 const validateTPaymentInputAll = requireAjvSchema(objectAjvAll.getSchema("TPaymentInput_0e8e9b2a"), "TPaymentInput_0e8e9b2a");
 
+function __golemDecode_TPaymentInput_0(__golemWire0: unknown): unknown {
+  return (fromWireFormatTMerchantOmitId(__golemWire0, { validate: false, construct: TMerchantOmitIdModel }));
+}
+
+function __golemDecode_TPaymentInput_1(__golemWire1: unknown): unknown {
+  return (fromWireFormatTMerchant(__golemWire1, { validate: false, construct: TMerchantModel }));
+}
+
+function __golemDecode_TPaymentInput_2(__golemWire2: unknown): unknown {
+  return (fromWireFormatTMoney(__golemWire2, { validate: false, construct: TMoneyModel }));
+}
+
 function fillTPaymentInput(out: Record<string, unknown>, wire: Record<string, unknown>, copyIdentity = true): Record<string, unknown> {
   if (copyIdentity) {
     out["note"] = wire["note"];
   }
   if (Object.prototype.hasOwnProperty.call(wire, "billing")) {
-    out["billing"] = convertModelField("deserialize", "billing", (__golemWire0) => (fromWireFormatTMerchantOmitId(__golemWire0, { validate: false, construct: TMerchantOmitIdModel })), wire["billing"]);
+    out["billing"] = convertModelField("deserialize", "billing", __golemDecode_TPaymentInput_0, wire["billing"]);
   }
   if (Object.prototype.hasOwnProperty.call(wire, "merchant")) {
-    out["merchant"] = convertModelField("deserialize", "merchant", (__golemWire1) => (fromWireFormatTMerchant(__golemWire1, { validate: false, construct: TMerchantModel })), wire["merchant"]);
+    out["merchant"] = convertModelField("deserialize", "merchant", __golemDecode_TPaymentInput_1, wire["merchant"]);
   }
   if (Object.prototype.hasOwnProperty.call(wire, "money")) {
-    out["money"] = convertModelField("deserialize", "money", (__golemWire2) => (fromWireFormatTMoney(__golemWire2, { validate: false, construct: TMoneyModel })), wire["money"]);
+    out["money"] = convertModelField("deserialize", "money", __golemDecode_TPaymentInput_2, wire["money"]);
   }
   return out;
 }

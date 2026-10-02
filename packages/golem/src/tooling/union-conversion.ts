@@ -152,6 +152,11 @@ export interface DispatchOptions {
    * variant's first value. Inferred tags are declared literals and required.
    */
   readonly canonicalTag: boolean;
+  /**
+   * decode of branches without a class: a local the first tag test assigns, so the tag is read once
+   * and the later tests and the rejection use it. The caller declares it.
+   */
+  readonly tagLocal?: string;
 }
 
 /**
@@ -166,9 +171,10 @@ export interface DispatchOptions {
  *   or undefined unchanged and rejects every other value.
  */
 export function emitDispatch(options: DispatchOptions): string {
-  const { expression, property, branches, direction } = options;
+  const { expression, property, branches, direction, tagLocal } = options;
   const encode = direction !== 'decode';
-  const tag = `(${expression} as unknown as Record<string, unknown>)[${JSON.stringify(property)}]`;
+  const tagRead = `(${expression} as unknown as Record<string, unknown>)[${JSON.stringify(property)}]`;
+  const tag = tagLocal ?? tagRead;
   const reject = `unknownDiscriminatorValue(${JSON.stringify(property)}, ${tag}, ${encode ? "'serialize'" : "'deserialize'"})`;
   const key = JSON.stringify(property);
   const injectJson = (convert: string, tagValue: string): string =>
@@ -185,7 +191,10 @@ export function emitDispatch(options: DispatchOptions): string {
     : `(${objectValueExpression(expression)} ? ${reject} : ${expression})`;
   for (let index = branches.length - 1; index >= 0; index--) {
     const branch = branches[index];
-    const guard = `${objectValueExpression(expression)} && ${discriminatorMatch(tag, branch.values)}`;
+    // The first test that runs reads the tag; every path through the chain starts there.
+    const guard = tagLocal && index === 0
+      ? `${objectValueExpression(expression)} && (${tagLocal} = ${tagRead}, ${discriminatorMatch(tagLocal, branch.values)})`
+      : `${objectValueExpression(expression)} && ${discriminatorMatch(tag, branch.values)}`;
     converted = `${guard} ? (${encodeBranch(branch, tag, false)}) : (${converted})`;
   }
   const classes = branches.flatMap((branch) => branch.className ? [branch.className] : []);

@@ -73,6 +73,7 @@ objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_TCharge) as object,
 const validateTChargeFast = requireAjvSchema(objectAjvFast.getSchema("TCharge_633183f5"), "TCharge_633183f5");
 const validateTChargeAll = requireAjvSchema(objectAjvAll.getSchema("TCharge_633183f5"), "TCharge_633183f5");
 
+
 export function fillTCharge(out: Record<string, unknown>, wire: Record<string, unknown>, copyIdentity = true): Record<string, unknown> {
   if (copyIdentity) {
     out["id"] = wire["id"];

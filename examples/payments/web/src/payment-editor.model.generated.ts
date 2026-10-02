@@ -71,12 +71,16 @@ objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_TPaymentEditor) as 
 const validateTPaymentEditorFast = requireAjvSchema(objectAjvFast.getSchema("TPaymentEditor_651767f7"), "TPaymentEditor_651767f7");
 const validateTPaymentEditorAll = requireAjvSchema(objectAjvAll.getSchema("TPaymentEditor_651767f7"), "TPaymentEditor_651767f7");
 
+function __golemDecode_TPaymentEditor_0(__golemWire0: unknown): unknown {
+  return (decodeGeneratedModelTrusted(TMoneyModel, __golemWire0));
+}
+
 function fillTPaymentEditor(out: Record<string, unknown>, wire: Record<string, unknown>, copyIdentity = true): Record<string, unknown> {
   if (copyIdentity) {
     out["note"] = wire["note"];
   }
   if (Object.prototype.hasOwnProperty.call(wire, "money")) {
-    out["money"] = convertModelField("deserialize", "money", (__golemWire0) => (decodeGeneratedModelTrusted(TMoneyModel, __golemWire0)), wire["money"]);
+    out["money"] = convertModelField("deserialize", "money", __golemDecode_TPaymentEditor_0, wire["money"]);
   }
   return out;
 }

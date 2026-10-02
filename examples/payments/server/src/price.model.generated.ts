@@ -81,12 +81,16 @@ const validateTPriceModelOnlyAll = requireAjvSchema(objectAjvAll.getSchema("TPri
 const validateTPriceWireOnlyFast = requireAjvSchema(objectAjvFast.getSchema("TPrice_b0966201#wire-only"), "TPrice_b0966201#wire-only");
 const validateTPriceWireOnlyAll = requireAjvSchema(objectAjvAll.getSchema("TPrice_b0966201#wire-only"), "TPrice_b0966201#wire-only");
 
+function __golemDecode_TPrice_0(__golemWire0: unknown): unknown {
+  return ((typeof __golemWire0 === 'string' ? modelSerdeBindings["src/decimal-text.ts#writeAmount\u0000src/decimal-text.ts#readAmount"].deserialize(__golemWire0) : __golemWire0));
+}
+
 function fillTPrice(out: Record<string, unknown>, wire: Record<string, unknown>, copyIdentity = true): Record<string, unknown> {
   if (copyIdentity) {
     out["currency"] = wire["currency"];
   }
   if (Object.prototype.hasOwnProperty.call(wire, "amount")) {
-    out["amount"] = convertModelField("deserialize", "amount", (__golemWire0) => ((typeof __golemWire0 === 'string' ? modelSerdeBindings["src/decimal-text.ts#writeAmount\u0000src/decimal-text.ts#readAmount"].deserialize(__golemWire0) : __golemWire0)), wire["amount"]);
+    out["amount"] = convertModelField("deserialize", "amount", __golemDecode_TPrice_0, wire["amount"]);
   }
   return out;
 }

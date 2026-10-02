@@ -46,21 +46,21 @@
     "provider/sdk/models/_group-65c6812f.ts": {
       "job": "openapi:provider/sdk",
       "owner": "@exprtlabs/golem-openapi",
-      "digest": "3d2a8600b6b1a73175f787c3d69d2314e7fe5676e599a634dc3efc3fe07684cc",
+      "digest": "06fbe97edc9ce853f7e742a3b81cd5c461bd87b2446b69bb22fb2af5db9e6dea",
       "destination": "provider/sdk",
       "destinationKind": "directory"
     },
     "provider/sdk/models/_group-a615bcf1.ts": {
       "job": "openapi:provider/sdk",
       "owner": "@exprtlabs/golem-openapi",
-      "digest": "fa44c93308d691962444d9680a43a0e5a3336eb3cdf87bda1aaad8720328275a",
+      "digest": "ca41222f20be35a0792ba3ce7fff0e48292efa06e168f40a79d09a3ce7470718",
       "destination": "provider/sdk",
       "destinationKind": "directory"
     },
     "provider/sdk/models/_group-dd3afb2e.ts": {
       "job": "openapi:provider/sdk",
       "owner": "@exprtlabs/golem-openapi",
-      "digest": "36785e64dce8f203889733216184947cc3e4b57d28b00e29e4b356fb7593a923",
+      "digest": "4787a5bc1ac144679c40b2d9c08c6d1a8879b42be95cb255838af0b05f3c6df0",
       "destination": "provider/sdk",
       "destinationKind": "directory"
     },
@@ -221,7 +221,7 @@
     "src/price.model.generated.ts": {
       "job": "models:.",
       "owner": "@exprtlabs/golem-model",
-      "digest": "22334d2f4aaa993eed6fda4eb201cc4cf5e6af9eeed2aeb242554fdccceb9fad",
+      "digest": "64176bef2683da9adade894354551b61d96666e1f643f43bfbf19f98d9db5f34",
       "destination": "src",
       "destinationKind": "directory"
     }

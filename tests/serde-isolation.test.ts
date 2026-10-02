@@ -231,6 +231,48 @@ test('parsed JSON text is decoded without cycle checks', async (t) => {
   assert.throws(() => fromWireFormatTTree(tree, { validate: false }), cycleAt(['next']));
 });
 
+function generatedSource(t: TestContext, name: string): string {
+  const { root, sourceRoot } = createModelProject(t, {
+    prefix: 'golem-serde-isolation-',
+    name: 'serde-isolation',
+    ttscPlugin: true,
+    linkWorkspaceNodeModules: true,
+  });
+  fs.writeFileSync(path.join(sourceRoot, `${name}.model.ts`), readFixture(`models/serde-isolation/${name}.model.ts`));
+  const artifact = generate({ root, profile: { mobx: false, validation: false } }).artifacts.find((item) => item.path.endsWith(`${name}.model.generated.ts`));
+  assert.ok(artifact);
+  return artifact.content;
+}
+
+test('fill paths pass converters as module-level functions, not per-value closures', (t) => {
+  const source = generatedSource(t, 'calendar');
+  assert.match(source, /convertModelField\("deserialize", "event", __golemDecode_TCalendar_\d+, /);
+  assert.match(source, /\.map\(\(item, index\) => convertModelField\("deserialize", index, __golemDecode_TCalendar_\d+, item\)\)/);
+  assert.doesNotMatch(source, /convertModelField\("deserialize", [^\n]*, \(\w+\) =>/);
+});
+
+test('a nested fill that cannot throw runs without a conversion scope', (t) => {
+  const source = generatedSource(t, 'nested');
+  const fill = /function fillTTop[\s\S]*?\n}\n/.exec(source)?.[0];
+  assert.ok(fill);
+  assert.match(fill, /out\["middle"\] = fillTMiddle\(/);
+  assert.doesNotMatch(fill, /convertModelField/);
+});
+
+test('a nested union reads its tag once', async (t) => {
+  const { fromWireFormatTContact } = await loadCodecs(t, 'union');
+  let reads = 0;
+  const value = { address: 'a@example.com' };
+  Object.defineProperty(value, 'kind', { enumerable: true, get() { reads++; return 'email'; } });
+  assert.deepEqual({ ...(fromWireFormatTContact({ value }, { validate: false }) as { value: object }).value }, { kind: 'email', address: 'a@example.com' });
+  assert.equal(reads, 1);
+  assert.throws(() => fromWireFormatTContact({ value: { kind: 'fax' } }, { validate: false }), (error: unknown) => {
+    assert.ok(error instanceof LibError);
+    assert.deepEqual(error.issues[0]?.path, ['value', 'kind']);
+    return true;
+  });
+});
+
 test('generated decode copies declared objects and carries unknown values by reference', async (t) => {
   const { fromWireFormatTRecord, fromWireFormatTShelf } = await loadCodecs(t, 'recursive');
   const wire = { payload: { nested: { a: 1 } } };

@@ -190,7 +190,7 @@ function fillTSubscription(out: Record<string, unknown>, wire: Record<string, un
     out["watchers"] = Array.isArray(__golemWire0) ? (__golemWire0 as readonly unknown[]).slice() : __golemWire0;
   }
   if (Object.prototype.hasOwnProperty.call(wire, "reminders")) {
-    out["reminders"] = convertModelField("deserialize", "reminders", (__golemWire1) => (fillAnonymous_53249103({} as Record<string, unknown>, (__golemWire1 as Record<string, unknown>))), wire["reminders"]);
+    out["reminders"] = fillAnonymous_53249103({} as Record<string, unknown>, (wire["reminders"] as Record<string, unknown>));
   }
   return out;
 }

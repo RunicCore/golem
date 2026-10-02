@@ -65,6 +65,7 @@ objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_PaymentDraft) as ob
 const validatePaymentDraftFast = requireAjvSchema(objectAjvFast.getSchema("PaymentDraft_8be34727"), "PaymentDraft_8be34727");
 const validatePaymentDraftAll = requireAjvSchema(objectAjvAll.getSchema("PaymentDraft_8be34727"), "PaymentDraft_8be34727");
 
+
 function fillPaymentDraft(out: Record<string, unknown>, wire: Record<string, unknown>, copyIdentity = true): Record<string, unknown> {
   if (copyIdentity) {
     out["note"] = wire["note"];

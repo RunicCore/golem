@@ -338,9 +338,14 @@ createObjectCodec("TPhone_6ba1ec97", {
 const validateTContactFast = requireAjvSchema(objectAjvFast.getSchema("TContact_ae9ed7ac"), "TContact_ae9ed7ac");
 const validateTContactAll = requireAjvSchema(objectAjvAll.getSchema("TContact_ae9ed7ac"), "TContact_ae9ed7ac");
 
+function __golemDecode_TContact_0(__golemWire0: unknown): unknown {
+  let __golemTag0: unknown;
+  return ((typeof __golemWire0 === 'object' && __golemWire0 !== null && !Array.isArray(__golemWire0) && (__golemTag0 = (__golemWire0 as unknown as Record<string, unknown>)["kind"], (__golemTag0 === "email")) ? (({ ["kind"]: __golemTag0, ["address"]: (__golemWire0 as Record<string, unknown>)["address"] })) : (typeof __golemWire0 === 'object' && __golemWire0 !== null && !Array.isArray(__golemWire0) && (__golemTag0 === "phone") ? (({ ["kind"]: __golemTag0, ["number"]: (__golemWire0 as Record<string, unknown>)["number"] })) : ((typeof __golemWire0 === 'object' && __golemWire0 !== null && !Array.isArray(__golemWire0) ? unknownDiscriminatorValue("kind", __golemTag0, 'deserialize') : __golemWire0)))));
+}
+
 function fillTContact(out: Record<string, unknown>, wire: Record<string, unknown>): Record<string, unknown> {
   if (Object.prototype.hasOwnProperty.call(wire, "value")) {
-    out["value"] = convertModelField("deserialize", "value", (__golemWire0) => ((typeof __golemWire0 === 'object' && __golemWire0 !== null && !Array.isArray(__golemWire0) && ((__golemWire0 as unknown as Record<string, unknown>)["kind"] === "email") ? (({ ["kind"]: (__golemWire0 as Record<string, unknown>)["kind"], ["address"]: (__golemWire0 as Record<string, unknown>)["address"] })) : (typeof __golemWire0 === 'object' && __golemWire0 !== null && !Array.isArray(__golemWire0) && ((__golemWire0 as unknown as Record<string, unknown>)["kind"] === "phone") ? (({ ["kind"]: (__golemWire0 as Record<string, unknown>)["kind"], ["number"]: (__golemWire0 as Record<string, unknown>)["number"] })) : ((typeof __golemWire0 === 'object' && __golemWire0 !== null && !Array.isArray(__golemWire0) ? unknownDiscriminatorValue("kind", (__golemWire0 as unknown as Record<string, unknown>)["kind"], 'deserialize') : __golemWire0))))), wire["value"]);
+    out["value"] = convertModelField("deserialize", "value", __golemDecode_TContact_0, wire["value"]);
   }
   return out;
 }

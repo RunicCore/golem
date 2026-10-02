@@ -442,16 +442,20 @@ createObjectCodec("TPlacePickCityCountryPartial_dd79d8cd", {
 const validateTAssigneeFast = requireAjvSchema(objectAjvFast.getSchema("TAssignee_fd7850bf"), "TAssignee_fd7850bf");
 const validateTAssigneeAll = requireAjvSchema(objectAjvAll.getSchema("TAssignee_fd7850bf"), "TAssignee_fd7850bf");
 
+function __golemDecode_TAssignee_0(__golemWire0: unknown): unknown {
+  return (convertFromWireTPlace(__golemWire0, { validate: false, construct: requireIModelClass("TPlace_420813af") }));
+}
+
 function fillTAssignee(out: Record<string, unknown>, wire: Record<string, unknown>): Record<string, unknown> {
   if (Object.prototype.hasOwnProperty.call(wire, "office")) {
-    out["office"] = convertModelField("deserialize", "office", (__golemWire0) => (convertFromWireTPlace(__golemWire0, { validate: false, construct: requireIModelClass("TPlace_420813af") })), wire["office"]);
+    out["office"] = convertModelField("deserialize", "office", __golemDecode_TAssignee_0, wire["office"]);
   }
   if (Object.prototype.hasOwnProperty.call(wire, "site")) {
     const __golemWire1 = wire["site"];
     out["site"] = ({ ["city"]: (__golemWire1 as Record<string, unknown>)["city"], ["country"]: (__golemWire1 as Record<string, unknown>)["country"] });
   }
   if (Object.prototype.hasOwnProperty.call(wire, "draft")) {
-    out["draft"] = convertModelField("deserialize", "draft", (__golemWire2) => (fillTPlacePickCityCountryPartial({} as Record<string, unknown>, (__golemWire2 as Record<string, unknown>))), wire["draft"]);
+    out["draft"] = fillTPlacePickCityCountryPartial({} as Record<string, unknown>, (wire["draft"] as Record<string, unknown>));
   }
   return out;
 }

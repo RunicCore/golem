@@ -94,15 +94,27 @@ const validateTScheduleModelOnlyAll = requireAjvSchema(objectAjvAll.getSchema("T
 const validateTScheduleWireOnlyFast = requireAjvSchema(objectAjvFast.getSchema("TSchedule_a6c75486#wire-only"), "TSchedule_a6c75486#wire-only");
 const validateTScheduleWireOnlyAll = requireAjvSchema(objectAjvAll.getSchema("TSchedule_a6c75486#wire-only"), "TSchedule_a6c75486#wire-only");
 
+function __golemDecode_TSchedule_0(__golemWire0: unknown): unknown {
+  return ((typeof __golemWire0 === 'string' ? modelSerdeBindings["@exprtlabs/golem/temporal#serializeTemporalInstant\u0000@exprtlabs/golem/temporal#deserializeTemporalInstant"].deserialize(__golemWire0) : __golemWire0));
+}
+
+function __golemDecode_TSchedule_1(__golemWire1: unknown): unknown {
+  return ((typeof __golemWire1 === 'string' ? modelSerdeBindings["@exprtlabs/golem/temporal#serializeTemporalPlainDate\u0000@exprtlabs/golem/temporal#deserializeTemporalPlainDate"].deserialize(__golemWire1) : __golemWire1));
+}
+
+function __golemDecode_TSchedule_2(__golemWire2: unknown): unknown {
+  return ((typeof __golemWire2 === 'string' ? modelSerdeBindings["@exprtlabs/golem/temporal#serializeTemporalDuration\u0000@exprtlabs/golem/temporal#deserializeTemporalDuration"].deserialize(__golemWire2) : __golemWire2));
+}
+
 function fillTSchedule(out: Record<string, unknown>, wire: Record<string, unknown>): Record<string, unknown> {
   if (Object.prototype.hasOwnProperty.call(wire, "startsAt")) {
-    out["startsAt"] = convertModelField("deserialize", "startsAt", (__golemWire0) => ((typeof __golemWire0 === 'string' ? modelSerdeBindings["@exprtlabs/golem/temporal#serializeTemporalInstant\u0000@exprtlabs/golem/temporal#deserializeTemporalInstant"].deserialize(__golemWire0) : __golemWire0)), wire["startsAt"]);
+    out["startsAt"] = convertModelField("deserialize", "startsAt", __golemDecode_TSchedule_0, wire["startsAt"]);
   }
   if (Object.prototype.hasOwnProperty.call(wire, "day")) {
-    out["day"] = convertModelField("deserialize", "day", (__golemWire1) => ((typeof __golemWire1 === 'string' ? modelSerdeBindings["@exprtlabs/golem/temporal#serializeTemporalPlainDate\u0000@exprtlabs/golem/temporal#deserializeTemporalPlainDate"].deserialize(__golemWire1) : __golemWire1)), wire["day"]);
+    out["day"] = convertModelField("deserialize", "day", __golemDecode_TSchedule_1, wire["day"]);
   }
   if (Object.prototype.hasOwnProperty.call(wire, "length")) {
-    out["length"] = convertModelField("deserialize", "length", (__golemWire2) => ((typeof __golemWire2 === 'string' ? modelSerdeBindings["@exprtlabs/golem/temporal#serializeTemporalDuration\u0000@exprtlabs/golem/temporal#deserializeTemporalDuration"].deserialize(__golemWire2) : __golemWire2)), wire["length"]);
+    out["length"] = convertModelField("deserialize", "length", __golemDecode_TSchedule_2, wire["length"]);
   }
   return out;
 }

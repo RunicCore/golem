@@ -124,22 +124,38 @@ objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_Payment) as object,
 const validatePaymentFast = requireAjvSchema(objectAjvFast.getSchema("Payment_4199d1df"), "Payment_4199d1df");
 const validatePaymentAll = requireAjvSchema(objectAjvAll.getSchema("Payment_4199d1df"), "Payment_4199d1df");
 
+function __golemDecode_Payment_0(__golemWire0: unknown): unknown {
+  return (fromWireFormatTMerchantOmitId(__golemWire0, { validate: false, construct: TMerchantOmitIdModel }));
+}
+
+function __golemDecode_Payment_1(__golemWire1: unknown): unknown {
+  return (fromWireFormatTCharge(__golemWire1, { validate: false, construct: TChargeModel }));
+}
+
+function __golemDecode_Payment_2(__golemWire3: unknown): unknown {
+  return (fromWireFormatTMerchant(__golemWire3, { validate: false, construct: TMerchantModel }));
+}
+
+function __golemDecode_Payment_3(__golemWire4: unknown): unknown {
+  return (fromWireFormatTMoney(__golemWire4, { validate: false, construct: TMoneyModel }));
+}
+
 function fillPayment(out: Record<string, unknown>, wire: Record<string, unknown>, copyIdentity = true): Record<string, unknown> {
   if (copyIdentity) {
     out["id"] = wire["id"];
     out["note"] = wire["note"];
   }
   if (Object.prototype.hasOwnProperty.call(wire, "billing")) {
-    out["billing"] = convertModelField("deserialize", "billing", (__golemWire0) => (fromWireFormatTMerchantOmitId(__golemWire0, { validate: false, construct: TMerchantOmitIdModel })), wire["billing"]);
+    out["billing"] = convertModelField("deserialize", "billing", __golemDecode_Payment_0, wire["billing"]);
   }
   if (Object.prototype.hasOwnProperty.call(wire, "charge")) {
-    out["charge"] = convertModelField("deserialize", "charge", (__golemWire1) => (fromWireFormatTCharge(__golemWire1, { validate: false, construct: TChargeModel })), wire["charge"]);
+    out["charge"] = convertModelField("deserialize", "charge", __golemDecode_Payment_1, wire["charge"]);
   }
   if (Object.prototype.hasOwnProperty.call(wire, "merchant")) {
-    out["merchant"] = convertModelField("deserialize", "merchant", (__golemWire3) => (fromWireFormatTMerchant(__golemWire3, { validate: false, construct: TMerchantModel })), wire["merchant"]);
+    out["merchant"] = convertModelField("deserialize", "merchant", __golemDecode_Payment_2, wire["merchant"]);
   }
   if (Object.prototype.hasOwnProperty.call(wire, "money")) {
-    out["money"] = convertModelField("deserialize", "money", (__golemWire4) => (fromWireFormatTMoney(__golemWire4, { validate: false, construct: TMoneyModel })), wire["money"]);
+    out["money"] = convertModelField("deserialize", "money", __golemDecode_Payment_3, wire["money"]);
   }
   return out;
 }

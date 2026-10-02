@@ -81,12 +81,16 @@ const validateTAttachmentModelOnlyAll = requireAjvSchema(objectAjvAll.getSchema(
 const validateTAttachmentWireOnlyFast = requireAjvSchema(objectAjvFast.getSchema("TAttachment_88b1059a#wire-only"), "TAttachment_88b1059a#wire-only");
 const validateTAttachmentWireOnlyAll = requireAjvSchema(objectAjvAll.getSchema("TAttachment_88b1059a#wire-only"), "TAttachment_88b1059a#wire-only");
 
+function __golemDecode_TAttachment_0(__golemWire1: unknown): unknown {
+  return ((typeof __golemWire1 === 'string' ? modelSerdeBindings["src/base64-codec.ts#encodeBase64\u0000src/base64-codec.ts#decodeBase64"].deserialize(__golemWire1) : __golemWire1));
+}
+
 function fillTAttachment(out: Record<string, unknown>, wire: Record<string, unknown>, copyIdentity = true): Record<string, unknown> {
   if (copyIdentity) {
     out["name"] = wire["name"];
   }
   if (Object.prototype.hasOwnProperty.call(wire, "content")) {
-    out["content"] = convertModelField("deserialize", "content", (__golemWire1) => ((typeof __golemWire1 === 'string' ? modelSerdeBindings["src/base64-codec.ts#encodeBase64\u0000src/base64-codec.ts#decodeBase64"].deserialize(__golemWire1) : __golemWire1)), wire["content"]);
+    out["content"] = convertModelField("deserialize", "content", __golemDecode_TAttachment_0, wire["content"]);
   }
   return out;
 }

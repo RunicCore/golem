@@ -78,9 +78,13 @@ const validateTPermissionInputModelOnlyAll = requireAjvSchema(objectAjvAll.getSc
 const validateTPermissionInputWireOnlyFast = requireAjvSchema(objectAjvFast.getSchema("TPermissionInput_8f46e801#wire-only"), "TPermissionInput_8f46e801#wire-only");
 const validateTPermissionInputWireOnlyAll = requireAjvSchema(objectAjvAll.getSchema("TPermissionInput_8f46e801#wire-only"), "TPermissionInput_8f46e801#wire-only");
 
+function __golemDecode_TPermissionInput_0(__golemWire0: unknown): unknown {
+  return ((typeof __golemWire0 === 'string' ? modelSerdeBindings["src/permission-rules.ts#encodePermissions\u0000src/permission-rules.ts#decodePermissions"].deserialize(__golemWire0) : __golemWire0));
+}
+
 function fillTPermissionInput(out: Record<string, unknown>, wire: Record<string, unknown>): Record<string, unknown> {
   if (Object.prototype.hasOwnProperty.call(wire, "permissions")) {
-    out["permissions"] = convertModelField("deserialize", "permissions", (__golemWire0) => ((typeof __golemWire0 === 'string' ? modelSerdeBindings["src/permission-rules.ts#encodePermissions\u0000src/permission-rules.ts#decodePermissions"].deserialize(__golemWire0) : __golemWire0)), wire["permissions"]);
+    out["permissions"] = convertModelField("deserialize", "permissions", __golemDecode_TPermissionInput_0, wire["permissions"]);
   }
   return out;
 }

@@ -69,6 +69,7 @@ objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_TMerchant) as objec
 const validateTMerchantFast = requireAjvSchema(objectAjvFast.getSchema("TMerchant_2d893464"), "TMerchant_2d893464");
 const validateTMerchantAll = requireAjvSchema(objectAjvAll.getSchema("TMerchant_2d893464"), "TMerchant_2d893464");
 
+
 export function fillTMerchant(out: Record<string, unknown>, wire: Record<string, unknown>, copyIdentity = true): Record<string, unknown> {
   if (copyIdentity) {
     out["id"] = wire["id"];

@@ -84,13 +84,17 @@ const validateTTaskModelOnlyAll = requireAjvSchema(objectAjvAll.getSchema("TTask
 const validateTTaskWireOnlyFast = requireAjvSchema(objectAjvFast.getSchema("TTask_895d5b8e#wire-only"), "TTask_895d5b8e#wire-only");
 const validateTTaskWireOnlyAll = requireAjvSchema(objectAjvAll.getSchema("TTask_895d5b8e#wire-only"), "TTask_895d5b8e#wire-only");
 
+function __golemDecode_TTask_0(__golemWire2: unknown): unknown {
+  return (modelSerdeBindings["src/priority-word.ts#toPriorityWord\u0000src/priority-word.ts#fromPriorityWord"].deserialize(__golemWire2));
+}
+
 function fillTTask(out: Record<string, unknown>, wire: Record<string, unknown>, copyIdentity = true): Record<string, unknown> {
   if (copyIdentity) {
     out["title"] = wire["title"];
     out["done"] = wire["done"];
   }
   if (Object.prototype.hasOwnProperty.call(wire, "priority")) {
-    out["priority"] = convertModelField("deserialize", "priority", (__golemWire2) => (modelSerdeBindings["src/priority-word.ts#toPriorityWord\u0000src/priority-word.ts#fromPriorityWord"].deserialize(__golemWire2)), wire["priority"]);
+    out["priority"] = convertModelField("deserialize", "priority", __golemDecode_TTask_0, wire["priority"]);
   }
   return out;
 }

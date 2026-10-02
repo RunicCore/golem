@@ -115,19 +115,31 @@ const validateChargeModelOnlyAll = requireAjvSchema(objectAjvAll.getSchema("Char
 const validateChargeWireOnlyFast = requireAjvSchema(objectAjvFast.getSchema("Charge_33b8be7b#wire-only"), "Charge_33b8be7b#wire-only");
 const validateChargeWireOnlyAll = requireAjvSchema(objectAjvAll.getSchema("Charge_33b8be7b#wire-only"), "Charge_33b8be7b#wire-only");
 
+function __golemDecode_Charge_0(__golemWire2: unknown): unknown {
+  return (fromWireFormatMoney(__golemWire2, { validate: false, construct: MoneyModel }));
+}
+
+function __golemDecode_Charge_1(__golemWire3: unknown): unknown {
+  return ((typeof __golemWire3 === 'string' ? deserializeTemporalInstant((__golemWire3) as never) : __golemWire3));
+}
+
+function __golemDecode_Charge_2(__golemWire4: unknown): unknown {
+  return ((typeof __golemWire4 === 'string' ? deserializeTemporalPlainDate((__golemWire4) as never) : __golemWire4));
+}
+
 function fillCharge(out: Record<string, unknown>, wire: Record<string, unknown>, copyIdentity = true): Record<string, unknown> {
   if (copyIdentity) {
     out["id"] = wire["id"];
     out["status"] = wire["status"];
   }
   if (Object.prototype.hasOwnProperty.call(wire, "money")) {
-    out["money"] = convertModelField("deserialize", "money", (__golemWire2) => (fromWireFormatMoney(__golemWire2, { validate: false, construct: MoneyModel })), wire["money"]);
+    out["money"] = convertModelField("deserialize", "money", __golemDecode_Charge_0, wire["money"]);
   }
   if (Object.prototype.hasOwnProperty.call(wire, "createdAt")) {
-    out["createdAt"] = convertModelField("deserialize", "createdAt", (__golemWire3) => ((typeof __golemWire3 === 'string' ? deserializeTemporalInstant((__golemWire3) as never) : __golemWire3)), wire["createdAt"]);
+    out["createdAt"] = convertModelField("deserialize", "createdAt", __golemDecode_Charge_1, wire["createdAt"]);
   }
   if (Object.prototype.hasOwnProperty.call(wire, "settlesOn")) {
-    out["settlesOn"] = convertModelField("deserialize", "settlesOn", (__golemWire4) => ((typeof __golemWire4 === 'string' ? deserializeTemporalPlainDate((__golemWire4) as never) : __golemWire4)), wire["settlesOn"]);
+    out["settlesOn"] = convertModelField("deserialize", "settlesOn", __golemDecode_Charge_2, wire["settlesOn"]);
   }
   return out;
 }

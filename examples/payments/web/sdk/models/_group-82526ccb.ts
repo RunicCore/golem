@@ -69,6 +69,7 @@ objectAjvAll.addSchema(structuredClone(__resolvedModelSchema_TMoney) as object, 
 const validateTMoneyFast = requireAjvSchema(objectAjvFast.getSchema("TMoney_3a1d334f"), "TMoney_3a1d334f");
 const validateTMoneyAll = requireAjvSchema(objectAjvAll.getSchema("TMoney_3a1d334f"), "TMoney_3a1d334f");
 
+
 export function fillTMoney(out: Record<string, unknown>, wire: Record<string, unknown>, copyIdentity = true): Record<string, unknown> {
   if (copyIdentity) {
     out["amount"] = wire["amount"];

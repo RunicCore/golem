@@ -315,9 +315,11 @@ export class Team extends TTeamBaseModel {}
   const result = generate({ root: value.root, profile: { mobx: false, validation: false } });
   const generated = modelArtifact(result, 'team');
   // Nested models call the module's own converter, not the public `fromWireFormat` entry.
-  assert.doesNotMatch(functionBody(generated, 'fillTTeam'), /fromWireFormat(Member|Stamp)\(/);
-  assert.match(functionBody(generated, 'fillTTeam'), /convertFromWireTMember\(/);
-  assert.match(functionBody(generated, 'fillTMember'), /convertFromWireTStamp\(/);
+  const teamConverters = [...generated.matchAll(/function __golemDecode_TTeam_\d+[\s\S]*?\n}\n/g)].map((match) => match[0]).join('\n');
+  assert.doesNotMatch(teamConverters, /fromWireFormat(Member|Stamp)\(/);
+  assert.match(teamConverters, /convertFromWireTMember\(/);
+  const memberConverters = [...generated.matchAll(/function __golemDecode_TMember_\d+[\s\S]*?\n}\n/g)].map((match) => match[0]).join('\n');
+  assert.match(memberConverters, /convertFromWireTStamp\(/);
 
   writeGeneratedArtifacts(result.artifacts);
   await compileModelProject(value.root);
