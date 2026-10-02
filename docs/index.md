@@ -65,7 +65,7 @@ Golem compiles with TypeScript 7 through `ttsc` on Node.js 22.15 or newer ([Inst
 
 `MinLength`, `Pattern` and `MaxLength` are types. Golem turns them into validation, OpenAPI constraints and client-side checks. An `IObject` stays a plain object; an `IModel` also gets a generated class ([IObject or IModel](/guide/models#iobject-or-imodel)).
 
-<<< ../examples/nest-openapi/src/payment.model.ts#payment-types
+<<< ../examples/payments/server/src/payment.model.ts#payment-types
 
 ## One model, start to finish
 
@@ -73,11 +73,11 @@ Declare the fields, run `npx golem generate`, then extend the generated class. G
 
 ::: code-group
 
-<<< ../examples/model/src/task.model.ts#model-definition [task.model.ts]
+<<< ../examples/models/src/task.model.ts#model-definition [task.model.ts]
 
-<<< ../examples/model/src/priority-word.ts#priority-word [priority-word.ts]
+<<< ../examples/models/src/priority-word.ts#priority-word [priority-word.ts]
 
-<<< ../examples/model/src/task-app.ts [task-app.ts]
+<<< ../examples/models/src/task-app.ts [task-app.ts]
 
 :::
 
@@ -89,11 +89,11 @@ The controller returns plain types. One `generate` run writes the OpenAPI docume
 
 ::: code-group
 
-<<< ../examples/nest-openapi/src/payments.controller.ts#create-payment [payments.controller.ts]
+<<< ../examples/payments/server/src/payments.controller.ts#create-payment [payments.controller.ts]
 
-<<< ../examples/nest-openapi/golem.yaml [golem.yaml]
+<<< ../examples/payments/server/golem.yaml#controllers-job [golem.yaml]
 
-<<< ../examples/nest-openapi/src/client.ts#payment-client [client.ts]
+<<< ../examples/payments/web/src/submit-payment.ts#payment-client [client.ts]
 
 :::
 

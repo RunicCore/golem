@@ -30,7 +30,7 @@ Generated files import `ajv` only with `validation: true` and `ajvStandalone: fa
 import type { IModel, IObject } from '@exprtlabs/golem/model';
 ```
 
-<<< ../../examples/model/src/task.model.ts#model-definition
+<<< ../../examples/models/src/task.model.ts#model-definition
 
 | Member | Signature | Behavior |
 | --- | --- | --- |
@@ -66,7 +66,7 @@ function getValidator<Fields extends object, Owner extends object>(
 ): ModelValidator<Fields, Owner>;
 ```
 
-<<< ../../examples/model/src/task-input-checks.ts#validate-a-model
+<<< ../../examples/models/src/task-input-checks.ts#validate-a-model
 
 | Member | Signature | Behavior |
 | --- | --- | --- |
@@ -148,7 +148,7 @@ Importing the module registers `createOpenApiAjvEngine()` as the default model e
 import { asGenObservable } from '@exprtlabs/golem/mobx';
 ```
 
-<<< ../../examples/model-mobx/src/task.model.ts#model-definition
+<<< ../../examples/payments/web/src/payment-editor.model.ts#model-definition
 
 | Member | Signature | Behavior |
 | --- | --- | --- |
@@ -179,7 +179,7 @@ Models generated with `mobx: true` and `validation: true` register `enhanceValid
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 ```
 
-<<< ../../examples/openapi/src/invalid-task.ts#invalid-task
+<<< ../../examples/payments/server/provider/charges.ts#invalid-task
 
 | `LibError` member | Type | Meaning |
 | --- | --- | --- |
@@ -223,7 +223,7 @@ interface ApiOperation<Input, Result, Options = unknown> {
 }
 ```
 
-<<< ../../examples/openapi/src/reuse-request.ts#reuse-request
+<<< ../../examples/payments/server/provider/charges.ts#reuse-request
 
 | Member | Signature | Behavior |
 | --- | --- | --- |
@@ -326,7 +326,7 @@ Temporal field types for models. Each converts to an ISO 8601 string on the wire
 import { fromWireFormat, parse, stringify, toWireFormat } from '@exprtlabs/golem/serde';
 ```
 
-<<< ../../examples/model/src/read-json.ts#read-json
+<<< ../../examples/models/src/read-json.ts#read-json
 
 ::: warning TypeScript 7 and ttsc
 `parse<T>`, `stringify<T>`, `assertValue<T>`, `toWireFormat<T>`, `fromWireFormat<T>` and `validate<T>` throw `ValidationUnavailable` unless the [`ttsc-plugin`](#ttsc-plugin) rewrites them. Compile with TypeScript 7 and `ttsc` 0.30; `tsc` does not run the plugin.
@@ -387,7 +387,7 @@ Used by generated code: `createObjectCodec`, `registerObjectCodec`, `getObjectCo
 import { NestModelInterceptor } from '@exprtlabs/golem/nest';
 ```
 
-<<< ../../examples/nest-openapi/src/application.ts#global-model-http
+<<< ../../examples/payments/server/src/application.ts#global-model-http
 
 | Member | Signature | Behavior |
 | --- | --- | --- |
