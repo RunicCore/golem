@@ -186,7 +186,7 @@ function compilerChildren(parent: number): number[] {
     .map(match => Number(match[1]));
 }
 
-test('watch reuses one compiler across edits and tsconfig path-mapping changes', { skip: process.platform === 'win32' || skipOnTypeScript6 }, async (t: TestContext) => {
+test('watch reuses one compiler across edits and tsconfig path-mapping changes', { skip: process.platform === 'win32' }, async (t: TestContext) => {
   const { root, config } = fixture(t);
   const tsconfigFile = path.join(root, 'tsconfig.json');
   const tsconfig = JSON.parse(fs.readFileSync(tsconfigFile, 'utf8')) as { compilerOptions: Record<string, unknown>; include: string[] };
@@ -227,8 +227,9 @@ test('watch reuses one compiler across edits and tsconfig path-mapping changes',
 
   try {
     await until(() => runs() >= 1, `initial generation ${context()}`);
+    // Only TypeScript 7 runs its compiler in a child process; the edits below must regenerate on both versions.
     const [compiler] = compilerChildren(child.pid!);
-    assert.ok(compiler, 'the watch keeps its compiler process between runs');
+    if (!skipOnTypeScript6) assert.ok(compiler, 'the watch keeps its compiler process between runs');
 
     // Every edit must reach the warm compiler, not only the first one.
     for (const field of ['firstEdit', 'secondEdit', 'thirdEdit']) {
@@ -249,7 +250,7 @@ test('watch reuses one compiler across edits and tsconfig path-mapping changes',
     );
     writeTsconfig('./shared/v2.ts', [...tsconfig.include, 'types/**/*.d.ts']);
     await until(() => generated().includes('ambientShape'), `an include edit is applied ${context()}`);
-    assert.deepEqual(compilerChildren(child.pid!), [compiler], 'edits reuse the running compiler');
+    if (!skipOnTypeScript6) assert.deepEqual(compilerChildren(child.pid!), [compiler], 'edits reuse the running compiler');
   } finally {
     if (child.exitCode === null && child.signalCode === null) {
       const closed = new Promise<void>(resolve => child.once('close', () => resolve()));
