@@ -73,7 +73,6 @@ export function convertModelField<Arg, Value>(
   convert: (arg: Arg) => Value,
   arg: Arg,
 ): Value {
-  const previousLength = activeConversionPath.length;
   activeConversionPath.push(field);
   try {
     return convert(arg);
@@ -85,7 +84,7 @@ export function convertModelField<Arg, Value>(
       : `Field ${direction === 'serialize' ? 'serialization' : 'deserialization'} failed.`;
     throw conversionError(kind, message, activeConversionPath, error);
   } finally {
-    activeConversionPath.length = previousLength;
+    activeConversionPath.pop();
   }
 }
 
