@@ -244,6 +244,11 @@ export function formatDiagnostics(
   });
 }
 
+/**
+ * Every input a watch must react to: the sources, manifests, project configuration and files, and each local file the
+ * program read. Generated companions are left out, but the set may still include other files golem itself writes, so a
+ * host must filter the outputs it owns before it reacts to a change; golem's watch does so through its OwnedOutputIndex.
+ */
 export function projectWatchInputs(
   info: ProgramInfo,
   program: ts.Program,

@@ -27,14 +27,18 @@ function controllerProject(t: TestContext): IdentityCase {
   return { name: 'controller', kind: 'controller', root };
 }
 
-/** Generates every case in a child process and returns the artifact files it wrote, keyed by path relative to the output directory. */
-async function generateArtifacts(t: TestContext, cases: readonly IdentityCase[], typescriptRoot: string | undefined): Promise<ReadonlyMap<string, string>> {
+/** Generates every case in a child process and returns the TypeScript version it ran and the artifact files it wrote, keyed by path relative to the output directory. */
+async function generateArtifacts(
+  t: TestContext,
+  cases: readonly IdentityCase[],
+  typescriptRoot: string | undefined,
+): Promise<{ readonly typescriptVersion: string; readonly artifacts: ReadonlyMap<string, string> }> {
   const scratch = createFixtureProject(t, 'golem-identity-out-');
   const casesFile = path.join(scratch, 'cases.json');
   const outputDirectory = path.join(scratch, 'artifacts');
   fs.writeFileSync(casesFile, JSON.stringify(cases));
   // An explicit undefined removes GOLEM_TYPESCRIPT_ROOT even when this process runs in the TypeScript 6 lane.
-  await command(workspace, process.execPath, [path.join(workspace, '.build/tests/support/identity-generate.js'), casesFile, outputDirectory], {
+  const run = await command(workspace, process.execPath, [path.join(workspace, '.build/tests/support/identity-generate.js'), casesFile, outputDirectory], {
     env: { GOLEM_TYPESCRIPT_ROOT: typescriptRoot },
     timeout: 60_000,
   });
@@ -47,20 +51,27 @@ async function generateArtifacts(t: TestContext, cases: readonly IdentityCase[],
     }
   };
   visit(outputDirectory);
-  return new Map([...artifacts].sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0)));
+  const typescriptVersion = /^typescript (\S+)$/m.exec(run.stdout)?.[1];
+  assert.ok(typescriptVersion, `the child reports its TypeScript version (stdout=${run.stdout})`);
+  return { typescriptVersion, artifacts: new Map([...artifacts].sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))) };
 }
 
 test('TypeScript 6 and 7 generate byte-identical artifacts', { skip }, async t => {
   const cases = [
     // Each union-order model is generated alone, so the two programs create their literal types in different orders.
-    modelProject(t, 'union-order-a', 'models/union-order', ['a.model.ts']),
-    modelProject(t, 'union-order-b', 'models/union-order', ['b.model.ts']),
+    modelProject(t, 'union-order-a', 'models/union-order', ['a.model.ts', 'other.model.ts']),
+    modelProject(t, 'union-order-b', 'models/union-order', ['b.model.ts', 'other.model.ts']),
     modelProject(t, 'generic-default', 'models/identity/generic-default', ['codecs.ts', 'blob.model.ts']),
     modelProject(t, 'intersection', 'models/identity/intersection', ['parts.model.ts']),
     controllerProject(t),
   ];
-  const seven = await generateArtifacts(t, cases, undefined);
-  const six = await generateArtifacts(t, cases, typescript6Root);
+  const sevenRun = await generateArtifacts(t, cases, undefined);
+  const sixRun = await generateArtifacts(t, cases, typescript6Root);
+  // Each child must have run the version its lane names, or the byte comparison below compares one compiler with itself.
+  assert.match(sevenRun.typescriptVersion, /^7\./, 'the first child ran TypeScript 7');
+  assert.match(sixRun.typescriptVersion, /^6\./, 'the second child ran TypeScript 6');
+  const seven = sevenRun.artifacts;
+  const six = sixRun.artifacts;
 
   for (const item of cases) {
     assert.ok([...seven.keys()].some(artifact => artifact.startsWith(`${item.name}${path.sep}`)), `${item.name} must generate at least one artifact`);

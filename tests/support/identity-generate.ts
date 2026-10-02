@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { generate as generateControllers } from '#controllers/generator';
 import { generate as generateModels } from '#model/generator';
+import { typescriptVersion } from '#golem/typescript-ns';
 
 /** One project to generate; the identity test writes the list as JSON and runs this module in a child process per TypeScript version. */
 export type IdentityCase =
@@ -10,6 +11,9 @@ export type IdentityCase =
 
 const [casesFile, outputDirectory] = process.argv.slice(2);
 if (!casesFile || !outputDirectory) throw new Error('usage: identity-generate <cases.json> <output directory>');
+
+// The seam's own version, so the test can tell which TypeScript each child ran.
+process.stdout.write(`typescript ${typescriptVersion}\n`);
 
 const cases = JSON.parse(fs.readFileSync(casesFile, 'utf8')) as readonly IdentityCase[];
 for (const item of cases) {

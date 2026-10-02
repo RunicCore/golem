@@ -45,16 +45,17 @@ test('union members are emitted in canonical order whichever order the checker c
   // (Models in one program share their literal types, so the checker orders their unions alike and no such pair could fail.)
   const fieldLines = (name: 'a' | 'b'): string[] => {
     const project = createModelProject(t, { prefix: `golem-union-order-${name}-`, name: `union-order-${name}` });
-    writeFileSync(path.join(project.sourceRoot, `${name}.model.ts`), readFixture(`models/union-order/${name}.model.ts`));
+    for (const source of [`${name}.model.ts`, 'other.model.ts']) writeFileSync(path.join(project.sourceRoot, source), readFixture(`models/union-order/${source}`));
     const artifact = generate({ root: project.root, profile: { mobx: false, validation: true } }).artifacts
       .find(candidate => candidate.path.endsWith(`${name}.model.generated.ts`));
     assert.ok(artifact, `${name}.model.generated.ts must be generated`);
     // Every generated type alias that mentions a field, with the alias name normalised (codec-id lines carry hashes and are excluded).
     return artifact.content.split('\n')
-      .filter(line => /^(export )?type \w+ = /.test(line) && /\b(priority|mixed)\b/.test(line))
+      .filter(line => /^(export )?type \w+ = /.test(line) && /\b(priority|mixed|link)\b/.test(line))
       .map(line => line.replace(/\bT[AB](?![a-z])/g, 'T')); // TA, TAJSON, TABaseModel -> T, TJSON, TBaseModel
   };
   const fromA = fieldLines('a');
   assert.ok(fromA.length > 0, 'generated type aliases must mention the union fields');
+  assert.ok(fromA.some(line => /\blink\b/.test(line)), 'the model-reference union must be among the compared aliases');
   assert.deepEqual(fromA, fieldLines('b'));
 });
