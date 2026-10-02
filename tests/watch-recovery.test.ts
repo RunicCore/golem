@@ -6,10 +6,15 @@ import path from 'node:path';
 import { execFileSync, spawn } from 'node:child_process';
 import { runPipeline, watchPipeline } from '#golem/cli';
 import { contains } from '#golem/config';
+import { resolveTypeScript } from '#golem/typescript-version';
 import { GeneratorSessionResources } from '#golem/pipeline';
 import { OwnedOutputIndex } from '#golem/watch';
 import { workspace } from './support/process.js';
 import { writeFixture } from './support/consumer.js';
+
+// These tests count the TypeScript 7 compiler's server processes and sessions, which TypeScript 6 does not have.
+const skipOnTypeScript6 = resolveTypeScript(process.env.GOLEM_TYPESCRIPT_ROOT ?? process.cwd()).major === 6
+  && 'TypeScript 6 runs no compiler server process';
 
 function fixture(t: TestContext): { root: string; config: string } {
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'golem-watch-recovery-')));
@@ -181,7 +186,7 @@ function compilerChildren(parent: number): number[] {
     .map(match => Number(match[1]));
 }
 
-test('watch reuses one compiler across edits and tsconfig path-mapping changes', { skip: process.platform === 'win32' }, async (t: TestContext) => {
+test('watch reuses one compiler across edits and tsconfig path-mapping changes', { skip: process.platform === 'win32' || skipOnTypeScript6 }, async (t: TestContext) => {
   const { root, config } = fixture(t);
   const tsconfigFile = path.join(root, 'tsconfig.json');
   const tsconfig = JSON.parse(fs.readFileSync(tsconfigFile, 'utf8')) as { compilerOptions: Record<string, unknown>; include: string[] };
@@ -254,7 +259,7 @@ test('watch reuses one compiler across edits and tsconfig path-mapping changes',
   }
 });
 
-test('stopping an in-process watch closes its compiler', { skip: process.platform === 'win32' }, async (t: TestContext) => {
+test('stopping an in-process watch closes its compiler', { skip: process.platform === 'win32' || skipOnTypeScript6 }, async (t: TestContext) => {
   const { root, config } = fixture(t);
   const errors: unknown[] = [];
   const stop = watchPipeline(config, error => { errors.push(error); });
@@ -268,7 +273,7 @@ test('stopping an in-process watch closes its compiler', { skip: process.platfor
   assert.deepEqual(errors, []);
 });
 
-test('a pipeline session closes the compiler of a removed job', { skip: process.platform === 'win32' }, async (t: TestContext) => {
+test('a pipeline session closes the compiler of a removed job', { skip: process.platform === 'win32' || skipOnTypeScript6 }, async (t: TestContext) => {
   const { config } = fixture(t);
   const session = new GeneratorSessionResources();
   t.after(() => session[Symbol.dispose]());

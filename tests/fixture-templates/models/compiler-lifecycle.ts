@@ -29,8 +29,8 @@ export function manifestScaleClassSource({ index }: { readonly index: number }):
   const { generatedClass } = checkedIndex(index);
   const model = identifier(generatedClass);
   return tsSource`export class ${model} { declare value: string; }
-export function ${identifier(`stringifyscale_item_${index}`)}(value: ${model}): string { return JSON.stringify(value); }
-export function ${identifier(`toWireFormatscale_item_${index}`)}(value: ${model}): object { return { ...value }; }
+export function ${identifier(`stringifyscale_item_${index}`)}(value: ${model}, _trusted?: unknown): string { return JSON.stringify(value); }
+export function ${identifier(`toWireFormatscale_item_${index}`)}(value: ${model}, _trusted?: unknown): object { return { ...value }; }
 `;
 }
 

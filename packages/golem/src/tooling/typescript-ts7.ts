@@ -1037,7 +1037,10 @@ interface ProgramRequest {
   readonly configPath: string;
   readonly files: readonly string[];
   readonly overlays: ReadonlyMap<string, string>;
-  readonly hidden?: string;
+  /** Configuration paths the observer is not told about: virtual configurations are derived input. */
+  readonly hidden: ReadonlySet<string>;
+  /** Whether the project is the derived configuration that adds overlay-only roots. */
+  readonly derived: boolean;
 }
 
 type UpdateSnapshotParams = NonNullable<Parameters<API['updateSnapshot']>[0]>;
@@ -1078,12 +1081,13 @@ function compilerExited(error: unknown): boolean {
 
 function programRequest(options: OpenProgramOptions): ProgramRequest {
   const overlays = new Map([...options.overlays ?? []].map(([filename, content]) => [canonical(filename), content]));
-  const configPath = canonical(options.configFile === undefined
+  const baseConfigPath = canonical(options.configFile === undefined
     ? join(options.root, 'tsconfig.json')
     : isAbsolute(options.configFile) ? options.configFile : join(options.root, options.configFile));
-  const hidden = options.configFile !== undefined && overlays.has(configPath) ? configPath : undefined;
-  if (!overlays.has(configPath) && !sys.fileExists(configPath)) {
-    overlays.set(configPath, JSON.stringify({
+  const hidden = new Set<string>();
+  if (options.configFile !== undefined && overlays.has(baseConfigPath)) hidden.add(baseConfigPath);
+  if (!overlays.has(baseConfigPath) && !sys.fileExists(baseConfigPath)) {
+    overlays.set(baseConfigPath, JSON.stringify({
       compilerOptions: {
         strict: true,
         target: 'ES2022',
@@ -1095,12 +1099,17 @@ function programRequest(options: OpenProgramOptions): ProgramRequest {
       include: ['**/*.ts'],
     }));
   }
-  return {
-    configPath,
-    files: [...new Set(options.sources.map(canonical))],
-    overlays,
-    ...(hidden ? { hidden } : {}),
-  };
+  const files = [...new Set(options.sources.map(canonical))];
+  // The compiler builds a project from its configuration, and a file that exists only as an overlay is matched by no
+  // directory listing. A derived configuration that extends the project's own and names those files as roots adds them.
+  const overlayOnly = files.filter((filename) => overlays.has(filename) && fileSignature(filename) === MISSING);
+  let configPath = baseConfigPath;
+  if (overlayOnly.length > 0) {
+    configPath = join(dirname(baseConfigPath), `${basename(baseConfigPath, '.json')}.overlay-roots.json`);
+    overlays.set(configPath, JSON.stringify({ extends: `./${basename(baseConfigPath)}`, files: overlayOnly }));
+    hidden.add(configPath);
+  }
+  return { configPath, files, overlays, hidden, derived: overlayOnly.length > 0 };
 }
 
 /** Release a snapshot; one on an exited compiler is already gone. */
@@ -1142,7 +1151,7 @@ export class ProgramSession implements Disposable {
   private overlays: ReadonlyMap<string, string> = new Map();
   private overlayDirectories = new Set<string>();
   private observer: ((filename: string) => void) | undefined;
-  private hidden: string | undefined;
+  private hidden: ReadonlySet<string> = new Set();
   private readonly observed = new Set<string>();
   private readonly signatures = new Map<string, string>();
   private readonly listings = new Map<string, string>();
@@ -1174,7 +1183,7 @@ export class ProgramSession implements Disposable {
   /** Parse a project configuration with the session compiler. */
   parseConfigFile(configPath: string, onInput?: (filename: string) => void): { options: CompilerOptions; fileNames: string[] } {
     const parsed = this.withCompiler('parse', (api) => {
-      this.observe(onInput, undefined);
+      this.observe(onInput, new Set());
       return api.parseConfigFile(configPath);
     });
     return { options: parsed.options as CompilerOptions, fileNames: parsed.fileNames };
@@ -1228,7 +1237,7 @@ export class ProgramSession implements Disposable {
       replaceAll(this.openProjects, projects);
       replaceAll(this.openFiles, files);
       try {
-        const configuredProject = options.configFile === undefined ? undefined : snapshot.getProject(request.configPath);
+        const configuredProject = options.configFile === undefined && !request.derived ? undefined : snapshot.getProject(request.configPath);
         const project = configuredProject
           ?? (request.files[0] ? snapshot.getDefaultProjectForFile(request.files[0]) : undefined)
           ?? snapshot.getProject(request.configPath)
@@ -1333,13 +1342,13 @@ export class ProgramSession implements Disposable {
     }
   }
 
-  private observe(observer: ((filename: string) => void) | undefined, hidden: string | undefined): void {
+  private observe(observer: ((filename: string) => void) | undefined, hidden: ReadonlySet<string>): void {
     this.observer = observer;
     this.hidden = hidden;
   }
 
   private report(filename: string): void {
-    if (filename === this.hidden) return;
+    if (this.hidden.has(filename)) return;
     this.observed.add(filename);
     try {
       this.observer?.(filename);

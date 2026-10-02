@@ -203,6 +203,7 @@ export function projectWatchInputs(
   root: string,
   sources: readonly string[],
   manifestPaths: readonly string[],
+  ownedOutputs: readonly string[] = [],
 ): string[] {
   const inputs = new Set<string>([
     ...sources,
@@ -219,5 +220,7 @@ export function projectWatchInputs(
     if (program.isSourceFileFromExternalLibrary(sourceFile) || program.isSourceFileDefaultLibrary(sourceFile)) continue;
     inputs.add(filename);
   }
-  return [...inputs].filter((filename) => !isGeneratedCompanion(filename)).sort();
+  // Watching a file the run writes would trigger the run again.
+  const owned = new Set(ownedOutputs.map(canonicalFilename));
+  return [...inputs].filter((filename) => !isGeneratedCompanion(filename) && !owned.has(canonicalFilename(filename))).sort();
 }

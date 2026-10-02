@@ -62,3 +62,29 @@ test('a disk edit that changes a file signature gives a new SourceFile without i
   assert.ok(after && after !== before);
   assert.match(after.text, /value = 22/);
 });
+
+test('a source that exists only as an overlay is part of the program and its errors are reported', t => {
+  const root = createFixtureProject(t, 'golem-overlay-only-');
+  fs.mkdirSync(path.join(root, 'src'));
+  fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ name: 'overlay-only', private: true, type: 'module' }));
+  fs.writeFileSync(path.join(root, 'tsconfig.json'), JSON.stringify({
+    compilerOptions: { strict: true, skipLibCheck: true, noEmit: true, module: 'NodeNext', moduleResolution: 'NodeNext' },
+    include: ['src/**/*.ts'],
+  }));
+  const onDisk = path.join(root, 'src/on-disk.ts');
+  fs.writeFileSync(onDisk, 'export const onDisk: number = 1;\n');
+  // One overlay-only source matches the configuration's include and one lies outside it.
+  const inside = path.join(root, 'src/inside.generated.ts');
+  const outside = path.join(root, 'generated/outside.ts');
+  const overlays = new Map([[inside, 'export const inside: string = 1;\n'], [outside, 'export const outside: string = 2;\n']]);
+  using session = new ts.ProgramSession({ cwd: root });
+  using program = session.openProgram({ root, sources: [onDisk, inside, outside], overlays });
+  const listed = new Set(program.getSourceFiles().map(file => file.fileName));
+  for (const file of [onDisk, inside, outside]) assert.ok(listed.has(file), `${file} is part of the program`);
+  const reported = ts.getPreEmitDiagnostics(program)
+    .map(diagnostic => ts.formatDiagnosticsWithColorAndContext([diagnostic], { getCanonicalFileName: name => name, getCurrentDirectory: () => root, getNewLine: () => '\n' }));
+  for (const file of [inside, outside]) {
+    assert.ok(reported.some(text => text.includes(file) && text.includes('TS2322')), `${file} has its type error reported`);
+  }
+  assert.equal(reported.some(text => text.includes(onDisk)), false);
+});

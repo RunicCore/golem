@@ -498,6 +498,7 @@ export function generate(context: GolemModelContext): GolemModelResult {
       normalized.root,
       sources,
       referencedManifestFiles(graphs, manifestIndex),
+      artifacts.map((artifact) => artifact.path),
     ),
   };
 }
