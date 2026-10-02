@@ -61,6 +61,7 @@ test('quick start toggles a task, serializes it and validates it', async () => {
     ]);
     assert.deepEqual(info.mock.calls[0]?.arguments, ['saved task:', { title: 'Ship the generators', done: true, priority: 'high' }]);
     assert.equal(info.mock.calls.length, 8);
+    assert.deepEqual(info.mock.calls.at(-1)?.arguments, ['blank title:', 'Enter a title.']);
   } finally {
     info.mock.restore();
   }
@@ -159,19 +160,20 @@ test('a trusted conversion skips Ajv but still surfaces the issue on validateIns
   assert.equal(result.title, '');
 });
 
-test('money is integer minor units: an IObject round-trips exactly and rejects bad data', () => {
-  const money = readMoney('{"minorUnits":1250,"currency":"USD"}');
-  assert.deepEqual(money, { minorUnits: 1250, currency: 'USD' });
-  assert.equal(writeMoney(money), '{"minorUnits":1250,"currency":"USD"}');
-  assert.equal(isMoney({ minorUnits: -1, currency: 'USD' }), false);
-  assert.equal(isMoney({ minorUnits: 12.5, currency: 'USD' }), false);
-  assert.throws(() => readMoney('{"minorUnits":1,"currency":"GBP"}'), (error: unknown) => error instanceof LibError);
+test('money is a decimal string: an IObject round-trips "12.50" exactly and rejects bad data', () => {
+  const money = readMoney('{"amount":"12.50","currency":"USD"}');
+  assert.deepEqual(money, { amount: '12.50', currency: 'USD' });
+  assert.equal(writeMoney(money), '{"amount":"12.50","currency":"USD"}');
+  assert.equal(isMoney({ amount: 12.5, currency: 'USD' }), false);
+  assert.equal(isMoney({ amount: '12.505', currency: 'USD' }), false);
+  assert.equal(isMoney({ amount: '12.50', currency: 'usd' }), false);
+  assert.throws(() => readMoney('{"amount":"-1","currency":"USD"}'), (error: unknown) => error instanceof LibError);
 });
 
 test('the Budget IModel nests the TMoney IObject', async () => {
-  const budget = new Budget({ estimate: { minorUnits: 500, currency: 'USD' } });
+  const budget = new Budget({ estimate: { amount: '5.00', currency: 'USD' } });
   assert.deepEqual(await validateInstance(budget), []);
-  assert.deepEqual(toWireFormat<Budget>(budget), { estimate: { minorUnits: 500, currency: 'USD' } });
+  assert.deepEqual(toWireFormat<Budget>(budget), { estimate: { amount: '5.00', currency: 'USD' } });
 });
 
 test('a field typed with a class holds an instance and a derived type stays a plain object', async () => {

@@ -8,7 +8,7 @@ An offline task tracker built from golem models: one TypeScript declaration per 
 - Tags and rules: built-in and generic tags, collection tags, a custom field rule, instance rules, server errors and a permission bit mask that is hexadecimal in JSON.
 - Composition: nested and derived models, an assignee contact union, an open metadata model, and an attachment whose `Uint8Array` is base64 in JSON.
 - Dates: a `Date` reminder and Temporal schedule fields.
-- Money is an integer count of minor units, never a float.
+- Money is a decimal string with an ISO 4217 currency code, never a float.
 
 The example depends on `1.0.0-rc` of `@exprtlabs/golem*`, which is not published yet. Run it from this repository checkout: it resolves the packages from the root `node_modules`, so run `npm install` at the repository root first.
 
@@ -26,13 +26,13 @@ npm start          # the walkthrough below
 { title: 'Review the draft', done: true, priority: 'normal' }
 []
 saved task: { title: 'Ship the generators', done: true, priority: 'high' }
-estimate: {"minorUnits":1250,"currency":"USD"}
+estimate: {"amount":"12.50","currency":"USD"}
 assignee contact: phone
 attachment: { name: 'checksum.bin', content: 'AQID' }
 reminder: 2025-01-02T03:04:05.000Z
 schedule ends: 2025-01-02T04:34:05Z
 permission bits: 5
-blank title: must NOT have fewer than 1 characters
+blank title: Enter a title.
 ```
 
 ## Files
@@ -46,7 +46,7 @@ blank title: must NOT have fewer than 1 characters
 | `src/builtin-tags.model.ts`, `tag-aliases.model.ts`, `collection-tags.model.ts` | Built-in, generic and collection tags |
 | `src/permission-input.model.ts`, `permission-rules.ts` | A member's permission bits as a hexadecimal `TSerde` |
 | `src/assignee.model.ts`, `contact.model.ts`, `metadata.model.ts` | Nested and derived models, the contact union, exact and open metadata |
-| `src/comment.model.ts`, `estimate.model.ts`, `estimate-json.ts` | Plain-object `IObject` comments and a minor-unit estimate |
+| `src/comment.model.ts`, `estimate.model.ts`, `estimate-json.ts` | Plain-object `IObject` comments and a decimal-string estimate |
 | `src/attachment.model.ts`, `attachment-json.ts`, `base64-codec.ts` | Attachments as base64 bytes |
 | `src/reminder.model.ts`, `read-reminder.ts`, `schedule.model.ts`, `read-schedule.ts` | `Date` and Temporal fields |
 | `src/app.test.ts` | One offline case per feature |

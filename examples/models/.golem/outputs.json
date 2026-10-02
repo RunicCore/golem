@@ -53,14 +53,14 @@
     "src/estimate.model.generated.ts": {
       "job": "models:.",
       "owner": "@exprtlabs/golem-model",
-      "digest": "8e2850695afb6ee316c618500669b1c9fed13655055e04472ca10017efb17480",
+      "digest": "0d9bde0f0d831f249e0a9afb01c7de5f82d297664f4f1e51d981afa09341761d",
       "destination": "src",
       "destinationKind": "directory"
     },
     "src/generated/models/iobject-plugin-keys.ts": {
       "job": "models:.",
       "owner": "@exprtlabs/golem-model",
-      "digest": "9aff79d7bef2bf750fc130ed3de3fb45cadacd82e21214ca76cc8b78975564ec",
+      "digest": "a26262eb393ce30496452c7135bd40900c10a828b50004d8098a7c02339a1e9c",
       "destination": "src/generated/models",
       "destinationKind": "directory"
     },
