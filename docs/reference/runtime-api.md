@@ -265,7 +265,7 @@ import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/golem/con
 | Member | Signature | Behavior |
 | --- | --- | --- |
 | `encodeGeneratedModel` | `(model): GeneratedModelWire<Model>` | A detached JSON-shaped copy of a generated model. Does not validate. |
-| `decodeGeneratedModel` | `(constructor, value: unknown): GeneratedModelResult<Constructor>` | An instance of `constructor` from a copy of `value`. Returns an existing instance unchanged. Does not validate. |
+| `decodeGeneratedModel` | `(constructor, value: unknown): GeneratedModelResult<Constructor>` | Builds an instance from `value` without copying it first; fields without conversion are the input's own values. Returns an existing instance unchanged. Does not validate. |
 
 Use them when the type is known only at runtime:
 
@@ -280,7 +280,7 @@ export function responseBody(value: unknown): unknown {
 
 Both throw `LibError` for missing generated metadata or cyclic input. With a known type, use [`toWireFormat<T>`](#serde) and `fromWireFormat<T>`, which also validate.
 
-Used by generated code: `decodeGeneratedModelTrusted`, `deserializeDate`, `serializeDate`, `convertModelField`, `defineModelProperty`, `requireModelObject`, `assertAcyclicValue`, `assertPropertyAcyclic`, `unknownDiscriminatorValue`, `withDiscriminatorValue`, `jsonWithDiscriminator`.
+Used by generated code: `decodeGeneratedModelTrusted`, `deserializeDate`, `serializeDate`, `convertModelField`, `defineModelProperty`, `requireModelObject`, `assertAcyclicValue`, `assertPropertyAcyclic`, `assertWireAcyclic`, `beginDecode`, `endDecode`, `decodeDetachedInput`, `unknownDiscriminatorValue`, `withDiscriminatorValue`, `jsonWithDiscriminator`.
 
 ## `@exprtlabs/golem/tags` {#tags}
 

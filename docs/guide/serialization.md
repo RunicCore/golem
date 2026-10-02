@@ -33,7 +33,7 @@ With validation on, the default, these calls check the value with Ajv. `{ valida
 
 `JSON.stringify(model)` does not run conversion or validation.
 
-Decoding copies objects, maps (`Record<string, V>`) and arrays, and reads each declared property once, so a getter runs once. Values typed `unknown` or `any`, including the undeclared properties of an open object, are carried by reference: the result holds the same object as the input. Cyclic input throws `LibError` of kind `deserialization`.
+`fromWireFormat` and `parse` copy objects, maps (`Record<string, V>`) and arrays, and read each declared property once, so a getter runs once. Values typed `unknown` or `any`, including the undeclared properties of an open object, are carried by reference: the result holds the same object as the input. `decodeGeneratedModel` copies nothing: fields without conversion are the input's own values. Cyclic input throws `LibError` of kind `deserialization`.
 
 Do not write `stringify(toWireFormat(x))` or `fromWireFormat(parse(text))` on the JSON path. `stringify` writes JSON for the declared fields, applying each `TSerde` serialize formatter. `parse` reads that JSON back.
 
