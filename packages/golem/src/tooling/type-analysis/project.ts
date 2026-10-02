@@ -86,8 +86,48 @@ function uniqueFilenames(filenames: readonly string[]): string[] {
   return [...new Set(filenames.map(canonicalFilename))];
 }
 
+/**
+ * The project configurations a solution tsconfig references. Both compilers parse a solution (`files: []` plus
+ * `references`) to no files and no options, and the TypeScript 7 parse reports no references, so the list is read here.
+ */
+function referencedConfigs(solutionPath: string, onInput?: InputObserver): string[] {
+  onInput?.(canonicalFilename(solutionPath));
+  // The compiler parsed this file, so it is JSON with comments and trailing commas; strings match first and stay whole.
+  const json = (ts.sys.readFile(solutionPath) ?? '').replace(
+    /("(?:[^"\\]|\\.)*")|\/\/[^\n]*|\/\*[\s\S]*?\*\/|,(?=(?:\s|\/\/[^\n]*|\/\*[\s\S]*?\*\/)*[}\]])/g,
+    (_match, text: string | undefined) => text ?? '',
+  );
+  const { references } = JSON.parse(json) as { references?: readonly { readonly path: string }[] };
+  return (references ?? []).map(({ path }) => {
+    const target = resolve(dirname(solutionPath), path);
+    return path.endsWith('.json') ? target : join(target, 'tsconfig.json');
+  });
+}
+
+/**
+ * The project a solution tsconfig leaves to a reference: the first referenced configuration whose files include every
+ * requested source, with the options of that project. Without references the file is no solution.
+ */
+function referencedProject(
+  solutionPath: string,
+  sources: readonly string[],
+  session: ts.ProgramSession,
+  onInput?: InputObserver,
+): { readonly configPath: string; readonly parsed: ReturnType<ts.ProgramSession['parseConfigFile']> } | undefined {
+  const references = referencedConfigs(solutionPath, onInput);
+  if (references.length === 0) return undefined;
+  const requested = uniqueFilenames(sources);
+  for (const configPath of references) {
+    const parsed = session.parseConfigFile(configPath, onInput);
+    const files = new Set(uniqueFilenames(parsed.fileNames));
+    if (requested.every((source) => files.has(source))) return { configPath, parsed };
+  }
+  throw new Error(`The solution tsconfig ${canonicalFilename(solutionPath)} references no project that includes ${requested.join(', ')}.`);
+}
+
 function parsedProject(
   root: string,
+  sources: readonly string[],
   session: ts.ProgramSession,
   onInput?: InputObserver,
 ): {
@@ -112,11 +152,14 @@ function parsedProject(
       },
     };
   }
-  const parsed = session.parseConfigFile(configPath, onInput);
+  let project = { configPath, parsed: session.parseConfigFile(configPath, onInput) };
+  // A solution tsconfig lists no files of its own; the referenced project that holds the sources has the files and options.
+  if (project.parsed.fileNames.length === 0) project = referencedProject(configPath, sources, session, onInput) ?? project;
+  const { parsed } = project;
   const projectFiles = uniqueFilenames(parsed.fileNames);
   const ambientFiles = projectFiles.filter(isAmbientDeclaration).filter((filename) => !isGeneratedCompanion(filename));
   return {
-    configPath: canonicalFilename(configPath),
+    configPath: canonicalFilename(project.configPath),
     projectFiles,
     ambientFiles,
     options: parsed.options,
@@ -147,11 +190,12 @@ export function createProgram(
   retained?: ts.ProgramSession,
 ): ProgramInfo {
   const session = retained ?? new ts.ProgramSession({ cwd: root, closeWhenIdle: true });
-  const parsed = parsedProject(root, session, onInput);
+  const parsed = parsedProject(root, sources, session, onInput);
   const rootNames = uniqueFilenames([...sources, ...parsed.ambientFiles]);
   const program = session.openProgram({
     root,
     sources: rootNames,
+    ...(parsed.configPath ? { configFile: parsed.configPath } : {}),
     onInput,
   });
   const host = ts.createCompilerHost(parsed.options, true);
@@ -182,6 +226,7 @@ export function createOverlayProgram(
   ]);
   return info.program.session.openProgram({
     root: dirname(info.configPath ?? sources[0] ?? '.'),
+    ...(info.configPath ? { configFile: info.configPath } : {}),
     sources: rootNames,
     overlays,
     onInput,

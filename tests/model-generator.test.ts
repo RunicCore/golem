@@ -261,3 +261,50 @@ test('a model source outside the job root generates next to an internal one on e
     assert.ok(fs.existsSync(path.join(external, 'outside.model.generated.ts')), `the ${run} run wrote the external companion`);
   }
 });
+
+/** A create-vite style solution: the root tsconfig lists no files and references the project that does. */
+function solutionProject(t: TestContext, references: readonly string[]): { readonly root: string; readonly sourceRoot: string } {
+  const created = project(t);
+  // Comments and trailing commas are valid in a tsconfig, so the solution carries both.
+  fs.writeFileSync(
+    path.join(created.root, 'tsconfig.json'),
+    `// The solution lists no files.\n{ "files": [], /* projects: */ "references": [${references.map(reference => `{ "path": ${JSON.stringify(reference)}, }`).join(', ')},], }\n`,
+  );
+  fs.writeFileSync(path.join(created.root, 'tsconfig.app.json'), JSON.stringify({
+    compilerOptions: {
+      strict: true,
+      target: 'ES2022',
+      module: 'ESNext',
+      moduleResolution: 'Bundler',
+      lib: ['ES2022', 'DOM'],
+      paths: { '@lib/*': ['./src/lib/*'] },
+      noEmit: true,
+      skipLibCheck: true,
+    },
+    include: ['src/**/*.ts'],
+  }));
+  fs.writeFileSync(path.join(created.root, 'tsconfig.other.json'), JSON.stringify({ compilerOptions: { strict: true }, include: ['other/**/*.ts'] }));
+  return created;
+}
+
+test('a solution tsconfig generates with the options of the referenced project that holds the model', (t: TestContext) => {
+  const { root, sourceRoot } = solutionProject(t, ['./tsconfig.other.json', './tsconfig.app.json']);
+  writeModelSources(sourceRoot, {
+    // The alias needs the app project's paths and Blob its DOM lib; the solution root has neither.
+    'lib/ids.ts': 'export type Id = string;\nexport const sizeOf = (blob: Blob): number => blob.size;\n',
+    'item.model.ts': taggedModelSource({ name: 'Item', imports: tsSource`import type { Id } from '@lib/ids';`, fields: tsSource`id: Id` }),
+  });
+  const result = generate({ root, profile: { mobx: false, validation: true } });
+  assert.ok(result.artifacts.some(artifact => artifact.path === path.join(sourceRoot, 'item.model.generated.ts')));
+});
+
+test('a solution tsconfig whose references hold no model source names the solution and the source', (t: TestContext) => {
+  const { root, sourceRoot } = solutionProject(t, ['./tsconfig.other.json']);
+  writeModelSources(sourceRoot, { 'item.model.ts': taggedModelSource({ name: 'Item', fields: tsSource`id: string` }) });
+  assert.throws(
+    () => generate({ root, profile: { mobx: false, validation: true } }),
+    (error: unknown) => error instanceof Error
+      && error.message.includes(path.join(root, 'tsconfig.json'))
+      && error.message.includes(path.join(sourceRoot, 'item.model.ts')),
+  );
+});
