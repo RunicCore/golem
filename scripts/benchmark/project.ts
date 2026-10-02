@@ -13,7 +13,7 @@ const featureSources = [
   'payloads.ts', 'feature-tags.ts', 'features.model.ts', 'features.iobject.model.ts',
   'features-class-transformer.models.ts', 'features-class-validator.models.ts',
   'comparison-features-golem.ts', 'comparison-features-golem-object.ts',
-  'comparison-features-class-transformer.ts', 'comparison-features-class-validator.ts',
+  'comparison-features-class-transformer.ts', 'comparison-features-class-validator.ts', 'access-rules.ts',
 ];
 
 function prepare(directory: string, kind: ProjectKind): string {
@@ -24,7 +24,6 @@ function prepare(directory: string, kind: ProjectKind): string {
   writeFileSync(path.join(project, 'package.json'), JSON.stringify({ private: true, type: 'module' }));
   copyFileSync(path.join(root, 'scripts/benchmark/fixture-contract.ts'), path.join(src, 'fixture-contract.ts'));
   for (const name of featureSources) copyFileSync(path.join(featureDirectory, name), path.join(src, name));
-  copyFileSync(path.join(root, 'examples/showcase/src/access-rules.ts'), path.join(src, 'access-rules.ts'));
   writeFileSync(path.join(project, 'tsconfig.json'), JSON.stringify({
     compilerOptions: {
       target: 'ES2022', module: 'NodeNext', moduleResolution: 'NodeNext', strict: true, skipLibCheck: true,

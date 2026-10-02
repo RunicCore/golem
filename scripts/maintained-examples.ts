@@ -1,11 +1,11 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-/** Standalone source examples: one packed-consumer project per generator profile. */
-export const SOURCE_EXAMPLES = ['model', 'models', 'openapi', 'combined', 'model-mobx', 'combined-mobx', 'showcase', 'nest-openapi', 'client-features'] as const;
+/** Source examples with no toolchain of their own: they resolve the workspace packages from the root `node_modules`. */
+export const SOURCE_EXAMPLES = ['models'] as const;
 
 /** Framework projects with their own toolchain. */
-export const FRAMEWORK_EXAMPLES = ['react-mobx', 'payments'] as const;
+export const FRAMEWORK_EXAMPLES = ['payments'] as const;
 
 /** Every maintained project under `examples/`. */
 export const EXAMPLE_NAMES = [...SOURCE_EXAMPLES, ...FRAMEWORK_EXAMPLES] as const;

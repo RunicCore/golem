@@ -66,6 +66,6 @@ test('release consistency rejects an example project missing from the maintained
   assert.throws(() => assertReleaseConsistency(root), /must match the maintained example inventory/);
 
   fs.rmSync(path.join(root, 'examples', 'unlisted'), { recursive: true });
-  fs.rmSync(path.join(root, 'examples', 'showcase'), { recursive: true });
+  fs.rmSync(path.join(root, 'examples', 'models'), { recursive: true });
   assert.throws(() => assertReleaseConsistency(root), /must match the maintained example inventory/);
 });

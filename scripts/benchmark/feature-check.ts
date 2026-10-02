@@ -24,9 +24,8 @@ function prepare(directory: string, mode: Mode): string {
     },
     include: ['src/**/*.ts'],
   }));
-  for (const name of ['features.model.ts', 'features.iobject.model.ts', 'feature-tags.ts', 'cases.ts']) copyFileSync(path.join(featureDirectory, name), path.join(source, name));
+  for (const name of ['features.model.ts', 'features.iobject.model.ts', 'feature-tags.ts', 'cases.ts', 'access-rules.ts']) copyFileSync(path.join(featureDirectory, name), path.join(source, name));
   copyFileSync(path.join(root, 'scripts/benchmark/fixture-contract.ts'), path.join(source, 'fixture-contract.ts'));
-  copyFileSync(path.join(root, 'examples/showcase/src/access-rules.ts'), path.join(source, 'access-rules.ts'));
   const profile = { mobx: false, validation: mode !== 'conversion-only', ajvStandalone: mode === 'standalone-ajv' };
   const manifest = generateFeatureMoneySdk(project, source, { validation: profile.validation, ajvStandalone: profile.ajvStandalone });
   const result = generate({ root: project, profile, manifestInputs: [manifest] });

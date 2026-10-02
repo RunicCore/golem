@@ -5,8 +5,6 @@
   "type": "module",
   "workspaces": [
     "packages/*",
-    "examples/react-mobx",
-    "examples/nest-openapi",
     "examples/payments"
   ],
   "engines": {
@@ -25,7 +23,6 @@
     "test:prepare": "bash scripts/test-runner/run.sh prepare",
     "test:native": "npm run build:tests && node .build/scripts/test-tier.js full --native",
     "test:go": "npm run build:scripts && node .build/scripts/test-go-plugin.js",
-    "check:react": "npm run check --workspace examples/react-mobx && npm test --workspace examples/react-mobx && npm run build --workspace examples/react-mobx",
     "generate:examples": "npm run build && npm run build:scripts && node .build/scripts/examples.js generate",
     "generate:openapi-compliance": "npm run build:scripts && node .build/packages/golem-openapi/compliance/generate-matrix.js",
     "check:openapi-compliance": "npm run build:scripts && node .build/packages/golem-openapi/compliance/generate-matrix.js --check",

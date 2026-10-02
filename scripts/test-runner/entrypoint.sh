@@ -27,7 +27,7 @@ if [ "$tier" != prepare ]; then export npm_config_offline=true GOPROXY=off; fi
 # reuses it while the workspace manifests are unchanged. The checked-in
 # lockfile is never edited. rsync restores it on every run, so copy each time.
 linux_lock=/cache/linux-lock
-manifest_hash="$(printf '%s\n' package.json packages/*/package.json examples/react-mobx/package.json examples/nest-openapi/package.json examples/payments/package.json \
+manifest_hash="$(printf '%s\n' package.json packages/*/package.json examples/payments/package.json \
   | LC_ALL=C sort | xargs sha256sum | sha256sum | cut -c1-64)"
 if [ -f "$linux_lock/package-lock.json" ] && [ "$(cat "$linux_lock/manifests.sha256" 2>/dev/null || true)" = "$manifest_hash" ]; then
   cp "$linux_lock/package-lock.json" package-lock.json

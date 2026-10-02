@@ -1,5 +1,0 @@
-version: 1
-mobx: true
-validation: false
-models:
-  root: .

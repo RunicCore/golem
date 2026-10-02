@@ -1,4 +1,3 @@
-// #region model-and-tags
 import type { Integer, Maximum, MaxLength, MinLength, Pattern, TSerde, TValidation, Minimum } from '@exprtlabs/golem/tags';
 
 export type ProjectName = string & MinLength<3> & MaxLength<48> & Pattern<'^[A-Za-z][A-Za-z0-9 -]*$'>;
@@ -39,4 +38,3 @@ export function deserializePermissions(value: PermissionWire): number {
   }
   return decoded;
 }
-// #endregion model-and-tags
