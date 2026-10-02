@@ -1184,26 +1184,25 @@ interface FillValue {
   readonly value: string;
   /** The conversion changes the value. */
   readonly converted: boolean;
-  /** The value is carried by reference or can recurse, so it was checked for cycles. */
+  /** The value is carried by reference, so it was checked for cycles. */
   readonly checked: boolean;
 }
 
 /**
- * Reads the source property once. A value the result shares with the input, or that reaches `recursiveId` again,
- * is checked for cycles against `wire` first; a conversion that can throw runs under the field's path.
+ * Reads the source property once. A value the result shares with the input is checked for cycles against
+ * `wire` first (a recursive node's fill registers its own wire); a conversion that can throw runs under the field's path.
  */
 function emitFillValue(
   property: ModelTypeDescriptor,
   read: string,
   field: string,
   local: string,
-  recursiveId: string | undefined,
   ctx: EmitCtx,
 ): FillValue {
   const before = fallibleConversions;
   const decoded = emitDecodeValue(property, read, ctx);
   const fallible = emittedFallible(before, decoded);
-  const checked = sharesInput(property, ctx) || (recursiveId !== undefined && reachesNode(property, recursiveId, ctx));
+  const checked = sharesInput(property, ctx);
   const converted = decoded !== read;
   if (!checked && !fallible && countOccurrences(decoded, read) <= 1) return { statements: [], value: decoded, converted, checked };
   const input = checked ? `assertPropertyAcyclic(wire, ${field}, ${read})` : read;
@@ -1238,13 +1237,14 @@ function emitFillFunction(
   if (properties.length === 0 && !additionalSchema && patternConstraints.length === 0) {
     // Every property is carried over as it is, so the whole input is checked.
     return {
-      source: `${exported}function ${fn}(out: Record<string, unknown>, wire: Record<string, unknown>): Record<string, unknown> {\n  assertAcyclicValue(wire);\n  return Object.assign(out, wire);\n}\n`,
+      source: `${exported}function ${fn}(out: Record<string, unknown>, wire: Record<string, unknown>): Record<string, unknown> {\n  assertWireAcyclic(wire);\n  return Object.assign(out, wire);\n}\n`,
       copyIdentity: false,
       needsFill: true,
     };
   }
   const required = new Set(descriptor.required);
-  const recursiveId = reachesNode(descriptor, node.id, ctx) ? node.id : undefined;
+  // A recursive node registers the wire it decodes, so a cycle in the input stops at the repeated object.
+  const recursive = reachesNode(descriptor, node.id, ctx);
   const identityWrites: string[] = [];
   const propertyWrites: string[] = [];
   let copyIdentity = false;
@@ -1252,7 +1252,7 @@ function emitFillFunction(
   properties.forEach(([name, property], index) => {
     const field = JSON.stringify(name);
     const read = access('wire', name);
-    const fill = emitFillValue(property, read, field, `__golemWire${index}`, recursiveId, ctx);
+    const fill = emitFillValue(property, read, field, `__golemWire${index}`, ctx);
     const proto = name === '__proto__';
     if (fill.converted || fill.checked || proto) needsFill = true;
     if (!fill.converted && !fill.checked && !proto) {
@@ -1306,7 +1306,7 @@ function emitFillFunction(
       // A pattern without a field schema carries the value by reference.
       const value = schema === undefined
         ? { statements: [], value: 'assertPropertyAcyclic(wire, key, wire[key])', converted: false, checked: true }
-        : emitFillValue(schema, 'wire[key]', 'key', '__golemValue', undefined, ctx);
+        : emitFillValue(schema, 'wire[key]', 'key', '__golemValue', ctx);
       if (value.converted || value.checked) needsFill = true;
       return [
         ...value.statements.map((line) => `${indent}${line}`),
@@ -1331,8 +1331,12 @@ function emitFillFunction(
     if (carriesExtras) lines.push(...emitExtra(undefined, '    '));
     lines.push('  }');
   }
-  lines.push('  return out;', '}', '');
-  return { source: lines.join('\n'), copyIdentity, needsFill };
+  lines.push('  return out;');
+  const body = lines.splice(1);
+  const source = recursive
+    ? [declaration, '  beginDecode(wire);', '  try {', ...body.map((line) => `  ${line}`), '  } finally {', '    endDecode(wire);', '  }', '}', '']
+    : [declaration, ...body, '}', ''];
+  return { source: source.join('\n'), copyIdentity, needsFill };
 }
 
 function emitEncodeValue(descriptor: ModelTypeDescriptor, expression: string, ctx: EmitCtx): string {
@@ -1597,10 +1601,14 @@ function emitNodeRuntime(
   }
   if (objectDescriptor) {
     // A constructed model starts from one copy of the input; fill reads each property from that copy.
+    // A recursive model also registers the input itself, so a cycle back to it is found at the first repeat.
+    const recursive = objectDescriptor !== undefined && reachesNode(objectDescriptor, node.id, ctx);
     const constructed = fill?.needsFill
       ? [
         `      const copy = { ...${asRecord('wire')} };`,
+        ...(recursive ? ['      beginDecode(wire);', '      try {'] : []),
         `      result = Reflect.construct(options.construct, [${fillName}(copy, copy${fill.copyIdentity ? ', false' : ''})]);`,
+        ...(recursive ? ['      } finally {', '        endDecode(wire);', '      }'] : []),
       ]
       : [`      result = Reflect.construct(options.construct, [{ ...${asRecord('wire')} }]);`];
     convertLines.push(
@@ -1615,7 +1623,7 @@ function emitNodeRuntime(
     );
   } else {
     // Values the result shares with the input are checked here; a model's fill checks its own fields.
-    if (sharesInput(node.descriptor, ctx)) convertLines.push('  assertAcyclicValue(wire);');
+    if (sharesInput(node.descriptor, ctx)) convertLines.push('  assertWireAcyclic(wire);');
     convertLines.push(`  const result = ${decodedExpr && decodedExpr !== 'wire' ? decodedExpr : 'wire'};`);
   }
   if (validationEnabled && node.modelOnlyJsonSchema !== undefined) {
@@ -1670,7 +1678,7 @@ function emitNodeRuntime(
 
   const parseLines = [
     `${exported}function ${parseName}(text: string, options?: ${SERDE_OPTIONS}): ${fieldsType ?? 'unknown'} {`,
-    `  return ${convertName}(parseJson(text), options)${fieldsType ? ` as ${fieldsType}` : ''};`,
+    `  return decodeDetachedInput(${convertName}, parseJson(text), options)${fieldsType ? ` as ${fieldsType}` : ''};`,
     '}',
     '',
   ];

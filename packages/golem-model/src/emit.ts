@@ -1460,8 +1460,11 @@ export function emitSource(
   conversionHelpers.add('define');
   conversionHelpers.add('field');
   const conversionImports = [
-    'assertAcyclicValue',
     'assertPropertyAcyclic',
+    'assertWireAcyclic',
+    'beginDecode',
+    'decodeDetachedInput',
+    'endDecode',
     ...(needsGeneratedDecode ? ['decodeGeneratedModelTrusted'] : []),
     ...(needsGeneratedEncode ? ['encodeGeneratedModel'] : []),
     ...(conversionHelpers.has('field') ? ['convertModelField'] : []),

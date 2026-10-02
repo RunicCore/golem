@@ -91,17 +91,21 @@ export function convertModelField<Arg, Value>(
 
 let activeDecodeValues: WeakMap<object, Function | Set<Function>> | undefined;
 let activeEncodeModels: Set<object> | undefined;
+/** Wire objects a generated recursive `fill` is decoding; a wire already in it is a cycle. */
+const activeDecodeWires = new Set<object>();
+/** Greater than zero while a generated decoder runs over `JSON.parse` output, which cannot be cyclic. */
+let detachedInputDepth = 0;
 
 /**
  * Reject active-path cycles before a validator or generated converter walks a
- * value. Shared references are allowed: the active list is popped on return.
+ * value. Shared references are allowed: the active set drops a value on return.
  * The issue path starts at the active conversion path.
  */
 export function assertAcyclicValue(
   value: unknown,
   kind: LibErrorKind.Serialization | LibErrorKind.Deserialization = LibErrorKind.Deserialization,
 ): void {
-  walkConversionInput(value, kind, [], [...activeConversionPath]);
+  walkConversionInput(value, kind, new Set(), [...activeConversionPath]);
 }
 
 /**
@@ -109,25 +113,62 @@ export function assertAcyclicValue(
  * and walk recursive structures. They call this with the object being decoded,
  * the field and the field's value, and use the returned value. A cycle in
  * `value`, including one back to `owner`, throws with the active conversion
- * path plus `field` and the path inside `value`.
+ * path plus `field` and the path inside `value`. Nothing is checked while a
+ * decoder runs over parsed JSON text.
  */
 export function assertPropertyAcyclic(owner: object, field: string | number, value: unknown): unknown {
-  if (value === null || typeof value !== 'object') return value;
-  walkConversionInput(value, LibErrorKind.Deserialization, [owner], [...activeConversionPath, field]);
+  if (detachedInputDepth > 0 || value === null || typeof value !== 'object') return value;
+  walkConversionInput(value, LibErrorKind.Deserialization, new Set([owner]), [...activeConversionPath, field]);
   return value;
+}
+
+/** `assertAcyclicValue` for generated decoders: nothing is checked over parsed JSON text. */
+export function assertWireAcyclic(value: unknown): void {
+  if (detachedInputDepth === 0) assertAcyclicValue(value);
+}
+
+/**
+ * A generated recursive `fill` registers the object it decodes and rejects one that is already
+ * being decoded, so each level costs one set operation instead of a walk of its subtree. The issue
+ * path is the active conversion path. Call `endDecode` in a `finally`.
+ */
+export function beginDecode(wire: object): void {
+  if (detachedInputDepth > 0) return;
+  if (activeDecodeWires.has(wire)) {
+    throw conversionError(LibErrorKind.Deserialization, 'Cyclic values cannot be converted.', [...activeConversionPath], undefined, true);
+  }
+  activeDecodeWires.add(wire);
+}
+
+export function endDecode(wire: object): void {
+  if (detachedInputDepth === 0) activeDecodeWires.delete(wire);
+}
+
+/** Runs a generated decoder over the output of `JSON.parse`; a tree parsed from text has no cycle to check. */
+export function decodeDetachedInput<Options, Value>(
+  convert: (wire: unknown, options: Options) => Value,
+  wire: unknown,
+  options: Options,
+): Value {
+  detachedInputDepth++;
+  try {
+    return convert(wire, options);
+  } finally {
+    detachedInputDepth--;
+  }
 }
 
 function walkConversionInput(
   value: unknown,
   kind: LibErrorKind.Serialization | LibErrorKind.Deserialization,
-  active: object[],
+  active: Set<object>,
   path: (string | number)[],
 ): void {
   if (value === null || typeof value !== 'object' || value instanceof Date) return;
-  if (active.includes(value)) {
+  if (active.has(value)) {
     throw conversionError(kind, 'Cyclic values cannot be converted.', [...path], undefined, kind === LibErrorKind.Deserialization);
   }
-  active.push(value);
+  active.add(value);
   if (Array.isArray(value)) {
     for (let index = 0; index < value.length; index++) {
       path.push(index);
@@ -163,7 +204,7 @@ function walkConversionInput(
       }
     }
   }
-  active.pop();
+  active.delete(value);
 }
 
 function decodeGeneratedModelValue(

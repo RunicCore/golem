@@ -183,6 +183,54 @@ test('generated decode of a recursive object rejects a cycle instead of overflow
   assert.throws(() => fromWireFormatTTree(tree, { validate: false }), cycleAt(['next']));
 });
 
+/** A chain of `length` objects linked by `next` whose getter counts every read, standing in for the visits of one decode. */
+function countedChain(length: number, counter: { reads: number }): Record<string, unknown> {
+  let node: Record<string, unknown> = {};
+  for (let index = 1; index < length; index++) {
+    const next = node;
+    node = {};
+    Object.defineProperty(node, 'next', { enumerable: true, get() { counter.reads++; return next; } });
+  }
+  return node;
+}
+
+test('generated decode of a recursive object visits each level once', async (t) => {
+  const { fromWireFormatTTree } = await loadCodecs(t, 'recursive');
+  const visits = (length: number): number => {
+    const counter = { reads: 0 };
+    fromWireFormatTTree(countedChain(length, counter), { validate: false });
+    return counter.reads;
+  };
+  const fifty = visits(50);
+  const hundred = visits(100);
+  assert.equal(fifty, 49);
+  assert.equal(hundred, 99);
+});
+
+test('a rejected cycle leaves no decode state behind', async (t) => {
+  const { fromWireFormatTTree, fromWireFormatTNode } = await loadCodecs(t, 'recursive');
+  const tree: { next?: unknown } = {};
+  tree.next = tree;
+  assert.throws(() => fromWireFormatTTree(tree, { validate: false }), cycleAt(['next']));
+  delete tree.next;
+  assert.deepEqual(fromWireFormatTTree(tree, { validate: false }), {});
+  assert.deepEqual(fromWireFormatTTree({ next: { next: {} } }, { validate: false }), { next: { next: {} } });
+  class Construct { constructor(public fields: unknown) {} }
+  const node: { label: string; children: unknown[] } = { label: 'root', children: [] };
+  node.children = [node];
+  assert.throws(() => fromWireFormatTNode(node, { validate: false, construct: Construct } as never), cycleAt(['children', 0]));
+  node.children = [];
+  assert.ok(fromWireFormatTNode(node, { validate: false, construct: Construct } as never) instanceof Construct);
+});
+
+test('parsed JSON text is decoded without cycle checks', async (t) => {
+  const { fromWireFormatTTree, parseTTree } = await loadCodecs(t, 'recursive') as Record<string, FromWire> & { parseTTree: (text: string, options?: { validate?: boolean }) => unknown };
+  assert.deepEqual(parseTTree('{"next":{"next":{}}}', { validate: false }), { next: { next: {} } });
+  const tree: { next?: unknown } = {};
+  tree.next = tree;
+  assert.throws(() => fromWireFormatTTree(tree, { validate: false }), cycleAt(['next']));
+});
+
 test('generated decode copies declared objects and carries unknown values by reference', async (t) => {
   const { fromWireFormatTRecord, fromWireFormatTShelf } = await loadCodecs(t, 'recursive');
   const wire = { payload: { nested: { a: 1 } } };
