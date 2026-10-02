@@ -320,6 +320,14 @@ An error prints its code, location when known, and message, then stops generatio
 
 **Rewrite site outside the project root.** A file that the TypeScript project includes but that lies outside the project root holds a serde call with a type argument, or a class that extends a generated model base class. The index in `.golem/rewrites.json` is keyed by files under the root, so golem can't rewrite it. The message names the file. **Fix:** Move the file under the root, or run `golem generate` for the package that contains it.
 
+### RUNM1071
+
+**Nest parameter type has no codec.** A `@Body()` or `@Query()` parameter's type has the name of a model, but no single model matches it, usually because two models in different files share the name and the type is not one of them. The message shows the decorator and the type, such as `@Body() type Payment has no unique codec id`. **Fix:** Type the parameter with the exported `IModel` or `IObject` alias or the model class, imported from the file that declares it.
+
+### RUNM1072
+
+**Nest parameter disagrees with the generated operations.** `golem check` found a `@Body()` or `@Query()` parameter whose model is missing from `src/generated/operation-codecs.ts`, or that file does not exist. The controllers job writes that file from the routes it reads, so the parameter is not part of a route it generated. The message shows the decorator and the type. **Fix:** Run `golem generate`. If the parameter belongs to a method that is not a route, add its file to the controllers job's `sources`, or give the parameter a primitive type.
+
 ## Client generator (OPENAPI)
 
 ### OPENAPI_BROWSER_COOKIE

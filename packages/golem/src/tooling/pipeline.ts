@@ -10,7 +10,7 @@ import { validateModelManifest } from './model-manifest.js';
 import type { GolemArtifact, GolemDiagnostic, GolemResult, GeneratorSession } from './generator-api.js';
 import { assertRuntimeCompatible } from './runtime-compatibility.js';
 import { REWRITE_INDEX_PATH } from './rewrite.js';
-import { assertRewriteIndexCurrent, scanProjectRewrites, writeRewriteIndex } from './rewrite-scan.js';
+import { assertRewriteIndexCurrent, checkNestCodecs, scanProjectRewrites, writeRewriteIndex } from './rewrite-scan.js';
 
 export type InputKind = 'config' | 'controllers' | 'openapi' | 'models' | 'generator';
 
@@ -430,6 +430,8 @@ export async function runPipeline(filename: string, options: PipelineOptions = {
     if (errors.length > 0) throw new Error(errorDiagnosticsMessage('golem rewrite scan', errors));
     if (options.check) {
       assertRewriteIndexCurrent(root, scanned.index);
+      const disagreements = nest ? checkNestCodecs(root, scanned) : [];
+      if (disagreements.length > 0) throw new Error(errorDiagnosticsMessage('golem nest codec check', disagreements));
       continue;
     }
     writeRewriteIndex(root, scanned.index);
