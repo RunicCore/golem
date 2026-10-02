@@ -49,6 +49,20 @@ if [ "$(cat node_modules/.golem-lock-hash 2>/dev/null || true)" != "$lock_hash" 
   echo "$lock_hash" > node_modules/.golem-lock-hash
 fi
 npm run build:tests
+# TypeScript 6 lane: its tests point GOLEM_TYPESCRIPT_ROOT at a project whose `typescript` is 6.x.
+# It is installed once per spec into the cache volume. `prepare` fills the npm cache; other tiers install offline from it.
+typescript6_spec="$(node -e "import('./.build/scripts/third-party-installs.js').then(({ TYPESCRIPT6 }) => process.stdout.write(TYPESCRIPT6))")"
+typescript6_root=/cache/typescript6
+if [ "$(cat "$typescript6_root/.spec" 2>/dev/null || true)" != "$typescript6_spec" ]; then
+  rm -rf "$typescript6_root"
+  mkdir -p "$typescript6_root"
+  echo '{ "private": true }' > "$typescript6_root/package.json"
+  (cd "$typescript6_root" && npm install --ignore-scripts --no-audit --no-fund "$typescript6_spec") || {
+    rm -rf "$typescript6_root"
+    echo "npm install $typescript6_spec failed. Run: npm run test:prepare" >&2; exit 2; }
+  echo "$typescript6_spec" > "$typescript6_root/.spec"
+fi
+export GOLEM_TYPESCRIPT6_ROOT="$typescript6_root"
 # npm ci ran before packages/*/dist existed, so workspace bins (golem) were not linked; link them now, without lifecycle scripts.
 npm rebuild --ignore-scripts --no-audit --no-fund
 # Run-level ceiling (F1: no run exceeds 10 min). --test-timeout only fails a

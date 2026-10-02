@@ -5,12 +5,20 @@ Run tests in the golem test-runner image. Tier runs are offline.
 | Command | Budget | Runs |
 | --- | --- | --- |
 | `npm run test -- <files or --test-name-pattern>` | 1 min | The tests you select. A packed or browser file packs first. |
-| `npm run test:full` | 5 min | Unit tests, Go plugin tests and the packed model-only smoke test. Run before a commit. |
+| `npm run test:full` | 5 min | Unit tests, the TypeScript 6 lane, Go plugin tests and the packed model-only smoke test. Run before a commit. |
 | `npm run test:acceptance` | 10 min | Full, the public-source and OpenAPI compliance checks, the acceptance unit tests, and the packed and browser tests. Run before a release. |
 | `npm run test:prepare` | 5 min (plus a first-time image build), online | Builds the image and fills the npm, Go and packed caches. Runs no tests. Run it first, and again after a lockfile or image change. |
 | `npm run docs:check` | 2 min | Builds the documentation site and checks it. |
 
 Pass a test source path, such as `tests/serde.test.ts`, or any `node --test` flag.
+
+## TypeScript 6 lane
+
+Unit tests run on TypeScript 7. The lane runs the generator, analysis and controller suites again on TypeScript 6; its file list is `TYPESCRIPT6_FILES` in `scripts/test-tier.ts`, which also names what the lane leaves out and why. Full runs it as the `typescript 6` step.
+
+The container's entrypoint installs TypeScript 6 once into `/cache/typescript6` and exports `GOLEM_TYPESCRIPT6_ROOT`. The lane sets `GOLEM_TYPESCRIPT_ROOT` to that path, which is how the compiler seam picks its backend. `tests/typescript-identity.test.ts` runs in the unit step and generates the same projects on both versions, then compares every artifact byte for byte.
+
+Run the lane's files with `npm run test -- --typescript 6`, or run chosen files on TypeScript 6 with `npm run test -- --typescript 6 tests/model-tags.test.ts`. To point a focused run at any other TypeScript install, set `GOLEM_TYPESCRIPT_ROOT` in your shell; `run.sh` passes it into the container.
 
 Name a unit test that is too slow for Full `tests/<name>.acceptance.ts` or `tests/openapi/<name>.acceptance.ts`. Acceptance runs it in its "acceptance unit" step.
 

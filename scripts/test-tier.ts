@@ -12,6 +12,20 @@ export const UNIT_FILES = ['.build/tests/*.test.js', '.build/tests/openapi/*.tes
 // The model-only smoke file runs in Full; Acceptance runs the others so it runs once.
 export const PACKED_FILES = ['.build/tests/packed/consumers.test.js', '.build/tests/packed/nest-workflows.test.js'] as const;
 const SMOKE_FILE = '.build/tests/packed/model-only.test.js';
+// The TypeScript 6 lane runs these files with GOLEM_TYPESCRIPT_ROOT at the container's TypeScript 6 install.
+// Left out on purpose: compiler-lifecycle (asserts TypeScript 7 server reports), model-generation-scale (patches
+// `Checker.prototype` from typescript/unstable/sync, which TypeScript 6 has no equivalent of), the ttsc suites (ttsc is
+// TypeScript 7 only) and typescript-identity (it compares both versions itself, so it runs once, in the unit step).
+export const TYPESCRIPT6_FILES = [
+  ...[
+    'typescript-backends', 'typescript-ts6', 'model-tags', 'model-composition', 'projection-names', 'model-job-graph',
+    'constraint-parity', 'model-companions', 'model-union-tags', 'union-conversion', 'model-tuples', 'projection-integration',
+    'resource-projection', 'tag-alias-generics', 'tag-model-boundaries', 'model-generator', 'model-codec-location',
+    'model-field-names', 'constraint-portability', 'constraint-callback-composition', 'public-model-layout', 'public-sdk-layout',
+    'controllers-tooling', 'watch-recovery',
+  ].map(name => `.build/tests/${name}.test.js`),
+  '.build/tests/golem-ts-openapi/*.test.js',
+] as const;
 export const BROWSER_FILES = ['.build/tests/browser/*.test.js'] as const;
 // Unit-level tests too slow for Full are named *.acceptance.ts and run only in Acceptance.
 export const ACCEPTANCE_UNIT_FILES = ['.build/tests/*.acceptance.js', '.build/tests/openapi/*.acceptance.js'] as const;
@@ -52,7 +66,7 @@ const tiers: Readonly<Record<Tier, { readonly budget: string; readonly purpose: 
   docs: { budget: 'about 2 min', purpose: 'Does the documentation site build and pass its checks?' },
 };
 
-export function selectFocused(args: readonly string[]): { readonly files: readonly string[]; readonly passThrough: readonly string[]; readonly needsPack: boolean } {
+export function selectFocused(args: readonly string[], lane6 = false): { readonly files: readonly string[]; readonly passThrough: readonly string[]; readonly needsPack: boolean } {
   const files: string[] = [];
   const passThrough: string[] = [];
   // A flag's separate value is the next argument unless that is a test file.
@@ -67,10 +81,10 @@ export function selectFocused(args: readonly string[]): { readonly files: readon
       files.push(value.startsWith('tests/') ? `.build/${value.replace(/\.ts$/, '.js')}` : value);
     }
   }
-  if (!files.length && !passThrough.some(flag => flag.startsWith('--test-name-pattern'))) {
+  if (!lane6 && !files.length && !passThrough.some(flag => flag.startsWith('--test-name-pattern'))) {
     throw new Error('Select test files or --test-name-pattern, for example: npm run test -- tests/serde.test.ts');
   }
-  const selected = files.length ? files : [...UNIT_FILES];
+  const selected = files.length ? files : [...(lane6 ? TYPESCRIPT6_FILES : UNIT_FILES)];
   return { files: selected, passThrough, needsPack: selected.some(file => /\/tests\/(?:packed|browser)\//.test(file)) };
 }
 
@@ -83,10 +97,31 @@ function run(executable: string, args: readonly string[], cwd: string = root, en
   return result.status ?? 1;
 }
 
-function nodeTest(label: string, files: readonly string[], timeout: number, concurrency: number, extra: readonly string[] = []): Step {
+function nodeTest(label: string, files: readonly string[], timeout: number, concurrency: number, extra: readonly string[] = [], env: NodeJS.ProcessEnv = {}): Step {
   const reporters = ['--test-reporter=spec', '--test-reporter-destination=stdout'];
   if (resultsDir) reporters.push('--test-reporter=tap', `--test-reporter-destination=${path.join(resultsDir, `${label}.tap`)}`);
-  return { label, run: () => run(process.execPath, ['--test', `--test-timeout=${timeout}`, `--test-concurrency=${concurrency}`, ...reporters, ...extra, ...files]) };
+  return { label, run: () => run(process.execPath, ['--test', `--test-timeout=${timeout}`, `--test-concurrency=${concurrency}`, ...reporters, ...extra, ...files], root, env) };
+}
+
+/** Environment that points the compiler seam at the container's TypeScript 6 install. */
+function typescript6Env(): NodeJS.ProcessEnv {
+  const typescript6Root = process.env.GOLEM_TYPESCRIPT6_ROOT;
+  if (!typescript6Root) throw new Error('GOLEM_TYPESCRIPT6_ROOT is not set; the TypeScript 6 lane runs in the test container (npm run test:prepare installs it).');
+  return { GOLEM_TYPESCRIPT_ROOT: typescript6Root };
+}
+
+/** Takes `--typescript 6` (or `--typescript=6`) out of the focused arguments. */
+function splitTypescriptLane(args: readonly string[]): { readonly lane6: boolean; readonly rest: readonly string[] } {
+  const rest: string[] = [];
+  let lane6 = false;
+  for (let index = 0; index < args.length; index++) {
+    const value = args[index];
+    if (value !== '--typescript' && !value.startsWith('--typescript=')) { rest.push(value); continue; }
+    const version = value.includes('=') ? value.slice(value.indexOf('=') + 1) : args[++index];
+    if (version !== '6') throw new Error(`--typescript takes 6 (TypeScript 7 is the default), got ${version ?? 'nothing'}.`);
+    lane6 = true;
+  }
+  return { lane6, rest };
 }
 
 const npmRun = (label: string, script: string): Step => ({ label, run: () => run('npm', ['run', script]) });
@@ -102,8 +137,10 @@ const prepareSteps: Step[] = [
 function steps(tier: Tier, args: readonly string[], native: boolean): Step[] {
   if (tier === 'prepare') return prepareSteps;
   if (tier === 'focused') {
-    const selection = selectFocused(args);
-    const focused = nodeTest('focused', selection.files, TEST_TIMEOUT_MS.focused, CONCURRENCY.unit, selection.passThrough);
+    const { lane6, rest } = splitTypescriptLane(args);
+    // `--typescript 6` alone runs the lane's whole list; with files it runs those files on TypeScript 6.
+    const selection = selectFocused(rest, lane6);
+    const focused = nodeTest('focused', selection.files, TEST_TIMEOUT_MS.focused, CONCURRENCY.unit, selection.passThrough, lane6 ? typescript6Env() : {});
     return selection.needsPack ? [pack, focused] : [focused];
   }
   if (tier === 'docs') {
@@ -114,7 +151,10 @@ function steps(tier: Tier, args: readonly string[], native: boolean): Step[] {
     ];
   }
   const full: Step[] = [nodeTest('unit', UNIT_FILES, TEST_TIMEOUT_MS.full, CONCURRENCY.unit), goTests];
-  if (tier === 'full') return native ? full : [...full, pack, nodeTest('packed smoke', [SMOKE_FILE], TEST_TIMEOUT_MS.full, 1)];
+  if (tier === 'full') {
+    if (native) return full;
+    return [...full, nodeTest('typescript 6', TYPESCRIPT6_FILES, TEST_TIMEOUT_MS.full, CONCURRENCY.unit, [], typescript6Env()), pack, nodeTest('packed smoke', [SMOKE_FILE], TEST_TIMEOUT_MS.full, 1)];
+  }
   return [
     { label: 'public source', run: () => run(process.execPath, ['.build/scripts/public-source.js', 'check']) },
     { label: 'OpenAPI compliance', run: () => run(process.execPath, ['.build/packages/golem-openapi/compliance/generate-matrix.js', '--check']) },
