@@ -18,7 +18,7 @@ Unit tests run on TypeScript 7. The lane runs the generator, analysis and contro
 
 The container's entrypoint installs TypeScript 6 once into `/cache/typescript6` and exports `GOLEM_TYPESCRIPT6_ROOT`. The lane sets `GOLEM_TYPESCRIPT_ROOT` to that path, which is how the compiler seam picks its backend. `tests/typescript-identity.test.ts` runs in the unit step and generates the same projects on both versions, then compares every artifact byte for byte.
 
-Run the lane's files with `npm run test -- --typescript 6`, or run chosen files on TypeScript 6 with `npm run test -- --typescript 6 tests/model-tags.test.ts`. To point a focused run at any other TypeScript install, set `GOLEM_TYPESCRIPT_ROOT` in your shell; `run.sh` passes it into the container.
+Run the lane's files with `npm run test -- --typescript 6`, or run chosen files on TypeScript 6 with `npm run test -- --typescript 6 tests/model-tags.test.ts`. To point a focused run at another TypeScript 6 install, set `GOLEM_TYPESCRIPT_ROOT` in your shell; `run.sh` passes it into the container. A TypeScript 7 install must be the one Golem itself loads, or the run fails at load.
 
 Name a unit test that is too slow for Full `tests/<name>.acceptance.ts` or `tests/openapi/<name>.acceptance.ts`. Acceptance runs it in its "acceptance unit" step.
 
