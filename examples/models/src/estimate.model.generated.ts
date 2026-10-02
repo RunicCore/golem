@@ -33,13 +33,13 @@ export abstract class TBudgetBaseModel implements GeneratedModel<TBudgetJSON, TB
 function decodeTBudgetModel(constructor: GeneratedModelConstructor, json: unknown): TBudgetBaseModel {
   const values = modelObject(json, "TBudgetBaseModel");
   const result: Record<string, unknown> = { ...values };
-  if (Object.prototype.hasOwnProperty.call(values, "estimate")) defineModelProperty(result, "estimate", convertModelField("deserialize", "estimate", () => (decodeTMoney(values["estimate"]))));
+  if (Object.prototype.hasOwnProperty.call(values, "estimate")) defineModelProperty(result, "estimate", convertModelField("deserialize", "estimate", decodeTMoney, values["estimate"]));
   return Reflect.construct(constructor, [result]) as TBudgetBaseModel;
 }
 
 function encodeTBudgetModel(model: TBudgetBaseModel): TBudgetJSON {
   const result: Record<string, unknown> = {};
-  if (Object.prototype.hasOwnProperty.call(model, "estimate")) defineModelProperty(result, "estimate", (convertModelField("serialize", "estimate", () => (encodeTMoney(model["estimate"])))));
+  if (Object.prototype.hasOwnProperty.call(model, "estimate")) defineModelProperty(result, "estimate", (convertModelField("serialize", "estimate", encodeTMoney, model["estimate"])));
   return result as TBudgetJSON;
 }
 

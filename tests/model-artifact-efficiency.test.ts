@@ -344,3 +344,24 @@ test('an inlined array item keeps the issue source of its own codec', async (t) 
     'the item model was generated from OpenAPI, so its issue keeps that source in a TypeScript model',
   );
 });
+
+test('converted model fields call their converter without a per-field closure', (t) => {
+  const project = fixture(t);
+  writeModelSources(project.sourceRoot, {
+    'wallet.model.ts': [
+      "import type { IModel, IObject } from '@exprtlabs/golem/model';",
+      'export type TMoney = IObject<{ amount: string; currency: string }>;',
+      'export type TWallet = IModel<{ balance: TMoney; rebate: TMoney | null }>;',
+    ].join('\n'),
+  });
+  const result = generate({ root: project.root, profile: { mobx: false, validation: false } });
+  const generated = result.artifacts.find((item) => item.path.endsWith('wallet.model.generated.ts'));
+  assert.ok(generated);
+  const source = generated.content;
+  assert.match(source, /convertModelField\("deserialize", "balance", decodeTMoney, /);
+  assert.match(source, /convertModelField\("serialize", "balance", encodeTMoney, /);
+  // A composite conversion is a module-level function, so no field allocates a closure.
+  assert.match(source, /convertModelField\("deserialize", "rebate", __convert_TWallet_\d+_decode, /);
+  assert.match(source, /convertModelField\("serialize", "rebate", __convert_TWallet_\d+_encode, /);
+  assert.doesNotMatch(source, /convertModelField\([^\n]*\(\) =>/);
+});

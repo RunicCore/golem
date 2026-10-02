@@ -30,16 +30,20 @@ export abstract class TThreadBaseModel implements GeneratedModel<TThreadJSON, TT
 
 }
 
+function __convert_TThread_0_encode(fieldValue: TThreadBaseModel["comments"]) { return Array.isArray(fieldValue) ? (fieldValue as readonly unknown[]).map((item, index) => convertModelField('serialize', index, () => (encodeTComment(item)))) : fieldValue; }
+
+function __convert_TThread_1_decode(fieldValue: unknown) { return Array.isArray(fieldValue) ? (fieldValue as readonly unknown[]).map((item, index) => convertModelField('deserialize', index, () => (decodeTComment(item)))) : fieldValue; }
+
 function decodeTThreadModel(constructor: GeneratedModelConstructor, json: unknown): TThreadBaseModel {
   const values = modelObject(json, "TThreadBaseModel");
   const result: Record<string, unknown> = { ...values };
-  if (Object.prototype.hasOwnProperty.call(values, "comments")) defineModelProperty(result, "comments", convertModelField("deserialize", "comments", () => (Array.isArray(values["comments"]) ? (values["comments"] as readonly unknown[]).map((item, index) => convertModelField('deserialize', index, () => (decodeTComment(item)))) : values["comments"])));
+  if (Object.prototype.hasOwnProperty.call(values, "comments")) defineModelProperty(result, "comments", convertModelField("deserialize", "comments", __convert_TThread_1_decode, values["comments"]));
   return Reflect.construct(constructor, [result]) as TThreadBaseModel;
 }
 
 function encodeTThreadModel(model: TThreadBaseModel): TThreadJSON {
   const result: Record<string, unknown> = {};
-  if (Object.prototype.hasOwnProperty.call(model, "comments")) defineModelProperty(result, "comments", (convertModelField("serialize", "comments", () => (Array.isArray(model["comments"]) ? (model["comments"] as readonly unknown[]).map((item, index) => convertModelField('serialize', index, () => (encodeTComment(item)))) : model["comments"]))));
+  if (Object.prototype.hasOwnProperty.call(model, "comments")) defineModelProperty(result, "comments", (convertModelField("serialize", "comments", __convert_TThread_0_encode, model["comments"])));
   return result as TThreadJSON;
 }
 

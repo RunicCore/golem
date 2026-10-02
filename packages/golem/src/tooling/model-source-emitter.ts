@@ -235,6 +235,22 @@ function emitTuple(
   return `Array.isArray(${expression}) ? [${values.join(', ')}] : ${expression}`;
 }
 
+/**
+ * Input identifier for a root field conversion emitted once to find its shape.
+ * No nested conversion binds this name.
+ */
+export const FIELD_CONVERSION_INPUT = 'fieldValue';
+
+const SINGLE_CALL_ON_FIELD_INPUT = new RegExp(`^([A-Za-z_$][\\w$]*)\\(${FIELD_CONVERSION_INPUT}\\)$`);
+
+/**
+ * The function name when a conversion emitted with `FIELD_CONVERSION_INPUT` is exactly one call on it.
+ * A caller passes that function and the field value to `convertModelField` instead of allocating a closure.
+ */
+export function singleCallConverter(converted: string): string | undefined {
+  return SINGLE_CALL_ON_FIELD_INPUT.exec(converted)?.[1];
+}
+
 function atField(converted: string, input: string, field: string, direction: 'fromJSON' | 'toJSON' | 'fromInit'): string {
   return converted === input || direction === 'fromInit'
     ? converted

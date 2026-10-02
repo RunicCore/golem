@@ -66,16 +66,31 @@ export function defineModelProperty(target: object, name: string, value: unknown
   });
 }
 
-/** Generated synchronous conversion scope; no instance or result state is retained. */
+/**
+ * Generated synchronous conversion scope; no instance or result state is retained.
+ * A converter that takes `arg` needs no per-call closure; the closure form serves nested conversions.
+ */
+export function convertModelField<Arg, Value>(
+  direction: 'serialize' | 'deserialize',
+  field: string | number,
+  convert: (arg: Arg) => Value,
+  arg: Arg,
+): Value;
 export function convertModelField<Value>(
   direction: 'serialize' | 'deserialize',
   field: string | number,
   convert: () => Value,
+): Value;
+export function convertModelField<Arg, Value>(
+  direction: 'serialize' | 'deserialize',
+  field: string | number,
+  convert: (arg: Arg) => Value,
+  arg?: Arg,
 ): Value {
   const previousLength = activeConversionPath.length;
   activeConversionPath.push(field);
   try {
-    return convert();
+    return convert(arg as Arg);
   } catch (error) {
     if (error instanceof LibError) throw error;
     const kind = direction === 'serialize' ? LibErrorKind.Serialization : LibErrorKind.Deserialization;

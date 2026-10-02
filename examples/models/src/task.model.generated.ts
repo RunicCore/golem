@@ -28,10 +28,14 @@ export abstract class TTaskBaseModel implements GeneratedModel<TTaskJSON, TTaskF
 
 }
 
+function __convert_TTask_0_encode(fieldValue: TTaskBaseModel["priority"]) { return modelSerdeBindings["src/priority-word.ts#toPriorityWord\u0000src/priority-word.ts#fromPriorityWord"].serialize(fieldValue); }
+
+function __convert_TTask_1_decode(fieldValue: unknown) { return modelSerdeBindings["src/priority-word.ts#toPriorityWord\u0000src/priority-word.ts#fromPriorityWord"].deserialize(fieldValue); }
+
 function decodeTTaskModel(constructor: GeneratedModelConstructor, json: unknown): TTaskBaseModel {
   const values = modelObject(json, "TTaskBaseModel");
   const result: Record<string, unknown> = { ...values };
-  if (Object.prototype.hasOwnProperty.call(values, "priority")) defineModelProperty(result, "priority", convertModelField("deserialize", "priority", () => (modelSerdeBindings["src/priority-word.ts#toPriorityWord\u0000src/priority-word.ts#fromPriorityWord"].deserialize(values["priority"]))));
+  if (Object.prototype.hasOwnProperty.call(values, "priority")) defineModelProperty(result, "priority", convertModelField("deserialize", "priority", __convert_TTask_1_decode, values["priority"]));
   return Reflect.construct(constructor, [result]) as TTaskBaseModel;
 }
 
@@ -39,7 +43,7 @@ function encodeTTaskModel(model: TTaskBaseModel): TTaskJSON {
   const result: Record<string, unknown> = {};
   if (Object.prototype.hasOwnProperty.call(model, "title")) defineModelProperty(result, "title", (model["title"]));
   if (Object.prototype.hasOwnProperty.call(model, "done")) defineModelProperty(result, "done", (model["done"]));
-  if (Object.prototype.hasOwnProperty.call(model, "priority")) defineModelProperty(result, "priority", (convertModelField("serialize", "priority", () => (modelSerdeBindings["src/priority-word.ts#toPriorityWord\u0000src/priority-word.ts#fromPriorityWord"].serialize(model["priority"])))));
+  if (Object.prototype.hasOwnProperty.call(model, "priority")) defineModelProperty(result, "priority", (convertModelField("serialize", "priority", __convert_TTask_0_encode, model["priority"])));
   return result as TTaskJSON;
 }
 

@@ -23,16 +23,20 @@ export abstract class TChecklistInputBaseModel implements GeneratedModel<TCheckl
 
 }
 
+function __convert_TChecklistInput_0_encode(fieldValue: TChecklistInputBaseModel["items"]) { return Array.isArray(fieldValue) ? (fieldValue as readonly unknown[]).slice() : fieldValue; }
+
+function __convert_TChecklistInput_1_decode(fieldValue: unknown) { return Array.isArray(fieldValue) ? (fieldValue as readonly unknown[]).slice() : fieldValue; }
+
 function decodeTChecklistInputModel(constructor: GeneratedModelConstructor, json: unknown): TChecklistInputBaseModel {
   const values = modelObject(json, "TChecklistInputBaseModel");
   const result: Record<string, unknown> = { ...values };
-  if (Object.prototype.hasOwnProperty.call(values, "items")) defineModelProperty(result, "items", convertModelField("deserialize", "items", () => (Array.isArray(values["items"]) ? (values["items"] as readonly unknown[]).slice() : values["items"])));
+  if (Object.prototype.hasOwnProperty.call(values, "items")) defineModelProperty(result, "items", convertModelField("deserialize", "items", __convert_TChecklistInput_1_decode, values["items"]));
   return Reflect.construct(constructor, [result]) as TChecklistInputBaseModel;
 }
 
 function encodeTChecklistInputModel(model: TChecklistInputBaseModel): TChecklistInputJSON {
   const result: Record<string, unknown> = {};
-  if (Object.prototype.hasOwnProperty.call(model, "items")) defineModelProperty(result, "items", (convertModelField("serialize", "items", () => (Array.isArray(model["items"]) ? (model["items"] as readonly unknown[]).slice() : model["items"]))));
+  if (Object.prototype.hasOwnProperty.call(model, "items")) defineModelProperty(result, "items", (convertModelField("serialize", "items", __convert_TChecklistInput_0_encode, model["items"])));
   return result as TChecklistInputJSON;
 }
 

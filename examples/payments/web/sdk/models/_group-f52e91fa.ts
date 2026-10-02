@@ -35,13 +35,29 @@ export type PaymentFields = {
 export type PaymentJSON = Types.Payment;
 export type PaymentInit = ModelInit<PaymentFields>;
 
+function convertPaymentField0Encode(fieldValue: Exclude<PaymentModel["billing"], undefined>) { return fieldValue instanceof TMerchantOmitIdModel ? encodeGeneratedModel(fieldValue) : fieldValue; }
+
+function convertPaymentField1Encode(fieldValue: Exclude<PaymentModel["charge"], undefined>) { return fieldValue instanceof TChargeModel ? encodeGeneratedModel(fieldValue) : fieldValue; }
+
+function convertPaymentField2Encode(fieldValue: Exclude<PaymentModel["merchant"], undefined>) { return fieldValue instanceof TMerchantModel ? encodeGeneratedModel(fieldValue) : fieldValue; }
+
+function convertPaymentField3Encode(fieldValue: Exclude<PaymentModel["money"], undefined>) { return fieldValue instanceof TMoneyModel ? encodeGeneratedModel(fieldValue) : fieldValue; }
+
+function convertPaymentField4Decode(fieldValue: unknown) { return fieldValue == null || fieldValue instanceof TMerchantOmitIdModel ? fieldValue : decodeGeneratedModelTrusted(TMerchantOmitIdModel, fieldValue); }
+
+function convertPaymentField5Decode(fieldValue: unknown) { return fieldValue == null || fieldValue instanceof TChargeModel ? fieldValue : decodeGeneratedModelTrusted(TChargeModel, fieldValue); }
+
+function convertPaymentField6Decode(fieldValue: unknown) { return fieldValue == null || fieldValue instanceof TMerchantModel ? fieldValue : decodeGeneratedModelTrusted(TMerchantModel, fieldValue); }
+
+function convertPaymentField7Decode(fieldValue: unknown) { return fieldValue == null || fieldValue instanceof TMoneyModel ? fieldValue : decodeGeneratedModelTrusted(TMoneyModel, fieldValue); }
+
 function deserializePaymentFields(json: unknown): PaymentInit {
   const value = objectFromJSON<Record<string, unknown>>(json, "PaymentModel");
   const result: Record<string, unknown> = { ...value };
-  if (value["billing"] !== undefined) result["billing"] = convertModelField('deserialize', "billing", () => (value["billing"] == null || value["billing"] instanceof TMerchantOmitIdModel ? value["billing"] : decodeGeneratedModelTrusted(TMerchantOmitIdModel, value["billing"])));
-  if (value["charge"] !== undefined) result["charge"] = convertModelField('deserialize', "charge", () => (value["charge"] == null || value["charge"] instanceof TChargeModel ? value["charge"] : decodeGeneratedModelTrusted(TChargeModel, value["charge"])));
-  if (value["merchant"] !== undefined) result["merchant"] = convertModelField('deserialize', "merchant", () => (value["merchant"] == null || value["merchant"] instanceof TMerchantModel ? value["merchant"] : decodeGeneratedModelTrusted(TMerchantModel, value["merchant"])));
-  if (value["money"] !== undefined) result["money"] = convertModelField('deserialize', "money", () => (value["money"] == null || value["money"] instanceof TMoneyModel ? value["money"] : decodeGeneratedModelTrusted(TMoneyModel, value["money"])));
+  if (value["billing"] !== undefined) result["billing"] = convertModelField('deserialize', "billing", convertPaymentField4Decode, value["billing"]);
+  if (value["charge"] !== undefined) result["charge"] = convertModelField('deserialize', "charge", convertPaymentField5Decode, value["charge"]);
+  if (value["merchant"] !== undefined) result["merchant"] = convertModelField('deserialize', "merchant", convertPaymentField6Decode, value["merchant"]);
+  if (value["money"] !== undefined) result["money"] = convertModelField('deserialize', "money", convertPaymentField7Decode, value["money"]);
   return result as PaymentInit;
 }
 
@@ -72,11 +88,11 @@ function decodePayment(json: unknown, constructor: GeneratedModelConstructor = P
 
 export function encodePayment(model: PaymentModel): Types.Payment {
   const result: Record<string, unknown> = {};
-  if (model["billing"] !== undefined) result["billing"] = convertModelField('serialize', "billing", () => (model["billing"] instanceof TMerchantOmitIdModel ? encodeGeneratedModel(model["billing"]) : model["billing"]));
-  if (model["charge"] !== undefined) result["charge"] = convertModelField('serialize', "charge", () => (model["charge"] instanceof TChargeModel ? encodeGeneratedModel(model["charge"]) : model["charge"]));
+  if (model["billing"] !== undefined) result["billing"] = convertModelField('serialize', "billing", convertPaymentField0Encode, model["billing"]);
+  if (model["charge"] !== undefined) result["charge"] = convertModelField('serialize', "charge", convertPaymentField1Encode, model["charge"]);
   if (model["id"] !== undefined) result["id"] = model["id"];
-  if (model["merchant"] !== undefined) result["merchant"] = convertModelField('serialize', "merchant", () => (model["merchant"] instanceof TMerchantModel ? encodeGeneratedModel(model["merchant"]) : model["merchant"]));
-  if (model["money"] !== undefined) result["money"] = convertModelField('serialize', "money", () => (model["money"] instanceof TMoneyModel ? encodeGeneratedModel(model["money"]) : model["money"]));
+  if (model["merchant"] !== undefined) result["merchant"] = convertModelField('serialize', "merchant", convertPaymentField2Encode, model["merchant"]);
+  if (model["money"] !== undefined) result["money"] = convertModelField('serialize', "money", convertPaymentField3Encode, model["money"]);
   if (model["note"] !== undefined) result["note"] = model["note"];
   return result as Types.Payment;
 }

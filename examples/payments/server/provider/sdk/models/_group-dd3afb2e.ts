@@ -24,12 +24,24 @@ export type ChargeFields = {
 export type ChargeJSON = Types.Charge;
 export type ChargeInit = ModelInit<ChargeFields>;
 
+function convertChargeField0Encode(fieldValue: Exclude<ChargeModel["money"], undefined>) { return fieldValue instanceof MoneyModel ? encodeGeneratedModel(fieldValue) : fieldValue; }
+
+function convertChargeField1Encode(fieldValue: Exclude<ChargeModel["createdAt"], undefined>) { return serializeTemporalInstant((fieldValue) as never); }
+
+function convertChargeField2Encode(fieldValue: Exclude<ChargeModel["settlesOn"], undefined>) { return serializeTemporalPlainDate((fieldValue) as never); }
+
+function convertChargeField3Decode(fieldValue: unknown) { return fieldValue == null || fieldValue instanceof MoneyModel ? fieldValue : decodeGeneratedModelTrusted(MoneyModel, fieldValue); }
+
+function convertChargeField4Decode(fieldValue: unknown) { return deserializeTemporalInstant((fieldValue) as never); }
+
+function convertChargeField5Decode(fieldValue: unknown) { return deserializeTemporalPlainDate((fieldValue) as never); }
+
 function deserializeChargeFields(json: unknown): ChargeInit {
   const value = objectFromJSON<Record<string, unknown>>(json, "ChargeModel");
   const result: Record<string, unknown> = { ...value };
-  if (value["money"] !== undefined) result["money"] = convertModelField('deserialize', "money", () => (value["money"] == null || value["money"] instanceof MoneyModel ? value["money"] : decodeGeneratedModelTrusted(MoneyModel, value["money"])));
-  if (value["createdAt"] !== undefined) result["createdAt"] = convertModelField('deserialize', "createdAt", () => (deserializeTemporalInstant((value["createdAt"]) as never)));
-  if (value["settlesOn"] !== undefined) result["settlesOn"] = convertModelField('deserialize', "settlesOn", () => (deserializeTemporalPlainDate((value["settlesOn"]) as never)));
+  if (value["money"] !== undefined) result["money"] = convertModelField('deserialize', "money", convertChargeField3Decode, value["money"]);
+  if (value["createdAt"] !== undefined) result["createdAt"] = convertModelField('deserialize', "createdAt", convertChargeField4Decode, value["createdAt"]);
+  if (value["settlesOn"] !== undefined) result["settlesOn"] = convertModelField('deserialize', "settlesOn", convertChargeField5Decode, value["settlesOn"]);
   return result as ChargeInit;
 }
 
@@ -59,9 +71,9 @@ export function encodeCharge(model: ChargeModel): Types.Charge {
   const result: Record<string, unknown> = {};
   if (model["id"] !== undefined) result["id"] = model["id"];
   if (model["status"] !== undefined) result["status"] = model["status"];
-  if (model["money"] !== undefined) result["money"] = convertModelField('serialize', "money", () => (model["money"] instanceof MoneyModel ? encodeGeneratedModel(model["money"]) : model["money"]));
-  if (model["createdAt"] !== undefined) result["createdAt"] = convertModelField('serialize', "createdAt", () => (serializeTemporalInstant((model["createdAt"]) as never)));
-  if (model["settlesOn"] !== undefined) result["settlesOn"] = convertModelField('serialize', "settlesOn", () => (serializeTemporalPlainDate((model["settlesOn"]) as never)));
+  if (model["money"] !== undefined) result["money"] = convertModelField('serialize', "money", convertChargeField0Encode, model["money"]);
+  if (model["createdAt"] !== undefined) result["createdAt"] = convertModelField('serialize', "createdAt", convertChargeField1Encode, model["createdAt"]);
+  if (model["settlesOn"] !== undefined) result["settlesOn"] = convertModelField('serialize', "settlesOn", convertChargeField2Encode, model["settlesOn"]);
   return result as Types.Charge;
 }
 

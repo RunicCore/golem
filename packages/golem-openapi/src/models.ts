@@ -1,5 +1,7 @@
 import {
   emitModelFromJSON,
+  FIELD_CONVERSION_INPUT,
+  singleCallConverter,
   emitModelFromInit,
   emitModelToJSON,
   emitCodecRuntime,
@@ -562,14 +564,28 @@ function modelToJSONExpression(
   );
 }
 
+/**
+ * `emit(FIELD_CONVERSION_INPUT)` shows the shape of a field conversion. A single call passes its function and the
+ * field value to `convertModelField`; any other conversion becomes a module-level function of the field value,
+ * so no field allocates a closure.
+ */
 function rootFieldConversion(
+  helpers: string[],
+  helperName: (index: number) => string,
   direction: 'deserialize' | 'serialize',
   field: string,
   input: string,
-  converted: string,
+  emit: (value: string) => string,
+  inputType: string,
 ): string {
-  if (converted === input) return converted;
-  return `convertModelField('${direction}', ${JSON.stringify(field)}, () => (${converted}))`;
+  const converted = emit(FIELD_CONVERSION_INPUT);
+  if (converted === FIELD_CONVERSION_INPUT) return input;
+  let convert = singleCallConverter(converted);
+  if (!convert) {
+    convert = helperName(helpers.length);
+    helpers.push(`function ${convert}(${FIELD_CONVERSION_INPUT}: ${inputType}) { return ${converted}; }`);
+  }
+  return `convertModelField('${direction}', ${JSON.stringify(field)}, ${convert}, ${input})`;
 }
 
 function modelFieldDeclaration(
@@ -1662,10 +1678,21 @@ export function generateModels(
     const assignments = fields.map(([name, schema]) =>
       `    if (${modelPropertyCondition('values', name)}) ${modelPropertyAssignment('this', name, `(${modelInitExpression(schema, `values${modelPropertyAccess(name)}`, definitions, fieldEnv)}) as ${modelFieldType(schema, definitions, fieldEnv)}`)}`,
     );
+    const fieldHelpers: string[] = [];
+    const fieldHelperName = (direction: 'encode' | 'decode') => (index: number): string => {
+      const helper = `convert${typeName}Field${index}${direction === 'encode' ? 'Encode' : 'Decode'}`;
+      moduleScope.claim(helper, `internal field converter for ${JSON.stringify(definition.schemaName)}`, definition.schemaName);
+      return helper;
+    };
     const jsonProperties = fields.map(([name, schema]) => {
       const input = `model${modelPropertyAccess(name)}`;
-      const converted = modelToJSONExpression(schema, input, definitions, fieldEnv);
-      return `  if (${modelPropertyCondition('model', name)}) ${modelPropertyAssignment('result', name, rootFieldConversion('serialize', name, input, converted))}`;
+      const converted = rootFieldConversion(
+        fieldHelpers, fieldHelperName('encode'), 'serialize', name, input,
+        (value) => modelToJSONExpression(schema, value, definitions, fieldEnv),
+        // The guard on the property excludes an undefined value before the conversion runs.
+        `Exclude<${className}${modelPropertyAccess(name)}, undefined>`,
+      );
+      return `  if (${modelPropertyCondition('model', name)}) ${modelPropertyAssignment('result', name, converted)}`;
     });
     const allProperties = modelSchemaProperties(fieldEnv, definition.rawSchema);
     const allFieldNames = [...allProperties.keys()];
@@ -1678,8 +1705,11 @@ export function generateModels(
     };
     const decodeLines = [...allProperties].flatMap(([name, schema]) => {
       const expression = `value${modelPropertyAccess(name)}`;
-      const converted = modelFromJSONExpression(schema, expression, definitions, fieldEnv);
-      const rootConverted = rootFieldConversion('deserialize', name, expression, converted);
+      const rootConverted = rootFieldConversion(
+        fieldHelpers, fieldHelperName('decode'), 'deserialize', name, expression,
+        (input) => modelFromJSONExpression(schema, input, definitions, fieldEnv),
+        'unknown',
+      );
       // `result` already contains every own enumerable input property.  Keep
       // the initializer copy as-is for fields with no wire conversion and
       // only replace values that must become model instances or pass through
@@ -1698,6 +1728,7 @@ export function generateModels(
       `export type ${typeName}JSON = Types.${typeName};`,
       `export type ${typeName}Init = ModelInit<${typeName}Fields>;`,
       '',
+      ...fieldHelpers.flatMap(helper => [helper, '']),
       ...(!definition.isUnion ? [
         `function deserialize${typeName}Fields(json: unknown): ${typeName}Init {`,
         `  const value = objectFromJSON<Record<string, unknown>>(json, ${JSON.stringify(className)});`,

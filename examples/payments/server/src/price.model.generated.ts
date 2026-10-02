@@ -26,16 +26,20 @@ export abstract class TPriceBaseModel implements GeneratedModel<TPriceJSON, TPri
 
 }
 
+function __convert_TPrice_0_encode(fieldValue: TPriceBaseModel["amount"]) { return modelSerdeBindings["src/decimal-text.ts#writeAmount\u0000src/decimal-text.ts#readAmount"].serialize(fieldValue); }
+
+function __convert_TPrice_1_decode(fieldValue: unknown) { return modelSerdeBindings["src/decimal-text.ts#writeAmount\u0000src/decimal-text.ts#readAmount"].deserialize(fieldValue); }
+
 function decodeTPriceModel(constructor: GeneratedModelConstructor, json: unknown): TPriceBaseModel {
   const values = modelObject(json, "TPriceBaseModel");
   const result: Record<string, unknown> = { ...values };
-  if (Object.prototype.hasOwnProperty.call(values, "amount")) defineModelProperty(result, "amount", convertModelField("deserialize", "amount", () => (modelSerdeBindings["src/decimal-text.ts#writeAmount\u0000src/decimal-text.ts#readAmount"].deserialize(values["amount"]))));
+  if (Object.prototype.hasOwnProperty.call(values, "amount")) defineModelProperty(result, "amount", convertModelField("deserialize", "amount", __convert_TPrice_1_decode, values["amount"]));
   return Reflect.construct(constructor, [result]) as TPriceBaseModel;
 }
 
 function encodeTPriceModel(model: TPriceBaseModel): TPriceJSON {
   const result: Record<string, unknown> = {};
-  if (Object.prototype.hasOwnProperty.call(model, "amount")) defineModelProperty(result, "amount", (convertModelField("serialize", "amount", () => (modelSerdeBindings["src/decimal-text.ts#writeAmount\u0000src/decimal-text.ts#readAmount"].serialize(model["amount"])))));
+  if (Object.prototype.hasOwnProperty.call(model, "amount")) defineModelProperty(result, "amount", (convertModelField("serialize", "amount", __convert_TPrice_0_encode, model["amount"])));
   if (Object.prototype.hasOwnProperty.call(model, "currency")) defineModelProperty(result, "currency", (model["currency"]));
   return result as TPriceJSON;
 }

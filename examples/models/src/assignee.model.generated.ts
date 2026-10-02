@@ -85,20 +85,24 @@ export abstract class TAssigneeBaseModel implements GeneratedModel<TAssigneeJSON
 
 }
 
+function __convert_TAssignee_0_encode(fieldValue: TAssigneeBaseModel["office"]) { return fieldValue instanceof TPlaceBaseModel ? encodeGeneratedModel(fieldValue) : fieldValue; }
+
+function __convert_TAssignee_1_decode(fieldValue: unknown) { return fieldValue == null || fieldValue instanceof TPlaceBaseModel ? fieldValue : decodeGeneratedModelTrusted(requireIModelClass("TPlace_420813af"), fieldValue); }
+
 function decodeTAssigneeModel(constructor: GeneratedModelConstructor, json: unknown): TAssigneeBaseModel {
   const values = modelObject(json, "TAssigneeBaseModel");
   const result: Record<string, unknown> = { ...values };
-  if (Object.prototype.hasOwnProperty.call(values, "office")) defineModelProperty(result, "office", convertModelField("deserialize", "office", () => (values["office"] == null || values["office"] instanceof TPlaceBaseModel ? values["office"] : decodeGeneratedModelTrusted(requireIModelClass("TPlace_420813af"), values["office"]))));
-  if (Object.prototype.hasOwnProperty.call(values, "site")) defineModelProperty(result, "site", convertModelField("deserialize", "site", () => (decodeTPlaceOmitId(values["site"]))));
-  if (Object.prototype.hasOwnProperty.call(values, "draft")) defineModelProperty(result, "draft", convertModelField("deserialize", "draft", () => (decodeTPlacePickCityCountryPartial(values["draft"]))));
+  if (Object.prototype.hasOwnProperty.call(values, "office")) defineModelProperty(result, "office", convertModelField("deserialize", "office", __convert_TAssignee_1_decode, values["office"]));
+  if (Object.prototype.hasOwnProperty.call(values, "site")) defineModelProperty(result, "site", convertModelField("deserialize", "site", decodeTPlaceOmitId, values["site"]));
+  if (Object.prototype.hasOwnProperty.call(values, "draft")) defineModelProperty(result, "draft", convertModelField("deserialize", "draft", decodeTPlacePickCityCountryPartial, values["draft"]));
   return Reflect.construct(constructor, [result]) as TAssigneeBaseModel;
 }
 
 function encodeTAssigneeModel(model: TAssigneeBaseModel): TAssigneeJSON {
   const result: Record<string, unknown> = {};
-  if (Object.prototype.hasOwnProperty.call(model, "office")) defineModelProperty(result, "office", (convertModelField("serialize", "office", () => (model["office"] instanceof TPlaceBaseModel ? encodeGeneratedModel(model["office"]) : model["office"]))));
-  if (Object.prototype.hasOwnProperty.call(model, "site")) defineModelProperty(result, "site", (convertModelField("serialize", "site", () => (encodeTPlaceOmitId(model["site"])))));
-  if (Object.prototype.hasOwnProperty.call(model, "draft")) defineModelProperty(result, "draft", (convertModelField("serialize", "draft", () => (encodeTPlacePickCityCountryPartial(model["draft"])))));
+  if (Object.prototype.hasOwnProperty.call(model, "office")) defineModelProperty(result, "office", (convertModelField("serialize", "office", __convert_TAssignee_0_encode, model["office"])));
+  if (Object.prototype.hasOwnProperty.call(model, "site")) defineModelProperty(result, "site", (convertModelField("serialize", "site", encodeTPlaceOmitId, model["site"])));
+  if (Object.prototype.hasOwnProperty.call(model, "draft")) defineModelProperty(result, "draft", (convertModelField("serialize", "draft", encodeTPlacePickCityCountryPartial, model["draft"])));
   return result as TAssigneeJSON;
 }
 

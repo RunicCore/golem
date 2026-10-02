@@ -69,24 +69,28 @@ export abstract class TPaymentBaseModel implements GeneratedModel<TPaymentJSON, 
 
 }
 
+function __convert_TPayment_0_encode(fieldValue: Exclude<TPaymentBaseModel["charge"], undefined>) { return fieldValue == null ? fieldValue : (encodeTCharge(fieldValue)); }
+
+function __convert_TPayment_1_decode(fieldValue: unknown) { return fieldValue == null ? fieldValue : (decodeTCharge(fieldValue)); }
+
 function decodeTPaymentModel(constructor: GeneratedModelConstructor, json: unknown): TPaymentBaseModel {
   const values = modelObject(json, "TPaymentBaseModel");
   const result: Record<string, unknown> = { ...values };
-  if (Object.prototype.hasOwnProperty.call(values, "merchant")) defineModelProperty(result, "merchant", convertModelField("deserialize", "merchant", () => (decodeTMerchant(values["merchant"]))));
-  if (Object.prototype.hasOwnProperty.call(values, "billing")) defineModelProperty(result, "billing", convertModelField("deserialize", "billing", () => (decodeTMerchantOmitId(values["billing"]))));
-  if (Object.prototype.hasOwnProperty.call(values, "money")) defineModelProperty(result, "money", convertModelField("deserialize", "money", () => (decodeTMoney(values["money"]))));
-  if (Object.prototype.hasOwnProperty.call(values, "charge")) defineModelProperty(result, "charge", convertModelField("deserialize", "charge", () => (values["charge"] == null ? values["charge"] : (decodeTCharge(values["charge"])))));
+  if (Object.prototype.hasOwnProperty.call(values, "merchant")) defineModelProperty(result, "merchant", convertModelField("deserialize", "merchant", decodeTMerchant, values["merchant"]));
+  if (Object.prototype.hasOwnProperty.call(values, "billing")) defineModelProperty(result, "billing", convertModelField("deserialize", "billing", decodeTMerchantOmitId, values["billing"]));
+  if (Object.prototype.hasOwnProperty.call(values, "money")) defineModelProperty(result, "money", convertModelField("deserialize", "money", decodeTMoney, values["money"]));
+  if (Object.prototype.hasOwnProperty.call(values, "charge")) defineModelProperty(result, "charge", convertModelField("deserialize", "charge", __convert_TPayment_1_decode, values["charge"]));
   return Reflect.construct(constructor, [result]) as TPaymentBaseModel;
 }
 
 function encodeTPaymentModel(model: TPaymentBaseModel): TPaymentJSON {
   const result: Record<string, unknown> = {};
   if (Object.prototype.hasOwnProperty.call(model, "id")) defineModelProperty(result, "id", (model["id"]));
-  if (Object.prototype.hasOwnProperty.call(model, "merchant")) defineModelProperty(result, "merchant", (convertModelField("serialize", "merchant", () => (encodeTMerchant(model["merchant"])))));
-  if (Object.prototype.hasOwnProperty.call(model, "billing")) defineModelProperty(result, "billing", (convertModelField("serialize", "billing", () => (encodeTMerchantOmitId(model["billing"])))));
-  if (Object.prototype.hasOwnProperty.call(model, "money")) defineModelProperty(result, "money", (convertModelField("serialize", "money", () => (encodeTMoney(model["money"])))));
+  if (Object.prototype.hasOwnProperty.call(model, "merchant")) defineModelProperty(result, "merchant", (convertModelField("serialize", "merchant", encodeTMerchant, model["merchant"])));
+  if (Object.prototype.hasOwnProperty.call(model, "billing")) defineModelProperty(result, "billing", (convertModelField("serialize", "billing", encodeTMerchantOmitId, model["billing"])));
+  if (Object.prototype.hasOwnProperty.call(model, "money")) defineModelProperty(result, "money", (convertModelField("serialize", "money", encodeTMoney, model["money"])));
   if (Object.prototype.hasOwnProperty.call(model, "note")) defineModelProperty(result, "note", (model["note"]));
-  if (Object.prototype.hasOwnProperty.call(model, "charge") && model["charge"] !== undefined) defineModelProperty(result, "charge", (convertModelField("serialize", "charge", () => (model["charge"] == null ? model["charge"] : (encodeTCharge(model["charge"]))))));
+  if (Object.prototype.hasOwnProperty.call(model, "charge") && model["charge"] !== undefined) defineModelProperty(result, "charge", (convertModelField("serialize", "charge", __convert_TPayment_0_encode, model["charge"])));
   return result as TPaymentJSON;
 }
 

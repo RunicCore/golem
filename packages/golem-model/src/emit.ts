@@ -6,6 +6,8 @@ import {
   emitModelFromInit,
   emitModelToJSON,
   emitCodecRuntime,
+  FIELD_CONVERSION_INPUT,
+  singleCallConverter,
   pruneNamedImport,
   stringifyFunctionName,
   wireStringifyExportName,
@@ -1339,30 +1341,46 @@ export function emitSource(
       : fieldDescriptors(checker, specification, descriptorBuilder(checker, specifications, manifestIndex, profile.validation, profile.allowAny ?? false, identityRoot), fields);
     return { specification, fields, descriptors };
   });
+  /**
+   * `emit(FIELD_CONVERSION_INPUT)` shows the shape of a field conversion. A single call passes its function and the
+   * field value to `convertModelField`; any other conversion becomes a module-level function of the field value,
+   * so no field allocates a closure.
+   */
   const wrapRootConversion = (
+    helpers: string[],
+    model: string,
     direction: 'serialize' | 'deserialize',
     field: string,
     input: string,
-    converted: string,
+    emit: (value: string) => string,
+    inputType: string,
   ): string => {
-    if (converted === input) return converted;
+    const converted = emit(FIELD_CONVERSION_INPUT);
+    if (converted === FIELD_CONVERSION_INPUT) return input;
     conversionHelpers.add('field');
-    return `convertModelField(${JSON.stringify(direction)}, ${field}, () => (${converted}))`;
+    let convert = singleCallConverter(converted);
+    if (!convert) {
+      convert = `__convert_${model}_${helpers.length}_${direction === 'serialize' ? 'encode' : 'decode'}`;
+      helpers.push(`function ${convert}(${FIELD_CONVERSION_INPUT}: ${inputType}) { return ${converted}; }`);
+    }
+    return `convertModelField(${JSON.stringify(direction)}, ${field}, ${convert}, ${input})`;
   };
   const rootFieldExpressions = new Map<string, {
+    readonly helpers: readonly string[];
     readonly encode: readonly string[];
     readonly decode: readonly string[];
     readonly init: readonly string[];
   }>();
   for (const { specification, fields, descriptors } of localEmissions) {
+    const helpers: string[] = [];
     const encode = fields.map((field) => {
       const name = JSON.stringify(field.getName());
       const input = `model[${name}]`;
       const descriptor = descriptors.get(field.getName());
       if (!descriptor) throw new Error(`Missing descriptor for field ${field.getName()}.`);
-      const expression = emitModelToJSON(
+      const emitEncode = (value: string): string => emitModelToJSON(
         descriptor,
-        input,
+        value,
         (id) => projectionNames.has(id) ? resolveProjection(id)
           : siblingObjectNames.has(id) ? resolveSiblingObject(id)
           : localNames.has(id)
@@ -1373,9 +1391,12 @@ export function emitSource(
           serialize: (id, value) => serdeExpression(id, 'serialize', value),
         },
       );
-      const converted = wrapRootConversion('serialize', name, input, expression);
+      const optional = (field.flags & ts.SymbolFlags.Optional) !== 0;
+      // The guard below excludes an undefined value of an optional field before the conversion runs.
+      const inputType = `${optional ? 'Exclude<' : ''}${specification.name}BaseModel[${name}]${optional ? ', undefined>' : ''}`;
+      const converted = wrapRootConversion(helpers, specification.name, 'serialize', name, input, emitEncode, inputType);
       // Wire output omits an optional field whose value is undefined, as stringify and JSON.stringify do.
-      const present = (field.flags & ts.SymbolFlags.Optional) !== 0
+      const present = optional
         ? `Object.prototype.hasOwnProperty.call(model, ${name}) && ${input} !== undefined`
         : `Object.prototype.hasOwnProperty.call(model, ${name})`;
       return `  if (${present}) defineModelProperty(result, ${name}, (${converted}));`;
@@ -1387,9 +1408,9 @@ export function emitSource(
       const input = `values[${name}]`;
       const descriptor = descriptors.get(field.getName());
       if (!descriptor) throw new Error(`Missing descriptor for field ${field.getName()}.`);
-      const fromJson = emitModelFromJSON(
+      const emitDecode = (value: string): string => emitModelFromJSON(
         descriptor,
-        input,
+        value,
         resolveFromAny,
         {
           deserialize: (id, value) => serdeExpression(id, 'deserialize', value),
@@ -1397,14 +1418,15 @@ export function emitSource(
         },
       );
       const fromInit = emitModelFromInit(descriptor, input, resolveFromAny);
-      if (fromJson !== input) {
+      const converted = wrapRootConversion(helpers, specification.name, 'deserialize', name, input, emitDecode, 'unknown');
+      if (converted !== input) {
         conversionHelpers.add('define');
-        decode.push(`  if (Object.prototype.hasOwnProperty.call(values, ${name})) defineModelProperty(result, ${name}, ${wrapRootConversion('deserialize', name, input, fromJson)});`);
+        decode.push(`  if (Object.prototype.hasOwnProperty.call(values, ${name})) defineModelProperty(result, ${name}, ${converted});`);
       }
       conversionHelpers.add('define');
       init.push(`    if (Object.prototype.hasOwnProperty.call(values, ${name})) defineModelProperty(this, ${name}, ${fromInit});`);
     }
-    rootFieldExpressions.set(specification.name, { encode, decode, init });
+    rootFieldExpressions.set(specification.name, { helpers, encode, decode, init });
   }
   const hasDate = Object.values(definitions).some((descriptor) => {
     const visit = (item: ModelConversionDescriptor): boolean => {
@@ -1614,6 +1636,7 @@ export function emitSource(
     lines.push(
       '}',
       '',
+      ...fieldExpressions.helpers.flatMap((helper) => [helper, '']),
       `function decode${specification.name}Model(constructor: GeneratedModelConstructor, json: unknown): ${baseName} {`,
       `  const values = modelObject(json, ${JSON.stringify(baseName)});`,
       ...(decodeFields.length

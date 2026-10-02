@@ -60,7 +60,7 @@
     "provider/sdk/models/_group-dd3afb2e.ts": {
       "job": "openapi:provider/sdk",
       "owner": "@exprtlabs/golem-openapi",
-      "digest": "c110ea485ddfeed0b903f58cf133260500428af49a40df3a7b2d314b201efdba",
+      "digest": "3f7673116bce85d0b3cdb1dd7f5116c964f66c86107055a61dfda3d7d38c0a49",
       "destination": "provider/sdk",
       "destinationKind": "directory"
     },
@@ -214,14 +214,14 @@
     "src/payment.model.generated.ts": {
       "job": "models:.",
       "owner": "@exprtlabs/golem-model",
-      "digest": "44fd047c3bd73b5a2286e9b9bace20ddd7165be5838a2f3fdd989f879b76eb50",
+      "digest": "0e741f9bef889db78c0858ae9211f324319a00eac12d990c28449829af078157",
       "destination": "src",
       "destinationKind": "directory"
     },
     "src/price.model.generated.ts": {
       "job": "models:.",
       "owner": "@exprtlabs/golem-model",
-      "digest": "a24ae5e2fa1249d3859d6e5a838fda750d873b786f3bc2e7ed858b74fdc6d421",
+      "digest": "4e838d2792bfe642894cc11d782d7c78e51ca4e1a85851512aa012e1008f9f39",
       "destination": "src",
       "destinationKind": "directory"
     }

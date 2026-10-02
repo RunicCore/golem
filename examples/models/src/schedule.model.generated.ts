@@ -28,20 +28,32 @@ export abstract class TScheduleBaseModel implements GeneratedModel<TScheduleJSON
 
 }
 
+function __convert_TSchedule_0_encode(fieldValue: TScheduleBaseModel["startsAt"]) { return modelSerdeBindings["@exprtlabs/golem/temporal#serializeTemporalInstant\u0000@exprtlabs/golem/temporal#deserializeTemporalInstant"].serialize(fieldValue); }
+
+function __convert_TSchedule_1_encode(fieldValue: TScheduleBaseModel["day"]) { return modelSerdeBindings["@exprtlabs/golem/temporal#serializeTemporalPlainDate\u0000@exprtlabs/golem/temporal#deserializeTemporalPlainDate"].serialize(fieldValue); }
+
+function __convert_TSchedule_2_encode(fieldValue: TScheduleBaseModel["length"]) { return modelSerdeBindings["@exprtlabs/golem/temporal#serializeTemporalDuration\u0000@exprtlabs/golem/temporal#deserializeTemporalDuration"].serialize(fieldValue); }
+
+function __convert_TSchedule_3_decode(fieldValue: unknown) { return modelSerdeBindings["@exprtlabs/golem/temporal#serializeTemporalInstant\u0000@exprtlabs/golem/temporal#deserializeTemporalInstant"].deserialize(fieldValue); }
+
+function __convert_TSchedule_4_decode(fieldValue: unknown) { return modelSerdeBindings["@exprtlabs/golem/temporal#serializeTemporalPlainDate\u0000@exprtlabs/golem/temporal#deserializeTemporalPlainDate"].deserialize(fieldValue); }
+
+function __convert_TSchedule_5_decode(fieldValue: unknown) { return modelSerdeBindings["@exprtlabs/golem/temporal#serializeTemporalDuration\u0000@exprtlabs/golem/temporal#deserializeTemporalDuration"].deserialize(fieldValue); }
+
 function decodeTScheduleModel(constructor: GeneratedModelConstructor, json: unknown): TScheduleBaseModel {
   const values = modelObject(json, "TScheduleBaseModel");
   const result: Record<string, unknown> = { ...values };
-  if (Object.prototype.hasOwnProperty.call(values, "startsAt")) defineModelProperty(result, "startsAt", convertModelField("deserialize", "startsAt", () => (modelSerdeBindings["@exprtlabs/golem/temporal#serializeTemporalInstant\u0000@exprtlabs/golem/temporal#deserializeTemporalInstant"].deserialize(values["startsAt"]))));
-  if (Object.prototype.hasOwnProperty.call(values, "day")) defineModelProperty(result, "day", convertModelField("deserialize", "day", () => (modelSerdeBindings["@exprtlabs/golem/temporal#serializeTemporalPlainDate\u0000@exprtlabs/golem/temporal#deserializeTemporalPlainDate"].deserialize(values["day"]))));
-  if (Object.prototype.hasOwnProperty.call(values, "length")) defineModelProperty(result, "length", convertModelField("deserialize", "length", () => (modelSerdeBindings["@exprtlabs/golem/temporal#serializeTemporalDuration\u0000@exprtlabs/golem/temporal#deserializeTemporalDuration"].deserialize(values["length"]))));
+  if (Object.prototype.hasOwnProperty.call(values, "startsAt")) defineModelProperty(result, "startsAt", convertModelField("deserialize", "startsAt", __convert_TSchedule_3_decode, values["startsAt"]));
+  if (Object.prototype.hasOwnProperty.call(values, "day")) defineModelProperty(result, "day", convertModelField("deserialize", "day", __convert_TSchedule_4_decode, values["day"]));
+  if (Object.prototype.hasOwnProperty.call(values, "length")) defineModelProperty(result, "length", convertModelField("deserialize", "length", __convert_TSchedule_5_decode, values["length"]));
   return Reflect.construct(constructor, [result]) as TScheduleBaseModel;
 }
 
 function encodeTScheduleModel(model: TScheduleBaseModel): TScheduleJSON {
   const result: Record<string, unknown> = {};
-  if (Object.prototype.hasOwnProperty.call(model, "startsAt")) defineModelProperty(result, "startsAt", (convertModelField("serialize", "startsAt", () => (modelSerdeBindings["@exprtlabs/golem/temporal#serializeTemporalInstant\u0000@exprtlabs/golem/temporal#deserializeTemporalInstant"].serialize(model["startsAt"])))));
-  if (Object.prototype.hasOwnProperty.call(model, "day")) defineModelProperty(result, "day", (convertModelField("serialize", "day", () => (modelSerdeBindings["@exprtlabs/golem/temporal#serializeTemporalPlainDate\u0000@exprtlabs/golem/temporal#deserializeTemporalPlainDate"].serialize(model["day"])))));
-  if (Object.prototype.hasOwnProperty.call(model, "length")) defineModelProperty(result, "length", (convertModelField("serialize", "length", () => (modelSerdeBindings["@exprtlabs/golem/temporal#serializeTemporalDuration\u0000@exprtlabs/golem/temporal#deserializeTemporalDuration"].serialize(model["length"])))));
+  if (Object.prototype.hasOwnProperty.call(model, "startsAt")) defineModelProperty(result, "startsAt", (convertModelField("serialize", "startsAt", __convert_TSchedule_0_encode, model["startsAt"])));
+  if (Object.prototype.hasOwnProperty.call(model, "day")) defineModelProperty(result, "day", (convertModelField("serialize", "day", __convert_TSchedule_1_encode, model["day"])));
+  if (Object.prototype.hasOwnProperty.call(model, "length")) defineModelProperty(result, "length", (convertModelField("serialize", "length", __convert_TSchedule_2_encode, model["length"])));
   return result as TScheduleJSON;
 }
 

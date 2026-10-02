@@ -29,14 +29,14 @@ export abstract class TReminderBaseModel implements GeneratedModel<TReminderJSON
 function decodeTReminderModel(constructor: GeneratedModelConstructor, json: unknown): TReminderBaseModel {
   const values = modelObject(json, "TReminderBaseModel");
   const result: Record<string, unknown> = { ...values };
-  if (Object.prototype.hasOwnProperty.call(values, "remindAt")) defineModelProperty(result, "remindAt", convertModelField("deserialize", "remindAt", () => (deserializeDate(values["remindAt"]))));
+  if (Object.prototype.hasOwnProperty.call(values, "remindAt")) defineModelProperty(result, "remindAt", convertModelField("deserialize", "remindAt", deserializeDate, values["remindAt"]));
   return Reflect.construct(constructor, [result]) as TReminderBaseModel;
 }
 
 function encodeTReminderModel(model: TReminderBaseModel): TReminderJSON {
   const result: Record<string, unknown> = {};
   if (Object.prototype.hasOwnProperty.call(model, "title")) defineModelProperty(result, "title", (model["title"]));
-  if (Object.prototype.hasOwnProperty.call(model, "remindAt")) defineModelProperty(result, "remindAt", (convertModelField("serialize", "remindAt", () => (serializeDate(model["remindAt"])))));
+  if (Object.prototype.hasOwnProperty.call(model, "remindAt")) defineModelProperty(result, "remindAt", (convertModelField("serialize", "remindAt", serializeDate, model["remindAt"])));
   return result as TReminderJSON;
 }
 

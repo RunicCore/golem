@@ -24,16 +24,20 @@ export abstract class TPermissionInputBaseModel implements GeneratedModel<TPermi
 
 }
 
+function __convert_TPermissionInput_0_encode(fieldValue: TPermissionInputBaseModel["permissions"]) { return modelSerdeBindings["src/permission-rules.ts#encodePermissions\u0000src/permission-rules.ts#decodePermissions"].serialize(fieldValue); }
+
+function __convert_TPermissionInput_1_decode(fieldValue: unknown) { return modelSerdeBindings["src/permission-rules.ts#encodePermissions\u0000src/permission-rules.ts#decodePermissions"].deserialize(fieldValue); }
+
 function decodeTPermissionInputModel(constructor: GeneratedModelConstructor, json: unknown): TPermissionInputBaseModel {
   const values = modelObject(json, "TPermissionInputBaseModel");
   const result: Record<string, unknown> = { ...values };
-  if (Object.prototype.hasOwnProperty.call(values, "permissions")) defineModelProperty(result, "permissions", convertModelField("deserialize", "permissions", () => (modelSerdeBindings["src/permission-rules.ts#encodePermissions\u0000src/permission-rules.ts#decodePermissions"].deserialize(values["permissions"]))));
+  if (Object.prototype.hasOwnProperty.call(values, "permissions")) defineModelProperty(result, "permissions", convertModelField("deserialize", "permissions", __convert_TPermissionInput_1_decode, values["permissions"]));
   return Reflect.construct(constructor, [result]) as TPermissionInputBaseModel;
 }
 
 function encodeTPermissionInputModel(model: TPermissionInputBaseModel): TPermissionInputJSON {
   const result: Record<string, unknown> = {};
-  if (Object.prototype.hasOwnProperty.call(model, "permissions")) defineModelProperty(result, "permissions", (convertModelField("serialize", "permissions", () => (modelSerdeBindings["src/permission-rules.ts#encodePermissions\u0000src/permission-rules.ts#decodePermissions"].serialize(model["permissions"])))));
+  if (Object.prototype.hasOwnProperty.call(model, "permissions")) defineModelProperty(result, "permissions", (convertModelField("serialize", "permissions", __convert_TPermissionInput_0_encode, model["permissions"])));
   return result as TPermissionInputJSON;
 }
 

@@ -26,17 +26,21 @@ export abstract class TAttachmentBaseModel implements GeneratedModel<TAttachment
 
 }
 
+function __convert_TAttachment_0_encode(fieldValue: TAttachmentBaseModel["content"]) { return modelSerdeBindings["src/base64-codec.ts#encodeBase64\u0000src/base64-codec.ts#decodeBase64"].serialize(fieldValue); }
+
+function __convert_TAttachment_1_decode(fieldValue: unknown) { return modelSerdeBindings["src/base64-codec.ts#encodeBase64\u0000src/base64-codec.ts#decodeBase64"].deserialize(fieldValue); }
+
 function decodeTAttachmentModel(constructor: GeneratedModelConstructor, json: unknown): TAttachmentBaseModel {
   const values = modelObject(json, "TAttachmentBaseModel");
   const result: Record<string, unknown> = { ...values };
-  if (Object.prototype.hasOwnProperty.call(values, "content")) defineModelProperty(result, "content", convertModelField("deserialize", "content", () => (modelSerdeBindings["src/base64-codec.ts#encodeBase64\u0000src/base64-codec.ts#decodeBase64"].deserialize(values["content"]))));
+  if (Object.prototype.hasOwnProperty.call(values, "content")) defineModelProperty(result, "content", convertModelField("deserialize", "content", __convert_TAttachment_1_decode, values["content"]));
   return Reflect.construct(constructor, [result]) as TAttachmentBaseModel;
 }
 
 function encodeTAttachmentModel(model: TAttachmentBaseModel): TAttachmentJSON {
   const result: Record<string, unknown> = {};
   if (Object.prototype.hasOwnProperty.call(model, "name")) defineModelProperty(result, "name", (model["name"]));
-  if (Object.prototype.hasOwnProperty.call(model, "content")) defineModelProperty(result, "content", (convertModelField("serialize", "content", () => (modelSerdeBindings["src/base64-codec.ts#encodeBase64\u0000src/base64-codec.ts#decodeBase64"].serialize(model["content"])))));
+  if (Object.prototype.hasOwnProperty.call(model, "content")) defineModelProperty(result, "content", (convertModelField("serialize", "content", __convert_TAttachment_0_encode, model["content"])));
   return result as TAttachmentJSON;
 }
 

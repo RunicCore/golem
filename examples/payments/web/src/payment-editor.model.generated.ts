@@ -27,16 +27,20 @@ export abstract class TPaymentEditorBaseModel implements GeneratedModel<TPayment
 
 }
 
+function __convert_TPaymentEditor_0_encode(fieldValue: TPaymentEditorBaseModel["money"]) { return fieldValue instanceof TMoneyModel ? encodeGeneratedModel(fieldValue) : fieldValue; }
+
+function __convert_TPaymentEditor_1_decode(fieldValue: unknown) { return fieldValue == null || fieldValue instanceof TMoneyModel ? fieldValue : decodeGeneratedModelTrusted(TMoneyModel, fieldValue); }
+
 function decodeTPaymentEditorModel(constructor: GeneratedModelConstructor, json: unknown): TPaymentEditorBaseModel {
   const values = modelObject(json, "TPaymentEditorBaseModel");
   const result: Record<string, unknown> = { ...values };
-  if (Object.prototype.hasOwnProperty.call(values, "money")) defineModelProperty(result, "money", convertModelField("deserialize", "money", () => (values["money"] == null || values["money"] instanceof TMoneyModel ? values["money"] : decodeGeneratedModelTrusted(TMoneyModel, values["money"]))));
+  if (Object.prototype.hasOwnProperty.call(values, "money")) defineModelProperty(result, "money", convertModelField("deserialize", "money", __convert_TPaymentEditor_1_decode, values["money"]));
   return Reflect.construct(constructor, [result]) as TPaymentEditorBaseModel;
 }
 
 function encodeTPaymentEditorModel(model: TPaymentEditorBaseModel): TPaymentEditorJSON {
   const result: Record<string, unknown> = {};
-  if (Object.prototype.hasOwnProperty.call(model, "money")) defineModelProperty(result, "money", (convertModelField("serialize", "money", () => (model["money"] instanceof TMoneyModel ? encodeGeneratedModel(model["money"]) : model["money"]))));
+  if (Object.prototype.hasOwnProperty.call(model, "money")) defineModelProperty(result, "money", (convertModelField("serialize", "money", __convert_TPaymentEditor_0_encode, model["money"])));
   if (Object.prototype.hasOwnProperty.call(model, "note")) defineModelProperty(result, "note", (model["note"]));
   return result as TPaymentEditorJSON;
 }

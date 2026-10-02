@@ -25,16 +25,20 @@ export abstract class TSubscriptionBaseModel implements GeneratedModel<TSubscrip
 
 }
 
+function __convert_TSubscription_0_encode(fieldValue: TSubscriptionBaseModel["watchers"]) { return Array.isArray(fieldValue) ? (fieldValue as readonly unknown[]).slice() : fieldValue; }
+
+function __convert_TSubscription_1_decode(fieldValue: unknown) { return Array.isArray(fieldValue) ? (fieldValue as readonly unknown[]).slice() : fieldValue; }
+
 function decodeTSubscriptionModel(constructor: GeneratedModelConstructor, json: unknown): TSubscriptionBaseModel {
   const values = modelObject(json, "TSubscriptionBaseModel");
   const result: Record<string, unknown> = { ...values };
-  if (Object.prototype.hasOwnProperty.call(values, "watchers")) defineModelProperty(result, "watchers", convertModelField("deserialize", "watchers", () => (Array.isArray(values["watchers"]) ? (values["watchers"] as readonly unknown[]).slice() : values["watchers"])));
+  if (Object.prototype.hasOwnProperty.call(values, "watchers")) defineModelProperty(result, "watchers", convertModelField("deserialize", "watchers", __convert_TSubscription_1_decode, values["watchers"]));
   return Reflect.construct(constructor, [result]) as TSubscriptionBaseModel;
 }
 
 function encodeTSubscriptionModel(model: TSubscriptionBaseModel): TSubscriptionJSON {
   const result: Record<string, unknown> = {};
-  if (Object.prototype.hasOwnProperty.call(model, "watchers")) defineModelProperty(result, "watchers", (convertModelField("serialize", "watchers", () => (Array.isArray(model["watchers"]) ? (model["watchers"] as readonly unknown[]).slice() : model["watchers"]))));
+  if (Object.prototype.hasOwnProperty.call(model, "watchers")) defineModelProperty(result, "watchers", (convertModelField("serialize", "watchers", __convert_TSubscription_0_encode, model["watchers"])));
   if (Object.prototype.hasOwnProperty.call(model, "reminders")) defineModelProperty(result, "reminders", (model["reminders"]));
   return result as TSubscriptionJSON;
 }
