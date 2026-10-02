@@ -48,3 +48,17 @@ test('a disk edit reported through inputsChanged gives a new SourceFile with the
   assert.ok(after && after !== before);
   assert.match(after.text, /value = 22/);
 });
+
+test('a disk edit that changes a file signature gives a new SourceFile without inputsChanged', t => {
+  const { root, main, dependency } = sessionOnDiskDependency(t);
+  using session = new ts.ProgramSession({ cwd: root });
+  const first = session.openProgram({ root, sources: [main] });
+  const before = first.getSourceFile(dependency);
+  assert.ok(before);
+  // The new text has another size, so the file's signature changes whatever the timestamp resolution.
+  fs.writeFileSync(dependency, 'export const value = 22;\n');
+  using second = session.openProgram({ root, sources: [main] });
+  const after = second.getSourceFile(dependency);
+  assert.ok(after && after !== before);
+  assert.match(after.text, /value = 22/);
+});
