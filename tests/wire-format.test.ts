@@ -148,9 +148,6 @@ test('WireFormat<T> equals the generator-emitted JSON type for fixture models an
     }
     writeModelSources(sourceRoot, sources);
     fs.writeFileSync(path.join(projectRoot, 'package.json'), JSON.stringify({ private: true, type: 'module' }));
-    // Each project is generated alone. Its own configuration keeps the shared one from putting its siblings' sources in the program,
-    // where the generator's stand-ins for companions it does not generate would fail them.
-    fs.writeFileSync(path.join(projectRoot, 'tsconfig.json'), JSON.stringify({ extends: '../../tsconfig.json', include: ['src/**/*.ts'] }));
     const modelSources = Object.keys(sources).filter(name => MODEL_SOURCE.test(name)).map(name => path.join(sourceRoot, name));
     let artifacts;
     // Models that use an SDK `Money` get a real generated SDK and its manifest.

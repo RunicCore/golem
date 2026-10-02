@@ -1039,8 +1039,6 @@ interface ProgramRequest {
   readonly overlays: ReadonlyMap<string, string>;
   /** Configuration paths the observer is not told about: virtual configurations are derived input. */
   readonly hidden: ReadonlySet<string>;
-  /** Whether the project is the derived configuration that adds overlay-only roots. */
-  readonly derived: boolean;
 }
 
 type UpdateSnapshotParams = NonNullable<Parameters<API['updateSnapshot']>[0]>;
@@ -1101,15 +1099,15 @@ function programRequest(options: OpenProgramOptions): ProgramRequest {
   }
   const files = [...new Set(options.sources.map(canonical))];
   // The compiler builds a project from its configuration, and a file that exists only as an overlay is matched by no
-  // directory listing. A derived configuration that extends the project's own and names those files as roots adds them.
-  const overlayOnly = files.filter((filename) => overlays.has(filename) && fileSignature(filename) === MISSING);
+  // directory listing. A derived configuration that extends the project's own and names every requested root adds
+  // those files. Its `files` replaces the project's own `files`, so the requested roots must include them.
   let configPath = baseConfigPath;
-  if (overlayOnly.length > 0) {
+  if (files.some((filename) => overlays.has(filename) && fileSignature(filename) === MISSING)) {
     configPath = join(dirname(baseConfigPath), `${basename(baseConfigPath, '.json')}.overlay-roots.json`);
-    overlays.set(configPath, JSON.stringify({ extends: `./${basename(baseConfigPath)}`, files: overlayOnly }));
+    overlays.set(configPath, JSON.stringify({ extends: `./${basename(baseConfigPath)}`, files }));
     hidden.add(configPath);
   }
-  return { configPath, files, overlays, hidden, derived: overlayOnly.length > 0 };
+  return { configPath, files, overlays, hidden };
 }
 
 /** Release a snapshot; one on an exited compiler is already gone. */
@@ -1237,10 +1235,12 @@ export class ProgramSession implements Disposable {
       replaceAll(this.openProjects, projects);
       replaceAll(this.openFiles, files);
       try {
-        const configuredProject = options.configFile === undefined && !request.derived ? undefined : snapshot.getProject(request.configPath);
-        const project = configuredProject
+        // The project of the program's own configuration, base or derived, so every run of a job sees the same files.
+        // A source outside that configuration (an external model root) belongs to the project the compiler picks for it.
+        const configured = snapshot.getProject(request.configPath);
+        const project = (configured && request.files.every((filename) => configured.program.getSourceFile(filename) !== undefined) ? configured : undefined)
           ?? (request.files[0] ? snapshot.getDefaultProjectForFile(request.files[0]) : undefined)
-          ?? snapshot.getProject(request.configPath)
+          ?? configured
           ?? snapshot.getProjects()[0];
         if (!project) throw new Error(`No TypeScript project could be opened for ${options.root}.`);
         const program = new CompatProgram(this, snapshot, project);

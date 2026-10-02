@@ -8,6 +8,7 @@ import { generatedCodecId } from './support/consumer.js';
 import { copyFixture, copyFixtureFile, writeGeneratedArtifacts } from './fixture-project.js';
 import { accountModelWithField, accountModelWithMissingImport } from './fixture-templates/models/model-generator.js';
 import { compileModelProject, createModelProject, writeModelSources } from './model-project.js';
+import { taggedModelSource } from './fixture-templates/models/model-tags.js';
 import { tsSource } from './source-template.js';
 
 import {
@@ -82,7 +83,8 @@ export type TAccount = IModel<{ id: string }>;`,
   });
   assert.deepEqual(discoverModelSources(root), [source]);
   const result = generate({ root, profile: { mobx: false, validation: false } });
-  assert.deepEqual(result.watchInputs, [source, path.join(root, 'tsconfig.json')]);
+  // The run's own plugin-keys output is in its program; the watch drops every owned output from its inputs.
+  assert.deepEqual(result.watchInputs, [path.join(root, 'src/generated/models/iobject-plugin-keys.ts'), source, path.join(root, 'tsconfig.json')]);
   assert.equal(result.watchInputs.some((filename) => filename.endsWith('.generated.ts')), false);
 });
 
@@ -212,4 +214,17 @@ test('rejects unsupported and duplicate model manifests', (t: TestContext) => {
     () => generate({ root, sources: [source], profile: { mobx: false, validation: false }, manifestInputs: [first, second] }),
     /Duplicate model manifest id/,
   );
+});
+
+test('a job leaves the real companions of other jobs under the same tsconfig alone', (t: TestContext) => {
+  // One tsconfig covers both jobs' sources. Job two's program holds job one's handwritten class, which extends the
+  // base class of job one's companion; only job one's own run may replace that companion.
+  const { root } = createModelProject(t, { prefix: 'golem-two-jobs-', name: 'two-jobs', rootDir: '.', include: ['jobs/*/src/**/*.ts'] });
+  const profile = { mobx: false, validation: true } as const;
+  for (const job of ['one', 'two']) {
+    const jobRoot = path.join(root, 'jobs', job);
+    writeModelSources(path.join(jobRoot, 'src'), { 'item.model.ts': taggedModelSource({ name: 'Item', fields: tsSource`name: string` }) });
+    writeGeneratedArtifacts(generate({ root: jobRoot, profile }).artifacts);
+    assert.ok(fs.existsSync(path.join(jobRoot, 'src/item.model.generated.ts')), `job ${job} wrote its companion`);
+  }
 });

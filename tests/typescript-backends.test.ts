@@ -88,3 +88,28 @@ test('a source that exists only as an overlay is part of the program and its err
   }
   assert.equal(reported.some(text => text.includes(onDisk)), false);
 });
+
+test('an overlay-only source keeps the ambient declarations that the configuration lists in files', t => {
+  const root = createFixtureProject(t, 'golem-overlay-ambient-');
+  fs.mkdirSync(path.join(root, 'src'));
+  fs.mkdirSync(path.join(root, 'types'));
+  fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ name: 'overlay-ambient', private: true, type: 'module' }));
+  fs.writeFileSync(path.join(root, 'tsconfig.json'), JSON.stringify({
+    compilerOptions: { strict: true, skipLibCheck: true, noEmit: true, module: 'NodeNext', moduleResolution: 'NodeNext' },
+    files: ['types/ambient.d.ts'],
+    include: ['src/**/*.ts'],
+  }));
+  const ambient = path.join(root, 'types/ambient.d.ts');
+  const onDisk = path.join(root, 'src/on-disk.ts');
+  const overlayOnly = path.join(root, 'src/uses-ambient.generated.ts');
+  fs.writeFileSync(ambient, 'interface AmbientNote { text: string }\n');
+  fs.writeFileSync(onDisk, 'export const onDisk = 1;\n');
+  // The generator names the configuration's ambient files as roots, next to the sources and the artifacts.
+  using session = new ts.ProgramSession({ cwd: root });
+  using program = session.openProgram({
+    root,
+    sources: [onDisk, ambient, overlayOnly],
+    overlays: new Map([[overlayOnly, 'export const note: AmbientNote = { text: "x" };\n']]),
+  });
+  assert.deepEqual(ts.getPreEmitDiagnostics(program).map(diagnostic => diagnostic.text), []);
+});

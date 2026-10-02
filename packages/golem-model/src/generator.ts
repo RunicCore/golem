@@ -1,5 +1,5 @@
 import { existsSync, statSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, sep } from 'node:path';
 import * as ts from '@exprtlabs/golem/ts';
 import type {
   GolemArtifact,
@@ -479,11 +479,14 @@ export function generate(context: GolemModelContext): GolemModelResult {
     });
   }
 
+  const ownedCompanions = new Set(sources.map((source) => canonicalFilename(generatedFilename(source))));
   using prospective = createOverlayProgram(
     programInfo,
     sources,
     artifacts,
     normalized.onInput,
+    // A companion this job owns is a source's companion or a file under its output directory.
+    (companion) => ownedCompanions.has(companion) || companion.startsWith(`${canonicalFilename(normalized.output)}${sep}`),
   );
   const diagnostics = ts.getPreEmitDiagnostics(prospective);
   if (diagnostics.length > 0) throw new Error(formatDiagnostics(diagnostics, normalized.root));
@@ -498,7 +501,6 @@ export function generate(context: GolemModelContext): GolemModelResult {
       normalized.root,
       sources,
       referencedManifestFiles(graphs, manifestIndex),
-      artifacts.map((artifact) => artifact.path),
     ),
   };
 }

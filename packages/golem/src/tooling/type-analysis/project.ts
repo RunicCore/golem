@@ -162,12 +162,14 @@ export function createOverlayProgram(
   info: ProgramInfo,
   sources: readonly string[],
   artifacts: readonly { readonly path: string; readonly content: string }[],
-  onInput?: InputObserver,
+  onInput: InputObserver | undefined,
+  /** Whether this run owns a companion: one it would write or remove, never another job's. */
+  owns: (canonicalCompanion: string) => boolean,
 ): ts.Program {
   const overlays = new Map(artifacts.map((artifact) => [canonicalFilename(artifact.path), artifact.content]));
   for (const filename of info.projectFiles) {
     const canonical = canonicalFilename(filename);
-    if (canonical.endsWith('.generated.ts') && !overlays.has(canonical)) {
+    if (canonical.endsWith('.generated.ts') && !overlays.has(canonical) && owns(canonical)) {
       overlays.set(canonical, 'export {}\n');
     }
   }
@@ -203,7 +205,6 @@ export function projectWatchInputs(
   root: string,
   sources: readonly string[],
   manifestPaths: readonly string[],
-  ownedOutputs: readonly string[] = [],
 ): string[] {
   const inputs = new Set<string>([
     ...sources,
@@ -220,7 +221,5 @@ export function projectWatchInputs(
     if (program.isSourceFileFromExternalLibrary(sourceFile) || program.isSourceFileDefaultLibrary(sourceFile)) continue;
     inputs.add(filename);
   }
-  // Watching a file the run writes would trigger the run again.
-  const owned = new Set(ownedOutputs.map(canonicalFilename));
-  return [...inputs].filter((filename) => !isGeneratedCompanion(filename) && !owned.has(canonicalFilename(filename))).sort();
+  return [...inputs].filter((filename) => !isGeneratedCompanion(filename)).sort();
 }
