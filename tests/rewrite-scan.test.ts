@@ -384,3 +384,49 @@ test('typeof and a qualified name resolve like a plain type name; a default clas
   }]);
   assert.equal(result.index.files['src/default-class-import.ts'], undefined);
 });
+
+/** A model project with an empty `src/` for tests that write their own key tables and sources. */
+function bareProject(t: TestContext, files: Readonly<Record<string, string>>): string {
+  const { root } = createModelProject(t, { prefix: 'golem-rewrite-scan-', linkTypescript: true });
+  writeGeneratedArtifacts(Object.entries(files).map(([relative, content]) => ({ path: path.join(root, 'src', relative), content })));
+  return root;
+}
+
+test('a class registers under the id its own file keys, never under a same-named declaration of another file', (t) => {
+  const keys = (entries: Readonly<Record<string, string>>): string => `export const IOBJECT_PLUGIN_KEYS = ${JSON.stringify(entries)} as const;\n`;
+  const root = bareProject(t, {
+    // `Foo` is keyed only in b.model.ts; a.model.ts declares its own `Foo` and reads b's through a namespace.
+    'iobject-plugin-keys.ts': keys({ 'b.model.ts#Foo': 'TFoo_bbbbbbbb', 'b.model.ts#TFoo': 'TFoo_bbbbbbbb', 'c.model.ts#Bar': 'TBar_cccccccc' }),
+    'b.model.ts': 'export type TFoo = { id: string };\nexport const Foo = 1;\n',
+    'a.model.generated.ts': 'export abstract class TFooBaseModel {}\n',
+    'a.model.ts': "import { TFooBaseModel } from './a.model.generated.js';\nimport * as b from './b.model.js';\nexport class Foo extends TFooBaseModel {}\nexport const other = b.Foo;\n",
+    'c.model.generated.ts': 'export abstract class TBarBaseModel {}\n',
+    'c.model.ts': "import { TBarBaseModel } from './c.model.generated.js';\nexport class Bar extends TBarBaseModel {}\n",
+  });
+  const result = scan(root);
+  assert.deepEqual(result.diagnostics, []);
+  assert.equal(result.index.files['src/a.model.ts'], undefined, 'a class with no key of its own is not registered');
+  assert.match(rewritten(root, result, 'c.model.ts'), /\n__golem_registerIModelClass\("TBar_cccccccc", Bar\);/, 'a keyed class still registers');
+});
+
+test('two key tables that give one declaration different ids make a call on it fail instead of choosing one', (t) => {
+  const table = (id: string): string => `export const IOBJECT_PLUGIN_KEYS = { "a/x.model.ts#TX": "${id}", "y.model.ts#TY": "TY_yyyyyyyy" } as const;\n`;
+  const root = bareProject(t, {
+    // Both tables name `a/x.model.ts#TX`; the declaring file is src/a/x.model.ts, so only the file-name match applies.
+    'iobject-plugin-keys.ts': table('TX_aaaaaaaa'),
+    'b/iobject-plugin-keys.ts': table('TX_bbbbbbbb'),
+    'a/x.model.ts': 'export type TX = { id: string };\n',
+    'y.model.ts': 'export type TY = { id: string };\n',
+    'use.ts': "import { parse } from '@exprtlabs/golem/serde';\nimport type { TX } from './a/x.model.js';\nimport type { TY } from './y.model.js';\nexport const x = parse<TX>('{}');\nexport const y = parse<TY>('{}');\n",
+  });
+  const result = scan(root);
+  assert.deepEqual(result.diagnostics, [{
+    code: 'RUNM1067',
+    severity: 'error',
+    message: 'parse<TX> has no unique codec id',
+    file: 'src/use.ts',
+    line: 4,
+    column: 18,
+  }]);
+  assert.match(rewritten(root, result, 'use.ts'), /__golem_requireObjectCodec\("TY_yyyyyyyy"\)\.parse\('\{\}'\)/, 'a declaration both tables agree on still resolves');
+});
