@@ -23,7 +23,7 @@ export const TYPESCRIPT6_FILES = [
     'constraint-parity', 'model-companions', 'model-union-tags', 'union-conversion', 'model-tuples', 'projection-integration',
     'resource-projection', 'tag-alias-generics', 'tag-model-boundaries', 'model-generator', 'model-codec-location',
     'model-field-names', 'constraint-portability', 'constraint-callback-composition', 'public-model-layout', 'public-sdk-layout',
-    'controllers-tooling', 'watch-recovery', 'pipeline', 'rewrite-scan',
+    'controllers-tooling', 'watch-recovery', 'pipeline', 'rewrite-scan', 'build-command',
   ].map(name => `.build/tests/${name}.test.js`),
   '.build/tests/golem-ts-openapi/*.test.js',
 ] as const;
