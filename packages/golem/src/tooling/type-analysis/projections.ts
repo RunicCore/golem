@@ -47,7 +47,7 @@ export function fieldProvenance(
     const environment = new Map(substitutions);
     declaration.typeParameters?.forEach((parameter, index) => {
       const parameterSymbol = typeParameterSymbol(checker, parameter);
-      const argument = current.typeArguments?.[index] ?? parameter.defaultType;
+      const argument = current.typeArguments?.[index] ?? ts.typeParameterDefault(parameter);
       if (parameterSymbol && argument) environment.set(parameterSymbol, argument);
     });
     // Conditional utilities can retain unchanged members; the checker selects them later.
@@ -73,22 +73,18 @@ export function isPropertyMapping(type: ts.Type): boolean {
 /** Preserve authored readonly array and tuple containers in generated model types. */
 export function isReadonlySequenceType(checker: ts.TypeChecker, type: ts.Type): boolean {
   if (checker.isTupleType(type)) {
-    return (type.target as ts.Type & { readonly readonly?: boolean } | undefined)?.readonly === true;
+    return (ts.typeReferenceTarget(type) as ts.Type & { readonly readonly?: boolean } | undefined)?.readonly === true;
   }
   if (!checker.isArrayType(type)) return false;
-  return type.target?.getSymbol?.()?.getName() === 'ReadonlyArray';
+  return ts.typeReferenceTarget(type)?.getSymbol?.()?.getName() === 'ReadonlyArray';
 }
-
-// TypeScript's internal CheckFlags bits; the TS 7 API exposes the number but no enum.
-const CHECK_FLAGS_READONLY = 1 << 3;
-const CHECK_FLAGS_MAPPED = 1 << 18;
 
 /** Readonly is a TypeScript modifier; it is neither freezing nor a wire annotation. */
 export function readonlyPropertyNames(checker: ts.TypeChecker, type: ts.Type): readonly string[] {
   return checker.getPropertiesOfType(type).filter(property =>
     // A mapped property's modifier comes from the mapping (`Readonly<>`, `-readonly`), not its source declaration.
-    (property.checkFlags & CHECK_FLAGS_MAPPED) !== 0
-      ? (property.checkFlags & CHECK_FLAGS_READONLY) !== 0
+    (property.checkFlags & ts.CheckFlags.Mapped) !== 0
+      ? (property.checkFlags & ts.CheckFlags.Readonly) !== 0
       : (property.declarations ?? checker.getRootSymbols(property).flatMap(root => root.declarations ?? [])).some(declaration =>
         ts.canHaveModifiers(declaration) && ts.getModifiers(declaration)?.some(item => item.kind === ts.SyntaxKind.ReadonlyKeyword)
       )).map(property => property.getName());
@@ -172,7 +168,7 @@ export function instantiatedTypeSource(checker: ts.TypeChecker, node: ts.TypeNod
       const parameterSymbol = typeParameterSymbol(checker, parameter);
       const argument = substituteTypeNode(
         checker,
-        node && ts.isTypeReferenceNode(node) ? node.typeArguments?.[index] ?? parameter.defaultType : parameter.defaultType,
+        node && ts.isTypeReferenceNode(node) ? node.typeArguments?.[index] ?? ts.typeParameterDefault(parameter) : ts.typeParameterDefault(parameter),
         environment,
       );
       if (parameterSymbol && argument) environment.set(parameterSymbol, argument);

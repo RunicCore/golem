@@ -193,7 +193,7 @@ function hasRequiredTypeParameter(symbol: ts.Symbol): boolean {
     .filter((item): item is ts.ClassLikeDeclaration | ts.InterfaceDeclaration => ts.isClassLike(item) || ts.isInterfaceDeclaration(item))
     .map((item) => item.typeParameters ?? []);
   const count = Math.max(0, ...lists.map((list) => list.length));
-  return Array.from({ length: count }, (_, index) => lists.some((list) => list[index]?.defaultType)).some((defaulted) => !defaulted);
+  return Array.from({ length: count }, (_, index) => lists.some((list) => { const parameter = list[index]; return parameter !== undefined && ts.typeParameterDefault(parameter) !== undefined; })).some((defaulted) => !defaulted);
 }
 
 /** A file with a top-level import or export is a module; any other file declares globals. */
@@ -754,10 +754,7 @@ export function descriptorBuilder(
     if (checker.isTupleType(type)) {
       const reference = tupleTarget(type);
       const arguments_ = checker.getTypeArguments(reference);
-      const tupleTargetType = reference.target as ts.GenericType & {
-        readonly elementFlags?: readonly ts.ElementFlags[];
-      };
-      const flags: readonly ts.ElementFlags[] = tupleTargetType.elementFlags ?? [];
+      const flags: readonly ts.ElementFlags[] = ts.typeReferenceTarget(reference)?.elementFlags ?? [];
       const allowsUndefined = (itemNode: ts.TypeNode): boolean => {
         const substituted = substituteTypeNode(checker, itemNode, childSubstitutions) ?? itemNode;
         if (ts.isParenthesizedTypeNode(substituted)) return allowsUndefined(substituted.type);

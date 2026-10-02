@@ -61,6 +61,19 @@ export {
   SymbolFlags,
   TypeFlags,
 };
+/** TypeScript 7 names a type parameter's default `defaultType`; TypeScript 6 names it `default`. */
+export function typeParameterDefault(parameter: ast.TypeParameterDeclaration): TypeNode | undefined {
+  return parameter.defaultType;
+}
+
+/** The generic target of a type reference (e.g. the tuple target of a tuple type). */
+export function typeReferenceTarget(type: Type): Type | undefined {
+  return type.target;
+}
+
+/** Checker-internal `CheckFlags` bits; the TypeScript 7 API exposes the number but no enum. */
+export const CheckFlags = { Readonly: 1 << 3, Mapped: 1 << 18 } as const;
+
 export type Type = CompatType;
 export type Symbol = CompatSymbol;
 export type Signature = CompatSignature;

@@ -29,3 +29,12 @@ test('typescript/unstable stays inside the generator shim', () => {
   assert.deepEqual(hits, ['packages/golem/src/tooling/typescript-ns.ts']);
 });
 
+
+test('analysis reads renamed AST members only through the seam', () => {
+  const offenders = typescriptFiles(path.join(root, 'packages'))
+    .filter((filename) => !/typescript-ns\.ts$|typescript-ts[67]\.ts$/.test(filename))
+    .filter((filename) => /\.defaultType\b|\b(?:type|reference)\.target\b|\.target\?\.getSymbol/.test(fs.readFileSync(filename, 'utf8')))
+    .map((filename) => portable(path.relative(root, filename)))
+    .sort();
+  assert.deepEqual(offenders, []);
+});
