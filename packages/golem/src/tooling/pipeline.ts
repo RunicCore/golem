@@ -260,9 +260,6 @@ function assertNoDiagnosticErrors(job: GolemJob, result: GolemResult): void {
   throw new Error(errorDiagnosticsMessage(job.package, errors));
 }
 
-/** The consumer that owns the inputs only the rewrite scan reads, so editing one reruns the scan and no job. */
-const SCAN_CONSUMER = 'rewrite-scan';
-
 interface RewriteRoot {
   /** The job whose compiler the scan borrows; none for a config without a models or controllers job. */
   readonly job?: GolemJob;
@@ -427,7 +424,7 @@ export async function runPipeline(filename: string, options: PipelineOptions = {
         // The models job's compiler is its retained session, keyed by golem-model's SESSION_OWNER, which is its package name.
         sessionOwner: job.package,
       } : {}),
-      onInput: input => observe(input, job?.kind ?? 'models', SCAN_CONSUMER),
+      onInput: input => observe(input, job?.kind ?? 'models'),
     });
     const errors = scanned.diagnostics.filter(diagnostic => diagnostic.severity === GolemDiagnosticSeverity.Error);
     if (errors.length > 0) throw new Error(errorDiagnosticsMessage('golem rewrite scan', errors));
