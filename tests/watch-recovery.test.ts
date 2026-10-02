@@ -137,7 +137,8 @@ test('watch keeps model dependencies outside the models root after a run that re
     'export type TCart = IModel<{ note: Note }>;',
     '',
   ].join('\n'));
-  fs.writeFileSync(config, fs.readFileSync(config, 'utf8').replace('root: .', 'root: app'));
+  // The models job lies in `app`, so the yaml names the tsconfig of `app`.
+  fs.writeFileSync(config, `tsconfig: app/tsconfig.json\n${fs.readFileSync(config, 'utf8').replace('root: .', 'root: app')}`);
   const state = await runPipeline(config);
   const modelInputs = state.results.get('models:app')?.watchInputs ?? [];
   assert.ok(modelInputs.includes(shared), 'the out-of-root import is a models dependency');

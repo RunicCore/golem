@@ -372,9 +372,11 @@ test('-p may name another build config of the yaml project, and only one in the 
 });
 
 /** A project whose golem.yaml names `tsconfig.app.json`, which leaves the test file out of the program; `tsconfig.json` still holds it. */
+/** The yaml names `tsconfig.json`, which leaves the tests out, beside `tsconfig.all.json`, which includes them. */
 async function projectWithNamedTsconfig(t: TestContext, name: string): Promise<string> {
-  const root = await generatedProject(t, name, { yaml: 'version: 1\nmobx: false\nvalidation: false\ntsconfig: tsconfig.app.json\nmodels:\n  root: .\n', generate: false });
-  fs.writeFileSync(path.join(root, 'tsconfig.app.json'), JSON.stringify({ extends: './tsconfig.json', exclude: ['src/**/*.test.ts'] }));
+  const root = await generatedProject(t, name, { yaml: 'version: 1\nmobx: false\nvalidation: false\ntsconfig: ./tsconfig.json\nmodels:\n  root: .\n', generate: false });
+  editTsconfig(root, (tsconfig) => { tsconfig.exclude = ['src/**/*.test.ts']; });
+  fs.writeFileSync(path.join(root, 'tsconfig.all.json'), JSON.stringify({ extends: './tsconfig.json', exclude: [] }));
   await runPipeline(path.join(root, 'golem.yaml'));
   return root;
 }
@@ -383,20 +385,56 @@ test('a tsconfig key names the project that golem generate indexes and golem bui
   const root = await projectWithNamedTsconfig(t, 'build-named-tsconfig');
   const files = Object.keys(readRewriteIndex(root)?.files ?? {});
   assert.ok(files.includes('src/use.ts'));
-  assert.equal(files.includes('src/use.test.ts'), false, 'generate scans tsconfig.app.json, which leaves the test file out');
+  assert.equal(files.includes('src/use.test.ts'), false, 'generate scans the named tsconfig, which leaves the test file out');
   const generated = fs.readFileSync(path.join(root, '.golem/rewrites.json'), 'utf8');
   await runPipeline(path.join(root, 'golem.yaml'), { check: true });
 
   assert.equal((await build(root)).exitCode, 0);
   assert.ok(fs.existsSync(path.join(root, 'build/use.js')));
   assert.equal(fs.existsSync(path.join(root, 'build/use.test.js')), false, 'the default project is the yaml tsconfig');
-  assert.ok(fs.existsSync(path.join(root, '.golem/build/tsconfig.app/emit.tsbuildinfo')));
+  assert.ok(fs.existsSync(path.join(root, '.golem/build/tsconfig/emit.tsbuildinfo')));
   assert.equal(fs.readFileSync(path.join(root, '.golem/rewrites.json'), 'utf8'), generated);
 
   // Another config of the directory builds in memory and leaves the index alone.
-  assert.equal((await build(root, 'tsconfig.json')).exitCode, 0);
+  assert.equal((await build(root, 'tsconfig.all.json')).exitCode, 0);
   assert.ok(fs.existsSync(path.join(root, 'build/use.test.js')));
   assert.equal(fs.readFileSync(path.join(root, '.golem/rewrites.json'), 'utf8'), generated);
+});
+
+test('a tsconfig key that differs from the tsconfig the job finds from its root fails in golem generate, golem check and golem build', async (t) => {
+  const root = await generatedProject(t, 'build-differing-tsconfig', { yaml: 'version: 1\nmobx: false\nvalidation: false\ntsconfig: ./tsconfig.app.json\nmodels:\n  root: .\n', generate: false });
+  fs.writeFileSync(path.join(root, 'tsconfig.app.json'), JSON.stringify({ extends: './tsconfig.json', exclude: ['src/**/*.test.ts'] }));
+  const yaml = path.join(root, 'golem.yaml');
+  const real = fs.realpathSync(root);
+  const unsupported = (error: Error): boolean => {
+    assert.ok(error.message.includes(path.join(real, 'tsconfig.app.json')), error.message);
+    assert.ok(error.message.includes(path.join(real, 'tsconfig.json')), error.message);
+    assert.match(error.message, /is not supported yet/);
+    return true;
+  };
+  await assert.rejects(runPipeline(yaml), unsupported);
+  await assert.rejects(runPipeline(yaml, { check: true }), unsupported);
+  await assert.rejects(build(root), unsupported);
+  const result = await golemBuild(root, []);
+  assert.notEqual(result.code, 0);
+  assert.match(result.stderr, /is not supported yet/);
+  assert.equal(fs.existsSync(path.join(root, '.golem')), false, 'a refused configuration writes no index');
+  assert.equal(fs.existsSync(path.join(root, 'build')), false, 'and no build');
+});
+
+test('a job root outside the directory of the yaml tsconfig fails in golem generate, golem check and golem build', async (t) => {
+  const root = await generatedProject(t, 'build-job-root-outside', { yaml: 'version: 1\nmobx: false\nvalidation: false\ntsconfig: ./app/tsconfig.json\nmodels:\n  root: .\n', generate: false });
+  fs.mkdirSync(path.join(root, 'app'));
+  fs.writeFileSync(path.join(root, 'app/tsconfig.json'), JSON.stringify({ extends: '../tsconfig.json', include: ['../src/**/*.ts'] }));
+  const yaml = path.join(root, 'golem.yaml');
+  const outside = (error: Error): boolean => {
+    assert.equal(error.message, `job root ${fs.realpathSync(root)} is outside ${path.join(fs.realpathSync(root), 'app')}; use one golem.yaml per tsconfig.`);
+    return true;
+  };
+  await assert.rejects(runPipeline(yaml), outside);
+  await assert.rejects(runPipeline(yaml, { check: true }), outside);
+  await assert.rejects(build(root), outside);
+  assert.equal(fs.existsSync(path.join(root, '.golem')), false);
 });
 
 test('a second golem.yaml that names the same tsconfig fails in golem generate, golem check and golem build, naming both yamls', async (t) => {

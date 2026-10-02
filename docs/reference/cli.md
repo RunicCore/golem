@@ -66,6 +66,8 @@ The tsconfig's directory is the project root, and `.golem/rewrites.json` lives t
 
 The index records the `golem.yaml` that owns it. A second `golem.yaml` that names the same tsconfig fails in `generate`, `check` and `build` with an error that names both files, so one tsconfig never gets rewrites from two configurations. Give each `golem.yaml` its own tsconfig, or delete the index to hand it over. An index whose owner file no longer exists is taken over without an error.
 
+One `golem.yaml` serves one tsconfig. `generate`, `check` and `build` fail on a `models` or `controllers` job whose `root` lies outside the tsconfig's directory: `job root <root> is outside <directory>; use one golem.yaml per tsconfig.` Put each package that has its own tsconfig in its own `golem.yaml`. Output paths of any job, including `openapi`, may lie anywhere. They also fail when the tsconfig that `golem.yaml` names differs from the nearest `tsconfig.json` from the job's `root` upward, because the model and controller analysis reads that nearest file. The error names both files and says that a non-default `tsconfig:` that differs from the job's own tsconfig is not supported yet. Name the file the job finds, or move the job.
+
 ## Exit status
 
 | Exit code | Meaning |

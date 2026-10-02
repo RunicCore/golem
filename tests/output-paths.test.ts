@@ -27,6 +27,11 @@ function pipelineFixture(t: TestContext): { root: string; config: string; extern
   fs.mkdirSync(path.join(external, 'node_modules/@exprtlabs'), { recursive: true });
   fs.symlinkSync(path.join(workspace, 'packages/golem'), path.join(external, 'node_modules/@exprtlabs/golem'), 'dir');
   fs.writeFileSync(source, "import type { IModel } from '@exprtlabs/golem/model';\nexport type TCart = IModel<{ value: string }>;\n");
+  // One golem.yaml serves one tsconfig, and the model root lies inside its directory: the external project owns the tsconfig.
+  fs.writeFileSync(path.join(external, 'tsconfig.json'), JSON.stringify({
+    compilerOptions: { target: 'ES2022', module: 'NodeNext', moduleResolution: 'NodeNext', strict: true, skipLibCheck: true },
+    include: ['sources/**/*.ts'],
+  }));
   t.after(() => fs.rmSync(external, { recursive: true, force: true }));
 
   const config = path.join(root, 'golem.yaml');
@@ -34,6 +39,7 @@ function pipelineFixture(t: TestContext): { root: string; config: string; extern
     'version: 1',
     'mobx: false',
     'validation: true',
+    'tsconfig: ../' + path.basename(external) + '/tsconfig.json',
     'openapi:',
     '  - input: api.json',
     '    output: ../' + path.basename(external) + '/sdk',

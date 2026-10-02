@@ -157,6 +157,36 @@ export function contains(directory: string, filename: string): boolean {
 }
 
 /** Parse and resolve the complete dependency graph before checking existence. */
+/** The tsconfig the models and controllers analysis finds from a job root: the nearest `tsconfig.json` upward, as `tsc` does. */
+function tsconfigFoundFrom(root: string): string | undefined {
+  for (let directory = root; ; directory = path.dirname(directory)) {
+    const candidate = path.join(directory, 'tsconfig.json');
+    if (fs.statSync(candidate, { throwIfNoEntry: false })?.isFile()) return canonicalFile(candidate);
+    if (path.dirname(directory) === directory) return undefined;
+  }
+}
+
+/**
+ * One golem.yaml serves one tsconfig. The rewrite scan and the build read the tsconfig the yaml names, while the models and
+ * controllers analysis still reads the one it finds from its job root, so a job must lie inside the yaml tsconfig's directory
+ * and find that same file.
+ */
+function assertJobsMatchTsconfig(configFile: string, tsconfig: string, jobs: readonly GolemJob[]): void {
+  const directory = path.dirname(tsconfig);
+  for (const job of jobs) {
+    if (job.kind !== 'models' && job.kind !== 'controllers') continue;
+    const { root } = job.options;
+    if (!contains(directory, root)) throw new Error(`job root ${root} is outside ${directory}; use one golem.yaml per tsconfig.`);
+    const found = tsconfigFoundFrom(root);
+    if (found !== undefined && found !== tsconfig) {
+      throw new Error(
+        `${configFile} uses the tsconfig ${tsconfig}, but the ${job.id} job reads ${found}, the tsconfig it finds from its root ${root}. `
+        + "A non-default tsconfig: that differs from the job's own tsconfig is not supported yet; name the file the job finds.",
+      );
+    }
+  }
+}
+
 export function resolveConfig(filename = 'golem.yaml', onInput?: InputObserver): GolemConfig {
   const requested = path.resolve(filename);
   onInput?.(requested);
@@ -299,6 +329,7 @@ export function resolveConfig(filename = 'golem.yaml', onInput?: InputObserver):
     jobs.push({ id: `models:${path.relative(directory, root) || '.'}`, kind: 'models', package: '@exprtlabs/golem-model', options: { root, output, profile, ...(sources ? { sources } : {}) } });
   }
   if (!jobs.length) throw new Error('Configure at least one generators, controllers, openapi, or models section.');
+  assertJobsMatchTsconfig(configFile, tsconfig, jobs);
   for (const [index, job] of jobs.entries()) {
     const inputs = job.kind === 'openapi' ? [job.options.input] : job.kind === 'generator' ? [] : job.options.sources ?? [];
     for (const input of inputs) {

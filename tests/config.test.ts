@@ -58,8 +58,9 @@ test('the tsconfig key names the project tsconfig, relative to golem.yaml, and d
   fs.mkdirSync(path.join(root, 'app/configs'), { recursive: true });
   fs.writeFileSync(path.join(root, 'tsconfig.base.json'), '{}');
   fs.writeFileSync(path.join(root, 'app/configs/tsconfig.app.json'), '{}');
-  for (const [value, expected] of [['app/configs/tsconfig.app.json', 'app/configs/tsconfig.app.json'], ['./tsconfig.base.json', 'tsconfig.base.json']] as const) {
-    const named = fixture(t, `version: 1\ntsconfig: ${value}\nmodels:\n  root: .\n`);
+  // The job root lies in the directory of the tsconfig the yaml names.
+  for (const [value, expected, jobRoot] of [['app/configs/tsconfig.app.json', 'app/configs/tsconfig.app.json', 'app/configs'], ['./tsconfig.base.json', 'tsconfig.base.json', '.']] as const) {
+    const named = fixture(t, `version: 1\ntsconfig: ${value}\nmodels:\n  root: ${jobRoot}\n`);
     fs.cpSync(root, named.root, { recursive: true, filter: (source) => !source.endsWith('golem.yaml') });
     const loaded = loadConfig(named.filename);
     assert.equal(loaded.tsconfig, path.join(named.root, expected));
@@ -74,7 +75,7 @@ test('the tsconfig key names the project tsconfig, relative to golem.yaml, and d
 });
 
 test('the tsconfig key resolves the directory through links and keeps the file name', (t: TestContext) => {
-  const { root, filename } = fixture(t, 'version: 1\ntsconfig: alias/tsconfig.json\nmodels:\n  root: .\n');
+  const { root, filename } = fixture(t, 'version: 1\ntsconfig: alias/tsconfig.json\nmodels:\n  root: alias\n');
   fs.mkdirSync(path.join(root, 'real'));
   fs.writeFileSync(path.join(root, 'real/tsconfig.json'), '{}');
   fs.symlinkSync(path.join(root, 'real'), path.join(root, 'alias'), 'dir');
@@ -99,6 +100,70 @@ test('a tsconfig key must be a nonempty string that names an existing file', (t:
     fs.mkdirSync(path.join(root, 'src'));
     assert.throws(() => loadConfig(filename), error);
   }
+});
+
+test('a models or controllers job root must lie inside the directory of the yaml tsconfig, and other outputs may be anywhere', (t: TestContext) => {
+  const controllers = 'controllers:\n  - root: other\n    output: api.json\n    info: { title: Api, version: "1" }\n';
+  const layouts = [
+    // The tsconfig key puts the project directory below the job root.
+    { yaml: `version: 1\ntsconfig: app/tsconfig.json\nmodels:\n  root: other\n`, directory: '.', project: 'app', jobRoot: 'other' },
+    { yaml: `version: 1\ntsconfig: app/tsconfig.json\n${controllers}`, directory: '.', project: 'app', jobRoot: 'other' },
+    // The default tsconfig sits beside the yaml: a root above it is outside.
+    { yaml: 'version: 1\nmodels:\n  root: ..\n', directory: 'pkg', project: 'pkg', jobRoot: '.' },
+  ] as const;
+  for (const layout of layouts) {
+    const { root } = fixture(t, layout.yaml);
+    for (const directory of ['app', 'other', 'pkg']) {
+      fs.mkdirSync(path.join(root, directory));
+      fs.writeFileSync(path.join(root, directory, 'tsconfig.json'), '{}');
+    }
+    const filename = path.join(root, layout.directory, 'golem.yaml');
+    fs.writeFileSync(filename, layout.yaml);
+    assert.throws(() => loadConfig(filename), (error: Error) => {
+      assert.equal(error.message, `job root ${path.join(root, layout.jobRoot)} is outside ${path.join(root, layout.project)}; use one golem.yaml per tsconfig.`);
+      return true;
+    });
+  }
+
+  // A root inside the directory is fine, and so is an openapi output outside it.
+  const inside = fixture(t, 'version: 1\ntsconfig: app/tsconfig.json\nopenapi:\n  - input: api.yaml\n    output: sdk\nmodels:\n  root: app/nested\n');
+  fs.mkdirSync(path.join(inside.root, 'app/nested'), { recursive: true });
+  fs.writeFileSync(path.join(inside.root, 'app/tsconfig.json'), '{}');
+  assert.equal(loadConfig(inside.filename).jobs.length, 2);
+});
+
+test('the yaml tsconfig must be the tsconfig a models or controllers job finds from its root', (t: TestContext) => {
+  const message = (yaml: string, config: string, found: string, job: string, root: string): string => (
+    `${yaml} uses the tsconfig ${config}, but the ${job} job reads ${found}, the tsconfig it finds from its root ${root}. `
+    + 'A non-default tsconfig: that differs from the job\'s own tsconfig is not supported yet; name the file the job finds.'
+  );
+  // A named tsconfig beside the one the job finds.
+  const named = fixture(t, 'version: 1\ntsconfig: ./tsconfig.app.json\nmodels:\n  root: .\n');
+  fs.writeFileSync(path.join(named.root, 'tsconfig.json'), '{}');
+  fs.writeFileSync(path.join(named.root, 'tsconfig.app.json'), '{}');
+  assert.throws(() => loadConfig(named.filename), (error: Error) => {
+    assert.equal(error.message, message(named.filename, path.join(named.root, 'tsconfig.app.json'), path.join(named.root, 'tsconfig.json'), 'models:.', named.root));
+    return true;
+  });
+  // The same file the job finds.
+  fs.writeFileSync(named.filename, 'version: 1\ntsconfig: ./tsconfig.json\nmodels:\n  root: .\n');
+  assert.equal(loadConfig(named.filename).tsconfig, path.join(named.root, 'tsconfig.json'));
+
+  // A controllers job in a package with its own tsconfig, under the default tsconfig beside the yaml.
+  const nested = fixture(t, 'version: 1\ncontrollers:\n  - root: packages/api\n    output: api.json\n    info: { title: Api, version: "1" }\n');
+  fs.mkdirSync(path.join(nested.root, 'packages/api'), { recursive: true });
+  fs.writeFileSync(path.join(nested.root, 'tsconfig.json'), '{}');
+  fs.writeFileSync(path.join(nested.root, 'packages/api/tsconfig.json'), '{}');
+  assert.throws(() => loadConfig(nested.filename), (error: Error) => {
+    assert.equal(error.message, message(nested.filename, path.join(nested.root, 'tsconfig.json'), path.join(nested.root, 'packages/api/tsconfig.json'), 'controllers:api.json', path.join(nested.root, 'packages/api')));
+    return true;
+  });
+
+  // An openapi job analyses no TypeScript, so the tsconfig it would find does not matter.
+  const none = fixture(t, 'version: 1\ntsconfig: tsconfig.app.json\nopenapi:\n  - input: api.yaml\n    output: sdk\n');
+  fs.writeFileSync(path.join(none.root, 'tsconfig.app.json'), '{}');
+  fs.writeFileSync(path.join(none.root, 'tsconfig.json'), '{}');
+  assert.equal(loadConfig(none.filename).jobs.length, 1);
 });
 
 test('configuration errors reject unknown overrides, duplicate keys and overlapping outputs', (t: TestContext) => {
