@@ -15,7 +15,8 @@ const SMOKE_FILE = '.build/tests/packed/model-only.test.js';
 // The TypeScript 6 lane runs these files with GOLEM_TYPESCRIPT_ROOT at the container's TypeScript 6 install.
 // Left out on purpose: compiler-lifecycle (asserts TypeScript 7 server reports), model-generation-scale (patches
 // `Checker.prototype` from typescript/unstable/sync, which TypeScript 6 has no equivalent of), the ttsc suites (ttsc is
-// TypeScript 7 only) and typescript-identity (it compares both versions itself, so it runs once, in the unit step).
+// TypeScript 7 only), rewrite-parity (its reference side is the ttsc plugin, TypeScript 7 only) and
+// typescript-identity (it compares both versions itself, so it runs once, in the unit step).
 export const TYPESCRIPT6_FILES = [
   ...[
     'typescript-backends', 'typescript-ts6', 'model-tags', 'model-composition', 'projection-names', 'model-job-graph',
