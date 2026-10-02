@@ -510,6 +510,14 @@ function requiredKeysType(type: string, names: readonly string[]): string {
   return `Required<Pick<${type}, Extract<${names.map((name) => JSON.stringify(name)).join(' | ')}, keyof ${operand}>>>`;
 }
 
+/** The schema's `required` names that neither its own properties nor an inline allOf member declare. */
+function undeclaredRequiredNames(schema: JsonObjectLike, declaredByAllOf: ReadonlySet<string> = new Set()): string[] {
+  if (!Array.isArray(schema.oneOf) && !Array.isArray(schema.anyOf)) return [];
+  const own = new Set(objectEntries(schema.properties).map(([name]) => name));
+  const names = Array.isArray(schema.required) ? schema.required.map(String) : [];
+  return names.filter((name) => !own.has(name) && !declaredByAllOf.has(name));
+}
+
 /**
  * Applies required names inside the oneOf/anyOf branches of a schema. An inline branch gains them
  * in its `required`; a referenced branch is intersected with a `required` part so the allOf
@@ -561,7 +569,8 @@ function schemaTypeNode(rawSchema: unknown, context: SchemaTypeContext = {}): st
   const allOfNames = Array.isArray(rawSchema.allOf) && !isSchemaReference(rawSchema)
     ? allOfRequirements(rawSchema)
     : undefined;
-  const schema = allOfNames?.required.size ? { ...rawSchema, required: [...allOfNames.required] } : rawSchema;
+  const requiredSchema = allOfNames?.required.size ? { ...rawSchema, required: [...allOfNames.required] } : rawSchema;
+  const schema = withUnionRequired(requiredSchema, undeclaredRequiredNames(requiredSchema, allOfNames?.declared));
   const resources = context.resources ?? (context.document ? collectCanonicalResources(context.document) : undefined);
   const currentBase = nextSchemaBase(
     schema,

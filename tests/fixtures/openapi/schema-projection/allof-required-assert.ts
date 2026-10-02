@@ -33,3 +33,16 @@ const plainCard: InputSchemas.Card = { last4: '1234' };
 void paymentWithoutMethod; void card; void bank;
 void referencedWithoutMethod; void referencedCard; void referencedBank;
 void nestedPaymentWithoutMethod; void nestedPayment; void plainCard;
+// @ts-expect-error a schema's own required binds every oneOf branch
+const plainWithoutMethod: InputSchemas.PlainPayment = { last4: '1234' };
+const plainCard2: InputSchemas.PlainPayment = { method: 'card', last4: '1234' };
+const plainBank: InputSchemas.PlainPayment = { method: 'bank', iban: 'x' };
+// @ts-expect-error a referenced oneOf branch requires method too
+const plainReferencedWithoutMethod: InputSchemas.PlainReferencedPayment = { last4: '1234' };
+const plainReferencedCard: InputSchemas.PlainReferencedPayment = { method: 'card', last4: '1234' };
+// @ts-expect-error a schema's own required binds every anyOf branch
+const anyWithoutMethod: InputSchemas.AnyPayment = { iban: 'x' };
+const anyBank: InputSchemas.AnyPayment = { method: 'bank', iban: 'x' };
+void plainWithoutMethod; void plainCard2; void plainBank;
+void plainReferencedWithoutMethod; void plainReferencedCard;
+void anyWithoutMethod; void anyBank;

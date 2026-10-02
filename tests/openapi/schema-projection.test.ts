@@ -322,6 +322,9 @@ test('allOf required names from any member make the declared property required i
       '/referenced-payments': operation('createReferencedPayment', 'ReferencedPayment'),
       '/nested-payments': operation('createNestedPayment', 'NestedPayment'),
       '/cards': operation('createCard', 'Card'),
+      '/plain-payments': operation('createPlainPayment', 'PlainPayment'),
+      '/plain-referenced-payments': operation('createPlainReferencedPayment', 'PlainReferencedPayment'),
+      '/any-payments': operation('createAnyPayment', 'AnyPayment'),
     },
     components: {
       schemas: {
@@ -365,6 +368,24 @@ test('allOf required names from any member make the declared property required i
           allOf: [
             { allOf: [{ oneOf: [{ $ref: '#/components/schemas/Card' }, { $ref: '#/components/schemas/Bank' }] }] },
             { required: ['method'] },
+          ],
+        },
+        PlainPayment: {
+          required: ['method'],
+          oneOf: [
+            { properties: { method: { const: 'card' }, last4: { type: 'string' } } },
+            { properties: { method: { const: 'bank' }, iban: { type: 'string' } } },
+          ],
+        },
+        PlainReferencedPayment: {
+          required: ['method'],
+          oneOf: [{ $ref: '#/components/schemas/Card' }, { $ref: '#/components/schemas/Bank' }],
+        },
+        AnyPayment: {
+          required: ['method'],
+          anyOf: [
+            { properties: { method: { const: 'card' }, last4: { type: 'string' } } },
+            { properties: { method: { const: 'bank' }, iban: { type: 'string' } } },
           ],
         },
         NestedPet: {
