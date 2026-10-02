@@ -34,8 +34,8 @@ The generators declare the compiler as a peer dependency, so npm installs one co
 
 | Package | Peer dependencies |
 | --- | --- |
-| `@exprtlabs/golem-model` | `typescript` `~7.0.2`, `ttsc` `~0.30.4` |
-| `@exprtlabs/golem-ts-openapi` | `typescript` `~7.0.2`, `ttsc` `~0.30.4` |
+| `@exprtlabs/golem-model` | `typescript` `>=6.0.0 <8`, `ttsc` `~0.30.4` |
+| `@exprtlabs/golem-ts-openapi` | `typescript` `>=6.0.0 <8`, `ttsc` `~0.30.4` |
 | `@exprtlabs/golem-openapi` | none; add `typescript` and `ttsc` to compile the SDK |
 | `@exprtlabs/golem` | optional: `typescript` `>=6.0.0 <8` and `ttsc` 0.30 for the plugin; `ajv`, `ajv-formats`, `mobx`, `esbuild`, `@nestjs/common`, `rxjs` for the features that use them |
 

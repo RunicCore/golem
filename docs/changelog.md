@@ -32,6 +32,14 @@ Nested model references keep their classes, and derived types such as
 `Omit<TAddress, 'id'>` produce plain objects
 ([Composing models](/guide/model-composition#nested-models-and-derived-types)).
 
+## TypeScript 6 and 7
+
+Generation runs on TypeScript 6.0+ or 7.x, chosen from the `typescript` installed in your project, and writes the same files on both ([Compatibility](/compatibility)). `parse<T>` and `stringify<T>` still need `ttsc`. TypeScript 5 isn't supported.
+
+- **Breaking:** `@exprtlabs/golem/ts` publishes Golem-owned types narrowed to what Golem uses. Its declarations no longer reference `typescript`, and it no longer exports the `API` class or the TypeScript 7 process-client types ([`ts`](/reference/runtime-api#ts)).
+- Union members in generated types and schemas appear in a fixed order that doesn't depend on the compiler or locale. Regenerate once; member order changes, and so do the ids of generated codecs.
+- On TypeScript 7, generation type-checks new files before writing them, so output that doesn't compile now fails with the compiler's message. Sibling model folders under one `tsconfig` no longer interfere.
+
 ## Known trade-offs
 
 - Tagged-union encoding dispatches on the tag, measured about 6% slower than class-first dispatch.

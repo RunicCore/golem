@@ -50,7 +50,7 @@
   },
   "peerDependencies": {
     "ttsc": "~0.30.4",
-    "typescript": "~7.0.2"
+    "typescript": ">=6.0.0 <8"
   },
   "scripts": {
     "build": "ttsc -p tsconfig.json",

@@ -136,14 +136,26 @@ test('each benchmark group shows, per payload, the declarations and timed calls 
   }
 });
 
-test('install commands use the generator peer ranges for typescript and ttsc', () => {
+/** `typescript` is declared as `>=A.B.C <D`; ttsc is declared as an exact tilde range. */
+function admits(peer: string, range: string): boolean {
+  const bounds = /^>=(\d+)\.(\d+)\.(\d+) <(\d+)$/.exec(peer);
+  const version = /^~(\d+)\.(\d+)\.(\d+)$/.exec(range);
+  if (!bounds || !version) return false;
+  const [low, high] = [bounds.slice(1, 4).map(Number), Number(bounds[4])];
+  const found = version.slice(1, 4).map(Number);
+  const atLeastLow = found[0] !== low[0] ? found[0] > low[0] : found[1] !== low[1] ? found[1] > low[1] : found[2] >= low[2];
+  return atLeastLow && found[0] < high;
+}
+
+test('install commands pin the ttsc peer range and a typescript inside the peer range', () => {
   const peers = JSON.parse(readFileSync(path.join(root, 'packages/golem-model/package.json'), 'utf8')).peerDependencies as Record<string, string>;
   const files = [...markdownFiles(docs), path.join(root, 'README.md'), ...readdirSync(path.join(root, 'packages')).map(p => path.join(root, 'packages', p, 'README.md'))].filter(existsSync);
   const wrong: string[] = [];
   for (const file of files) {
     for (const [line] of readFileSync(file, 'utf8').matchAll(/^npm install .*$/gm)) {
       for (const [, name, range] of line.matchAll(/\b(typescript|ttsc)@(\S+)/g)) {
-        if (range !== peers[name]) wrong.push(`${path.relative(root, file)}: ${name}@${range} (peer ${peers[name]})`);
+        const ok = name === 'typescript' ? range === '~7.0.2' && admits(peers[name], range) : range === peers[name];
+        if (!ok) wrong.push(`${path.relative(root, file)}: ${name}@${range} (peer ${peers[name]})`);
       }
     }
   }
