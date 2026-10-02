@@ -58,13 +58,14 @@ test('owned output index excludes exactly the outputs and the directories contai
   assert.equal(index.covers(path.join(root, 'sdk2/models.ts')), false, 'a sibling with a shared prefix is not owned');
 });
 
-async function until(check: () => boolean, message: string, timeout = 25000): Promise<void> {
+/** A message that reports state is a function: it runs when the wait times out, not when the wait starts. */
+async function until(check: () => boolean, message: string | (() => string), timeout = 25000): Promise<void> {
   const deadline = Date.now() + timeout;
   while (Date.now() < deadline) {
     if (check()) return;
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
-  throw new Error(`Timed out: ${message}`);
+  throw new Error(`Timed out: ${typeof message === 'function' ? message() : message}`);
 }
 
 test('watch recovers when a referenced local schema file is introduced after the document that references it', async (t: TestContext) => {
@@ -109,7 +110,7 @@ test('watch recovers when a referenced local schema file is introduced after the
     // Watcher must detect the created file and recover
     await until(
       () => fs.existsSync(path.join(root, 'sdk/client.ts')) && fs.readFileSync(path.join(root, 'sdk/client.ts'), 'utf8').includes('getUser'),
-      `watcher recovers after missing schema is created (errors=${errors.map(String).join('; ')})`,
+      () => `watcher recovers after missing schema is created (errors=${errors.map(String).join('; ')})`,
     );
   } finally {
     stop();
@@ -156,7 +157,7 @@ test('watch keeps model dependencies outside the models root after a run that re
 
   try {
     const companion = path.join(app, 'src/cart.model.generated.ts');
-    await until(() => runs() >= 1 && fs.existsSync(companion), `initial generation ${context()}`);
+    await until(() => runs() >= 1 && fs.existsSync(companion), () => `initial generation ${context()}`);
     assert.doesNotMatch(fs.readFileSync(companion, 'utf8'), /\btag\b/);
 
     // An OpenAPI-only edit regenerates the SDK and reuses the cached models job.
@@ -164,14 +165,14 @@ test('watch keeps model dependencies outside the models root after a run that re
     const client = path.join(root, 'sdk/client.ts');
     const api = path.join(root, 'api.json');
     fs.writeFileSync(api, fs.readFileSync(api, 'utf8').replace('getMoney', 'listItems'));
-    await until(() => fs.readFileSync(client, 'utf8').includes('listItems'), `SDK regenerates ${context()}`);
-    await until(() => runs() >= 2, `incremental run completes ${context()}`);
+    await until(() => fs.readFileSync(client, 'utf8').includes('listItems'), () => `SDK regenerates ${context()}`);
+    await until(() => runs() >= 2, () => `incremental run completes ${context()}`);
     assert.equal(fs.statSync(companion).mtimeMs, companionMtime, 'the models job is reused');
 
     fs.writeFileSync(shared, 'export type Note = { text: string; tag?: string };\n');
     await until(
       () => fs.readFileSync(companion, 'utf8').includes('tag'),
-      `an edit outside the models root regenerates the companion ${context()}`,
+      () => `an edit outside the models root regenerates the companion ${context()}`,
     );
   } finally {
     stop();
@@ -223,11 +224,11 @@ test('watch reuses one compiler across edits and tsconfig path-mapping changes',
   const failsAfter = async (edit: () => void, pattern: RegExp, message: string): Promise<void> => {
     const reported = stderr.length;
     edit();
-    await until(() => pattern.test(stderr.slice(reported)), `${message} ${context()}`);
+    await until(() => pattern.test(stderr.slice(reported)), () => `${message} ${context()}`);
   };
 
   try {
-    await until(() => runs() >= 1, `initial generation ${context()}`);
+    await until(() => runs() >= 1, () => `initial generation ${context()}`);
     // Only TypeScript 7 runs its compiler in a child process; the edits below must regenerate on both versions.
     const [compiler] = compilerChildren(child.pid!);
     if (!skipOnTypeScript6) assert.ok(compiler, 'the watch keeps its compiler process between runs');
@@ -235,22 +236,22 @@ test('watch reuses one compiler across edits and tsconfig path-mapping changes',
     // Every edit must reach the warm compiler, not only the first one.
     for (const field of ['firstEdit', 'secondEdit', 'thirdEdit']) {
       writeModel([], `${field}?: boolean`);
-      await until(() => generated().includes(field), `edit ${field} regenerates ${context()}`);
+      await until(() => generated().includes(field), () => `edit ${field} regenerates ${context()}`);
     }
 
     writeModel(["import type { Extra } from '@extra/types';"], 'extra: Extra');
-    await until(() => generated().includes('firstShape'), `the tsconfig path mapping resolves ${context()}`);
+    await until(() => generated().includes('firstShape'), () => `the tsconfig path mapping resolves ${context()}`);
 
     // tsconfig edits change path mapping and the project file list.
     writeTsconfig('./shared/v2.ts', tsconfig.include);
-    await until(() => generated().includes('secondShape'), `a path mapping edit is applied ${context()}`);
+    await until(() => generated().includes('secondShape'), () => `a path mapping edit is applied ${context()}`);
     await failsAfter(
       () => writeModel(["import type { Extra } from '@extra/types';"], 'extra: Extra; ambient: AmbientNote'),
       /AmbientNote/,
       'an ambient type outside the project is reported',
     );
     writeTsconfig('./shared/v2.ts', [...tsconfig.include, 'types/**/*.d.ts']);
-    await until(() => generated().includes('ambientShape'), `an include edit is applied ${context()}`);
+    await until(() => generated().includes('ambientShape'), () => `an include edit is applied ${context()}`);
     if (!skipOnTypeScript6) assert.deepEqual(compilerChildren(child.pid!), [compiler], 'edits reuse the running compiler');
   } finally {
     if (child.exitCode === null && child.signalCode === null) {
@@ -259,56 +260,6 @@ test('watch reuses one compiler across edits and tsconfig path-mapping changes',
       await closed;
     }
   }
-});
-
-test('a tsconfig edit that lands while the compiler probes the project is applied by the next run', { skip: process.platform === 'win32' || skipOnTypeScript6 }, async (t: TestContext) => {
-  const { root, config } = fixture(t);
-  const tsconfigFile = path.join(root, 'tsconfig.json');
-  const tsconfig = JSON.parse(fs.readFileSync(tsconfigFile, 'utf8')) as { compilerOptions: Record<string, unknown> };
-  const writeTsconfig = (shape: string): void => {
-    fs.writeFileSync(tsconfigFile, JSON.stringify({ ...tsconfig, compilerOptions: { ...tsconfig.compilerOptions, paths: { '@extra/types': [`./shared/${shape}.ts`] } } }));
-  };
-  fs.mkdirSync(path.join(root, 'shared'));
-  fs.writeFileSync(path.join(root, 'shared/first.ts'), 'export type Extra = { firstShape: string };\n');
-  fs.writeFileSync(path.join(root, 'shared/second.ts'), 'export type Extra = { secondShape: string };\n');
-  writeTsconfig('first');
-  const modelSource = path.join(root, 'src/cart.model.ts');
-  const original = fs.readFileSync(modelSource, 'utf8');
-  fs.writeFileSync(modelSource, [`import type { Extra } from '@extra/types';`, original.replace('note: string', 'note: string; extra: Extra')].join('\n'));
-  const companion = path.join(root, 'src/cart.model.generated.ts');
-
-  const { API } = await import('#golem/typescript-ts7');
-  const prototype = API.prototype as unknown as { updateSnapshot(this: InstanceType<typeof API>, ...args: unknown[]): unknown };
-  const updateSnapshot = prototype.updateSnapshot;
-  let snapshots = 0;
-  let editAtSnapshot = 0;
-  prototype.updateSnapshot = function countedUpdateSnapshot(this: InstanceType<typeof API>, ...args: unknown[]): unknown {
-    snapshots++;
-    if (snapshots === editAtSnapshot) writeTsconfig('second');
-    return updateSnapshot.apply(this, args);
-  };
-  t.after(() => { prototype.updateSnapshot = updateSnapshot; });
-
-  const session = new GeneratorSessionResources();
-  t.after(() => session[Symbol.dispose]());
-  const first = await runPipeline(config, { session });
-  const shapes = (): string => ['firstShape', 'secondShape'].filter(shape => fs.readFileSync(companion, 'utf8').includes(shape)).join();
-  assert.equal(shapes(), 'firstShape');
-  const snapshotsPerRun = snapshots;
-
-  // The edit lands in the last snapshot of the run, the rewrite scan, which only probes the tsconfig.
-  fs.writeFileSync(modelSource, fs.readFileSync(modelSource, 'utf8').replace('note: string;', 'note: string; edited?: boolean;'));
-  session.inputsChanged([modelSource]);
-  editAtSnapshot = snapshots + snapshotsPerRun;
-  const second = await runPipeline(config, { session, previous: first, changedInputs: [modelSource] });
-  assert.equal(snapshots, editAtSnapshot, 'the second run opened as many snapshots as the first');
-  assert.equal(fs.readFileSync(tsconfigFile, 'utf8').includes('second.ts'), true, 'the tsconfig was edited during the run');
-  assert.equal(shapes(), 'firstShape', 'the run read the tsconfig before the edit');
-
-  // The watch reports the edit and runs again.
-  session.inputsChanged([tsconfigFile]);
-  await runPipeline(config, { session, previous: second, changedInputs: [tsconfigFile] });
-  assert.equal(shapes(), 'secondShape', 'the next run applies the edit');
 });
 
 test('stopping an in-process watch closes its compiler', { skip: process.platform === 'win32' || skipOnTypeScript6 }, async (t: TestContext) => {

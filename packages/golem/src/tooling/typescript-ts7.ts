@@ -1042,7 +1042,6 @@ interface ProgramRequest {
 }
 
 type UpdateSnapshotParams = NonNullable<Parameters<API['updateSnapshot']>[0]>;
-type FileChanges = NonNullable<UpdateSnapshotParams['fileChanges']>;
 
 const MISSING = 'missing';
 
@@ -1110,10 +1109,11 @@ function disposeSnapshot(snapshot: Snapshot): void {
 }
 
 interface PendingChanges {
-  /** Explicit changes, or undefined when nothing the compiler read has changed. */
+  /** Every detected change and every hinted file the compiler read, or undefined when there is none. */
   readonly changes?: { readonly changed: readonly string[]; readonly created: readonly string[]; readonly deleted: readonly string[] };
-  /** Invalidate every cached file: signatures missed a reported change, resolution inputs changed, or records outgrew the last full snapshot. */
+  /** Invalidate every cached file too: resolution inputs changed, or records outgrew the last full snapshot. */
   readonly full: boolean;
+  /** Record the signatures the changes were computed from, once a snapshot has reported them. */
   readonly commit: () => void;
 }
 
@@ -1122,19 +1122,27 @@ interface PendingChanges {
  * run or watch session.
  *
  * The compiler caches every file it reads, so each later snapshot reports
- * the files that changed since the compiler last read them. The session
+ * the files that changed since the compiler last held them. The session
  * records the signature of every path the compiler read or probed and every
  * directory it listed, compares them before the next snapshot, and replays the
  * recorded paths to the next program's input observer because a warm compiler
- * does not probe them again. A full snapshot (a new compiler or an
- * invalidation of every file) probes again and replaces the records.
+ * does not probe them again.
+ *
+ * A compiler callback records a path only the first time. Only a snapshot that
+ * reported a change replaces the recorded signature: a callback does not show
+ * what the compiler holds, because it can read or probe a project configuration
+ * without applying it. A record that is older than the disk costs one extra
+ * reload; a record that is newer would hide the change.
+ *
+ * Invalidating every file does not parse a project configuration again, only a
+ * reported change does, so a snapshot that invalidates every file first reports
+ * the detected changes in a snapshot of their own. The records of a compiler
+ * survive such a snapshot; the replayed inputs are collected again.
  */
 export class ProgramSession implements Disposable {
   private api: API | undefined;
   private disposed = false;
   private callbackFailed = false;
-  /** Whether callbacks come from a snapshot update rather than a configuration parse. */
-  private recording = false;
   /** Overlays served by the latest snapshot. */
   private overlays: ReadonlyMap<string, string> = new Map();
   private overlayDirectories = new Set<string>();
@@ -1160,9 +1168,10 @@ export class ProgramSession implements Disposable {
   public constructor(private readonly options: ProgramSessionOptions) {}
 
   /**
-   * Report inputs a host observed changing. A change the session's own
-   * signatures cannot see, such as an edit within the file system's timestamp
-   * resolution, then invalidates every cached file.
+   * Report inputs a host observed changing. The next snapshot reports each one
+   * the compiler read as changed, so an edit that the session's own signatures
+   * cannot see, such as one within the file system's timestamp resolution,
+   * still reaches the compiler.
    */
   inputsChanged(filenames: Iterable<string>): void {
     for (const filename of filenames) this.hinted.add(canonical(filename));
@@ -1186,43 +1195,29 @@ export class ProgramSession implements Disposable {
       const overlays = request.overlays;
       const pending = reused ? this.pendingChanges(overlays) : undefined;
       const full = pending === undefined || pending.full;
-      if (full) {
-        this.observed.clear();
-        this.signatures.clear();
-        this.listings.clear();
-      }
+      if (full) this.observed.clear();
       this.setOverlays(overlays);
       this.observe(options.onInput, request.hidden);
       for (const filename of [...this.observed]) this.report(filename);
-      const fileChanges: FileChanges | undefined = pending?.full
-        ? { invalidateAll: true }
-        : pending?.changes && {
-          changed: nonEmpty(pending.changes.changed),
-          created: nonEmpty(pending.changes.created),
-          deleted: nonEmpty(pending.changes.deleted),
-        };
+      const changes = pending?.changes && {
+        changed: nonEmpty(pending.changes.changed),
+        created: nonEmpty(pending.changes.created),
+        deleted: nonEmpty(pending.changes.deleted),
+      };
       const projects = new Set([request.configPath]);
       const files = new Set(request.files);
-      const params: UpdateSnapshotParams = {
+      // Invalidating every file leaves a parsed configuration as it is, so its change is reported first.
+      if (pending?.full && changes) this.advance(api, { fileChanges: changes });
+      const snapshot = this.advance(api, {
         openProjects: this.openProjects.has(request.configPath) ? undefined : [request.configPath],
         closeProjects: nonEmpty([...this.openProjects].filter((project) => !projects.has(project))),
         openFiles: nonEmpty(request.files.filter((filename) => !this.openFiles.has(filename))),
         closeFiles: nonEmpty([...this.openFiles].filter((filename) => !files.has(filename))),
-        fileChanges,
-      };
-      this.recording = true;
-      let snapshot: Snapshot;
-      try {
-        snapshot = api.updateSnapshot(params);
-      } finally {
-        this.recording = false;
-      }
-      if (!full) pending?.commit();
-      else this.fullRecordCount = this.observed.size;
+        fileChanges: pending?.full ? { invalidateAll: true } : changes,
+      });
+      pending?.commit();
+      if (full) this.fullRecordCount = this.observed.size;
       this.hinted.clear();
-      const previous = this.latest;
-      this.latest = snapshot;
-      if (previous && ![...this.held.keys()].some((program) => program.snapshot === previous)) disposeSnapshot(previous);
       replaceAll(this.openProjects, projects);
       replaceAll(this.openFiles, files);
       try {
@@ -1238,6 +1233,18 @@ export class ProgramSession implements Disposable {
         throw error;
       }
     });
+  }
+
+  /**
+   * Send one snapshot update. The newest snapshot stays alive until the next one exists, and the one before it is
+   * disposed unless a held program uses it.
+   */
+  private advance(api: API, params: UpdateSnapshotParams): Snapshot {
+    const snapshot = api.updateSnapshot(params);
+    const previous = this.latest;
+    this.latest = snapshot;
+    if (previous && ![...this.held.keys()].some((program) => program.snapshot === previous)) disposeSnapshot(previous);
+    return snapshot;
   }
 
   /**
@@ -1370,12 +1377,12 @@ export class ProgramSession implements Disposable {
   }
 
   /**
-   * A snapshot read replaces a path's signature: the compiler has just read the file. A probe or a configuration parse
-   * records only a path not seen before. The compiler keeps what it read through a probe, and a parse can reuse what it
-   * parsed, so refreshing the signature would hide an edit made since the compiler read the file from the next snapshot.
+   * Record a path the compiler touched, unless it is recorded. A callback is not evidence that the compiler holds the
+   * current file: a read can leave a parsed configuration as it was, and a probe reads nothing. Refreshing the record
+   * would hide an edit from the next snapshot, so only `commit` replaces a signature.
    */
-  private recordSignature(filename: string, read: boolean): void {
-    if ((this.recording && read) || !this.signatures.has(filename)) this.signatures.set(filename, fileSignature(filename));
+  private recordSignature(filename: string): void {
+    if (!this.signatures.has(filename)) this.signatures.set(filename, fileSignature(filename));
   }
 
   private fileSystem(): FileSystem {
@@ -1384,26 +1391,26 @@ export class ProgramSession implements Disposable {
         const filename = canonical(fileName);
         this.report(filename);
         if (this.overlays.has(filename)) return this.overlays.get(filename)!;
-        this.recordSignature(filename, true);
+        this.recordSignature(filename);
         return undefined;
       },
       fileExists: (fileName) => {
         const filename = canonical(fileName);
         this.report(filename);
         if (this.overlays.has(filename)) return true;
-        this.recordSignature(filename, false);
+        this.recordSignature(filename);
         return undefined;
       },
       directoryExists: (directoryName) => {
         const directory = canonical(directoryName);
         this.report(directory);
         if (this.overlayDirectories.has(directory)) return true;
-        this.recordSignature(directory, false);
+        this.recordSignature(directory);
         return undefined;
       },
       getAccessibleEntries: (directoryName) => {
         const directory = canonical(directoryName);
-        if (this.recording || !this.listings.has(directory)) this.listings.set(directory, directoryEntries(directory));
+        if (!this.listings.has(directory)) this.listings.set(directory, directoryEntries(directory));
         return undefined;
       },
     };
@@ -1445,13 +1452,17 @@ export class ProgramSession implements Disposable {
       for (const name of before) if (!after.has(name)) deleted.add(join(directory, name));
     }
     for (const filename of [...created, ...deleted]) changed.delete(filename);
+    // An edit within the timestamp resolution leaves the signature as it was; the host's report still reaches the compiler.
+    for (const filename of this.hinted) {
+      const recorded = this.signatures.get(filename);
+      if (recorded !== undefined && recorded !== MISSING && !created.has(filename) && !deleted.has(filename)) changed.add(filename);
+    }
     const detected = new Set([...changed, ...created, ...deleted]);
-    const missed = [...this.hinted].some((filename) => this.signatures.has(filename) && !detected.has(filename));
-    const resolution = [...detected, ...[...this.hinted].filter((filename) => this.signatures.has(filename))].some(affectsResolution);
+    const resolution = [...detected].some(affectsResolution);
     const outgrown = this.observed.size > 2 * this.fullRecordCount + 256;
     return {
       ...(detected.size > 0 ? { changes: { changed: [...changed], created: [...created], deleted: [...deleted] } } : {}),
-      full: missed || resolution || outgrown,
+      full: resolution || outgrown,
       commit: () => {
         for (const [filename, signature] of signatures) this.signatures.set(filename, signature);
         for (const [directory, listing] of listings) this.listings.set(directory, listing);

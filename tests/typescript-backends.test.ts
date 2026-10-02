@@ -7,6 +7,7 @@ import type * as Six from '#golem/typescript-ts6';
 import type * as Seven from '#golem/typescript-ts7';
 import type { TypeScriptBackend } from '#golem/typescript-types';
 import { createFixtureProject } from './fixture-project.js';
+import { pathMappedProject } from './support/path-mapped-project.js';
 
 type MissingFrom<Backend> = Exclude<keyof TypeScriptBackend, keyof Backend>;
 type MustBeNever<Names extends never> = Names;
@@ -133,3 +134,46 @@ test('a program sees only its own overlays while another program is open', t => 
   assert.deepEqual(ts.getPreEmitDiagnostics(check).map(diagnostic => diagnostic.text), []);
   assert.match(ts.getPreEmitDiagnostics(emit).map(diagnostic => diagnostic.text).join('\n'), /'string' is not assignable to type 'number'/, 'the held program still type-checks its overlay');
 });
+
+// A tsconfig edit must reach the project however it interleaves with a manifest edit or with the reads of a program.
+for (const hinted of [false, true]) {
+  const how = hinted ? 'reported by the host' : 'found by the signatures';
+
+  test(`a tsconfig edit made with a manifest edit is applied by the next program, ${how}`, t => {
+    const project = pathMappedProject(t, 'golem-tsconfig-with-manifest-');
+    using session = new ts.ProgramSession({ cwd: project.root });
+    using first = session.openProgram({ root: project.root, sources: [project.app] });
+    assert.equal(project.mappingOf(first), 'first');
+    project.writeMapping('second');
+    project.changeManifest();
+    if (hinted) session.inputsChanged([project.tsconfig, project.manifest]);
+    using second = session.openProgram({ root: project.root, sources: [project.app] });
+    assert.equal(project.mappingOf(second), 'second');
+  });
+
+  test(`a tsconfig edit that lands while a program opens after a manifest edit is applied by the next program, ${how}`, t => {
+    const project = pathMappedProject(t, 'golem-tsconfig-while-opening-');
+    using session = new ts.ProgramSession({ cwd: project.root });
+    let edits = 0;
+    let armed = false;
+    const open = (sources: readonly string[]): ts.Program => session.openProgram({
+      root: project.root,
+      sources,
+      onInput: filename => {
+        if (!armed || filename !== project.tsconfig) return;
+        armed = false;
+        edits++;
+        project.writeMapping('second');
+      },
+    });
+    open([project.app]).close();
+    project.changeManifest();
+    open([project.app]).close();
+    armed = true;
+    open([project.app, project.sdk]).close();
+    assert.equal(edits, 1, 'the edit landed while the program opened');
+    if (hinted) session.inputsChanged([project.tsconfig]);
+    using next = open([project.app, project.sdk]);
+    assert.equal(project.mappingOf(next), 'second');
+  });
+}

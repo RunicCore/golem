@@ -15,6 +15,7 @@ import {
   manifestScaleTypesSource,
 } from './fixture-templates/models/compiler-lifecycle.js';
 import { workspace } from './support/process.js';
+import { pathMappedProject } from './support/path-mapped-project.js';
 
 interface Fixture {
   readonly root: string;
@@ -390,6 +391,23 @@ function captureSnapshotRequests(t: TestContext): unknown[] {
   return requests;
 }
 
+/** Whether a snapshot update is running: the compiler's file system callbacks of a snapshot arrive while it is. */
+function snapshotRunning(t: TestContext): () => boolean {
+  const prototype = API.prototype as unknown as { updateSnapshot(this: API, ...args: unknown[]): unknown };
+  const original = prototype.updateSnapshot;
+  let running = false;
+  prototype.updateSnapshot = function runningUpdateSnapshot(this: API, ...args: unknown[]): unknown {
+    running = true;
+    try {
+      return original.apply(this, args);
+    } finally {
+      running = false;
+    }
+  };
+  t.after(() => { prototype.updateSnapshot = original; });
+  return () => running;
+}
+
 test('a compiler that exits during a snapshot update is replaced and the program reflects the latest files', async t => {
   const tracker = trackApiChildren(t);
   const fixture = projectFixture(t, 'compiler-lifecycle-crash-in-update');
@@ -477,7 +495,7 @@ test('host-reported and module-resolution changes invalidate the warm compiler, 
   // the host's report still reaches the compiler.
   session.inputsChanged([importer]);
   open();
-  assert.notEqual(lastChanges(), undefined, 'the host report still reaches the compiler even when the edit leaves the signature unchanged');
+  assert.deepEqual(lastChanges(), { changed: [importer], created: undefined, deleted: undefined }, 'the host report reaches the compiler as a changed file even when the edit leaves the signature unchanged');
   session.inputsChanged([path.join(fixture.root, 'unrelated.json')]);
   open();
   assert.equal(lastChanges(), undefined, 'a change to a path the compiler never read is ignored');
@@ -490,6 +508,100 @@ test('host-reported and module-resolution changes invalidate the warm compiler, 
   assert.equal(inputs.has(imported), false, 'a full snapshot replaces the recorded inputs');
   assert.equal(open().has(imported), false);
 });
+
+// A tsconfig edit must reach the compiler's project however the edit and the compiler's reads interleave. The compiler
+// can read or probe a tsconfig while a snapshot is built without applying it, and invalidating every file does not parse
+// a tsconfig again; see ProgramSession in typescript-ts7.ts.
+for (const hinted of [false, true]) {
+  const how = hinted ? 'reported by the host' : 'found by the signatures';
+
+  test(`a tsconfig edit that lands while the compiler probes the project is applied by the next program, ${how}`, t => {
+    const project = pathMappedProject(t, 'compiler-lifecycle-probing-edit');
+    const running = snapshotRunning(t);
+    let edits = 0;
+    let armed = false;
+    const session = new ts.ProgramSession({ cwd: project.root });
+    t.after(() => session[Symbol.dispose]());
+    const open = (sources: readonly string[], virtual?: string): ts.Program => session.openProgram({
+      root: project.root,
+      sources,
+      ...(virtual === undefined ? {} : {
+        configFile: virtual,
+        overlays: new Map([[virtual, JSON.stringify({ extends: './tsconfig.json', files: [...sources], include: [] })]]),
+      }),
+      onInput: filename => {
+        if (!armed || !running() || filename !== project.tsconfig) return;
+        armed = false;
+        edits++;
+        project.writeMapping('second');
+      },
+    });
+
+    open([project.app]).close();
+    // Another project takes over, then the first reopens from the tsconfig on disk.
+    open([project.sdk], path.join(project.root, 'virtual.json')).close();
+    open([project.app]).close();
+    // Opening files in a directory the compiler has not searched makes it probe the tsconfig without reading it.
+    armed = true;
+    using stale = open([project.app, project.sdk]);
+    assert.equal(edits, 1, 'the edit landed in the snapshot');
+    assert.equal(project.mappingOf(stale), 'first', 'the program holds the project of the tsconfig it read');
+
+    if (hinted) session.inputsChanged([project.tsconfig]);
+    using current = open([project.app, project.sdk]);
+    assert.equal(project.mappingOf(current), 'second', 'the next program applies the edit');
+  });
+
+  test(`a tsconfig edit that lands in the snapshot after a full snapshot is applied by the next program, ${how}`, t => {
+    const project = pathMappedProject(t, 'compiler-lifecycle-discovery-edit');
+    const running = snapshotRunning(t);
+    let edits = 0;
+    let armed = false;
+    const session = new ts.ProgramSession({ cwd: project.root });
+    t.after(() => session[Symbol.dispose]());
+    const open = (sources: readonly string[]): ts.Program => session.openProgram({
+      root: project.root,
+      sources,
+      onInput: filename => {
+        if (!armed || !running() || filename !== project.tsconfig) return;
+        armed = false;
+        edits++;
+        project.writeMapping('second');
+      },
+    });
+
+    open([project.app]).close();
+    // A manifest change invalidates module resolution: a full snapshot, which does not parse the tsconfig again.
+    project.changeManifest();
+    open([project.app]).close();
+    armed = true;
+    open([project.app, project.sdk]).close();
+    assert.equal(edits, 1, 'the edit landed in the snapshot');
+
+    if (hinted) session.inputsChanged([project.tsconfig]);
+    using current = open([project.app, project.sdk]);
+    assert.equal(project.mappingOf(current), 'second', 'the next program applies the edit');
+  });
+
+  test(`a tsconfig edit made with a manifest edit is applied by the full snapshot the manifest needs, ${how}`, t => {
+    const project = pathMappedProject(t, 'compiler-lifecycle-full-snapshot-edit');
+    const requests = captureSnapshotRequests(t);
+    const session = new ts.ProgramSession({ cwd: project.root });
+    t.after(() => session[Symbol.dispose]());
+    const open = (): ts.Program => session.openProgram({ root: project.root, sources: [project.app] });
+
+    using first = open();
+    assert.equal(project.mappingOf(first), 'first');
+    project.writeMapping('second');
+    project.changeManifest();
+    if (hinted) session.inputsChanged([project.tsconfig, project.manifest]);
+    using second = open();
+    assert.equal(project.mappingOf(second), 'second', 'the full snapshot applies the tsconfig edit');
+    const [reported, invalidated] = requests.slice(-2) as { readonly fileChanges?: { readonly changed?: readonly string[]; readonly invalidateAll?: boolean } }[];
+    assert.ok(reported?.fileChanges?.changed?.includes(project.tsconfig), 'the tsconfig is reported as changed before every file is invalidated');
+    assert.deepEqual(invalidated?.fileChanges, { invalidateAll: true });
+  });
+}
 
 test('a configuration error keeps the warm compiler running', async t => {
   const tracker = trackApiChildren(t);
