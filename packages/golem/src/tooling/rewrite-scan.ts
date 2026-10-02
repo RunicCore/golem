@@ -13,7 +13,7 @@ import {
   sha256Hex,
 } from './rewrite.js';
 import type { RewriteEdit, RewriteFile, RewriteImport, RewriteIndex } from './rewrite.js';
-import { canonicalFilename, createProjectProgram, isGeneratedCompanion, retainedProgramSession } from './type-analysis/project.js';
+import { createProjectProgram, isGeneratedCompanion, retainedProgramSession } from './type-analysis/project.js';
 import { resolveSymbol } from './type-analysis/symbols.js';
 import { GOLEM_VERSION } from './version.js';
 

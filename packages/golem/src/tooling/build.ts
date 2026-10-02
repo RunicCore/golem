@@ -392,8 +392,13 @@ export async function runBuild(options: BuildOptions): Promise<{ exitCode: numbe
   using session = new ts.ProgramSession({ cwd: root });
   const inputs = new Set<string>();
   const outputs = new Set<string>();
+  const outputsPresent = (): boolean => [...outputs].every((directory) => fs.existsSync(directory));
+  // Whether the directories the build writes existed when it ended: one that vanishes afterwards, such as a deleted outDir, is rebuilt once.
+  // Taken before "Built" is printed, so a deletion that follows that line is seen.
+  let wrote = true;
   const run = async (): Promise<number> => {
     const exitCode = await buildOnce(session, request, inputs, outputs);
+    wrote = exitCode === 0 && outputsPresent();
     if (exitCode === 0) process.stdout.write(`Built ${label}.\n`);
     else if (options.watch) process.stdout.write('Build failed.\n');
     return exitCode;
@@ -403,10 +408,7 @@ export async function runBuild(options: BuildOptions): Promise<{ exitCode: numbe
   let exitCode = 0;
   let previous = new Map<string, string>();
   let directories = new Map<string, string>();
-  // Whether the directories the build writes existed when it ended: one that vanishes afterwards, such as a deleted outDir, is rebuilt once.
-  let wrote = true;
   const fingerprints = (): Map<string, string> => new Map([...inputs].map((input) => [input, signature(input)]));
-  const outputsPresent = (): boolean => [...outputs].every((directory) => fs.existsSync(directory));
   const directorySignatures = (): Map<string, string> => {
     const own = ownDirectories(root, outputs);
     return new Map([...watchedDirectories(root, inputs)].map((directory) => [directory, directorySignature(directory, own)]));
@@ -419,11 +421,11 @@ export async function runBuild(options: BuildOptions): Promise<{ exitCode: numbe
       exitCode = await run();
     } catch (error) {
       exitCode = 1;
+      wrote = false;
       process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
     }
     previous = new Map([...fingerprints()].map(([input, value]) => [input, before.get(input) ?? value]));
     directories = new Map([...directorySignatures()].map(([directory, value]) => [directory, directoriesBefore.get(directory) ?? value]));
-    wrote = outputsPresent();
   };
   await attempt();
   process.stdout.write('Watching for changes.\n');
