@@ -2,9 +2,9 @@
 
 Pass credentials once and let each operation apply what its security requirement asks for.
 
-This page uses a `PaymentsClient` for the [payments contract](/guide/models-and-client) with a bearer security scheme.
+This page uses a `ProviderClient` for the example's payment provider, whose document declares a bearer security scheme.
 
-Add the security scheme to `api.yaml`:
+Add the security scheme to `provider.yaml`:
 
 ```yaml
 components:
@@ -22,9 +22,9 @@ After saving the security scheme, run:
 npx golem generate
 ```
 
-`src/send-payment.ts`:
+`provider/client.ts`:
 
-<<< ../../examples/client-features/src/send-payment.ts#send-payment
+<<< ../../examples/payments/server/provider/client.ts#send-payment
 
 - A callback is evaluated for each `.execute()` call, for example `auth: { oauth: ({ scopes }) => tokens.get(scopes) }`.
 - Your application obtains and stores the token. Return `undefined` when no credential is available; the client then tries the next security requirement.
@@ -34,9 +34,9 @@ Only credentials declared directly on the `auth` object are used; inherited prop
 ## Read the current token for each request
 
 Pass a callback when the token can change while the client is alive.
-`src/current-token.ts`:
+`provider/client.ts` again:
 
-<<< ../../examples/client-features/src/current-token.ts#current-token
+<<< ../../examples/payments/server/provider/client.ts#current-token
 
 An async callback works too. Token refresh and sign-in remain application
 responsibilities.

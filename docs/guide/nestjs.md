@@ -4,7 +4,7 @@ Turn NestJS controller decorators and TypeScript types into an OpenAPI document,
 
 A controller in your NestJS project, `src/payment-notes.controller.ts`:
 
-<<< ../../examples/nest-openapi/src/payment-notes.controller.ts#payment-note-controller
+<<< ../../examples/payments/server/src/payment-notes.controller.ts#payment-note-controller
 
 `@exprtlabs/golem-ts-openapi` reads this file; it doesn't start Nest or call handlers. NestJS 11 is supported.
 
@@ -44,11 +44,11 @@ Set `openapiVersion: '3.1.2'` in the controller job when a downstream tool doesn
 
 ## Generated models in a controller
 
-<<< ../../examples/nest-openapi/src/payments.controller.ts#create-payment
+<<< ../../examples/payments/server/src/payments.controller.ts#create-payment
 
-<<< ../../examples/nest-openapi/src/payment.model.ts#payment-types
+<<< ../../examples/payments/server/src/payment.model.ts#payment-types
 
-<<< ../../examples/nest-openapi/src/payment.model.ts#payment-class
+<<< ../../examples/payments/server/src/payment.model.ts#payment-class
 
 `Payment` extends the generated `TPaymentBaseModel`, which the `models` job writes ([Generate a client from the document](#generate-a-client-from-the-document)). `@ApiOperation({ operationId: 'createPayment' })` replaces the default, so the client method is `createPayment()`. `@ApiBadRequestResponse` from `@nestjs/swagger` produces the `400` response. The controller above produces this operation in `api/openapi.yaml`:
 
@@ -89,7 +89,7 @@ A model's component name comes from the types it was declared with:
 
 Add an OpenAPI job that reads `./api/openapi.yaml` ([Generate a client](/guide/client)). One configuration can run both jobs:
 
-<<< ../../examples/nest-openapi/golem.yaml
+<<< ../../examples/payments/server/golem.yaml#controllers-job
 
 `globalPrefix: api` must match `app.setGlobalPrefix()`; the generator reads controllers, not your bootstrap code. The `models` job generates `TPaymentBaseModel`.
 
@@ -100,7 +100,7 @@ npm install --save-dev @exprtlabs/golem-openapi@rc @exprtlabs/golem-model@rc
 npm install @exprtlabs/golem@rc ajv ajv-formats reflect-metadata
 ```
 
-<<< ../../examples/nest-openapi/src/client.ts#payment-client
+<<< ../../examples/payments/web/src/submit-payment.ts#payment-client
 
 ## Set up TypeScript
 
@@ -122,12 +122,12 @@ Import `reflect-metadata` first in the application entry file, before any applic
 
 To convert `@Body()` and `@Query()` models and stringify `IModel` or `IObject` returns at runtime, register the interceptor:
 
-<<< ../../examples/nest-openapi/src/application.ts#global-model-http
+<<< ../../examples/payments/server/src/application.ts#global-model-http
 
 [`NestModelInterceptor`](/guide/nestjs-in-depth#nestmodelinterceptor) has the full request and response contract.
 
 ## Run the example
 
-The example is in the Golem repository's [`examples/nest-openapi/`](https://github.com/RunicCore/golem/tree/master/examples/nest-openapi). There, run `npm install`, `npm run generate` and `npm start`. The API listens at `http://127.0.0.1:3000/api/payments/transactions`: `globalPrefix: api` plus the controller route `payments/transactions`. Set `PORT` to use another port. In a second terminal, `npm run client` prints `Payment 1: USD 12.50` on a fresh server; set `API_BASE_URL` when the API runs elsewhere.
+The example is in the Golem repository's [`examples/payments/`](https://github.com/RunicCore/golem/tree/master/examples/payments); the controllers are under `server/`. There, run `npm install`, `npm run generate` and `npm start`. The API listens at `http://127.0.0.1:3000/api/payments/transactions`: `globalPrefix: api` plus the controller route `payments/transactions`. Set `API_PORT` to use another port. `npm run demo` starts the API on a free port with a stand-in payment provider, submits one payment through the generated client and prints a line that begins `Payment 1: USD 12.50`.
 
-Full example: [`examples/nest-openapi`](https://github.com/RunicCore/golem/tree/master/examples/nest-openapi)
+Full example: [`examples/payments`](https://github.com/RunicCore/golem/tree/master/examples/payments)

@@ -4,7 +4,7 @@ Read an OpenAPI 3.2 operation that streams items one at a time instead of return
 
 A generated operation's `response.body` is an `AsyncIterable` of decoded items, which you read with `for await`.
 
-<<< ../../examples/client-features/src/read-events.ts#read-events
+<<< ../../examples/payments/server/provider/events.ts#read-events
 
 - NDJSON, JSON-seq and SSE have built-in framing.
 - Breaking out of the loop cancels its reader.
@@ -15,13 +15,13 @@ A generated operation's `response.body` is an `AsyncIterable` of decoded items, 
 ## Describe the items
 
 For an API that sends one JSON object per line, describe the response in
-`api.yaml`:
+`provider.yaml`:
 
-<<< ../../examples/client-features/api.yaml#events-operation
+<<< ../../examples/payments/server/provider/provider.yaml#events-operation
 
-`golem.yaml`:
+`golem.yaml`, whose `openapi` job reads that document:
 
-<<< ../../examples/client-features/golem.yaml#openapi-job
+<<< ../../examples/payments/server/golem.yaml#openapi-job
 
 Run `npx golem generate` to update the client. With the [default
 validation dependencies](/guide/install#runtime-dependencies)
@@ -29,13 +29,13 @@ installed, each decoded item is checked.
 
 ## Stop reading
 
-For the same `readEvents` operation, `src/first-event.ts` consumes one item:
+For the same `readEvents` operation, `provider/events.ts` consumes one item:
 
-<<< ../../examples/client-features/src/first-event.ts#first-event
+<<< ../../examples/payments/server/provider/events.ts#first-event
 
-`src/cancel-events.ts` — cancel from outside the loop:
+`provider/events.ts` also cancels from outside the loop:
 
-<<< ../../examples/client-features/src/cancel-events.ts#cancel-events
+<<< ../../examples/payments/server/provider/events.ts#cancel-events
 
 ## Supported formats
 
@@ -53,14 +53,14 @@ entry.
 ## Connect a custom stream decoder
 
 Declare `application/vnd.example.events` with `itemSchema` on a `readEventIds`
-operation, then regenerate `PaymentsClient`. The decoder below reads integer
-lines and yields the objects declared by `itemSchema`. `src/custom-events.ts`:
+operation, then regenerate `ProviderClient`. The decoder below reads integer
+lines and yields the objects declared by `itemSchema`. The same file connects it:
 
-<<< ../../examples/client-features/src/custom-events.ts#custom-events
+<<< ../../examples/payments/server/provider/events.ts#custom-events
 
 | Decoder contract | Requirement |
 | --- | --- |
-| Signature | `(response: Response, context: PaymentsStreamDecoderContext) => AsyncIterable<unknown>` |
+| Signature | `(response: Response, context: ProviderStreamDecoderContext) => AsyncIterable<unknown>` |
 | Context | Operation name and actual response content type |
 | Output | Decoded items matching `itemSchema` |
 | Cleanup | Cancel and release any reader you acquire when iteration ends or fails |

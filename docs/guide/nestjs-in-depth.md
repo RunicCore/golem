@@ -2,17 +2,17 @@
 
 Shape routes, schemas, query objects, responses and request handling for NestJS 11 controllers.
 
-The types in your controller signatures produce both the OpenAPI schema and the runtime request conversion. Each section below is a separate example; [`examples/nest-openapi`](https://github.com/RunicCore/golem/tree/master/examples/nest-openapi) combines them in one app.
+The types in your controller signatures produce both the OpenAPI schema and the runtime request conversion. Each section below is a separate example; [`examples/payments`](https://github.com/RunicCore/golem/tree/master/examples/payments) combines them in one app.
 
 ## Route helpers
 
 `src/routes.ts`:
 
-<<< @/../examples/nest-openapi/src/routes.ts#route-helper
+<<< @/../examples/payments/server/src/routes.ts#route-helper
 
 Add to your controller:
 
-<<< @/../examples/nest-openapi/src/payments.controller.ts#route-helper-method
+<<< @/../examples/payments/server/src/payments.controller.ts#route-helper-method
 
 | Path expression | Allowed |
 | --- | --- |
@@ -32,11 +32,11 @@ Use `TSerde` to store a number in the model and send a string in JSON.
 
 The converters live in their own module, because generated files import them:
 
-<<< ../../examples/nest-openapi/src/decimal-text.ts#decimal-text
+<<< ../../examples/payments/server/src/decimal-text.ts#decimal-text
 
 The model references them by type:
 
-<<< ../../examples/nest-openapi/src/price.model.ts#decimal-price
+<<< ../../examples/payments/server/src/price.model.ts#decimal-price
 
 - A controller parameter or return type using that model appears in OpenAPI as its JSON value: `amount` is a string schema with the `Pattern` declared on the decoder's parameter type.
 - The decoder's parameter type supplies the JSON type. Generation reads that type; it never calls a converter to infer a schema.
@@ -52,15 +52,15 @@ with the TypeScript contract and its [validation constraints](/guide/validation#
 
 `NestModelInterceptor` runs `fromWireFormat` on `@Body()` and `@Query()` before the handler, and writes an `IModel` or `IObject` return with `stringify`.
 
-<<< @/../examples/nest-openapi/src/application.ts#global-model-http
+<<< @/../examples/payments/server/src/application.ts#global-model-http
 
 Declare a model and use it as a `@Body()` type:
 
-<<< ../../examples/nest-openapi/src/payment-draft.model.ts#payment-draft
+<<< ../../examples/payments/server/src/payment-draft.model.ts#payment-draft
 
 Add a method to your controller:
 
-<<< ../../examples/nest-openapi/src/payments.controller.ts#draft-method
+<<< ../../examples/payments/server/src/payments.controller.ts#draft-method
 
 What happens to a request:
 
@@ -103,9 +103,9 @@ HTTP query values are strings, and repeated keys arrive as string arrays. Declar
 - A JSON body is not decoded.
 - The interceptor stores the converted query on the individual request. Whole-query parameters on one route must use the same model type; repeated bindings share the converted value. The same rule applies to whole-body parameters. Field bindings such as `@Query('limit')` keep Nest's normal behavior.
 
-<<< @/../examples/nest-openapi/src/payment.model.ts#payment-filter
+<<< @/../examples/payments/server/src/payment.model.ts#payment-filter
 
-<<< @/../examples/nest-openapi/src/payments.controller.ts#query-method
+<<< @/../examples/payments/server/src/payments.controller.ts#query-method
 
 - `GET /api/payments/transactions?limit=10&status=paid` yields `{ limit: 10, status: 'paid' }`.
 - Repeated `status=paid&status=pending` yields `{ status: ['paid', 'pending'] }`.
@@ -133,4 +133,4 @@ OpenAPI 3.2 emits the whole query schema; its SDK uses `.execute({ querystring: 
 
 Class-level Swagger response decorators, exclusion decorators and their [merge order](/reference/openapi-support#nest-controller-generation) follow `@nestjs/swagger`.
 
-Full example: [`examples/nest-openapi`](https://github.com/RunicCore/golem/tree/master/examples/nest-openapi)
+Full example: [`examples/payments`](https://github.com/RunicCore/golem/tree/master/examples/payments)

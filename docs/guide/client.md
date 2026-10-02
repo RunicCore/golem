@@ -2,9 +2,9 @@
 
 Point `@exprtlabs/golem-openapi` at an OpenAPI document and call its operations with typed, validated requests and responses.
 
-<<< ../../examples/openapi/src/list-tasks.ts#create-and-list
+<<< ../../examples/payments/server/provider/charges.ts#create-and-list
 
-Set `baseUrl` to your service — the client doesn't pick an OpenAPI `servers` URL — then `client.listTasks()` creates a reusable operation and `.execute({})` sends `GET /tasks` and returns the response.
+Set `baseUrl` to your service — the client doesn't pick an OpenAPI `servers` URL — then `client.listCharges()` creates a reusable operation and `.execute({})` sends `GET /charges` and returns the response.
 
 ## Install
 
@@ -17,13 +17,11 @@ Requests and responses are validated by default; `ajv` and `ajv-formats` supply 
 
 ## Point to your OpenAPI document
 
-Add `golem.yaml` at the project root. Paths are relative to it, and `name: Tasks` names the client `TasksClient`. The [`mobx`](/reference/config#root-keys) and [`validation`](/reference/config#validation-profiles) keys set MobX observability and runtime validation for the generated code.
+Add `golem.yaml` at the project root. Paths are relative to it, and `name: Provider` names the client `ProviderClient`. The [`mobx`](/reference/config#root-keys) and [`validation`](/reference/config#validation-profiles) root keys, which this excerpt leaves out, set MobX observability and runtime validation for the generated code.
 
-<<< ../../examples/openapi/golem.yaml
+<<< ../../examples/payments/server/golem.yaml#openapi-job
 
-The document is the contract. Keep it in the project or point `input` at the file your API already owns; any [supported OpenAPI feature](/reference/openapi-support) works:
-
-<<< ../../examples/openapi/api.yaml
+The document is the contract. Keep it in the project or point `input` at the file your API already owns; any [supported OpenAPI feature](/reference/openapi-support) works. The example's contract is [`provider.yaml`](https://github.com/RunicCore/golem/blob/master/examples/payments/server/provider/provider.yaml).
 
 Generation fails on an invalid document.
 
@@ -33,7 +31,7 @@ Generation fails on an invalid document.
 npx golem generate
 ```
 
-The command writes `sdk/`. Import `TasksClient` from `../sdk/index.js`, the path from a file in `src/`.
+The command writes `sdk/`. Import `ProviderClient` from the `sdk/index.js` file under your `output` directory; the example's `provider/client.ts` imports `./sdk/index.js`.
 
 ## Generated files
 
@@ -47,22 +45,22 @@ Import only the public [generated files](/reference/generated-files); the others
 | `models/<Schema>.ts` | A runtime model class per object schema | Yes |
 | `model-manifest.json` | Read by the model generator | No |
 
-For a schema named `Task` you get `Task`, the JSON data type, and `TaskModel`, its runtime class. Use `TaskModel` when you want an instance rather than response data:
+For a schema named `Charge` you get `Charge`, the JSON data type, and `ChargeModel`, its runtime class. Use `ChargeModel` when you want an instance rather than response data:
 
-<<< ../../examples/openapi/src/task-model.ts#task-model
+<<< ../../examples/payments/server/provider/charges.ts#task-model
 
 Build your own model around SDK types the same way in [Models with a client](/guide/models-and-client).
 
-Change `api.yaml` and generate again when the contract changes. Keep your own code, including your model classes, outside `sdk/`.
+Change `provider.yaml` and generate again when the contract changes. Keep your own code, including your model classes, outside `sdk/`.
 
 ## Call the generated client
 
 Pass query parameters and a request body:
 
-<<< ../../examples/openapi/src/task-requests.ts#request-arguments
+<<< ../../examples/payments/server/provider/charges.ts#request-arguments
 
 Check the declared status before reading the body:
 
-<<< ../../examples/openapi/src/read-task.ts#read-task
+<<< ../../examples/payments/server/provider/charges.ts#read-task
 
-Full example: [`examples/openapi`](https://github.com/RunicCore/golem/tree/master/examples/openapi)
+Full example: [`examples/payments`](https://github.com/RunicCore/golem/tree/master/examples/payments)

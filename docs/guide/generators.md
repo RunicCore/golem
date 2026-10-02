@@ -2,7 +2,7 @@
 
 Write a generator package that emits source files, and let `golem generate` run it before the model job.
 
-<<< ../../examples/client-features/golem.yaml#generator-job
+<<< ../../examples/payments/server/golem.yaml#generator-job
 
 Each `generators` entry names an installed package, a config-relative `output` directory the generator owns, and `options` that golem passes through untouched. Generator jobs run before the built-in jobs, so the [models job](/reference/config#typescript-models) reads the files a generator writes ([generator jobs](/reference/config#generator-jobs)).
 
@@ -10,7 +10,7 @@ Each `generators` entry names an installed package, a config-relative `output` d
 
 The package exports `./generator`. That module exports `apiVersion` and `generate(context)`:
 
-<<< ../../examples/client-features/generators/event-models.js#event-generator
+<<< ../../examples/payments/generators/event-models.js#event-generator
 
 - `apiVersion` is `1`. The CLI rejects a generator that reports another version.
 - `context` holds the absolute `directory` of `golem.yaml`, the absolute `output` directory, your `options` and the `profile` ([`GeneratorJobContext`](/reference/generator-api)).
@@ -25,13 +25,13 @@ Your package version does not need to match golem's.
 
 The generator writes this file, and the models job then writes `payment-events.model.generated.ts` beside it:
 
-<<< ../../examples/client-features/src/event-models/payment-events.model.ts
+<<< ../../examples/payments/server/src/events/payment-events.model.ts
 
 ## Use the generated models
 
 Import the declarations like any model:
 
-<<< ../../examples/client-features/src/read-event.ts#read-event
+<<< ../../examples/payments/server/provider/events.ts#read-event
 
 ## Install the generator
 
@@ -43,4 +43,4 @@ npm install --save-dev your-generator-package
 
 The example project exports `./generator` from its own `package.json` instead, so it runs without an install.
 
-Full example: [`examples/client-features`](https://github.com/RunicCore/golem/tree/master/examples/client-features)
+Full example: [`examples/payments`](https://github.com/RunicCore/golem/tree/master/examples/payments)

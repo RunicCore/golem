@@ -2,11 +2,11 @@
 
 Send and receive JSON, form, text and binary bodies, or plug in your own format.
 
-This page uses the `PaymentsClient` from [Models with a client](/guide/models-and-client); its `createPayment` operation accepts and returns `{ amount: number, currency: string }` as JSON.
+This page uses the `PaymentsClient` from [Models with a client](/guide/models-and-client); its `createPayment` operation sends a payment as JSON, with `money` as `{ amount, currency }` and `amount` a decimal string.
 
-`src/create-payment.ts`:
+`web/src/submit-payment.ts`:
 
-<<< ../../examples/combined/src/create-payment.ts#create-payment
+<<< ../../examples/payments/web/src/submit-payment.ts#create-payment
 
 - Validation checks the request value or decoded response value; codecs still run when validation is disabled.
 
@@ -26,8 +26,8 @@ This page uses the `PaymentsClient` from [Models with a client](/guide/models-an
 
 ## Supply a custom format
 
-Suppose the service sends money as text such as `USD 25`. Declare
-`application/vnd.example.money` for the request and response, with this decoded
+Suppose the service sends money as text such as `USD 25.00`. Declare
+`application/vnd.provider.money` for the request and response, with this decoded
 schema:
 
 ```yaml
@@ -35,15 +35,15 @@ schema:
   type: object
   required: [amount, currency]
   properties:
-    amount: { type: number, minimum: 0 }
+    amount: { type: string, pattern: '^[0-9]+(?:\\.[0-9]{1,2})?$' }
     currency: { type: string, pattern: '^[A-Z]{3}$' }
 ```
 
-Declare it on a `createPaymentText` operation and regenerate `PaymentsClient`. The
-[payment contract](/guide/models-and-client) uses the same fields.
-`src/money-client.ts`:
+Declare it on a `createChargeText` operation and regenerate `ProviderClient`. The
+provider's `Money` schema uses the same fields.
+`provider/client.ts`:
 
-<<< ../../examples/client-features/src/money-client.ts#money-client
+<<< ../../examples/payments/server/provider/client.ts#money-client
 
 ## Codec options
 

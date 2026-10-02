@@ -7,9 +7,9 @@ With `mobx: true`, generated model fields are MobX observables.
 - Annotate your class's own fields, getters and actions with normal MobX annotations.
 - Nested generated models are initialized recursively and keep their identity.
 
-Create `src/task.model.ts`:
+Create `src/payment-editor.model.ts`:
 
-<<< ../../examples/model-mobx/src/task.model.ts#model-definition
+<<< ../../examples/payments/web/src/payment-editor.model.ts#model-definition
 
 MobX changes observability only. Construction, `fromWireFormat` / `toWireFormat`, `parse` / `stringify` and validation keep their normal behavior.
 
@@ -23,9 +23,9 @@ npm install mobx
 
 Set the profile and regenerate:
 
-<<< ../../examples/model-mobx/golem.yaml
+<<< ../../examples/payments/web/golem.yaml
 
-`mobx: true` applies to every generator in the configuration. The example also sets `validation: false`; validation is independent of MobX ([Validation](/guide/validation)). An OpenAPI client
+`mobx: true` applies to every generator in the configuration. The example also sets `validation: true`; validation is independent of MobX ([Validation](/guide/validation)). An OpenAPI client
 also gains observable operation loading ([SDK loading state](/guide/client-usage#observe-loading-with-mobx)).
 
 ## Initialize your class
@@ -35,15 +35,15 @@ Call `asGenObservable(this, annotations)` once in your constructor, after `super
 - Extra annotations are optional: `asGenObservable(this, { label: computed, toggle: action })`.
 - Annotate writable state with `observable`, derived getters with `computed` and state-changing methods with `action`.
 - Use `observable.ref`, `observable.shallow`, `observable.struct`, or `false` when a field should not be deeply observable.
-- `asGenObservable` runs once per instance. An [SDK model class](/guide/models-and-client) such as `MoneyModel`, created with `new` or with `fromWireFormat`, initializes itself. An empty `class Payment extends TPaymentBaseModel {}` is not observable until its constructor calls `asGenObservable(this)`.
+- `asGenObservable` runs once per instance. An [SDK model class](/guide/models-and-client) such as `TMoneyModel`, created with `new` or with `fromWireFormat`, initializes itself. An empty `class Payment extends TPaymentBaseModel {}` is not observable until its constructor calls `asGenObservable(this)`.
 
 ## Observe a model
 
-`autorun` runs once immediately and again when a value it reads changes. `label` and `toggle` are the members in the class above.
+`autorun` runs once immediately and again when a value it reads changes. `summary` is the computed getter in the class above.
 
-`src/observe-task.ts`:
+`src/summary.ts`:
 
-<<< ../../examples/model-mobx/src/observe-task.ts#observe-task
+<<< ../../examples/payments/web/src/summary.ts#observe-task
 
 Dispose the reaction when the observation is no longer needed.
 
@@ -52,23 +52,13 @@ Dispose the reaction when the observation is no longer needed.
 When an observable generated model contains another generated model,
 `asGenObservable` walks nested values through arrays, records, maps and sets.
 
-One top-level `mobx: true` in `golem.yaml` applies to both the SDK and the model generator, building a [model with a client](/guide/models-and-client) as observables together.
+One top-level `mobx: true` in `golem.yaml` applies to both the SDK and the model generator, building a [model with a client](/guide/models-and-client) as observables together. The `golem.yaml` above generates the SDK into `sdk/` from `../server/api/openapi.yaml`. In `src/payment-editor.model.ts`, `setAmount` edits the nested `money` model:
 
-<<< ../../examples/combined-mobx/golem.yaml
+<<< ../../examples/payments/web/src/payment-editor.model.ts#nested-editing
 
-It generates the SDK into `sdk/` from `api.yaml`.
+Calling `setAmount('12.50')` changes `money.amount`, and the reaction above reports the new summary.
 
-`src/payment-editor.model.ts`:
-
-<<< ../../examples/combined-mobx/src/payment-editor.model.ts#model-definition
-
-`src/nested-editing.ts`:
-
-<<< ../../examples/combined-mobx/src/nested-editing.ts#nested-editing
-
-Calling `editPayment()` — its default `report` is `console.log` — prints the same two lines the reaction observes above.
-
-- The constructor turns the nested initializer into a generated `MoneyModel`.
+- The constructor turns the nested initializer into a generated `TMoneyModel`.
 - `asGenObservable` initializes that nested model; no manual MobX call is needed for it.
 - `setAmount` is an action. The reaction runs after it updates `money.amount`.
 
@@ -85,8 +75,8 @@ A React component imports a generated model or client like any other module. Wra
 
 `src/App.tsx`:
 
-<<< ../../examples/react-mobx/src/App.tsx#observer-component
+<<< ../../examples/payments/web/src/App.tsx#observer-component
 
-`getValidator` reads the editor's validation issues ([Validation](/guide/validation)) for the form to render; the form's fields call action methods such as `setAmount` on change. [`examples/react-mobx`](https://github.com/RunicCore/golem/tree/master/examples/react-mobx) runs this editor against a local demo server.
+`getValidator` reads the editor's validation issues ([Validation](/guide/validation)) for the form to render; the form's fields call action methods such as `setAmount` on change. [`examples/payments`](https://github.com/RunicCore/golem/tree/master/examples/payments) runs this editor against a local demo server.
 
-Full example: [`examples/model-mobx`](https://github.com/RunicCore/golem/tree/master/examples/model-mobx)
+Full example: [`examples/payments`](https://github.com/RunicCore/golem/tree/master/examples/payments)
