@@ -316,6 +316,10 @@ An error prints its code, location when known, and message, then stops generatio
 
 **Class imported from two modules.** A file holds `parse` or `fromWireFormat` calls whose type arguments are type-only imports of two classes with the same exported name from different modules. golem imports each of them by name for the call, and a name has one module. **Fix:** Import one of the classes as a value, or give the two classes different names.
 
+### RUNM1070
+
+**Rewrite site outside the project root.** A file that the TypeScript project includes but that lies outside the project root holds a serde call with a type argument, or a class that extends a generated model base class. The index in `.golem/rewrites.json` is keyed by files under the root, so golem can't rewrite it. The message names the file. **Fix:** Move the file under the root, or run `golem generate` for the package that contains it.
+
 ## Client generator (OPENAPI)
 
 ### OPENAPI_BROWSER_COOKIE

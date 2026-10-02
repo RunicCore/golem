@@ -1,7 +1,6 @@
-import fs from 'node:fs';
 import path from 'node:path';
 import * as ts from './typescript-ns.js';
-import { GolemDiagnosticSeverity, hasErrorCode } from './generator-api.js';
+import { GolemDiagnosticSeverity } from './generator-api.js';
 import type { GeneratorSession, GolemDiagnostic, InputObserver } from './generator-api.js';
 import { atomicWrite } from './outputs.js';
 import {
@@ -39,6 +38,7 @@ const CODE_TYPE_ARGUMENT = 'RUNM1066';
 const CODE_NO_CODEC = 'RUNM1067';
 const CODE_RESERVED_PREFIX = 'RUNM1068';
 const CODE_IMPORT_CLASH = 'RUNM1069';
+const CODE_OUTSIDE_ROOT = 'RUNM1070';
 
 /** The serde functions a type argument turns into a codec call, and the runtime method each becomes. */
 const SERDE_METHODS: ReadonlyMap<string, string> = new Map([
@@ -382,8 +382,7 @@ export function scanRewrites(input: ScanInput): ScanResult {
       && !program.isSourceFileDefaultLibrary(file)
       && !file.fileName.split(/[\\/]/).includes('node_modules')
       && !isGeneratedCompanion(file.fileName)
-      && path.basename(file.fileName) !== CODEC_KEY_FILE
-      && !portable(root, file.fileName).startsWith('../'))
+      && path.basename(file.fileName) !== CODEC_KEY_FILE)
     .map((file) => ({ file, relative: portable(root, file.fileName) }))
     .sort((left, right) => compareText(left.relative, right.relative));
 
@@ -391,6 +390,22 @@ export function scanRewrites(input: ScanInput): ScanResult {
   const diagnostics: GolemDiagnostic[] = [];
   for (const { relative, file } of sources) {
     const scan = scanFile({ root, checker, keys }, file);
+    if (relative.startsWith('../')) {
+      // Index keys are root-relative, so a site here cannot be indexed yet.
+      const first = scan.edits.length > 0 ? file.getLineAndCharacterOfPosition(Math.min(...scan.edits.map((edit) => edit.start))) : undefined;
+      const site = first ? { line: first.line + 1, column: first.character + 1 } : scan.diagnostics[0];
+      if (site) {
+        diagnostics.push({
+          code: CODE_OUTSIDE_ROOT,
+          severity: GolemDiagnosticSeverity.Error,
+          message: `"${relative}" has a rewrite site but lies outside the project root. Move it under the root, or run golem generate for the package that contains it.`,
+          file: relative,
+          line: site.line,
+          column: site.column,
+        });
+      }
+      continue;
+    }
     diagnostics.push(...scan.diagnostics);
     if (scan.edits.length > 0) files[relative] = entryFor(file.text, scan);
   }
@@ -418,19 +433,16 @@ export function scanProjectRewrites(input: {
 }
 
 /**
- * Fail, naming the file, when an index entry no longer matches its source: a bundler would otherwise build from a stale
- * rewrite. A project without an index passes; `golem generate` creates it.
+ * Fail, naming the first differing file, when the index on disk is not what `scanned` holds: a bundler would otherwise
+ * build from a stale rewrite. A project without an index passes; `golem generate` creates it.
  */
-export function assertRewriteIndexFresh(root: string): void {
+export function assertRewriteIndexCurrent(root: string, scanned: RewriteIndex): void {
   const index = readRewriteIndex(root);
   if (!index) return;
-  for (const [relative, entry] of Object.entries(index.files)) {
-    let text: string | undefined;
-    try { text = fs.readFileSync(path.join(root, relative), 'utf8'); } catch (error) {
-      if (!hasErrorCode(error, 'ENOENT')) throw error;
-    }
-    if (text === undefined || sha256Hex(text) !== entry.sha256) {
-      throw new GolemRewriteStaleError(relative, `${relative} changed after golem generate wrote ${REWRITE_INDEX_PATH}; run golem generate.`);
-    }
+  const differing = [...new Set([...Object.keys(index.files), ...Object.keys(scanned.files)])]
+    .sort(compareText)
+    .find((relative) => JSON.stringify(index.files[relative]) !== JSON.stringify(scanned.files[relative]));
+  if (differing !== undefined) {
+    throw new GolemRewriteStaleError(differing, `${differing} is out of date in ${REWRITE_INDEX_PATH}; run golem generate.`);
   }
 }

@@ -4,11 +4,13 @@ import path from 'node:path';
 import test, { type TestContext } from 'node:test';
 
 import { runPipeline } from '#golem/cli';
+import { GeneratorSessionResources } from '#golem/pipeline';
 import { applyRewrites, GolemRewriteStaleError, readRewriteIndex } from '#golem/rewrite';
-import { assertRewriteIndexFresh, scanProjectRewrites, writeRewriteIndex, type ScanResult } from '#golem/rewrite-scan';
+import { assertRewriteIndexCurrent, scanProjectRewrites, writeRewriteIndex, type ScanResult } from '#golem/rewrite-scan';
 import { writeSdk } from '#openapi/generator';
 import { copyFixtureFile, readFixture, writeGeneratedArtifacts } from './fixture-project.js';
 import { createModelProject } from './model-project.js';
+import { writeFixture } from './support/consumer.js';
 import { workspace } from './support/process.js';
 
 const BASE = ['payment.model.ts', 'payment.model.generated.ts', 'iobject-plugin-keys.ts'];
@@ -133,8 +135,8 @@ test('a model class registers once, several classes of one model register under 
   assert.equal(result.index.files['src/rewritten.model.ts'], undefined, 'the aliased statement exists');
 });
 
-test('a type from an installed SDK resolves through its own key table', (t) => {
-  const root = project(t);
+/** Install a one-model SDK as `node_modules/sdk`; returns its directory. */
+function installSdk(root: string): string {
   const sdk = path.join(root, 'node_modules/sdk');
   writeGeneratedArtifacts(writeSdk({
     openapi: '3.1.0',
@@ -142,8 +144,19 @@ test('a type from an installed SDK resolves through its own key table', (t) => {
     components: { schemas: { Money: { type: 'object', required: ['cents'], properties: { cents: { type: 'number' } } } } },
   }, { output: sdk, name: 'sdk', profile: { mobx: false, validation: false } }).artifacts);
   fs.writeFileSync(path.join(sdk, 'package.json'), JSON.stringify({ name: 'sdk', type: 'module', types: './index.ts', main: './index.ts' }));
+  return sdk;
+}
+
+/** The codec id the SDK's key table gives `MoneyModel`. */
+function sdkMoneyId(sdk: string): string {
   const id = /"models\/_group-[0-9a-f]{8}\.ts#MoneyModel": "(Money_[0-9a-f]{8})"/.exec(fs.readFileSync(path.join(sdk, 'iobject-plugin-keys.ts'), 'utf8'))?.[1];
   assert.ok(id, 'the SDK key table names MoneyModel');
+  return id;
+}
+
+test('a type from an installed SDK resolves through its own key table', (t) => {
+  const root = project(t);
+  const id = sdkMoneyId(installSdk(root));
   fs.writeFileSync(path.join(root, 'src/use-sdk.ts'), `import { parse } from '@exprtlabs/golem/serde';
 import type { MoneyModel } from 'sdk';
 declare const text: string;
@@ -197,18 +210,18 @@ test('a file that gets a rewrite may not use a name that starts with the added i
   ]);
 });
 
-test('a file is stale when its text no longer matches the index entry', (t) => {
+test('an index is current only while it equals a fresh scan', (t) => {
   const root = project(t, ['calls.ts']);
   writeRewriteIndex(root, scan(root).index);
-  assertRewriteIndexFresh(root);
-  const calls = path.join(root, 'src/calls.ts');
-  fs.appendFileSync(calls, '// edited\n');
-  assert.throws(() => assertRewriteIndexFresh(root), (error: unknown) =>
-    error instanceof GolemRewriteStaleError && error.file === 'src/calls.ts' && /src\/calls\.ts changed after golem generate/.test(error.message));
+  assertRewriteIndexCurrent(root, scan(root).index);
+  fs.appendFileSync(path.join(root, 'src/calls.ts'), '// edited\n');
+  assert.throws(() => assertRewriteIndexCurrent(root, scan(root).index), (error: unknown) =>
+    error instanceof GolemRewriteStaleError && error.file === 'src/calls.ts' && /src\/calls\.ts is out of date in \.golem\/rewrites\.json/.test(error.message));
 });
 
-test('a project without an index is not stale', (t) => {
-  assertRewriteIndexFresh(project(t, ['calls.ts']));
+test('a project without an index is current', (t) => {
+  const root = project(t, ['calls.ts']);
+  assertRewriteIndexCurrent(root, scan(root).index);
 });
 
 test('the same project always writes the same index, with its files and edits in order', (t) => {
@@ -236,7 +249,8 @@ test('a call whose type argument is parenthesised is rewritten in a file that sh
   ]);
 });
 
-test('golem generate writes the index, writes it identically twice, and a model change updates the ids of files that did not change', async (t) => {
+/** A project whose `golem.yaml` has one models job, with `src/use.ts` parsing the generated class `Payment`. */
+function generatedProject(t: TestContext): { root: string; config: string } {
   const { root } = createModelProject(t, {
     prefix: 'golem-rewrite-pipeline-',
     linkTypescript: true,
@@ -248,7 +262,11 @@ test('golem generate writes the index, writes it identically twice, and a model 
 import { Payment } from './money.model.js';
 export const payment = parse<Payment>('{}');
 `);
-  const config = path.join(root, 'golem.yaml');
+  return { root, config: path.join(root, 'golem.yaml') };
+}
+
+test('golem generate writes the index, writes it identically twice, and a model change updates the ids of files that did not change', async (t) => {
+  const { root, config } = generatedProject(t);
   const indexFile = path.join(root, '.golem/rewrites.json');
 
   await runPipeline(config);
@@ -270,7 +288,121 @@ export const payment = parse<Payment>('{}');
   await runPipeline(config, { check: true });
 
   fs.appendFileSync(path.join(root, 'src/use.ts'), '// edited\n');
-  await assert.rejects(runPipeline(config, { check: true }), /src\/use\.ts changed after golem generate/);
+  await assert.rejects(runPipeline(config, { check: true }), /src\/use\.ts is out of date in \.golem\/rewrites\.json/);
   fs.writeFileSync(path.join(root, 'src/use.ts'), "import { parse } from '@exprtlabs/golem/serde';\nexport const bad = parse<string | null>('{}');\n");
   await assert.rejects(runPipeline(config), /RUNM1066 \(src\/use\.ts:2:20\): parse type argument must be a single type name or typeof expression/);
+});
+
+test('golem check rescans: a new call, a stale codec id and a removed file fail it, an up-to-date index and a missing index pass', async (t) => {
+  const { root, config } = generatedProject(t);
+  const indexFile = path.join(root, '.golem/rewrites.json');
+  await runPipeline(config);
+  fs.rmSync(indexFile);
+  await runPipeline(config, { check: true });
+  assert.equal(fs.existsSync(indexFile), false, 'check without an index passes and writes none');
+  await runPipeline(config);
+  await runPipeline(config, { check: true });
+
+  const index = fs.readFileSync(indexFile, 'utf8');
+  const id = /requireObjectCodec\(\\"(TPayment_[0-9a-f]{8})\\"\)/.exec(index)?.[1];
+  assert.ok(id, 'the index holds a codec id for use.ts');
+  fs.writeFileSync(indexFile, index.split(id).join('TPayment_00000000'));
+  await assert.rejects(runPipeline(config, { check: true }), /src\/(use|money\.model)\.ts is out of date in \.golem\/rewrites\.json/, 'the sha256 still matches, the codec id does not');
+  fs.writeFileSync(indexFile, index);
+  await runPipeline(config, { check: true });
+
+  fs.writeFileSync(path.join(root, 'src/added.ts'), "import { parse } from '@exprtlabs/golem/serde';\nimport type { TPayment } from './money.model.js';\nexport const added = parse<TPayment>('{}');\n");
+  await assert.rejects(runPipeline(config, { check: true }), /src\/added\.ts is out of date in \.golem\/rewrites\.json/, 'a file with a site and no entry');
+  fs.rmSync(path.join(root, 'src/added.ts'));
+  await runPipeline(config, { check: true });
+
+  fs.rmSync(path.join(root, 'src/use.ts'));
+  await assert.rejects(runPipeline(config, { check: true }), /src\/use\.ts is out of date in \.golem\/rewrites\.json/, 'an entry whose file is gone');
+});
+
+test('an edit to a file only the scan reads reruns the scan and reuses the models job', async (t) => {
+  const { root, config } = generatedProject(t);
+  const sdk = installSdk(root);
+  fs.writeFileSync(path.join(root, 'src/use-sdk.ts'), `import { parse } from '@exprtlabs/golem/serde';
+import type { MoneyModel } from 'sdk';
+declare const text: string;
+export const money = parse<MoneyModel>(text);
+`);
+  const keys = path.join(sdk, 'iobject-plugin-keys.ts');
+  const id = sdkMoneyId(sdk);
+  const codecId = (): string => /requireObjectCodec\("(Money_[0-9a-f]{8})"\)/.exec(readRewriteIndex(root)?.files['src/use-sdk.ts']?.edits[0]?.text ?? '')?.[1] ?? '';
+  using session = new GeneratorSessionResources();
+  const first = await runPipeline(config, { session });
+  assert.equal(codecId(), id);
+  assert.equal(first.dependencies.get(keys)?.has('models:.') ?? false, false, 'the models job does not read the installed SDK key table');
+  fs.writeFileSync(keys, fs.readFileSync(keys, 'utf8').split(id).join('Money_00000000'));
+  const second = await runPipeline(config, { session, previous: first, changedInputs: [keys], modelOnly: true });
+  assert.equal(codecId(), 'Money_00000000', 'the scan saw the new key table');
+  assert.equal(second.results.get('models:.'), first.results.get('models:.'), 'the models job was not rerun');
+});
+
+test('a config without a models or controllers job still indexes the project that calls an SDK', async (t) => {
+  const { root } = createModelProject(t, {
+    prefix: 'golem-rewrite-consumer-',
+    linkTypescript: true,
+    packages: { '@exprtlabs/golem-openapi': path.join(workspace, 'packages/golem-openapi') },
+  });
+  writeFixture(root, { mobx: false, validation: false }, false);
+  fs.writeFileSync(path.join(root, 'src/use.ts'), `import { parse } from '@exprtlabs/golem/serde';
+import type { MoneyModel } from '../sdk/index.js';
+declare const text: string;
+export const money = parse<MoneyModel>(text);
+`);
+  await runPipeline(path.join(root, 'golem.yaml'));
+  const entry = readRewriteIndex(root)?.files['src/use.ts'];
+  assert.match(entry?.edits[0]?.text ?? '', /^__golem_requireObjectCodec\("Money_[0-9a-f]{8}"\)\.parse\($/);
+  assert.deepEqual(Object.keys(readRewriteIndex(root)?.files ?? {}), ['src/use.ts']);
+  await runPipeline(path.join(root, 'golem.yaml'), { check: true });
+});
+
+test('a file outside the project root with a rewrite site fails generation, one without a site does not', (t) => {
+  const { root: outer } = createModelProject(t, { prefix: 'golem-rewrite-outside-', linkTypescript: true });
+  const root = path.join(outer, 'app');
+  for (const file of BASE) copyFixtureFile(root, `rewrite/${file}`, `src/${file}`);
+  fs.writeFileSync(path.join(root, 'tsconfig.json'), JSON.stringify({
+    compilerOptions: { target: 'ES2022', module: 'NodeNext', moduleResolution: 'NodeNext', strict: true, skipLibCheck: true },
+    include: ['src/**/*.ts', '../shared/**/*.ts'],
+  }));
+  fs.mkdirSync(path.join(outer, 'shared'));
+  fs.writeFileSync(path.join(outer, 'shared/x.ts'), `import { parse } from '@exprtlabs/golem/serde';
+import type { TMoney } from '../app/src/payment.model.js';
+declare const text: string;
+export const money = parse<TMoney>(text);
+`);
+  fs.writeFileSync(path.join(outer, 'shared/payment.model.ts'), `import { TPaymentBaseModel } from '../app/src/payment.model.generated.js';
+export class Payment extends TPaymentBaseModel {}
+`);
+  fs.writeFileSync(path.join(outer, 'shared/plain.ts'), "export const plain = 1;\n");
+  const { diagnostics, index } = scanProjectRewrites({ root, nest: false });
+  // A class site is the end of the class, where its registration goes.
+  const message = (file: string): string => `"${file}" has a rewrite site but lies outside the project root. Move it under the root, or run golem generate for the package that contains it.`;
+  assert.deepEqual(diagnostics, [
+    { code: 'RUNM1070', severity: 'error', message: message('../shared/payment.model.ts'), file: '../shared/payment.model.ts', line: 2, column: 50 },
+    { code: 'RUNM1070', severity: 'error', message: message('../shared/x.ts'), file: '../shared/x.ts', line: 4, column: 22 },
+  ]);
+  assert.deepEqual(Object.keys(index.files), ['src/payment.model.ts'], 'files outside the root are not indexed');
+});
+
+test('typeof and a qualified name resolve like a plain type name; a default class import has no codec id', (t) => {
+  const root = project(t, ['type-argument-forms.ts', 'default-class-import.ts', 'default-class.model.ts', 'default-class.model.generated.ts']);
+  const result = scan(root);
+  assertLines(rewritten(root, result, 'type-argument-forms.ts'), [
+    'export const queried = __golem_requireObjectCodec("TPayment_22222222").parse(text, { construct: Payment });',
+    'export const qualified = __golem_requireObjectCodec("TMoney_11111111").parse(text);',
+    'export const qualifiedClass = __golem_requireObjectCodec("TPayment_22222222").parse(text, { construct: models.Payment });',
+  ]);
+  // The symbol of `export default class DefaultClass` is named "default", which no key table entry carries.
+  assert.deepEqual(result.diagnostics, [{
+    code: 'RUNM1067',
+    severity: 'error',
+    message: 'parse<DefaultClass> has no unique codec id',
+    file: 'src/default-class-import.ts',
+    ...position(readFixture('rewrite/default-class-import.ts'), 'parse<DefaultClass>'),
+  }]);
+  assert.equal(result.index.files['src/default-class-import.ts'], undefined);
 });
