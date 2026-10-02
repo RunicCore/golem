@@ -211,27 +211,29 @@ test('a project without an index is not stale', (t) => {
   assertRewriteIndexFresh(project(t, ['calls.ts']));
 });
 
-test('the same project always writes the same index, and an unchanged file is not scanned again', (t) => {
+test('the same project always writes the same index, with its files and edits in order', (t) => {
   const root = project(t, ['calls.ts', 'construct.ts', 'ledger.model.ts', 'ledger.model.generated.ts']);
   const first = scan(root);
   assert.deepEqual(first.diagnostics, []);
-  assert.equal(first.scannedFiles, 4);
   writeRewriteIndex(root, first.index);
   const bytes = fs.readFileSync(path.join(root, '.golem/rewrites.json'), 'utf8');
+  assert.deepEqual(Object.keys(JSON.parse(bytes) as object), ['version', 'golem', 'files'], 'the index holds no cache state');
   const second = scan(root);
-  assert.equal(second.scannedFiles, 0, 'nothing changed');
   assert.equal(writeRewriteIndex(root, second.index), false);
   assert.equal(fs.readFileSync(path.join(root, '.golem/rewrites.json'), 'utf8'), bytes);
   assert.deepEqual(Object.keys(first.index.files), [...Object.keys(first.index.files)].sort());
   for (const file of Object.values(first.index.files)) {
     assert.deepEqual(file.edits.map(({ start, end }) => [start, end]), file.edits.map(({ start, end }) => [start, end]).sort((a, b) => a[0]! - b[0]! || a[1]! - b[1]!));
   }
+});
 
-  fs.appendFileSync(path.join(root, 'src/calls.ts'), 'export const more = 1;\n');
-  const third = scan(root);
-  assert.equal(third.scannedFiles, 1, 'only the changed file is scanned');
-  assert.deepEqual(third.index.files['src/construct.ts'], first.index.files['src/construct.ts']);
-  assert.notEqual(third.index.files['src/calls.ts']?.sha256, first.index.files['src/calls.ts']?.sha256);
+test('a call whose type argument is parenthesised is rewritten in a file that shows no golem text', (t) => {
+  const root = project(t, ['index.ts', 'write.ts', 'paren-type-argument.ts']);
+  const result = scan(root);
+  assert.deepEqual(result.diagnostics, []);
+  assertLines(rewritten(root, result, 'paren-type-argument.ts'), [
+    'export const parsed = __golem_requireObjectCodec("TMoney_11111111").parse(text);',
+  ]);
 });
 
 test('golem generate writes the index, writes it identically twice, and a model change updates the ids of files that did not change', async (t) => {

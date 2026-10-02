@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import * as ts from './typescript-ns.js';
@@ -17,31 +16,18 @@ import { createProjectProgram, isGeneratedCompanion, retainedProgramSession } fr
 import { resolveSymbol } from './type-analysis/symbols.js';
 import { GOLEM_VERSION } from './version.js';
 
-/**
- * The index `scanRewrites` writes. `resolution` fingerprints what a call's codec id depends on besides the file's own
- * text (the key tables and the files without a scan candidate's markers); a file keeps its previous entry only while
- * both its text and this fingerprint are unchanged.
- */
-export interface ScannedRewriteIndex extends RewriteIndex {
-  readonly resolution: string;
-}
-
 export interface ScanInput {
   /** Absolute project root; index keys are relative to it. */
   readonly root: string;
   readonly program: ts.Program;
   readonly checker: ts.TypeChecker;
-  /** The index of the previous run; its entries are reused for files whose text and resolution inputs are unchanged. */
-  readonly previous?: RewriteIndex;
-  /** The project has NestJS controllers (reserved for the Nest rules; widens the candidate files). */
+  /** The project has NestJS controllers (reserved for the Nest rules; nothing reads it yet). */
   readonly nest: boolean;
 }
 
 export interface ScanResult {
-  readonly index: ScannedRewriteIndex;
+  readonly index: RewriteIndex;
   readonly diagnostics: readonly GolemDiagnostic[];
-  /** Files walked in this scan; a reused entry does not count. */
-  readonly scannedFiles: number;
 }
 
 const SERDE_MODULE = '@exprtlabs/golem/serde';
@@ -66,12 +52,6 @@ const SERDE_METHODS: ReadonlyMap<string, string> = new Map([
 
 /** `x.model.generated.ts`, `x.models.generated.ts`, `models.generated.ts` and their emitted JavaScript and declarations. */
 const GENERATED_MODEL_MODULE = /(?:^|[/\\.])models?\.generated\.(?:d\.)?[cm]?[jt]s$/;
-
-/**
- * Files that can hold a rewrite site. A call may reach serde through an aliased local re-export, so any generic call
- * qualifies; a class may reach a generated base through a renamed re-export, so any `extends` qualifies.
- */
-const CANDIDATE_MARKERS = /@exprtlabs\/golem|BaseModel|\bextends\b|[\w$)\]]\s*<[^()]*>\s*\(/;
 
 function portable(root: string, filename: string): string {
   return path.relative(root, filename).split(path.sep).join('/');
@@ -136,12 +116,6 @@ class CodecKeys {
       if (id !== '') return id;
     }
     return '';
-  }
-
-  /** Stable text of every entry; part of what an unchanged file's cached edits depend on. */
-  fingerprint(): string {
-    return [...this.byDeclaration].sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
-      .map(([declaration, id]) => `${declaration}\0${id}`).join('\n');
   }
 }
 
@@ -398,18 +372,10 @@ function entryFor(text: string, scan: FileScan): RewriteFile {
   return { sha256: sha256Hex(text), edits, imports };
 }
 
-function previousResolution(previous: RewriteIndex | undefined): string | undefined {
-  if (!previous || previous.golem !== GOLEM_VERSION) return undefined;
-  const resolution: unknown = Reflect.get(previous, 'resolution');
-  return typeof resolution === 'string' ? resolution : undefined;
-}
-
 /** Scan the program's own sources for every rewrite site and return the index and the sites that cannot be rewritten. */
 export function scanRewrites(input: ScanInput): ScanResult {
-  const { root, program, checker, previous, nest } = input;
+  const { root, program, checker } = input;
   const keys = new CodecKeys(program, root);
-  const candidates: { readonly relative: string; readonly file: ts.SourceFile; readonly sha: string }[] = [];
-  const resolution = createHash('sha256').update(keys.fingerprint());
   const sources = program.getSourceFiles()
     .filter((file) => !file.isDeclarationFile
       && !program.isSourceFileFromExternalLibrary(file)
@@ -420,36 +386,20 @@ export function scanRewrites(input: ScanInput): ScanResult {
       && !portable(root, file.fileName).startsWith('../'))
     .map((file) => ({ file, relative: portable(root, file.fileName) }))
     .sort((left, right) => compareText(left.relative, right.relative));
-  for (const { file, relative } of sources) {
-    const sha = sha256Hex(file.text);
-    if (CANDIDATE_MARKERS.test(file.text) || (nest && file.text.includes('@nestjs/common'))) candidates.push({ relative, file, sha });
-    else resolution.update(`\0${relative}\0${sha}`);
-  }
-  const fingerprint = resolution.digest('hex');
-  const reusable = previousResolution(previous) === fingerprint ? previous?.files : undefined;
 
   const files: Record<string, RewriteFile> = {};
   const diagnostics: GolemDiagnostic[] = [];
-  let scannedFiles = 0;
-  for (const { relative, file, sha } of candidates) {
-    const cached = reusable?.[relative];
-    if (cached?.sha256 === sha) { files[relative] = cached; continue; }
-    scannedFiles += 1;
+  for (const { relative, file } of sources) {
     const scan = scanFile({ root, checker, keys }, file);
     diagnostics.push(...scan.diagnostics);
     if (scan.edits.length > 0) files[relative] = entryFor(file.text, scan);
   }
-  return { index: { version: 1, golem: GOLEM_VERSION, resolution: fingerprint, files }, diagnostics, scannedFiles };
+  return { index: { version: 1, golem: GOLEM_VERSION, files }, diagnostics };
 }
 
 /** Write `<root>/.golem/rewrites.json`; the same index always yields the same bytes. Returns whether the file changed. */
 export function writeRewriteIndex(root: string, index: RewriteIndex): boolean {
   return atomicWrite(path.join(root, REWRITE_INDEX_PATH), `${JSON.stringify(index, null, 2)}\n`);
-}
-
-/** The index of the last run, or undefined when there is none or it cannot be read; a rescan replaces it either way. */
-function readPreviousIndex(root: string): RewriteIndex | undefined {
-  try { return readRewriteIndex(root); } catch { return undefined; }
 }
 
 /** Open the project's program and scan it. `onInput` observes every file the compiler reads. */
@@ -464,7 +414,7 @@ export function scanProjectRewrites(input: {
   const { root, nest, session, sessionOwner, onInput } = input;
   const info = createProjectProgram(root, onInput, sessionOwner === undefined ? undefined : retainedProgramSession(session, sessionOwner, root));
   using program = info.program;
-  return scanRewrites({ root, program, checker: program.getTypeChecker(), previous: readPreviousIndex(root), nest });
+  return scanRewrites({ root, program, checker: program.getTypeChecker(), nest });
 }
 
 /**
