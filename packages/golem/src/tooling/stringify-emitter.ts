@@ -600,6 +600,105 @@ function emitClosedIdentityObject(
   return `(${emitComputedRecord(names.map((name) => [name, access(expression, name)]))})`;
 }
 
+/**
+ * Counts the nested conversion calls (`fill*`, `convertFromWire*`, `fromWireFormat*`, trusted
+ * model decodes) emitted so far. A caller compares it across one `emitDecodeValue` to learn
+ * whether the expression calls one, since those calls need the field on the conversion path.
+ */
+let nestedConversionCalls = 0;
+
+function nestedConversionCall(call: string): string {
+  nestedConversionCalls++;
+  return call;
+}
+
+function countOccurrences(text: string, needle: string): number {
+  let count = 0;
+  for (let index = text.indexOf(needle); index !== -1; index = text.indexOf(needle, index + needle.length)) count++;
+  return count;
+}
+
+/**
+ * Whether decoding `descriptor` hands a value of the input to the result by reference, so the
+ * decoder has to check it for cycles. Values of `unknown`/`any`, open objects that need no
+ * conversion and `Record<string, unknown>` are carried this way; nested models check their own fields.
+ */
+function sharesInput(descriptor: ModelTypeDescriptor, ctx: EmitCtx, seen: Set<ModelTypeDescriptor> = new Set()): boolean {
+  if (seen.has(descriptor)) return false;
+  seen.add(descriptor);
+  const tags = serdeTags(descriptor);
+  if (tags.serde) {
+    const wire = serdeWireDescriptor(descriptor);
+    return wire !== undefined && sharesInput(wire, ctx, seen);
+  }
+  if (tags.date) return false;
+  switch (descriptor.kind) {
+    case 'any':
+    case 'unknown':
+      return true;
+    case 'array':
+      return sharesInput(descriptor.item, ctx, seen);
+    case 'tuple':
+      return descriptor.items.some((item) => sharesInput(item, ctx, seen))
+        || (descriptor.rest !== undefined && sharesInput(descriptor.rest.item, ctx, seen));
+    case 'union':
+    case 'intersection':
+      return descriptor.variants.some((variant) => sharesInput(variant, ctx, seen));
+    case 'object': {
+      if (!descriptorNeedsConversion(descriptor) && extrasAllowed(descriptor)) return true;
+      return Object.values(descriptor.properties).some((property) => sharesInput(property, ctx, seen))
+        || (typeof descriptor.additionalProperties === 'object' && sharesInput(descriptor.additionalProperties, ctx, seen))
+        || (descriptor.constraints ?? []).some((constraint) =>
+          constraint.kind === 'additionalProperties' || constraint.kind === 'patternProperties');
+    }
+    case 'reference':
+    case 'generated-model': {
+      if (descriptor.kind === 'generated-model' && ctx.nestedGenerated?.(descriptor.id)) return false;
+      if (shouldConstructNested(descriptor, ctx)) return false;
+      const node = ctx.graph.nodeFor(descriptor);
+      if (!node) return true;
+      return node.descriptor.kind === 'object' && !descriptorNeedsConversion(node.descriptor)
+        ? sharesInput(node.descriptor, ctx, seen)
+        : false;
+    }
+    default:
+      return false;
+  }
+}
+
+/** Whether decoding `descriptor` can reach the model node `id` again, so a cyclic input would recurse. */
+function reachesNode(
+  descriptor: ModelTypeDescriptor,
+  id: string,
+  ctx: EmitCtx,
+  seen: Set<string> = new Set(),
+): boolean {
+  switch (descriptor.kind) {
+    case 'array':
+      return reachesNode(descriptor.item, id, ctx, seen);
+    case 'tuple':
+      return descriptor.items.some((item) => reachesNode(item, id, ctx, seen))
+        || (descriptor.rest !== undefined && reachesNode(descriptor.rest.item, id, ctx, seen));
+    case 'union':
+    case 'intersection':
+      return descriptor.variants.some((variant) => reachesNode(variant, id, ctx, seen));
+    case 'object':
+      return Object.values(descriptor.properties).some((property) => reachesNode(property, id, ctx, seen))
+        || (typeof descriptor.additionalProperties === 'object' && reachesNode(descriptor.additionalProperties, id, ctx, seen));
+    case 'reference':
+    case 'generated-model': {
+      const node = ctx.graph.nodeFor(descriptor);
+      if (!node) return false;
+      if (node.id === id) return true;
+      if (seen.has(node.id)) return false;
+      seen.add(node.id);
+      return reachesNode(node.descriptor, id, ctx, seen);
+    }
+    default:
+      return false;
+  }
+}
+
 function emitInternedObjectDecode(
   node: SchemaNode,
   descriptor: ModelTypeDescriptor,
@@ -607,12 +706,10 @@ function emitInternedObjectDecode(
   ctx: EmitCtx,
 ): string {
   if (shouldConstructNested(descriptor, ctx)) {
-    // Nested values belong to input the outermost call already isolated, so a
-    // model emitted in this module converts them without copying again.
     const local = !isExternalCodecNode(node) && !(ctx.nestedImportedSerde?.(node.codecId) ?? ctx.nestedImportedSerde?.(node.id));
-    return local
-      ? `convertFromWire${node.id}(${expression}, ${nestedFromWireOptions(descriptor, ctx)}, true)`
-      : `${fromWireFunctionName(node.id)}(${expression}, ${nestedFromWireOptions(descriptor, ctx)})`;
+    return nestedConversionCall(local
+      ? `convertFromWire${node.id}(${expression}, ${nestedFromWireOptions(descriptor, ctx)})`
+      : `${fromWireFunctionName(node.id)}(${expression}, ${nestedFromWireOptions(descriptor, ctx)})`);
   }
   if (
     node.kind === 'object'
@@ -625,9 +722,9 @@ function emitInternedObjectDecode(
   }
   if (node.kind === 'object') {
     const imported = ctx.nestedImportedSerde?.(node.codecId) ?? ctx.nestedImportedSerde?.(node.id);
-    return `${imported?.fill ?? fillFunctionName(node.id)}({} as Record<string, unknown>, ${asRecord(expression)})`;
+    return nestedConversionCall(`${imported?.fill ?? fillFunctionName(node.id)}({} as Record<string, unknown>, ${asRecord(expression)})`);
   }
-  return `${fromWireFunctionName(node.id)}(${expression}, ${trustedOptions(ctx)})`;
+  return nestedConversionCall(`${fromWireFunctionName(node.id)}(${expression}, ${trustedOptions(ctx)})`);
 }
 
 function mergeResolvedObjects(
@@ -804,7 +901,7 @@ function emitUnionDecode(
   if (generated.length === 1) {
     const className = ctx.nestedGenerated?.(generated[0].id);
     if (className) {
-      const converted = `${expression} instanceof ${className} ? ${expression} : decodeGeneratedModelTrusted(${className}, ${expression})`;
+      const converted = `${expression} instanceof ${className} ? ${expression} : ${nestedConversionCall(`decodeGeneratedModelTrusted(${className}, ${expression})`)}`;
       const objects = present.filter((variant): variant is ObjectTypeDescriptor => variant.kind === 'object');
       const discriminator = objectDiscriminator(objects);
       if (objects.length > 0 && !discriminator) throw new Error(OBJECT_UNION_DISCRIMINATOR_ERROR);
@@ -916,7 +1013,7 @@ function emitUnionEncode(
 function emitDecodeValue(descriptor: ModelTypeDescriptor, expression: string, ctx: EmitCtx): string {
   if (descriptor.kind === 'generated-model') {
     const className = ctx.nestedGenerated?.(descriptor.id);
-    if (className) return `decodeGeneratedModelTrusted(${className}, ${expression})`;
+    if (className) return nestedConversionCall(`decodeGeneratedModelTrusted(${className}, ${expression})`);
   }
   const tags = serdeTags(descriptor);
   if (tags.serde) {
@@ -989,11 +1086,21 @@ function emitDecodedRecord(
 ): string {
   const fields = Object.entries(descriptor.properties);
   if (fields.length === 0) return expression;
-  return emitComputedRecord(fields.map(([name, property]) => [
-    name,
-    emitDecodeValue(property, access(expression, name), ctx),
-  ]));
+  return emitComputedRecord(fields.map(([name, property]) => {
+    const source = access(expression, name);
+    const decoded = emitDecodeValue(property, source, ctx);
+    // A source property is read once: bind it to a parameter when the conversion uses it again.
+    return [
+      name,
+      countOccurrences(decoded, source) > 1
+        ? `((${NESTED_SOURCE}) => ${emitDecodeValue(property, NESTED_SOURCE, ctx)})(${source})`
+        : decoded,
+    ];
+  }));
 }
+
+/** Parameter of an inline decoder that reads a nested property once; inner decoders shadow it. */
+const NESTED_SOURCE = '__golemSource';
 
 function emitFillPropertyWrite(name: string, decoded: string, indent = '    '): string {
   if (name === '__proto__') {
@@ -1002,18 +1109,56 @@ function emitFillPropertyWrite(name: string, decoded: string, indent = '    '): 
   return `${indent}out[${JSON.stringify(name)}] = ${decoded};`;
 }
 
+/** Result of emitting how one source property reaches the fill output. */
+interface FillValue {
+  /** Statements that run before the write; they read the source property once into a local. */
+  readonly statements: readonly string[];
+  readonly value: string;
+  /** The conversion changes the value. */
+  readonly converted: boolean;
+  /** The value is carried by reference or can recurse, so it was checked for cycles. */
+  readonly checked: boolean;
+}
+
+/**
+ * Reads the source property once. A value the result shares with the input, or that reaches `recursiveId` again,
+ * is checked for cycles against `wire` first; a conversion that calls another conversion runs under the field's path.
+ */
+function emitFillValue(
+  property: ModelTypeDescriptor,
+  read: string,
+  field: string,
+  local: string,
+  recursiveId: string | undefined,
+  ctx: EmitCtx,
+): FillValue {
+  const callsBefore = nestedConversionCalls;
+  const decoded = emitDecodeValue(property, read, ctx);
+  const nested = nestedConversionCalls !== callsBefore;
+  const checked = sharesInput(property, ctx) || (recursiveId !== undefined && reachesNode(property, recursiveId, ctx));
+  const converted = decoded !== read;
+  if (!checked && !nested && countOccurrences(decoded, read) <= 1) return { statements: [], value: decoded, converted, checked };
+  const bound = emitDecodeValue(property, local, ctx);
+  return {
+    statements: [`const ${local} = ${checked ? `assertPropertyAcyclic(wire, ${field}, ${read})` : read};`],
+    value: nested ? `convertModelField("deserialize", ${field}, (${local}) => (${bound}), ${local})` : bound,
+    converted,
+    checked,
+  };
+}
+
 function emitFillFunction(
   node: SchemaNode,
   ctx: EmitCtx,
   descriptor: ModelTypeDescriptor = node.descriptor,
-): { readonly source: string; readonly copyIdentity: boolean; readonly hasConvertedWrites: boolean } {
+): { readonly source: string; readonly copyIdentity: boolean; readonly needsFill: boolean } {
   const fn = fillFunctionName(node.id);
   const exported = ctx.exportedFillFunctionIds?.has(node.id) ? 'export ' : '';
   if (descriptor.kind !== 'object') {
     return {
       source: `${exported}function ${fn}(out: Record<string, unknown>, _wire: Record<string, unknown>): Record<string, unknown> {\n  return out;\n}\n`,
       copyIdentity: false,
-      hasConvertedWrites: false,
+      needsFill: false,
     };
   }
   const properties = Object.entries(descriptor.properties);
@@ -1034,41 +1179,56 @@ function emitFillFunction(
     (constraint) => constraint.kind === 'patternProperties',
   );
   if (properties.length === 0 && !additionalSchema && patternConstraints.length === 0) {
+    // Every property is carried over as it is, so the whole input is checked.
     return {
-      source: `${exported}function ${fn}(out: Record<string, unknown>, wire: Record<string, unknown>): Record<string, unknown> {\n  return Object.assign(out, wire);\n}\n`,
+      source: `${exported}function ${fn}(out: Record<string, unknown>, wire: Record<string, unknown>): Record<string, unknown> {\n  assertAcyclicValue(wire);\n  return Object.assign(out, wire);\n}\n`,
       copyIdentity: false,
-      hasConvertedWrites: false,
+      needsFill: true,
     };
   }
   const required = new Set(descriptor.required);
+  const recursiveId = reachesNode(descriptor, node.id, ctx) ? node.id : undefined;
   const identityWrites: string[] = [];
   const propertyWrites: string[] = [];
   let copyIdentity = false;
-  let hasConvertedWrites = false;
-  for (const [name, property] of properties) {
-    const identity = access('wire', name);
-    const decoded = emitDecodeValue(property, identity, ctx);
-    const converted = name === '__proto__' || decoded !== identity;
-    if (converted) hasConvertedWrites = true;
-    else copyIdentity = true;
-    if (!converted && required.has(name) && name !== '__proto__') {
-      identityWrites.push(emitFillPropertyWrite(name, decoded));
-      continue;
+  let needsFill = false;
+  properties.forEach(([name, property], index) => {
+    const field = JSON.stringify(name);
+    const read = access('wire', name);
+    const fill = emitFillValue(property, read, field, `__golemWire${index}`, recursiveId, ctx);
+    const proto = name === '__proto__';
+    if (fill.converted || fill.checked || proto) needsFill = true;
+    if (!fill.converted && !fill.checked && !proto) {
+      copyIdentity = true;
+      identityWrites.push(...(required.has(name)
+        ? [emitFillPropertyWrite(name, fill.value)]
+        : [
+          `    if (Object.prototype.hasOwnProperty.call(wire, ${field})) {`,
+          emitFillPropertyWrite(name, fill.value, '      '),
+          '    }',
+        ]));
+      return;
     }
-    if (!converted) {
-      identityWrites.push(
-        `    if (Object.prototype.hasOwnProperty.call(wire, ${JSON.stringify(name)})) {`,
-        emitFillPropertyWrite(name, decoded, '      '),
-        '    }',
-      );
-      continue;
+    if (!fill.converted && !proto) {
+      // Carried by reference: checked on every call, written only when the caller wants identity fields copied.
+      copyIdentity = true;
+      const write = ['  if (copyIdentity) {', emitFillPropertyWrite(name, fill.value, '    '), '  }'];
+      propertyWrites.push(...(required.has(name)
+        ? [...fill.statements.map((line) => `  ${line}`), ...write]
+        : [
+          `  if (Object.prototype.hasOwnProperty.call(wire, ${field})) {`,
+          ...[...fill.statements, ...write].map((line) => line.startsWith('  ') ? `  ${line}` : `    ${line}`),
+          '  }',
+        ]));
+      return;
     }
     propertyWrites.push(
-      `  if (Object.prototype.hasOwnProperty.call(wire, ${JSON.stringify(name)})) {`,
-      emitFillPropertyWrite(name, decoded),
+      `  if (Object.prototype.hasOwnProperty.call(wire, ${field})) {`,
+      ...fill.statements.map((line) => `    ${line}`),
+      emitFillPropertyWrite(name, fill.value),
       '  }',
     );
-  }
+  });
   const declaration = copyIdentity
     ? `${exported}function ${fn}(out: Record<string, unknown>, wire: Record<string, unknown>, copyIdentity = true): Record<string, unknown> {`
     : `${exported}function ${fn}(out: Record<string, unknown>, wire: Record<string, unknown>): Record<string, unknown> {`;
@@ -1085,29 +1245,36 @@ function emitFillFunction(
       `  for (const key of Object.keys(wire)) {`,
       `    if (${known ? `[${known}].includes(key)` : 'false'}) continue;`,
     );
+    const emitExtra = (schema: ModelTypeDescriptor | undefined, indent: string): string[] => {
+      // A pattern without a field schema carries the value by reference.
+      const value = schema === undefined
+        ? { statements: [], value: 'assertPropertyAcyclic(wire, key, wire[key])', converted: false, checked: true }
+        : emitFillValue(schema, 'wire[key]', 'key', '__golemValue', undefined, ctx);
+      if (value.converted || value.checked) needsFill = true;
+      return [
+        ...value.statements.map((line) => `${indent}${line}`),
+        `${indent}defineModelProperty(out, key, ${value.value});`,
+      ];
+    };
     for (const pattern of patternConstraints) {
       if (pattern.kind !== 'patternProperties') continue;
       const schema = typeof pattern.schema === 'object' && pattern.schema !== null && 'kind' in pattern.schema
-        ? pattern.schema
+        ? pattern.schema as ModelTypeDescriptor
         : undefined;
-      const decoded = schema ? emitDecodeValue(schema as never, 'wire[key]', ctx) : 'wire[key]';
-      if (decoded !== 'wire[key]') hasConvertedWrites = true;
       lines.push(
         `    if (new RegExp(${JSON.stringify(pattern.pattern)}).test(key)) {`,
-        `      defineModelProperty(out, key, ${decoded});`,
+        ...emitExtra(schema, '      '),
         '      continue;',
         '    }',
       );
     }
     if (additionalSchema && typeof additionalSchema === 'object' && additionalSchema !== null && 'kind' in additionalSchema) {
-      const decoded = emitDecodeValue(additionalSchema as never, 'wire[key]', ctx);
-      if (decoded !== 'wire[key]') hasConvertedWrites = true;
-      lines.push(`    defineModelProperty(out, key, ${decoded});`);
+      lines.push(...emitExtra(additionalSchema as ModelTypeDescriptor, '    '));
     }
     lines.push('  }');
   }
   lines.push('  return out;', '}', '');
-  return { source: lines.join('\n'), copyIdentity, hasConvertedWrites };
+  return { source: lines.join('\n'), copyIdentity, needsFill };
 }
 
 function emitEncodeValue(descriptor: ModelTypeDescriptor, expression: string, ctx: EmitCtx): string {
@@ -1355,17 +1522,12 @@ function emitNodeRuntime(
 
   const fill = objectDescriptor ? emitFillFunction(node, ctx, objectDescriptor) : undefined;
   const fillSrc = fill?.source ?? '';
-  const constructFill = fill?.hasConvertedWrites
-    ? (fill.copyIdentity
-      ? `${fillName}({ ...${asRecord('source')} }, ${asRecord('source')}, false)`
-      : `${fillName}({ ...${asRecord('source')} }, ${asRecord('source')})`)
-    : `{ ...${asRecord('source')} }`;
   const decodedExpr = objectDescriptor
     ? undefined
-    : emitDecodeValue(node.descriptor, 'source', ctx);
+    : emitDecodeValue(node.descriptor, 'wire', ctx);
 
   const convertLines: string[] = [
-    `function ${convertName}(wire: unknown, options: ${SERDE_OPTIONS} | undefined, isolated: boolean): unknown {`,
+    `function ${convertName}(wire: unknown, options: ${SERDE_OPTIONS} | undefined): unknown {`,
     emitSerdeValidates(validationEnabled),
   ];
   if (validationEnabled) {
@@ -1375,24 +1537,28 @@ function emitNodeRuntime(
       '  }',
     );
   }
-  convertLines.push(
-    '  const source = isolated || wire === null || typeof wire !== \'object\' ? wire : cloneConversionInput(wire);',
-  );
   if (objectDescriptor) {
+    // A constructed model starts from one copy of the input; fill reads each property from that copy.
+    const constructed = fill?.needsFill
+      ? [
+        `      const copy = { ...${asRecord('wire')} };`,
+        `      result = Reflect.construct(options.construct, [${fillName}(copy, copy${fill.copyIdentity ? ', false' : ''})]);`,
+      ]
+      : [`      result = Reflect.construct(options.construct, [{ ...${asRecord('wire')} }]);`];
     convertLines.push(
-      '  let result: unknown = source;',
-      "  if (source !== null && typeof source === 'object' && !Array.isArray(source)) {",
+      '  let result: unknown = wire;',
+      "  if (wire !== null && typeof wire === 'object' && !Array.isArray(wire)) {",
       '    if (options?.construct) {',
-      `      result = Reflect.construct(options.construct, [${constructFill}]);`,
+      ...constructed,
       '    } else {',
-      `      result = ${fillName}({} as Record<string, unknown>, source as Record<string, unknown>);`,
+      `      result = ${fillName}({} as Record<string, unknown>, wire as Record<string, unknown>);`,
       '    }',
       '  }',
     );
-  } else if (decodedExpr && decodedExpr !== 'source') {
-    convertLines.push(`  const result = ${decodedExpr};`);
   } else {
-    convertLines.push('  const result = source;');
+    // Values the result shares with the input are checked here; a model's fill checks its own fields.
+    if (sharesInput(node.descriptor, ctx)) convertLines.push('  assertAcyclicValue(wire);');
+    convertLines.push(`  const result = ${decodedExpr && decodedExpr !== 'wire' ? decodedExpr : 'wire'};`);
   }
   if (validationEnabled && node.modelOnlyJsonSchema !== undefined) {
     // The full wire check already ran; check only what decoding produced.
@@ -1406,7 +1572,7 @@ function emitNodeRuntime(
 
   const fromWireLines = [
     `${exported}function ${fromWire}(wire: unknown, options?: ${SERDE_OPTIONS}): ${fieldsType ?? 'unknown'} {`,
-    `  return ${convertName}(wire, options, false)${fieldsType ? ` as ${fieldsType}` : ''};`,
+    `  return ${convertName}(wire, options)${fieldsType ? ` as ${fieldsType}` : ''};`,
     '}',
     '',
   ];
@@ -1446,7 +1612,7 @@ function emitNodeRuntime(
 
   const parseLines = [
     `${exported}function ${parseName}(text: string, options?: ${SERDE_OPTIONS}): ${fieldsType ?? 'unknown'} {`,
-    `  return ${convertName}(parseJson(text), options, true)${fieldsType ? ` as ${fieldsType}` : ''};`,
+    `  return ${convertName}(parseJson(text), options)${fieldsType ? ` as ${fieldsType}` : ''};`,
     '}',
     '',
   ];

@@ -280,7 +280,7 @@ export function responseBody(value: unknown): unknown {
 
 Both throw `LibError` for missing generated metadata or cyclic input. With a known type, use [`toWireFormat<T>`](#serde) and `fromWireFormat<T>`, which also validate.
 
-Used by generated code: `decodeGeneratedModelTrusted`, `deserializeDate`, `serializeDate`, `convertModelField`, `defineModelProperty`, `requireModelObject`, `cloneConversionInput`, `assertAcyclicValue`, `unknownDiscriminatorValue`, `withDiscriminatorValue`, `jsonWithDiscriminator`.
+Used by generated code: `decodeGeneratedModelTrusted`, `deserializeDate`, `serializeDate`, `convertModelField`, `defineModelProperty`, `requireModelObject`, `assertAcyclicValue`, `assertPropertyAcyclic`, `unknownDiscriminatorValue`, `withDiscriminatorValue`, `jsonWithDiscriminator`.
 
 ## `@exprtlabs/golem/tags` {#tags}
 

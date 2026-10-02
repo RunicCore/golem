@@ -33,6 +33,8 @@ With validation on, the default, these calls check the value with Ajv. `{ valida
 
 `JSON.stringify(model)` does not run conversion or validation.
 
+Decoding copies the declared structure and reads each declared property once, so a getter runs once. It does not copy values in `unknown` or open fields (`additionalProperties`, `Record<string, unknown>`); the result holds the same object as the input. Cyclic input throws `LibError` of kind `deserialization`.
+
 Do not write `stringify(toWireFormat(x))` or `fromWireFormat(parse(text))` on the JSON path. `stringify` writes JSON for the declared fields, applying each `TSerde` serialize formatter. `parse` reads that JSON back.
 
 ## Validation during conversion

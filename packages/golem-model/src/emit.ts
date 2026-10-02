@@ -1458,8 +1458,10 @@ export function emitSource(
   const needsGeneratedDecode = externalIds.length > 0 || referenceNames.size > 0;
   const needsGeneratedEncode = needsGeneratedDecode;
   conversionHelpers.add('define');
+  conversionHelpers.add('field');
   const conversionImports = [
-    'cloneConversionInput',
+    'assertAcyclicValue',
+    'assertPropertyAcyclic',
     ...(needsGeneratedDecode ? ['decodeGeneratedModelTrusted'] : []),
     ...(needsGeneratedEncode ? ['encodeGeneratedModel'] : []),
     ...(conversionHelpers.has('field') ? ['convertModelField'] : []),

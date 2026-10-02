@@ -76,8 +76,8 @@ test('stringify checks the model, builds the wire, checks the wire and writes it
 test('identity arrays are copied with slice, not a map callback that returns its item', () => {
   const source = paymentRuntimeSource();
   assert.doesNotMatch(source, /\.map\(\(item\) => item\)/);
-  assert.match(functionBody(source, 'fillPayment'), /\(wire\["list"\] as readonly unknown\[\]\)\.map\(\(item\) => Array\.isArray\(item\) \? \(item as readonly unknown\[\]\)\.slice\(\) : item\)/);
-  assert.match(functionBody(source, 'fillMoney'), /\(wire\["tags"\] as readonly unknown\[\]\)\.slice\(\)/);
+  assert.match(functionBody(source, 'fillPayment'), /\(__golemWire\d+ as readonly unknown\[\]\)\.map\(\(item\) => Array\.isArray\(item\) \? \(item as readonly unknown\[\]\)\.slice\(\) : item\)/);
+  assert.match(functionBody(source, 'fillMoney'), /\(__golemWire\d+ as readonly unknown\[\]\)\.slice\(\)/);
   assert.match(functionBody(source, 'toWireFormatMoneyCore'), /\(__golemField0 as readonly unknown\[\]\)\.slice\(\)/);
 
   const runtime = instantiateRuntime(source);

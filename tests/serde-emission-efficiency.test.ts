@@ -301,7 +301,7 @@ test('OpenAPI decoder leaves scalar fields in the initializer copy', () => {
   );
 });
 
-test('nested local models decode from the already isolated input without copying it again', async (t) => {
+test('nested local models decode through the local converter of the nested model', async (t) => {
   const value = fixture(t);
   writeFileSync(path.join(value.sourceRoot, 'team.model.ts'), `import type { IModel } from '@exprtlabs/golem/model';
 import { TMemberBaseModel, TStampBaseModel, TTeamBaseModel } from './team.model.generated.js';
@@ -314,10 +314,10 @@ export class Team extends TTeamBaseModel {}
 `);
   const result = generate({ root: value.root, profile: { mobx: false, validation: false } });
   const generated = modelArtifact(result, 'team');
-  // Only the outermost call copies the input; nested models reuse that copy.
+  // Nested models call the module's own converter, not the public `fromWireFormat` entry.
   assert.doesNotMatch(functionBody(generated, 'fillTTeam'), /fromWireFormat(Member|Stamp)\(/);
-  assert.match(functionBody(generated, 'fillTTeam'), /convertFromWireTMember\([^;]*, true\)/);
-  assert.match(functionBody(generated, 'fillTMember'), /convertFromWireTStamp\([^;]*, true\)/);
+  assert.match(functionBody(generated, 'fillTTeam'), /convertFromWireTMember\(/);
+  assert.match(functionBody(generated, 'fillTMember'), /convertFromWireTStamp\(/);
 
   writeGeneratedArtifacts(result.artifacts);
   await compileModelProject(value.root);

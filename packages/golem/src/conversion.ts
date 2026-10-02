@@ -94,80 +94,82 @@ let activeEncodeModels: Set<object> | undefined;
 
 /**
  * Reject active-path cycles before a validator or generated converter walks a
- * value. Shared references are allowed: the active set is removed on return.
+ * value. Shared references are allowed: the active list is popped on return.
+ * The issue path starts at the active conversion path.
  */
 export function assertAcyclicValue(
   value: unknown,
   kind: LibErrorKind.Serialization | LibErrorKind.Deserialization = LibErrorKind.Deserialization,
 ): void {
-  walkConversionInput(value, kind, false);
+  walkConversionInput(value, kind, [], [...activeConversionPath]);
 }
 
-/** Check cycles and isolate plain input containers before invoking application code. */
-export function cloneConversionInput(value: unknown): unknown {
-  return walkConversionInput(value, LibErrorKind.Deserialization, true);
+/**
+ * Generated decoders carry values of `unknown` and open fields by reference,
+ * and walk recursive structures. They call this with the object being decoded,
+ * the field and the field's value, and use the returned value. A cycle in
+ * `value`, including one back to `owner`, throws with the active conversion
+ * path plus `field` and the path inside `value`.
+ */
+export function assertPropertyAcyclic(owner: object, field: string | number, value: unknown): unknown {
+  if (value === null || typeof value !== 'object') return value;
+  walkConversionInput(value, LibErrorKind.Deserialization, [owner], [...activeConversionPath, field]);
+  return value;
 }
 
 function walkConversionInput(
   value: unknown,
   kind: LibErrorKind.Serialization | LibErrorKind.Deserialization,
-  copy: boolean,
-): unknown {
-  const active = new Set<object>();
-  const path: (string | number)[] = [];
-  const at = (current: unknown, field: string | number, clone: boolean): unknown => {
-    path.push(field);
-    try { return visit(current, clone); }
-    finally { path.pop(); }
-  };
-  const visit = (current: unknown, clone: boolean): unknown => {
-    if (current === null || typeof current !== 'object' || current instanceof Date) return current;
-    if (active.has(current)) throw conversionError(kind, 'Cyclic values cannot be converted.', path, undefined, kind === LibErrorKind.Deserialization);
-    active.add(current);
-    try {
-      if (Array.isArray(current)) {
-        if (clone) return current.map((item, index) => at(item, index, true));
-        current.forEach((item, index) => at(item, index, false));
-        return current;
+  active: object[],
+  path: (string | number)[],
+): void {
+  if (value === null || typeof value !== 'object' || value instanceof Date) return;
+  if (active.includes(value)) {
+    throw conversionError(kind, 'Cyclic values cannot be converted.', [...path], undefined, kind === LibErrorKind.Deserialization);
+  }
+  active.push(value);
+  if (Array.isArray(value)) {
+    for (let index = 0; index < value.length; index++) {
+      path.push(index);
+      walkConversionInput(value[index], kind, active, path);
+      path.pop();
+    }
+  } else {
+    const definition = findGeneratedModelDefinition(value);
+    if (definition) {
+      // Existing model instances retain identity, but their declared graph still needs checking.
+      for (const field of definition.fields) {
+        path.push(field);
+        walkConversionInput(Reflect.get(value, field), kind, active, path);
+        path.pop();
       }
-      const definition = findGeneratedModelDefinition(current);
-      if (definition) {
-        // Existing model instances retain identity, but their declared graph still needs checking.
-        for (const field of definition.fields) at(Reflect.get(current, field), field, false);
-        if (definition.additionalProperties) {
-          const known = new Set(definition.fields);
-          for (const [name, item] of Object.entries(current)) {
-            if (!known.has(name)) at(item, name, false);
-          }
+      if (definition.additionalProperties) {
+        const known = new Set(definition.fields);
+        for (const [name, item] of Object.entries(value)) {
+          if (known.has(name)) continue;
+          path.push(name);
+          walkConversionInput(item, kind, active, path);
+          path.pop();
         }
-        return current;
       }
-      const prototype = Object.getPrototypeOf(current);
-      if (prototype !== Object.prototype && prototype !== null) return current;
-      if (clone) {
-        // Snapshot before descending: callbacks/accessors in a later branch cannot
-        // change which values this operation copies. Spread defines own data
-        // properties, including __proto__, without invoking inherited setters.
-        const result: Record<string, unknown> = Object.getOwnPropertySymbols(current).length === 0
-          ? { ...current }
-          : Object.fromEntries(Object.entries(current));
-        for (const name of Object.keys(result)) {
-          const item = result[name];
-          if (item !== null && typeof item === 'object') result[name] = at(item, name, true);
+    } else {
+      const prototype = Object.getPrototypeOf(value);
+      if (prototype === Object.prototype || prototype === null) {
+        for (const name of Object.keys(value)) {
+          path.push(name);
+          walkConversionInput(Reflect.get(value, name), kind, active, path);
+          path.pop();
         }
-        return result;
       }
-      for (const [name, item] of Object.entries(current)) at(item, name, false);
-      return current;
-    } finally { active.delete(current); }
-  };
-  return visit(value, copy);
+    }
+  }
+  active.pop();
 }
 
 function decodeGeneratedModelValue(
   constructor: GeneratedModelConstructor,
   value: unknown,
-  isolate: boolean,
+  checkCycles: boolean,
 ): object {
   if (value !== null && typeof value === 'object' && value instanceof constructor) return value;
   const definition = findGeneratedModelDefinitionForConstructor(constructor);
@@ -188,8 +190,8 @@ function decodeGeneratedModelValue(
     else active.set(objectValue, previousOwner ? new Set([previousOwner, constructor]) : constructor);
   }
   try {
-    const isolated = isolate && value !== null && typeof value === 'object' ? cloneConversionInput(value) : value;
-    const decoded = conversion.decode(isolated, constructor);
+    if (checkCycles && objectValue) assertAcyclicValue(value, LibErrorKind.Deserialization);
+    const decoded = conversion.decode(value, constructor);
     if (decoded === null || typeof decoded !== 'object' || !(decoded instanceof constructor)) {
       throw conversionError(LibErrorKind.Deserialization, 'Generated model conversion did not return an instance of the requested model.');
     }
@@ -230,9 +232,9 @@ export function decodeGeneratedModel(
 }
 
 /**
- * Nested generated-model decode after the caller isolated input or produced a
- * detached tree (`JSON.parse`, cloned `fromWireFormat` root). Application code
- * should keep using `decodeGeneratedModel`.
+ * Nested generated-model decode after the caller checked the input for cycles
+ * or produced a detached tree (`JSON.parse`). Application code should keep
+ * using `decodeGeneratedModel`.
  */
 export function decodeGeneratedModelTrusted<Constructor extends GeneratedModelConstructor>(
   constructor: Constructor,
