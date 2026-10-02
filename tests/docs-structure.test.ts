@@ -176,7 +176,7 @@ test('guide TypeScript is imported except on listed pages', () => {
 });
 
 const PUBLIC_SUBPATHS = ['model', 'validation', 'ajv', 'mobx', 'mobx-validation', 'errors', 'client', 'conversion', 'tags', 'temporal', 'serde', 'nest', 'ttsc-plugin', 'generator-api', 'manifest'];
-const INTERNAL_SUBPATHS = ['cli', 'emitter', 'schema', 'schema-graph', 'ajv-tooling', 'type-analysis', 'generated-paths', 'rewrite', 'loader', 'register', 'ts'];
+const INTERNAL_SUBPATHS = ['cli', 'emitter', 'schema', 'schema-graph', 'ajv-tooling', 'type-analysis', 'generated-paths', 'rewrite', 'loader', 'register', 'vite', 'esbuild', 'ts'];
 
 test('the runtime reference covers every @exprtlabs/golem subpath', () => {
   const exports = Object.keys(JSON.parse(readFileSync(path.join(root, 'packages/golem/package.json'), 'utf8')).exports as Record<string, unknown>).map(key => key.replace(/^\.\//, ''));

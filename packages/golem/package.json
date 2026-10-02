@@ -112,6 +112,16 @@
       "import": "./dist/tooling/loader.js",
       "default": "./dist/tooling/loader.js"
     },
+    "./vite": {
+      "types": "./dist/tooling/vite.d.ts",
+      "import": "./dist/tooling/vite.js",
+      "default": "./dist/tooling/vite.js"
+    },
+    "./esbuild": {
+      "types": "./dist/tooling/esbuild.d.ts",
+      "import": "./dist/tooling/esbuild.js",
+      "default": "./dist/tooling/esbuild.js"
+    },
     "./register": {
       "types": "./dist/tooling/register.d.ts",
       "import": "./dist/tooling/register.js",
@@ -190,7 +200,8 @@
     "mobx": "^6.13.0",
     "rxjs": "^7.8.0",
     "ttsc": "0.30.x",
-    "typescript": ">=6.0.0 <8"
+    "typescript": ">=6.0.0 <8",
+    "vite": ">=5"
   },
   "peerDependenciesMeta": {
     "@nestjs/common": {
@@ -215,6 +226,9 @@
       "optional": true
     },
     "typescript": {
+      "optional": true
+    },
+    "vite": {
       "optional": true
     }
   },

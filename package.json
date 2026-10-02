@@ -50,6 +50,7 @@
     "ttsc": "0.30.x",
     "typescript": "7.x",
     "typia": "^14.0.6",
+    "vite": "5.4.21",
     "vitepress": "1.6.4",
     "zod": "4.6.5"
   },

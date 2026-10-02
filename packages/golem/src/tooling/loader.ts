@@ -1,8 +1,7 @@
-import { existsSync, statSync } from 'node:fs';
-import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { applyRewrites, readRewriteIndex, REWRITE_INDEX_PATH, type RewriteIndex } from './rewrite.js';
+import { applyRewrites } from './rewrite.js';
+import { findRewriteIndex, NODE_MODULES, withInlineSourceMap } from './rewrite-host.js';
 
 /**
  * Node module `load` hook that applies golem's rewrite index to TypeScript sources in memory, before Node strips
@@ -12,43 +11,10 @@ import { applyRewrites, readRewriteIndex, REWRITE_INDEX_PATH, type RewriteIndex 
  */
 
 const TYPESCRIPT_FILE = /\.(?:ts|mts|cts)$/;
-const NODE_MODULES = /[\\/]node_modules[\\/]/;
-const INLINE_MAP_PREFIX = '\n//# sourceMappingURL=data:application/json;base64,';
 
 interface LoadContext { readonly format?: string | null | undefined }
 interface LoadResult { readonly format: string; readonly source?: string | ArrayBuffer | NodeJS.TypedArray | null | undefined; readonly shortCircuit?: boolean }
 type NextLoad = (url: string, context?: LoadContext) => LoadResult | Promise<LoadResult>;
-
-const indexes = new Map<string, { readonly stamp: string; readonly index: RewriteIndex | undefined }>();
-
-/** The index of `root`, read again only when the index file changes. */
-function indexOf(root: string): RewriteIndex | undefined {
-  const filename = path.join(root, REWRITE_INDEX_PATH);
-  let stamp = 'absent';
-  try {
-    const stat = statSync(filename, { bigint: true });
-    stamp = `${stat.mtimeNs}:${stat.size}`;
-  } catch { /* readRewriteIndex reports a missing file as undefined */ }
-  const cached = indexes.get(root);
-  if (cached?.stamp === stamp) return cached.index;
-  const index = readRewriteIndex(root);
-  indexes.set(root, { stamp, index });
-  return index;
-}
-
-function ancestorsOf(file: string): string[] {
-  const directories: string[] = [];
-  for (let directory = path.dirname(file); ; directory = path.dirname(directory)) {
-    directories.push(directory);
-    if (path.dirname(directory) === directory) return directories;
-  }
-}
-
-/** The directory that would hold the index: the nearest one with a tsconfig.json, else the file's own directory. */
-function expectedRoot(file: string): string {
-  const directories = ancestorsOf(file);
-  return directories.find((directory) => existsSync(path.join(directory, 'tsconfig.json'))) ?? directories[0]!;
-}
 
 function sourceText(source: LoadResult['source']): string {
   if (typeof source === 'string') return source;
@@ -61,21 +27,13 @@ export async function load(url: string, context: LoadContext, nextLoad: NextLoad
   const file = fileURLToPath(url);
   if (!TYPESCRIPT_FILE.test(file) || NODE_MODULES.test(file)) return nextLoad(url, context);
 
-  const root = ancestorsOf(file).find((directory) => existsSync(path.join(directory, REWRITE_INDEX_PATH)));
-  const index = root === undefined ? undefined : indexOf(root);
-  if (root === undefined || index === undefined) {
-    throw new Error(`no golem rewrite index at ${path.join(root ?? expectedRoot(file), REWRITE_INDEX_PATH)}; run golem generate`);
-  }
-
+  const { index, relative } = findRewriteIndex(file);
   const loaded = await nextLoad(url, context);
-  const relative = path.relative(root, file).split(path.sep).join('/');
   // The rewrite prepends ES imports, which CommonJS cannot run.
   if (loaded.format === 'commonjs-typescript' && relative in index.files) {
     throw new Error(`golem rewrites need ES modules; ${relative} loads as CommonJS. Use .mts, or .ts with "type": "module", or build with golem build`);
   }
   const applied = applyRewrites(relative, sourceText(loaded.source), index);
   if (!applied) return loaded;
-  // The map's source is the module's own file name: an inline map resolves `sources` against the module's URL.
-  const map = JSON.stringify({ ...applied.map, sources: [path.basename(file)] });
-  return { ...loaded, source: `${applied.code}${INLINE_MAP_PREFIX}${Buffer.from(map, 'utf8').toString('base64')}\n` };
+  return { ...loaded, source: withInlineSourceMap(applied.code, applied.map, file) };
 }
