@@ -261,6 +261,56 @@ test('watch reuses one compiler across edits and tsconfig path-mapping changes',
   }
 });
 
+test('a tsconfig edit that lands while the compiler probes the project is applied by the next run', { skip: process.platform === 'win32' || skipOnTypeScript6 }, async (t: TestContext) => {
+  const { root, config } = fixture(t);
+  const tsconfigFile = path.join(root, 'tsconfig.json');
+  const tsconfig = JSON.parse(fs.readFileSync(tsconfigFile, 'utf8')) as { compilerOptions: Record<string, unknown> };
+  const writeTsconfig = (shape: string): void => {
+    fs.writeFileSync(tsconfigFile, JSON.stringify({ ...tsconfig, compilerOptions: { ...tsconfig.compilerOptions, paths: { '@extra/types': [`./shared/${shape}.ts`] } } }));
+  };
+  fs.mkdirSync(path.join(root, 'shared'));
+  fs.writeFileSync(path.join(root, 'shared/first.ts'), 'export type Extra = { firstShape: string };\n');
+  fs.writeFileSync(path.join(root, 'shared/second.ts'), 'export type Extra = { secondShape: string };\n');
+  writeTsconfig('first');
+  const modelSource = path.join(root, 'src/cart.model.ts');
+  const original = fs.readFileSync(modelSource, 'utf8');
+  fs.writeFileSync(modelSource, [`import type { Extra } from '@extra/types';`, original.replace('note: string', 'note: string; extra: Extra')].join('\n'));
+  const companion = path.join(root, 'src/cart.model.generated.ts');
+
+  const { API } = await import('#golem/typescript-ts7');
+  const prototype = API.prototype as unknown as { updateSnapshot(this: InstanceType<typeof API>, ...args: unknown[]): unknown };
+  const updateSnapshot = prototype.updateSnapshot;
+  let snapshots = 0;
+  let editAtSnapshot = 0;
+  prototype.updateSnapshot = function countedUpdateSnapshot(this: InstanceType<typeof API>, ...args: unknown[]): unknown {
+    snapshots++;
+    if (snapshots === editAtSnapshot) writeTsconfig('second');
+    return updateSnapshot.apply(this, args);
+  };
+  t.after(() => { prototype.updateSnapshot = updateSnapshot; });
+
+  const session = new GeneratorSessionResources();
+  t.after(() => session[Symbol.dispose]());
+  const first = await runPipeline(config, { session });
+  const shapes = (): string => ['firstShape', 'secondShape'].filter(shape => fs.readFileSync(companion, 'utf8').includes(shape)).join();
+  assert.equal(shapes(), 'firstShape');
+  const snapshotsPerRun = snapshots;
+
+  // The edit lands in the last snapshot of the run, the rewrite scan, which only probes the tsconfig.
+  fs.writeFileSync(modelSource, fs.readFileSync(modelSource, 'utf8').replace('note: string;', 'note: string; edited?: boolean;'));
+  session.inputsChanged([modelSource]);
+  editAtSnapshot = snapshots + snapshotsPerRun;
+  const second = await runPipeline(config, { session, previous: first, changedInputs: [modelSource] });
+  assert.equal(snapshots, editAtSnapshot, 'the second run opened as many snapshots as the first');
+  assert.equal(fs.readFileSync(tsconfigFile, 'utf8').includes('second.ts'), true, 'the tsconfig was edited during the run');
+  assert.equal(shapes(), 'firstShape', 'the run read the tsconfig before the edit');
+
+  // The watch reports the edit and runs again.
+  session.inputsChanged([tsconfigFile]);
+  await runPipeline(config, { session, previous: second, changedInputs: [tsconfigFile] });
+  assert.equal(shapes(), 'secondShape', 'the next run applies the edit');
+});
+
 test('stopping an in-process watch closes its compiler', { skip: process.platform === 'win32' || skipOnTypeScript6 }, async (t: TestContext) => {
   const { root, config } = fixture(t);
   const errors: unknown[] = [];

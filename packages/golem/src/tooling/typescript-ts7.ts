@@ -1370,12 +1370,12 @@ export class ProgramSession implements Disposable {
   }
 
   /**
-   * A snapshot read replaces a path's signature. A configuration parse records
-   * only paths not seen before: the compiler can reuse what it parsed, but a
-   * parse must not hide a change from the next snapshot.
+   * A snapshot read replaces a path's signature: the compiler has just read the file. A probe or a configuration parse
+   * records only a path not seen before. The compiler keeps what it read through a probe, and a parse can reuse what it
+   * parsed, so refreshing the signature would hide an edit made since the compiler read the file from the next snapshot.
    */
-  private recordSignature(filename: string): void {
-    if (this.recording || !this.signatures.has(filename)) this.signatures.set(filename, fileSignature(filename));
+  private recordSignature(filename: string, read: boolean): void {
+    if ((this.recording && read) || !this.signatures.has(filename)) this.signatures.set(filename, fileSignature(filename));
   }
 
   private fileSystem(): FileSystem {
@@ -1384,21 +1384,21 @@ export class ProgramSession implements Disposable {
         const filename = canonical(fileName);
         this.report(filename);
         if (this.overlays.has(filename)) return this.overlays.get(filename)!;
-        this.recordSignature(filename);
+        this.recordSignature(filename, true);
         return undefined;
       },
       fileExists: (fileName) => {
         const filename = canonical(fileName);
         this.report(filename);
         if (this.overlays.has(filename)) return true;
-        this.recordSignature(filename);
+        this.recordSignature(filename, false);
         return undefined;
       },
       directoryExists: (directoryName) => {
         const directory = canonical(directoryName);
         this.report(directory);
         if (this.overlayDirectories.has(directory)) return true;
-        this.recordSignature(directory);
+        this.recordSignature(directory, false);
         return undefined;
       },
       getAccessibleEntries: (directoryName) => {
