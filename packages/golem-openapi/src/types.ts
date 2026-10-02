@@ -480,10 +480,62 @@ function referencedSchemaType(reference: string, context: SchemaTypeContext): st
   return name ? `${context.qualifier || ''}${name}` : 'unknown';
 }
 
-function schemaTypeNode(schema: unknown, context: SchemaTypeContext = {}): string {
-  if (schema === true) return 'unknown';
-  if (schema === false) return 'never';
-  if (!isJsonObject(schema)) return 'unknown';
+function isSchemaReference(schema: JsonObjectLike): boolean {
+  return typeof schema.$ref === 'string' || typeof schema.$dynamicRef === 'string';
+}
+
+type AllOfRequirements = {
+  /** Every name an inline member of the intersection requires. */
+  readonly required: ReadonlySet<string>;
+  /** Every name an inline member of the intersection declares as a property. */
+  readonly declared: ReadonlySet<string>;
+};
+
+function allOfRequirements(schema: JsonObjectLike): AllOfRequirements {
+  const required = new Set<string>();
+  const declared = new Set<string>();
+  const visit = (node: unknown): void => {
+    if (!isJsonObject(node) || isSchemaReference(node)) return;
+    for (const name of Array.isArray(node.required) ? node.required : []) required.add(String(name));
+    for (const [name] of objectEntries(node.properties)) declared.add(name);
+    for (const member of Array.isArray(node.allOf) ? node.allOf : []) visit(member);
+  };
+  visit(schema);
+  return { required, declared };
+}
+
+/** Keeps the referenced type shared while requiring the given keys it declares. */
+function requiredKeysType(type: string, names: readonly string[]): string {
+  const operand = hasTopLevel(type, ['|', '&', '=>', '?']) ? `(${type})` : type;
+  return `Required<Pick<${type}, Extract<${names.map((name) => JSON.stringify(name)).join(' | ')}, keyof ${operand}>>>`;
+}
+
+/**
+ * The types an allOf member contributes. Every member's `required` names bind the intersection:
+ * an inline member declaring the property emits it required, and a referenced member intersects
+ * with a required-key part so the shared component's own type is unchanged.
+ */
+function allOfMemberTypes(item: unknown, requirements: AllOfRequirements, context: SchemaTypeContext): string[] {
+  if (!isJsonObject(item)) return [schemaTypeNode(item, context)];
+  if (isSchemaReference(item)) {
+    const type = schemaTypeNode(item, context);
+    const undeclared = [...requirements.required].filter((name) => !requirements.declared.has(name));
+    return undeclared.length && type !== 'unknown' ? [type, requiredKeysType(type, undeclared)] : [type];
+  }
+  if (requirements.required.size && (item.properties !== undefined || Array.isArray(item.allOf))) {
+    return [schemaTypeNode({ ...item, required: [...requirements.required] }, context)];
+  }
+  return [schemaTypeNode(item, context)];
+}
+
+function schemaTypeNode(rawSchema: unknown, context: SchemaTypeContext = {}): string {
+  if (rawSchema === true) return 'unknown';
+  if (rawSchema === false) return 'never';
+  if (!isJsonObject(rawSchema)) return 'unknown';
+  const allOfNames = Array.isArray(rawSchema.allOf) && !isSchemaReference(rawSchema)
+    ? allOfRequirements(rawSchema)
+    : undefined;
+  const schema = allOfNames?.required.size ? { ...rawSchema, required: [...allOfNames.required] } : rawSchema;
   const resources = context.resources ?? (context.document ? collectCanonicalResources(context.document) : undefined);
   const currentBase = nextSchemaBase(
     schema,
@@ -556,8 +608,9 @@ function schemaTypeNode(schema: unknown, context: SchemaTypeContext = {}): strin
     result = result ? intersectionType([result, union]) : union;
   }
   if (Array.isArray(schema.allOf)) {
+    const requirements = allOfNames ?? allOfRequirements(schema);
     const parts = schema.allOf
-      .map((item) => schemaTypeNode(item, inner))
+      .flatMap((item) => allOfMemberTypes(item, requirements, inner))
       .filter((part) => part !== 'unknown');
     if (parts.length) result = intersectionType(result ? [result, ...parts] : parts);
   }

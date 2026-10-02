@@ -300,6 +300,54 @@ test('public generation validates repeated aliases, sibling allOf required, and 
   assert.equal(await userModel({ ...request, ...reply }), true);
 });
 
+test('allOf required names from any member make the declared property required in the generated type', async (t) => {
+  const output = path.join(createFixtureProject(t, 'golem-openapi-allof-required-'), 'sdk');
+  const json = (name: string) => ({ 'application/json': { schema: { $ref: `#/components/schemas/${name}` } } });
+  const operation = (operationId: string, name: string) => ({
+    post: {
+      operationId,
+      requestBody: { required: true, content: json(name) },
+      responses: { 200: { description: 'ok', content: json(name) } },
+    },
+  });
+  const document = {
+    openapi: '3.1.0',
+    info: { title: 'AllOfRequired', version: '1' },
+    paths: {
+      '/siblings': operation('createSibling', 'AllOfSibling'),
+      '/pets': operation('createPet', 'CreatePet'),
+      '/plain-pets': operation('createPlainPet', 'Pet'),
+      '/nested-pets': operation('createNestedPet', 'NestedPet'),
+    },
+    components: {
+      schemas: {
+        AllOfSibling: {
+          allOf: [
+            { properties: { secret: { type: 'string', writeOnly: true } } },
+            { required: ['id', 'secret'], properties: { id: { type: 'string' } } },
+          ],
+        },
+        Pet: {
+          type: 'object',
+          properties: { name: { type: 'string' }, tag: { type: 'string' } },
+        },
+        CreatePet: {
+          allOf: [{ $ref: '#/components/schemas/Pet' }, { required: ['name'] }],
+        },
+        NestedPet: {
+          allOf: [
+            { allOf: [{ $ref: '#/components/schemas/Pet' }, { properties: { owner: { type: 'string' } } }] },
+            { required: ['name', 'owner'] },
+          ],
+        },
+      },
+    },
+  };
+  await generateMaterializedSdk(document, { output, name: 'AllOfRequired', profile: standaloneProfile });
+  copyFixtureFile(output, 'openapi/schema-projection/allof-required-assert.ts', 'allof-required-assert.ts');
+  compileGeneratedSdk(output, [path.join(output, 'allof-required-assert.ts')], { strict: true });
+});
+
 function directionalUserEnvelope(userId: string, envelopeId: string, userRef: string) {
   return {
     openapi: '3.1.0',
