@@ -90,7 +90,7 @@ function fillTTask(out: Record<string, unknown>, wire: Record<string, unknown>, 
     out["done"] = wire["done"];
   }
   if (Object.prototype.hasOwnProperty.call(wire, "priority")) {
-    out["priority"] = modelSerdeBindings["src/priority-word.ts#toPriorityWord\u0000src/priority-word.ts#fromPriorityWord"].deserialize(wire["priority"]);
+    out["priority"] = convertModelField("deserialize", "priority", (__golemWire2) => (modelSerdeBindings["src/priority-word.ts#toPriorityWord\u0000src/priority-word.ts#fromPriorityWord"].deserialize(__golemWire2)), wire["priority"]);
   }
   return out;
 }

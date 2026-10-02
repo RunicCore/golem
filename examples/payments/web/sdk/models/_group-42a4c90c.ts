@@ -112,16 +112,13 @@ function fillTPaymentInput(out: Record<string, unknown>, wire: Record<string, un
     out["note"] = wire["note"];
   }
   if (Object.prototype.hasOwnProperty.call(wire, "billing")) {
-    const __golemWire0 = wire["billing"];
-    out["billing"] = convertModelField("deserialize", "billing", (__golemWire0) => (fromWireFormatTMerchantOmitId(__golemWire0, { validate: false, construct: TMerchantOmitIdModel })), __golemWire0);
+    out["billing"] = convertModelField("deserialize", "billing", (__golemWire0) => (fromWireFormatTMerchantOmitId(__golemWire0, { validate: false, construct: TMerchantOmitIdModel })), wire["billing"]);
   }
   if (Object.prototype.hasOwnProperty.call(wire, "merchant")) {
-    const __golemWire1 = wire["merchant"];
-    out["merchant"] = convertModelField("deserialize", "merchant", (__golemWire1) => (fromWireFormatTMerchant(__golemWire1, { validate: false, construct: TMerchantModel })), __golemWire1);
+    out["merchant"] = convertModelField("deserialize", "merchant", (__golemWire1) => (fromWireFormatTMerchant(__golemWire1, { validate: false, construct: TMerchantModel })), wire["merchant"]);
   }
   if (Object.prototype.hasOwnProperty.call(wire, "money")) {
-    const __golemWire2 = wire["money"];
-    out["money"] = convertModelField("deserialize", "money", (__golemWire2) => (fromWireFormatTMoney(__golemWire2, { validate: false, construct: TMoneyModel })), __golemWire2);
+    out["money"] = convertModelField("deserialize", "money", (__golemWire2) => (fromWireFormatTMoney(__golemWire2, { validate: false, construct: TMoneyModel })), wire["money"]);
   }
   return out;
 }

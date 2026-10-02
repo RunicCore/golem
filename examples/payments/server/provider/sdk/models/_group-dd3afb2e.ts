@@ -121,16 +121,13 @@ function fillCharge(out: Record<string, unknown>, wire: Record<string, unknown>,
     out["status"] = wire["status"];
   }
   if (Object.prototype.hasOwnProperty.call(wire, "money")) {
-    const __golemWire2 = wire["money"];
-    out["money"] = convertModelField("deserialize", "money", (__golemWire2) => (fromWireFormatMoney(__golemWire2, { validate: false, construct: MoneyModel })), __golemWire2);
+    out["money"] = convertModelField("deserialize", "money", (__golemWire2) => (fromWireFormatMoney(__golemWire2, { validate: false, construct: MoneyModel })), wire["money"]);
   }
   if (Object.prototype.hasOwnProperty.call(wire, "createdAt")) {
-    const __golemWire3 = wire["createdAt"];
-    out["createdAt"] = (typeof __golemWire3 === 'string' ? deserializeTemporalInstant((__golemWire3) as never) : __golemWire3);
+    out["createdAt"] = convertModelField("deserialize", "createdAt", (__golemWire3) => ((typeof __golemWire3 === 'string' ? deserializeTemporalInstant((__golemWire3) as never) : __golemWire3)), wire["createdAt"]);
   }
   if (Object.prototype.hasOwnProperty.call(wire, "settlesOn")) {
-    const __golemWire4 = wire["settlesOn"];
-    out["settlesOn"] = (typeof __golemWire4 === 'string' ? deserializeTemporalPlainDate((__golemWire4) as never) : __golemWire4);
+    out["settlesOn"] = convertModelField("deserialize", "settlesOn", (__golemWire4) => ((typeof __golemWire4 === 'string' ? deserializeTemporalPlainDate((__golemWire4) as never) : __golemWire4)), wire["settlesOn"]);
   }
   return out;
 }

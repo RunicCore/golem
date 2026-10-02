@@ -82,8 +82,7 @@ function fillTReminder(out: Record<string, unknown>, wire: Record<string, unknow
     out["title"] = wire["title"];
   }
   if (Object.prototype.hasOwnProperty.call(wire, "remindAt")) {
-    const __golemWire1 = wire["remindAt"];
-    out["remindAt"] = (__golemWire1 instanceof Date ? __golemWire1 : deserializeDate(__golemWire1));
+    out["remindAt"] = convertModelField("deserialize", "remindAt", deserializeDate, wire["remindAt"]);
   }
   return out;
 }

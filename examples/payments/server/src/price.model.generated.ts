@@ -86,8 +86,7 @@ function fillTPrice(out: Record<string, unknown>, wire: Record<string, unknown>,
     out["currency"] = wire["currency"];
   }
   if (Object.prototype.hasOwnProperty.call(wire, "amount")) {
-    const __golemWire0 = wire["amount"];
-    out["amount"] = (typeof __golemWire0 === 'string' ? modelSerdeBindings["src/decimal-text.ts#writeAmount\u0000src/decimal-text.ts#readAmount"].deserialize(__golemWire0) : __golemWire0);
+    out["amount"] = convertModelField("deserialize", "amount", (__golemWire0) => ((typeof __golemWire0 === 'string' ? modelSerdeBindings["src/decimal-text.ts#writeAmount\u0000src/decimal-text.ts#readAmount"].deserialize(__golemWire0) : __golemWire0)), wire["amount"]);
   }
   return out;
 }

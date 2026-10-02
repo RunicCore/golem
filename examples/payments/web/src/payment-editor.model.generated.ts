@@ -76,8 +76,7 @@ function fillTPaymentEditor(out: Record<string, unknown>, wire: Record<string, u
     out["note"] = wire["note"];
   }
   if (Object.prototype.hasOwnProperty.call(wire, "money")) {
-    const __golemWire0 = wire["money"];
-    out["money"] = convertModelField("deserialize", "money", (__golemWire0) => (decodeGeneratedModelTrusted(TMoneyModel, __golemWire0)), __golemWire0);
+    out["money"] = convertModelField("deserialize", "money", (__golemWire0) => (decodeGeneratedModelTrusted(TMoneyModel, __golemWire0)), wire["money"]);
   }
   return out;
 }

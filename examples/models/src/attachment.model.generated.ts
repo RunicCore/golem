@@ -86,8 +86,7 @@ function fillTAttachment(out: Record<string, unknown>, wire: Record<string, unkn
     out["name"] = wire["name"];
   }
   if (Object.prototype.hasOwnProperty.call(wire, "content")) {
-    const __golemWire1 = wire["content"];
-    out["content"] = (typeof __golemWire1 === 'string' ? modelSerdeBindings["src/base64-codec.ts#encodeBase64\u0000src/base64-codec.ts#decodeBase64"].deserialize(__golemWire1) : __golemWire1);
+    out["content"] = convertModelField("deserialize", "content", (__golemWire1) => ((typeof __golemWire1 === 'string' ? modelSerdeBindings["src/base64-codec.ts#encodeBase64\u0000src/base64-codec.ts#decodeBase64"].deserialize(__golemWire1) : __golemWire1)), wire["content"]);
   }
   return out;
 }

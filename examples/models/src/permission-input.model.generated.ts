@@ -80,8 +80,7 @@ const validateTPermissionInputWireOnlyAll = requireAjvSchema(objectAjvAll.getSch
 
 function fillTPermissionInput(out: Record<string, unknown>, wire: Record<string, unknown>): Record<string, unknown> {
   if (Object.prototype.hasOwnProperty.call(wire, "permissions")) {
-    const __golemWire0 = wire["permissions"];
-    out["permissions"] = (typeof __golemWire0 === 'string' ? modelSerdeBindings["src/permission-rules.ts#encodePermissions\u0000src/permission-rules.ts#decodePermissions"].deserialize(__golemWire0) : __golemWire0);
+    out["permissions"] = convertModelField("deserialize", "permissions", (__golemWire0) => ((typeof __golemWire0 === 'string' ? modelSerdeBindings["src/permission-rules.ts#encodePermissions\u0000src/permission-rules.ts#decodePermissions"].deserialize(__golemWire0) : __golemWire0)), wire["permissions"]);
   }
   return out;
 }

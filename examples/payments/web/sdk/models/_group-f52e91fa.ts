@@ -130,20 +130,16 @@ function fillPayment(out: Record<string, unknown>, wire: Record<string, unknown>
     out["note"] = wire["note"];
   }
   if (Object.prototype.hasOwnProperty.call(wire, "billing")) {
-    const __golemWire0 = wire["billing"];
-    out["billing"] = convertModelField("deserialize", "billing", (__golemWire0) => (fromWireFormatTMerchantOmitId(__golemWire0, { validate: false, construct: TMerchantOmitIdModel })), __golemWire0);
+    out["billing"] = convertModelField("deserialize", "billing", (__golemWire0) => (fromWireFormatTMerchantOmitId(__golemWire0, { validate: false, construct: TMerchantOmitIdModel })), wire["billing"]);
   }
   if (Object.prototype.hasOwnProperty.call(wire, "charge")) {
-    const __golemWire1 = wire["charge"];
-    out["charge"] = convertModelField("deserialize", "charge", (__golemWire1) => (fromWireFormatTCharge(__golemWire1, { validate: false, construct: TChargeModel })), __golemWire1);
+    out["charge"] = convertModelField("deserialize", "charge", (__golemWire1) => (fromWireFormatTCharge(__golemWire1, { validate: false, construct: TChargeModel })), wire["charge"]);
   }
   if (Object.prototype.hasOwnProperty.call(wire, "merchant")) {
-    const __golemWire3 = wire["merchant"];
-    out["merchant"] = convertModelField("deserialize", "merchant", (__golemWire3) => (fromWireFormatTMerchant(__golemWire3, { validate: false, construct: TMerchantModel })), __golemWire3);
+    out["merchant"] = convertModelField("deserialize", "merchant", (__golemWire3) => (fromWireFormatTMerchant(__golemWire3, { validate: false, construct: TMerchantModel })), wire["merchant"]);
   }
   if (Object.prototype.hasOwnProperty.call(wire, "money")) {
-    const __golemWire4 = wire["money"];
-    out["money"] = convertModelField("deserialize", "money", (__golemWire4) => (fromWireFormatTMoney(__golemWire4, { validate: false, construct: TMoneyModel })), __golemWire4);
+    out["money"] = convertModelField("deserialize", "money", (__golemWire4) => (fromWireFormatTMoney(__golemWire4, { validate: false, construct: TMoneyModel })), wire["money"]);
   }
   return out;
 }

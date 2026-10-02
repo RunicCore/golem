@@ -589,6 +589,30 @@ function extrasAllowed(descriptor: ModelTypeDescriptor): boolean {
   return descriptor.kind !== 'object' || descriptor.additionalProperties !== false;
 }
 
+/** A value that holds no object, so assigning it copies it. */
+function isScalarDescriptor(descriptor: ModelTypeDescriptor): boolean {
+  switch (descriptor.kind) {
+    case 'string':
+    case 'number':
+    case 'boolean':
+    case 'bigint':
+    case 'null':
+    case 'undefined':
+    case 'never':
+    case 'literal':
+      return true;
+    case 'union':
+    case 'intersection':
+      return descriptor.variants.every(isScalarDescriptor);
+    default:
+      return false;
+  }
+}
+
+/**
+ * A closed object of required scalar properties is copied by one literal. A property that holds an
+ * object needs its own copy, which the object's `fill*` makes.
+ */
 function emitClosedIdentityObject(
   descriptor: Extract<ModelTypeDescriptor, { kind: 'object' }>,
   expression: string,
@@ -597,19 +621,32 @@ function emitClosedIdentityObject(
   const names = Object.keys(descriptor.properties);
   if (names.length === 0) return undefined;
   if (names.some((name) => name === '__proto__' || !required.has(name))) return undefined;
+  if (names.some((name) => !isScalarDescriptor(descriptor.properties[name]))) return undefined;
   return `(${emitComputedRecord(names.map((name) => [name, access(expression, name)]))})`;
 }
 
 /**
- * Counts the nested conversion calls (`fill*`, `convertFromWire*`, `fromWireFormat*`, trusted
- * model decodes) emitted so far. A caller compares it across one `emitDecodeValue` to learn
- * whether the expression calls one, since those calls need the field on the conversion path.
+ * Counts the conversions emitted so far that can throw: nested `fill*`/`convertFromWire*`/`fromWireFormat*`
+ * calls, trusted model decodes, `Date` and `TSerde` decoders. A caller compares it across one
+ * `emitDecodeValue` to learn whether the expression can throw, since the field then needs to be on the
+ * conversion path for the error to report it.
  */
-let nestedConversionCalls = 0;
+let fallibleConversions = 0;
 
-function nestedConversionCall(call: string): string {
-  nestedConversionCalls++;
+function fallibleConversion(call: string): string {
+  fallibleConversions++;
   return call;
+}
+
+/** Whether an expression emitted since `before` can throw, so it runs under its field's path. */
+function emittedFallible(before: number, decoded: string): boolean {
+  return fallibleConversions !== before || decoded.includes('unknownDiscriminatorValue(');
+}
+
+/** `convertModelField` for a decoder written against `local`, with the field value passed in as `input`. */
+function emitFieldConversion(field: string, local: string, decoded: string, input: string): string {
+  const date = `(${local} instanceof Date ? ${local} : deserializeDate(${local}))`;
+  return `convertModelField("deserialize", ${field}, ${decoded === date ? 'deserializeDate' : `(${local}) => (${decoded})`}, ${input})`;
 }
 
 function countOccurrences(text: string, needle: string): number {
@@ -707,7 +744,7 @@ function emitInternedObjectDecode(
 ): string {
   if (shouldConstructNested(descriptor, ctx)) {
     const local = !isExternalCodecNode(node) && !(ctx.nestedImportedSerde?.(node.codecId) ?? ctx.nestedImportedSerde?.(node.id));
-    return nestedConversionCall(local
+    return fallibleConversion(local
       ? `convertFromWire${node.id}(${expression}, ${nestedFromWireOptions(descriptor, ctx)})`
       : `${fromWireFunctionName(node.id)}(${expression}, ${nestedFromWireOptions(descriptor, ctx)})`);
   }
@@ -722,9 +759,9 @@ function emitInternedObjectDecode(
   }
   if (node.kind === 'object') {
     const imported = ctx.nestedImportedSerde?.(node.codecId) ?? ctx.nestedImportedSerde?.(node.id);
-    return nestedConversionCall(`${imported?.fill ?? fillFunctionName(node.id)}({} as Record<string, unknown>, ${asRecord(expression)})`);
+    return fallibleConversion(`${imported?.fill ?? fillFunctionName(node.id)}({} as Record<string, unknown>, ${asRecord(expression)})`);
   }
-  return nestedConversionCall(`${fromWireFunctionName(node.id)}(${expression}, ${trustedOptions(ctx)})`);
+  return fallibleConversion(`${fromWireFunctionName(node.id)}(${expression}, ${trustedOptions(ctx)})`);
 }
 
 function mergeResolvedObjects(
@@ -901,7 +938,7 @@ function emitUnionDecode(
   if (generated.length === 1) {
     const className = ctx.nestedGenerated?.(generated[0].id);
     if (className) {
-      const converted = `${expression} instanceof ${className} ? ${expression} : ${nestedConversionCall(`decodeGeneratedModelTrusted(${className}, ${expression})`)}`;
+      const converted = `${expression} instanceof ${className} ? ${expression} : ${fallibleConversion(`decodeGeneratedModelTrusted(${className}, ${expression})`)}`;
       const objects = present.filter((variant): variant is ObjectTypeDescriptor => variant.kind === 'object');
       const discriminator = objectDiscriminator(objects);
       if (objects.length > 0 && !discriminator) throw new Error(OBJECT_UNION_DISCRIMINATOR_ERROR);
@@ -1013,11 +1050,11 @@ function emitUnionEncode(
 function emitDecodeValue(descriptor: ModelTypeDescriptor, expression: string, ctx: EmitCtx): string {
   if (descriptor.kind === 'generated-model') {
     const className = ctx.nestedGenerated?.(descriptor.id);
-    if (className) return nestedConversionCall(`decodeGeneratedModelTrusted(${className}, ${expression})`);
+    if (className) return fallibleConversion(`decodeGeneratedModelTrusted(${className}, ${expression})`);
   }
   const tags = serdeTags(descriptor);
   if (tags.serde) {
-    const deserialized = ctx.serde ? ctx.serde.deserialize(tags.serde.id, expression) : expression;
+    const deserialized = ctx.serde ? fallibleConversion(ctx.serde.deserialize(tags.serde.id, expression)) : expression;
     const wire = serdeWireDescriptor(descriptor);
     if (wire?.kind === 'string') {
       return `(typeof ${expression} === 'string' ? ${deserialized} : ${expression})`;
@@ -1034,7 +1071,7 @@ function emitDecodeValue(descriptor: ModelTypeDescriptor, expression: string, ct
     return deserialized;
   }
   if (descriptor.kind === 'date' || tags.date) {
-    return `(${expression} instanceof Date ? ${expression} : deserializeDate(${expression}))`;
+    return fallibleConversion(`(${expression} instanceof Date ? ${expression} : deserializeDate(${expression}))`);
   }
   if (descriptor.kind === 'union') {
     return emitUnionDecode(descriptor, expression, ctx);
@@ -1045,16 +1082,22 @@ function emitDecodeValue(descriptor: ModelTypeDescriptor, expression: string, ct
       if (named) return emitInternedObjectDecode(named, descriptor, expression, ctx);
       return expression;
     }
+    const before = fallibleConversions;
     const decoded = emitDecodeValue(descriptor.additionalProperties, 'value', ctx);
-    return `Object.fromEntries(Object.entries((${expression} ?? {}) as Record<string, unknown>).map(([key, value]) => [key, ${decoded}]))`;
+    const entry = emittedFallible(before, decoded) ? emitFieldConversion('key', 'value', decoded, 'value') : decoded;
+    return `Object.fromEntries(Object.entries((${expression} ?? {}) as Record<string, unknown>).map(([key, value]) => [key, ${entry}]))`;
   }
   const named = ctx.graph.nodeFor(descriptor);
   if (named && isObjectish(descriptor)) {
     return emitInternedObjectDecode(named, descriptor, expression, ctx);
   }
   if (descriptor.kind === 'array') {
+    const before = fallibleConversions;
     const item = emitDecodeValue(descriptor.item, 'item', ctx);
-    return `Array.isArray(${expression}) ? ${emitArrayCopy(expression, item)} : ${expression}`;
+    // An item that can throw runs under its index.
+    return emittedFallible(before, item)
+      ? `Array.isArray(${expression}) ? (${expression} as readonly unknown[]).map((item, index) => ${emitFieldConversion('index', 'item', item, 'item')}) : ${expression}`
+      : `Array.isArray(${expression}) ? ${emitArrayCopy(expression, item)} : ${expression}`;
   }
   if (descriptor.kind === 'tuple') {
     const item = emitTupleItem(descriptor, item => emitDecodeValue(item, '_item', ctx));
@@ -1088,8 +1131,13 @@ function emitDecodedRecord(
   if (fields.length === 0) return expression;
   return emitComputedRecord(fields.map(([name, property]) => {
     const source = access(expression, name);
+    const before = fallibleConversions;
     const decoded = emitDecodeValue(property, source, ctx);
-    // A source property is read once: bind it to a parameter when the conversion uses it again.
+    // A source property is read once: a conversion that can throw runs under its field's path with the
+    // property as its argument, and another conversion binds it to a parameter when it uses it again.
+    if (emittedFallible(before, decoded)) {
+      return [name, emitFieldConversion(JSON.stringify(name), NESTED_SOURCE, emitDecodeValue(property, NESTED_SOURCE, ctx), source)];
+    }
     return [
       name,
       countOccurrences(decoded, source) > 1
@@ -1122,7 +1170,7 @@ interface FillValue {
 
 /**
  * Reads the source property once. A value the result shares with the input, or that reaches `recursiveId` again,
- * is checked for cycles against `wire` first; a conversion that calls another conversion runs under the field's path.
+ * is checked for cycles against `wire` first; a conversion that can throw runs under the field's path.
  */
 function emitFillValue(
   property: ModelTypeDescriptor,
@@ -1132,19 +1180,18 @@ function emitFillValue(
   recursiveId: string | undefined,
   ctx: EmitCtx,
 ): FillValue {
-  const callsBefore = nestedConversionCalls;
+  const before = fallibleConversions;
   const decoded = emitDecodeValue(property, read, ctx);
-  const nested = nestedConversionCalls !== callsBefore;
+  const fallible = emittedFallible(before, decoded);
   const checked = sharesInput(property, ctx) || (recursiveId !== undefined && reachesNode(property, recursiveId, ctx));
   const converted = decoded !== read;
-  if (!checked && !nested && countOccurrences(decoded, read) <= 1) return { statements: [], value: decoded, converted, checked };
+  if (!checked && !fallible && countOccurrences(decoded, read) <= 1) return { statements: [], value: decoded, converted, checked };
+  const input = checked ? `assertPropertyAcyclic(wire, ${field}, ${read})` : read;
   const bound = emitDecodeValue(property, local, ctx);
-  return {
-    statements: [`const ${local} = ${checked ? `assertPropertyAcyclic(wire, ${field}, ${read})` : read};`],
-    value: nested ? `convertModelField("deserialize", ${field}, (${local}) => (${bound}), ${local})` : bound,
-    converted,
-    checked,
-  };
+  if (fallible) {
+    return { statements: [], value: emitFieldConversion(field, local, bound, input), converted, checked };
+  }
+  return { statements: [`const ${local} = ${input};`], value: bound, converted, checked };
 }
 
 function emitFillFunction(

@@ -444,16 +444,14 @@ const validateTAssigneeAll = requireAjvSchema(objectAjvAll.getSchema("TAssignee_
 
 function fillTAssignee(out: Record<string, unknown>, wire: Record<string, unknown>): Record<string, unknown> {
   if (Object.prototype.hasOwnProperty.call(wire, "office")) {
-    const __golemWire0 = wire["office"];
-    out["office"] = convertModelField("deserialize", "office", (__golemWire0) => (convertFromWireTPlace(__golemWire0, { validate: false, construct: requireIModelClass("TPlace_420813af") })), __golemWire0);
+    out["office"] = convertModelField("deserialize", "office", (__golemWire0) => (convertFromWireTPlace(__golemWire0, { validate: false, construct: requireIModelClass("TPlace_420813af") })), wire["office"]);
   }
   if (Object.prototype.hasOwnProperty.call(wire, "site")) {
     const __golemWire1 = wire["site"];
     out["site"] = ({ ["city"]: (__golemWire1 as Record<string, unknown>)["city"], ["country"]: (__golemWire1 as Record<string, unknown>)["country"] });
   }
   if (Object.prototype.hasOwnProperty.call(wire, "draft")) {
-    const __golemWire2 = wire["draft"];
-    out["draft"] = convertModelField("deserialize", "draft", (__golemWire2) => (fillTPlacePickCityCountryPartial({} as Record<string, unknown>, (__golemWire2 as Record<string, unknown>))), __golemWire2);
+    out["draft"] = convertModelField("deserialize", "draft", (__golemWire2) => (fillTPlacePickCityCountryPartial({} as Record<string, unknown>, (__golemWire2 as Record<string, unknown>))), wire["draft"]);
   }
   return out;
 }

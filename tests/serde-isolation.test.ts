@@ -107,18 +107,18 @@ test('generated decode with a constructor reads each declared property once and 
   });
 });
 
-test('a conversion that fails inside a nested model reports the field that holds it', async (t) => {
+test('a conversion that fails inside a nested model reports the outer field, the index and the inner field', async (t) => {
   const { fromWireFormatTCalendar } = await loadCodecs(t, 'calendar');
   const note = {};
   assert.throws(() => fromWireFormatTCalendar({ title: 't', event: { at: 'not a date' }, events: [] }, { validate: false }), (error: unknown) => {
     assert.ok(error instanceof LibError);
     assert.equal(error.kind, LibErrorKind.Deserialization);
-    assert.deepEqual(error.issues[0]?.path, ['event']);
+    assert.deepEqual(error.issues[0]?.path, ['event', 'at']);
     return true;
   });
-  assert.throws(() => fromWireFormatTCalendar({ title: 't', event: { at: '2026-01-01T00:00:00Z', note }, events: [{ at: 'x' }] }, { validate: false }), (error: unknown) => {
+  assert.throws(() => fromWireFormatTCalendar({ title: 't', event: { at: '2026-01-01T00:00:00Z', note }, events: [{ at: '2026-01-01T00:00:00Z' }, { at: '2026-01-02T00:00:00Z' }, { at: 'x' }] }, { validate: false }), (error: unknown) => {
     assert.ok(error instanceof LibError);
-    assert.deepEqual(error.issues[0]?.path, ['events']);
+    assert.deepEqual(error.issues[0]?.path, ['events', 2, 'at']);
     return true;
   });
   const decoded = fromWireFormatTCalendar({ title: 't', event: { at: '2026-01-01T00:00:00Z', note }, events: [] }, { validate: false }) as { event: { at: unknown; note: unknown } };
@@ -126,16 +126,36 @@ test('a conversion that fails inside a nested model reports the field that holds
   assert.strictEqual(decoded.event.note, note);
 });
 
-test('generated decode of a recursive model or object rejects a cycle instead of overflowing the stack', async (t) => {
-  const { fromWireFormatTNode, fromWireFormatTTree } = await loadCodecs(t, 'recursive');
+test('generated decode copies every level of closed nested objects and rejects a cycle at depth two', async (t) => {
+  const { fromWireFormatTOuter } = await loadCodecs(t, 'outer');
+  const input = { inner: { deep: { x: 1 } } };
+  const decoded = fromWireFormatTOuter(input, { validate: false }) as typeof input;
+  input.inner.deep.x = 2;
+  assert.equal(decoded.inner.deep.x, 1);
+  assert.notStrictEqual(decoded.inner.deep, input.inner.deep);
+
+  const deep: Record<string, unknown> = { x: 1 };
+  deep.extra = deep;
+  assert.throws(() => fromWireFormatTOuter({ inner: { deep } }, { validate: false }), cycleAt(['inner', 'deep', 'extra']));
+  const outer: { inner: { deep: Record<string, unknown> } } = { inner: { deep: { x: 1 } } };
+  outer.inner.deep.extra = outer;
+  assert.throws(() => fromWireFormatTOuter(outer, { validate: false }), cycleAt(['inner', 'deep', 'extra']));
+});
+
+test('generated decode of a recursive model rejects a cycle instead of overflowing the stack', async (t) => {
+  const { fromWireFormatTNode } = await loadCodecs(t, 'recursive');
   const node: { label: string; children: unknown[] } = { label: 'root', children: [] };
   node.children = [node];
   assert.throws(() => fromWireFormatTNode(node, { validate: false }), cycleAt(['children', 0]));
+  const shared = { label: 'leaf', children: [] };
+  assert.deepEqual(fromWireFormatTNode({ label: 'root', children: [shared, shared] }, { validate: false }), { label: 'root', children: [shared, shared] });
+});
+
+test('generated decode of a recursive object rejects a cycle instead of overflowing the stack', async (t) => {
+  const { fromWireFormatTTree } = await loadCodecs(t, 'recursive');
   const tree: { next?: unknown } = {};
   tree.next = tree;
   assert.throws(() => fromWireFormatTTree(tree, { validate: false }), cycleAt(['next']));
-  const shared = { label: 'leaf', children: [] };
-  assert.deepEqual(fromWireFormatTNode({ label: 'root', children: [shared, shared] }, { validate: false }), { label: 'root', children: [shared, shared] });
 });
 
 test('generated decode copies declared objects and carries unknown values by reference', async (t) => {

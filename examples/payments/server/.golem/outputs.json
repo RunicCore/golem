@@ -60,7 +60,7 @@
     "provider/sdk/models/_group-dd3afb2e.ts": {
       "job": "openapi:provider/sdk",
       "owner": "@exprtlabs/golem-openapi",
-      "digest": "875db11c51925423b6cc8315069eddadd8aef0aa09e7bb4b01595ae9066c3a1a",
+      "digest": "18cb91539beffabcd27b7057b6289586e59fba86a4058788355160a33565fdf5",
       "destination": "provider/sdk",
       "destinationKind": "directory"
     },
@@ -221,7 +221,7 @@
     "src/price.model.generated.ts": {
       "job": "models:.",
       "owner": "@exprtlabs/golem-model",
-      "digest": "db5aa318e8840c1b58228971968420c18b1dfa7570978aec2d8c7b87b1f7fad7",
+      "digest": "705008844e90d04da2d3123168d04ed124abeb288a8425ba590f85e98094bba5",
       "destination": "src",
       "destinationKind": "directory"
     }
