@@ -352,6 +352,146 @@ export function buildCodecValidationPlan(
   return { schemas, references: Object.keys(schemas).sort() };
 }
 
+type SchemaRecord = Record<string, unknown>;
+
+function isSchemaRecord(value: unknown): value is SchemaRecord {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+/** Keywords whose value is data, not a schema. */
+const LITERAL_KEYWORDS = new Set(['const', 'enum', 'default', 'examples']);
+/** Keywords whose value maps names to schemas, so its keys are names, not keywords. */
+const SCHEMA_MAP_KEYWORDS = new Set(['properties', 'patternProperties', 'dependentSchemas', '$defs', 'definitions']);
+/** Keywords that never change what validates, so a `$ref` node's own value may replace its target's. */
+const ANNOTATION_KEYWORDS = new Set(['$comment', 'title', 'description', 'default', 'examples', 'example', 'deprecated', 'readOnly', 'writeOnly']);
+/** Keywords that bind a name or a base to the resource they sit in. */
+const RESOURCE_SCOPED_KEYWORDS = ['$defs', 'definitions', '$anchor', '$dynamicAnchor', '$dynamicRef', '$recursiveAnchor', '$recursiveRef'];
+
+/** Copy of a schema node with each schema-valued child replaced by `visit(child, keyword)`. */
+function mapSchemaChildren(node: SchemaRecord, visit: (child: unknown, keyword: string) => unknown): SchemaRecord {
+  const result: SchemaRecord = Object.create(null) as SchemaRecord;
+  for (const [keyword, value] of Object.entries(node)) {
+    if (LITERAL_KEYWORDS.has(keyword)) {
+      result[keyword] = value;
+    } else if (SCHEMA_MAP_KEYWORDS.has(keyword) && isSchemaRecord(value)) {
+      const members: SchemaRecord = Object.create(null) as SchemaRecord;
+      for (const [name, member] of Object.entries(value)) members[name] = visit(member, keyword);
+      result[keyword] = members;
+    } else {
+      result[keyword] = Array.isArray(value) ? value.map(child => visit(child, keyword)) : visit(value, keyword);
+    }
+  }
+  return result;
+}
+
+interface SchemaReferences {
+  readonly references: ReadonlySet<string>;
+  /** True when a name or base inside the schema would change meaning in another resource. */
+  readonly resourceScoped: boolean;
+}
+
+function schemaReferences(schema: SchemaRecord): SchemaReferences {
+  const references = new Set<string>();
+  let resourceScoped = false;
+  const walk = (value: unknown, root: boolean): unknown => {
+    if (!isSchemaRecord(value)) return value;
+    if (typeof value.$ref === 'string') {
+      references.add(value.$ref);
+      if (value.$ref.startsWith('#')) resourceScoped = true;
+    }
+    if ((!root && Object.hasOwn(value, '$id')) || RESOURCE_SCOPED_KEYWORDS.some(keyword => Object.hasOwn(value, keyword))) {
+      resourceScoped = true;
+    }
+    return mapSchemaChildren(value, child => walk(child, false));
+  };
+  walk(schema, true);
+  return { references, resourceScoped };
+}
+
+/** Ids that reach themselves through `$ref`, found as strongly connected components (Tarjan). */
+function referenceCycleMembers(edges: ReadonlyMap<string, ReadonlySet<string>>): Set<string> {
+  const members = new Set<string>();
+  const index = new Map<string, number>();
+  const lowLink = new Map<string, number>();
+  const stack: string[] = [];
+  const onStack = new Set<string>();
+  const connect = (id: string): void => {
+    index.set(id, index.size);
+    lowLink.set(id, index.get(id) as number);
+    stack.push(id);
+    onStack.add(id);
+    for (const next of edges.get(id) ?? []) {
+      if (!index.has(next)) {
+        connect(next);
+        lowLink.set(id, Math.min(lowLink.get(id) as number, lowLink.get(next) as number));
+      } else if (onStack.has(next)) {
+        lowLink.set(id, Math.min(lowLink.get(id) as number, index.get(next) as number));
+      }
+    }
+    if (lowLink.get(id) !== index.get(id)) return;
+    const component: string[] = [];
+    let member: string | undefined;
+    do {
+      member = stack.pop() as string;
+      onStack.delete(member);
+      component.push(member);
+    } while (member !== id);
+    if (component.length > 1 || edges.get(id)?.has(id)) for (const item of component) members.add(item);
+  };
+  for (const id of edges.keys()) if (!index.has(id)) connect(id);
+  return members;
+}
+
+/**
+ * Ajv inlines a `$ref` target only when the target has no `$ref` of its own, so
+ * a model item in an array otherwise costs a sub-validator call per element.
+ * Substitute each target that is not part of a reference cycle, is not a
+ * residual schema, and holds no name or base that would change meaning in its
+ * new resource. Every other `$ref` stays. Applied to the schemas Ajv compiles;
+ * the schema data the plan returns is unchanged.
+ */
+function inlineAcyclicModelRefs(schemas: Readonly<Record<string, object | boolean>>): Record<string, object | boolean> {
+  const analyses = new Map<string, SchemaReferences>();
+  for (const [id, schema] of Object.entries(schemas)) {
+    if (isSchemaRecord(schema)) analyses.set(id, schemaReferences(schema));
+  }
+  const edges = new Map<string, ReadonlySet<string>>();
+  for (const [id, analysis] of analyses) edges.set(id, new Set([...analysis.references].filter(reference => analyses.has(reference))));
+  const cyclic = referenceCycleMembers(edges);
+  const inlinable = new Set<string>();
+  for (const [id, analysis] of analyses) {
+    if (cyclic.has(id) || id.endsWith('#model-only') || id.endsWith('#wire-only') || analysis.resourceScoped) continue;
+    if ([...analysis.references].every(reference => analyses.has(reference))) inlinable.add(id);
+  }
+
+  const inlining = new Set<string>();
+  const inline = (value: unknown, keepReference = false): unknown => {
+    if (!isSchemaRecord(value)) return value;
+    const reference = value.$ref;
+    if (!keepReference && typeof reference === 'string' && inlinable.has(reference) && !inlining.has(reference)) {
+      const { $id: _id, $schema: _schema, ...body } = schemas[reference] as SchemaRecord;
+      const { $ref: _ref, ...siblings } = value;
+      // A sibling that constrains the same keyword as the target cannot replace it.
+      if (Object.keys(siblings).every(key => key !== '$id' && key !== '$schema'
+        && (ANNOTATION_KEYWORDS.has(key) || !Object.hasOwn(body, key)))) {
+        inlining.add(reference);
+        try {
+          return {
+            ...(inline(body) as SchemaRecord),
+            ...mapSchemaChildren(siblings, child => inline(child)),
+          };
+        } finally {
+          inlining.delete(reference);
+        }
+      }
+    }
+    // Ajv's discriminator reads its oneOf/anyOf branches as references.
+    const discriminated = Object.hasOwn(value, 'discriminator');
+    return mapSchemaChildren(value, (child, keyword) => inline(child, discriminated && (keyword === 'oneOf' || keyword === 'anyOf')));
+  };
+  return Object.fromEntries(Object.entries(schemas).map(([id, schema]) => [id, inline(schema) as object | boolean]));
+}
+
 function standaloneSource(input: StandaloneValidatorInput, allErrors: boolean): string {
   const addFormats: unknown = FormatsModule.default;
   const standalone: unknown = StandaloneModule.default;
@@ -376,8 +516,9 @@ function standaloneSource(input: StandaloneValidatorInput, allErrors: boolean): 
 /** Compile fast and all-error functions for each closed schema reference. Application functions are injected when a factory is called. */
 export function compileStandaloneValidatorSet(input: StandaloneValidatorInput): StandaloneValidatorOutput {
   const references = [...new Set(input.references)].sort();
-  const source = standaloneSource(input, true);
-  const firstSource = standaloneSource(input, false);
+  const compiled = { ...input, schemas: inlineAcyclicModelRefs(input.schemas) };
+  const source = standaloneSource(compiled, true);
+  const firstSource = standaloneSource(compiled, false);
   // Computed properties keep schema identities such as `__proto__` as own data
   // keys instead of invoking the object-literal prototype setter.
   const referenceMap = references.map((reference, index) => `[${JSON.stringify(reference)}]: exports.v${index}`).join(',');
