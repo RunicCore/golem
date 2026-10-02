@@ -591,16 +591,25 @@ export function writeRewriteIndex(root: string, index: RewriteIndex): boolean {
 }
 
 /**
- * The directory of the tsconfig that owns the sources under `root`: it holds the project's `.golem/rewrites.json`, and
- * the index keys are relative to it. `golem generate` and `golem build` agree on it, so a package without a tsconfig of its own is
- * indexed at the parent tsconfig that includes it. A root without a tsconfig is its own directory. `onInput` observes the lookups.
+ * The tsconfig that owns the sources under `root`, found from `root` upward as `tsc -p` finds one; `undefined` without one.
+ * `onInput` observes the lookups.
  */
-export function projectDirectory(root: string, onInput?: InputObserver): string {
+export function projectConfigFile(root: string, onInput?: InputObserver): string | undefined {
   const configPath = ts.findConfigFile(root, (filename) => {
     onInput?.(canonicalFilename(filename));
     return ts.sys.fileExists(filename);
   }, 'tsconfig.json');
-  return configPath === undefined ? root : canonicalPath(path.dirname(configPath));
+  return configPath === undefined ? undefined : canonicalPath(configPath);
+}
+
+/**
+ * The directory of that tsconfig: it holds the project's `.golem/rewrites.json`, and the index keys are relative to it.
+ * `golem generate` and `golem build` agree on it, so a package without a tsconfig of its own is indexed at the parent
+ * tsconfig that includes it. A root without a tsconfig is its own directory.
+ */
+export function projectDirectory(root: string, onInput?: InputObserver): string {
+  const configFile = projectConfigFile(root, onInput);
+  return configFile === undefined ? root : path.dirname(configFile);
 }
 
 /** Open the project's program and scan it. `onInput` observes every file the compiler reads. */

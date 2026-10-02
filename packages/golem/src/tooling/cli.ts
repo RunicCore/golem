@@ -8,21 +8,25 @@ export { runBuild } from './build.js';
 export type { PipelineOptions, PipelineState } from './pipeline.js';
 export type Arguments =
   | { action: 'help' }
-  | { action: 'build'; project: string; watch: boolean }
+  | { action: 'build'; project: string; watch: boolean; config?: string }
   | { action: 'generate' | 'check' | 'watch' | 'exec'; config: string; watch: boolean; command: string[] };
 
 function parseBuildArguments(args: readonly string[]): Arguments {
   let project = 'tsconfig.json';
   let watch = false;
+  let config: string | undefined;
   for (let i = 0; i < args.length; i += 1) {
     if (args[i] === '-b' || args[i] === '--build') throw new Error(BUILD_REFERENCES_REJECTION);
     if (args[i] === '-p' || args[i] === '--project') {
       if (!args[i + 1] || args[i + 1].startsWith('-')) throw new Error(`${args[i]} requires a tsconfig path.`);
       project = args[++i];
+    } else if (args[i] === '--config') {
+      if (!args[i + 1] || args[i + 1].startsWith('-')) throw new Error('--config requires a filename.');
+      config = args[++i];
     } else if (args[i] === '--watch') watch = true;
     else throw new Error(`Unknown option: ${args[i]}`);
   }
-  return { action: 'build', project, watch };
+  return { action: 'build', project, watch, ...(config === undefined ? {} : { config }) };
 }
 
 export function parseArguments(argv: readonly string[]): Arguments {
@@ -49,14 +53,14 @@ export function parseArguments(argv: readonly string[]): Arguments {
 export async function main(argv = process.argv.slice(2)) {
   const options = parseArguments(argv);
   if (options.action === 'help') {
-    process.stdout.write('Usage: golem <generate|check|watch|exec> [--config golem.yaml]\n       golem exec [--watch] -- <command> [args...]\n       golem build [-p tsconfig.json] [--watch]\n');
+    process.stdout.write('Usage: golem <generate|check|watch|exec> [--config golem.yaml]\n       golem exec [--watch] -- <command> [args...]\n       golem build [-p tsconfig.json] [--config golem.yaml] [--watch]\n');
     return;
   }
   if (options.action === 'build') {
     const controller = new AbortController();
     let signalled: number | undefined;
     for (const signal of ['SIGINT', 'SIGTERM'] as const) process.once(signal, () => { signalled = signal === 'SIGINT' ? 130 : 143; controller.abort(); });
-    const { exitCode } = await runBuild({ project: options.project, watch: options.watch, signal: controller.signal });
+    const { exitCode } = await runBuild({ project: options.project, watch: options.watch, signal: controller.signal, ...(options.config === undefined ? {} : { config: options.config }) });
     process.exitCode = signalled ?? exitCode;
     return;
   }
