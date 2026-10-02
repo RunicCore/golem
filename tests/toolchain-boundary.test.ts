@@ -26,7 +26,15 @@ test('typescript/unstable stays inside the generator shim', () => {
     .filter((filename) => fs.readFileSync(filename, 'utf8').includes('typescript/unstable'))
     .map((filename) => portable(path.relative(root, filename)))
     .sort();
-  assert.deepEqual(hits, ['packages/golem/src/tooling/typescript-ns.ts']);
+  assert.deepEqual(hits, ['packages/golem/src/tooling/typescript-ts7.ts']);
+});
+
+test('the classic typescript package stays inside the TypeScript 6 backend', () => {
+  const hits = typescriptFiles(path.join(root, 'packages'))
+    .filter((filename) => /from\s+['"]typescript['"]|import\(\s*['"]typescript['"]\s*\)/.test(fs.readFileSync(filename, 'utf8')))
+    .map((filename) => portable(path.relative(root, filename)))
+    .sort();
+  assert.deepEqual(hits, []);
 });
 
 
