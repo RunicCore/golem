@@ -150,16 +150,8 @@ test('install commands use the generator peer ranges for typescript and ttsc', (
   assert.deepEqual(wrong, []);
 });
 
-// Pages whose TypeScript stays inline, with the reason. Everything else imports its code.
-const INLINE_CODE_ALLOWED: Readonly<Record<string, number>> = {
-  'guide/auth.md': 2, // no example project; corrected against source
-  'guide/codecs.md': 2, // no example project; corrected against source
-  'guide/streams.md': 4, // no example project; corrected against source
-  'guide/quick-start.md': 3, // builds a minimal model step by step
-  'guide/model-composition.md': 3, // declaration shapes only
-  'guide/nestjs.md': 1, // the smallest controller, before any setup
-  'guide/nestjs-in-depth.md': 3, // declaration fragments; adding routes would change the example contract
-};
+// Pages whose TypeScript stays inline, with the reason. Empty: every guide page imports its code.
+const INLINE_CODE_ALLOWED: Readonly<Record<string, number>> = {};
 
 test('guide TypeScript is imported except on listed pages', () => {
   const over: string[] = [];
