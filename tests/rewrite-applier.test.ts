@@ -19,7 +19,8 @@ import { GOLEM_VERSION } from '#golem/version';
 
 const SERDE = '@exprtlabs/golem/serde';
 const CALL = 'parse<TPayment>';
-const CALL_TEXT = 'requireObjectCodec("TPayment_ab12cd34").parse';
+const CALL_TEXT = '__golem_requireObjectCodec("TPayment_ab12cd34").parse';
+const IMPORT_LINE = `import { requireObjectCodec as __golem_requireObjectCodec } from '${SERDE}';\n`;
 
 function replace(text: string, original: string, replacement: string, from = 0): RewriteEdit {
   const start = text.indexOf(original, from);
@@ -57,7 +58,7 @@ test('a call rewrite replaces the call and adds the import; an untouched file is
   const text = "const result = parse<TPayment>(text);\n";
   const index = callRewrite('src/pay.ts', text);
   const applied = applyRewrites('src/pay.ts', text, index);
-  assert.equal(applied?.code, `import { requireObjectCodec } from '${SERDE}';\nconst result = ${CALL_TEXT}(text);\n`);
+  assert.equal(applied?.code, `${IMPORT_LINE}const result = ${CALL_TEXT}(text);\n`);
   assert.deepEqual(applied?.map.sources, ['src/pay.ts']);
   assert.deepEqual(applied?.map.sourcesContent, [text]);
   assert.equal(applyRewrites('src/other.ts', 'const x = 1;\n', index), undefined);
@@ -66,7 +67,7 @@ test('a call rewrite replaces the call and adds the import; an untouched file is
 test('a missing import goes after a shebang and use strict directive', () => {
   const text = "#!/usr/bin/env node\n'use strict';\nparse<TPayment>(text);\n";
   const applied = applyRewrites('bin/pay.ts', text, callRewrite('bin/pay.ts', text));
-  assert.equal(applied?.code, `#!/usr/bin/env node\n'use strict';\nimport { requireObjectCodec } from '${SERDE}';\n${CALL_TEXT}(text);\n`);
+  assert.equal(applied?.code, `#!/usr/bin/env node\n'use strict';\n${IMPORT_LINE}${CALL_TEXT}(text);\n`);
 });
 
 test('a stale hash or a different golem version is a stale-index error naming the fix', () => {
@@ -109,7 +110,7 @@ test('a CRLF file with Vietnamese text maps the rewritten call back to its origi
   const text = '// Thanh toán — đơn hàng\r\nconst result = parse<TPayment>(text);\r\nconst next = 1;\r\n';
   const applied = applyRewrites('src/pay.ts', text, callRewrite('src/pay.ts', text));
   assert.ok(applied);
-  assert.equal(applied.code, `import { requireObjectCodec } from '${SERDE}';\n// Thanh toán — đơn hàng\r\nconst result = ${CALL_TEXT}(text);\r\nconst next = 1;\r\n`);
+  assert.equal(applied.code, `${IMPORT_LINE}// Thanh toán — đơn hàng\r\nconst result = ${CALL_TEXT}(text);\r\nconst next = 1;\r\n`);
   assert.deepEqual(originalPosition(applied.code, applied.map, '(text)'), originalPositionOf(text, '(text)'));
   assert.deepEqual(originalPosition(applied.code, applied.map, 'đơn'), originalPositionOf(text, 'đơn'));
   assert.deepEqual(originalPosition(applied.code, applied.map, 'const next'), originalPositionOf(text, 'const next'));
@@ -117,27 +118,76 @@ test('a CRLF file with Vietnamese text maps the rewritten call back to its origi
   assert.deepEqual(originalPosition(applied.code, applied.map, CALL_TEXT), originalPositionOf(text, CALL));
 });
 
-test('an existing serde import gains the name; a type-only import is not merged into', () => {
-  const merged = `import { parse } from '${SERDE}';\nconst result = parse<TPayment>(text);\n`;
-  assert.equal(
-    applyRewrites('a.ts', merged, callRewrite('a.ts', merged))?.code,
-    `import { parse, requireObjectCodec } from '${SERDE}';\nconst result = ${CALL_TEXT}(text);\n`,
-  );
-  const doubleQuoted = `import {\n  parse,\n} from "${SERDE}";\nconst result = parse<TPayment>(text);\n`;
-  assert.equal(
-    applyRewrites('b.ts', doubleQuoted, callRewrite('b.ts', doubleQuoted))?.code,
-    `import {\n  parse, requireObjectCodec,\n} from "${SERDE}";\nconst result = ${CALL_TEXT}(text);\n`,
-  );
-  const alreadyThere = `import { requireObjectCodec as codec, parse } from '${SERDE}';\nconst result = parse<TPayment>(text);\n`;
-  assert.equal(
-    applyRewrites('c.ts', alreadyThere, callRewrite('c.ts', alreadyThere))?.code,
-    `import { requireObjectCodec as codec, parse, requireObjectCodec } from '${SERDE}';\nconst result = ${CALL_TEXT}(text);\n`,
-  );
+test('existing imports are never edited: a separate aliased import is added, whatever they contain', () => {
+  const clash = `import { parse } from '${SERDE}';\nconst result = parse<TPayment>(text);\n`;
+  assert.equal(applyRewrites('a.ts', clash, callRewrite('a.ts', clash))?.code, `${IMPORT_LINE}import { parse } from '${SERDE}';\nconst result = ${CALL_TEXT}(text);\n`);
   const typeOnly = `import type { TModel } from '${SERDE}';\nconst result = parse<TPayment>(text);\n`;
+  assert.equal(applyRewrites('d.ts', typeOnly, callRewrite('d.ts', typeOnly))?.code, `${IMPORT_LINE}import type { TModel } from '${SERDE}';\nconst result = ${CALL_TEXT}(text);\n`);
+  const inlineType = `import { type requireObjectCodec, parse } from '${SERDE}';\nconst result = parse<TPayment>(text);\n`;
+  assert.equal(applyRewrites('e.ts', inlineType, callRewrite('e.ts', inlineType))?.code, `${IMPORT_LINE}${inlineType.replace('parse<TPayment>', CALL_TEXT)}`);
+  const sameName = `import { requireObjectCodec } from '${SERDE}';\nconst result = parse<TPayment>(text);\n`;
+  assert.equal(applyRewrites('f.ts', sameName, callRewrite('f.ts', sameName))?.code, `${IMPORT_LINE}${sameName.replace('parse<TPayment>', CALL_TEXT)}`);
+});
+
+test('comments, template literals and strings that look like imports stay untouched', () => {
+  const text = [
+    `import {`,
+    `  parse, // the codec entry`,
+    `  /* requireObjectCodec, */`,
+    `} from '${SERDE}';`,
+    'const sample = `',
+    `import { parse } from '${SERDE}';`,
+    '`;',
+    `// import { parse } from '${SERDE}';`,
+    `const result = parse<TPayment>(text);`,
+    '',
+  ].join('\n');
+  const applied = applyRewrites('src/comments.ts', text, callRewrite('src/comments.ts', text));
+  assert.equal(applied?.code, `${IMPORT_LINE}${text.replace('parse<TPayment>', CALL_TEXT)}`);
+});
+
+test('a file that ends right after its shebang or directive gets the import on its own line', () => {
+  const edits: RewriteEdit[] = [];
+  const imports = [{ from: SERDE, names: ['requireObjectCodec'] }];
+  for (const [file, text] of [
+    ['shebang.ts', '#!/usr/bin/env node'],
+    ['directive.ts', "'use strict'"],
+    ['both.ts', "#!/usr/bin/env node\n'use strict';"],
+    ['crlf.ts', "#!/usr/bin/env node\r\n'use strict';\r\n"],
+  ] as const) {
+    const code = applyRewrites(file, text, indexFor(file, text, edits, imports))?.code;
+    const lines = (code ?? '').split(/\r?\n/);
+    assert.equal(lines.includes(IMPORT_LINE.trimEnd()), true, `${file}: ${JSON.stringify(code)}`);
+    assert.equal(code?.startsWith(text.split(/\r?\n/)[0]!), true);
+    assert.equal(code?.endsWith(IMPORT_LINE), true, `${file}: ${JSON.stringify(code)}`);
+  }
   assert.equal(
-    applyRewrites('d.ts', typeOnly, callRewrite('d.ts', typeOnly))?.code,
-    `import { requireObjectCodec } from '${SERDE}';\nimport type { TModel } from '${SERDE}';\nconst result = ${CALL_TEXT}(text);\n`,
+    applyRewrites('shebang.ts', '#!/usr/bin/env node', indexFor('shebang.ts', '#!/usr/bin/env node', edits, imports))?.code,
+    `#!/usr/bin/env node\n${IMPORT_LINE}`,
   );
+});
+
+test('one aliased import line is added per entry, and the map stays correct after the prepended lines', () => {
+  const text = "'use strict';\r\nconst result = parse<TPayment>(text);\r\nconst next = 1;\r\n";
+  const imports = [
+    { from: SERDE, names: ['requireObjectCodec', 'registerIModelClass'] },
+    { from: '@exprtlabs/golem/model', names: ['IModel'] },
+  ];
+  const index = indexFor('src/two.ts', text, [replace(text, CALL, CALL_TEXT)], imports);
+  const applied = applyRewrites('src/two.ts', text, index);
+  assert.ok(applied);
+  assert.equal(
+    applied.code,
+    "'use strict';\r\n"
+      + `import { requireObjectCodec as __golem_requireObjectCodec, registerIModelClass as __golem_registerIModelClass } from '${SERDE}';\n`
+      + "import { IModel as __golem_IModel } from '@exprtlabs/golem/model';\n"
+      + `const result = ${CALL_TEXT}(text);\r\nconst next = 1;\r\n`,
+  );
+  for (const needle of ['const result', '(text)', 'const next', 'result =']) {
+    assert.deepEqual(originalPosition(applied.code, applied.map, needle), originalPositionOf(text, needle), needle);
+  }
+  // The prepended lines map to the offset they were inserted at.
+  assert.deepEqual(originalPosition(applied.code, applied.map, 'import { IModel'), originalPositionOf(text, 'const result'));
 });
 
 test('an insertion maps to its edit start and the lines around it keep their original positions', () => {
@@ -165,7 +215,7 @@ test('source map mappings round trip through encode and decode', () => {
 
 test('composing maps resolves an output position to the original, whatever the outer map names its source', () => {
   const original = 'const a = 1;\nconst x = parse<T>(v);\n';
-  const index = indexFor('src/x.ts', original, [replace(original, 'parse<T>', 'requireObjectCodec("T_1").parse')]);
+  const index = indexFor('src/x.ts', original, [replace(original, 'parse<T>', '__golem_requireObjectCodec("T_1").parse')]);
   const rewritten = applyRewrites('src/x.ts', original, index);
   assert.ok(rewritten);
   // The compiler dropped the first statement and indented the second by two spaces, naming the staged copy.
@@ -177,7 +227,7 @@ test('composing maps resolves an output position to the original, whatever the o
     names: [],
     mappings: encodeMappings([[
       [2, 0, 1, 0],
-      [2 + secondLine.indexOf('requireObjectCodec'), 0, 1, secondLine.indexOf('requireObjectCodec')],
+      [2 + secondLine.indexOf('__golem_requireObjectCodec'), 0, 1, secondLine.indexOf('__golem_requireObjectCodec')],
       [2 + secondLine.indexOf('.parse') + 3, 0, 1, secondLine.indexOf('.parse') + 3],
       [2 + secondLine.indexOf('(v)'), 0, 1, secondLine.indexOf('(v)')],
       [2 + secondLine.indexOf('v)'), 0, 1, secondLine.indexOf('v)')],
@@ -189,7 +239,7 @@ test('composing maps resolves an output position to the original, whatever the o
   assert.equal(composed.file, 'x.js');
   assert.deepEqual(decodeMappings(composed.mappings), [[
     [2, 0, 1, 0],
-    [2 + secondLine.indexOf('requireObjectCodec'), 0, 1, original.split('\n')[1]!.indexOf('parse<T>')],
+    [2 + secondLine.indexOf('__golem_requireObjectCodec'), 0, 1, original.split('\n')[1]!.indexOf('parse<T>')],
     [2 + secondLine.indexOf('.parse') + 3, 0, 1, original.split('\n')[1]!.indexOf('parse<T>')],
     [2 + secondLine.indexOf('(v)'), 0, 1, original.split('\n')[1]!.indexOf('(v)')],
     [2 + secondLine.indexOf('v)'), 0, 1, original.split('\n')[1]!.indexOf('v)')],

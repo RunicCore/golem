@@ -16,6 +16,11 @@ export interface RewriteEdit {
   readonly text: string;
 }
 
+/**
+ * A module and the names `applyRewrites` imports from it. Each name is imported
+ * under the alias `__golem_<name>`, so edit text refers to `__golem_<name>(...)`
+ * and cannot clash with, or depend on, the file's own imports.
+ */
 export interface RewriteImport {
   readonly from: string;
   readonly names: readonly string[];
@@ -44,6 +49,7 @@ export class GolemRewriteStaleError extends Error {
   }
 }
 
+export const REWRITE_IMPORT_PREFIX = '__golem_';
 export const REWRITE_INDEX_PATH = '.golem/rewrites.json';
 
 // Source text, not a regex literal: emit would print a U+2028 escape in a literal as the raw character.
@@ -97,33 +103,19 @@ function importInsertOffset(text: string): number {
   }
 }
 
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-/** The import changes as insertions into the original text, so one edit list drives code and map. */
+/**
+ * One aliased import line per entry, prepended after a leading shebang and
+ * `'use strict'`. Existing imports are never read or edited.
+ */
 function importEdits(text: string, imports: readonly RewriteImport[]): RewriteEdit[] {
-  const edits: RewriteEdit[] = [];
-  for (const { from, names } of imports) {
-    const statement = new RegExp(`^[ \\t]*import\\s*\\{([^}]*)\\}\\s*from\\s*(['"])${escapeRegExp(from)}\\2`, 'm').exec(text);
-    if (statement) {
-      const bound = new Set((statement[1] ?? '').split(',').map((specifier) => specifier.trim()).filter(Boolean).map((specifier) => specifier.split(/\s+as\s+/).pop()!.trim()));
-      const missing = names.filter((name) => !bound.has(name));
-      if (missing.length === 0) continue;
-      const list = statement[1] ?? '';
-      const listStart = statement.index + statement[0].indexOf('{') + 1;
-      const content = list.trimEnd();
-      const insertAt = listStart + content.length;
-      const joined = missing.join(', ');
-      const textToInsert = content === '' ? ` ${joined} ` : content.endsWith(',') ? ` ${joined},` : `, ${joined}`;
-      edits.push({ start: insertAt, end: insertAt, expect: '', text: textToInsert });
-      continue;
-    }
-    if (names.length === 0) continue;
-    const at = importInsertOffset(text);
-    edits.push({ start: at, end: at, expect: '', text: `import { ${names.join(', ')} } from '${from}';\n` });
-  }
-  return edits;
+  const at = importInsertOffset(text);
+  const lineBreakBefore = at === 0 || '\r\n\u2028\u2029'.includes(text.charAt(at - 1));
+  return imports.filter(({ names }) => names.length > 0).map(({ from, names }, position) => ({
+    start: at,
+    end: at,
+    expect: '',
+    text: `${position === 0 && !lineBreakBefore ? '\n' : ''}import { ${names.map((name) => `${name} as ${REWRITE_IMPORT_PREFIX}${name}`).join(', ')} } from '${from}';\n`,
+  }));
 }
 
 function lineStarts(text: string): number[] {
