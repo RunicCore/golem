@@ -273,6 +273,22 @@ test('a nested union reads its tag once', async (t) => {
   });
 });
 
+test('an open object without declared fields keeps an own __proto__ key instead of changing the prototype', async (t) => {
+  const { fromWireFormatTBag, fromWireFormatTShelfOfBag } = await loadCodecs(t, 'bag');
+  const wire = (): Record<string, unknown> => JSON.parse('{"__proto__":{"x":1},"k":"v"}') as Record<string, unknown>;
+  const plain = fromWireFormatTBag(wire(), { validate: false }) as Record<string, unknown>;
+  assert.equal(Object.getPrototypeOf(plain), Object.prototype);
+  assert.equal(Object.hasOwn(plain, '__proto__'), true);
+  assert.equal(plain.k, 'v');
+  const nested = (fromWireFormatTShelfOfBag({ bag: wire() }, { validate: false }) as { bag: Record<string, unknown> }).bag;
+  assert.equal(Object.getPrototypeOf(nested), Object.prototype);
+  assert.equal(Object.hasOwn(nested, '__proto__'), true);
+  class Construct { constructor(public fields: Record<string, unknown>) {} }
+  const built = fromWireFormatTBag(wire(), { validate: false, construct: Construct } as never) as Construct;
+  assert.equal(Object.getPrototypeOf(built.fields), Object.prototype);
+  assert.equal(Object.hasOwn(built.fields, '__proto__'), true);
+});
+
 test('generated decode copies declared objects and carries unknown values by reference', async (t) => {
   const { fromWireFormatTRecord, fromWireFormatTShelf } = await loadCodecs(t, 'recursive');
   const wire = { payload: { nested: { a: 1 } } };

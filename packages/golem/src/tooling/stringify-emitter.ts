@@ -1294,9 +1294,9 @@ function emitFillFunction(
     (constraint) => constraint.kind === 'patternProperties',
   );
   if (properties.length === 0 && !additionalSchema && patternConstraints.length === 0) {
-    // Every property is carried over as it is, so the whole input is checked.
+    // Every property is carried over as it is and checked; an own `__proto__` stays a data property.
     return {
-      source: `${exported}function ${fn}(out: Record<string, unknown>, wire: Record<string, unknown>): Record<string, unknown> {\n  assertWireAcyclic(wire);\n  return Object.assign(out, wire);\n}\n`,
+      source: `${exported}function ${fn}(out: Record<string, unknown>, wire: Record<string, unknown>): Record<string, unknown> {\n  for (const key of Object.keys(wire)) {\n    const value = assertPropertyAcyclic(wire, key, wire[key]);\n    if (out !== wire) defineModelProperty(out, key, value);\n  }\n  return out;\n}\n`,
       copyIdentity: false,
       needsFill: true,
       fallible: true,
