@@ -113,3 +113,23 @@ test('an overlay-only source keeps the ambient declarations that the configurati
   });
   assert.deepEqual(ts.getPreEmitDiagnostics(program).map(diagnostic => diagnostic.text), []);
 });
+
+test('a program sees only its own overlays while another program is open', t => {
+  const root = createFixtureProject(t, 'golem-overlay-scope-');
+  fs.mkdirSync(path.join(root, 'src'));
+  fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ name: 'overlay-scope', private: true, type: 'module' }));
+  fs.writeFileSync(path.join(root, 'tsconfig.json'), JSON.stringify({
+    compilerOptions: { strict: true, skipLibCheck: true, noEmit: true, module: 'NodeNext', moduleResolution: 'NodeNext' },
+    include: ['src/**/*.ts'],
+  }));
+  const x = path.join(root, 'src/x.ts');
+  fs.writeFileSync(x, 'export const x: string = "on disk";\n');
+  using session = new ts.ProgramSession({ cwd: root });
+  using emit = session.openProgram({ root, sources: [x], overlays: new Map([[x, 'export const x: number = "rewritten";\n']]) });
+  assert.match(emit.getSourceFile(x)?.text ?? '', /rewritten/);
+  using check = session.openProgram({ root, sources: [x] });
+  assert.match(check.getSourceFile(x)?.text ?? '', /on disk/, 'the program without overlays reads the file on disk');
+  assert.match(emit.getSourceFile(x)?.text ?? '', /rewritten/, 'the held program keeps its overlay');
+  assert.deepEqual(ts.getPreEmitDiagnostics(check).map(diagnostic => diagnostic.text), []);
+  assert.match(ts.getPreEmitDiagnostics(emit).map(diagnostic => diagnostic.text).join('\n'), /'string' is not assignable to type 'number'/, 'the held program still type-checks its overlay');
+});

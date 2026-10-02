@@ -1182,8 +1182,8 @@ export class ProgramSession implements Disposable {
     const base = programRequest(options);
     return this.withCompiler('snapshot', (api, reused) => {
       const request = this.withRequestedRoots(api, base, options.onInput);
-      // Programs that remain open keep their overlays in the new snapshot.
-      const overlays = new Map([...[...this.held.values()].flatMap((held) => [...held.overlays]), ...request.overlays]);
+      // A program sees only its own overlays: a held program keeps the snapshot it was opened in.
+      const overlays = request.overlays;
       const pending = reused ? this.pendingChanges(overlays) : undefined;
       const full = pending === undefined || pending.full;
       if (full) {
@@ -1201,8 +1201,8 @@ export class ProgramSession implements Disposable {
           created: nonEmpty(pending.changes.created),
           deleted: nonEmpty(pending.changes.deleted),
         };
-      const projects = new Set([request.configPath, ...[...this.held.values()].map((held) => held.configPath)]);
-      const files = new Set([...request.files, ...[...this.held.values()].flatMap((held) => held.files)]);
+      const projects = new Set([request.configPath]);
+      const files = new Set(request.files);
       const params: UpdateSnapshotParams = {
         openProjects: this.openProjects.has(request.configPath) ? undefined : [request.configPath],
         closeProjects: nonEmpty([...this.openProjects].filter((project) => !projects.has(project))),
@@ -1249,7 +1249,7 @@ export class ProgramSession implements Disposable {
   private withRequestedRoots(api: API, base: ProgramRequest, onInput: ((filename: string) => void) | undefined): ProgramRequest {
     if (base.files.length === 0) return base;
     const previous = this.overlays;
-    this.setOverlays(new Map([...[...this.held.values()].flatMap((held) => [...held.overlays]), ...base.overlays]));
+    this.setOverlays(base.overlays);
     this.observe(onInput, base.hidden);
     let parsed: { readonly fileNames: readonly string[] };
     try {
