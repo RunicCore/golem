@@ -1,13 +1,14 @@
 // The only door to TypeScript: picks the backend for the project's installed TypeScript.
 // Add a name to the value list below when golem code starts using it through this seam.
 import { resolveTypeScript } from './typescript-version.js';
-import type * as Seven from './typescript-ts7.js';
+import type * as Golem from './typescript-types.js';
 
 const selected = resolveTypeScript(process.env.GOLEM_TYPESCRIPT_ROOT ?? process.cwd());
-// The TypeScript 6 backend implements the same surface as the TypeScript 7 one; this is the only place its module is cast to that shape.
-const backend: typeof Seven = selected.major === 7
+// The single boundary between TypeScript's own types and golem's: both backend modules are cast here to the
+// golem-owned shape in typescript-types.ts, so no published declaration names a TypeScript package.
+const backend = (selected.major === 7
   ? await import('./typescript-ts7.js')
-  : (await import('./typescript-ts6.js')) as unknown as typeof Seven;
+  : await import('./typescript-ts6.js')) as unknown as Golem.TypeScriptBackend;
 
 export const typescriptVersion = selected.version;
 export const {
@@ -124,18 +125,18 @@ export const {
 } = backend;
 
 // A value export shadows the type meaning of its name, so enum-like and class names are re-exported as types too.
-export type API = Seven.API;
-export type ElementFlags = Seven.ElementFlags;
-export type IndexKind = Seven.IndexKind;
-export type ModuleKind = Seven.ModuleKind;
-export type ModuleResolutionKind = Seven.ModuleResolutionKind;
-export type NodeBuilderFlags = Seven.NodeBuilderFlags;
-export type NodeFlags = Seven.NodeFlags;
-export type ObjectFlags = Seven.ObjectFlags;
-export type ProgramSession = Seven.ProgramSession;
-export type ScriptTarget = Seven.ScriptTarget;
-export type SignatureKind = Seven.SignatureKind;
-export type SymbolFlags = Seven.SymbolFlags;
-export type SyntaxKind = Seven.SyntaxKind;
-export type TypeFlags = Seven.TypeFlags;
-export type * from './typescript-ts7.js';
+export type API = Golem.API;
+export type ElementFlags = Golem.ElementFlags;
+export type IndexKind = Golem.IndexKind;
+export type ModuleKind = Golem.ModuleKind;
+export type ModuleResolutionKind = Golem.ModuleResolutionKind;
+export type NodeBuilderFlags = Golem.NodeBuilderFlags;
+export type NodeFlags = Golem.NodeFlags;
+export type ObjectFlags = Golem.ObjectFlags;
+export type ProgramSession = Golem.ProgramSession;
+export type ScriptTarget = Golem.ScriptTarget;
+export type SignatureKind = Golem.SignatureKind;
+export type SymbolFlags = Golem.SymbolFlags;
+export type SyntaxKind = Golem.SyntaxKind;
+export type TypeFlags = Golem.TypeFlags;
+export type * from './typescript-types.js';
