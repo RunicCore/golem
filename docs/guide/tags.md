@@ -17,7 +17,7 @@ Tags are type-only annotations on a field type.
 - Add validation constraints without changing the TypeScript type application code sees.
 - Compose tags through aliases, intersections, arrays and supported unions.
 
-<<< ../../examples/model/src/builtin-tags.model.ts#builtin-tags
+<<< ../../examples/models/src/builtin-tags.model.ts#builtin-tags
 
 - `title` remains a `string` to application code; tags do not coerce it.
 - Arguments must be literal types, such as `Minimum<0>` or `Pattern<'^[A-Z]+$'>`.
@@ -30,7 +30,7 @@ Intersect the field type with each validation constraint tag. The title above is
 
 Give a combination of tags a type alias and use the alias as the field type. A type parameter can supply a tag argument, so one alias serves every length.
 
-<<< ../../examples/model/src/tag-aliases.model.ts#tag-aliases
+<<< ../../examples/models/src/tag-aliases.model.ts#tag-aliases
 
 - `Handle<20>` checks `maxLength: 20` and the pattern; aliases can use other aliases.
 - The argument must be a literal where you use the alias. `Varchar<number>` fails with [RUNM1043](/reference/diagnostics#runm1043).
@@ -57,10 +57,10 @@ Give a combination of tags a type alias and use the alias as the field type. A t
 
 Schema-valued tags describe another TypeScript contract:
 
-<<< ../../examples/model/src/collection-tags.model.ts#collection-tags
+<<< ../../examples/models/src/collection-tags.model.ts#collection-tags
 
 - `Contains<T>` counts matching elements; `MinContains` and `MaxContains` bound the count.
-- `DependentRequired` requires listed keys when its trigger is present; `DependentSchemas` checks the whole object in that situation.
+- `DependentRequired<{ remindOn: ['dueOn'] }>` requires `dueOn` whenever `remindOn` is present, so the rejected subscription above fails; in general it requires the listed keys when its trigger key is present; `DependentSchemas` checks the whole object in that situation.
 - `PropertyNames`, `PatternProperties`, `AdditionalProperties`, `UnevaluatedProperties` and `UnevaluatedItems` check keys or values without adding TypeScript index signatures.
 - `OneOf<[A, B]>`, `Not<T>` and `IfThenElse` choose or reject schema branches; none changes assignability or selects a converter.
 
@@ -68,9 +68,9 @@ Schema-valued tags describe another TypeScript contract:
 
 Use `TValidation<typeof predicate>` when a built-in tag cannot express the validation constraint. Declare the predicate in its own module and import it into the model file; a predicate declared in a model file is a generation error ([RUNM1065](/reference/diagnostics#runm1065)).
 
-<<< ../../examples/model/src/task-input-rule.ts#custom-rule-fn
+<<< ../../examples/models/src/task-input-rule.ts#custom-rule-fn
 
-<<< ../../examples/model/src/task-input.model.ts#custom-rule
+<<< ../../examples/models/src/task-input.model.ts#custom-rule
 
 - Extra `TValidation` on a nested SDK type, such as `Money & TValidation<typeof extra>`, is compiled into the parent model's Ajv validator next to the nested SDK schema; it does not create a second validator.
 - Export a synchronous function with one required value.
@@ -87,9 +87,9 @@ The generated file imports your predicate. OpenAPI documents carry only the JSON
 
 `TPermissionInput` is an IModel; `fromWireFormat<TPermissionInput>` returns a plain object and `fromWireFormat<PermissionInput>` constructs your class.
 
-<<< ../../examples/model/src/permission-rules.ts#serde-tag-fn
+<<< ../../examples/models/src/permission-rules.ts#serde-tag-fn
 
-<<< ../../examples/model/src/permission-input.model.ts#serde-tag
+<<< ../../examples/models/src/permission-input.model.ts#serde-tag
 
 - The same behavior applies when the field is nested.
 - Declare the encoder and decoder in their own module, like a `TValidation` predicate; in a model file they are a generation error ([RUNM1065](/reference/diagnostics#runm1065)).
@@ -120,13 +120,13 @@ JSON validation and model validation are separate stages, and each rule runs onc
 
 A `TSerde` field can hold a class instance, such as `Uint8Array`, or a `bigint`. The codec does all the conversion, and validation checks the JSON value.
 
-<<< ../../examples/model/src/base64-codec.ts#base64-codec
+<<< ../../examples/models/src/base64-codec.ts#base64-codec
 
-<<< ../../examples/model/src/attachment.model.ts#class-valued-field
+<<< ../../examples/models/src/attachment.model.ts#class-valued-field
 
 Converting the model writes the JSON form and restores the instance:
 
-<<< ../../examples/model/src/attachment-json.ts#attachment-json
+<<< ../../examples/models/src/attachment-json.ts#attachment-json
 
 - The class must have a name, be exported from a module (under any name, or as the default export), and have no type parameter without a default ([RUNM1063](/reference/diagnostics#runm1063)).
 - A `TemporalInstant` is this kind of field; the [Temporal types](/guide/dates#use-temporal-fields) ship their own codecs.

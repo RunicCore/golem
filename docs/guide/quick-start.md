@@ -32,9 +32,13 @@ Add `"type": "module"` to `package.json` and this to `tsconfig.json` ([TypeScrip
 
 ## Declare your fields
 
-Mark a type with `IModel` in `src/task.model.ts`:
+`priority` is a number in your code and a word in JSON, so first write the two functions that convert it in `src/priority-word.ts`. The generated file imports them, so they cannot live in the model file ([`TSerde`](/guide/tags#convert-a-field-to-a-different-json-value)):
 
-<<< ../../examples/model/src/quick-start/task.model.ts#task-declaration
+<<< ../../examples/models/src/priority-word.ts#priority-word
+
+Then mark a type with `IModel` in `src/task.model.ts`; `TSerde` ties `priority` to those functions:
+
+<<< ../../examples/models/src/task.model.ts#task-declaration
 
 The generator reads `src/**/*.model.ts` and `src/**/*.models.ts`; [`models.sources`](/reference/config#typescript-models) changes that.
 
@@ -44,7 +48,7 @@ An `IObject` gives plain objects with the same validation and conversion; an `IM
 
 Add `golem.yaml` at the project root and run the generator:
 
-<<< ../../examples/model/golem.yaml
+<<< ../../examples/models/golem.yaml
 
 ```sh
 npx golem generate
@@ -60,7 +64,7 @@ You get `src/task.model.generated.ts` beside the declaration, with the generated
 
 Extend the generated class in `src/task.model.ts`, below the declaration:
 
-<<< ../../examples/model/src/quick-start/task.model.ts#task-model
+<<< ../../examples/models/src/task.model.ts#task-model
 
 To add a field later, change `TTask` and generate again. Only `task.model.generated.ts` is replaced; `toggle()` stays.
 
@@ -68,7 +72,7 @@ To add a field later, change `TTask` and generate again. Only `task.model.genera
 
 Create `src/main.ts`:
 
-<<< ../../examples/model/src/quick-start/main.ts#use-task
+<<< ../../examples/models/src/main.ts#use-task
 
 `@exprtlabs/golem/serde` also exports `parse` and `stringify`. `parse<Task>(text)` builds a `Task`; `parse<TTask>(text)` returns a plain object. `stringify` returns JSON text.
 
@@ -79,6 +83,8 @@ npx ttsc && node .build/src/main.js
 ```
 
 ```
-{ title: 'Review the draft', done: true }
+{ title: 'Review the draft', done: true, priority: 'normal' }
 []
 ```
+
+Your `main.ts` holds only the code above, so this is all it prints. The full example's `main.ts` continues with one line per feature; `npm start` in [`examples/models`](https://github.com/RunicCore/golem/tree/master/examples/models) prints them all.

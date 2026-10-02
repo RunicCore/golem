@@ -4,11 +4,11 @@ Nest models, derive types with `Pick` and `Omit`, and model unions that convert 
 
 ## Nested models and derived types
 
-A field typed with your class, such as `home: Address`, holds an instance of that class. A field typed with the declaration alias (`TAddress`) holds a plain object. `Pick`, `Omit`, `Partial`, `Required` and `Readonly` produce a derived type as a plain object.
+A field typed with your class, such as `office: Place`, holds an instance of that class. A field typed with the declaration alias (`TPlace`) holds a plain object. `Pick`, `Omit`, `Partial`, `Required` and `Readonly` produce a derived type as a plain object.
 
-<<< ../../examples/model/src/customer.model.ts#nested-and-derived
+<<< ../../examples/models/src/assignee.model.ts#nested-and-derived
 
-A derived type keeps field conversion and validation, but not `Address` methods, constructor defaults or rules added with [`getValidator(model).extend()`](/guide/validation#instance-rules). `Readonly` keeps TypeScript's modifier and doesn't freeze the value.
+A derived type keeps field conversion and validation, but not `Place` methods, constructor defaults or rules added with [`getValidator(model).extend()`](/guide/validation#instance-rules). `Readonly` keeps TypeScript's modifier and doesn't freeze the value.
 
 A derived type is exact by default, like any model: extra keys fail validation; `{ exact: false }` keeps them. Put a whole-object [`TValidation`](/guide/tags#add-a-custom-field-rule) predicate or [`TSerde`](/guide/tags#convert-a-field-to-a-different-json-value) formatter on the derived type itself rather than reusing one written for another shape.
 
@@ -26,7 +26,7 @@ Supported:
 
 A discriminated union of two models:
 
-<<< ../../examples/model/src/contact.model.ts#discriminated-union
+<<< ../../examples/models/src/contact.model.ts#discriminated-union
 
 Generation fails for:
 
@@ -41,7 +41,7 @@ Generation fails for:
 
 The second type argument of `IModel` controls extra properties and `any`:
 
-<<< ../../examples/model/src/open-objects.model.ts#exact-and-any
+<<< ../../examples/models/src/metadata.model.ts#exact-and-any
 
 `exact` defaults to `true`: extra properties fail validation, including in nested plain objects. Constructors still assign declared fields only, and extra keys added to an instance aren't serialized.
 

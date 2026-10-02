@@ -11,9 +11,9 @@ Put validation constraints such as `MinLength`, `Minimum`, and `TValidation` on 
 
 Both stop at the first issue by default. Pass `{ failFast: false }` to collect every issue, for example to show all field errors in a form.
 
-<<< ../../examples/model/src/task-input.model.ts#custom-rule
+<<< ../../examples/models/src/task-input.model.ts#custom-rule
 
-<<< ../../examples/model/src/task-input-checks.ts#validate-a-model
+<<< ../../examples/models/src/task-input-checks.ts#validate-a-model
 
 ::: info Ajv
 Default validation uses runtime Ajv. With `ajvStandalone: true`, all generated checks use precompiled validators and the application needs no Ajv runtime peers.
@@ -65,7 +65,7 @@ Changing a field does not clear its old error. Validate again to refresh the res
 
 Pass a path array to read errors inside objects or arrays. Field names are strings; array indexes are numbers.
 
-<<< ../../examples/model/src/order-input.model.ts#nested-field-errors
+<<< ../../examples/models/src/checklist-input.model.ts#nested-field-errors
 
 Use `issues` when you need an error's code or source as well as its message: each [`Issue`](/reference/runtime-api#errors) carries both. The `errors` map keys messages by [escaped JSON Pointer](/reference/runtime-api#model-validator).
 
@@ -73,7 +73,7 @@ Use `issues` when you need an error's code or source as well as its message: eac
 
 Use `extend()` for a rule added to a particular model, including asynchronous checks. The callback receives the field value and the model, and returns `true` or an error message, directly or through a promise.
 
-<<< ../../examples/model/src/title-rule.ts#instance-rules
+<<< ../../examples/models/src/title-rule.ts#instance-rules
 
 - Generated checks run before instance rules.
 - Register the rule in your class constructor when every instance needs it, including instances created by `fromWireFormat<TaskInput>()`.
@@ -83,7 +83,7 @@ Use `extend()` for a rule added to a particular model, including asynchronous ch
 
 `setErrors()` lets you display a server message alongside local validation errors. It stores messages; it does not add validation rules.
 
-<<< ../../examples/model/src/server-errors.ts#server-errors
+<<< ../../examples/models/src/server-errors.ts#server-errors
 
 The next `validator.validate()` replaces these messages with its own results. The standalone `validateInstance(task)` leaves them unchanged. To customize messages for generated checks, use [`messages()`](/reference/runtime-api#validation).
 
@@ -91,7 +91,7 @@ The next `validator.validate()` replaces these messages with its own results. Th
 
 `parse<T>(text)` validates the incoming JSON, then runs each field's `TSerde` decoder. `fromWireFormat<T>(value)` does the same for a plain object, without `JSON.parse`. `{ validate: false }` skips Ajv and does not update stored field errors.
 
-<<< ../../examples/model/src/load-task.ts#validation-during-conversion
+<<< ../../examples/models/src/load-task.ts#validation-during-conversion
 
 - After successful `parse` / `fromWireFormat` (Ajv on), you do not need another `validateInstance(model)` call unless you edit the instance. Use `getValidator(model).validate()` when you want all field errors stored for display.
 - JSON values and model values are checked at separate stages.
@@ -117,4 +117,4 @@ Supported keywords, versions and profiles are in [OpenAPI client support](/refer
 
 Validation is enabled by default. [Validation profiles](/reference/config#validation-profiles) set how validators are supplied in `golem.yaml`.
 
-Full example: [`examples/model`](https://github.com/RunicCore/golem/tree/master/examples/model)
+Full example: [`examples/models`](https://github.com/RunicCore/golem/tree/master/examples/models)

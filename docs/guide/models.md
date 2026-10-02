@@ -4,9 +4,9 @@ Declare fields as a type, generate validation and JSON conversion, and add behav
 
 ::: code-group
 
-<<< ../../examples/model/src/task.model.ts#model-definition [task.model.ts]
+<<< ../../examples/models/src/task.model.ts#model-definition [task.model.ts]
 
-<<< ../../examples/model/src/priority-word.ts#priority-word [priority-word.ts]
+<<< ../../examples/models/src/priority-word.ts#priority-word [priority-word.ts]
 
 :::
 
@@ -16,14 +16,14 @@ Declare fields as a type, generate validation and JSON conversion, and add behav
 
 Both declare fields. `IObject` stops there: values stay plain objects, and you call the generated validation and conversion as functions. `IModel` is an `IObject` plus a **generated class** (`TTaskBaseModel`) that **your class** (`Task`) extends.
 
-<<< ../../examples/model/src/note.model.ts#object-and-model
+<<< ../../examples/models/src/comment.model.ts#object-and-model
 
-`TNote` is an `IObject`: `parse<TNote>` returns a plain object. `TNotebook` is an `IModel` nesting it: `parse<Notebook>` builds a `Notebook` whose `notes` array holds those plain objects.
+`TComment` is an `IObject`: `parse<TComment>` returns a plain object. `TThread` is an `IModel` nesting it: `parse<Thread>` builds a `Thread` whose `comments` array holds those plain objects.
 
 | | `IObject` | `IModel` |
 | --- | --- | --- |
 | Generates | validation and JSON conversion | the same, plus a class (`TTaskBaseModel`) |
-| Value from `parse` | plain object: `parse<TNote>(json)` | your class with `parse<Task>(json)`; a plain object with `parse<TTask>(json)` |
+| Value from `parse` | plain object: `parse<TComment>(json)` | your class with `parse<Task>(json)`; a plain object with `parse<TTask>(json)` |
 | Methods and getters | no | yes, on your class |
 | [MobX](/guide/mobx) (`mobx: true`) | observable only as a field of a generated model | observable fields once your constructor calls `asGenObservable(this)` |
 | Use it for | DTOs and nested data | domain objects with behavior |
@@ -65,7 +65,7 @@ IObject codec "<id>" for model <model> is not registered. The generated file tha
 
 `stringify` and `parse` work with JSON text; `toWireFormat` and `fromWireFormat` work with plain objects. The type argument picks the result: `parse<TTask>` returns a plain object, `parse<Task>` builds a `Task`.
 
-<<< ../../examples/model/src/read-json.ts#read-json
+<<< ../../examples/models/src/read-json.ts#read-json
 
 Each call takes [serde options](/guide/serialization) such as `{ validate: false }`.
 
@@ -103,4 +103,4 @@ npx golem generate
 
 Generation type-checks the whole project first and stops at the first TypeScript error, reported as `file:line:column`. It then replaces every `*.model.generated.ts` file and the shared files under `models.output` (default `src/generated/models/`); your classes don't change. Commit `.golem/outputs.json` with the generated files, and run `npx golem check` in CI ([Generate, watch and check](/guide/watch)).
 
-Full example: [`examples/model`](https://github.com/RunicCore/golem/tree/master/examples/model)
+Full example: [`examples/models`](https://github.com/RunicCore/golem/tree/master/examples/models)

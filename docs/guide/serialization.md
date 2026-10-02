@@ -10,11 +10,11 @@ These calls convert a named [`IObject` or `IModel`](/guide/models#iobject-or-imo
 
 ## Convert to and from JSON
 
-<<< ../../examples/model/src/money.model.ts#money-model
+<<< ../../examples/models/src/estimate.model.ts#money-model
 
-<<< ../../examples/model/src/money-json.ts#iobject-json
+<<< ../../examples/models/src/estimate-json.ts#iobject-json
 
-<<< ../../examples/model/src/read-json.ts#read-json
+<<< ../../examples/models/src/read-json.ts#read-json
 
 ::: info ttsc
 `parse`, `stringify`, `fromWireFormat` and `toWireFormat` throw unless `@exprtlabs/golem/ttsc-plugin` rewrites them. Compile with TypeScript 7 and `ttsc` 0.30.x; `tsc` does not run that transform.
@@ -53,4 +53,4 @@ Each rule runs once; your decoders only see values that passed the JSON check.
 
 When `validation` is off, generated output has no Ajv. `{ validate: true }` then throws `LibErrorKind.ValidationUnavailable`, described in the [runtime reference](/reference/runtime-api#errors). `{ validate: false }` skips the check for data you already trust.
 
-Full example: [`examples/model`](https://github.com/RunicCore/golem/tree/master/examples/model)
+Full example: [`examples/models`](https://github.com/RunicCore/golem/tree/master/examples/models)
