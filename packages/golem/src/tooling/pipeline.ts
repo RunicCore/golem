@@ -337,7 +337,7 @@ export async function runPipeline(filename: string, options: PipelineOptions = {
   };
   const requestedConfig = path.resolve(filename);
   let canonicalConfig: string | undefined;
-  try { canonicalConfig = fs.realpathSync(requestedConfig); } catch { /* resolveConfig reports the missing/invalid file */ }
+  try { canonicalConfig = fs.realpathSync.native(requestedConfig); } catch { /* resolveConfig reports the missing/invalid file */ }
   const config = resolveConfig(filename, input => {
     const resolved = path.resolve(input);
     // resolveConfig reports roots, sources, and generated inputs through the
