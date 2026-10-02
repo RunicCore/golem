@@ -745,6 +745,8 @@ function sharesInput(descriptor: ModelTypeDescriptor, ctx: EmitCtx, seen: Set<Mo
       return descriptor.variants.some((variant) => sharesInput(variant, ctx, seen));
     case 'object': {
       const values = mapValueDescriptor(descriptor);
+      // A named object is decoded by its own fill, which checks the values it carries by reference.
+      if (ctx.graph.nodeFor(descriptor) && !(values !== undefined && descriptorNeedsConversion(descriptor))) return false;
       // Undeclared properties of an open object are values of unknown type.
       if (values === undefined && extrasAllowed(descriptor)) return true;
       return Object.values(descriptor.properties).some((property) => sharesInput(property, ctx, seen))
@@ -755,11 +757,8 @@ function sharesInput(descriptor: ModelTypeDescriptor, ctx: EmitCtx, seen: Set<Mo
     case 'generated-model': {
       if (descriptor.kind === 'generated-model' && ctx.nestedGenerated?.(descriptor.id)) return false;
       if (shouldConstructNested(descriptor, ctx)) return false;
-      const node = ctx.graph.nodeFor(descriptor);
-      if (!node) return true;
-      return node.descriptor.kind === 'object' && !descriptorNeedsConversion(node.descriptor)
-        ? sharesInput(node.descriptor, ctx, seen)
-        : false;
+      // A node is decoded by its own fill or convert function, which checks what it carries by reference.
+      return ctx.graph.nodeFor(descriptor) === undefined;
     }
     default:
       return false;
@@ -1710,7 +1709,7 @@ function emitNodeRuntime(
 
   const fromWireLines = [
     `${exported}function ${fromWire}(wire: unknown, options?: ${SERDE_OPTIONS}): ${fieldsType ?? 'unknown'} {`,
-    `  return ${convertName}(wire, options)${fieldsType ? ` as ${fieldsType}` : ''};`,
+    `  return decodeCheckedInput(${convertName}, wire, options)${fieldsType ? ` as ${fieldsType}` : ''};`,
     '}',
     '',
   ];

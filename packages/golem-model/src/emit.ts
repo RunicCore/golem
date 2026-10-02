@@ -1463,6 +1463,7 @@ export function emitSource(
     'assertPropertyAcyclic',
     'assertWireAcyclic',
     'beginDecode',
+    'decodeCheckedInput',
     'decodeDetachedInput',
     'endDecode',
     ...(needsGeneratedDecode ? ['decodeGeneratedModelTrusted'] : []),

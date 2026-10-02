@@ -139,7 +139,8 @@ test('generated decode copies every level of closed nested objects and rejects a
   assert.throws(() => fromWireFormatTOuter({ inner: { deep } }, { validate: false }), cycleAt(['inner', 'deep', 'extra']));
   const outer: { inner: { deep: Record<string, unknown> } } = { inner: { deep: { x: 1 } } };
   outer.inner.deep.extra = outer;
-  assert.throws(() => fromWireFormatTOuter(outer, { validate: false }), cycleAt(['inner', 'deep', 'extra']));
+  // The cycle is found by the fill of `deep`, which checks `extra`, so the path runs on to the repeated `deep`.
+  assert.throws(() => fromWireFormatTOuter(outer, { validate: false }), cycleAt(['inner', 'deep', 'extra', 'inner', 'deep']));
 });
 
 test('generated decode copies maps and arrays and carries only unknown values by reference', async (t) => {
@@ -221,6 +222,23 @@ test('a rejected cycle leaves no decode state behind', async (t) => {
   assert.throws(() => fromWireFormatTNode(node, { validate: false, construct: Construct } as never), cycleAt(['children', 0]));
   node.children = [];
   assert.ok(fromWireFormatTNode(node, { validate: false, construct: Construct } as never) instanceof Construct);
+});
+
+test('a decoder that user code runs during a parse still checks its own input for cycles', async (t) => {
+  const { fromWireFormatTTree, parseTTree } = await loadCodecs(t, 'recursive') as Record<string, FromWire> & { parseTTree: (text: string, options?: unknown) => unknown };
+  const cyclic: { next?: unknown } = {};
+  cyclic.next = cyclic;
+  let inner: unknown;
+  class Construct {
+    constructor(public fields: unknown) {
+      try { fromWireFormatTTree(cyclic, { validate: false }); } catch (error) { inner = error; }
+    }
+  }
+  assert.ok(parseTTree('{"next":{}}', { validate: false, construct: Construct }) instanceof Construct);
+  assert.ok(inner instanceof LibError);
+  assert.equal(inner.kind, LibErrorKind.Deserialization);
+  assert.match(inner.message, /Cyclic values cannot be converted/);
+  assert.throws(() => decodeGeneratedModel(RecordModel, { payload: cyclic }), cycleAt(['payload', 'next']));
 });
 
 test('parsed JSON text is decoded without cycle checks', async (t) => {

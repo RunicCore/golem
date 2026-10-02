@@ -157,6 +157,24 @@ export function decodeDetachedInput<Options, Value>(
   }
 }
 
+/**
+ * Runs a generated decoder for a caller outside generated code, such as a constructor or a serde
+ * deserializer that a parse invoked: its input is checked for cycles even while a parse is running.
+ */
+export function decodeCheckedInput<Options, Value>(
+  convert: (wire: unknown, options: Options) => Value,
+  wire: unknown,
+  options: Options,
+): Value {
+  const depth = detachedInputDepth;
+  detachedInputDepth = 0;
+  try {
+    return convert(wire, options);
+  } finally {
+    detachedInputDepth = depth;
+  }
+}
+
 function walkConversionInput(
   value: unknown,
   kind: LibErrorKind.Serialization | LibErrorKind.Deserialization,
@@ -268,7 +286,7 @@ export function decodeGeneratedModel(
   constructor: GeneratedModelConstructor,
   value: unknown,
 ): object {
-  return decodeGeneratedModelValue(constructor, value, true);
+  return decodeCheckedInput((input, target) => decodeGeneratedModelValue(target, input, true), value, constructor);
 }
 
 /**
