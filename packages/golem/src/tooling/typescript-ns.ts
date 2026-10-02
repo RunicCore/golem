@@ -12,7 +12,6 @@ const backend = (selected.major === 7
 
 export const typescriptVersion = selected.version;
 export const {
-  API,
   CheckFlags,
   ElementFlags,
   IndexKind,
@@ -125,7 +124,6 @@ export const {
 } = backend;
 
 // A value export shadows the type meaning of its name, so enum-like and class names are re-exported as types too.
-export type API = Golem.API;
 export type ElementFlags = Golem.ElementFlags;
 export type IndexKind = Golem.IndexKind;
 export type ModuleKind = Golem.ModuleKind;

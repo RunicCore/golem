@@ -30,13 +30,13 @@ test('typescript/unstable stays inside the generator shim', () => {
 });
 
 test('the classic typescript package stays inside the TypeScript 6 backend', () => {
+  // The backend loads the project's TypeScript by the directory `resolveTypeScript` found, so a bare import would load golem's own.
   const hits = typescriptFiles(path.join(root, 'packages'))
-    .filter((filename) => /from\s+['"]typescript['"]|import\(\s*['"]typescript['"]\s*\)/.test(fs.readFileSync(filename, 'utf8')))
+    .filter((filename) => /from\s+['"]typescript['"]|import\(\s*['"]typescript['"]\s*\)|\brequire\(\s*[\w.]*packageDir\s*\)/.test(fs.readFileSync(filename, 'utf8')))
     .map((filename) => portable(path.relative(root, filename)))
     .sort();
-  assert.deepEqual(hits, []);
+  assert.deepEqual(hits, ['packages/golem/src/tooling/typescript-ts6.ts']);
 });
-
 
 test('analysis reads renamed AST members only through the seam', () => {
   const offenders = typescriptFiles(path.join(root, 'packages'))

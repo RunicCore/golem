@@ -534,19 +534,6 @@ export interface ProgramSession extends Disposable {
   openProgram(options: OpenProgramOptions): Program;
 }
 
-// The compiler process client; only the lifecycle tests drive it directly.
-export interface API {
-  updateSnapshot(params?: {
-    readonly openProjects?: readonly string[];
-    readonly fileChanges?: { readonly changed?: readonly string[] };
-  }): ApiSnapshot;
-  close(): void;
-}
-export interface ApiSnapshot {
-  getProject(configFile: string): { readonly program: { getSourceFile(filename: string): SourceFile | undefined } } | undefined;
-  dispose(): void;
-}
-
 // The runtime values of the seam, as the facade destructures them. The value `X` of an enum-like name carries the
 // members golem reads; the type `X` above is the number those members hold.
 export interface TypeScriptBackend {
@@ -607,7 +594,6 @@ export interface TypeScriptBackend {
   readonly ModuleResolutionKind: { readonly NodeNext: ModuleResolutionKind };
   readonly ScriptTarget: { readonly ES2022: ScriptTarget };
   readonly CheckFlags: { readonly Readonly: number; readonly Mapped: number };
-  readonly API: { new (options: { readonly cwd: string }): API; readonly prototype: API };
   readonly ProgramSession: { new (options: ProgramSessionOptions): ProgramSession };
   readonly sys: ModuleResolutionHost;
   canHaveDecorators(node: Node): boolean;

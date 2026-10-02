@@ -5,6 +5,7 @@ import path from 'node:path';
 import test, { type TestContext } from 'node:test';
 
 import * as ts from '@exprtlabs/golem/ts';
+import { API } from '#golem/typescript-ts7';
 import { createFixtureProject, readFixture } from './fixture-project.js';
 import { generate as generateController } from '#controllers/generator';
 import { generate as generateModel } from '#model/generator';
@@ -143,19 +144,19 @@ function writeManifestFixture(fixture: Fixture): { readonly source: string; read
 }
 
 function throwAfterRealClose(t: TestContext, failure: Error): () => number {
-  const prototype = ts.API.prototype as unknown as {
-    updateSnapshot(this: ts.API, ...args: readonly unknown[]): unknown;
-    close(this: ts.API): void;
+  const prototype = API.prototype as unknown as {
+    updateSnapshot(this: API, ...args: readonly unknown[]): unknown;
+    close(this: API): void;
   };
   const originalUpdateSnapshot = prototype.updateSnapshot;
   const originalClose = prototype.close;
-  const owned = new WeakSet<ts.API>();
+  const owned = new WeakSet<API>();
   let calls = 0;
-  prototype.updateSnapshot = function updateSnapshotForTest(this: ts.API, ...args: readonly unknown[]): unknown {
+  prototype.updateSnapshot = function updateSnapshotForTest(this: API, ...args: readonly unknown[]): unknown {
     owned.add(this);
     return originalUpdateSnapshot.call(this, ...args);
   };
-  prototype.close = function closeWithFailure(this: ts.API): void {
+  prototype.close = function closeWithFailure(this: API): void {
     const isOwned = owned.has(this);
     originalClose.call(this);
     if (!isOwned) return;
@@ -378,10 +379,10 @@ test('a reused program session replays recorded inputs, sees file changes and re
 });
 
 function captureSnapshotRequests(t: TestContext): unknown[] {
-  const prototype = ts.API.prototype as unknown as { updateSnapshot(this: ts.API, ...args: unknown[]): unknown };
+  const prototype = API.prototype as unknown as { updateSnapshot(this: API, ...args: unknown[]): unknown };
   const original = prototype.updateSnapshot;
   const requests: unknown[] = [];
-  prototype.updateSnapshot = function capturedUpdateSnapshot(this: ts.API, ...args: unknown[]): unknown {
+  prototype.updateSnapshot = function capturedUpdateSnapshot(this: API, ...args: unknown[]): unknown {
     requests.push(args[0]);
     return original.apply(this, args);
   };
@@ -407,10 +408,10 @@ test('a compiler that exits during a snapshot update is replaced and the program
   assert.ok(compiler);
 
   // Kill the warm compiler as the next snapshot update is sent, so the request itself fails.
-  const prototype = ts.API.prototype as unknown as { updateSnapshot(this: ts.API, ...args: unknown[]): unknown };
+  const prototype = API.prototype as unknown as { updateSnapshot(this: API, ...args: unknown[]): unknown };
   const original = prototype.updateSnapshot;
   let updates = 0;
-  prototype.updateSnapshot = function crashingUpdateSnapshot(this: ts.API, ...args: unknown[]): unknown {
+  prototype.updateSnapshot = function crashingUpdateSnapshot(this: API, ...args: unknown[]): unknown {
     updates++;
     if (updates === 1) compiler.kill('SIGKILL');
     return original.apply(this, args);
@@ -515,9 +516,9 @@ test('server change report: TypeScript 7.0.2 serves stale files after the previo
   const fixture = projectFixture(t, 'compiler-lifecycle-server-changes');
   const source = path.join(fixture.sourceRoot, 'value.ts');
   const configFile = path.join(fixture.root, 'tsconfig.json');
-  const api = new ts.API({ cwd: fixture.root });
+  const api = new API({ cwd: fixture.root });
   t.after(() => api.close());
-  const read = (snapshot: ReturnType<ts.API['updateSnapshot']>): string | undefined =>
+  const read = (snapshot: ReturnType<API['updateSnapshot']>): string | undefined =>
     snapshot.getProject(configFile)?.program.getSourceFile(source)?.text;
 
   fs.writeFileSync(source, 'export const value = 1;\n');
