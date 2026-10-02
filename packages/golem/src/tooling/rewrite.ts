@@ -36,6 +36,8 @@ export interface RewriteFile {
 export interface RewriteIndex {
   readonly version: 1;
   readonly golem: string;
+  /** The canonical path of the golem.yaml that writes this index; an index from before owners has none. */
+  readonly owner?: string;
   readonly files: Readonly<Record<string, RewriteFile>>;
 }
 
@@ -78,7 +80,7 @@ export function readRewriteIndex(root: string): RewriteIndex | undefined {
     throw malformed();
   }
   const record = value as Partial<Record<keyof RewriteIndex, unknown>> | null;
-  if (typeof record !== 'object' || record === null || record.version !== 1 || typeof record.golem !== 'string' || typeof record.files !== 'object' || record.files === null) throw malformed();
+  if (typeof record !== 'object' || record === null || record.version !== 1 || typeof record.golem !== 'string' || (record.owner !== undefined && typeof record.owner !== 'string') || typeof record.files !== 'object' || record.files === null) throw malformed();
   return record as unknown as RewriteIndex;
 }
 

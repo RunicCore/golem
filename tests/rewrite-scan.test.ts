@@ -22,7 +22,7 @@ function project(t: TestContext, files: readonly string[] = []): string {
 }
 
 function scan(root: string): ScanResult {
-  return scanProjectRewrites({ root, nest: false });
+  return scanProjectRewrites({ root, configFile: path.join(root, 'tsconfig.json'), nest: false });
 }
 
 /** The file after `applyRewrites`, as a host would see it. */
@@ -356,7 +356,7 @@ export const money = parse<TMoney>(text);
 export class Payment extends TPaymentBaseModel {}
 `);
   fs.writeFileSync(path.join(outer, 'shared/plain.ts'), "export const plain = 1;\n");
-  const { diagnostics, index } = scanProjectRewrites({ root, nest: false });
+  const { diagnostics, index } = scanProjectRewrites({ root, configFile: path.join(root, 'tsconfig.json'), nest: false });
   // A class site is the end of the class, where its registration goes.
   const message = (file: string): string => `"${file}" has a rewrite site but lies outside the project root. Move it under the root, or run golem generate for the package that contains it.`;
   assert.deepEqual(diagnostics, [

@@ -132,6 +132,8 @@ function parsedProject(
   sources: readonly string[],
   session: ts.ProgramSession,
   onInput?: InputObserver,
+  /** The tsconfig to read, from the golem.yaml; without it the one that `tsc` would find from `root` upward. */
+  configFile?: string,
 ): {
   readonly configPath?: string;
   readonly referencedConfigPath?: string;
@@ -139,10 +141,12 @@ function parsedProject(
   readonly ambientFiles: readonly string[];
   readonly options: ts.CompilerOptions;
 } {
-  const configPath = ts.findConfigFile(root, (filename) => {
-    onInput?.(canonicalFilename(filename));
-    return ts.sys.fileExists(filename);
-  }, 'tsconfig.json');
+  const configPath = configFile === undefined
+    ? ts.findConfigFile(root, (filename) => {
+      onInput?.(canonicalFilename(filename));
+      return ts.sys.fileExists(filename);
+    }, 'tsconfig.json')
+    : (onInput?.(canonicalFilename(configFile)), ts.sys.fileExists(configFile) ? configFile : undefined);
   if (!configPath) {
     return {
       projectFiles: [],
@@ -189,11 +193,14 @@ function openParsedProgram(
   parsed: ReturnType<typeof parsedProject>,
   rootNames: readonly string[],
   onInput?: InputObserver,
+  /** The configuration to open the program with when no referenced project holds the sources; otherwise the compiler reads `tsconfig.json` in `root`. */
+  configFile?: string,
 ): ProgramInfo {
+  const programConfig = parsed.referencedConfigPath ?? configFile;
   const program = session.openProgram({
     root,
     sources: rootNames,
-    ...(parsed.referencedConfigPath ? { configFile: parsed.referencedConfigPath } : {}),
+    ...(programConfig ? { configFile: programConfig } : {}),
     onInput,
   });
   const host = ts.createCompilerHost(parsed.options, true);
@@ -217,17 +224,18 @@ export function createProgram(
 }
 
 /**
- * Open a program on every file of the project's tsconfig, so a scan sees each source and the generated files it
- * imports or ignores alike. A project without a tsconfig has no files.
+ * Open a program on every file of the given tsconfig, so a scan sees each source and the generated files it
+ * imports or ignores alike. A tsconfig that does not exist has no files.
  */
 export function createProjectProgram(
   root: string,
+  configFile: string,
   onInput?: InputObserver,
   retained?: ts.ProgramSession,
 ): ProgramInfo {
   const session = retained ?? new ts.ProgramSession({ cwd: root, closeWhenIdle: true });
-  const parsed = parsedProject(root, [], session, onInput);
-  return openParsedProgram(session, root, parsed, parsed.projectFiles, onInput);
+  const parsed = parsedProject(root, [], session, onInput, configFile);
+  return openParsedProgram(session, root, parsed, parsed.projectFiles, onInput, parsed.configPath);
 }
 
 export function createOverlayProgram(

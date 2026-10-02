@@ -36,7 +36,7 @@ function paymentsProject(t: TestContext, extra: Readonly<Record<string, string>>
 }
 
 function scan(root: string, nest = true): ScanResult {
-  return scanProjectRewrites({ root, nest });
+  return scanProjectRewrites({ root, configFile: path.join(root, 'tsconfig.json'), nest });
 }
 
 function rewritten(root: string, result: ScanResult, relative: string): string {

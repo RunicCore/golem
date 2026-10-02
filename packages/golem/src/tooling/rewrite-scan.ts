@@ -3,7 +3,6 @@ import path from 'node:path';
 import * as ts from './typescript-ns.js';
 import { GolemDiagnosticSeverity } from './generator-api.js';
 import type { GeneratorSession, GolemDiagnostic, InputObserver } from './generator-api.js';
-import { canonicalPath } from './config.js';
 import { operationCodecRegistryPath } from './generated-paths.js';
 import { atomicWrite } from './outputs.js';
 import {
@@ -585,55 +584,59 @@ export function checkNestCodecs(roots: string | readonly string[], scanned: Scan
     }));
 }
 
-/** Write `<root>/.golem/rewrites.json`; the same index always yields the same bytes. Returns whether the file changed. */
-export function writeRewriteIndex(root: string, index: RewriteIndex): boolean {
-  return atomicWrite(path.join(root, REWRITE_INDEX_PATH), `${JSON.stringify(index, null, 2)}\n`);
+/** The golem.yaml that owns the index of `root`; none for a missing, unreadable or ownerless index. */
+function indexOwner(root: string): string | undefined {
+  try {
+    return readRewriteIndex(root)?.owner;
+  } catch {
+    // A malformed index is replaced by the next generate, whoever runs it.
+    return undefined;
+  }
 }
 
 /**
- * The tsconfig that owns the sources under `root`, found from `root` upward as `tsc -p` finds one; `undefined` without one.
- * `onInput` observes the lookups.
+ * Fail when another golem.yaml owns the index of `root`: two yamls that name one tsconfig would overwrite each other's
+ * rewrites. An owner whose file no longer exists has left the project, so its index can be taken over.
  */
-export function projectConfigFile(root: string, onInput?: InputObserver): string | undefined {
-  const configPath = ts.findConfigFile(root, (filename) => {
-    onInput?.(canonicalFilename(filename));
-    return ts.sys.fileExists(filename);
-  }, 'tsconfig.json');
-  return configPath === undefined ? undefined : canonicalPath(configPath);
+export function assertRewriteIndexOwner(root: string, owner: string): void {
+  const current = indexOwner(root);
+  if (current === undefined || current === owner || !fs.existsSync(current)) return;
+  throw new Error(`${path.join(root, REWRITE_INDEX_PATH)} belongs to ${current}, but ${owner} names the same tsconfig. Give each golem.yaml its own tsconfig, or delete the index to hand it to ${owner}.`);
 }
 
 /**
- * The directory of that tsconfig: it holds the project's `.golem/rewrites.json`, and the index keys are relative to it.
- * `golem generate` and `golem build` agree on it, so a package without a tsconfig of its own is indexed at the parent
- * tsconfig that includes it. A root without a tsconfig is its own directory.
+ * Write `<root>/.golem/rewrites.json`, recording `owner`; the same index and owner always yield the same bytes.
+ * Returns whether the file changed.
  */
-export function projectDirectory(root: string, onInput?: InputObserver): string {
-  const configFile = projectConfigFile(root, onInput);
-  return configFile === undefined ? root : path.dirname(configFile);
+export function writeRewriteIndex(root: string, index: RewriteIndex, owner?: string): boolean {
+  if (owner !== undefined) assertRewriteIndexOwner(root, owner);
+  const written: RewriteIndex = owner === undefined ? index : { version: index.version, golem: index.golem, owner, files: index.files };
+  return atomicWrite(path.join(root, REWRITE_INDEX_PATH), `${JSON.stringify(written, null, 2)}\n`);
 }
 
 /** Open the project's program and scan it. `onInput` observes every file the compiler reads. */
 export function scanProjectRewrites(input: {
   readonly root: string;
-  /** The directory the index keys are relative to, from `projectDirectory`; defaults to `root`. */
-  readonly indexRoot?: string;
+  /** The tsconfig whose files are scanned, from the golem.yaml; its directory is what the index keys are relative to. */
+  readonly configFile: string;
   readonly nest: boolean;
   /** The session and owner of the job that reads this project, so one compiler serves its generation and this scan; the session is kept under `root`. */
   readonly session?: GeneratorSession;
   readonly sessionOwner?: string;
   readonly onInput?: InputObserver;
 }): ScanResult {
-  const { root, nest, session, sessionOwner, onInput } = input;
-  const info = createProjectProgram(root, onInput, sessionOwner === undefined ? undefined : retainedProgramSession(session, sessionOwner, root));
+  const { root, configFile, nest, session, sessionOwner, onInput } = input;
+  const info = createProjectProgram(root, configFile, onInput, sessionOwner === undefined ? undefined : retainedProgramSession(session, sessionOwner, root));
   using program = info.program;
-  return scanRewrites({ root: input.indexRoot ?? root, program, checker: program.getTypeChecker(), nest });
+  return scanRewrites({ root: path.dirname(configFile), program, checker: program.getTypeChecker(), nest });
 }
 
 /**
  * Fail, naming the first differing file, when the index on disk is not what `scanned` holds: a bundler would otherwise
  * build from a stale rewrite. A project without an index passes; `golem generate` creates it.
  */
-export function assertRewriteIndexCurrent(root: string, scanned: RewriteIndex): void {
+export function assertRewriteIndexCurrent(root: string, scanned: RewriteIndex, owner?: string): void {
+  if (owner !== undefined) assertRewriteIndexOwner(root, owner);
   const index = readRewriteIndex(root);
   if (!index) return;
   const differing = [...new Set([...Object.keys(index.files), ...Object.keys(scanned.files)])]

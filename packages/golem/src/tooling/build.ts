@@ -2,13 +2,14 @@ import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 
-import { contains, resolveConfig } from './config.js';
+import { canonicalFile, contains, resolveConfig } from './config.js';
+import type { GolemConfig } from './config.js';
 import { GolemDiagnosticSeverity } from './generator-api.js';
 import type { GolemDiagnostic } from './generator-api.js';
 import { atomicWrite } from './outputs.js';
 import { applyRewrites } from './rewrite.js';
 import type { RewriteIndex } from './rewrite.js';
-import { projectConfigFile, projectDirectory, scanRewrites, writeRewriteIndex } from './rewrite-scan.js';
+import { assertRewriteIndexOwner, scanRewrites, writeRewriteIndex } from './rewrite-scan.js';
 import { composeSourceMaps } from './source-map.js';
 import type { SourceMapV3 } from './source-map.js';
 import * as ts from './typescript-ns.js';
@@ -16,14 +17,19 @@ import { resolveTypeScript } from './typescript-version.js';
 import { signature } from './watch.js';
 
 export interface BuildOptions {
-  /** A tsconfig file, or a directory that holds `tsconfig.json`, as `tsc -p` takes it. */
-  readonly project: string;
+  /**
+   * Another build config of the same project: a tsconfig file, or a directory that holds `tsconfig.json`, as `tsc -p` takes it.
+   * It lives in the directory of the golem.yaml's tsconfig. Without it the build is that tsconfig.
+   */
+  readonly project?: string;
   readonly watch: boolean;
-  /** The golem.yaml whose controllers jobs turn on the Nest rewrites. Without it, `golem.yaml` in the working directory when there is one, as `golem generate` finds it. */
+  /** The golem.yaml the build starts from; `golem.yaml` in the working directory without it. */
   readonly config?: string;
   /** Stops a watching build; the returned promise resolves when the current build has finished. */
   readonly signal?: AbortSignal;
 }
+
+export const NO_GOLEM_YAML = 'golem build needs a golem.yaml; run it next to one or pass --config';
 
 export const BUILD_REFERENCES_REJECTION = 'golem build does not support project references (-b); run golem build -p <tsconfig> per project.';
 
@@ -64,13 +70,29 @@ function pathsOption(options: ts.CompilerOptions): Readonly<Record<string, reado
   return Object.fromEntries(Object.entries(value).map(([pattern, targets]) => [pattern, (targets as readonly unknown[]).map(String)]));
 }
 
-function resolveProject(project: string): string {
+/** The golem.yaml a build starts from. Nothing above the working directory is searched. */
+function readGolemConfig(requested: string | undefined, observe: (filename: string) => void): GolemConfig {
+  const file = path.resolve(requested ?? 'golem.yaml');
+  observe(file);
+  if (!fs.existsSync(file)) throw new Error(requested === undefined ? NO_GOLEM_YAML : `golem build cannot find ${file}.`);
+  return resolveConfig(file, observe);
+}
+
+/** The tsconfig to build: the golem.yaml's own, or the alternate `-p` names beside it. */
+function resolveProject(project: string | undefined, config: GolemConfig): string {
+  if (project === undefined) {
+    if (!fs.existsSync(config.tsconfig)) throw new Error(`golem build cannot find ${config.tsconfig}, the tsconfig ${config.configFile} names.`);
+    return config.tsconfig;
+  }
   const requested = path.resolve(project);
   const stat = fs.statSync(requested, { throwIfNoEntry: false });
   if (!stat) throw new Error(`golem build cannot find ${requested}.`);
-  const configFile = stat.isDirectory() ? path.join(requested, 'tsconfig.json') : requested;
+  const configFile = canonicalFile(stat.isDirectory() ? path.join(requested, 'tsconfig.json') : requested);
   if (!fs.existsSync(configFile)) throw new Error(`golem build cannot find ${configFile}.`);
-  return fs.realpathSync(configFile);
+  if (path.dirname(configFile) !== path.dirname(config.tsconfig)) {
+    throw new Error(`golem build -p ${project} must name a config in the same directory as ${config.tsconfig}, the tsconfig ${config.configFile} names.`);
+  }
+  return configFile;
 }
 
 /** Read the build settings, or fail on a configuration the staged copy cannot mirror. */
@@ -140,19 +162,6 @@ function runTsc(cli: string, cwd: string, args: readonly string[], forward: bool
     child.once('error', reject);
     child.once('close', (code) => resolve({ code: code ?? 1, stdout, stderr }));
   });
-}
-
-/**
- * Whether the project's rewrites include the Nest codec decorators: a controllers job of the golem.yaml maps to this
- * project, as `golem generate` decides it. A golem.yaml named by `--config` must exist; the default one need not.
- */
-function nestEnabled(root: string, config: { readonly file: string; readonly explicit: boolean }, observe: (filename: string) => void): boolean {
-  observe(config.file);
-  if (!fs.existsSync(config.file)) {
-    if (config.explicit) throw new Error(`golem build cannot find ${config.file}.`);
-    return false;
-  }
-  return resolveConfig(config.file).jobs.some((job) => job.kind === 'controllers' && projectDirectory(job.options.root) === root);
 }
 
 function scanFailure(errors: readonly GolemDiagnostic[]): Error {
@@ -267,18 +276,34 @@ function remapSourceMap(mapFile: string, project: Project, maps: ReadonlyMap<str
   fs.writeFileSync(mapFile, JSON.stringify(remapped));
 }
 
+/** The directories this build writes: the compiler's own output, where the incremental state would otherwise find nothing to do. */
+function writtenDirectories(project: Project): Set<string> {
+  if (project.noEmit) return new Set();
+  return new Set([
+    ...project.emitsJavaScript ? [project.outDir] : [],
+    ...project.declaration ? [project.declarationDir ?? project.outDir] : [],
+  ]);
+}
+
 /** One build. `inputs` collects every file the build read, for a watching build to poll. */
-async function buildOnce(session: ts.ProgramSession, configFile: string, golemConfig: { readonly file: string; readonly explicit: boolean }, inputs: Set<string>): Promise<number> {
-  const root = path.dirname(configFile);
+async function buildOnce(session: ts.ProgramSession, request: { readonly project: string | undefined; readonly config: string | undefined }, inputs: Set<string>, outputs: Set<string>): Promise<number> {
   const observe = (filename: string): void => { inputs.add(path.resolve(filename)); };
+  const golemConfig = readGolemConfig(request.config, observe);
+  const configFile = resolveProject(request.project, golemConfig);
+  const root = path.dirname(configFile);
   observe(configFile);
+  // The index belongs to the tsconfig the golem.yaml names, and to that yaml; another config of the directory keeps its scan in memory.
+  const writesIndex = configFile === golemConfig.tsconfig;
+  if (writesIndex) assertRewriteIndexOwner(root, golemConfig.configFile);
   const cli = compilerCli(root);
   const parsed = session.parseConfigFile(configFile, observe);
   const project = readProject(configFile, parsed);
   const checkState = path.join(project.buildDirectory, 'check.tsbuildinfo');
   const emitState = path.join(project.buildDirectory, 'emit.tsbuildinfo');
-  // The incremental state outlives the output: with the outDir gone, the compiler would find nothing to write.
-  if (!project.noEmit && [project.outDir, project.declarationDir].some((directory) => directory !== undefined && !fs.existsSync(directory))) {
+  outputs.clear();
+  for (const directory of writtenDirectories(project)) outputs.add(directory);
+  // The incremental state outlives the output: with a directory this build writes gone, the compiler would find nothing to write.
+  if ([...outputs].some((directory) => !fs.existsSync(directory))) {
     fs.rmSync(checkState, { force: true });
     fs.rmSync(emitState, { force: true });
   }
@@ -302,11 +327,10 @@ async function buildOnce(session: ts.ProgramSession, configFile: string, golemCo
       throw new Error(`golem build cannot stage ${source.fileName}: it is outside the project root ${root}. Move it under the root, or build the package that holds it with golem build -p.`);
     }
   }
-  const scanned = scanRewrites({ root, program, checker: program.getTypeChecker(), nest: nestEnabled(root, golemConfig, observe) });
+  const scanned = scanRewrites({ root, program, checker: program.getTypeChecker(), nest: golemConfig.jobs.some((job) => job.kind === 'controllers') });
   const errors = scanned.diagnostics.filter((diagnostic) => diagnostic.severity === GolemDiagnosticSeverity.Error);
   if (errors.length > 0) throw scanFailure(errors);
-  // The index belongs to the tsconfig `golem generate` resolves for this root; another tsconfig's build keeps its scan in memory.
-  if (projectConfigFile(root, observe) === configFile) writeRewriteIndex(root, scanned.index);
+  if (writesIndex) writeRewriteIndex(root, scanned.index, golemConfig.configFile);
 
   const stage = writeStage(project, sources, scanned.index);
   const emit = await runTsc(cli, root, [
@@ -323,10 +347,16 @@ async function buildOnce(session: ts.ProgramSession, configFile: string, golemCo
   return emit.code;
 }
 
-/** A directory's mtime moves when a file is added or removed in it, which is how a new source is noticed. */
-function directorySignature(directory: string): string {
-  const stat = fs.statSync(directory, { throwIfNoEntry: false });
-  return stat === undefined ? 'missing' : String(stat.mtimeMs);
+/**
+ * The names in a directory, without the build's own: what a watching build compares to notice a source that was added or
+ * removed. Its output and state directories come and go with the build itself, which is no reason to build again.
+ */
+function directorySignature(directory: string, ownDirectories: ReadonlySet<string>): string {
+  try {
+    return fs.readdirSync(directory).filter((name) => !ownDirectories.has(path.join(directory, name))).sort().join('\n');
+  } catch {
+    return 'missing';
+  }
 }
 
 /** The directories above each input up to the root: a file added beside an input changes one of them. */
@@ -341,19 +371,29 @@ function watchedDirectories(root: string, inputs: ReadonlySet<string>): Set<stri
   return directories;
 }
 
+/** The build's own directories: `.golem`, every directory it writes, and the directories between the root and those. */
+function ownDirectories(root: string, outputs: ReadonlySet<string>): Set<string> {
+  const own = new Set([path.join(root, GOLEM_DIRECTORY)]);
+  for (const output of outputs) {
+    for (let directory = output; contains(root, directory) && directory !== root; directory = path.dirname(directory)) own.add(directory);
+  }
+  return own;
+}
+
 /**
- * Check the original sources of one tsconfig and emit the rewritten ones into its outDir. The project's own compiler
- * does both, incrementally. With `watch`, the build repeats when an input changes and ends on `signal`.
+ * Check the original sources of the golem.yaml's tsconfig and emit the rewritten ones into its outDir. The project's own
+ * compiler does both, incrementally. With `watch`, the build repeats when an input changes and ends on `signal`.
  */
 export async function runBuild(options: BuildOptions): Promise<{ exitCode: number }> {
-  const configFile = resolveProject(options.project);
-  const root = path.dirname(configFile);
-  const label = path.relative(process.cwd(), configFile) || configFile;
+  const request = { project: options.project, config: options.config };
+  const first = readGolemConfig(options.config, () => {});
+  const root = path.dirname(first.tsconfig);
+  const label = path.relative(process.cwd(), options.project === undefined ? first.tsconfig : path.resolve(options.project)) || first.tsconfig;
   using session = new ts.ProgramSession({ cwd: root });
-  const golemConfig = { file: path.resolve(options.config ?? 'golem.yaml'), explicit: options.config !== undefined };
   const inputs = new Set<string>();
+  const outputs = new Set<string>();
   const run = async (): Promise<number> => {
-    const exitCode = await buildOnce(session, configFile, golemConfig, inputs);
+    const exitCode = await buildOnce(session, request, inputs, outputs);
     if (exitCode === 0) process.stdout.write(`Built ${label}.\n`);
     else if (options.watch) process.stdout.write('Build failed.\n');
     return exitCode;
@@ -363,11 +403,18 @@ export async function runBuild(options: BuildOptions): Promise<{ exitCode: numbe
   let exitCode = 0;
   let previous = new Map<string, string>();
   let directories = new Map<string, string>();
+  // Whether the directories the build writes existed when it ended: one that vanishes afterwards, such as a deleted outDir, is rebuilt once.
+  let wrote = true;
   const fingerprints = (): Map<string, string> => new Map([...inputs].map((input) => [input, signature(input)]));
+  const outputsPresent = (): boolean => [...outputs].every((directory) => fs.existsSync(directory));
+  const directorySignatures = (): Map<string, string> => {
+    const own = ownDirectories(root, outputs);
+    return new Map([...watchedDirectories(root, inputs)].map((directory) => [directory, directorySignature(directory, own)]));
+  };
   const attempt = async (): Promise<void> => {
     // Signatures from before the build, so an edit or a new file made during it starts the next build.
     const before = fingerprints();
-    const directoriesBefore = new Map([...watchedDirectories(root, inputs)].map((directory) => [directory, directorySignature(directory)]));
+    const directoriesBefore = directorySignatures();
     try {
       exitCode = await run();
     } catch (error) {
@@ -375,7 +422,8 @@ export async function runBuild(options: BuildOptions): Promise<{ exitCode: numbe
       process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
     }
     previous = new Map([...fingerprints()].map(([input, value]) => [input, before.get(input) ?? value]));
-    directories = new Map([...watchedDirectories(root, inputs)].map((directory) => [directory, directoriesBefore.get(directory) ?? directorySignature(directory)]));
+    directories = new Map([...directorySignatures()].map(([directory, value]) => [directory, directoriesBefore.get(directory) ?? value]));
+    wrote = outputsPresent();
   };
   await attempt();
   process.stdout.write('Watching for changes.\n');
@@ -384,8 +432,9 @@ export async function runBuild(options: BuildOptions): Promise<{ exitCode: numbe
     const timer = setInterval(() => {
       if (busy) return;
       const changed = [...fingerprints()].filter(([input, value]) => previous.get(input) !== value).map(([input]) => input);
-      const added = [...directories].some(([directory, value]) => directorySignature(directory) !== value);
-      if (changed.length === 0 && !added) return;
+      const own = ownDirectories(root, outputs);
+      const added = [...directories].some(([directory, value]) => directorySignature(directory, own) !== value);
+      if (changed.length === 0 && !added && !(wrote && !outputsPresent())) return;
       busy = true;
       session.inputsChanged(changed);
       void attempt().finally(() => { busy = false; if (options.signal?.aborted) { clearInterval(timer); resolve(); } });

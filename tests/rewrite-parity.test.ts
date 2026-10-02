@@ -125,7 +125,7 @@ function rewrittenCopy(t: TestContext, root: string, result: ScanResult): string
 }
 
 function scan(root: string, nest: boolean): ScanResult {
-  return scanProjectRewrites({ root, nest });
+  return scanProjectRewrites({ root, configFile: path.join(root, 'tsconfig.json'), nest });
 }
 
 /** `import` statements go (golem adds its own, aliased; Go merges names into existing ones), `__golem_x` reads as `x`, and each line is trimmed. */

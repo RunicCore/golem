@@ -221,6 +221,8 @@ test('controller OpenAPI files stay standards-valid while ownership and retireme
     directory: root,
     configFile: path.join(root, 'golem.yaml'),
     inventoryFile: path.join(root, '.golem/outputs.json'),
+    tsconfig: path.join(root, 'tsconfig.json'),
+    tsconfigDeclared: false,
     profile: { mobx: false, validation: true },
     jobs: [job],
   };

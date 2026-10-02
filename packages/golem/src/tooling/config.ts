@@ -23,6 +23,10 @@ export type GolemJob =
 export interface GolemConfig {
   readonly configFile: string;
   readonly directory: string;
+  /** The project's tsconfig: where `golem generate` and `golem build` start. Its directory owns `.golem/rewrites.json`. */
+  readonly tsconfig: string;
+  /** The yaml names `tsconfig`; otherwise it is `tsconfig.json` beside the yaml, which need not exist. */
+  readonly tsconfigDeclared: boolean;
   readonly profile: GolemProfile;
   readonly jobs: readonly GolemJob[];
   readonly inventoryFile: string;
@@ -141,6 +145,12 @@ export function canonicalPath(filename: string): string {
   return path.join(fs.realpathSync(ancestor), ...missing);
 }
 
+/** A file's name under its canonical directory: a link to the file is not followed, so the file stays where it is named. */
+export function canonicalFile(filename: string): string {
+  const resolved = path.resolve(filename);
+  return path.join(canonicalPath(path.dirname(resolved)), path.basename(resolved));
+}
+
 export function contains(directory: string, filename: string): boolean {
   const relative = path.relative(directory, filename);
   return relative === '' || (!relative.startsWith(`..${path.sep}`) && relative !== '..' && !path.isAbsolute(relative));
@@ -154,12 +164,17 @@ export function resolveConfig(filename = 'golem.yaml', onInput?: InputObserver):
   onInput?.(configFile);
   const directory = path.dirname(configFile);
   const value: unknown = YAML.parse(fs.readFileSync(configFile, 'utf8'), { uniqueKeys: true });
-  keys(value, ['version', 'mobx', 'validation', 'ajvStandalone', 'allowAny', 'generators', 'controllers', 'openapi', 'models'], 'configuration');
+  keys(value, ['version', 'tsconfig', 'mobx', 'validation', 'ajvStandalone', 'allowAny', 'generators', 'controllers', 'openapi', 'models'], 'configuration');
   if (value.version !== 1) throw new Error('Configuration version must be 1.');
   const profile = resolveProfile({
     mobx: boolean(value.mobx, false, 'mobx'), validation: boolean(value.validation, true, 'validation'),
     ajvStandalone: boolean(value.ajvStandalone, false, 'ajvStandalone'), allowAny: boolean(value.allowAny, false, 'allowAny'),
   });
+  const tsconfigRequested = path.resolve(directory, value.tsconfig === undefined ? 'tsconfig.json' : nonempty(value.tsconfig, 'tsconfig'));
+  onInput?.(tsconfigRequested);
+  // The directory is canonical and the file keeps its name: a linked tsconfig.json belongs to the directory that holds the link.
+  const tsconfig = canonicalFile(tsconfigRequested);
+  onInput?.(tsconfig);
   const jobs: GolemJob[] = [];
   const outputs: string[] = [];
   const inputPath = (value: unknown, label: string): string => {
@@ -295,10 +310,11 @@ export function resolveConfig(filename = 'golem.yaml', onInput?: InputObserver):
       }
     }
   }
-  return { configFile, directory, profile, jobs, inventoryFile: path.join(directory, '.golem', 'outputs.json') };
+  return { configFile, directory, tsconfig, tsconfigDeclared: value.tsconfig !== undefined, profile, jobs, inventoryFile: path.join(directory, '.golem', 'outputs.json') };
 }
 
 export function validateConfigInputs(config: GolemConfig): void {
+  if (config.tsconfigDeclared) existing(config.tsconfig, 'file', 'tsconfig');
   const controllerOutputs = new Set(config.jobs
     .filter((job): job is Extract<GolemJob, { kind: 'controllers' }> => job.kind === 'controllers')
     .map(job => canonicalPath(job.options.output)));

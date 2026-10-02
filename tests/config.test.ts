@@ -49,6 +49,58 @@ test('defaults and relative paths are anchored to the config rather than process
   assert.deepEqual(modelJob.options.profile, explicitConfig.profile);
 });
 
+test('the tsconfig key names the project tsconfig, relative to golem.yaml, and defaults to the one beside it', (t: TestContext) => {
+  const { root, filename } = fixture(t, 'version: 1\nmodels:\n  root: .\n');
+  const config = loadConfig(filename);
+  assert.equal(config.tsconfig, path.join(root, 'tsconfig.json'), 'a missing default tsconfig is not an error');
+  assert.equal(config.tsconfigDeclared, false);
+
+  fs.mkdirSync(path.join(root, 'app/configs'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'tsconfig.base.json'), '{}');
+  fs.writeFileSync(path.join(root, 'app/configs/tsconfig.app.json'), '{}');
+  for (const [value, expected] of [['app/configs/tsconfig.app.json', 'app/configs/tsconfig.app.json'], ['./tsconfig.base.json', 'tsconfig.base.json']] as const) {
+    const named = fixture(t, `version: 1\ntsconfig: ${value}\nmodels:\n  root: .\n`);
+    fs.cpSync(root, named.root, { recursive: true, filter: (source) => !source.endsWith('golem.yaml') });
+    const loaded = loadConfig(named.filename);
+    assert.equal(loaded.tsconfig, path.join(named.root, expected));
+    assert.equal(loaded.tsconfigDeclared, true);
+  }
+
+  const parent = fixture(t, 'version: 1\nmodels:\n  root: .\n');
+  fs.mkdirSync(path.join(parent.root, 'packages/api'), { recursive: true });
+  fs.writeFileSync(path.join(parent.root, 'tsconfig.json'), '{}');
+  fs.writeFileSync(path.join(parent.root, 'packages/api/golem.yaml'), 'version: 1\ntsconfig: ../../tsconfig.json\nmodels:\n  root: .\n');
+  assert.equal(loadConfig(path.join(parent.root, 'packages/api/golem.yaml')).tsconfig, path.join(parent.root, 'tsconfig.json'));
+});
+
+test('the tsconfig key resolves the directory through links and keeps the file name', (t: TestContext) => {
+  const { root, filename } = fixture(t, 'version: 1\ntsconfig: alias/tsconfig.json\nmodels:\n  root: .\n');
+  fs.mkdirSync(path.join(root, 'real'));
+  fs.writeFileSync(path.join(root, 'real/tsconfig.json'), '{}');
+  fs.symlinkSync(path.join(root, 'real'), path.join(root, 'alias'), 'dir');
+  assert.equal(loadConfig(filename).tsconfig, path.join(root, 'real/tsconfig.json'), 'a linked directory resolves');
+
+  // A linked file keeps its own directory: the project is where the link is, not where it points.
+  const linked = fixture(t, 'version: 1\nmodels:\n  root: .\n');
+  fs.mkdirSync(path.join(linked.root, 'shared'));
+  fs.writeFileSync(path.join(linked.root, 'shared/tsconfig.real.json'), '{}');
+  fs.symlinkSync(path.join('shared', 'tsconfig.real.json'), path.join(linked.root, 'tsconfig.json'));
+  assert.equal(loadConfig(linked.filename).tsconfig, path.join(linked.root, 'tsconfig.json'));
+});
+
+test('a tsconfig key must be a nonempty string that names an existing file', (t: TestContext) => {
+  for (const [yaml, error] of [
+    ['version: 1\ntsconfig: 3\nmodels: {}\n', /tsconfig must be a nonempty string/],
+    ['version: 1\ntsconfig: ""\nmodels: {}\n', /tsconfig must be a nonempty string/],
+    ['version: 1\ntsconfig: missing.json\nmodels: {}\n', /tsconfig does not exist: .*missing\.json/],
+    ['version: 1\ntsconfig: src\nmodels: {}\n', /tsconfig must be a file: .*src/],
+  ] as const) {
+    const { root, filename } = fixture(t, yaml);
+    fs.mkdirSync(path.join(root, 'src'));
+    assert.throws(() => loadConfig(filename), error);
+  }
+});
+
 test('configuration errors reject unknown overrides, duplicate keys and overlapping outputs', (t: TestContext) => {
   const testCases: [string, RegExp][] = [
     ['version: 2\nmodels: {}', /version/],

@@ -5,6 +5,7 @@ inside the file resolve from its directory; the `--config` value resolves
 from the current directory.
 
 - `version: 1` selects the configuration format and is independent of the package release.
+- `tsconfig` names the TypeScript project that `golem generate` indexes and `golem build` builds.
 - `mobx`, `validation`, `ajvStandalone`, and `allowAny` apply to every job. A named `IObject` or `IModel` can still set `validation` and `allowAny` for that declaration.
 - Unknown keys are errors.
 - Configure at least one `generators`, `controllers`, `openapi` or `models` job.
@@ -18,6 +19,7 @@ It records what it writes in an [inventory](/guide/watch#generated-files-and-the
 | Key | Type | Required | Default | Meaning |
 | --- | --- | --- | --- | --- |
 | `version` | literal `1` | Yes | — | Configuration format version. |
+| `tsconfig` | path | No | `tsconfig.json` | The project's tsconfig, relative to `golem.yaml`. Its directory holds `.golem/rewrites.json`, and the file must exist when you set the key. One tsconfig belongs to one `golem.yaml`. |
 | `mobx` | boolean | No | `false` | Generate MobX observability hooks. |
 | `validation` | boolean | No | `true` | Generate runtime validation metadata and checks. Named `IObject` / `IModel` `{ validation: true or false }` overrides this per declaration. |
 | `ajvStandalone` | boolean | No | `false` | Precompile model, object-codec and SDK validators during generation. Requires `validation: true`. |

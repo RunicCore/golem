@@ -8,11 +8,11 @@ export { runBuild } from './build.js';
 export type { PipelineOptions, PipelineState } from './pipeline.js';
 export type Arguments =
   | { action: 'help' }
-  | { action: 'build'; project: string; watch: boolean; config?: string }
+  | { action: 'build'; project?: string; watch: boolean; config?: string }
   | { action: 'generate' | 'check' | 'watch' | 'exec'; config: string; watch: boolean; command: string[] };
 
 function parseBuildArguments(args: readonly string[]): Arguments {
-  let project = 'tsconfig.json';
+  let project: string | undefined;
   let watch = false;
   let config: string | undefined;
   for (let i = 0; i < args.length; i += 1) {
@@ -26,7 +26,7 @@ function parseBuildArguments(args: readonly string[]): Arguments {
     } else if (args[i] === '--watch') watch = true;
     else throw new Error(`Unknown option: ${args[i]}`);
   }
-  return { action: 'build', project, watch, ...(config === undefined ? {} : { config }) };
+  return { action: 'build', watch, ...(project === undefined ? {} : { project }), ...(config === undefined ? {} : { config }) };
 }
 
 export function parseArguments(argv: readonly string[]): Arguments {
@@ -53,14 +53,14 @@ export function parseArguments(argv: readonly string[]): Arguments {
 export async function main(argv = process.argv.slice(2)) {
   const options = parseArguments(argv);
   if (options.action === 'help') {
-    process.stdout.write('Usage: golem <generate|check|watch|exec> [--config golem.yaml]\n       golem exec [--watch] -- <command> [args...]\n       golem build [-p tsconfig.json] [--config golem.yaml] [--watch]\n');
+    process.stdout.write('Usage: golem <generate|check|watch|exec> [--config golem.yaml]\n       golem exec [--watch] -- <command> [args...]\n       golem build [--config golem.yaml] [-p tsconfig.build.json] [--watch]\n');
     return;
   }
   if (options.action === 'build') {
     const controller = new AbortController();
     let signalled: number | undefined;
     for (const signal of ['SIGINT', 'SIGTERM'] as const) process.once(signal, () => { signalled = signal === 'SIGINT' ? 130 : 143; controller.abort(); });
-    const { exitCode } = await runBuild({ project: options.project, watch: options.watch, signal: controller.signal, ...(options.config === undefined ? {} : { config: options.config }) });
+    const { exitCode } = await runBuild({ watch: options.watch, signal: controller.signal, ...(options.project === undefined ? {} : { project: options.project }), ...(options.config === undefined ? {} : { config: options.config }) });
     process.exitCode = signalled ?? exitCode;
     return;
   }

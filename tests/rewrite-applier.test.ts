@@ -259,6 +259,11 @@ test('readRewriteIndex reads .golem/rewrites.json, reports a missing file as und
   assert.throws(() => readRewriteIndex(root), /malformed; run golem generate/);
   fs.writeFileSync(path.join(root, '.golem', 'rewrites.json'), '{');
   assert.throws(() => readRewriteIndex(root), /malformed; run golem generate/);
+  // An index records the golem.yaml that owns it; one from before owners has none.
+  fs.writeFileSync(path.join(root, '.golem', 'rewrites.json'), JSON.stringify({ ...index, owner: '/project/golem.yaml' }));
+  assert.equal(readRewriteIndex(root)?.owner, '/project/golem.yaml');
+  fs.writeFileSync(path.join(root, '.golem', 'rewrites.json'), JSON.stringify({ ...index, owner: 3 }));
+  assert.throws(() => readRewriteIndex(root), /malformed; run golem generate/);
 });
 
 test('GOLEM_VERSION equals the golem package version', () => {

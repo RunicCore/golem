@@ -67,6 +67,8 @@ function modelConfig(root: string, job: GolemJob): GolemConfig {
     directory: root,
     configFile: path.join(root, 'golem.yaml'),
     inventoryFile: path.join(root, '.golem/outputs.json'),
+    tsconfig: path.join(root, 'tsconfig.json'),
+    tsconfigDeclared: false,
     profile: { mobx: false, validation: true },
     jobs: [job],
   };
