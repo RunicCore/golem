@@ -36,6 +36,16 @@ function copyStandalone(result: ReturnType<typeof generate>, fixtureValue: Model
   copyFileSync(artifact.path, target);
 }
 
+/**
+ * Ajv emits a sub-validator call (`validateN(` or `wrapperN.validate(`) as the
+ * per-item check of an array loop; the property it appends to instancePath names the array.
+ */
+function arrayItemCalls(source: string): string[] {
+  return [...source.matchAll(
+    /for \(let (i\d+) = 0;[^}]*?(?:validate\d+|wrapper\d+\.validate)\(data\d+\[\1\], \{ instancePath: instancePath \+ "\/([^/"]+)\//g,
+  )].map((match) => match[2]);
+}
+
 test('equivalent tag schemas share compilation while metadata and callback identities stay distinct', () => {
   const schemas: TagSchema[] = [
     { key: 'number:first', id: 'legacy:first', schema: { type: 'number' } },
@@ -252,13 +262,11 @@ test('standalone validators inline non-recursive array item models and keep recu
   const standalone = result.artifacts.find((item) => item.path.endsWith('/models.validators.generated.js'));
   assert.ok(standalone);
   const source = readFileSync(standalone.path, 'utf8');
-  // Ajv emits a sub-validator call (`validateN(` or `wrapperN.validate(`) as the
-  // per-item check of an array loop; the property it appends to instancePath names the array.
-  const itemCalls = [...source.matchAll(
-    /for \(let (i\d+) = 0;[^}]*?(?:validate\d+|wrapper\d+\.validate)\(data\d+\[\1\], \{ instancePath: instancePath \+ "\/([^/"]+)\//g,
-  )].map((match) => match[2]);
+  const itemCalls = arrayItemCalls(source);
   assert.deepEqual(itemCalls.filter((property) => property !== 'children'), [], 'non-recursive item models are inlined');
   assert.ok(itemCalls.includes('children'), 'TNode children stay a $ref call');
+  // A model used as a plain property is validated once per instance, so it keeps its sub-validator call.
+  assert.match(source, /(?:validate\d+|wrapper\d+\.validate)\(data\d*\.hq, \{ instancePath: instancePath \+ "\/hq"/, 'a non-array model property stays a $ref call');
 
   await compileModelProject(fixtureValue.root);
   copyStandalone(result, fixtureValue);
@@ -274,4 +282,29 @@ test('standalone validators inline non-recursive array item models and keep recu
   );
   const tree = new Node({ label: 'a', children: [{ label: 'b', children: [{ label: 'c', children: [] }] }] });
   assert.equal(await getValidator(tree).validate(), true);
+});
+
+test('standalone validators inline array item models that live in another file', async (t) => {
+  const fixtureValue = fixture(t);
+  for (const name of ['department', 'roster']) {
+    writeFileSync(path.join(fixtureValue.sourceRoot, `${name}.model.ts`),
+      readFixture(`models/model-artifact-efficiency/array-items-inline/cross-file/${name}.model.ts`));
+  }
+  const result = generate({ root: fixtureValue.root, profile: { mobx: false, validation: true, ajvStandalone: true } });
+  writeGeneratedArtifacts(result.artifacts);
+  const standalone = result.artifacts.find((item) => item.path.endsWith('/models.validators.generated.js'));
+  assert.ok(standalone);
+  assert.deepEqual(arrayItemCalls(readFileSync(standalone.path, 'utf8')), [], 'imported item models are inlined');
+
+  await compileModelProject(fixtureValue.root);
+  copyStandalone(result, fixtureValue);
+  const { Roster } = await import(pathToFileURL(path.join(fixtureValue.root, 'build/roster.model.js')).href);
+  const invalid = getValidator(new Roster({
+    departments: [{ title: 'R&D', employees: [{ name: 'a', age: 1 }, { name: '', age: 2 }] }],
+  }));
+  assert.equal(await invalid.validate(), false);
+  assert.deepEqual(
+    invalid.issues.map((issue: { path: readonly (string | number)[] }) => issue.path),
+    [['departments', 0, 'employees', 1, 'name']],
+  );
 });

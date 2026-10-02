@@ -365,7 +365,7 @@ const SCHEMA_MAP_KEYWORDS = new Set(['properties', 'patternProperties', 'depende
 /** Keywords that never change what validates, so a `$ref` node's own value may replace its target's. */
 const ANNOTATION_KEYWORDS = new Set(['$comment', 'title', 'description', 'default', 'examples', 'example', 'deprecated', 'readOnly', 'writeOnly']);
 /** Keywords that bind a name or a base to the resource they sit in. */
-const RESOURCE_SCOPED_KEYWORDS = ['$defs', 'definitions', '$anchor', '$dynamicAnchor', '$dynamicRef', '$recursiveAnchor', '$recursiveRef'];
+const RESOURCE_SCOPED_KEYWORDS = ['$anchor', '$dynamicAnchor', '$dynamicRef', '$recursiveAnchor', '$recursiveRef'];
 
 /** Copy of a schema node with each schema-valued child replaced by `visit(child, keyword)`. */
 function mapSchemaChildren(node: SchemaRecord, visit: (child: unknown, keyword: string) => unknown): SchemaRecord {
@@ -401,6 +401,11 @@ function schemaReferences(schema: SchemaRecord): SchemaReferences {
     }
     if ((!root && Object.hasOwn(value, '$id')) || RESOURCE_SCOPED_KEYWORDS.some(keyword => Object.hasOwn(value, keyword))) {
       resourceScoped = true;
+    }
+    // A definitions map binds names; an empty one binds none.
+    for (const keyword of ['$defs', 'definitions']) {
+      const definitions = value[keyword];
+      if (Object.hasOwn(value, keyword) && !(isSchemaRecord(definitions) && Object.keys(definitions).length === 0)) resourceScoped = true;
     }
     return mapSchemaChildren(value, child => walk(child, false));
   };
@@ -443,14 +448,56 @@ function referenceCycleMembers(edges: ReadonlyMap<string, ReadonlySet<string>>):
 }
 
 /**
+ * Generated models from another file arrive as `#/$defs/<name>` whose definition
+ * is only a `$ref` to the model's schema id. Point those refs at the id, and drop
+ * a definition once nothing else addresses it, so the schema holds no local name.
+ */
+function resolveDefinitionAliases(schema: object | boolean, ids: ReadonlySet<string>): object | boolean {
+  if (!isSchemaRecord(schema) || !isSchemaRecord(schema.$defs)) return schema;
+  const aliases = new Map<string, string>();
+  for (const [name, definition] of Object.entries(schema.$defs)) {
+    if (isSchemaRecord(definition) && typeof definition.$ref === 'string' && ids.has(definition.$ref)
+      && Object.keys(definition).length === 1) aliases.set(name, definition.$ref);
+  }
+  if (aliases.size === 0) return schema;
+  const rewrite = (value: unknown, root: boolean): unknown => {
+    // A nested resource resolves `#/...` refs against itself.
+    if (!isSchemaRecord(value) || (!root && Object.hasOwn(value, '$id'))) return value;
+    const mapped = mapSchemaChildren(value, child => rewrite(child, false));
+    const name = typeof value.$ref === 'string' ? localDefinitionName(value.$ref) : undefined;
+    const target = name === undefined ? undefined : aliases.get(name);
+    if (target !== undefined) mapped.$ref = target;
+    return mapped;
+  };
+  const rewritten = rewrite(schema, true) as SchemaRecord;
+  const remaining = [...schemaReferences(rewritten).references];
+  const definitions = Object.fromEntries(Object.entries(rewritten.$defs as SchemaRecord).filter(([name]) => {
+    const pointer = `#/$defs/${name.replaceAll('~', '~0').replaceAll('/', '~1')}`;
+    return !aliases.has(name) || remaining.some(reference => reference === pointer || reference.startsWith(`${pointer}/`));
+  }));
+  return { ...rewritten, $defs: definitions };
+}
+
+/** Keywords whose subschema Ajv validates once per element of an array or object. */
+const PER_ELEMENT_KEYWORDS = new Set(['items', 'prefixItems', 'additionalProperties', 'patternProperties', 'contains']);
+/** Keywords that apply a subschema to the same instance, so the instance's position carries over. */
+const SAME_INSTANCE_KEYWORDS = new Set(['allOf', 'anyOf', 'oneOf', 'not', 'if', 'then', 'else']);
+
+/**
  * Ajv inlines a `$ref` target only when the target has no `$ref` of its own, so
  * a model item in an array otherwise costs a sub-validator call per element.
- * Substitute each target that is not part of a reference cycle, is not a
- * residual schema, and holds no name or base that would change meaning in its
- * new resource. Every other `$ref` stays. Applied to the schemas Ajv compiles;
+ * Substitute a target that is reached in a per-element position (array items,
+ * pattern or additional properties), is not part of a reference cycle, is not
+ * a residual schema, and holds no name or base that would change meaning in its
+ * new resource. A model used as a plain property is called once per instance, so
+ * inlining it would only copy its body. The body of an inlined target keeps its
+ * own refs: nesting copies would grow the code with the depth of the model graph.
+ * Every other `$ref` stays. Applied to the schemas Ajv compiles;
  * the schema data the plan returns is unchanged.
  */
-function inlineAcyclicModelRefs(schemas: Readonly<Record<string, object | boolean>>): Record<string, object | boolean> {
+function inlineAcyclicModelRefs(declared: Readonly<Record<string, object | boolean>>): Record<string, object | boolean> {
+  const ids = new Set(Object.keys(declared));
+  const schemas = Object.fromEntries(Object.entries(declared).map(([id, schema]) => [id, resolveDefinitionAliases(schema, ids)]));
   const analyses = new Map<string, SchemaReferences>();
   for (const [id, schema] of Object.entries(schemas)) {
     if (isSchemaRecord(schema)) analyses.set(id, schemaReferences(schema));
@@ -464,32 +511,36 @@ function inlineAcyclicModelRefs(schemas: Readonly<Record<string, object | boolea
     if ([...analysis.references].every(reference => analyses.has(reference))) inlinable.add(id);
   }
 
-  const inlining = new Set<string>();
-  const inline = (value: unknown, keepReference = false): unknown => {
+  // `inlined` is true inside a substituted body: its own per-element refs stay refs,
+  // so the copies a host holds never nest.
+  const inline = (value: unknown, perElement: boolean, inlined: boolean, keepReference = false): unknown => {
     if (!isSchemaRecord(value)) return value;
     const reference = value.$ref;
-    if (!keepReference && typeof reference === 'string' && inlinable.has(reference) && !inlining.has(reference)) {
+    if (perElement && !inlined && !keepReference && typeof reference === 'string' && inlinable.has(reference)) {
       const { $id: _id, $schema: _schema, ...body } = schemas[reference] as SchemaRecord;
       const { $ref: _ref, ...siblings } = value;
       // A sibling that constrains the same keyword as the target cannot replace it.
       if (Object.keys(siblings).every(key => key !== '$id' && key !== '$schema'
         && (ANNOTATION_KEYWORDS.has(key) || !Object.hasOwn(body, key)))) {
-        inlining.add(reference);
-        try {
-          return {
-            ...(inline(body) as SchemaRecord),
-            ...mapSchemaChildren(siblings, child => inline(child)),
-          };
-        } finally {
-          inlining.delete(reference);
-        }
+        return {
+          ...(inline(body, true, true) as SchemaRecord),
+          ...visitChildren(siblings, perElement, inlined, false),
+        };
       }
     }
-    // Ajv's discriminator reads its oneOf/anyOf branches as references.
-    const discriminated = Object.hasOwn(value, 'discriminator');
-    return mapSchemaChildren(value, (child, keyword) => inline(child, discriminated && (keyword === 'oneOf' || keyword === 'anyOf')));
+    return visitChildren(value, perElement, inlined, Object.hasOwn(value, 'discriminator'));
   };
-  return Object.fromEntries(Object.entries(schemas).map(([id, schema]) => [id, inline(schema) as object | boolean]));
+  const visitChildren = (node: SchemaRecord, perElement: boolean, inlined: boolean, discriminated: boolean): SchemaRecord => mapSchemaChildren(
+    node,
+    (child, keyword) => inline(
+      child,
+      PER_ELEMENT_KEYWORDS.has(keyword) || (perElement && SAME_INSTANCE_KEYWORDS.has(keyword)),
+      inlined,
+      // Ajv's discriminator reads its oneOf/anyOf branches as references.
+      discriminated && (keyword === 'oneOf' || keyword === 'anyOf'),
+    ),
+  );
+  return Object.fromEntries(Object.entries(schemas).map(([id, schema]) => [id, inline(schema, false, false) as object | boolean]));
 }
 
 function standaloneSource(input: StandaloneValidatorInput, allErrors: boolean): string {
