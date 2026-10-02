@@ -395,9 +395,11 @@ export async function runBuild(options: BuildOptions): Promise<{ exitCode: numbe
   // Whether the directories the build writes existed when it ended: one that vanishes afterwards, such as a deleted outDir, is rebuilt once.
   // Taken before "Built" is printed, so a deletion that follows that line is seen.
   let wrote = true;
-  const run = async (): Promise<number> => {
+  const run = async (beforeAnnouncing: () => void = () => {}): Promise<number> => {
     const exitCode = await buildOnce(session, request, inputs, outputs);
     wrote = exitCode === 0 && outputsPresent();
+    // The watch baseline is recorded before the build is announced: whoever reacts to the announcement may edit a source at once.
+    beforeAnnouncing();
     if (exitCode === 0) process.stdout.write(`Built ${label}.\n`);
     else if (options.watch) process.stdout.write('Build failed.\n');
     return exitCode;
@@ -416,15 +418,18 @@ export async function runBuild(options: BuildOptions): Promise<{ exitCode: numbe
     // Signatures from before the build, so an edit or a new file made during it starts the next build.
     const before = fingerprints();
     const directoriesBefore = directorySignatures();
+    const record = (): void => {
+      previous = new Map([...fingerprints()].map(([input, value]) => [input, before.get(input) ?? value]));
+      directories = new Map([...directorySignatures()].map(([directory, value]) => [directory, directoriesBefore.get(directory) ?? value]));
+    };
     try {
-      exitCode = await run();
+      exitCode = await run(record);
     } catch (error) {
       exitCode = 1;
       wrote = false;
       process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+      record();
     }
-    previous = new Map([...fingerprints()].map(([input, value]) => [input, before.get(input) ?? value]));
-    directories = new Map([...directorySignatures()].map(([directory, value]) => [directory, directoriesBefore.get(directory) ?? value]));
   };
   await attempt();
   process.stdout.write('Watching for changes.\n');

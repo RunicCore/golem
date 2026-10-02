@@ -4,6 +4,7 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import test, { type TestContext } from 'node:test';
+import { runBuild } from '#golem/build';
 import { GOLEM, HEAVY_TEST_TIMEOUT_MS, write, serdeProject, USE, snapshot, build } from './support/build-project.js';
 
 /** How long a watching build gets to exit after SIGINT before the test fails with what it printed. */
@@ -85,4 +86,26 @@ test('golem build --watch rebuilds once per edit, reports an error, recovers, an
   const expected = new Map(before);
   expected.delete('src/use.ts');
   assert.deepEqual(after, expected, 'a watching build changes no file it does not own');
+});
+
+test('a source edited the moment the first build is announced still starts the next build', { timeout: HEAVY_TEST_TIMEOUT_MS }, async (t) => {
+  const root = serdeProject(t, 'build-watch-announce');
+  write(root, 'src/use.ts', USE);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 20_000);
+  t.after(() => clearTimeout(timer));
+  const announced: string[] = [];
+  const stdout = process.stdout.write.bind(process.stdout);
+  t.mock.method(process.stdout, 'write', (chunk: string | Uint8Array, ...rest: unknown[]) => {
+    if (typeof chunk === 'string' && chunk.startsWith('Built ')) {
+      announced.push(chunk);
+      // Synchronously, as a program reacting to the line would: the edit lands before the build returns to its watch loop.
+      if (announced.length === 1) fs.writeFileSync(path.join(root, 'src/use.ts'), `${USE}export const second = 2;\n`);
+      else controller.abort();
+    }
+    return (stdout as (chunk: string | Uint8Array, ...rest: unknown[]) => boolean)(chunk, ...rest);
+  });
+  await runBuild({ watch: true, config: path.join(root, 'golem.yaml'), signal: controller.signal });
+  assert.equal(announced.length, 2, 'the edit made at the first announcement started a second build');
+  assert.match(fs.readFileSync(path.join(root, 'build/use.js'), 'utf8'), /second = 2/);
 });
