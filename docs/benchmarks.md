@@ -203,7 +203,7 @@ Class instances are checked against their rules on the way in and out. Golem run
 ::: code-group
 
 <<< @/../scripts/benchmark/fixtures/upstream/golem.model.ts#simple [Golem (IModel)]
-<<< @/../scripts/benchmark/fixtures/upstream/class-validator.models.ts#simple [class-validator]
+<<< @/../scripts/benchmark/fixtures/upstream/class-validator.models.ts#simple [class-transformer + class-validator]
 
 :::
 
@@ -212,7 +212,7 @@ Class instances are checked against their rules on the way in and out. Golem run
 ::: code-group
 
 <<< @/../scripts/benchmark/fixtures/upstream/golem.ts#calls [Golem (IModel)]
-<<< @/../scripts/benchmark/fixtures/upstream/class-validator.ts#calls [class-validator]
+<<< @/../scripts/benchmark/fixtures/upstream/class-validator.ts#calls [class-transformer + class-validator]
 
 :::
 
@@ -224,7 +224,7 @@ Class instances are checked against their rules on the way in and out. Golem run
 ::: code-group
 
 <<< @/../scripts/benchmark/fixtures/upstream/golem.constrained.model.ts#nested [Golem (IModel)]
-<<< @/../scripts/benchmark/fixtures/upstream/class-validator.models.ts#nested [class-validator]
+<<< @/../scripts/benchmark/fixtures/upstream/class-validator.models.ts#nested [class-transformer + class-validator]
 
 :::
 
@@ -233,7 +233,7 @@ Class instances are checked against their rules on the way in and out. Golem run
 ::: code-group
 
 <<< @/../scripts/benchmark/fixtures/upstream/golem.ts#calls [Golem (IModel)]
-<<< @/../scripts/benchmark/fixtures/upstream/class-validator.ts#calls [class-validator]
+<<< @/../scripts/benchmark/fixtures/upstream/class-validator.ts#calls [class-transformer + class-validator]
 
 :::
 
@@ -245,7 +245,7 @@ Class instances are checked against their rules on the way in and out. Golem run
 ::: code-group
 
 <<< @/../scripts/benchmark/fixtures/upstream/golem.model.ts#array [Golem (IModel)]
-<<< @/../scripts/benchmark/fixtures/upstream/class-validator.models.ts#array [class-validator]
+<<< @/../scripts/benchmark/fixtures/upstream/class-validator.models.ts#array [class-transformer + class-validator]
 
 :::
 
@@ -254,7 +254,7 @@ Class instances are checked against their rules on the way in and out. Golem run
 ::: code-group
 
 <<< @/../scripts/benchmark/fixtures/upstream/golem.ts#calls [Golem (IModel)]
-<<< @/../scripts/benchmark/fixtures/upstream/class-validator.ts#calls [class-validator]
+<<< @/../scripts/benchmark/fixtures/upstream/class-validator.ts#calls [class-transformer + class-validator]
 
 :::
 
@@ -266,7 +266,7 @@ Class instances are checked against their rules on the way in and out. Golem run
 ::: code-group
 
 <<< @/../scripts/benchmark/fixtures/features/features.model.ts#checkout [Golem (IModel)]
-<<< @/../scripts/benchmark/fixtures/features/features-class-validator.models.ts#checkout [class-validator]
+<<< @/../scripts/benchmark/fixtures/features/features-class-validator.models.ts#checkout [class-transformer + class-validator]
 
 :::
 
@@ -275,7 +275,7 @@ Class instances are checked against their rules on the way in and out. Golem run
 ::: code-group
 
 <<< @/../scripts/benchmark/fixtures/features/comparison-features-golem.ts#calls [Golem (IModel)]
-<<< @/../scripts/benchmark/fixtures/features/comparison-features-class-validator.ts#calls [class-validator]
+<<< @/../scripts/benchmark/fixtures/features/comparison-features-class-validator.ts#calls [class-transformer + class-validator]
 
 :::
 

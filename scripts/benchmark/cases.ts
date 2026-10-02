@@ -56,7 +56,7 @@ export const BENCH_ADAPTERS: readonly AdapterSpec[] = [
   { id: 'class-transformer', fixtureAdapter: 'class-transformer', project: 'plain', group: 'classes', label: 'class-transformer', library: 'class-transformer', checked: false, sourceFile: `${F}/class-transformer.ts` },
   { id: 'golem-standalone', fixtureAdapter: 'golem-standalone', project: 'standalone', group: 'validated-classes', label: 'Golem (IModel, validated)', library: '@exprtlabs/golem', checked: true, sourceFile: `${F}/golem.ts` },
   { id: 'golem-runtime', fixtureAdapter: 'golem-runtime', project: 'runtime', group: 'validated-classes', label: 'Golem (IModel, runtime Ajv)', library: '@exprtlabs/golem', checked: true, sourceFile: `${F}/golem.ts` },
-  { id: 'class-validator', fixtureAdapter: 'class-validator', project: 'plain', group: 'validated-classes', label: 'class-validator', library: 'class-validator', checked: true, sourceFile: `${F}/class-validator.ts` },
+  { id: 'class-validator', fixtureAdapter: 'class-validator', project: 'plain', group: 'validated-classes', label: 'class-transformer + class-validator', library: 'class-validator', checked: true, sourceFile: `${F}/class-validator.ts` },
 ];
 
 const TYPIA_CHECKOUT = 'Typia checks JSON shapes but does not convert values, so the hex code and the dates would stay strings.';

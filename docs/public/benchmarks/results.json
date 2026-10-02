@@ -153,7 +153,7 @@
     {
       "id": "class-validator",
       "group": "validated-classes",
-      "label": "class-validator",
+      "label": "class-transformer + class-validator",
       "library": "class-validator",
       "checked": true,
       "sourceUrl": "https://github.com/RunicCore/golem/blob/master/scripts/benchmark/fixtures/upstream/class-validator.ts"
