@@ -1136,8 +1136,11 @@ interface PendingChanges {
  *
  * Invalidating every file does not parse a project configuration again, only a
  * reported change does, so a snapshot that invalidates every file first reports
- * the detected changes in a snapshot of their own. The records of a compiler
- * survive such a snapshot; the replayed inputs are collected again.
+ * the detected changes in a snapshot of their own. The records survive such a
+ * snapshot because the compiler keeps its parsed configurations through it: a record
+ * taken again after an edit that lands inside the snapshot would postdate an edit the
+ * compiler never applied, and the next snapshot would not report it. Only the replayed
+ * inputs are collected again.
  */
 export class ProgramSession implements Disposable {
   private api: API | undefined;

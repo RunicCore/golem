@@ -583,6 +583,38 @@ for (const hinted of [false, true]) {
     assert.equal(project.mappingOf(current), 'second', 'the next program applies the edit');
   });
 
+  test(`a tsconfig edit that lands inside a full snapshot is applied by the next program, ${how}`, t => {
+    const project = pathMappedProject(t, 'compiler-lifecycle-edit-inside-full-snapshot');
+    const running = snapshotRunning(t);
+    let edits = 0;
+    let armed = false;
+    const session = new ts.ProgramSession({ cwd: project.root });
+    t.after(() => session[Symbol.dispose]());
+    const open = (): ts.Program => session.openProgram({
+      root: project.root,
+      sources: [project.app],
+      onInput: () => {
+        if (!armed || !running()) return;
+        armed = false;
+        edits++;
+        project.writeMapping('second');
+      },
+    });
+
+    open().close();
+    // A manifest change forces a full snapshot, and the edit lands at the first input that snapshot reports. The compiler
+    // keeps its parsed configuration through the invalidation, so the record of the tsconfig must stay older than the edit.
+    project.changeManifest();
+    armed = true;
+    using full = open();
+    assert.equal(edits, 1, 'the edit landed inside the full snapshot');
+    assert.equal(project.mappingOf(full), 'first', 'the program holds the configuration the compiler parsed');
+
+    if (hinted) session.inputsChanged([project.tsconfig]);
+    using current = open();
+    assert.equal(project.mappingOf(current), 'second', 'the next program applies the edit');
+  });
+
   test(`a tsconfig edit made with a manifest edit is applied by the full snapshot the manifest needs, ${how}`, t => {
     const project = pathMappedProject(t, 'compiler-lifecycle-full-snapshot-edit');
     const requests = captureSnapshotRequests(t);
