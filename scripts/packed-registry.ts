@@ -43,11 +43,16 @@ export interface PackedRegistry extends PreparedPackages {
   close(): Promise<void>;
 }
 
+// The registry is served under the packed-set digest because npm's packument cache is keyed by the full URL and
+// the port is random: a repeated port would otherwise reuse an earlier run's packument and install its tarball.
 export async function startRegistry(prepared: PreparedPackages = preparedPackages()): Promise<PackedRegistry> {
   let url = '';
+  const prefix = `${prepared.digest}/`;
   const requests: string[] = [];
   const server = http.createServer((request, response) => {
-    const requested = decodeURIComponent((request.url ?? '/').split('?')[0]).replace(/^\//, '');
+    const routed = decodeURIComponent((request.url ?? '/').split('?')[0]).replace(/^\//, '');
+    if (!routed.startsWith(prefix)) { response.writeHead(404); response.end(); return; }
+    const requested = routed.slice(prefix.length);
     requests.push(requested);
     if (requested.startsWith('tarballs/')) {
       const filename = path.basename(requested);
@@ -62,13 +67,13 @@ export async function startRegistry(prepared: PreparedPackages = preparedPackage
     response.setHeader('content-type', 'application/json');
     const distTags = entry.manifest.version.includes('-') ? { rc: entry.manifest.version } : { latest: entry.manifest.version };
     response.end(JSON.stringify({ name: requested, 'dist-tags': distTags, versions: {
-      [entry.manifest.version]: { ...entry.manifest, dist: { tarball: `${url}/tarballs/${entry.pack.filename}`, shasum: entry.pack.shasum, integrity: entry.pack.integrity } },
+      [entry.manifest.version]: { ...entry.manifest, dist: { tarball: `${url}tarballs/${entry.pack.filename}`, shasum: entry.pack.shasum, integrity: entry.pack.integrity } },
     } }));
   });
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
   const address = server.address();
   if (!address || typeof address === 'string') throw new Error('Registry did not bind TCP.');
-  url = `http://127.0.0.1:${address.port}`;
+  url = `http://127.0.0.1:${address.port}/${prefix}`;
   const distTags: Readonly<Record<string, string>> = Object.freeze({ [prepared.workspaceVersion.includes('-') ? 'rc' : 'latest']: prepared.workspaceVersion });
   const version = spawnSync('npm', ['--version'], { cwd: os.tmpdir(), encoding: 'utf8' });
   if (version.error || version.status !== 0) throw version.error ?? new Error(`npm --version failed: ${version.stderr}`);
