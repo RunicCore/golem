@@ -78,7 +78,7 @@ function isAmbientDeclaration(filename: string): boolean {
   return filename.endsWith('.d.ts') || filename.endsWith('.d.mts') || filename.endsWith('.d.cts');
 }
 
-function isGeneratedCompanion(filename: string): boolean {
+export function isGeneratedCompanion(filename: string): boolean {
   return filename.endsWith('.generated.ts')
     || filename.endsWith('.generated.mts')
     || filename.endsWith('.generated.cts');
@@ -183,6 +183,23 @@ export function retainedProgramSession(
   return session?.retain(`${owner}:${canonicalFilename(root)}`, () => new ts.ProgramSession({ cwd: root }));
 }
 
+function openParsedProgram(
+  session: ts.ProgramSession,
+  root: string,
+  parsed: ReturnType<typeof parsedProject>,
+  rootNames: readonly string[],
+  onInput?: InputObserver,
+): ProgramInfo {
+  const program = session.openProgram({
+    root,
+    sources: rootNames,
+    ...(parsed.referencedConfigPath ? { configFile: parsed.referencedConfigPath } : {}),
+    onInput,
+  });
+  const host = ts.createCompilerHost(parsed.options, true);
+  return { ...parsed, rootNames, program, host };
+}
+
 /**
  * Open the project program. Without a retained session, one compiler serves
  * this program and every program opened from it, and closes with the last.
@@ -196,15 +213,21 @@ export function createProgram(
 ): ProgramInfo {
   const session = retained ?? new ts.ProgramSession({ cwd: root, closeWhenIdle: true });
   const parsed = parsedProject(root, sources, session, onInput);
-  const rootNames = uniqueFilenames([...sources, ...parsed.ambientFiles]);
-  const program = session.openProgram({
-    root,
-    sources: rootNames,
-    ...(parsed.referencedConfigPath ? { configFile: parsed.referencedConfigPath } : {}),
-    onInput,
-  });
-  const host = ts.createCompilerHost(parsed.options, true);
-  return { ...parsed, rootNames, program, host };
+  return openParsedProgram(session, root, parsed, uniqueFilenames([...sources, ...parsed.ambientFiles]), onInput);
+}
+
+/**
+ * Open a program on every file of the project's tsconfig, so a scan sees each source and the generated files it
+ * imports or ignores alike. A project without a tsconfig has no files.
+ */
+export function createProjectProgram(
+  root: string,
+  onInput?: InputObserver,
+  retained?: ts.ProgramSession,
+): ProgramInfo {
+  const session = retained ?? new ts.ProgramSession({ cwd: root, closeWhenIdle: true });
+  const parsed = parsedProject(root, [], session, onInput);
+  return openParsedProgram(session, root, parsed, parsed.projectFiles, onInput);
 }
 
 export function createOverlayProgram(

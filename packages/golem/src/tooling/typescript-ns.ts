@@ -94,6 +94,7 @@ export const {
   isPropertyAssignment,
   isPropertyDeclaration,
   isPropertySignature,
+  isQualifiedName,
   isRestTypeNode,
   isReturnStatement,
   isSatisfiesExpression,

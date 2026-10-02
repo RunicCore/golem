@@ -28,10 +28,17 @@ export interface Node {
   readonly kind: SyntaxKind;
   readonly flags: NodeFlags;
   readonly pos: number;
+  readonly end: number;
   readonly parent: Node;
   getSourceFile(): SourceFile;
   getText(sourceFile?: SourceFile): string;
   getStart(sourceFile?: SourceFile): number;
+}
+
+/** The nodes of a list, such as call arguments; `pos` is the offset after the opening token. */
+export interface NodeArray<T> extends ReadonlyArray<T> {
+  readonly pos: number;
+  readonly end: number;
 }
 
 export interface Expression extends Node {}
@@ -125,7 +132,8 @@ export interface CallExpression extends Expression {
   readonly kind: KindOf<'CallExpression'>;
   readonly questionDotToken?: Node;
   readonly expression: Expression;
-  readonly arguments: readonly Expression[];
+  readonly typeArguments?: NodeArray<TypeNode>;
+  readonly arguments: NodeArray<Expression>;
 }
 export interface PropertyAccessExpression extends Expression {
   readonly kind: KindOf<'PropertyAccessExpression'>;
@@ -302,12 +310,17 @@ export interface ImportDeclaration extends Node {
 }
 export interface ImportClause extends Node {
   readonly kind: KindOf<'ImportClause'>;
+  /** TypeScript 6 reads `isTypeOnly`; TypeScript 7 has `phaseModifier` only (`TypeKeyword` for `import type`). */
+  readonly isTypeOnly?: boolean;
+  readonly phaseModifier?: SyntaxKind;
+  readonly name?: Identifier;
 }
 export interface NamedImports extends Node {
   readonly kind: KindOf<'NamedImports'>;
 }
 export interface ImportSpecifier extends Node {
   readonly kind: KindOf<'ImportSpecifier'>;
+  readonly isTypeOnly: boolean;
   readonly propertyName?: Identifier;
   readonly name: Identifier;
 }
@@ -347,6 +360,7 @@ export interface TypeReferenceNode extends TypeNode {
 export interface TypeQueryNode extends TypeNode {
   readonly kind: KindOf<'TypeQueryNode'>;
   readonly exprName: EntityName;
+  readonly typeArguments?: readonly TypeNode[];
 }
 export interface ArrayTypeNode extends TypeNode {
   readonly kind: KindOf<'ArrayTypeNode'>;
@@ -548,6 +562,7 @@ export interface TypeScriptBackend {
     readonly StaticKeyword: SyntaxKind;
     readonly ThisKeyword: SyntaxKind;
     readonly TrueKeyword: SyntaxKind;
+    readonly TypeKeyword: SyntaxKind;
   };
   readonly TypeFlags: {
     readonly Any: TypeFlags;
@@ -671,6 +686,7 @@ export interface TypeScriptBackend {
   isPropertyAssignment(node: Node): node is PropertyAssignment;
   isPropertyDeclaration(node: Node): node is PropertyDeclaration;
   isPropertySignature(node: Node): node is PropertySignature;
+  isQualifiedName(node: Node): node is QualifiedName;
   isRestTypeNode(node: Node): node is RestTypeNode;
   isReturnStatement(node: Node): node is ReturnStatement;
   isSatisfiesExpression(node: Node): node is SatisfiesExpression;

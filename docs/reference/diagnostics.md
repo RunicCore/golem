@@ -300,6 +300,22 @@ An error prints its code, location when known, and message, then stops generatio
 
 **Codec or predicate declared in a model file.** A `TSerde` or `TValidation` function is declared in a `*.model.ts` or `*.models.ts` file. Generated code imports the function, and the model file imports its `*.model.generated.ts` file, so the two import each other; when the generated file loads first, the model class extends a base class that isn't initialized yet and start-up fails. **Fix:** Move the function to its own module, export it there, and import it into the model file.
 
+### RUNM1066
+
+**Serde type argument is not a type name.** A call to `stringify`, `parse`, `validate`, `assertValue`, `toWireFormat` or `fromWireFormat` has a type argument that is not a single type name or `typeof` expression, such as `parse<TPayment | null>(text)`, `parse<Array<TPayment>>(text)` or `parse<TPayment, TMoney>(text)`. The message names the function and the position of the call. **Fix:** Pass one model type alias, one model class, or `typeof` an exported codec, and declare a named model for a union or generic.
+
+### RUNM1067
+
+**Serde type argument has no codec.** The type argument of a serde call names something that is no model: a type parameter, a type that no `IModel` or `IObject` declares, or a name that several models share. The message shows the call, such as `parse<T> has no unique codec id`. **Fix:** Name an exported `IModel` or `IObject` alias. Inside a generic function, take the codec as a parameter instead of a type parameter; golem rewrites a call only where the model is known when it generates.
+
+### RUNM1068
+
+**Reserved name in a rewritten file.** A file that holds a serde call or a model class uses an identifier that starts with `__golem_`, which golem reserves for the imports it adds to that file, so a local with that name would capture the rewritten call. The message names the identifier. **Fix:** Rename the identifier.
+
+### RUNM1069
+
+**Class imported from two modules.** A file holds `parse` or `fromWireFormat` calls whose type arguments are type-only imports of two classes with the same exported name from different modules. golem imports each of them by name for the call, and a name has one module. **Fix:** Import one of the classes as a value, or give the two classes different names.
+
 ## Client generator (OPENAPI)
 
 ### OPENAPI_BROWSER_COOKIE

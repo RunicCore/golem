@@ -197,9 +197,10 @@ function emittedDiagnosticCodes(): Record<'NEST' | 'RUNM' | 'OPENAPI', string[]>
   const nest = [...readFileSync(path.join(root, 'packages/golem-ts-openapi/src/diagnostics.ts'), 'utf8').matchAll(/= '(NEST\d{4})'/g)].map(m => m[1]);
   const runm = tsFiles(path.join(root, 'packages/golem/src/tooling/type-analysis'))
     .flatMap(f => [...readFileSync(f, 'utf8').matchAll(/\bdiagnostic\([^;]*?'(\d{4})'/gs)].map(m => `RUNM${m[1]}`));
+  const scan = [...readFileSync(path.join(root, 'packages/golem/src/tooling/rewrite-scan.ts'), 'utf8').matchAll(/= '(RUNM\d{4})'/g)].map(m => m[1]);
   const openapi = tsFiles(path.join(root, 'packages/golem-openapi/src'))
     .flatMap(f => [...readFileSync(f, 'utf8').matchAll(/'(OPENAPI_[A-Z_]+)'/g)].map(m => m[1]));
-  return { NEST: [...new Set(nest)], RUNM: [...new Set(runm)], OPENAPI: [...new Set(openapi)] };
+  return { NEST: [...new Set(nest)], RUNM: [...new Set([...runm, ...scan])], OPENAPI: [...new Set(openapi)] };
 }
 
 test('the diagnostics page lists every code the generators emit', () => {

@@ -9,6 +9,8 @@ import { GolemDiagnosticSeverity, errorMessage, hasErrorCode, isRecord } from '.
 import { validateModelManifest } from './model-manifest.js';
 import type { GolemArtifact, GolemDiagnostic, GolemResult, GeneratorSession } from './generator-api.js';
 import { assertRuntimeCompatible } from './runtime-compatibility.js';
+import { REWRITE_INDEX_PATH } from './rewrite.js';
+import { assertRewriteIndexFresh, scanProjectRewrites, writeRewriteIndex } from './rewrite-scan.js';
 
 export type InputKind = 'config' | 'controllers' | 'openapi' | 'models' | 'generator';
 
@@ -245,13 +247,35 @@ function diagnosticLocation(diagnostic: GolemDiagnostic): string {
   return ` (${diagnostic.file}${line})`;
 }
 
+function errorDiagnosticsMessage(source: string, errors: readonly GolemDiagnostic[]): string {
+  return [
+    `${source} reported ${errors.length} error diagnostic${errors.length === 1 ? '' : 's'}:`,
+    ...errors.map(diagnostic => `  ${diagnostic.code}${diagnosticLocation(diagnostic)}: ${diagnostic.message}`),
+  ].join('\n');
+}
+
 function assertNoDiagnosticErrors(job: GolemJob, result: GolemResult): void {
   const errors = result.diagnostics?.filter(diagnostic => diagnostic.severity === GolemDiagnosticSeverity.Error) ?? [];
   if (errors.length === 0) return;
-  throw new Error([
-    `${job.package} reported ${errors.length} error diagnostic${errors.length === 1 ? '' : 's'}:`,
-    ...errors.map(diagnostic => `  ${diagnostic.code}${diagnosticLocation(diagnostic)}: ${diagnostic.message}`),
-  ].join('\n'));
+  throw new Error(errorDiagnosticsMessage(job.package, errors));
+}
+
+/**
+ * The project roots whose sources golem rewrites: where a models or controllers job reads its TypeScript project. The
+ * scan borrows the compiler of the first such job at a root, which keeps a source edit a model-only change for a root
+ * with a models job.
+ */
+function rewriteRoots(config: GolemConfig): ReadonlyMap<string, { readonly job: GolemJob; readonly nest: boolean }> {
+  const roots = new Map<string, { job: GolemJob; nest: boolean }>();
+  for (const job of config.jobs) {
+    if (job.kind !== 'models' && job.kind !== 'controllers') continue;
+    const known = roots.get(job.options.root);
+    roots.set(job.options.root, {
+      job: known && (known.job.kind === 'models' || job.kind !== 'models') ? known.job : job,
+      nest: (known?.nest ?? false) || job.kind === 'controllers',
+    });
+  }
+  return roots;
 }
 
 /** Select source consumers and then follow generated-artifact edges in pipeline order. */
@@ -381,6 +405,24 @@ export async function runPipeline(filename: string, options: PipelineOptions = {
     for (const input of result.watchInputs) observe(input, job.kind, job.id);
     manifests.push(...result.manifestPaths);
     results.set(job.id, result);
+  }
+  for (const [root, { job, nest }] of rewriteRoots(config)) {
+    if (options.check) { assertRewriteIndexFresh(root); continue; }
+    const keys = used.get(job.id) ?? new Set<string>();
+    used.set(job.id, keys);
+    const scanned = scanProjectRewrites({
+      root,
+      nest,
+      session: session.forJob(job.id, keys),
+      sessionOwner: job.package,
+      onInput: input => observe(input, job.kind),
+    });
+    const errors = scanned.diagnostics.filter(diagnostic => diagnostic.severity === GolemDiagnosticSeverity.Error);
+    if (errors.length > 0) throw new Error(errorDiagnosticsMessage('golem rewrite scan', errors));
+    writeRewriteIndex(root, scanned.index);
+    const indexFile = path.join(root, REWRITE_INDEX_PATH);
+    owned.add(indexFile);
+    options.onOwned?.([indexFile]);
   }
   for (const output of owned) inputs.delete(output);
   session.retainUsed(new Set(config.jobs.map((job) => job.id)), used);
