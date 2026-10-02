@@ -7,11 +7,11 @@ import {
   resolveJsonPointer,
   type JsonObject,
 } from './json.js';
+import { HTTP_METHODS_32 } from './normalize.js';
 import type { OpenApiProblem } from './openapi-validator.js';
 import { isMappingComponentName } from './reference-loader.js';
 import { collectCanonicalResources, findDuplicateSchemaIds, lookupCanonicalResource, visitOpenApiSchemaTree } from './schema-projection.js';
 
-const HTTP_METHODS = ['get', 'put', 'post', 'delete', 'options', 'head', 'patch', 'trace', 'query'] as const;
 const TEMPLATE = /\{([^{}]*)\}/g;
 
 /**
@@ -78,7 +78,7 @@ function collectPathItemOperations(
       }
     }
   };
-  for (const method of HTTP_METHODS) {
+  for (const method of HTTP_METHODS_32) {
     if (pathItem[method] !== undefined) add(method, pathItem[method], pointerJoin(pathItemPointer, method));
   }
   for (const [method, operation] of objectEntries(pathItem.additionalOperations)) {

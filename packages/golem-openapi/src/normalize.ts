@@ -3,7 +3,7 @@ import { GolemDiagnosticSeverity, identifier, type GolemDiagnostic } from '@expr
 import { inboundOperationName, operationName } from './names.js';
 
 const HTTP_METHODS_31 = ['get', 'put', 'post', 'delete', 'options', 'head', 'patch', 'trace'] as const;
-const HTTP_METHODS_32 = [...HTTP_METHODS_31, 'query'] as const;
+export const HTTP_METHODS_32 = [...HTTP_METHODS_31, 'query'] as const;
 
 export const VERSION_ADAPTERS = {
   '3.1': {

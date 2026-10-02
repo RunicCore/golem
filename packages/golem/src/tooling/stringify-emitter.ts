@@ -5,6 +5,7 @@
  */
 
 import type { ModelTypeDescriptor } from '../model.js';
+import type { ValidationPlane } from '../object-codec.js';
 import type { SchemaGraph, SchemaNode } from './schema-graph.js';
 import { codecShortName, serdeWireDescriptor } from './schema-graph.js';
 import { GENERATED_MODEL_SCHEMA_REF_PREFIX, generatedModelShortName, type JsonSchema } from './schema.js';
@@ -1207,8 +1208,6 @@ function wireValidator(id: string, failFast: boolean, sameSchema: boolean): stri
   return failFast ? `validate${id}WireFast` : `validate${id}WireAll`;
 }
 
-type SchemaPlane = 'model' | 'wire' | 'model-only' | 'wire-only';
-
 function residualValidator(id: string, plane: 'model-only' | 'wire-only', failFast: boolean): string {
   const name = plane === 'model-only' ? 'ModelOnly' : 'WireOnly';
   return `validate${id}${name}${failFast ? 'Fast' : 'All'}`;
@@ -1231,7 +1230,7 @@ function emitSerdeValidates(validationEnabled: boolean): string {
 function emitAjvGuard(
   node: SchemaNode,
   value: string,
-  plane: SchemaPlane,
+  plane: ValidationPlane,
   issueSource: 'TypeScript' | 'OpenAPI',
 ): string {
   const wire = plane === 'wire' && !node.sameSchema;
@@ -1257,7 +1256,7 @@ function hoistedResidualSchemaName(node: SchemaNode, plane: 'model-only' | 'wire
   return plane === 'model-only' ? `__resolvedModelOnlySchema_${node.id}` : `__resolvedWireOnlySchema_${node.id}`;
 }
 
-function emitHoistedSchema(name: string, payload: string, id: string, representation: SchemaPlane): string {
+function emitHoistedSchema(name: string, payload: string, id: string, representation: ValidationPlane): string {
   const plane = representation === 'model' ? '' : `, '${representation}'`;
   return [
     `const ${name} = resolveGeneratedModelSchemaRefs(${payload} as object${plane}) as object;`,
@@ -1488,7 +1487,7 @@ function emitNodeRuntime(
       '',
     ];
 
-  const planeAssert = (name: string, plane: SchemaPlane): string[] => [
+  const planeAssert = (name: string, plane: ValidationPlane): string[] => [
     `function ${name}(value: unknown, options?: ${VALIDATE_OPTIONS}): Record<string, unknown> {`,
     `  ${emitAjvGuard(node, 'value', plane, ctx.issueSource)}`,
     '  return value as Record<string, unknown>;',
