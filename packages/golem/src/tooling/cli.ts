@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import path from 'node:path';
 import { runPipeline } from './pipeline.js';
 import { watchPipeline } from './watch.js';
 export { providersFor, runPipeline } from './pipeline.js';
@@ -57,6 +58,10 @@ export async function main(argv = process.argv.slice(2)) {
     process.stdout.write('Usage: golem <generate|check|watch|exec> [--config golem.yaml]\n       golem exec [--watch] -- <command> [args...]\n       golem build [--config golem.yaml] [-p tsconfig.build.json] [--watch]\n');
     return;
   }
+  // The project's TypeScript is the one beside its golem.yaml, wherever the command runs from; the seam reads this when it first loads.
+  // An `exec` child does not inherit a root golem chose for itself.
+  const { GOLEM_TYPESCRIPT_ROOT: userTypeScriptRoot, ...childEnvironment } = process.env;
+  process.env.GOLEM_TYPESCRIPT_ROOT ??= path.dirname(path.resolve(options.config ?? 'golem.yaml'));
   if (options.action === 'build') {
     const controller = new AbortController();
     let signalled: number | undefined;
@@ -76,7 +81,7 @@ export async function main(argv = process.argv.slice(2)) {
   const stop = options.watch ? watchPipeline(state) : () => {};
   if (options.action === 'exec') {
     await new Promise<void>((resolve, reject) => {
-      const child = spawn(options.command[0], options.command.slice(1), { stdio: 'inherit', shell: process.platform === 'win32' });
+      const child = spawn(options.command[0], options.command.slice(1), { stdio: 'inherit', shell: process.platform === 'win32', env: userTypeScriptRoot === undefined ? childEnvironment : process.env });
       const handlers = new Map<NodeJS.Signals, () => void>();
       for (const signal of ['SIGINT', 'SIGTERM'] as const) {
         const handler = () => { stop(); child.kill(signal); };
