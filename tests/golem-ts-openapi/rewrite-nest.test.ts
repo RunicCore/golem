@@ -11,6 +11,7 @@ import { createControllerFixture } from '../fixture-templates/controllers/projec
 import { paymentModelSource } from '../fixture-templates/controllers/payment-model.js';
 
 const PLUGIN = 'controllers/nest-plugin';
+const FORMS = `${PLUGIN}/rewrite-covers-qualified-array-and-serde-forms`;
 const CHECKS = `${PLUGIN}/rewrite-checks-parameters-against-operation-codecs`;
 const CONTROLLER = 'src/payments.controller.ts';
 const NEST_IMPORT = "import { nestModelCodec as __golem_nestModelCodec, nestModelReturn as __golem_nestModelReturn } from '@exprtlabs/golem/nest';";
@@ -170,6 +171,71 @@ test('a method that a decorator cannot decorate is not indexed: an object litera
   assert.match(code, /@__golem_nestModelReturn\("TPayment_[0-9a-f]{8}"\) find\(id: string \| number\): TPayment \{/);
   assert.ok(code.includes('  find(id: string): TPayment;\n'), 'the overload signature is untouched');
   assert.ok(code.includes('  load(): TPayment {'), 'the object literal method is untouched');
+});
+
+/** The hashed codec id the models job wrote for a model of `src/payment.model.ts`. */
+function idOf(root: string, name: string): string {
+  const keys = fs.readFileSync(path.join(root, 'src/generated/models/iobject-plugin-keys.ts'), 'utf8');
+  const id = new RegExp(`src/payment\\.model\\.ts#${name}": "([^"]+)"`).exec(keys)?.[1];
+  assert.ok(id, `${name} has a key`);
+  return id;
+}
+
+function assertLines(code: string, expected: readonly string[]): void {
+  const lines = code.split('\n').map(line => line.trimEnd());
+  for (const line of expected) assert.ok(lines.includes(line), `missing line ${line}\n${code}`);
+}
+
+test('a parameter decorator reached through a namespace import is stamped', (t) => {
+  const root = paymentsProject(t, { 'src/namespaced.controller.ts': readFixture(`${FORMS}/namespaced.controller.ts`) });
+  const result = scan(root);
+  assert.deepEqual(result.diagnostics, []);
+  const input = idOf(root, 'TPaymentInput');
+  const filter = idOf(root, 'TPaymentFilter');
+  assertLines(rewritten(root, result, 'src/namespaced.controller.ts'), [
+    `  create(@nest.Body() @__golem_nestModelCodec("${input}") input: TPaymentInput, @nest.Query() @__golem_nestModelCodec("${filter}") filter: TPaymentFilter): number { return input.note.length + (filter.limit?.length ?? 0); }`,
+  ]);
+});
+
+test('Array<T> and Promise<T[]> returns record an array, and an Array<T> body takes the element codec', (t) => {
+  const root = paymentsProject(t, { 'src/arrays.controller.ts': readFixture(`${FORMS}/arrays.controller.ts`) });
+  const result = scan(root);
+  assert.deepEqual(result.diagnostics, []);
+  const payment = idOf(root, 'TPayment');
+  const input = idOf(root, 'TPaymentInput');
+  const code = rewritten(root, result, 'src/arrays.controller.ts');
+  assertLines(code, [
+    `  @__golem_nestModelReturn("${payment}", true) @Get('generic')`,
+    `  @__golem_nestModelReturn("${payment}", true) @Get('promised')`,
+    `  batch(@Body() @__golem_nestModelCodec("${input}") inputs: Array<TPaymentInput>): number { return inputs.length; }`,
+  ]);
+  assert.equal(code.match(/__golem_nestModelReturn\(/g)?.length, 2);
+});
+
+test('a method that calls parse and carries nest decorators gets both rewrites and both imports', (t) => {
+  const root = paymentsProject(t, { 'src/mixed.controller.ts': readFixture(`${FORMS}/mixed.controller.ts`) });
+  const result = scan(root);
+  assert.deepEqual(result.diagnostics, []);
+  const payment = idOf(root, 'TPayment');
+  const input = idOf(root, 'TPaymentInput');
+  const code = rewritten(root, result, 'src/mixed.controller.ts');
+  assert.deepEqual(result.index.files['src/mixed.controller.ts']?.imports, [
+    { from: '@exprtlabs/golem/nest', names: ['nestModelCodec', 'nestModelReturn'] },
+    { from: '@exprtlabs/golem/serde', names: ['requireObjectCodec'] },
+  ]);
+  assert.deepEqual(
+    result.index.files['src/mixed.controller.ts']?.edits.map(edit => /^@?(__golem_\w+)/.exec(edit.text)?.[1]),
+    ['__golem_nestModelReturn', '__golem_nestModelCodec', '__golem_requireObjectCodec'],
+    'edits are indexed in source order',
+  );
+  assert.deepEqual(code.split('\n').slice(0, 2), [
+    "import { nestModelCodec as __golem_nestModelCodec, nestModelReturn as __golem_nestModelReturn } from '@exprtlabs/golem/nest';",
+    "import { requireObjectCodec as __golem_requireObjectCodec } from '@exprtlabs/golem/serde';",
+  ]);
+  assertLines(code, [
+    `  @__golem_nestModelReturn("${payment}") @Post()`,
+    `  create(@Body() @__golem_nestModelCodec("${input}") input: TPaymentInput): TPayment { return __golem_requireObjectCodec("${payment}").parse(JSON.stringify(input)); }`,
+  ]);
 });
 
 test('the operation-codec check passes when the registry holds every id the scan indexed, and fails when it does not', (t) => {
