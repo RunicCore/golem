@@ -11,9 +11,9 @@ function modelObject(json: unknown, name: string): Record<string, unknown> {
 type TMerchantOmitIdFields = { name: string };
 type TMerchantOmitIdJSON = { name: string };
 type TMerchantOmitIdInit = { name: string };
-function decodeTMerchantOmitId(value: unknown): TMerchantOmitIdFields { const data = modelObject(value, "TMerchantOmitId"); return (typeof data === 'object' && data !== null && !Array.isArray(data) ? Object.fromEntries([...(Object.hasOwn(data, "name") ? [["name", data["name"] === undefined ? undefined : (data["name"])]] : [])]) : data) as TMerchantOmitIdFields; }
+function decodeTMerchantOmitId(value: unknown): TMerchantOmitIdFields { const data = modelObject(value, "TMerchantOmitId"); return (typeof data === 'object' && data !== null && !Array.isArray(data) ? ((source: Record<string, unknown>) => { const out: Record<string, unknown> = {}; if (Object.hasOwn(source, "name")) defineModelProperty(out, "name", source["name"] === undefined ? undefined : (source["name"])); return out; })(data) : data) as TMerchantOmitIdFields; }
 const initTMerchantOmitId = decodeTMerchantOmitId;
-function encodeTMerchantOmitId(value: unknown): TMerchantOmitIdJSON { const data = value as Record<string, unknown>; return (typeof data === 'object' && data !== null && !Array.isArray(data) ? Object.fromEntries([...(Object.hasOwn(data, "name") ? [["name", data["name"] === undefined ? undefined : (data["name"])]] : [])]) : data) as TMerchantOmitIdJSON; }
+function encodeTMerchantOmitId(value: unknown): TMerchantOmitIdJSON { const data = value as Record<string, unknown>; return (typeof data === 'object' && data !== null && !Array.isArray(data) ? ((source: Record<string, unknown>) => { const out: Record<string, unknown> = {}; if (Object.hasOwn(source, "name")) defineModelProperty(out, "name", source["name"] === undefined ? undefined : (source["name"])); return out; })(data) : data) as TMerchantOmitIdJSON; }
 
 export type TMerchantFields = { id: string; name: string };
 export type TMerchantJSON = { id: string; name: string };

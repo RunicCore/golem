@@ -94,6 +94,26 @@ test('nested projections strip omitted fields and retain intact child models wit
   await assertNestedProjections(root, 'build/address.model.js', false);
 });
 
+test('projection decoders and encoders copy fields with assignments and keep the prototype untouched', async t => {
+  const { root, sourceRoot } = fixture(t);
+  fs.writeFileSync(path.join(sourceRoot, 'place.model.ts'), readFixture("models/model-composition/projection-decoders-copy-fields-with-assignments/place.model.ts"));
+  const result = generate({ root, profile: { mobx: false, validation: false } });
+  writeGeneratedArtifacts(result.artifacts);
+  const companion = result.artifacts.find(artifact => artifact.path.endsWith('place.model.generated.ts'))!.content;
+  for (const direction of ['decode', 'encode']) {
+    const helper = companion.split('\n').find(line => line.startsWith(`function ${direction}TPlaceOmitId(`));
+    assert.ok(helper);
+    assert.doesNotMatch(helper, /Object\.fromEntries/);
+  }
+  await compileModelProject(root);
+  const { Office } = await import(path.join(root, 'build/place.model.js'));
+  const place = JSON.parse('{"city":"Hue","country":"VN","__proto__":{"x":1}}');
+  const office = decodeGeneratedModel(Office, { place }) as { place: Record<string, unknown> };
+  assert.equal(Object.getPrototypeOf(office.place), Object.prototype);
+  assert.deepEqual(office.place, { city: 'Hue', country: 'VN' });
+  assert.deepEqual(encodeGeneratedModel(office), { place: { city: 'Hue', country: 'VN' } });
+});
+
 test('equivalent projections share helpers and execute only retained field codecs', async t => {
   const { root, sourceRoot } = fixture(t);
   fs.writeFileSync(path.join(sourceRoot, 'codecs.ts'), readFixture("models/model-composition/equivalent-projections-share-helpers-and-execute-only-retained-field-codecs/codecs.ts"));

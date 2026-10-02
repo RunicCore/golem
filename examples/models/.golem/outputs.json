@@ -4,7 +4,7 @@
     "src/assignee.model.generated.ts": {
       "job": "models:.",
       "owner": "@exprtlabs/golem-model",
-      "digest": "b643b0609c991eebecc5d1ffd07db5f14246ed8f4d612f51137e3262554ce7d3",
+      "digest": "0002e49fef6974b88bba451d68f3c8b5cf2f4d305a3fb23f8b15abb6ae59e678",
       "destination": "src",
       "destinationKind": "directory"
     },

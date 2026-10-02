@@ -134,7 +134,7 @@ function inferredBranchDispatch(branches: readonly ModelDiscriminators[]): Varia
 }
 
 function recordExpression(expression: string): string {
-  return expression === 'data' ? expression : `(${expression} as Record<string, unknown>)`;
+  return expression === 'data' || expression === 'source' ? expression : `(${expression} as Record<string, unknown>)`;
 }
 
 function recordIndex(expression: string, property: string): string {
@@ -446,10 +446,12 @@ function emitNested(
     return emitTuple(descriptor, expression, direction !== 'fromInit', (item, value, index) => atField(emitNested(item, value, direction, resolveModel, resolveSerde), value, index, direction));
   }
   if (descriptor.kind === 'object') {
+    // A projection copies its fields inside a function whose `source` parameter is the record.
+    const fieldSource = descriptor.projection ? 'source' : expression;
     const assignments = Object.entries(descriptor.properties).map(([name, item]) => {
       const property = JSON.stringify(name);
-      // `data` is already a record binding. Other expressions are cast once here.
-      const sourceValue = recordIndex(expression, property);
+      // `data` and `source` are already record bindings. Other expressions are cast once here.
+      const sourceValue = recordIndex(fieldSource, property);
       return {
         name,
         property,
@@ -465,12 +467,12 @@ function emitNested(
     if (descriptor.projection) {
       const knownKeys = Object.keys(descriptor.properties).map(name => JSON.stringify(name)).join(', ');
       const extras = typeof descriptor.additionalProperties === 'object'
-        ? `...Object.entries(${recordExpression(expression)}).filter(([key]) => !([${knownKeys}] as readonly string[]).includes(key)).map(([key, value]) => [key, ${additional}])`
+        ? `for (const [key, value] of Object.entries(source)) if (!([${knownKeys}] as readonly string[]).includes(key)) defineModelProperty(out, key, ${additional});`
         : '';
       const fields = assignments.map(({ name, property, sourceValue, value }) => omitsUndefined(name)
-        ? `...(${sourceValue} !== undefined ? [[${property}, ${value}]] : [])`
-        : `...(Object.hasOwn(${recordExpression(expression)}, ${property}) ? [[${property}, ${sourceValue} === undefined ? undefined : (${value})]] : [])`);
-      return `${objectValueExpression(expression)} ? Object.fromEntries([${[...fields, extras].filter(Boolean).join(', ')}]) : ${expression}`;
+        ? `if (${sourceValue} !== undefined) defineModelProperty(out, ${property}, ${value});`
+        : `if (Object.hasOwn(source, ${property})) defineModelProperty(out, ${property}, ${sourceValue} === undefined ? undefined : (${value}));`);
+      return `${objectValueExpression(expression)} ? ((source: Record<string, unknown>) => { const out: Record<string, unknown> = {}; ${[...fields, extras].filter(Boolean).join(' ')} return out; })(${recordExpression(expression)}) : ${expression}`;
     }
     const additionalChanged = additional !== 'value';
     const knownChanged = assignments.some(({ sourceValue, value }) => value !== sourceValue);
