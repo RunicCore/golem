@@ -30,9 +30,9 @@ export abstract class TThreadBaseModel implements GeneratedModel<TThreadJSON, TT
 
 }
 
-function __convert_TThread_0_encode(fieldValue: TThreadBaseModel["comments"]) { return Array.isArray(fieldValue) ? (fieldValue as readonly unknown[]).map((item, index) => convertModelField('serialize', index, () => (encodeTComment(item)))) : fieldValue; }
+function __convert_TThread_0_encode(fieldValue: TThreadBaseModel["comments"]) { return Array.isArray(fieldValue) ? (fieldValue as readonly unknown[]).map((item, index) => convertModelField('serialize', index, encodeTComment, item)) : fieldValue; }
 
-function __convert_TThread_1_decode(fieldValue: unknown) { return Array.isArray(fieldValue) ? (fieldValue as readonly unknown[]).map((item, index) => convertModelField('deserialize', index, () => (decodeTComment(item)))) : fieldValue; }
+function __convert_TThread_1_decode(fieldValue: unknown) { return Array.isArray(fieldValue) ? (fieldValue as readonly unknown[]).map((item, index) => convertModelField('deserialize', index, decodeTComment, item)) : fieldValue; }
 
 function decodeTThreadModel(constructor: GeneratedModelConstructor, json: unknown): TThreadBaseModel {
   const values = modelObject(json, "TThreadBaseModel");

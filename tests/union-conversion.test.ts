@@ -180,7 +180,7 @@ test('model conversion writes a variant instance by class and rejects unknown or
   const compile = (code: string, direction: 'serialize' | 'deserialize'): RuntimeFunction => {
     const expression = transformSync(`(${code})`, { loader: 'ts', target: 'es2022' }).code.trim().replace(/;$/, '');
     const convert = new Function('ModelCat', 'ModelDog', 'unknownDiscriminatorValue', 'withDiscriminatorValue', 'convertModelField', 'value',
-      `return convertModelField(${JSON.stringify(direction)}, 'pet', () => ${expression});`) as RuntimeFunction;
+      `return convertModelField(${JSON.stringify(direction)}, 'pet', (value) => ${expression}, value);`) as RuntimeFunction;
     return (value) => convert(ModelCat, ModelDog, conversion.unknownDiscriminatorValue, conversion.withDiscriminatorValue,
       conversion.convertModelField, value);
   };

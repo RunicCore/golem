@@ -39,7 +39,7 @@
     "src/comment.model.generated.ts": {
       "job": "models:.",
       "owner": "@exprtlabs/golem-model",
-      "digest": "a7b07e6a78383d74ae6937a5ee7c10b773e1d4bfafe5fa931de83020a9927b4d",
+      "digest": "1fddf8028569b6df8ceb0f419ad2a18c6a5ad79614c6de313add04110c4d44d8",
       "destination": "src",
       "destinationKind": "directory"
     },

@@ -251,10 +251,17 @@ export function singleCallConverter(converted: string): string | undefined {
   return SINGLE_CALL_ON_FIELD_INPUT.exec(converted)?.[1];
 }
 
-function atField(converted: string, input: string, field: string, direction: 'fromJSON' | 'toJSON' | 'fromInit'): string {
-  return converted === input || direction === 'fromInit'
-    ? converted
-    : `convertModelField('${direction === 'toJSON' ? 'serialize' : 'deserialize'}', ${field}, () => (${converted}))`;
+/**
+ * A converted value at a nested field. `emit(FIELD_CONVERSION_INPUT)` shows the conversion's shape: a single call
+ * passes its function and the value to `convertModelField`; any other conversion becomes a value-taking arrow,
+ * so no conversion captures the enclosing loop.
+ */
+function atField(emit: (value: string) => string, input: string, field: string, direction: 'fromJSON' | 'toJSON' | 'fromInit'): string {
+  if (direction === 'fromInit') return emit(input);
+  const converted = emit(FIELD_CONVERSION_INPUT);
+  if (converted === FIELD_CONVERSION_INPUT) return input;
+  const convert = singleCallConverter(converted) ?? `(${FIELD_CONVERSION_INPUT}: unknown) => (${converted})`;
+  return `convertModelField('${direction === 'toJSON' ? 'serialize' : 'deserialize'}', ${field}, ${convert}, ${input})`;
 }
 
 function emitNested(
@@ -311,7 +318,7 @@ function emitNested(
     }
     const array = scalarOrArrayItem(present);
     if (array) {
-      const item = atField(emitNested(array.item, 'item', direction, resolveModel, resolveSerde), 'item', 'index', direction);
+      const item = atField(value => emitNested(array.item, value, direction, resolveModel, resolveSerde), 'item', 'index', direction);
       const scalar = emitNested(array.item, expression, direction, resolveModel, resolveSerde);
       if (item === 'item' && scalar === expression) return expression;
       const indexParam = direction !== 'fromInit' && item.includes('index') ? ', index' : '';
@@ -450,7 +457,7 @@ function emitNested(
     return `${expression} instanceof ${model.className} ? ${encode(expression)} : ${expression}`;
   }
   if (descriptor.kind === 'array') {
-    const item = atField(emitNested(descriptor.item, 'item', direction, resolveModel, resolveSerde), 'item', 'index', direction);
+    const item = atField(value => emitNested(descriptor.item, value, direction, resolveModel, resolveSerde), 'item', 'index', direction);
     const indexParam = direction !== 'fromInit' && item.includes('index') ? ', index' : '';
     // An unchanged item needs no callback: slice copies the same way map does.
     const copy = item === 'item'
@@ -459,7 +466,7 @@ function emitNested(
     return `Array.isArray(${expression}) ? ${copy} : ${expression}`;
   }
   if (descriptor.kind === 'tuple') {
-    return emitTuple(descriptor, expression, direction !== 'fromInit', (item, value, index) => atField(emitNested(item, value, direction, resolveModel, resolveSerde), value, index, direction));
+    return emitTuple(descriptor, expression, direction !== 'fromInit', (item, value, index) => atField(input => emitNested(item, input, direction, resolveModel, resolveSerde), value, index, direction));
   }
   if (descriptor.kind === 'object') {
     // A projection copies its fields inside a function whose `source` parameter is the record.
@@ -472,11 +479,12 @@ function emitNested(
         name,
         property,
         sourceValue,
-        value: atField(emitNested(item, sourceValue, direction, resolveModel, resolveSerde), sourceValue, property, direction),
+        value: atField(input => emitNested(item, input, direction, resolveModel, resolveSerde), sourceValue, property, direction),
       };
     });
-    const additional = typeof descriptor.additionalProperties === 'object'
-      ? atField(emitNested(descriptor.additionalProperties, 'value', direction, resolveModel, resolveSerde), 'value', 'key', direction)
+    const additionalItem = descriptor.additionalProperties;
+    const additional = typeof additionalItem === 'object'
+      ? atField(value => emitNested(additionalItem, value, direction, resolveModel, resolveSerde), 'value', 'key', direction)
       : 'value';
     // Wire output omits an optional field whose value is undefined, as stringify and JSON.stringify do.
     const omitsUndefined = (name: string): boolean => direction === 'toJSON' && !descriptor.required.includes(name);

@@ -1856,10 +1856,11 @@ export function generateModels(
   };
   output.push(emitSchemaCodecRuntime(emittedSchemaGraph, codecRuntimeOptions, definitions));
   const source = output.join('\n').trim();
-  // Only import converter helpers actually used by this model graph.
+  // Only import converter helpers actually used by this model graph. A converter passed to `convertModelField` is referenced, not called.
+  const sourceBody = source.replace(/^import \{[^\n]+\} from '@exprtlabs\/golem\/conversion';\n/m, '');
   const conversionImports = [
     'convertModelField', 'decodeGeneratedModel', 'decodeGeneratedModelTrusted', 'cloneConversionInput', 'defineModelProperty', 'encodeGeneratedModel', 'deserializeDate', 'serializeDate', 'unknownDiscriminatorValue', 'withDiscriminatorValue', 'jsonWithDiscriminator', 'requireModelObject',
-  ].filter(name => new RegExp(`\\b${name}\\(`).test(source));
+  ].filter(name => new RegExp(`\\b${name}\\b`).test(sourceBody));
   // `dates: temporal` fields call their codecs from `@exprtlabs/golem/temporal`; import exactly those used.
   const temporalImports = [...new Set(source.match(/\b(?:de)?serializeTemporal[A-Za-z]+(?=\()/g) ?? [])].sort();
   const temporalImport = temporalImports.length ? `import { ${temporalImports.join(', ')} } from '@exprtlabs/golem/temporal';\n` : '';

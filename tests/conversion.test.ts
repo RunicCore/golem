@@ -19,12 +19,12 @@ test('conversion scopes preserve LibError identity and restore paths after failu
     code: IssueCode.Deserialization, message: 'Explicit callback failure', path: ['custom'],
     source: IssueSource.Custom, representation: IssueRepresentation.Wire,
   }]);
-  assert.throws(() => convertModelField('deserialize', 'outer', () => { throw original; }), error => error === original);
-  assertConversionError(() => convertModelField('serialize', 'items', () =>
-    convertModelField('serialize', 2, () => serializeDate('invalid'))),
+  assert.throws(() => convertModelField('deserialize', 'outer', (failure: LibError) => { throw failure; }, original), error => error === original);
+  assertConversionError(() => convertModelField('serialize', 'items', (value: unknown) =>
+    convertModelField('serialize', 2, serializeDate, value), 'invalid'),
   LibErrorKind.Serialization, IssueRepresentation.Model, ['items', 2]);
   for (const invalid of ['invalid', 1, null, {}]) {
-    assertConversionError(() => convertModelField('deserialize', 'at', () => deserializeDate(invalid)),
+    assertConversionError(() => convertModelField('deserialize', 'at', deserializeDate, invalid),
       LibErrorKind.Deserialization, IssueRepresentation.Wire, ['at']);
   }
 });

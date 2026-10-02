@@ -365,3 +365,20 @@ test('converted model fields call their converter without a per-field closure', 
   assert.match(source, /convertModelField\("serialize", "rebate", __convert_TWallet_\d+_encode, /);
   assert.doesNotMatch(source, /convertModelField\([^\n]*\(\) =>/);
 });
+
+test('converted model items inside an array call their converter without a per-item closure', (t) => {
+  const project = fixture(t);
+  writeModelSources(project.sourceRoot, {
+    'wallet.model.ts': [
+      "import type { IModel, IObject } from '@exprtlabs/golem/model';",
+      'export type TMoney = IObject<{ amount: string; currency: string }>;',
+      'export type TWallet = IModel<{ history: TMoney[] }>;',
+    ].join('\n'),
+  });
+  const result = generate({ root: project.root, profile: { mobx: false, validation: false } });
+  const generated = result.artifacts.find((item) => item.path.endsWith('wallet.model.generated.ts'));
+  assert.ok(generated);
+  assert.match(generated.content, /\.map\(\(item, index\) => convertModelField\('deserialize', index, decodeTMoney, item\)\)/);
+  assert.match(generated.content, /\.map\(\(item, index\) => convertModelField\('serialize', index, encodeTMoney, item\)\)/);
+  assert.doesNotMatch(generated.content, /convertModelField\([^\n]*\(\) =>/);
+});

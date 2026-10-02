@@ -375,7 +375,7 @@ test('shared emitter emits exact generated-model conversion expressions', () => 
       'value',
       resolveModel,
     ),
-    'Array.isArray(value) ? (value as readonly unknown[]).map((item, index) => convertModelField(\'deserialize\', index, () => (item == null || item instanceof MoneyModel ? item : decodeGeneratedModel(MoneyModel, item)))) : value',
+    'Array.isArray(value) ? (value as readonly unknown[]).map((item, index) => convertModelField(\'deserialize\', index, (fieldValue: unknown) => (fieldValue == null || fieldValue instanceof MoneyModel ? fieldValue : decodeGeneratedModel(MoneyModel, fieldValue)), item)) : value',
   );
   assert.equal(
     emitter.emitModelToJSON({ kind: 'generated-model', id: 'money' }, 'value', resolveModel),
