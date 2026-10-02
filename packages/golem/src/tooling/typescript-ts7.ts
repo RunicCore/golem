@@ -1097,17 +1097,7 @@ function programRequest(options: OpenProgramOptions): ProgramRequest {
       include: ['**/*.ts'],
     }));
   }
-  const files = [...new Set(options.sources.map(canonical))];
-  // The compiler builds a project from its configuration, and a file that exists only as an overlay is matched by no
-  // directory listing. A derived configuration that extends the project's own and names every requested root adds
-  // those files. Its `files` replaces the project's own `files`, so the requested roots must include them.
-  let configPath = baseConfigPath;
-  if (files.some((filename) => overlays.has(filename) && fileSignature(filename) === MISSING)) {
-    configPath = join(dirname(baseConfigPath), `${basename(baseConfigPath, '.json')}.overlay-roots.json`);
-    overlays.set(configPath, JSON.stringify({ extends: `./${basename(baseConfigPath)}`, files }));
-    hidden.add(configPath);
-  }
-  return { configPath, files, overlays, hidden };
+  return { configPath: baseConfigPath, files: [...new Set(options.sources.map(canonical))], overlays, hidden };
 }
 
 /** Release a snapshot; one on an exited compiler is already gone. */
@@ -1189,8 +1179,9 @@ export class ProgramSession implements Disposable {
 
   /** Open a program in a new snapshot that reflects every file change since the previous one. */
   openProgram(options: OpenProgramOptions): Program {
-    const request = programRequest(options);
+    const base = programRequest(options);
     return this.withCompiler('snapshot', (api, reused) => {
+      const request = this.withRequestedRoots(api, base, options.onInput);
       // Programs that remain open keep their overlays in the new snapshot.
       const overlays = new Map([...[...this.held.values()].flatMap((held) => [...held.overlays]), ...request.overlays]);
       const pending = reused ? this.pendingChanges(overlays) : undefined;
@@ -1236,12 +1227,7 @@ export class ProgramSession implements Disposable {
       replaceAll(this.openFiles, files);
       try {
         // The project of the program's own configuration, base or derived, so every run of a job sees the same files.
-        // A source outside that configuration (an external model root) belongs to the project the compiler picks for it.
-        const configured = snapshot.getProject(request.configPath);
-        const project = (configured && request.files.every((filename) => configured.program.getSourceFile(filename) !== undefined) ? configured : undefined)
-          ?? (request.files[0] ? snapshot.getDefaultProjectForFile(request.files[0]) : undefined)
-          ?? configured
-          ?? snapshot.getProjects()[0];
+        const project = snapshot.getProject(request.configPath) ?? snapshot.getProjects()[0];
         if (!project) throw new Error(`No TypeScript project could be opened for ${options.root}.`);
         const program = new CompatProgram(this, snapshot, project);
         this.held.set(program, request);
@@ -1251,6 +1237,30 @@ export class ProgramSession implements Disposable {
         throw error;
       }
     });
+  }
+
+  /**
+   * The compiler builds a project only from a configuration, so a requested root outside the configuration's own files (an
+   * external model root, or a file that exists only as an overlay) needs a derived configuration. It extends the project's
+   * own and lists exactly what the TypeScript 6 backend gives the compiler: the files the project's configuration parses to,
+   * plus the requested roots. `include` is emptied so the list is the whole project.
+   */
+  private withRequestedRoots(api: API, base: ProgramRequest, onInput: ((filename: string) => void) | undefined): ProgramRequest {
+    if (base.files.length === 0) return base;
+    const previous = this.overlays;
+    this.setOverlays(new Map([...[...this.held.values()].flatMap((held) => [...held.overlays]), ...base.overlays]));
+    this.observe(onInput, base.hidden);
+    let parsed: { readonly fileNames: readonly string[] };
+    try {
+      parsed = api.parseConfigFile(base.configPath);
+    } finally {
+      this.setOverlays(previous);
+    }
+    const configPath = join(dirname(base.configPath), `${basename(base.configPath, '.json')}.roots.json`);
+    const files = [...new Set([...parsed.fileNames.map(canonical), ...base.files])];
+    const overlays = new Map(base.overlays);
+    overlays.set(configPath, JSON.stringify({ extends: `./${basename(base.configPath)}`, files, include: [] }));
+    return { configPath, files: base.files, overlays, hidden: new Set([...base.hidden, configPath]) };
   }
 
   /** Called by a closing program. */

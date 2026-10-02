@@ -229,3 +229,23 @@ test('an unreferenced OpenAPI document does not regenerate model companions', as
   await runPipeline(config, { previous: second, changedInputs: [api] });
   assert.doesNotMatch(fs.readFileSync(companion, 'utf8'), /companion marker/);
 });
+
+test('deleting a model while editing the model its companion imports still generates and removes the orphan companion', async (t: TestContext) => {
+  const { root, config } = fixture(t);
+  const owner = path.join(root, 'src/owner.model.ts');
+  const shared = path.join(root, 'src/shared.model.ts');
+  fs.writeFileSync(owner, "import type { IModel } from '@exprtlabs/golem/model';\nimport type { TShared } from './shared.model.js';\nexport type TOwner = IModel<{ shared: TShared }>;\n");
+  const sharedSource = (fields: string): string => `import type { IObject } from '@exprtlabs/golem/model';\nexport type TShared = IObject<{ ${fields} }>;\n`;
+  fs.writeFileSync(shared, sharedSource('value: string'));
+  await runPipeline(config);
+  const ownerCompanion = path.join(root, 'src/owner.model.generated.ts');
+  assert.equal(fs.existsSync(ownerCompanion), true);
+
+  // The orphan companion imports the shared model's codec helpers, whose names carry the shared model's shape hash. After the
+  // edit the orphan fails to compile against the new companion unless the run treats it as its own output to remove.
+  fs.unlinkSync(owner);
+  fs.writeFileSync(shared, sharedSource('value: string; extra: number'));
+  await runPipeline(config);
+  assert.equal(fs.existsSync(ownerCompanion), false);
+  assert.match(fs.readFileSync(path.join(root, 'src/shared.model.generated.ts'), 'utf8'), /extra/);
+});

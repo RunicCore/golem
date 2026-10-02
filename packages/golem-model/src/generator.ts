@@ -480,13 +480,18 @@ export function generate(context: GolemModelContext): GolemModelResult {
   }
 
   const ownedCompanions = new Set(sources.map((source) => canonicalFilename(generatedFilename(source))));
+  const outputPrefix = `${canonicalFilename(normalized.output)}${sep}`;
+  // A companion is this job's to write or remove when its source is one of the job's, it lies in the job's output
+  // directory, or its model source no longer exists. Another job's companion is real input to this program.
+  const ownsCompanion = (companion: string): boolean => ownedCompanions.has(companion)
+    || companion.startsWith(outputPrefix)
+    || !existsSync(companion.replace(/\.(models?)\.generated\.ts$/, '.$1.ts'));
   using prospective = createOverlayProgram(
     programInfo,
     sources,
     artifacts,
     normalized.onInput,
-    // A companion this job owns is a source's companion or a file under its output directory.
-    (companion) => ownedCompanions.has(companion) || companion.startsWith(`${canonicalFilename(normalized.output)}${sep}`),
+    ownsCompanion,
   );
   const diagnostics = ts.getPreEmitDiagnostics(prospective);
   if (diagnostics.length > 0) throw new Error(formatDiagnostics(diagnostics, normalized.root));

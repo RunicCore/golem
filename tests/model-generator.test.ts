@@ -2,10 +2,10 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import test, { type TestContext } from 'node:test';
-import { command } from './support/process.js';
+import { command, workspace } from './support/process.js';
 import { generatedCodecId } from './support/consumer.js';
 
-import { copyFixture, copyFixtureFile, writeGeneratedArtifacts } from './fixture-project.js';
+import { copyFixture, copyFixtureFile, createFixtureProject, linkProjectPackages, writeGeneratedArtifacts } from './fixture-project.js';
 import { accountModelWithField, accountModelWithMissingImport } from './fixture-templates/models/model-generator.js';
 import { compileModelProject, createModelProject, writeModelSources } from './model-project.js';
 import { taggedModelSource } from './fixture-templates/models/model-tags.js';
@@ -226,5 +226,38 @@ test('a job leaves the real companions of other jobs under the same tsconfig alo
     writeModelSources(path.join(jobRoot, 'src'), { 'item.model.ts': taggedModelSource({ name: 'Item', fields: tsSource`name: string` }) });
     writeGeneratedArtifacts(generate({ root: jobRoot, profile }).artifacts);
     assert.ok(fs.existsSync(path.join(jobRoot, 'src/item.model.generated.ts')), `job ${job} wrote its companion`);
+  }
+});
+
+test('a handwritten file that no model imports is checked against the artifacts on the first run, whatever the tsconfig lists', (t: TestContext) => {
+  // The tsconfig has compiler options only, so the project is whatever the compiler's defaults find.
+  const { root, sourceRoot } = project(t);
+  fs.writeFileSync(path.join(root, 'tsconfig.json'), JSON.stringify({
+    compilerOptions: { strict: true, target: 'ES2022', module: 'NodeNext', moduleResolution: 'NodeNext', skipLibCheck: true, noEmit: true },
+  }));
+  writeModelSources(sourceRoot, {
+    'item.model.ts': taggedModelSource({ name: 'Item', fields: tsSource`name: string` }),
+    'handwritten.ts': "import { TItemMissingBaseModel } from './item.model.generated.js';\nexport class Sub extends TItemMissingBaseModel {}\n",
+  });
+  assert.throws(() => generate({ root, profile: { mobx: false, validation: true } }), /TItemMissingBaseModel/);
+});
+
+test('a model source outside the job root generates next to an internal one on every run', (t: TestContext) => {
+  const workspaceRoot = createFixtureProject(t, 'golem-external-source-');
+  linkProjectPackages(workspaceRoot, { '@exprtlabs/golem': path.join(workspace, 'packages/golem') });
+  const root = path.join(workspaceRoot, 'app');
+  const external = path.join(workspaceRoot, 'shared');
+  fs.mkdirSync(root);
+  fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ name: 'app', private: true, type: 'module' }));
+  fs.writeFileSync(path.join(root, 'tsconfig.json'), JSON.stringify({
+    compilerOptions: { strict: true, target: 'ES2022', module: 'NodeNext', moduleResolution: 'NodeNext', skipLibCheck: true, noEmit: true },
+    include: ['src/**/*.ts'],
+  }));
+  writeModelSources(path.join(root, 'src'), { 'inside.model.ts': taggedModelSource({ name: 'Inside', fields: tsSource`name: string` }) });
+  writeModelSources(external, { 'outside.model.ts': taggedModelSource({ name: 'Outside', fields: tsSource`size: number` }) });
+  const sources = [path.join(root, 'src/inside.model.ts'), path.join(external, 'outside.model.ts')];
+  for (const run of ['first', 'second']) {
+    writeGeneratedArtifacts(generate({ root, sources, profile: { mobx: false, validation: true } }).artifacts);
+    assert.ok(fs.existsSync(path.join(external, 'outside.model.generated.ts')), `the ${run} run wrote the external companion`);
   }
 });
