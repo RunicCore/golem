@@ -17,7 +17,7 @@ Requests and responses are validated by default; `ajv` and `ajv-formats` supply 
 
 ## Point to your OpenAPI document
 
-Add `golem.yaml` at the project root. Paths are relative to it, and `name: Provider` names the client `ProviderClient`. The [`mobx`](/reference/config#root-keys) and [`validation`](/reference/config#validation-profiles) root keys, which this excerpt leaves out, set MobX observability and runtime validation for the generated code.
+Add `golem.yaml` at the project root (the example keeps it in `server/`). Paths are relative to it, and `name: Provider` names the client `ProviderClient`. The [`mobx`](/reference/config#root-keys) and [`validation`](/reference/config#validation-profiles) root keys, which this excerpt leaves out, set MobX observability and runtime validation for the generated code.
 
 <<< ../../examples/payments/server/golem.yaml#openapi-job
 
@@ -31,7 +31,7 @@ Generation fails on an invalid document.
 npx golem generate
 ```
 
-The command writes `sdk/`. Import `ProviderClient` from the `sdk/index.js` file under your `output` directory; the example's `provider/client.ts` imports `./sdk/index.js`.
+The command writes the `sdk/` directory under `output`; the example writes `provider/sdk/`. Import `ProviderClient` from the `sdk/index.js` file under your `output` directory; the example's `provider/client.ts` imports `./sdk/index.js`.
 
 ## Generated files
 

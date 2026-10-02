@@ -64,7 +64,7 @@ Calling `setAmount('12.50')` changes `money.amount`, and the reaction above repo
 
 ## Unions and your classes
 
-Put annotations on your class, after `super`. When a union field holds one of your classes, construct it with `new Task(…)`; generated [union conversion](/guide/model-composition#unions) builds only generated classes. The runtime initializes each generated model once
+Put annotations on your class, after `super`. When a union field holds one of your classes, construct it with `new YourClass(…)`; generated [union conversion](/guide/model-composition#unions) builds only generated classes. The runtime initializes each generated model once
 and throws if an already initialized instance is initialized again.
 
 With `mobx: false`, generated files omit MobX imports; all other model and validation settings continue to follow the profile.

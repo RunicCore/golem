@@ -85,7 +85,7 @@ Declare the fields, run `npx golem generate`, then extend the generated class. G
 
 ## One contract, backend to frontend
 
-The controller returns plain types. One `generate` run writes the OpenAPI document, the SDK built from it and your models.
+The controller returns plain types. The server configuration writes the OpenAPI document from the controller; the web configuration builds the SDK from it and your models.
 
 ::: code-group
 
@@ -93,7 +93,7 @@ The controller returns plain types. One `generate` run writes the OpenAPI docume
 
 <<< ../examples/payments/server/golem.yaml#controllers-job [golem.yaml]
 
-<<< ../examples/payments/web/src/submit-payment.ts#payment-client [client.ts]
+<<< ../examples/payments/web/src/submit-payment.ts#payment-client [submit-payment.ts]
 
 :::
 

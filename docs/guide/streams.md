@@ -52,7 +52,7 @@ entry.
 
 ## Connect a custom stream decoder
 
-Declare `application/vnd.example.events` with `itemSchema` on a `readEventIds`
+Declare `application/vnd.provider.events` with `itemSchema` on a `readEventIds`
 operation, then regenerate `ProviderClient`. The decoder below reads integer
 lines and yields the objects declared by `itemSchema`. The same file connects it:
 

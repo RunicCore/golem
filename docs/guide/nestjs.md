@@ -50,7 +50,7 @@ Set `openapiVersion: '3.1.2'` in the controller job when a downstream tool doesn
 
 <<< ../../examples/payments/server/src/payment.model.ts#payment-class
 
-`Payment` extends the generated `TPaymentBaseModel`, which the `models` job writes ([Generate a client from the document](#generate-a-client-from-the-document)). `@ApiOperation({ operationId: 'createPayment' })` replaces the default, so the client method is `createPayment()`. `@ApiBadRequestResponse` from `@nestjs/swagger` produces the `400` response. The controller above produces this operation in `api/openapi.yaml`:
+`Payment` extends the generated `TPaymentBaseModel`, which the `models` job writes ([Generate a client from the document](#generate-a-client-from-the-document)). `@ApiOperation({ operationId: 'createPayment' })` replaces the default, so the client method is `createPayment()`. `@ApiBadRequestResponse` and `@ApiBadGatewayResponse` from `@nestjs/swagger` produce the `400` and `502` responses. The controller above produces this operation in `api/openapi.yaml`:
 
 ```yaml
 post:
@@ -70,6 +70,8 @@ post:
       description: Created
     "400":
       description: Invalid payment input.
+    "502":
+      description: The payment provider declined or is unavailable.
 ```
 
 ### Component names
@@ -87,11 +89,11 @@ A model's component name comes from the types it was declared with:
 
 ## Generate a client from the document
 
-Add an OpenAPI job that reads `./api/openapi.yaml` ([Generate a client](/guide/client)). One configuration can run both jobs:
+The controller job writes `api/openapi.yaml`. An OpenAPI job reads that document and generates the client ([Generate a client](/guide/client)); the example runs it from `web/golem.yaml`. The controller job in `server/golem.yaml`:
 
 <<< ../../examples/payments/server/golem.yaml#controllers-job
 
-`globalPrefix: api` must match `app.setGlobalPrefix()`; the generator reads controllers, not your bootstrap code. The `models` job generates `TPaymentBaseModel`.
+`globalPrefix: api` must match `app.setGlobalPrefix()`; the generator reads controllers, not your bootstrap code. The `models` job in the same configuration generates `TPaymentBaseModel`.
 
 ### Install the client and runtime packages
 
