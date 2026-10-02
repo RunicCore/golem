@@ -22,7 +22,7 @@ Run the lane's files with `npm run test -- --typescript 6`, or run chosen files 
 
 Name a unit test that is too slow for Full `tests/<name>.acceptance.ts` or `tests/openapi/<name>.acceptance.ts`. Acceptance runs it in its "acceptance unit" step.
 
-After you change what a test installs, run `npm run test:prepare` before the next tier run.
+After you change what a test installs, run `npm run test:prepare` before the next tier run. The TypeScript 6 lane changed the runner image, so every other checkout needs one `npm run test:prepare` after it updates to this change.
 
 Full and Acceptance clear the container's Go build cache when it passes 9 GiB. The next run then rebuilds the ttsc plugin, which takes a few minutes longer.
 

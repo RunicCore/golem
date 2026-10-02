@@ -7,13 +7,13 @@ Check which versions Golem supports and which APIs stay stable.
 | Requirement | Version |
 | --- | --- |
 | Node.js | `>=22.15.0` |
-| TypeScript | `~7.0.2` |
+| TypeScript | `>=6.0.0 <7` or `>=7.0.0 <8` for generation; `~7.0.2` for the `parse<T>` rewrite |
 | `ttsc` | `~0.30.4` |
 | NestJS | `^11.0.0` (`@nestjs/common`) |
 | OpenAPI input documents | 3.1, 3.2 |
 | OpenAPI output (`openapiVersion`) | `3.2.0` (default) or `3.1.2` |
 
-TypeScript 5 and 6 don't compile the generated code.
+Generation runs on TypeScript 6.0 and later 6.x, or on 7.x, and writes the same files on both. TypeScript 5 isn't supported. The `parse<T>` rewrite still needs `ttsc`; a later release removes that requirement.
 
 CI runs the unit suite on Node.js 22.15.0 and 24, on Ubuntu and Windows; Windows jobs are allowed to fail.
 

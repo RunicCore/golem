@@ -16,11 +16,11 @@ Find every `@exprtlabs/golem` import your application, NestJS app or tool can us
 | [`temporal`](#temporal) | Temporal field types and their codecs | a `Temporal` global, such as `temporal-polyfill` |
 | [`serde`](#serde) | `parse<T>`, `stringify<T>`, `assertValue<T>`, `toWireFormat<T>`, `fromWireFormat<T>` | none |
 | [`nest`](#nest) | `NestModelInterceptor` and the decorators the plugin inserts | `@nestjs/common`, `rxjs` |
-| [`ttsc-plugin`](#ttsc-plugin) | The compile-time transform for the generic calls | `typescript` 7, `ttsc` 0.30 |
+| [`ttsc-plugin`](#ttsc-plugin) | The compile-time transform for the generic calls | `typescript` `>=6.0.0 <8`, `ttsc` 0.30 |
 | [`generator-api`](#generator-api) | Contracts shared by the generators | none |
 | [`manifest`](#manifest) | Read and find `model-manifest.json` files | none |
 
-Internal subpaths used by the generators: `cli`, `emitter`, `schema`, `schema-graph`, `ajv-tooling`, `type-analysis`, `generated-paths`, `ts`. Don't import them; they may change in any release.
+Internal subpaths used by the generators: `cli`, `emitter`, `schema`, `schema-graph`, `ajv-tooling`, `type-analysis`, `generated-paths`, [`ts`](#ts). Don't import them; they may change in any release.
 
 Generated files import `ajv` only with `validation: true` and `ajvStandalone: false`. With `ajvStandalone: true` they import precompiled validators instead ([validation profiles](/reference/config#validation-profiles)).
 
@@ -458,3 +458,19 @@ An OpenAPI job writes `model-manifest.json` beside its SDK; a model job reads it
 | `MODEL_MANIFEST_FILENAME` | `'model-manifest.json'` | The file name. |
 
 Used by the generators: `ModelManifestEntry`, `ModelManifestProvenance`, `MODEL_MANIFEST_MARKER`, `manifestMarker`, `modelManifestProfile`, `validateModelProfile`, `stableJson`, `stableIdentity`, `sourceDigest`.
+
+## `@exprtlabs/golem/ts` {#ts}
+
+```ts
+import { typescriptVersion, SyntaxKind } from '@exprtlabs/golem/ts';
+```
+
+The generators use this subpath for type analysis and generation. Application code doesn't import it, and it may change in any release. It publishes types that Golem owns, narrowed to what Golem uses: its declarations don't reference `typescript`, and it exports only the value names Golem uses, not the compiler's `API` class or TypeScript 7 client types.
+
+Golem loads the compiler from your project's installed `typescript`. It resolves the package from the directory in `GOLEM_TYPESCRIPT_ROOT`, or from the current directory when the variable is unset, and falls back to the copy beside Golem. It selects the backend by version: `>=6.0.0 <7` or `>=7.0.0 <8`. Any other version fails at load:
+
+```text
+golem supports TypeScript 6.0+ and 7.x; found <version> at <path>.
+```
+
+Both backends generate byte-identical files. A test lane enforces that.
