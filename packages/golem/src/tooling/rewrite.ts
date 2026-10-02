@@ -51,6 +51,14 @@ export class GolemRewriteStaleError extends Error {
   }
 }
 
+/** `.golem/rewrites.json` exists and is not a rewrite index: unreadable JSON, or the wrong shape. */
+export class GolemRewriteMalformedIndexError extends Error {
+  constructor(filename: string) {
+    super(`golem rewrite index at ${filename} is malformed; run golem generate`);
+    this.name = 'GolemRewriteMalformedIndexError';
+  }
+}
+
 export const REWRITE_IMPORT_PREFIX = '__golem_';
 export const REWRITE_INDEX_PATH = '.golem/rewrites.json';
 
@@ -72,7 +80,7 @@ export function readRewriteIndex(root: string): RewriteIndex | undefined {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
     throw error;
   }
-  const malformed = (): Error => new Error(`golem rewrite index at ${filename} is malformed; run golem generate`);
+  const malformed = (): Error => new GolemRewriteMalformedIndexError(filename);
   let value: unknown;
   try {
     value = JSON.parse(content);

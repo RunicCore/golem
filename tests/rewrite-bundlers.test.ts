@@ -50,13 +50,13 @@ function listedSource(variant = ''): string {
 }
 
 /** An index written by hand: each key is a path from the index's root, each value the text the index describes. */
-function handIndex(sources: Readonly<Record<string, string>>): RewriteIndex {
+function handIndex(sources: Readonly<Record<string, string>>, replacement = "'rewritten'", golem = GOLEM_VERSION): RewriteIndex {
   const files: Record<string, RewriteIndex['files'][string]> = {};
   for (const [key, text] of Object.entries(sources)) {
     const start = text.indexOf(ORIGINAL);
-    files[key] = { sha256: sha256Hex(text), edits: [{ start, end: start + ORIGINAL.length, expect: ORIGINAL, text: "'rewritten'" } satisfies RewriteEdit], imports: [] };
+    files[key] = { sha256: sha256Hex(text), edits: [{ start, end: start + ORIGINAL.length, expect: ORIGINAL, text: replacement } satisfies RewriteEdit], imports: [] };
   }
-  return { version: 1, golem: GOLEM_VERSION, files };
+  return { version: 1, golem, files };
 }
 
 /** Bundles `<root>/<entry>` to `<outDir>/main.mjs` with a linked source map. */
@@ -261,8 +261,8 @@ test('vite serve: the index above Vite\'s root is watched, and a change invalida
   const send = t.mock.method(server.ws, 'send', () => undefined);
   const reloads = (): number => send.mock.calls.filter((call) => (call.arguments[0] as { type?: string } | undefined)?.type === 'full-reload').length;
   const moduleOf = (file: string) => server.moduleGraph.getModuleById(path.join(project, file));
-  const transformBoth = async (): Promise<void> => {
-    for (const url of ['/a.ts', '/b.ts']) assert.match((await server.transformRequest(url))?.code ?? '', /"rewritten"/);
+  const transformBoth = async (rewritten = 'rewritten'): Promise<void> => {
+    for (const url of ['/a.ts', '/b.ts']) assert.match((await server.transformRequest(url))?.code ?? '', new RegExp(`"${rewritten}"`));
   };
   const change = (): void => { server.watcher.emit('change', indexFile); };
 
@@ -288,12 +288,59 @@ test('vite serve: the index above Vite\'s root is watched, and a change invalida
   assert.ok(moduleOf('app/a.ts')?.transformResult && moduleOf('app/b.ts')?.transformResult);
   assert.equal(reloads(), 1);
 
-  // An entry removed from the index: that module is invalidated.
-  write(project, '.golem/rewrites.json', JSON.stringify(handIndex({ 'app/a.ts': changedA })));
+  // An entry with the same sha256 and other edits: what an edit holds depends on more than the file's text, so it is invalidated.
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  await transformBoth();
+  write(project, '.golem/rewrites.json', JSON.stringify(handIndex({ 'app/a.ts': changedA, 'app/b.ts': b }, "'edited'")));
+  change();
+  assert.equal(moduleOf('app/a.ts')?.transformResult, null);
+  assert.equal(moduleOf('app/b.ts')?.transformResult, null);
+  assert.equal(reloads(), 2);
+
+  // An entry removed from the index: that module is invalidated, and the other one is not.
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  await transformBoth('edited');
+  write(project, '.golem/rewrites.json', JSON.stringify(handIndex({ 'app/a.ts': changedA }, "'edited'")));
   change();
   assert.ok(moduleOf('app/a.ts')?.transformResult);
   assert.equal(moduleOf('app/b.ts')?.transformResult, null);
-  assert.equal(reloads(), 2);
+  assert.equal(reloads(), 3);
+
+  // An index written by another golem version changes every entry.
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  write(project, '.golem/rewrites.json', JSON.stringify(handIndex({ 'app/a.ts': changedA }, "'edited'", '0.0.1-other')));
+  change();
+  assert.equal(moduleOf('app/a.ts')?.transformResult, null);
+  assert.equal(reloads(), 4);
+});
+
+test('vite serve: a missing or unreadable index is watched, and the page reloads once the index reads again', async (t) => {
+  const project = createFixtureProject(t, 'golem-bundler-serve-missing-');
+  write(project, 'package.json', '{"type":"module"}');
+  write(project, 'tsconfig.json', '{}');
+  const indexFile = path.join(project, '.golem/rewrites.json');
+  const text = listedSource();
+  write(project, 'src/a.ts', text);
+  const server = await serve(t, project);
+  const watched: string[] = [];
+  const add = server.watcher.add.bind(server.watcher);
+  server.watcher.add = (paths) => { watched.push(...[paths].flat()); return add(paths); };
+  const send = t.mock.method(server.ws, 'send', () => undefined);
+  const reloads = (): number => send.mock.calls.filter((call) => (call.arguments[0] as { type?: string } | undefined)?.type === 'full-reload').length;
+
+  await assert.rejects(server.transformRequest('/src/a.ts'), /no golem rewrite index at .*rewrites\.json; run golem generate/);
+  assert.deepEqual(watched, [indexFile]);
+
+  // A torn write is not an index yet.
+  write(project, '.golem/rewrites.json', '{"version":');
+  server.watcher.emit('add', indexFile);
+  assert.equal(reloads(), 0);
+
+  // The index lists nothing the page used, and the page still reloads: the error it showed is gone.
+  write(project, '.golem/rewrites.json', JSON.stringify(handIndex({ 'src/a.ts': text })));
+  server.watcher.emit('change', indexFile);
+  assert.equal(reloads(), 1);
+  assert.match((await server.transformRequest('/src/a.ts'))?.code ?? '', /"rewritten"/);
 });
 
 test('esbuild: a stale source is an error located at the source file', async (t) => {
@@ -341,4 +388,66 @@ test('esbuild: watch mode builds again when the index changes', async (t) => {
   write(root, '.golem/rewrites.json', JSON.stringify(handIndex({ 'src/a.ts': text, 'src/unlisted.ts': unlisted })));
   await built(2);
   assert.equal(outputs[1]!.match(/rewritten/g)?.length, 2);
+});
+
+test('esbuild: a file the index does not list still reaches the onLoad plugins after golem', async (t) => {
+  const root = createFixtureProject(t, 'golem-bundler-esbuild-later-');
+  write(root, 'package.json', '{"type":"module"}');
+  write(root, 'tsconfig.json', '{}');
+  const text = listedSource();
+  write(root, 'src/a.ts', text);
+  write(root, 'src/unlisted.ts', listedSource(' // not listed'));
+  write(root, '.golem/rewrites.json', JSON.stringify(handIndex({ 'src/a.ts': text })));
+  write(root, 'src/main.ts', "import { value } from './a.ts';\nimport { value as other } from './unlisted.ts';\nconsole.log(value, other);\n");
+  const seen: string[] = [];
+  const result = await esbuild({
+    absWorkingDir: root,
+    entryPoints: ['src/main.ts'],
+    bundle: true,
+    write: false,
+    logLevel: 'silent',
+    plugins: [esbuildPlugin(), {
+      name: 'later',
+      setup(build) {
+        build.onLoad({ filter: /\.ts$/, namespace: 'file' }, ({ path: file }) => {
+          seen.push(path.basename(file));
+          return file.endsWith('unlisted.ts') ? { contents: "export const value = 'from the later plugin';", loader: 'ts' } : undefined;
+        });
+      },
+    }],
+  });
+  assert.ok(seen.includes('unlisted.ts'), seen.join(', '));
+  assert.match(result.outputFiles[0]!.text, /from the later plugin/);
+});
+
+test('esbuild: watch mode builds again when a missing or malformed index is written', async (t) => {
+  const root = createFixtureProject(t, 'golem-bundler-esbuild-watch-missing-');
+  write(root, 'package.json', '{"type":"module"}');
+  write(root, 'tsconfig.json', '{}');
+  const text = listedSource();
+  write(root, 'src/a.ts', text);
+  write(root, 'src/main.ts', "import { value } from './a.ts';\nconsole.log(value);\n");
+  const errors: string[][] = [];
+  const context = await esbuildContext({
+    absWorkingDir: root,
+    entryPoints: ['src/main.ts'],
+    bundle: true,
+    write: false,
+    logLevel: 'silent',
+    plugins: [esbuildPlugin(), { name: 'record', setup(build) { build.onEnd((result) => { errors.push(result.errors.map((error) => error.text)); }); } }],
+  });
+  t.after(() => context.dispose());
+  await context.watch();
+  const built = async (count: number): Promise<void> => {
+    for (const deadline = Date.now() + 10_000; errors.length < count && Date.now() < deadline;) await new Promise((resolve) => setTimeout(resolve, 50));
+    assert.ok(errors.length >= count, `no build ${count} after the index was written`);
+  };
+  await built(1);
+  assert.match(errors[0]!.join('\n'), /no golem rewrite index at .*rewrites\.json; run golem generate/);
+  write(root, '.golem/rewrites.json', '{"version":');
+  await built(2);
+  assert.match(errors[1]!.join('\n'), /is malformed; run golem generate/);
+  write(root, '.golem/rewrites.json', JSON.stringify(handIndex({ 'src/a.ts': text })));
+  await built(3);
+  assert.deepEqual(errors[2], []);
 });

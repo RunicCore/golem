@@ -61,16 +61,19 @@ export interface RewriteHostIndex {
   readonly relative: string;
 }
 
+/** The directory whose index owns `file`: `root` when given, else the nearest ancestor that holds an index, else where one is expected. */
+export function rewriteIndexRoot(file: string, root?: string): string {
+  return root ?? ancestorsOf(file).find((directory) => existsSync(path.join(directory, REWRITE_INDEX_PATH))) ?? expectedRoot(file);
+}
+
 /**
  * The index that owns `file`: the one in `root` when given, else the nearest ancestor directory that holds one.
  * Throws when there is none, so a host never passes a TypeScript file on unrewritten.
  */
 export function findRewriteIndex(file: string, root?: string): RewriteHostIndex {
-  const owner = root ?? ancestorsOf(file).find((directory) => existsSync(path.join(directory, REWRITE_INDEX_PATH)));
-  const index = owner === undefined ? undefined : rewriteIndexOf(owner);
-  if (owner === undefined || index === undefined) {
-    throw new Error(`no golem rewrite index at ${path.join(owner ?? expectedRoot(file), REWRITE_INDEX_PATH)}; run golem generate`);
-  }
+  const owner = rewriteIndexRoot(file, root);
+  const index = rewriteIndexOf(owner);
+  if (index === undefined) throw new Error(`no golem rewrite index at ${path.join(owner, REWRITE_INDEX_PATH)}; run golem generate`);
   return { root: owner, index, relative: path.relative(owner, file).split(path.sep).join('/') };
 }
 
