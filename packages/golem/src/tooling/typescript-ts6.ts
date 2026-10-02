@@ -72,7 +72,6 @@ interface ClassicChecker {
   getUnknownType(): ClassicType;
   getExportsOfModule(symbol: ClassicSymbol): readonly ClassicSymbol[];
   tryGetMemberInModuleExports(name: string, moduleSymbol: ClassicSymbol): ClassicSymbol | undefined;
-  getRootSymbols(symbol: ClassicSymbol): readonly ClassicSymbol[];
   getIndexInfosOfType(type: ClassicType): readonly ClassicIndexInfo[];
   getBaseTypes(type: ClassicType): readonly ClassicType[];
   getDeclaredTypeOfSymbol(symbol: ClassicSymbol): ClassicType;
@@ -296,20 +295,24 @@ const originalSymbols = new WeakMap<object, ClassicSymbol>();
 const originalSignatures = new WeakMap<object, ClassicSignature>();
 
 function unwrapType(type: Golem.Type): ClassicType {
+  // An unwrapped type is already the classic object; golem's declaration hides its classic members.
   return originalTypes.get(type) ?? (type as unknown as ClassicType);
 }
 
 function unwrapSymbol(symbol: Golem.Symbol): ClassicSymbol {
+  // An unwrapped symbol is already the classic object; golem's declaration hides its classic members.
   return originalSymbols.get(symbol) ?? (symbol as unknown as ClassicSymbol);
 }
 
 function unwrapSignature(signature: Golem.Signature): ClassicSignature {
+  // An unwrapped signature is already the classic object; golem's declaration hides its classic members.
   return originalSignatures.get(signature) ?? (signature as unknown as ClassicSignature);
 }
 
 /** A property read that leaves the classic object as `this`, so the compiler never sees a wrapper. */
 function passthrough(target: object, property: string | symbol): unknown {
   const value: unknown = Reflect.get(target, property, target);
+  // A function member is called with the classic object as `this`; its parameters are not known here.
   return typeof value === 'function' ? (value as (...args: never[]) => unknown).bind(target) : value;
 }
 
@@ -476,8 +479,8 @@ class CompatChecker implements Golem.TypeChecker {
   }
 
   getRootSymbols(symbol: Golem.Symbol): readonly Golem.Symbol[] {
-    const roots = this.inner.getRootSymbols(unwrapSymbol(symbol));
-    return roots.length > 0 ? roots.map((root) => wrapSymbol(root)) : [symbol];
+    // The TypeScript 7 backend returns the symbol itself (typescript-ts7.ts), so output matches across compilers.
+    return [symbol];
   }
 
   getIndexTypeOfType(type: Golem.Type, kind: Golem.IndexKind): Golem.Type | undefined {
@@ -580,7 +583,9 @@ function chainTexts(message: string | ClassicMessageChain, depth: number): strin
 
 /** The classic compiler's diagnostics for the program, each reading `text` as the head message. */
 export function getPreEmitDiagnostics(program: Golem.Program): readonly Golem.Diagnostic[] {
-  return classic.getPreEmitDiagnostics((program as CompatProgram).program)
+  if (!(program instanceof CompatProgram)) throw new TypeError('getPreEmitDiagnostics needs a program opened by the TypeScript 6 backend.');
+  return classic.getPreEmitDiagnostics(program.program)
+    // Object.create returns `any`; the result is the classic diagnostic with `text` added.
     .map((diagnostic) => Object.create(diagnostic, { text: { value: headText(diagnostic.messageText), enumerable: true } }) as Golem.Diagnostic & ClassicDiagnostic);
 }
 

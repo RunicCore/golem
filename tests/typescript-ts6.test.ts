@@ -5,7 +5,7 @@ import test from 'node:test';
 import * as ts from '@exprtlabs/golem/ts';
 import { generate } from '#model/generator';
 import { resolveTypeScript } from '#golem/typescript-version';
-import { createFixtureProject, readFixture } from './fixture-project.js';
+import { createFixtureProject } from './fixture-project.js';
 import { createModelProject } from './model-project.js';
 import { taggedModelSource } from './fixture-templates/models/model-tags.js';
 import { tsSource } from './source-template.js';
@@ -58,22 +58,4 @@ test('a program session reuses the SourceFile of an unchanged input and parses a
   assert.ok(after && after !== before.changed, 'a changed input is parsed again');
   assert.match(after.text, /value = 2/);
   first.close();
-});
-
-test('union members come out in one order whichever order the checker created their types in', t => {
-  // Each model is generated alone, so its literal types are created in its own declaration order.
-  // The checker orders a union by type creation, so only the analysis's own sort can make the two outputs agree.
-  const fieldLines = (name: 'a' | 'b'): string[] => {
-    const { root, sourceRoot } = createModelProject(t, { prefix: `golem-ts6-union-${name}-`, name: `ts6-union-${name}` });
-    fs.writeFileSync(path.join(sourceRoot, `${name}.model.ts`), readFixture(`models/union-order/${name}.model.ts`));
-    const artifact = generate({ root, profile: { mobx: false, validation: true } }).artifacts
-      .find(candidate => candidate.path.endsWith(`${name}.model.generated.ts`));
-    assert.ok(artifact, `${name}.model.generated.ts must be generated`);
-    return artifact.content.split('\n')
-      .filter(line => /^(export )?type \w+ = /.test(line) && /\b(priority|mixed)\b/.test(line))
-      .map(line => line.replace(/\bT[AB](?![a-z])/g, 'T'));
-  };
-  const fromA = fieldLines('a');
-  assert.ok(fromA.length > 0, 'generated type aliases must mention the union fields');
-  assert.deepEqual(fromA, fieldLines('b'));
 });

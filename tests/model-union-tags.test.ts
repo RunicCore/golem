@@ -39,22 +39,22 @@ test('an IModel union variant tagged by several literal values is selected by ea
   }
 });
 
-test('union members are emitted in canonical order regardless of declaration order', t => {
-  const project = createModelProject(t, { prefix: 'golem-union-order-', name: 'union-order' });
-  for (const name of ['a.model.ts', 'b.model.ts']) {
-    writeFileSync(path.join(project.sourceRoot, name), readFixture(`models/union-order/${name}`));
-  }
-  const result = generate({ root: project.root, profile: { mobx: false, validation: true } });
-  const text = (file: string): string => {
-    const artifact = result.artifacts.find(candidate => candidate.path.endsWith(file));
-    assert.ok(artifact, `${file} must be generated`);
-    return artifact.content;
+test('union members are emitted in canonical order whichever order the checker created their types in', t => {
+  // Each model is generated alone, so its literal types are created in its own declaration order.
+  // The checker orders a union by type creation, so only the analysis's own sort can make the two outputs agree.
+  // (Models in one program share their literal types, so the checker orders their unions alike and no such pair could fail.)
+  const fieldLines = (name: 'a' | 'b'): string[] => {
+    const project = createModelProject(t, { prefix: `golem-union-order-${name}-`, name: `union-order-${name}` });
+    writeFileSync(path.join(project.sourceRoot, `${name}.model.ts`), readFixture(`models/union-order/${name}.model.ts`));
+    const artifact = generate({ root: project.root, profile: { mobx: false, validation: true } }).artifacts
+      .find(candidate => candidate.path.endsWith(`${name}.model.generated.ts`));
+    assert.ok(artifact, `${name}.model.generated.ts must be generated`);
+    // Every generated type alias that mentions a field, with the alias name normalised (codec-id lines carry hashes and are excluded).
+    return artifact.content.split('\n')
+      .filter(line => /^(export )?type \w+ = /.test(line) && /\b(priority|mixed)\b/.test(line))
+      .map(line => line.replace(/\bT[AB](?![a-z])/g, 'T')); // TA, TAJSON, TABaseModel -> T, TJSON, TBaseModel
   };
-  // Every generated type alias that mentions a field, with the alias name normalised (codec-id lines carry hashes and are excluded).
-  const fieldLines = (file: string): string[] => text(file).split('\n')
-    .filter(line => /^(export )?type \w+ = /.test(line) && /\b(priority|mixed)\b/.test(line))
-    .map(line => line.replace(/\bT[AB](?![a-z])/g, 'T')); // TA, TAJSON, TABaseModel -> T, TJSON, TBaseModel
-  const fromA = fieldLines('a.model.generated.ts');
+  const fromA = fieldLines('a');
   assert.ok(fromA.length > 0, 'generated type aliases must mention the union fields');
-  assert.deepEqual(fromA, fieldLines('b.model.generated.ts'));
+  assert.deepEqual(fromA, fieldLines('b'));
 });
