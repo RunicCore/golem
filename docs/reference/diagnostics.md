@@ -318,7 +318,7 @@ An error prints its code, location when known, and message, then stops generatio
 
 ### RUNM1070
 
-**Rewrite site outside the project root.** A file that the TypeScript project includes but that lies outside the project root holds a serde call with a type argument, or a class that extends a generated model base class. The index in `.golem/rewrites.json` is keyed by files under the root, so golem can't rewrite it. The message names the file. **Fix:** Move the file under the root, or run `golem generate` for the package that contains it.
+**Rewrite site outside the project root.** A file that the TypeScript project includes but that lies outside the directory of its tsconfig holds a serde call with a type argument, or a class that extends a generated model base class. The index in `.golem/rewrites.json` is keyed by files under that directory, so golem can't rewrite it. The message names the file. **Fix:** Move the file under the tsconfig's directory, or run `golem generate` for the package that contains it.
 
 ### RUNM1071
 

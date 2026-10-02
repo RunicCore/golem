@@ -3,6 +3,7 @@ import path from 'node:path';
 import * as ts from './typescript-ns.js';
 import { GolemDiagnosticSeverity } from './generator-api.js';
 import type { GeneratorSession, GolemDiagnostic, InputObserver } from './generator-api.js';
+import { canonicalPath } from './config.js';
 import { operationCodecRegistryPath } from './generated-paths.js';
 import { atomicWrite } from './outputs.js';
 import {
@@ -13,7 +14,7 @@ import {
   sha256Hex,
 } from './rewrite.js';
 import type { RewriteEdit, RewriteFile, RewriteImport, RewriteIndex } from './rewrite.js';
-import { createProjectProgram, isGeneratedCompanion, retainedProgramSession } from './type-analysis/project.js';
+import { canonicalFilename, createProjectProgram, isGeneratedCompanion, retainedProgramSession } from './type-analysis/project.js';
 import { resolveSymbol } from './type-analysis/symbols.js';
 import { GOLEM_VERSION } from './version.js';
 
@@ -560,19 +561,20 @@ export function scanRewrites(input: ScanInput): ScanResult {
 }
 
 /**
- * The `@Body()` and `@Query()` parameters whose codec id the controllers job's generated operation codecs do not hold. The id the scan stamps and the id the controllers job writes come
+ * The `@Body()` and `@Query()` parameters whose codec id no controllers job's generated operation codecs hold. The id the scan stamps and the id the controllers job writes come
  * from separate analyses, so a mismatch means the decorators and the generated operations disagree. A missing registry
- * disagrees with every site.
+ * disagrees with every site. `roots` are the controllers job roots whose registries the project's sites may belong to.
  */
-export function checkNestCodecs(root: string, scanned: ScanResult): GolemDiagnostic[] {
-  let registry: string | undefined;
-  try {
-    registry = fs.readFileSync(operationCodecRegistryPath(root), 'utf8');
-  } catch {
-    registry = undefined;
-  }
+export function checkNestCodecs(roots: string | readonly string[], scanned: ScanResult): GolemDiagnostic[] {
+  const registries = (typeof roots === 'string' ? [roots] : roots).flatMap((root) => {
+    try {
+      return [fs.readFileSync(operationCodecRegistryPath(root), 'utf8')];
+    } catch {
+      return [];
+    }
+  });
   return scanned.nestCodecSites
-    .filter((site) => registry === undefined || !registry.includes(JSON.stringify(site.id)))
+    .filter((site) => !registries.some((registry) => registry.includes(JSON.stringify(site.id))))
     .map((site) => ({
       code: CODE_NEST_REGISTRY,
       severity: GolemDiagnosticSeverity.Error,
@@ -588,11 +590,26 @@ export function writeRewriteIndex(root: string, index: RewriteIndex): boolean {
   return atomicWrite(path.join(root, REWRITE_INDEX_PATH), `${JSON.stringify(index, null, 2)}\n`);
 }
 
+/**
+ * The directory of the tsconfig that owns the sources under `root`: it holds the project's `.golem/rewrites.json`, and
+ * the index keys are relative to it. `golem generate` and `golem build` agree on it, so a package without a tsconfig of its own is
+ * indexed at the parent tsconfig that includes it. A root without a tsconfig is its own directory. `onInput` observes the lookups.
+ */
+export function projectDirectory(root: string, onInput?: InputObserver): string {
+  const configPath = ts.findConfigFile(root, (filename) => {
+    onInput?.(canonicalFilename(filename));
+    return ts.sys.fileExists(filename);
+  }, 'tsconfig.json');
+  return configPath === undefined ? root : canonicalPath(path.dirname(configPath));
+}
+
 /** Open the project's program and scan it. `onInput` observes every file the compiler reads. */
 export function scanProjectRewrites(input: {
   readonly root: string;
+  /** The directory the index keys are relative to, from `projectDirectory`; defaults to `root`. */
+  readonly indexRoot?: string;
   readonly nest: boolean;
-  /** The session and owner of the job that reads this project, so one compiler serves its generation and this scan. */
+  /** The session and owner of the job that reads this project, so one compiler serves its generation and this scan; the session is kept under `root`. */
   readonly session?: GeneratorSession;
   readonly sessionOwner?: string;
   readonly onInput?: InputObserver;
@@ -600,7 +617,7 @@ export function scanProjectRewrites(input: {
   const { root, nest, session, sessionOwner, onInput } = input;
   const info = createProjectProgram(root, onInput, sessionOwner === undefined ? undefined : retainedProgramSession(session, sessionOwner, root));
   using program = info.program;
-  return scanRewrites({ root, program, checker: program.getTypeChecker(), nest });
+  return scanRewrites({ root: input.indexRoot ?? root, program, checker: program.getTypeChecker(), nest });
 }
 
 /**

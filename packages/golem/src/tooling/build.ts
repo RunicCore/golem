@@ -2,17 +2,18 @@ import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 
-import { canonicalPath, contains, resolveConfig } from './config.js';
+import { contains, resolveConfig } from './config.js';
 import { GolemDiagnosticSeverity } from './generator-api.js';
 import type { GolemDiagnostic } from './generator-api.js';
 import { atomicWrite } from './outputs.js';
 import { applyRewrites } from './rewrite.js';
 import type { RewriteIndex } from './rewrite.js';
-import { scanRewrites, writeRewriteIndex } from './rewrite-scan.js';
+import { projectDirectory, scanRewrites, writeRewriteIndex } from './rewrite-scan.js';
 import { composeSourceMaps } from './source-map.js';
 import type { SourceMapV3 } from './source-map.js';
 import * as ts from './typescript-ns.js';
 import { resolveTypeScript } from './typescript-version.js';
+import { signature } from './watch.js';
 
 export interface BuildOptions {
   /** A tsconfig file, or a directory that holds `tsconfig.json`, as `tsc -p` takes it. */
@@ -137,7 +138,7 @@ function nestEnabled(root: string, observe: (filename: string) => void): boolean
     const filename = path.join(directory, 'golem.yaml');
     if (fs.existsSync(filename)) {
       observe(filename);
-      return resolveConfig(filename).jobs.some((job) => job.kind === 'controllers' && canonicalPath(job.options.root) === root);
+      return resolveConfig(filename).jobs.some((job) => job.kind === 'controllers' && projectDirectory(job.options.root) === root);
     }
     if (path.dirname(directory) === directory) return false;
   }
@@ -304,9 +305,10 @@ async function buildOnce(session: ts.ProgramSession, configFile: string, inputs:
   return emit.code;
 }
 
-function signature(filename: string): string {
-  const stat = fs.statSync(filename, { throwIfNoEntry: false });
-  return stat === undefined ? 'missing' : `${stat.mtimeMs}:${stat.size}`;
+/** A directory's mtime moves when a file is added or removed in it, which is how a new source is noticed. */
+function directorySignature(directory: string): string {
+  const stat = fs.statSync(directory, { throwIfNoEntry: false });
+  return stat === undefined ? 'missing' : String(stat.mtimeMs);
 }
 
 /** The directories above each input up to the root: a file added beside an input changes one of them. */
@@ -353,7 +355,7 @@ export async function runBuild(options: BuildOptions): Promise<{ exitCode: numbe
       process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
     }
     previous = new Map([...fingerprints()].map(([input, value]) => [input, before.get(input) ?? value]));
-    directories = new Map([...watchedDirectories(root, inputs)].map((directory) => [directory, signature(directory)]));
+    directories = new Map([...watchedDirectories(root, inputs)].map((directory) => [directory, directorySignature(directory)]));
   };
   await attempt();
   process.stdout.write('Watching for changes.\n');
@@ -362,7 +364,7 @@ export async function runBuild(options: BuildOptions): Promise<{ exitCode: numbe
     const timer = setInterval(() => {
       if (busy) return;
       const changed = [...fingerprints()].filter(([input, value]) => previous.get(input) !== value).map(([input]) => input);
-      const added = [...directories].some(([directory, value]) => signature(directory) !== value);
+      const added = [...directories].some(([directory, value]) => directorySignature(directory) !== value);
       if (changed.length === 0 && !added) return;
       busy = true;
       session.inputsChanged(changed);

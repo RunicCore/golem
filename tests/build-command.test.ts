@@ -6,7 +6,7 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import test, { type TestContext } from 'node:test';
 
-import { parseArguments } from '#golem/cli';
+import { parseArguments, runPipeline } from '#golem/cli';
 import { runBuild } from '#golem/build';
 import { readRewriteIndex, sha256Hex } from '#golem/rewrite';
 import { decodeMappings } from '#golem/source-map';
@@ -324,6 +324,33 @@ test('the tsconfig directory owns the index: a parent tsconfig builds every pack
   assert.deepEqual(Object.keys(index?.files ?? {}).filter((file) => file.endsWith('calls.ts')).sort(), ['packages/a/src/calls.ts', 'packages/b/src/calls.ts']);
   assert.equal(fs.existsSync(path.join(root, 'packages/a/.golem')), false);
   assert.match(fs.readFileSync(path.join(root, 'build/packages/b/src/calls.js'), 'utf8'), /requireObjectCodec\("TMoney_11111111"\)\.stringify\(/);
+});
+
+test('a package without a tsconfig of its own, under a parent tsconfig, gets one index from golem generate and golem build', async (t) => {
+  const { root } = createModelProject(t, {
+    prefix: 'golem-build-package-',
+    name: 'build-package',
+    linkTypescript: true,
+    packages: { '@exprtlabs/golem-model': path.join(workspace, 'packages/golem-model') },
+    rootDir: '.',
+    include: ['packages/*/src/**/*.ts'],
+  });
+  write(root, 'golem.yaml', 'version: 1\nmobx: false\nvalidation: false\nmodels:\n  root: packages/a\n');
+  copyFixtureFile(root, 'models/serde/base-payment-model/money.model.ts', 'packages/a/src/money.model.ts');
+  write(root, 'packages/a/src/use.ts', USE);
+  // A sibling package that the same tsconfig includes: its sites are not outside the tsconfig directory.
+  for (const file of ['payment.model.ts', 'payment.model.generated.ts', 'iobject-plugin-keys.ts', 'calls.ts']) copyFixtureFile(root, `rewrite/${file}`, `packages/b/src/${file}`);
+
+  await runPipeline(path.join(root, 'golem.yaml'));
+  const index = readRewriteIndex(root);
+  assert.deepEqual(Object.keys(index?.files ?? {}).filter((file) => file.endsWith('use.ts') || file.endsWith('calls.ts')).sort(), ['packages/a/src/use.ts', 'packages/b/src/calls.ts']);
+  assert.equal(fs.existsSync(path.join(root, 'packages/a/.golem')), false, 'the package gets no index of its own');
+  await runPipeline(path.join(root, 'golem.yaml'), { check: true });
+  const generated = fs.readFileSync(path.join(root, '.golem/rewrites.json'), 'utf8');
+
+  assert.equal((await build(root)).exitCode, 0);
+  assert.equal(fs.readFileSync(path.join(root, '.golem/rewrites.json'), 'utf8'), generated, 'golem build reads and writes the index golem generate wrote');
+  assert.match(fs.readFileSync(path.join(root, 'build/packages/a/src/use.js'), 'utf8'), /requireObjectCodec\("TMoney_[0-9a-f]{8}"\)\.stringify\(/);
 });
 
 // Watch

@@ -21,7 +21,8 @@ function sourceCandidates(config: GolemConfig, kind: 'models' | 'controllers'): 
   return found;
 }
 
-function signature(filename: string): string {
+/** Content signature of a watched path: `missing`, `directory` (a directory's mtime also moves on output writes), or mtime, ctime and size. */
+export function signature(filename: string): string {
   try {
     // Most watched paths are failed module-resolution probes; avoid an exception per missing path.
     const stat = fs.statSync(filename, { throwIfNoEntry: false });

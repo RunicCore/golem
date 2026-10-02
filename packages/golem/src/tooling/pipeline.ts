@@ -10,7 +10,7 @@ import { validateModelManifest } from './model-manifest.js';
 import type { GolemArtifact, GolemDiagnostic, GolemResult, GeneratorSession } from './generator-api.js';
 import { assertRuntimeCompatible } from './runtime-compatibility.js';
 import { REWRITE_INDEX_PATH } from './rewrite.js';
-import { assertRewriteIndexCurrent, checkNestCodecs, scanProjectRewrites, writeRewriteIndex } from './rewrite-scan.js';
+import { assertRewriteIndexCurrent, checkNestCodecs, projectDirectory, scanProjectRewrites, writeRewriteIndex } from './rewrite-scan.js';
 
 export type InputKind = 'config' | 'controllers' | 'openapi' | 'models' | 'generator';
 
@@ -263,25 +263,33 @@ function assertNoDiagnosticErrors(job: GolemJob, result: GolemResult): void {
 interface RewriteRoot {
   /** The job whose compiler the scan borrows; none for a config without a models or controllers job. */
   readonly job?: GolemJob;
-  readonly nest: boolean;
+  /** The root the borrowed compiler is kept under: its job's root, or the config directory without a job. */
+  readonly root: string;
+  /** The roots of the controllers jobs whose generated operation codecs hold this project's `@Body()` and `@Query()` ids. */
+  readonly controllerRoots: readonly string[];
 }
 
 /**
- * The project roots whose sources golem rewrites: where a models or controllers job reads its TypeScript project, or,
- * for a config with neither, the config directory, so an app that only calls an SDK gets an index too. The scan borrows
- * the compiler of the first models or controllers job at a root.
+ * The projects whose sources golem rewrites, keyed by the directory of their tsconfig: that directory owns the index
+ * (`golem build` uses the same rule), so jobs in packages that share a parent tsconfig share its index. A project is
+ * found from where a models or controllers job reads its sources or, for a config with neither, from the config
+ * directory, so an app that only calls an SDK gets an index too. The scan borrows the compiler of the first models or
+ * controllers job of the project.
  */
-function rewriteRoots(config: GolemConfig): ReadonlyMap<string, RewriteRoot> {
-  const roots = new Map<string, { job: GolemJob; nest: boolean }>();
+function rewriteRoots(config: GolemConfig, observe: (filename: string, kind: InputKind) => void): ReadonlyMap<string, RewriteRoot> {
+  const roots = new Map<string, RewriteRoot>();
   for (const job of config.jobs) {
     if (job.kind !== 'models' && job.kind !== 'controllers') continue;
-    const known = roots.get(job.options.root);
-    roots.set(job.options.root, {
-      job: known && (known.job.kind === 'models' || job.kind !== 'models') ? known.job : job,
-      nest: (known?.nest ?? false) || job.kind === 'controllers',
+    const directory = projectDirectory(job.options.root, filename => observe(filename, job.kind));
+    const known = roots.get(directory);
+    const borrowed = known?.job && (known.job.kind === 'models' || job.kind !== 'models') ? known : { job, root: job.options.root };
+    roots.set(directory, {
+      job: borrowed.job,
+      root: borrowed.root,
+      controllerRoots: [...known?.controllerRoots ?? [], ...job.kind === 'controllers' ? [job.options.root] : []],
     });
   }
-  return roots.size > 0 ? roots : new Map([[config.directory, { nest: false }]]);
+  return roots.size > 0 ? roots : new Map([[projectDirectory(config.directory, filename => observe(filename, 'models')), { root: config.directory, controllerRoots: [] }]]);
 }
 
 /** Select source consumers and then follow generated-artifact edges in pipeline order. */
@@ -412,11 +420,13 @@ export async function runPipeline(filename: string, options: PipelineOptions = {
     manifests.push(...result.manifestPaths);
     results.set(job.id, result);
   }
-  for (const [root, { job, nest }] of rewriteRoots(config)) {
+  for (const [indexRoot, { job, root, controllerRoots }] of rewriteRoots(config, observe)) {
+    const nest = controllerRoots.length > 0;
     const keys = job ? used.get(job.id) ?? new Set<string>() : undefined;
     if (job && keys) used.set(job.id, keys);
     const scanned = scanProjectRewrites({
       root,
+      indexRoot,
       nest,
       // Without a job there is no compiler to borrow; the scan opens its own and closes it when idle.
       ...(job && keys ? {
@@ -429,13 +439,13 @@ export async function runPipeline(filename: string, options: PipelineOptions = {
     const errors = scanned.diagnostics.filter(diagnostic => diagnostic.severity === GolemDiagnosticSeverity.Error);
     if (errors.length > 0) throw new Error(errorDiagnosticsMessage('golem rewrite scan', errors));
     if (options.check) {
-      assertRewriteIndexCurrent(root, scanned.index);
-      const disagreements = nest ? checkNestCodecs(root, scanned) : [];
+      assertRewriteIndexCurrent(indexRoot, scanned.index);
+      const disagreements = nest ? checkNestCodecs(controllerRoots, scanned) : [];
       if (disagreements.length > 0) throw new Error(errorDiagnosticsMessage('golem nest codec check', disagreements));
       continue;
     }
-    writeRewriteIndex(root, scanned.index);
-    const indexFile = path.join(root, REWRITE_INDEX_PATH);
+    writeRewriteIndex(indexRoot, scanned.index);
+    const indexFile = path.join(indexRoot, REWRITE_INDEX_PATH);
     owned.add(indexFile);
     options.onOwned?.([indexFile]);
   }

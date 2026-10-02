@@ -59,7 +59,7 @@ A build never edits your source files. It writes the declarations and JavaScript
 - `extends` may name a file anywhere. `paths` and `baseUrl` targets under the directory work as they do for `tsc`.
 - `outFile`, `rootDirs` and `inlineSourceMap` are not supported. `-b` and `--build` are rejected: `golem build does not support project references (-b); run golem build -p <tsconfig> per project.`
 
-The tsconfig's directory is the project root. The build indexes every file the tsconfig includes under that directory, so a parent tsconfig that includes several packages builds all of them. If a `golem.yaml` at or above the root has a `controllers` job rooted there, the build also adds the Nest codec decorators.
+The tsconfig's directory is the project root, and `.golem/rewrites.json` lives there. `golem generate` writes the index to the same place: for a models or controllers job it uses the directory of the tsconfig that holds the job's root, so a package without a tsconfig of its own is indexed at the parent tsconfig that includes it. The index covers every file that tsconfig includes, so a parent tsconfig that includes several packages indexes and builds all of them. If a `golem.yaml` at or above the root has a `controllers` job rooted at or under it, the build also adds the Nest codec decorators.
 
 ## Exit status
 
