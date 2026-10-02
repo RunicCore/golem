@@ -12,10 +12,11 @@ import test, { type TestContext } from 'node:test';
 import { deduplicateTagSchemas, type TagSchema } from '#model/emit';
 import { generate } from '#model/generator';
 import { readFixture, writeGeneratedArtifacts } from './fixture-project.js';
-import { compileModelProject, createModelProject, type ModelProject } from './model-project.js';
+import { compileModelProject, createModelProject, writeModelSources, type ModelProject } from './model-project.js';
 import { duplicateLocalNameReferenceModelSource } from './fixture-templates/models/model-artifact-efficiency.js';
+import { generate as generateOpenApi } from '@exprtlabs/golem-openapi/generator';
 import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/golem/conversion';
-import { IssueCode, IssueRepresentation, LibError, LibErrorKind } from '@exprtlabs/golem/errors';
+import { IssueCode, IssueRepresentation, IssueSource, LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 import { findCodecIdForConstructor, requireObjectCodec } from '@exprtlabs/golem/serde';
 import { getValidator } from '@exprtlabs/golem/validation';
 import { generatedCodecIdFromRoot } from './support/consumer.js';
@@ -280,6 +281,11 @@ test('standalone validators inline non-recursive array item models and keep recu
     [['departments', 0, 'employees', 1, 'name']],
     'the failing nested item keeps its full instance path',
   );
+  assert.deepEqual(
+    invalid.issues.map((issue: { source: IssueSource }) => issue.source),
+    [IssueSource.TypeScript],
+    'the failing nested item keeps the source of its codec',
+  );
   const tree = new Node({ label: 'a', children: [{ label: 'b', children: [{ label: 'c', children: [] }] }] });
   assert.equal(await getValidator(tree).validate(), true);
 });
@@ -306,5 +312,35 @@ test('standalone validators inline array item models that live in another file',
   assert.deepEqual(
     invalid.issues.map((issue: { path: readonly (string | number)[] }) => issue.path),
     [['departments', 0, 'employees', 1, 'name']],
+  );
+});
+
+test('an inlined array item keeps the issue source of its own codec', async (t) => {
+  const profile = { mobx: false, validation: true, ajvStandalone: true } as const;
+  const fixtureValue = createModelProject(t, { prefix: 'golem-model-efficiency-mixed-', name: 'model-efficiency-mixed', allowJs: true });
+  const fixtureRoot = 'models/model-artifact-efficiency/array-items-inline/mixed-source';
+  writeModelSources(fixtureValue.root, { 'money.yaml': readFixture(`${fixtureRoot}/money.yaml`) });
+  writeGeneratedArtifacts((await generateOpenApi({
+    input: path.join(fixtureValue.root, 'money.yaml'),
+    output: path.join(fixtureValue.sourceRoot, 'sdk'),
+    name: 'Payments',
+    profile,
+  })).artifacts);
+  writeModelSources(fixtureValue.sourceRoot, { 'wallet.model.ts': readFixture(`${fixtureRoot}/wallet.model.ts`) });
+  const result = generate({
+    root: fixtureValue.root,
+    profile,
+    manifestInputs: [path.join(fixtureValue.sourceRoot, 'sdk/model-manifest.json')],
+  });
+  writeGeneratedArtifacts(result.artifacts);
+  await compileModelProject(fixtureValue.root);
+  copyStandalone(result, fixtureValue);
+  const { Wallet } = await import(pathToFileURL(path.join(fixtureValue.root, 'build/wallet.model.js')).href);
+  const invalid = getValidator(new Wallet({ coins: [{ amount: 1, currency: 'USD' }, { amount: -1, currency: 'USD' }] }));
+  assert.equal(await invalid.validate(), false);
+  assert.deepEqual(
+    invalid.issues.map((issue: { path: readonly (string | number)[]; source: IssueSource }) => [issue.path, issue.source]),
+    [[['coins', 1, 'amount'], IssueSource.OpenAPI]],
+    'the item model was generated from OpenAPI, so its issue keeps that source in a TypeScript model',
   );
 });

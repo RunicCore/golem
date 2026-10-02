@@ -1464,6 +1464,7 @@ export function generateOpenApiModelArtifacts(
       const compiled = compileStandaloneValidatorSet({
         schemas: validationPlan.schemas,
         references: validationPlan.references,
+        ownSchemas: validationPlan.ownSchemas,
         owner: '@exprtlabs/golem-openapi',
       });
       files.set(validatorModule, compiled.code);

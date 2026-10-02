@@ -412,6 +412,7 @@ export function generate(context: GolemModelContext): GolemModelResult {
     ? compileStandaloneValidatorSet({
       schemas: validationPlan.schemas,
       references: validationPlan.references,
+      ownSchemas: validationPlan.ownSchemas,
       owner: '@exprtlabs/golem-model',
     })
     : undefined;
