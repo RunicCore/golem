@@ -11,7 +11,7 @@ import { tsSource, type SourceFragment } from './source-template.js';
 import { generate } from '#model/generator';
 
 function fixture(t: TestContext) {
-  return createModelProject(t, { prefix: 'golem-class-value-', name: 'class-value', ttscPlugin: true, linkWorkspaceNodeModules: true });
+  return createModelProject(t, { prefix: 'golem-class-value-', name: 'class-value', linkWorkspaceNodeModules: true });
 }
 
 const CODECS = `import type { Pattern } from '@exprtlabs/golem/tags';
@@ -135,7 +135,7 @@ export function decodeMoney(value: string): Money { return Money.parse(value); }
   } });
   const workspace = path.resolve(import.meta.dirname, '../..');
   const { root, sourceRoot } = createModelProject(t, {
-    prefix: 'golem-class-value-pkg-', name: 'class-value-pkg', ttscPlugin: true, linkTypescript: true, linkTtsc: true,
+    prefix: 'golem-class-value-pkg-', name: 'class-value-pkg', linkTypescript: true,
     packages: { '@fixture/money': vendor, ajv: path.join(workspace, 'node_modules/ajv'), 'ajv-formats': path.join(workspace, 'node_modules/ajv-formats') },
   });
   fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), taggedModelSource({ name: 'A', imports: tsSource`import type { TSerde } from '@exprtlabs/golem/tags';

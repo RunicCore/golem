@@ -12,18 +12,17 @@ import { copyFixture, readFixture, writeGeneratedArtifacts } from './fixture-pro
 import { compileModelProject, createModelProject } from './model-project.js';
 import { generate } from '#model/generator';
 
-function ttscModelProject(t: TestContext, name: string) {
+function tupleModelProject(t: TestContext, name: string) {
   return createModelProject(t, {
     prefix: `golem-${name}-`,
     name,
-    ttscPlugin: true,
     linkWorkspaceNodeModules: true,
   });
 }
 
 test('generated optional and rest tuples retain exact lengths through every serde direction with validation on and off', async t => {
   for (const validation of [false, true]) {
-    const { root, sourceRoot } = ttscModelProject(t, `tuple-${validation ? 'validated' : 'trusted'}`);
+    const { root, sourceRoot } = tupleModelProject(t, `tuple-${validation ? 'validated' : 'trusted'}`);
     const sourceFile = path.join(sourceRoot, 'tuple.model.ts');
     fs.writeFileSync(sourceFile, readFixture('models/model-tuples/tuple.model.ts'));
     const result = generate({ root, sources: [sourceFile], profile: { mobx: false, validation } });

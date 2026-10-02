@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { test, before, after } from 'node:test';
 import { chromium, expect, type Browser, type Page } from '@playwright/test';
 import { build } from 'esbuild';
@@ -53,7 +54,7 @@ for (const standalone of [false, true]) {
     copyFixtureFile(root, 'browser/packed-runtime/cart.model.ts', 'src/cart.model.ts');
     await cli(root, ['generate']);
     copyFixtureFile(root, 'browser/packed-runtime/src/browser.ts', 'src/browser.ts');
-    await command(root, path.join(root, 'node_modules/.bin/ttsc'), ['-p', 'tsconfig.json']);
+    await cli(root, ['build']);
     await npm(root, ['prune', '--omit=dev'], { includeOptional: false });
     for (const name of ['typescript', '@exprtlabs/golem-model', '@exprtlabs/golem-openapi', ...(standalone ? ['ajv', 'ajv-formats', 'esbuild'] : [])]) {
       assert.equal(fs.existsSync(path.join(root, 'node_modules', name)), false, `${name} is not an application dependency`);
@@ -184,8 +185,10 @@ for (const standalone of [false, true]) {
     fs.appendFileSync(path.join(root, 'golem.yaml'), `\najvStandalone: ${standalone}\n`);
     await cli(root, ['generate']);
     await cli(root, ['check']);
-    await command(root, path.join(root, 'node_modules/.bin/ttsc'), ['-p', 'tsconfig.json', '--noEmit']);
+    await command(root, path.join(root, 'node_modules/.bin/tsc'), ['-p', 'tsconfig.json']);
     await npm(root, ['prune', '--omit=dev'], { includeOptional: false });
+    // The packed esbuild plugin rewrites from the index `golem generate` wrote; it needs no compiler at bundle time.
+    const { golem } = await import(pathToFileURL(path.join(root, 'node_modules/@exprtlabs/golem/dist/tooling/esbuild.js')).href) as typeof import('@exprtlabs/golem/esbuild');
     if (standalone) for (const name of ['ajv', 'ajv-formats']) {
       assert.equal(fs.existsSync(path.join(root, 'node_modules', name)), false);
     }
@@ -194,6 +197,7 @@ for (const standalone of [false, true]) {
       bundle: true, platform: 'browser', format: 'esm', write: false, metafile: true,
       // The development React build is the one where StrictMode replays effects.
       define: { 'process.env.NODE_ENV': JSON.stringify('development') },
+      plugins: [golem()],
     });
     if (standalone) assert.doesNotMatch(Object.keys(bundled.metafile.inputs).join('\n'), /node_modules\/(?:ajv|ajv-formats)\//);
     const javascript = bundled.outputFiles.find(file => file.path.endsWith('.js'))?.text;

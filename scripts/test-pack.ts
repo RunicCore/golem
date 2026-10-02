@@ -4,7 +4,6 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { exportPublicSource, packedSetDigest } from './public-source.js';
 import { assertReleaseConsistency } from './release-version.js';
-import { ttscCacheEnv } from './ttsc-cache.js';
 import { readManifest, readPack, verifyPackedArchive, type PackedPackage } from './packed-archive.js';
 
 export const PACKAGE_FOLDERS = ['golem', 'golem-model', 'golem-openapi', 'golem-ts-openapi'] as const;
@@ -31,8 +30,7 @@ export function packPublicSource(workspace: string, packedRoot: string): { reado
     exportPublicSource(workspace, source);
     const workspaceVersion = assertReleaseConsistency(source);
     // An ordinary source checkout must be sufficient for npm pack.
-    // prepack runs ttsc in this staging copy, whose path is new every run; the shared caches keep that build out of it.
-    const env = { ...process.env, ...ttscCacheEnv(workspace) };
+    const env = process.env;
     npm(source, ['ci', '--ignore-scripts', '--no-audit', '--no-fund'], env);
     const packages: PackedPackage[] = [];
     for (const folder of PACKAGE_FOLDERS) {

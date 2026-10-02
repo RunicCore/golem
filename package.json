@@ -11,9 +11,9 @@
     "node": ">=22.15.0"
   },
   "scripts": {
-    "build": "ttsc -p packages/golem/tsconfig.runtime.json && ttsc -p packages/golem/tsconfig.tooling.json && ttsc -p packages/golem-model/tsconfig.json && ttsc -p packages/golem-openapi/tsconfig.json && ttsc -p packages/golem-ts-openapi/tsconfig.json",
-    "build:tests": "npm run build && npm run build:scripts && node .build/scripts/clean-tests.js && ttsc -p tsconfig.tests.json",
-    "build:scripts": "ttsc -p tsconfig.scripts.json",
+    "build": "tsc -p packages/golem/tsconfig.runtime.json && tsc -p packages/golem/tsconfig.tooling.json && tsc -p packages/golem-model/tsconfig.json && tsc -p packages/golem-openapi/tsconfig.json && tsc -p packages/golem-ts-openapi/tsconfig.json",
+    "build:tests": "npm run build && npm run build:scripts && node .build/scripts/clean-tests.js && tsc -p tsconfig.tests.json",
+    "build:scripts": "tsc -p tsconfig.scripts.json",
     "vendor:openapi-schemas": "npm run build:scripts && node .build/scripts/vendor-openapi-schemas.js",
     "bench": "npm run build && npm run build:scripts && node .build/scripts/benchmark/run.js",
     "bench:compare": "npm run build:scripts && node .build/scripts/benchmark/compare.js",

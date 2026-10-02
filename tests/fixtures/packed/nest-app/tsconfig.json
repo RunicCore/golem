@@ -12,12 +12,6 @@
     ],
     "outDir": ".build",
     "rootDir": ".",
-    "plugins": [
-      {
-        "transform": "@exprtlabs/golem/ttsc-plugin",
-        "nest": true
-      }
-    ],
     "allowJs": true
   },
   "include": [

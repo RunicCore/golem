@@ -7,7 +7,6 @@ import type { GolemProfile } from '@exprtlabs/golem/generator-api';
 import { generate } from '#model/generator';
 import { writeGeneratedArtifacts } from './fixture-project.js';
 import { compileModelProject, createModelProject, writeModelSources } from './model-project.js';
-import { ttscEnv } from './support/process.js';
 
 const sources = {
   'tree.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
@@ -36,11 +35,11 @@ const profiles: readonly (readonly [string, GolemProfile])[] = [
 for (const [label, profile] of profiles) {
   test(`self- and mutually recursive models generate and round-trip (${label})`, async (t: TestContext) => {
     const { root, sourceRoot } = createModelProject(t, {
-      prefix: 'golem-recursive-models-', linkTypescript: true, linkTtsc: true, allowJs: profile.ajvStandalone === true,
+      prefix: 'golem-recursive-models-', linkTypescript: true, allowJs: profile.ajvStandalone === true,
     });
     writeModelSources(sourceRoot, sources);
     writeGeneratedArtifacts(generate({ root, profile }).artifacts);
-    await compileModelProject(root, [], { env: ttscEnv });
+    await compileModelProject(root);
     const codecs = await import(pathToFileURL(path.join(root, 'build/tree.model.generated.js')).href) as Codecs;
 
     const nodeWire = { at: '2024-01-01T00:00:00.000Z', children: [{ at: '2024-01-02T00:00:00.000Z', children: [{ at: '2024-01-03T00:00:00.000Z', children: [] }] }] };

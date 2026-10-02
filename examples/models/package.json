@@ -4,9 +4,9 @@
   "type": "module",
   "scripts": {
     "generate": "golem generate",
-    "check": "golem check && ttsc --noEmit",
-    "test": "golem check && ttsc && node --test .build/src/app.test.js",
-    "start": "golem check && ttsc && node .build/src/main.js"
+    "check": "golem check && tsc --noEmit",
+    "test": "golem check && golem build && node --test .build/src/app.test.js",
+    "start": "golem check && golem build && node .build/src/main.js"
   },
   "dependencies": {
     "@exprtlabs/golem": "1.0.0-rc",
@@ -17,7 +17,6 @@
   "devDependencies": {
     "@exprtlabs/golem-model": "1.0.0-rc",
     "typescript": "7.x",
-    "ttsc": "0.30.x",
     "@types/node": "22.20.1"
   }
 }

@@ -6,9 +6,9 @@ import test from 'node:test';
 
 import { generate as generateOpenApi } from '@exprtlabs/golem-openapi/generator';
 import { generate } from '#model/generator';
-import { command, ttsc } from './support/process.js';
+import { command } from './support/process.js';
 import { fixturePath, writeGeneratedArtifacts } from './fixture-project.js';
-import { compileModelProject, createModelProject, writeModelSources } from './model-project.js';
+import { buildModelProject, compileModelProject, createModelProject, writeModelSources } from './model-project.js';
 
 const MODEL_SOURCE = /\.models?\.ts$/;
 const SDK_MONEY_SPEC = 'models/unify-validate/sdk-money-ref-plus-extra-tvalidation-local-tvalidation-and-tserde-share-one-/money.yaml';
@@ -121,7 +121,6 @@ test('WireFormat<T> equals the generator-emitted JSON type for fixture models an
   const { root } = createModelProject(t, {
     prefix: 'golem-wire-format-',
     name: 'wire-format',
-    ttscPlugin: true,
     linkWorkspaceNodeModules: true,
     rootDir: '.',
     include: ['fixtures/**/*.ts', 'checks/**/*.ts'],
@@ -227,7 +226,7 @@ export type AnyWire = Assert<NotAny<WireFormat<any>>>;
     'wire-format/wire-kinds.model.ts#TWireKinds',
   ]) assert.ok(covered.includes(label), `missing equivalence check ${label}`);
   assert.ok(covered.some(label => /\/sdk\/.*_Money(?:Model|Fields)$/.test(label)), 'a generated SDK model must be checked');
-  const result = await command(root, process.execPath, [ttsc, '-p', path.join(root, 'tsconfig.json')], { allowFailure: true });
+  const result = await buildModelProject(root, [], { allowFailure: true });
   assert.equal(result.code, 0, `${result.stdout}\n${result.stderr}`);
 });
 
@@ -235,7 +234,6 @@ test('WireFormat<T> equals the emitted JSON type for nested and omitted-field SD
   const { root } = createModelProject(t, {
     prefix: 'golem-wire-format-sdk-',
     name: 'wire-format-sdk',
-    ttscPlugin: true,
     linkWorkspaceNodeModules: true,
     rootDir: '.',
     include: ['fixtures/**/*.ts'],
@@ -271,15 +269,14 @@ test('WireFormat<T> equals the emitted JSON type for nested and omitted-field SD
       }
     }
   }
-  const result = await command(root, process.execPath, [ttsc, '-p', path.join(root, 'tsconfig.json')], { allowFailure: true });
+  const result = await buildModelProject(root, [], { allowFailure: true });
   assert.equal(result.code, 0, `${result.stdout}\n${result.stderr}`);
 });
 
-test('toWireFormat<T> returns the emitted JSON type through the ttsc plugin without a cast', async t => {
+test('toWireFormat<T> returns the emitted JSON type through the golem rewrite without a cast', async t => {
   const { root, sourceRoot } = createModelProject(t, {
     prefix: 'golem-wire-format-call-',
     name: 'wire-format-call',
-    ttscPlugin: true,
     linkWorkspaceNodeModules: true,
   });
   writeModelSources(sourceRoot, {

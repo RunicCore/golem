@@ -41,11 +41,10 @@ function writeManifest(
   }));
 }
 
-function ttscModelProject(t: TestContext, name: string) {
+function companionModelProject(t: TestContext, name: string) {
   return createModelProject(t, {
     prefix: `golem-${name}-`,
     name,
-    ttscPlugin: true,
     linkWorkspaceNodeModules: true,
   });
 }
@@ -183,8 +182,8 @@ test('public generation compiles and executes conversion and rest tuple behavior
   await command(root, process.execPath, [verifier]);
 });
 
-test('ttsc rewrites nested model serde calls and preserves class construction in CRLF source', async t => {
-  const { root, sourceRoot } = ttscModelProject(t, 'model-serde-edit');
+test('golem build rewrites nested model serde calls and preserves class construction in CRLF source', async t => {
+  const { root, sourceRoot } = companionModelProject(t, 'model-serde-edit');
   const source = readFixture('models/model-companions/serde-edit.model.ts').replaceAll('\n', '\r\n');
   const sourceFile = path.join(sourceRoot, 'item.model.ts');
   fs.writeFileSync(sourceFile, source);
@@ -213,7 +212,7 @@ test('ttsc rewrites nested model serde calls and preserves class construction in
 });
 
 test('re-exported IModel and IObject symbols preserve class versus plain-object generation', async t => {
-  const { root, sourceRoot } = ttscModelProject(t, 'model-kind-provenance');
+  const { root, sourceRoot } = companionModelProject(t, 'model-kind-provenance');
   fs.writeFileSync(path.join(sourceRoot, 'contracts.ts'), readFixture('models/model-companions/contracts.ts'));
   const sourceFile = path.join(sourceRoot, 'provenance.model.ts');
   fs.writeFileSync(sourceFile, readFixture('models/model-companions/provenance.model.ts'));

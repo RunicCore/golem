@@ -8,6 +8,9 @@ export interface NpmOptions { readonly includeOptional?: boolean; readonly env?:
 export interface CommandResult { readonly code: number | null; readonly signal: NodeJS.Signals | null; readonly stdout: string; readonly stderr: string }
 
 export const workspace = fileURLToPath(new URL('../../../', import.meta.url));
+/** The workspace's `golem` CLI, for a project that does not link it into its own node_modules. */
+export const golem = path.join(workspace, 'packages/golem/dist/bin/golem.js');
+/** Only the ttsc suites run ttsc; Task 10 deletes it, `ttscEnv` and the special case in `command` with them. */
 export const ttsc = path.join(workspace, 'node_modules/ttsc/lib/launcher/ttsc.js');
 /** Fixture projects share the workspace's ttsc caches, so every fixture reuses one build of the golem plugin instead of building its own in a temporary directory. */
 export const ttscEnv = {

@@ -14,8 +14,8 @@ const workspace = path.resolve(import.meta.dirname, '../..');
 
 function project(t: TestContext, packages: Record<string, string> = {}) {
   return createModelProject(t, {
-    prefix: 'golem-packaged-codecs-', name: 'packaged-codecs', ttscPlugin: true,
-    linkTypescript: true, linkTtsc: true,
+    prefix: 'golem-packaged-codecs-', name: 'packaged-codecs',
+    linkTypescript: true,
     packages: { ajv: path.join(workspace, 'node_modules/ajv'), 'ajv-formats': path.join(workspace, 'node_modules/ajv-formats'), ...packages },
   });
 }

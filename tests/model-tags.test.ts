@@ -19,7 +19,6 @@ function fixture(t: TestContext, allowJs = false) {
     prefix: 'golem-model-tags-',
     name: 'model-tags',
     allowJs,
-    ttscPlugin: true,
     linkWorkspaceNodeModules: true,
   });
 }

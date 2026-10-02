@@ -10,8 +10,7 @@
     "lib": ["ES2023", "DOM", "DOM.Iterable", "esnext.temporal"],
     "types": ["node"],
     "outDir": "../.build/server",
-    "rootDir": ".",
-    "plugins": [{ "transform": "@exprtlabs/golem/ttsc-plugin", "nest": true }]
+    "rootDir": "."
   },
   "include": ["src/**/*.ts", "provider/**/*.ts"]
 }

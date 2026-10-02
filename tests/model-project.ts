@@ -3,7 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { TestContext } from 'node:test';
 
-import { command, type CommandOptions } from './support/process.js';
+import { command, golem, type CommandOptions, type CommandResult } from './support/process.js';
 import {
   createFixtureProject,
   linkProjectPackages,
@@ -19,8 +19,10 @@ interface ModelProjectOptions {
   readonly outDir?: string;
   readonly allowJs?: boolean;
   readonly checkJs?: boolean;
+  /** For the ttsc suites only; Task 10 deletes it with them. `golem build` needs no tsconfig entry. */
   readonly ttscPlugin?: boolean;
   readonly linkTypescript?: boolean;
+  /** For the ttsc suites only; Task 10 deletes it with them. */
   readonly linkTtsc?: boolean;
   readonly linkWorkspaceNodeModules?: boolean;
   readonly packages?: Readonly<Record<string, string>>;
@@ -90,7 +92,46 @@ export function writeModelSources(
   }
 }
 
+/** The smallest golem.yaml `golem build` reads: it names the tsconfig beside it by default. */
+const MINIMAL_GOLEM_YAML = 'version: 1\nmodels:\n  root: .\n';
+
+/**
+ * Run `golem build` on the project: the original sources are checked and the rewritten ones emitted into its outDir. A project
+ * without a golem.yaml gets the minimal one. A boolean compiler flag in `args` (`--noEmit`) builds an alternate config of the
+ * project that extends its tsconfig with the flag on.
+ */
+export async function buildModelProject(
+  root: string,
+  args: readonly string[] = [],
+  options: CommandOptions = {},
+): Promise<CommandResult> {
+  const config = path.join(root, 'golem.yaml');
+  if (!fs.existsSync(config)) fs.writeFileSync(config, MINIMAL_GOLEM_YAML);
+  const flags = args.map((arg) => {
+    if (!/^--[A-Za-z]+$/.test(arg)) throw new Error(`buildModelProject takes boolean compiler flags only, not ${arg}`);
+    return arg.slice(2);
+  });
+  const project: string[] = [];
+  if (flags.length > 0) {
+    fs.writeFileSync(path.join(root, 'tsconfig.flags.json'), JSON.stringify({
+      extends: './tsconfig.json',
+      compilerOptions: Object.fromEntries(flags.map((flag) => [flag, true])),
+    }));
+    project.push('-p', path.join(root, 'tsconfig.flags.json'));
+  }
+  return command(root, process.execPath, [golem, 'build', '--config', config, ...project], options);
+}
+
 export async function compileModelProject(
+  root: string,
+  args: readonly string[] = [],
+  options: CommandOptions = {},
+): Promise<void> {
+  await buildModelProject(root, args, options);
+}
+
+/** Compile with ttsc and the Go plugin: only the ttsc suites do, and Task 10 deletes this with them. */
+export async function compileModelProjectWithTtsc(
   root: string,
   args: readonly string[] = [],
   options: CommandOptions = {},

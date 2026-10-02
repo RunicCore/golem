@@ -39,7 +39,6 @@ async function loadCodecs(t: TestContext, name: string): Promise<Record<string, 
   const { root, sourceRoot } = createModelProject(t, {
     prefix: 'golem-serde-isolation-',
     name: 'serde-isolation',
-    ttscPlugin: true,
     linkWorkspaceNodeModules: true,
   });
   fs.writeFileSync(path.join(sourceRoot, `${name}.model.ts`), readFixture(`models/serde-isolation/${name}.model.ts`));
@@ -253,7 +252,6 @@ function generatedSource(t: TestContext, name: string): string {
   const { root, sourceRoot } = createModelProject(t, {
     prefix: 'golem-serde-isolation-',
     name: 'serde-isolation',
-    ttscPlugin: true,
     linkWorkspaceNodeModules: true,
   });
   fs.writeFileSync(path.join(sourceRoot, `${name}.model.ts`), readFixture(`models/serde-isolation/${name}.model.ts`));

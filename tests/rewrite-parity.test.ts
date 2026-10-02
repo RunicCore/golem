@@ -12,7 +12,7 @@ import { writeSdk } from '#openapi/generator';
 import { copyFixtureFile, createFixtureProject, readFixture, writeGeneratedArtifacts } from './fixture-project.js';
 import { createControllerFixture } from './fixture-templates/controllers/project.js';
 import { paymentModelSource } from './fixture-templates/controllers/payment-model.js';
-import { compileModelProject, createModelProject } from './model-project.js';
+import { compileModelProjectWithTtsc, createModelProject } from './model-project.js';
 import { command, ttsc, ttscEnv, workspace } from './support/process.js';
 
 const NEST_PLUGIN = '@exprtlabs/golem-ts-openapi/ttsc-plugin';
@@ -155,7 +155,7 @@ async function assertParity(t: TestContext, root: string, nest: boolean, rewrite
   const result = scan(root, nest);
   assert.deepEqual(result.diagnostics, [], 'the scan finds no failing site');
   const copy = rewrittenCopy(t, root, result);
-  await compileModelProject(root, [], { env: ttscEnv });
+  await compileModelProjectWithTtsc(root, [], { env: ttscEnv });
   await command(copy, process.execPath, [TSC, '-p', path.join(copy, 'tsconfig.json'), '--noCheck']);
   const go = emitted(root);
   const golem = emitted(copy);
@@ -323,7 +323,7 @@ async function goEmit(t: TestContext, files: Readonly<Record<string, string>>): 
   const { root } = createModelProject(t, { prefix: 'golem-rewrite-parity-', name: 'rewrite-ruled', linkTypescript: true, linkTtsc: true });
   for (const [relative, text] of Object.entries(files)) write(root, `src/${relative}`, text);
   usePlugins(root, SERDE_PLUGIN);
-  await compileModelProject(root, [], { env: ttscEnv });
+  await compileModelProjectWithTtsc(root, [], { env: ttscEnv });
   return { root, go: emitted(root) };
 }
 
@@ -365,7 +365,7 @@ test('parity: a clean project compiles to the same output and a type error is re
   const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-rewrite-parity-', linkTypescript: true, linkTtsc: true, ttscPlugin: true });
   fs.writeFileSync(path.join(sourceRoot, 'clean.ts'), 'export const clean: string = "ok";\n');
   const copy = rewrittenCopy(t, root, scan(root, false));
-  await compileModelProject(root, [], { env: ttscEnv });
+  await compileModelProjectWithTtsc(root, [], { env: ttscEnv });
   await command(copy, process.execPath, [TSC, '-p', path.join(copy, 'tsconfig.json')]);
   assertSameEmit(emitted(root), emitted(copy));
 

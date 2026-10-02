@@ -8,7 +8,7 @@ import { createExecutableValidationMemo, hasExecutableValidation } from '@exprtl
 import { generate } from '#model/generator';
 import { writeGeneratedArtifacts } from './fixture-project.js';
 import { compileModelProject, createModelProject, writeModelSources } from './model-project.js';
-import { command, ttscEnv } from './support/process.js';
+import { command } from './support/process.js';
 
 const profiles: readonly (readonly [string, GolemProfile])[] = [
   ['validation off', { mobx: false, validation: false }],
@@ -18,7 +18,7 @@ const profiles: readonly (readonly [string, GolemProfile])[] = [
 
 function project(t: TestContext, prefix: string, profile: GolemProfile) {
   return createModelProject(t, {
-    prefix, linkTypescript: true, linkTtsc: true, allowJs: profile.ajvStandalone === true,
+    prefix, linkTypescript: true, allowJs: profile.ajvStandalone === true,
   });
 }
 
@@ -220,7 +220,7 @@ for (const [label, profile] of profiles) {
     writeGeneratedArtifacts(artifacts);
     const generated = (name: string): string =>
       artifacts.find((artifact) => artifact.path.endsWith(name))?.content ?? '';
-    await compileModelProject(root, [], { env: ttscEnv });
+    await compileModelProject(root);
     const validation = profile.validation ? 'validate' : 'skip';
 
     for (const chain of [modelChain, objectChain]) {

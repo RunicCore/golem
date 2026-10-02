@@ -6,8 +6,7 @@ import { codecPublicId } from '@exprtlabs/golem/schema-graph';
 import type { ModelTypeDescriptor } from '@exprtlabs/golem/model';
 import { runPipeline } from '#golem/cli';
 import { copyFixtureFile, createFixtureProject, linkProjectPackages } from './fixture-project.js';
-import { command, workspace } from './support/process.js';
-import { tscBin } from './openapi/helpers.js';
+import { command, golem, workspace } from './support/process.js';
 
 const shape: ModelTypeDescriptor = {
   kind: 'object',
@@ -89,7 +88,7 @@ test('a hand-written and an SDK model of the same name and shape keep their own 
   const sdkId = keyOf('sdk/iobject-plugin-keys.ts', /#MoneyModel": "(Money_[0-9a-f]{8})"/);
   assert.notEqual(handId, sdkId);
 
-  await command(root, process.execPath, [tscBin(), '-p', path.join(root, 'tsconfig.json')]);
+  await command(root, process.execPath, [golem, 'build', '--config', path.join(root, 'golem.yaml')]);
   for (const order of [['sdk/index.js', 'src/money.model.generated.js'], ['src/money.model.generated.js', 'sdk/index.js']]) {
     const run = await command(root, process.execPath, ['--input-type=module', '-e', registerBoth(order), handId, sdkId]);
     assert.deepEqual(JSON.parse(run.stdout.trim()), { hand: 'typescript', sdk: 'openapi' }, order.join(' then '));

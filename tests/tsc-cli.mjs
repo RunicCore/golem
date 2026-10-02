@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 /**
- * Drop-in ttsc launcher for tests. ttsc does not accept tsc-style file lists;
- * this writes a temporary tsconfig and invokes `ttsc -p`.
+ * tsc launcher for tests that type-check generated SDKs and consumers outside any project root. It accepts a short
+ * tsc-style file list by writing a temporary tsconfig and invoking `tsc -p`. These sources hold no rewrite sites, so they
+ * need no `golem build`.
  */
 import { spawnSync } from 'node:child_process';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
@@ -10,12 +11,12 @@ import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const repoRoot = dirname(fileURLToPath(new URL('.', import.meta.url)));
-const ttsc = join(repoRoot, 'node_modules/ttsc/lib/launcher/ttsc.js');
+const tsc = join(repoRoot, 'node_modules/typescript/bin/tsc');
 const args = process.argv.slice(2);
 const env = { ...process.env, NODE_PATH: join(repoRoot, 'node_modules') };
 
 if (args.some((arg) => arg === '-p' || arg === '--project' || arg === '-b' || arg === '--build')) {
-  const result = spawnSync(process.execPath, [ttsc, ...args], { stdio: 'inherit', env });
+  const result = spawnSync(process.execPath, [tsc, ...args], { stdio: 'inherit', env });
   process.exit(result.status ?? 1);
 }
 
@@ -65,7 +66,7 @@ for (let index = 0; index < args.length; index += 1) {
     continue;
   }
   if (arg.startsWith('-')) {
-    process.stderr.write(`ttsc-cli.mjs: unsupported flag ${arg}\n`);
+    process.stderr.write(`tsc-cli.mjs: unsupported flag ${arg}\n`);
     process.exit(2);
   }
   files.push(isAbsolute(arg) ? arg : resolve(process.cwd(), arg));
@@ -85,7 +86,7 @@ function commonRootDir(filenames) {
 }
 
 const cwd = process.cwd();
-const directory = mkdtempSync(join(tmpdir(), 'ttsc-cli-'));
+const directory = mkdtempSync(join(tmpdir(), 'tsc-cli-'));
 const resolvedOutDir = compilerOptions.outDir
   ? (isAbsolute(String(compilerOptions.outDir)) ? String(compilerOptions.outDir) : resolve(cwd, String(compilerOptions.outDir)))
   : undefined;
@@ -104,7 +105,7 @@ try {
     files,
   }, null, 2)}\n`);
 
-  const result = spawnSync(process.execPath, [ttsc, '-p', join(directory, 'tsconfig.json')], {
+  const result = spawnSync(process.execPath, [tsc, '-p', join(directory, 'tsconfig.json')], {
     stdio: 'inherit',
     env,
     cwd,

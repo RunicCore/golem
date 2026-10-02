@@ -9,8 +9,7 @@
     "lib": ["ES2023", "DOM", "DOM.Iterable"],
     "types": ["node", "vite/client"],
     "outDir": "../.build/web",
-    "rootDir": ".",
-    "plugins": [{ "transform": "@exprtlabs/golem/ttsc-plugin" }]
+    "rootDir": "."
   },
   "include": ["src/**/*.ts", "src/**/*.tsx", "sdk/**/*.ts"]
 }

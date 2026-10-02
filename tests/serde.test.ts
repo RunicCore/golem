@@ -16,7 +16,6 @@ import {
 import { validate as publicValidate } from '@exprtlabs/golem/validation';
 import { IssueCode, IssueRepresentation, IssueSource, LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 import { generate } from '#model/generator';
-import { ttscEnv } from './support/process.js';
 import { generatedCodecId } from './support/consumer.js';
 import type { GolemProfile } from '@exprtlabs/golem/generator-api';
 
@@ -28,7 +27,6 @@ function fixture(
     prefix: 'golem-serde-',
     name: 'serde-fixture',
     linkTypescript: true,
-    linkTtsc: true,
   });
   copyFixtureFile(root, 'models/serde/base-payment-model/money.model.ts', 'src/money.model.ts');
   const result = generate({ root, profile });
@@ -37,7 +35,7 @@ function fixture(
 }
 
 async function compile(root: string): Promise<void> {
-  await compileModelProject(root, [], { env: ttscEnv });
+  await compileModelProject(root);
 }
 
 
@@ -160,7 +158,6 @@ test('IObject TSerde stringify/parse convert declared fields in one pass', async
     prefix: 'golem-serde-tserde-',
     name: 'serde-tserde',
     linkTypescript: true,
-    linkTtsc: true,
   });
   fs.writeFileSync(path.join(sourceRoot, 'codecs.ts'), readFixture("models/serde/iobject-tserde-stringify-parse-convert-declared-fields-in-one-pass/codecs.ts"));
   fs.writeFileSync(path.join(sourceRoot, 'permission.model.ts'), readFixture("models/serde/iobject-tserde-stringify-parse-convert-declared-fields-in-one-pass/permission.model.ts"));
@@ -236,7 +233,6 @@ test('same-type TSerde emits one Ajv schema and global validation false rejects 
     prefix: 'golem-serde-identity-',
     name: 'serde-identity',
     linkTypescript: true,
-    linkTtsc: true,
   });
   fs.writeFileSync(path.join(sourceRoot, 'codecs.ts'), readFixture("models/serde/same-type-tserde-emits-one-ajv-schema-and-global-validation-false-rejects-va/codecs.ts"));
   fs.writeFileSync(path.join(sourceRoot, 'label.model.ts'), readFixture("models/serde/same-type-tserde-emits-one-ajv-schema-and-global-validation-false-rejects-va/label.model.ts"));

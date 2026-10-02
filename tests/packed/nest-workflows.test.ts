@@ -32,9 +32,9 @@ for (const { standalone, adapters } of RUNS) {
     fs.appendFileSync(path.join(root, 'golem.yaml'), `\najvStandalone: ${standalone}\n`);
     await cli(root, ['generate']);
     await cli(root, ['check']);
-    await command(root, path.join(root, 'node_modules/.bin/ttsc'), ['-p', 'tsconfig.json']);
+    await cli(root, ['build']);
     await npm(root, ['prune', '--omit=dev'], { includeOptional: false });
-    for (const name of ['@exprtlabs/golem-model', '@exprtlabs/golem-openapi', '@exprtlabs/golem-ts-openapi', 'typescript', 'ttsc']) {
+    for (const name of ['@exprtlabs/golem-model', '@exprtlabs/golem-openapi', '@exprtlabs/golem-ts-openapi', 'typescript']) {
       assert.equal(fs.existsSync(path.join(root, 'node_modules', name)), false, `${name} must not be a production dependency`);
     }
     for (const adapter of adapters) {

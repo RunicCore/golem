@@ -20,7 +20,6 @@
     "@exprtlabs/golem-openapi": "rc",
     "@exprtlabs/golem-ts-openapi": "rc",
     "typescript": "~7.0.2",
-    "ttsc": "~0.30.4",
     "@types/node": "22.20.1"
   }
 }

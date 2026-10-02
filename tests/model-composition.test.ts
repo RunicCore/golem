@@ -16,7 +16,6 @@ function fixture(t: TestContext, allowJs = false) {
     prefix: 'golem-model-composition-',
     name: 'model-composition',
     allowJs,
-    ttscPlugin: true,
     linkWorkspaceNodeModules: true,
   });
 }

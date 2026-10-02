@@ -6,7 +6,7 @@ import { build } from 'esbuild';
 import { workspace, command, npm, cli } from '../support/process.js';
 import { writeFixture, filesUnder } from '../support/consumer.js';
 import { startRegistry, packageSpec, type PackedRegistry } from '../../scripts/packed-registry.js';
-import { AJV, AJV_FORMATS, ESBUILD, MOBX, NEST_COMMON, NEST_SWAGGER, TTSC, TYPESCRIPT } from '../../scripts/third-party-installs.js';
+import { AJV, AJV_FORMATS, ESBUILD, MOBX, NEST_COMMON, NEST_SWAGGER, TYPESCRIPT } from '../../scripts/third-party-installs.js';
 import { copyFixture, copyFixtureFile } from '../fixture-project.js';
 
 let registry: PackedRegistry;
@@ -116,8 +116,8 @@ test('packed OpenAPI-only install generates without loading the model generator'
   assert.equal(fs.existsSync(path.join(root, 'node_modules/@exprtlabs/golem-model')), false);
   await cli(root, ['generate']);
   await cli(root, ['check']);
-  await npm(root, ['install', '--save-dev', TYPESCRIPT, TTSC]);
-  await command(root, path.join(root, 'node_modules/.bin/ttsc'), ['-p', 'tsconfig.json']);
+  await npm(root, ['install', '--save-dev', TYPESCRIPT]);
+  await cli(root, ['build']);
 });
 
 test('CLI resolves configured providers from a project with spaces outside cwd and never downloads missing providers', async t => {

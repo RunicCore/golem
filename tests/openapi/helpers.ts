@@ -19,7 +19,7 @@ export function openApiFixture(...parts: string[]): string {
 }
 
 export function tscBin(): string {
-  return join(repoRoot(), 'tests/ttsc-cli.mjs');
+  return join(repoRoot(), 'tests/tsc-cli.mjs');
 }
 
 export const defaultTestProfile: OpenApiGenerationProfile = Object.freeze({
@@ -49,7 +49,7 @@ export function writeGeneratedSdk(
     writeGeneratedArtifacts(result.artifacts);
   }
   prepareSdkProject(output);
-  for (const name of ['typescript', 'ttsc', '@types/node'] as const) {
+  for (const name of ['typescript', '@types/node'] as const) {
     const source = join(repoRoot(), 'node_modules', name);
     if (existsSync(source)) linkProjectPackages(output, { [name]: source });
   }
@@ -116,7 +116,7 @@ export function compileGeneratedSdk(
     env: { ...process.env, NODE_PATH: join(repoRoot(), 'node_modules') },
   });
   if (compiled.status !== 0) {
-    throw new Error(compiled.stderr || compiled.stdout || 'ttsc failed');
+    throw new Error(compiled.stderr || compiled.stdout || 'tsc failed');
   }
 }
 

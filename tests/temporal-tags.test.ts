@@ -11,7 +11,7 @@ import { generate } from '#model/generator';
 
 async function build(t: TestContext) {
   const { root, sourceRoot } = createModelProject(t, {
-    prefix: 'golem-temporal-tags-', name: 'temporal-tags', ttscPlugin: true, linkWorkspaceNodeModules: true,
+    prefix: 'golem-temporal-tags-', name: 'temporal-tags', linkWorkspaceNodeModules: true,
     compilerOptions: { lib: ['ES2023', 'DOM', 'esnext.temporal'] },
   });
   fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), taggedModelSource({ name: 'A',

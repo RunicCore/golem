@@ -53,8 +53,8 @@
     "typescript": ">=6.0.0 <8"
   },
   "scripts": {
-    "build": "ttsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json",
     "clean": "node -e \"for (const target of ['dist', '../../.build/golem-model.tsbuildinfo']) require('node:fs').rmSync(target, { recursive: true, force: true })\"",
-    "prepack": "npm run clean && npm run build && ttsc -p ../../tsconfig.package-check.json && node ../../.build/scripts/verify-package.js ."
+    "prepack": "npm run clean && npm run build && tsc -p ../../tsconfig.package-check.json && node ../../.build/scripts/verify-package.js ."
   }
 }

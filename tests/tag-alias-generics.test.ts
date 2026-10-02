@@ -10,7 +10,7 @@ import { tsSource, type SourceFragment } from './source-template.js';
 import { generate } from '#model/generator';
 
 function fixture(t: TestContext) {
-  return createModelProject(t, { prefix: 'golem-tag-alias-generics-', name: 'tag-alias-generics', ttscPlugin: true, linkWorkspaceNodeModules: true });
+  return createModelProject(t, { prefix: 'golem-tag-alias-generics-', name: 'tag-alias-generics', linkWorkspaceNodeModules: true });
 }
 
 async function validity(t: TestContext, prelude: SourceFragment, field: SourceFragment, values: readonly unknown[]): Promise<boolean[]> {

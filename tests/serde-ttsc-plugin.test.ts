@@ -4,7 +4,7 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import test, { type TestContext } from 'node:test';
 import { copyFixtureFile, readFixture, writeGeneratedArtifacts } from './fixture-project.js';
-import { compileModelProject, createModelProject } from './model-project.js';
+import { compileModelProjectWithTtsc, createModelProject } from './model-project.js';
 
 import { LibErrorKind } from '@exprtlabs/golem/errors';
 import { generate } from '#model/generator';
@@ -29,7 +29,7 @@ function fixture(
 }
 
 async function compile(root: string): Promise<void> {
-  await compileModelProject(root, [], { env: ttscEnv });
+  await compileModelProjectWithTtsc(root, [], { env: ttscEnv });
 }
 
 function enableSerdePlugin(root: string): void {

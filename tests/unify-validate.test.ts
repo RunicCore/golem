@@ -9,6 +9,7 @@ import { requireObjectCodec } from '@exprtlabs/golem/serde';
 import { getValidator, validateInstance } from '@exprtlabs/golem/validation';
 import { generate as generateOpenApi } from '@exprtlabs/golem-openapi/generator';
 import { generate } from '#model/generator';
+import { buildModelProject } from './model-project.js';
 import { command, workspace } from './support/process.js';
 import { generatedCodecIdFromRoot } from './support/consumer.js';
 import { pathToFileURL } from 'node:url';
@@ -38,7 +39,6 @@ function fixture(t: TestContext): Fixture {
           skipLibCheck: true,
           outDir: 'build',
           rootDir: 'src',
-          plugins: [{ transform: '@exprtlabs/golem/ttsc-plugin' }],
         },
         include: ['src/**/*.ts'],
       }),
@@ -52,11 +52,7 @@ function writeArtifacts(result: { readonly artifacts: readonly { readonly path: 
 }
 
 async function compile(root: string): Promise<void> {
-  await command(root, process.execPath, [
-    path.join(workspace, 'node_modules/ttsc/lib/launcher/ttsc.js'),
-    '-p',
-    path.join(root, 'tsconfig.json'),
-  ]);
+  await buildModelProject(root);
 }
 
 function generatedText(root: string): string {
