@@ -5,6 +5,8 @@ import { discoverSources, type GeneratorSession, type InputObserver } from '../g
 
 export interface ProgramInfo {
   readonly configPath?: string;
+  /** The referenced project that holds the sources when `configPath` is a solution tsconfig; the program opens from it. */
+  readonly referencedConfigPath?: string;
   readonly projectFiles: readonly string[];
   readonly ambientFiles: readonly string[];
   readonly options: ts.CompilerOptions;
@@ -132,6 +134,7 @@ function parsedProject(
   onInput?: InputObserver,
 ): {
   readonly configPath?: string;
+  readonly referencedConfigPath?: string;
   readonly projectFiles: readonly string[];
   readonly ambientFiles: readonly string[];
   readonly options: ts.CompilerOptions;
@@ -154,12 +157,14 @@ function parsedProject(
   }
   let project = { configPath, parsed: session.parseConfigFile(configPath, onInput) };
   // A solution tsconfig lists no files of its own; the referenced project that holds the sources has the files and options.
-  if (project.parsed.fileNames.length === 0) project = referencedProject(configPath, sources, session, onInput) ?? project;
+  const referenced = project.parsed.fileNames.length === 0 ? referencedProject(configPath, sources, session, onInput) : undefined;
+  if (referenced) project = referenced;
   const { parsed } = project;
   const projectFiles = uniqueFilenames(parsed.fileNames);
   const ambientFiles = projectFiles.filter(isAmbientDeclaration).filter((filename) => !isGeneratedCompanion(filename));
   return {
-    configPath: canonicalFilename(project.configPath),
+    configPath: canonicalFilename(configPath),
+    ...(referenced ? { referencedConfigPath: canonicalFilename(referenced.configPath) } : {}),
     projectFiles,
     ambientFiles,
     options: parsed.options,
@@ -195,7 +200,7 @@ export function createProgram(
   const program = session.openProgram({
     root,
     sources: rootNames,
-    ...(parsed.configPath ? { configFile: parsed.configPath } : {}),
+    ...(parsed.referencedConfigPath ? { configFile: parsed.referencedConfigPath } : {}),
     onInput,
   });
   const host = ts.createCompilerHost(parsed.options, true);
@@ -226,7 +231,7 @@ export function createOverlayProgram(
   ]);
   return info.program.session.openProgram({
     root: dirname(info.configPath ?? sources[0] ?? '.'),
-    ...(info.configPath ? { configFile: info.configPath } : {}),
+    ...(info.referencedConfigPath ? { configFile: info.referencedConfigPath } : {}),
     sources: rootNames,
     overlays,
     onInput,

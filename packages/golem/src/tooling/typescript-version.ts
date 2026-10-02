@@ -28,7 +28,7 @@ function resolveManifest(root: string, golemUrl: string): string {
 }
 
 /**
- * The TypeScript 7 backend imports `typescript/unstable/*` from golem's own location, so it can only serve the TypeScript 7
+ * The TypeScript 7 backend imports the compiler's unstable API from golem's own location, so it can only serve the TypeScript 7
  * the project selected when that is the install golem resolves. Anything else would silently analyse with another compiler.
  */
 export function assertGolemLoadsTypeScript(
