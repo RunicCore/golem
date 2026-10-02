@@ -142,6 +142,10 @@ function fillTOpenLabel(out: Record<string, unknown>, wire: Record<string, unkno
   if (copyIdentity) {
     out["name"] = wire["name"];
   }
+  for (const key of Object.keys(wire)) {
+    if (["name"].includes(key)) continue;
+    defineModelProperty(out, key, assertPropertyAcyclic(wire, key, wire[key]));
+  }
   return out;
 }
 
@@ -165,7 +169,8 @@ function convertFromWireTOpenLabel(wire: unknown, options: __GolemSerdeOptions |
   let result: unknown = wire;
   if (wire !== null && typeof wire === 'object' && !Array.isArray(wire)) {
     if (options?.construct) {
-      result = Reflect.construct(options.construct, [{ ...(wire as Record<string, unknown>) }]);
+      const copy = { ...(wire as Record<string, unknown>) };
+      result = Reflect.construct(options.construct, [fillTOpenLabel(copy, copy, false)]);
     } else {
       result = fillTOpenLabel({} as Record<string, unknown>, wire as Record<string, unknown>);
     }

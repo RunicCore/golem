@@ -74,7 +74,7 @@
     "src/metadata.model.generated.ts": {
       "job": "models:.",
       "owner": "@exprtlabs/golem-model",
-      "digest": "8571f00eedf3cd78bc94c21d6a4e5f7b5c1ae4bef157ee7da9b021fc31610ba9",
+      "digest": "1313f3323b78c89fe3610c74a57e83d3d695aa351d8e6a75a9194a5d3b13d39f",
       "destination": "src",
       "destinationKind": "directory"
     },

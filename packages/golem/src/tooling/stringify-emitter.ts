@@ -589,6 +589,26 @@ function extrasAllowed(descriptor: ModelTypeDescriptor): boolean {
   return descriptor.kind !== 'object' || descriptor.additionalProperties !== false;
 }
 
+/** The schema every undeclared property of an object follows: its `additionalProperties` type or constraint. */
+function additionalSchemaOf(descriptor: Extract<ModelTypeDescriptor, { kind: 'object' }>): unknown {
+  if (typeof descriptor.additionalProperties === 'object') return descriptor.additionalProperties;
+  const constraint = descriptor.constraints?.find((candidate) => candidate.kind === 'additionalProperties');
+  return constraint && constraint.kind === 'additionalProperties'
+    && constraint.schema !== false
+    && !(typeof constraint.schema === 'object'
+      && constraint.schema !== null
+      && 'kind' in constraint.schema
+      && (constraint.schema.kind === 'never' || constraint.schema.kind === 'undefined'))
+    ? constraint.schema
+    : undefined;
+}
+
+/** The type of the values of a map object (`Record<string, V>`); decoding copies the map and decodes each value as `V`. */
+function mapValueDescriptor(descriptor: Extract<ModelTypeDescriptor, { kind: 'object' }>): ModelTypeDescriptor | undefined {
+  const schema = additionalSchemaOf(descriptor);
+  return typeof schema === 'object' && schema !== null && 'kind' in schema ? schema as ModelTypeDescriptor : undefined;
+}
+
 /** A value that holds no object, so assigning it copies it. */
 function isScalarDescriptor(descriptor: ModelTypeDescriptor): boolean {
   switch (descriptor.kind) {
@@ -682,11 +702,12 @@ function sharesInput(descriptor: ModelTypeDescriptor, ctx: EmitCtx, seen: Set<Mo
     case 'intersection':
       return descriptor.variants.some((variant) => sharesInput(variant, ctx, seen));
     case 'object': {
-      if (!descriptorNeedsConversion(descriptor) && extrasAllowed(descriptor)) return true;
+      const values = mapValueDescriptor(descriptor);
+      // Undeclared properties of an open object are values of unknown type.
+      if (values === undefined && extrasAllowed(descriptor)) return true;
       return Object.values(descriptor.properties).some((property) => sharesInput(property, ctx, seen))
-        || (typeof descriptor.additionalProperties === 'object' && sharesInput(descriptor.additionalProperties, ctx, seen))
-        || (descriptor.constraints ?? []).some((constraint) =>
-          constraint.kind === 'additionalProperties' || constraint.kind === 'patternProperties');
+        || (values !== undefined && sharesInput(values, ctx, seen))
+        || (descriptor.constraints ?? []).some((constraint) => constraint.kind === 'patternProperties');
     }
     case 'reference':
     case 'generated-model': {
@@ -753,8 +774,8 @@ function emitInternedObjectDecode(
     && node.descriptor.kind === 'object'
     && !descriptorNeedsConversion(node.descriptor)
   ) {
-    if (extrasAllowed(node.descriptor)) return expression;
-    const closed = emitClosedIdentityObject(node.descriptor, expression);
+    // An open object or a map is copied by its `fill*`; only a closed object of scalars is one literal.
+    const closed = extrasAllowed(node.descriptor) ? undefined : emitClosedIdentityObject(node.descriptor, expression);
     if (closed) return closed;
   }
   if (node.kind === 'object') {
@@ -1080,7 +1101,6 @@ function emitDecodeValue(descriptor: ModelTypeDescriptor, expression: string, ct
     if (!descriptorNeedsConversion(descriptor)) {
       const named = ctx.graph.nodeFor(descriptor);
       if (named) return emitInternedObjectDecode(named, descriptor, expression, ctx);
-      return expression;
     }
     const before = fallibleConversions;
     const decoded = emitDecodeValue(descriptor.additionalProperties, 'value', ctx);
@@ -1209,19 +1229,9 @@ function emitFillFunction(
     };
   }
   const properties = Object.entries(descriptor.properties);
-  const additional = typeof descriptor.additionalProperties === 'object'
-    ? descriptor.additionalProperties
-    : undefined;
-  const additionalConstraint = descriptor.constraints?.find((constraint) => constraint.kind === 'additionalProperties');
-  const additionalSchema = additional
-    ?? (additionalConstraint && additionalConstraint.kind === 'additionalProperties'
-      && additionalConstraint.schema !== false
-      && !(typeof additionalConstraint.schema === 'object'
-        && additionalConstraint.schema !== null
-        && 'kind' in additionalConstraint.schema
-        && (additionalConstraint.schema.kind === 'never' || additionalConstraint.schema.kind === 'undefined'))
-      ? additionalConstraint.schema
-      : undefined);
+  const additionalSchema = additionalSchemaOf(descriptor);
+  // An open object keeps its undeclared properties, as values of unknown type.
+  const carriesExtras = additionalSchema === undefined && descriptor.additionalProperties !== false;
   const patternConstraints = (descriptor.constraints ?? []).filter(
     (constraint) => constraint.kind === 'patternProperties',
   );
@@ -1286,7 +1296,7 @@ function emitFillFunction(
       : []),
     ...propertyWrites,
   ];
-  if (additionalSchema || patternConstraints.length > 0) {
+  if (additionalSchema || carriesExtras || patternConstraints.length > 0) {
     const known = properties.map(([name]) => JSON.stringify(name)).join(', ');
     lines.push(
       `  for (const key of Object.keys(wire)) {`,
@@ -1318,6 +1328,7 @@ function emitFillFunction(
     if (additionalSchema && typeof additionalSchema === 'object' && additionalSchema !== null && 'kind' in additionalSchema) {
       lines.push(...emitExtra(additionalSchema as ModelTypeDescriptor, '    '));
     }
+    if (carriesExtras) lines.push(...emitExtra(undefined, '    '));
     lines.push('  }');
   }
   lines.push('  return out;', '}', '');

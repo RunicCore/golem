@@ -142,6 +142,31 @@ test('generated decode copies every level of closed nested objects and rejects a
   assert.throws(() => fromWireFormatTOuter(outer, { validate: false }), cycleAt(['inner', 'deep', 'extra']));
 });
 
+test('generated decode copies maps and arrays and carries only unknown values by reference', async (t) => {
+  const { fromWireFormatTContainers } = await loadCodecs(t, 'containers');
+  const open = Object.assign(Object.create(null) as Record<string, unknown>, { id: 'o', note: { n: 1 } });
+  const wire = { flags: { a: 'x', b: 'y' }, tags: ['t1', 't2'], matrix: [['m']], open, payload: { deep: [1] } };
+  const decoded = fromWireFormatTContainers(wire, { validate: false }) as typeof wire;
+  assert.notStrictEqual(decoded.flags, wire.flags);
+  assert.deepEqual(decoded.flags, wire.flags);
+  assert.notStrictEqual(decoded.tags, wire.tags);
+  assert.deepEqual(decoded.tags, wire.tags);
+  assert.notStrictEqual(decoded.matrix, wire.matrix);
+  assert.notStrictEqual(decoded.matrix[0], wire.matrix[0]);
+  assert.deepEqual(decoded.matrix, wire.matrix);
+  assert.notStrictEqual(decoded.open, wire.open);
+  assert.deepEqual({ ...decoded.open }, { id: 'o', note: { n: 1 } });
+  assert.strictEqual(decoded.payload, wire.payload);
+  wire.flags.a = 'changed';
+  wire.tags.push('t3');
+  assert.deepEqual(decoded.flags, { a: 'x', b: 'y' });
+  assert.deepEqual(decoded.tags, ['t1', 't2']);
+  const flags = JSON.parse('{"__proto__":"p","k":"v"}') as Record<string, string>;
+  const kept = fromWireFormatTContainers({ ...wire, flags }, { validate: false }) as typeof wire;
+  assert.equal(Object.getPrototypeOf(kept.flags), Object.prototype);
+  assert.equal(Object.hasOwn(kept.flags, '__proto__'), true);
+});
+
 test('generated decode of a recursive model rejects a cycle instead of overflowing the stack', async (t) => {
   const { fromWireFormatTNode } = await loadCodecs(t, 'recursive');
   const node: { label: string; children: unknown[] } = { label: 'root', children: [] };
@@ -171,7 +196,8 @@ test('generated decode copies declared objects and carries unknown values by ref
   shelf.owner.id = 'changed';
   assert.equal(copy.owner.id, 'o');
   assert.notStrictEqual(copy.owner, shelf.owner);
-  assert.strictEqual(copy.extras, shelf.extras);
+  assert.notStrictEqual(copy.extras, shelf.extras);
+  assert.strictEqual(copy.extras.tag, shelf.extras.tag);
 
   const loop: Record<string, unknown> = {};
   loop.again = loop;
