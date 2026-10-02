@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { runPipeline } from '#golem/cli';
+import { runBuild } from '#golem/build';
 import { command, workspace } from './support/process.js';
 import { writeFixture } from './support/consumer.js';
 import { readGeneratedModelSource } from './openapi/helpers.js';
@@ -248,4 +249,16 @@ test('deleting a model while editing the model its companion imports still gener
   await runPipeline(config);
   assert.equal(fs.existsSync(ownerCompanion), false);
   assert.match(fs.readFileSync(path.join(root, 'src/shared.model.generated.ts'), 'utf8'), /extra/);
+});
+
+test('an openapi-only golem.yaml with no tsconfig scans no project and writes no rewrite index, and golem build names the missing tsconfig', async (t: TestContext) => {
+  const { root, config } = fixture(t);
+  fs.rmSync(path.join(root, 'tsconfig.json'));
+  fs.writeFileSync(config, 'version: 1\nmobx: false\nvalidation: true\nopenapi:\n  - input: api.json\n    output: sdk\n    name: Profile\n');
+  await runPipeline(config);
+  assert.equal(fs.existsSync(path.join(root, 'sdk')), true);
+  assert.equal(fs.existsSync(path.join(root, '.golem/rewrites.json')), false);
+  await runPipeline(config, { check: true });
+  await assert.rejects(runBuild({ watch: false, config }), /golem build cannot find .*tsconfig\.json, the tsconfig .*golem\.yaml names/);
+  assert.equal(fs.existsSync(path.join(root, '.golem/rewrites.json')), false);
 });

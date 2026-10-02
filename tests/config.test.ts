@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { loadConfig } from '#golem/config';
+import { loadConfig, resolveConfig } from '#golem/config';
 import { parseArguments, providersFor } from '#golem/cli';
 
 function fixture(t: TestContext, yaml: string): { root: string; filename: string } {
@@ -53,7 +53,6 @@ test('the tsconfig key names the project tsconfig, relative to golem.yaml, and d
   const { root, filename } = fixture(t, 'version: 1\nmodels:\n  root: .\n');
   const config = loadConfig(filename);
   assert.equal(config.tsconfig, path.join(root, 'tsconfig.json'), 'a missing default tsconfig is not an error');
-  assert.equal(config.tsconfigDeclared, false);
 
   fs.mkdirSync(path.join(root, 'app/configs'), { recursive: true });
   fs.writeFileSync(path.join(root, 'tsconfig.base.json'), '{}');
@@ -64,7 +63,6 @@ test('the tsconfig key names the project tsconfig, relative to golem.yaml, and d
     fs.cpSync(root, named.root, { recursive: true, filter: (source) => !source.endsWith('golem.yaml') });
     const loaded = loadConfig(named.filename);
     assert.equal(loaded.tsconfig, path.join(named.root, expected));
-    assert.equal(loaded.tsconfigDeclared, true);
   }
 
   const parent = fixture(t, 'version: 1\nmodels:\n  root: .\n');
@@ -102,6 +100,12 @@ test('a tsconfig key must be a nonempty string that names an existing file', (t:
   }
 });
 
+test('a misspelled tsconfig path reports that the file does not exist, not the tsconfig the job finds', (t: TestContext) => {
+  const { root, filename } = fixture(t, 'version: 1\ntsconfig: tsconfg.json\nmodels:\n  root: .\n');
+  fs.writeFileSync(path.join(root, 'tsconfig.json'), '{}');
+  for (const load of [loadConfig, resolveConfig]) assert.throws(() => load(filename), /tsconfig does not exist: .*tsconfg\.json/);
+});
+
 test('a models or controllers job root must lie inside the directory of the yaml tsconfig, and other outputs may be anywhere', (t: TestContext) => {
   const controllers = 'controllers:\n  - root: other\n    output: api.json\n    info: { title: Api, version: "1" }\n';
   const layouts = [
@@ -133,16 +137,18 @@ test('a models or controllers job root must lie inside the directory of the yaml
 });
 
 test('the yaml tsconfig must be the tsconfig a models or controllers job finds from its root', (t: TestContext) => {
-  const message = (yaml: string, config: string, found: string, job: string, root: string): string => (
+  const message = (yaml: string, config: string, found: string, job: string, root: string, declared: boolean): string => (
     `${yaml} uses the tsconfig ${config}, but the ${job} job reads ${found}, the tsconfig it finds from its root ${root}. `
-    + 'A non-default tsconfig: that differs from the job\'s own tsconfig is not supported yet; name the file the job finds.'
+    + (declared
+      ? 'A non-default tsconfig: that differs from the job\'s own tsconfig is not supported yet; name the file the job finds.'
+      : 'A default tsconfig.json that differs from the job\'s own tsconfig is not supported yet; name the file the job finds with tsconfig:.')
   );
   // A named tsconfig beside the one the job finds.
   const named = fixture(t, 'version: 1\ntsconfig: ./tsconfig.app.json\nmodels:\n  root: .\n');
   fs.writeFileSync(path.join(named.root, 'tsconfig.json'), '{}');
   fs.writeFileSync(path.join(named.root, 'tsconfig.app.json'), '{}');
   assert.throws(() => loadConfig(named.filename), (error: Error) => {
-    assert.equal(error.message, message(named.filename, path.join(named.root, 'tsconfig.app.json'), path.join(named.root, 'tsconfig.json'), 'models:.', named.root));
+    assert.equal(error.message, message(named.filename, path.join(named.root, 'tsconfig.app.json'), path.join(named.root, 'tsconfig.json'), 'models:.', named.root, true));
     return true;
   });
   // The same file the job finds.
@@ -155,7 +161,7 @@ test('the yaml tsconfig must be the tsconfig a models or controllers job finds f
   fs.writeFileSync(path.join(nested.root, 'tsconfig.json'), '{}');
   fs.writeFileSync(path.join(nested.root, 'packages/api/tsconfig.json'), '{}');
   assert.throws(() => loadConfig(nested.filename), (error: Error) => {
-    assert.equal(error.message, message(nested.filename, path.join(nested.root, 'tsconfig.json'), path.join(nested.root, 'packages/api/tsconfig.json'), 'controllers:api.json', path.join(nested.root, 'packages/api')));
+    assert.equal(error.message, message(nested.filename, path.join(nested.root, 'tsconfig.json'), path.join(nested.root, 'packages/api/tsconfig.json'), 'controllers:api.json', path.join(nested.root, 'packages/api'), false));
     return true;
   });
 

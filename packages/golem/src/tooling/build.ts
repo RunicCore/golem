@@ -293,8 +293,9 @@ async function buildOnce(session: ts.ProgramSession, request: { readonly project
   const root = path.dirname(configFile);
   observe(configFile);
   // The index belongs to the tsconfig the golem.yaml names, and to that yaml; another config of the directory keeps its scan in memory.
+  // Every build of the directory answers to the owner, since its emit replaces the owner's output whether or not it writes the index.
+  assertRewriteIndexOwner(root, golemConfig.configFile);
   const writesIndex = configFile === golemConfig.tsconfig;
-  if (writesIndex) assertRewriteIndexOwner(root, golemConfig.configFile);
   const cli = compilerCli(root);
   const parsed = session.parseConfigFile(configFile, observe);
   const project = readProject(configFile, parsed);

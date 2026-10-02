@@ -371,7 +371,6 @@ test('-p may name another build config of the yaml project, and only one in the 
   assert.equal(fs.existsSync(path.join(root, 'build')), false);
 });
 
-/** A project whose golem.yaml names `tsconfig.app.json`, which leaves the test file out of the program; `tsconfig.json` still holds it. */
 /** The yaml names `tsconfig.json`, which leaves the tests out, beside `tsconfig.all.json`, which includes them. */
 async function projectWithNamedTsconfig(t: TestContext, name: string): Promise<string> {
   const root = await generatedProject(t, name, { yaml: 'version: 1\nmobx: false\nvalidation: false\ntsconfig: ./tsconfig.json\nmodels:\n  root: .\n', generate: false });
@@ -461,6 +460,39 @@ test('a second golem.yaml that names the same tsconfig fails in golem generate, 
   fs.rmSync(first);
   await runPipeline(second);
   assert.equal(readRewriteIndex(root)?.owner, second);
+});
+
+test('a second golem.yaml cannot rebuild the shared project with -p either, and the owner keeps its index and output', async (t) => {
+  const root = await generatedProject(t, 'build-two-yamls-project');
+  fs.writeFileSync(path.join(root, 'tsconfig.build.json'), JSON.stringify({ extends: './tsconfig.json', exclude: ['src/**/*.test.ts'] }));
+  fs.mkdirSync(path.join(root, 'second'));
+  write(root, 'second/golem.yaml', 'version: 1\nmobx: false\nvalidation: false\ntsconfig: ../tsconfig.json\nmodels:\n  root: ..\n');
+  const first = path.join(fs.realpathSync(root), 'golem.yaml');
+  const second = path.join(fs.realpathSync(root), 'second/golem.yaml');
+  const generated = fs.readFileSync(path.join(root, '.golem/rewrites.json'), 'utf8');
+  await assert.rejects(build(root, 'tsconfig.build.json', second), (error: Error) => {
+    assert.ok(error.message.includes(first), error.message);
+    assert.ok(error.message.includes(second), error.message);
+    return true;
+  });
+  assert.equal(fs.readFileSync(path.join(root, '.golem/rewrites.json'), 'utf8'), generated);
+  assert.equal(fs.existsSync(path.join(root, 'build')), false, 'a refused build emits nothing');
+  assert.equal((await build(root, 'tsconfig.build.json')).exitCode, 0, 'the owner builds its own project config');
+});
+
+test('a case-variant path of the owning golem.yaml is the same owner on a file system that folds case', async (t) => {
+  const root = await generatedProject(t, 'build-owner-case');
+  const yaml = path.join(fs.realpathSync(root), 'golem.yaml');
+  const variant = path.join(fs.realpathSync(root).toUpperCase(), 'GOLEM.YAML');
+  // Only a file system that folds case and reports names as they are stored can show the variant as one file.
+  if (!fs.existsSync(variant) || fs.realpathSync.native(variant) !== yaml) {
+    t.skip('this file system tells case variants apart');
+    return;
+  }
+  await runPipeline(variant, { check: true });
+  assert.equal((await build(root, undefined, variant)).exitCode, 0);
+  await runPipeline(variant);
+  assert.equal(readRewriteIndex(root)?.owner, yaml);
 });
 
 test('a symlinked tsconfig keeps its own directory as the project root', async (t) => {

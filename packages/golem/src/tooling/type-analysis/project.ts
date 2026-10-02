@@ -229,13 +229,14 @@ export function createProgram(
  */
 export function createProjectProgram(
   root: string,
-  configFile: string,
   onInput?: InputObserver,
   retained?: ts.ProgramSession,
+  /** The tsconfig to open, from the golem.yaml; without it the one that `tsc` would find from `root` upward. */
+  configFile?: string,
 ): ProgramInfo {
   const session = retained ?? new ts.ProgramSession({ cwd: root, closeWhenIdle: true });
   const parsed = parsedProject(root, [], session, onInput, configFile);
-  return openParsedProgram(session, root, parsed, parsed.projectFiles, onInput, parsed.configPath);
+  return openParsedProgram(session, root, parsed, parsed.projectFiles, onInput, configFile === undefined ? undefined : parsed.configPath);
 }
 
 export function createOverlayProgram(

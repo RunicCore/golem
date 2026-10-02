@@ -29,7 +29,6 @@ function fixture(t: TestContext): OutputFixture {
     configFile: path.join(directory, 'golem.yaml'),
     inventoryFile: path.join(directory, '.golem/outputs.json'),
     tsconfig: path.join(directory, 'tsconfig.json'),
-    tsconfigDeclared: false,
     profile: { mobx: false, validation: true },
     jobs: [job],
   };

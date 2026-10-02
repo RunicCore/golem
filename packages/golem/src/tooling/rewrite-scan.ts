@@ -594,13 +594,23 @@ function indexOwner(root: string): string | undefined {
   }
 }
 
+/** Whether two paths name one file by the file system's own spelling: a case-variant path on a case-insensitive file system does. */
+function sameFile(left: string, right: string): boolean {
+  try {
+    return fs.realpathSync.native(left) === fs.realpathSync.native(right);
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Fail when another golem.yaml owns the index of `root`: two yamls that name one tsconfig would overwrite each other's
  * rewrites. An owner whose file no longer exists has left the project, so its index can be taken over.
  */
 export function assertRewriteIndexOwner(root: string, owner: string): void {
   const current = indexOwner(root);
-  if (current === undefined || current === owner || !fs.existsSync(current)) return;
+  if (current === undefined || !fs.existsSync(current)) return;
+  if (current === owner || sameFile(current, owner)) return;
   throw new Error(`${path.join(root, REWRITE_INDEX_PATH)} belongs to ${current}, but ${owner} names the same tsconfig. Give each golem.yaml its own tsconfig, or delete the index to hand it to ${owner}.`);
 }
 
@@ -626,7 +636,7 @@ export function scanProjectRewrites(input: {
   readonly onInput?: InputObserver;
 }): ScanResult {
   const { root, configFile, nest, session, sessionOwner, onInput } = input;
-  const info = createProjectProgram(root, configFile, onInput, sessionOwner === undefined ? undefined : retainedProgramSession(session, sessionOwner, root));
+  const info = createProjectProgram(root, onInput, sessionOwner === undefined ? undefined : retainedProgramSession(session, sessionOwner, root), configFile);
   using program = info.program;
   return scanRewrites({ root: path.dirname(configFile), program, checker: program.getTypeChecker(), nest });
 }

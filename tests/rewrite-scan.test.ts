@@ -6,6 +6,7 @@ import test, { type TestContext } from 'node:test';
 import { runPipeline } from '#golem/cli';
 import { applyRewrites, GolemRewriteStaleError, readRewriteIndex } from '#golem/rewrite';
 import { assertRewriteIndexCurrent, scanProjectRewrites, writeRewriteIndex, type ScanResult } from '#golem/rewrite-scan';
+import { createProjectProgram } from '@exprtlabs/golem/type-analysis';
 import { writeSdk } from '#openapi/generator';
 import { copyFixtureFile, readFixture, writeGeneratedArtifacts } from './fixture-project.js';
 import { createModelProject } from './model-project.js';
@@ -429,4 +430,22 @@ test('two key tables that give one declaration different ids make a call on it f
     column: 18,
   }]);
   assert.match(rewritten(root, result, 'use.ts'), /__golem_requireObjectCodec\("TY_yyyyyyyy"\)\.parse\('\{\}'\)/, 'a declaration both tables agree on still resolves');
+});
+
+test('createProjectProgram keeps its observer and session arguments, and takes the tsconfig as an optional last argument', (t) => {
+  const root = project(t, ['calls.ts']);
+  fs.writeFileSync(path.join(root, 'tsconfig.calls.json'), JSON.stringify({ extends: './tsconfig.json', include: ['src/calls.ts'], exclude: [] }));
+  const open = (...args: [undefined | ((file: string) => void), undefined, string?]): string[] => {
+    const info = createProjectProgram(root, ...args);
+    try {
+      return info.projectFiles.map((file) => path.relative(root, file)).filter((file) => file.startsWith('src'));
+    } finally {
+      info.program[Symbol.dispose]();
+    }
+  };
+  const seen = new Set<string>();
+  const found = open((file) => { seen.add(path.relative(root, file)); }, undefined);
+  assert.ok(found.includes('src/payment.model.ts'), found.join());
+  assert.ok(seen.has('tsconfig.json'), 'the tsconfig found from the root is observed');
+  assert.deepEqual(open(undefined, undefined, path.join(root, 'tsconfig.calls.json')), ['src/calls.ts']);
 });

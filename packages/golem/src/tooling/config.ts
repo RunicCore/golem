@@ -23,10 +23,8 @@ export type GolemJob =
 export interface GolemConfig {
   readonly configFile: string;
   readonly directory: string;
-  /** The project's tsconfig: where `golem generate` and `golem build` start. Its directory owns `.golem/rewrites.json`. */
+  /** The project's tsconfig: where `golem generate` and `golem build` start. Its directory owns `.golem/rewrites.json`. A tsconfig the yaml names exists; the default beside the yaml need not. */
   readonly tsconfig: string;
-  /** The yaml names `tsconfig`; otherwise it is `tsconfig.json` beside the yaml, which need not exist. */
-  readonly tsconfigDeclared: boolean;
   readonly profile: GolemProfile;
   readonly jobs: readonly GolemJob[];
   readonly inventoryFile: string;
@@ -142,7 +140,7 @@ export function canonicalPath(filename: string): string {
     if (parent === ancestor) break;
     ancestor = parent;
   }
-  return path.join(fs.realpathSync(ancestor), ...missing);
+  return path.join(fs.realpathSync.native(ancestor), ...missing);
 }
 
 /** A file's name under its canonical directory: a link to the file is not followed, so the file stays where it is named. */
@@ -156,7 +154,6 @@ export function contains(directory: string, filename: string): boolean {
   return relative === '' || (!relative.startsWith(`..${path.sep}`) && relative !== '..' && !path.isAbsolute(relative));
 }
 
-/** Parse and resolve the complete dependency graph before checking existence. */
 /** The tsconfig the models and controllers analysis finds from a job root: the nearest `tsconfig.json` upward, as `tsc` does. */
 function tsconfigFoundFrom(root: string): string | undefined {
   for (let directory = root; ; directory = path.dirname(directory)) {
@@ -171,7 +168,7 @@ function tsconfigFoundFrom(root: string): string | undefined {
  * controllers analysis still reads the one it finds from its job root, so a job must lie inside the yaml tsconfig's directory
  * and find that same file.
  */
-function assertJobsMatchTsconfig(configFile: string, tsconfig: string, jobs: readonly GolemJob[]): void {
+function assertJobsMatchTsconfig(configFile: string, tsconfig: string, declared: boolean, jobs: readonly GolemJob[]): void {
   const directory = path.dirname(tsconfig);
   for (const job of jobs) {
     if (job.kind !== 'models' && job.kind !== 'controllers') continue;
@@ -181,16 +178,19 @@ function assertJobsMatchTsconfig(configFile: string, tsconfig: string, jobs: rea
     if (found !== undefined && found !== tsconfig) {
       throw new Error(
         `${configFile} uses the tsconfig ${tsconfig}, but the ${job.id} job reads ${found}, the tsconfig it finds from its root ${root}. `
-        + "A non-default tsconfig: that differs from the job's own tsconfig is not supported yet; name the file the job finds.",
+        + (declared
+          ? "A non-default tsconfig: that differs from the job's own tsconfig is not supported yet; name the file the job finds."
+          : "A default tsconfig.json that differs from the job's own tsconfig is not supported yet; name the file the job finds with tsconfig:."),
       );
     }
   }
 }
 
+/** Parse and resolve the complete dependency graph before checking existence. */
 export function resolveConfig(filename = 'golem.yaml', onInput?: InputObserver): GolemConfig {
   const requested = path.resolve(filename);
   onInput?.(requested);
-  const configFile = fs.realpathSync(requested);
+  const configFile = fs.realpathSync.native(requested);
   onInput?.(configFile);
   const directory = path.dirname(configFile);
   const value: unknown = YAML.parse(fs.readFileSync(configFile, 'utf8'), { uniqueKeys: true });
@@ -329,7 +329,9 @@ export function resolveConfig(filename = 'golem.yaml', onInput?: InputObserver):
     jobs.push({ id: `models:${path.relative(directory, root) || '.'}`, kind: 'models', package: '@exprtlabs/golem-model', options: { root, output, profile, ...(sources ? { sources } : {}) } });
   }
   if (!jobs.length) throw new Error('Configure at least one generators, controllers, openapi, or models section.');
-  assertJobsMatchTsconfig(configFile, tsconfig, jobs);
+  // A misspelled path is that, not a tsconfig the jobs happen to find elsewhere.
+  if (value.tsconfig !== undefined) existing(tsconfig, 'file', 'tsconfig');
+  assertJobsMatchTsconfig(configFile, tsconfig, value.tsconfig !== undefined, jobs);
   for (const [index, job] of jobs.entries()) {
     const inputs = job.kind === 'openapi' ? [job.options.input] : job.kind === 'generator' ? [] : job.options.sources ?? [];
     for (const input of inputs) {
@@ -341,11 +343,10 @@ export function resolveConfig(filename = 'golem.yaml', onInput?: InputObserver):
       }
     }
   }
-  return { configFile, directory, tsconfig, tsconfigDeclared: value.tsconfig !== undefined, profile, jobs, inventoryFile: path.join(directory, '.golem', 'outputs.json') };
+  return { configFile, directory, tsconfig, profile, jobs, inventoryFile: path.join(directory, '.golem', 'outputs.json') };
 }
 
 export function validateConfigInputs(config: GolemConfig): void {
-  if (config.tsconfigDeclared) existing(config.tsconfig, 'file', 'tsconfig');
   const controllerOutputs = new Set(config.jobs
     .filter((job): job is Extract<GolemJob, { kind: 'controllers' }> => job.kind === 'controllers')
     .map(job => canonicalPath(job.options.output)));

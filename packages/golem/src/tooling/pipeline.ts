@@ -272,7 +272,7 @@ interface RewriteRoot {
 /**
  * The project whose sources golem rewrites: the tsconfig the golem.yaml names, whose directory owns the index
  * (`golem build` starts from the same yaml). The scan borrows the compiler of the first models job, else of the first
- * controllers job; a config with neither opens its own, so an app that only calls an SDK gets an index too.
+ * controllers job; a config with neither opens its own, so an app that only calls an SDK gets an index too. A yaml with no tsconfig file has no project.
  */
 function rewriteRoot(config: GolemConfig): RewriteRoot {
   const job = config.jobs.find((candidate): candidate is Extract<GolemJob, { kind: 'models' }> => candidate.kind === 'models')
@@ -411,7 +411,8 @@ export async function runPipeline(filename: string, options: PipelineOptions = {
     manifests.push(...result.manifestPaths);
     results.set(job.id, result);
   }
-  {
+  // A yaml without a tsconfig, an openapi-only one for instance, has no project to scan and no index to own.
+  if (fs.existsSync(config.tsconfig)) {
     const { job, root, controllerRoots } = rewriteRoot(config);
     const indexRoot = path.dirname(config.tsconfig);
     const nest = controllerRoots.length > 0;
