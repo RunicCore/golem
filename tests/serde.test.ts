@@ -141,23 +141,26 @@ test('IObject stringify/parse compose nested Money by call; invalid JSON fails b
   }
 });
 
-test('untransformed public serde APIs and validate<T> throw', () => {
-  const unavailable = (error: unknown) => (
-    error instanceof LibError && error.kind === LibErrorKind.ValidationUnavailable
-  );
-  // The message says what to run now: generate, then a build that applies golem's rewrite.
-  const namesTheRewrite = (error: unknown) => (
-    unavailable(error)
-    && error instanceof LibError
-    && ['golem generate', 'golem build', 'Vite', 'esbuild', '@exprtlabs/golem/register'].every(text => error.message.includes(text))
-    && !/ttsc/.test(error.message)
-  );
-  assert.throws(() => publicStringify({ id: '1' }), namesTheRewrite);
-  assert.throws(() => publicParse('{"id":"1"}'), namesTheRewrite);
-  assert.throws(() => publicValidate({ id: '1' }), namesTheRewrite);
-  assert.throws(() => publicAssertValue({ id: '1' }), unavailable);
-  assert.throws(() => publicToWireFormat({ id: '1' }), unavailable);
-  assert.throws(() => publicFromWireFormat({ id: '1' }), unavailable);
+test('untransformed public serde APIs and validate<T> throw with the message that names the rewrite', () => {
+  const calls = [
+    ['stringify', () => publicStringify({ id: '1' })],
+    ['parse', () => publicParse('{"id":"1"}')],
+    ['validate', () => publicValidate({ id: '1' })],
+    ['assertValue', () => publicAssertValue({ id: '1' })],
+    ['toWireFormat', () => publicToWireFormat({ id: '1' })],
+    ['fromWireFormat', () => publicFromWireFormat({ id: '1' })],
+  ] as const;
+  for (const [name, call] of calls) {
+    assert.throws(call, (error: unknown) => {
+      assert.ok(error instanceof LibError);
+      assert.equal(error.kind, LibErrorKind.ValidationUnavailable);
+      assert.equal(
+        error.message,
+        `${name}<T> was not rewritten to a generated function. Run \`golem generate\`, then build with \`golem build\`, the golem Vite or esbuild plugin, or run Node with \`--import @exprtlabs/golem/register\`.`,
+      );
+      return true;
+    }, name);
+  }
 });
 
 test('IObject TSerde stringify/parse convert declared fields in one pass', async (t) => {

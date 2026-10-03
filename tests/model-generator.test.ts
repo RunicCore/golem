@@ -317,3 +317,16 @@ test('a project root reached through a symlink opens its own project', (t: TestC
   const result = generate({ root: alias, profile: { mobx: false, validation: true } });
   assert.ok(result.artifacts.some(artifact => artifact.path.endsWith('item.model.generated.ts')));
 });
+
+test('model generation reports source type errors with path:line:col and TS code', (t: TestContext) => {
+  const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-generate-diagnostics-', linkTypescript: true });
+  fs.writeFileSync(path.join(sourceRoot, 'broken.model.ts'), `import type { IModel } from '@exprtlabs/golem/model';
+const wrong: string = 5;
+export type TBroken = IModel<{ id: string }>;
+export { wrong };
+`);
+  assert.throws(
+    () => generate({ root, profile: { mobx: false, validation: false } }),
+    /broken\.model\.ts:2:7 - error TS2322: Type 'number' is not assignable to type 'string'\./,
+  );
+});
