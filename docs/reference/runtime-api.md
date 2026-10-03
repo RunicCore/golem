@@ -449,7 +449,7 @@ node --import @exprtlabs/golem/register src/main.ts
 
 Every later import of the process goes through the loader. Run `golem generate` first.
 
-- Node 22 needs `--experimental-strip-types` as well: Node strips the types after the loader rewrites the file.
+- Node before 22.18 needs `--experimental-strip-types` as well: Node strips the types after the loader rewrites the file. Node 22.18 and later, including Node 24, strip types by default.
 - The loader uses the nearest `.golem/rewrites.json` above each file. A TypeScript file outside `node_modules` with no index fails instead of loading unrewritten.
 - A workspace package symlinked into `node_modules` loads from its real path, so it needs its own index: give it its own `golem.yaml` and run `golem generate` there.
 - Rewrites need ES modules. A listed `.cts` file, or a listed `.ts` file under a CommonJS `package.json`, fails with a message that names the file. Use `.mts`, `"type": "module"`, or `golem build`.

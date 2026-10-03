@@ -117,9 +117,9 @@ Add these options to the `tsconfig.json` from [Quick start](/guide/quick-start):
 }
 ```
 
-With a `controllers` job in `golem.yaml`, `golem build` records `@Body()`, `@Query()` and return types for Nest ([`golem build`](/reference/cli#build)). Build with `npx golem build`, and run `npx golem generate` first.
+With a `controllers` job in `golem.yaml`, the rewrite records `@Body()`, `@Query()` and return types for Nest. Every host applies it: [`golem build`](/reference/cli#build), the [loader](/reference/runtime-api#loader) and the [Vite](/reference/runtime-api#vite) and [esbuild](/reference/runtime-api#esbuild) plugins. Run `npx golem generate` first, then build with `npx golem build`.
 
-Import `reflect-metadata` first in the application entry file, before any application module import. TypeScript erases the types of `@Body()`, `@Query()` and return values, so the build records them for `NestModelInterceptor`, which converts and validates requests and responses.
+Import `reflect-metadata` first in the application entry file, before any application module import. TypeScript erases the types of `@Body()`, `@Query()` and return values, so the rewrite records them for `NestModelInterceptor`, which converts and validates requests and responses.
 
 ## Convert requests and responses
 

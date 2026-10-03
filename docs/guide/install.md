@@ -40,7 +40,7 @@ The generators declare the compiler as a peer dependency, so npm installs one co
 
 ## TypeScript setup
 
-`parse<T>`, `stringify<T>`, `fromWireFormat<T>` and `toWireFormat<T>` are rewritten at build time to call the generated conversion. `tsc` doesn't do that, so an untransformed call throws at runtime. Build with one of these; each reads `.golem/rewrites.json`, which `golem generate` writes:
+`parse<T>`, `stringify<T>`, `fromWireFormat<T>` and `toWireFormat<T>` are rewritten at build time to call the generated conversion. `tsc` doesn't do that, so an untransformed call throws at runtime. Build with one of these; each reads `.golem/rewrites.json`, which `golem generate` and `golem watch` write and `golem build` refreshes itself:
 
 - [`golem build`](/reference/cli#build) checks your sources and emits JavaScript with the calls rewritten. It replaces `tsc -p`.
 - The [Vite](/reference/runtime-api#vite) and [esbuild](/reference/runtime-api#esbuild) plugins rewrite the calls inside your bundler.
