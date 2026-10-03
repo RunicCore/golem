@@ -4,7 +4,7 @@ import path from 'node:path';
 import test, { type TestContext } from 'node:test';
 import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/golem/conversion';
 import { writeGeneratedArtifacts } from './fixture-project.js';
-import { createModelProject, compileModelProject } from './model-project.js';
+import { createModelProject, buildModelProject } from './model-project.js';
 import { taggedModelSource } from './fixture-templates/models/model-tags.js';
 import { COUNT_DIST_FILES, writeCodecPackage } from './fixture-templates/models/codec-package.js';
 import { tsSource } from './source-template.js';
@@ -29,7 +29,7 @@ async function roundTrip(root: string): Promise<void> {
   const generated = fs.readFileSync(path.join(root, SHARED_MODELS), 'utf8');
   assert.match(generated, /from "@fixture\/pg\/codecs"/);
   assert.doesNotMatch(generated, /node_modules|\.d\.js/);
-  await compileModelProject(root);
+  await buildModelProject(root);
   const { A } = await import(path.toNamespacedPath(path.join(root, 'build/a.model.js')));
   const decoded = decodeGeneratedModel(A, { count: '42', name: 'abcd' });
   assert.equal(decoded.count, 42);

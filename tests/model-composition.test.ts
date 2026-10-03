@@ -7,7 +7,7 @@ import test, { type TestContext } from 'node:test';
 import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/golem/conversion';
 import { requireObjectCodec } from '@exprtlabs/golem/serde';
 import { generatedCodecId, generatedCodecIdFromRoot } from './support/consumer.js';
-import { compileModelProject, createModelProject, writeModelSources } from './model-project.js';
+import { buildModelProject, createModelProject, writeModelSources } from './model-project.js';
 import { discardedProjectionCodecsSource, discardedProjectionMetadataSource, projectionPolicyModelSource } from './fixture-templates/models/model-composition.js';
 import { generate } from '#model/generator';
 
@@ -24,7 +24,7 @@ test('an unrelated same-name class does not become a model constructor', async t
   const { root, sourceRoot } = fixture(t);
   fs.writeFileSync(path.join(sourceRoot, 'item.model.ts'), readFixture("models/model-composition/an-unrelated-same-name-class-does-not-become-a-model-constructor/item.model.ts"));
   writeGeneratedArtifacts(generate({ root, profile: { mobx: false, validation: false } }).artifacts);
-  await compileModelProject(root);
+  await buildModelProject(root);
   const generated = await import(`${path.join(root, 'build/item.model.generated.js')}?${Date.now()}`);
   const authored = await import(`${path.join(root, 'build/item.model.js')}?${Date.now()}`);
   const parent = new generated.TParentBaseModel({ child: { id: 'child' } });
@@ -43,7 +43,7 @@ test('first generation resolves model class bases through project path aliases',
   fs.writeFileSync(path.join(sourceRoot, 'parent.model.ts'), readFixture("models/model-composition/first-generation-resolves-model-class-bases-through-project-path-aliases/parent.model.ts"));
   const result = generate({ root, profile: { mobx: false, validation: false } });
   writeGeneratedArtifacts(result.artifacts);
-  await compileModelProject(root);
+  await buildModelProject(root);
   const generated = await import(`${path.join(root, 'build/parent.model.generated.js')}?${Date.now()}`);
   const authored = await import(path.join(root, 'build/item.model.js'));
   const parent = new generated.TParentBaseModel({ child: { id: 'nested' } });
@@ -56,7 +56,7 @@ test('first generation resolves model class bases through project path aliases',
 test('IModel exposes fields and rejects root unions before emitting artifacts', async t => {
   const { root, sourceRoot } = fixture(t);
   fs.writeFileSync(path.join(sourceRoot, 'keys.ts'), readFixture("models/model-composition/imodel-exposes-fields-and-rejects-root-unions-before-emitting-artifacts/keys.ts"));
-  await compileModelProject(root);
+  await buildModelProject(root);
   fs.writeFileSync(path.join(sourceRoot, 'item.model.ts'), readFixture("models/model-composition/imodel-exposes-fields-and-rejects-root-unions-before-emitting-artifacts/item.model.ts"));
   for (const validation of [true, false]) {
     assert.throws(() => generate({ root, profile: { mobx: false, validation } }), /RUNM1052.*Root IModel unions/);
@@ -89,7 +89,7 @@ test('nested projections strip omitted fields and retain intact child models wit
   const { root, sourceRoot } = fixture(t);
   fs.writeFileSync(path.join(sourceRoot, 'address.model.ts'), readFixture("models/model-composition/model-composition-address-model/address.model.ts"));
   writeGeneratedArtifacts(generate({ root, profile: { mobx: false, validation: false } }).artifacts);
-  await compileModelProject(root);
+  await buildModelProject(root);
   await assertNestedProjections(root, 'build/address.model.js', false);
 });
 
@@ -104,7 +104,7 @@ test('projection decoders and encoders copy fields with assignments and keep the
     assert.ok(helper);
     assert.doesNotMatch(helper, /Object\.fromEntries/);
   }
-  await compileModelProject(root);
+  await buildModelProject(root);
   const { Office } = await import(path.join(root, 'build/place.model.js'));
   const place = JSON.parse('{"city":"Hue","country":"VN","__proto__":{"x":1}}');
   const office = decodeGeneratedModel(Office, { place }) as { place: Record<string, unknown> };
@@ -123,7 +123,7 @@ test('equivalent projections share helpers and execute only retained field codec
   assert.equal([...companion.matchAll(/function decodeTItemOmitId\(/g)].length, 1);
   assert.equal([...companion.matchAll(/function initTItemOmitId\(/g)].length, 1);
   assert.equal([...companion.matchAll(/function encodeTItemOmitId\(/g)].length, 1);
-  await compileModelProject(root);
+  await buildModelProject(root);
   const { Container } = await import(path.join(root, 'build/item.model.js'));
   const codecs = await import(path.join(root, 'build/codecs.js'));
   const model = decodeGeneratedModel(Container, { first: { id: 'ignored', value: 'HELLO' } });
@@ -140,7 +140,7 @@ test('generated readonly fields remain readonly to TypeScript consumers', async 
   fs.writeFileSync(path.join(sourceRoot, 'item.model.ts'), readFixture("models/model-composition/generated-readonly-fields-remain-readonly-to-typescript-consumers/item.model.ts"));
   writeGeneratedArtifacts(generate({ root, profile: { mobx: false, validation: false } }).artifacts);
   fs.writeFileSync(path.join(sourceRoot, 'readonly-consumer.ts'), readFixture("models/model-composition/generated-readonly-fields-remain-readonly-to-typescript-consumers/readonly-consumer.ts"));
-  await compileModelProject(root);
+  await buildModelProject(root);
 });
 
 test('anonymous nested IModel declarations fail with an actionable diagnostic', async t => {
@@ -185,7 +185,7 @@ test('validation-on projection cases share one generated project', async t => {
     'projected-child/item.model.ts': composition('a-projected-child-applies-the-containing-model-allowany-policy', 'item.model-2.ts'),
   });
   writeGeneratedArtifacts(generate({ root, profile: { mobx: false, validation: true } }).artifacts);
-  await compileModelProject(root);
+  await buildModelProject(root);
   const load = (directory: string, file: string) => import(path.join(root, 'build', directory, file));
   // Codec ids are read from the one directory's companion, since several directories declare a Container.
   const codecIdIn = (directory: string, shortName: string): string =>
@@ -308,7 +308,7 @@ for (const ajvStandalone of [false, true]) {
     const { root, sourceRoot } = fixture(t, ajvStandalone);
     fs.writeFileSync(path.join(sourceRoot, 'item.model.ts'), readFixture("models/model-composition/model-composition-item-model/item.model.ts"));
     writeGeneratedArtifacts(generate({ root, profile: { mobx: true, validation: true, ajvStandalone } }).artifacts);
-    await compileModelProject(root);
+    await buildModelProject(root);
     const { Parent, Child } = await import(path.join(root, 'build/item.model.js'));
     const { autorun, isObservableObject, runInAction } = await import('mobx');
     const parent = decodeGeneratedModel(Parent, { projected: { child: { name: 'First' } } });

@@ -9,7 +9,7 @@ import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/golem/con
 import { requireObjectCodec } from '@exprtlabs/golem/serde';
 import { getValidator } from '@exprtlabs/golem/validation';
 import { generatedCodecIdFromRoot } from './support/consumer.js';
-import { createModelProject, compileModelProject } from './model-project.js';
+import { createModelProject, buildModelProject } from './model-project.js';
 import { taggedModelSource } from './fixture-templates/models/model-tags.js';
 import { joinSource, tsSource, type SourceFragment } from './source-template.js';
 import { generate } from '#model/generator';
@@ -43,7 +43,7 @@ import { validate } from './validators.js';`,
   build(first.sourceRoot);
   const firstResult = generate({ root: first.root, profile: { mobx: false, validation: true } });
   writeGeneratedArtifacts(firstResult.artifacts);
-  await compileModelProject(first.root);
+  await buildModelProject(first.root);
   const firstShared = firstResult.artifacts.find((artifact) => artifact.path.endsWith('/models.generated.ts'))?.content ?? '';
   assert.ok(firstShared);
   assert.doesNotMatch(firstShared, new RegExp(first.root.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
@@ -78,7 +78,7 @@ type ValueArray = Array<string>;`,
     'dependentRequired', 'dependentSchemas', 'oneOf', 'not', 'if', 'then', 'else',
   ]) assert.match(shared, new RegExp(`\\b${keyword}\\b`), keyword);
   assert.match(generatedJsonData(shared), /"contains"[\s\S]*"(?:minContains"[\s\S]*"maxContains|maxContains"[\s\S]*"minContains)/);
-  await compileModelProject(root);
+  await buildModelProject(root);
   const { A } = await import(path.toNamespacedPath(path.join(root, 'build/a.model.js')));
   const valid = new A({ values: ['ok'], objectValue: { bar: 'yes', x_value: 1 } });
   assert.equal(await getValidator(valid).validate(), true);
@@ -169,7 +169,7 @@ import { first, second } from './predicates.js';`,
   });
   const result = generate({ root, profile: { mobx: false, validation: true } });
   writeGeneratedArtifacts(result.artifacts);
-  await compileModelProject(root);
+  await buildModelProject(root);
   const load = (directory: string, file: string) => import(path.toNamespacedPath(path.join(root, 'build', directory, file)));
 
   await t.test('builtin constraints run before custom predicates and distinct predicates compose once', async () => {
@@ -350,7 +350,7 @@ test('validation false retains Date and serde conversions without a validator re
   writeGeneratedArtifacts(result.artifacts);
   const shared = result.artifacts.find((artifact) => artifact.path.endsWith('/models.generated.ts'))?.content ?? '';
   assert.match(shared, /modelSerdeBindings/);
-  await compileModelProject(root);
+  await buildModelProject(root);
   const { A } = await import(path.toNamespacedPath(path.join(root, 'build/a.model.js')));
   const codecs = await import(path.toNamespacedPath(path.join(root, 'build/codecs.js')));
   const model = decodeGeneratedModel(A, { token: '4' });
@@ -371,7 +371,7 @@ test('a MobX model generated with validation false has no validator', async t =>
   }).text);
   const result = generate({ root, profile: { mobx: true, validation: false } });
   writeGeneratedArtifacts(result.artifacts);
-  await compileModelProject(root);
+  await buildModelProject(root);
   const { A } = await import(path.toNamespacedPath(path.join(root, 'build/a.model.js')));
   const model = decodeGeneratedModel(A, { title: 'Write', done: false });
   assert.equal('$validator' in model, false);
@@ -392,7 +392,7 @@ test('generic utility aliases retain nested constraints, predicates, and serde b
   assert.match(shared, /minLength/);
   assert.match(shared, /exprtValidation/);
   assert.match(shared, /modelSerdeBindings/);
-  await compileModelProject(root);
+  await buildModelProject(root);
   const { A } = await import(path.toNamespacedPath(path.join(root, 'build/a.model.js')));
   const bindings = await import(path.toNamespacedPath(path.join(root, 'build/bindings.js')));
   const invalid = decodeGeneratedModel(A, { payload: { value: 'x', when: '2025-01-02T03:04:05.000Z' } });
@@ -417,7 +417,7 @@ test('serde wire descriptors validate nested constraints before decode and after
   }).text);
   const result = generate({ root, profile: { mobx: false, validation: true } });
   writeGeneratedArtifacts(result.artifacts);
-  await compileModelProject(root);
+  await buildModelProject(root);
   const { A } = await import(path.toNamespacedPath(path.join(root, 'build/a.model.js')));
   const codecs = await import(path.toNamespacedPath(path.join(root, 'build/codecs.js')));
   assert.throws(() => requireObjectCodec(generatedCodecIdFromRoot(root, 'TA')).parse( JSON.stringify({ value: { code: 'x' } })));
@@ -444,7 +444,7 @@ test('serde wire predicates run on the wire plane with JIT and standalone valida
         fs.copyFileSync(artifact.path, built);
       }
     }
-    await compileModelProject(root);
+    await buildModelProject(root);
     const { A } = await import(path.toNamespacedPath(path.join(root, 'build/a.model.js')));
     const codecs = await import(path.toNamespacedPath(path.join(root, 'build/codecs.js')));
 
@@ -560,7 +560,7 @@ test('standalone model validators are external generated artifacts with declarat
   assert.ok(names.includes('models.generated.NOTICES.txt'));
   const shared = result.artifacts.map((artifact) => artifact.content).join('\n');
   assert.doesNotMatch(shared, /__commonJS/);
-  await compileModelProject(root);
+  await buildModelProject(root);
   const standalone = result.artifacts.find((artifact) => artifact.path.endsWith('/models.validators.generated.js'));
   assert.ok(standalone);
   const builtStandalone = path.join(root, 'build', path.relative(sourceRoot, standalone.path));

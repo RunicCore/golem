@@ -8,7 +8,7 @@ import { validateInstance } from '@exprtlabs/golem/validation';
 import { generate } from '#model/generator';
 import { readFixture, writeGeneratedArtifacts } from './fixture-project.js';
 import { generate as generateOpenApi } from '@exprtlabs/golem-openapi/generator';
-import { compileModelProject, createModelProject, writeModelSources } from './model-project.js';
+import { buildModelProject, createModelProject, writeModelSources } from './model-project.js';
 
 const COUNTER = `export let calls = 0;
 export function notBlank(value: string): boolean | string { calls++; return value.trim().length > 0 || 'blank'; }
@@ -44,7 +44,7 @@ async function project(t: TestContext, profile: { mobx: false; validation: true;
   writeModelSources(sourceRoot, { 'counter.ts': COUNTER, 'order.model.ts': ORDER });
   const result = generate({ root, profile });
   writeGeneratedArtifacts(result.artifacts);
-  await compileModelProject(root);
+  await buildModelProject(root);
   const source = result.artifacts.map(a => a.content).join('\n');
   const counter = await import(pathToFileURL(path.join(root, 'build/counter.js')).href) as { calls: number; reset(): void };
   const models = await import(pathToFileURL(path.join(root, 'build/order.model.js')).href) as { Order: new (v?: object) => object; RuleOnly: new (v?: object) => object };
@@ -100,7 +100,7 @@ test('a rule on an SDK model runs once per parse and IObject enforces it (standa
   writeGeneratedArtifacts((await generateOpenApi({ input: path.join(root, 'money.yaml'), output: path.join(sourceRoot, 'sdk'), name: 'Payments', profile })).artifacts);
   writeModelSources(sourceRoot, { 'rules.ts': readFixture(`${MONEY_FIXTURE}/rules.ts`), 'checkout.model.ts': readFixture(`${MONEY_FIXTURE}/checkout.model.ts`) });
   writeGeneratedArtifacts(generate({ root, profile, manifestInputs: [path.join(sourceRoot, 'sdk/model-manifest.json')] }).artifacts);
-  await compileModelProject(root);
+  await buildModelProject(root);
   const rules = await import(pathToFileURL(path.join(root, 'build/rules.js')).href) as { extraMoneyCalls: number };
   await import(pathToFileURL(path.join(root, 'build/checkout.model.js')).href);
   const wire = {
@@ -141,7 +141,7 @@ for (const profileValidation of [true, false]) {
     writeModelSources(sourceRoot, { 'counter.ts': COUNTER, 'toggles.model.ts': TOGGLES });
     const result = generate({ root, profile: { mobx: false, validation: profileValidation } });
     writeGeneratedArtifacts(result.artifacts);
-    await compileModelProject(root);
+    await buildModelProject(root);
     const counter = await import(pathToFileURL(path.join(root, 'build/counter.js')).href) as { calls: number; reset(): void };
     const models = await import(pathToFileURL(path.join(root, 'build/toggles.model.js')).href) as Record<string, new (v?: object) => object>;
     const value = { note: 'hi', when: '2026-01-02T03:04:05.000Z' };
@@ -202,7 +202,7 @@ for (const [label, profile] of [['runtime Ajv', { mobx: false, validation: true 
       'a.model.ts': readFixture('models/constraint-callback-composition/nested-value-callbacks/a.model.ts'),
     });
     writeGeneratedArtifacts(generate({ root, profile }).artifacts);
-    await compileModelProject(root);
+    await buildModelProject(root);
     const predicates = await import(pathToFileURL(path.join(root, 'build/predicates.js')).href) as { positiveCalls: number; reset(): void };
     const { A } = await import(pathToFileURL(path.join(root, 'build/a.model.js')).href) as { A: new (v?: object) => object };
     const codec = requireObjectCodec('TA');
@@ -226,7 +226,7 @@ export type TTrip = IModel<{ at: Date; stop: Stop }>;
 export class Trip extends TTripBaseModel {}
 ` });
   writeGeneratedArtifacts(generate({ root, profile: { mobx: false, validation: true } }).artifacts);
-  await compileModelProject(root);
+  await buildModelProject(root);
   const { Trip } = await import(pathToFileURL(path.join(root, 'build/visit.model.js')).href) as { Trip: new (v?: object) => object };
   const { createOpenApiSyncAjvEngine } = await import('@exprtlabs/golem/ajv');
   const { registerCodecSchemas } = await import('@exprtlabs/golem/serde');

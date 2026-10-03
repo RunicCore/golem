@@ -12,7 +12,7 @@ import type { ModelTypeDescriptor } from '@exprtlabs/golem/model';
 import { generatedCodecId } from './support/consumer.js';
 import { generate, type GolemModelResult } from '#model/generator';
 import { writeGeneratedArtifacts } from './fixture-project.js';
-import { compileModelProject, createModelProject } from './model-project.js';
+import { buildModelProject, createModelProject } from './model-project.js';
 
 function fixture(t: TestContext) {
   return createModelProject(t, {
@@ -74,7 +74,7 @@ async function buildScenarioProject(t: TestContext, ajvStandalone: boolean, name
   }
   const result = generate({ root, profile: { mobx: false, validation: true, ajvStandalone } });
   writeGeneratedArtifacts(result.artifacts);
-  await compileModelProject(root);
+  await buildModelProject(root);
   if (ajvStandalone) copyStandaloneArtifacts(result, root, sourceRoot);
   return {
     root,

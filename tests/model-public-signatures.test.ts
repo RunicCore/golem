@@ -3,7 +3,7 @@ import test from 'node:test';
 
 import { generate } from '#model/generator';
 import { writeGeneratedArtifacts } from './fixture-project.js';
-import { compileModelProject, createModelProject, writeModelSources } from './model-project.js';
+import { buildModelProject, createModelProject, writeModelSources } from './model-project.js';
 
 const OPTIONS = String.raw`options\?: __Golem(?:Serde|Validate)Options`;
 
@@ -83,6 +83,6 @@ export type TNote = IObject<{ text: string; author: TAuthor; at: Date }>;
   for (const ajvStandalone of [false, true]) {
     const result = generate({ root, profile: { mobx: false, validation: true, ajvStandalone } });
     writeGeneratedArtifacts(result.artifacts);
-    await compileModelProject(root, ['--noEmit']);
+    await buildModelProject(root, ['--noEmit']);
   }
 });

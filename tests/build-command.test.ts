@@ -9,7 +9,8 @@ import { generate } from '#model/generator';
 import { createFixtureProject, readFixture, writeGeneratedArtifacts } from './fixture-project.js';
 import { createControllerFixture } from './fixture-templates/controllers/project.js';
 import { command, workspace } from './support/process.js';
-import { TSC, PROFILE, HEAVY_TEST_TIMEOUT_MS, REJECTION, write, editTsconfig, MINIMAL_YAML, serdeProject, USE, snapshot, build, mtimes, importBuilt, golemBuild, assertCallMap } from './support/build-project.js';
+import { MINIMAL_GOLEM_YAML } from './model-project.js';
+import { TSC, PROFILE, HEAVY_TEST_TIMEOUT_MS, REJECTION, write, editTsconfig, serdeProject, USE, snapshot, build, mtimes, importBuilt, golemBuild, assertCallMap } from './support/build-project.js';
 
 // Original sources are checked, rewritten sources are emitted
 
@@ -207,7 +208,7 @@ test('a tsconfig that extends a file outside the root, with paths and a rootDir,
   fs.symlinkSync(path.join(workspace, 'node_modules/typescript'), path.join(root, 'node_modules/typescript'), 'dir');
   fs.writeFileSync(path.join(parent, 'tsconfig.base.json'), JSON.stringify({ compilerOptions: { strict: true, target: 'ES2022', module: 'NodeNext', moduleResolution: 'NodeNext', sourceMap: true } }));
   fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ private: true, type: 'module' }));
-  write(root, 'golem.yaml', MINIMAL_YAML);
+  write(root, 'golem.yaml', MINIMAL_GOLEM_YAML);
   fs.writeFileSync(path.join(root, 'tsconfig.json'), JSON.stringify({
     extends: '../tsconfig.base.json',
     compilerOptions: { outDir: 'build', rootDir: 'src', paths: { '@lib/*': ['./src/lib/*'] } },
@@ -230,7 +231,7 @@ test('golem build rejects a tsconfig the stage cannot mirror', async (t) => {
   fs.mkdirSync(path.join(parent, 'shared'));
   fs.writeFileSync(path.join(parent, 'shared/shared.d.ts'), 'export declare const shared: number;\n');
   fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ private: true, type: 'module' }));
-  write(root, 'golem.yaml', MINIMAL_YAML);
+  write(root, 'golem.yaml', MINIMAL_GOLEM_YAML);
   write(root, 'src/main.ts', "import { shared } from '../../shared/shared.js';\nexport const value = shared;\n");
   const base = { strict: true, target: 'ES2022', module: 'NodeNext', moduleResolution: 'NodeNext' };
   const config = (extra: Record<string, unknown>, name: string): string => {

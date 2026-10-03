@@ -9,9 +9,9 @@ import { readRewriteIndex } from '#golem/rewrite';
 import { generate } from '#model/generator';
 import { copyFixtureFile, readFixture } from './fixture-project.js';
 import { createControllerFixture } from './fixture-templates/controllers/project.js';
-import { createModelProject } from './model-project.js';
-import { command, workspace } from './support/process.js';
-import { GOLEM, write, editTsconfig, MINIMAL_YAML, serdeProject, USE, build, mtimes, golemBuild, assertCallMap } from './support/build-project.js';
+import { createModelProject, MINIMAL_GOLEM_YAML } from './model-project.js';
+import { command, golem, workspace } from './support/process.js';
+import { write, editTsconfig, serdeProject, USE, build, mtimes, golemBuild, assertCallMap } from './support/build-project.js';
 
 /** A project with a golem.yaml whose models job generates the serde model, and the index golem generate wrote. */
 async function generatedProject(t: TestContext, name: string, options: { readonly yaml?: string; readonly generate?: boolean } = {}): Promise<string> {
@@ -103,7 +103,7 @@ test('golem build starts from a golem.yaml: without one it fails, and it never s
   const message = 'golem build needs a golem.yaml; run it next to one or pass --config';
   // The folder above has a golem.yaml and the tsconfig; neither is found from here.
   for (const args of [[], ['-p', '../tsconfig.json']]) {
-    const result = await command(nested, process.execPath, [GOLEM, 'build', ...args], { allowFailure: true });
+    const result = await command(nested, process.execPath, [golem, 'build', ...args], { allowFailure: true });
     assert.notEqual(result.code, 0);
     assert.ok(result.stderr.includes(message), result.stderr);
   }
@@ -291,7 +291,7 @@ test('a source map of an .mts file names the original and resolves the rewritten
 
 test('the tsconfig directory owns the index: a parent tsconfig builds every package under it, and no package gets an index of its own', async (t) => {
   const { root } = createModelProject(t, { prefix: 'golem-build-monorepo-', name: 'build-monorepo', linkTypescript: true, rootDir: '.', include: ['packages/*/src/**/*.ts'] });
-  write(root, 'golem.yaml', MINIMAL_YAML);
+  write(root, 'golem.yaml', MINIMAL_GOLEM_YAML);
   for (const name of ['a', 'b']) {
     for (const file of ['payment.model.ts', 'payment.model.generated.ts', 'iobject-plugin-keys.ts', 'calls.ts']) copyFixtureFile(root, `rewrite/${file}`, `packages/${name}/src/${file}`);
     write(root, `packages/${name}/package.json`, JSON.stringify({ name, private: true, type: 'module' }));

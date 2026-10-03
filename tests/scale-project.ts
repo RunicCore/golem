@@ -2,7 +2,7 @@ import { copyFixtureFile, writeGeneratedArtifacts } from './fixture-project.js';
 import { scaleModelSource } from './fixture-templates/models/scale.js';
 import { generate } from '#model/generator';
 import { command } from './support/process.js';
-import { compileModelProject, createModelProject, writeModelSources } from './model-project.js';
+import { buildModelProject, createModelProject, writeModelSources } from './model-project.js';
 import type { TestContext } from 'node:test';
 
 /** Write `count` scale models into a standalone-validation project and generate their companions. */
@@ -22,7 +22,7 @@ export function generateScaleProject(t: TestContext, count: number): { readonly 
 /** Compile the generated companions and execute every model, which catches invalid shared bindings. */
 export async function compileAndVerifyScaleProject(root: string, result: ReturnType<typeof generate>, count: number): Promise<void> {
   writeGeneratedArtifacts(result.artifacts);
-  await compileModelProject(root);
+  await buildModelProject(root);
   const verifier = copyFixtureFile(root, 'models/model-generation-scale/verify.mjs', 'verify.mjs');
   await command(root, process.execPath, [verifier, String(count)]);
 }

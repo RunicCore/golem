@@ -6,7 +6,7 @@ import test from 'node:test';
 import { generate } from '#model/generator';
 import { writeGeneratedArtifacts } from './fixture-project.js';
 import { builtinTagsModelSource } from './fixture-templates/models/builtin-tags.js';
-import { compileModelProject, createModelProject, writeModelSources } from './model-project.js';
+import { buildModelProject, createModelProject, writeModelSources } from './model-project.js';
 import { getValidator } from '@exprtlabs/golem/validation';
 
 function materializeStandalone(root: string, sourceRoot: string, result: ReturnType<typeof generate>): void {
@@ -77,7 +77,7 @@ for (const { mobx, ajvStandalone } of profiles) {
       profile: { mobx, validation: true, ajvStandalone },
     });
     writeGeneratedArtifacts(result.artifacts);
-    await compileModelProject(root);
+    await buildModelProject(root);
     if (ajvStandalone) materializeStandalone(root, sourceRoot, result);
     const { A } = await import(path.toNamespacedPath(path.join(root, 'build/a.model.js')));
 

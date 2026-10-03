@@ -6,7 +6,7 @@ import test, { type TestContext } from 'node:test';
 import type { GolemProfile } from '@exprtlabs/golem/generator-api';
 import { generate } from '#model/generator';
 import { writeGeneratedArtifacts } from './fixture-project.js';
-import { compileModelProject, createModelProject, writeModelSources } from './model-project.js';
+import { buildModelProject, createModelProject, writeModelSources } from './model-project.js';
 
 const sources = {
   'tree.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
@@ -39,7 +39,7 @@ for (const [label, profile] of profiles) {
     });
     writeModelSources(sourceRoot, sources);
     writeGeneratedArtifacts(generate({ root, profile }).artifacts);
-    await compileModelProject(root);
+    await buildModelProject(root);
     const codecs = await import(pathToFileURL(path.join(root, 'build/tree.model.generated.js')).href) as Codecs;
 
     const nodeWire = { at: '2024-01-01T00:00:00.000Z', children: [{ at: '2024-01-02T00:00:00.000Z', children: [{ at: '2024-01-03T00:00:00.000Z', children: [] }] }] };

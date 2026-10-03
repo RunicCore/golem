@@ -9,7 +9,7 @@ import { createSchemaGraph } from '@exprtlabs/golem/schema-graph';
 import { command } from './support/process.js';
 import { generatedCodecId } from './support/consumer.js';
 import { copyFixture, readFixture, writeGeneratedArtifacts } from './fixture-project.js';
-import { compileModelProject, createModelProject } from './model-project.js';
+import { buildModelProject, createModelProject } from './model-project.js';
 import { generate } from '#model/generator';
 
 function tupleModelProject(t: TestContext, name: string) {
@@ -27,7 +27,7 @@ test('generated optional and rest tuples retain exact lengths through every serd
     fs.writeFileSync(sourceFile, readFixture('models/model-tuples/tuple.model.ts'));
     const result = generate({ root, sources: [sourceFile], profile: { mobx: false, validation } });
     writeGeneratedArtifacts(result.artifacts);
-    await compileModelProject(root);
+    await buildModelProject(root);
 
     const loaded = await import(pathToFileURL(path.join(root, 'build/tuple.model.js')).href) as {
       readonly Tuple: new (values?: object) => object;
@@ -84,7 +84,7 @@ test('readonly array and tuple contracts survive model generation and strict con
   const model = path.join(sourceRoot, 'snapshot.model.ts');
   const result = generate({ root, sources: [model], profile: { mobx: false, validation: false } });
   writeGeneratedArtifacts(result.artifacts);
-  await compileModelProject(root);
+  await buildModelProject(root);
 });
 
 test('readonly container metadata does not fork semantic runtime codec identity', () => {
@@ -118,7 +118,7 @@ test('validation-enabled codec emission compiles and preserves array and tuple g
   const model = path.join(sourceRoot, 'snapshot.model.ts');
   const result = generate({ root, sources: [model], profile: { mobx: false, validation: true } });
   writeGeneratedArtifacts(result.artifacts);
-  await compileModelProject(root);
+  await buildModelProject(root);
   const codecId = generatedCodecId(result.artifacts.map((artifact) => artifact.content).join('\n'), 'TSnapshot');
   const verifier = path.join(root, 'verify-array-getters.mjs');
   await command(root, process.execPath, [verifier, codecId]);

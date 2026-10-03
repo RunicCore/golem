@@ -93,7 +93,7 @@ export function writeModelSources(
 }
 
 /** The smallest golem.yaml `golem build` reads: it names the tsconfig beside it by default. */
-const MINIMAL_GOLEM_YAML = 'version: 1\nmodels:\n  root: .\n';
+export const MINIMAL_GOLEM_YAML = 'version: 1\nmodels:\n  root: .\n';
 
 /**
  * Run `golem build` on the project: the original sources are checked and the rewritten ones emitted into its outDir. A project
@@ -120,14 +120,6 @@ export async function buildModelProject(
     project.push('-p', path.join(root, 'tsconfig.flags.json'));
   }
   return command(root, process.execPath, [golem, 'build', '--config', config, ...project], options);
-}
-
-export async function compileModelProject(
-  root: string,
-  args: readonly string[] = [],
-  options: CommandOptions = {},
-): Promise<void> {
-  await buildModelProject(root, args, options);
 }
 
 /** Compile with ttsc and the Go plugin: only the ttsc suites do, and Task 10 deletes this with them. */

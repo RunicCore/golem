@@ -8,7 +8,7 @@ import { generate as generateOpenApi } from '@exprtlabs/golem-openapi/generator'
 import { generate } from '#model/generator';
 import { command } from './support/process.js';
 import { fixturePath, writeGeneratedArtifacts } from './fixture-project.js';
-import { buildModelProject, compileModelProject, createModelProject, writeModelSources } from './model-project.js';
+import { buildModelProject, createModelProject, writeModelSources } from './model-project.js';
 
 const MODEL_SOURCE = /\.models?\.ts$/;
 const SDK_MONEY_SPEC = 'models/unify-validate/sdk-money-ref-plus-extra-tvalidation-local-tvalidation-and-tserde-share-one-/money.yaml';
@@ -311,7 +311,7 @@ void paidAtDate;
 console.log(JSON.stringify({ wire, paidAt }));
 `,
   });
-  await compileModelProject(root);
+  await buildModelProject(root);
   const result = await command(root, process.execPath, [path.join(root, 'build/main.js')]);
   assert.deepEqual(JSON.parse(result.stdout), {
     wire: { amount: 30, note: 'Lunch', paidAt: '2026-01-02T03:04:05.000Z' },
@@ -342,7 +342,7 @@ export class Visit extends TVisitBaseModel {}
 `,
   });
   writeGeneratedArtifacts(generate({ root, profile: { mobx: false, validation: true } }).artifacts);
-  await compileModelProject(root);
+  await buildModelProject(root);
   const generated = await import(pathToFileURL(path.join(root, 'build/visit.model.generated.js')).href) as {
     readonly toWireFormatTVisit: (value: unknown) => Record<string, unknown>;
     readonly stringifyTVisit: (value: unknown) => string;

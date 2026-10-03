@@ -4,7 +4,7 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import test, { type TestContext } from 'node:test';
 import { copyFixtureFile, readFixture, writeGeneratedArtifacts } from './fixture-project.js';
-import { compileModelProject, createModelProject } from './model-project.js';
+import { buildModelProject, createModelProject } from './model-project.js';
 
 import {
   assertValue as publicAssertValue,
@@ -35,7 +35,7 @@ function fixture(
 }
 
 async function compile(root: string): Promise<void> {
-  await compileModelProject(root);
+  await buildModelProject(root);
 }
 
 

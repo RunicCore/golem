@@ -7,7 +7,7 @@ import { generatedCodecId } from './support/consumer.js';
 
 import { copyFixture, copyFixtureFile, createFixtureProject, linkProjectPackages, writeGeneratedArtifacts } from './fixture-project.js';
 import { accountModelWithField, accountModelWithMissingImport } from './fixture-templates/models/model-generator.js';
-import { compileModelProject, createModelProject, writeModelSources } from './model-project.js';
+import { buildModelProject, createModelProject, writeModelSources } from './model-project.js';
 import { taggedModelSource } from './fixture-templates/models/model-tags.js';
 import { tsSource } from './source-template.js';
 
@@ -71,7 +71,7 @@ test('getValidator infers generated fields and rejects handwritten subclass fiel
   const source = path.join(sourceRoot, 'account.model.ts');
   const result = generate({ root, sources: [source], profile: { mobx: false, validation: true } });
   writeGeneratedArtifacts(result.artifacts);
-  await compileModelProject(root);
+  await buildModelProject(root);
 });
 
 test('discovers model sources, reports project inputs, and excludes generated companions', (t: TestContext) => {
@@ -183,7 +183,7 @@ test('generated validation executes local references and exact-object rules', as
   writeGeneratedArtifacts(result.artifacts);
   const paymentId = generatedCodecId(result.artifacts.map((artifact) => artifact.content).join('\n'), 'TPayment');
   assert.match(result.artifacts.map(artifact => artifact.content).join('\n'), /export abstract class TPaymentBaseModel/);
-  await compileModelProject(root);
+  await buildModelProject(root);
   const verifier = path.join(root, 'verify.mjs');
   await command(root, process.execPath, [verifier, paymentId]);
 });

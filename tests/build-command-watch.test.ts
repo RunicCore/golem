@@ -5,7 +5,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import test, { type TestContext } from 'node:test';
 import { runBuild } from '#golem/build';
-import { GOLEM, HEAVY_TEST_TIMEOUT_MS, write, serdeProject, USE, snapshot, build } from './support/build-project.js';
+import { HEAVY_TEST_TIMEOUT_MS, write, serdeProject, USE, snapshot } from './support/build-project.js';
+import { golem } from './support/process.js';
 
 /** How long a watching build gets to exit after SIGINT before the test fails with what it printed. */
 const STOP_TIMEOUT_MS = 15_000;
@@ -15,7 +16,7 @@ const STOP_TIMEOUT_MS = 15_000;
 interface Watching { readonly output: () => string; readonly stop: () => Promise<number | null> }
 
 function watching(t: TestContext, root: string): Watching {
-  const child: ChildProcess = spawn(process.execPath, [GOLEM, 'build', '--watch', '-p', 'tsconfig.json'], { cwd: root, stdio: ['ignore', 'pipe', 'pipe'] });
+  const child: ChildProcess = spawn(process.execPath, [golem, 'build', '--watch', '-p', 'tsconfig.json'], { cwd: root, stdio: ['ignore', 'pipe', 'pipe'] });
   let output = '';
   child.stdout?.on('data', (chunk: Buffer) => { output += chunk; });
   child.stderr?.on('data', (chunk: Buffer) => { output += chunk; });

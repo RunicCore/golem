@@ -6,7 +6,7 @@ import test from 'node:test';
 import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/golem/conversion';
 import { generate } from '#model/generator';
 import { copyFixtureFile, readFixture, writeGeneratedArtifacts } from './fixture-project.js';
-import { compileModelProject, createModelProject } from './model-project.js';
+import { buildModelProject, createModelProject } from './model-project.js';
 import { isGeneratedModelClass, requireRecord, type GeneratedModelClass } from './openapi/helpers.js';
 
 test('an IModel union variant tagged by several literal values is selected by each of them', async (t) => {
@@ -14,7 +14,7 @@ test('an IModel union variant tagged by several literal values is selected by ea
     const { root } = createModelProject(t, { prefix: 'golem-union-multi-tag-', name: 'union-multi-tag' });
     const source = copyFixtureFile(root, 'models/multi-tag/pets.model.ts', 'src/pets.model.ts');
     writeGeneratedArtifacts(generate({ root, sources: [source], profile: { mobx: false, validation } }).artifacts);
-    await compileModelProject(root);
+    await buildModelProject(root);
     const pets = {
       ...requireRecord(await import(pathToFileURL(path.join(root, 'build/pets.model.js')).href), 'pets module'),
       ...requireRecord(await import(pathToFileURL(path.join(root, 'build/pets.model.generated.js')).href), 'pets companion'),

@@ -3,16 +3,15 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import test, { type TestContext } from 'node:test';
+import { type TestContext } from 'node:test';
 import { runBuild } from '#golem/build';
 import { decodeMappings } from '#golem/source-map';
 import { resolveTypeScript } from '#golem/typescript-version';
 import { generate } from '#model/generator';
 import { copyFixtureFile, writeGeneratedArtifacts } from '../fixture-project.js';
-import { createModelProject } from '../model-project.js';
-import { command, workspace } from './process.js';
+import { createModelProject, MINIMAL_GOLEM_YAML } from '../model-project.js';
+import { command, golem, workspace } from './process.js';
 
-export const GOLEM = path.join(workspace, 'packages/golem/dist/bin/golem.js');
 export const TSC = path.join(resolveTypeScript(process.env.GOLEM_TYPESCRIPT_ROOT ?? workspace).packageDir, 'bin/tsc');
 export const PROFILE = { mobx: false, validation: true } as const;
 /** A heavy test is bounded below the file's 90 s budget, so a kill names the test. */
@@ -32,9 +31,6 @@ export function editTsconfig(root: string, edit: (tsconfig: { compilerOptions: R
   fs.writeFileSync(file, JSON.stringify(tsconfig));
 }
 
-/** The smallest golem.yaml `golem build` reads: it names the tsconfig next to it by default. */
-export const MINIMAL_YAML = 'version: 1\nmodels:\n  root: .\n';
-
 /** A serde project (the shared money model and its generated files) with `declaration` and `sourceMap` on; the caller adds sources. */
 export function serdeProject(t: TestContext, name: string): string {
   const { root } = createModelProject(t, {
@@ -45,7 +41,7 @@ export function serdeProject(t: TestContext, name: string): string {
   });
   copyFixtureFile(root, 'models/serde/base-payment-model/money.model.ts', 'src/money.model.ts');
   writeGeneratedArtifacts(generate({ root, profile: PROFILE }).artifacts);
-  write(root, 'golem.yaml', MINIMAL_YAML);
+  write(root, 'golem.yaml', MINIMAL_GOLEM_YAML);
   return root;
 }
 
@@ -105,7 +101,7 @@ export function importBuilt(root: string, file: string): Promise<Record<string, 
 }
 
 export function golemBuild(root: string, args: readonly string[]) {
-  return withoutSourceEdits(root, () => command(root, process.execPath, [GOLEM, 'build', ...args], { allowFailure: true }));
+  return withoutSourceEdits(root, () => command(root, process.execPath, [golem, 'build', ...args], { allowFailure: true }));
 }
 
 /** The map of a built file resolves the rewritten `stringify` call of `USE` to its line and column in `source`. */

@@ -7,7 +7,7 @@ import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/golem/con
 import { getValidator } from '@exprtlabs/golem/validation';
 import { generate } from '#model/generator';
 import { copyFixtureFile, writeGeneratedArtifacts } from './fixture-project.js';
-import { compileModelProject, createModelProject } from './model-project.js';
+import { buildModelProject, createModelProject } from './model-project.js';
 import { isGeneratedModelClass, requireRecord, type GeneratedModelClass } from './openapi/helpers.js';
 
 import { schemaForDescriptor } from '@exprtlabs/golem/schema';
@@ -246,7 +246,7 @@ test('IModel object unions with validation load, validate and reject an unknown 
   const { root } = createModelProject(t, { prefix: 'golem-union-validation-', name: 'union-validation' });
   const source = copyFixtureFile(root, 'models/union-validation/pets.model.ts', 'src/pets.model.ts');
   writeGeneratedArtifacts(generate({ root, sources: [source], profile: { mobx: false, validation: true } }).artifacts);
-  await compileModelProject(root);
+  await buildModelProject(root);
   const pets = {
     ...requireRecord(await import(pathToFileURL(path.join(root, 'build/pets.model.js')).href), 'pets module'),
     ...requireRecord(await import(pathToFileURL(path.join(root, 'build/pets.model.generated.js')).href), 'pets companion'),

@@ -10,7 +10,7 @@ import type { GeneratedModel } from '@exprtlabs/golem/model';
 import { generateModels } from '#openapi/models';
 import { writeSdk } from '#openapi/generator';
 import { generate } from '#model/generator';
-import { compileModelProject, createModelProject } from './model-project.js';
+import { buildModelProject, createModelProject } from './model-project.js';
 import { writeGeneratedSdk } from './openapi/helpers.js';
 
 const fixture = (t: TestContext) => createModelProject(t, {
@@ -72,7 +72,7 @@ test('model generation preserves imported model identity and detached JSON outpu
     'budget: a known Money codec is stringified by direct call, not a runtime requireObjectCodec lookup',
   );
   writeGeneratedArtifacts(result.artifacts);
-  await compileModelProject(value.root);
+  await buildModelProject(value.root);
 
   const sdkModule = await import(pathToFileURL(path.join(value.root, 'build/sdk/index.js')).href) as {
     readonly MoneyModel: new (values?: { amount?: number; currency?: string }) => object;
@@ -127,7 +127,7 @@ test('generated decoding preserves the constructor and initializer boundaries', 
 
   const result = generate({ root: value.root, profile: { mobx: false, validation: false } });
   writeGeneratedArtifacts(result.artifacts);
-  await compileModelProject(value.root);
+  await buildModelProject(value.root);
   // Parent's generated companion imports Child through the ordinary module
   // URL. Keep the test imports on that same URL so constructor identity and
   // static counters are shared with the generated decoder.
@@ -237,7 +237,7 @@ test('OpenAPI generated models use the same detached JSON serialization as objec
     },
   }, { mobx: false, validation: false });
   writeFileSync(path.join(value.sourceRoot, 'models.ts'), source);
-  await compileModelProject(value.root);
+  await buildModelProject(value.root);
 
   const models = await import(pathToFileURL(path.join(value.root, 'build/models.js')).href) as unknown as {
     readonly ChildModel: new (values?: Record<string, unknown>) => object;
@@ -322,7 +322,7 @@ export class Team extends TTeamBaseModel {}
   assert.match(memberConverters, /convertFromWireTStamp\(/);
 
   writeGeneratedArtifacts(result.artifacts);
-  await compileModelProject(value.root);
+  await buildModelProject(value.root);
   const { Team } = await import(pathToFileURL(path.join(value.root, 'build/team.model.js')).href);
   // Nested values are the generated classes; a model file's own subclasses aren't visible to its companion.
   const { TMemberBaseModel: Member, TStampBaseModel: Stamp } = await import(pathToFileURL(path.join(value.root, 'build/team.model.generated.js')).href);
@@ -360,7 +360,7 @@ export class Note extends TNoteBaseModel {}
   assert.deepEqual(positions, [...positions].sort((a, b) => a - b), 'fields are assigned in declaration order');
 
   writeGeneratedArtifacts(result.artifacts);
-  await compileModelProject(value.root);
+  await buildModelProject(value.root);
   const { Note } = await import(pathToFileURL(path.join(value.root, 'build/note.model.js')).href);
   const keys = (init: object) => Object.keys(encodeGeneratedModel(new Note(init) as never));
   assert.deepEqual(keys({ title: 't', pinned: true }), ['title', 'pinned']);
