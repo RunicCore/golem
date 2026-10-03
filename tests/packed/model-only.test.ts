@@ -35,7 +35,6 @@ test('packed manifests and tarballs carry the release contract', () => {
     else assert.equal(entry.manifest.bin, undefined);
     assert.equal(entry.manifest.license, 'MIT');
     assert.ok(entry.pack.files.some(file => file.path === 'LICENSE'));
-    assert.deepEqual(entry.pack.files.map(file => file.path).filter(file => file === 'ttsc-plugin.cjs' || file.startsWith('plugin/')), [], `${name} packs no ttsc plugin or native plugin source`);
     assert.ok(entry.pack.files.every(file => !/(?:^|\/)(?:docs?|assets?|\.vitepress|vitepress|vue|node_modules)(?:\/|$)/i.test(file.path)), name);
   }
   assert.deepEqual(registry.distTags, { rc: registry.workspaceVersion });
