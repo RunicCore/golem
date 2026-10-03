@@ -59,7 +59,7 @@ A typical TypeScript API stack assembles a library for each job and keeps their 
 - Have an OpenAPI document? Generate a [typed client](/guide/client).
 - Have NestJS controllers? Generate the [OpenAPI document](/guide/nestjs) from them, then the client.
 
-Golem compiles with TypeScript 7 through `ttsc` on Node.js 22.15 or newer ([Installation](/guide/install)).
+Golem runs on TypeScript 6 or 7 and Node.js 22.15 or newer ([Installation](/guide/install)).
 
 ## Your types are the schema
 
@@ -101,11 +101,11 @@ The controller returns plain types. The server configuration writes the OpenAPI 
 
 ## Get started
 
-Golem needs Node.js 22.15 or newer, TypeScript 7 and `ttsc` 0.30. The generator writes the JSON conversion code; the `ttsc` plugin points your `parse` and `toWireFormat` calls at it when you compile ([Installation](/guide/install)).
+Golem needs Node.js 22.15 or newer and TypeScript 6 or 7. The generator writes the JSON conversion code; `golem build`, the Vite or esbuild plugin, or the Node loader points your `parse` and `toWireFormat` calls at it ([Installation](/guide/install)).
 
 ```bash
 npm install @exprtlabs/golem@rc ajv ajv-formats
-npm install --save-dev @exprtlabs/golem-model@rc typescript@~7.0.2 ttsc@~0.30.4
+npm install --save-dev @exprtlabs/golem-model@rc typescript@~7.0.2
 ```
 
 The [quick start](/guide/quick-start) takes one model from declaration to JSON.

@@ -136,7 +136,7 @@ test('each benchmark group shows, per payload, the declarations and timed calls 
   }
 });
 
-/** `typescript` is declared as `>=A.B.C <D`; ttsc is declared as an exact tilde range. */
+/** `typescript` is declared as `>=A.B.C <D`; an install command pins a tilde range. */
 function admits(peer: string, range: string): boolean {
   const bounds = /^>=(\d+)\.(\d+)\.(\d+) <(\d+)$/.exec(peer);
   const version = /^~(\d+)\.(\d+)\.(\d+)$/.exec(range);
@@ -147,15 +147,14 @@ function admits(peer: string, range: string): boolean {
   return atLeastLow && found[0] < high;
 }
 
-test('install commands pin the ttsc peer range and a typescript inside the peer range', () => {
+test('install commands pin a typescript inside the peer range', () => {
   const peers = JSON.parse(readFileSync(path.join(root, 'packages/golem-model/package.json'), 'utf8')).peerDependencies as Record<string, string>;
   const files = [...markdownFiles(docs), path.join(root, 'README.md'), ...readdirSync(path.join(root, 'packages')).map(p => path.join(root, 'packages', p, 'README.md'))].filter(existsSync);
   const wrong: string[] = [];
   for (const file of files) {
     for (const [line] of readFileSync(file, 'utf8').matchAll(/^npm install .*$/gm)) {
-      for (const [, name, range] of line.matchAll(/\b(typescript|ttsc)@(\S+)/g)) {
-        const ok = name === 'typescript' ? range === '~7.0.2' && admits(peers[name], range) : range === peers[name];
-        if (!ok) wrong.push(`${path.relative(root, file)}: ${name}@${range} (peer ${peers[name]})`);
+      for (const [, name, range] of line.matchAll(/\b(typescript)@(\S+)/g)) {
+        if (!(range === '~7.0.2' && admits(peers[name], range))) wrong.push(`${path.relative(root, file)}: ${name}@${range} (peer ${peers[name]})`);
       }
     }
   }
@@ -175,8 +174,8 @@ test('guide TypeScript is imported except on listed pages', () => {
   assert.deepEqual(over, []);
 });
 
-const PUBLIC_SUBPATHS = ['model', 'validation', 'ajv', 'mobx', 'mobx-validation', 'errors', 'client', 'conversion', 'tags', 'temporal', 'serde', 'nest', 'ttsc-plugin', 'generator-api', 'manifest'];
-const INTERNAL_SUBPATHS = ['cli', 'emitter', 'schema', 'schema-graph', 'ajv-tooling', 'type-analysis', 'generated-paths', 'rewrite', 'loader', 'register', 'vite', 'esbuild', 'ts'];
+const PUBLIC_SUBPATHS = ['model', 'validation', 'ajv', 'mobx', 'mobx-validation', 'errors', 'client', 'conversion', 'tags', 'temporal', 'serde', 'nest', 'generator-api', 'manifest', 'rewrite', 'loader', 'register', 'vite', 'esbuild'];
+const INTERNAL_SUBPATHS = ['cli', 'emitter', 'schema', 'schema-graph', 'ajv-tooling', 'type-analysis', 'generated-paths', 'ts'];
 
 test('the runtime reference covers every @exprtlabs/golem subpath', () => {
   const exports = Object.keys(JSON.parse(readFileSync(path.join(root, 'packages/golem/package.json'), 'utf8')).exports as Record<string, unknown>).map(key => key.replace(/^\.\//, ''));

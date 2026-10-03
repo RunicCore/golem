@@ -11,7 +11,7 @@ Use npm with Node.js 22.15 or newer:
 
 ```sh
 npm install @exprtlabs/golem@rc ajv ajv-formats
-npm install --save-dev @exprtlabs/golem-openapi@rc typescript@~7.0.2 ttsc@~0.30.4
+npm install --save-dev @exprtlabs/golem-openapi@rc typescript@~7.0.2
 ```
 
 [Generate a client](../../docs/guide/client.md) walks through calling the

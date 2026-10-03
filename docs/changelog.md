@@ -34,11 +34,20 @@ Nested model references keep their classes, and derived types such as
 
 ## TypeScript 6 and 7
 
-Generation runs on TypeScript 6.0+ or 7.x, chosen from the `typescript` installed in your project, and writes the same files on both ([Compatibility](/compatibility)). `parse<T>` and `stringify<T>` still need `ttsc`. TypeScript 5 isn't supported.
+Generation runs on TypeScript 6.0+ or 7.x, chosen from the `typescript` installed in your project, and writes the same files on both ([Compatibility](/compatibility)). `parse<T>`, `stringify<T>` and the other generic serde calls work on both. TypeScript 5 isn't supported.
 
 - **Breaking:** `@exprtlabs/golem/ts` publishes Golem-owned types narrowed to what Golem uses. Its declarations no longer reference `typescript`, and it no longer exports the `API` class or the TypeScript 7 process-client types ([`ts`](/reference/runtime-api#ts)).
 - Union members in generated types and schemas appear in a fixed order that doesn't depend on the compiler or locale. Regenerate once; member order changes, and so do the ids of generated codecs.
 - On TypeScript 7, generation type-checks new files before writing them, so output that doesn't compile now fails with the compiler's message. Sibling model folders under one `tsconfig` no longer interfere.
+
+## golem build and the rewrite hosts
+
+- **Breaking:** `ttsc` and the Go plugin are removed, with their subpaths and peer dependency. Replace `ttsc` with [`golem build`](/reference/cli#build), the [Vite](/reference/runtime-api#vite) or [esbuild](/reference/runtime-api#esbuild) plugin, or the [Node loader](/reference/runtime-api#loader), and delete the `plugins` entry from `tsconfig.json` ([Migrating to 1.0](/migrating)).
+- **Breaking:** `golem.yaml` gains [`tsconfig:`](/reference/config#root-keys) and is the entry point for `golem build`.
+- **Breaking:** `.golem/rewrites.json` is not committed. Add it and `.golem/build/` to `.gitignore`, and run `golem generate` before a bundler build and in CI.
+- `golem build` checks your original sources, so errors point at your lines, and a failed check emits no JavaScript.
+- A TypeScript 7 watch no longer loses a `tsconfig` edit made during a build.
+- `golem --help`, and `generate` and `check` on a configuration with no `models` or `controllers` job, run without TypeScript installed.
 
 ## Known trade-offs
 

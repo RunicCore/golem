@@ -7,10 +7,9 @@ Install the generator you need as a development dependency and the shared runtim
 | Tool | Version |
 | --- | --- |
 | Node.js | `22.15` or newer |
-| `typescript` | `>=6.0.0 <7` or `>=7.0.0 <8` for generation; `~7.0.2` for the `parse<T>` rewrite |
-| `ttsc` | `~0.30.4` |
+| `typescript` | `>=6.0.0 <7` or `>=7.0.0 <8` |
 
-Generation runs on TypeScript 6.0+ or 7.x and writes the same files on both. Golem picks the version from the `typescript` installed in your project. TypeScript 5 isn't supported.
+Generation, `golem build` and the `parse<T>` rewrite run on TypeScript 6.0+ or 7.x and write the same files on both. Golem picks the version from the `typescript` installed in your project. TypeScript 5 isn't supported.
 
 ## Packages per generator
 
@@ -34,32 +33,31 @@ The generators declare the compiler as a peer dependency, so npm installs one co
 
 | Package | Peer dependencies |
 | --- | --- |
-| `@exprtlabs/golem-model` | `typescript` `>=6.0.0 <8`, `ttsc` `~0.30.4` |
-| `@exprtlabs/golem-ts-openapi` | `typescript` `>=6.0.0 <8`, `ttsc` `~0.30.4` |
-| `@exprtlabs/golem-openapi` | none; add `typescript` and `ttsc` to compile the SDK |
-| `@exprtlabs/golem` | optional: `typescript` 7 (`~7.0.2`) and `ttsc` 0.30 for the plugin; `ajv`, `ajv-formats`, `mobx`, `esbuild`, `@nestjs/common`, `rxjs` for the features that use them |
+| `@exprtlabs/golem-model` | `typescript` `>=6.0.0 <8` |
+| `@exprtlabs/golem-ts-openapi` | `typescript` `>=6.0.0 <8` |
+| `@exprtlabs/golem-openapi` | none; add `typescript` to compile the SDK |
+| `@exprtlabs/golem` | optional: `typescript` (`>=6.0.0 <8`) for `golem build`; `vite` (`>=5`) and `esbuild` for their plugins; `ajv`, `ajv-formats`, `mobx`, `@nestjs/common`, `rxjs` for the features that use them |
 
 ## TypeScript setup
 
-`parse<T>`, `stringify<T>`, `fromWireFormat<T>` and `toWireFormat<T>` need **TypeScript 7** and **`ttsc` 0.30**. `tsc` doesn't run the plugin, so an untransformed call throws at runtime. On TypeScript 6 generation works, but `parse<T>()` and the other generic serde calls don't, until Golem's own rewrite replaces `ttsc`.
+`parse<T>`, `stringify<T>`, `fromWireFormat<T>` and `toWireFormat<T>` are rewritten at build time to call the generated conversion. `tsc` doesn't do that, so an untransformed call throws at runtime. Build with one of these; each reads `.golem/rewrites.json`, which `golem generate` writes:
+
+- [`golem build`](/reference/cli#build) checks your sources and emits JavaScript with the calls rewritten. It replaces `tsc -p`.
+- The [Vite](/reference/runtime-api#vite) and [esbuild](/reference/runtime-api#esbuild) plugins rewrite the calls inside your bundler.
+- The [Node loader](/reference/runtime-api#loader), `node --import @exprtlabs/golem/register`, rewrites them as Node loads TypeScript files.
+
+All of them work on TypeScript 6 and 7. Run `golem generate`, or keep `golem watch` running, before a bundler build and in CI, so the index exists and matches your sources.
 
 ```sh
-npm install --save-dev typescript@~7.0.2 ttsc@~0.30.4
+npm install --save-dev typescript@~7.0.2
 ```
 
-Add the plugin to `tsconfig.json`:
+`golem.yaml` names the project the build uses with [`tsconfig`](/reference/config#root-keys), the `tsconfig.json` beside it by default. Add the generated state to `.gitignore`:
 
-```json
-{
-  "compilerOptions": {
-    "plugins": [
-      { "transform": "@exprtlabs/golem/ttsc-plugin" }
-    ]
-  }
-}
+```text
+.golem/rewrites.json
+.golem/build/
 ```
-
-Compile with `npx ttsc`. `ttsc` builds the plugin on first use with the Go toolchain in its platform package. Keep optional dependencies enabled, or set `TTSC_GO_BINARY` to a Go 1.26 toolchain.
 
 A NestJS app needs extra compiler settings ([NestJS setup](/guide/nestjs#set-up-typescript)).
 
@@ -71,7 +69,7 @@ A NestJS app needs extra compiler settings ([NestJS setup](/guide/nestjs#set-up-
 - `.js` extensions on relative imports, including generated files
 - `"outDir": ".build"`
 - `"rootDir": "."`
-- `@exprtlabs/*` package subpaths are ESM-only; import them from ESM application code, or invoke the CLI directly. `@exprtlabs/golem/ttsc-plugin` is CommonJS.
+- `@exprtlabs/*` package subpaths are ESM-only; import them from ESM application code, or invoke the CLI directly.
 
 ## Runtime dependencies
 

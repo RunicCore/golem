@@ -42,7 +42,8 @@ Each item names a breaking change and the action to take.
 
 ## Packages
 
-- `typescript` (`>=6.0.0 <8`) and `ttsc` (`~0.30.4`) are peer dependencies of both generators. Install them in the consuming project.
+- `typescript` (`>=6.0.0 <8`) is a peer dependency of both generators. Install it in the consuming project.
+- `ttsc` and the `@exprtlabs/golem/ttsc-plugin` and `@exprtlabs/golem-ts-openapi/ttsc-plugin` plugins are removed. Delete the `plugins` entry from `tsconfig.json` and the `ttsc` dependency, and build with [`golem build`](/reference/cli#build), the [Vite](/reference/runtime-api#vite) or [esbuild](/reference/runtime-api#esbuild) plugin, or the [Node loader](/reference/runtime-api#loader). `golem.yaml` gains [`tsconfig`](/reference/config#root-keys) and is the entry point for `golem build`; add `.golem/rewrites.json` and `.golem/build/` to `.gitignore`.
 - Several pre-1.0 exports are removed with no replacement ([Removed APIs](https://github.com/RunicCore/golem/blob/master/CHANGELOG.md#removed-apis-pre-10)).
 - The packages are renamed: `@exprtlabs/codegen` is `@exprtlabs/golem`, `@exprtlabs/model-codegen` is `@exprtlabs/golem-model`, `@exprtlabs/openapi-to-ts` is `@exprtlabs/golem-openapi` and `@exprtlabs/ts-to-openapi` is `@exprtlabs/golem-ts-openapi`. Subpaths are unchanged. Replace the dependencies and imports.
 - A `TSerde` or `TValidation` function declared in a `*.model.ts` file is a generation error (RUNM1065). Move it to its own module.

@@ -10,10 +10,10 @@ Set `baseUrl` to your service — the client doesn't pick an OpenAPI `servers` U
 
 ```sh
 npm install @exprtlabs/golem@rc ajv ajv-formats
-npm install --save-dev @exprtlabs/golem-openapi@rc typescript@~7.0.2 ttsc@~0.30.4
+npm install --save-dev @exprtlabs/golem-openapi@rc typescript@~7.0.2
 ```
 
-Requests and responses are validated by default; `ajv` and `ajv-formats` supply the validators. Add the ttsc plugin to `tsconfig.json` and compile with `npx ttsc` ([TypeScript setup](/guide/install#typescript-setup)). Include the generated `sdk/` directory in the TypeScript program that builds your app. For precompiled validators, set [`ajvStandalone`](/reference/config#validation-profiles).
+Requests and responses are validated by default; `ajv` and `ajv-formats` supply the validators. Build with `npx golem build`, the Vite or esbuild plugin, or the Node loader ([TypeScript setup](/guide/install#typescript-setup)). Include the generated `sdk/` directory in the TypeScript program that builds your app. For precompiled validators, set [`ajvStandalone`](/reference/config#validation-profiles).
 
 ## Point to your OpenAPI document
 

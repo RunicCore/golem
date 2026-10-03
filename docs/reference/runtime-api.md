@@ -15,12 +15,16 @@ Find every `@exprtlabs/golem` import your application, NestJS app or tool can us
 | [`tags`](#tags) | Type-only validation constraints, `TValidation`, `TSerde` | none |
 | [`temporal`](#temporal) | Temporal field types and their codecs | a `Temporal` global, such as `temporal-polyfill` |
 | [`serde`](#serde) | `parse<T>`, `stringify<T>`, `assertValue<T>`, `toWireFormat<T>`, `fromWireFormat<T>` | none |
-| [`nest`](#nest) | `NestModelInterceptor` and the decorators the plugin inserts | `@nestjs/common`, `rxjs` |
-| [`ttsc-plugin`](#ttsc-plugin) | The compile-time transform for the generic calls | `typescript` 7 (`~7.0.2`), `ttsc` 0.30 |
+| [`nest`](#nest) | `NestModelInterceptor` and the decorators the rewrite inserts | `@nestjs/common`, `rxjs` |
 | [`generator-api`](#generator-api) | Contracts shared by the generators | none |
 | [`manifest`](#manifest) | Read and find `model-manifest.json` files | none |
+| [`rewrite`](#rewrite) | Read the rewrite index and apply it to one file, for a custom build host | none |
+| [`loader`](#loader) | Node `load` hook that rewrites TypeScript as Node loads it | none |
+| [`register`](#register) | `node --import` entry that installs the loader | none |
+| [`vite`](#vite) | Vite plugin that rewrites TypeScript before Vite strips its types | `vite` |
+| [`esbuild`](#esbuild) | esbuild plugin that rewrites TypeScript before esbuild strips its types | `esbuild` |
 
-Internal subpaths used by the generators: `cli`, `emitter`, `schema`, `schema-graph`, `ajv-tooling`, `type-analysis`, `generated-paths`, `rewrite`, `loader`, `register`, `vite`, `esbuild`, [`ts`](#ts). Don't import them; they may change in any release.
+Internal subpaths used by the generators: `cli`, `emitter`, `schema`, `schema-graph`, `ajv-tooling`, `type-analysis`, `generated-paths`, [`ts`](#ts). Don't import them; they may change in any release.
 
 Generated files import `ajv` only with `validation: true` and `ajvStandalone: false`. With `ajvStandalone: true` they import precompiled validators instead ([validation profiles](/reference/config#validation-profiles)).
 
@@ -72,7 +76,7 @@ function getValidator<Fields extends object, Owner extends object>(
 | --- | --- | --- |
 | `getValidator` | `(model): ModelValidator<Fields, Owner>` | Returns the same stateful validator for a model instance every time. `Fields` are the generated field types, so methods of your class are not fields. |
 | `validateInstance` | `(model, options?: ValidateOptions): Promise<readonly Issue[]>` | Returns the current issues without changing the stored state ([validation](/guide/validation)). |
-| `validate` | `<T>(value: unknown, options?: ValidateOptions): value is T` | Checks a value against a named `IObject` or `IModel` and narrows it. Needs the [`ttsc-plugin`](#ttsc-plugin). |
+| `validate` | `<T>(value: unknown, options?: ValidateOptions): value is T` | Checks a value against a named `IObject` or `IModel` and narrows it. Needs a [build that rewrites it](/guide/install#typescript-setup). |
 | `ModelValidator` | `class ModelValidator<Fields, Owner = Fields>` | The stateful validator; members below. |
 
 `validateInstance`, `validate` and `ModelValidator.validate` stop at the first issue unless you pass `{ failFast: false }`. An invalid value is an ordinary result. They throw `LibError` when validation can't run: the model was generated with `validation: false` (`ValidationUnavailable`), generated metadata is missing, or a converter or engine throws.
@@ -195,7 +199,7 @@ import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 | `Serialization` | `serialization` | A value can't be written as JSON, such as an invalid `Date`. |
 | `Deserialization` | `deserialization` | JSON can't be decoded, such as an unparsable date. |
 | `InvalidJson` | `invalid_json` | `parse` receives text that is not JSON. |
-| `ValidationUnavailable` | `validation_unavailable` | Checks were not generated, the ttsc plugin did not rewrite a call, or a validation context lacks a validator. |
+| `ValidationUnavailable` | `validation_unavailable` | Checks were not generated, no build rewrote a call, or a validation context lacks a validator. |
 | `Response` | `response` | A generated client receives a status or media type the operation does not declare. |
 
 `ModelValidator.validate()` returns `false` for an invalid value. Checked serde calls and generated client checks throw `LibError` instead. A predicate, codec or native call that throws is wrapped once with its `cause`; a thrown `LibError` passes through unchanged. Network failures reject with the `fetch` error.
@@ -328,8 +332,8 @@ import { fromWireFormat, parse, stringify, toWireFormat } from '@exprtlabs/golem
 
 <<< ../../examples/models/src/read-json.ts#read-json
 
-::: warning TypeScript 7 and ttsc
-`parse<T>`, `stringify<T>`, `assertValue<T>`, `toWireFormat<T>`, `fromWireFormat<T>` and `validate<T>` throw `ValidationUnavailable` unless the [`ttsc-plugin`](#ttsc-plugin) rewrites them. Compile with TypeScript 7 and `ttsc` 0.30; `tsc` does not run the plugin.
+::: warning Build with golem
+`parse<T>`, `stringify<T>`, `assertValue<T>`, `toWireFormat<T>`, `fromWireFormat<T>` and `validate<T>` throw `ValidationUnavailable` unless a build rewrote them: run `golem generate`, then [`golem build`](/reference/cli#build), the [Vite](#vite) or [esbuild](#esbuild) plugin, or the [Node loader](#loader). `tsc` does not rewrite them. They work on TypeScript 6 and 7.
 :::
 
 `T` names a generated `IObject` or `IModel`. A type alias returns a plain object; your class returns an instance of it.
@@ -348,7 +352,7 @@ import { fromWireFormat, parse, stringify, toWireFormat } from '@exprtlabs/golem
 | `failFast` | both | `true` | `false` reports every issue. It does not skip checks. |
 | `validationContext` | both | none | Resolves validators from your engine ([validation context](#validation-context)). |
 
-`ValidateOptions` has `failFast` and `validationContext`. The plugin also passes `construct` in `SerdeOptions` for a class `T`. The call order and checks per call are in [Validation during conversion](/guide/serialization#validation-during-conversion).
+`ValidateOptions` has `failFast` and `validationContext`. The rewrite also passes `construct` in `SerdeOptions` for a class `T`. The call order and checks per call are in [Validation during conversion](/guide/serialization#validation-during-conversion).
 
 - `JSON.stringify(model)` does not convert or validate.
 - A `Date` field decodes with ECMAScript `Date` parsing; a non-string or unparsable value throws `Deserialization` with `causedByInput: true`. Put format rules on `Format<'date-time'>` or `TValidation`.
@@ -395,8 +399,8 @@ import { NestModelInterceptor } from '@exprtlabs/golem/nest';
 | `nestModelStringifyInterceptor` | `(codec: ObjectCodec): NestInterceptor` | Writes every non-null result with that codec's `stringify`, an array item by item. |
 | `objectCodecFromMetatype` | `<T>(metatype: unknown): ObjectCodec<T> \| undefined` | The codec of a parameter token that `nestModelCodec` placed, such as the `design:paramtypes` entry of a `@Body()` parameter. `undefined` for a raw class. |
 | `nestModelConstruct` | `(metatype: unknown)` | The class that token constructs, or `undefined`. |
-| `nestModelCodec` | `(id: string): ParameterDecorator` | Inserted by the plugin on `@Body()` and `@Query()` parameters typed with a model. Replaces the parameter type with a token carrying the model's codec and class. |
-| `nestModelReturn` | `(id: string, array?: boolean): MethodDecorator` | Inserted by the plugin on a handler that returns a model. `NestModelInterceptor` reads it. |
+| `nestModelCodec` | `(id: string): ParameterDecorator` | Inserted by the rewrite on `@Body()` and `@Query()` parameters typed with a model. Replaces the parameter type with a token carrying the model's codec and class. |
+| `nestModelReturn` | `(id: string, array?: boolean): MethodDecorator` | Inserted by the rewrite on a handler that returns a model. `NestModelInterceptor` reads it. |
 
 - A `LibError` with `causedByInput: true` becomes HTTP 400 with `{ issues }`. Other errors, such as missing generated metadata or a throwing converter, stay HTTP 500.
 - `@Param()`, `@Body('field')` and `@Query('field')` stay as Nest received them.
@@ -404,17 +408,13 @@ import { NestModelInterceptor } from '@exprtlabs/golem/nest';
 
 For inbound conversion in your own interceptor or pipe, get the codec with `objectCodecFromMetatype` and call its `fromWireFormat`. The request and response contract is in [NestModelInterceptor](/guide/nestjs-in-depth#nestmodelinterceptor).
 
-## `@exprtlabs/golem/ttsc-plugin` {#ttsc-plugin}
+## `@exprtlabs/golem/rewrite` {#rewrite}
 
-```json
-{
-  "compilerOptions": {
-    "plugins": [{ "transform": "@exprtlabs/golem/ttsc-plugin" }]
-  }
-}
+```ts
+import { applyRewrites, readRewriteIndex } from '@exprtlabs/golem/rewrite';
 ```
 
-The subpath is a CommonJS plugin descriptor (`ttsc-plugin.cjs`) that `ttsc` loads while compiling; application code does not import it. Install `typescript@~7.0.2` and `ttsc@~0.30.4` ([TypeScript setup](/guide/install#typescript-setup)).
+`golem generate`, `golem watch` and `golem build` write `.golem/rewrites.json`, the index of where each generic serde call sits in your sources. Every host reads it and edits a file's text before its types are stripped. The edits are:
 
 | Call | Becomes |
 | --- | --- |
@@ -425,11 +425,69 @@ The subpath is a CommonJS plugin descriptor (`ttsc-plugin.cjs`) that `ttsc` load
 | `toWireFormat<T>(value)` | the generated `toWireFormat` for `T` |
 | `fromWireFormat<T>(wire)` | the generated `fromWireFormat` for `T`, constructing your class when `T` is a class |
 
-The build fails when `T` is not a single type name or `typeof` expression, or has no generated code.
+Generation fails when `T` is not a single type name or `typeof` expression, or has no generated code. With a `controllers` job in `golem.yaml`, the rewrite also inserts [`nestModelCodec`](#nest) on `@Body()` and `@Query()` parameters and `nestModelReturn` on handlers that return a model. Nest also needs `experimentalDecorators` and `emitDecoratorMetadata` ([Set up TypeScript](/guide/nestjs#set-up-typescript)).
 
-Add `"nest": true` to the same entry in a NestJS app. The plugin then inserts [`nestModelCodec`](#nest) on `@Body()` and `@Query()` parameters and `nestModelReturn` on handlers that return a model. Listing `@exprtlabs/golem-ts-openapi/ttsc-plugin` has the same effect. Nest also needs `experimentalDecorators` and `emitDecoratorMetadata` ([Set up TypeScript](/guide/nestjs#set-up-typescript)).
+Import this subpath to write a host for another build tool; `golem build`, [`loader`](#loader), [`vite`](#vite) and [`esbuild`](#esbuild) already cover the common ones.
 
-Add `"serde": false` to an entry to leave the calls in the table unchanged; they then throw `ValidationUnavailable`. If you list both plugin entries, add it to each.
+| Member | Signature | Behavior |
+| --- | --- | --- |
+| `readRewriteIndex` | `(root: string): RewriteIndex \| undefined` | Reads `<root>/.golem/rewrites.json`; `undefined` when the file is absent. Throws `GolemRewriteMalformedIndexError` when it is not an index. |
+| `applyRewrites` | `(file: string, text: string, index: RewriteIndex)` | The rewritten `code` and its source `map` for a file the index lists, or `undefined` for any other file. `file` is its path from the index's root with `/` separators. Throws `GolemRewriteStaleError` when the text changed, or another golem version wrote the index, since `golem generate`. |
+| `REWRITE_INDEX_PATH` | `'.golem/rewrites.json'` | The index path under the project root. |
+
+Types: `RewriteIndex`, `RewriteFile`, `RewriteEdit`, `RewriteImport`.
+
+## `@exprtlabs/golem/loader` {#loader}
+
+A Node `load` hook that rewrites TypeScript files as Node loads them. Install it through [`register`](#register); import `loader` only to call `module.register` yourself.
+
+## `@exprtlabs/golem/register` {#register}
+
+```sh
+node --import @exprtlabs/golem/register src/main.ts
+```
+
+Every later import of the process goes through the loader. Run `golem generate` first.
+
+- Node 22 needs `--experimental-strip-types` as well: Node strips the types after the loader rewrites the file.
+- The loader uses the nearest `.golem/rewrites.json` above each file. A TypeScript file outside `node_modules` with no index fails instead of loading unrewritten.
+- A workspace package symlinked into `node_modules` loads from its real path, so it needs its own index: give it its own `golem.yaml` and run `golem generate` there.
+- Rewrites need ES modules. A listed `.cts` file, or a listed `.ts` file under a CommonJS `package.json`, fails with a message that names the file. Use `.mts`, `"type": "module"`, or `golem build`.
+- `.tsx` is not supported: Node cannot strip it.
+- Only `.ts`, `.mts` and `.cts` files are rewritten.
+
+## `@exprtlabs/golem/vite` {#vite}
+
+```ts
+import { golem } from '@exprtlabs/golem/vite';
+import { defineConfig } from 'vite';
+
+export default defineConfig({ plugins: [golem()] });
+```
+
+The plugin rewrites TypeScript in memory before Vite strips its types, in the dev server and in builds. Run `golem generate`, or keep `golem watch` running, first.
+
+- Put `golem()` before plugins that transform TypeScript. It runs first (`enforce: 'pre'`) and must see the file text as it is on disk.
+- Vite does not strip `.cts` files.
+- A TypeScript file outside `node_modules` with no index fails the build, and so does a file that changed after `golem generate`. An id with a query, such as `?raw`, passes through.
+- The dev server watches the index and transforms again the modules whose entry changed.
+- `golem({ root })` names the directory that holds `.golem/rewrites.json`, relative to Vite's `root`. Without it each file uses the nearest index above it.
+
+## `@exprtlabs/golem/esbuild` {#esbuild}
+
+```ts
+import { golem } from '@exprtlabs/golem/esbuild';
+import { build } from 'esbuild';
+
+await build({ entryPoints: ['src/main.ts'], bundle: true, outfile: 'dist/main.js', plugins: [golem()] });
+```
+
+The plugin rewrites TypeScript in memory before esbuild strips its types and chains the source map into the bundle's. Run `golem generate`, or keep `golem watch` running, first.
+
+- Its `onLoad` takes the TypeScript files the index lists, so a plugin that needs those files must come before `golem()` in `plugins`.
+- A TypeScript file outside `node_modules` with no index fails the build with an error located at the file, and so does a file that changed after `golem generate`.
+- The index is a watched file, so esbuild's watch mode builds again when it changes or appears.
+- `golem({ root })` names the directory that holds `.golem/rewrites.json`, relative to `absWorkingDir`. Without it each file uses the nearest index above it.
 
 ## `@exprtlabs/golem/generator-api` {#generator-api}
 

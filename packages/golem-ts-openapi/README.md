@@ -10,7 +10,7 @@ shapes.
 Add the generator to an existing NestJS project:
 
 ```sh
-npm install --save-dev @exprtlabs/golem-ts-openapi@rc typescript@~7.0.2 ttsc@~0.30.4
+npm install --save-dev @exprtlabs/golem-ts-openapi@rc typescript@~7.0.2
 ```
 
 [Generate OpenAPI](../../docs/guide/nestjs.md) walks through a controller.

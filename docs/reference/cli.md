@@ -41,7 +41,7 @@ valid only with `exec`; unknown options fail before generation starts.
 
 ## Build
 
-`golem build` replaces `tsc -p` for a project that calls `parse<T>()`, `stringify<T>()` and the other generic serde calls, or extends a generated model class. It checks the sources you wrote, so an error points at your line, and emits JavaScript with those calls rewritten.
+`golem build` replaces `tsc -p` for a project that calls `parse<T>()`, `stringify<T>()` and the other generic serde calls, or extends a generated model class. It checks the sources you wrote, so an error points at your line, and emits JavaScript with those calls rewritten. A bundler or Node can apply the same rewrite while it loads your TypeScript instead: use the [Vite plugin](/reference/runtime-api#vite), the [esbuild plugin](/reference/runtime-api#esbuild) or the [Node loader](/reference/runtime-api#loader).
 
 ```sh
 npx golem build
@@ -54,7 +54,7 @@ The build starts from `golem.yaml`: the one in the working directory, or the one
 
 `-p` names another build config of the same project, such as `tsconfig.build.json` without your tests. It takes a file, or a directory that holds `tsconfig.json`, and it must lie in the directory of the tsconfig that `golem.yaml` names; any other location is an error. The build runs the TypeScript in your project, TypeScript 6.0 or 7, and prints its messages unchanged. A failed check stops the build before any JavaScript is written; when the tsconfig asks for declarations, the check may already have written them. With `--watch` the build repeats when a source, tsconfig or `golem.yaml` changes. Deleting `outDir` while it runs starts one build that writes it again.
 
-A build never edits your source files. It writes the declarations and JavaScript the tsconfig asks for into `outDir`, and its own files into `.golem/`: the rewrite index (`rewrites.json`), and, per tsconfig under `.golem/build/<tsconfig name>/`, the incremental state and a copy of your sources with the calls rewritten. Two tsconfig files in one directory never share that state. Add `.golem/` to `.gitignore`. A build of the tsconfig that `golem.yaml` names refreshes `.golem/rewrites.json` itself, so a source edited since `golem generate` is not an error. A build of any other config, with `-p`, keeps its rewrites in memory and leaves the index alone. Delete `outDir`, or `declarationDir` when you set one, and the next build writes it again.
+A build never edits your source files. It writes the declarations and JavaScript the tsconfig asks for into `outDir`, and its own files into `.golem/`: the rewrite index (`rewrites.json`), and, per tsconfig under `.golem/build/<tsconfig name>/`, the incremental state and a copy of your sources with the calls rewritten. Two tsconfig files in one directory never share that state. Add `.golem/rewrites.json` and `.golem/build/` to `.gitignore`; the inventory `.golem/outputs.json` stays committed. A build of the tsconfig that `golem.yaml` names refreshes `.golem/rewrites.json` itself, so a source edited since `golem generate` is not an error. A build of any other config, with `-p`, keeps its rewrites in memory and leaves the index alone. Delete `outDir`, or `declarationDir` when you set one, and the next build writes it again.
 
 ### What the tsconfig needs
 
@@ -102,4 +102,3 @@ after the first successful generation.
 
 The CLI requires Node.js 22.15 or newer. Generated application code needs the
 ESM and `NodeNext` settings in [run compiled code](/guide/install#run-compiled-code).
-The `./ttsc-plugin` subpath is CommonJS.

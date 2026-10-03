@@ -11,7 +11,7 @@ A controller in your NestJS project, `src/payment-notes.controller.ts`:
 ## Install
 
 ```sh
-npm install --save-dev @exprtlabs/golem-ts-openapi@rc typescript@~7.0.2 ttsc@~0.30.4
+npm install --save-dev @exprtlabs/golem-ts-openapi@rc typescript@~7.0.2
 npm install @nestjs/swagger
 ```
 
@@ -106,19 +106,20 @@ npm install @exprtlabs/golem@rc ajv ajv-formats reflect-metadata
 
 ## Set up TypeScript
 
-Add these options to the `tsconfig.json` from [Quick start](/guide/quick-start). `"nest": true` makes the [plugin](/reference/runtime-api#ttsc-plugin) record `@Body()`, `@Query()` and return types for Nest.
+Add these options to the `tsconfig.json` from [Quick start](/guide/quick-start):
 
 ```json
 {
   "compilerOptions": {
     "experimentalDecorators": true,
-    "emitDecoratorMetadata": true,
-    "plugins": [{ "transform": "@exprtlabs/golem/ttsc-plugin", "nest": true }]
+    "emitDecoratorMetadata": true
   }
 }
 ```
 
-Import `reflect-metadata` first in the application entry file, before any application module import. TypeScript erases the types of `@Body()`, `@Query()` and return values, so the plugin records them for `NestModelInterceptor`, which converts and validates requests and responses.
+With a `controllers` job in `golem.yaml`, `golem build` records `@Body()`, `@Query()` and return types for Nest ([`golem build`](/reference/cli#build)). Build with `npx golem build`, and run `npx golem generate` first.
+
+Import `reflect-metadata` first in the application entry file, before any application module import. TypeScript erases the types of `@Body()`, `@Query()` and return values, so the build records them for `NestModelInterceptor`, which converts and validates requests and responses.
 
 ## Convert requests and responses
 

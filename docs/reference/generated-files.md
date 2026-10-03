@@ -15,6 +15,15 @@ Know which generated paths and names you can import and commit, and which may ch
 
 The SDK folder is the `sdk` output you configure. Import only from the paths above.
 
+## Files you don't commit
+
+| Path | What it holds |
+| --- | --- |
+| `.golem/rewrites.json` | Where each generic serde call sits in your sources. `golem generate`, `golem watch` and `golem build` write it; the Vite and esbuild plugins and the Node loader read it ([TypeScript setup](/guide/install#typescript-setup)). |
+| `.golem/build/` | The incremental state and the staged copy of your sources that `golem build` keeps per tsconfig. |
+
+Add both to `.gitignore`. Run `golem generate` in CI before a bundler build, which creates the index.
+
 ## Default locations
 
 | Output | Location |

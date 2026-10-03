@@ -10,7 +10,7 @@ In an ESM TypeScript project with Node.js 22.15 or newer:
 
 ```sh
 npm install @exprtlabs/golem@rc ajv ajv-formats
-npm install --save-dev @exprtlabs/golem-model@rc typescript@~7.0.2 ttsc@~0.30.4
+npm install --save-dev @exprtlabs/golem-model@rc typescript@~7.0.2
 ```
 
 [Defining models](../../docs/guide/models.md) walks through a declaration,
