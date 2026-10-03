@@ -266,7 +266,7 @@ function resolveLocalModel(
     const className = `${name}BaseModel`;
     const initType = `${name}Init`;
     // Same-file handwritten classes would TDZ if this companion imported them.
-    // The ttsc plugin registers the class under the hashed codec id.
+    // The build-time rewrite registers the class under the hashed codec id.
     const ctor = codecId
       ? `(requireIModelClass(${JSON.stringify(codecId)}) as unknown as new (values?: ${initType}) => ${className})`
       : `(${className} as unknown as new (values?: ${initType}) => ${className})`;
@@ -1501,7 +1501,7 @@ export function emitSource(
       .map((item) => `import { ${concreteNames.get(item.name)} } from ${JSON.stringify(sourceImportPath(item.sourceFile.fileName, output))};`),
     // Same-file nested class fields look up `requireIModelClass(id)` at decode
     // time. This module never imports the handwritten class (ESM TDZ if the user
-    // file extends this companion). The ttsc plugin registers the class under
+    // file extends this companion). The build-time rewrite registers the class under
     // the hashed codec id after the handwritten module finishes evaluating.
     // Cross-file class fields import the class.
     ...(shared ? (() => {

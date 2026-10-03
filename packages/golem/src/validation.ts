@@ -38,6 +38,7 @@ import {
   objectCodecValidationReference,
   requireObjectCodec,
   resolveModelValidationContextValidator,
+  untransformedCallError,
   type ObjectCodec,
   type ValidateOptions,
 } from './object-codec.js';
@@ -601,13 +602,10 @@ function requireObjectCodecForConstructor(constructor: Function): ObjectCodec {
 
 /**
  * Type predicate for a named interned IObject or IModel.
- * The ttsc plugin rewrites the call to the generated codec. An untransformed call throws.
+ * The build-time rewrite replaces the call with the generated codec. An unrewritten call throws.
  */
 export function validate<T>(_value: unknown, _options?: ValidateOptions): _value is T {
-  throw new LibError(
-    LibErrorKind.ValidationUnavailable,
-    'validate<T> requires the ttsc plugin to rewrite the type argument to a generated function.',
-  );
+  throw untransformedCallError('validate');
 }
 
 /** The current issues, first issue only unless `failFast: false`, without changing validator state. */

@@ -1,8 +1,8 @@
 /**
- * Optional Nest helpers. The golem-ts-openapi ttsc plugin registers codec
+ * Optional Nest helpers. Golem's build-time rewrite registers codec
  * identity on `@Body()` / `@Query()` parameters via `nestModelCodec`; it does
  * not attach an interceptor or pipe. `nestModelCodec` binds the codec when
- * the controller class loads. The same plugin records an `IModel` or
+ * the controller class loads. The same rewrite records an `IModel` or
  * `IObject` return type, including `Promise` and an array of that type, with
  * `nestModelReturn`. `NestModelInterceptor` parses body and query parameters
  * to the declared type or class with fail-fast validation (query strings are

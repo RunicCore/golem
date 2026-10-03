@@ -488,7 +488,7 @@ test('the SDK entry re-exports each model module directly', async t => {
   assert.match(index, /from '\.\/models\/Money\.js'/);
   assert.match(index, /from '\.\/models\/Payment\.js'/);
   // The codec-key table and the schema helpers are internal: the entry does not re-export them,
-  // and a type-only import from the model module keeps the table in the program for the ttsc plugin.
+  // and a type-only import from the model module keeps the table in the program for golem's rewrite scan.
   assert.doesNotMatch(index, /iobject-plugin-keys|'\.\/schemas\.js'/);
   const group = [...files].find(([file]) => file.startsWith('models/_group-'))?.[1] ?? '';
   assert.match(group, /^import type \{\} from '\.\.\/iobject-plugin-keys\.js';$/m);

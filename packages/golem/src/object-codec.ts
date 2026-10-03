@@ -1,6 +1,6 @@
 /**
  * Runtime IObject registry. Generated stringify/parse/validate bind here so
- * the ttsc plugin can rewrite `stringify<T>` to `requireObjectCodec(id).stringify`.
+ * the build-time rewrite can turn `stringify<T>` into `requireObjectCodec(id).stringify`.
  */
 
 import {
@@ -15,6 +15,14 @@ import { issuesFromErrors } from './validation-issues.js';
 import type { ModelRuntimeSyncValidator, ModelRuntimeValidator, ModelValidationContext, WireFormat } from './model.js';
 
 import { GENERATED_MODEL_SCHEMA_REF_PREFIX } from './schema-keywords.js';
+
+/** The error a generic serde call throws when no build has rewritten its type argument. */
+export function untransformedCallError(name: string): LibError {
+  return new LibError(
+    LibErrorKind.ValidationUnavailable,
+    `${name}<T> was not rewritten to a generated function. Run \`golem generate\`, then build with \`golem build\`, the golem Vite or esbuild plugin, or run Node with \`--import @exprtlabs/golem/register\`.`,
+  );
+}
 
 export interface ValidateOptions {
   readonly failFast?: boolean;

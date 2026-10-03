@@ -3,14 +3,13 @@
  *
  * Public calls are `stringify<T>(value)` / `parse<T>(text)`.
  * `validate<T>(value)` lives on `@exprtlabs/golem/validation`.
- * The ttsc plugin rewrites the type argument to the generated function. An
- * untransformed call throws. Tests that cannot run the plugin import generated
- * functions directly.
+ * `golem build`, the golem Vite and esbuild plugins and the Node loader rewrite
+ * the type argument to the generated function. An unrewritten call throws.
+ * Tests that run no rewrite import generated functions directly.
  */
 
-import { LibError, LibErrorKind } from './errors.js';
 import type { WireFormat } from './model.js';
-import type { SerdeOptions, ValidateOptions } from './object-codec.js';
+import { untransformedCallError, type SerdeOptions, type ValidateOptions } from './object-codec.js';
 
 export {
   ajvIssues,
@@ -48,10 +47,7 @@ export type { WireFormat } from './model.js';
 export { IssueRepresentation, IssueSource } from './errors.js';
 
 function untransformed(name: string): never {
-  throw new LibError(
-    LibErrorKind.ValidationUnavailable,
-    `${name}<T> requires the ttsc plugin to rewrite the type argument to a generated function.`,
-  );
+  throw untransformedCallError(name);
 }
 
 export function stringify<T>(_value: T, _options?: SerdeOptions): string {

@@ -145,9 +145,16 @@ test('untransformed public serde APIs and validate<T> throw', () => {
   const unavailable = (error: unknown) => (
     error instanceof LibError && error.kind === LibErrorKind.ValidationUnavailable
   );
-  assert.throws(() => publicStringify({ id: '1' }), unavailable);
-  assert.throws(() => publicParse('{"id":"1"}'), unavailable);
-  assert.throws(() => publicValidate({ id: '1' }), unavailable);
+  // The message says what to run now: generate, then a build that applies golem's rewrite.
+  const namesTheRewrite = (error: unknown) => (
+    unavailable(error)
+    && error instanceof LibError
+    && ['golem generate', 'golem build', 'Vite', 'esbuild', '@exprtlabs/golem/register'].every(text => error.message.includes(text))
+    && !/ttsc/.test(error.message)
+  );
+  assert.throws(() => publicStringify({ id: '1' }), namesTheRewrite);
+  assert.throws(() => publicParse('{"id":"1"}'), namesTheRewrite);
+  assert.throws(() => publicValidate({ id: '1' }), namesTheRewrite);
   assert.throws(() => publicAssertValue({ id: '1' }), unavailable);
   assert.throws(() => publicToWireFormat({ id: '1' }), unavailable);
   assert.throws(() => publicFromWireFormat({ id: '1' }), unavailable);
