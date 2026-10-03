@@ -7,6 +7,7 @@ import { Ajv2020, type AnySchema } from 'ajv/dist/2020.js';
 import { generate as generateModels } from '#model/generator';
 import { generate as generateControllers } from '#controllers/generator';
 import { command, workspace } from './support/process.js';
+import { buildModelProject } from './model-project.js';
 import { generatedCodecId } from './support/consumer.js';
 
 const accepted = [
@@ -33,6 +34,7 @@ for (const ajvStandalone of [false, true]) {
       '@exprtlabs/golem': path.join(workspace, 'packages/golem'),
       '@nestjs/common': path.join(workspace, 'node_modules/@nestjs/common'),
       '@types': path.join(workspace, 'node_modules/@types'),
+      typescript: path.join(workspace, 'node_modules/typescript'),
     });
     writeGeneratedArtifacts([
       {
@@ -99,7 +101,7 @@ for (const ajvStandalone of [false, true]) {
       path: path.join(root, 'src/verify.ts'),
       content: readFixture('models/constraint-portability/verifier/verify.ts'),
     }]);
-    await command(root, process.execPath, [path.join(workspace, 'node_modules/ttsc/lib/launcher/ttsc.js'), '-p', '.']);
+    await buildModelProject(root);
     await command(root, process.execPath, [
       path.join(root, 'build/verify.js'),
       JSON.stringify(aId),

@@ -6,14 +6,11 @@ import test, { type TestContext } from 'node:test';
 
 import { IssueRepresentation, LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 import { generate } from '#model/generator';
-import { command, workspace } from './support/process.js';
+import { workspace } from './support/process.js';
+import { buildModelProject } from './model-project.js';
 
 async function compile(root: string): Promise<void> {
-  await command(root, process.execPath, [
-    path.join(workspace, 'node_modules/ttsc/lib/launcher/ttsc.js'),
-    '-p',
-    path.join(root, 'tsconfig.json'),
-  ], { env: { NODE_PATH: path.join(workspace, 'node_modules') } });
+  await buildModelProject(root);
 }
 
 function generateRoot(t: TestContext): string {
@@ -21,7 +18,6 @@ function generateRoot(t: TestContext): string {
   linkProjectPackages(root, {
     '@exprtlabs/golem': path.join(workspace, 'packages/golem'),
     typescript: path.join(workspace, 'node_modules/typescript'),
-    ttsc: path.join(workspace, 'node_modules/ttsc'),
   });
   writeGeneratedArtifacts([
     {

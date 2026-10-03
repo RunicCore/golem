@@ -4,7 +4,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import test, { type TestContext } from 'node:test';
 
-import { command, workspace } from './support/process.js';
+import { workspace } from './support/process.js';
+import { buildModelProject } from './model-project.js';
 import { generate } from '#model/generator';
 import { getValidator } from '@exprtlabs/golem/validation';
 
@@ -18,6 +19,7 @@ function fixture(t: TestContext): Fixture {
   const sourceRoot = path.join(root, 'src');
   linkProjectPackages(root, {
     '@exprtlabs/golem': path.join(workspace, 'packages/golem'),
+    typescript: path.join(workspace, 'node_modules/typescript'),
   });
   writeGeneratedArtifacts([
     {
@@ -48,11 +50,7 @@ function writeArtifacts(result: ReturnType<typeof generate>): void {
 }
 
 async function compile(root: string): Promise<void> {
-  await command(root, process.execPath, [
-    path.join(workspace, 'node_modules/ttsc/lib/launcher/ttsc.js'),
-    '-p',
-    path.join(root, 'tsconfig.json'),
-  ]);
+  await buildModelProject(root);
 }
 
 function materializeStandalone(result: ReturnType<typeof generate>, fixtureData: Fixture): void {

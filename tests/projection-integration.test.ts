@@ -6,6 +6,7 @@ import path from 'node:path';
 import { test } from 'node:test';
 import { generate } from '@exprtlabs/golem-openapi/generator';
 import { command, workspace } from './support/process.js';
+import { buildModelProject } from './model-project.js';
 
 test('public directional projection handles repeated aliases and allOf requirements without weakening neutral or required-only schemas', async t => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'golem-projection-integration-'));
@@ -66,6 +67,6 @@ test('public directional projection handles repeated aliases and allOf requireme
     },
     include: ['sdk/**/*.ts', 'consumer.ts'],
   }));
-  await command(root, process.execPath, [path.join(workspace, 'node_modules/ttsc/lib/launcher/ttsc.js'), '-p', 'tsconfig.json']);
+  await buildModelProject(root);
   await command(root, process.execPath, ['build/consumer.js']);
 });

@@ -90,7 +90,7 @@ for (const profile of [
     for (const absent of ['inbound.ts', 'links.ts']) assert.equal(fs.existsSync(path.join(root, 'sdk', absent)), false);
     if (!profile.mobx) assert.doesNotMatch(text, /asGenObservable|ModelAnnotations|@exprtlabs\/golem\/mobx/);
     if (!profile.validation) assert.doesNotMatch(text, /\$validator|runtimeSchemaRegistry|@exprtlabs\/golem\/(?:validation|ajv|mobx-validation)/);
-    await command(root, path.join(root, 'node_modules/.bin/ttsc'), ['-p', 'tsconfig.json']);
+    await cli(root, ['build']);
     await npm(root, ['prune', '--omit=dev'], { includeOptional: false });
     for (const name of ['typescript', '@redocly/openapi-core', '@exprtlabs/golem-model', '@exprtlabs/golem-openapi']) assert.equal(fs.existsSync(path.join(root, 'node_modules', name)), false, `${name} leaked into production`);
     if (!profile.mobx) assert.equal(fs.existsSync(path.join(root, 'node_modules/mobx')), false);
@@ -160,7 +160,7 @@ test('packed public generator declarations retain synchronous models and asynchr
   const root = registry.create(t, 'declarations');
   await npm(root, ['install', '--save-dev', packageSpec(registry, '@exprtlabs/golem-model'), packageSpec(registry, '@exprtlabs/golem-openapi')]);
   copyFixture(root, 'packed/declarations');
-  await command(root, path.join(root, 'node_modules/.bin/ttsc'), ['-p', 'tsconfig.contracts.json']);
+  await command(root, process.execPath, [path.join(root, 'node_modules/typescript/bin/tsc'), '-p', 'tsconfig.contracts.json']);
 });
 
 
@@ -179,7 +179,7 @@ test('packed standalone model and SDK validators work without optional compiler 
   const generatedText = [...filesUnder(path.join(root, 'sdk')), path.join(root, 'src/cart.model.generated.ts')]
     .filter(filename => filename.endsWith('.ts')).map(filename => fs.readFileSync(filename, 'utf8')).join('\n');
   assert.doesNotMatch(generatedText, /asGenObservable|ModelAnnotations|@exprtlabs\/golem\/mobx/);
-  await command(root, path.join(root, 'node_modules/.bin/ttsc'), ['-p', 'tsconfig.json']);
+  await cli(root, ['build']);
   await npm(root, ['prune', '--omit=dev'], { includeOptional: false });
   for (const name of ['ajv', 'ajv-formats', 'esbuild', 'mobx', 'typescript', '@exprtlabs/golem-model', '@exprtlabs/golem-openapi']) {
     assert.equal(fs.existsSync(path.join(root, 'node_modules', name)), false, `${name} must be absent from standalone production`);

@@ -10,7 +10,7 @@ import { IssueCode, IssueRepresentation, IssueSource, LibError, LibErrorKind, ty
 import { getValidator } from '@exprtlabs/golem/validation';
 import type { GolemProfile } from '#golem/generator-api';
 import { generate } from '#model/generator';
-import { command, workspace } from './support/process.js';
+import { buildModelProject } from './model-project.js';
 import { generatedCodecIdFromRoot } from './support/consumer.js';
 import { readFixture, writeGeneratedArtifacts } from './fixture-project.js';
 import { modelAliasSource, referencedPolicyModelSource, taggedProfilePayloadSource } from './fixture-templates/models/profile-options.js';
@@ -36,6 +36,7 @@ function modelProject(t: TestContext): { root: string; sourceRoot: string; sourc
     path.join(root, 'node_modules/@exprtlabs/golem'),
     'dir',
   );
+  fs.symlinkSync(path.join(process.cwd(), 'node_modules/typescript'), path.join(root, 'node_modules/typescript'), 'dir');
   fs.writeFileSync(path.join(root, 'tsconfig.json'), JSON.stringify({
     compilerOptions: {
       strict: true,
@@ -43,6 +44,8 @@ function modelProject(t: TestContext): { root: string; sourceRoot: string; sourc
       module: 'NodeNext',
       moduleResolution: 'NodeNext',
       skipLibCheck: true,
+      outDir: 'build',
+      rootDir: 'src',
     },
     include: ['src/**/*.ts'],
   }));
@@ -56,11 +59,7 @@ function writeModel(source: string, declaration: SourceFragment): void {
 }
 
 async function compileModel(root: string): Promise<void> {
-  await command(root, process.execPath, [
-    path.join(workspace, 'node_modules/ttsc/lib/launcher/ttsc.js'),
-    '-p',
-    path.join(root, 'tsconfig.json'),
-  ]);
+  await buildModelProject(root);
 }
 
 function assertModelArtifactRoles(
@@ -157,7 +156,7 @@ for (const item of [
     const result = generate({ root, sources: [source], profile: profile({ allowAny: item.global }) });
     writeGeneratedArtifacts(result.artifacts);
     await compileModel(root);
-    const { Payload } = await import(path.toNamespacedPath(path.join(sourceRoot, 'payload.model.js')));
+    const { Payload } = await import(path.toNamespacedPath(path.join(root, 'build/payload.model.js')));
 
     const model = new Payload({ nested: { text: 'bad', payload: 'x', opaque: 1 } });
     assert.equal(await getValidator(model).validate({ failFast: false }), false);

@@ -6,7 +6,8 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import test from 'node:test';
 import { generate } from '#model/generator';
-import { command, workspace } from './support/process.js';
+import { workspace } from './support/process.js';
+import { buildModelProject } from './model-project.js';
 
 test('generated validation formats nested errors without replaying field getters', async t => {
   const root = mkdtempSync(path.join(os.tmpdir(), 'exprtlabs-generated-validation-'));
@@ -14,6 +15,7 @@ test('generated validation formats nested errors without replaying field getters
   mkdirSync(path.join(root, 'src'));
   mkdirSync(path.join(root, 'node_modules/@exprtlabs'), { recursive: true });
   symlinkSync(path.join(workspace, 'packages/golem'), path.join(root, 'node_modules/@exprtlabs/golem'), 'dir');
+  symlinkSync(path.join(workspace, 'node_modules/typescript'), path.join(root, 'node_modules/typescript'), 'dir');
   writeFileSync(path.join(root, 'package.json'), JSON.stringify({ private: true, type: 'module' }));
   writeFileSync(path.join(root, 'tsconfig.json'), JSON.stringify({
     compilerOptions: { strict: true, target: 'ES2022', module: 'NodeNext', moduleResolution: 'NodeNext', skipLibCheck: true, outDir: 'build',
@@ -27,7 +29,7 @@ test('generated validation formats nested errors without replaying field getters
     mkdirSync(path.dirname(artifact.path), { recursive: true });
     writeFileSync(artifact.path, artifact.content);
   }
-  await command(root, process.execPath, [path.join(workspace, 'node_modules/ttsc/lib/launcher/ttsc.js'), '-p', 'tsconfig.json']);
+  await buildModelProject(root);
   const module = await import(pathToFileURL(path.join(root, 'build/getter-replay.model.js')).href) as {
     exercise(): Promise<{ plain: readonly { path: readonly (string | number)[] }[]; withState: readonly { path: readonly (string | number)[]; message: string }[]; plainReads: number[]; stateReads: number[]; stateUnchanged: boolean }>;
   };

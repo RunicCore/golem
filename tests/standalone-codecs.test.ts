@@ -17,7 +17,8 @@ import { buildCodecValidationPlan, type CodecSchemaClosureEntry } from '@exprtla
 import type { ModelTypeDescriptor } from '@exprtlabs/golem/model';
 import { createSchemaGraph } from '@exprtlabs/golem/schema-graph';
 import { generate } from '#model/generator';
-import { command, workspace } from './support/process.js';
+import { workspace } from './support/process.js';
+import { buildModelProject } from './model-project.js';
 import type { ModelValidationContext } from '@exprtlabs/golem/model';
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 
@@ -32,6 +33,7 @@ function fixture(t: TestContext): Fixture {
   mkdirSync(sourceRoot, { recursive: true });
   mkdirSync(path.join(root, 'node_modules/@exprtlabs'), { recursive: true });
   symlinkSync(path.join(workspace, 'packages/golem'), path.join(root, 'node_modules/@exprtlabs/golem'), 'dir');
+  symlinkSync(path.join(workspace, 'node_modules/typescript'), path.join(root, 'node_modules/typescript'), 'dir');
   writeFileSync(path.join(root, 'package.json'), JSON.stringify({ name: 'standalone-codecs', private: true, type: 'module' }));
   writeFileSync(path.join(root, 'tsconfig.json'), JSON.stringify({
     compilerOptions: {
@@ -66,11 +68,7 @@ function copyStandalone(result: ReturnType<typeof generate>, value: Fixture): st
 }
 
 async function compile(root: string): Promise<void> {
-  await command(root, process.execPath, [
-    path.join(workspace, 'node_modules/ttsc/lib/launcher/ttsc.js'),
-    '-p',
-    path.join(root, 'tsconfig.json'),
-  ]);
+  await buildModelProject(root);
 }
 
 function schemaRecord(value: unknown, label: string): Record<string, unknown> {

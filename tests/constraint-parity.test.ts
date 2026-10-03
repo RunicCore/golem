@@ -18,7 +18,8 @@ import { collectSpecifications } from '@exprtlabs/golem/type-analysis';
 import { loadModelManifests } from '@exprtlabs/golem/type-analysis';
 import { createProgram, generatedFilename } from '@exprtlabs/golem/type-analysis';
 import { generate as generateControllers } from '#controllers/generator';
-import { command, workspace } from './support/process.js';
+import { workspace } from './support/process.js';
+import { buildModelProject } from './model-project.js';
 import { generatedCodecIdFromRoot } from './support/consumer.js';
 import { containsSiblingConstraintSource } from './fixture-templates/models/constraint-parity.js';
 
@@ -32,6 +33,7 @@ function fixture(t: TestContext): Fixture {
   const sourceRoot = path.join(root, 'src');
   linkProjectPackages(root, {
     '@exprtlabs/golem': path.join(workspace, 'packages/golem'),
+    typescript: path.join(workspace, 'node_modules/typescript'),
   });
   writeGeneratedArtifacts([
     {
@@ -59,11 +61,7 @@ function fixture(t: TestContext): Fixture {
 }
 
 async function compile(root: string): Promise<void> {
-  await command(root, process.execPath, [
-    path.join(workspace, 'node_modules/ttsc/lib/launcher/ttsc.js'),
-    '-p',
-    path.join(root, 'tsconfig.json'),
-  ]);
+  await buildModelProject(root);
 }
 
 function materializeStandalone(root: string, sourceRoot: string, result: ReturnType<typeof generate>): void {

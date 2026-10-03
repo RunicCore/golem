@@ -20,7 +20,7 @@ test('model-only packed installation validates structure with no OpenAPI or MobX
   await cli(root, ['generate']);
   copyFixtureFile(root, 'packed/model-only-after-generation/item.model.ts', 'src/item.model.ts');
   await cli(root, ['generate']);
-  await command(root, path.join(root, 'node_modules/.bin/ttsc'), ['-p', 'tsconfig.json']);
+  await cli(root, ['build']);
   await npm(root, ['prune', '--omit=dev'], { includeOptional: false });
   for (const name of ['mobx', 'typescript', '@exprtlabs/golem-model', '@exprtlabs/golem-openapi']) assert.equal(fs.existsSync(path.join(root, 'node_modules', name)), false, `${name} should not be installed`);
   await command(root, process.execPath, ['verify.mjs']);
