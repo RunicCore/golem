@@ -283,9 +283,16 @@ function writtenDirectories(project: Project): Set<string> {
   ]);
 }
 
-/** One build. `inputs` collects every file the build read, for a watching build to poll. */
-async function buildOnce(session: ts.ProgramSession, request: { readonly project: string | undefined; readonly config: string | undefined }, inputs: Set<string>, outputs: Set<string>): Promise<number> {
-  const observe = (filename: string): void => { inputs.add(path.resolve(filename)); };
+/**
+ * One build. `inputs` collects every file the build read, for a watching build to poll. `baselines`, for a watching build, takes
+ * each file's signature when the build first reads it, which is the only baseline a file the build has not met before can have.
+ */
+async function buildOnce(session: ts.ProgramSession, request: { readonly project: string | undefined; readonly config: string | undefined }, inputs: Set<string>, outputs: Set<string>, baselines?: Map<string, string>): Promise<number> {
+  const observe = (filename: string): void => {
+    const file = path.resolve(filename);
+    inputs.add(file);
+    if (baselines !== undefined && !baselines.has(file)) baselines.set(file, signature(file));
+  };
   const golemConfig = readGolemConfig(request.config, observe);
   const configFile = resolveProject(request.project, golemConfig);
   const root = path.dirname(configFile);
@@ -297,6 +304,8 @@ async function buildOnce(session: ts.ProgramSession, request: { readonly project
   const cli = compilerCli(root);
   const parsed = session.parseConfigFile(configFile, observe);
   const project = readProject(configFile, parsed);
+  // The sources are inputs from here on: a failed check ends the build before any later step reads them.
+  for (const filename of parsed.fileNames) observe(filename);
   const checkState = path.join(project.buildDirectory, 'check.tsbuildinfo');
   const emitState = path.join(project.buildDirectory, 'emit.tsbuildinfo');
   outputs.clear();
@@ -395,8 +404,9 @@ export async function runBuild(options: BuildOptions): Promise<{ exitCode: numbe
   // Whether the directories the build writes existed when it ended: one that vanishes afterwards, such as a deleted outDir, is rebuilt once.
   // Taken before "Built" is printed, so a deletion that follows that line is seen.
   let wrote = true;
+  const baselines = options.watch ? new Map<string, string>() : undefined;
   const run = async (beforeAnnouncing: () => void = () => {}): Promise<number> => {
-    const exitCode = await buildOnce(session, request, inputs, outputs);
+    const exitCode = await buildOnce(session, request, inputs, outputs, baselines);
     wrote = exitCode === 0 && outputsPresent();
     // The watch baseline is recorded before the build is announced: whoever reacts to the announcement may edit a source at once.
     beforeAnnouncing();
@@ -415,11 +425,13 @@ export async function runBuild(options: BuildOptions): Promise<{ exitCode: numbe
     return new Map([...watchedDirectories(root, inputs)].map((directory) => [directory, directorySignature(directory, own)]));
   };
   const attempt = async (): Promise<void> => {
-    // Signatures from before the build, so an edit or a new file made during it starts the next build.
+    // Signatures from before the build, so an edit or a new file made during it starts the next build. The first build has no
+    // inputs yet: its files carry the signature they had when the build first read them.
     const before = fingerprints();
     const directoriesBefore = directorySignatures();
+    baselines?.clear();
     const record = (): void => {
-      previous = new Map([...fingerprints()].map(([input, value]) => [input, before.get(input) ?? value]));
+      previous = new Map([...fingerprints()].map(([input, value]) => [input, before.get(input) ?? baselines?.get(input) ?? value]));
       directories = new Map([...directorySignatures()].map(([directory, value]) => [directory, directoriesBefore.get(directory) ?? value]));
     };
     try {

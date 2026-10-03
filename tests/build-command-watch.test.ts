@@ -109,3 +109,27 @@ test('a source edited the moment the first build is announced still starts the n
   assert.equal(announced.length, 2, 'the edit made at the first announcement started a second build');
   assert.match(fs.readFileSync(path.join(root, 'build/use.js'), 'utf8'), /second = 2/);
 });
+
+test('a source fixed while the first build is still running starts the next build', { timeout: HEAVY_TEST_TIMEOUT_MS }, async (t) => {
+  const root = serdeProject(t, 'build-watch-first');
+  write(root, 'src/use.ts', `${USE}export const wrong: number = 'text';\n`);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 20_000);
+  t.after(() => clearTimeout(timer));
+  const stdout = process.stdout.write.bind(process.stdout);
+  let fixed = false;
+  let built = false;
+  t.mock.method(process.stdout, 'write', (chunk: string | Uint8Array, ...rest: unknown[]) => {
+    const text = typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString();
+    // The compiler's report is forwarded while the first build is still running: the fix lands during it, not after it.
+    if (!fixed && text.includes('error TS')) {
+      fixed = true;
+      fs.writeFileSync(path.join(root, 'src/use.ts'), USE);
+    }
+    if (text.startsWith('Built ')) { built = true; controller.abort(); }
+    return (stdout as (chunk: string | Uint8Array, ...rest: unknown[]) => boolean)(chunk, ...rest);
+  });
+  await runBuild({ watch: true, config: path.join(root, 'golem.yaml'), signal: controller.signal });
+  assert.ok(fixed, 'the first build reported the type error');
+  assert.ok(built, 'the fix made during the first build started a second build');
+});
