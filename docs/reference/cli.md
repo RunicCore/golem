@@ -21,7 +21,7 @@ Usage: golem <generate|check|watch|exec> [--config golem.yaml]
 Running `golem` with no arguments, or with `--help` or `-h`, prints
 usage and exits.
 
-Commands that need TypeScript use the one installed beside the `golem.yaml` they read, wherever you run them from; set `GOLEM_TYPESCRIPT_ROOT` to a directory to use the TypeScript installed there instead.
+Commands that need TypeScript use the one installed in the directory of the tsconfig the `golem.yaml` names (or in a parent directory), wherever you run them from; set `GOLEM_TYPESCRIPT_ROOT` to a directory to use the TypeScript installed there instead.
 
 ## Commands
 

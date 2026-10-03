@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process';
 import path from 'node:path';
+import { resolveConfig } from './config.js';
 import { runPipeline } from './pipeline.js';
 import { watchPipeline } from './watch.js';
 export { providersFor, runPipeline } from './pipeline.js';
@@ -52,16 +53,25 @@ export function parseArguments(argv: readonly string[]): Arguments {
   return { action, config, watch, command };
 }
 
+/** The directory of the tsconfig the golem.yaml names. A golem.yaml that cannot be read is reported by the command itself, which reads it again. */
+function tsconfigDirectory(configFile: string): string {
+  try {
+    return path.dirname(resolveConfig(configFile).tsconfig);
+  } catch {
+    return path.dirname(path.resolve(configFile));
+  }
+}
+
 export async function main(argv = process.argv.slice(2)) {
   const options = parseArguments(argv);
   if (options.action === 'help') {
     process.stdout.write('Usage: golem <generate|check|watch|exec> [--config golem.yaml]\n       golem exec [--watch] -- <command> [args...]\n       golem build [--config golem.yaml] [-p tsconfig.build.json] [--watch]\n');
     return;
   }
-  // The project's TypeScript is the one beside its golem.yaml, wherever the command runs from; the seam reads this when it first loads.
+  // The project's TypeScript is the one beside its tsconfig, wherever the command runs from; the seam reads this when it first loads.
   // An `exec` child does not inherit a root golem chose for itself.
   const { GOLEM_TYPESCRIPT_ROOT: userTypeScriptRoot, ...childEnvironment } = process.env;
-  process.env.GOLEM_TYPESCRIPT_ROOT ??= path.dirname(path.resolve(options.config ?? 'golem.yaml'));
+  process.env.GOLEM_TYPESCRIPT_ROOT ??= tsconfigDirectory(options.config ?? 'golem.yaml');
   if (options.action === 'build') {
     const controller = new AbortController();
     let signalled: number | undefined;

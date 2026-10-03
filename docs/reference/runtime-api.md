@@ -467,7 +467,7 @@ import { typescriptVersion, SyntaxKind } from '@exprtlabs/golem/ts';
 
 The generators use this subpath for type analysis and generation. Application code doesn't import it, and it may change in any release. It publishes types that Golem owns, narrowed to what Golem uses: its declarations don't reference `typescript`, and it exports only the value names Golem uses, not the compiler's `API` class or TypeScript 7 client types.
 
-Golem uses your project's installed `typescript`. It looks for the package in the directory in `GOLEM_TYPESCRIPT_ROOT`, or from the current directory when the variable is unset, and falls back to the copy beside Golem. It selects the backend by version: `>=6.0.0 <7` or `>=7.0.0 <8`. Any other version fails at load:
+Golem uses your project's installed `typescript`. The `golem` command looks for the package from the directory of the tsconfig your `golem.yaml` names, unless you set `GOLEM_TYPESCRIPT_ROOT`. Library use looks in the directory in `GOLEM_TYPESCRIPT_ROOT`, or from the current directory when the variable is unset. Both fall back to the copy beside Golem. It selects the backend by version: `>=6.0.0 <7` or `>=7.0.0 <8`. Any other version fails at load:
 
 ```text
 golem supports TypeScript 6.0+ and 7.x; found <version> at <path>.

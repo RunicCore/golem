@@ -30,6 +30,8 @@ export function generate(context) {
 `);
 });
 
+// A user's own GOLEM_TYPESCRIPT_ROOT (the TypeScript 6 lane sets one) would replace the root golem chooses.
+const CHOSEN_ROOT = { GOLEM_TYPESCRIPT_ROOT: undefined };
 const GENERATOR_ONLY = ['version: 1', 'generators:', "  - package: '@fixture/gen'", '    output: gen', ''].join('\n');
 after(() => fs.rmSync(installRoot, { recursive: true, force: true }));
 
@@ -47,15 +49,15 @@ test('golem --help does not need TypeScript', async () => {
 
 test('a configured provider that is not installed is reported without TypeScript', async () => {
   const root = project({ 'golem.yaml': 'version: 1\nopenapi:\n  - input: api.json\n    output: sdk\n    name: Api\n', 'api.json': '{}', 'tsconfig.json': '{}' });
-  const result = await command(root, process.execPath, [binary, 'generate'], { allowFailure: true });
+  const result = await command(root, process.execPath, [binary, 'generate'], { allowFailure: true, env: CHOSEN_ROOT });
   assert.notEqual(result.code, 0);
   assert.match(result.stderr, /openapi is configured.*not installed/);
 });
 
 test('a config with no models or controllers job generates without TypeScript, and writes no rewrite index', async () => {
   const root = project({ 'golem.yaml': GENERATOR_ONLY, 'tsconfig.json': '{}' });
-  await command(root, process.execPath, [binary, 'generate']);
-  await command(root, process.execPath, [binary, 'check']);
+  await command(root, process.execPath, [binary, 'generate'], { env: CHOSEN_ROOT });
+  await command(root, process.execPath, [binary, 'check'], { env: CHOSEN_ROOT });
   assert.match(fs.readFileSync(path.join(root, 'gen/note.ts'), 'utf8'), /export const note/);
   assert.equal(fs.existsSync(path.join(root, '.golem/rewrites.json')), false);
 });
@@ -76,10 +78,29 @@ test('the TypeScript of the directory of golem.yaml is the one used, wherever th
   fs.writeFileSync(path.join(configured, 'node_modules/typescript/package.json'), JSON.stringify({ name: 'typescript', version: '5.9.0' }));
   const elsewhere = project({});
   const config = path.join(configured, 'golem.yaml');
-  const result = await command(elsewhere, process.execPath, [binary, 'generate', '--config', config], { allowFailure: true });
+  const result = await command(elsewhere, process.execPath, [binary, 'generate', '--config', config], { allowFailure: true, env: CHOSEN_ROOT });
   assert.notEqual(result.code, 0);
   assert.match(result.stderr, /golem supports TypeScript 6\.0\+ and 7\.x; found 5\.9\.0/);
   // GOLEM_TYPESCRIPT_ROOT set by the user wins: this directory has no TypeScript, so the scan is skipped.
   await command(elsewhere, process.execPath, [binary, 'generate', '--config', config], { env: { GOLEM_TYPESCRIPT_ROOT: elsewhere } });
   assert.equal(fs.existsSync(path.join(configured, '.golem/rewrites.json')), false);
+});
+
+test('the TypeScript of the directory of the tsconfig golem.yaml names is the one used, not the yaml directory', async () => {
+  const root = project({ 'golem.yaml': 'version: 1\ntsconfig: app/tsconfig.json\nmodels:\n  root: app\n' });
+  fs.mkdirSync(path.join(root, 'app/node_modules/typescript'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'app/tsconfig.json'), '{}');
+  fs.writeFileSync(path.join(root, 'app/node_modules/typescript/package.json'), JSON.stringify({ name: 'typescript', version: '5.9.0' }));
+  // Only app/ has a TypeScript, and golem has none of its own, so the version it names is the directory the lookup started from.
+  const result = await command(project({}), process.execPath, [binary, 'build', '--config', path.join(root, 'golem.yaml')], { allowFailure: true, env: CHOSEN_ROOT });
+  assert.notEqual(result.code, 0);
+  assert.match(result.stderr, /golem supports TypeScript 6\.0\+ and 7\.x; found 5\.9\.0 at .*app/);
+});
+
+test('an exec child inherits GOLEM_TYPESCRIPT_ROOT only when the user set it, not the root golem chose', async () => {
+  const root = project({ 'golem.yaml': GENERATOR_ONLY, 'tsconfig.json': '{}' });
+  const config = path.join(root, 'golem.yaml');
+  const exec = (env: NodeJS.ProcessEnv) => command(root, process.execPath, [binary, 'exec', '--config', config, '--', process.execPath, '-e', 'process.exit(process.env.GOLEM_TYPESCRIPT_ROOT === undefined ? 0 : 1)'], { allowFailure: true, env });
+  assert.equal((await exec(CHOSEN_ROOT)).code, 0, 'a root golem chose reached the child');
+  assert.equal((await exec({ GOLEM_TYPESCRIPT_ROOT: root })).code, 1, 'the root the user set did not reach the child');
 });
