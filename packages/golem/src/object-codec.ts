@@ -33,7 +33,7 @@ export interface SerdeOptions {
   readonly validate?: boolean;
   readonly failFast?: boolean;
   readonly validationContext?: ModelValidationContext;
-  /** Plugin-injected for `parse<Class>` / `fromWireFormat<Class>`. */
+  /** Set by golem's rewrite for `parse<Class>` / `fromWireFormat<Class>`. */
   readonly construct?: abstract new (values?: never) => object;
 }
 
