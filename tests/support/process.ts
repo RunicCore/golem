@@ -1,7 +1,6 @@
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { ttscCacheEnv } from '../../scripts/ttsc-cache.js';
 
 export interface CommandOptions { readonly env?: NodeJS.ProcessEnv; readonly timeout?: number; readonly allowFailure?: boolean }
 export interface NpmOptions { readonly includeOptional?: boolean; readonly env?: NodeJS.ProcessEnv }
@@ -10,13 +9,6 @@ export interface CommandResult { readonly code: number | null; readonly signal: 
 export const workspace = fileURLToPath(new URL('../../../', import.meta.url));
 /** The workspace's `golem` CLI, for a project that does not link it into its own node_modules. */
 export const golem = path.join(workspace, 'packages/golem/dist/bin/golem.js');
-/** Only the ttsc suites run ttsc; Task 10 deletes it, `ttscEnv` and the special case in `command` with them. */
-export const ttsc = path.join(workspace, 'node_modules/ttsc/lib/launcher/ttsc.js');
-/** Fixture projects share the workspace's ttsc caches, so every fixture reuses one build of the golem plugin instead of building its own in a temporary directory. */
-export const ttscEnv = {
-  NODE_PATH: path.join(workspace, 'node_modules'),
-  ...ttscCacheEnv(workspace),
-};
 /** Time a timed-out command's process group gets to exit after SIGTERM before SIGKILL. */
 export const KILL_GRACE_MS = 5000;
 
@@ -45,18 +37,6 @@ function installExitCleanup(): void {
 export function command(cwd: string, executable: string, args: readonly string[] = [], options: CommandOptions = {}): Promise<CommandResult> {
   return new Promise((resolve, reject) => {
     const env: NodeJS.ProcessEnv = { ...process.env, NODE_PATH: '', ...options.env };
-    const ttscScript = executable === process.execPath && typeof args[0] === 'string' && args[0].includes(`${path.sep}ttsc${path.sep}`);
-    // A consumer project's own `node_modules/.bin/ttsc` is a ttsc run too: its plugin and Go builds would otherwise
-    // land in the project's throwaway directory and write Go cache entries keyed by that path.
-    const ttscBin = path.basename(executable) === 'ttsc';
-    if (ttscScript || ttscBin) {
-      if (ttscScript && !options.env?.NODE_PATH) env.NODE_PATH = path.join(workspace, 'node_modules');
-      // Reuse the workspace's content-addressed plugin and Go caches instead of
-      // building the plugin again for every isolated fixture.
-      const subcommand = ttscScript ? args[1] : args[0];
-      if (subcommand !== 'clean' && !env.TTSC_CACHE_DIR) env.TTSC_CACHE_DIR = ttscEnv.TTSC_CACHE_DIR;
-      if (subcommand !== 'clean' && !env.TTSC_GO_CACHE_DIR) env.TTSC_GO_CACHE_DIR = ttscEnv.TTSC_GO_CACHE_DIR;
-    }
     // A Node test worker's private context marker makes a nested `node --test`
     // skip its requested files. Child consumer commands run independently.
     delete env.NODE_TEST_CONTEXT;

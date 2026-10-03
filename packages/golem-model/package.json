@@ -49,7 +49,6 @@
     "esbuild": "^0.25.12"
   },
   "peerDependencies": {
-    "ttsc": "~0.30.4",
     "typescript": ">=6.0.0 <8"
   },
   "scripts": {

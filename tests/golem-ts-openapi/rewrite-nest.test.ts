@@ -110,10 +110,10 @@ test('a decorator that is already present, plain, through a namespace or aliased
 
 test('a primitive @Body() and a type no model table names are not indexed', (t) => {
   const primitive = project(t, {
-    'src/notes.controller.ts': readFixture(`${PLUGIN}/ttsc-compiles-a-primitive-body-and-fails-parse-of-a-missing-model/notes.controller.ts`),
+    'src/notes.controller.ts': readFixture(`${PLUGIN}/rewrite-skips-a-primitive-body/notes.controller.ts`),
   });
   const unknown = project(t, {
-    'src/notes.controller.ts': readFixture(`${PLUGIN}/ttsc-fails-when-a-table-known-body-payment-cannot-bind-to-one-hashed-id/notes.controller.ts`),
+    'src/notes.controller.ts': readFixture(`${PLUGIN}/rewrite-skips-a-body-type-no-model-table-names/notes.controller.ts`),
   });
   for (const root of [primitive, unknown]) {
     const result = scan(root);
@@ -148,7 +148,7 @@ test('a table-known @Body() type that binds to no single id fails with its posit
   const root = paymentsProject(t, {
     'src/billing/payment.model.ts': paymentModelSource({ field: 'amount', fieldType: 'number' }).text,
     'src/payout/payment.model.ts': paymentModelSource({ field: 'destination', fieldType: 'string' }).text,
-    'src/notes.controller.ts': readFixture(`${PLUGIN}/ttsc-fails-when-a-table-known-body-payment-cannot-bind-to-one-hashed-id/notes.controller.ts`),
+    'src/notes.controller.ts': readFixture(`${PLUGIN}/rewrite-skips-a-body-type-no-model-table-names/notes.controller.ts`),
   });
   const result = scan(root);
   assert.deepEqual(result.diagnostics.map(({ code, file, line, column, message }) => ({ code, file, line, column, message })), [{

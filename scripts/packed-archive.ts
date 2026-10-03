@@ -59,9 +59,6 @@ function archiveFilesUnder(root: string): string[] {
 
 function assertPublishedFileHygiene(root: string, entry: PackedPackage): void {
   for (const file of archiveFilesUnder(root)) {
-    if (/^plugin\/(?:.*_test\.go|go\.work(?:\.sum)?)$/.test(file)) {
-      throw new Error(`Packed package ships local Go development file: ${entry.manifest.name}:${file}`);
-    }
     if (file.endsWith('.map')) throw new Error(`Packed package must not ship source maps: ${entry.manifest.name}:${file}`);
   }
 }

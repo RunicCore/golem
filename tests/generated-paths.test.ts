@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { test } from 'node:test';
 import {
-  DEFAULT_MODEL_OUTPUT, OPERATION_CODEC_REGISTRY, defaultModelOutput, isOperationCodecRegistry, operationCodecRegistryPath,
+  DEFAULT_MODEL_OUTPUT, defaultModelOutput, isOperationCodecRegistry, operationCodecRegistryPath,
 } from '#golem/generated-paths';
 import { workspace } from './support/process.js';
 
@@ -34,10 +34,6 @@ test('no package source outside generated-paths.ts spells a default generated pa
   assert.deepEqual(offenders, []);
 });
 
-test('the Go plugin default registry path equals the TypeScript default', () => {
-  const go = fs.readFileSync(path.join(workspace, 'packages/golem/plugin/nest.go'), 'utf8');
-  const match = /const defaultOperationCodecRegistry = "([^"]+)"/.exec(go);
-  assert.ok(match, 'nest.go declares defaultOperationCodecRegistry');
-  assert.equal(match[1], OPERATION_CODEC_REGISTRY);
+test('the default model output is src/generated/models', () => {
   assert.equal(DEFAULT_MODEL_OUTPUT, 'src/generated/models');
 });

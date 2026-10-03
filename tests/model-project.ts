@@ -19,11 +19,7 @@ interface ModelProjectOptions {
   readonly outDir?: string;
   readonly allowJs?: boolean;
   readonly checkJs?: boolean;
-  /** For the ttsc suites only; Task 10 deletes it with them. `golem build` needs no tsconfig entry. */
-  readonly ttscPlugin?: boolean;
   readonly linkTypescript?: boolean;
-  /** For the ttsc suites only; Task 10 deletes it with them. */
-  readonly linkTtsc?: boolean;
   readonly linkWorkspaceNodeModules?: boolean;
   readonly packages?: Readonly<Record<string, string>>;
   readonly compilerOptions?: Readonly<Record<string, unknown>>;
@@ -55,7 +51,6 @@ export function createModelProject(t: TestContext, options: ModelProjectOptions)
     const packages: Record<string, string> = {
       '@exprtlabs/golem': path.join(workspace, 'packages/golem'),
       ...(options.linkTypescript ? { typescript: path.join(workspace, 'node_modules/typescript') } : {}),
-      ...(options.linkTtsc ? { ttsc: path.join(workspace, 'node_modules/ttsc') } : {}),
       ...options.packages,
     };
     linkProjectPackages(root, packages);
@@ -70,7 +65,6 @@ export function createModelProject(t: TestContext, options: ModelProjectOptions)
     skipLibCheck: true,
     outDir: options.outDir ?? 'build',
     rootDir: options.rootDir ?? 'src',
-    ...(options.ttscPlugin ? { plugins: [{ transform: '@exprtlabs/golem/ttsc-plugin' }] } : {}),
     ...(allowJs ? { allowJs: true, checkJs: options.checkJs ?? false } : {}),
     ...options.compilerOptions,
   };
@@ -120,18 +114,4 @@ export async function buildModelProject(
     project.push('-p', path.join(root, 'tsconfig.flags.json'));
   }
   return command(root, process.execPath, [golem, 'build', '--config', config, ...project], options);
-}
-
-/** Compile with ttsc and the Go plugin: only the ttsc suites do, and Task 10 deletes this with them. */
-export async function compileModelProjectWithTtsc(
-  root: string,
-  args: readonly string[] = [],
-  options: CommandOptions = {},
-): Promise<void> {
-  await command(root, process.execPath, [
-    path.join(workspace, 'node_modules/ttsc/lib/launcher/ttsc.js'),
-    '-p',
-    path.join(root, 'tsconfig.json'),
-    ...args,
-  ], options);
 }

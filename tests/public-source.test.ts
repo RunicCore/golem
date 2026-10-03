@@ -303,10 +303,10 @@ test('escaped symlinks are rejected before export and do not mutate the destinat
 test('denied text from the environment rejects content without reporting the value', (t) => {
   const root = publicFixture(t);
   const marker = joinParts('synthetic-', 'environment-', 'marker');
-  writeFixture(root, 'packages/golem/plugin/main.go', `package main // ${marker}\n`);
+  writeFixture(root, 'packages/golem/src/main.ts', `export {}; // ${marker}\n`);
   const env = { PUBLIC_CONTENT_DENIED_TEXT: `\n${marker}\r\n` };
   const issues = scanPublicContent(root, listPublicSourceFiles(root), publicContentOptions(root, env));
-  assert.deepEqual(issues, [{ path: 'packages/golem/plugin/main.go', category: 'private-reference' }]);
+  assert.deepEqual(issues, [{ path: 'packages/golem/src/main.ts', category: 'private-reference' }]);
   assert.equal(JSON.stringify(issues).includes(marker), false);
 
   assert.deepEqual(publicContentOptions(root, {}), {});

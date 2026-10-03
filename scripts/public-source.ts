@@ -39,9 +39,8 @@ function allowedSource(filename: string): boolean {
   if (parts.length === 1) return rootFiles.has(top) || /^tsconfig(?:\.[\w-]+)?\.json$/.test(top);
   if (top === 'packages') {
     if (!packageFolders.has(folder)) return false;
-    return rest[0] === 'src' || rest[0] === 'compliance' || rest[0] === 'plugin' || rest[0] === 'LICENSES'
-      || (rest.length === 1 && (packageFiles.has(rest[0]) || rest[0] === 'ttsc-plugin.cjs'
-        || /^tsconfig(?:\.[\w-]+)?\.json$/.test(rest[0])));
+    return rest[0] === 'src' || rest[0] === 'compliance' || rest[0] === 'LICENSES'
+      || (rest.length === 1 && (packageFiles.has(rest[0]) || /^tsconfig(?:\.[\w-]+)?\.json$/.test(rest[0])));
   }
   if (top === '.github') return folder === 'workflows' && /\.ya?ml$/.test(filename);
   return ['scripts', 'tests', 'examples', 'docs'].includes(top);

@@ -38,11 +38,6 @@
   },
   "files": [
     "dist",
-    "plugin",
-    "!plugin/*_test.go",
-    "!plugin/go.work",
-    "!plugin/go.work.sum",
-    "ttsc-plugin.cjs",
     "README.md",
     "LICENSE"
   ],
@@ -172,7 +167,6 @@
       "import": "./dist/nest.js",
       "default": "./dist/nest.js"
     },
-    "./ttsc-plugin": "./ttsc-plugin.cjs",
     "./ajv-tooling": {
       "types": "./dist/tooling/ajv-tooling.d.ts",
       "import": "./dist/tooling/ajv-tooling.js",
@@ -199,7 +193,6 @@
     "esbuild": "^0.25.12",
     "mobx": "^6.13.0",
     "rxjs": "^7.8.0",
-    "ttsc": "0.30.x",
     "typescript": ">=6.0.0 <8",
     "vite": ">=5"
   },
@@ -220,9 +213,6 @@
       "optional": true
     },
     "rxjs": {
-      "optional": true
-    },
-    "ttsc": {
       "optional": true
     },
     "typescript": {

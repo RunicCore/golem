@@ -39,6 +39,7 @@ function prepare(directory: string, kind: ProjectKind): string {
     mkdirSync(path.dirname(artifact.path), { recursive: true });
     writeFileSync(artifact.path, artifact.content);
   }
+  // The root keeps `ttsc` as a devDependency only for this call: typia's transform is a ttsc plugin. golem's own builds never use it.
   execFileSync(process.execPath, [path.join(root, 'node_modules/ttsc/lib/launcher/ttsc.js'), '-p', path.join(project, 'tsconfig.json')],
     { cwd: project, encoding: 'utf8', timeout: 180_000, maxBuffer: 16 * 1024 * 1024 });
   for (const artifact of artifacts.filter(a => a.path.endsWith('.js'))) {

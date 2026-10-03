@@ -31,7 +31,6 @@
   },
   "files": [
     "dist",
-    "ttsc-plugin.cjs",
     "README.md",
     "LICENSE"
   ],
@@ -40,15 +39,13 @@
       "types": "./dist/generator.d.ts",
       "import": "./dist/generator.js",
       "default": "./dist/generator.js"
-    },
-    "./ttsc-plugin": "./ttsc-plugin.cjs"
+    }
   },
   "dependencies": {
     "@exprtlabs/golem": "1.0.0-rc",
     "yaml": "^2.9.0"
   },
   "peerDependencies": {
-    "ttsc": "~0.30.4",
     "typescript": ">=6.0.0 <8"
   },
   "scripts": {

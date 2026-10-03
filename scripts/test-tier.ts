@@ -3,7 +3,6 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { goBinary } from './go-binary.js';
 
 export type Tier = 'prepare' | 'focused' | 'full' | 'acceptance' | 'docs';
 export interface Step { readonly label: string; readonly run: () => number }
@@ -14,8 +13,7 @@ export const PACKED_FILES = ['.build/tests/packed/consumers.test.js', '.build/te
 const SMOKE_FILE = '.build/tests/packed/model-only.test.js';
 // The TypeScript 6 lane runs these files with GOLEM_TYPESCRIPT_ROOT at the container's TypeScript 6 install.
 // Left out on purpose: compiler-lifecycle (asserts TypeScript 7 server reports), model-generation-scale (patches
-// `Checker.prototype` from typescript/unstable/sync, which TypeScript 6 has no equivalent of), the ttsc suites (ttsc is
-// TypeScript 7 only), rewrite-parity (its reference side is the ttsc plugin, TypeScript 7 only) and
+// `Checker.prototype` from typescript/unstable/sync, which TypeScript 6 has no equivalent of), and
 // typescript-identity (it compares both versions itself, so it runs once, in the unit step).
 export const TYPESCRIPT6_FILES = [
   ...[
@@ -40,28 +38,13 @@ export const TEST_TIMEOUT_MS = { focused: 60_000, full: 90_000, acceptance: 300_
 // files, so two at once is the most that helps.
 const UNIT_CAP = 8;
 const PACKED_CAP = 2;
-// The container's Go build cache (GOCACHE=/cache/go) is a backstop: a repeat Full run adds nothing to it, because
-// the pack step builds ttsc through the workspace's shared caches (2026-10-01: +0 MiB over two Full runs that each
-// rebuilt the packed set, against +1.6 GiB per run before). A fresh prepare fills 4.3 GiB (2026-09-30), so Full and
-// Acceptance clear it past twice that; the next run then rebuilds the ttsc plugin from source.
-const GO_CACHE_LIMIT_BYTES = 9 * 1024 ** 3;
-
-export function trimGoCache(limitBytes: number): void {
-  const directory = process.env.GOCACHE;
-  if (!directory || !fs.existsSync(directory)) return;
-  const size = Number(spawnSync('du', ['-sb', directory], { encoding: 'utf8' }).stdout.split('\t')[0]);
-  if (size <= limitBytes) return;
-  fs.rmSync(directory, { recursive: true, force: true });
-  process.stdout.write(`Go build cache was ${(size / 1024 ** 3).toFixed(1)} GiB; cleared it. The next run rebuilds the ttsc plugin.\n`);
-}
-
 export const CONCURRENCY = {
   unit: Math.min(UNIT_CAP, os.availableParallelism()),
   packed: Math.max(1, Math.min(PACKED_CAP, Math.floor(os.availableParallelism() / 2))),
 } as const;
 
 const tiers: Readonly<Record<Tier, { readonly budget: string; readonly purpose: string }>> = {
-  prepare: { budget: '≤5 min (plus a first-time image build), network', purpose: 'Fill the npm, Go and packed caches so tiers run offline.' },
+  prepare: { budget: '≤5 min (plus a first-time image build), network', purpose: 'Fill the npm and packed caches so tiers run offline.' },
   focused: { budget: '≤1 min', purpose: 'Did my change break what I touched?' },
   full: { budget: '≤5 min', purpose: 'Did I break anything anywhere?' },
   acceptance: { budget: '≤10 min, needs a stated reason', purpose: 'Is this releasable?' },
@@ -127,13 +110,11 @@ function splitTypescriptLane(args: readonly string[]): { readonly lane6: boolean
 }
 
 const npmRun = (label: string, script: string): Step => ({ label, run: () => run('npm', ['run', script]) });
-const goTests: Step = { label: 'go', run: () => run(process.execPath, ['.build/scripts/test-go-plugin.js']) };
 const pack: Step = { label: 'pack', run: () => run(process.execPath, ['.build/scripts/test-pack.js']) };
 // Prepare only fills caches; it never runs a test.
 const prepareSteps: Step[] = [
   pack,
   { label: 'warm', run: () => run(process.execPath, ['.build/scripts/test-warm.js']) },
-  { label: 'goModules', run: () => run(goBinary(), ['mod', 'download'], path.join(root, 'packages/golem/plugin'), { GOTOOLCHAIN: 'local' }) },
 ];
 
 function steps(tier: Tier, args: readonly string[], native: boolean): Step[] {
@@ -152,7 +133,7 @@ function steps(tier: Tier, args: readonly string[], native: boolean): Step[] {
       { label: 'docs public content', run: () => run(process.execPath, ['.build/scripts/public-source.js', 'scan', 'docs/.vitepress/dist']) },
     ];
   }
-  const full: Step[] = [nodeTest('unit', UNIT_FILES, TEST_TIMEOUT_MS.full, CONCURRENCY.unit), goTests];
+  const full: Step[] = [nodeTest('unit', UNIT_FILES, TEST_TIMEOUT_MS.full, CONCURRENCY.unit)];
   if (tier === 'full') {
     if (native) return full;
     return [...full, nodeTest('typescript 6', TYPESCRIPT6_FILES, TEST_TIMEOUT_MS.full, CONCURRENCY.unit, [], typescript6Env()), pack, nodeTest('packed smoke', [SMOKE_FILE], TEST_TIMEOUT_MS.full, 1)];
@@ -186,7 +167,7 @@ function readJson<T>(file: string): T | undefined {
 
 function assertContainer(tier: Tier, native: boolean): void {
   if (native) {
-    if (tier !== 'full') throw new Error('--native runs only the full tier (unit and Go), for CI platform jobs.');
+    if (tier !== 'full') throw new Error('--native runs only the full tier (unit tests), for CI platform jobs.');
     return;
   }
   const command = { prepare: 'npm run test:prepare', focused: 'npm run test -- <files>', full: 'npm run test:full', acceptance: 'npm run test:acceptance', docs: 'npm run docs:check' }[tier];
@@ -224,8 +205,6 @@ function main(argv: readonly string[]): void {
     const status = step.run();
     timings.push({ label: step.label, seconds: Math.round((Date.now() - stepStarted) / 1000), status });
   }
-  // Only the container's cache: natively, GOCACHE may be the developer's own.
-  if (!native && (tier === 'full' || tier === 'acceptance')) trimGoCache(GO_CACHE_LIMIT_BYTES);
   const total = Math.round((Date.now() - started) / 1000);
   for (const entry of timings) process.stdout.write(`${tier} ${entry.label}: ${entry.status === 0 ? 'passed' : 'FAILED'} in ${entry.seconds}s\n`);
   process.stdout.write(`${tier} finished in ${total}s\n`);
