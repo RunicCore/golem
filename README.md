@@ -10,7 +10,8 @@ Start from what you have: TypeScript models (`@exprtlabs/golem-model`), an
 OpenAPI document (`@exprtlabs/golem-openapi`) or NestJS controllers
 (`@exprtlabs/golem-ts-openapi`). The shared `@exprtlabs/golem` runtime and
 `golem` CLI run them in dependency order when a project uses more than one.
-Golem compiles with TypeScript 7 through `ttsc`.
+Golem runs on TypeScript 6 or 7; `golem build`, a Vite or esbuild plugin, or a
+Node loader turns `parse<T>()` calls into generated code.
 
 ## Install
 
@@ -20,19 +21,19 @@ compiler ([installation](docs/guide/install.md)):
 
 ```sh
 npm install @exprtlabs/golem@rc ajv ajv-formats
-npm install --save-dev @exprtlabs/golem-model@rc typescript@~7.0.2 ttsc@~0.30.4
+npm install --save-dev @exprtlabs/golem-model@rc typescript@~7.0.2
 ```
 
 Or, for an existing OpenAPI document:
 
 ```sh
-npm install --save-dev @exprtlabs/golem-openapi@rc typescript@~7.0.2 ttsc@~0.30.4
+npm install --save-dev @exprtlabs/golem-openapi@rc typescript@~7.0.2
 ```
 
 Or, for NestJS controllers only:
 
 ```sh
-npm install --save-dev @exprtlabs/golem-ts-openapi@rc typescript@~7.0.2 ttsc@~0.30.4
+npm install --save-dev @exprtlabs/golem-ts-openapi@rc typescript@~7.0.2
 ```
 
 ## Quick start
@@ -46,11 +47,16 @@ Add `"type": "module"` to `package.json` and this to `tsconfig.json`:
     "moduleResolution": "NodeNext",
     "strict": true,
     "rootDir": ".",
-    "outDir": ".build",
-    "plugins": [{ "transform": "@exprtlabs/golem/ttsc-plugin" }]
+    "outDir": ".build"
   },
   "include": ["src/**/*.ts"]
 }
+```
+and this to `golem.yaml`:
+```yaml
+version: 1
+models:
+  root: .
 ```
 Declare a model in `src/task.model.ts`, generate its class, then use it:
 ```ts
@@ -71,7 +77,7 @@ task.toggle();
 console.log(toWireFormat<Task>(task));
 // { title: 'Review the draft', done: true }
 ```
-Run it: `npx ttsc && node .build/src/main.js`. Full setup: [Quick start](docs/guide/quick-start.md).
+Run it: `npx golem build && node .build/src/main.js`. Full setup: [Quick start](docs/guide/quick-start.md).
 
 ## More
 
