@@ -187,18 +187,22 @@ for (const standalone of [false, true]) {
     await cli(root, ['check']);
     await command(root, path.join(root, 'node_modules/.bin/tsc'), ['-p', 'tsconfig.json']);
     await npm(root, ['prune', '--omit=dev'], { includeOptional: false });
-    // The packed esbuild plugin scans the project's sources itself, so it loads TypeScript, a production dependency of this app, when it first rewrites a file.
     const { golem } = await import(pathToFileURL(path.join(root, 'node_modules/@exprtlabs/golem/dist/tooling/esbuild.js')).href) as typeof import('@exprtlabs/golem/esbuild');
     if (standalone) for (const name of ['ajv', 'ajv-formats']) {
       assert.equal(fs.existsSync(path.join(root, 'node_modules', name)), false);
     }
+    // The packed esbuild plugin scans the project's sources itself, so it loads TypeScript, a production dependency of this app, when it first rewrites a file. TypeScript runs from an optional native package that the prune removed, so the install restores it. A development-only Ajv comes back with it as an optional peer of golem, and the bundle check below shows the standalone bundle does not use it.
+    await npm(root, ['install', '--omit=dev']);
+    // A consumer bundles from its project directory: the plugin opens ./golem.yaml there and loads the project's TypeScript.
+    const testDirectory = process.cwd();
+    process.chdir(root);
     const bundled = await build({
       entryPoints: [path.join(root, 'src/browser-test-entry.tsx')], outfile: path.join(root, 'browser/app.js'),
       bundle: true, platform: 'browser', format: 'esm', write: false, metafile: true,
       // The development React build is the one where StrictMode replays effects.
       define: { 'process.env.NODE_ENV': JSON.stringify('development') },
       plugins: [golem()],
-    });
+    }).finally(() => { process.chdir(testDirectory); });
     if (standalone) assert.doesNotMatch(Object.keys(bundled.metafile.inputs).join('\n'), /node_modules\/(?:ajv|ajv-formats)\//);
     const javascript = bundled.outputFiles.find(file => file.path.endsWith('.js'))?.text;
     const css = bundled.outputFiles.find(file => file.path.endsWith('.css'))?.text;

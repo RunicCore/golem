@@ -9,7 +9,6 @@ import { nestModelConstruct, objectCodecFromMetatype } from '@exprtlabs/golem/ne
 import { getObjectCodec } from '@exprtlabs/golem/serde';
 import { decodeGeneratedModel } from '@exprtlabs/golem/conversion';
 import { PaymentsClient } from './.build/sdk/index.js';
-import { IOBJECT_PLUGIN_KEYS as sdkCodecKeys } from './.build/sdk/iobject-plugin-keys.js';
 import { createApplication } from './.build/src/application.js';
 import { Payment } from './.build/src/payment.model.js';
 import { PaymentsController } from './.build/src/payments.controller.js';
@@ -35,7 +34,10 @@ const input = {
 // The models job's codec ids, by `src/<file>#<name>`.
 const modelCodecKeys = JSON.parse(readFileSync(new URL('./.golem/codec-keys.json', import.meta.url), 'utf8')).keys;
 
-const sdkCodecId = model => Object.entries(sdkCodecKeys).find(([key]) => key.endsWith(`#${model}Model`))?.[1];
+// The SDK's codec ids, from the `codecId` of each model in its manifest, by generated class name.
+const sdkModels = JSON.parse(readFileSync(new URL('./sdk/model-manifest.json', import.meta.url), 'utf8')).models;
+
+const sdkCodecId = model => sdkModels.find(entry => entry.generated.export === `${model}Model`)?.codecId;
 
 async function withApplication(run) {
   const application = await createApplication(adapter === 'fastify' ? new FastifyAdapter() : new ExpressAdapter());
