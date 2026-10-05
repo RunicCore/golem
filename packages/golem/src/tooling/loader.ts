@@ -1,7 +1,6 @@
 import { fileURLToPath } from 'node:url';
 
-import { applyRewrites } from './rewrite.js';
-import { findRewriteIndex, NODE_MODULES, withInlineSourceMap } from './rewrite-host.js';
+import { applyIndexedRewrites, findRewriteIndex, NODE_MODULES, withInlineSourceMap } from './rewrite-host.js';
 
 /**
  * Node module `load` hook that applies golem's rewrite index to TypeScript sources in memory, before Node strips
@@ -33,7 +32,7 @@ export async function load(url: string, context: LoadContext, nextLoad: NextLoad
   if (loaded.format === 'commonjs-typescript' && relative in index.files) {
     throw new Error(`golem rewrites need ES modules; ${relative} loads as CommonJS. Use .mts, or .ts with "type": "module", or build with golem build`);
   }
-  const applied = applyRewrites(relative, sourceText(loaded.source), index);
+  const applied = applyIndexedRewrites(relative, sourceText(loaded.source), index);
   if (!applied) return loaded;
   return { ...loaded, source: withInlineSourceMap(applied.code, applied.map, file) };
 }

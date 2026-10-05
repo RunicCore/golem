@@ -12,7 +12,7 @@ import {
   readRewriteIndex,
   sha256Hex,
 } from './rewrite.js';
-import type { RewriteEdit, RewriteFile, RewriteImport, RewriteIndex } from './rewrite.js';
+import type { FileRewrite, RewriteEdit, RewriteFile, RewriteImport, RewriteIndex } from './rewrite.js';
 import { createProjectProgram, isGeneratedCompanion, retainedProgramSession } from './type-analysis/project.js';
 import { resolveSymbol } from './type-analysis/symbols.js';
 import { GOLEM_VERSION } from './version.js';
@@ -88,14 +88,17 @@ function portable(root: string, filename: string): string {
 
 /** Every `<source>#<name>` entry of the program's `iobject-plugin-keys.ts` tables, by the key's last path segment. */
 class CodecKeys {
-  private readonly byDeclaration = new Map<string, string>();
-  private readonly byTail = new Map<string, Set<string>>();
+  /** Each declaration's id and the key tables that give it. */
+  private readonly byDeclaration = new Map<string, { readonly id: string; readonly tables: Set<string> }>();
+  /** Each `<file name>#<name>` tail's ids, with the key tables that give each. */
+  private readonly byTail = new Map<string, Map<string, Set<string>>>();
   private readonly names = new Set<string>();
 
   constructor(program: ts.Program, private readonly root: string) {
     for (const file of program.getSourceFiles()) {
       if (path.basename(file.fileName) !== CODEC_KEY_FILE) continue;
       const openApi = file.text.includes(OPENAPI_KEYS_MARKER);
+      const table = portable(root, file.fileName);
       const directory = portable(root, path.dirname(file.fileName));
       const visit = (node: ts.Node): void => {
         if (ts.isPropertyAssignment(node) && ts.isStringLiteral(node.initializer)
@@ -106,10 +109,10 @@ class CodecKeys {
           if (hash > 0 && id !== '') {
             const source = name.slice(0, hash).replace(/\\/g, '/');
             const short = name.slice(hash + 1);
-            if (openApi) this.add(`${path.posix.join(directory, source)}#${short}`, id);
+            if (openApi) this.add(`${path.posix.join(directory, source)}#${short}`, id, table);
             else {
-              this.add(`${source}#${short}`, id);
-              if (directory !== '' && directory !== '.' && !source.includes('/')) this.add(`${directory}/${source}#${short}`, id);
+              this.add(`${source}#${short}`, id, table);
+              if (directory !== '' && directory !== '.' && !source.includes('/')) this.add(`${directory}/${source}#${short}`, id, table);
             }
           }
         }
@@ -119,24 +122,36 @@ class CodecKeys {
     }
   }
 
-  private add(declaration: string, id: string): void {
-    if (this.byDeclaration.get(declaration) === id) return;
-    this.byDeclaration.set(declaration, id);
+  private add(declaration: string, id: string, table: string): void {
+    const existing = this.byDeclaration.get(declaration);
+    if (existing?.id === id) existing.tables.add(table);
+    else this.byDeclaration.set(declaration, { id, tables: new Set([table]) });
     this.names.add(declaration.slice(declaration.lastIndexOf('#') + 1));
     const tail = declaration.slice(declaration.lastIndexOf('/') + 1);
     let ids = this.byTail.get(tail);
-    if (!ids) this.byTail.set(tail, ids = new Set());
-    ids.add(id);
+    if (!ids) this.byTail.set(tail, ids = new Map());
+    let tables = ids.get(id);
+    if (!tables) ids.set(id, tables = new Set());
+    tables.add(table);
   }
 
-  /** The codec id of the named declaration in the file: an exact path match, else the one id any key with that file name and name holds. */
-  idFor(filename: string, name: string): string {
+  /**
+   * The codec id of the named declaration in the file: an exact path match, else the one id any key with that file name and name holds.
+   * The key tables that give a found id are added to `dependencies`.
+   */
+  idFor(filename: string, name: string, dependencies: Set<string>): string {
     if (name === '') return '';
     const relative = portable(this.root, filename);
     const exact = this.byDeclaration.get(`${relative}#${name}`);
-    if (exact !== undefined) return exact;
+    if (exact !== undefined) {
+      for (const table of exact.tables) dependencies.add(table);
+      return exact.id;
+    }
     const ids = this.byTail.get(`${path.posix.basename(relative)}#${name}`);
-    return ids?.size === 1 ? [...ids][0] : '';
+    if (ids?.size !== 1) return '';
+    const [[id, tables]] = [...ids];
+    for (const table of tables) dependencies.add(table);
+    return id;
   }
 
   /** Some key names a declaration called `name`, whether or not one id binds to it. */
@@ -144,9 +159,9 @@ class CodecKeys {
     return this.names.has(name);
   }
 
-  idForSymbol(symbol: ts.Symbol): string {
+  idForSymbol(symbol: ts.Symbol, dependencies: Set<string>): string {
     for (const declaration of symbol.declarations ?? []) {
-      const id = this.idFor(declaration.getSourceFile().fileName, symbol.name);
+      const id = this.idFor(declaration.getSourceFile().fileName, symbol.name, dependencies);
       if (id !== '') return id;
     }
     return '';
@@ -198,21 +213,20 @@ function serdeTypeName(typeNode: ts.TypeNode): ts.EntityName | undefined {
   return undefined;
 }
 
-/** `class X extends YBaseModel` with `YBaseModel` a class declared in a generated model module; `Mixin(YBaseModel)` never qualifies. */
-function extendsGeneratedBase(checker: ts.TypeChecker, declaration: ts.ClassDeclaration): boolean {
-  return (declaration.heritageClauses ?? [])
+/** The generated model module that declares `YBaseModel` in `class X extends YBaseModel`; `Mixin(YBaseModel)` and any other base have none. */
+function generatedBaseFile(checker: ts.TypeChecker, declaration: ts.ClassDeclaration): string | undefined {
+  for (const base of (declaration.heritageClauses ?? [])
     .filter((clause) => clause.token === ts.SyntaxKind.ExtendsKeyword)
-    .flatMap((clause) => clause.types)
-    .some((base) => {
-      const expression = unwrapParentheses(base.expression);
-      if (!ts.isIdentifier(expression) && !ts.isPropertyAccessExpression(expression)) return false;
-      const symbol = resolvedSymbolAt(checker, expression);
-      return symbol !== undefined
-        && (symbol.flags & ts.SymbolFlags.Class) !== 0
-        && symbol.name.endsWith(BASE_MODEL_SUFFIX)
-        && (symbol.declarations ?? []).some((candidate) => ts.isClassDeclaration(candidate)
-          && GENERATED_MODEL_MODULE.test(candidate.getSourceFile().fileName));
-    });
+    .flatMap((clause) => clause.types)) {
+    const expression = unwrapParentheses(base.expression);
+    if (!ts.isIdentifier(expression) && !ts.isPropertyAccessExpression(expression)) continue;
+    const symbol = resolvedSymbolAt(checker, expression);
+    if (symbol === undefined || (symbol.flags & ts.SymbolFlags.Class) === 0 || !symbol.name.endsWith(BASE_MODEL_SUFFIX)) continue;
+    const generated = (symbol.declarations ?? []).find((candidate) => ts.isClassDeclaration(candidate)
+      && GENERATED_MODEL_MODULE.test(candidate.getSourceFile().fileName));
+    if (generated) return generated.getSourceFile().fileName;
+  }
+  return undefined;
 }
 
 /** Offset of the `(` that opens a call's arguments; the argument list starts right after it. */
@@ -303,10 +317,10 @@ interface NestBinding {
 }
 
 function nestBinding(
-  input: { readonly checker: ts.TypeChecker; readonly keys: CodecKeys; readonly file: ts.SourceFile },
+  input: { readonly checker: ts.TypeChecker; readonly keys: CodecKeys; readonly file: ts.SourceFile; readonly dependencies: Set<string> },
   typeNode: ts.TypeNode,
 ): NestBinding {
-  const { checker, keys, file } = input;
+  const { checker, keys, file, dependencies } = input;
   const model = nestModelTypeNode(typeNode);
   const label = model.getText(file);
   const unbound = { id: '', primitive: false, known: false, label };
@@ -314,7 +328,7 @@ function nestBinding(
   const name = serdeTypeName(model);
   const symbol = name && resolvedSymbolAt(checker, name);
   if (!symbol) return unbound;
-  const id = keys.idForSymbol(symbol);
+  const id = keys.idForSymbol(symbol, dependencies);
   return { ...unbound, id, known: id !== '' || keys.known(symbol.name) };
 }
 
@@ -326,6 +340,8 @@ interface FileScan {
   readonly imports: Map<string, string>;
   readonly diagnostics: GolemDiagnostic[];
   readonly nestSites: NestCodecSite[];
+  /** Root-relative key tables and generated model modules the edits were resolved from. */
+  readonly dependencies: Set<string>;
 }
 
 function importOf(
@@ -404,7 +420,7 @@ function scanFile(
 ): FileScan {
   const { root, checker, keys, nest } = input;
   const text = file.text;
-  const scan: FileScan = { edits: [], imports: new Map(), diagnostics: [], nestSites: [] };
+  const scan: FileScan = { edits: [], imports: new Map(), diagnostics: [], nestSites: [], dependencies: new Set() };
   const classes: { readonly name: string; readonly id: string; readonly end: number }[] = [];
   let reserved: ts.Identifier | undefined;
 
@@ -419,7 +435,7 @@ function scanFile(
       return;
     }
     const symbol = resolvedSymbolAt(checker, typeName);
-    const id = symbol ? keys.idForSymbol(symbol) : '';
+    const id = symbol ? keys.idForSymbol(symbol, scan.dependencies) : '';
     if (id === '') {
       scan.diagnostics.push(locate(root, file, call, CODE_NO_CODEC, `${method}<${call.typeArguments[0].getText(file)}> has no unique codec id`));
       return;
@@ -445,7 +461,7 @@ function scanFile(
     const names = decoratorNames(parameter);
     const decorator = names.find((name) => NEST_PARAMETER_DECORATORS.includes(name));
     if (!parameter.type || decorator === undefined || hasDecorator(names, NEST_CODEC_DECORATOR)) return;
-    const { id, primitive, known, label } = nestBinding({ checker, keys, file }, parameter.type);
+    const { id, primitive, known, label } = nestBinding({ checker, keys, file, dependencies: scan.dependencies }, parameter.type);
     if (primitive) return;
     if (id === '') {
       if (known) scan.diagnostics.push(locate(root, file, parameter.type, CODE_NEST_NO_CODEC, `@${decorator}() type ${label} has no unique codec id`));
@@ -463,7 +479,7 @@ function scanFile(
     if (!method.type || !method.body || !ts.isClassLike(method.parent)) return;
     const returned = nestReturnModel(method.type);
     if (!returned || hasDecorator(decoratorNames(method), NEST_RETURN_DECORATOR)) return;
-    const { id, primitive } = nestBinding({ checker, keys, file }, returned.model);
+    const { id, primitive } = nestBinding({ checker, keys, file, dependencies: scan.dependencies }, returned.model);
     if (primitive || id === '') return;
     scan.edits.push(insertion(method.getStart(file), `@${REWRITE_IMPORT_PREFIX}${NEST_RETURN_DECORATOR}(${JSON.stringify(id)}${returned.array ? ', true' : ''}) `));
     importOf(scan, root, file, method, NEST_RETURN_DECORATOR, NEST_MODULE);
@@ -473,9 +489,13 @@ function scanFile(
     if (nest && ts.isParameter(node)) visitParameter(node);
     else if (nest && ts.isMethodDeclaration(node)) visitMethod(node);
     if (ts.isCallExpression(node)) visitCall(node);
-    else if (ts.isClassDeclaration(node) && node.name && extendsGeneratedBase(checker, node)) {
-      const id = keys.idFor(file.fileName, node.name.text);
-      if (id !== '') classes.push({ name: node.name.text, id, end: node.end });
+    else if (ts.isClassDeclaration(node) && node.name) {
+      const base = generatedBaseFile(checker, node);
+      const id = base === undefined ? '' : keys.idFor(file.fileName, node.name.text, scan.dependencies);
+      if (base !== undefined && id !== '') {
+        classes.push({ name: node.name.text, id, end: node.end });
+        scan.dependencies.add(portable(root, base));
+      }
     } else if (ts.isIdentifier(node) && !reserved && node.text.startsWith(REWRITE_IMPORT_PREFIX)) reserved = node;
     ts.forEachChild(node, (child) => { visit(child); return undefined; });
   };
@@ -507,56 +527,105 @@ function compareText(left: string, right: string): number {
   return left < right ? -1 : left > right ? 1 : 0;
 }
 
-function entryFor(text: string, scan: FileScan): RewriteFile {
+/** What one file needs rewritten, answered per file from the program the scanner holds. */
+export interface FileScanResult extends FileRewrite {
+  readonly diagnostics: readonly GolemDiagnostic[];
+  /** Every parameter the nest rule stamps in this file; empty unless `nest` is on. */
+  readonly nestCodecSites: readonly NestCodecSite[];
+  /** Root-relative key tables and generated model modules the edits were resolved from, sorted. A change to one of them can change this file's edits. */
+  readonly dependencies: readonly string[];
+}
+
+function resultOf(scan: FileScan): FileScanResult {
   const byModule = new Map<string, string[]>();
   for (const [name, from] of scan.imports) byModule.set(from, [...(byModule.get(from) ?? []), name]);
   const imports: RewriteImport[] = [...byModule]
     .sort(([left], [right]) => compareText(left, right))
     .map(([from, names]) => ({ from, names: names.sort(compareText) }));
   const edits = [...scan.edits].sort((left, right) => left.start - right.start || left.end - right.end);
-  return { sha256: sha256Hex(text), edits, imports };
+  return { edits, imports, diagnostics: scan.diagnostics, nestCodecSites: scan.nestSites, dependencies: [...scan.dependencies].sort(compareText) };
 }
 
-/** Scan the program's own sources for every rewrite site and return the index and the sites that cannot be rewritten. */
-export function scanRewrites(input: ScanInput): ScanResult {
-  const { root, program, checker, nest } = input;
-  const keys = new CodecKeys(program, root);
-  const sources = program.getSourceFiles()
-    .filter((file) => !file.isDeclarationFile
-      && !program.isSourceFileFromExternalLibrary(file)
-      && !program.isSourceFileDefaultLibrary(file)
+/** Finds the rewrite sites of the files of one program. Reads nothing from disk: the text is the program's own. */
+export class RewriteScanner {
+  private readonly root: string;
+  private readonly program: ts.Program;
+  private readonly checker: ts.TypeChecker;
+  private readonly nest: boolean;
+  private readonly keys: CodecKeys;
+
+  constructor(input: ScanInput) {
+    this.root = input.root;
+    this.program = input.program;
+    this.checker = input.checker;
+    this.nest = input.nest;
+    this.keys = new CodecKeys(input.program, input.root);
+  }
+
+  private candidate(file: ts.SourceFile): boolean {
+    return !file.isDeclarationFile
+      && !this.program.isSourceFileFromExternalLibrary(file)
+      && !this.program.isSourceFileDefaultLibrary(file)
       && !file.fileName.split(/[\\/]/).includes('node_modules')
       && !isGeneratedCompanion(file.fileName)
-      && path.basename(file.fileName) !== CODEC_KEY_FILE)
-    .map((file) => ({ file, relative: portable(root, file.fileName) }))
-    .sort((left, right) => compareText(left.relative, right.relative));
-
-  const files: Record<string, RewriteFile> = {};
-  const diagnostics: GolemDiagnostic[] = [];
-  const nestCodecSites: NestCodecSite[] = [];
-  for (const { relative, file } of sources) {
-    const scan = scanFile({ root, checker, keys, nest }, file);
-    if (relative.startsWith('../')) {
-      // Index keys are root-relative, so a site here cannot be indexed yet.
-      const first = scan.edits.length > 0 ? file.getLineAndCharacterOfPosition(Math.min(...scan.edits.map((edit) => edit.start))) : undefined;
-      const site = first ? { line: first.line + 1, column: first.character + 1 } : scan.diagnostics[0];
-      if (site) {
-        diagnostics.push({
-          code: CODE_OUTSIDE_ROOT,
-          severity: GolemDiagnosticSeverity.Error,
-          message: `"${relative}" has a rewrite site but lies outside the project root. Move it under the root, or run golem generate for the package that contains it.`,
-          file: relative,
-          line: site.line,
-          column: site.column,
-        });
-      }
-      continue;
-    }
-    diagnostics.push(...scan.diagnostics);
-    nestCodecSites.push(...scan.nestSites);
-    if (scan.edits.length > 0) files[relative] = entryFor(file.text, scan);
+      && path.basename(file.fileName) !== CODEC_KEY_FILE;
   }
-  return { index: { version: 1, golem: GOLEM_VERSION, files }, diagnostics, nestCodecSites };
+
+  private scan(file: ts.SourceFile, relative: string): FileScanResult {
+    const scan = scanFile({ root: this.root, checker: this.checker, keys: this.keys, nest: this.nest }, file);
+    if (!relative.startsWith('../')) return resultOf(scan);
+    // A rewrite names its file by a root-relative path, so a site here cannot be rewritten yet.
+    const first = scan.edits.length > 0 ? file.getLineAndCharacterOfPosition(Math.min(...scan.edits.map((edit) => edit.start))) : undefined;
+    const site = first ? { line: first.line + 1, column: first.character + 1 } : scan.diagnostics[0];
+    const diagnostics: GolemDiagnostic[] = site ? [{
+      code: CODE_OUTSIDE_ROOT,
+      severity: GolemDiagnosticSeverity.Error,
+      message: `"${relative}" has a rewrite site but lies outside the project root. Move it under the root, or run golem generate for the package that contains it.`,
+      file: relative,
+      line: site.line,
+      column: site.column,
+    }] : [];
+    return { edits: [], imports: [], diagnostics, nestCodecSites: [], dependencies: [] };
+  }
+
+  /** `filename` is an absolute path. Undefined for a file that is not a rewrite candidate: not in the program, a declaration file, under node_modules, a generated companion or a key table. */
+  scanFile(filename: string): FileScanResult | undefined {
+    const file = this.program.getSourceFile(filename);
+    return file && this.candidate(file) ? this.scan(file, portable(this.root, file.fileName)) : undefined;
+  }
+
+  /** Every file of the program that needs a rewrite, by root-relative POSIX path in path order, and the diagnostics of all candidates in the same order. */
+  scanProgram(): { readonly files: ReadonlyMap<string, FileScanResult>; readonly diagnostics: readonly GolemDiagnostic[] } {
+    const sources = this.program.getSourceFiles()
+      .filter((file) => this.candidate(file))
+      .map((file) => ({ file, relative: portable(this.root, file.fileName) }))
+      .sort((left, right) => compareText(left.relative, right.relative));
+    const files = new Map<string, FileScanResult>();
+    const diagnostics: GolemDiagnostic[] = [];
+    for (const { file, relative } of sources) {
+      const result = this.scan(file, relative);
+      diagnostics.push(...result.diagnostics);
+      if (result.edits.length > 0) files.set(relative, result);
+    }
+    return { files, diagnostics };
+  }
+}
+
+/**
+ * Temporary index adapter over `RewriteScanner.scanProgram`, for the pipeline, `golem build` and the hosts that still
+ * read `.golem/rewrites.json`: scan the program's own sources and return the index and the sites that cannot be rewritten.
+ */
+export function scanRewrites(input: ScanInput): ScanResult {
+  const { files, diagnostics } = new RewriteScanner(input).scanProgram();
+  const entries: Record<string, RewriteFile> = {};
+  const nestCodecSites: NestCodecSite[] = [];
+  for (const [relative, result] of files) {
+    const text = input.program.getSourceFile(path.join(input.root, relative))?.text;
+    if (text === undefined) throw new Error(`${relative} is in the scan and not in the program`);
+    entries[relative] = { sha256: sha256Hex(text), edits: result.edits, imports: result.imports };
+    nestCodecSites.push(...result.nestCodecSites);
+  }
+  return { index: { version: 1, golem: GOLEM_VERSION, files: entries }, diagnostics, nestCodecSites };
 }
 
 /**
@@ -564,7 +633,7 @@ export function scanRewrites(input: ScanInput): ScanResult {
  * from separate analyses, so a mismatch means the decorators and the generated operations disagree. A missing registry
  * disagrees with every site. `roots` are the controllers job roots whose registries the project's sites may belong to.
  */
-export function checkNestCodecs(roots: string | readonly string[], scanned: ScanResult): GolemDiagnostic[] {
+export function checkNestCodecs(roots: string | readonly string[], scanned: { readonly nestCodecSites: readonly NestCodecSite[] }): GolemDiagnostic[] {
   const registries = (typeof roots === 'string' ? [roots] : roots).flatMap((root) => {
     try {
       return [fs.readFileSync(operationCodecRegistryPath(root), 'utf8')];

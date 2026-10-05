@@ -9,11 +9,13 @@ import {
   GolemRewriteStaleError,
   readRewriteIndex,
   sha256Hex,
+  type FileRewrite,
   type RewriteEdit,
   type RewriteFile,
   type RewriteImport,
   type RewriteIndex,
 } from '#golem/rewrite';
+import { applyIndexedRewrites } from '#golem/rewrite-host';
 import { composeSourceMaps, decodeMappings, encodeMappings, type SourceMapV3 } from '#golem/source-map';
 import { GOLEM_VERSION } from '#golem/version';
 
@@ -28,12 +30,16 @@ function replace(text: string, original: string, replacement: string, from = 0):
   return { start, end: start + original.length, expect: original, text: replacement };
 }
 
-function indexFor(file: string, text: string, edits: readonly RewriteEdit[], imports: readonly RewriteImport[] = [], overrides: Partial<RewriteFile> = {}): RewriteIndex {
-  return { version: 1, golem: GOLEM_VERSION, files: { [file]: { sha256: sha256Hex(text), edits, imports, ...overrides } } };
+function rewriteOf(edits: readonly RewriteEdit[], imports: readonly RewriteImport[] = []): FileRewrite {
+  return { edits, imports };
 }
 
-function callRewrite(file: string, text: string): RewriteIndex {
-  return indexFor(file, text, [replace(text, CALL, CALL_TEXT)], [{ from: SERDE, names: ['requireObjectCodec'] }]);
+function callRewrite(text: string): FileRewrite {
+  return rewriteOf([replace(text, CALL, CALL_TEXT)], [{ from: SERDE, names: ['requireObjectCodec'] }]);
+}
+
+function indexFor(file: string, text: string, rewrite: FileRewrite, overrides: Partial<RewriteFile> = {}): RewriteIndex {
+  return { version: 1, golem: GOLEM_VERSION, files: { [file]: { sha256: sha256Hex(text), ...rewrite, ...overrides } } };
 }
 
 /** Original `[line, column]` of the first `needle` in the generated code, resolved through the map's segments. */
@@ -54,44 +60,75 @@ function originalPositionOf(text: string, needle: string): [number, number] {
   return [before.length - 1, before[before.length - 1]!.length];
 }
 
-test('a call rewrite replaces the call and adds the import; an untouched file is left alone', () => {
+test('a call rewrite replaces the call and adds the import; the map names no file and carries the text', () => {
   const text = "const result = parse<TPayment>(text);\n";
-  const index = callRewrite('src/pay.ts', text);
-  const applied = applyRewrites('src/pay.ts', text, index);
-  assert.equal(applied?.code, `${IMPORT_LINE}const result = ${CALL_TEXT}(text);\n`);
-  assert.deepEqual(applied?.map.sources, ['src/pay.ts']);
-  assert.deepEqual(applied?.map.sourcesContent, [text]);
-  assert.equal(applyRewrites('src/other.ts', 'const x = 1;\n', index), undefined);
+  const applied = applyRewrites(text, callRewrite(text));
+  assert.equal(applied.code, `${IMPORT_LINE}const result = ${CALL_TEXT}(text);\n`);
+  assert.deepEqual(applied.map.sources, ['']);
+  assert.deepEqual(applied.map.sourcesContent, [text]);
+  assert.equal(applyRewrites('const x = 1;\n', rewriteOf([])).code, 'const x = 1;\n');
 });
 
-test('a missing import goes after a shebang and use strict directive', () => {
-  const text = "#!/usr/bin/env node\n'use strict';\nparse<TPayment>(text);\n";
-  const applied = applyRewrites('bin/pay.ts', text, callRewrite('bin/pay.ts', text));
-  assert.equal(applied?.code, `#!/usr/bin/env node\n'use strict';\n${IMPORT_LINE}${CALL_TEXT}(text);\n`);
+// The index host path stays until Task 4 rewires the hosts; its behaviour is the index's, not the applier's.
+test('the indexed host path applies a file entry, names the file in the map and leaves an unlisted file alone', () => {
+  const text = 'const result = parse<TPayment>(text);\n';
+  const index = indexFor('src/pay.ts', text, callRewrite(text));
+  const applied = applyIndexedRewrites('src/pay.ts', text, index);
+  assert.equal(applied?.code, `${IMPORT_LINE}const result = ${CALL_TEXT}(text);\n`);
+  assert.deepEqual(applied?.map.sources, ['src/pay.ts']);
+  assert.equal(applyIndexedRewrites('src/other.ts', 'const x = 1;\n', index), undefined);
 });
 
 test('a stale hash or a different golem version is a stale-index error naming the fix', () => {
   const text = 'const result = parse<TPayment>(text);\n';
-  const index = callRewrite('src/pay.ts', text);
+  const index = indexFor('src/pay.ts', text, callRewrite(text));
   assert.throws(
-    () => applyRewrites('src/pay.ts', `${text}// edited\n`, index),
+    () => applyIndexedRewrites('src/pay.ts', `${text}// edited\n`, index),
     (error: unknown) => error instanceof GolemRewriteStaleError
       && error.file === 'src/pay.ts'
       && error.message === 'src/pay.ts changed after golem generate; run golem generate, or keep golem watch running.',
   );
   assert.throws(
-    () => applyRewrites('src/pay.ts', text, { ...index, golem: '0.0.1' }),
+    () => applyIndexedRewrites('src/pay.ts', text, { ...index, golem: '0.0.1' }),
     (error: unknown) => error instanceof GolemRewriteStaleError && error.message === 'rewrite index was written by golem 0.0.1; run golem generate',
   );
+  assert.equal(applyIndexedRewrites('src/pay.ts', `﻿${text}`, index)?.code.startsWith('﻿'), true, 'a byte order mark does not make the file stale');
 });
 
-test('overlapping edits, a wrong expectation and an out-of-range edit are an inconsistent index', () => {
+test('a missing import goes after a shebang and use strict directive', () => {
+  const text = "#!/usr/bin/env node\n'use strict';\nparse<TPayment>(text);\n";
+  assert.equal(applyRewrites(text, callRewrite(text)).code, `#!/usr/bin/env node\n'use strict';\n${IMPORT_LINE}${CALL_TEXT}(text);\n`);
+});
+
+test('the whole directive prologue stays first, whatever the directives are and however they end', () => {
+  for (const prologue of [
+    "'use client';\n",
+    "'use client'\n",
+    '"use client";\r\n"use strict";\r\n',
+    "'use client'; // runs in the browser\n'use strict';\n",
+    "/* header */\n// note\n'use client';\n",
+    "#!/usr/bin/env node\n'use client';\n'use strict'\n",
+  ]) {
+    const text = `${prologue}import { parse } from '${SERDE}';\nconst result = parse<TPayment>(text);\n`;
+    assert.equal(applyRewrites(text, callRewrite(text)).code, `${prologue}${IMPORT_LINE}${text.slice(prologue.length).replace('parse<TPayment>', CALL_TEXT)}`, JSON.stringify(prologue));
+  }
+  // A string that is not a statement of its own is not a directive.
+  const expression = "'use client' + suffix;\nparse<TPayment>(text);\n";
+  assert.equal(applyRewrites(expression, callRewrite(expression)).code, `${IMPORT_LINE}'use client' + suffix;\n${CALL_TEXT}(text);\n`);
+});
+
+test('a module name with a quote or a backslash is escaped in the import line', () => {
+  const text = 'const result = 1;\n';
+  const imports = [{ from: "./it's\\here.js", names: ['x'] }];
+  assert.equal(applyRewrites(text, rewriteOf([], imports)).code, `import { x as __golem_x } from './it\\'s\\\\here.js';\n${text}`);
+});
+
+test('overlapping edits, a wrong expectation and an out-of-range edit are an inconsistent rewrite', () => {
   const text = 'const result = parse<TPayment>(text);\n';
   const call = replace(text, CALL, CALL_TEXT);
-  const expected = 'golem rewrite index is inconsistent for src/pay.ts';
   const inconsistent = (edits: readonly RewriteEdit[]) => assert.throws(
-    () => applyRewrites('src/pay.ts', text, indexFor('src/pay.ts', text, edits)),
-    (error: unknown) => !(error instanceof GolemRewriteStaleError) && error instanceof Error && error.message === expected,
+    () => applyRewrites(text, rewriteOf(edits)),
+    (error: unknown) => !(error instanceof GolemRewriteStaleError) && error instanceof Error && error.message.startsWith('golem rewrite is inconsistent'),
   );
   inconsistent([call, { ...call, start: call.start + 2, end: call.end - 2, expect: CALL.slice(2, -2) }]);
   inconsistent([call, call]);
@@ -103,13 +140,12 @@ test('overlapping edits, a wrong expectation and an out-of-range edit are an inc
     call,
     { start: call.end, end: call.end, expect: '', text: '/*b*/' },
   ];
-  assert.equal(applyRewrites('src/pay.ts', text, indexFor('src/pay.ts', text, [...around].reverse()))?.code, `const result = /*a*/${CALL_TEXT}/*b*/(text);\n`);
+  assert.equal(applyRewrites(text, rewriteOf([...around].reverse())).code, `const result = /*a*/${CALL_TEXT}/*b*/(text);\n`);
 });
 
 test('a CRLF file with Vietnamese text maps the rewritten call back to its original line and column', () => {
   const text = '// Thanh toán — đơn hàng\r\nconst result = parse<TPayment>(text);\r\nconst next = 1;\r\n';
-  const applied = applyRewrites('src/pay.ts', text, callRewrite('src/pay.ts', text));
-  assert.ok(applied);
+  const applied = applyRewrites(text, callRewrite(text));
   assert.equal(applied.code, `${IMPORT_LINE}// Thanh toán — đơn hàng\r\nconst result = ${CALL_TEXT}(text);\r\nconst next = 1;\r\n`);
   assert.deepEqual(originalPosition(applied.code, applied.map, '(text)'), originalPositionOf(text, '(text)'));
   assert.deepEqual(originalPosition(applied.code, applied.map, 'đơn'), originalPositionOf(text, 'đơn'));
@@ -118,15 +154,29 @@ test('a CRLF file with Vietnamese text maps the rewritten call back to its origi
   assert.deepEqual(originalPosition(applied.code, applied.map, CALL_TEXT), originalPositionOf(text, CALL));
 });
 
+test('offsets ignore a leading byte order mark, which stays in the output and out of the map', () => {
+  const body = '// Thanh toán — đơn hàng\r\nconst result = parse<TPayment>(text);\r\nconst next = 1;\r\n';
+  const text = `﻿${body}`;
+  // The compiler reads the file without the mark, so the edit's offsets count from `body`.
+  const applied = applyRewrites(text, callRewrite(body));
+  assert.equal(applied.code, `﻿${IMPORT_LINE}// Thanh toán — đơn hàng\r\nconst result = ${CALL_TEXT}(text);\r\nconst next = 1;\r\n`);
+  assert.deepEqual(applied.map.sourcesContent, [body]);
+  assert.equal(applyRewrites(body, callRewrite(body)).code, applied.code.slice(1), 'the text without the mark gives the same code');
+  for (const needle of ['(text)', 'đơn', 'const next']) {
+    assert.deepEqual(originalPosition(applied.code, applied.map, needle), originalPositionOf(body, needle), needle);
+  }
+  assert.deepEqual(originalPosition(applied.code, applied.map, CALL_TEXT), originalPositionOf(body, CALL));
+});
+
 test('existing imports are never edited: a separate aliased import is added, whatever they contain', () => {
   const clash = `import { parse } from '${SERDE}';\nconst result = parse<TPayment>(text);\n`;
-  assert.equal(applyRewrites('a.ts', clash, callRewrite('a.ts', clash))?.code, `${IMPORT_LINE}import { parse } from '${SERDE}';\nconst result = ${CALL_TEXT}(text);\n`);
+  assert.equal(applyRewrites(clash, callRewrite(clash)).code, `${IMPORT_LINE}import { parse } from '${SERDE}';\nconst result = ${CALL_TEXT}(text);\n`);
   const typeOnly = `import type { TModel } from '${SERDE}';\nconst result = parse<TPayment>(text);\n`;
-  assert.equal(applyRewrites('d.ts', typeOnly, callRewrite('d.ts', typeOnly))?.code, `${IMPORT_LINE}import type { TModel } from '${SERDE}';\nconst result = ${CALL_TEXT}(text);\n`);
+  assert.equal(applyRewrites(typeOnly, callRewrite(typeOnly)).code, `${IMPORT_LINE}import type { TModel } from '${SERDE}';\nconst result = ${CALL_TEXT}(text);\n`);
   const inlineType = `import { type requireObjectCodec, parse } from '${SERDE}';\nconst result = parse<TPayment>(text);\n`;
-  assert.equal(applyRewrites('e.ts', inlineType, callRewrite('e.ts', inlineType))?.code, `${IMPORT_LINE}${inlineType.replace('parse<TPayment>', CALL_TEXT)}`);
+  assert.equal(applyRewrites(inlineType, callRewrite(inlineType)).code, `${IMPORT_LINE}${inlineType.replace('parse<TPayment>', CALL_TEXT)}`);
   const sameName = `import { requireObjectCodec } from '${SERDE}';\nconst result = parse<TPayment>(text);\n`;
-  assert.equal(applyRewrites('f.ts', sameName, callRewrite('f.ts', sameName))?.code, `${IMPORT_LINE}${sameName.replace('parse<TPayment>', CALL_TEXT)}`);
+  assert.equal(applyRewrites(sameName, callRewrite(sameName)).code, `${IMPORT_LINE}${sameName.replace('parse<TPayment>', CALL_TEXT)}`);
 });
 
 test('comments, template literals and strings that look like imports stay untouched', () => {
@@ -142,29 +192,24 @@ test('comments, template literals and strings that look like imports stay untouc
     `const result = parse<TPayment>(text);`,
     '',
   ].join('\n');
-  const applied = applyRewrites('src/comments.ts', text, callRewrite('src/comments.ts', text));
-  assert.equal(applied?.code, `${IMPORT_LINE}${text.replace('parse<TPayment>', CALL_TEXT)}`);
+  assert.equal(applyRewrites(text, callRewrite(text)).code, `${IMPORT_LINE}${text.replace('parse<TPayment>', CALL_TEXT)}`);
 });
 
 test('a file that ends right after its shebang or directive gets the import on its own line', () => {
-  const edits: RewriteEdit[] = [];
   const imports = [{ from: SERDE, names: ['requireObjectCodec'] }];
-  for (const [file, text] of [
-    ['shebang.ts', '#!/usr/bin/env node'],
-    ['directive.ts', "'use strict'"],
-    ['both.ts', "#!/usr/bin/env node\n'use strict';"],
-    ['crlf.ts', "#!/usr/bin/env node\r\n'use strict';\r\n"],
-  ] as const) {
-    const code = applyRewrites(file, text, indexFor(file, text, edits, imports))?.code;
-    const lines = (code ?? '').split(/\r?\n/);
-    assert.equal(lines.includes(IMPORT_LINE.trimEnd()), true, `${file}: ${JSON.stringify(code)}`);
-    assert.equal(code?.startsWith(text.split(/\r?\n/)[0]!), true);
-    assert.equal(code?.endsWith(IMPORT_LINE), true, `${file}: ${JSON.stringify(code)}`);
+  for (const text of [
+    '#!/usr/bin/env node',
+    "'use strict'",
+    "#!/usr/bin/env node\n'use strict';",
+    "#!/usr/bin/env node\r\n'use strict';\r\n",
+  ]) {
+    const code = applyRewrites(text, rewriteOf([], imports)).code;
+    const lines = code.split(/\r?\n/);
+    assert.equal(lines.includes(IMPORT_LINE.trimEnd()), true, JSON.stringify(code));
+    assert.equal(code.startsWith(text.split(/\r?\n/)[0]!), true);
+    assert.equal(code.endsWith(IMPORT_LINE), true, JSON.stringify(code));
   }
-  assert.equal(
-    applyRewrites('shebang.ts', '#!/usr/bin/env node', indexFor('shebang.ts', '#!/usr/bin/env node', edits, imports))?.code,
-    `#!/usr/bin/env node\n${IMPORT_LINE}`,
-  );
+  assert.equal(applyRewrites('#!/usr/bin/env node', rewriteOf([], imports)).code, `#!/usr/bin/env node\n${IMPORT_LINE}`);
 });
 
 test('one aliased import line is added per entry, and the map stays correct after the prepended lines', () => {
@@ -173,9 +218,7 @@ test('one aliased import line is added per entry, and the map stays correct afte
     { from: SERDE, names: ['requireObjectCodec', 'registerIModelClass'] },
     { from: '@exprtlabs/golem/model', names: ['IModel'] },
   ];
-  const index = indexFor('src/two.ts', text, [replace(text, CALL, CALL_TEXT)], imports);
-  const applied = applyRewrites('src/two.ts', text, index);
-  assert.ok(applied);
+  const applied = applyRewrites(text, rewriteOf([replace(text, CALL, CALL_TEXT)], imports));
   assert.equal(
     applied.code,
     "'use strict';\r\n"
@@ -197,8 +240,7 @@ test('an insertion maps to its edit start and the lines around it keep their ori
     { start: open, end: open, expect: '', text: 'first(),\n  ' },
     { start: text.length - 1, end: text.length - 1, expect: '', text: '// end' },
   ];
-  const applied = applyRewrites('src/a.ts', text, indexFor('src/a.ts', text, edits));
-  assert.ok(applied);
+  const applied = applyRewrites(text, rewriteOf(edits));
   assert.equal(applied.code, 'class A {}\nexport const a = new Codec(\n  first(),\n  value,\n);\nconst tail = 2;// end\n');
   assert.deepEqual(originalPosition(applied.code, applied.map, 'first()'), originalPositionOf(text, 'value'));
   assert.deepEqual(originalPosition(applied.code, applied.map, 'value'), originalPositionOf(text, 'value'));
@@ -215,9 +257,8 @@ test('source map mappings round trip through encode and decode', () => {
 
 test('composing maps resolves an output position to the original, whatever the outer map names its source', () => {
   const original = 'const a = 1;\nconst x = parse<T>(v);\n';
-  const index = indexFor('src/x.ts', original, [replace(original, 'parse<T>', '__golem_requireObjectCodec("T_1").parse')]);
-  const rewritten = applyRewrites('src/x.ts', original, index);
-  assert.ok(rewritten);
+  const applied = applyRewrites(original, rewriteOf([replace(original, 'parse<T>', '__golem_requireObjectCodec("T_1").parse')]));
+  const rewritten = { code: applied.code, map: { ...applied.map, sources: ['src/x.ts'] } };
   // The compiler dropped the first statement and indented the second by two spaces, naming the staged copy.
   const secondLine = rewritten.code.split('\n')[1]!;
   const outer: SourceMapV3 = {
@@ -251,7 +292,7 @@ test('readRewriteIndex reads .golem/rewrites.json, reports a missing file as und
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   assert.equal(readRewriteIndex(root), undefined);
   const text = 'const result = parse<TPayment>(text);\n';
-  const index = callRewrite('src/pay.ts', text);
+  const index = indexFor('src/pay.ts', text, callRewrite(text));
   fs.mkdirSync(path.join(root, '.golem'));
   fs.writeFileSync(path.join(root, '.golem', 'rewrites.json'), JSON.stringify(index));
   assert.deepEqual(readRewriteIndex(root), index);

@@ -3,7 +3,6 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
 import { encodeMappings, type MappingSegment, type SourceMapV3 } from './source-map.js';
-import { GOLEM_VERSION } from './version.js';
 
 export interface RewriteEdit {
   /** UTF-16 offset into the original file text. */
@@ -26,10 +25,14 @@ export interface RewriteImport {
   readonly names: readonly string[];
 }
 
-export interface RewriteFile {
-  readonly sha256: string;
+/** What a host does to one file: the edits and the aliased imports they need. */
+export interface FileRewrite {
   readonly edits: readonly RewriteEdit[];
   readonly imports: readonly RewriteImport[];
+}
+
+export interface RewriteFile extends FileRewrite {
+  readonly sha256: string;
 }
 
 /** `files` keys are project-root-relative POSIX paths. */
@@ -66,8 +69,16 @@ export const REWRITE_INDEX_PATH = '.golem/rewrites.json';
 const LINE_BREAK_SOURCE = '\\r\\n|[\\r\\n\\u2028\\u2029]';
 const LINE_BREAK = new RegExp(LINE_BREAK_SOURCE, 'g');
 
+const BYTE_ORDER_MARK = '\uFEFF';
+
+/** The text as the compiler sees it: without a leading U+FEFF. */
+function withoutByteOrderMark(text: string): string {
+  return text.startsWith(BYTE_ORDER_MARK) ? text.slice(BYTE_ORDER_MARK.length) : text;
+}
+
+/** SHA-256 of the text without a leading byte order mark, so a file reads the same to the compiler and to a host. */
 export function sha256Hex(text: string): string {
-  return createHash('sha256').update(text, 'utf8').digest('hex');
+  return createHash('sha256').update(withoutByteOrderMark(text), 'utf8').digest('hex');
 }
 
 /** Read `<root>/.golem/rewrites.json`; `undefined` when the file does not exist. */
@@ -92,11 +103,17 @@ export function readRewriteIndex(root: string): RewriteIndex | undefined {
   return record as unknown as RewriteIndex;
 }
 
-function inconsistent(file: string): Error {
-  return new Error(`golem rewrite index is inconsistent for ${file}`);
+function inconsistent(edit: RewriteEdit): Error {
+  return new Error(`golem rewrite is inconsistent: the edit at ${edit.start}-${edit.end} is out of range, overlaps another edit, or no longer matches the text it expects; run golem generate`);
 }
 
-/** Offset after a leading shebang line and `'use strict'` directives. */
+const LINE_TEXT = '[^\\r\\n\\u2028\\u2029]';
+// Whitespace and comments that may sit before a directive.
+const PROLOGUE_TRIVIA = new RegExp(`(?:\\s+|//${LINE_TEXT}*|/\\*[\\s\\S]*?\\*/)*`, 'y');
+// One directive: a string literal statement. A trailing comment and the line break that end its line belong to it.
+const DIRECTIVE = new RegExp(`(['"])(?:(?!\\1)[^\\\\\\r\\n\\u2028\\u2029]|\\\\[\\s\\S])*\\1[ \\t]*(?:;(?:[ \\t]*(?://${LINE_TEXT}*)?(?:${LINE_BREAK_SOURCE}|$))?|(?://${LINE_TEXT}*)?(?:${LINE_BREAK_SOURCE}|$))`, 'y');
+
+/** Offset after a leading shebang line and the whole directive prologue (`'use strict'`, `'use client'`, ...). */
 function importInsertOffset(text: string): number {
   let offset = 0;
   if (text.startsWith('#!')) {
@@ -104,18 +121,31 @@ function importInsertOffset(text: string): number {
     const lineEnd = LINE_BREAK.exec(text);
     offset = lineEnd ? lineEnd.index + lineEnd[0].length : text.length;
   }
-  const directive = new RegExp(`[ \\t]*(['"])use strict\\1[ \\t]*;?[ \\t]*(?:${LINE_BREAK_SOURCE}|$)`, 'y');
+  let position = offset;
   for (;;) {
-    directive.lastIndex = offset;
-    const match = directive.exec(text);
-    if (!match || match[0].length === 0) return offset;
-    offset += match[0].length;
+    PROLOGUE_TRIVIA.lastIndex = position;
+    PROLOGUE_TRIVIA.exec(text);
+    DIRECTIVE.lastIndex = PROLOGUE_TRIVIA.lastIndex;
+    const match = DIRECTIVE.exec(text);
+    if (!match) return offset;
+    position = DIRECTIVE.lastIndex;
+    offset = position;
   }
 }
 
+const QUOTE_ESCAPED = new RegExp("[\\\\'\\n\\r\\u2028\\u2029]", 'g');
+const QUOTE_ESCAPES: Readonly<Record<string, string>> = {
+  '\\': '\\\\', "'": "\\'", '\n': '\\n', '\r': '\\r', '\u2028': '\\u2028', '\u2029': '\\u2029',
+};
+
+/** `from` as a single-quoted string literal. */
+function quote(from: string): string {
+  return `'${from.replace(QUOTE_ESCAPED, (character) => QUOTE_ESCAPES[character]!)}'`;
+}
+
 /**
- * One aliased import line per entry, prepended after a leading shebang and
- * `'use strict'`. Existing imports are never read or edited.
+ * One aliased import line per entry, prepended after a leading shebang and the
+ * directive prologue. Existing imports are never read or edited.
  */
 function importEdits(text: string, imports: readonly RewriteImport[]): RewriteEdit[] {
   const at = importInsertOffset(text);
@@ -124,7 +154,7 @@ function importEdits(text: string, imports: readonly RewriteImport[]): RewriteEd
     start: at,
     end: at,
     expect: '',
-    text: `${position === 0 && !lineBreakBefore ? '\n' : ''}import { ${names.map((name) => `${name} as ${REWRITE_IMPORT_PREFIX}${name}`).join(', ')} } from '${from}';\n`,
+    text: `${position === 0 && !lineBreakBefore ? '\n' : ''}import { ${names.map((name) => `${name} as ${REWRITE_IMPORT_PREFIX}${name}`).join(', ')} } from ${quote(from)};\n`,
   }));
 }
 
@@ -136,28 +166,24 @@ function lineStarts(text: string): number[] {
 }
 
 /**
- * Apply the file's edits and missing imports. Returns `undefined` for a file the
- * index does not list. `file` is the project-root-relative POSIX path.
+ * Apply a file's edits and missing imports. Offsets are UTF-16 units of `text`
+ * as the compiler sees it: a leading U+FEFF is not counted and is kept in the
+ * output. The map's one source is named `''` and holds the text without the
+ * mark; a host that knows the file name sets `sources`.
  */
-export function applyRewrites(file: string, text: string, index: RewriteIndex): { readonly code: string; readonly map: SourceMapV3 } | undefined {
-  const entry = index.files[file];
-  if (!entry) return undefined;
-  if (index.golem !== GOLEM_VERSION) {
-    throw new GolemRewriteStaleError(file, `rewrite index was written by golem ${index.golem}; run golem generate`);
-  }
-  if (sha256Hex(text) !== entry.sha256) {
-    throw new GolemRewriteStaleError(file, `${file} changed after golem generate; run golem generate, or keep golem watch running.`);
-  }
+export function applyRewrites(source: string, rewrite: FileRewrite): { readonly code: string; readonly map: SourceMapV3 } {
+  const text = withoutByteOrderMark(source);
+  const mark = source.slice(0, source.length - text.length);
 
   // Imports first, so an import insertion precedes an edit inserted at the same offset.
-  const edits = [...importEdits(text, entry.imports), ...entry.edits]
+  const edits = [...importEdits(text, rewrite.imports), ...rewrite.edits]
     .map((edit, order) => ({ edit, order }))
     .sort((a, b) => a.edit.start - b.edit.start || Number(a.edit.end !== a.edit.start) - Number(b.edit.end !== b.edit.start) || a.order - b.order)
     .map(({ edit }) => edit);
   let previousEnd = 0;
   for (const edit of edits) {
-    if (!Number.isInteger(edit.start) || !Number.isInteger(edit.end) || edit.start > edit.end || edit.end > text.length) throw inconsistent(file);
-    if (edit.start < previousEnd || text.slice(edit.start, edit.end) !== edit.expect) throw inconsistent(file);
+    if (!Number.isInteger(edit.start) || !Number.isInteger(edit.end) || edit.start > edit.end || edit.end > text.length) throw inconsistent(edit);
+    if (edit.start < previousEnd || text.slice(edit.start, edit.end) !== edit.expect) throw inconsistent(edit);
     previousEnd = edit.end;
   }
 
@@ -204,7 +230,7 @@ export function applyRewrites(file: string, text: string, index: RewriteIndex): 
   emit(text.slice(cursor), cursor, true);
 
   return {
-    code,
-    map: { version: 3, sources: [file], sourcesContent: [text], names: [], mappings: encodeMappings(lines) },
+    code: `${mark}${code}`,
+    map: { version: 3, sources: [''], sourcesContent: [text], names: [], mappings: encodeMappings(lines) },
   };
 }

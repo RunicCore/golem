@@ -40,9 +40,9 @@ function scan(root: string, nest = true): ScanResult {
 }
 
 function rewritten(root: string, result: ScanResult, relative: string): string {
-  const output = applyRewrites(relative, fs.readFileSync(path.join(root, relative), 'utf8'), result.index);
-  assert.ok(output, `${relative} has an index entry`);
-  return output.code;
+  const entry = result.index.files[relative];
+  assert.ok(entry, `${relative} has an index entry`);
+  return applyRewrites(fs.readFileSync(path.join(root, relative), 'utf8'), entry).code;
 }
 
 /** The decorator lines above a method and its signature line, as the controller fixture lays them out. */

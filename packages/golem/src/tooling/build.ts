@@ -7,8 +7,8 @@ import type { GolemConfig } from './config.js';
 import { GolemDiagnosticSeverity } from './generator-api.js';
 import type { GolemDiagnostic } from './generator-api.js';
 import { atomicWrite } from './outputs.js';
-import { applyRewrites } from './rewrite.js';
 import type { RewriteIndex } from './rewrite.js';
+import { applyIndexedRewrites } from './rewrite-host.js';
 import { assertRewriteIndexOwner, scanRewrites, writeRewriteIndex } from './rewrite-scan.js';
 import { composeSourceMaps } from './source-map.js';
 import type { SourceMapV3 } from './source-map.js';
@@ -202,7 +202,7 @@ function writeStage(project: Project, sources: readonly ts.SourceFile[], index: 
   const keep = new Set<string>(['tsconfig.json']);
   for (const source of sources) {
     const relative = posix(path.relative(root, source.fileName));
-    const rewritten = applyRewrites(relative, source.text, index);
+    const rewritten = applyIndexedRewrites(relative, source.text, index);
     if (rewritten) maps.set(relative, rewritten.map);
     atomicWrite(path.join(stageDirectory, relative), rewritten?.code ?? source.text);
     keep.add(relative);

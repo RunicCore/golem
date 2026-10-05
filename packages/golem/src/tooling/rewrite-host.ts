@@ -1,8 +1,9 @@
 import { existsSync, statSync } from 'node:fs';
 import path from 'node:path';
 
-import { readRewriteIndex, REWRITE_INDEX_PATH, type RewriteIndex } from './rewrite.js';
+import { applyRewrites, GolemRewriteStaleError, readRewriteIndex, REWRITE_INDEX_PATH, sha256Hex, type RewriteIndex } from './rewrite.js';
 import type { SourceMapV3 } from './source-map.js';
+import { GOLEM_VERSION } from './version.js';
 
 /**
  * What every host of the rewrite index shares: the Node loader and the Vite and esbuild plugins. A host finds the
@@ -75,6 +76,23 @@ export function findRewriteIndex(file: string, root?: string): RewriteHostIndex 
   const index = rewriteIndexOf(owner);
   if (index === undefined) throw new Error(`no golem rewrite index at ${path.join(owner, REWRITE_INDEX_PATH)}; run golem generate`);
   return { root: owner, index, relative: path.relative(owner, file).split(path.sep).join('/') };
+}
+
+/**
+ * Apply the index entry of `file` (a project root-relative POSIX path) to its text; `undefined` for a file the index
+ * does not list. The map names `file`.
+ */
+export function applyIndexedRewrites(file: string, text: string, index: RewriteIndex): { readonly code: string; readonly map: SourceMapV3 } | undefined {
+  const entry = index.files[file];
+  if (!entry) return undefined;
+  if (index.golem !== GOLEM_VERSION) {
+    throw new GolemRewriteStaleError(file, `rewrite index was written by golem ${index.golem}; run golem generate`);
+  }
+  if (sha256Hex(text) !== entry.sha256) {
+    throw new GolemRewriteStaleError(file, `${file} changed after golem generate; run golem generate, or keep golem watch running.`);
+  }
+  const applied = applyRewrites(text, entry);
+  return { code: applied.code, map: { ...applied.map, sources: [file] } };
 }
 
 /**

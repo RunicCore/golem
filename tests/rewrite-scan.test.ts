@@ -5,7 +5,8 @@ import test, { type TestContext } from 'node:test';
 
 import { runPipeline } from '#golem/cli';
 import { applyRewrites, GolemRewriteStaleError, readRewriteIndex } from '#golem/rewrite';
-import { assertRewriteIndexCurrent, scanProjectRewrites, writeRewriteIndex, type ScanResult } from '#golem/rewrite-scan';
+import { assertRewriteIndexCurrent, RewriteScanner, scanProjectRewrites, writeRewriteIndex, type FileScanResult } from '#golem/rewrite-scan';
+import { decodeMappings } from '#golem/source-map';
 import { createProjectProgram } from '@exprtlabs/golem/type-analysis';
 import { writeSdk } from '#openapi/generator';
 import { copyFixtureFile, readFixture, writeGeneratedArtifacts } from './fixture-project.js';
@@ -22,16 +23,29 @@ function project(t: TestContext, files: readonly string[] = []): string {
   return root;
 }
 
-function scan(root: string): ScanResult {
-  return scanProjectRewrites({ root, configFile: path.join(root, 'tsconfig.json'), nest: false });
+type ProgramScan = ReturnType<RewriteScanner['scanProgram']>;
+
+/** The scanner's answer for every file of the project's own program. */
+function scan(root: string): ProgramScan {
+  return withScanner(root, (scanner) => scanner.scanProgram());
+}
+
+/** Run `use` against a scanner of the project's own program, which closes with it. */
+function withScanner<T>(root: string, use: (scanner: RewriteScanner) => T): T {
+  const info = createProjectProgram(root, undefined, undefined, path.join(root, 'tsconfig.json'));
+  using program = info.program;
+  return use(new RewriteScanner({ root, program, checker: program.getTypeChecker(), nest: false }));
+}
+
+function scanned(result: ProgramScan, file: string): FileScanResult {
+  const entry = result.files.get(`src/${file}`);
+  assert.ok(entry, `src/${file} has rewrites`);
+  return entry;
 }
 
 /** The file after `applyRewrites`, as a host would see it. */
-function rewritten(root: string, result: ScanResult, file: string): string {
-  const relative = `src/${file}`;
-  const output = applyRewrites(relative, fs.readFileSync(path.join(root, relative), 'utf8'), result.index);
-  assert.ok(output, `${relative} has an index entry`);
-  return output.code;
+function rewritten(root: string, result: ProgramScan, file: string): string {
+  return applyRewrites(fs.readFileSync(path.join(root, 'src', file), 'utf8'), scanned(result, file)).code;
 }
 
 function assertLines(code: string, expected: readonly string[]): void {
@@ -62,7 +76,7 @@ test('each serde call with a type argument becomes a call on its codec', (t) => 
     'export const wire = __golem_requireObjectCodec("TMoney_11111111").toWireFormat(money);',
     'export const read = __golem_requireObjectCodec("TMoney_11111111").fromWireFormat(text);',
   ]);
-  assert.deepEqual(result.index.files['src/calls.ts']?.imports, [{ from: '@exprtlabs/golem/serde', names: ['requireObjectCodec'] }]);
+  assert.deepEqual(result.files.get('src/calls.ts')?.imports, [{ from: '@exprtlabs/golem/serde', names: ['requireObjectCodec'] }]);
 });
 
 test('a callee reached through an alias, a namespace or a re-export is rewritten, any other callee is not', (t) => {
@@ -75,8 +89,8 @@ test('a callee reached through an alias, a namespace or a re-export is rewritten
     'export const reexported = __golem_requireObjectCodec("TMoney_11111111").parse(text);',
     'export const reexportedStar = __golem_requireObjectCodec("TMoney_11111111").stringify(money);',
   ]);
-  assert.equal(result.index.files['src/not-serde.ts'], undefined, 'a local function, JSON.parse, an optional call, a comment and a call without a type argument stay');
-  assert.equal(result.index.files['src/index.ts'], undefined);
+  assert.equal(result.files.get('src/not-serde.ts'), undefined, 'a local function, JSON.parse, an optional call, a comment and a call without a type argument stay');
+  assert.equal(result.files.get('src/index.ts'), undefined);
 });
 
 test('parse and fromWireFormat of a class construct it, and options that name construct are kept', (t) => {
@@ -93,14 +107,14 @@ test('parse and fromWireFormat of a class construct it, and options that name co
     `export const plain = ${parse}(text);`,
     `export const nested = ${parse}(text, { ...{ validate: ${parse}(text) === undefined }, construct: Payment });`,
   ]);
-  assert.deepEqual(result.index.files['src/construct.ts']?.imports, [{ from: '@exprtlabs/golem/serde', names: ['requireObjectCodec'] }]);
+  assert.deepEqual(result.files.get('src/construct.ts')?.imports, [{ from: '@exprtlabs/golem/serde', names: ['requireObjectCodec'] }]);
 });
 
 test('a class imported only as a type is constructed through an aliased value import of its module', (t) => {
   const root = project(t, ['type-only.ts', 'ledger.model.ts', 'ledger.model.generated.ts']);
   const result = scan(root);
   assert.deepEqual(result.diagnostics, []);
-  assert.deepEqual(result.index.files['src/type-only.ts']?.imports, [
+  assert.deepEqual(result.files.get('src/type-only.ts')?.imports, [
     { from: './ledger.model.js', names: ['Ledger'] },
     { from: './payment.model.js', names: ['Payment'] },
     { from: '@exprtlabs/golem/serde', names: ['requireObjectCodec'] },
@@ -130,9 +144,9 @@ test('a model class registers once, several classes of one model register under 
   ]);
   assert.doesNotMatch(ledger, /RushLedger\)|"TLedger_33333333"/, 'a subclass and a default class do not register');
   assert.match(rewritten(root, result, 'payment.model.ts'), /\n__golem_registerIModelClass\("TPayment_22222222", Payment\);/);
-  assert.deepEqual(result.index.files['src/ledger.model.ts']?.imports, [{ from: '@exprtlabs/golem/serde', names: ['registerIModelClass'] }]);
-  assert.equal(result.index.files['src/registered.model.ts'], undefined, 'the plain statement exists');
-  assert.equal(result.index.files['src/rewritten.model.ts'], undefined, 'the aliased statement exists');
+  assert.deepEqual(result.files.get('src/ledger.model.ts')?.imports, [{ from: '@exprtlabs/golem/serde', names: ['registerIModelClass'] }]);
+  assert.equal(result.files.get('src/registered.model.ts'), undefined, 'the plain statement exists');
+  assert.equal(result.files.get('src/rewritten.model.ts'), undefined, 'the aliased statement exists');
 });
 
 /** Install a one-model SDK as `node_modules/sdk`; returns its directory. */
@@ -168,13 +182,13 @@ export const money = parse<MoneyModel>(text);
     `export const money = __golem_requireObjectCodec("${id}").parse(text, { construct: __golem_MoneyModel });`,
     "import { MoneyModel as __golem_MoneyModel } from 'sdk';",
   ]);
-  assert.deepEqual(Object.keys(result.index.files).filter((file) => file.includes('node_modules')), [], 'installed packages are not rewritten');
+  assert.deepEqual([...result.files.keys()].filter((file) => file.includes('node_modules')), [], 'installed packages are not rewritten');
 });
 
 test('a type argument that is not a type name, a type without a codec and a type parameter are reported with their position', (t) => {
   const root = project(t, ['bad-arguments.ts']);
   const source = readFixture('rewrite/bad-arguments.ts');
-  const { diagnostics, index } = scan(root);
+  const { diagnostics, files } = scan(root);
   const at = (needle: string): { line: number; column: number } => position(source, needle);
   const expected = (code: string, message: string, needle: string) => ({ code, severity: 'error', message, file: 'src/bad-arguments.ts', ...at(needle) });
   assert.deepEqual(diagnostics, [
@@ -184,7 +198,7 @@ test('a type argument that is not a type name, a type without a codec and a type
     expected('RUNM1067', 'parse<TUnkeyed> has no unique codec id', 'parse<TUnkeyed>'),
     expected('RUNM1067', 'parse<T> has no unique codec id', 'parse<T>(value)'),
   ]);
-  assert.equal(index.files['src/bad-arguments.ts'], undefined);
+  assert.equal(files.get('src/bad-arguments.ts'), undefined);
 });
 
 test('a file that gets a rewrite may not use a name that starts with the added import prefix', (t) => {
@@ -210,28 +224,33 @@ test('a file that gets a rewrite may not use a name that starts with the added i
   ]);
 });
 
+/** The index wrapper over the scanner, which the pipeline and `golem build` still read. */
+function indexScan(root: string): ReturnType<typeof scanProjectRewrites> {
+  return scanProjectRewrites({ root, configFile: path.join(root, 'tsconfig.json'), nest: false });
+}
+
 test('an index is current only while it equals a fresh scan', (t) => {
   const root = project(t, ['calls.ts']);
-  writeRewriteIndex(root, scan(root).index);
-  assertRewriteIndexCurrent(root, scan(root).index);
+  writeRewriteIndex(root, indexScan(root).index);
+  assertRewriteIndexCurrent(root, indexScan(root).index);
   fs.appendFileSync(path.join(root, 'src/calls.ts'), '// edited\n');
-  assert.throws(() => assertRewriteIndexCurrent(root, scan(root).index), (error: unknown) =>
+  assert.throws(() => assertRewriteIndexCurrent(root, indexScan(root).index), (error: unknown) =>
     error instanceof GolemRewriteStaleError && error.file === 'src/calls.ts' && /src\/calls\.ts is out of date in \.golem\/rewrites\.json/.test(error.message));
 });
 
 test('a project without an index is current', (t) => {
   const root = project(t, ['calls.ts']);
-  assertRewriteIndexCurrent(root, scan(root).index);
+  assertRewriteIndexCurrent(root, indexScan(root).index);
 });
 
 test('the same project always writes the same index, with its files and edits in order', (t) => {
   const root = project(t, ['calls.ts', 'construct.ts', 'ledger.model.ts', 'ledger.model.generated.ts']);
-  const first = scan(root);
+  const first = indexScan(root);
   assert.deepEqual(first.diagnostics, []);
   writeRewriteIndex(root, first.index);
   const bytes = fs.readFileSync(path.join(root, '.golem/rewrites.json'), 'utf8');
   assert.deepEqual(Object.keys(JSON.parse(bytes) as object), ['version', 'golem', 'files'], 'the index holds no cache state');
-  const second = scan(root);
+  const second = indexScan(root);
   assert.equal(writeRewriteIndex(root, second.index), false);
   assert.equal(fs.readFileSync(path.join(root, '.golem/rewrites.json'), 'utf8'), bytes);
   assert.deepEqual(Object.keys(first.index.files), [...Object.keys(first.index.files)].sort());
@@ -357,14 +376,14 @@ export const money = parse<TMoney>(text);
 export class Payment extends TPaymentBaseModel {}
 `);
   fs.writeFileSync(path.join(outer, 'shared/plain.ts'), "export const plain = 1;\n");
-  const { diagnostics, index } = scanProjectRewrites({ root, configFile: path.join(root, 'tsconfig.json'), nest: false });
+  const { diagnostics, files } = scan(root);
   // A class site is the end of the class, where its registration goes.
   const message = (file: string): string => `"${file}" has a rewrite site but lies outside the project root. Move it under the root, or run golem generate for the package that contains it.`;
   assert.deepEqual(diagnostics, [
     { code: 'RUNM1070', severity: 'error', message: message('../shared/payment.model.ts'), file: '../shared/payment.model.ts', line: 2, column: 50 },
     { code: 'RUNM1070', severity: 'error', message: message('../shared/x.ts'), file: '../shared/x.ts', line: 4, column: 22 },
   ]);
-  assert.deepEqual(Object.keys(index.files), ['src/payment.model.ts'], 'files outside the root are not indexed');
+  assert.deepEqual([...files.keys()], ['src/payment.model.ts'], 'files outside the root are not rewritten');
 });
 
 test('typeof and a qualified name resolve like a plain type name; a default class import has no codec id', (t) => {
@@ -383,7 +402,7 @@ test('typeof and a qualified name resolve like a plain type name; a default clas
     file: 'src/default-class-import.ts',
     ...position(readFixture('rewrite/default-class-import.ts'), 'parse<DefaultClass>'),
   }]);
-  assert.equal(result.index.files['src/default-class-import.ts'], undefined);
+  assert.equal(result.files.get('src/default-class-import.ts'), undefined);
 });
 
 /** A model project with an empty `src/` for tests that write their own key tables and sources. */
@@ -406,7 +425,7 @@ test('a class registers under the id its own file keys, never under a same-named
   });
   const result = scan(root);
   assert.deepEqual(result.diagnostics, []);
-  assert.equal(result.index.files['src/a.model.ts'], undefined, 'a class with no key of its own is not registered');
+  assert.equal(result.files.get('src/a.model.ts'), undefined, 'a class with no key of its own is not registered');
   assert.match(rewritten(root, result, 'c.model.ts'), /\n__golem_registerIModelClass\("TBar_cccccccc", Bar\);/, 'a keyed class still registers');
 });
 
@@ -448,4 +467,84 @@ test('createProjectProgram keeps its observer and session arguments, and takes t
   assert.ok(found.includes('src/payment.model.ts'), found.join());
   assert.ok(seen.has('tsconfig.json'), 'the tsconfig found from the root is observed');
   assert.deepEqual(open(undefined, undefined, path.join(root, 'tsconfig.calls.json')), ['src/calls.ts']);
+});
+
+test('scanFile answers for one file as scanProgram does, and for no file that is not a rewrite candidate', (t) => {
+  const root = project(t, ['calls.ts']);
+  fs.mkdirSync(path.join(root, 'node_modules/pkg'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'node_modules/pkg/index.d.ts'), 'export declare const x: number;\n');
+  fs.writeFileSync(path.join(root, 'src/declared.d.ts'), 'export declare const y: number;\n');
+  const absolute = (relative: string): string => path.join(root, relative);
+  withScanner(root, (scanner) => {
+    const all = scanner.scanProgram();
+    assert.deepEqual(scanner.scanFile(absolute('src/calls.ts')), all.files.get('src/calls.ts'));
+    assert.deepEqual(scanner.scanFile(absolute('src/payment.model.ts')), all.files.get('src/payment.model.ts'));
+    assert.deepEqual(scanner.scanFile(absolute('src/payment.model.ts'))?.edits.map(({ expect }) => expect), ['']);
+    for (const candidate of ['src/payment.model.generated.ts', 'src/iobject-plugin-keys.ts', 'src/declared.d.ts', 'node_modules/pkg/index.d.ts', 'src/not-in-the-program.ts']) {
+      assert.equal(scanner.scanFile(absolute(candidate)), undefined, candidate);
+    }
+  });
+});
+
+test('a file lists the key tables and generated files its edits were resolved from', (t) => {
+  const root = project(t, ['calls.ts', 'ledger.model.ts', 'ledger.model.generated.ts']);
+  const result = scan(root);
+  assert.deepEqual(scanned(result, 'calls.ts').dependencies, ['src/iobject-plugin-keys.ts']);
+  assert.deepEqual(scanned(result, 'ledger.model.ts').dependencies, ['src/iobject-plugin-keys.ts', 'src/ledger.model.generated.ts']);
+  assert.deepEqual(scanned(result, 'payment.model.ts').dependencies, ['src/iobject-plugin-keys.ts', 'src/payment.model.generated.ts']);
+});
+
+test('a file with a byte order mark, CRLF line ends and Vietnamese text is scanned and applied at the compiler offsets', (t) => {
+  const root = project(t, ['bom-crlf.ts']);
+  // Git may normalise line ends in a checkout, so the test sets them.
+  const fixture = path.join(root, 'src/bom-crlf.ts');
+  fs.writeFileSync(fixture, fs.readFileSync(fixture, 'utf8').replace(/\r?\n/g, '\r\n'));
+  const raw = fs.readFileSync(fixture, 'utf8');
+  assert.equal(raw.startsWith('\uFEFF'), true, 'the fixture starts with a byte order mark');
+  assert.equal(raw.includes('\r\n'), true);
+  const result = scan(root);
+  assert.deepEqual(result.diagnostics, []);
+  const entry = scanned(result, 'bom-crlf.ts');
+  const text = raw.slice(1);
+  const call = 'parse<TMoney>(';
+  assert.deepEqual(entry.edits.map(({ start, end, expect }) => ({ start, end, expect })), [{ start: text.indexOf(call), end: text.indexOf(call) + call.length, expect: call }]);
+
+  const applied = applyRewrites(raw, entry);
+  assert.equal(applied.code.startsWith(`\uFEFF${SERDE}\n`), true, 'the mark stays first');
+  assert.equal(applied.code, `\uFEFF${SERDE}\n${text.replace(call, '__golem_requireObjectCodec("TMoney_11111111").parse(')}`);
+  assert.equal(applyRewrites(text, entry).code, applied.code.slice(1), 'the text without the mark gives the same code without it');
+
+  // The rewritten call resolves, through the map, to the original line and column of the call.
+  const code = applied.code;
+  const offset = code.indexOf('__golem_requireObjectCodec("TMoney');
+  const before = code.slice(0, offset).split(/\r\n|\n/);
+  const generatedLine = before.length - 1;
+  const generatedColumn = before[generatedLine]!.length;
+  const segment = [...(decodeMappings(applied.map.mappings)[generatedLine] ?? [])].reverse().find((candidate) => candidate[0]! <= generatedColumn);
+  assert.ok(segment && segment.length >= 4);
+  const original = text.slice(0, text.indexOf('parse<TMoney>')).split(/\r\n|\n/);
+  assert.deepEqual([segment[2], segment[3]], [original.length - 1, original[original.length - 1]!.length]);
+});
+
+test('a // comment between the type arguments and the opening parenthesis goes with the replaced text', (t) => {
+  const root = project(t);
+  const source = `import { parse } from '@exprtlabs/golem/serde';
+import type { TMoney } from './payment.model.js';
+declare const text: string;
+export const money = parse<TMoney> // keep the codec
+  (text);
+export const next = 1;
+`;
+  fs.writeFileSync(path.join(root, 'src/line-comment.ts'), source);
+  const result = scan(root);
+  assert.deepEqual(result.diagnostics, []);
+  const entry = scanned(result, 'line-comment.ts');
+  assert.deepEqual(entry.edits.map(({ expect }) => expect), ['parse<TMoney> // keep the codec\n  (']);
+  const applied = applyRewrites(source, entry);
+  assert.equal(applied.code, `${SERDE}\n${source.replace('parse<TMoney> // keep the codec\n  (', '__golem_requireObjectCodec("TMoney_11111111").parse(')}`);
+  // The line after the collapsed call still resolves to its own original line.
+  const generated = applied.code.split('\n');
+  const line = generated.findIndex((each) => each.startsWith('export const next'));
+  const segment = decodeMappings(applied.map.mappings)[line]?.[0];
+  assert.equal(segment?.[2], source.split('\n').findIndex((each) => each.startsWith('export const next')));
 });

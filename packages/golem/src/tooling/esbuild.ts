@@ -2,8 +2,8 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { Plugin } from 'esbuild';
 
-import { applyRewrites, REWRITE_INDEX_PATH } from './rewrite.js';
-import { BUNDLER_TYPESCRIPT_FILE, findRewriteIndex, NODE_MODULES, rewriteIndexRoot, withInlineSourceMap, type GolemBundlerOptions } from './rewrite-host.js';
+import { REWRITE_INDEX_PATH } from './rewrite.js';
+import { applyIndexedRewrites, BUNDLER_TYPESCRIPT_FILE, findRewriteIndex, NODE_MODULES, rewriteIndexRoot, withInlineSourceMap, type GolemBundlerOptions } from './rewrite-host.js';
 
 /**
  * esbuild plugin that applies golem's rewrite index to TypeScript sources in memory, before esbuild strips their
@@ -24,7 +24,7 @@ export function golem(options: GolemBundlerOptions = {}): Plugin {
         const indexFile = path.join(rewriteIndexRoot(file, root), REWRITE_INDEX_PATH);
         try {
           const { index, relative } = findRewriteIndex(file, root);
-          const applied = applyRewrites(relative, await readFile(file, 'utf8'), index);
+          const applied = applyIndexedRewrites(relative, await readFile(file, 'utf8'), index);
           // A file the index does not list is left to the loaders after this one, which see it as they would without golem.
           if (!applied) return undefined;
           // Any listed file puts the index in esbuild's watch set.

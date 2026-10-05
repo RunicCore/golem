@@ -1,8 +1,8 @@
 import path from 'node:path';
 import type { Plugin, ViteDevServer } from 'vite';
 
-import { applyRewrites, GolemRewriteMalformedIndexError, REWRITE_INDEX_PATH, type RewriteIndex } from './rewrite.js';
-import { BUNDLER_TYPESCRIPT_FILE, findRewriteIndex, NODE_MODULES, rewriteIndexOf, rewriteIndexRoot, type GolemBundlerOptions } from './rewrite-host.js';
+import { GolemRewriteMalformedIndexError, REWRITE_INDEX_PATH, type RewriteIndex } from './rewrite.js';
+import { applyIndexedRewrites, BUNDLER_TYPESCRIPT_FILE, findRewriteIndex, NODE_MODULES, rewriteIndexOf, rewriteIndexRoot, type GolemBundlerOptions } from './rewrite-host.js';
 
 /**
  * Vite plugin that applies golem's rewrite index to TypeScript sources in memory, before Vite strips their types.
@@ -97,7 +97,7 @@ export function golem(options: GolemBundlerOptions = {}): Plugin {
       }
       const { root: indexRoot, index, relative } = found;
       watchIndex(indexRoot, index);
-      const applied = applyRewrites(relative, code, index);
+      const applied = applyIndexedRewrites(relative, code, index);
       if (!applied) return undefined;
       const { map } = applied;
       // The map's source is the module's own file name, as in the other hosts: a served map resolves `sources` against the module's URL.
