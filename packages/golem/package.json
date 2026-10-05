@@ -177,6 +177,11 @@
       "import": "./dist/tooling/ajv-tooling.js",
       "default": "./dist/tooling/ajv-tooling.js"
     },
+    "./validator-compiler": {
+      "types": "./dist/tooling/validator-compiler/index.d.ts",
+      "import": "./dist/tooling/validator-compiler/index.js",
+      "default": "./dist/tooling/validator-compiler/index.js"
+    },
     "./type-analysis": {
       "types": "./dist/tooling/type-analysis/index.d.ts",
       "import": "./dist/tooling/type-analysis/index.js",

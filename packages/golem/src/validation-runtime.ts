@@ -236,6 +236,11 @@ const numberFormats: Readonly<Record<string, (value: number) => boolean>> = {
   double: value => Number.isFinite(value),
 };
 
+/** True when `checkFormat` checks `format`; the validator compiler warns about any other name. */
+export function isKnownFormat(format: string): boolean {
+  return Object.hasOwn(stringFormats, format) || Object.hasOwn(numberFormats, format);
+}
+
 /** True when `value` fits `format`, or when the format does not apply to its type or is not known. */
 export function checkFormat(format: string, value: unknown): boolean {
   if (typeof value === 'string') return Object.hasOwn(stringFormats, format) ? stringFormats[format](value) : true;

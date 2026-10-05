@@ -1,0 +1,333 @@
+import assert from 'node:assert/strict';
+import { test } from 'node:test';
+
+import { GolemDiagnosticSeverity } from '@exprtlabs/golem/generator-api';
+import { compile } from '@exprtlabs/golem/validator-compiler';
+
+import { compileSchema, compileValidators } from './support/compiled-validators.js';
+
+/** Asserts the all-errors result, then that fast-fail returns only the first of those issues. */
+async function assertIssues(schema: unknown, value: unknown, expected: readonly object[]): Promise<void> {
+  const validate = await compileSchema(schema);
+  assert.deepEqual(validate(value, true), expected);
+  assert.deepEqual(validate(value, false), expected.slice(0, 1));
+}
+
+test('type accepts one name or a list and reports the expected names', async () => {
+  await assertIssues({ type: 'string' }, 5, [{ path: [], code: 'type', expected: ['string'] }]);
+  await assertIssues({ type: ['string', 'null'] }, 5, [{ path: [], code: 'type', expected: ['string', 'null'] }]);
+  await assertIssues({ type: ['string', 'null'] }, null, []);
+  await assertIssues({ type: 'array' }, { length: 0 }, [{ path: [], code: 'type', expected: ['array'] }]);
+  await assertIssues({ type: 'object' }, [], [{ path: [], code: 'type', expected: ['object'] }]);
+  await assertIssues({ type: 'object' }, null, [{ path: [], code: 'type', expected: ['object'] }]);
+});
+
+test('type integer rejects 1.5 and accepts 1.0', async () => {
+  await assertIssues({ type: 'integer' }, 1.5, [{ path: [], code: 'type', expected: ['integer'] }]);
+  await assertIssues({ type: 'integer' }, 1.0, []);
+  await assertIssues({ type: 'number' }, 1.5, []);
+});
+
+test('const and enum report the allowed values as a literal issue', async () => {
+  await assertIssues({ const: { a: [1, 2] } }, { a: [1, 3] }, [{ path: [], code: 'literal', expected: [{ a: [1, 2] }] }]);
+  await assertIssues({ const: { a: [1, 2] } }, { a: [1, 2] }, []);
+  await assertIssues({ enum: [1, 'a', null] }, 'b', [{ path: [], code: 'literal', expected: [1, 'a', null] }]);
+  await assertIssues({ enum: [1, 'a', null] }, null, []);
+});
+
+test('required reports each missing key with the path ending at the key', async () => {
+  const schema = { type: 'object', required: ['a', 'b'] };
+  await assertIssues(schema, { c: 1 }, [
+    { path: ['a'], code: 'required', key: 'a' },
+    { path: ['b'], code: 'required', key: 'b' },
+  ]);
+  await assertIssues(schema, { a: 1, b: 2 }, []);
+  await assertIssues({ required: ['a'] }, 'text', []);
+});
+
+test('properties validate present keys at their own path', async () => {
+  const schema = { properties: { a: { type: 'string' }, b: { properties: { c: { type: 'integer' } } } } };
+  await assertIssues(schema, { a: 1, b: { c: 'x' } }, [
+    { path: ['a'], code: 'type', expected: ['string'] },
+    { path: ['b', 'c'], code: 'type', expected: ['integer'] },
+  ]);
+  await assertIssues(schema, {}, []);
+});
+
+test('additionalProperties false reports each unknown key; a schema checks each extra value', async () => {
+  await assertIssues({ properties: { a: {} }, additionalProperties: false }, { a: 1, b: 2, c: 3 }, [
+    { path: [], code: 'unknownKey', key: 'b' },
+    { path: [], code: 'unknownKey', key: 'c' },
+  ]);
+  await assertIssues({ properties: { a: {} }, additionalProperties: { type: 'integer' } }, { a: 'free', b: 'x', c: 3 }, [
+    { path: ['b'], code: 'type', expected: ['integer'] },
+  ]);
+  await assertIssues({ properties: { a: {} }, additionalProperties: true }, { a: 1, b: 2 }, []);
+});
+
+test('prefixItems and items report the index in the path', async () => {
+  const schema = { prefixItems: [{ type: 'string' }, { type: 'integer' }], items: { type: 'boolean' } };
+  await assertIssues(schema, [1, 'x', 'y', true], [
+    { path: [0], code: 'type', expected: ['string'] },
+    { path: [1], code: 'type', expected: ['integer'] },
+    { path: [2], code: 'type', expected: ['boolean'] },
+  ]);
+  await assertIssues(schema, ['a'], []);
+});
+
+test('minLength and maxLength count code points', async () => {
+  await assertIssues({ minLength: 2 }, '\u{1F600}', [{ path: [], code: 'tooSmall', measure: 'length', limit: 2, inclusive: true }]);
+  await assertIssues({ maxLength: 2 }, '\u{1F600}'.repeat(3), [{ path: [], code: 'tooBig', measure: 'length', limit: 2, inclusive: true }]);
+  await assertIssues({ maxLength: 2 }, '\u{1F600}'.repeat(2), []);
+  await assertIssues({ minLength: 2 }, 1, []);
+});
+
+test('minimum and exclusiveMaximum report the value limit and whether it is inclusive', async () => {
+  await assertIssues({ minimum: 5 }, 4, [{ path: [], code: 'tooSmall', measure: 'value', limit: 5, inclusive: true }]);
+  await assertIssues({ minimum: 5 }, 5, []);
+  await assertIssues({ exclusiveMaximum: 10 }, 10, [{ path: [], code: 'tooBig', measure: 'value', limit: 10, inclusive: false }]);
+  await assertIssues({ exclusiveMinimum: 0 }, 0, [{ path: [], code: 'tooSmall', measure: 'value', limit: 0, inclusive: false }]);
+  await assertIssues({ maximum: 3 }, 4, [{ path: [], code: 'tooBig', measure: 'value', limit: 3, inclusive: true }]);
+  await assertIssues({ maximum: 3 }, 'big', []);
+});
+
+test('minItems, maxItems, minProperties and maxProperties report their measure', async () => {
+  await assertIssues({ minItems: 2 }, [1], [{ path: [], code: 'tooSmall', measure: 'items', limit: 2, inclusive: true }]);
+  await assertIssues({ maxItems: 1 }, [1, 2], [{ path: [], code: 'tooBig', measure: 'items', limit: 1, inclusive: true }]);
+  await assertIssues({ minProperties: 1 }, {}, [{ path: [], code: 'tooSmall', measure: 'properties', limit: 1, inclusive: true }]);
+  await assertIssues({ maxProperties: 1 }, { a: 1, b: 2 }, [{ path: [], code: 'tooBig', measure: 'properties', limit: 1, inclusive: true }]);
+});
+
+test('pattern reports the source and ignores non-strings', async () => {
+  await assertIssues({ pattern: '^a+$' }, 'b', [{ path: [], code: 'pattern', pattern: '^a+$' }]);
+  await assertIssues({ pattern: '^a+$' }, 'aa', []);
+  await assertIssues({ pattern: '^a+$' }, 7, []);
+  await assertIssues({ pattern: '^\\p{L}$' }, 'é', []);
+});
+
+test('format reports a known format that does not match', async () => {
+  await assertIssues({ format: 'ipv4' }, '999.1.1.1', [{ path: [], code: 'format', format: 'ipv4' }]);
+  await assertIssues({ format: 'ipv4' }, '10.0.0.1', []);
+  await assertIssues({ format: 'int32' }, 2 ** 31, [{ path: [], code: 'format', format: 'int32' }]);
+  await assertIssues({ format: 'ipv4' }, 7, []);
+});
+
+test('multipleOf tolerates binary rounding: 0.3 is a multiple of 0.1', async () => {
+  await assertIssues({ multipleOf: 0.1 }, 0.3, []);
+  await assertIssues({ multipleOf: 0.0001 }, 0.0075, []);
+  await assertIssues({ multipleOf: 0.1 }, 0.35, [{ path: [], code: 'multipleOf', divisor: 0.1 }]);
+  await assertIssues({ multipleOf: 2 }, 7, [{ path: [], code: 'multipleOf', divisor: 2 }]);
+  await assertIssues({ multipleOf: 0.123456789 }, 1e308, [{ path: [], code: 'multipleOf', divisor: 0.123456789 }]);
+});
+
+test('uniqueItems reports the first duplicate pair by index', async () => {
+  await assertIssues({ uniqueItems: true }, [1, { a: [1] }, 2, { a: [1] }], [{ path: [], code: 'unique', indexes: [1, 3] }]);
+  await assertIssues({ uniqueItems: true }, [1, 2, 1, 2], [{ path: [], code: 'unique', indexes: [0, 2] }]);
+  await assertIssues({ uniqueItems: true }, [1, '1', true, null], []);
+  await assertIssues({ uniqueItems: false }, [1, 1], []);
+});
+
+test('allOf reports the issues of every failing branch', async () => {
+  await assertIssues({ allOf: [{ minLength: 3 }, { pattern: '^b' }, { type: 'string' }] }, 'a', [
+    { path: [], code: 'tooSmall', measure: 'length', limit: 3, inclusive: true },
+    { path: [], code: 'pattern', pattern: '^b' },
+  ]);
+});
+
+test('anyOf and oneOf without a discriminator report a union with the matched count', async () => {
+  const anyOf = { anyOf: [{ type: 'string' }, { type: 'integer' }] };
+  await assertIssues(anyOf, true, [{ path: [], code: 'union', matched: 0 }]);
+  await assertIssues(anyOf, 'a', []);
+  const oneOf = { oneOf: [{ type: 'number' }, { type: 'integer' }] };
+  await assertIssues(oneOf, 1, [{ path: [], code: 'union', matched: 2 }]);
+  await assertIssues(oneOf, 1.5, []);
+  await assertIssues(oneOf, 'a', [{ path: [], code: 'union', matched: 0 }]);
+});
+
+test('a union reports its own path, not the paths inside its branches', async () => {
+  await assertIssues({ properties: { a: { anyOf: [{ type: 'string' }, { required: ['x'] }] } } }, { a: {} }, [
+    { path: ['a'], code: 'union', matched: 0 },
+  ]);
+});
+
+test('not reports an issue when its schema matches', async () => {
+  await assertIssues({ not: { type: 'string' } }, 'a', [{ path: [], code: 'not' }]);
+  await assertIssues({ not: { type: 'string' } }, 1, []);
+});
+
+test('a false schema reports never and a true schema accepts anything', async () => {
+  await assertIssues(false, 1, [{ path: [], code: 'never' }]);
+  await assertIssues({ properties: { a: false } }, { a: 1 }, [{ path: ['a'], code: 'never' }]);
+  await assertIssues({ properties: { a: false } }, {}, []);
+  await assertIssues(true, { anything: [1, null] }, []);
+  await assertIssues({}, 'x', []);
+});
+
+test('$ref to $defs resolves for every referrer', async () => {
+  const schema = {
+    $defs: { name: { type: 'string', minLength: 1 } },
+    properties: { first: { $ref: '#/$defs/name' }, last: { $ref: '#/$defs/name' } },
+  };
+  await assertIssues(schema, { first: '', last: 3 }, [
+    { path: ['first'], code: 'tooSmall', measure: 'length', limit: 1, inclusive: true },
+    { path: ['last'], code: 'type', expected: ['string'] },
+  ]);
+});
+
+test('$ref resolves to another root by absolute and relative $id', async () => {
+  const validators = await compileValidators({
+    roots: {
+      item: { $id: 'https://example.com/schemas/item.json', type: 'integer' },
+      list: {
+        $id: 'https://example.com/schemas/list.json',
+        properties: { absolute: { $ref: 'https://example.com/schemas/item.json' }, relative: { $ref: 'item.json' } },
+      },
+    },
+  });
+  assert.deepEqual(validators.list({ absolute: 'x', relative: 'y' }, true), [
+    { path: ['absolute'], code: 'type', expected: ['integer'] },
+    { path: ['relative'], code: 'type', expected: ['integer'] },
+  ]);
+  assert.deepEqual(validators.list({ absolute: 1, relative: 2 }, true), []);
+});
+
+test('$ref reaches a resource by its $id, its name and a $anchor', async () => {
+  const validators = await compileValidators({
+    roots: {
+      root: {
+        properties: {
+          byId: { $ref: 'https://example.com/id.json' },
+          byName: { $ref: 'TNamed' },
+          byAnchor: { $ref: 'https://example.com/id.json#positive' },
+        },
+      },
+    },
+    resources: {
+      'https://example.com/id.json': { $id: 'https://example.com/id.json', $defs: { positive: { $anchor: 'positive', minimum: 1 } }, type: 'string' },
+      TNamed: { type: 'boolean' },
+    },
+  });
+  assert.deepEqual(validators.root({ byId: 1, byName: 'x', byAnchor: 0 }, true), [
+    { path: ['byId'], code: 'type', expected: ['string'] },
+    { path: ['byName'], code: 'type', expected: ['boolean'] },
+    { path: ['byAnchor'], code: 'tooSmall', measure: 'value', limit: 1, inclusive: true },
+  ]);
+});
+
+test('$ref by JSON pointer decodes ~0, ~1 and percent escapes', async () => {
+  const schema = {
+    $defs: { 'a/b': { type: 'string' }, 'm~n': { type: 'integer' }, 'p q': { type: 'boolean' } },
+    properties: { slash: { $ref: '#/$defs/a~1b' }, tilde: { $ref: '#/$defs/m~0n' }, space: { $ref: '#/$defs/p%20q' } },
+  };
+  await assertIssues(schema, { slash: 1, tilde: 'x', space: 'y' }, [
+    { path: ['slash'], code: 'type', expected: ['string'] },
+    { path: ['tilde'], code: 'type', expected: ['integer'] },
+    { path: ['space'], code: 'type', expected: ['boolean'] },
+  ]);
+});
+
+test('recursive $ref validates a three-level tree and reports the deepest path', async () => {
+  const schema = {
+    type: 'object',
+    required: ['value'],
+    properties: { value: { type: 'integer' }, children: { type: 'array', items: { $ref: '#' } } },
+  };
+  const tree = { value: 1, children: [{ value: 2 }, { value: 3, children: [{ value: 4 }, { value: 'deep' }] }] };
+  await assertIssues(schema, tree, [{ path: ['children', 1, 'children', 1, 'value'], code: 'type', expected: ['integer'] }]);
+  await assertIssues(schema, { value: 1, children: [{ value: 2, children: [{ value: 3, children: [{}] }] }] }, [
+    { path: ['children', 0, 'children', 0, 'children', 0, 'value'], code: 'required', key: 'value' },
+  ]);
+});
+
+test('own-property checks hold for __proto__ and constructor keys', async () => {
+  const schema = JSON.parse('{"properties":{"__proto__":{"type":"integer"},"constructor":{"type":"integer"},"toString":{}},"required":["__proto__","constructor","toString"],"additionalProperties":false}') as unknown;
+  const validate = await compileSchema(schema);
+  assert.deepEqual(validate({}, true), [
+    { path: ['__proto__'], code: 'required', key: '__proto__' },
+    { path: ['constructor'], code: 'required', key: 'constructor' },
+    { path: ['toString'], code: 'required', key: 'toString' },
+  ]);
+  assert.deepEqual(validate(JSON.parse('{"__proto__":1,"constructor":2,"toString":3}'), true), []);
+  assert.deepEqual(validate(JSON.parse('{"__proto__":"x","constructor":2,"toString":3}'), true), [
+    { path: ['__proto__'], code: 'type', expected: ['integer'] },
+  ]);
+  const undeclared = await compileSchema({ additionalProperties: false });
+  assert.deepEqual(undeclared(JSON.parse('{"__proto__":1,"constructor":2}'), true), [
+    { path: [], code: 'unknownKey', key: '__proto__' },
+    { path: [], code: 'unknownKey', key: 'constructor' },
+  ]);
+});
+
+test('root names with # and - become valid function names and verbatim keys', async () => {
+  const names = ['TPayment_1234abcd#wire', 'list-items', '#', '__proto__'];
+  const validators = await compileValidators({ roots: Object.fromEntries(names.map(name => [name, { type: 'integer' }])) });
+  assert.deepEqual(Object.keys(validators).sort(), [...names].sort());
+  for (const name of names) {
+    assert.match(Object.getOwnPropertyDescriptor(validators, name)?.value.name, /^[A-Za-z_$][A-Za-z0-9_$]*$/);
+    assert.deepEqual(Object.getOwnPropertyDescriptor(validators, name)?.value('x', true), [{ path: [], code: 'type', expected: ['integer'] }]);
+  }
+});
+
+test('$dynamicRef is an unsupported keyword error at its JSON pointer and leaves no source', () => {
+  const result = compile(
+    { roots: new Map([['root', { properties: { a: { $dynamicRef: '#node' } } }]]) },
+    { unknownFormats: 'warn', documentName: 'orders.yaml' },
+  );
+  assert.equal(result.source, '');
+  assert.equal(result.diagnostics.length, 1);
+  const [diagnostic] = result.diagnostics;
+  assert.equal(diagnostic.code, 'VALIDATE_UNSUPPORTED_KEYWORD');
+  assert.equal(diagnostic.severity, GolemDiagnosticSeverity.Error);
+  assert.equal(diagnostic.file, 'orders.yaml');
+  assert.equal(diagnostic.path, '/properties/a/$dynamicRef');
+  assert.match(diagnostic.message, /orders\.yaml/);
+  assert.match(diagnostic.message, /\/properties\/a\/\$dynamicRef/);
+});
+
+test('$dynamicAnchor is an unsupported keyword error', () => {
+  const result = compile({ roots: new Map([['root', { $ref: '#/$defs/node', $defs: { node: { $dynamicAnchor: 'node' } } }]]) }, { unknownFormats: 'warn' });
+  assert.deepEqual(result.diagnostics.map(entry => [entry.code, entry.path]), [['VALIDATE_UNSUPPORTED_KEYWORD', '/$defs/node/$dynamicAnchor']]);
+});
+
+test('a $ref that does not resolve is an error naming the reference', () => {
+  const result = compile(
+    { roots: new Map([['root', { properties: { a: { $ref: '#/$defs/missing' } } }]]) },
+    { unknownFormats: 'warn', documentName: 'orders.yaml' },
+  );
+  assert.equal(result.source, '');
+  assert.deepEqual(result.diagnostics.map(entry => [entry.code, entry.severity, entry.path]), [
+    ['VALIDATE_UNRESOLVED_REF', GolemDiagnosticSeverity.Error, '/properties/a/$ref'],
+  ]);
+  assert.match(result.diagnostics[0].message, /#\/\$defs\/missing/);
+  assert.match(result.diagnostics[0].message, /orders\.yaml/);
+});
+
+test('a pattern that is not a valid unicode regular expression is an error', () => {
+  const result = compile({ roots: new Map([['root', { properties: { a: { pattern: '[' } } }]]) }, { unknownFormats: 'warn' });
+  assert.equal(result.source, '');
+  assert.deepEqual(result.diagnostics.map(entry => [entry.code, entry.severity, entry.path]), [
+    ['VALIDATE_INVALID_PATTERN', GolemDiagnosticSeverity.Error, '/properties/a/pattern'],
+  ]);
+});
+
+test('an unknown format warns and accepts any string, or fails with unknownFormats error', async () => {
+  const schema = { type: 'string', format: 'color' };
+  const warned = compile({ roots: new Map([['root', schema]]) }, { unknownFormats: 'warn' });
+  assert.deepEqual(warned.diagnostics.map(entry => [entry.code, entry.severity, entry.path]), [
+    ['VALIDATE_UNKNOWN_FORMAT', GolemDiagnosticSeverity.Warning, '/format'],
+  ]);
+  assert.notEqual(warned.source, '');
+  await assertIssues(schema, 'not a color', []);
+  const failed = compile({ roots: new Map([['root', schema]]) }, { unknownFormats: 'error' });
+  assert.equal(failed.source, '');
+  assert.deepEqual(failed.diagnostics.map(entry => [entry.code, entry.severity]), [['VALIDATE_UNKNOWN_FORMAT', GolemDiagnosticSeverity.Error]]);
+});
+
+test('diagnostics from every root are collected before the source is withheld', () => {
+  const result = compile(
+    { roots: new Map<string, unknown>([['a', { pattern: '(' }], ['b', { $ref: '#/missing' }]]) },
+    { unknownFormats: 'warn' },
+  );
+  assert.equal(result.source, '');
+  assert.deepEqual(result.diagnostics.map(entry => entry.code), ['VALIDATE_INVALID_PATTERN', 'VALIDATE_UNRESOLVED_REF']);
+});
