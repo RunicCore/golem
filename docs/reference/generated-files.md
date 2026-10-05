@@ -28,7 +28,7 @@ Golem writes these generated files:
 Choose one of these:
 
 - **Ignore them.** Put the generated files and `.golem/` in `.gitignore` together, so a clone has neither. Run `golem generate` or `golem build` in CI.
-- **Commit them.** Commit the generated files and `.golem/outputs.json` together. Without the list, `golem check` reports each committed generated file as unrecorded, and golem cannot delete a file it no longer generates. Run `golem check` in CI to catch a stale file.
+- **Commit them.** Commit the generated files with `.golem/outputs.json` and `.golem/codec-keys.json` together. Without the list, `golem check` reports each committed generated file as stale, and golem cannot delete a file it no longer generates. Run `golem check` in CI to catch a stale file.
 
 Always ignore `.golem/jobs.json` and `.golem/build/`. The first keeps what each job read the last time it ran, so a build with no change runs no job. The second holds the incremental state and the staged copy of your sources that `golem build` keeps per tsconfig. Both belong to your machine.
 
@@ -40,6 +40,8 @@ An example `.gitignore` for the first choice:
 src/generated/
 sdk/
 ```
+
+A model suffix such as `.entity.mts` or `.entity.cts` makes `.generated.mts` or `.generated.cts` files; add a line for each extension your suffixes use.
 
 List every other generated path by name: the OpenAPI document that a `controllers` job writes, and the files of a `generators` job. A tool that imports such a file needs it generated first, so run `golem generate` before it.
 

@@ -17,7 +17,7 @@ These calls convert a named [`IObject` or `IModel`](/guide/models#iobject-or-imo
 <<< ../../examples/models/src/read-json.ts#read-json
 
 ::: info Build with golem
-`parse`, `stringify`, `fromWireFormat` and `toWireFormat` throw unless a build rewrote them. Run `golem generate`, then build with `golem build`, the Vite or esbuild plugin, or the Node loader ([TypeScript setup](/guide/install#typescript-setup)); `tsc` does not rewrite them. They work on TypeScript 6 and 7.
+`parse`, `stringify`, `fromWireFormat` and `toWireFormat` throw unless a build rewrote them. Build with `golem build`, the Vite or esbuild plugin, or the Node loader ([TypeScript setup](/guide/install#typescript-setup)); `tsc` does not rewrite them. They work on TypeScript 6 and 7.
 :::
 
 - The type argument selects the model.

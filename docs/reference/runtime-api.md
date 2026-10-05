@@ -414,7 +414,7 @@ For inbound conversion in your own interceptor or pipe, get the codec with `obje
 import { applyRewrites } from '@exprtlabs/golem/rewrite';
 ```
 
-Every host scans each TypeScript file it compiles or loads with your project's own TypeScript, and edits the file's text before its types are stripped. No index file holds the edits. The edits are:
+Every host scans each TypeScript file it compiles or loads with your project's own TypeScript, and edits the file's text before its types are stripped. The edits are:
 
 | Call | Becomes |
 | --- | --- |

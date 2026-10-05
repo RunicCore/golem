@@ -43,7 +43,7 @@ valid only with `exec`; unknown options fail before generation starts.
 
 ## Build
 
-`golem build` compiles your project the way `tsc -p` does and rewrites the generic serde calls (`parse<T>()`, `stringify<T>()` and the others) on the way. It generates the code `golem.yaml` configures first, so a checkout with no generated files builds in one command. A bundler or Node can apply the same rewrite while it loads your TypeScript instead: use the [Vite plugin](/reference/runtime-api#vite), the [esbuild plugin](/reference/runtime-api#esbuild) or the [Node loader](/reference/runtime-api#loader). Each of them opens your project from `golem.yaml`, scans each file itself and needs no index file.
+`golem build` rewrites the generic serde calls (`parse<T>()`, `stringify<T>()` and the others) while it compiles. It generates the code `golem.yaml` configures first, so a checkout with no generated files builds in one command. A bundler or Node can apply the same rewrite while it loads your TypeScript instead: use the [Vite plugin](/reference/runtime-api#vite), the [esbuild plugin](/reference/runtime-api#esbuild) or the [Node loader](/reference/runtime-api#loader). Each of them opens your project from `golem.yaml`, and scans each file itself.
 
 ```sh
 npx golem build
@@ -63,7 +63,7 @@ The build starts from `golem.yaml`: the one in the working directory, or the one
 
 `-p` names another build config of the same project, such as `tsconfig.build.json` without your tests. It takes a file, or a directory that holds `tsconfig.json`, and it must lie in the directory of the tsconfig that `golem.yaml` names; any other location is an error. With `--watch` the build repeats when a source, tsconfig or `golem.yaml` changes: it generates first, so editing a model source regenerates its file and rebuilds once. The models job reads every source of the project, so editing any other source runs it again before the rebuild. A job that reads no changed input, such as a generator that reads only the models, does not run. Deleting `outDir` while it runs starts one build that writes it again.
 
-A build never edits your source files. It writes the generated files `golem.yaml` configures, the declarations and JavaScript the tsconfig asks for into `outDir`, and its own files into `.golem/`: per tsconfig under `.golem/build/<tsconfig name>/`, the incremental state and a copy of your sources with the calls rewritten. Two tsconfig files in one directory never share that state. Always ignore `.golem/build/` and `.golem/jobs.json`. Ignore the generated files and the rest of `.golem/` together, or commit the generated files and `.golem/outputs.json` together ([what to commit](/reference/generated-files#gitignore)). Delete `outDir`, or `declarationDir` when you set one, and the next build writes it again.
+A build never edits your source files. It writes the generated files `golem.yaml` configures, the declarations and JavaScript the tsconfig asks for into `outDir`, and its own files into `.golem/`: per tsconfig under `.golem/build/<tsconfig name>/`, the incremental state and a copy of your sources with the calls rewritten. Two tsconfig files in one directory never share that state. Always ignore `.golem/build/` and `.golem/jobs.json`. Ignore the generated files and the rest of `.golem/` together, or commit the generated files with `.golem/outputs.json` and `.golem/codec-keys.json` ([what to commit](/reference/generated-files#gitignore)). Delete `outDir`, or `declarationDir` when you set one, and the next build writes it again.
 
 ### Compiler arguments
 

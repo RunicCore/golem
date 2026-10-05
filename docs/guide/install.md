@@ -50,19 +50,21 @@ The generators declare the compiler as a peer dependency, so npm installs one co
 
 All four hosts are fully supported on TypeScript 6 and 7. Extra speed work, such as faster transforms in a Vite dev server, comes later and never changes what a host produces.
 
-The plugins and the loader open your project from `golem.yaml`: the `config` option of the plugin, else the `GOLEM_CONFIG` environment variable, else `./golem.yaml`. They read each file themselves, so no index file exists. A call that no host can rewrite fails with its file, its line and what to run, and `golem check` reports the same sites. Run `golem generate` once, or keep `golem watch` running, so your editor sees the generated files ([Generate, watch and check](/guide/watch)).
+The plugins and the loader open your project from `golem.yaml`: the `config` option of the plugin, else the `GOLEM_CONFIG` environment variable, else `./golem.yaml`. They read each file themselves. A call that no host can rewrite fails with its file, its line and what to run, and `golem check` reports the same sites. Run `golem generate` once, or keep `golem watch` running, so your editor sees the generated files ([Generate, watch and check](/guide/watch)).
 
 ```sh
 npm install --save-dev typescript@~7.0.2
 ```
 
-`golem.yaml` names the project the build uses with [`tsconfig`](/reference/config#root-keys), the `tsconfig.json` beside it by default. Ignore the generated files and `.golem/` together, or commit the generated files and `.golem/outputs.json` together. Always ignore `.golem/jobs.json` and `.golem/build/` ([what to commit](/reference/generated-files#gitignore)):
+`golem.yaml` names the project the build uses with [`tsconfig`](/reference/config#root-keys), the `tsconfig.json` beside it by default. Ignore the generated files and `.golem/` together, or commit the generated files with `.golem/outputs.json` and `.golem/codec-keys.json`. Always ignore `.golem/jobs.json` and `.golem/build/` ([what to commit](/reference/generated-files#gitignore)):
 
 ```text
 .golem/
 *.generated.ts
 src/generated/
 ```
+
+A model suffix such as `.entity.mts` makes `.generated.mts` files; add a line for each extension your suffixes use.
 
 A NestJS app needs extra compiler settings ([NestJS setup](/guide/nestjs#set-up-typescript)).
 
