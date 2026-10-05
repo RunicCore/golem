@@ -587,7 +587,7 @@ export function getPreEmitDiagnostics(program: Golem.Program): readonly Golem.Di
   if (!(program instanceof CompatProgram)) throw new TypeError('getPreEmitDiagnostics needs a program opened by the TypeScript 6 backend.');
   return classic.getPreEmitDiagnostics(program.program)
     // Object.create returns `any`; the result is the classic diagnostic with `text` added.
-    .map((diagnostic) => Object.create(diagnostic, { text: { value: headText(diagnostic.messageText), enumerable: true } }) as Golem.Diagnostic & ClassicDiagnostic);
+    .map((diagnostic) => Object.create(diagnostic, { text: { value: headText(diagnostic.messageText), enumerable: true }, fileName: { value: diagnostic.file?.fileName, enumerable: true } }) as Golem.Diagnostic & ClassicDiagnostic);
 }
 
 /** Format diagnostics as `path:line:col - error TS1234: message`, with chained messages indented below, as the TypeScript 7 backend does. */

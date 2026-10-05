@@ -307,6 +307,12 @@ function internJobSchemaGraphs(
   });
 }
 
+/** The diagnostics about the model `sources`, the files named in `outputs`, or the program as a whole. */
+function ownDiagnostics(diagnostics: readonly ts.Diagnostic[], outputs: readonly string[], sources: readonly string[]): readonly ts.Diagnostic[] {
+  const own = new Set([...sources, ...outputs].map(canonicalFilename));
+  return diagnostics.filter((diagnostic) => diagnostic.fileName === undefined || own.has(canonicalFilename(diagnostic.fileName)));
+}
+
 export function generate(context: GolemModelContext): GolemModelResult {
   const normalized = validateContext(context);
   const sources = normalized.sources === undefined
@@ -356,7 +362,7 @@ export function generate(context: GolemModelContext): GolemModelResult {
   );
   const { checker, specifications } = collectSpecifications(program, sources);
   if (specifications.length === 0) {
-    const diagnostics = ts.getPreEmitDiagnostics(programInfo.program);
+    const diagnostics = ownDiagnostics(ts.getPreEmitDiagnostics(programInfo.program), sources.map(generatedFilename), sources);
     if (diagnostics.length > 0) throw new Error(formatDiagnostics(diagnostics, normalized.root));
     throw new Error('No exported IModel<...> type aliases were found.');
   }
@@ -493,7 +499,8 @@ export function generate(context: GolemModelContext): GolemModelResult {
     normalized.onInput,
     ownsCompanion,
   );
-  const diagnostics = ts.getPreEmitDiagnostics(prospective);
+  // The write gate: an error in a model source or in what this job writes. Any other handwritten file is the compiler's to report.
+  const diagnostics = ownDiagnostics(ts.getPreEmitDiagnostics(prospective), artifacts.map((artifact) => artifact.path).concat(sources.map(generatedFilename)), sources);
   if (diagnostics.length > 0) throw new Error(formatDiagnostics(diagnostics, normalized.root));
 
   return {

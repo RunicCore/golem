@@ -229,19 +229,6 @@ test('a job leaves the real companions of other jobs under the same tsconfig alo
   }
 });
 
-test('a handwritten file that no model imports is checked against the artifacts on the first run, whatever the tsconfig lists', (t: TestContext) => {
-  // The tsconfig has compiler options only, so the project is whatever the compiler's defaults find.
-  const { root, sourceRoot } = project(t);
-  fs.writeFileSync(path.join(root, 'tsconfig.json'), JSON.stringify({
-    compilerOptions: { strict: true, target: 'ES2022', module: 'NodeNext', moduleResolution: 'NodeNext', skipLibCheck: true, noEmit: true },
-  }));
-  writeModelSources(sourceRoot, {
-    'item.model.ts': taggedModelSource({ name: 'Item', fields: tsSource`name: string` }),
-    'handwritten.ts': "import { TItemMissingBaseModel } from './item.model.generated.js';\nexport class Sub extends TItemMissingBaseModel {}\n",
-  });
-  assert.throws(() => generate({ root, profile: { mobx: false, validation: true } }), /TItemMissingBaseModel/);
-});
-
 test('a model source outside the job root generates next to an internal one on every run', (t: TestContext) => {
   const workspaceRoot = createFixtureProject(t, 'golem-external-source-');
   linkProjectPackages(workspaceRoot, { '@exprtlabs/golem': path.join(workspace, 'packages/golem') });
@@ -329,4 +316,12 @@ export { wrong };
     () => generate({ root, profile: { mobx: false, validation: false } }),
     /broken\.model\.ts:2:7 - error TS2322: Type 'number' is not assignable to type 'string'\./,
   );
+});
+
+test('a type error in a handwritten file that is not a model source does not stop generation', (t: TestContext) => {
+  const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-generate-unrelated-error-', linkTypescript: true, compilerOptions: { declaration: false } });
+  writeModelSources(sourceRoot, { 'item.model.ts': taggedModelSource({ name: 'Item', fields: tsSource`id: string` }) });
+  fs.writeFileSync(path.join(sourceRoot, 'unrelated.ts'), "export const wrong: string = 5;\nexport const Anonymous = class { private x = 1; };\n");
+  const result = generate({ root, profile: { mobx: false, validation: false } });
+  assert.ok(result.artifacts.some(artifact => artifact.path.endsWith('item.model.generated.ts')), 'the companion is generated; the compiler reports the other file');
 });

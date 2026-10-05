@@ -776,10 +776,12 @@ export function formatDiagnosticsWithColorAndContext(
 }
 
 export function getPreEmitDiagnostics(program: Program): readonly SyncDiagnostic[] {
+  // As the classic compiler: declaration diagnostics belong to a program that emits declarations.
+  const options = program.getCompilerOptions();
   return [
     ...program.getSyntacticDiagnostics(),
     ...program.getSemanticDiagnostics(),
-    ...program.getDeclarationDiagnostics(),
+    ...(options.declaration === true || options.composite === true ? program.getDeclarationDiagnostics() : []),
     ...program.getProgramDiagnostics(),
   ];
 }

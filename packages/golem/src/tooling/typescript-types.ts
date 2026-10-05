@@ -505,6 +505,8 @@ export interface CompilerOptions {
 
 export interface Diagnostic {
   readonly text?: string;
+  /** The file the diagnostic is about; absent for a diagnostic about the program as a whole. */
+  readonly fileName?: string;
 }
 
 export interface ModuleResolutionHost {
