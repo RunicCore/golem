@@ -69,7 +69,7 @@ Golem runs on TypeScript 6 or 7 and Node.js 22.15 or newer ([Installation](/guid
 
 ## One model, start to finish
 
-Declare the fields, run `npx golem generate`, then extend the generated class. Generation rewrites `task.model.generated.ts` and never touches your class.
+Declare the fields, run `npx golem generate`, then extend the generated class. Generation rewrites `task.model.generated.ts`, a file you can leave out of git, and never touches your class.
 
 ::: code-group
 
@@ -101,7 +101,7 @@ The controller returns plain types. The server configuration writes the OpenAPI 
 
 ## Get started
 
-Golem needs Node.js 22.15 or newer and TypeScript 6 or 7. The generator writes the JSON conversion code; `golem build`, the Vite or esbuild plugin, or the Node loader points your `parse` and `toWireFormat` calls at it ([Installation](/guide/install)).
+Golem needs Node.js 22.15 or newer and TypeScript 6 or 7. `golem build` compiles your project the way `tsc -p` does and rewrites `parse<T>()` on the way; `golem generate` writes the generated code your editor and bundler need. The Vite or esbuild plugin, or the Node loader, can rewrite the calls instead ([Installation](/guide/install)).
 
 ```bash
 npm install @exprtlabs/golem@rc ajv ajv-formats

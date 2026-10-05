@@ -15,7 +15,7 @@ npm install @exprtlabs/golem@rc ajv ajv-formats
 npm install --save-dev @exprtlabs/golem-model@rc @exprtlabs/golem-openapi@rc typescript@~7.0.2
 ```
 
-Build with `npx golem build`, the Vite or esbuild plugin, or the Node loader ([TypeScript setup](/guide/install#typescript-setup)). Include both `src/**/*.ts` and the generated `sdk/**/*.ts` in your TypeScript program.
+Build with `npx golem build`, which generates first, the Vite or esbuild plugin, or the Node loader ([TypeScript setup](/guide/install#typescript-setup)). Include both `src/**/*.ts` and the generated `sdk/**/*.ts` in your TypeScript program.
 
 ## Configure both generators
 
@@ -23,7 +23,7 @@ One configuration runs the OpenAPI job first; its `model-manifest.json` lets the
 
 <<< ../../examples/payments/web/golem.yaml
 
-The Payments API's `createPayment` operation takes `money` as a `TMoney`, not the whole editor. The OpenAPI document is generated (`server/api/openapi.yaml`); the controller that produces this operation is:
+The Payments API's `createPayment` operation takes `money` as a `TMoney`, not the whole editor. The OpenAPI document is a generated file (`server/api/openapi.yaml`), so generate the server before the web project; the controller that produces this operation is:
 
 <<< ../../examples/payments/server/src/payments.controller.ts#create-payment
 

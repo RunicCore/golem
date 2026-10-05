@@ -17,7 +17,7 @@ npm install @nestjs/swagger
 
 ## Describe a controller
 
-The generator reads every `*.controller.ts` under `src/`. To choose files yourself, list them under `sources` in the [controller job](/reference/config#controller-jobs). From the controller above it writes:
+The generator reads every `*.controller.ts` under `src/`. Set `suffixes` in the [controller job](/reference/config#controller-jobs) to use other endings, or list files under `sources` to choose them yourself. From the controller above it writes:
 
 - `GET /payment-notes/{id}` with a required string path parameter `id`
 - a JSON response with `id` and `note`
@@ -117,7 +117,9 @@ Add these options to the `tsconfig.json` from [Quick start](/guide/quick-start):
 }
 ```
 
-With a `controllers` job in `golem.yaml`, the rewrite records `@Body()`, `@Query()` and return types for Nest. Every host applies it: [`golem build`](/reference/cli#build), the [loader](/reference/runtime-api#loader) and the [Vite](/reference/runtime-api#vite) and [esbuild](/reference/runtime-api#esbuild) plugins. Run `npx golem generate` first, then build with `npx golem build`.
+With a `controllers` job in `golem.yaml`, the rewrite records `@Body()`, `@Query()` and return types for Nest. Every host applies it: [`golem build`](/reference/cli#build), the [loader](/reference/runtime-api#loader) and the [Vite](/reference/runtime-api#vite) and [esbuild](/reference/runtime-api#esbuild) plugins. `npx golem build` generates first and then compiles.
+
+Node's type stripping rejects the parameter decorators of a NestJS controller. To run the app through the Node loader, register a loader that compiles decorators after golem's: `node --import @exprtlabs/golem/register --import ./decorators.mjs src/main.ts`. Its `load` hook calls `nextLoad` to get the file as golem rewrote it, then compiles the decorators ([loader](/reference/runtime-api#register)).
 
 Import `reflect-metadata` first in the application entry file, before any application module import. TypeScript erases the types of `@Body()`, `@Query()` and return values, so the rewrite records them for `NestModelInterceptor`, which converts and validates requests and responses.
 

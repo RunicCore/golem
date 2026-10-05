@@ -1,6 +1,6 @@
 # Generated files
 
-Know which generated paths and names you can import and commit, and which may change.
+Know which generated paths and names you can import, which to commit, and which may change.
 
 ## Public paths
 
@@ -15,14 +15,33 @@ Know which generated paths and names you can import and commit, and which may ch
 
 The SDK folder is the `sdk` output you configure. Import only from the paths above.
 
-## Files you don't commit
+## What to commit {#gitignore}
 
-| Path | What it holds |
-| --- | --- |
-| `.golem/rewrites.json` | Where each generic serde call sits in your sources. `golem generate`, `golem watch` and `golem build` write it; the Vite and esbuild plugins and the Node loader read it ([TypeScript setup](/guide/install#typescript-setup)). |
-| `.golem/build/` | The incremental state and the staged copy of your sources that `golem build` keeps per tsconfig. |
+Whether to commit generated files is your choice. Golem works with every generated file ignored: `golem build` generates first, so a fresh clone builds with one command. Your editor needs one `golem generate`, or a running `golem watch`, to see the generated files.
 
-Add both to `.gitignore`. Run `golem generate` in CI before a bundler build, which creates the index.
+Golem writes these generated files:
+
+- `<name>.model.generated.ts` beside each model file, and the shared files under `models.output` (default `src/generated/models/`)
+- the SDK folders, the OpenAPI document of a `controllers` job, and the files of a `generators` job
+- `.golem/outputs.json`, the list of files that golem owns
+
+Choose one of these:
+
+- **Ignore them.** Put the generated files and `.golem/` in `.gitignore` together, so a clone has neither. Run `golem generate` or `golem build` in CI.
+- **Commit them.** Commit the generated files and `.golem/outputs.json` together. Without the list, `golem check` reports each committed generated file as unrecorded, and golem cannot delete a file it no longer generates. Run `golem check` in CI to catch a stale file.
+
+Always ignore `.golem/jobs.json` and `.golem/build/`. The first keeps what each job read the last time it ran, so a build with no change runs no job. The second holds the incremental state and the staged copy of your sources that `golem build` keeps per tsconfig. Both belong to your machine.
+
+An example `.gitignore` for the first choice:
+
+```text
+.golem/
+*.generated.ts
+src/generated/
+sdk/
+```
+
+List every other generated path by name: the OpenAPI document that a `controllers` job writes, and the files of a `generators` job. A tool that imports such a file needs it generated first, so run `golem generate` before it.
 
 ## Default locations
 
@@ -52,7 +71,7 @@ Every other file in an SDK is internal and may change in a minor release. Do not
 
 In the model output (`src/generated/models/` by default), every file is internal: `models.generated.ts`, `models.validators.generated.js` and `.d.ts` with `ajvStandalone: true`, and `models.generated.NOTICES.txt`. Each `<name>.model.generated.ts` is public for the models its source declares: `<Alias>BaseModel` for an `IModel`, the `<Alias>Fields`, `<Alias>JSON` and `<Alias>Init` types, and `parse<Alias>`, `stringify<Alias>`, `validate<Alias>`, `assert<Alias>`, `toWireFormat<Alias>` and `fromWireFormat<Alias>` functions. `<Alias>` is the exact type alias: `type TPayment = IModel<…>` gives `TPaymentBaseModel` and `parseTPayment`, `type Payment = IModel<…>` gives `PaymentBaseModel`, and `type TPermissionModel = IModel<…>` gives `TPermissionModelBaseModel`. A class links to its model through `extends <Alias>BaseModel` and can have any name; a file can't export two classes that extend the same generated class directly. Codecs of [derived types](#derived-type-names) and exports that start with `__golem` are internal.
 
-The models job also writes `.golem/codec-keys.json` beside `.golem/outputs.json`. It maps each model and class to its codec id for `golem build`, the loader and the bundler plugins. An SDK holds its ids in `model-manifest.json`. Commit or ignore `.golem/codec-keys.json` with the generated files.
+The models job also writes `.golem/codec-keys.json`, in the directory of `golem.yaml`. It lists the generated codec each model and class uses, for `golem build`, the loader and the bundler plugins. An SDK lists the same in the `codecId` of each entry in `models[]` of its `model-manifest.json`. An SDK made by an older version holds an `iobject-plugin-keys.ts` table instead, and golem still reads it. Commit or ignore `.golem/codec-keys.json` with the other generated files.
 
 The generator no longer writes `validation.ts`, `client-runtime.ts` or `models.ts`. Their code lives in `@exprtlabs/golem`.
 

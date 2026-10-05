@@ -14,9 +14,13 @@ npm install @exprtlabs/golem@rc ajv ajv-formats
 ```
 
 `parse<T>`, `stringify<T>`, `fromWireFormat<T>` and `toWireFormat<T>` need a
-build that rewrites them: `golem build`, the `@exprtlabs/golem/vite` or
+host that rewrites them: `golem build`, the `@exprtlabs/golem/vite` or
 `@exprtlabs/golem/esbuild` plugin, or the Node loader
-(`node --import @exprtlabs/golem/register`). They work on TypeScript 6 and 7
+(`node --import @exprtlabs/golem/register`). `golem build` compiles your
+project the way `tsc -p` does and rewrites the calls on the way; it generates
+first. The plugins and the loader open your project from `golem.yaml` (the
+`config` option or `GOLEM_CONFIG`, else `./golem.yaml`) and scan each file
+themselves. All of them work on TypeScript 6 and 7
 ([installation](../../docs/guide/install.md)).
 
 [Runtime API](../../docs/reference/runtime-api.md) lists every subpath, its

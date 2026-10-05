@@ -1,8 +1,10 @@
 # @exprtlabs/golem-model
 
 Generate model bases from TypeScript `IModel` definitions. Keep methods and
-defaults in your handwritten class; the generated companion supplies fields,
-conversion metadata and optional validation or MobX support.
+defaults in your handwritten class; the generated base supplies fields,
+conversion metadata and optional validation or MobX support. Generated files
+need not be committed: `golem build` generates first
+([what to commit](../../docs/reference/generated-files.md#gitignore)).
 
 ## Install
 

@@ -15,8 +15,8 @@ The example depends on `1.0.0-rc` of `@exprtlabs/golem*`, which is not published
 ## Install and run
 
 ```sh
-npm run generate   # write the generated model classes
-npm test           # offline: one case per feature
+npm run generate   # write the generated model classes, for your editor
+npm test           # offline: one case per feature; golem build generates first
 npm start          # the walkthrough below
 ```
 
@@ -53,4 +53,4 @@ blank title: Enter a title.
 
 ## Edit and regenerate
 
-Change a model, then run `npm run generate`. The `*.model.generated.ts` files and `src/generated/` are replaced; `.golem/outputs.json` records them, and `npm test` checks that they are current.
+Change a model, then run `npm run generate`. The `*.model.generated.ts` files and `src/generated/` are replaced. They are not committed: `.gitignore` lists them with `.golem/`, and `npm run check` generates them before it type-checks.

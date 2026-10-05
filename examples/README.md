@@ -1,7 +1,7 @@
 # Golem examples
 
-Two complete TypeScript projects, each with its source contract, configuration,
-generated files and a runnable entrypoint. Browse them in the
+Two complete TypeScript projects, each with its source contract, configuration
+and a runnable entrypoint. Neither commits its generated files. Browse them in the
 [Golem repository](https://github.com/RunicCore/golem). The documentation pages
 explain the examples and show source regions from these maintained files.
 
@@ -24,8 +24,8 @@ published yet. Run them from this repository checkout: run `npm install` once at
 the repository root, then in the example directory:
 
 ```sh
-npm run generate   # write the generated files
-npm test           # offline
+npm run generate   # write the generated files, for your editor
+npm test           # offline; golem build generates first
 ```
 
 - `models`: `npm start` prints a walkthrough, one line per feature. It needs no
@@ -35,7 +35,7 @@ npm test           # offline
   provider on 3001 and the editor at `http://127.0.0.1:5173`. `API_PORT` sets
   the API port.
 
-Files under `sdk/` and the `*.model.generated.ts` files are generated output.
+Files under `sdk/`, the `*.model.generated.ts` files, `src/generated/` and `.golem/` are generated output, and each example's `.gitignore` lists them.
 Edit the authored contract or handwritten source, then run `npm run generate`.
 See [Installation](../docs/guide/install.md) for the `@rc` tag and profiles.
 

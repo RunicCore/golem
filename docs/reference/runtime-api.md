@@ -18,7 +18,7 @@ Find every `@exprtlabs/golem` import your application, NestJS app or tool can us
 | [`nest`](#nest) | `NestModelInterceptor` and the decorators the rewrite inserts | `@nestjs/common`, `rxjs` |
 | [`generator-api`](#generator-api) | Contracts shared by the generators | none |
 | [`manifest`](#manifest) | Read and find `model-manifest.json` files | none |
-| [`rewrite`](#rewrite) | Read the rewrite index and apply it to one file, for a custom build host | none |
+| [`rewrite`](#rewrite) | Apply a file's rewrite edits to its text and get its source map | none |
 | [`loader`](#loader) | Node `load` hook that rewrites TypeScript as Node loads it | none |
 | [`register`](#register) | `node --import` entry that installs the loader | none |
 | [`vite`](#vite) | Vite plugin that rewrites TypeScript before Vite strips its types | `vite` |
@@ -411,10 +411,10 @@ For inbound conversion in your own interceptor or pipe, get the codec with `obje
 ## `@exprtlabs/golem/rewrite` {#rewrite}
 
 ```ts
-import { applyRewrites, readRewriteIndex } from '@exprtlabs/golem/rewrite';
+import { applyRewrites } from '@exprtlabs/golem/rewrite';
 ```
 
-`golem generate`, `golem watch` and `golem build` write `.golem/rewrites.json`, the index of where each generic serde call sits in your sources. Every host reads it and edits a file's text before its types are stripped. The edits are:
+Every host scans each TypeScript file it compiles or loads with your project's own TypeScript, and edits the file's text before its types are stripped. No index file holds the edits. The edits are:
 
 | Call | Becomes |
 | --- | --- |
@@ -425,17 +425,16 @@ import { applyRewrites, readRewriteIndex } from '@exprtlabs/golem/rewrite';
 | `toWireFormat<T>(value)` | the generated `toWireFormat` for `T` |
 | `fromWireFormat<T>(wire)` | the generated `fromWireFormat` for `T`, constructing your class when `T` is a class |
 
-Generation fails when `T` is not a single type name or `typeof` expression, or has no generated code. With a `controllers` job in `golem.yaml`, the rewrite also inserts [`nestModelCodec`](#nest) on `@Body()` and `@Query()` parameters and `nestModelReturn` on handlers that return a model. Nest also needs `experimentalDecorators` and `emitDecoratorMetadata` ([Set up TypeScript](/guide/nestjs#set-up-typescript)).
+A host fails with the file, the line and what to run when `T` is not a single type name or `typeof` expression, or has no generated code. `golem check` reports the same sites. With a `controllers` job in `golem.yaml`, the rewrite also inserts [`nestModelCodec`](#nest) on `@Body()` and `@Query()` parameters and `nestModelReturn` on handlers that return a model. Nest also needs `experimentalDecorators` and `emitDecoratorMetadata` ([Set up TypeScript](/guide/nestjs#set-up-typescript)).
 
-Import this subpath to write a host for another build tool; `golem build`, [`loader`](#loader), [`vite`](#vite) and [`esbuild`](#esbuild) already cover the common ones.
+`golem build`, [`loader`](#loader), [`vite`](#vite) and [`esbuild`](#esbuild) use this subpath to apply their edits.
 
 | Member | Signature | Behavior |
 | --- | --- | --- |
-| `readRewriteIndex` | `(root: string): RewriteIndex \| undefined` | Reads `<root>/.golem/rewrites.json`; `undefined` when the file is absent. Throws `GolemRewriteMalformedIndexError` when it is not an index. |
-| `applyRewrites` | `(file: string, text: string, index: RewriteIndex)` | The rewritten `code` and its source `map` for a file the index lists, or `undefined` for any other file. `file` is its path from the index's root with `/` separators. Throws `GolemRewriteStaleError` when the text changed, or another golem version wrote the index, since `golem generate`. |
-| `REWRITE_INDEX_PATH` | `'.golem/rewrites.json'` | The index path under the project root. |
+| `applyRewrites` | `(text: string, rewrite: FileRewrite, file?: string): { code: string; map: SourceMapV3 }` | Applies the edits and the imports they need to the file's `text`, and returns the new `code` with its source `map`. Offsets are UTF-16 units of the text without a leading byte order mark, which the output keeps. The map has one source, named `''`; set `sources` on it when you know the file name. Throws an error that names `file` and the line when an edit is out of range, overlaps another edit, or no longer matches the text it expects. |
+| `REWRITE_IMPORT_PREFIX` | `'__golem_'` | The prefix of the names that the rewrite imports. Each name is imported as `__golem_<name>`, so edit text cannot clash with an import of your file. |
 
-Types: `RewriteIndex`, `RewriteFile`, `RewriteEdit`, `RewriteImport`.
+Types: `FileRewrite` (`{ edits, imports }`), `RewriteEdit` (`{ start, end, expect, text }`) and `RewriteImport` (`{ from, names }`).
 
 ## `@exprtlabs/golem/loader` {#loader}
 
@@ -447,14 +446,15 @@ A Node `load` hook that rewrites TypeScript files as Node loads them. Install it
 node --import @exprtlabs/golem/register src/main.ts
 ```
 
-Every later import of the process goes through the loader. Run `golem generate` first.
+Every later import of the process goes through the loader. The loader needs a `golem.yaml`: it opens your project from the file that `GOLEM_CONFIG` names, else `./golem.yaml` in the working directory. With neither, a TypeScript file outside `node_modules` fails to load with a message that says so. It scans each file itself, so no `golem generate` run refreshes anything for it; run `golem generate` once so the generated files exist.
 
 - Node before 22.18 needs `--experimental-strip-types` as well: Node strips the types after the loader rewrites the file. Node 22.18 and later, including Node 24, strip types by default.
-- The loader uses the nearest `.golem/rewrites.json` above each file. A TypeScript file outside `node_modules` with no index fails instead of loading unrewritten.
-- A workspace package symlinked into `node_modules` loads from its real path, so it needs its own index: give it its own `golem.yaml` and run `golem generate` there.
-- Rewrites need ES modules. A listed `.cts` file, or a listed `.ts` file under a CommonJS `package.json`, fails with a message that names the file. Use `.mts`, `"type": "module"`, or `golem build`.
+- A call that cannot be rewritten fails the load with the file and the line.
+- A workspace package symlinked into `node_modules` loads from its real path. Its calls are rewritten when that path lies under the directory of your tsconfig. A call in a package outside that directory fails the load with the file and line; give that package its own `golem.yaml` and build it there. With `preserveSymlinks` in TypeScript or in your bundler, the package keeps its `node_modules` path, so the host skips it, and the call fails at run time with `parse<T> was not rewritten`.
+- Rewrites need ES modules. A `.cts` file, or a `.ts` file under a CommonJS `package.json`, that holds a call to rewrite fails with a message that names the file. Use `.mts`, `"type": "module"`, or `golem build`.
 - `.tsx` is not supported: Node cannot strip it.
 - Only `.ts`, `.mts` and `.cts` files are rewritten.
+- A NestJS app needs a second loader. Node's type stripping rejects parameter decorators, so a loader that compiles decorators must run after golem's: register it later, as in `node --import @exprtlabs/golem/register --import ./decorators.mjs src/main.ts`. Its `load` hook calls `nextLoad` to get the file as golem rewrote it, then compiles the decorators.
 
 ## `@exprtlabs/golem/vite` {#vite}
 
@@ -465,13 +465,17 @@ import { defineConfig } from 'vite';
 export default defineConfig({ plugins: [golem()] });
 ```
 
-The plugin rewrites TypeScript in memory before Vite strips its types, in the dev server and in builds. Run `golem generate`, or keep `golem watch` running, first.
+The plugin rewrites TypeScript in memory before Vite strips its types, in the dev server and in builds.
+
+| Option | Type | Behavior |
+| --- | --- | --- |
+| `config` | `string` | The `golem.yaml` to open, relative to Vite's `root`. Without it the plugin uses `GOLEM_CONFIG`, else `./golem.yaml` in `root`. |
 
 - Put `golem()` before plugins that transform TypeScript. It runs first (`enforce: 'pre'`) and must see the file text as it is on disk.
+- Without a `golem.yaml`, a TypeScript file outside `node_modules` fails the build. A call that cannot be rewritten fails with the file and the line; if its model has no generated code, run `golem generate`. An id with a query, such as `?raw`, passes through.
 - Vite does not strip `.cts` files.
-- A TypeScript file outside `node_modules` with no index fails the build, and so does a file that changed after `golem generate`. An id with a query, such as `?raw`, passes through.
-- The dev server watches the index and transforms again the modules whose entry changed.
-- `golem({ root })` names the directory that holds `.golem/rewrites.json`, relative to Vite's `root`. Without it each file uses the nearest index above it.
+- The dev server watches the files each rewrite depends on, and a build adds them to its watch set. When one changes, or a generated model file of the project does, the plugin scans again and transforms only the modules whose rewrite came out different.
+- A workspace package symlinked into `node_modules` follows the rule of the [loader](#register), including the `preserveSymlinks` limit.
 
 ## `@exprtlabs/golem/esbuild` {#esbuild}
 
@@ -482,12 +486,16 @@ import { build } from 'esbuild';
 await build({ entryPoints: ['src/main.ts'], bundle: true, outfile: 'dist/main.js', plugins: [golem()] });
 ```
 
-The plugin rewrites TypeScript in memory before esbuild strips its types and chains the source map into the bundle's. Run `golem generate`, or keep `golem watch` running, first.
+The plugin rewrites TypeScript in memory before esbuild strips its types and chains the source map into the bundle's.
 
-- Its `onLoad` takes the TypeScript files the index lists, so a plugin that needs those files must come before `golem()` in `plugins`.
-- A TypeScript file outside `node_modules` with no index fails the build with an error located at the file, and so does a file that changed after `golem generate`.
-- The index is a watched file, so esbuild's watch mode builds again when it changes or appears.
-- `golem({ root })` names the directory that holds `.golem/rewrites.json`, relative to `absWorkingDir`. Without it each file uses the nearest index above it.
+| Option | Type | Behavior |
+| --- | --- | --- |
+| `config` | `string` | The `golem.yaml` to open, relative to `absWorkingDir` (default: the current directory). Without it the plugin uses `GOLEM_CONFIG`, else `./golem.yaml` in `absWorkingDir`. |
+
+- Its `onLoad` takes every TypeScript file outside `node_modules`, so a plugin that needs those files must come before `golem()` in `plugins`. A file with no rewrite goes on to the plugins after it.
+- Without a `golem.yaml`, a TypeScript file outside `node_modules` fails the build with an error located at the file. A call that cannot be rewritten does the same, with the line.
+- The files a rewrite depends on are watched, so esbuild's watch mode builds again when one changes. A failed file watches the key tables that `golem generate` writes, so the build runs again when they appear.
+- A workspace package symlinked into `node_modules` follows the rule of the [loader](#register), including the `preserveSymlinks` limit.
 
 ## `@exprtlabs/golem/generator-api` {#generator-api}
 

@@ -40,23 +40,28 @@ The generators declare the compiler as a peer dependency, so npm installs one co
 
 ## TypeScript setup
 
-`parse<T>`, `stringify<T>`, `fromWireFormat<T>` and `toWireFormat<T>` are rewritten at build time to call the generated conversion. `tsc` doesn't do that, so an untransformed call throws at runtime. Build with one of these; each reads `.golem/rewrites.json`, which `golem generate` and `golem watch` write and `golem build` refreshes itself:
+`golem build` compiles your project the way `tsc -p` does and rewrites `parse<T>()` on the way. `golem generate` writes the generated code that your editor and bundler need.
 
-- [`golem build`](/reference/cli#build) checks your sources and emits JavaScript with the calls rewritten. It replaces `tsc -p`.
+`parse<T>`, `stringify<T>`, `fromWireFormat<T>` and `toWireFormat<T>` are rewritten at build time to call the generated conversion. `tsc` doesn't do that, so an untransformed call throws at runtime. Build with one of these hosts:
+
+- [`golem build`](/reference/cli#build) generates first, checks your sources and emits JavaScript with the calls rewritten. It replaces `tsc -p`, and a fresh clone builds with this one command.
 - The [Vite](/reference/runtime-api#vite) and [esbuild](/reference/runtime-api#esbuild) plugins rewrite the calls inside your bundler.
 - The [Node loader](/reference/runtime-api#loader), `node --import @exprtlabs/golem/register`, rewrites them as Node loads TypeScript files.
 
-All of them work on TypeScript 6 and 7. Run `golem generate`, or keep `golem watch` running, before a bundler build and in CI, so the index exists and matches your sources.
+All four hosts are fully supported on TypeScript 6 and 7. Extra speed work, such as faster transforms in a Vite dev server, comes later and never changes what a host produces.
+
+The plugins and the loader open your project from `golem.yaml`: the `config` option of the plugin, else the `GOLEM_CONFIG` environment variable, else `./golem.yaml`. They read each file themselves, so no index file exists. A call that no host can rewrite fails with its file, its line and what to run, and `golem check` reports the same sites. Run `golem generate` once, or keep `golem watch` running, so your editor sees the generated files ([Generate, watch and check](/guide/watch)).
 
 ```sh
 npm install --save-dev typescript@~7.0.2
 ```
 
-`golem.yaml` names the project the build uses with [`tsconfig`](/reference/config#root-keys), the `tsconfig.json` beside it by default. Add the generated state to `.gitignore`:
+`golem.yaml` names the project the build uses with [`tsconfig`](/reference/config#root-keys), the `tsconfig.json` beside it by default. Ignore the generated files and `.golem/` together, or commit the generated files and `.golem/outputs.json` together. Always ignore `.golem/jobs.json` and `.golem/build/` ([what to commit](/reference/generated-files#gitignore)):
 
 ```text
-.golem/rewrites.json
-.golem/build/
+.golem/
+*.generated.ts
+src/generated/
 ```
 
 A NestJS app needs extra compiler settings ([NestJS setup](/guide/nestjs#set-up-typescript)).

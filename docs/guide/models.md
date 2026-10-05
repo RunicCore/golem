@@ -30,7 +30,7 @@ Both declare fields. `IObject` stops there: values stay plain objects, and you c
 
 ## Declare fields
 
-Put declarations in `src/**/*.model.ts` or `src/**/*.models.ts`. Generation writes the generated file `task.model.generated.ts` beside each declaration file, with these exports:
+Put declarations in `src/**/*.model.ts` or `src/**/*.models.ts`. Set [`models.suffixes`](/reference/config#typescript-models) to use other endings, such as `.entity.ts`, and `models.sources` to name files directly. Generation writes the generated file `task.model.generated.ts` beside each declaration file, with these exports:
 
 | Export | What it is |
 | --- | --- |
@@ -43,7 +43,7 @@ Each name is the exact type alias plus a suffix: nothing is dropped from the ali
 
 Your class links to its model through `extends <Alias>BaseModel`, so it can have any name: `class PurchaseOrder extends TOrderBaseModel`. A file can export several classes that extend the generated class directly: each links to the model, and `parse<AdminPayment>` builds an `AdminPayment`. With one class, the model uses it as its default class. With several, the model has no default class, so decoding builds the generated class unless the type names one. A class that extends another linked class does not link.
 
-Don't edit the generated file; generation replaces it.
+The generated file puts `.generated` before the final extension of its source: `order.entity.ts` gets `order.entity.generated.ts`, and `order.entity.mts` gets `order.entity.generated.mts`. Don't edit the generated file; generation replaces it.
 
 ## Add behavior
 
@@ -101,6 +101,6 @@ After you change a declaration, generate again:
 npx golem generate
 ```
 
-Generation type-checks the whole project first and stops at the first TypeScript error, reported as `file:line:column`. It then replaces every `*.model.generated.ts` file and the shared files under `models.output` (default `src/generated/models/`); your classes don't change. Commit `.golem/outputs.json` with the generated files, and run `npx golem check` in CI ([Generate, watch and check](/guide/watch)).
+Generation type-checks the project first. It stops on a TypeScript error in a model source or in a file the job writes, reported as `file:line:column`. A type error in any other file does not stop generation; `tsc` and `golem build` report it. Generation then replaces every `*.model.generated.ts` file and the shared files under `models.output` (default `src/generated/models/`); your classes don't change. `golem build` generates first, so a build needs no separate `golem generate`. Run `npx golem check` in CI when you commit the generated files; otherwise run `golem build` ([Generate, watch and check](/guide/watch), [what to commit](/reference/generated-files#gitignore)).
 
 Full example: [`examples/models`](https://github.com/RunicCore/golem/tree/master/examples/models)

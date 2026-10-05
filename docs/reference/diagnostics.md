@@ -302,7 +302,7 @@ An error prints its code, location when known, and message, then stops generatio
 
 ### RUNM1066
 
-**Serde type argument is not a type name.** A call to `stringify`, `parse`, `validate`, `assertValue`, `toWireFormat` or `fromWireFormat` has a type argument that is not a single type name or `typeof` expression, such as `parse<TPayment | null>(text)`, `parse<Array<TPayment>>(text)` or `parse<TPayment, TMoney>(text)`. The message names the function and the position of the call. **Fix:** Pass one model type alias, one model class, or `typeof` an exported codec, and declare a named model for a union or generic.
+**Serde type argument is not a type name.** A call to `stringify`, `parse`, `validate`, `assertValue`, `toWireFormat` or `fromWireFormat` has a type argument that is not a single type name or `typeof` expression, such as `parse<TPayment | null>(text)`, `parse<Array<TPayment>>(text)` or `parse<TPayment, TMoney>(text)`. The message names the function and the position of the call, and `golem check` and every host report it. **Fix:** Pass one model type alias, one model class, or `typeof` an exported codec, and declare a named model for a union or generic.
 
 ### RUNM1067
 
@@ -318,7 +318,7 @@ An error prints its code, location when known, and message, then stops generatio
 
 ### RUNM1070
 
-**Rewrite site outside the project root.** A file that the TypeScript project includes but that lies outside the directory of its tsconfig holds a serde call with a type argument, or a class that extends a generated model base class. The index in `.golem/rewrites.json` is keyed by files under that directory, so golem can't rewrite it. The message names the file. **Fix:** Move the file under the tsconfig's directory, or point `tsconfig` in `golem.yaml` at a tsconfig whose directory contains it.
+**Rewrite site outside the project root.** A file that the TypeScript project includes but that lies outside the directory of its tsconfig holds a serde call with a type argument, or a class that extends a generated model base class. A rewrite names its file by a path from that directory, so no host can rewrite it. `golem check` and every host report it; the message names the file and the line. **Fix:** Move the file under the tsconfig's directory, or point `tsconfig` in `golem.yaml` at a tsconfig whose directory contains it.
 
 ### RUNM1071
 

@@ -5,7 +5,7 @@ inside the file resolve from its directory; the `--config` value resolves
 from the current directory.
 
 - `version: 1` selects the configuration format and is independent of the package release.
-- `tsconfig` names the TypeScript project that `golem generate` indexes and `golem build` builds.
+- `tsconfig` names the TypeScript project that `golem generate` reads and `golem build` builds. The Vite and esbuild plugins and the Node loader open the same project from `golem.yaml`: the `config` option of the plugin, else `GOLEM_CONFIG`, else `./golem.yaml`.
 - `mobx`, `validation`, `ajvStandalone`, and `allowAny` apply to every job. A named `IObject` or `IModel` can still set `validation` and `allowAny` for that declaration.
 - Unknown keys are errors.
 - Configure at least one `generators`, `controllers`, `openapi` or `models` job.
@@ -19,7 +19,7 @@ It records what it writes in an [inventory](/guide/watch#generated-files-and-the
 | Key | Type | Required | Default | Meaning |
 | --- | --- | --- | --- | --- |
 | `version` | literal `1` | Yes | — | Configuration format version. |
-| `tsconfig` | path | No | `tsconfig.json` | The project's tsconfig, relative to `golem.yaml`. Its directory holds `.golem/rewrites.json`, and the file must exist when you set the key. One tsconfig belongs to one `golem.yaml`: the `root` of a `models` or `controllers` job must lie inside its directory, and each job must find that same file as the nearest `tsconfig.json` from its `root` upward. A `tsconfig` that names another file is not supported yet. |
+| `tsconfig` | path | No | `tsconfig.json` | The project's tsconfig, relative to `golem.yaml`. The file must exist when you set the key. One tsconfig belongs to one `golem.yaml`: the `root` of a `models` or `controllers` job must lie inside its directory, and each job must find that same file as the nearest `tsconfig.json` from its `root` upward. A `tsconfig` that names another file is not supported yet. |
 | `mobx` | boolean | No | `false` | Generate MobX observability hooks. |
 | `validation` | boolean | No | `true` | Generate runtime validation metadata and checks. Named `IObject` / `IModel` `{ validation: true or false }` overrides this per declaration. |
 | `ajvStandalone` | boolean | No | `false` | Precompile model, object-codec and SDK validators during generation. Requires `validation: true`. |

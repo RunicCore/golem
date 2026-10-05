@@ -13,7 +13,7 @@ npm install @exprtlabs/golem@rc ajv ajv-formats
 npm install --save-dev @exprtlabs/golem-openapi@rc typescript@~7.0.2
 ```
 
-Requests and responses are validated by default; `ajv` and `ajv-formats` supply the validators. Build with `npx golem build`, the Vite or esbuild plugin, or the Node loader ([TypeScript setup](/guide/install#typescript-setup)). Include the generated `sdk/` directory in the TypeScript program that builds your app. For precompiled validators, set [`ajvStandalone`](/reference/config#validation-profiles).
+Requests and responses are validated by default; `ajv` and `ajv-formats` supply the validators. Build with `npx golem build`, which generates first, the Vite or esbuild plugin, or the Node loader ([TypeScript setup](/guide/install#typescript-setup)). Include the generated `sdk/` directory in the TypeScript program that builds your app, and ignore it in git with the other generated files ([what to commit](/reference/generated-files#gitignore)). For precompiled validators, set [`ajvStandalone`](/reference/config#validation-profiles).
 
 ## Point to your OpenAPI document
 

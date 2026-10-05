@@ -37,13 +37,13 @@ Then mark a type with `IModel` in `src/task.model.ts`; `TSerde` ties `priority` 
 
 <<< ../../examples/models/src/task.model.ts#task-declaration
 
-The generator reads `src/**/*.model.ts` and `src/**/*.models.ts`; [`models.sources`](/reference/config#typescript-models) changes that.
+The generator reads `src/**/*.model.ts` and `src/**/*.models.ts`; [`models.suffixes`](/reference/config#typescript-models) changes the endings and `models.sources` names the files.
 
 An `IObject` gives plain objects with the same validation and conversion; an `IModel` also gives you a class ([IObject or IModel](/guide/models#iobject-or-imodel)).
 
 ## Generate the base
 
-Add `golem.yaml` at the project root and run the generator. `golem build` starts from this file and builds the `tsconfig.json` beside it:
+Add `golem.yaml` at the project root and run the generator. `golem build` starts from this file and builds the `tsconfig.json` beside it. `golem generate` writes the generated code your editor needs; `golem build` generates first on its own:
 
 <<< ../../examples/models/golem.yaml
 
@@ -55,7 +55,13 @@ npx golem generate
 Generated configured outputs.
 ```
 
-You get `src/task.model.generated.ts` beside the declaration, with the generated class `TTaskBaseModel` and the `TTaskFields` type. Shared files go to `models.output` (default `src/generated/models/`). Generation also writes `.golem/rewrites.json`, which `golem build` reads; add it and `.golem/build/` to `.gitignore`.
+You get `src/task.model.generated.ts` beside the declaration, with the generated class `TTaskBaseModel` and the `TTaskFields` type. Shared files go to `models.output` (default `src/generated/models/`). Golem also keeps its state in `.golem/`. Add the generated files and `.golem/` to `.gitignore`, or commit the generated files and `.golem/outputs.json` together ([what to commit](/reference/generated-files#gitignore)):
+
+```text
+.golem/
+*.generated.ts
+src/generated/
+```
 
 ## Add methods
 
@@ -84,6 +90,6 @@ npx golem build && node .build/src/main.js
 []
 ```
 
-`golem build` checks your sources, then writes JavaScript with `parse` and `stringify` calls rewritten into `.build/`. A bundler plugin or the Node loader can rewrite the calls instead ([TypeScript setup](/guide/install#typescript-setup)).
+`golem build` generates first, checks your sources, then writes JavaScript with `parse` and `stringify` calls rewritten into `.build/`. A bundler plugin or the Node loader can rewrite the calls instead ([TypeScript setup](/guide/install#typescript-setup)).
 
 Your `main.ts` holds only the code above, so this is all it prints. The full example's `main.ts` continues with one line per feature; `npm start` in [`examples/models`](https://github.com/RunicCore/golem/tree/master/examples/models) prints them all.

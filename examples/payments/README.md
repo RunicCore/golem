@@ -17,7 +17,7 @@ The example depends on `1.0.0-rc` of `@exprtlabs/golem*`, which is not published
 
 ```sh
 npm install
-npm run generate   # server configuration first, then the web configuration
+npm run generate   # server configuration first, then the web configuration, for your editor
 npm test           # offline: mocked fetch and an in-process Nest app
 npm run demo       # starts the API on a free port and submits one payment
 npm run dev        # API :3000, stand-in provider :3001, editor http://127.0.0.1:5173
@@ -28,6 +28,8 @@ npm run dev        # API :3000, stand-in provider :3001, editor http://127.0.0.1
 ```text
 Payment 1: USD 12.50, charge charge-1 is pending
 ```
+
+`npm test`, `npm start`, `npm run demo` and `npm run dev` build with `golem build`, which generates first; nothing generated is committed.
 
 `dev/provider.ts` is a local stand-in for the third-party provider (token `dev-token`). Only `npm run dev` starts it; tests mock `fetch`.
 
@@ -48,4 +50,4 @@ Payment 1: USD 12.50, charge charge-1 is pending
 
 ## Edit and regenerate
 
-Change a model or controller, then run `npm run generate`. The web configuration reads `server/api/openapi.yaml`, so the server configuration runs first.
+Change a model or controller, then run `npm run generate`. The web configuration reads `server/api/openapi.yaml`, which the server configuration generates, so the server runs first. `.gitignore` lists the generated files by path: the SDK folders, the OpenAPI document and `server/src/events/payment-events.model.ts`.

@@ -6,6 +6,8 @@ runs the configured generators, and writes their artifacts to the configured
 destinations. The inventory (`.golem/outputs.json`) records which
 generated files each job produced.
 
+`golem build` compiles your project the way `tsc -p` does and rewrites `parse<T>()` on the way. `golem generate` writes the generated code that your editor and your bundler need. It does not scan or rewrite your calls.
+
 A job replaces a file at one of its output paths only when the inventory
 records it or the file starts with that generator's marker comment. Any other
 file there stops `generate` and `check` with an error naming it; remove or
@@ -27,8 +29,8 @@ Commands that need TypeScript use the one installed in the directory of the tsco
 
 | Command | What it does |
 | --- | --- |
-| `generate` | Writes all outputs and the inventory. |
-| `check` | Generates the expected artifact set in memory and fails when files are missing, stale, conflicting or obsolete inventoried outputs remain. It does not write files. |
+| `generate` | Writes all outputs and the inventory. A job whose inputs and options did not change since its last run, and whose outputs exist, is skipped. |
+| `check` | Generates the expected artifact set in memory and fails when files are missing, stale, conflicting or obsolete inventoried outputs remain. It also reports every `parse<T>()` call that no host can rewrite, with its file, its line and what to run, and checks that the Nest codecs agree with the generated registry. It does not write files. |
 | `watch` | Generates once, then reruns affected jobs when observed configuration, API, model, TypeScript or manifest inputs change. |
 | `exec -- <command> [args...]` | Generates once, starts the child command only after generation succeeds, and forwards its exit status and signals. |
 | `exec --watch -- <command> [args...]` | Does the same and keeps the generator watching until the child exits. |
@@ -41,7 +43,7 @@ valid only with `exec`; unknown options fail before generation starts.
 
 ## Build
 
-`golem build` compiles your project the way `tsc -p` does and rewrites the generic serde calls (`parse<T>()`, `stringify<T>()` and the others) on the way. It generates the code `golem.yaml` configures first, so a checkout with no generated files builds in one command. A bundler or Node can apply the same rewrite while it loads your TypeScript instead: use the [Vite plugin](/reference/runtime-api#vite), the [esbuild plugin](/reference/runtime-api#esbuild) or the [Node loader](/reference/runtime-api#loader).
+`golem build` compiles your project the way `tsc -p` does and rewrites the generic serde calls (`parse<T>()`, `stringify<T>()` and the others) on the way. It generates the code `golem.yaml` configures first, so a checkout with no generated files builds in one command. A bundler or Node can apply the same rewrite while it loads your TypeScript instead: use the [Vite plugin](/reference/runtime-api#vite), the [esbuild plugin](/reference/runtime-api#esbuild) or the [Node loader](/reference/runtime-api#loader). Each of them opens your project from `golem.yaml`, scans each file itself and needs no index file.
 
 ```sh
 npx golem build
@@ -53,7 +55,7 @@ npx golem build --declaration --noEmitOnError
 
 A build runs three steps:
 
-1. It generates the outputs of `golem.yaml`, as `golem generate` does. A job whose inputs did not change since the last run is skipped.
+1. It generates the outputs of `golem.yaml`, as `golem generate` does. A job whose inputs did not change since the last run is skipped: `.golem/jobs.json` keeps, per job, the golem version, the job's options and a hash of every input it read, so a second build with no change runs no job. An input change runs the job and every job after it that reads its outputs.
 2. It type-checks the sources you wrote with the TypeScript in your project, TypeScript 6.0 or 7, and prints its messages unchanged. An error points at your line, and the declarations come from your sources.
 3. It emits JavaScript with the calls rewritten. Source maps point at your sources.
 
@@ -61,11 +63,11 @@ The build starts from `golem.yaml`: the one in the working directory, or the one
 
 `-p` names another build config of the same project, such as `tsconfig.build.json` without your tests. It takes a file, or a directory that holds `tsconfig.json`, and it must lie in the directory of the tsconfig that `golem.yaml` names; any other location is an error. With `--watch` the build repeats when a source, tsconfig or `golem.yaml` changes: it generates first, so editing a model source regenerates its file and rebuilds once. The models job reads every source of the project, so editing any other source runs it again before the rebuild. A job that reads no changed input, such as a generator that reads only the models, does not run. Deleting `outDir` while it runs starts one build that writes it again.
 
-A build never edits your source files. It writes the generated files `golem.yaml` configures, the declarations and JavaScript the tsconfig asks for into `outDir`, and its own files into `.golem/`: per tsconfig under `.golem/build/<tsconfig name>/`, the incremental state and a copy of your sources with the calls rewritten. Two tsconfig files in one directory never share that state. Add `.golem/build/` to `.gitignore`; the inventory `.golem/outputs.json` stays committed. Delete `outDir`, or `declarationDir` when you set one, and the next build writes it again.
+A build never edits your source files. It writes the generated files `golem.yaml` configures, the declarations and JavaScript the tsconfig asks for into `outDir`, and its own files into `.golem/`: per tsconfig under `.golem/build/<tsconfig name>/`, the incremental state and a copy of your sources with the calls rewritten. Two tsconfig files in one directory never share that state. Always ignore `.golem/build/` and `.golem/jobs.json`. Ignore the generated files and the rest of `.golem/` together, or commit the generated files and `.golem/outputs.json` together ([what to commit](/reference/generated-files#gitignore)). Delete `outDir`, or `declarationDir` when you set one, and the next build writes it again.
 
 ### Compiler arguments
 
-`golem build` takes `--config`, `-p` or `--project`, and `--watch` or `-w`. It passes every other argument unchanged to both compiler runs, the check and the emit, so `tsc` decides what it means: `--declaration`, `--noEmitOnError`, `--listFiles` and `--generateTrace` work as they do for `tsc -p`. The build asks the compiler how the arguments change `declaration` and `noEmitOnError`, so a forwarded `--declaration` writes the declarations from your sources.
+`golem build` takes `--config`, `-p` or `--project`, and `--watch` or `-w` (`-w` also stops the compiler's own watcher from starting). It passes every other argument unchanged to both compiler runs, the check and the emit, so `tsc` decides what it means: `--declaration`, `--noEmitOnError`, `--listFiles` and `--generateTrace` work as they do for `tsc -p`. The build asks the compiler how the arguments change `declaration` and `noEmitOnError`, so a forwarded `--declaration` writes the declarations from your sources.
 
 The build sets some arguments itself. Passing one stops the build with `golem build sets <argument> itself (<reason>); <workaround>`.
 
@@ -81,6 +83,8 @@ The build sets some arguments itself. Passing one stops the build with `golem bu
 | `--rootDir`, `--baseUrl`, `--composite`, `--outFile`, `--declarationDir`, `--sourceRoot`, `--mapRoot`, `--inlineSourceMap`, `--inlineSources` | An argument beats the tsconfig the emit run reads, and these change how the build maps your sources onto its copy and writes declarations and maps | Set it in the tsconfig |
 
 ### Type errors
+
+Generation stops only on a type error in the models job's own model sources and in the generated files it writes, because a codec built from a model that does not type-check could validate wrongly. A type error in any other file does not stop generation; the check run reports it, as `tsc` does.
 
 Like `tsc`, the build emits JavaScript after a failed check unless `noEmitOnError` is true, in the tsconfig or as `--noEmitOnError`. With it, a type error stops the build before any file is emitted. The exit status is the check's whenever it failed.
 

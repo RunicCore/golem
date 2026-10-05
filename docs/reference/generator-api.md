@@ -86,7 +86,10 @@ returned diagnostics to the user; their codes are in
 exception instead of a result.
 
 `onInput` runs before each local read or existence check, including for a
-missing path. Watch the returned `watchInputs`.
+missing path. Watch the returned `watchInputs`. The CLI skips a job whose
+recorded inputs did not change since its last run, and it learns an input
+only through `onInput`: a generator that returns a path in `watchInputs`
+without announcing it through `onInput` runs again every time.
 
 Pass the same `session` to repeated `generate()` calls of the model or
 controller generator to keep its TypeScript compiler running between calls.
