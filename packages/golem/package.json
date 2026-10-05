@@ -57,6 +57,11 @@
       "import": "./dist/validation.js",
       "default": "./dist/validation.js"
     },
+    "./validation-runtime": {
+      "types": "./dist/validation-runtime.d.ts",
+      "import": "./dist/validation-runtime.js",
+      "default": "./dist/validation-runtime.js"
+    },
     "./ajv": {
       "types": "./dist/ajv.d.ts",
       "import": "./dist/ajv.js",
