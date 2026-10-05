@@ -104,7 +104,7 @@ function readCodecKeysFile(filename: string): Readonly<Record<string, string>> {
 class CodecKeys {
   /** Each declaration's ids, each with the files that give it; more than one id makes the declaration ambiguous. */
   private readonly byDeclaration = new Map<string, Map<string, Set<string>>>();
-  /** Each `<file name>#<name>` tail's ids, with the files that give each. */
+  /** Each `<file name>#<name>` tail's ids, with the files that give each; only old key tables feed it. */
   private readonly byTail = new Map<string, Map<string, Set<string>>>();
   private readonly names = new Set<string>();
 
@@ -166,10 +166,10 @@ class CodecKeys {
           if (hash > 0 && id !== '') {
             const source = name.slice(0, hash).replace(/\\/g, '/');
             const short = name.slice(hash + 1);
-            if (openApi) this.add(`${path.posix.join(directory, source)}#${short}`, id, table);
+            if (openApi) this.add(`${path.posix.join(directory, source)}#${short}`, id, table, true);
             else {
-              this.add(`${source}#${short}`, id, table);
-              if (directory !== '' && directory !== '.' && !source.includes('/')) this.add(`${directory}/${source}#${short}`, id, table);
+              this.add(`${source}#${short}`, id, table, true);
+              if (directory !== '' && directory !== '.' && !source.includes('/')) this.add(`${directory}/${source}#${short}`, id, table, true);
             }
           }
         }
@@ -179,11 +179,13 @@ class CodecKeys {
     }
   }
 
-  private add(declaration: string, id: string, table: string): void {
+  /** `byFileName` also lets a declaration of another path with the same file name and name resolve: only for old key tables, whose paths have no known base. */
+  private add(declaration: string, id: string, table: string, byFileName = false): void {
     const ids = this.byDeclaration.get(declaration) ?? new Map<string, Set<string>>();
     this.byDeclaration.set(declaration, ids);
     ids.set(id, (ids.get(id) ?? new Set()).add(table));
     this.names.add(declaration.slice(declaration.lastIndexOf('#') + 1));
+    if (!byFileName) return;
     const tail = declaration.slice(declaration.lastIndexOf('/') + 1);
     let tailIds = this.byTail.get(tail);
     if (!tailIds) this.byTail.set(tail, tailIds = new Map());

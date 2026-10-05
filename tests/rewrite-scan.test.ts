@@ -230,6 +230,18 @@ test('two manifests that give one declaration different codec ids make a call on
   assert.equal(files.get('src/use-sdk.ts'), undefined);
 });
 
+test('a user type that shares a file name and a type name with an SDK type never takes the SDK codec id', (t) => {
+  const root = project(t);
+  installSdk(root);
+  fs.writeFileSync(path.join(root, 'src/use-sdk.ts'), USE_SDK);
+  // Every SDK declares its types in types.ts; this project's own types.ts declares its own Money.
+  fs.writeFileSync(path.join(root, 'src/types.ts'), 'export type Money = { amount: string };\n');
+  fs.writeFileSync(path.join(root, 'src/use-own.ts'), "import { parse } from '@exprtlabs/golem/serde';\nimport type { Money } from './types.js';\ndeclare const text: string;\nexport const money = parse<Money>(text);\n");
+  const { diagnostics, files } = scan(root);
+  assert.deepEqual(diagnostics.map(({ code, message, file }) => ({ code, message, file })), [{ code: 'RUNM1067', message: 'parse<Money> has no unique codec id', file: 'src/use-own.ts' }]);
+  assert.equal(files.get('src/use-own.ts'), undefined);
+});
+
 test('a regenerated codec key file changes what the next scan stamps', (t) => {
   const root = project(t, ['calls.ts']);
   assert.match(rewritten(root, scan(root), 'calls.ts'), /requireObjectCodec\("TMoney_11111111"\)\.stringify\(/);
@@ -385,6 +397,10 @@ export const money = parse<TMoney>(text);
 export class Payment extends TPaymentBaseModel {}
 `);
   fs.writeFileSync(path.join(outer, 'shared/plain.ts'), "export const plain = 1;\n");
+  // Keys are exact paths from the tsconfig directory, so the class outside the root has a key of its own.
+  const keysFile = path.join(root, CODEC_KEYS);
+  const table: { version: number; keys: Record<string, string> } = JSON.parse(fs.readFileSync(keysFile, 'utf8'));
+  fs.writeFileSync(keysFile, JSON.stringify({ ...table, keys: { ...table.keys, '../shared/payment.model.ts#Payment': 'TPayment_22222222' } }));
   const { diagnostics, files } = scan(root);
   // A class site is the end of the class, where its registration goes.
   const message = (file: string): string => `"${file}" has a rewrite site but lies outside the project root. Move it under the root, or give the package its own golem.yaml and build it with that.`;
