@@ -90,10 +90,7 @@ import type { TTag } from './money.model.js';
 export const tag = parse<TTag>('{"label":"a"}');
 `;
 
-/**
- * A generated project: the model source and its generated files. `golem generate` still writes the rewrite index, and
- * the hosts do not read it: it is removed, so every run proves a host scans for itself.
- */
+/** A generated project: the model source and its generated files. */
 async function generatedProject(t: TestContext, name: string, options: { readonly generate?: boolean } = {}): Promise<string> {
   const { root } = createModelProject(t, {
     prefix: 'golem-bundler-',
@@ -109,7 +106,6 @@ async function generatedProject(t: TestContext, name: string, options: { readonl
   write(root, 'src/util.ts', UTIL);
   write(root, 'src/tag.ts', TAG_USE);
   if (options.generate !== false) await runPipeline(path.join(root, 'golem.yaml'));
-  fs.rmSync(path.join(root, '.golem/rewrites.json'), { force: true });
   return root;
 }
 
@@ -136,7 +132,6 @@ async function changeMoney(root: string): Promise<void> {
   const file = path.join(root, 'src/money.model.ts');
   write(root, 'src/money.model.ts', fs.readFileSync(file, 'utf8').replace('value: string }>', 'value: string; note?: string }>'));
   await runPipeline(path.join(root, 'golem.yaml'));
-  fs.rmSync(path.join(root, '.golem/rewrites.json'), { force: true });
 }
 
 /** The project's files and their mtimes, taken before a build and compared after it: a build edits no source. */
@@ -190,9 +185,8 @@ function frameLines(output: string, file: string): number[] {
 }
 
 for (const bundler of BUNDLERS) {
-  test(`${bundler.name}: the bundle runs the parse and stringify calls the host rewrites, in a project with no rewrite index`, async (t) => {
+  test(`${bundler.name}: the bundle runs the parse and stringify calls the host rewrites.`, async (t) => {
     const root = await generatedProject(t, `${bundler.name}-run`);
-    assert.equal(fs.existsSync(path.join(root, '.golem/rewrites.json')), false);
     const bundle = await build(bundler, t, root, 'src/main.ts');
     const result = await command(root, process.execPath, [bundle]);
     assert.deepEqual(JSON.parse(result.stdout.split('\n')[0]!), { money: { currency: 'USD', value: '1' }, twice: 42 });
@@ -351,7 +345,6 @@ test('vite serve: a module whose model had no generated code transforms again on
   const send = t.mock.method(server.ws, 'send', () => undefined);
   await assert.rejects(server.transformRequest('/src/main.ts'), /run golem generate/);
   await runPipeline(path.join(root, 'golem.yaml'));
-  fs.rmSync(path.join(root, '.golem/rewrites.json'), { force: true });
   server.watcher.emit('add', keyTable(root));
   assert.equal(send.mock.calls.filter((call) => (call.arguments[0] as { type?: string } | undefined)?.type === 'full-reload').length, 1);
   await new Promise((resolve) => setTimeout(resolve, 5));

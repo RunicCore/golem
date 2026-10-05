@@ -23,7 +23,7 @@ export type GolemJob =
 export interface GolemConfig {
   readonly configFile: string;
   readonly directory: string;
-  /** The project's tsconfig: where `golem generate` and `golem build` start. Its directory owns `.golem/rewrites.json`. A tsconfig the yaml names exists; the default beside the yaml need not. */
+  /** The project's tsconfig: where `golem generate` and `golem build` start. Its directory is the project root a rewrite names files from. A tsconfig the yaml names exists; the default beside the yaml need not. */
   readonly tsconfig: string;
   readonly profile: GolemProfile;
   readonly jobs: readonly GolemJob[];

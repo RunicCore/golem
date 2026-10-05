@@ -259,7 +259,6 @@ test('an openapi-only golem.yaml with no tsconfig has no project to check, and g
   assert.equal(fs.existsSync(path.join(root, 'sdk')), true);
   await runPipeline(config, { check: true });
   await assert.rejects(runBuild({ watch: false, config }), /golem build cannot find .*tsconfig\.json, the tsconfig .*golem\.yaml names/);
-  assert.equal(fs.existsSync(path.join(root, '.golem/rewrites.json')), false);
 });
 
 // ---------------------------------------------------------------------------

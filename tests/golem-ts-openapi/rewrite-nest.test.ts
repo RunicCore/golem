@@ -3,8 +3,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import test, { type TestContext } from 'node:test';
 import { runPipeline } from '#golem/cli';
-import { applyRewrites, readRewriteIndex } from '#golem/rewrite';
-import { checkNestCodecs, scanProjectRewrites, type ScanResult } from '#golem/rewrite-scan';
+import { applyRewrites } from '#golem/rewrite';
+import { checkNestCodecs, scanProject, type ProgramScan } from '#golem/rewrite-scan';
 import { generate } from '#model/generator';
 import { readFixture, writeGeneratedArtifacts } from '../fixture-project.js';
 import { createControllerFixture } from '../fixture-templates/controllers/project.js';
@@ -35,13 +35,13 @@ function paymentsProject(t: TestContext, extra: Readonly<Record<string, string>>
   });
 }
 
-function scan(root: string, nest = true): ScanResult {
-  return scanProjectRewrites({ root, configFile: path.join(root, 'tsconfig.json'), nest });
+function scan(root: string, nest = true): ProgramScan {
+  return scanProject({ root, configFile: path.join(root, 'tsconfig.json'), nest });
 }
 
-function rewritten(root: string, result: ScanResult, relative: string): string {
-  const entry = result.index.files[relative];
-  assert.ok(entry, `${relative} has an index entry`);
+function rewritten(root: string, result: ProgramScan, relative: string): string {
+  const entry = result.files.get(relative);
+  assert.ok(entry, `${relative} has rewrites`);
   return applyRewrites(fs.readFileSync(path.join(root, relative), 'utf8'), entry).code;
 }
 
@@ -58,7 +58,7 @@ test('with nest on, a model @Body() or @Query() parameter and a model return gai
   assert.deepEqual(result.diagnostics, []);
   const code = rewritten(root, result, CONTROLLER);
   assert.equal(code.split('\n')[0], NEST_IMPORT);
-  assert.deepEqual(result.index.files[CONTROLLER]?.imports, [{ from: '@exprtlabs/golem/nest', names: ['nestModelCodec', 'nestModelReturn'] }]);
+  assert.deepEqual(result.files.get(CONTROLLER)?.imports, [{ from: '@exprtlabs/golem/nest', names: ['nestModelCodec', 'nestModelReturn'] }]);
 
   const model = /@__golem_nestModelReturn\("TPayment_[0-9a-f]{8}"\) @Post\(\)/;
   const modelArray = /@__golem_nestModelReturn\("TPayment_[0-9a-f]{8}", true\) @Get\(\)/;
@@ -93,7 +93,7 @@ test('without nest the controller is not indexed', (t) => {
   const root = paymentsProject(t);
   const result = scan(root, false);
   assert.deepEqual(result.diagnostics, []);
-  assert.equal(result.index.files[CONTROLLER], undefined);
+  assert.equal(result.files.get(CONTROLLER), undefined);
   assert.deepEqual(result.nestCodecSites, []);
 });
 
@@ -104,8 +104,8 @@ test('a decorator that is already present, plain, through a namespace or aliased
   });
   const result = scan(root);
   assert.deepEqual(result.diagnostics, []);
-  assert.equal(result.index.files['src/plain.controller.ts'], undefined);
-  assert.equal(result.index.files['src/aliased.controller.ts'], undefined);
+  assert.equal(result.files.get('src/plain.controller.ts'), undefined);
+  assert.equal(result.files.get('src/aliased.controller.ts'), undefined);
 });
 
 test('a primitive @Body() and a type no model table names are not indexed', (t) => {
@@ -118,7 +118,7 @@ test('a primitive @Body() and a type no model table names are not indexed', (t) 
   for (const root of [primitive, unknown]) {
     const result = scan(root);
     assert.deepEqual(result.diagnostics, []);
-    assert.equal(result.index.files['src/notes.controller.ts'], undefined);
+    assert.equal(result.files.get('src/notes.controller.ts'), undefined);
     assert.deepEqual(result.nestCodecSites, []);
   }
 });
@@ -219,12 +219,12 @@ test('a method that calls parse and carries nest decorators gets both rewrites a
   const payment = idOf(root, 'TPayment');
   const input = idOf(root, 'TPaymentInput');
   const code = rewritten(root, result, 'src/mixed.controller.ts');
-  assert.deepEqual(result.index.files['src/mixed.controller.ts']?.imports, [
+  assert.deepEqual(result.files.get('src/mixed.controller.ts')?.imports, [
     { from: '@exprtlabs/golem/nest', names: ['nestModelCodec', 'nestModelReturn'] },
     { from: '@exprtlabs/golem/serde', names: ['requireObjectCodec'] },
   ]);
   assert.deepEqual(
-    result.index.files['src/mixed.controller.ts']?.edits.map(edit => /^@?(__golem_\w+)/.exec(edit.text)?.[1]),
+    result.files.get('src/mixed.controller.ts')?.edits.map(edit => /^@?(__golem_\w+)/.exec(edit.text)?.[1]),
     ['__golem_nestModelReturn', '__golem_nestModelCodec', '__golem_requireObjectCodec'],
     'edits are indexed in source order',
   );
@@ -297,7 +297,6 @@ test('a controllers job turns nest on, and golem check fails a parameter the gen
   });
   const config = path.join(root, 'golem.yaml');
   await runPipeline(config);
-  assert.deepEqual(readRewriteIndex(root)?.files[CONTROLLER]?.imports, [{ from: '@exprtlabs/golem/nest', names: ['nestModelCodec', 'nestModelReturn'] }]);
   await runPipeline(config, { check: true });
 
   // A method outside the controllers job's sources is stamped by the scan but is in no generated operation.

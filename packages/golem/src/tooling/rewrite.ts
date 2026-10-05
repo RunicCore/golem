@@ -1,7 +1,3 @@
-import { createHash } from 'node:crypto';
-import { readFileSync } from 'node:fs';
-import path from 'node:path';
-
 import { encodeMappings, type MappingSegment, type SourceMapV3 } from './source-map.js';
 
 export interface RewriteEdit {
@@ -31,39 +27,7 @@ export interface FileRewrite {
   readonly imports: readonly RewriteImport[];
 }
 
-export interface RewriteFile extends FileRewrite {
-  readonly sha256: string;
-}
-
-/** `files` keys are project-root-relative POSIX paths. */
-export interface RewriteIndex {
-  readonly version: 1;
-  readonly golem: string;
-  /** The canonical path of the golem.yaml that writes this index; an index from before owners has none. */
-  readonly owner?: string;
-  readonly files: Readonly<Record<string, RewriteFile>>;
-}
-
-export class GolemRewriteStaleError extends Error {
-  readonly file: string;
-
-  constructor(file: string, message: string) {
-    super(message);
-    this.name = 'GolemRewriteStaleError';
-    this.file = file;
-  }
-}
-
-/** `.golem/rewrites.json` exists and is not a rewrite index: unreadable JSON, or the wrong shape. */
-export class GolemRewriteMalformedIndexError extends Error {
-  constructor(filename: string) {
-    super(`golem rewrite index at ${filename} is malformed; run golem generate`);
-    this.name = 'GolemRewriteMalformedIndexError';
-  }
-}
-
 export const REWRITE_IMPORT_PREFIX = '__golem_';
-export const REWRITE_INDEX_PATH = '.golem/rewrites.json';
 
 // Source text, not a regex literal: emit would print a U+2028 escape in a literal as the raw character.
 const LINE_BREAK_SOURCE = '\\r\\n|[\\r\\n\\u2028\\u2029]';
@@ -74,33 +38,6 @@ const BYTE_ORDER_MARK = '\uFEFF';
 /** The text as the compiler sees it: without a leading U+FEFF. */
 function withoutByteOrderMark(text: string): string {
   return text.startsWith(BYTE_ORDER_MARK) ? text.slice(BYTE_ORDER_MARK.length) : text;
-}
-
-/** SHA-256 of the text without a leading byte order mark, so a file reads the same to the compiler and to a host. */
-export function sha256Hex(text: string): string {
-  return createHash('sha256').update(withoutByteOrderMark(text), 'utf8').digest('hex');
-}
-
-/** Read `<root>/.golem/rewrites.json`; `undefined` when the file does not exist. */
-export function readRewriteIndex(root: string): RewriteIndex | undefined {
-  const filename = path.join(root, REWRITE_INDEX_PATH);
-  let content: string;
-  try {
-    content = readFileSync(filename, 'utf8');
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
-    throw error;
-  }
-  const malformed = (): Error => new GolemRewriteMalformedIndexError(filename);
-  let value: unknown;
-  try {
-    value = JSON.parse(content);
-  } catch {
-    throw malformed();
-  }
-  const record = value as Partial<Record<keyof RewriteIndex, unknown>> | null;
-  if (typeof record !== 'object' || record === null || record.version !== 1 || typeof record.golem !== 'string' || (record.owner !== undefined && typeof record.owner !== 'string') || typeof record.files !== 'object' || record.files === null) throw malformed();
-  return record as unknown as RewriteIndex;
 }
 
 /** Names the file when the caller knows it, and the line of the edit's start in `text`. */

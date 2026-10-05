@@ -44,10 +44,7 @@ function frameLine(output: string, file: string): number {
   return Number(output.match(frame)?.[1]);
 }
 
-/**
- * A project that runs under Node's type stripping. It runs `golem generate` unless told not to, then removes the rewrite
- * index that generate still writes: the loader scans for itself and reads no index.
- */
+/** A project that runs under Node's type stripping. It runs `golem generate` unless told not to. */
 async function project(t: TestContext, name: string, options: { readonly generate?: boolean } = {}): Promise<string> {
   const { root } = createModelProject(t, {
     prefix: 'golem-loader-',
@@ -62,7 +59,6 @@ async function project(t: TestContext, name: string, options: { readonly generat
   write(root, 'src/main.ts', MAIN);
   write(root, 'src/util.ts', UTIL);
   if (options.generate !== false) await runPipeline(path.join(root, 'golem.yaml'));
-  fs.rmSync(path.join(root, '.golem/rewrites.json'), { force: true });
   return root;
 }
 
@@ -74,9 +70,8 @@ async function run(root: string, file: string, options: { readonly cwd?: string;
   return result;
 }
 
-test('node runs a TypeScript file whose parse and stringify calls the host rewrites, with no rewrite index in the project', async (t) => {
+test('node runs a TypeScript file whose parse and stringify calls the host rewrites', async (t) => {
   const root = await project(t, 'loader-run');
-  assert.equal(fs.existsSync(path.join(root, '.golem/rewrites.json')), false);
   const result = await run(root, 'src/main.ts');
   assert.equal(result.code, 0, result.stderr);
   const [json] = result.stdout.split('\n');
@@ -264,7 +259,6 @@ test('a Nest controller with a @Body() model parameter carries nestModelCodec me
     },
   });
   await runPipeline(path.join(root, 'golem.yaml'));
-  fs.rmSync(path.join(root, '.golem/rewrites.json'), { force: true });
   write(root, 'golem.yaml', `${MODELS_YAML}controllers:\n  - root: .\n    output: generated/api.json\n    info: { title: Payments, version: "1" }\n`);
   const result = await run(root, 'src/main.ts', { flags: ['--import', './decorator-register.mjs'] });
   assert.equal(result.code, 0, result.stderr);

@@ -2,22 +2,15 @@ import fs from 'node:fs';
 import path from 'node:path';
 import * as ts from './typescript-ns.js';
 import { GolemDiagnosticSeverity } from './generator-api.js';
-import type { GeneratorSession, GolemDiagnostic, InputObserver } from './generator-api.js';
+import type { GeneratorSession, GolemDiagnostic } from './generator-api.js';
 import { CODEC_KEY_FILE, operationCodecRegistryPath } from './generated-paths.js';
-import { atomicWrite } from './outputs.js';
-import {
-  REWRITE_IMPORT_PREFIX,
-  REWRITE_INDEX_PATH,
-  readRewriteIndex,
-  sha256Hex,
-} from './rewrite.js';
-import type { FileRewrite, RewriteEdit, RewriteFile, RewriteImport, RewriteIndex } from './rewrite.js';
+import { REWRITE_IMPORT_PREFIX } from './rewrite.js';
+import type { FileRewrite, RewriteEdit, RewriteImport } from './rewrite.js';
 import { createProjectProgram, isGeneratedCompanion, retainedProgramSession } from './type-analysis/project.js';
 import { resolveSymbol } from './type-analysis/symbols.js';
-import { GOLEM_VERSION } from './version.js';
 
 export interface ScanInput {
-  /** Absolute project root; index keys are relative to it. */
+  /** Absolute project root; file paths in results are relative to it. */
   readonly root: string;
   readonly program: ts.Program;
   readonly checker: ts.TypeChecker;
@@ -35,13 +28,6 @@ export interface NestCodecSite {
   /** The model type as the parameter spells it, array wrappers removed. */
   readonly label: string;
   readonly id: string;
-}
-
-export interface ScanResult {
-  readonly index: RewriteIndex;
-  readonly diagnostics: readonly GolemDiagnostic[];
-  /** Every parameter the nest rule stamps, for `checkNestCodecs`; empty unless `nest` is on. */
-  readonly nestCodecSites: readonly NestCodecSite[];
 }
 
 const SERDE_MODULE = '@exprtlabs/golem/serde';
@@ -597,23 +583,6 @@ export class RewriteScanner {
   }
 }
 
-/**
- * Temporary index adapter over `RewriteScanner.scanProgram`, for the pipeline, `golem build` and the hosts that still
- * read `.golem/rewrites.json`: scan the program's own sources and return the index and the sites that cannot be rewritten.
- */
-export function scanRewrites(input: ScanInput): ScanResult {
-  const { files, diagnostics } = new RewriteScanner(input).scanProgram();
-  const entries: Record<string, RewriteFile> = {};
-  const nestCodecSites: NestCodecSite[] = [];
-  for (const [relative, result] of files) {
-    const text = input.program.getSourceFile(path.join(input.root, relative))?.text;
-    if (text === undefined) throw new Error(`${relative} is in the scan and not in the program`);
-    entries[relative] = { sha256: sha256Hex(text), edits: result.edits, imports: result.imports };
-    nestCodecSites.push(...result.nestCodecSites);
-  }
-  return { index: { version: 1, golem: GOLEM_VERSION, files: entries }, diagnostics, nestCodecSites };
-}
-
 /** The scanner's answer for a whole project, with the nest sites `checkNestCodecs` reads. */
 export interface ProgramScan {
   readonly files: ReadonlyMap<string, FileScanResult>;
@@ -646,46 +615,6 @@ export function checkNestCodecs(roots: string | readonly string[], scanned: { re
     }));
 }
 
-/** The golem.yaml that owns the index of `root`; none for a missing, unreadable or ownerless index. */
-function indexOwner(root: string): string | undefined {
-  try {
-    return readRewriteIndex(root)?.owner;
-  } catch {
-    // A malformed index is replaced by the next generate, whoever runs it.
-    return undefined;
-  }
-}
-
-/** Whether two paths name one file by the file system's own spelling: a case-variant path on a case-insensitive file system does. */
-function sameFile(left: string, right: string): boolean {
-  try {
-    return fs.realpathSync.native(left) === fs.realpathSync.native(right);
-  } catch {
-    return false;
-  }
-}
-
-/**
- * Fail when another golem.yaml owns the index of `root`: two yamls that name one tsconfig would overwrite each other's
- * rewrites. An owner whose file no longer exists has left the project, so its index can be taken over.
- */
-export function assertRewriteIndexOwner(root: string, owner: string): void {
-  const current = indexOwner(root);
-  if (current === undefined || !fs.existsSync(current)) return;
-  if (current === owner || sameFile(current, owner)) return;
-  throw new Error(`${path.join(root, REWRITE_INDEX_PATH)} belongs to ${current}, but ${owner} names the same tsconfig. Give each golem.yaml its own tsconfig, or delete the index to hand it to ${owner}.`);
-}
-
-/**
- * Write `<root>/.golem/rewrites.json`, recording `owner`; the same index and owner always yield the same bytes.
- * Returns whether the file changed.
- */
-export function writeRewriteIndex(root: string, index: RewriteIndex, owner?: string): boolean {
-  if (owner !== undefined) assertRewriteIndexOwner(root, owner);
-  const written: RewriteIndex = owner === undefined ? index : { version: index.version, golem: index.golem, owner, files: index.files };
-  return atomicWrite(path.join(root, REWRITE_INDEX_PATH), `${JSON.stringify(written, null, 2)}\n`);
-}
-
 /** What opening a project's program for a scan needs. */
 interface ProjectScanInput {
   readonly root: string;
@@ -695,25 +624,13 @@ interface ProjectScanInput {
   /** The session and owner of the job that reads this project, so one compiler serves its generation and this scan; the session is kept under `root`. */
   readonly session?: GeneratorSession;
   readonly sessionOwner?: string;
-  readonly onInput?: InputObserver;
-}
-
-function withProjectProgram<Result>(input: ProjectScanInput, use: (scan: ScanInput) => Result): Result {
-  const { root, configFile, nest, session, sessionOwner, onInput } = input;
-  const info = createProjectProgram(root, onInput, sessionOwner === undefined ? undefined : retainedProgramSession(session, sessionOwner, root), configFile);
-  using program = info.program;
-  return use({ root: path.dirname(configFile), program, checker: program.getTypeChecker(), nest });
-}
-
-/** Open the project's program and scan it. `onInput` observes every file the compiler reads. */
-export function scanProjectRewrites(input: ProjectScanInput): ScanResult {
-  return withProjectProgram(input, scanRewrites);
 }
 
 /** Open the project's program and ask the scanner about every file: what `golem check` reports. Writes nothing. */
 export function scanProject(input: ProjectScanInput): ProgramScan {
-  return withProjectProgram(input, (scan) => {
-    const { files, diagnostics } = new RewriteScanner(scan).scanProgram();
-    return { files, diagnostics, nestCodecSites: [...files.values()].flatMap((file) => file.nestCodecSites) };
-  });
+  const { root, configFile, nest, session, sessionOwner } = input;
+  const info = createProjectProgram(root, undefined, sessionOwner === undefined ? undefined : retainedProgramSession(session, sessionOwner, root), configFile);
+  using program = info.program;
+  const { files, diagnostics } = new RewriteScanner({ root: path.dirname(configFile), program, checker: program.getTypeChecker(), nest }).scanProgram();
+  return { files, diagnostics, nestCodecSites: [...files.values()].flatMap((file) => file.nestCodecSites) };
 }

@@ -11,7 +11,6 @@ import { GolemDiagnosticSeverity, errorMessage, hasErrorCode, isRecord } from '.
 import { validateModelManifest } from './model-manifest.js';
 import type { GolemArtifact, GolemDiagnostic, GolemResult, GeneratorSession } from './generator-api.js';
 import { assertRuntimeCompatible } from './runtime-compatibility.js';
-import { REWRITE_INDEX_PATH } from './rewrite.js';
 import { TypeScriptNotInstalledError, resolveTypeScript } from './typescript-version.js';
 import { GOLEM_VERSION } from './version.js';
 
@@ -320,20 +319,6 @@ async function loadRewriteScan(hasCompilerJob: boolean): Promise<typeof import('
   return import('./rewrite-scan.js');
 }
 
-/** Temporary: write the index the hosts still read, from a scan the caller made. Task 4 removes it with the index. */
-function writeHostRewriteIndex(
-  config: GolemConfig,
-  scanned: ReturnType<typeof import('./rewrite-scan.js').scanProjectRewrites>,
-  rewriteScan: typeof import('./rewrite-scan.js'),
-  indexFile: string,
-  options: PipelineOptions,
-): void {
-  const errors = scanned.diagnostics.filter(diagnostic => diagnostic.severity === GolemDiagnosticSeverity.Error);
-  if (errors.length > 0) throw new Error(errorDiagnosticsMessage('golem rewrite scan', errors));
-  rewriteScan.writeRewriteIndex(path.dirname(config.tsconfig), scanned.index, config.configFile);
-  options.onOwned?.([indexFile]);
-}
-
 /** The inputs a job names in its configuration, before it runs. */
 function declaredInputs(job: GolemJob): readonly string[] {
   if (job.kind === 'openapi') return [job.options.input];
@@ -555,19 +540,15 @@ export async function runPipeline(filename: string, options: PipelineOptions = {
     manifests.push(...result.manifestPaths);
     results.set(job.id, result);
   }
-  // A yaml without a tsconfig, an openapi-only one for instance, has no project to scan.
-  const hasProject = fs.existsSync(config.tsconfig);
-  const indexFile = path.join(path.dirname(config.tsconfig), REWRITE_INDEX_PATH);
-  // Temporary: the hosts still read the index, so every generate rescans and writes it. Task 4 removes `writeHostRewriteIndex`.
-  const hostIndex = !options.check && hasProject;
-  // `golem check` reads the project's sources too: it reports the sites golem cannot rewrite, and writes nothing.
-  const rewriteScan = (options.check || hostIndex) && hasProject ? await loadRewriteScan(rewriteRoot(config).job !== undefined) : undefined;
+  // `golem check` reads the project's sources too: it reports the sites golem cannot rewrite, and writes nothing. A yaml
+  // without a tsconfig, an openapi-only one for instance, has no project to scan.
+  const rewriteScan = options.check && fs.existsSync(config.tsconfig) ? await loadRewriteScan(rewriteRoot(config).job !== undefined) : undefined;
   if (rewriteScan) {
     const { job, root, controllerRoots } = rewriteRoot(config);
     const nest = controllerRoots.length > 0;
     const keys = job ? used.get(job.id) ?? new Set<string>() : undefined;
     if (job && keys) used.set(job.id, keys);
-    const scanInput = {
+    const scanned = rewriteScan.scanProject({
       root,
       configFile: config.tsconfig,
       nest,
@@ -577,19 +558,11 @@ export async function runPipeline(filename: string, options: PipelineOptions = {
         // The models job's compiler is its retained session, keyed by golem-model's SESSION_OWNER, which is its package name.
         sessionOwner: job.package,
       } : {}),
-    };
-    if (options.check) {
-      // Temporary, with the index: two yamls that name one tsconfig still fail in check. Task 4 removes it.
-      rewriteScan.assertRewriteIndexOwner(path.dirname(config.tsconfig), config.configFile);
-      const scanned = rewriteScan.scanProject(scanInput);
-      const errors = scanned.diagnostics.filter(diagnostic => diagnostic.severity === GolemDiagnosticSeverity.Error);
-      if (errors.length > 0) throw new Error(errorDiagnosticsMessage('golem rewrite scan', errors));
-      const disagreements = nest ? rewriteScan.checkNestCodecs(controllerRoots, scanned) : [];
-      if (disagreements.length > 0) throw new Error(errorDiagnosticsMessage('golem nest codec check', disagreements));
-    } else {
-      writeHostRewriteIndex(config, rewriteScan.scanProjectRewrites({ ...scanInput, onInput: input => observe(input, job?.kind ?? 'models') }), rewriteScan, indexFile, options);
-      owned.add(indexFile);
-    }
+    });
+    const errors = scanned.diagnostics.filter(diagnostic => diagnostic.severity === GolemDiagnosticSeverity.Error);
+    if (errors.length > 0) throw new Error(errorDiagnosticsMessage('golem rewrite scan', errors));
+    const disagreements = nest ? rewriteScan.checkNestCodecs(controllerRoots, scanned) : [];
+    if (disagreements.length > 0) throw new Error(errorDiagnosticsMessage('golem nest codec check', disagreements));
   }
   // Records are saved last: a run that fails in the scan is not recorded as done.
   if (!options.check) saveJobRecords(config, nextRecords);

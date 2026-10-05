@@ -1,21 +1,13 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
 import test from 'node:test';
 
 import {
   applyRewrites,
-  GolemRewriteStaleError,
-  readRewriteIndex,
-  sha256Hex,
   type FileRewrite,
   type RewriteEdit,
-  type RewriteFile,
   type RewriteImport,
-  type RewriteIndex,
 } from '#golem/rewrite';
-import { applyIndexedRewrites } from '#golem/rewrite-host';
 import { composeSourceMaps, decodeMappings, encodeMappings, type SourceMapV3 } from '#golem/source-map';
 import { GOLEM_VERSION } from '#golem/version';
 
@@ -36,10 +28,6 @@ function rewriteOf(edits: readonly RewriteEdit[], imports: readonly RewriteImpor
 
 function callRewrite(text: string): FileRewrite {
   return rewriteOf([replace(text, CALL, CALL_TEXT)], [{ from: SERDE, names: ['requireObjectCodec'] }]);
-}
-
-function indexFor(file: string, text: string, rewrite: FileRewrite, overrides: Partial<RewriteFile> = {}): RewriteIndex {
-  return { version: 1, golem: GOLEM_VERSION, files: { [file]: { sha256: sha256Hex(text), ...rewrite, ...overrides } } };
 }
 
 /** Original `[line, column]` of the first `needle` in the generated code, resolved through the map's segments. */
@@ -67,32 +55,6 @@ test('a call rewrite replaces the call and adds the import; the map names no fil
   assert.deepEqual(applied.map.sources, ['']);
   assert.deepEqual(applied.map.sourcesContent, [text]);
   assert.equal(applyRewrites('const x = 1;\n', rewriteOf([])).code, 'const x = 1;\n');
-});
-
-// The index host path stays until Task 4 rewires the hosts; its behaviour is the index's, not the applier's.
-test('the indexed host path applies a file entry, names the file in the map and leaves an unlisted file alone', () => {
-  const text = 'const result = parse<TPayment>(text);\n';
-  const index = indexFor('src/pay.ts', text, callRewrite(text));
-  const applied = applyIndexedRewrites('src/pay.ts', text, index);
-  assert.equal(applied?.code, `${IMPORT_LINE}const result = ${CALL_TEXT}(text);\n`);
-  assert.deepEqual(applied?.map.sources, ['src/pay.ts']);
-  assert.equal(applyIndexedRewrites('src/other.ts', 'const x = 1;\n', index), undefined);
-});
-
-test('a stale hash or a different golem version is a stale-index error naming the fix', () => {
-  const text = 'const result = parse<TPayment>(text);\n';
-  const index = indexFor('src/pay.ts', text, callRewrite(text));
-  assert.throws(
-    () => applyIndexedRewrites('src/pay.ts', `${text}// edited\n`, index),
-    (error: unknown) => error instanceof GolemRewriteStaleError
-      && error.file === 'src/pay.ts'
-      && error.message === 'src/pay.ts changed after golem generate; run golem generate, or keep golem watch running.',
-  );
-  assert.throws(
-    () => applyIndexedRewrites('src/pay.ts', text, { ...index, golem: '0.0.1' }),
-    (error: unknown) => error instanceof GolemRewriteStaleError && error.message === 'rewrite index was written by golem 0.0.1; run golem generate',
-  );
-  assert.equal(applyIndexedRewrites('src/pay.ts', `﻿${text}`, index)?.code.startsWith('﻿'), true, 'a byte order mark does not make the file stale');
 });
 
 test('a missing import goes after a shebang and use strict directive', () => {
@@ -128,7 +90,7 @@ test('overlapping edits, a wrong expectation and an out-of-range edit are an inc
   const call = replace(text, CALL, CALL_TEXT);
   const inconsistent = (edits: readonly RewriteEdit[]) => assert.throws(
     () => applyRewrites(text, rewriteOf(edits)),
-    (error: unknown) => !(error instanceof GolemRewriteStaleError) && error instanceof Error && error.message.startsWith('golem rewrite is inconsistent'),
+    (error: unknown) => error instanceof Error && error.message.startsWith('golem rewrite is inconsistent'),
   );
   inconsistent([call, { ...call, start: call.start + 2, end: call.end - 2, expect: CALL.slice(2, -2) }]);
   inconsistent([call, call]);
@@ -143,7 +105,7 @@ test('overlapping edits, a wrong expectation and an out-of-range edit are an inc
   assert.equal(applyRewrites(text, rewriteOf([...around].reverse())).code, `const result = /*a*/${CALL_TEXT}/*b*/(text);\n`);
 });
 
-test('an inconsistent rewrite names its file and line when the caller gives the file, in the applier and in the indexed host path', () => {
+test('an inconsistent rewrite names its file and line when the caller gives the file, in the applier', () => {
   const text = 'const first = 1;\r\nconst result = parse<TPayment>(text);\r\n';
   const wrong = { ...replace(text, CALL, CALL_TEXT), expect: 'parse<TOther>' };
   assert.throws(
@@ -153,10 +115,6 @@ test('an inconsistent rewrite names its file and line when the caller gives the 
   assert.throws(
     () => applyRewrites(text, rewriteOf([wrong])),
     (error: unknown) => error instanceof Error && error.message.startsWith('golem rewrite is inconsistent at line 2: '),
-  );
-  assert.throws(
-    () => applyIndexedRewrites('src/pay.ts', text, indexFor('src/pay.ts', text, rewriteOf([wrong]))),
-    (error: unknown) => error instanceof Error && !(error instanceof GolemRewriteStaleError) && error.message.startsWith('golem rewrite is inconsistent for src/pay.ts at line 2: '),
   );
 });
 
@@ -302,26 +260,6 @@ test('composing maps resolves an output position to the original, whatever the o
     [2 + secondLine.indexOf('(v)'), 0, 1, original.split('\n')[1]!.indexOf('(v)')],
     [2 + secondLine.indexOf('v)'), 0, 1, original.split('\n')[1]!.indexOf('v)')],
   ]]);
-});
-
-test('readRewriteIndex reads .golem/rewrites.json, reports a missing file as undefined and rejects a malformed one', (t) => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'golem-rewrite-index-'));
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  assert.equal(readRewriteIndex(root), undefined);
-  const text = 'const result = parse<TPayment>(text);\n';
-  const index = indexFor('src/pay.ts', text, callRewrite(text));
-  fs.mkdirSync(path.join(root, '.golem'));
-  fs.writeFileSync(path.join(root, '.golem', 'rewrites.json'), JSON.stringify(index));
-  assert.deepEqual(readRewriteIndex(root), index);
-  fs.writeFileSync(path.join(root, '.golem', 'rewrites.json'), JSON.stringify({ ...index, version: 2 }));
-  assert.throws(() => readRewriteIndex(root), /malformed; run golem generate/);
-  fs.writeFileSync(path.join(root, '.golem', 'rewrites.json'), '{');
-  assert.throws(() => readRewriteIndex(root), /malformed; run golem generate/);
-  // An index records the golem.yaml that owns it; one from before owners has none.
-  fs.writeFileSync(path.join(root, '.golem', 'rewrites.json'), JSON.stringify({ ...index, owner: '/project/golem.yaml' }));
-  assert.equal(readRewriteIndex(root)?.owner, '/project/golem.yaml');
-  fs.writeFileSync(path.join(root, '.golem', 'rewrites.json'), JSON.stringify({ ...index, owner: 3 }));
-  assert.throws(() => readRewriteIndex(root), /malformed; run golem generate/);
 });
 
 test('GOLEM_VERSION equals the golem package version', () => {

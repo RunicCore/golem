@@ -5,7 +5,6 @@ import path from 'node:path';
 import test, { type TestContext } from 'node:test';
 import { runPipeline } from '#golem/cli';
 import { runBuild } from '#golem/build';
-import { readRewriteIndex } from '#golem/rewrite';
 import { generate } from '#model/generator';
 import { copyFixtureFile, readFixture } from './fixture-project.js';
 import { createControllerFixture } from './fixture-templates/controllers/project.js';
@@ -156,43 +155,6 @@ test('a job root outside the directory of the yaml tsconfig fails in golem gener
   await assert.rejects(runPipeline(yaml, { check: true }), outside);
   await assert.rejects(build(root), outside);
   assert.equal(fs.existsSync(path.join(root, '.golem')), false);
-});
-
-test('a second golem.yaml that names the same tsconfig fails in golem generate and golem check, naming both yamls', async (t) => {
-  const root = await generatedProject(t, 'build-two-yamls');
-  const first = path.join(fs.realpathSync(root), 'golem.yaml');
-  fs.mkdirSync(path.join(root, 'second'));
-  write(root, 'second/golem.yaml', 'version: 1\nmobx: false\nvalidation: false\ntsconfig: ../tsconfig.json\nmodels:\n  root: ..\n');
-  const second = path.join(fs.realpathSync(root), 'second/golem.yaml');
-  const generated = fs.readFileSync(path.join(root, '.golem/rewrites.json'), 'utf8');
-  const both = (error: Error): boolean => {
-    assert.ok(error.message.includes(first), error.message);
-    assert.ok(error.message.includes(second), error.message);
-    return true;
-  };
-  await assert.rejects(runPipeline(second), both);
-  await assert.rejects(runPipeline(second, { check: true }), both);
-  assert.equal(fs.readFileSync(path.join(root, '.golem/rewrites.json'), 'utf8'), generated, 'the owner keeps its index');
-  await runPipeline(first, { check: true });
-
-  // An owner whose golem.yaml is gone no longer holds the index.
-  fs.rmSync(first);
-  await runPipeline(second);
-  assert.equal(readRewriteIndex(root)?.owner, second);
-});
-
-test('a case-variant path of the owning golem.yaml is the same owner on a file system that folds case', async (t) => {
-  const root = await generatedProject(t, 'build-owner-case');
-  const yaml = path.join(fs.realpathSync(root), 'golem.yaml');
-  const variant = path.join(fs.realpathSync(root).toUpperCase(), 'GOLEM.YAML');
-  // Only a file system that folds case and reports names as they are stored can show the variant as one file.
-  if (!fs.existsSync(variant) || fs.realpathSync.native(variant) !== yaml) {
-    t.skip('this file system tells case variants apart');
-    return;
-  }
-  await runPipeline(variant, { check: true });
-  await runPipeline(variant);
-  assert.equal(readRewriteIndex(root)?.owner, yaml);
 });
 
 test('a symlinked tsconfig keeps its own directory as the project root', async (t) => {

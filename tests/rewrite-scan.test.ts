@@ -4,8 +4,8 @@ import path from 'node:path';
 import test, { type TestContext } from 'node:test';
 
 import { runPipeline } from '#golem/cli';
-import { applyRewrites, readRewriteIndex } from '#golem/rewrite';
-import { RewriteScanner, scanProjectRewrites, writeRewriteIndex, type FileScanResult } from '#golem/rewrite-scan';
+import { applyRewrites } from '#golem/rewrite';
+import { RewriteScanner, type FileScanResult } from '#golem/rewrite-scan';
 import { decodeMappings } from '#golem/source-map';
 import { createProjectProgram } from '@exprtlabs/golem/type-analysis';
 import { writeSdk } from '#openapi/generator';
@@ -224,25 +224,16 @@ test('a file that gets a rewrite may not use a name that starts with the added i
   ]);
 });
 
-/** The index wrapper over the scanner, which the pipeline and `golem build` still read. */
-function indexScan(root: string): ReturnType<typeof scanProjectRewrites> {
-  return scanProjectRewrites({ root, configFile: path.join(root, 'tsconfig.json'), nest: false });
-}
-
-test('the same project always writes the same index, with its files and edits in order', (t) => {
+test('the scan lists files in path order and each file\'s edits in source order, the same way every time', (t) => {
   const root = project(t, ['calls.ts', 'construct.ts', 'ledger.model.ts', 'ledger.model.generated.ts']);
-  const first = indexScan(root);
+  const first = scan(root);
   assert.deepEqual(first.diagnostics, []);
-  writeRewriteIndex(root, first.index);
-  const bytes = fs.readFileSync(path.join(root, '.golem/rewrites.json'), 'utf8');
-  assert.deepEqual(Object.keys(JSON.parse(bytes) as object), ['version', 'golem', 'files'], 'the index holds no cache state');
-  const second = indexScan(root);
-  assert.equal(writeRewriteIndex(root, second.index), false);
-  assert.equal(fs.readFileSync(path.join(root, '.golem/rewrites.json'), 'utf8'), bytes);
-  assert.deepEqual(Object.keys(first.index.files), [...Object.keys(first.index.files)].sort());
-  for (const file of Object.values(first.index.files)) {
+  const files = [...first.files.keys()];
+  assert.deepEqual(files, [...files].sort());
+  for (const file of first.files.values()) {
     assert.deepEqual(file.edits.map(({ start, end }) => [start, end]), file.edits.map(({ start, end }) => [start, end]).sort((a, b) => a[0]! - b[0]! || a[1]! - b[1]!));
   }
+  assert.deepEqual(scan(root), first);
 });
 
 test('a call whose type argument is parenthesised is rewritten in a file that shows no golem text', (t) => {
@@ -281,17 +272,6 @@ test('golem check reports the sites golem cannot rewrite with their code and pos
   await runPipeline(config, { check: true });
 });
 
-test('golem generate fails on a site golem cannot rewrite, and fails again on retry while the site remains', async (t) => {
-  const { root, config } = generatedProject(t);
-  await runPipeline(config);
-  fs.writeFileSync(path.join(root, 'src/use.ts'), "import { parse } from '@exprtlabs/golem/serde';\nexport const bad = parse<string | null>('{}');\n");
-  const rejection = /RUNM1066 \(src\/use\.ts:2:20\): parse type argument must be a single type name or typeof expression/;
-  await assert.rejects(runPipeline(config), rejection);
-  await assert.rejects(runPipeline(config), rejection, 'a failed generate is not recorded as done');
-  fs.writeFileSync(path.join(root, 'src/use.ts'), "import { parse } from '@exprtlabs/golem/serde';\nimport { Payment } from './money.model.js';\nexport const payment = parse<Payment>('{}');\n");
-  await runPipeline(config);
-});
-
 test('a config without a models or controllers job still checks the project that calls an SDK', async (t) => {
   const { root } = createModelProject(t, {
     prefix: 'golem-rewrite-consumer-',
@@ -312,34 +292,7 @@ export const money = parse<MoneyModel>(text);
   await assert.rejects(runPipeline(config, { check: true }), /RUNM1066 \(src\/use\.ts:5:20\)/);
 });
 
-test('a source edit that changes no job input still refreshes the index of a project that only calls an SDK', async (t) => {
-  const { root } = createModelProject(t, {
-    prefix: 'golem-rewrite-consumer-refresh-',
-    linkTypescript: true,
-    packages: { '@exprtlabs/golem-openapi': path.join(workspace, 'packages/golem-openapi') },
-  });
-  writeFixture(root, { mobx: false, validation: false }, false);
-  const use = path.join(root, 'src/use.ts');
-  const source = `import { parse } from '@exprtlabs/golem/serde';
-import type { MoneyModel } from '../sdk/index.js';
-declare const text: string;
-export const money = parse<MoneyModel>(text);
-`;
-  fs.writeFileSync(use, source);
-  const config = path.join(root, 'golem.yaml');
-  await runPipeline(config);
-  const before = readRewriteIndex(root)?.files['src/use.ts'];
-  assert.ok(before);
-  fs.writeFileSync(use, `${source}export const again = parse<MoneyModel>(text);\n`);
-  fs.writeFileSync(path.join(root, 'src/added.ts'), source);
-  const state = await runPipeline(config);
-  assert.deepEqual([...state.ran], [], 'no job input changed');
-  const after = readRewriteIndex(root);
-  assert.equal(after?.files['src/use.ts']?.edits.length, before.edits.length * 2);
-  assert.ok(after?.files['src/added.ts'], 'a new file with a site is listed');
-});
-
-test('a file outside the project root with a rewrite site fails generation, one without a site does not', (t) => {
+test('a file outside the project root with a rewrite site fails the scan, one without a site does not', (t) => {
   const { root: outer } = createModelProject(t, { prefix: 'golem-rewrite-outside-', linkTypescript: true });
   const root = path.join(outer, 'app');
   for (const file of BASE) copyFixtureFile(root, `rewrite/${file}`, `src/${file}`);
