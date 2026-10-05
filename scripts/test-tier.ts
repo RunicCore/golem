@@ -17,8 +17,8 @@ const SMOKE_FILE = '.build/tests/packed/model-only.test.js';
 // typescript-identity (it compares both versions itself, so it runs once, in the unit step).
 export const TYPESCRIPT6_FILES = [
   ...[
-    'typescript-backends', 'typescript-ts6', 'model-tags', 'model-composition', 'projection-names', 'model-job-graph',
-    'constraint-parity', 'model-companions', 'model-union-tags', 'union-conversion', 'model-tuples', 'projection-integration',
+    'typescript-backends', 'typescript-ts6', 'model-tags', 'model-tags-serde', 'model-composition', 'model-projections', 'projection-names', 'model-job-graph',
+    'constraint-parity', 'model-companions', 'model-companion-build', 'model-union-tags', 'union-conversion', 'model-tuples', 'projection-integration',
     'resource-projection', 'tag-alias-generics', 'tag-model-boundaries', 'model-generator', 'model-codec-location',
     'model-field-names', 'constraint-portability', 'constraint-callback-composition', 'public-model-layout', 'public-sdk-layout',
     'controllers-tooling', 'watch-recovery', 'pipeline', 'rewrite-scan', 'rewrite-loader', 'rewrite-bundlers', 'build-command',
