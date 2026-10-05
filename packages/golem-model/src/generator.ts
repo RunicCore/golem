@@ -8,7 +8,7 @@ import type {
   GeneratorSession,
   InputObserver,
 } from '@exprtlabs/golem/generator-api';
-import { buildCodecValidationPlan, compileStandaloneValidatorSet, type CodecSchemaClosureEntry } from '@exprtlabs/golem/ajv-tooling';
+import { buildCodecValidationPlan, compilePlanValidators, type CodecSchemaClosureEntry } from '@exprtlabs/golem/validation-plan';
 import { DEFAULT_MODEL_SUFFIXES, resolveProfile, suffixPattern } from '@exprtlabs/golem/generator-api';
 import { codecKeysPath, defaultModelOutput } from '@exprtlabs/golem/generated-paths';
 import { emitCodecDeclarationTable } from '@exprtlabs/golem/schema-graph';

@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { discoverSources, isRecord, resolveProfile } from './generator-api.js';
 import type { GolemProfile, InputObserver } from './generator-api.js';
-import type { CodecSchemaClosureEntry } from './ajv-tooling.js';
+import type { CodecSchemaClosureEntry } from './validation-plan.js';
 
 export interface ModelManifestProvenance {
   readonly module: string;

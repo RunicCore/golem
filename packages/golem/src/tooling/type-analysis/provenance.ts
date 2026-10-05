@@ -11,7 +11,7 @@ import type {
   ModelManifestEntry,
 } from '../model-manifest.js';
 import type { GolemProfile, InputObserver } from '../generator-api.js';
-import type { CodecSchemaClosureEntry } from '../ajv-tooling.js';
+import type { CodecSchemaClosureEntry } from '../validation-plan.js';
 import { canonicalFilename } from './project.js';
 
 export interface ResolvedModelManifestEntry extends ModelManifestEntry {

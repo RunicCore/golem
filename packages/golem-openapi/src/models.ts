@@ -11,10 +11,10 @@ import {
   type ModelDiscriminators,
 } from '@exprtlabs/golem/emitter';
 import { createSchemaGraph, codecPublicId, internDescriptors, type SchemaGraph, type SchemaNode } from '@exprtlabs/golem/schema-graph';
-import type { CodecSchemaClosureEntry } from '@exprtlabs/golem/ajv-tooling';
+import type { CodecSchemaClosureEntry } from '@exprtlabs/golem/validation-plan';
 import { assertSupportedModelFieldName, type JsonSchema } from '@exprtlabs/golem/schema';
 import { sourceDigest } from '@exprtlabs/golem/manifest';
-import { buildCodecValidationPlan, compileStandaloneValidatorSet } from '@exprtlabs/golem/ajv-tooling';
+import { buildCodecValidationPlan, compilePlanValidators } from '@exprtlabs/golem/validation-plan';
 import type { DiscriminatorValue, ModelConstraint, ModelTypeDescriptor, UnionDiscriminator } from '@exprtlabs/golem/model';
 
 import { asRecord, isJsonObject, jsonLiteral, objectEntries } from './json.js';
