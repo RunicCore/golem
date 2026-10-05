@@ -7,7 +7,7 @@ import test, { type TestContext } from 'node:test';
 
 import { load } from '#golem/loader';
 import { runPipeline } from '#golem/cli';
-import { copyFixtureFile, createFixtureProject, readFixture, snapshotFilesystem, writeGeneratedArtifacts } from './fixture-project.js';
+import { copyFixtureFile, createFixtureProject, linkProjectPackages, readFixture, snapshotFilesystem, writeGeneratedArtifacts } from './fixture-project.js';
 import { createControllerFixture } from './fixture-templates/controllers/project.js';
 import { createModelProject } from './model-project.js';
 import { command, workspace, type CommandResult } from './support/process.js';
@@ -143,6 +143,35 @@ test('a .mts file whose tsconfig include misses it runs rewritten', async (t) =>
   const result = await run(root, 'src/listed.mts');
   assert.equal(result.code, 0, result.stderr);
   assert.deepEqual(JSON.parse(result.stdout.split('\n')[0]!), { money: { currency: 'USD', value: '1' }, twice: 42 });
+});
+
+/** A directory next to the project, as a workspace package that the project imports from its real path: outside the golem.yaml's tsconfig directory. */
+function outsideDirectory(t: TestContext, root: string, files: Readonly<Record<string, string>>): string {
+  const outside = createFixtureProject(t, 'golem-loader-outside-');
+  linkProjectPackages(outside, { '@exprtlabs/golem': path.join(workspace, 'packages/golem') });
+  for (const [relative, text] of Object.entries(files)) write(outside, relative, text);
+  write(root, 'src/outside.ts', `import './money.model.ts';\nimport { value } from '${pathToFileURL(path.join(outside, 'lib.ts')).href}';\nconsole.log(JSON.stringify(value));\n`);
+  return outside;
+}
+
+test('a parse call in a file outside the project fails the run with the file and the line instead of loading unrewritten', async (t) => {
+  const root = await project(t, 'loader-outside-call');
+  const outside = outsideDirectory(t, root, {
+    'lib.ts': `import { parse } from '${SERDE}';\nimport type { TMoney } from '${path.join(root, 'src/money.model.ts')}';\nexport const value = parse<TMoney>('{"currency":"USD","value":"1"}');\n`,
+  });
+  const result = await run(root, 'src/outside.ts');
+  assert.notEqual(result.code, 0);
+  assert.match(result.stderr, /GolemHostError/);
+  assert.ok(result.stderr.includes(`${path.relative(root, path.join(outside, 'lib.ts')).split(path.sep).join('/')}:3:`), result.stderr);
+  assert.match(result.stderr, /outside the project root/);
+});
+
+test('a file outside the project with no rewrite site loads normally', async (t) => {
+  const root = await project(t, 'loader-outside-plain');
+  outsideDirectory(t, root, { 'lib.ts': 'export const value: number = 42;\n' });
+  const result = await run(root, 'src/outside.ts');
+  assert.equal(result.code, 0, result.stderr);
+  assert.equal(result.stdout, '42\n');
 });
 
 /** A CommonJS file with a rewrite site: the import the rewrite adds cannot run in CommonJS. */

@@ -1,7 +1,7 @@
 import { existsSync, statSync } from 'node:fs';
 import path from 'node:path';
 
-import { contains, resolveConfig } from './config.js';
+import { resolveConfig } from './config.js';
 import type { GolemConfig } from './config.js';
 import { GolemDiagnosticSeverity } from './generator-api.js';
 import { applyRewrites, GolemRewriteStaleError, readRewriteIndex, REWRITE_INDEX_PATH, sha256Hex, type RewriteIndex } from './rewrite.js';
@@ -127,8 +127,8 @@ export interface RewriteProject {
   /** Directory of the yaml's tsconfig. */
   readonly root: string;
   /**
-   * Edits for one file as the host will compile it, `dependencies` as absolute paths; undefined when the file is
-   * outside the project or has no rewrite. Throws a `GolemHostError` (file, line, "run golem generate") on scan diagnostics.
+   * Edits for one file as the host will compile it, `dependencies` as absolute paths; undefined when the file has no
+   * rewrite. A file outside the tsconfig's directory is scanned like any other, and the scan fails one that needs a rewrite. Throws a `GolemHostError` (file, line, "run golem generate") on scan diagnostics.
    */
   rewrite(filename: string, text: string): { code: string; map: SourceMapV3; dependencies: readonly string[] } | undefined;
   /** Tell the session these files changed on disk (new, edited or removed). */
@@ -160,7 +160,7 @@ class ScanningProject implements RewriteProject {
   private stale = false;
   /** Text the host holds for files that differ from the disk, by canonical file. */
   private readonly overlays = new Map<string, string>();
-  /** Files under the root that the tsconfig's own file list misses, such as `.mts`: the program gets them as roots. */
+  /** Files that the tsconfig's own file list misses, such as `.mts`: the program gets them as roots. */
   private readonly extras = new Set<string>();
 
   constructor(private readonly config: GolemConfig, private readonly nest: boolean, private readonly compiler: Compiler, private readonly forget: () => void) {
@@ -196,7 +196,6 @@ class ScanningProject implements RewriteProject {
 
   rewrite(filename: string, text: string): { code: string; map: SourceMapV3; dependencies: readonly string[] } | undefined {
     const file = this.compiler.canonicalFilename(filename);
-    if (!contains(this.root, file)) return undefined;
     this.holds(file, withoutByteOrderMark(text));
     const scanned = this.scanner!.scanFile(file);
     if (scanned === undefined) return undefined;
