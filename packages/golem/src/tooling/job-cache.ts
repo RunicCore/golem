@@ -14,10 +14,14 @@ import { GOLEM_VERSION } from './version.js';
 export interface JobRecord {
   /** The golem version that ran the job. */
   readonly golem: string;
+  /** The version of the job's provider package, which can change with its options and inputs unchanged. */
+  readonly provider: string;
   /** JSON of the job's resolved options. */
   readonly options: string;
-  /** Every input, by the digest it had when the job read it: a file's content, a directory's file listing, `missing` for an absent path, `unstable` for a file edited after the job started. */
+  /** Every input, by the digest it had when the job read it: a file's content, a directory's file listing, `missing` for an absent path, `unstable` for a reported input the job never announced. */
   readonly inputs: Readonly<Record<string, string>>;
+  /** The manifests of the jobs before it that the job received as `manifestInputs`. */
+  readonly manifestInputs: readonly string[];
   readonly outputs: readonly string[];
   /** The manifests the job reported: its outputs that later jobs read as `manifestInputs`. */
   readonly manifests: readonly string[];
@@ -44,7 +48,9 @@ function isJobRecord(value: unknown): value is JobRecord {
   const strings = (items: unknown): boolean => Array.isArray(items) && items.every(item => typeof item === 'string');
   return isRecord(value)
     && typeof value.golem === 'string'
+    && typeof value.provider === 'string'
     && typeof value.options === 'string'
+    && strings(value.manifestInputs)
     && isRecord(value.inputs) && Object.values(value.inputs).every(digest => typeof digest === 'string')
     && strings(value.outputs)
     && strings(value.manifests);
@@ -72,8 +78,10 @@ export function saveJobRecords(config: GolemConfig, records: ReadonlyMap<string,
     .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
     .map(([id, record]) => [id, {
       golem: record.golem,
+      provider: record.provider,
       options: record.options,
       inputs: Object.fromEntries(Object.entries(record.inputs).sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))),
+      manifestInputs: record.manifestInputs,
       outputs: record.outputs,
       manifests: record.manifests,
     }]));
@@ -135,18 +143,32 @@ export function inputDigest(filename: string, excluded: (filename: string) => bo
   }
 }
 
+/** What the run supplies to a job besides its inputs: the version of its provider package, and the manifests of the jobs before it (absolute paths). */
+export interface JobSetup {
+  /** Undefined when the provider package cannot be resolved. */
+  readonly provider: string | undefined;
+  readonly manifestInputs: readonly string[];
+}
+
+/** Whether the provider version and the manifest set are those the record holds. */
+export function sameSetup(config: GolemConfig, record: JobRecord, setup: JobSetup): boolean {
+  return record.provider === setup.provider
+    && JSON.stringify(record.manifestInputs) === JSON.stringify(setup.manifestInputs.map(manifest => recordPath(config, manifest)));
+}
+
 /**
- * Whether the job would produce what its record holds: the golem version and options match, every output exists and
- * every input still has the digest it had when the job read it. `generated` is the files the inventory records,
- * which directory listings leave out; it defaults to the inventory on disk.
+ * Whether the job would produce what its record holds: the golem version, provider version, options and manifest set
+ * match, every output exists and every input still has the digest it had when the job read it. `generated` is the
+ * files the inventory records, which directory listings leave out; it defaults to the inventory on disk.
  */
 export function jobIsCurrent(
   config: GolemConfig,
   job: GolemJob,
   record: JobRecord | undefined,
+  setup: JobSetup,
   generated: ReadonlySet<string> = inventoryPaths(config, loadInventory(config)),
 ): boolean {
-  if (!record || record.golem !== GOLEM_VERSION || record.options !== JSON.stringify(job.options)) return false;
+  if (!record || record.golem !== GOLEM_VERSION || record.options !== JSON.stringify(job.options) || !sameSetup(config, record, setup)) return false;
   // A job that announced no input hides what it reads: nothing can show that it is still true.
   if (Object.keys(record.inputs).length === 0) return false;
   const outputs = new Set(record.outputs.map(output => absoluteRecordPath(config, output)));
@@ -159,7 +181,6 @@ export function jobIsCurrent(
 /** Collects the inputs of one running job, each digested when the job reads it and never later: an edit after the read changes the file's digest, so the next run reruns the job. */
 export class JobInputs {
   private readonly digests = new Map<string, string>();
-  private readonly startedAt = Date.now();
 
   /** `excluded` is read at each call, so files an earlier job just wrote stay out of a listing. */
   constructor(private readonly excluded: (filename: string) => boolean) {}
@@ -170,16 +191,13 @@ export class JobInputs {
   }
 
   /**
-   * The record's inputs. A reported watch input the job never announced is digested now; a file written since the job
-   * started may have been read in its older state, so it is `unstable` and the job reruns. `own` are the job's own
-   * outputs, which are not inputs.
+   * The record's inputs. A reported watch input the job never announced has no digest from the read: it is `unstable`,
+   * which never matches, so the job runs again. `own` are the job's own outputs, which are not inputs.
    */
   finish(config: GolemConfig, watchInputs: readonly string[], own: ReadonlySet<string>): Record<string, string> {
     for (const input of watchInputs) {
       const resolved = path.resolve(input);
-      if (this.digests.has(resolved)) continue;
-      const stat = fs.statSync(resolved, { throwIfNoEntry: false });
-      this.digests.set(resolved, stat?.isFile() && stat.mtimeMs >= this.startedAt ? UNSTABLE : inputDigest(resolved, this.excluded));
+      if (!this.digests.has(resolved)) this.digests.set(resolved, UNSTABLE);
     }
     return Object.fromEntries([...this.digests]
       .filter(([input]) => !own.has(input))

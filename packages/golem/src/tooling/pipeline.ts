@@ -5,7 +5,7 @@ import { pathToFileURL } from 'node:url';
 import { contains, resolveConfig, validateConfigInputs } from './config.js';
 import type { GolemConfig, GolemJob } from './config.js';
 import { loadInventory, applyJob, removeRetiredJobs } from './outputs.js';
-import { absoluteRecordPath, inventoryPaths, JobInputs, jobIsCurrent, loadJobRecords, recordPath, saveJobRecords } from './job-cache.js';
+import { absoluteRecordPath, inventoryPaths, JobInputs, jobIsCurrent, loadJobRecords, recordPath, sameSetup, saveJobRecords } from './job-cache.js';
 import type { JobRecord } from './job-cache.js';
 import { GolemDiagnosticSeverity, errorMessage, hasErrorCode, isRecord } from './generator-api.js';
 import { validateModelManifest } from './model-manifest.js';
@@ -150,6 +150,15 @@ function packageVersion(specifier: string, filename: string): string {
 }
 
 /** The providers of the configured jobs, or of the jobs named by `only`. */
+/** The version of the package that provides a job, or undefined when it cannot be resolved. */
+function providerVersion(config: GolemConfig, job: GolemJob): string | undefined {
+  try {
+    return packageVersion(job.package, createRequire(path.join(config.directory, 'package.json')).resolve(`${job.package}/generator`));
+  } catch {
+    return undefined;
+  }
+}
+
 export async function providersFor(config: GolemConfig, only?: ReadonlySet<string>): Promise<ReadonlyMap<string, LoadedProvider>> {
   const requireFromProject = createRequire(path.join(config.directory, 'package.json'));
   const providers = new Map<string, LoadedProvider>();
@@ -415,12 +424,22 @@ export async function runPipeline(filename: string, options: PipelineOptions = {
   // The outputs of removed jobs go before the first job runs, so a job that reads one is not current.
   const active = new Set(config.jobs.map(job => job.id));
   const retired = new Set(Object.entries(inventory.files).filter(([, entry]) => !active.has(entry.job)).map(([key]) => path.resolve(config.directory, key)));
-  const current = new Set(jobCache
-    ? config.jobs.filter(job => {
+  const providerVersions = new Map<string, string | undefined>();
+  const versionOf = (job: GolemJob): string | undefined => {
+    if (!providerVersions.has(job.package)) providerVersions.set(job.package, providerVersion(config, job));
+    return providerVersions.get(job.package);
+  };
+  const current = new Set<string>();
+  // The manifests a job receives are those of the jobs before it; their records say what to expect before anything runs.
+  const expectedManifests: string[] = [];
+  if (jobCache) {
+    for (const job of config.jobs) {
       const record = records.get(job.id);
-      return record !== undefined && !readsAny(config, record, retired) && jobIsCurrent(config, job, record, generated);
-    }).map(job => job.id)
-    : []);
+      if (record && !readsAny(config, record, retired)
+        && jobIsCurrent(config, job, record, { provider: versionOf(job), manifestInputs: expectedManifests }, generated)) current.add(job.id);
+      expectedManifests.push(...(record?.manifests ?? []).map(manifest => absoluteRecordPath(config, manifest)));
+    }
+  }
   // Jobs that must run, with the providers they need: a stale job, and each job that reads an output of one that runs.
   const planned = new Set<string>();
   const plannedOutputs = new Set<string>();
@@ -451,7 +470,7 @@ export async function runPipeline(filename: string, options: PipelineOptions = {
       && previous
       && JSON.stringify(previousJob?.options) === JSON.stringify(job.options);
     const record = records.get(job.id);
-    if (jobCache && record && current.has(job.id) && !readsAny(config, record, ranOutputs)) {
+    if (jobCache && record && current.has(job.id) && !readsAny(config, record, ranOutputs) && sameSetup(config, record, { provider: versionOf(job), manifestInputs: manifests })) {
       // Its inputs and outputs are as its record holds them: there is no result to reuse, and nothing to write.
       const outputs = record.outputs.map(output => absoluteRecordPath(config, output));
       for (const output of outputs) {
@@ -507,7 +526,9 @@ export async function runPipeline(filename: string, options: PipelineOptions = {
         const own = new Set([...previousOutputs, ...result.artifacts.map(artifact => artifact.path)]);
         nextRecords.set(job.id, {
           golem: GOLEM_VERSION,
+          provider: versionOf(job) ?? '',
           options: JSON.stringify(job.options),
+          manifestInputs: manifests.map(manifest => recordPath(config, manifest)),
           inputs: read.finish(config, result.watchInputs, own),
           outputs: result.artifacts.map(artifact => recordPath(config, artifact.path)).sort(),
           manifests: result.manifestPaths.map(manifest => recordPath(config, manifest)),
@@ -531,12 +552,11 @@ export async function runPipeline(filename: string, options: PipelineOptions = {
     manifests.push(...result.manifestPaths);
     results.set(job.id, result);
   }
-  if (!options.check) saveJobRecords(config, nextRecords);
   // A yaml without a tsconfig, an openapi-only one for instance, has no project to scan.
   const hasProject = fs.existsSync(config.tsconfig);
   const indexFile = path.join(path.dirname(config.tsconfig), REWRITE_INDEX_PATH);
-  // Temporary: the hosts still read the index, so generate writes it when a job ran or it is missing. Task 4 removes `writeHostRewriteIndex`.
-  const hostIndex = !options.check && hasProject && (ran.size > 0 || !fs.existsSync(indexFile));
+  // Temporary: the hosts still read the index, so every generate rescans and writes it. Task 4 removes `writeHostRewriteIndex`.
+  const hostIndex = !options.check && hasProject;
   // `golem check` reads the project's sources too: it reports the sites golem cannot rewrite, and writes nothing.
   const rewriteScan = (options.check || hostIndex) && hasProject ? await loadRewriteScan(rewriteRoot(config).job !== undefined) : undefined;
   if (rewriteScan) {
@@ -568,11 +588,8 @@ export async function runPipeline(filename: string, options: PipelineOptions = {
       owned.add(indexFile);
     }
   }
-  // An index an earlier run wrote stays owned when this run kept it.
-  if (!options.check && hasProject && !hostIndex && fs.existsSync(indexFile)) {
-    owned.add(indexFile);
-    options.onOwned?.([indexFile]);
-  }
+  // Records are saved last: a run that fails in the scan is not recorded as done.
+  if (!options.check) saveJobRecords(config, nextRecords);
   for (const output of owned) inputs.delete(output);
   session.retainUsed(new Set(config.jobs.map((job) => job.id)), used);
   return { config, results, inputs, dependencies, owned, ran, skippedOutputs };
