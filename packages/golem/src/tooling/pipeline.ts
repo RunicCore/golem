@@ -566,7 +566,7 @@ export async function runPipeline(filename: string, options: PipelineOptions = {
     const disagreements = nest ? rewriteScan.checkNestCodecs(controllerRoots, scanned) : [];
     if (disagreements.length > 0) throw new Error(errorDiagnosticsMessage('golem nest codec check', disagreements));
   }
-  // Records are saved last: a run that fails in the scan is not recorded as done.
+  // Records are saved last, and only by a run that writes: `check` writes nothing.
   if (!options.check) saveJobRecords(config, nextRecords);
   for (const output of owned) inputs.delete(output);
   session.retainUsed(new Set(config.jobs.map((job) => job.id)), used);

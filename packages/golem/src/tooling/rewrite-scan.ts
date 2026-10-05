@@ -148,13 +148,13 @@ class CodecKeys {
   }
 
   /**
-   * Transition: the `iobject-plugin-keys.ts` tables of SDKs generated, or installed, before manifests held codec ids.
+   * Transition: the `iobject-plugin-keys.ts` tables of SDKs generated, or installed, before manifests held codec ids. A table
+   * a models job wrote before `codec-keys.json` is not read: the next `golem generate` retires it.
    * Follow-up: remove the read of SDK key tables generated before model-manifest codecId.
    */
   private addProgramTables(): void {
     for (const file of this.program.getSourceFiles()) {
-      if (path.basename(file.fileName) !== CODEC_KEY_FILE) continue;
-      const openApi = file.text.includes(OPENAPI_KEYS_MARKER);
+      if (path.basename(file.fileName) !== CODEC_KEY_FILE || !file.text.includes(OPENAPI_KEYS_MARKER)) continue;
       const table = portable(this.root, file.fileName);
       const directory = portable(this.root, path.dirname(file.fileName));
       const visit = (node: ts.Node): void => {
@@ -165,12 +165,7 @@ class CodecKeys {
           const hash = name.lastIndexOf('#');
           if (hash > 0 && id !== '') {
             const source = name.slice(0, hash).replace(/\\/g, '/');
-            const short = name.slice(hash + 1);
-            if (openApi) this.add(`${path.posix.join(directory, source)}#${short}`, id, table, true);
-            else {
-              this.add(`${source}#${short}`, id, table, true);
-              if (directory !== '' && directory !== '.' && !source.includes('/')) this.add(`${directory}/${source}#${short}`, id, table, true);
-            }
+            this.add(`${path.posix.join(directory, source)}#${name.slice(hash + 1)}`, id, table, true);
           }
         }
         ts.forEachChild(node, (child) => { visit(child); return undefined; });

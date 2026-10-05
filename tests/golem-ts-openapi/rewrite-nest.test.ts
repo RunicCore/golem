@@ -89,7 +89,7 @@ test('with nest on, a model @Body() or @Query() parameter and a model return gai
   assert.equal(code.match(/__golem_nestModelCodec\(/g)?.length, 6);
 });
 
-test('without nest the controller is not indexed', (t) => {
+test('without nest the controller is not rewritten', (t) => {
   const root = paymentsProject(t);
   const result = scan(root, false);
   assert.deepEqual(result.diagnostics, []);
@@ -108,7 +108,7 @@ test('a decorator that is already present, plain, through a namespace or aliased
   assert.equal(result.files.get('src/aliased.controller.ts'), undefined);
 });
 
-test('a primitive @Body() and a type no model table names are not indexed', (t) => {
+test('a primitive @Body() and a type no model table names are not rewritten', (t) => {
   const primitive = project(t, {
     'src/notes.controller.ts': readFixture(`${PLUGIN}/rewrite-skips-a-primitive-body/notes.controller.ts`),
   });
@@ -160,7 +160,7 @@ test('a table-known @Body() type that binds to no single id fails with its posit
   }]);
 });
 
-test('a method that a decorator cannot decorate is not indexed: an object literal, an abstract method, an overload signature', (t) => {
+test('a method that a decorator cannot decorate is not rewritten: an object literal, an abstract method, an overload signature', (t) => {
   const root = paymentsProject(t, {
     'src/loose.ts': readFixture(`${PLUGIN}/rewrite-skips-methods-a-decorator-cannot-reach/loose.ts`),
   });
@@ -226,7 +226,7 @@ test('a method that calls parse and carries nest decorators gets both rewrites a
   assert.deepEqual(
     result.files.get('src/mixed.controller.ts')?.edits.map(edit => /^@?(__golem_\w+)/.exec(edit.text)?.[1]),
     ['__golem_nestModelReturn', '__golem_nestModelCodec', '__golem_requireObjectCodec'],
-    'edits are indexed in source order',
+    'edits are in source order',
   );
   assert.deepEqual(code.split('\n').slice(0, 2), [
     "import { nestModelCodec as __golem_nestModelCodec, nestModelReturn as __golem_nestModelReturn } from '@exprtlabs/golem/nest';",
@@ -238,7 +238,7 @@ test('a method that calls parse and carries nest decorators gets both rewrites a
   ]);
 });
 
-test('the operation-codec check passes when the registry holds every id the scan indexed, and fails when it does not', (t) => {
+test('the operation-codec check passes when the registry holds every id the scan found, and fails when it does not', (t) => {
   const root = paymentsProject(t);
   const result = scan(root);
   assert.deepEqual(result.diagnostics, []);
