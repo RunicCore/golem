@@ -23,6 +23,7 @@ These calls convert a named [`IObject` or `IModel`](/guide/models#iobject-or-imo
 - The type argument selects the model.
 - `T` must be a named generated `IObject` or `IModel`. An inline object type is not enough.
 - [Unsupported unions](/guide/model-composition#unions) fail generation.
+- Write these calls in your own source files. golem does not rewrite a call inside a generated `*.generated.ts` file, so it throws at run time.
 
 With validation on, the default, these calls check the value with Ajv. `{ validate: false }` skips that check. `failFast: false` reports every issue instead of the first one. It does not turn Ajv off.
 
