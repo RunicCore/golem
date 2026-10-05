@@ -206,6 +206,31 @@ test('a file the repository ignores is neither listed, exported nor hashed, and 
   assert.equal(exportPublicSource(clone, path.join(clone, '.cache', 'export')).digest, result.digest);
 });
 
+test('an ignore rule with a character class matches what git matches', (t) => {
+  const root = publicFixture(t);
+  writeFixture(root, 'examples/classes/.gitignore', ['[Gg]enerated/', 'gen-[a-c].ts', 'out[!0-9].ts', 'num-[0-3].ts', 'dash[-x].ts', ''].join('\n'));
+  const ignoredFiles = [
+    'examples/classes/Generated/a.ts', 'examples/classes/generated/a.ts', 'examples/classes/gen-a.ts', 'examples/classes/gen-c.ts',
+    'examples/classes/outx.ts', 'examples/classes/num-2.ts', 'examples/classes/dash-.ts', 'examples/classes/dashx.ts',
+  ];
+  const keptFiles = [
+    'examples/classes/GENERATED/a.ts', 'examples/classes/gen-d.ts', 'examples/classes/out5.ts', 'examples/classes/num-4.ts',
+    'examples/classes/dashy.ts', 'examples/classes/gen-.ts',
+  ];
+  for (const relative of [...ignoredFiles, ...keptFiles]) writeFixture(root, relative, 'export {};\n');
+
+  const files = listPublicSourceFiles(root);
+  for (const relative of ignoredFiles) assert.equal(files.includes(relative), false, relative);
+  for (const relative of keptFiles) assert.equal(files.includes(relative), true, relative);
+});
+
+test('an ignore rule with a bracket that closes no character class is rejected with its file and line', (t) => {
+  const root = publicFixture(t);
+  writeFixture(root, 'examples/classes/.gitignore', '*.log\nbroken[abc\n');
+  writeFixture(root, 'examples/classes/a.ts', 'export {};\n');
+  assert.throws(() => listPublicSourceFiles(root), new Error('unsupported .gitignore pattern: examples/classes/.gitignore:2: broken[abc'));
+});
+
 test('content scanner reports forbidden paths and payload classes without returning payload text, and accepts an explicit safe candidate set', (t) => {
   const root = publicFixture(t);
   const dotPrivate = joinParts('.', 'pri', 'vate');

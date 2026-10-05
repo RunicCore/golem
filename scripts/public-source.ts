@@ -48,8 +48,25 @@ function allowedSource(filename: string): boolean {
 
 interface IgnoreRule { readonly base: string; readonly pattern: RegExp; readonly negated: boolean; readonly directoryOnly: boolean }
 
-/** One `.gitignore` glob as a regular expression over a path relative to the folder of the ignore file. */
-function ignorePattern(pattern: string): RegExp {
+/** The regular expression for the character class that opens at `glob[start]`, and the index of its `]`; undefined when no `]` closes it. */
+function characterClass(glob: string, start: number): { source: string; end: number } | undefined {
+  let index = start + 1;
+  const negated = glob[index] === '!' || glob[index] === '^';
+  if (negated) index += 1;
+  const first = index;
+  let body = '';
+  for (; index < glob.length; index += 1) {
+    const char = glob[index];
+    if (char === ']' && index > first) return { source: negated ? `(?!/)[^${body}]` : `[${body}]`, end: index };
+    if (char === '[' && glob[index + 1] === ':') return undefined;
+    if (char === '\\' && index + 1 < glob.length) { index += 1; body += `\\${glob[index]}`; }
+    else body += char === '-' ? char : char.replace(/[\\^\][]/g, '\\$&');
+  }
+  return undefined;
+}
+
+/** One `.gitignore` glob as a regular expression over a path relative to the folder of the ignore file; `where` names the rule in an error. */
+function ignorePattern(pattern: string, where: string): RegExp {
   const anchored = pattern.includes('/');
   const glob = pattern.startsWith('/') ? pattern.slice(1) : pattern;
   let source = '';
@@ -62,24 +79,34 @@ function ignorePattern(pattern: string): RegExp {
       else { source += '[^/]*'; index += 1; }
     } else if (char === '*') source += '[^/]*';
     else if (char === '?') source += '[^/]';
-    else if (char === '\\' && index + 1 < glob.length) { index += 1; source += glob[index].replace(/[.+^${}()|[\]\\]/g, '\\$&'); }
+    else if (char === '[') {
+      const characters = characterClass(glob, index);
+      if (!characters) throw new Error(`unsupported .gitignore pattern: ${where}`);
+      source += characters.source;
+      index = characters.end;
+    } else if (char === '\\' && index + 1 < glob.length) { index += 1; source += glob[index].replace(/[.+^${}()|[\]\\]/g, '\\$&'); }
     else source += char.replace(/[.+^${}()|[\]\\]/g, '\\$&');
   }
-  return new RegExp(`^${anchored ? '' : '(?:.*/)?'}${source}$`);
+  try {
+    return new RegExp(`^${anchored ? '' : '(?:.*/)?'}${source}$`);
+  } catch {
+    throw new Error(`unsupported .gitignore pattern: ${where}`);
+  }
 }
 
 /** The rules of one `.gitignore` file; `base` is its folder relative to the root. */
 function ignoreRules(text: string, base: string): IgnoreRule[] {
   const rules: IgnoreRule[] = [];
-  for (const raw of text.split(/\r?\n/)) {
-    let line = raw.replace(/(?<!\\)\s+$/, '');
+  for (const [lineIndex, raw] of text.split(/\r?\n/).entries()) {
+    const written = raw.replace(/(?<!\\)\s+$/, '');
+    let line = written;
     if (!line || line.startsWith('#')) continue;
     const negated = line.startsWith('!');
     if (negated) line = line.slice(1);
     const directoryOnly = line.endsWith('/');
     if (directoryOnly) line = line.slice(0, -1);
     if (!line) continue;
-    rules.push({ base, pattern: ignorePattern(line), negated, directoryOnly });
+    rules.push({ base, pattern: ignorePattern(line, `${base ? `${base}/` : ''}.gitignore:${lineIndex + 1}: ${written}`), negated, directoryOnly });
   }
   return rules;
 }
