@@ -800,3 +800,46 @@ test('a binding that no validation names is an error naming it and its place in 
   const noTable = compile({ roots: new Map([['root', { exprtValidation: ['rules.isEven'] }]]) }, { unknownFormats: 'warn' });
   assert.deepEqual(noTable.diagnostics.map(entry => [entry.code, entry.path]), [['VALIDATE_UNKNOWN_VALIDATION', '/exprtValidation/0']]);
 });
+
+test('a golem keyword with a malformed value is an error naming the keyword, not a dropped check', () => {
+  const cases: readonly [string, unknown][] = [
+    ['golemModelDate', 'yes'],
+    ['golemModelInstance', { among: 'Cat', required: true }],
+    ['golemModelInstance', { of: 1, among: ['Cat'], required: true }],
+    ['golemModelInstance', { among: ['Cat'] }],
+    ['golemModelInstance', 'Cat'],
+    ['exprtValidation', 'rules.isEven'],
+    ['exprtValidation', { schema: true }],
+    ['exprtValidation', { schema: true, bindings: 'rules.isEven' }],
+    ['exprtValidation', { schema: true, bindings: ['rules.isEven', 5] }],
+    ['exprtValidation', ['rules.isEven', null]],
+  ];
+  for (const [keyword, value] of cases) {
+    const result = compile(
+      { roots: new Map([['root', { properties: { a: { [keyword]: value } } }]]), validations: new Map([['rules.isEven', { importPath: RULES_PATH, exportName: 'isEven' }]]) },
+      { unknownFormats: 'warn', documentName: 'orders.yaml' },
+    );
+    assert.equal(result.source, '', `${keyword} ${JSON.stringify(value)}`);
+    assert.deepEqual(result.diagnostics.map(entry => [entry.code, entry.severity, entry.path]), [
+      ['VALIDATE_UNSUPPORTED_KEYWORD', GolemDiagnosticSeverity.Error, `/properties/a/${keyword}`],
+    ], `${keyword} ${JSON.stringify(value)}`);
+    assert.match(result.diagnostics[0].message, new RegExp(`value of ${keyword} is not valid`));
+    assert.match(result.diagnostics[0].message, /orders\.yaml/);
+  }
+});
+
+test('a discriminator reads the tag through a validation wrapper and runs only the selected branch', async () => {
+  const wrap = (schema: unknown): unknown => ({ exprtValidation: { schema, bindings: ['rules.always'] } });
+  const schema = {
+    oneOf: [
+      wrap({ properties: { kind: { const: 'a' }, x: { type: 'integer' } }, required: ['kind'] }),
+      wrap({ allOf: [{ properties: { kind: { enum: ['b', 'c'] } } }, { properties: { y: { type: 'string' } } }], required: ['kind'] }),
+    ],
+    discriminator: { propertyName: 'kind' },
+  };
+  const validate = await compileRules(schema, ['rules.always']);
+  assert.deepEqual(validate({ kind: 'a', x: 'no' }, true), [{ path: ['x'], code: 'type', expected: ['integer'] }]);
+  assert.deepEqual(validate({ kind: 'c', y: 1 }, false), [{ path: ['y'], code: 'type', expected: ['string'] }]);
+  assert.deepEqual(validate({ kind: 'z' }, true), [{ path: ['kind'], code: 'literal', expected: ['a', 'b', 'c'] }]);
+  assert.deepEqual(validate({ kind: 'a', x: 1 }, true), []);
+});

@@ -77,7 +77,7 @@ function finiteNumber(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
 }
 
-/** The value of `golemModelInstance` as an IR node; undefined when it does not have the shape `schema.ts` writes. */
+/** The value of `golemModelInstance` as an IR node; undefined when it does not have the shape `schema.ts` writes: `{ of?: string, among: string[], required: boolean }`. */
 function modelInstance(value: unknown): IrInstance | undefined {
   if (!isRecord(value)) return undefined;
   const { of, among, required } = value;
@@ -193,7 +193,14 @@ class Lowering {
     }
     const target = typeof node.$ref === 'string' ? this.resolver.resolve(node.$ref, base) : undefined;
     const viaRef = target ? this.tagValues(target, property, active) : undefined;
-    if (viaRef !== undefined || !Array.isArray(node.allOf)) return viaRef;
+    if (viaRef !== undefined) return viaRef;
+    // A branch that a validation function wraps states its tag in the wrapper's own schema.
+    const wrapper = node[VALIDATION_KEYWORD];
+    if (isRecord(wrapper) && wrapper.schema !== undefined) {
+      const inner = this.tagValues({ node: wrapper.schema, base, resource: location.resource, pointer: `${location.pointer}${pointerSegment(VALIDATION_KEYWORD)}${pointerSegment('schema')}` }, property, active);
+      if (inner !== undefined) return inner;
+    }
+    if (!Array.isArray(node.allOf)) return undefined;
     for (const [position, entry] of (node.allOf as readonly unknown[]).entries()) {
       const found = this.tagValues({ node: entry, base, resource: location.resource, pointer: `${location.pointer}${pointerSegment('allOf')}${pointerSegment(position)}` }, property, active);
       if (found !== undefined) return found;
@@ -332,9 +339,17 @@ class Lowering {
     const names = typeList.filter(isTypeName);
     if (names.length > 0) checks.push({ kind: 'type', names });
 
-    if (node[MODEL_DATE_KEYWORD] === true) checks.push({ kind: 'date' });
-    const instance = modelInstance(node[MODEL_INSTANCE_KEYWORD]);
-    if (instance !== undefined) checks.push(instance);
+    // A golem keyword with a malformed value is an error: dropping it would accept data its rule rejects.
+    const malformed = (keyword: string, expected: string): void => this.report(VALIDATE_UNSUPPORTED_KEYWORD, GolemDiagnosticSeverity.Error, here, keyword, `the value of ${keyword} is not valid: ${expected}`);
+    if (Object.hasOwn(node, MODEL_DATE_KEYWORD)) {
+      if (typeof node[MODEL_DATE_KEYWORD] !== 'boolean') malformed(MODEL_DATE_KEYWORD, 'expected true or false');
+      else if (node[MODEL_DATE_KEYWORD]) checks.push({ kind: 'date' });
+    }
+    if (Object.hasOwn(node, MODEL_INSTANCE_KEYWORD)) {
+      const instance = modelInstance(node[MODEL_INSTANCE_KEYWORD]);
+      if (instance === undefined) malformed(MODEL_INSTANCE_KEYWORD, 'expected an object with an optional string "of", a list of strings "among" and a boolean "required"');
+      else checks.push(instance);
+    }
 
     if (Object.hasOwn(node, 'const')) checks.push({ kind: 'literal', values: [node.const] });
     if (Array.isArray(node.enum)) checks.push({ kind: 'literal', values: node.enum as readonly unknown[] });
@@ -459,14 +474,19 @@ class Lowering {
     }
 
     // `{ schema, bindings }`, or the bindings alone: the functions run once the structural schema has passed, and the schema marks what it evaluates.
-    const validation = node[VALIDATION_KEYWORD];
-    if (Array.isArray(validation)) {
-      const calls = this.bindingCalls(validation, here);
-      if (calls.length > 0) checks.push({ kind: 'validation', calls });
-    } else if (isRecord(validation) && Array.isArray(validation.bindings)) {
-      const calls = this.bindingCalls(validation.bindings, here, 'bindings');
-      const fn = validation.schema === undefined || validation.schema === true ? undefined : sameValueFunction(VALIDATION_KEYWORD, validation.schema, 'schema');
-      if (calls.length > 0 || fn !== undefined) checks.push({ kind: 'validation', fn, calls });
+    if (Object.hasOwn(node, VALIDATION_KEYWORD)) {
+      const validation = node[VALIDATION_KEYWORD];
+      const ids: unknown = isRecord(validation) ? validation.bindings : validation;
+      if (!Array.isArray(ids) || !ids.every(id => typeof id === 'string')) {
+        malformed(VALIDATION_KEYWORD, 'expected a list of validation function identifiers, or an object with such a list as "bindings"');
+      } else if (Array.isArray(validation)) {
+        const calls = this.bindingCalls(ids, here);
+        if (calls.length > 0) checks.push({ kind: 'validation', calls });
+      } else if (isRecord(validation)) {
+        const calls = this.bindingCalls(ids, here, 'bindings');
+        const fn = validation.schema === undefined || validation.schema === true ? undefined : sameValueFunction(VALIDATION_KEYWORD, validation.schema, 'schema');
+        if (calls.length > 0 || fn !== undefined) checks.push({ kind: 'validation', fn, calls });
+      }
     }
 
     // These two read what every check above evaluated, so they come last.

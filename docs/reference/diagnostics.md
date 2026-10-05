@@ -338,7 +338,7 @@ The validator compiler writes the checks that generated models and SDKs run. Its
 
 ### VALIDATE_REF_CYCLE
 
-**Reference cycle.** A chain of `$ref`, `allOf`, `anyOf`, `oneOf`, `not`, `if`, `then`, `else` or `dependentSchemas` keywords returns to a schema without reading any property or item of the value, so a check could never finish. A cycle that goes through a property or an item, such as a tree whose `children` are trees, is fine. The message points at the first `$ref` in the cycle. **Fix:** Break the cycle, or make the schema read a property or an item before it refers back to itself.
+**Reference cycle.** A `$ref`, or a chain of schemas that apply to the same value, leads back to itself without reading any property or item of the value, so a check could never finish. A cycle that goes through a property or an item, such as a tree whose `children` are trees, is fine. The message points at the first `$ref` on the cycle, or at the step that closes the cycle when it has no `$ref`. **Fix:** Break the cycle, or make the schema read a property or an item before it refers back to itself.
 
 ### VALIDATE_UNKNOWN_FORMAT
 
@@ -346,7 +346,7 @@ The validator compiler writes the checks that generated models and SDKs run. Its
 
 ### VALIDATE_UNKNOWN_VALIDATION
 
-**Validation function not found.** A model refers to a validation function (a `TValidation` predicate) that the generator did not hand to the compiler to import. The message shows the function's identifier. **Fix:** Export the function from a source file that the job reads, then run `golem generate` again. The predicate must also meet the rules in [RUNM1040](#runm1040).
+**Validation function not found.** A model uses a validation function (a `TValidation` predicate) that generation could not find. The message shows the function's identifier. **Fix:** Export that function from a source file that the generator job reads, then run `golem generate` again. The predicate must also meet the rules in [RUNM1040](#runm1040).
 
 ### VALIDATE_UNRESOLVED_REF
 
@@ -354,7 +354,7 @@ The validator compiler writes the checks that generated models and SDKs run. Its
 
 ### VALIDATE_UNSUPPORTED_KEYWORD
 
-**Keyword golem does not support.** A schema uses `$dynamicRef` or `$dynamicAnchor`. Dynamic references depend on the order in which a validator reaches a schema at run time, which golem's validators do not track, so ignoring them would accept data that the schema rejects. Annotation keywords and keywords that start with `x-` are ignored without a diagnostic. **Fix:** Replace the dynamic reference with a `$ref` to a named schema.
+**Keyword golem does not support, or with an invalid value.** A schema uses `$dynamicRef` or `$dynamicAnchor`. Dynamic references depend on the order in which a validator reaches a schema at run time, which golem's validators do not track, so ignoring them would accept data that the schema rejects. The same code reports a keyword that golem writes into model schemas (`golemModelDate`, `golemModelInstance`, `exprtValidation`) when its value has the wrong shape; the message names the keyword and what it expects. Annotation keywords and keywords that start with `x-` are ignored without a diagnostic. **Fix:** Replace the dynamic reference with a `$ref` to a named schema. For a golem keyword, regenerate the schema with `golem generate` instead of editing it by hand.
 
 ## Client generator (OPENAPI)
 
