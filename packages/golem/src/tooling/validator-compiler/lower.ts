@@ -42,39 +42,29 @@ function callTo(fn: number): IrSchema {
   return { kind: 'checks', checks: [{ kind: 'call', fn }] };
 }
 
-/** True when `value`, or anything inside it, has one of `keys` as a key. */
-function hasKey(value: unknown, keys: readonly string[]): boolean {
-  if (Array.isArray(value)) return value.some(item => hasKey(item, keys));
-  if (!isRecord(value)) return false;
-  return Object.entries(value).some(([key, item]) => keys.includes(key) || hasKey(item, keys));
+// Keywords whose value is data, not schema.
+const DATA_KEYWORDS: ReadonlySet<string> = new Set(['enum', 'const', 'default', 'examples']);
+// Keywords whose value maps names to schemas: the names are not keywords, so `default` there is a property.
+const NAME_MAP_KEYWORDS: ReadonlySet<string> = new Set(['properties', 'patternProperties', 'dependentSchemas', 'dependentRequired', '$defs', 'definitions']);
+
+/**
+ * True when the schema `value`, or a schema inside it, has one of `keys` as a keyword. Each object is read once,
+ * so a schema that contains itself (a YAML alias can do that) ends the scan.
+ */
+function hasKey(value: unknown, keys: readonly string[], seen = new Set<object>(), namesOnly = false): boolean {
+  if (typeof value !== 'object' || value === null || seen.has(value)) return false;
+  seen.add(value);
+  if (Array.isArray(value)) return value.some(item => hasKey(item, keys, seen));
+  return Object.entries(value).some(([key, item]) => {
+    if (!namesOnly && keys.includes(key)) return true;
+    if (!namesOnly && DATA_KEYWORDS.has(key)) return false;
+    return hasKey(item, keys, seen, !namesOnly && NAME_MAP_KEYWORDS.has(key));
+  });
 }
 
 /** True when the schema node itself holds `unevaluatedProperties` or `unevaluatedItems`. */
 function holdsEvaluationKeyword(node: unknown): boolean {
   return isRecord(node) && EVALUATION_KEYWORDS.some(keyword => Object.hasOwn(node, keyword));
-}
-
-/**
- * The tag values of a `oneOf` branch for `property`: its `const`, or the values of its `enum`. Undefined when the
- * branch does not state them.
- */
-function branchTags(branch: unknown, property: string): readonly unknown[] | undefined {
-  if (!isRecord(branch) || !isRecord(branch.properties) || !Object.hasOwn(branch.properties, property)) return undefined;
-  const tag = branch.properties[property];
-  if (!isRecord(tag)) return undefined;
-  if (Object.hasOwn(tag, 'const')) return [tag.const];
-  return Array.isArray(tag.enum) && tag.enum.length > 0 ? tag.enum as readonly unknown[] : undefined;
-}
-
-/** The discriminator of a `oneOf` list, when every branch states its tag values and no value repeats; otherwise it is an annotation. */
-function discriminatorOf(node: Readonly<Record<string, unknown>>, branches: readonly unknown[]): IrDiscriminator | undefined {
-  const { discriminator } = node;
-  if (!isRecord(discriminator) || typeof discriminator.propertyName !== 'string') return undefined;
-  const property = discriminator.propertyName;
-  const tags = branches.map(branch => branchTags(branch, property));
-  if (!tags.every((list): list is readonly unknown[] => list !== undefined)) return undefined;
-  const seen = new Set(tags.flat().map(tag => JSON.stringify(tag)));
-  return seen.size === tags.flat().length ? { property, tags } : undefined;
 }
 
 function isTypeName(value: unknown): value is IrTypeName {
@@ -115,6 +105,8 @@ class Lowering {
   private readonly functions: MutableFunction[] = [];
   private readonly functionIds = new Map<object, number>();
   private readonly sameValueEdges: (readonly SameValueEdge[])[] = [];
+  /** The schema objects whose bodies are being lowered inline; one that contains itself becomes a function instead of recursing. */
+  private readonly inlining = new Set<object>();
   private readonly pending: { readonly id: number; readonly location: SchemaLocation }[] = [];
   /** True when any schema of the compilation holds `unevaluatedProperties` or `unevaluatedItems`; only then do checks keep what they evaluate. */
   private readonly tracksEvaluation: boolean;
@@ -172,6 +164,42 @@ class Lowering {
   }
 
   /**
+   * The tag values the schema at `location` states for `property`: its `const`, or the values of its `enum`.
+   * Reads the schema's own `properties`, follows a `$ref`, and looks into each `allOf` entry, so a branch may be
+   * inline, a reference, or `allOf` of references and an inline tag. Undefined when none states them.
+   */
+  private tagValues(location: SchemaLocation, property: string, active: Set<object> = new Set()): readonly unknown[] | undefined {
+    const { node } = location;
+    if (!isRecord(node) || active.has(node)) return undefined;
+    active.add(node);
+    const base = baseInside(node, location.base);
+    const tag = isRecord(node.properties) && Object.hasOwn(node.properties, property) ? node.properties[property] : undefined;
+    if (isRecord(tag)) {
+      if (Object.hasOwn(tag, 'const')) return [tag.const];
+      if (Array.isArray(tag.enum) && tag.enum.length > 0) return tag.enum as readonly unknown[];
+    }
+    const target = typeof node.$ref === 'string' ? this.resolver.resolve(node.$ref, base) : undefined;
+    const viaRef = target ? this.tagValues(target, property, active) : undefined;
+    if (viaRef !== undefined || !Array.isArray(node.allOf)) return viaRef;
+    for (const [position, entry] of (node.allOf as readonly unknown[]).entries()) {
+      const found = this.tagValues({ node: entry, base, resource: location.resource, pointer: `${location.pointer}${pointerSegment('allOf')}${pointerSegment(position)}` }, property, active);
+      if (found !== undefined) return found;
+    }
+    return undefined;
+  }
+
+  /** The discriminator of a `oneOf` list, when every branch states its tag values and no value repeats; otherwise it is an annotation. */
+  private discriminatorOf(node: Readonly<Record<string, unknown>>, branches: readonly SchemaLocation[]): IrDiscriminator | undefined {
+    const { discriminator } = node;
+    if (!isRecord(discriminator) || typeof discriminator.propertyName !== 'string') return undefined;
+    const property = discriminator.propertyName;
+    const tags = branches.map(branch => this.tagValues(branch, property));
+    if (!tags.every((list): list is readonly unknown[] => list !== undefined)) return undefined;
+    const seen = new Set(tags.flat().map(tag => JSON.stringify(tag)));
+    return seen.size === tags.flat().length ? { property, tags } : undefined;
+  }
+
+  /**
    * A function that a collector reaches through steps that pass the whole value on receives the collector's
    * record, and so does every function such a step reaches in turn.
    */
@@ -215,11 +243,24 @@ class Lowering {
     for (let id = 0; id < this.functions.length; id++) if (!visited.has(id)) visit(id);
   }
 
+  private isInlining(node: unknown): boolean {
+    return typeof node === 'object' && node !== null && this.inlining.has(node);
+  }
+
   private lowerSchema(location: SchemaLocation, sameValue: SameValueEdge[]): IrSchema {
     const { node } = location;
     if (node === true) return ALWAYS;
     if (node === false) return NEVER;
     if (!isRecord(node)) return ALWAYS;
+    this.inlining.add(node);
+    try {
+      return this.lowerRecord(node, location, sameValue);
+    } finally {
+      this.inlining.delete(node);
+    }
+  }
+
+  private lowerRecord(node: Readonly<Record<string, unknown>>, location: SchemaLocation, sameValue: SameValueEdge[]): IrSchema {
     const here: SchemaLocation = { ...location, base: baseInside(node, location.base) };
     for (const keyword of Object.keys(node)) {
       if (UNSUPPORTED_KEYWORDS.has(keyword)) this.report(VALIDATE_UNSUPPORTED_KEYWORD, GolemDiagnosticSeverity.Error, here, keyword, `the keyword ${keyword} is not supported`);
@@ -234,7 +275,7 @@ class Lowering {
     // child value, not to this one.
     const lowerChild = (keyword: string, value: unknown, ...more: readonly (string | number)[]): IrSchema => {
       const location = child(keyword, value, ...more);
-      return holdsEvaluationKeyword(location.node) ? callTo(this.functionFor(location)) : this.lowerSchema(location, []);
+      return holdsEvaluationKeyword(location.node) || this.isInlining(location.node) ? callTo(this.functionFor(location)) : this.lowerSchema(location, []);
     };
     // A schema that applies to another value than this one (an item tried by `contains`, a key read by `propertyNames`).
     const otherValueFunction = (keyword: string, value: unknown, ...more: readonly (string | number)[]): number => this.functionFor(child(keyword, value, ...more));
@@ -342,7 +383,7 @@ class Lowering {
       const branches = (node.allOf as readonly unknown[])
         .map((branch, position) => {
           // A branch with its own `unevaluated*` keyword is its own function: it must not see what its siblings evaluated.
-          if (holdsEvaluationKeyword(branch)) return callTo(sameValueFunction('allOf', branch, position));
+          if (holdsEvaluationKeyword(branch) || this.isInlining(branch)) return callTo(sameValueFunction('allOf', branch, position));
           return this.lowerSchema(child('allOf', branch, position), sameValue);
         })
         .filter(branch => branch.kind !== 'always');
@@ -352,7 +393,7 @@ class Lowering {
       const list = node[keyword];
       if (Array.isArray(list) && list.length > 0) {
         const branches = (list as readonly unknown[]).map((branch, position) => sameValueFunction(keyword, branch, position));
-        const discriminator = keyword === 'oneOf' ? discriminatorOf(node, list as readonly unknown[]) : undefined;
+        const discriminator = keyword === 'oneOf' ? this.discriminatorOf(node, (list as readonly unknown[]).map((branch, position) => child(keyword, branch, position))) : undefined;
         checks.push({ kind: 'union', exactlyOne: keyword === 'oneOf', branches, discriminator });
       }
     }

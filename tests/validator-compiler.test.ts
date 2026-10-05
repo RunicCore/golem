@@ -179,6 +179,16 @@ test('unevaluated keys count only branches that passed', async () => {
   ]);
   await assertIssues(conditional, { a: 1, b: 1 }, []);
   await assertIssues({ not: { properties: { a: { type: 'string' } } }, unevaluatedProperties: false }, { a: 1 }, [{ path: ['a'], code: 'unknownKey', key: 'a' }]);
+  const oneOf = {
+    oneOf: [
+      { properties: { a: { type: 'integer' } }, required: ['a'] },
+      { properties: { b: { type: 'integer' } }, required: ['b'] },
+    ],
+    unevaluatedProperties: false,
+  };
+  await assertIssues(oneOf, { a: 1 }, []);
+  await assertIssues(oneOf, { b: 2 }, []);
+  await assertIssues(oneOf, { a: 1, b: 'x' }, [{ path: ['b'], code: 'unknownKey', key: 'b' }]);
 });
 
 test('unevaluated keys see through $ref and in-place allOf, but not into cousins or other values', async () => {
@@ -206,6 +216,44 @@ test('a discriminator on a oneOf runs only the selected variant and reports an u
   await assertIssues(schema, 'text', [{ path: ['kind'], code: 'literal', expected: ['a', 'b', 'c'] }]);
   // Without the discriminator the same data is an ordinary oneOf failure.
   await assertIssues({ oneOf: schema.oneOf }, { kind: 'a', x: 'no' }, [{ path: [], code: 'union', matched: 0 }]);
+});
+
+test('a discriminator follows $ref branches, in $defs or another resource, and an allOf that states the tag', async () => {
+  const validators = await compileValidators({
+    roots: {
+      pet: {
+        $defs: {
+          cat: { properties: { kind: { const: 'cat' }, lives: { type: 'integer' } }, required: ['kind'] },
+          dog: { allOf: [{ $ref: 'TDogBase' }, { properties: { kind: { enum: ['dog', 'hound'] } } }] },
+        },
+        oneOf: [{ $ref: '#/$defs/cat' }, { $ref: '#/$defs/dog' }, { $ref: 'TBird' }],
+        discriminator: { propertyName: 'kind' },
+      },
+    },
+    resources: {
+      TDogBase: { properties: { barks: { type: 'boolean' } } },
+      TBird: { $ref: '#/$defs/bird', $defs: { bird: { properties: { kind: { const: 'bird' }, wings: { type: 'integer' } } } } },
+    },
+  });
+  assert.deepEqual(validators.pet({ kind: 'cat', lives: 'nine' }, true), [{ path: ['lives'], code: 'type', expected: ['integer'] }]);
+  assert.deepEqual(validators.pet({ kind: 'hound', barks: 1 }, true), [{ path: ['barks'], code: 'type', expected: ['boolean'] }]);
+  assert.deepEqual(validators.pet({ kind: 'bird', wings: 'two' }, true), [{ path: ['wings'], code: 'type', expected: ['integer'] }]);
+  assert.deepEqual(validators.pet({ kind: 'cat', lives: 9 }, true), []);
+  assert.deepEqual(validators.pet({ kind: 'fish' }, true), [{ path: ['kind'], code: 'literal', expected: ['cat', 'dog', 'hound', 'bird'] }]);
+});
+
+test('a discriminator over two $ref branches reports only the selected branch', async () => {
+  const schema = {
+    $defs: {
+      a: { properties: { kind: { const: 'a' }, x: { type: 'integer' } } },
+      b: { properties: { kind: { const: 'b' }, y: { type: 'string' } } },
+    },
+    oneOf: [{ $ref: '#/$defs/a' }, { $ref: '#/$defs/b' }],
+    discriminator: { propertyName: 'kind' },
+  };
+  await assertIssues(schema, { kind: 'a', x: 'no' }, [{ path: ['x'], code: 'type', expected: ['integer'] }]);
+  await assertIssues(schema, { kind: 'z' }, [{ path: ['kind'], code: 'literal', expected: ['a', 'b'] }]);
+  await assertIssues(schema, { kind: 'b', y: 'ok' }, []);
 });
 
 test('a discriminator is an annotation unless every branch states its own tag values', async () => {
@@ -501,6 +549,17 @@ test('a same-value cycle through if/then or dependentSchemas is an error at its 
   assert.deepEqual(conditional.diagnostics.map(entry => [entry.code, entry.path]), [['VALIDATE_REF_CYCLE', '/then/$ref']]);
   const dependent = compile({ roots: new Map([['root', { dependentSchemas: { a: { $ref: '#' } } }]]) }, { unknownFormats: 'warn' });
   assert.deepEqual(dependent.diagnostics.map(entry => [entry.code, entry.path]), [['VALIDATE_REF_CYCLE', '/dependentSchemas/a/$ref']]);
+});
+
+test('a schema that contains itself compiles and validates, or reports a cycle, without overflowing the stack', async () => {
+  const tree: Record<string, unknown> = { type: 'object', properties: {}, unevaluatedProperties: false };
+  (tree.properties as Record<string, unknown>).self = tree;
+  await assertIssues(tree, { self: { self: 1 } }, [{ path: ['self', 'self'], code: 'type', expected: ['object'] }]);
+  await assertIssues(tree, { self: { other: 1 } }, [{ path: ['self', 'other'], code: 'unknownKey', key: 'other' }]);
+  const loop: Record<string, unknown> = { type: 'object' };
+  loop.allOf = [loop];
+  const result = compile({ roots: new Map([['root', loop]]) }, { unknownFormats: 'warn' });
+  assert.deepEqual(result.diagnostics.map(entry => entry.code), ['VALIDATE_REF_CYCLE']);
 });
 
 test('$dynamicAnchor is an unsupported keyword error', () => {

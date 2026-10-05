@@ -107,14 +107,16 @@ export class SchemaResolver {
   }
 
   /** Registers the `$id` and `$anchor` of `location` and of every subschema below it. */
-  private index(location: SchemaLocation): void {
+  private index(location: SchemaLocation, active = new Set<object>()): void {
     const { node, resource, pointer } = location;
-    if (!isRecord(node)) return;
+    // `active` holds the schemas above this one; a schema that contains itself is not walked again.
+    if (!isRecord(node) || active.has(node)) return;
+    active.add(node);
     const here = baseInside(node, location.base);
     if (here !== location.base && !this.documents.has(here)) this.documents.set(here, location);
     if (typeof node.$anchor === 'string') this.anchors.set(`${here}#${node.$anchor}`, location);
     const descend = (child: unknown, ...tokens: readonly (string | number)[]): void => {
-      this.index({ node: child, base: here, resource, pointer: tokens.reduce<string>((path, token) => path + pointerSegment(token), pointer) });
+      this.index({ node: child, base: here, resource, pointer: tokens.reduce<string>((path, token) => path + pointerSegment(token), pointer) }, active);
     };
     for (const keyword of SCHEMA_KEYWORDS) if (keyword in node) descend(node[keyword], keyword);
     for (const keyword of SCHEMA_LIST_KEYWORDS) {
@@ -125,6 +127,7 @@ export class SchemaResolver {
       const map = node[keyword];
       if (isRecord(map)) for (const [key, child] of Object.entries(map)) descend(child, keyword, key);
     }
+    active.delete(node);
   }
 
   private followPointer(document: SchemaLocation, fragment: string): SchemaLocation | undefined {
