@@ -10,5 +10,5 @@ test('one hundred model companions compile and execute against shared standalone
   const { root } = createScaleProject(t, count);
   const artifacts = await compileAndVerifyScaleProject(root, count);
   assert.equal(artifacts.filter(artifact => artifact.path.endsWith('.model.generated.ts')).length, count);
-  assert.equal(artifacts.filter(artifact => artifact.path.endsWith('models.validators.generated.js')).length, 1);
+  assert.equal(artifacts.filter(artifact => artifact.path.endsWith('models.validators.generated.ts')).length, 1);
 });

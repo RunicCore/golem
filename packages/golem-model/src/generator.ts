@@ -434,7 +434,7 @@ export function generate(context: GolemModelContext): GolemModelResult {
       normalized.profile.validation,
     )
     : undefined;
-  const validatorsOutput = join(normalized.output, 'models.validators.generated.js');
+  const validatorsOutput = join(normalized.output, 'models.validators.generated.ts');
   const validators = validationPlan && validationPlan.references.length > 0
     ? compilePlanValidators(validationPlan, {
       owner: '@exprtlabs/golem-model',
@@ -471,7 +471,6 @@ export function generate(context: GolemModelContext): GolemModelResult {
   if (sharedContent !== undefined) artifacts.push({ path: sharedOutput, content: sharedContent });
   if (validators) {
     artifacts.push({ path: validatorsOutput, content: validators.source });
-    artifacts.push({ path: join(normalized.output, 'models.validators.generated.d.ts'), content: validators.declarations });
   }
   // Codecs some companion writes through their owner's wire stringify.
   const referencedWireCodecIds = new Set(graphSchemaPairs.flatMap(({ schemaGraph, siblingWireCodecIds }) =>

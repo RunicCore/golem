@@ -843,3 +843,22 @@ test('a discriminator reads the tag through a validation wrapper and runs only t
   assert.deepEqual(validate({ kind: 'z' }, true), [{ path: ['kind'], code: 'literal', expected: ['a', 'b', 'c'] }]);
   assert.deepEqual(validate({ kind: 'a', x: 1 }, true), []);
 });
+
+test('a key whose value is undefined counts as absent for required, properties, unknown keys, property counts and property names', async () => {
+  const value = { a: undefined };
+  await assertIssues({ required: ['a'] }, value, [{ path: ['a'], code: 'required', key: 'a' }]);
+  await assertIssues({ properties: { a: { type: 'string' } } }, value, []);
+  await assertIssues({ additionalProperties: false }, value, []);
+  await assertIssues({ additionalProperties: { type: 'string' } }, value, []);
+  await assertIssues({ unevaluatedProperties: false }, value, []);
+  await assertIssues({ minProperties: 1 }, value, [{ path: [], code: 'tooSmall', measure: 'properties', limit: 1, inclusive: true }]);
+  await assertIssues({ maxProperties: 0 }, value, []);
+  await assertIssues({ propertyNames: { maxLength: 0 } }, value, []);
+  await assertIssues({ required: ['a'] }, { a: null }, []);
+});
+
+test('compile with typed writes the validators export with its type and the type import', () => {
+  const { source } = compile({ roots: new Map([['root', { type: 'string' }]]) }, { unknownFormats: 'warn', typed: true });
+  assert.match(source, /^import type \{ Validator \} from "@exprtlabs\/golem\/validation-runtime";$/m);
+  assert.match(source, /^export const validators: Readonly<Record<string, Validator>> = \{$/m);
+});

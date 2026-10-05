@@ -18,6 +18,8 @@ export interface CompileOptions {
   readonly runtimeModule?: string;
   /** Named in every diagnostic message. */
   readonly documentName?: string;
+  /** Emit TypeScript: the `validators` export carries its type. */
+  readonly typed?: boolean;
 }
 
 export interface CompileResult {
@@ -32,5 +34,5 @@ const DEFAULT_RUNTIME_MODULE = '@exprtlabs/golem/validation-runtime';
 export function compile(input: CompileInput, options: CompileOptions): CompileResult {
   const { module, diagnostics } = lower(input, options);
   if (diagnostics.some(entry => entry.severity === GolemDiagnosticSeverity.Error)) return { source: '', diagnostics };
-  return { source: emit(module, { runtimeModule: options.runtimeModule ?? DEFAULT_RUNTIME_MODULE }), diagnostics };
+  return { source: emit(module, { runtimeModule: options.runtimeModule ?? DEFAULT_RUNTIME_MODULE, ...(options.typed ? { typed: true } : {}) }), diagnostics };
 }

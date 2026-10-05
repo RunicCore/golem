@@ -8,7 +8,7 @@ import { buildModelProject, createModelProject, generatedModelFiles, writeModelG
 import { getValidator } from '@exprtlabs/golem/validation';
 
 function materializeStandalone(root: string, sourceRoot: string): void {
-  const artifact = generatedModelFiles(root).find((item) => item.path.endsWith('/models.validators.generated.js'));
+  const artifact = generatedModelFiles(root).find((item) => item.path.endsWith('/models.validators.generated.ts'));
   assert.ok(artifact, 'standalone validator artifact');
   const target = path.join(root, 'build', path.relative(sourceRoot, artifact.path));
   fs.mkdirSync(path.dirname(target), { recursive: true });

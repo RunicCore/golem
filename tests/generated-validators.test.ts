@@ -1,7 +1,6 @@
 import { readFixture } from './fixture-project.js';
 import assert from 'node:assert/strict';
 import {
-  copyFileSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -55,13 +54,11 @@ function fixture(t: TestContext): Fixture {
   return { root, sourceRoot };
 }
 
-function copyValidators(value: Fixture): string {
-  const artifact = generatedModelFiles(value.root).find(item => item.path.endsWith('/models.validators.generated.js'));
+/** The validators module as `golem build` wrote it into outDir. */
+function builtValidators(value: Fixture): string {
+  const artifact = generatedModelFiles(value.root).find(item => item.path.endsWith('/models.validators.generated.ts'));
   assert.ok(artifact, 'generated validators artifact');
-  const target = path.join(value.root, 'build', path.relative(value.sourceRoot, artifact.path));
-  mkdirSync(path.dirname(target), { recursive: true });
-  copyFileSync(artifact.path, target);
-  return target;
+  return path.join(value.root, 'build', path.relative(value.sourceRoot, artifact.path).replace(/\.ts$/, '.js'));
 }
 
 async function compile(root: string): Promise<void> {
@@ -186,7 +183,7 @@ test('generated object codecs close nested schemas and keep first/all and contex
     'generated model modules do not import a runtime Ajv engine',
   );
 
-  const validatorsPath = copyValidators(value);
+  const validatorsPath = builtValidators(value);
   const [{ Root }, { TLeafBaseModel, TMiddleBaseModel, TRootBaseModel }, validatorModule] = await Promise.all([
     import(pathToFileURL(path.join(value.root, 'build/root.model.js')).href),
     import(pathToFileURL(path.join(value.root, 'build/root.model.generated.js')).href),
@@ -288,8 +285,7 @@ test('generated validators permit equal model names in independent source graphs
 
   writeModelGolemYaml(value.root, { mobx: false, validation: true });
   await compile(value.root);
-  assert.ok(generatedModelFiles(value.root).some(item => item.path.endsWith('/models.validators.generated.js')));
-  copyValidators(value);
+  assert.ok(generatedModelFiles(value.root).some(item => item.path.endsWith('/models.validators.generated.ts')));
   const [{ Item: FirstItem }, { Item: SecondItem }] = await Promise.all([
     import(pathToFileURL(path.join(value.root, 'build/first/item.model.js')).href),
     import(pathToFileURL(path.join(value.root, 'build/second/item.model.js')).href),
@@ -307,7 +303,7 @@ test('a project with validation off generates no validators and refuses validate
   writeFileSync(path.join(value.sourceRoot, 'root.model.ts'), readFixture("models/generated-validators/generated-object-codecs-close-nested-schemas-and-preserve-first-all-sync-and-context/root.model.ts"));
   writeModelGolemYaml(value.root, { mobx: false, validation: false });
   await compile(value.root);
-  assert.equal(generatedModelFiles(value.root).some(item => item.path.endsWith('.validators.generated.js')), false);
+  assert.equal(generatedModelFiles(value.root).some(item => item.path.endsWith('.validators.generated.ts')), false);
   const { TRootBaseModel } = await import(pathToFileURL(path.join(value.root, 'build/root.model.generated.js')).href) as {
     TRootBaseModel: abstract new (...args: never[]) => object;
   };
@@ -334,7 +330,7 @@ test('unknownFormats: error makes generation fail with VALIDATE_UNKNOWN_FORMAT',
   const config = path.join(value.root, 'golem.yaml');
   // The default warns and writes the validators; the format is not checked.
   await runPipeline(config);
-  assert.ok(generatedModelFiles(value.root).some(item => item.path.endsWith('/models.validators.generated.js')));
+  assert.ok(generatedModelFiles(value.root).some(item => item.path.endsWith('/models.validators.generated.ts')));
   writeFileSync(config, `${readFileSync(config, 'utf8')}unknownFormats: error\n`);
   await assert.rejects(runPipeline(config), /VALIDATE_UNKNOWN_FORMAT/);
 });

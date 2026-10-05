@@ -29,7 +29,7 @@ function fixture(t: TestContext, options: { readonly noUnusedLocals?: boolean } 
 }
 
 function copyStandalone(fixtureValue: ModelProject): void {
-  const artifact = generatedModelFiles(fixtureValue.root).find((item) => item.path.endsWith('/models.validators.generated.js'));
+  const artifact = generatedModelFiles(fixtureValue.root).find((item) => item.path.endsWith('/models.validators.generated.ts'));
   assert.ok(artifact, 'standalone validator artifact');
   const target = path.join(fixtureValue.root, 'build', path.relative(fixtureValue.sourceRoot, artifact.path));
   mkdirSync(path.dirname(target), { recursive: true });
@@ -254,7 +254,7 @@ test('standalone validators inline non-recursive array item models and keep recu
   const profile = { mobx: false, validation: true, ajvStandalone: true } as const;
   writeModelGolemYaml(fixtureValue.root, profile);
   await buildModelProject(fixtureValue.root);
-  const standalone = generatedModelFiles(fixtureValue.root).find((item) => item.path.endsWith('/models.validators.generated.js'));
+  const standalone = generatedModelFiles(fixtureValue.root).find((item) => item.path.endsWith('/models.validators.generated.ts'));
   assert.ok(standalone);
   const source = standalone.content;
   const itemCalls = arrayItemCalls(source);
@@ -291,7 +291,7 @@ test('standalone validators inline array item models that live in another file',
   }
   writeModelGolemYaml(fixtureValue.root, { mobx: false, validation: true, ajvStandalone: true });
   await buildModelProject(fixtureValue.root);
-  const standalone = generatedModelFiles(fixtureValue.root).find((item) => item.path.endsWith('/models.validators.generated.js'));
+  const standalone = generatedModelFiles(fixtureValue.root).find((item) => item.path.endsWith('/models.validators.generated.ts'));
   assert.ok(standalone);
   assert.deepEqual(arrayItemCalls(standalone.content), [], 'imported item models are inlined');
 

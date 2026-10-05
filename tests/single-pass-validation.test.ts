@@ -226,7 +226,7 @@ export class Trip extends TTripBaseModel {}
   writeModelGolemYaml(root, { mobx: false, validation: true });
   await buildModelProject(root);
   const { Trip } = await import(pathToFileURL(path.join(root, 'build/visit.model.js')).href) as { Trip: new (v?: object) => object };
-  const validatorsFile = generatedModelFiles(root).find(item => item.path.endsWith('/models.validators.generated.js'));
+  const validatorsFile = generatedModelFiles(root).find(item => item.path.endsWith('/models.validators.generated.ts'));
   assert.ok(validatorsFile);
   const { validators } = await import(pathToFileURL(path.join(root, 'build', path.relative(sourceRoot, validatorsFile.path))).href) as { validators: Readonly<Record<string, Validator>> };
   const requested: string[] = [];

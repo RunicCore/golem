@@ -37,9 +37,9 @@ import { validate } from './validators.js';`,
   const firstShared = firstArtifacts.find((artifact) => artifact.path.endsWith('/models.generated.ts'))?.content ?? '';
   assert.ok(firstShared);
   assert.doesNotMatch(firstShared, new RegExp(first.root.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
-  const bindingIds = [...firstShared.matchAll(/src\/(?:one|two)\/validators\.ts#\w+/g)].map(match => match[0]);
-  assert.deepEqual(new Set(bindingIds).size, 2, 'same-signature functions from separate declarations remain distinct');
-  assert.equal((firstShared.match(/import \{ validate as __golemValidation\d+ \}/g) ?? []).length, 2);
+  const firstValidators = firstArtifacts.find((artifact) => artifact.path.endsWith('/models.validators.generated.ts'))?.content ?? '';
+  assert.doesNotMatch(firstValidators, new RegExp(first.root.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  assert.equal((firstValidators.match(/^import \{ \w+ as v\d+ \} from /gm) ?? []).length, 2, 'same-signature functions from separate declarations remain distinct');
 
   const second = fixture(t);
   build(second.sourceRoot);
@@ -193,8 +193,7 @@ import { first, second } from './predicates.js';`,
     const { A } = await load('nested-contains', 'a.model.js');
     assert.equal(await getValidator(new A({ children: [{ name: 'ok' }] })).validate(), true);
     assert.equal(await getValidator(new A({ children: [{ name: 7 }] } as never)).validate(), false);
-    const shared = generatedModelFiles(root).filter(artifact => artifact.path.includes('/nested-contains/')).map((artifact) => artifact.content).join('\n');
-    assert.match(shared, /contains/);
+    const shared = generatedModelFiles(root).map((artifact) => artifact.content).join('\n');
     assert.match(generatedJsonData(shared), /"contains"/);
   });
 
@@ -210,8 +209,8 @@ import { first, second } from './predicates.js';`,
   });
 
   await t.test('utility aliases preserve two distinct same-signature predicates and deduplicate an alias', async () => {
-    const shared = generatedModelFiles(root).find((artifact) => artifact.path.endsWith('/models.generated.ts'))?.content ?? '';
-    assert.equal(new Set([...shared.matchAll(/src\/utility-aliases\/predicates\.ts#\w+/g)].map((match) => match[0])).size, 2);
+    const validators = generatedModelFiles(root).find((artifact) => artifact.path.endsWith('/models.validators.generated.ts'))?.content ?? '';
+    assert.equal(validators.match(/^import \{ \w+ as v\d+ \} from "[^"]*utility-aliases\/predicates\.js";$/gm)?.length, 2);
     const { A } = await load('utility-aliases', 'a.model.js');
     const predicates = await load('utility-aliases', 'predicates.js');
     assert.equal(await getValidator(new A({ payload: { value: 'ok' } })).validate({ failFast: false }), true);
@@ -340,7 +339,7 @@ test('a MobX model generated with validation false has no validator', async t =>
   assert.deepEqual(encodeGeneratedModel(model), { title: 'Write', done: false });
 });
 
-test('standalone model validators are external generated artifacts with declarations and notices', async t => {
+test('model validators are a generated TypeScript artifact that the built output runs', async t => {
   const { root, sourceRoot } = fixture(t, true);
   copyFixtureFile(
     root,
@@ -352,20 +351,12 @@ test('standalone model validators are external generated artifacts with declarat
     imports: tsSource`import type { TValidation } from '@exprtlabs/golem/tags';\nimport { valid } from './predicates.js';`,
     fields: tsSource`value: string & TValidation<typeof valid>`,
   }).text);
-  writeModelGolemYaml(root, { mobx: false, validation: true, ajvStandalone: true });
+  writeModelGolemYaml(root, { mobx: false, validation: true });
   await buildModelProject(root);
   const artifacts = generatedModelFiles(root);
-  const names = artifacts.map((artifact) => path.basename(artifact.path));
-  assert.ok(names.includes('models.validators.generated.js'));
-  assert.ok(names.includes('models.validators.generated.d.ts'));
-  assert.ok(names.includes('models.generated.NOTICES.txt'));
-  const shared = artifacts.map((artifact) => artifact.content).join('\n');
-  assert.doesNotMatch(shared, /__commonJS/);
-  const standalone = artifacts.find((artifact) => artifact.path.endsWith('/models.validators.generated.js'));
-  assert.ok(standalone);
-  const builtStandalone = path.join(root, 'build', path.relative(sourceRoot, standalone.path));
-  fs.mkdirSync(path.dirname(builtStandalone), { recursive: true });
-  fs.copyFileSync(standalone.path, builtStandalone);
+  const validators = artifacts.find((artifact) => artifact.path.endsWith('/models.validators.generated.ts'));
+  assert.ok(validators);
+  assert.ok(fs.existsSync(path.join(root, 'build', path.relative(sourceRoot, validators.path).replace(/\.ts$/, '.js'))), 'the build writes the validators');
   const { A } = await import(path.toNamespacedPath(path.join(root, 'build/a.model.js')));
   assert.equal(await getValidator(new A({ value: 'ok' })).validate(), true);
   assert.equal(await getValidator(new A({ value: 'bad' })).validate(), false);

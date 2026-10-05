@@ -16,7 +16,7 @@ test('many model companions share standalone validation and grow with the model 
     // model-generation-scale.acceptance.ts, so here it only generates.
     const artifacts = count === 10 ? await compileAndVerifyScaleProject(root, count) : generate({ root, profile: SCALE_PROFILE }).artifacts;
     assert.equal(artifacts.filter(artifact => artifact.path.endsWith('.model.generated.ts')).length, count);
-    assert.equal(artifacts.filter(artifact => artifact.path.endsWith('models.validators.generated.js')).length, 1);
+    assert.equal(artifacts.filter(artifact => artifact.path.endsWith('models.validators.generated.ts')).length, 1);
     sizes.push(artifacts.reduce((sum, artifact) => sum + Buffer.byteLength(artifact.content), 0));
   }
   // A tenfold input increase must stay near linear; no timing threshold depends

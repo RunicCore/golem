@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
+import { pathToFileURL } from 'node:url';
 import { createFixtureProject, linkProjectPackages, readFixture } from './fixture-project.js';
 import { createControllerFixture } from './fixture-templates/controllers/project.js';
 import { command, workspace } from './support/process.js';
@@ -18,6 +19,24 @@ test('a build restores an outDir that was deleted, with its declarations and sou
   fs.rmSync(path.join(root, 'build'), { recursive: true });
   assert.equal((await build(root)).exitCode, 0);
   for (const file of ['use.js', 'use.js.map', 'use.d.ts', 'money.model.js']) assert.ok(fs.existsSync(path.join(root, 'build', file)), `build/${file} is written again`);
+});
+
+test('a validating project runs its validation from the build output as written', async (t) => {
+  const root = serdeProject(t, 'build-validating-output');
+  write(root, 'src/check.ts', `import { parse } from '@exprtlabs/golem/serde';
+import type { TMoney } from './money.model.js';
+import './money.model.js';
+
+export const valid = parse<TMoney>('{"currency":"USD","value":"1"}', { validate: true });
+export const parseInvalid = (): TMoney => parse<TMoney>('{"currency":1,"value":"1"}', { validate: true });
+`);
+  assert.equal((await build(root)).exitCode, 0);
+  const built = await import(pathToFileURL(path.join(root, 'build/check.js')).href) as {
+    readonly valid: unknown;
+    readonly parseInvalid: () => unknown;
+  };
+  assert.deepEqual(built.valid, { currency: 'USD', value: '1' });
+  assert.throws(built.parseInvalid, /Model validation failed/);
 });
 
 test('a class expression with a private member builds when the original does not emit declarations', async (t) => {

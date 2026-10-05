@@ -1444,7 +1444,7 @@ export function generateOpenApiModelArtifacts(
       // resolves the closure; named imports are still pruned to actual calls.
       moduleImports.push(`import ${JSON.stringify(`./_${dependencyGroupId}.js`)};`);
     }
-    const validatorModule = `${group.filename.slice(0, -3)}.validators.generated.js`;
+    const validatorModule = `${group.filename.slice(0, -3)}.validators.generated.ts`;
     let groupPlan: CodecValidationPlan | undefined;
     if (profile.validation) {
       const dependencyCodecIds = new Set([...dependencyIds].flatMap((id) => {
@@ -1463,7 +1463,6 @@ export function generateOpenApiModelArtifacts(
       });
       diagnostics.push(...compiled.diagnostics);
       files.set(validatorModule, compiled.source);
-      files.set(`${validatorModule.slice(0, -3)}.d.ts`, compiled.declarations);
       moduleImports.push(`import { validators } from ${JSON.stringify(`./_${group.id}.validators.generated.js`)};`);
     }
     const modelModule = generateModels(document, profile, {
