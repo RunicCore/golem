@@ -47,7 +47,7 @@ npx --no-install golem check
 `--no-install` makes `npx` fail when the project doesn't install golem, instead of fetching the unrelated `golem` package from npm ([Install](/guide/install#packages-per-generator)).
 
 `check` exits with code 1 when a generated file is missing, stale or
-unrecorded, and writes nothing. It also reports each `parse<T>()` call that no host can rewrite, with its file and line and what to run. A project that commits its generated files runs `check` in CI, and commits `.golem/outputs.json` with them so the check knows which paths belong to
+unrecorded, and writes nothing. It also reports each `parse<T>()` call that no host can rewrite, with its file and line and what to run. A project that commits its generated files runs `check` in CI, and commits `.golem/outputs.json` and `.golem/codec-keys.json` with them so the check knows which paths belong to
 each job. A project that ignores its generated files runs `golem generate` or `golem build` in CI instead ([what to commit](/reference/generated-files#gitignore)).
 
 ## Generated files and the inventory
