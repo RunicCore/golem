@@ -151,7 +151,6 @@ function packageVersion(specifier: string, filename: string): string {
   }
 }
 
-/** The providers of the configured jobs, or of the jobs named by `only`. */
 /** The version of the package that provides a job, or undefined when it cannot be resolved. */
 function providerVersion(config: GolemConfig, job: GolemJob): string | undefined {
   try {
@@ -161,6 +160,7 @@ function providerVersion(config: GolemConfig, job: GolemJob): string | undefined
   }
 }
 
+/** The providers of the configured jobs, or of the jobs named by `only`. */
 export async function providersFor(config: GolemConfig, only?: ReadonlySet<string>): Promise<ReadonlyMap<string, LoadedProvider>> {
   const requireFromProject = createRequire(path.join(config.directory, 'package.json'));
   const providers = new Map<string, LoadedProvider>();
@@ -425,7 +425,7 @@ export async function runPipeline(filename: string, options: PipelineOptions = {
     for (const job of config.jobs) {
       const record = records.get(job.id);
       if (record && !readsAny(config, record, retired)
-        && jobIsCurrent(config, job, record, { provider: versionOf(job), manifestInputs: expectedManifests }, generated, ignoredDirectories)) current.add(job.id);
+        && jobIsCurrent(config, job, record, { provider: versionOf(job), manifestInputs: expectedManifests }, inventory, ignoredDirectories)) current.add(job.id);
       expectedManifests.push(...(record?.manifests ?? []).map(manifest => absoluteRecordPath(config, manifest)));
     }
   }

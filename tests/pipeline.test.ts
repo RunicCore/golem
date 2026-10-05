@@ -318,6 +318,19 @@ test('a deleted output reruns its job, and a changed option or golem version rer
   assert.deepEqual(ranKinds(await runPipeline(config)), []);
 });
 
+test('a generated file or the codec key table edited by hand is restored by the next run, because its job is not current', async (t: TestContext) => {
+  const { root, config } = fixture(t);
+  await runPipeline(config);
+  for (const edited of ['src/cart.model.generated.ts', '.golem/codec-keys.json']) {
+    const filename = path.join(root, edited);
+    const original = fs.readFileSync(filename, 'utf8');
+    fs.writeFileSync(filename, `${original}\n// edited by hand\n`);
+    assert.deepEqual(ranKinds(await runPipeline(config)), ['models'], edited);
+    assert.equal(fs.readFileSync(filename, 'utf8'), original, edited);
+    assert.deepEqual(ranKinds(await runPipeline(config)), [], `${edited} is current again`);
+  }
+});
+
 test('a job that edits an input after it read it runs again, because its record holds the digest from the read', async (t: TestContext) => {
   const root = createFixtureProject(t, 'golem-pipeline-read-');
   fs.writeFileSync(path.join(root, 'package.json'), '{"name":"read-fixture","type":"module"}');

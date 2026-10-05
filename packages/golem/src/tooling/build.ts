@@ -5,7 +5,7 @@ import path from 'node:path';
 import { canonicalFile, contains, resolveConfig } from './config.js';
 import type { GolemConfig } from './config.js';
 import { codecKeysPath } from './generated-paths.js';
-import { GolemDiagnosticSeverity } from './generator-api.js';
+import { GolemDiagnosticSeverity, isRecord } from './generator-api.js';
 import type { GolemDiagnostic } from './generator-api.js';
 import { atomicWrite } from './outputs.js';
 import { GeneratorSessionResources, runPipeline } from './pipeline.js';
@@ -182,7 +182,7 @@ function runTsc(cli: string, cwd: string, args: readonly string[], forward: bool
  * The options the build's decisions depend on, as the compiler resolves them from the tsconfig and the forwarded arguments. The
  * path options are whether they are set: the staged copy handles their values itself.
  */
-interface EffectiveOptions {
+export interface EffectiveOptions {
   readonly declaration: boolean;
   readonly noEmitOnError: boolean;
   readonly outDir: boolean;
@@ -202,6 +202,20 @@ function effectiveOf(options: ts.CompilerOptions): EffectiveOptions {
   };
 }
 
+/** The options `tsc --showConfig` printed. Output that is not a configuration cannot say what the forwarded arguments changed, so it fails. */
+export function shownOptions(stdout: string, configFile: string, tscArguments: readonly string[]): EffectiveOptions {
+  let shown: unknown;
+  try {
+    shown = JSON.parse(stdout);
+  } catch {
+    shown = undefined;
+  }
+  if (!isRecord(shown)) {
+    throw new Error(`golem build cannot read what tsc --showConfig printed for ${configFile} with ${tscArguments.join(' ')}: ${stdout.trim() || 'nothing'}. Run tsc -p ${configFile} ${tscArguments.join(' ')} --showConfig to see it.`);
+  }
+  return effectiveOf(isRecord(shown.compilerOptions) ? shown.compilerOptions : {});
+}
+
 /**
  * Forwarded arguments can change what the tsconfig says, and only the compiler's own parser knows how: `tsc --showConfig` prints the
  * configuration it resolved. Without forwarded arguments the tsconfig is the answer, and the compiler is not asked. An argument the
@@ -211,12 +225,7 @@ async function effectiveOptions(cli: string, root: string, configFile: string, p
   if (tscArguments.length === 0) return effectiveOf(parsed);
   const shown = await runTsc(cli, root, ['-p', configFile, ...tscArguments, '--showConfig'], false);
   if (shown.code !== 0) return effectiveOf(parsed);
-  try {
-    const { compilerOptions } = JSON.parse(shown.stdout) as { compilerOptions?: ts.CompilerOptions };
-    return effectiveOf(compilerOptions ?? {});
-  } catch {
-    return effectiveOf(parsed);
-  }
+  return shownOptions(shown.stdout, configFile, tscArguments);
 }
 
 function scanFailure(errors: readonly GolemDiagnostic[]): Error {
@@ -422,7 +431,9 @@ async function buildOnce(session: ts.ProgramSession, run: BuildRun, changed?: re
       throw new Error(`golem build cannot stage ${source.fileName}: it is outside the project root ${root}. Move it under the root, or build the package that holds it with golem build -p.`);
     }
   }
-  const scanned = new RewriteScanner({ root, program, checker: program.getTypeChecker(), codecKeysFile: codecKeysPath(golemConfig.directory), nest: golemConfig.jobs.some((job) => job.kind === 'controllers') }).scanProgram();
+  // Only the staged sources are scanned: a package the program reaches through node_modules is built by its own golem build.
+  const scanned = new RewriteScanner({ root, program, checker: program.getTypeChecker(), codecKeysFile: codecKeysPath(golemConfig.directory), nest: golemConfig.jobs.some((job) => job.kind === 'controllers') })
+    .scanFiles(sources.map((source) => source.fileName));
   const errors = scanned.diagnostics.filter((diagnostic) => diagnostic.severity === GolemDiagnosticSeverity.Error);
   if (errors.length > 0) throw scanFailure(errors);
 

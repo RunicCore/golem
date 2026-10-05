@@ -4,13 +4,28 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { loadConfig } from '#golem/config';
 import { inputDigest, insideAny, jobIsCurrent, loadJobRecords, saveJobRecords, type JobRecord, type JobSetup } from '#golem/job-cache';
+import { digest, type Inventory } from '#golem/outputs';
 import { GOLEM_VERSION } from '#golem/version';
 import { createFixtureProject } from './fixture-project.js';
 
 const SETUP: JobSetup = { provider: '1.0.0', manifestInputs: [] };
 
+/** The inventory of a job's files: each as it is on disk now. */
+function inventoryOf(root: string, files: readonly string[]): Inventory {
+  return {
+    version: 1,
+    files: Object.fromEntries(files.map(file => [file, {
+      job: 'openapi:sdk',
+      owner: '@exprtlabs/golem-openapi',
+      digest: digest(fs.readFileSync(path.join(root, file), 'utf8')),
+      destination: 'sdk',
+      destinationKind: 'directory' as const,
+    }])),
+  };
+}
+
 /** A project with one OpenAPI job whose record the tests build by hand. */
-function project(t: TestContext): { root: string; record: JobRecord; current: () => boolean; config: ReturnType<typeof loadConfig> } {
+function project(t: TestContext): { root: string; record: JobRecord; inventory: Inventory; current: () => boolean; config: ReturnType<typeof loadConfig> } {
   const root = createFixtureProject(t, 'golem-job-cache-');
   fs.writeFileSync(path.join(root, 'api.yaml'), 'openapi: 3.1.0');
   fs.mkdirSync(path.join(root, 'src'));
@@ -33,7 +48,8 @@ function project(t: TestContext): { root: string; record: JobRecord; current: ()
     outputs: ['sdk.ts'],
     manifests: [],
   };
-  return { root, record, config, current: () => jobIsCurrent(config, job, record, SETUP, new Set()) };
+  const inventory = inventoryOf(root, ['sdk.ts']);
+  return { root, record, inventory, config, current: () => jobIsCurrent(config, job, record, SETUP, inventory) };
 }
 
 test('records survive a save and load, and an absent or unreadable file holds none', (t: TestContext) => {
@@ -48,16 +64,26 @@ test('records survive a save and load, and an absent or unreadable file holds no
 });
 
 test('a job is current while its version, options, outputs and every input are as its record holds them', (t: TestContext) => {
-  const { root, config, record } = project(t);
+  const { root, config, record, inventory } = project(t);
   const job = config.jobs[0];
   assert.ok(job);
-  assert.equal(jobIsCurrent(config, job, undefined, SETUP, new Set()), false);
-  assert.equal(jobIsCurrent(config, job, { ...record, golem: '0.0.0' }, SETUP, new Set()), false, 'another golem version');
-  assert.equal(jobIsCurrent(config, job, { ...record, options: '{}' }, SETUP, new Set()), false, 'other options');
-  assert.equal(jobIsCurrent(config, job, { ...record, outputs: ['sdk.ts', 'gone.ts'] }, SETUP, new Set()), false, 'an output is gone');
-  assert.equal(jobIsCurrent(config, job, record, SETUP, new Set()), true);
+  assert.equal(jobIsCurrent(config, job, undefined, SETUP, inventory), false);
+  assert.equal(jobIsCurrent(config, job, { ...record, golem: '0.0.0' }, SETUP, inventory), false, 'another golem version');
+  assert.equal(jobIsCurrent(config, job, { ...record, options: '{}' }, SETUP, inventory), false, 'other options');
+  assert.equal(jobIsCurrent(config, job, { ...record, outputs: ['sdk.ts', 'gone.ts'] }, SETUP, inventory), false, 'an output is gone');
+  assert.equal(jobIsCurrent(config, job, record, SETUP, inventory), true);
   fs.appendFileSync(path.join(root, 'api.yaml'), '\n');
-  assert.equal(jobIsCurrent(config, job, record, SETUP, new Set()), false, 'an edited file');
+  assert.equal(jobIsCurrent(config, job, record, SETUP, inventory), false, 'an edited file');
+});
+
+test('a job is stale when an output is edited or is not in the inventory', (t: TestContext) => {
+  const { root, config, record, inventory } = project(t);
+  const job = config.jobs[0];
+  assert.ok(job);
+  assert.equal(jobIsCurrent(config, job, record, SETUP, { version: 1, files: {} }), false, 'an output the inventory does not record');
+  fs.appendFileSync(path.join(root, 'sdk.ts'), '// edited by hand\n');
+  assert.equal(jobIsCurrent(config, job, record, SETUP, inventory), false, 'an output that differs from its recorded digest');
+  assert.equal(jobIsCurrent(config, job, record, SETUP, inventoryOf(root, ['sdk.ts'])), true, 'the inventory holds the new content');
 });
 
 test('a directory input changes with the files it lists, not with generated files or dot-directories', (t: TestContext) => {
@@ -71,7 +97,7 @@ test('a directory input changes with the files it lists, not with generated file
 });
 
 test('a directory outside the golem.yaml directory is recorded by existence, one inside it by its listing', (t: TestContext) => {
-  const { root, config } = project(t);
+  const { root, config, inventory } = project(t);
   const job = config.jobs[0];
   assert.ok(job);
   const outside = fs.mkdtempSync(path.join(path.dirname(root), 'golem-job-cache-outside-'));
@@ -87,7 +113,7 @@ test('a directory outside the golem.yaml directory is recorded by existence, one
     outputs: ['sdk.ts'],
     manifests: [],
   } satisfies JobRecord;
-  const current = (): boolean => jobIsCurrent(config, job, recorded, SETUP, new Set());
+  const current = (): boolean => jobIsCurrent(config, job, recorded, SETUP, inventory);
   assert.equal(current(), true);
   fs.writeFileSync(path.join(outside, 'two.ts'), 'export {};\n');
   assert.equal(current(), true, 'a new file in a directory outside the root does not change the record');
@@ -105,7 +131,7 @@ test('a directory listing leaves out the ignored directories', (t: TestContext) 
   assert.ok(job);
   const ignored = [path.join(root, 'build'), path.join(root, 'types')];
   const recorded = { ...record, outputs: [], inputs: { '': inputDigest(root, (filename) => insideAny(ignored, filename), root) } };
-  const current = (): boolean => jobIsCurrent(config, job, recorded, SETUP, new Set(), ignored);
+  const current = (): boolean => jobIsCurrent(config, job, recorded, SETUP, { version: 1, files: {} }, ignored);
   assert.equal(current(), true);
   fs.mkdirSync(path.join(root, 'build/nested'), { recursive: true });
   fs.writeFileSync(path.join(root, 'build/nested/a.js'), '');
@@ -117,13 +143,12 @@ test('a directory listing leaves out the ignored directories', (t: TestContext) 
 });
 
 test('a generated file is left out of a directory listing', (t: TestContext) => {
-  const { root, config, record } = project(t);
+  const { root, config, record, inventory } = project(t);
   const job = config.jobs[0];
   assert.ok(job);
-  const generated = path.join(root, 'src/a.model.generated.ts');
-  fs.writeFileSync(generated, 'export {};\n');
-  assert.equal(jobIsCurrent(config, job, record, SETUP, new Set()), false);
-  assert.equal(jobIsCurrent(config, job, record, SETUP, new Set([generated])), true);
+  fs.writeFileSync(path.join(root, 'src/a.model.generated.ts'), 'export {};\n');
+  assert.equal(jobIsCurrent(config, job, record, SETUP, inventory), false);
+  assert.equal(jobIsCurrent(config, job, record, SETUP, inventoryOf(root, ['sdk.ts', 'src/a.model.generated.ts'])), true);
 });
 
 test('an input recorded as missing makes the job stale once it exists', (t: TestContext) => {
@@ -134,22 +159,22 @@ test('an input recorded as missing makes the job stale once it exists', (t: Test
 });
 
 test('a job that recorded no input is never current', (t: TestContext) => {
-  const { config, record } = project(t);
+  const { config, record, inventory } = project(t);
   const job = config.jobs[0];
   assert.ok(job);
-  assert.equal(jobIsCurrent(config, job, { ...record, inputs: {} }, SETUP, new Set()), false);
+  assert.equal(jobIsCurrent(config, job, { ...record, inputs: {} }, SETUP, inventory), false);
 });
 
 test('a job is stale when its provider version or the manifests it receives are not those of its record', (t: TestContext) => {
-  const { root, config, record } = project(t);
+  const { root, config, record, inventory } = project(t);
   const job = config.jobs[0];
   assert.ok(job);
   const manifest = path.join(root, 'sdk/model-manifest.json');
-  assert.equal(jobIsCurrent(config, job, record, SETUP, new Set()), true);
-  assert.equal(jobIsCurrent(config, job, record, { ...SETUP, provider: '1.1.0' }, new Set()), false, 'another provider version');
-  assert.equal(jobIsCurrent(config, job, record, { ...SETUP, provider: undefined }, new Set()), false, 'a provider that cannot be resolved');
-  assert.equal(jobIsCurrent(config, job, record, { ...SETUP, manifestInputs: [manifest] }, new Set()), false, 'a manifest the record did not receive');
+  assert.equal(jobIsCurrent(config, job, record, SETUP, inventory), true);
+  assert.equal(jobIsCurrent(config, job, record, { ...SETUP, provider: '1.1.0' }, inventory), false, 'another provider version');
+  assert.equal(jobIsCurrent(config, job, record, { ...SETUP, provider: undefined }, inventory), false, 'a provider that cannot be resolved');
+  assert.equal(jobIsCurrent(config, job, record, { ...SETUP, manifestInputs: [manifest] }, inventory), false, 'a manifest the record did not receive');
   const received = { ...record, manifestInputs: ['sdk/model-manifest.json'] };
-  assert.equal(jobIsCurrent(config, job, received, { ...SETUP, manifestInputs: [manifest] }, new Set()), true);
-  assert.equal(jobIsCurrent(config, job, received, SETUP, new Set()), false, 'a manifest the job no longer receives');
+  assert.equal(jobIsCurrent(config, job, received, { ...SETUP, manifestInputs: [manifest] }, inventory), true);
+  assert.equal(jobIsCurrent(config, job, received, SETUP, inventory), false, 'a manifest the job no longer receives');
 });

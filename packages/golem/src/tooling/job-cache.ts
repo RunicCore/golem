@@ -5,7 +5,7 @@ import { contains } from './config.js';
 import type { GolemConfig, GolemJob } from './config.js';
 import { hasErrorCode, isRecord } from './generator-api.js';
 import { atomicWrite, loadInventory } from './outputs.js';
-import type { Inventory } from './outputs.js';
+import type { Inventory, InventoryEntry } from './outputs.js';
 import { GOLEM_VERSION } from './version.js';
 
 /**
@@ -168,24 +168,38 @@ export function sameSetup(config: GolemConfig, record: JobRecord, setup: JobSetu
     && JSON.stringify(record.manifestInputs) === JSON.stringify(setup.manifestInputs.map(manifest => recordPath(config, manifest)));
 }
 
+/** Whether the file still holds what the inventory recorded for it. */
+function outputIsRecorded(entry: InventoryEntry | undefined, filename: string): boolean {
+  if (!entry) return false;
+  try {
+    return crypto.createHash('sha256').update(fs.readFileSync(filename)).digest('hex') === entry.digest;
+  } catch (error) {
+    if (hasErrorCode(error, 'ENOENT') || hasErrorCode(error, 'EISDIR')) return false;
+    throw error;
+  }
+}
+
 /**
  * Whether the job would produce what its record holds: the golem version, provider version, options and manifest set
- * match, every output exists and every input still has the digest it had when the job read it. `generated` is the
- * files the inventory records, which directory listings leave out; it defaults to the inventory on disk.
+ * match, every output still has the digest the inventory recorded for it and every input still has the digest it had when the job
+ * read it. An output that is missing, edited or absent from the inventory is not current: the job runs again and rewrites it. The
+ * files the inventory records are left out of directory listings; `inventory` defaults to the one on disk.
  */
 export function jobIsCurrent(
   config: GolemConfig,
   job: GolemJob,
   record: JobRecord | undefined,
   setup: JobSetup,
-  generated: ReadonlySet<string> = inventoryPaths(config, loadInventory(config)),
+  inventory: Inventory = loadInventory(config),
   ignoredDirectories: readonly string[] = [],
 ): boolean {
   if (!record || record.golem !== GOLEM_VERSION || record.options !== JSON.stringify(job.options) || !sameSetup(config, record, setup)) return false;
   // A job that announced no input hides what it reads: nothing can show that it is still true.
   if (Object.keys(record.inputs).length === 0) return false;
   const outputs = new Set(record.outputs.map(output => absoluteRecordPath(config, output)));
-  if (![...outputs].every(output => fs.existsSync(output))) return false;
+  const entries = new Map(Object.entries(inventory.files).map(([key, entry]) => [path.resolve(config.directory, key), entry]));
+  const generated = new Set(entries.keys());
+  if (![...outputs].every(output => outputIsRecorded(entries.get(output), output))) return false;
   const excluded = (filename: string): boolean => generated.has(filename) || outputs.has(filename) || insideAny(ignoredDirectories, filename);
   return Object.entries(record.inputs)
     .every(([input, digest]) => inputDigest(absoluteRecordPath(config, input), excluded, config.directory) === digest);

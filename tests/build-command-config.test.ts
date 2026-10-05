@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import test, { type TestContext } from 'node:test';
 import { runPipeline } from '#golem/cli';
-import { runBuild } from '#golem/build';
+import { runBuild, shownOptions } from '#golem/build';
 import { generate } from '#model/generator';
 import { copyFixtureFile, readFixture } from './fixture-project.js';
 import { createControllerFixture } from './fixture-templates/controllers/project.js';
@@ -236,3 +236,47 @@ test('a package without a tsconfig of its own, under a parent tsconfig, builds w
   assert.match(fs.readFileSync(path.join(root, 'build/packages/b/src/calls.js'), 'utf8'), /requireObjectCodec\("TMoney_11111111"\)\.stringify\(/);
 });
 
+
+test('output that tsc --showConfig prints and is not a configuration fails with what to run, never the tsconfig answer', () => {
+  const shown = shownOptions(JSON.stringify({ compilerOptions: { noEmitOnError: true, declaration: true } }), 'tsconfig.json', ['--noEmitOnError']);
+  assert.equal(shown.noEmitOnError, true);
+  assert.equal(shown.declaration, true);
+  assert.equal(shownOptions('{}', 'tsconfig.json', ['--noEmitOnError']).noEmitOnError, false, 'a configuration without options holds none');
+  for (const printed of ['error TS5023: Unknown option', 'null', '']) {
+    assert.throws(
+      () => shownOptions(printed, 'tsconfig.json', ['--noEmitOnError']),
+      (error: Error) => error.message.startsWith('golem build cannot read what tsc --showConfig printed for tsconfig.json with --noEmitOnError: ')
+        && error.message.endsWith('Run tsc -p tsconfig.json --noEmitOnError --showConfig to see it.'),
+      printed,
+    );
+  }
+});
+
+test('a symlinked workspace package outside the tsconfig directory builds: the build scans only the sources it stages', async (t) => {
+  // The package's `types` is its source, so the compiler reads it as an external library: the app's build does not stage it.
+  const { root: outer } = createModelProject(t, {
+    prefix: 'golem-build-linked-package-',
+    name: 'build-linked-package',
+    linkTypescript: true,
+    packages: { '@exprtlabs/golem-model': path.join(workspace, 'packages/golem-model') },
+  });
+  const app = path.join(outer, 'app');
+  write(outer, 'packages/lib/package.json', JSON.stringify({ name: '@fixture/lib', type: 'module', types: './src/index.ts', exports: { '.': { types: './src/index.ts', default: './src/index.js' } } }));
+  write(outer, 'packages/lib/src/index.ts', `import { parse } from '@exprtlabs/golem/serde';
+export function read(text: string): unknown { return parse<{ note: string }>(text); }
+`);
+  fs.mkdirSync(path.join(app, 'node_modules/@fixture'), { recursive: true });
+  fs.symlinkSync(path.join(outer, 'packages/lib'), path.join(app, 'node_modules/@fixture/lib'), 'dir');
+  write(app, 'package.json', '{"name":"linked-app","type":"module"}');
+  write(app, 'tsconfig.json', JSON.stringify({
+    compilerOptions: { target: 'ES2022', module: 'NodeNext', moduleResolution: 'NodeNext', strict: true, skipLibCheck: true, outDir: 'build', rootDir: 'src' },
+    include: ['src/**/*.ts'],
+  }));
+  write(app, 'golem.yaml', 'version: 1\nmobx: false\nvalidation: false\nmodels:\n  root: .\n');
+  copyFixtureFile(app, 'models/serde/base-payment-model/money.model.ts', 'src/money.model.ts');
+  write(app, 'src/use.ts', USE.replace("import './money.model.js';", "import './money.model.js';\nimport { read } from '@fixture/lib';\nexport const fromLibrary = read('{}');"));
+  await runPipeline(path.join(app, 'golem.yaml'));
+
+  assert.equal((await build(app)).exitCode, 0);
+  assert.match(fs.readFileSync(path.join(app, 'build/use.js'), 'utf8'), /requireObjectCodec\("TMoney_[0-9a-f]{8}"\)\.stringify\(/, 'the app\'s own sites are rewritten');
+});

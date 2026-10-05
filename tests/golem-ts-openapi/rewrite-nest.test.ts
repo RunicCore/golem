@@ -108,18 +108,19 @@ test('a decorator that is already present, plain, through a namespace or aliased
   assert.equal(result.files.get('src/aliased.controller.ts'), undefined);
 });
 
-test('a primitive @Body() and a type no model table names are not rewritten', (t) => {
-  const primitive = project(t, {
+test('a primitive @Body() and a type that is not a golem model are not rewritten, even when a model of the same name has keys', (t) => {
+  const primitive = paymentsProject(t, {
     'src/notes.controller.ts': readFixture(`${PLUGIN}/rewrite-skips-a-primitive-body/notes.controller.ts`),
   });
-  const unknown = project(t, {
+  // The key table names a `Payment` model; this controller's `Payment` is a plain interface of its own file.
+  const plain = paymentsProject(t, {
     'src/notes.controller.ts': readFixture(`${PLUGIN}/rewrite-skips-a-body-type-no-model-table-names/notes.controller.ts`),
   });
-  for (const root of [primitive, unknown]) {
+  for (const root of [primitive, plain]) {
     const result = scan(root);
     assert.deepEqual(result.diagnostics, []);
     assert.equal(result.files.get('src/notes.controller.ts'), undefined);
-    assert.deepEqual(result.nestCodecSites, []);
+    assert.deepEqual(result.nestCodecSites.filter(site => site.file === 'src/notes.controller.ts'), []);
   }
 });
 
@@ -143,21 +144,31 @@ test('two Payment contracts keep distinct ids in their controllers', (t) => {
   assert.ok(!billing.includes(payoutId) && !payout.includes(billingId));
 });
 
-test('a table-known @Body() type that binds to no single id fails with its position', (t) => {
-  // The payments fixture's Payment class puts the name in the tables, so the interface below is known but binds to no id.
-  const root = paymentsProject(t, {
-    'src/billing/payment.model.ts': paymentModelSource({ field: 'amount', fieldType: 'number' }).text,
-    'src/payout/payment.model.ts': paymentModelSource({ field: 'destination', fieldType: 'string' }).text,
-    'src/notes.controller.ts': readFixture(`${PLUGIN}/rewrite-skips-a-body-type-no-model-table-names/notes.controller.ts`),
-  });
+test('a golem model that no key names fails with its position and what to run, as an alias and as a class', (t) => {
+  // The model is added after golem generate ran, as when a dev server runs: no key table or manifest holds it.
+  const root = paymentsProject(t);
+  fs.writeFileSync(path.join(root, 'src/fresh.model.ts'), `import type { IModel } from '@exprtlabs/golem/model';
+import { TFreshBaseModel } from './fresh.model.generated.js';
+export type TFresh = IModel<{ note: string }>;
+export class Fresh extends TFreshBaseModel {}
+`);
+  fs.writeFileSync(path.join(root, 'src/fresh.model.generated.ts'), 'export class TFreshBaseModel {}\n');
+  fs.writeFileSync(path.join(root, 'src/fresh.controller.ts'), `import { Body, Controller, Post } from '@nestjs/common';
+import { Fresh, type TFresh } from './fresh.model.js';
+@Controller('fresh')
+export class FreshController {
+  @Post()
+  create(@Body() input: TFresh): number { return 1; }
+  @Post('class')
+  createAsClass(@Body() input: Fresh): number { return 1; }
+}
+`);
   const result = scan(root);
-  assert.deepEqual(result.diagnostics.map(({ code, file, line, column, message }) => ({ code, file, line, column, message })), [{
-    code: 'RUNM1071',
-    file: 'src/notes.controller.ts',
-    line: 6,
-    column: 25,
-    message: '@Body() type Payment has no unique codec id',
-  }]);
+  assert.deepEqual(result.diagnostics.map(({ code, file, line, column, message }) => ({ code, file, line, column, message })), [
+    { code: 'RUNM1071', file: 'src/fresh.controller.ts', line: 6, column: 25, message: '@Body() type TFresh has no unique codec id; run golem generate' },
+    { code: 'RUNM1071', file: 'src/fresh.controller.ts', line: 8, column: 32, message: '@Body() type Fresh has no unique codec id; run golem generate' },
+  ]);
+  assert.equal(result.files.get('src/fresh.controller.ts'), undefined);
 });
 
 test('a method that a decorator cannot decorate is not rewritten: an object literal, an abstract method, an overload signature', (t) => {

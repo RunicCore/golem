@@ -9,7 +9,7 @@ import type { FileRewrite, RewriteEdit, RewriteImport } from './rewrite.js';
 import { readModelManifest } from './model-manifest.js';
 import { createProjectProgram, canonicalFilename, isGeneratedCompanion, retainedProgramSession } from './type-analysis/project.js';
 import { advertisedModelManifests } from './type-analysis/provenance.js';
-import { resolveSymbol } from './type-analysis/symbols.js';
+import { modelDeclarationKind, resolveSymbol } from './type-analysis/symbols.js';
 
 export interface ScanInput {
   /** Absolute project root; file paths in results are relative to it. */
@@ -17,7 +17,7 @@ export interface ScanInput {
   readonly program: ts.Program;
   readonly checker: ts.TypeChecker;
   /** The project's `.golem/codec-keys.json`, which the program does not hold; a missing file holds no keys. */
-  readonly codecKeysFile?: string;
+  readonly codecKeysFile: string;
   /** The project has NestJS controllers: `@Body()` and `@Query()` parameters and method returns of a model get codec decorators. */
   readonly nest: boolean;
 }
@@ -106,14 +106,11 @@ class CodecKeys {
   private readonly byDeclaration = new Map<string, Map<string, Set<string>>>();
   /** Each `<file name>#<name>` tail's ids, with the files that give each; only old key tables feed it. */
   private readonly byTail = new Map<string, Map<string, Set<string>>>();
-  private readonly names = new Set<string>();
 
-  constructor(private readonly program: ts.Program, private readonly checker: ts.TypeChecker, private readonly root: string, codecKeysFile: string | undefined) {
-    if (codecKeysFile !== undefined) {
-      const table = portable(root, codecKeysFile);
-      for (const [declaration, id] of Object.entries(readCodecKeysFile(codecKeysFile))) {
-        if (declaration.lastIndexOf('#') > 0 && id !== '') this.add(declaration.replace(/\\/g, '/'), id, table);
-      }
+  constructor(private readonly program: ts.Program, private readonly checker: ts.TypeChecker, private readonly root: string, codecKeysFile: string) {
+    const table = portable(root, codecKeysFile);
+    for (const [declaration, id] of Object.entries(readCodecKeysFile(codecKeysFile))) {
+      if (declaration.lastIndexOf('#') > 0 && id !== '') this.add(declaration.replace(/\\/g, '/'), id, table);
     }
     this.addManifests();
     this.addProgramTables();
@@ -179,7 +176,6 @@ class CodecKeys {
     const ids = this.byDeclaration.get(declaration) ?? new Map<string, Set<string>>();
     this.byDeclaration.set(declaration, ids);
     ids.set(id, (ids.get(id) ?? new Set()).add(table));
-    this.names.add(declaration.slice(declaration.lastIndexOf('#') + 1));
     if (!byFileName) return;
     const tail = declaration.slice(declaration.lastIndexOf('/') + 1);
     let tailIds = this.byTail.get(tail);
@@ -209,11 +205,6 @@ class CodecKeys {
     const [[id, tables]] = [...ids];
     for (const table of tables) dependencies.add(table);
     return id;
-  }
-
-  /** Some key names a declaration called `name`, whether or not one id binds to it. */
-  known(name: string): boolean {
-    return this.names.has(name);
   }
 
   idForSymbol(symbol: ts.Symbol, dependencies: Set<string>): string {
@@ -349,11 +340,27 @@ function hasDecorator(names: readonly string[], name: string): boolean {
   return names.includes(name) || names.includes(`${REWRITE_IMPORT_PREFIX}${name}`);
 }
 
+/**
+ * Whether the symbol is a golem model by its declaration, not by a key table that a new model may not be in yet: an alias of
+ * `IModel<…>` or `IObject<…>`, through other aliases, or a class that extends a `*BaseModel` of a generated module.
+ */
+function isGolemModel(checker: ts.TypeChecker, symbol: ts.Symbol, seen = new Set<ts.Symbol>()): boolean {
+  if (seen.has(symbol)) return false;
+  seen.add(symbol);
+  return (symbol.declarations ?? []).some((declaration) => {
+    if (ts.isClassDeclaration(declaration)) return generatedBaseFile(checker, declaration) !== undefined;
+    if (!ts.isTypeAliasDeclaration(declaration)) return false;
+    if (modelDeclarationKind(checker, declaration.type) !== undefined) return true;
+    const target = ts.isTypeReferenceNode(declaration.type) ? resolvedSymbolAt(checker, declaration.type.typeName) : undefined;
+    return target !== undefined && isGolemModel(checker, target, seen);
+  });
+}
+
 interface NestBinding {
   readonly id: string;
   readonly primitive: boolean;
-  /** The codec tables name a model with this name, so a type that binds to no id is an error rather than a plain class. */
-  readonly known: boolean;
+  /** The type is a golem model, so one that binds to no id is an error rather than a plain class. */
+  readonly golemModel: boolean;
   /** The model type as written, array wrappers removed. */
   readonly label: string;
 }
@@ -365,13 +372,12 @@ function nestBinding(
   const { checker, keys, file, dependencies } = input;
   const model = nestModelTypeNode(typeNode);
   const label = model.getText(file);
-  const unbound = { id: '', primitive: false, known: false, label };
+  const unbound = { id: '', primitive: false, golemModel: false, label };
   if (NEST_PRIMITIVE_TYPES.has(label.slice(label.lastIndexOf('.') + 1))) return { ...unbound, primitive: true };
   const name = serdeTypeName(model);
   const symbol = name && resolvedSymbolAt(checker, name);
-  if (!symbol) return unbound;
-  const id = keys.idForSymbol(symbol, dependencies);
-  return { ...unbound, id, known: id !== '' || keys.known(symbol.name) };
+  if (!symbol) return { ...unbound, golemModel: modelDeclarationKind(checker, model) !== undefined };
+  return { ...unbound, id: keys.idForSymbol(symbol, dependencies), golemModel: isGolemModel(checker, symbol) };
 }
 
 // One file
@@ -503,10 +509,10 @@ function scanFile(
     const names = decoratorNames(parameter);
     const decorator = names.find((name) => NEST_PARAMETER_DECORATORS.includes(name));
     if (!parameter.type || decorator === undefined || hasDecorator(names, NEST_CODEC_DECORATOR)) return;
-    const { id, primitive, known, label } = nestBinding({ checker, keys, file, dependencies: scan.dependencies }, parameter.type);
+    const { id, primitive, golemModel, label } = nestBinding({ checker, keys, file, dependencies: scan.dependencies }, parameter.type);
     if (primitive) return;
     if (id === '') {
-      if (known) scan.diagnostics.push(locate(root, file, parameter.type, CODE_NEST_NO_CODEC, `@${decorator}() type ${label} has no unique codec id`));
+      if (golemModel) scan.diagnostics.push(locate(root, file, parameter.type, CODE_NEST_NO_CODEC, `@${decorator}() type ${label} has no unique codec id; run golem generate`));
       return;
     }
     scan.edits.push(insertion(parameter.name.getStart(file), `@${REWRITE_IMPORT_PREFIX}${NEST_CODEC_DECORATOR}(${JSON.stringify(id)}) `));
@@ -641,7 +647,12 @@ export class RewriteScanner {
 
   /** Every file of the program that needs a rewrite, by root-relative POSIX path in path order, and the diagnostics of all candidates in the same order. */
   scanProgram(): { readonly files: ReadonlyMap<string, FileScanResult>; readonly diagnostics: readonly GolemDiagnostic[] } {
-    const sources = this.program.getSourceFiles()
+    return this.scanFiles(this.program.getSourceFiles().map((file) => file.fileName));
+  }
+
+  /** As `scanProgram`, for the named absolute paths: the files a caller emits, which need not be all the program reaches. Non-candidates are skipped. */
+  scanFiles(filenames: readonly string[]): { readonly files: ReadonlyMap<string, FileScanResult>; readonly diagnostics: readonly GolemDiagnostic[] } {
+    const sources = filenames.flatMap((filename) => this.program.getSourceFile(filename) ?? [])
       .filter((file) => this.candidate(file))
       .map((file) => ({ file, relative: portable(this.root, file.fileName) }))
       .sort((left, right) => compareText(left.relative, right.relative));
@@ -695,7 +706,7 @@ interface ProjectScanInput {
   readonly configFile: string;
   readonly nest: boolean;
   /** The yaml's `.golem/codec-keys.json`. */
-  readonly codecKeysFile?: string;
+  readonly codecKeysFile: string;
   /** The session and owner of the job that reads this project, so one compiler serves its generation and this scan; the session is kept under `root`. */
   readonly session?: GeneratorSession;
   readonly sessionOwner?: string;
@@ -706,6 +717,6 @@ export function scanProject(input: ProjectScanInput): ProgramScan {
   const { root, configFile, nest, codecKeysFile, session, sessionOwner } = input;
   const info = createProjectProgram(root, undefined, sessionOwner === undefined ? undefined : retainedProgramSession(session, sessionOwner, root), configFile);
   using program = info.program;
-  const { files, diagnostics } = new RewriteScanner({ root: path.dirname(configFile), program, checker: program.getTypeChecker(), nest, ...(codecKeysFile === undefined ? {} : { codecKeysFile }) }).scanProgram();
+  const { files, diagnostics } = new RewriteScanner({ root: path.dirname(configFile), program, checker: program.getTypeChecker(), nest, codecKeysFile }).scanProgram();
   return { files, diagnostics, nestCodecSites: [...files.values()].flatMap((file) => file.nestCodecSites) };
 }
