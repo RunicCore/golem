@@ -1,12 +1,15 @@
 import { fileURLToPath } from 'node:url';
 
-import { applyIndexedRewrites, findRewriteIndex, NODE_MODULES, withInlineSourceMap } from './rewrite-host.js';
+import { NODE_MODULES, openRewriteProject, withInlineSourceMap } from './rewrite-host.js';
+import type { RewriteProject } from './rewrite-host.js';
 
 /**
- * Node module `load` hook that applies golem's rewrite index to TypeScript sources in memory, before Node strips
- * their types. The project root is the nearest ancestor directory that holds `.golem/rewrites.json`. A TypeScript
- * file outside `node_modules` with no index above it fails instead of loading unrewritten. `.tsx` goes straight to
- * Node, which cannot strip it. This module imports neither TypeScript nor the checker.
+ * Node module `load` hook that rewrites TypeScript sources in memory, before Node strips their types. The hook scans
+ * each file with the project's own TypeScript against the golem.yaml named by `GOLEM_CONFIG`, else `./golem.yaml` in
+ * the working directory; with neither, a TypeScript file outside `node_modules` fails the load. The scan needs
+ * TypeScript, so the first TypeScript file loads it. The loader thread owns its own compiler session, a second-tier
+ * cost beside the one of the build: the program is opened once in the thread and reopened for a file it does not hold.
+ * ES modules only: a rewrite adds imports, which CommonJS cannot run. `.tsx` goes straight to Node, which cannot strip it.
  */
 
 const TYPESCRIPT_FILE = /\.(?:ts|mts|cts)$/;
@@ -21,18 +24,26 @@ function sourceText(source: LoadResult['source']): string {
   return Buffer.from(source instanceof ArrayBuffer ? new Uint8Array(source) : new Uint8Array(source.buffer, source.byteOffset, source.byteLength)).toString('utf8');
 }
 
+let project: Promise<RewriteProject> | undefined;
+
+function projectOfThisProcess(): Promise<RewriteProject> {
+  project ??= openRewriteProject({ cwd: process.cwd() });
+  return project;
+}
+
 export async function load(url: string, context: LoadContext, nextLoad: NextLoad): Promise<LoadResult> {
   if (!url.startsWith('file:')) return nextLoad(url, context);
   const file = fileURLToPath(url);
   if (!TYPESCRIPT_FILE.test(file) || NODE_MODULES.test(file)) return nextLoad(url, context);
 
-  const { index, relative } = findRewriteIndex(file);
+  const rewriting = await projectOfThisProcess();
   const loaded = await nextLoad(url, context);
+  const rewritten = rewriting.rewrite(file, sourceText(loaded.source));
+  if (!rewritten) return loaded;
   // The rewrite prepends ES imports, which CommonJS cannot run.
-  if (loaded.format === 'commonjs-typescript' && relative in index.files) {
+  if (loaded.format === 'commonjs-typescript') {
+    const relative = rewritten.map.sources[0] ?? file;
     throw new Error(`golem rewrites need ES modules; ${relative} loads as CommonJS. Use .mts, or .ts with "type": "module", or build with golem build`);
   }
-  const applied = applyIndexedRewrites(relative, sourceText(loaded.source), index);
-  if (!applied) return loaded;
-  return { ...loaded, source: withInlineSourceMap(applied.code, applied.map, file) };
+  return { ...loaded, source: withInlineSourceMap(rewritten.code, rewritten.map, file) };
 }
