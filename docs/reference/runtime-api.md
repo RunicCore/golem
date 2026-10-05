@@ -24,7 +24,7 @@ Find every `@exprtlabs/golem` import your application, NestJS app or tool can us
 | [`vite`](#vite) | Vite plugin that rewrites TypeScript before Vite strips its types | `vite` |
 | [`esbuild`](#esbuild) | esbuild plugin that rewrites TypeScript before esbuild strips its types | `esbuild` |
 
-Internal subpaths used by the generators: `cli`, `emitter`, `schema`, `schema-graph`, `ajv-tooling`, `type-analysis`, `generated-paths`, [`ts`](#ts). Don't import them; they may change in any release.
+Internal subpaths used by the generators: `cli`, `emitter`, `schema`, `schema-graph`, `ajv-tooling`, `type-analysis`, `generated-paths`, `validation-runtime`, `validator-compiler`, [`ts`](#ts). Don't import them; they may change in any release.
 
 Generated files import `ajv` only with `validation: true` and `ajvStandalone: false`. With `ajvStandalone: true` they import precompiled validators instead ([validation profiles](/reference/config#validation-profiles)).
 

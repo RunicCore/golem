@@ -18,7 +18,7 @@ function fixture(t: TestContext, yaml: string): { root: string; filename: string
 test('defaults and relative paths are anchored to the config rather than process cwd', (t: TestContext) => {
   const { root, filename } = fixture(t, 'version: 1\nopenapi:\n  - input: api.yaml\n    output: sdk\nmodels:\n  root: .\n');
   const config = loadConfig(filename);
-  assert.deepEqual(config.profile, { mobx: false, validation: true, ajvStandalone: false, allowAny: false });
+  assert.deepEqual(config.profile, { mobx: false, validation: true, ajvStandalone: false, allowAny: false, unknownFormats: 'warn' });
   const job0 = config.jobs[0];
   const job1 = config.jobs[1];
   assert.ok(job0 && job0.kind === 'openapi');
@@ -34,6 +34,7 @@ test('defaults and relative paths are anchored to the config rather than process
     'validation: true',
     'ajvStandalone: true',
     'allowAny: true',
+    'unknownFormats: error',
     'models:',
     '  root: project',
     '  output: generated/models',
@@ -41,7 +42,7 @@ test('defaults and relative paths are anchored to the config rather than process
   ].join('\n'));
   fs.mkdirSync(path.join(explicit.root, 'project'), { recursive: true });
   const explicitConfig = loadConfig(explicit.filename);
-  assert.deepEqual(explicitConfig.profile, { mobx: true, validation: true, ajvStandalone: true, allowAny: true });
+  assert.deepEqual(explicitConfig.profile, { mobx: true, validation: true, ajvStandalone: true, allowAny: true, unknownFormats: 'error' });
   const modelJob = explicitConfig.jobs.find((job) => job.kind === 'models');
   assert.ok(modelJob && modelJob.kind === 'models');
   assert.equal(modelJob.options.root, path.join(explicit.root, 'project'));
@@ -183,6 +184,7 @@ test('configuration errors reject unknown overrides, duplicate keys and overlapp
     ['version: 1\nopenapi: [{input: api.yaml, output: sdk, maxRefBytes: 0}]', /positive/],
     ['version: 1\nallowAny: maybe\nmodels: {}\n', /allowAny must be a boolean/],
     ['version: 1\najvStandalone: maybe\nmodels: {}\n', /ajvStandalone must be a boolean/],
+    ['version: 1\nunknownFormats: strict\nmodels: {}\n', /unknownFormats must be "warn" or "error"/],
     ['version: 1\nopenapi:\n  - input: api.yaml\n    output: sdk\n    ajvStandalone: true\n', /Unknown openapi\[0\] key/],
     ['version: 1\nvalidation: false\najvStandalone: true\nopenapi:\n  - input: api.yaml\n    output: sdk\n', /ajvStandalone.*validation|validation.*ajvStandalone/],
     ['version: 1\nopenapi:\n  - input: api.yaml\n    output: sdk\nmodels:\n  root: .\n  output: sdk/models\n', /Overlapping/],

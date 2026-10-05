@@ -18,18 +18,21 @@ export interface GolemProfile {
   readonly validation: boolean;
   readonly ajvStandalone?: boolean;
   readonly allowAny?: boolean;
+  /** What a schema format that golem does not implement does: `warn` (default) skips its check, `error` fails generation. */
+  readonly unknownFormats?: 'warn' | 'error';
 }
 
 export interface ResolvedGolemProfile extends GolemProfile {
   readonly ajvStandalone: boolean;
   readonly allowAny: boolean;
+  readonly unknownFormats: 'warn' | 'error';
 }
 
 /** Programmatic callers receive the same defaults and checks as YAML users. */
 export function resolveProfile(profile: GolemProfile): ResolvedGolemProfile {
   if (!isRecord(profile)) throw new TypeError('Generation profile must be an object.');
   for (const key of Object.keys(profile)) {
-    if (!['mobx', 'validation', 'ajvStandalone', 'allowAny'].includes(key)) {
+    if (!['mobx', 'validation', 'ajvStandalone', 'allowAny', 'unknownFormats'].includes(key)) {
       throw new TypeError(`Unknown generation profile option: ${key}.`);
     }
   }
@@ -41,7 +44,15 @@ export function resolveProfile(profile: GolemProfile): ResolvedGolemProfile {
       throw new TypeError(`Generation profile ${key} must be a boolean.`);
     }
   }
-  const resolved = { ...profile, ajvStandalone: profile.ajvStandalone ?? false, allowAny: profile.allowAny ?? false };
+  if (profile.unknownFormats !== undefined && profile.unknownFormats !== 'warn' && profile.unknownFormats !== 'error') {
+    throw new TypeError('Generation profile unknownFormats must be "warn" or "error".');
+  }
+  const resolved: ResolvedGolemProfile = {
+    ...profile,
+    ajvStandalone: profile.ajvStandalone ?? false,
+    allowAny: profile.allowAny ?? false,
+    unknownFormats: profile.unknownFormats ?? 'warn',
+  };
   if (resolved.ajvStandalone && !resolved.validation) {
     throw new TypeError('ajvStandalone requires validation to be enabled.');
   }

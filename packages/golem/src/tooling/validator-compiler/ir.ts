@@ -1,4 +1,4 @@
-/** Type names a JSON Schema `type` keyword can test; `Date` is golem's own node and has no keyword. */
+/** Type names a JSON Schema `type` keyword can test; `Date` is golem's own node (`IrDate`) and has no `type` name. */
 export type IrTypeName = 'string' | 'number' | 'integer' | 'boolean' | 'null' | 'object' | 'array';
 
 /** `type`: the value must be one of the named types. */
@@ -169,9 +169,43 @@ export interface IrNot {
   readonly fn: number;
 }
 
+/** `golemModelDate`: the value must be a `Date` that holds a valid time. */
+export interface IrDate {
+  readonly kind: 'date';
+}
+
+/**
+ * `golemModelInstance`: of the model classes `among`, the one the value's encoder selects is the most derived one
+ * the value is an instance of. It must be `of`: always when `required`, otherwise when there is one. Without `of`,
+ * the value must be an instance of none of them. A failure is one `instance` issue naming `of`, or the first of `among`.
+ */
+export interface IrInstance {
+  readonly kind: 'instance';
+  readonly of?: string;
+  readonly among: readonly string[];
+  readonly required: boolean;
+}
+
+/** A user validation function the generated module imports. */
+export interface IrValidationImport {
+  readonly importPath: string;
+  readonly exportName: string;
+}
+
+/**
+ * `exprtValidation`: when the structural schema `fn` passes (or when there is none), each function in `calls` runs in
+ * order on the value. An index in `calls` points into `IrModule.validations`. A function returns `true`, `false`, or a
+ * string that is the reason it failed; any other result throws a `TypeError`.
+ */
+export interface IrValidation {
+  readonly kind: 'validation';
+  readonly fn?: number;
+  readonly calls: readonly number[];
+}
+
 export type IrCheck =
   | IrType | IrLiteral | IrFormat | IrString | IrNumber | IrArray | IrObject | IrCall | IrAllOf | IrUnion | IrNot
-  | IrConditional | IrDependentSchemas | IrUnevaluatedProperties | IrUnevaluatedItems;
+  | IrConditional | IrDependentSchemas | IrDate | IrInstance | IrValidation | IrUnevaluatedProperties | IrUnevaluatedItems;
 
 /** A lowered schema: the `true` schema, the `false` schema, or the checks that apply in order. */
 export type IrSchema =
@@ -202,5 +236,7 @@ export interface IrExport {
 
 export interface IrModule {
   readonly functions: readonly IrFunction[];
+  /** The user validation functions the module imports, each once. */
+  readonly validations: readonly IrValidationImport[];
   readonly exports: readonly IrExport[];
 }

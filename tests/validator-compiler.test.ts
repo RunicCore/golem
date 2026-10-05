@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { GolemDiagnosticSeverity } from '@exprtlabs/golem/generator-api';
+import type { Validator } from '@exprtlabs/golem/validation-runtime';
 import { compile } from '@exprtlabs/golem/validator-compiler';
 
 import { compileSchema, compileValidators } from './support/compiled-validators.js';
@@ -616,4 +617,186 @@ test('diagnostics from every root are collected before the source is withheld', 
   );
   assert.equal(result.source, '');
   assert.deepEqual(result.diagnostics.map(entry => entry.code), ['VALIDATE_INVALID_PATTERN', 'VALIDATE_UNRESOLVED_REF']);
+});
+
+// golem's own keywords
+
+const MODEL_CODEC_IDS = Symbol.for('@exprtlabs/golem:modelCodecIds');
+
+/** A class whose prototype lists `ids` the way a registered model does. */
+function modelClass(...ids: string[]): new () => object {
+  const model = class {};
+  Object.defineProperty(model.prototype, MODEL_CODEC_IDS, { value: ids });
+  return model;
+}
+
+test('golemModelInstance accepts an instance of the selected class and reports another or none', async () => {
+  const Cat = modelClass('Cat');
+  const Dog = modelClass('Dog');
+  const schema = { golemModelInstance: { of: 'Cat', among: ['Cat', 'Dog'], required: true } };
+  await assertIssues(schema, new Cat(), []);
+  await assertIssues(schema, new Dog(), [{ path: [], code: 'instance', model: 'Cat' }]);
+  await assertIssues(schema, { name: 'plain' }, [{ path: [], code: 'instance', model: 'Cat' }]);
+  await assertIssues(schema, 'text', [{ path: [], code: 'instance', model: 'Cat' }]);
+  await assertIssues(schema, null, [{ path: [], code: 'instance', model: 'Cat' }]);
+});
+
+test('golemModelInstance follows the prototype chain to the most derived registered class', async () => {
+  const Base = modelClass('Base');
+  class Plain extends Base {}
+  class Derived extends Base {}
+  Object.defineProperty(Derived.prototype, MODEL_CODEC_IDS, { value: ['Derived'] });
+  const schema = { golemModelInstance: { of: 'Base', among: ['Base', 'Derived'], required: true } };
+  await assertIssues(schema, new Plain(), []);
+  await assertIssues(schema, new Derived(), [{ path: [], code: 'instance', model: 'Base' }]);
+  await assertIssues({ golemModelInstance: { of: 'Derived', among: ['Base', 'Derived'], required: true } }, new Derived(), []);
+});
+
+test('golemModelInstance without required lets a plain object through when it names a class, and without a class rejects any instance', async () => {
+  const Cat = modelClass('Cat');
+  const named = { golemModelInstance: { of: 'Cat', among: ['Cat', 'Dog'], required: false } };
+  await assertIssues(named, { name: 'plain' }, []);
+  await assertIssues(named, new Cat(), []);
+  const anonymous = { golemModelInstance: { among: ['Cat', 'Dog'], required: false } };
+  await assertIssues(anonymous, { name: 'plain' }, []);
+  await assertIssues(anonymous, new Cat(), [{ path: [], code: 'instance', model: 'Cat' }]);
+  const Dog = modelClass('Dog');
+  await assertIssues({ golemModelInstance: { among: ['Dog', 'Cat'], required: false } }, new Dog(), [{ path: [], code: 'instance', model: 'Dog' }]);
+});
+
+test('golemModelInstance matches a hashed codec id exactly and an unhashed name against its hashed ids', async () => {
+  const Order = modelClass('Order_1a2b3c4d');
+  await assertIssues({ golemModelInstance: { of: 'Order_1a2b3c4d', among: ['Order_1a2b3c4d'], required: true } }, new Order(), []);
+  await assertIssues({ golemModelInstance: { of: 'Order', among: ['Order'], required: true } }, new Order(), []);
+  await assertIssues({ golemModelInstance: { of: 'Order_ffffffff', among: ['Order_ffffffff'], required: true } }, new Order(), [
+    { path: [], code: 'instance', model: 'Order_ffffffff' },
+  ]);
+  await assertIssues({ golemModelInstance: { of: 'Ord', among: ['Ord'], required: true } }, new Order(), [{ path: [], code: 'instance', model: 'Ord' }]);
+});
+
+test('golemModelInstance reports at the path of the value it checks', async () => {
+  const Cat = modelClass('Cat');
+  const schema = { properties: { pet: { golemModelInstance: { of: 'Cat', among: ['Cat'], required: true } } } };
+  await assertIssues(schema, { pet: new Cat() }, []);
+  await assertIssues(schema, { pet: {} }, [{ path: ['pet'], code: 'instance', model: 'Cat' }]);
+});
+
+test('golemModelDate accepts a valid Date and reports a Date type issue for anything else', async () => {
+  const schema = { golemModelDate: true };
+  await assertIssues(schema, new Date(0), []);
+  await assertIssues(schema, '2024-01-01T00:00:00Z', [{ path: [], code: 'type', expected: ['Date'] }]);
+  await assertIssues(schema, 0, [{ path: [], code: 'type', expected: ['Date'] }]);
+  await assertIssues(schema, new Date(Number.NaN), [{ path: [], code: 'type', expected: ['Date'] }]);
+  await assertIssues({ golemModelDate: false }, 'anything', []);
+});
+
+const RULES_PATH = './rules.mjs';
+const RULES_MODULE = `
+const calls = (globalThis.ruleCalls ??= []);
+export const isEven = value => { calls.push('isEven'); return value % 2 === 0; };
+export const isSmall = value => { calls.push('isSmall'); return value < 10 ? true : 'must be below 10'; };
+export const blank = () => { calls.push('blank'); return ''; };
+export const always = () => { calls.push('always'); return true; };
+export const count = () => { calls.push('count'); return 1; };
+`;
+
+function ruleCalls(): string[] {
+  const calls: unknown = Reflect.get(globalThis, 'ruleCalls');
+  return Array.isArray(calls) ? calls.map(String) : [];
+}
+
+async function compileRules(schema: unknown, ids: readonly string[]): Promise<Validator> {
+  Reflect.set(globalThis, 'ruleCalls', []);
+  const validations = Object.fromEntries(ids.map(id => [id, { importPath: RULES_PATH, exportName: id.replace(/^rules\./, '') }]));
+  return (await compileValidators({ roots: { root: schema }, validations, modules: { 'rules.mjs': RULES_MODULE } })).root;
+}
+
+test('exprtValidation imports each bound function and calls it inline', async () => {
+  const result = compile(
+    { roots: new Map([['root', { exprtValidation: { schema: true, bindings: ['rules.isEven', 'rules.isSmall'] } }]]), validations: new Map([
+      ['rules.isEven', { importPath: RULES_PATH, exportName: 'isEven' }],
+      ['rules.isSmall', { importPath: RULES_PATH, exportName: 'isSmall' }],
+    ]) },
+    { unknownFormats: 'warn' },
+  );
+  assert.deepEqual(result.diagnostics, []);
+  assert.match(result.source, /^import \{ isEven as v0 \} from "\.\/rules\.mjs";$/m);
+  assert.match(result.source, /^import \{ isSmall as v1 \} from "\.\/rules\.mjs";$/m);
+  assert.match(result.source, /v0\(v\)/);
+});
+
+test('a validation function that returns false is one custom issue, and a string is its reason', async () => {
+  const validate = await compileRules({ exprtValidation: { schema: { type: 'integer' }, bindings: ['rules.isEven'] } }, ['rules.isEven']);
+  assert.deepEqual(validate(4, true), []);
+  assert.deepEqual(validate(3, true), [{ path: [], code: 'custom' }]);
+  const small = await compileRules({ exprtValidation: { schema: { type: 'integer' }, bindings: ['rules.isSmall'] } }, ['rules.isSmall']);
+  assert.deepEqual(small(5, true), []);
+  assert.deepEqual(small(50, true), [{ path: [], code: 'custom', reason: 'must be below 10' }]);
+  const blank = await compileRules({ exprtValidation: { bindings: ['rules.blank'] } }, ['rules.blank']);
+  assert.deepEqual(blank(1, true), [{ path: [], code: 'custom' }]);
+});
+
+test('a validation function reports at the path of the value its schema describes', async () => {
+  const validate = await compileRules({ properties: { n: { exprtValidation: { schema: true, bindings: ['rules.isEven'] } } } }, ['rules.isEven']);
+  assert.deepEqual(validate({ n: 3 }, true), [{ path: ['n'], code: 'custom' }]);
+  assert.deepEqual(validate({ n: 2 }, true), []);
+});
+
+test('a validation function that returns neither a boolean nor a string throws a TypeError', async () => {
+  const validate = await compileRules({ exprtValidation: { schema: true, bindings: ['rules.count'] } }, ['rules.count']);
+  assert.throws(() => validate(1, true), new TypeError('Validation functions must return boolean or string.'));
+  assert.throws(() => validate(1, false), new TypeError('Validation functions must return boolean or string.'));
+});
+
+test('validation functions run only when the structural schema passes', async () => {
+  const validate = await compileRules({ exprtValidation: { schema: { type: 'integer' }, bindings: ['rules.isEven'] } }, ['rules.isEven']);
+  assert.deepEqual(validate('text', true), [{ path: [], code: 'type', expected: ['integer'] }]);
+  assert.deepEqual(ruleCalls(), []);
+});
+
+test('all errors reports each failing validation function in order; a binding listed twice runs once', async () => {
+  const validate = await compileRules({ exprtValidation: { schema: true, bindings: ['rules.isEven', 'rules.isSmall', 'rules.isEven'] } }, ['rules.isEven', 'rules.isSmall']);
+  assert.deepEqual(validate(51, true), [
+    { path: [], code: 'custom' },
+    { path: [], code: 'custom', reason: 'must be below 10' },
+  ]);
+  assert.deepEqual(ruleCalls(), ['isEven', 'isSmall']);
+});
+
+test('fast-fail stops before a later validation function runs', async () => {
+  const validate = await compileRules({ exprtValidation: { schema: true, bindings: ['rules.isEven', 'rules.isSmall'] } }, ['rules.isEven', 'rules.isSmall']);
+  assert.deepEqual(validate(51, false), [{ path: [], code: 'custom' }]);
+  assert.deepEqual(ruleCalls(), ['isEven']);
+});
+
+test('a binding list without a wrapper schema is the same check', async () => {
+  const validate = await compileRules({ exprtValidation: ['rules.isEven'] }, ['rules.isEven']);
+  assert.deepEqual(validate(3, true), [{ path: [], code: 'custom' }]);
+  assert.deepEqual(validate(2, true), []);
+});
+
+test('the structural schema of a validation wrapper marks the properties it evaluates', async () => {
+  const validate = await compileRules({
+    exprtValidation: { schema: { properties: { a: true } }, bindings: ['rules.always'] },
+    unevaluatedProperties: false,
+  }, ['rules.always']);
+  assert.deepEqual(validate({ a: 1 }, true), []);
+  assert.deepEqual(validate({ a: 1, b: 2 }, true), [{ path: ['b'], code: 'unknownKey', key: 'b' }]);
+});
+
+test('a binding that no validation names is an error naming it and its place in the schema', () => {
+  const result = compile(
+    { roots: new Map([['root', { exprtValidation: { schema: true, bindings: ['rules.isEven', 'rules.missing'] } }]]), validations: new Map([
+      ['rules.isEven', { importPath: RULES_PATH, exportName: 'isEven' }],
+    ]) },
+    { unknownFormats: 'warn', documentName: 'orders.yaml' },
+  );
+  assert.equal(result.source, '');
+  assert.deepEqual(result.diagnostics.map(entry => [entry.code, entry.severity, entry.path]), [
+    ['VALIDATE_UNKNOWN_VALIDATION', GolemDiagnosticSeverity.Error, '/exprtValidation/bindings/1'],
+  ]);
+  assert.match(result.diagnostics[0].message, /rules\.missing/);
+  assert.match(result.diagnostics[0].message, /orders\.yaml/);
+  const noTable = compile({ roots: new Map([['root', { exprtValidation: ['rules.isEven'] }]]) }, { unknownFormats: 'warn' });
+  assert.deepEqual(noTable.diagnostics.map(entry => [entry.code, entry.path]), [['VALIDATE_UNKNOWN_VALIDATION', '/exprtValidation/0']]);
 });

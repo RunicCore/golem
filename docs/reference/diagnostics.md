@@ -328,6 +328,34 @@ An error prints its code, location when known, and message, then stops generatio
 
 **Nest parameter disagrees with the generated operations.** `golem check` found a `@Body()` or `@Query()` parameter whose model is missing from `src/generated/operation-codecs.ts`, or that file does not exist. The controllers job writes that file from the routes it reads, so the parameter is not part of a route it generated. The message shows the decorator and the type. **Fix:** Run `golem generate`. If the parameter belongs to a method that is not a route, add its file to the controllers job's `sources`, or give the parameter a primitive type.
 
+## Validators (VALIDATE)
+
+The validator compiler writes the checks that generated models and SDKs run. Its messages name the document, the schema and the JSON pointer of the keyword it rejects, such as `orders.yaml: schema "Order" at /properties/total/pattern: ...`. An error stops generation before any validator is written; a warning lets generation continue, as its entry notes.
+
+### VALIDATE_INVALID_PATTERN
+
+**Invalid regular expression.** A `pattern` keyword, or a key of `patternProperties`, is not a valid regular expression. golem reads each one as a JavaScript expression with the `u` flag, so `\p{L}` is valid, but an unterminated `[`, a lone `{` or a `\-` outside a character class is not. The message shows the pattern and the reason JavaScript gives. **Fix:** Correct the expression so that `new RegExp(pattern, 'u')` accepts it.
+
+### VALIDATE_REF_CYCLE
+
+**Reference cycle.** A chain of `$ref`, `allOf`, `anyOf`, `oneOf`, `not`, `if`, `then`, `else` or `dependentSchemas` keywords returns to a schema without reading any property or item of the value, so a check could never finish. A cycle that goes through a property or an item, such as a tree whose `children` are trees, is fine. The message points at the first `$ref` in the cycle. **Fix:** Break the cycle, or make the schema read a property or an item before it refers back to itself.
+
+### VALIDATE_UNKNOWN_FORMAT
+
+**Format golem does not check.** A `format` keyword names a format that golem does not implement. golem checks `date-time`, `date`, `time`, `duration`, `email`, `hostname`, `ipv4`, `ipv6`, `uri`, `uri-reference`, `uuid`, `regex`, `int32`, `int64`, `float` and `double`. By default this is a warning: generation continues and values are not checked against that format. With `unknownFormats: error` in [golem.yaml](/reference/config#root-keys) it is an error. **Fix:** Use an implemented format, or remove the `format` keyword and state the rule with `pattern`. Set `unknownFormats: error` to find every such format.
+
+### VALIDATE_UNKNOWN_VALIDATION
+
+**Validation function not found.** A model refers to a validation function (a `TValidation` predicate) that the generator did not hand to the compiler to import. The message shows the function's identifier. **Fix:** Export the function from a source file that the job reads, then run `golem generate` again. The predicate must also meet the rules in [RUNM1040](#runm1040).
+
+### VALIDATE_UNRESOLVED_REF
+
+**Reference that does not resolve.** A `$ref` points at a schema that the document does not hold, such as `#/$defs/missing` or an identifier that no schema declares. The message shows the reference. **Fix:** Correct the pointer or the identifier, or add the schema it names.
+
+### VALIDATE_UNSUPPORTED_KEYWORD
+
+**Keyword golem does not support.** A schema uses `$dynamicRef` or `$dynamicAnchor`. Dynamic references depend on the order in which a validator reaches a schema at run time, which golem's validators do not track, so ignoring them would accept data that the schema rejects. Annotation keywords and keywords that start with `x-` are ignored without a diagnostic. **Fix:** Replace the dynamic reference with a `$ref` to a named schema.
+
 ## Client generator (OPENAPI)
 
 ### OPENAPI_BROWSER_COOKIE

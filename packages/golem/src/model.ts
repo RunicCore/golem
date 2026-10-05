@@ -295,6 +295,7 @@ export interface GeneratedModelProfile {
   readonly mobx?: boolean;
   readonly ajvStandalone?: boolean;
   readonly allowAny?: boolean;
+  readonly unknownFormats?: 'warn' | 'error';
 }
 
 /**

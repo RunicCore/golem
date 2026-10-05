@@ -70,7 +70,10 @@ export function validateModelProfile(profile: unknown, filename = MODEL_MANIFEST
       `Invalid model manifest ${filename}: profile must include mobx, validation, ajvStandalone and allowAny booleans. Regenerate the models.`,
     );
   }
-  const unknown = Object.keys(profile).filter((key) => !['mobx', 'validation', 'ajvStandalone', 'allowAny'].includes(key));
+  if (profile.unknownFormats !== undefined && profile.unknownFormats !== 'warn' && profile.unknownFormats !== 'error') {
+    throw new Error(`Invalid model manifest ${filename}: profile unknownFormats must be "warn" or "error". Regenerate the models.`);
+  }
+  const unknown = Object.keys(profile).filter((key) => !['mobx', 'validation', 'ajvStandalone', 'allowAny', 'unknownFormats'].includes(key));
   if (unknown.length > 0) {
     throw new Error(
       `Invalid model manifest ${filename}: profile has unsupported field(s): ${unknown.join(', ')}.`,

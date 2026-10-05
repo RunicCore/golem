@@ -1,4 +1,4 @@
-import type { IrArray, IrCheck, IrDiscriminator, IrFunction, IrModule, IrNumber, IrObject, IrSchema, IrString, IrTypeName, IrUnion } from './ir.js';
+import type { IrArray, IrCheck, IrDiscriminator, IrFunction, IrInstance, IrModule, IrNumber, IrObject, IrSchema, IrString, IrTypeName, IrUnion, IrValidation, IrValidationImport } from './ir.js';
 
 export interface EmitOptions {
   /** The module specifier the generated file imports its runtime helpers from. */
@@ -6,7 +6,7 @@ export interface EmitOptions {
 }
 
 type RuntimeHelper = 'checkFormat' | 'codePointLength' | 'jsonEqual';
-type LocalHelper = 'hasOwn' | 'isObject' | 'isMultipleOf' | 'newEvaluation' | 'mergeEvaluation';
+type LocalHelper = 'hasOwn' | 'isObject' | 'isMultipleOf' | 'selectedModel' | 'newEvaluation' | 'mergeEvaluation';
 
 // Parameters of every generated function: the value, the path stack, the issue list and the all-errors flag,
 // then, for a function that receives an evaluation record (see `IrFunction`), the caller's record. Every call and
@@ -56,6 +56,24 @@ const LOCAL_HELPERS: Readonly<Record<LocalHelper, string>> = {
     '  return nearest !== 0 && Math.abs(quotient - nearest) <= 4 * Number.EPSILON * Math.abs(nearest);',
     '}',
   ].join('\n'),
+  // The registered model class a value is an instance of, as `golemModelInstance` reads it. The symbol key must match
+  // `MODEL_CODEC_IDS` in object-codec.ts: the generated module imports nothing that registers classes. The most derived
+  // registered prototype on the chain wins. A hashed codec id (`Name_1a2b3c4d`) matches exactly; an unhashed name also
+  // matches the hashed ids of that name.
+  selectedModel: [
+    'const hashedId = /_[0-9a-f]{8}$/;',
+    'function selectedModel(value, among) {',
+    "  if (typeof value !== 'object' || value === null) return undefined;",
+    '  const key = Symbol.for("@exprtlabs/golem:modelCodecIds");',
+    '  const matches = (registered, id) => registered === id',
+    '    || (!hashedId.test(id) && registered.length === id.length + 9 && registered.startsWith(id + "_") && hashedId.test(registered));',
+    '  for (let prototype = Object.getPrototypeOf(value); prototype !== null; prototype = Object.getPrototypeOf(prototype)) {',
+    '    if (!Object.prototype.hasOwnProperty.call(prototype, key)) continue;',
+    '    for (const id of among) if (prototype[key].some(registered => matches(registered, id))) return id;',
+    '  }',
+    '  return undefined;',
+    '}',
+  ].join('\n'),
   // What the keywords of one value evaluated: keys by name, or all of them; leading items by count, others by
   // index, or all of them.
   newEvaluation: 'const newEvaluation = () => ({ keys: new Set(), allKeys: false, prefix: 0, indexes: new Set(), allItems: false });',
@@ -90,6 +108,7 @@ class ModuleState {
   private readonly runtime = new Set<RuntimeHelper>();
   private readonly helpers = new Set<LocalHelper>();
   private readonly declarations: string[] = [];
+  private imports: readonly IrValidationImport[] = [];
 
   public runtimeHelper(name: RuntimeHelper): string {
     this.runtime.add(name);
@@ -99,6 +118,15 @@ class ModuleState {
   public localHelper(name: LocalHelper): string {
     this.helpers.add(name);
     return name;
+  }
+
+  public importValidations(imports: readonly IrValidationImport[]): void {
+    this.imports = imports;
+  }
+
+  /** The local name of the validation function at `index` of the module's imports. */
+  public validationFunction(index: number): string {
+    return `v${index}`;
   }
 
   /** Declares a module-level constant and returns its name. */
@@ -111,6 +139,10 @@ class ModuleState {
   public prelude(runtimeModule: string): string[] {
     const lines: string[] = [];
     if (this.runtime.size > 0) lines.push(`import { ${[...this.runtime].sort().join(', ')} } from ${literal(runtimeModule)};`);
+    this.imports.forEach((entry, index) => {
+      const exported = /^[A-Za-z_$][\w$]*$/.test(entry.exportName) ? entry.exportName : literal(entry.exportName);
+      lines.push(`import { ${exported} as ${this.validationFunction(index)} } from ${literal(entry.importPath)};`);
+    });
     for (const name of Object.keys(LOCAL_HELPERS) as LocalHelper[]) if (this.helpers.has(name)) lines.push(LOCAL_HELPERS[name]);
     return [...lines, ...this.declarations];
   }
@@ -254,6 +286,13 @@ class FunctionWriter {
         this.close();
         return;
       }
+      case 'date':
+        this.open(`if (!(${value} instanceof Date) || !Number.isFinite(${value}.getTime()))`);
+        this.issue("code: 'type', expected: ['Date']");
+        this.close();
+        return;
+      case 'instance': return this.instanceCheck(check, value);
+      case 'validation': return this.validationCheck(check, value);
       case 'string': return this.stringCheck(check, value);
       case 'number': return this.numberCheck(check, value);
       case 'array': return this.arrayCheck(check, value);
@@ -284,6 +323,41 @@ class FunctionWriter {
       case 'unevaluatedProperties': return this.unevaluatedProperties(check.schema, value);
       case 'unevaluatedItems': return this.unevaluatedItems(check.schema, value);
     }
+  }
+
+  /** The class the value's encoder selects must be `of`; see `IrInstance`. */
+  private instanceCheck(check: IrInstance, value: string): void {
+    const selected = this.fresh('selected');
+    this.line(`const ${selected} = ${this.state.localHelper('selectedModel')}(${value}, ${JSON.stringify(check.among)});`);
+    const expected = check.of === undefined ? 'undefined' : literal(check.of);
+    this.open(check.required || check.of === undefined
+      ? `if (${selected} !== ${expected})`
+      : `if (${selected} !== undefined && ${selected} !== ${expected})`);
+    this.issue(`code: 'instance', model: ${literal(check.of ?? check.among[0])}`);
+    this.close();
+  }
+
+  /** The functions run only after the structural schema passed, so they never see a value of the wrong shape. */
+  private validationCheck(check: IrValidation, value: string): void {
+    const runCalls = (): void => {
+      for (const index of check.calls) {
+        const result = this.fresh('result');
+        this.line(`const ${result} = ${this.state.validationFunction(index)}(${value});`);
+        this.open(`if (typeof ${result} !== 'boolean' && typeof ${result} !== 'string')`);
+        this.line('throw new TypeError("Validation functions must return boolean or string.");');
+        this.close();
+        this.open(`if (${result} !== true)`);
+        this.issue(`code: 'custom', ...(typeof ${result} === 'string' && ${result}.length > 0 ? { reason: ${result} } : {})`);
+        this.close();
+      }
+    };
+    if (check.fn === undefined) return runCalls();
+    this.open(`if (${this.call(check.fn, { value, issues: ISSUES, all: ALL, record: this.record })})`);
+    runCalls();
+    this.close();
+    this.open('else');
+    this.fail();
+    this.close();
   }
 
   private stringCheck(check: IrString, value: string): void {
@@ -650,6 +724,7 @@ function wrapperName(name: string, index: number): string {
 /** Emits the module: one function per IR function, one wrapper per root, and `export const validators`. */
 export function emit(module: IrModule, options: EmitOptions): string {
   const state = new ModuleState();
+  state.importValidations(module.validations);
   const functions = module.functions.map(fn => new FunctionWriter(state, module.functions, fn).write());
   const wrappers = module.exports.map(({ fn }, index) => [
     `function ${wrapperName(module.exports[index].name, index)}(value, all) {`,

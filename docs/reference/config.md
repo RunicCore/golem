@@ -24,6 +24,7 @@ It records what it writes in an [inventory](/guide/watch#generated-files-and-the
 | `validation` | boolean | No | `true` | Generate runtime validation metadata and checks. Named `IObject` / `IModel` `{ validation: true or false }` overrides this per declaration. |
 | `ajvStandalone` | boolean | No | `false` | Precompile model, object-codec and SDK validators during generation. Requires `validation: true`. |
 | `allowAny` | boolean | No | `false` | Permit inferred `any` fields in models. An `IObject` or `IModel` can opt in with `IObject<F, { allowAny: true }>`, or tighten this policy explicitly. |
+| `unknownFormats` | `warn` or `error` | No | `warn` | What generation does with a schema `format` that golem does not check. `warn` reports [`VALIDATE_UNKNOWN_FORMAT`](/reference/diagnostics#validate-unknown-format) and does not check that format; `error` stops generation. |
 | `generators` | array of generator jobs | No | — | A non-empty list of [jobs from installed packages](#generator-jobs). |
 | `controllers` | array of controller jobs | No | — | A non-empty list of controller-to-OpenAPI jobs. |
 | `openapi` | array of OpenAPI jobs | No | — | A non-empty list of OpenAPI SDK jobs. |
@@ -35,6 +36,7 @@ mobx: false
 validation: true
 ajvStandalone: false
 allowAny: false
+unknownFormats: warn
 openapi:
   - input: api.yaml
     output: sdk
@@ -62,6 +64,8 @@ For standalone output:
 - Bundlers follow the generated imports. With `tsc`, enable `allowJs` and include the generated JavaScript, or copy it to `outDir`.
 - `ajvStandalone: true` requires `validation: true`.
 - Custom predicates and serde bindings must be exported functions that the generator can import. An unresolved binding or imported schema stops generation with a diagnostic.
+
+A `format` is checked only when golem implements it: `date-time`, `date`, `time`, `duration`, `email`, `hostname`, `ipv4`, `ipv6`, `uri`, `uri-reference`, `uuid`, `regex`, `int32`, `int64`, `float` and `double`. Set `unknownFormats: error` to fail generation on any other format instead of skipping its check.
 
 Disabling validation does not disable conversion guards, codecs, JSON
 representability checks or generation diagnostics.

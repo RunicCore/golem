@@ -16,12 +16,20 @@ export interface CompiledValidatorInput {
   readonly roots: Readonly<Record<string, unknown>>;
   readonly resources?: Readonly<Record<string, unknown>>;
   readonly unknownFormats?: CompileOptions['unknownFormats'];
+  /** User validation functions, keyed by binding id; an `importPath` of `./name.mjs` reads a file of `modules`. */
+  readonly validations?: Readonly<Record<string, { readonly importPath: string; readonly exportName: string }>>;
+  /** Files written next to the emitted module, by file name. */
+  readonly modules?: Readonly<Record<string, string>>;
 }
 
 /** Compiles the roots, writes the module to a temp directory, imports it and returns its `validators`. */
 export async function compileValidators(input: CompiledValidatorInput): Promise<Readonly<Record<string, Validator>>> {
   const { source, diagnostics } = compile(
-    { roots: new Map(Object.entries(input.roots)), resources: new Map(Object.entries(input.resources ?? {})) },
+    {
+      roots: new Map(Object.entries(input.roots)),
+      resources: new Map(Object.entries(input.resources ?? {})),
+      validations: new Map(Object.entries(input.validations ?? {})),
+    },
     { unknownFormats: input.unknownFormats ?? 'warn', runtimeModule },
   );
   const errors = diagnostics.filter(entry => entry.severity === GolemDiagnosticSeverity.Error);
@@ -30,6 +38,7 @@ export async function compileValidators(input: CompiledValidatorInput): Promise<
   try {
     const file = path.join(directory, 'validators.mjs');
     writeFileSync(file, source);
+    for (const [name, text] of Object.entries(input.modules ?? {})) writeFileSync(path.join(directory, name), text);
     const loaded = await import(pathToFileURL(file).href) as { readonly validators: Readonly<Record<string, Validator>> };
     return loaded.validators;
   } finally {

@@ -1,7 +1,8 @@
+import { MODEL_DATE_KEYWORD, MODEL_INSTANCE_KEYWORD, VALIDATION_KEYWORD } from '../../schema-keywords.js';
 import { isKnownFormat } from '../../validation-runtime.js';
 import { GolemDiagnosticSeverity, type GolemDiagnostic } from '../generator-api.js';
 import type { CompileInput, CompileOptions } from './index.js';
-import type { IrAdditional, IrCheck, IrContains, IrDiscriminator, IrFunction, IrModule, IrSchema, IrTypeName } from './ir.js';
+import type { IrAdditional, IrCheck, IrContains, IrDiscriminator, IrFunction, IrInstance, IrModule, IrSchema, IrTypeName, IrValidationImport } from './ir.js';
 import { baseInside, isRecord, pointerSegment, SchemaResolver, type SchemaLocation } from './resolve.js';
 
 export const VALIDATE_UNSUPPORTED_KEYWORD = 'VALIDATE_UNSUPPORTED_KEYWORD';
@@ -9,6 +10,7 @@ export const VALIDATE_UNRESOLVED_REF = 'VALIDATE_UNRESOLVED_REF';
 export const VALIDATE_INVALID_PATTERN = 'VALIDATE_INVALID_PATTERN';
 export const VALIDATE_UNKNOWN_FORMAT = 'VALIDATE_UNKNOWN_FORMAT';
 export const VALIDATE_REF_CYCLE = 'VALIDATE_REF_CYCLE';
+export const VALIDATE_UNKNOWN_VALIDATION = 'VALIDATE_UNKNOWN_VALIDATION';
 
 /**
  * Validation keywords of JSON Schema 2020-12 that the compiler reports instead of ignoring, because
@@ -75,6 +77,15 @@ function finiteNumber(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
 }
 
+/** The value of `golemModelInstance` as an IR node; undefined when it does not have the shape `schema.ts` writes. */
+function modelInstance(value: unknown): IrInstance | undefined {
+  if (!isRecord(value)) return undefined;
+  const { of, among, required } = value;
+  if ((of !== undefined && typeof of !== 'string') || !Array.isArray(among) || typeof required !== 'boolean') return undefined;
+  if (!among.every((id): id is string => typeof id === 'string')) return undefined;
+  return { kind: 'instance', ...(of === undefined ? {} : { of }), among, required };
+}
+
 /** The message of the error `new RegExp(source, 'u')` throws, or undefined when it compiles. */
 function patternError(source: string): string | undefined {
   try {
@@ -107,6 +118,8 @@ class Lowering {
   private readonly sameValueEdges: (readonly SameValueEdge[])[] = [];
   /** The schema objects whose bodies are being lowered inline; one that contains itself becomes a function instead of recursing. */
   private readonly inlining = new Set<object>();
+  /** The user validation functions the module imports, in order of first use. */
+  private readonly validationImports: IrValidationImport[] = [];
   private readonly pending: { readonly id: number; readonly location: SchemaLocation }[] = [];
   /** True when any schema of the compilation holds `unevaluatedProperties` or `unevaluatedItems`; only then do checks keep what they evaluate. */
   private readonly tracksEvaluation: boolean;
@@ -132,7 +145,7 @@ class Lowering {
     }
     this.markEvaluationReceivers();
     this.reportRefCycles();
-    return { module: { functions: this.functions, exports }, diagnostics: this.diagnostics };
+    return { module: { functions: this.functions, validations: this.validationImports, exports }, diagnostics: this.diagnostics };
   }
 
   /**
@@ -243,6 +256,34 @@ class Lowering {
     for (let id = 0; id < this.functions.length; id++) if (!visited.has(id)) visit(id);
   }
 
+  /** The index of `entry` in the module's imports; one function is imported once however many bindings name it. */
+  private importIndex(entry: IrValidationImport): number {
+    const known = this.validationImports.findIndex(item => item.importPath === entry.importPath && item.exportName === entry.exportName);
+    if (known >= 0) return known;
+    this.validationImports.push({ importPath: entry.importPath, exportName: entry.exportName });
+    return this.validationImports.length - 1;
+  }
+
+  /**
+   * The indexes of the functions the binding ids name, in order, each once. An id that `input.validations` does not
+   * hold is an error. `inside` is the path from the keyword to the list.
+   */
+  private bindingCalls(ids: readonly unknown[], location: SchemaLocation, ...inside: readonly string[]): number[] {
+    const calls: number[] = [];
+    const seen = new Set<string>();
+    ids.forEach((id, position) => {
+      if (typeof id !== 'string' || seen.has(id)) return;
+      seen.add(id);
+      const entry = this.input.validations?.get(id);
+      if (entry === undefined) {
+        this.report(VALIDATE_UNKNOWN_VALIDATION, GolemDiagnosticSeverity.Error, location, VALIDATION_KEYWORD, `the validation function ${JSON.stringify(id)} is not among the functions to import`, ...inside, String(position));
+      } else {
+        calls.push(this.importIndex(entry));
+      }
+    });
+    return calls;
+  }
+
   private isInlining(node: unknown): boolean {
     return typeof node === 'object' && node !== null && this.inlining.has(node);
   }
@@ -290,6 +331,10 @@ class Lowering {
     const typeList = typeof node.type === 'string' ? [node.type] : Array.isArray(node.type) ? node.type as readonly unknown[] : [];
     const names = typeList.filter(isTypeName);
     if (names.length > 0) checks.push({ kind: 'type', names });
+
+    if (node[MODEL_DATE_KEYWORD] === true) checks.push({ kind: 'date' });
+    const instance = modelInstance(node[MODEL_INSTANCE_KEYWORD]);
+    if (instance !== undefined) checks.push(instance);
 
     if (Object.hasOwn(node, 'const')) checks.push({ kind: 'literal', values: [node.const] });
     if (Array.isArray(node.enum)) checks.push({ kind: 'literal', values: node.enum as readonly unknown[] });
@@ -411,6 +456,17 @@ class Lowering {
     if (isRecord(node.dependentSchemas)) {
       const entries = Object.entries(node.dependentSchemas).map(([trigger, schema]) => ({ trigger, fn: sameValueFunction('dependentSchemas', schema, trigger) }));
       if (entries.length > 0) checks.push({ kind: 'dependentSchemas', entries });
+    }
+
+    // `{ schema, bindings }`, or the bindings alone: the functions run once the structural schema has passed, and the schema marks what it evaluates.
+    const validation = node[VALIDATION_KEYWORD];
+    if (Array.isArray(validation)) {
+      const calls = this.bindingCalls(validation, here);
+      if (calls.length > 0) checks.push({ kind: 'validation', calls });
+    } else if (isRecord(validation) && Array.isArray(validation.bindings)) {
+      const calls = this.bindingCalls(validation.bindings, here, 'bindings');
+      const fn = validation.schema === undefined || validation.schema === true ? undefined : sameValueFunction(VALIDATION_KEYWORD, validation.schema, 'schema');
+      if (calls.length > 0 || fn !== undefined) checks.push({ kind: 'validation', fn, calls });
     }
 
     // These two read what every check above evaluated, so they come last.

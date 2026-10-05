@@ -147,6 +147,9 @@ test('rejects missing sources and profile-mismatched manifests before emitting a
     assert.throws(() => generate({ root, sources: [source], profile, manifestInputs: [manifest] }), /profile mismatch/);
     assert.equal(fs.existsSync(path.join(sourceRoot, 'x.model.generated.ts')), false);
   }
+  fs.writeFileSync(manifest, JSON.stringify({ profile: { ...profile, unknownFormats: 'error' }, models: [] }));
+  assert.throws(() => generate({ root, sources: [source], profile, manifestInputs: [manifest] }), /profile mismatch.*unknownFormats: warn/);
+  assert.equal(fs.existsSync(path.join(sourceRoot, 'x.model.generated.ts')), false);
 });
 
 test('prospective companions permit a concrete subclass field rename and still reject unrelated errors', (t: TestContext) => {
