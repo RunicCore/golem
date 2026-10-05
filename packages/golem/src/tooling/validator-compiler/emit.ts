@@ -258,6 +258,11 @@ class FunctionWriter {
       this.limitIssue('tooBig', 'items', check.maxItems, true);
       this.close();
     }
+    if (check.closed) {
+      this.open(`if (${value}.length > ${check.prefixItems.length})`);
+      this.limitIssue('tooBig', 'items', check.prefixItems.length, true);
+      this.close();
+    }
     check.prefixItems.forEach((schema, position) => {
       if (schema.kind === 'always') return;
       this.open(`if (${value}.length > ${position})`);
@@ -331,7 +336,7 @@ class FunctionWriter {
       this.open(`for (const ${key} of ${keys})`);
       this.line(`if (${known}.has(${key})) continue;`);
       if (additional.kind === 'forbid') {
-        this.issue(`code: 'unknownKey', key: ${key}`);
+        this.issue(`code: 'unknownKey', key: ${key}`, `[...${PATH}, ${key}]`);
       } else {
         const member = this.fresh('member');
         this.line(`const ${member} = ${value}[${key}];`);

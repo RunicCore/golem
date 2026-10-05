@@ -8,6 +8,7 @@ export const VALIDATE_UNSUPPORTED_KEYWORD = 'VALIDATE_UNSUPPORTED_KEYWORD';
 export const VALIDATE_UNRESOLVED_REF = 'VALIDATE_UNRESOLVED_REF';
 export const VALIDATE_INVALID_PATTERN = 'VALIDATE_INVALID_PATTERN';
 export const VALIDATE_UNKNOWN_FORMAT = 'VALIDATE_UNKNOWN_FORMAT';
+export const VALIDATE_REF_CYCLE = 'VALIDATE_REF_CYCLE';
 
 /**
  * Validation keywords of JSON Schema 2020-12 that the compiler reports instead of ignoring, because
@@ -32,6 +33,13 @@ const UNSUPPORTED_KEYWORDS: ReadonlySet<string> = new Set([
 ]);
 
 const TYPE_NAMES: readonly IrTypeName[] = ['string', 'number', 'integer', 'boolean', 'null', 'object', 'array'];
+
+/** A step that hands the same value to another function, so no part of the value is consumed. */
+interface SameValueEdge {
+  readonly to: number;
+  readonly location: SchemaLocation;
+  readonly keyword: string;
+}
 
 const ALWAYS: IrSchema = { kind: 'always' };
 const NEVER: IrSchema = { kind: 'never' };
@@ -75,6 +83,7 @@ class Lowering {
   private readonly diagnostics: GolemDiagnostic[] = [];
   private readonly functions: MutableFunction[] = [];
   private readonly functionIds = new Map<object, number>();
+  private readonly sameValueEdges: (readonly SameValueEdge[])[] = [];
   private readonly pending: { readonly id: number; readonly location: SchemaLocation }[] = [];
 
   public constructor(
@@ -89,8 +98,11 @@ class Lowering {
     // Lowering a function can add more; the list grows while it is walked.
     for (let next = 0; next < this.pending.length; next++) {
       const { id, location } = this.pending[next];
-      this.functions[id].body = this.lowerSchema(location);
+      const edges: SameValueEdge[] = [];
+      this.functions[id].body = this.lowerSchema(location, edges);
+      this.sameValueEdges[id] = edges;
     }
+    this.reportRefCycles();
     return { module: { functions: this.functions, exports }, diagnostics: this.diagnostics };
   }
 
@@ -122,7 +134,36 @@ class Lowering {
     });
   }
 
-  private lowerSchema(location: SchemaLocation): IrSchema {
+  /**
+   * A cycle of functions that each pass the whole value on never reads it: it would recurse until the
+   * stack overflows for any input. A cycle that goes through a property or an item is a recursive
+   * structure and is fine.
+   */
+  private reportRefCycles(): void {
+    const visited = new Set<number>();
+    const active = new Set<number>();
+    const trail: { readonly from: number; readonly edge: SameValueEdge }[] = [];
+    const visit = (id: number): void => {
+      visited.add(id);
+      active.add(id);
+      for (const edge of this.sameValueEdges[id] ?? []) {
+        if (active.has(edge.to)) {
+          const start = trail.findIndex(step => step.from === edge.to);
+          const cycle = [...(start < 0 ? [] : trail.slice(start).map(step => step.edge)), edge];
+          const reference = cycle.find(step => step.keyword === '$ref') ?? edge;
+          this.report(VALIDATE_REF_CYCLE, GolemDiagnosticSeverity.Error, reference.location, reference.keyword, 'the $ref chain returns to a schema without reading any part of the value, so it cannot finish');
+        } else if (!visited.has(edge.to)) {
+          trail.push({ from: id, edge });
+          visit(edge.to);
+          trail.pop();
+        }
+      }
+      active.delete(id);
+    };
+    for (let id = 0; id < this.functions.length; id++) if (!visited.has(id)) visit(id);
+  }
+
+  private lowerSchema(location: SchemaLocation, sameValue: SameValueEdge[]): IrSchema {
     const { node } = location;
     if (node === true) return ALWAYS;
     if (node === false) return NEVER;
@@ -136,7 +177,14 @@ class Lowering {
       node: value,
       pointer: more.reduce<string>((path, token) => path + pointerSegment(token), here.pointer + pointerSegment(keyword)),
     });
-    const lowerChild = (keyword: string, value: unknown, ...more: readonly (string | number)[]): IrSchema => this.lowerSchema(child(keyword, value, ...more));
+    // A child that reads part of the value (a property, an item) starts a new chain of same-value steps.
+    const lowerChild = (keyword: string, value: unknown, ...more: readonly (string | number)[]): IrSchema => this.lowerSchema(child(keyword, value, ...more), []);
+    const sameValueFunction = (keyword: string, value: unknown, ...more: readonly (string | number)[]): number => {
+      const location = child(keyword, value, ...more);
+      const to = this.functionFor(location);
+      sameValue.push({ to, location: here, keyword });
+      return to;
+    };
     const checks: IrCheck[] = [];
 
     const typeList = typeof node.type === 'string' ? [node.type] : Array.isArray(node.type) ? node.type as readonly unknown[] : [];
@@ -148,7 +196,11 @@ class Lowering {
 
     if (typeof node.$ref === 'string') {
       const target = this.resolver.resolve(node.$ref, here.base);
-      if (target) checks.push({ kind: 'call', fn: this.functionFor(target) });
+      if (target) {
+        const to = this.functionFor(target);
+        sameValue.push({ to, location: here, keyword: '$ref' });
+        checks.push({ kind: 'call', fn: to });
+      }
       else this.report(VALIDATE_UNRESOLVED_REF, GolemDiagnosticSeverity.Error, here, '$ref', `the reference ${JSON.stringify(node.$ref)} does not resolve to a schema`);
     }
 
@@ -182,12 +234,13 @@ class Lowering {
     }
 
     const prefixItems = Array.isArray(node.prefixItems) ? (node.prefixItems as readonly unknown[]).map((item, position) => lowerChild('prefixItems', item, position)) : [];
-    const items = node.items === undefined ? undefined : lowerChild('items', node.items);
+    const closed = node.items === false;
+    const items = node.items === undefined || closed ? undefined : lowerChild('items', node.items);
     const minItems = finiteNumber(node.minItems);
     const maxItems = finiteNumber(node.maxItems);
     const uniqueItems = node.uniqueItems === true;
-    if (prefixItems.some(item => item.kind !== 'always') || (items !== undefined && items.kind !== 'always') || minItems !== undefined || maxItems !== undefined || uniqueItems) {
-      checks.push({ kind: 'array', prefixItems, items, minItems, maxItems, uniqueItems });
+    if (prefixItems.some(item => item.kind !== 'always') || (items !== undefined && items.kind !== 'always') || closed || minItems !== undefined || maxItems !== undefined || uniqueItems) {
+      checks.push({ kind: 'array', prefixItems, items, closed, minItems, maxItems, uniqueItems });
     }
 
     const required = Array.isArray(node.required) ? (node.required as readonly unknown[]).filter((key): key is string => typeof key === 'string') : [];
@@ -208,17 +261,19 @@ class Lowering {
     }
 
     if (Array.isArray(node.allOf)) {
-      const branches = (node.allOf as readonly unknown[]).map((branch, position) => lowerChild('allOf', branch, position)).filter(branch => branch.kind !== 'always');
+      const branches = (node.allOf as readonly unknown[])
+        .map((branch, position) => this.lowerSchema(child('allOf', branch, position), sameValue))
+        .filter(branch => branch.kind !== 'always');
       if (branches.length > 0) checks.push({ kind: 'allOf', branches });
     }
     for (const keyword of ['anyOf', 'oneOf'] as const) {
       const list = node[keyword];
       if (Array.isArray(list) && list.length > 0) {
-        const branches = (list as readonly unknown[]).map((branch, position) => this.functionFor(child(keyword, branch, position)));
+        const branches = (list as readonly unknown[]).map((branch, position) => sameValueFunction(keyword, branch, position));
         checks.push({ kind: 'union', exactlyOne: keyword === 'oneOf', branches });
       }
     }
-    if (node.not !== undefined) checks.push({ kind: 'not', fn: this.functionFor(child('not', node.not)) });
+    if (node.not !== undefined) checks.push({ kind: 'not', fn: sameValueFunction('not', node.not) });
 
     return checks.length === 0 ? ALWAYS : { kind: 'checks', checks };
   }

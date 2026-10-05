@@ -70,6 +70,10 @@ export class SchemaResolver {
 
   /** The schema `reference` names when read inside a schema whose base URI is `base`; undefined when it names none. */
   public resolve(reference: string, base: string): SchemaLocation | undefined {
+    // A codec id such as `TPayment_1234abcd#wire` names a root or resource whole. A leading `#` is a fragment
+    // of the current document, never a name.
+    const whole = reference.startsWith('#') ? undefined : this.names.get(reference);
+    if (whole !== undefined) return this.documents.get(whole);
     const hash = reference.indexOf('#');
     const target = hash < 0 ? reference : reference.slice(0, hash);
     const alias = target === '' ? undefined : this.names.get(target);

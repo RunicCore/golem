@@ -44,6 +44,8 @@ export interface IrArray {
   readonly prefixItems: readonly IrSchema[];
   /** Applies to the items after `prefixItems`. */
   readonly items?: IrSchema;
+  /** No item may follow `prefixItems`: `items: false`. One `tooBig` issue says so, with `limit` the prefix length. */
+  readonly closed: boolean;
   readonly minItems?: number;
   readonly maxItems?: number;
   readonly uniqueItems: boolean;

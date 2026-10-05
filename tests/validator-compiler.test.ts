@@ -54,10 +54,10 @@ test('properties validate present keys at their own path', async () => {
   await assertIssues(schema, {}, []);
 });
 
-test('additionalProperties false reports each unknown key; a schema checks each extra value', async () => {
+test('additionalProperties false reports each unknown key with the path ending at the key; a schema checks each extra value', async () => {
   await assertIssues({ properties: { a: {} }, additionalProperties: false }, { a: 1, b: 2, c: 3 }, [
-    { path: [], code: 'unknownKey', key: 'b' },
-    { path: [], code: 'unknownKey', key: 'c' },
+    { path: ['b'], code: 'unknownKey', key: 'b' },
+    { path: ['c'], code: 'unknownKey', key: 'c' },
   ]);
   await assertIssues({ properties: { a: {} }, additionalProperties: { type: 'integer' } }, { a: 'free', b: 'x', c: 3 }, [
     { path: ['b'], code: 'type', expected: ['integer'] },
@@ -73,6 +73,18 @@ test('prefixItems and items report the index in the path', async () => {
     { path: [2], code: 'type', expected: ['boolean'] },
   ]);
   await assertIssues(schema, ['a'], []);
+});
+
+test('items false reports one tooBig issue at the array with the prefix length as the limit', async () => {
+  const tuple = { prefixItems: [{ type: 'string' }], items: false };
+  await assertIssues(tuple, ['a', 1, 2], [{ path: [], code: 'tooBig', measure: 'items', limit: 1, inclusive: true }]);
+  await assertIssues(tuple, ['a'], []);
+  await assertIssues(tuple, [1, 2], [
+    { path: [], code: 'tooBig', measure: 'items', limit: 1, inclusive: true },
+    { path: [0], code: 'type', expected: ['string'] },
+  ]);
+  await assertIssues({ items: false }, [1, 2], [{ path: [], code: 'tooBig', measure: 'items', limit: 0, inclusive: true }]);
+  await assertIssues({ items: false }, [], []);
 });
 
 test('minLength and maxLength count code points', async () => {
@@ -226,6 +238,61 @@ test('$ref by JSON pointer decodes ~0, ~1 and percent escapes', async () => {
   ]);
 });
 
+test('a nested $id changes the base a relative $ref inside it resolves against', async () => {
+  const validators = await compileValidators({
+    roots: {
+      root: {
+        $id: 'https://e.com/a/root.json',
+        properties: {
+          outer: { $ref: 'sibling.json' },
+          inner: { $id: 'https://e.com/b/sub.json', properties: { value: { $ref: 'sibling.json' } } },
+        },
+      },
+    },
+    resources: {
+      'https://e.com/a/sibling.json': { type: 'string' },
+      'https://e.com/b/sibling.json': { type: 'integer' },
+    },
+  });
+  assert.deepEqual(validators.root({ outer: 1, inner: { value: 'x' } }, true), [
+    { path: ['outer'], code: 'type', expected: ['string'] },
+    { path: ['inner', 'value'], code: 'type', expected: ['integer'] },
+  ]);
+  assert.deepEqual(validators.root({ outer: 'x', inner: { value: 1 } }, true), []);
+});
+
+test('$ref reaches a root or resource whose name contains #', async () => {
+  const validators = await compileValidators({
+    roots: {
+      'TPayment_1234abcd#wire': { type: 'integer' },
+      holder: { properties: { payment: { $ref: 'TPayment_1234abcd#wire' }, other: { $ref: 'TOther_9f9f#model-only' }, self: { $ref: '#/$defs/n' } }, $defs: { n: { type: 'boolean' } } },
+    },
+    resources: { 'TOther_9f9f#model-only': { type: 'string' } },
+  });
+  assert.deepEqual(validators.holder({ payment: 'x', other: 1, self: 2 }, true), [
+    { path: ['payment'], code: 'type', expected: ['integer'] },
+    { path: ['other'], code: 'type', expected: ['string'] },
+    { path: ['self'], code: 'type', expected: ['boolean'] },
+  ]);
+});
+
+test('quotes, backslashes, backticks, template syntax and U+2028 in names, keys, patterns and values stay data', async () => {
+  const awkward = 'a"b\\c`d${1}e\u2028f';
+  // The same text as a regular expression: the backslash and the template braces need escapes.
+  const awkwardPattern = '^a"b\\\\c`d\\$\\{1\\}e\u2028f$';
+  const validators = await compileValidators({
+    roots: {
+      [awkward]: { properties: { [awkward]: { enum: [awkward, 1] } }, required: [awkward] },
+      pattern: { pattern: awkwardPattern },
+    },
+  });
+  assert.deepEqual(validators[awkward]({ [awkward]: awkward }, true), []);
+  assert.deepEqual(validators[awkward]({ [awkward]: 'other' }, true), [{ path: [awkward], code: 'literal', expected: [awkward, 1] }]);
+  assert.deepEqual(validators[awkward]({}, true), [{ path: [awkward], code: 'required', key: awkward }]);
+  assert.deepEqual(validators.pattern(awkward, true), []);
+  assert.deepEqual(validators.pattern('a"b', true), [{ path: [], code: 'pattern', pattern: awkwardPattern }]);
+});
+
 test('recursive $ref validates a three-level tree and reports the deepest path', async () => {
   const schema = {
     type: 'object',
@@ -253,8 +320,8 @@ test('own-property checks hold for __proto__ and constructor keys', async () => 
   ]);
   const undeclared = await compileSchema({ additionalProperties: false });
   assert.deepEqual(undeclared(JSON.parse('{"__proto__":1,"constructor":2}'), true), [
-    { path: [], code: 'unknownKey', key: '__proto__' },
-    { path: [], code: 'unknownKey', key: 'constructor' },
+    { path: ['__proto__'], code: 'unknownKey', key: '__proto__' },
+    { path: ['constructor'], code: 'unknownKey', key: 'constructor' },
   ]);
 });
 
@@ -282,6 +349,22 @@ test('$dynamicRef is an unsupported keyword error at its JSON pointer and leaves
   assert.equal(diagnostic.path, '/properties/a/$dynamicRef');
   assert.match(diagnostic.message, /orders\.yaml/);
   assert.match(diagnostic.message, /\/properties\/a\/\$dynamicRef/);
+});
+
+test('a $ref chain that returns to itself without reading the value is an error at its first $ref', () => {
+  const chain = compile(
+    { roots: new Map([['a', { $ref: 'b' }]]), resources: new Map([['b', { $ref: 'c' }], ['c', { $ref: 'b' }]]) },
+    { unknownFormats: 'warn' },
+  );
+  assert.equal(chain.source, '');
+  assert.deepEqual(chain.diagnostics.map(entry => [entry.code, entry.severity, entry.path]), [
+    ['VALIDATE_REF_CYCLE', GolemDiagnosticSeverity.Error, '/$ref'],
+  ]);
+  assert.match(chain.diagnostics[0].message, /schema "b"/);
+  const self = compile({ roots: new Map([['root', { type: 'object', $ref: '#' }]]) }, { unknownFormats: 'warn' });
+  assert.deepEqual(self.diagnostics.map(entry => [entry.code, entry.path]), [['VALIDATE_REF_CYCLE', '/$ref']]);
+  const branch = compile({ roots: new Map([['root', { anyOf: [{ type: 'string' }, { $ref: '#' }] }]]) }, { unknownFormats: 'warn' });
+  assert.deepEqual(branch.diagnostics.map(entry => [entry.code, entry.path]), [['VALIDATE_REF_CYCLE', '/anyOf/1/$ref']]);
 });
 
 test('$dynamicAnchor is an unsupported keyword error', () => {
