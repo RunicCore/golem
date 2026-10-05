@@ -48,6 +48,7 @@ const formatRows: readonly (readonly [format: string, value: unknown, valid: boo
   ['email', '"joe@bloggs"@example.com', true],
   ['email', 'joe.bloggs@[127.0.0.1]', true],
   ['email', 'joe.bloggs@[IPv6:::1]', true],
+  ['email', 'joe.bloggs@[ipv6:::1]', true],
   ['email', '.test@example.com', false],
   ['email', 'te..st@example.com', false],
   ['email', 'joe bloggs@example.com', false],

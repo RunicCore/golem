@@ -38,7 +38,19 @@ export interface IrNumber {
   readonly multipleOf?: number;
 }
 
-/** Array keywords; they apply to arrays only. */
+/** `contains` with its counts: the number of items that pass `fn` must lie between the two limits. */
+export interface IrContains {
+  /** The function every item is tried against; its issues are not reported. */
+  readonly fn: number;
+  /** 1 when `minContains` is absent; 0 makes `contains` pass without a match. */
+  readonly min: number;
+  readonly max?: number;
+}
+
+/**
+ * Array keywords; they apply to arrays only. When the compilation uses `unevaluatedItems`, the check is kept
+ * even if no keyword in it can fail, because `prefixItems`, `items` and `contains` mark the items they evaluate.
+ */
 export interface IrArray {
   readonly kind: 'array';
   readonly prefixItems: readonly IrSchema[];
@@ -46,6 +58,7 @@ export interface IrArray {
   readonly items?: IrSchema;
   /** No item may follow `prefixItems`: `items: false`. One `tooBig` issue says so, with `limit` the prefix length. */
   readonly closed: boolean;
+  readonly contains?: IrContains;
   readonly minItems?: number;
   readonly maxItems?: number;
   readonly uniqueItems: boolean;
@@ -61,12 +74,33 @@ export type IrAdditional =
   | { readonly kind: 'forbid' }
   | { readonly kind: 'schema'; readonly schema: IrSchema };
 
-/** Object keywords; they apply to plain objects only. */
+/** A `patternProperties` entry; a key that matches `pattern` must pass `schema`. */
+export interface IrPatternProperty {
+  /** A source already known to compile as `new RegExp(source, 'u')`. */
+  readonly pattern: string;
+  readonly schema: IrSchema;
+}
+
+/** `dependentRequired`: when `trigger` is present, every key in `keys` must be too. */
+export interface IrDependentRequired {
+  readonly trigger: string;
+  readonly keys: readonly string[];
+}
+
+/**
+ * Object keywords; they apply to plain objects only. When the compilation uses `unevaluatedProperties`, the check
+ * is kept even if no keyword in it can fail, because `properties`, `patternProperties` and `additionalProperties`
+ * mark the keys they evaluate.
+ */
 export interface IrObject {
   readonly kind: 'object';
   readonly required: readonly string[];
+  readonly dependentRequired: readonly IrDependentRequired[];
   readonly properties: readonly IrProperty[];
+  readonly patternProperties: readonly IrPatternProperty[];
   readonly additional?: IrAdditional;
+  /** A function that every key, read as a string, must pass; a failing key is one `invalidKey` issue. */
+  readonly propertyNames?: number;
   readonly minProperties?: number;
   readonly maxProperties?: number;
 }
@@ -83,12 +117,50 @@ export interface IrAllOf {
   readonly branches: readonly IrSchema[];
 }
 
-/** `anyOf` and `oneOf` without a discriminator: one `union` issue says how many branches matched. */
+/** A `oneOf` whose branches each state their tag values: the tag selects the one branch to run. */
+export interface IrDiscriminator {
+  /** The property that holds the tag. */
+  readonly property: string;
+  /** The tag values of each branch, in branch order; no value belongs to two branches. */
+  readonly tags: readonly (readonly unknown[])[];
+}
+
+/**
+ * `anyOf` and `oneOf`: one `union` issue says how many branches matched. With a discriminator only the selected
+ * branch runs and reports its own issues, and an unknown tag is a `literal` issue on the tag property.
+ */
 export interface IrUnion {
   readonly kind: 'union';
   readonly exactlyOne: boolean;
-  /** Function ids; a branch is run only to learn whether it matches. */
+  /** Function ids; without a discriminator a branch is run only to learn whether it matches. */
   readonly branches: readonly number[];
+  readonly discriminator?: IrDiscriminator;
+}
+
+/** `if`, `then` and `else`: `then` or `else` applies, by whether `if` passes; the issues of `if` are not reported. */
+export interface IrConditional {
+  readonly kind: 'conditional';
+  readonly if: number;
+  readonly then?: number;
+  readonly else?: number;
+}
+
+/** `dependentSchemas`: when `trigger` is present, the whole object must pass `fn`. */
+export interface IrDependentSchemas {
+  readonly kind: 'dependentSchemas';
+  readonly entries: readonly { readonly trigger: string; readonly fn: number }[];
+}
+
+/** `unevaluatedProperties`: each key no applicator evaluated must pass `schema` (`never` for `false`). Runs after every other check. */
+export interface IrUnevaluatedProperties {
+  readonly kind: 'unevaluatedProperties';
+  readonly schema: IrSchema;
+}
+
+/** `unevaluatedItems`: each item no applicator evaluated must pass `schema`; `never` gives one `tooBig` issue. Runs after every other check. */
+export interface IrUnevaluatedItems {
+  readonly kind: 'unevaluatedItems';
+  readonly schema: IrSchema;
 }
 
 /** `not`: the function `fn` must not match. */
@@ -97,7 +169,9 @@ export interface IrNot {
   readonly fn: number;
 }
 
-export type IrCheck = IrType | IrLiteral | IrFormat | IrString | IrNumber | IrArray | IrObject | IrCall | IrAllOf | IrUnion | IrNot;
+export type IrCheck =
+  | IrType | IrLiteral | IrFormat | IrString | IrNumber | IrArray | IrObject | IrCall | IrAllOf | IrUnion | IrNot
+  | IrConditional | IrDependentSchemas | IrUnevaluatedProperties | IrUnevaluatedItems;
 
 /** A lowered schema: the `true` schema, the `false` schema, or the checks that apply in order. */
 export type IrSchema =
@@ -105,10 +179,19 @@ export type IrSchema =
   | { readonly kind: 'never' }
   | { readonly kind: 'checks'; readonly checks: readonly IrCheck[] };
 
-/** A schema that something refers to: a root, a `$ref` target, or a union or `not` branch. */
+/**
+ * A schema that something refers to: a root, a `$ref` target, a branch, or a schema that needs a record of its own.
+ *
+ * Evaluation record: `unevaluatedProperties` and `unevaluatedItems` need to know which keys and items the schema's
+ * other keywords, and the schemas that apply to the same value in place, evaluated. A function that holds either
+ * keyword `collects`: it keeps a record. A function that a collector reaches through in-place steps `receives`: it
+ * is handed the record and fills it. A function can do both.
+ */
 export interface IrFunction {
   readonly id: number;
   readonly body: IrSchema;
+  readonly collects: boolean;
+  readonly receives: boolean;
 }
 
 export interface IrExport {

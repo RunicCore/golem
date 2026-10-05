@@ -168,7 +168,8 @@ function isEmail(text: string): boolean {
   const domain = text.slice(at + 1);
   if (domain.startsWith('[') && domain.endsWith(']')) {
     const literal = domain.slice(1, -1);
-    return literal.startsWith('IPv6:') ? isIpv6(literal.slice(5)) : isIpv4(literal);
+    // RFC 5321 writes the tag as `IPv6:`, and ABNF literals match any letter case.
+    return literal.slice(0, 5).toLowerCase() === 'ipv6:' ? isIpv6(literal.slice(5)) : isIpv4(literal);
   }
   return isHostname(domain);
 }

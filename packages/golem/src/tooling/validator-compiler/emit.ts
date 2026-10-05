@@ -1,4 +1,4 @@
-import type { IrArray, IrCheck, IrFunction, IrModule, IrNumber, IrObject, IrSchema, IrString, IrTypeName, IrUnion } from './ir.js';
+import type { IrArray, IrCheck, IrDiscriminator, IrFunction, IrModule, IrNumber, IrObject, IrSchema, IrString, IrTypeName, IrUnion } from './ir.js';
 
 export interface EmitOptions {
   /** The module specifier the generated file imports its runtime helpers from. */
@@ -6,26 +6,40 @@ export interface EmitOptions {
 }
 
 type RuntimeHelper = 'checkFormat' | 'codePointLength' | 'jsonEqual';
-type LocalHelper = 'hasOwn' | 'isObject' | 'isMultipleOf';
+type LocalHelper = 'hasOwn' | 'isObject' | 'isMultipleOf' | 'newEvaluation' | 'mergeEvaluation';
 
-// Parameters of every generated function: the value, the path stack, the issue list and the all-errors flag.
-// Every call and header goes through `functionName`, `functionHeader` and `callFunction`, so a change to the
-// parameter list is made in one place.
+// Parameters of every generated function: the value, the path stack, the issue list and the all-errors flag,
+// then, for a function that receives an evaluation record (see `IrFunction`), the caller's record. Every call and
+// header goes through `functionName`, `functionHeader` and `callFunction`, so a change to the parameter list is
+// made in one place.
 const VALUE = 'v';
 const PATH = 'p';
 const ISSUES = 'i';
 const ALL = 'a';
+const INHERITED = 'e';
+// The record a function keeps or fills, and what it holds.
+const EVALUATION = 'r';
 
 function functionName(id: number): string {
   return `f${id}`;
 }
 
-function functionHeader(id: number): string {
-  return `function ${functionName(id)}(${[VALUE, PATH, ISSUES, ALL].join(', ')}) {`;
+function functionHeader(fn: IrFunction): string {
+  return `function ${functionName(fn.id)}(${[VALUE, PATH, ISSUES, ALL, ...(fn.receives ? [INHERITED] : [])].join(', ')}) {`;
 }
 
-function callFunction(id: number, args: { readonly value: string; readonly path?: string; readonly issues: string; readonly all: string }): string {
-  return `${functionName(id)}(${[args.value, args.path ?? PATH, args.issues, args.all].join(', ')})`;
+interface CallArguments {
+  readonly value: string;
+  readonly path?: string;
+  readonly issues: string;
+  readonly all: string;
+  /** The record to hand to the callee; dropped when the callee takes none. */
+  readonly record?: string;
+}
+
+function callFunction(callee: IrFunction, args: CallArguments): string {
+  const record = callee.receives && args.record !== undefined ? [args.record] : [];
+  return `${functionName(callee.id)}(${[args.value, args.path ?? PATH, args.issues, args.all, ...record].join(', ')})`;
 }
 
 const LOCAL_HELPERS: Readonly<Record<LocalHelper, string>> = {
@@ -40,6 +54,18 @@ const LOCAL_HELPERS: Readonly<Record<LocalHelper, string>> = {
     '  if (Number.isInteger(quotient)) return true;',
     '  const nearest = Math.round(quotient);',
     '  return nearest !== 0 && Math.abs(quotient - nearest) <= 4 * Number.EPSILON * Math.abs(nearest);',
+    '}',
+  ].join('\n'),
+  // What the keywords of one value evaluated: keys by name, or all of them; leading items by count, others by
+  // index, or all of them.
+  newEvaluation: 'const newEvaluation = () => ({ keys: new Set(), allKeys: false, prefix: 0, indexes: new Set(), allItems: false });',
+  mergeEvaluation: [
+    'function mergeEvaluation(into, from) {',
+    '  for (const key of from.keys) into.keys.add(key);',
+    '  for (const index of from.indexes) into.indexes.add(index);',
+    '  into.allKeys = into.allKeys || from.allKeys;',
+    '  into.prefix = Math.max(into.prefix, from.prefix);',
+    '  into.allItems = into.allItems || from.allItems;',
     '}',
   ].join('\n'),
 };
@@ -95,14 +121,26 @@ class FunctionWriter {
   private readonly lines: string[] = [];
   private depth = 1;
   private counter = 0;
+  /** The record that checks of the value being checked fill; undefined when this function keeps none, or while a child value is checked. */
+  private record: string | undefined;
 
-  public constructor(private readonly state: ModuleState) {}
+  public constructor(
+    private readonly state: ModuleState,
+    private readonly functions: readonly IrFunction[],
+    private readonly fn: IrFunction,
+  ) {
+    this.record = fn.collects || fn.receives ? EVALUATION : undefined;
+  }
 
-  public write(fn: IrFunction): string {
-    this.lines.push(functionHeader(fn.id));
+  public write(): string {
+    this.lines.push(functionHeader(this.fn));
     this.line(`const pl = ${PATH}.length;`);
     this.line('let ok = true;');
-    this.schema(fn.body, VALUE);
+    if (this.fn.collects) this.line(`const ${EVALUATION} = ${this.state.localHelper('newEvaluation')}();`);
+    else if (this.fn.receives) this.line(`const ${EVALUATION} = ${INHERITED} ?? ${this.state.localHelper('newEvaluation')}();`);
+    this.schema(this.fn.body, VALUE);
+    // A function that both keeps a record and receives one hands what it evaluated to its caller once it passed.
+    if (this.fn.collects && this.fn.receives) this.line(`if (ok && ${INHERITED} !== undefined) ${this.state.localHelper('mergeEvaluation')}(${INHERITED}, ${EVALUATION});`);
     this.line('return ok;');
     this.lines.push('}');
     return this.lines.join('\n');
@@ -112,14 +150,28 @@ class FunctionWriter {
     this.lines.push(`${'  '.repeat(this.depth)}${text}`);
   }
 
+  /** Opens a block; an empty `head` opens a bare scope. */
   private open(head: string): void {
-    this.line(`${head} {`);
+    this.line(head === '' ? '{' : `${head} {`);
     this.depth++;
   }
 
   private close(): void {
     this.depth--;
     this.line('}');
+  }
+
+  /** A block that is left out when `body` writes nothing, as when a check only marks what it evaluates and nothing reads the mark. */
+  private block(head: string, body: () => void): void {
+    const start = this.lines.length;
+    this.open(head);
+    body();
+    if (this.lines.length === start + 1) {
+      this.lines.length = start;
+      this.depth--;
+    } else {
+      this.close();
+    }
   }
 
   private fresh(prefix: string): string {
@@ -136,8 +188,30 @@ class FunctionWriter {
     this.line(`ok = false; if (!${ALL}) { ${PATH}.length = pl; return false; }`);
   }
 
-  private limitIssue(code: 'tooSmall' | 'tooBig', measure: string, limit: number, inclusive: boolean): void {
-    this.issue(`code: ${literal(code)}, measure: ${literal(measure)}, limit: ${JSON.stringify(limit)}, inclusive: ${inclusive}`);
+  /** `limit` is a number, or an expression of the generated code. */
+  private limitIssue(code: 'tooSmall' | 'tooBig', measure: string, limit: number | string, inclusive: boolean): void {
+    this.issue(`code: ${literal(code)}, measure: ${literal(measure)}, limit: ${typeof limit === 'number' ? JSON.stringify(limit) : limit}, inclusive: ${inclusive}`);
+  }
+
+  /** Adds a statement that marks what the current value evaluated, when this function keeps a record. */
+  private mark(statement: (record: string) => string): void {
+    if (this.record !== undefined) this.line(statement(this.record));
+  }
+
+  private requireRecord(): string {
+    if (this.record === undefined) throw new Error('A check that reads evaluated keys or items needs a function that keeps a record.');
+    return this.record;
+  }
+
+  private call(id: number, args: CallArguments): string {
+    return callFunction(this.functions[id], args);
+  }
+
+  /** The function `id` applies to the same value in place: it fails this function when it fails, and fills this function's record. */
+  private callInPlace(id: number, value: string): void {
+    this.open(`if (!${this.call(id, { value, issues: ISSUES, all: ALL, record: this.record })})`);
+    this.fail();
+    this.close();
   }
 
   private schema(schema: IrSchema, value: string): void {
@@ -145,11 +219,14 @@ class FunctionWriter {
     else if (schema.kind === 'checks') for (const check of schema.checks) this.check(check, value);
   }
 
-  /** Runs `body` for the child `token` of the current value with the path extended. */
+  /** Runs `body` for the child `token` of the current value with the path extended; the child has its own evaluation, so no record is filled. */
   private atChild(token: string, body: () => void): void {
+    const record = this.record;
+    this.record = undefined;
     this.line(`${PATH}.push(${token});`);
     body();
     this.line(`${PATH}.pop();`);
+    this.record = record;
   }
 
   private check(check: IrCheck, value: string): void {
@@ -181,20 +258,31 @@ class FunctionWriter {
       case 'number': return this.numberCheck(check, value);
       case 'array': return this.arrayCheck(check, value);
       case 'object': return this.objectCheck(check, value);
-      case 'call':
-        this.open(`if (!${callFunction(check.fn, { value, issues: ISSUES, all: ALL })})`);
-        this.fail();
-        this.close();
-        return;
+      case 'call': return this.callInPlace(check.fn, value);
       case 'allOf':
         for (const branch of check.branches) this.schema(branch, value);
         return;
-      case 'union': return this.unionCheck(check, value);
+      case 'union': return check.discriminator ? this.discriminatedUnion(check, check.discriminator, value) : this.unionCheck(check, value);
       case 'not':
-        this.open(`if (${callFunction(check.fn, { value, issues: '[]', all: 'false' })})`);
+        this.open(`if (${this.call(check.fn, { value, issues: '[]', all: 'false' })})`);
         this.issue("code: 'not'");
         this.close();
         return;
+      case 'conditional': return this.conditionalCheck(check, value);
+      case 'dependentSchemas': {
+        this.state.localHelper('isObject');
+        const hasOwn = this.state.localHelper('hasOwn');
+        this.open(`if (isObject(${value}))`);
+        for (const { trigger, fn } of check.entries) {
+          this.open(`if (${hasOwn}.call(${value}, ${literal(trigger)}))`);
+          this.callInPlace(fn, value);
+          this.close();
+        }
+        this.close();
+        return;
+      }
+      case 'unevaluatedProperties': return this.unevaluatedProperties(check.schema, value);
+      case 'unevaluatedItems': return this.unevaluatedItems(check.schema, value);
     }
   }
 
@@ -247,108 +335,255 @@ class FunctionWriter {
   }
 
   private arrayCheck(check: IrArray, value: string): void {
-    this.open(`if (Array.isArray(${value}))`);
-    if (check.minItems !== undefined) {
-      this.open(`if (${value}.length < ${JSON.stringify(check.minItems)})`);
-      this.limitIssue('tooSmall', 'items', check.minItems, true);
-      this.close();
-    }
-    if (check.maxItems !== undefined) {
-      this.open(`if (${value}.length > ${JSON.stringify(check.maxItems)})`);
-      this.limitIssue('tooBig', 'items', check.maxItems, true);
-      this.close();
-    }
-    if (check.closed) {
-      this.open(`if (${value}.length > ${check.prefixItems.length})`);
-      this.limitIssue('tooBig', 'items', check.prefixItems.length, true);
-      this.close();
-    }
-    check.prefixItems.forEach((schema, position) => {
-      if (schema.kind === 'always') return;
-      this.open(`if (${value}.length > ${position})`);
-      const item = this.fresh('item');
-      this.line(`const ${item} = ${value}[${position}];`);
-      this.atChild(String(position), () => this.schema(schema, item));
-      this.close();
+    this.block(`if (Array.isArray(${value}))`, () => {
+      if (check.minItems !== undefined) {
+        this.open(`if (${value}.length < ${JSON.stringify(check.minItems)})`);
+        this.limitIssue('tooSmall', 'items', check.minItems, true);
+        this.close();
+      }
+      if (check.maxItems !== undefined) {
+        this.open(`if (${value}.length > ${JSON.stringify(check.maxItems)})`);
+        this.limitIssue('tooBig', 'items', check.maxItems, true);
+        this.close();
+      }
+      if (check.closed) {
+        this.open(`if (${value}.length > ${check.prefixItems.length})`);
+        this.limitIssue('tooBig', 'items', check.prefixItems.length, true);
+        this.close();
+      }
+      if (check.prefixItems.length > 0) this.mark(record => `${record}.prefix = Math.max(${record}.prefix, Math.min(${value}.length, ${check.prefixItems.length}));`);
+      check.prefixItems.forEach((schema, position) => {
+        if (schema.kind === 'always') return;
+        this.open(`if (${value}.length > ${position})`);
+        const item = this.fresh('item');
+        this.line(`const ${item} = ${value}[${position}];`);
+        this.atChild(String(position), () => this.schema(schema, item));
+        this.close();
+      });
+      if (check.items !== undefined || check.closed) this.mark(record => `${record}.allItems = true;`);
+      if (check.items !== undefined && check.items.kind !== 'always') {
+        const index = this.fresh('x');
+        const item = this.fresh('item');
+        const items = check.items;
+        this.open(`for (let ${index} = ${check.prefixItems.length}; ${index} < ${value}.length; ${index}++)`);
+        this.line(`const ${item} = ${value}[${index}];`);
+        this.atChild(index, () => this.schema(items, item));
+        this.close();
+      }
+      if (check.contains !== undefined) this.containsCheck(check.contains, value);
+      if (check.uniqueItems) {
+        const first = this.fresh('x');
+        const second = this.fresh('y');
+        const label = this.fresh('unique');
+        const jsonEqual = this.state.runtimeHelper('jsonEqual');
+        this.open(`${label}: for (let ${first} = 0; ${first} < ${value}.length - 1; ${first}++)`);
+        this.open(`for (let ${second} = ${first} + 1; ${second} < ${value}.length; ${second}++)`);
+        this.open(`if (${jsonEqual}(${value}[${first}], ${value}[${second}]))`);
+        this.line(`${ISSUES}.push({ path: ${PATH}.slice(), code: 'unique', indexes: [${first}, ${second}] });`);
+        this.fail();
+        this.line(`break ${label};`);
+        this.close();
+        this.close();
+        this.close();
+      }
     });
-    if (check.items !== undefined && check.items.kind !== 'always') {
-      const index = this.fresh('x');
-      const item = this.fresh('item');
-      const items = check.items;
-      this.open(`for (let ${index} = ${check.prefixItems.length}; ${index} < ${value}.length; ${index}++)`);
-      this.line(`const ${item} = ${value}[${index}];`);
-      this.atChild(index, () => this.schema(items, item));
-      this.close();
-    }
-    if (check.uniqueItems) {
-      const first = this.fresh('x');
-      const second = this.fresh('y');
-      const label = this.fresh('unique');
-      const jsonEqual = this.state.runtimeHelper('jsonEqual');
-      this.open(`${label}: for (let ${first} = 0; ${first} < ${value}.length - 1; ${first}++)`);
-      this.open(`for (let ${second} = ${first} + 1; ${second} < ${value}.length; ${second}++)`);
-      this.open(`if (${jsonEqual}(${value}[${first}], ${value}[${second}]))`);
-      this.line(`${ISSUES}.push({ path: ${PATH}.slice(), code: 'unique', indexes: [${first}, ${second}] });`);
-      this.fail();
-      this.line(`break ${label};`);
-      this.close();
-      this.close();
-      this.close();
-    }
+  }
+
+  /** Counts the items that pass `contains`; the count must lie between its limits, and each match counts as evaluated. */
+  private containsCheck(contains: NonNullable<IrArray['contains']>, value: string): void {
+    const marks = this.record !== undefined;
+    if (contains.min === 0 && contains.max === undefined && !marks) return;
+    const count = this.fresh('count');
+    const index = this.fresh('x');
+    this.line(`let ${count} = 0;`);
+    this.open(`for (let ${index} = 0; ${index} < ${value}.length; ${index}++)`);
+    this.open(`if (${this.call(contains.fn, { value: `${value}[${index}]`, issues: '[]', all: 'false' })})`);
+    this.line(`${count}++;`);
+    this.mark(record => `${record}.indexes.add(${index});`);
+    // Without a maximum or a record, the first `min` matches decide the outcome.
+    if (contains.max === undefined && !marks) this.line(`if (${count} >= ${contains.min}) break;`);
     this.close();
+    this.close();
+    if (contains.min > 0) {
+      this.open(`if (${count} < ${JSON.stringify(contains.min)})`);
+      this.limitIssue('tooSmall', 'matches', contains.min, true);
+      this.close();
+    }
+    if (contains.max !== undefined) {
+      this.open(`if (${count} > ${JSON.stringify(contains.max)})`);
+      this.limitIssue('tooBig', 'matches', contains.max, true);
+      this.close();
+    }
   }
 
   private objectCheck(check: IrObject, value: string): void {
     this.state.localHelper('isObject');
-    this.open(`if (isObject(${value}))`);
-    const needsKeys = check.minProperties !== undefined || check.maxProperties !== undefined || check.additional !== undefined;
-    const keys = this.fresh('keys');
-    if (needsKeys) this.line(`const ${keys} = Object.keys(${value});`);
-    if (check.minProperties !== undefined) {
-      this.open(`if (${keys}.length < ${JSON.stringify(check.minProperties)})`);
-      this.limitIssue('tooSmall', 'properties', check.minProperties, true);
-      this.close();
-    }
-    if (check.maxProperties !== undefined) {
-      this.open(`if (${keys}.length > ${JSON.stringify(check.maxProperties)})`);
-      this.limitIssue('tooBig', 'properties', check.maxProperties, true);
-      this.close();
-    }
     const hasOwn = this.state.localHelper('hasOwn');
-    for (const key of check.required) {
-      this.open(`if (!${hasOwn}.call(${value}, ${literal(key)}))`);
-      this.issue(`code: 'required', key: ${literal(key)}`, `[...${PATH}, ${literal(key)}]`);
-      this.close();
-    }
-    for (const property of check.properties) {
-      if (property.schema.kind === 'always') continue;
-      const schema = property.schema;
-      this.open(`if (${hasOwn}.call(${value}, ${literal(property.key)}))`);
-      const member = this.fresh('member');
-      this.line(`const ${member} = ${value}[${literal(property.key)}];`);
-      this.atChild(literal(property.key), () => this.schema(schema, member));
-      this.close();
-    }
-    if (check.additional) {
-      const additional = check.additional;
-      const known = this.state.constant('known', `new Set(${JSON.stringify(check.properties.map(property => property.key))})`);
+    this.block(`if (isObject(${value}))`, () => {
+      const marks = this.record !== undefined;
+      // A key that matches a pattern is not "additional" even when the pattern's schema accepts everything.
+      const patterns = check.patternProperties.map(entry => ({ entry, expression: this.state.constant('pattern', `new RegExp(${literal(entry.pattern)}, 'u')`) }));
+      const patternsToRun = patterns.filter(({ entry }) => entry.schema.kind !== 'always' || marks);
+      const visitsAdditional = check.additional !== undefined && (check.additional.kind === 'forbid' || check.additional.schema.kind !== 'always');
+      const keys = this.fresh('keys');
+      if (check.minProperties !== undefined || check.maxProperties !== undefined || patternsToRun.length > 0 || visitsAdditional || check.propertyNames !== undefined) {
+        this.line(`const ${keys} = Object.keys(${value});`);
+      }
+      if (check.minProperties !== undefined) {
+        this.open(`if (${keys}.length < ${JSON.stringify(check.minProperties)})`);
+        this.limitIssue('tooSmall', 'properties', check.minProperties, true);
+        this.close();
+      }
+      if (check.maxProperties !== undefined) {
+        this.open(`if (${keys}.length > ${JSON.stringify(check.maxProperties)})`);
+        this.limitIssue('tooBig', 'properties', check.maxProperties, true);
+        this.close();
+      }
+      for (const key of check.required) {
+        this.open(`if (!${hasOwn}.call(${value}, ${literal(key)}))`);
+        this.issue(`code: 'required', key: ${literal(key)}`, `[...${PATH}, ${literal(key)}]`);
+        this.close();
+      }
+      for (const { trigger, keys: dependents } of check.dependentRequired) {
+        if (dependents.length === 0) continue;
+        this.open(`if (${hasOwn}.call(${value}, ${literal(trigger)}))`);
+        for (const key of dependents) {
+          this.open(`if (!${hasOwn}.call(${value}, ${literal(key)}))`);
+          this.issue(`code: 'required', key: ${literal(key)}`, `[...${PATH}, ${literal(key)}]`);
+          this.close();
+        }
+        this.close();
+      }
+      for (const property of check.properties) {
+        if (property.schema.kind === 'always' && !marks) continue;
+        const schema = property.schema;
+        this.open(`if (${hasOwn}.call(${value}, ${literal(property.key)}))`);
+        this.mark(record => `${record}.keys.add(${literal(property.key)});`);
+        if (schema.kind !== 'always') {
+          const member = this.fresh('member');
+          this.line(`const ${member} = ${value}[${literal(property.key)}];`);
+          this.atChild(literal(property.key), () => this.schema(schema, member));
+        }
+        this.close();
+      }
+      if (patternsToRun.length > 0) {
+        const key = this.fresh('key');
+        this.open(`for (const ${key} of ${keys})`);
+        for (const { entry, expression } of patternsToRun) {
+          this.open(`if (${expression}.test(${key}))`);
+          this.mark(record => `${record}.keys.add(${key});`);
+          if (entry.schema.kind !== 'always') {
+            const schema = entry.schema;
+            const member = this.fresh('member');
+            this.line(`const ${member} = ${value}[${key}];`);
+            this.atChild(key, () => this.schema(schema, member));
+          }
+          this.close();
+        }
+        this.close();
+      }
+      if (check.additional && visitsAdditional) {
+        const additional = check.additional;
+        const key = this.fresh('key');
+        const known = check.properties.length > 0 ? this.state.constant('known', `new Set(${JSON.stringify(check.properties.map(property => property.key))})`) : undefined;
+        const skipped = [...(known === undefined ? [] : [`${known}.has(${key})`]), ...patterns.map(({ expression }) => `${expression}.test(${key})`)];
+        this.open(`for (const ${key} of ${keys})`);
+        if (skipped.length > 0) this.line(`if (${skipped.join(' || ')}) continue;`);
+        if (additional.kind === 'forbid') {
+          this.issue(`code: 'unknownKey', key: ${key}`, `[...${PATH}, ${key}]`);
+        } else {
+          const schema = additional.schema;
+          const member = this.fresh('member');
+          this.line(`const ${member} = ${value}[${key}];`);
+          this.atChild(key, () => this.schema(schema, member));
+        }
+        this.close();
+      }
+      // `additionalProperties` takes every key the other two did not.
+      if (check.additional !== undefined) this.mark(record => `${record}.allKeys = true;`);
+      if (check.propertyNames !== undefined) {
+        const key = this.fresh('key');
+        this.open(`for (const ${key} of ${keys})`);
+        this.open(`if (!${this.call(check.propertyNames, { value: key, issues: '[]', all: 'false' })})`);
+        this.issue(`code: 'invalidKey', key: ${key}`);
+        this.close();
+        this.close();
+      }
+    });
+  }
+
+  /** `unevaluatedProperties`: the keys that nothing evaluated. */
+  private unevaluatedProperties(schema: IrSchema, value: string): void {
+    const record = this.requireRecord();
+    this.state.localHelper('isObject');
+    this.open(`if (isObject(${value}))`);
+    if (schema.kind !== 'always') {
       const key = this.fresh('key');
-      this.open(`for (const ${key} of ${keys})`);
-      this.line(`if (${known}.has(${key})) continue;`);
-      if (additional.kind === 'forbid') {
+      this.open(`if (!${record}.allKeys)`);
+      this.open(`for (const ${key} of Object.keys(${value}))`);
+      this.line(`if (${record}.keys.has(${key})) continue;`);
+      if (schema.kind === 'never') {
         this.issue(`code: 'unknownKey', key: ${key}`, `[...${PATH}, ${key}]`);
       } else {
         const member = this.fresh('member');
         this.line(`const ${member} = ${value}[${key}];`);
-        this.atChild(key, () => this.schema(additional.schema, member));
+        this.atChild(key, () => this.schema(schema, member));
       }
       this.close();
+      this.close();
     }
+    this.line(`${record}.allKeys = true;`);
     this.close();
   }
 
+  /** `unevaluatedItems`: the items that nothing evaluated. `false` gives one `tooBig` issue with the number of evaluated items as the limit. */
+  private unevaluatedItems(schema: IrSchema, value: string): void {
+    const record = this.requireRecord();
+    this.open(`if (Array.isArray(${value}))`);
+    if (schema.kind !== 'always') {
+      const index = this.fresh('x');
+      const unevaluated = this.fresh('unevaluated');
+      this.open(`if (!${record}.allItems)`);
+      if (schema.kind === 'never') this.line(`let ${unevaluated} = 0;`);
+      this.open(`for (let ${index} = 0; ${index} < ${value}.length; ${index}++)`);
+      this.line(`if (${index} < ${record}.prefix || ${record}.indexes.has(${index})) continue;`);
+      if (schema.kind === 'never') {
+        this.line(`${unevaluated}++;`);
+      } else {
+        const item = this.fresh('item');
+        this.line(`const ${item} = ${value}[${index}];`);
+        this.atChild(index, () => this.schema(schema, item));
+      }
+      this.close();
+      if (schema.kind === 'never') {
+        this.open(`if (${unevaluated} > 0)`);
+        this.limitIssue('tooBig', 'items', `${value}.length - ${unevaluated}`, true);
+        this.close();
+      }
+      this.close();
+    }
+    this.line(`${record}.allItems = true;`);
+    this.close();
+  }
+
+  /** `if` runs with a scratch list and, when this function keeps a record, a scratch record that counts only when `if` passes. */
+  private conditionalCheck(check: Extract<IrCheck, { kind: 'conditional' }>, value: string): void {
+    const scratch = this.record === undefined ? undefined : this.fresh('scratch');
+    if (scratch !== undefined) this.line(`const ${scratch} = ${this.state.localHelper('newEvaluation')}();`);
+    this.open(`if (${this.call(check.if, { value, issues: '[]', all: 'false', record: scratch })})`);
+    if (scratch !== undefined && this.record !== undefined) this.line(`${this.state.localHelper('mergeEvaluation')}(${this.record}, ${scratch});`);
+    if (check.then !== undefined) this.callInPlace(check.then, value);
+    this.close();
+    if (check.else !== undefined) {
+      this.open('else');
+      this.callInPlace(check.else, value);
+      this.close();
+    }
+  }
+
   private unionCheck(check: IrUnion, value: string): void {
-    const attempt = (fn: number): string => callFunction(fn, { value, issues: '[]', all: 'false' });
+    if (this.record !== undefined) return this.recordingUnionCheck(check, value);
+    const attempt = (fn: number): string => this.call(fn, { value, issues: '[]', all: 'false' });
     if (!check.exactlyOne) {
       this.open(`if (!(${check.branches.map(attempt).join(' || ')}))`);
       this.issue("code: 'union', matched: 0");
@@ -363,6 +598,48 @@ class FunctionWriter {
     this.issue(`code: 'union', matched: ${matched}`);
     this.close();
   }
+
+  /** Every branch that passes marks what it evaluated, so `anyOf` runs all of its branches here. */
+  private recordingUnionCheck(check: IrUnion, value: string): void {
+    const record = this.requireRecord();
+    const matched = this.fresh('matched');
+    this.line(`let ${matched} = 0;`);
+    check.branches.forEach((fn, position) => {
+      const scratch = this.fresh('scratch');
+      this.open(position === 0 || !check.exactlyOne ? '' : `if (${matched} < 2)`);
+      this.line(`const ${scratch} = ${this.state.localHelper('newEvaluation')}();`);
+      this.open(`if (${this.call(fn, { value, issues: '[]', all: 'false', record: scratch })})`);
+      this.line(`${matched}++;`);
+      this.line(`${this.state.localHelper('mergeEvaluation')}(${record}, ${scratch});`);
+      this.close();
+      this.close();
+    });
+    this.open(check.exactlyOne ? `if (${matched} !== 1)` : `if (${matched} === 0)`);
+    this.issue(`code: 'union', matched: ${matched}`);
+    this.close();
+  }
+
+  /** The tag selects the branch; only that branch's issues are reported, and an unknown tag is a `literal` issue on the tag property. */
+  private discriminatedUnion(check: IrUnion, discriminator: IrDiscriminator, value: string): void {
+    this.state.localHelper('isObject');
+    const hasOwn = this.state.localHelper('hasOwn');
+    const jsonEqual = this.state.runtimeHelper('jsonEqual');
+    const tags = this.state.constant('tags', `JSON.parse(${literal(JSON.stringify(discriminator.tags))})`);
+    const allTags = this.state.constant('lit', `JSON.parse(${literal(JSON.stringify(discriminator.tags.flat()))})`);
+    const tag = this.fresh('tag');
+    const selected = this.fresh('branch');
+    const property = literal(discriminator.property);
+    this.line(`const ${tag} = isObject(${value}) && ${hasOwn}.call(${value}, ${property}) ? ${value}[${property}] : undefined;`);
+    this.line(`const ${selected} = ${tags}.findIndex(list => list.some(item => ${jsonEqual}(${tag}, item)));`);
+    check.branches.forEach((fn, position) => {
+      this.open(`if (${selected} === ${position})`);
+      this.callInPlace(fn, value);
+      this.close();
+    });
+    this.open(`if (${selected} < 0)`);
+    this.issue(`code: 'literal', expected: ${allTags}`, `[...${PATH}, ${property}]`);
+    this.close();
+  }
 }
 
 /** The name of the exported wrapper for the root at `index`; any character that is not valid in a name becomes `_`. */
@@ -373,11 +650,11 @@ function wrapperName(name: string, index: number): string {
 /** Emits the module: one function per IR function, one wrapper per root, and `export const validators`. */
 export function emit(module: IrModule, options: EmitOptions): string {
   const state = new ModuleState();
-  const functions = module.functions.map(fn => new FunctionWriter(state).write(fn));
+  const functions = module.functions.map(fn => new FunctionWriter(state, module.functions, fn).write());
   const wrappers = module.exports.map(({ fn }, index) => [
     `function ${wrapperName(module.exports[index].name, index)}(value, all) {`,
     '  const issues = [];',
-    `  ${callFunction(fn, { value: 'value', path: '[]', issues: 'issues', all: 'all' })};`,
+    `  ${callFunction(module.functions[fn], { value: 'value', path: '[]', issues: 'issues', all: 'all' })};`,
     '  return issues;',
     '}',
   ].join('\n'));

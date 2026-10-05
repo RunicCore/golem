@@ -1,7 +1,7 @@
 import { isKnownFormat } from '../../validation-runtime.js';
 import { GolemDiagnosticSeverity, type GolemDiagnostic } from '../generator-api.js';
 import type { CompileInput, CompileOptions } from './index.js';
-import type { IrAdditional, IrCheck, IrFunction, IrModule, IrSchema, IrTypeName } from './ir.js';
+import type { IrAdditional, IrCheck, IrContains, IrDiscriminator, IrFunction, IrModule, IrSchema, IrTypeName } from './ir.js';
 import { baseInside, isRecord, pointerSegment, SchemaResolver, type SchemaLocation } from './resolve.js';
 
 export const VALIDATE_UNSUPPORTED_KEYWORD = 'VALIDATE_UNSUPPORTED_KEYWORD';
@@ -12,25 +12,12 @@ export const VALIDATE_REF_CYCLE = 'VALIDATE_REF_CYCLE';
 
 /**
  * Validation keywords of JSON Schema 2020-12 that the compiler reports instead of ignoring, because
- * ignoring one would accept data the schema rejects. `$dynamicRef` and `$dynamicAnchor` stay here; the
- * rest are removed as `lowerSchema` learns them.
+ * ignoring one would accept data the schema rejects. Dynamic references need a run-time scope that
+ * golem's generated validators do not keep.
  */
-const UNSUPPORTED_KEYWORDS: ReadonlySet<string> = new Set([
-  '$dynamicRef',
-  '$dynamicAnchor',
-  'if',
-  'then',
-  'else',
-  'dependentRequired',
-  'dependentSchemas',
-  'patternProperties',
-  'propertyNames',
-  'contains',
-  'minContains',
-  'maxContains',
-  'unevaluatedItems',
-  'unevaluatedProperties',
-]);
+const UNSUPPORTED_KEYWORDS: ReadonlySet<string> = new Set(['$dynamicRef', '$dynamicAnchor']);
+
+const EVALUATION_KEYWORDS: readonly string[] = ['unevaluatedProperties', 'unevaluatedItems'];
 
 const TYPE_NAMES: readonly IrTypeName[] = ['string', 'number', 'integer', 'boolean', 'null', 'object', 'array'];
 
@@ -41,10 +28,54 @@ interface SameValueEdge {
   readonly keyword: string;
 }
 
+/** `not` passes the value on, but what its schema evaluates does not count for the schema that holds it. */
+function carriesEvaluation(edge: SameValueEdge): boolean {
+  return edge.keyword !== 'not';
+}
+
 const ALWAYS: IrSchema = { kind: 'always' };
 const NEVER: IrSchema = { kind: 'never' };
 
 type MutableFunction = { -readonly [Key in keyof IrFunction]: IrFunction[Key] };
+
+function callTo(fn: number): IrSchema {
+  return { kind: 'checks', checks: [{ kind: 'call', fn }] };
+}
+
+/** True when `value`, or anything inside it, has one of `keys` as a key. */
+function hasKey(value: unknown, keys: readonly string[]): boolean {
+  if (Array.isArray(value)) return value.some(item => hasKey(item, keys));
+  if (!isRecord(value)) return false;
+  return Object.entries(value).some(([key, item]) => keys.includes(key) || hasKey(item, keys));
+}
+
+/** True when the schema node itself holds `unevaluatedProperties` or `unevaluatedItems`. */
+function holdsEvaluationKeyword(node: unknown): boolean {
+  return isRecord(node) && EVALUATION_KEYWORDS.some(keyword => Object.hasOwn(node, keyword));
+}
+
+/**
+ * The tag values of a `oneOf` branch for `property`: its `const`, or the values of its `enum`. Undefined when the
+ * branch does not state them.
+ */
+function branchTags(branch: unknown, property: string): readonly unknown[] | undefined {
+  if (!isRecord(branch) || !isRecord(branch.properties) || !Object.hasOwn(branch.properties, property)) return undefined;
+  const tag = branch.properties[property];
+  if (!isRecord(tag)) return undefined;
+  if (Object.hasOwn(tag, 'const')) return [tag.const];
+  return Array.isArray(tag.enum) && tag.enum.length > 0 ? tag.enum as readonly unknown[] : undefined;
+}
+
+/** The discriminator of a `oneOf` list, when every branch states its tag values and no value repeats; otherwise it is an annotation. */
+function discriminatorOf(node: Readonly<Record<string, unknown>>, branches: readonly unknown[]): IrDiscriminator | undefined {
+  const { discriminator } = node;
+  if (!isRecord(discriminator) || typeof discriminator.propertyName !== 'string') return undefined;
+  const property = discriminator.propertyName;
+  const tags = branches.map(branch => branchTags(branch, property));
+  if (!tags.every((list): list is readonly unknown[] => list !== undefined)) return undefined;
+  const seen = new Set(tags.flat().map(tag => JSON.stringify(tag)));
+  return seen.size === tags.flat().length ? { property, tags } : undefined;
+}
 
 function isTypeName(value: unknown): value is IrTypeName {
   return TYPE_NAMES.some(name => name === value);
@@ -85,12 +116,15 @@ class Lowering {
   private readonly functionIds = new Map<object, number>();
   private readonly sameValueEdges: (readonly SameValueEdge[])[] = [];
   private readonly pending: { readonly id: number; readonly location: SchemaLocation }[] = [];
+  /** True when any schema of the compilation holds `unevaluatedProperties` or `unevaluatedItems`; only then do checks keep what they evaluate. */
+  private readonly tracksEvaluation: boolean;
 
   public constructor(
     private readonly input: CompileInput,
     private readonly options: Pick<CompileOptions, 'unknownFormats' | 'documentName'>,
   ) {
     this.resolver = new SchemaResolver(input.roots, input.resources ?? new Map());
+    this.tracksEvaluation = [...input.roots.values(), ...(input.resources?.values() ?? [])].some(schema => hasKey(schema, EVALUATION_KEYWORDS));
   }
 
   public run(): LoweringResult {
@@ -99,9 +133,12 @@ class Lowering {
     for (let next = 0; next < this.pending.length; next++) {
       const { id, location } = this.pending[next];
       const edges: SameValueEdge[] = [];
-      this.functions[id].body = this.lowerSchema(location, edges);
+      const body = this.lowerSchema(location, edges);
+      this.functions[id].body = body;
+      this.functions[id].collects = body.kind === 'checks' && body.checks.some(check => check.kind === 'unevaluatedProperties' || check.kind === 'unevaluatedItems');
       this.sameValueEdges[id] = edges;
     }
+    this.markEvaluationReceivers();
     this.reportRefCycles();
     return { module: { functions: this.functions, exports }, diagnostics: this.diagnostics };
   }
@@ -116,15 +153,15 @@ class Lowering {
     const known = shared ? this.functionIds.get(node) : undefined;
     if (known !== undefined) return known;
     const id = this.functions.length;
-    this.functions.push({ id, body: ALWAYS });
+    this.functions.push({ id, body: ALWAYS, collects: false, receives: false });
     if (shared) this.functionIds.set(node, id);
     this.pending.push({ id, location });
     return id;
   }
 
-  private report(code: string, severity: GolemDiagnosticSeverity, location: SchemaLocation, keyword: string, text: string): void {
+  private report(code: string, severity: GolemDiagnosticSeverity, location: SchemaLocation, keyword: string, text: string, ...inside: readonly string[]): void {
     const { documentName } = this.options;
-    const pointer = location.pointer + pointerSegment(keyword);
+    const pointer = [keyword, ...inside].reduce((path, token) => path + pointerSegment(token), location.pointer);
     this.diagnostics.push({
       code,
       severity,
@@ -132,6 +169,21 @@ class Lowering {
       ...(documentName === undefined ? {} : { file: documentName }),
       path: pointer,
     });
+  }
+
+  /**
+   * A function that a collector reaches through steps that pass the whole value on receives the collector's
+   * record, and so does every function such a step reaches in turn.
+   */
+  private markEvaluationReceivers(): void {
+    const queue = this.functions.filter(fn => fn.collects).map(fn => fn.id);
+    for (let next = 0; next < queue.length; next++) {
+      for (const edge of this.sameValueEdges[queue[next]] ?? []) {
+        if (!carriesEvaluation(edge) || this.functions[edge.to].receives) continue;
+        this.functions[edge.to].receives = true;
+        queue.push(edge.to);
+      }
+    }
   }
 
   /**
@@ -177,8 +229,15 @@ class Lowering {
       node: value,
       pointer: more.reduce<string>((path, token) => path + pointerSegment(token), here.pointer + pointerSegment(keyword)),
     });
-    // A child that reads part of the value (a property, an item) starts a new chain of same-value steps.
-    const lowerChild = (keyword: string, value: unknown, ...more: readonly (string | number)[]): IrSchema => this.lowerSchema(child(keyword, value, ...more), []);
+    // A child that reads part of the value (a property, an item) starts a new chain of same-value steps. A child
+    // that holds `unevaluatedProperties` or `unevaluatedItems` is its own function, because its record belongs to the
+    // child value, not to this one.
+    const lowerChild = (keyword: string, value: unknown, ...more: readonly (string | number)[]): IrSchema => {
+      const location = child(keyword, value, ...more);
+      return holdsEvaluationKeyword(location.node) ? callTo(this.functionFor(location)) : this.lowerSchema(location, []);
+    };
+    // A schema that applies to another value than this one (an item tried by `contains`, a key read by `propertyNames`).
+    const otherValueFunction = (keyword: string, value: unknown, ...more: readonly (string | number)[]): number => this.functionFor(child(keyword, value, ...more));
     const sameValueFunction = (keyword: string, value: unknown, ...more: readonly (string | number)[]): number => {
       const location = child(keyword, value, ...more);
       const to = this.functionFor(location);
@@ -239,30 +298,53 @@ class Lowering {
     const minItems = finiteNumber(node.minItems);
     const maxItems = finiteNumber(node.maxItems);
     const uniqueItems = node.uniqueItems === true;
-    if (prefixItems.some(item => item.kind !== 'always') || (items !== undefined && items.kind !== 'always') || closed || minItems !== undefined || maxItems !== undefined || uniqueItems) {
-      checks.push({ kind: 'array', prefixItems, items, closed, minItems, maxItems, uniqueItems });
+    let contains: IrContains | undefined;
+    if (node.contains !== undefined) {
+      contains = { fn: otherValueFunction('contains', node.contains), min: finiteNumber(node.minContains) ?? 1, max: finiteNumber(node.maxContains) };
+    }
+    const marksItems = this.tracksEvaluation && (prefixItems.length > 0 || items !== undefined);
+    if (prefixItems.some(item => item.kind !== 'always') || (items !== undefined && items.kind !== 'always') || closed || contains !== undefined || marksItems || minItems !== undefined || maxItems !== undefined || uniqueItems) {
+      checks.push({ kind: 'array', prefixItems, items, closed, contains, minItems, maxItems, uniqueItems });
     }
 
     const required = Array.isArray(node.required) ? (node.required as readonly unknown[]).filter((key): key is string => typeof key === 'string') : [];
     const properties = isRecord(node.properties)
       ? Object.entries(node.properties).map(([key, schema]) => ({ key, schema: lowerChild('properties', schema, key) }))
       : [];
+    const patternProperties: { readonly pattern: string; readonly schema: IrSchema }[] = [];
+    if (isRecord(node.patternProperties)) {
+      for (const [source, schema] of Object.entries(node.patternProperties)) {
+        const problem = patternError(source);
+        if (problem === undefined) patternProperties.push({ pattern: source, schema: lowerChild('patternProperties', schema, source) });
+        else this.report(VALIDATE_INVALID_PATTERN, GolemDiagnosticSeverity.Error, here, 'patternProperties', `the pattern ${JSON.stringify(source)} is not a valid regular expression: ${problem}`, source);
+      }
+    }
+    const dependentRequired = isRecord(node.dependentRequired)
+      ? Object.entries(node.dependentRequired).flatMap(([trigger, keys]) => Array.isArray(keys) ? [{ trigger, keys: (keys as readonly unknown[]).filter((key): key is string => typeof key === 'string') }] : [])
+      : [];
     let additional: IrAdditional | undefined;
     if (node.additionalProperties === false) {
       additional = { kind: 'forbid' };
     } else if (node.additionalProperties !== undefined) {
       const schema = lowerChild('additionalProperties', node.additionalProperties);
-      if (schema.kind !== 'always') additional = { kind: 'schema', schema };
+      if (schema.kind !== 'always' || this.tracksEvaluation) additional = { kind: 'schema', schema };
     }
+    const propertyNames = node.propertyNames === undefined ? undefined : otherValueFunction('propertyNames', node.propertyNames);
     const minProperties = finiteNumber(node.minProperties);
     const maxProperties = finiteNumber(node.maxProperties);
-    if (required.length > 0 || properties.some(property => property.schema.kind !== 'always') || additional !== undefined || minProperties !== undefined || maxProperties !== undefined) {
-      checks.push({ kind: 'object', required, properties, additional, minProperties, maxProperties });
+    const marksKeys = this.tracksEvaluation && (properties.length > 0 || patternProperties.length > 0);
+    const checksKeys = required.length > 0 || dependentRequired.some(entry => entry.keys.length > 0) || properties.some(property => property.schema.kind !== 'always') || patternProperties.some(entry => entry.schema.kind !== 'always');
+    if (checksKeys || marksKeys || additional !== undefined || propertyNames !== undefined || minProperties !== undefined || maxProperties !== undefined) {
+      checks.push({ kind: 'object', required, dependentRequired, properties, patternProperties, additional, propertyNames, minProperties, maxProperties });
     }
 
     if (Array.isArray(node.allOf)) {
       const branches = (node.allOf as readonly unknown[])
-        .map((branch, position) => this.lowerSchema(child('allOf', branch, position), sameValue))
+        .map((branch, position) => {
+          // A branch with its own `unevaluated*` keyword is its own function: it must not see what its siblings evaluated.
+          if (holdsEvaluationKeyword(branch)) return callTo(sameValueFunction('allOf', branch, position));
+          return this.lowerSchema(child('allOf', branch, position), sameValue);
+        })
         .filter(branch => branch.kind !== 'always');
       if (branches.length > 0) checks.push({ kind: 'allOf', branches });
     }
@@ -270,10 +352,29 @@ class Lowering {
       const list = node[keyword];
       if (Array.isArray(list) && list.length > 0) {
         const branches = (list as readonly unknown[]).map((branch, position) => sameValueFunction(keyword, branch, position));
-        checks.push({ kind: 'union', exactlyOne: keyword === 'oneOf', branches });
+        const discriminator = keyword === 'oneOf' ? discriminatorOf(node, list as readonly unknown[]) : undefined;
+        checks.push({ kind: 'union', exactlyOne: keyword === 'oneOf', branches, discriminator });
       }
     }
     if (node.not !== undefined) checks.push({ kind: 'not', fn: sameValueFunction('not', node.not) });
+
+    // `then` and `else` apply only next to an `if`; an `if` with neither changes nothing unless it marks what it evaluates.
+    if (node.if !== undefined && (node.then !== undefined || node.else !== undefined || this.tracksEvaluation)) {
+      checks.push({
+        kind: 'conditional',
+        if: sameValueFunction('if', node.if),
+        then: node.then === undefined ? undefined : sameValueFunction('then', node.then),
+        else: node.else === undefined ? undefined : sameValueFunction('else', node.else),
+      });
+    }
+    if (isRecord(node.dependentSchemas)) {
+      const entries = Object.entries(node.dependentSchemas).map(([trigger, schema]) => ({ trigger, fn: sameValueFunction('dependentSchemas', schema, trigger) }));
+      if (entries.length > 0) checks.push({ kind: 'dependentSchemas', entries });
+    }
+
+    // These two read what every check above evaluated, so they come last.
+    if (node.unevaluatedProperties !== undefined) checks.push({ kind: 'unevaluatedProperties', schema: lowerChild('unevaluatedProperties', node.unevaluatedProperties) });
+    if (node.unevaluatedItems !== undefined) checks.push({ kind: 'unevaluatedItems', schema: lowerChild('unevaluatedItems', node.unevaluatedItems) });
 
     return checks.length === 0 ? ALWAYS : { kind: 'checks', checks };
   }
