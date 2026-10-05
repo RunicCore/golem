@@ -1,4 +1,4 @@
-// The Vite and esbuild plugins apply the rewrite index to TypeScript in memory; the bundler then strips the types.
+// The Vite and esbuild plugins scan each TypeScript file with the project's own types and rewrite it in memory; the bundler then strips the types.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -9,10 +9,9 @@ import { build as vite, createServer, type ViteDevServer } from 'vite';
 
 import { runPipeline } from '#golem/cli';
 import { golem as esbuildPlugin } from '#golem/esbuild';
-import type { GolemBundlerOptions } from '#golem/rewrite-host';
-import { sha256Hex, type RewriteEdit, type RewriteIndex } from '#golem/rewrite';
+import { openRewriteProject } from '#golem/rewrite-host';
+import type { GolemHostOptions } from '#golem/rewrite-host';
 import { golem as vitePlugin } from '#golem/vite';
-import { GOLEM_VERSION } from '#golem/version';
 import { copyFixtureFile, createFixtureProject, snapshotFilesystem, writeGeneratedArtifacts } from './fixture-project.js';
 import { createModelProject } from './model-project.js';
 import { command, workspace } from './support/process.js';
@@ -42,29 +41,12 @@ function write(root: string, relative: string, text: string): void {
   writeGeneratedArtifacts([{ path: path.join(root, relative), content: text }]);
 }
 
-const ORIGINAL = "'original'";
-
-/** A source with one edit site: the index rewrites `'original'` to `'rewritten'`. */
-function listedSource(variant = ''): string {
-  return `export const value: string = ${ORIGINAL};${variant}\n`;
-}
-
-/** An index written by hand: each key is a path from the index's root, each value the text the index describes. */
-function handIndex(sources: Readonly<Record<string, string>>, replacement = "'rewritten'", golem = GOLEM_VERSION): RewriteIndex {
-  const files: Record<string, RewriteIndex['files'][string]> = {};
-  for (const [key, text] of Object.entries(sources)) {
-    const start = text.indexOf(ORIGINAL);
-    files[key] = { sha256: sha256Hex(text), edits: [{ start, end: start + ORIGINAL.length, expect: ORIGINAL, text: replacement } satisfies RewriteEdit], imports: [] };
-  }
-  return { version: 1, golem, files };
-}
-
 /** Bundles `<root>/<entry>` to `<outDir>/main.mjs` with a linked source map. */
 interface Bundler {
   readonly name: string;
   /** Vite's own esbuild step strips these, and leaves `.cts` alone. */
   readonly extensions: readonly string[];
-  bundle(root: string, entry: string, outDir: string, options?: GolemBundlerOptions): Promise<void>;
+  bundle(root: string, entry: string, outDir: string, options?: GolemHostOptions): Promise<void>;
 }
 
 const BUNDLERS: readonly Bundler[] = [
@@ -100,8 +82,19 @@ const BUNDLERS: readonly Bundler[] = [
   },
 ];
 
-/** A generated project: the model source, its generated files and `.golem/rewrites.json`. */
-async function generatedProject(t: TestContext, name: string): Promise<string> {
+/** A tag model beside the money model: a second module that parses a model the money model's edits leave alone. */
+const TAG_MODEL = "\nexport type TTag = IObject<{ label: string }>;\n";
+const TAG_USE = `import { parse } from '${SERDE}';
+import type { TTag } from './money.model.js';
+
+export const tag = parse<TTag>('{"label":"a"}');
+`;
+
+/**
+ * A generated project: the model source and its generated files. `golem generate` still writes the rewrite index, and
+ * the hosts do not read it: it is removed, so every run proves a host scans for itself.
+ */
+async function generatedProject(t: TestContext, name: string, options: { readonly generate?: boolean } = {}): Promise<string> {
   const { root } = createModelProject(t, {
     prefix: 'golem-bundler-',
     name,
@@ -111,14 +104,43 @@ async function generatedProject(t: TestContext, name: string): Promise<string> {
   });
   write(root, 'golem.yaml', 'version: 1\nmobx: false\nvalidation: false\nmodels:\n  root: .\n');
   copyFixtureFile(root, 'models/serde/base-payment-model/money.model.ts', 'src/money.model.ts');
+  write(root, 'src/money.model.ts', fs.readFileSync(path.join(root, 'src/money.model.ts'), 'utf8') + TAG_MODEL);
   write(root, 'src/main.ts', MAIN);
   write(root, 'src/util.ts', UTIL);
-  await runPipeline(path.join(root, 'golem.yaml'));
+  write(root, 'src/tag.ts', TAG_USE);
+  if (options.generate !== false) await runPipeline(path.join(root, 'golem.yaml'));
+  fs.rmSync(path.join(root, '.golem/rewrites.json'), { force: true });
   return root;
 }
 
+function lineOf(source: string, prefix: string): number {
+  return source.split(/\r?\n/).findIndex((text) => text.replace(/^\uFEFF/, '').startsWith(prefix)) + 1;
+}
+
+/** The codec id the project's key table gives `name`. */
+function codecId(root: string, name: string): string {
+  const table = keyTable(root);
+  const id = new RegExp(`#${name}": "(${name}_[0-9a-f]+)"`).exec(fs.readFileSync(table, 'utf8'))?.[1];
+  assert.ok(id, `${table} names ${name}`);
+  return id;
+}
+
+function keyTable(root: string): string {
+  const found = fs.readdirSync(root, { recursive: true, encoding: 'utf8' }).filter((file) => path.basename(file) === 'iobject-plugin-keys.ts' && !file.includes('node_modules'));
+  assert.equal(found.length, 1, found.join(', '));
+  return path.join(root, found[0]!);
+}
+
+/** Adds a field to `TMoney`, so `golem generate` gives it another codec id. */
+async function changeMoney(root: string): Promise<void> {
+  const file = path.join(root, 'src/money.model.ts');
+  write(root, 'src/money.model.ts', fs.readFileSync(file, 'utf8').replace('value: string }>', 'value: string; note?: string }>'));
+  await runPipeline(path.join(root, 'golem.yaml'));
+  fs.rmSync(path.join(root, '.golem/rewrites.json'), { force: true });
+}
+
 /** The project's files and their mtimes, taken before a build and compared after it: a build edits no source. */
-async function build(bundler: Bundler, t: TestContext, root: string, entry: string, options?: GolemBundlerOptions): Promise<string> {
+async function build(bundler: Bundler, t: TestContext, root: string, entry: string, options?: GolemHostOptions): Promise<string> {
   const outDir = createFixtureProject(t, 'golem-bundle-out-');
   const before = snapshotFilesystem(root);
   try {
@@ -142,9 +164,35 @@ async function failure(promise: Promise<unknown>): Promise<string> {
   assert.fail('the build succeeded');
 }
 
+/** A source that starts with a byte order mark, has CRLF line ends and Vietnamese text. */
+const BOM_CRLF = `﻿${[
+  '// Thanh toán — đơn hàng',
+  `import { parse } from '${SERDE}';`,
+  "import type { TMoney } from './money.model.js';",
+  "import './money.model.js';",
+  "const label = 'đơn hàng';",
+  'const money = parse<TMoney>(\'{"currency":"VND","value":"1"}\');',
+  'console.log(JSON.stringify({ label, money }));',
+  "console.log(new Error('where am I').stack);",
+].join('\r\n')}\r\n`;
+
+/** A file that calls `parse<TMoney>` and exports the result, for the extensions a bundler strips types from. */
+const CALL = `import { parse } from '${SERDE}';
+import type { TMoney } from './money.model.js';
+import './money.model.js';
+
+export const value: string = JSON.stringify(parse<TMoney>('{"currency":"EUR","value":"2"}'));
+`;
+
+/** The mapped line of the first stack frame in `output` that names `file`. */
+function frameLines(output: string, file: string): number[] {
+  return [...output.matchAll(new RegExp(`${file.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}:(\\d+):\\d+`, 'g'))].map((match) => Number(match[1]));
+}
+
 for (const bundler of BUNDLERS) {
-  test(`${bundler.name}: the bundle runs the parse and stringify calls the index rewrites`, async (t) => {
+  test(`${bundler.name}: the bundle runs the parse and stringify calls the host rewrites, in a project with no rewrite index`, async (t) => {
     const root = await generatedProject(t, `${bundler.name}-run`);
+    assert.equal(fs.existsSync(path.join(root, '.golem/rewrites.json')), false);
     const bundle = await build(bundler, t, root, 'src/main.ts');
     const result = await command(root, process.execPath, [bundle]);
     assert.deepEqual(JSON.parse(result.stdout.split('\n')[0]!), { money: { currency: 'USD', value: '1' }, twice: 42 });
@@ -156,65 +204,73 @@ for (const bundler of BUNDLERS) {
     const result = await command(root, process.execPath, ['--enable-source-maps', bundle]);
     // The rewrite prepends an import line, so the line in the rewritten text is one past the original. Node reports
     // a mapped frame at the column where the map's segment starts, so the line and the file name carry the check.
-    const lineOf = (prefix: string): number => MAIN.split('\n').findIndex((text) => text.startsWith(prefix)) + 1;
-    const file = path.join(root, 'src/main.ts').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const file = path.join(root, 'src/main.ts');
     const [traceStack, failureStack] = result.stdout.split('failure ');
-    const frames = (stack: string | undefined): number[] => [...(stack ?? '').matchAll(new RegExp(`${file}:(\\d+):\\d+`, 'g'))].map((match) => Number(match[1]));
-    assert.ok(frames(traceStack).includes(lineOf('const trace')), result.stdout);
+    assert.ok(frameLines(traceStack ?? '', file).includes(lineOf(MAIN, 'const trace')), result.stdout);
     // The failing call is an edited span: its frame resolves to the line the call stands on in the original file.
-    assert.ok(frames(failureStack).includes(lineOf('  parse<TMoney>')), result.stdout);
+    assert.ok(frameLines(failureStack ?? '', file).includes(lineOf(MAIN, '  parse<TMoney>')), result.stdout);
   });
 
-  test(`${bundler.name}: a source changed after generate fails the build and names the file`, async (t) => {
-    const root = await generatedProject(t, `${bundler.name}-stale`);
-    write(root, 'src/main.ts', `${MAIN}// edited after generate\n`);
+  test(`${bundler.name}: a file with a byte order mark, CRLF line ends and Vietnamese text bundles, runs and maps to its original line`, async (t) => {
+    const root = await generatedProject(t, `${bundler.name}-bom-crlf`);
+    write(root, 'src/bom-crlf.ts', BOM_CRLF);
+    const bundle = await build(bundler, t, root, 'src/bom-crlf.ts');
+    const result = await command(root, process.execPath, ['--enable-source-maps', bundle]);
+    assert.deepEqual(JSON.parse(result.stdout.split('\n')[0]!), { label: 'đơn hàng', money: { currency: 'VND', value: '1' } });
+    assert.ok(frameLines(result.stdout, path.join(root, 'src/bom-crlf.ts')).includes(lineOf(BOM_CRLF, 'console.log(new Error')), result.stdout);
+  });
+
+  test(`${bundler.name}: a call whose model has no generated code fails the build with the file, the line and what to run`, async (t) => {
+    const root = await generatedProject(t, `${bundler.name}-no-generated`, { generate: false });
     const message = await failure(build(bundler, t, root, 'src/main.ts'));
-    assert.match(message, /src\/main\.ts changed after golem generate/);
+    assert.match(message, new RegExp(`src/main\\.ts:${lineOf(MAIN, 'const text')}\\b`), message);
+    assert.match(message, /run golem generate/);
   });
 
-  test(`${bundler.name}: a project without an index fails the build instead of bundling its sources unrewritten`, async (t) => {
-    const root = await generatedProject(t, `${bundler.name}-no-index`);
-    fs.rmSync(path.join(root, '.golem'), { recursive: true });
+  test(`${bundler.name}: a project with no golem.yaml fails the build with the config error`, async (t) => {
+    const root = await generatedProject(t, `${bundler.name}-no-config`);
+    fs.rmSync(path.join(root, 'golem.yaml'));
     const message = await failure(build(bundler, t, root, 'src/util.ts'));
-    assert.ok(message.includes(`no golem rewrite index at ${path.join(root, '.golem/rewrites.json')}; run golem generate`), message);
+    assert.ok(message.includes('golem needs a golem.yaml to rewrite parse<T>() calls; set config or GOLEM_CONFIG'), message);
   });
 
-  test(`${bundler.name}: a file the index lists is rewritten and one it does not list is not, for every TypeScript extension`, async (t) => {
-    const root = createFixtureProject(t, 'golem-bundler-extensions-');
-    write(root, 'package.json', '{"type":"module"}');
-    write(root, 'tsconfig.json', '{}');
-    const original = "'original'";
-    const text = `export const value: string = ${original};\n`;
-    const start = text.indexOf(original);
-    const files: Record<string, RewriteIndex['files'][string]> = {};
-    const { extensions } = bundler;
-    for (const extension of extensions) {
-      write(root, `src/listed${extension}`, text);
-      files[`src/listed${extension}`] = { sha256: sha256Hex(text), edits: [{ start, end: start + original.length, expect: original, text: "'rewritten'" } satisfies RewriteEdit], imports: [] };
-    }
-    write(root, 'src/unlisted.ts', text);
-    write(root, '.golem/rewrites.json', JSON.stringify({ version: 1, golem: GOLEM_VERSION, files } satisfies RewriteIndex));
-    const names = [...extensions.map((extension) => `listed${extension}`), 'unlisted.ts'];
-    write(root, 'src/main.ts', `${names.map((name, index) => `import { value as v${index} } from './${name}';`).join('\n')}\nconsole.log(JSON.stringify([${names.map((_, index) => `v${index}`).join(', ')}]));\n`);
-    const bundle = await build(bundler, t, root, 'src/main.ts');
+  test(`${bundler.name}: the config option names a golem.yaml that is not in the working directory`, async (t) => {
+    const root = await generatedProject(t, `${bundler.name}-config-option`);
+    fs.mkdirSync(path.join(root, 'app'));
+    write(root, 'app/entry.ts', `import '../src/main.js';\n`);
+    fs.renameSync(path.join(root, 'golem.yaml'), path.join(root, 'config.yaml'));
+    const bundle = await build(bundler, t, root, 'app/entry.ts', { config: 'config.yaml' });
     const result = await command(root, process.execPath, [bundle]);
-    assert.deepEqual(JSON.parse(result.stdout), [...extensions.map(() => 'rewritten'), 'original']);
+    assert.deepEqual(JSON.parse(result.stdout.split('\n')[0]!), { money: { currency: 'USD', value: '1' }, twice: 42 });
   });
 
-  test(`${bundler.name}: a relative root option resolves against the bundler's own working directory`, async (t) => {
-    const root = createFixtureProject(t, 'golem-bundler-root-option-');
-    write(root, 'package.json', '{"type":"module"}');
-    const text = listedSource();
-    write(root, 'src/a.ts', text);
-    // The index sits beside the sources, not above them, so only the option can find it.
-    write(root, 'other/.golem/rewrites.json', JSON.stringify(handIndex({ '../src/a.ts': text })));
-    write(root, 'src/main.ts', "import { value } from './a.ts';\nconsole.log(value);\n");
-    const bundle = await build(bundler, t, root, 'src/main.ts', { root: 'other' });
-    assert.equal((await command(root, process.execPath, [bundle])).stdout, 'rewritten\n');
-    const message = await failure(build(bundler, t, root, 'src/main.ts'));
-    assert.ok(message.includes('no golem rewrite index at'), message);
+  test(`${bundler.name}: a file with a parse call is rewritten for every TypeScript extension the bundler strips`, async (t) => {
+    const root = await generatedProject(t, `${bundler.name}-extensions`);
+    const names = bundler.extensions.map((extension) => `call${extension}`);
+    for (const name of names) write(root, `src/${name}`, CALL);
+    write(root, 'src/entry.ts', `${names.map((name, index) => `import { value as v${index} } from './${name}';`).join('\n')}\nconsole.log(JSON.stringify([${names.map((_, index) => `v${index}`).join(', ')}]));\n`);
+    const bundle = await build(bundler, t, root, 'src/entry.ts');
+    const result = await command(root, process.execPath, [bundle]);
+    assert.deepEqual(JSON.parse(result.stdout), names.map(() => '{"currency":"EUR","value":"2"}'));
   });
 }
+
+test('the rewrite project of one golem.yaml is shared, and its session lives until the last host closes it', async (t) => {
+  const root = await generatedProject(t, 'shared-project');
+  const file = path.join(root, 'src/main.ts');
+  const text = fs.readFileSync(file, 'utf8');
+  const first = await openRewriteProject({ cwd: root });
+  const second = await openRewriteProject({ cwd: root });
+  first.close();
+  // The second host still has a live session.
+  assert.match(second.rewrite(file, text)?.code ?? '', /__golem_requireObjectCodec\(/);
+  second.close();
+  // Closing again is not a second release; a later host opens a new session.
+  first.close();
+  const third = await openRewriteProject({ cwd: root });
+  t.after(() => third.close());
+  assert.match(third.rewrite(file, text)?.code ?? '', /__golem_requireObjectCodec\(/);
+});
 
 /** A Vite dev server with no file watching: closing a server before its watcher finished scanning leaves a handle open and the test process alive. */
 async function serve(t: TestContext, root: string): Promise<ViteDevServer> {
@@ -244,161 +300,128 @@ test('vite serve: a transformed module is rewritten and its map names the module
   assert.deepEqual(snapshotFilesystem(root), before, 'serving changed a file of the project');
 });
 
-test('vite serve: the index above Vite\'s root is watched, and a change invalidates only the modules whose entry changed', async (t) => {
-  const project = createFixtureProject(t, 'golem-bundler-serve-index-');
-  write(project, 'package.json', '{"type":"module"}');
-  write(project, 'tsconfig.json', '{}');
-  const indexFile = path.join(project, '.golem/rewrites.json');
-  const a = listedSource();
-  const b = listedSource();
-  write(project, 'app/a.ts', a);
-  write(project, 'app/b.ts', b);
-  write(project, '.golem/rewrites.json', JSON.stringify(handIndex({ 'app/a.ts': a, 'app/b.ts': b })));
-  const server = await serve(t, path.join(project, 'app'));
+test('vite serve: a new file with its first parse call, added after the server started, is rewritten', async (t) => {
+  const root = await generatedProject(t, 'vite-new-file');
+  const server = await serve(t, root);
+  assert.match((await server.transformRequest('/src/main.ts'))?.code ?? '', /__golem_requireObjectCodec\(/);
+  write(root, 'src/later.ts', CALL);
+  assert.match((await server.transformRequest('/src/later.ts'))?.code ?? '', /__golem_requireObjectCodec\(/);
+});
+
+test('vite serve: regenerating a model transforms again the module that used it, and no other', async (t) => {
+  const root = await generatedProject(t, 'vite-regenerate');
+  const server = await serve(t, root);
+  const send = t.mock.method(server.ws, 'send', () => undefined);
+  const reloads = (): number => send.mock.calls.filter((call) => (call.arguments[0] as { type?: string } | undefined)?.type === 'full-reload').length;
+  const moduleOf = (file: string) => server.moduleGraph.getModuleById(path.join(root, file));
+  const oldId = codecId(root, 'TMoney');
   const watched: string[] = [];
   const add = server.watcher.add.bind(server.watcher);
   server.watcher.add = (paths) => { watched.push(...[paths].flat()); return add(paths); };
-  const send = t.mock.method(server.ws, 'send', () => undefined);
-  const reloads = (): number => send.mock.calls.filter((call) => (call.arguments[0] as { type?: string } | undefined)?.type === 'full-reload').length;
-  const moduleOf = (file: string) => server.moduleGraph.getModuleById(path.join(project, file));
-  const transformBoth = async (rewritten = 'rewritten'): Promise<void> => {
-    for (const url of ['/a.ts', '/b.ts']) assert.match((await server.transformRequest(url))?.code ?? '', new RegExp(`"${rewritten}"`));
-  };
-  const change = (): void => { server.watcher.emit('change', indexFile); };
 
-  await transformBoth();
-  assert.ok(watched.includes(indexFile), `the index at ${indexFile} is not watched: ${watched.join(', ')}`);
-  assert.ok(moduleOf('app/a.ts')?.transformResult && moduleOf('app/b.ts')?.transformResult);
+  assert.match((await server.transformRequest('/src/main.ts'))?.code ?? '', new RegExp(`"${oldId}"`));
+  assert.ok((await server.transformRequest('/src/tag.ts'))?.code);
+  assert.ok(watched.includes(keyTable(root)), `the key table is not watched: ${watched.join(', ')}`);
+  assert.ok(moduleOf('src/main.ts')?.transformResult && moduleOf('src/tag.ts')?.transformResult, 'both modules are cached after their first transform');
 
-  // An entry whose sha changed: only that module is invalidated, and the page reloads.
-  const changedA = listedSource(' // changed');
-  write(project, 'app/a.ts', changedA);
-  write(project, '.golem/rewrites.json', JSON.stringify(handIndex({ 'app/a.ts': changedA, 'app/b.ts': b })));
-  change();
-  assert.equal(moduleOf('app/a.ts')?.transformResult, null);
-  assert.ok(moduleOf('app/b.ts')?.transformResult);
+  await changeMoney(root);
+  const newId = codecId(root, 'TMoney');
+  assert.notEqual(newId, oldId);
+  server.watcher.emit('change', keyTable(root));
+  assert.equal(moduleOf('src/main.ts')?.transformResult, null);
+  assert.ok(moduleOf('src/tag.ts')?.transformResult);
   assert.equal(reloads(), 1);
 
-  // The same entries written again: nothing is invalidated and no reload is sent.
   // Vite caches a transform only when it starts after the module's invalidation, to the millisecond.
   await new Promise((resolve) => setTimeout(resolve, 5));
-  await transformBoth();
-  write(project, '.golem/rewrites.json', JSON.stringify(handIndex({ 'app/a.ts': changedA, 'app/b.ts': b })));
-  change();
-  assert.ok(moduleOf('app/a.ts')?.transformResult && moduleOf('app/b.ts')?.transformResult);
+  const code = (await server.transformRequest('/src/main.ts'))?.code ?? '';
+  assert.match(code, new RegExp(`"${newId}"`));
+  assert.doesNotMatch(code, new RegExp(`"${oldId}"`));
+
+  // The same files announced again change no rewrite: nothing is invalidated and no reload is sent.
+  server.watcher.emit('change', keyTable(root));
+  assert.ok(moduleOf('src/main.ts')?.transformResult, 'main.ts stays cached when the same files are announced again');
+  assert.ok(moduleOf('src/tag.ts')?.transformResult, 'tag.ts stays cached when the same files are announced again');
   assert.equal(reloads(), 1);
-
-  // An entry with the same sha256 and other edits: what an edit holds depends on more than the file's text, so it is invalidated.
-  await new Promise((resolve) => setTimeout(resolve, 5));
-  await transformBoth();
-  write(project, '.golem/rewrites.json', JSON.stringify(handIndex({ 'app/a.ts': changedA, 'app/b.ts': b }, "'edited'")));
-  change();
-  assert.equal(moduleOf('app/a.ts')?.transformResult, null);
-  assert.equal(moduleOf('app/b.ts')?.transformResult, null);
-  assert.equal(reloads(), 2);
-
-  // An entry removed from the index: that module is invalidated, and the other one is not.
-  await new Promise((resolve) => setTimeout(resolve, 5));
-  await transformBoth('edited');
-  write(project, '.golem/rewrites.json', JSON.stringify(handIndex({ 'app/a.ts': changedA }, "'edited'")));
-  change();
-  assert.ok(moduleOf('app/a.ts')?.transformResult);
-  assert.equal(moduleOf('app/b.ts')?.transformResult, null);
-  assert.equal(reloads(), 3);
-
-  // An index written by another golem version changes every entry.
-  await new Promise((resolve) => setTimeout(resolve, 5));
-  write(project, '.golem/rewrites.json', JSON.stringify(handIndex({ 'app/a.ts': changedA }, "'edited'", '0.0.1-other')));
-  change();
-  assert.equal(moduleOf('app/a.ts')?.transformResult, null);
-  assert.equal(reloads(), 4);
 });
 
-test('vite serve: a missing or unreadable index is watched, and the page reloads once the index reads again', async (t) => {
-  const project = createFixtureProject(t, 'golem-bundler-serve-missing-');
-  write(project, 'package.json', '{"type":"module"}');
-  write(project, 'tsconfig.json', '{}');
-  const indexFile = path.join(project, '.golem/rewrites.json');
-  const text = listedSource();
-  write(project, 'src/a.ts', text);
-  const server = await serve(t, project);
-  const watched: string[] = [];
-  const add = server.watcher.add.bind(server.watcher);
-  server.watcher.add = (paths) => { watched.push(...[paths].flat()); return add(paths); };
+test('vite serve: a module whose model had no generated code transforms again once golem generate has written it', async (t) => {
+  const root = await generatedProject(t, 'vite-recover', { generate: false });
+  const server = await serve(t, root);
   const send = t.mock.method(server.ws, 'send', () => undefined);
-  const reloads = (): number => send.mock.calls.filter((call) => (call.arguments[0] as { type?: string } | undefined)?.type === 'full-reload').length;
-
-  await assert.rejects(server.transformRequest('/src/a.ts'), /no golem rewrite index at .*rewrites\.json; run golem generate/);
-  assert.deepEqual(watched, [indexFile]);
-
-  // A torn write is not an index yet.
-  write(project, '.golem/rewrites.json', '{"version":');
-  server.watcher.emit('add', indexFile);
-  assert.equal(reloads(), 0);
-
-  // The index lists nothing the page used, and the page still reloads: the error it showed is gone.
-  write(project, '.golem/rewrites.json', JSON.stringify(handIndex({ 'src/a.ts': text })));
-  server.watcher.emit('change', indexFile);
-  assert.equal(reloads(), 1);
-  assert.match((await server.transformRequest('/src/a.ts'))?.code ?? '', /"rewritten"/);
+  await assert.rejects(server.transformRequest('/src/main.ts'), /run golem generate/);
+  await runPipeline(path.join(root, 'golem.yaml'));
+  fs.rmSync(path.join(root, '.golem/rewrites.json'), { force: true });
+  server.watcher.emit('add', keyTable(root));
+  assert.equal(send.mock.calls.filter((call) => (call.arguments[0] as { type?: string } | undefined)?.type === 'full-reload').length, 1);
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  assert.match((await server.transformRequest('/src/main.ts'))?.code ?? '', /__golem_requireObjectCodec\(/);
 });
 
-test('esbuild: a stale source is an error located at the source file', async (t) => {
-  const root = createFixtureProject(t, 'golem-bundler-esbuild-error-');
-  write(root, 'package.json', '{"type":"module"}');
-  write(root, 'tsconfig.json', '{}');
-  write(root, 'src/a.ts', listedSource());
-  write(root, '.golem/rewrites.json', JSON.stringify(handIndex({ 'src/a.ts': listedSource(' // another text') })));
-  write(root, 'src/main.ts', "import { value } from './a.ts';\nconsole.log(value);\n");
-  const failed = await esbuild({ absWorkingDir: root, entryPoints: ['src/main.ts'], bundle: true, write: false, logLevel: 'silent', plugins: [esbuildPlugin()] }).then(() => undefined, (error: BuildFailure) => error);
-  assert.ok(failed, 'the build succeeded');
-  assert.equal(failed.errors.length, 1);
-  assert.match(failed.errors[0]!.text, /src\/a\.ts changed after golem generate/);
-  assert.equal(failed.errors[0]!.location?.file, 'src/a.ts');
-});
-
-test('esbuild: watch mode builds again when the index changes', async (t) => {
-  const root = createFixtureProject(t, 'golem-bundler-esbuild-watch-');
-  write(root, 'package.json', '{"type":"module"}');
-  write(root, 'tsconfig.json', '{}');
-  const text = listedSource();
-  write(root, 'src/a.ts', text);
-  write(root, 'src/unlisted.ts', listedSource(' // not listed'));
-  write(root, '.golem/rewrites.json', JSON.stringify(handIndex({ 'src/a.ts': text })));
-  write(root, 'src/main.ts', "import { value } from './a.ts';\nimport { value as other } from './unlisted.ts';\nconsole.log(value, other);\n");
-  const outputs: string[] = [];
+/** An esbuild context in watch mode that writes the bundle; `built(n)` waits for build n and gives its error texts. */
+async function watching(t: TestContext, root: string, entry: string): Promise<{ readonly bundle: string; built(count: number): Promise<readonly string[]> }> {
+  const bundle = path.join(createFixtureProject(t, 'golem-bundle-out-'), 'main.mjs');
+  const results: string[][] = [];
   const context = await esbuildContext({
     absWorkingDir: root,
-    entryPoints: ['src/main.ts'],
+    entryPoints: [entry],
+    outfile: bundle,
     bundle: true,
-    write: false,
+    format: 'esm',
+    platform: 'node',
     logLevel: 'silent',
-    plugins: [esbuildPlugin(), { name: 'record', setup(build) { build.onEnd((result) => { outputs.push(result.outputFiles?.[0]?.text ?? ''); }); } }],
+    plugins: [esbuildPlugin(), { name: 'record', setup(build) { build.onEnd((result) => { results.push(result.errors.map((error) => error.text)); }); } }],
   });
   t.after(() => context.dispose());
   await context.watch();
-  const built = async (count: number): Promise<void> => {
-    for (const deadline = Date.now() + 10_000; outputs.length < count && Date.now() < deadline;) await new Promise((resolve) => setTimeout(resolve, 50));
-    assert.ok(outputs.length >= count, `no build ${count} after the index changed`);
+  return {
+    bundle,
+    async built(count) {
+      for (const deadline = Date.now() + 15_000; results.length < count && Date.now() < deadline;) await new Promise((resolve) => setTimeout(resolve, 50));
+      assert.ok(results.length >= count, `no build ${count}`);
+      return results[count - 1]!;
+    },
   };
-  await built(1);
-  assert.match(outputs[0]!, /"rewritten"|'rewritten'/);
-  // The index lists the second file too: esbuild watches the index, so it builds again though no source changed.
-  const unlisted = listedSource(' // not listed');
-  write(root, '.golem/rewrites.json', JSON.stringify(handIndex({ 'src/a.ts': text, 'src/unlisted.ts': unlisted })));
-  await built(2);
-  assert.equal(outputs[1]!.match(/rewritten/g)?.length, 2);
+}
+
+test('esbuild: an error is located at the file and the line of the call', async (t) => {
+  const root = await generatedProject(t, 'esbuild-error-location', { generate: false });
+  const failed = await esbuild({ absWorkingDir: root, entryPoints: ['src/main.ts'], bundle: true, write: false, logLevel: 'silent', plugins: [esbuildPlugin()] }).then(() => undefined, (error: BuildFailure) => error);
+  assert.ok(failed, 'the build succeeded');
+  assert.equal(failed.errors.length, 1);
+  assert.match(failed.errors[0]!.text, /run golem generate/);
+  assert.equal(path.resolve(root, failed.errors[0]!.location!.file), path.join(root, 'src/main.ts'));
+  assert.equal(failed.errors[0]!.location?.line, lineOf(MAIN, 'const text'));
 });
 
-test('esbuild: a file the index does not list still reaches the onLoad plugins after golem', async (t) => {
-  const root = createFixtureProject(t, 'golem-bundler-esbuild-later-');
-  write(root, 'package.json', '{"type":"module"}');
-  write(root, 'tsconfig.json', '{}');
-  const text = listedSource();
-  write(root, 'src/a.ts', text);
-  write(root, 'src/unlisted.ts', listedSource(' // not listed'));
-  write(root, '.golem/rewrites.json', JSON.stringify(handIndex({ 'src/a.ts': text })));
-  write(root, 'src/main.ts', "import { value } from './a.ts';\nimport { value as other } from './unlisted.ts';\nconsole.log(value, other);\n");
+test('esbuild: a new file with its first parse call, added to a watched build, is rewritten', async (t) => {
+  const root = await generatedProject(t, 'esbuild-new-file');
+  const watch = await watching(t, root, 'src/main.ts');
+  assert.deepEqual(await watch.built(1), []);
+  write(root, 'src/later.ts', CALL);
+  write(root, 'src/main.ts', `${MAIN}import { value } from './later.js';\nconsole.log(value);\n`);
+  assert.deepEqual(await watch.built(2), []);
+  const result = await command(root, process.execPath, [watch.bundle]);
+  assert.ok(result.stdout.split('\n').includes('{"currency":"EUR","value":"2"}'), result.stdout);
+});
+
+test('esbuild: a watched build runs again when a model is regenerated, and rewrites with the new codec id', async (t) => {
+  const root = await generatedProject(t, 'esbuild-regenerate');
+  const watch = await watching(t, root, 'src/main.ts');
+  assert.deepEqual(await watch.built(1), []);
+  const oldId = codecId(root, 'TMoney');
+  assert.ok(fs.readFileSync(watch.bundle, 'utf8').includes(oldId));
+  await changeMoney(root);
+  const newId = codecId(root, 'TMoney');
+  assert.notEqual(newId, oldId);
+  assert.deepEqual(await watch.built(2), []);
+  const bundled = fs.readFileSync(watch.bundle, 'utf8');
+  assert.ok(bundled.includes(newId), 'the rebuilt bundle has the new codec id');
+  assert.ok(!bundled.includes(oldId), 'the rebuilt bundle has no old codec id');
+});
+
+test('esbuild: a file with no rewrite still reaches the onLoad plugins after golem', async (t) => {
+  const root = await generatedProject(t, 'esbuild-later');
   const seen: string[] = [];
   const result = await esbuild({
     absWorkingDir: root,
@@ -411,43 +434,11 @@ test('esbuild: a file the index does not list still reaches the onLoad plugins a
       setup(build) {
         build.onLoad({ filter: /\.ts$/, namespace: 'file' }, ({ path: file }) => {
           seen.push(path.basename(file));
-          return file.endsWith('unlisted.ts') ? { contents: "export const value = 'from the later plugin';", loader: 'ts' } : undefined;
+          return file.endsWith('util.ts') ? { contents: "export const twice = (): string => 'from the later plugin';", loader: 'ts' } : undefined;
         });
       },
     }],
   });
-  assert.ok(seen.includes('unlisted.ts'), seen.join(', '));
+  assert.ok(seen.includes('util.ts'), seen.join(', '));
   assert.match(result.outputFiles[0]!.text, /from the later plugin/);
-});
-
-test('esbuild: watch mode builds again when a missing or malformed index is written', async (t) => {
-  const root = createFixtureProject(t, 'golem-bundler-esbuild-watch-missing-');
-  write(root, 'package.json', '{"type":"module"}');
-  write(root, 'tsconfig.json', '{}');
-  const text = listedSource();
-  write(root, 'src/a.ts', text);
-  write(root, 'src/main.ts', "import { value } from './a.ts';\nconsole.log(value);\n");
-  const errors: string[][] = [];
-  const context = await esbuildContext({
-    absWorkingDir: root,
-    entryPoints: ['src/main.ts'],
-    bundle: true,
-    write: false,
-    logLevel: 'silent',
-    plugins: [esbuildPlugin(), { name: 'record', setup(build) { build.onEnd((result) => { errors.push(result.errors.map((error) => error.text)); }); } }],
-  });
-  t.after(() => context.dispose());
-  await context.watch();
-  const built = async (count: number): Promise<void> => {
-    for (const deadline = Date.now() + 10_000; errors.length < count && Date.now() < deadline;) await new Promise((resolve) => setTimeout(resolve, 50));
-    assert.ok(errors.length >= count, `no build ${count} after the index was written`);
-  };
-  await built(1);
-  assert.match(errors[0]!.join('\n'), /no golem rewrite index at .*rewrites\.json; run golem generate/);
-  write(root, '.golem/rewrites.json', '{"version":');
-  await built(2);
-  assert.match(errors[1]!.join('\n'), /is malformed; run golem generate/);
-  write(root, '.golem/rewrites.json', JSON.stringify(handIndex({ 'src/a.ts': text })));
-  await built(3);
-  assert.deepEqual(errors[2], []);
 });

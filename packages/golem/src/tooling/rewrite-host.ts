@@ -19,15 +19,6 @@ import { GOLEM_VERSION } from './version.js';
 
 /** Paths a host's bundler can strip types from; `.tsx` is a bundler's to handle, not Node's. */
 export const BUNDLER_TYPESCRIPT_FILE = /\.(?:ts|mts|cts|tsx)$/;
-export interface GolemBundlerOptions {
-  /**
-   * The project root that holds `.golem/rewrites.json`. A relative path resolves against Vite's `root`, or against
-   * esbuild's `absWorkingDir` (default: the current directory). Default: the nearest ancestor directory of each file
-   * that holds one.
-   */
-  readonly root?: string;
-}
-
 export const NODE_MODULES = /[\\/]node_modules[\\/]/;
 
 const indexes = new Map<string, { readonly stamp: string; readonly index: RewriteIndex | undefined }>();
@@ -112,9 +103,13 @@ export function withInlineSourceMap(code: string, map: SourceMapV3, file: string
 
 /** A host cannot rewrite a file; the message names the file and line and what to run. */
 export class GolemHostError extends Error {
-  constructor(message: string) {
+  /** The file and 1-based line of the first scan error, for a host that reports locations itself. */
+  readonly location: { readonly file: string; readonly line?: number } | undefined;
+
+  constructor(message: string, location?: { readonly file: string; readonly line?: number }) {
     super(message);
     this.name = 'GolemHostError';
+    this.location = location;
   }
 }
 
@@ -152,7 +147,7 @@ interface Compiler {
 }
 
 /** A project's compiler session and the program of its latest state; a changed or new file reopens the program. */
-class ScanningProject implements RewriteProject {
+class ScanningProject {
   readonly root: string;
   private readonly session: ts.ProgramSession;
   private program: ts.Program | undefined;
@@ -163,7 +158,7 @@ class ScanningProject implements RewriteProject {
   /** Files that the tsconfig's own file list misses, such as `.mts`: the program gets them as roots. */
   private readonly extras = new Set<string>();
 
-  constructor(private readonly config: GolemConfig, private readonly nest: boolean, private readonly compiler: Compiler, private readonly forget: () => void) {
+  constructor(private readonly config: GolemConfig, private readonly nest: boolean, private readonly compiler: Compiler) {
     this.root = path.dirname(config.tsconfig);
     this.session = new compiler.ts.ProgramSession({ cwd: this.root });
   }
@@ -201,11 +196,12 @@ class ScanningProject implements RewriteProject {
     if (scanned === undefined) return undefined;
     const errors = scanned.diagnostics.filter((diagnostic) => diagnostic.severity === GolemDiagnosticSeverity.Error);
     if (errors.length > 0) {
+      const line = errors.find((diagnostic) => diagnostic.line !== undefined)?.line;
       throw new GolemHostError([
         `golem cannot rewrite ${path.relative(this.root, file).split(path.sep).join('/')}:`,
         ...errors.map((diagnostic) => `  ${diagnostic.file ?? ''}${diagnostic.line === undefined ? '' : `:${diagnostic.line}`}${diagnostic.column === undefined ? '' : `:${diagnostic.column}`} ${diagnostic.code}: ${diagnostic.message}`),
         'If a model changed, run golem generate.',
-      ].join('\n'));
+      ].join('\n'), { file, ...(line === undefined ? {} : { line }) });
     }
     if (scanned.edits.length === 0) return undefined;
     const relative = path.relative(this.root, file).split(path.sep).join('/');
@@ -223,8 +219,7 @@ class ScanningProject implements RewriteProject {
     this.stale = true;
   }
 
-  close(): void {
-    this.forget();
+  dispose(): void {
     this.program?.close();
     this.program = undefined;
     this.scanner = undefined;
@@ -232,26 +227,63 @@ class ScanningProject implements RewriteProject {
   }
 }
 
-const projects = new Map<string, Promise<RewriteProject>>();
+interface SharedProject {
+  readonly project: Promise<ScanningProject>;
+  holders: number;
+}
+
+const projects = new Map<string, SharedProject>();
+
+/** Drops one holder; the last one disposes the session, and a later open starts a new one. */
+function release(key: string, shared: SharedProject): void {
+  shared.holders -= 1;
+  if (shared.holders > 0) return;
+  if (projects.get(key) === shared) projects.delete(key);
+  shared.project.then((project) => { project.dispose(); }, () => undefined);
+}
 
 /**
- * The rewrite project of one golem.yaml, shared by every host of the process. It loads TypeScript, the checker and the
- * scanner only here, so a missing TypeScript fails with its install hint when a host first needs a rewrite.
+ * The rewrite project of one golem.yaml, shared by every host of the process: each open gets a handle of its own, and
+ * the session lives until the last handle closes. It loads TypeScript, the checker and the scanner only here, so a
+ * missing TypeScript fails with its install hint when a host first needs a rewrite.
  */
 export async function openRewriteProject(options: GolemHostOptions & { cwd: string }): Promise<RewriteProject> {
   const requested = path.resolve(options.cwd, options.config ?? process.env.GOLEM_CONFIG ?? 'golem.yaml');
   if (!existsSync(requested)) throw new GolemHostError(options.config === undefined && process.env.GOLEM_CONFIG === undefined ? NO_GOLEM_YAML : `${NO_GOLEM_YAML} (${requested} does not exist)`);
   const config = resolveConfig(requested);
-  const existing = projects.get(config.configFile);
-  if (existing) return existing;
-  const opened = (async (): Promise<RewriteProject> => {
-    if (!existsSync(config.tsconfig)) throw new GolemHostError(`golem cannot find ${config.tsconfig}, the tsconfig ${config.configFile} names; create it or name another with tsconfig:`);
-    const [seam, scan, analysis] = await Promise.all([import('./typescript-ns.js'), import('./rewrite-scan.js'), import('./type-analysis/project.js')]);
-    return new ScanningProject(config, config.jobs.some((job) => job.kind === 'controllers'),
-      { ts: seam, RewriteScanner: scan.RewriteScanner, canonicalFilename: analysis.canonicalFilename },
-      () => { projects.delete(config.configFile); });
-  })();
-  projects.set(config.configFile, opened);
-  opened.catch(() => { projects.delete(config.configFile); });
-  return opened;
+  const key = config.configFile;
+  let shared = projects.get(key);
+  if (shared === undefined) {
+    shared = {
+      holders: 0,
+      project: (async (): Promise<ScanningProject> => {
+        if (!existsSync(config.tsconfig)) throw new GolemHostError(`golem cannot find ${config.tsconfig}, the tsconfig ${config.configFile} names; create it or name another with tsconfig:`);
+        const [seam, scan, analysis] = await Promise.all([import('./typescript-ns.js'), import('./rewrite-scan.js'), import('./type-analysis/project.js')]);
+        return new ScanningProject(config, config.jobs.some((job) => job.kind === 'controllers'),
+          { ts: seam, RewriteScanner: scan.RewriteScanner, canonicalFilename: analysis.canonicalFilename });
+      })(),
+    };
+    projects.set(key, shared);
+  }
+  const holding = shared;
+  holding.holders += 1;
+  let project: ScanningProject;
+  try {
+    project = await holding.project;
+  } catch (error) {
+    // A failed open is not kept: the next open tries again.
+    if (projects.get(key) === holding) projects.delete(key);
+    throw error;
+  }
+  let closed = false;
+  return {
+    root: project.root,
+    rewrite: (filename, text) => project.rewrite(filename, text),
+    changed: (filenames) => { project.changed(filenames); },
+    close() {
+      if (closed) return;
+      closed = true;
+      release(key, holding);
+    },
+  };
 }

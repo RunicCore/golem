@@ -1,38 +1,64 @@
 import { readFile } from 'node:fs/promises';
-import path from 'node:path';
 import type { Plugin } from 'esbuild';
 
-import { REWRITE_INDEX_PATH } from './rewrite.js';
-import { applyIndexedRewrites, BUNDLER_TYPESCRIPT_FILE, findRewriteIndex, NODE_MODULES, rewriteIndexRoot, withInlineSourceMap, type GolemBundlerOptions } from './rewrite-host.js';
+import { BUNDLER_TYPESCRIPT_FILE, GolemHostError, NODE_MODULES, openRewriteProject, withInlineSourceMap, type GolemHostOptions, type RewriteProject } from './rewrite-host.js';
 
 /**
- * esbuild plugin that applies golem's rewrite index to TypeScript sources in memory, before esbuild strips their
- * types. The rewritten text carries its source map inline, which esbuild chains into the bundle's map. A TypeScript
- * file outside `node_modules` with no index fails the build instead of passing on unrewritten, and so does a file
- * that changed after `golem generate`; the error is located at the source file. The index is a watched file, so
- * esbuild's watch mode builds again when it changes or appears. This module imports neither TypeScript nor the checker.
+ * esbuild plugin that scans each TypeScript source with the project's own TypeScript, against the golem.yaml named by
+ * `config`, `GOLEM_CONFIG` or `./golem.yaml` in `absWorkingDir` (default: the current directory), and applies the
+ * rewrite in memory before esbuild strips the types. The rewritten text carries its source map inline, which esbuild
+ * chains into the bundle's map. A file the scan cannot rewrite is an error located at the file and line; a file with
+ * no rewrite goes on to the plugins after this one. The first TypeScript file loads the compiler. The files a rewrite
+ * depends on are watched, and each rebuild scans the files it loads again.
  */
-export type { GolemBundlerOptions };
+export type { GolemHostOptions };
 
-export function golem(options: GolemBundlerOptions = {}): Plugin {
+export function golem(options: GolemHostOptions = {}): Plugin {
   return {
     name: 'golem',
     setup(build) {
-      const root = options.root === undefined ? undefined : path.resolve(build.initialOptions.absWorkingDir ?? process.cwd(), options.root);
+      const cwd = build.initialOptions.absWorkingDir ?? process.cwd();
+      let opening: Promise<RewriteProject> | undefined;
+      let project: RewriteProject | undefined;
+      let builds = 0;
+      /** Every file a build loaded or depended on: esbuild does not say which changed, so a rebuild tells the session about all of them. */
+      const touched = new Set<string>();
+
+      const open = (): Promise<RewriteProject> => {
+        opening ??= openRewriteProject({ cwd, ...options }).then((opened) => {
+          project = opened;
+          return opened;
+        }, (error: unknown) => {
+          opening = undefined;
+          throw error;
+        });
+        return opening;
+      };
+
+      build.onStart(() => {
+        builds += 1;
+        if (builds > 1) project?.changed([...touched]);
+      });
+      build.onDispose(() => {
+        const closing = opening;
+        opening = undefined;
+        project = undefined;
+        void closing?.then((opened) => { opened.close(); }, () => undefined);
+      });
       build.onLoad({ filter: BUNDLER_TYPESCRIPT_FILE, namespace: 'file' }, async ({ path: file }) => {
         if (NODE_MODULES.test(file)) return undefined;
-        const indexFile = path.join(rewriteIndexRoot(file, root), REWRITE_INDEX_PATH);
         try {
-          const { index, relative } = findRewriteIndex(file, root);
-          const applied = applyIndexedRewrites(relative, await readFile(file, 'utf8'), index);
-          // A file the index does not list is left to the loaders after this one, which see it as they would without golem.
-          if (!applied) return undefined;
-          // Any listed file puts the index in esbuild's watch set.
-          return { contents: withInlineSourceMap(applied.code, applied.map, file), loader: file.endsWith('.tsx') ? 'tsx' : 'ts', watchFiles: [indexFile] };
+          const rewriting = await open();
+          touched.add(file);
+          const rewritten = rewriting.rewrite(file, await readFile(file, 'utf8'));
+          // A file with no rewrite is left to the loaders after this one, which see it as they would without golem.
+          if (!rewritten) return undefined;
+          for (const dependency of rewritten.dependencies) touched.add(dependency);
+          return { contents: withInlineSourceMap(rewritten.code, rewritten.map, file), loader: file.endsWith('.tsx') ? 'tsx' : 'ts', watchFiles: [...rewritten.dependencies] };
         } catch (error) {
           if (!(error instanceof Error)) throw error;
-          // The expected index is watched too, so `golem generate` afterwards builds again.
-          return { errors: [{ text: error.message, location: { file } }], watchFiles: [indexFile] };
+          const location = error instanceof GolemHostError ? error.location : undefined;
+          return { errors: [{ text: error.message, location: { file: location?.file ?? file, ...(location?.line === undefined ? {} : { line: location.line }) } }] };
         }
       });
     },

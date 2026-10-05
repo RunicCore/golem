@@ -17,3 +17,11 @@ export function operationCodecRegistryPath(root: string): string {
 export function isOperationCodecRegistry(portablePath: string): boolean {
   return portablePath === OPERATION_CODEC_REGISTRY || portablePath.endsWith(`/${OPERATION_CODEC_REGISTRY}`);
 }
+
+/** The key table a models job writes beside its generated models, which holds the codec ids a rewrite stamps. */
+export const CODEC_KEY_FILE = 'iobject-plugin-keys.ts';
+
+/** A generated companion (`*.generated.ts`, `.mts`, `.cts`) or a key table: the files a rewrite depends on. */
+export function isGeneratedModelFile(filename: string): boolean {
+  return /\.generated\.[cm]?ts$/.test(filename) || path.basename(filename) === CODEC_KEY_FILE;
+}

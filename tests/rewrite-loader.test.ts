@@ -166,6 +166,21 @@ test('a parse call in a file outside the project fails the run with the file and
   assert.match(result.stderr, /outside the project root/);
 });
 
+test('a parse call in a workspace package symlinked into node_modules fails the run with the file and the line instead of loading unrewritten', async (t) => {
+  const root = await project(t, 'loader-symlinked-package');
+  const workspacePackage = createFixtureProject(t, 'golem-loader-workspace-package-');
+  linkProjectPackages(workspacePackage, { '@exprtlabs/golem': path.join(workspace, 'packages/golem') });
+  write(workspacePackage, 'package.json', JSON.stringify({ name: 'workspace-lib', type: 'module', exports: './lib.ts' }));
+  write(workspacePackage, 'lib.ts', `import { parse } from '${SERDE}';\nimport type { TMoney } from '${path.join(root, 'src/money.model.ts')}';\nexport const value = parse<TMoney>('{"currency":"USD","value":"1"}');\n`);
+  linkProjectPackages(root, { 'workspace-lib': workspacePackage });
+  write(root, 'src/linked.ts', "import './money.model.ts';\nimport { value } from 'workspace-lib';\nconsole.log(JSON.stringify(value));\n");
+  const result = await run(root, 'src/linked.ts');
+  assert.notEqual(result.code, 0);
+  assert.match(result.stderr, /GolemHostError/);
+  assert.ok(result.stderr.includes(`${path.relative(root, path.join(workspacePackage, 'lib.ts')).split(path.sep).join('/')}:3:`), result.stderr);
+  assert.match(result.stderr, /outside the project root/);
+});
+
 test('a file outside the project with no rewrite site loads normally', async (t) => {
   const root = await project(t, 'loader-outside-plain');
   outsideDirectory(t, root, { 'lib.ts': 'export const value: number = 42;\n' });
