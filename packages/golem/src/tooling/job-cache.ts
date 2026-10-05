@@ -147,6 +147,8 @@ export function jobIsCurrent(
   generated: ReadonlySet<string> = inventoryPaths(config, loadInventory(config)),
 ): boolean {
   if (!record || record.golem !== GOLEM_VERSION || record.options !== JSON.stringify(job.options)) return false;
+  // A job that announced no input hides what it reads: nothing can show that it is still true.
+  if (Object.keys(record.inputs).length === 0) return false;
   const outputs = new Set(record.outputs.map(output => absoluteRecordPath(config, output)));
   if (![...outputs].every(output => fs.existsSync(output))) return false;
   const excluded = (filename: string): boolean => generated.has(filename) || outputs.has(filename);

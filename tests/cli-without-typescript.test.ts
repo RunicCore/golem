@@ -54,11 +54,12 @@ test('a configured provider that is not installed is reported without TypeScript
   assert.match(result.stderr, /openapi is configured.*not installed/);
 });
 
-test('a config with no models or controllers job generates and checks without TypeScript', async () => {
+test('a config with no models or controllers job generates without TypeScript, and writes no rewrite index', async () => {
   const root = project({ 'golem.yaml': GENERATOR_ONLY, 'tsconfig.json': '{}' });
   await command(root, process.execPath, [binary, 'generate'], { env: CHOSEN_ROOT });
   await command(root, process.execPath, [binary, 'check'], { env: CHOSEN_ROOT });
   assert.match(fs.readFileSync(path.join(root, 'gen/note.ts'), 'utf8'), /export const note/);
+  assert.equal(fs.existsSync(path.join(root, '.golem/rewrites.json')), false);
 });
 
 test('an installed TypeScript that golem does not support is still an error', async () => {
@@ -66,9 +67,7 @@ test('an installed TypeScript that golem does not support is still an error', as
   fs.mkdirSync(path.join(unsupported, 'node_modules/typescript'), { recursive: true });
   fs.writeFileSync(path.join(unsupported, 'node_modules/typescript/package.json'), JSON.stringify({ name: 'typescript', version: '5.9.0' }));
   const root = project({ 'golem.yaml': GENERATOR_ONLY, 'tsconfig.json': '{}' });
-  // Generating reads no TypeScript; checking the project's sources does.
-  await command(root, process.execPath, [binary, 'generate'], { env: { GOLEM_TYPESCRIPT_ROOT: unsupported } });
-  const result = await command(root, process.execPath, [binary, 'check'], { allowFailure: true, env: { GOLEM_TYPESCRIPT_ROOT: unsupported } });
+  const result = await command(root, process.execPath, [binary, 'generate'], { allowFailure: true, env: { GOLEM_TYPESCRIPT_ROOT: unsupported } });
   assert.notEqual(result.code, 0);
   assert.match(result.stderr, /golem supports TypeScript 6\.0\+ and 7\.x; found 5\.9\.0/);
 });
@@ -79,12 +78,12 @@ test('the TypeScript of the directory of golem.yaml is the one used, wherever th
   fs.writeFileSync(path.join(configured, 'node_modules/typescript/package.json'), JSON.stringify({ name: 'typescript', version: '5.9.0' }));
   const elsewhere = project({});
   const config = path.join(configured, 'golem.yaml');
-  await command(elsewhere, process.execPath, [binary, 'generate', '--config', config], { env: CHOSEN_ROOT });
-  const result = await command(elsewhere, process.execPath, [binary, 'check', '--config', config], { allowFailure: true, env: CHOSEN_ROOT });
+  const result = await command(elsewhere, process.execPath, [binary, 'generate', '--config', config], { allowFailure: true, env: CHOSEN_ROOT });
   assert.notEqual(result.code, 0);
   assert.match(result.stderr, /golem supports TypeScript 6\.0\+ and 7\.x; found 5\.9\.0/);
   // GOLEM_TYPESCRIPT_ROOT set by the user wins: this directory has no TypeScript, so the scan is skipped.
-  await command(elsewhere, process.execPath, [binary, 'check', '--config', config], { env: { GOLEM_TYPESCRIPT_ROOT: elsewhere } });
+  await command(elsewhere, process.execPath, [binary, 'generate', '--config', config], { env: { GOLEM_TYPESCRIPT_ROOT: elsewhere } });
+  assert.equal(fs.existsSync(path.join(configured, '.golem/rewrites.json')), false);
 });
 
 test('the TypeScript of the directory of the tsconfig golem.yaml names is the one used, not the yaml directory', async () => {

@@ -82,3 +82,10 @@ test('an input recorded as missing makes the job stale once it exists', (t: Test
   fs.writeFileSync(path.join(root, 'absent.json'), '{}');
   assert.equal(current(), false);
 });
+
+test('a job that recorded no input is never current', (t: TestContext) => {
+  const { config, record } = project(t);
+  const job = config.jobs[0];
+  assert.ok(job);
+  assert.equal(jobIsCurrent(config, job, { ...record, inputs: {} }, new Set()), false);
+});
