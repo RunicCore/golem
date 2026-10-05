@@ -334,6 +334,13 @@ export function buildCodecValidationPlan(
   return { schemas, references: Object.keys(schemas).sort(), ownSchemas: [...ownSchemas].sort() };
 }
 
+function withoutOwnId(schema: unknown, id: string): unknown {
+  if (schema === null || typeof schema !== 'object' || Array.isArray(schema) || Reflect.get(schema, '$id') !== id) return schema;
+  const copy = { ...(schema as Record<string, unknown>) };
+  delete copy.$id;
+  return copy;
+}
+
 export interface PlanValidatorsOptions {
   /** The package that writes the file: its name opens the file's ownership header. */
   readonly owner: string;
@@ -352,7 +359,9 @@ export interface PlanValidators {
 
 /** Compile every schema of the plan to one validators module; each id of the plan is a key of its `validators` export. */
 export function compilePlanValidators(plan: CodecValidationPlan, options: PlanValidatorsOptions): PlanValidators {
-  const roots = new Map(Object.entries(plan.schemas).map(([id, schema]) => [id, lowerDiscriminatorMappings(schema)] as const));
+  // A root is addressed by its plan id. Its own `$id` (the id again, `#wire` fragment included) would move the base
+  // URI of the root's local `$ref`s onto the model root of the same codec, so the compiler does not see it.
+  const roots = new Map(Object.entries(plan.schemas).map(([id, schema]) => [id, withoutOwnId(lowerDiscriminatorMappings(schema), id)] as const));
   const { source, diagnostics } = compile(
     { roots, ...(options.validations === undefined ? {} : { validations: options.validations }) },
     { unknownFormats: options.unknownFormats, documentName: options.documentName, typed: true },

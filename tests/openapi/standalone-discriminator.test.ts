@@ -221,20 +221,17 @@ const dateDocument = {
   },
 };
 
-for (const ajvStandalone of [false, true]) {
-  test(`inherited date fields decode and validate in allOf variants and their union (ajvStandalone=${ajvStandalone})`, async (t) => {
-    const output = path.join(createFixtureProject(t, 'golem-openapi-variant-dates-'), 'sdk');
-    await generateMaterializedSdk(dateDocument, { output, name: 'Dates', profile: { mobx: false, validation: true, ajvStandalone } });
-    compileGeneratedSdk(output, [], { strict: true });
-    copyFixtureFile(output, 'openapi/standalone-discriminator/verify-dates.mjs', 'verify-dates.mjs');
-    const flags = ajvStandalone ? ['--disallow-code-generation-from-strings'] : [];
-    const result = await command(output, process.execPath, [...flags, 'verify-dates.mjs']);
-    assert.deepEqual(JSON.parse(result.stdout), {
-      base: true, variant: true, union: true, parseVariant: true, parseUnion: true,
-      unionConstructs: true, validateVariant: true, validateUnion: true, nonObjectIsInput: true, rejectsBadDate: true,
-    });
+test('inherited date fields decode and validate in allOf variants and their union', async (t) => {
+  const output = path.join(createFixtureProject(t, 'golem-openapi-variant-dates-'), 'sdk');
+  await generateMaterializedSdk(dateDocument, { output, name: 'Dates', profile: { mobx: false, validation: true } });
+  compileGeneratedSdk(output, [], { strict: true });
+  copyFixtureFile(output, 'openapi/standalone-discriminator/verify-dates.mjs', 'verify-dates.mjs');
+  const result = await command(output, process.execPath, ['--disallow-code-generation-from-strings', 'verify-dates.mjs']);
+  assert.deepEqual(JSON.parse(result.stdout), {
+    base: true, variant: true, union: true, parseVariant: true, parseUnion: true,
+    unionConstructs: true, validateVariant: true, validateUnion: true, nonObjectIsInput: true, rejectsBadDate: true,
   });
-}
+});
 
 test('discriminator mapping lowering reports a $ref alias cycle', () => {
   const registry = {

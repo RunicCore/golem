@@ -1,6 +1,5 @@
 import { copyFixtureFile, createFixtureProject, readFixture, linkProjectPackages, writeGeneratedArtifacts } from '../fixture-project.js';
 import assert from 'node:assert/strict';
-import { spawnSync } from 'node:child_process';
 import {
   mkdirSync,
   readFileSync,
@@ -469,13 +468,13 @@ test('cross-group discriminator initializer is emitted by its defining model gro
   assert.equal(Reflect.get(choice, 'alpha'), 'selected');
 });
 
-test('compact OpenAPI schema closure feeds standalone nested model first/all validation and rejects missing closure only for standalone', async t => {
+test('compact OpenAPI schema closure feeds nested model first/all validation and a missing closure is rejected', async t => {
   const { root, source } = fixture(t);
   const sdk = source;
   const sdkResult = writeGeneratedSdk(writeSdk, nestedValidationDocument(), {
     output: sdk,
     name: 'NestedStandalone',
-    profile: { mobx: false, validation: true, ajvStandalone: true },
+    profile: { mobx: false, validation: true },
   });
   const manifestPath = path.join(sdk, 'model-manifest.json');
   const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as {
@@ -508,16 +507,16 @@ test('compact OpenAPI schema closure feeds standalone nested model first/all val
 
   const purchaseSource = path.join(source, 'purchase.model.ts');
   copyFixtureFile(source, "openapi/modular-generation/purchase.model.ts", "purchase.model.ts");
-  const generateCompanion = (ajvStandalone: boolean) => generateModels({
+  const generateCompanion = () => generateModels({
     root,
     sources: [purchaseSource],
     manifestInputs: [manifestPath],
-    profile: { mobx: false, validation: true, ajvStandalone },
+    profile: { mobx: false, validation: true },
   });
-  const standalone = generateCompanion(true);
-  const standaloneValidator = standalone.artifacts.find(artifact => artifact.path.endsWith('/models.validators.generated.js'));
-  assert.ok(standaloneValidator, 'standalone golem-model consumes the transitive OpenAPI closure in one validator module');
-  writeGeneratedArtifacts(standalone.artifacts);
+  const companion = generateCompanion();
+  const validatorModule = companion.artifacts.find(artifact => artifact.path.endsWith('/models.validators.generated.ts'));
+  assert.ok(validatorModule, 'golem-model consumes the transitive OpenAPI closure in one validator module');
+  writeGeneratedArtifacts(companion.artifacts);
   compileGeneratedSdk(source, [purchaseSource], {
     strict: true,
     noUnusedLocals: true,
@@ -554,47 +553,17 @@ test('compact OpenAPI schema closure feeds standalone nested model first/all val
 
   delete (manifest as { validationSchemaClosure?: unknown }).validationSchemaClosure;
   writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
-  const captureStandaloneDiagnostic = (): string => {
+  const captureMissingClosureDiagnostic = (): string => {
     try {
-      generateCompanion(true);
+      generateCompanion();
     } catch (error) {
       return error instanceof Error ? error.message : String(error);
     }
-    throw new Error('standalone generation unexpectedly accepted a missing OpenAPI validation schema closure');
+    throw new Error('generation unexpectedly accepted a missing OpenAPI validation schema closure');
   };
-  const missingClosureError = captureStandaloneDiagnostic();
+  const missingClosureError = captureMissingClosureDiagnostic();
   assert.match(missingClosureError, /Regenerate the referenced model manifest with standalone schema closure metadata/);
-  assert.equal(captureStandaloneDiagnostic(), missingClosureError, 'missing closure diagnostics are deterministic across generation jobs');
-
-  writeGeneratedSdk(writeSdk, nestedValidationDocument(), {
-    output: sdk,
-    name: 'NestedStandalone',
-    profile: { mobx: false, validation: true, ajvStandalone: false },
-  });
-  const runtimeManifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as {
-    source: { digest: string };
-    validationSchemaClosure?: readonly unknown[];
-  };
-  delete (runtimeManifest as { validationSchemaClosure?: unknown }).validationSchemaClosure;
-  writeFileSync(manifestPath, `${JSON.stringify(runtimeManifest, null, 2)}\n`);
-  const runtimeAjv = generateCompanion(false);
-  assert.ok(runtimeAjv.artifacts.some(artifact => artifact.path.endsWith('/purchase.model.generated.ts')),
-    'legacy non-standalone model companion generates without OpenAPI closure metadata');
-  assert.equal(runtimeAjv.artifacts.some(artifact => artifact.path.endsWith('/models.validators.generated.js')), false,
-    'legacy runtime-backed companion does not require standalone validator artifacts');
-  writeGeneratedArtifacts(runtimeAjv.artifacts);
-  compileGeneratedSdk(source, [purchaseSource], {
-    strict: true,
-    noUnusedLocals: true,
-    noUnusedParameters: true,
-    exactOptionalPropertyTypes: true,
-    noUncheckedIndexedAccess: true,
-  });
-  copyFixtureFile(source, 'openapi/modular-generation/verify-legacy-runtime.mjs', 'verify-legacy-runtime.mjs');
-  const legacyRuntime = spawnSync(process.execPath, ['verify-legacy-runtime.mjs'], { cwd: source, encoding: 'utf8' });
-  assert.equal(legacyRuntime.status, 0,
-    `legacy runtime subprocess failed:\n${legacyRuntime.stdout}\n${legacyRuntime.stderr}`);
-  assert.equal(runtimeManifest.source.digest.length, 64);
+  assert.equal(captureMissingClosureDiagnostic(), missingClosureError, 'missing closure diagnostics are deterministic across generation jobs');
 });
 
 test('a Nest-style Payment keeps canonical codec identity across repeated compact SDK closure candidates', t => {
@@ -612,7 +581,7 @@ test('a Nest-style Payment keeps canonical codec identity across repeated compac
   const sdkResult = writeSdk(document, {
     output: sdk,
     name: 'Payments',
-    profile: { mobx: false, validation: true, ajvStandalone: true },
+    profile: { mobx: false, validation: true },
   });
   writeGeneratedArtifacts(sdkResult.artifacts);
 
@@ -639,7 +608,7 @@ test('a Nest-style Payment keeps canonical codec identity across repeated compac
   const secondSdkResult = writeSdk(document, {
     output: secondSdk,
     name: 'Payments',
-    profile: { mobx: false, validation: true, ajvStandalone: true },
+    profile: { mobx: false, validation: true },
   });
   writeGeneratedArtifacts(secondSdkResult.artifacts);
   const secondManifest = JSON.parse(readFileSync(path.join(secondSdk, 'model-manifest.json'), 'utf8')) as {
@@ -660,11 +629,11 @@ test('a Nest-style Payment keeps canonical codec identity across repeated compac
     root,
     sources: [paymentSource],
     manifestInputs: [manifestPath],
-    profile: { mobx: false, validation: true, ajvStandalone: true },
+    profile: { mobx: false, validation: true },
   });
   const result = generatePayment();
   assert.ok(result.artifacts.some(artifact => artifact.path.endsWith('/payment.model.generated.ts')));
-  assert.ok(result.artifacts.some(artifact => artifact.path.endsWith('/models.validators.generated.js')));
+  assert.ok(result.artifacts.some(artifact => artifact.path.endsWith('/models.validators.generated.ts')));
 
   const conflictingMoneySchema = {
     ...requireRecord(moneyClosure.modelSchema, 'Money model schema'),
