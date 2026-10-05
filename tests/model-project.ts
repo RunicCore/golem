@@ -101,6 +101,10 @@ export async function buildModelProject(
 ): Promise<CommandResult> {
   const config = path.join(root, 'golem.yaml');
   if (!fs.existsSync(config)) fs.writeFileSync(config, MINIMAL_GOLEM_YAML);
+  // The build runs the models job, which the project installs; a project that links the workspace's node_modules has it.
+  if (!fs.lstatSync(path.join(root, 'node_modules'), { throwIfNoEntry: false })?.isSymbolicLink()) {
+    linkProjectPackages(root, { '@exprtlabs/golem-model': path.join(workspace, 'packages/golem-model') });
+  }
   const flags = args.map((arg) => {
     if (!/^--[A-Za-z]+$/.test(arg)) throw new Error(`buildModelProject takes boolean compiler flags only, not ${arg}`);
     return arg.slice(2);

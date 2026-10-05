@@ -14,7 +14,7 @@ rename the file, or change the job's output path.
 ```text
 Usage: golem <generate|check|watch|exec> [--config golem.yaml]
        golem exec [--watch] -- <command> [args...]
-       golem build [--config golem.yaml] [-p tsconfig.build.json] [--watch]
+       golem build [--config golem.yaml] [-p tsconfig.build.json] [--watch] [tsc arguments...]
        golem --help
 ```
 
@@ -32,7 +32,7 @@ Commands that need TypeScript use the one installed in the directory of the tsco
 | `watch` | Generates once, then reruns affected jobs when observed configuration, API, model, TypeScript or manifest inputs change. |
 | `exec -- <command> [args...]` | Generates once, starts the child command only after generation succeeds, and forwards its exit status and signals. |
 | `exec --watch -- <command> [args...]` | Does the same and keeps the generator watching until the child exits. |
-| `build [--config golem.yaml] [-p tsconfig.build.json] [--watch]` | Type-checks your TypeScript sources, then emits JavaScript with the generic serde calls rewritten. |
+| `build [--config golem.yaml] [-p tsconfig.build.json] [--watch] [tsc arguments...]` | Generates, type-checks your TypeScript sources, then emits JavaScript with the generic serde calls rewritten. |
 
 `generate` runs configured jobs in the order set by
 [configuration](/reference/config). `exec` requires the `--` separator.
@@ -41,32 +41,65 @@ valid only with `exec`; unknown options fail before generation starts.
 
 ## Build
 
-`golem build` replaces `tsc -p` for a project that calls `parse<T>()`, `stringify<T>()` and the other generic serde calls, or extends a generated model class. It checks the sources you wrote, so an error points at your line, and emits JavaScript with those calls rewritten. A bundler or Node can apply the same rewrite while it loads your TypeScript instead: use the [Vite plugin](/reference/runtime-api#vite), the [esbuild plugin](/reference/runtime-api#esbuild) or the [Node loader](/reference/runtime-api#loader).
+`golem build` compiles your project the way `tsc -p` does and rewrites the generic serde calls (`parse<T>()`, `stringify<T>()` and the others) on the way. It generates the code `golem.yaml` configures first, so a checkout with no generated files builds in one command. A bundler or Node can apply the same rewrite while it loads your TypeScript instead: use the [Vite plugin](/reference/runtime-api#vite), the [esbuild plugin](/reference/runtime-api#esbuild) or the [Node loader](/reference/runtime-api#loader).
 
 ```sh
 npx golem build
 npx golem build --config packages/api/golem.yaml
 npx golem build -p tsconfig.build.json
 npx golem build --watch
+npx golem build --declaration --noEmitOnError
 ```
+
+A build runs three steps:
+
+1. It generates the outputs of `golem.yaml`, as `golem generate` does. A job whose inputs did not change since the last run is skipped.
+2. It type-checks the sources you wrote with the TypeScript in your project, TypeScript 6.0 or 7, and prints its messages unchanged. An error points at your line, and the declarations come from your sources.
+3. It emits JavaScript with the calls rewritten. Source maps point at your sources.
 
 The build starts from `golem.yaml`: the one in the working directory, or the one `--config` names. Without one it stops with `golem build needs a golem.yaml; run it next to one or pass --config`, and it never searches the folders above. It builds the tsconfig that `golem.yaml` names with [`tsconfig`](/reference/config#root-keys), which is the `tsconfig.json` beside `golem.yaml` by default, so `golem generate` and `golem build` always agree on the project.
 
-`-p` names another build config of the same project, such as `tsconfig.build.json` without your tests. It takes a file, or a directory that holds `tsconfig.json`, and it must lie in the directory of the tsconfig that `golem.yaml` names; any other location is an error. The build runs the TypeScript in your project, TypeScript 6.0 or 7, and prints its messages unchanged. A failed check stops the build before any JavaScript is written; when the tsconfig asks for declarations, the check may already have written them. With `--watch` the build repeats when a source, tsconfig or `golem.yaml` changes. Deleting `outDir` while it runs starts one build that writes it again.
+`-p` names another build config of the same project, such as `tsconfig.build.json` without your tests. It takes a file, or a directory that holds `tsconfig.json`, and it must lie in the directory of the tsconfig that `golem.yaml` names; any other location is an error. With `--watch` the build repeats when a source, tsconfig or `golem.yaml` changes: it generates first, so editing a model source regenerates its file and rebuilds once, and editing any other source rebuilds without running a generate job. Deleting `outDir` while it runs starts one build that writes it again.
 
-A build never edits your source files. It writes the declarations and JavaScript the tsconfig asks for into `outDir`, and its own files into `.golem/`: the rewrite index (`rewrites.json`), and, per tsconfig under `.golem/build/<tsconfig name>/`, the incremental state and a copy of your sources with the calls rewritten. Two tsconfig files in one directory never share that state. Add `.golem/rewrites.json` and `.golem/build/` to `.gitignore`; the inventory `.golem/outputs.json` stays committed. A build of the tsconfig that `golem.yaml` names refreshes `.golem/rewrites.json` itself, so a source edited since `golem generate` is not an error. A build of any other config, with `-p`, keeps its rewrites in memory and leaves the index alone. Delete `outDir`, or `declarationDir` when you set one, and the next build writes it again.
+A build never edits your source files. It writes the generated files `golem.yaml` configures, the declarations and JavaScript the tsconfig asks for into `outDir`, and its own files into `.golem/`: per tsconfig under `.golem/build/<tsconfig name>/`, the incremental state and a copy of your sources with the calls rewritten. Two tsconfig files in one directory never share that state. Add `.golem/build/` to `.gitignore`; the inventory `.golem/outputs.json` stays committed. Delete `outDir`, or `declarationDir` when you set one, and the next build writes it again.
+
+### Compiler arguments
+
+`golem build` takes `--config`, `-p` or `--project`, and `--watch` or `-w`. It passes every other argument unchanged to both compiler runs, the check and the emit, so `tsc` decides what it means: `--declaration`, `--noEmitOnError`, `--listFiles` and `--generateTrace` work as they do for `tsc -p`. The build asks the compiler how the arguments change `declaration` and `noEmitOnError`, so a forwarded `--declaration` writes the declarations from your sources.
+
+The build sets some arguments itself. Passing one stops the build with `golem build sets <argument> itself (<reason>); <workaround>`.
+
+| Argument | Why the build sets it | Instead |
+| --- | --- | --- |
+| `--noCheck` | The emit run skips the check and the check run reports the errors | A failed check still emits unless `noEmitOnError` is set |
+| `--noEmit` | The check run writes nothing and the emit run writes the JavaScript | Set `noEmit` in the tsconfig |
+| `--emitDeclarationOnly` | The check run writes the declarations and the emit run writes the JavaScript | Set `emitDeclarationOnly` in the tsconfig |
+| `--tsBuildInfoFile` | Each run keeps its own incremental state | Delete `.golem/build` to start clean |
+| `--incremental` | Both runs are incremental | Delete `.golem/build` to build everything again |
+| `--outDir` | The emit run writes into the `outDir` of the tsconfig | Set `outDir` in the tsconfig, or pass `-p` a tsconfig that extends it and sets another `outDir` |
+| `--listEmittedFiles` | The build reads the list to point source maps at your sources | List the files in `outDir` after the build |
+
+### Type errors
+
+Like `tsc`, the build emits JavaScript after a failed check unless `noEmitOnError` is true, in the tsconfig or as `--noEmitOnError`. With it, a type error stops the build before any file is emitted. The exit status is the check's whenever it failed.
 
 ### What the tsconfig needs
 
 - `outDir` is required.
-- Every source file the program reads lies under the tsconfig's directory. A relative import that leaves it fails the build and names the file; build the package that holds the file instead.
-- `rootDir` lies under the tsconfig's directory.
+- Every source file the program reads lies under the tsconfig's directory. A relative import that leaves it fails the build and names the file.
 - `extends` may name a file anywhere. `paths` and `baseUrl` targets under the directory work as they do for `tsc`.
-- `outFile`, `rootDirs`, `inlineSourceMap` and `sourceRoot` are not supported. `-b` and `--build` are rejected: `golem build does not support project references (-b); run golem build -p <tsconfig> per project.`
 
-The tsconfig's directory is the project root, and `.golem/rewrites.json` lives there. `golem generate`, `golem check` and `golem build` all read and write that one index. It covers every file the tsconfig includes, so a parent tsconfig that includes several packages indexes and builds all of them: put `golem.yaml` in a package and point `tsconfig` at the parent, as in `tsconfig: ../../tsconfig.json`. The Nest codec decorators are added to every file of the project when `golem.yaml` has a `controllers` job. A `golem.yaml` with no tsconfig file, such as one with only `openapi` jobs, scans nothing and writes no index.
+Some configurations are not supported. `-b` and `--build` are rejected with `golem build does not support project references (-b); run golem build -p <tsconfig> per project.`
 
-The index records the `golem.yaml` that owns it. A second `golem.yaml` that names the same tsconfig fails in `generate`, `check` and every `build`, `-p` included, with an error that names both files, so one tsconfig never gets rewrites from two configurations. Give each `golem.yaml` its own tsconfig, or delete the index to hand it over. An index whose owner file no longer exists is taken over without an error.
+| Not supported | Why | Workaround |
+| --- | --- | --- |
+| `-b` and project references | One copy of the sources for each project | Run `golem build -p <tsconfig>` per project, in dependency order |
+| `outFile` | The emit run writes one file per source | Emit per file, then bundle with esbuild or Vite and the golem plugin |
+| `rootDirs`, `rootDir` outside the project, sources outside the tsconfig directory | The copy mirrors one directory tree | Move the sources under the tsconfig directory, or build each package separately |
+| `inlineSourceMap`, `sourceRoot` | The build writes its own map files | Use `sourceMap` |
+| The `tsc --watch` file watcher | The build runs two compiles per cycle | Use `golem build --watch`, which polls |
+
+The tsconfig's directory is the project root. The build covers every file the tsconfig includes, so a parent tsconfig that includes several packages builds all of them: put `golem.yaml` in a package and point `tsconfig` at the parent, as in `tsconfig: ../../tsconfig.json`. The Nest codec decorators are added to every file of the project when `golem.yaml` has a `controllers` job. A `golem.yaml` with no tsconfig file, such as one with only `openapi` jobs, has nothing to build.
 
 One `golem.yaml` serves one tsconfig. `generate`, `check` and `build` fail on a `models` or `controllers` job whose `root` lies outside the tsconfig's directory: `job root <root> is outside <directory>; use one golem.yaml per tsconfig.` Put each package that has its own tsconfig in its own `golem.yaml`. Output paths of any job, including `openapi`, may lie anywhere. They also fail when the tsconfig that `golem.yaml` names differs from the nearest `tsconfig.json` from the job's `root` upward, because the model and controller analysis reads that nearest file. The error names both files and says that a tsconfig that differs from the job's own is not supported yet. Name the file the job finds, or move the job.
 

@@ -4,13 +4,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 import { parseArguments } from '#golem/cli';
-import { readRewriteIndex, sha256Hex } from '#golem/rewrite';
-import { generate } from '#model/generator';
-import { createFixtureProject, readFixture, writeGeneratedArtifacts } from './fixture-project.js';
+import { createFixtureProject, linkProjectPackages, readFixture } from './fixture-project.js';
 import { createControllerFixture } from './fixture-templates/controllers/project.js';
 import { command, workspace } from './support/process.js';
 import { MINIMAL_GOLEM_YAML } from './model-project.js';
-import { TSC, PROFILE, HEAVY_TEST_TIMEOUT_MS, REJECTION, write, editTsconfig, serdeProject, USE, snapshot, build, mtimes, importBuilt, golemBuild, assertCallMap } from './support/build-project.js';
+import { TSC, HEAVY_TEST_TIMEOUT_MS, REJECTION, write, editTsconfig, serdeProject, sourceOnlyProject, countingGenerator, USE, snapshot, build, mtimes, importBuilt, golemBuild, assertCallMap } from './support/build-project.js';
 
 // Original sources are checked, rewritten sources are emitted
 
@@ -69,25 +67,51 @@ export function load(t: string) { return parse<Payment>(t); }
   });
 });
 
-// Incremental builds and a stale index
+// Generating first, and incremental builds
 
-test('a second build emits only the changed file, and a changed source refreshes the index instead of failing', async (t) => {
+test('a project with no generated file builds in one golem build, and the built JavaScript runs', { timeout: HEAVY_TEST_TIMEOUT_MS }, async (t) => {
+  const root = sourceOnlyProject(t, 'build-generates');
+  write(root, 'src/use.ts', USE);
+  const companion = path.join(root, 'src/money.model.generated.ts');
+  assert.equal(fs.existsSync(companion), false, 'the fixture holds sources, golem.yaml and tsconfig only');
+  assert.deepEqual(await build(root), { exitCode: 0 });
+  assert.ok(fs.existsSync(companion), 'the build generated the file the source imports');
+  const built = await importBuilt(root, 'use.js');
+  assert.equal(built.text, '{"currency":"USD","value":"1"}');
+  assert.deepEqual(built.money, { currency: 'USD', value: '1' });
+});
+
+test('a second build with no change runs no generate job and emits nothing again', { timeout: HEAVY_TEST_TIMEOUT_MS }, async (t) => {
+  const root = sourceOnlyProject(t, 'build-second');
+  write(root, 'src/use.ts', USE);
+  const counter = countingGenerator(root);
+  assert.equal((await build(root)).exitCode, 0);
+  assert.equal(counter.runs(), 1);
+  const companion = path.join(root, 'src/money.model.generated.ts');
+  const generatedAt = fs.statSync(companion, { bigint: true }).mtimeNs;
+  const emitted = mtimes(path.join(root, 'build'), '.js');
+  assert.ok(emitted.size > 0);
+
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.equal((await build(root)).exitCode, 0);
+  assert.equal(counter.runs(), 1, 'no generate job ran');
+  assert.equal(fs.statSync(companion, { bigint: true }).mtimeNs, generatedAt);
+  assert.deepEqual(mtimes(path.join(root, 'build'), '.js'), emitted, 'nothing was emitted again');
+});
+
+test('a second build emits only the changed file', async (t) => {
   const root = serdeProject(t, 'build-incremental');
   write(root, 'src/use.ts', USE);
   write(root, 'src/other.ts', 'export const other = 1;\n');
   assert.equal((await build(root)).exitCode, 0);
   const first = mtimes(path.join(root, 'build'), '.js');
-  const index = readRewriteIndex(root);
-  assert.equal(index?.files['src/use.ts']?.sha256, sha256Hex(USE));
 
-  // The edit leaves the index stale, and adds a call the index does not list.
   const edited = `${USE}export const again = stringify<TMoney>({ currency: 'EUR', value: '2' });\n`;
   await new Promise((resolve) => setTimeout(resolve, 20));
   write(root, 'src/use.ts', edited);
   assert.equal((await build(root)).exitCode, 0);
   const second = mtimes(path.join(root, 'build'), '.js');
   assert.deepEqual([...second].filter(([file, time]) => first.get(file) !== time).map(([file]) => file), ['use.js']);
-  assert.equal(readRewriteIndex(root)?.files['src/use.ts']?.sha256, sha256Hex(edited));
   const built = await importBuilt(root, 'use.js');
   assert.equal(built.again, '{"currency":"EUR","value":"2"}');
 
@@ -99,14 +123,48 @@ test('a second build emits only the changed file, and a changed source refreshes
 
 // The compiler's own messages and the rejected -b
 
-test('a type error in an original file fails the build with the compiler message at the original line', async (t) => {
+test('a type error fails the build with the compiler message at the original line and still emits, as tsc does', async (t) => {
   const root = serdeProject(t, 'build-error');
   write(root, 'src/use.ts', USE);
   write(root, 'src/broken.ts', "export const n: number = 'text';\n");
   const result = await golemBuild(root, []);
   assert.notEqual(result.code, 0);
   assert.match(`${result.stdout}${result.stderr}`, /src\/broken\.ts\(1,14\): error TS2322: Type 'string' is not assignable to type 'number'\./);
-  assert.equal(fs.existsSync(path.join(root, 'build/use.js')), false, 'a failed check emits nothing');
+  assert.match(fs.readFileSync(path.join(root, 'build/use.js'), 'utf8'), /requireObjectCodec/, 'the rewritten JavaScript is emitted');
+  assert.ok(fs.existsSync(path.join(root, 'build/broken.js')), 'so is the file with the error');
+});
+
+test('a forwarded --noEmitOnError stops the emit after a type error, and the exit status stays the compiler\'s', async (t) => {
+  const root = serdeProject(t, 'build-error-no-emit');
+  write(root, 'src/use.ts', USE);
+  write(root, 'src/broken.ts', "export const n: number = 'text';\n");
+  const result = await golemBuild(root, ['--noEmitOnError']);
+  assert.notEqual(result.code, 0);
+  assert.match(`${result.stdout}${result.stderr}`, /error TS2322/);
+  assert.equal(fs.existsSync(path.join(root, 'build')), false, 'nothing is emitted');
+});
+
+test('an argument golem build sets itself is rejected with the reason and the workaround', async (t) => {
+  assert.throws(() => parseArguments(['build', '--noCheck']), { message: 'golem build sets --noCheck itself (the emit run skips the type check and the check run reports the errors); a build emits JavaScript when the check fails unless noEmitOnError is set' });
+  for (const flag of ['--noEmit', '--emitDeclarationOnly', '--tsBuildInfoFile', '--incremental', '--outDir', '--listEmittedFiles']) {
+    assert.throws(() => parseArguments(['build', flag, 'value']), (error: Error) => error.message.startsWith(`golem build sets ${flag} itself (`) && error.message.includes('); '), flag);
+  }
+  const root = serdeProject(t, 'build-owned-flag');
+  const result = await golemBuild(root, ['--noCheck']);
+  assert.notEqual(result.code, 0);
+  assert.ok(result.stderr.includes('golem build sets --noCheck itself ('), result.stderr);
+  assert.equal(fs.existsSync(path.join(root, 'build')), false, 'a rejected argument builds nothing');
+});
+
+test('a forwarded --declaration writes declarations from the original sources', { timeout: HEAVY_TEST_TIMEOUT_MS }, async (t) => {
+  const root = sourceOnlyProject(t, 'build-declaration-argument');
+  editTsconfig(root, (tsconfig) => { tsconfig.compilerOptions.declaration = false; });
+  write(root, 'src/use.ts', USE);
+  const result = await golemBuild(root, ['--declaration']);
+  assert.equal(result.code, 0, `${result.stdout}${result.stderr}`);
+  const declarations = fs.readFileSync(path.join(root, 'build/use.d.ts'), 'utf8');
+  assert.match(declarations, /export declare const text: string;/);
+  assert.doesNotMatch(declarations, /__golem_/, 'declarations come from the original, not the rewritten text');
 });
 
 test('-b and --build are rejected', async (t) => {
@@ -116,7 +174,10 @@ test('-b and --build are rejected', async (t) => {
   const result = await golemBuild(root, ['-b']);
   assert.notEqual(result.code, 0);
   assert.ok(result.stderr.includes(REJECTION), result.stderr);
+  assert.deepEqual(parseArguments(['build', '-w']), { action: 'build', watch: true }, '-w is --watch, as in tsc');
   assert.deepEqual(parseArguments(['build', '--project', 'a/tsconfig.json', '--watch']), { action: 'build', project: 'a/tsconfig.json', watch: true });
+  // Every other argument goes to the compiler runs unchanged, in order.
+  assert.deepEqual(parseArguments(['build', '--declaration', '-p', 'a', '--target', 'es2022', '--listFiles']), { action: 'build', watch: false, project: 'a', tscArguments: ['--declaration', '--target', 'es2022', '--listFiles'] });
   // The project is the golem.yaml's tsconfig unless -p names another one.
   assert.deepEqual(parseArguments(['build']), { action: 'build', watch: false });
   assert.deepEqual(parseArguments(['build', '--config', 'app/golem.yaml']), { action: 'build', watch: false, config: 'app/golem.yaml' });
@@ -145,7 +206,7 @@ test('a class expression with a private member builds when the original does not
 
 // A configuration with nothing to emit
 
-test('a noEmit or emitDeclarationOnly project is checked and writes no JavaScript, no stage and no index', async (t) => {
+test('a noEmit or emitDeclarationOnly project is checked and writes no JavaScript and no stage', async (t) => {
   const root = serdeProject(t, 'build-no-js');
   write(root, 'src/use.ts', USE);
   editTsconfig(root, (tsconfig) => { tsconfig.compilerOptions.emitDeclarationOnly = true; });
@@ -157,7 +218,6 @@ test('a noEmit or emitDeclarationOnly project is checked and writes no JavaScrip
   assert.equal((await build(root)).exitCode, 0);
   assert.equal(fs.existsSync(path.join(root, 'unused')), false);
   assert.equal(fs.existsSync(path.join(root, '.golem/build/tsconfig/stage')), false, 'a check-only build stages nothing');
-  assert.equal(readRewriteIndex(root), undefined, 'and indexes nothing');
 });
 
 // Decorator metadata
@@ -184,11 +244,19 @@ test('a Nest controller builds with the design:paramtypes of a plain tsc emit of
     },
     files: {
       'src/payment.model.ts': readFixture(`${nest}/payment.model.ts`),
-      'src/payments.controller.ts': readFixture(`${nest}/payments.controller.ts`),
+      'src/payments.controller.ts': `import { Body, Controller, Get, Post, Query } from '@nestjs/common';
+import type { TPaymentFilter, TPaymentInput, TPayment } from './payment.model.js';
+@Controller('payments')
+export class PaymentsController {
+  @Post()
+  create(@Body() input: TPaymentInput): TPayment { return { id: '1', ...input }; }
+  @Get()
+  list(@Query() filter: TPaymentFilter): TPayment[] { return []; }
+}
+`,
       'golem.yaml': 'version: 1\nmodels: { root: . }\ncontrollers:\n  - root: .\n    output: generated/api.json\n    info: { title: Payments, version: "1" }\n',
     },
   });
-  writeGeneratedArtifacts(generate({ root, profile: PROFILE }).artifacts);
   assert.equal((await build(root, 'tsconfig.json', path.join(root, 'golem.yaml'))).exitCode, 0);
   await command(root, process.execPath, [TSC, '-p', 'tsconfig.json', '--outDir', 'plain']);
 
@@ -204,8 +272,7 @@ test('a Nest controller builds with the design:paramtypes of a plain tsc emit of
 test('a tsconfig that extends a file outside the root, with paths and a rootDir, builds', async (t) => {
   const parent = createFixtureProject(t, 'golem-build-forms-');
   const root = path.join(parent, 'app');
-  fs.mkdirSync(path.join(root, 'node_modules'), { recursive: true });
-  fs.symlinkSync(path.join(workspace, 'node_modules/typescript'), path.join(root, 'node_modules/typescript'), 'dir');
+  linkProjectPackages(root, { typescript: path.join(workspace, 'node_modules/typescript'), '@exprtlabs/golem-model': path.join(workspace, 'packages/golem-model') });
   fs.writeFileSync(path.join(parent, 'tsconfig.base.json'), JSON.stringify({ compilerOptions: { strict: true, target: 'ES2022', module: 'NodeNext', moduleResolution: 'NodeNext', sourceMap: true } }));
   fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ private: true, type: 'module' }));
   write(root, 'golem.yaml', MINIMAL_GOLEM_YAML);
@@ -226,14 +293,15 @@ test('a tsconfig that extends a file outside the root, with paths and a rootDir,
 test('golem build rejects a tsconfig the stage cannot mirror', async (t) => {
   const parent = createFixtureProject(t, 'golem-build-rejected-');
   const root = path.join(parent, 'app');
-  fs.mkdirSync(path.join(root, 'node_modules'), { recursive: true });
-  fs.symlinkSync(path.join(workspace, 'node_modules/typescript'), path.join(root, 'node_modules/typescript'), 'dir');
+  linkProjectPackages(root, { typescript: path.join(workspace, 'node_modules/typescript'), '@exprtlabs/golem-model': path.join(workspace, 'packages/golem-model') });
   fs.mkdirSync(path.join(parent, 'shared'));
   fs.writeFileSync(path.join(parent, 'shared/shared.d.ts'), 'export declare const shared: number;\n');
   fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ private: true, type: 'module' }));
   write(root, 'golem.yaml', MINIMAL_GOLEM_YAML);
   write(root, 'src/main.ts', "import { shared } from '../../shared/shared.js';\nexport const value = shared;\n");
   const base = { strict: true, target: 'ES2022', module: 'NodeNext', moduleResolution: 'NodeNext' };
+  // The golem.yaml names this tsconfig; every config below is another build of the same directory.
+  fs.writeFileSync(path.join(root, 'tsconfig.json'), JSON.stringify({ compilerOptions: { ...base, outDir: 'build' }, include: ['src/**/*.ts'] }));
   const config = (extra: Record<string, unknown>, name: string): string => {
     fs.writeFileSync(path.join(root, name), JSON.stringify({ compilerOptions: { ...base, outDir: 'build', ...extra }, include: ['src/**/*.ts'] }));
     return name;

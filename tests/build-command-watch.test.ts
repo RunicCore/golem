@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import test, { type TestContext } from 'node:test';
 import { runBuild } from '#golem/build';
-import { HEAVY_TEST_TIMEOUT_MS, write, serdeProject, USE, snapshot } from './support/build-project.js';
+import { HEAVY_TEST_TIMEOUT_MS, write, serdeProject, sourceOnlyProject, countingGenerator, USE, snapshot } from './support/build-project.js';
 import { golem } from './support/process.js';
 
 /** How long a watching build gets to exit after SIGINT before the test fails with what it printed. */
@@ -87,6 +87,42 @@ test('golem build --watch rebuilds once per edit, reports an error, recovers, an
   const expected = new Map(before);
   expected.delete('src/use.ts');
   assert.deepEqual(after, expected, 'a watching build changes no file it does not own');
+});
+
+test('golem build --watch generates before it rebuilds a model edit, and rebuilds any other edit without a generate job', { timeout: HEAVY_TEST_TIMEOUT_MS }, async (t) => {
+  const root = sourceOnlyProject(t, 'build-watch-generate');
+  write(root, 'src/use.ts', USE);
+  const counter = countingGenerator(root);
+  const before = snapshot(root);
+  const watcher = watching(t, root);
+  const built = (): number => count(watcher.output(), /^Built /);
+  await until(() => built() === 1, 'the first build');
+  assert.equal(counter.runs(), 1);
+  const companion = path.join(root, 'src/money.model.generated.ts');
+  assert.ok(fs.existsSync(companion), 'the first build generated the file');
+
+  // The model source is what a generate job reads: its edit regenerates the companion, and the build that follows sees it.
+  const model = path.join(root, 'src/money.model.ts');
+  fs.writeFileSync(model, fs.readFileSync(model, 'utf8').replace('note: string', 'note: string; extra?: string'));
+  await until(() => built() === 2, 'the rebuild after a model edit');
+  await new Promise((resolve) => setTimeout(resolve, 1_000));
+  assert.equal(built(), 2, 'one model edit triggers one rebuild, though the generate step wrote a file');
+  assert.equal(counter.runs(), 2);
+  assert.match(fs.readFileSync(companion, 'utf8'), /extra/);
+  assert.match(fs.readFileSync(path.join(root, 'build/money.model.generated.js'), 'utf8'), /extra/, 'the build compiled the regenerated file');
+
+  const generatedAt = fs.statSync(companion, { bigint: true }).mtimeNs;
+  write(root, 'src/use.ts', `${USE}export const second = 2;\n`);
+  await until(() => built() === 3, 'the rebuild after a source edit');
+  await new Promise((resolve) => setTimeout(resolve, 1_000));
+  assert.equal(built(), 3, 'one edit triggers one rebuild');
+  assert.equal(counter.runs(), 2, 'no generate job ran');
+  assert.equal(fs.statSync(companion, { bigint: true }).mtimeNs, generatedAt);
+  assert.match(fs.readFileSync(path.join(root, 'build/use.js'), 'utf8'), /second = 2/);
+  assert.equal(await watcher.stop(), 130);
+
+  const after = snapshot(root);
+  for (const file of ['golem.yaml', 'package.json', 'tsconfig.json']) assert.equal(after.get(file), before.get(file), `${file} is not a file golem build owns`);
 });
 
 test('a source edited the moment the first build is announced still starts the next build', { timeout: HEAVY_TEST_TIMEOUT_MS }, async (t) => {

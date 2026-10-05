@@ -103,7 +103,8 @@ function listFiles(directory: string, excluded: (filename: string) => boolean, p
   try {
     entries = fs.readdirSync(directory, { withFileTypes: true });
   } catch (error) {
-    if (hasErrorCode(error, 'ENOENT') || hasErrorCode(error, 'ENOTDIR')) return [];
+    // A directory the compiler probed, such as `/` above a project, can hold entries the system will not list (`/proc/<pid>/net`).
+    if (['ENOENT', 'ENOTDIR', 'EINVAL', 'EACCES', 'EPERM'].some((code) => hasErrorCode(error, code))) return [];
     throw error;
   }
   const listed: string[] = [];
