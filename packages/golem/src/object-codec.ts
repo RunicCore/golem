@@ -4,14 +4,13 @@
  */
 
 import {
-  IssueCode,
   IssueRepresentation,
   IssueSource,
   LibError,
   LibErrorKind,
   type Issue,
 } from './errors.js';
-import { issuesFromErrors } from './validation-issues.js';
+import { issuesFromErrors, reportedAjvErrors } from './validation-issues.js';
 import type { ModelRuntimeSyncValidator, ModelRuntimeValidator, ModelValidationContext, WireFormat } from './model.js';
 
 import { GENERATED_MODEL_SCHEMA_REF_PREFIX } from './schema-keywords.js';
@@ -255,7 +254,7 @@ export function parseJson(text: string): unknown {
       LibErrorKind.InvalidJson,
       message,
       [{
-        code: IssueCode.InvalidJson,
+        code: 'invalid_json',
         message,
         path: [],
         source: IssueSource.JSON,
@@ -352,11 +351,12 @@ export function ajvIssuesFromErrors(
   representation: IssueRepresentation = IssueRepresentation.Wire,
   source: IssueSource = IssueSource.OpenAPI,
 ): readonly Issue[] {
-  const issues = issuesFromErrors(errors, value, source, representation);
-  if (errors.length === 0) return issues;
+  const reported = reportedAjvErrors(errors);
+  const issues = issuesFromErrors(reported, value, source, representation);
+  if (reported.length === 0) return issues;
   return issues.map((issue, index) => {
     if (issue.source === IssueSource.Custom) return issue;
-    const next = issueSourceFromAjvError(errors[index], source);
+    const next = issueSourceFromAjvError(reported[index], source);
     if (next === issue.source) return issue;
     return { ...issue, source: next };
   });

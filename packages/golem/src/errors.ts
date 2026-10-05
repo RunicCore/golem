@@ -1,4 +1,4 @@
-import { VALIDATION_KEYWORD } from './schema-keywords.js';
+import { schemaIssueMessage, type SchemaIssue, type SchemaIssueDetail } from './validation-runtime.js';
 
 /**
  * Failures owned by model validation, JSON serialization, and the generated
@@ -24,106 +24,90 @@ export enum IssueSource {
 
 export enum IssueRepresentation { Model = 'model', Wire = 'wire' }
 
-export enum IssueCode {
-  Invalid = 'invalid',
-  Literal = 'literal',
-  Union = 'union',
-  Never = 'never',
-  Reference = 'reference',
-  TupleLength = 'tupleLength',
-  Type = 'type',
-  Required = 'required',
-  AdditionalProperties = 'additionalProperties',
-  UnevaluatedProperties = 'unevaluatedProperties',
-  UnevaluatedItems = 'unevaluatedItems',
-  AllOf = 'allOf',
-  AnyOf = 'anyOf',
-  OneOf = 'oneOf',
-  Const = 'const',
-  Enum = 'enum',
-  Contains = 'contains',
-  DependentRequired = 'dependentRequired',
-  DependentSchemas = 'dependentSchemas',
-  ExclusiveMaximum = 'exclusiveMaximum',
-  ExclusiveMinimum = 'exclusiveMinimum',
-  Format = 'format',
-  If = 'if',
-  Maximum = 'maximum',
-  Minimum = 'minimum',
-  MaxContains = 'maxContains',
-  MinContains = 'minContains',
-  MaxItems = 'maxItems',
-  MinItems = 'minItems',
-  MaxLength = 'maxLength',
-  MinLength = 'minLength',
-  MaxProperties = 'maxProperties',
-  MinProperties = 'minProperties',
-  MultipleOf = 'multipleOf',
-  Not = 'not',
-  Pattern = 'pattern',
-  PatternProperties = 'patternProperties',
-  PropertyNames = 'propertyNames',
-  Items = 'items',
-  UniqueItems = 'uniqueItems',
-  Custom = 'custom',
-  External = 'external',
-  InvalidJson = 'invalid_json',
-  Serialization = 'serialization',
-  Deserialization = 'deserialization',
-  ValidationUnavailable = 'validation_unavailable',
-}
-
 export type JsonValue = null | boolean | number | string | readonly JsonValue[] | { readonly [key: string]: JsonValue };
 export type IssuePath = readonly (string | number)[];
+
+/** What failed, with the typed fields of that code. */
+export type IssueDetail =
+  | SchemaIssueDetail
+  | { readonly code: 'invalid_json' }
+  | { readonly code: 'serialization' }
+  | { readonly code: 'deserialization' }
+  | { readonly code: 'external' };
+
 export type Issue = {
-  readonly code: IssueCode;
-  readonly message: string;
   readonly path: IssuePath;
+  readonly message: string;
   readonly source: IssueSource;
   readonly representation?: IssueRepresentation;
-  readonly params?: Readonly<Record<string, JsonValue>>;
-};
+} & IssueDetail;
 
-const issueCodes = new Set<string>(Object.values(IssueCode));
-export function mapValidationCode(keyword: string): IssueCode {
-  if (keyword === VALIDATION_KEYWORD) return IssueCode.Custom;
-  return issueCodes.has(keyword) ? keyword as IssueCode : IssueCode.Invalid;
+export type IssueCode = Issue['code'];
+
+/** A validator's issue with golem's default message, the source that produced it and the value plane it checked. */
+export function toIssue(issue: SchemaIssue, source: IssueSource, representation?: IssueRepresentation): Issue {
+  return {
+    ...issue,
+    message: schemaIssueMessage(issue),
+    source,
+    ...(representation === undefined ? {} : { representation }),
+  };
 }
 
 function copyJson(value: JsonValue, active: Set<object>): JsonValue {
   if (value === null || typeof value === 'string' || typeof value === 'boolean') return value;
   if (typeof value === 'number' && Number.isFinite(value)) return value;
-  if (typeof value !== 'object' || active.has(value)) throw new TypeError('Issue parameters must contain finite, acyclic JSON values.');
+  if (typeof value !== 'object' || active.has(value)) throw new TypeError('Issue values must contain finite, acyclic JSON values.');
   active.add(value);
   try {
     if (Array.isArray(value)) {
       const copied: JsonValue[] = [];
       for (let index = 0; index < value.length; index++) {
-        if (!Object.hasOwn(value, index)) throw new TypeError('Issue parameter arrays must not contain holes.');
+        if (!Object.hasOwn(value, index)) throw new TypeError('Issue value arrays must not contain holes.');
         copied.push(copyJson(value[index], active));
       }
       return Object.freeze(copied);
     }
     const prototype: unknown = Object.getPrototypeOf(value);
-    if (prototype !== null && prototype !== Object.prototype) throw new TypeError('Issue parameters must be plain JSON objects.');
+    if (prototype !== null && prototype !== Object.prototype) throw new TypeError('Issue values must be plain JSON objects.');
     return Object.freeze(Object.fromEntries(Object.entries(value).map(([key, item]) => [key, copyJson(item, active)])));
   } finally { active.delete(value); }
 }
 
+/** The code and its typed fields, copied so the snapshot shares nothing mutable with the caller. */
+function snapshotDetail(issue: Issue): IssueDetail {
+  switch (issue.code) {
+    case 'type': return { code: issue.code, expected: Object.freeze([...issue.expected]) };
+    case 'instance': return { code: issue.code, model: issue.model };
+    case 'required':
+    case 'unknownKey':
+    case 'invalidKey': return { code: issue.code, key: issue.key };
+    case 'literal': return { code: issue.code, expected: Object.freeze(issue.expected.map(value => copyJson(value, new Set()))) };
+    case 'union': return { code: issue.code, matched: issue.matched };
+    case 'tooSmall':
+    case 'tooBig': return { code: issue.code, measure: issue.measure, limit: issue.limit, inclusive: issue.inclusive };
+    case 'pattern': return { code: issue.code, pattern: issue.pattern };
+    case 'format': return { code: issue.code, format: issue.format };
+    case 'multipleOf': return { code: issue.code, divisor: issue.divisor };
+    case 'unique': return { code: issue.code, indexes: Object.freeze([issue.indexes[0], issue.indexes[1]] as const) };
+    case 'custom': return { code: issue.code, ...(issue.reason === undefined ? {} : { reason: issue.reason }) };
+    case 'not':
+    case 'never':
+    case 'invalid_json':
+    case 'serialization':
+    case 'deserialization':
+    case 'external': return { code: issue.code };
+  }
+}
+
 export function snapshotIssues(issues: readonly Issue[]): readonly Issue[] {
-  return Object.freeze(issues.map(issue => {
-    const snap: Issue = {
-      code: issue.code,
-      message: issue.message,
-      path: Object.freeze([...issue.path]),
-      source: issue.source,
-      ...(issue.representation === undefined ? {} : { representation: issue.representation }),
-      ...(issue.params === undefined ? {} : {
-        params: Object.freeze(Object.fromEntries(Object.entries(issue.params).map(([key, value]) => [key, copyJson(value, new Set())]))),
-      }),
-    };
-    return Object.freeze(snap);
-  }));
+  return Object.freeze(issues.map(issue => Object.freeze({
+    ...snapshotDetail(issue),
+    message: issue.message,
+    path: Object.freeze([...issue.path]),
+    source: issue.source,
+    ...(issue.representation === undefined ? {} : { representation: issue.representation }),
+  })));
 }
 
 export interface LibErrorOptions extends ErrorOptions {

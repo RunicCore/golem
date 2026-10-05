@@ -1,7 +1,9 @@
 import {
-  IssueCode, IssueRepresentation, IssueSource, mapValidationCode, snapshotIssues,
+  IssueRepresentation, IssueSource, snapshotIssues, toIssue,
   type Issue, type IssuePath, type JsonValue,
 } from './errors.js';
+import { MODEL_DATE_KEYWORD, MODEL_INSTANCE_KEYWORD, VALIDATION_KEYWORD } from './schema-keywords.js';
+import type { JsonTypeName, SchemaIssueDetail } from './validation-runtime.js';
 
 function record(value: unknown): Record<string, unknown> | undefined {
   return value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
@@ -55,27 +57,102 @@ export function copyValidationErrors(errors: readonly unknown[]): readonly unkno
   return errors.map(error => jsonParameter(error) ?? {});
 }
 
+const JSON_TYPE_NAMES: ReadonlySet<string> = new Set<JsonTypeName>(['string', 'number', 'integer', 'boolean', 'null', 'object', 'array', 'Date']);
+const SOURCES: readonly unknown[] = Object.values(IssueSource);
+
+/** Ajv reports an `if` keyword failure next to the branch issues it already carries; the issues of the branch are the report. */
+export function reportedAjvErrors(errors: readonly unknown[]): readonly unknown[] {
+  return errors.filter(raw => record(raw)?.keyword !== 'if');
+}
+
+function count(value: unknown): number {
+  return typeof value === 'number' ? value : 0;
+}
+
+function tooSmall(measure: 'length' | 'items' | 'properties' | 'value' | 'matches', limit: unknown, inclusive = true): SchemaIssueDetail {
+  return { code: 'tooSmall', measure, limit: count(limit), inclusive };
+}
+
+function tooBig(measure: 'length' | 'items' | 'properties' | 'value' | 'matches', limit: unknown, inclusive = true): SchemaIssueDetail {
+  return { code: 'tooBig', measure, limit: count(limit), inclusive };
+}
+
+/** The type-level issue for one Ajv error. Dies with Ajv: the generated validators report these issues directly. */
+function detailFromAjvError(keyword: unknown, parameters: Record<string, unknown> | undefined, message: unknown): SchemaIssueDetail {
+  const params = parameters ?? {};
+  switch (keyword) {
+    case 'type': {
+      const names = Array.isArray(params.type) ? params.type : [params.type];
+      return { code: 'type', expected: names.filter((name): name is JsonTypeName => typeof name === 'string' && JSON_TYPE_NAMES.has(name)) };
+    }
+    case MODEL_DATE_KEYWORD: return { code: 'type', expected: ['Date'] };
+    // Ajv does not report which model the keyword checks.
+    case MODEL_INSTANCE_KEYWORD: return { code: 'instance', model: 'the selected variant' };
+    case 'required':
+    case 'dependentRequired': return { code: 'required', key: String(params.missingProperty) };
+    case 'additionalProperties': return { code: 'unknownKey', key: String(params.additionalProperty) };
+    case 'unevaluatedProperties': return { code: 'unknownKey', key: String(params.unevaluatedProperty) };
+    case 'propertyNames': return { code: 'invalidKey', key: String(params.propertyName) };
+    case 'const': return { code: 'literal', expected: [jsonParameter(params.allowedValue) ?? null] };
+    case 'enum': {
+      const values = Array.isArray(params.allowedValues) ? params.allowedValues : [];
+      return { code: 'literal', expected: values.map(value => jsonParameter(value) ?? null) };
+    }
+    case 'anyOf':
+    // Ajv's own discriminator check reports a tag no branch accepts.
+    case 'discriminator': return { code: 'union', matched: 0 };
+    case 'oneOf': return { code: 'union', matched: Array.isArray(params.passingSchemas) ? params.passingSchemas.length : 0 };
+    case 'minLength': return tooSmall('length', params.limit);
+    case 'maxLength': return tooBig('length', params.limit);
+    case 'minItems': return tooSmall('items', params.limit);
+    case 'maxItems':
+    // The schema closes a tuple: `limit` is the number of items it allows.
+    case 'items':
+    case 'unevaluatedItems': return tooBig('items', params.limit);
+    case 'minProperties': return tooSmall('properties', params.limit);
+    case 'maxProperties': return tooBig('properties', params.limit);
+    case 'minimum': return tooSmall('value', params.limit);
+    case 'maximum': return tooBig('value', params.limit);
+    case 'exclusiveMinimum': return tooSmall('value', params.limit, false);
+    case 'exclusiveMaximum': return tooBig('value', params.limit, false);
+    // Ajv reports `minContains` and `maxContains` as one `contains` error and does not say which bound failed.
+    case 'contains': return tooSmall('matches', params.minContains ?? 1);
+    case 'pattern': return { code: 'pattern', pattern: String(params.pattern) };
+    case 'format': return { code: 'format', format: String(params.format) };
+    case 'multipleOf': return { code: 'multipleOf', divisor: count(params.multipleOf) };
+    case 'uniqueItems': {
+      const first = count(params.i);
+      const second = count(params.j);
+      return { code: 'unique', indexes: [Math.min(first, second), Math.max(first, second)] };
+    }
+    case 'not': return { code: 'not' };
+    case 'false schema': return { code: 'never' };
+    case VALIDATION_KEYWORD: {
+      const reason = typeof params.message === 'string' && params.message !== 'Invalid value' ? params.message : undefined;
+      return reason === undefined ? { code: 'custom' } : { code: 'custom', reason };
+    }
+    default: return typeof message === 'string' && message !== 'Invalid value' ? { code: 'custom', reason: message } : { code: 'custom' };
+  }
+}
+
 export function issuesFromErrors(
   errors: readonly unknown[], value: unknown, source: IssueSource,
   representation: IssueRepresentation = IssueRepresentation.Wire,
 ): readonly Issue[] {
-  return snapshotIssues((errors.length ? errors : [{ keyword: 'invalid', message: 'Invalid value' }]).map(raw => {
+  const reported = reportedAjvErrors(errors);
+  return snapshotIssues((reported.length ? reported : [{ keyword: 'invalid' }]).map(raw => {
     const error = record(raw) ?? {};
     const parameters = record(error.params);
     const path = segments(error.instancePath, value);
     const property = parameters?.missingProperty ?? parameters?.additionalProperty ?? parameters?.unevaluatedProperty;
     if (typeof property === 'string') path.push(property);
-    const keyword = typeof error.keyword === 'string' ? error.keyword : 'invalid';
-    const code = mapValidationCode(keyword);
-    const params = parameters ? record(jsonParameter(parameters)) as Readonly<Record<string, JsonValue>> | undefined : undefined;
-    return {
-      code, path,
-      message: typeof error.message === 'string' && error.message ? error.message : 'Invalid value',
-      source: code === IssueCode.Custom ? IssueSource.Custom
-        : Object.values(IssueSource).includes(error.source as IssueSource) ? error.source as IssueSource : source,
+    const detail = detailFromAjvError(error.keyword, parameters, error.message);
+    return toIssue(
+      { path, ...detail },
+      error.keyword === VALIDATION_KEYWORD ? IssueSource.Custom
+        : SOURCES.includes(error.source) ? error.source as IssueSource : source,
       representation,
-      ...(params ? { params } : {}),
-    } satisfies Issue;
+    );
   }));
 }
 

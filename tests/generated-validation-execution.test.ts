@@ -45,7 +45,7 @@ test('generated validation formats nested errors without replaying field getters
     }>;
   };
   const tagResult = await tagModule.exercise();
-  assert.equal(tagResult.issue.code, 'minProperties');
+  assert.equal(tagResult.issue.code, 'tooSmall');
   assert.equal(tagResult.issue.message, 'Child needs two fields.');
   assert.deepEqual(tagResult.issue.path, ['child']);
   assert.equal(tagResult.issue.source, 'typescript');

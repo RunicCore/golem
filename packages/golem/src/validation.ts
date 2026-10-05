@@ -26,9 +26,9 @@ import {
 import { issuesFromErrors, issuePointer } from './validation-issues.js';
 export { issuesFromErrors } from './validation-issues.js';
 import {
-  IssueCode, IssueSource, IssueRepresentation, LibError, LibErrorKind,
-  snapshotIssues,
-  type Issue, type IssuePath,
+  IssueSource, IssueRepresentation, LibError, LibErrorKind,
+  snapshotIssues, toIssue,
+  type Issue, type IssueCode, type IssuePath,
 } from './errors.js';
 export type { Issue, IssuePath } from './errors.js';
 import {
@@ -46,7 +46,8 @@ import {
 /** Internal continuation policy; both modes use the same rules and schemas. */
 export type ValidationMode = 'first' | 'all';
 
-export type ValidationRuleResult = boolean | string | Pick<Issue, 'code' | 'message'> | undefined | void;
+/** `true` or nothing passes; `false`, a message or `{ message }` fails with a `custom` issue. */
+export type ValidationRuleResult = boolean | string | { readonly message: string } | undefined | void;
 export type ValidationRule<Value, Model extends object> = (value: Value, model: Model) => ValidationRuleResult | Promise<ValidationRuleResult>;
 export type ModelValidationRules<Fields extends object, Owner extends object = Fields, Field extends ModelField<Fields> = ModelField<Fields>> = Partial<{
   [Key in Field]: ValidationRule<Fields[Key], Owner> | readonly ValidationRule<Fields[Key], Owner>[];
@@ -278,9 +279,12 @@ function generatedIssueSource(definition: RegisteredGeneratedModelDefinition, co
 }
 
 function generatedIssues(result: { readonly valid: boolean; readonly errors: readonly unknown[] }, value: unknown, source: IssueSource, representation: IssueRepresentation): readonly Issue[] {
-  if (result.valid) return [];
-  const issues = issuesFromErrors(result.errors, value, source, representation);
-  return issues.length ? issues : [{ code: IssueCode.Invalid, message: 'Invalid value', path: [], source, representation }];
+  return result.valid ? [] : issuesFromErrors(result.errors, value, source, representation);
+}
+
+/** An issue from a model rule, which carries its own message when it has one. */
+function customIssue(path: IssuePath, reason?: string): Issue {
+  return toIssue({ path, code: 'custom', ...(reason === undefined ? {} : { reason }) }, IssueSource.Custom, IssueRepresentation.Model);
 }
 
 function validationFailure(error: unknown): never {
@@ -312,7 +316,7 @@ function formatIssues(model: object, issues: readonly Issue[]): readonly Issue[]
   return issues.map(issue => {
     const owners = ownersForIssue(model, issue);
     let formatted = issue;
-    const explicit = issue.source === IssueSource.Custom && issue.message !== 'Invalid value';
+    const explicit = issue.code === 'custom' && issue.reason !== undefined;
     for (let ownerIndex = owners.length - 1; ownerIndex >= 0; ownerIndex--) {
       const owner = owners[ownerIndex];
       const registration = instanceRuleRegistration(owner.model);
@@ -351,18 +355,15 @@ function evaluateInstanceRules(root: object, mode: ValidationMode): ValidationSt
       try {
         if (result === true || result === undefined) return false;
         if (typeof result !== 'boolean' && typeof result !== 'string'
-          && (typeof result !== 'object' || result === null || typeof result.message !== 'string'
-            || !Object.values(IssueCode).includes(result.code))) {
+          && (typeof result !== 'object' || result === null || typeof result.message !== 'string')) {
           throw new TypeError('Validation rules must return a boolean, message or issue.');
         }
-        const explicit = typeof result === 'string' ? result.length > 0 : typeof result === 'object' && result.message.length > 0;
-        const code = typeof result === 'object' ? result.code : IssueCode.Custom;
-        const message = typeof result === 'string' ? result || 'Invalid value' : typeof result === 'object' ? result.message || 'Invalid value' : 'Invalid value';
-        local.push({ issue: { code, message, path: [field], source: IssueSource.Custom, representation: IssueRepresentation.Model }, explicit });
+        const reason = typeof result === 'string' ? result : typeof result === 'object' ? result.message : '';
+        local.push({ issue: customIssue([field], reason || undefined), explicit: reason.length > 0 });
         return true;
       } catch (cause) {
         if (cause instanceof LibError) throw cause;
-        throw new LibError(LibErrorKind.Validation, 'A custom validation rule could not finish.', [{ code: IssueCode.Custom, message: 'A custom validation rule could not finish.', path: [...path, field], source: IssueSource.Custom, representation: IssueRepresentation.Model }], { cause, causedByInput: false });
+        throw new LibError(LibErrorKind.Validation, 'A custom validation rule could not finish.', [customIssue([...path, field], 'A custom validation rule could not finish.')], { cause, causedByInput: false });
       }
     };
     const evaluateRules = (fieldIndex: number, ruleIndex: number): ValidationStep<readonly LocalRuleIssue[]> => {
@@ -375,7 +376,7 @@ function evaluateInstanceRules(root: object, mode: ValidationMode): ValidationSt
             rawResult = rule(Reflect.get(model, field), model);
           } catch (cause) {
             if (cause instanceof LibError) throw cause;
-            throw new LibError(LibErrorKind.Validation, 'A custom validation rule could not finish.', [{ code: IssueCode.Custom, message: 'A custom validation rule could not finish.', path: [...path, field], source: IssueSource.Custom, representation: IssueRepresentation.Model }], { cause, causedByInput: false });
+            throw new LibError(LibErrorKind.Validation, 'A custom validation rule could not finish.', [customIssue([...path, field], 'A custom validation rule could not finish.')], { cause, causedByInput: false });
           }
           const applyResult = (result: ValidationRuleResult): ValidationStep<readonly LocalRuleIssue[]> => {
             if (appendRuleResult(field, result) && mode === 'first') return finish();
@@ -383,7 +384,7 @@ function evaluateInstanceRules(root: object, mode: ValidationMode): ValidationSt
           };
           const onRejected = (cause: unknown): never => {
             if (cause instanceof LibError) throw cause;
-            throw new LibError(LibErrorKind.Validation, 'A custom validation rule could not finish.', [{ code: IssueCode.Custom, message: 'A custom validation rule could not finish.', path: [...path, field], source: IssueSource.Custom, representation: IssueRepresentation.Model }], { cause, causedByInput: false });
+            throw new LibError(LibErrorKind.Validation, 'A custom validation rule could not finish.', [customIssue([...path, field], 'A custom validation rule could not finish.')], { cause, causedByInput: false });
           };
           if (rawResult instanceof Promise) return rawResult.then(applyResult, onRejected);
           const continuation = adoptValidationThenable<ValidationRuleResult>(rawResult);
@@ -722,7 +723,7 @@ export class ModelValidator<Fields extends object, Owner extends object = Fields
     const entries: readonly ExternalFieldError[] = Array.isArray(errors) ? errors as readonly ExternalFieldError[]
       : Object.entries(errors).filter(([, message]) => message !== undefined).map(([field, message]) => ({ path: [field], message: message as string | readonly string[] }));
     const issues = entries.flatMap(entry => (typeof entry.message === 'string' ? [entry.message] : entry.message).map((message): Issue => ({
-      code: IssueCode.External, message, path: entry.path, source: IssueSource.External, representation: IssueRepresentation.Model,
+      code: 'external', message, path: entry.path, source: IssueSource.External, representation: IssueRepresentation.Model,
     })));
     ++this.validationId;
     this.setIssues([...this.issuesValue.filter(issue => issue.source !== IssueSource.External), ...issues]);

@@ -1,4 +1,4 @@
-import { IssueCode, IssueRepresentation, IssueSource, LibError, LibErrorKind, type IssuePath } from './errors.js';
+import { IssueRepresentation, IssueSource, LibError, LibErrorKind, type IssuePath } from './errors.js';
 import { activeConversionPath, conversionError } from './conversion-error.js';
 import {
   findGeneratedModelDefinition,

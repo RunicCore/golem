@@ -220,7 +220,7 @@ test('JSON Pointer escapes ~ and / in property paths; errorsFor finds actual fie
   assert.deepEqual(validator.errorsFor('c~d'), ['Field c~d must be a valid number']);
 
   // errorsFor('e/f~g') must find the default message
-  assert.deepEqual(validator.errorsFor('e/f~g'), ['must be boolean']);
+  assert.deepEqual(validator.errorsFor('e/f~g'), ['Expected boolean']);
 
   // Missing required check for escaped fields
   const missingModel = new EscapedModel({});
@@ -234,7 +234,7 @@ test('JSON Pointer escapes ~ and / in property paths; errorsFor finds actual fie
       { code: 'required', path: ['e/f~g'] },
     ],
   );
-  assert.deepEqual(missingValidator.errorsFor('a/b'), ["must have required property 'a/b'"]);
+  assert.deepEqual(missingValidator.errorsFor('a/b'), ['Missing required property "a/b"']);
 });
 
 // ---------------------------------------------------------------------------
@@ -378,7 +378,7 @@ test('MobX getter called FIRST, plain getter called SECOND shares identity and o
   });
 
   await mobxValidator.validate();
-  assert.deepEqual(observedErrors, ['must be string']);
+  assert.deepEqual(observedErrors, ['Expected string']);
 
   dispose();
 });

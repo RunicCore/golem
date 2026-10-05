@@ -15,7 +15,7 @@ import {
   toWireFormat as publicToWireFormat,
 } from '@exprtlabs/golem/serde';
 import { validate as publicValidate } from '@exprtlabs/golem/validation';
-import { IssueCode, IssueRepresentation, IssueSource, LibError, LibErrorKind } from '@exprtlabs/golem/errors';
+import { IssueRepresentation, IssueSource, LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 import { generatedCodecId } from './support/consumer.js';
 import type { GolemProfile } from '@exprtlabs/golem/generator-api';
 
@@ -110,7 +110,7 @@ test('IObject stringify/parse compose nested Money by call; invalid JSON fails b
   assert.throws(
     () => codecs.parseTPayment('{"id":'),
     (error: unknown) => error instanceof LibError && error.kind === LibErrorKind.InvalidJson
-      && error.issues[0]?.code === IssueCode.InvalidJson
+      && error.issues[0]?.code === 'invalid_json'
       && error.issues[0]?.source === IssueSource.JSON
       && error.issues[0]?.representation === IssueRepresentation.Wire,
   );

@@ -6,7 +6,7 @@ import { test, type TestContext } from 'node:test';
 
 import { decodeGeneratedModel } from '@exprtlabs/golem/conversion';
 import { requireObjectCodec } from '@exprtlabs/golem/serde';
-import { IssueCode, IssueRepresentation, IssueSource, LibError, LibErrorKind, type Issue } from '@exprtlabs/golem/errors';
+import { IssueRepresentation, IssueSource, LibError, LibErrorKind, type Issue } from '@exprtlabs/golem/errors';
 import { getValidator } from '@exprtlabs/golem/validation';
 import type { GolemProfile } from '#golem/generator-api';
 import { generate } from '#model/generator';
@@ -165,8 +165,8 @@ for (const item of [
       source: issue.source,
       representation: issue.representation,
     })), [
-      { code: IssueCode.MinLength, path: ['nested', 'payload'], source: IssueSource.TypeScript, representation: IssueRepresentation.Model },
-      { code: IssueCode.Custom, path: ['nested', 'text'], source: IssueSource.Custom, representation: IssueRepresentation.Model },
+      { code: 'tooSmall', path: ['nested', 'payload'], source: IssueSource.TypeScript, representation: IssueRepresentation.Model },
+      { code: 'custom', path: ['nested', 'text'], source: IssueSource.Custom, representation: IssueRepresentation.Model },
     ]);
 
     const admitted = new Payload({ nested: { text: 'ok', payload: 7, opaque: 1 } });
@@ -185,7 +185,7 @@ for (const item of [
           source: issue.source,
           representation: issue.representation,
         })), [
-          { code: IssueCode.MinLength, path: ['nested', 'payload'], source: IssueSource.TypeScript, representation: IssueRepresentation.Model },
+          { code: 'tooSmall', path: ['nested', 'payload'], source: IssueSource.TypeScript, representation: IssueRepresentation.Model },
         ]);
         return true;
       },

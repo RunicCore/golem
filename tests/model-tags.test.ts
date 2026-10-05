@@ -185,7 +185,7 @@ import { first, second } from './predicates.js';`,
     const validator = getValidator(new A({ value: { name: 'x' } }));
     assert.equal(await validator.validate(), false);
     assert.deepEqual(validator.issues.map((issue: { readonly code: string; readonly path: readonly (string | number)[] }) => ({ code: issue.code, path: issue.path })), [
-      { code: 'minLength', path: ['value', 'name'] },
+      { code: 'tooSmall', path: ['value', 'name'] },
     ]);
   });
 

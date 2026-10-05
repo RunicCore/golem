@@ -138,7 +138,7 @@ test('a TSerde tag converts a hex permission string and blocks a value missing t
 test('a nested field error reports an array path and clears once fixed', async () => {
   const { result } = await capture(checkChecklistInput);
   assert.deepEqual(result.firstIssuePath, ['items', 0, 'label']);
-  assert.equal(result.labelError, 'must NOT have fewer than 3 characters');
+  assert.equal(result.labelError, 'Must be at least 3 characters');
   assert.equal(result.fixedCount, 0);
 });
 
@@ -156,7 +156,7 @@ test('setErrors stores a server message that clear() removes', async () => {
 
 test('a trusted conversion skips Ajv but still surfaces the issue on validateInstance', async () => {
   const { result } = await capture(loadInvalidTask);
-  assert.equal(result.message, 'must NOT have fewer than 1 characters');
+  assert.equal(result.message, 'Must be at least 1 character');
   assert.equal(result.title, '');
 });
 

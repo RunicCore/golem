@@ -1,4 +1,3 @@
-import { IssueCode } from '@exprtlabs/golem/errors';
 import type { IModel } from '@exprtlabs/golem/model';
 import type { MinProperties } from '@exprtlabs/golem/tags';
 import { getValidator, validateInstance } from '@exprtlabs/golem/validation';
@@ -13,8 +12,8 @@ export async function exercise() {
   const root = new TagRoot({ child });
   const registered = getValidator(child);
   registered.setErrors({ value: "existing display error" });
-  registered.messages([{ path: [], code: IssueCode.MinProperties, message: "Child needs two fields." }]);
-  getValidator(root).messages([{ path: ['child'], code: IssueCode.MinProperties, message: "Child needs two fields." }]);
+  registered.messages([{ path: [], code: 'tooSmall', message: "Child needs two fields." }]);
+  getValidator(root).messages([{ path: ['child'], code: 'tooSmall', message: "Child needs two fields." }]);
   const beforeIssues = registered.issues;
   const beforePending = registered.pending;
   const issues = await validateInstance(root);

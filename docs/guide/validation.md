@@ -50,14 +50,14 @@ only by your class are not validation fields.
 | `await getValidator(model).validate()` | Returns `true` or `false` and replaces stored errors with the current results. Pass `{ failFast: false }` to store every field error. |
 | `error('title')` | The first message for a field, or `undefined`. |
 | `errorsFor('title')` | All messages for that field. |
-| `issues` | Structured errors with paths, codes, sources and messages. |
+| `issues` | Structured errors with paths, codes, sources, messages and the fields of each code, such as `limit` on a `tooSmall` issue. |
 | `errors` | A map from each field's escaped path to its messages. |
 | `pending` | Whether validation is in progress. |
 | `valid` | Whether the stored issues are empty. It does not track unvalidated edits. |
 | `clear()` | Removes the stored issues and resets `pending`. |
 | `setErrors(map)` | Stores messages from outside generated or instance rules, such as a server response. |
 | `extend(rules)` | Adds a rule for this model instance, including asynchronous checks. |
-| `messages(overrides)` | Overrides the message for a generated check, by field and code. |
+| `messages(overrides)` | Overrides the message for a generated check, by field and code, such as `'title.tooSmall'`. |
 
 Changing a field does not clear its old error. Validate again to refresh the result, or call `clear()` to remove the stored errors. If a converter throws or validation cannot run, the stateful `getValidator(model).validate()` throws `LibError` instead of returning `false`.
 
@@ -85,7 +85,7 @@ Use `extend()` for a rule added to a particular model, including asynchronous ch
 
 <<< ../../examples/models/src/server-errors.ts#server-errors
 
-The next `validator.validate()` replaces these messages with its own results. The standalone `validateInstance(task)` leaves them unchanged. To customize messages for generated checks, use [`messages()`](/reference/runtime-api#validation).
+The next `validator.validate()` replaces these messages with its own results. The standalone `validateInstance(task)` leaves them unchanged. To customize messages for generated checks, use [`messages()`](/reference/runtime-api#validation) with the issue's code, such as `tooSmall`.
 
 ## Validation during conversion
 

@@ -7,7 +7,6 @@ import {
   serializeDate,
 } from '@exprtlabs/golem/conversion';
 import {
-  IssueCode,
   IssueRepresentation,
   IssueSource,
   LibError,
@@ -16,7 +15,7 @@ import {
 
 test('conversion scopes preserve LibError identity and restore paths after failure', () => {
   const original = new LibError(LibErrorKind.Deserialization, 'Explicit callback failure', [{
-    code: IssueCode.Deserialization, message: 'Explicit callback failure', path: ['custom'],
+    code: 'deserialization', message: 'Explicit callback failure', path: ['custom'],
     source: IssueSource.Custom, representation: IssueRepresentation.Wire,
   }]);
   assert.throws(() => convertModelField('deserialize', 'outer', (failure: LibError) => { throw failure; }, original), error => error === original);
@@ -51,8 +50,8 @@ function assertConversionError(
   const issue = error.issues[0];
   assert.ok(issue);
   assert.equal(issue.code, kind === LibErrorKind.Serialization
-    ? IssueCode.Serialization
-    : IssueCode.Deserialization);
+    ? 'serialization'
+    : 'deserialization');
   assert.equal(issue.source, IssueSource.Serde);
   assert.equal(issue.representation, representation);
   assert.deepEqual(issue.path, path);

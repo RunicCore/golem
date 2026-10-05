@@ -15,7 +15,7 @@ import { buildModelProject, createModelProject, generatedModelFiles, writeModelG
 import { duplicateLocalNameReferenceModelSource } from './fixture-templates/models/model-artifact-efficiency.js';
 import { generate as generateOpenApi } from '@exprtlabs/golem-openapi/generator';
 import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/golem/conversion';
-import { IssueCode, IssueRepresentation, IssueSource, LibError, LibErrorKind } from '@exprtlabs/golem/errors';
+import { IssueRepresentation, IssueSource, LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 import { findCodecIdForConstructor, requireObjectCodec } from '@exprtlabs/golem/serde';
 import { getValidator } from '@exprtlabs/golem/validation';
 import { generatedCodecIdFromRoot } from './support/consumer.js';
@@ -163,7 +163,7 @@ test('wire-only serde predicates do not create model-plane tag validators', asyn
     () => codec.parse(JSON.stringify({ value: '' })),
     (error: unknown) => error instanceof LibError
       && error.kind === LibErrorKind.Validation
-      && error.issues.some((issue) => issue.code === IssueCode.Custom
+      && error.issues.some((issue) => issue.code === 'custom'
         && issue.representation === IssueRepresentation.Wire
         && issue.path.join('.') === 'value'),
     'the wire-plane predicate still rejects an invalid wire string on decode',

@@ -95,7 +95,7 @@ function getValidator<Fields extends object, Owner extends object>(
 | `error` | `(field): string \| undefined` | First message for a field name or path array such as `['items', 0, 'sku']`. |
 | `errorsFor` | `(field): readonly string[]` | All messages for that field name or path. |
 | `extend` | `(rules: ModelValidationRules<Fields, Owner>): this` | Adds rules for this instance. A rule returns `true`, a message, or a promise of either. |
-| `messages` | `(messages: ValidationMessages<Fields>): this` | Replaces generated messages by code (`'minLength'`) or field and code (`'title.minLength'`). |
+| `messages` | `(messages: ValidationMessages<Fields>): this` | Replaces generated messages by code (`'tooSmall'`) or field and code (`'title.tooSmall'`). |
 | `setErrors` | `(errors): void` | Stores messages from outside, such as a server response, as `external` issues. Takes a field map or `{ path, message }[]`. |
 | `clear` | `(): void` | Removes stored issues and resets `pending`. |
 | `setIssues` | `(issues: readonly Issue[]): void` | Replaces the stored issues. |
@@ -206,16 +206,37 @@ import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 
 | `Issue` field | Type | Meaning |
 | --- | --- | --- |
-| `code` | `IssueCode` | The failed check. |
+| `code` | `IssueCode` | The failed check. Each code adds the typed fields listed below. |
 | `message` | `string` | Display text. |
 | `path` | `IssuePath` | String and number segments, such as `['items', 0, 'amount']`. |
 | `source` | `IssueSource` | `typescript`, `openapi`, `custom`, `external`, `json` or `serde`. |
 | `representation` | `IssueRepresentation` | Optional: `model` or `wire` (JSON) value. |
-| `params` | `Readonly<Record<string, JsonValue>>` | Optional JSON details. |
 
-`IssueCode` values are JSON Schema keyword names, such as `minLength` and `required`, plus `invalid`, `custom`, `external`, `invalid_json`, `serialization`, `deserialization` and `validation_unavailable`.
+`Issue` is a union keyed by `code`. Check `issue.code` and TypeScript narrows to that code's fields, such as `issue.limit` after `issue.code === 'tooSmall'`.
 
-Used by generated code: `mapValidationCode`, `snapshotIssues`.
+| `code` | Extra fields | Failed check |
+| --- | --- | --- |
+| `type` | `expected` | The value has another type. `expected` lists `string`, `number`, `integer`, `boolean`, `null`, `object`, `array` or `Date`. |
+| `instance` | `model` | The value is not an instance of the model class. |
+| `required` | `key` | A property is missing. `path` ends at the missing key. |
+| `unknownKey` | `key` | The object has a property the schema does not allow. `path` ends at the key. |
+| `invalidKey` | `key` | A property name is not allowed. `path` points at the object. |
+| `literal` | `expected` | The value is not one of the allowed constants. |
+| `union` | `matched` | The value matches no alternative (`0`) or more than one where one is required. |
+| `tooSmall`, `tooBig` | `measure`, `limit`, `inclusive` | A limit is crossed. `measure` is `length`, `items`, `properties`, `value` or `matches`; `inclusive` is `false` for an exclusive bound. |
+| `pattern` | `pattern` | A string does not match the pattern. |
+| `format` | `format` | A string is not in the named format. |
+| `multipleOf` | `divisor` | A number is not a multiple of `divisor`. |
+| `unique` | `indexes` | Two items are equal; `indexes` gives their positions. |
+| `not` | none | The value matches a shape that is excluded. |
+| `never` | none | The schema allows no value here. |
+| `custom` | `reason` (optional) | A `TValidation` function or an instance rule rejected the value. `reason` holds the message the rule returned. |
+| `external` | none | A message from `setErrors()`. |
+| `invalid_json`, `serialization`, `deserialization` | none | The failures of the matching `LibErrorKind`. |
+
+The default `message` is golem's English text built from these fields. `messages()` overrides replace it by code.
+
+`toIssue(issue, source, representation?)` adds the default message to a validator's issue, and `snapshotIssues` freezes a list of issues.
 
 ## `@exprtlabs/golem/client` {#client}
 

@@ -291,7 +291,7 @@ test('Ajv integration registers the OpenAPI engine without changing validation i
   assert.deepEqual(
     validator.issues.map(({ source, code, path }) => ({ source, code, path })),
     [
-      { source: 'openapi', code: 'minimum', path: ['amount'] },
+      { source: 'openapi', code: 'tooSmall', path: ['amount'] },
       { source: 'openapi', code: 'pattern', path: ['currency'] },
     ],
   );
@@ -347,7 +347,7 @@ test('MobX runtime preserves observation and shares validator identity', async (
   const dispose = autorun(() => observed.push(payment.amount));
   const validator = mobxValidation.getValidator<PaymentFieldsMobx, PaymentModel>(payment);
   assert.strictEqual(validator, validation.getValidator(payment));
-  validator.messages({ 'amount.minimum': 'Amount must be positive' });
+  validator.messages({ 'amount.tooSmall': 'Amount must be positive' });
   assert.equal(await validator.validate(), false);
   assert.deepEqual(validator.errorsFor('amount'), ['Amount must be positive']);
   runInAction(() => {

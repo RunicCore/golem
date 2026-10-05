@@ -17,7 +17,7 @@ export async function checkChecklistInput() {
   const validator = getValidator(checklist);
   await validator.validate();
   const labelError = validator.error(['items', 0, 'label']);
-  console.log(labelError); // 'must NOT have fewer than 3 characters'
+  console.log(labelError); // 'Must be at least 3 characters'
 
   checklist.items = [{ label: 'Tag' }];
   const fixedCount = (await validateInstance(checklist)).length;

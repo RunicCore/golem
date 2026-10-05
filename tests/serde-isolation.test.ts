@@ -5,7 +5,7 @@ import { pathToFileURL } from 'node:url';
 import { test, type TestContext } from 'node:test';
 import { decodeGeneratedModel, decodeGeneratedModelTrusted } from '@exprtlabs/golem/conversion';
 import { registerGeneratedModel } from '@exprtlabs/golem/model';
-import { LibError, LibErrorKind, IssueCode, IssueSource, IssueRepresentation } from '@exprtlabs/golem/errors';
+import { LibError, LibErrorKind, IssueSource, IssueRepresentation } from '@exprtlabs/golem/errors';
 import { generate } from '#model/generator';
 import { readFixture } from './fixture-project.js';
 import { buildModelProject, createModelProject, writeModelGolemYaml } from './model-project.js';
@@ -16,7 +16,7 @@ function cycleAt(path: readonly (string | number)[]): (error: unknown) => boolea
   return error => {
     assert.ok(error instanceof LibError);
     assert.equal(error.kind, LibErrorKind.Deserialization);
-    assert.equal(error.issues[0]?.code, IssueCode.Deserialization);
+    assert.equal(error.issues[0]?.code, 'deserialization');
     assert.equal(error.issues[0]?.source, IssueSource.Serde);
     assert.equal(error.issues[0]?.representation, IssueRepresentation.Wire);
     assert.deepEqual(error.issues[0]?.path, path);
