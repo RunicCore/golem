@@ -5,7 +5,7 @@ import crypto from 'node:crypto';
 import { hasErrorCode, isRecord } from './generator-api.js';
 import type { GolemArtifact } from './generator-api.js';
 import { canonicalPath, contains } from './config.js';
-import { defaultModelOutput, isOperationCodecRegistry, operationCodecRegistryPath } from './generated-paths.js';
+import { codecKeysPath, defaultModelOutput, isOperationCodecRegistry, operationCodecRegistryPath } from './generated-paths.js';
 import type { GolemConfig, GolemJob } from './config.js';
 
 export interface InventoryEntry {
@@ -137,7 +137,8 @@ function jobDestinations(job: GolemJob): readonly string[] {
 }
 
 function artifactDestination(config: GolemConfig, job: GolemJob, filename: string): string {
-  const destinations = jobDestinations(job);
+  // A models job also owns the codec key file under the configuration directory's `.golem/`.
+  const destinations = job.kind === 'models' ? [...jobDestinations(job), path.dirname(codecKeysPath(config.directory))] : jobDestinations(job);
   if (job.kind === 'controllers') {
     const extra = operationCodecRegistryPath(job.options.root);
     if (!samePath(filename, job.options.output) && !samePath(filename, extra)) {
@@ -215,6 +216,8 @@ export function marker(content: string, owner: string): boolean {
   ) return true;
   try {
     const manifest: unknown = JSON.parse(content);
+    // The codec key file has no header of its own: it is the models job's table of `<source>#<name>` ids.
+    if (owner === '@exprtlabs/golem-model' && isRecord(manifest) && manifest.version === 1 && isRecord(manifest.keys)) return true;
     return isRecord(manifest) && (manifest['x-generator'] === owner
       || (Array.isArray(manifest.models) && isRecord(manifest.generator) && manifest.generator.name === owner));
   } catch { return false; }

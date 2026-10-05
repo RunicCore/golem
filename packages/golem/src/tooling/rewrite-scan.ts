@@ -1,12 +1,14 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import * as ts from './typescript-ns.js';
-import { GolemDiagnosticSeverity } from './generator-api.js';
+import { GolemDiagnosticSeverity, isRecord } from './generator-api.js';
 import type { GeneratorSession, GolemDiagnostic } from './generator-api.js';
 import { CODEC_KEY_FILE, operationCodecRegistryPath } from './generated-paths.js';
 import { REWRITE_IMPORT_PREFIX } from './rewrite.js';
 import type { FileRewrite, RewriteEdit, RewriteImport } from './rewrite.js';
-import { createProjectProgram, isGeneratedCompanion, retainedProgramSession } from './type-analysis/project.js';
+import { readModelManifest } from './model-manifest.js';
+import { createProjectProgram, canonicalFilename, isGeneratedCompanion, retainedProgramSession } from './type-analysis/project.js';
+import { advertisedModelManifests } from './type-analysis/provenance.js';
 import { resolveSymbol } from './type-analysis/symbols.js';
 
 export interface ScanInput {
@@ -14,6 +16,8 @@ export interface ScanInput {
   readonly root: string;
   readonly program: ts.Program;
   readonly checker: ts.TypeChecker;
+  /** The project's `.golem/codec-keys.json`, which the program does not hold; a missing file holds no keys. */
+  readonly codecKeysFile?: string;
   /** The project has NestJS controllers: `@Body()` and `@Query()` parameters and method returns of a model get codec decorators. */
   readonly nest: boolean;
 }
@@ -70,20 +74,89 @@ function portable(root: string, filename: string): string {
 
 // Codec keys
 
-/** Every `<source>#<name>` entry of the program's `iobject-plugin-keys.ts` tables, by the key's last path segment. */
+/** The `<source>#<name>` keys of a project's `.golem/codec-keys.json`, absent when `golem generate` has not written it. */
+function readCodecKeysFile(filename: string): Readonly<Record<string, string>> {
+  let text: string;
+  try {
+    text = fs.readFileSync(filename, 'utf8');
+  } catch (error) {
+    if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return {};
+    throw error;
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    parsed = undefined;
+  }
+  const keys = isRecord(parsed) && parsed.version === 1 ? parsed.keys : undefined;
+  if (!isRecord(keys) || !Object.values(keys).every((id) => typeof id === 'string')) {
+    throw new Error(`${filename} is not a golem codec key file; run golem generate.`);
+  }
+  return keys as Readonly<Record<string, string>>;
+}
+
+/**
+ * The codec id of every declaration a rewrite can name, from three sources: the project's `.golem/codec-keys.json`, the
+ * `codecId` of the model manifests that the program's files advertise, and, for SDKs generated before manifests held ids, the
+ * `iobject-plugin-keys.ts` tables in the program.
+ */
 class CodecKeys {
-  /** Each declaration's id and the key tables that give it. */
-  private readonly byDeclaration = new Map<string, { readonly id: string; readonly tables: Set<string> }>();
-  /** Each `<file name>#<name>` tail's ids, with the key tables that give each. */
+  /** Each declaration's ids, each with the files that give it; more than one id makes the declaration ambiguous. */
+  private readonly byDeclaration = new Map<string, Map<string, Set<string>>>();
+  /** Each `<file name>#<name>` tail's ids, with the files that give each. */
   private readonly byTail = new Map<string, Map<string, Set<string>>>();
   private readonly names = new Set<string>();
 
-  constructor(program: ts.Program, private readonly root: string) {
-    for (const file of program.getSourceFiles()) {
+  constructor(private readonly program: ts.Program, private readonly checker: ts.TypeChecker, private readonly root: string, codecKeysFile: string | undefined) {
+    if (codecKeysFile !== undefined) {
+      const table = portable(root, codecKeysFile);
+      for (const [declaration, id] of Object.entries(readCodecKeysFile(codecKeysFile))) {
+        if (declaration.lastIndexOf('#') > 0 && id !== '') this.add(declaration.replace(/\\/g, '/'), id, table);
+      }
+    }
+    this.addManifests();
+    this.addProgramTables();
+  }
+
+  /** The models of the manifests that the program's files advertise, resolved to the declarations they export in this program. */
+  private addManifests(): void {
+    const exportsOf = new Map<ts.SourceFile, ReadonlyMap<string, ts.Symbol>>();
+    const declarationsOf = (manifestFile: string, module: string, exportName: string): ts.Symbol | undefined => {
+      const file = this.program.getSourceFile(canonicalFilename(path.resolve(path.dirname(manifestFile), module)));
+      if (!file) return undefined;
+      let exported = exportsOf.get(file);
+      if (!exported) {
+        const moduleSymbol = this.checker.getSymbolAtLocation(file);
+        exported = new Map((moduleSymbol ? this.checker.getExportsOfModule(moduleSymbol) : []).map((symbol) => [symbol.name, symbol]));
+        exportsOf.set(file, exported);
+      }
+      return resolveSymbol(this.checker, exported.get(exportName));
+    };
+    for (const manifestFile of advertisedModelManifests(this.program)) {
+      const table = portable(this.root, manifestFile);
+      for (const model of readModelManifest(manifestFile).models) {
+        if (model.codecId === undefined) continue;
+        for (const { module, export: exportName } of [model.generated, model.type, ...(model.type.aliases ?? [])]) {
+          const symbol = declarationsOf(manifestFile, module, exportName);
+          for (const declaration of symbol?.declarations ?? []) {
+            this.add(`${portable(this.root, declaration.getSourceFile().fileName)}#${symbol!.name}`, model.codecId, table);
+          }
+        }
+      }
+    }
+  }
+
+  /**
+   * Transition: the `iobject-plugin-keys.ts` tables of SDKs generated, or installed, before manifests held codec ids.
+   * Follow-up: remove the read of SDK key tables generated before model-manifest codecId.
+   */
+  private addProgramTables(): void {
+    for (const file of this.program.getSourceFiles()) {
       if (path.basename(file.fileName) !== CODEC_KEY_FILE) continue;
       const openApi = file.text.includes(OPENAPI_KEYS_MARKER);
-      const table = portable(root, file.fileName);
-      const directory = portable(root, path.dirname(file.fileName));
+      const table = portable(this.root, file.fileName);
+      const directory = portable(this.root, path.dirname(file.fileName));
       const visit = (node: ts.Node): void => {
         if (ts.isPropertyAssignment(node) && ts.isStringLiteral(node.initializer)
           && (ts.isStringLiteral(node.name) || ts.isIdentifier(node.name))) {
@@ -107,29 +180,32 @@ class CodecKeys {
   }
 
   private add(declaration: string, id: string, table: string): void {
-    const existing = this.byDeclaration.get(declaration);
-    if (existing?.id === id) existing.tables.add(table);
-    else this.byDeclaration.set(declaration, { id, tables: new Set([table]) });
+    const ids = this.byDeclaration.get(declaration) ?? new Map<string, Set<string>>();
+    this.byDeclaration.set(declaration, ids);
+    ids.set(id, (ids.get(id) ?? new Set()).add(table));
     this.names.add(declaration.slice(declaration.lastIndexOf('#') + 1));
     const tail = declaration.slice(declaration.lastIndexOf('/') + 1);
-    let ids = this.byTail.get(tail);
-    if (!ids) this.byTail.set(tail, ids = new Map());
-    let tables = ids.get(id);
-    if (!tables) ids.set(id, tables = new Set());
+    let tailIds = this.byTail.get(tail);
+    if (!tailIds) this.byTail.set(tail, tailIds = new Map());
+    let tables = tailIds.get(id);
+    if (!tables) tailIds.set(id, tables = new Set());
     tables.add(table);
   }
 
   /**
    * The codec id of the named declaration in the file: an exact path match, else the one id any key with that file name and name holds.
-   * The key tables that give a found id are added to `dependencies`.
+   * The key files and manifests that give a found id are added to `dependencies`.
    */
   idFor(filename: string, name: string, dependencies: Set<string>): string {
     if (name === '') return '';
     const relative = portable(this.root, filename);
     const exact = this.byDeclaration.get(`${relative}#${name}`);
     if (exact !== undefined) {
-      for (const table of exact.tables) dependencies.add(table);
-      return exact.id;
+      // Two sources that give one declaration different ids give it none: the call reports it instead of choosing.
+      if (exact.size !== 1) return '';
+      const [[id, tables]] = [...exact];
+      for (const table of tables) dependencies.add(table);
+      return id;
     }
     const ids = this.byTail.get(`${path.posix.basename(relative)}#${name}`);
     if (ids?.size !== 1) return '';
@@ -515,7 +591,7 @@ function resultOf(scan: FileScan): FileScanResult {
   return { edits, imports, diagnostics: scan.diagnostics, nestCodecSites: scan.nestSites, dependencies: [...scan.dependencies].sort(compareText) };
 }
 
-/** Finds the rewrite sites of the files of one program. Reads nothing from disk: the text is the program's own. */
+/** Finds the rewrite sites of the files of one program. A file's text is the program's own; the codec keys come from `codecKeysFile` and the manifests the program advertises. */
 export class RewriteScanner {
   private readonly root: string;
   private readonly program: ts.Program;
@@ -528,7 +604,7 @@ export class RewriteScanner {
     this.program = input.program;
     this.checker = input.checker;
     this.nest = input.nest;
-    this.keys = new CodecKeys(input.program, input.root);
+    this.keys = new CodecKeys(input.program, input.checker, input.root, input.codecKeysFile);
   }
 
   /**
@@ -621,6 +697,8 @@ interface ProjectScanInput {
   /** The tsconfig whose files are scanned, from the golem.yaml; its directory is what the file paths are relative to. */
   readonly configFile: string;
   readonly nest: boolean;
+  /** The yaml's `.golem/codec-keys.json`. */
+  readonly codecKeysFile?: string;
   /** The session and owner of the job that reads this project, so one compiler serves its generation and this scan; the session is kept under `root`. */
   readonly session?: GeneratorSession;
   readonly sessionOwner?: string;
@@ -628,9 +706,9 @@ interface ProjectScanInput {
 
 /** Open the project's program and ask the scanner about every file: what `golem check` reports. Writes nothing. */
 export function scanProject(input: ProjectScanInput): ProgramScan {
-  const { root, configFile, nest, session, sessionOwner } = input;
+  const { root, configFile, nest, codecKeysFile, session, sessionOwner } = input;
   const info = createProjectProgram(root, undefined, sessionOwner === undefined ? undefined : retainedProgramSession(session, sessionOwner, root), configFile);
   using program = info.program;
-  const { files, diagnostics } = new RewriteScanner({ root: path.dirname(configFile), program, checker: program.getTypeChecker(), nest }).scanProgram();
+  const { files, diagnostics } = new RewriteScanner({ root: path.dirname(configFile), program, checker: program.getTypeChecker(), nest, ...(codecKeysFile === undefined ? {} : { codecKeysFile }) }).scanProgram();
   return { files, diagnostics, nestCodecSites: [...files.values()].flatMap((file) => file.nestCodecSites) };
 }

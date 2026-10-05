@@ -63,7 +63,7 @@ test('model companions compile with --noUnusedLocals for empty, scalar and neste
       const modelName = modelNames.find(name => path.basename(artifact.path) === `${name.toLowerCase()}.model.generated.ts`);
       if (!modelName) {
         const base = path.basename(artifact.path);
-        assert.ok(base === 'models.generated.ts' || base === 'iobject-plugin-keys.ts', base);
+        assert.ok(base === 'models.generated.ts' || base === 'codec-keys.json', base);
         continue;
       }
       assert.match(artifact.content, new RegExp(`function fillT${modelName}\\(`), `${modelName}: shared fill`);
@@ -89,7 +89,7 @@ test('generated model names are scoped to their companion modules', (t) => {
   assert.equal(result.artifacts.filter((artifact) => artifact.content.includes('export abstract class TItemBaseModel')).length, 2);
   assert.equal(result.artifacts.some((artifact) => artifact.content.includes('first')), true);
   assert.equal(result.artifacts.some((artifact) => artifact.content.includes('second')), true);
-  const keys = result.artifacts.find((artifact) => artifact.path.endsWith('iobject-plugin-keys.ts'))?.content ?? '';
+  const keys = result.artifacts.find((artifact) => artifact.path.endsWith('codec-keys.json'))?.content ?? '';
   const firstId = keys.match(/src\/first\.model\.ts#TItem": "([^"]+)"/)?.[1];
   const secondId = keys.match(/src\/second\.model\.ts#TItem": "([^"]+)"/)?.[1];
   assert.match(firstId ?? '', /^TItem_[0-9a-f]{8}$/);
@@ -108,7 +108,7 @@ test('same-file aliases that differ only by the T prefix generate two separate m
   const companion = result.artifacts.find((artifact) => artifact.path.endsWith('payment.model.generated.ts'))?.content ?? '';
   assert.match(companion, /export abstract class TPaymentBaseModel\b/);
   assert.match(companion, /export abstract class PaymentBaseModel\b/);
-  const keys = result.artifacts.find((artifact) => artifact.path.endsWith('iobject-plugin-keys.ts'))?.content ?? '';
+  const keys = result.artifacts.find((artifact) => artifact.path.endsWith('codec-keys.json'))?.content ?? '';
   const tId = keys.match(/payment\.model\.ts#TPayment": "([^"]+)"/)?.[1];
   const id = keys.match(/payment\.model\.ts#Payment": "([^"]+)"/)?.[1];
   assert.match(tId ?? '', /^TPayment_[0-9a-f]{8}$/);

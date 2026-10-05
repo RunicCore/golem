@@ -113,7 +113,7 @@ function lineOf(source: string, prefix: string): number {
   return source.split(/\r?\n/).findIndex((text) => text.replace(/^\uFEFF/, '').startsWith(prefix)) + 1;
 }
 
-/** The codec id the project's key table gives `name`. */
+/** The codec id the project's codec key file gives `name`. */
 function codecId(root: string, name: string): string {
   const table = keyTable(root);
   const id = new RegExp(`#${name}": "(${name}_[0-9a-f]+)"`).exec(fs.readFileSync(table, 'utf8'))?.[1];
@@ -122,9 +122,7 @@ function codecId(root: string, name: string): string {
 }
 
 function keyTable(root: string): string {
-  const found = fs.readdirSync(root, { recursive: true, encoding: 'utf8' }).filter((file) => path.basename(file) === 'iobject-plugin-keys.ts' && !file.includes('node_modules'));
-  assert.equal(found.length, 1, found.join(', '));
-  return path.join(root, found[0]!);
+  return path.join(root, '.golem/codec-keys.json');
 }
 
 /** Adds a field to `TMoney`, so `golem generate` gives it another codec id. */

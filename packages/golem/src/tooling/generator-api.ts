@@ -110,6 +110,8 @@ export interface GeneratorSession {
 
 export interface ModelContext {
   readonly root: string;
+  /** The golem.yaml's directory, whose `.golem/` holds the codec keys; defaults to `root`. */
+  readonly directory?: string;
   /** File-name endings that make a file below `root/src` a model source; defaults to `.model.ts` and `.models.ts`. */
   readonly suffixes?: readonly string[];
   readonly output?: string;

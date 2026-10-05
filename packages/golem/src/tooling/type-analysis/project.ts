@@ -256,7 +256,7 @@ export function createOverlayProgram(
     ...sources,
     ...info.ambientFiles,
     ...artifacts
-      .filter((artifact) => !artifact.path.endsWith('.NOTICES.txt') && !artifact.path.endsWith('.js'))
+      .filter((artifact) => !artifact.path.endsWith('.NOTICES.txt') && !artifact.path.endsWith('.js') && !artifact.path.endsWith('.json'))
       .map((artifact) => artifact.path),
   ]);
   return info.program.session.openProgram({

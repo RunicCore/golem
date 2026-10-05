@@ -18,10 +18,20 @@ export function isOperationCodecRegistry(portablePath: string): boolean {
   return portablePath === OPERATION_CODEC_REGISTRY || portablePath.endsWith(`/${OPERATION_CODEC_REGISTRY}`);
 }
 
-/** The key table a models job writes beside its generated models, which holds the codec ids a rewrite stamps. */
+/** The codec ids a models job writes under `.golem/`, beside the owned-output inventory: the table a rewrite reads. */
+export const CODEC_KEYS_FILE = 'codec-keys.json';
+
+/** The codec key file of the golem.yaml in `configDirectory`. */
+export function codecKeysPath(configDirectory: string): string {
+  return path.join(configDirectory, '.golem', CODEC_KEYS_FILE);
+}
+
+/** The `iobject-plugin-keys.ts` table that SDKs generated before the model manifest held codec ids, and models jobs before `codec-keys.json`, wrote into the program. */
 export const CODEC_KEY_FILE = 'iobject-plugin-keys.ts';
 
-/** A generated companion (`*.generated.ts`, `.mts`, `.cts`) or a key table: the files a rewrite depends on. */
+/** A generated companion (`*.generated.ts`, `.mts`, `.cts`), the codec key file or an old key table: the files a rewrite depends on. */
 export function isGeneratedModelFile(filename: string): boolean {
-  return /\.generated\.[cm]?ts$/.test(filename) || path.basename(filename) === CODEC_KEY_FILE;
+  const base = path.basename(filename);
+  return /\.generated\.[cm]?ts$/.test(filename) || base === CODEC_KEY_FILE
+    || (base === CODEC_KEYS_FILE && path.basename(path.dirname(filename)) === '.golem');
 }

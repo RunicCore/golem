@@ -36,7 +36,7 @@ function paymentsProject(t: TestContext, extra: Readonly<Record<string, string>>
 }
 
 function scan(root: string, nest = true): ProgramScan {
-  return scanProject({ root, configFile: path.join(root, 'tsconfig.json'), nest });
+  return scanProject({ root, configFile: path.join(root, 'tsconfig.json'), nest, codecKeysFile: path.join(root, '.golem/codec-keys.json') });
 }
 
 function rewritten(root: string, result: ProgramScan, relative: string): string {
@@ -130,7 +130,7 @@ test('two Payment contracts keep distinct ids in their controllers', (t) => {
     'src/billing.controller.ts': readFixture(`${PLUGIN}/two-payment-contracts-keep-distinct-hashed-nestmodelcodec-ids/billing.controller.ts`),
     'src/payout.controller.ts': readFixture(`${PLUGIN}/two-payment-contracts-keep-distinct-hashed-nestmodelcodec-ids/payout.controller.ts`),
   });
-  const keys = fs.readFileSync(path.join(root, 'src/generated/models/iobject-plugin-keys.ts'), 'utf8');
+  const keys = fs.readFileSync(path.join(root, '.golem/codec-keys.json'), 'utf8');
   const billingId = keys.match(/src\/billing\/payment\.model\.ts#TPayment": "([^"]+)"/)?.[1];
   const payoutId = keys.match(/src\/payout\/payment\.model\.ts#TPayment": "([^"]+)"/)?.[1];
   assert.ok(billingId && payoutId && billingId !== payoutId);
@@ -175,7 +175,7 @@ test('a method that a decorator cannot decorate is not indexed: an object litera
 
 /** The hashed codec id the models job wrote for a model of `src/payment.model.ts`. */
 function idOf(root: string, name: string): string {
-  const keys = fs.readFileSync(path.join(root, 'src/generated/models/iobject-plugin-keys.ts'), 'utf8');
+  const keys = fs.readFileSync(path.join(root, '.golem/codec-keys.json'), 'utf8');
   const id = new RegExp(`src/payment\\.model\\.ts#${name}": "([^"]+)"`).exec(keys)?.[1];
   assert.ok(id, `${name} has a key`);
   return id;

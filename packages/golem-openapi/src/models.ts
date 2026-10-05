@@ -898,6 +898,7 @@ export function generateModelManifest(
     }));
     return {
       id: stableId(definition),
+      codecId: openApiCodecId(modelAnalysis, definition.name),
       sourceKind: 'openapi',
       allowAny: profile.allowAny ?? false,
       type: {
@@ -1619,8 +1620,6 @@ export function generateModels(
       "import { asGenObservable } from '@exprtlabs/golem/mobx';",
     ] : []),
     `import type * as Types from '${helpers.moduleFile?.includes('/') ? '../types.js' : './types.js'}';`,
-    // An SDK group keeps the internal codec-key table in the program for golem's rewrite scan; erased from the emitted JavaScript.
-    ...(helpers.moduleFile ? [`import type {} from '${helpers.moduleFile.includes('/') ? '../iobject-plugin-keys.js' : './iobject-plugin-keys.js'}';`] : []),
     ...(helpers.moduleImports ?? []),
     '',
     ...(emitObjectFromJSON ? [
@@ -1869,23 +1868,9 @@ export function generateModels(
   return pruneGeneratedImports(`${trimmed}\n`);
 }
 
-export function collectOpenApiCodecEntries(
-  document: unknown,
-  analysis?: OpenApiModelAnalysis,
-): ReadonlyArray<{ readonly source: string; readonly name: string; readonly codecId: string; readonly classNames: readonly string[] }> {
-  const modelAnalysis = analysis ?? analyzeOpenApiModels(document);
-  const { ordered, schemaGraph } = modelAnalysis;
-  const groupForModel = new Map<string, string>();
-  for (const group of modelAnalysis.grouping.groups) {
-    for (const name of group.models) groupForModel.set(name, group.filename);
-  }
-  return ordered.map((definition) => {
-    const node = modelAnalysis.nodesByName.get(definition.name);
-    const codecId = node?.codecId ?? codecPublicId(definition.name, { kind: 'unknown' }, undefined, { source: 'openapi', constructs: true });
-    const source = groupForModel.get(definition.name);
-    if (!source) throw new Error(`Internal error: model ${definition.name} has no output group.`);
-    return { source, name: definition.name, codecId, classNames: [`${definition.name}Model`] };
-  });
+/** The runtime codec id of a model: what the manifest records and a rewrite stamps. */
+function openApiCodecId(analysis: OpenApiModelAnalysis, name: string): string {
+  return analysis.nodesByName.get(name)?.codecId ?? codecPublicId(name, { kind: 'unknown' }, undefined, { source: 'openapi', constructs: true });
 }
 
 export type { OpenApiSchema };

@@ -345,7 +345,7 @@ export function resolveConfig(filename = 'golem.yaml', onInput?: InputObserver):
       if (new Set(sources).size !== sources.length) throw new Error('Duplicate model source paths.');
     }
     const sourceSuffixes = suffixes(value.models.suffixes, 'models.suffixes');
-    jobs.push({ id: `models:${path.relative(directory, root) || '.'}`, kind: 'models', package: '@exprtlabs/golem-model', options: { root, output, profile, ...(sources ? { sources } : {}), ...(sourceSuffixes ? { suffixes: sourceSuffixes } : {}) } });
+    jobs.push({ id: `models:${path.relative(directory, root) || '.'}`, kind: 'models', package: '@exprtlabs/golem-model', options: { root, directory, output, profile, ...(sources ? { sources } : {}), ...(sourceSuffixes ? { suffixes: sourceSuffixes } : {}) } });
   }
   if (!jobs.length) throw new Error('Configure at least one generators, controllers, openapi, or models section.');
   // A misspelled path is that, not a tsconfig the jobs happen to find elsewhere.

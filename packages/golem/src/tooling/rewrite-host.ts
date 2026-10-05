@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs';
 import path from 'node:path';
 
 import { resolveConfig } from './config.js';
-import { CODEC_KEY_FILE, defaultModelOutput } from './generated-paths.js';
+import { codecKeysPath } from './generated-paths.js';
 import type { GolemConfig } from './config.js';
 import { GolemDiagnosticSeverity } from './generator-api.js';
 import { applyRewrites } from './rewrite.js';
@@ -48,7 +48,7 @@ export interface GolemHostOptions {
 export interface RewriteProject {
   /** Directory of the yaml's tsconfig. */
   readonly root: string;
-  /** The key tables the yaml's models jobs write, whether or not they exist yet: what a host watches after a failed rewrite so that `golem generate` brings it back. */
+  /** The codec key file the yaml's models job writes, whether or not it exists yet: what a host watches after a failed rewrite so that `golem generate` brings it back. */
   readonly expectedGenerated: readonly string[];
   /**
    * Edits for one file as the host will compile it, `dependencies` as absolute paths; undefined when the file has no
@@ -90,7 +90,7 @@ class ScanningProject {
 
   constructor(private readonly config: GolemConfig, private readonly nest: boolean, private readonly compiler: Compiler) {
     this.root = path.dirname(config.tsconfig);
-    this.expectedGenerated = config.jobs.flatMap((job) => job.kind === 'models' ? [path.join(job.options.output ?? defaultModelOutput(job.options.root), CODEC_KEY_FILE)] : []);
+    this.expectedGenerated = config.jobs.some((job) => job.kind === 'models') ? [codecKeysPath(config.directory)] : [];
     this.session = new compiler.ts.ProgramSession({ cwd: this.root });
   }
 
@@ -101,7 +101,7 @@ class ScanningProject {
     const program = this.session.openProgram({ root: this.root, sources, configFile: this.config.tsconfig, overlays: new Map(this.overlays) });
     this.program?.close();
     this.program = program;
-    this.scanner = new this.compiler.RewriteScanner({ root: this.root, program, checker: program.getTypeChecker(), nest: this.nest });
+    this.scanner = new this.compiler.RewriteScanner({ root: this.root, program, codecKeysFile: codecKeysPath(this.config.directory), checker: program.getTypeChecker(), nest: this.nest });
     this.stale = false;
   }
 

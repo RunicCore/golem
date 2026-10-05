@@ -84,8 +84,8 @@ test('a hand-written and an SDK model of the same name and shape keep their own 
     assert.ok(match, `${file} names the Money codec`);
     return match[1];
   };
-  const handId = keyOf('src/generated/models/iobject-plugin-keys.ts', /#TMoney": "(TMoney_[0-9a-f]{8})"/);
-  const sdkId = keyOf('sdk/iobject-plugin-keys.ts', /#MoneyModel": "(Money_[0-9a-f]{8})"/);
+  const handId = keyOf('.golem/codec-keys.json', /#TMoney": "(TMoney_[0-9a-f]{8})"/);
+  const sdkId = keyOf('sdk/model-manifest.json', /"codecId": "(Money_[0-9a-f]{8})"/);
   assert.notEqual(handId, sdkId);
 
   await command(root, process.execPath, [golem, 'build', '--config', path.join(root, 'golem.yaml')]);

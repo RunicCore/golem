@@ -4,6 +4,7 @@ import { createRequire } from 'node:module';
 import { pathToFileURL } from 'node:url';
 import { contains, resolveConfig, validateConfigInputs } from './config.js';
 import type { GolemConfig, GolemJob } from './config.js';
+import { codecKeysPath } from './generated-paths.js';
 import { loadInventory, applyJob, removeRetiredJobs } from './outputs.js';
 import { absoluteRecordPath, insideAny, inventoryPaths, JobInputs, jobIsCurrent, loadJobRecords, recordPath, sameSetup, saveJobRecords } from './job-cache.js';
 import type { JobRecord } from './job-cache.js';
@@ -552,6 +553,7 @@ export async function runPipeline(filename: string, options: PipelineOptions = {
       root,
       configFile: config.tsconfig,
       nest,
+      codecKeysFile: codecKeysPath(config.directory),
       // Without a job there is no compiler to borrow; the scan opens its own and closes it when idle.
       ...(job && keys ? {
         session: session.forJob(job.id, keys),

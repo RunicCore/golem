@@ -12,12 +12,10 @@ import type { NormalizedOperation } from './normalize.js';
 import { generatedBanner } from './package-info.js';
 import type { OpenApiGenerationProfile } from './profile.js';
 import { requireProfile } from './profile.js';
-import { emitCodecDeclarationTable } from '@exprtlabs/golem/schema-graph';
 import {
   analyzeOpenApiModels,
   generateModelManifest,
   generateOpenApiModelArtifacts,
-  collectOpenApiCodecEntries,
   type OpenApiDates,
 } from './models.js';
 import { withOrigins, type OriginLocator } from './origin.js';
@@ -188,8 +186,6 @@ function buildGeneratedFiles(document: unknown, options: WriteSdkOptions): Gener
     });
     for (const [name, source] of models.files) files.set(name, source);
     modelReexports = models.entryReexports;
-    const codecEntries = collectOpenApiCodecEntries(document, modelAnalysis);
-    files.set('iobject-plugin-keys.ts', emitCodecDeclarationTable(codecEntries, '@exprtlabs/golem-openapi'));
   }
   files.set('model-manifest.json', stableJson(generateModelManifest(document, profile, modelAnalysis)));
   if (plan.artifacts.has('client.ts')) {

@@ -4,6 +4,7 @@ import path from 'node:path';
 
 import { canonicalFile, contains, resolveConfig } from './config.js';
 import type { GolemConfig } from './config.js';
+import { codecKeysPath } from './generated-paths.js';
 import { GolemDiagnosticSeverity } from './generator-api.js';
 import type { GolemDiagnostic } from './generator-api.js';
 import { atomicWrite } from './outputs.js';
@@ -421,7 +422,7 @@ async function buildOnce(session: ts.ProgramSession, run: BuildRun, changed?: re
       throw new Error(`golem build cannot stage ${source.fileName}: it is outside the project root ${root}. Move it under the root, or build the package that holds it with golem build -p.`);
     }
   }
-  const scanned = new RewriteScanner({ root, program, checker: program.getTypeChecker(), nest: golemConfig.jobs.some((job) => job.kind === 'controllers') }).scanProgram();
+  const scanned = new RewriteScanner({ root, program, checker: program.getTypeChecker(), codecKeysFile: codecKeysPath(golemConfig.directory), nest: golemConfig.jobs.some((job) => job.kind === 'controllers') }).scanProgram();
   const errors = scanned.diagnostics.filter((diagnostic) => diagnostic.severity === GolemDiagnosticSeverity.Error);
   if (errors.length > 0) throw scanFailure(errors);
 

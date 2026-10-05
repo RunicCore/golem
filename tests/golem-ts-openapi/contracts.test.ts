@@ -340,7 +340,7 @@ test('same-name same-shape class and plain models share one component and keep t
   const contracts = await generateFixture(root);
   const registry = contracts.artifacts.find(artifact => artifact.path.endsWith('operation-codecs.ts'))?.content ?? '';
   const models = await generateModels({ root, profile: { mobx: false, validation: true } });
-  const keys = models.artifacts.find(artifact => artifact.path.endsWith('iobject-plugin-keys.ts'))?.content ?? '';
+  const keys = models.artifacts.find(artifact => artifact.path.endsWith('codec-keys.json'))?.content ?? '';
   const keyOf = (directory: string): string => {
     const id = keys.match(new RegExp(`src/${directory}/payment\\.model\\.ts#TPayment": "([^"]+)"`))?.[1];
     assert.ok(id, `${directory} model has a plugin key`);

@@ -1,5 +1,5 @@
 import { existsSync, statSync } from 'node:fs';
-import { basename, join, sep } from 'node:path';
+import { basename, dirname, join, resolve, sep } from 'node:path';
 import * as ts from '@exprtlabs/golem/ts';
 import type {
   GolemArtifact,
@@ -10,7 +10,7 @@ import type {
 } from '@exprtlabs/golem/generator-api';
 import { buildCodecValidationPlan, compileStandaloneValidatorSet, type CodecSchemaClosureEntry } from '@exprtlabs/golem/ajv-tooling';
 import { DEFAULT_MODEL_SUFFIXES, resolveProfile, suffixPattern } from '@exprtlabs/golem/generator-api';
-import { defaultModelOutput } from '@exprtlabs/golem/generated-paths';
+import { codecKeysPath, defaultModelOutput } from '@exprtlabs/golem/generated-paths';
 import { emitCodecDeclarationTable } from '@exprtlabs/golem/schema-graph';
 import {
   analyzeSourceGraph,
@@ -48,6 +48,8 @@ export interface GolemModelProfile extends GolemProfile {}
 export interface GolemModelContext {
   /** Absolute project root used for TypeScript configuration and discovery. */
   readonly root: string;
+  /** The golem.yaml's directory, whose `.golem/` receives the codec keys. Defaults to `root`. */
+  readonly directory?: string;
   /** Optional shared output directory for job-level model metadata. */
   readonly output?: string;
   /** Absolute model source paths. Omit to discover model sources below root/src. */
@@ -72,6 +74,7 @@ export const apiVersion = 1 as const;
 
 interface NormalizedContext {
   readonly root: string;
+  readonly directory: string;
   readonly output: string;
   readonly sources: readonly string[] | undefined;
   readonly suffixes: readonly string[];
@@ -98,6 +101,7 @@ function validateContext(context: GolemModelContext): NormalizedContext {
     context.output ?? defaultModelOutput(root),
     'context.output',
   );
+  const directory = context.directory === undefined ? root : assertAbsolute(context.directory, 'context.directory');
   const sources = context.sources === undefined
     ? undefined
     : (() => {
@@ -116,6 +120,7 @@ function validateContext(context: GolemModelContext): NormalizedContext {
     })();
   return {
     root,
+    directory,
     output,
     sources,
     suffixes: context.suffixes ?? DEFAULT_MODEL_SUFFIXES,
@@ -487,11 +492,14 @@ export function generate(context: GolemModelContext): GolemModelResult {
     );
     if (content !== undefined) artifacts.push({ path: output, content });
   }
-  const codecEntries = graphSchemaPairs.flatMap(({ graph, schemaGraph }) => codecEntriesForGraph(graph, schemaGraph, checker, specifications));
+  // The keys name each source by its path from the tsconfig's directory, which is the root a rewrite resolves files from.
+  const tsconfigDirectory = programInfo.configPath === undefined ? normalized.root : dirname(programInfo.configPath);
+  const codecEntries = graphSchemaPairs.flatMap(({ graph, schemaGraph }) => codecEntriesForGraph(graph, schemaGraph, checker, specifications))
+    .map((entry) => ({ ...entry, source: portableRelativeFilename(resolve(normalized.root, entry.source), tsconfigDirectory) }));
   if (codecEntries.length > 0) {
     artifacts.push({
-      path: join(normalized.output, 'iobject-plugin-keys.ts'),
-      content: emitCodecDeclarationTable(codecEntries, '@exprtlabs/golem-model'),
+      path: codecKeysPath(normalized.directory),
+      content: emitCodecDeclarationTable(codecEntries),
     });
   }
 

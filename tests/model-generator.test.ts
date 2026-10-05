@@ -83,8 +83,8 @@ export type TAccount = IModel<{ id: string }>;`,
   });
   assert.deepEqual(discoverModelSources(root), [source]);
   const result = generate({ root, profile: { mobx: false, validation: false } });
-  // The run's own plugin-keys output is in its program; the watch drops every owned output from its inputs.
-  assert.deepEqual(result.watchInputs, [path.join(root, 'src/generated/models/iobject-plugin-keys.ts'), source, path.join(root, 'tsconfig.json')]);
+  assert.deepEqual(result.artifacts.map((artifact) => artifact.path).sort(), [path.join(root, '.golem/codec-keys.json'), path.join(sourceRoot, 'nested/account.models.generated.ts')], 'the run writes the companion and the codec keys under .golem/');
+  assert.deepEqual(result.watchInputs, [source, path.join(root, 'tsconfig.json')]);
   assert.equal(result.watchInputs.some((filename) => filename.endsWith('.generated.ts')), false);
 });
 
@@ -161,7 +161,7 @@ test('prospective companions permit a concrete subclass field rename and still r
   writeModelSources(sourceRoot, { 'account.model.ts': accountModelWithField({ field: 'complete' }) });
   const second = generate({ root, sources: [source], profile: { mobx: false, validation: true } });
   // account.model.ts has no custom validation/serde bindings, so no shared
-  // models.generated.ts module is emitted (companion + iobject-plugin-keys.ts only).
+  // models.generated.ts module is emitted (companion + codec keys only).
   assert.equal(second.artifacts.length, 2);
   writeModelSources(sourceRoot, { 'account.model.ts': accountModelWithMissingImport({ field: 'complete' }) });
   assert.throws(
@@ -382,4 +382,19 @@ export type TOrder = IModel<{ lines: TLine[] }>;`,
   const order = result.artifacts.find(artifact => artifact.path === path.join(sourceRoot, 'order.entity.generated.mts'));
   assert.ok(order, 'the companion of an .mts source is a .generated.mts file');
   assert.match(order.content, /\.\/line\.entity\.generated\.mjs/);
+});
+
+test('the codec keys go under .golem/ of the golem.yaml directory when the job has one, named from the tsconfig directory', (t: TestContext) => {
+  const { root, sourceRoot } = project(t);
+  writeModelSources(sourceRoot, {
+    'account.model.ts': tsSource`import type { IModel } from '@exprtlabs/golem/model';
+export type TAccount = IModel<{ id: string }>;`,
+  });
+  const directory = path.join(root, 'config');
+  const result = generate({ root, directory, profile: { mobx: false, validation: false } });
+  const keys = result.artifacts.find((artifact) => artifact.path === path.join(directory, '.golem/codec-keys.json'));
+  assert.ok(keys, 'the codec key file lies under the configuration directory');
+  const table = JSON.parse(keys.content) as { version: number; keys: Record<string, string> };
+  assert.equal(table.version, 1);
+  assert.deepEqual(Object.keys(table.keys), ['src/account.model.ts#TAccount']);
 });

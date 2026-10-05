@@ -13,6 +13,8 @@ export interface ModelManifestProvenance {
 
 export interface ModelManifestEntry {
   readonly id: string;
+  /** The runtime codec id a rewrite stamps for this model. Manifests written before it existed have none. */
+  readonly codecId?: string;
   readonly allowAny: boolean;
   readonly type: ModelManifestProvenance;
   readonly generated: { readonly module: string; readonly export: string };
@@ -134,6 +136,7 @@ export function validateModelManifest(manifest: unknown, filename = MODEL_MANIFE
     if (
       !isRecord(model) || !isProvenance(model.type) || !isProvenance(model.generated)
       || typeof model.id !== 'string' || !model.id || typeof model.allowAny !== 'boolean'
+      || (model.codecId !== undefined && (typeof model.codecId !== 'string' || !model.codecId))
     ) {
       throw new Error(`Invalid model entry in ${filename}.`);
     }

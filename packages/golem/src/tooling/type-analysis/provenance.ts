@@ -174,14 +174,8 @@ function validateGeneratedModules(
   return exportsById;
 }
 
-export function loadModelManifests(
-  root: string,
-  program: ts.Program,
-  options: ts.CompilerOptions,
-  explicit: readonly string[],
-  profile: GolemProfile,
-  onInput?: InputObserver,
-): ManifestIndex {
+/** The manifests the program's files advertise with the `@golem-model-manifest` marker comment. Throws for one that does not exist. */
+export function advertisedModelManifests(program: ts.Program, onInput?: InputObserver): Set<string> {
   const advertised = new Set<string>();
   const markerPattern = new RegExp(`${escapeRegExp(MODEL_MANIFEST_MARKER)}\\s+([^\\s*]+)`);
   for (const sourceFile of program.getSourceFiles()) {
@@ -196,6 +190,18 @@ export function loadModelManifests(
     }
     advertised.add(filename);
   }
+  return advertised;
+}
+
+export function loadModelManifests(
+  root: string,
+  program: ts.Program,
+  options: ts.CompilerOptions,
+  explicit: readonly string[],
+  profile: GolemProfile,
+  onInput?: InputObserver,
+): ManifestIndex {
+  const advertised = advertisedModelManifests(program, onInput);
   const discovered = discoverModelManifests(root, onInput).map(canonicalFilename);
   discovered.forEach((filename) => onInput?.(filename));
   const localFiles = [...new Set([...discovered, ...advertised])].sort();

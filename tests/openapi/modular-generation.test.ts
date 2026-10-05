@@ -846,14 +846,13 @@ function assertHolderRoundTrip(
 
 test('a holder of both compiles and round-trips its nested classes', async t => {
   const { result, sdk } = await generateShortened(t, { PaymentModel: idObject, TPayment: amountObject, Holder: holderOf('PaymentModel', 'TPayment') });
-  const keys = result.artifacts.find((artifact) => artifact.path.endsWith('iobject-plugin-keys.ts'))?.content ?? '';
-  const entries = [...keys.matchAll(/"([^"]+)#(\w+)": "(\w+_[0-9a-f]+)"/g)];
-  assert.deepEqual(entries.map((entry) => entry[2]).sort(), ['Holder', 'HolderModel', 'PaymentModel', 'PaymentModelModel', 'TPayment', 'TPaymentModel'], 'keys are the exact component names and the emitted class names');
-  assert.equal(new Set(entries.map((entry) => entry[1])).size, 3, 'three files');
-  assert.equal(new Set(entries.map((entry) => entry[3])).size, 3, 'three codec ids');
-  for (const entry of entries.filter((item) => item[2].endsWith('Model') && ['HolderModel', 'PaymentModelModel', 'TPaymentModel'].includes(item[2]))) {
-    const declaring = result.artifacts.find((artifact) => artifact.path.endsWith(`/${entry[1]}`))?.content ?? '';
-    assert.match(declaring, new RegExp(`export class ${entry[2]}\\b`), `${entry[2]} is declared in the file its plugin key names`);
+  const manifest = JSON.parse(result.artifacts.find((artifact) => artifact.path.endsWith('/model-manifest.json'))?.content ?? '{}') as { models: { codecId: string; generated: { export: string } }[] };
+  const classes = manifest.models.map((model) => model.generated.export).sort();
+  assert.deepEqual(classes, ['HolderModel', 'PaymentModelModel', 'TPaymentModel'], 'the manifest names the emitted class of each exact component name');
+  assert.equal(new Set(manifest.models.map((model) => model.codecId)).size, 3, 'three codec ids');
+  for (const name of classes) {
+    const declaring = result.artifacts.filter((artifact) => /\/models\/_group-[0-9a-f]+\.ts$/.test(artifact.path) && new RegExp(`export class ${name}\\b`).test(artifact.content));
+    assert.equal(declaring.length, 1, `${name} is declared in one group file`);
   }
   roundTrip(sdk, 'PaymentModel', 'PaymentModelModel', { id: 'a' });
   roundTrip(sdk, 'TPayment', 'TPaymentModel', { amount: 3 });

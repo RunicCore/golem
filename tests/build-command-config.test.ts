@@ -90,7 +90,7 @@ test('golem build starts from a golem.yaml: without one it fails, and it never s
   }
   await assert.rejects(runBuild({ project: path.join(root, 'tsconfig.json'), watch: false, config: path.join(nested, 'golem.yaml') }), /golem build cannot find .*golem\.yaml/);
   assert.equal(fs.existsSync(path.join(root, 'build')), false);
-  assert.equal(fs.existsSync(path.join(root, '.golem')), false);
+  assert.equal(fs.existsSync(path.join(root, '.golem/build')), false);
 });
 
 test('-p may name another build config of the yaml project, and only one in the directory of its tsconfig', async (t) => {

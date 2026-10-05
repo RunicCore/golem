@@ -35,7 +35,6 @@ export function generatedCodecIdFromRoot(root: string, shortName: string): strin
   return generatedCodecId(
     filesUnder(root)
       .filter((filename) => filename.endsWith('.generated.ts')
-        || filename.endsWith('iobject-plugin-keys.ts')
         || (path.basename(path.dirname(filename)) === 'models' && /^_group-.*\.ts$/.test(path.basename(filename))))
       .map((filename) => fs.readFileSync(filename, 'utf8'))
       .join('\n'),

@@ -89,9 +89,9 @@ test('YAML pipeline supports external OpenAPI and model roots, sources, and outp
 
   const sdkClient = path.join(external, 'sdk/client.ts');
   // cart.model.ts has no validation or serde bindings, so the job writes the
-  // codec table (iobject-plugin-keys.ts) to the output directory but no shared
+  // codec keys (.golem/codec-keys.json, beside the inventory) but no shared
   // models.generated.ts.
-  const modelOutput = path.join(external, 'models-output/iobject-plugin-keys.ts');
+  const modelOutput = path.join(root, '.golem/codec-keys.json');
   const sharedModelOutput = path.join(external, 'models-output/models.generated.ts');
   const companion = path.join(path.dirname(source), 'cart.model.generated.ts');
   assert.equal(fs.existsSync(sdkClient), true);
@@ -107,7 +107,7 @@ test('YAML pipeline supports external OpenAPI and model roots, sources, and outp
   };
   const relative = (filename: string): string => path.relative(root, filename).replaceAll(path.sep, '/');
   assert.equal(inventory.files[relative(sdkClient)]?.destination, relative(path.join(external, 'sdk')));
-  assert.equal(inventory.files[relative(modelOutput)]?.destination, relative(path.join(external, 'models-output')));
+  assert.equal(inventory.files[relative(modelOutput)]?.destination, '.golem');
   assert.equal(inventory.files[relative(companion)]?.destination, relative(path.dirname(source)));
 
   await runPipeline(config, { check: true });

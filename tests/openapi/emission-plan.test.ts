@@ -229,7 +229,6 @@ test('schema-only documents emit types, directional files, and models without a 
     'output-schemas.ts',
     'models/Widget.ts',
     'models/_group-<hash>.ts',
-    'iobject-plugin-keys.ts',
   ]);
 });
 
@@ -487,11 +486,8 @@ test('the SDK entry re-exports each model module directly', async t => {
   const index = files.get('index.ts') ?? '';
   assert.match(index, /from '\.\/models\/Money\.js'/);
   assert.match(index, /from '\.\/models\/Payment\.js'/);
-  // The codec-key table and the schema helpers are internal: the entry does not re-export them,
-  // and a type-only import from the model module keeps the table in the program for golem's rewrite scan.
-  assert.doesNotMatch(index, /iobject-plugin-keys|'\.\/schemas\.js'/);
-  const group = [...files].find(([file]) => file.startsWith('models/_group-'))?.[1] ?? '';
-  assert.match(group, /^import type \{\} from '\.\.\/iobject-plugin-keys\.js';$/m);
+  // The schema helpers are internal: the entry does not re-export them.
+  assert.doesNotMatch(index, /'\.\/schemas\.js'/);
 });
 
 test('an ajvStandalone validation SDK with operations compiles under strict unused checks', async t => {

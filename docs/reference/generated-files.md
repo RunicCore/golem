@@ -45,13 +45,14 @@ Every other file in an SDK is internal and may change in a minor release. Do not
 - `validation-schemas/*`
 - `client.ts`
 - `inbound.ts` and `links.ts` (their names are public through `sdk/index.js`)
-- `iobject-plugin-keys.ts`
 - `model-manifest.json`
 - `operations/<name>.validators.generated.*` and `models/*.validators.generated.*` (with `ajvStandalone: true`)
 
 ## Internal model files
 
-In the model output (`src/generated/models/` by default), every file is internal: `models.generated.ts`, `models.validators.generated.js` and `.d.ts` with `ajvStandalone: true`, `models.generated.NOTICES.txt` and `iobject-plugin-keys.ts`. Each `<name>.model.generated.ts` is public for the models its source declares: `<Alias>BaseModel` for an `IModel`, the `<Alias>Fields`, `<Alias>JSON` and `<Alias>Init` types, and `parse<Alias>`, `stringify<Alias>`, `validate<Alias>`, `assert<Alias>`, `toWireFormat<Alias>` and `fromWireFormat<Alias>` functions. `<Alias>` is the exact type alias: `type TPayment = IModel<…>` gives `TPaymentBaseModel` and `parseTPayment`, `type Payment = IModel<…>` gives `PaymentBaseModel`, and `type TPermissionModel = IModel<…>` gives `TPermissionModelBaseModel`. A class links to its model through `extends <Alias>BaseModel` and can have any name; a file can't export two classes that extend the same generated class directly. Codecs of [derived types](#derived-type-names) and exports that start with `__golem` are internal.
+In the model output (`src/generated/models/` by default), every file is internal: `models.generated.ts`, `models.validators.generated.js` and `.d.ts` with `ajvStandalone: true`, and `models.generated.NOTICES.txt`. Each `<name>.model.generated.ts` is public for the models its source declares: `<Alias>BaseModel` for an `IModel`, the `<Alias>Fields`, `<Alias>JSON` and `<Alias>Init` types, and `parse<Alias>`, `stringify<Alias>`, `validate<Alias>`, `assert<Alias>`, `toWireFormat<Alias>` and `fromWireFormat<Alias>` functions. `<Alias>` is the exact type alias: `type TPayment = IModel<…>` gives `TPaymentBaseModel` and `parseTPayment`, `type Payment = IModel<…>` gives `PaymentBaseModel`, and `type TPermissionModel = IModel<…>` gives `TPermissionModelBaseModel`. A class links to its model through `extends <Alias>BaseModel` and can have any name; a file can't export two classes that extend the same generated class directly. Codecs of [derived types](#derived-type-names) and exports that start with `__golem` are internal.
+
+The models job also writes `.golem/codec-keys.json` beside `.golem/outputs.json`. It maps each model and class to its codec id for `golem build`, the loader and the bundler plugins. An SDK holds its ids in `model-manifest.json`. Commit or ignore `.golem/codec-keys.json` with the generated files.
 
 The generator no longer writes `validation.ts`, `client-runtime.ts` or `models.ts`. Their code lives in `@exprtlabs/golem`.
 
