@@ -24,10 +24,10 @@ function prepare(directory: string, mode: Mode): string {
     },
     include: ['src/**/*.ts'],
   }));
-  writeFileSync(path.join(project, 'golem.yaml'), 'version: 1\nmodels:\n  root: .\n');
+  const profile = { mobx: false, validation: mode !== 'conversion-only', ajvStandalone: mode === 'standalone-ajv' };
+  writeFileSync(path.join(project, 'golem.yaml'), `version: 1\nmobx: ${profile.mobx}\nvalidation: ${profile.validation}\najvStandalone: ${profile.ajvStandalone}\nmodels:\n  root: .\n`);
   for (const name of ['features.model.ts', 'features.iobject.model.ts', 'feature-tags.ts', 'cases.ts', 'access-rules.ts']) copyFileSync(path.join(featureDirectory, name), path.join(source, name));
   copyFileSync(path.join(root, 'scripts/benchmark/fixture-contract.ts'), path.join(source, 'fixture-contract.ts'));
-  const profile = { mobx: false, validation: mode !== 'conversion-only', ajvStandalone: mode === 'standalone-ajv' };
   const manifest = generateFeatureMoneySdk(project, source, { validation: profile.validation, ajvStandalone: profile.ajvStandalone });
   const result = generate({ root: project, profile, manifestInputs: [manifest] });
   for (const artifact of result.artifacts) {
