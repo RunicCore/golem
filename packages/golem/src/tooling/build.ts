@@ -12,7 +12,7 @@ import { GeneratorSessionResources, runPipeline } from './pipeline.js';
 import type { PipelineState } from './pipeline.js';
 import { applyRewrites } from './rewrite.js';
 import type { FileRewrite } from './rewrite.js';
-import { RewriteScanner } from './rewrite-scan.js';
+import { projectSources, RewriteScanner } from './rewrite-scan.js';
 import { composeSourceMaps } from './source-map.js';
 import type { SourceMapV3 } from './source-map.js';
 import * as ts from './typescript-ns.js';
@@ -422,16 +422,13 @@ async function buildOnce(session: ts.ProgramSession, run: BuildRun, changed?: re
   if (!project.emitsJavaScript) return check.code;
 
   using program = session.openProgram({ root, sources: parsed.fileNames, configFile, onInput: observe });
-  const sources = program.getSourceFiles().filter((file) => !program.isSourceFileDefaultLibrary(file)
-    && !program.isSourceFileFromExternalLibrary(file)
-    && !file.fileName.split(/[\\/]/).includes('node_modules'));
+  const sources = projectSources(program);
   for (const source of sources) {
     observe(source.fileName);
     if (!contains(root, source.fileName)) {
       throw new Error(`golem build cannot stage ${source.fileName}: it is outside the project root ${root}. Move it under the root, or build the package that holds it with golem build -p.`);
     }
   }
-  // Only the staged sources are scanned: a package the program reaches through node_modules is built by its own golem build.
   const scanned = new RewriteScanner({ root, program, checker: program.getTypeChecker(), codecKeysFile: codecKeysPath(golemConfig.directory), nest: golemConfig.jobs.some((job) => job.kind === 'controllers') })
     .scanFiles(sources.map((source) => source.fileName));
   const errors = scanned.diagnostics.filter((diagnostic) => diagnostic.severity === GolemDiagnosticSeverity.Error);

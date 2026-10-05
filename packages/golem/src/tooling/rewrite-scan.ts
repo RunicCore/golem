@@ -594,6 +594,16 @@ function resultOf(scan: FileScan): FileScanResult {
   return { edits, imports, diagnostics: scan.diagnostics, nestCodecSites: scan.nestSites, dependencies: [...scan.dependencies].sort(compareText) };
 }
 
+/**
+ * The program's own sources: what `golem build` stages and `golem check` scans. A package the program reaches through
+ * node_modules, a workspace package linked there included, is an external library that its own golem build builds.
+ */
+export function projectSources(program: ts.Program): ts.SourceFile[] {
+  return program.getSourceFiles().filter((file) => !program.isSourceFileDefaultLibrary(file)
+    && !program.isSourceFileFromExternalLibrary(file)
+    && !file.fileName.split(/[\\/]/).includes('node_modules'));
+}
+
 /** Finds the rewrite sites of the files of one program. A file's text is the program's own; the codec keys come from `codecKeysFile` and the manifests the program advertises. */
 export class RewriteScanner {
   private readonly root: string;
@@ -610,10 +620,6 @@ export class RewriteScanner {
     this.keys = new CodecKeys(input.program, input.checker, input.root, input.codecKeysFile);
   }
 
-  /**
-   * node_modules is judged by the file's own path, which the compiler resolves through symlinks: a workspace package
-   * linked into node_modules is `isSourceFileFromExternalLibrary` yet lies elsewhere, and its sites are the project's to rewrite.
-   */
   private candidate(file: ts.SourceFile): boolean {
     return !file.isDeclarationFile
       && !this.program.isSourceFileDefaultLibrary(file)
@@ -639,15 +645,19 @@ export class RewriteScanner {
     return { edits: [], imports: [], diagnostics, nestCodecSites: [], dependencies: [] };
   }
 
-  /** `filename` is an absolute path. Undefined for a file that is not a rewrite candidate: not in the program, a declaration file, under node_modules, a generated companion or a key table. */
+  /**
+   * `filename` is an absolute path. Undefined for a file that is not a rewrite candidate: not in the program, a declaration file, under node_modules, a generated companion or a key table.
+   * node_modules is judged by the file's own path, which the compiler resolves through symlinks: a workspace package
+   * linked into node_modules is `isSourceFileFromExternalLibrary` yet lies elsewhere, and a host loading it rewrites its sites.
+   */
   scanFile(filename: string): FileScanResult | undefined {
     const file = this.program.getSourceFile(filename);
     return file && this.candidate(file) ? this.scan(file, portable(this.root, file.fileName)) : undefined;
   }
 
-  /** Every file of the program that needs a rewrite, by root-relative POSIX path in path order, and the diagnostics of all candidates in the same order. */
+  /** Every project source that needs a rewrite, by root-relative POSIX path in path order, and the diagnostics of all candidates in the same order: what `golem build` stages and rewrites. */
   scanProgram(): { readonly files: ReadonlyMap<string, FileScanResult>; readonly diagnostics: readonly GolemDiagnostic[] } {
-    return this.scanFiles(this.program.getSourceFiles().map((file) => file.fileName));
+    return this.scanFiles(projectSources(this.program).map((file) => file.fileName));
   }
 
   /** As `scanProgram`, for the named absolute paths: the files a caller emits, which need not be all the program reaches. Non-candidates are skipped. */
@@ -712,7 +722,7 @@ interface ProjectScanInput {
   readonly sessionOwner?: string;
 }
 
-/** Open the project's program and ask the scanner about every file: what `golem check` reports. Writes nothing. */
+/** Open the project's program and ask the scanner about its sources: what `golem check` reports. Writes nothing. */
 export function scanProject(input: ProjectScanInput): ProgramScan {
   const { root, configFile, nest, codecKeysFile, session, sessionOwner } = input;
   const info = createProjectProgram(root, undefined, sessionOwner === undefined ? undefined : retainedProgramSession(session, sessionOwner, root), configFile);

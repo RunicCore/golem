@@ -318,7 +318,7 @@ An error prints its code, location when known, and message, then stops generatio
 
 ### RUNM1070
 
-**Rewrite site outside the project root.** A file that the TypeScript project includes but that lies outside the directory of its tsconfig holds a serde call with a type argument, or a class that extends a generated model base class. A rewrite names its file by a path from that directory, so no host can rewrite it. `golem check` and every host report it; the message names the file and the line. **Fix:** Move the file under the tsconfig's directory, or point `tsconfig` in `golem.yaml` at a tsconfig whose directory contains it.
+**Rewrite site outside the project root.** A file that the TypeScript project includes but that lies outside the directory of its tsconfig holds a serde call with a type argument, or a class that extends a generated model base class. A rewrite names its file by a path from that directory, so no host can rewrite it. `golem check` and every host report it; the message names the file and the line. `golem check` and `golem build` skip a workspace package that the project reaches through `node_modules`, since that package's own `golem build` rewrites it; the loader and the plugins follow the [symlink rule](/reference/runtime-api#register). **Fix:** Move the file under the tsconfig's directory, or point `tsconfig` in `golem.yaml` at a tsconfig whose directory contains it.
 
 ### RUNM1071
 

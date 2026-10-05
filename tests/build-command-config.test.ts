@@ -252,8 +252,8 @@ test('output that tsc --showConfig prints and is not a configuration fails with 
   }
 });
 
-test('a symlinked workspace package outside the tsconfig directory builds: the build scans only the sources it stages', async (t) => {
-  // The package's `types` is its source, so the compiler reads it as an external library: the app's build does not stage it.
+test('a symlinked workspace package outside the tsconfig directory passes golem check and builds: both scan only the sources the build stages', async (t) => {
+  // The package's `types` is its source, so the compiler reads it as an external library: the app's build does not stage it, and its check does not scan it.
   const { root: outer } = createModelProject(t, {
     prefix: 'golem-build-linked-package-',
     name: 'build-linked-package',
@@ -277,6 +277,7 @@ export function read(text: string): unknown { return parse<{ note: string }>(tex
   write(app, 'src/use.ts', USE.replace("import './money.model.js';", "import './money.model.js';\nimport { read } from '@fixture/lib';\nexport const fromLibrary = read('{}');"));
   await runPipeline(path.join(app, 'golem.yaml'));
 
+  await runPipeline(path.join(app, 'golem.yaml'), { check: true });
   assert.equal((await build(app)).exitCode, 0);
   assert.match(fs.readFileSync(path.join(app, 'build/use.js'), 'utf8'), /requireObjectCodec\("TMoney_[0-9a-f]{8}"\)\.stringify\(/, 'the app\'s own sites are rewritten');
 });
