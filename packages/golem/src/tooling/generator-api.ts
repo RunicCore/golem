@@ -134,6 +134,8 @@ export interface GeneratorJobContext {
   /** The entry's `options`, passed as-is; the generator validates them. */
   readonly options: unknown;
   readonly profile: GolemProfile;
+  /** Call with each local file path before reading it, so golem can skip the job when its inputs are unchanged. */
+  readonly onInput?: InputObserver;
 }
 
 export interface OpenApiContext {

@@ -20,7 +20,7 @@ import { GENERATED_MODEL_SCHEMA_REF_PREFIX } from './schema-keywords.js';
 export function untransformedCallError(name: string): LibError {
   return new LibError(
     LibErrorKind.ValidationUnavailable,
-    `${name}<T> was not rewritten to a generated function. Run \`golem generate\`, then build with \`golem build\`, the golem Vite or esbuild plugin, or run Node with \`--import @exprtlabs/golem/register\`.`,
+    `${name}<T> was not rewritten to a generated function. Build with \`golem build\`, the golem Vite or esbuild plugin, or Node with \`--import @exprtlabs/golem/register\`; a package loaded through \`node_modules\` (\`preserveSymlinks\`) is not rewritten.`,
   );
 }
 

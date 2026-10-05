@@ -158,7 +158,7 @@ test('untransformed public serde APIs and validate<T> throw with the message tha
       assert.equal(error.kind, LibErrorKind.ValidationUnavailable);
       assert.equal(
         error.message,
-        `${name}<T> was not rewritten to a generated function. Run \`golem generate\`, then build with \`golem build\`, the golem Vite or esbuild plugin, or run Node with \`--import @exprtlabs/golem/register\`.`,
+        `${name}<T> was not rewritten to a generated function. Build with \`golem build\`, the golem Vite or esbuild plugin, or Node with \`--import @exprtlabs/golem/register\`; a package loaded through \`node_modules\` (\`preserveSymlinks\`) is not rewritten.`,
       );
       return true;
     }, name);
