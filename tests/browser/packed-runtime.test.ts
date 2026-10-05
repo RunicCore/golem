@@ -187,7 +187,7 @@ for (const standalone of [false, true]) {
     await cli(root, ['check']);
     await command(root, path.join(root, 'node_modules/.bin/tsc'), ['-p', 'tsconfig.json']);
     await npm(root, ['prune', '--omit=dev'], { includeOptional: false });
-    // The packed esbuild plugin scans the project's sources itself, so it loads TypeScript when it first rewrites a file.
+    // The packed esbuild plugin scans the project's sources itself, so it loads TypeScript, a production dependency of this app, when it first rewrites a file.
     const { golem } = await import(pathToFileURL(path.join(root, 'node_modules/@exprtlabs/golem/dist/tooling/esbuild.js')).href) as typeof import('@exprtlabs/golem/esbuild');
     if (standalone) for (const name of ['ajv', 'ajv-formats']) {
       assert.equal(fs.existsSync(path.join(root, 'node_modules', name)), false);

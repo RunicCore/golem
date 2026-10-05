@@ -57,9 +57,9 @@ function characterClass(glob: string, start: number): { source: string; end: num
   let body = '';
   for (; index < glob.length; index += 1) {
     const char = glob[index];
-    if (char === ']' && index > first) return { source: negated ? `(?!/)[^${body}]` : `[${body}]`, end: index };
+    if (char === ']' && index > first) return { source: `(?!/)[${negated ? '^' : ''}${body}]`, end: index };
     if (char === '[' && glob[index + 1] === ':') return undefined;
-    if (char === '\\' && index + 1 < glob.length) { index += 1; body += `\\${glob[index]}`; }
+    if (char === '\\' && index + 1 < glob.length) { index += 1; body += glob[index].replace(/[\\^\][-]/g, '\\$&'); }
     else body += char === '-' ? char : char.replace(/[\\^\][]/g, '\\$&');
   }
   return undefined;

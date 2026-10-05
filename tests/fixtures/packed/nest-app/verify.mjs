@@ -2,6 +2,7 @@
 // throws, so the process exits non-zero. TEST_HTTP_ADAPTER selects the server.
 import 'reflect-metadata';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { ExpressAdapter } from '@nestjs/platform-express';
 import { FastifyAdapter } from '@nestjs/platform-fastify';
 import { nestModelConstruct, objectCodecFromMetatype } from '@exprtlabs/golem/nest';
@@ -13,7 +14,6 @@ import { createApplication } from './.build/src/application.js';
 import { Payment } from './.build/src/payment.model.js';
 import { PaymentsController } from './.build/src/payments.controller.js';
 import { parseInput, stringifyInput, submitPayment } from './.build/src/wire.js';
-import { IOBJECT_PLUGIN_KEYS as modelCodecKeys } from './.build/src/generated/models/iobject-plugin-keys.js';
 import {
   OPERATION_CODECS,
   OPERATION_OUTPUT_CODECS,
@@ -31,6 +31,9 @@ const input = {
   money: { amount: '12.50', currency: 'USD' },
   note: 'Order 123',
 };
+
+// The models job's codec ids, by `src/<file>#<name>`.
+const modelCodecKeys = JSON.parse(readFileSync(new URL('./.golem/codec-keys.json', import.meta.url), 'utf8')).keys;
 
 const sdkCodecId = model => Object.entries(sdkCodecKeys).find(([key]) => key.endsWith(`#${model}Model`))?.[1];
 
