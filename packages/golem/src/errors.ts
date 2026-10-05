@@ -1,4 +1,4 @@
-import { schemaIssueMessage, type SchemaIssue, type SchemaIssueDetail } from './validation-runtime.js';
+import { schemaIssueMessage, type SchemaIssue, type SchemaIssueDetail } from './issue-messages.js';
 
 /**
  * Failures owned by model validation, JSON serialization, and the generated
@@ -97,6 +97,11 @@ function snapshotDetail(issue: Issue): IssueDetail {
     case 'serialization':
     case 'deserialization':
     case 'external': return { code: issue.code };
+    default: {
+      // Untyped JavaScript callers can send a code the union does not have.
+      const unknown: { readonly code: unknown } = issue;
+      throw new TypeError(`Unknown issue code: ${String(unknown.code)}.`);
+    }
   }
 }
 

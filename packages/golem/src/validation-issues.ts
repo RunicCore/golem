@@ -3,7 +3,7 @@ import {
   type Issue, type IssuePath, type JsonValue,
 } from './errors.js';
 import { MODEL_DATE_KEYWORD, MODEL_INSTANCE_KEYWORD, VALIDATION_KEYWORD } from './schema-keywords.js';
-import type { JsonTypeName, SchemaIssueDetail } from './validation-runtime.js';
+import type { JsonTypeName, SchemaIssueDetail } from './issue-messages.js';
 
 function record(value: unknown): Record<string, unknown> | undefined {
   return value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : undefined;

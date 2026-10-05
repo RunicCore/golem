@@ -137,3 +137,12 @@ test('LibError rejects non-JSON literal values instead of retaining mutable or c
   cyclic.self = cyclic;
   assert.throws(rejected([cyclic as never]), /finite, acyclic JSON values/);
 });
+
+test('LibError rejects an issue whose code the type does not have', () => {
+  // Untyped JavaScript callers, such as setIssues, can send an old keyword code.
+  const old = { code: 'minLength', message: 'Too short', path: ['name'], source: IssueSource.TypeScript } as unknown as Issue;
+  assert.throws(
+    () => new LibError(LibErrorKind.Validation, 'Invalid issue', [old]),
+    /Unknown issue code: minLength/,
+  );
+});
