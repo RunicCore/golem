@@ -46,14 +46,74 @@ function allowedSource(filename: string): boolean {
   return ['scripts', 'tests', 'examples', 'docs'].includes(top);
 }
 
+interface IgnoreRule { readonly base: string; readonly pattern: RegExp; readonly negated: boolean; readonly directoryOnly: boolean }
+
+/** One `.gitignore` glob as a regular expression over a path relative to the folder of the ignore file. */
+function ignorePattern(pattern: string): RegExp {
+  const anchored = pattern.includes('/');
+  const glob = pattern.startsWith('/') ? pattern.slice(1) : pattern;
+  let source = '';
+  for (let index = 0; index < glob.length; index += 1) {
+    const char = glob[index];
+    if (char === '*' && glob[index + 1] === '*') {
+      const startsSegment = index === 0 || glob[index - 1] === '/';
+      if (startsSegment && glob[index + 2] === '/') { source += '(?:.*/)?'; index += 2; }
+      else if (startsSegment && index + 2 === glob.length) { source += '.*'; index += 1; }
+      else { source += '[^/]*'; index += 1; }
+    } else if (char === '*') source += '[^/]*';
+    else if (char === '?') source += '[^/]';
+    else if (char === '\\' && index + 1 < glob.length) { index += 1; source += glob[index].replace(/[.+^${}()|[\]\\]/g, '\\$&'); }
+    else source += char.replace(/[.+^${}()|[\]\\]/g, '\\$&');
+  }
+  return new RegExp(`^${anchored ? '' : '(?:.*/)?'}${source}$`);
+}
+
+/** The rules of one `.gitignore` file; `base` is its folder relative to the root. */
+function ignoreRules(text: string, base: string): IgnoreRule[] {
+  const rules: IgnoreRule[] = [];
+  for (const raw of text.split(/\r?\n/)) {
+    let line = raw.replace(/(?<!\\)\s+$/, '');
+    if (!line || line.startsWith('#')) continue;
+    const negated = line.startsWith('!');
+    if (negated) line = line.slice(1);
+    const directoryOnly = line.endsWith('/');
+    if (directoryOnly) line = line.slice(0, -1);
+    if (!line) continue;
+    rules.push({ base, pattern: ignorePattern(line), negated, directoryOnly });
+  }
+  return rules;
+}
+
+/** True when the repository's ignore files, read from the root down to the entry's folder, ignore the entry. The last matching rule wins. */
+function ignored(rules: readonly IgnoreRule[], relative: string, directory: boolean): boolean {
+  let result = false;
+  for (const rule of rules) {
+    if (rule.directoryOnly && !directory) continue;
+    const local = rule.base ? (relative.startsWith(`${rule.base}/`) ? relative.slice(rule.base.length + 1) : undefined) : relative;
+    if (local !== undefined && rule.pattern.test(local)) result = !rule.negated;
+  }
+  return result;
+}
+
+/**
+ * The files below `root`. A source listing leaves out what the `.gitignore` files in the tree ignore, so a checkout
+ * that generated files lists the same files as a clean clone. The listing reads the ignore files itself and needs no
+ * git: a tree without them, such as a copy made without ignore files, lists everything. A tracked file that an ignore
+ * rule matches is left out too.
+ */
 function filesIn(root: string, sourceOnly: boolean): string[] {
   const canonicalRoot = fs.realpathSync(root);
   const result: string[] = [];
-  function visit(directory: string): void {
+  function visit(directory: string, inherited: readonly IgnoreRule[]): void {
+    const base = portable(path.relative(canonicalRoot, directory));
+    const ignoreFile = path.join(directory, '.gitignore');
+    const rules = sourceOnly && fs.existsSync(ignoreFile) && fs.statSync(ignoreFile).isFile()
+      ? [...inherited, ...ignoreRules(fs.readFileSync(ignoreFile, 'utf8'), base)]
+      : inherited;
     for (const entry of fs.readdirSync(directory, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
       const absolute = path.join(directory, entry.name);
       const relative = portable(path.relative(canonicalRoot, absolute));
-      if (sourceOnly && forbiddenPath(relative)) continue;
+      if (sourceOnly && (forbiddenPath(relative) || ignored(rules, relative, entry.isDirectory()))) continue;
       if (sourceOnly && !relative.includes('/') && entry.isDirectory()
         && !['packages', 'scripts', 'tests', 'examples', 'docs', '.github'].includes(relative)) continue;
       if (entry.isSymbolicLink()) {
@@ -64,11 +124,11 @@ function filesIn(root: string, sourceOnly: boolean): string[] {
         }
         throw new Error(`Public source rejected: symbolic link at ${relative}`);
       }
-      if (entry.isDirectory()) visit(absolute);
+      if (entry.isDirectory()) visit(absolute, rules);
       else if (entry.isFile() && (!sourceOnly || allowedSource(relative))) result.push(relative);
     }
   }
-  visit(canonicalRoot);
+  visit(canonicalRoot, []);
   return result.sort();
 }
 
