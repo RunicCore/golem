@@ -319,7 +319,7 @@ function ownDiagnostics(diagnostics: readonly ts.Diagnostic[], outputs: readonly
 
 /** A companion of a model-suffixed source that no longer exists; any other `*.generated.ts` is not golem's. */
 function isOrphanCompanion(companion: string, suffixes: readonly string[]): boolean {
-  const source = companion.replace(/\.generated\.ts$/, '.ts');
+  const source = companion.replace(/\.generated(\.[cm]?ts)$/, '$1');
   return source !== companion && suffixPattern(suffixes).test(basename(source)) && !existsSync(source);
 }
 

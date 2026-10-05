@@ -58,7 +58,7 @@ A file that exports only types compiles to an empty module: TypeScript erases th
 Skip that import and the call throws a `LibError` of kind `validation_unavailable`:
 
 ```
-IObject codec "<id>" for model <model> is not registered. The generated file that registers it (the model file's .model.generated.js) has not been loaded; a type-only import such as `import type { T<model> }` does not load it. Import the model's .model.generated.js file, or a value from its model file, before calling parse, stringify, validate or the wire-format functions.
+IObject codec "<id>" for model <model> is not registered. The generated file that registers it (the model file's `.generated.js` companion, such as `order.entity.generated.js` for `order.entity.ts`) has not been loaded; a type-only import such as `import type { T<model> }` does not load it. Import the model's `.generated.js` companion, or a value from its model file, before calling parse, stringify, validate or the wire-format functions.
 ```
 
 ## Read and write JSON

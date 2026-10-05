@@ -10,6 +10,7 @@ import {
   assertValue as publicAssertValue,
   fromWireFormat as publicFromWireFormat,
   parse as publicParse,
+  requireObjectCodec,
   stringify as publicStringify,
   toWireFormat as publicToWireFormat,
 } from '@exprtlabs/golem/serde';
@@ -396,4 +397,14 @@ test('fromWireFormat copies identity arrays and tuples instead of aliasing the i
   assert.deepEqual(encoded.emails, wire.emails);
   assert.notEqual(encoded.ip, model.ip);
   assert.deepEqual(encoded.ip, wire.ip);
+});
+
+test('a codec that is not registered points at the generated companion of any model file', () => {
+  assert.throws(() => requireObjectCodec('TOrder_0badc0de'), (error: unknown) => {
+    assert.ok(error instanceof LibError);
+    assert.equal(error.kind, LibErrorKind.ValidationUnavailable);
+    assert.match(error.message, /the model file's `\.generated\.js` companion, such as `order\.entity\.generated\.js` for `order\.entity\.ts`/);
+    assert.match(error.message, /Import the model's `\.generated\.js` companion, or a value from its model file/);
+    return true;
+  });
 });

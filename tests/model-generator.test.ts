@@ -366,3 +366,20 @@ export type TAnything = IModel<{ id: string }>;` });
   const result = generate({ root, sources: [path.join(sourceRoot, 'anything.ts')], profile: { mobx: false, validation: false } });
   assert.ok(result.artifacts.some(artifact => artifact.path === path.join(sourceRoot, 'anything.generated.ts')));
 });
+
+test('generated companions of .mts models import sibling companions with .mjs specifiers and type-check', (t: TestContext) => {
+  const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-generate-mts-', linkTypescript: true, include: ['src/**/*.mts'] });
+  writeModelSources(sourceRoot, {
+    'line.entity.mts': tsSource`import type { IModel } from '@exprtlabs/golem/model';
+export type TLine = IModel<{ sku: string }>;`,
+    'order.entity.mts': tsSource`import type { IModel } from '@exprtlabs/golem/model';
+import type { TLine } from './line.entity.mjs';
+export type TOrder = IModel<{ lines: TLine[] }>;`,
+  });
+  // A variable keeps the test free of the context type, which names the suffixes only once they exist.
+  const context = { root, suffixes: ['.entity.mts'], profile: { mobx: false, validation: false } };
+  const result = generate(context);
+  const order = result.artifacts.find(artifact => artifact.path === path.join(sourceRoot, 'order.entity.generated.mts'));
+  assert.ok(order, 'the companion of an .mts source is a .generated.mts file');
+  assert.match(order.content, /\.\/line\.entity\.generated\.mjs/);
+});
