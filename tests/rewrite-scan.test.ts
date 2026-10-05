@@ -482,3 +482,14 @@ export const next = 1;
   const segment = decodeMappings(applied.map.mappings)[line]?.[0];
   assert.equal(segment?.[2], source.split('\n').findIndex((each) => each.startsWith('export const next')));
 });
+
+test('a class extending a base from any generated module registers, whatever suffix its file has', (t) => {
+  const root = bareProject(t, {
+    'iobject-plugin-keys.ts': 'export const IOBJECT_PLUGIN_KEYS = {"order.entity.ts#Order":"TOrder_aaaaaaaa","order.entity.ts#TOrder":"TOrder_aaaaaaaa"} as const;\n',
+    'order.entity.generated.ts': 'export abstract class TOrderBaseModel {}\n',
+    'order.entity.ts': "import { TOrderBaseModel } from './order.entity.generated.js';\nexport type TOrder = { id: string };\nexport class Order extends TOrderBaseModel {}\n",
+  });
+  const result = scan(root);
+  assert.deepEqual(result.diagnostics, []);
+  assert.match(rewritten(root, result, 'order.entity.ts'), /\n__golem_registerIModelClass\("TOrder_aaaaaaaa", Order\);/);
+});

@@ -1,6 +1,6 @@
 import path from 'node:path';
 import * as ts from '../typescript-ns.js';
-import { canonicalFilename, isModelSource, portableRelativeFilename } from './project.js';
+import { canonicalFilename, portableRelativeFilename } from './project.js';
 import { packageSpecifier } from './package-specifier.js';
 import { canonicalConstraintKey } from '../schema.js';
 import type { ConstraintSchemaValue, ModelConstraint } from '../schema.js';
@@ -51,6 +51,8 @@ export interface TagAnalysisContext {
   readonly sourceFile: ts.SourceFile;
   /** Absolute project root used to keep emitted binding IDs relocatable. */
   readonly identityRoot?: string;
+  /** Whether a file is a model source of the job, so it has a generated companion. */
+  readonly isModelSource?: (filename: string) => boolean;
   readonly diagnostic: (node: ts.Node, code: string, message: string) => Error;
   /** Resolve a tag's schema type without executing application code. */
   readonly describeSchema?: (type: ts.Type, node?: ts.TypeNode) => ConstraintSchemaValue;
@@ -252,7 +254,7 @@ function valueBindingForSymbol(
     );
   }
   const resolved = packageSpecifier(canonicalFilename(sourceFile.fileName), context.sourceFile.fileName);
-  if (resolved.kind !== 'package' && isModelSource(canonicalFilename(sourceFile.fileName))) {
+  if (resolved.kind !== 'package' && context.isModelSource?.(canonicalFilename(sourceFile.fileName))) {
     // The shared generated module imports this function; from a model file that would close a cycle with the
     // file's generated companion, which breaks start-up whenever the companion loads first.
     throw context.diagnostic(

@@ -7,7 +7,7 @@ import type { GolemConfig, GolemJob } from './config.js';
 import { loadInventory, applyJob, removeRetiredJobs } from './outputs.js';
 import { absoluteRecordPath, insideAny, inventoryPaths, JobInputs, jobIsCurrent, loadJobRecords, recordPath, sameSetup, saveJobRecords } from './job-cache.js';
 import type { JobRecord } from './job-cache.js';
-import { GolemDiagnosticSeverity, errorMessage, hasErrorCode, isRecord } from './generator-api.js';
+import { DEFAULT_CONTROLLER_SUFFIXES, DEFAULT_MODEL_SUFFIXES, GolemDiagnosticSeverity, errorMessage, hasErrorCode, isRecord, suffixPattern } from './generator-api.js';
 import { validateModelManifest } from './model-manifest.js';
 import type { GolemArtifact, GolemDiagnostic, GolemResult, GeneratorSession } from './generator-api.js';
 import { assertRuntimeCompatible } from './runtime-compatibility.js';
@@ -349,7 +349,7 @@ function affectedJobs(config: GolemConfig, options: PipelineOptions): ReadonlySe
         // A generator job has no input pattern; it reruns from its recorded watchInputs or a config change.
       } else if (job.options.sources?.includes(input)
         || (!job.options.sources && contains(path.join(job.options.root, 'src'), input)
-          && (job.kind === 'controllers' ? /\.controller\.ts$/.test(input) : /\.models?\.ts$/.test(input)))) affected.add(job.id);
+          && suffixPattern(job.options.suffixes ?? (job.kind === 'controllers' ? DEFAULT_CONTROLLER_SUFFIXES : DEFAULT_MODEL_SUFFIXES)).test(path.basename(input)))) affected.add(job.id);
     }
   }
   // An unclassified input can be a previously missing resolution dependency.

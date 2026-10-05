@@ -110,6 +110,8 @@ export interface GeneratorSession {
 
 export interface ModelContext {
   readonly root: string;
+  /** File-name endings that make a file below `root/src` a model source; defaults to `.model.ts` and `.models.ts`. */
+  readonly suffixes?: readonly string[];
   readonly output?: string;
   readonly sources?: readonly string[];
   readonly profile: GolemProfile;
@@ -155,6 +157,8 @@ export interface ControllerContext {
   readonly output: string;
   /** Optional controller entrypoints; omitted means provider discovery below root/src. */
   readonly sources?: readonly string[];
+  /** File-name endings that make a file below `root/src` a controller source; defaults to `.controller.ts`. */
+  readonly suffixes?: readonly string[];
   /** Defaults to OpenAPI 3.2.0; 3.1.2 is the supported explicit target. */
   readonly openapiVersion?: '3.2.0' | '3.1.2';
   readonly info: Readonly<Record<string, unknown>>;
@@ -183,6 +187,21 @@ export function errorMessage(error: unknown): string {
 
 export function hasErrorCode(error: unknown, code: string): boolean {
   return isRecord(error) && error.code === code;
+}
+
+export const DEFAULT_MODEL_SUFFIXES: readonly string[] = ['.model.ts', '.models.ts'];
+export const DEFAULT_CONTROLLER_SUFFIXES: readonly string[] = ['.controller.ts'];
+
+/** Matches a source file name that ends in one of `suffixes` and is not a generated companion (`*.generated.ts`, `.mts`, `.cts`). */
+export function suffixPattern(suffixes: readonly string[]): RegExp {
+  const endings = suffixes.map(suffix => suffix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
+  return new RegExp(`^(?![\\s\\S]*\\.generated\\.[cm]?ts$)[\\s\\S]*(?:${endings})$`);
+}
+
+/** The file name without the longest of `suffixes` it ends in, or without its extension when it ends in none. */
+export function stripSourceSuffix(filename: string, suffixes: readonly string[]): string {
+  const matched = suffixes.filter(suffix => filename.endsWith(suffix)).sort((left, right) => right.length - left.length)[0];
+  return matched === undefined ? filename.replace(/\.[cm]?ts$/, '') : filename.slice(0, -matched.length);
 }
 
 export interface SourceDiscoveryOptions {

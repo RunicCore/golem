@@ -1,7 +1,7 @@
 
 import { dirname, join, normalize, parse, relative, resolve, sep } from 'node:path';
 import * as ts from '../typescript-ns.js';
-import { discoverSources, type GeneratorSession, type InputObserver } from '../generator-api.js';
+import { DEFAULT_MODEL_SUFFIXES, discoverSources, suffixPattern, type GeneratorSession, type InputObserver } from '../generator-api.js';
 
 export interface ProgramInfo {
   readonly configPath?: string;
@@ -53,24 +53,22 @@ function pathIsAbsolute(filename: string): boolean {
   return parse(filename).root.length > 0;
 }
 
+/** A TypeScript file that is not a generated companion: what an explicit model source may name. */
 export function isModelSource(filename: string): boolean {
-  return (
-    (filename.endsWith('.model.ts') || filename.endsWith('.models.ts'))
-    && !filename.endsWith('.generated.ts')
-  );
+  return /\.[cm]?ts$/.test(filename) && !/\.d\.[cm]?ts$/.test(filename) && !isGeneratedCompanion(filename);
 }
 
 export function discoverModelSources(
   root = process.cwd(),
   onInput?: InputObserver,
+  suffixes: readonly string[] = DEFAULT_MODEL_SUFFIXES,
 ): string[] {
-  return discoverSources(join(root, 'src'), { source: /\.models?\.ts$/, normalize: canonicalFilename, onInput });
+  return discoverSources(join(root, 'src'), { source: suffixPattern(suffixes), normalize: canonicalFilename, onInput });
 }
 
+/** The companion of a source: `.generated` before its final extension. */
 export function generatedFilename(source: string): string {
-  const generated = source.replace(/\.models?\.ts$/, (suffix) =>
-    suffix === '.models.ts' ? '.models.generated.ts' : '.model.generated.ts',
-  );
+  const generated = source.replace(/\.([cm]?ts)$/, '.generated.$1');
   return pathIsAbsolute(source) ? canonicalFilename(generated) : generated;
 }
 
@@ -250,7 +248,7 @@ export function createOverlayProgram(
   const overlays = new Map(artifacts.map((artifact) => [canonicalFilename(artifact.path), artifact.content]));
   for (const filename of info.projectFiles) {
     const canonical = canonicalFilename(filename);
-    if (canonical.endsWith('.generated.ts') && !overlays.has(canonical) && owns(canonical)) {
+    if (isGeneratedCompanion(canonical) && !overlays.has(canonical) && owns(canonical)) {
       overlays.set(canonical, 'export {}\n');
     }
   }

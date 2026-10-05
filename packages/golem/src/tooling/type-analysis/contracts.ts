@@ -2,6 +2,7 @@ import * as path from 'node:path';
 import * as ts from '../typescript-ns.js';
 import { collectSpecifications, type ModelSpecification, type TypeAnalysisContext } from './models.js';
 import { descriptorBuilder, type ModelConversionDescriptor } from './types.js';
+import { isGeneratedCompanion } from './project.js';
 import { pascalIdentifier } from './projection-names.js';
 import { fieldProvenance } from './projections.js';
 import { canonicalDescriptorKey } from '../schema.js';
@@ -31,7 +32,7 @@ export function createContractAnalysis(
   const checker = program.getTypeChecker();
   const sources = program.getSourceFiles().filter(source => !source.isDeclarationFile
     && !source.fileName.replace(/\\/g, '/').includes('/node_modules/')
-    && !source.fileName.endsWith('.generated.ts')).map(source => source.fileName);
+    && !isGeneratedCompanion(source.fileName)).map(source => source.fileName);
   const { specifications } = collectSpecifications(program, sources);
   const emptyManifests: ManifestIndex = {
     byId: new Map(), byProvenance: new Map(), files: [], localFiles: [], validationSchemaClosure: [], runtimeExports: () => new Set(), externalModelForType: () => undefined,

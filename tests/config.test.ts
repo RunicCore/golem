@@ -224,3 +224,47 @@ test('CLI rejects per-command feature overrides and preserves child arguments', 
     action: 'exec', config: 'other.yaml', watch: true, command: ['node', '-e', 'process.exit(7)'],
   });
 });
+
+const CONTROLLER_YAML = (suffixes: string): string => `version: 1\ncontrollers:\n  - root: .\n    output: api.json\n    info: { title: T, version: "1" }\n    suffixes: ${suffixes}\n`;
+
+test('model and controller suffixes are read per job, and a job without them has none', (t: TestContext) => {
+  const models = fixture(t, 'version: 1\nmodels:\n  root: .\n  suffixes: [.entity.ts, .record.mts]\n');
+  const modelJob = loadConfig(models.filename).jobs[0];
+  assert.ok(modelJob && modelJob.kind === 'models');
+  assert.deepEqual(Reflect.get(modelJob.options, 'suffixes'), ['.entity.ts', '.record.mts']);
+
+  const controllers = fixture(t, CONTROLLER_YAML('[.api.ts]'));
+  const controllerJob = loadConfig(controllers.filename).jobs[0];
+  assert.ok(controllerJob && controllerJob.kind === 'controllers');
+  assert.deepEqual(Reflect.get(controllerJob.options, 'suffixes'), ['.api.ts']);
+
+  const defaults = fixture(t, 'version: 1\nmodels:\n  root: .\n');
+  const defaultJob = loadConfig(defaults.filename).jobs[0];
+  assert.ok(defaultJob && defaultJob.kind === 'models');
+  assert.equal('suffixes' in defaultJob.options, false, 'the generator applies its own defaults');
+});
+
+test('a suffix that is empty, malformed, repeated or names a generated file is a configuration error', (t: TestContext) => {
+  const models = (suffixes: string): string => `version: 1\nmodels:\n  root: .\n  suffixes: ${suffixes}\n`;
+  const form = (label: string): string => `${label} must be a string that starts with "." and ends in .ts, .mts or .cts.`;
+  const generated = (label: string): string => `${label} must not end in .generated.ts, .generated.mts or .generated.cts: golem writes those files.`;
+  const testCases: [string, string][] = [
+    [models('[]'), 'models.suffixes must be a nonempty array.'],
+    [models('.model.ts'), 'models.suffixes must be a nonempty array.'],
+    [models('[""]'), form('models.suffixes[0]')],
+    [models('[.model.ts, model.ts]'), form('models.suffixes[1]')],
+    [models('[.model.js]'), form('models.suffixes[0]')],
+    [models('[.model.ts, 3]'), form('models.suffixes[1]')],
+    [models('[.model.generated.ts]'), generated('models.suffixes[0]')],
+    [models('[.model.generated.cts]'), generated('models.suffixes[0]')],
+    [models('[.model.ts, .models.ts, .model.ts]'), 'models.suffixes lists .model.ts twice.'],
+    [CONTROLLER_YAML('[]'), 'controllers[0].suffixes must be a nonempty array.'],
+    [CONTROLLER_YAML('[api.ts]'), form('controllers[0].suffixes[0]')],
+    [CONTROLLER_YAML('[.api.generated.mts]'), generated('controllers[0].suffixes[0]')],
+    [CONTROLLER_YAML('[.api.ts, .api.ts]'), 'controllers[0].suffixes lists .api.ts twice.'],
+  ];
+  for (const [yaml, message] of testCases) {
+    const { filename } = fixture(t, yaml);
+    assert.throws(() => loadConfig(filename), (error: unknown) => error instanceof Error && error.message === message, message);
+  }
+});

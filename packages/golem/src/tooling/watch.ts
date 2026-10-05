@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { contains } from './config.js';
 import type { GolemConfig } from './config.js';
-import { discoverSources, errorMessage, hasErrorCode } from './generator-api.js';
+import { DEFAULT_CONTROLLER_SUFFIXES, DEFAULT_MODEL_SUFFIXES, discoverSources, errorMessage, hasErrorCode, suffixPattern } from './generator-api.js';
 import { GeneratorSessionResources, runPipeline, strongestInputKind } from './pipeline.js';
 import type { InputKind, PipelineState } from './pipeline.js';
 
@@ -14,8 +14,8 @@ function sourceCandidates(config: GolemConfig, kind: 'models' | 'controllers'): 
     if (job.kind !== kind) continue;
     found.add(path.join(job.options.root, 'tsconfig.json'));
     const sources = job.options.sources ?? discoverSources(path.join(job.options.root, 'src'), kind === 'models'
-      ? { source: /\.models?\.ts$/, skip: directory => outputs.some(output => contains(output, directory)) }
-      : { source: /\.controller\.ts$/ });
+      ? { source: suffixPattern(job.options.suffixes ?? DEFAULT_MODEL_SUFFIXES), skip: directory => outputs.some(output => contains(output, directory)) }
+      : { source: suffixPattern(job.options.suffixes ?? DEFAULT_CONTROLLER_SUFFIXES) });
     for (const source of sources) found.add(source);
   }
   return found;

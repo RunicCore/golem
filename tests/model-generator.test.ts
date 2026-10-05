@@ -341,3 +341,28 @@ export {};
     /item\.model\.generated\.ts:\d+:\d+ - error TS2420: Class 'TItemBaseModel' incorrectly implements interface 'GeneratedModel/,
   );
 });
+
+test('configured suffixes select the model sources and name each generated file after its source', (t: TestContext) => {
+  const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-generate-suffixes-', linkTypescript: true });
+  writeModelSources(sourceRoot, {
+    'order.entity.ts': tsSource`import type { IModel } from '@exprtlabs/golem/model';
+export type TOrder = IModel<{ id: string }>;`,
+    'order.model.ts': tsSource`import type { IModel } from '@exprtlabs/golem/model';
+export type TIgnored = IModel<{ id: string }>;`,
+  });
+  // A variable keeps the test free of the context type, which names the suffixes only once they exist.
+  const context = { root, suffixes: ['.entity.ts'], profile: { mobx: false, validation: false } };
+  const result = generate(context);
+  const paths = result.artifacts.map(artifact => artifact.path);
+  assert.ok(paths.includes(path.join(sourceRoot, 'order.entity.generated.ts')), 'the companion keeps the whole source name');
+  assert.equal(paths.some(filename => filename.endsWith('order.model.generated.ts')), false, 'a file without a configured suffix is not a source');
+  assert.ok(result.watchInputs.includes(path.join(sourceRoot, 'order.entity.ts')));
+});
+
+test('an explicit source may have any TypeScript file name, whatever the suffixes', (t: TestContext) => {
+  const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-generate-any-name-', linkTypescript: true });
+  writeModelSources(sourceRoot, { 'anything.ts': tsSource`import type { IModel } from '@exprtlabs/golem/model';
+export type TAnything = IModel<{ id: string }>;` });
+  const result = generate({ root, sources: [path.join(sourceRoot, 'anything.ts')], profile: { mobx: false, validation: false } });
+  assert.ok(result.artifacts.some(artifact => artifact.path === path.join(sourceRoot, 'anything.generated.ts')));
+});

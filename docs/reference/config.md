@@ -77,7 +77,8 @@ controllers.
 | --- | --- | --- | --- | --- |
 | `framework` | literal `'nestjs'` | No | `nestjs` (NestJS 11) | Controller framework the job reads contracts from. |
 | `root` | path | No | `.` | TypeScript project directory. |
-| `sources` | array of paths | No | — | Explicit config-relative controller files. When omitted, scans `src/**/*.controller.ts` below `root`. |
+| `sources` | array of paths | No | — | Explicit config-relative controller files. When omitted, scans `src/**` below `root` for the `suffixes`. |
+| `suffixes` | array of strings | No | `[".controller.ts"]` | File-name endings that make a file below `root/src` a controller source. Each entry starts with `.`, ends in `.ts`, `.mts` or `.cts`, appears once, and does not end in `.generated.<ext>`. |
 | `output` | path | Yes | — | One config-relative `.json`, `.yaml` or `.yml` document. |
 | `openapiVersion` | `'3.2.0'` or `'3.1.2'` | No | `3.2.0` | Document dialect. Use `3.1.2` for consumers that require that target; contracts that cannot be represented fail generation. |
 | `info` | object | Yes | — | OpenAPI information object, including the API `title` and `version`. |
@@ -157,11 +158,13 @@ Install `@exprtlabs/golem-model` to use `models`.
 | Key | Type | Required | Default | Meaning |
 | --- | --- | --- | --- | --- |
 | `root` | path | No | `.` | TypeScript project directory. |
-| `sources` | array of paths | No | — | Explicit config-relative model files, or `src/**/*.model.ts` and `src/**/*.models.ts` discovered below `root`. |
+| `sources` | array of paths | No | — | Explicit config-relative model files, which may have any `.ts`, `.mts` or `.cts` name. When omitted, scans `src/**` below `root` for the `suffixes`. |
+| `suffixes` | array of strings | No | `[".model.ts", ".models.ts"]` | File-name endings that make a file below `root/src` a model source. Each entry starts with `.`, ends in `.ts`, `.mts` or `.cts`, appears once, and does not end in `.generated.<ext>`. |
 | `output` | path | No | `<root>/src/generated/models` | Shared generated model output. It must not overlap another job. |
 
-The generated file for each model source stays beside it. Explicit `sources`
-must be non-empty and must not contain duplicates.
+The generated file for each model source stays beside it and puts `.generated`
+before the final extension: `order.entity.ts` gets `order.entity.generated.ts`.
+Explicit `sources` must be non-empty and must not contain duplicates.
 
 ```yaml
 version: 1

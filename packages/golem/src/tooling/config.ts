@@ -55,6 +55,22 @@ function nonempty(value: unknown, label: string): string {
   return value;
 }
 
+/** The `suffixes` of a job: file-name endings that start with `.`, end in `.ts`, `.mts` or `.cts`, never repeat and never name a generated file. */
+function suffixes(value: unknown, label: string): readonly string[] | undefined {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value) || !value.length) throw new Error(`${label} must be a nonempty array.`);
+  const seen = new Set<string>();
+  for (const [index, entry] of value.entries()) {
+    if (typeof entry !== 'string' || !entry.startsWith('.') || !/\.[cm]?ts$/.test(entry)) {
+      throw new Error(`${label}[${index}] must be a string that starts with "." and ends in .ts, .mts or .cts.`);
+    }
+    if (/\.generated\.[cm]?ts$/.test(entry)) throw new Error(`${label}[${index}] must not end in .generated.ts, .generated.mts or .generated.cts: golem writes those files.`);
+    if (seen.has(entry)) throw new Error(`${label} lists ${entry} twice.`);
+    seen.add(entry);
+  }
+  return value;
+}
+
 function positive(value: unknown, fallback: number, label: string): number {
   const result = value === undefined ? fallback : value;
   if (typeof result !== 'number' || !Number.isSafeInteger(result) || result <= 0) throw new Error(`${label} must be a positive safe integer.`);
@@ -238,7 +254,7 @@ export function resolveConfig(filename = 'golem.yaml', onInput?: InputObserver):
     for (const [index, entry] of value.controllers.entries()) {
       const label = `controllers[${index}]`;
       keys(entry, [
-        'framework', 'root', 'sources', 'output', 'openapiVersion', 'info', 'servers',
+        'framework', 'root', 'sources', 'suffixes', 'output', 'openapiVersion', 'info', 'servers',
         'securitySchemes', 'tags', 'globalPrefix', 'uriVersioning',
       ], label);
       if (entry.framework !== undefined && entry.framework !== 'nestjs') throw new Error(`${label}.framework must be nestjs.`);
@@ -258,6 +274,7 @@ export function resolveConfig(filename = 'golem.yaml', onInput?: InputObserver):
           if (new Set(sources).size !== sources.length) throw new Error(`Duplicate ${label}.sources paths.`);
           return sources;
         })();
+      const sourceSuffixes = suffixes(entry.suffixes, `${label}.suffixes`);
       const openapiVersion = entry.openapiVersion === undefined ? '3.2.0' : entry.openapiVersion;
       if (openapiVersion !== '3.2.0' && openapiVersion !== '3.1.2') {
         throw new Error(`${label}.openapiVersion must be 3.2.0 or 3.1.2.`);
@@ -275,6 +292,7 @@ export function resolveConfig(filename = 'golem.yaml', onInput?: InputObserver):
         openapiVersion,
         info,
         ...(sourceValues ? { sources: sourceValues } : {}),
+        ...(sourceSuffixes ? { suffixes: sourceSuffixes } : {}),
         ...(servers ? { servers } : {}),
         ...(securitySchemes ? { securitySchemes } : {}),
         ...(tags ? { tags } : {}),
@@ -311,7 +329,7 @@ export function resolveConfig(filename = 'golem.yaml', onInput?: InputObserver):
     }
   }
   if (value.models !== undefined) {
-    keys(value.models, ['root', 'sources', 'output'], 'models');
+    keys(value.models, ['root', 'sources', 'suffixes', 'output'], 'models');
     const root = inputPath(value.models.root ?? '.', 'models.root');
     const output = canonicalPath(value.models.output === undefined
       ? defaultModelOutput(root)
@@ -326,7 +344,8 @@ export function resolveConfig(filename = 'golem.yaml', onInput?: InputObserver):
       sources = value.models.sources.map(source => inputPath(source, 'model source'));
       if (new Set(sources).size !== sources.length) throw new Error('Duplicate model source paths.');
     }
-    jobs.push({ id: `models:${path.relative(directory, root) || '.'}`, kind: 'models', package: '@exprtlabs/golem-model', options: { root, output, profile, ...(sources ? { sources } : {}) } });
+    const sourceSuffixes = suffixes(value.models.suffixes, 'models.suffixes');
+    jobs.push({ id: `models:${path.relative(directory, root) || '.'}`, kind: 'models', package: '@exprtlabs/golem-model', options: { root, output, profile, ...(sources ? { sources } : {}), ...(sourceSuffixes ? { suffixes: sourceSuffixes } : {}) } });
   }
   if (!jobs.length) throw new Error('Configure at least one generators, controllers, openapi, or models section.');
   // A misspelled path is that, not a tsconfig the jobs happen to find elsewhere.

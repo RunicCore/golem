@@ -1,5 +1,5 @@
 import * as path from 'node:path';
-import { discoverSources } from '@exprtlabs/golem/generator-api';
+import { DEFAULT_CONTROLLER_SUFFIXES, discoverSources, stripSourceSuffix, suffixPattern } from '@exprtlabs/golem/generator-api';
 import * as ts from '@exprtlabs/golem/ts';
 import {
   GolemDiagnosticSeverity,
@@ -52,8 +52,9 @@ export interface UriVersioning {
 export function discoverControllerSources(
   root: string,
   onInput?: (filename: string) => void,
+  suffixes: readonly string[] = DEFAULT_CONTROLLER_SUFFIXES,
 ): string[] {
-  return discoverSources(path.join(root, 'src'), { source: /\.controller\.ts$/, onInput });
+  return discoverSources(path.join(root, 'src'), { source: suffixPattern(suffixes), onInput });
 }
 function normalizeSegment(value: string): string {
   return value.trim().replace(/^\/+|\/+$/g, '');
@@ -366,7 +367,7 @@ async function analyzeController(
   const methods = classMethods(context.checker, classDeclaration);
   const routes: ControllerRoute[] = [];
   const controllerName = classDeclaration.name?.text
-    ?? path.basename(classDeclaration.getSourceFile().fileName).replace(/\.controller\.ts$/, '');
+    ?? stripSourceSuffix(path.basename(classDeclaration.getSourceFile().fileName), context.suffixes ?? DEFAULT_CONTROLLER_SUFFIXES);
   for (const method of methods) {
     const decorators = decoratorsOf(context.checker, method);
     if (routeExcluded(context, decorators)) continue;

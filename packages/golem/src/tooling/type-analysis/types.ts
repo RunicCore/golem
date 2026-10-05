@@ -535,6 +535,8 @@ export function descriptorBuilder(
   allowUnresolved = true,
   /** Name that references to a model and its derived projections use; the model's own name when omitted. */
   nameFor?: (specification: ModelSpecification) => string,
+  /** Canonical model source files of the job, which have a generated companion; omitted when the analysis emits none. */
+  modelSources?: ReadonlySet<string>,
 ): {
   (type: ts.Type, context: TypeAnalysisContext, seen?: ReadonlySet<ts.Type>, node?: ts.TypeNode): ModelConversionDescriptor;
   readonly projections: ReadonlyMap<string, ModelConversionDescriptor>;
@@ -587,6 +589,7 @@ export function descriptorBuilder(
       checker,
       sourceFile: context.sourceFile,
       identityRoot: stableIdentityRoot,
+      ...(modelSources ? { isModelSource: (filename: string) => modelSources.has(filename) } : {}),
       diagnostic: (tagNode: ts.Node, code: string, message: string) =>
         diagnostic(context.sourceFile, tagNode, code, message),
       describeSchema: (schemaType: ts.Type, schemaNode?: ts.TypeNode) =>

@@ -180,6 +180,23 @@ test('watch keeps model dependencies outside the models root after a run that re
   await until(() => compilerChildren(process.pid).length === 0, 'the compiler closes with the watch');
 });
 
+test('watch generates a new file that ends in a configured model suffix', async (t: TestContext) => {
+  const { root, config } = fixture(t);
+  fs.writeFileSync(config, fs.readFileSync(config, 'utf8').replace('models:\n  root: .\n', 'models:\n  root: .\n  suffixes: [.entity.ts]\n'));
+  const entity = (name: string): string => `import type { IModel } from '@exprtlabs/golem/model';\n\nexport type T${name} = IModel<{ id: string }>;\n`;
+  fs.writeFileSync(path.join(root, 'src/cart.entity.ts'), entity('Cart'));
+  const errors: unknown[] = [];
+  const stop = watchPipeline(config, error => { errors.push(error); });
+  const context = (): string => `(errors=${errors.map(String).join('; ')})`;
+  try {
+    await until(() => fs.existsSync(path.join(root, 'src/cart.entity.generated.ts')), () => `initial generation ${context()}`);
+    fs.writeFileSync(path.join(root, 'src/pet.entity.ts'), entity('Pet'));
+    await until(() => fs.existsSync(path.join(root, 'src/pet.entity.generated.ts')), () => `the new file is generated ${context()}`);
+  } finally {
+    stop();
+  }
+});
+
 function compilerChildren(parent: number): number[] {
   return execFileSync('ps', ['-A', '-o', 'pid=,ppid=,command='], { encoding: 'utf8' })
     .split('\n')

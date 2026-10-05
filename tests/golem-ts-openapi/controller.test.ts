@@ -475,3 +475,25 @@ test('rejects unresolved local component references in raw Swagger response meta
     (error: unknown) => String(error).includes('NEST1505'),
   );
 });
+
+test('configured suffixes select the controller sources and name their operations as before', async (t: TestContext) => {
+  const controller = (name: string, route: string): string => `import { Controller, Get } from '@nestjs/common';
+
+@Controller('${route}')
+export class ${name} {
+  @Get()
+  list(): void {}
+}
+`;
+  const root = createControllerFixture(t, {
+    prefix: 'golem-ts-openapi-suffixes-',
+    sourceFile: 'src/cats.api.ts',
+    source: controller('CatsController', 'cats'),
+    files: { 'src/dogs.controller.ts': controller('DogsController', 'dogs') },
+  });
+  // A variable keeps the test free of the context type, which names the suffixes only once they exist.
+  const context = { root, output: path.join(root, 'openapi.json'), suffixes: ['.api.ts'], info: { title: 'Pets', version: '1' }, profile: { mobx: false, validation: false } };
+  const document = documentOf(await generate(context));
+  assert.equal(operationOf(document, '/cats', 'get').operationId, 'CatsController_list');
+  assert.equal(document.paths['/dogs'], undefined, 'a file without a configured suffix is not a controller source');
+});

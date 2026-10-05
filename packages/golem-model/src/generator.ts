@@ -1,5 +1,5 @@
 import { existsSync, statSync } from 'node:fs';
-import { join, sep } from 'node:path';
+import { basename, join, sep } from 'node:path';
 import * as ts from '@exprtlabs/golem/ts';
 import type {
   GolemArtifact,
@@ -9,7 +9,7 @@ import type {
   InputObserver,
 } from '@exprtlabs/golem/generator-api';
 import { buildCodecValidationPlan, compileStandaloneValidatorSet, type CodecSchemaClosureEntry } from '@exprtlabs/golem/ajv-tooling';
-import { resolveProfile } from '@exprtlabs/golem/generator-api';
+import { DEFAULT_MODEL_SUFFIXES, resolveProfile, suffixPattern } from '@exprtlabs/golem/generator-api';
 import { defaultModelOutput } from '@exprtlabs/golem/generated-paths';
 import { emitCodecDeclarationTable } from '@exprtlabs/golem/schema-graph';
 import {
@@ -52,6 +52,8 @@ export interface GolemModelContext {
   readonly output?: string;
   /** Absolute model source paths. Omit to discover model sources below root/src. */
   readonly sources?: readonly string[];
+  /** File-name endings that make a file below root/src a model source; defaults to `.model.ts` and `.models.ts`. */
+  readonly suffixes?: readonly string[];
   /** Runtime features selected for generated model companions. */
   readonly profile: GolemModelProfile;
   /** Absolute model-manifest paths to add to marker and source discovery. */
@@ -72,6 +74,7 @@ interface NormalizedContext {
   readonly root: string;
   readonly output: string;
   readonly sources: readonly string[] | undefined;
+  readonly suffixes: readonly string[];
   readonly profile: GolemModelProfile;
   readonly manifestInputs: readonly string[];
   readonly onInput?: InputObserver;
@@ -115,6 +118,7 @@ function validateContext(context: GolemModelContext): NormalizedContext {
     root,
     output,
     sources,
+    suffixes: context.suffixes ?? DEFAULT_MODEL_SUFFIXES,
     profile,
     manifestInputs,
     onInput: context.onInput,
@@ -313,16 +317,22 @@ function ownDiagnostics(diagnostics: readonly ts.Diagnostic[], outputs: readonly
   return diagnostics.filter((diagnostic) => diagnostic.fileName === undefined || own.has(canonicalFilename(diagnostic.fileName)));
 }
 
+/** A companion of a model-suffixed source that no longer exists; any other `*.generated.ts` is not golem's. */
+function isOrphanCompanion(companion: string, suffixes: readonly string[]): boolean {
+  const source = companion.replace(/\.generated\.ts$/, '.ts');
+  return source !== companion && suffixPattern(suffixes).test(basename(source)) && !existsSync(source);
+}
+
 export function generate(context: GolemModelContext): GolemModelResult {
   const normalized = validateContext(context);
   const sources = normalized.sources === undefined
-    ? discoverModelSources(normalized.root, normalized.onInput)
+    ? discoverModelSources(normalized.root, normalized.onInput, normalized.suffixes)
     : [...normalized.sources].sort();
   if (sources.length === 0) {
     if (normalized.sources !== undefined) {
       throw new Error(
         `No model sources found under ${join(normalized.root, 'src')}. `
-        + 'Add a *.model.ts or *.models.ts source, or provide context.sources.',
+        + `Add a file ending in ${normalized.suffixes.join(' or ')}, or provide context.sources.`,
       );
     }
     return emptyResult(
@@ -334,7 +344,7 @@ export function generate(context: GolemModelContext): GolemModelResult {
   for (const source of sources) {
     normalized.onInput?.(source);
     if (!isModelSource(source)) {
-      throw new Error(`Model source must end in .model.ts or .models.ts: ${source}`);
+      throw new Error(`Model source must be a .ts, .mts or .cts file that golem did not generate: ${source}`);
     }
     if (!existsSync(source) || !statSync(source).isFile()) {
       throw new Error(`Model source does not exist: ${source}`);
@@ -491,7 +501,7 @@ export function generate(context: GolemModelContext): GolemModelResult {
   // directory, or its model source no longer exists. Another job's companion is real input to this program.
   const ownsCompanion = (companion: string): boolean => ownedCompanions.has(companion)
     || companion.startsWith(outputPrefix)
-    || !existsSync(companion.replace(/\.(models?)\.generated\.ts$/, '.$1.ts'));
+    || isOrphanCompanion(companion, normalized.suffixes);
   using prospective = createOverlayProgram(
     programInfo,
     sources,

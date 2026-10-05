@@ -792,6 +792,7 @@ export function createJobAnalysis(
   const stableIdentityRoot = canonicalFilename(identityRoot ?? commonDirectory(
     specifications.map((specification) => specification.sourceFile.fileName),
   ));
+  const modelSources = new Set(sources.map(canonicalFilename));
   return {
     describe: descriptorBuilder(
       checker,
@@ -801,9 +802,12 @@ export function createJobAnalysis(
       profile.allowAny ?? false,
       stableIdentityRoot,
       compilerOptions,
+      true,
+      undefined,
+      modelSources,
     ),
     described: new Map(),
-    sources: new Set(sources.map(canonicalFilename)),
+    sources: modelSources,
     executableMemo: createExecutableValidationMemo(),
   };
 }

@@ -101,6 +101,8 @@ export interface AnalyzedController {
 export interface NestAnalysisContext {
   readonly root: string;
   readonly sources: readonly string[];
+  /** File-name endings of controller sources; a controller class without a name is named by its file without one. */
+  readonly suffixes?: readonly string[];
   readonly program: ts.Program;
   readonly checker: ts.TypeChecker;
   readonly openapiVersion?: '3.2.0' | '3.1.2';

@@ -19,7 +19,7 @@ import type {
   InputObserver,
   ResolvedGolemProfile,
 } from '@exprtlabs/golem/generator-api';
-import { resolveProfile } from '@exprtlabs/golem/generator-api';
+import { DEFAULT_CONTROLLER_SUFFIXES, resolveProfile } from '@exprtlabs/golem/generator-api';
 import {
   GolemDiagnosticSeverity,
   diagnostic,
@@ -50,6 +50,7 @@ function validateContext(context: TsToOpenApiContext): {
   readonly root: string;
   readonly output: string;
   readonly sources?: readonly string[];
+  readonly suffixes: readonly string[];
   readonly openapiVersion: '3.2.0' | '3.1.2';
   readonly profile: ResolvedGolemProfile;
   readonly onInput?: InputObserver;
@@ -84,7 +85,7 @@ function validateContext(context: TsToOpenApiContext): {
       if (new Set(resolved).size !== resolved.length) throw new TypeError('context.sources must not contain duplicates.');
       return [...resolved].sort();
     })();
-  return { root, output, ...(sources ? { sources } : {}), openapiVersion, profile, onInput: context.onInput };
+  return { root, output, ...(sources ? { sources } : {}), suffixes: context.suffixes ?? DEFAULT_CONTROLLER_SUFFIXES, openapiVersion, profile, onInput: context.onInput };
 }
 
 function asGolemDiagnostic(value: TsToOpenApiDiagnostic): GolemDiagnostic {
@@ -200,12 +201,12 @@ export async function generate(context: TsToOpenApiContext): Promise<TsToOpenApi
     observed.add(canonical);
     normalized.onInput?.(canonical);
   };
-  const sources = normalized.sources ?? discoverControllerSources(normalized.root, observe);
+  const sources = normalized.sources ?? discoverControllerSources(normalized.root, observe, normalized.suffixes);
   if (sources.length === 0) {
     throw new TsToOpenApiError({
       severity: GolemDiagnosticSeverity.Error,
       code: TsToOpenApiDiagnosticCode.NoControllerSources,
-      message: `No controller source files found under ${path.join(normalized.root, 'src')}. Add a *.controller.ts file or provide context.sources.`,
+      message: `No controller source files found under ${path.join(normalized.root, 'src')}. Add a file ending in ${normalized.suffixes.join(' or ')}, or provide context.sources.`,
     });
   }
   for (const source of sources) {
@@ -360,6 +361,7 @@ export async function generate(context: TsToOpenApiContext): Promise<TsToOpenApi
   const analysisContext: NestAnalysisContext = {
     root: normalized.root,
     sources,
+    suffixes: normalized.suffixes,
     program: programInfo.program,
     checker,
     openapiVersion: normalized.openapiVersion,

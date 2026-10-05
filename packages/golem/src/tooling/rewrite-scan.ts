@@ -61,8 +61,8 @@ const SERDE_METHODS: ReadonlyMap<string, string> = new Map([
   ['fromWireFormat', 'fromWireFormat'],
 ]);
 
-/** `x.model.generated.ts`, `x.models.generated.ts`, `models.generated.ts` and their emitted JavaScript and declarations. */
-const GENERATED_MODEL_MODULE = /(?:^|[/\\.])models?\.generated\.(?:d\.)?[cm]?[jt]s$/;
+/** Any `*.generated.<ext>` module, such as `x.entity.generated.ts` or `models.generated.ts`, and its emitted JavaScript and declarations. */
+const GENERATED_MODEL_MODULE = /\.generated\.(?:d\.)?[cm]?[jt]s$/;
 
 function portable(root: string, filename: string): string {
   return path.relative(root, filename).split(path.sep).join('/');
