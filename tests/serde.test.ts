@@ -4,7 +4,7 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import test, { type TestContext } from 'node:test';
 import { copyFixtureFile, readFixture, writeGeneratedArtifacts } from './fixture-project.js';
-import { buildModelProject, createModelProject } from './model-project.js';
+import { buildModelProject, createModelProject, writeModelGolemYaml } from './model-project.js';
 
 import {
   assertValue as publicAssertValue,
@@ -31,6 +31,7 @@ function fixture(
   copyFixtureFile(root, 'models/serde/base-payment-model/money.model.ts', 'src/money.model.ts');
   const result = generate({ root, profile });
   writeGeneratedArtifacts(result.artifacts);
+  writeModelGolemYaml(root, profile);
   return { root };
 }
 

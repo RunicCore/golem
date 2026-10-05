@@ -12,7 +12,7 @@ import test, { type TestContext } from 'node:test';
 import { deduplicateTagSchemas, type TagSchema } from '#model/emit';
 import { generate } from '#model/generator';
 import { readFixture, writeGeneratedArtifacts } from './fixture-project.js';
-import { buildModelProject, createModelProject, writeModelSources, type ModelProject } from './model-project.js';
+import { buildModelProject, createModelProject, writeModelGolemYaml, writeModelSources, type ModelProject } from './model-project.js';
 import { duplicateLocalNameReferenceModelSource } from './fixture-templates/models/model-artifact-efficiency.js';
 import { generate as generateOpenApi } from '@exprtlabs/golem-openapi/generator';
 import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/golem/conversion';
@@ -333,6 +333,7 @@ test('an inlined array item keeps the issue source of its own codec', async (t) 
     manifestInputs: [path.join(fixtureValue.sourceRoot, 'sdk/model-manifest.json')],
   });
   writeGeneratedArtifacts(result.artifacts);
+  writeModelGolemYaml(fixtureValue.root, profile);
   await buildModelProject(fixtureValue.root);
   copyStandalone(result, fixtureValue);
   const { Wallet } = await import(pathToFileURL(path.join(fixtureValue.root, 'build/wallet.model.js')).href);

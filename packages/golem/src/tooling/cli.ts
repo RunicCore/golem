@@ -23,6 +23,17 @@ const BUILD_OWNED_ARGUMENTS: Readonly<Record<string, { readonly why: string; rea
   '--incremental': { why: 'both runs are incremental', workaround: 'delete .golem/build to build everything again' },
   '--outdir': { why: 'the emit run writes into the outDir of the tsconfig', workaround: 'set outDir in the tsconfig, or pass -p a tsconfig that extends it and sets another outDir' },
   '--listemittedfiles': { why: 'golem reads the list of emitted files to point source maps at your sources', workaround: 'list the files in outDir after the build' },
+  ...Object.fromEntries(([
+    ['--rootDir', 'the emit run compiles a staged copy of your sources, so golem maps the rootDir of the tsconfig onto it'],
+    ['--baseUrl', 'the emit run compiles a staged copy of your sources, so golem maps the baseUrl and paths of the tsconfig onto it'],
+    ['--composite', 'the emit run is not a composite build, and the check run must report what it reports'],
+    ['--outFile', 'the emit run writes one file per source into the outDir of the tsconfig'],
+    ['--declarationDir', 'the check run writes the declarations from your sources, and a forwarded directory would also receive the ones of the staged copy'],
+    ['--sourceRoot', 'golem points source maps at your sources, and the emit run writes them from a staged copy'],
+    ['--mapRoot', 'golem points the maps of the emit run at your sources, and a forwarded map location would change what they resolve against'],
+    ['--inlineSourceMap', 'golem rewrites the map files the emit run writes and cannot reach a map inside the JavaScript'],
+    ['--inlineSources', 'the maps of the emit run embed the sources of the tsconfig setting, and a forwarded one would embed the staged text'],
+  ] as const).map(([flag, why]) => [flag.toLowerCase(), { why, workaround: 'set it in tsconfig.json' }])),
 };
 
 /** `golem build` takes `--config`, `-p/--project` and `--watch` (`-w` too, so the compiler's own watcher never starts); every other argument goes to both compiler runs unchanged. */

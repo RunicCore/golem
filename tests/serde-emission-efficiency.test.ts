@@ -10,7 +10,7 @@ import type { GeneratedModel } from '@exprtlabs/golem/model';
 import { generateModels } from '#openapi/models';
 import { writeSdk } from '#openapi/generator';
 import { generate } from '#model/generator';
-import { buildModelProject, createModelProject } from './model-project.js';
+import { buildModelProject, createModelProject, writeModelGolemYaml } from './model-project.js';
 import { writeGeneratedSdk } from './openapi/helpers.js';
 
 const fixture = (t: TestContext) => createModelProject(t, {
@@ -72,6 +72,7 @@ test('model generation preserves imported model identity and detached JSON outpu
     'budget: a known Money codec is stringified by direct call, not a runtime requireObjectCodec lookup',
   );
   writeGeneratedArtifacts(result.artifacts);
+  writeModelGolemYaml(value.root, { mobx: false, validation: false });
   await buildModelProject(value.root);
 
   const sdkModule = await import(pathToFileURL(path.join(value.root, 'build/sdk/index.js')).href) as {

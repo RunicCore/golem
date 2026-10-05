@@ -31,6 +31,8 @@ export interface BuildOptions {
   readonly signal?: AbortSignal;
   /** Every argument golem build does not take itself: both compiler runs get them unchanged. */
   readonly tscArguments?: readonly string[];
+  /** Called after the generate step of each build with the ids of the jobs that executed; a job its record showed to be current is not among them. */
+  readonly onGenerated?: (ran: ReadonlySet<string>) => void;
 }
 
 export const NO_GOLEM_YAML = 'golem build needs a golem.yaml; run it next to one or pass --config';
@@ -98,19 +100,19 @@ function resolveProject(project: string | undefined, config: GolemConfig): strin
   return configFile;
 }
 
-/** Fail on a configuration the staged copy cannot mirror. It reads the options alone, so it runs before anything is generated. */
-function assertSupported(configFile: string, parsed: { readonly options: ts.CompilerOptions; readonly fileNames: readonly string[] }): void {
+/** Fail on a configuration the staged copy cannot mirror: the tsconfig's, with the forwarded arguments applied. It reads options alone, so it runs before anything is generated. */
+function assertSupported(configFile: string, parsed: { readonly options: ts.CompilerOptions; readonly fileNames: readonly string[] }, effective: EffectiveOptions): void {
   const { options } = parsed;
   const root = path.dirname(configFile);
   const unsupported = (what: string): Error => new Error(`golem build does not support ${what} (${configFile}).`);
   if (parsed.fileNames.length === 0) {
     throw new Error(`${configFile} includes no files. golem build builds one project and does not follow project references; run golem build -p <tsconfig> per project.`);
   }
-  if (stringOption(options, 'outDir') === undefined) throw new Error(`golem build requires compilerOptions.outDir in ${configFile}: it emits the rewritten sources there.`);
-  if (stringOption(options, 'outFile') !== undefined) throw unsupported('outFile');
+  if (!effective.outDir) throw new Error(`golem build requires compilerOptions.outDir in ${configFile}: it emits the rewritten sources there.`);
+  if (effective.outFile) throw unsupported('outFile');
   if (Array.isArray(options.rootDirs)) throw unsupported('rootDirs');
-  if (options.inlineSourceMap === true) throw unsupported('inlineSourceMap');
-  if (stringOption(options, 'sourceRoot') !== undefined) throw unsupported('sourceRoot');
+  if (effective.inlineSourceMap) throw unsupported('inlineSourceMap');
+  if (effective.sourceRoot) throw unsupported('sourceRoot');
   const rootDir = stringOption(options, 'rootDir');
   if (rootDir !== undefined && !contains(root, rootDir)) {
     throw new Error(`golem build cannot stage rootDir ${rootDir}: it is outside the project root ${root}.`);
@@ -175,14 +177,28 @@ function runTsc(cli: string, cwd: string, args: readonly string[], forward: bool
   });
 }
 
-/** The options the build's decisions depend on, as the compiler resolves them from the tsconfig and the forwarded arguments. */
+/**
+ * The options the build's decisions depend on, as the compiler resolves them from the tsconfig and the forwarded arguments. The
+ * path options are whether they are set: the staged copy handles their values itself.
+ */
 interface EffectiveOptions {
   readonly declaration: boolean;
   readonly noEmitOnError: boolean;
+  readonly outDir: boolean;
+  readonly outFile: boolean;
+  readonly inlineSourceMap: boolean;
+  readonly sourceRoot: boolean;
 }
 
 function effectiveOf(options: ts.CompilerOptions): EffectiveOptions {
-  return { declaration: options.declaration === true || options.composite === true, noEmitOnError: options.noEmitOnError === true };
+  return {
+    declaration: options.declaration === true || options.composite === true,
+    noEmitOnError: options.noEmitOnError === true,
+    outDir: stringOption(options, 'outDir') !== undefined,
+    outFile: stringOption(options, 'outFile') !== undefined,
+    inlineSourceMap: options.inlineSourceMap === true,
+    sourceRoot: stringOption(options, 'sourceRoot') !== undefined,
+  };
 }
 
 /**
@@ -337,6 +353,7 @@ interface BuildRun {
   /** For a watching build, each file's signature when the build first reads it, which is the only baseline a file the build has not met before can have. */
   readonly baselines?: Map<string, string>;
   readonly generation: GeneratorSessionResources;
+  readonly onGenerated?: (ran: ReadonlySet<string>) => void;
   /** The last generate run that finished: the next run reruns only the jobs a changed input reaches. Empty after a failed run. */
   pipeline?: PipelineState;
 }
@@ -354,8 +371,10 @@ async function buildOnce(session: ts.ProgramSession, run: BuildRun, changed?: re
   const root = path.dirname(configFile);
   observe(configFile);
   const cli = compilerCli(root);
-  // A configuration the build cannot mirror fails before anything is generated.
-  assertSupported(configFile, session.parseConfigFile(configFile, observe));
+  // A configuration the build cannot mirror, with the forwarded arguments applied, fails before anything is generated.
+  const configured = session.parseConfigFile(configFile, observe);
+  const effective = await effectiveOptions(cli, root, configFile, configured.options, run.tscArguments);
+  assertSupported(configFile, configured, effective);
   // The generated files are part of the program the next steps read, so they are written first. A job whose inputs did not change is skipped.
   const previous = run.pipeline;
   run.pipeline = undefined;
@@ -364,8 +383,9 @@ async function buildOnce(session: ts.ProgramSession, run: BuildRun, changed?: re
   // The compiler session knows only the changes it was told about.
   if (generated.ran.size > 0) session.inputsChanged(generated.owned);
   run.pipeline = generated;
+  run.onGenerated?.(generated.ran);
   const parsed = session.parseConfigFile(configFile, observe);
-  const project = readProject(configFile, parsed, await effectiveOptions(cli, root, configFile, parsed.options, run.tscArguments));
+  const project = readProject(configFile, parsed, effective);
   // The sources are inputs from here on: a failed check ends the build before any later step reads them.
   for (const filename of parsed.fileNames) observe(filename);
   const checkState = path.join(project.buildDirectory, 'check.tsbuildinfo');
@@ -478,6 +498,7 @@ export async function runBuild(options: BuildOptions): Promise<{ exitCode: numbe
     outputs,
     owned: new Set<string>(),
     generation,
+    ...(options.onGenerated === undefined ? {} : { onGenerated: options.onGenerated }),
     ...(baselines === undefined ? {} : { baselines }),
   };
   const run = async (changed?: readonly string[], beforeAnnouncing: () => void = () => {}): Promise<number> => {

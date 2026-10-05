@@ -11,7 +11,7 @@ import { copyFixtureFile, readFixture } from './fixture-project.js';
 import { createControllerFixture } from './fixture-templates/controllers/project.js';
 import { createModelProject, MINIMAL_GOLEM_YAML } from './model-project.js';
 import { command, golem, workspace } from './support/process.js';
-import { write, editTsconfig, serdeProject, USE, build, mtimes, golemBuild, assertCallMap } from './support/build-project.js';
+import { write, editTsconfig, serdeProject, PAYMENTS_CONTROLLER, USE, build, mtimes, golemBuild, assertCallMap } from './support/build-project.js';
 
 /** A project with a golem.yaml whose models job generates the serde model, and the files golem generate wrote. */
 async function generatedProject(t: TestContext, name: string, options: { readonly yaml?: string; readonly generate?: boolean } = {}): Promise<string> {
@@ -64,16 +64,7 @@ test('golem build --config from the parent folder builds the yaml tsconfig and k
     },
     files: {
       'packages/api/src/payment.model.ts': readFixture(`${nest}/payment.model.ts`),
-      'packages/api/src/payments.controller.ts': `import { Body, Controller, Get, Post, Query } from '@nestjs/common';
-import type { TPaymentFilter, TPaymentInput, TPayment } from './payment.model.js';
-@Controller('payments')
-export class PaymentsController {
-  @Post()
-  create(@Body() input: TPaymentInput): TPayment { return { id: '1', ...input }; }
-  @Get()
-  list(@Query() filter: TPaymentFilter): TPayment[] { return []; }
-}
-`,
+      'packages/api/src/payments.controller.ts': PAYMENTS_CONTROLLER,
       'packages/api/golem.yaml': 'version: 1\ntsconfig: ../../tsconfig.json\nmodels: { root: . }\ncontrollers:\n  - root: .\n    output: generated/api.json\n    info: { title: Payments, version: "1" }\n',
     },
   });

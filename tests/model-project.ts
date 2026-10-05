@@ -89,6 +89,12 @@ export function writeModelSources(
 /** The smallest golem.yaml `golem build` reads: it names the tsconfig beside it by default. */
 export const MINIMAL_GOLEM_YAML = 'version: 1\nmodels:\n  root: .\n';
 
+/** The golem.yaml of a project whose models job generates with `profile`: the profile its own `generate` calls used, so a build regenerates the same files. */
+export function writeModelGolemYaml(root: string, profile: Readonly<{ mobx?: boolean; validation?: boolean; ajvStandalone?: boolean; allowAny?: boolean }>): void {
+  const keys = Object.entries(profile).map(([key, value]) => `${key}: ${String(value)}\n`).join('');
+  fs.writeFileSync(path.join(root, 'golem.yaml'), `version: 1\n${keys}models:\n  root: .\n`);
+}
+
 /**
  * Run `golem build` on the project: the original sources are checked and the rewritten ones emitted into its outDir. A project
  * without a golem.yaml gets the minimal one. A boolean compiler flag in `args` (`--noEmit`) builds an alternate config of the

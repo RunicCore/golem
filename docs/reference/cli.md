@@ -59,7 +59,7 @@ A build runs three steps:
 
 The build starts from `golem.yaml`: the one in the working directory, or the one `--config` names. Without one it stops with `golem build needs a golem.yaml; run it next to one or pass --config`, and it never searches the folders above. It builds the tsconfig that `golem.yaml` names with [`tsconfig`](/reference/config#root-keys), which is the `tsconfig.json` beside `golem.yaml` by default, so `golem generate` and `golem build` always agree on the project.
 
-`-p` names another build config of the same project, such as `tsconfig.build.json` without your tests. It takes a file, or a directory that holds `tsconfig.json`, and it must lie in the directory of the tsconfig that `golem.yaml` names; any other location is an error. With `--watch` the build repeats when a source, tsconfig or `golem.yaml` changes: it generates first, so editing a model source regenerates its file and rebuilds once, and editing any other source rebuilds without running a generate job. Deleting `outDir` while it runs starts one build that writes it again.
+`-p` names another build config of the same project, such as `tsconfig.build.json` without your tests. It takes a file, or a directory that holds `tsconfig.json`, and it must lie in the directory of the tsconfig that `golem.yaml` names; any other location is an error. With `--watch` the build repeats when a source, tsconfig or `golem.yaml` changes: it generates first, so editing a model source regenerates its file and rebuilds once. The models job reads every source of the project, so editing any other source runs it again before the rebuild. A job that reads no changed input, such as a generator that reads only the models, does not run. Deleting `outDir` while it runs starts one build that writes it again.
 
 A build never edits your source files. It writes the generated files `golem.yaml` configures, the declarations and JavaScript the tsconfig asks for into `outDir`, and its own files into `.golem/`: per tsconfig under `.golem/build/<tsconfig name>/`, the incremental state and a copy of your sources with the calls rewritten. Two tsconfig files in one directory never share that state. Add `.golem/build/` to `.gitignore`; the inventory `.golem/outputs.json` stays committed. Delete `outDir`, or `declarationDir` when you set one, and the next build writes it again.
 
@@ -78,6 +78,7 @@ The build sets some arguments itself. Passing one stops the build with `golem bu
 | `--incremental` | Both runs are incremental | Delete `.golem/build` to build everything again |
 | `--outDir` | The emit run writes into the `outDir` of the tsconfig | Set `outDir` in the tsconfig, or pass `-p` a tsconfig that extends it and sets another `outDir` |
 | `--listEmittedFiles` | The build reads the list to point source maps at your sources | List the files in `outDir` after the build |
+| `--rootDir`, `--baseUrl`, `--composite`, `--outFile`, `--declarationDir`, `--sourceRoot`, `--mapRoot`, `--inlineSourceMap`, `--inlineSources` | An argument beats the tsconfig the emit run reads, and these change how the build maps your sources onto its copy and writes declarations and maps | Set it in the tsconfig |
 
 ### Type errors
 

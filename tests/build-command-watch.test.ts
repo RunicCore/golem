@@ -89,37 +89,46 @@ test('golem build --watch rebuilds once per edit, reports an error, recovers, an
   assert.deepEqual(after, expected, 'a watching build changes no file it does not own');
 });
 
-test('golem build --watch generates before it rebuilds a model edit, and rebuilds any other edit without a generate job', { timeout: HEAVY_TEST_TIMEOUT_MS }, async (t) => {
+test('golem build --watch regenerates and rebuilds once after a model edit; any other source edit rebuilds and reruns the models job, which reads the whole project', { timeout: HEAVY_TEST_TIMEOUT_MS }, async (t) => {
   const root = sourceOnlyProject(t, 'build-watch-generate');
   write(root, 'src/use.ts', USE);
-  const counter = countingGenerator(root);
+  countingGenerator(root);
   const before = snapshot(root);
-  const watcher = watching(t, root);
-  const built = (): number => count(watcher.output(), /^Built /);
-  await until(() => built() === 1, 'the first build');
-  assert.equal(counter.runs(), 1);
+  // In this process, so the jobs each build's generate step ran are the pipeline's own job results.
+  const controller = new AbortController();
+  t.after(() => controller.abort());
+  const ran: string[][] = [];
+  let built = 0;
+  const stdout = process.stdout.write.bind(process.stdout);
+  t.mock.method(process.stdout, 'write', (chunk: string | Uint8Array, ...rest: unknown[]) => {
+    if (typeof chunk === 'string' && chunk.startsWith('Built ')) built += 1;
+    return (stdout as (chunk: string | Uint8Array, ...rest: unknown[]) => boolean)(chunk, ...rest);
+  });
+  const finished = runBuild({ watch: true, config: path.join(root, 'golem.yaml'), signal: controller.signal, onGenerated: (jobs) => ran.push([...jobs].sort()) });
+  await until(() => built === 1, 'the first build');
+  assert.deepEqual(ran, [['generator:out', 'models:.']], 'the first build ran every job');
   const companion = path.join(root, 'src/money.model.generated.ts');
   assert.ok(fs.existsSync(companion), 'the first build generated the file');
 
-  // The model source is what a generate job reads: its edit regenerates the companion, and the build that follows sees it.
+  // The model source is what both jobs read: its edit regenerates the companion, and the build that follows sees it.
   const model = path.join(root, 'src/money.model.ts');
   fs.writeFileSync(model, fs.readFileSync(model, 'utf8').replace('note: string', 'note: string; extra?: string'));
-  await until(() => built() === 2, 'the rebuild after a model edit');
+  await until(() => built === 2, 'the rebuild after a model edit');
   await new Promise((resolve) => setTimeout(resolve, 1_000));
-  assert.equal(built(), 2, 'one model edit triggers one rebuild, though the generate step wrote a file');
-  assert.equal(counter.runs(), 2);
+  assert.equal(built, 2, 'one model edit triggers one rebuild, though the generate step wrote a file');
+  assert.deepEqual(ran.slice(1), [['generator:out', 'models:.']], 'both jobs read the model source');
   assert.match(fs.readFileSync(companion, 'utf8'), /extra/);
   assert.match(fs.readFileSync(path.join(root, 'build/money.model.generated.js'), 'utf8'), /extra/, 'the build compiled the regenerated file');
 
-  const generatedAt = fs.statSync(companion, { bigint: true }).mtimeNs;
+  // The models job's program reads the whole project, so `use.ts` is one of its inputs; the generator reads only the model.
   write(root, 'src/use.ts', `${USE}export const second = 2;\n`);
-  await until(() => built() === 3, 'the rebuild after a source edit');
+  await until(() => built === 3, 'the rebuild after a source edit');
   await new Promise((resolve) => setTimeout(resolve, 1_000));
-  assert.equal(built(), 3, 'one edit triggers one rebuild');
-  assert.equal(counter.runs(), 2, 'no generate job ran');
-  assert.equal(fs.statSync(companion, { bigint: true }).mtimeNs, generatedAt);
+  assert.equal(built, 3, 'one edit triggers one rebuild');
+  assert.deepEqual(ran.slice(2), [['models:.']], 'the models job ran again and the generator did not');
   assert.match(fs.readFileSync(path.join(root, 'build/use.js'), 'utf8'), /second = 2/);
-  assert.equal(await watcher.stop(), 130);
+  controller.abort();
+  assert.equal((await finished).exitCode, 0);
 
   const after = snapshot(root);
   for (const file of ['golem.yaml', 'package.json', 'tsconfig.json']) assert.equal(after.get(file), before.get(file), `${file} is not a file golem build owns`);

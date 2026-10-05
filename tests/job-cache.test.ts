@@ -25,8 +25,8 @@ function project(t: TestContext): { root: string; record: JobRecord; current: ()
     provider: SETUP.provider ?? '',
     options: JSON.stringify(job.options),
     inputs: {
-      'api.yaml': inputDigest(path.join(root, 'api.yaml'), () => false),
-      src: inputDigest(path.join(root, 'src'), () => false),
+      'api.yaml': inputDigest(path.join(root, 'api.yaml'), () => false, root),
+      src: inputDigest(path.join(root, 'src'), () => false, root),
       'absent.json': 'missing',
     },
     manifestInputs: [],
@@ -68,6 +68,35 @@ test('a directory input changes with the files it lists, not with generated file
   assert.equal(current(), true, 'a dot-directory is not listed');
   fs.writeFileSync(path.join(root, 'src/b.model.ts'), 'export {};\n');
   assert.equal(current(), false, 'a new model file changes the listing');
+});
+
+test('a directory outside the golem.yaml directory is recorded by existence, one inside it by its listing', (t: TestContext) => {
+  const { root, config } = project(t);
+  const job = config.jobs[0];
+  assert.ok(job);
+  const outside = fs.mkdtempSync(path.join(path.dirname(root), 'golem-job-cache-outside-'));
+  t.after(() => fs.rmSync(outside, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(outside, 'one.ts'), 'export {};\n');
+  const inputs = { 'api.yaml': inputDigest(path.join(root, 'api.yaml'), () => false, root) };
+  const recorded = {
+    golem: GOLEM_VERSION,
+    provider: SETUP.provider ?? '',
+    options: JSON.stringify(job.options),
+    inputs: { ...inputs, [path.relative(root, outside)]: inputDigest(outside, () => false, root), src: inputDigest(path.join(root, 'src'), () => false, root) },
+    manifestInputs: [],
+    outputs: ['sdk.ts'],
+    manifests: [],
+  } satisfies JobRecord;
+  const current = (): boolean => jobIsCurrent(config, job, recorded, SETUP, new Set());
+  assert.equal(current(), true);
+  fs.writeFileSync(path.join(outside, 'two.ts'), 'export {};\n');
+  assert.equal(current(), true, 'a new file in a directory outside the root does not change the record');
+  fs.rmSync(outside, { recursive: true });
+  assert.equal(current(), false, 'the outside directory itself is gone');
+  fs.mkdirSync(outside);
+  assert.equal(current(), true, 'the directory exists again');
+  fs.writeFileSync(path.join(root, 'src/b.model.ts'), 'export {};\n');
+  assert.equal(current(), false, 'a new file in a directory inside the root changes the listing');
 });
 
 test('a generated file is left out of a directory listing', (t: TestContext) => {

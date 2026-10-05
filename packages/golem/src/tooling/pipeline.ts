@@ -506,7 +506,7 @@ export async function runPipeline(filename: string, options: PipelineOptions = {
       if (!provider) throw new Error(`Missing loaded provider ${job.package}.`);
       const keys = new Set<string>();
       used.set(job.id, keys);
-      const read = options.check ? undefined : new JobInputs(filename => generated.has(filename) || previousOutputs.has(filename) || ranOutputs.has(filename));
+      const read = options.check ? undefined : new JobInputs(filename => generated.has(filename) || previousOutputs.has(filename) || ranOutputs.has(filename), config.directory);
       for (const input of declaredInputs(job)) read?.read(input);
       let generatedResult: unknown;
       try {

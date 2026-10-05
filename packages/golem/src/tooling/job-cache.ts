@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import { contains } from './config.js';
 import type { GolemConfig, GolemJob } from './config.js';
 import { hasErrorCode, isRecord } from './generator-api.js';
 import { atomicWrite, loadInventory } from './outputs.js';
@@ -18,7 +19,7 @@ export interface JobRecord {
   readonly provider: string;
   /** JSON of the job's resolved options. */
   readonly options: string;
-  /** Every input, by the digest it had when the job read it: a file's content, a directory's file listing, `missing` for an absent path, `unstable` for a reported input the job never announced. */
+  /** Every input, by the digest it had when the job read it: a file's content, the file listing of a directory under the golem.yaml's directory, `directory` for one outside it, `missing` for an absent path, `unstable` for a reported input the job never announced. */
   readonly inputs: Readonly<Record<string, string>>;
   /** The manifests of the jobs before it that the job received as `manifestInputs`. */
   readonly manifestInputs: readonly string[];
@@ -29,6 +30,7 @@ export interface JobRecord {
 
 const MISSING = 'missing';
 const UNSTABLE = 'unstable';
+const OUTSIDE_DIRECTORY = 'directory';
 const RECORDS_VERSION = 1;
 
 function jobsFile(config: GolemConfig): string {
@@ -103,8 +105,7 @@ function listFiles(directory: string, excluded: (filename: string) => boolean, p
   try {
     entries = fs.readdirSync(directory, { withFileTypes: true });
   } catch (error) {
-    // A directory the compiler probed, such as `/` above a project, can hold entries the system will not list (`/proc/<pid>/net`).
-    if (['ENOENT', 'ENOTDIR', 'EINVAL', 'EACCES', 'EPERM'].some((code) => hasErrorCode(error, code))) return [];
+    if (hasErrorCode(error, 'ENOENT') || hasErrorCode(error, 'ENOTDIR')) return [];
     throw error;
   }
   const listed: string[] = [];
@@ -119,11 +120,12 @@ function listFiles(directory: string, excluded: (filename: string) => boolean, p
 }
 
 /**
- * The digest of one input now: a file's content, the sorted listing of a directory's files (a new model file changes
- * it) or `missing`, which also stands for a directory that lists no file. `excluded` names generated files, which a listing leaves out: a job's own output must not change
- * what it reads.
+ * The digest of one input now: a file's content, the sorted listing of the files of a directory under `root` (a new model file
+ * changes it) or `missing`, which also stands for such a directory that lists no file. A directory outside `root` is a path the
+ * compiler probed, such as `/` above the project: only its existence is recorded, as a listing of it would walk what the job
+ * does not own. `excluded` names generated files, which a listing leaves out: a job's own output must not change what it reads.
  */
-export function inputDigest(filename: string, excluded: (filename: string) => boolean): string {
+export function inputDigest(filename: string, excluded: (filename: string) => boolean, root: string): string {
   let stat: fs.Stats | undefined;
   try {
     stat = fs.statSync(filename, { throwIfNoEntry: false });
@@ -132,6 +134,7 @@ export function inputDigest(filename: string, excluded: (filename: string) => bo
   }
   if (!stat) return MISSING;
   if (stat.isDirectory()) {
+    if (!contains(root, filename)) return OUTSIDE_DIRECTORY;
     // A directory that holds only generated files lists as an absent one: a job's own output directory does not exist before its first run.
     const listed = listFiles(filename, excluded);
     return listed.length === 0 ? MISSING : hashText(listed.join('\n'));
@@ -176,19 +179,19 @@ export function jobIsCurrent(
   if (![...outputs].every(output => fs.existsSync(output))) return false;
   const excluded = (filename: string): boolean => generated.has(filename) || outputs.has(filename);
   return Object.entries(record.inputs)
-    .every(([input, digest]) => inputDigest(absoluteRecordPath(config, input), excluded) === digest);
+    .every(([input, digest]) => inputDigest(absoluteRecordPath(config, input), excluded, config.directory) === digest);
 }
 
 /** Collects the inputs of one running job, each digested when the job reads it and never later: an edit after the read changes the file's digest, so the next run reruns the job. */
 export class JobInputs {
   private readonly digests = new Map<string, string>();
 
-  /** `excluded` is read at each call, so files an earlier job just wrote stay out of a listing. */
-  constructor(private readonly excluded: (filename: string) => boolean) {}
+  /** `excluded` is read at each call, so files an earlier job just wrote stay out of a listing. `root` is the golem.yaml's directory. */
+  constructor(private readonly excluded: (filename: string) => boolean, private readonly root: string) {}
 
   read(filename: string): void {
     const resolved = path.resolve(filename);
-    if (!this.digests.has(resolved)) this.digests.set(resolved, inputDigest(resolved, this.excluded));
+    if (!this.digests.has(resolved)) this.digests.set(resolved, inputDigest(resolved, this.excluded, this.root));
   }
 
   /**

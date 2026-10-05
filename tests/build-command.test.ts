@@ -8,7 +8,7 @@ import { createFixtureProject, linkProjectPackages, readFixture } from './fixtur
 import { createControllerFixture } from './fixture-templates/controllers/project.js';
 import { command, workspace } from './support/process.js';
 import { MINIMAL_GOLEM_YAML } from './model-project.js';
-import { TSC, HEAVY_TEST_TIMEOUT_MS, REJECTION, write, editTsconfig, serdeProject, sourceOnlyProject, countingGenerator, USE, snapshot, build, mtimes, importBuilt, golemBuild, assertCallMap } from './support/build-project.js';
+import { TSC, HEAVY_TEST_TIMEOUT_MS, REJECTION, write, editTsconfig, serdeProject, sourceOnlyProject, countingGenerator, PAYMENTS_CONTROLLER, USE, snapshot, build, buildAndListJobs, mtimes, importBuilt, golemBuild, assertCallMap } from './support/build-project.js';
 
 // Original sources are checked, rewritten sources are emitted
 
@@ -81,20 +81,27 @@ test('a project with no generated file builds in one golem build, and the built 
   assert.deepEqual(built.money, { currency: 'USD', value: '1' });
 });
 
-test('a second build with no change runs no generate job and emits nothing again', { timeout: HEAVY_TEST_TIMEOUT_MS }, async (t) => {
+test('a build with no change runs no job and emits nothing again', { timeout: HEAVY_TEST_TIMEOUT_MS }, async (t) => {
   const root = sourceOnlyProject(t, 'build-second');
   write(root, 'src/use.ts', USE);
-  const counter = countingGenerator(root);
-  assert.equal((await build(root)).exitCode, 0);
-  assert.equal(counter.runs(), 1);
+  countingGenerator(root);
+  const first = await buildAndListJobs(root);
+  assert.equal(first.exitCode, 0);
+  assert.deepEqual(first.ran, ['generator:out', 'models:.'], 'the first build ran every job');
+  // The models job lists the project root, which gains `build/` while the first build emits: the second build runs that job once
+  // more and records the listing with the output in it. The generator reads one file and is current.
+  const second = await buildAndListJobs(root);
+  assert.equal(second.exitCode, 0);
+  assert.deepEqual(second.ran.filter((id) => id !== 'models:.'), [], 'a job that reads no changed input does not run');
+
   const companion = path.join(root, 'src/money.model.generated.ts');
   const generatedAt = fs.statSync(companion, { bigint: true }).mtimeNs;
   const emitted = mtimes(path.join(root, 'build'), '.js');
   assert.ok(emitted.size > 0);
-
   await new Promise((resolve) => setTimeout(resolve, 20));
-  assert.equal((await build(root)).exitCode, 0);
-  assert.equal(counter.runs(), 1, 'no generate job ran');
+  const third = await buildAndListJobs(root);
+  assert.equal(third.exitCode, 0);
+  assert.deepEqual(third.ran, [], 'no job ran');
   assert.equal(fs.statSync(companion, { bigint: true }).mtimeNs, generatedAt);
   assert.deepEqual(mtimes(path.join(root, 'build'), '.js'), emitted, 'nothing was emitted again');
 });
@@ -149,6 +156,10 @@ test('an argument golem build sets itself is rejected with the reason and the wo
   for (const flag of ['--noEmit', '--emitDeclarationOnly', '--tsBuildInfoFile', '--incremental', '--outDir', '--listEmittedFiles']) {
     assert.throws(() => parseArguments(['build', flag, 'value']), (error: Error) => error.message.startsWith(`golem build sets ${flag} itself (`) && error.message.includes('); '), flag);
   }
+  // The stage tsconfig sets these: an argument would beat it. The tsconfig is where they are set.
+  for (const flag of ['--rootDir', '--baseUrl', '--composite', '--outFile', '--declarationDir', '--sourceRoot', '--mapRoot', '--inlineSourceMap', '--inlineSources']) {
+    assert.throws(() => parseArguments(['build', flag, 'value']), (error: Error) => error.message.startsWith(`golem build sets ${flag} itself (`) && error.message.endsWith('); set it in tsconfig.json'), flag);
+  }
   const root = serdeProject(t, 'build-owned-flag');
   const result = await golemBuild(root, ['--noCheck']);
   assert.notEqual(result.code, 0);
@@ -163,8 +174,9 @@ test('a forwarded --declaration writes declarations from the original sources', 
   const result = await golemBuild(root, ['--declaration']);
   assert.equal(result.code, 0, `${result.stdout}${result.stderr}`);
   const declarations = fs.readFileSync(path.join(root, 'build/use.d.ts'), 'utf8');
-  assert.match(declarations, /export declare const text: string;/);
-  assert.doesNotMatch(declarations, /__golem_/, 'declarations come from the original, not the rewritten text');
+  // The rewritten text types `parse` as unknown; the original types it as the model's object type.
+  assert.match(declarations, /export declare const money: \{\s*currency: string;\s*value: string;\s*\};/);
+  assert.doesNotMatch(declarations, /unknown|__golem_/, 'declarations come from the original, not the rewritten text');
 });
 
 test('-b and --build are rejected', async (t) => {
@@ -244,16 +256,7 @@ test('a Nest controller builds with the design:paramtypes of a plain tsc emit of
     },
     files: {
       'src/payment.model.ts': readFixture(`${nest}/payment.model.ts`),
-      'src/payments.controller.ts': `import { Body, Controller, Get, Post, Query } from '@nestjs/common';
-import type { TPaymentFilter, TPaymentInput, TPayment } from './payment.model.js';
-@Controller('payments')
-export class PaymentsController {
-  @Post()
-  create(@Body() input: TPaymentInput): TPayment { return { id: '1', ...input }; }
-  @Get()
-  list(@Query() filter: TPaymentFilter): TPayment[] { return []; }
-}
-`,
+      'src/payments.controller.ts': PAYMENTS_CONTROLLER,
       'golem.yaml': 'version: 1\nmodels: { root: . }\ncontrollers:\n  - root: .\n    output: generated/api.json\n    info: { title: Payments, version: "1" }\n',
     },
   });
