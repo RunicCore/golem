@@ -1,4 +1,3 @@
-import { createOpenApiSyncAjvEngine } from '@exprtlabs/golem/ajv';
 import {
   registerGeneratedModel,
   type GeneratedModelConversion,
@@ -7,15 +6,18 @@ import {
 } from '@exprtlabs/golem/model';
 import { GENERATED_MODEL_SCHEMA_REF_PREFIX, schemaForDescriptor } from '@exprtlabs/golem/schema';
 import {
+  assertModelValue,
   createObjectCodec,
+  isValidModelValue,
   registerIModelClass,
-  requireAjvSchema,
   requireObjectCodec,
-  serdeFailFast,
-  validationFailure,
-  ajvIssues,
   IssueRepresentation,
+  IssueSource,
 } from '@exprtlabs/golem/serde';
+import { compileValidators } from './support/compiled-validators.js';
+
+/** Where a compiled module finds the test's own validation functions: files cannot carry closures. */
+const BINDINGS = Symbol.for('golem.test.validationBindings');
 
 function inlineGeneratedModelRefs(schema: object): object {
   const prefix = GENERATED_MODEL_SCHEMA_REF_PREFIX;
@@ -41,7 +43,8 @@ function inlineGeneratedModelRefs(schema: object): object {
   return walk(schema) as object;
 }
 
-export function installCodecModel<Model extends object>(options: {
+/** Registers a model whose codec validates with validators compiled from the descriptor's schema. */
+export async function installCodecModel<Model extends object>(options: {
   readonly constructor: abstract new (...arguments_: never[]) => Model;
   readonly name: string;
   readonly fields: readonly string[];
@@ -51,7 +54,7 @@ export function installCodecModel<Model extends object>(options: {
   readonly nestedCodecIds?: readonly string[];
   readonly profileValidation?: boolean;
   readonly enhanceValidator?: GeneratedModelValidatorEnhancer;
-}): string {
+}): Promise<string> {
   const codecId = options.name;
   const enabled = options.profileValidation !== false;
   const schema = schemaForDescriptor(options.definitions[options.name], {
@@ -65,24 +68,23 @@ export function installCodecModel<Model extends object>(options: {
   const resolved = inlineGeneratedModelRefs(payload as object);
   if (enabled) {
     const bindings = options.bindings ?? {};
-    const ajvFast = createOpenApiSyncAjvEngine({ allErrors: false, validationBindings: bindings });
-    const ajvAll = createOpenApiSyncAjvEngine({ allErrors: true, validationBindings: bindings });
-    ajvFast.addSchema(resolved, codecId);
-    ajvAll.addSchema(resolved, codecId);
-    const validateFast = requireAjvSchema(ajvFast.getSchema(codecId), codecId);
-    const validateAll = requireAjvSchema(ajvAll.getSchema(codecId), codecId);
-    function validate(value: unknown, optionsArg?: { readonly failFast?: boolean }): value is Record<string, unknown> {
-      const validator = serdeFailFast(optionsArg) ? validateFast : validateAll;
-      const ok = validator(value) === true;
-      (validate as { errors?: unknown }).errors = validator.errors;
-      return ok;
-    }
+    const ids = Object.keys(bindings);
+    const registry = globalThis as { [BINDINGS]?: Record<string, Record<string, (value: unknown) => boolean | string>> };
+    registry[BINDINGS] = { ...registry[BINDINGS], [codecId]: bindings };
+    const validators = await compileValidators({
+      roots: { [codecId]: resolved },
+      validations: Object.fromEntries(ids.map((id, index) => [id, { importPath: './bindings.mjs', exportName: `binding${index}` }])),
+      modules: {
+        'bindings.mjs': ids.map((id, index) => `export const binding${index} = (value) => globalThis[Symbol.for('golem.test.validationBindings')][${JSON.stringify(codecId)}][${JSON.stringify(id)}](value);`).join('\n'),
+      },
+    });
+    const validator = validators[codecId];
     createObjectCodec(codecId, {
       stringify: () => { throw new Error('not used'); },
       parse: () => { throw new Error('not used'); },
-      validate,
-      assert: (value) => {
-        if (validateFast(value) !== true) validationFailure(ajvIssues(validateFast, value, IssueRepresentation.Model));
+      validate: (value, optionsArg) => isValidModelValue(value, optionsArg, validator, codecId),
+      assert: (value, optionsArg) => {
+        assertModelValue(value, optionsArg, validator, codecId, IssueRepresentation.Model, IssueSource.TypeScript);
         return value as never;
       },
       toWireFormat: (value) => value,

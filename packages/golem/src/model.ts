@@ -8,6 +8,7 @@
 
 import type { TSerdeWire } from './tags.js';
 import type { ModelValidator } from './validation.js';
+import type { Validator } from './validation-runtime.js';
 
 export interface IModelOptions {
   /** Reject additional properties. Defaults to true. */
@@ -243,15 +244,7 @@ export type ModelField<Model extends object> = {
     : never;
 }[keyof Model];
 
-export interface OpenApiGeneratedModelValidation {
-  readonly kind?: 'openapi';
-  readonly registry: object;
-  readonly registryId: string;
-  readonly reference: string;
-}
-
-export type GeneratedModelValidation = OpenApiGeneratedModelValidation;
-
+/** The next three types are the Ajv-era engine contract the generated client uses until it validates with generated validators. */
 export interface ModelRuntimeValidator {
   (value: unknown): boolean | Promise<boolean>;
   readonly errors?: readonly unknown[] | null;
@@ -268,19 +261,13 @@ export interface ModelRuntimeValidationEngine {
   getSchema(reference: string): ModelRuntimeValidator | undefined;
 }
 
-/** Selects validators from one reusable schema/binding environment. */
+/** Supplies the validators a call uses instead of the generated ones. */
 export interface ModelValidationContext {
   /**
-   * When supplied, this resolver is authoritative. A missing reference fails
-   * within this context and never falls back to the process-wide engine.
+   * The validator for `reference`: `Id`, `Id#wire`, `Id#model-only` or `Id#wire-only`, the reference names the plane.
+   * A missing reference fails within this context and never falls back to the generated validator.
    */
-  readonly resolve?: (
-    /** `Id`, `Id#wire`, `Id#model-only` or `Id#wire-only`; the reference names the plane. */
-    reference: string,
-    mode: 'first' | 'all',
-  ) => ModelRuntimeValidator | undefined;
-  /** Used when `resolve` is omitted; engine error-mode behavior remains its own. */
-  readonly engine?: ModelRuntimeValidationEngine;
+  readonly resolve: (reference: string, mode: 'first' | 'all') => Validator | undefined;
 }
 
 export interface GeneratedModelConversion<Model extends object = object, Wire = unknown> {
@@ -317,7 +304,6 @@ export interface GeneratedModelDefinition<Model extends object, Wire = unknown> 
   readonly codecId?: string;
   /** Whether unlisted own keys are part of this model's dynamic map. */
   readonly additionalProperties?: boolean;
-  readonly validation?: GeneratedModelValidation;
   /** Optional integration hook applied when a stateful validator is created. */
   readonly enhanceValidator?: GeneratedModelValidatorEnhancer;
 }
@@ -330,7 +316,6 @@ export interface RegisteredGeneratedModelDefinition {
   readonly profile?: GeneratedModelProfile;
   readonly codecId?: string;
   readonly additionalProperties?: boolean;
-  readonly validation?: GeneratedModelValidation;
   readonly enhanceValidator?: GeneratedModelValidatorEnhancer;
 }
 
@@ -354,7 +339,6 @@ export function registerGeneratedModel<Model extends object, Wire = unknown>(
     profile: definition.profile,
     codecId: definition.codecId,
     additionalProperties: definition.additionalProperties,
-    validation: definition.validation,
     enhanceValidator: definition.enhanceValidator,
   };
   // The same descriptor is attached to the constructor and its prototype.

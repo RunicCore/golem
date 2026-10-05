@@ -135,5 +135,30 @@ export async function buildModelProject(
     }));
     project.push('-p', path.join(root, 'tsconfig.flags.json'));
   }
-  return command(root, process.execPath, [golem, 'build', '--config', config, ...project], options);
+  const result = await command(root, process.execPath, [golem, 'build', '--config', config, ...project], options);
+  if (result.code === 0) materializeValidators(root);
+  return result;
+}
+
+/**
+ * The compiler emits TypeScript only, so a project runs its build from outDir once the generated validator JavaScript
+ * sits there too, in the same place relative to rootDir (a bundler would include it; a test project copies it).
+ */
+function materializeValidators(root: string): void {
+  const inventory = path.join(root, '.golem/outputs.json');
+  if (!fs.existsSync(inventory)) return;
+  const { compilerOptions } = JSON.parse(fs.readFileSync(path.join(root, 'tsconfig.json'), 'utf8')) as {
+    readonly compilerOptions?: { readonly rootDir?: string; readonly outDir?: string };
+  };
+  const rootDir = path.resolve(root, compilerOptions?.rootDir ?? 'src');
+  const outDir = path.resolve(root, compilerOptions?.outDir ?? 'build');
+  const files = (JSON.parse(fs.readFileSync(inventory, 'utf8')) as { readonly files: Readonly<Record<string, unknown>> }).files;
+  for (const key of Object.keys(files).filter((name) => name.endsWith('.validators.generated.js'))) {
+    const source = path.join(root, key);
+    const relative = path.relative(rootDir, source);
+    if (relative.startsWith('..')) continue;
+    const target = path.join(outDir, relative);
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.copyFileSync(source, target);
+  }
 }

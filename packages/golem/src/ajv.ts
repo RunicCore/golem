@@ -9,7 +9,6 @@ import {
   type ValidateFunction,
 } from 'ajv/dist/2020.js';
 import type { FormatsPlugin } from 'ajv-formats';
-import { registerModelValidationEngineFactory } from './validation.js';
 import type {
   ModelRuntimeValidationEngine,
   ModelRuntimeSyncValidator,
@@ -31,8 +30,6 @@ function isFormatsPlugin(value: unknown): value is FormatsPlugin {
 const formatsPlugin: unknown = AddFormatsModule.default;
 if (!isFormatsPlugin(formatsPlugin)) throw new TypeError('ajv-formats did not export its formats plugin.');
 const addFormats = formatsPlugin;
-
-export { configureModelValidationEngine } from './validation.js';
 
 export type OpenApiRuntimeValidator = ModelRuntimeValidator;
 export type OpenApiSyncRuntimeValidator = ModelRuntimeSyncValidator;
@@ -169,5 +166,3 @@ export function createOpenApiSyncAjvEngine(
 function isAsyncAjvValidator(validator: AnyValidateFunction): validator is AsyncValidateFunction {
   return '$async' in validator && validator.$async === true;
 }
-
-registerModelValidationEngineFactory(() => createOpenApiAjvEngine());

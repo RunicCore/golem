@@ -68,13 +68,8 @@ export function getValidator<Fields extends object = object, Owner extends objec
 
 export type {
   ModelField,
-  ModelRuntimeValidator,
   ModelValidationRules,
   Issue,
   ValidationMessage,
   ValidationMessages,
-} from './validation.js';
-export {
-  configureModelValidationEngine,
-  registerModelValidationEngineFactory,
 } from './validation.js';

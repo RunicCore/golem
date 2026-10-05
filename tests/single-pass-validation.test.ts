@@ -4,6 +4,8 @@ import { pathToFileURL } from 'node:url';
 import test, { type TestContext } from 'node:test';
 import { IssueRepresentation, LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 import { requireObjectCodec } from '@exprtlabs/golem/serde';
+import type { ModelValidationContext } from '@exprtlabs/golem/model';
+import type { Validator } from '@exprtlabs/golem/validation-runtime';
 import { validateInstance } from '@exprtlabs/golem/validation';
 import { readFixture, writeGeneratedArtifacts } from './fixture-project.js';
 import { generate as generateOpenApi } from '@exprtlabs/golem-openapi/generator';
@@ -177,9 +179,8 @@ for (const profileValidation of [true, false]) {
       const blank = new models.Parent({ child: { secret: 'x' }, note: '  ', when: new Date(value.when) });
       assert.equal(parentCodec.validate(blank), false, 'a blank parent note is rejected');
       assert.ok((await validateInstance(blank)).some(issue => issue.path[0] === 'note'));
-      const source = generatedModelFiles(root).map(a => a.content).join('\n');
-      const parentModelOnly = source.split('\n').find(line => line.includes('const __resolvedModelOnlySchema_TParent')) ?? '';
-      assert.ok(parentModelOnly.length > 0 && !parentModelOnly.includes('Child'), 'the parent residual does not reference the opaque child');
+      const parentModelOnly = JSON.stringify(parentCodec.modelOnlySchema ?? '');
+      assert.ok(parentModelOnly.length > 2 && !parentModelOnly.includes('Child'), 'the parent residual does not reference the opaque child');
     } else {
       // A validated child inside an unvalidated parent: the codec you call decides.
       counter.reset();
@@ -213,8 +214,8 @@ for (const [label, profile] of [['runtime Ajv', { mobx: false, validation: true 
   });
 }
 
-test('an engine filled by registerCodecSchemas validates parse and stringify through a context, nested residual refs included', async t => {
-  const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-single-pass-engine-', name: 'single-pass-engine' });
+test('a context of the generated validators validates parse and stringify, nested residual references included', async t => {
+  const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-single-pass-context-', name: 'single-pass-context' });
   writeModelSources(sourceRoot, { 'visit.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
 import { TStopBaseModel, TTripBaseModel } from './visit.model.generated.js';
 export type TStop = IModel<{ at: Date; name: string }>;
@@ -225,17 +226,16 @@ export class Trip extends TTripBaseModel {}
   writeModelGolemYaml(root, { mobx: false, validation: true });
   await buildModelProject(root);
   const { Trip } = await import(pathToFileURL(path.join(root, 'build/visit.model.js')).href) as { Trip: new (v?: object) => object };
-  const { createOpenApiSyncAjvEngine } = await import('@exprtlabs/golem/ajv');
-  const { registerCodecSchemas } = await import('@exprtlabs/golem/serde');
-  const engine = createOpenApiSyncAjvEngine({ allErrors: false, validationBindings: {} });
-  const registered: string[] = [];
-  registerCodecSchemas((schema, id) => { registered.push(id); engine.addSchema(schema, id); }, 'TTrip');
-  assert.ok(registered.some(id => id.startsWith('TStop') && id.endsWith('#model-only')), 'the nested codec residual schema is registered');
-  const context = { engine };
+  const validatorsFile = generatedModelFiles(root).find(item => item.path.endsWith('/models.validators.generated.js'));
+  assert.ok(validatorsFile);
+  const { validators } = await import(pathToFileURL(path.join(root, 'build', path.relative(sourceRoot, validatorsFile.path))).href) as { validators: Readonly<Record<string, Validator>> };
+  const requested: string[] = [];
+  const context: ModelValidationContext = { resolve: (reference) => { requested.push(reference); return validators[reference]; } };
   const codec = requireObjectCodec('TTrip');
   const good = { at: '2026-01-02T03:04:05.000Z', stop: { at: '2026-01-03T00:00:00.000Z', name: 'A' } };
   const trip = codec.parse(JSON.stringify(good), { construct: Trip, validationContext: context });
   assert.equal(codec.stringify(trip as never, { validationContext: context }), JSON.stringify(good));
+  assert.ok(requested.some(reference => reference.startsWith('TTrip') && reference.endsWith('#model-only')), 'parse checks the decoded value through the context');
   assert.throws(() => codec.parse(JSON.stringify({ ...good, stop: { ...good.stop, at: 'nope' } }), { construct: Trip, validationContext: context }), validationError);
   const bad = codec.parse(JSON.stringify(good), { construct: Trip }) as { stop: object };
   Reflect.set(bad.stop, 'at', 'not a date');

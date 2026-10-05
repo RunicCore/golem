@@ -115,6 +115,8 @@ export function buildCodecValidationPlan(
   graphOrGraphs: SchemaGraph | readonly SchemaGraph[],
   externalCodecs: readonly CodecSchemaClosureEntry[] = [],
   additionalSchemas: Readonly<Record<string, JsonSchema>> = {},
+  /** Whether a node that does not choose validates: the profile's `validation`. */
+  defaultValidation = true,
 ): CodecValidationPlan {
   const graphs = Array.isArray(graphOrGraphs) ? graphOrGraphs : [graphOrGraphs];
   const nodes = graphs.flatMap(graph => [...graph.nodes.values()]
@@ -143,7 +145,7 @@ export function buildCodecValidationPlan(
     for (const node of graph.nodes.values()) {
       if (node.kind === 'reference') continue;
       for (const alias of schemaNodeAliases(node)) addAlias(graphAliases, alias, node.codecId);
-      if (node.validationEnabled !== false) {
+      if (node.validationEnabled ?? defaultValidation) {
         modelDefinitions.set(node.codecId, {
           reference: node.codecId,
           schema: node.modelJsonSchema ?? node.jsonSchema,
@@ -201,7 +203,7 @@ export function buildCodecValidationPlan(
   };
   const ownSchemas = new Set<string>();
   for (const { graph, node } of nodes) {
-    if (node.kind === 'reference' || node.validationEnabled === false) continue;
+    if (node.kind === 'reference' || !(node.validationEnabled ?? defaultValidation)) continue;
     ownSchemas.add(node.codecId);
     if (!node.sameSchema) ownSchemas.add(`${node.codecId}#wire`);
     if (node.modelOnlyJsonSchema !== undefined) ownSchemas.add(`${node.codecId}#model-only`);

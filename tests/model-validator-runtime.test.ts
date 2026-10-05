@@ -26,14 +26,14 @@ async function runtime(name: string): Promise<unknown> {
   return import(modulePath);
 }
 
-function validatedModel(
+async function validatedModel(
   constructor: abstract new (...arguments_: never[]) => { toJSON?: () => unknown },
   name: string,
   definitions: Readonly<Record<string, ModelTypeDescriptor>>,
   fields: readonly string[],
   enhanceValidator?: GeneratedModelValidatorEnhancer,
-): void {
-  installCodecModel({
+): Promise<void> {
+  await installCodecModel({
     constructor: constructor as never,
     name,
     fields,
@@ -122,7 +122,7 @@ test('tuple validation supports rest elements with prefix only, prefix and suffi
         return { data: this.data };
       }
     }
-    validatedModel(RestTupleModel, name, {
+    await validatedModel(RestTupleModel, name, {
       [name]: {
         kind: 'object',
         required: ['data'],
@@ -178,7 +178,7 @@ test('JSON Pointer escapes ~ and / in property paths; errorsFor finds actual fie
     }
   }
 
-  validatedModel(EscapedModel, 'Escaped', {
+  await validatedModel(EscapedModel, 'Escaped', {
         Escaped: {
           kind: 'object',
           required: ['a/b', 'c~d', 'e/f~g'],
@@ -261,7 +261,7 @@ test('plain getter called FIRST, MobX getter called SECOND shares identity and e
     }
   }
 
-  validatedModel(Order1Model, 'Order1', {
+  await validatedModel(Order1Model, 'Order1', {
         Order1: {
           kind: 'object',
           required: ['title', 'count'],
@@ -349,7 +349,7 @@ test('MobX getter called FIRST, plain getter called SECOND shares identity and o
     }
   }
 
-  validatedModel(Order2Model, 'Order2', {
+  await validatedModel(Order2Model, 'Order2', {
         Order2: {
           kind: 'object',
           required: ['name'],
@@ -401,7 +401,7 @@ test('direct MobX ModelValidator constructor enhances in place and runs setters 
     }
   }
 
-  validatedModel(DirectModel, 'Direct', {
+  await validatedModel(DirectModel, 'Direct', {
         Direct: {
           kind: 'object',
           required: ['status'],
@@ -471,7 +471,7 @@ test('async validation observes pending state transition [false -> true -> false
     }
   }
 
-  validatedModel(AsyncModel, 'Async', {
+  await validatedModel(AsyncModel, 'Async', {
         Async: {
           kind: 'object',
           required: ['email'],
@@ -529,7 +529,7 @@ test('ModelValidator keeps the latest overlapping result and clears stale pendin
     }
   }
 
-  validatedModel(OverlapModel, 'Overlap', {
+  await validatedModel(OverlapModel, 'Overlap', {
         Overlap: {
           kind: 'object',
           required: ['value'],

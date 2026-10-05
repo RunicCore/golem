@@ -3,8 +3,8 @@ import test from 'node:test';
 
 import type { ModelField, ModelTypeDescriptor } from '@exprtlabs/golem/model';
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
+import { requireObjectCodec } from '@exprtlabs/golem/serde';
 import {
-  getModelRuntimeValidator,
   getValidator,
 } from '@exprtlabs/golem/validation';
 import { installCodecModel } from './register-codec-model.js';
@@ -17,14 +17,14 @@ const childDescriptor: ModelTypeDescriptor = {
   additionalProperties: false,
 };
 
-function registerModel<Model extends object>(
+async function registerModel<Model extends object>(
   constructor: new (...arguments_: never[]) => Model,
   root: string,
   definitions: Readonly<Record<string, ModelTypeDescriptor>>,
   fields: readonly ModelField<Model>[],
   nestedCodecIds?: readonly string[],
-): void {
-  installCodecModel({
+): Promise<void> {
+  await installCodecModel({
     constructor,
     name: root,
     fields,
@@ -37,7 +37,7 @@ function registerModel<Model extends object>(
   });
 }
 
-test('unconstrained structural validation stays synchronous through nested models and arrays', () => {
+test('unconstrained structural validation stays synchronous through nested models and arrays', async () => {
   class Child {
     public value = 1;
   }
@@ -45,8 +45,8 @@ test('unconstrained structural validation stays synchronous through nested model
     public child = new Child();
     public children = [new Child(), new Child()];
   }
-  registerModel(Child, 'Child', { Child: childDescriptor }, ['value']);
-  registerModel(
+  await registerModel(Child, 'Child', { Child: childDescriptor }, ['value']);
+  await registerModel(
     Root,
     'Root',
     {
@@ -64,8 +64,7 @@ test('unconstrained structural validation stays synchronous through nested model
     ['Child'],
   );
 
-  const result = getModelRuntimeValidator(new Root())(new Root());
-  assert.equal(result, true);
+  assert.equal(requireObjectCodec('Root').validate(new Root()), true);
 });
 
 test('nested instance rules run when the root has no local rules', async () => {
@@ -75,8 +74,8 @@ test('nested instance rules run when the root has no local rules', async () => {
   class Root {
     public child = new Child();
   }
-  registerModel(Child, 'Child', { Child: childDescriptor }, ['value']);
-  registerModel(
+  await registerModel(Child, 'Child', { Child: childDescriptor }, ['value']);
+  await registerModel(
     Root,
     'Root',
     {
@@ -110,8 +109,8 @@ test('custom thenables suspend rule traversal once and preserve the original res
   class Root {
     public child = new Child();
   }
-  registerModel(Child, 'Child', { Child: childDescriptor }, ['value']);
-  registerModel(
+  await registerModel(Child, 'Child', { Child: childDescriptor }, ['value']);
+  await registerModel(
     Root,
     'Root',
     {
@@ -151,7 +150,7 @@ test('async rule continuation resumes at the next rule without replaying sibling
     public first = 1;
     public second = 2;
   }
-  registerModel(
+  await registerModel(
     Model,
     'Model',
     {
@@ -191,7 +190,7 @@ test('rejected thenables become validation errors without rerunning the rule', a
   class Model {
     public value = 1;
   }
-  registerModel(Model, 'Model', { Model: childDescriptor }, ['value']);
+  await registerModel(Model, 'Model', { Model: childDescriptor }, ['value']);
   const cause = new Error('rule failed');
   let thenCalls = 0;
   const model = new Model();

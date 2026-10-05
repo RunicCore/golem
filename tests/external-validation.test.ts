@@ -53,15 +53,15 @@ const numberDescriptor: ModelTypeDescriptor = {
   additionalProperties: false,
 };
 
-function registerNumberModel(
+async function registerNumberModel(
   constructor: new (...args: never[]) => { value: number },
   options: {
     readonly validation: boolean;
     readonly encode?: (model: { value: number }) => unknown;
     readonly enhanceValidator?: GeneratedModelValidatorEnhancer;
   } = { validation: true },
-): void {
-  installCodecModel({
+): Promise<void> {
+  await installCodecModel({
     constructor,
     name: `NumberModel_${constructor.name}`,
     fields: ['value'],
@@ -79,7 +79,7 @@ test('validate collects model issues without creating validator state', async ()
   class NumberModel {
     public value = 0;
   }
-  registerNumberModel(NumberModel);
+  await registerNumberModel(NumberModel);
   const model = new NumberModel();
   const issues = await validateInstance(generated(model));
   assert.deepEqual(issues, []);
@@ -92,7 +92,7 @@ test('getValidator is stable, keeps rules in instance state, and stateless valid
   class NumberModel {
     public value = 0;
   }
-  registerNumberModel(NumberModel);
+  await registerNumberModel(NumberModel);
   const model = new NumberModel();
   const validator = getValidator(generated(model));
   const same = getValidator(generated(model));
@@ -111,12 +111,12 @@ test('getValidator is stable, keeps rules in instance state, and stateless valid
   assert.deepEqual(validator.errorsFor('value'), ['Value must be positive.', 'Server rejected the value.']);
 });
 
-test('a failed validator enhancer is not cached and can be retried', () => {
+test('a failed validator enhancer is not cached and can be retried', async () => {
   class NumberModel {
     public value = 1;
   }
   let enhancerCalls = 0;
-  registerNumberModel(NumberModel, {
+  await registerNumberModel(NumberModel, {
     validation: true,
     enhanceValidator: validator => {
       enhancerCalls += 1;
@@ -165,7 +165,7 @@ test('model metadata is resolved through the prototype, not an instance construc
     public value = 1;
   }
   class ChildModel extends BaseModel {}
-  registerNumberModel(BaseModel);
+  await registerNumberModel(BaseModel);
   const child = generated(new ChildModel());
   // Shadow runtime identity without adding an unexpected serialized field.
   Object.defineProperty(child, 'constructor', { configurable: true, enumerable: false, value: class Foreign {} });
@@ -190,7 +190,7 @@ test('missing conversion and validation metadata fail before rules can run', asy
 
 test('frozen models support stateless operations and previously initialized validation state', async () => {
   class FrozenModel { public value = 1; }
-  registerNumberModel(FrozenModel);
+  await registerNumberModel(FrozenModel);
   const frozen = generated(Object.freeze(new FrozenModel()));
   const symbols = Object.getOwnPropertySymbols(frozen);
   assert.deepEqual(await validateInstance(frozen), []);
@@ -212,7 +212,7 @@ test('frozen models support stateless operations and previously initialized vali
 
 test('an instance never inherits the validator or rules of another instance', async () => {
   class NumberModel { public value = 1; }
-  registerNumberModel(NumberModel);
+  await registerNumberModel(NumberModel);
   const original = generated(new NumberModel());
   const originalValidator = getValidator(original).extend({ value: () => 'Only the original.' });
   const derived = generated(Object.create(original) as NumberModel);
@@ -226,7 +226,7 @@ test('an instance never inherits the validator or rules of another instance', as
 test('derived registration shadows inherited metadata and failed replacement leaves both attachments intact', async () => {
   class Base { public value = 1; }
   class Derived extends Base { public label = 'child'; }
-  registerNumberModel(Base);
+  await registerNumberModel(Base);
   const parent = findGeneratedModelDefinitionForConstructor(Base);
   assert.strictEqual(findGeneratedModelDefinition(new Derived()), parent);
   const registerDerived = () => registerGeneratedModel(Derived, {

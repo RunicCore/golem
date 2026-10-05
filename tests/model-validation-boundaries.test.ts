@@ -21,7 +21,7 @@ test('exact frontend models ignore prototype extras while nested records stay ex
     required: ['value'],
     additionalProperties: false,
   };
-  installCodecModel({
+  await installCodecModel({
     constructor: Child,
     name: 'Child',
     fields: ['value'],
@@ -53,7 +53,7 @@ test('exact frontend models ignore prototype extras while nested records stay ex
     required: ['child', 'when', 'settings'],
     additionalProperties: false,
   };
-  installCodecModel({
+  await installCodecModel({
     constructor: Editor,
     name: 'Editor',
     fields: ['child', 'when', 'settings'],

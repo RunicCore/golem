@@ -9,7 +9,7 @@ import type {
   InputObserver,
 } from '@exprtlabs/golem/generator-api';
 import { buildCodecValidationPlan, compilePlanValidators, type CodecSchemaClosureEntry } from '@exprtlabs/golem/validation-plan';
-import { DEFAULT_MODEL_SUFFIXES, resolveProfile, suffixPattern } from '@exprtlabs/golem/generator-api';
+import { DEFAULT_MODEL_SUFFIXES, GolemDiagnosticSeverity, resolveProfile, suffixPattern } from '@exprtlabs/golem/generator-api';
 import { codecKeysPath, defaultModelOutput } from '@exprtlabs/golem/generated-paths';
 import { emitCodecDeclarationTable } from '@exprtlabs/golem/schema-graph';
 import {
@@ -19,6 +19,7 @@ import {
   describeJob,
   emitSharedSource,
   emitSource,
+  validatorImports,
   codecEntriesForGraph,
   internSourceDefinitions,
   type SourceModelGraph,
@@ -409,10 +410,13 @@ export function generate(context: GolemModelContext): GolemModelResult {
     ))
     .filter((graph): graph is NonNullable<typeof graph> => graph !== undefined);
   const sharedOutput = join(normalized.output, 'models.generated.ts');
-  const needsShared = normalized.profile.validation
-    || graphs.some((graph) => graph.registry.serde.size > 0);
   const graphSchemaPairs = internJobSchemaGraphs(graphs, normalized.profile.validation, manifestIndex.validationSchemaClosure);
   const schemaGraphs = graphSchemaPairs.map(({ schemaGraph }) => schemaGraph);
+  // A model can ask for validation when the profile does not.
+  const anyValidation = normalized.profile.validation
+    || schemaGraphs.some((graph) => [...graph.nodes.values()].some((node) => node.kind !== 'reference' && node.validationEnabled === true));
+  const needsShared = anyValidation
+    || graphs.some((graph) => graph.registry.serde.size > 0);
   const sharedBase = needsShared ? {
     modulePath: sharedOutput,
     keyFor: (source: string, modelName: string): string => `${portableRelativeFilename(source, normalized.root)}\0${modelName}`,
@@ -422,23 +426,38 @@ export function generate(context: GolemModelContext): GolemModelResult {
       .sort((left, right) => left.key.localeCompare(right.key)
         || JSON.stringify(left.schema).localeCompare(JSON.stringify(right.schema))),
   );
-  const validationPlan = normalized.profile.validation && normalized.profile.ajvStandalone
+  const validationPlan = anyValidation
     ? buildCodecValidationPlan(
       schemaGraphs,
       manifestIndex.validationSchemaClosure,
       Object.fromEntries(schemaEntries.map((compilation) => [compilation.id, compilation.schema])),
+      normalized.profile.validation,
     )
     : undefined;
-  const standalone = validationPlan && validationPlan.references.length > 0
-    ? compileStandaloneValidatorSet({
-      schemas: validationPlan.schemas,
-      references: validationPlan.references,
-      ownSchemas: validationPlan.ownSchemas,
+  const validatorsOutput = join(normalized.output, 'models.validators.generated.js');
+  const validators = validationPlan && validationPlan.references.length > 0
+    ? compilePlanValidators(validationPlan, {
       owner: '@exprtlabs/golem-model',
+      unknownFormats: normalized.profile.unknownFormats ?? 'warn',
+      validations: validatorImports(graphs, normalized.profile, validatorsOutput),
+      documentName: 'the model schemas',
     })
     : undefined;
-  const shared = sharedBase && standalone
-    ? { ...sharedBase, validationSetName: 'modelValidatorSet' }
+  const validatorDiagnostics = validators?.diagnostics ?? [];
+  if (validatorDiagnostics.some((diagnostic) => diagnostic.severity === GolemDiagnosticSeverity.Error)) {
+    // Nothing is written: the companions import the validators this job could not compile.
+    return {
+      artifacts: [],
+      manifestPaths: [],
+      watchInputs: projectWatchInputs(programInfo, programInfo.program, normalized.root, sources, referencedManifestFiles(graphs, manifestIndex)),
+      diagnostics: validatorDiagnostics,
+    };
+  }
+  const planSchemas = validationPlan && validators
+    ? Object.fromEntries(validationPlan.ownSchemas.map((id) => [id, validationPlan.schemas[id]]))
+    : undefined;
+  const shared = sharedBase && validators
+    ? { ...sharedBase, validatorsModule: validatorsOutput, schemasName: 'modelSchemas' }
     : sharedBase;
   const artifacts: GolemModelArtifact[] = [];
   const sharedContent = needsShared
@@ -446,25 +465,13 @@ export function generate(context: GolemModelContext): GolemModelResult {
       output: sharedOutput,
       profile: normalized.profile,
       graphs,
-      ...(standalone ? { standaloneModule: './models.validators.generated.js' } : {}),
+      ...(planSchemas ? { schemas: planSchemas } : {}),
     })
     : undefined;
   if (sharedContent !== undefined) artifacts.push({ path: sharedOutput, content: sharedContent });
-  if (standalone) {
-    artifacts.push({
-      path: join(normalized.output, 'models.validators.generated.js'),
-      content: standalone.code,
-    });
-    artifacts.push({
-      path: join(normalized.output, 'models.validators.generated.d.ts'),
-      content: standalone.declarations,
-    });
-    // Keep the third-party notices adjacent to the shared generated module;
-    // the TypeScript overlay deliberately excludes this text artifact.
-    artifacts.push({
-      path: join(normalized.output, 'models.generated.NOTICES.txt'),
-      content: standalone.notices,
-    });
+  if (validators) {
+    artifacts.push({ path: validatorsOutput, content: validators.source });
+    artifacts.push({ path: join(normalized.output, 'models.validators.generated.d.ts'), content: validators.declarations });
   }
   // Codecs some companion writes through their owner's wire stringify.
   const referencedWireCodecIds = new Set(graphSchemaPairs.flatMap(({ schemaGraph, siblingWireCodecIds }) =>
@@ -532,6 +539,7 @@ export function generate(context: GolemModelContext): GolemModelResult {
       sources,
       referencedManifestFiles(graphs, manifestIndex),
     ),
+    ...(validatorDiagnostics.length > 0 ? { diagnostics: validatorDiagnostics } : {}),
   };
 }
 

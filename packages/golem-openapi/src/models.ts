@@ -11,7 +11,7 @@ import {
   type ModelDiscriminators,
 } from '@exprtlabs/golem/emitter';
 import { createSchemaGraph, codecPublicId, internDescriptors, type SchemaGraph, type SchemaNode } from '@exprtlabs/golem/schema-graph';
-import type { CodecSchemaClosureEntry } from '@exprtlabs/golem/validation-plan';
+import type { CodecSchemaClosureEntry, CodecValidationPlan } from '@exprtlabs/golem/validation-plan';
 import { assertSupportedModelFieldName, type JsonSchema } from '@exprtlabs/golem/schema';
 import { sourceDigest } from '@exprtlabs/golem/manifest';
 import { buildCodecValidationPlan, compilePlanValidators } from '@exprtlabs/golem/validation-plan';
@@ -1303,8 +1303,7 @@ function pruneGeneratedImports(source: string): string {
       pruned.set(line, uses(namespace[2] ?? '') ? line : '');
       continue;
     }
-    // Side-effect imports are intentional, for example the optional Ajv
-    // provider registration used by runtime-backed generated codecs.
+    // Side-effect imports are intentional: a group module's import of another group registers its codecs.
     pruned.set(line, line);
   }
   return source.replace(/^import[^\n]*(?:\n|$)/gm, (line) => pruned.get(line) ?? line);
@@ -1315,7 +1314,7 @@ export function generateOpenApiModelArtifacts(
   profile: OpenApiGenerationProfile,
   analysis: OpenApiModelAnalysis,
   helpers: { readonly copyAdditionalProperties?: boolean; readonly objectFromJSON?: boolean } = {},
-): { readonly files: ReadonlyMap<string, string>; readonly entryReexports: string } {
+): { readonly files: ReadonlyMap<string, string>; readonly entryReexports: string; readonly diagnostics: readonly GolemDiagnostic[] } {
   const { schemaGraph, definitions, ordered, grouping } = analysis;
   const { groups, owner, runtimeEdges } = grouping;
   const digest = sourceDigest(document);
@@ -1369,6 +1368,7 @@ export function generateOpenApiModelArtifacts(
     }
   }
   const files = new Map<string, string>();
+  const diagnostics: GolemDiagnostic[] = [];
   const codecExports = (name: string): string[] => {
     const node = analysis.nodesByName.get(name);
     if (!node) return [];
@@ -1445,8 +1445,26 @@ export function generateOpenApiModelArtifacts(
       moduleImports.push(`import ${JSON.stringify(`./_${dependencyGroupId}.js`)};`);
     }
     const validatorModule = `${group.filename.slice(0, -3)}.validators.generated.js`;
-    if (profile.validation && profile.ajvStandalone) {
-      moduleImports.push(`import { createValidatorSet } from ${JSON.stringify(`./_${group.id}.validators.generated.js`)};`);
+    let groupPlan: CodecValidationPlan | undefined;
+    if (profile.validation) {
+      const dependencyCodecIds = new Set([...dependencyIds].flatMap((id) => {
+        const node = schemaGraph.nodes.get(id);
+        return node ? [node.codecId] : [];
+      }));
+      const externalCodecs = validationClosure.filter((entry) => dependencyCodecIds.has(entry.codecId));
+      groupPlan = buildCodecValidationPlan(
+        schemaGraphView(schemaGraph, localIds, dependencyIds),
+        externalCodecs,
+      );
+      const compiled = compilePlanValidators(groupPlan, {
+        owner: '@exprtlabs/golem-openapi',
+        unknownFormats: profile.unknownFormats ?? 'warn',
+        documentName: 'the OpenAPI document',
+      });
+      diagnostics.push(...compiled.diagnostics);
+      files.set(validatorModule, compiled.source);
+      files.set(`${validatorModule.slice(0, -3)}.d.ts`, compiled.declarations);
+      moduleImports.push(`import { validators } from ${JSON.stringify(`./_${group.id}.validators.generated.js`)};`);
     }
     const modelModule = generateModels(document, profile, {
       ...helpers,
@@ -1465,29 +1483,9 @@ export function generateOpenApiModelArtifacts(
       },
       exportedFillFunctionIds: exportedFillFunctionsByGroup.get(group.id),
       exportedInitializerNames: exportedInitializersByGroup.get(group.id),
-      validatorSetExpr: profile.ajvStandalone && profile.validation ? 'modelValidatorSet' : undefined,
+      ...(groupPlan ? { resolvedSchemas: Object.fromEntries(groupPlan.ownSchemas.map((id) => [id, groupPlan.schemas[id]])) } : {}),
     });
     files.set(group.filename, modelModule);
-    if (profile.validation && profile.ajvStandalone) {
-      const dependencyCodecIds = new Set([...dependencyIds].flatMap((id) => {
-        const node = schemaGraph.nodes.get(id);
-        return node ? [node.codecId] : [];
-      }));
-      const externalCodecs = validationClosure.filter((entry) => dependencyCodecIds.has(entry.codecId));
-      const validationPlan = buildCodecValidationPlan(
-        schemaGraphView(schemaGraph, localIds, dependencyIds),
-        externalCodecs,
-      );
-      const compiled = compileStandaloneValidatorSet({
-        schemas: validationPlan.schemas,
-        references: validationPlan.references,
-        ownSchemas: validationPlan.ownSchemas,
-        owner: '@exprtlabs/golem-openapi',
-      });
-      files.set(validatorModule, compiled.code);
-      files.set(`${validatorModule.slice(0, -3)}.d.ts`, compiled.declarations);
-      files.set(`${validatorModule.slice(0, -3)}.NOTICES.txt`, compiled.notices);
-    }
     for (const name of group.models) {
       const filename = `models/${name}.ts`;
       const runtimeExports = codecExports(name);
@@ -1497,7 +1495,7 @@ export function generateOpenApiModelArtifacts(
   const reexports = ordered.map((definition) =>
     `export { ${definition.name}Model, ${codecExports(definition.name).map((name) => name.includes(' as ') ? name.slice(name.indexOf(' as ') + 4) : name).join(', ')} } from './models/${definition.name}.js';\nexport type { ${definition.name}Fields, ${definition.name}JSON, ${definition.name}Init } from './models/${definition.name}.js';`,
   );
-  return { files, entryReexports: reexports.join('\n') };
+  return { files, entryReexports: reexports.join('\n'), diagnostics };
 }
 
 /**
@@ -1576,7 +1574,8 @@ export function generateModels(
     readonly modelImport?: (name: string) => string | undefined;
     readonly codecFunctionImport?: (nodeId: string, functionName: 'stringify' | 'fill' | 'fromWire' | 'toWire') => string | undefined;
     readonly moduleImports?: readonly string[];
-    readonly validatorSetExpr?: string;
+    /** The validation plan's resolved schemas of this module's models by codec id and plane. */
+    readonly resolvedSchemas?: Readonly<Record<string, object | boolean>>;
     readonly exportedFillFunctionIds?: ReadonlySet<string>;
     readonly exportedInitializerNames?: ReadonlySet<string>;
   } = {},
@@ -1610,12 +1609,10 @@ export function generateModels(
   };
   const output = [
     generatedBanner(),
-    ...(profile.validation && !helpers.moduleFile && !profile.ajvStandalone ? ["import '@exprtlabs/golem/ajv';"] : []),
     ...(profile.validation && profile.mobx ? ["import { enhanceValidatorWithMobX } from '@exprtlabs/golem/mobx-validation';"] : []),
     `import { registerGeneratedModel, type ModelInit, type GeneratedModelConstructor, type generatedModelWireBrand, type generatedModelFieldsBrand${ordered.some(definition => definition.isUnion) ? ", type generatedModelResultBrand" : ""}${emitCopy ? ", findGeneratedModelDefinition, findGeneratedModelDefinitionForConstructor" : ""} } from '@exprtlabs/golem/model';`,
     `import { assertPropertyAcyclic, assertWireAcyclic, beginDecode, convertModelField, decodeCheckedInput, decodeDetachedInput, endDecode, decodeGeneratedModelTrusted, defineModelProperty, encodeGeneratedModel${usesDate ? ", deserializeDate, serializeDate" : ""} } from '@exprtlabs/golem/conversion';`,
-    "import { addNestedCodecSchema, ajvIssues, assertModelValue, createObjectCodec, parseJson, registerIModelClass, requireAjvSchema, requireIModelClass, requireObjectCodec, resolveGeneratedModelSchemaRefs, resolveModelValidationContextValidator, runSynchronousValidation, serdeFailFast, serdeValidates, stringifyJsonArray, stringifyJsonBoolean, stringifyJsonNumber, stringifyJsonScalar, stringifyJsonString, validationFailure, validationUnavailable, IssueRepresentation, IssueSource, type SerdeOptions as __GolemSerdeOptions, type ValidateOptions as __GolemValidateOptions } from '@exprtlabs/golem/serde';",
-    ...(profile.validation ? ["import { createOpenApiSyncAjvEngine } from '@exprtlabs/golem/ajv';"] : []),
+    "import { assertModelValue, createObjectCodec, isValidModelValue, modelValueIssues, parseJson, registerIModelClass, requireIModelClass, requireModelValidator, requireObjectCodec, resolveGeneratedModelSchemaRefs, serdeFailFast, serdeValidates, stringifyJsonArray, stringifyJsonBoolean, stringifyJsonNumber, stringifyJsonScalar, stringifyJsonString, validationFailure, validationUnavailable, IssueRepresentation, IssueSource, type SerdeOptions as __GolemSerdeOptions, type ValidateOptions as __GolemValidateOptions } from '@exprtlabs/golem/serde';",
     ...(profile.mobx ? [
       "import { asGenObservable } from '@exprtlabs/golem/mobx';",
     ] : []),
@@ -1809,13 +1806,13 @@ export function generateModels(
       ]),
     );
   }
-  if (profile.validation && profile.ajvStandalone && helpers.moduleFile) {
-    output.push('const modelValidatorSet = createValidatorSet();', '');
+  if (helpers.resolvedSchemas) {
+    output.push(`const modelSchemas = JSON.parse(${JSON.stringify(JSON.stringify(helpers.resolvedSchemas))}) as Readonly<Record<string, object>>;`, '');
   }
   const codecRuntimeOptions: CodecRuntimeOptions = {
     validationEnabled: profile.validation,
     serde: TEMPORAL_SERDE,
-    ...(helpers.validatorSetExpr ? { validatorSetExpr: helpers.validatorSetExpr } : {}),
+    ...(helpers.resolvedSchemas ? { resolvedSchemasExpr: 'modelSchemas' } : {}),
     issueSource: 'OpenAPI',
     wireType: (node) => {
       const modelName = analysis.definitionNameByNodeId.get(node.id);

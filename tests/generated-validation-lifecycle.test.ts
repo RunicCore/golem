@@ -13,7 +13,7 @@ test('nested generated-model $ref reports issues at the nested child path', asyn
     public child!: Child;
   }
 
-  installCodecModel({
+  await installCodecModel({
     constructor: Child,
     name: 'Child',
     fields: ['name'],
@@ -30,7 +30,7 @@ test('nested generated-model $ref reports issues at the nested child path', asyn
       encode: model => model,
     },
   });
-  installCodecModel({
+  await installCodecModel({
     constructor: Root,
     name: 'Root',
     fields: ['child'],
@@ -60,7 +60,7 @@ test('instance validation stops at the first issue unless failFast is false', as
   class TwoFieldsModel {
     public constructor(public name: unknown = 1, public count: unknown = 'x') {}
   }
-  installCodecModel({
+  await installCodecModel({
     constructor: TwoFieldsModel,
     name: 'FailFastDefault',
     fields: ['name', 'count'],
@@ -87,7 +87,7 @@ test('a throwing custom rule is a program fault, not rejected input', async () =
   class RuleFaultModel {
     public constructor(public name: unknown = 'ok') {}
   }
-  installCodecModel({
+  await installCodecModel({
     constructor: RuleFaultModel,
     name: 'RuleFault',
     fields: ['name'],

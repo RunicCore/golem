@@ -5,25 +5,20 @@ import {
 import type {
   generatedModelFieldsBrand,
   GeneratedModelConstructor,
-  GeneratedModelValidation,
   ModelField,
-  ModelRuntimeValidationEngine,
-  ModelRuntimeValidator,
   ModelValidationContext,
   ModelTypeDescriptor,
-  OpenApiGeneratedModelValidation,
   RegisteredGeneratedModelDefinition,
 } from './model.js';
 export { runValidation } from './validation-runner.js';
 export * from './schema-registry-validation.js';
 export { operationValidators, responseCheck, validateOperationInput } from './client-runtime/validation.js';
 
-import { runValidationNow } from './validation-runner.js';
 import {
   assertAcyclicValue,
   defineModelProperty,
 } from './conversion.js';
-import { issuesFromErrors, issuePointer } from './validation-issues.js';
+import { issuePointer } from './validation-issues.js';
 export { issuesFromErrors } from './validation-issues.js';
 import {
   IssueSource, IssueRepresentation, LibError, LibErrorKind,
@@ -32,12 +27,8 @@ import {
 } from './errors.js';
 export type { Issue, IssuePath } from './errors.js';
 import {
-  ajvIssues,
-  ajvIssuesFromErrors,
   findCodecIdForConstructor,
-  objectCodecValidationReference,
   requireObjectCodec,
-  resolveModelValidationContextValidator,
   untransformedCallError,
   type ObjectCodec,
   type ValidateOptions,
@@ -124,36 +115,6 @@ function instanceRuleRegistration(model: object): InstanceRuleRegistration | und
   return state?.registration;
 }
 
-export type ModelValidationEngineFactory = () => ModelRuntimeValidationEngine;
-
-const validatorEngines = new WeakMap<object, ModelRuntimeValidationEngine>();
-let validationEngineFactory: ModelValidationEngineFactory | undefined;
-
-/**
- * Installs the optional runtime engine used for OpenAPI model metadata.
- *
- * The Ajv integration calls this from its module initializer. Keeping the
- * registration point here means importing structural validation never loads
- * Ajv or any other optional dependency. Registries without an explicitly
- * configured engine use this factory on first validation and retain that
- * engine; register the factory during initialization, not to reconfigure
- * registries that have already been validated.
- */
-export function registerModelValidationEngineFactory(
-  factory: ModelValidationEngineFactory,
-): void {
-  validationEngineFactory = factory;
-}
-
-export function configureModelValidationEngine(
-  registry: object,
-  registryId: string,
-  engine: ModelRuntimeValidationEngine,
-): void {
-  if (!engine.getSchema(registryId)) engine.addSchema(registry, registryId);
-  validatorEngines.set(registry, engine);
-}
-
 /**
  * Rule evaluation stays synchronous until a rule returns a promise; the
  * traversal then suspends and resumes without restarting.
@@ -193,12 +154,6 @@ function isNativeValidationPromise<Value>(value: ValidationStep<Value>): value i
   return value instanceof Promise;
 }
 
-const validRuntimeValidator: ModelRuntimeValidator = (() => {
-  const validate = (() => true) as ModelRuntimeValidator;
-  Object.defineProperty(validate, 'errors', { value: null, enumerable: true });
-  return validate;
-})();
-
 function modelDefinition(model: object) {
   const definition = findGeneratedModelDefinition(model);
   if (!definition) throw new LibError(LibErrorKind.ValidationUnavailable, 'Generated model metadata is missing. Regenerate the model.');
@@ -218,68 +173,6 @@ function objectCodecForDefinition(definition: RegisteredGeneratedModelDefinition
     );
   }
   return requireObjectCodec(codecId);
-}
-
-const codecValidators = new WeakMap<ObjectCodec, { readonly first: ModelRuntimeValidator; readonly all: ModelRuntimeValidator }>();
-
-function codecRuntimeValidator(codec: ObjectCodec, failFast: boolean): ModelRuntimeValidator {
-  let validators = codecValidators.get(codec);
-  if (!validators) {
-    const create = (mode: boolean): ModelRuntimeValidator => {
-      function runtimeValidator(value: unknown): boolean {
-        return codec.validate(value, { failFast: mode });
-      }
-      Object.defineProperty(runtimeValidator, 'errors', {
-        enumerable: true,
-        get: () => codec.errors,
-      });
-      return runtimeValidator;
-    };
-    validators = { first: create(true), all: create(false) };
-    codecValidators.set(codec, validators);
-  }
-  return failFast ? validators.first : validators.all;
-}
-
-/** The OpenAPI registry validator for model metadata without a generated codec. */
-function runtimeValidator(definition: GeneratedModelValidation | undefined): ModelRuntimeValidator {
-  if (!definition) return validRuntimeValidator;
-
-  let engine = validatorEngines.get(definition.registry);
-  if (!engine) {
-    if (!validationEngineFactory) {
-      throw new LibError(LibErrorKind.ValidationUnavailable,
-        'No OpenAPI model validation engine is registered. Import @exprtlabs/golem/ajv '
-        + 'or configure a ModelRuntimeValidationEngine before validating.',
-      );
-    }
-    engine = validationEngineFactory();
-    engine.addSchema(definition.registry, definition.registryId);
-    validatorEngines.set(definition.registry, engine);
-  }
-  const validator = engine.getSchema(definition.reference);
-  if (!validator) {
-    throw new LibError(LibErrorKind.ValidationUnavailable, `No validator is available for model schema ${definition.reference}.`);
-  }
-  return validator;
-}
-
-/** Resolve the runtime validator for a registered model's schema. */
-export function getModelRuntimeValidator(model: object): ModelRuntimeValidator {
-  const definition = modelDefinition(model);
-  const codecId = codecIdForDefinition(definition);
-  if (codecId) return codecRuntimeValidator(requireObjectCodec(codecId), false);
-  if (definition.validation) return runtimeValidator(definition.validation);
-  return validRuntimeValidator;
-}
-
-function generatedIssueSource(definition: RegisteredGeneratedModelDefinition, codec?: ObjectCodec): IssueSource {
-  if (codec?.issueSource) return codec.issueSource;
-  return definition.validation?.kind === 'openapi' ? IssueSource.OpenAPI : IssueSource.TypeScript;
-}
-
-function generatedIssues(result: { readonly valid: boolean; readonly errors: readonly unknown[] }, value: unknown, source: IssueSource, representation: IssueRepresentation): readonly Issue[] {
-  return result.valid ? [] : issuesFromErrors(result.errors, value, source, representation);
 }
 
 /** An issue from a model rule, which carries its own message when it has one. */
@@ -486,6 +379,17 @@ function codecValidationValue(model: object, definition: RegisteredGeneratedMode
   return payload;
 }
 
+/** The issues the codec's assert throws, none when the value passes. Any other error is not about the value and propagates. */
+function codecIssues(codec: ObjectCodec, value: unknown, options: ValidateOptions): readonly Issue[] {
+  try {
+    codec.assert(value, options);
+    return [];
+  } catch (error) {
+    if (error instanceof LibError && error.kind === LibErrorKind.Validation) return error.issues;
+    throw error;
+  }
+}
+
 async function collectCodecIssues(
   model: object,
   mode: ValidationMode,
@@ -497,69 +401,20 @@ async function collectCodecIssues(
   let generated: readonly Issue[] = [];
   const codecId = codecIdForDefinition(definition);
   // A model registered without a profile validates only what it declares; with nothing to check it is not validatable.
-  if (!codecId && !definition.validation && !instanceRuleRegistration(model)?.rules.size) {
+  if (!codecId && !instanceRuleRegistration(model)?.rules.size) {
     throw new LibError(
       LibErrorKind.ValidationUnavailable,
-      'This model has no generated validation, schema, or custom rules. Regenerate it with validation enabled or add rules.',
+      'This model has no generated validation or custom rules. Regenerate it with validation enabled or add rules.',
     );
   }
   if (codecId) {
-    const codec = requireObjectCodec(codecId);
-    const value = codecValidationValue(model, definition);
-    if (validationContext === undefined) {
-      // Generated ObjectCodec validators are synchronous. Read `.errors`
-      // immediately after the call so concurrent callers cannot replace the
-      // Ajv result, without allocating a run/snapshot wrapper on this hot path.
-      const valid = codec.validate(value, { failFast });
-      generated = valid
-        ? []
-        : ajvIssues(
-          codecRuntimeValidator(codec, failFast),
-          value,
-          IssueRepresentation.Model,
-          generatedIssueSource(definition, codec),
-        );
-    } else {
-      const validator = resolveModelValidationContextValidator(
-        validationContext,
-        objectCodecValidationReference(codec, 'model'),
-        failFast ? 'first' : 'all',
-      );
-      const result = runValidationNow(validator, value);
-      const outcome = isNativeValidationPromise(result) ? await result : result;
-      generated = outcome.valid
-        ? []
-        : ajvIssuesFromErrors(
-          outcome.errors,
-          value,
-          IssueRepresentation.Model,
-          generatedIssueSource(definition, codec),
-        );
-    }
-  } else if (definition.validation) {
-    let validator: ModelRuntimeValidator;
-    if (validationContext !== undefined) {
-      validator = resolveModelValidationContextValidator(
-        validationContext,
-        definition.validation.reference,
-        failFast ? 'first' : 'all',
-      );
-    } else {
-      validator = runtimeValidator(definition.validation);
-    }
-    const result = runValidationNow(validator, model);
-    const outcome = isNativeValidationPromise(result) ? await result : result;
-    generated = outcome.valid
-      ? []
-      : generatedIssues(
-        { valid: false, errors: outcome.errors },
-        model,
-        IssueSource.OpenAPI,
-        IssueRepresentation.Model,
-      );
+    generated = codecIssues(
+      requireObjectCodec(codecId),
+      codecValidationValue(model, definition),
+      { failFast, ...(validationContext === undefined ? {} : { validationContext }) },
+    );
   }
-  const overlayResult = evaluateInstanceRules(model, mode);
-  const overlay = isNativeValidationPromise(overlayResult) ? await overlayResult : overlayResult;
+  const overlay = await evaluateInstanceRules(model, mode);
   const issues = formatIssues(model, [...generated, ...overlay]);
   return mode === 'first' ? issues.slice(0, 1) : issues;
 }
@@ -588,7 +443,7 @@ function publicValidationDefinition(model: unknown): RegisteredGeneratedModelDef
       );
     }
     // Resolve the generated ObjectCodec before custom rules run.
-    if (!definition.validation) requireObjectCodecForConstructor(definition.constructor);
+    requireObjectCodecForConstructor(definition.constructor);
   }
   return definition;
 }
@@ -764,10 +619,6 @@ export function getValidator<Fields extends object, Owner extends object = Field
 
 export type {
   GeneratedModelConstructor,
-  GeneratedModelValidation,
   ModelField,
-  ModelRuntimeValidationEngine,
-  ModelRuntimeValidator,
   ModelTypeDescriptor,
-  OpenApiGeneratedModelValidation,
 };

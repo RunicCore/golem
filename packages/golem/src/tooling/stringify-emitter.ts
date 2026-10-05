@@ -8,7 +8,7 @@ import type { ModelTypeDescriptor } from '../model.js';
 import type { ValidationPlane } from '../object-codec.js';
 import type { SchemaGraph, SchemaNode } from './schema-graph.js';
 import { codecShortName, serdeWireDescriptor } from './schema-graph.js';
-import { GENERATED_MODEL_SCHEMA_REF_PREFIX, generatedModelShortName, type JsonSchema } from './schema.js';
+import type { JsonSchema } from './schema.js';
 import {
   AMBIGUOUS_UNION_CONVERSION_ERROR,
   OBJECT_UNION_DISCRIMINATOR_ERROR,
@@ -44,9 +44,10 @@ export interface NestedImportedSerde {
 
 export interface CodecRuntimeOptions {
   readonly validationEnabled?: boolean;
-  readonly validationBindingsExpr?: string;
-  /** Module-local output from `createValidatorSet` for standalone profiles. */
-  readonly validatorSetExpr?: string;
+  /** Expression of the module's `validators` record, keyed by codec id and plane (`Id`, `Id#wire`, `Id#model-only`, `Id#wire-only`). Defaults to `validators`. */
+  readonly validatorsExpr?: string;
+  /** Expression of a record of the validation plan's resolved schemas by the same keys. A validated codec publishes these as its schemas; without it the codec carries its own unresolved payload. */
+  readonly resolvedSchemasExpr?: string;
   readonly serde?: StringifySerdeResolver;
   readonly nestedConstruct?: (name: string, className?: string) => string;
   readonly nestedGenerated?: (id: string) => string;
@@ -70,7 +71,8 @@ export interface CodecRuntimeOptions {
 
 interface EmitCtx {
   readonly graph: SchemaGraph;
-  readonly validatorSetExpr?: string;
+  readonly validatorsExpr?: string;
+  readonly resolvedSchemasExpr?: string;
   readonly serde?: StringifySerdeResolver;
   readonly nestedConstruct?: (name: string, className?: string) => string;
   readonly nestedGenerated?: (id: string) => string;
@@ -1491,20 +1493,6 @@ function allocateInlineLocal(
   return local;
 }
 
-function modelValidator(id: string, failFast: boolean): string {
-  return failFast ? `validate${id}Fast` : `validate${id}All`;
-}
-
-function wireValidator(id: string, failFast: boolean, sameSchema: boolean): string {
-  if (sameSchema) return modelValidator(id, failFast);
-  return failFast ? `validate${id}WireFast` : `validate${id}WireAll`;
-}
-
-function residualValidator(id: string, plane: 'model-only' | 'wire-only', failFast: boolean): string {
-  const name = plane === 'model-only' ? 'ModelOnly' : 'WireOnly';
-  return `validate${id}${name}${failFast ? 'Fast' : 'All'}`;
-}
-
 function modelOnlyAssertName(node: SchemaNode): string {
   return `__golemAssertModelOnly_${node.id}`;
 }
@@ -1519,49 +1507,28 @@ function emitSerdeValidates(validationEnabled: boolean): string {
     : '  serdeValidates(options, false);';
 }
 
-function emitAjvGuard(
+function validatorReference(ctx: EmitCtx, id: string): string {
+  return `requireModelValidator(${ctx.validatorsExpr ?? 'validators'}, ${JSON.stringify(id)})`;
+}
+
+function emitModelGuard(
   node: SchemaNode,
   value: string,
   plane: ValidationPlane,
-  issueSource: 'TypeScript' | 'OpenAPI',
+  ctx: EmitCtx,
 ): string {
   const wire = plane === 'wire' && !node.sameSchema;
   const representation = plane === 'wire' || plane === 'wire-only' ? 'Wire' : 'Model';
   const reference = plane === 'model-only' || plane === 'wire-only'
     ? `${node.codecId}#${plane}`
     : wire ? `${node.codecId}#wire` : node.codecId;
-  const validator = (fast: boolean): string => plane === 'model-only' || plane === 'wire-only'
-    ? residualValidator(node.id, plane, fast)
-    : wire ? wireValidator(node.id, fast, false) : modelValidator(node.id, fast);
-  return `assertModelValue(${value}, options, ${validator(true)}, ${validator(false)}, ${JSON.stringify(reference)}, IssueRepresentation.${representation}, IssueSource.${issueSource});`;
-}
-
-function hoistedModelSchemaName(node: SchemaNode): string {
-  return `__resolvedModelSchema_${node.id}`;
-}
-
-function hoistedWireSchemaName(node: SchemaNode): string {
-  return `__resolvedWireSchema_${node.id}`;
-}
-
-function hoistedResidualSchemaName(node: SchemaNode, plane: 'model-only' | 'wire-only'): string {
-  return plane === 'model-only' ? `__resolvedModelOnlySchema_${node.id}` : `__resolvedWireOnlySchema_${node.id}`;
-}
-
-function emitHoistedSchema(name: string, payload: string, id: string, representation: ValidationPlane): string {
-  const plane = representation === 'model' ? '' : `, '${representation}'`;
-  return [
-    `const ${name} = resolveGeneratedModelSchemaRefs(${payload} as object${plane}) as object;`,
-    `objectAjvFast.addSchema(structuredClone(${name}) as object, ${JSON.stringify(id)});`,
-    `objectAjvAll.addSchema(structuredClone(${name}) as object, ${JSON.stringify(id)});`,
-  ].join('\n');
+  return `assertModelValue(${value}, options, ${validatorReference(ctx, reference)}, ${JSON.stringify(reference)}, IssueRepresentation.${representation}, IssueSource.${ctx.issueSource});`;
 }
 
 function emitNodeRuntime(
   node: SchemaNode,
   moduleCtx: EmitCtx,
   validationEnabled: boolean,
-  hoistedSchemas = false,
 ): string {
   if (node.descriptor.kind === 'generated-model' || node.descriptor.kind === 'reference') {
     const imported = node.descriptor.kind === 'generated-model'
@@ -1757,24 +1724,11 @@ function emitNodeRuntime(
   const validateLines = validationEnabled
     ? [
       `${exported}function ${validateName}(value: unknown, options?: ${VALIDATE_OPTIONS}): value is ${modelType} {`,
-      '  const failFast = options?.failFast !== false;',
-      '  let ok: boolean;',
-      '  let errors: readonly unknown[] | null | undefined;',
-      '  if (options?.validationContext === undefined) {',
-      `    const validator = failFast ? ${modelValidator(node.id, true)} : ${modelValidator(node.id, false)};`,
-      '    ok = validator(value);',
-      '    errors = validator.errors;',
-      '  } else {',
-      `    const validator = resolveModelValidationContextValidator(options.validationContext, ${JSON.stringify(node.codecId)}, failFast ? 'first' : 'all');`,
-      '    ok = runSynchronousValidation(validator, value);',
-      '    errors = validator.errors;',
-      '  }',
-      `  (${validateName} as { errors?: unknown }).errors = errors;`,
-      '  return ok;',
+      `  return isValidModelValue(value, options, ${validatorReference(ctx, node.codecId)}, ${JSON.stringify(node.codecId)});`,
       '}',
       '',
       `${exported}function ${assertName}(value: unknown, options?: ${VALIDATE_OPTIONS}): ${modelType} {`,
-      `  ${emitAjvGuard(node, 'value', 'model', ctx.issueSource)}`,
+      `  ${emitModelGuard(node, 'value', 'model', ctx)}`,
       `  return value as ${modelType};`,
       '}',
       '',
@@ -1792,7 +1746,7 @@ function emitNodeRuntime(
 
   const planeAssert = (name: string, plane: ValidationPlane): string[] => [
     `function ${name}(value: unknown, options?: ${VALIDATE_OPTIONS}): Record<string, unknown> {`,
-    `  ${emitAjvGuard(node, 'value', plane, ctx.issueSource)}`,
+    `  ${emitModelGuard(node, 'value', plane, ctx)}`,
     '  return value as Record<string, unknown>;',
     '}',
     '',
@@ -1805,25 +1759,20 @@ function emitNodeRuntime(
     ]
     : [];
 
-  const modelSchemaExpr = ctx.validatorSetExpr && node.validationEnabled !== false
-    ? `${ctx.validatorSetExpr}.schemas[${JSON.stringify(node.codecId)}] as object`
-    : hoistedSchemas
-      ? hoistedModelSchemaName(node)
-      : `${jsonDataExpression(schemaPayload(node.modelJsonSchema ?? node.jsonSchema, node.codecId))} as object`;
+  const resolved = (id: string): string | undefined => ctx.resolvedSchemasExpr !== undefined && node.validationEnabled !== false
+    ? `${ctx.resolvedSchemasExpr}[${JSON.stringify(id)}] as object`
+    : undefined;
+  const modelSchemaExpr = resolved(node.codecId)
+    ?? `${jsonDataExpression(schemaPayload(node.modelJsonSchema ?? node.jsonSchema, node.codecId))} as object`;
   const wireSchemaExpr = node.sameSchema
     ? undefined
-    : ctx.validatorSetExpr && node.validationEnabled !== false
-      ? `${ctx.validatorSetExpr}.schemas[${JSON.stringify(`${node.codecId}#wire`)}] as object`
-      : hoistedSchemas
-        ? hoistedWireSchemaName(node)
-        : `${jsonDataExpression(schemaPayload(node.jsonSchema, `${node.codecId}#wire`))} as object`;
+    : resolved(`${node.codecId}#wire`)
+      ?? `${jsonDataExpression(schemaPayload(node.jsonSchema, `${node.codecId}#wire`))} as object`;
   const residualSchemaExpr = (plane: 'model-only' | 'wire-only'): string | undefined => {
     const residual = plane === 'model-only' ? node.modelOnlyJsonSchema : node.wireOnlyJsonSchema;
     if (residual === undefined || !validationEnabled) return undefined;
     const id = `${node.codecId}#${plane}`;
-    if (ctx.validatorSetExpr && node.validationEnabled !== false) return `${ctx.validatorSetExpr}.schemas[${JSON.stringify(id)}] as object`;
-    if (hoistedSchemas) return hoistedResidualSchemaName(node, plane);
-    return `${jsonDataExpression(schemaPayload(residual, id))} as object`;
+    return resolved(id) ?? `${jsonDataExpression(schemaPayload(residual, id))} as object`;
   };
   const modelOnlySchemaExpr = residualSchemaExpr('model-only');
   const wireOnlySchemaExpr = residualSchemaExpr('wire-only');
@@ -1839,7 +1788,7 @@ function emitNodeRuntime(
     ...(wireSchemaExpr ? [`  wireSchema: ${wireSchemaExpr},`] : []),
     ...(modelOnlySchemaExpr ? [`  modelOnlySchema: ${modelOnlySchemaExpr},`] : []),
     ...(wireOnlySchemaExpr ? [`  wireOnlySchema: ${wireOnlySchemaExpr},`] : []),
-    ...(ctx.validatorSetExpr && node.validationEnabled !== false ? ['  schemaRefsResolved: true,'] : []),
+    ...(resolved(node.codecId) !== undefined ? ['  schemaRefsResolved: true,'] : []),
     `  issueSource: IssueSource.${ctx.issueSource},`,
     '});',
     '',
@@ -1853,103 +1802,6 @@ function schemaPayload(schema: JsonSchema, id: string): object {
     return schema ? { $id: id } : { $id: id, not: true };
   }
   return { $id: id, ...schema };
-}
-
-/**
- * A generated-model `$ref` normally resolves at module load through the codec
- * registry. A model emitted in this module registers its codec only after all
- * schemas are added, so point its references at the known schema id instead.
- */
-function localModelSchemaRefs(
-  schema: JsonSchema,
-  local: ReadonlyMap<string, string>,
-  wireIds?: ReadonlySet<string>,
-): JsonSchema {
-  if (local.size === 0) return schema;
-  const localCodecIds = new Set(local.values());
-  // A wire schema references a model's wire schema when that model has one.
-  const target = (id: string): string => wireIds?.has(id) ? `${id}#wire` : id;
-  const walk = (value: unknown): unknown => {
-    if (Array.isArray(value)) return value.map(walk);
-    if (value === null || typeof value !== 'object') return value;
-    return Object.fromEntries(Object.entries(value).map(([key, item]) => {
-      if (key === '$ref' && typeof item === 'string' && item.startsWith(GENERATED_MODEL_SCHEMA_REF_PREFIX)) {
-        const name = item.slice(GENERATED_MODEL_SCHEMA_REF_PREFIX.length);
-        const hash = name.indexOf('#');
-        // A residual reference names its own plane (`Name#model-only`).
-        if (hash >= 0) {
-          // Residual references carry the full codec id; a local codec resolves here, before registration.
-          const base = name.slice(0, hash);
-          const id = localCodecIds.has(base) ? base : local.get(base) ?? local.get(base.replace(/_[0-9a-f]{8}$/, ''));
-          return [key, id === undefined ? item : `${id}${name.slice(hash)}`];
-        }
-        const id = localCodecIds.has(name) ? name : local.get(name);
-        return [key, id === undefined ? item : target(id)];
-      }
-      return [key, walk(item)];
-    }));
-  };
-  return walk(schema) as JsonSchema;
-}
-
-/** Every generated-model descriptor reachable from `descriptor`. */
-function generatedModelDescriptors(
-  descriptor: ModelTypeDescriptor,
-  found: Extract<ModelTypeDescriptor, { kind: 'generated-model' }>[] = [],
-): Extract<ModelTypeDescriptor, { kind: 'generated-model' }>[] {
-  switch (descriptor.kind) {
-    case 'generated-model': found.push(descriptor); break;
-    case 'array': generatedModelDescriptors(descriptor.item, found); break;
-    case 'tuple':
-      for (const item of descriptor.items) generatedModelDescriptors(item, found);
-      if (descriptor.rest) generatedModelDescriptors(descriptor.rest.item, found);
-      break;
-    case 'object':
-      for (const property of Object.values(descriptor.properties)) generatedModelDescriptors(property, found);
-      if (typeof descriptor.additionalProperties === 'object') generatedModelDescriptors(descriptor.additionalProperties, found);
-      break;
-    case 'union':
-    case 'intersection':
-      for (const variant of descriptor.variants) generatedModelDescriptors(variant, found);
-      break;
-    default: break;
-  }
-  return found;
-}
-
-/**
- * Short model names that name exactly one validated codec of this module,
- * mapped to its schema id. A short name that some reference resolves outside
- * this module, or that two codecs share, keeps its registry reference.
- */
-function localModelSchemaIds(
-  graph: SchemaGraph,
-  nodes: readonly SchemaNode[],
-  validates: (node: SchemaNode) => boolean,
-): Map<string, string> {
-  const ids = new Map<string, Set<string>>();
-  const claim = (short: string, target: string): void => {
-    ids.set(short, (ids.get(short) ?? new Set()).add(target));
-  };
-  const local = (node: SchemaNode | undefined): string | undefined =>
-    node && !isExternalCodecNode(node) && validates(node) ? node.codecId : undefined;
-  for (const node of nodes) {
-    // A sibling module registers this codec's schemas under its id before any validator compiles.
-    if (node.siblingCodec) {
-      if (validates(node)) claim(generatedModelShortName(node.codecId), node.codecId);
-      continue;
-    }
-    const target = local(node) ?? `external:${node.codecId}`;
-    claim(node.id, target);
-    claim(node.codecId.replace(/_[0-9a-f]{8}$/, ''), target);
-    for (const reference of generatedModelDescriptors(node.descriptor)) {
-      claim(generatedModelShortName(reference.id), local(graph.nodeFor(reference)) ?? `external:${reference.id}`);
-    }
-  }
-  return new Map([...ids].flatMap(([short, targets]) => {
-    const [target] = targets;
-    return targets.size === 1 && !target.startsWith('external:') ? [[short, target] as const] : [];
-  }));
 }
 
 function jsonDataExpression(value: unknown): string {
@@ -1975,38 +1827,6 @@ export function pruneNamedImport(source: string, moduleName: string): string {
   );
 }
 
-function emitAjvPair(node: SchemaNode, validationEnabled: boolean, validatorSetExpr?: string, lazy = false): string {
-  if (!validationEnabled) return '';
-  const validator = (name: string, set: 'first' | 'all', id: string): string => {
-    const reference = JSON.stringify(id);
-    if (validatorSetExpr) return `const ${name} = requireAjvSchema(${validatorSetExpr}.${set}[${reference}], ${reference});`;
-    const engine = set === 'first' ? 'objectAjvFast' : 'objectAjvAll';
-    return lazy
-      ? `const ${name} = lazyAjvSchema(() => { addNestedCodecSchemas(); return ${engine}.getSchema(${reference}); }, ${reference});`
-      : `const ${name} = requireAjvSchema(${engine}.getSchema(${reference}), ${reference});`;
-  };
-  const lines: string[] = [
-    validator(modelValidator(node.id, true), 'first', node.codecId),
-    validator(modelValidator(node.id, false), 'all', node.codecId),
-  ];
-  if (!node.sameSchema) {
-    const wireId = `${node.codecId}#wire`;
-    lines.push(
-      validator(wireValidator(node.id, true, false), 'first', wireId),
-      validator(wireValidator(node.id, false, false), 'all', wireId),
-    );
-  }
-  for (const plane of ['model-only', 'wire-only'] as const) {
-    if ((plane === 'model-only' ? node.modelOnlyJsonSchema : node.wireOnlyJsonSchema) === undefined) continue;
-    const residualId = `${node.codecId}#${plane}`;
-    lines.push(
-      validator(residualValidator(node.id, plane, true), 'first', residualId),
-      validator(residualValidator(node.id, plane, false), 'all', residualId),
-    );
-  }
-  return `${lines.join('\n')}\n`;
-}
-
 function nodeValidates(node: SchemaNode, defaultEnabled: boolean): boolean {
   if (node.validationEnabled === true) return true;
   if (node.validationEnabled === false) return false;
@@ -2019,17 +1839,13 @@ function isExternalCodecNode(node: SchemaNode): boolean {
     || node.descriptor.kind === 'reference';
 }
 
-/** Ajv + specialized stringify/parse + codec registration for every graph node. */
+/** Specialized stringify/parse/validate and codec registration for every graph node. */
 export function emitCodecRuntime(
   graph: SchemaGraph,
-  validationBindingsExprOrOptions: string | CodecRuntimeOptions = '{}',
+  options: CodecRuntimeOptions = {},
 ): string {
-  const options: CodecRuntimeOptions = typeof validationBindingsExprOrOptions === 'string'
-    ? { validationBindingsExpr: validationBindingsExprOrOptions }
-    : validationBindingsExprOrOptions;
   const defaultEnabled = options.validationEnabled !== false;
   const validates = (node: SchemaNode): boolean => nodeValidates(node, defaultEnabled);
-  const bindings = options.validationBindingsExpr ?? '{}';
   const nodes = [...graph.topo()];
   const ctx: EmitCtx = {
     graph,
@@ -2040,7 +1856,8 @@ export function emitCodecRuntime(
     trustedOptions: TRUSTED_CONSTANT,
     siblingWireCodecIds: options.siblingWireCodecIds,
     exportedWireStringifyIds: options.exportedWireStringifyIds,
-    validatorSetExpr: options.validatorSetExpr,
+    validatorsExpr: options.validatorsExpr,
+    resolvedSchemasExpr: options.resolvedSchemasExpr,
     serde: options.serde,
     nestedConstruct: options.nestedConstruct,
     nestedGenerated: options.nestedGenerated,
@@ -2053,104 +1870,10 @@ export function emitCodecRuntime(
     privateCodec: options.privateCodec,
     fillThrows: new Map(),
   };
-  const anyValidation = nodes.some((node) => !isExternalCodecNode(node) && validates(node));
-  // Validators compile on first use when a sibling module's codec schema must be added first.
-  const lazyNestedSchemas = !ctx.validatorSetExpr && nodes.some((node) => node.siblingCodec);
   const lines: string[] = [];
-  if (anyValidation && !ctx.validatorSetExpr) {
-    lines.push(
-      `const objectAjvFast = createOpenApiSyncAjvEngine({ allErrors: false, validationBindings: ${bindings} });`,
-      `const objectAjvAll = createOpenApiSyncAjvEngine({ allErrors: true, validationBindings: ${bindings} });`,
-      '',
-    );
-    if (lazyNestedSchemas) {
-      // Nested codecs reference their own nested codecs; the writer adds each schema id once.
-      const ownIds = nodes.filter((node) => !isExternalCodecNode(node) && validates(node))
-        .flatMap((node) => [
-          node.codecId,
-          ...(node.sameSchema ? [] : [`${node.codecId}#wire`]),
-          ...(node.modelOnlyJsonSchema === undefined ? [] : [`${node.codecId}#model-only`]),
-          ...(node.wireOnlyJsonSchema === undefined ? [] : [`${node.codecId}#wire-only`]),
-        ]);
-      lines.push(
-        `const nestedSchemaIds = new Set<string>(${JSON.stringify(ownIds)});`,
-        'function nestedSchemaWriter(schema: object, id: string): void {',
-        '  if (nestedSchemaIds.has(id)) return;',
-        '  nestedSchemaIds.add(id);',
-        '  objectAjvFast.addSchema(schema, id);',
-        '  objectAjvAll.addSchema(schema, id);',
-        '}',
-      );
-    }
-    const nestedCodecs = new Set<string>();
-    const nestedSchemaLines: string[] = [];
-    const localIds = localModelSchemaIds(graph, nodes, validates);
-    const localWireIds = new Set([
-      ...nodes.filter(node => !isExternalCodecNode(node) && validates(node) && !node.sameSchema).map(node => node.codecId),
-      ...nodes.filter(node => node.siblingCodec && options.siblingWireCodecIds?.has(node.codecId)).map(node => node.codecId),
-    ]);
-    for (const node of nodes) {
-      if (isExternalCodecNode(node)) {
-        if (nestedCodecs.has(node.codecId)) continue;
-        nestedCodecs.add(node.codecId);
-        if (ctx.validatorSetExpr) continue;
-        const ctor = node.descriptor.kind === 'generated-model' && ctx.nestedGenerated
-          ? `, ${ctx.nestedGenerated(node.descriptor.id)}`
-          : '';
-        // A sibling codec registers when its module finishes loading, possibly after this one.
-        if (node.siblingCodec) nestedSchemaLines.push(`addNestedCodecSchema(nestedSchemaWriter, ${JSON.stringify(node.codecId)}, undefined, nestedCodecIds);`);
-        else if (lazyNestedSchemas) lines.push(`addNestedCodecSchema(nestedSchemaWriter, ${JSON.stringify(node.codecId)}${ctor});`);
-        else lines.push(`addNestedCodecSchema([(schema, id) => objectAjvFast.addSchema(schema, id), (schema, id) => objectAjvAll.addSchema(schema, id)], ${JSON.stringify(node.codecId)}${ctor});`);
-        continue;
-      }
-      if (!validates(node)) continue;
-      const modelPayload = jsonDataExpression(schemaPayload(
-        localModelSchemaRefs(node.modelJsonSchema ?? node.jsonSchema, localIds),
-        node.codecId,
-      ));
-      lines.push(emitHoistedSchema(hoistedModelSchemaName(node), modelPayload, node.codecId, 'model'));
-      if (!node.sameSchema) {
-        const wireId = `${node.codecId}#wire`;
-        const wirePayload = jsonDataExpression(schemaPayload(
-          localModelSchemaRefs(node.jsonSchema, localIds, localWireIds),
-          wireId,
-        ));
-        lines.push(emitHoistedSchema(hoistedWireSchemaName(node), wirePayload, wireId, 'wire'));
-      }
-      for (const plane of ['model-only', 'wire-only'] as const) {
-        const residual = plane === 'model-only' ? node.modelOnlyJsonSchema : node.wireOnlyJsonSchema;
-        if (residual === undefined) continue;
-        const residualId = `${node.codecId}#${plane}`;
-        // Plain refs inside a residual follow its plane: model-only → model schemas, wire-only → wire schemas.
-        const residualPayload = jsonDataExpression(schemaPayload(
-          localModelSchemaRefs(residual, localIds, plane === 'wire-only' ? localWireIds : undefined),
-          residualId,
-        ));
-        lines.push(emitHoistedSchema(hoistedResidualSchemaName(node, plane), residualPayload, residualId, plane));
-      }
-    }
-    if (lazyNestedSchemas) {
-      lines.push(
-        'let nestedCodecSchemasAdded = false;',
-        'function addNestedCodecSchemas(): void {',
-        '  if (nestedCodecSchemasAdded) return;',
-        '  nestedCodecSchemasAdded = true;',
-        '  const nestedCodecIds = new Set<string>();',
-        ...nestedSchemaLines.map((line) => `  ${line}`),
-        '}',
-      );
-    }
-    lines.push('');
-  }
   for (const node of nodes) {
-    const enabled = validates(node);
-    if (isExternalCodecNode(node)) {
-      const runtime = emitNodeRuntime(node, ctx, enabled);
-      if (runtime) lines.push(runtime);
-      continue;
-    }
-    if (enabled) lines.push(emitAjvPair(node, true, ctx.validatorSetExpr, lazyNestedSchemas));
-    lines.push(emitNodeRuntime(node, ctx, enabled, anyValidation && enabled && !ctx.validatorSetExpr));
+    const runtime = emitNodeRuntime(node, ctx, validates(node));
+    if (runtime) lines.push(runtime);
   }
   const runtime = lines.join('\n');
   // One frozen object serves every nested call that passes trusted options to another module's function.

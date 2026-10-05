@@ -22,19 +22,18 @@ import {
   nestModelStringifyInterceptor,
   objectCodecFromMetatype,
 } from '@exprtlabs/golem/nest';
-import { createOpenApiSyncAjvEngine } from '@exprtlabs/golem/ajv';
 import { decodeGeneratedModel, deserializeDate, unknownDiscriminatorValue } from '@exprtlabs/golem/conversion';
 import type { ModelTypeDescriptor } from '@exprtlabs/golem/model';
 import { schemaForDescriptor } from '@exprtlabs/golem/schema';
 import {
-  ajvIssues,
+  assertModelValue,
   createObjectCodec,
   getObjectCodec,
+  isValidModelValue,
   IssueRepresentation,
-  requireAjvSchema,
-  runSynchronousValidation,
-  validationFailure,
+  IssueSource,
 } from '@exprtlabs/golem/serde';
+import { compileSchema } from './support/compiled-validators.js';
 
 function markerCodec(id: string) {
   return createObjectCodec(id, {
@@ -493,17 +492,15 @@ test('NestModelInterceptor decodes whole @Query() strings to the declared scalar
   const assembled = schemaForDescriptor(filter, { representation: 'model' });
   assert.ok(typeof assembled === 'object');
   const schema = { $id: id, ...assembled };
-  const ajv = createOpenApiSyncAjvEngine({ allErrors: false });
-  ajv.addSchema(schema, id);
-  const validate = requireAjvSchema(ajv.getSchema(id), id);
+  const validate = await compileSchema(schema);
   createObjectCodec(id, {
     stringify: (value) => JSON.stringify(value),
     parse: (text) => JSON.parse(text) as never,
-    validate: (value) => validate(value) === true,
+    validate: (value) => isValidModelValue(value, undefined, validate, id),
     assert: (value) => value as never,
     toWireFormat: (value) => value,
     fromWireFormat: (wire) => {
-      if (validate(wire) !== true) validationFailure(ajvIssues(validate, wire, IssueRepresentation.Wire));
+      assertModelValue(wire, undefined, validate, id, IssueRepresentation.Wire, IssueSource.OpenAPI);
       return wire as never;
     },
     schema,
@@ -618,9 +615,9 @@ test('NestModelInterceptor answers 400 for request input the decoder rejects and
     // Missing conversion metadata is a program fault, not bad input.
     serverFault: (wire) => decodeGeneratedModel(UnregisteredModel, wire),
     // A validator that cannot report a result is a program fault too.
-    brokenValidator: (wire) => runSynchronousValidation(Object.assign(() => ({
+    brokenValidator: (wire) => isValidModelValue(wire, undefined, (() => ({
       get then(): never { throw new Error('validator failure'); },
-    }) as never, { errors: null }), wire),
+    })) as never, 'InputFaultbrokenValidator'),
   };
   const controllers: Function[] = [];
   for (const [name, decode] of Object.entries(decoders)) {

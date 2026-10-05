@@ -1,5 +1,5 @@
 import path from 'node:path';
-import type { GolemArtifact, GolemDiagnostic, GolemResult } from '@exprtlabs/golem/generator-api';
+import { GolemDiagnosticSeverity, type GolemArtifact, type GolemDiagnostic, type GolemResult } from '@exprtlabs/golem/generator-api';
 import { isRecord } from '@exprtlabs/golem/generator-api';
 import { stableJson } from '@exprtlabs/golem/manifest';
 import { generateClientModules } from './client/emit.js';
@@ -179,6 +179,7 @@ function buildGeneratedFiles(document: unknown, options: WriteSdkOptions): Gener
     files.set('output-schemas.ts', generateDirectionalSchemas(document, 'output'));
   }
   let modelReexports = '';
+  const modelDiagnostics: GolemDiagnostic[] = [];
   if (plan.hasModels) {
     const models = generateOpenApiModelArtifacts(document, profile, modelAnalysis, {
       copyAdditionalProperties: plan.copyAdditionalProperties,
@@ -186,6 +187,7 @@ function buildGeneratedFiles(document: unknown, options: WriteSdkOptions): Gener
     });
     for (const [name, source] of models.files) files.set(name, source);
     modelReexports = models.entryReexports;
+    modelDiagnostics.push(...models.diagnostics);
   }
   files.set('model-manifest.json', stableJson(generateModelManifest(document, profile, modelAnalysis)));
   if (plan.artifacts.has('client.ts')) {
@@ -208,7 +210,7 @@ function buildGeneratedFiles(document: unknown, options: WriteSdkOptions): Gener
   files.set('index.ts', generateIndex(profile, plan, modelReexports));
   assertUniquePublicExports(files);
   assertPortableFilenames(files.keys());
-  return { files, output, clientName, operations, inboundOperations, diagnostics: [...ir.diagnostics, ...browserCookieDiagnostics(document, operations), ...modelAnalysis.diagnostics] };
+  return { files, output, clientName, operations, inboundOperations, diagnostics: [...ir.diagnostics, ...browserCookieDiagnostics(document, operations), ...modelAnalysis.diagnostics, ...modelDiagnostics] };
 }
 
 /**
@@ -217,6 +219,10 @@ function buildGeneratedFiles(document: unknown, options: WriteSdkOptions): Gener
  */
 export function writeSdk(document: unknown, options: WriteSdkOptions): WriteSdkResult {
   const generated = generatedFiles(document, options);
+  // A validator that could not be compiled leaves the files incomplete: report the diagnostics and write nothing.
+  if (generated.diagnostics.some((diagnostic) => diagnostic.severity === GolemDiagnosticSeverity.Error)) {
+    return { artifacts: [], manifestPaths: [], watchInputs: [], diagnostics: generated.diagnostics };
+  }
   return {
     artifacts: [...generated.files].map(([name, content]) => ({
       path: path.resolve(generated.output, name),

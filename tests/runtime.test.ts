@@ -90,7 +90,7 @@ test('structural validation preserves descriptors, custom rules, messages, and c
     }
   }
 
-  installCodecModel({
+  await installCodecModel({
     constructor: PaymentModel,
     name: 'Payment',
     fields: ['id', 'amount', 'currency', 'note'],
@@ -181,7 +181,7 @@ test('structural validation delegates nested generated-model validation', async 
       return { currency: this.currency };
     }
   }
-  installCodecModel({
+  await installCodecModel({
     constructor: MoneyModel,
     name: 'Money',
     fields: ['currency'],
@@ -207,7 +207,7 @@ test('structural validation delegates nested generated-model validation', async 
       Object.assign(this, values);
     }
   }
-  installCodecModel({
+  await installCodecModel({
     constructor: AggregateModel,
     name: 'Aggregate',
     fields: ['money'],
@@ -236,88 +236,7 @@ test('structural validation delegates nested generated-model validation', async 
   assert.ok(validator.issues.some((issue) => JSON.stringify(issue.path) === JSON.stringify(['money', 'currency'])));
 });
 
-test('Ajv integration registers the OpenAPI engine without changing validation imports', async () => {
-  const ajv = await import('@exprtlabs/golem/ajv');
-  assert.equal(typeof ajv.createOpenApiAjvEngine, 'function');
-  assert.equal(typeof ajv.configureModelValidationEngine, 'function');
-
-  const registry = {
-    $id: 'urn:test:runtime:openapi',
-    $schema: 'https://json-schema.org/draft/2020-12/schema',
-    components: {
-      schemas: {
-        Payment: {
-          type: 'object',
-          required: ['amount', 'currency'],
-          properties: {
-            amount: { type: 'number', minimum: 1 },
-            currency: { type: 'string', pattern: '^[A-Z]{3}$' },
-          },
-        },
-      },
-    },
-  };
-
-  interface PaymentFieldsOas {
-    amount: number;
-    currency: string;
-  }
-
-  class PaymentModel {
-    public amount?: number;
-    public currency?: string;
-
-    public constructor(values: Partial<PaymentFieldsOas> = {}) {
-      Object.assign(this, values);
-    }
-  }
-  model.registerGeneratedModel(PaymentModel, {
-    fields: ['amount', 'currency'],
-    validation: {
-      registry,
-      registryId: registry.$id,
-      reference: `${registry.$id}#/components/schemas/Payment`,
-    },
-  });
-
-  const valid = new PaymentModel({ amount: 5, currency: 'USD' });
-  assert.equal(
-    await validation.getValidator<PaymentFieldsOas, PaymentModel>(valid).validate({ failFast: false }),
-    true,
-  );
-  const invalid = new PaymentModel({ amount: 0, currency: 'usd' });
-  const validator = validation.getValidator<PaymentFieldsOas, PaymentModel>(invalid);
-  assert.equal(await validator.validate({ failFast: false }), false);
-  assert.deepEqual(
-    validator.issues.map(({ source, code, path }) => ({ source, code, path })),
-    [
-      { source: 'openapi', code: 'tooSmall', path: ['amount'] },
-      { source: 'openapi', code: 'pattern', path: ['currency'] },
-    ],
-  );
-});
-
 test('MobX runtime preserves observation and shares validator identity', async () => {
-  const ajv = await import('@exprtlabs/golem/ajv');
-  assert.equal(typeof ajv.createOpenApiAjvEngine, 'function');
-
-  const registry = {
-    $id: 'urn:test:runtime:mobx',
-    $schema: 'https://json-schema.org/draft/2020-12/schema',
-    components: {
-      schemas: {
-        Payment: {
-          type: 'object',
-          required: ['amount', 'currency'],
-          properties: {
-            amount: { type: 'number', minimum: 1 },
-            currency: { type: 'string', pattern: '^[A-Z]{3}$' },
-          },
-        },
-      },
-    },
-  };
-
   interface PaymentFieldsMobx {
     amount: number;
     currency: string;
@@ -332,12 +251,20 @@ test('MobX runtime preserves observation and shares validator identity', async (
     }
 
   }
-  model.registerGeneratedModel(PaymentModel, {
+  await installCodecModel({
+    constructor: PaymentModel,
+    name: 'MobxPayment',
     fields: ['amount', 'currency'],
-    validation: {
-      registry,
-      registryId: registry.$id,
-      reference: `${registry.$id}#/components/schemas/Payment`,
+    definitions: {
+      MobxPayment: {
+        kind: 'object',
+        required: ['amount', 'currency'],
+        additionalProperties: false,
+        properties: {
+          amount: { kind: 'number', constraints: [{ kind: 'minimum', value: 1 }] },
+          currency: { kind: 'string', constraints: [{ kind: 'pattern', value: '^[A-Z]{3}$' }] },
+        },
+      },
     },
   });
 

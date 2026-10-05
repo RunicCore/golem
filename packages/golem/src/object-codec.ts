@@ -8,10 +8,12 @@ import {
   IssueSource,
   LibError,
   LibErrorKind,
+  toIssue,
   type Issue,
 } from './errors.js';
-import { issuesFromErrors, reportedAjvErrors } from './validation-issues.js';
-import type { ModelRuntimeSyncValidator, ModelRuntimeValidator, ModelValidationContext, WireFormat } from './model.js';
+import type { SchemaIssue } from './issue-messages.js';
+import type { ModelValidationContext, WireFormat } from './model.js';
+import type { Validator } from './validation-runtime.js';
 
 import { GENERATED_MODEL_SCHEMA_REF_PREFIX } from './schema-keywords.js';
 
@@ -38,7 +40,7 @@ export interface SerdeOptions {
 
 export interface ObjectCodec<T = unknown> {
   readonly id: string;
-  /** Model-plane JSON Schema payload; reused by parent Ajv `$ref` graphs. */
+  /** Model-plane JSON Schema payload. */
   readonly schema?: object;
   /** Wire-plane JSON Schema when intern ≠ model. */
   readonly wireSchema?: object;
@@ -46,10 +48,8 @@ export interface ObjectCodec<T = unknown> {
   readonly modelOnlySchema?: object;
   /** What stringify checks after encoding (`Id#wire-only`). */
   readonly wireOnlySchema?: object;
-  /** Origin of generated Ajv issues; TypeScript IObject/IModel vs OpenAPI SDK. */
+  /** Origin of generated issues; TypeScript IObject/IModel vs OpenAPI SDK. */
   readonly issueSource?: IssueSource;
-  /** Ajv errors from the last `validate` call. */
-  readonly errors?: readonly unknown[] | null;
   stringify(value: T, options?: SerdeOptions): string;
   parse(text: string, options?: SerdeOptions): T;
   validate(value: unknown, options?: ValidateOptions): value is T;
@@ -62,10 +62,7 @@ export interface ObjectCodec<T = unknown> {
 export interface ObjectCodecImpl<T = unknown> {
   stringify(value: T, options?: SerdeOptions): string;
   parse(text: string, options?: SerdeOptions): T;
-  readonly validate: {
-    (value: unknown, options?: ValidateOptions): boolean;
-    readonly errors?: readonly unknown[] | null;
-  };
+  validate(value: unknown, options?: ValidateOptions): boolean;
   assert(value: unknown, options?: ValidateOptions): T;
   toWireFormat(value: T, options?: SerdeOptions): unknown;
   fromWireFormat(wire: unknown, options?: SerdeOptions): T;
@@ -84,8 +81,8 @@ const codecIdByConstructor = new WeakMap<Function, string>();
 /** A codec schema plane; the validation reference names it (`Id`, `Id#wire`, `Id#model-only`, `Id#wire-only`). */
 export type ValidationPlane = 'model' | 'wire' | 'model-only' | 'wire-only';
 interface ContextValidatorCache {
-  readonly first: Map<string, ModelRuntimeValidator>;
-  readonly all: Map<string, ModelRuntimeValidator>;
+  readonly first: Map<string, Validator>;
+  readonly all: Map<string, Validator>;
 }
 const contextValidators = new WeakMap<ModelValidationContext, ContextValidatorCache>();
 const HASHED_CODEC_SUFFIX = /^[0-9a-f]{8}$/;
@@ -95,7 +92,7 @@ export function resolveModelValidationContextValidator(
   context: ModelValidationContext,
   reference: string,
   mode: 'first' | 'all',
-): ModelRuntimeValidator {
+): Validator {
   if (context === null || typeof context !== 'object') {
     throw new LibError(LibErrorKind.ValidationUnavailable, 'A model validation context must be an object.');
   }
@@ -108,46 +105,22 @@ export function resolveModelValidationContextValidator(
   const cached = validators.get(reference);
   if (cached) return cached;
 
-  const resolved = typeof context.resolve === 'function'
-    ? context.resolve(reference, mode)
-    : context.engine?.getSchema(reference);
+  const resolved: unknown = typeof context.resolve === 'function' ? context.resolve(reference, mode) : undefined;
   if (typeof resolved !== 'function') {
     throw new LibError(
       LibErrorKind.ValidationUnavailable,
       `The model validation context has no validator for schema ${JSON.stringify(reference)} (${mode}).`,
     );
   }
-  validators.set(reference, resolved);
-  return resolved;
-}
-
-/** Synchronous generated APIs must reject asynchronous context overrides clearly. */
-export function runSynchronousValidation(validator: ModelRuntimeValidator, value: unknown): boolean {
-  const result: unknown = validator(value);
-  if (typeof result === 'boolean') return result;
-  if (result !== null && (typeof result === 'object' || typeof result === 'function')) {
-    let then: unknown;
-    try { then = Reflect.get(result, 'then'); }
-    catch (cause) {
-      throw new LibError(LibErrorKind.Validation, 'A validation result could not be inspected.', [], { cause, causedByInput: false });
-    }
-    if (typeof then === 'function') {
-      // A sync API cannot await this result, but consume it so rejected async
-      // overrides do not become unhandled rejections after this call throws.
-      void Promise.resolve(result).catch(() => undefined);
-      throw new LibError(
-        LibErrorKind.ValidationUnavailable,
-        'Synchronous model validation cannot use an asynchronous validator.',
-      );
-    }
-  }
-  throw new TypeError('A validation engine must return a boolean result.');
+  const validator = resolved as Validator;
+  validators.set(reference, validator);
+  return validator;
 }
 
 /**
  * Codec ids registered for a model class, as a non-enumerable own property of
- * its prototype. Validation reads it without a registry import, so standalone
- * validators stay free of code generation. Must match `ajv-keywords.ts`.
+ * its prototype. Validation reads it without a registry import, so generated
+ * validators need no import of this module. The compiler emits the same key.
  */
 export const MODEL_CODEC_IDS = Symbol.for('@exprtlabs/golem:modelCodecIds');
 
@@ -321,68 +294,69 @@ export function stringifyJsonArray<T>(
   return `${out}]`;
 }
 
-function issueSourceFromAjvError(raw: unknown, fallback: IssueSource): IssueSource {
-  if (raw === null || typeof raw !== 'object') return fallback;
-  const error = raw as Record<string, unknown>;
-  if (Object.values(IssueSource).includes(error.source as IssueSource)) {
-    return error.source as IssueSource;
+/** The generated validator for `id`; a module without one was generated without validation. */
+export function requireModelValidator(validators: Readonly<Record<string, Validator>>, id: string): Validator {
+  const validator = Object.hasOwn(validators, id) ? validators[id] : undefined;
+  if (!validator) throw new Error(`IObject validator missing: ${id}`);
+  return validator;
+}
+
+/** What a validator reports for `value`: the context's validator when the options name one, else the generated one. */
+function runModelValidator(
+  value: unknown,
+  options: ValidateOptions | undefined,
+  validator: Validator,
+  reference: string,
+): readonly SchemaIssue[] {
+  const all = options?.failFast === false;
+  const run = options?.validationContext === undefined
+    ? validator
+    : resolveModelValidationContextValidator(options.validationContext, reference, all ? 'all' : 'first');
+  const issues: unknown = run(value, all);
+  if (Array.isArray(issues)) return issues as readonly SchemaIssue[];
+  if (issues !== null && typeof issues === 'object' && typeof Reflect.get(issues, 'then') === 'function') {
+    // A synchronous API cannot await this result, but consuming it keeps a rejected override from becoming an unhandled rejection.
+    void Promise.resolve(issues).catch(() => undefined);
+    throw new LibError(LibErrorKind.ValidationUnavailable, 'Synchronous model validation cannot use an asynchronous validator.');
   }
-  const schemaPath = typeof error.schemaPath === 'string' ? error.schemaPath : '';
-  if (!schemaPath || schemaPath.startsWith('#')) return fallback;
-  const schemaId = schemaPath.split(/[#/]/)[0];
-  if (!schemaId) return fallback;
-  return getObjectCodec(schemaId)?.issueSource ?? fallback;
+  throw new TypeError('A validator must return an array of issues.');
 }
 
-export function ajvIssues(
-  validator: ModelRuntimeValidator,
+/** Whether `value` passes the validator, or the context's validator for `reference`. */
+export function isValidModelValue(
   value: unknown,
-  representation: IssueRepresentation = IssueRepresentation.Wire,
-  source: IssueSource = IssueSource.OpenAPI,
-): readonly Issue[] {
-  const errors = validator.errors ?? [];
-  return ajvIssuesFromErrors(errors, value, representation, source);
+  options: ValidateOptions | undefined,
+  validator: Validator,
+  reference: string,
+): boolean {
+  return runModelValidator(value, options, validator, reference).length === 0;
 }
 
-/** Convert an invocation-local error snapshot without rereading mutable validator state. */
-export function ajvIssuesFromErrors(
-  errors: readonly unknown[],
+/** The public issues of `value`: from the first failure, or from every failure with `failFast: false`. */
+export function modelValueIssues(
   value: unknown,
-  representation: IssueRepresentation = IssueRepresentation.Wire,
-  source: IssueSource = IssueSource.OpenAPI,
+  options: ValidateOptions | undefined,
+  validator: Validator,
+  reference: string,
+  representation: IssueRepresentation,
+  source: IssueSource,
 ): readonly Issue[] {
-  const reported = reportedAjvErrors(errors);
-  const issues = issuesFromErrors(reported, value, source, representation);
-  if (reported.length === 0) return issues;
-  return issues.map((issue, index) => {
-    if (issue.source === IssueSource.Custom) return issue;
-    const next = issueSourceFromAjvError(reported[index], source);
-    if (next === issue.source) return issue;
-    return { ...issue, source: next };
-  });
+  // A rule of a TValidation function is the application's, whatever generated the validator.
+  return runModelValidator(value, options, validator, reference)
+    .map((issue) => toIssue(issue, issue.code === 'custom' ? IssueSource.Custom : source, representation));
 }
 
-/**
- * The body of a generated assert function: checks `value` with the module's own fail-fast or all-errors
- * validator, or with the validation context's validator for `reference`, and throws the validation error.
- */
+/** The body of a generated assert function: throws the validation error when the value fails. */
 export function assertModelValue(
   value: unknown,
   options: ValidateOptions | undefined,
-  first: ModelRuntimeSyncValidator,
-  all: ModelRuntimeSyncValidator,
+  validator: Validator,
   reference: string,
   representation: IssueRepresentation,
   source: IssueSource,
 ): void {
-  const failFast = options?.failFast !== false;
-  if (options?.validationContext === undefined) {
-    const validator = failFast ? first : all;
-    if (!validator(value)) validationFailure(ajvIssues(validator, value, representation, source));
-    return;
-  }
-  const validator = resolveModelValidationContextValidator(options.validationContext, reference, failFast ? 'first' : 'all');
-  if (!runSynchronousValidation(validator, value)) validationFailure(ajvIssues(validator, value, representation, source));
+  const issues = modelValueIssues(value, options, validator, reference, representation, source);
+  if (issues.length > 0) validationFailure(issues);
 }
 
 export function validationFailure(issues: readonly Issue[]): never {
@@ -392,37 +366,11 @@ export function validationFailure(issues: readonly Issue[]): never {
 export function validationUnavailable(message?: string): never {
   throw new LibError(
     LibErrorKind.ValidationUnavailable,
-    message ?? 'Ajv validation is not generated for this profile.',
+    message ?? 'Validation is not generated for this profile.',
   );
 }
 
-export function requireAjvSchema(
-  validator: ModelRuntimeSyncValidator | undefined,
-  id: string,
-): ModelRuntimeSyncValidator {
-  if (!validator) throw new Error(`IObject validator missing: ${id}`);
-  return validator;
-}
-
-/**
- * A validator that compiles on its first call. A generated module that
- * references models of other generated modules adds their schemas then, so
- * modules that import each other can finish loading first.
- */
-export function lazyAjvSchema(
-  compile: () => ModelRuntimeSyncValidator | undefined,
-  id: string,
-): ModelRuntimeSyncValidator {
-  let compiled: ModelRuntimeSyncValidator | undefined;
-  const validator = function lazyValidator(this: unknown, value: unknown): boolean {
-    compiled ??= requireAjvSchema(compile(), id);
-    return compiled.call(this, value);
-  };
-  Object.defineProperty(validator, 'errors', { enumerable: true, get: () => compiled?.errors ?? null });
-  return validator as ModelRuntimeSyncValidator;
-}
-
-/** Default Ajv on when the golem profile enabled it; `{ validate: false }` skips. */
+/** Validation on when the golem profile enabled it; `{ validate: false }` skips. */
 export function serdeValidates(options: SerdeOptions | undefined, validationEnabled: boolean): boolean {
   if (!validationEnabled) {
     if (options?.validate === true) validationUnavailable();
@@ -436,7 +384,6 @@ export function serdeFailFast(options: SerdeOptions | ValidateOptions | undefine
 }
 
 export function createObjectCodec<T>(id: string, impl: ObjectCodecImpl<T>): ObjectCodec<T> {
-  let errors: readonly unknown[] | null = null;
   const schema = impl.schema
     ? impl.schemaRefsResolved ? impl.schema : resolveGeneratedModelSchemaRefs(impl.schema)
     : undefined;
@@ -453,16 +400,9 @@ export function createObjectCodec<T>(id: string, impl: ObjectCodecImpl<T>): Obje
     ...(modelOnlySchema ? { modelOnlySchema } : {}),
     ...(wireOnlySchema ? { wireOnlySchema } : {}),
     issueSource: impl.issueSource,
-    get errors() {
-      return errors;
-    },
     stringify: (value, options) => impl.stringify(value, options),
     parse: (text, options) => impl.parse(text, options),
-    validate: (value, options): value is T => {
-      const ok = impl.validate(value, options);
-      errors = impl.validate.errors ?? null;
-      return ok;
-    },
+    validate: (value, options): value is T => impl.validate(value, options),
     assert: (value, options) => impl.assert(value, options),
     // The generated implementation returns the emitted JSON type, which WireFormat mirrors.
     toWireFormat: <Value extends T>(value: Value, options?: SerdeOptions) => impl.toWireFormat(value, options) as WireFormat<Value>,
@@ -487,90 +427,6 @@ export function objectCodecValidationReference(codec: ObjectCodec, plane: Valida
   if (schema !== null && typeof schema === 'object' && '$id' in schema && typeof schema.$id === 'string') return schema.$id;
   if (plane === 'model' || (plane === 'wire' && codec.wireSchema === undefined)) return codec.id;
   return `${codec.id}#${plane}`;
-}
-
-/**
- * Parent companions intern SDK models under the sanitized manifest id
- * (`fixture_money`). The nested codec is registered under its own id (`Money`
- * or `Money_xxxxxxxx`). Alias the intern id so `$ref` rewrite can find it.
- */
-export function addNestedCodecSchema(
-  addSchema: SchemaWriters,
-  shortId: string,
-  constructor?: Function,
-  /**
-   * Codec ids whose schemas the engines already hold. When given, the codecs
-   * a nested schema references by id are added too, each once.
-   */
-  added?: Set<string>,
-): string {
-  let codec = getObjectCodec(shortId);
-  if (!codec && constructor) {
-    const bound = findCodecIdForConstructor(constructor);
-    if (bound) codec = getObjectCodec(bound);
-  }
-  if (!codec) {
-    throw new LibError(
-      LibErrorKind.ValidationUnavailable,
-      `IObject codec ${JSON.stringify(shortId)} is not registered.`,
-    );
-  }
-  if (!codecs.has(shortId)) codecs.set(shortId, codec);
-  return writeCodecSchemas(addSchema, codec, added, added !== undefined);
-}
-
-type SchemaWriters = ((schema: object, id: string) => void) | readonly ((schema: object, id: string) => void)[];
-
-/**
- * Register every schema a codec has (model, wire, model-only, wire-only) and
- * those of the codecs it references, each once. Fills an engine for a
- * validation context.
- */
-export function registerCodecSchemas(addSchema: SchemaWriters, codecOrId: ObjectCodec | string, added = new Set<string>()): string {
-  const codec = typeof codecOrId === 'string' ? requireObjectCodec(codecOrId) : codecOrId;
-  return writeCodecSchemas(addSchema, codec, added, true);
-}
-
-function writeCodecSchemas(addSchema: SchemaWriters, codec: ObjectCodec, added: Set<string> | undefined, recurse: boolean): string {
-  if (codec.schema === undefined) {
-    validationUnavailable(`Nested codec schema is missing: ${codec.id}`);
-  }
-  if (added?.has(codec.id)) return codec.id;
-  added?.add(codec.id);
-  const writers = Array.isArray(addSchema) ? addSchema : [addSchema];
-  const planes: readonly ValidationPlane[] = ['model', 'wire', 'model-only', 'wire-only'];
-  const schemas = planes.flatMap((plane) => {
-    const schema = plane === 'wire' ? codec.wireSchema : codecPlaneSchema(codec, plane);
-    return schema === undefined ? [] : [[schema, objectCodecValidationReference(codec, plane)] as const];
-  });
-  for (const write of writers) for (const [schema, id] of schemas) write(schema, id);
-  if (recurse && added) {
-    for (const reference of referencedCodecIds(schemas.map(([schema]) => schema))) {
-      if (!added.has(reference)) writeCodecSchemas(addSchema, requireObjectCodec(reference), added, true);
-    }
-  }
-  return codec.id;
-}
-
-/** Registered codecs a schema references by absolute id (`Id` or `Id#wire`). */
-function referencedCodecIds(schemas: readonly unknown[]): Set<string> {
-  const found = new Set<string>();
-  const walk = (value: unknown): void => {
-    if (Array.isArray(value)) {
-      value.forEach(walk);
-      return;
-    }
-    if (value === null || typeof value !== 'object') return;
-    for (const [key, item] of Object.entries(value)) {
-      if (key === '$ref' && typeof item === 'string' && !item.startsWith('#')) {
-        const hash = item.indexOf('#');
-        const id = hash < 0 ? item : item.slice(0, hash);
-        if (codecs.has(id)) found.add(id);
-      } else walk(item);
-    }
-  };
-  schemas.forEach(walk);
-  return found;
 }
 
 const resolvedGeneratedModelSchemas = new WeakSet<object>();

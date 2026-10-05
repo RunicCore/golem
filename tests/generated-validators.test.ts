@@ -4,6 +4,7 @@ import {
   copyFileSync,
   mkdirSync,
   mkdtempSync,
+  readFileSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -13,13 +14,16 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import test, { type TestContext } from 'node:test';
 
-import { buildCodecValidationPlan, type CodecSchemaClosureEntry } from '@exprtlabs/golem/ajv-tooling';
+import { buildCodecValidationPlan, type CodecSchemaClosureEntry } from '@exprtlabs/golem/validation-plan';
 import type { ModelTypeDescriptor } from '@exprtlabs/golem/model';
 import { createSchemaGraph } from '@exprtlabs/golem/schema-graph';
 import { workspace } from './support/process.js';
 import { buildModelProject, generatedModelFiles, writeModelGolemYaml } from './model-project.js';
 import type { ModelValidationContext } from '@exprtlabs/golem/model';
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
+import type { Validator } from '@exprtlabs/golem/validation-runtime';
+import { compileSchema } from './support/compiled-validators.js';
+import { runPipeline } from '#golem/pipeline';
 
 interface Fixture {
   readonly root: string;
@@ -27,13 +31,14 @@ interface Fixture {
 }
 
 function fixture(t: TestContext): Fixture {
-  const root = mkdtempSync(path.join(os.tmpdir(), 'golem-standalone-codecs-'));
+  const root = mkdtempSync(path.join(os.tmpdir(), 'golem-generated-validators-'));
   const sourceRoot = path.join(root, 'src');
   mkdirSync(sourceRoot, { recursive: true });
   mkdirSync(path.join(root, 'node_modules/@exprtlabs'), { recursive: true });
   symlinkSync(path.join(workspace, 'packages/golem'), path.join(root, 'node_modules/@exprtlabs/golem'), 'dir');
   symlinkSync(path.join(workspace, 'node_modules/typescript'), path.join(root, 'node_modules/typescript'), 'dir');
-  writeFileSync(path.join(root, 'package.json'), JSON.stringify({ name: 'standalone-codecs', private: true, type: 'module' }));
+  symlinkSync(path.join(workspace, 'packages/golem-model'), path.join(root, 'node_modules/@exprtlabs/golem-model'), 'dir');
+  writeFileSync(path.join(root, 'package.json'), JSON.stringify({ name: 'generated-validators', private: true, type: 'module' }));
   writeFileSync(path.join(root, 'tsconfig.json'), JSON.stringify({
     compilerOptions: {
       strict: true,
@@ -50,9 +55,9 @@ function fixture(t: TestContext): Fixture {
   return { root, sourceRoot };
 }
 
-function copyStandalone(value: Fixture): string {
+function copyValidators(value: Fixture): string {
   const artifact = generatedModelFiles(value.root).find(item => item.path.endsWith('/models.validators.generated.js'));
-  assert.ok(artifact, 'standalone validator artifact');
+  assert.ok(artifact, 'generated validators artifact');
   const target = path.join(value.root, 'build', path.relative(value.sourceRoot, artifact.path));
   mkdirSync(path.dirname(target), { recursive: true });
   copyFileSync(artifact.path, target);
@@ -88,7 +93,7 @@ function changePropertySchema(
   return result;
 }
 
-test('standalone schema identity compares owned definitions per model and wire plane and retains real child conflicts', () => {
+test('validation plan identity compares owned definitions per model and wire plane and retains real child conflicts', () => {
   const moneyDescriptor: ModelTypeDescriptor = {
     kind: 'object',
     properties: {
@@ -167,22 +172,22 @@ test('standalone schema identity compares owned definitions per model and wire p
   );
 });
 
-test('standalone object codecs close nested schemas and preserve first/all sync and async-context behavior', async t => {
+test('generated object codecs close nested schemas and keep first/all and context behavior', async t => {
   const value = fixture(t);
-  writeFileSync(path.join(value.sourceRoot, 'root.model.ts'), readFixture("models/standalone-codecs/standalone-object-codecs-close-nested-schemas-and-preserve-first-all-sync-an/root.model.ts"));
+  writeFileSync(path.join(value.sourceRoot, 'root.model.ts'), readFixture("models/generated-validators/generated-object-codecs-close-nested-schemas-and-preserve-first-all-sync-and-context/root.model.ts"));
 
-  writeModelGolemYaml(value.root, { mobx: false, validation: true, ajvStandalone: true });
+  writeModelGolemYaml(value.root, { mobx: false, validation: true });
   await compile(value.root);
   const generated = generatedModelFiles(value.root).filter(item => item.path.endsWith('.ts')).map(item => item.content).join('\n');
-  assert.match(generated, /modelValidatorSet\.(?:first|all)\[/, 'object codecs bind directly to precompiled validators');
+  assert.match(generated, /requireModelValidator\(validators, /, 'object codecs bind to the generated validators');
   assert.doesNotMatch(
     generated,
     /@exprtlabs\/golem\/ajv|createOpenApi(?:Sync)?AjvEngine/,
-    'standalone codecs bind to precompiled validators instead of importing a runtime Ajv engine',
+    'generated model modules do not import a runtime Ajv engine',
   );
 
-  const validatorsPath = copyStandalone(value);
-  const [{ Root }, { TLeafBaseModel, TMiddleBaseModel, TRootBaseModel }, validators] = await Promise.all([
+  const validatorsPath = copyValidators(value);
+  const [{ Root }, { TLeafBaseModel, TMiddleBaseModel, TRootBaseModel }, validatorModule] = await Promise.all([
     import(pathToFileURL(path.join(value.root, 'build/root.model.js')).href),
     import(pathToFileURL(path.join(value.root, 'build/root.model.generated.js')).href),
     import(pathToFileURL(validatorsPath).href),
@@ -190,13 +195,7 @@ test('standalone object codecs close nested schemas and preserve first/all sync 
     TLeafBaseModel: abstract new (...args: never[]) => object;
     TMiddleBaseModel: abstract new (...args: never[]) => object;
     TRootBaseModel: abstract new (...args: never[]) => object;
-  }, {
-    createValidatorSet(bindings?: Readonly<Record<string, (value: unknown) => boolean | string>>): {
-      readonly first: Readonly<Record<string, ((input: unknown) => boolean) & { readonly errors?: readonly unknown[] | null }>>;
-      readonly all: Readonly<Record<string, ((input: unknown) => boolean) & { readonly errors?: readonly unknown[] | null }>>;
-      readonly schemas: Readonly<Record<string, object | boolean>>;
-    };
-  }];
+  }, { readonly validators: Readonly<Record<string, Validator>> }];
   const { findCodecIdForConstructor, requireObjectCodec } = await import('@exprtlabs/golem/serde');
   const { getValidator, validateInstance } = await import('@exprtlabs/golem/validation');
   const codecId = findCodecIdForConstructor(TRootBaseModel);
@@ -208,38 +207,23 @@ test('standalone object codecs close nested schemas and preserve first/all sync 
     second: { label: 'second', child: { code: 'z' } },
   };
   const invalid = new Root(wire as never);
-  const standalone = validators.createValidatorSet();
-  const leafId = findCodecIdForConstructor(TLeafBaseModel);
-  const middleId = findCodecIdForConstructor(TMiddleBaseModel);
-  assert.ok(Object.hasOwn(standalone.schemas, codecId));
-  assert.ok(leafId);
-  assert.ok(middleId);
-  const rootSchema = standalone.schemas[codecId] as {
-    readonly properties?: Readonly<Record<string, { readonly $ref?: string }>>;
-    readonly $defs?: Readonly<Record<string, unknown>>;
-  };
-  const middleSchema = standalone.schemas[middleId] as {
-    readonly properties?: Readonly<Record<string, { readonly $ref?: string }>>;
-  };
-  assert.equal(rootSchema.properties?.first?.$ref, middleId);
-  assert.equal(rootSchema.properties?.second?.$ref, middleId);
-  assert.equal(middleSchema.properties?.child?.$ref, leafId);
-  assert.equal(rootSchema.$defs?.[middleId], undefined, 'graph-owned nested definitions are removed from the root payload');
-  assert.equal(rootSchema.$defs?.[leafId], undefined, 'transitive graph definitions are not repeated in the root payload');
-  assert.equal(standalone.first[codecId]?.(wire), false);
-  assert.equal(standalone.first[codecId]?.errors?.length, 1);
-  assert.equal(standalone.all[codecId]?.(wire), false);
-  assert.equal(standalone.all[codecId]?.errors?.length, 3);
+  const { validators } = validatorModule;
+  assert.ok(findCodecIdForConstructor(TLeafBaseModel));
+  assert.ok(findCodecIdForConstructor(TMiddleBaseModel));
+  assert.equal(validators[codecId]?.(wire, false).length, 1, 'the first issue only');
+  assert.deepEqual(
+    validators[codecId]?.(wire, true).map(issue => issue.path.join('.')).sort(),
+    ['first.child.code', 'label', 'second.child.code'],
+    'every issue, nested models included',
+  );
 
   assert.equal(codec.validate(invalid), false);
-  assert.equal(codec.errors?.length, 1, 'generated codec defaults to first-error validation');
   assert.equal(codec.validate(invalid, { failFast: false }), false);
-  assert.equal(codec.errors?.length, 3, 'generated codec selects all-errors validation when requested');
   assert.throws(() => codec.assert(invalid), error => error instanceof LibError && error.issues.length === 1);
   assert.throws(
     () => codec.assert(invalid, { failFast: false }),
     error => error instanceof LibError && error.issues.length === 3,
-    'generated assert honors the all-errors option',
+    'generated assert honors the all-issues option',
   );
 
   const stateful = getValidator(invalid);
@@ -249,8 +233,7 @@ test('standalone object codecs close nested schemas and preserve first/all sync 
   assert.equal(stateful.issues.length, 1);
   assert.equal((await validateInstance(invalid, { failFast: false })).length, 3);
 
-  const accept = (_input: unknown): boolean => true;
-  Object.defineProperty(accept, 'errors', { value: [] });
+  const accept: Validator = () => [];
   const lookups: string[] = [];
   const context: ModelValidationContext = {
     resolve(reference, mode) {
@@ -264,51 +247,26 @@ test('standalone object codecs close nested schemas and preserve first/all sync 
   assert.equal(codec.validate(invalid, { failFast: false, validationContext: context }), true);
   assert.deepEqual(lookups, [`${codecId}|first`, `${codecId}|all`], 'context resolution is reused separately for each mode');
 
-  const engineLookups: string[] = [];
-  const engineContext: ModelValidationContext = {
-    engine: {
-      addSchema() {},
-      getSchema(reference) {
-        engineLookups.push(reference);
-        return accept;
-      },
-    },
-  };
-  assert.equal(codec.validate(invalid, { validationContext: engineContext }), true);
-  assert.equal(codec.validate(invalid, { validationContext: engineContext }), true);
-  assert.equal(codec.validate(invalid, { failFast: false, validationContext: engineContext }), true);
-  assert.deepEqual(engineLookups, [codecId, codecId], 'generated codecs resolve and reuse explicit engine validators for first/all modes');
-
   assert.throws(
     () => codec.validate(invalid, { validationContext: { resolve: () => undefined } }),
     error => error instanceof LibError && error.kind === LibErrorKind.ValidationUnavailable,
-    'an incomplete explicit context does not fall back to the global Ajv engine',
-  );
-  assert.throws(
-    () => codec.validate(invalid, { validationContext: { engine: { addSchema() {}, getSchema: () => undefined } } }),
-    error => error instanceof LibError && error.kind === LibErrorKind.ValidationUnavailable,
-    'an explicit engine with a missing schema does not fall back to the global Ajv engine',
+    'an incomplete explicit context does not fall back to the generated validators',
   );
   await assert.rejects(
     () => validateInstance(invalid, { validationContext: null as unknown as ModelValidationContext }),
     error => error instanceof LibError && error.kind === LibErrorKind.ValidationUnavailable,
-    'an explicitly supplied null instance context does not fall back to the global validator',
+    'an explicitly supplied null context does not fall back to the generated validators',
   );
-
-  const asyncContext: ModelValidationContext = {
-    resolve: () => async input => input !== null && typeof input === 'object' && 'label' in input,
-  };
-  assert.deepEqual(await validateInstance(invalid, { validationContext: asyncContext }), [], 'async contexts are supported by async validation APIs');
 
   const unhandled: unknown[] = [];
   const captureUnhandled = (reason: unknown): void => { unhandled.push(reason); };
   process.on('unhandledRejection', captureUnhandled);
   try {
     for (const asyncValidator of [
-      async (_input: unknown): Promise<boolean> => false,
-      async (_input: unknown): Promise<boolean> => { throw new Error('async validation failure'); },
+      async (): Promise<boolean> => false,
+      async (): Promise<boolean> => { throw new Error('async validation failure'); },
     ]) {
-      const asyncOverride: ModelValidationContext = { resolve: () => asyncValidator };
+      const asyncOverride: ModelValidationContext = { resolve: () => asyncValidator as unknown as Validator };
       assert.throws(
         () => codec.validate(invalid, { validationContext: asyncOverride }),
         error => error instanceof LibError && error.kind === LibErrorKind.ValidationUnavailable,
@@ -321,17 +279,17 @@ test('standalone object codecs close nested schemas and preserve first/all sync 
   assert.deepEqual(unhandled, [], 'sync rejection consumes async override promises safely');
 });
 
-test('standalone plans permit equal model names in independent source graphs', async t => {
+test('generated validators permit equal model names in independent source graphs', async t => {
   const value = fixture(t);
   mkdirSync(path.join(value.sourceRoot, 'first'), { recursive: true });
   mkdirSync(path.join(value.sourceRoot, 'second'), { recursive: true });
-  writeFileSync(path.join(value.sourceRoot, 'first/item.model.ts'), readFixture("models/standalone-codecs/standalone-plans-permit-equal-model-names-in-independent-source-graphs/item.model.ts"));
-  writeFileSync(path.join(value.sourceRoot, 'second/item.model.ts'), readFixture("models/standalone-codecs/standalone-plans-permit-equal-model-names-in-independent-source-graphs/item.model-2.ts"));
+  writeFileSync(path.join(value.sourceRoot, 'first/item.model.ts'), readFixture("models/generated-validators/generated-validators-permit-equal-model-names-in-independent-source-graphs/item.model.ts"));
+  writeFileSync(path.join(value.sourceRoot, 'second/item.model.ts'), readFixture("models/generated-validators/generated-validators-permit-equal-model-names-in-independent-source-graphs/item.model-2.ts"));
 
-  writeModelGolemYaml(value.root, { mobx: false, validation: true, ajvStandalone: true });
+  writeModelGolemYaml(value.root, { mobx: false, validation: true });
   await compile(value.root);
   assert.ok(generatedModelFiles(value.root).some(item => item.path.endsWith('/models.validators.generated.js')));
-  copyStandalone(value);
+  copyValidators(value);
   const [{ Item: FirstItem }, { Item: SecondItem }] = await Promise.all([
     import(pathToFileURL(path.join(value.root, 'build/first/item.model.js')).href),
     import(pathToFileURL(path.join(value.root, 'build/second/item.model.js')).href),
@@ -342,4 +300,55 @@ test('standalone plans permit equal model names in independent source graphs', a
   const { getValidator } = await import('@exprtlabs/golem/validation');
   assert.equal(await getValidator(new FirstItem({ label: 'first' } as never)).validate(), true);
   assert.equal(await getValidator(new SecondItem({ count: 2 } as never)).validate(), true);
+});
+
+test('a project with validation off generates no validators and refuses validate: true', async t => {
+  const value = fixture(t);
+  writeFileSync(path.join(value.sourceRoot, 'root.model.ts'), readFixture("models/generated-validators/generated-object-codecs-close-nested-schemas-and-preserve-first-all-sync-and-context/root.model.ts"));
+  writeModelGolemYaml(value.root, { mobx: false, validation: false });
+  await compile(value.root);
+  assert.equal(generatedModelFiles(value.root).some(item => item.path.endsWith('.validators.generated.js')), false);
+  const { TRootBaseModel } = await import(pathToFileURL(path.join(value.root, 'build/root.model.generated.js')).href) as {
+    TRootBaseModel: abstract new (...args: never[]) => object;
+  };
+  const { findCodecIdForConstructor, requireObjectCodec } = await import('@exprtlabs/golem/serde');
+  const codecId = findCodecIdForConstructor(TRootBaseModel);
+  assert.ok(codecId);
+  const wire = '{"label":"x","first":{"label":"first","child":{"code":"y"}},"second":{"label":"second","child":{"code":"z"}}}';
+  assert.throws(
+    () => requireObjectCodec(codecId).parse(wire, { validate: true }),
+    error => error instanceof LibError && error.kind === LibErrorKind.ValidationUnavailable,
+  );
+  assert.doesNotThrow(() => requireObjectCodec(codecId).parse(wire));
+});
+
+test('unknownFormats: error makes generation fail with VALIDATE_UNKNOWN_FORMAT', async t => {
+  const value = fixture(t);
+  writeFileSync(path.join(value.sourceRoot, 'contact.model.ts'), [
+    "import type { IModel } from '@exprtlabs/golem/model';",
+    "import type { Format } from '@exprtlabs/golem/tags';",
+    "export type TContact = IModel<{ phone: string & Format<'phone-number'> }>;",
+    '',
+  ].join('\n'));
+  writeModelGolemYaml(value.root, { mobx: false, validation: true });
+  const config = path.join(value.root, 'golem.yaml');
+  // The default warns and writes the validators; the format is not checked.
+  await runPipeline(config);
+  assert.ok(generatedModelFiles(value.root).some(item => item.path.endsWith('/models.validators.generated.js')));
+  writeFileSync(config, `${readFileSync(config, 'utf8')}unknownFormats: error\n`);
+  await assert.rejects(runPipeline(config), /VALIDATE_UNKNOWN_FORMAT/);
+});
+
+test('a model class registered at run time satisfies a generated model-instance check', async () => {
+  const { registerIModelClass } = await import('@exprtlabs/golem/serde');
+  class Cat {}
+  class Dog {}
+  registerIModelClass('GeneratedValidatorsCat_0a1b2c3d', Cat);
+  registerIModelClass('GeneratedValidatorsDog_0a1b2c3d', Dog);
+  const validate = await compileSchema({
+    golemModelInstance: { of: 'GeneratedValidatorsCat_0a1b2c3d', among: ['GeneratedValidatorsCat_0a1b2c3d', 'GeneratedValidatorsDog_0a1b2c3d'], required: true },
+  });
+  assert.deepEqual(validate(new Cat(), true), []);
+  assert.deepEqual(validate(new Dog(), true), [{ path: [], code: 'instance', model: 'GeneratedValidatorsCat_0a1b2c3d' }]);
+  assert.deepEqual(validate({}, true), [{ path: [], code: 'instance', model: 'GeneratedValidatorsCat_0a1b2c3d' }]);
 });

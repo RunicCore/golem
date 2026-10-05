@@ -43,7 +43,8 @@ function callFunction(callee: IrFunction, args: CallArguments): string {
 }
 
 const LOCAL_HELPERS: Readonly<Record<LocalHelper, string>> = {
-  hasOwn: 'const hasOwn = Object.prototype.hasOwnProperty;',
+  // A key whose value is `undefined` is absent: a model's optional field may be set to `undefined` and JSON has no such value.
+  hasOwn: 'const hasOwn = { call: (value, key) => Object.prototype.hasOwnProperty.call(value, key) && value[key] !== undefined };',
   isObject: "const isObject = value => typeof value === 'object' && value !== null && !Array.isArray(value);",
   // The quotient of two doubles is off by rounding (0.3 / 0.1), so a quotient within a few ulps of a non-zero
   // whole number counts. An infinite quotient falls back to the exact remainder.
