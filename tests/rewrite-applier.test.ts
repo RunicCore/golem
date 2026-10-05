@@ -143,6 +143,23 @@ test('overlapping edits, a wrong expectation and an out-of-range edit are an inc
   assert.equal(applyRewrites(text, rewriteOf([...around].reverse())).code, `const result = /*a*/${CALL_TEXT}/*b*/(text);\n`);
 });
 
+test('an inconsistent rewrite names its file and line when the caller gives the file, in the applier and in the indexed host path', () => {
+  const text = 'const first = 1;\r\nconst result = parse<TPayment>(text);\r\n';
+  const wrong = { ...replace(text, CALL, CALL_TEXT), expect: 'parse<TOther>' };
+  assert.throws(
+    () => applyRewrites(text, rewriteOf([wrong]), 'src/pay.ts'),
+    (error: unknown) => error instanceof Error && error.message.startsWith('golem rewrite is inconsistent for src/pay.ts at line 2: ') && error.message.endsWith('run golem generate'),
+  );
+  assert.throws(
+    () => applyRewrites(text, rewriteOf([wrong])),
+    (error: unknown) => error instanceof Error && error.message.startsWith('golem rewrite is inconsistent at line 2: '),
+  );
+  assert.throws(
+    () => applyIndexedRewrites('src/pay.ts', text, indexFor('src/pay.ts', text, rewriteOf([wrong]))),
+    (error: unknown) => error instanceof Error && !(error instanceof GolemRewriteStaleError) && error.message.startsWith('golem rewrite is inconsistent for src/pay.ts at line 2: '),
+  );
+});
+
 test('a CRLF file with Vietnamese text maps the rewritten call back to its original line and column', () => {
   const text = '// Thanh toán — đơn hàng\r\nconst result = parse<TPayment>(text);\r\nconst next = 1;\r\n';
   const applied = applyRewrites(text, callRewrite(text));

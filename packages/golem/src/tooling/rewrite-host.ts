@@ -91,7 +91,7 @@ export function applyIndexedRewrites(file: string, text: string, index: RewriteI
   if (sha256Hex(text) !== entry.sha256) {
     throw new GolemRewriteStaleError(file, `${file} changed after golem generate; run golem generate, or keep golem watch running.`);
   }
-  const applied = applyRewrites(text, entry);
+  const applied = applyRewrites(text, entry, file);
   return { code: applied.code, map: { ...applied.map, sources: [file] } };
 }
 

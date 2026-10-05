@@ -229,21 +229,6 @@ function generatedBaseFile(checker: ts.TypeChecker, declaration: ts.ClassDeclara
   return undefined;
 }
 
-/** Offset of the `(` that opens a call's arguments; the argument list starts right after it. */
-function openParenthesis(text: string, callArguments: ts.NodeArray<ts.Expression>): number {
-  let position = Math.min(callArguments.pos, text.length);
-  while (position > 0) {
-    const previous = text.charAt(position - 1);
-    if (/\s/.test(previous)) { position -= 1; continue; }
-    if (text.slice(0, position).endsWith('*/')) {
-      const start = text.lastIndexOf('/*', position - 2);
-      if (start >= 0) { position = start; continue; }
-    }
-    return previous === '(' ? position - 1 : -1;
-  }
-  return -1;
-}
-
 function insertion(at: number, text: string): RewriteEdit {
   return { start: at, end: at, expect: '', text };
 }
@@ -441,8 +426,8 @@ function scanFile(
       return;
     }
     const start = call.expression.getStart(file);
-    const open = openParenthesis(text, call.arguments);
-    if (open < start) throw new Error(`${portable(root, file.fileName)}: the ${method} call could not be rewritten: no opening parenthesis found.`);
+    // The argument list starts right after the `(` that opens it, whatever trivia sits between the type arguments and the `(`.
+    const open = call.arguments.pos - 1;
     scan.edits.push({
       start,
       end: open + 1,

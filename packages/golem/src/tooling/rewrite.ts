@@ -103,8 +103,12 @@ export function readRewriteIndex(root: string): RewriteIndex | undefined {
   return record as unknown as RewriteIndex;
 }
 
-function inconsistent(edit: RewriteEdit): Error {
-  return new Error(`golem rewrite is inconsistent: the edit at ${edit.start}-${edit.end} is out of range, overlaps another edit, or no longer matches the text it expects; run golem generate`);
+/** Names the file when the caller knows it, and the line of the edit's start in `text`. */
+function inconsistent(edit: RewriteEdit, text: string, file: string | undefined): Error {
+  const starts = lineStarts(text);
+  const at = Number.isInteger(edit.start) ? Math.min(Math.max(edit.start, 0), text.length) : 0;
+  const line = starts.filter((start) => start <= at).length;
+  return new Error(`golem rewrite is inconsistent${file === undefined ? '' : ` for ${file}`} at line ${line}: the edit at ${edit.start}-${edit.end} is out of range, overlaps another edit, or no longer matches the text it expects; run golem generate`);
 }
 
 const LINE_TEXT = '[^\\r\\n\\u2028\\u2029]';
@@ -169,9 +173,10 @@ function lineStarts(text: string): number[] {
  * Apply a file's edits and missing imports. Offsets are UTF-16 units of `text`
  * as the compiler sees it: a leading U+FEFF is not counted and is kept in the
  * output. The map's one source is named `''` and holds the text without the
- * mark; a host that knows the file name sets `sources`.
+ * mark; a host that knows the file name sets `sources`. `file`, when given,
+ * names the file in the error of an inconsistent rewrite.
  */
-export function applyRewrites(source: string, rewrite: FileRewrite): { readonly code: string; readonly map: SourceMapV3 } {
+export function applyRewrites(source: string, rewrite: FileRewrite, file?: string): { readonly code: string; readonly map: SourceMapV3 } {
   const text = withoutByteOrderMark(source);
   const mark = source.slice(0, source.length - text.length);
 
@@ -182,8 +187,8 @@ export function applyRewrites(source: string, rewrite: FileRewrite): { readonly 
     .map(({ edit }) => edit);
   let previousEnd = 0;
   for (const edit of edits) {
-    if (!Number.isInteger(edit.start) || !Number.isInteger(edit.end) || edit.start > edit.end || edit.end > text.length) throw inconsistent(edit);
-    if (edit.start < previousEnd || text.slice(edit.start, edit.end) !== edit.expect) throw inconsistent(edit);
+    if (!Number.isInteger(edit.start) || !Number.isInteger(edit.end) || edit.start > edit.end || edit.end > text.length) throw inconsistent(edit, text, file);
+    if (edit.start < previousEnd || text.slice(edit.start, edit.end) !== edit.expect) throw inconsistent(edit, text, file);
     previousEnd = edit.end;
   }
 
