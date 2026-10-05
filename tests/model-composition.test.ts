@@ -1,4 +1,4 @@
-import { readFixture, writeGeneratedArtifacts } from './fixture-project.js';
+import { readFixture } from './fixture-project.js';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -7,7 +7,7 @@ import test, { type TestContext } from 'node:test';
 import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/golem/conversion';
 import { requireObjectCodec } from '@exprtlabs/golem/serde';
 import { generatedCodecId, generatedCodecIdFromRoot } from './support/consumer.js';
-import { buildModelProject, createModelProject, writeModelSources } from './model-project.js';
+import { buildModelProject, createModelProject, generatedModelFiles, writeModelGolemYaml, writeModelSources } from './model-project.js';
 import { discardedProjectionCodecsSource, discardedProjectionMetadataSource, projectionPolicyModelSource } from './fixture-templates/models/model-composition.js';
 import { generate } from '#model/generator';
 
@@ -23,7 +23,7 @@ function fixture(t: TestContext, allowJs = false) {
 test('an unrelated same-name class does not become a model constructor', async t => {
   const { root, sourceRoot } = fixture(t);
   fs.writeFileSync(path.join(sourceRoot, 'item.model.ts'), readFixture("models/model-composition/an-unrelated-same-name-class-does-not-become-a-model-constructor/item.model.ts"));
-  writeGeneratedArtifacts(generate({ root, profile: { mobx: false, validation: false } }).artifacts);
+  writeModelGolemYaml(root, { mobx: false, validation: false });
   await buildModelProject(root);
   const generated = await import(`${path.join(root, 'build/item.model.generated.js')}?${Date.now()}`);
   const authored = await import(`${path.join(root, 'build/item.model.js')}?${Date.now()}`);
@@ -41,8 +41,7 @@ test('first generation resolves model class bases through project path aliases',
   fs.writeFileSync(path.join(root, 'tsconfig.json'), JSON.stringify(config));
   fs.writeFileSync(path.join(sourceRoot, 'item.model.ts'), readFixture("models/model-composition/first-generation-resolves-model-class-bases-through-project-path-aliases/item.model.ts"));
   fs.writeFileSync(path.join(sourceRoot, 'parent.model.ts'), readFixture("models/model-composition/first-generation-resolves-model-class-bases-through-project-path-aliases/parent.model.ts"));
-  const result = generate({ root, profile: { mobx: false, validation: false } });
-  writeGeneratedArtifacts(result.artifacts);
+  writeModelGolemYaml(root, { mobx: false, validation: false });
   await buildModelProject(root);
   const generated = await import(`${path.join(root, 'build/parent.model.generated.js')}?${Date.now()}`);
   const authored = await import(path.join(root, 'build/item.model.js'));
@@ -88,7 +87,7 @@ async function assertNestedProjections(root: string, buildFile: string, validati
 test('nested projections strip omitted fields and retain intact child models with validation=false', async t => {
   const { root, sourceRoot } = fixture(t);
   fs.writeFileSync(path.join(sourceRoot, 'address.model.ts'), readFixture("models/model-composition/model-composition-address-model/address.model.ts"));
-  writeGeneratedArtifacts(generate({ root, profile: { mobx: false, validation: false } }).artifacts);
+  writeModelGolemYaml(root, { mobx: false, validation: false });
   await buildModelProject(root);
   await assertNestedProjections(root, 'build/address.model.js', false);
 });
@@ -96,15 +95,14 @@ test('nested projections strip omitted fields and retain intact child models wit
 test('projection decoders and encoders copy fields with assignments and keep the prototype untouched', async t => {
   const { root, sourceRoot } = fixture(t);
   fs.writeFileSync(path.join(sourceRoot, 'place.model.ts'), readFixture("models/model-composition/projection-decoders-copy-fields-with-assignments/place.model.ts"));
-  const result = generate({ root, profile: { mobx: false, validation: false } });
-  writeGeneratedArtifacts(result.artifacts);
-  const companion = result.artifacts.find(artifact => artifact.path.endsWith('place.model.generated.ts'))!.content;
+  writeModelGolemYaml(root, { mobx: false, validation: false });
+  await buildModelProject(root);
+  const companion = generatedModelFiles(root).find(artifact => artifact.path.endsWith('place.model.generated.ts'))!.content;
   for (const direction of ['decode', 'encode']) {
     const helper = companion.split('\n').find(line => line.startsWith(`function ${direction}TPlaceOmitId(`));
     assert.ok(helper);
     assert.doesNotMatch(helper, /Object\.fromEntries/);
   }
-  await buildModelProject(root);
   const { Office } = await import(path.join(root, 'build/place.model.js'));
   const place = JSON.parse('{"city":"Hue","country":"VN","__proto__":{"x":1}}');
   const office = decodeGeneratedModel(Office, { place }) as { place: Record<string, unknown> };
@@ -117,13 +115,12 @@ test('equivalent projections share helpers and execute only retained field codec
   const { root, sourceRoot } = fixture(t);
   fs.writeFileSync(path.join(sourceRoot, 'codecs.ts'), readFixture("models/model-composition/equivalent-projections-share-helpers-and-execute-only-retained-field-codecs/codecs.ts"));
   fs.writeFileSync(path.join(sourceRoot, 'item.model.ts'), readFixture("models/model-composition/equivalent-projections-share-helpers-and-execute-only-retained-field-codecs/item.model.ts"));
-  const result = generate({ root, profile: { mobx: false, validation: false } });
-  writeGeneratedArtifacts(result.artifacts);
-  const companion = result.artifacts.find(artifact => artifact.path.endsWith('item.model.generated.ts'))!.content;
+  writeModelGolemYaml(root, { mobx: false, validation: false });
+  await buildModelProject(root);
+  const companion = generatedModelFiles(root).find(artifact => artifact.path.endsWith('item.model.generated.ts'))!.content;
   assert.equal([...companion.matchAll(/function decodeTItemOmitId\(/g)].length, 1);
   assert.equal([...companion.matchAll(/function initTItemOmitId\(/g)].length, 1);
   assert.equal([...companion.matchAll(/function encodeTItemOmitId\(/g)].length, 1);
-  await buildModelProject(root);
   const { Container } = await import(path.join(root, 'build/item.model.js'));
   const codecs = await import(path.join(root, 'build/codecs.js'));
   const model = decodeGeneratedModel(Container, { first: { id: 'ignored', value: 'HELLO' } });
@@ -138,7 +135,7 @@ test('equivalent projections share helpers and execute only retained field codec
 test('generated readonly fields remain readonly to TypeScript consumers', async t => {
   const { root, sourceRoot } = fixture(t);
   fs.writeFileSync(path.join(sourceRoot, 'item.model.ts'), readFixture("models/model-composition/generated-readonly-fields-remain-readonly-to-typescript-consumers/item.model.ts"));
-  writeGeneratedArtifacts(generate({ root, profile: { mobx: false, validation: false } }).artifacts);
+  writeModelGolemYaml(root, { mobx: false, validation: false });
   fs.writeFileSync(path.join(sourceRoot, 'readonly-consumer.ts'), readFixture("models/model-composition/generated-readonly-fields-remain-readonly-to-typescript-consumers/readonly-consumer.ts"));
   await buildModelProject(root);
 });
@@ -184,7 +181,7 @@ test('validation-on projection cases share one generated project', async t => {
     'intact-child/item.model.ts': composition('an-intact-child-model-keeps-its-own-allowany-policy-inside-a-strict-parent', 'item.model.ts'),
     'projected-child/item.model.ts': composition('a-projected-child-applies-the-containing-model-allowany-policy', 'item.model-2.ts'),
   });
-  writeGeneratedArtifacts(generate({ root, profile: { mobx: false, validation: true } }).artifacts);
+  writeModelGolemYaml(root, { mobx: false, validation: true });
   await buildModelProject(root);
   const load = (directory: string, file: string) => import(path.join(root, 'build', directory, file));
   // Codec ids are read from the one directory's companion, since several directories declare a Container.
@@ -307,7 +304,7 @@ for (const ajvStandalone of [false, true]) {
   test(`MobX projections retain nested observability with standalone=${ajvStandalone}`, async t => {
     const { root, sourceRoot } = fixture(t, ajvStandalone);
     fs.writeFileSync(path.join(sourceRoot, 'item.model.ts'), readFixture("models/model-composition/model-composition-item-model/item.model.ts"));
-    writeGeneratedArtifacts(generate({ root, profile: { mobx: true, validation: true, ajvStandalone } }).artifacts);
+    writeModelGolemYaml(root, { mobx: true, validation: true, ajvStandalone });
     await buildModelProject(root);
     const { Parent, Child } = await import(path.join(root, 'build/item.model.js'));
     const { autorun, isObservableObject, runInAction } = await import('mobx');

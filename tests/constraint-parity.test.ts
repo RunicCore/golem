@@ -19,7 +19,7 @@ import { loadModelManifests } from '@exprtlabs/golem/type-analysis';
 import { createProgram, generatedFilename } from '@exprtlabs/golem/type-analysis';
 import { generate as generateControllers } from '#controllers/generator';
 import { workspace } from './support/process.js';
-import { buildModelProject } from './model-project.js';
+import { buildModelProject, generatedModelFiles, writeModelGolemYaml } from './model-project.js';
 import { generatedCodecIdFromRoot } from './support/consumer.js';
 import { containsSiblingConstraintSource } from './fixture-templates/models/constraint-parity.js';
 
@@ -64,8 +64,8 @@ async function compile(root: string): Promise<void> {
   await buildModelProject(root);
 }
 
-function materializeStandalone(root: string, sourceRoot: string, result: ReturnType<typeof generate>): void {
-  const artifact = result.artifacts.find((item) => item.path.endsWith('/models.validators.generated.js'));
+function materializeStandalone(root: string, sourceRoot: string): void {
+  const artifact = generatedModelFiles(root).find((item) => item.path.endsWith('/models.validators.generated.js'));
   assert.ok(artifact, 'standalone validator artifact');
   const target = path.join(root, 'build', path.relative(sourceRoot, artifact.path));
   fs.mkdirSync(path.dirname(target), { recursive: true });
@@ -203,13 +203,9 @@ for (const ajvStandalone of [false, true] as const) {
     // The OpenAPI and canonical schemas do not depend on the Ajv mode, so only
     // the runtime-Ajv run checks them; both runs check the generated validator.
     const openApiValidators = ajvStandalone ? [] : await controllerValidators(root);
-    const result = generate({
-      root,
-      profile: { mobx: false, validation: true, ajvStandalone },
-    });
-    writeGeneratedArtifacts(result.artifacts);
+    writeModelGolemYaml(root, { mobx: false, validation: true, ajvStandalone });
     await compile(root);
-    if (ajvStandalone) materializeStandalone(root, sourceRoot, result);
+    if (ajvStandalone) materializeStandalone(root, sourceRoot);
 
     const { A } = await import(path.toNamespacedPath(path.join(root, 'build/a.model.js')));
     const codec = requireObjectCodec(generatedCodecIdFromRoot(root, 'TA'));

@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import test, { type TestContext } from 'node:test';
-import { copyFixtureFile, readFixture, writeGeneratedArtifacts } from './fixture-project.js';
+import { copyFixtureFile, readFixture } from './fixture-project.js';
 import { buildModelProject, createModelProject, writeModelGolemYaml } from './model-project.js';
 
 import {
@@ -16,7 +16,6 @@ import {
 } from '@exprtlabs/golem/serde';
 import { validate as publicValidate } from '@exprtlabs/golem/validation';
 import { IssueCode, IssueRepresentation, IssueSource, LibError, LibErrorKind } from '@exprtlabs/golem/errors';
-import { generate } from '#model/generator';
 import { generatedCodecId } from './support/consumer.js';
 import type { GolemProfile } from '@exprtlabs/golem/generator-api';
 
@@ -30,8 +29,6 @@ function fixture(
     linkTypescript: true,
   });
   copyFixtureFile(root, 'models/serde/base-payment-model/money.model.ts', 'src/money.model.ts');
-  const result = generate({ root, profile });
-  writeGeneratedArtifacts(result.artifacts);
   writeModelGolemYaml(root, profile);
   return { root };
 }
@@ -54,6 +51,7 @@ interface PaymentCodecs {
 test('IObject stringify/parse compose nested Money by call; invalid JSON fails before Ajv; validate<T> narrows', async (t) => {
   const { root } = fixture(t);
   fs.writeFileSync(path.join(root, 'src/narrow.ts'), readFixture("models/serde/validate-t-type-predicate-narrows-to-iobject-fields-for-imodel-and-iobject/narrow.ts"));
+  await compile(root);
   const generated = fs.readFileSync(path.join(root, 'src/money.model.generated.ts'), 'utf8');
   const paymentFnStart = generated.indexOf('function stringifyTPayment');
   const paymentFnEnd = generated.indexOf('\n}', paymentFnStart);
@@ -74,7 +72,6 @@ test('IObject stringify/parse compose nested Money by call; invalid JSON fails b
     /from ['"]\.\/money\.model\.js['"]/,
     'the generated companion never imports the handwritten model file it registers, avoiding a require cycle between them',
   );
-  await compile(root);
   const { Payment } = await import(pathToFileURL(path.join(root, 'build/money.model.js')).href) as {
     Payment: new (values?: object) => { id: string; amount: { currency: string; value: string }; note: string };
   };
@@ -173,15 +170,14 @@ test('IObject TSerde stringify/parse convert declared fields in one pass', async
   });
   fs.writeFileSync(path.join(sourceRoot, 'codecs.ts'), readFixture("models/serde/iobject-tserde-stringify-parse-convert-declared-fields-in-one-pass/codecs.ts"));
   fs.writeFileSync(path.join(sourceRoot, 'permission.model.ts'), readFixture("models/serde/iobject-tserde-stringify-parse-convert-declared-fields-in-one-pass/permission.model.ts"));
-  const result = generate({ root, profile: { mobx: false, validation: true } });
-  writeGeneratedArtifacts(result.artifacts);
+  writeModelGolemYaml(root, { mobx: false, validation: true });
+  await compile(root);
   const generated = fs.readFileSync(path.join(root, 'src/permission.model.generated.ts'), 'utf8');
   assert.doesNotMatch(
     generated,
     /stringifyTPermissionInputCore[\s\S]*__golemSerialize[\s\S]*validateTPermissionInputFast/,
     'budget: TSerde fields convert declared fields in one pass, not through a second interleaved stringify/validate sequence',
   );
-  await compile(root);
   const permissionCodecs = await import(pathToFileURL(path.join(root, 'build/codecs.js')).href) as {
     deserializeCalls: number;
   };
@@ -248,12 +244,11 @@ test('same-type TSerde emits one Ajv schema and global validation false rejects 
   });
   fs.writeFileSync(path.join(sourceRoot, 'codecs.ts'), readFixture("models/serde/same-type-tserde-emits-one-ajv-schema-and-global-validation-false-rejects-va/codecs.ts"));
   fs.writeFileSync(path.join(sourceRoot, 'label.model.ts'), readFixture("models/serde/same-type-tserde-emits-one-ajv-schema-and-global-validation-false-rejects-va/label.model.ts"));
-  const generatedArtifacts = generate({ root: identityRoot, profile: { mobx: false, validation: true } });
-  writeGeneratedArtifacts(generatedArtifacts.artifacts);
+  writeModelGolemYaml(identityRoot, { mobx: false, validation: true });
+  await compile(identityRoot);
   const generated = fs.readFileSync(path.join(identityRoot, 'src/label.model.generated.ts'), 'utf8');
   assert.doesNotMatch(generated, /Label#wire/, 'budget: identical wire and model schemas share one Ajv schema, no separate Label#wire schema is hoisted');
   assert.doesNotMatch(generated, /validateLabelWireFast/, 'budget: no separate wire-plane validator is emitted when the wire and model schemas are identical');
-  await compile(identityRoot);
   const codecs = await import(pathToFileURL(path.join(identityRoot, 'build/label.model.generated.js')).href) as {
     stringifyTLabel: (value: object, options?: { validate?: boolean }) => string;
     parseTLabel: (text: string, options?: { validate?: boolean }) => { name: string };
@@ -288,8 +283,7 @@ test('same-type TSerde emits one Ajv schema and global validation false rejects 
 test('same-file nested IModel companions compile without naming the handwritten nested class unbound', async (t) => {
   const { root } = fixture(t);
   fs.writeFileSync(path.join(root, 'src/money.model.ts'), readFixture("models/serde/same-file-nested-imodel-companions-compile-without-naming-the-handwritten-ne/money.model.ts"));
-  const result = generate({ root, profile: { mobx: false, validation: true } });
-  writeGeneratedArtifacts(result.artifacts);
+  await compile(root);
   const generated = fs.readFileSync(path.join(root, 'src/money.model.generated.ts'), 'utf8');
   assert.match(
     generated,
@@ -301,19 +295,16 @@ test('same-file nested IModel companions compile without naming the handwritten 
     /import \{ Item \} from ['"]\.\/money\.model\.js['"]/,
     'the generated companion never imports the same-file handwritten class, avoiding a use-before-bound reference',
   );
-  await compile(root);
 });
 
 test('nested class-typed IModel fields construct; type-only parse fills like IObject', async (t) => {
-  const { root } = fixture(t);
+  const { root } = fixture(t, { mobx: false, validation: false });
   fs.writeFileSync(path.join(root, 'src/money.model.ts'), readFixture("models/serde/nested-class-typed-imodel-fields-construct-type-only-parse-fills-like-iobjec/money.model.ts"));
-  const result = generate({ root, profile: { mobx: false, validation: false } });
-  writeGeneratedArtifacts(result.artifacts);
+  await compile(root);
   const generated = fs.readFileSync(path.join(root, 'src/money.model.generated.ts'), 'utf8');
   assert.doesNotMatch(generated, /from ['"]\.\/money\.model\.js['"]/);
   const pointId = generatedCodecId(generated, 'TPoint3D');
   assert.match(generated, new RegExp(`requireIModelClass\\("${pointId}"\\)`));
-  await compile(root);
   const { registerIModelClass } = await import('@exprtlabs/golem/serde');
   const { Point3D } = await import(pathToFileURL(path.join(root, 'build/money.model.js')).href) as {
     Point3D: new (values?: object) => object;
@@ -333,10 +324,8 @@ test('nested class-typed IModel fields construct; type-only parse fills like IOb
 });
 
 test('type-only IModel parse fills nested models from the generated base', async (t) => {
-  const { root } = fixture(t);
+  const { root } = fixture(t, { mobx: false, validation: false });
   fs.writeFileSync(path.join(root, 'src/money.model.ts'), readFixture("models/serde/type-only-imodel-parse-fills-nested-models-from-the-generated-base/money.model.ts"));
-  const result = generate({ root, profile: { mobx: false, validation: false } });
-  writeGeneratedArtifacts(result.artifacts);
   await compile(root);
   const { TIsolatedPointBaseModel } = await import(pathToFileURL(path.join(root, 'build/money.model.generated.js')).href) as {
     TIsolatedPointBaseModel: new (values?: object) => object;
@@ -358,8 +347,6 @@ test('type-only IModel parse fills nested models from the generated base', async
 test('toWireFormat encodes nullable nested IModel fields to plain objects, not class instances', async (t) => {
   const { root } = fixture(t);
   fs.writeFileSync(path.join(root, 'src/money.model.ts'), readFixture("models/serde/towireformat-encodes-nullable-nested-imodel-fields-to-plain-objects-not-clas/money.model.ts"));
-  const result = generate({ root, profile: { mobx: false, validation: true } });
-  writeGeneratedArtifacts(result.artifacts);
   await compile(root);
   const codecs = await import(pathToFileURL(path.join(root, 'build/money.model.generated.js')).href) as {
     fromWireFormatTCustomer: (wire: unknown, options?: { validate?: boolean }) => { id: number; account: object | null };
@@ -377,10 +364,8 @@ test('toWireFormat encodes nullable nested IModel fields to plain objects, not c
 });
 
 test('fromWireFormat copies identity arrays and tuples instead of aliasing the input containers', async (t) => {
-  const { root } = fixture(t);
+  const { root } = fixture(t, { mobx: false, validation: false });
   fs.writeFileSync(path.join(root, 'src/money.model.ts'), readFixture("models/serde/fromwireformat-copies-identity-arrays-and-tuples-without-aliasing-input/money.model.ts"));
-  const result = generate({ root, profile: { mobx: false, validation: false } });
-  writeGeneratedArtifacts(result.artifacts);
   await compile(root);
   const codecs = await import(pathToFileURL(path.join(root, 'build/money.model.generated.js')).href) as {
     fromWireFormatTMember: (wire: unknown, options?: { validate?: boolean }) => { emails: string[]; ip: [number, number, number, number] };

@@ -96,6 +96,18 @@ export function writeModelGolemYaml(root: string, profile: Readonly<{ mobx?: boo
 }
 
 /**
+ * The files the project's models job wrote, as the golem.yaml's inventory records them: what a test would read from the result of its
+ * own `generate` call if it generated in process. A test that builds generates once, in the build, and reads its output here.
+ */
+export function generatedModelFiles(root: string): readonly { readonly path: string; readonly content: string }[] {
+  const inventory = JSON.parse(fs.readFileSync(path.join(root, '.golem/outputs.json'), 'utf8')) as { readonly files: Readonly<Record<string, unknown>> };
+  return Object.keys(inventory.files).sort().map((key) => {
+    const filename = path.join(root, key);
+    return { path: filename, content: fs.readFileSync(filename, 'utf8') };
+  });
+}
+
+/**
  * Run `golem build` on the project: the original sources are checked and the rewritten ones emitted into its outDir. A project
  * without a golem.yaml gets the minimal one. A boolean compiler flag in `args` (`--noEmit`) builds an alternate config of the
  * project that extends its tsconfig with the flag on.

@@ -7,8 +7,8 @@ import { decodeGeneratedModel, decodeGeneratedModelTrusted } from '@exprtlabs/go
 import { registerGeneratedModel } from '@exprtlabs/golem/model';
 import { LibError, LibErrorKind, IssueCode, IssueSource, IssueRepresentation } from '@exprtlabs/golem/errors';
 import { generate } from '#model/generator';
-import { readFixture, writeGeneratedArtifacts } from './fixture-project.js';
-import { buildModelProject, createModelProject } from './model-project.js';
+import { readFixture } from './fixture-project.js';
+import { buildModelProject, createModelProject, writeModelGolemYaml } from './model-project.js';
 
 type FromWire = (wire: unknown, options?: { validate?: boolean }) => unknown;
 
@@ -42,7 +42,7 @@ async function loadCodecs(t: TestContext, name: string): Promise<Record<string, 
     linkWorkspaceNodeModules: true,
   });
   fs.writeFileSync(path.join(sourceRoot, `${name}.model.ts`), readFixture(`models/serde-isolation/${name}.model.ts`));
-  writeGeneratedArtifacts(generate({ root, profile: { mobx: false, validation: false } }).artifacts);
+  writeModelGolemYaml(root, { mobx: false, validation: false });
   await buildModelProject(root);
   return await import(pathToFileURL(path.join(root, `build/${name}.model.generated.js`)).href) as Record<string, FromWire>;
 }

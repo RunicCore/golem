@@ -1,4 +1,4 @@
-import { copyFixture, copyFixtureFile, readFixture, writeGeneratedArtifacts } from './fixture-project.js';
+import { copyFixture, copyFixtureFile, readFixture } from './fixture-project.js';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -9,7 +9,7 @@ import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/golem/con
 import { requireObjectCodec } from '@exprtlabs/golem/serde';
 import { getValidator } from '@exprtlabs/golem/validation';
 import { generatedCodecIdFromRoot } from './support/consumer.js';
-import { createModelProject, buildModelProject } from './model-project.js';
+import { createModelProject, buildModelProject, generatedModelFiles, writeModelGolemYaml } from './model-project.js';
 import { taggedModelSource } from './fixture-templates/models/model-tags.js';
 import { joinSource, tsSource, type SourceFragment } from './source-template.js';
 import { generate } from '#model/generator';
@@ -41,10 +41,10 @@ import { validate } from './validators.js';`,
   };
   const first = fixture(t);
   build(first.sourceRoot);
-  const firstResult = generate({ root: first.root, profile: { mobx: false, validation: true } });
-  writeGeneratedArtifacts(firstResult.artifacts);
+  writeModelGolemYaml(first.root, { mobx: false, validation: true });
   await buildModelProject(first.root);
-  const firstShared = firstResult.artifacts.find((artifact) => artifact.path.endsWith('/models.generated.ts'))?.content ?? '';
+  const firstArtifacts = generatedModelFiles(first.root);
+  const firstShared = firstArtifacts.find((artifact) => artifact.path.endsWith('/models.generated.ts'))?.content ?? '';
   assert.ok(firstShared);
   assert.doesNotMatch(firstShared, new RegExp(first.root.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   const bindingIds = [...firstShared.matchAll(/src\/(?:one|two)\/validators\.ts#\w+/g)].map(match => match[0]);
@@ -54,7 +54,7 @@ import { validate } from './validators.js';`,
   const second = fixture(t);
   build(second.sourceRoot);
   const secondResult = generate({ root: second.root, profile: { mobx: false, validation: true } });
-  const firstByRelative = new Map(firstResult.artifacts.map(artifact => [path.relative(first.root, artifact.path), artifact.content]));
+  const firstByRelative = new Map(firstArtifacts.map(artifact => [path.relative(first.root, artifact.path), artifact.content]));
   for (const artifact of secondResult.artifacts) {
     assert.equal(artifact.content, firstByRelative.get(path.relative(second.root, artifact.path)), path.relative(second.root, artifact.path));
   }
@@ -69,16 +69,15 @@ type ValueObject = { foo?: string; bar?: string; x_value?: number };
 type ValueArray = Array<string>;`,
     fields: tsSource`values: ValueArray & Contains<string & Pattern<'^ok$'>> & MinItems<1> & MinContains<1> & MaxContains<2>; objectValue: ValueObject & MinProperties<1> & MaxProperties<3> & PropertyNames<string & Pattern<'^[a-z_]+$'>> & PatternProperties<{ '^x_': number; '^z_': boolean }> & AdditionalProperties<never> & UnevaluatedProperties<never> & DependentRequired<{ foo: ['bar'] }> & DependentSchemas<{ foo: { bar: string } }> & OneOf<[{ foo: string }, { bar: string }]> & Not<{ forbidden: string }> & IfThenElse<{ bar: string }, { bar: string }, { foo: string }>;`,
   }).text);
-  const result = generate({ root, profile: { mobx: false, validation: true } });
-  writeGeneratedArtifacts(result.artifacts);
-  const shared = result.artifacts.map((artifact) => artifact.content).join('\n');
+  writeModelGolemYaml(root, { mobx: false, validation: true });
+  await buildModelProject(root);
+  const shared = generatedModelFiles(root).map((artifact) => artifact.content).join('\n');
   for (const keyword of [
     'contains', 'minContains', 'maxContains', 'minProperties', 'maxProperties',
     'propertyNames', 'patternProperties', 'additionalProperties', 'unevaluatedProperties',
     'dependentRequired', 'dependentSchemas', 'oneOf', 'not', 'if', 'then', 'else',
   ]) assert.match(shared, new RegExp(`\\b${keyword}\\b`), keyword);
   assert.match(generatedJsonData(shared), /"contains"[\s\S]*"(?:minContains"[\s\S]*"maxContains|maxContains"[\s\S]*"minContains)/);
-  await buildModelProject(root);
   const { A } = await import(path.toNamespacedPath(path.join(root, 'build/a.model.js')));
   const valid = new A({ values: ['ok'], objectValue: { bar: 'yes', x_value: 1 } });
   assert.equal(await getValidator(valid).validate(), true);
@@ -167,8 +166,7 @@ import { first, second } from './predicates.js';`,
   write('recursive-alias', {
     'node.model.ts': taggedModelSource({ name: 'Node', fields: tsSource`name: string; children?: TNode[]` }).text,
   });
-  const result = generate({ root, profile: { mobx: false, validation: true } });
-  writeGeneratedArtifacts(result.artifacts);
+  writeModelGolemYaml(root, { mobx: false, validation: true });
   await buildModelProject(root);
   const load = (directory: string, file: string) => import(path.toNamespacedPath(path.join(root, 'build', directory, file)));
 
@@ -205,7 +203,7 @@ import { first, second } from './predicates.js';`,
     const { A } = await load('nested-contains', 'a.model.js');
     assert.equal(await getValidator(new A({ children: [{ name: 'ok' }] })).validate(), true);
     assert.equal(await getValidator(new A({ children: [{ name: 7 }] } as never)).validate(), false);
-    const shared = result.artifacts.filter(artifact => artifact.path.includes('/nested-contains/')).map((artifact) => artifact.content).join('\n');
+    const shared = generatedModelFiles(root).filter(artifact => artifact.path.includes('/nested-contains/')).map((artifact) => artifact.content).join('\n');
     assert.match(shared, /contains/);
     assert.match(generatedJsonData(shared), /"contains"/);
   });
@@ -222,7 +220,7 @@ import { first, second } from './predicates.js';`,
   });
 
   await t.test('utility aliases preserve two distinct same-signature predicates and deduplicate an alias', async () => {
-    const shared = result.artifacts.find((artifact) => artifact.path.endsWith('/models.generated.ts'))?.content ?? '';
+    const shared = generatedModelFiles(root).find((artifact) => artifact.path.endsWith('/models.generated.ts'))?.content ?? '';
     assert.equal(new Set([...shared.matchAll(/src\/utility-aliases\/predicates\.ts#\w+/g)].map((match) => match[0])).size, 2);
     const { A } = await load('utility-aliases', 'a.model.js');
     const predicates = await load('utility-aliases', 'predicates.js');
@@ -346,11 +344,10 @@ test('validation false retains Date and serde conversions without a validator re
     imports: tsSource`import type { TSerde } from '@exprtlabs/golem/tags';\nimport { encode, decode } from './codecs.js';`,
     fields: tsSource`when?: Date; token: number & TSerde<typeof encode, typeof decode>`,
   }).text);
-  const result = generate({ root, profile: { mobx: false, validation: false } });
-  writeGeneratedArtifacts(result.artifacts);
-  const shared = result.artifacts.find((artifact) => artifact.path.endsWith('/models.generated.ts'))?.content ?? '';
-  assert.match(shared, /modelSerdeBindings/);
+  writeModelGolemYaml(root, { mobx: false, validation: false });
   await buildModelProject(root);
+  const shared = generatedModelFiles(root).find((artifact) => artifact.path.endsWith('/models.generated.ts'))?.content ?? '';
+  assert.match(shared, /modelSerdeBindings/);
   const { A } = await import(path.toNamespacedPath(path.join(root, 'build/a.model.js')));
   const codecs = await import(path.toNamespacedPath(path.join(root, 'build/codecs.js')));
   const model = decodeGeneratedModel(A, { token: '4' });
@@ -369,8 +366,7 @@ test('a MobX model generated with validation false has no validator', async t =>
     name: 'A',
     fields: tsSource`title: string; done: boolean`,
   }).text);
-  const result = generate({ root, profile: { mobx: true, validation: false } });
-  writeGeneratedArtifacts(result.artifacts);
+  writeModelGolemYaml(root, { mobx: true, validation: false });
   await buildModelProject(root);
   const { A } = await import(path.toNamespacedPath(path.join(root, 'build/a.model.js')));
   const model = decodeGeneratedModel(A, { title: 'Write', done: false });
@@ -386,13 +382,12 @@ test('generic utility aliases retain nested constraints, predicates, and serde b
     imports: tsSource`import type { MinLength, TSerde, TValidation } from '@exprtlabs/golem/tags';\nimport { encodeDate, decodeDate, valid } from './bindings.js';\ntype Tagged<T extends string> = T & MinLength<3> & TValidation<typeof valid>;\ntype Box<T> = { value: T };\ntype Payload = Partial<Pick<Box<Tagged<string>>, 'value'>> & { when: Date & TSerde<typeof encodeDate, typeof decodeDate> };`,
     fields: tsSource`payload: Payload`,
   }).text);
-  const result = generate({ root, profile: { mobx: false, validation: true } });
-  writeGeneratedArtifacts(result.artifacts);
-  const shared = result.artifacts.map((artifact) => artifact.content).join('\n');
+  writeModelGolemYaml(root, { mobx: false, validation: true });
+  await buildModelProject(root);
+  const shared = generatedModelFiles(root).map((artifact) => artifact.content).join('\n');
   assert.match(shared, /minLength/);
   assert.match(shared, /exprtValidation/);
   assert.match(shared, /modelSerdeBindings/);
-  await buildModelProject(root);
   const { A } = await import(path.toNamespacedPath(path.join(root, 'build/a.model.js')));
   const bindings = await import(path.toNamespacedPath(path.join(root, 'build/bindings.js')));
   const invalid = decodeGeneratedModel(A, { payload: { value: 'x', when: '2025-01-02T03:04:05.000Z' } });
@@ -415,8 +410,7 @@ test('serde wire descriptors validate nested constraints before decode and after
     imports: tsSource`import type { TSerde, MinLength } from '@exprtlabs/golem/tags';\nimport { encode, decode } from './codecs.js';`,
     fields: tsSource`value: number & TSerde<typeof encode, typeof decode>`,
   }).text);
-  const result = generate({ root, profile: { mobx: false, validation: true } });
-  writeGeneratedArtifacts(result.artifacts);
+  writeModelGolemYaml(root, { mobx: false, validation: true });
   await buildModelProject(root);
   const { A } = await import(path.toNamespacedPath(path.join(root, 'build/a.model.js')));
   const codecs = await import(path.toNamespacedPath(path.join(root, 'build/codecs.js')));
@@ -435,16 +429,15 @@ test('serde wire predicates run on the wire plane with JIT and standalone valida
       imports: tsSource`import type { TSerde, TValidation } from '@exprtlabs/golem/tags';\nimport { encode, decode, positive } from './codecs.js';`,
       fields: tsSource`value: number & TValidation<typeof positive> & TSerde<typeof encode, typeof decode>`,
     }).text);
-    const result = generate({ root, profile: { mobx: false, validation: true, ajvStandalone } });
-    writeGeneratedArtifacts(result.artifacts);
+    writeModelGolemYaml(root, { mobx: false, validation: true, ajvStandalone });
+    await buildModelProject(root);
     if (ajvStandalone) {
-      for (const artifact of result.artifacts.filter((item) => item.path.endsWith('.generated.js'))) {
+      for (const artifact of generatedModelFiles(root).filter((item) => item.path.endsWith('.generated.js'))) {
         const built = path.join(root, 'build', path.relative(sourceRoot, artifact.path));
         fs.mkdirSync(path.dirname(built), { recursive: true });
         fs.copyFileSync(artifact.path, built);
       }
     }
-    await buildModelProject(root);
     const { A } = await import(path.toNamespacedPath(path.join(root, 'build/a.model.js')));
     const codecs = await import(path.toNamespacedPath(path.join(root, 'build/codecs.js')));
 
@@ -552,16 +545,16 @@ test('standalone model validators are external generated artifacts with declarat
     imports: tsSource`import type { TValidation } from '@exprtlabs/golem/tags';\nimport { valid } from './predicates.js';`,
     fields: tsSource`value: string & TValidation<typeof valid>`,
   }).text);
-  const result = generate({ root, profile: { mobx: false, validation: true, ajvStandalone: true } });
-  writeGeneratedArtifacts(result.artifacts);
-  const names = result.artifacts.map((artifact) => path.basename(artifact.path));
+  writeModelGolemYaml(root, { mobx: false, validation: true, ajvStandalone: true });
+  await buildModelProject(root);
+  const artifacts = generatedModelFiles(root);
+  const names = artifacts.map((artifact) => path.basename(artifact.path));
   assert.ok(names.includes('models.validators.generated.js'));
   assert.ok(names.includes('models.validators.generated.d.ts'));
   assert.ok(names.includes('models.generated.NOTICES.txt'));
-  const shared = result.artifacts.map((artifact) => artifact.content).join('\n');
+  const shared = artifacts.map((artifact) => artifact.content).join('\n');
   assert.doesNotMatch(shared, /__commonJS/);
-  await buildModelProject(root);
-  const standalone = result.artifacts.find((artifact) => artifact.path.endsWith('/models.validators.generated.js'));
+  const standalone = artifacts.find((artifact) => artifact.path.endsWith('/models.validators.generated.js'));
   assert.ok(standalone);
   const builtStandalone = path.join(root, 'build', path.relative(sourceRoot, standalone.path));
   fs.mkdirSync(path.dirname(builtStandalone), { recursive: true });

@@ -5,19 +5,19 @@ import { Checker } from 'typescript/unstable/sync';
 import { scaleModelSource } from './fixture-templates/models/scale.js';
 import { generate } from '#model/generator';
 import { createModelProject, writeModelSources } from './model-project.js';
-import { compileAndVerifyScaleProject, generateScaleProject } from './scale-project.js';
+import { compileAndVerifyScaleProject, createScaleProject, SCALE_PROFILE } from './scale-project.js';
 
 test('many model companions share standalone validation and grow with the model count', async t => {
   const sizes: number[] = [];
   for (const count of [10, 100]) {
-    const { root, result } = generateScaleProject(t, count);
-    assert.equal(result.artifacts.filter(artifact => artifact.path.endsWith('.model.generated.ts')).length, count);
-    assert.equal(result.artifacts.filter(artifact => artifact.path.endsWith('models.validators.generated.js')).length, 1);
-    sizes.push(result.artifacts.reduce((sum, artifact) => sum + Buffer.byteLength(artifact.content), 0));
+    const { root } = createScaleProject(t, count);
     // Compiling and executing every companion catches invalid shared bindings
     // that a source-size assertion alone would miss; the 100-model run is in
-    // model-generation-scale.acceptance.ts.
-    if (count === 10) await compileAndVerifyScaleProject(root, result, count);
+    // model-generation-scale.acceptance.ts, so here it only generates.
+    const artifacts = count === 10 ? await compileAndVerifyScaleProject(root, count) : generate({ root, profile: SCALE_PROFILE }).artifacts;
+    assert.equal(artifacts.filter(artifact => artifact.path.endsWith('.model.generated.ts')).length, count);
+    assert.equal(artifacts.filter(artifact => artifact.path.endsWith('models.validators.generated.js')).length, 1);
+    sizes.push(artifacts.reduce((sum, artifact) => sum + Buffer.byteLength(artifact.content), 0));
   }
   // A tenfold input increase must stay near linear; no timing threshold depends
   // on the host.

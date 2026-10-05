@@ -1,4 +1,4 @@
-import { copyFixtureFile, readFixture, writeGeneratedArtifacts } from './fixture-project.js';
+import { copyFixtureFile, readFixture } from './fixture-project.js';
 import assert from 'node:assert/strict';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
@@ -10,7 +10,7 @@ import type { GeneratedModel } from '@exprtlabs/golem/model';
 import { generateModels } from '#openapi/models';
 import { writeSdk } from '#openapi/generator';
 import { generate } from '#model/generator';
-import { buildModelProject, createModelProject, writeModelGolemYaml } from './model-project.js';
+import { buildModelProject, createModelProject, generatedModelFiles, writeModelGolemYaml } from './model-project.js';
 import { writeGeneratedSdk } from './openapi/helpers.js';
 
 const fixture = (t: TestContext) => createModelProject(t, {
@@ -18,8 +18,8 @@ const fixture = (t: TestContext) => createModelProject(t, {
   name: 'serde-emission-efficiency',
 });
 
-function modelArtifact(result: ReturnType<typeof generate>, name: string): string {
-  return result.artifacts.find((artifact) => artifact.path.endsWith(`/${name}.model.generated.ts`))?.content ?? '';
+function modelArtifact(artifacts: readonly { readonly path: string; readonly content: string }[], name: string): string {
+  return artifacts.find((artifact) => artifact.path.endsWith(`/${name}.model.generated.ts`))?.content ?? '';
 }
 
 function functionBody(source: string, name: string): string {
@@ -56,13 +56,9 @@ test('model generation preserves imported model identity and detached JSON outpu
   });
   writeFileSync(path.join(value.sourceRoot, 'wallet.model.ts'), readFixture("models/serde-emission-efficiency/model-generation-preserves-imported-model-identity-and-detached-json-output/wallet.model.ts"));
 
-  const result = generate({
-    root: value.root,
-    sources: [path.join(value.sourceRoot, 'wallet.model.ts')],
-    manifestInputs: [path.join(sdk, 'model-manifest.json')],
-    profile: { mobx: false, validation: false },
-  });
-  const generated = modelArtifact(result, 'wallet');
+  writeModelGolemYaml(value.root, { mobx: false, validation: false });
+  await buildModelProject(value.root);
+  const generated = modelArtifact(generatedModelFiles(value.root), 'wallet');
   assert.match(generated, /decodeGeneratedModelTrusted/, 'budget: decoding an already-known external model uses the trusted fast path');
   assert.match(generated, /encodeGeneratedModel/, 'budget: encoding an external model reuses the shared encodeGeneratedModel helper');
   assert.match(generated, /stringifyMoney\(/, 'one stringify function per interned node: wallet calls stringifyMoney instead of inlining it');
@@ -71,9 +67,6 @@ test('model generation preserves imported model identity and detached JSON outpu
     /requireObjectCodec\("Money"\)\.stringify/,
     'budget: a known Money codec is stringified by direct call, not a runtime requireObjectCodec lookup',
   );
-  writeGeneratedArtifacts(result.artifacts);
-  writeModelGolemYaml(value.root, { mobx: false, validation: false });
-  await buildModelProject(value.root);
 
   const sdkModule = await import(pathToFileURL(path.join(value.root, 'build/sdk/index.js')).href) as {
     readonly MoneyModel: new (values?: { amount?: number; currency?: string }) => object;
@@ -102,7 +95,7 @@ test('model decoder leaves unchanged fields in the initializer copy', (t) => {
   );
 
   const result = generate({ root: value.root, profile: { mobx: false, validation: false } });
-  const decode = functionBody(modelArtifact(result, 'item'), 'decodeTItemModel');
+  const decode = functionBody(modelArtifact(result.artifacts, 'item'), 'decodeTItemModel');
   assert.match(
     decode,
     /const result: Record<string, unknown> = \{ \.\.\.values \};/,
@@ -126,8 +119,7 @@ test('generated decoding preserves the constructor and initializer boundaries', 
   writeFileSync(path.join(value.sourceRoot, 'optional-codec.ts'), readFixture("models/serde-emission-efficiency/generated-decoding-preserves-the-constructor-and-initializer-boundaries/optional-codec.ts"));
   writeFileSync(path.join(value.sourceRoot, 'parent.model.ts'), readFixture("models/serde-emission-efficiency/generated-decoding-preserves-the-constructor-and-initializer-boundaries/parent.model.ts"));
 
-  const result = generate({ root: value.root, profile: { mobx: false, validation: false } });
-  writeGeneratedArtifacts(result.artifacts);
+  writeModelGolemYaml(value.root, { mobx: false, validation: false });
   await buildModelProject(value.root);
   // Parent's generated companion imports Child through the ordinary module
   // URL. Keep the test imports on that same URL so constructor identity and
@@ -313,8 +305,9 @@ export class Member extends TMemberBaseModel {}
 export type TTeam = IModel<{ lead: Member; members: Member[] }>;
 export class Team extends TTeamBaseModel {}
 `);
-  const result = generate({ root: value.root, profile: { mobx: false, validation: false } });
-  const generated = modelArtifact(result, 'team');
+  writeModelGolemYaml(value.root, { mobx: false, validation: false });
+  await buildModelProject(value.root);
+  const generated = modelArtifact(generatedModelFiles(value.root), 'team');
   // Nested models call the module's own converter, not the public `fromWireFormat` entry.
   const teamConverters = [...generated.matchAll(/function __golemDecode_TTeam_\d+[\s\S]*?\n}\n/g)].map((match) => match[0]).join('\n');
   assert.doesNotMatch(teamConverters, /fromWireFormat(Member|Stamp)\(/);
@@ -322,8 +315,6 @@ export class Team extends TTeamBaseModel {}
   const memberConverters = [...generated.matchAll(/function __golemDecode_TMember_\d+[\s\S]*?\n}\n/g)].map((match) => match[0]).join('\n');
   assert.match(memberConverters, /convertFromWireTStamp\(/);
 
-  writeGeneratedArtifacts(result.artifacts);
-  await buildModelProject(value.root);
   const { Team } = await import(pathToFileURL(path.join(value.root, 'build/team.model.js')).href);
   // Nested values are the generated classes; a model file's own subclasses aren't visible to its companion.
   const { TMemberBaseModel: Member, TStampBaseModel: Stamp } = await import(pathToFileURL(path.join(value.root, 'build/team.model.generated.js')).href);
@@ -351,8 +342,9 @@ import { TNoteBaseModel } from './note.model.generated.js';
 export type TNote = IModel<{ title: string; body?: string; pinned: boolean }>;
 export class Note extends TNoteBaseModel {}
 `);
-  const result = generate({ root: value.root, profile: { mobx: false, validation: false } });
-  const generated = modelArtifact(result, 'note');
+  writeModelGolemYaml(value.root, { mobx: false, validation: false });
+  await buildModelProject(value.root);
+  const generated = modelArtifact(generatedModelFiles(value.root), 'note');
   const encode = functionBody(generated, 'encodeTNoteModel');
   assert.doesNotMatch(generated, /AbsentField/, 'budget: no sentinel value stands in for an absent field');
   assert.doesNotMatch(encode, /\bdelete\b/, 'budget: absent fields are never added and then deleted, which turns the result into a dictionary-mode object');
@@ -360,8 +352,6 @@ export class Note extends TNoteBaseModel {}
   assert.ok(positions.every((position) => position >= 0), 'every field is assigned conditionally');
   assert.deepEqual(positions, [...positions].sort((a, b) => a - b), 'fields are assigned in declaration order');
 
-  writeGeneratedArtifacts(result.artifacts);
-  await buildModelProject(value.root);
   const { Note } = await import(pathToFileURL(path.join(value.root, 'build/note.model.js')).href);
   const keys = (init: object) => Object.keys(encodeGeneratedModel(new Note(init) as never));
   assert.deepEqual(keys({ title: 't', pinned: true }), ['title', 'pinned']);

@@ -5,9 +5,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import test from 'node:test';
-import { generate } from '#model/generator';
 import { workspace } from './support/process.js';
-import { buildModelProject } from './model-project.js';
+import { buildModelProject, writeModelGolemYaml } from './model-project.js';
 
 test('generated validation formats nested errors without replaying field getters', async t => {
   const root = mkdtempSync(path.join(os.tmpdir(), 'exprtlabs-generated-validation-'));
@@ -24,11 +23,7 @@ test('generated validation formats nested errors without replaying field getters
   }));
   writeFileSync(path.join(root, 'src/getter-replay.model.ts'), readFixture("models/generated-validation-execution/generated-validation-formats-nested-errors-without-replaying-field-getters/example.model.ts"));
   writeFileSync(path.join(root, 'src/tag-message.model.ts'), readFixture("models/generated-validation-execution/nested-whole-object-tag-messages-keep-the-child-path-and-serde-state-unchang/example.model.ts"));
-  const generated = generate({ root, profile: { mobx: false, validation: true } });
-  for (const artifact of generated.artifacts) {
-    mkdirSync(path.dirname(artifact.path), { recursive: true });
-    writeFileSync(artifact.path, artifact.content);
-  }
+  writeModelGolemYaml(root, { mobx: false, validation: true });
   await buildModelProject(root);
   const module = await import(pathToFileURL(path.join(root, 'build/getter-replay.model.js')).href) as {
     exercise(): Promise<{ plain: readonly { path: readonly (string | number)[] }[]; withState: readonly { path: readonly (string | number)[]; message: string }[]; plainReads: number[]; stateReads: number[]; stateUnchanged: boolean }>;

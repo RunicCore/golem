@@ -7,10 +7,9 @@ import test, { type TestContext } from 'node:test';
 import { requireObjectCodec } from '@exprtlabs/golem/serde';
 import { createSchemaGraph } from '@exprtlabs/golem/schema-graph';
 import { command } from './support/process.js';
-import { generatedCodecId } from './support/consumer.js';
-import { copyFixture, readFixture, writeGeneratedArtifacts } from './fixture-project.js';
-import { buildModelProject, createModelProject } from './model-project.js';
-import { generate } from '#model/generator';
+import { generatedCodecIdFromRoot } from './support/consumer.js';
+import { copyFixture, readFixture } from './fixture-project.js';
+import { buildModelProject, createModelProject, writeModelGolemYaml } from './model-project.js';
 
 function tupleModelProject(t: TestContext, name: string) {
   return createModelProject(t, {
@@ -23,16 +22,14 @@ function tupleModelProject(t: TestContext, name: string) {
 test('generated optional and rest tuples retain exact lengths through every serde direction with validation on and off', async t => {
   for (const validation of [false, true]) {
     const { root, sourceRoot } = tupleModelProject(t, `tuple-${validation ? 'validated' : 'trusted'}`);
-    const sourceFile = path.join(sourceRoot, 'tuple.model.ts');
-    fs.writeFileSync(sourceFile, readFixture('models/model-tuples/tuple.model.ts'));
-    const result = generate({ root, sources: [sourceFile], profile: { mobx: false, validation } });
-    writeGeneratedArtifacts(result.artifacts);
+    fs.writeFileSync(path.join(sourceRoot, 'tuple.model.ts'), readFixture('models/model-tuples/tuple.model.ts'));
+    writeModelGolemYaml(root, { mobx: false, validation });
     await buildModelProject(root);
 
     const loaded = await import(pathToFileURL(path.join(root, 'build/tuple.model.js')).href) as {
       readonly Tuple: new (values?: object) => object;
     };
-    const codecId = generatedCodecId(result.artifacts.map(artifact => artifact.content).join('\n'), 'TTuple');
+    const codecId = generatedCodecIdFromRoot(root, 'TTuple');
     const codec = requireObjectCodec(codecId);
     const omitted = new loaded.Tuple({ required: ['required', 9], maybe: ['x'], rest: ['prefix', true] });
     const full = new loaded.Tuple({ required: ['required', 9], maybe: ['x', 2], nested: ['inner'], rest: ['prefix', 1, 2, true] });
@@ -75,15 +72,13 @@ test('generated optional and rest tuples retain exact lengths through every serd
 });
 
 test('readonly array and tuple contracts survive model generation and strict consumer compilation', async (t) => {
-  const { root, sourceRoot } = createModelProject(t, {
+  const { root } = createModelProject(t, {
     prefix: 'golem-model-tuples-',
     name: 'model-tuples',
     compilerOptions: { exactOptionalPropertyTypes: true, noUncheckedIndexedAccess: true },
   });
   copyFixture(root, 'models/model-tuples/readonly');
-  const model = path.join(sourceRoot, 'snapshot.model.ts');
-  const result = generate({ root, sources: [model], profile: { mobx: false, validation: false } });
-  writeGeneratedArtifacts(result.artifacts);
+  writeModelGolemYaml(root, { mobx: false, validation: false });
   await buildModelProject(root);
 });
 
@@ -114,12 +109,9 @@ test('validation-enabled codec emission compiles and preserves array and tuple g
     compilerOptions: { exactOptionalPropertyTypes: true, noUncheckedIndexedAccess: true },
   });
   copyFixture(root, 'models/model-tuples/getter');
-  const sourceRoot = path.join(root, 'src');
-  const model = path.join(sourceRoot, 'snapshot.model.ts');
-  const result = generate({ root, sources: [model], profile: { mobx: false, validation: true } });
-  writeGeneratedArtifacts(result.artifacts);
+  writeModelGolemYaml(root, { mobx: false, validation: true });
   await buildModelProject(root);
-  const codecId = generatedCodecId(result.artifacts.map((artifact) => artifact.content).join('\n'), 'TSnapshot');
+  const codecId = generatedCodecIdFromRoot(root, 'TSnapshot');
   const verifier = path.join(root, 'verify-array-getters.mjs');
   await command(root, process.execPath, [verifier, codecId]);
 });

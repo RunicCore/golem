@@ -3,14 +3,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 
-import { generate } from '#model/generator';
-import { writeGeneratedArtifacts } from './fixture-project.js';
 import { builtinTagsModelSource } from './fixture-templates/models/builtin-tags.js';
-import { buildModelProject, createModelProject, writeModelSources } from './model-project.js';
+import { buildModelProject, createModelProject, generatedModelFiles, writeModelGolemYaml, writeModelSources } from './model-project.js';
 import { getValidator } from '@exprtlabs/golem/validation';
 
-function materializeStandalone(root: string, sourceRoot: string, result: ReturnType<typeof generate>): void {
-  const artifact = result.artifacts.find((item) => item.path.endsWith('/models.validators.generated.js'));
+function materializeStandalone(root: string, sourceRoot: string): void {
+  const artifact = generatedModelFiles(root).find((item) => item.path.endsWith('/models.validators.generated.js'));
   assert.ok(artifact, 'standalone validator artifact');
   const target = path.join(root, 'build', path.relative(sourceRoot, artifact.path));
   fs.mkdirSync(path.dirname(target), { recursive: true });
@@ -72,13 +70,9 @@ for (const { mobx, ajvStandalone } of profiles) {
     const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-builtin-tags-', name: 'builtin-tags' });
     writeModelSources(sourceRoot, { 'a.model.ts': builtinTagsModelSource({ mobx }) });
 
-    const result = generate({
-      root,
-      profile: { mobx, validation: true, ajvStandalone },
-    });
-    writeGeneratedArtifacts(result.artifacts);
+    writeModelGolemYaml(root, { mobx, validation: true, ajvStandalone });
     await buildModelProject(root);
-    if (ajvStandalone) materializeStandalone(root, sourceRoot, result);
+    if (ajvStandalone) materializeStandalone(root, sourceRoot);
     const { A } = await import(path.toNamespacedPath(path.join(root, 'build/a.model.js')));
 
     assert.equal(await getValidator(new A(valid)).validate(), true);

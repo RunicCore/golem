@@ -8,7 +8,7 @@ import { generate as generateOpenApi } from '@exprtlabs/golem-openapi/generator'
 import { generate } from '#model/generator';
 import { command } from './support/process.js';
 import { fixturePath, writeGeneratedArtifacts } from './fixture-project.js';
-import { buildModelProject, createModelProject, writeModelSources } from './model-project.js';
+import { buildModelProject, createModelProject, writeModelGolemYaml, writeModelSources } from './model-project.js';
 
 const MODEL_SOURCE = /\.models?\.ts$/;
 const SDK_MONEY_SPEC = 'models/unify-validate/sdk-money-ref-plus-extra-tvalidation-local-tvalidation-and-tserde-share-one-/money.yaml';
@@ -293,7 +293,7 @@ export class PaymentEditor extends TPaymentEditorBaseModel {
 }
 `,
   });
-  writeGeneratedArtifacts(generate({ root, profile: { mobx: false, validation: true } }).artifacts);
+  writeModelGolemYaml(root, { mobx: false, validation: true });
   writeModelSources(sourceRoot, {
     'main.ts': `import { toWireFormat } from '@exprtlabs/golem/serde';
 import { PaymentEditor, type TPaymentEditor } from './payment-editor.model.js';
@@ -341,7 +341,7 @@ export class Slot extends TSlotBaseModel {}
 export class Visit extends TVisitBaseModel {}
 `,
   });
-  writeGeneratedArtifacts(generate({ root, profile: { mobx: false, validation: true } }).artifacts);
+  writeModelGolemYaml(root, { mobx: false, validation: true });
   await buildModelProject(root);
   const generated = await import(pathToFileURL(path.join(root, 'build/visit.model.generated.js')).href) as {
     readonly toWireFormatTVisit: (value: unknown) => Record<string, unknown>;

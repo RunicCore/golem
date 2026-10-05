@@ -16,9 +16,8 @@ import test, { type TestContext } from 'node:test';
 import { buildCodecValidationPlan, type CodecSchemaClosureEntry } from '@exprtlabs/golem/ajv-tooling';
 import type { ModelTypeDescriptor } from '@exprtlabs/golem/model';
 import { createSchemaGraph } from '@exprtlabs/golem/schema-graph';
-import { generate } from '#model/generator';
 import { workspace } from './support/process.js';
-import { buildModelProject } from './model-project.js';
+import { buildModelProject, generatedModelFiles, writeModelGolemYaml } from './model-project.js';
 import type { ModelValidationContext } from '@exprtlabs/golem/model';
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 
@@ -51,15 +50,8 @@ function fixture(t: TestContext): Fixture {
   return { root, sourceRoot };
 }
 
-function materialize(result: ReturnType<typeof generate>): void {
-  for (const artifact of result.artifacts) {
-    mkdirSync(path.dirname(artifact.path), { recursive: true });
-    writeFileSync(artifact.path, artifact.content);
-  }
-}
-
-function copyStandalone(result: ReturnType<typeof generate>, value: Fixture): string {
-  const artifact = result.artifacts.find(item => item.path.endsWith('/models.validators.generated.js'));
+function copyStandalone(value: Fixture): string {
+  const artifact = generatedModelFiles(value.root).find(item => item.path.endsWith('/models.validators.generated.js'));
   assert.ok(artifact, 'standalone validator artifact');
   const target = path.join(value.root, 'build', path.relative(value.sourceRoot, artifact.path));
   mkdirSync(path.dirname(target), { recursive: true });
@@ -179,9 +171,9 @@ test('standalone object codecs close nested schemas and preserve first/all sync 
   const value = fixture(t);
   writeFileSync(path.join(value.sourceRoot, 'root.model.ts'), readFixture("models/standalone-codecs/standalone-object-codecs-close-nested-schemas-and-preserve-first-all-sync-an/root.model.ts"));
 
-  const result = generate({ root: value.root, profile: { mobx: false, validation: true, ajvStandalone: true } });
-  materialize(result);
-  const generated = result.artifacts.filter(item => item.path.endsWith('.ts')).map(item => item.content).join('\n');
+  writeModelGolemYaml(value.root, { mobx: false, validation: true, ajvStandalone: true });
+  await compile(value.root);
+  const generated = generatedModelFiles(value.root).filter(item => item.path.endsWith('.ts')).map(item => item.content).join('\n');
   assert.match(generated, /modelValidatorSet\.(?:first|all)\[/, 'object codecs bind directly to precompiled validators');
   assert.doesNotMatch(
     generated,
@@ -189,8 +181,7 @@ test('standalone object codecs close nested schemas and preserve first/all sync 
     'standalone codecs bind to precompiled validators instead of importing a runtime Ajv engine',
   );
 
-  await compile(value.root);
-  const validatorsPath = copyStandalone(result, value);
+  const validatorsPath = copyStandalone(value);
   const [{ Root }, { TLeafBaseModel, TMiddleBaseModel, TRootBaseModel }, validators] = await Promise.all([
     import(pathToFileURL(path.join(value.root, 'build/root.model.js')).href),
     import(pathToFileURL(path.join(value.root, 'build/root.model.generated.js')).href),
@@ -337,11 +328,10 @@ test('standalone plans permit equal model names in independent source graphs', a
   writeFileSync(path.join(value.sourceRoot, 'first/item.model.ts'), readFixture("models/standalone-codecs/standalone-plans-permit-equal-model-names-in-independent-source-graphs/item.model.ts"));
   writeFileSync(path.join(value.sourceRoot, 'second/item.model.ts'), readFixture("models/standalone-codecs/standalone-plans-permit-equal-model-names-in-independent-source-graphs/item.model-2.ts"));
 
-  const result = generate({ root: value.root, profile: { mobx: false, validation: true, ajvStandalone: true } });
-  materialize(result);
-  assert.ok(result.artifacts.some(item => item.path.endsWith('/models.validators.generated.js')));
+  writeModelGolemYaml(value.root, { mobx: false, validation: true, ajvStandalone: true });
   await compile(value.root);
-  copyStandalone(result, value);
+  assert.ok(generatedModelFiles(value.root).some(item => item.path.endsWith('/models.validators.generated.js')));
+  copyStandalone(value);
   const [{ Item: FirstItem }, { Item: SecondItem }] = await Promise.all([
     import(pathToFileURL(path.join(value.root, 'build/first/item.model.js')).href),
     import(pathToFileURL(path.join(value.root, 'build/second/item.model.js')).href),

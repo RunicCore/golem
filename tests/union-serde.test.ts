@@ -5,9 +5,8 @@ import { pathToFileURL } from 'node:url';
 import test, { type TestContext } from 'node:test';
 
 import { IssueRepresentation, LibError, LibErrorKind } from '@exprtlabs/golem/errors';
-import { generate } from '#model/generator';
 import { workspace } from './support/process.js';
-import { buildModelProject } from './model-project.js';
+import { buildModelProject, writeModelGolemYaml } from './model-project.js';
 
 async function compile(root: string): Promise<void> {
   await buildModelProject(root);
@@ -42,8 +41,7 @@ function generateRoot(t: TestContext): string {
   ]);
   copyFixtureFile(root, 'models/union-serde/nested-serde/codecs.ts', 'src/codecs.ts');
   copyFixtureFile(root, 'models/union-serde/nested-serde/order.model.ts', 'src/order.model.ts');
-  const result = generate({ root, profile: { mobx: false, validation: true } });
-  writeGeneratedArtifacts(result.artifacts);
+  writeModelGolemYaml(root, { mobx: false, validation: true });
   return root;
 }
 

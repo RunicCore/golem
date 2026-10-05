@@ -2,7 +2,6 @@ import assert from 'node:assert/strict';
 import {
   copyFileSync,
   mkdirSync,
-  readFileSync,
   writeFileSync,
 } from 'node:fs';
 import path from 'node:path';
@@ -12,7 +11,7 @@ import test, { type TestContext } from 'node:test';
 import { deduplicateTagSchemas, type TagSchema } from '#model/emit';
 import { generate } from '#model/generator';
 import { readFixture, writeGeneratedArtifacts } from './fixture-project.js';
-import { buildModelProject, createModelProject, writeModelGolemYaml, writeModelSources, type ModelProject } from './model-project.js';
+import { buildModelProject, createModelProject, generatedModelFiles, writeModelGolemYaml, writeModelSources, type ModelProject } from './model-project.js';
 import { duplicateLocalNameReferenceModelSource } from './fixture-templates/models/model-artifact-efficiency.js';
 import { generate as generateOpenApi } from '@exprtlabs/golem-openapi/generator';
 import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/golem/conversion';
@@ -29,8 +28,8 @@ function fixture(t: TestContext, options: { readonly noUnusedLocals?: boolean } 
   });
 }
 
-function copyStandalone(result: ReturnType<typeof generate>, fixtureValue: ModelProject): void {
-  const artifact = result.artifacts.find((item) => item.path.endsWith('/models.validators.generated.js'));
+function copyStandalone(fixtureValue: ModelProject): void {
+  const artifact = generatedModelFiles(fixtureValue.root).find((item) => item.path.endsWith('/models.validators.generated.js'));
   assert.ok(artifact, 'standalone validator artifact');
   const target = path.join(fixtureValue.root, 'build', path.relative(fixtureValue.sourceRoot, artifact.path));
   mkdirSync(path.dirname(target), { recursive: true });
@@ -92,9 +91,9 @@ test('codec Ajv compiles equivalent MinLength tags in each companion', async (t)
       const source = path.join(fixtureValue.sourceRoot, 'item.model.ts');
       writeFileSync(source, readFixture('models/model-artifact-efficiency/codec-ajv-compiles-equivalent-minlength-tags-in-each-companion/item.model.ts'));
       writeFileSync(path.join(fixtureValue.sourceRoot, 'other.model.ts'), readFixture("models/model-artifact-efficiency/codec-ajv-compiles-equivalent-minlength-tags-in-each-companion/other.model.ts"));
-      const result = generate({ root: fixtureValue.root, profile: { mobx: false, validation: true, ajvStandalone } });
-      writeGeneratedArtifacts(result.artifacts);
-      const generated = result.artifacts.map((item) => item.content).join('\n');
+      writeModelGolemYaml(fixtureValue.root, { mobx: false, validation: true, ajvStandalone });
+      await buildModelProject(fixtureValue.root);
+      const generated = generatedModelFiles(fixtureValue.root).map((item) => item.content).join('\n');
       if (ajvStandalone) {
         assert.match(generated, /createValidatorSet\(/, 'standalone validators are created as a shared set');
         assert.doesNotMatch(
@@ -105,8 +104,7 @@ test('codec Ajv compiles equivalent MinLength tags in each companion', async (t)
       } else {
         assert.equal((generated.match(/createOpenApiSyncAjvEngine\(\{ allErrors: false/g) ?? []).length, 2, 'one fast sync engine per companion');
       }
-      await buildModelProject(fixtureValue.root);
-      if (ajvStandalone) copyStandalone(result, fixtureValue);
+      if (ajvStandalone) copyStandalone(fixtureValue);
       const { Item } = await import(`${pathToFileURL(path.join(fixtureValue.root, 'build/item.model.js')).href}?${ajvStandalone}`) as {
         Item: new (values?: { value?: string; extra?: string }) => { value: string; extra: string };
       };
@@ -135,14 +133,13 @@ test('standalone validator bindings survive strict companion regeneration', asyn
 
   // The first pass emits the base class. Adding the handwritten class mirrors
   // consumer use and forces prospective validation on the second generation.
-  const first = generate({ root: fixtureValue.root, profile });
-  writeGeneratedArtifacts(first.artifacts);
+  writeGeneratedArtifacts(generate({ root: fixtureValue.root, profile }).artifacts);
   writeFileSync(source, readFixture('models/model-artifact-efficiency/standalone-validator-regeneration/cart.model.ts'));
-  const regenerated = generate({ root: fixtureValue.root, profile });
-  writeGeneratedArtifacts(regenerated.artifacts);
 
+  // The build runs the models job, which regenerates the companions beside the existing ones.
+  writeModelGolemYaml(fixtureValue.root, profile);
   await buildModelProject(fixtureValue.root);
-  copyStandalone(regenerated, fixtureValue);
+  copyStandalone(fixtureValue);
   const { Cart } = await import(pathToFileURL(path.join(fixtureValue.root, 'build/cart.model.js')).href);
   assert.equal(await getValidator(new Cart({ count: 2 })).validate(), true);
   assert.equal(await getValidator(new Cart({ count: 3 })).validate(), false, 'custom predicate rejects values accepted by Minimum');
@@ -154,8 +151,7 @@ test('wire-only serde predicates do not create model-plane tag validators', asyn
   mkdirSync(fixtureValue.sourceRoot, { recursive: true });
   writeFileSync(path.join(fixtureValue.sourceRoot, 'codecs.ts'), readFixture("models/model-artifact-efficiency/wire-only-serde-predicates-do-not-create-model-plane-tag-validators/codecs.ts"));
   writeFileSync(path.join(fixtureValue.sourceRoot, 'item.model.ts'), readFixture("models/model-artifact-efficiency/wire-only-serde-predicates-do-not-create-model-plane-tag-validators/item.model.ts"));
-  const result = generate({ root: fixtureValue.root, profile: { mobx: false, validation: true } });
-  writeGeneratedArtifacts(result.artifacts);
+  writeModelGolemYaml(fixtureValue.root, { mobx: false, validation: true });
   await buildModelProject(fixtureValue.root);
   const { Item } = await import(pathToFileURL(path.join(fixtureValue.root, 'build/item.model.js')).href) as {
     Item: new (values?: { value?: number }) => { value: number };
@@ -180,8 +176,7 @@ test('generated tag schemas retain distinct reference closures for duplicate loc
   writeFileSync(path.join(fixtureValue.sourceRoot, 'one/things.model.ts'), duplicateLocalNameReferenceModelSource({ valueType: 'string' }).text);
   writeFileSync(path.join(fixtureValue.sourceRoot, 'two/things.model.ts'), duplicateLocalNameReferenceModelSource({ valueType: 'number' }).text);
 
-  const result = generate({ root: fixtureValue.root, profile: { mobx: false, validation: true } });
-  writeGeneratedArtifacts(result.artifacts);
+  writeModelGolemYaml(fixtureValue.root, { mobx: false, validation: true });
   await buildModelProject(fixtureValue.root);
   const [
     { Parent: OneParent, Child: OneChild },
@@ -225,12 +220,11 @@ for (const ajvStandalone of [false, true]) {
   test(`shared projection helpers retain distinct validators with standalone=${ajvStandalone}`, async t => {
     const value = fixture(t);
     writeFileSync(path.join(value.sourceRoot, 'item.model.ts'), readFixture("models/model-artifact-efficiency/model-artifact-efficiency-item-model/item.model.ts"));
-    const result = generate({ root: value.root, profile: { mobx: false, validation: true, ajvStandalone } });
-    writeGeneratedArtifacts(result.artifacts);
-    const companion = result.artifacts.find(item => item.path.endsWith('/item.model.generated.ts'))?.content ?? '';
-    assert.equal((companion.match(/function decodeTShortPickValue\(/g) ?? []).length, 1);
+    writeModelGolemYaml(value.root, { mobx: false, validation: true, ajvStandalone });
     await buildModelProject(value.root);
-    if (ajvStandalone) copyStandalone(result, value);
+    const companion = generatedModelFiles(value.root).find(item => item.path.endsWith('/item.model.generated.ts'))?.content ?? '';
+    assert.equal((companion.match(/function decodeTShortPickValue\(/g) ?? []).length, 1);
+    if (ajvStandalone) copyStandalone(value);
     const { Container } = await import(pathToFileURL(path.join(value.root, 'build/item.model.js')).href);
     const wire = { first: { value: 'a' }, second: { value: 'abc' } };
     const model = decodeGeneratedModel(Container, wire);
@@ -258,19 +252,18 @@ test('standalone validators inline non-recursive array item models and keep recu
   writeFileSync(path.join(fixtureValue.sourceRoot, 'company.model.ts'),
     readFixture('models/model-artifact-efficiency/array-items-inline/company.model.ts'));
   const profile = { mobx: false, validation: true, ajvStandalone: true } as const;
-  const result = generate({ root: fixtureValue.root, profile });
-  writeGeneratedArtifacts(result.artifacts);
-  const standalone = result.artifacts.find((item) => item.path.endsWith('/models.validators.generated.js'));
+  writeModelGolemYaml(fixtureValue.root, profile);
+  await buildModelProject(fixtureValue.root);
+  const standalone = generatedModelFiles(fixtureValue.root).find((item) => item.path.endsWith('/models.validators.generated.js'));
   assert.ok(standalone);
-  const source = readFileSync(standalone.path, 'utf8');
+  const source = standalone.content;
   const itemCalls = arrayItemCalls(source);
   assert.deepEqual(itemCalls.filter((property) => property !== 'children'), [], 'non-recursive item models are inlined');
   assert.ok(itemCalls.includes('children'), 'TNode children stay a $ref call');
   // A model used as a plain property is validated once per instance, so it keeps its sub-validator call.
   assert.match(source, /(?:validate\d+|wrapper\d+\.validate)\(data\d*\.hq, \{ instancePath: instancePath \+ "\/hq"/, 'a non-array model property stays a $ref call');
 
-  await buildModelProject(fixtureValue.root);
-  copyStandalone(result, fixtureValue);
+  copyStandalone(fixtureValue);
   const { Company, Node } = await import(pathToFileURL(path.join(fixtureValue.root, 'build/company.model.js')).href);
   const invalid = getValidator(new Company({
     departments: [{ title: 'R&D', employees: [{ name: 'a', age: 1 }, { name: '', age: 2 }] }],
@@ -296,14 +289,13 @@ test('standalone validators inline array item models that live in another file',
     writeFileSync(path.join(fixtureValue.sourceRoot, `${name}.model.ts`),
       readFixture(`models/model-artifact-efficiency/array-items-inline/cross-file/${name}.model.ts`));
   }
-  const result = generate({ root: fixtureValue.root, profile: { mobx: false, validation: true, ajvStandalone: true } });
-  writeGeneratedArtifacts(result.artifacts);
-  const standalone = result.artifacts.find((item) => item.path.endsWith('/models.validators.generated.js'));
-  assert.ok(standalone);
-  assert.deepEqual(arrayItemCalls(readFileSync(standalone.path, 'utf8')), [], 'imported item models are inlined');
-
+  writeModelGolemYaml(fixtureValue.root, { mobx: false, validation: true, ajvStandalone: true });
   await buildModelProject(fixtureValue.root);
-  copyStandalone(result, fixtureValue);
+  const standalone = generatedModelFiles(fixtureValue.root).find((item) => item.path.endsWith('/models.validators.generated.js'));
+  assert.ok(standalone);
+  assert.deepEqual(arrayItemCalls(standalone.content), [], 'imported item models are inlined');
+
+  copyStandalone(fixtureValue);
   const { Roster } = await import(pathToFileURL(path.join(fixtureValue.root, 'build/roster.model.js')).href);
   const invalid = getValidator(new Roster({
     departments: [{ title: 'R&D', employees: [{ name: 'a', age: 1 }, { name: '', age: 2 }] }],
@@ -327,15 +319,9 @@ test('an inlined array item keeps the issue source of its own codec', async (t) 
     profile,
   })).artifacts);
   writeModelSources(fixtureValue.sourceRoot, { 'wallet.model.ts': readFixture(`${fixtureRoot}/wallet.model.ts`) });
-  const result = generate({
-    root: fixtureValue.root,
-    profile,
-    manifestInputs: [path.join(fixtureValue.sourceRoot, 'sdk/model-manifest.json')],
-  });
-  writeGeneratedArtifacts(result.artifacts);
   writeModelGolemYaml(fixtureValue.root, profile);
   await buildModelProject(fixtureValue.root);
-  copyStandalone(result, fixtureValue);
+  copyStandalone(fixtureValue);
   const { Wallet } = await import(pathToFileURL(path.join(fixtureValue.root, 'build/wallet.model.js')).href);
   const invalid = getValidator(new Wallet({ coins: [{ amount: 1, currency: 'USD' }, { amount: -1, currency: 'USD' }] }));
   assert.equal(await invalid.validate(), false);

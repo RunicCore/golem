@@ -5,9 +5,8 @@ import test from 'node:test';
 
 import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/golem/conversion';
 import { getValidator } from '@exprtlabs/golem/validation';
-import { generate } from '#model/generator';
-import { copyFixtureFile, writeGeneratedArtifacts } from './fixture-project.js';
-import { buildModelProject, createModelProject } from './model-project.js';
+import { copyFixtureFile } from './fixture-project.js';
+import { buildModelProject, createModelProject, writeModelGolemYaml } from './model-project.js';
 import { isGeneratedModelClass, requireRecord, type GeneratedModelClass } from './openapi/helpers.js';
 
 import { schemaForDescriptor } from '@exprtlabs/golem/schema';
@@ -244,8 +243,8 @@ test('model-plane validation selects the variant class the encoder selects', asy
 
 test('IModel object unions with validation load, validate and reject an unknown tag', async (t) => {
   const { root } = createModelProject(t, { prefix: 'golem-union-validation-', name: 'union-validation' });
-  const source = copyFixtureFile(root, 'models/union-validation/pets.model.ts', 'src/pets.model.ts');
-  writeGeneratedArtifacts(generate({ root, sources: [source], profile: { mobx: false, validation: true } }).artifacts);
+  copyFixtureFile(root, 'models/union-validation/pets.model.ts', 'src/pets.model.ts');
+  writeModelGolemYaml(root, { mobx: false, validation: true });
   await buildModelProject(root);
   const pets = {
     ...requireRecord(await import(pathToFileURL(path.join(root, 'build/pets.model.js')).href), 'pets module'),

@@ -5,9 +5,7 @@ import test from 'node:test';
 
 import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/golem/conversion';
 import { getValidator } from '@exprtlabs/golem/validation';
-import { generate } from '#model/generator';
-import { writeGeneratedArtifacts } from './fixture-project.js';
-import { buildModelProject, createModelProject, writeModelSources } from './model-project.js';
+import { buildModelProject, createModelProject, generatedModelFiles, writeModelGolemYaml, writeModelSources } from './model-project.js';
 import { prototypeFieldsModelSource } from './fixture-templates/models/prototype-fields.js';
 
 // One run keeps mobx and the other keeps validation; the other two profile
@@ -25,11 +23,10 @@ for (const { mobx, validation } of profiles) {
       linkWorkspaceNodeModules: true,
     });
     writeModelSources(sourceRoot, { 'item.model.ts': prototypeFieldsModelSource({ mobx }) });
-    const result = generate({ root, profile: { mobx, validation } });
-    writeGeneratedArtifacts(result.artifacts);
-    const companion = result.artifacts.find((item) => item.path.endsWith('/item.model.generated.ts'))?.content ?? '';
-    assert.match(companion, /defineModelProperty/);
+    writeModelGolemYaml(root, { mobx, validation });
     await buildModelProject(root);
+    const companion = generatedModelFiles(root).find((item) => item.path.endsWith('/item.model.generated.ts'))?.content ?? '';
+    assert.match(companion, /defineModelProperty/);
     const { Item } = await import(`${pathToFileURL(path.join(root, 'build/item.model.js')).href}?${mobx}-${validation}`);
     const values = Object.fromEntries([
       ['label', 'own'],

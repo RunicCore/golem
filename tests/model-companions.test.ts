@@ -7,10 +7,12 @@ import test, { type TestContext } from 'node:test';
 import * as ts from '@exprtlabs/golem/ts';
 import { isModelDeclarationReference } from '@exprtlabs/golem/type-analysis';
 import { command } from './support/process.js';
-import { generatedCodecId } from './support/consumer.js';
+import { generatedCodecIdFromRoot } from './support/consumer.js';
 import {
   buildModelProject,
   createModelProject,
+  generatedModelFiles,
+  writeModelGolemYaml,
   writeModelSources,
 } from './model-project.js';
 import { copyFixtureFile, readFixture, writeGeneratedArtifacts } from './fixture-project.js';
@@ -58,8 +60,9 @@ test('model companions compile with --noUnusedLocals for empty, scalar and neste
       const stem = name.toLowerCase();
       writeModelSources(sourceRoot, { [`${stem}.model.ts`]: companionModelSource({ name, mobx }) });
     }
-    const result = generate({ root, profile });
-    for (const artifact of result.artifacts) {
+    writeModelGolemYaml(root, profile);
+    await buildModelProject(root, ['--noUnusedLocals', '--noUnusedParameters']);
+    for (const artifact of generatedModelFiles(root)) {
       const modelName = modelNames.find(name => path.basename(artifact.path) === `${name.toLowerCase()}.model.generated.ts`);
       if (!modelName) {
         const base = path.basename(artifact.path);
@@ -68,8 +71,6 @@ test('model companions compile with --noUnusedLocals for empty, scalar and neste
       }
       assert.match(artifact.content, new RegExp(`function fillT${modelName}\\(`), `${modelName}: shared fill`);
     }
-    writeGeneratedArtifacts(result.artifacts);
-    await buildModelProject(root, ['--noUnusedLocals', '--noUnusedParameters']);
     // Execution does not depend on the profile, so the verifier runs once.
     if (mobx && validation) {
       const verifier = copyFixtureFile(root, 'models/model-companions/verify-empty-scalar-nested.mjs', 'verify.mjs');
@@ -102,13 +103,13 @@ test('same-file aliases that differ only by the T prefix generate two separate m
   writeModelSources(sourceRoot, {
     'payment.model.ts': readFixture('models/model-companions/duplicate-model/payment.model.ts'),
   });
-  const result = generate({ root, profile: { mobx: false, validation: false } });
-  writeGeneratedArtifacts(result.artifacts);
+  writeModelGolemYaml(root, { mobx: false, validation: false });
   await buildModelProject(root);
-  const companion = result.artifacts.find((artifact) => artifact.path.endsWith('payment.model.generated.ts'))?.content ?? '';
+  const artifacts = generatedModelFiles(root);
+  const companion = artifacts.find((artifact) => artifact.path.endsWith('payment.model.generated.ts'))?.content ?? '';
   assert.match(companion, /export abstract class TPaymentBaseModel\b/);
   assert.match(companion, /export abstract class PaymentBaseModel\b/);
-  const keys = result.artifacts.find((artifact) => artifact.path.endsWith('codec-keys.json'))?.content ?? '';
+  const keys = artifacts.find((artifact) => artifact.path.endsWith('codec-keys.json'))?.content ?? '';
   const tId = keys.match(/payment\.model\.ts#TPayment": "([^"]+)"/)?.[1];
   const id = keys.match(/payment\.model\.ts#Payment": "([^"]+)"/)?.[1];
   assert.match(tId ?? '', /^TPayment_[0-9a-f]{8}$/);
@@ -127,18 +128,26 @@ test('automatic empty discovery returns an empty expected artifact set', (t) => 
   assert.equal(empty.manifestPaths.length, 0);
 });
 
-test('tsconfig ambient declarations participate in executable validation and watching', async (t) => {
+function ambientInvoiceProject(t: TestContext): { readonly root: string; readonly ambient: string } {
   const { root, sourceRoot } = modelProject(t);
   const ambient = path.join(sourceRoot, 'global.d.ts');
   fs.writeFileSync(ambient, 'interface Money { currency: string; }\n');
-  const source = path.join(sourceRoot, 'invoice.model.ts');
   writeModelSources(sourceRoot, { 'invoice.model.ts': tsSource`import type { IModel } from '@exprtlabs/golem/model';\nexport type TInvoice = IModel<{ money: Money }>;\n` });
-  const result = generate({ root, sources: [source], profile: { mobx: false, validation: true } });
-  writeGeneratedArtifacts(result.artifacts);
-  const invoiceId = generatedCodecId(result.artifacts.map((artifact) => artifact.content).join('\n'), 'TInvoice');
+  return { root, ambient };
+}
+
+test('tsconfig ambient declarations participate in executable validation', async (t) => {
+  const { root } = ambientInvoiceProject(t);
+  writeModelGolemYaml(root, { mobx: false, validation: true });
   await buildModelProject(root);
+  const invoiceId = generatedCodecIdFromRoot(root, 'TInvoice');
   const verifier = copyFixtureFile(root, 'models/model-companions/verify-ambient-validation.mjs', 'verify-ambient-validation.mjs');
   await command(root, process.execPath, [verifier, invoiceId]);
+});
+
+test('tsconfig ambient declarations are inputs a watching build follows', (t) => {
+  const { root, ambient } = ambientInvoiceProject(t);
+  const result = generate({ root, profile: { mobx: false, validation: true } });
   assert.equal(result.watchInputs.includes(ambient), true);
 });
 
@@ -174,9 +183,8 @@ test('public generation compiles and executes conversion and rest tuple behavior
   copyFixtureFile(root, 'models/model-companions/sdk-types/types.ts', 'src/sdk/types.ts');
   fs.writeFileSync(path.join(sdk, 'models.ts'), readFixture("models/model-companions/public-generation-compiles-and-executes-conversion-and-rest-tuple-behavior/models.ts"));
   writeManifest(path.join(sdk, 'model-manifest.json'), './models.ts', 'MoneyModel', './types.ts', { mobx: false, validation: true });
-  const source = copyFixtureFile(root, 'models/model-companions/public-generation-compiles-and-executes-conversion-and-rest-tuple-behavior/wallet.model.ts', 'src/wallet.model.ts');
-  const result = generate({ root, sources: [source], profile: { mobx: false, validation: true } });
-  writeGeneratedArtifacts(result.artifacts);
+  copyFixtureFile(root, 'models/model-companions/public-generation-compiles-and-executes-conversion-and-rest-tuple-behavior/wallet.model.ts', 'src/wallet.model.ts');
+  writeModelGolemYaml(root, { mobx: false, validation: true });
   await buildModelProject(root);
   const verifier = copyFixtureFile(root, 'models/model-companions/verify-public-generation.mjs', 'verify-public-generation.mjs');
   await command(root, process.execPath, [verifier]);
@@ -188,8 +196,7 @@ test('golem build rewrites nested model serde calls and preserves class construc
   const sourceFile = path.join(sourceRoot, 'item.model.ts');
   fs.writeFileSync(sourceFile, source);
 
-  const result = generate({ root, sources: [sourceFile], profile: { mobx: false, validation: true } });
-  writeGeneratedArtifacts(result.artifacts);
+  writeModelGolemYaml(root, { mobx: false, validation: true });
   await buildModelProject(root);
 
   const emitted = fs.readFileSync(path.join(root, 'build/item.model.js'), 'utf8');
@@ -217,9 +224,9 @@ test('re-exported IModel and IObject symbols preserve class versus plain-object 
   const sourceFile = path.join(sourceRoot, 'provenance.model.ts');
   fs.writeFileSync(sourceFile, readFixture('models/model-companions/provenance.model.ts'));
 
-  const result = generate({ root, sources: [sourceFile], profile: { mobx: false, validation: false } });
-  writeGeneratedArtifacts(result.artifacts);
-  const generated = result.artifacts.find(artifact => artifact.path.endsWith('provenance.model.generated.ts'))?.content ?? '';
+  writeModelGolemYaml(root, { mobx: false, validation: false });
+  await buildModelProject(root);
+  const generated = generatedModelFiles(root).find(artifact => artifact.path.endsWith('provenance.model.generated.ts'))?.content ?? '';
   assert.match(generated, /export abstract class TProvenanceBaseModel/);
   assert.doesNotMatch(generated, /export abstract class PlainBaseModel/);
   {
@@ -228,7 +235,6 @@ test('re-exported IModel and IObject symbols preserve class versus plain-object 
     assert.equal(aliases.length, 2);
     for (const alias of aliases) assert.equal(isModelDeclarationReference(program.getTypeChecker(), alias.type), true);
   }
-  await buildModelProject(root);
 
   const loaded = await import(pathToFileURL(path.join(root, 'build/provenance.model.js')).href) as {
     readonly Provenance: new (values?: object) => object;

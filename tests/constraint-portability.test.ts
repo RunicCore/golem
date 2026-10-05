@@ -4,11 +4,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 import { Ajv2020, type AnySchema } from 'ajv/dist/2020.js';
-import { generate as generateModels } from '#model/generator';
 import { generate as generateControllers } from '#controllers/generator';
 import { command, workspace } from './support/process.js';
-import { buildModelProject } from './model-project.js';
-import { generatedCodecId } from './support/consumer.js';
+import { buildModelProject, generatedModelFiles, writeModelGolemYaml } from './model-project.js';
+import { generatedCodecIdFromRoot } from './support/consumer.js';
 
 const accepted = [
   { neg: -1 },
@@ -87,21 +86,20 @@ for (const ajvStandalone of [false, true]) {
       for (const value of accepted) assert.equal(validate(value), true, JSON.stringify(validate.errors));
       assert.equal(validate({ builtin: 2 }), false, 'predicate-free Not remains exact');
     }
-    const modelResult = generateModels({ root, profile: { mobx: false, validation: true, ajvStandalone } });
-    writeGeneratedArtifacts(modelResult.artifacts);
-    for (const artifact of modelResult.artifacts) {
+    writeGeneratedArtifacts([{
+      path: path.join(root, 'src/verify.ts'),
+      content: readFixture('models/constraint-portability/verifier/verify.ts'),
+    }]);
+    writeModelGolemYaml(root, { mobx: false, validation: true, ajvStandalone });
+    await buildModelProject(root);
+    for (const artifact of generatedModelFiles(root)) {
       if (artifact.path.endsWith('.generated.js')) {
         const built = path.join(root, 'build', path.relative(path.join(root, 'src'), artifact.path));
         fs.mkdirSync(path.dirname(built), { recursive: true });
         fs.copyFileSync(artifact.path, built);
       }
     }
-    const aId = generatedCodecId(modelResult.artifacts.map((artifact) => artifact.content).join('\n'), 'TA');
-    writeGeneratedArtifacts([{
-      path: path.join(root, 'src/verify.ts'),
-      content: readFixture('models/constraint-portability/verifier/verify.ts'),
-    }]);
-    await buildModelProject(root);
+    const aId = generatedCodecIdFromRoot(root, 'TA');
     await command(root, process.execPath, [
       path.join(root, 'build/verify.js'),
       JSON.stringify(aId),

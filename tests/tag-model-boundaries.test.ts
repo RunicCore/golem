@@ -10,9 +10,7 @@ import { getValidator } from '@exprtlabs/golem/validation';
 import { validationTagKey } from '@exprtlabs/golem/schema';
 import type { ModelTypeDescriptor } from '@exprtlabs/golem/model';
 import { generatedCodecId } from './support/consumer.js';
-import { generate, type GolemModelResult } from '#model/generator';
-import { writeGeneratedArtifacts } from './fixture-project.js';
-import { buildModelProject, createModelProject } from './model-project.js';
+import { buildModelProject, createModelProject, generatedModelFiles, writeModelGolemYaml } from './model-project.js';
 
 function fixture(t: TestContext) {
   return createModelProject(t, {
@@ -21,8 +19,8 @@ function fixture(t: TestContext) {
   });
 }
 
-function copyStandaloneArtifacts(result: GolemModelResult, root: string, sourceRoot: string): void {
-  for (const artifact of result.artifacts.filter(item => item.path.endsWith('.generated.js'))) {
+function copyStandaloneArtifacts(root: string, sourceRoot: string): void {
+  for (const artifact of generatedModelFiles(root).filter(item => item.path.endsWith('.generated.js'))) {
     const built = path.join(root, 'build', path.relative(sourceRoot, artifact.path));
     fs.mkdirSync(path.dirname(built), { recursive: true });
     fs.copyFileSync(artifact.path, built);
@@ -72,10 +70,9 @@ async function buildScenarioProject(t: TestContext, ajvStandalone: boolean, name
       fs.writeFileSync(path.join(sourceRoot, directory, name), readFixture(fixturePath));
     }
   }
-  const result = generate({ root, profile: { mobx: false, validation: true, ajvStandalone } });
-  writeGeneratedArtifacts(result.artifacts);
+  writeModelGolemYaml(root, { mobx: false, validation: true, ajvStandalone });
   await buildModelProject(root);
-  if (ajvStandalone) copyStandaloneArtifacts(result, root, sourceRoot);
+  if (ajvStandalone) copyStandaloneArtifacts(root, sourceRoot);
   return {
     root,
     sourceRoot,

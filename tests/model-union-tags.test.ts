@@ -5,15 +5,15 @@ import { pathToFileURL } from 'node:url';
 import test from 'node:test';
 import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/golem/conversion';
 import { generate } from '#model/generator';
-import { copyFixtureFile, readFixture, writeGeneratedArtifacts } from './fixture-project.js';
-import { buildModelProject, createModelProject } from './model-project.js';
+import { copyFixtureFile, readFixture } from './fixture-project.js';
+import { buildModelProject, createModelProject, writeModelGolemYaml } from './model-project.js';
 import { isGeneratedModelClass, requireRecord, type GeneratedModelClass } from './openapi/helpers.js';
 
 test('an IModel union variant tagged by several literal values is selected by each of them', async (t) => {
   for (const validation of [false, true]) {
     const { root } = createModelProject(t, { prefix: 'golem-union-multi-tag-', name: 'union-multi-tag' });
-    const source = copyFixtureFile(root, 'models/multi-tag/pets.model.ts', 'src/pets.model.ts');
-    writeGeneratedArtifacts(generate({ root, sources: [source], profile: { mobx: false, validation } }).artifacts);
+    copyFixtureFile(root, 'models/multi-tag/pets.model.ts', 'src/pets.model.ts');
+    writeModelGolemYaml(root, { mobx: false, validation });
     await buildModelProject(root);
     const pets = {
       ...requireRecord(await import(pathToFileURL(path.join(root, 'build/pets.model.js')).href), 'pets module'),

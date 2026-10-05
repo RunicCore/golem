@@ -3,8 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import test, { type TestContext } from 'node:test';
 import { getValidator } from '@exprtlabs/golem/validation';
-import { writeGeneratedArtifacts } from './fixture-project.js';
-import { createModelProject, buildModelProject } from './model-project.js';
+import { createModelProject, buildModelProject, writeModelGolemYaml } from './model-project.js';
 import { taggedModelSource } from './fixture-templates/models/model-tags.js';
 import { tsSource, type SourceFragment } from './source-template.js';
 import { generate } from '#model/generator';
@@ -17,7 +16,7 @@ async function validity(t: TestContext, prelude: SourceFragment, field: SourceFr
   const { root, sourceRoot } = fixture(t);
   fs.writeFileSync(path.join(sourceRoot, 'rules.ts'), `export function notBlank(value: string): boolean | string { return value.trim() !== '' || 'blank'; }\n`);
   fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), taggedModelSource({ name: 'A', imports: prelude, fields: field }).text);
-  writeGeneratedArtifacts(generate({ root, profile: { mobx: false, validation: true } }).artifacts);
+  writeModelGolemYaml(root, { mobx: false, validation: true });
   await buildModelProject(root);
   const { A } = await import(path.toNamespacedPath(path.join(root, 'build/a.model.js')));
   const results: boolean[] = [];

@@ -3,11 +3,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 import test, { type TestContext } from 'node:test';
 import { command, workspace } from './support/process.js';
-import { generatedCodecId } from './support/consumer.js';
+import { generatedCodecIdFromRoot } from './support/consumer.js';
 
 import { copyFixture, copyFixtureFile, createFixtureProject, linkProjectPackages, writeGeneratedArtifacts } from './fixture-project.js';
 import { accountModelWithField, accountModelWithMissingImport } from './fixture-templates/models/model-generator.js';
-import { buildModelProject, createModelProject, writeModelSources } from './model-project.js';
+import { buildModelProject, createModelProject, generatedModelFiles, writeModelGolemYaml, writeModelSources } from './model-project.js';
 import { taggedModelSource } from './fixture-templates/models/model-tags.js';
 import { tsSource } from './source-template.js';
 
@@ -67,10 +67,7 @@ test('exports API 1 and emits profile-specific model companions without writes',
 test('getValidator infers generated fields and rejects handwritten subclass fields', async (t: TestContext) => {
   const { root } = project(t);
   copyFixture(root, 'models/model-generator/validation-fields');
-  const sourceRoot = path.join(root, 'src');
-  const source = path.join(sourceRoot, 'account.model.ts');
-  const result = generate({ root, sources: [source], profile: { mobx: false, validation: true } });
-  writeGeneratedArtifacts(result.artifacts);
+  writeModelGolemYaml(root, { mobx: false, validation: true });
   await buildModelProject(root);
 });
 
@@ -173,17 +170,10 @@ test('prospective companions permit a concrete subclass field rename and still r
 test('generated validation executes local references and exact-object rules', async (t: TestContext) => {
   const { root } = project(t);
   copyFixture(root, 'models/model-generator/exact-rules');
-  const sourceRoot = path.join(root, 'src');
-  const source = path.join(sourceRoot, 'models.model.ts');
-  const result = generate({
-    root,
-    sources: [source],
-    profile: { mobx: false, validation: true },
-  });
-  writeGeneratedArtifacts(result.artifacts);
-  const paymentId = generatedCodecId(result.artifacts.map((artifact) => artifact.content).join('\n'), 'TPayment');
-  assert.match(result.artifacts.map(artifact => artifact.content).join('\n'), /export abstract class TPaymentBaseModel/);
+  writeModelGolemYaml(root, { mobx: false, validation: true });
   await buildModelProject(root);
+  const paymentId = generatedCodecIdFromRoot(root, 'TPayment');
+  assert.match(generatedModelFiles(root).map(artifact => artifact.content).join('\n'), /export abstract class TPaymentBaseModel/);
   const verifier = path.join(root, 'verify.mjs');
   await command(root, process.execPath, [verifier, paymentId]);
 });

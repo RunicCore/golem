@@ -5,8 +5,7 @@ import path from 'node:path';
 import test, { type TestContext } from 'node:test';
 
 import { workspace } from './support/process.js';
-import { buildModelProject } from './model-project.js';
-import { generate } from '#model/generator';
+import { buildModelProject, generatedModelFiles, writeModelGolemYaml } from './model-project.js';
 import { getValidator } from '@exprtlabs/golem/validation';
 
 interface Fixture {
@@ -45,16 +44,12 @@ function fixture(t: TestContext): Fixture {
   return { root, sourceRoot };
 }
 
-function writeArtifacts(result: ReturnType<typeof generate>): void {
-  writeGeneratedArtifacts(result.artifacts);
-}
-
 async function compile(root: string): Promise<void> {
   await buildModelProject(root);
 }
 
-function materializeStandalone(result: ReturnType<typeof generate>, fixtureData: Fixture): void {
-  for (const artifact of result.artifacts.filter(item => item.path.endsWith('.generated.js'))) {
+function materializeStandalone(fixtureData: Fixture): void {
+  for (const artifact of generatedModelFiles(fixtureData.root).filter(item => item.path.endsWith('.generated.js'))) {
     const built = path.join(fixtureData.root, 'build', path.relative(fixtureData.sourceRoot, artifact.path));
     fs.mkdirSync(path.dirname(built), { recursive: true });
     fs.copyFileSync(artifact.path, built);
@@ -87,13 +82,9 @@ for (const ajvStandalone of [false, true] as const) {
       },
     ]);
 
-    const result = generate({
-      root: fixtureData.root,
-      profile: { mobx: false, validation: true, ajvStandalone },
-    });
-    writeArtifacts(result);
-    if (ajvStandalone) materializeStandalone(result, fixtureData);
+    writeModelGolemYaml(fixtureData.root, { mobx: false, validation: true, ajvStandalone });
     await compile(fixtureData.root);
+    if (ajvStandalone) materializeStandalone(fixtureData);
 
     const generated = await import(path.toNamespacedPath(path.join(fixtureData.root, 'build/a.model.js')));
     const predicates = await import(path.toNamespacedPath(path.join(fixtureData.root, 'build/predicates.js')));

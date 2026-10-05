@@ -3,8 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import test, { type TestContext } from 'node:test';
 import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/golem/conversion';
-import { writeGeneratedArtifacts } from './fixture-project.js';
-import { createModelProject, buildModelProject } from './model-project.js';
+import { createModelProject, buildModelProject, writeModelGolemYaml } from './model-project.js';
 import { taggedModelSource } from './fixture-templates/models/model-tags.js';
 import { COUNT_DIST_FILES, writeCodecPackage } from './fixture-templates/models/codec-package.js';
 import { tsSource } from './source-template.js';
@@ -25,11 +24,12 @@ const SHARED_MODELS = 'src/generated/models/models.generated.ts';
 const EXPORTS = { './codecs': { types: './dist/codecs.d.ts', import: './dist/codecs.js' }, './tags': { types: './dist/tags.d.ts', import: './dist/tags.js' } };
 const model = taggedModelSource({ name: 'A', imports: tsSource`import type { PkgCount, PkgVarchar } from '@fixture/pg/tags';`, fields: tsSource`count: PkgCount; name: PkgVarchar<4>` }).text;
 
+/** Builds the project, whose models job generates once, then checks the shared models file that build wrote. */
 async function roundTrip(root: string): Promise<void> {
+  await buildModelProject(root);
   const generated = fs.readFileSync(path.join(root, SHARED_MODELS), 'utf8');
   assert.match(generated, /from "@fixture\/pg\/codecs"/);
   assert.doesNotMatch(generated, /node_modules|\.d\.js/);
-  await buildModelProject(root);
   const { A } = await import(path.toNamespacedPath(path.join(root, 'build/a.model.js')));
   const decoded = decodeGeneratedModel(A, { count: '42', name: 'abcd' });
   assert.equal(decoded.count, 42);
@@ -40,7 +40,7 @@ test('codec declared in an installed package dist/*.d.ts imports by package spec
   const { root, sourceRoot } = project(t);
   writeCodecPackage(path.join(root, 'node_modules/@fixture/pg'), { name: '@fixture/pg', exports: EXPORTS, files: COUNT_DIST_FILES });
   fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), model);
-  writeGeneratedArtifacts(generate({ root, profile: { mobx: false, validation: true } }).artifacts);
+  writeModelGolemYaml(root, { mobx: false, validation: true });
   await roundTrip(root);
 });
 
@@ -65,7 +65,7 @@ test('wildcard export reaches the codec', async t => {
   const { root, sourceRoot } = project(t);
   writeCodecPackage(path.join(root, 'node_modules/@fixture/pg'), { name: '@fixture/pg', exports: { './*': { types: './dist/*.d.ts', import: './dist/*.js' } }, files: COUNT_DIST_FILES });
   fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), model);
-  writeGeneratedArtifacts(generate({ root, profile: { mobx: false, validation: true } }).artifacts);
+  writeModelGolemYaml(root, { mobx: false, validation: true });
   await roundTrip(root);
 });
 
@@ -92,7 +92,7 @@ test('exports without a types condition reach the declaration file beside each t
   const { root, sourceRoot } = project(t);
   writeCodecPackage(path.join(root, 'node_modules/@fixture/pg'), { name: '@fixture/pg', exports: { './codecs': './dist/codecs.js', './tags': './dist/tags.js' }, files: COUNT_DIST_FILES });
   fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), model);
-  writeGeneratedArtifacts(generate({ root, profile: { mobx: false, validation: true } }).artifacts);
+  writeModelGolemYaml(root, { mobx: false, validation: true });
   await roundTrip(root);
 });
 
@@ -100,7 +100,7 @@ test('a nameless nested package.json inside the codec package does not hide the 
   const { root, sourceRoot } = project(t);
   writeCodecPackage(path.join(root, 'node_modules/@fixture/pg'), { name: '@fixture/pg', exports: EXPORTS, files: { ...COUNT_DIST_FILES, 'dist/package.json': '{"type":"module"}' } });
   fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), model);
-  writeGeneratedArtifacts(generate({ root, profile: { mobx: false, validation: true } }).artifacts);
+  writeModelGolemYaml(root, { mobx: false, validation: true });
   await roundTrip(root);
 });
 

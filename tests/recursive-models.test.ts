@@ -4,9 +4,7 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import test, { type TestContext } from 'node:test';
 import type { GolemProfile } from '@exprtlabs/golem/generator-api';
-import { generate } from '#model/generator';
-import { writeGeneratedArtifacts } from './fixture-project.js';
-import { buildModelProject, createModelProject, writeModelSources } from './model-project.js';
+import { buildModelProject, createModelProject, writeModelGolemYaml, writeModelSources } from './model-project.js';
 
 const sources = {
   'tree.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
@@ -38,7 +36,7 @@ for (const [label, profile] of profiles) {
       prefix: 'golem-recursive-models-', linkTypescript: true, allowJs: profile.ajvStandalone === true,
     });
     writeModelSources(sourceRoot, sources);
-    writeGeneratedArtifacts(generate({ root, profile }).artifacts);
+    writeModelGolemYaml(root, profile);
     await buildModelProject(root);
     const codecs = await import(pathToFileURL(path.join(root, 'build/tree.model.generated.js')).href) as Codecs;
 

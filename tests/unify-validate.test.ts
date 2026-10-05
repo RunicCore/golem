@@ -8,8 +8,7 @@ import { decodeGeneratedModel } from '@exprtlabs/golem/conversion';
 import { requireObjectCodec } from '@exprtlabs/golem/serde';
 import { getValidator, validateInstance } from '@exprtlabs/golem/validation';
 import { generate as generateOpenApi } from '@exprtlabs/golem-openapi/generator';
-import { generate } from '#model/generator';
-import { buildModelProject } from './model-project.js';
+import { buildModelProject, writeModelGolemYaml } from './model-project.js';
 import { command, workspace } from './support/process.js';
 import { generatedCodecIdFromRoot } from './support/consumer.js';
 import { pathToFileURL } from 'node:url';
@@ -79,12 +78,12 @@ test('global validation true emits codec Ajv for IObject and IModel', async (t: 
     path: path.join(sourceRoot, 'payload.model.ts'),
     content: readFixture('models/unify-validate/global-validation-true-emits-codec-ajv-for-iobject-and-imodel/payload.model.ts'),
   }]);
-  writeArtifacts(generate({ root, profile: { mobx: false, validation: true } }));
+  writeModelGolemYaml(root, { mobx: false, validation: true });
+  await compile(root);
   const source = generatedText(root);
   assertAjvEngineCreated(source);
   assert.match(source, /export function validateTPayload\b/);
   assert.match(source, /export function validateTAlias\b/);
-  await compile(root);
   const { Payload } = await import(pathToFileURL(path.join(root, 'build/payload.model.js')).href);
   const codec = requireObjectCodec(generatedCodecIdFromRoot(root, 'TPayload'));
   const model = new Payload({ title: 'ok' });
@@ -104,7 +103,7 @@ test('I* validation option overrides the global flag in both directions and mixe
     path: path.join(sourceRoot, 'mixed.model.ts'),
     content: readFixture('models/unify-validate/i-validation-option-overrides-the-global-flag-in-both-directions-and-mixed-f/mixed.model.ts'),
   }]);
-  writeArtifacts(generate({ root, profile: { mobx: false, validation: false } }));
+  writeModelGolemYaml(root, { mobx: false, validation: false });
   await compile(root);
   const { Checked } = await import(pathToFileURL(path.join(root, 'build/mixed.model.js')).href);
   const checkedCodec = requireObjectCodec(generatedCodecIdFromRoot(root, 'TChecked'));
@@ -127,7 +126,7 @@ test('nested interned child with validation false is opaque; parent field tags s
       content: readFixture('models/unify-validate/nested-interned-child-with-validation-false-is-opaque-parent-field-tags-stil/nested.model.ts'),
     },
   ]);
-  writeArtifacts(generate({ root, profile: { mobx: false, validation: true } }));
+  writeModelGolemYaml(root, { mobx: false, validation: true });
   await compile(root);
   const { Parent } = await import(pathToFileURL(path.join(root, 'build/nested.model.js')).href);
   const codec = requireObjectCodec(generatedCodecIdFromRoot(root, 'TParent'));
@@ -161,16 +160,12 @@ test('SDK Money $ref plus extra TValidation, local TValidation, and TSerde compi
       content: readFixture('models/unify-validate/sdk-money-ref-plus-extra-tvalidation-local-tvalidation-and-tserde-share-one-/checkout.model.ts'),
     },
   ]);
-  writeArtifacts(generate({
-    root,
-    profile: { mobx: false, validation: true },
-    manifestInputs: [path.join(sourceRoot, 'sdk/model-manifest.json')],
-  }));
+  writeModelGolemYaml(root, { mobx: false, validation: true });
+  await compile(root);
   const source = generatedText(root);
   assertAjvEngineCreated(source);
   const companion = fs.readFileSync(path.join(sourceRoot, 'checkout.model.generated.ts'), 'utf8');
   assert.equal((companion.match(/createOpenApiSyncAjvEngine\(\{ allErrors: false/g) ?? []).length, 1, 'one fast engine in the parent companion');
-  await compile(root);
   const { Checkout } = await import(pathToFileURL(path.join(root, 'build/checkout.model.js')).href);
   const codec = requireObjectCodec(generatedCodecIdFromRoot(root, 'TCheckout'));
   const validWire = {

@@ -7,7 +7,7 @@ import type { ModelTypeDescriptor } from '@exprtlabs/golem/model';
 import { createExecutableValidationMemo, hasExecutableValidation } from '@exprtlabs/golem/schema';
 import { generate } from '#model/generator';
 import { writeGeneratedArtifacts } from './fixture-project.js';
-import { buildModelProject, createModelProject, writeModelSources } from './model-project.js';
+import { buildModelProject, createModelProject, writeModelGolemYaml, writeModelSources } from './model-project.js';
 import { command } from './support/process.js';
 
 const profiles: readonly (readonly [string, GolemProfile])[] = [
@@ -216,11 +216,9 @@ for (const [label, profile] of profiles) {
       ...cycleSources,
       ...mixedCycleSources,
     });
-    const { artifacts } = generate({ root, profile });
-    writeGeneratedArtifacts(artifacts);
-    const generated = (name: string): string =>
-      artifacts.find((artifact) => artifact.path.endsWith(name))?.content ?? '';
+    writeModelGolemYaml(root, profile);
     await buildModelProject(root);
+    const generated = (name: string): string => fs.readFileSync(path.join(sourceRoot, name), 'utf8');
     const validation = profile.validation ? 'validate' : 'skip';
 
     for (const chain of [modelChain, objectChain]) {

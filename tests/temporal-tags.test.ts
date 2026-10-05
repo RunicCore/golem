@@ -3,11 +3,9 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import test, { type TestContext } from 'node:test';
-import { writeGeneratedArtifacts } from './fixture-project.js';
-import { createModelProject, buildModelProject } from './model-project.js';
+import { createModelProject, buildModelProject, writeModelGolemYaml } from './model-project.js';
 import { taggedModelSource } from './fixture-templates/models/model-tags.js';
 import { tsSource } from './source-template.js';
-import { generate } from '#model/generator';
 
 async function build(t: TestContext) {
   const { root, sourceRoot } = createModelProject(t, {
@@ -18,7 +16,7 @@ async function build(t: TestContext) {
     imports: tsSource`import type { TemporalDuration, TemporalInstant, TemporalPlainDate, TemporalPlainDateTime, TemporalPlainTime, TemporalZonedDateTime } from '@exprtlabs/golem/temporal';`,
     fields: tsSource`at: TemporalInstant; zoned: TemporalZonedDateTime; day: TemporalPlainDate; local: TemporalPlainDateTime; time: TemporalPlainTime; span: TemporalDuration; maybe: TemporalInstant | null`,
   }).text);
-  writeGeneratedArtifacts(generate({ root, profile: { mobx: false, validation: true } }).artifacts);
+  writeModelGolemYaml(root, { mobx: false, validation: true });
   await buildModelProject(root);
   return import(path.toNamespacedPath(path.join(root, 'build/a.model.generated.js'))) as Promise<{
     parseTA: (text: string) => Record<string, unknown>;

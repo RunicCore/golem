@@ -12,7 +12,7 @@ import type { GolemProfile } from '#golem/generator-api';
 import { generate } from '#model/generator';
 import { buildModelProject, writeModelGolemYaml } from './model-project.js';
 import { generatedCodecIdFromRoot } from './support/consumer.js';
-import { readFixture, writeGeneratedArtifacts } from './fixture-project.js';
+import { readFixture } from './fixture-project.js';
 import { modelAliasSource, referencedPolicyModelSource, taggedProfilePayloadSource } from './fixture-templates/models/profile-options.js';
 import { tsSource, type SourceFragment } from './source-template.js';
 
@@ -153,8 +153,6 @@ for (const item of [
     const { root, sourceRoot, source } = modelProject(t);
     fs.writeFileSync(path.join(sourceRoot, 'validators.ts'), readFixture('models/profile-options/validators.ts'));
     fs.writeFileSync(source, taggedProfilePayloadSource({ modelOptions: item.options }).text);
-    const result = generate({ root, sources: [source], profile: profile({ allowAny: item.global }) });
-    writeGeneratedArtifacts(result.artifacts);
     writeModelGolemYaml(root, profile({ allowAny: item.global }));
     await compileModel(root);
     const { Payload } = await import(path.toNamespacedPath(path.join(root, 'build/payload.model.js')));

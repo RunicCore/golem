@@ -3,8 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import test, { type TestContext } from 'node:test';
 import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/golem/conversion';
-import { writeGeneratedArtifacts } from './fixture-project.js';
-import { createModelProject, buildModelProject } from './model-project.js';
+import { createModelProject, buildModelProject, writeModelGolemYaml } from './model-project.js';
 import { taggedModelSource } from './fixture-templates/models/model-tags.js';
 import { writeCodecPackage } from './fixture-templates/models/codec-package.js';
 import { tsSource, type SourceFragment } from './source-template.js';
@@ -57,14 +56,13 @@ type Bytes = Uint8Array & TSerde<typeof encodeBytes, typeof decodeBytes>;
 type Price = Money & TSerde<typeof encodeMoney, typeof decodeMoney>;
 type When = Temporal.Instant & TSerde<typeof encodeInstant, typeof decodeInstant>;
 type Big = bigint & TSerde<typeof encodeBig, typeof decodeBig>;`, fields }).text);
-  const result = generate({ root, profile: { mobx: false, validation: true } });
-  writeGeneratedArtifacts(result.artifacts);
+  writeModelGolemYaml(root, { mobx: false, validation: true });
   fs.mkdirSync(path.join(root, 'build'), { recursive: true });
   fs.copyFileSync(path.join(sourceRoot, 'temporal-runtime.js'), path.join(root, 'build/temporal-runtime.js'));
   await import(path.toNamespacedPath(path.join(root, 'build/temporal-runtime.js')));
   await buildModelProject(root);
   const { A } = await import(path.toNamespacedPath(path.join(root, 'build/a.model.js')));
-  return { A, result, root };
+  return { A, generatedSource: fs.readFileSync(path.join(sourceRoot, 'a.model.generated.ts'), 'utf8'), root };
 }
 
 test('class-valued TSerde fields round-trip', async t => {
@@ -102,8 +100,7 @@ test('invalid wire value is rejected before decoding', async t => {
 });
 
 test('generated model type names the class', async t => {
-  const { result } = await build(t, tsSource`price: Price; when: When; bytes: Bytes`);
-  const generated = result.artifacts.find(a => a.path.endsWith('a.model.generated.ts'))?.content ?? '';
+  const { generatedSource: generated } = await build(t, tsSource`price: Price; when: When; bytes: Bytes`);
   assert.match(generated, /import type \{ Money as __golemClass\d+ \} from "\.\/money\.js"/);
   assert.match(generated, /Temporal\.Instant/);
   assert.match(generated, /Uint8Array/);
@@ -117,7 +114,7 @@ test('class-value field under the MobX profile', async t => {
   fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), taggedModelSource({ name: 'A', imports: tsSource`import type { TSerde } from '@exprtlabs/golem/tags';
 import { encodeBytes, decodeBytes } from './codecs.js';
 type Bytes = Uint8Array & TSerde<typeof encodeBytes, typeof decodeBytes>;`, fields: tsSource`bytes: Bytes` }).text);
-  writeGeneratedArtifacts(generate({ root, profile: { mobx: true, validation: true } }).artifacts);
+  writeModelGolemYaml(root, { mobx: true, validation: true });
   await buildModelProject(root);
   const { A } = await import(path.toNamespacedPath(path.join(root, 'build/a.model.js')));
   const model = decodeGeneratedModel(A, { bytes: 'AQID' });
@@ -243,13 +240,12 @@ import { encodeThird, decodeThird } from './third.js';
 type First = Cash & TSerde<typeof encodeFirst, typeof decodeFirst>;
 type Second = SecondMoney & TSerde<typeof encodeSecond, typeof decodeSecond>;
 type Third = ThirdMoney & TSerde<typeof encodeThird, typeof decodeThird>;`, fields: tsSource`first: First; second: Second; third: Third` }).text);
-  const result = generate({ root, profile: { mobx: false, validation: true } });
-  writeGeneratedArtifacts(result.artifacts);
-  const generated = result.artifacts.find(a => a.path.endsWith('a.model.generated.ts'))?.content ?? '';
+  writeModelGolemYaml(root, { mobx: false, validation: true });
+  await buildModelProject(root);
+  const generated = fs.readFileSync(path.join(sourceRoot, 'a.model.generated.ts'), 'utf8');
   assert.match(generated, /import type \{ Cash as __golemClass\d+ \} from "\.\/first\/money\.js"/);
   assert.match(generated, /import type \{ default as __golemClass\d+ \} from "\.\/second\/money\.js"/);
   assert.match(generated, /import type \{ Money as __golemClass\d+ \} from "\.\/third\.js"/);
-  await buildModelProject(root);
   const { A } = await import(path.toNamespacedPath(path.join(root, 'build/a.model.js')));
   const wire = { first: 'a', second: 'b', third: 'c' };
   assert.deepEqual(encodeGeneratedModel(decodeGeneratedModel(A, wire)), wire);

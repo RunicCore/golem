@@ -5,10 +5,9 @@ import test, { type TestContext } from 'node:test';
 import { IssueRepresentation, LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 import { requireObjectCodec } from '@exprtlabs/golem/serde';
 import { validateInstance } from '@exprtlabs/golem/validation';
-import { generate } from '#model/generator';
 import { readFixture, writeGeneratedArtifacts } from './fixture-project.js';
 import { generate as generateOpenApi } from '@exprtlabs/golem-openapi/generator';
-import { buildModelProject, createModelProject, writeModelGolemYaml, writeModelSources } from './model-project.js';
+import { buildModelProject, createModelProject, generatedModelFiles, writeModelGolemYaml, writeModelSources } from './model-project.js';
 
 const COUNTER = `export let calls = 0;
 export function notBlank(value: string): boolean | string { calls++; return value.trim().length > 0 || 'blank'; }
@@ -42,10 +41,9 @@ const firstIssue = (error: unknown) => (error as LibError).issues[0];
 async function project(t: TestContext, profile: { mobx: false; validation: true; ajvStandalone?: boolean }) {
   const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-single-pass-', name: 'single-pass', allowJs: profile.ajvStandalone === true });
   writeModelSources(sourceRoot, { 'counter.ts': COUNTER, 'order.model.ts': ORDER });
-  const result = generate({ root, profile });
-  writeGeneratedArtifacts(result.artifacts);
+  writeModelGolemYaml(root, profile);
   await buildModelProject(root);
-  const source = result.artifacts.map(a => a.content).join('\n');
+  const source = generatedModelFiles(root).map(a => a.content).join('\n');
   const counter = await import(pathToFileURL(path.join(root, 'build/counter.js')).href) as { calls: number; reset(): void };
   const models = await import(pathToFileURL(path.join(root, 'build/order.model.js')).href) as { Order: new (v?: object) => object; RuleOnly: new (v?: object) => object };
   return { source, counter, ...models, order: requireObjectCodec('TOrder'), plain: requireObjectCodec('TPlainOrder'), ruleOnly: requireObjectCodec('TRuleOnly') };
@@ -99,7 +97,6 @@ test('a rule on an SDK model runs once per parse and IObject enforces it (standa
   writeModelSources(root, { 'money.yaml': readFixture(`${MONEY_FIXTURE}/money.yaml`) });
   writeGeneratedArtifacts((await generateOpenApi({ input: path.join(root, 'money.yaml'), output: path.join(sourceRoot, 'sdk'), name: 'Payments', profile })).artifacts);
   writeModelSources(sourceRoot, { 'rules.ts': readFixture(`${MONEY_FIXTURE}/rules.ts`), 'checkout.model.ts': readFixture(`${MONEY_FIXTURE}/checkout.model.ts`) });
-  writeGeneratedArtifacts(generate({ root, profile, manifestInputs: [path.join(sourceRoot, 'sdk/model-manifest.json')] }).artifacts);
   writeModelGolemYaml(root, profile);
   await buildModelProject(root);
   const rules = await import(pathToFileURL(path.join(root, 'build/rules.js')).href) as { extraMoneyCalls: number };
@@ -140,8 +137,6 @@ for (const profileValidation of [true, false]) {
   test(`validation toggles behave as the spec states (profile validation ${profileValidation})`, async t => {
     const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-single-pass-toggles-', name: 'single-pass-toggles' });
     writeModelSources(sourceRoot, { 'counter.ts': COUNTER, 'toggles.model.ts': TOGGLES });
-    const result = generate({ root, profile: { mobx: false, validation: profileValidation } });
-    writeGeneratedArtifacts(result.artifacts);
     writeModelGolemYaml(root, { mobx: false, validation: profileValidation });
     await buildModelProject(root);
     const counter = await import(pathToFileURL(path.join(root, 'build/counter.js')).href) as { calls: number; reset(): void };
@@ -182,7 +177,7 @@ for (const profileValidation of [true, false]) {
       const blank = new models.Parent({ child: { secret: 'x' }, note: '  ', when: new Date(value.when) });
       assert.equal(parentCodec.validate(blank), false, 'a blank parent note is rejected');
       assert.ok((await validateInstance(blank)).some(issue => issue.path[0] === 'note'));
-      const source = result.artifacts.map(a => a.content).join('\n');
+      const source = generatedModelFiles(root).map(a => a.content).join('\n');
       const parentModelOnly = source.split('\n').find(line => line.includes('const __resolvedModelOnlySchema_TParent')) ?? '';
       assert.ok(parentModelOnly.length > 0 && !parentModelOnly.includes('Child'), 'the parent residual does not reference the opaque child');
     } else {
@@ -203,7 +198,7 @@ for (const [label, profile] of [['runtime Ajv', { mobx: false, validation: true 
       'predicates.ts': readFixture('models/constraint-callback-composition/constraint-callback-composition-predicates/predicates.ts'),
       'a.model.ts': readFixture('models/constraint-callback-composition/nested-value-callbacks/a.model.ts'),
     });
-    writeGeneratedArtifacts(generate({ root, profile }).artifacts);
+    writeModelGolemYaml(root, profile);
     await buildModelProject(root);
     const predicates = await import(pathToFileURL(path.join(root, 'build/predicates.js')).href) as { positiveCalls: number; reset(): void };
     const { A } = await import(pathToFileURL(path.join(root, 'build/a.model.js')).href) as { A: new (v?: object) => object };
@@ -227,7 +222,7 @@ export class Stop extends TStopBaseModel {}
 export type TTrip = IModel<{ at: Date; stop: Stop }>;
 export class Trip extends TTripBaseModel {}
 ` });
-  writeGeneratedArtifacts(generate({ root, profile: { mobx: false, validation: true } }).artifacts);
+  writeModelGolemYaml(root, { mobx: false, validation: true });
   await buildModelProject(root);
   const { Trip } = await import(pathToFileURL(path.join(root, 'build/visit.model.js')).href) as { Trip: new (v?: object) => object };
   const { createOpenApiSyncAjvEngine } = await import('@exprtlabs/golem/ajv');
