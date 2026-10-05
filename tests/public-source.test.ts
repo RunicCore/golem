@@ -163,9 +163,9 @@ test('interrupted documentation build output stays outside a public source expor
   ]);
 });
 
-test('golem build state and the rewrite index stay outside a public source export, but the committed outputs index stays in', (t) => {
+test('golem build state and the job records stay outside a public source export, but the committed outputs index stays in', (t) => {
   const root = publicFixture(t);
-  const generated = ['examples/app/.golem/rewrites.json', 'examples/app/.golem/build/tsconfig/stage/tsconfig.json'];
+  const generated = ['examples/app/.golem/jobs.json', 'examples/app/.golem/build/tsconfig/stage/tsconfig.json'];
   const committed = 'examples/app/.golem/outputs.json';
   for (const relative of [...generated, committed]) writeFixture(root, relative, '{}\n');
   const destination = path.join(root, '.cache', 'export');

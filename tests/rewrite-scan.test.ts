@@ -4,8 +4,8 @@ import path from 'node:path';
 import test, { type TestContext } from 'node:test';
 
 import { runPipeline } from '#golem/cli';
-import { applyRewrites, GolemRewriteStaleError, readRewriteIndex } from '#golem/rewrite';
-import { assertRewriteIndexCurrent, RewriteScanner, scanProjectRewrites, writeRewriteIndex, type FileScanResult } from '#golem/rewrite-scan';
+import { applyRewrites } from '#golem/rewrite';
+import { RewriteScanner, scanProjectRewrites, writeRewriteIndex, type FileScanResult } from '#golem/rewrite-scan';
 import { decodeMappings } from '#golem/source-map';
 import { createProjectProgram } from '@exprtlabs/golem/type-analysis';
 import { writeSdk } from '#openapi/generator';
@@ -229,20 +229,6 @@ function indexScan(root: string): ReturnType<typeof scanProjectRewrites> {
   return scanProjectRewrites({ root, configFile: path.join(root, 'tsconfig.json'), nest: false });
 }
 
-test('an index is current only while it equals a fresh scan', (t) => {
-  const root = project(t, ['calls.ts']);
-  writeRewriteIndex(root, indexScan(root).index);
-  assertRewriteIndexCurrent(root, indexScan(root).index);
-  fs.appendFileSync(path.join(root, 'src/calls.ts'), '// edited\n');
-  assert.throws(() => assertRewriteIndexCurrent(root, indexScan(root).index), (error: unknown) =>
-    error instanceof GolemRewriteStaleError && error.file === 'src/calls.ts' && /src\/calls\.ts is out of date in \.golem\/rewrites\.json/.test(error.message));
-});
-
-test('a project without an index is current', (t) => {
-  const root = project(t, ['calls.ts']);
-  assertRewriteIndexCurrent(root, indexScan(root).index);
-});
-
 test('the same project always writes the same index, with its files and edits in order', (t) => {
   const root = project(t, ['calls.ts', 'construct.ts', 'ledger.model.ts', 'ledger.model.generated.ts']);
   const first = indexScan(root);
@@ -284,78 +270,35 @@ export const payment = parse<Payment>('{}');
   return { root, config: path.join(root, 'golem.yaml') };
 }
 
-test('golem generate writes the index, writes it identically twice, and a model change updates the ids of files that did not change', async (t) => {
+test('golem check reports the sites golem cannot rewrite with their code and position, and a rewritable project passes', async (t) => {
   const { root, config } = generatedProject(t);
-  const indexFile = path.join(root, '.golem/rewrites.json');
-
   await runPipeline(config);
-  const first = fs.readFileSync(indexFile, 'utf8');
-  const index = readRewriteIndex(root);
-  assert.deepEqual(Object.keys(index?.files ?? {}), ['src/money.model.ts', 'src/use.ts']);
-  const usedId = (): string => /requireObjectCodec\("(TPayment_[0-9a-f]{8})"\)/.exec(readRewriteIndex(root)?.files['src/use.ts']?.edits[0]?.text ?? '')?.[1] ?? '';
-  const before = usedId();
-  assert.match(before, /^TPayment_[0-9a-f]{8}$/);
-  assert.match(readRewriteIndex(root)?.files['src/money.model.ts']?.edits[0]?.text ?? '', new RegExp(`registerIModelClass\\("${before}", Payment\\)`));
-
-  await runPipeline(config);
-  assert.equal(fs.readFileSync(indexFile, 'utf8'), first, 'a second run writes the same bytes');
   await runPipeline(config, { check: true });
 
-  fs.writeFileSync(path.join(root, 'src/money.model.ts'), fs.readFileSync(path.join(root, 'src/money.model.ts'), 'utf8').replace('note: string', 'note: string; extra: string'));
-  await runPipeline(config);
-  assert.notEqual(usedId(), before, 'use.ts did not change, its codec did');
-  await runPipeline(config, { check: true });
-
-  fs.appendFileSync(path.join(root, 'src/use.ts'), '// edited\n');
-  await assert.rejects(runPipeline(config, { check: true }), /src\/use\.ts is out of date in \.golem\/rewrites\.json/);
   fs.writeFileSync(path.join(root, 'src/use.ts'), "import { parse } from '@exprtlabs/golem/serde';\nexport const bad = parse<string | null>('{}');\n");
-  await assert.rejects(runPipeline(config), /RUNM1066 \(src\/use\.ts:2:20\): parse type argument must be a single type name or typeof expression/);
+  await assert.rejects(runPipeline(config, { check: true }), /RUNM1066 \(src\/use\.ts:2:20\): parse type argument must be a single type name or typeof expression/);
+  fs.writeFileSync(path.join(root, 'src/use.ts'), "import { parse } from '@exprtlabs/golem/serde';\nimport { Payment } from './money.model.js';\nexport const payment = parse<Payment>('{}');\n");
+  await runPipeline(config, { check: true });
 });
 
-test('golem check rescans: a new call, a stale codec id and a removed file fail it, an up-to-date index and a missing index pass', async (t) => {
-  const { root, config } = generatedProject(t);
-  const indexFile = path.join(root, '.golem/rewrites.json');
-  await runPipeline(config);
-  fs.rmSync(indexFile);
-  await runPipeline(config, { check: true });
-  assert.equal(fs.existsSync(indexFile), false, 'check without an index passes and writes none');
-  await runPipeline(config);
-  await runPipeline(config, { check: true });
-
-  const index = fs.readFileSync(indexFile, 'utf8');
-  const id = /requireObjectCodec\(\\"(TPayment_[0-9a-f]{8})\\"\)/.exec(index)?.[1];
-  assert.ok(id, 'the index holds a codec id for use.ts');
-  fs.writeFileSync(indexFile, index.split(id).join('TPayment_00000000'));
-  await assert.rejects(runPipeline(config, { check: true }), /src\/(use|money\.model)\.ts is out of date in \.golem\/rewrites\.json/, 'the sha256 still matches, the codec id does not');
-  fs.writeFileSync(indexFile, index);
-  await runPipeline(config, { check: true });
-
-  fs.writeFileSync(path.join(root, 'src/added.ts'), "import { parse } from '@exprtlabs/golem/serde';\nimport type { TPayment } from './money.model.js';\nexport const added = parse<TPayment>('{}');\n");
-  await assert.rejects(runPipeline(config, { check: true }), /src\/added\.ts is out of date in \.golem\/rewrites\.json/, 'a file with a site and no entry');
-  fs.rmSync(path.join(root, 'src/added.ts'));
-  await runPipeline(config, { check: true });
-
-  fs.rmSync(path.join(root, 'src/use.ts'));
-  await assert.rejects(runPipeline(config, { check: true }), /src\/use\.ts is out of date in \.golem\/rewrites\.json/, 'an entry whose file is gone');
-});
-
-test('a config without a models or controllers job still indexes the project that calls an SDK', async (t) => {
+test('a config without a models or controllers job still checks the project that calls an SDK', async (t) => {
   const { root } = createModelProject(t, {
     prefix: 'golem-rewrite-consumer-',
     linkTypescript: true,
     packages: { '@exprtlabs/golem-openapi': path.join(workspace, 'packages/golem-openapi') },
   });
   writeFixture(root, { mobx: false, validation: false }, false);
-  fs.writeFileSync(path.join(root, 'src/use.ts'), `import { parse } from '@exprtlabs/golem/serde';
+  const use = path.join(root, 'src/use.ts');
+  fs.writeFileSync(use, `import { parse } from '@exprtlabs/golem/serde';
 import type { MoneyModel } from '../sdk/index.js';
 declare const text: string;
 export const money = parse<MoneyModel>(text);
 `);
-  await runPipeline(path.join(root, 'golem.yaml'));
-  const entry = readRewriteIndex(root)?.files['src/use.ts'];
-  assert.match(entry?.edits[0]?.text ?? '', /^__golem_requireObjectCodec\("Money_[0-9a-f]{8}"\)\.parse\($/);
-  assert.deepEqual(Object.keys(readRewriteIndex(root)?.files ?? {}), ['src/use.ts']);
-  await runPipeline(path.join(root, 'golem.yaml'), { check: true });
+  const config = path.join(root, 'golem.yaml');
+  await runPipeline(config);
+  await runPipeline(config, { check: true });
+  fs.appendFileSync(use, "export const bad = parse<string | null>('{}');\n");
+  await assert.rejects(runPipeline(config, { check: true }), /RUNM1066 \(src\/use\.ts:5:20\)/);
 });
 
 test('a file outside the project root with a rewrite site fails generation, one without a site does not', (t) => {

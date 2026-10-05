@@ -5,12 +5,14 @@ import { pathToFileURL } from 'node:url';
 import { contains, resolveConfig, validateConfigInputs } from './config.js';
 import type { GolemConfig, GolemJob } from './config.js';
 import { loadInventory, applyJob, removeRetiredJobs } from './outputs.js';
+import { absoluteRecordPath, inventoryPaths, JobInputs, jobIsCurrent, loadJobRecords, recordPath, saveJobRecords } from './job-cache.js';
+import type { JobRecord } from './job-cache.js';
 import { GolemDiagnosticSeverity, errorMessage, hasErrorCode, isRecord } from './generator-api.js';
 import { validateModelManifest } from './model-manifest.js';
 import type { GolemArtifact, GolemDiagnostic, GolemResult, GeneratorSession } from './generator-api.js';
 import { assertRuntimeCompatible } from './runtime-compatibility.js';
-import { REWRITE_INDEX_PATH } from './rewrite.js';
 import { TypeScriptNotInstalledError, resolveTypeScript } from './typescript-version.js';
+import { GOLEM_VERSION } from './version.js';
 
 export type InputKind = 'config' | 'controllers' | 'openapi' | 'models' | 'generator';
 
@@ -35,6 +37,10 @@ export interface PipelineState {
   readonly inputs: ReadonlyMap<string, InputKind>;
   readonly dependencies: ReadonlyMap<string, ReadonlySet<string>>;
   readonly owned: ReadonlySet<string>;
+  /** The ids of the jobs that executed in this run; a job reused from `previous` or skipped by the job cache is not in it. */
+  readonly ran: ReadonlySet<string>;
+  /** The outputs of the jobs the job cache skipped, which have no result: the edges that tell a later watch run which jobs consume them. */
+  readonly skippedOutputs: ReadonlyMap<string, readonly string[]>;
 }
 export interface PipelineOptions {
   readonly check?: boolean;
@@ -142,11 +148,12 @@ function packageVersion(specifier: string, filename: string): string {
   }
 }
 
-export async function providersFor(config: GolemConfig): Promise<ReadonlyMap<string, LoadedProvider>> {
+/** The providers of the configured jobs, or of the jobs named by `only`. */
+export async function providersFor(config: GolemConfig, only?: ReadonlySet<string>): Promise<ReadonlyMap<string, LoadedProvider>> {
   const requireFromProject = createRequire(path.join(config.directory, 'package.json'));
   const providers = new Map<string, LoadedProvider>();
   for (const job of config.jobs) {
-    if (providers.has(job.package)) continue;
+    if (providers.has(job.package) || (only && !only.has(job.id))) continue;
     let filename: string;
     try { filename = requireFromProject.resolve(`${job.package}/generator`); }
     catch (error) {
@@ -270,9 +277,9 @@ interface RewriteRoot {
 }
 
 /**
- * The project whose sources golem rewrites: the tsconfig the golem.yaml names, whose directory owns the index
- * (`golem build` starts from the same yaml). The scan borrows the compiler of the first models job, else of the first
- * controllers job; a config with neither opens its own, so an app that only calls an SDK gets an index too. A yaml with no tsconfig file has no project.
+ * The project whose sources `golem check` scans: the tsconfig the golem.yaml names (`golem build` starts from the same
+ * yaml). The scan borrows the compiler of the first models job, else of the first controllers job; a config with neither
+ * opens its own, so an app that only calls an SDK is checked too. A yaml with no tsconfig file has no project.
  */
 function rewriteRoot(config: GolemConfig): RewriteRoot {
   const job = config.jobs.find((candidate): candidate is Extract<GolemJob, { kind: 'models' }> => candidate.kind === 'models')
@@ -286,7 +293,7 @@ function rewriteRoot(config: GolemConfig): RewriteRoot {
 /**
  * The rewrite scan needs TypeScript, so its module (and the compiler seam behind it) loads only when a scan runs. A config with
  * a models or controllers job has a compiler by construction. One without scans only when TypeScript is installed: an
- * OpenAPI-only project need not have it, and without TypeScript it has no sources to rewrite and no index. A TypeScript
+ * OpenAPI-only project need not have it, and without TypeScript it has no sources to scan. A TypeScript
  * that is installed but unsupported still fails here.
  */
 async function loadRewriteScan(hasCompilerJob: boolean): Promise<typeof import('./rewrite-scan.js') | undefined> {
@@ -299,6 +306,18 @@ async function loadRewriteScan(hasCompilerJob: boolean): Promise<typeof import('
     }
   }
   return import('./rewrite-scan.js');
+}
+
+/** The inputs a job names in its configuration, before it runs. */
+function declaredInputs(job: GolemJob): readonly string[] {
+  if (job.kind === 'openapi') return [job.options.input];
+  if (job.kind === 'generator') return [];
+  return [job.options.root, ...(job.options.sources ?? [])];
+}
+
+/** Whether a record's inputs include any of `outputs`: a job downstream of one that ran. */
+function readsAny(config: GolemConfig, record: JobRecord, outputs: ReadonlySet<string>): boolean {
+  return Object.keys(record.inputs).some(input => outputs.has(absoluteRecordPath(config, input)));
 }
 
 /** Select source consumers and then follow generated-artifact edges in pipeline order. */
@@ -326,11 +345,12 @@ function affectedJobs(config: GolemConfig, options: PipelineOptions): ReadonlySe
   if (affected.size === 0) return undefined;
   for (const job of config.jobs) {
     if (!affected.has(job.id)) continue;
-    const result = previous.results.get(job.id);
-    for (const artifact of result?.artifacts ?? []) {
-      for (const consumer of previous.dependencies.get(artifact.path) ?? []) affected.add(consumer);
+    // A job the job cache skipped has no result; its recorded outputs are the same edges.
+    const outputs = previous.results.get(job.id)?.artifacts.map(artifact => artifact.path) ?? previous.skippedOutputs.get(job.id) ?? [];
+    for (const output of outputs) {
+      for (const consumer of previous.dependencies.get(output) ?? []) affected.add(consumer);
       for (const consumer of config.jobs) {
-        if (consumer.kind === 'openapi' && consumer.options.input === artifact.path) affected.add(consumer.id);
+        if (consumer.kind === 'openapi' && consumer.options.input === output) affected.add(consumer.id);
       }
     }
   }
@@ -372,8 +392,30 @@ export async function runPipeline(filename: string, options: PipelineOptions = {
     else if (job.kind === 'models') for (const input of [job.options.root, ...(job.options.sources ?? [])]) observe(input, 'models', job.id);
   }
   validateConfigInputs(config);
-  const providers = await providersFor(config);
   const inventory = loadInventory(config);
+  const generated = inventoryPaths(config, inventory);
+  // The job cache serves a run that holds nothing in memory; a watch run with `previous` reuses by its own rules.
+  const jobCache = !options.check && !options.previous;
+  const records = options.check ? new Map<string, JobRecord>() : loadJobRecords(config);
+  // The outputs of removed jobs go before the first job runs, so a job that reads one is not current.
+  const active = new Set(config.jobs.map(job => job.id));
+  const retired = new Set(Object.entries(inventory.files).filter(([, entry]) => !active.has(entry.job)).map(([key]) => path.resolve(config.directory, key)));
+  const current = new Set(jobCache
+    ? config.jobs.filter(job => {
+      const record = records.get(job.id);
+      return record !== undefined && !readsAny(config, record, retired) && jobIsCurrent(config, job, record, generated);
+    }).map(job => job.id)
+    : []);
+  // Jobs that must run, with the providers they need: a stale job, and each job that reads an output of one that runs.
+  const planned = new Set<string>();
+  const plannedOutputs = new Set<string>();
+  for (const job of config.jobs) {
+    const record = records.get(job.id);
+    if (jobCache && record && current.has(job.id) && !readsAny(config, record, plannedOutputs)) continue;
+    planned.add(job.id);
+    for (const output of record?.outputs ?? []) plannedOutputs.add(absoluteRecordPath(config, output));
+  }
+  const providers = new Map(await providersFor(config, jobCache ? planned : undefined));
   options.onOwned?.([config.inventoryFile, ...Object.keys(inventory.files).map(key => path.resolve(config.directory, key))]);
   removeRetiredJobs(config, inventory, Boolean(options.check));
   const affected = affectedJobs(config, options);
@@ -381,6 +423,11 @@ export async function runPipeline(filename: string, options: PipelineOptions = {
   const results = new Map<string, GolemResult>();
   const owned = new Set<string>([config.inventoryFile]);
   const used = new Map<string, Set<string>>();
+  const ran = new Set<string>();
+  const skippedOutputs = new Map<string, readonly string[]>();
+  const nextRecords = new Map([...records].filter(([id]) => active.has(id)));
+  // The outputs of the jobs that ran in this run: what a later job reads from them is not what its record holds.
+  const ranOutputs = new Set<string>();
   for (const job of config.jobs) {
     const previous = options.previous?.results.get(job.id);
     const previousJob = options.previous?.config.jobs.find(candidate => candidate.id === job.id);
@@ -388,6 +435,25 @@ export async function runPipeline(filename: string, options: PipelineOptions = {
       && (affected ? !affected.has(job.id) : options.modelOnly && (job.kind === 'controllers' || job.kind === 'openapi' || job.kind === 'generator'))
       && previous
       && JSON.stringify(previousJob?.options) === JSON.stringify(job.options);
+    const record = records.get(job.id);
+    if (jobCache && record && current.has(job.id) && !readsAny(config, record, ranOutputs)) {
+      // Its inputs and outputs are as its record holds them: there is no result to reuse, and nothing to write.
+      const outputs = record.outputs.map(output => absoluteRecordPath(config, output));
+      for (const output of outputs) {
+        if (owned.has(output)) throw new Error(`Two generators emitted the same output: ${output}`);
+        owned.add(output);
+      }
+      options.onOwned?.(outputs);
+      for (const input of Object.keys(record.inputs)) observe(absoluteRecordPath(config, input), job.kind, job.id);
+      manifests.push(...record.manifests.map(manifest => absoluteRecordPath(config, manifest)));
+      skippedOutputs.set(job.id, outputs);
+      continue;
+    }
+    // The job's own earlier outputs are not inputs: its record and its directory listings leave them out.
+    const previousOutputs = new Set([
+      ...(record?.outputs ?? []).map(output => absoluteRecordPath(config, output)),
+      ...Object.entries(inventory.files).filter(([, entry]) => entry.job === job.id).map(([key]) => path.resolve(config.directory, key)),
+    ]);
     let result: GolemResult;
     if (cached) {
       result = previous;
@@ -396,16 +462,24 @@ export async function runPipeline(filename: string, options: PipelineOptions = {
       }
     }
     else {
-      const provider = providers.get(job.package);
+      ran.add(job.id);
+      let provider = providers.get(job.package);
+      if (!provider) {
+        // A job the plan skipped reads an output that the run just changed.
+        for (const [name, loaded] of await providersFor(config, new Set([job.id]))) providers.set(name, loaded);
+        provider = providers.get(job.package);
+      }
       if (!provider) throw new Error(`Missing loaded provider ${job.package}.`);
       const keys = new Set<string>();
       used.set(job.id, keys);
-      let generated: unknown;
+      const read = options.check ? undefined : new JobInputs(filename => generated.has(filename) || previousOutputs.has(filename) || ranOutputs.has(filename));
+      for (const input of declaredInputs(job)) read?.read(input);
+      let generatedResult: unknown;
       try {
-        generated = await provider.generate({
+        generatedResult = await provider.generate({
           ...job.options,
           manifestInputs: [...manifests],
-          onInput: (input: string) => observe(input, job.kind),
+          onInput: (input: string) => { observe(input, job.kind); read?.read(input); },
           session: session.forJob(job.id, keys),
         });
       } catch (error) {
@@ -413,7 +487,17 @@ export async function runPipeline(filename: string, options: PipelineOptions = {
         if (job.kind === 'generator') throw new Error(`Generator ${job.package} failed for ${job.id}: ${errorMessage(error)}`, { cause: error });
         throw error;
       }
-      result = validateResult(generated, job);
+      result = validateResult(generatedResult, job);
+      if (read) {
+        const own = new Set([...previousOutputs, ...result.artifacts.map(artifact => artifact.path)]);
+        nextRecords.set(job.id, {
+          golem: GOLEM_VERSION,
+          options: JSON.stringify(job.options),
+          inputs: read.finish(config, result.watchInputs, own),
+          outputs: result.artifacts.map(artifact => recordPath(config, artifact.path)).sort(),
+          manifests: result.manifestPaths.map(manifest => recordPath(config, manifest)),
+        });
+      }
     }
     assertNoDiagnosticErrors(job, result);
     if (!cached) for (const diagnostic of result.diagnostics ?? []) {
@@ -424,21 +508,23 @@ export async function runPipeline(filename: string, options: PipelineOptions = {
       owned.add(artifact.path);
     }
     options.onOwned?.(result.artifacts.map(artifact => artifact.path));
-    if (!cached) applyJob(config, inventory, job, result.artifacts, Boolean(options.check));
+    if (!cached) {
+      applyJob(config, inventory, job, result.artifacts, Boolean(options.check));
+      for (const output of [...previousOutputs, ...result.artifacts.map(artifact => artifact.path)]) ranOutputs.add(output);
+    }
     for (const input of result.watchInputs) observe(input, job.kind, job.id);
     manifests.push(...result.manifestPaths);
     results.set(job.id, result);
   }
-  // A yaml without a tsconfig, an openapi-only one for instance, has no project to scan and no index to own.
-  const rewriteScan = fs.existsSync(config.tsconfig) ? await loadRewriteScan(rewriteRoot(config).job !== undefined) : undefined;
+  if (!options.check) saveJobRecords(config, nextRecords);
+  // Only `golem check` reads the project's sources: it reports the sites golem cannot rewrite, and writes nothing.
+  const rewriteScan = options.check && fs.existsSync(config.tsconfig) ? await loadRewriteScan(rewriteRoot(config).job !== undefined) : undefined;
   if (rewriteScan) {
-    const { assertRewriteIndexCurrent, checkNestCodecs, scanProjectRewrites, writeRewriteIndex } = rewriteScan;
     const { job, root, controllerRoots } = rewriteRoot(config);
-    const indexRoot = path.dirname(config.tsconfig);
     const nest = controllerRoots.length > 0;
     const keys = job ? used.get(job.id) ?? new Set<string>() : undefined;
     if (job && keys) used.set(job.id, keys);
-    const scanned = scanProjectRewrites({
+    const scanned = rewriteScan.scanProject({
       root,
       configFile: config.tsconfig,
       nest,
@@ -448,22 +534,13 @@ export async function runPipeline(filename: string, options: PipelineOptions = {
         // The models job's compiler is its retained session, keyed by golem-model's SESSION_OWNER, which is its package name.
         sessionOwner: job.package,
       } : {}),
-      onInput: input => observe(input, job?.kind ?? 'models'),
     });
     const errors = scanned.diagnostics.filter(diagnostic => diagnostic.severity === GolemDiagnosticSeverity.Error);
     if (errors.length > 0) throw new Error(errorDiagnosticsMessage('golem rewrite scan', errors));
-    if (options.check) {
-      assertRewriteIndexCurrent(indexRoot, scanned.index, config.configFile);
-      const disagreements = nest ? checkNestCodecs(controllerRoots, scanned) : [];
-      if (disagreements.length > 0) throw new Error(errorDiagnosticsMessage('golem nest codec check', disagreements));
-    } else {
-      writeRewriteIndex(indexRoot, scanned.index, config.configFile);
-      const indexFile = path.join(indexRoot, REWRITE_INDEX_PATH);
-      owned.add(indexFile);
-      options.onOwned?.([indexFile]);
-    }
+    const disagreements = nest ? rewriteScan.checkNestCodecs(controllerRoots, scanned) : [];
+    if (disagreements.length > 0) throw new Error(errorDiagnosticsMessage('golem nest codec check', disagreements));
   }
   for (const output of owned) inputs.delete(output);
   session.retainUsed(new Set(config.jobs.map((job) => job.id)), used);
-  return { config, results, inputs, dependencies, owned };
+  return { config, results, inputs, dependencies, owned, ran, skippedOutputs };
 }

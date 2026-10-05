@@ -6,7 +6,6 @@ import type { GeneratorSession, GolemDiagnostic, InputObserver } from './generat
 import { operationCodecRegistryPath } from './generated-paths.js';
 import { atomicWrite } from './outputs.js';
 import {
-  GolemRewriteStaleError,
   REWRITE_IMPORT_PREFIX,
   REWRITE_INDEX_PATH,
   readRewriteIndex,
@@ -613,6 +612,13 @@ export function scanRewrites(input: ScanInput): ScanResult {
   return { index: { version: 1, golem: GOLEM_VERSION, files: entries }, diagnostics, nestCodecSites };
 }
 
+/** The scanner's answer for a whole project, with the nest sites `checkNestCodecs` reads. */
+export interface ProgramScan {
+  readonly files: ReadonlyMap<string, FileScanResult>;
+  readonly diagnostics: readonly GolemDiagnostic[];
+  readonly nestCodecSites: readonly NestCodecSite[];
+}
+
 /**
  * The `@Body()` and `@Query()` parameters whose codec id no controllers job's generated operation codecs hold. The id the scan stamps and the id the controllers job writes come
  * from separate analyses, so a mismatch means the decorators and the generated operations disagree. A missing registry
@@ -678,35 +684,34 @@ export function writeRewriteIndex(root: string, index: RewriteIndex, owner?: str
   return atomicWrite(path.join(root, REWRITE_INDEX_PATH), `${JSON.stringify(written, null, 2)}\n`);
 }
 
-/** Open the project's program and scan it. `onInput` observes every file the compiler reads. */
-export function scanProjectRewrites(input: {
+/** What opening a project's program for a scan needs. */
+interface ProjectScanInput {
   readonly root: string;
-  /** The tsconfig whose files are scanned, from the golem.yaml; its directory is what the index keys are relative to. */
+  /** The tsconfig whose files are scanned, from the golem.yaml; its directory is what the file paths are relative to. */
   readonly configFile: string;
   readonly nest: boolean;
   /** The session and owner of the job that reads this project, so one compiler serves its generation and this scan; the session is kept under `root`. */
   readonly session?: GeneratorSession;
   readonly sessionOwner?: string;
   readonly onInput?: InputObserver;
-}): ScanResult {
+}
+
+function withProjectProgram<Result>(input: ProjectScanInput, use: (scan: ScanInput) => Result): Result {
   const { root, configFile, nest, session, sessionOwner, onInput } = input;
   const info = createProjectProgram(root, onInput, sessionOwner === undefined ? undefined : retainedProgramSession(session, sessionOwner, root), configFile);
   using program = info.program;
-  return scanRewrites({ root: path.dirname(configFile), program, checker: program.getTypeChecker(), nest });
+  return use({ root: path.dirname(configFile), program, checker: program.getTypeChecker(), nest });
 }
 
-/**
- * Fail, naming the first differing file, when the index on disk is not what `scanned` holds: a bundler would otherwise
- * build from a stale rewrite. A project without an index passes; `golem generate` creates it.
- */
-export function assertRewriteIndexCurrent(root: string, scanned: RewriteIndex, owner?: string): void {
-  if (owner !== undefined) assertRewriteIndexOwner(root, owner);
-  const index = readRewriteIndex(root);
-  if (!index) return;
-  const differing = [...new Set([...Object.keys(index.files), ...Object.keys(scanned.files)])]
-    .sort(compareText)
-    .find((relative) => JSON.stringify(index.files[relative]) !== JSON.stringify(scanned.files[relative]));
-  if (differing !== undefined) {
-    throw new GolemRewriteStaleError(differing, `${differing} is out of date in ${REWRITE_INDEX_PATH}; run golem generate.`);
-  }
+/** Open the project's program and scan it. `onInput` observes every file the compiler reads. */
+export function scanProjectRewrites(input: ProjectScanInput): ScanResult {
+  return withProjectProgram(input, scanRewrites);
+}
+
+/** Open the project's program and ask the scanner about every file: what `golem check` reports. Writes nothing. */
+export function scanProject(input: ProjectScanInput): ProgramScan {
+  return withProjectProgram(input, (scan) => {
+    const { files, diagnostics } = new RewriteScanner(scan).scanProgram();
+    return { files, diagnostics, nestCodecSites: [...files.values()].flatMap((file) => file.nestCodecSites) };
+  });
 }

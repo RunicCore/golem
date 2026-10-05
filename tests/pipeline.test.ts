@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
-import { runPipeline } from '#golem/cli';
+import { runPipeline, type PipelineState } from '#golem/cli';
 import { runBuild } from '#golem/build';
 import { command, workspace } from './support/process.js';
 import { writeFixture } from './support/consumer.js';
@@ -251,14 +251,126 @@ test('deleting a model while editing the model its companion imports still gener
   assert.match(fs.readFileSync(path.join(root, 'src/shared.model.generated.ts'), 'utf8'), /extra/);
 });
 
-test('an openapi-only golem.yaml with no tsconfig scans no project and writes no rewrite index, and golem build names the missing tsconfig', async (t: TestContext) => {
+test('an openapi-only golem.yaml with no tsconfig has no project to check, and golem build names the missing tsconfig', async (t: TestContext) => {
   const { root, config } = fixture(t);
   fs.rmSync(path.join(root, 'tsconfig.json'));
   fs.writeFileSync(config, 'version: 1\nmobx: false\nvalidation: true\nopenapi:\n  - input: api.json\n    output: sdk\n    name: Profile\n');
   await runPipeline(config);
   assert.equal(fs.existsSync(path.join(root, 'sdk')), true);
-  assert.equal(fs.existsSync(path.join(root, '.golem/rewrites.json')), false);
   await runPipeline(config, { check: true });
   await assert.rejects(runBuild({ watch: false, config }), /golem build cannot find .*tsconfig\.json, the tsconfig .*golem\.yaml names/);
   assert.equal(fs.existsSync(path.join(root, '.golem/rewrites.json')), false);
+});
+
+// ---------------------------------------------------------------------------
+// The job cache: a run skips the jobs whose inputs did not change
+// ---------------------------------------------------------------------------
+
+/** The kinds of the jobs that executed in a run, in a stable order. */
+function ranKinds(state: PipelineState): string[] {
+  return state.config.jobs.filter((job) => state.ran.has(job.id)).map((job) => job.kind);
+}
+
+test('a second generate with no input change runs no job and rewrites no output', async (t: TestContext) => {
+  const { config } = fixture(t);
+  const first = await runPipeline(config);
+  assert.deepEqual(ranKinds(first), ['openapi', 'models']);
+  const modifiedAt = new Map([...first.owned].map((output) => [output, fs.statSync(output).mtimeMs]));
+  const second = await runPipeline(config);
+  assert.deepEqual([...second.ran], []);
+  assert.deepEqual([...second.owned].sort(), [...first.owned].sort(), 'a skipped job still owns its outputs');
+  for (const [output, mtime] of modifiedAt) assert.equal(fs.statSync(output).mtimeMs, mtime, output);
+});
+
+test('an edited model source reruns the models job, an edited OpenAPI document reruns the models job that reads its manifest', async (t: TestContext) => {
+  const { root, config } = fixture(t);
+  await runPipeline(config);
+  const modelSource = path.join(root, 'src/cart.model.ts');
+  fs.writeFileSync(modelSource, fs.readFileSync(modelSource, 'utf8').replace('note: string', 'note: string; selected?: boolean'));
+  const edited = await runPipeline(config);
+  assert.deepEqual(ranKinds(edited), ['models'], 'the OpenAPI job reads no model source');
+  assert.match(fs.readFileSync(path.join(root, 'src/cart.model.generated.ts'), 'utf8'), /selected/);
+  assert.deepEqual(ranKinds(await runPipeline(config)), []);
+
+  const api = path.join(root, 'api.json');
+  fs.writeFileSync(api, JSON.stringify(JSON.parse(fs.readFileSync(api, 'utf8')), null, 4));
+  assert.deepEqual(ranKinds(await runPipeline(config)), ['openapi', 'models'], 'the manifest the OpenAPI job writes is the same, the job after it still runs');
+});
+
+test('a deleted output reruns its job, and a changed option or golem version reruns the jobs it applies to', async (t: TestContext) => {
+  const { root, config } = fixture(t);
+  await runPipeline(config);
+  const companion = path.join(root, 'src/cart.model.generated.ts');
+  const original = fs.readFileSync(companion, 'utf8');
+  fs.rmSync(companion);
+  assert.deepEqual(ranKinds(await runPipeline(config)), ['models']);
+  assert.equal(fs.readFileSync(companion, 'utf8'), original);
+
+  const records = path.join(root, '.golem/jobs.json');
+  const written = JSON.parse(fs.readFileSync(records, 'utf8')) as { jobs: Record<string, { golem: string }> };
+  const modelsId = Object.keys(written.jobs).find((id) => id.startsWith('models:'));
+  assert.ok(modelsId, 'the models job has a record');
+  written.jobs[modelsId].golem = '0.0.0-other';
+  fs.writeFileSync(records, JSON.stringify(written));
+  assert.deepEqual(ranKinds(await runPipeline(config)), ['models']);
+
+  fs.writeFileSync(config, fs.readFileSync(config, 'utf8').replace('validation: true', 'validation: false'));
+  assert.deepEqual(ranKinds(await runPipeline(config)), ['openapi', 'models']);
+  assert.deepEqual(ranKinds(await runPipeline(config)), []);
+});
+
+test('a job that edits an input after it read it runs again, because its record holds the digest from the read', async (t: TestContext) => {
+  const root = createFixtureProject(t, 'golem-pipeline-read-');
+  fs.writeFileSync(path.join(root, 'package.json'), '{"name":"read-fixture","type":"module"}');
+  const provider = path.join(root, 'node_modules/@fixture/rewriter');
+  fs.mkdirSync(provider, { recursive: true });
+  fs.writeFileSync(path.join(provider, 'package.json'), JSON.stringify({ name: '@fixture/rewriter', version: '1.0.0', type: 'module', exports: { './generator': './index.js' } }));
+  fs.writeFileSync(path.join(provider, 'index.js'), `import fs from 'node:fs';
+import path from 'node:path';
+export const apiVersion = 1;
+export function generate(context) {
+  const input = path.join(context.directory, 'input.txt');
+  context.onInput(input);
+  const text = fs.readFileSync(input, 'utf8');
+  fs.writeFileSync(input, text + 'x');
+  return { apiVersion: 1, artifacts: [{ path: path.join(context.output, 'out.txt'), content: '# Generated by @fixture/rewriter. Do not edit.\\n' + text.length }], manifestPaths: [], watchInputs: [input] };
+}
+`);
+  fs.writeFileSync(path.join(root, 'input.txt'), 'x');
+  fs.writeFileSync(path.join(root, 'golem.yaml'), ['version: 1', 'generators:', "  - package: '@fixture/rewriter'", '    output: out', ''].join('\n'));
+  const config = path.join(root, 'golem.yaml');
+  assert.deepEqual([...(await runPipeline(config)).ran].length, 1);
+  assert.deepEqual([...(await runPipeline(config)).ran].length, 1, 'the file changed after the job read it, so the second run is not a cache hit');
+});
+
+test('a watch run after a cached start reruns the job that reads an output of an edited, skipped job', async (t: TestContext) => {
+  const { root, config } = fixture(t);
+  await runPipeline(config);
+  fs.rmSync(path.join(root, 'src/cart.model.generated.ts'));
+  const cachedStart = await runPipeline(config);
+  assert.deepEqual(ranKinds(cachedStart), ['models'], 'the OpenAPI job is skipped and has no result');
+  assert.equal(cachedStart.results.size, 1);
+  const api = path.join(root, 'api.json');
+  fs.writeFileSync(api, JSON.stringify(JSON.parse(fs.readFileSync(api, 'utf8')), null, 4));
+  const next = await runPipeline(config, { previous: cachedStart, changedInputs: [api] });
+  assert.deepEqual(ranKinds(next), ['openapi', 'models'], 'the models job reads the manifest of the OpenAPI job');
+});
+
+test('check reports an unresolved parse call with its code and writes no file', async (t: TestContext) => {
+  const { root, config } = fixture(t);
+  await runPipeline(config);
+  fs.writeFileSync(path.join(root, 'src/use.ts'), "import { parse } from '@exprtlabs/golem/serde';\nexport const bad = parse<string | null>('{}');\n");
+  const before = fs.readdirSync(root, { recursive: true }).map(String).sort();
+  const records = fs.readFileSync(path.join(root, '.golem/jobs.json'), 'utf8');
+  await assert.rejects(runPipeline(config, { check: true }), /RUNM1066 \(src\/use\.ts:2:20\): parse type argument must be a single type name or typeof expression/);
+  assert.deepEqual(fs.readdirSync(root, { recursive: true }).map(String).sort(), before);
+  assert.equal(fs.readFileSync(path.join(root, '.golem/jobs.json'), 'utf8'), records);
+});
+
+test('removing the OpenAPI job reruns the models job that read its output instead of skipping it', async (t: TestContext) => {
+  const { root, config } = fixture(t);
+  await runPipeline(config);
+  fs.writeFileSync(config, ['version: 1', 'mobx: false', 'validation: true', 'models:', '  root: .', ''].join('\n'));
+  await assert.rejects(runPipeline(config), /Cannot find module|cannot find module|TS2307|sdk[\\/]index/);
+  assert.equal(fs.existsSync(path.join(root, 'sdk/index.ts')), false);
 });
