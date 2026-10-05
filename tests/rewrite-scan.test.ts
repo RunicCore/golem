@@ -312,7 +312,7 @@ export class Payment extends TPaymentBaseModel {}
   fs.writeFileSync(path.join(outer, 'shared/plain.ts'), "export const plain = 1;\n");
   const { diagnostics, files } = scan(root);
   // A class site is the end of the class, where its registration goes.
-  const message = (file: string): string => `"${file}" has a rewrite site but lies outside the project root. Move it under the root, or run golem generate for the package that contains it.`;
+  const message = (file: string): string => `"${file}" has a rewrite site but lies outside the project root. Move it under the root, or give the package its own golem.yaml and build it with that.`;
   assert.deepEqual(diagnostics, [
     { code: 'RUNM1070', severity: 'error', message: message('../shared/payment.model.ts'), file: '../shared/payment.model.ts', line: 2, column: 50 },
     { code: 'RUNM1070', severity: 'error', message: message('../shared/x.ts'), file: '../shared/x.ts', line: 4, column: 22 },

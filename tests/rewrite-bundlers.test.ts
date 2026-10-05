@@ -12,7 +12,7 @@ import { golem as esbuildPlugin } from '#golem/esbuild';
 import { openRewriteProject } from '#golem/rewrite-host';
 import type { GolemHostOptions } from '#golem/rewrite-host';
 import { golem as vitePlugin } from '#golem/vite';
-import { copyFixtureFile, createFixtureProject, snapshotFilesystem, writeGeneratedArtifacts } from './fixture-project.js';
+import { copyFixtureFile, createFixtureProject, linkProjectPackages, snapshotFilesystem, writeGeneratedArtifacts } from './fixture-project.js';
 import { createModelProject } from './model-project.js';
 import { command, workspace } from './support/process.js';
 
@@ -249,6 +249,27 @@ for (const bundler of BUNDLERS) {
   });
 }
 
+/** A workspace package symlinked into the project's node_modules: its real path is outside the project root and outside node_modules. */
+function symlinkedPackage(t: TestContext, root: string): string {
+  const workspacePackage = createFixtureProject(t, 'golem-bundler-workspace-package-');
+  linkProjectPackages(workspacePackage, { '@exprtlabs/golem': path.join(workspace, 'packages/golem') });
+  write(workspacePackage, 'package.json', JSON.stringify({ name: 'workspace-lib', type: 'module', exports: './lib.ts' }));
+  write(workspacePackage, 'lib.ts', `import { parse } from '${SERDE}';\nimport type { TMoney } from '${path.join(root, 'src/money.model.ts')}';\nexport const value = parse<TMoney>('{"currency":"USD","value":"1"}');\n`);
+  linkProjectPackages(root, { 'workspace-lib': workspacePackage });
+  write(root, 'src/linked.ts', "import { value } from 'workspace-lib';\nconsole.log(JSON.stringify(value));\n");
+  return path.join(workspacePackage, 'lib.ts');
+}
+
+for (const bundler of BUNDLERS) {
+  test(`${bundler.name}: a parse call in a workspace package symlinked into node_modules fails the build with the file and the line instead of bundling unrewritten`, async (t) => {
+    const root = await generatedProject(t, `${bundler.name}-symlinked-package`);
+    const library = symlinkedPackage(t, root);
+    const message = await failure(build(bundler, t, root, 'src/linked.ts'));
+    assert.ok(message.includes(`${path.relative(root, library).split(path.sep).join('/')}:3:`), message);
+    assert.match(message, /outside the project root/);
+  });
+}
+
 test('the rewrite project of one golem.yaml is shared, and its session lives until the last host closes it', async (t) => {
   const root = await generatedProject(t, 'shared-project');
   const file = path.join(root, 'src/main.ts');
@@ -259,6 +280,7 @@ test('the rewrite project of one golem.yaml is shared, and its session lives unt
   // The second host still has a live session.
   assert.match(second.rewrite(file, text)?.code ?? '', /__golem_requireObjectCodec\(/);
   second.close();
+  assert.throws(() => second.rewrite(file, text), /closed/, 'the last close disposes the session');
   // Closing again is not a second release; a later host opens a new session.
   first.close();
   const third = await openRewriteProject({ cwd: root });
@@ -385,6 +407,16 @@ test('esbuild: an error is located at the file and the line of the call', async 
   assert.match(failed.errors[0]!.text, /run golem generate/);
   assert.equal(path.resolve(root, failed.errors[0]!.location!.file), path.join(root, 'src/main.ts'));
   assert.equal(failed.errors[0]!.location?.line, lineOf(MAIN, 'const text'));
+});
+
+test('esbuild: a build that failed for want of generated code runs again once golem generate has written it', async (t) => {
+  const root = await generatedProject(t, 'esbuild-recover', { generate: false });
+  const watch = await watching(t, root, 'src/main.ts');
+  assert.match((await watch.built(1)).join('\n'), /run golem generate/);
+  await runPipeline(path.join(root, 'golem.yaml'));
+  assert.deepEqual(await watch.built(2), []);
+  const result = await command(root, process.execPath, [watch.bundle]);
+  assert.deepEqual(JSON.parse(result.stdout.split('\n')[0]!), { money: { currency: 'USD', value: '1' }, twice: 42 });
 });
 
 test('esbuild: a new file with its first parse call, added to a watched build, is rewritten', async (t) => {

@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs';
 import path from 'node:path';
 
 import { resolveConfig } from './config.js';
+import { CODEC_KEY_FILE, defaultModelOutput } from './generated-paths.js';
 import type { GolemConfig } from './config.js';
 import { GolemDiagnosticSeverity } from './generator-api.js';
 import { applyRewrites } from './rewrite.js';
@@ -47,6 +48,8 @@ export interface GolemHostOptions {
 export interface RewriteProject {
   /** Directory of the yaml's tsconfig. */
   readonly root: string;
+  /** The key tables the yaml's models jobs write, whether or not they exist yet: what a host watches after a failed rewrite so that `golem generate` brings it back. */
+  readonly expectedGenerated: readonly string[];
   /**
    * Edits for one file as the host will compile it, `dependencies` as absolute paths; undefined when the file has no
    * rewrite. A file outside the tsconfig's directory is scanned like any other, and the scan fails one that needs a rewrite. Throws a `GolemHostError` (file, line, "run golem generate") on scan diagnostics.
@@ -75,6 +78,7 @@ interface Compiler {
 /** A project's compiler session and the program of its latest state; a changed or new file reopens the program. */
 class ScanningProject {
   readonly root: string;
+  readonly expectedGenerated: readonly string[];
   private readonly session: ts.ProgramSession;
   private program: ts.Program | undefined;
   private scanner: RewriteScanner | undefined;
@@ -86,6 +90,7 @@ class ScanningProject {
 
   constructor(private readonly config: GolemConfig, private readonly nest: boolean, private readonly compiler: Compiler) {
     this.root = path.dirname(config.tsconfig);
+    this.expectedGenerated = config.jobs.flatMap((job) => job.kind === 'models' ? [path.join(job.options.output ?? defaultModelOutput(job.options.root), CODEC_KEY_FILE)] : []);
     this.session = new compiler.ts.ProgramSession({ cwd: this.root });
   }
 
@@ -155,6 +160,8 @@ class ScanningProject {
 
 interface SharedProject {
   readonly project: Promise<ScanningProject>;
+  /** The project once opened: a handle exists only then, so the last close disposes it at once. */
+  opened?: ScanningProject;
   holders: number;
 }
 
@@ -165,7 +172,7 @@ function release(key: string, shared: SharedProject): void {
   shared.holders -= 1;
   if (shared.holders > 0) return;
   if (projects.get(key) === shared) projects.delete(key);
-  shared.project.then((project) => { project.dispose(); }, () => undefined);
+  shared.opened?.dispose();
 }
 
 /**
@@ -196,6 +203,7 @@ export async function openRewriteProject(options: GolemHostOptions & { cwd: stri
   let project: ScanningProject;
   try {
     project = await holding.project;
+    holding.opened = project;
   } catch (error) {
     // A failed open is not kept: the next open tries again.
     if (projects.get(key) === holding) projects.delete(key);
@@ -204,6 +212,7 @@ export async function openRewriteProject(options: GolemHostOptions & { cwd: stri
   let closed = false;
   return {
     root: project.root,
+    expectedGenerated: project.expectedGenerated,
     rewrite: (filename, text) => project.rewrite(filename, text),
     changed: (filenames) => { project.changed(filenames); },
     close() {

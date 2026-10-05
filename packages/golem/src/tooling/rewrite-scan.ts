@@ -552,7 +552,7 @@ export class RewriteScanner {
     const diagnostics: GolemDiagnostic[] = site ? [{
       code: CODE_OUTSIDE_ROOT,
       severity: GolemDiagnosticSeverity.Error,
-      message: `"${relative}" has a rewrite site but lies outside the project root. Move it under the root, or run golem generate for the package that contains it.`,
+      message: `"${relative}" has a rewrite site but lies outside the project root. Move it under the root, or give the package its own golem.yaml and build it with that.`,
       file: relative,
       line: site.line,
       column: site.column,
