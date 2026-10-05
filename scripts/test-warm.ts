@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -62,6 +62,32 @@ async function warm(install: WarmInstall): Promise<WarmResult> {
   return { label: install.label, seconds: (Date.now() - started) / 1000 };
 }
 
+/**
+ * The benchmark's typia adapter compiles with ttsc, which builds typia's Go plugin on first use: from source, with Go
+ * modules fetched from the network. One compile of a tiny typia project fills the plugin and Go caches
+ * (`TTSC_CACHE_DIR`, `GOMODCACHE`) that the entrypoint persists, so the benchmark runs offline.
+ */
+function warmTypiaPlugin(scratch: string): WarmResult {
+  const started = Date.now();
+  const label = 'typia ttsc plugin';
+  const project = path.join(scratch, 'typia-plugin');
+  fs.mkdirSync(path.join(project, 'src'), { recursive: true });
+  fs.symlinkSync(path.join(root, 'node_modules'), path.join(project, 'node_modules'), 'dir');
+  fs.writeFileSync(path.join(project, 'package.json'), JSON.stringify({ private: true, type: 'module' }));
+  fs.writeFileSync(path.join(project, 'tsconfig.json'), JSON.stringify({
+    compilerOptions: { target: 'ES2022', module: 'NodeNext', moduleResolution: 'NodeNext', strict: true, skipLibCheck: true, rootDir: 'src', outDir: 'build', types: ['node'], plugins: [{ transform: 'typia/lib/transform' }] },
+    include: ['src/**/*.ts'],
+  }));
+  fs.writeFileSync(path.join(project, 'src/check.ts'), "import typia from 'typia';\nexport const isNumber = (value: unknown): boolean => typia.is<number>(value);\n");
+  try {
+    execFileSync(process.execPath, [path.join(root, 'node_modules/ttsc/lib/launcher/ttsc.js'), '-p', path.join(project, 'tsconfig.json')],
+      { cwd: project, encoding: 'utf8', timeout: INSTALL_TIMEOUT_MS * 2, maxBuffer: 16 * 1024 * 1024, stdio: 'pipe' });
+    return { label, seconds: (Date.now() - started) / 1000 };
+  } catch (error) {
+    return { label, seconds: (Date.now() - started) / 1000, failure: error instanceof Error ? error.message : String(error) };
+  }
+}
+
 async function main(): Promise<void> {
   const started = Date.now();
   const registry = await startRegistry(preparedPackages(root));
@@ -87,6 +113,9 @@ async function main(): Promise<void> {
         process.stdout.write(`warm ${result.label}: ${result.failure ? 'FAILED' : 'ok'} in ${result.seconds.toFixed(1)}s\n`);
       }
     }));
+    const typia = warmTypiaPlugin(scratch);
+    results.push(typia);
+    process.stdout.write(`warm ${typia.label}: ${typia.failure ? 'FAILED' : 'ok'} in ${typia.seconds.toFixed(1)}s\n`);
     process.stdout.write(`warm finished ${results.length} installs in ${((Date.now() - started) / 1000).toFixed(1)}s\n`);
     const failed = results.filter(result => result.failure);
     for (const result of failed) process.stderr.write(`\n${result.label} failed:\n${result.failure}\n`);

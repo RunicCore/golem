@@ -44,7 +44,7 @@ export const CONCURRENCY = {
 } as const;
 
 const tiers: Readonly<Record<Tier, { readonly budget: string; readonly purpose: string }>> = {
-  prepare: { budget: '≤5 min (plus a first-time image build), network', purpose: 'Fill the npm and packed caches so tiers run offline.' },
+  prepare: { budget: '≤5 min (plus a first-time image build), network', purpose: 'Fill the npm, packed and typia plugin caches so tiers run offline.' },
   focused: { budget: '≤1 min', purpose: 'Did my change break what I touched?' },
   full: { budget: '≤5 min', purpose: 'Did I break anything anywhere?' },
   acceptance: { budget: '≤10 min, needs a stated reason', purpose: 'Is this releasable?' },

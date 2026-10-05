@@ -7,7 +7,7 @@ Run tests in the golem test-runner image. Tier runs are offline.
 | `npm run test -- <files or --test-name-pattern>` | 1 min | The tests you select. A packed or browser file packs first. |
 | `npm run test:full` | 5 min | Unit tests, the TypeScript 6 lane and the packed model-only smoke test. Run before a commit. |
 | `npm run test:acceptance` | 10 min | Full, the public-source and OpenAPI compliance checks, the acceptance unit tests, and the packed and browser tests. Run before a release. |
-| `npm run test:prepare` | 5 min (plus a first-time image build), online | Builds the image and fills the npm and packed caches. Runs no tests. Run it first, and again after a lockfile or image change. |
+| `npm run test:prepare` | 5 min (plus a first-time image build), online | Builds the image and fills the npm, packed and typia plugin caches. Runs no tests. Run it first, and again after a lockfile or image change. |
 | `npm run docs:check` | 2 min | Builds the documentation site and checks it. |
 
 Pass a test source path, such as `tests/serde.test.ts`, or any `node --test` flag.
@@ -21,6 +21,8 @@ The container's entrypoint installs TypeScript 6 once into `/cache/typescript6` 
 Run the lane's files with `npm run test -- --typescript 6`, or run chosen files on TypeScript 6 with `npm run test -- --typescript 6 tests/model-tags.test.ts`. To point a focused run at another TypeScript 6 install, set `GOLEM_TYPESCRIPT_ROOT` in your shell; `run.sh` passes it into the container. A TypeScript 7 install must be the one Golem itself loads, or the run fails at load.
 
 Name a unit test that is too slow for Full `tests/<name>.acceptance.ts` or `tests/openapi/<name>.acceptance.ts`. Acceptance runs it in its "acceptance unit" step.
+
+The benchmark's typia adapter compiles with `ttsc`, which builds typia's Go plugin from source on first use and fetches its Go modules. Prepare compiles one small typia project so the plugin and the modules are cached. The entrypoint keeps them in `/cache/ttsc` (`TTSC_CACHE_DIR`) and `/cache/gomod` (`GOMODCACHE`), outside the work tree that each run resets, and sets `GOPROXY=off` in the offline tiers. A missing module then fails the run at once with a Go error: run `npm run test:prepare`.
 
 After you change what a test installs, run `npm run test:prepare` before the next tier run. The TypeScript 6 lane changed the runner image, so every other checkout needs one `npm run test:prepare` after it updates to this change.
 

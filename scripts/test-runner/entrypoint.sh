@@ -6,7 +6,7 @@ tier="${1:?usage: golem-test <prepare|focused|full|acceptance|docs> [args]}"
 exec 9>/cache/run.lock
 flock -n 9 || { echo "Another golem test run holds /cache/run.lock; wait for it to finish." >&2; exit 2; }
 
-mkdir -p /cache/work /cache/npm /cache/packed /cache/linux-lock
+mkdir -p /cache/work /cache/npm /cache/packed /cache/linux-lock /cache/ttsc /cache/gomod
 # Copy the read-only source into the work tree, keeping mtimes so incremental
 # builds stay warm. Build output and installs live only in the work tree.
 rsync -a --delete \
@@ -17,8 +17,9 @@ rsync -a --delete \
 cd /cache/work
 
 export npm_config_cache=/cache/npm \
-  FE_DEPS_PACKED_DIR=/cache/packed FE_DEPS_RESULTS_DIR=/results
-if [ "$tier" != prepare ]; then export npm_config_offline=true; fi
+  FE_DEPS_PACKED_DIR=/cache/packed FE_DEPS_RESULTS_DIR=/results \
+  TTSC_CACHE_DIR=/cache/ttsc GOMODCACHE=/cache/gomod
+if [ "$tier" != prepare ]; then export npm_config_offline=true GOPROXY=off; fi
 
 # The checked-in package-lock.json is generated on macOS and lacks the Linux
 # platform binaries (typescript, esbuild, rollup). The container resolves its
