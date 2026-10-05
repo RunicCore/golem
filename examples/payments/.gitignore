@@ -1,2 +1,7 @@
-**/.golem/rewrites.json
-**/.golem/build/
+**/.golem/
+**/*.generated.ts
+**/src/generated/
+server/provider/sdk/
+server/api/openapi.yaml
+server/src/events/payment-events.model.ts
+web/sdk/

@@ -4,7 +4,7 @@ import path from 'node:path';
 import { existsSync } from 'node:fs';
 import { EXAMPLE_NAMES } from './maintained-examples.js';
 
-// Rewrite every maintained example's committed output with the workspace build.
+// Generate every maintained example's files with the workspace build, so the editor resolves them. The examples commit none of them.
 const root = fileURLToPath(new URL('../../', import.meta.url));
 for (const example of EXAMPLE_NAMES) {
   const cwd = path.join(root, 'examples', example);

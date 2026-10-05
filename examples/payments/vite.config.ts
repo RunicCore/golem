@@ -3,7 +3,7 @@ import react from '@vitejs/plugin-react';
 import { golem } from '@exprtlabs/golem/vite';
 
 export default defineConfig({
-  plugins: [golem(), react()],
+  plugins: [golem({ config: 'web/golem.yaml' }), react()],
   server: {
     port: 5173,
     strictPort: true,

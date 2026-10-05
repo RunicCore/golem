@@ -1,2 +1,3 @@
-.golem/rewrites.json
-.golem/build/
+.golem/
+*.generated.ts
+src/generated/

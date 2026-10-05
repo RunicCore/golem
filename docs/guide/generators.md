@@ -23,9 +23,7 @@ Your package version does not need to match golem's.
 
 ## Check what it writes
 
-The generator writes this file, and the models job then writes `payment-events.model.generated.ts` beside it:
-
-<<< ../../examples/payments/server/src/events/payment-events.model.ts
+The generator writes `payment-events.model.ts` into the `output` directory, and the models job then writes `payment-events.model.generated.ts` beside it.
 
 ## Use the generated models
 
