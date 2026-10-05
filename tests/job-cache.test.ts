@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { loadConfig } from '#golem/config';
-import { inputDigest, jobIsCurrent, loadJobRecords, saveJobRecords, type JobRecord, type JobSetup } from '#golem/job-cache';
+import { inputDigest, insideAny, jobIsCurrent, loadJobRecords, saveJobRecords, type JobRecord, type JobSetup } from '#golem/job-cache';
 import { GOLEM_VERSION } from '#golem/version';
 import { createFixtureProject } from './fixture-project.js';
 
@@ -97,6 +97,23 @@ test('a directory outside the golem.yaml directory is recorded by existence, one
   assert.equal(current(), true, 'the directory exists again');
   fs.writeFileSync(path.join(root, 'src/b.model.ts'), 'export {};\n');
   assert.equal(current(), false, 'a new file in a directory inside the root changes the listing');
+});
+
+test('a directory listing leaves out the ignored directories', (t: TestContext) => {
+  const { root, config, record } = project(t);
+  const job = config.jobs[0];
+  assert.ok(job);
+  const ignored = [path.join(root, 'build'), path.join(root, 'types')];
+  const recorded = { ...record, outputs: [], inputs: { '': inputDigest(root, (filename) => insideAny(ignored, filename), root) } };
+  const current = (): boolean => jobIsCurrent(config, job, recorded, SETUP, new Set(), ignored);
+  assert.equal(current(), true);
+  fs.mkdirSync(path.join(root, 'build/nested'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'build/nested/a.js'), '');
+  fs.mkdirSync(path.join(root, 'types'));
+  fs.writeFileSync(path.join(root, 'types/a.d.ts'), '');
+  assert.equal(current(), true, 'compiler output is no input');
+  fs.writeFileSync(path.join(root, 'b.ts'), '');
+  assert.equal(current(), false, 'a new file outside the ignored directories changes the listing');
 });
 
 test('a generated file is left out of a directory listing', (t: TestContext) => {

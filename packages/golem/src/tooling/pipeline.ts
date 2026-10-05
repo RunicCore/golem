@@ -5,7 +5,7 @@ import { pathToFileURL } from 'node:url';
 import { contains, resolveConfig, validateConfigInputs } from './config.js';
 import type { GolemConfig, GolemJob } from './config.js';
 import { loadInventory, applyJob, removeRetiredJobs } from './outputs.js';
-import { absoluteRecordPath, inventoryPaths, JobInputs, jobIsCurrent, loadJobRecords, recordPath, sameSetup, saveJobRecords } from './job-cache.js';
+import { absoluteRecordPath, insideAny, inventoryPaths, JobInputs, jobIsCurrent, loadJobRecords, recordPath, sameSetup, saveJobRecords } from './job-cache.js';
 import type { JobRecord } from './job-cache.js';
 import { GolemDiagnosticSeverity, errorMessage, hasErrorCode, isRecord } from './generator-api.js';
 import { validateModelManifest } from './model-manifest.js';
@@ -51,6 +51,8 @@ export interface PipelineOptions {
   readonly onInput?: (filename: string, kind: InputKind) => void;
   readonly onConfig?: (config: GolemConfig) => void;
   readonly onOwned?: (filenames: readonly string[]) => void;
+  /** Directories a job's directory inputs leave out: the compiler output of the project that builds after the run, which is no input of any job. */
+  readonly ignoredDirectories?: readonly string[];
   /** Provider resources kept across runs; a run without one disposes its own. */
   readonly session?: GeneratorSessionResources;
 }
@@ -382,6 +384,7 @@ function affectedJobs(config: GolemConfig, options: PipelineOptions): ReadonlySe
 }
 
 export async function runPipeline(filename: string, options: PipelineOptions = {}): Promise<PipelineState> {
+  const ignoredDirectories = options.ignoredDirectories ?? [];
   const session = options.session ?? new GeneratorSessionResources();
   using ownedSession = options.session ? undefined : session;
   const inputs = new Map<string, InputKind>();
@@ -436,7 +439,7 @@ export async function runPipeline(filename: string, options: PipelineOptions = {
     for (const job of config.jobs) {
       const record = records.get(job.id);
       if (record && !readsAny(config, record, retired)
-        && jobIsCurrent(config, job, record, { provider: versionOf(job), manifestInputs: expectedManifests }, generated)) current.add(job.id);
+        && jobIsCurrent(config, job, record, { provider: versionOf(job), manifestInputs: expectedManifests }, generated, ignoredDirectories)) current.add(job.id);
       expectedManifests.push(...(record?.manifests ?? []).map(manifest => absoluteRecordPath(config, manifest)));
     }
   }
@@ -506,7 +509,7 @@ export async function runPipeline(filename: string, options: PipelineOptions = {
       if (!provider) throw new Error(`Missing loaded provider ${job.package}.`);
       const keys = new Set<string>();
       used.set(job.id, keys);
-      const read = options.check ? undefined : new JobInputs(filename => generated.has(filename) || previousOutputs.has(filename) || ranOutputs.has(filename), config.directory);
+      const read = options.check ? undefined : new JobInputs(filename => generated.has(filename) || previousOutputs.has(filename) || ranOutputs.has(filename) || insideAny(ignoredDirectories, filename), config.directory);
       for (const input of declaredInputs(job)) read?.read(input);
       let generatedResult: unknown;
       try {

@@ -270,14 +270,18 @@ export function createOverlayProgram(
   });
 }
 
+/** `unwritten` are the texts of program files that are not on disk yet, such as the companions of a run, by path. */
 export function formatDiagnostics(
   diagnostics: readonly ts.Diagnostic[],
   root: string,
+  unwritten: readonly { readonly path: string; readonly content: string }[] = [],
 ): string {
+  const texts = new Map(unwritten.map((file) => [canonicalFilename(file.path), file.content]));
   return ts.formatDiagnosticsWithColorAndContext(diagnostics, {
     getCanonicalFileName: (filename) => filename,
     getCurrentDirectory: () => root,
     getNewLine: () => '\n',
+    readFile: (filename) => texts.get(canonicalFilename(filename)),
   });
 }
 

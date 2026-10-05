@@ -378,7 +378,9 @@ async function buildOnce(session: ts.ProgramSession, run: BuildRun, changed?: re
   // The generated files are part of the program the next steps read, so they are written first. A job whose inputs did not change is skipped.
   const previous = run.pipeline;
   run.pipeline = undefined;
-  const generated = await runPipeline(golemConfig.configFile, { session: run.generation, onInput: observe, ...(previous === undefined || changed === undefined ? {} : { previous, changedInputs: changed }) });
+  // The compiler output is this build's own: a job that lists the project must not see it change.
+  const ignoredDirectories = [stringOption(configured.options, 'outDir'), stringOption(configured.options, 'declarationDir')].filter((directory) => directory !== undefined);
+  const generated = await runPipeline(golemConfig.configFile, { session: run.generation, onInput: observe, ignoredDirectories, ...(previous === undefined || changed === undefined ? {} : { previous, changedInputs: changed }) });
   for (const output of generated.owned) run.owned.add(output);
   // The compiler session knows only the changes it was told about.
   if (generated.ran.size > 0) session.inputsChanged(generated.owned);

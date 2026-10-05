@@ -621,7 +621,7 @@ export interface TypeScriptBackend {
   forEachChild<T>(node: Node, callback: (node: Node) => T | undefined): T | undefined;
   formatDiagnosticsWithColorAndContext(
     diagnostics: readonly Diagnostic[],
-    host: { getCanonicalFileName(filename: string): string; getCurrentDirectory(): string; getNewLine(): string },
+    host: { getCanonicalFileName(filename: string): string; getCurrentDirectory(): string; getNewLine(): string; readFile?(filename: string): string | undefined },
   ): string;
   getDecorators(node: Node): readonly Decorator[] | undefined;
   getModifiers(node: Node): readonly Node[] | undefined;

@@ -81,27 +81,22 @@ test('a project with no generated file builds in one golem build, and the built 
   assert.deepEqual(built.money, { currency: 'USD', value: '1' });
 });
 
-test('a build with no change runs no job and emits nothing again', { timeout: HEAVY_TEST_TIMEOUT_MS }, async (t) => {
+test('a second build with no change runs no job and emits nothing again', { timeout: HEAVY_TEST_TIMEOUT_MS }, async (t) => {
   const root = sourceOnlyProject(t, 'build-second');
   write(root, 'src/use.ts', USE);
   countingGenerator(root);
   const first = await buildAndListJobs(root);
   assert.equal(first.exitCode, 0);
   assert.deepEqual(first.ran, ['generator:out', 'models:.'], 'the first build ran every job');
-  // The models job lists the project root, which gains `build/` while the first build emits: the second build runs that job once
-  // more and records the listing with the output in it. The generator reads one file and is current.
-  const second = await buildAndListJobs(root);
-  assert.equal(second.exitCode, 0);
-  assert.deepEqual(second.ran.filter((id) => id !== 'models:.'), [], 'a job that reads no changed input does not run');
-
   const companion = path.join(root, 'src/money.model.generated.ts');
   const generatedAt = fs.statSync(companion, { bigint: true }).mtimeNs;
   const emitted = mtimes(path.join(root, 'build'), '.js');
   assert.ok(emitted.size > 0);
+
   await new Promise((resolve) => setTimeout(resolve, 20));
-  const third = await buildAndListJobs(root);
-  assert.equal(third.exitCode, 0);
-  assert.deepEqual(third.ran, [], 'no job ran');
+  const second = await buildAndListJobs(root);
+  assert.equal(second.exitCode, 0);
+  assert.deepEqual(second.ran, [], 'no job ran: the build\'s own output is no input of the models job');
   assert.equal(fs.statSync(companion, { bigint: true }).mtimeNs, generatedAt);
   assert.deepEqual(mtimes(path.join(root, 'build'), '.js'), emitted, 'nothing was emitted again');
 });

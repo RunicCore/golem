@@ -735,17 +735,20 @@ const DIAGNOSTIC_CATEGORY_NAMES: Readonly<Record<number, string>> = {
 /** Format diagnostics as `path:line:col - error TS1234: message`, with chained messages indented below. */
 export function formatDiagnosticsWithColorAndContext(
   diagnostics: readonly Diagnostic[] | readonly SyncDiagnostic[],
-  host: { getCanonicalFileName(filename: string): string; getCurrentDirectory(): string; getNewLine(): string },
+  host: { getCanonicalFileName(filename: string): string; getCurrentDirectory(): string; getNewLine(): string; readFile?(filename: string): string | undefined },
 ): string {
   const texts = new Map<string, string | undefined>();
   const sourceText = (fileName: string, file: SourceFile | undefined): string | undefined => {
     if (file?.text !== undefined) return file.text;
     if (!texts.has(fileName)) {
-      let text: string | undefined;
-      try {
-        text = readFileSync(fileName, 'utf8');
-      } catch {
-        text = undefined;
+      // The host knows files that exist only in the program, such as a companion a run has not written.
+      let text: string | undefined = host.readFile?.(fileName);
+      if (text === undefined) {
+        try {
+          text = readFileSync(fileName, 'utf8');
+        } catch {
+          text = undefined;
+        }
       }
       texts.set(fileName, text);
     }

@@ -99,7 +99,15 @@ function hashText(text: string): string {
   return crypto.createHash('sha256').update(text).digest('hex');
 }
 
-/** The files of a directory, as sorted paths relative to it. Dot-directories and node_modules are skipped, as the output scan skips them. */
+/** Whether `filename` is one of `directories` or lies under one. */
+export function insideAny(directories: readonly string[], filename: string): boolean {
+  return directories.some(directory => contains(directory, filename));
+}
+
+/**
+ * The files of a directory, as sorted paths relative to it. Dot-directories (`.golem` among them) and node_modules are skipped, as the
+ * output scan skips them, and so is a directory `excluded` names: the project's compiler output.
+ */
 function listFiles(directory: string, excluded: (filename: string) => boolean, prefix = ''): string[] {
   let entries: fs.Dirent[];
   try {
@@ -112,7 +120,7 @@ function listFiles(directory: string, excluded: (filename: string) => boolean, p
   for (const entry of entries) {
     const filename = path.join(directory, entry.name);
     if (entry.isDirectory()) {
-      if (entry.name.startsWith('.') || entry.name === 'node_modules') continue;
+      if (entry.name.startsWith('.') || entry.name === 'node_modules' || excluded(filename)) continue;
       listed.push(...listFiles(filename, excluded, `${prefix}${entry.name}/`));
     } else if (!excluded(filename)) listed.push(`${prefix}${entry.name}`);
   }
@@ -123,7 +131,7 @@ function listFiles(directory: string, excluded: (filename: string) => boolean, p
  * The digest of one input now: a file's content, the sorted listing of the files of a directory under `root` (a new model file
  * changes it) or `missing`, which also stands for such a directory that lists no file. A directory outside `root` is a path the
  * compiler probed, such as `/` above the project: only its existence is recorded, as a listing of it would walk what the job
- * does not own. `excluded` names generated files, which a listing leaves out: a job's own output must not change what it reads.
+ * does not own. `excluded` names generated files and directories, which a listing leaves out: a job's own output must not change what it reads.
  */
 export function inputDigest(filename: string, excluded: (filename: string) => boolean, root: string): string {
   let stat: fs.Stats | undefined;
@@ -171,13 +179,14 @@ export function jobIsCurrent(
   record: JobRecord | undefined,
   setup: JobSetup,
   generated: ReadonlySet<string> = inventoryPaths(config, loadInventory(config)),
+  ignoredDirectories: readonly string[] = [],
 ): boolean {
   if (!record || record.golem !== GOLEM_VERSION || record.options !== JSON.stringify(job.options) || !sameSetup(config, record, setup)) return false;
   // A job that announced no input hides what it reads: nothing can show that it is still true.
   if (Object.keys(record.inputs).length === 0) return false;
   const outputs = new Set(record.outputs.map(output => absoluteRecordPath(config, output)));
   if (![...outputs].every(output => fs.existsSync(output))) return false;
-  const excluded = (filename: string): boolean => generated.has(filename) || outputs.has(filename);
+  const excluded = (filename: string): boolean => generated.has(filename) || outputs.has(filename) || insideAny(ignoredDirectories, filename);
   return Object.entries(record.inputs)
     .every(([input, digest]) => inputDigest(absoluteRecordPath(config, input), excluded, config.directory) === digest);
 }
