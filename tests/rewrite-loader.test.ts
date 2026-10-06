@@ -78,6 +78,30 @@ test('node runs a TypeScript file whose parse and stringify calls the host rewri
   assert.deepEqual(JSON.parse(json!), { money: { currency: 'USD', value: '1' }, twice: 42 });
 });
 
+test('a validating model project runs when its sources and its companions are imported with .js specifiers', async (t) => {
+  const root = await project(t, 'loader-js-specifiers', { generate: false });
+  write(root, 'golem.yaml', 'version: 1\nmobx: false\nvalidation: true\nmodels:\n  root: .\n');
+  write(root, 'src/money.model.ts', [
+    "import type { IModel } from '@exprtlabs/golem/model';",
+    "import type { MinLength } from '@exprtlabs/golem/tags';",
+    "import { TMoneyBaseModel } from './money.model.generated.js';",
+    'export type TMoney = IModel<{ currency: string & MinLength<3> }>;',
+    'export class Money extends TMoneyBaseModel {}',
+    '',
+  ].join('\n'));
+  write(root, 'src/main.ts', [
+    `import { requireObjectCodec } from '${SERDE}';`,
+    "import { Money } from './money.model.js';",
+    "const codec = requireObjectCodec('TMoney');",
+    "console.log(JSON.stringify({ good: codec.validate(new Money({ currency: 'USD' })), bad: codec.validate(new Money({ currency: 'x' })) }));",
+    '',
+  ].join('\n'));
+  await runPipeline(path.join(root, 'golem.yaml'));
+  const result = await run(root, 'src/main.ts');
+  assert.equal(result.code, 0, result.stderr);
+  assert.deepEqual(JSON.parse(result.stdout.split('\n')[0]!), { good: true, bad: false });
+});
+
 test('a stack trace through a rewritten file names its original line', async (t) => {
   const root = await project(t, 'loader-source-map');
   const result = await run(root, 'src/main.ts');

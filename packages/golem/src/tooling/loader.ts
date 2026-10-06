@@ -9,10 +9,18 @@ import type { RewriteProject } from './rewrite-host.js';
  * the working directory; with neither, a TypeScript file outside `node_modules` fails the load. The scan needs
  * TypeScript, so the first TypeScript file loads it. The loader thread owns its own compiler session, a second-tier
  * cost beside the one of the build: the program is opened once in the thread and reopened for a file it does not hold.
- * ES modules only: a rewrite adds imports, which CommonJS cannot run. `.tsx` goes straight to Node, which cannot strip it.
+ * The `resolve` hook lets a relative `.js`, `.mjs` or `.cjs` import name the TypeScript source that has no built file yet,
+ * the way the generated companions and validators name their siblings. ES modules only: a rewrite adds imports, which CommonJS cannot run. `.tsx` goes straight to Node, which cannot strip it.
  */
 
 const TYPESCRIPT_FILE = /\.(?:ts|mts|cts)$/;
+
+const BUILT_TO_SOURCE: Readonly<Record<string, string>> = { '.js': '.ts', '.mjs': '.mts', '.cjs': '.cts' };
+const RELATIVE_BUILT_FILE = /^\.{1,2}\/.*(\.[cm]?js)$/;
+
+interface ResolveContext { readonly parentURL?: string | undefined; readonly conditions?: readonly string[]; readonly importAttributes?: object }
+interface ResolveResult { readonly url: string; readonly format?: string | null | undefined; readonly shortCircuit?: boolean }
+type NextResolve = (specifier: string, context?: ResolveContext) => ResolveResult | Promise<ResolveResult>;
 
 interface LoadContext { readonly format?: string | null | undefined }
 interface LoadResult { readonly format: string; readonly source?: string | ArrayBuffer | NodeJS.TypedArray | null | undefined; readonly shortCircuit?: boolean }
@@ -29,6 +37,21 @@ let project: Promise<RewriteProject> | undefined;
 function projectOfThisProcess(): Promise<RewriteProject> {
   project ??= openRewriteProject({ cwd: process.cwd() });
   return project;
+}
+
+export async function resolve(specifier: string, context: ResolveContext, nextResolve: NextResolve): Promise<ResolveResult> {
+  try {
+    return await nextResolve(specifier, context);
+  } catch (error) {
+    const built = RELATIVE_BUILT_FILE.exec(specifier)?.[1];
+    if (built === undefined || !(error instanceof Error) || Reflect.get(error, 'code') !== 'ERR_MODULE_NOT_FOUND') throw error;
+    // The source has the built file's name with its TypeScript extension; when it does not exist either, the first error stands.
+    try {
+      return await nextResolve(`${specifier.slice(0, -built.length)}${BUILT_TO_SOURCE[built]}`, context);
+    } catch {
+      throw error;
+    }
+  }
 }
 
 export async function load(url: string, context: LoadContext, nextLoad: NextLoad): Promise<LoadResult> {
