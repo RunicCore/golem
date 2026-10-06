@@ -278,6 +278,18 @@ test('a solution tsconfig generates with the options of the referenced project t
   assert.ok(result.artifacts.some(artifact => artifact.path === path.join(sourceRoot, 'item.model.generated.ts')));
 });
 
+test('a solution tsconfig that starts with a byte-order mark generates with the options of the referenced project', (t: TestContext) => {
+  const { root, sourceRoot } = solutionProject(t, ['./tsconfig.other.json', './tsconfig.app.json']);
+  const solution = path.join(root, 'tsconfig.json');
+  fs.writeFileSync(solution, `\uFEFF${fs.readFileSync(solution, 'utf8')}`);
+  writeModelSources(sourceRoot, {
+    'lib/ids.ts': 'export type Id = string;\n',
+    'item.model.ts': taggedModelSource({ name: 'Item', imports: tsSource`import type { Id } from '@lib/ids';`, fields: tsSource`id: Id` }),
+  });
+  const result = generate({ root, profile: { mobx: false, validation: true } });
+  assert.ok(result.artifacts.some(artifact => artifact.path === path.join(sourceRoot, 'item.model.generated.ts')));
+});
+
 test('a solution tsconfig checks a generated SDK module with the options of the referenced project', (t: TestContext) => {
   const { root, sourceRoot } = solutionProject(t, ['./tsconfig.other.json', './tsconfig.app.json']);
   copyFixture(root, 'models/model-generator/manifest-identity');

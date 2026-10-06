@@ -626,7 +626,8 @@ export const sys: ModuleResolutionHost & {
   fileExists: (filename) => existsSync(filename),
   readFile: (filename) => {
     try {
-      return readFileSync(filename, 'utf8');
+      // Like the TypeScript 6 system, return the text without a leading U+FEFF, so a JSON file that starts with one parses.
+      return readFileSync(filename, 'utf8').replace(/^\uFEFF/, '');
     } catch {
       return undefined;
     }
