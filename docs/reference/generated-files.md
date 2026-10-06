@@ -66,7 +66,7 @@ Every other file in an SDK is internal and may change in a minor release. Do not
 - `client.ts`
 - `inbound.ts` and `links.ts` (their names are public through `sdk/index.js`)
 - `model-manifest.json`
-- `operations/<name>.validators.generated.ts` and `models/_*.validators.generated.ts`
+- `validators.generated.ts` (the validators of every model and operation)
 
 ## Internal model files
 

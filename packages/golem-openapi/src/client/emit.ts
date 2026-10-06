@@ -1,7 +1,6 @@
 import type { EmissionPlan } from '../emission-plan.js';
 import { mediaFraming } from '../emission-plan.js';
-import { compileSchemaValidators, uniqueDiagnostics, type SchemaPlace } from '@exprtlabs/golem/validation-plan';
-import type { GolemDiagnostic } from '@exprtlabs/golem/generator-api';
+import type { SchemaPlace, SdkValidatorsInput } from '@exprtlabs/golem/validation-plan';
 import { asRecord, escapeJsonPointerToken, isJsonObject, objectEntries } from '../json.js';
 import { componentPlace, type OriginLocator } from '../origin.js';
 import { identifier, NameScope, propertyName } from '@exprtlabs/golem/generator-api';
@@ -120,9 +119,6 @@ export interface GeneratedClientModules {
   readonly client: string;
   /** Module paths are relative to the generated package root. */
   readonly operations: ReadonlyMap<string, string>;
-  /** One validators module per operation, keyed like `operations`; none when validation is off, and a source is empty when its compile reported an error. */
-  readonly operationValidators: ReadonlyMap<string, string>;
-  readonly diagnostics: readonly GolemDiagnostic[];
 }
 
 function operationFactoryName(operation: NormalizedOperation): string {
@@ -272,7 +268,7 @@ function operationSource(
     profile.mobx
       ? `import { createObservableApiOperation as createApiOperation, type ObservableApiOperation as ApiOperation } from '@exprtlabs/golem/mobx';`
       : '',
-    validatesWithSources ? `import { ${validatorImports.map(item => `${item.exported} as ${item.local}`).join(', ')} } from './${operation.name}.validators.generated.js';` : '',
+    validatesWithSources ? `import { ${validatorImports.map(item => `${item.exported} as ${item.local}`).join(', ')} } from '../validators.generated.js';` : '',
     validationFunctions.length
       ? `import { ${validationFunctions.join(', ')} } from '@exprtlabs/golem/validation';`
       : '',
@@ -546,14 +542,60 @@ ${metadata}
 `;
 }
 
+type OperationValidationBundle = ReturnType<typeof buildOperationValidationSchemaBundle>;
+
+/** What the SDK's validators module compiles for the operations. */
+export interface OperationValidationSchemas {
+  /** The validation schema bundle of each operation, by operation name. */
+  readonly bundles: ReadonlyMap<string, OperationValidationBundle>;
+  /** The roots and resources of each operation, for `compileSdkValidators`. */
+  readonly operations: SdkValidatorsInput['operations'];
+  /** Where a diagnostic about an operation schema belongs in the user's document. */
+  readonly locate: (resource: string, pointer: string) => SchemaPlace | undefined;
+}
+
+/** The validation schemas of every operation; none when the profile does not validate. */
+export function buildOperationValidationSchemas(
+  operations: readonly NormalizedOperation[],
+  document: unknown,
+  profile: OpenApiGenerationProfile,
+  schemaData?: ReturnType<typeof buildSchemaData>,
+  locate?: OriginLocator,
+): OperationValidationSchemas | undefined {
+  if (!profile.validation) return undefined;
+  const bundles = buildOperationValidationSchemaBundles(document, operations, schemaData);
+  const list = operations.map((operation) => {
+    const bundle = bundles.get(operation.name);
+    if (!bundle) throw new Error(`Missing generated validation schema bundle for operation ${operation.name}`);
+    return bundle;
+  });
+  const componentNames = new Map(list.flatMap((bundle) => Object.entries(bundle.componentNames)));
+  const operationRoots = new Map(list.map((bundle) => [bundle.operationRootId, bundle.operationName] as const));
+  return {
+    bundles,
+    operations: list.map((bundle) => ({ roots: bundle.roots, resources: bundle.schemas })),
+    locate: (resource, pointer) => {
+      const component = componentNames.get(resource);
+      if (component !== undefined) return componentPlace(locate, component, pointer);
+      const operationName = operationRoots.get(resource);
+      if (operationName === undefined) return undefined;
+      const prefix = `/operations/${escapeJsonPointerToken(operationName)}`;
+      return pointer.startsWith(prefix) ? { where: `operation ${JSON.stringify(operationName)} at ${pointer.slice(prefix.length) || '/'}` } : undefined;
+    },
+  };
+}
+
+/**
+ * The modules of the client. When the profile validates, `validatorExports` is the name the SDK's validators module
+ * exports each operation root under, and each operation module imports its validators from that module.
+ */
 export function generateClientModules(
   clientName: string,
   operations: readonly NormalizedOperation[],
   document: unknown = {},
   profile: OpenApiGenerationProfile,
   plan: EmissionPlan,
-  schemaData?: ReturnType<typeof buildSchemaData>,
-  locate?: OriginLocator,
+  validation?: { readonly schemas: OperationValidationSchemas; readonly validatorExports: ReadonlyMap<string, string> },
 ): GeneratedClientModules {
   requireProfile(profile);
   const rawSecuritySchemes = Object.fromEntries(plan.referencedAuthSchemes);
@@ -570,37 +612,6 @@ export function generateClientModules(
       },
     ]),
   );
-  const validationBundles = profile.validation
-    ? buildOperationValidationSchemaBundles(document, operations, schemaData)
-    : new Map<string, ReturnType<typeof buildOperationValidationSchemaBundle>>();
-  const operationValidators = new Map<string, string>();
-  const validatorExports = new Map<string, ReadonlyMap<string, string>>();
-  const diagnostics: GolemDiagnostic[] = [];
-  for (const operation of operations) {
-    const bundle = validationBundles.get(operation.name);
-    if (!profile.validation) continue;
-    if (!bundle) throw new Error(`Missing generated validation schema bundle for operation ${operation.name}`);
-    const compiled = compileSchemaValidators(
-      { roots: bundle.roots, resources: bundle.schemas },
-      {
-        owner: '@exprtlabs/golem-openapi',
-        unknownFormats: profile.unknownFormats ?? 'warn',
-        documentName: 'the OpenAPI document',
-        locate: (resource, pointer): SchemaPlace | undefined => {
-          const component = bundle.componentNames[resource];
-          if (component !== undefined) return componentPlace(locate, component, pointer);
-          const prefix = `/operations/${escapeJsonPointerToken(bundle.operationName)}`;
-          return resource === bundle.operationRootId && pointer.startsWith(prefix)
-            ? { where: `operation ${JSON.stringify(bundle.operationName)} at ${pointer.slice(prefix.length) || '/'}` }
-            : undefined;
-        },
-      },
-    );
-    diagnostics.push(...compiled.diagnostics);
-    operationValidators.set(`operations/${operation.name}.validators.generated.ts`, compiled.source);
-    validatorExports.set(operation.name, compiled.exports);
-  }
-
   const emittedOperations = new Map<string, string>();
   for (const operation of operations) {
     const operationSchemes = operationSecuritySchemeData(operation, securitySchemes);
@@ -612,11 +623,11 @@ export function generateClientModules(
       plan,
       responseContractsForOperation(document, operation),
       operationSchemes,
-      validationBundles.get(operation.name),
-      validatorExports.get(operation.name) ?? new Map(),
+      validation?.schemas.bundles.get(operation.name),
+      validation?.validatorExports ?? new Map(),
     ));
   }
   const client = emitClient(clientName, operations, profile, plan, rawSecuritySchemes);
-  return { client, operations: emittedOperations, operationValidators, diagnostics: uniqueDiagnostics(diagnostics) };
+  return { client, operations: emittedOperations };
 }
 

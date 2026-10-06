@@ -11,10 +11,10 @@ import {
   type ModelDiscriminators,
 } from '@exprtlabs/golem/emitter';
 import { createSchemaGraph, codecPublicId, internDescriptors, type SchemaGraph, type SchemaNode } from '@exprtlabs/golem/schema-graph';
-import type { CodecSchemaClosureEntry, CodecValidationPlan } from '@exprtlabs/golem/validation-plan';
+import type { CodecSchemaClosureEntry, CodecValidationPlan, SchemaPlace } from '@exprtlabs/golem/validation-plan';
 import { assertSupportedModelFieldName, type JsonSchema } from '@exprtlabs/golem/schema';
 import { sourceDigest } from '@exprtlabs/golem/manifest';
-import { buildCodecValidationPlan, compilePlanValidators, uniqueDiagnostics } from '@exprtlabs/golem/validation-plan';
+import { buildCodecValidationPlan, uniqueDiagnostics } from '@exprtlabs/golem/validation-plan';
 import type { DiscriminatorValue, ModelConstraint, ModelTypeDescriptor, UnionDiscriminator } from '@exprtlabs/golem/model';
 
 import { asRecord, isJsonObject, jsonLiteral, objectEntries } from './json.js';
@@ -1313,7 +1313,16 @@ export function generateOpenApiModelArtifacts(
   document: unknown,
   profile: OpenApiGenerationProfile,
   analysis: OpenApiModelAnalysis,
-  helpers: { readonly copyAdditionalProperties?: boolean; readonly objectFromJSON?: boolean; readonly locate?: OriginLocator | undefined } = {},
+  helpers: {
+    readonly copyAdditionalProperties?: boolean;
+    readonly objectFromJSON?: boolean;
+    readonly locate?: OriginLocator | undefined;
+    /**
+     * Compiles the SDK's validators module from the validation plan of every model and returns the name it exports
+     * each root under (`PlanValidators.exports`). Called once, and required when the profile validates.
+     */
+    readonly compileValidators?: (input: { readonly plan: CodecValidationPlan; readonly locateModel: (name: string) => SchemaPlace }) => ReadonlyMap<string, string>;
+  } = {},
 ): { readonly files: ReadonlyMap<string, string>; readonly entryReexports: string; readonly diagnostics: readonly GolemDiagnostic[] } {
   const { schemaGraph, definitions, ordered, grouping } = analysis;
   const { groups, owner, runtimeEdges } = grouping;
@@ -1388,6 +1397,29 @@ export function generateOpenApiModelArtifacts(
     ];
     return aliases.map(([local, exported]) => local === exported ? local : `${local} as ${exported}`);
   };
+  // Every group's validation plan comes first: the companions of a group import their validators by the names the
+  // SDK's one validators module gives, and that module compiles every model in one plan.
+  const groupPlans = new Map<string, CodecValidationPlan>();
+  if (profile.validation) {
+    for (const group of groups) {
+      const dependencyCodecIds = new Set([...(dependenciesByGroup.get(group.id) ?? [])].flatMap((id) => {
+        const node = schemaGraph.nodes.get(id);
+        return node ? [node.codecId] : [];
+      }));
+      const externalCodecs = validationClosure.filter((entry) => dependencyCodecIds.has(entry.codecId));
+      groupPlans.set(group.id, buildCodecValidationPlan(
+        schemaGraphView(schemaGraph, group.nodes, dependenciesByGroup.get(group.id) ?? new Set<string>()),
+        externalCodecs,
+      ));
+    }
+  }
+  if (profile.validation && !helpers.compileValidators) throw new Error('A validating SDK compiles its model validators with the operation validators; the caller names how.');
+  const validatorExports = profile.validation && helpers.compileValidators
+    ? helpers.compileValidators({
+      plan: buildCodecValidationPlan(schemaGraph),
+      locateModel: (name) => componentPlace(helpers.locate, schemaNameByModelName.get(name) ?? name, ''),
+    })
+    : undefined;
   for (const group of groups) {
     const localIds = group.nodes;
     const dependencyIds = dependenciesByGroup.get(group.id) ?? new Set<string>();
@@ -1449,32 +1481,11 @@ export function generateOpenApiModelArtifacts(
       // resolves the closure; named imports are still pruned to actual calls.
       moduleImports.push(`import ${JSON.stringify(`./_${dependencyGroupId}.js`)};`);
     }
-    const validatorModule = `${group.filename.slice(0, -3)}.validators.generated.ts`;
-    let groupPlan: CodecValidationPlan | undefined;
-    let validatorExports: ReadonlyMap<string, string> | undefined;
-    if (profile.validation) {
-      const dependencyCodecIds = new Set([...dependencyIds].flatMap((id) => {
-        const node = schemaGraph.nodes.get(id);
-        return node ? [node.codecId] : [];
-      }));
-      const externalCodecs = validationClosure.filter((entry) => dependencyCodecIds.has(entry.codecId));
-      groupPlan = buildCodecValidationPlan(
-        schemaGraphView(schemaGraph, localIds, dependencyIds),
-        externalCodecs,
-      );
-      const compiled = compilePlanValidators(groupPlan, {
-        owner: '@exprtlabs/golem-openapi',
-        unknownFormats: profile.unknownFormats ?? 'warn',
-        documentName: 'the OpenAPI document',
-        locateModel: (name) => componentPlace(helpers.locate, schemaNameByModelName.get(name) ?? name, ''),
-      });
-      diagnostics.push(...compiled.diagnostics);
-      files.set(validatorModule, compiled.source);
-      validatorExports = compiled.exports;
+    const groupPlan = groupPlans.get(group.id);
+    if (groupPlan && validatorExports) {
       // The model module's import pruning keeps the validators its codecs use.
-      if (compiled.exports.size > 0) {
-        moduleImports.push(`import { ${[...compiled.exports.values()].sort().join(', ')} } from ${JSON.stringify(`./_${group.id}.validators.generated.js`)};`);
-      }
+      const names = Object.keys(groupPlan.schemas).flatMap((id) => validatorExports.get(id) ?? []);
+      if (names.length > 0) moduleImports.push(`import { ${[...new Set(names)].sort().join(', ')} } from '../validators.generated.js';`);
     }
     const modelModule = generateModels(document, profile, {
       ...helpers,

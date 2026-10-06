@@ -465,7 +465,7 @@ test('generation is deterministic', async (t) => {
   assert.deepEqual(second.artifacts, first.artifacts, 'repeated generation from the same document produces identical artifacts');
   writeSdk(document, { output, name: 'ExamplePayments' });
   assert.equal(fs.existsSync(path.join(output, 'schemas.ts')), false);
-  assert.ok(fs.readdirSync(path.join(output, 'operations')).some((name) => name.endsWith('.validators.generated.ts')));
+  assert.ok(fs.existsSync(path.join(output, 'validators.generated.ts')));
   assert.ok(fs.existsSync(path.join(output, 'input-schemas.ts')));
   assert.ok(fs.existsSync(path.join(output, 'output-schemas.ts')));
   const manifestText = fs.readFileSync(path.join(output, 'model-manifest.json'), 'utf8');

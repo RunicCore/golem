@@ -8,16 +8,18 @@ import { runPipeline } from '#golem/pipeline';
 import { workspace } from './support/process.js';
 import { writeFixture } from './support/consumer.js';
 
-/** SDK model groups carry their own validator modules; nothing is written at the SDK root. */
-function sdkModelValidatorModules(root: string): string[] {
-  const directory = path.join(root, 'sdk/models');
-  return fs.existsSync(directory) ? fs.readdirSync(directory).filter(name => name.endsWith('.validators.generated.ts')) : [];
-}
+/** A validators module: `validators.generated.ts` of an SDK, or `<name>.validators.generated.ts` of a model job. */
+const VALIDATOR_MODULE = /(?:^|\/)(?:[^/]*\.)?validators\.generated\.ts$/;
 
-/** Every SDK operation carries its own validator module. */
-function sdkOperationValidatorModules(root: string): string[] {
-  const directory = path.join(root, 'sdk/operations');
-  return fs.existsSync(directory) ? fs.readdirSync(directory).filter(name => name.endsWith('.validators.generated.ts')) : [];
+/** The SDK writes one validators module at its root, for its models and its operations. */
+function sdkValidatorModules(root: string): string[] {
+  const modules = fs.existsSync(path.join(root, 'sdk/validators.generated.ts')) ? ['validators.generated.ts'] : [];
+  const retired = ['models', 'operations'].flatMap(directory => {
+    const folder = path.join(root, 'sdk', directory);
+    return fs.existsSync(folder) ? fs.readdirSync(folder).filter(name => name.endsWith('.validators.generated.ts')) : [];
+  });
+  assert.deepEqual(retired, [], 'no group or operation writes its own validators module');
+  return modules;
 }
 
 function fixture(t: TestContext) {
@@ -41,8 +43,7 @@ function fixture(t: TestContext) {
 test('an interrupted inventory replacement recovers and the validators stay in place', async t => {
   const setup = fixture(t);
   await runPipeline(setup.config);
-  assert.ok(sdkModelValidatorModules(setup.root).length > 0, 'SDK models have validator modules');
-  assert.ok(sdkOperationValidatorModules(setup.root).length > 0, 'SDK operations have validator modules');
+  assert.equal(sdkValidatorModules(setup.root).length, 1, 'the SDK has one validators module');
   const originalInventory = fs.readFileSync(setup.inventory, 'utf8');
   setup.addProbe('first');
   const rename = fs.renameSync;
@@ -53,24 +54,22 @@ test('an interrupted inventory replacement recovers and the validators stay in p
   await assert.rejects(runPipeline(setup.config), /interrupted inventory replacement/);
   fault.mock.restore();
   assert.equal(fs.readFileSync(setup.inventory, 'utf8'), originalInventory);
-  assert.ok(sdkOperationValidatorModules(setup.root).length > 0, 'the interrupted run left its operation validators in place');
+  assert.equal(sdkValidatorModules(setup.root).length, 1, 'the interrupted run left the SDK validators in place');
   const recovered = await runPipeline(setup.config);
   await runPipeline(setup.config, { check: true });
   const files: Record<string, unknown> = JSON.parse(fs.readFileSync(setup.inventory, 'utf8')).files;
-  const validators = Object.keys(files).filter(filename => filename.endsWith('.validators.generated.ts'));
+  const validators = Object.keys(files).filter(filename => VALIDATOR_MODULE.test(filename));
   const emittedValidators = [...recovered.results.values()].flatMap(result => result.artifacts)
-    .filter(artifact => artifact.path.endsWith('.validators.generated.ts'))
+    .filter(artifact => VALIDATOR_MODULE.test(artifact.path))
     .map(artifact => path.relative(setup.root, artifact.path));
   assert.ok(emittedValidators.length > 0, 'the recovered run emitted a validator module');
   // The probe changes only the frontend module; the SDK files the interrupted run wrote are not emitted again, so the recovered run emits a subset.
   for (const filename of emittedValidators) assert.ok(validators.includes(filename), `${filename} is inventoried`);
   const validatorsOf = (inventory: string) => Object.keys((JSON.parse(inventory) as { files: Record<string, unknown> }).files)
-    .filter(filename => filename.endsWith('.validators.generated.ts'));
+    .filter(filename => VALIDATOR_MODULE.test(filename));
   assert.deepEqual(new Set(validators), new Set(validatorsOf(originalInventory)), 'recovery inventories exactly the validator modules of the first run');
-  assert.ok(validators.some(filename => filename.startsWith('sdk/operations/')), 'SDK operation validators are inventoried');
-  const modelValidators = validators.filter(filename => !filename.startsWith('sdk/operations/'));
-  assert.ok(modelValidators.some(filename => filename.startsWith('sdk/models/')), 'SDK model validators are inventoried');
-  assert.ok(modelValidators.some(filename => filename.startsWith('src/')), 'frontend validators are inventoried');
+  assert.ok(validators.includes('sdk/validators.generated.ts'), 'the SDK validators are inventoried');
+  assert.ok(validators.some(filename => filename.startsWith('src/')), 'frontend validators are inventoried');
   for (const filename of validators) assert.equal(fs.existsSync(path.join(setup.root, filename)), true, filename);
 });
 
@@ -94,8 +93,7 @@ test('watch regenerates SDK then frontend without output loops', async t => {
   await untilRun(1);
   setup.addProbe('first');
   await untilRun(2);
-  assert.ok(sdkOperationValidatorModules(setup.root).length > 0);
-  assert.ok(sdkModelValidatorModules(setup.root).length > 0);
+  assert.equal(sdkValidatorModules(setup.root).length, 1);
   await runPipeline(setup.config, { check: true });
   const before = fs.statSync(setup.inventory).mtimeMs;
   await runPipeline(setup.config, { check: true });

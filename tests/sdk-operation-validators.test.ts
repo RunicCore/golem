@@ -6,6 +6,7 @@ import { pathToFileURL } from 'node:url';
 import test from 'node:test';
 
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
+import { compileSdkValidators } from '@exprtlabs/golem/validation-plan';
 import { writeSdk } from '#openapi/generator';
 import {
   artifactBasenames,
@@ -93,14 +94,15 @@ function compileValidatedSdk(output: string): string {
   return outDir;
 }
 
-test('OpenAPI SDKs emit per-operation validators; models use generated validators', () => {
+test('OpenAPI SDKs emit one validators module that the models and the operations use', () => {
   const result = writeSdk(validatedDocument(), {
     output: path.join(tmpdir(), 'validators-profile'),
     name: 'Validated',
     profile,
   });
   const names = artifactBasenames(result.artifacts);
-  assert.equal(names.includes('getTask.validators.generated.ts'), true);
+  assert.equal(names.includes('validators.generated.ts'), true);
+  assert.equal(names.some(name => name !== 'validators.generated.ts' && name.endsWith('.validators.generated.ts')), false, 'no group or operation writes its own');
   const models = generatedModelSource(result.artifacts);
   assert.match(models, /validators\.generated\.js/);
   assert.match(models, /createObjectCodec/);
@@ -143,12 +145,10 @@ test('SDK operation validators expose every operation reference and validate thr
     profile,
   });
   const compiled = compileValidatedSdk(output);
-  const operationModules = ['createTask', 'getTask'];
-  for (const operation of operationModules) {
-    const generatedCode = readFileSync(path.join(output, `operations/${operation}.validators.generated.ts`), 'utf8');
-    assert.doesNotMatch(generatedCode, /new\s+Function|\beval\s*\(/);
-  }
-  assert.ok(result.artifacts.some(item => /\/models\/_[^/]*\.validators\.generated\.ts$/.test(item.path)), 'model groups carry their own validators');
+  const generatedCode = readFileSync(path.join(output, 'validators.generated.ts'), 'utf8');
+  assert.doesNotMatch(generatedCode, /new\s+Function|\beval\s*\(/);
+  assert.ok(result.artifacts.some(item => item.path === path.join(output, 'validators.generated.ts')), 'the SDK carries one validators module');
+  assert.equal(result.artifacts.some(item => item.path.endsWith('.validators.generated.ts')), false, 'no group or operation carries its own');
 
   type OperationValidator = (value: unknown, all: boolean) => readonly { readonly path: readonly unknown[] }[];
   const expected: Record<string, string[]> = {
@@ -156,16 +156,14 @@ test('SDK operation validators expose every operation reference and validate thr
     getTask: ['validate_getTask_input', 'validate_getTask_response_200_application_json'],
   };
   const task = { id: 'task-1', when: '2025-01-02T03:04:05Z', child: { id: 'child-1' }, labels: ['one'] };
-  const validatorsOf = async (operation: string): Promise<Record<string, OperationValidator>> =>
-    await import(pathToFileURL(path.join(compiled, `operations/${operation}.validators.generated.js`)).href) as Record<string, OperationValidator>;
-  for (const operation of operationModules) {
-    const validators = await validatorsOf(operation);
-    assert.deepEqual(Object.keys(validators).sort(), [...expected[operation] ?? []].sort(), `${operation} validators`);
-    for (const name of Object.keys(validators)) assert.equal(typeof validators[name], 'function', name);
-  }
+  const validatorsOf = async (): Promise<Record<string, OperationValidator>> =>
+    await import(pathToFileURL(path.join(compiled, 'validators.generated.js')).href) as Record<string, OperationValidator>;
+  const all = await validatorsOf();
+  for (const name of Object.keys(all)) assert.equal(typeof all[name], 'function', name);
+  for (const names of Object.values(expected)) for (const name of names) assert.equal(typeof all[name], 'function', name);
+  assert.ok(Object.keys(all).some(name => /^validate_Task_[0-9a-f]{8}$/.test(name)), 'the model roots are exported by the same module');
 
-  const created = await validatorsOf('createTask');
-  const inputValidator = created.validate_createTask_input;
+  const inputValidator = all.validate_createTask_input;
   assert.ok(inputValidator);
   assert.deepEqual(inputValidator({ body: task }, true), []);
   assert.deepEqual(inputValidator({ body: { ...task, labels: [] } }, true).map(issue => issue.path), [['body', 'labels']]);
@@ -261,10 +259,68 @@ test('a model used in a request and a response with a readOnly field gets two va
   const compiled = compileValidatedSdk(output);
 
   type OperationValidator = (value: unknown, all: boolean) => readonly { readonly code: string; readonly path: readonly unknown[] }[];
-  const validators = await import(pathToFileURL(path.join(compiled, 'operations/createItem.validators.generated.js')).href) as Record<string, OperationValidator>;
-  assert.deepEqual(Object.keys(validators).sort(), ['validate_createItem_input', 'validate_createItem_response_201_application_json']);
+  const validators = await import(pathToFileURL(path.join(compiled, 'validators.generated.js')).href) as Record<string, OperationValidator>;
+  assert.ok(typeof validators.validate_createItem_input === 'function' && typeof validators.validate_createItem_response_201_application_json === 'function');
+  // The request and the response plane of the model are separate roots as well; the operation roots differ from them.
+  assert.notEqual(validators.validate_createItem_input, validators.validate_createItem_response_201_application_json);
   const withServerId = { name: 'n', serverId: 's' };
   assert.deepEqual(validators.validate_createItem_input({ body: { name: 'n' } }, true), []);
   assert.deepEqual(validators.validate_createItem_input({ body: withServerId }, true).map(issue => [issue.code, issue.path]), [['unknownKey', ['body', 'serverId']]], 'a request may not set the readOnly field');
   assert.deepEqual(validators.validate_createItem_response_201_application_json(withServerId, true), [], 'a response carries the readOnly field');
+});
+
+test('a model that an operation response and a model group both validate has its check written once in the SDK module', () => {
+  const pattern = '^ITEM-[0-9]{6}$';
+  const result = writeSdk({
+    openapi: '3.1.0',
+    info: { title: 'Shared checks', version: '1' },
+    paths: {
+      '/items/{id}': {
+        get: {
+          operationId: 'getItem',
+          parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+          responses: { 200: { description: 'ok', content: { 'application/json': { schema: { $ref: '#/components/schemas/Item' } } } } },
+        },
+      },
+    },
+    components: { schemas: { Item: { type: 'object', required: ['code'], properties: { code: { type: 'string', pattern } } } } },
+  }, { output: path.join(tmpdir(), 'validators-shared-checks'), name: 'Shared', profile });
+  const module = result.artifacts.find(item => path.basename(item.path) === 'validators.generated.ts');
+  assert.ok(module);
+  // Each check function holds its pattern twice: the compiled expression and the issue it reports.
+  assert.equal(module.content.split(JSON.stringify(pattern)).length - 1, 2, 'one check function serves the model and the operation');
+  assert.equal(module.content.split('new RegExp(').length - 1, 1, 'one compiled expression');
+  assert.match(module.content, /export function validate_getItem_response_200_application_json\(/);
+  assert.match(module.content, /export function validate_Item_[0-9a-f]{8}\(/);
+});
+
+test('a validation-off SDK writes no validators module and no import of one', () => {
+  const result = writeSdk(validatedDocument(), {
+    output: path.join(tmpdir(), 'validators-off'),
+    name: 'Validated',
+    profile: { mobx: false, validation: false, allowAny: false },
+  });
+  assert.equal(result.artifacts.some(item => item.path.endsWith('validators.generated.ts')), false);
+  assert.equal(result.artifacts.some(item => item.content.includes('validators.generated')), false, 'no module imports one');
+});
+
+test('an operation root that has the name of a model root fails the SDK compile, and roots that only sanitize alike are numbered', () => {
+  const options = { owner: 'test', unknownFormats: 'warn', documentName: 'the document' } as const;
+  const plan = { schemas: { 'get-x:input': { type: 'string' } }, references: ['get-x:input'], ownSchemas: ['get-x:input'], modelNames: {} };
+  assert.throws(
+    () => compileSdkValidators({ plan, operations: [{ roots: { 'get-x:input': { type: 'integer' } }, resources: {} }] }, options),
+    /operation root "get-x:input" has the name of another root/,
+  );
+  const numbered = compileSdkValidators({
+    plan,
+    operations: [{ roots: { 'get_x_input': { type: 'integer' } }, resources: {} }],
+  }, options);
+  assert.deepEqual([...numbered.exports.values()].sort(), ['validate_get_x_input', 'validate_get_x_input_2']);
+  assert.throws(
+    () => compileSdkValidators({ operations: [
+      { roots: { a: { type: 'string' } }, resources: { 'urn:shared': { type: 'string' } } },
+      { roots: { b: { type: 'string' } }, resources: { 'urn:shared': { type: 'integer' } } },
+    ] }, options),
+    /two operations give the resource "urn:shared" different schemas/,
+  );
 });

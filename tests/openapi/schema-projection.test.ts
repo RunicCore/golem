@@ -592,7 +592,7 @@ test('literal example and default $ref values are not treated as schema referenc
       name: 'LiteralRef',
       profile: { mobx: false, validation: true },
     });
-    assert.ok(result.artifacts.some((artifact) => artifact.path.endsWith('operations/putX.validators.generated.ts')));
+    assert.ok(result.artifacts.some((artifact) => artifact.path.endsWith('/validators.generated.ts') && artifact.content.includes('export function validate_putX_input(')));
     compileGeneratedSdk(output, []);
     const module = requireRecord(await import(pathToFileURL(path.join(output, 'dist/client.js')).href), 'literal ref client');
     const Client = module.LiteralRefClient;

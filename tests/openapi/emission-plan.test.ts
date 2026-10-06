@@ -187,8 +187,7 @@ test('directional imports follow schema references while literal data and keywor
 
 function emittedFiles(artifacts: readonly { path: string }[], output: string): string[] {
   return artifacts.map(artifact => path.relative(output, artifact.path)
-    .replace(/^models\/_group-[a-f0-9]+\.ts$/, 'models/_group-<hash>.ts')
-    .replace(/^models\/_group-[a-f0-9]+\.validators\.generated\.ts$/, 'models/_group-<hash>.validators.generated.ts')).sort();
+    .replace(/^models\/_group-[a-f0-9]+\.ts$/, 'models/_group-<hash>.ts')).sort();
 }
 
 // The emitted file list is asserted for every profile; only the default (all-on) profile is compiled, unless the caller compiles elsewhere.
@@ -230,7 +229,7 @@ test('schema-only documents emit types, directional files, and models without a 
     'output-schemas.ts',
     'models/Widget.ts',
     'models/_group-<hash>.ts',
-    ...(profile.validation ? ['models/_group-<hash>.validators.generated.ts'] : []),
+    ...(profile.validation ? ['validators.generated.ts'] : []),
   ]);
 });
 
@@ -324,7 +323,7 @@ test('minimal GET without content omits codec options and unused helpers', async
     'model-manifest.json',
     'client.ts',
     'operations/ping.ts',
-    ...(profile.validation ? ['operations/ping.validators.generated.ts'] : []),
+    ...(profile.validation ? ['validators.generated.ts'] : []),
   ], false);
 
   const output = outputDir(t, 'codec-omit');

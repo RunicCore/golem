@@ -402,7 +402,8 @@ export interface PlanValidators {
   readonly diagnostics: readonly GolemDiagnostic[];
 }
 
-function compileRoots(
+/** Compiles `roots` and `resources` to one validators module (TypeScript). */
+export function compileValidatorRoots(
   roots: ReadonlyMap<string, unknown>,
   resources: ReadonlyMap<string, unknown>,
   options: PlanValidatorsOptions,
@@ -423,13 +424,19 @@ function compileRoots(
   };
 }
 
+/**
+ * The roots that compile a plan: each schema under its plan id. A root's own `$id` (the id again, `#wire` fragment
+ * included) would move the base URI of the root's local `$ref`s onto the model root of the same codec, so the
+ * compiler does not see it.
+ */
+export function planValidationRoots(plan: CodecValidationPlan): ReadonlyMap<string, unknown> {
+  return new Map(Object.entries(plan.schemas).map(([id, schema]) => [id, withoutOwnId(lowerDiscriminatorMappings(schema), id)] as const));
+}
+
 /** Compile every schema of the plan to one validators module; each id of the plan is a root name of the result's `exports`. */
 export function compilePlanValidators(plan: CodecValidationPlan, options: PlanValidatorsOptions): PlanValidators {
-  // A root is addressed by its plan id. Its own `$id` (the id again, `#wire` fragment included) would move the base
-  // URI of the root's local `$ref`s onto the model root of the same codec, so the compiler does not see it.
-  const roots = new Map(Object.entries(plan.schemas).map(([id, schema]) => [id, withoutOwnId(lowerDiscriminatorMappings(schema), id)] as const));
   const locateModel = options.locateModel ?? ((name: string): SchemaPlace => ({ where: `model ${name}` }));
-  return compileRoots(roots, new Map(), {
+  return compileValidatorRoots(planValidationRoots(plan), new Map(), {
     ...options,
     locate: (resource, pointer) => {
       const name = plan.modelNames[resource];
@@ -449,15 +456,63 @@ export function uniqueDiagnostics(diagnostics: readonly GolemDiagnostic[]): read
   });
 }
 
+export interface SdkValidatorsInput {
+  /** The validation plan of every model of the SDK, in one graph. */
+  readonly plan?: CodecValidationPlan;
+  /**
+   * Each operation's roots, one for the input and one for each response, by root name, and the schemas those reach
+   * only through `$ref`, by name; a resource keeps its `$id`. A resource that several operations hold must be the
+   * same schema in each.
+   */
+  readonly operations: readonly {
+    readonly roots: Readonly<Record<string, unknown>>;
+    readonly resources: Readonly<Record<string, unknown>>;
+  }[];
+}
+
+function sameSchema(first: unknown, second: unknown): boolean {
+  return first === second || JSON.stringify(first) === JSON.stringify(second);
+}
+
 /**
- * Compile `roots` to one validators module, each root name a key of the result's `exports`. `resources` are the
- * schemas the roots reach only through `$ref`; a resource keeps its `$id`.
+ * Compile the roots of every model and every operation of an SDK to one validators module. A root name belongs to
+ * one schema: a name that an operation root and a model root both take, or that two operations' resources take with
+ * different schemas, is an error rather than a silent rename. Roots whose names only become the same identifier are
+ * told apart by the compiler (`CompileResult.exports`). Every check is written once across the models and the
+ * operations.
  */
-export function compileSchemaValidators(
-  input: { readonly roots: Readonly<Record<string, unknown>>; readonly resources: Readonly<Record<string, unknown>> },
-  options: PlanValidatorsOptions,
-): PlanValidators {
+export function compileSdkValidators(input: SdkValidatorsInput, options: PlanValidatorsOptions): PlanValidators {
+  const roots = new Map<string, unknown>(input.plan ? planValidationRoots(input.plan) : []);
+  // A schema that several operations share is lowered once, so the comparison below finds it the same object.
+  const loweredSchemas = new Map<unknown, unknown>();
+  const lowerOnce = (schema: unknown): unknown => {
+    if (!loweredSchemas.has(schema)) loweredSchemas.set(schema, lowerDiscriminatorMappings(schema));
+    return loweredSchemas.get(schema);
+  };
   const lowered = (schemas: Readonly<Record<string, unknown>>): Map<string, unknown> =>
-    new Map(Object.entries(schemas).map(([name, schema]) => [name, lowerDiscriminatorMappings(schema)] as const));
-  return compileRoots(lowered(input.roots), lowered(input.resources), options);
+    new Map(Object.entries(schemas).map(([name, schema]) => [name, lowerOnce(schema)] as const));
+  const resources = new Map<string, unknown>();
+  for (const operation of input.operations) {
+    for (const [name, root] of lowered(operation.roots)) {
+      if (roots.has(name)) throw new Error(`Cannot compile the SDK validators: the operation root ${JSON.stringify(name)} has the name of another root.`);
+      roots.set(name, root);
+    }
+    for (const [name, resource] of lowered(operation.resources)) {
+      if (resources.has(name) && !sameSchema(resources.get(name), resource)) {
+        throw new Error(`Cannot compile the SDK validators: two operations give the resource ${JSON.stringify(name)} different schemas.`);
+      }
+      resources.set(name, resource);
+    }
+  }
+  for (const name of resources.keys()) {
+    if (roots.has(name)) throw new Error(`Cannot compile the SDK validators: the resource ${JSON.stringify(name)} has the name of a root.`);
+  }
+  const locateModel = options.locateModel ?? ((name: string): SchemaPlace => ({ where: `model ${name}` }));
+  return compileValidatorRoots(roots, resources, {
+    ...options,
+    locate: (resource, pointer) => {
+      const name = input.plan?.modelNames[resource];
+      return name === undefined ? options.locate?.(resource, pointer) : locateModel(name);
+    },
+  });
 }

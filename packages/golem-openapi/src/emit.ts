@@ -2,7 +2,7 @@ import path from 'node:path';
 import { GolemDiagnosticSeverity, type GolemArtifact, type GolemDiagnostic, type GolemResult } from '@exprtlabs/golem/generator-api';
 import { isRecord } from '@exprtlabs/golem/generator-api';
 import { stableJson } from '@exprtlabs/golem/manifest';
-import { generateClientModules } from './client/emit.js';
+import { buildOperationValidationSchemas, generateClientModules } from './client/emit.js';
 import { browserCookieDiagnostics, normalizeAndValidate, unsupportedHttpAuthSchemes } from './document.js';
 import { buildEmissionPlan, type ArtifactFile, type EmissionPlan } from './emission-plan.js';
 import { asRecord, readString } from './json.js';
@@ -20,7 +20,7 @@ import {
 } from './models.js';
 import { withOrigins, type OriginLocator } from './origin.js';
 import { buildSchemaData } from './schemas.js';
-import { uniqueDiagnostics } from '@exprtlabs/golem/validation-plan';
+import { compileSdkValidators, uniqueDiagnostics, type CodecValidationPlan, type PlanValidators, type SchemaPlace } from '@exprtlabs/golem/validation-plan';
 import { generateDirectionalSchemas, generateTypes } from './types.js';
 
 export interface OpenApiArtifact extends GolemArtifact {}
@@ -179,6 +179,25 @@ function buildGeneratedFiles(document: unknown, options: WriteSdkOptions): Gener
   if (plan.artifacts.has('output-schemas.ts')) {
     files.set('output-schemas.ts', generateDirectionalSchemas(document, 'output'));
   }
+  // One validators module serves the models and the operations: it compiles the roots of every model group and
+  // every operation together, so a check the two share is written once.
+  const operationValidation = plan.artifacts.has('client.ts')
+    ? buildOperationValidationSchemas(operations, document, profile, schemaData, options.locate)
+    : undefined;
+  const validators: { compiled?: PlanValidators } = {};
+  const validatorOptions = {
+    owner: '@exprtlabs/golem-openapi',
+    unknownFormats: profile.unknownFormats ?? 'warn',
+    documentName: 'the OpenAPI document',
+    ...(operationValidation ? { locate: operationValidation.locate } : {}),
+  } as const;
+  const compileValidators = (plan: CodecValidationPlan | undefined, locateModel?: (name: string) => SchemaPlace): PlanValidators => {
+    validators.compiled = compileSdkValidators(
+      { ...(plan ? { plan } : {}), operations: operationValidation?.operations ?? [] },
+      { ...validatorOptions, ...(locateModel ? { locateModel } : {}) },
+    );
+    return validators.compiled;
+  };
   let modelReexports = '';
   const modelDiagnostics: GolemDiagnostic[] = [];
   if (plan.hasModels) {
@@ -186,18 +205,32 @@ function buildGeneratedFiles(document: unknown, options: WriteSdkOptions): Gener
       copyAdditionalProperties: plan.copyAdditionalProperties,
       objectFromJSON: plan.objectFromJSON,
       locate: options.locate,
+      ...(profile.validation ? { compileValidators: ({ plan, locateModel }: { plan: CodecValidationPlan; locateModel: (name: string) => SchemaPlace }) => compileValidators(plan, locateModel).exports } : {}),
     });
     for (const [name, source] of models.files) files.set(name, source);
     modelReexports = models.entryReexports;
     modelDiagnostics.push(...models.diagnostics);
   }
+  if (operationValidation && !validators.compiled) compileValidators(undefined);
+  if (validators.compiled) {
+    modelDiagnostics.push(...validators.compiled.diagnostics);
+    // A source is empty when the compile reported an error; no file is written then.
+    if (validators.compiled.exports.size > 0) files.set('validators.generated.ts', validators.compiled.source);
+  }
   files.set('model-manifest.json', stableJson(generateModelManifest(document, profile, modelAnalysis)));
   if (plan.artifacts.has('client.ts')) {
-    const clientModules = generateClientModules(clientName, operations, document, profile, plan, schemaData, options.locate);
+    const clientModules = generateClientModules(
+      clientName,
+      operations,
+      document,
+      profile,
+      plan,
+      operationValidation && validators.compiled
+        ? { schemas: operationValidation, validatorExports: validators.compiled.exports }
+        : undefined,
+    );
     files.set('client.ts', clientModules.client);
     for (const [name, source] of clientModules.operations) files.set(name, source);
-    for (const [name, source] of clientModules.operationValidators) files.set(name, source);
-    modelDiagnostics.push(...clientModules.diagnostics);
   }
   if (plan.artifacts.has('inbound.ts')) {
     files.set('inbound.ts', generateInbound(clientName, inboundOperations));
