@@ -361,7 +361,7 @@ function assertManifestProfile(output: string, profile: { readonly mobx: boolean
   const manifestValue: unknown = JSON.parse(fs.readFileSync(path.join(output, 'model-manifest.json'), 'utf8'));
   assert.ok(isRecord(manifestValue));
   const manifestProfile = manifestValue && Reflect.get(manifestValue, 'profile');
-  assert.deepEqual(manifestProfile, { ...profile, allowAny: false });
+  assert.deepEqual(manifestProfile, { ...profile, allowAny: false, unknownFormats: 'warn' });
 }
 
 test('typed upstream corpus cases generate, strict-compile, and execute every accounted outbound operation', async t => {
