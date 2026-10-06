@@ -497,14 +497,13 @@ class Lowering {
       checks.push({ kind: 'object', required, dependentRequired, properties, patternProperties, additional, propertyNames, minProperties, maxProperties });
     }
 
+    // A branch that applies to this value in place. One with its own `unevaluated*` keyword is its own function: it must not see what its siblings evaluated.
+    const inPlaceBranch = (keyword: string, branch: unknown, position: number): IrSchema => {
+      if (holdsEvaluationKeyword(branch) || this.isInlining(branch)) return callTo(sameValueFunction(keyword, branch, position));
+      return this.lowerSchema(child(keyword, branch, position), sameValue);
+    };
     if (Array.isArray(node.allOf)) {
-      const branches = (node.allOf as readonly unknown[])
-        .map((branch, position) => {
-          // A branch with its own `unevaluated*` keyword is its own function: it must not see what its siblings evaluated.
-          if (holdsEvaluationKeyword(branch) || this.isInlining(branch)) return callTo(sameValueFunction('allOf', branch, position));
-          return this.lowerSchema(child('allOf', branch, position), sameValue);
-        })
-        .filter(branch => branch.kind !== 'always');
+      const branches = (node.allOf as readonly unknown[]).map((branch, position) => inPlaceBranch('allOf', branch, position)).filter(branch => branch.kind !== 'always');
       if (branches.length > 0) checks.push({ kind: 'allOf', branches });
     }
     for (const keyword of ['anyOf', 'oneOf'] as const) {
@@ -516,8 +515,14 @@ class Lowering {
           checks.push({ kind: 'literal', values });
           continue;
         }
-        const branches = (list as readonly unknown[]).map((branch, position) => sameValueFunction(keyword, branch, position));
         const discriminator = keyword === 'oneOf' ? this.discriminatorOf(node, (list as readonly unknown[]).map((branch, position) => child(keyword, branch, position))) : undefined;
+        // One branch is `allOf` of one: the value must pass it, and its own issues are the ones reported.
+        if (list.length === 1 && discriminator === undefined) {
+          const branch = inPlaceBranch(keyword, list[0], 0);
+          if (branch.kind !== 'always') checks.push({ kind: 'allOf', branches: [branch] });
+          continue;
+        }
+        const branches = (list as readonly unknown[]).map((branch, position) => sameValueFunction(keyword, branch, position));
         checks.push({ kind: 'union', exactlyOne: keyword === 'oneOf', branches, discriminator });
       }
     }

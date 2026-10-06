@@ -396,6 +396,23 @@ test('a union of a constant and another shape keeps the union issue', async () =
   await assertIssues({ anyOf: [{ const: 'a', minLength: 1 }, { const: 'b' }] }, 'c', [{ path: [], code: 'union', matched: 0 }]);
 });
 
+test('an anyOf or oneOf with one branch reports the issues of that branch', async () => {
+  const defs = { Owner: { type: 'object', required: ['id'], properties: { id: { type: 'integer' } } } };
+  for (const keyword of ['anyOf', 'oneOf']) {
+    const schema = { $defs: defs, properties: { owner: { [keyword]: [{ $ref: '#/$defs/Owner' }] } } };
+    await assertIssues(schema, { owner: 1 }, [{ path: ['owner'], code: 'type', expected: ['object'] }]);
+    await assertIssues(schema, { owner: {} }, [{ path: ['owner', 'id'], code: 'required', key: 'id' }]);
+    await assertIssues(schema, { owner: { id: 'x' } }, [{ path: ['owner', 'id'], code: 'type', expected: ['integer'] }]);
+    await assertIssues(schema, { owner: { id: 1 } }, []);
+  }
+});
+
+test('a one-branch anyOf evaluates keys as its branch does', async () => {
+  const schema = { anyOf: [{ properties: { a: { type: 'string' } } }], unevaluatedProperties: false };
+  await assertIssues(schema, { a: 'x' }, []);
+  await assertIssues(schema, { a: 'x', b: 1 }, [{ path: ['b'], code: 'unknownKey', key: 'b' }]);
+});
+
 test('a union reports its own path, not the paths inside its branches', async () => {
   await assertIssues({ properties: { a: { anyOf: [{ type: 'string' }, { required: ['x'] }] } } }, { a: {} }, [
     { path: ['a'], code: 'union', matched: 0 },
