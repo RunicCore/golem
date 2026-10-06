@@ -729,3 +729,71 @@ test('a companion imports only #golem-models and the companions its source impor
   ]);
   assert.doesNotMatch(payment, /models\.generated|model-manifest/);
 });
+
+test('a models job generates the model files its tsconfig includes outside its root', (t: TestContext) => {
+  const outer = sharedWorkspace(t);
+  const sharedFolder = path.join(outer, 'shared');
+  fs.mkdirSync(sharedFolder, { recursive: true });
+  fs.writeFileSync(path.join(sharedFolder, 'package.json'), JSON.stringify({ name: 'shared', private: true, type: 'module' }));
+  writeModelSources(sharedFolder, {
+    'src/money.model.ts': tsSource`import type { IObject } from '@exprtlabs/golem/model';
+export type TMoney = IObject<{ currency: string }>;
+`,
+  });
+  const root = appProject(outer, 'a', '../shared/**/*.ts');
+  writeModelSources(path.join(root, 'src'), {
+    'order.model.ts': tsSource`import type { IModel } from '@exprtlabs/golem/model';
+import type { TMoney } from '../../shared/src/money.model.js';
+export type TOrder = IModel<{ total: TMoney }>;
+`,
+  });
+
+  const { artifacts } = generate({ root, profile: { mobx: false, validation: true } });
+  const companions = artifacts.map(artifact => artifact.path).filter(file => file.endsWith('.model.generated.ts')).sort();
+  assert.deepEqual(companions, [path.join(root, 'src/order.model.generated.ts'), path.join(sharedFolder, 'src/money.model.generated.ts')]);
+});
+
+test('a model file that a shared model imports is generated when the tsconfig includes only the importing file', (t: TestContext) => {
+  const outer = sharedWorkspace(t);
+  const sharedFolder = path.join(outer, 'shared');
+  fs.mkdirSync(sharedFolder, { recursive: true });
+  fs.writeFileSync(path.join(sharedFolder, 'package.json'), JSON.stringify({ name: 'shared', private: true, type: 'module' }));
+  writeModelSources(sharedFolder, {
+    'money.model.ts': tsSource`import type { IObject } from '@exprtlabs/golem/model';
+export type TMoney = IObject<{ currency: string }>;
+`,
+    'account.model.ts': tsSource`import type { IModel } from '@exprtlabs/golem/model';
+import type { TMoney } from './money.model.js';
+export type TAccount = IModel<{ id: string; balance: TMoney }>;
+`,
+  });
+  const root = appProject(outer, 'a', '../shared/account.model.ts');
+
+  const { artifacts } = generate({ root, profile: { mobx: false, validation: true } });
+  assert.deepEqual(Object.keys(filesIn(sharedFolder, artifacts)).sort(), ['account.model.generated.ts', 'money.model.generated.ts']);
+});
+
+test('a shared model that imports a file outside its shared folder stops generation and names both files', (t: TestContext) => {
+  const outer = sharedWorkspace(t);
+  const sharedFolder = path.join(outer, 'shared');
+  fs.mkdirSync(path.join(outer, 'helpers'), { recursive: true });
+  fs.mkdirSync(sharedFolder, { recursive: true });
+  fs.writeFileSync(path.join(sharedFolder, 'package.json'), JSON.stringify({ name: 'shared', private: true, type: 'module' }));
+  writeModelSources(outer, { 'helpers/limits.ts': 'export const LIMIT = 3;\n' });
+  writeModelSources(sharedFolder, {
+    'money.model.ts': tsSource`import type { IObject } from '@exprtlabs/golem/model';
+import { LIMIT } from '../helpers/limits.js';
+export const limit: number = LIMIT;
+export type TMoney = IObject<{ currency: string }>;
+`,
+  });
+  const root = appProject(outer, 'a', '../shared/**/*.ts');
+
+  assert.throws(
+    () => generate({ root, profile: { mobx: false, validation: true } }),
+    {
+      message: `${path.join(sharedFolder, 'money.model.ts')} is outside ${root} and imports ${path.join(outer, 'helpers/limits.ts')}, which is outside its shared folder ${sharedFolder}. `
+        + 'A shared model may import only files in its shared folder.',
+    },
+  );
+});

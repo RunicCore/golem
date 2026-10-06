@@ -74,8 +74,7 @@ function namedPackageAbove(folder: string): { readonly root: string; readonly na
  * instead (see `packageSpecifier`).
  */
 export function identityPathOf(filename: string, root: string): string {
-  const path = relative(canonicalFilename(root), canonicalFilename(filename));
-  if (!(path === '..' || path.startsWith(`..${sep}`) || isAbsolute(path))) return portableRelativeFilename(filename, root);
+  if (!isOutside(root, filename)) return portableRelativeFilename(filename, root);
   const folder = sharedFolderOf(filename);
   const named = namedPackageAbove(folder);
   return named === undefined ? portableRelativeFilename(filename, folder) : `${named.name}/${portableRelativeFilename(filename, named.root)}`;
@@ -116,6 +115,50 @@ export function discoverModelSources(
   suffixes: readonly string[] = DEFAULT_MODEL_SUFFIXES,
 ): string[] {
   return discoverSources(join(root, 'src'), { source: suffixPattern(suffixes), normalize: canonicalFilename, onInput });
+}
+
+/**
+ * The model files among `files`: those that end in a model suffix, are not in `node_modules` and are not generated
+ * companions. A models job generates each of them, wherever it lies. Pass the files of the project's program, which are the
+ * files the tsconfig includes and the files they import.
+ */
+export function includedModelSources(files: readonly string[], suffixes: readonly string[]): string[] {
+  const pattern = suffixPattern(suffixes);
+  return uniqueFilenames(files)
+    .filter((filename) => pattern.test(filename) && !isGeneratedCompanion(filename) && !filename.split(sep).includes('node_modules'))
+    .sort((left, right) => left < right ? -1 : left > right ? 1 : 0);
+}
+
+/**
+ * The error for a shared model source (outside the folder of the tsconfig) that imports a file outside its own shared
+ * folder, or undefined when it imports none. Its companion would then depend on files that another app does not include.
+ * `projectFiles` are the canonical names of the program's own files: a package, a linked one too, is not among them.
+ */
+export function sharedImportOutsideItsFolder(
+  source: ts.SourceFile,
+  tsconfigDirectory: string,
+  projectFiles: ReadonlySet<string>,
+  compilerOptions: ts.CompilerOptions,
+): string | undefined {
+  const filename = canonicalFilename(source.fileName);
+  if (!isOutside(tsconfigDirectory, filename)) return undefined;
+  const sharedFolder = sharedFolderOf(filename);
+  for (const statement of source.statements) {
+    const specifier = ts.isImportDeclaration(statement) || ts.isExportDeclaration(statement) ? statement.moduleSpecifier : undefined;
+    if (specifier === undefined || !ts.isStringLiteralLike(specifier)) continue;
+    const resolved = ts.resolveModuleName(specifier.text, source.fileName, compilerOptions, ts.sys).resolvedModule?.resolvedFileName;
+    const target = resolved === undefined ? undefined : canonicalFilename(resolved);
+    if (target !== undefined && projectFiles.has(target) && isOutside(sharedFolder, target)) {
+      return `${filename} is outside ${tsconfigDirectory} and imports ${target}, which is outside its shared folder ${sharedFolder}. `
+        + 'A shared model may import only files in its shared folder.';
+    }
+  }
+  return undefined;
+}
+
+function isOutside(directory: string, filename: string): boolean {
+  const path = relative(canonicalFilename(directory), canonicalFilename(filename));
+  return path === '..' || path.startsWith(`..${sep}`) || isAbsolute(path);
 }
 
 /** The companion of a source: `.generated` before its final extension. */

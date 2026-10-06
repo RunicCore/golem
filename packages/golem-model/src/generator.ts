@@ -38,10 +38,13 @@ import {
   discoverModelSources,
   formatDiagnostics,
   generatedFilename,
+  includedModelSources,
   isModelSource,
   portableRelativeFilename,
   projectWatchInputs,
   retainedProgramSession,
+  sharedImportOutsideItsFolder,
+  type ProgramInfo,
 } from '@exprtlabs/golem/type-analysis';
 
 export interface GolemModelProfile extends GolemProfile {}
@@ -134,15 +137,17 @@ function validateContext(context: GolemModelContext): NormalizedContext {
 
 const SESSION_OWNER = '@exprtlabs/golem-model';
 
-function emptyResult(
-  root: string,
-  onInput?: InputObserver,
-  session?: GeneratorSession,
-): GolemModelResult {
-  const info = createProgram([], root, onInput, retainedProgramSession(session, SESSION_OWNER, root));
-  using program = info.program;
+/** A job without model files still watches the project, so a model file added later is seen. */
+function emptyResult(info: ProgramInfo, program: ts.Program, root: string): GolemModelResult {
   const watchInputs = projectWatchInputs(info, program, root, [], discoverModelManifests(root));
   return { artifacts: [], manifestPaths: [], watchInputs };
+}
+
+/** The files of the project's own program: not a library, not a package from node_modules. */
+function programFilenames(program: ts.Program): string[] {
+  return program.getSourceFiles()
+    .filter((sourceFile) => !program.isSourceFileFromExternalLibrary(sourceFile) && !program.isSourceFileDefaultLibrary(sourceFile))
+    .map((sourceFile) => sourceFile.fileName);
 }
 
 function referencedManifestFiles(
@@ -350,23 +355,17 @@ function withoutRepeatedFieldTypeWarnings(diagnostics: readonly GolemDiagnostic[
 
 export function generate(context: GolemModelContext): GolemModelResult {
   const normalized = validateContext(context);
-  const sources = normalized.sources === undefined
+  const listed = normalized.sources !== undefined;
+  const discovered = normalized.sources === undefined
     ? discoverModelSources(normalized.root, normalized.onInput, normalized.suffixes)
     : [...normalized.sources].sort();
-  if (sources.length === 0) {
-    if (normalized.sources !== undefined) {
-      throw new Error(
-        `No model sources found under ${join(normalized.root, 'src')}. `
-        + `Add a file ending in ${normalized.suffixes.join(' or ')}, or provide context.sources.`,
-      );
-    }
-    return emptyResult(
-      normalized.root,
-      normalized.onInput,
-      normalized.session,
+  if (listed && discovered.length === 0) {
+    throw new Error(
+      `No model sources found under ${join(normalized.root, 'src')}. `
+      + `Add a file ending in ${normalized.suffixes.join(' or ')}, or provide context.sources.`,
     );
   }
-  for (const source of sources) {
+  for (const source of discovered) {
     normalized.onInput?.(source);
     if (!isModelSource(source)) {
       throw new Error(`Model source must be a .ts, .mts or .cts file that golem did not generate: ${source}`);
@@ -381,12 +380,28 @@ export function generate(context: GolemModelContext): GolemModelResult {
   // companions are then overlaid in phase two, whose unsuppressed diagnostics
   // are the write gate and preserve genuine handwritten-source failures.
   const programInfo = createProgram(
-    sources,
+    discovered,
     normalized.root,
     normalized.onInput,
     retainedProgramSession(normalized.session, SESSION_OWNER, normalized.root),
   );
   using program = programInfo.program;
+  // The program holds the files the tsconfig includes and the files they import, so a model file outside the root (a
+  // shared folder) is a source of this job. `models.sources` limits the list.
+  const projectFiles = programFilenames(program);
+  const sources = listed || programInfo.configPath === undefined
+    ? discovered
+    : [...new Set([...discovered, ...includedModelSources(projectFiles, normalized.suffixes)])].sort();
+  if (sources.length === 0) {
+    return emptyResult(programInfo, program, normalized.root);
+  }
+  const tsconfigDirectory = programInfo.configPath === undefined ? normalized.root : dirname(programInfo.configPath);
+  const projectFileSet = new Set(projectFiles.map(canonicalFilename));
+  for (const source of sources) {
+    const sourceFile = program.getSourceFile(source);
+    const outsideImport = sourceFile && sharedImportOutsideItsFolder(sourceFile, tsconfigDirectory, projectFileSet, programInfo.options);
+    if (outsideImport !== undefined) throw new Error(outsideImport);
+  }
   const manifestIndex = loadModelManifests(
     normalized.root,
     programInfo,
@@ -508,7 +523,6 @@ export function generate(context: GolemModelContext): GolemModelResult {
     if (content !== undefined) artifacts.push({ path: output, content });
   }
   // The keys name each source by its path from the tsconfig's directory, which is the root a rewrite resolves files from.
-  const tsconfigDirectory = programInfo.configPath === undefined ? normalized.root : dirname(programInfo.configPath);
   const codecEntries = graphSchemaPairs.flatMap(({ graph, schemaGraph }) => codecEntriesForGraph(graph, schemaGraph, checker, specifications)
     .map((entry) => ({ ...entry, source: portableRelativeFilename(resolve(graph.identityRoot, entry.source), tsconfigDirectory) })));
   if (codecEntries.length > 0) {

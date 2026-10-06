@@ -6,17 +6,28 @@ import { DEFAULT_CONTROLLER_SUFFIXES, DEFAULT_MODEL_SUFFIXES, discoverSources, e
 import { GeneratorSessionResources, runPipeline, strongestInputKind } from './pipeline.js';
 import type { InputKind, PipelineState } from './pipeline.js';
 
-function sourceCandidates(config: GolemConfig, kind: 'models' | 'controllers'): Set<string> {
+function sourceCandidates(config: GolemConfig, kind: 'models' | 'controllers', known: ReadonlyMap<string, InputKind>): Set<string> {
   const found = new Set<string>();
   // Generated outputs can contain model-named files; they are not model sources.
   const outputs = config.jobs.flatMap(job => job.kind === 'openapi' || job.kind === 'controllers' ? [job.options.output] : []);
+  const skip = (directory: string): boolean => outputs.some(output => contains(output, directory));
   for (const job of config.jobs) {
     if (job.kind !== kind) continue;
     found.add(path.join(job.options.root, 'tsconfig.json'));
-    const sources = job.options.sources ?? discoverSources(path.join(job.options.root, 'src'), kind === 'models'
-      ? { source: suffixPattern(job.options.suffixes ?? DEFAULT_MODEL_SUFFIXES), skip: directory => outputs.some(output => contains(output, directory)) }
-      : { source: suffixPattern(job.options.suffixes ?? DEFAULT_CONTROLLER_SUFFIXES) });
+    const suffixes = job.options.suffixes ?? (kind === 'models' ? DEFAULT_MODEL_SUFFIXES : DEFAULT_CONTROLLER_SUFFIXES);
+    const sources = job.options.sources ?? discoverSources(path.join(job.options.root, 'src'), { source: suffixPattern(suffixes), ...(kind === 'models' ? { skip } : {}) });
     for (const source of sources) found.add(source);
+    if (kind !== 'models' || job.options.sources !== undefined) continue;
+    // A models job also generates the model files its tsconfig includes outside its root, such as a shared folder. The
+    // last run recorded them as inputs; a model file added beside them is a candidate too.
+    const pattern = suffixPattern(suffixes);
+    const sharedDirectories = new Set<string>();
+    for (const [input, inputKind] of known) {
+      if (inputKind === 'models' && pattern.test(input) && !contains(job.options.root, input)) sharedDirectories.add(path.dirname(input));
+    }
+    for (const directory of sharedDirectories) {
+      for (const source of discoverSources(directory, { source: pattern, skip })) found.add(source);
+    }
   }
   return found;
 }
@@ -94,8 +105,8 @@ export function watchPipeline(initial: PipelineState | string, reportError: (err
           inputs.set(job.options.root, strongestInputKind(inputs.get(job.options.root), 'controllers'));
         } else if (job.kind === 'openapi') inputs.set(job.options.input, strongestInputKind(inputs.get(job.options.input), 'openapi'));
       }
-      for (const source of sourceCandidates(config, 'controllers')) inputs.set(source, strongestInputKind(inputs.get(source), 'controllers'));
-      for (const source of sourceCandidates(config, 'models')) inputs.set(source, strongestInputKind(inputs.get(source), 'models'));
+      for (const source of sourceCandidates(config, 'controllers', inputs)) inputs.set(source, strongestInputKind(inputs.get(source), 'controllers'));
+      for (const source of sourceCandidates(config, 'models', inputs)) inputs.set(source, strongestInputKind(inputs.get(source), 'models'));
     }
     // A new output directory can have been observed as missing during module
     // resolution. Its creation is output work, not a source edit. Discovery
