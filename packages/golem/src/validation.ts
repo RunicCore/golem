@@ -10,6 +10,7 @@ import type {
   ModelTypeDescriptor,
   RegisteredGeneratedModelDefinition,
 } from './model.js';
+export type { SchemaIssue, SchemaIssueDetail, Validator } from './validation-runtime.js';
 export { runValidation } from './validation-runner.js';
 export * from './schema-registry-validation.js';
 export { operationValidators, responseCheck, validateOperationInput } from './client-runtime/validation.js';

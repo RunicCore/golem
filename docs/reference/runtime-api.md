@@ -113,7 +113,7 @@ function validateWith(validator: Validator, value: unknown, all = true): Promise
 
 `validateWith` runs one validator and returns `{ valid, issues }`. `all` defaults to `true`, which reports every issue; pass `false` to stop at the first. A validator that does not return an array throws `TypeError`.
 
-Types: `OperationRuntimeValidators` and `ValidationResult`. `OperationRuntimeValidators` is the value type of a client's `operationValidators` option: the input validator and the response validators keyed `status:contentType`. Each validator is a `Validator`: `(value, all) => readonly SchemaIssue[]`, empty when the value is valid.
+Types: `OperationRuntimeValidators`, `ValidationResult`, `Validator`, `SchemaIssue` and `SchemaIssueDetail`. `OperationRuntimeValidators` is the value type of a client's `operationValidators` option: the input validator and the response validators keyed `status:contentType`. Each validator is a `Validator`: `(value, all) => readonly SchemaIssue[]`, empty when the value is valid.
 
 ## `@exprtlabs/golem/mobx` {#mobx}
 

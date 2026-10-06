@@ -1,9 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import type { SchemaIssue } from '@exprtlabs/golem/validation-runtime';
-import { runValidation, validateWith } from '@exprtlabs/golem/validation';
-import type { Validator } from '@exprtlabs/golem/validation-runtime';
+import { runValidation, validateWith, type SchemaIssue, type Validator } from '@exprtlabs/golem/validation';
 
 const issue: SchemaIssue = { code: 'custom', path: ['name'] };
 
