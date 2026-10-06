@@ -1320,6 +1320,11 @@ export function generateOpenApiModelArtifacts(
   const digest = sourceDigest(document);
   const stableId = (definition: ModelDefinition) =>
     `openapi:${digest.slice(0, 16)}#/components/schemas/${definition.schemaName}`;
+  // A model is named by its identifier form; the document names the component by its own key.
+  const schemaNameByModelName = new Map(ordered.flatMap((definition) => {
+    const node = analysis.nodesByName.get(definition.name);
+    return node ? [[node.name, definition.schemaName] as const] : [];
+  }));
   const validationClosure = profile.validation
     ? openApiValidationSchemaClosure(schemaGraph, ordered, stableId)
     : [];
@@ -1460,7 +1465,7 @@ export function generateOpenApiModelArtifacts(
         owner: '@exprtlabs/golem-openapi',
         unknownFormats: profile.unknownFormats ?? 'warn',
         documentName: 'the OpenAPI document',
-        locateModel: (name) => componentPlace(helpers.locate, name, ''),
+        locateModel: (name) => componentPlace(helpers.locate, schemaNameByModelName.get(name) ?? name, ''),
       });
       diagnostics.push(...compiled.diagnostics);
       files.set(validatorModule, compiled.source);

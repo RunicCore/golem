@@ -287,3 +287,20 @@ test('a format golem does not check is reported once for the component, however 
   assert.equal(warnings[0].file, undefined);
   assert.equal(warnings[0].path, '#/components/schemas/Amount/format');
 });
+
+test('a format golem does not check is reported at the component key, however the model is named', () => {
+  const item = { $ref: '#/components/schemas/pet-item' };
+  const document = {
+    openapi: '3.1.0', info: { title: 'Pets', version: '1' },
+    components: { schemas: { 'pet-item': { type: 'object', properties: { price: { type: 'string', format: 'money' } } } } },
+    paths: { '/items': { post: {
+      operationId: 'addItem',
+      requestBody: { required: true, content: { 'application/json': { schema: item } } },
+      responses: { 200: { description: 'ok', content: { 'application/json': { schema: item } } } },
+    } } },
+  };
+  const result = writeSdk(document, { output: path.join(tmpdir(), 'golem-unknown-format-key'), name: 'Pets', profile: { mobx: false, validation: true, unknownFormats: 'warn' } });
+  const warnings = (result.diagnostics ?? []).filter(entry => entry.code === 'VALIDATE_UNKNOWN_FORMAT');
+  assert.ok(warnings.length > 0);
+  for (const warning of warnings) assert.ok(warning.path?.startsWith('#/components/schemas/pet-item'), JSON.stringify(warning));
+});
