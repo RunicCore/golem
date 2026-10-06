@@ -94,7 +94,8 @@ const LOCAL_HELPERS: Readonly<Record<LocalHelper, string>> = {
 
 const TYPE_TESTS: Readonly<Record<IrTypeName, (value: string) => string>> = {
   string: value => `typeof ${value} === 'string'`,
-  number: value => `typeof ${value} === 'number'`,
+  // JSON has no NaN or infinity; a model value that holds one is not a number.
+  number: value => `(typeof ${value} === 'number' && Number.isFinite(${value}))`,
   integer: value => `Number.isInteger(${value})`,
   boolean: value => `typeof ${value} === 'boolean'`,
   null: value => `${value} === null`,

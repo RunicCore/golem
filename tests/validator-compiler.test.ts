@@ -908,3 +908,19 @@ test('the expected values an issue shares with the validator cannot be changed b
     assert.ok(issue.code === 'literal' && Object.isFrozen(issue.expected), JSON.stringify(issue));
   }
 });
+
+test('number and integer reject NaN and the infinities, and other number keywords never crash on them', async () => {
+  const notFinite = [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY];
+  for (const value of notFinite) {
+    await assertIssues({ type: 'number' }, value, [{ path: [], code: 'type', expected: ['number'] }]);
+    await assertIssues({ type: 'integer' }, value, [{ path: [], code: 'type', expected: ['integer'] }]);
+    await assertIssues({ type: ['number', 'string'] }, value, [{ path: [], code: 'type', expected: ['number', 'string'] }]);
+    const validate = await compileSchema({ type: 'number', minimum: 0, maximum: 10, multipleOf: 2, const: 4 });
+    assert.doesNotThrow(() => validate(value, true));
+    assert.ok(validate(value, true).some(issue => issue.code === 'type'));
+    const enumerated = await compileSchema({ enum: [1, 2] });
+    assert.doesNotThrow(() => enumerated(value, true));
+  }
+  for (const value of [0, -1.5, 3, 1e300, Number.MIN_VALUE]) await assertIssues({ type: 'number' }, value, []);
+  for (const value of [0, -3, 2 ** 40]) await assertIssues({ type: 'integer' }, value, []);
+});
