@@ -1,5 +1,6 @@
 
-import { dirname, join, normalize, parse, relative, resolve, sep } from 'node:path';
+import { existsSync } from 'node:fs';
+import { dirname, isAbsolute, join, normalize, parse, relative, resolve, sep } from 'node:path';
 import * as ts from '../typescript-ns.js';
 import { DEFAULT_MODEL_SUFFIXES, discoverSources, suffixPattern, type GeneratorSession, type InputObserver } from '../generator-api.js';
 
@@ -27,6 +28,25 @@ export function canonicalFilename(filename: string): string {
  */
 export function portableRelativeFilename(filename: string, root: string): string {
   return relative(canonicalFilename(root), canonicalFilename(filename)).replace(/\\/g, '/');
+}
+
+/**
+ * The folder a shared source belongs to: the nearest directory above it that holds a `package.json`, else its own
+ * directory. A file of a shared folder is identified by its path from this folder, so every app that includes the folder
+ * gives it the same identity.
+ */
+export function sharedFolderOf(source: string): string {
+  const own = dirname(canonicalFilename(source));
+  for (let directory = own; ; directory = dirname(directory)) {
+    if (existsSync(join(directory, 'package.json'))) return directory;
+    if (dirname(directory) === directory) return own;
+  }
+}
+
+/** The directory a file's identity is relative to: the project root, or the shared folder of a file outside it. */
+export function identityRootOf(filename: string, root: string): string {
+  const path = relative(canonicalFilename(root), canonicalFilename(filename));
+  return path === '..' || path.startsWith(`..${sep}`) || isAbsolute(path) ? sharedFolderOf(filename) : canonicalFilename(root);
 }
 
 /** Find a stable project root when a direct generator root is unavailable. */

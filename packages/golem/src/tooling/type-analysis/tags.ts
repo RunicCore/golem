@@ -1,6 +1,6 @@
 import path from 'node:path';
 import * as ts from '../typescript-ns.js';
-import { canonicalFilename, portableRelativeFilename } from './project.js';
+import { canonicalFilename, identityRootOf, portableRelativeFilename } from './project.js';
 import { packageSpecifier } from './package-specifier.js';
 import { canonicalConstraintKey } from '../schema.js';
 import type { ConstraintSchemaValue, ModelConstraint } from '../schema.js';
@@ -187,9 +187,11 @@ function canonicalValue(
 
 /** A project function is identified by its file and export name, like a packaged one, so reformatting the file keeps the id. */
 function canonicalIdentity(declaration: ts.Declaration, exportName: string, identityRoot?: string): string {
+  const filename = declaration.getSourceFile().fileName;
+  // A function of a shared folder outside the project keeps one id in every app: it is named from its shared folder.
   const source = identityRoot
-    ? portableRelativeFilename(declaration.getSourceFile().fileName, identityRoot)
-    : declaration.getSourceFile().fileName.replace(/\\/g, '/').split('/').pop() ?? 'source.ts';
+    ? portableRelativeFilename(filename, identityRootOf(filename, identityRoot))
+    : filename.replace(/\\/g, '/').split('/').pop() ?? 'source.ts';
   return `${source}#${exportName}`;
 }
 
