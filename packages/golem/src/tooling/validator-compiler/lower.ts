@@ -92,10 +92,9 @@ function literalUnionValues(branches: readonly unknown[]): readonly unknown[] | 
   return values.length > 0 && distinct ? values : undefined;
 }
 
-/** What a `$ref` target is called: the last segment of its pointer, or its resource when the pointer is empty. */
-function referenceName(target: SchemaLocation): string {
-  const last = target.pointer.slice(target.pointer.lastIndexOf('/') + 1);
-  return target.pointer === '' ? target.resource.slice(target.resource.lastIndexOf('/') + 1) : unescapePointerToken(last);
+/** What a `$ref` target is called: the last segment of its pointer; a whole resource has no segment, and its name may be a digest. */
+function referenceName(target: SchemaLocation): string | undefined {
+  return target.pointer === '' ? undefined : unescapePointerToken(target.pointer.slice(target.pointer.lastIndexOf('/') + 1));
 }
 
 function isTypeName(value: unknown): value is IrTypeName {
