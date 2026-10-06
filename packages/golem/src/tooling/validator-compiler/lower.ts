@@ -169,7 +169,6 @@ class Lowering {
     const { documentName, locate } = this.options;
     const pointer = [keyword, ...inside].reduce((path, token) => path + pointerSegment(token), location.pointer);
     const place = locate?.(location.resource, pointer);
-    if (place === null) return;
     const where = place?.where ?? `${documentName === undefined ? '' : `${documentName}: `}schema ${JSON.stringify(location.resource)} at ${pointer}`;
     const message = `${where}: ${text}`;
     // Schemas reached by several routes, such as a component used by many operations, report one diagnostic.

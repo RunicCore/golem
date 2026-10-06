@@ -9,7 +9,7 @@ import type {
   InputObserver,
 } from '@exprtlabs/golem/generator-api';
 import { buildCodecValidationPlan, compilePlanValidators, type CodecSchemaClosureEntry } from '@exprtlabs/golem/validation-plan';
-import { DEFAULT_MODEL_SUFFIXES, GolemDiagnosticSeverity, resolveProfile, suffixPattern } from '@exprtlabs/golem/generator-api';
+import { DEFAULT_MODEL_SUFFIXES, GolemDiagnosticSeverity, resolveProfile, suffixPattern, type GolemDiagnostic } from '@exprtlabs/golem/generator-api';
 import { codecKeysPath, defaultModelOutput } from '@exprtlabs/golem/generated-paths';
 import { emitCodecDeclarationTable } from '@exprtlabs/golem/schema-graph';
 import {
@@ -329,6 +329,22 @@ function isOrphanCompanion(companion: string, suffixes: readonly string[]): bool
   return source !== companion && suffixPattern(suffixes).test(basename(source)) && !existsSync(source);
 }
 
+/** Names a field type's own schema, which is compiled apart from the model that holds the field. */
+const FIELD_TYPE_PLACE = 'a model field type';
+
+/**
+ * A field type's schema repeats a warning that the model holding the field already reports, so only the model's warning stays.
+ * A warning only the field type carries (its model does not validate) and every error stay.
+ */
+function withoutRepeatedFieldTypeWarnings(diagnostics: readonly GolemDiagnostic[]): readonly GolemDiagnostic[] {
+  const detail = (diagnostic: GolemDiagnostic): string => `${diagnostic.code}\0${diagnostic.message.slice(diagnostic.message.indexOf(': ') + 2)}`;
+  const isFieldType = (diagnostic: GolemDiagnostic): boolean => diagnostic.message.startsWith(`${FIELD_TYPE_PLACE}: `);
+  const reportedByModels = new Set(diagnostics.filter(diagnostic => !isFieldType(diagnostic)).map(detail));
+  return diagnostics.filter(diagnostic => !(
+    isFieldType(diagnostic) && diagnostic.severity === GolemDiagnosticSeverity.Warning && reportedByModels.has(detail(diagnostic))
+  ));
+}
+
 export function generate(context: GolemModelContext): GolemModelResult {
   const normalized = validateContext(context);
   const sources = normalized.sources === undefined
@@ -441,11 +457,10 @@ export function generate(context: GolemModelContext): GolemModelResult {
       unknownFormats: normalized.profile.unknownFormats ?? 'warn',
       validations: validatorImports(graphs, normalized.profile, validatorsOutput),
       documentName: 'the model schemas',
-      // A field type's own schema repeats what the model that holds the field already reports.
-      locate: (resource) => resource.startsWith('golem:model-tag:') ? null : undefined,
+      locate: (resource) => resource.startsWith('golem:model-tag:') ? { where: FIELD_TYPE_PLACE } : undefined,
     })
     : undefined;
-  const validatorDiagnostics = validators?.diagnostics ?? [];
+  const validatorDiagnostics = withoutRepeatedFieldTypeWarnings(validators?.diagnostics ?? []);
   if (validatorDiagnostics.some((diagnostic) => diagnostic.severity === GolemDiagnosticSeverity.Error)) {
     // Nothing is written: the companions import the validators this job could not compile.
     return {

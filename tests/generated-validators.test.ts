@@ -434,12 +434,21 @@ test('unknownFormats: error makes generation fail with VALIDATE_UNKNOWN_FORMAT',
   await runPipeline(config);
   assert.ok(generatedModelFiles(value.root).some(item => item.path.endsWith('/models.validators.generated.ts')));
   writeFileSync(config, `${readFileSync(config, 'utf8')}unknownFormats: error\n`);
-  // The error names the model once; a field type's own schema does not report the same declaration again.
-  await assert.rejects(
-    runPipeline(config),
-    (error: unknown) => error instanceof Error && error.message.match(/VALIDATE_UNKNOWN_FORMAT/g)?.length === 1
-      && /VALIDATE_UNKNOWN_FORMAT: model TContact: the format "phone-number" is not implemented/.test(error.message),
-  );
+  // The error names the model, and no error is dropped: the field type's own schema reports it too.
+  await assert.rejects(runPipeline(config), /VALIDATE_UNKNOWN_FORMAT: model TContact: the format "phone-number" is not implemented/);
+});
+
+test('a field type that only a model without validation holds still fails generation when its pattern is invalid', async t => {
+  const value = fixture(t);
+  writeFileSync(path.join(value.sourceRoot, 'contact.model.ts'), [
+    "import type { IModel } from '@exprtlabs/golem/model';",
+    "import type { Pattern } from '@exprtlabs/golem/tags';",
+    "export type TChecked = IModel<{ count: number }>;",
+    "export type TUnchecked = IModel<{ code: string & Pattern<'['> }, { validation: false }>;",
+    '',
+  ].join('\n'));
+  writeModelGolemYaml(value.root, { mobx: false, validation: true });
+  await assert.rejects(runPipeline(path.join(value.root, 'golem.yaml')), /VALIDATE_INVALID_PATTERN/);
 });
 
 test('a model class registered at run time satisfies a generated model-instance check', async () => {

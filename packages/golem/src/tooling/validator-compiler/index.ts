@@ -28,11 +28,8 @@ export interface CompileOptions {
   readonly runtimeModule?: string;
   /** Named in each diagnostic message that `locate` does not place. */
   readonly documentName?: string;
-  /**
-   * Maps a schema resource and a JSON Pointer inside it to the place the user knows; without one, a diagnostic names the resource.
-   * `null` drops the diagnostic: another schema that holds the same declaration reports it.
-   */
-  readonly locate?: (resource: string, pointer: string) => SchemaPlace | null | undefined;
+  /** Maps a schema resource and a JSON Pointer inside it to the place the user knows; without one, a diagnostic names the resource. */
+  readonly locate?: (resource: string, pointer: string) => SchemaPlace | undefined;
   /** Emit TypeScript: the `validators` export carries its type. */
   readonly typed?: boolean;
 }
