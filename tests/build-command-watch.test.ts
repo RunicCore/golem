@@ -5,8 +5,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import test, { type TestContext } from 'node:test';
 import { runBuild } from '#golem/build';
+import { createModelProject, MINIMAL_GOLEM_YAML } from './model-project.js';
 import { HEAVY_TEST_TIMEOUT_MS, write, serdeProject, sourceOnlyProject, countingGenerator, USE, snapshot } from './support/build-project.js';
-import { golem } from './support/process.js';
+import { golem, workspace } from './support/process.js';
 
 /** How long a watching build gets to exit after SIGINT before the test fails with what it printed. */
 const STOP_TIMEOUT_MS = 15_000;
@@ -87,6 +88,31 @@ test('golem build --watch rebuilds once per edit, reports an error, recovers, an
   const expected = new Map(before);
   expected.delete('src/use.ts');
   assert.deepEqual(after, expected, 'a watching build changes no file it does not own');
+});
+
+test('golem build --watch rebuilds for an edit to a source outside the tsconfig directory and for a file added beside it', { timeout: HEAVY_TEST_TIMEOUT_MS }, async (t) => {
+  const { root: outer } = createModelProject(t, { prefix: 'golem-build-watch-shared-', name: 'build-watch-shared', linkTypescript: true, packages: { '@exprtlabs/golem-model': path.join(workspace, 'packages/golem-model') } });
+  const app = path.join(outer, 'app');
+  write(app, 'package.json', '{"name":"watch-shared-app","type":"module"}');
+  write(app, 'golem.yaml', MINIMAL_GOLEM_YAML);
+  write(app, 'tsconfig.json', JSON.stringify({
+    compilerOptions: { strict: true, target: 'ES2022', module: 'NodeNext', moduleResolution: 'NodeNext', skipLibCheck: true, outDir: 'build', rootDir: '..' },
+    include: ['src/**/*.ts', '../shared/*.ts'],
+  }));
+  write(app, 'src/main.ts', 'export const main: number = 1;\n');
+  write(outer, 'shared/shared.ts', 'export const shared: number = 1;\n');
+  const watcher = watching(t, app);
+  await until(() => count(watcher.output(), /^Built /) === 1, 'the first build');
+  assert.match(fs.readFileSync(path.join(app, 'build/shared/shared.js'), 'utf8'), /shared = 1/);
+
+  write(outer, 'shared/shared.ts', 'export const shared: number = 2;\n');
+  await until(() => count(watcher.output(), /^Built /) === 2, 'the rebuild after an edit outside the tsconfig directory');
+  assert.match(fs.readFileSync(path.join(app, 'build/shared/shared.js'), 'utf8'), /shared = 2/);
+
+  write(outer, 'shared/added.ts', 'export const added: number = 3;\n');
+  await until(() => count(watcher.output(), /^Built /) === 3, 'the rebuild after a file was added beside the outside source');
+  assert.match(fs.readFileSync(path.join(app, 'build/shared/added.js'), 'utf8'), /added = 3/);
+  assert.equal(await watcher.stop(), 130);
 });
 
 test('golem build --watch regenerates and rebuilds once after a model edit; any other source edit rebuilds and reruns the models job, which reads the whole project', { timeout: HEAVY_TEST_TIMEOUT_MS }, async (t) => {

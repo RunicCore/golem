@@ -378,7 +378,7 @@ export const money = parse<MoneyModel>(text);
   await assert.rejects(runPipeline(config, { check: true }), /RUNM1066 \(src\/use\.ts:5:20\)/);
 });
 
-test('a file outside the project root fails the project scan with or without a rewrite site; the per-file scan of a host fails only one with a site', (t) => {
+test('a file outside the project root fails the project scan and the per-file scan only when it has a rewrite site', (t) => {
   const { root: outer } = createModelProject(t, { prefix: 'golem-rewrite-outside-', linkTypescript: true });
   const root = path.join(outer, 'app');
   for (const file of BASE) copyFixtureFile(root, `rewrite/${file}`, `src/${file}`);
@@ -402,12 +402,14 @@ export class Payment extends TPaymentBaseModel {}
   const table: { version: number; keys: Record<string, string> } = JSON.parse(fs.readFileSync(keysFile, 'utf8'));
   fs.writeFileSync(keysFile, JSON.stringify({ ...table, keys: { ...table.keys, '../shared/payment.model.ts#Payment': 'TPayment_22222222' } }));
   const { diagnostics, files } = scan(root);
-  const outside = (file: string) => ({ code: 'RUNM1070', severity: 'error', message: `"${file}" lies outside the project root. Move it under the root, or give the package its own golem.yaml and build it with that.`, file });
-  assert.deepEqual(diagnostics, [outside('../shared/payment.model.ts'), outside('../shared/plain.ts'), outside('../shared/x.ts')]);
+  const site = (file: string): string => `"${file}" has a rewrite site but lies outside the project root. Move it under the root, or give the package its own golem.yaml and build it with that.`;
+  assert.deepEqual(diagnostics, [
+    { code: 'RUNM1070', severity: 'error', message: site('../shared/payment.model.ts'), file: '../shared/payment.model.ts', line: 2, column: 50 },
+    { code: 'RUNM1070', severity: 'error', message: site('../shared/x.ts'), file: '../shared/x.ts', line: 4, column: 22 },
+  ]);
   assert.deepEqual([...files.keys()], ['src/payment.model.ts'], 'files outside the root are not rewritten');
 
   // A host scans one file at a time and fails only a file whose rewrite site cannot be applied. A class site is the end of the class, where its registration goes.
-  const site = (file: string): string => `"${file}" has a rewrite site but lies outside the project root. Move it under the root, or give the package its own golem.yaml and build it with that.`;
   withScanner(root, (scanner) => {
     assert.deepEqual(scanner.scanFile(path.join(outer, 'shared/payment.model.ts'))?.diagnostics, [
       { code: 'RUNM1070', severity: 'error', message: site('../shared/payment.model.ts'), file: '../shared/payment.model.ts', line: 2, column: 50 },

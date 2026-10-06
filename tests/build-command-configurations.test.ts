@@ -2,13 +2,13 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import test from 'node:test';
+import test, { type TestContext } from 'node:test';
 import { pathToFileURL } from 'node:url';
 import { createFixtureProject, linkProjectPackages, readFixture } from './fixture-project.js';
 import { createControllerFixture } from './fixture-templates/controllers/project.js';
 import { command, workspace } from './support/process.js';
-import { MINIMAL_GOLEM_YAML } from './model-project.js';
-import { TSC, HEAVY_TEST_TIMEOUT_MS, write, editTsconfig, serdeProject, PAYMENTS_CONTROLLER, USE, snapshot, build, mtimes } from './support/build-project.js';
+import { createModelProject, MINIMAL_GOLEM_YAML } from './model-project.js';
+import { TSC, HEAVY_TEST_TIMEOUT_MS, write, editTsconfig, serdeProject, PAYMENTS_CONTROLLER, USE, snapshot, build, mtimes, importBuilt } from './support/build-project.js';
 
 // Output the incremental state cannot see, and configurations that differ in one directory
 
@@ -129,11 +129,8 @@ test('golem build rejects a tsconfig the stage cannot mirror', async (t) => {
   const parent = createFixtureProject(t, 'golem-build-rejected-');
   const root = path.join(parent, 'app');
   linkProjectPackages(root, { typescript: path.join(workspace, 'node_modules/typescript'), '@exprtlabs/golem-model': path.join(workspace, 'packages/golem-model') });
-  fs.mkdirSync(path.join(parent, 'shared'));
-  fs.writeFileSync(path.join(parent, 'shared/shared.d.ts'), 'export declare const shared: number;\n');
   fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ private: true, type: 'module' }));
   write(root, 'golem.yaml', MINIMAL_GOLEM_YAML);
-  write(root, 'src/main.ts', "import { shared } from '../../shared/shared.js';\nexport const value = shared;\n");
   const base = { strict: true, target: 'ES2022', module: 'NodeNext', moduleResolution: 'NodeNext' };
   // The golem.yaml names this tsconfig; every config below is another build of the same directory.
   fs.writeFileSync(path.join(root, 'tsconfig.json'), JSON.stringify({ compilerOptions: { ...base, outDir: 'build' }, include: ['src/**/*.ts'] }));
@@ -142,13 +139,6 @@ test('golem build rejects a tsconfig the stage cannot mirror', async (t) => {
     return name;
   };
 
-  // A declaration file outside the root is not subject to rootDir, so the compiler accepts it; the stage would not reach it.
-  await assert.rejects(build(root, config({ rootDir: 'src' }, 'outside.json')), (error: Error) => {
-    assert.match(error.message, /shared\/shared\.d\.ts/);
-    assert.match(error.message, /outside the project root/);
-    return true;
-  });
-  await assert.rejects(build(root, config({ rootDir: '..' }, 'root-dir-outside.json')), /rootDir .* outside the project root/);
   fs.writeFileSync(path.join(root, 'no-outdir.json'), JSON.stringify({ compilerOptions: base, include: ['src/**/*.ts'] }));
   write(root, 'src/main.ts', 'export const value = 1;\n');
   await assert.rejects(build(root, 'no-outdir.json'), /requires compilerOptions\.outDir/);
@@ -160,3 +150,152 @@ test('golem build rejects a tsconfig the stage cannot mirror', async (t) => {
   assert.equal(fs.existsSync(path.join(root, 'build')), false, 'a rejected project writes no output');
 });
 
+
+// Sources outside the tsconfig directory: every file the tsconfig includes builds, as it does under tsc
+
+/** `outer/app`, a project whose tsconfig includes `../shared/*.ts` under `rootDir: '..'`, beside `outer/shared`. `outer` holds the linked packages the app resolves. */
+function appBesideShared(t: TestContext, name: string, compilerOptions: Record<string, unknown> = {}): { readonly outer: string; readonly app: string } {
+  const { root: outer } = createModelProject(t, {
+    prefix: 'golem-build-shared-',
+    name,
+    linkTypescript: true,
+    packages: { '@exprtlabs/golem-model': path.join(workspace, 'packages/golem-model') },
+  });
+  const app = path.join(outer, 'app');
+  write(app, 'package.json', '{"name":"shared-app","type":"module"}');
+  write(app, 'golem.yaml', MINIMAL_GOLEM_YAML);
+  write(app, 'tsconfig.json', JSON.stringify({
+    compilerOptions: { strict: true, target: 'ES2022', module: 'NodeNext', moduleResolution: 'NodeNext', skipLibCheck: true, declaration: true, outDir: 'build', rootDir: '..', ...compilerOptions },
+    include: ['src/**/*.ts', '../shared/*.ts'],
+  }));
+  return { outer, app };
+}
+
+/** Every file under `directory`, by POSIX path, with its text; a link is listed as `<path> (link)` and not read. */
+function filesUnder(directory: string): Record<string, string> {
+  const found: Record<string, string> = {};
+  const visit = (current: string): void => {
+    for (const entry of fs.readdirSync(current, { withFileTypes: true })) {
+      const filename = path.join(current, entry.name);
+      const relative = path.relative(directory, filename).split(path.sep).join('/');
+      if (entry.isSymbolicLink()) found[`${relative} (link)`] = fs.realpathSync(filename);
+      else if (entry.isDirectory()) visit(filename);
+      else found[relative] = fs.readFileSync(filename, 'utf8');
+    }
+  };
+  visit(directory);
+  return Object.fromEntries(Object.entries(found).sort(([left], [right]) => (left < right ? -1 : 1)));
+}
+
+/** What a plain `tsc -p tsconfig.json` emits for the project, beside the golem build's own output. */
+async function plainTscOutput(app: string): Promise<Record<string, string>> {
+  await command(app, process.execPath, [TSC, '-p', 'tsconfig.json', '--outDir', 'plain']);
+  return filesUnder(path.join(app, 'plain'));
+}
+
+test('a tsconfig that includes ../shared builds the output tree that tsc emits, and the JavaScript runs', async (t) => {
+  const { outer, app } = appBesideShared(t, 'build-shared-tree');
+  write(app, 'src/main.ts', "import { shared } from '../../shared/shared.js';\nexport const doubled: number = shared * 2;\n");
+  write(outer, 'shared/shared.ts', 'export const shared: number = 21;\n');
+
+  assert.equal((await build(app)).exitCode, 0);
+  const built = filesUnder(path.join(app, 'build'));
+  assert.deepEqual(Object.keys(built), ['app/src/main.d.ts', 'app/src/main.js', 'shared/shared.d.ts', 'shared/shared.js']);
+  assert.deepEqual(built, await plainTscOutput(app));
+  assert.equal((await importBuilt(app, 'app/src/main.js')).doubled, 42);
+});
+
+test('a declaration file outside the project, imported under a rootDir inside it, builds the layout tsc emits', async (t) => {
+  // The compiler leaves a declaration file out of the rootDir check, so a project that only imports one keeps its own layout.
+  const { outer, app } = appBesideShared(t, 'build-shared-declaration', { rootDir: 'src' });
+  write(app, 'src/main.ts', "import { typed } from '../../shared/typed.js';\nexport const value: number = typed;\n");
+  write(outer, 'shared/typed.d.ts', 'export declare const typed: number;\n');
+  editTsconfig(app, (tsconfig) => { tsconfig.include = ['src/**/*.ts']; });
+  assert.equal((await build(app)).exitCode, 0);
+  const built = filesUnder(path.join(app, 'build'));
+  assert.deepEqual(Object.keys(built), ['main.d.ts', 'main.js']);
+  assert.deepEqual(built, await plainTscOutput(app));
+});
+
+test('an outside source under a folder without a package.json is CommonJS in the stage, as in its place', async (t) => {
+  const { outer, app } = appBesideShared(t, 'build-shared-no-manifest');
+  // The app is ESM; nothing from the shared folder up to the filesystem root has a package.json.
+  fs.rmSync(path.join(outer, 'package.json'));
+  write(app, 'src/main.ts', 'export const main: number = 1;\n');
+  write(outer, 'shared/util.ts', 'export const value: number = 2;\n');
+
+  assert.equal((await build(app)).exitCode, 0);
+  const built = filesUnder(path.join(app, 'build'));
+  assert.match(built['shared/util.js']!, /exports\.value = /);
+  assert.deepEqual(built, await plainTscOutput(app));
+});
+
+test('an outside source resolves its own package.json and node_modules in the stage as it does in its place', async (t) => {
+  const { outer, app } = appBesideShared(t, 'build-shared-packages', { experimentalDecorators: true, emitDecoratorMetadata: true });
+  // Everything above the shared folder is CommonJS, so a module the stage emits as ESM got its type from the shared folder's own package.json.
+  write(outer, 'package.json', '{"private":true}');
+  write(app, 'package.json', '{"name":"shared-app"}');
+  write(app, 'src/main.ts', 'export const main: number = 1;\n');
+  write(outer, 'shared/package.json', JSON.stringify({ type: 'module', imports: { '#helper': './helper.js' } }));
+  write(outer, 'shared/helper.ts', 'export class Helper { readonly name: string = \'helper\'; }\n');
+  // A property decorator's metadata names a class the compiler resolves, and is `Object` for one it cannot.
+  write(outer, 'shared/util.ts', `import { Dep } from '@fixture/dep';
+import { Helper } from '#helper';
+declare function mark(target: object, key: string): void;
+export class User {
+  @mark dep?: Dep;
+  @mark helper?: Helper;
+}
+`);
+  write(outer, 'shared/node_modules/@fixture/dep/package.json', '{"name":"@fixture/dep","version":"1.0.0","types":"./index.d.ts"}');
+  write(outer, 'shared/node_modules/@fixture/dep/index.d.ts', 'export declare class Dep { readonly name: string }\n');
+
+  assert.equal((await build(app)).exitCode, 0);
+  const built = filesUnder(path.join(app, 'build'));
+  assert.deepEqual(built['shared/util.js']!.match(/__metadata\("design:type", \w+\)/g), ['__metadata("design:type", Dep)', '__metadata("design:type", Helper)']);
+  assert.deepEqual(built, await plainTscOutput(app));
+});
+
+test('a workspace library reached only by import is neither staged nor emitted, as under tsc', async (t) => {
+  const { outer, app } = appBesideShared(t, 'build-shared-library');
+  write(app, 'src/main.ts', 'export const main: number = 1;\n');
+  write(outer, 'packages/lib/package.json', JSON.stringify({ name: '@fixture/lib', type: 'module', types: './src/index.ts', exports: { '.': { types: './src/index.ts', default: './src/index.js' } } }));
+  write(outer, 'packages/lib/src/index.ts', 'export const read = (): number => 7;\n');
+  write(outer, 'shared/util.ts', "import { read } from '@fixture/lib';\nexport const value: number = read();\n");
+  fs.mkdirSync(path.join(outer, 'shared/node_modules/@fixture'), { recursive: true });
+  fs.symlinkSync(path.join(outer, 'packages/lib'), path.join(outer, 'shared/node_modules/@fixture/lib'), 'dir');
+
+  assert.equal((await build(app)).exitCode, 0);
+  const built = filesUnder(path.join(app, 'build'));
+  assert.deepEqual(Object.keys(built), ['app/src/main.d.ts', 'app/src/main.js', 'shared/util.d.ts', 'shared/util.js']);
+  assert.deepEqual(built, await plainTscOutput(app));
+  // The stage holds the program's sources, the package.json files and links the originals have, and the stage's own tsconfig.
+  assert.deepEqual(Object.keys(filesUnder(path.join(app, '.golem/build/tsconfig/stage'))), [
+    'app/package.json',
+    'app/src/main.ts',
+    'node_modules (link)',
+    'package.json',
+    'shared/node_modules (link)',
+    'shared/util.ts',
+    'tsconfig.json',
+  ]);
+});
+
+test('a staged copy of a source that left the program is pruned and the node_modules its stage linked to is left alone', async (t) => {
+  const { outer, app } = appBesideShared(t, 'build-shared-prune');
+  write(app, 'src/main.ts', 'export const main: number = 1;\n');
+  write(outer, 'shared/util.ts', "import { Dep } from '@fixture/dep';\nexport const value = (dep: Dep): string => dep.name;\n");
+  write(outer, 'shared/node_modules/@fixture/dep/package.json', '{"name":"@fixture/dep","version":"1.0.0","types":"./index.d.ts"}');
+  write(outer, 'shared/node_modules/@fixture/dep/index.d.ts', 'export interface Dep { readonly name: string }\n');
+  const stage = path.join(app, '.golem/build/tsconfig/stage');
+  const dependency = filesUnder(path.join(outer, 'shared/node_modules'));
+
+  assert.equal((await build(app)).exitCode, 0);
+  assert.ok(Object.keys(filesUnder(stage)).includes('shared/node_modules (link)'), 'the stage links the outside node_modules');
+
+  editTsconfig(app, (tsconfig) => { tsconfig.include = ['src/**/*.ts']; tsconfig.compilerOptions.rootDir = 'src'; });
+  assert.equal((await build(app)).exitCode, 0);
+  assert.deepEqual(Object.keys(filesUnder(stage)), ['package.json', 'src/main.ts', 'tsconfig.json']);
+  assert.deepEqual(filesUnder(path.join(outer, 'shared/node_modules')), dependency, 'the linked directory keeps its files');
+  assert.equal(fs.readFileSync(path.join(outer, 'shared/util.ts'), 'utf8'), "import { Dep } from '@fixture/dep';\nexport const value = (dep: Dep): string => dep.name;\n");
+});
