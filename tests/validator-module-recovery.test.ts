@@ -62,7 +62,11 @@ test('an interrupted inventory replacement recovers and the validators stay in p
     .filter(artifact => artifact.path.endsWith('.validators.generated.ts'))
     .map(artifact => path.relative(setup.root, artifact.path));
   assert.ok(emittedValidators.length > 0, 'the recovered run emitted a validator module');
+  // The probe changes only the frontend module; the SDK files the interrupted run wrote are not emitted again, so the recovered run emits a subset.
   for (const filename of emittedValidators) assert.ok(validators.includes(filename), `${filename} is inventoried`);
+  const validatorsOf = (inventory: string) => Object.keys((JSON.parse(inventory) as { files: Record<string, unknown> }).files)
+    .filter(filename => filename.endsWith('.validators.generated.ts'));
+  assert.deepEqual(new Set(validators), new Set(validatorsOf(originalInventory)), 'recovery inventories exactly the validator modules of the first run');
   assert.ok(validators.some(filename => filename.startsWith('sdk/operations/')), 'SDK operation validators are inventoried');
   const modelValidators = validators.filter(filename => !filename.startsWith('sdk/operations/'));
   assert.ok(modelValidators.some(filename => filename.startsWith('sdk/models/')), 'SDK model validators are inventoried');
