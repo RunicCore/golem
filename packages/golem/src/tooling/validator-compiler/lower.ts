@@ -1,5 +1,5 @@
 import { MODEL_DATE_KEYWORD, MODEL_INSTANCE_KEYWORD, VALIDATION_KEYWORD } from '../../schema-keywords.js';
-import { isKnownFormat } from '../../validation-runtime.js';
+import { isKnownFormat, jsonEqual } from '../../validation-runtime.js';
 import { GolemDiagnosticSeverity, type GolemDiagnostic } from '../generator-api.js';
 import type { CompileInput, CompileOptions } from './index.js';
 import type { IrAdditional, IrCheck, IrContains, IrDiscriminator, IrFunction, IrInstance, IrModule, IrSchema, IrTypeName, IrValidationImport } from './ir.js';
@@ -67,6 +67,28 @@ function hasKey(value: unknown, keys: readonly string[], seen = new Set<object>(
 /** True when the schema node itself holds `unevaluatedProperties` or `unevaluatedItems`. */
 function holdsEvaluationKeyword(node: unknown): boolean {
   return isRecord(node) && EVALUATION_KEYWORDS.some(keyword => Object.hasOwn(node, keyword));
+}
+
+// Keywords that describe a schema and never reject a value.
+const ANNOTATION_KEYWORDS: ReadonlySet<string> = new Set(['title', 'description', 'default', 'examples', '$comment', 'deprecated', 'readOnly', 'writeOnly']);
+
+/** The values a branch allows when its only validation keyword is `const` or `enum`; undefined for any other branch. */
+function literalBranchValues(branch: unknown): readonly unknown[] | undefined {
+  if (!isRecord(branch) || Object.hasOwn(branch, 'const') === Array.isArray(branch.enum)) return undefined;
+  if (!Object.keys(branch).every(key => key === 'const' || key === 'enum' || ANNOTATION_KEYWORDS.has(key) || key.startsWith('x-'))) return undefined;
+  return Object.hasOwn(branch, 'const') ? [branch.const] : branch.enum as readonly unknown[];
+}
+
+/**
+ * The values of an `anyOf` or `oneOf` whose every branch is a literal, in branch order; undefined when a branch is
+ * anything else, when no value is allowed, or when a value repeats (a `oneOf` then has two matching branches).
+ */
+function literalUnionValues(branches: readonly unknown[]): readonly unknown[] | undefined {
+  const lists = branches.map(literalBranchValues);
+  if (!lists.every((list): list is readonly unknown[] => list !== undefined)) return undefined;
+  const values = lists.flat();
+  const distinct = values.every((value, position) => values.findIndex(other => jsonEqual(value, other)) === position);
+  return values.length > 0 && distinct ? values : undefined;
 }
 
 function isTypeName(value: unknown): value is IrTypeName {
@@ -461,6 +483,12 @@ class Lowering {
     for (const keyword of ['anyOf', 'oneOf'] as const) {
       const list = node[keyword];
       if (Array.isArray(list) && list.length > 0) {
+        // Constants alone make a union of values: one `literal` issue says which are allowed, and no branch needs a function.
+        const values = literalUnionValues(list);
+        if (values !== undefined) {
+          checks.push({ kind: 'literal', values });
+          continue;
+        }
         const branches = (list as readonly unknown[]).map((branch, position) => sameValueFunction(keyword, branch, position));
         const discriminator = keyword === 'oneOf' ? this.discriminatorOf(node, (list as readonly unknown[]).map((branch, position) => child(keyword, branch, position))) : undefined;
         checks.push({ kind: 'union', exactlyOne: keyword === 'oneOf', branches, discriminator });

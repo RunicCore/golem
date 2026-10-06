@@ -348,6 +348,39 @@ test('anyOf and oneOf without a discriminator report a union with the matched co
   await assertIssues(oneOf, 'a', [{ path: [], code: 'union', matched: 0 }]);
 });
 
+test('an anyOf or oneOf of constants reports one literal issue with every allowed value', async () => {
+  await assertIssues({ anyOf: [{ const: 'a' }, { const: 'b' }] }, 'c', [{ path: [], code: 'literal', expected: ['a', 'b'] }]);
+  await assertIssues({ anyOf: [{ const: 'a' }, { const: 'b' }] }, 'b', []);
+  await assertIssues({ oneOf: [{ const: 1 }, { const: 2 }, { const: 3 }] }, 4, [{ path: [], code: 'literal', expected: [1, 2, 3] }]);
+  await assertIssues({ oneOf: [{ const: 1 }, { const: 2 }, { const: 3 }] }, 3, []);
+  await assertIssues({ properties: { kind: { anyOf: [{ const: 'a' }, { const: 'b' }] } } }, { kind: 'z' }, [{ path: ['kind'], code: 'literal', expected: ['a', 'b'] }]);
+});
+
+test('enum branches, null and annotations fold into one literal issue in branch order', async () => {
+  const schema = { anyOf: [{ enum: ['a', 'b'], title: 'letters' }, { const: null, description: 'nothing', 'x-note': 1 }, { enum: [3] }] };
+  await assertIssues(schema, 'c', [{ path: [], code: 'literal', expected: ['a', 'b', null, 3] }]);
+  await assertIssues(schema, null, []);
+  await assertIssues(schema, 3, []);
+  await assertIssues({ oneOf: [{ enum: ['a', 'b'] }, { const: null }] }, 1, [{ path: [], code: 'literal', expected: ['a', 'b', null] }]);
+});
+
+test('a oneOf whose constants repeat keeps the union issue and its matched count', async () => {
+  const schema = { oneOf: [{ const: 'a' }, { const: 'b' }, { enum: ['a'] }] };
+  await assertIssues(schema, 'a', [{ path: [], code: 'union', matched: 2 }]);
+  await assertIssues(schema, 'z', [{ path: [], code: 'union', matched: 0 }]);
+  await assertIssues(schema, 'b', []);
+  const reordered = { oneOf: [{ const: { x: 1, y: 2 } }, { const: { y: 2, x: 1 } }] };
+  await assertIssues(reordered, { x: 1, y: 2 }, [{ path: [], code: 'union', matched: 2 }]);
+});
+
+test('a union of a constant and another shape keeps the union issue', async () => {
+  const schema = { anyOf: [{ const: 'a' }, { type: 'object' }] };
+  await assertIssues(schema, 'b', [{ path: [], code: 'union', matched: 0 }]);
+  await assertIssues(schema, 'a', []);
+  await assertIssues(schema, {}, []);
+  await assertIssues({ anyOf: [{ const: 'a', type: 'string' }, { const: 'b' }] }, 'c', [{ path: [], code: 'union', matched: 0 }]);
+});
+
 test('a union reports its own path, not the paths inside its branches', async () => {
   await assertIssues({ properties: { a: { anyOf: [{ type: 'string' }, { required: ['x'] }] } } }, { a: {} }, [
     { path: ['a'], code: 'union', matched: 0 },

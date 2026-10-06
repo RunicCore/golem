@@ -190,7 +190,7 @@ import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 | `required` | `key` | A property is missing. `path` ends at the missing key. |
 | `unknownKey` | `key` | The object has a property the schema does not allow. `path` ends at the key. |
 | `invalidKey` | `key` | A property name is not allowed. `path` points at the object. |
-| `literal` | `expected` | The value is not one of the allowed constants. |
+| `literal` | `expected` | The value is not one of the allowed constants, including an `anyOf` or `oneOf` whose alternatives are all constants. |
 | `union` | `matched` | The value matches no alternative (`0`) or more than one where one is required. |
 | `tooSmall`, `tooBig` | `measure`, `limit`, `inclusive` | A limit is crossed. `measure` is `length`, `items`, `properties`, `value` or `matches`; `inclusive` is `false` for an exclusive bound. |
 | `pattern` | `pattern` | A string does not match the pattern. |
