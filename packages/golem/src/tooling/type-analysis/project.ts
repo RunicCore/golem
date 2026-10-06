@@ -1,5 +1,5 @@
 
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { dirname, isAbsolute, join, normalize, parse, relative, resolve, sep } from 'node:path';
 import * as ts from '../typescript-ns.js';
 import { DEFAULT_MODEL_SUFFIXES, discoverSources, suffixPattern, type GeneratorSession, type InputObserver } from '../generator-api.js';
@@ -43,15 +43,35 @@ export function sharedFolderOf(source: string): string {
   }
 }
 
+/** The `name` of the `package.json` in `folder`; a folder without one, or one without a name, has none. */
+function packageNameOf(folder: string): string | undefined {
+  const file = join(folder, 'package.json');
+  if (!existsSync(file)) return undefined;
+  let manifest: unknown;
+  try {
+    manifest = JSON.parse(readFileSync(file, 'utf8'));
+  } catch (error) {
+    // A package.json that is not JSON is the project's to fix; the name of a shared folder cannot be read without it.
+    if (error instanceof SyntaxError) throw new Error(`${file} is not valid JSON: ${error.message}`);
+    throw error;
+  }
+  const name = typeof manifest === 'object' && manifest !== null && 'name' in manifest ? manifest.name : undefined;
+  return typeof name === 'string' && name !== '' ? name : undefined;
+}
+
 /**
  * The stable name of a project function's file. A file of the project is named from the project root. A file outside it
- * belongs to a shared folder and is named from that folder, so the name is the same in every app that includes the
- * folder. A function a named package exports is identified by its package import instead (see `packageSpecifier`).
+ * belongs to a shared folder and is named from that folder, with the `name` of the folder's package.json in front when
+ * it has one: the name is the same in every app that includes the folder, and two named folders do not share a name.
+ * A function that a named package exports is identified by its package import instead (see `packageSpecifier`).
  */
 export function identityPathOf(filename: string, root: string): string {
   const path = relative(canonicalFilename(root), canonicalFilename(filename));
   if (!(path === '..' || path.startsWith(`..${sep}`) || isAbsolute(path))) return portableRelativeFilename(filename, root);
-  return portableRelativeFilename(filename, sharedFolderOf(filename));
+  const folder = sharedFolderOf(filename);
+  const name = packageNameOf(folder);
+  const inFolder = portableRelativeFilename(filename, folder);
+  return name === undefined ? inFolder : `${name}/${inFolder}`;
 }
 
 /** Find a stable project root when a direct generator root is unavailable. */

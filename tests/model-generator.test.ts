@@ -570,11 +570,11 @@ export type TCount = IModel<{ count: number & TValidation<typeof isEven>; price:
     const validatorsArtifact = result.artifacts.find(artifact => artifact.path.endsWith('models.validators.generated.ts'));
     assert.ok(layerArtifact && validatorsArtifact);
     // The serde binding id is the same in both apps and names the pair of shared functions.
-    assert.ok(layerArtifact.content.includes('"codecs.ts#toCents\\u0000codecs.ts#fromCents":'), 'the layer holds the serde binding under its shared-folder id');
+    assert.ok(layerArtifact.content.includes('"@acme/shared/codecs.ts#toCents\\u0000@acme/shared/codecs.ts#fromCents":'), 'the layer holds the serde binding under its shared-folder id');
     assert.equal(importedFile(layerArtifact.content, 'toCents', layerArtifact.path), path.join(sharedFolder, 'codecs.ts'));
     assert.equal(importedFile(layerArtifact.content, 'fromCents', layerArtifact.path), path.join(sharedFolder, 'codecs.ts'));
     // The validation binding id is in the validation schema the layer carries; the validators module imports the function.
-    assert.ok(layerArtifact.content.includes('rules.ts#isEven'), 'the layer schema names the validation function by its shared-folder id');
+    assert.ok(layerArtifact.content.includes('@acme/shared/rules.ts#isEven'), 'the layer schema names the validation function by its shared-folder id');
     assert.equal(importedFile(validatorsArtifact.content, 'isEven', validatorsArtifact.path), path.join(sharedFolder, 'rules.ts'));
   }
 });
@@ -601,6 +601,37 @@ export type TCount = IModel<{ count: number & TValidation<typeof isEven> }>;
     () => generate({ root, sources, profile: { mobx: false, validation: true } }),
     /Two functions have the id "rules\.ts#isEven": .*shared\/first\/rules\.ts#isEven and .*shared\/second\/rules\.ts#isEven\. Give each shared folder a package\.json with a name and exports/,
   );
+});
+
+test('two named shared folders with the same file and export names generate in one job and each model binds its own folder\'s function', (t: TestContext) => {
+  const outer = sharedWorkspace(t);
+  const sources: string[] = [];
+  for (const folder of ['first', 'second']) {
+    const directory = path.join(outer, 'shared', folder);
+    fs.mkdirSync(directory, { recursive: true });
+    fs.writeFileSync(path.join(directory, 'package.json'), JSON.stringify({ name: `@acme/${folder}`, private: true, type: 'module' }));
+    writeModelSources(directory, {
+      'rules.ts': folder === 'first' ? rulesSource : tsSource`export function isEven(value: number): boolean | string { return value % 4 === 0 || 'must be a multiple of four'; }
+`,
+      'count.model.ts': tsSource`import type { IModel } from '@exprtlabs/golem/model';
+import type { TValidation } from '@exprtlabs/golem/tags';
+import { isEven } from './rules.js';
+export type TCount = IModel<{ count: number & TValidation<typeof isEven> }>;
+`,
+    });
+    sources.push(path.join(directory, 'count.model.ts'));
+  }
+  const result = generate({ root: appProject(outer, 'a', '../shared/**/*.ts'), sources, profile: { mobx: false, validation: true } });
+  const layer = result.artifacts.find(artifact => artifact.path.endsWith('models.generated.ts'))?.content ?? '';
+  for (const id of ['@acme/first/rules.ts#isEven', '@acme/second/rules.ts#isEven']) {
+    assert.ok(layer.includes(id), `the layer schemas name ${id}`);
+  }
+  const validators = result.artifacts.find(artifact => artifact.path.endsWith('models.validators.generated.ts'));
+  assert.ok(validators);
+  const targets = [...validators.content.matchAll(/import \{ isEven as \w+ \} from "([^"]+)"/g)]
+    .map(match => path.resolve(path.dirname(validators.path), match[1]!).replace(/\.js$/, '.ts'))
+    .sort();
+  assert.deepEqual(targets, [path.join(outer, 'shared/first/rules.ts'), path.join(outer, 'shared/second/rules.ts')]);
 });
 
 test('with validation off, a model that opts in generates and validates, and the default model it nests stays open', async (t: TestContext) => {
