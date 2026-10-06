@@ -32,6 +32,27 @@ const KNOWN_DRIFT: Readonly<Record<string, { readonly reason: string; readonly c
   },
 };
 
+/**
+ * Fixtures that do not generate standalone, each with the error generation must fail with (a substring of its message). A fixture is either
+ * a rejected declaration, or it needs setup this test does not do: a helper module, a companion or a project option it lacks.
+ * Any other generation failure fails the test, and so does an entry whose fixture generates.
+ */
+const STANDALONE_SKIPS: Readonly<Record<string, { readonly reason: string; readonly error: string }>> = {
+  'compiler-lifecycle__manifest-scale': { reason: 'needs the generated scale SDK', error: "Module '\"./sdk/types.js\"' has no exported member 'Item0'" },
+  'constraint-callback-composition__handwritten-child-parent': { reason: 'needs its predicates module', error: 'RUNM1046: validation must be a single callable function' },
+  'constraint-callback-composition__nested-value-callbacks': { reason: 'needs its predicates module', error: 'RUNM1046: validation must be a single callable function' },
+  'constraint-portability__constraint-portability-a-model': { reason: 'needs its rules module', error: 'RUNM1046: validation must be a single callable function' },
+  'generated-validation-execution__generated-validation-formats-nested-errors-without-replaying-field-getters': { reason: 'a consumer of a model source the test writes', error: "Cannot find module './getter-replay.model.generated.js'" },
+  'generated-validation-execution__nested-whole-object-tag-messages-keep-the-child-path-and-serde-state-unchang': { reason: 'a consumer of a model source the test writes', error: "Cannot find module './tag-message.model.generated.js'" },
+  'model-companions': { reason: 'a consumer of the models in its subdirectories', error: "Cannot find module './item.model.generated.js'" },
+  'model-composition__a-projected-child-applies-the-containing-model-allowany-policy': { reason: 'rejected declaration: allowAny false over a projection that contains any', error: 'RUNM1011: Model TContainer contains any' },
+  'model-composition__anonymous-nested-imodel-declarations-fail-with-an-actionable-diagnostic': { reason: 'rejected declaration: anonymous nested IModel', error: 'RUNM1053: Nested IModel definitions need a named, exported declaration' },
+  'model-composition__first-generation-resolves-model-class-bases-through-project-path-aliases': { reason: 'needs the tsconfig path aliases of its project', error: 'RUNM1011: Model TParent contains any' },
+  'model-composition__generic-model-templates-require-a-concrete-named-declaration': { reason: 'rejected declaration: generic IModel template', error: 'RUNM1057: IModel declarations must have concrete fields' },
+  'model-composition__imodel-exposes-fields-and-rejects-root-unions-before-emitting-artifacts': { reason: 'rejected declaration: root IModel union', error: 'RUNM1052: Root IModel unions are unsupported' },
+  'model-tags__generic-aliases-preserve-concrete-local-model-identity-for-nested-conversion': { reason: 'needs the child model module it imports', error: "Cannot find module './child.model.js'" },
+};
+
 interface WireCheck {
   readonly label: string;
   readonly model: string;
@@ -43,17 +64,24 @@ function importPath(from: string, to: string): string {
   return relative.startsWith('.') ? relative : `./${relative}`;
 }
 
+/** The model aliases and handwritten model classes a source declares: the declarations a caller may pass to `toWireFormat<T>`. */
+function declaredModels(sourceFile: string): { aliases: string[]; classes: RegExpMatchArray[] } {
+  const source = fs.readFileSync(sourceFile, 'utf8');
+  return {
+    aliases: [...source.matchAll(/^export type (\w+)\s*=\s*I(?:Model|Object)</gm)].map(match => match[1]!),
+    classes: [...source.matchAll(/^export (?:abstract )?class (\w+) extends (\w+)BaseModel\b/gm)],
+  };
+}
+
 /**
  * Pair every generator-emitted `XJSON` with the declarations a caller may pass
  * to `toWireFormat<T>`: the IModel/IObject alias and, for classes, the
  * handwritten subclass.
  */
 function modelChecks(sourceFile: string, companionFile: string): { imports: string[]; checks: WireCheck[] } {
-  const source = fs.readFileSync(sourceFile, 'utf8');
   const companion = fs.readFileSync(companionFile, 'utf8');
   const exported = new Set([...companion.matchAll(/^export type (\w+)JSON = /gm)].map(match => match[1]!));
-  const aliases = [...source.matchAll(/^export type (\w+)\s*=\s*I(?:Model|Object)</gm)].map(match => match[1]!);
-  const classes = [...source.matchAll(/^export (?:abstract )?class (\w+) extends (\w+)BaseModel\b/gm)];
+  const { aliases, classes } = declaredModels(sourceFile);
   const sourceTypes: string[] = [];
   const jsonTypes = new Set<string>();
   const checks: WireCheck[] = [];
@@ -127,7 +155,9 @@ test('WireFormat<T> equals the generator-emitted JSON type for fixture models an
     compilerOptions: { noEmit: true },
   });
   const covered: string[] = [];
-  const skipped: string[] = [];
+  const skipped = new Set<string>();
+  // Every model declaration and SDK facade of a fixture that generates: each must come out as an equivalence check.
+  const expected: string[] = [];
   const fixtures = fixturePath('models');
   for (const directory of modelFixtureDirectories(fixtures)) {
     const slug = path.relative(fixtures, directory).replace(/[\\/]/g, '__');
@@ -167,8 +197,10 @@ test('WireFormat<T> equals the generator-emitted JSON type for fixture models an
         ...(usesSdk ? { manifestInputs: [path.join(sourceRoot, 'sdk/model-manifest.json')] } : {}),
       }).artifacts;
     } catch (error) {
-      // Fixtures for rejected declarations, or needing a project-specific setup, do not generate standalone.
-      skipped.push(`${slug}: ${(error instanceof Error ? error.message : String(error)).split('\n')[0]}`);
+      const message = error instanceof Error ? error.message : String(error);
+      const skip = STANDALONE_SKIPS[slug];
+      if (!skip || !message.includes(skip.error)) throw new Error(`Fixture ${slug} failed to generate: ${message}`, { cause: error });
+      skipped.add(slug);
       fs.rmSync(projectRoot, { recursive: true, force: true });
       continue;
     }
@@ -183,6 +215,8 @@ test('WireFormat<T> equals the generator-emitted JSON type for fixture models an
         const result = sdkChecks(path.join(facadeDirectory, name), sdkCheckFile, slug);
         sdkImports.push(...result.imports);
         sdkWireChecks.push(...result.checks.map(check => ({ ...check, label: `${slug}/sdk/${check.label}` })));
+        const local = `${slug}_${path.basename(name, '.ts')}`.replace(/\W/g, '_');
+        expected.push(...['Model', 'Fields'].map(kind => `${slug}/sdk/${local}${kind}`));
       }
       if (sdkWireChecks.length > 0) {
         fs.writeFileSync(sdkCheckFile, checkSource(sdkImports, sdkWireChecks));
@@ -190,6 +224,8 @@ test('WireFormat<T> equals the generator-emitted JSON type for fixture models an
       }
     }
     for (const modelSource of modelSources) {
+      const { aliases, classes } = declaredModels(modelSource);
+      expected.push(...[...aliases, ...classes.map(match => match[1]!)].map(name => `${slug}/${path.basename(modelSource)}#${name}`));
       const companion = modelSource.replace(MODEL_SOURCE, match => match.replace('.ts', '.generated.ts'));
       if (!fs.existsSync(companion)) continue;
       const result = modelChecks(modelSource, companion);
@@ -212,20 +248,11 @@ export type DateStaysDate = Assert<Same<WireFormat<{ at: Date }>, { at: Date }>>
 export type AnyWire = Assert<NotAny<WireFormat<any>>>;
 `);
 
-  t.diagnostic(`covered ${covered.length}: ${covered.join(', ')}`);
-  t.diagnostic(`skipped ${skipped.length}: ${skipped.join(' | ')}`);
-  // Representative kinds: nested SDK model, SDK model in a union, manifest-backed SDK fields, template literals, tagged booleans, discriminated unions, TSerde, Date in tags, tuples, projections, SDK fields.
-  for (const label of [
-    'union-validation/pets.model.ts#TOwner',
-    'serde__iobject-tserde-stringify-parse-convert-declared-fields-in-one-pass/permission.model.ts#TPermissionModel',
-    'tag-model-boundaries__date-descriptors-in-contains-and-dependentschemas-validate-model-date-values/calendar.model.ts#TCalendar',
-    'model-tuples/tuple.model.ts#TTuple',
-    'model-composition__recursive-projections-convert-every-selected-level-without-restoring-omitted/tree.model.ts#TTree',
-    'model-companions__conversion-unions/wallet.model.ts#TWallet',
-    'unify-validate__sdk-money-ref-plus-extra-tvalidation-local-tvalidation-and-tserde-share-one-/checkout.model.ts#TCheckout',
-    'wire-format/wire-kinds.model.ts#TWireKinds',
-  ]) assert.ok(covered.includes(label), `missing equivalence check ${label}`);
-  assert.ok(covered.some(label => /\/sdk\/.*_Money(?:Model|Fields)$/.test(label)), 'a generated SDK model must be checked');
+  t.diagnostic(`covered ${covered.length} of ${expected.length} expected labels; skipped ${skipped.size} fixtures`);
+  const unskipped = Object.keys(STANDALONE_SKIPS).filter(slug => !skipped.has(slug));
+  assert.deepEqual(unskipped, [], 'declared skips whose fixture now generates or is gone: remove them from STANDALONE_SKIPS');
+  const unchecked = expected.filter(label => !covered.includes(label));
+  assert.deepEqual(unchecked, [], `no equivalence check for ${unchecked.join(', ')}`);
   const result = await buildModelProject(root, [], { allowFailure: true });
   assert.equal(result.code, 0, `${result.stdout}\n${result.stderr}`);
 });
