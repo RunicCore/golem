@@ -70,18 +70,24 @@ golem now validates with its own generated validators. Ajv is gone.
 
 An `Issue` now has one `code` for each kind of failure, with typed fields in place of `params`. The per-keyword codes are gone, and the default English messages changed. Update code that reads `issue.code` or `issue.params`, and any `messages()` key.
 
-| Schema keyword | New code |
+| Old code | New code |
 | --- | --- |
-| `minLength`, `minItems`, `minimum`, `minProperties`, `minContains` | `tooSmall` |
+| `minLength`, `minItems`, `minimum`, `minProperties`, `minContains`, `contains` | `tooSmall` with `measure` `length`, `items`, `value`, `properties` or `matches` |
 | `maxLength`, `maxItems`, `maximum`, `maxProperties`, `maxContains` | `tooBig` |
 | `exclusiveMinimum`, `exclusiveMaximum` | `tooSmall`, `tooBig` with `inclusive: false` |
-| `const`, `enum` | `literal` |
+| `items`, `unevaluatedItems` (a closed tuple) | `tooBig` with `measure: 'items'` |
+| `tupleLength` | `tooSmall` or `tooBig` with `measure: 'items'` |
+| `const`, `enum`, `literal` | `literal` |
 | `additionalProperties`, `unevaluatedProperties` | `unknownKey` |
 | `propertyNames` | `invalidKey` |
-| `anyOf`, `oneOf` | `union` |
-| tuple length | `tooSmall` or `tooBig` with `measure: 'items'` |
-| a model reference | `instance` |
-| any other check | its own code: `type`, `required`, `pattern`, `format`, `multipleOf`, `unique`, `not`, `never` or `custom` |
+| `dependentRequired`, `required` | `required` |
+| `anyOf`, `oneOf`, `union` | `union` |
+| `uniqueItems` | `unique` |
+| `reference` | `instance` |
+| `allOf`, `dependentSchemas`, `if`, `patternProperties` | the issues of the schema that failed, each with its own code and path |
+| `invalid` | the specific code of the failed check |
+| `type`, `format`, `pattern`, `multipleOf`, `not`, `never`, `custom`, `external`, `invalid_json`, `serialization`, `deserialization` | unchanged |
+| `validation_unavailable` | no issue code; it remains the `LibErrorKind` of the thrown error |
 
 - A `ValidationRule` returns `true`, a message, `{ message }` or nothing. It no longer returns a code: an issue from a rule has the code `custom`.
 - `ModelValidationContext` is `{ resolve }`. The `engine` field is removed.
