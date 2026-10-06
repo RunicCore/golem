@@ -10,6 +10,7 @@ import type {
   ModelManifest,
   ModelManifestEntry,
 } from '../model-manifest.js';
+import { isRecord } from '../generator-api.js';
 import type { GolemProfile, InputObserver } from '../generator-api.js';
 import type { CodecSchemaClosureEntry } from '../validation-plan.js';
 import { canonicalFilename, effectiveConfigPath } from './project.js';
@@ -173,14 +174,18 @@ function validateGeneratedModules(
   return exportsById;
 }
 
-/** The manifests the program's files advertise with the `@golem-model-manifest` marker comment. Throws for one that does not exist. */
-export function advertisedModelManifests(program: ts.Program, onInput?: InputObserver): Set<string> {
+/**
+ * The manifests the program's files advertise with the `@golem-model-manifest` marker comment. Throws for one that does not
+ * exist, except one in `skipped`: the caller owns it and is about to write it.
+ */
+export function advertisedModelManifests(program: ts.Program, onInput?: InputObserver, skipped: ReadonlySet<string> = new Set()): Set<string> {
   const advertised = new Set<string>();
   const markerPattern = new RegExp(`${escapeRegExp(MODEL_MANIFEST_MARKER)}\\s+([^\\s*]+)`);
   for (const sourceFile of program.getSourceFiles()) {
     const marker = sourceFile.text.match(markerPattern);
     if (!marker) continue;
     const filename = canonicalFilename(resolve(dirname(sourceFile.fileName), marker[1]));
+    if (skipped.has(filename)) continue;
     onInput?.(filename);
     if (!existsSync(filename)) {
       throw new Error(
@@ -192,15 +197,25 @@ export function advertisedModelManifests(program: ts.Program, onInput?: InputObs
   return advertised;
 }
 
+/** The package whose models job writes a manifest of its own models: a table of their codec ids, not an SDK to compose with. */
+const MODELS_JOB_PACKAGE = '@exprtlabs/golem-model';
+
+/**
+ * `ownManifest` is the manifest the calling models job writes. The job does not read it, and a marker that still names it
+ * after the file is gone does not stop the job that writes it again. A manifest another models job wrote lists models that
+ * job generated; it holds codec ids for the rewrite, so it is no input here.
+ */
 export function loadModelManifests(
   root: string,
   info: ProgramInfo,
   explicit: readonly string[],
   profile: GolemProfile,
   onInput?: InputObserver,
+  ownManifest?: string,
 ): ManifestIndex {
-  const advertised = advertisedModelManifests(info.program, onInput);
-  const discovered = discoverModelManifests(root, onInput).map(canonicalFilename);
+  const own = ownManifest === undefined ? undefined : canonicalFilename(ownManifest);
+  const advertised = advertisedModelManifests(info.program, onInput, new Set(own === undefined ? [] : [own]));
+  const discovered = discoverModelManifests(root, onInput).map(canonicalFilename).filter((filename) => filename !== own);
   discovered.forEach((filename) => onInput?.(filename));
   const localFiles = [...new Set([...discovered, ...advertised])].sort();
   const local = new Set(localFiles);
@@ -218,6 +233,7 @@ export function loadModelManifests(
     if (local.has(filename)) onInput?.(filename);
     if (!existsSync(filename)) throw new Error(`Model manifest does not exist: ${filename}`);
     const manifest = readModelManifest(filename);
+    if (isRecord(manifest.generator) && manifest.generator.name === MODELS_JOB_PACKAGE) continue;
     validateManifestProfile(manifest, filename, profile);
     validationSchemaClosure.push(...manifest.validationSchemaClosure ?? []);
     for (const model of manifest.models) {

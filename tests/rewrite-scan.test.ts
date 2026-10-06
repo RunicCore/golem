@@ -358,6 +358,41 @@ test('a models job owns .golem/codec-keys.json, and the project it generates pas
   await runPipeline(config, { check: true });
 });
 
+test('a models job writes a manifest whose codec ids agree with its key table, so a call resolves through both without ambiguity', async (t) => {
+  const { root, config } = generatedProject(t);
+  await runPipeline(config);
+  const result = scan(root);
+  assert.deepEqual(result.diagnostics, []);
+  assert.match(rewritten(root, result, 'use.ts'), /export const payment = __golem_requireObjectCodec\("TPayment_dc2b21d5"\)\.parse\('\{\}', \{ construct: Payment \}\);/);
+  // A declaration that two sources key differently has no id, so a found id that lists both files is one they agree on.
+  assert.deepEqual(scanned(result, 'use.ts').dependencies, ['.golem/codec-keys.json', 'src/generated/models/model-manifest.json']);
+});
+
+test('an app that includes a shared folder with its own golem.yaml reads the codec id of the folder\'s model from the folder\'s model manifest, with no key table of its own', async (t) => {
+  const { root: outer } = createModelProject(t, {
+    prefix: 'golem-rewrite-shared-',
+    linkTypescript: true,
+    packages: { '@exprtlabs/golem-model': path.join(workspace, 'packages/golem-model') },
+  });
+  const put = (relative: string, content: string): void => writeGeneratedArtifacts([{ path: path.join(outer, relative), content }]);
+  const compilerOptions = { strict: true, target: 'ES2022', module: 'NodeNext', moduleResolution: 'NodeNext', skipLibCheck: true, noEmit: true };
+  put('shared/golem.yaml', 'version: 1\nmobx: false\nvalidation: false\nmodels:\n  root: .\n');
+  put('shared/tsconfig.json', JSON.stringify({ compilerOptions, include: ['src/**/*.ts'] }));
+  copyFixtureFile(outer, 'models/serde/base-payment-model/money.model.ts', 'shared/src/money.model.ts');
+  await runPipeline(path.join(outer, 'shared/golem.yaml'));
+  const app = path.join(outer, 'app');
+  put('app/tsconfig.json', JSON.stringify({ compilerOptions: { ...compilerOptions, rootDir: '..' }, include: ['src/**/*.ts', '../shared/**/*.ts'] }));
+  put('app/src/use.ts', `import { parse } from '@exprtlabs/golem/serde';
+import { Payment } from '../../shared/src/money.model.js';
+export const payment = parse<Payment>('{}');
+`);
+
+  const result = scan(app);
+  assert.deepEqual(result.diagnostics, []);
+  assert.match(rewritten(app, result, 'use.ts'), /export const payment = __golem_requireObjectCodec\("TPayment_dc2b21d5"\)\.parse\('\{\}', \{ construct: Payment \}\);/);
+  assert.deepEqual(scanned(result, 'use.ts').dependencies, ['../shared/src/generated/models/model-manifest.json'], 'the folder\'s manifest is what the id was resolved from');
+});
+
 test('a config without a models or controllers job still checks the project that calls an SDK', async (t) => {
   const { root } = createModelProject(t, {
     prefix: 'golem-rewrite-consumer-',
