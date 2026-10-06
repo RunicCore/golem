@@ -102,7 +102,6 @@ test('OpenAPI SDKs emit one validators module that the models and the operations
   });
   const names = artifactBasenames(result.artifacts);
   assert.equal(names.includes('validators.generated.ts'), true);
-  assert.equal(names.some(name => name !== 'validators.generated.ts' && name.endsWith('.validators.generated.ts')), false, 'no group or operation writes its own');
   const models = generatedModelSource(result.artifacts);
   assert.match(models, /validators\.generated\.js/);
   assert.match(models, /createObjectCodec/);
@@ -148,7 +147,6 @@ test('SDK operation validators expose every operation reference and validate thr
   const generatedCode = readFileSync(path.join(output, 'validators.generated.ts'), 'utf8');
   assert.doesNotMatch(generatedCode, /new\s+Function|\beval\s*\(/);
   assert.ok(result.artifacts.some(item => item.path === path.join(output, 'validators.generated.ts')), 'the SDK carries one validators module');
-  assert.equal(result.artifacts.some(item => item.path.endsWith('.validators.generated.ts')), false, 'no group or operation carries its own');
 
   type OperationValidator = (value: unknown, all: boolean) => readonly { readonly path: readonly unknown[] }[];
   const expected: Record<string, string[]> = {

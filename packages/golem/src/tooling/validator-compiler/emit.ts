@@ -35,9 +35,9 @@ function identifier(text: string): string {
 
 /**
  * The name each root's validator is exported under: `validate_` and the root's name, with each character that cannot
- * appear in a name turned into `_`. The name comes from the root alone, so adding a root renames no other export.
- * Roots whose names become the same identifier are told apart by a number from 2, handed out in the order of the
- * roots' own names.
+ * appear in a name turned into `_`. The name comes from the root alone, so adding a root renames no other export,
+ * unless its name becomes an identifier another root already has: roots whose names become the same identifier are
+ * told apart by a number from 2, handed out in the order of the roots' own names, so the numbers of that set can shift.
  */
 export function exportNames(rootNames: Iterable<string>): ReadonlyMap<string, string> {
   const names = [...new Set(rootNames)].sort((first, second) => (first < second ? -1 : first > second ? 1 : 0));

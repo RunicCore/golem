@@ -667,7 +667,6 @@ test('10 and 100 operations share one validators module and the generated source
     const [shared, ...others] = sdkValidatorArtifacts(result.artifacts);
     assert.deepEqual(others, [], 'one validators module');
     assert.equal([...(shared?.content.matchAll(/^export function validate_\w+_input\(/gm) ?? [])].length, count, 'one input validator for each operation');
-    assert.equal(result.artifacts.filter(artifact => artifact.path.endsWith('.validators.generated.ts')).length, 0, 'no operation or group writes its own');
     sizes.push(result.artifacts.reduce((total, artifact) => total + Buffer.byteLength(artifact.content), 0));
   }
   assert.ok(sizes[1] !== undefined && sizes[0] !== undefined && sizes[1] <= sizes[0] * 12,

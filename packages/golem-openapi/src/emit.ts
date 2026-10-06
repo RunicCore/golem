@@ -215,7 +215,7 @@ function buildGeneratedFiles(document: unknown, options: WriteSdkOptions): Gener
   if (validators.compiled) {
     modelDiagnostics.push(...validators.compiled.diagnostics);
     // A source is empty when the compile reported an error; no file is written then.
-    if (validators.compiled.exports.size > 0) files.set('validators.generated.ts', validators.compiled.source);
+    if (validators.compiled.source !== '' && validators.compiled.exports.size > 0) files.set('validators.generated.ts', validators.compiled.source);
   }
   files.set('model-manifest.json', stableJson(generateModelManifest(document, profile, modelAnalysis)));
   if (plan.artifacts.has('client.ts')) {

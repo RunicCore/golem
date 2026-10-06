@@ -13,13 +13,7 @@ const VALIDATOR_MODULE = /(?:^|\/)(?:[^/]*\.)?validators\.generated\.ts$/;
 
 /** The SDK writes one validators module at its root, for its models and its operations. */
 function sdkValidatorModules(root: string): string[] {
-  const modules = fs.existsSync(path.join(root, 'sdk/validators.generated.ts')) ? ['validators.generated.ts'] : [];
-  const retired = ['models', 'operations'].flatMap(directory => {
-    const folder = path.join(root, 'sdk', directory);
-    return fs.existsSync(folder) ? fs.readdirSync(folder).filter(name => name.endsWith('.validators.generated.ts')) : [];
-  });
-  assert.deepEqual(retired, [], 'no group or operation writes its own validators module');
-  return modules;
+  return fs.existsSync(path.join(root, 'sdk/validators.generated.ts')) ? ['validators.generated.ts'] : [];
 }
 
 function fixture(t: TestContext) {

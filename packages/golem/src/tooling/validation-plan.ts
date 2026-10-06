@@ -403,7 +403,7 @@ export interface PlanValidators {
 }
 
 /** Compiles `roots` and `resources` to one validators module (TypeScript). */
-export function compileValidatorRoots(
+function compileValidatorRoots(
   roots: ReadonlyMap<string, unknown>,
   resources: ReadonlyMap<string, unknown>,
   options: PlanValidatorsOptions,
@@ -429,7 +429,7 @@ export function compileValidatorRoots(
  * included) would move the base URI of the root's local `$ref`s onto the model root of the same codec, so the
  * compiler does not see it.
  */
-export function planValidationRoots(plan: CodecValidationPlan): ReadonlyMap<string, unknown> {
+function planValidationRoots(plan: CodecValidationPlan): ReadonlyMap<string, unknown> {
   return new Map(Object.entries(plan.schemas).map(([id, schema]) => [id, withoutOwnId(lowerDiscriminatorMappings(schema), id)] as const));
 }
 

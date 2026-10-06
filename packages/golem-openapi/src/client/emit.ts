@@ -612,6 +612,7 @@ export function generateClientModules(
       },
     ]),
   );
+  if (profile.validation && !validation) throw new Error('A validating SDK imports its operation validators from the SDK validators module; the caller gives its schemas and exports.');
   const emittedOperations = new Map<string, string>();
   for (const operation of operations) {
     const operationSchemes = operationSecuritySchemeData(operation, securitySchemes);
@@ -624,7 +625,7 @@ export function generateClientModules(
       responseContractsForOperation(document, operation),
       operationSchemes,
       validation?.schemas.bundles.get(operation.name),
-      validation?.validatorExports ?? new Map(),
+      validation?.validatorExports ?? new Map<string, string>(),
     ));
   }
   const client = emitClient(clientName, operations, profile, plan, rawSecuritySchemes);

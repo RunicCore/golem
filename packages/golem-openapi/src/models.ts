@@ -1319,9 +1319,10 @@ export function generateOpenApiModelArtifacts(
     readonly locate?: OriginLocator | undefined;
     /**
      * Compiles the SDK's validators module from the validation plan of every model and returns the name it exports
-     * each root under (`PlanValidators.exports`). Called once, and required when the profile validates.
+     * each root under (`PlanValidators.exports`). `groupPlans` are the plans the model groups' own schemas come from:
+     * a companion imports the validators of its group's plan ids. Called once, and required when the profile validates.
      */
-    readonly compileValidators?: (input: { readonly plan: CodecValidationPlan; readonly locateModel: (name: string) => SchemaPlace }) => ReadonlyMap<string, string>;
+    readonly compileValidators?: (input: { readonly plan: CodecValidationPlan; readonly groupPlans: ReadonlyMap<string, CodecValidationPlan>; readonly locateModel: (name: string) => SchemaPlace }) => ReadonlyMap<string, string>;
   } = {},
 ): { readonly files: ReadonlyMap<string, string>; readonly entryReexports: string; readonly diagnostics: readonly GolemDiagnostic[] } {
   const { schemaGraph, definitions, ordered, grouping } = analysis;
@@ -1417,6 +1418,7 @@ export function generateOpenApiModelArtifacts(
   const validatorExports = profile.validation && helpers.compileValidators
     ? helpers.compileValidators({
       plan: buildCodecValidationPlan(schemaGraph),
+      groupPlans,
       locateModel: (name) => componentPlace(helpers.locate, schemaNameByModelName.get(name) ?? name, ''),
     })
     : undefined;
@@ -1484,7 +1486,11 @@ export function generateOpenApiModelArtifacts(
     const groupPlan = groupPlans.get(group.id);
     if (groupPlan && validatorExports) {
       // The model module's import pruning keeps the validators its codecs use.
-      const names = Object.keys(groupPlan.schemas).flatMap((id) => validatorExports.get(id) ?? []);
+      const names = Object.keys(groupPlan.schemas).map((id) => {
+        const name = validatorExports.get(id);
+        if (name === undefined) throw new Error(`The SDK validators module has no validator for the codec ${JSON.stringify(id)} of model group ${group.id}.`);
+        return name;
+      });
       if (names.length > 0) moduleImports.push(`import { ${[...new Set(names)].sort().join(', ')} } from '../validators.generated.js';`);
     }
     const modelModule = generateModels(document, profile, {
