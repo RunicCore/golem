@@ -11,7 +11,8 @@ import { atomicWrite } from './outputs.js';
 import { GeneratorSessionResources, runPipeline } from './pipeline.js';
 import type { PipelineState } from './pipeline.js';
 import { applyRewrites } from './rewrite.js';
-import type { FileRewrite } from './rewrite.js';
+import type { FileRewrite, RewriteEdit } from './rewrite.js';
+import { LAYER_SPECIFIER, layerFileOf, missingLayerMessage } from './rewrite-host.js';
 import { emitsJavaScript, projectSources, RewriteScanner } from './rewrite-scan.js';
 import { composeSourceMaps } from './source-map.js';
 import type { SourceMapV3 } from './source-map.js';
@@ -298,6 +299,30 @@ interface StageResult {
   readonly manifests: readonly string[];
 }
 
+/** The specifier by which the staged file `from` imports the staged module `to`, as emitted: relative, POSIX, with the `.js` extension of the compiled module. */
+function relativeImport(from: string, to: string): string {
+  const relative = posix(path.relative(path.dirname(from), to)).replace(/\.ts$/, '.js');
+  return relative.startsWith('.') ? relative : `./${relative}`;
+}
+
+/**
+ * `rewrite` with the edits that point each `#golem-models` import of `source` at the layer, so the emitted JavaScript needs
+ * no mapping. A file with no such import keeps `rewrite` as it is; a project with no models job has no layer to point at.
+ */
+function withLayerEdits(source: ts.SourceFile, rewrite: FileRewrite | undefined, layerFile: string | undefined, golemConfigFile: string, specifierTo: (layer: string) => string): FileRewrite | undefined {
+  if (!source.text.includes(LAYER_SPECIFIER)) return rewrite;
+  const edits: RewriteEdit[] = [];
+  for (const statement of source.statements) {
+    const specifier = ts.isImportDeclaration(statement) || ts.isExportDeclaration(statement) ? statement.moduleSpecifier : undefined;
+    if (specifier === undefined || !ts.isStringLiteralLike(specifier) || specifier.text !== LAYER_SPECIFIER) continue;
+    if (layerFile === undefined) throw new Error(missingLayerMessage(source.fileName, golemConfigFile));
+    const start = specifier.getStart(source);
+    edits.push({ start, end: specifier.end, expect: source.text.slice(start, specifier.end), text: JSON.stringify(specifierTo(layerFile)) });
+  }
+  if (edits.length === 0) return rewrite;
+  return { edits: [...rewrite?.edits ?? [], ...edits], imports: rewrite?.imports ?? [] };
+}
+
 /**
  * Mirror the program's local sources into `<root>/.golem/build/<config name>/stage`: the rewritten text for a file the scan found a site in, the file itself
  * otherwise. A file is written only when its content differs, so the compiler's incremental state keeps every other file.
@@ -305,7 +330,7 @@ interface StageResult {
  * outside the tsconfig's directory lands in the output where the compiler would put it. A mirrored directory holds a copy of its original's `package.json`
  * and a link to its `node_modules`, so a staged file resolves packages, `type` and `exports` as the original does.
  */
-function writeStage(project: Project, sources: readonly ts.SourceFile[], rewrites: ReadonlyMap<string, FileRewrite>): StageResult {
+function writeStage(project: Project, sources: readonly ts.SourceFile[], rewrites: ReadonlyMap<string, FileRewrite>, layerFile: string | undefined, golemConfigFile: string): StageResult {
   const { root } = project;
   const stageDirectory = path.join(project.buildDirectory, 'stage');
   const base = commonDirectory([root, ...sources.map((source) => path.dirname(source.fileName)), ...project.rootDir === undefined ? [] : [project.rootDir]]);
@@ -316,7 +341,7 @@ function writeStage(project: Project, sources: readonly ts.SourceFile[], rewrite
   const keep = new Set<string>(['tsconfig.json']);
   for (const source of sources) {
     const key = keyOf(source.fileName);
-    const rewrite = rewrites.get(posix(path.relative(root, source.fileName)));
+    const rewrite = withLayerEdits(source, rewrites.get(posix(path.relative(root, source.fileName))), layerFile, golemConfigFile, (layer) => relativeImport(stagePath(source.fileName), stagePath(layer)));
     const rewritten = rewrite && applyRewrites(source.text, rewrite, key);
     if (rewritten) maps.set(key, rewritten.map);
     atomicWrite(stagePath(source.fileName), rewritten?.code ?? source.text);
@@ -506,7 +531,7 @@ async function buildOnce(session: ts.ProgramSession, run: BuildRun, changed?: re
   const errors = scanned.diagnostics.filter((diagnostic) => diagnostic.severity === GolemDiagnosticSeverity.Error);
   if (errors.length > 0) throw scanFailure(errors);
 
-  const stage = writeStage(project, sources, scanned.files);
+  const stage = writeStage(project, sources, scanned.files, layerFileOf(golemConfig), golemConfig.configFile);
   // The stage holds copies of these: a change to one is a change to build for.
   for (const manifest of stage.manifests) observe(manifest);
   const emit = await runTsc(cli, root, [

@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import type { Plugin } from 'esbuild';
 
-import { BUNDLER_TYPESCRIPT_FILE, GolemHostError, NODE_MODULES, openRewriteProject, withInlineSourceMap, type GolemHostOptions, type RewriteProject } from './rewrite-host.js';
+import { BUNDLER_TYPESCRIPT_FILE, GolemHostError, LAYER_SPECIFIER, layerOf, NODE_MODULES, openRewriteProject, withInlineSourceMap, type GolemHostOptions, type RewriteProject } from './rewrite-host.js';
 
 /**
  * esbuild plugin that scans each TypeScript source with the project's own TypeScript, against the golem.yaml named by
@@ -44,6 +44,14 @@ export function golem(options: GolemHostOptions = {}): Plugin {
         opening = undefined;
         project = undefined;
         void closing?.then((opened) => { opened.close(); }, () => undefined);
+      });
+      build.onResolve({ filter: /^#golem-models$/ }, async ({ importer }) => {
+        try {
+          return { path: layerOf(await open(), importer) };
+        } catch (error) {
+          if (!(error instanceof GolemHostError)) throw error;
+          return { errors: [{ text: error.message, location: { file: importer } }] };
+        }
       });
       build.onLoad({ filter: BUNDLER_TYPESCRIPT_FILE, namespace: 'file' }, async ({ path: file }) => {
         if (NODE_MODULES.test(file)) return undefined;

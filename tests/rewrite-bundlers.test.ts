@@ -276,6 +276,18 @@ for (const bundler of BUNDLERS) {
     const result = await command(root, process.execPath, [bundle]);
     assert.deepEqual(JSON.parse(result.stdout), { currency: 'USD', value: '1' });
   });
+
+  test(`${bundler.name}: a bundle resolves #golem-models to the layer of the project`, async (t) => {
+    const root = await generatedProject(t, `${bundler.name}-layer`, { generate: false });
+    // A layer as `golem generate` will write it, by hand: `#golem-models` resolves to the file, whatever generated it.
+    write(root, 'src/generated/models/models.generated.ts', 'export const layer = { profile: { mobx: true, validation: false }, schemas: {}, serdeBindings: {} };\n');
+    const outside = createFixtureProject(t, 'golem-bundler-layer-');
+    write(outside, 'use.ts', "import { layer } from '#golem-models';\nexport const mobx: boolean = layer.profile.mobx;\n");
+    write(root, 'src/layer.ts', `import { mobx } from '${path.join(outside, 'use.js')}';\nconsole.log(mobx);\n`);
+    const bundle = await build(bundler, t, root, 'src/layer.ts');
+    const result = await command(root, process.execPath, [bundle]);
+    assert.equal(result.stdout, 'true\n');
+  });
 }
 
 test('the rewrite project of one golem.yaml is shared, and its session lives until the last host closes it', async (t) => {

@@ -4,12 +4,12 @@ import path from 'node:path';
 import type { Plugin, ViteDevServer } from 'vite';
 
 import { isGeneratedModelFile } from './generated-paths.js';
-import { BUNDLER_TYPESCRIPT_FILE, NODE_MODULES, openRewriteProject, type GolemHostOptions, type RewriteProject } from './rewrite-host.js';
+import { BUNDLER_TYPESCRIPT_FILE, LAYER_SPECIFIER, layerOf, NODE_MODULES, openRewriteProject, type GolemHostOptions, type RewriteProject } from './rewrite-host.js';
 
 /**
  * Vite plugin that scans each TypeScript module with the project's own TypeScript, against the golem.yaml named by
  * `config`, `GOLEM_CONFIG` or `./golem.yaml` in Vite's root, and applies the rewrite in memory before Vite strips the
- * types. Put it first in `plugins`: it runs `pre` and must see the file text as it is on disk. A module the scan cannot
+ * types, and resolves `#golem-models` to the layer file of the project. Put it first in `plugins`: it runs `pre` and must see the file text as it is on disk. A module the scan cannot
  * rewrite fails with its file and line. An id with a query, such as `?raw`, is not the file's own text and passes
  * through, and so do `node_modules`. The first TypeScript module loads the compiler. The dev server watches the files
  * each rewrite depends on, and a build adds them to its watch set. When one changes, or a generated model file of the project does, the project scans again
@@ -102,6 +102,10 @@ export function golem(options: GolemHostOptions = {}): Plugin {
     configureServer(devServer) {
       server = devServer;
       for (const event of ['add', 'change', 'unlink'] as const) devServer.watcher.on(event, fileChanged);
+    },
+    async resolveId(source, importer) {
+      if (source !== LAYER_SPECIFIER) return undefined;
+      return layerOf(await open(), importer ?? source);
     },
     async transform(code, id) {
       if (id.includes('?') || id.startsWith('\0') || !BUNDLER_TYPESCRIPT_FILE.test(id) || NODE_MODULES.test(id)) return undefined;

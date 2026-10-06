@@ -11,7 +11,7 @@ import { copyFixtureFile, createFixtureProject, linkProjectPackages, readFixture
 import { createControllerFixture } from './fixture-templates/controllers/project.js';
 import { command, workspace } from './support/process.js';
 import { createModelProject, MINIMAL_GOLEM_YAML } from './model-project.js';
-import { TSC, HEAVY_TEST_TIMEOUT_MS, write, editTsconfig, serdeProject, PAYMENTS_CONTROLLER, USE, snapshot, build, mtimes, importBuilt, assertCallMap } from './support/build-project.js';
+import { TSC, HEAVY_TEST_TIMEOUT_MS, write, editTsconfig, serdeProject, sourceOnlyProject, countingGenerator, PAYMENTS_CONTROLLER, USE, snapshot, build, mtimes, importBuilt, assertCallMap } from './support/build-project.js';
 
 // Output the incremental state cannot see, and configurations that differ in one directory
 
@@ -206,6 +206,36 @@ test('a tsconfig that includes ../shared builds the output tree that tsc emits, 
   assert.deepEqual(Object.keys(built), ['app/src/main.d.ts', 'app/src/main.js', 'shared/shared.d.ts', 'shared/shared.js']);
   assert.deepEqual(built, await plainTscOutput(app));
   assert.equal((await importBuilt(app, 'app/src/main.js')).doubled, 42);
+});
+
+/** A layer as `golem generate` will write it, by hand: the build points `#golem-models` at the file, whatever generated it. */
+const LAYER = 'export const layer = { profile: { mobx: true, validation: false }, schemas: {}, serdeBindings: {} };\n';
+/** The import of the serde entry puts the ambient `#golem-models` declaration into the program. */
+const LAYER_USE = `import type { GolemLayer } from '@exprtlabs/golem/serde';
+import * as layerModule from '#golem-models';
+
+const layer: GolemLayer = layerModule.layer;
+export const mobx: boolean = layer.profile.mobx;
+`;
+
+test('golem build output that imports #golem-models runs under plain node with no package.json imports entry', async (t) => {
+  const { outer, app } = appBesideShared(t, 'build-layer');
+  write(app, 'src/main.ts', 'export const main: number = 1;\n');
+  write(app, 'src/generated/models/models.generated.ts', LAYER);
+  write(outer, 'shared/use.ts', LAYER_USE);
+
+  assert.equal((await build(app)).exitCode, 0);
+  assert.doesNotMatch(fs.readFileSync(path.join(app, 'build/shared/use.js'), 'utf8'), /#golem-models/);
+  const result = await command(app, process.execPath, ['--input-type=module', '--eval', "import { mobx } from './build/shared/use.js'; console.log(mobx);"]);
+  assert.equal(result.stdout, 'true\n');
+});
+
+test('a project with no models job that imports #golem-models fails golem build with the missing-layer error', async (t) => {
+  const root = sourceOnlyProject(t, 'build-layer-missing');
+  write(root, 'golem.yaml', 'version: 1\n');
+  countingGenerator(root);
+  write(root, 'src/use.ts', LAYER_USE);
+  await assert.rejects(build(root), { message: `${path.join(root, 'src/use.ts')} imports #golem-models, but ${path.join(root, 'golem.yaml')} has no models job. Add a models job to golem.yaml.` });
 });
 
 test('a declaration file outside the project, imported under a rootDir inside it, builds the layout tsc emits', async (t) => {
