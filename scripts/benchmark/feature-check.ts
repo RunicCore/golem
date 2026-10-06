@@ -4,7 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { generate } from '@exprtlabs/golem-model/generator';
 import { MODES, type Mode } from './fixture-contract.js';
-import { copyGeneratedJavascript, generateFeatureMoneySdk } from './generate-sdk.js';
+import { generateFeatureMoneySdk } from './generate-sdk.js';
 import { root } from './project.js';
 
 const featureDirectory = path.join(root, 'scripts/benchmark/fixtures/features');
@@ -24,23 +24,17 @@ function prepare(directory: string, mode: Mode): string {
     },
     include: ['src/**/*.ts'],
   }));
-  const profile = { mobx: false, validation: mode !== 'conversion-only', ajvStandalone: mode === 'standalone-ajv' };
-  writeFileSync(path.join(project, 'golem.yaml'), `version: 1\nmobx: ${profile.mobx}\nvalidation: ${profile.validation}\najvStandalone: ${profile.ajvStandalone}\nmodels:\n  root: .\n`);
+  const profile = { mobx: false, validation: mode !== 'conversion-only' };
+  writeFileSync(path.join(project, 'golem.yaml'), `version: 1\nmobx: ${profile.mobx}\nvalidation: ${profile.validation}\nmodels:\n  root: .\n`);
   for (const name of ['features.model.ts', 'features.iobject.model.ts', 'feature-tags.ts', 'cases.ts', 'access-rules.ts']) copyFileSync(path.join(featureDirectory, name), path.join(source, name));
   copyFileSync(path.join(root, 'scripts/benchmark/fixture-contract.ts'), path.join(source, 'fixture-contract.ts'));
-  const manifest = generateFeatureMoneySdk(project, source, { validation: profile.validation, ajvStandalone: profile.ajvStandalone });
+  const manifest = generateFeatureMoneySdk(project, source, { validation: profile.validation });
   const result = generate({ root: project, profile, manifestInputs: [manifest] });
   for (const artifact of result.artifacts) {
     mkdirSync(path.dirname(artifact.path), { recursive: true });
     writeFileSync(artifact.path, artifact.content);
   }
   execFileSync(process.execPath, [path.join(root, 'packages/golem/dist/bin/golem.js'), 'build', '--config', path.join(project, 'golem.yaml')], { cwd: root, stdio: 'pipe', timeout: 120_000 });
-  for (const artifact of result.artifacts.filter(item => item.path.endsWith('.js'))) {
-    const destination = path.join(project, 'build', path.relative(source, artifact.path));
-    mkdirSync(path.dirname(destination), { recursive: true });
-    copyFileSync(artifact.path, destination);
-  }
-  copyGeneratedJavascript(source, project);
   return path.join(project, 'build/cases.js');
 }
 

@@ -74,10 +74,10 @@ export const EVIDENCE_DECLARATIONS = [
     description: 'An explicit case table covers each normalized outbound operation and fails on new or skipped operations.',
   },
   {
-    id: 'upstream-ajv-native-codecs',
+    id: 'upstream-native-codecs',
     kind: 'wire',
     layers: ['generated-client'],
-    description: 'Validation-enabled clients use the generated Ajv registry; JSON, empty, form, and binary media use native codecs.',
+    description: 'Validation-enabled clients use the generated validators; JSON, empty, form, and binary media use native codecs.',
   },
   {
     id: 'upstream-inbound-contracts',
@@ -143,7 +143,7 @@ export const EVIDENCE_DECLARATIONS = [
     id: 'conformance-advanced-constraints',
     kind: 'negative',
     layers: ['generated-client', 'adapter-validation'],
-    description: 'Conditional request violations are rejected before fetch and conditional response violations are rejected after decoding in both runtime and standalone Ajv profiles.',
+    description: 'Conditional request violations are rejected before fetch and conditional response violations are rejected after decoding in validation-enabled profiles.',
   },
   {
     id: 'conformance-remote-reference-policy',
@@ -161,13 +161,13 @@ export const EVIDENCE_DECLARATIONS = [
     id: "directional-required-and-neutral-models",
     kind: "wire",
     layers: ['generated-client'],
-    description: "Public generation, strict types, default Ajv, sibling allOf constraints and neutral model validation are exercised together.",
+    description: "Public generation, strict types, generated validators, sibling allOf constraints and neutral model validation are exercised together.",
   },
   {
     id: 'local-resource-targets',
     kind: 'wire',
     layers: ['generated-client'],
-    description: 'Public generation, strict consumer types and default Ajv agree on whole resources, URI fragments and nested relative identifiers without network access.',
+    description: 'Public generation, strict consumer types and generated validators agree on whole resources, URI fragments and nested relative identifiers without network access.',
   },
   {
     id: 'uri-model-types',
@@ -203,7 +203,7 @@ export const EVIDENCE_DECLARATIONS = [
     id: "tuple-prefixes",
     kind: "compile",
     layers: ['type-check', 'adapter-validation'],
-    description: "Prefix-length tuple unions preserve short arrays and positional types, with runtime bounds enforced by Ajv.",
+    description: "Prefix-length tuple unions preserve short arrays and positional types, with runtime bounds enforced by the generated validators.",
   },
   {
     id: "json-sequence-framing",
@@ -280,7 +280,7 @@ export const REPRESENTATION_BOUNDARIES = [
   'TypeScript does not provide exact unevaluated-property semantics across composition; generated runtime validation enforces them when validation is enabled.',
   'Callbacks and webhooks are inbound contracts only: they are generated as types, and your app implements the handlers.',
   'Response Link Objects are metadata only; evaluating runtime expressions remains application-owned.',
-  'Unknown format names are annotations in the default Ajv engine; applications can supply an engine with custom format validators.',
+  'A schema format that golem does not implement is skipped with a warning, or fails generation when unknownFormats is error.',
   'OpenAPI 3.1 does not define the itemSchema stream surface used by this generator. Streams need OpenAPI 3.2.',
 ] as const;
 
@@ -363,9 +363,9 @@ export const CAPABILITY_RECORDS: readonly CapabilityRecord[] = [
   ...recordsFor({
     capability: 'generated-runtime-validation',
     surface: 'runtime',
-    limitations: ['Validation is emitted and used only for profiles with validation enabled. Unknown format names are annotations unless a custom engine defines them.'],
+    limitations: ['Validation is emitted and used only for profiles with validation enabled. A schema format that golem does not implement is skipped with a warning, or fails generation when unknownFormats is error.'],
     evidenceIds: [
-      'upstream-ajv-native-codecs',
+      'upstream-native-codecs',
       'conformance-content-parameter-validation',
       'conformance-content-parameter-false-schema',
       'conformance-advanced-constraints',
@@ -381,7 +381,7 @@ export const CAPABILITY_RECORDS: readonly CapabilityRecord[] = [
     capability: 'native-json-form-empty-and-binary-codecs',
     surface: 'runtime',
     limitations: ['Structured media types outside the built-in codecs require an exact media-type codec.'],
-    evidenceIds: ['upstream-ajv-native-codecs', 'conformance-default-codecs'],
+    evidenceIds: ['upstream-native-codecs', 'conformance-default-codecs'],
   }, OPENAPI_VERSIONS, ALL_PROFILES, 'supported'),
   ...recordsFor({
     capability: 'custom-codec-boundaries',

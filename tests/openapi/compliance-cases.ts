@@ -25,7 +25,7 @@ export interface UpstreamOperationCase {
   readonly evidenceIds: readonly EvidenceId[];
 }
 
-const OPERATION_EVIDENCE = ['upstream-operation-cases', 'upstream-ajv-native-codecs'] as const satisfies readonly EvidenceId[];
+const OPERATION_EVIDENCE = ['upstream-operation-cases', 'upstream-native-codecs'] as const satisfies readonly EvidenceId[];
 
 function operationCase(
   fixture: string,

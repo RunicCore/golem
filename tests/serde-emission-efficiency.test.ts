@@ -52,7 +52,7 @@ test('model generation preserves imported model identity and detached JSON outpu
   };
   writeGeneratedSdk(writeSdk, document, {
     output: sdk,
-    profile: { mobx: false, validation: false, ajvStandalone: false, allowAny: false },
+    profile: { mobx: false, validation: false, allowAny: false },
   });
   writeFileSync(path.join(value.sourceRoot, 'wallet.model.ts'), readFixture("models/serde-emission-efficiency/model-generation-preserves-imported-model-identity-and-detached-json-output/wallet.model.ts"));
 

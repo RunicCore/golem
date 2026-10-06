@@ -12,7 +12,7 @@ import { command } from './support/process.js';
 
 const profiles: readonly (readonly [string, GolemProfile])[] = [
   ['validation off', { mobx: false, validation: false }],
-  // Models validate with the generated validators whatever `ajvStandalone` says, so one validating profile covers them.
+  // Models validate with the generated validators so one validating profile covers them.
   ['generated validators', { mobx: false, validation: true }],
 ];
 

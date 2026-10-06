@@ -8,20 +8,20 @@ import { runPipeline } from '#golem/pipeline';
 import { workspace } from './support/process.js';
 import { writeFixture } from './support/consumer.js';
 
-/** SDK model groups carry their own validator modules in every mode; nothing is written at the SDK root. */
+/** SDK model groups carry their own validator modules; nothing is written at the SDK root. */
 function sdkModelValidatorModules(root: string): string[] {
   const directory = path.join(root, 'sdk/models');
   return fs.existsSync(directory) ? fs.readdirSync(directory).filter(name => name.endsWith('.validators.generated.ts')) : [];
 }
 
-/** Every SDK operation carries its own validator module, whatever the mode says. */
+/** Every SDK operation carries its own validator module. */
 function sdkOperationValidatorModules(root: string): string[] {
   const directory = path.join(root, 'sdk/operations');
   return fs.existsSync(directory) ? fs.readdirSync(directory).filter(name => name.endsWith('.validators.generated.ts')) : [];
 }
 
 function fixture(t: TestContext) {
-  const root = createFixtureProject(t, 'golem-validator-transition-');
+  const root = createFixtureProject(t, 'golem-validator-recovery-');
 
   linkProjectPackages(root, Object.fromEntries(
     ['golem', 'golem-model', 'golem-openapi'].map(name => [`@exprtlabs/${name}`, path.join(workspace, 'packages', name)]),
@@ -29,22 +29,22 @@ function fixture(t: TestContext) {
   fs.writeFileSync(path.join(root, 'package.json'), '{"type":"module"}');
   writeFixture(root, { mobx: false, validation: true });
   const model = path.join(root, 'src/cart.model.ts');
-  copyFixtureFile(root, 'pipeline/standalone-transition/cart.model.ts', 'src/cart.model.ts');
+  copyFixtureFile(root, 'pipeline/validator-module-recovery/cart.model.ts', 'src/cart.model.ts');
   const config = path.join(root, 'golem.yaml');
-  const setStandalone = (enabled: boolean) => {
-    const text = fs.readFileSync(config, 'utf8');
-    fs.writeFileSync(config, text.replace(/ajvStandalone: (?:true|false)/, `ajvStandalone: ${enabled}`));
+  /** A model edit that changes the generated outputs, so the next run rewrites them. */
+  const addProbe = (name: string) => {
+    fs.writeFileSync(model, fs.readFileSync(model, 'utf8').replace('note: string', `note: string; ${name}?: string`));
   };
-  return { root, model, config, setStandalone, inventory: path.join(root, '.golem/outputs.json') };
+  return { root, model, config, addProbe, inventory: path.join(root, '.golem/outputs.json') };
 }
 
-test('an interrupted inventory replacement recovers and the validators stay through a mode switch', async t => {
+test('an interrupted inventory replacement recovers and the validators stay in place', async t => {
   const setup = fixture(t);
   await runPipeline(setup.config);
-  assert.ok(sdkModelValidatorModules(setup.root).length > 0, 'model validators do not depend on the mode');
-  assert.ok(sdkOperationValidatorModules(setup.root).length > 0, 'operation validators do not depend on the mode');
+  assert.ok(sdkModelValidatorModules(setup.root).length > 0, 'SDK models have validator modules');
+  assert.ok(sdkOperationValidatorModules(setup.root).length > 0, 'SDK operations have validator modules');
   const originalInventory = fs.readFileSync(setup.inventory, 'utf8');
-  setup.setStandalone(true);
+  setup.addProbe('first');
   const rename = fs.renameSync;
   const fault = t.mock.method(fs, 'renameSync', (source: fs.PathLike, destination: fs.PathLike) => {
     if (String(destination) === setup.inventory) throw new Error('interrupted inventory replacement');
@@ -54,25 +54,23 @@ test('an interrupted inventory replacement recovers and the validators stay thro
   fault.mock.restore();
   assert.equal(fs.readFileSync(setup.inventory, 'utf8'), originalInventory);
   assert.ok(sdkOperationValidatorModules(setup.root).length > 0, 'the interrupted run left its operation validators in place');
-  const standalone = await runPipeline(setup.config);
+  const recovered = await runPipeline(setup.config);
   await runPipeline(setup.config, { check: true });
   const files: Record<string, unknown> = JSON.parse(fs.readFileSync(setup.inventory, 'utf8')).files;
   const validators = Object.keys(files).filter(filename => filename.endsWith('.validators.generated.ts'));
-  const emittedValidators = [...standalone.results.values()].flatMap(result => result.artifacts)
+  const emittedValidators = [...recovered.results.values()].flatMap(result => result.artifacts)
     .filter(artifact => artifact.path.endsWith('.validators.generated.ts'))
     .map(artifact => path.relative(setup.root, artifact.path));
-  assert.deepEqual(new Set(validators), new Set(emittedValidators), 'inventory includes every emitted validator module');
+  assert.ok(emittedValidators.length > 0, 'the recovered run emitted a validator module');
+  for (const filename of emittedValidators) assert.ok(validators.includes(filename), `${filename} is inventoried`);
   assert.ok(validators.some(filename => filename.startsWith('sdk/operations/')), 'SDK operation validators are inventoried');
   const modelValidators = validators.filter(filename => !filename.startsWith('sdk/operations/'));
   assert.ok(modelValidators.some(filename => filename.startsWith('sdk/models/')), 'SDK model validators are inventoried');
   assert.ok(modelValidators.some(filename => filename.startsWith('src/')), 'frontend validators are inventoried');
-  setup.setStandalone(false);
-  await runPipeline(setup.config);
   for (const filename of validators) assert.equal(fs.existsSync(path.join(setup.root, filename)), true, filename);
-  await runPipeline(setup.config, { check: true });
 });
 
-test('watch regenerates SDK then frontend through a mode switch without output loops', async t => {
+test('watch regenerates SDK then frontend without output loops', async t => {
   const setup = fixture(t);
   const child = spawn(process.execPath, [path.join(workspace, 'packages/golem/dist/bin/golem.js'), 'watch', '--config', setup.config], {
     cwd: setup.root, stdio: ['ignore', 'pipe', 'pipe'],
@@ -90,20 +88,17 @@ test('watch regenerates SDK then frontend through a mode switch without output l
     assert.equal(runs(), count, errors || output);
   };
   await untilRun(1);
-  setup.setStandalone(true);
+  setup.addProbe('first');
   await untilRun(2);
   assert.ok(sdkOperationValidatorModules(setup.root).length > 0);
-  await runPipeline(setup.config, { check: true });
-  setup.setStandalone(false);
-  await untilRun(3);
-  assert.ok(sdkOperationValidatorModules(setup.root).length > 0);
   assert.ok(sdkModelValidatorModules(setup.root).length > 0);
+  await runPipeline(setup.config, { check: true });
   const before = fs.statSync(setup.inventory).mtimeMs;
   await runPipeline(setup.config, { check: true });
   assert.equal(fs.statSync(setup.inventory).mtimeMs, before, 'check leaves the inventory untouched');
   // The next source edit is the observation point: an output-triggered run would precede its single run.
-  fs.writeFileSync(setup.model, fs.readFileSync(setup.model, 'utf8').replace('note: string', 'note: string; probe?: string'));
-  await untilRun(4);
+  setup.addProbe('probe');
+  await untilRun(3);
   assert.match(fs.readFileSync(path.join(setup.root, 'src/cart.model.generated.ts'), 'utf8'), /probe/);
   assert.equal(errors, '');
 });

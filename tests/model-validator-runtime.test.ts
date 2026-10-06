@@ -7,7 +7,6 @@ import { autorun } from 'mobx';
 
 import type * as ModelModule from '@exprtlabs/golem/model';
 import type * as ValidationModule from '@exprtlabs/golem/validation';
-import type * as AjvModule from '@exprtlabs/golem/ajv';
 import type * as MobxModule from '@exprtlabs/golem/mobx';
 import type * as MobxValidationModule from '@exprtlabs/golem/mobx-validation';
 import { installCodecModel } from './register-codec-model.js';
@@ -17,7 +16,6 @@ const distRoot = dirname(fileURLToPath(import.meta.resolve('@exprtlabs/golem/mod
 
 async function runtime(name: 'model'): Promise<typeof ModelModule>;
 async function runtime(name: 'validation'): Promise<typeof ValidationModule>;
-async function runtime(name: 'ajv'): Promise<typeof AjvModule>;
 async function runtime(name: 'mobx'): Promise<typeof MobxModule>;
 async function runtime(name: 'mobx-validation'): Promise<typeof MobxValidationModule>;
 async function runtime(name: string): Promise<unknown>;

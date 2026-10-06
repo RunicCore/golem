@@ -1,13 +1,12 @@
 import { createFixtureProject, linkProjectPackages, readFixture, writeGeneratedArtifacts } from './fixture-project.js';
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
-import { Ajv2020, type AnySchema } from 'ajv/dist/2020.js';
 import { generate as generateControllers } from '#controllers/generator';
 import { command, workspace } from './support/process.js';
-import { buildModelProject, generatedModelFiles, writeModelGolemYaml } from './model-project.js';
+import { buildModelProject, writeModelGolemYaml } from './model-project.js';
 import { generatedCodecIdFromRoot } from './support/consumer.js';
+import { compileSchema } from './support/compiled-validators.js';
 
 const accepted = [
   { neg: -1 },
@@ -26,85 +25,75 @@ const rejected = [
   { builtin: 2 },
 ];
 
-for (const ajvStandalone of [false, true]) {
-  test(`model predicates never strengthen wire or OpenAPI contracts with standalone=${ajvStandalone}`, async t => {
-    const root = createFixtureProject(t, 'golem-portability-');
-    linkProjectPackages(root, {
-      '@exprtlabs/golem': path.join(workspace, 'packages/golem'),
-      '@nestjs/common': path.join(workspace, 'node_modules/@nestjs/common'),
-      '@types': path.join(workspace, 'node_modules/@types'),
-      typescript: path.join(workspace, 'node_modules/typescript'),
-    });
-    writeGeneratedArtifacts([
-      {
-        path: path.join(root, 'package.json'),
-        content: JSON.stringify({ private: true, type: 'module' }),
-      },
-      {
-        path: path.join(root, 'tsconfig.json'),
-        content: JSON.stringify({
-          compilerOptions: {
-            strict: true,
-            target: 'ES2022',
-            module: 'NodeNext',
-            moduleResolution: 'NodeNext',
-            experimentalDecorators: true,
-            skipLibCheck: true,
-            outDir: 'build',
-            rootDir: 'src',
-            types: ['node'],
-          },
-          include: ['src/**/*.ts'],
-        }),
-      },
-      {
-        path: path.join(root, 'src/rules.ts'),
-        content: readFixture('models/constraint-portability/constraint-portability-rules/rules.ts'),
-      },
-      {
-        path: path.join(root, 'src/a.model.ts'),
-        content: readFixture('models/constraint-portability/constraint-portability-a-model/a.model.ts'),
-      },
-      {
-        path: path.join(root, 'src/a.controller.ts'),
-        content: readFixture('models/constraint-portability/constraint-portability-a-controller/a.controller.ts'),
-      },
-    ]);
-    // Controller output never reads the Ajv mode, so only the runtime-Ajv run checks the OpenAPI contracts.
-    for (const openapiVersion of ajvStandalone ? [] : ['3.2.0', '3.1.2'] as const) {
-      const result = await generateControllers({
-        root, output: path.join(root, 'openapi.json'), openapiVersion,
-        info: { title: 'Contracts', version: '1' },
-        profile: { mobx: false, validation: true, ajvStandalone },
-      });
-      assert.ok(result.diagnostics?.some(item => item.code === 'NEST1502' && item.severity === 'warning'));
-      const content = result.artifacts[0]!.content;
-      assert.doesNotMatch(content, /exprtValidation|positive|negative|rules\.ts|rules\.js|validations/);
-      const document = JSON.parse(content) as { components: Record<string, unknown>; paths: Record<string, { post: { requestBody: { content: { 'application/json': { schema: unknown } } } } }> };
-      const schema = document.paths['/contracts']!.post.requestBody.content['application/json'].schema;
-      const validate = new Ajv2020({ strict: false, validateSchema: false }).compile({ allOf: [schema], components: document.components } as AnySchema);
-      for (const value of accepted) assert.equal(validate(value), true, JSON.stringify(validate.errors));
-      assert.equal(validate({ builtin: 2 }), false, 'predicate-free Not remains exact');
-    }
-    writeGeneratedArtifacts([{
-      path: path.join(root, 'src/verify.ts'),
-      content: readFixture('models/constraint-portability/verifier/verify.ts'),
-    }]);
-    writeModelGolemYaml(root, { mobx: false, validation: true, ajvStandalone });
-    await buildModelProject(root);
-    for (const artifact of generatedModelFiles(root)) {
-      if (artifact.path.endsWith('.generated.js')) {
-        const built = path.join(root, 'build', path.relative(path.join(root, 'src'), artifact.path));
-        fs.mkdirSync(path.dirname(built), { recursive: true });
-        fs.copyFileSync(artifact.path, built);
-      }
-    }
-    const aId = generatedCodecIdFromRoot(root, 'TA');
-    await command(root, process.execPath, [
-      path.join(root, 'build/verify.js'),
-      JSON.stringify(aId),
-      JSON.stringify(accepted),
-      JSON.stringify(rejected),
-    ]);
+test('model predicates never strengthen wire or OpenAPI contracts', async t => {
+  const root = createFixtureProject(t, 'golem-portability-');
+  linkProjectPackages(root, {
+    '@exprtlabs/golem': path.join(workspace, 'packages/golem'),
+    '@nestjs/common': path.join(workspace, 'node_modules/@nestjs/common'),
+    '@types': path.join(workspace, 'node_modules/@types'),
+    typescript: path.join(workspace, 'node_modules/typescript'),
   });
-}
+  writeGeneratedArtifacts([
+    {
+      path: path.join(root, 'package.json'),
+      content: JSON.stringify({ private: true, type: 'module' }),
+    },
+    {
+      path: path.join(root, 'tsconfig.json'),
+      content: JSON.stringify({
+        compilerOptions: {
+          strict: true,
+          target: 'ES2022',
+          module: 'NodeNext',
+          moduleResolution: 'NodeNext',
+          experimentalDecorators: true,
+          skipLibCheck: true,
+          outDir: 'build',
+          rootDir: 'src',
+          types: ['node'],
+        },
+        include: ['src/**/*.ts'],
+      }),
+    },
+    {
+      path: path.join(root, 'src/rules.ts'),
+      content: readFixture('models/constraint-portability/constraint-portability-rules/rules.ts'),
+    },
+    {
+      path: path.join(root, 'src/a.model.ts'),
+      content: readFixture('models/constraint-portability/constraint-portability-a-model/a.model.ts'),
+    },
+    {
+      path: path.join(root, 'src/a.controller.ts'),
+      content: readFixture('models/constraint-portability/constraint-portability-a-controller/a.controller.ts'),
+    },
+  ]);
+  for (const openapiVersion of ['3.2.0', '3.1.2'] as const) {
+    const result = await generateControllers({
+      root, output: path.join(root, 'openapi.json'), openapiVersion,
+      info: { title: 'Contracts', version: '1' },
+      profile: { mobx: false, validation: true },
+    });
+    assert.ok(result.diagnostics?.some(item => item.code === 'NEST1502' && item.severity === 'warning'));
+    const content = result.artifacts[0]!.content;
+    assert.doesNotMatch(content, /exprtValidation|positive|negative|rules\.ts|rules\.js|validations/);
+    const document = JSON.parse(content) as { components: Record<string, unknown>; paths: Record<string, { post: { requestBody: { content: { 'application/json': { schema: unknown } } } } }> };
+    const schema = document.paths['/contracts']!.post.requestBody.content['application/json'].schema;
+    const validate = await compileSchema({ allOf: [schema], components: document.components });
+    for (const value of accepted) assert.deepEqual(validate(value, true), [], JSON.stringify(value));
+    assert.notDeepEqual(validate({ builtin: 2 }, true), [], 'predicate-free Not remains exact');
+  }
+  writeGeneratedArtifacts([{
+    path: path.join(root, 'src/verify.ts'),
+    content: readFixture('models/constraint-portability/verifier/verify.ts'),
+  }]);
+  writeModelGolemYaml(root, { mobx: false, validation: true });
+  await buildModelProject(root);
+  const aId = generatedCodecIdFromRoot(root, 'TA');
+  await command(root, process.execPath, [
+    path.join(root, 'build/verify.js'),
+    JSON.stringify(aId),
+    JSON.stringify(accepted),
+    JSON.stringify(rejected),
+  ]);
+});

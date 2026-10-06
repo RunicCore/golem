@@ -10,7 +10,7 @@ import { createModelProject, writeModelSources } from './model-project.js';
 function generateWith(t: TestContext, sources: Record<string, string>): () => unknown {
   const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-codec-location-', name: null, linkWorkspaceNodeModules: true });
   writeModelSources(sourceRoot, sources);
-  return () => generate({ root, profile: { mobx: false, validation: true, ajvStandalone: false } });
+  return () => generate({ root, profile: { mobx: false, validation: true } });
 }
 
 const model = (imports: string, field: string) => `import type { IModel } from '@exprtlabs/golem/model';

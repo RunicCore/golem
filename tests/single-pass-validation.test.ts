@@ -40,8 +40,8 @@ const good = { note: 'hi', code: 'ff', when: '2026-01-02T03:04:05.000Z', sku: 'A
 const validationError = (error: unknown): boolean => error instanceof LibError && error.kind === LibErrorKind.Validation;
 const firstIssue = (error: unknown) => (error as LibError).issues[0];
 
-async function project(t: TestContext, profile: { mobx: false; validation: true; ajvStandalone?: boolean }) {
-  const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-single-pass-', name: 'single-pass', allowJs: profile.ajvStandalone === true });
+async function project(t: TestContext, profile: { mobx: false; validation: true }) {
+  const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-single-pass-', name: 'single-pass' });
   writeModelSources(sourceRoot, { 'counter.ts': COUNTER, 'order.model.ts': ORDER });
   writeModelGolemYaml(root, profile);
   await buildModelProject(root);
@@ -51,51 +51,49 @@ async function project(t: TestContext, profile: { mobx: false; validation: true;
   return { source, counter, ...models, order: requireObjectCodec('TOrder'), plain: requireObjectCodec('TPlainOrder'), ruleOnly: requireObjectCodec('TRuleOnly') };
 }
 
-for (const [label, profile] of [['runtime Ajv', { mobx: false, validation: true }], ['standalone', { mobx: false, validation: true, ajvStandalone: true }]] as const) {
-  test(`each rule runs once per conversion; IObject parse enforces model-only rules (${label})`, async t => {
-    const { counter, Order, RuleOnly, order, plain, ruleOnly, source } = await project(t, profile);
-    const count = (run: () => unknown): number => { counter.reset(); run(); return counter.calls; };
+test('each rule runs once per conversion; IObject parse enforces model-only rules', async t => {
+  const { counter, Order, RuleOnly, order, plain, ruleOnly, source } = await project(t, { mobx: false, validation: true });
+  const count = (run: () => unknown): number => { counter.reset(); run(); return counter.calls; };
 
-    // The IObject bug: model-only rules after decoding.
-    assert.throws(() => plain.parse(JSON.stringify({ ...good, note: '  ' })), validationError);
-    assert.throws(() => plain.parse(JSON.stringify({ ...good, code: '0' })), validationError);
+  // The IObject bug: model-only rules after decoding.
+  assert.throws(() => plain.parse(JSON.stringify({ ...good, note: '  ' })), validationError);
+  assert.throws(() => plain.parse(JSON.stringify({ ...good, code: '0' })), validationError);
 
-    for (const run of [
-      () => plain.parse(JSON.stringify(good)),
-      () => plain.fromWireFormat(good),
-      () => order.parse(JSON.stringify(good), { construct: Order }),
-      () => order.fromWireFormat(good, { construct: Order }),
-    ]) assert.equal(count(run), 1);
-    const model = order.parse(JSON.stringify(good), { construct: Order });
-    assert.equal(count(() => order.stringify(model)), 1);
-    assert.equal(count(() => order.toWireFormat(model)), 1);
+  for (const run of [
+    () => plain.parse(JSON.stringify(good)),
+    () => plain.fromWireFormat(good),
+    () => order.parse(JSON.stringify(good), { construct: Order }),
+    () => order.fromWireFormat(good, { construct: Order }),
+  ]) assert.equal(count(run), 1);
+  const model = order.parse(JSON.stringify(good), { construct: Order });
+  assert.equal(count(() => order.stringify(model)), 1);
+  assert.equal(count(() => order.toWireFormat(model)), 1);
 
-    // Stringify checks the full model first.
-    assert.throws(() => order.stringify({ ...(model as object), when: 'not a date' } as never),
-      (e: unknown) => validationError(e) && firstIssue(e)?.representation === IssueRepresentation.Model);
-    const bad = order.parse(JSON.stringify(good), { construct: Order }) as object;
-    Reflect.set(bad, 'when', 'not a date');
-    assert.throws(() => order.stringify(bad as never), (e: unknown) => validationError(e) && firstIssue(e)?.representation === IssueRepresentation.Model);
+  // Stringify checks the full model first.
+  assert.throws(() => order.stringify({ ...(model as object), when: 'not a date' } as never),
+    (e: unknown) => validationError(e) && firstIssue(e)?.representation === IssueRepresentation.Model);
+  const bad = order.parse(JSON.stringify(good), { construct: Order }) as object;
+  Reflect.set(bad, 'when', 'not a date');
+  assert.throws(() => order.stringify(bad as never), (e: unknown) => validationError(e) && firstIssue(e)?.representation === IssueRepresentation.Model);
 
-    // Wire violations are unchanged.
-    assert.throws(() => plain.parse(JSON.stringify({ ...good, code: 'ZZ' })),
-      (e: unknown) => validationError(e) && firstIssue(e)?.representation === IssueRepresentation.Wire);
+  // Wire violations are unchanged.
+  assert.throws(() => plain.parse(JSON.stringify({ ...good, code: 'ZZ' })),
+    (e: unknown) => validationError(e) && firstIssue(e)?.representation === IssueRepresentation.Wire);
 
-    // A rule-only model: one check each way, no wire-only step.
-    const rule = { note: 'hi', sku: 'A' };
-    assert.equal(count(() => ruleOnly.parse(JSON.stringify(rule), { construct: RuleOnly })), 1);
-    const ruleModel = ruleOnly.parse(JSON.stringify(rule), { construct: RuleOnly });
-    assert.equal(count(() => ruleOnly.stringify(ruleModel)), 1);
-    assert.match(source, /__golemAssertModelOnly_TRuleOnly/);
-    assert.doesNotMatch(source, /__golemAssertWireOnly_RuleOnly/);
-  });
-}
+  // A rule-only model: one check each way, no wire-only step.
+  const rule = { note: 'hi', sku: 'A' };
+  assert.equal(count(() => ruleOnly.parse(JSON.stringify(rule), { construct: RuleOnly })), 1);
+  const ruleModel = ruleOnly.parse(JSON.stringify(rule), { construct: RuleOnly });
+  assert.equal(count(() => ruleOnly.stringify(ruleModel)), 1);
+  assert.match(source, /__golemAssertModelOnly_TRuleOnly/);
+  assert.doesNotMatch(source, /__golemAssertWireOnly_RuleOnly/);
+});
 
 const MONEY_FIXTURE = 'models/unify-validate/sdk-money-ref-plus-extra-tvalidation-local-tvalidation-and-tserde-share-one-';
 
-test('a rule on an SDK model runs once per parse and IObject enforces it (standalone)', async t => {
-  const profile = { mobx: false, validation: true, ajvStandalone: true } as const;
-  const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-single-pass-sdk-', name: 'single-pass-sdk', allowJs: true });
+test('a rule on an SDK model runs once per parse and IObject enforces it ', async t => {
+  const profile = { mobx: false, validation: true } as const;
+  const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-single-pass-sdk-', name: 'single-pass-sdk' });
   writeModelSources(root, { 'money.yaml': readFixture(`${MONEY_FIXTURE}/money.yaml`) });
   writeGeneratedArtifacts((await generateOpenApi({ input: path.join(root, 'money.yaml'), output: path.join(sourceRoot, 'sdk'), name: 'Payments', profile })).artifacts);
   writeModelSources(sourceRoot, { 'rules.ts': readFixture(`${MONEY_FIXTURE}/rules.ts`), 'checkout.model.ts': readFixture(`${MONEY_FIXTURE}/checkout.model.ts`) });
@@ -192,27 +190,26 @@ for (const profileValidation of [true, false]) {
   });
 }
 
-for (const [label, profile] of [['runtime Ajv', { mobx: false, validation: true }], ['standalone', { mobx: false, validation: true, ajvStandalone: true }]] as const) {
-  test(`rules inside constraints the wire drops (Contains, Not) still run once on parse (${label})`, async t => {
-    const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-single-pass-constraints-', name: 'single-pass-constraints', allowJs: true });
-    writeModelSources(sourceRoot, {
-      'predicates.ts': readFixture('models/constraint-callback-composition/constraint-callback-composition-predicates/predicates.ts'),
-      'a.model.ts': readFixture('models/constraint-callback-composition/nested-value-callbacks/a.model.ts'),
-    });
-    writeModelGolemYaml(root, profile);
-    await buildModelProject(root);
-    const predicates = await import(pathToFileURL(path.join(root, 'build/predicates.js')).href) as { positiveCalls: number; reset(): void };
-    const { A } = await import(pathToFileURL(path.join(root, 'build/a.model.js')).href) as { A: new (v?: object) => object };
-    const codec = requireObjectCodec('TA');
-    for (const options of [{ construct: A }, {}]) {
-      assert.throws(() => codec.parse(JSON.stringify({ values: [-1] }), options), validationError, 'no positive element for Contains');
-      assert.throws(() => codec.parse(JSON.stringify({ blocked: 5 }), options), validationError, 'Not<positive> rejects a positive number');
-      predicates.reset();
-      codec.parse(JSON.stringify({ values: [3] }), options);
-      assert.equal(predicates.positiveCalls, 1, 'the Contains rule runs once per parse');
-    }
+test('rules inside constraints the wire drops (Contains, Not) still run once on parse', async t => {
+  const profile = { mobx: false, validation: true } as const;
+  const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-single-pass-constraints-', name: 'single-pass-constraints' });
+  writeModelSources(sourceRoot, {
+    'predicates.ts': readFixture('models/constraint-callback-composition/constraint-callback-composition-predicates/predicates.ts'),
+    'a.model.ts': readFixture('models/constraint-callback-composition/nested-value-callbacks/a.model.ts'),
   });
-}
+  writeModelGolemYaml(root, profile);
+  await buildModelProject(root);
+  const predicates = await import(pathToFileURL(path.join(root, 'build/predicates.js')).href) as { positiveCalls: number; reset(): void };
+  const { A } = await import(pathToFileURL(path.join(root, 'build/a.model.js')).href) as { A: new (v?: object) => object };
+  const codec = requireObjectCodec('TA');
+  for (const options of [{ construct: A }, {}]) {
+    assert.throws(() => codec.parse(JSON.stringify({ values: [-1] }), options), validationError, 'no positive element for Contains');
+    assert.throws(() => codec.parse(JSON.stringify({ blocked: 5 }), options), validationError, 'Not<positive> rejects a positive number');
+    predicates.reset();
+    codec.parse(JSON.stringify({ values: [3] }), options);
+    assert.equal(predicates.positiveCalls, 1, 'the Contains rule runs once per parse');
+  }
+});
 
 test('a context of the generated validators validates parse and stringify, nested residual references included', async t => {
   const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-single-pass-context-', name: 'single-pass-context' });

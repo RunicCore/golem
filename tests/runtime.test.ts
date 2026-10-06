@@ -61,10 +61,10 @@ test('dependency-free runtime entrypoints do not import optional integrations', 
   const modelSource = fs.readFileSync(join(distRoot, 'model.js'), 'utf8');
   const validationSources = ['validation.js', 'schema-registry-validation.js']
     .map(name => fs.readFileSync(join(distRoot, name), 'utf8'));
-  assert.doesNotMatch(modelSource, /from ['"].*(?:mobx|ajv)/i);
+  assert.doesNotMatch(modelSource, /from ['"].*mobx/i);
   assert.doesNotMatch(modelSource, /node:/);
   for (const source of validationSources) {
-    assert.doesNotMatch(source, /from ['"].*(?:mobx|ajv)/i);
+    assert.doesNotMatch(source, /from ['"].*mobx/i);
     assert.doesNotMatch(source, /node:/);
   }
 });
@@ -312,7 +312,7 @@ test('shared emitter emits exact generated-model conversion expressions', () => 
 
 test('model manifests validate profile and keep identity independent of profile', () => {
   const base = {
-    profile: { mobx: false, validation: true, ajvStandalone: false, allowAny: false },
+    profile: { mobx: false, validation: true, allowAny: false },
     models: [{
       id: 'fixture:payment',
       allowAny: false,
@@ -322,20 +322,19 @@ test('model manifests validate profile and keep identity independent of profile'
   };
   const profileVariant = {
     ...base,
-    profile: { mobx: true, validation: false, ajvStandalone: false, allowAny: true },
+    profile: { mobx: true, validation: false, allowAny: true },
   };
   assert.strictEqual(manifest.validateModelManifest(base), base);
   assert.equal(manifest.sourceDigest(base), manifest.sourceDigest(profileVariant));
   assert.deepEqual(manifest.modelManifestProfile(base), {
     mobx: false,
     validation: true,
-    ajvStandalone: false,
     allowAny: false,
     unknownFormats: 'warn',
   });
   assert.throws(
     () => manifest.validateModelManifest({ ...base, profile: { mobx: true } }),
-    /profile must include mobx, validation, ajvStandalone and allowAny booleans/,
+    /profile must include mobx, validation and allowAny booleans/,
   );
   assert.equal(manifest.modelManifestProfile({ ...base, profile: { ...base.profile, unknownFormats: 'error' } }).unknownFormats, 'error');
   assert.throws(

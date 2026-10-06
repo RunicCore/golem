@@ -5,7 +5,7 @@ import { buildModelProject, createModelProject, generatedModelFiles, writeModelG
 import type { TestContext } from 'node:test';
 
 /** The generation profile of every scale project. */
-export const SCALE_PROFILE = { mobx: false, validation: true, ajvStandalone: true } as const;
+export const SCALE_PROFILE = { mobx: false, validation: true } as const;
 
 /** Write `count` scale models into a standalone-validation project whose golem.yaml names the scale profile. */
 export function createScaleProject(t: TestContext, count: number): { readonly root: string } {

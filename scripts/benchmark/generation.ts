@@ -11,12 +11,11 @@ import { environment, gitState } from './results.js';
 // Run nothing else meanwhile: concurrent compiles change the timings severalfold.
 
 const root = fileURLToPath(new URL('../../../', import.meta.url));
-const profile = { mobx: false, validation: true, ajvStandalone: false };
+const profile = { mobx: false, validation: true };
 
 interface GenerationCase {
   readonly id: string;
   readonly description: string;
-  readonly ajvStandalone: boolean;
   readonly sources: (count: number) => Record<string, string>;
   readonly count: number;
 }
@@ -52,10 +51,9 @@ export class Item${index} extends TItem${index}BaseModel {}
 }
 
 export const GENERATION_CASES: readonly GenerationCase[] = [
-  { id: 'independent-10', description: '10 independent models', ajvStandalone: false, sources: independentSources, count: 10 },
-  { id: 'independent-100', description: '100 independent models', ajvStandalone: false, sources: independentSources, count: 100 },
-  { id: 'independent-100-standalone', description: '100 independent models, precompiled Ajv', ajvStandalone: true, sources: independentSources, count: 100 },
-  { id: 'chain-80', description: '80 models, each referencing the previous one twice', ajvStandalone: false, sources: chainSources, count: 80 },
+  { id: 'independent-10', description: '10 independent models', sources: independentSources, count: 10 },
+  { id: 'independent-100', description: '100 independent models', sources: independentSources, count: 100 },
+  { id: 'chain-80', description: '80 models, each referencing the previous one twice', sources: chainSources, count: 80 },
 ];
 
 const RUNS = 2;
@@ -91,7 +89,7 @@ function measureCase(spec: GenerationCase, directory: string): CaseResult {
     const project = createProject(directory, spec.sources(spec.count));
     (globalThis as { gc?: () => void }).gc?.();
     const started = performance.now();
-    const result = generate({ root: project, profile: { ...profile, ajvStandalone: spec.ajvStandalone } });
+    const result = generate({ root: project, profile });
     runsMs.push(Math.round(performance.now() - started));
     artifacts = result.artifacts.length;
     outputBytes = result.artifacts.reduce((sum, artifact) => sum + Buffer.byteLength(artifact.content), 0);

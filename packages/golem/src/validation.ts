@@ -18,8 +18,6 @@ import {
   assertAcyclicValue,
   defineModelProperty,
 } from './conversion.js';
-import { issuePointer } from './validation-issues.js';
-export { issuesFromErrors } from './validation-issues.js';
 import {
   IssueSource, IssueRepresentation, LibError, LibErrorKind,
   snapshotIssues, toIssue,
@@ -173,6 +171,10 @@ function objectCodecForDefinition(definition: RegisteredGeneratedModelDefinition
     );
   }
   return requireObjectCodec(codecId);
+}
+
+function issuePointer(path: IssuePath): string {
+  return path.map(segment => `/${String(segment).replace(/~/g, '~0').replace(/\//g, '~1')}`).join('');
 }
 
 /** An issue from a model rule, which carries its own message when it has one. */

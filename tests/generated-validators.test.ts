@@ -246,11 +246,6 @@ test('generated object codecs close nested schemas and keep first/all and contex
   await compile(value.root);
   const generated = generatedModelFiles(value.root).filter(item => item.path.endsWith('.ts')).map(item => item.content).join('\n');
   assert.match(generated, /requireModelValidator\(validators, /, 'object codecs bind to the generated validators');
-  assert.doesNotMatch(
-    generated,
-    /@exprtlabs\/golem\/ajv|createOpenApi(?:Sync)?AjvEngine/,
-    'generated model modules do not import a runtime Ajv engine',
-  );
 
   const validatorsPath = builtValidators(value);
   const [{ Root }, { TLeafBaseModel, TMiddleBaseModel, TRootBaseModel }, validatorModule] = await Promise.all([

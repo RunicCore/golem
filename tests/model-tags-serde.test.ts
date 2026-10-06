@@ -56,58 +56,49 @@ test('serde wire descriptors validate nested constraints before decode and after
   assert.equal(codecs.encodeCalls, 1, 'invalid encoded wire output is checked after one encode');
 });
 
-test('serde wire predicates run on the wire plane with JIT and standalone validators', async t => {
-  for (const ajvStandalone of [false, true]) {
-    const { root, sourceRoot } = fixture(t, ajvStandalone);
-    fs.writeFileSync(path.join(sourceRoot, 'codecs.ts'), readFixture("models/model-tags/serde-wire-predicates-run-on-the-wire-plane-with-jit-and-standalone-validato/codecs.ts"));
-    fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), taggedModelSource({
-      name: 'A',
-      imports: tsSource`import type { TSerde, TValidation } from '@exprtlabs/golem/tags';\nimport { encode, decode, positive } from './codecs.js';`,
-      fields: tsSource`value: number & TValidation<typeof positive> & TSerde<typeof encode, typeof decode>`,
-    }).text);
-    writeModelGolemYaml(root, { mobx: false, validation: true, ajvStandalone });
-    await buildModelProject(root);
-    if (ajvStandalone) {
-      for (const artifact of generatedModelFiles(root).filter((item) => item.path.endsWith('.generated.js'))) {
-        const built = path.join(root, 'build', path.relative(sourceRoot, artifact.path));
-        fs.mkdirSync(path.dirname(built), { recursive: true });
-        fs.copyFileSync(artifact.path, built);
-      }
-    }
-    const { A } = await import(path.toNamespacedPath(path.join(root, 'build/a.model.js')));
-    const codecs = await import(path.toNamespacedPath(path.join(root, 'build/codecs.js')));
+test('serde wire predicates run on the wire plane', async t => {
+  const { root, sourceRoot } = fixture(t);
+  fs.writeFileSync(path.join(sourceRoot, 'codecs.ts'), readFixture("models/model-tags/serde-wire-predicates-run-on-the-wire-plane-with-jit-and-standalone-validato/codecs.ts"));
+  fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), taggedModelSource({
+    name: 'A',
+    imports: tsSource`import type { TSerde, TValidation } from '@exprtlabs/golem/tags';\nimport { encode, decode, positive } from './codecs.js';`,
+    fields: tsSource`value: number & TValidation<typeof positive> & TSerde<typeof encode, typeof decode>`,
+  }).text);
+  writeModelGolemYaml(root, { mobx: false, validation: true });
+  await buildModelProject(root);
+  const { A } = await import(path.toNamespacedPath(path.join(root, 'build/a.model.js')));
+  const codecs = await import(path.toNamespacedPath(path.join(root, 'build/codecs.js')));
 
-    const parsed = requireObjectCodec(generatedCodecIdFromRoot(root, 'TA')).parse( JSON.stringify({ value: '0a' })) as { value: number };
-    assert.equal(codecs.wireCalls, 1, `${ajvStandalone ? 'AOT' : 'JIT'} validates the explicit wire predicate before decode`);
-    assert.equal(codecs.decodeCalls, 1, 'type-only parse fills through deserialize');
-    assert.equal(parsed.value, 10);
-    assert.equal(Object.getPrototypeOf(parsed), Object.prototype);
-    assert.equal(codecs.modelCalls, 1, 'parse runs the model predicate once after decoding, with or without a class');
-    const model = new A(parsed);
-    assert.equal(Reflect.get(model, 'value'), 10);
-    assert.equal(await getValidator(model).validate(), true);
-    assert.equal(codecs.modelCalls, 2, 'the class validator runs the model predicate');
-    assert.equal(codecs.encodeCalls, 0, 'public validate stays on the model plane and does not encode');
+  const parsed = requireObjectCodec(generatedCodecIdFromRoot(root, 'TA')).parse( JSON.stringify({ value: '0a' })) as { value: number };
+  assert.equal(codecs.wireCalls, 1, 'validates the explicit wire predicate before decode');
+  assert.equal(codecs.decodeCalls, 1, 'type-only parse fills through deserialize');
+  assert.equal(parsed.value, 10);
+  assert.equal(Object.getPrototypeOf(parsed), Object.prototype);
+  assert.equal(codecs.modelCalls, 1, 'parse runs the model predicate once after decoding, with or without a class');
+  const model = new A(parsed);
+  assert.equal(Reflect.get(model, 'value'), 10);
+  assert.equal(await getValidator(model).validate(), true);
+  assert.equal(codecs.modelCalls, 2, 'the class validator runs the model predicate');
+  assert.equal(codecs.encodeCalls, 0, 'public validate stays on the model plane and does not encode');
 
-    const wireBeforeStringify = codecs.wireCalls;
-    requireObjectCodec(generatedCodecIdFromRoot(root, 'TA')).stringify(model);
-    assert.equal(codecs.wireCalls, wireBeforeStringify + 1, 'stringify validates the encoded wire value');
-    assert.equal(codecs.encodeCalls, 1, 'stringify serializes through TSerde');
-    assert.equal(codecs.modelCalls, 3, 'stringify checks the model plane before encoding');
+  const wireBeforeStringify = codecs.wireCalls;
+  requireObjectCodec(generatedCodecIdFromRoot(root, 'TA')).stringify(model);
+  assert.equal(codecs.wireCalls, wireBeforeStringify + 1, 'stringify validates the encoded wire value');
+  assert.equal(codecs.encodeCalls, 1, 'stringify serializes through TSerde');
+  assert.equal(codecs.modelCalls, 3, 'stringify checks the model plane before encoding');
 
-    const wireBeforeInvalidParse = codecs.wireCalls;
-    assert.throws(() => requireObjectCodec(generatedCodecIdFromRoot(root, 'TA')).parse( JSON.stringify({ value: 'zz' })));
-    assert.equal(codecs.wireCalls, wireBeforeInvalidParse + 1);
-    assert.equal(codecs.decodeCalls, 1, 'invalid wire data does not invoke the decoder');
-    assert.equal(codecs.modelCalls, 3, 'invalid wire data does not invoke the model predicate');
+  const wireBeforeInvalidParse = codecs.wireCalls;
+  assert.throws(() => requireObjectCodec(generatedCodecIdFromRoot(root, 'TA')).parse( JSON.stringify({ value: 'zz' })));
+  assert.equal(codecs.wireCalls, wireBeforeInvalidParse + 1);
+  assert.equal(codecs.decodeCalls, 1, 'invalid wire data does not invoke the decoder');
+  assert.equal(codecs.modelCalls, 3, 'invalid wire data does not invoke the model predicate');
 
-    codecs.setInvalidEncoding(true);
-    const wireBeforeInvalidEncode = codecs.wireCalls;
-    assert.throws(() => requireObjectCodec(generatedCodecIdFromRoot(root, 'TA')).stringify(new A({ value: 10 })));
-    assert.equal(codecs.modelCalls, 4, 'failed stringify still checks the model plane');
-    assert.equal(codecs.encodeCalls, 2);
-    assert.equal(codecs.wireCalls, wireBeforeInvalidEncode + 1);
-  }
+  codecs.setInvalidEncoding(true);
+  const wireBeforeInvalidEncode = codecs.wireCalls;
+  assert.throws(() => requireObjectCodec(generatedCodecIdFromRoot(root, 'TA')).stringify(new A({ value: 10 })));
+  assert.equal(codecs.modelCalls, 4, 'failed stringify still checks the model plane');
+  assert.equal(codecs.encodeCalls, 2);
+  assert.equal(codecs.wireCalls, wireBeforeInvalidEncode + 1);
 });
 
 test('rejects asynchronous, multi-parameter, and incompatible codec bindings', t => {

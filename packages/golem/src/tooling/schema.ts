@@ -1,8 +1,8 @@
 /**
  * Canonical JSON Schema assembly for generated model constraints.
  *
- * The model generator, the runtime Ajv adapter, and the standalone compiler
- * all consume the same constraint representation. Runtime schemas refer to
+ * The model generator and the validator compiler
+ * both consume the same constraint representation. Runtime schemas refer to
  * callback bindings by declaration identity; portable schemas omit executable
  * rules without narrowing the set of accepted values.
  */
@@ -43,7 +43,7 @@ export interface SchemaDescriptorOptions {
   /** Convenience registry for callers that already have descriptor definitions. */
   readonly definitions?: Readonly<Record<string, unknown>>;
   /**
-   * Interned child codec ids whose Ajv was not emitted. Parent schemas inline
+   * Interned child codec ids whose validator was not emitted. Parent schemas inline
    * an open object instead of `$ref` so they still compile.
    */
   readonly opaqueReferenceIds?: ReadonlySet<string>;
@@ -291,7 +291,7 @@ function objectUnionDiscriminator(variants: readonly unknown[]): string | undefi
   return undefined;
 }
 
-function hasAjvDiscriminatorTag(branch: JsonSchema, propertyName: string): boolean {
+function hasDiscriminatorTag(branch: JsonSchema, propertyName: string): boolean {
   if (!isRecord(branch) || !isRecord(branch.properties)) return false;
   const tag = branch.properties[propertyName];
   if (!Array.isArray(branch.required) || !branch.required.includes(propertyName) || !isRecord(tag)) return false;
@@ -592,10 +592,10 @@ function descriptorSchema(
           };
         });
         const propertyName = table?.propertyName ?? objectUnionDiscriminator(variants);
-        // Ajv's discriminator requires a required tag with non-empty string
+        // A discriminator requires a required tag with non-empty string
         // const or enum values directly under each branch. Other tags keep anyOf.
         schema = propertyName !== undefined
-          && branches.every((branch) => hasAjvDiscriminatorTag(branch, propertyName))
+          && branches.every((branch) => hasDiscriminatorTag(branch, propertyName))
           ? { discriminator: { propertyName }, oneOf: branches }
           : { anyOf: branches };
         break;

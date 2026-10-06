@@ -127,7 +127,7 @@ function writeManifestFixture(fixture: Fixture): { readonly source: string; read
   fs.writeFileSync(types, '/* @golem-model-manifest ./model-manifest.json */\nexport interface Money { currency: string }\n');
   fs.writeFileSync(generated, 'export const Other = 1;\n');
   fs.writeFileSync(manifest, JSON.stringify({
-    profile: { mobx: false, validation: false, ajvStandalone: false, allowAny: false },
+    profile: { mobx: false, validation: false, allowAny: false },
     models: [{
       id: 'fixture:money',
       allowAny: false,
@@ -292,7 +292,7 @@ test('manifest validation shares one compiler across 5 and 50 generated model mo
       fs.writeFileSync(path.join(sdk, 'models', `${item}.ts`), manifestScaleClassSource({ index }).text);
     }
     fs.writeFileSync(manifestFile, JSON.stringify({
-      profile: { ...profile, ajvStandalone: false, allowAny: false }, models,
+      profile: { ...profile, allowAny: false }, models,
     }));
     const source = path.join(fixture.sourceRoot, 'aggregate.model.ts');
     fs.writeFileSync(source, readFixture('models/compiler-lifecycle/manifest-scale/aggregate.model.ts'));

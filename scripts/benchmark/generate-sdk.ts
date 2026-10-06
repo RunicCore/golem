@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { copyFileSync, mkdirSync, readdirSync } from 'node:fs';
+import { copyFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -9,7 +9,7 @@ const moneyYaml = path.join(root, 'scripts/benchmark/fixtures/features/money.yam
 export function generateFeatureMoneySdk(
   project: string,
   source: string,
-  options: { readonly validation: boolean; readonly ajvStandalone: boolean },
+  options: { readonly validation: boolean },
   generatorModule?: string,
 ): string {
   copyFileSync(moneyYaml, path.join(project, 'money.yaml'));
@@ -22,7 +22,7 @@ const result = await generate({
   input: ${JSON.stringify(path.join(project, 'money.yaml'))},
   output: ${JSON.stringify(output)},
   name: 'Payments',
-  profile: { mobx: false, validation: ${options.validation}, ajvStandalone: ${options.ajvStandalone} },
+  profile: { mobx: false, validation: ${options.validation} },
 });
 for (const artifact of result.artifacts) {
   mkdirSync(path.dirname(artifact.path), { recursive: true });
@@ -38,19 +38,4 @@ process.stdout.write(JSON.stringify(result.manifestPaths ?? []));
   });
   const manifests = JSON.parse(stdout.trim() || '[]') as string[];
   return manifests[0] ?? path.join(output, 'model-manifest.json');
-}
-
-export function copyGeneratedJavascript(source: string, project: string): void {
-  const visit = (directory: string): void => {
-    for (const entry of readdirSync(directory, { withFileTypes: true })) {
-      const filename = path.join(directory, entry.name);
-      if (entry.isDirectory()) visit(filename);
-      else if (entry.name.endsWith('.js')) {
-        const destination = path.join(project, 'build', path.relative(source, filename));
-        mkdirSync(path.dirname(destination), { recursive: true });
-        copyFileSync(filename, destination);
-      }
-    }
-  };
-  visit(source);
 }

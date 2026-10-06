@@ -1,6 +1,6 @@
 /**
  * Intern schema descriptors into a dependency graph so stringify, parse, and
- * Ajv compile once per node and compose by call / $ref.
+ * validation compile once per node and compose by call / $ref.
  */
 
 import type { ModelTypeDescriptor } from '../model.js';
@@ -21,7 +21,7 @@ export interface SchemaNode {
   readonly id: string;
   /** Human export name (`Payment`). */
   readonly name: string;
-  /** Runtime codec / Ajv id (`Payment_a3f2c91b`). */
+  /** Runtime codec / validator id (`Payment_a3f2c91b`). */
   readonly codecId: string;
   readonly descriptor: ModelTypeDescriptor;
   /** Wire JSON Schema (TSerde deserialize-param / encode output). */
@@ -39,7 +39,7 @@ export interface SchemaNode {
   /**
    * Resolved per-declaration validation flag. `undefined` inherits the emit
    * profile. `false` stubs `validate${id}` and parent schemas do not `$ref`
-   * this node as if it had Ajv.
+   * this node as if it had a validator.
    */
   readonly validationEnabled?: boolean;
   readonly kind: SchemaNodeKind;
@@ -445,7 +445,7 @@ function rewriteToRefs(
   if (named) {
     const node = lookup(descriptor) ?? lookup(asReference(named));
     if (node && (node.descriptor.kind === 'object' || node.siblingCodec)) {
-      // Keep named references for conversion/construct. Parent Ajv schemas
+      // Keep named references for conversion/construct. Parent schemas
       // inline an opaque object when the child did not emit a codec.
       rewritten = namedReference(node, descriptor);
     } else rewritten = descriptor;

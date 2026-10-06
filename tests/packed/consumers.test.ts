@@ -6,7 +6,7 @@ import { build } from 'esbuild';
 import { workspace, command, npm, cli } from '../support/process.js';
 import { writeFixture, filesUnder } from '../support/consumer.js';
 import { startRegistry, packageSpec, type PackedRegistry } from '../../scripts/packed-registry.js';
-import { AJV, AJV_FORMATS, ESBUILD, MOBX, NEST_COMMON, NEST_SWAGGER, TYPESCRIPT } from '../../scripts/third-party-installs.js';
+import { MOBX, NEST_COMMON, NEST_SWAGGER, TYPESCRIPT } from '../../scripts/third-party-installs.js';
 import { copyFixture, copyFixtureFile } from '../fixture-project.js';
 
 let registry: PackedRegistry;
@@ -41,9 +41,7 @@ test('packed controller generator installs independently and resolves real Nest 
   assert.equal(document.openapi, '3.2.0');
   assert.equal(fs.existsSync(path.join(root, 'node_modules/@exprtlabs/golem-model')), false);
   assert.equal(fs.existsSync(path.join(root, 'node_modules/@exprtlabs/golem-openapi')), false);
-  for (const name of ['mobx', 'ajv', 'ajv-formats']) {
-    assert.equal(fs.existsSync(path.join(root, 'node_modules', name)), false, `${name} must not be installed`);
-  }
+  assert.equal(fs.existsSync(path.join(root, 'node_modules/mobx')), false, 'mobx must not be installed');
   assert.equal(fs.existsSync(path.join(root, 'node_modules/.bin/golem')), true);
   assert.equal(fs.lstatSync(path.join(root, 'node_modules/@exprtlabs/golem')).isSymbolicLink(), false);
   const golemManifest = JSON.parse(fs.readFileSync(path.join(root, 'node_modules/@exprtlabs/golem/package.json'), 'utf8')) as { bin?: Record<string, string> };
@@ -51,19 +49,16 @@ test('packed controller generator installs independently and resolves real Nest 
 });
 
 for (const profile of [
-  { mobx: false, validation: false, ajvStandalone: false },
-  { mobx: false, validation: true, ajvStandalone: false },
-  { mobx: true, validation: false, ajvStandalone: false },
-  { mobx: true, validation: true, ajvStandalone: false },
-  { mobx: true, validation: true, ajvStandalone: true },
+  { mobx: false, validation: false },
+  { mobx: false, validation: true },
+  { mobx: true, validation: false },
+  { mobx: true, validation: true },
 ]) {
-  test(`packed SDK and frontend model compose with mobx=${profile.mobx}, validation=${profile.validation}, standalone=${profile.ajvStandalone}`, async t => {
-    const root = registry.create(t, `profile-${profile.mobx}-${profile.validation}-${profile.ajvStandalone}`);
+  test(`packed SDK and frontend model compose with mobx=${profile.mobx}, validation=${profile.validation}`, async t => {
+    const root = registry.create(t, `profile-${profile.mobx}-${profile.validation}`);
     await npm(root, ['install', '--save-dev', packageSpec(registry, '@exprtlabs/golem-model'), packageSpec(registry, '@exprtlabs/golem-openapi')]);
-    if (profile.ajvStandalone) await npm(root, ['install', '--save-dev', ESBUILD]);
     const production = [packageSpec(registry, '@exprtlabs/golem')];
     if (profile.mobx) production.push(MOBX);
-    if (profile.validation) production.push(AJV, AJV_FORMATS);
     await npm(root, ['install', '--save-prod', ...production]);
     writeFixture(root, profile);
     await cli(root, ['generate']);
@@ -89,12 +84,11 @@ for (const profile of [
     assert.ok(generatedImports.every(source => source.startsWith('./') || source.startsWith('../') || source.startsWith('@exprtlabs/golem/')), generatedImports.join('\n'));
     for (const absent of ['inbound.ts', 'links.ts']) assert.equal(fs.existsSync(path.join(root, 'sdk', absent)), false);
     if (!profile.mobx) assert.doesNotMatch(text, /asGenObservable|ModelAnnotations|@exprtlabs\/golem\/mobx/);
-    if (!profile.validation) assert.doesNotMatch(text, /\$validator|runtimeSchemaRegistry|@exprtlabs\/golem\/(?:validation|ajv|mobx-validation)/);
+    if (!profile.validation) assert.doesNotMatch(text, /\$validator|runtimeSchemaRegistry|@exprtlabs\/golem\/(?:validation|mobx-validation)/);
     await cli(root, ['build']);
     await npm(root, ['prune', '--omit=dev'], { includeOptional: false });
     for (const name of ['typescript', '@redocly/openapi-core', '@exprtlabs/golem-model', '@exprtlabs/golem-openapi']) assert.equal(fs.existsSync(path.join(root, 'node_modules', name)), false, `${name} leaked into production`);
     if (!profile.mobx) assert.equal(fs.existsSync(path.join(root, 'node_modules/mobx')), false);
-    if (!profile.validation) assert.equal(fs.existsSync(path.join(root, 'node_modules/ajv')), false);
     copyFixtureFile(root, 'packed/profile/verify-profile.mjs', 'verify-profile.mjs');
     copyFixtureFile(root, 'packed/profile/browser-exports.ts', 'browser-exports.ts');
     fs.writeFileSync(path.join(root, 'profile.json'), JSON.stringify(profile));
@@ -104,7 +98,6 @@ for (const profile of [
     const modules = Object.keys(browser.metafile.inputs).join('\n');
     assert.doesNotMatch(modules, /node:|\/tooling\/|\/typescript\/|\/@redocly\//);
     if (!profile.mobx) assert.doesNotMatch(modules, /\/mobx\//);
-    if (!profile.validation) assert.doesNotMatch(modules, /\/ajv(?:-formats)?\//);
     if (!profile.validation) assert.doesNotMatch(modules, /\/(?:validation|validation-runner|schema)\.js/);
   });
 }
@@ -164,9 +157,9 @@ test('packed public generator declarations retain synchronous models and asynchr
 });
 
 
-test('packed standalone model and SDK validators work without optional compiler peers', async t => {
+test('packed model and SDK validators work without code generation from strings', async t => {
   const root = registry.create(t, 'standalone-runtime');
-  await npm(root, ['install', '--save-dev', packageSpec(registry, '@exprtlabs/golem-model'), packageSpec(registry, '@exprtlabs/golem-openapi'), AJV, AJV_FORMATS], { includeOptional: true });
+  await npm(root, ['install', '--save-dev', packageSpec(registry, '@exprtlabs/golem-model'), packageSpec(registry, '@exprtlabs/golem-openapi')], { includeOptional: true });
   await npm(root, ['install', '--save-prod', packageSpec(registry, '@exprtlabs/golem')]);
   copyFixture(root, 'packed/standalone-runtime');
   copyFixtureFile(root, 'packed/profile/api.json', 'api.json');
@@ -175,17 +168,16 @@ test('packed standalone model and SDK validators work without optional compiler 
   await cli(root, ['generate']);
   await cli(root, ['check']);
   const manifest = JSON.parse(fs.readFileSync(path.join(root, 'sdk/model-manifest.json'), 'utf8'));
-  assert.deepEqual(manifest.profile, { mobx: false, validation: true, ajvStandalone: true, allowAny: false, unknownFormats: 'warn' });
+  assert.deepEqual(manifest.profile, { mobx: false, validation: true, allowAny: false, unknownFormats: 'warn' });
   const generatedText = [...filesUnder(path.join(root, 'sdk')), path.join(root, 'src/cart.model.generated.ts')]
     .filter(filename => filename.endsWith('.ts')).map(filename => fs.readFileSync(filename, 'utf8')).join('\n');
   assert.doesNotMatch(generatedText, /asGenObservable|ModelAnnotations|@exprtlabs\/golem\/mobx/);
   await cli(root, ['build']);
   await npm(root, ['prune', '--omit=dev'], { includeOptional: false });
-  for (const name of ['ajv', 'ajv-formats', 'esbuild', 'mobx', 'typescript', '@exprtlabs/golem-model', '@exprtlabs/golem-openapi']) {
-    assert.equal(fs.existsSync(path.join(root, 'node_modules', name)), false, `${name} must be absent from standalone production`);
+  for (const name of ['mobx', 'typescript', '@exprtlabs/golem-model', '@exprtlabs/golem-openapi']) {
+    assert.equal(fs.existsSync(path.join(root, 'node_modules', name)), false, `${name} must be absent from production`);
   }
   await command(root, process.execPath, ['--disallow-code-generation-from-strings', 'verify.mjs']);
   const browser = await build({ entryPoints: [path.join(root, 'build/src/cart.model.js'), path.join(root, 'build/sdk/index.js')], outdir: 'browser', bundle: true, platform: 'browser', format: 'esm', write: false, metafile: true });
   assert.doesNotMatch(Object.keys(browser.metafile.inputs).join('\n'), /node:|\/tooling\/|\/esbuild\/|\/mobx\//);
-  assert.doesNotMatch(Object.keys(browser.metafile.inputs).join('\n'), /node_modules\/(?:ajv|ajv-formats)\//);
 });

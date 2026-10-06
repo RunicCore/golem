@@ -532,7 +532,7 @@ class FunctionWriter {
         }
         this.close();
       }
-      // Ahead of `properties`, as in Ajv: with fail-fast the first issue is the object's own unknown key.
+      // Ahead of `properties`: with fail-fast the first issue is the object's own unknown key.
       if (check.additional && visitsAdditional) {
         const additional = check.additional;
         const key = this.fresh('key');

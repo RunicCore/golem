@@ -47,7 +47,7 @@ test('model identity checks grow linearly with the model count', t => {
     for (let index = 0; index < count; index++) sources[`item-${index}.model.ts`] = scaleModelSource({ index });
     writeModelSources(sourceRoot, sources);
     const before = calls;
-    const result = generate({ root, profile: { mobx: false, validation: true, ajvStandalone: false } });
+    const result = generate({ root, profile: { mobx: false, validation: true } });
     assert.equal(result.artifacts.filter(artifact => artifact.path.endsWith('.model.generated.ts')).length, count);
     counts.push(calls - before);
   }

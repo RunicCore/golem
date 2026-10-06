@@ -10,21 +10,13 @@ import { getValidator } from '@exprtlabs/golem/validation';
 import { validationTagKey } from '@exprtlabs/golem/schema';
 import type { ModelTypeDescriptor } from '@exprtlabs/golem/model';
 import { generatedCodecId } from './support/consumer.js';
-import { buildModelProject, createModelProject, generatedModelFiles, writeModelGolemYaml } from './model-project.js';
+import { buildModelProject, createModelProject, writeModelGolemYaml } from './model-project.js';
 
 function fixture(t: TestContext) {
   return createModelProject(t, {
     prefix: 'golem-tag-model-boundaries-',
     name: 'tag-model-boundaries',
   });
-}
-
-function copyStandaloneArtifacts(root: string, sourceRoot: string): void {
-  for (const artifact of generatedModelFiles(root).filter(item => item.path.endsWith('.generated.js'))) {
-    const built = path.join(root, 'build', path.relative(sourceRoot, artifact.path));
-    fs.mkdirSync(path.dirname(built), { recursive: true });
-    fs.copyFileSync(artifact.path, built);
-  }
 }
 
 const fixtureRoot = 'models/tag-model-boundaries';
@@ -61,8 +53,8 @@ interface ScenarioProject {
   readonly load: (directory: string, file: string) => Promise<Record<string, unknown>>;
 }
 
-/** Generate and compile the named scenarios once, for one validator engine. */
-async function buildScenarioProject(t: TestContext, ajvStandalone: boolean, names: readonly string[]): Promise<ScenarioProject> {
+/** Generate and compile the named scenarios once. */
+async function buildScenarioProject(t: TestContext, names: readonly string[]): Promise<ScenarioProject> {
   const { root, sourceRoot } = fixture(t);
   for (const directory of names) {
     for (const [name, fixturePath] of Object.entries(scenarios[directory])) {
@@ -70,9 +62,8 @@ async function buildScenarioProject(t: TestContext, ajvStandalone: boolean, name
       fs.writeFileSync(path.join(sourceRoot, directory, name), readFixture(fixturePath));
     }
   }
-  writeModelGolemYaml(root, { mobx: false, validation: true, ajvStandalone });
+  writeModelGolemYaml(root, { mobx: false, validation: true });
   await buildModelProject(root);
-  if (ajvStandalone) copyStandaloneArtifacts(root, sourceRoot);
   return {
     root,
     sourceRoot,
@@ -111,16 +102,16 @@ test('tag keys preserve user fields named like descriptor metadata', () => {
 
 interface Check {
   readonly title: string;
-  /** The scenario directory this check reads; a standalone project holds only this one. */
+  /** The scenario directory this check reads. */
   readonly directory: string;
-  readonly run: (project: ScenarioProject, engine: 'JIT' | 'AOT') => Promise<void>;
+  readonly run: (project: ScenarioProject) => Promise<void>;
 }
 
 const checks: readonly Check[] = [
   {
     title: 'root property cardinality ignores handwritten state and still checks serde wire output',
     directory: 'cardinality',
-    run: async (project, engine) => {
+    run: async (project) => {
       const Box = await loadModel(project, 'cardinality', 'box.model.js', 'Box');
       const valid = Reflect.construct(Box, [{ code: 7 }]);
       const empty = Reflect.construct(Box, [{}]);
@@ -129,17 +120,17 @@ const checks: readonly Check[] = [
         const candidate = getValidator(value);
         return { validate: () => candidate.validate(), issues: candidate.issues };
       };
-      assert.equal(await validator(valid).validate(), true, `${engine} accepts a valid model with handwritten state`);
+      assert.equal(await validator(valid).validate(), true, 'accepts a valid model with handwritten state');
       const wire = encodeGeneratedModel(valid);
-      assert.deepEqual(wire, { code: '7' }, `${engine} preserves the declared serde wire shape`);
-      assert.equal(await validator(empty).validate(), false, `${engine} enforces minProperties`);
-      assert.equal(await validator(two).validate(), false, `${engine} enforces maxProperties`);
+      assert.deepEqual(wire, { code: '7' }, 'preserves the declared serde wire shape');
+      assert.equal(await validator(empty).validate(), false, 'enforces minProperties');
+      assert.equal(await validator(two).validate(), false, 'enforces maxProperties');
     },
   },
   {
     title: 'Contains<TChild> accepts a handwritten child instance with exact child fields',
     directory: 'contains',
-    run: async (project, engine) => {
+    run: async (project) => {
       const Parent = await loadModel(project, 'contains', 'parent.model.js', 'Parent');
       const Child = await loadModel(project, 'contains', 'child.model.js', 'Child');
       const child = Reflect.construct(Child, [{ name: 'nested' }]);
@@ -150,7 +141,7 @@ const checks: readonly Check[] = [
       assert.equal(
         valid,
         true,
-        `${engine} accepts a nested handwritten child through Contains and DependentSchemas: ${JSON.stringify(issues)}`,
+        `accepts a nested handwritten child through Contains and DependentSchemas: ${JSON.stringify(issues)}`,
       );
       assert.deepEqual(issues, [], 'nested child validation issues');
       const empty = Reflect.construct(Parent, [{ children: [], metadata: { children: [child], mode: 'loaded' } }]);
@@ -158,14 +149,14 @@ const checks: readonly Check[] = [
       assert.equal(
         await emptyValidator.validate(),
         false,
-        `${engine} still enforces Contains after accepting a handwritten child`,
+        'still enforces Contains after accepting a handwritten child',
       );
     },
   },
   {
     title: 'exact objects keep pattern properties aligned with generated validation',
     directory: 'patterns',
-    run: async (project, engine) => {
+    run: async (project) => {
       const Box = await loadModel(project, 'patterns', 'box.model.js', 'PatternBox');
       const predicates = await project.load('patterns', 'predicates.js') as { reset(): void; calls: number };
       predicates.reset();
@@ -186,7 +177,7 @@ const checks: readonly Check[] = [
   {
     title: 'Date descriptors in Contains and DependentSchemas validate model Date values',
     directory: 'dates',
-    run: async (project, engine) => {
+    run: async (project) => {
       const Calendar = await loadModel(project, 'dates', 'calendar.model.js', 'Calendar');
       const calendar = Reflect.construct(Calendar, [{ dates: [new Date('2025-01-02T03:04:05.000Z')], metadata: { dates: [new Date('2025-01-02T03:04:05.000Z')], mode: 'dated' } }]);
       const candidate = getValidator(calendar);
@@ -195,7 +186,7 @@ const checks: readonly Check[] = [
       assert.equal(
         valid,
         true,
-        `${engine} accepts model Date values in structural schemas: ${JSON.stringify(issues)}`,
+        `accepts model Date values in structural schemas: ${JSON.stringify(issues)}`,
       );
       assert.deepEqual(issues, [], 'Date structural validation issues');
       const wireInput = {
@@ -203,7 +194,7 @@ const checks: readonly Check[] = [
         metadata: { dates: ['2025-01-02T03:04:05.000Z'], mode: 'dated' },
       };
       const decoded = decodeGeneratedModel(Calendar, wireInput) as { dates: unknown[]; metadata: { dates: unknown[] } };
-      assert.ok(decoded.dates[0] instanceof Date, `${engine} accepts wire date-time strings`);
+      assert.ok(decoded.dates[0] instanceof Date, 'accepts wire date-time strings');
       const assigned = Reflect.construct(Calendar, [{
         dates: [new Date('2025-01-02T03:04:05.000Z')],
         metadata: { dates: [new Date('2025-01-02T03:04:05.000Z')], mode: 'dated' },
@@ -213,21 +204,21 @@ const checks: readonly Check[] = [
       assert.equal(
         await invalidValidator.validate(),
         false,
-        `${engine} rejects wire strings when supplied as model-plane Date values`,
+        'rejects wire strings when supplied as model-plane Date values',
       );
     },
   },
   {
     title: 'discriminated union tag projections retain the selected branch fields',
     directory: 'zoo',
-    run: async (project, engine) => {
+    run: async (project) => {
       const Zoo = await loadModel(project, 'zoo', 'zoo.model.js', 'Zoo');
       const zoo = Reflect.construct(Zoo, [{ pets: [{ kind: 'dog', name: 'Rex', bark: true }] }]);
       const validator = getValidator(zoo);
       assert.equal(
         await validator.validate(),
         true,
-        `${engine} keeps the dog branch fields during Contains validation`,
+        'keeps the dog branch fields during Contains validation',
       );
       const invalid = Reflect.construct(Zoo, [{ pets: [{ kind: 'dog', name: 'Rex' }] }]);
       assert.equal(await getValidator(invalid).validate(), false, 'missing selected-branch fields remain invalid');
@@ -236,7 +227,7 @@ const checks: readonly Check[] = [
   {
     title: 'shared generated instances are projected independently for different tag descriptors',
     directory: 'shared',
-    run: async (project, engine) => {
+    run: async (project) => {
       const Child = await loadModel(project, 'shared', 'child.model.js', 'SharedChild');
       const Shared = await loadModel(project, 'shared', 'shared.model.js', 'Shared');
       const child = Reflect.construct(Child, [{ value: 'ok', extra: 1 }]);
@@ -245,27 +236,21 @@ const checks: readonly Check[] = [
       assert.equal(
         await validator.validate(),
         true,
-        `${engine} validates Pick and full nested models independently`,
+        'validates Pick and full nested models independently',
       );
       Reflect.set(shared, 'first', child);
       assert.equal(
         await getValidator(shared).validate(),
         false,
-        `${engine} rejects extra enumerable fields on an exact Pick field`,
+        'rejects extra enumerable fields on an exact Pick field',
       );
     },
   },
 ];
 
-// Both engines hold every scenario in one project. Anonymous structural schemas are identified by their
-// shape, so models in one standalone project never claim the same id for different schemas (earlier
-// counter ids made generate() throw "Conflicting standalone schema identity").
-test('tag boundary scenarios share one runtime project', async t => {
-  const project = await buildScenarioProject(t, false, checks.map(check => check.directory));
-  for (const check of checks) await t.test(check.title, () => check.run(project, 'JIT'));
-});
-
-test('tag boundary scenarios share one standalone project', async t => {
-  const project = await buildScenarioProject(t, true, checks.map(check => check.directory));
-  for (const check of checks) await t.test(check.title, () => check.run(project, 'AOT'));
+// One project holds every scenario. Anonymous structural schemas are identified by their shape, so models
+// in one project never claim the same id for different schemas.
+test('tag boundary scenarios share one project', async t => {
+  const project = await buildScenarioProject(t, checks.map(check => check.directory));
+  for (const check of checks) await t.test(check.title, () => check.run(project));
 });

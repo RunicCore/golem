@@ -2,10 +2,10 @@ import { readFixture } from '../fixture-project.js';
 import assert from 'node:assert/strict';
 import path from 'node:path';
 import test, { type TestContext } from 'node:test';
-import { Ajv2020, type AnySchema } from 'ajv/dist/2020.js';
 
 import { generate } from '#controllers/generator';
 import { createControllerFixture } from '../fixture-templates/controllers/project.js';
+import { compileSchema } from '../support/compiled-validators.js';
 
 interface OpenApiSchema {
   readonly $ref?: string;
@@ -70,12 +70,12 @@ function rewriteComponentRefs(value: unknown): unknown {
   return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, rewriteComponentRefs(item)]));
 }
 
-function standardSchema(document: OpenApiDocument, schema: OpenApiSchema): AnySchema {
+function standardSchema(document: OpenApiDocument, schema: OpenApiSchema): Record<string, unknown> {
   const schemas = document.components?.schemas ?? {};
   return {
     ...(rewriteComponentRefs(schema) as Record<string, unknown>),
     $defs: rewriteComponentRefs(schemas),
-  } as AnySchema;
+  };
 }
 
 function assertNoLegacyNullable(value: unknown): void {
@@ -131,20 +131,19 @@ test('normalizes ordinary DTO nullable properties, enums, and response overlays'
   const kind = result.properties?.kind;
   assert.ok(label);
   assert.ok(kind);
-  const ajv = new Ajv2020({ allErrors: true, strict: false, validateSchema: false });
-  const validateLabel = ajv.compile(standardSchema(document, label));
-  const validateKind = ajv.compile(standardSchema(document, kind));
-  const validateResponse = ajv.compile(standardSchema(document, response));
-  assert.equal(validateLabel('ok'), true, JSON.stringify(validateLabel.errors));
-  assert.equal(validateLabel(null), true, JSON.stringify(validateLabel.errors));
-  assert.equal(validateLabel(42), false);
-  assert.equal(validateKind('cat'), true, JSON.stringify(validateKind.errors));
-  assert.equal(validateKind('dog'), true, JSON.stringify(validateKind.errors));
-  assert.equal(validateKind(null), true, JSON.stringify(validateKind.errors));
-  assert.equal(validateKind('bird'), false);
-  assert.equal(validateResponse({ label: 'ok', kind: 'cat' }), true, JSON.stringify(validateResponse.errors));
-  assert.equal(validateResponse(null), true, JSON.stringify(validateResponse.errors));
-  assert.equal(validateResponse({ label: 42, kind: 'cat' }), false);
+  const validateLabel = await compileSchema(standardSchema(document, label));
+  const validateKind = await compileSchema(standardSchema(document, kind));
+  const validateResponse = await compileSchema(standardSchema(document, response));
+  assert.deepEqual(validateLabel('ok', true), []);
+  assert.deepEqual(validateLabel(null, true), []);
+  assert.notDeepEqual(validateLabel(42, true), []);
+  assert.deepEqual(validateKind('cat', true), []);
+  assert.deepEqual(validateKind('dog', true), []);
+  assert.deepEqual(validateKind(null, true), []);
+  assert.notDeepEqual(validateKind('bird', true), []);
+  assert.deepEqual(validateResponse({ label: 'ok', kind: 'cat' }, true), []);
+  assert.deepEqual(validateResponse(null, true), []);
+  assert.notDeepEqual(validateResponse({ label: 42, kind: 'cat' }, true), []);
 });
 
 test('allows nullable:false narrowing for ordinary DTOs while keeping the standard schema nonnullable', async t => {
@@ -166,16 +165,15 @@ test('allows nullable:false narrowing for ordinary DTOs while keeping the standa
   const kind = propertyObject.properties?.kind;
   assert.ok(label);
   assert.ok(kind);
-  const ajv = new Ajv2020({ allErrors: true, strict: false, validateSchema: false });
-  const validateLabel = ajv.compile(standardSchema(document, label));
-  const validateKind = ajv.compile(standardSchema(document, kind));
-  const validateResponse = ajv.compile(standardSchema(document, responseResponse));
-  assert.equal(validateLabel('ok'), true, JSON.stringify(validateLabel.errors));
-  assert.equal(validateLabel(null), false);
-  assert.equal(validateKind('cat'), true, JSON.stringify(validateKind.errors));
-  assert.equal(validateKind(null), false);
-  assert.equal(validateResponse({ label: 'ok', kind: 'cat' }), true, JSON.stringify(validateResponse.errors));
-  assert.equal(validateResponse(null), false);
+  const validateLabel = await compileSchema(standardSchema(document, label));
+  const validateKind = await compileSchema(standardSchema(document, kind));
+  const validateResponse = await compileSchema(standardSchema(document, responseResponse));
+  assert.deepEqual(validateLabel('ok', true), []);
+  assert.notDeepEqual(validateLabel(null, true), []);
+  assert.deepEqual(validateKind('cat', true), []);
+  assert.notDeepEqual(validateKind(null, true), []);
+  assert.deepEqual(validateResponse({ label: 'ok', kind: 'cat' }, true), []);
+  assert.notDeepEqual(validateResponse(null, true), []);
 });
 
 test('rejects nullable Swagger overlays that widen a nonnullable IModel response', async t => {

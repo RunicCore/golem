@@ -56,7 +56,7 @@ test('exports API 1 and emits profile-specific model companions without writes',
     }
 
     if (expected.validation) {
-      assert.match(output, /@exprtlabs\/golem\/(?:ajv|serde)/);
+      assert.match(output, /@exprtlabs\/golem\/serde/);
       assert.match(output, /function validate\w*\(/);
       assert.match(output, /createObjectCodec/);
       assert.match(output, /generatedModelFieldsBrand/);
@@ -132,7 +132,7 @@ test('rejects missing sources and profile-mismatched manifests before emitting a
   const { root, sourceRoot } = project(t);
   const manifest = path.join(root, 'external-model-manifest.json');
   fs.writeFileSync(manifest, JSON.stringify({
-    profile: { mobx: true, validation: true, ajvStandalone: false, allowAny: false },
+    profile: { mobx: true, validation: true, allowAny: false },
     models: [],
   }));
   assert.throws(
@@ -144,12 +144,10 @@ test('rejects missing sources and profile-mismatched manifests before emitting a
     () => generate({ root, sources: [source], profile: { mobx: false, validation: false }, manifestInputs: [manifest] }),
     /profile mismatch/,
   );
-  const profile = { mobx: false, validation: true, ajvStandalone: false, allowAny: false };
-  for (const flag of ['ajvStandalone', 'allowAny'] as const) {
-    fs.writeFileSync(manifest, JSON.stringify({ profile: { ...profile, [flag]: true }, models: [] }));
-    assert.throws(() => generate({ root, sources: [source], profile, manifestInputs: [manifest] }), /profile mismatch/);
-    assert.equal(fs.existsSync(path.join(sourceRoot, 'x.model.generated.ts')), false);
-  }
+  const profile = { mobx: false, validation: true, allowAny: false };
+  fs.writeFileSync(manifest, JSON.stringify({ profile: { ...profile, allowAny: true }, models: [] }));
+  assert.throws(() => generate({ root, sources: [source], profile, manifestInputs: [manifest] }), /profile mismatch/);
+  assert.equal(fs.existsSync(path.join(sourceRoot, 'x.model.generated.ts')), false);
   fs.writeFileSync(manifest, JSON.stringify({ profile: { ...profile, unknownFormats: 'error' }, models: [] }));
   assert.throws(() => generate({ root, sources: [source], profile, manifestInputs: [manifest] }), /profile mismatch.*unknownFormats: warn/);
   assert.equal(fs.existsSync(path.join(sourceRoot, 'x.model.generated.ts')), false);
@@ -195,7 +193,7 @@ test('rejects unsupported and duplicate model manifests', (t: TestContext) => {
     generated: { module: './models.ts', export: 'MoneyModel' },
   };
   const manifest = (profile: { mobx: boolean; validation: boolean }) => ({
-    profile: { ...profile, ajvStandalone: false, allowAny: false },
+    profile: { ...profile, allowAny: false },
     models: [model],
   });
   fs.writeFileSync(first, JSON.stringify({ ...manifest({ mobx: false, validation: false }), manifestVersion: 99 }));

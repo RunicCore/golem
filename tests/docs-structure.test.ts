@@ -174,8 +174,8 @@ test('guide TypeScript is imported except on listed pages', () => {
   assert.deepEqual(over, []);
 });
 
-const PUBLIC_SUBPATHS = ['model', 'validation', 'ajv', 'mobx', 'mobx-validation', 'errors', 'client', 'conversion', 'tags', 'temporal', 'serde', 'nest', 'generator-api', 'manifest', 'rewrite', 'loader', 'register', 'vite', 'esbuild'];
-const INTERNAL_SUBPATHS = ['cli', 'emitter', 'schema', 'schema-graph', 'ajv-tooling', 'type-analysis', 'generated-paths', 'validation-runtime', 'validator-compiler', 'validation-plan', 'ts'];
+const PUBLIC_SUBPATHS = ['model', 'validation', 'mobx', 'mobx-validation', 'errors', 'client', 'conversion', 'tags', 'temporal', 'serde', 'nest', 'generator-api', 'manifest', 'rewrite', 'loader', 'register', 'vite', 'esbuild'];
+const INTERNAL_SUBPATHS = ['cli', 'emitter', 'schema', 'schema-graph', 'type-analysis', 'generated-paths', 'validation-runtime', 'validator-compiler', 'validation-plan', 'ts'];
 
 test('the runtime reference covers every @exprtlabs/golem subpath', () => {
   const exports = Object.keys(JSON.parse(readFileSync(path.join(root, 'packages/golem/package.json'), 'utf8')).exports as Record<string, unknown>).map(key => key.replace(/^\.\//, ''));

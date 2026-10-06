@@ -15,7 +15,7 @@ export type TTask = IModel<{ title: string; done: boolean }>;
 export class Task extends TTaskBaseModel {}
 `,
   });
-  const result = generate({ root, profile: { mobx: false, validation: true, ajvStandalone: false } });
+  const result = generate({ root, profile: { mobx: false, validation: true } });
   const companion = result.artifacts.find(artifact => artifact.path.endsWith('task.model.generated.ts'))?.content ?? '';
   for (const signature of [
     `export function stringifyTTask\\(value: TTaskFields, ${OPTIONS}\\): string \\{`,
@@ -47,7 +47,7 @@ test('reformatting model and codec sources leaves every generated file unchanged
   const generated = (preamble: string) => {
     const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-reformat-', name: null, linkWorkspaceNodeModules: true });
     writeModelSources(sourceRoot, priority(preamble));
-    const result = generate({ root, profile: { mobx: false, validation: true, ajvStandalone: false } });
+    const result = generate({ root, profile: { mobx: false, validation: true } });
     return new Map(result.artifacts.map(artifact => [artifact.path.slice(root.length), artifact.content]));
   };
   const before = generated('');
@@ -59,7 +59,7 @@ test('reformatting model and codec sources leaves every generated file unchanged
 test('model companion assert functions share one runtime helper and named option types', t => {
   const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-assert-helper-', name: null, linkWorkspaceNodeModules: true });
   writeModelSources(sourceRoot, priority(''));
-  const result = generate({ root, profile: { mobx: false, validation: true, ajvStandalone: false } });
+  const result = generate({ root, profile: { mobx: false, validation: true } });
   const companion = result.artifacts.find(artifact => artifact.path.endsWith('task.model.generated.ts'))?.content ?? '';
   assert.doesNotMatch(companion, /import\('@exprtlabs\/golem\/model'\)/);
   assert.doesNotMatch(companion, /validationContext === undefined\) \{\n\s+if \(!\(/);
@@ -79,8 +79,6 @@ export type TAuthor = IObject<{ name: string & MinLength<1> }>;
 export type TNote = IObject<{ text: string; author: TAuthor; at: Date }>;
 `,
   });
-  for (const ajvStandalone of [false, true]) {
-    writeModelGolemYaml(root, { mobx: false, validation: true, ajvStandalone });
-    await buildModelProject(root, ['--noEmit']);
-  }
+  writeModelGolemYaml(root, { mobx: false, validation: true });
+  await buildModelProject(root, ['--noEmit']);
 });

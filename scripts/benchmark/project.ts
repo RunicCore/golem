@@ -4,7 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { generate } from '@exprtlabs/golem-model/generator';
 import type { ProjectKind } from './cases.js';
-import { copyGeneratedJavascript, generateFeatureMoneySdk } from './generate-sdk.js';
+import { generateFeatureMoneySdk } from './generate-sdk.js';
 
 export const root = fileURLToPath(new URL('../../../', import.meta.url));
 const upstreamDirectory = path.join(root, 'scripts/benchmark/fixtures/upstream');
@@ -32,8 +32,8 @@ function prepare(directory: string, kind: ProjectKind): string {
     },
     include: ['src/**/*.ts'],
   }));
-  const profile = { mobx: false, validation: kind !== 'plain', ajvStandalone: kind === 'standalone' };
-  const manifest = generateFeatureMoneySdk(project, src, { validation: profile.validation, ajvStandalone: profile.ajvStandalone });
+  const profile = { mobx: false, validation: kind !== 'plain' };
+  const manifest = generateFeatureMoneySdk(project, src, { validation: profile.validation });
   const { artifacts } = generate({ root: project, profile, manifestInputs: [manifest] });
   for (const artifact of artifacts) {
     mkdirSync(path.dirname(artifact.path), { recursive: true });
@@ -42,15 +42,9 @@ function prepare(directory: string, kind: ProjectKind): string {
   // The root keeps `ttsc` as a devDependency only for this call: typia's transform is a ttsc plugin. golem's own builds never use it.
   execFileSync(process.execPath, [path.join(root, 'node_modules/ttsc/lib/launcher/ttsc.js'), '-p', path.join(project, 'tsconfig.json')],
     { cwd: project, encoding: 'utf8', timeout: 180_000, maxBuffer: 16 * 1024 * 1024 });
-  for (const artifact of artifacts.filter(a => a.path.endsWith('.js'))) {
-    const destination = path.join(project, 'build', path.relative(src, artifact.path));
-    mkdirSync(path.dirname(destination), { recursive: true });
-    copyFileSync(artifact.path, destination);
-  }
-  copyGeneratedJavascript(src, project);
   return path.join(project, 'build/cases.js');
 }
 
 export function prepareProjects(directory: string): Record<ProjectKind, string> {
-  return { plain: prepare(directory, 'plain'), runtime: prepare(directory, 'runtime'), standalone: prepare(directory, 'standalone') };
+  return { plain: prepare(directory, 'plain'), validating: prepare(directory, 'validating') };
 }

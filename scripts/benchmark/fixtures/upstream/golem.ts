@@ -83,7 +83,7 @@ function constructFor(input: FixtureInput): new (values?: never) => object {
 }
 
 /**
- * Prove that IObject parse / stringify compose Ajv by default.
+ * Prove that IObject parse / stringify compose the generated validators by default.
  * IModel tagValidators stay on the class editor path and are not the JSON hot path.
  */
 async function verifyPublicTagInvocation(input: FixtureInput): Promise<void> {
@@ -102,7 +102,7 @@ async function verifyPublicTagInvocation(input: FixtureInput): Promise<void> {
 }
 
 function validationFor(adapter: Adapter): boolean {
-  if (adapter !== 'golem' && adapter !== 'golem-runtime' && adapter !== 'golem-standalone') {
+  if (adapter !== 'golem' && adapter !== 'golem-validated') {
     throw new TypeError(`Unsupported golem adapter: ${adapter}`);
   }
   return adapter !== 'golem';

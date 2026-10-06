@@ -9,13 +9,11 @@ import { COUNT_DIST_FILES, writeCodecPackage } from './fixture-templates/models/
 import { tsSource } from './source-template.js';
 import { generate } from '#model/generator';
 
-const workspace = path.resolve(import.meta.dirname, '../..');
-
 function project(t: TestContext, packages: Record<string, string> = {}) {
   return createModelProject(t, {
     prefix: 'golem-packaged-codecs-', name: 'packaged-codecs',
     linkTypescript: true,
-    packages: { ajv: path.join(workspace, 'node_modules/ajv'), 'ajv-formats': path.join(workspace, 'node_modules/ajv-formats'), ...packages },
+    packages,
   });
 }
 

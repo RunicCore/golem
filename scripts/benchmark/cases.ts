@@ -4,10 +4,10 @@ export const REPOSITORY_BLOB_URL = 'https://github.com/RunicCore/golem/blob/mast
 
 export type PayloadId = 'simple' | 'nested' | 'array' | 'checkout';
 export type OperationId = 'parse' | 'stringify' | 'validate';
-export type AdapterId = 'golem' | 'golem-standalone' | 'golem-runtime' | 'golem-object' | 'class-transformer' | 'class-validator' | 'typia' | 'zod';
+export type AdapterId = 'golem' | 'golem-validated' | 'golem-object' | 'class-transformer' | 'class-validator' | 'typia' | 'zod';
 export type GroupId = 'plain' | 'classes' | 'validated-classes';
 export type Support = 'full' | 'none';
-export type ProjectKind = 'plain' | 'runtime' | 'standalone';
+export type ProjectKind = 'plain' | 'validating';
 
 export interface PayloadSpec { readonly id: PayloadId; readonly fixture: string; readonly label: string; readonly description: string; readonly sourceFile: string }
 export interface OperationSpec { readonly id: OperationId; readonly fixtureOperation: Operation; readonly label: string; readonly description: string }
@@ -44,18 +44,17 @@ export const GROUPS: readonly GroupSpec[] = [
     operations: { parse: ['golem', 'class-transformer'], stringify: ['golem', 'class-transformer'], validate: [] },
     operationDescriptions: { parse: 'JSON text to instances of your classes', stringify: 'instances of your classes to JSON text' } },
   { id: 'validated-classes', label: 'Validated class instances', description: 'Class instances checked against their constraints.',
-    operations: { parse: ['golem-standalone', 'class-validator'], stringify: ['golem-standalone', 'class-validator'], validate: ['golem-standalone', 'golem-runtime', 'class-validator'] },
+    operations: { parse: ['golem-validated', 'class-validator'], stringify: ['golem-validated', 'class-validator'], validate: ['golem-validated', 'class-validator'] },
     operationDescriptions: { parse: 'JSON text to checked instances of your classes', stringify: 'instances, checked, to JSON text', validate: 'check an instance' } },
 ];
 
 export const BENCH_ADAPTERS: readonly AdapterSpec[] = [
-  { id: 'golem-object', fixtureAdapter: 'golem-object', project: 'standalone', group: 'plain', label: 'Golem (IObject)', library: '@exprtlabs/golem', checked: true, sourceFile: `${F}/golem-object.ts` },
+  { id: 'golem-object', fixtureAdapter: 'golem-object', project: 'validating', group: 'plain', label: 'Golem (IObject)', library: '@exprtlabs/golem', checked: true, sourceFile: `${F}/golem-object.ts` },
   { id: 'typia', fixtureAdapter: 'typia', project: 'plain', group: 'plain', label: 'Typia', library: 'typia', checked: true, sourceFile: `${F}/typia.ts` },
   { id: 'zod', fixtureAdapter: 'zod', project: 'plain', group: 'plain', label: 'Zod', library: 'zod', checked: true, sourceFile: `${F}/zod.ts` },
   { id: 'golem', fixtureAdapter: 'golem', project: 'plain', group: 'classes', label: 'Golem (IModel)', library: '@exprtlabs/golem', checked: false, sourceFile: `${F}/golem.ts` },
   { id: 'class-transformer', fixtureAdapter: 'class-transformer', project: 'plain', group: 'classes', label: 'class-transformer', library: 'class-transformer', checked: false, sourceFile: `${F}/class-transformer.ts` },
-  { id: 'golem-standalone', fixtureAdapter: 'golem-standalone', project: 'standalone', group: 'validated-classes', label: 'Golem (IModel, validated)', library: '@exprtlabs/golem', checked: true, sourceFile: `${F}/golem.ts` },
-  { id: 'golem-runtime', fixtureAdapter: 'golem-runtime', project: 'runtime', group: 'validated-classes', label: 'Golem (IModel, runtime Ajv)', library: '@exprtlabs/golem', checked: true, sourceFile: `${F}/golem.ts` },
+  { id: 'golem-validated', fixtureAdapter: 'golem-validated', project: 'validating', group: 'validated-classes', label: 'Golem (IModel, validated)', library: '@exprtlabs/golem', checked: true, sourceFile: `${F}/golem.ts` },
   { id: 'class-validator', fixtureAdapter: 'class-validator', project: 'plain', group: 'validated-classes', label: 'class-transformer + class-validator', library: 'class-validator', checked: true, sourceFile: `${F}/class-validator.ts` },
 ];
 

@@ -351,7 +351,7 @@ async function executeCase(
     await assert.rejects(
       () => api.execute(null),
       (error: unknown) => error instanceof LibError && error.kind === LibErrorKind.Validation && error.issues.some(issue => issue.source === IssueSource.OpenAPI),
-      `${item.id} uses the generated default Ajv request validator`,
+      `${item.id} uses the generated request validator`,
     );
     assert.equal(captured, requestBeforeInvalidInput, `${item.id} invalid input did not reach fetch`);
   }
@@ -361,7 +361,7 @@ function assertManifestProfile(output: string, profile: { readonly mobx: boolean
   const manifestValue: unknown = JSON.parse(fs.readFileSync(path.join(output, 'model-manifest.json'), 'utf8'));
   assert.ok(isRecord(manifestValue));
   const manifestProfile = manifestValue && Reflect.get(manifestValue, 'profile');
-  assert.deepEqual(manifestProfile, { ...profile, ajvStandalone: false, allowAny: false });
+  assert.deepEqual(manifestProfile, { ...profile, allowAny: false });
 }
 
 test('typed upstream corpus cases generate, strict-compile, and execute every accounted outbound operation', async t => {

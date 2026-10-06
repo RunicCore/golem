@@ -26,7 +26,7 @@ for (const value of accepted) {
   rules.reset();
   const decoded = decodeGeneratedModel(A, wire);
   assert.ok(decoded instanceof A);
-  assert.equal(rules.calls, 0, 'fromJSON copies a class after parse and does not re-run Ajv');
+  assert.equal(rules.calls, 0, 'fromJSON copies a class after parse and does not re-run validation');
   const usesModelPredicate = value.choice !== undefined
     || value.cond !== undefined
     || value.counts !== undefined

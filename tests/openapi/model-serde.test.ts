@@ -331,7 +331,7 @@ test('checked model serde validates wire before construction, converts nested nu
   await generateMaterializedSdk(modelSerdeDocument(), {
     output,
     name: 'ModelSerde',
-    profile: { mobx: false, validation: true, ajvStandalone: false, allowAny: false },
+    profile: { mobx: false, validation: true, allowAny: false },
   });
   // Nested Init/Fields/JSON contracts: Date is the runtime value, the wire contract stays a string.
   copyFixtureFile(output, "openapi/model-serde/model-serde-types.ts", "model-serde-types.ts");
@@ -464,7 +464,7 @@ test('generated nested Date, inherited, and dictionary conversions work in a sta
   await generateMaterializedSdk(modelSerdeDocument(), {
     output,
     name: 'ModelSerde',
-    profile: { mobx: false, validation: true, ajvStandalone: true, allowAny: false },
+    profile: { mobx: false, validation: true, allowAny: false },
   });
   compileStandaloneModelSerdeSdk(output);
   const models = requireRecord(
@@ -479,7 +479,7 @@ test('generated discriminated unions infer abstract, concrete, and handwritten s
   const result = await generateMaterializedSdk(discriminatedUnionSerdeDocument(), {
     output,
     name: 'DiscriminatedSerde',
-    profile: { mobx: false, validation: false, ajvStandalone: false, allowAny: false },
+    profile: { mobx: false, validation: false, allowAny: false },
   });
   const models = generatedModelSource(result.artifacts);
   assert.doesNotMatch(models, /\b(?:fromJSON|toJSON)\b/);

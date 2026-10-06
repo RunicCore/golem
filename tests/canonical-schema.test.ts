@@ -1,28 +1,24 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
-  Ajv2020,
-  type AnySchema,
-  type ValidateFunction,
-} from 'ajv/dist/2020.js';
-import {
   assembleConstraintSchema,
   schemaForDescriptor,
   type JsonSchema,
   type ModelConstraint,
 } from '@exprtlabs/golem/schema';
+import type { Validator } from '@exprtlabs/golem/validation-runtime';
+import { compileSchema } from './support/compiled-validators.js';
 
-function validator(schema: JsonSchema): ValidateFunction {
-  const ajv = new Ajv2020({ allErrors: true, strict: false, validateSchema: false });
-  return ajv.compile(schema as AnySchema);
+function validator(schema: JsonSchema): Promise<Validator> {
+  return compileSchema(schema);
 }
 
-function assertAccepts(validate: ValidateFunction, value: unknown): void {
-  assert.equal(validate(value), true, JSON.stringify(validate.errors));
+function assertAccepts(validate: Validator, value: unknown): void {
+  assert.deepEqual(validate(value, true), [], JSON.stringify(value));
 }
 
-function assertRejects(validate: ValidateFunction, value: unknown): void {
-  assert.equal(validate(value), false, `expected rejection for ${JSON.stringify(value)}`);
+function assertRejects(validate: Validator, value: unknown): void {
+  assert.notDeepEqual(validate(value, true), [], `expected rejection for ${JSON.stringify(value)}`);
 }
 
 function objectDescriptor(
@@ -39,7 +35,7 @@ function objectDescriptor(
   };
 }
 
-test('recursive references compile through local $defs and OpenAPI component prefixes', () => {
+test('recursive references compile through local $defs and OpenAPI component prefixes', async () => {
   const node = objectDescriptor({
     value: { kind: 'number', constraints: [{ kind: 'integer' }] },
     next: {
@@ -59,7 +55,7 @@ test('recursive references compile through local $defs and OpenAPI component pre
   assert.ok(typeof local === 'object' && local !== null);
   const localDefinitions = (local as Record<string, unknown>).$defs;
   assert.ok(typeof localDefinitions === 'object' && localDefinitions !== null && 'Node' in localDefinitions);
-  const localValidate = validator(local);
+  const localValidate = await validator(local);
   assertAccepts(localValidate, { value: 1, next: { value: 2, next: null } });
   assertRejects(localValidate, { value: 1, next: { value: 'bad' } });
 
@@ -74,18 +70,18 @@ test('recursive references compile through local $defs and OpenAPI component pre
     $ref: '#/components/schemas/Node',
     components: { schemas: { Node: componentNode } },
   };
-  const componentValidate = validator(openApiRoot);
+  const componentValidate = await validator(openApiRoot);
   assertAccepts(componentValidate, { value: 1, next: { value: 2, next: null } });
   assertRejects(componentValidate, { value: 1, next: { value: 'bad' } });
 });
 
-test('false and never descriptors stay impossible when constraints are attached', () => {
+test('false and never descriptors stay impossible when constraints are attached', async () => {
   const never = schemaForDescriptor({
     kind: 'never',
     constraints: [{ kind: 'minProperties', value: 1 }],
   });
   assert.equal(never, false);
-  const neverValidate = validator(never);
+  const neverValidate = await validator(never);
   assertRejects(neverValidate, {});
   assertRejects(neverValidate, { value: true });
 
@@ -94,16 +90,16 @@ test('false and never descriptors stay impossible when constraints are attached'
     constraints: [{ kind: 'pattern', value: '^present$' }],
   });
   assert.equal(undefinedValue, false);
-  assertRejects(validator(undefinedValue), 'present');
+  assertRejects(await validator(undefinedValue), 'present');
 });
 
-test('contextual additional and unevaluated property constraints keep declared properties evaluated', () => {
+test('contextual additional and unevaluated property constraints keep declared properties evaluated', async () => {
   const additionalFalse = schemaForDescriptor(objectDescriptor(
     { known: { kind: 'string' } },
     [{ kind: 'additionalProperties', schema: false }],
     true,
   ));
-  const validateAdditionalFalse = validator(additionalFalse);
+  const validateAdditionalFalse = await validator(additionalFalse);
   assertAccepts(validateAdditionalFalse, { known: 'ok' });
   assertRejects(validateAdditionalFalse, { known: 'ok', extra: 1 });
 
@@ -112,7 +108,7 @@ test('contextual additional and unevaluated property constraints keep declared p
     [{ kind: 'additionalProperties', schema: { kind: 'number' } }],
     true,
   ));
-  const validateAdditionalNumbers = validator(additionalNumbers);
+  const validateAdditionalNumbers = await validator(additionalNumbers);
   assertAccepts(validateAdditionalNumbers, { known: 'ok', extra: 1 });
   assertRejects(validateAdditionalNumbers, { known: 'ok', extra: 'bad' });
 
@@ -121,24 +117,24 @@ test('contextual additional and unevaluated property constraints keep declared p
     properties: { known: { type: 'string' } },
     ...assembleConstraintSchema([{ kind: 'unevaluatedProperties', schema: false }]),
   } as JsonSchema;
-  const validateUnevaluated = validator(unevaluated);
+  const validateUnevaluated = await validator(unevaluated);
   assertAccepts(validateUnevaluated, { known: 'ok' });
   assertRejects(validateUnevaluated, { known: 'ok', extra: 1 });
 });
 
-test('unevaluated items remain contextual across prefix item schemas', () => {
+test('unevaluated items remain contextual across prefix item schemas', async () => {
   const schema = {
     type: 'array',
     prefixItems: [{ type: 'string' }],
     ...assembleConstraintSchema([{ kind: 'unevaluatedItems', schema: false }]),
   } as JsonSchema;
-  const validate = validator(schema);
+  const validate = await validator(schema);
   assertAccepts(validate, ['first']);
   assertRejects(validate, ['first', 2]);
   assertRejects(validate, [1]);
 });
 
-test('fixed tuples reject items beyond prefixItems', () => {
+test('fixed tuples reject items beyond prefixItems', async () => {
   const schema = schemaForDescriptor({
     kind: 'object',
     properties: {
@@ -147,12 +143,12 @@ test('fixed tuples reject items beyond prefixItems', () => {
     required: ['tuple'],
     additionalProperties: false,
   });
-  const validate = validator(schema);
+  const validate = await validator(schema);
   assertAccepts(validate, { tuple: ['name', 2] });
   assertRejects(validate, { tuple: ['name', 2, true] });
 });
 
-test('contains, minContains, and maxContains share one validation context', () => {
+test('contains, minContains, and maxContains share one validation context', async () => {
   const schema = schemaForDescriptor({
     kind: 'array',
     item: { kind: 'string' },
@@ -162,14 +158,14 @@ test('contains, minContains, and maxContains share one validation context', () =
       { kind: 'maxContains', value: 2 },
     ],
   });
-  const validate = validator(schema);
+  const validate = await validator(schema);
   assertRejects(validate, ['a', 'b']);
   assertAccepts(validate, ['x', 'a']);
   assertAccepts(validate, ['x', 'x']);
   assertRejects(validate, ['x', 'x', 'x']);
 });
 
-test('patternProperties and dependentSchemas compose with additional and unevaluated properties', () => {
+test('patternProperties and dependentSchemas compose with additional and unevaluated properties', async () => {
   const schema = schemaForDescriptor(objectDescriptor(
     {
       flag: { kind: 'boolean' },
@@ -196,7 +192,7 @@ test('patternProperties and dependentSchemas compose with additional and unevalu
     ],
     false,
   ));
-  const validate = validator(schema);
+  const validate = await validator(schema);
   assertAccepts(validate, { flag: true, requiredWhenFlag: 'yes', x_count: 2 });
   assertAccepts(validate, { x_count: 2 });
   assertRejects(validate, { flag: true, x_count: 2 });
@@ -204,7 +200,7 @@ test('patternProperties and dependentSchemas compose with additional and unevalu
   assertRejects(validate, { other: 2 });
 });
 
-test('conflicting duplicate constraints become intersecting branches with effective bounds', () => {
+test('conflicting duplicate constraints become intersecting branches with effective bounds', async () => {
   const constraints: readonly ModelConstraint[] = [
     { kind: 'minLength', value: 2 },
     { kind: 'minLength', value: 4 },
@@ -213,7 +209,7 @@ test('conflicting duplicate constraints become intersecting branches with effect
   ];
   const assembled = assembleConstraintSchema(constraints);
   assert.ok('allOf' in assembled);
-  const validate = validator(schemaForDescriptor({ kind: 'string', constraints }));
+  const validate = await validator(schemaForDescriptor({ kind: 'string', constraints }));
   assertRejects(validate, 'abc');
   assertAccepts(validate, 'abcd');
   assertAccepts(validate, 'abcde');
@@ -226,7 +222,7 @@ test('conflicting duplicate constraints become intersecting branches with effect
   assert.deepEqual(duplicate, { minLength: 4 });
 });
 
-test('wire schemas erase type-only scalar brands while retaining constraints', () => {
+test('wire schemas erase type-only scalar brands while retaining constraints', async () => {
   const schema = schemaForDescriptor({
     kind: 'intersection',
     variants: [
@@ -241,14 +237,14 @@ test('wire schemas erase type-only scalar brands while retaining constraints', (
     constraints: [{ kind: 'minLength', value: 2 }],
   }, { representation: 'wire' });
   assert.deepEqual(schema, { allOf: [{ type: 'string' }, { minLength: 2 }] });
-  const validate = validator(schema);
+  const validate = await validator(schema);
   assertAccepts(validate, 'ok');
   assertRejects(validate, 'x');
   assertRejects(validate, { __wireBrand: undefined });
 });
 
 
-test('portable composition follows callback metadata in both serde wire shapes', () => {
+test('portable composition follows callback metadata in both serde wire shapes', async () => {
   for (const key of ['wire', 'wireDescriptor']) {
     const warnings: string[] = [];
     const projected = schemaForDescriptor({
@@ -258,7 +254,7 @@ test('portable composition follows callback metadata in both serde wire shapes',
         serde: { [key]: { kind: 'number', validations: ['positive'] } },
       } }],
     }, { representation: 'wire', portable: true, onNonportable: message => warnings.push(message) });
-    assertAccepts(validator(projected), -1);
+    assertAccepts(await validator(projected), -1);
     assert.ok(warnings.length > 0);
     assert.doesNotMatch(JSON.stringify(projected), /positive|exprtValidation/);
   }

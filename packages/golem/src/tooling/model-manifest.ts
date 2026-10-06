@@ -58,7 +58,7 @@ export function sourceDigest(value: unknown): string {
 }
 
 function isProfile(profile: unknown): profile is GolemProfile {
-  return isRecord(profile) && ['mobx', 'validation', 'ajvStandalone', 'allowAny'].every(key => typeof profile[key] === 'boolean');
+  return isRecord(profile) && ['mobx', 'validation', 'allowAny'].every(key => typeof profile[key] === 'boolean');
 }
 
 export function validateModelProfile(profile: unknown, filename = MODEL_MANIFEST_FILENAME): GolemProfile {
@@ -67,13 +67,13 @@ export function validateModelProfile(profile: unknown, filename = MODEL_MANIFEST
   }
   if (!isProfile(profile)) {
     throw new Error(
-      `Invalid model manifest ${filename}: profile must include mobx, validation, ajvStandalone and allowAny booleans. Regenerate the models.`,
+      `Invalid model manifest ${filename}: profile must include mobx, validation and allowAny booleans. Regenerate the models.`,
     );
   }
   if (profile.unknownFormats !== undefined && profile.unknownFormats !== 'warn' && profile.unknownFormats !== 'error') {
     throw new Error(`Invalid model manifest ${filename}: profile unknownFormats must be "warn" or "error". Regenerate the models.`);
   }
-  const unknown = Object.keys(profile).filter((key) => !['mobx', 'validation', 'ajvStandalone', 'allowAny', 'unknownFormats'].includes(key));
+  const unknown = Object.keys(profile).filter((key) => !['mobx', 'validation', 'allowAny', 'unknownFormats'].includes(key));
   if (unknown.length > 0) {
     throw new Error(
       `Invalid model manifest ${filename}: profile has unsupported field(s): ${unknown.join(', ')}.`,

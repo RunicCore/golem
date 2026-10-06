@@ -5,7 +5,6 @@ import { writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import test from 'node:test';
-import { createOpenApiAjvEngine } from '@exprtlabs/golem/ajv';
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 import { generate, findRemoteRefs, loadValidatedDocument } from '#openapi/generator';
 import { collectCanonicalResources, projectSchema } from '#openapi/schema-projection';
@@ -16,8 +15,9 @@ import {
   isGeneratedClientClass,
   requireRecord,
 } from './helpers.js';
+import { compileValidators } from '../support/compiled-validators.js';
 
-test('equivalent directional resources share a scope while request and response rules remain distinct', () => {
+test('equivalent directional resources share a scope while request and response rules remain distinct', async () => {
   const document = (readOnly: boolean, ownId: boolean) => ({
     openapi: '3.1.0', info: { title: 'ResourceReuse', version: '1' },
     components: { schemas: { Item: {
@@ -34,15 +34,18 @@ test('equivalent directional resources share a scope while request and response 
     const data = buildSchemaData(document(readOnly, ownId));
     const registry = requireRecord(data.normalizedRegistry, 'registry');
     assert.equal(Object.keys(requireRecord(registry.$defs, 'directional resources')).length, readOnly || ownId ? 2 : 1);
-    const engine = createOpenApiAjvEngine();
-    engine.addSchema(registry, String(registry.$id));
-    const input = engine.getSchema(`${registry.$id}#/operations/save/input`);
-    const response = engine.getSchema(`${registry.$id}#/operations/save/responses/200/application~1json`);
-    assert.ok(input); assert.ok(response);
-    assert.equal(input({ body: { name: 'Example', id: '1' } }), !readOnly);
-    assert.equal(input({ body: { name: 'Example' } }), readOnly);
-    assert.equal(response({ name: 'Example', id: '1' }), true);
-    assert.equal(response({ name: 'Example' }), false);
+    const id = String(registry.$id);
+    const { input, response } = await compileValidators({
+      roots: {
+        input: { $ref: `${id}#/operations/save/input` },
+        response: { $ref: `${id}#/operations/save/responses/200/application~1json` },
+      },
+      resources: { [id]: registry },
+    });
+    assert.equal(input({ body: { name: 'Example', id: '1' } }, true).length === 0, !readOnly);
+    assert.equal(input({ body: { name: 'Example' } }, true).length === 0, readOnly);
+    assert.equal(response({ name: 'Example', id: '1' }, true).length, 0);
+    assert.notEqual(response({ name: 'Example' }, true).length, 0);
   }
 });
 
@@ -98,14 +101,14 @@ async function generateProjection(t: TestContext, openapi: string) {
   const result = await generateMaterializedSdk(directionalComponents(openapi), {
     output,
     name: 'Projection',
-    profile: standaloneProfile,
+    profile: validatingProfile,
   });
   const manifest = result.artifacts.find((artifact) => artifact.path.endsWith('/model-manifest.json'))?.content ?? '';
   return { output, manifest, registry: runtimeRegistry(directionalComponents(openapi)), artifacts: result.artifacts };
 }
 
-/** Operations of a standalone SDK validate with their generated validator modules. */
-const standaloneProfile = { mobx: false, validation: true, ajvStandalone: true } as const;
+/** Operations of a validating SDK check with their generated validator modules. */
+const validatingProfile = { mobx: false, validation: true } as const;
 
 interface OperationProbe {
   /** True when the client let the input through to the transport. */
@@ -147,36 +150,16 @@ async function clientProbe(output: string, clientName: string): Promise<Operatio
   };
 }
 
-/** Probes the standalone SDK and a default-Ajv SDK of the same document; the two must agree. */
-async function operationProbe(output: string, clientName: string, document: unknown): Promise<OperationProbe> {
-  const ajvOutput = `${output}-ajv`;
-  await generateMaterializedSdk(document, { output: ajvOutput, name: clientName, profile: { mobx: false, validation: true } });
-  compileGeneratedSdk(ajvOutput);
-  const probes = [await clientProbe(output, clientName), await clientProbe(ajvOutput, clientName)];
-  const agreed = async (operation: string, check: (probe: OperationProbe) => Promise<boolean>): Promise<boolean> => {
-    const [standalone, ajv] = await Promise.all(probes.map(check));
-    assert.equal(standalone, ajv, `the standalone and Ajv SDKs agree on ${operation}`);
-    return standalone === true;
-  };
-  return {
-    acceptsInput: (operation, input) => agreed(operation, (probe) => probe.acceptsInput(operation, input)),
-    acceptsResponse: (operation, input, reply) => agreed(operation, (probe) => probe.acceptsResponse(operation, input, reply)),
-  };
-}
-
 /** Validates a value against one neutral component schema of the emitted registry. */
-function componentValidator(registry: Record<string, unknown>, name: string): (value: unknown) => boolean | Promise<boolean> {
-  const engine = createOpenApiAjvEngine();
+async function componentValidator(registry: Record<string, unknown>, name: string): Promise<(value: unknown) => boolean> {
   const id = String(registry.$id);
-  if (!engine.getSchema(id)) engine.addSchema(registry, id);
+  const resources: Record<string, unknown> = { [id]: registry };
   for (const resource of Object.values(requireRecord(registry.$defs ?? {}, 'registry resources'))) {
-    const resourceId = isRecordWithId(resource) ? resource.$id : undefined;
-    if (resourceId !== undefined && !engine.getSchema(resourceId)) engine.addSchema(resource as object, resourceId);
+    if (isRecordWithId(resource)) resources[resource.$id] ??= resource;
   }
   const token = encodeURIComponent(name.replace(/~/g, '~0').replace(/\//g, '~1'));
-  const validator = engine.getSchema(`${id}#/components/schemas/${token}`);
-  assert.ok(validator, `component schema ${name} compiles`);
-  return validator;
+  const { component } = await compileValidators({ roots: { component: { $ref: `${id}#/components/schemas/${token}` } }, resources });
+  return value => component(value, true).length === 0;
 }
 
 function isRecordWithId(value: unknown): value is { $id: string } {
@@ -282,11 +265,11 @@ test('public generation validates repeated aliases, sibling allOf required, and 
       },
     },
   };
-  await generateMaterializedSdk(document, { output, name: 'Aliases', profile: standaloneProfile });
+  await generateMaterializedSdk(document, { output, name: 'Aliases', profile: validatingProfile });
   copyFixtureFile(output, "openapi/schema-projection/alias-assert.ts", "alias-assert.ts");
   compileGeneratedSdk(output, [path.join(output, 'alias-assert.ts')], { strict: true });
-  const probe = await operationProbe(output, 'Aliases', document);
-  const userModel = componentValidator(runtimeRegistry(document), 'UserBase');
+  const probe = await clientProbe(output, 'Aliases');
+  const userModel = await componentValidator(runtimeRegistry(document), 'UserBase');
 
   const request = { name: 'Ada', secretOne: 'one', secretTwo: 'two' };
   const reply = { name: 'Ada', first: 'id-1', second: 'id-2' };
@@ -397,7 +380,7 @@ test('allOf required names from any member make the declared property required i
       },
     },
   };
-  await generateMaterializedSdk(document, { output, name: 'AllOfRequired', profile: standaloneProfile });
+  await generateMaterializedSdk(document, { output, name: 'AllOfRequired', profile: validatingProfile });
   copyFixtureFile(output, 'openapi/schema-projection/allof-required-assert.ts', 'allof-required-assert.ts');
   compileGeneratedSdk(output, [path.join(output, 'allof-required-assert.ts')], { strict: true });
 });
@@ -465,8 +448,8 @@ async function assertDirectionalEnvelope(
   assert.doesNotMatch(inputPack, new RegExp(`"user": \\{\\s*"\\$ref": "${escaped}"`));
   assert.match(inputPack, new RegExp(`${escaped}:input`));
 
-  const probe = await operationProbe(output, 'Absolute', document);
-  const userModel = componentValidator(runtimeRegistry(document), 'User');
+  const probe = await clientProbe(output, 'Absolute');
+  const userModel = await componentValidator(runtimeRegistry(document), 'User');
 
   const requestUser = { id: 'u1', secret: 's' };
   const replyUser = { id: 'u1', serverValue: 'ok' };
@@ -479,7 +462,7 @@ async function assertDirectionalEnvelope(
   assert.equal(await userModel({ id: 'u1', secret: 's' }), false);
 }
 
-test('absolute and relative $id refs remap onto directional resources for Ajv', async (t) => {
+test('absolute and relative $id refs remap onto directional resources', async (t) => {
   const output = path.join(createFixtureProject(t, 'golem-openapi-absid-'), 'sdk');
   const document = directionalUserEnvelope(
     'https://schemas.example.test/user',
@@ -497,7 +480,7 @@ test('absolute and relative $id refs remap onto directional resources for Ajv', 
     await generateMaterializedSdk(document, {
       output,
       name: 'Absolute',
-      profile: standaloneProfile,
+      profile: validatingProfile,
     });
     await assertDirectionalEnvelope(document, output, 'https://schemas.example.test/user');
     assert.equal(fetched, false);
@@ -676,8 +659,8 @@ test('directional projection is consistent on OAS 3.1 and 3.2 and keeps neutral 
       continue;
     }
     compileGeneratedSdk(generated.output);
-    const probe = await operationProbe(generated.output, 'Projection', directionalComponents(openapi));
-    const widgetModel = componentValidator(generated.registry, 'Widget');
+    const probe = await clientProbe(generated.output, 'Projection');
+    const widgetModel = await componentValidator(generated.registry, 'Widget');
     const widgetRequest = { body: { id: 'w1', secret: 's' } };
 
     assert.equal(await probe.acceptsInput('putWidget', widgetRequest), true);
@@ -687,7 +670,7 @@ test('directional projection is consistent on OAS 3.1 and 3.2 and keeps neutral 
 
     assert.equal(await widgetModel({ id: 'w1', secret: 's', serverValue: 'ok' }), true);
 
-    const requiredOnly = componentValidator(generated.registry, 'RequiredOnly');
+    const requiredOnly = await componentValidator(generated.registry, 'RequiredOnly');
     assert.equal(await requiredOnly({ ghost: 1 }), true);
     assert.equal(await requiredOnly({}), false);
   }

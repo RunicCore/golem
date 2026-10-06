@@ -4,13 +4,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import test, { type TestContext } from 'node:test';
 
-import {
-  Ajv2020,
-  type AnySchema,
-  type ValidateFunction,
-} from 'ajv/dist/2020.js';
 import { schemaForDescriptor } from '@exprtlabs/golem/schema';
 import { requireObjectCodec } from '@exprtlabs/golem/serde';
+import type { Validator } from '@exprtlabs/golem/validation-runtime';
 import { getValidator } from '@exprtlabs/golem/validation';
 import { analyzeSourceGraph } from '#model/emit';
 import { generate } from '#model/generator';
@@ -21,6 +17,7 @@ import { generate as generateControllers } from '#controllers/generator';
 import { workspace } from './support/process.js';
 import { buildModelProject, generatedModelFiles, writeModelGolemYaml } from './model-project.js';
 import { generatedCodecIdFromRoot } from './support/consumer.js';
+import { compileSchema } from './support/compiled-validators.js';
 import { containsSiblingConstraintSource } from './fixture-templates/models/constraint-parity.js';
 
 interface Fixture {
@@ -64,7 +61,7 @@ async function compile(root: string): Promise<void> {
   await buildModelProject(root);
 }
 
-async function controllerValidators(root: string): Promise<readonly ValidateFunction[]> {
+async function controllerValidators(root: string): Promise<readonly Validator[]> {
   linkProjectPackages(root, {
     '@nestjs/common': path.join(workspace, 'node_modules/@nestjs/common'),
   });
@@ -72,7 +69,7 @@ async function controllerValidators(root: string): Promise<readonly ValidateFunc
     path: path.join(root, 'src/a.controller.ts'),
     content: readFixture('models/constraint-parity/constraint-parity-a-controller/a.controller.ts'),
   }]);
-  const validators: ValidateFunction[] = [];
+  const validators: Validator[] = [];
   for (const openapiVersion of ['3.2.0', '3.1.2'] as const) {
     const result = await generateControllers({
       root, output: path.join(root, `openapi-${openapiVersion}.json`), openapiVersion,
@@ -80,21 +77,20 @@ async function controllerValidators(root: string): Promise<readonly ValidateFunc
       profile: { mobx: false, validation: true },
     });
     const document: {
-      components: { schemas: Record<string, AnySchema> };
-      paths: Record<string, { post: { requestBody: { content: Record<string, { schema: AnySchema }> } } }>;
+      components: { schemas: Record<string, unknown> };
+      paths: Record<string, { post: { requestBody: { content: Record<string, { schema: unknown }> } } }>;
     } = JSON.parse(result.artifacts[0].content);
     const schema = document.paths['/constraints'].post.requestBody.content['application/json'].schema;
     const schemaDocument = {
       components: document.components,
       allOf: [schema],
     };
-    const ajv = new Ajv2020({ allErrors: true, strict: false, validateSchema: false });
-    validators.push(ajv.compile(schemaDocument as AnySchema));
+    validators.push(await compileSchema(schemaDocument));
   }
   return validators;
 }
 
-function canonicalModelValidator(root: string, sourceRoot: string): ValidateFunction {
+function canonicalModelSchema(root: string, sourceRoot: string): unknown {
   const source = path.join(sourceRoot, 'a.model.ts');
   const profile = { mobx: false, validation: true } as const;
   const programInfo = createProgram([source], root);
@@ -120,8 +116,7 @@ function canonicalModelValidator(root: string, sourceRoot: string): ValidateFunc
   const descriptor = graph.definitions.TA;
   assert.ok(descriptor, 'generated root descriptor');
   const schema = schemaForDescriptor(descriptor, { definitions: graph.definitions });
-  const ajv = new Ajv2020({ allErrors: true, strict: false, validateSchema: false });
-  return ajv.compile(schema as AnySchema);
+  return schema;
 }
 
 const cases = {
@@ -171,18 +166,18 @@ function validModelValues(): FixtureValues {
 
 function assertParity(
   model: object,
-  canonical: ValidateFunction | undefined,
+  canonical: Validator,
   value: FixtureValues,
   expected: boolean,
 ): Promise<void> {
-  if (canonical) assert.equal(canonical(value), expected, `canonical schema mismatch: ${JSON.stringify(canonical.errors)}`);
+  assert.equal(canonical(value, true).length === 0, expected, `canonical schema mismatch: ${JSON.stringify(canonical(value, true))}`);
   const validator = getValidator(model);
   return validator.validate().then((actual) => {
     assert.equal(actual, expected, `generated validator mismatch: ${JSON.stringify(validator)}`);
   });
 }
 
-test('generated extended constraints match canonical schemas', async t => {
+test('generated extended constraints accept and reject the same wire values as the emitted schemas', async t => {
   const { root, sourceRoot } = fixture(t);
   writeGeneratedArtifacts([{
     path: path.join(sourceRoot, 'a.model.ts'),
@@ -197,14 +192,14 @@ test('generated extended constraints match canonical schemas', async t => {
 
   const { A } = await import(path.toNamespacedPath(path.join(root, 'build/a.model.js')));
   const codec = requireObjectCodec(generatedCodecIdFromRoot(root, 'TA'));
-  const canonical = canonicalModelValidator(root, sourceRoot);
+  const canonical = await compileSchema(canonicalModelSchema(root, sourceRoot));
   const valid = validModelValues();
   assert.equal(codec.validate(valid), true);
-  for (const validate of openApiValidators) assert.equal(validate(valid), true, JSON.stringify(validate.errors));
+  for (const validate of openApiValidators) assert.deepEqual(validate(valid, true), []);
   await assertParity(new A(valid), canonical, valid, true);
 
   const boundary = { ...valid, ...cases.boundaries } as unknown as FixtureValues;
-  for (const validate of openApiValidators) assert.equal(validate(boundary), true, JSON.stringify(validate.errors));
+  for (const validate of openApiValidators) assert.deepEqual(validate(boundary, true), []);
   await assertParity(new A(boundary), canonical, boundary, true);
 
   const invalidCases: readonly [keyof FixtureValues, unknown][] = [
@@ -235,8 +230,8 @@ test('generated extended constraints match canonical schemas', async t => {
   ];
   for (const [field, fieldValue] of invalidCases) {
     const candidate = { ...valid, [field]: fieldValue } as FixtureValues;
-    for (const validate of openApiValidators) assert.equal(validate(candidate), false, `OpenAPI accepts ${field}`);
-    if (canonical) assert.equal(canonical(candidate), false, `canonical accepts ${field}: ${JSON.stringify(canonical.errors)}`);
+    for (const validate of openApiValidators) assert.notDeepEqual(validate(candidate, true), [], `OpenAPI accepts ${field}`);
+    assert.notDeepEqual(canonical(candidate, true), [], `canonical accepts ${field}`);
     assert.equal(codec.validate(candidate), false, `generated validate accepts ${field}`);
     assert.throws(() => codec.parse(JSON.stringify(candidate)), field);
     assert.throws(() => codec.fromWireFormat(candidate), field);

@@ -10,40 +10,25 @@ let registry: PackedRegistry;
 before(async () => { registry = await startRegistry(); });
 after(async () => { await registry?.close(); });
 
-const RUNS: readonly { readonly standalone: boolean; readonly adapters: readonly ('express' | 'fastify')[] }[] = [
-  { standalone: false, adapters: ['express', 'fastify'] },
-  { standalone: true, adapters: ['express'] },
-];
+const ADAPTERS: readonly ('express' | 'fastify')[] = ['express', 'fastify'];
 
-for (const { standalone, adapters } of RUNS) {
-  test(`packed Nest consumer round trips on ${adapters.join(' and ')}, standalone=${standalone}`, async t => {
-    const root = registry.create(t, `nest-app-${standalone}`);
-    copyFixture(root, 'packed/nest-app');
-    if (standalone) {
-      const packageFile = path.join(root, 'package.json');
-      const manifest: { dependencies: Record<string, string>; devDependencies: Record<string, string> } = JSON.parse(fs.readFileSync(packageFile, 'utf8'));
-      for (const name of ['ajv', 'ajv-formats']) {
-        manifest.devDependencies[name] = manifest.dependencies[name];
-        delete manifest.dependencies[name];
-      }
-      fs.writeFileSync(packageFile, JSON.stringify(manifest, null, 2));
-    }
-    await npm(root, ['install']);
-    fs.appendFileSync(path.join(root, 'golem.yaml'), `\najvStandalone: ${standalone}\n`);
-    await cli(root, ['generate']);
-    await cli(root, ['check']);
-    await cli(root, ['build']);
-    await npm(root, ['prune', '--omit=dev'], { includeOptional: false });
-    for (const name of ['@exprtlabs/golem-model', '@exprtlabs/golem-openapi', '@exprtlabs/golem-ts-openapi', 'typescript']) {
-      assert.equal(fs.existsSync(path.join(root, 'node_modules', name)), false, `${name} must not be a production dependency`);
-    }
-    for (const adapter of adapters) {
-      // verify.mjs checks create/read/list/delete, class construction, query
-      // arrays, invalid body and query, malformed JSON, rejection before the
-      // controller runs, and codec identity. It throws on any failure.
-      await t.test(adapter, async () => {
-        await command(root, process.execPath, ['verify.mjs'], { env: { TEST_HTTP_ADAPTER: adapter }, timeout: 120_000 });
-      });
-    }
-  });
-}
+test(`packed Nest consumer round trips on ${ADAPTERS.join(' and ')}`, async t => {
+  const root = registry.create(t, 'nest-app');
+  copyFixture(root, 'packed/nest-app');
+  await npm(root, ['install']);
+  await cli(root, ['generate']);
+  await cli(root, ['check']);
+  await cli(root, ['build']);
+  await npm(root, ['prune', '--omit=dev'], { includeOptional: false });
+  for (const name of ['@exprtlabs/golem-model', '@exprtlabs/golem-openapi', '@exprtlabs/golem-ts-openapi', 'typescript']) {
+    assert.equal(fs.existsSync(path.join(root, 'node_modules', name)), false, `${name} must not be a production dependency`);
+  }
+  for (const adapter of ADAPTERS) {
+    // verify.mjs checks create/read/list/delete, class construction, query
+    // arrays, invalid body and query, malformed JSON, rejection before the
+    // controller runs, and codec identity. It throws on any failure.
+    await t.test(adapter, async () => {
+      await command(root, process.execPath, ['verify.mjs'], { env: { TEST_HTTP_ADAPTER: adapter }, timeout: 120_000 });
+    });
+  }
+});

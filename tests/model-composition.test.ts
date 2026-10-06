@@ -90,26 +90,24 @@ test('generic model templates require a concrete named declaration', t => {
   assert.throws(() => generate({ root, profile: { mobx: false, validation: true } }), /RUNM1057.*concrete fields/);
 });
 
-for (const ajvStandalone of [false, true]) {
-  test(`MobX projections retain nested observability with standalone=${ajvStandalone}`, async t => {
-    const { root, sourceRoot } = fixture(t, ajvStandalone);
-    fs.writeFileSync(path.join(sourceRoot, 'item.model.ts'), readFixture("models/model-composition/model-composition-item-model/item.model.ts"));
-    writeModelGolemYaml(root, { mobx: true, validation: true, ajvStandalone });
-    await buildModelProject(root);
-    const { Parent, Child } = await import(path.join(root, 'build/item.model.js'));
-    const { autorun, isObservableObject, runInAction } = await import('mobx');
-    const parent = decodeGeneratedModel(Parent, { projected: { child: { name: 'First' } } });
-    assert.ok(parent.projected.child instanceof Child);
-    assert.equal(Object.getPrototypeOf(parent.projected), Object.prototype);
-    assert.ok(isObservableObject(parent.projected.child));
-    const seen: string[] = [];
-    const dispose = autorun(() => { seen.push(parent.projected.child.name); });
-    try {
-      runInAction(() => { parent.projected.child.name = 'Next'; });
-      assert.deepEqual(seen, ['First', 'Next']);
-      assert.deepEqual(encodeGeneratedModel(parent), { projected: { child: { name: 'Next' } } });
-      runInAction(() => { parent.projected.child.name = 'x'; });
-      assert.throws(() => requireObjectCodec(generatedCodecIdFromRoot(root, 'Parent')).assert( encodeGeneratedModel(parent)));
-    } finally { dispose(); }
-  });
-}
+test('MobX projections retain nested observability', async t => {
+  const { root, sourceRoot } = fixture(t);
+  fs.writeFileSync(path.join(sourceRoot, 'item.model.ts'), readFixture("models/model-composition/model-composition-item-model/item.model.ts"));
+  writeModelGolemYaml(root, { mobx: true, validation: true });
+  await buildModelProject(root);
+  const { Parent, Child } = await import(path.join(root, 'build/item.model.js'));
+  const { autorun, isObservableObject, runInAction } = await import('mobx');
+  const parent = decodeGeneratedModel(Parent, { projected: { child: { name: 'First' } } });
+  assert.ok(parent.projected.child instanceof Child);
+  assert.equal(Object.getPrototypeOf(parent.projected), Object.prototype);
+  assert.ok(isObservableObject(parent.projected.child));
+  const seen: string[] = [];
+  const dispose = autorun(() => { seen.push(parent.projected.child.name); });
+  try {
+    runInAction(() => { parent.projected.child.name = 'Next'; });
+    assert.deepEqual(seen, ['First', 'Next']);
+    assert.deepEqual(encodeGeneratedModel(parent), { projected: { child: { name: 'Next' } } });
+    runInAction(() => { parent.projected.child.name = 'x'; });
+    assert.throws(() => requireObjectCodec(generatedCodecIdFromRoot(root, 'Parent')).assert( encodeGeneratedModel(parent)));
+  } finally { dispose(); }
+});

@@ -78,7 +78,7 @@ test('prefixItems type is a prefix-length union filtered by min/max and items:fa
   }), 'never');
 });
 
-test('prefixItems closed and rest tuples compile in strict TypeScript and validate on default Ajv', async (t) => {
+test('prefixItems closed and rest tuples compile in strict TypeScript and validate at runtime', async (t) => {
   const output = path.join(createFixtureProject(t, 'golem-openapi-prefix-'), 'sdk');
   await generateMaterializedSdk(prefixDoc({
     putTuple: {

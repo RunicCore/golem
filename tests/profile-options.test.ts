@@ -20,7 +20,6 @@ function profile(overrides: Partial<GolemProfile> = {}): GolemProfile {
   return {
     mobx: false,
     validation: true,
-    ajvStandalone: false,
     allowAny: false,
     ...overrides,
   };

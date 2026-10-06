@@ -501,7 +501,7 @@ function patternSchemaMap(
   const result = schemaMap(context, type, node, owner, label);
   for (const pattern of Object.keys(result)) {
     try {
-      // Ajv compiles JSON Schema patterns with the Unicode flag. Validate the
+      // Generated validators compile JSON Schema patterns with the Unicode flag. Validate the
       // same expression during analysis so malformed metadata never reaches
       // generated output.
       void new RegExp(pattern, 'u');
@@ -720,7 +720,7 @@ function parseTag(
       if (typeof value !== 'string') throw context.diagnostic(node, '1044', `${name} requires a string literal argument.`);
       if (name === 'Pattern') {
         try {
-          // Ajv compiles JSON Schema patterns with the Unicode flag.  Parse
+          // Generated validators compile JSON Schema patterns with the Unicode flag.  Parse
           // the same expression here so malformed patterns fail before any
           // generated artifact can be written.
           void new RegExp(value, 'u');

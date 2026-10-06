@@ -9,7 +9,7 @@ import { build } from 'esbuild';
 import { cli, command, npm } from '../support/process.js';
 import { writeFixture } from '../support/consumer.js';
 import { startRegistry, packageSpec, type PackedRegistry } from '../../scripts/packed-registry.js';
-import { AJV, AJV_FORMATS, ESBUILD, MOBX } from '../../scripts/third-party-installs.js';
+import { ESBUILD, MOBX } from '../../scripts/third-party-installs.js';
 import { copyFixture, copyFixtureFile, readFixture } from '../fixture-project.js';
 
 let registry: PackedRegistry;
@@ -35,270 +35,231 @@ after(async () => {
   await registry?.close();
 });
 
-for (const standalone of [false, true]) {
-  test(`packed browser executes reusable APIs, nested MobX models and custom codecs with standalone=${standalone}`, async t => {
-    const root = registry.create(t, `browser-${standalone}`);
-    await npm(root, ['install', '--save-dev', packageSpec(registry, '@exprtlabs/golem-model'), packageSpec(registry, '@exprtlabs/golem-openapi')]);
-    if (standalone) await npm(root, ['install', '--save-dev', ESBUILD]);
-    await npm(root, ['install', '--save-prod', packageSpec(registry, '@exprtlabs/golem'), MOBX]);
-    await npm(root, ['install', standalone ? '--save-dev' : '--save-prod', AJV, AJV_FORMATS]);
-    writeFixture(root, { mobx: true, validation: true, ajvStandalone: standalone });
-    const apiFile = path.join(root, 'api.json');
-    const apiDocument = JSON.parse(fs.readFileSync(apiFile, 'utf8'));
-    apiDocument.paths['/money'].get.parameters = [
-      { name: 'request', in: 'query', required: true, schema: { type: 'integer' } },
-    ];
-    fs.writeFileSync(apiFile, JSON.stringify(apiDocument));
-    await cli(root, ['generate']);
-    copyFixtureFile(root, 'browser/packed-runtime/codecs.ts', 'src/codecs.ts');
-    copyFixtureFile(root, 'browser/packed-runtime/cart.model.ts', 'src/cart.model.ts');
-    await cli(root, ['generate']);
-    copyFixtureFile(root, 'browser/packed-runtime/src/browser.ts', 'src/browser.ts');
-    await cli(root, ['build']);
-    await npm(root, ['prune', '--omit=dev'], { includeOptional: false });
-    for (const name of ['typescript', '@exprtlabs/golem-model', '@exprtlabs/golem-openapi', ...(standalone ? ['ajv', 'ajv-formats', 'esbuild'] : [])]) {
-      assert.equal(fs.existsSync(path.join(root, 'node_modules', name)), false, `${name} is not an application dependency`);
+test('packed browser executes reusable APIs, nested MobX models and custom codecs', async t => {
+  const root = registry.create(t, 'browser');
+  await npm(root, ['install', '--save-dev', packageSpec(registry, '@exprtlabs/golem-model'), packageSpec(registry, '@exprtlabs/golem-openapi')]);
+  await npm(root, ['install', '--save-dev', ESBUILD]);
+  await npm(root, ['install', '--save-prod', packageSpec(registry, '@exprtlabs/golem'), MOBX]);
+  writeFixture(root, { mobx: true, validation: true });
+  const apiFile = path.join(root, 'api.json');
+  const apiDocument = JSON.parse(fs.readFileSync(apiFile, 'utf8'));
+  apiDocument.paths['/money'].get.parameters = [
+    { name: 'request', in: 'query', required: true, schema: { type: 'integer' } },
+  ];
+  fs.writeFileSync(apiFile, JSON.stringify(apiDocument));
+  await cli(root, ['generate']);
+  copyFixtureFile(root, 'browser/packed-runtime/codecs.ts', 'src/codecs.ts');
+  copyFixtureFile(root, 'browser/packed-runtime/cart.model.ts', 'src/cart.model.ts');
+  await cli(root, ['generate']);
+  copyFixtureFile(root, 'browser/packed-runtime/src/browser.ts', 'src/browser.ts');
+  await cli(root, ['build']);
+  await npm(root, ['prune', '--omit=dev'], { includeOptional: false });
+  for (const name of ['typescript', '@exprtlabs/golem-model', '@exprtlabs/golem-openapi', 'esbuild']) {
+    assert.equal(fs.existsSync(path.join(root, 'node_modules', name)), false, `${name} is not an application dependency`);
+  }
+  const bundled = await build({ entryPoints: [path.join(root, 'build/src/browser.js')], bundle: true, platform: 'browser', format: 'esm', write: false, metafile: true });
+  assert.doesNotMatch(Object.keys(bundled.metafile.inputs).join('\n'), /node:|\/tooling\/|\/typescript\//);
+  const code = bundled.outputFiles[0].text;
+  assert.doesNotMatch(code, /\btypeScriptRuntimeValidator\b|\bmodelTypeDefinitions\w*|\bmodelWireDefinitions\w*/, 'packed models execute emitted checks without the descriptor interpreter');
+  let requests = 0;
+  let postRequests = 0;
+  let abortStarted = false;
+  let abortHandshake: http.ServerResponse | undefined;
+  const held: Array<{ response: http.ServerResponse; amount: number }> = [];
+  const reply = (response: http.ServerResponse, amount: number) => {
+    response.setHeader('content-type', 'application/json');
+    response.end(JSON.stringify({ amount, currency: 'USD' }));
+  };
+  const csp = `default-src 'none'; script-src 'self'; connect-src 'self'`;
+  const html = readFixture('browser/packed-runtime/index.html');
+  const server = http.createServer((request, response) => {
+    const url = new URL(request.url ?? '/', 'http://localhost');
+    if (url.pathname === '/abort/money') {
+      abortStarted = true;
+      abortHandshake?.end('ready');
+      // Leave the actual HTTP request pending until the browser aborts it.
+    } else if (request.url === '/abort-started') {
+      if (abortStarted) response.end('ready');
+      else abortHandshake = response;
+    } else if (url.pathname === '/explicit-fetch/money') {
+      reply(response, Number(url.searchParams.get('request')));
+    } else if (url.pathname === '/money') {
+      if (request.method === 'POST') postRequests++;
+      requests++;
+      if (requests <= 2) {
+        held.push({ response, amount: Number(url.searchParams.get('request')) });
+        if (held.length === 2) { reply(held[1].response, held[1].amount); reply(held[0].response, held[0].amount); }
+      } else reply(response, requests);
+    } else if (request.url === '/app.js') {
+      response.setHeader('content-type', 'text/javascript');
+      response.end(code);
+    } else {
+      response.setHeader('content-type', 'text/html');
+      response.setHeader('content-security-policy', csp);
+      response.end(html);
     }
-    const bundled = await build({ entryPoints: [path.join(root, 'build/src/browser.js')], bundle: true, platform: 'browser', format: 'esm', write: false, metafile: true });
-    assert.doesNotMatch(Object.keys(bundled.metafile.inputs).join('\n'), /node:|\/tooling\/|\/typescript\//);
-    if (standalone) assert.doesNotMatch(Object.keys(bundled.metafile.inputs).join('\n'), /node_modules\/(?:ajv|ajv-formats)\//);
-    const code = bundled.outputFiles[0].text;
-    assert.doesNotMatch(code, /\btypeScriptRuntimeValidator\b|\bmodelTypeDefinitions\w*|\bmodelWireDefinitions\w*/, 'packed models execute emitted checks without the descriptor interpreter');
-    let requests = 0;
-    let postRequests = 0;
-    let abortStarted = false;
-    let abortHandshake: http.ServerResponse | undefined;
-    const held: Array<{ response: http.ServerResponse; amount: number }> = [];
-    const reply = (response: http.ServerResponse, amount: number) => {
+  });
+  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => { server.closeAllConnections(); server.close(); });
+  const address = server.address();
+  if (!address || typeof address === 'string') throw new Error('Browser fixture did not bind');
+  const page = await browser.newPage();
+  t.after(() => page.close());
+  page.setDefaultTimeout(15_000);
+  page.setDefaultNavigationTimeout(15_000);
+  await trackBlockedEval(page);
+  const errors: string[] = [];
+  page.on('pageerror', error => errors.push(error.message));
+  const pageResponse = await page.goto(`http://127.0.0.1:${address.port}`);
+  assert.equal(pageResponse?.headers()['content-security-policy'], csp);
+  assert.equal(requests, 0, 'loading the application does not send an API request');
+  await page.getByRole('button', { name: 'Run' }).click();
+  try {
+    await page.waitForFunction(() => Boolean(document.querySelector('output')?.textContent), undefined, { timeout: 15_000 });
+  } catch (error) {
+    throw new Error(`Browser execution did not finish: ${JSON.stringify({ requests, abortStarted, errors })}`, { cause: error });
+  }
+  const result = JSON.parse(await page.locator('output').innerText());
+  assert.equal(result.failure, undefined);
+  assert.equal(result.nested, true);
+  assert.deepEqual(result.amounts, [1, 2]);
+  assert.equal(result.customValidationInitiallyValid, true);
+  assert.equal(result.customValidationRejectsZero, true);
+  assert.equal(result.customValidationError, 'Use a positive count');
+  assert.equal(result.decodedCode, 255);
+  assert.deepEqual(result.loading, [false, true, false, true, false]);
+  assert.equal(result.idle, true);
+  assert.deepEqual(result.values, [1, 2]);
+  assert.equal(result.next, 3);
+  assert.equal(result.rejected, true);
+  assert.equal(result.cancelled, true);
+  assert.equal(result.abortIdle, true);
+  assert.equal(result.explicitFetch, 7, 'a caller-supplied native fetch keeps its browser receiver');
+  assert.equal(abortStarted, true, 'cancellation happens after the request reaches the server');
+  assert.equal(result.warnings.length, 1);
+  assert.match(result.warnings[0], /getMoney/);
+  assert.deepEqual(result.json, { money: { amount: 2, currency: 'USD' }, note: 'draft', count: 2, code: 'ff' });
+  assert.equal(postRequests, 0, 'invalid input never reaches the network');
+  assert.equal(requests, 3);
+  assert.deepEqual(errors, []);
+  assert.deepEqual(await page.evaluate(() => Reflect.get(globalThis, 'blockedEvalSources')), []);
+});
+
+test('packed React form survives StrictMode, validation, retry and disposal', async t => {
+  const root = registry.create(t, 'react-consumer');
+  copyFixture(root, 'browser/react-app');
+  await npm(root, ['install']);
+  await cli(root, ['generate']);
+  await cli(root, ['check']);
+  await command(root, path.join(root, 'node_modules/.bin/tsc'), ['-p', 'tsconfig.json']);
+  await npm(root, ['prune', '--omit=dev'], { includeOptional: false });
+  const { golem } = await import(pathToFileURL(path.join(root, 'node_modules/@exprtlabs/golem/dist/tooling/esbuild.js')).href) as typeof import('@exprtlabs/golem/esbuild');
+  // The packed esbuild plugin scans the project's sources itself, so it loads TypeScript, a production dependency of this app, when it first rewrites a file. TypeScript runs from an optional native package that the prune removed, so the install restores it.
+  await npm(root, ['install', '--omit=dev']);
+  // A consumer bundles from its project directory: the plugin opens ./golem.yaml there and loads the project's TypeScript.
+  const testDirectory = process.cwd();
+  process.chdir(root);
+  const bundled = await build({
+    entryPoints: [path.join(root, 'src/browser-test-entry.tsx')], outfile: path.join(root, 'browser/app.js'),
+    bundle: true, platform: 'browser', format: 'esm', write: false, metafile: true,
+    // The development React build is the one where StrictMode replays effects.
+    define: { 'process.env.NODE_ENV': JSON.stringify('development') },
+    plugins: [golem()],
+  }).finally(() => { process.chdir(testDirectory); });
+  const javascript = bundled.outputFiles.find(file => file.path.endsWith('.js'))?.text;
+  const css = bundled.outputFiles.find(file => file.path.endsWith('.css'))?.text;
+  assert.ok(javascript && css, 'the app bundles its entry and styles');
+  const requests: unknown[] = [];
+  let failNext = false;
+  let holdNext = false;
+  let held: http.ServerResponse | undefined;
+  let aborted = false;
+  const csp = `default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'`;
+  const html = readFixture('browser/react-app/index.html');
+  const server = http.createServer(async (request, response) => {
+    if (request.url === '/app.js') {
+      response.setHeader('content-type', 'text/javascript'); response.end(javascript);
+    } else if (request.url === '/app.css') {
+      response.setHeader('content-type', 'text/css'); response.end(css);
+    } else if (request.url === '/payments' && request.method === 'POST') {
+      let body = '';
+      for await (const chunk of request) body += String(chunk);
+      requests.push(JSON.parse(body));
       response.setHeader('content-type', 'application/json');
-      response.end(JSON.stringify({ amount, currency: 'USD' }));
-    };
-    const csp = `default-src 'none'; script-src 'self'${standalone ? '' : " 'unsafe-eval'"}; connect-src 'self'`;
-    const html = readFixture('browser/packed-runtime/index.html');
-    const server = http.createServer((request, response) => {
-      const url = new URL(request.url ?? '/', 'http://localhost');
-      if (url.pathname === '/abort/money') {
-        abortStarted = true;
-        abortHandshake?.end('ready');
-        // Leave the actual HTTP request pending until the browser aborts it.
-      } else if (request.url === '/abort-started') {
-        if (abortStarted) response.end('ready');
-        else abortHandshake = response;
-      } else if (url.pathname === '/explicit-fetch/money') {
-        reply(response, Number(url.searchParams.get('request')));
-      } else if (url.pathname === '/money') {
-        if (request.method === 'POST') postRequests++;
-        requests++;
-        if (requests <= 2) {
-          held.push({ response, amount: Number(url.searchParams.get('request')) });
-          if (held.length === 2) { reply(held[1].response, held[1].amount); reply(held[0].response, held[0].amount); }
-        } else reply(response, requests);
-      } else if (request.url === '/app.js') {
-        response.setHeader('content-type', 'text/javascript');
-        response.end(code);
+      if (holdNext) {
+        holdNext = false; held = response;
+        response.on('close', () => { if (!response.writableEnded) aborted = true; });
+      } else if (failNext) {
+        failNext = false; response.statusCode = 500; response.end('{"message":"temporary failure"}');
       } else {
-        response.setHeader('content-type', 'text/html');
-        response.setHeader('content-security-policy', url.pathname === '/strict'
-          ? "default-src 'none'; script-src 'self'; connect-src 'self'" : csp);
-        response.end(html);
+        response.statusCode = 201; response.end(body);
       }
-    });
-    await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
-    t.after(() => { server.closeAllConnections(); server.close(); });
-    const address = server.address();
-    if (!address || typeof address === 'string') throw new Error('Browser fixture did not bind');
-    const page = await browser.newPage();
-    t.after(() => page.close());
-    page.setDefaultTimeout(15_000);
-    page.setDefaultNavigationTimeout(15_000);
-    if (standalone) await trackBlockedEval(page);
-    const errors: string[] = [];
-    page.on('pageerror', error => errors.push(error.message));
-    const pageResponse = await page.goto(`http://127.0.0.1:${address.port}`);
-    assert.equal(pageResponse?.headers()['content-security-policy'], csp);
-    assert.equal(requests, 0, 'loading the application does not send an API request');
-    await page.getByRole('button', { name: 'Run' }).click();
-    try {
-      await page.waitForFunction(() => Boolean(document.querySelector('output')?.textContent), undefined, { timeout: 15_000 });
-    } catch (error) {
-      throw new Error(`Browser execution did not finish: ${JSON.stringify({ requests, abortStarted, errors })}`, { cause: error });
-    }
-    const result = JSON.parse(await page.locator('output').innerText());
-    assert.equal(result.failure, undefined);
-    assert.equal(result.nested, true);
-    assert.deepEqual(result.amounts, [1, 2]);
-    assert.equal(result.customValidationInitiallyValid, true);
-    assert.equal(result.customValidationRejectsZero, true);
-    assert.equal(result.customValidationError, 'Use a positive count');
-    assert.equal(result.decodedCode, 255);
-    assert.deepEqual(result.loading, [false, true, false, true, false]);
-    assert.equal(result.idle, true);
-    assert.deepEqual(result.values, [1, 2]);
-    assert.equal(result.next, 3);
-    assert.equal(result.rejected, true);
-    assert.equal(result.cancelled, true);
-    assert.equal(result.abortIdle, true);
-    assert.equal(result.explicitFetch, 7, 'a caller-supplied native fetch keeps its browser receiver');
-    assert.equal(abortStarted, true, 'cancellation happens after the request reaches the server');
-    assert.equal(result.warnings.length, 1);
-    assert.match(result.warnings[0], /getMoney/);
-    assert.deepEqual(result.json, { money: { amount: 2, currency: 'USD' }, note: 'draft', count: 2, code: 'ff' });
-    assert.equal(postRequests, 0, 'invalid input never reaches the network');
-    assert.equal(requests, 3);
-    assert.deepEqual(errors, []);
-    if (standalone) assert.deepEqual(await page.evaluate(() => Reflect.get(globalThis, 'blockedEvalSources')), []);
-    if (!standalone) {
-      // Runtime Ajv compiles schemas. Verify its CSP limitation with the same
-      // packed application, rather than implying it supports strict CSP.
-      const strictPage = await browser.newPage();
-      t.after(() => strictPage.close());
-      strictPage.setDefaultTimeout(15_000);
-      strictPage.setDefaultNavigationTimeout(15_000);
-      await strictPage.addInitScript(() => {
-        document.addEventListener('securitypolicyviolation', event => {
-          if (event.blockedURI === 'eval') Reflect.set(globalThis, 'blockedSchemaCompilation', true);
-        });
-      });
-      const strictResponse = await strictPage.goto(`http://127.0.0.1:${address.port}/strict`);
-      assert.doesNotMatch(strictResponse?.headers()['content-security-policy'] ?? '', /unsafe-eval/);
-      await strictPage.getByRole('button', { name: 'Run' }).click();
-      await strictPage.waitForFunction(() => Reflect.get(globalThis, 'blockedSchemaCompilation') === true, undefined, { timeout: 15_000 });
-      assert.equal(requests, 3, 'CSP-blocked schema compilation does not send a request');
+    } else {
+      response.setHeader('content-type', 'text/html');
+      response.setHeader('content-security-policy', csp);
+      response.end(html);
     }
   });
-}
+  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => { server.closeAllConnections(); server.close(); });
+  const address = server.address();
+  assert.ok(address && typeof address !== 'string');
+  const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+  t.after(() => page.close());
+  page.setDefaultTimeout(15_000);
+  page.setDefaultNavigationTimeout(15_000);
+  await trackBlockedEval(page);
+  const errors: string[] = [];
+  page.on('pageerror', error => errors.push(error.message));
+  const loaded = await page.goto(`http://127.0.0.1:${address.port}`);
+  assert.equal(loaded?.headers()['content-security-policy'], csp);
+  await expect(page.getByRole('heading', { name: 'Payment editor' })).toBeVisible();
+  await expect.poll(() => page.evaluate(() => Reflect.get(globalThis, 'storeDisposals'))).toBe(1);
+  assert.equal(requests.length, 0, 'StrictMode effect replay does not submit');
+  await page.getByRole('spinbutton', { name: /^Amount\b/ }).fill('40');
+  await page.getByLabel('Currency', { exact: true }).fill('eur');
+  await page.getByLabel('Note', { exact: false }).fill('Lunch');
+  await expect(page.locator('.summary-panel strong')).toHaveText('40 EUR: Lunch');
+  await page.getByRole('button', { name: 'Save payment' }).click();
+  await expect(page.getByRole('status')).toHaveText('Payment saved by the local demo server.');
+  assert.deepEqual(requests, [{ amount: 40, currency: 'EUR' }]);
 
-for (const standalone of [false, true]) {
-  test(`packed React form survives StrictMode, validation, retry and disposal, standalone=${standalone}`, async t => {
-    const root = registry.create(t, `react-consumer-${standalone}`);
-    copyFixture(root, 'browser/react-app');
-    if (standalone) {
-      const packageFile = path.join(root, 'package.json');
-      const manifest: { dependencies: Record<string, string>; devDependencies: Record<string, string> } = JSON.parse(fs.readFileSync(packageFile, 'utf8'));
-      for (const name of ['ajv', 'ajv-formats']) {
-        manifest.devDependencies[name] = manifest.dependencies[name];
-        delete manifest.dependencies[name];
-      }
-      fs.writeFileSync(packageFile, JSON.stringify(manifest, null, 2));
-    }
-    await npm(root, ['install']);
-    fs.appendFileSync(path.join(root, 'golem.yaml'), `\najvStandalone: ${standalone}\n`);
-    await cli(root, ['generate']);
-    await cli(root, ['check']);
-    await command(root, path.join(root, 'node_modules/.bin/tsc'), ['-p', 'tsconfig.json']);
-    await npm(root, ['prune', '--omit=dev'], { includeOptional: false });
-    const { golem } = await import(pathToFileURL(path.join(root, 'node_modules/@exprtlabs/golem/dist/tooling/esbuild.js')).href) as typeof import('@exprtlabs/golem/esbuild');
-    if (standalone) for (const name of ['ajv', 'ajv-formats']) {
-      assert.equal(fs.existsSync(path.join(root, 'node_modules', name)), false);
-    }
-    // The packed esbuild plugin scans the project's sources itself, so it loads TypeScript, a production dependency of this app, when it first rewrites a file. TypeScript runs from an optional native package that the prune removed, so the install restores it. A development-only Ajv comes back with it as an optional peer of golem, and the bundle check below shows the standalone bundle does not use it.
-    await npm(root, ['install', '--omit=dev']);
-    // A consumer bundles from its project directory: the plugin opens ./golem.yaml there and loads the project's TypeScript.
-    const testDirectory = process.cwd();
-    process.chdir(root);
-    const bundled = await build({
-      entryPoints: [path.join(root, 'src/browser-test-entry.tsx')], outfile: path.join(root, 'browser/app.js'),
-      bundle: true, platform: 'browser', format: 'esm', write: false, metafile: true,
-      // The development React build is the one where StrictMode replays effects.
-      define: { 'process.env.NODE_ENV': JSON.stringify('development') },
-      plugins: [golem()],
-    }).finally(() => { process.chdir(testDirectory); });
-    if (standalone) assert.doesNotMatch(Object.keys(bundled.metafile.inputs).join('\n'), /node_modules\/(?:ajv|ajv-formats)\//);
-    const javascript = bundled.outputFiles.find(file => file.path.endsWith('.js'))?.text;
-    const css = bundled.outputFiles.find(file => file.path.endsWith('.css'))?.text;
-    assert.ok(javascript && css, 'the app bundles its entry and styles');
-    const requests: unknown[] = [];
-    let failNext = false;
-    let holdNext = false;
-    let held: http.ServerResponse | undefined;
-    let aborted = false;
-    const csp = `default-src 'none'; script-src 'self'${standalone ? '' : " 'unsafe-eval'"}; style-src 'self'; connect-src 'self'`;
-    const html = readFixture('browser/react-app/index.html');
-    const server = http.createServer(async (request, response) => {
-      if (request.url === '/app.js') {
-        response.setHeader('content-type', 'text/javascript'); response.end(javascript);
-      } else if (request.url === '/app.css') {
-        response.setHeader('content-type', 'text/css'); response.end(css);
-      } else if (request.url === '/payments' && request.method === 'POST') {
-        let body = '';
-        for await (const chunk of request) body += String(chunk);
-        requests.push(JSON.parse(body));
-        response.setHeader('content-type', 'application/json');
-        if (holdNext) {
-          holdNext = false; held = response;
-          response.on('close', () => { if (!response.writableEnded) aborted = true; });
-        } else if (failNext) {
-          failNext = false; response.statusCode = 500; response.end('{"message":"temporary failure"}');
-        } else {
-          response.statusCode = 201; response.end(body);
-        }
-      } else {
-        response.setHeader('content-type', 'text/html');
-        response.setHeader('content-security-policy', csp);
-        response.end(html);
-      }
-    });
-    await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
-    t.after(() => { server.closeAllConnections(); server.close(); });
-    const address = server.address();
-    assert.ok(address && typeof address !== 'string');
-    const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
-    t.after(() => page.close());
-    page.setDefaultTimeout(15_000);
-    page.setDefaultNavigationTimeout(15_000);
-    if (standalone) await trackBlockedEval(page);
-    const errors: string[] = [];
-    page.on('pageerror', error => errors.push(error.message));
-    const loaded = await page.goto(`http://127.0.0.1:${address.port}`);
-    assert.equal(loaded?.headers()['content-security-policy'], csp);
-    await expect(page.getByRole('heading', { name: 'Payment editor' })).toBeVisible();
-    await expect.poll(() => page.evaluate(() => Reflect.get(globalThis, 'storeDisposals'))).toBe(1);
-    assert.equal(requests.length, 0, 'StrictMode effect replay does not submit');
-    await page.getByRole('spinbutton', { name: /^Amount\b/ }).fill('40');
-    await page.getByLabel('Currency', { exact: true }).fill('eur');
-    await page.getByLabel('Note', { exact: false }).fill('Lunch');
-    await expect(page.locator('.summary-panel strong')).toHaveText('40 EUR: Lunch');
-    await page.getByRole('button', { name: 'Save payment' }).click();
-    await expect(page.getByRole('status')).toHaveText('Payment saved by the local demo server.');
-    assert.deepEqual(requests, [{ amount: 40, currency: 'EUR' }]);
+  await page.getByRole('spinbutton', { name: /^Amount\b/ }).fill('-1');
+  await page.getByRole('button', { name: 'Save payment' }).click();
+  await expect(page.locator('#amount-error')).toBeVisible();
+  assert.equal(requests.length, 1);
+  await page.getByRole('spinbutton', { name: /^Amount\b/ }).fill('');
+  await page.getByRole('button', { name: 'Save payment' }).click();
+  await expect(page.locator('#amount-error')).toHaveText('Enter an amount.');
+  await page.getByRole('spinbutton', { name: /^Amount\b/ }).fill('41');
+  await page.getByLabel('Note', { exact: false }).fill('x'.repeat(101));
+  await page.getByRole('button', { name: 'Save payment' }).click();
+  await expect(page.locator('#note-error')).toHaveText('Keep the note within 100 characters');
+  assert.equal(requests.length, 1, 'all invalid form submissions stop before HTTP');
+  await page.getByLabel('Note', { exact: false }).fill('Retry me');
+  failNext = true;
+  await page.getByRole('button', { name: 'Save payment' }).click();
+  await expect(page.getByRole('alert')).toContainText('Could not save the payment');
+  await expect(page.getByRole('spinbutton', { name: /^Amount\b/ })).toHaveValue('41');
+  await expect(page.getByLabel('Note', { exact: false })).toHaveValue('Retry me');
+  await page.getByRole('button', { name: 'Try again' }).click();
+  await expect(page.getByRole('status')).toHaveText('Payment saved by the local demo server.');
+  assert.equal(requests.length, 3);
+  assert.deepEqual(requests[2], { amount: 41, currency: 'EUR' });
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, 'the 390px layout has no horizontal overflow');
 
-    await page.getByRole('spinbutton', { name: /^Amount\b/ }).fill('-1');
-    await page.getByRole('button', { name: 'Save payment' }).click();
-    await expect(page.locator('#amount-error')).toBeVisible();
-    assert.equal(requests.length, 1);
-    await page.getByRole('spinbutton', { name: /^Amount\b/ }).fill('');
-    await page.getByRole('button', { name: 'Save payment' }).click();
-    await expect(page.locator('#amount-error')).toHaveText('Enter an amount.');
-    await page.getByRole('spinbutton', { name: /^Amount\b/ }).fill('41');
-    await page.getByLabel('Note', { exact: false }).fill('x'.repeat(101));
-    await page.getByRole('button', { name: 'Save payment' }).click();
-    await expect(page.locator('#note-error')).toHaveText('Keep the note within 100 characters');
-    assert.equal(requests.length, 1, 'all invalid form submissions stop before HTTP');
-    await page.getByLabel('Note', { exact: false }).fill('Retry me');
-    failNext = true;
-    await page.getByRole('button', { name: 'Save payment' }).click();
-    await expect(page.getByRole('alert')).toContainText('Could not save the payment');
-    await expect(page.getByRole('spinbutton', { name: /^Amount\b/ })).toHaveValue('41');
-    await expect(page.getByLabel('Note', { exact: false })).toHaveValue('Retry me');
-    await page.getByRole('button', { name: 'Try again' }).click();
-    await expect(page.getByRole('status')).toHaveText('Payment saved by the local demo server.');
-    assert.equal(requests.length, 3);
-    assert.deepEqual(requests[2], { amount: 41, currency: 'EUR' });
-    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, 'the 390px layout has no horizontal overflow');
-
-    holdNext = true;
-    await page.getByRole('button', { name: 'Save payment' }).click();
-    await expect(page.getByRole('button', { name: 'Saving…' })).toBeDisabled();
-    await page.locator('form').dispatchEvent('submit');
-    await expect.poll(() => requests.length).toBe(4);
-    assert.equal(requests.length, 4, 'duplicate submit while saving sends only one request');
-    await page.evaluate(() => Reflect.get(globalThis, 'unmountApp')());
-    await expect.poll(() => aborted).toBe(true);
-    assert.equal(await page.evaluate(() => Reflect.get(globalThis, 'storeDisposals')), 2);
-    held?.end('{"amount":99,"currency":"USD"}');
-    await expect(page.locator('#root')).toBeEmpty();
-    assert.equal(requests.length, 4, 'no late duplicate request');
-    assert.deepEqual(errors, []);
-    if (standalone) assert.deepEqual(await page.evaluate(() => Reflect.get(globalThis, 'blockedEvalSources')), []);
-  });
-}
+  holdNext = true;
+  await page.getByRole('button', { name: 'Save payment' }).click();
+  await expect(page.getByRole('button', { name: 'Saving…' })).toBeDisabled();
+  await page.locator('form').dispatchEvent('submit');
+  await expect.poll(() => requests.length).toBe(4);
+  assert.equal(requests.length, 4, 'duplicate submit while saving sends only one request');
+  await page.evaluate(() => Reflect.get(globalThis, 'unmountApp')());
+  await expect.poll(() => aborted).toBe(true);
+  assert.equal(await page.evaluate(() => Reflect.get(globalThis, 'storeDisposals')), 2);
+  held?.end('{"amount":99,"currency":"USD"}');
+  await expect(page.locator('#root')).toBeEmpty();
+  assert.equal(requests.length, 4, 'no late duplicate request');
+  assert.deepEqual(errors, []);
+  assert.deepEqual(await page.evaluate(() => Reflect.get(globalThis, 'blockedEvalSources')), []);
+});

@@ -26,14 +26,13 @@ const json = (value: unknown): unknown => JSON.parse(JSON.stringify(value));
 
 const profiles: readonly (readonly [string, GolemProfile])[] = [
   ['validation off', { mobx: false, validation: false }],
-  ['runtime Ajv', { mobx: false, validation: true }],
-  ['standalone', { mobx: false, validation: true, ajvStandalone: true }],
+  ['validation on', { mobx: false, validation: true }],
 ];
 
 for (const [label, profile] of profiles) {
   test(`self- and mutually recursive models generate and round-trip (${label})`, async (t: TestContext) => {
     const { root, sourceRoot } = createModelProject(t, {
-      prefix: 'golem-recursive-models-', linkTypescript: true, allowJs: profile.ajvStandalone === true,
+      prefix: 'golem-recursive-models-', linkTypescript: true,
     });
     writeModelSources(sourceRoot, sources);
     writeModelGolemYaml(root, profile);

@@ -340,7 +340,7 @@ test('a MobX model generated with validation false has no validator', async t =>
 });
 
 test('model validators are a generated TypeScript artifact that the built output runs', async t => {
-  const { root, sourceRoot } = fixture(t, true);
+  const { root, sourceRoot } = fixture(t);
   copyFixtureFile(
     root,
     'models/model-tags/standalone-model-validators-are-external-generated-artifacts-with-declarations-and-notices/predicates.ts',

@@ -42,7 +42,7 @@ test('model generation rejects an SDK manifest whose profile differs from the co
   const manifest = path.join(root, 'sdk/model-manifest.json');
   fs.mkdirSync(path.dirname(manifest), { recursive: true });
   fs.writeFileSync(manifest, JSON.stringify({
-    profile: { mobx: true, validation: true, ajvStandalone: false, allowAny: false },
+    profile: { mobx: true, validation: true, allowAny: false },
     models: [],
   }));
 

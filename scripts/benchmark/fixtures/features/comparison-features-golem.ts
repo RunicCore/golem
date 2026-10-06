@@ -14,7 +14,7 @@ function options(validation: boolean, construct?: new (values?: never) => object
 
 function validationFor(adapter: Adapter): boolean {
   if (adapter === 'golem') return false;
-  if (adapter === 'golem-runtime' || adapter === 'golem-standalone') return true;
+  if (adapter === 'golem-validated') return true;
   throw new TypeError(`Unsupported golem adapter: ${adapter}`);
 }
 

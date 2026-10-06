@@ -32,7 +32,7 @@ async function loadClientAt(
   output: string,
   document: unknown,
   name: string,
-  profile: { mobx: boolean; validation: boolean; ajvStandalone?: boolean },
+  profile: { mobx: boolean; validation: boolean },
 ): Promise<GeneratedClientClass> {
   await generateMaterializedSdk(document, { output, name, profile });
   compileGeneratedSdk(output);
@@ -50,7 +50,7 @@ function loadClient(
   t: TestContext,
   document: unknown,
   name: string,
-  profile: { mobx: boolean; validation: boolean; ajvStandalone?: boolean },
+  profile: { mobx: boolean; validation: boolean },
 ): Promise<GeneratedClientClass> {
   return loadClientAt(path.join(createFixtureProject(t, 'golem-openapi-streams-'), 'sdk'), document, name, profile);
 }
@@ -81,18 +81,18 @@ const objectItem = {
   properties: { id: { type: 'integer' } },
 };
 
-test('JSON-seq validates with an ajvStandalone profile', async (t) => {
+test('JSON-seq validates its records', async (t) => {
   const OnClient = await loadClient(
     t, streamDoc('application/json-seq', objectItem),
     'Streams',
-    { mobx: false, validation: true, ajvStandalone: true },
+    { mobx: false, validation: true },
   );
   const valid = new OnClient({
     baseUrl: 'https://api.example',
     fetchImpl: async () => streamResponse('application/json-seq', [new TextEncoder().encode(`${RS}{"id":1}\n`)]),
   });
   const validStream = (await valid.readStream().execute({})).body;
-  if (!isAsyncIterable(validStream)) throw new TypeError('ajvStandalone valid stream');
+  if (!isAsyncIterable(validStream)) throw new TypeError('valid stream');
   const values: unknown[] = [];
   for await (const item of validStream) values.push(item);
   assert.deepEqual(values, [{ id: 1 }]);
@@ -102,7 +102,7 @@ test('JSON-seq validates with an ajvStandalone profile', async (t) => {
     fetchImpl: async () => streamResponse('application/json-seq', [new TextEncoder().encode(`${RS}{}\n`)]),
   });
   const invalidStream = (await invalid.readStream().execute({})).body;
-  if (!isAsyncIterable(invalidStream)) throw new TypeError('ajvStandalone invalid stream');
+  if (!isAsyncIterable(invalidStream)) throw new TypeError('invalid stream');
   await assert.rejects(async () => {
     for await (const item of invalidStream) assert.equal(item, undefined);
   }, /API data validation failed\./);

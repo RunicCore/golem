@@ -56,7 +56,7 @@ test('global profile changes remove obsolete validation and keep manifest identi
     profile: { mobx: boolean; validation: boolean };
   };
   assert.deepEqual(after.models.map((model) => model.id), before.models.map((model) => model.id));
-  assert.deepEqual(after.profile, { mobx: false, validation: false, ajvStandalone: false, allowAny: false, unknownFormats: 'warn' });
+  assert.deepEqual(after.profile, { mobx: false, validation: false, allowAny: false, unknownFormats: 'warn' });
   assert.doesNotMatch(readGeneratedModelSource(path.join(root, 'sdk')), /requireModelValidator\(validators, /);
   assert.doesNotMatch(fs.readFileSync(path.join(root, 'src/cart.model.generated.ts'), 'utf8'), /\$validator|modelTypeDefinitions/);
   await runPipeline(config, { check: true });
@@ -198,7 +198,6 @@ test('an unreferenced OpenAPI document does not regenerate model companions', as
     'version: 1',
     'mobx: false',
     'validation: true',
-    'ajvStandalone: false',
     'openapi:',
     '  - input: api.json',
     '    output: sdk',

@@ -96,7 +96,7 @@ function modelWatchFixture(t: TestContext): ModelWatchFixture {
   );
   fs.writeFileSync(
     path.join(root, 'golem.yaml'),
-    'version: 1\nmobx: false\nvalidation: false\najvStandalone: false\nallowAny: false\nmodels:\n  root: .\n',
+    'version: 1\nmobx: false\nvalidation: false\nallowAny: false\nmodels:\n  root: .\n',
   );
 
   const manifest = path.join(root, 'src/external/model-manifest.json');
@@ -113,7 +113,7 @@ function modelWatchFixture(t: TestContext): ModelWatchFixture {
 function writeExternalManifest(fixture: ModelWatchFixture): void {
   copyFixtureFile(fixture.root, 'pipeline/model-watch/models.ts', 'src/external/models.ts');
   fs.writeFileSync(fixture.manifest, JSON.stringify({
-    profile: { mobx: false, validation: false, ajvStandalone: false, allowAny: false },
+    profile: { mobx: false, validation: false, allowAny: false },
     models: [{
       id: 'fixture:money',
       allowAny: false,
@@ -172,7 +172,7 @@ async function generatedOpenApiFixture(
     input,
     output,
     name: 'Payments',
-    profile: { mobx: false, validation, ajvStandalone: false, allowAny: false },
+    profile: { mobx: false, validation, allowAny: false },
   });
   writeGeneratedArtifacts(result.artifacts);
   fs.writeFileSync(path.join(output, 'package.json'), '{"type":"module"}');
@@ -490,7 +490,7 @@ test('public OpenAPI generation rejects names colliding across exported index mo
         input,
         output: path.join(root, 'sdk'),
         name: 'Payments',
-        profile: { mobx: false, validation: true, ajvStandalone: false, allowAny: false },
+        profile: { mobx: false, validation: true, allowAny: false },
       }),
       new RegExp(`collision.*${schemaName}|${schemaName}.*collision`, 'i'),
       `${schemaName} must be rejected before emitting an invalid public index`,
@@ -519,23 +519,23 @@ test('pipeline rejects malformed or profile-mismatched returned manifests before
     {
       name: 'malformed',
       manifest: {
-        profile: { mobx: false, validation: true, ajvStandalone: false, allowAny: false },
+        profile: { mobx: false, validation: true, allowAny: false },
         models: [{ id: 'bad-entry' }],
       },
       error: /Invalid model entry/,
     },
     {
-      name: 'profile-missing-standalone',
+      name: 'profile-missing-allow-any',
       manifest: {
-        profile: { mobx: false, validation: true, allowAny: false },
+        profile: { mobx: false, validation: true },
         models: [],
       },
-      error: /profile must include mobx, validation, ajvStandalone and allowAny booleans/,
+      error: /profile must include mobx, validation and allowAny booleans/,
     },
     {
       name: 'profile-mismatch',
       manifest: {
-        profile: { mobx: false, validation: true, ajvStandalone: false, allowAny: true },
+        profile: { mobx: false, validation: true, allowAny: true },
         models: [],
       },
       error: /different generation profile/,

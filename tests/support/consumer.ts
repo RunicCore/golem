@@ -13,7 +13,6 @@ export function writeFixture(root: string, profile: GolemProfile, includeModels 
     'version: 1',
     `mobx: ${profile.mobx}`,
     `validation: ${profile.validation}`,
-    `ajvStandalone: ${profile.ajvStandalone ?? false}`,
     'openapi:',
     '  - input: api.json',
     '    output: sdk',

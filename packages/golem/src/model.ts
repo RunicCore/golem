@@ -2,7 +2,7 @@
  * Dependency-free model contracts and generated-model metadata registry.
  *
  * This module is intentionally safe to import from browser bundles that do
- * not install either MobX or Ajv. Optional runtime integrations register
+ * not install MobX. Optional runtime integrations register
  * themselves through the interfaces below.
  */
 
@@ -263,7 +263,6 @@ export interface GeneratedModelConversion<Model extends object = object, Wire = 
 export interface GeneratedModelProfile {
   readonly validation: boolean;
   readonly mobx?: boolean;
-  readonly ajvStandalone?: boolean;
   readonly allowAny?: boolean;
   readonly unknownFormats?: 'warn' | 'error';
 }

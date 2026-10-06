@@ -5,7 +5,6 @@ import path from 'node:path';
 import { build } from 'esbuild';
 import { command, npm, cli } from '../support/process.js';
 import { startRegistry, packageSpec, type PackedRegistry } from '../../scripts/packed-registry.js';
-import { AJV_FORMATS_PINNED, AJV_PINNED } from '../../scripts/third-party-installs.js';
 import { copyFixture, copyFixtureFile } from '../fixture-project.js';
 
 let registry: PackedRegistry;
@@ -15,7 +14,7 @@ after(async () => { if (registry) await registry.close(); });
 test('model-only packed installation validates structure with no OpenAPI or MobX runtime', async t => {
   const root = registry.create(t, 'model-only');
   await npm(root, ['install', '--save-dev', packageSpec(registry, '@exprtlabs/golem-model')]);
-  await npm(root, ['install', '--save-prod', packageSpec(registry, '@exprtlabs/golem'), AJV_PINNED, AJV_FORMATS_PINNED]);
+  await npm(root, ['install', '--save-prod', packageSpec(registry, '@exprtlabs/golem')]);
   copyFixture(root, 'packed/model-only');
   await cli(root, ['generate']);
   copyFixtureFile(root, 'packed/model-only-after-generation/item.model.ts', 'src/item.model.ts');

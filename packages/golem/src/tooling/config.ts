@@ -210,12 +210,12 @@ export function resolveConfig(filename = 'golem.yaml', onInput?: InputObserver):
   onInput?.(configFile);
   const directory = path.dirname(configFile);
   const value: unknown = YAML.parse(fs.readFileSync(configFile, 'utf8'), { uniqueKeys: true });
-  keys(value, ['version', 'tsconfig', 'mobx', 'validation', 'ajvStandalone', 'allowAny', 'unknownFormats', 'generators', 'controllers', 'openapi', 'models'], 'configuration');
+  keys(value, ['version', 'tsconfig', 'mobx', 'validation', 'allowAny', 'unknownFormats', 'generators', 'controllers', 'openapi', 'models'], 'configuration');
   if (value.version !== 1) throw new Error('Configuration version must be 1.');
   if (value.unknownFormats !== undefined && value.unknownFormats !== 'warn' && value.unknownFormats !== 'error') throw new Error('unknownFormats must be "warn" or "error".');
   const profile = resolveProfile({
     mobx: boolean(value.mobx, false, 'mobx'), validation: boolean(value.validation, true, 'validation'),
-    ajvStandalone: boolean(value.ajvStandalone, false, 'ajvStandalone'), allowAny: boolean(value.allowAny, false, 'allowAny'),
+    allowAny: boolean(value.allowAny, false, 'allowAny'),
     ...(value.unknownFormats === undefined ? {} : { unknownFormats: value.unknownFormats }),
   });
   const tsconfigRequested = path.resolve(directory, value.tsconfig === undefined ? 'tsconfig.json' : nonempty(value.tsconfig, 'tsconfig'));

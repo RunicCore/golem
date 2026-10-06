@@ -1,6 +1,6 @@
 /**
- * Ajv's `discriminator` keyword rejects the OpenAPI `mapping` property and
- * requires each `oneOf` branch to state its tag as a string `const`/`enum`.
+ * The JSON Schema `discriminator` keyword does not carry the OpenAPI `mapping`
+ * property and needs each `oneOf` branch to state its tag as a string `const`/`enum`.
  * OpenAPI documents instead map tag values to schema references. Lower that
  * form before compiling: each mapped branch is wrapped with its tag values,
  * so validation keeps the mapping's meaning.
@@ -110,7 +110,7 @@ function lowerNode(node: SchemaRecord, original: SchemaRecord, index: SchemaInde
   const branches: readonly unknown[] | undefined = Array.isArray(node.oneOf) ? node.oneOf
     : Array.isArray(node.anyOf) ? node.anyOf : undefined;
   const keyword = Array.isArray(node.oneOf) ? 'oneOf' : 'anyOf';
-  // Ajv's discriminator applies only to oneOf; elsewhere it is an annotation.
+  // A discriminator applies only to oneOf; elsewhere it is an annotation.
   if (!branches || (keyword === 'anyOf' && !isRecord(discriminator.mapping))) return rest;
   if (!isRecord(discriminator.mapping)) return node;
   const property = discriminator.propertyName;
@@ -151,7 +151,7 @@ function lowerNode(node: SchemaRecord, original: SchemaRecord, index: SchemaInde
   return {
     ...rest,
     [keyword]: tagged,
-    // Ajv's discriminator needs oneOf with a tag on every branch.
+    // A discriminator needs oneOf with a tag on every branch.
     ...(keyword === 'oneOf' && everyTagged ? { discriminator: { propertyName: property } } : {}),
   };
 }

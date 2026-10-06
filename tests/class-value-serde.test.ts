@@ -130,10 +130,9 @@ test('class from an installed package is imported by package specifier', async t
 export function decodeMoney(value: string): Money { return Money.parse(value); }
 `,
   } });
-  const workspace = path.resolve(import.meta.dirname, '../..');
   const { root, sourceRoot } = createModelProject(t, {
     prefix: 'golem-class-value-pkg-', name: 'class-value-pkg', linkTypescript: true,
-    packages: { '@fixture/money': vendor, ajv: path.join(workspace, 'node_modules/ajv'), 'ajv-formats': path.join(workspace, 'node_modules/ajv-formats') },
+    packages: { '@fixture/money': vendor },
   });
   fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), taggedModelSource({ name: 'A', imports: tsSource`import type { TSerde } from '@exprtlabs/golem/tags';
 import { type Money, encodeMoney, decodeMoney } from '@fixture/money';

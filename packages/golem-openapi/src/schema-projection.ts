@@ -1090,7 +1090,7 @@ function rewriteReference(
   keyword: '$ref' | '$dynamicRef',
 ): string {
   const fragmentOnly = reference.startsWith('#') && !reference.startsWith('#/');
-  // Ajv's 2020 engine only accepts hash-fragment $dynamicRef values.
+  // Only hash-fragment $dynamicRef values are projected.
   if (keyword === '$dynamicRef' && fragmentOnly) return reference;
   const componentPointer = reference.startsWith('#/components/schemas/');
   const nestedIdScope = context.emittingCanonical !== null;

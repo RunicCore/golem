@@ -18,95 +18,93 @@ import {
   writeOpenApiDocument,
 } from './helpers.js';
 
-test('generated SDK enforces conditional request and response schemas with runtime and standalone Ajv', async t => {
-  for (const ajvStandalone of [false, true] as const) {
-    const directory = createFixtureProject(t, 'golem-openapi-advanced-');
-    const output = path.join(directory, 'sdk');
-    const conditionalPayment = {
-      type: 'object',
+test('generated SDK enforces conditional request and response schemas', async t => {
+  const directory = createFixtureProject(t, 'golem-openapi-advanced-');
+  const output = path.join(directory, 'sdk');
+  const conditionalPayment = {
+    type: 'object',
+    required: ['state'],
+    properties: {
+      state: { enum: ['pending', 'settled'] },
+      settledAt: { type: 'string' },
+    },
+    if: {
+      properties: { state: { const: 'settled' } },
       required: ['state'],
-      properties: {
-        state: { enum: ['pending', 'settled'] },
-        settledAt: { type: 'string' },
-      },
-      if: {
-        properties: { state: { const: 'settled' } },
-        required: ['state'],
-      },
-      then: { required: ['settledAt'] },
-    };
-    const document = documentBase('3.2.0', {
-      paths: {
-        '/payments': {
-          post: {
-            operationId: 'upsertPayment',
-            requestBody: {
-              required: true,
+    },
+    then: { required: ['settledAt'] },
+  };
+  const document = documentBase('3.2.0', {
+    paths: {
+      '/payments': {
+        post: {
+          operationId: 'upsertPayment',
+          requestBody: {
+            required: true,
+            content: { 'application/json': { schema: conditionalPayment } },
+          },
+          responses: {
+            200: {
+              description: 'payment',
               content: { 'application/json': { schema: conditionalPayment } },
-            },
-            responses: {
-              200: {
-                description: 'payment',
-                content: { 'application/json': { schema: conditionalPayment } },
-              },
             },
           },
         },
       },
-    });
-    await generateMaterializedSdk(document, {
-      output,
-      name: 'AdvancedConstraints',
-      profile: { mobx: false, validation: true, ajvStandalone },
-    });
-    compileGeneratedSdk(output);
-    const module = requireRecord(
-      await import(pathToFileURL(path.join(output, 'dist/client.js')).href),
-      'advanced constraints client',
-    );
-    const Client = module.AdvancedConstraintsClient;
-    assert.equal(isGeneratedClientClass(Client), true);
-    if (!isGeneratedClientClass(Client)) throw new TypeError('AdvancedConstraintsClient');
+    },
+  });
+  await generateMaterializedSdk(document, {
+    output,
+    name: 'AdvancedConstraints',
+    profile: { mobx: false, validation: true },
+  });
+  compileGeneratedSdk(output);
+  const module = requireRecord(
+    await import(pathToFileURL(path.join(output, 'dist/client.js')).href),
+    'advanced constraints client',
+  );
+  const Client = module.AdvancedConstraintsClient;
+  assert.equal(isGeneratedClientClass(Client), true);
+  if (!isGeneratedClientClass(Client)) throw new TypeError('AdvancedConstraintsClient');
 
-    let fetchCount = 0;
-    let responseBody: unknown = { state: 'settled' };
-    const client = new Client({
-      baseUrl: 'https://api.example',
-      fetchImpl: async () => {
-        fetchCount += 1;
-        return new Response(JSON.stringify(responseBody), {
-          status: 200,
-          headers: { 'content-type': 'application/json' },
-        });
-      },
-    });
-    const api = client.upsertPayment();
-    const invalidInput = { body: { state: 'settled' } };
-    await assert.rejects(
-      () => api.execute(invalidInput),
-      (error: unknown) => error instanceof LibError
-        && error.kind === LibErrorKind.Validation
-        && error.issues.some(issue => issue.source === IssueSource.OpenAPI),
-      'conditional request branch rejects a missing settledAt field',
-    );
-    assert.equal(fetchCount, 0, 'invalid conditional request did not reach fetch');
+  let fetchCount = 0;
+  let responseBody: unknown = { state: 'settled' };
+  const client = new Client({
+    baseUrl: 'https://api.example',
+    fetchImpl: async () => {
+      fetchCount += 1;
+      return new Response(JSON.stringify(responseBody), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    },
+  });
+  const api = client.upsertPayment();
+  const invalidInput = { body: { state: 'settled' } };
+  await assert.rejects(
+    () => api.execute(invalidInput),
+    (error: unknown) => error instanceof LibError
+      && error.kind === LibErrorKind.Validation
+      && error.issues.some(issue => issue.source === IssueSource.OpenAPI),
+    'conditional request branch rejects a missing settledAt field',
+  );
+  assert.equal(fetchCount, 0, 'invalid conditional request did not reach fetch');
 
-    const validInput = { body: { state: 'settled', settledAt: '2026-09-11' } };
-    await assert.rejects(
-      () => api.execute(validInput),
-      (error: unknown) => error instanceof LibError
-        && error.kind === LibErrorKind.Validation
-        && error.issues.some(issue => issue.source === IssueSource.OpenAPI),
-      'conditional response branch rejects a missing settledAt field',
-    );
-    assert.equal(fetchCount, 1, 'valid request reached fetch before response validation');
+  const validInput = { body: { state: 'settled', settledAt: '2026-09-11' } };
+  await assert.rejects(
+    () => api.execute(validInput),
+    (error: unknown) => error instanceof LibError
+      && error.kind === LibErrorKind.Validation
+      && error.issues.some(issue => issue.source === IssueSource.OpenAPI),
+    'conditional response branch rejects a missing settledAt field',
+  );
+  assert.equal(fetchCount, 1, 'valid request reached fetch before response validation');
 
-    responseBody = { state: 'settled', settledAt: '2026-09-11' };
-    const response = await api.execute(validInput);
-    assert.equal(response.status, 200);
-    assert.deepEqual(response.body, responseBody);
-    assert.equal(fetchCount, 2);
-  }
+  responseBody = { state: 'settled', settledAt: '2026-09-11' };
+  const response = await api.execute(validInput);
+  assert.equal(response.status, 200);
+  assert.deepEqual(response.body, responseBody);
+  assert.equal(fetchCount, 2);
 });
 
 /** Three operations whose request body is `false` directly, as `additionalProperties`, and by `$ref`; every response is `true`. */

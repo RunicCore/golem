@@ -1,12 +1,10 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import test from 'node:test';
 
-import { createOpenApiAjvEngine } from '@exprtlabs/golem/ajv';
-import { compileStandaloneValidatorSet } from '@exprtlabs/golem/ajv-tooling';
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 import { writeSdk } from '#openapi/generator';
 import {
@@ -15,11 +13,6 @@ import {
   generateMaterializedSdk,
   generatedModelSource,
 } from './openapi/helpers.js';
-
-interface GeneratedValidator {
-  (value: unknown): boolean;
-  readonly errors?: readonly { readonly keyword?: string; readonly message?: string }[] | null;
-}
 
 function standaloneDocument(): Record<string, unknown> {
   return {
@@ -91,7 +84,6 @@ function standaloneDocument(): Record<string, unknown> {
 const profile = Object.freeze({
   mobx: false,
   validation: true,
-  ajvStandalone: true,
   allowAny: false,
 });
 
@@ -101,32 +93,21 @@ function compileStandaloneSdk(output: string): string {
   return outDir;
 }
 
-test('OpenAPI SDKs emit per-operation validators in either mode; models use generated validators', () => {
-  const document = standaloneDocument();
-  const runtime = writeSdk(document, {
-    output: path.join(tmpdir(), 'runtime-profile'),
-    name: 'Standalone',
-    profile: { mobx: false, validation: true },
-  });
-  const standalone = writeSdk(document, {
-    output: path.join(tmpdir(), 'standalone-profile'),
+test('OpenAPI SDKs emit per-operation validators; models use generated validators', () => {
+  const result = writeSdk(standaloneDocument(), {
+    output: path.join(tmpdir(), 'validators-profile'),
     name: 'Standalone',
     profile,
   });
-  for (const [label, result] of [['runtime', runtime], ['standalone', standalone]] as const) {
-    const names = artifactBasenames(result.artifacts);
-    assert.equal(names.includes('getTask.validators.generated.ts'), true, label);
-    const models = generatedModelSource(result.artifacts);
-    assert.match(models, /validators\.generated\.js/, label);
-    assert.match(models, /createObjectCodec/, label);
-  }
-  for (const [expectedMode, result] of [[false, runtime], [true, standalone]] as const) {
-    const manifest = JSON.parse(result.artifacts.find(item => item.path.endsWith('/model-manifest.json'))?.content ?? '{}') as {
-      profile?: { ajvStandalone?: boolean; allowAny?: boolean };
-    };
-    assert.equal(manifest.profile?.ajvStandalone, expectedMode);
-    assert.equal(manifest.profile?.allowAny, false);
-  }
+  const names = artifactBasenames(result.artifacts);
+  assert.equal(names.includes('getTask.validators.generated.ts'), true);
+  const models = generatedModelSource(result.artifacts);
+  assert.match(models, /validators\.generated\.js/);
+  assert.match(models, /createObjectCodec/);
+  const manifest = JSON.parse(result.artifacts.find(item => item.path.endsWith('/model-manifest.json'))?.content ?? '{}') as {
+    profile?: { allowAny?: boolean };
+  };
+  assert.equal(manifest.profile?.allowAny, false);
 });
 
 test('standalone SDK compiles a no-content operation with no response validators', async t => {
@@ -252,42 +233,4 @@ test('standalone SDK validates a response whose $id schema refers to a component
     () => call({ code: 'c', child: { value: 'one' } }),
     (error: unknown) => error instanceof LibError && error.kind === LibErrorKind.Validation,
   );
-});
-
-test('custom synchronous validation bindings have identical JIT and standalone behavior and are not called during generation', async () => {
-  const id = 'urn:golem:custom-validation';
-  const schema = {
-    $id: id,
-    type: 'object',
-    additionalProperties: false,
-    required: ['value'],
-    properties: {
-      value: { type: 'integer', exprtValidation: ['isEven'] },
-    },
-  };
-  let calls = 0;
-  const isEven = (value: unknown): boolean | string => {
-    calls++;
-    return typeof value === 'number' && value % 2 === 0 ? true : 'must be even';
-  };
-  const compiled = compileStandaloneValidatorSet({ schemas: { [id]: schema }, references: [id], owner: 'standalone.test' });
-  assert.equal(calls, 0);
-  assert.doesNotMatch(compiled.code, /(?:from|require\s*\()\s*['"](?:ajv|ajv-formats|fast-deep-equal)/);
-  const standaloneModule = await import(`data:text/javascript;charset=utf-8,${encodeURIComponent(compiled.code)}`);
-  const standaloneValidator = standaloneModule.createValidators({ isEven })[id] as GeneratedValidator;
-  const jitEngine = createOpenApiAjvEngine({ validationBindings: { isEven } });
-  jitEngine.addSchema(schema, id);
-  const jitValidator = jitEngine.getSchema(id);
-  assert.ok(jitValidator);
-  if (!jitValidator) throw new Error('JIT validator was not registered');
-
-  assert.equal(standaloneValidator({ value: 2 }), true);
-  assert.equal(jitValidator({ value: 2 }), true);
-  assert.equal(standaloneValidator({ value: 3 }), false);
-  const standaloneErrors = standaloneValidator.errors;
-  assert.equal(jitValidator({ value: 3 }), false);
-  assert.deepEqual(jitValidator.errors, standaloneErrors);
-  assert.equal(standaloneErrors?.[0]?.keyword, 'exprtValidation');
-  assert.equal(standaloneErrors?.[0]?.message, 'must be even');
-  assert.equal(calls, 4);
 });

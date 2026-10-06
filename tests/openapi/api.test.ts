@@ -45,7 +45,7 @@ test('generate returns absolute pure artifacts and local watch inputs', async (t
   assert.doesNotMatch(models, /@exprtlabs\/golem\/(mobx|mobx-validation)/);
   assert.doesNotMatch(models, /asGenObservable|validation:\s*\{/);
   assert.match(models, /registerGeneratedModel/);
-  assert.doesNotMatch(client, /@exprtlabs\/golem\/(ajv|validation)/);
+  assert.doesNotMatch(client, /@exprtlabs\/golem\/validation/);
   assert.equal(result.artifacts.some(({ path: filename }) => filename.endsWith('/schemas.ts')), false);
 });
 
@@ -73,7 +73,7 @@ test('OpenAPI getValidator infers generated fields and rejects handwritten subcl
   ]);
 });
 
-test('SDK generated with mobx and validation disabled loads and runs an operation without mobx or ajv resolvable', async (t) => {
+test('SDK generated with mobx and validation disabled loads and runs an operation without mobx resolvable', async (t) => {
   const directory = createFixtureProject(t, 'golem-openapi-no-peer-deps-');
   const output = path.join(directory, 'sdk');
   const input = path.join(directory, 'openapi.json');
@@ -106,9 +106,9 @@ test('SDK generated with mobx and validation disabled loads and runs an operatio
   // symlinking (linkProjectPackages/prepareSdkProject's usual behavior): Node
   // resolves a symlink to its real path before walking node_modules, so a
   // symlinked golem package would still resolve up into this workspace's own
-  // node_modules, where mobx and ajv are installed, defeating the isolation
+  // node_modules, where mobx is installed, defeating the isolation
   // this test exists to prove. A real copy keeps the whole dependency chain
-  // rooted under the temp project, where neither package exists at any
+  // rooted under the temp project, where mobx does not exist at any
   // ancestor directory.
   const golemSource = path.join(workspace, 'packages/golem');
   const golemDestination = path.join(output, 'node_modules/@exprtlabs/golem');
@@ -120,15 +120,12 @@ test('SDK generated with mobx and validation disabled loads and runs an operatio
 
   const probeDirectories = [output, path.join(golemDestination, 'dist')];
   for (const directory of probeDirectories) {
-    for (const missing of ['mobx', 'ajv']) {
-      // One file per missing package: Node caches a failed import by URL, so reusing a file returns the first failure.
-      const probe = path.join(directory, `peer-dep-probe-${missing}.mjs`);
-      writeFileSync(probe, `export * from '${missing}';\n`);
-      await assert.rejects(
-        () => import(pathToFileURL(probe).href),
-        new RegExp(`Cannot find package '${missing}'`),
-      );
-    }
+    const probe = path.join(directory, 'peer-dep-probe-mobx.mjs');
+    writeFileSync(probe, "export * from 'mobx';\n");
+    await assert.rejects(
+      () => import(pathToFileURL(probe).href),
+      /Cannot find package 'mobx'/,
+    );
   }
 
   const module = requireRecord(

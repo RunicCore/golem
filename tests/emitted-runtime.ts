@@ -1,6 +1,5 @@
 import { transformSync } from 'esbuild';
 
-import * as ajv from '@exprtlabs/golem/ajv';
 import * as conversion from '@exprtlabs/golem/conversion';
 import * as serde from '@exprtlabs/golem/serde';
 
@@ -33,7 +32,7 @@ export function instantiateRuntime(
 ): Record<string, RuntimeFunction> {
   const exported = [...source.matchAll(/^export function (\w+)/gm)].map((match) => match[1]);
   const javascript = transformSync(source.replace(/^export /gm, ''), { loader: 'ts', target: 'es2022' }).code;
-  const bindings: Record<string, unknown> = { ...serde, ...ajv, ...conversion, ...scope };
+  const bindings: Record<string, unknown> = { ...serde, ...conversion, ...scope };
   const names = Object.keys(bindings).filter((name) => /^[A-Za-z_$][\w$]*$/.test(name));
   const create = new Function(...names, `${javascript}\nreturn { ${exported.join(', ')} };`) as RuntimeFunction;
   return create(...names.map((name) => bindings[name])) as Record<string, RuntimeFunction>;

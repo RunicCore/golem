@@ -16,14 +16,12 @@ export {
 export interface GolemProfile {
   readonly mobx: boolean;
   readonly validation: boolean;
-  readonly ajvStandalone?: boolean;
   readonly allowAny?: boolean;
   /** What a schema format that golem does not implement does: `warn` (default) skips its check, `error` fails generation. */
   readonly unknownFormats?: 'warn' | 'error';
 }
 
 export interface ResolvedGolemProfile extends GolemProfile {
-  readonly ajvStandalone: boolean;
   readonly allowAny: boolean;
   readonly unknownFormats: 'warn' | 'error';
 }
@@ -32,30 +30,24 @@ export interface ResolvedGolemProfile extends GolemProfile {
 export function resolveProfile(profile: GolemProfile): ResolvedGolemProfile {
   if (!isRecord(profile)) throw new TypeError('Generation profile must be an object.');
   for (const key of Object.keys(profile)) {
-    if (!['mobx', 'validation', 'ajvStandalone', 'allowAny', 'unknownFormats'].includes(key)) {
+    if (!['mobx', 'validation', 'allowAny', 'unknownFormats'].includes(key)) {
       throw new TypeError(`Unknown generation profile option: ${key}.`);
     }
   }
   if (typeof profile.mobx !== 'boolean' || typeof profile.validation !== 'boolean') {
     throw new TypeError('Generation profile mobx and validation must be booleans.');
   }
-  for (const key of ['ajvStandalone', 'allowAny'] as const) {
-    if (profile[key] !== undefined && typeof profile[key] !== 'boolean') {
-      throw new TypeError(`Generation profile ${key} must be a boolean.`);
-    }
+  if (profile.allowAny !== undefined && typeof profile.allowAny !== 'boolean') {
+    throw new TypeError('Generation profile allowAny must be a boolean.');
   }
   if (profile.unknownFormats !== undefined && profile.unknownFormats !== 'warn' && profile.unknownFormats !== 'error') {
     throw new TypeError('Generation profile unknownFormats must be "warn" or "error".');
   }
   const resolved: ResolvedGolemProfile = {
     ...profile,
-    ajvStandalone: profile.ajvStandalone ?? false,
     allowAny: profile.allowAny ?? false,
     unknownFormats: profile.unknownFormats ?? 'warn',
   };
-  if (resolved.ajvStandalone && !resolved.validation) {
-    throw new TypeError('ajvStandalone requires validation to be enabled.');
-  }
   return Object.freeze(resolved);
 }
 

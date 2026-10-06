@@ -247,9 +247,8 @@ test('no SDK emits schemas.ts, whatever the validation profile', async t => {
   for (const profile of [
     { mobx: false, validation: false },
     { mobx: false, validation: true },
-    { mobx: false, validation: true, ajvStandalone: true },
   ] as const) {
-    const output = outputDir(t, `registries-${profile.validation}-${'ajvStandalone' in profile}`);
+    const output = outputDir(t, `registries-${profile.validation}`);
     const result = await generateMaterializedSdk(document, { output, name: 'Registries', profile });
     const names = emittedFiles(result.artifacts, output);
     for (const name of ['schemas.ts', 'validation-engine.ts', 'validators.generated.js']) assert.equal(names.includes(name), false, name);
@@ -493,10 +492,10 @@ test('the SDK entry re-exports each model module directly', async t => {
   assert.doesNotMatch(index, /'\.\/schemas\.js'/);
 });
 
-test('an ajvStandalone validation SDK with operations compiles under strict unused checks', async t => {
-  const output = outputDir(t, 'standalone-strict');
+test('a validation SDK with operations compiles under strict unused checks', async t => {
+  const output = outputDir(t, 'validation-strict');
   await generateMaterializedSdk({
-    openapi: '3.1.0', info: info('Standalone'),
+    openapi: '3.1.0', info: info('Strict'),
     components: { schemas: { Item: {
       type: 'object', required: ['name'], properties: { name: { type: 'string', minLength: 1 } },
     } } },
@@ -505,7 +504,7 @@ test('an ajvStandalone validation SDK with operations compiles under strict unus
       requestBody: { required: true, content: { 'application/json': { schema: { $ref: '#/components/schemas/Item' } } } },
       responses: { 200: { description: 'ok', content: { 'application/json': { schema: { $ref: '#/components/schemas/Item' } } } } },
     } } },
-  }, { output, name: 'Standalone', profile: { mobx: false, validation: true, ajvStandalone: true } });
+  }, { output, name: 'Strict', profile: { mobx: false, validation: true } });
   compileStrictUnusedSdk(output);
 });
 

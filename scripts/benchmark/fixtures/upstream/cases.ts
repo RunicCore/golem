@@ -9,8 +9,7 @@ import { createZodFixtures } from './zod.js';
 export async function createComparisonFixtures(adapter: Adapter): Promise<readonly ComparisonFixture[]> {
   switch (adapter) {
     case 'golem':
-    case 'golem-runtime':
-    case 'golem-standalone':
+    case 'golem-validated':
       return createGolemFixtures(adapter);
     case 'golem-object':
       return createGolemObjectFixtures(adapter);

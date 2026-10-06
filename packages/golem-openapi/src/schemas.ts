@@ -275,7 +275,7 @@ export interface OpenApiOperationValidationSchemaBundle {
 
 
 /**
- * A name inside a registry URN. The URN parser Ajv uses (fast-uri) rejects `~`,
+ * A name inside a registry URN. URN parsers reject `~`,
  * and URI normalization decodes `%7E` back to it, so `~` is written as `$7E`.
  * `encodeURIComponent` never emits `$`, so the mapping stays one-to-one; the id
  * only has to be unique and stable, and `componentNamesById` maps it back.

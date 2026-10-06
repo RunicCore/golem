@@ -15,14 +15,13 @@ const root = fileURLToPath(new URL('../../../', import.meta.url));
 /** Runtime entry points an application bundle can import; the tooling ones never reach a browser. */
 export const RUNTIME_ENTRIES = [
   'model', 'conversion', 'tags', 'temporal', 'serde', 'errors', 'schema',
-  'validation', 'ajv', 'mobx', 'mobx-validation', 'client',
+  'validation', 'mobx', 'mobx-validation', 'client',
 ] as const;
 
 /** SDK profiles generated from scripts/benchmark/fixtures/features/money.yaml: one operation, one model. */
 const SDK_PROFILES = [
-  { id: 'sdk-no-validation', validation: false, ajvStandalone: false },
-  { id: 'sdk-runtime-ajv', validation: true, ajvStandalone: false },
-  { id: 'sdk-standalone-ajv', validation: true, ajvStandalone: true },
+  { id: 'sdk-no-validation', validation: false },
+  { id: 'sdk-validating', validation: true },
 ] as const;
 
 const CLIENT_RUNTIME_CORE = /packages\/golem\/dist\/client-runtime\/core\.js$/;
@@ -35,7 +34,7 @@ interface BundleResult {
   readonly golemBytes: number;
   /** Bytes from generated SDK files. */
   readonly sdkBytes: number;
-  /** Bytes from third-party packages such as ajv or mobx. */
+  /** Bytes from third-party packages such as mobx. */
   readonly dependencyBytes: number;
   readonly clientRuntimeCoreBytes: number;
 }
@@ -85,7 +84,7 @@ export async function main(): Promise<void> {
     for (const profile of SDK_PROFILES) {
       const project = createProject(directory, profile.id);
       const src = path.join(project, 'src');
-      generateFeatureMoneySdk(project, src, { validation: profile.validation, ajvStandalone: profile.ajvStandalone });
+      generateFeatureMoneySdk(project, src, { validation: profile.validation });
       // One call through the public entry, so tree shaking keeps what an application keeps.
       const file = path.join(src, 'app.ts');
       writeFileSync(file, `import { PaymentsClient } from './sdk/index.js';

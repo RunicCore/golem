@@ -54,13 +54,12 @@ function validateManifestProfile(
     !advertised
     || advertised.mobx !== profile.mobx
     || advertised.validation !== profile.validation
-    || advertised.ajvStandalone !== (profile.ajvStandalone ?? false)
     || advertised.allowAny !== (profile.allowAny ?? false)
     || (advertised.unknownFormats ?? 'warn') !== (profile.unknownFormats ?? 'warn')
   ) {
     throw new Error(
       `Model manifest profile mismatch in ${filename}: expected `
-      + `{ mobx: ${profile.mobx}, validation: ${profile.validation}, ajvStandalone: ${profile.ajvStandalone ?? false}, allowAny: ${profile.allowAny ?? false}, unknownFormats: ${profile.unknownFormats ?? 'warn'} }. `
+      + `{ mobx: ${profile.mobx}, validation: ${profile.validation}, allowAny: ${profile.allowAny ?? false}, unknownFormats: ${profile.unknownFormats ?? 'warn'} }. `
       + 'Regenerate the SDK manifest with the same profile before model generation.',
     );
   }

@@ -18,7 +18,7 @@ export interface BuildInput {
   readonly measuredAt: string;
 }
 
-export const PACKAGE_NAMES = ['@exprtlabs/golem', '@exprtlabs/golem-model', '@exprtlabs/golem-openapi', 'typescript', 'typia', 'class-transformer', 'class-validator', 'zod', 'ajv'] as const;
+export const PACKAGE_NAMES = ['@exprtlabs/golem', '@exprtlabs/golem-model', '@exprtlabs/golem-openapi', 'typescript', 'typia', 'class-transformer', 'class-validator', 'zod'] as const;
 
 export function opsPerSecond(sample: BatchSample): number {
   return sample.iterations * 1000 / sample.elapsedMs;
