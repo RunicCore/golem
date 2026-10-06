@@ -361,6 +361,8 @@ function assertNoUnrecordedOutputs(config: GolemConfig, inventory: Inventory, jo
       if (!entry.isFile() || (!entry.name.endsWith('.ts') && !entry.name.endsWith('.js') && !entry.name.endsWith('.NOTICES.txt') && entry.name !== 'model-manifest.json')) continue;
       const key = inventoryKey(config, filename);
       if (expected.has(key) || inventory.files[key]) continue;
+      // Another app may have written, or this job may have stopped writing, the companion of a shared source: it is not drift.
+      if (isSharedCompanion(config, job, filename)) continue;
       if (knownOwner(fs.readFileSync(filename, 'utf8'), owners) !== undefined) drift.push(filename);
     }
   };

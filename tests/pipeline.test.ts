@@ -632,3 +632,42 @@ test('removing a job deletes its shared companion once the source is gone', (t: 
 
   assert.equal(fs.existsSync(companion), false);
 });
+
+/** The fixture's models job listing `sources` explicitly, so the job scans the folder of each source for drift. */
+function jobWithSources(job: ReturnType<typeof modelsJobWithSiblingFolder>['job'], sources: string[]): typeof job {
+  assert.equal(job.kind, 'models');
+  return { ...job, options: { ...job.options, sources } } as typeof job;
+}
+
+test('a check does not report a kept shared companion as drift when the job lists its sources', (t: TestContext) => {
+  const { config, job, shared } = modelsJobWithSiblingFolder(t);
+  const [a, b] = ['a', 'b'].map(name => path.join(shared, `${name}.model.ts`));
+  assert.ok(a && b);
+  const [companionA, companionB] = [a, b].map(source => source.replace(/\.ts$/, '.generated.ts'));
+  assert.ok(companionA && companionB);
+  fs.writeFileSync(a, 'export {};\n');
+  fs.writeFileSync(b, 'export {};\n');
+  applyJob(config, loadInventory(config), jobWithSources(job, [a, b]), [{ path: companionA, content: COMPANION_TEXT }, { path: companionB, content: COMPANION_TEXT }]);
+
+  const onlyA = jobWithSources(job, [a]);
+  applyJob(config, loadInventory(config), onlyA, [{ path: companionA, content: COMPANION_TEXT }]);
+
+  assert.equal(fs.existsSync(companionB), true);
+  assert.doesNotThrow(() => applyJob(config, loadInventory(config), onlyA, [{ path: companionA, content: COMPANION_TEXT }], true));
+});
+
+test('a check still reports a generated file in a shared source folder that is no companion of a source', (t: TestContext) => {
+  const { config, job, shared } = modelsJobWithSiblingFolder(t);
+  const a = path.join(shared, 'a.model.ts');
+  const companionA = path.join(shared, 'a.model.generated.ts');
+  const stray = path.join(shared, 'stray.generated.ts');
+  fs.writeFileSync(a, 'export {};\n');
+  fs.writeFileSync(stray, COMPANION_TEXT);
+  const listed = jobWithSources(job, [a]);
+  applyJob(config, loadInventory(config), listed, [{ path: companionA, content: COMPANION_TEXT }]);
+
+  assert.throws(
+    () => applyJob(config, loadInventory(config), listed, [{ path: companionA, content: COMPANION_TEXT }], true),
+    (error: unknown) => error instanceof Error && error.message.includes('Unrecorded generated output drift') && error.message.includes(stray),
+  );
+});
