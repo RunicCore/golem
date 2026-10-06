@@ -7,9 +7,9 @@ independently, or combine them in one `golem.yaml` file.
 ## What you can build
 
 - Define models in TypeScript, extend generated bases with application methods, and convert typed wire values with `fromWireFormat` / `toWireFormat`. JSON text uses IObject `stringify` / `parse`.
-- Validate models before saving and display messages for individual fields. Default validation uses runtime Ajv. Tags add built-in constraints, predicates and conversion pairs.
+- Validate models before saving and display messages for individual fields. Golem generates the validators. Tags add built-in constraints, predicates and conversion pairs.
 - Compose nested model values with TypeScript utilities such as `Pick`, `Omit` and `Partial`.
-- Precompile model, object-codec and client validators with `ajvStandalone`. Generated checks run without Ajv runtime peers or dynamic compilation.
+- Generated validators are TypeScript files that run without extra packages or dynamic compilation.
 - Enable MobX for reactive fields and nested SDK models. Your classes initialize observability once in their constructors.
 - Generate typed API clients with authentication, cancellation, codecs and streaming responses. Browser clients use native `fetch` by default.
 - Keep generated files synchronized with `watch`, or use the read-only `check` command in CI.
@@ -39,6 +39,13 @@ Generation runs on TypeScript 6.0+ or 7.x, chosen from the `typescript` installe
 - **Breaking:** `@exprtlabs/golem/ts` publishes Golem-owned types narrowed to what Golem uses. Its declarations no longer reference `typescript`, and it no longer exports the `API` class or the TypeScript 7 process-client types ([`ts`](/reference/runtime-api#ts)).
 - Union members in generated types and schemas appear in a fixed order that doesn't depend on the compiler or locale. Regenerate once; member order changes, and so do the ids of generated codecs.
 - On TypeScript 7, generation type-checks new files before writing them, so output that doesn't compile now fails with the compiler's message. Sibling model folders under one `tsconfig` no longer interfere.
+
+## Validation
+
+- **Breaking:** Ajv is removed. Remove `ajv` and `ajv-formats` from your dependencies. The `@exprtlabs/golem/ajv` and `@exprtlabs/golem/ajv-tooling` subpaths, `OpenApiAjvOptions` and the engine functions are gone, and `ajvStandalone` is now an unknown key in `golem.yaml` ([Migrating to 1.0](/migrating#validation)).
+- **Breaking:** issue codes describe the kind of failure, such as `tooSmall`, `literal` and `unknownKey`, with typed fields and new default messages ([mapping](/migrating#issues)).
+- **Breaking:** validators are generated TypeScript files, `ValidationRuleResult` takes `{ message }`, `ModelValidationContext` is `{ resolve }`, and the client's `operationValidators` overrides are `Validator` functions ([Migrating to 1.0](/migrating#validation)).
+- `golem.yaml` gains `unknownFormats: warn | error` ([configuration](/reference/config#root-keys)).
 
 ## golem build and the rewrite hosts
 

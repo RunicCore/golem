@@ -24,13 +24,13 @@ The configuration format (`version: 1`) and the public subpaths listed on this p
 
 ## Public API
 
-Public subpaths of `@exprtlabs/golem` follow semver from 1.0.0: [`model`](/reference/runtime-api#model), [`validation`](/reference/runtime-api#validation), [`ajv`](/reference/runtime-api#ajv), [`mobx`](/reference/runtime-api#mobx), [`mobx-validation`](/reference/runtime-api#mobx-validation), [`errors`](/reference/runtime-api#errors), [`client`](/reference/runtime-api#client), [`conversion`](/reference/runtime-api#conversion), [`tags`](/reference/runtime-api#tags), [`temporal`](/reference/runtime-api#temporal), [`serde`](/reference/runtime-api#serde), [`nest`](/reference/runtime-api#nest), [`generator-api`](/reference/runtime-api#generator-api), [`manifest`](/reference/runtime-api#manifest), [`rewrite`](/reference/runtime-api#rewrite), [`loader`](/reference/runtime-api#loader), [`register`](/reference/runtime-api#register), [`vite`](/reference/runtime-api#vite) and [`esbuild`](/reference/runtime-api#esbuild).
+Public subpaths of `@exprtlabs/golem` follow semver from 1.0.0: [`model`](/reference/runtime-api#model), [`validation`](/reference/runtime-api#validation), [`mobx`](/reference/runtime-api#mobx), [`mobx-validation`](/reference/runtime-api#mobx-validation), [`errors`](/reference/runtime-api#errors), [`client`](/reference/runtime-api#client), [`conversion`](/reference/runtime-api#conversion), [`tags`](/reference/runtime-api#tags), [`temporal`](/reference/runtime-api#temporal), [`serde`](/reference/runtime-api#serde), [`nest`](/reference/runtime-api#nest), [`generator-api`](/reference/runtime-api#generator-api), [`manifest`](/reference/runtime-api#manifest), [`rewrite`](/reference/runtime-api#rewrite), [`loader`](/reference/runtime-api#loader), [`register`](/reference/runtime-api#register), [`vite`](/reference/runtime-api#vite) and [`esbuild`](/reference/runtime-api#esbuild).
 
-Internal subpaths `cli`, `emitter`, `schema`, `schema-graph`, `ajv-tooling`, `type-analysis`, `generated-paths` and `ts` may change in any release.
+Internal subpaths `cli`, `emitter`, `schema`, `schema-graph`, `type-analysis`, `generated-paths` and `ts` may change in any release.
 
 ## Feature defaults
 
-- Validation is enabled by default. MobX, `ajvStandalone` and `allowAny` are disabled by default.
+- Validation is enabled by default. MobX and `allowAny` are disabled by default.
 - Feature flags apply to every job. An individual `IObject` or `IModel` can override `allowAny` and `validation`.
 - Callback and webhook types are generated; your application implements their handlers.
 - Response links are emitted as metadata; clients don't follow them automatically.

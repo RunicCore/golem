@@ -23,11 +23,11 @@ You declare data in one of two ways. An `IObject` is a field declaration whose v
 
 1. The TypeScript type checker reads your `IObject` and `IModel` declarations, including tags such as `MinLength<3>`, `TValidation` and `TSerde`.
 2. Golem turns those types into JSON Schema: the full model and JSON schemas, plus the smaller checks that run after conversion.
-3. [Ajv](https://github.com/ajv-validator/ajv) compiles the schemas into validators, at run time or ahead of time. Ahead-of-time validators are bundled into the generated code.
+3. Golem compiles the schemas into validators, written as TypeScript beside the generated code.
 4. Golem writes the generated class, its JSON conversion and its types beside your file.
 5. `golem build`, the Vite or esbuild plugin, or the Node loader rewrites `parse<T>`, `stringify<T>`, `fromWireFormat<T>` and `toWireFormat<T>` calls to that generated conversion when you build or load your code.
 
-For an OpenAPI 3.1 or 3.2 document, Golem resolves its `$ref`s across local files (and allowed HTTPS hosts), checks it against the official OpenAPI schema and the specification's cross-field rules, then runs the same schema and Ajv steps. For NestJS, Golem reads controllers and their types without starting the app and writes an OpenAPI document.
+For an OpenAPI 3.1 or 3.2 document, Golem resolves its `$ref`s across local files (and allowed HTTPS hosts), checks it against the official OpenAPI schema and the specification's cross-field rules, then runs the same schema and validator steps. For NestJS, Golem reads controllers and their types without starting the app and writes an OpenAPI document.
 
 ## Requirements
 
@@ -36,10 +36,6 @@ You need Node.js 22.15 or newer and TypeScript 6 or 7 ([requirements](/guide/ins
 ## Planned features
 
 - **Data structure catalog.** A structured document built from your `IObject` and `IModel` declarations, so you can browse and review the main data interfaces and classes in your code: DTOs, models, entities. A later step adds classification by Jev, a classifier model, and review by another AI reviewer.
-
-## Special thanks
-
-- [Ajv](https://github.com/ajv-validator/ajv) compiles and runs every validator.
 
 ## Common questions
 

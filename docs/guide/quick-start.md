@@ -5,7 +5,7 @@ Declare a model, generate its class, add a method, and run it.
 ## Install
 
 ```sh
-npm install @exprtlabs/golem@rc ajv ajv-formats
+npm install @exprtlabs/golem@rc
 npm install --save-dev @exprtlabs/golem-model@rc typescript@~7.0.2
 ```
 

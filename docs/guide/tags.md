@@ -2,13 +2,7 @@
 
 Attach validation constraints, custom rules and JSON conversions to field types.
 
-Start with a [configured model project](/guide/quick-start). Keep validation enabled and install its runtime peers:
-
-```sh
-npm install ajv ajv-formats
-```
-
-Run `npx golem generate` after saving a model file. [Standalone validation](/reference/config#validation-profiles) is an alternative to runtime Ajv.
+Start with a [configured model project](/guide/quick-start) and keep validation enabled. Run `npx golem generate` after saving a model file.
 
 Tags are type-only annotations on a field type.
 
@@ -72,7 +66,7 @@ Use `TValidation<typeof predicate>` when a built-in tag cannot express the valid
 
 <<< ../../examples/models/src/task-input.model.ts#custom-rule
 
-- Extra `TValidation` on a nested SDK type, such as `Money & TValidation<typeof extra>`, is compiled into the parent model's Ajv validator next to the nested SDK schema; it does not create a second validator.
+- Extra `TValidation` on a nested SDK type, such as `Money & TValidation<typeof extra>`, is compiled into the parent model's validator next to the nested SDK schema; it does not create a second validator.
 - Export a synchronous function with one required value.
 - Built-in constraints run first. Several predicates on one value run in a fixed order that doesn't follow the order you wrote them, so keep each predicate independent of the others.
 - Return `true` to accept, `false` for a default message, or a string for a custom message.
@@ -106,7 +100,7 @@ Here `PermissionWire` is a string tagged with a hexadecimal pattern, and the mod
 | `decodePermissions(value: PermissionWire)` | JSON validation includes the pattern. Generated validation checks it **before decoding and after encoding**. |
 | Change the decoder parameter to `value: string` | JSON validation keeps the string type check but drops the pattern, even if the encoder still returns `PermissionWire`. |
 | `permissions: number & Integer & Minimum<0> & …` | These are validation constraints on the model value. They run **after decoding and before encoding**, regardless of whether the decoder accepts plain `string`. |
-| `{ validate: false }` | Runs only the `TSerde` serialize formatter, without Ajv. Without this option, `parse`, `stringify`, `fromWireFormat` and `toWireFormat` run Ajv when validation is enabled. |
+| `{ validate: false }` | Runs only the `TSerde` serialize formatter, without checks. Without this option, `parse`, `stringify`, `fromWireFormat` and `toWireFormat` check the value when validation is enabled. |
 
 - The decoder's parameter type defines the JSON schema.
 - The encoder's return type is checked for TypeScript compatibility. Tags on the return type alone add no JSON validation.

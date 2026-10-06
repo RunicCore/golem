@@ -36,7 +36,7 @@ The generators declare the compiler as a peer dependency, so npm installs one co
 | `@exprtlabs/golem-model` | `typescript` `>=6.0.0 <8` |
 | `@exprtlabs/golem-ts-openapi` | `typescript` `>=6.0.0 <8` |
 | `@exprtlabs/golem-openapi` | none; add `typescript` to compile the SDK |
-| `@exprtlabs/golem` | optional: `typescript` (`>=6.0.0 <8`) for `golem build`; `vite` (`>=5`) and `esbuild` for their plugins; `ajv`, `ajv-formats`, `mobx`, `@nestjs/common`, `rxjs` for the features that use them |
+| `@exprtlabs/golem` | optional: `typescript` (`>=6.0.0 <8`) for `golem build`; `vite` (`>=5`) and `esbuild` for their plugins; `mobx`, `@nestjs/common`, `rxjs` for the features that use them |
 
 ## TypeScript setup
 
@@ -84,9 +84,8 @@ Validation is on and MobX is off by default.
 
 | Setting in `golem.yaml` | Extra application dependencies |
 | --- | --- |
-| Validation on (`validation: true`) | `npm install ajv ajv-formats` |
+| Validation on (`validation: true`) | none |
 | MobX on (`mobx: true`) | `npm install mobx` |
-| Precompiled validators (`ajvStandalone: true`) | none; ship the generated validator JavaScript |
 | Validation off (`validation: false`) | none |
 
 These keys go at the top level of `golem.yaml` ([all settings](/reference/config#validation-profiles)).

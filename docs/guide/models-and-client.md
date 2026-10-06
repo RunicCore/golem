@@ -11,7 +11,7 @@ The generated class builds the `money` field as the SDK's runtime class, `TMoney
 ## Install
 
 ```sh
-npm install @exprtlabs/golem@rc ajv ajv-formats
+npm install @exprtlabs/golem@rc
 npm install --save-dev @exprtlabs/golem-model@rc @exprtlabs/golem-openapi@rc typescript@~7.0.2
 ```
 

@@ -6,7 +6,7 @@ from the current directory.
 
 - `version: 1` selects the configuration format and is independent of the package release.
 - `tsconfig` names the TypeScript project that `golem generate` reads and `golem build` builds. The Vite and esbuild plugins and the Node loader open the same project from `golem.yaml`: the `config` option of the plugin, else `GOLEM_CONFIG`, else `./golem.yaml`.
-- `mobx`, `validation`, `ajvStandalone`, and `allowAny` apply to every job. A named `IObject` or `IModel` can still set `validation` and `allowAny` for that declaration.
+- `mobx`, `validation` and `allowAny` apply to every job. A named `IObject` or `IModel` can still set `validation` and `allowAny` for that declaration.
 - Unknown keys are errors.
 - Configure at least one `generators`, `controllers`, `openapi` or `models` job.
 
@@ -22,7 +22,6 @@ It records what it writes in an [inventory](/guide/watch#generated-files-and-the
 | `tsconfig` | path | No | `tsconfig.json` | The project's tsconfig, relative to `golem.yaml`. The file must exist when you set the key. One tsconfig belongs to one `golem.yaml`: the `root` of a `models` or `controllers` job must lie inside its directory, and each job must find that same file as the nearest `tsconfig.json` from its `root` upward. A `tsconfig` that names another file is not supported yet. |
 | `mobx` | boolean | No | `false` | Generate MobX observability hooks. |
 | `validation` | boolean | No | `true` | Generate runtime validation metadata and checks. Named `IObject` / `IModel` `{ validation: true or false }` overrides this per declaration. |
-| `ajvStandalone` | boolean | No | `false` | Precompile model, object-codec and SDK validators during generation. Requires `validation: true`. |
 | `allowAny` | boolean | No | `false` | Permit inferred `any` fields in models. An `IObject` or `IModel` can opt in with `IObject<F, { allowAny: true }>`, or tighten this policy explicitly. |
 | `unknownFormats` | `warn` or `error` | No | `warn` | What generation does with a schema `format` that golem does not check. `warn` reports [`VALIDATE_UNKNOWN_FORMAT`](/reference/diagnostics#validate-unknown-format) and does not check that format; `error` stops generation. |
 | `generators` | array of generator jobs | No | — | A non-empty list of [jobs from installed packages](#generator-jobs). |
@@ -34,7 +33,6 @@ It records what it writes in an [inventory](/guide/watch#generated-files-and-the
 version: 1
 mobx: false
 validation: true
-ajvStandalone: false
 allowAny: false
 unknownFormats: warn
 openapi:
@@ -54,16 +52,10 @@ outputs are rejected.
 
 | Profile | Runtime behavior | Application setup |
 | --- | --- | --- |
-| `validation: true`, `ajvStandalone: false` (default) | Generated checks use runtime Ajv. | Install `ajv` and `ajv-formats`. |
-| `validation: true`, `ajvStandalone: true` | All generated checks use precompiled validators, including nested models and custom bindings. | Include the generated validator JavaScript in the compile output. Ajv runtime peers are unnecessary. |
+| `validation: true` (default) | Generated checks run in TypeScript validator modules written beside the models and SDK, including nested models and custom bindings. | None. Compile the generated files with the rest of the project. |
 | `validation: false` | Conversion runs without generated checks unless a named I* sets `{ validation: true }`. | Calling serde with `{ validate: true }` on a stub throws `LibErrorKind.ValidationUnavailable`. |
 
-For standalone output:
-
-- Include all generated validator JavaScript beside the compiled modules that import it, preserving the generated directory structure.
-- Bundlers follow the generated imports. With `tsc`, enable `allowJs` and include the generated JavaScript, or copy it to `outDir`.
-- `ajvStandalone: true` requires `validation: true`.
-- Custom predicates and serde bindings must be exported functions that the generator can import. An unresolved binding or imported schema stops generation with a diagnostic.
+Custom predicates and serde bindings must be exported functions that the generator can import. An unresolved binding or imported schema stops generation with a diagnostic.
 
 A `format` is checked only when golem implements it: `date-time`, `date`, `time`, `duration`, `email`, `hostname`, `ipv4`, `ipv6`, `uri`, `uri-reference`, `uuid`, `regex`, `int32`, `int64`, `float` and `double`. Set `unknownFormats: error` to fail generation on any other format instead of skipping its check.
 

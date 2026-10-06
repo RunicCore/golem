@@ -2,9 +2,7 @@
 
 Check models and API data, show field errors, and add your own rules.
 
-Validation needs `ajv` and `ajv-formats` unless you use precompiled validators ([settings](/reference/config#validation-profiles)).
-
-Put validation constraints such as `MinLength`, `Minimum`, and `TValidation` on field types. Generated Ajv validators check them.
+Put validation constraints such as `MinLength`, `Minimum`, and `TValidation` on field types. Generated validators check them.
 
 - `validateInstance(model)` returns an issue list.
 - `getValidator(model)` stores field errors for an editor.
@@ -14,10 +12,6 @@ Both stop at the first issue by default. Pass `{ failFast: false }` to collect e
 <<< ../../examples/models/src/task-input.model.ts#custom-rule
 
 <<< ../../examples/models/src/task-input-checks.ts#validate-a-model
-
-::: info Ajv
-Default validation uses runtime Ajv. With `ajvStandalone: true`, all generated checks use precompiled validators and the application needs no Ajv runtime peers.
-:::
 
 `validation` defaults to `true`. `IObject` and `IModel` accept `{ validation: false }` to skip checks for that declaration. A nested `IObject` or `IModel` uses its own setting.
 
@@ -89,11 +83,11 @@ The next `validator.validate()` replaces these messages with its own results. Th
 
 ## Validation during conversion
 
-`parse<T>(text)` validates the incoming JSON, then runs each field's `TSerde` decoder. `fromWireFormat<T>(value)` does the same for a plain object, without `JSON.parse`. `{ validate: false }` skips Ajv and does not update stored field errors.
+`parse<T>(text)` validates the incoming JSON, then runs each field's `TSerde` decoder. `fromWireFormat<T>(value)` does the same for a plain object, without `JSON.parse`. `{ validate: false }` skips the check and does not update stored field errors.
 
 <<< ../../examples/models/src/load-task.ts#validation-during-conversion
 
-- After successful `parse` / `fromWireFormat` (Ajv on), you do not need another `validateInstance(model)` call unless you edit the instance. Use `getValidator(model).validate()` when you want all field errors stored for display.
+- After successful `parse` / `fromWireFormat` (validation on), you do not need another `validateInstance(model)` call unless you edit the instance. Use `getValidator(model).validate()` when you want all field errors stored for display.
 - JSON values and model values are checked at separate stages.
 - Typing a `TSerde` decoder parameter as plain `string` drops the [validation constraints on the JSON value](/guide/tags#which-type-controls-validation), not the ones on the model value.
 
@@ -113,8 +107,8 @@ Supported OpenAPI validation constraints work whether you start from TypeScript 
 
 Supported keywords, versions and profiles are in [OpenAPI client support](/reference/openapi-support).
 
-## Ajv and generation settings
+## Generation settings
 
-Validation is enabled by default. [Validation profiles](/reference/config#validation-profiles) set how validators are supplied in `golem.yaml`.
+Validation is enabled by default. [Validation profiles](/reference/config#validation-profiles) set it in `golem.yaml`.
 
 Full example: [`examples/models`](https://github.com/RunicCore/golem/tree/master/examples/models)

@@ -19,7 +19,7 @@ Each library turns JSON into instances of your classes and back, without validat
 </template>
 <template #validated-classes>
 
-Class instances are checked against their rules on the way in and out. Golem runs Ajv [precompiled or at run time](/reference/config#validation-profiles); class-validator runs decorator rules after class-transformer builds the instance, and doesn't reject unknown properties.
+Class instances are checked against their rules on the way in and out. Golem runs its own generated [validators](/reference/config#validation-profiles); class-validator runs decorator rules after class-transformer builds the instance, and doesn't reject unknown properties.
 
 </template>
 <template #plain-simple-code>
@@ -284,7 +284,7 @@ Class instances are checked against their rules on the way in and out. Golem run
 
 ## What is measured
 
-Every library gets the same JSON payload. Before timing, each library must turn its parsed value back into the original JSON, and the libraries that validate must reject invalid variants of it. Those checks run in a separate process, so every library is timed on valid input only. A validator runs slower after it has rejected differently shaped input: V8 re-optimises Ajv's generated function for the new object shapes. typia shows the same effect. Each library is timed in its own process, in two rounds with the library order reversed in the second. Each case is warmed up, then timed in six short batches; the table shows the median. A library that can't do a case says why instead of showing a number.
+Every library gets the same JSON payload. Before timing, each library must turn its parsed value back into the original JSON, and the libraries that validate must reject invalid variants of it. Those checks run in a separate process, so every library is timed on valid input only. A validator runs slower after it has rejected differently shaped input: V8 re-optimises a validator's generated function for the new object shapes. typia shows the same effect. Each library is timed in its own process, in two rounds with the library order reversed in the second. Each case is warmed up, then timed in six short batches; the table shows the median. A library that can't do a case says why instead of showing a number.
 
 ## Run it yourself
 

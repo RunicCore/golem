@@ -99,7 +99,7 @@ The controller job writes `api/openapi.yaml`. An OpenAPI job reads that document
 
 ```sh
 npm install --save-dev @exprtlabs/golem-openapi@rc @exprtlabs/golem-model@rc
-npm install @exprtlabs/golem@rc ajv ajv-formats reflect-metadata
+npm install @exprtlabs/golem@rc reflect-metadata
 ```
 
 <<< ../../examples/payments/web/src/submit-payment.ts#payment-client

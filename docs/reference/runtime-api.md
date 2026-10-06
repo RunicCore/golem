@@ -6,7 +6,6 @@ Find every `@exprtlabs/golem` import your application, NestJS app or tool can us
 | --- | --- | --- |
 | [`model`](#model) | `IModel`, `IObject`, generated-model types and guards | none |
 | [`validation`](#validation) | `validate<T>`, `validateInstance`, `getValidator`, `ModelValidator` | none |
-| [`ajv`](#ajv) | Runtime Ajv validation engines | `ajv`, `ajv-formats` |
 | [`mobx`](#mobx) | `asGenObservable` and observable API operations | `mobx` |
 | [`mobx-validation`](#mobx-validation) | Observable validator state | `mobx` |
 | [`errors`](#errors) | `LibError`, `LibErrorKind` and the `Issue` type | none |
@@ -24,9 +23,9 @@ Find every `@exprtlabs/golem` import your application, NestJS app or tool can us
 | [`vite`](#vite) | Vite plugin that rewrites TypeScript before Vite strips its types | `vite` |
 | [`esbuild`](#esbuild) | esbuild plugin that rewrites TypeScript before esbuild strips its types | `esbuild` |
 
-Internal subpaths used by the generators: `cli`, `emitter`, `schema`, `schema-graph`, `ajv-tooling`, `type-analysis`, `generated-paths`, `validation-runtime`, `validator-compiler`, `validation-plan`, [`ts`](#ts). Don't import them; they may change in any release.
+Internal subpaths used by the generators: `cli`, `emitter`, `schema`, `schema-graph`, `type-analysis`, `generated-paths`, `validation-runtime`, `validator-compiler`, `validation-plan`, [`ts`](#ts). Don't import them; they may change in any release.
 
-Generated files import `ajv` only with `validation: true` and `ajvStandalone: false`. With `ajvStandalone: true` they import precompiled validators instead ([validation profiles](/reference/config#validation-profiles)).
+With `validation: true`, generated files import their own validator modules and need no extra package ([validation profiles](/reference/config#validation-profiles)).
 
 ## `@exprtlabs/golem/model` {#model}
 
@@ -44,7 +43,7 @@ import type { IModel, IObject } from '@exprtlabs/golem/model';
 | `ModelInit` | `ModelInit<Value>` | Constructor values: nested models or their initializers. |
 | `WireFormat` | `WireFormat<Value>` | The JSON shape `toWireFormat<Value>` returns, such as `TTaskJSON` for `Task`. |
 | `ModelField` | `ModelField<Model>` | String field names, without methods and `$`-prefixed keys. |
-| `ModelValidationContext` | `{ resolve?, engine? }` | Validator source for one call ([validation context](#validation-context)). |
+| `ModelValidationContext` | `{ resolve }` | Validator source for one call ([validation context](#validation-context)). |
 | `isGeneratedModel` | `(value: unknown): value is GeneratedModel<unknown>` | Recognizes a generated instance, including instances of your class. |
 | `isGeneratedModelConstructor` | `(value: unknown): value is GeneratedModelConstructor` | Recognizes a generated class or your class that extends it. |
 
@@ -58,7 +57,7 @@ import type { IModel, IObject } from '@exprtlabs/golem/model';
 
 Generation writes `task.model.generated.ts` with `TTaskBaseModel`, `TTaskFields` (field types), `TTaskJSON` (JSON shape) and `TTaskInit` (constructor values). The `TTaskBaseModel` constructor copies the values it receives and does not validate, so an incomplete draft is valid state.
 
-Used by generated code: `registerGeneratedModel`, `findGeneratedModelDefinition`, `findGeneratedModelDefinitionForConstructor`, `GeneratedModel`, `GeneratedModelWire`, `GeneratedModelFields`, `GeneratedModelConstructor`, `GeneratedModelResult`, `GeneratedModelDefinition`, `RegisteredGeneratedModelDefinition`, `GeneratedModelConversion`, `GeneratedModelProfile`, `GeneratedModelValidation`, `GeneratedModelValidatorEnhancer`, `OpenApiGeneratedModelValidation`, `ModelRuntimeValidator`, `ModelRuntimeSyncValidator`, `ModelRuntimeValidationEngine`, `ModelConstraint`, `ModelTypeMetadata`, `ModelTypeDescriptor`, `UnionDiscriminator`, `DiscriminatorValue`, `ConstraintSchemaValue` and the `generatedModel*Brand` symbols.
+Used by generated code: `registerGeneratedModel`, `findGeneratedModelDefinition`, `findGeneratedModelDefinitionForConstructor`, `GeneratedModel`, `GeneratedModelWire`, `GeneratedModelFields`, `GeneratedModelConstructor`, `GeneratedModelResult`, `GeneratedModelDefinition`, `RegisteredGeneratedModelDefinition`, `GeneratedModelConversion`, `GeneratedModelProfile`, `GeneratedModelValidatorEnhancer`, `ModelConstraint`, `ModelTypeMetadata`, `ModelTypeDescriptor`, `UnionDiscriminator`, `DiscriminatorValue`, `ConstraintSchemaValue` and the `generatedModel*Brand` symbols.
 
 ## `@exprtlabs/golem/validation` {#validation}
 
@@ -79,7 +78,7 @@ function getValidator<Fields extends object, Owner extends object>(
 | `validate` | `<T>(value: unknown, options?: ValidateOptions): value is T` | Checks a value against a named `IObject` or `IModel` and narrows it. Needs a [build that rewrites it](/guide/install#typescript-setup). |
 | `ModelValidator` | `class ModelValidator<Fields, Owner = Fields>` | The stateful validator; members below. |
 
-`validateInstance`, `validate` and `ModelValidator.validate` stop at the first issue unless you pass `{ failFast: false }`. An invalid value is an ordinary result. They throw `LibError` when validation can't run: the model was generated with `validation: false` (`ValidationUnavailable`), generated metadata is missing, or a converter or engine throws.
+`validateInstance`, `validate` and `ModelValidator.validate` stop at the first issue unless you pass `{ failFast: false }`. An invalid value is an ordinary result. They throw `LibError` when validation can't run: the model was generated with `validation: false` (`ValidationUnavailable`), generated metadata is missing, or a converter throws.
 
 ### `ModelValidator` members {#model-validator}
 
@@ -94,7 +93,7 @@ function getValidator<Fields extends object, Owner extends object>(
 | `pending` | `boolean` | `true` while `validate` runs. |
 | `error` | `(field): string \| undefined` | First message for a field name or path array such as `['items', 0, 'sku']`. |
 | `errorsFor` | `(field): readonly string[]` | All messages for that field name or path. |
-| `extend` | `(rules: ModelValidationRules<Fields, Owner>): this` | Adds rules for this instance. A rule returns `true`, a message, or a promise of either. |
+| `extend` | `(rules: ModelValidationRules<Fields, Owner>): this` | Adds rules for this instance. A rule returns `true`, a message, `{ message }`, or a promise of any of them. A rejecting rule reports a `custom` issue. |
 | `messages` | `(messages: ValidationMessages<Fields>): this` | Replaces generated messages by code (`'tooSmall'`) or field and code (`'title.tooSmall'`). |
 | `setErrors` | `(errors): void` | Stores messages from outside, such as a server response, as `external` issues. Takes a field map or `{ path, message }[]`. |
 | `clear` | `(): void` | Removes stored issues and resets `pending`. |
@@ -104,16 +103,7 @@ function getValidator<Fields extends object, Owner extends object>(
 
 Types for these members: `ModelValidationRules`, `ValidationRule`, `ValidationRuleResult`, `ValidationMessages`, `ValidationMessage`, `ValidationMessageKey`, `FieldValidationMessage`, `ExternalFieldError`, `ValidationMode`, `Issue` and `IssuePath`.
 
-### Validation engine {#validation-engine}
-
-```ts
-function configureModelValidationEngine(registry: object, registryId: string, engine: ModelRuntimeValidationEngine): void;
-function registerModelValidationEngineFactory(factory: () => ModelRuntimeValidationEngine): void;
-```
-
-`configureModelValidationEngine` adds the registry schema to `engine` if missing and uses that engine for models of that registry. `registerModelValidationEngineFactory` sets the engine created for a registry on its first validation; importing [`ajv`](#ajv) registers one. Register a factory during startup: a registry keeps the engine it already created.
-
-Used by generated code: `runValidation`, `issuesFromErrors`, and in operation modules `operationValidators` (resolves an operation's input and response validators once per client), `validateOperationInput` and `responseCheck` (the response check `ClientRuntime.readResponse` runs on each decoded body or stream item).
+Used by generated code: `runValidation` and, in operation modules, `operationValidators` (resolves an operation's input and response validators once per client), `validateOperationInput` and `responseCheck` (the response check `ClientRuntime.readResponse` runs on each decoded body or stream item).
 
 ### Runtime validators {#runtime-validators}
 
@@ -121,30 +111,9 @@ Used by generated code: `runValidation`, `issuesFromErrors`, and in operation mo
 function validateWith(validator: RuntimeValidator, value: unknown): Promise<ValidationResult>;
 ```
 
-`validateWith` runs one validator and returns `{ valid, errors }`.
+`validateWith` runs one validator and returns `{ valid, issues }`. `all` defaults to `true`, which reports every issue; pass `false` to stop at the first. A validator that does not return an array throws `TypeError`.
 
 Types: `OperationRuntimeValidators` and `ValidationResult`. `OperationRuntimeValidators` is the value type of a client's `operationValidators` option: the input validator and the response validators keyed `status:contentType`. Each validator is a `Validator`: `(value, all) => readonly SchemaIssue[]`, empty when the value is valid.
-
-## `@exprtlabs/golem/ajv` {#ajv}
-
-```ts
-import { createOpenApiAjvEngine } from '@exprtlabs/golem/ajv';
-import { TasksClient } from '../sdk/index.js';
-
-const client = new TasksClient({
-  baseUrl: 'https://api.example.com',
-  validationEngine: createOpenApiAjvEngine({ allErrors: false }),
-});
-```
-
-| Member | Signature | Behavior |
-| --- | --- | --- |
-| `createOpenApiAjvEngine` | `(options?: OpenApiAjvOptions): OpenApiRuntimeValidationEngine` | Ajv 2020-12 with `ajv-formats`. Accepts asynchronous schemas. |
-| `createOpenApiSyncAjvEngine` | `(options?: OpenApiAjvOptions): OpenApiSyncRuntimeValidationEngine` | The same engine for synchronous calls. Resolving an `$async` schema throws `ValidationUnavailable`. Generated model files use it. |
-| `configureModelValidationEngine` | re-export | [Validation engine](#validation-engine). |
-| `OpenApiAjvOptions` | Ajv `Options` plus `validationBindings` | Your options override the defaults `allErrors: true`, `strict: false`, `validateSchema: false`, `discriminator: true`. `validationBindings` holds the `TValidation` predicates generated code passes. |
-
-Importing the module registers `createOpenApiAjvEngine()` as the default model engine. A generated SDK creates one shared engine on first use. An engine passed to a client applies to that client's checks only; it does not change the generation profile or the model engine. With `ajvStandalone: true` the SDK uses its precompiled engine.
 
 ## `@exprtlabs/golem/mobx` {#mobx}
 
@@ -175,7 +144,7 @@ import { getValidator } from '@exprtlabs/golem/mobx-validation';
 | `enhanceValidatorWithMobX` | `(validator): validator` | Makes `issues`, `errors`, `valid` and `pending` computed, and `setIssues`, `setPending`, `clear` and `setErrors` actions. Repeated calls change nothing. |
 | `ModelValidator` | `class extends ModelValidator` | A validator that is observable from construction. |
 
-Models generated with `mobx: true` and `validation: true` register `enhanceValidatorWithMobX`, so `getValidator` from `validation` already returns an observable validator for them. The module also re-exports `configureModelValidationEngine`, `registerModelValidationEngineFactory` and the validation types.
+Models generated with `mobx: true` and `validation: true` register `enhanceValidatorWithMobX`, so `getValidator` from `validation` already returns an observable validator for them. The module also re-exports the validation types.
 
 ## `@exprtlabs/golem/errors` {#errors}
 
@@ -263,7 +232,7 @@ Generated SDKs call the request runtime. Application code rarely does.
 
 | Member | Behavior |
 | --- | --- |
-| `ClientRuntime` | Holds a client's options and sends its requests. `new ClientRuntime(client, options, defaults)`. `readResponse` selects the declared response, decodes it and runs the operation's response check. |
+| `ClientRuntime` | Holds a client's options and sends its requests. `new ClientRuntime(client, options)`. `readResponse` selects the declared response, decodes it and runs the operation's response check. |
 | `isUndeclaredResponseError` | `(error, client?)`: true for a status or media type the operation does not declare |
 | `serializePath` | Writes a path parameter |
 | `addQueryParameter` | Adds a query parameter |
@@ -277,7 +246,7 @@ Generated SDKs call the request runtime. Application code rarely does.
 | `applySecurity` | Adds credentials for the operation's security requirements |
 | `encode` | Percent-encodes a value |
 
-The module also exports the types these functions use, including `ClientOptions`, `RequestOptions`, `ClientRuntimeDefaults`, `ParameterSerializer`, `EncodedBody`, `BodyEncoder`, `MutualTlsTransport`, `ResponseHeaderDecoder`, `StreamDecoder`, `ResponseDecoder`, `UndeclaredResponseError`, `AuthContext`, `TokenAuthValue`, `BasicCredentials`, `BasicAuthValue` and `RuntimeSecuritySchemes`. Each SDK aliases the option types with its client name, such as `PaymentsClientOptions`.
+The module also exports the types these functions use, including `ClientOptions`, `RequestOptions`, `ParameterSerializer`, `EncodedBody`, `BodyEncoder`, `MutualTlsTransport`, `ResponseHeaderDecoder`, `StreamDecoder`, `ResponseDecoder`, `UndeclaredResponseError`, `AuthContext`, `TokenAuthValue`, `BasicCredentials`, `BasicAuthValue` and `RuntimeSecuritySchemes`. Each SDK aliases the option types with its client name, such as `PaymentsClientOptions`.
 
 Generated client options are in [Create a client](/guide/client-usage#create-a-client).
 
@@ -371,7 +340,7 @@ import { fromWireFormat, parse, stringify, toWireFormat } from '@exprtlabs/golem
 | --- | --- | --- | --- |
 | `validate` | `SerdeOptions` | `true` when generated | `false` skips the checks. `true` throws `ValidationUnavailable` if checks were not generated. |
 | `failFast` | both | `true` | `false` reports every issue. It does not skip checks. |
-| `validationContext` | both | none | Resolves validators from your engine ([validation context](#validation-context)). |
+| `validationContext` | both | none | Resolves validators from your own function ([validation context](#validation-context)). |
 
 `ValidateOptions` has `failFast` and `validationContext`. The rewrite also passes `construct` in `SerdeOptions` for a class `T`. The call order and checks per call are in [Validation during conversion](/guide/serialization#validation-during-conversion).
 
@@ -386,8 +355,7 @@ Pass one `ModelValidationContext` to repeated serde, `validateInstance` and `Mod
 
 | Field | Behavior |
 | --- | --- |
-| `resolve(reference, mode)` | Returns the validator for a schema reference and `'first'` or `'all'` mode. Takes precedence over `engine`. |
-| `engine` | A `ModelRuntimeValidationEngine` holding the schemas. Its own options decide how many errors it reports. |
+| `resolve(reference, mode)` | Returns the `Validator` for a schema reference and `'first'` or `'all'` mode, or `undefined` when it has none. |
 
 | Reference | Checks | Used by |
 | --- | --- | --- |
@@ -396,15 +364,14 @@ Pass one `ModelValidationContext` to repeated serde, `validateInstance` and `Mod
 | `Id#model-only` | converted fields and `TValidation` rules on the model value | `parse` / `fromWireFormat` after decoding |
 | `Id#wire-only` | the JSON written for converted fields | `stringify` / `toWireFormat` after encoding |
 
-- `registerCodecSchemas(addSchema, codec)` adds every schema of a codec and the codecs it references, each once.
 - `objectCodecValidationReference(codec, plane)` returns the reference for one `ValidationPlane`.
-- A context is authoritative: a missing validator throws `ValidationUnavailable` instead of using another engine.
+- A context is authoritative: a missing validator throws `ValidationUnavailable` instead of using the generated one.
 - Resolved validators are cached per context object, reference and mode. Create a new context when schemas change.
-- Synchronous serde calls reject a validator that returns a promise; `validateInstance` and `ModelValidator.validate` await it.
+- A validator must return an array of issues, empty when the value is valid. Any other result throws `TypeError`, and a promise throws `ValidationUnavailable` in synchronous serde calls.
 
 Types: `ObjectCodec`, `ObjectCodecImpl`, `SerdeOptions`, `ValidateOptions`, `ValidationPlane`, `WireFormat`; `IssueRepresentation` and `IssueSource` are re-exported from [`errors`](#errors).
 
-Used by generated code: `createObjectCodec`, `registerObjectCodec`, `getObjectCodec`, `requireObjectCodec`, `registerIModelClass`, `getIModelClass`, `requireIModelClass`, `findCodecIdForConstructor`, `addNestedCodecSchema`, `resolveGeneratedModelSchemaRefs`, `resolveModelValidationContextValidator`, `runSynchronousValidation`, `lazyAjvSchema`, `requireAjvSchema`, `ajvIssues`, `ajvIssuesFromErrors`, `parseJson`, `serdeValidates`, `serdeFailFast`, `validationFailure`, `validationUnavailable` and the `stringifyJson*` writers.
+Used by generated code: `createObjectCodec`, `registerObjectCodec`, `getObjectCodec`, `requireObjectCodec`, `registerIModelClass`, `getIModelClass`, `requireIModelClass`, `findCodecIdForConstructor`, `resolveGeneratedModelSchemaRefs`, `resolveModelValidationContextValidator`, `requireModelValidator`, `isValidModelValue`, `modelValueIssues`, `assertModelValue`, `parseJson`, `serdeValidates`, `serdeFailFast`, `validationFailure`, `validationUnavailable` and the `stringifyJson*` writers.
 
 ## `@exprtlabs/golem/nest` {#nest}
 
@@ -541,7 +508,7 @@ An OpenAPI job writes `model-manifest.json` beside its SDK; a model job reads it
 | `discoverModelManifests` | `(root = process.cwd(), onInput?): string[]` | Sorted absolute paths of `model-manifest.json` files below `<root>/src`, skipping `dist` and `build`. |
 | `readModelManifest` | `(filename: string, onInput?): ModelManifest` | Reads and checks one manifest. Throws with the file name when it is unreadable or invalid. |
 | `validateModelManifest` | `(manifest: unknown, filename?): ModelManifest` | Checks a parsed manifest. |
-| `ModelManifest` | `{ profile, models, validationSchemaClosure? }` | The generation profile, one `ModelManifestEntry` per model, and schemas for `ajvStandalone` builds. |
+| `ModelManifest` | `{ profile, models, validationSchemaClosure? }` | The generation profile, one `ModelManifestEntry` per model, and the schemas a project needs to validate those models. |
 | `MODEL_MANIFEST_FILENAME` | `'model-manifest.json'` | The file name. |
 
 Used by the generators: `ModelManifestEntry`, `ModelManifestProvenance`, `MODEL_MANIFEST_MARKER`, `manifestMarker`, `modelManifestProfile`, `validateModelProfile`, `stableJson`, `stableIdentity`, `sourceDigest`.

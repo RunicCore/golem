@@ -25,7 +25,7 @@ These calls convert a named [`IObject` or `IModel`](/guide/models#iobject-or-imo
 - [Unsupported unions](/guide/model-composition#unions) fail generation.
 - Write these calls in your own source files. golem does not rewrite a call inside a generated `*.generated.ts` file, so it throws at run time.
 
-With validation on, the default, these calls check the value with Ajv. `{ validate: false }` skips that check. `failFast: false` reports every issue instead of the first one. It does not turn Ajv off.
+With validation on, the default, these calls check the value. `{ validate: false }` skips that check. `failFast: false` reports every issue instead of the first one. It does not turn the check off.
 
 `validate<T>(value)` from `@exprtlabs/golem/validation` narrows `value` to that model. `validateInstance(model)` returns the issue list and does not throw for an ordinary invalid value.
 
@@ -54,6 +54,6 @@ Each rule runs once; your decoders only see values that passed the JSON check.
 
 `failFast: false` throws with every issue. `validate<T>(value)` returns whether the value matches, without throwing. `validateInstance(model)` returns the issues.
 
-When `validation` is off, generated output has no Ajv. `{ validate: true }` then throws `LibErrorKind.ValidationUnavailable`, described in the [runtime reference](/reference/runtime-api#errors). `{ validate: false }` skips the check for data you already trust.
+When `validation` is off, generated output has no checks. `{ validate: true }` then throws `LibErrorKind.ValidationUnavailable`, described in the [runtime reference](/reference/runtime-api#errors). `{ validate: false }` skips the check for data you already trust.
 
 Full example: [`examples/models`](https://github.com/RunicCore/golem/tree/master/examples/models)

@@ -104,7 +104,7 @@ The controller returns plain types. The server configuration writes the OpenAPI 
 Golem needs Node.js 22.15 or newer and TypeScript 6 or 7. `golem build` compiles your project the way `tsc -p` does and rewrites `parse<T>()` on the way; `golem generate` writes the generated code your editor and bundler need. The Vite or esbuild plugin, or the Node loader, can rewrite the calls instead ([Installation](/guide/install)).
 
 ```bash
-npm install @exprtlabs/golem@rc ajv ajv-formats
+npm install @exprtlabs/golem@rc
 npm install --save-dev @exprtlabs/golem-model@rc typescript@~7.0.2
 ```
 
