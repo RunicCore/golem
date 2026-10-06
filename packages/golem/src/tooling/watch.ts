@@ -21,12 +21,14 @@ function sourceCandidates(config: GolemConfig, kind: 'models' | 'controllers', k
     if (kind !== 'models' || job.options.sources !== undefined) continue;
     // A models job also generates the model files its tsconfig includes outside its root, such as a shared folder. The
     // last run recorded the files it read as inputs; the shared folder of each local source outside the root is scanned
-    // whole, so a model file added beside them or in a new subfolder is a candidate too.
+    // whole, so a model file added beside them or in a new subfolder is a candidate too. A "shared folder" that holds
+    // the project itself is the repository: only the directory of the source is scanned then.
     const pattern = suffixPattern(suffixes);
     const sharedFolders = new Set<string>();
     for (const [input, inputKind] of known) {
       if (inputKind === 'models' && /(?<!\.d)\.[cm]?ts$/.test(input) && !input.split(path.sep).includes('node_modules') && !contains(job.options.root, input)) {
-        sharedFolders.add(sharedFolderOf(path.dirname(input)));
+        const folder = sharedFolderOf(path.dirname(input));
+        sharedFolders.add(contains(folder, job.options.root) ? path.dirname(input) : folder);
       }
     }
     for (const folder of sharedFolders) {
