@@ -30,7 +30,7 @@ Commands that need TypeScript use the one installed in the directory of the tsco
 | Command | What it does |
 | --- | --- |
 | `generate` | Writes all outputs and the inventory. A job whose inputs and options did not change since its last run, and whose outputs exist, is skipped. |
-| `check` | Generates the expected artifact set in memory and fails when files are missing, stale, conflicting or obsolete inventoried outputs remain. When the project emits JavaScript (neither `noEmit` nor `emitDeclarationOnly` is set), it also fails on a source of the TypeScript project that lies outside the tsconfig's directory, as `golem build` does. It reports every `parse<T>()` call that no host can rewrite, with its file, its line and what to run, and checks that the Nest codecs agree with the generated registry. It does not write files. |
+| `check` | Generates the expected artifact set in memory and fails when files are missing, stale, conflicting or obsolete inventoried outputs remain. It reports every `parse<T>()` call that no host can rewrite, with its file, its line and what to run, and checks that the Nest codecs agree with the generated registry. It does not write files. |
 | `watch` | Generates once, then reruns affected jobs when observed configuration, API, model, TypeScript or manifest inputs change. |
 | `exec -- <command> [args...]` | Generates once, starts the child command only after generation succeeds, and forwards its exit status and signals. |
 | `exec --watch -- <command> [args...]` | Does the same and keeps the generator watching until the child exits. |
@@ -91,7 +91,7 @@ Like `tsc`, the build emits JavaScript after a failed check unless `noEmitOnErro
 ### What the tsconfig needs
 
 - `outDir` is required.
-- Every source file the program reads lies under the tsconfig's directory. A relative import that leaves it fails the build and names the file.
+- Every source file the tsconfig includes builds, inside the tsconfig's directory or outside it, such as `../shared/*.ts`. The output under `outDir` has the layout `tsc` emits. As with `tsc`, a `rootDir` must contain every included file, so a tsconfig that includes `../shared` sets `rootDir` to a common parent such as `..`.
 - `extends` may name a file anywhere. `paths` and `baseUrl` targets under the directory work as they do for `tsc`.
 
 Some configurations are not supported. `-b` and `--build` are rejected with `golem build does not support project references (-b); run golem build -p <tsconfig> per project.`
@@ -100,7 +100,7 @@ Some configurations are not supported. `-b` and `--build` are rejected with `gol
 | --- | --- | --- |
 | `-b` and project references | One copy of the sources for each project | Run `golem build -p <tsconfig>` per project, in dependency order |
 | `outFile` | The emit run writes one file per source | Emit per file, then bundle with esbuild or Vite and the golem plugin |
-| `rootDirs`, `rootDir` outside the project, sources outside the tsconfig directory | The copy mirrors one directory tree | Move the sources under the tsconfig directory, or build each package separately |
+| `rootDirs` | The copy mirrors one directory tree | Merge the directories, or build each package separately |
 | `inlineSourceMap`, `sourceRoot` | The build writes its own map files | Use `sourceMap` |
 | The `tsc --watch` file watcher | The build runs two compiles per cycle | Use `golem build --watch`, which polls |
 

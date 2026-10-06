@@ -173,6 +173,44 @@ models:
   output: src/generated/models
 ```
 
+### A folder shared by several apps
+
+Give a folder that several apps share its own `golem.yaml` and tsconfig, and run `golem generate` there. The models of the folder are generated into the folder.
+
+```yaml
+# shared/golem.yaml
+version: 1
+mobx: false
+validation: true
+models:
+  root: .
+```
+
+Each app includes the folder in its own tsconfig, with a `rootDir` that contains both:
+
+```json
+{
+  "compilerOptions": { "rootDir": "..", "outDir": "build" },
+  "include": ["src/**/*.ts", "../shared/**/*.ts"]
+}
+```
+
+Each app also lists the shared model files in `models.sources` of its own `golem.yaml`, with the same `mobx` and `validation` as the folder and with the app's own model files. The codec key table of the app then names the shared models, so the app can rewrite the `parse<T>()` calls that use them. The app generates the files that the folder already wrote, with the same content, and imports them from the folder.
+
+```yaml
+# app/golem.yaml
+version: 1
+mobx: false
+validation: true
+models:
+  root: .
+  sources:
+    - src/order.model.ts
+    - ../shared/src/payment.model.ts
+```
+
+The apps share one generated copy of each model. `golem build`, `golem check` and every host rewrite the `parse<T>()` calls in the shared files for the app that builds them.
+
 The global `allowAny` policy defaults to `false`. An `IObject` or `IModel` can
 opt in with `IObject<Fields, { allowAny: true }>` or tighten a global `true`
 profile with `IObject<Fields, { allowAny: false }>`. The declaration's own
