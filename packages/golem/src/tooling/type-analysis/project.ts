@@ -143,17 +143,25 @@ export function sharedImportOutsideItsFolder(
   const filename = canonicalFilename(source.fileName);
   if (!isOutside(tsconfigDirectory, filename)) return undefined;
   const sharedFolder = sharedFolderOf(filename);
-  for (const statement of source.statements) {
+  const target = projectFilesImportedBy(source, compilerOptions)
+    .find((imported) => projectFiles.has(imported) && isOutside(sharedFolder, imported));
+  return target === undefined
+    ? undefined
+    : `${filename} is outside ${tsconfigDirectory} and imports ${target}, which is outside its shared folder ${sharedFolder}. `
+      + 'A shared model may import only files in its shared folder.';
+}
+
+/** The project files that `file` imports or re-exports, by canonical filename. A declaration file and a file in `node_modules` are left out. */
+export function projectFilesImportedBy(file: ts.SourceFile, compilerOptions: ts.CompilerOptions): string[] {
+  const found = new Set<string>();
+  for (const statement of file.statements) {
     const specifier = ts.isImportDeclaration(statement) || ts.isExportDeclaration(statement) ? statement.moduleSpecifier : undefined;
     if (specifier === undefined || !ts.isStringLiteralLike(specifier)) continue;
-    const resolved = ts.resolveModuleName(specifier.text, source.fileName, compilerOptions, ts.sys).resolvedModule?.resolvedFileName;
-    const target = resolved === undefined ? undefined : canonicalFilename(resolved);
-    if (target !== undefined && projectFiles.has(target) && isOutside(sharedFolder, target)) {
-      return `${filename} is outside ${tsconfigDirectory} and imports ${target}, which is outside its shared folder ${sharedFolder}. `
-        + 'A shared model may import only files in its shared folder.';
-    }
+    const resolved = ts.resolveModuleName(specifier.text, file.fileName, compilerOptions, ts.sys).resolvedModule?.resolvedFileName;
+    if (resolved === undefined || isAmbientDeclaration(resolved) || /(?:^|[\\/])node_modules[\\/]/.test(resolved)) continue;
+    found.add(canonicalFilename(resolved));
   }
-  return undefined;
+  return [...found];
 }
 
 function isOutside(directory: string, filename: string): boolean {

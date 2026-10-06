@@ -32,6 +32,7 @@ import {
   commonDirectory,
   generatedFilename,
   portableRelativeFilename,
+  projectFilesImportedBy,
 } from '@exprtlabs/golem/type-analysis';
 import type {
   ConstraintSchemaValue,
@@ -861,15 +862,7 @@ function directImports(job: JobAnalysis, file: ts.SourceFile): readonly string[]
   const key = canonicalFilename(file.fileName);
   const known = job.directImports.get(key);
   if (known) return known;
-  const found = new Set<string>();
-  for (const statement of file.statements) {
-    const specifier = ts.isImportDeclaration(statement) || ts.isExportDeclaration(statement) ? statement.moduleSpecifier : undefined;
-    if (specifier === undefined || !ts.isStringLiteralLike(specifier)) continue;
-    const resolved = ts.resolveModuleName(specifier.text, file.fileName, job.compilerOptions, ts.sys).resolvedModule?.resolvedFileName;
-    if (resolved === undefined || /\.d\.[cm]?ts$/.test(resolved) || /(?:^|[\\/])node_modules[\\/]/.test(resolved)) continue;
-    found.add(canonicalFilename(resolved));
-  }
-  const imports = [...found];
+  const imports = projectFilesImportedBy(file, job.compilerOptions);
   job.directImports.set(key, imports);
   return imports;
 }

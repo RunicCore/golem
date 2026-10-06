@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 
-import { hasErrorCode, isRecord } from './generator-api.js';
+import { DEFAULT_MODEL_SUFFIXES, hasErrorCode, isRecord, suffixPattern } from './generator-api.js';
 import type { GolemArtifact } from './generator-api.js';
 import { canonicalPath, contains } from './config.js';
 import { codecKeysPath, defaultModelOutput, isOperationCodecRegistry, operationCodecRegistryPath } from './generated-paths.js';
@@ -136,6 +136,22 @@ function jobDestinations(job: GolemJob): readonly string[] {
   return [modelOutputOf(job), ...sourceDirectories];
 }
 
+/**
+ * Whether `filename` is the companion of a model source that exists and ends in one of the job's model suffixes, outside
+ * `node_modules`. A models job writes such a companion wherever its source is, as for a shared model folder outside the root.
+ */
+function isCompanionOfModelSource(job: Extract<GolemJob, { kind: 'models' }>, filename: string): boolean {
+  const source = filename.replace(/\.generated\.([cm]?ts)$/, '.$1');
+  if (source === filename || path.normalize(filename).split(path.sep).includes('node_modules')) return false;
+  if (!suffixPattern(job.options.suffixes ?? DEFAULT_MODEL_SUFFIXES).test(path.basename(source))) return false;
+  try {
+    return fs.statSync(source).isFile();
+  } catch (error) {
+    if (hasErrorCode(error, 'ENOENT') || hasErrorCode(error, 'ENOTDIR')) return false;
+    throw error;
+  }
+}
+
 function artifactDestination(config: GolemConfig, job: GolemJob, filename: string): string {
   // A models job also owns the codec key file under the configuration directory's `.golem/`.
   const destinations = job.kind === 'models' ? [...jobDestinations(job), path.dirname(codecKeysPath(config.directory))] : jobDestinations(job);
@@ -151,10 +167,11 @@ function artifactDestination(config: GolemConfig, job: GolemJob, filename: strin
       return contains(canonicalPath(candidate), canonicalPath(filename));
     } catch { return false; }
   });
-  if (destination === undefined) {
+  const owner = destination ?? (job.kind === 'models' && isCompanionOfModelSource(job, filename) ? path.dirname(filename) : undefined);
+  if (owner === undefined) {
     throw new Error(`Generated output escapes the ${job.id} destination: ${filename}`);
   }
-  const configured = configuredDestinationPath(destination);
+  const configured = configuredDestinationPath(owner);
   assertDestinationPath(filename, configured, 'job');
   return relativePath(config, configured);
 }

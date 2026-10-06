@@ -217,9 +217,9 @@ export type TOrder = IModel<{ total: TMoney; payment: TPayment }>;
 `);
   write(app, 'src/main.ts', `import { parse, stringify } from '@exprtlabs/golem/serde';
 import type { TOrder } from './order.model.js';
-import './order.model.js';
-import '../../shared/money.model.js';
-import '../../shared/payment.model.js';
+import './order.model.generated.js';
+import '../../shared/money.model.generated.js';
+import '../../shared/payment.model.generated.js';
 
 export const text = stringify<TOrder>({ total: { currency: 'USD', value: '5' }, payment: { id: 'p1', note: 'paid' } });
 export const order = parse<TOrder>(text);
