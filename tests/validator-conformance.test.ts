@@ -68,6 +68,8 @@ const EXCLUSIONS: readonly Exclusion[] = [
   { file: 'format.json', test: 'invalid uri-reference string is only an annotation by default', reason: FORMAT_ASSERTED },
   { file: 'format.json', test: 'invalid uuid string is only an annotation by default', reason: FORMAT_ASSERTED },
   { file: 'format.json', test: 'invalid duration string is only an annotation by default', reason: FORMAT_ASSERTED },
+  { file: 'format.json', test: 'invalid json-pointer string is only an annotation by default', reason: FORMAT_ASSERTED },
+  { file: 'format.json', test: 'invalid relative-json-pointer string is only an annotation by default', reason: FORMAT_ASSERTED },
   { file: 'optional/cross-draft.json', reason: REMOTE_DOCUMENT, diagnostic: NOT_RESOLVED },
   { file: 'optional/dependencies-compatibility.json', reason: LEGACY_DEPENDENCIES },
   { file: 'vocabulary.json', reason: 'golem validates with the 2020-12 vocabularies and does not read the vocabularies a custom $schema meta-schema selects' },
@@ -75,8 +77,6 @@ const EXCLUSIONS: readonly Exclusion[] = [
   { file: 'optional/format/idn-hostname.json', reason: FORMAT_NOT_IMPLEMENTED, diagnostic: UNKNOWN_FORMAT },
   { file: 'optional/format/iri.json', reason: FORMAT_NOT_IMPLEMENTED, diagnostic: UNKNOWN_FORMAT },
   { file: 'optional/format/iri-reference.json', reason: FORMAT_NOT_IMPLEMENTED, diagnostic: UNKNOWN_FORMAT },
-  { file: 'optional/format/json-pointer.json', reason: FORMAT_NOT_IMPLEMENTED, diagnostic: UNKNOWN_FORMAT },
-  { file: 'optional/format/relative-json-pointer.json', reason: FORMAT_NOT_IMPLEMENTED, diagnostic: UNKNOWN_FORMAT },
   { file: 'optional/format/uri-template.json', reason: FORMAT_NOT_IMPLEMENTED, diagnostic: UNKNOWN_FORMAT },
   { file: 'optional/format/hostname.json', group: 'validation of A-label (punycode) host names', reason: 'every case needs IDNA (punycode) validation; golem checks the ASCII rules of RFC 1123 only' },
 ];

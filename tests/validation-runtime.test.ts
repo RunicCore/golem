@@ -142,6 +142,39 @@ const formatRows: readonly (readonly [format: string, value: unknown, valid: boo
   ['double', 1.7976931348623157e308, true],
   ['double', Number.NaN, false],
   ['double', Number.NEGATIVE_INFINITY, false],
+  ['byte', '', true],
+  ['byte', 'TWFu', true],
+  ['byte', 'TWE=', true],
+  ['byte', 'TQ==', true],
+  ['byte', 'TWFuTWE=', true],
+  ['byte', 'TWF', false],
+  ['byte', 'TQ=', false],
+  ['byte', 'TQ===', false],
+  ['byte', 'TW Fu', false],
+  ['byte', 'TWF-', false],
+  ['byte', '=TWF', false],
+  ['json-pointer', '', true],
+  ['json-pointer', '/', true],
+  ['json-pointer', '/foo/0', true],
+  ['json-pointer', '/a~1b/m~0n', true],
+  ['json-pointer', '/foo//bar', true],
+  ['json-pointer', 'foo', false],
+  ['json-pointer', '/foo~', false],
+  ['json-pointer', '/foo~2', false],
+  ['relative-json-pointer', '0', true],
+  ['relative-json-pointer', '1/foo/bar', true],
+  ['relative-json-pointer', '120/foo/bar', true],
+  ['relative-json-pointer', '0#', true],
+  ['relative-json-pointer', '', false],
+  ['relative-json-pointer', '/foo/bar', false],
+  ['relative-json-pointer', '-1/foo', false],
+  ['relative-json-pointer', '01/foo', false],
+  ['relative-json-pointer', '0##', false],
+  ['relative-json-pointer', '1#/foo', false],
+  ['relative-json-pointer', '0/foo~', false],
+  ['password', 'any text at all', true],
+  ['binary', 'any text at all', true],
+  ['byte', 7, true],
   ['media-range', 'text/*', true],
   ['media-range', 'not a media range', true],
   ['media-range', 7, true],
@@ -159,8 +192,8 @@ test('checkFormat accepts valid values, rejects invalid ones, and ignores other 
   assert.deepEqual(failures, []);
 });
 
-test('isKnownFormat names the OpenAPI media-range format, which checks no value', () => {
-  assert.equal(isKnownFormat('media-range'), true);
+test('isKnownFormat names the OpenAPI formats that check no value', () => {
+  for (const format of ['media-range', 'password', 'binary']) assert.equal(isKnownFormat(format), true, format);
   assert.equal(isKnownFormat('unknown-format'), false);
 });
 

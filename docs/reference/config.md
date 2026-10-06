@@ -57,7 +57,7 @@ outputs are rejected.
 
 Custom predicates and serde bindings must be exported functions that the generator can import. An unresolved binding or imported schema stops generation with a diagnostic.
 
-A `format` is checked only when golem implements it: `date-time`, `date`, `time`, `duration`, `email`, `hostname`, `ipv4`, `ipv6`, `uri`, `uri-reference`, `uuid`, `regex`, `int32`, `int64`, `float` and `double`. Set `unknownFormats: error` to fail generation on any other format instead of skipping its check.
+A `format` is checked only when golem implements it: `date-time`, `date`, `time`, `duration`, `email`, `hostname`, `ipv4`, `ipv6`, `uri`, `uri-reference`, `uuid`, `regex`, `byte`, `json-pointer`, `relative-json-pointer`, `int32`, `int64`, `float` and `double`. The OpenAPI formats `password` and `binary` are known and check nothing. Set `unknownFormats: error` to fail generation on any other format instead of skipping its check.
 
 Disabling validation does not disable conversion guards, codecs, JSON
 representability checks or generation diagnostics.

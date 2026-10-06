@@ -191,6 +191,13 @@ function isRegex(text: string): boolean {
   }
 }
 
+/** RFC 4648 base64 with padding. */
+const BASE64 = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
+/** RFC 6901: a reference token escapes `~` as `~0` and `/` as `~1`. */
+const JSON_POINTER = /^(?:\/(?:[^~/]|~[01])*)*$/;
+/** Relative JSON Pointer: a count of parents without a leading zero, then `#` or a JSON Pointer. */
+const RELATIVE_JSON_POINTER = /^(?:0|[1-9][0-9]*)(?:#|(?:\/(?:[^~/]|~[01])*)*)$/;
+
 const stringFormats: Readonly<Record<string, (text: string) => boolean>> = {
   'date-time': isDateTime,
   date: isDate,
@@ -204,7 +211,12 @@ const stringFormats: Readonly<Record<string, (text: string) => boolean>> = {
   'uri-reference': text => isUri(text, true),
   uuid: text => UUID.test(text),
   regex: isRegex,
-  // The OpenAPI meta-schemas name this format for media type keys; as before, any string passes.
+  byte: text => BASE64.test(text),
+  'json-pointer': text => JSON_POINTER.test(text),
+  'relative-json-pointer': text => RELATIVE_JSON_POINTER.test(text),
+  // These OpenAPI formats name how a string is shown or carried and say nothing about its characters: any string passes.
+  password: () => true,
+  binary: () => true,
   'media-range': () => true,
 };
 
