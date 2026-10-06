@@ -1,7 +1,7 @@
 // The lock of a shared model folder: one live process at a time writes the shared companions there.
 import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -12,6 +12,7 @@ import { writeFixture } from './support/consumer.js';
 
 const OWNER_A = { pid: process.pid, config: '/projects/a/golem.yaml' };
 const OWNER_B = { pid: process.pid, config: '/projects/b/golem.yaml' };
+const OTHER_CONFIG = '/projects/other/golem.yaml';
 
 function folder(t: TestContext): string {
   const directory = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'golem-shared-lock-')));
@@ -26,13 +27,66 @@ function exitedPid(): number {
   return result.pid;
 }
 
-test('a second session does not hold a folder that a live session holds', (t: TestContext) => {
+/** A process that runs until the test ends, as another golem process does. */
+function liveProcess(t: TestContext): number {
+  const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore' });
+  t.after(() => { child.kill('SIGKILL'); });
+  assert.ok(child.pid, 'the child process started');
+  return child.pid;
+}
+
+test('a session does not hold a folder that another live process holds, and holds it again once it has', (t: TestContext) => {
   const shared = folder(t);
-  using first = new SharedFolderLocks(OWNER_A, 'process');
-  using second = new SharedFolderLocks(OWNER_B, 'process');
-  assert.equal(first.hold(shared), 'held');
-  assert.deepEqual(second.hold(shared), { holder: OWNER_A });
-  assert.equal(first.hold(shared), 'held', 'the holder holds again');
+  const other = { pid: liveProcess(t), config: OTHER_CONFIG };
+  fs.writeFileSync(path.join(shared, '.golem.lock'), JSON.stringify(other));
+  using locks = new SharedFolderLocks(OWNER_A, 'process');
+  assert.deepEqual(locks.hold(shared), { holder: other });
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(shared, '.golem.lock'), 'utf8')), other, 'the lock is the holder\'s');
+  const free = folder(t);
+  assert.equal(locks.hold(free), 'held');
+  assert.equal(locks.hold(free), 'held', 'the holder holds again');
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(free, '.golem.lock'), 'utf8')), OWNER_A);
+});
+
+test('a lock with the id of this process that this session does not hold is a leftover of an earlier process', (t: TestContext) => {
+  const shared = folder(t);
+  fs.writeFileSync(path.join(shared, '.golem.lock'), JSON.stringify({ pid: process.pid, config: OTHER_CONFIG }));
+  using locks = new SharedFolderLocks(OWNER_A, 'process');
+  assert.equal(locks.hold(shared), 'held');
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(shared, '.golem.lock'), 'utf8')), OWNER_A);
+});
+
+test('a holder that finds its lock taken by another process no longer holds the folder', (t: TestContext) => {
+  const shared = folder(t);
+  using locks = new SharedFolderLocks(OWNER_A, 'process');
+  assert.equal(locks.hold(shared), 'held');
+  const other = { pid: liveProcess(t), config: OTHER_CONFIG };
+  fs.writeFileSync(path.join(shared, '.golem.lock'), JSON.stringify(other));
+  assert.deepEqual(locks.hold(shared), { holder: other });
+});
+
+test('a lock file that its creator has not written yet is waited for', async (t: TestContext) => {
+  const shared = folder(t);
+  const lock = path.join(shared, '.golem.lock');
+  fs.writeFileSync(lock, '');
+  // Another process fills the file shortly after it created it. This process waits in `hold`, so it cannot fill the file itself.
+  const config = '/projects/slow/golem.yaml';
+  const child = spawn(process.execPath, ['-e', `
+    const fs = require('node:fs');
+    setTimeout(() => fs.writeFileSync(process.argv[1], JSON.stringify({ pid: process.pid, config: process.argv[2] })), 150);
+    setInterval(() => {}, 1000);
+  `, lock, config], { stdio: 'ignore' });
+  t.after(() => { child.kill('SIGKILL'); });
+  assert.ok(child.pid, 'the child process started');
+  using locks = new SharedFolderLocks(OWNER_A, 'process');
+  assert.deepEqual(locks.hold(shared), { holder: { pid: child.pid, config } });
+});
+
+test('a lock file that stays empty is a lock whose creator ended', (t: TestContext) => {
+  const shared = folder(t);
+  fs.writeFileSync(path.join(shared, '.golem.lock'), '');
+  using locks = new SharedFolderLocks(OWNER_A, 'process');
+  assert.equal(locks.hold(shared), 'held');
   assert.deepEqual(JSON.parse(fs.readFileSync(path.join(shared, '.golem.lock'), 'utf8')), OWNER_A);
 });
 
@@ -123,7 +177,8 @@ test('a non-holder with equal text passes and writes nothing; with different tex
   await runPipeline(config);
   const lock = path.join(shared, '.golem.lock');
   // A live process that is not this run holds the lock.
-  fs.writeFileSync(lock, JSON.stringify({ pid: process.pid, config: '/projects/other/golem.yaml' }));
+  const holder = { pid: liveProcess(t), config: OTHER_CONFIG };
+  fs.writeFileSync(lock, JSON.stringify(holder));
   const written = fs.readFileSync(companion, 'utf8');
   const writtenAt = fs.statSync(companion).mtimeMs;
 
@@ -132,12 +187,12 @@ test('a non-holder with equal text passes and writes nothing; with different tex
   assert.equal(modelsJobRan(state), true, 'the models job compared its text');
   assert.equal(fs.readFileSync(companion, 'utf8'), written);
   assert.equal(fs.statSync(companion).mtimeMs, writtenAt, 'the file was not written');
-  assert.deepEqual(JSON.parse(fs.readFileSync(lock, 'utf8')), { pid: process.pid, config: '/projects/other/golem.yaml' }, 'the lock is the holder\'s');
+  assert.deepEqual(JSON.parse(fs.readFileSync(lock, 'utf8')), holder, 'the lock is the holder\'s');
 
   editShared(sharedModel);
   await assert.rejects(
     runPipeline(config),
-    { message: `${companion} is incompatible with the shared companion that /projects/other/golem.yaml (process ${process.pid}) writes. Generate in that project, or stop it. If no golem process runs, delete ${lock}.` },
+    { message: `${companion} is incompatible with the shared companion that ${OTHER_CONFIG} (process ${holder.pid}) writes. Generate in that project, or stop it. If no golem process runs, delete ${lock}.` },
   );
   assert.equal(fs.readFileSync(companion, 'utf8'), written, 'the file is unchanged');
   assert.equal(fs.statSync(companion).mtimeMs, writtenAt, 'the file was not written');
@@ -146,7 +201,7 @@ test('a non-holder with equal text passes and writes nothing; with different tex
 test('a lock held by a live unrelated process names the lock file in the error', async (t: TestContext) => {
   const { config, shared, companion } = sharedProject(t);
   const lock = path.join(shared, '.golem.lock');
-  fs.writeFileSync(lock, JSON.stringify({ pid: process.pid, config: '/nonexistent/golem.yaml' }));
+  fs.writeFileSync(lock, JSON.stringify({ pid: liveProcess(t), config: '/nonexistent/golem.yaml' }));
   await assert.rejects(runPipeline(config), (error: unknown) => error instanceof Error && error.message.endsWith(`delete ${lock}.`) && error.message.startsWith(`${companion} is incompatible with`));
   assert.equal(fs.existsSync(companion), false, 'the non-holder wrote no companion');
 });
@@ -158,7 +213,7 @@ test('the error names both golem versions when the headers differ', async (t: Te
   const text = fs.readFileSync(companion, 'utf8');
   assert.ok(text.startsWith(`/* Generated by @exprtlabs/golem-model ${ours}. Do not edit. */`), 'the header records the version');
   fs.writeFileSync(companion, text.replace(`golem-model ${ours}.`, 'golem-model 0.0.1.'));
-  fs.writeFileSync(path.join(shared, '.golem.lock'), JSON.stringify({ pid: process.pid, config: '/projects/other/golem.yaml' }));
+  fs.writeFileSync(path.join(shared, '.golem.lock'), JSON.stringify({ pid: liveProcess(t), config: OTHER_CONFIG }));
   touchApp(app);
   await assert.rejects(runPipeline(config), (error: unknown) => error instanceof Error && error.message.includes(` writes: written by golem 0.0.1, this project uses golem ${ours}. Generate in that project`));
 });

@@ -598,7 +598,8 @@ export async function runBuild(options: BuildOptions): Promise<{ exitCode: numbe
   const root = path.dirname(first.tsconfig);
   const label = path.relative(process.cwd(), options.project === undefined ? first.tsconfig : path.resolve(options.project)) || first.tsconfig;
   using session = new ts.ProgramSession({ cwd: root });
-  using generation = new GeneratorSessionResources();
+  // A one-shot build gives up its shared-folder locks when the generate step ends, not after the compiler.
+  using generation = new GeneratorSessionResources(options.watch ? 'process' : 'run');
   const inputs = new Set<string>();
   const outputs = new Set<string>();
   const outputsPresent = (): boolean => [...outputs].every((directory) => fs.existsSync(directory));

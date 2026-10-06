@@ -24,9 +24,17 @@ function isLive(pid: number): boolean {
   }
 }
 
-type LockRead = { readonly kind: 'owner'; readonly owner: LockOwner; readonly text: string } | { readonly kind: 'gone' };
+type LockRead = { readonly kind: 'owner'; readonly owner: LockOwner; readonly text: string } | { readonly kind: 'empty' } | { readonly kind: 'gone' };
 
-/** The owner a lock file names; a file that another process is just creating or removing is read again by the caller. */
+/** How long a lock file that has no owner in it yet is waited for: its creator is between creating the file and writing it. */
+const EMPTY_LOCK_WAIT_MS = 1000;
+const EMPTY_LOCK_POLL_MS = 20;
+
+function pause(milliseconds: number): void {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, milliseconds);
+}
+
+/** The owner a lock file names. */
 function readLock(file: string): LockRead {
   let text: string;
   try { text = fs.readFileSync(file, 'utf8'); }
@@ -34,8 +42,7 @@ function readLock(file: string): LockRead {
     if (hasErrorCode(error, 'ENOENT')) return { kind: 'gone' };
     throw error;
   }
-  // The creator has made the file and not written it yet.
-  if (text === '') return { kind: 'gone' };
+  if (text === '') return { kind: 'empty' };
   let parsed: unknown;
   try { parsed = JSON.parse(text); } catch { parsed = undefined; }
   if (!isRecord(parsed) || typeof parsed.pid !== 'number' || !Number.isInteger(parsed.pid) || parsed.pid <= 0 || typeof parsed.config !== 'string') {
@@ -57,18 +64,29 @@ export class SharedFolderLocks implements Disposable {
   /** `'held'` when this process holds the lock of `folder`, else the process that holds it. */
   hold(folder: string): 'held' | { readonly holder: LockOwner } {
     const resolved = path.resolve(folder);
-    if (this.held.has(resolved)) return 'held';
     const file = lockFileOf(resolved);
-    // A lock of a process that does not run is removed once; a lock that changes again belongs to a process that runs.
+    if (this.held.has(resolved)) {
+      if (this.names(file)) return 'held';
+      // Another process removed this lock as stale and took the folder: it is not held now.
+      this.held.delete(resolved);
+    }
+    // A stale lock is removed once; a lock that changes again belongs to a process that runs.
     for (let attempt = 0; attempt < 2; attempt += 1) {
       if (this.create(file)) {
         this.held.add(resolved);
         return 'held';
       }
-      const read = readLock(file);
+      let read = readLock(file);
+      if (read.kind === 'empty') read = this.waitForOwner(file);
       if (read.kind === 'gone') continue;
-      if (isLive(read.owner.pid)) return { holder: read.owner };
-      this.removeIfUnchanged(file, read.text);
+      if (read.kind === 'empty') {
+        // Its creator ended between creating the file and writing it.
+        this.removeIfUnchanged(file, read);
+        continue;
+      }
+      // This process holds no lock here, so a lock with its id is left by an earlier process that had the same id.
+      if (read.owner.pid !== this.owner.pid && isLive(read.owner.pid)) return { holder: read.owner };
+      this.removeIfUnchanged(file, read);
     }
     throw new Error(`Could not take the lock ${file}: it keeps changing. If no golem process runs, delete it.`);
   }
@@ -102,10 +120,26 @@ export class SharedFolderLocks implements Disposable {
     return true;
   }
 
-  /** Remove a lock whose process does not run, unless another process has taken it since it was read. */
-  private removeIfUnchanged(file: string, text: string): void {
+  /** Whether the lock file names this owner. */
+  private names(file: string): boolean {
     const read = readLock(file);
-    if (read.kind === 'owner' && read.text === text) fs.rmSync(file, { force: true });
+    return read.kind === 'owner' && read.owner.pid === this.owner.pid && read.owner.config === this.owner.config;
+  }
+
+  /** Read a lock file whose creator has not written it yet, until it has an owner or the wait ends. */
+  private waitForOwner(file: string): LockRead {
+    let read: LockRead = { kind: 'empty' };
+    for (let waited = 0; read.kind === 'empty' && waited < EMPTY_LOCK_WAIT_MS; waited += EMPTY_LOCK_POLL_MS) {
+      pause(EMPTY_LOCK_POLL_MS);
+      read = readLock(file);
+    }
+    return read;
+  }
+
+  /** Remove a stale lock, unless another process has taken it since `seen` was read. */
+  private removeIfUnchanged(file: string, seen: LockRead): void {
+    const read = readLock(file);
+    if ((read.kind === 'owner' && seen.kind === 'owner' && read.text === seen.text) || (read.kind === 'empty' && seen.kind === 'empty')) fs.rmSync(file, { force: true });
   }
 
   private release(): void {
@@ -113,9 +147,8 @@ export class SharedFolderLocks implements Disposable {
     for (const folder of this.held) {
       const file = lockFileOf(folder);
       try {
-        const read = readLock(file);
         // A lock that another process has taken is no longer this process's.
-        if (read.kind === 'owner' && read.owner.pid === this.owner.pid && read.owner.config === this.owner.config) fs.rmSync(file, { force: true });
+        if (this.names(file)) fs.rmSync(file, { force: true });
       } catch (error) { errors.push(error); }
     }
     this.held.clear();
