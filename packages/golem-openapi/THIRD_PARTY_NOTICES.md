@@ -11,6 +11,16 @@ The OpenAPI document schemas in `src/openapi-schemas/` are derived from
 `https://spec.openapis.org/oas/3.1/schema/2026-08-03` (sha256 59f106413cb48c31299f96f024c938d3628aed6cd02cd14bcfb2fcaae7a130b6) and
 `https://spec.openapis.org/oas/3.2/schema/2026-08-30` (sha256 ec53db6e114b768ff2d273b232bda210f51b70c5e57d57ac8daf7e8496a6e073),
 published by the OpenAPI Initiative under the Apache License 2.0. Each
-`$dynamicRef: "#meta"` is replaced by `$ref: "#/$defs/schema"` so Ajv 8 can
-compile them; `scripts/vendor-openapi-schemas.ts` reproduces the files.
+`$dynamicRef: "#meta"` is replaced by `$ref: "#/$defs/schema"` so golem's
+validator compiler can compile them; `scripts/vendor-openapi-schemas.ts` reproduces the files.
 The Apache License 2.0 text ships with this package as `LICENSES/Apache-2.0.txt`.
+
+The JSON Schema 2020-12 meta-schema in `src/openapi-schemas/json-schema-2020-12.ts`
+is derived from `https://json-schema.org/draft/2020-12/schema` and its
+`meta/` vocabulary schemas (core, applicator, unevaluated, validation,
+meta-data, format-annotation, content; sha256 of the files in that order
+1ea2456fb0988458861a90632d9c8a2afaa7d391aa335d9b12cff3b6c743f957), published by
+the JSON Schema organization. Each `$dynamicRef: "#meta"` is replaced by a
+`$ref` to the meta-schema and each `$dynamicAnchor` is removed so golem's
+validator compiler can compile them; `scripts/vendor-openapi-schemas.ts`
+reproduces the file.
