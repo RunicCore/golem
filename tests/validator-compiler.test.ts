@@ -826,6 +826,9 @@ test('a golem keyword with a malformed value is an error naming the keyword, not
     ['exprtValidation', { schema: true }],
     ['exprtValidation', { schema: true, bindings: 'rules.isEven' }],
     ['exprtValidation', { schema: true, bindings: ['rules.isEven', 5] }],
+    ['exprtValidation', { schema: 'string', bindings: ['rules.isEven'] }],
+    ['exprtValidation', { schema: null, bindings: ['rules.isEven'] }],
+    ['exprtValidation', { schema: [{ type: 'string' }], bindings: ['rules.isEven'] }],
     ['exprtValidation', ['rules.isEven', null]],
   ];
   for (const [keyword, value] of cases) {

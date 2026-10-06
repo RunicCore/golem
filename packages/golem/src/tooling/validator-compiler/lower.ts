@@ -492,6 +492,8 @@ class Lowering {
       } else if (Array.isArray(validation)) {
         const calls = this.bindingCalls(ids, here);
         if (calls.length > 0) checks.push({ kind: 'validation', calls });
+      } else if (isRecord(validation) && validation.schema !== undefined && typeof validation.schema !== 'boolean' && !isRecord(validation.schema)) {
+        malformed(VALIDATION_KEYWORD, 'expected "schema" to be a boolean or a schema object');
       } else if (isRecord(validation)) {
         const calls = this.bindingCalls(ids, here, 'bindings');
         const fn = validation.schema === undefined || validation.schema === true ? undefined : sameValueFunction(VALIDATION_KEYWORD, validation.schema, 'schema');
