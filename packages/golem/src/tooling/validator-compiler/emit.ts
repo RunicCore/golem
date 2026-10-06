@@ -277,7 +277,7 @@ class FunctionWriter {
       }
       case 'literal': {
         const jsonEqual = this.state.runtimeHelper('jsonEqual');
-        const values = this.state.constant('lit', `JSON.parse(${literal(JSON.stringify(check.values))})`);
+        const values = this.state.constant('lit', `Object.freeze(JSON.parse(${literal(JSON.stringify(check.values))}))`);
         const missing = check.values.length === 1 ? `!${jsonEqual}(${value}, ${values}[0])` : `!${values}.some(item => ${jsonEqual}(${value}, item))`;
         this.open(`if (${missing})`);
         this.issue(`code: 'literal', expected: ${values}`);
@@ -703,8 +703,8 @@ class FunctionWriter {
     this.state.localHelper('isObject');
     const hasOwn = this.state.localHelper('hasOwn');
     const jsonEqual = this.state.runtimeHelper('jsonEqual');
-    const tags = this.state.constant('tags', `JSON.parse(${literal(JSON.stringify(discriminator.tags))})`);
-    const allTags = this.state.constant('lit', `JSON.parse(${literal(JSON.stringify(discriminator.tags.flat()))})`);
+    const tags = this.state.constant('tags', `Object.freeze(JSON.parse(${literal(JSON.stringify(discriminator.tags))}))`);
+    const allTags = this.state.constant('lit', `Object.freeze(JSON.parse(${literal(JSON.stringify(discriminator.tags.flat()))}))`);
     const tag = this.fresh('tag');
     const selected = this.fresh('branch');
     const property = literal(discriminator.property);

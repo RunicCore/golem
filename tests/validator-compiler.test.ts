@@ -897,3 +897,14 @@ test('a diagnostic is placed where the locator says and reported once per place'
     path: '#/Money/format',
   }]);
 });
+
+test('the expected values an issue shares with the validator cannot be changed by its reader', async () => {
+  const [enumIssue] = (await compileSchema({ enum: ['a', 'b'] }))('c', true);
+  const [tagIssue] = (await compileSchema({
+    oneOf: [{ properties: { kind: { const: 'a' } }, required: ['kind'] }, { properties: { kind: { const: 'b' } }, required: ['kind'] }],
+    discriminator: { propertyName: 'kind' },
+  }))({ kind: 'z' }, true);
+  for (const issue of [enumIssue, tagIssue]) {
+    assert.ok(issue.code === 'literal' && Object.isFrozen(issue.expected), JSON.stringify(issue));
+  }
+});
