@@ -97,14 +97,14 @@ test('equivalent MinLength tags of two companions compile to one validators modu
 test('validator bindings survive strict companion regeneration', async (t) => {
   const fixtureValue = fixture(t, { noUnusedLocals: true });
   const source = path.join(fixtureValue.sourceRoot, 'cart.model.ts');
-  writeFileSync(path.join(fixtureValue.sourceRoot, 'rules.ts'), readFixture('models/model-artifact-efficiency/standalone-validator-regeneration/rules.ts'));
-  writeFileSync(source, readFixture('models/model-artifact-efficiency/standalone-validator-regeneration/cart-initial.model.ts'));
+  writeFileSync(path.join(fixtureValue.sourceRoot, 'rules.ts'), readFixture('models/model-artifact-efficiency/validator-regeneration/rules.ts'));
+  writeFileSync(source, readFixture('models/model-artifact-efficiency/validator-regeneration/cart-initial.model.ts'));
   const profile = { mobx: false, validation: true } as const;
 
   // The first pass emits the base class. Adding the handwritten class mirrors
   // consumer use and forces prospective validation on the second generation.
   writeGeneratedArtifacts(generate({ root: fixtureValue.root, profile }).artifacts);
-  writeFileSync(source, readFixture('models/model-artifact-efficiency/standalone-validator-regeneration/cart.model.ts'));
+  writeFileSync(source, readFixture('models/model-artifact-efficiency/validator-regeneration/cart.model.ts'));
 
   // The build runs the models job, which regenerates the companions beside the existing ones.
   writeModelGolemYaml(fixtureValue.root, profile);

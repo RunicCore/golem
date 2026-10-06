@@ -14,10 +14,10 @@ import {
   generatedModelSource,
 } from './openapi/helpers.js';
 
-function standaloneDocument(): Record<string, unknown> {
+function validatedDocument(): Record<string, unknown> {
   return {
     openapi: '3.1.0',
-    info: { title: 'Standalone', version: '1' },
+    info: { title: 'Validated', version: '1' },
     paths: {
       '/tasks': {
         post: {
@@ -87,16 +87,16 @@ const profile = Object.freeze({
   allowAny: false,
 });
 
-function compileStandaloneSdk(output: string): string {
+function compileValidatedSdk(output: string): string {
   const outDir = path.join(output, 'dist');
   compileGeneratedSdk(output, [], { strict: true, skipLibCheck: true, outDir });
   return outDir;
 }
 
 test('OpenAPI SDKs emit per-operation validators; models use generated validators', () => {
-  const result = writeSdk(standaloneDocument(), {
+  const result = writeSdk(validatedDocument(), {
     output: path.join(tmpdir(), 'validators-profile'),
-    name: 'Standalone',
+    name: 'Validated',
     profile,
   });
   const names = artifactBasenames(result.artifacts);
@@ -110,7 +110,7 @@ test('OpenAPI SDKs emit per-operation validators; models use generated validator
   assert.equal(manifest.profile?.allowAny, false);
 });
 
-test('standalone SDK compiles a no-content operation with no response validators', async t => {
+test('SDK compiles a no-content operation with no response validators', async t => {
   const directory = mkdtempSync(path.join(tmpdir(), 'golem-openapi-no-content-'));
   const output = path.join(directory, 'sdk');
   t.after(() => rmSync(directory, { recursive: true, force: true }));
@@ -135,14 +135,14 @@ test('standalone SDK compiles a no-content operation with no response validators
 });
 
 test('SDK operation validators expose every operation reference and validate through the client', async t => {
-  const output = path.join(mkdtempSync(path.join(tmpdir(), 'golem-openapi-standalone-')), 'sdk');
+  const output = path.join(mkdtempSync(path.join(tmpdir(), 'golem-openapi-validated-')), 'sdk');
   t.after(() => rmSync(path.dirname(output), { recursive: true, force: true }));
-  const result = await generateMaterializedSdk(standaloneDocument(), {
+  const result = await generateMaterializedSdk(validatedDocument(), {
     output,
-    name: 'Standalone',
+    name: 'Validated',
     profile,
   });
-  const compiled = compileStandaloneSdk(output);
+  const compiled = compileValidatedSdk(output);
   const operationModules = ['createTask', 'getTask'];
   for (const operation of operationModules) {
     const generatedCode = readFileSync(path.join(output, `operations/${operation}.validators.generated.ts`), 'utf8');
@@ -178,20 +178,20 @@ test('SDK operation validators expose every operation reference and validate thr
   const clientModule = await import(pathToFileURL(path.join(compiled, 'client.js')).href);
   const respond = (status: number, body: unknown): typeof fetch => async () =>
     new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
-  const createdTask = await new clientModule.StandaloneClient({ baseUrl: 'https://api.example', fetchImpl: respond(201, task) })
+  const createdTask = await new clientModule.ValidatedClient({ baseUrl: 'https://api.example', fetchImpl: respond(201, task) })
     .createTask().execute({ body: task });
   assert.deepEqual(createdTask.body, task);
-  const fetched = await new clientModule.StandaloneClient({ baseUrl: 'https://api.example', fetchImpl: respond(200, task) })
+  const fetched = await new clientModule.ValidatedClient({ baseUrl: 'https://api.example', fetchImpl: respond(200, task) })
     .getTask().execute({ path: { id: 'task-1' } });
   assert.deepEqual(fetched.body, task);
   await assert.rejects(
-    () => new clientModule.StandaloneClient({ baseUrl: 'https://api.example', fetchImpl: respond(201, task) })
+    () => new clientModule.ValidatedClient({ baseUrl: 'https://api.example', fetchImpl: respond(201, task) })
       .createTask().execute({ body: { ...task, labels: [] } }),
     (error: unknown) => error instanceof LibError && error.kind === LibErrorKind.Validation,
   );
 });
 
-test('standalone SDK validates a response whose $id schema refers to a component by local pointer', async t => {
+test('SDK validates a response whose $id schema refers to a component by local pointer', async t => {
   const output = path.join(mkdtempSync(path.join(tmpdir(), 'golem-openapi-embedded-id-')), 'sdk');
   t.after(() => rmSync(path.dirname(output), { recursive: true, force: true }));
   await generateMaterializedSdk({

@@ -251,7 +251,7 @@ test('no SDK emits schemas.ts, whatever the validation profile', async t => {
     const output = outputDir(t, `registries-${profile.validation}`);
     const result = await generateMaterializedSdk(document, { output, name: 'Registries', profile });
     const names = emittedFiles(result.artifacts, output);
-    for (const name of ['schemas.ts', 'validation-engine.ts', 'validators.generated.js']) assert.equal(names.includes(name), false, name);
+    for (const name of ['schemas.ts', 'validation-engine.ts']) assert.equal(names.includes(name), false, name);
   }
 });
 

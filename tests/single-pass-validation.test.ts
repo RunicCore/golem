@@ -91,7 +91,7 @@ test('each rule runs once per conversion; IObject parse enforces model-only rule
 
 const MONEY_FIXTURE = 'models/unify-validate/sdk-money-ref-plus-extra-tvalidation-local-tvalidation-and-tserde-share-one-';
 
-test('a rule on an SDK model runs once per parse and IObject enforces it ', async t => {
+test('a rule on an SDK model runs once per parse and IObject enforces it', async t => {
   const profile = { mobx: false, validation: true } as const;
   const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-single-pass-sdk-', name: 'single-pass-sdk' });
   writeModelSources(root, { 'money.yaml': readFixture(`${MONEY_FIXTURE}/money.yaml`) });

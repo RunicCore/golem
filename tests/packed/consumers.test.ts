@@ -158,13 +158,13 @@ test('packed public generator declarations retain synchronous models and asynchr
 
 
 test('packed model and SDK validators work without code generation from strings', async t => {
-  const root = registry.create(t, 'standalone-runtime');
+  const root = registry.create(t, 'generated-runtime');
   await npm(root, ['install', '--save-dev', packageSpec(registry, '@exprtlabs/golem-model'), packageSpec(registry, '@exprtlabs/golem-openapi')], { includeOptional: true });
   await npm(root, ['install', '--save-prod', packageSpec(registry, '@exprtlabs/golem')]);
-  copyFixture(root, 'packed/standalone-runtime');
+  copyFixture(root, 'packed/generated-runtime');
   copyFixtureFile(root, 'packed/profile/api.json', 'api.json');
   await cli(root, ['generate']);
-  copyFixtureFile(root, 'packed/standalone-runtime-after-generation/cart.model.ts', 'src/cart.model.ts');
+  copyFixtureFile(root, 'packed/generated-runtime-after-generation/cart.model.ts', 'src/cart.model.ts');
   await cli(root, ['generate']);
   await cli(root, ['check']);
   const manifest = JSON.parse(fs.readFileSync(path.join(root, 'sdk/model-manifest.json'), 'utf8'));

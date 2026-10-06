@@ -58,7 +58,7 @@ test('serde wire descriptors validate nested constraints before decode and after
 
 test('serde wire predicates run on the wire plane', async t => {
   const { root, sourceRoot } = fixture(t);
-  fs.writeFileSync(path.join(sourceRoot, 'codecs.ts'), readFixture("models/model-tags/serde-wire-predicates-run-on-the-wire-plane-with-jit-and-standalone-validato/codecs.ts"));
+  fs.writeFileSync(path.join(sourceRoot, 'codecs.ts'), readFixture("models/model-tags/serde-wire-predicates-run-on-the-wire-plane-with-generated-validators/codecs.ts"));
   fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), taggedModelSource({
     name: 'A',
     imports: tsSource`import type { TSerde, TValidation } from '@exprtlabs/golem/tags';\nimport { encode, decode, positive } from './codecs.js';`,
