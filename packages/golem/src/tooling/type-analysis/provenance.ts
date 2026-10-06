@@ -12,7 +12,8 @@ import type {
 } from '../model-manifest.js';
 import type { GolemProfile, InputObserver } from '../generator-api.js';
 import type { CodecSchemaClosureEntry } from '../validation-plan.js';
-import { canonicalFilename } from './project.js';
+import { canonicalFilename, effectiveConfigPath } from './project.js';
+import type { ProgramInfo } from './project.js';
 
 export interface ResolvedModelManifestEntry extends ModelManifestEntry {
   readonly manifestFile: string;
@@ -73,12 +74,12 @@ function isRuntimeExport(symbol: ts.Symbol, checker: ts.TypeChecker): boolean {
 }
 
 function validateGeneratedModules(
-  session: ts.ProgramSession,
+  info: ProgramInfo,
   root: string,
   models: readonly ResolvedModelManifestEntry[],
-  options: ts.CompilerOptions,
   onInput?: InputObserver,
 ): ReadonlyMap<string, ReadonlySet<string>> {
+  const { options } = info;
   const exportsById = new Map<string, ReadonlySet<string>>();
   if (models.length === 0) return exportsById;
   const host = ts.createCompilerHost(options, true);
@@ -123,12 +124,10 @@ function validateGeneratedModules(
   // can leave modules from the other SDKs outside the selected TS7 project.
   // Opening files does not make sources excluded by the app tsconfig project
   // roots, so give the one project an overlay config that explicitly lists all
-  // resolved modules while extending the app config to preserve its options.
+  // resolved modules while extending the job's effective config to preserve its
+  // options: the referenced project of a solution tsconfig, not the solution.
   const sources = [...new Set(files.values())];
-  const appConfig = ts.findConfigFile(root, (filename) => {
-    onInput?.(canonicalFilename(filename));
-    return ts.sys.fileExists(filename);
-  }, 'tsconfig.json');
+  const appConfig = effectiveConfigPath(info);
   const configFile = join(root, '.golem-manifest-validation.json');
   const validationConfig = appConfig
     ? { extends: appConfig, files: sources, include: [] }
@@ -144,7 +143,7 @@ function validateGeneratedModules(
       files: sources,
       include: [],
     };
-  using moduleProgram = session.openProgram({
+  using moduleProgram = info.program.session.openProgram({
     root,
     configFile,
     sources,
@@ -195,13 +194,12 @@ export function advertisedModelManifests(program: ts.Program, onInput?: InputObs
 
 export function loadModelManifests(
   root: string,
-  program: ts.Program,
-  options: ts.CompilerOptions,
+  info: ProgramInfo,
   explicit: readonly string[],
   profile: GolemProfile,
   onInput?: InputObserver,
 ): ManifestIndex {
-  const advertised = advertisedModelManifests(program, onInput);
+  const advertised = advertisedModelManifests(info.program, onInput);
   const discovered = discoverModelManifests(root, onInput).map(canonicalFilename);
   discovered.forEach((filename) => onInput?.(filename));
   const localFiles = [...new Set([...discovered, ...advertised])].sort();
@@ -259,7 +257,7 @@ export function loadModelManifests(
       }
     }
   }
-  const exportsById = validateGeneratedModules(program.session, root, [...byId.values()], options, onInput);
+  const exportsById = validateGeneratedModules(info, root, [...byId.values()], onInput);
 
   return {
     byId,

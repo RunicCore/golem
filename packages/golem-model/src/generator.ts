@@ -386,8 +386,7 @@ export function generate(context: GolemModelContext): GolemModelResult {
   using program = programInfo.program;
   const manifestIndex = loadModelManifests(
     normalized.root,
-    program,
-    programInfo.options,
+    programInfo,
     normalized.manifestInputs,
     normalized.profile,
     normalized.onInput,

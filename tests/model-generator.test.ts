@@ -278,6 +278,25 @@ test('a solution tsconfig generates with the options of the referenced project t
   assert.ok(result.artifacts.some(artifact => artifact.path === path.join(sourceRoot, 'item.model.generated.ts')));
 });
 
+test('a solution tsconfig checks a generated SDK module with the options of the referenced project', (t: TestContext) => {
+  const { root, sourceRoot } = solutionProject(t, ['./tsconfig.other.json', './tsconfig.app.json']);
+  copyFixture(root, 'models/model-generator/manifest-identity');
+  // The SDK module reaches its exports through the app project's `paths` alias; the solution root has no paths.
+  fs.mkdirSync(path.join(sourceRoot, 'lib'));
+  fs.renameSync(path.join(sourceRoot, 'sdk/models.ts'), path.join(sourceRoot, 'lib/money.ts'));
+  fs.writeFileSync(path.join(sourceRoot, 'sdk/models.ts'), "export * from '@lib/money';\n");
+  const result = generate({
+    root,
+    sources: [path.join(sourceRoot, 'aggregate.model.ts')],
+    profile: { mobx: false, validation: false },
+    manifestInputs: [path.join(sourceRoot, 'sdk/model-manifest.json')],
+  });
+  assert.match(
+    result.artifacts.map(artifact => artifact.content).join('\n'),
+    /import \{[^}]*\bMoneyModel\b[^}]*\} from "\.\/sdk\/models\.js"/,
+  );
+});
+
 test('a solution tsconfig whose references hold no model source names the solution and the source', (t: TestContext) => {
   const { root, sourceRoot } = solutionProject(t, ['./tsconfig.other.json']);
   writeModelSources(sourceRoot, { 'item.model.ts': taggedModelSource({ name: 'Item', fields: tsSource`id: string` }) });

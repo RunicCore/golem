@@ -97,8 +97,7 @@ function canonicalModelSchema(root: string, sourceRoot: string): unknown {
   const { checker, specifications } = collectSpecifications(programInfo.program, [source]);
   const manifestIndex = loadModelManifests(
     root,
-    programInfo.program,
-    programInfo.options,
+    programInfo,
     [],
     profile,
   );
