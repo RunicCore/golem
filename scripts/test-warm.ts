@@ -9,7 +9,12 @@ import { THIRD_PARTY_INSTALLS } from './third-party-installs.js';
 // Fill the npm cache with what the packed and browser tests install, so those
 // tiers run offline. Runs only in `test:prepare`, which has network access.
 const root = fileURLToPath(new URL('../../', import.meta.url));
-const INSTALL_TIMEOUT_MS = 240_000;
+// The entrypoint ends `prepare` at 300 s, pack included. Every warm step ends by one deadline inside that, so a slow
+// step reports its own timeout before the ceiling ends the run.
+const WARM_BUDGET_MS = 240_000;
+const deadline = Date.now() + WARM_BUDGET_MS;
+/** The time left for a step; at least 1 ms, because a timeout of 0 means none. */
+const remaining = (): number => Math.max(1, deadline - Date.now());
 /** Fixture apps the packed and browser tests install from their own manifests, with `@exprtlabs/*` served by the local registry. */
 const FIXTURE_APPS = ['tests/fixtures/packed/nest-app', 'tests/fixtures/browser/react-app'] as const;
 
@@ -42,9 +47,9 @@ function npmInstall(directory: string, specs: readonly string[]): Promise<string
     child.stdout.on('data', collect);
     child.stderr.on('data', collect);
     const timer = setTimeout(() => {
-      output += `\nTimed out after ${INSTALL_TIMEOUT_MS} ms`;
+      output += `\nTimed out: the warm steps have ${WARM_BUDGET_MS} ms in all`;
       try { if (child.pid && process.platform !== 'win32') process.kill(-child.pid, 'SIGKILL'); else child.kill('SIGKILL'); } catch { /* already exited */ }
-    }, INSTALL_TIMEOUT_MS);
+    }, remaining());
     child.once('error', error => { clearTimeout(timer); resolve(`${error.message}\n${output}`); });
     child.once('close', (code, signal) => {
       clearTimeout(timer);
@@ -81,7 +86,7 @@ function warmTypiaPlugin(scratch: string): WarmResult {
   fs.writeFileSync(path.join(project, 'src/check.ts'), "import typia from 'typia';\nexport const isNumber = (value: unknown): boolean => typia.is<number>(value);\n");
   try {
     execFileSync(process.execPath, [path.join(root, 'node_modules/ttsc/lib/launcher/ttsc.js'), '-p', path.join(project, 'tsconfig.json')],
-      { cwd: project, encoding: 'utf8', timeout: INSTALL_TIMEOUT_MS * 2, maxBuffer: 16 * 1024 * 1024, stdio: 'pipe' });
+      { cwd: project, encoding: 'utf8', timeout: remaining(), maxBuffer: 16 * 1024 * 1024, stdio: 'pipe' });
     return { label, seconds: (Date.now() - started) / 1000 };
   } catch (error) {
     return { label, seconds: (Date.now() - started) / 1000, failure: error instanceof Error ? error.message : String(error) };
