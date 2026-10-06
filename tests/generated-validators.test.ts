@@ -434,7 +434,12 @@ test('unknownFormats: error makes generation fail with VALIDATE_UNKNOWN_FORMAT',
   await runPipeline(config);
   assert.ok(generatedModelFiles(value.root).some(item => item.path.endsWith('/models.validators.generated.ts')));
   writeFileSync(config, `${readFileSync(config, 'utf8')}unknownFormats: error\n`);
-  await assert.rejects(runPipeline(config), /VALIDATE_UNKNOWN_FORMAT/);
+  // The error names the model once; a field type's own schema does not report the same declaration again.
+  await assert.rejects(
+    runPipeline(config),
+    (error: unknown) => error instanceof Error && error.message.match(/VALIDATE_UNKNOWN_FORMAT/g)?.length === 1
+      && /VALIDATE_UNKNOWN_FORMAT: model TContact: the format "phone-number" is not implemented/.test(error.message),
+  );
 });
 
 test('a model class registered at run time satisfies a generated model-instance check', async () => {

@@ -20,6 +20,7 @@ import {
 } from './models.js';
 import { withOrigins, type OriginLocator } from './origin.js';
 import { buildSchemaData } from './schemas.js';
+import { uniqueDiagnostics } from '@exprtlabs/golem/validation-plan';
 import { generateDirectionalSchemas, generateTypes } from './types.js';
 
 export interface OpenApiArtifact extends GolemArtifact {}
@@ -184,6 +185,7 @@ function buildGeneratedFiles(document: unknown, options: WriteSdkOptions): Gener
     const models = generateOpenApiModelArtifacts(document, profile, modelAnalysis, {
       copyAdditionalProperties: plan.copyAdditionalProperties,
       objectFromJSON: plan.objectFromJSON,
+      locate: options.locate,
     });
     for (const [name, source] of models.files) files.set(name, source);
     modelReexports = models.entryReexports;
@@ -191,7 +193,7 @@ function buildGeneratedFiles(document: unknown, options: WriteSdkOptions): Gener
   }
   files.set('model-manifest.json', stableJson(generateModelManifest(document, profile, modelAnalysis)));
   if (plan.artifacts.has('client.ts')) {
-    const clientModules = generateClientModules(clientName, operations, document, profile, plan, schemaData);
+    const clientModules = generateClientModules(clientName, operations, document, profile, plan, schemaData, options.locate);
     files.set('client.ts', clientModules.client);
     for (const [name, source] of clientModules.operations) files.set(name, source);
     for (const [name, source] of clientModules.operationValidators) files.set(name, source);
@@ -206,7 +208,7 @@ function buildGeneratedFiles(document: unknown, options: WriteSdkOptions): Gener
   files.set('index.ts', generateIndex(profile, plan, modelReexports));
   assertUniquePublicExports(files);
   assertPortableFilenames(files.keys());
-  return { files, output, clientName, operations, inboundOperations, diagnostics: [...ir.diagnostics, ...browserCookieDiagnostics(document, operations), ...modelAnalysis.diagnostics, ...modelDiagnostics] };
+  return { files, output, clientName, operations, inboundOperations, diagnostics: uniqueDiagnostics([...ir.diagnostics, ...browserCookieDiagnostics(document, operations), ...modelAnalysis.diagnostics, ...modelDiagnostics]) };
 }
 
 /**

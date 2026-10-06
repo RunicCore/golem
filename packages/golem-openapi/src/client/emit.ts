@@ -1,8 +1,9 @@
 import type { EmissionPlan } from '../emission-plan.js';
 import { mediaFraming } from '../emission-plan.js';
-import { compileSchemaValidators } from '@exprtlabs/golem/validation-plan';
+import { compileSchemaValidators, uniqueDiagnostics, type SchemaPlace } from '@exprtlabs/golem/validation-plan';
 import type { GolemDiagnostic } from '@exprtlabs/golem/generator-api';
-import { asRecord, isJsonObject, objectEntries } from '../json.js';
+import { asRecord, escapeJsonPointerToken, isJsonObject, objectEntries } from '../json.js';
+import { componentPlace, type OriginLocator } from '../origin.js';
 import { identifier, NameScope, propertyName } from '@exprtlabs/golem/generator-api';
 import {
   parameterSchema,
@@ -540,6 +541,7 @@ export function generateClientModules(
   profile: OpenApiGenerationProfile,
   plan: EmissionPlan,
   schemaData?: ReturnType<typeof buildSchemaData>,
+  locate?: OriginLocator,
 ): GeneratedClientModules {
   requireProfile(profile);
   const rawSecuritySchemes = Object.fromEntries(plan.referencedAuthSchemes);
@@ -571,6 +573,14 @@ export function generateClientModules(
         owner: '@exprtlabs/golem-openapi',
         unknownFormats: profile.unknownFormats ?? 'warn',
         documentName: 'the OpenAPI document',
+        locate: (resource, pointer): SchemaPlace | undefined => {
+          const component = bundle.componentNames[resource];
+          if (component !== undefined) return componentPlace(locate, component, pointer);
+          const prefix = `/operations/${escapeJsonPointerToken(bundle.operationName)}`;
+          return resource === bundle.operationRootId && pointer.startsWith(prefix)
+            ? { where: `operation ${JSON.stringify(bundle.operationName)} at ${pointer.slice(prefix.length) || '/'}` }
+            : undefined;
+        },
       },
     );
     diagnostics.push(...compiled.diagnostics);
@@ -592,6 +602,6 @@ export function generateClientModules(
     ));
   }
   const client = emitClient(clientName, operations, profile, plan, rawSecuritySchemes);
-  return { client, operations: emittedOperations, operationValidators, diagnostics };
+  return { client, operations: emittedOperations, operationValidators, diagnostics: uniqueDiagnostics(diagnostics) };
 }
 

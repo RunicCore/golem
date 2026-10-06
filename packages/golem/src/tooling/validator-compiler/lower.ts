@@ -106,13 +106,14 @@ export interface LoweringResult {
  * Lowers every root, and every schema a root reaches through `$ref`, to validation IR. Schemas are
  * assumed valid against the 2020-12 meta-schema; a keyword whose value has the wrong shape is ignored.
  */
-export function lower(input: CompileInput, options: Pick<CompileOptions, 'unknownFormats' | 'documentName'>): LoweringResult {
+export function lower(input: CompileInput, options: Pick<CompileOptions, 'unknownFormats' | 'documentName' | 'locate'>): LoweringResult {
   return new Lowering(input, options).run();
 }
 
 class Lowering {
   private readonly resolver: SchemaResolver;
   private readonly diagnostics: GolemDiagnostic[] = [];
+  private readonly reported = new Set<string>();
   private readonly functions: MutableFunction[] = [];
   private readonly functionIds = new Map<object, number>();
   private readonly sameValueEdges: (readonly SameValueEdge[])[] = [];
@@ -126,7 +127,7 @@ class Lowering {
 
   public constructor(
     private readonly input: CompileInput,
-    private readonly options: Pick<CompileOptions, 'unknownFormats' | 'documentName'>,
+    private readonly options: Pick<CompileOptions, 'unknownFormats' | 'documentName' | 'locate'>,
   ) {
     this.resolver = new SchemaResolver(input.roots, input.resources ?? new Map());
     this.tracksEvaluation = [...input.roots.values(), ...(input.resources?.values() ?? [])].some(schema => hasKey(schema, EVALUATION_KEYWORDS));
@@ -165,14 +166,23 @@ class Lowering {
   }
 
   private report(code: string, severity: GolemDiagnosticSeverity, location: SchemaLocation, keyword: string, text: string, ...inside: readonly string[]): void {
-    const { documentName } = this.options;
+    const { documentName, locate } = this.options;
     const pointer = [keyword, ...inside].reduce((path, token) => path + pointerSegment(token), location.pointer);
+    const place = locate?.(location.resource, pointer);
+    if (place === null) return;
+    const where = place?.where ?? `${documentName === undefined ? '' : `${documentName}: `}schema ${JSON.stringify(location.resource)} at ${pointer}`;
+    const message = `${where}: ${text}`;
+    // Schemas reached by several routes, such as a component used by many operations, report one diagnostic.
+    const key = `${code}\0${message}`;
+    if (this.reported.has(key)) return;
+    this.reported.add(key);
+    const path = place === undefined ? pointer : place.path;
     this.diagnostics.push({
       code,
       severity,
-      message: `${documentName === undefined ? '' : `${documentName}: `}schema ${JSON.stringify(location.resource)} at ${pointer}: ${text}`,
-      ...(documentName === undefined ? {} : { file: documentName }),
-      path: pointer,
+      message,
+      ...(place?.file === undefined ? {} : { file: place.file }),
+      ...(path === undefined ? {} : { path }),
     });
   }
 

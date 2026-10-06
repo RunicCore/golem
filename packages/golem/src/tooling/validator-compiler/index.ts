@@ -11,13 +11,28 @@ export interface CompileInput {
   readonly validations?: ReadonlyMap<string, { readonly importPath: string; readonly exportName: string }>;
 }
 
+/** Where a schema diagnostic belongs in the user's own document, instead of in a schema the compiler built. */
+export interface SchemaPlace {
+  /** Names the place in the diagnostic message. */
+  readonly where: string;
+  /** The real file of the place, when there is one. */
+  readonly file?: string;
+  /** The place as a JSON Pointer into the document, when there is one. */
+  readonly path?: string;
+}
+
 export interface CompileOptions {
   /** What a format that golem does not implement does: warn and skip the check, or fail the compile. */
   readonly unknownFormats: 'warn' | 'error';
   /** Where the generated module imports its helpers from; the package's validation runtime by default. */
   readonly runtimeModule?: string;
-  /** Named in every diagnostic message. */
+  /** Named in each diagnostic message that `locate` does not place. */
   readonly documentName?: string;
+  /**
+   * Maps a schema resource and a JSON Pointer inside it to the place the user knows; without one, a diagnostic names the resource.
+   * `null` drops the diagnostic: another schema that holds the same declaration reports it.
+   */
+  readonly locate?: (resource: string, pointer: string) => SchemaPlace | null | undefined;
   /** Emit TypeScript: the `validators` export carries its type. */
   readonly typed?: boolean;
 }

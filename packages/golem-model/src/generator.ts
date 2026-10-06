@@ -441,6 +441,8 @@ export function generate(context: GolemModelContext): GolemModelResult {
       unknownFormats: normalized.profile.unknownFormats ?? 'warn',
       validations: validatorImports(graphs, normalized.profile, validatorsOutput),
       documentName: 'the model schemas',
+      // A field type's own schema repeats what the model that holds the field already reports.
+      locate: (resource) => resource.startsWith('golem:model-tag:') ? null : undefined,
     })
     : undefined;
   const validatorDiagnostics = validators?.diagnostics ?? [];

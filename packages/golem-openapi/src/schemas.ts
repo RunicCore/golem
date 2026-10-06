@@ -270,6 +270,11 @@ export interface OpenApiOperationValidationSchemaBundle {
    * compiler reads the pointer as a reference to the operation root and not as the root itself.
    */
   readonly roots: Readonly<Record<string, object>>;
+  /** The component name behind each schema of the closure that is a component, keyed like `schemas`. */
+  readonly componentNames: Readonly<Record<string, string>>;
+  /** The id of the operation root schema, which holds the operation's own inline schemas. */
+  readonly operationRootId: string;
+  readonly operationName: string;
 }
 
 
@@ -666,6 +671,7 @@ function operationBundleFromIndex(
   const schemaRoot = root as object;
 
   const schemas = Object.create(null) as Record<string, object | boolean>;
+  const componentNames = Object.create(null) as Record<string, string>;
   schemas[operationRootId] = schemaRoot;
   const pending: Array<{ readonly ref: string; readonly direction: SchemaDirection }> = [];
   const visitRefs = (
@@ -716,6 +722,8 @@ function operationBundleFromIndex(
       throw new Error(`Unresolved OpenAPI validation schema reference ${JSON.stringify(item.ref)}.`);
     }
     schemas[baseId] = schema;
+    const component = index.componentNamesById.get(baseId);
+    if (component !== undefined) componentNames[baseId] = component.name;
     visitRefs(schema, item.direction, collectReference);
   }
 
@@ -733,6 +741,9 @@ function operationBundleFromIndex(
     responseReferences,
     schemas,
     roots,
+    componentNames,
+    operationRootId,
+    operationName: operation.name,
   };
 }
 

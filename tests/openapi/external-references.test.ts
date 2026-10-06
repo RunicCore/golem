@@ -246,3 +246,27 @@ test('a JSON Schema $id declared in two files is reported with both files', asyn
     },
   );
 });
+
+test('a format golem does not check is reported at the file and pointer that declare it', async (t) => {
+  const directory = createFixtureProject(t, 'golem-external-format-');
+  write(directory, 'schemas/money.json', { type: 'object', properties: { amount: { type: 'string', format: 'money' } } });
+  const money = { $ref: './schemas/money.json' };
+  const input = write(directory, 'api.json', {
+    openapi: '3.1.0',
+    info: { title: 'Ledger', version: '1' },
+    paths: {
+      '/credit': { post: { operationId: 'credit', requestBody: { required: true, content: { 'application/json': { schema: money } } }, responses: { 200: { description: 'ok' } } } },
+      '/debit': { post: { operationId: 'debit', requestBody: { required: true, content: { 'application/json': { schema: money } } }, responses: { 200: { description: 'ok' } } } },
+    },
+  });
+  const result = await generate({ input, output: path.join(directory, 'sdk'), name: 'Ledger', profile: { mobx: false, validation: true } });
+  const warnings = result.diagnostics?.filter(entry => entry.code === 'VALIDATE_UNKNOWN_FORMAT') ?? [];
+  assert.deepEqual(warnings.filter(entry => entry.file === 'schemas/money.json'), [{
+    code: 'VALIDATE_UNKNOWN_FORMAT',
+    severity: 'warning',
+    message: 'schemas/money.json#/properties/amount/format: the format "money" is not implemented and is not checked',
+    file: 'schemas/money.json',
+    path: '#/properties/amount/format',
+  }]);
+  for (const warning of warnings) assert.match(warning.file ?? '', /^(api|schemas\/money)\.json$/, warning.message);
+});

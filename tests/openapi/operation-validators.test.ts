@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import test from 'node:test';
@@ -263,4 +264,26 @@ test('same-title SDKs keep their schema contracts', async t => {
     await assert.rejects(client.sendPayload().execute({ body: { marker: marker === 'A' ? 'B' : 'A' } }));
     assert.equal(requests, before, 'invalid input never reaches transport');
   }
+});
+
+test('a format golem does not check is reported once for the component, however many operations use it', () => {
+  const amount = { $ref: '#/components/schemas/Amount' };
+  const operation = (operationId: string) => ({ post: {
+    operationId,
+    requestBody: { required: true, content: { 'application/json': { schema: amount } } },
+    responses: { 200: { description: 'ok', content: { 'application/json': { schema: amount } } } },
+  } });
+  const document = {
+    openapi: '3.1.0', info: { title: 'Ledger', version: '1' },
+    components: { schemas: { Amount: { type: 'string', format: 'money' } } },
+    paths: { '/credit': operation('credit'), '/debit': operation('debit'), '/refund': operation('refund') },
+  };
+  const result = writeSdk(document, { output: path.join(tmpdir(), 'golem-unknown-format-once'), name: 'Ledger', profile: { mobx: false, validation: true, unknownFormats: 'warn' } });
+  const warnings = (result.diagnostics ?? []).filter(entry => entry.code === 'VALIDATE_UNKNOWN_FORMAT');
+  assert.equal(warnings.length, 1, JSON.stringify(warnings, null, 1));
+  assert.match(warnings[0].message, /#\/components\/schemas\/Amount\/format/);
+  assert.match(warnings[0].message, /"money"/);
+  assert.doesNotMatch(warnings[0].message, /urn:golem|Amount_[0-9a-f]{8}/);
+  assert.equal(warnings[0].file, undefined);
+  assert.equal(warnings[0].path, '#/components/schemas/Amount/format');
 });

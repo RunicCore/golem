@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { NameScope } from '@exprtlabs/golem/generator-api';
+import type { SchemaPlace } from '@exprtlabs/golem/validation-plan';
 import { escapeJsonPointerToken } from './json.js';
 
 /**
@@ -15,6 +16,15 @@ export function displayUri(uri: string, rootDirectory: string): string {
   return url.protocol === 'file:'
     ? path.relative(rootDirectory, fileURLToPath(url)).split(path.sep).join('/')
     : uri;
+}
+
+/** The place of `pointer` inside component schema `name`: the source file when a locator knows it, else the bundled document's pointer. */
+export function componentPlace(locate: OriginLocator | undefined, name: string, pointer: string): SchemaPlace {
+  const bundled = `/components/schemas/${escapeJsonPointerToken(name)}${pointer}`;
+  if (locate === undefined) return { where: `#${bundled}`, path: `#${bundled}` };
+  const located = locate(bundled);
+  const hash = located.indexOf('#');
+  return hash < 0 ? { where: located } : { where: located, file: located.slice(0, hash), path: located.slice(hash) };
 }
 
 export function displayLocation(uri: string, pointer: string, rootDirectory: string): string {

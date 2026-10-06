@@ -537,7 +537,6 @@ test('$dynamicRef is an unsupported keyword error at its JSON pointer and leaves
   const [diagnostic] = result.diagnostics;
   assert.equal(diagnostic.code, 'VALIDATE_UNSUPPORTED_KEYWORD');
   assert.equal(diagnostic.severity, GolemDiagnosticSeverity.Error);
-  assert.equal(diagnostic.file, 'orders.yaml');
   assert.equal(diagnostic.path, '/properties/a/$dynamicRef');
   assert.match(diagnostic.message, /orders\.yaml/);
   assert.match(diagnostic.message, /\/properties\/a\/\$dynamicRef/);
@@ -876,4 +875,22 @@ test('compile with typed writes the validators export with its type and the type
   const { source } = compile({ roots: new Map([['root', { type: 'string' }]]) }, { unknownFormats: 'warn', typed: true });
   assert.match(source, /^import type \{ Validator \} from "@exprtlabs\/golem\/validation-runtime";$/m);
   assert.match(source, /^export const validators: Readonly<Record<string, Validator>> = \{$/m);
+});
+
+test('a diagnostic is placed where the locator says and reported once per place', () => {
+  const result = compile(
+    { roots: new Map([['a', { $ref: 'shared' }], ['b', { $ref: 'shared' }]]), resources: new Map([['shared', { format: 'money' }]]) },
+    {
+      unknownFormats: 'warn',
+      documentName: 'orders.yaml',
+      locate: (resource, pointer) => resource === 'shared' ? { where: `orders.yaml#/Money${pointer}`, file: 'orders.yaml', path: `#/Money${pointer}` } : undefined,
+    },
+  );
+  assert.deepEqual(result.diagnostics, [{
+    code: 'VALIDATE_UNKNOWN_FORMAT',
+    severity: GolemDiagnosticSeverity.Warning,
+    message: 'orders.yaml#/Money/format: the format "money" is not implemented and is not checked',
+    file: 'orders.yaml',
+    path: '#/Money/format',
+  }]);
 });

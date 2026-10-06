@@ -14,7 +14,7 @@ import { createSchemaGraph, codecPublicId, internDescriptors, type SchemaGraph, 
 import type { CodecSchemaClosureEntry, CodecValidationPlan } from '@exprtlabs/golem/validation-plan';
 import { assertSupportedModelFieldName, type JsonSchema } from '@exprtlabs/golem/schema';
 import { sourceDigest } from '@exprtlabs/golem/manifest';
-import { buildCodecValidationPlan, compilePlanValidators } from '@exprtlabs/golem/validation-plan';
+import { buildCodecValidationPlan, compilePlanValidators, uniqueDiagnostics } from '@exprtlabs/golem/validation-plan';
 import type { DiscriminatorValue, ModelConstraint, ModelTypeDescriptor, UnionDiscriminator } from '@exprtlabs/golem/model';
 
 import { asRecord, isJsonObject, jsonLiteral, objectEntries } from './json.js';
@@ -26,7 +26,7 @@ import {
   RESERVED_MODEL_MEMBERS,
   type GolemDiagnostic,
 } from '@exprtlabs/golem/generator-api';
-import { componentOrigin, ComponentNameScope, LocatedError } from './origin.js';
+import { componentOrigin, componentPlace, ComponentNameScope, LocatedError, type OriginLocator } from './origin.js';
 import { effectiveSchemaTypes, resolveLocal, type OpenApiSchema } from './normalize.js';
 import { generatedBanner, GENERATOR_NAME, PACKAGE_VERSION } from './package-info.js';
 import type { OpenApiGenerationProfile } from './profile.js';
@@ -1313,7 +1313,7 @@ export function generateOpenApiModelArtifacts(
   document: unknown,
   profile: OpenApiGenerationProfile,
   analysis: OpenApiModelAnalysis,
-  helpers: { readonly copyAdditionalProperties?: boolean; readonly objectFromJSON?: boolean } = {},
+  helpers: { readonly copyAdditionalProperties?: boolean; readonly objectFromJSON?: boolean; readonly locate?: OriginLocator | undefined } = {},
 ): { readonly files: ReadonlyMap<string, string>; readonly entryReexports: string; readonly diagnostics: readonly GolemDiagnostic[] } {
   const { schemaGraph, definitions, ordered, grouping } = analysis;
   const { groups, owner, runtimeEdges } = grouping;
@@ -1460,6 +1460,7 @@ export function generateOpenApiModelArtifacts(
         owner: '@exprtlabs/golem-openapi',
         unknownFormats: profile.unknownFormats ?? 'warn',
         documentName: 'the OpenAPI document',
+        locateModel: (name) => componentPlace(helpers.locate, name, ''),
       });
       diagnostics.push(...compiled.diagnostics);
       files.set(validatorModule, compiled.source);
@@ -1494,7 +1495,7 @@ export function generateOpenApiModelArtifacts(
   const reexports = ordered.map((definition) =>
     `export { ${definition.name}Model, ${codecExports(definition.name).map((name) => name.includes(' as ') ? name.slice(name.indexOf(' as ') + 4) : name).join(', ')} } from './models/${definition.name}.js';\nexport type { ${definition.name}Fields, ${definition.name}JSON, ${definition.name}Init } from './models/${definition.name}.js';`,
   );
-  return { files, entryReexports: reexports.join('\n'), diagnostics };
+  return { files, entryReexports: reexports.join('\n'), diagnostics: uniqueDiagnostics(diagnostics) };
 }
 
 /**
