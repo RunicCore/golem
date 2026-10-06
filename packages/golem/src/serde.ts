@@ -11,10 +11,12 @@
 
 import type { GeneratedModelValidatorEnhancer, WireFormat } from './model.js';
 import { untransformedCallError, type SerdeOptions, type ValidateOptions } from './object-codec.js';
+import type { Validator } from './validation-runtime.js';
 
 export {
   assertModelValue,
   isValidModelValue,
+  layerValidator,
   modelValueIssues,
   createObjectCodec,
   findCodecIdForConstructor,
@@ -53,10 +55,12 @@ export interface GolemSerdeBinding {
 /** The MobX hook of the layer: the type of `enhanceValidatorWithMobX`. */
 export type GolemValidatorEnhancer = GeneratedModelValidatorEnhancer;
 
-/** What `#golem-models` exports: the profile, the validator hook, and the schemas and serde bindings by codec id. */
+/** What `#golem-models` exports: the profile, the validator hook, and the validators, schemas and serde bindings by codec id. */
 export interface GolemLayer {
   readonly profile: { readonly validation: boolean; readonly mobx: boolean };
   readonly enhanceValidator?: GolemValidatorEnhancer;
+  /** The generated validators by schema key (`Id`, `Id#wire`, `Id#model-only`, `Id#wire-only`); empty when the app does not validate. */
+  readonly validators: Readonly<Record<string, Validator>>;
   readonly schemas: Readonly<Record<string, GolemCodecSchemas>>;
   readonly serdeBindings: Readonly<Record<string, GolemSerdeBinding>>;
 }
