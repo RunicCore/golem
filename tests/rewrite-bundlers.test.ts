@@ -439,11 +439,14 @@ test('esbuild: a build of a validating model bundles its generated validators fr
   assert.deepEqual(JSON.parse(result.stdout.split('\n')[0]!), { money: { currency: 'USD', value: '1' }, twice: 42 });
 });
 
-test('vite serve: a validating model resolves its generated validators to the TypeScript file', async (t) => {
+test('vite serve: a validating model reaches its layer, which resolves the generated validators to the TypeScript file', async (t) => {
   const root = await generatedProject(t, 'vite-validating', { validation: true });
   const server = await serve(t, root);
-  const result = await server.transformRequest('/src/money.model.generated.ts');
-  assert.match(result?.code ?? '', /from "\/src\/generated\/models\/models\.validators\.generated\.ts"/, 'the .js specifier resolves to the .ts file');
+  const companion = await server.transformRequest('/src/money.model.generated.ts');
+  assert.doesNotMatch(companion?.code ?? '', /#golem-models/, 'the layer specifier is resolved');
+  assert.match(companion?.code ?? '', /from "\/src\/generated\/models\/models\.generated\.ts"/, 'the companion imports the layer file');
+  const layer = await server.transformRequest('/src/generated/models/models.generated.ts');
+  assert.match(layer?.code ?? '', /from "\/src\/generated\/models\/models\.validators\.generated\.ts"/, 'the .js specifier resolves to the .ts file');
   assert.ok(await server.transformRequest('/src/generated/models/models.validators.generated.ts'), 'the validators module is served from its .ts file');
 });
 

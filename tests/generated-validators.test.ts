@@ -245,7 +245,8 @@ test('generated object codecs close nested schemas and keep first/all and contex
   writeModelGolemYaml(value.root, { mobx: false, validation: true });
   await compile(value.root);
   const generated = generatedModelFiles(value.root).filter(item => item.path.endsWith('.ts')).map(item => item.content).join('\n');
-  assert.match(generated, /\bisValidModelValue\([^)]*\bvalidate_\w+_[0-9a-f]{8}\b/, 'object codecs bind to the generated validators');
+  assert.match(generated, /\bisValidModelValue\(value, options, layerValidator\(layer, "\w+_[0-9a-f]{8}", true\)/, 'object codecs read their validators from the layer');
+  assert.match(generated, /validators: Object\.freeze\(\{[^}]*"\w+_[0-9a-f]{8}": validate_\w+_[0-9a-f]{8}/, 'the layer binds the generated validators');
 
   const validatorsPath = builtValidators(value);
   const [{ Root }, { TLeafBaseModel, TMiddleBaseModel, TRootBaseModel }, validatorModule] = await Promise.all([

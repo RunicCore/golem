@@ -25,7 +25,7 @@ test('validation false retains Date and serde conversions without a validator re
   writeModelGolemYaml(root, { mobx: false, validation: false });
   await buildModelProject(root);
   const shared = generatedModelFiles(root).find((artifact) => artifact.path.endsWith('/models.generated.ts'))?.content ?? '';
-  assert.match(shared, /modelSerdeBindings/);
+  assert.match(shared, /serdeBindings: Object\.freeze/);
   const { A } = await import(path.toNamespacedPath(path.join(root, 'build/a.model.js')));
   const codecs = await import(path.toNamespacedPath(path.join(root, 'build/codecs.js')));
   const model = decodeGeneratedModel(A, { token: '4' });
@@ -187,7 +187,7 @@ test('generic utility aliases retain nested constraints, predicates, and serde b
   const shared = generatedModelFiles(root).map((artifact) => artifact.content).join('\n');
   assert.match(shared, /minLength/);
   assert.match(shared, /exprtValidation/);
-  assert.match(shared, /modelSerdeBindings/);
+  assert.match(shared, /serdeBindings: Object\.freeze/);
   const { A } = await import(path.toNamespacedPath(path.join(root, 'build/a.model.js')));
   const bindings = await import(path.toNamespacedPath(path.join(root, 'build/bindings.js')));
   const invalid = decodeGeneratedModel(A, { payload: { value: 'x', when: '2025-01-02T03:04:05.000Z' } });
