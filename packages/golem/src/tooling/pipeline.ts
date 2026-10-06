@@ -271,6 +271,12 @@ function diagnosticLocation(diagnostic: GolemDiagnostic): string {
   return ` (${diagnostic.file}${line})`;
 }
 
+function writeWarnings(diagnostics: readonly GolemDiagnostic[]): void {
+  for (const diagnostic of diagnostics) {
+    if (diagnostic.severity === GolemDiagnosticSeverity.Warning) process.stderr.write(`${diagnostic.code}${diagnosticLocation(diagnostic)}: ${diagnostic.message}\n`);
+  }
+}
+
 function errorDiagnosticsMessage(source: string, errors: readonly GolemDiagnostic[]): string {
   return [
     `${source} reported ${errors.length} error diagnostic${errors.length === 1 ? '' : 's'}:`,
@@ -491,6 +497,8 @@ export async function runPipeline(filename: string, options: PipelineOptions = {
     }
     else {
       ran.add(job.id);
+      // The tsconfig the job analyses with is named before it runs, so a failure that the tsconfig explains still names it.
+      writeWarnings(jobTsconfigDiagnostics(config, job));
       let provider = providers.get(job.package);
       if (!provider) {
         // A job the plan skipped reads an output that the run just changed.
@@ -530,9 +538,7 @@ export async function runPipeline(filename: string, options: PipelineOptions = {
       }
     }
     assertNoDiagnosticErrors(job, result);
-    if (!cached) for (const diagnostic of [...jobTsconfigDiagnostics(config, job), ...result.diagnostics ?? []]) {
-      if (diagnostic.severity === GolemDiagnosticSeverity.Warning) process.stderr.write(`${diagnostic.code}${diagnosticLocation(diagnostic)}: ${diagnostic.message}\n`);
-    }
+    if (!cached) writeWarnings(result.diagnostics ?? []);
     for (const artifact of result.artifacts) {
       if (owned.has(artifact.path)) throw new Error(`Two generators emitted the same output: ${artifact.path}`);
       owned.add(artifact.path);
