@@ -175,21 +175,22 @@ test('responses declared by a status range or default, with a parametric content
   await assert.rejects(() => respond(500, { id: 'x' }).getFallback().execute({}), /validation failed/i);
 });
 
-test('an operation without a generated validator is reported by operation, never skipped', () => {
+test('the generated validators of an operation are keyed by status and content type, and resolved once per runtime', () => {
   const runtime = new ClientRuntime('Engine', { baseUrl: 'https://fixture.invalid' });
-  const accept: Validator = () => [];
+  const input: Validator = () => [];
+  const ok: Validator = () => [];
+  const problem: Validator = () => [];
   const sources = {
-    inputReference: 'input',
-    responseReferences: [{ status: '200', contentType: 'application/json', reference: 'ok' }],
+    input,
+    responses: [
+      { status: '200', contentType: 'application/json', validator: ok },
+      { status: '400', contentType: 'application/problem+json', validator: problem },
+    ],
   };
-  assert.throws(
-    () => operationValidators(runtime, 'sendPayload', { ...sources, validators: {} }),
-    (error: unknown) => error instanceof LibError && error.kind === LibErrorKind.ValidationUnavailable && /operation input: sendPayload/.test(error.message),
-  );
-  assert.throws(
-    () => operationValidators(runtime, 'sendPayload', { ...sources, validators: { input: accept } }),
-    (error: unknown) => error instanceof LibError && error.kind === LibErrorKind.ValidationUnavailable && /operation response: sendPayload 200 application\/json/.test(error.message),
-  );
+  const resolved = operationValidators(runtime, 'sendPayload', sources);
+  assert.equal(resolved.input, input);
+  assert.deepEqual([...resolved.responses], [['200:application/json', ok], ['400:application/problem+json', problem]]);
+  assert.equal(operationValidators(runtime, 'sendPayload', { input: ok, responses: [] }), resolved, 'the first resolution is kept');
 });
 
 test('a discriminated response is validated against the variant its tag selects', async (t) => {

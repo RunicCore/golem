@@ -68,7 +68,7 @@ function generatedText(root: string): string {
 }
 
 function assertGeneratedValidatorsBound(source: string): void {
-  assert.ok((source.match(/requireModelValidator\(validators, /g) ?? []).length >= 1, 'a codec binds to the generated validators');
+  assert.ok((source.match(/\bvalidate_\w+_[0-9a-f]{8}\b/g) ?? []).length >= 1, 'a codec binds to the generated validators');
 }
 
 test('global validation true binds IObject and IModel codecs to generated validators', async (t: TestContext) => {
@@ -164,7 +164,7 @@ test('SDK Money $ref plus extra TValidation, local TValidation, and TSerde compi
   const source = generatedText(root);
   assertGeneratedValidatorsBound(source);
   const companion = fs.readFileSync(path.join(sourceRoot, 'checkout.model.generated.ts'), 'utf8');
-  assert.equal((companion.match(/^import \{ validators \} from /gm) ?? []).length, 1, 'the parent companion imports the shared validators once');
+  assert.equal((companion.match(/^import \{ validate_[^}]+\} from /gm) ?? []).length, 1, 'the parent companion imports the shared validators once');
   const { Checkout } = await import(pathToFileURL(path.join(root, 'build/checkout.model.js')).href);
   const codec = requireObjectCodec(generatedCodecIdFromRoot(root, 'TCheckout'));
   const validWire = {
@@ -229,6 +229,6 @@ test('SDK Money $ref plus extra TValidation, local TValidation, and TSerde compi
   assert.doesNotMatch(companion, /function validateMoney\b/, 'the parent companion does not duplicate the interned Money validator');
   const validateTCheckout = companion.match(/export function validateTCheckout[\s\S]*?\n\}/)?.[0] ?? '';
   assert.notEqual(validateTCheckout, '', 'validateTCheckout is found in the companion');
-  assert.match(validateTCheckout, /isValidModelValue\(value, options, requireModelValidator\(validators, /);
+  assert.match(validateTCheckout, /isValidModelValue\(value, options, validate_\w+_[0-9a-f]{8}, /);
   assert.doesNotMatch(validateTCheckout, /resolve|JSON\.parse/, 'schema work runs once at module scope, not on every validateTCheckout call');
 });

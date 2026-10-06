@@ -474,7 +474,7 @@ export function generate(context: GolemModelContext): GolemModelResult {
     ? Object.fromEntries(validationPlan.ownSchemas.map((id) => [id, validationPlan.schemas[id]]))
     : undefined;
   const shared = sharedBase && validators
-    ? { ...sharedBase, validatorsModule: validatorsOutput, schemasName: 'modelSchemas' }
+    ? { ...sharedBase, validators: { module: validatorsOutput, exports: validators.exports }, schemasName: 'modelSchemas' }
     : sharedBase;
   const artifacts: GolemModelArtifact[] = [];
   const sharedContent = needsShared

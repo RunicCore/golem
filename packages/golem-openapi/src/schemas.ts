@@ -728,11 +728,12 @@ function operationBundleFromIndex(
   }
 
   const pointerBase = `${operationRootId}#/operations/${escapePointerToken(operation.name)}`;
-  const inputReference = `${operationRootId}:input`;
+  // A root is named by its operation and slot: the validator's export name comes from it (`validate_getPayment_input`).
+  const inputReference = `${operation.name}:input`;
   const roots = Object.create(null) as Record<string, object>;
   roots[inputReference] = { $ref: `${pointerBase}/input` };
   const responseReferences = operation.responses.flatMap((response) => response.content.map((media) => {
-    const reference = `${operationRootId}:response:${urnSegment(response.status)}:${urnSegment(media.contentType)}`;
+    const reference = `${operation.name}:response:${response.status}:${media.contentType}`;
     roots[reference] = { $ref: `${pointerBase}/responses/${escapePointerToken(response.status)}/${escapePointerToken(media.contentType)}` };
     return { status: response.status, contentType: media.contentType, reference };
   }));

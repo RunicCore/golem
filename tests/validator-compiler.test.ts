@@ -1,5 +1,10 @@
 import assert from 'node:assert/strict';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import { test } from 'node:test';
+
+import { build } from 'esbuild';
 
 import { GolemDiagnosticSeverity } from '@exprtlabs/golem/generator-api';
 import type { Validator } from '@exprtlabs/golem/validation-runtime';
@@ -939,10 +944,91 @@ test('a key whose value is undefined counts as absent for required, properties, 
   await assertIssues({ required: ['a'] }, { a: null }, []);
 });
 
-test('compile with typed writes the validators export with its type and the type import', () => {
+test('compile with typed types each exported validator and imports the issue type', () => {
   const { source } = compile({ roots: new Map([['root', { type: 'string' }]]) }, { unknownFormats: 'warn', typed: true });
-  assert.match(source, /^import type \{ Validator \} from "@exprtlabs\/golem\/validation-runtime";$/m);
-  assert.match(source, /^export const validators: Readonly<Record<string, Validator>> = \{$/m);
+  assert.match(source, /^import type \{ SchemaIssue \} from "@exprtlabs\/golem\/validation-runtime";$/m);
+  assert.match(source, /^export function validate_root\(value: unknown, all: boolean\): readonly SchemaIssue\[\] \{$/m);
+});
+
+const MODEL_ROOTS = new Map<string, unknown>([
+  ['PaymentDraft_8be34727', { type: 'object', properties: { note: { type: 'string', pattern: '^draft-[0-9]{4}$' } }, additionalProperties: false }],
+  ['PaymentDraft_8be34727#wire', { type: 'object', properties: { tags: { enum: ['a', 'b'] } } }],
+  ['getPayment:input', { type: 'object', required: ['id'] }],
+  ['getPayment:response:200:application/json', { type: 'array', items: { type: 'string' }, uniqueItems: true }],
+]);
+
+test('every root is a named exported function and no record is exported', () => {
+  const { source, exports } = compile({ roots: MODEL_ROOTS }, { unknownFormats: 'warn' });
+  assert.deepEqual([...exports], [
+    ['PaymentDraft_8be34727', 'validate_PaymentDraft_8be34727'],
+    ['PaymentDraft_8be34727#wire', 'validate_PaymentDraft_8be34727_wire'],
+    ['getPayment:input', 'validate_getPayment_input'],
+    ['getPayment:response:200:application/json', 'validate_getPayment_response_200_application_json'],
+  ].sort(([first], [second]) => (first < second ? -1 : 1)));
+  assert.deepEqual([...source.matchAll(/^export (?:function|const|let|class) (\w+)/gm)].map(match => match[1]).sort(), [...exports.values()].sort());
+  assert.doesNotMatch(source, /^export (?!function )/m, 'only functions are exported');
+  assert.doesNotMatch(source, /\bvalidators\b/);
+});
+
+test('every top-level constant initializer that is a call or a new expression is annotated as pure', () => {
+  const { source } = compile({ roots: MODEL_ROOTS }, { unknownFormats: 'warn' });
+  const constants = [...source.matchAll(/^const (\w+) = (.*)$/gm)].filter(([, , initializer]) => /\bnew\b|\w\(/.test(initializer ?? '') && !/^(?:\w+|\([^)]*\)) =>/.test(initializer ?? ''));
+  assert.ok(constants.some(([, , initializer]) => /new RegExp\(/.test(initializer ?? '')), 'the fixture emits a pattern constant');
+  assert.ok(constants.some(([, , initializer]) => /Object\.freeze\(\/\*#__PURE__\*\/ JSON\.parse\(/.test(initializer ?? '')), 'the fixture emits a literal constant');
+  assert.ok(constants.some(([, , initializer]) => /new Set\(/.test(initializer ?? '')), 'the fixture emits a known-keys constant');
+  for (const [line, name, initializer] of constants) {
+    assert.ok(initializer?.startsWith('/*#__PURE__*/ '), `${name} is pure: ${line}`);
+    assert.doesNotMatch(initializer ?? '', /(?<!\/\*#__PURE__\*\/ )JSON\.parse\(/, `${name} marks its inner call: ${line}`);
+  }
+});
+
+test('adding a root renames no other export', () => {
+  const before = compile({ roots: MODEL_ROOTS }, { unknownFormats: 'warn' }).exports;
+  const grown = new Map<string, unknown>([['Aardvark_00000000', { type: 'string' }], ...MODEL_ROOTS, ['zebra:input', { type: 'string' }]]);
+  const after = compile({ roots: grown }, { unknownFormats: 'warn' }).exports;
+  for (const [root, exported] of before) assert.equal(after.get(root), exported, root);
+  assert.equal(after.size, before.size + 2);
+});
+
+test('roots whose names become one identifier get a number, the others keep their name', async () => {
+  const roots = { 'a-b': { type: 'integer' }, 'a_b': { type: 'string' }, 'c': { type: 'boolean' } };
+  const compiled = await import('./support/compiled-validators.js').then(module => module.compileValidatorModule({ roots }));
+  assert.deepEqual([...compiled.exports], [['a-b', 'validate_a_b'], ['a_b', 'validate_a_b_2'], ['c', 'validate_c']]);
+  assert.deepEqual(compiled.byRoot['a-b']('x', true), [{ path: [], code: 'type', expected: ['integer'] }]);
+  assert.deepEqual(compiled.byRoot.a_b(1, true), [{ path: [], code: 'type', expected: ['string'] }]);
+});
+
+test('a bundle of one validator drops an unused validator with its constants', async t => {
+  const roots = new Map<string, unknown>([
+    ['kept', { type: 'string', pattern: '^kept-pattern-[0-9]+$' }],
+    ['unused', { type: 'object', properties: { code: { type: 'string', pattern: '^unused-pattern-[0-9]+$' }, kind: { enum: ['unused-literal-a', 'unused-literal-b'] } }, additionalProperties: false }],
+  ]);
+  const { source, exports } = compile({ roots }, { unknownFormats: 'warn', runtimeModule: 'golem-validation-runtime' });
+  const directory = mkdtempSync(path.join(tmpdir(), 'golem-validators-bundle-'));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  writeFileSync(path.join(directory, 'validators.js'), source);
+  const bundle = async (names: readonly string[]): Promise<string> => {
+    writeFileSync(path.join(directory, 'entry.js'), `import { ${names.join(', ')} } from './validators.js';\nglobalThis.used = [${names.join(', ')}];\n`);
+    const result = await build({
+      entryPoints: [path.join(directory, 'entry.js')],
+      bundle: true,
+      format: 'esm',
+      write: false,
+      treeShaking: true,
+      external: ['golem-validation-runtime'],
+    });
+    return result.outputFiles[0].text;
+  };
+  const kept = exports.get('kept') ?? '';
+  const unused = exports.get('unused') ?? '';
+  const one = await bundle([kept]);
+  assert.match(one, new RegExp(`function ${kept}\\b`));
+  assert.match(one, /kept-pattern/);
+  assert.doesNotMatch(one, new RegExp(unused));
+  assert.doesNotMatch(one, /unused-pattern|unused-literal/, 'the constants of the dropped validator go with it');
+  const both = await bundle([kept, unused]);
+  assert.match(both, /unused-pattern/);
+  assert.match(both, /unused-literal-a/);
 });
 
 test('a diagnostic is placed where the locator says and reported once per place', () => {

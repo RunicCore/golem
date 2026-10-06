@@ -6,7 +6,7 @@ import { emitCodecRuntime, emitModelFromInit, emitModelFromJSON, emitModelToJSON
 import type { ModelTypeDescriptor } from '@exprtlabs/golem/model';
 import { buildCodecValidationPlan } from '@exprtlabs/golem/validation-plan';
 import { instantiateRuntime } from './emitted-runtime.js';
-import { compileValidationPlan } from './support/compiled-validators.js';
+import { compileValidationPlanBinding } from './support/compiled-validators.js';
 
 /** A parent that nests a model with a date, so the wire differs from the model and validation is on. */
 function paymentGraph(): ReturnType<typeof createSchemaGraph> {
@@ -38,13 +38,14 @@ function paymentGraph(): ReturnType<typeof createSchemaGraph> {
   return graph;
 }
 
+/** The runtime source; a test that only reads the text names each validator after its root. */
 function paymentRuntimeSource(options: Parameters<typeof emitCodecRuntime>[1] = {}): string {
-  return emitCodecRuntime(paymentGraph(), options);
+  return emitCodecRuntime(paymentGraph(), { validatorName: (id) => `validate_${id.replace(/[^\w$]/g, '_')}`, ...options });
 }
 
-/** The generated validators the payment runtime reads, compiled from the same graph. */
-function paymentValidators(): ReturnType<typeof compileValidationPlan> {
-  return compileValidationPlan(buildCodecValidationPlan([paymentGraph()], [], {}, true));
+/** The generated validators the payment runtime imports, compiled from the same graph, and the names the runtime source must use. */
+function paymentValidators(): ReturnType<typeof compileValidationPlanBinding> {
+  return compileValidationPlanBinding(buildCodecValidationPlan([paymentGraph()], [], {}, true));
 }
 
 function functionBody(source: string, name: string): string {
@@ -62,11 +63,12 @@ function occurrences(text: string, pattern: string): number {
 test('validate makes one check through the generated validator of the model', () => {
   const body = functionBody(paymentRuntimeSource(), 'validatePayment');
   assert.equal(occurrences(body, 'isValidModelValue('), 1, 'one check');
-  assert.match(body, /return isValidModelValue\(value, options, requireModelValidator\(validators, "Payment_[0-9a-f]{8}"\), "Payment_[0-9a-f]{8}"\);/);
+  assert.match(body, /return isValidModelValue\(value, options, validate_Payment_[0-9a-f]{8}, "Payment_[0-9a-f]{8}"\);/);
 });
 
 test('stringify checks the model, builds the wire, checks the wire and writes it in one guarded block', async () => {
-  const source = paymentRuntimeSource();
+  const validators = await paymentValidators();
+  const source = paymentRuntimeSource({ validatorName: validators.validatorName });
   const body = functionBody(source, 'stringifyPayment');
   assert.equal(occurrences(body, 'if (validates)'), 1, 'one guard');
   const order = ['assertPayment(value, options)', 'const wire =', '__golemAssertWireOnly_Payment(wire, options)', 'stringifyPaymentWire(wire']
@@ -75,7 +77,7 @@ test('stringify checks the model, builds the wire, checks the wire and writes it
   assert.deepEqual(order, [...order].sort((a, b) => a - b), 'model check, wire build, wire-only check, wire stringify');
   assert.ok(body.indexOf('stringifyPaymentCore(') > body.indexOf('stringifyPaymentWire('), 'the unvalidated path follows the guarded block');
 
-  const runtime = instantiateRuntime(source, { validators: await paymentValidators() });
+  const runtime = instantiateRuntime(source, validators.scope);
   const value = { id: 'p1', amount: { currency: 'USD', at: new Date(0), tags: ['a'] }, list: [['x']] };
   const wire = { id: 'p1', amount: { currency: 'USD', at: '1970-01-01T00:00:00.000Z', tags: ['a'] }, list: [['x']] };
   assert.equal(runtime.stringifyPayment(value), JSON.stringify(wire));
@@ -133,7 +135,8 @@ test('a nested trusted call to a model of the same module runs its core and pass
 });
 
 test('the public toWireFormat validates, builds the wire through its core and checks the wire-only schema last', async () => {
-  const source = paymentRuntimeSource();
+  const validators = await paymentValidators();
+  const source = paymentRuntimeSource({ validatorName: validators.validatorName });
   const body = functionBody(source, 'toWireFormatPayment');
   const order = ['assertPayment(value, options)', 'const wire = toWireFormatPaymentCore(value);', '__golemAssertWireOnly_Payment(wire, options)', 'return wire;']
     .map((step) => body.indexOf(step));
@@ -141,7 +144,7 @@ test('the public toWireFormat validates, builds the wire through its core and ch
   assert.deepEqual(order, [...order].sort((a, b) => a - b));
   assert.doesNotMatch(body, /\bMoney\b|record\[/, 'the wrapper builds nothing itself');
 
-  const runtime = instantiateRuntime(source, { validators: await paymentValidators() });
+  const runtime = instantiateRuntime(source, validators.scope);
   const value = { id: 'p1', amount: { currency: 'USD', at: new Date(0), tags: ['a'] }, list: [['x']] };
   const wire = { id: 'p1', amount: { currency: 'USD', at: '1970-01-01T00:00:00.000Z', tags: ['a'] }, list: [['x']] };
   assert.deepEqual(runtime.toWireFormatPayment(value), wire);

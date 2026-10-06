@@ -33,20 +33,9 @@ export function operationValidators(
     return override;
   }
 
-  // A schema the generator could not give a validator never skips validation.
-  const input = sources.validators[sources.inputReference];
-  if (!input) {
-    throw new LibError(LibErrorKind.ValidationUnavailable, `Generated validator missing for operation input: ${operation}`);
-  }
   const responses = new Map<string, Validator>();
-  for (const item of sources.responseReferences) {
-    const validator = sources.validators[item.reference];
-    if (!validator) {
-      throw new LibError(LibErrorKind.ValidationUnavailable, `Generated validator missing for operation response: ${operation} ${item.status} ${item.contentType}`);
-    }
-    responses.set(`${item.status}:${item.contentType}`, validator);
-  }
-  const resolved = { input, responses };
+  for (const item of sources.responses) responses.set(`${item.status}:${item.contentType}`, item.validator);
+  const resolved = { input: sources.input, responses };
   runtime.operationValidatorCache.set(operation, resolved);
   return resolved;
 }

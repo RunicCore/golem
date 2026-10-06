@@ -1,5 +1,5 @@
 import { GolemDiagnosticSeverity, type GolemDiagnostic } from '../generator-api.js';
-import { emit } from './emit.js';
+import { emit, exportNames } from './emit.js';
 import { lower } from './lower.js';
 
 export interface CompileInput {
@@ -30,21 +30,24 @@ export interface CompileOptions {
   readonly documentName?: string;
   /** Maps a schema resource and a JSON Pointer inside it to the place the user knows; without one, a diagnostic names the resource. */
   readonly locate?: (resource: string, pointer: string) => SchemaPlace | undefined;
-  /** Emit TypeScript: the `validators` export carries its type. */
+  /** Emit TypeScript: each exported validator carries its type. */
   readonly typed?: boolean;
 }
 
 export interface CompileResult {
-  /** An ES module with one named export, `validators`; empty when any diagnostic is an error. */
+  /** An ES module with one named export, a function, for each root (see `exports`); empty when any diagnostic is an error. */
   readonly source: string;
+  /** The name each root's validator is exported under, by root name. The names depend on the roots' own names only, and exist when the source is empty. */
+  readonly exports: ReadonlyMap<string, string>;
   readonly diagnostics: readonly GolemDiagnostic[];
 }
 
 const DEFAULT_RUNTIME_MODULE = '@exprtlabs/golem/validation-runtime';
 
-/** Compiles JSON Schema 2020-12 roots to a module of validators, one per root. */
+/** Compiles JSON Schema 2020-12 roots to a module that exports one validator function per root. */
 export function compile(input: CompileInput, options: CompileOptions): CompileResult {
   const { module, diagnostics } = lower(input, options);
-  if (diagnostics.some(entry => entry.severity === GolemDiagnosticSeverity.Error)) return { source: '', diagnostics };
-  return { source: emit(module, { runtimeModule: options.runtimeModule ?? DEFAULT_RUNTIME_MODULE, ...(options.typed ? { typed: true } : {}) }), diagnostics };
+  const exports = exportNames(input.roots.keys());
+  if (diagnostics.some(entry => entry.severity === GolemDiagnosticSeverity.Error)) return { source: '', exports, diagnostics };
+  return { source: emit(module, { runtimeModule: options.runtimeModule ?? DEFAULT_RUNTIME_MODULE, ...(options.typed ? { typed: true } : {}) }), exports, diagnostics };
 }

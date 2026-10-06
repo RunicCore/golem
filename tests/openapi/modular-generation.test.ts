@@ -689,12 +689,10 @@ test('sequential same-title generation jobs keep schema and resource contexts is
   assert.ok(secondShared.every(artifact => !artifact.content.includes('alpha')));
   assert.ok(firstShared.some(artifact => artifact.content.includes('alpha')));
   assert.ok(secondShared.some(artifact => artifact.content.includes('beta')));
-  const firstOperation = first.artifacts.find(artifact => artifact.path.endsWith('/operations/putEnvelope.ts'))?.content ?? '';
-  const secondOperation = second.artifacts.find(artifact => artifact.path.endsWith('/operations/putEnvelope.ts'))?.content ?? '';
-  assert.notEqual(firstOperation, secondOperation, 'operation references carry each job’s digest-qualified schema context');
+  // An operation module imports its validators by operation and slot, so it carries no schema context of the job.
 });
 
-test('operation validators modules export only their validators', () => {
+test('operation validators modules export one named function per operation root and no record', () => {
   const result = writeSdk(contextDocument('alpha'), {
     output: path.join(tmpdir(), 'openapi-schema-exports'),
     name: 'Context',
@@ -703,7 +701,10 @@ test('operation validators modules export only their validators', () => {
   const modules = operationValidatorArtifacts(result.artifacts);
   assert.ok(modules.length > 0);
   for (const artifact of modules) {
-    assert.deepEqual([...artifact.content.matchAll(/^export const (\w+)/gm)].map(match => match[1]), ['validators'], artifact.path);
+    const exported = [...artifact.content.matchAll(/^export (?:function|const) (\w+)/gm)].map(match => match[1]);
+    assert.ok(exported.length > 0, artifact.path);
+    for (const name of exported) assert.match(name, /^validate_\w+_(?:input|response_\d+_\w+)$/, artifact.path);
+    assert.doesNotMatch(artifact.content, /^export const /m, artifact.path);
   }
 });
 

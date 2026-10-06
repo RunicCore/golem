@@ -129,6 +129,12 @@ function operationFactoryName(operation: NormalizedOperation): string {
   return `create${identifier(operation.name)}Operation`;
 }
 
+function requireValidatorExport(operation: string, reference: string, exports: ReadonlyMap<string, string>): string {
+  const exported = exports.get(reference);
+  if (exported === undefined) throw new Error(`The generated validators of operation ${JSON.stringify(operation)} have no export for ${JSON.stringify(reference)}.`);
+  return exported;
+}
+
 function operationSource(
   clientName: string,
   operation: NormalizedOperation,
@@ -138,6 +144,7 @@ function operationSource(
   responseContracts: readonly unknown[],
   securitySchemes: Readonly<Record<string, unknown>>,
   validationBundle: ReturnType<typeof buildOperationValidationSchemaBundle> | undefined,
+  validatorExports: ReadonlyMap<string, string>,
 ): string {
   const usedFunctions = new Set<string>();
   const use = (name: string): string => {
@@ -238,18 +245,23 @@ function operationSource(
     return name;
   };
   const validationSourcesName = uniqueModuleName('__operationValidationSources', 'operation validation sources');
-  const generatedValidatorsName = uniqueModuleName('__operationValidators', 'generated operation validators import');
   const inputType = `Types.${operation.typeName}OperationInput`;
   const responseType = `Types.${operation.typeName}OperationHttpResponse`;
   const validatorSetup = validatesWithSources
     ? `  const validators = operationValidators(runtime, ${JSON.stringify(operation.name)}, ${validationSourcesName});\n  const checkResponse = responseCheck(validators);`
     : '';
+  // The generated validators this operation imports, each under a module-local alias that no operation name can take.
+  const validatorImports = validationBundle
+    ? [
+      { reference: validationBundle.inputReference, local: uniqueModuleName('__validateInput', 'generated input validator import') },
+      ...validationBundle.responseReferences.map((item, index) => ({ reference: item.reference, local: uniqueModuleName(`__validateResponse${index}`, 'generated response validator import') })),
+    ].map(item => ({ ...item, exported: requireValidatorExport(operation.name, item.reference, validatorExports) }))
+    : [];
   const validationSources = validationBundle
     ? [
       `const ${validationSourcesName}: OperationValidationSources = {`,
-      `  inputReference: ${JSON.stringify(validationBundle.inputReference)},`,
-      `  responseReferences: ${JSON.stringify(validationBundle.responseReferences)},`,
-      `  validators: ${generatedValidatorsName},`,
+      `  input: ${validatorImports[0].local},`,
+      `  responses: [${validationBundle.responseReferences.map((item, index) => `{ status: ${JSON.stringify(item.status)}, contentType: ${JSON.stringify(item.contentType)}, validator: ${validatorImports[index + 1].local} }`).join(', ')}],`,
       '};',
     ].join('\n')
     : '';
@@ -260,7 +272,7 @@ function operationSource(
     profile.mobx
       ? `import { createObservableApiOperation as createApiOperation, type ObservableApiOperation as ApiOperation } from '@exprtlabs/golem/mobx';`
       : '',
-    validatesWithSources ? `import { validators as ${generatedValidatorsName} } from './${operation.name}.validators.generated.js';` : '',
+    validatesWithSources ? `import { ${validatorImports.map(item => `${item.exported} as ${item.local}`).join(', ')} } from './${operation.name}.validators.generated.js';` : '',
     validationFunctions.length
       ? `import { ${validationFunctions.join(', ')} } from '@exprtlabs/golem/validation';`
       : '',
@@ -562,6 +574,7 @@ export function generateClientModules(
     ? buildOperationValidationSchemaBundles(document, operations, schemaData)
     : new Map<string, ReturnType<typeof buildOperationValidationSchemaBundle>>();
   const operationValidators = new Map<string, string>();
+  const validatorExports = new Map<string, ReadonlyMap<string, string>>();
   const diagnostics: GolemDiagnostic[] = [];
   for (const operation of operations) {
     const bundle = validationBundles.get(operation.name);
@@ -585,6 +598,7 @@ export function generateClientModules(
     );
     diagnostics.push(...compiled.diagnostics);
     operationValidators.set(`operations/${operation.name}.validators.generated.ts`, compiled.source);
+    validatorExports.set(operation.name, compiled.exports);
   }
 
   const emittedOperations = new Map<string, string>();
@@ -599,6 +613,7 @@ export function generateClientModules(
       responseContractsForOperation(document, operation),
       operationSchemes,
       validationBundles.get(operation.name),
+      validatorExports.get(operation.name) ?? new Map(),
     ));
   }
   const client = emitClient(clientName, operations, profile, plan, rawSecuritySchemes);

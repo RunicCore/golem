@@ -8,7 +8,7 @@ import { buildCodecValidationPlan } from '@exprtlabs/golem/validation-plan';
 import * as serde from '@exprtlabs/golem/serde';
 import { LibError } from '@exprtlabs/golem/errors';
 import { instantiate, instantiateRuntime } from './emitted-runtime.js';
-import { compileValidationPlan } from './support/compiled-validators.js';
+import { compileValidationPlanBinding } from './support/compiled-validators.js';
 
 const money: ModelTypeDescriptor = {
   kind: 'object',
@@ -30,6 +30,11 @@ const payment: ModelTypeDescriptor = {
   required: ['id', 'amount', 'note'],
   additionalProperties: false,
 };
+
+/** Emits the runtime with each validator named after its root, as the text a test reads needs no validators module. */
+function emitRuntime(graph: Parameters<typeof emitCodecRuntime>[0]): string {
+  return emitCodecRuntime(graph, { validatorName: (id) => `validate_${id.replace(/[^\w$]/g, '_')}` });
+}
 
 test('schema graph interns nested objects once and stringify composes by call', () => {
   const graph = createSchemaGraph();
@@ -119,7 +124,7 @@ test('intern preserves type-only nested refs as known-key copies and class refs 
   assert.equal(classField?.kind, 'reference');
   if (classField?.kind !== 'reference') return;
   assert.equal(classField.construct, true);
-  const source = emitCodecRuntime(graph);
+  const source = emitRuntime(graph);
   class ItemStub {
     public constructor(values: object = {}) {
       Object.assign(this, values);
@@ -189,7 +194,7 @@ test('construct skips identity-only fill and reuses extras-allowed identity nest
   const itemNode = graph.intern(item, 'Item', true);
   graph.intern(root, 'Root');
   graph.seal();
-  const source = emitCodecRuntime(graph);
+  const source = emitRuntime(graph);
   class ItemStub {
     public constructor(values: object = {}) {
       Object.assign(this, values);
@@ -242,7 +247,7 @@ test('TSerde intern emits a second schema only when wire and model intern keys d
   const name = [...graph.nodes.values()].find((node) => node.name === 'NameInput');
   assert.equal(permission?.sameSchema, false);
   assert.equal(name?.sameSchema, true);
-  const source = emitCodecRuntime(graph);
+  const source = emitRuntime(graph);
   assert.match(source, /PermissionInput_[0-9a-f]{8}#wire/, 'a second schema is registered for PermissionInput because its wire and model intern keys differ');
   assert.doesNotMatch(source, /NameInput_[0-9a-f]{8}#wire/, 'no second schema is registered for NameInput because its wire and model intern keys are identical');
   // The only way to observe that stringify composes through its own wire-plane function
@@ -296,7 +301,7 @@ test('IObject and IModel with the same TSerde fields intern as separate stringif
   assert.equal(modelProperties.properties?.permissions?.type, 'number', 'the model plane keeps the TSerde field as a number');
   assert.equal(wireProperties.properties?.permissions?.type, 'string', 'the wire plane keeps the TSerde field as its wire type');
   assert.equal(Object.hasOwn(modelJsonSchema, '$ref'), false, 'the object node schema does not $ref the unrelated IModel node');
-  const source = emitCodecRuntime(graph);
+  const source = emitRuntime(graph);
   // One model-only and one wire-only residual schema per node (PermissionInput, Permission).
   const plan = buildCodecValidationPlan([graph], [], {}, true);
   assert.equal(plan.ownSchemas.filter((id) => /#(?:model|wire)-only$/.test(id)).length, 4, 'one model-only and one wire-only residual schema per node');
@@ -338,7 +343,7 @@ test('different Payment contracts intern as distinct hashed codec ids and identi
   assert.notEqual(first.codecId, second.codecId);
   assert.match(first.codecId, /^Payment_[0-9a-f]{8}$/);
   assert.match(second.codecId, /^Payment_[0-9a-f]{8}$/);
-  const source = emitCodecRuntime(graph);
+  const source = emitRuntime(graph);
   assert.match(source, new RegExp(`createObjectCodec\\("${first.codecId}"`));
   assert.match(source, new RegExp(`createObjectCodec\\("${second.codecId}"`));
 
@@ -480,7 +485,7 @@ test('nested IModel refs keep construct on the hashed codec id', () => {
   assert.equal(nested?.kind, 'reference');
   assert.equal(nested && 'name' in nested ? nested.name : undefined, childNode.codecId);
   assert.equal(nested && 'construct' in nested ? nested.construct : undefined, true);
-  const source = emitCodecRuntime(graph);
+  const source = emitRuntime(graph);
   class ChildStub {
     public constructor(values: object = {}) {
       Object.assign(this, values);
@@ -539,13 +544,13 @@ test('wire schema drops model-only Not predicates and IObject assert checks the 
   const wireNegSchema = (node?.jsonSchema as { properties?: Record<string, { not?: unknown }> } | undefined)?.properties?.neg;
   assert.notEqual(modelNegSchema?.not, undefined, 'the model plane keeps the Not predicate');
   assert.equal(wireNegSchema?.not, undefined, 'the wire plane drops the model-only Not predicate');
-  const source = emitCodecRuntime(graph);
   // The "positive" function of the model-only Not predicate is supplied by the surrounding generator.
-  const validators = await compileValidationPlan(buildCodecValidationPlan([graph], [], {}, true), {
+  const validators = await compileValidationPlanBinding(buildCodecValidationPlan([graph], [], {}, true), {
     validations: { positive: { importPath: './rules.mjs', exportName: 'positive' } },
     modules: { 'rules.mjs': "export const positive = value => typeof value === 'number' && value > 0;" },
   });
-  const { assertA, fromWireFormatA, parseA } = instantiateRuntime(source, { validators });
+  const source = emitCodecRuntime(graph, { validatorName: validators.validatorName });
+  const { assertA, fromWireFormatA, parseA } = instantiateRuntime(source, validators.scope);
   assert.throws(
     () => assertA({ neg: 5 }),
     (error: unknown) => error instanceof LibError
@@ -582,6 +587,7 @@ test('fill assigns known fields, keeps __proto__ defineProperty, and nested mode
   }, 'Checkout', true);
   graph.seal();
   const source = emitCodecRuntime(graph, {
+    validatorName: (id) => `validate_${id.replace(/[^\w$]/g, '_')}`,
     nestedGenerated: (id) => id === 'Money' ? 'MoneyModel' : id,
   });
   assert.match(source, /if \(copyIdentity\) \{\n    out\["note"\] = /, 'budget: defineModelProperty is heavier than a plain assignment, so an ordinary field is copied with a direct assignment');

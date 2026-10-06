@@ -120,11 +120,10 @@ export interface RuntimeSecurityScheme {
 }
 export type RuntimeSecuritySchemes = Readonly<Record<string, RuntimeSecurityScheme>>;
 
+/** The generated validators of one operation, each imported by name from the generated validators module. */
 export interface OperationValidationSources {
-  readonly inputReference: string;
-  readonly responseReferences: readonly { readonly status: string; readonly contentType: string; readonly reference: string }[];
-  /** The operation's generated validators, keyed by the references above. */
-  readonly validators: Readonly<Record<string, Validator>>;
+  readonly input: Validator;
+  readonly responses: readonly { readonly status: string; readonly contentType: string; readonly validator: Validator }[];
 }
 
 /** The matched response a check runs against. */

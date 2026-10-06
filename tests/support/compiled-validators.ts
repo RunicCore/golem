@@ -22,9 +22,19 @@ export interface CompiledValidatorInput {
   readonly modules?: Readonly<Record<string, string>>;
 }
 
-/** Compiles the roots, writes the module to a temp directory, imports it and returns its `validators`. */
-export async function compileValidators(input: CompiledValidatorInput): Promise<Readonly<Record<string, Validator>>> {
-  const { source, diagnostics } = compile(
+/** The validators of a compiled module: what it exports, and the export name of each root. */
+export interface CompiledValidatorModule {
+  /** Each root's validator, by root name. */
+  readonly byRoot: Readonly<Record<string, Validator>>;
+  /** Every export of the module, by export name: the scope a module that imports them runs in. */
+  readonly byExport: Readonly<Record<string, Validator>>;
+  /** The export name of each root, by root name. */
+  readonly exports: ReadonlyMap<string, string>;
+}
+
+/** Compiles the roots, writes the module to a temp directory and imports it. */
+export async function compileValidatorModule(input: CompiledValidatorInput): Promise<CompiledValidatorModule> {
+  const { source, exports, diagnostics } = compile(
     {
       roots: new Map(Object.entries(input.roots)),
       resources: new Map(Object.entries(input.resources ?? {})),
@@ -39,11 +49,17 @@ export async function compileValidators(input: CompiledValidatorInput): Promise<
     const file = path.join(directory, 'validators.mjs');
     writeFileSync(file, source);
     for (const [name, text] of Object.entries(input.modules ?? {})) writeFileSync(path.join(directory, name), text);
-    const loaded = await import(pathToFileURL(file).href) as { readonly validators: Readonly<Record<string, Validator>> };
-    return loaded.validators;
+    const loaded = await import(pathToFileURL(file).href) as Readonly<Record<string, Validator>>;
+    const byExport = Object.fromEntries(Object.entries(loaded).filter(([, value]) => typeof value === 'function'));
+    return { byRoot: Object.fromEntries([...exports].map(([root, exported]) => [root, loaded[exported]] as const)), byExport, exports };
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
+}
+
+/** Compiles the roots and returns the validator exported for each root, by root name. */
+export async function compileValidators(input: CompiledValidatorInput): Promise<Readonly<Record<string, Validator>>> {
+  return (await compileValidatorModule(input)).byRoot;
 }
 
 /** Compiles one schema as the root named `root`. */
@@ -51,16 +67,38 @@ export async function compileSchema(schema: unknown): Promise<Validator> {
   return (await compileValidators({ roots: { root: schema } })).root;
 }
 
-/** Compiles every schema of a validation plan, each under its plan id, as the generated validators module does. */
-export async function compileValidationPlan(
-  plan: { readonly schemas: Readonly<Record<string, object | boolean>> },
-  input: Omit<CompiledValidatorInput, 'roots'> = {},
-): Promise<Readonly<Record<string, Validator>>> {
-  const roots = Object.fromEntries(Object.entries(plan.schemas).map(([id, schema]) => {
+function planRoots(plan: { readonly schemas: Readonly<Record<string, object | boolean>> }): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(plan.schemas).map(([id, schema]) => {
     if (typeof schema === 'boolean') return [id, schema] as const;
     // The plan id is the root's address; the schema's own `$id` repeats it.
     const { $id: _id, ...rest } = schema as Record<string, unknown>;
     return [id, rest] as const;
   }));
-  return compileValidators({ ...input, roots });
+}
+
+/** Compiles every schema of a validation plan, each under its plan id, as the generated validators module does. */
+export async function compileValidationPlan(
+  plan: { readonly schemas: Readonly<Record<string, object | boolean>> },
+  input: Omit<CompiledValidatorInput, 'roots'> = {},
+): Promise<Readonly<Record<string, Validator>>> {
+  return compileValidators({ ...input, roots: planRoots(plan) });
+}
+
+/**
+ * What a generated codec module needs to run on a plan's validators: the `validatorName` option for the emitter,
+ * and the scope that holds the validators under those names.
+ */
+export async function compileValidationPlanBinding(
+  plan: { readonly schemas: Readonly<Record<string, object | boolean>> },
+  input: Omit<CompiledValidatorInput, 'roots'> = {},
+): Promise<{ readonly validatorName: (id: string) => string; readonly scope: Readonly<Record<string, Validator>> }> {
+  const compiled = await compileValidatorModule({ ...input, roots: planRoots(plan) });
+  return {
+    validatorName: id => {
+      const name = compiled.exports.get(id);
+      if (name === undefined) throw new Error(`No validator for ${id}`);
+      return name;
+    },
+    scope: compiled.byExport,
+  };
 }

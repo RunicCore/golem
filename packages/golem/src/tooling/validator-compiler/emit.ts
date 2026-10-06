@@ -3,7 +3,7 @@ import type { IrArray, IrCheck, IrDiscriminator, IrFunction, IrInstance, IrModul
 export interface EmitOptions {
   /** The module specifier the generated file imports its runtime helpers from. */
   readonly runtimeModule: string;
-  /** Types the `validators` export as `Readonly<Record<string, Validator>>`, for a TypeScript file. */
+  /** Types each exported validator as a `Validator`, for a TypeScript file. */
   readonly typed?: boolean;
 }
 
@@ -31,6 +31,26 @@ const NAME_LIMIT = 40;
 /** Characters that cannot appear in a name become `_`. */
 function identifier(text: string): string {
   return text.replace(/[^A-Za-z0-9_$]/g, '_');
+}
+
+/**
+ * The name each root's validator is exported under: `validate_` and the root's name, with each character that cannot
+ * appear in a name turned into `_`. The name comes from the root alone, so adding a root renames no other export.
+ * Roots whose names become the same identifier are told apart by a number from 2, handed out in the order of the
+ * roots' own names.
+ */
+export function exportNames(rootNames: Iterable<string>): ReadonlyMap<string, string> {
+  const names = [...new Set(rootNames)].sort((first, second) => (first < second ? -1 : first > second ? 1 : 0));
+  const taken = new Set<string>();
+  const result = new Map<string, string>();
+  for (const name of names) {
+    const base = `validate_${identifier(name)}`;
+    let candidate = base;
+    for (let suffix = 2; taken.has(candidate); suffix++) candidate = `${base}_${suffix}`;
+    taken.add(candidate);
+    result.set(name, candidate);
+  }
+  return result;
 }
 
 /**
@@ -159,14 +179,16 @@ class ModuleState {
 
   /**
    * Declares a module-level constant and returns its name. A constant that holds the same value, as `key` says
-   * (the expression itself by default), is declared once.
+   * (the expression itself by default), is declared once. Every initializer is a call or a `new`, so it carries the
+   * annotation that lets a bundler drop the constant with the validator that alone uses it; a call among its
+   * arguments carries the annotation too, as a bundler keeps a pure call whose arguments may have side effects.
    */
   public constant(prefix: string, expression: string, key = expression): string {
     const identity = `${prefix}\u0000${key}`;
     const known = this.constants.get(identity);
     if (known !== undefined) return known;
     const name = `${prefix}${this.declarations.length}`;
-    this.declarations.push(`const ${name} = ${expression};`);
+    this.declarations.push(`const ${name} = /*#__PURE__*/ ${expression};`);
     this.constants.set(identity, name);
     return name;
   }
@@ -328,7 +350,7 @@ class FunctionWriter {
       }
       case 'literal': {
         const jsonEqual = this.state.runtimeHelper('jsonEqual');
-        const values = this.state.constant('lit', `Object.freeze(JSON.parse(${literal(JSON.stringify(check.values))}))`);
+        const values = this.state.constant('lit', `Object.freeze(/*#__PURE__*/ JSON.parse(${literal(JSON.stringify(check.values))}))`);
         const missing = check.values.length === 1 ? `!${jsonEqual}(${value}, ${values}[0])` : `!${values}.some(item => ${jsonEqual}(${value}, item))`;
         this.open(`if (${missing})`);
         this.issue(`code: 'literal', expected: ${values}`);
@@ -775,8 +797,8 @@ class FunctionWriter {
     this.state.localHelper('isObject');
     const hasOwn = this.state.localHelper('hasOwn');
     const jsonEqual = this.state.runtimeHelper('jsonEqual');
-    const tags = this.state.constant('tags', `Object.freeze(JSON.parse(${literal(JSON.stringify(discriminator.tags))}))`);
-    const allTags = this.state.constant('lit', `Object.freeze(JSON.parse(${literal(JSON.stringify(discriminator.tags.flat()))}))`);
+    const tags = this.state.constant('tags', `Object.freeze(/*#__PURE__*/ JSON.parse(${literal(JSON.stringify(discriminator.tags))}))`);
+    const allTags = this.state.constant('lit', `Object.freeze(/*#__PURE__*/ JSON.parse(${literal(JSON.stringify(discriminator.tags.flat()))}))`);
     const tag = this.fresh('tag');
     const selected = this.fresh('branch');
     const property = literal(discriminator.property);
@@ -791,11 +813,6 @@ class FunctionWriter {
     this.issue(`code: 'literal', expected: ${allTags}`, `[...${PATH}, ${property}]`);
     this.close();
   }
-}
-
-/** The name of the exported wrapper for the root at `index`; any character that is not valid in a name becomes `_`. */
-function wrapperName(name: string, index: number): string {
-  return `validate_${identifier(name)}_${index}`;
 }
 
 /**
@@ -867,7 +884,7 @@ function groupFunctions(written: readonly WrittenFunction[]): ReadonlyMap<number
 }
 
 /**
- * Emits the module: one function per distinct behavior, one wrapper per root, and `export const validators`.
+ * Emits the module: one function per distinct behavior and one exported wrapper per root, named by `exportNames`.
  * Every check is written once: a forwarding function, and a function the same as another, are not emitted, and
  * their callers call the one that is.
  */
@@ -899,20 +916,21 @@ export function emit(module: IrModule, options: EmitOptions): string {
     const { parameters, body } = writeFunction(state, module, target, module.functions[id]);
     return `function ${names.get(id)}(${parameters}) {\n${body.replace(FUNCTION_MARK, (_, called: string) => nameOf(Number(called)))}`;
   });
-  const wrappers = module.exports.map(({ fn }, index) => [
-    `function ${wrapperName(module.exports[index].name, index)}(value, all) {`,
+  const exported = exportNames(module.exports.map(({ name }) => name));
+  const wrappers = module.exports.map(({ name, fn }) => [
+    options.typed
+      ? `export function ${exported.get(name)}(value: unknown, all: boolean): readonly SchemaIssue[] {`
+      : `export function ${exported.get(name)}(value, all) {`,
     '  const issues = [];',
     `  ${callFunction(module.functions[target(fn)], nameOf(fn), { value: 'value', path: '[]', issues: 'issues', all: 'all' })};`,
     '  return issues;',
     '}',
   ].join('\n'));
-  const entries = module.exports.map(({ name }, index) => `  [${literal(name)}]: ${wrapperName(name, index)},`);
   return [
-    ...(options.typed ? [`import type { Validator } from ${literal(options.runtimeModule)};`] : []),
+    ...(options.typed ? [`import type { SchemaIssue } from ${literal(options.runtimeModule)};`] : []),
     ...state.prelude(options.runtimeModule),
     ...functions,
     ...wrappers,
-    [options.typed ? 'export const validators: Readonly<Record<string, Validator>> = {' : 'export const validators = {', ...entries, '};'].join('\n'),
     '',
   ].join('\n');
 }

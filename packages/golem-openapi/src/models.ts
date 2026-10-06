@@ -1451,6 +1451,7 @@ export function generateOpenApiModelArtifacts(
     }
     const validatorModule = `${group.filename.slice(0, -3)}.validators.generated.ts`;
     let groupPlan: CodecValidationPlan | undefined;
+    let validatorExports: ReadonlyMap<string, string> | undefined;
     if (profile.validation) {
       const dependencyCodecIds = new Set([...dependencyIds].flatMap((id) => {
         const node = schemaGraph.nodes.get(id);
@@ -1469,7 +1470,11 @@ export function generateOpenApiModelArtifacts(
       });
       diagnostics.push(...compiled.diagnostics);
       files.set(validatorModule, compiled.source);
-      moduleImports.push(`import { validators } from ${JSON.stringify(`./_${group.id}.validators.generated.js`)};`);
+      validatorExports = compiled.exports;
+      // The model module's import pruning keeps the validators its codecs use.
+      if (compiled.exports.size > 0) {
+        moduleImports.push(`import { ${[...compiled.exports.values()].sort().join(', ')} } from ${JSON.stringify(`./_${group.id}.validators.generated.js`)};`);
+      }
     }
     const modelModule = generateModels(document, profile, {
       ...helpers,
@@ -1481,6 +1486,7 @@ export function generateOpenApiModelArtifacts(
       dependencyNodeIds: dependencyIds,
       moduleFile: group.filename,
       moduleImports,
+      ...(validatorExports ? { validatorExports } : {}),
       codecFunctionImport: (nodeId, functionName) => {
         const dependencyGroupId = owner.get(nodeId);
         if (!dependencyGroupId || dependencyGroupId === group.id) return undefined;
@@ -1579,6 +1585,8 @@ export function generateModels(
     readonly modelImport?: (name: string) => string | undefined;
     readonly codecFunctionImport?: (nodeId: string, functionName: 'stringify' | 'fill' | 'fromWire' | 'toWire') => string | undefined;
     readonly moduleImports?: readonly string[];
+    /** The name the module's generated validators are exported under, by codec id and plane; set when `moduleImports` imports them. */
+    readonly validatorExports?: ReadonlyMap<string, string>;
     /** The validation plan's resolved schemas of this module's models by codec id and plane. */
     readonly resolvedSchemas?: Readonly<Record<string, object | boolean>>;
     readonly exportedFillFunctionIds?: ReadonlySet<string>;
@@ -1617,7 +1625,7 @@ export function generateModels(
     ...(profile.validation && profile.mobx ? ["import { enhanceValidatorWithMobX } from '@exprtlabs/golem/mobx-validation';"] : []),
     `import { registerGeneratedModel, type ModelInit, type GeneratedModelConstructor, type generatedModelWireBrand, type generatedModelFieldsBrand${ordered.some(definition => definition.isUnion) ? ", type generatedModelResultBrand" : ""}${emitCopy ? ", findGeneratedModelDefinition, findGeneratedModelDefinitionForConstructor" : ""} } from '@exprtlabs/golem/model';`,
     `import { assertPropertyAcyclic, assertWireAcyclic, beginDecode, convertModelField, decodeCheckedInput, decodeDetachedInput, endDecode, decodeGeneratedModelTrusted, defineModelProperty, encodeGeneratedModel${usesDate ? ", deserializeDate, serializeDate" : ""} } from '@exprtlabs/golem/conversion';`,
-    "import { assertModelValue, createObjectCodec, isValidModelValue, modelValueIssues, parseJson, registerIModelClass, requireIModelClass, requireModelValidator, requireObjectCodec, resolveGeneratedModelSchemaRefs, serdeFailFast, serdeValidates, stringifyJsonArray, stringifyJsonBoolean, stringifyJsonNumber, stringifyJsonScalar, stringifyJsonString, validationFailure, validationUnavailable, IssueRepresentation, IssueSource, type SerdeOptions as __GolemSerdeOptions, type ValidateOptions as __GolemValidateOptions } from '@exprtlabs/golem/serde';",
+    "import { assertModelValue, createObjectCodec, isValidModelValue, modelValueIssues, parseJson, registerIModelClass, requireIModelClass, requireObjectCodec, resolveGeneratedModelSchemaRefs, serdeFailFast, serdeValidates, stringifyJsonArray, stringifyJsonBoolean, stringifyJsonNumber, stringifyJsonScalar, stringifyJsonString, validationFailure, validationUnavailable, IssueRepresentation, IssueSource, type SerdeOptions as __GolemSerdeOptions, type ValidateOptions as __GolemValidateOptions } from '@exprtlabs/golem/serde';",
     ...(profile.mobx ? [
       "import { asGenObservable } from '@exprtlabs/golem/mobx';",
     ] : []),
@@ -1817,6 +1825,13 @@ export function generateModels(
   const codecRuntimeOptions: CodecRuntimeOptions = {
     validationEnabled: profile.validation,
     serde: TEMPORAL_SERDE,
+    ...(helpers.validatorExports ? {
+      validatorName: (id: string) => {
+        const name = helpers.validatorExports?.get(id);
+        if (name === undefined) throw new Error(`The generated validators module has no validator for ${JSON.stringify(id)}.`);
+        return name;
+      },
+    } : {}),
     ...(helpers.resolvedSchemas ? { resolvedSchemasExpr: 'modelSchemas' } : {}),
     issueSource: 'OpenAPI',
     wireType: (node) => {

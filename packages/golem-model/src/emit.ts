@@ -1018,8 +1018,8 @@ export interface SharedSourceOptions {
 export interface SharedSourceReference {
   readonly modulePath: string;
   readonly keyFor: (source: string, modelName: string) => string;
-  /** The generated validators module; set when the job validates. */
-  readonly validatorsModule?: string;
+  /** The generated validators module and the name it exports each root under (see `PlanValidators.exports`); set when the job validates. */
+  readonly validators?: { readonly module: string; readonly exports: ReadonlyMap<string, string> };
   /** The shared constant that holds the plan's resolved schemas; set when the shared module has it. */
   readonly schemasName?: string;
 }
@@ -1479,8 +1479,7 @@ export function emitSource(
   }
   if (hasDate) lines.push("import { deserializeDate, serializeDate } from '@exprtlabs/golem/conversion';");
   lines.push(...classValueImports);
-  lines.push("import { assertModelValue, createObjectCodec, isValidModelValue, modelValueIssues, parseJson, registerIModelClass, requireIModelClass, requireModelValidator, requireObjectCodec, resolveGeneratedModelSchemaRefs, serdeValidates, stringifyJsonArray, stringifyJsonBoolean, stringifyJsonNumber, stringifyJsonScalar, stringifyJsonString, validationFailure, validationUnavailable, IssueRepresentation, IssueSource, type SerdeOptions as __GolemSerdeOptions, type ValidateOptions as __GolemValidateOptions } from '@exprtlabs/golem/serde';");
-  if (anyCodecValidation && shared?.validatorsModule) lines.push(`import { validators } from ${JSON.stringify(sourceImportPath(shared.validatorsModule, output))};`);
+  lines.push("import { assertModelValue, createObjectCodec, isValidModelValue, modelValueIssues, parseJson, registerIModelClass, requireIModelClass, requireObjectCodec, resolveGeneratedModelSchemaRefs, serdeValidates, stringifyJsonArray, stringifyJsonBoolean, stringifyJsonNumber, stringifyJsonScalar, stringifyJsonString, validationFailure, validationUnavailable, IssueRepresentation, IssueSource, type SerdeOptions as __GolemSerdeOptions, type ValidateOptions as __GolemValidateOptions } from '@exprtlabs/golem/serde';");
   if (anyCodecValidation && profile.mobx) lines.push("import { enhanceValidatorWithMobX } from '@exprtlabs/golem/mobx-validation';");
   lines.push(
     // A sibling companion registers the codecs this module references by id.
@@ -1701,10 +1700,21 @@ export function emitSource(
       toWire: toWireFunctionName(short),
     };
   };
+  // The validators the codecs use, by export name: the companion imports those and no others.
+  const usedValidators = new Set<string>();
+  const validators = shared?.validators;
   const codecRuntime = emitCodecRuntime(
     schemaGraph,
     {
       validationEnabled: profile.validation,
+      ...(validators ? {
+        validatorName: (id: string) => {
+          const name = validators.exports.get(id);
+          if (name === undefined) throw new Error(`The generated validators module has no validator for ${JSON.stringify(id)}.`);
+          usedValidators.add(name);
+          return name;
+        },
+      } : {}),
       ...(shared?.schemasName ? { resolvedSchemasExpr: shared.schemasName } : {}),
       serde: {
         deserialize: (id, value) => serdeExpression(id, 'deserialize', value),
@@ -1731,6 +1741,9 @@ export function emitSource(
       : [];
   });
   lines.splice(1, 0, ...siblingWireImports);
+  if (validators && usedValidators.size > 0) {
+    lines.splice(1, 0, `import { ${[...usedValidators].sort().join(', ')} } from ${JSON.stringify(sourceImportPath(validators.module, output))};`);
+  }
   const companion = pruneExternalCodecImports(pruneNamedImport(
     pruneNamedImport(
       pruneNamedImport(pruneUnusedHelpers(`${lines.join('\n').trim()}\n`), '@exprtlabs/golem/serde'),

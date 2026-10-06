@@ -37,16 +37,22 @@ async function compileOpenApiValidators(): Promise<OpenApiValidators> {
     ['schemaObject', JSON_SCHEMA_2020_12_META_SCHEMAS[JSON_SCHEMA_2020_12_ID]],
   ]);
   const resources = new Map(Object.entries(JSON_SCHEMA_2020_12_META_SCHEMAS).filter(([id]) => id !== JSON_SCHEMA_2020_12_ID));
-  const { source, diagnostics } = compile(
+  const { source, exports, diagnostics } = compile(
     { roots, resources },
     { unknownFormats: 'error', runtimeModule: import.meta.resolve('@exprtlabs/golem/validation-runtime'), documentName: 'the OpenAPI meta-schemas' },
   );
   const errors = diagnostics.filter((entry) => entry.severity === GolemDiagnosticSeverity.Error);
   if (errors.length) throw new Error(`the OpenAPI meta-schemas do not compile: ${errors.map((entry) => entry.message).join('; ')}`);
-  const loaded = await import(`data:text/javascript,${encodeURIComponent(source)}`) as { readonly validators: Readonly<Record<string, Validator>> };
+  const loaded = await import(`data:text/javascript,${encodeURIComponent(source)}`) as Readonly<Record<string, Validator>>;
+  const validator = (root: string): Validator => {
+    const exported = exports.get(root);
+    const found = exported === undefined ? undefined : loaded[exported];
+    if (found === undefined) throw new Error(`the OpenAPI meta-schemas module has no validator for ${JSON.stringify(root)}`);
+    return found;
+  };
   return {
-    documents: { '3.1': loaded.validators['3.1'], '3.2': loaded.validators['3.2'] },
-    schemaObject: loaded.validators.schemaObject,
+    documents: { '3.1': validator('3.1'), '3.2': validator('3.2') },
+    schemaObject: validator('schemaObject'),
   };
 }
 

@@ -24,7 +24,6 @@ export {
   registerIModelClass,
   registerObjectCodec,
   requireIModelClass,
-  requireModelValidator,
   requireObjectCodec,
   resolveModelValidationContextValidator,
   resolveGeneratedModelSchemaRefs,

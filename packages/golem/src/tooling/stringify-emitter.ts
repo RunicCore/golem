@@ -44,8 +44,11 @@ export interface NestedImportedSerde {
 
 export interface CodecRuntimeOptions {
   readonly validationEnabled?: boolean;
-  /** Expression of the module's `validators` record, keyed by codec id and plane (`Id`, `Id#wire`, `Id#model-only`, `Id#wire-only`). Defaults to `validators`. */
-  readonly validatorsExpr?: string;
+  /**
+   * The name the module imports the validator of a root under; the root is a codec id and plane (`Id`, `Id#wire`,
+   * `Id#model-only`, `Id#wire-only`). Called once for each use, so the caller knows which validators to import.
+   */
+  readonly validatorName?: (id: string) => string;
   /** Expression of a record of the validation plan's resolved schemas by the same keys. A validated codec publishes these as its schemas; without it the codec carries its own unresolved payload. */
   readonly resolvedSchemasExpr?: string;
   readonly serde?: StringifySerdeResolver;
@@ -71,7 +74,7 @@ export interface CodecRuntimeOptions {
 
 interface EmitCtx {
   readonly graph: SchemaGraph;
-  readonly validatorsExpr?: string;
+  readonly validatorName?: (id: string) => string;
   readonly resolvedSchemasExpr?: string;
   readonly serde?: StringifySerdeResolver;
   readonly nestedConstruct?: (name: string, className?: string) => string;
@@ -1508,7 +1511,8 @@ function emitSerdeValidates(validationEnabled: boolean): string {
 }
 
 function validatorReference(ctx: EmitCtx, id: string): string {
-  return `requireModelValidator(${ctx.validatorsExpr ?? 'validators'}, ${JSON.stringify(id)})`;
+  if (ctx.validatorName === undefined) throw new Error(`The codec of ${JSON.stringify(id)} validates, and the module names no validators to import.`);
+  return ctx.validatorName(id);
 }
 
 function emitModelGuard(
@@ -1856,7 +1860,7 @@ export function emitCodecRuntime(
     trustedOptions: TRUSTED_CONSTANT,
     siblingWireCodecIds: options.siblingWireCodecIds,
     exportedWireStringifyIds: options.exportedWireStringifyIds,
-    validatorsExpr: options.validatorsExpr,
+    validatorName: options.validatorName,
     resolvedSchemasExpr: options.resolvedSchemasExpr,
     serde: options.serde,
     nestedConstruct: options.nestedConstruct,

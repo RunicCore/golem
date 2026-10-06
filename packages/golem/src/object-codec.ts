@@ -294,13 +294,6 @@ export function stringifyJsonArray<T>(
   return `${out}]`;
 }
 
-/** The generated validator for `id`; a module without one was generated without validation. */
-export function requireModelValidator(validators: Readonly<Record<string, Validator>>, id: string): Validator {
-  const validator = Object.hasOwn(validators, id) ? validators[id] : undefined;
-  if (!validator) throw new LibError(LibErrorKind.ValidationUnavailable, `The generated validator of ${JSON.stringify(id)} is missing from its validators module.`);
-  return validator;
-}
-
 /** What a validator reports for `value`: the context's validator when the options name one, else the generated one. */
 function runModelValidator(
   value: unknown,

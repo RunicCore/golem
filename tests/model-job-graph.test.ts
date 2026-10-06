@@ -100,7 +100,7 @@ for (const [label, profile] of profiles) for (const chain of [modelChain, object
     }
     // Each companion binds its own models to the shared validators and reaches the rest by codec id.
     for (const index of [0, last]) {
-      assert.equal(companion(index).includes('requireModelValidator(validators, '), profile.validation === true, `${name.toLowerCase()}-${index} validator binding`);
+      assert.equal(/\bvalidate_\w+_[0-9a-f]{8}\b/.test(companion(index)), profile.validation === true, `${name.toLowerCase()}-${index} validator binding`);
     }
     assert.ok(lastCompanion.includes(kind === 'IModel' ? `class T${name}${last}BaseModel` : `function stringifyT${name}${last}Core(`));
     // Each companion carries its own model; its size does not grow with the chain behind it.
@@ -120,9 +120,9 @@ export type TOpted = IModel<{ at: Date }, { validation: true }>;
   });
   const { artifacts } = generate({ root, profile: { mobx: false, validation: false } });
   const companion = (stem: string): string => artifacts.find((artifact) => artifact.path.endsWith(`${stem}.model.generated.ts`))?.content ?? '';
-  assert.match(companion('opted'), /import \{ validators \} from /);
+  assert.match(companion('opted'), /import \{ validate_[^}]+ \} from /);
   assert.match(companion('opted'), /import \{ modelSchemas \} from /);
-  assert.doesNotMatch(companion('plain'), /import \{ validators \} from /);
+  assert.doesNotMatch(companion('plain'), /import \{ validate_[^}]+ \} from /);
   assert.doesNotMatch(companion('plain'), /modelSchemas/);
 });
 

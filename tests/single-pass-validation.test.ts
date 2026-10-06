@@ -225,9 +225,9 @@ export class Trip extends TTripBaseModel {}
   const { Trip } = await import(pathToFileURL(path.join(root, 'build/visit.model.js')).href) as { Trip: new (v?: object) => object };
   const validatorsFile = generatedModelFiles(root).find(item => item.path.endsWith('/models.validators.generated.ts'));
   assert.ok(validatorsFile);
-  const { validators } = await import(pathToFileURL(path.join(root, 'build', path.relative(sourceRoot, validatorsFile.path).replace(/\.ts$/, '.js'))).href) as { validators: Readonly<Record<string, Validator>> };
+  const validators = await import(pathToFileURL(path.join(root, 'build', path.relative(sourceRoot, validatorsFile.path).replace(/\.ts$/, '.js'))).href) as Readonly<Record<string, Validator>>;
   const requested: string[] = [];
-  const context: ModelValidationContext = { resolve: (reference) => { requested.push(reference); return validators[reference]; } };
+  const context: ModelValidationContext = { resolve: (reference) => { requested.push(reference); return validators[`validate_${reference.replace(/[^A-Za-z0-9_$]/g, '_')}`]; } };
   const codec = requireObjectCodec('TTrip');
   const good = { at: '2026-01-02T03:04:05.000Z', stop: { at: '2026-01-03T00:00:00.000Z', name: 'A' } };
   const trip = codec.parse(JSON.stringify(good), { construct: Trip, validationContext: context });

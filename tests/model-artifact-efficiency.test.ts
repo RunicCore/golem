@@ -76,7 +76,7 @@ test('equivalent MinLength tags of two companions compile to one validators modu
   assert.equal(artifacts.filter((item) => item.path.endsWith('.validators.generated.ts')).length, 1, 'one validators module serves every companion');
   const companions = artifacts.filter((item) => item.path.endsWith('.model.generated.ts')).map((item) => item.content);
   assert.equal(companions.length, 2);
-  for (const companion of companions) assert.match(companion, /requireModelValidator\(validators, /, 'each companion binds to the shared validators');
+  for (const companion of companions) assert.match(companion, /\bvalidate_\w+_[0-9a-f]{8}\b/, 'each companion binds to the shared validators');
   const { Item } = await import(`${pathToFileURL(path.join(fixtureValue.root, 'build/item.model.js')).href}`) as {
     Item: new (values?: { value?: string; extra?: string }) => { value: string; extra: string };
   };

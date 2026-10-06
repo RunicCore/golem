@@ -245,7 +245,7 @@ test('generated object codecs close nested schemas and keep first/all and contex
   writeModelGolemYaml(value.root, { mobx: false, validation: true });
   await compile(value.root);
   const generated = generatedModelFiles(value.root).filter(item => item.path.endsWith('.ts')).map(item => item.content).join('\n');
-  assert.match(generated, /requireModelValidator\(validators, /, 'object codecs bind to the generated validators');
+  assert.match(generated, /\bisValidModelValue\([^)]*\bvalidate_\w+_[0-9a-f]{8}\b/, 'object codecs bind to the generated validators');
 
   const validatorsPath = builtValidators(value);
   const [{ Root }, { TLeafBaseModel, TMiddleBaseModel, TRootBaseModel }, validatorModule] = await Promise.all([
@@ -256,7 +256,7 @@ test('generated object codecs close nested schemas and keep first/all and contex
     TLeafBaseModel: abstract new (...args: never[]) => object;
     TMiddleBaseModel: abstract new (...args: never[]) => object;
     TRootBaseModel: abstract new (...args: never[]) => object;
-  }, { readonly validators: Readonly<Record<string, Validator>> }];
+  }, Readonly<Record<string, Validator>>];
   const { findCodecIdForConstructor, requireObjectCodec } = await import('@exprtlabs/golem/serde');
   const { getValidator, validateInstance } = await import('@exprtlabs/golem/validation');
   const codecId = findCodecIdForConstructor(TRootBaseModel);
@@ -268,7 +268,8 @@ test('generated object codecs close nested schemas and keep first/all and contex
     second: { label: 'second', child: { code: 'z' } },
   };
   const invalid = new Root(wire as never);
-  const { validators } = validatorModule;
+  // A root named by its codec id is exported as `validate_` and the id.
+  const validators = { [codecId]: validatorModule[`validate_${codecId}`] };
   assert.ok(findCodecIdForConstructor(TLeafBaseModel));
   assert.ok(findCodecIdForConstructor(TMiddleBaseModel));
   assert.equal(validators[codecId]?.(wire, false).length, 1, 'the first issue only');
@@ -465,16 +466,4 @@ test('a model class registered at run time satisfies a generated model-instance 
   assert.deepEqual(validate(new Cat(), true), []);
   assert.deepEqual(validate(new Dog(), true), [{ path: [], code: 'instance', model: 'GeneratedValidatorsCat_0a1b2c3d' }]);
   assert.deepEqual(validate({}, true), [{ path: [], code: 'instance', model: 'GeneratedValidatorsCat_0a1b2c3d' }]);
-});
-
-test('a generated module without the validator of its model reports validation as unavailable and names the id', async () => {
-  const { requireModelValidator } = await import('@exprtlabs/golem/serde');
-  const present: Validator = () => [];
-  assert.equal(requireModelValidator({ Known_00000000: present }, 'Known_00000000'), present);
-  assert.throws(
-    () => requireModelValidator({ Known_00000000: present }, 'Missing_11111111'),
-    error => error instanceof LibError
-      && error.kind === LibErrorKind.ValidationUnavailable
-      && error.message.includes('Missing_11111111'),
-  );
 });

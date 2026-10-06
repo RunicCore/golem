@@ -129,7 +129,7 @@ test('SDK compiles a no-content operation with no response validators', async t 
   }, { output, name: 'NoContent', profile });
   const operation = result.artifacts.find(artifact => artifact.path.endsWith('/operations/deleteTask.ts'));
   assert.ok(operation);
-  assert.match(operation.content, /responseReferences: \[\]/);
+  assert.match(operation.content, /responses: \[\],/);
   assert.doesNotMatch(operation.content, /for \(const item of \[\]/);
   compileGeneratedSdk(output, [], { strict: true, skipLibCheck: true });
 });
@@ -151,25 +151,21 @@ test('SDK operation validators expose every operation reference and validate thr
   assert.ok(result.artifacts.some(item => /\/models\/_[^/]*\.validators\.generated\.ts$/.test(item.path)), 'model groups carry their own validators');
 
   type OperationValidator = (value: unknown, all: boolean) => readonly { readonly path: readonly unknown[] }[];
-  const suffix = (reference: string, operation: string): string => reference.slice(reference.indexOf(`:operation:${operation}:`) + `:operation:${operation}:`.length);
   const expected: Record<string, string[]> = {
-    createTask: ['input', 'response:201:application%2Fjson', 'response:400:application%2Fjson'],
-    getTask: ['input', 'response:200:application%2Fjson'],
+    createTask: ['validate_createTask_input', 'validate_createTask_response_201_application_json', 'validate_createTask_response_400_application_json'],
+    getTask: ['validate_getTask_input', 'validate_getTask_response_200_application_json'],
   };
   const task = { id: 'task-1', when: '2025-01-02T03:04:05Z', child: { id: 'child-1' }, labels: ['one'] };
-  const validatorsOf = async (operation: string): Promise<Record<string, OperationValidator>> => {
-    const module = await import(pathToFileURL(path.join(compiled, `operations/${operation}.validators.generated.js`)).href);
-    return module.validators as Record<string, OperationValidator>;
-  };
+  const validatorsOf = async (operation: string): Promise<Record<string, OperationValidator>> =>
+    await import(pathToFileURL(path.join(compiled, `operations/${operation}.validators.generated.js`)).href) as Record<string, OperationValidator>;
   for (const operation of operationModules) {
     const validators = await validatorsOf(operation);
-    assert.deepEqual(Object.keys(validators).map(reference => suffix(reference, operation)).sort(), [...expected[operation] ?? []].sort(), `${operation} validators`);
-    for (const reference of Object.keys(validators)) assert.equal(typeof validators[reference], 'function', reference);
+    assert.deepEqual(Object.keys(validators).sort(), [...expected[operation] ?? []].sort(), `${operation} validators`);
+    for (const name of Object.keys(validators)) assert.equal(typeof validators[name], 'function', name);
   }
 
   const created = await validatorsOf('createTask');
-  const inputReference = Object.keys(created).find(reference => suffix(reference, 'createTask') === 'input') ?? '';
-  const inputValidator = created[inputReference];
+  const inputValidator = created.validate_createTask_input;
   assert.ok(inputValidator);
   assert.deepEqual(inputValidator({ body: task }, true), []);
   assert.deepEqual(inputValidator({ body: { ...task, labels: [] } }, true).map(issue => issue.path), [['body', 'labels']]);
@@ -233,4 +229,42 @@ test('SDK validates a response whose $id schema refers to a component by local p
     () => call({ code: 'c', child: { value: 'one' } }),
     (error: unknown) => error instanceof LibError && error.kind === LibErrorKind.Validation,
   );
+});
+
+test('a model used in a request and a response with a readOnly field gets two validators that disagree on the field', async t => {
+  const output = path.join(mkdtempSync(path.join(tmpdir(), 'golem-openapi-read-only-')), 'sdk');
+  t.after(() => rmSync(path.dirname(output), { recursive: true, force: true }));
+  const item = { $ref: '#/components/schemas/Item' };
+  await generateMaterializedSdk({
+    openapi: '3.1.0',
+    info: { title: 'Read only', version: '1' },
+    paths: {
+      '/items': {
+        post: {
+          operationId: 'createItem',
+          requestBody: { required: true, content: { 'application/json': { schema: item } } },
+          responses: { 201: { description: 'created', content: { 'application/json': { schema: item } } } },
+        },
+      },
+    },
+    components: {
+      schemas: {
+        Item: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['name'],
+          properties: { name: { type: 'string' }, serverId: { type: 'string', readOnly: true } },
+        },
+      },
+    },
+  }, { output, name: 'ReadOnly', profile });
+  const compiled = compileValidatedSdk(output);
+
+  type OperationValidator = (value: unknown, all: boolean) => readonly { readonly code: string; readonly path: readonly unknown[] }[];
+  const validators = await import(pathToFileURL(path.join(compiled, 'operations/createItem.validators.generated.js')).href) as Record<string, OperationValidator>;
+  assert.deepEqual(Object.keys(validators).sort(), ['validate_createItem_input', 'validate_createItem_response_201_application_json']);
+  const withServerId = { name: 'n', serverId: 's' };
+  assert.deepEqual(validators.validate_createItem_input({ body: { name: 'n' } }, true), []);
+  assert.deepEqual(validators.validate_createItem_input({ body: withServerId }, true).map(issue => [issue.code, issue.path]), [['unknownKey', ['body', 'serverId']]], 'a request may not set the readOnly field');
+  assert.deepEqual(validators.validate_createItem_response_201_application_json(withServerId, true), [], 'a response carries the readOnly field');
 });
