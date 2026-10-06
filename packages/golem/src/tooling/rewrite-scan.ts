@@ -51,7 +51,6 @@ const CODE_TYPE_ARGUMENT = 'RUNM1066';
 const CODE_NO_CODEC = 'RUNM1067';
 const CODE_RESERVED_PREFIX = 'RUNM1068';
 const CODE_IMPORT_CLASH = 'RUNM1069';
-const CODE_OUTSIDE_ROOT = 'RUNM1070';
 const CODE_NEST_NO_CODEC = 'RUNM1071';
 const CODE_NEST_REGISTRY = 'RUNM1072';
 
@@ -633,21 +632,8 @@ export class RewriteScanner {
       && path.basename(file.fileName) !== CODEC_KEY_FILE;
   }
 
-  private scan(file: ts.SourceFile, relative: string): FileScanResult {
-    const scan = scanFile({ root: this.root, checker: this.checker, keys: this.keys, nest: this.nest }, file);
-    if (!relative.startsWith('../')) return resultOf(scan);
-    // A rewrite names its file by a root-relative path, so a site here cannot be rewritten yet.
-    const first = scan.edits.length > 0 ? file.getLineAndCharacterOfPosition(Math.min(...scan.edits.map((edit) => edit.start))) : undefined;
-    const site = first ? { line: first.line + 1, column: first.character + 1 } : scan.diagnostics[0];
-    const diagnostics: GolemDiagnostic[] = site ? [{
-      code: CODE_OUTSIDE_ROOT,
-      severity: GolemDiagnosticSeverity.Error,
-      message: `"${relative}" has a rewrite site but lies outside the project root. Move it under the root, or give the package its own golem.yaml and build it with that.`,
-      file: relative,
-      line: site.line,
-      column: site.column,
-    }] : [];
-    return { edits: [], imports: [], diagnostics, nestCodecSites: [], dependencies: [] };
+  private scan(file: ts.SourceFile): FileScanResult {
+    return resultOf(scanFile({ root: this.root, checker: this.checker, keys: this.keys, nest: this.nest }, file));
   }
 
   /**
@@ -657,7 +643,7 @@ export class RewriteScanner {
    */
   scanFile(filename: string): FileScanResult | undefined {
     const file = this.program.getSourceFile(filename);
-    return file && this.candidate(file) ? this.scan(file, portable(this.root, file.fileName)) : undefined;
+    return file && this.candidate(file) ? this.scan(file) : undefined;
   }
 
   /** Every project source that needs a rewrite, by root-relative POSIX path in path order, and the diagnostics of all candidates in the same order: what `golem build` stages and rewrites. */
@@ -674,7 +660,7 @@ export class RewriteScanner {
     const files = new Map<string, FileScanResult>();
     const diagnostics: GolemDiagnostic[] = [];
     for (const { file, relative } of sources) {
-      const result = this.scan(file, relative);
+      const result = this.scan(file);
       diagnostics.push(...result.diagnostics);
       if (result.edits.length > 0) files.set(relative, result);
     }

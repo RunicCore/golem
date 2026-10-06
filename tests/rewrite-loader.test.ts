@@ -173,19 +173,17 @@ function outsideDirectory(t: TestContext, root: string, files: Readonly<Record<s
   return outside;
 }
 
-test('a parse call in a file outside the project fails the run with the file and the line instead of loading unrewritten', async (t) => {
+test('a parse call in a file outside the project runs rewritten', async (t) => {
   const root = await project(t, 'loader-outside-call');
-  const outside = outsideDirectory(t, root, {
+  outsideDirectory(t, root, {
     'lib.ts': `import { parse } from '${SERDE}';\nimport type { TMoney } from '${path.join(root, 'src/money.model.ts')}';\nexport const value = parse<TMoney>('{"currency":"USD","value":"1"}');\n`,
   });
   const result = await run(root, 'src/outside.ts');
-  assert.notEqual(result.code, 0);
-  assert.match(result.stderr, /GolemHostError/);
-  assert.ok(result.stderr.includes(`${path.relative(root, path.join(outside, 'lib.ts')).split(path.sep).join('/')}:3:`), result.stderr);
-  assert.match(result.stderr, /outside the project root/);
+  assert.equal(result.code, 0, result.stderr);
+  assert.deepEqual(JSON.parse(result.stdout), { currency: 'USD', value: '1' });
 });
 
-test('a parse call in a workspace package symlinked into node_modules fails the run with the file and the line instead of loading unrewritten', async (t) => {
+test('a parse call in a workspace package symlinked into node_modules runs rewritten', async (t) => {
   const root = await project(t, 'loader-symlinked-package');
   const workspacePackage = createFixtureProject(t, 'golem-loader-workspace-package-');
   linkProjectPackages(workspacePackage, { '@exprtlabs/golem': path.join(workspace, 'packages/golem') });
@@ -194,10 +192,8 @@ test('a parse call in a workspace package symlinked into node_modules fails the 
   linkProjectPackages(root, { 'workspace-lib': workspacePackage });
   write(root, 'src/linked.ts', "import './money.model.ts';\nimport { value } from 'workspace-lib';\nconsole.log(JSON.stringify(value));\n");
   const result = await run(root, 'src/linked.ts');
-  assert.notEqual(result.code, 0);
-  assert.match(result.stderr, /GolemHostError/);
-  assert.ok(result.stderr.includes(`${path.relative(root, path.join(workspacePackage, 'lib.ts')).split(path.sep).join('/')}:3:`), result.stderr);
-  assert.match(result.stderr, /outside the project root/);
+  assert.equal(result.code, 0, result.stderr);
+  assert.deepEqual(JSON.parse(result.stdout), { currency: 'USD', value: '1' });
 });
 
 test('a file outside the project with no rewrite site loads normally', async (t) => {

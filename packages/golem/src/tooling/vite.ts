@@ -77,7 +77,7 @@ export function golem(options: GolemHostOptions = {}): Plugin {
     if (!server || !project) return;
     const file = path.resolve(changed);
     const depending = dependents.get(file);
-    const generated = isGeneratedModelFile(file) && !path.relative(project.root, file).startsWith('..');
+    const generated = isGeneratedModelFile(file);
     if (!depending && !generated) return;
     project.changed([file]);
     const ids = new Set([...(depending ?? []), ...(generated ? failed : [])]);

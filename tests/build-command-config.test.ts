@@ -331,7 +331,7 @@ test('a source without a rewrite site that the tsconfig includes outside its dir
   await runPipeline(config, { check: true });
 });
 
-test('a rewrite site in a source outside the tsconfig directory is reported by golem check with its line', async (t) => {
+test('a rewrite site in a source outside the tsconfig directory passes golem check under noEmit, and golem build rewrites it', async (t) => {
   const { root: outer } = createModelProject(t, {
     prefix: 'golem-build-outside-site-',
     name: 'build-outside-site',
@@ -353,5 +353,13 @@ import type { TMoney } from '../app/src/money.model.js';
 declare const text: string;
 export const money = parse<TMoney>(text);
 `);
-  await assert.rejects(runPipeline(config, { check: true }), /RUNM1070 \(\.\.\/shared\/site\.ts:4:22\): "\.\.\/shared\/site\.ts" has a rewrite site but lies outside the project root/);
+  await runPipeline(config, { check: true });
+
+  editTsconfig(app, (tsconfig) => {
+    delete tsconfig.compilerOptions.noEmit;
+    tsconfig.compilerOptions.outDir = 'build';
+    tsconfig.compilerOptions.rootDir = '..';
+  });
+  assert.equal((await build(app)).exitCode, 0);
+  assert.match(fs.readFileSync(path.join(app, 'build/shared/site.js'), 'utf8'), /export const money = __golem_requireObjectCodec\("TMoney_[0-9a-f]+"\)\.parse\(text\);/);
 });

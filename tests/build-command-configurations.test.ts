@@ -4,11 +4,14 @@ import fs from 'node:fs';
 import path from 'node:path';
 import test, { type TestContext } from 'node:test';
 import { pathToFileURL } from 'node:url';
-import { createFixtureProject, linkProjectPackages, readFixture } from './fixture-project.js';
+import { build as esbuild } from 'esbuild';
+import { runPipeline } from '#golem/cli';
+import { golem as esbuildPlugin } from '#golem/esbuild';
+import { copyFixtureFile, createFixtureProject, linkProjectPackages, readFixture } from './fixture-project.js';
 import { createControllerFixture } from './fixture-templates/controllers/project.js';
 import { command, workspace } from './support/process.js';
 import { createModelProject, MINIMAL_GOLEM_YAML } from './model-project.js';
-import { TSC, HEAVY_TEST_TIMEOUT_MS, write, editTsconfig, serdeProject, PAYMENTS_CONTROLLER, USE, snapshot, build, mtimes, importBuilt } from './support/build-project.js';
+import { TSC, HEAVY_TEST_TIMEOUT_MS, write, editTsconfig, serdeProject, PAYMENTS_CONTROLLER, USE, snapshot, build, mtimes, importBuilt, assertCallMap } from './support/build-project.js';
 
 // Output the incremental state cannot see, and configurations that differ in one directory
 
@@ -298,4 +301,52 @@ test('a staged copy of a source that left the program is pruned and the node_mod
   assert.deepEqual(Object.keys(filesUnder(stage)), ['package.json', 'src/main.ts', 'tsconfig.json']);
   assert.deepEqual(filesUnder(path.join(outer, 'shared/node_modules')), dependency, 'the linked directory keeps its files');
   assert.equal(fs.readFileSync(path.join(outer, 'shared/util.ts'), 'utf8'), "import { Dep } from '@fixture/dep';\nexport const value = (dep: Dep): string => dep.name;\n");
+});
+
+test('a rewrite site in a source outside the tsconfig directory passes golem check, is rewritten by golem build, and its source map names the original file and line', { timeout: HEAVY_TEST_TIMEOUT_MS }, async (t) => {
+  const { outer, app } = appBesideShared(t, 'build-shared-site', { sourceMap: true });
+  copyFixtureFile(app, 'models/serde/base-payment-model/money.model.ts', 'src/money.model.ts');
+  write(app, 'src/main.ts', "export const main: number = 1;\n");
+  write(outer, 'shared/site.ts', USE.replaceAll("'./money.model.js'", "'../app/src/money.model.js'"));
+  const config = path.join(app, 'golem.yaml');
+  await runPipeline(config);
+  await runPipeline(config, { check: true });
+
+  assert.equal((await build(app)).exitCode, 0);
+  const built = fs.readFileSync(path.join(app, 'build/shared/site.js'), 'utf8');
+  assert.match(built, /export const money = __golem_requireObjectCodec\("TMoney_[0-9a-f]+"\)\.parse\(text\);/);
+  assert.deepEqual((await importBuilt(app, 'shared/site.js')).money, { currency: 'USD', value: '1' });
+  assertCallMap(app, 'build/shared/site.js', '../shared/site.ts');
+});
+
+test('an app that includes a shared folder with its own golem.yaml and generated models builds and runs, and a rewrite site in the folder is rewritten by golem build and by a host', { timeout: HEAVY_TEST_TIMEOUT_MS }, async (t) => {
+  const { outer, app } = appBesideShared(t, 'build-shared-folder');
+  // The shared folder is a project of its own: its golem.yaml, its tsconfig, its models and the files `golem generate` wrote for them.
+  write(outer, 'shared/golem.yaml', 'version: 1\nmobx: false\nvalidation: false\nmodels:\n  root: .\n');
+  write(outer, 'shared/tsconfig.json', JSON.stringify({
+    compilerOptions: { strict: true, target: 'ES2022', module: 'NodeNext', moduleResolution: 'NodeNext', skipLibCheck: true, noEmit: true },
+    include: ['src/**/*.ts'],
+  }));
+  copyFixtureFile(outer, 'models/serde/base-payment-model/money.model.ts', 'shared/src/money.model.ts');
+  write(outer, 'shared/src/site.ts', USE);
+  await runPipeline(path.join(outer, 'shared/golem.yaml'));
+
+  // The app lists the shared model sources, so its key table names their codecs; the files it generates for them are the ones the shared folder already wrote.
+  write(app, 'golem.yaml', 'version: 1\nmobx: false\nvalidation: false\nmodels:\n  root: .\n  sources:\n    - ../shared/src/money.model.ts\n');
+  editTsconfig(app, (tsconfig) => { tsconfig.include = ['src/**/*.ts', '../shared/**/*.ts']; });
+  write(app, 'src/main.ts', "import { money } from '../../shared/src/site.js';\nexport const fromShared: unknown = money;\n");
+  const config = path.join(app, 'golem.yaml');
+  await runPipeline(config);
+  await runPipeline(config, { check: true });
+
+  assert.equal((await build(app)).exitCode, 0);
+  const rewrite = /__golem_requireObjectCodec\("TMoney_[0-9a-f]+"\)\.parse\(/;
+  assert.match(fs.readFileSync(path.join(app, 'build/shared/src/site.js'), 'utf8'), rewrite);
+  assert.deepEqual((await importBuilt(app, 'app/src/main.js')).fromShared, { currency: 'USD', value: '1' });
+
+  // A bundler plugin opens the app's project and rewrites the same file.
+  const bundle = path.join(app, 'bundle/main.mjs');
+  await esbuild({ absWorkingDir: app, entryPoints: ['src/main.ts'], outfile: bundle, bundle: true, format: 'esm', platform: 'node', logLevel: 'silent', plugins: [esbuildPlugin()] });
+  const ran = await command(app, process.execPath, ['--input-type=module', '-e', `import { fromShared } from ${JSON.stringify(pathToFileURL(bundle).href)}; console.log(JSON.stringify(fromShared));`]);
+  assert.deepEqual(JSON.parse(ran.stdout), { currency: 'USD', value: '1' });
 });
