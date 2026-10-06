@@ -88,141 +88,139 @@ test('operation parameters override path parameters by (in, name) and repeated p
 });
 
 test('generated content parameters validate before execute', async t => {
-  {
-    const directory = createFixtureProject(t, 'golem-openapi-content-parameters-');
-    const output = path.join(directory, 'sdk');
-    const contentSchema = (required: string) => ({
-      type: 'object',
-      required: [required],
-      properties: { [required]: { type: 'string', pattern: '^[a-z]+$' } },
-      additionalProperties: false,
-    });
-    const document = documentBase('3.2.0', {
-      paths: {
-        '/querystring': {
-          get: {
-            operationId: 'queryStringParam',
-            parameters: [{
-              name: 'queryStringValue',
-              in: 'querystring',
-              required: true,
-              content: { 'application/x-www-form-urlencoded': { schema: contentSchema('term') } },
-            }],
-            responses: { 204: { description: 'ok' } },
-          },
-        },
-        '/query': {
-          get: {
-            operationId: 'queryParam',
-            parameters: [{
-              name: 'queryValue',
-              in: 'query',
-              content: { 'application/json': { schema: contentSchema('filter') } },
-            }],
-            responses: { 204: { description: 'ok' } },
-          },
-        },
-        '/header': {
-          get: {
-            operationId: 'headerParam',
-            parameters: [{
-              name: 'X-Content',
-              in: 'header',
-              content: { 'application/json': { schema: contentSchema('header') } },
-            }],
-            responses: { 204: { description: 'ok' } },
-          },
-        },
-        '/items/{pathValue}': {
-          get: {
-            operationId: 'pathParam',
-            parameters: [{
-              name: 'pathValue',
-              in: 'path',
-              required: true,
-              content: { 'application/json': { schema: contentSchema('id') } },
-            }],
-            responses: { 204: { description: 'ok' } },
-          },
-        },
-        '/blocked': {
-          get: {
-            operationId: 'blocked',
-            parameters: [{
-              name: 'queryValue',
-              in: 'query',
-              content: { 'application/json': { schema: false } },
-            }],
-            responses: { 204: { description: 'blocked' } },
-          },
+  const directory = createFixtureProject(t, 'golem-openapi-content-parameters-');
+  const output = path.join(directory, 'sdk');
+  const contentSchema = (required: string) => ({
+    type: 'object',
+    required: [required],
+    properties: { [required]: { type: 'string', pattern: '^[a-z]+$' } },
+    additionalProperties: false,
+  });
+  const document = documentBase('3.2.0', {
+    paths: {
+      '/querystring': {
+        get: {
+          operationId: 'queryStringParam',
+          parameters: [{
+            name: 'queryStringValue',
+            in: 'querystring',
+            required: true,
+            content: { 'application/x-www-form-urlencoded': { schema: contentSchema('term') } },
+          }],
+          responses: { 204: { description: 'ok' } },
         },
       },
-    });
-    await generateMaterializedSdk(document, {
-      output,
-      name: 'ContentParameters',
-      profile: { mobx: false, validation: true },
-    });
-    copyFixtureFile(output, 'openapi/parameters/parameters-content-false-assert.ts', 'parameters-content-false-assert.ts');
-    compileGeneratedSdk(output, [path.join(output, 'parameters-content-false-assert.ts')]);
-    const module = requireRecord(
-      await import(pathToFileURL(path.join(output, 'dist/client.js')).href),
-      'content parameter client',
-    );
-    const Client = module.ContentParametersClient;
-    assert.equal(isGeneratedClientClass(Client), true);
-    if (!isGeneratedClientClass(Client)) throw new TypeError('ContentParametersClient');
+      '/query': {
+        get: {
+          operationId: 'queryParam',
+          parameters: [{
+            name: 'queryValue',
+            in: 'query',
+            content: { 'application/json': { schema: contentSchema('filter') } },
+          }],
+          responses: { 204: { description: 'ok' } },
+        },
+      },
+      '/header': {
+        get: {
+          operationId: 'headerParam',
+          parameters: [{
+            name: 'X-Content',
+            in: 'header',
+            content: { 'application/json': { schema: contentSchema('header') } },
+          }],
+          responses: { 204: { description: 'ok' } },
+        },
+      },
+      '/items/{pathValue}': {
+        get: {
+          operationId: 'pathParam',
+          parameters: [{
+            name: 'pathValue',
+            in: 'path',
+            required: true,
+            content: { 'application/json': { schema: contentSchema('id') } },
+          }],
+          responses: { 204: { description: 'ok' } },
+        },
+      },
+      '/blocked': {
+        get: {
+          operationId: 'blocked',
+          parameters: [{
+            name: 'queryValue',
+            in: 'query',
+            content: { 'application/json': { schema: false } },
+          }],
+          responses: { 204: { description: 'blocked' } },
+        },
+      },
+    },
+  });
+  await generateMaterializedSdk(document, {
+    output,
+    name: 'ContentParameters',
+    profile: { mobx: false, validation: true },
+  });
+  copyFixtureFile(output, 'openapi/parameters/parameters-content-false-assert.ts', 'parameters-content-false-assert.ts');
+  compileGeneratedSdk(output, [path.join(output, 'parameters-content-false-assert.ts')]);
+  const module = requireRecord(
+    await import(pathToFileURL(path.join(output, 'dist/client.js')).href),
+    'content parameter client',
+  );
+  const Client = module.ContentParametersClient;
+  assert.equal(isGeneratedClientClass(Client), true);
+  if (!isGeneratedClientClass(Client)) throw new TypeError('ContentParametersClient');
 
-    let fetchCount = 0;
-    const client = new Client({
-      baseUrl: 'https://api.example',
-      fetchImpl: async () => {
-        fetchCount += 1;
-        return new Response(null, { status: 204 });
-      },
-    });
-    const cases = [
-      {
-        operation: 'queryStringParam',
-        valid: { querystring: { term: 'search' } },
-        invalid: { querystring: { term: 1 } },
-      },
-      {
-        operation: 'queryParam',
-        valid: { query: { queryValue: { filter: 'active' } } },
-        invalid: { query: { queryValue: { filter: 1 } } },
-      },
-      {
-        operation: 'headerParam',
-        valid: { header: { 'X-Content': { header: 'trace' } } },
-        invalid: { header: { 'X-Content': { header: 1 } } },
-      },
-      {
-        operation: 'pathParam',
-        valid: { path: { pathValue: { id: 'item' } } },
-        invalid: { path: { pathValue: { id: 1 } } },
-      },
-    ] as const;
-    for (const [index, { operation, valid, invalid }] of cases.entries()) {
-      const api = client[operation]();
-      const fetchesBeforeInvalid = fetchCount;
-      await assert.rejects(
-        () => api.execute(invalid),
-        /API data validation failed|validation failed/i,
-        `${operation} content parameter is rejected before serialization`,
-      );
-      assert.equal(fetchCount, fetchesBeforeInvalid, `${operation} invalid content parameter did not reach fetch`);
-      await api.execute(valid);
-      assert.equal(fetchCount, index + 1);
-    }
-    const fetchesBeforeBlocked = fetchCount;
+  let fetchCount = 0;
+  const client = new Client({
+    baseUrl: 'https://api.example',
+    fetchImpl: async () => {
+      fetchCount += 1;
+      return new Response(null, { status: 204 });
+    },
+  });
+  const cases = [
+    {
+      operation: 'queryStringParam',
+      valid: { querystring: { term: 'search' } },
+      invalid: { querystring: { term: 1 } },
+    },
+    {
+      operation: 'queryParam',
+      valid: { query: { queryValue: { filter: 'active' } } },
+      invalid: { query: { queryValue: { filter: 1 } } },
+    },
+    {
+      operation: 'headerParam',
+      valid: { header: { 'X-Content': { header: 'trace' } } },
+      invalid: { header: { 'X-Content': { header: 1 } } },
+    },
+    {
+      operation: 'pathParam',
+      valid: { path: { pathValue: { id: 'item' } } },
+      invalid: { path: { pathValue: { id: 1 } } },
+    },
+  ] as const;
+  for (const [index, { operation, valid, invalid }] of cases.entries()) {
+    const api = client[operation]();
+    const fetchesBeforeInvalid = fetchCount;
     await assert.rejects(
-      () => client.blocked().execute({ query: { queryValue: 'anything' } }),
-      /validation failed/i,
-      'a schema: false content parameter is unusable and is rejected before serialization',
+      () => api.execute(invalid),
+      /API data validation failed|validation failed/i,
+      `${operation} content parameter is rejected before serialization`,
     );
-    assert.equal(fetchCount, fetchesBeforeBlocked, 'the blocked queryValue must not reach fetch');
+    assert.equal(fetchCount, fetchesBeforeInvalid, `${operation} invalid content parameter did not reach fetch`);
+    await api.execute(valid);
+    assert.equal(fetchCount, index + 1);
   }
+  const fetchesBeforeBlocked = fetchCount;
+  await assert.rejects(
+    () => client.blocked().execute({ query: { queryValue: 'anything' } }),
+    /validation failed/i,
+    'a schema: false content parameter is unusable and is rejected before serialization',
+  );
+  assert.equal(fetchCount, fetchesBeforeBlocked, 'the blocked queryValue must not reach fetch');
 });
 
 test('rejects duplicate parameters within the same level', async (t) => {

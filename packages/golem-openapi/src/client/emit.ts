@@ -119,7 +119,7 @@ export interface GeneratedClientModules {
   readonly client: string;
   /** Module paths are relative to the generated package root. */
   readonly operations: ReadonlyMap<string, string>;
-  /** One validators module per operation, keyed like `operations`; empty when validation is off or a compile diagnostic is an error. */
+  /** One validators module per operation, keyed like `operations`; none when validation is off, and a source is empty when its compile reported an error. */
   readonly operationValidators: ReadonlyMap<string, string>;
   readonly diagnostics: readonly GolemDiagnostic[];
 }
@@ -205,9 +205,9 @@ function operationSource(
   const factoryName = operationFactoryName(operation);
   if (appliesSecurity) use('applySecurity');
   if (requestBody) use('encodeBody');
-  const validatesWithSources = profile.validation && validationBundle !== undefined;
-  const validationFunctions = !profile.validation ? []
-    : validatesWithSources ? ['operationValidators', 'responseCheck', 'validateOperationInput'] : ['validateOperationInput'];
+  // The bundle exists exactly when the profile validates.
+  const validatesWithSources = validationBundle !== undefined;
+  const validationFunctions = validatesWithSources ? ['operationValidators', 'responseCheck', 'validateOperationInput'] : [];
   const runtimeFunctions = [...usedFunctions].sort();
   const importedNames: Array<readonly [string, string]> = [
     ['ClientRuntime', 'client runtime import'],
@@ -224,27 +224,31 @@ function operationSource(
   if (surfaces.auth || surfaces.mutualTls) importedNames.push(['__golemSecuritySchemes', 'security metadata']);
   if (appliesSecurity) importedNames.push(['RuntimeSecuritySchemes', 'security scheme type import']);
   if (profile.validation) importedNames.push(['OperationValidationSources', 'validation source type import']);
-  if (validatesWithSources) importedNames.push(['validators', 'generated operation validators import']);
   const moduleScope = new NameScope(`operation ${JSON.stringify(operation.name)}`);
   for (const [name, origin] of importedNames) {
     moduleScope.claim(name, origin);
   }
   moduleScope.claim(operation.name, `operation factory ${JSON.stringify(operation.name)}`);
   moduleScope.claim(factoryName, `internal operation factory ${JSON.stringify(operation.name)}`);
-  let validationSourcesName = '__operationValidationSources';
-  for (let suffix = 1; moduleScope.has(validationSourcesName); suffix += 1) validationSourcesName = `__operationValidationSources${suffix}`;
-  if (validatesWithSources) moduleScope.claim(validationSourcesName, 'operation validation sources');
+  const uniqueModuleName = (base: string, origin: string): string => {
+    let name = base;
+    for (let suffix = 1; moduleScope.has(name); suffix += 1) name = `${base}${suffix}`;
+    if (validatesWithSources) moduleScope.claim(name, origin);
+    return name;
+  };
+  const validationSourcesName = uniqueModuleName('__operationValidationSources', 'operation validation sources');
+  const generatedValidatorsName = uniqueModuleName('__operationValidators', 'generated operation validators import');
   const inputType = `Types.${operation.typeName}OperationInput`;
   const responseType = `Types.${operation.typeName}OperationHttpResponse`;
   const validatorSetup = validatesWithSources
     ? `  const validators = operationValidators(runtime, ${JSON.stringify(operation.name)}, ${validationSourcesName});\n  const checkResponse = responseCheck(validators);`
-    : profile.validation ? '  const validators = undefined;' : '';
-  const validationSources = validationBundle && validatesWithSources
+    : '';
+  const validationSources = validationBundle
     ? [
       `const ${validationSourcesName}: OperationValidationSources = {`,
       `  inputReference: ${JSON.stringify(validationBundle.inputReference)},`,
       `  responseReferences: ${JSON.stringify(validationBundle.responseReferences)},`,
-      '  validators,',
+      `  validators: ${generatedValidatorsName},`,
       '};',
     ].join('\n')
     : '';
@@ -255,7 +259,7 @@ function operationSource(
     profile.mobx
       ? `import { createObservableApiOperation as createApiOperation, type ObservableApiOperation as ApiOperation } from '@exprtlabs/golem/mobx';`
       : '',
-    validatesWithSources ? `import { validators } from './${operation.name}.validators.generated.js';` : '',
+    validatesWithSources ? `import { validators as ${generatedValidatorsName} } from './${operation.name}.validators.generated.js';` : '',
     validationFunctions.length
       ? `import { ${validationFunctions.join(', ')} } from '@exprtlabs/golem/validation';`
       : '',

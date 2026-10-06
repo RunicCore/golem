@@ -256,8 +256,6 @@ export function buildSchemaData(document: unknown, preparedIr?: NormalizedDocume
 }
 
 export interface OpenApiOperationValidationSchemaBundle {
-  readonly operationRootId: string;
-  readonly operationSchema: object | boolean;
   readonly inputReference: string;
   readonly responseReferences: readonly {
     readonly status: string;
@@ -731,8 +729,6 @@ function operationBundleFromIndex(
     return { status: response.status, contentType: media.contentType, reference };
   }));
   return {
-    operationRootId,
-    operationSchema: schemaRoot,
     inputReference,
     responseReferences,
     schemas,

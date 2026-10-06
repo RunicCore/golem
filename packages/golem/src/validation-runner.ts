@@ -13,6 +13,8 @@ export async function runValidation(
   value: unknown,
   all = true,
 ): Promise<ValidationResult> {
-  const issues = validator(value, all);
+  const issues: unknown = validator(value, all);
+  // An override written for another contract (a boolean, a promise) must not read as "valid".
+  if (!Array.isArray(issues)) throw new TypeError('A validator must return an array of issues.');
   return { valid: issues.length === 0, issues };
 }

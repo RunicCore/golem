@@ -28,3 +28,8 @@ test('runValidation reports every issue unless the caller asks for the first onl
   assert.deepEqual(await validateWith(validator, 'b', false), { valid: false, issues: [issue] });
   assert.deepEqual(seen, [['a', true], ['b', false]]);
 });
+
+test('runValidation refuses a validator that does not return an array of issues', async () => {
+  const oldStyle = (() => true) as unknown as Validator;
+  await assert.rejects(runValidation(oldStyle, 'value'), (error: unknown) => error instanceof TypeError && error.message === 'A validator must return an array of issues.');
+});

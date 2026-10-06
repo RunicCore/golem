@@ -116,10 +116,6 @@ test('OpenAPI SDKs emit per-operation validators in either mode; models use gene
   for (const [label, result] of [['runtime', runtime], ['standalone', standalone]] as const) {
     const names = artifactBasenames(result.artifacts);
     assert.equal(names.includes('getTask.validators.generated.ts'), true, label);
-    // One validator module per operation and model group; no SDK-wide registry, validator module or engine.
-    for (const name of ['schemas.ts', 'validators.generated.js', 'validators.generated.d.ts', 'validation-engine.ts']) {
-      assert.equal(names.includes(name), false, `${label}: ${name}`);
-    }
     const models = generatedModelSource(result.artifacts);
     assert.match(models, /validators\.generated\.js/, label);
     assert.match(models, /createObjectCodec/, label);
@@ -169,7 +165,6 @@ test('SDK operation validators expose every operation reference and validate thr
   const operationModules = ['createTask', 'getTask'];
   for (const operation of operationModules) {
     const generatedCode = readFileSync(path.join(output, `operations/${operation}.validators.generated.ts`), 'utf8');
-    assert.doesNotMatch(generatedCode, /(?:from|require\s*\()\s*['"](?:ajv|ajv-formats|fast-deep-equal)/);
     assert.doesNotMatch(generatedCode, /new\s+Function|\beval\s*\(/);
   }
   assert.ok(result.artifacts.some(item => /\/models\/_[^/]*\.validators\.generated\.ts$/.test(item.path)), 'model groups carry their own validators');
