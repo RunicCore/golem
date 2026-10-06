@@ -17,7 +17,7 @@ export async function checkPermissionInput() {
   console.log(toWireFormat<TPermissionInput>(access)); // { permissions: '0x5' }
 
   const denied = fromWireFormat<TPermissionInput>({ permissions: '0x2' }, { validate: false });
-  console.log(denied.permissions); // 2: trusted conversion does not run Ajv
+  console.log(denied.permissions); // 2: trusted conversion does not validate
   const deniedValid = (await validateInstance(new PermissionInput(denied))).length === 0;
   console.log(deniedValid); // false: hasReadPermission rejects the model value
   console.log(toWireFormat<TPermissionInput>(denied, { validate: false })); // { permissions: '0x2' }

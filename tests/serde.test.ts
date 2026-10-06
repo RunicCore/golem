@@ -48,7 +48,7 @@ interface PaymentCodecs {
   parseTMoney: (text: string, options?: { validate?: boolean; failFast?: boolean }) => unknown;
 }
 
-test('IObject stringify/parse compose nested Money by call; invalid JSON fails before Ajv; validate<T> narrows', async (t) => {
+test('IObject stringify/parse compose nested Money by call; invalid JSON fails before validation; validate<T> narrows', async (t) => {
   const { root } = fixture(t);
   fs.writeFileSync(path.join(root, 'src/narrow.ts'), readFixture("models/serde/validate-t-type-predicate-narrows-to-iobject-fields-for-imodel-and-iobject/narrow.ts"));
   await compile(root);
@@ -120,7 +120,7 @@ test('IObject stringify/parse compose nested Money by call; invalid JSON fails b
       amount: { currency: 1, value: 2 },
       note: false,
     }));
-    assert.fail('expected fail-fast Ajv');
+    assert.fail('expected fail-fast validation');
   } catch (error) {
     assert.ok(error instanceof LibError);
     assert.equal(error.kind, LibErrorKind.Validation);
@@ -132,7 +132,7 @@ test('IObject stringify/parse compose nested Money by call; invalid JSON fails b
       amount: { currency: 1, value: 2 },
       note: false,
     }), { failFast: false });
-    assert.fail('expected exhaustive Ajv');
+    assert.fail('expected exhaustive validation');
   } catch (error) {
     assert.ok(error instanceof LibError);
     assert.equal(error.kind, LibErrorKind.Validation);
@@ -236,18 +236,18 @@ test('IObject TSerde stringify/parse convert declared fields in one pass', async
   assert.ok(trusted.permissions === Number.parseInt('nope', 16) || Number.isNaN(trusted.permissions));
 });
 
-test('same-type TSerde emits one Ajv schema and global validation false rejects { validate: true }', async (t) => {
+test('same-type TSerde emits one validator and global validation false rejects { validate: true }', async (t) => {
   const { root: identityRoot, sourceRoot } = createModelProject(t, {
     prefix: 'golem-serde-identity-',
     name: 'serde-identity',
     linkTypescript: true,
   });
-  fs.writeFileSync(path.join(sourceRoot, 'codecs.ts'), readFixture("models/serde/same-type-tserde-emits-one-ajv-schema-and-global-validation-false-rejects-va/codecs.ts"));
-  fs.writeFileSync(path.join(sourceRoot, 'label.model.ts'), readFixture("models/serde/same-type-tserde-emits-one-ajv-schema-and-global-validation-false-rejects-va/label.model.ts"));
+  fs.writeFileSync(path.join(sourceRoot, 'codecs.ts'), readFixture("models/serde/same-type-tserde-emits-one-validator-and-global-validation-false-rejects-va/codecs.ts"));
+  fs.writeFileSync(path.join(sourceRoot, 'label.model.ts'), readFixture("models/serde/same-type-tserde-emits-one-validator-and-global-validation-false-rejects-va/label.model.ts"));
   writeModelGolemYaml(identityRoot, { mobx: false, validation: true });
   await compile(identityRoot);
   const generated = fs.readFileSync(path.join(identityRoot, 'src/label.model.generated.ts'), 'utf8');
-  assert.doesNotMatch(generated, /Label#wire/, 'budget: identical wire and model schemas share one Ajv schema, no separate Label#wire schema is hoisted');
+  assert.doesNotMatch(generated, /Label#wire/, 'budget: identical wire and model schemas share one schema, no separate Label#wire schema is hoisted');
   assert.doesNotMatch(generated, /validateLabelWireFast/, 'budget: no separate wire-plane validator is emitted when the wire and model schemas are identical');
   const codecs = await import(pathToFileURL(path.join(identityRoot, 'build/label.model.generated.js')).href) as {
     stringifyTLabel: (value: object, options?: { validate?: boolean }) => string;

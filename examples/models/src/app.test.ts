@@ -154,7 +154,7 @@ test('setErrors stores a server message that clear() removes', async () => {
   assert.equal(result.afterClear, undefined);
 });
 
-test('a trusted conversion skips Ajv but still surfaces the issue on validateInstance', async () => {
+test('a trusted conversion skips validation but still surfaces the issue on validateInstance', async () => {
   const { result } = await capture(loadInvalidTask);
   assert.equal(result.message, 'Must be at least 1 character');
   assert.equal(result.title, '');

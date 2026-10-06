@@ -70,7 +70,7 @@ test('nested TSerde with exact and T|T[] fail-fast reports one issue', async (t)
       money: { amount: 1, currency: 1 },
       tag: 'refunded',
     });
-    assert.fail('expected fail-fast Ajv');
+    assert.fail('expected fail-fast validation');
   } catch (error) {
     assert.ok(error instanceof LibError);
     assert.equal(error.kind, LibErrorKind.Validation);
@@ -82,7 +82,7 @@ test('nested TSerde with exact and T|T[] fail-fast reports one issue', async (t)
       money: { amount: 1, currency: 1 },
       tag: 'refunded',
     }, { failFast: false });
-    assert.fail('expected exhaustive Ajv');
+    assert.fail('expected exhaustive validation');
   } catch (error) {
     assert.ok(error instanceof LibError);
     assert.equal(error.kind, LibErrorKind.Validation);

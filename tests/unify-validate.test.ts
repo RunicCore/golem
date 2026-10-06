@@ -75,7 +75,7 @@ test('global validation true binds IObject and IModel codecs to generated valida
   const { root, sourceRoot } = fixture(t);
   writeGeneratedArtifacts([{
     path: path.join(sourceRoot, 'payload.model.ts'),
-    content: readFixture('models/unify-validate/global-validation-true-emits-codec-ajv-for-iobject-and-imodel/payload.model.ts'),
+    content: readFixture('models/unify-validate/global-validation-true-emits-codec-validator-for-iobject-and-imodel/payload.model.ts'),
   }]);
   writeModelGolemYaml(root, { mobx: false, validation: true });
   await compile(root);

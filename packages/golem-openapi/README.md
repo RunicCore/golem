@@ -10,7 +10,7 @@ independently of the other generators and does not start or host the API.
 Use npm with Node.js 22.15 or newer:
 
 ```sh
-npm install @exprtlabs/golem@rc ajv ajv-formats
+npm install @exprtlabs/golem@rc
 npm install --save-dev @exprtlabs/golem-openapi@rc typescript@~7.0.2
 ```
 

@@ -11,7 +11,7 @@ need not be committed: `golem build` generates first
 In an ESM TypeScript project with Node.js 22.15 or newer:
 
 ```sh
-npm install @exprtlabs/golem@rc ajv ajv-formats
+npm install @exprtlabs/golem@rc
 npm install --save-dev @exprtlabs/golem-model@rc typescript@~7.0.2
 ```
 

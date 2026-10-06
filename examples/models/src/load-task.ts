@@ -7,7 +7,7 @@ export async function loadInvalidTask() {
   const draft = new TaskInput(fromWireFormat<TTaskInput>({ title: '', done: false }, { validate: false }));
   const issues = await validateInstance(draft);
   console.log(issues[0]?.message); // 'Must be at least 1 character'
-  console.log(draft.title); // '': trusted conversion does not run Ajv
+  console.log(draft.title); // '': trusted conversion does not validate
 
   return { message: issues[0]?.message, title: draft.title };
 }

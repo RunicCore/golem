@@ -68,8 +68,8 @@ test('equivalent tag schemas share compilation while metadata and callback ident
 test('equivalent MinLength tags of two companions compile to one validators module and each keeps its own bound', async (t) => {
   const fixtureValue = fixture(t);
   const source = path.join(fixtureValue.sourceRoot, 'item.model.ts');
-  writeFileSync(source, readFixture('models/model-artifact-efficiency/codec-ajv-compiles-equivalent-minlength-tags-in-each-companion/item.model.ts'));
-  writeFileSync(path.join(fixtureValue.sourceRoot, 'other.model.ts'), readFixture("models/model-artifact-efficiency/codec-ajv-compiles-equivalent-minlength-tags-in-each-companion/other.model.ts"));
+  writeFileSync(source, readFixture('models/model-artifact-efficiency/codec-compiles-equivalent-minlength-tags-in-each-companion/item.model.ts'));
+  writeFileSync(path.join(fixtureValue.sourceRoot, 'other.model.ts'), readFixture("models/model-artifact-efficiency/codec-compiles-equivalent-minlength-tags-in-each-companion/other.model.ts"));
   writeModelGolemYaml(fixtureValue.root, { mobx: false, validation: true });
   await buildModelProject(fixtureValue.root);
   const artifacts = generatedModelFiles(fixtureValue.root);
