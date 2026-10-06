@@ -11,7 +11,7 @@
     "node": ">=22.15.0"
   },
   "scripts": {
-    "build": "tsc -p packages/golem/tsconfig.runtime.json && tsc -p packages/golem/tsconfig.tooling.json && tsc -p packages/golem-model/tsconfig.json && tsc -p packages/golem-openapi/tsconfig.json && tsc -p packages/golem-ts-openapi/tsconfig.json",
+    "build": "npm run build -w @exprtlabs/golem && tsc -p packages/golem-model/tsconfig.json && tsc -p packages/golem-openapi/tsconfig.json && tsc -p packages/golem-ts-openapi/tsconfig.json",
     "build:tests": "npm run build && npm run build:scripts && node .build/scripts/clean-tests.js && tsc -p tsconfig.tests.json",
     "build:scripts": "tsc -p tsconfig.scripts.json",
     "vendor:openapi-schemas": "npm run build:scripts && node .build/scripts/vendor-openapi-schemas.js",
