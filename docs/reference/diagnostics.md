@@ -328,6 +328,10 @@ An error prints its code, location when known, and message, then stops generatio
 
 **Nest parameter disagrees with the generated operations.** `golem check` found a `@Body()` or `@Query()` parameter whose model is missing from `src/generated/operation-codecs.ts`, or that file does not exist. The controllers job writes that file from the routes it reads, so the parameter is not part of a route it generated. The message shows the decorator and the type. **Fix:** Run `golem generate`. If the parameter belongs to a method that is not a route, add its file to the controllers job's `sources`, or give the parameter a primitive type.
 
+### RUNM1073
+
+**Job reads the tsconfig above its root.** A `models` or `controllers` job's `root` has no `tsconfig.json` and `golem.yaml` sets no `tsconfig`, so the job reads the nearest `tsconfig.json` above its root, as `tsc` does: that file's `paths` and compiler options apply to the job. This is a warning: generation continues. The message names the job and the file. **Fix:** Add a `tsconfig.json` to the job's root to give it its own options, or set `tsconfig` in `golem.yaml` to the file the message names to state that the job is meant to use it.
+
 ## Validators (VALIDATE)
 
 The validator compiler writes the checks that generated models and SDKs run. Its messages name the document, the schema and the JSON pointer of the keyword it rejects, such as `orders.yaml: schema "Order" at /properties/total/pattern: ...`. An error stops generation before any validator is written; a warning lets generation continue, as its entry notes.

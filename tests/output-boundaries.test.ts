@@ -20,6 +20,7 @@ function configFor(directory: string, job: GolemJob): GolemConfig {
     configFile: path.join(directory, 'golem.yaml'),
     inventoryFile: path.join(directory, '.golem/outputs.json'),
     tsconfig: path.join(directory, 'tsconfig.json'),
+    tsconfigNamed: false,
     profile: { mobx: false, validation: true },
     jobs: [job],
   };

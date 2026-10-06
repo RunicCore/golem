@@ -1,9 +1,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import YAML from 'yaml';
-import { isRecord, resolveProfile } from './generator-api.js';
+import { GolemDiagnosticSeverity, isRecord, resolveProfile } from './generator-api.js';
 import { defaultModelOutput } from './generated-paths.js';
 import type {
+  GolemDiagnostic,
   GolemProfile,
   ControllerContext,
   ControllerTag,
@@ -25,6 +26,8 @@ export interface GolemConfig {
   readonly directory: string;
   /** The project's tsconfig: where `golem generate` and `golem build` start. Its directory is the project root a rewrite names files from. A tsconfig the yaml names exists; the default beside the yaml need not. */
   readonly tsconfig: string;
+  /** Whether the yaml sets `tsconfig`, as opposed to the default beside it. */
+  readonly tsconfigNamed: boolean;
   readonly profile: GolemProfile;
   readonly jobs: readonly GolemJob[];
   readonly inventoryFile: string;
@@ -177,6 +180,24 @@ function tsconfigFoundFrom(root: string): string | undefined {
     if (fs.statSync(candidate, { throwIfNoEntry: false })?.isFile()) return canonicalFile(candidate);
     if (path.dirname(directory) === directory) return undefined;
   }
+}
+
+const CODE_TSCONFIG_ABOVE_ROOT = 'RUNM1073';
+
+/**
+ * The diagnostics for a models or controllers job whose root has no tsconfig.json while the golem.yaml names none: its analysis
+ * uses the nearest tsconfig.json above the root, as `tsc` does. It names that file and never stops the run.
+ */
+export function jobTsconfigDiagnostics(config: GolemConfig, job: GolemJob): readonly GolemDiagnostic[] {
+  if ((job.kind !== 'models' && job.kind !== 'controllers') || config.tsconfigNamed) return [];
+  const { root } = job.options;
+  const found = tsconfigFoundFrom(root);
+  if (found === undefined || path.dirname(found) === root) return [];
+  return [{
+    code: CODE_TSCONFIG_ABOVE_ROOT,
+    severity: GolemDiagnosticSeverity.Warning,
+    message: `The ${job.id} job has no tsconfig.json in its root ${root}, so it uses ${found}, the nearest one above it.`,
+  }];
 }
 
 /**
@@ -364,7 +385,7 @@ export function resolveConfig(filename = 'golem.yaml', onInput?: InputObserver):
       }
     }
   }
-  return { configFile, directory, tsconfig, profile, jobs, inventoryFile: path.join(directory, '.golem', 'outputs.json') };
+  return { configFile, directory, tsconfig, tsconfigNamed: value.tsconfig !== undefined, profile, jobs, inventoryFile: path.join(directory, '.golem', 'outputs.json') };
 }
 
 export function validateConfigInputs(config: GolemConfig): void {

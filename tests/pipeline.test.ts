@@ -423,3 +423,60 @@ test('a watch input the job did not announce has no digest from the read, so its
   assert.equal((await runPipeline(config)).ran.size, 1);
   assert.equal((await runPipeline(config)).ran.size, 1);
 });
+
+/**
+ * A project whose models job has its root in `pkg/`, a folder without a tsconfig.json. The tsconfig one folder up holds the
+ * options the model source needs: a `paths` alias and bundler module resolution, which allows the extensionless import.
+ */
+function parentTsconfigProject(t: TestContext, yamlLines: readonly string[]): { root: string; jobRoot: string } {
+  const root = createFixtureProject(t, 'golem-parent-tsconfig-');
+  linkProjectPackages(root, Object.fromEntries(
+    ['golem', 'golem-model'].map(name => [`@exprtlabs/${name}`, path.join(workspace, 'packages', name)]),
+  ));
+  fs.writeFileSync(path.join(root, 'package.json'), '{"name":"parent-tsconfig-fixture","type":"module"}');
+  fs.writeFileSync(path.join(root, 'tsconfig.json'), JSON.stringify({
+    compilerOptions: {
+      strict: true,
+      target: 'ES2022',
+      module: 'ESNext',
+      moduleResolution: 'Bundler',
+      skipLibCheck: true,
+      noEmit: true,
+      paths: { '@lib/*': ['./pkg/src/lib/*'] },
+    },
+    include: ['pkg/src/**/*.ts'],
+  }));
+  const sourceRoot = path.join(root, 'pkg/src');
+  fs.mkdirSync(path.join(sourceRoot, 'lib'), { recursive: true });
+  fs.writeFileSync(path.join(sourceRoot, 'lib/ids.ts'), 'export type Id = string;\n');
+  fs.writeFileSync(path.join(sourceRoot, 'label.ts'), 'export type Label = string;\n');
+  fs.writeFileSync(path.join(sourceRoot, 'item.model.ts'), [
+    "import type { IModel } from '@exprtlabs/golem/model';",
+    "import type { Id } from '@lib/ids';",
+    "import type { Label } from './label';",
+    'export type TItem = IModel<{ id: Id; label: Label }>;',
+    '',
+  ].join('\n'));
+  fs.writeFileSync(path.join(root, 'golem.yaml'), [...yamlLines, ''].join('\n'));
+  return { root, jobRoot: path.join(root, 'pkg') };
+}
+
+test('a models job whose root has no tsconfig.json analyses with the parent tsconfig and warns once, naming it', async (t: TestContext) => {
+  const { root, jobRoot } = parentTsconfigProject(t, ['version: 1', 'models:', '  root: pkg']);
+  const binary = path.join(workspace, 'packages/golem/dist/bin/golem.js');
+  const result = await command(root, process.execPath, [binary, 'generate']);
+  // The alias and the extensionless import resolve only under the parent's options; without them both fields are `unknown`.
+  assert.match(fs.readFileSync(path.join(jobRoot, 'src/item.model.generated.ts'), 'utf8'), /export type TItemFields = \{ id: string; label: string \};/);
+  assert.equal(
+    result.stderr,
+    `RUNM1073: The models:pkg job has no tsconfig.json in its root ${jobRoot}, so it uses ${path.join(root, 'tsconfig.json')}, the nearest one above it.\n`,
+  );
+});
+
+test('a models job whose root has no tsconfig.json does not warn when golem.yaml names the tsconfig it uses', async (t: TestContext) => {
+  const { root, jobRoot } = parentTsconfigProject(t, ['version: 1', 'tsconfig: tsconfig.json', 'models:', '  root: pkg']);
+  const binary = path.join(workspace, 'packages/golem/dist/bin/golem.js');
+  const result = await command(root, process.execPath, [binary, 'generate']);
+  assert.match(fs.readFileSync(path.join(jobRoot, 'src/item.model.generated.ts'), 'utf8'), /export type TItemFields = \{ id: string; label: string \};/);
+  assert.equal(result.stderr, '');
+});

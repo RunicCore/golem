@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { pathToFileURL } from 'node:url';
-import { contains, resolveConfig, validateConfigInputs } from './config.js';
+import { contains, jobTsconfigDiagnostics, resolveConfig, validateConfigInputs } from './config.js';
 import type { GolemConfig, GolemJob } from './config.js';
 import { codecKeysPath } from './generated-paths.js';
 import { loadInventory, applyJob, removeRetiredJobs } from './outputs.js';
@@ -530,7 +530,7 @@ export async function runPipeline(filename: string, options: PipelineOptions = {
       }
     }
     assertNoDiagnosticErrors(job, result);
-    if (!cached) for (const diagnostic of result.diagnostics ?? []) {
+    if (!cached) for (const diagnostic of [...jobTsconfigDiagnostics(config, job), ...result.diagnostics ?? []]) {
       if (diagnostic.severity === GolemDiagnosticSeverity.Warning) process.stderr.write(`${diagnostic.code}${diagnosticLocation(diagnostic)}: ${diagnostic.message}\n`);
     }
     for (const artifact of result.artifacts) {

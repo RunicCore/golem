@@ -185,16 +185,19 @@ export function retainedProgramSession(
   return session?.retain(`${owner}:${canonicalFilename(root)}`, () => new ts.ProgramSession({ cwd: root }));
 }
 
+/** The tsconfig a job's programs open with: the referenced project that holds the sources of a solution tsconfig, else the tsconfig itself. */
+export function effectiveConfigPath(info: Pick<ProgramInfo, 'configPath' | 'referencedConfigPath'>): string | undefined {
+  return info.referencedConfigPath ?? info.configPath;
+}
+
 function openParsedProgram(
   session: ts.ProgramSession,
   root: string,
   parsed: ReturnType<typeof parsedProject>,
   rootNames: readonly string[],
   onInput?: InputObserver,
-  /** The configuration to open the program with when no referenced project holds the sources; otherwise the compiler reads `tsconfig.json` in `root`. */
-  configFile?: string,
 ): ProgramInfo {
-  const programConfig = parsed.referencedConfigPath ?? configFile;
+  const programConfig = effectiveConfigPath(parsed);
   const program = session.openProgram({
     root,
     sources: rootNames,
@@ -234,7 +237,7 @@ export function createProjectProgram(
 ): ProgramInfo {
   const session = retained ?? new ts.ProgramSession({ cwd: root, closeWhenIdle: true });
   const parsed = parsedProject(root, [], session, onInput, configFile);
-  return openParsedProgram(session, root, parsed, parsed.projectFiles, onInput, configFile === undefined ? undefined : parsed.configPath);
+  return openParsedProgram(session, root, parsed, parsed.projectFiles, onInput);
 }
 
 export function createOverlayProgram(
@@ -259,9 +262,10 @@ export function createOverlayProgram(
       .filter((artifact) => !artifact.path.endsWith('.NOTICES.txt') && !artifact.path.endsWith('.js') && !artifact.path.endsWith('.json'))
       .map((artifact) => artifact.path),
   ]);
+  const configFile = effectiveConfigPath(info);
   return info.program.session.openProgram({
     root: dirname(info.configPath ?? sources[0] ?? '.'),
-    ...(info.referencedConfigPath ? { configFile: info.referencedConfigPath } : {}),
+    ...(configFile ? { configFile } : {}),
     sources: rootNames,
     overlays,
     onInput,
