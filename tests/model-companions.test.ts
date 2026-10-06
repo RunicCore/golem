@@ -28,6 +28,13 @@ function writeManifest(
 ): void {
   fs.writeFileSync(filename, JSON.stringify({
     profile: { ...profile, ajvStandalone: false, allowAny: false },
+    // A validating model that references this one compiles its schema into its own validators.
+    ...(profile.validation ? {
+      validationSchemaClosure: [{
+        codecId: 'fixture:money',
+        modelSchema: { type: 'object', properties: { currency: { type: 'string' }, amount: { type: 'number' } }, required: ['currency', 'amount'], additionalProperties: false },
+      }],
+    } : {}),
     models: [{
       id: 'fixture:money',
       allowAny: false,
@@ -184,11 +191,11 @@ import type { MinLength } from '@exprtlabs/golem/tags';
 export type TItem = IModel<{ title: string & MinLength<1> }>;
 `,
   });
-  const result = generate({ root, profile: { mobx: false, validation: true } });
+  const result = generate({ root, profile: { mobx: false, validation: false } });
   assert.equal(result.artifacts.some(artifact => artifact.path.endsWith('models.generated.ts')), false);
 });
 
-test('a custom validation binding writes the shared file and the companion imports it', (t) => {
+test('a custom validation binding is imported by the generated validators and the companion imports those', (t) => {
   const { root, sourceRoot } = modelProject(t);
   writeModelSources(sourceRoot, {
     'rules.ts': tsSource`export function isEven(value: number): boolean | string { return value % 2 === 0 || 'must be even'; }
@@ -200,9 +207,9 @@ export type TItem = IModel<{ count: number & TValidation<typeof isEven> }>;
 `,
   });
   const result = generate({ root, profile: { mobx: false, validation: true } });
-  const shared = result.artifacts.find(artifact => artifact.path.endsWith('models.generated.ts'));
-  assert.ok(shared, 'shared bindings file is written');
-  assert.match(shared.content, /export const modelValidationBindings/);
+  const validators = result.artifacts.find(artifact => artifact.path.endsWith('models.validators.generated.ts'));
+  assert.ok(validators, 'the validators file is written');
+  assert.match(validators.content, /import \{ isEven as \w+ \} from "[^"]*rules\.js"/);
   const companion = result.artifacts.find(artifact => artifact.path.endsWith('item.model.generated.ts'));
-  assert.match(companion?.content ?? '', /from "\.\/generated\/models\/models\.generated\.js"/);
+  assert.match(companion?.content ?? '', /from "\.\/generated\/models\/models\.validators\.generated\.js"/);
 });

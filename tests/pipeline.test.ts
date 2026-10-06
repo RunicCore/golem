@@ -47,7 +47,7 @@ test('global profile changes remove obsolete validation and keep manifest identi
     models: { id: string }[];
     profile: { mobx: boolean; validation: boolean };
   };
-  assert.match(readGeneratedModelSource(path.join(root, 'sdk')), /@exprtlabs\/golem\/ajv/);
+  assert.match(readGeneratedModelSource(path.join(root, 'sdk')), /requireModelValidator\(validators, /);
   fs.writeFileSync(config, fs.readFileSync(config, 'utf8').replace('validation: true', 'validation: false'));
   await assert.rejects(runPipeline(config, { check: true }), /stale/);
   await runPipeline(config);
@@ -57,7 +57,7 @@ test('global profile changes remove obsolete validation and keep manifest identi
   };
   assert.deepEqual(after.models.map((model) => model.id), before.models.map((model) => model.id));
   assert.deepEqual(after.profile, { mobx: false, validation: false, ajvStandalone: false, allowAny: false, unknownFormats: 'warn' });
-  assert.doesNotMatch(readGeneratedModelSource(path.join(root, 'sdk')), /@exprtlabs\/golem\/ajv/);
+  assert.doesNotMatch(readGeneratedModelSource(path.join(root, 'sdk')), /requireModelValidator\(validators, /);
   assert.doesNotMatch(fs.readFileSync(path.join(root, 'src/cart.model.generated.ts'), 'utf8'), /\$validator|modelTypeDefinitions/);
   await runPipeline(config, { check: true });
 });

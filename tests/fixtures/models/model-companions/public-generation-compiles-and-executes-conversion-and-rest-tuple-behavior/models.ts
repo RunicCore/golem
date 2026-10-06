@@ -1,6 +1,5 @@
 import { registerGeneratedModel } from "@exprtlabs/golem/model";
-import { createOpenApiSyncAjvEngine } from "@exprtlabs/golem/ajv";
-import { ajvIssues, createObjectCodec, registerIModelClass, requireAjvSchema, resolveGeneratedModelSchemaRefs, serdeFailFast, validationFailure, IssueRepresentation } from "@exprtlabs/golem/serde";
+import { createObjectCodec, registerIModelClass } from "@exprtlabs/golem/serde";
 export class MoneyModel {
   public currency = "USD";
   public amount = 0;
@@ -17,12 +16,6 @@ registerGeneratedModel(MoneyModel, {
   codecId: "Money",
 });
 registerIModelClass("Money", MoneyModel);
-const objectAjvFast = createOpenApiSyncAjvEngine({ allErrors: false, validationBindings: {} });
-const objectAjvAll = createOpenApiSyncAjvEngine({ allErrors: true, validationBindings: {} });
-const moneySchema = resolveGeneratedModelSchemaRefs({ $id: "Money", type: "object", required: ["currency", "amount"], additionalProperties: false, properties: { currency: { type: "string" }, amount: { type: "number" } } });
-objectAjvFast.addSchema(moneySchema, "Money");
-objectAjvAll.addSchema(moneySchema, "Money");
-const validateMoneyFast = requireAjvSchema(objectAjvFast.getSchema("Money"), "Money");
-const validateMoneyAll = requireAjvSchema(objectAjvAll.getSchema("Money"), "Money");
-function validateMoney(value: unknown, options?: { readonly failFast?: boolean }) { const validator = serdeFailFast(options) ? validateMoneyFast : validateMoneyAll; const ok = validator(value) === true; (validateMoney as { errors?: unknown }).errors = validator.errors; return ok; }
-createObjectCodec("Money", { stringify() { throw new Error("unused"); }, parse() { throw new Error("unused"); }, validate: validateMoney, assert(value) { if (validateMoneyFast(value) !== true) validationFailure(ajvIssues(validateMoneyFast, value, IssueRepresentation.Model)); return value; }, toWireFormat: encodeMoney, fromWireFormat: decodeMoney, schema: moneySchema });
+const moneySchema = { $id: "Money", type: "object", required: ["currency", "amount"], additionalProperties: false, properties: { currency: { type: "string" }, amount: { type: "number" } } };
+function validateMoney(value: unknown) { const data = value as { currency?: unknown; amount?: unknown } | null; return typeof data === "object" && data !== null && typeof data.currency === "string" && typeof data.amount === "number"; }
+createObjectCodec("Money", { stringify() { throw new Error("unused"); }, parse() { throw new Error("unused"); }, validate: validateMoney, assert(value) { return value; }, toWireFormat: encodeMoney, fromWireFormat: decodeMoney, schema: moneySchema });
