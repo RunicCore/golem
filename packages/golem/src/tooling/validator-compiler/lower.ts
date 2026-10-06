@@ -73,11 +73,28 @@ function holdsEvaluationKeyword(node: unknown): boolean {
 // Keywords that describe a schema and never reject a value.
 const ANNOTATION_KEYWORDS: ReadonlySet<string> = new Set(['title', 'description', 'default', 'examples', '$comment', 'deprecated', 'readOnly', 'writeOnly']);
 
-/** The values a branch allows when its only validation keyword is `const` or `enum`; undefined for any other branch. */
+const TYPE_TESTS: Readonly<Record<IrTypeName, (value: unknown) => boolean>> = {
+  string: value => typeof value === 'string',
+  number: value => typeof value === 'number' && Number.isFinite(value),
+  integer: value => Number.isInteger(value),
+  boolean: value => typeof value === 'boolean',
+  null: value => value === null,
+  object: value => typeof value === 'object' && value !== null && !Array.isArray(value),
+  array: value => Array.isArray(value),
+};
+
+/**
+ * The values a branch allows when its only validation keywords are `const` or `enum`, and a `type` that every value
+ * satisfies; undefined for any other branch.
+ */
 function literalBranchValues(branch: unknown): readonly unknown[] | undefined {
   if (!isRecord(branch) || Object.hasOwn(branch, 'const') === Array.isArray(branch.enum)) return undefined;
-  if (!Object.keys(branch).every(key => key === 'const' || key === 'enum' || ANNOTATION_KEYWORDS.has(key) || key.startsWith('x-'))) return undefined;
-  return Object.hasOwn(branch, 'const') ? [branch.const] : branch.enum as readonly unknown[];
+  if (!Object.keys(branch).every(key => key === 'const' || key === 'enum' || key === 'type' || ANNOTATION_KEYWORDS.has(key) || key.startsWith('x-'))) return undefined;
+  const values = Object.hasOwn(branch, 'const') ? [branch.const] : branch.enum as readonly unknown[];
+  if (!Object.hasOwn(branch, 'type')) return values;
+  const names = typeof branch.type === 'string' ? [branch.type] : Array.isArray(branch.type) ? branch.type as readonly unknown[] : [];
+  if (names.length === 0 || !names.every(isTypeName)) return undefined;
+  return values.every(value => names.some(name => TYPE_TESTS[name](value))) ? values : undefined;
 }
 
 /**

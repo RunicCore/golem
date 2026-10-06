@@ -373,6 +373,21 @@ test('a oneOf whose constants repeat keeps the union issue and its matched count
   await assertIssues(reordered, { x: 1, y: 2 }, [{ path: [], code: 'union', matched: 2 }]);
 });
 
+test('a constant branch with a type that every value satisfies folds into the literal issue', async () => {
+  await assertIssues({ anyOf: [{ type: 'string', enum: ['a', 'b'] }, { type: 'integer', const: 3 }] }, 'c', [{ path: [], code: 'literal', expected: ['a', 'b', 3] }]);
+  await assertIssues({ anyOf: [{ type: 'string', enum: ['a', 'b'] }, { type: 'integer', const: 3 }] }, 3, []);
+  await assertIssues({ oneOf: [{ type: ['string', 'null'], enum: ['a', null] }, { const: 1 }] }, 2, [{ path: [], code: 'literal', expected: ['a', null, 1] }]);
+  await assertIssues({ oneOf: [{ type: ['string', 'null'], enum: ['a', null] }, { const: 1 }] }, null, []);
+});
+
+test('a constant branch whose type a value does not satisfy keeps the union issue', async () => {
+  const schema = { anyOf: [{ type: 'string', enum: ['a', 1] }, { const: 'b' }] };
+  await assertIssues(schema, 'c', [{ path: [], code: 'union', matched: 0 }]);
+  await assertIssues(schema, 'a', []);
+  await assertIssues(schema, 1, [{ path: [], code: 'union', matched: 0 }]);
+  await assertIssues({ anyOf: [{ type: 'integer', const: 1.5 }, { const: 'b' }] }, 1.5, [{ path: [], code: 'union', matched: 0 }]);
+});
+
 test('a union of a constant and another shape keeps the union issue', async () => {
   const schema = { anyOf: [{ const: 'a' }, { type: 'object' }] };
   await assertIssues(schema, 'b', [{ path: [], code: 'union', matched: 0 }]);
