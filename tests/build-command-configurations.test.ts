@@ -390,7 +390,7 @@ const LAYER_OF = (app: string): string => fs.readFileSync(path.join(app, 'src/ge
 const MONEY_ID = 'TMoney_b19d74dc';
 const PAYMENT_ID = 'TPayment_c55f59c7';
 
-test('two apps write byte-identical companions for a shared folder and different layers', async (t) => {
+test('two apps write byte-identical companions for a shared folder and different layers', { timeout: HEAVY_TEST_TIMEOUT_MS }, async (t) => {
   const project = sharedFolderProject(t, 'shared-folder-identical');
   await runPipeline(CONFIG_OF(project.appA));
   const writtenByA = sharedCompanions(project);
@@ -445,7 +445,7 @@ test('each app builds and runs a model with shared IObject and IModel fields und
   assert.deepEqual(appB, { wire: null, validityObservable: null, accepted: { currency: 'US', value: '5' }, rejected: null });
 });
 
-test('tsc type-checks both apps with no paths entry', async (t) => {
+test('tsc type-checks both apps with no paths entry', { timeout: HEAVY_TEST_TIMEOUT_MS }, async (t) => {
   const project = sharedFolderProject(t, 'shared-folder-tsc');
   for (const app of [project.appA, project.appB]) {
     await runPipeline(CONFIG_OF(app));

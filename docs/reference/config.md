@@ -186,11 +186,13 @@ Each app includes the folder in its own tsconfig, with a `rootDir` that contains
 }
 ```
 
-A models job generates every model file that its tsconfig includes or imports, also outside `<root>/src`. So `golem generate` and `golem build` in the app generate the models of the folder, and a model of the app can use one as a field type. A model file of the folder imports only files of the folder and installed packages.
+A models job generates every model file that its tsconfig includes or imports, also outside `<root>/src`. So `golem generate` and `golem build` in the app generate the models of the folder, and a model of the app can use one as a field type. A model file of the folder imports only files of the folder and installed packages. When it imports another file, generation stops with an error that names the import.
 
 The generated files beside the models of the folder are the same text in every app. Each app has its own layer, `models.generated.ts` in `models.output`. The layer holds the `mobx` and `validation` settings of the app and the schemas, validators and serde bindings of its models. A generated file of the folder imports the layer through the specifier `#golem-models`. So each app runs the shared models with its own profile.
 
-Golem resolves `#golem-models` for `golem build`, the Node loader, the Vite plugin, the esbuild plugin and TypeScript. The tsconfig needs no `paths` entry. A tool outside golem needs an entry in the `package.json` of the app, or its own alias:
+Golem resolves `#golem-models` for `golem build`, the Node loader, the Vite plugin, the esbuild plugin and TypeScript. The tsconfig needs no `paths` entry.
+
+A tool outside golem needs help in two cases. Node reads an `imports` entry from the nearest `package.json` of the importing file. So this entry in the `package.json` of the app reaches the files inside the app and the JavaScript that `tsc` emits into its output folder:
 
 ```json
 {
@@ -198,9 +200,9 @@ Golem resolves `#golem-models` for `golem build`, the Node loader, the Vite plug
 }
 ```
 
-Use the `models.output` of the app in the path.
+The path is relative to that `package.json`; use the `models.output` of the app. A tool that runs the TypeScript sources of the shared folder, such as Jest, Vitest or tsx, needs its own alias, or a `paths` entry in its tsconfig, that maps `#golem-models` to the layer of the app.
 
-Give the shared folder a `package.json` with a `name`. Golem then names each `TSerde` and `TValidation` function of the folder by that package, so its id is the same in every app. Two shared folders without a name that have a function with the same file name and export name fail with a collision error.
+Give the shared folder a `package.json` with a `name`. Golem then names each `TSerde` and `TValidation` function of the folder by that package, so its id is the same in every app. The `name` is enough when the models and their functions are in the shared folder. When a model outside the folder uses a function of the folder, the `package.json` of the folder also needs an `exports` entry that reaches the file of the function. Without it, generation fails with [RUNM1060](/reference/diagnostics#runm1060). Two shared folders without a name that have a function with the same file name and export name fail with a collision error.
 
 One process at a time writes the generated files of a shared folder. It keeps the lock in `.golem.lock` in the folder. Put `.golem.lock` in `.gitignore`. The lock rules are in the [watch guide](/guide/watch#shared-model-folders).
 
