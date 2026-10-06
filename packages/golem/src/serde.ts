@@ -1,3 +1,4 @@
+/// <reference path="./golem-models.ts" preserve="true" />
 /**
  * IObject/IModel JSON and object-plane conversion.
  *
@@ -8,7 +9,7 @@
  * Tests that run no rewrite import generated functions directly.
  */
 
-import type { WireFormat } from './model.js';
+import type { GeneratedModelValidatorEnhancer, WireFormat } from './model.js';
 import { untransformedCallError, type SerdeOptions, type ValidateOptions } from './object-codec.js';
 
 export {
@@ -39,6 +40,26 @@ export {
 } from './object-codec.js';
 export type { ObjectCodec, ObjectCodecImpl, SerdeOptions, ValidateOptions, ValidationPlane } from './object-codec.js';
 export type { WireFormat } from './model.js';
+
+/** The JSON schemas the layer holds for one codec id. */
+export type GolemCodecSchemas = object;
+
+/** The serde functions the layer holds for one codec id. */
+export interface GolemSerdeBinding {
+  readonly serialize: (value: unknown) => unknown;
+  readonly deserialize: (value: unknown) => unknown;
+}
+
+/** The MobX hook of the layer: the type of `enhanceValidatorWithMobX`. */
+export type GolemValidatorEnhancer = GeneratedModelValidatorEnhancer;
+
+/** What `#golem-models` exports: the profile, the validator hook, and the schemas and serde bindings by codec id. */
+export interface GolemLayer {
+  readonly profile: { readonly validation: boolean; readonly mobx: boolean };
+  readonly enhanceValidator?: GolemValidatorEnhancer;
+  readonly schemas: Readonly<Record<string, GolemCodecSchemas>>;
+  readonly serdeBindings: Readonly<Record<string, GolemSerdeBinding>>;
+}
 export { IssueRepresentation, IssueSource } from './errors.js';
 
 function untransformed(name: string): never {
