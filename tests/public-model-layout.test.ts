@@ -35,7 +35,7 @@ test('the public exports of generated model companions match the frozen list', t
   // Every other generated file is internal, the validators module included.
   assert.deepEqual(
     result.artifacts.filter(a => !a.path.endsWith('.model.generated.ts')).map(a => path.basename(a.path)).sort(),
-    ['codec-keys.json', 'models.generated.ts', 'models.validators.generated.ts'],
+    ['codec-keys.json', 'model-manifest.json', 'models.generated.ts', 'models.validators.generated.ts'],
   );
   for (const artifact of companions) {
     fs.mkdirSync(path.dirname(artifact.path), { recursive: true });

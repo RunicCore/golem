@@ -53,7 +53,7 @@ export interface RewriteProject {
   readonly expectedGenerated: readonly string[];
   /**
    * Edits for one file as the host will compile it, `dependencies` as absolute paths; undefined when the file has no
-   * rewrite. A file outside the tsconfig's directory is scanned like any other, and the scan fails one that needs a rewrite. Throws a `GolemHostError` (file, line, "run golem generate") on scan diagnostics.
+   * rewrite. A file outside the tsconfig's directory is scanned and rewritten like any other. Throws a `GolemHostError` (file, line, "run golem generate") on scan diagnostics.
    */
   rewrite(filename: string, text: string): { code: string; map: SourceMapV3; dependencies: readonly string[] } | undefined;
   /** Tell the session these files changed on disk (new, edited or removed). */

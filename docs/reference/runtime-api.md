@@ -438,7 +438,7 @@ Every later import of the process goes through the loader. The loader needs a `g
 
 - Node before 22.18 needs `--experimental-strip-types` as well: Node strips the types after the loader rewrites the file. Node 22.18 and later, including Node 24, strip types by default.
 - A call that cannot be rewritten fails the load with the file and the line.
-- A workspace package symlinked into `node_modules` loads from its real path. Its calls are rewritten when that path lies under the directory of your tsconfig. A call in a package outside that directory fails the load with the file and line; give that package its own `golem.yaml` and build it there. With `preserveSymlinks` in TypeScript or in your bundler, the package keeps its `node_modules` path, so the host skips it, and the call fails at run time with `parse<T> was not rewritten`.
+- A workspace package symlinked into `node_modules` loads from its real path, and its calls are rewritten wherever that path lies, inside the directory of your tsconfig or outside it. With `preserveSymlinks` in TypeScript or in your bundler, the package keeps its `node_modules` path, so the host skips it, and the call fails at run time with `parse<T> was not rewritten`.
 - Rewrites need ES modules. A `.cts` file, or a `.ts` file under a CommonJS `package.json`, that holds a call to rewrite fails with a message that names the file. Use `.mts`, `"type": "module"`, or `golem build`.
 - `.tsx` is not supported: Node cannot strip it.
 - Only `.ts`, `.mts` and `.cts` files are rewritten.

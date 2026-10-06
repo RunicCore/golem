@@ -248,23 +248,33 @@ for (const bundler of BUNDLERS) {
 }
 
 /** A workspace package symlinked into the project's node_modules: its real path is outside the project root and outside node_modules. */
-function symlinkedPackage(t: TestContext, root: string): string {
+function symlinkedPackage(t: TestContext, root: string): void {
   const workspacePackage = createFixtureProject(t, 'golem-bundler-workspace-package-');
   linkProjectPackages(workspacePackage, { '@exprtlabs/golem': path.join(workspace, 'packages/golem') });
   write(workspacePackage, 'package.json', JSON.stringify({ name: 'workspace-lib', type: 'module', exports: './lib.ts' }));
   write(workspacePackage, 'lib.ts', `import { parse } from '${SERDE}';\nimport type { TMoney } from '${path.join(root, 'src/money.model.ts')}';\nexport const value = parse<TMoney>('{"currency":"USD","value":"1"}');\n`);
   linkProjectPackages(root, { 'workspace-lib': workspacePackage });
-  write(root, 'src/linked.ts', "import { value } from 'workspace-lib';\nconsole.log(JSON.stringify(value));\n");
-  return path.join(workspacePackage, 'lib.ts');
+  write(root, 'src/linked.ts', "import './money.model.js';\nimport { value } from 'workspace-lib';\nconsole.log(JSON.stringify(value));\n");
 }
 
 for (const bundler of BUNDLERS) {
-  test(`${bundler.name}: a parse call in a workspace package symlinked into node_modules fails the build with the file and the line instead of bundling unrewritten`, async (t) => {
+  test(`${bundler.name}: a parse call in a file outside the project, which the project imports by its path, is rewritten and the bundle runs`, async (t) => {
+    const root = await generatedProject(t, `${bundler.name}-outside-file`);
+    const outside = createFixtureProject(t, 'golem-bundler-outside-');
+    linkProjectPackages(outside, { '@exprtlabs/golem': path.join(workspace, 'packages/golem') });
+    write(outside, 'lib.ts', `import { parse } from '${SERDE}';\nimport type { TMoney } from '${path.join(root, 'src/money.model.ts')}';\nexport const value = parse<TMoney>('{"currency":"USD","value":"1"}');\n`);
+    write(root, 'src/outside.ts', `import './money.model.js';\nimport { value } from '${path.join(outside, 'lib.js')}';\nconsole.log(JSON.stringify(value));\n`);
+    const bundle = await build(bundler, t, root, 'src/outside.ts');
+    const result = await command(root, process.execPath, [bundle]);
+    assert.deepEqual(JSON.parse(result.stdout), { currency: 'USD', value: '1' });
+  });
+
+  test(`${bundler.name}: a parse call in a workspace package symlinked into node_modules is rewritten and the bundle runs`, async (t) => {
     const root = await generatedProject(t, `${bundler.name}-symlinked-package`);
-    const library = symlinkedPackage(t, root);
-    const message = await failure(build(bundler, t, root, 'src/linked.ts'));
-    assert.ok(message.includes(`${path.relative(root, library).split(path.sep).join('/')}:3:`), message);
-    assert.match(message, /outside the project root/);
+    symlinkedPackage(t, root);
+    const bundle = await build(bundler, t, root, 'src/linked.ts');
+    const result = await command(root, process.execPath, [bundle]);
+    assert.deepEqual(JSON.parse(result.stdout), { currency: 'USD', value: '1' });
   });
 }
 
@@ -366,6 +376,18 @@ test('vite serve: a module whose model had no generated code transforms again on
   await assert.rejects(server.transformRequest('/src/main.ts'), /run golem generate/);
   await runPipeline(path.join(root, 'golem.yaml'));
   server.watcher.emit('add', keyTable(root));
+  assert.equal(send.mock.calls.filter((call) => (call.arguments[0] as { type?: string } | undefined)?.type === 'full-reload').length, 1);
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  assert.match((await server.transformRequest('/src/main.ts'))?.code ?? '', /__golem_requireObjectCodec\(/);
+});
+
+test('vite serve: a generated model file outside the project root transforms again a module that failed, as one inside does', async (t) => {
+  const root = await generatedProject(t, 'vite-recover-outside', { generate: false });
+  const server = await serve(t, root);
+  const send = t.mock.method(server.ws, 'send', () => undefined);
+  await assert.rejects(server.transformRequest('/src/main.ts'), /run golem generate/);
+  await runPipeline(path.join(root, 'golem.yaml'));
+  server.watcher.emit('add', path.join(createFixtureProject(t, 'golem-bundler-outside-'), 'shared.model.generated.ts'));
   assert.equal(send.mock.calls.filter((call) => (call.arguments[0] as { type?: string } | undefined)?.type === 'full-reload').length, 1);
   await new Promise((resolve) => setTimeout(resolve, 5));
   assert.match((await server.transformRequest('/src/main.ts'))?.code ?? '', /__golem_requireObjectCodec\(/);

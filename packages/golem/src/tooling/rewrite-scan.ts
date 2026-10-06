@@ -1,7 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import * as ts from './typescript-ns.js';
-import { contains } from './config.js';
 import { GolemDiagnosticSeverity, isRecord } from './generator-api.js';
 import type { GeneratorSession, GolemDiagnostic } from './generator-api.js';
 import { CODEC_KEY_FILE, operationCodecRegistryPath } from './generated-paths.js';
@@ -52,7 +51,6 @@ const CODE_TYPE_ARGUMENT = 'RUNM1066';
 const CODE_NO_CODEC = 'RUNM1067';
 const CODE_RESERVED_PREFIX = 'RUNM1068';
 const CODE_IMPORT_CLASH = 'RUNM1069';
-const CODE_OUTSIDE_ROOT = 'RUNM1070';
 const CODE_NEST_NO_CODEC = 'RUNM1071';
 const CODE_NEST_REGISTRY = 'RUNM1072';
 
@@ -605,14 +603,9 @@ export function projectSources(program: ts.Program): ts.SourceFile[] {
     && !file.fileName.split(/[\\/]/).includes('node_modules'));
 }
 
-/** `noEmit` and `emitDeclarationOnly` leave no JavaScript to emit: `golem build` stages nothing then, and the project scan of `golem check` has no outside source to reject. */
+/** `noEmit` and `emitDeclarationOnly` leave no JavaScript to emit: `golem build` stages nothing then. */
 export function emitsJavaScript(options: ts.CompilerOptions): boolean {
   return options.noEmit !== true && options.emitDeclarationOnly !== true;
-}
-
-/** The sources of `sources` outside `root`, the tsconfig's directory: a staged copy of the project cannot hold them, so `golem build` and the project scan of `golem check` both reject each one. */
-export function outsideProjectRoot(root: string, sources: readonly ts.SourceFile[]): ts.SourceFile[] {
-  return sources.filter((file) => !contains(root, file.fileName));
 }
 
 /** Finds the rewrite sites of the files of one program. A file's text is the program's own; the codec keys come from `codecKeysFile` and the manifests the program advertises. */
@@ -639,21 +632,8 @@ export class RewriteScanner {
       && path.basename(file.fileName) !== CODEC_KEY_FILE;
   }
 
-  private scan(file: ts.SourceFile, relative: string): FileScanResult {
-    const scan = scanFile({ root: this.root, checker: this.checker, keys: this.keys, nest: this.nest }, file);
-    if (!relative.startsWith('../')) return resultOf(scan);
-    // A rewrite names its file by a root-relative path, so a site here cannot be rewritten yet.
-    const first = scan.edits.length > 0 ? file.getLineAndCharacterOfPosition(Math.min(...scan.edits.map((edit) => edit.start))) : undefined;
-    const site = first ? { line: first.line + 1, column: first.character + 1 } : scan.diagnostics[0];
-    const diagnostics: GolemDiagnostic[] = site ? [{
-      code: CODE_OUTSIDE_ROOT,
-      severity: GolemDiagnosticSeverity.Error,
-      message: `"${relative}" has a rewrite site but lies outside the project root. Move it under the root, or give the package its own golem.yaml and build it with that.`,
-      file: relative,
-      line: site.line,
-      column: site.column,
-    }] : [];
-    return { edits: [], imports: [], diagnostics, nestCodecSites: [], dependencies: [] };
+  private scan(file: ts.SourceFile): FileScanResult {
+    return resultOf(scanFile({ root: this.root, checker: this.checker, keys: this.keys, nest: this.nest }, file));
   }
 
   /**
@@ -663,27 +643,12 @@ export class RewriteScanner {
    */
   scanFile(filename: string): FileScanResult | undefined {
     const file = this.program.getSourceFile(filename);
-    return file && this.candidate(file) ? this.scan(file, portable(this.root, file.fileName)) : undefined;
+    return file && this.candidate(file) ? this.scan(file) : undefined;
   }
 
-  /**
-   * Every project source that needs a rewrite, by root-relative POSIX path in path order, and the diagnostics of all candidates in the same order: what `golem build` stages and rewrites.
-   * In a project that emits JavaScript, a source outside the root fails here as it fails `golem build`, whether or not it has a rewrite site, so `files` holds none of them.
-   */
+  /** Every project source that needs a rewrite, by root-relative POSIX path in path order, and the diagnostics of all candidates in the same order: what `golem build` stages and rewrites. */
   scanProgram(): { readonly files: ReadonlyMap<string, FileScanResult>; readonly diagnostics: readonly GolemDiagnostic[] } {
-    const sources = projectSources(this.program);
-    if (!emitsJavaScript(this.program.getCompilerOptions())) return this.scanFiles(sources.map((file) => file.fileName));
-    const outside = outsideProjectRoot(this.root, sources)
-      .map((file) => portable(this.root, file.fileName))
-      .sort(compareText)
-      .map((relative): GolemDiagnostic => ({
-        code: CODE_OUTSIDE_ROOT,
-        severity: GolemDiagnosticSeverity.Error,
-        message: `"${relative}" lies outside the project root. Move it under the root, or give the package its own golem.yaml and build it with that.`,
-        file: relative,
-      }));
-    const scanned = this.scanFiles(sources.filter((file) => contains(this.root, file.fileName)).map((file) => file.fileName));
-    return { files: scanned.files, diagnostics: [...outside, ...scanned.diagnostics] };
+    return this.scanFiles(projectSources(this.program).map((file) => file.fileName));
   }
 
   /** As `scanProgram`, for the named absolute paths: the files a caller emits, which need not be all the program reaches. Non-candidates are skipped. */
@@ -695,7 +660,7 @@ export class RewriteScanner {
     const files = new Map<string, FileScanResult>();
     const diagnostics: GolemDiagnostic[] = [];
     for (const { file, relative } of sources) {
-      const result = this.scan(file, relative);
+      const result = this.scan(file);
       diagnostics.push(...result.diagnostics);
       if (result.edits.length > 0) files.set(relative, result);
     }

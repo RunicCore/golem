@@ -173,6 +173,49 @@ models:
   output: src/generated/models
 ```
 
+### A folder shared by several apps
+
+Give a folder that several apps share its own `golem.yaml` and tsconfig, and run `golem generate` there. The models of the folder are generated into the folder.
+
+```yaml
+# shared/golem.yaml
+version: 1
+mobx: false
+validation: true
+models:
+  root: .
+```
+
+Each app includes the folder in its own tsconfig, with a `rootDir` that contains both:
+
+```json
+{
+  "compilerOptions": { "rootDir": "..", "outDir": "build" },
+  "include": ["src/**/*.ts", "../shared/**/*.ts"]
+}
+```
+
+Run `golem generate` in the folder first. The folder then holds a `model-manifest.json` beside its generated models. It names the codec id of each model of the folder.
+
+The app does not list a model of the folder in `models.sources`, and it does not generate one. `golem generate`, `golem check`, `golem build` and every host read the codec ids from the manifest of the folder. The app can then rewrite the `parse<T>()` calls that use the models of the folder. The `.golem/codec-keys.json` of the app names only the models of the app.
+
+The app can have models of its own, with its own `mobx` and `validation`. They do not have to match the folder.
+
+```yaml
+# app/golem.yaml
+version: 1
+mobx: true
+validation: false
+models:
+  root: .
+  sources:
+    - src/order.model.ts
+```
+
+If a generated file of the folder names a `model-manifest.json` that does not exist, golem stops and names the missing file. Run `golem generate` in the folder.
+
+The apps share one generated copy of each model. `golem build`, `golem check` and every host rewrite the `parse<T>()` calls in the shared files for the app that builds them.
+
 The global `allowAny` policy defaults to `false`. An `IObject` or `IModel` can
 opt in with `IObject<Fields, { allowAny: true }>` or tighten a global `true`
 profile with `IObject<Fields, { allowAny: false }>`. The declaration's own
