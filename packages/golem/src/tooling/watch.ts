@@ -3,7 +3,7 @@ import path from 'node:path';
 import { contains } from './config.js';
 import type { GolemConfig } from './config.js';
 import { DEFAULT_CONTROLLER_SUFFIXES, DEFAULT_MODEL_SUFFIXES, discoverSources, errorMessage, hasErrorCode, suffixPattern } from './generator-api.js';
-import { sharedFolderOf } from './type-analysis/project.js';
+import { sharedFolderOf } from './shared-folder.js';
 import { GeneratorSessionResources, runPipeline, strongestInputKind } from './pipeline.js';
 import type { InputKind, PipelineState } from './pipeline.js';
 
@@ -25,11 +25,15 @@ function sourceCandidates(config: GolemConfig, kind: 'models' | 'controllers', k
     // the project itself is the repository: only the directory of the source is scanned then.
     const pattern = suffixPattern(suffixes);
     const sharedFolders = new Set<string>();
+    const inputOfDirectory = new Map<string, string>();
     for (const [input, inputKind] of known) {
       if (inputKind === 'models' && /(?<!\.d)\.[cm]?ts$/.test(input) && !input.split(path.sep).includes('node_modules') && !contains(job.options.root, input)) {
-        const folder = sharedFolderOf(path.dirname(input));
-        sharedFolders.add(contains(folder, job.options.root) ? path.dirname(input) : folder);
+        inputOfDirectory.set(path.dirname(input), input);
       }
+    }
+    for (const [directory, input] of inputOfDirectory) {
+      const folder = sharedFolderOf(input);
+      sharedFolders.add(contains(folder, job.options.root) ? directory : folder);
     }
     for (const folder of sharedFolders) {
       // A folder inside another is scanned with it.

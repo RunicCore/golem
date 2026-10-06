@@ -252,13 +252,52 @@ test('watch scans only the directory of a shared model when its shared folder is
   try {
     await until(() => runs() === 1 && fs.existsSync(path.join(shared, 'money.model.generated.ts')), () => `initial generation ${context()}`);
 
-    // A model file in an unrelated subtree of the repository is no input of the models job: it starts no run.
+    // A model file in an unrelated subtree of the repository is no input of the models job: it starts no run. The wait
+    // keeps the two writes in different polls, so a run that the unrelated file starts is not merged with the next one.
     fs.writeFileSync(path.join(root, 'unrelated/deep/other.model.ts'), model('Other'));
     await new Promise((resolve) => setTimeout(resolve, 1500));
-    assert.equal(runs(), 1, 'a file outside every included directory starts no run');
-
     fs.writeFileSync(path.join(shared, 'tax.model.ts'), model('Tax'));
-    await until(() => fs.existsSync(path.join(shared, 'tax.model.generated.ts')), () => `a model beside the shared model is generated ${context()}`);
+    await until(() => runs() >= 2 && fs.existsSync(path.join(shared, 'tax.model.generated.ts')), () => `a model beside the shared model is generated ${context()}`);
+    assert.equal(runs(), 2, 'one run for the model beside the shared model, none for the unrelated file');
+  } finally {
+    stop();
+  }
+});
+
+test('watch scans only the shared folder of a shared model that has its package.json beside it', async (t: TestContext) => {
+  const { root, config } = fixture(t);
+  // A workspace outside the project holds the shared folder and an unrelated subtree; no package.json lies above them.
+  const workspaceDirectory = path.join(path.dirname(root), `${path.basename(root)}-workspace`);
+  const shared = path.join(workspaceDirectory, 'shared');
+  const app = path.join(root, 'app');
+  fs.mkdirSync(path.join(app, 'src'), { recursive: true });
+  fs.mkdirSync(shared, { recursive: true });
+  fs.mkdirSync(path.join(workspaceDirectory, 'unrelated/deep'), { recursive: true });
+  t.after(() => fs.rmSync(workspaceDirectory, { recursive: true, force: true }));
+  fs.symlinkSync(path.join(root, 'node_modules'), path.join(workspaceDirectory, 'node_modules'), 'dir');
+  fs.rmSync(path.join(root, 'src'), { recursive: true, force: true });
+  fs.writeFileSync(path.join(shared, 'package.json'), '{"name":"shared","private":true,"type":"module"}');
+  fs.writeFileSync(path.join(app, 'tsconfig.json'), JSON.stringify({
+    compilerOptions: { target: 'ES2022', module: 'NodeNext', moduleResolution: 'NodeNext', strict: true, skipLibCheck: true },
+    include: ['src/**/*.ts', `${path.relative(app, shared).split(path.sep).join('/')}/**/*.ts`],
+  }));
+  const model = (name: string): string => `import type { IModel } from '@exprtlabs/golem/model';\n\nexport type T${name} = IModel<{ id: string }>;\n`;
+  fs.writeFileSync(path.join(app, 'src/cart.model.ts'), model('Cart'));
+  fs.writeFileSync(path.join(shared, 'money.model.ts'), model('Money'));
+  fs.writeFileSync(config, `tsconfig: app/tsconfig.json\n${fs.readFileSync(config, 'utf8').replace('root: .', 'root: app')}`);
+  const runs = countRuns(t);
+  const errors: unknown[] = [];
+  const stop = watchPipeline(config, error => { errors.push(error); });
+  const context = (): string => `(errors=${errors.map(String).join('; ')})`;
+  try {
+    await until(() => runs() === 1 && fs.existsSync(path.join(shared, 'money.model.generated.ts')), () => `initial generation ${context()}`);
+
+    // The wait keeps the two writes in different polls, so a run that the unrelated file starts is not merged with the next one.
+    fs.writeFileSync(path.join(workspaceDirectory, 'unrelated/deep/other.model.ts'), model('Other'));
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    fs.writeFileSync(path.join(shared, 'tax.model.ts'), model('Tax'));
+    await until(() => runs() >= 2 && fs.existsSync(path.join(shared, 'tax.model.generated.ts')), () => `a model beside the shared model is generated ${context()}`);
+    assert.equal(runs(), 2, 'one run for the model beside the shared model, none for the unrelated file');
   } finally {
     stop();
   }

@@ -2,7 +2,10 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, isAbsolute, join, normalize, parse, relative, resolve, sep } from 'node:path';
 import * as ts from '../typescript-ns.js';
+import { canonicalFilename, sharedFolderOf } from '../shared-folder.js';
 import { DEFAULT_MODEL_SUFFIXES, discoverSources, suffixPattern, type GeneratorSession, type InputObserver } from '../generator-api.js';
+
+export { canonicalFilename, sharedFolderOf };
 
 export interface ProgramInfo {
   readonly configPath?: string;
@@ -16,10 +19,6 @@ export interface ProgramInfo {
   readonly host: ts.CompilerHost;
 }
 
-export function canonicalFilename(filename: string): string {
-  return normalize(resolve(filename));
-}
-
 /**
  * Stable source identity used in generated metadata.  Absolute paths are
  * useful while resolving a program but would make generated output depend on
@@ -28,19 +27,6 @@ export function canonicalFilename(filename: string): string {
  */
 export function portableRelativeFilename(filename: string, root: string): string {
   return relative(canonicalFilename(root), canonicalFilename(filename)).replace(/\\/g, '/');
-}
-
-/**
- * The folder a shared source belongs to: the nearest directory above it that holds a `package.json`, else its own
- * directory. A file of a shared folder is identified by its path from this folder, so every app that includes the folder
- * gives it the same identity.
- */
-export function sharedFolderOf(source: string): string {
-  const own = dirname(canonicalFilename(source));
-  for (let directory = own; ; directory = dirname(directory)) {
-    if (existsSync(join(directory, 'package.json'))) return directory;
-    if (dirname(directory) === directory) return own;
-  }
 }
 
 /**
