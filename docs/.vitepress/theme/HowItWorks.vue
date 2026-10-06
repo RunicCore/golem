@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref } from 'vue';
 
-// 0: declaration only · 1: JSON Schema · 2: Ajv validator · 3: call found · 4: call rewritten.
+// 0: declaration only · 1: JSON Schema · 2: validator · 3: call found · 4: call rewritten.
 const FINAL = 4;
 const STEP_MS = 1100;
 // Server render and reduced motion show the final state.
@@ -61,8 +61,8 @@ onBeforeUnmount(() => {
       </div>
       <span class="link across" :class="{ on: step >= 1 }" aria-hidden="true" />
       <div class="hud panel schema" :class="{ on: step >= 1 }">
-        <div class="fname">JSON Schema → Ajv</div>
-        <pre><code><span class="ln step" :class="{ on: step >= 1 }">"title": { "type": "string", <mark>"minLength": 1</mark> }</span><span class="ln step" :class="{ on: step >= 1 }">"due": { "type": "string", <mark>"format": "date-time"</mark> }</span><span class="ln step note" :class="{ on: step >= 2 }">→ compiled Ajv validator</span></code></pre>
+        <div class="fname">JSON Schema → validator</div>
+        <pre><code><span class="ln step" :class="{ on: step >= 1 }">"title": { "type": "string", <mark>"minLength": 1</mark> }</span><span class="ln step" :class="{ on: step >= 1 }">"due": { "type": "string", <mark>"format": "date-time"</mark> }</span><span class="ln step note" :class="{ on: step >= 2 }">→ compiled validator</span></code></pre>
       </div>
       <span class="link down" :class="{ on: step >= 3 }" aria-hidden="true" />
       <div class="hud panel call" :class="{ on: step >= 3 }">

@@ -562,7 +562,7 @@ test('compact OpenAPI schema closure feeds nested model first/all validation and
     throw new Error('generation unexpectedly accepted a missing OpenAPI validation schema closure');
   };
   const missingClosureError = captureMissingClosureDiagnostic();
-  assert.match(missingClosureError, /Regenerate the referenced model manifest with standalone schema closure metadata/);
+  assert.match(missingClosureError, /Regenerate the referenced model manifest with schema closure metadata/);
   assert.equal(captureMissingClosureDiagnostic(), missingClosureError, 'missing closure diagnostics are deterministic across generation jobs');
 });
 
@@ -646,7 +646,7 @@ test('a Nest-style Payment keeps canonical codec identity across repeated compac
   assert.throws(
     generatePayment,
     error => error instanceof TypeError
-      && error.message === `Conflicting standalone schema identity "${moneyClosure.codecId}".`,
+      && error.message === `Conflicting schema identity "${moneyClosure.codecId}".`,
     'two closure entries with one codec id and different schemas remain rejected',
   );
 });

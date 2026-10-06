@@ -155,7 +155,7 @@ test('validation plan identity compares owned definitions per model and wire pla
     : entry);
   assert.throws(
     () => buildCodecValidationPlan(graph, modelConflict),
-    error => error instanceof TypeError && error.message === `Conflicting standalone schema identity "${money.codecId}".`,
+    error => error instanceof TypeError && error.message === `Conflicting schema identity "${money.codecId}".`,
     'a changed child model constraint is still rejected',
   );
 
@@ -164,7 +164,7 @@ test('validation plan identity compares owned definitions per model and wire pla
     : entry);
   assert.throws(
     () => buildCodecValidationPlan(graph, wireConflict),
-    error => error instanceof TypeError && error.message === `Conflicting standalone schema identity "${money.codecId}#wire".`,
+    error => error instanceof TypeError && error.message === `Conflicting schema identity "${money.codecId}#wire".`,
     'a changed child wire constraint cannot be mistaken for the model schema',
   );
 });

@@ -96,7 +96,7 @@ function schemaWithId(schema: JsonSchema, id: string): object | boolean {
   if (typeof schema === 'boolean') return schema ? { $id: id } : { $id: id, not: true };
   if (schema.$id !== undefined && schema.$id !== id) {
     throw new TypeError(
-      `Standalone schema identity ${JSON.stringify(schema.$id)} conflicts with codec identity ${JSON.stringify(id)}.`,
+      `Schema identity ${JSON.stringify(schema.$id)} conflicts with codec identity ${JSON.stringify(id)}.`,
     );
   }
   return { ...schema, $id: id };
@@ -220,7 +220,7 @@ export function buildCodecValidationPlan(
     if (previous !== undefined) {
       if (stableSchema(schemaIdentityView(previous, schemaDefinitions.get(id)))
         !== stableSchema(schemaIdentityView(withId, preferredDefinitions))) {
-        throw new TypeError(`Conflicting standalone schema identity ${JSON.stringify(id)}.`);
+        throw new TypeError(`Conflicting schema identity ${JSON.stringify(id)}.`);
       }
       // Keep the first schema paired with the definition context recorded for
       // it above. Replacing only the payload would leave that context attached
@@ -282,7 +282,7 @@ export function buildCodecValidationPlan(
     const visit = (current: unknown, root = false, localReferences = true): unknown => {
       if (Array.isArray(current)) return current.map(item => visit(item, false, localReferences));
       if (current === null || typeof current !== 'object') return current;
-      if (active.has(current)) throw new TypeError('Cyclic schema data cannot be compiled as standalone validators.');
+      if (active.has(current)) throw new TypeError('Cyclic schema data cannot be compiled into validators.');
       active.add(current);
       try {
         const nestedResource = !root && Object.hasOwn(current, '$id');
@@ -301,7 +301,7 @@ export function buildCodecValidationPlan(
               ?? aliases.get(codecShortName(name));
             if (candidates && candidates.size > 1) {
               throw new TypeError(
-                `Cannot compile standalone validators: generated model schema reference ${JSON.stringify(name)} `
+                `Cannot compile validators: generated model schema reference ${JSON.stringify(name)} `
                 + `is ambiguous between codec identities ${[...candidates].sort().map(id => JSON.stringify(id)).join(', ')}. `
                 + 'Regenerate the referenced model manifest with an unambiguous codec identity.',
               );
@@ -309,14 +309,14 @@ export function buildCodecValidationPlan(
             const codecId = candidates?.values().next().value;
             if (codecId === undefined || !Object.hasOwn(schemas, codecId)) {
               throw new TypeError(
-                `Cannot compile standalone validators: generated model schema reference ${JSON.stringify(name)} is unresolved. `
-                + 'Regenerate the referenced model manifest with standalone schema closure metadata.',
+                `Cannot compile validators: generated model schema reference ${JSON.stringify(name)} is unresolved. `
+                + 'Regenerate the referenced model manifest with schema closure metadata.',
               );
             }
             if (residualPlane !== undefined) {
               if (!Object.hasOwn(schemas, `${codecId}${residualPlane}`)) {
                 throw new TypeError(
-                  `Cannot compile standalone validators: residual schema ${JSON.stringify(`${codecId}${residualPlane}`)} is unresolved. `
+                  `Cannot compile validators: residual schema ${JSON.stringify(`${codecId}${residualPlane}`)} is unresolved. `
                   + 'Regenerate the referenced model manifest so it publishes residual schemas.',
                 );
               }
