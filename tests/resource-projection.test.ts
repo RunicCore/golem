@@ -94,7 +94,7 @@ function projectionDocument(): Record<string, unknown> {
             embedded: { $ref: '#/components/schemas/Embedded' },
             anchored: { $ref: '#/components/schemas/Anchored' },
             // Component references inside a projected resource must resolve to
-            // the directional copy, including recursive dynamic references.
+            // the directional copy, including recursive references.
             treeAlias: { $ref: '#/components/schemas/Tree' },
             clientSecret: { type: 'string', writeOnly: true },
             serverValue: { type: 'string', readOnly: true },
@@ -114,14 +114,13 @@ function projectionDocument(): Record<string, unknown> {
           $id: 'urn:fixture:tree',
           type: 'object',
           additionalProperties: false,
-          $dynamicAnchor: 'node',
           required: ['value', 'serverValue'],
           properties: {
             value: { type: 'string' },
             serverValue: { type: 'string', readOnly: true },
             children: {
               type: 'array',
-              items: { $dynamicRef: '#node' },
+              items: { $ref: '#/components/schemas/Tree' },
             },
           },
         },
@@ -288,7 +287,7 @@ function schemaProperties(schema: unknown, label: string): Record<string, unknow
   return requireRecord(requireRecord(schema, label).properties, `${label}.properties`);
 }
 
-test('public directional resources preserve nested scopes and run through strict default Ajv consumers', async (t) => {
+test('public directional resources preserve nested scopes and run through generated validators in strict consumers', async (t) => {
   const root = mkdtempSync(path.join(tmpdir(), 'golem-resource-projection-'));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const input = path.join(root, 'openapi.json');
@@ -300,6 +299,7 @@ test('public directional resources preserve nested scopes and run through strict
     name: 'ResourceProjection',
     profile: { mobx: false, validation: true },
   });
+  assert.deepEqual(result.diagnostics ?? [], []);
   assert.equal(result.artifacts.every(({ path: filename }) => path.isAbsolute(filename)), true);
   assert.equal(existsSync(output), false, 'public generation must stay pure until materialization');
 

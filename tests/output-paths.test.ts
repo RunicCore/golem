@@ -88,15 +88,16 @@ test('YAML pipeline supports external OpenAPI and model roots, sources, and outp
   await runPipeline(config);
 
   const sdkClient = path.join(external, 'sdk/client.ts');
-  // cart.model.ts has no validation or serde bindings, so the job writes the
-  // codec keys (.golem/codec-keys.json, beside the inventory) but no shared
-  // models.generated.ts.
+  // The job validates, so besides the codec keys (.golem/codec-keys.json, beside
+  // the inventory) it writes the shared models.generated.ts and the validators.
   const modelOutput = path.join(root, '.golem/codec-keys.json');
   const sharedModelOutput = path.join(external, 'models-output/models.generated.ts');
+  const validatorsOutput = path.join(external, 'models-output/models.validators.generated.ts');
   const companion = path.join(path.dirname(source), 'cart.model.generated.ts');
   assert.equal(fs.existsSync(sdkClient), true);
   assert.equal(fs.existsSync(modelOutput), true);
-  assert.equal(fs.existsSync(sharedModelOutput), false);
+  assert.equal(fs.existsSync(sharedModelOutput), true);
+  assert.equal(fs.existsSync(validatorsOutput), true);
   assert.equal(fs.existsSync(companion), true);
 
   const inventoryFile = path.join(root, '.golem/outputs.json');
