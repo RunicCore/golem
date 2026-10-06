@@ -330,7 +330,7 @@ An error prints its code, location when known, and message, then stops generatio
 
 ### RUNM1073
 
-**Job reads the tsconfig above its root.** A `models` or `controllers` job's `root` has no `tsconfig.json` and `golem.yaml` sets no `tsconfig`, so the job reads the nearest `tsconfig.json` above its root, as `tsc` does: that file's `paths` and compiler options apply to the job. This is a warning: generation continues. The message names the job and the file. **Fix:** Add a `tsconfig.json` to the job's root to give it its own options, or set `tsconfig` in `golem.yaml` to the file the message names to state that the job is meant to use it.
+**Job reads the tsconfig above its root.** A `models` or `controllers` job's `root` has no `tsconfig.json` and `golem.yaml` sets no `tsconfig`, so the job reads the nearest `tsconfig.json` above its root, as `tsc` does: that file's `paths` and compiler options apply to the job. When that file is a solution tsconfig, the options of the referenced project that holds the job's sources apply, and the message names the solution file. This is a warning: generation continues. The job prints it when it runs, before it generates, so a failure that follows still names the file; a job skipped as unchanged prints nothing. The message names the job and the file. **Fix:** Add a `tsconfig.json` to the job's root to give it its own options, or set `tsconfig` in `golem.yaml` to the file the message names to state that the job is meant to use it.
 
 ## Validators (VALIDATE)
 
