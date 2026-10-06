@@ -108,7 +108,7 @@ Used by generated code: `runValidation` and, in operation modules, `operationVal
 ### Runtime validators {#runtime-validators}
 
 ```ts
-function validateWith(validator: RuntimeValidator, value: unknown): Promise<ValidationResult>;
+function validateWith(validator: Validator, value: unknown, all = true): Promise<ValidationResult>;
 ```
 
 `validateWith` runs one validator and returns `{ valid, issues }`. `all` defaults to `true`, which reports every issue; pass `false` to stop at the first. A validator that does not return an array throws `TypeError`.
@@ -371,7 +371,7 @@ Pass one `ModelValidationContext` to repeated serde, `validateInstance` and `Mod
 
 Types: `ObjectCodec`, `ObjectCodecImpl`, `SerdeOptions`, `ValidateOptions`, `ValidationPlane`, `WireFormat`; `IssueRepresentation` and `IssueSource` are re-exported from [`errors`](#errors).
 
-Used by generated code: `createObjectCodec`, `registerObjectCodec`, `getObjectCodec`, `requireObjectCodec`, `registerIModelClass`, `getIModelClass`, `requireIModelClass`, `findCodecIdForConstructor`, `resolveGeneratedModelSchemaRefs`, `resolveModelValidationContextValidator`, `requireModelValidator`, `isValidModelValue`, `modelValueIssues`, `assertModelValue`, `parseJson`, `serdeValidates`, `serdeFailFast`, `validationFailure`, `validationUnavailable` and the `stringifyJson*` writers.
+Used by generated code: `createObjectCodec`, `registerObjectCodec`, `getObjectCodec`, `requireObjectCodec`, `registerIModelClass`, `getIModelClass`, `requireIModelClass`, `findCodecIdForConstructor`, `resolveGeneratedModelSchemaRefs`, `resolveModelValidationContextValidator`, `parseJson`, `serdeValidates`, `serdeFailFast`, `validationFailure`, `validationUnavailable` and the `stringifyJson*` writers.
 
 ## `@exprtlabs/golem/nest` {#nest}
 
