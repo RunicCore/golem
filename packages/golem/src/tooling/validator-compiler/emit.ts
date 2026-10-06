@@ -532,6 +532,24 @@ class FunctionWriter {
         }
         this.close();
       }
+      // Ahead of `properties`, as in Ajv: with fail-fast the first issue is the object's own unknown key.
+      if (check.additional && visitsAdditional) {
+        const additional = check.additional;
+        const key = this.fresh('key');
+        const known = check.properties.length > 0 ? this.state.constant('known', `new Set(${JSON.stringify(check.properties.map(property => property.key))})`) : undefined;
+        const skipped = [...(known === undefined ? [] : [`${known}.has(${key})`]), ...patterns.map(({ expression }) => `${expression}.test(${key})`)];
+        this.open(`for (const ${key} of ${keys})`);
+        if (skipped.length > 0) this.line(`if (${skipped.join(' || ')}) continue;`);
+        if (additional.kind === 'forbid') {
+          this.issue(`code: 'unknownKey', key: ${key}`, `[...${PATH}, ${key}]`);
+        } else {
+          const schema = additional.schema;
+          const member = this.fresh('member');
+          this.line(`const ${member} = ${value}[${key}];`);
+          this.atChild(key, () => this.schema(schema, member));
+        }
+        this.close();
+      }
       for (const property of check.properties) {
         if (property.schema.kind === 'always' && !marks) continue;
         const schema = property.schema;
@@ -557,23 +575,6 @@ class FunctionWriter {
             this.atChild(key, () => this.schema(schema, member));
           }
           this.close();
-        }
-        this.close();
-      }
-      if (check.additional && visitsAdditional) {
-        const additional = check.additional;
-        const key = this.fresh('key');
-        const known = check.properties.length > 0 ? this.state.constant('known', `new Set(${JSON.stringify(check.properties.map(property => property.key))})`) : undefined;
-        const skipped = [...(known === undefined ? [] : [`${known}.has(${key})`]), ...patterns.map(({ expression }) => `${expression}.test(${key})`)];
-        this.open(`for (const ${key} of ${keys})`);
-        if (skipped.length > 0) this.line(`if (${skipped.join(' || ')}) continue;`);
-        if (additional.kind === 'forbid') {
-          this.issue(`code: 'unknownKey', key: ${key}`, `[...${PATH}, ${key}]`);
-        } else {
-          const schema = additional.schema;
-          const member = this.fresh('member');
-          this.line(`const ${member} = ${value}[${key}];`);
-          this.atChild(key, () => this.schema(schema, member));
         }
         this.close();
       }

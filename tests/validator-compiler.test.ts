@@ -46,6 +46,21 @@ test('required reports each missing key with the path ending at the key', async 
   await assertIssues({ required: ['a'] }, 'text', []);
 });
 
+test('an object reports its own required and unknown keys before the issues of its properties', async () => {
+  const validate = await compileSchema({
+    type: 'object',
+    required: ['id'],
+    properties: { id: { type: 'integer' }, a: { type: 'string' } },
+    additionalProperties: false,
+  });
+  assert.deepEqual(validate({ id: 1, a: 1, extra: true }, false), [{ path: ['extra'], code: 'unknownKey', key: 'extra' }]);
+  assert.deepEqual(validate({ a: 1, extra: true }, true), [
+    { path: ['id'], code: 'required', key: 'id' },
+    { path: ['extra'], code: 'unknownKey', key: 'extra' },
+    { path: ['a'], code: 'type', expected: ['string'] },
+  ]);
+});
+
 test('properties validate present keys at their own path', async () => {
   const schema = { properties: { a: { type: 'string' }, b: { properties: { c: { type: 'integer' } } } } };
   await assertIssues(schema, { a: 1, b: { c: 'x' } }, [
@@ -122,11 +137,11 @@ test('dependentSchemas applies the schema to the whole object when its trigger i
 test('patternProperties validate each matching key at its own path, and a matching key is not additional', async () => {
   const schema = { patternProperties: { '^x-': { type: 'integer' }, 'name$': { type: 'string' } }, additionalProperties: false };
   await assertIssues(schema, { 'x-a': 'no', fullname: 5, other: 1, 'x-name': true }, [
+    { path: ['other'], code: 'unknownKey', key: 'other' },
     { path: ['x-a'], code: 'type', expected: ['integer'] },
     { path: ['fullname'], code: 'type', expected: ['string'] },
     { path: ['x-name'], code: 'type', expected: ['integer'] },
     { path: ['x-name'], code: 'type', expected: ['string'] },
-    { path: ['other'], code: 'unknownKey', key: 'other' },
   ]);
   await assertIssues(schema, { 'x-a': 1, fullname: 'n' }, []);
   await assertIssues({ patternProperties: { '^\\p{L}+$': { type: 'integer' } } }, { 'é': 'x', '1': 'y' }, [{ path: ['é'], code: 'type', expected: ['integer'] }]);
