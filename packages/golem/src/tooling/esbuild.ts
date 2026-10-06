@@ -45,7 +45,7 @@ export function golem(options: GolemHostOptions = {}): Plugin {
         project = undefined;
         void closing?.then((opened) => { opened.close(); }, () => undefined);
       });
-      build.onResolve({ filter: /^#golem-models$/ }, async ({ importer }) => {
+      build.onResolve({ filter: new RegExp(`^${LAYER_SPECIFIER.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`) }, async ({ importer }) => {
         try {
           return { path: layerOf(await open(), importer) };
         } catch (error) {

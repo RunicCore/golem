@@ -309,15 +309,17 @@ function relativeImport(from: string, to: string): string {
  * `rewrite` with the edits that point each `#golem-models` import of `source` at the layer, so the emitted JavaScript needs
  * no mapping. A file with no such import keeps `rewrite` as it is; a project with no models job has no layer to point at.
  */
-function withLayerEdits(source: ts.SourceFile, rewrite: FileRewrite | undefined, layerFile: string | undefined, golemConfigFile: string, specifierTo: (layer: string) => string): FileRewrite | undefined {
+function withLayerEdits(source: ts.SourceFile, rewrite: FileRewrite | undefined, layer: { readonly file: string | undefined; readonly staged: boolean; readonly golemConfigFile: string; readonly tsconfigFile: string }, specifierTo: (layerFile: string) => string): FileRewrite | undefined {
   if (!source.text.includes(LAYER_SPECIFIER)) return rewrite;
   const edits: RewriteEdit[] = [];
   for (const statement of source.statements) {
     const specifier = ts.isImportDeclaration(statement) || ts.isExportDeclaration(statement) ? statement.moduleSpecifier : undefined;
     if (specifier === undefined || !ts.isStringLiteralLike(specifier) || specifier.text !== LAYER_SPECIFIER) continue;
-    if (layerFile === undefined) throw new Error(missingLayerMessage(source.fileName, golemConfigFile));
+    if (layer.file === undefined) throw new Error(missingLayerMessage(source.fileName, layer.golemConfigFile));
+    // A layer the tsconfig leaves out is not emitted: the import would name a file that does not exist.
+    if (!layer.staged) throw new Error(`${source.fileName} imports ${LAYER_SPECIFIER}, but the layer ${layer.file} is not in the program of ${layer.tsconfigFile}. Include the models output in the tsconfig.`);
     const start = specifier.getStart(source);
-    edits.push({ start, end: specifier.end, expect: source.text.slice(start, specifier.end), text: JSON.stringify(specifierTo(layerFile)) });
+    edits.push({ start, end: specifier.end, expect: source.text.slice(start, specifier.end), text: JSON.stringify(specifierTo(layer.file)) });
   }
   if (edits.length === 0) return rewrite;
   return { edits: [...rewrite?.edits ?? [], ...edits], imports: rewrite?.imports ?? [] };
@@ -336,12 +338,13 @@ function writeStage(project: Project, sources: readonly ts.SourceFile[], rewrite
   const base = commonDirectory([root, ...sources.map((source) => path.dirname(source.fileName)), ...project.rootDir === undefined ? [] : [project.rootDir]]);
   const stagePath = (original: string): string => insideStage(stageDirectory, path.join(stageDirectory, path.relative(base, original)));
   const keyOf = (original: string): string => posix(path.relative(base, original));
+  const layer = { file: layerFile, staged: layerFile !== undefined && sources.some((source) => path.resolve(source.fileName) === layerFile), golemConfigFile, tsconfigFile: project.configFile };
   const maps = new Map<string, SourceMapV3>();
   const manifests: string[] = [];
   const keep = new Set<string>(['tsconfig.json']);
   for (const source of sources) {
     const key = keyOf(source.fileName);
-    const rewrite = withLayerEdits(source, rewrites.get(posix(path.relative(root, source.fileName))), layerFile, golemConfigFile, (layer) => relativeImport(stagePath(source.fileName), stagePath(layer)));
+    const rewrite = withLayerEdits(source, rewrites.get(posix(path.relative(root, source.fileName))), layer, (layerFile) => relativeImport(stagePath(source.fileName), stagePath(layerFile)));
     const rewritten = rewrite && applyRewrites(source.text, rewrite, key);
     if (rewritten) maps.set(key, rewritten.map);
     atomicWrite(stagePath(source.fileName), rewritten?.code ?? source.text);

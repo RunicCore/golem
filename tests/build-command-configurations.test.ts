@@ -238,6 +238,17 @@ test('a project with no models job that imports #golem-models fails golem build 
   await assert.rejects(build(root), { message: `${path.join(root, 'src/use.ts')} imports #golem-models, but ${path.join(root, 'golem.yaml')} has no models job. Add a models job to golem.yaml.` });
 });
 
+test('a tsconfig whose include leaves out the layer fails golem build with the layer and the tsconfig named', async (t) => {
+  const { outer, app } = appBesideShared(t, 'build-layer-excluded');
+  write(app, 'src/main.ts', 'export const main: number = 1;\n');
+  write(app, 'src/generated/models/models.generated.ts', LAYER);
+  write(outer, 'shared/use.ts', LAYER_USE);
+  editTsconfig(app, (tsconfig) => { tsconfig.include = ['src/main.ts', '../shared/*.ts']; });
+
+  await assert.rejects(build(app), { message: `${path.join(outer, 'shared/use.ts')} imports #golem-models, but the layer ${path.join(app, 'src/generated/models/models.generated.ts')} is not in the program of ${path.join(app, 'tsconfig.json')}. Include the models output in the tsconfig.` });
+  assert.equal(fs.existsSync(path.join(app, 'build/shared/use.js')), false, 'no JavaScript that imports a missing file is emitted');
+});
+
 test('a declaration file outside the project, imported under a rootDir inside it, builds the layout tsc emits', async (t) => {
   // The compiler leaves a declaration file out of the rootDir check, so a project that only imports one keeps its own layout.
   const { outer, app } = appBesideShared(t, 'build-shared-declaration', { rootDir: 'src' });
