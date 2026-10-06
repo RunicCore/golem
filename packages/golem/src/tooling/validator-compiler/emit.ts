@@ -1,4 +1,4 @@
-import type { IrArray, IrCheck, IrDiscriminator, IrFunction, IrInstance, IrModule, IrNumber, IrObject, IrSchema, IrString, IrTypeName, IrUnion, IrValidation, IrValidationImport } from './ir.js';
+import type { IrArray, IrCheck, IrDiscriminator, IrFunction, IrInstance, IrModule, IrNumber, IrObject, IrSchema, IrString, IrType, IrTypeName, IrUnion, IrValidation, IrValidationImport } from './ir.js';
 
 export interface EmitOptions {
   /** The module specifier the generated file imports its runtime helpers from. */
@@ -12,8 +12,7 @@ type LocalHelper = 'hasOwn' | 'definedKeys' | 'isObject' | 'isMultipleOf' | 'sel
 
 // Parameters of every generated function: the value, the path stack, the issue list and the all-errors flag,
 // then, for a function that receives an evaluation record (see `IrFunction`), the caller's record. Every call and
-// header goes through `functionName`, `functionHeader` and `callFunction`, so a change to the parameter list is
-// made in one place.
+// header goes through `functionParameters` and `callFunction`, so a change to the parameter list is made in one place.
 const VALUE = 'v';
 const PATH = 'p';
 const ISSUES = 'i';
@@ -22,12 +21,23 @@ const INHERITED = 'e';
 // The record a function keeps or fills, and what it holds.
 const EVALUATION = 'r';
 
-function functionName(id: number): string {
-  return `f${id}`;
+function functionParameters(fn: IrFunction): string {
+  return [VALUE, PATH, ISSUES, ALL, ...(fn.receives ? [INHERITED] : [])].join(', ');
 }
 
-function functionHeader(fn: IrFunction): string {
-  return `function ${functionName(fn.id)}(${[VALUE, PATH, ISSUES, ALL, ...(fn.receives ? [INHERITED] : [])].join(', ')}) {`;
+/** The name a function has in the emitted module: functions that need no code of their own share their target's. */
+function functionName(index: number): string {
+  return `f${index}`;
+}
+
+/**
+ * Stands for a function in the text of another until the module is assembled: the final name depends on which
+ * functions turn out to be one. The character cannot occur otherwise, as a string literal escapes it.
+ */
+const FUNCTION_MARK = /\u0000(\d+)\u0000/g;
+
+function functionMark(id: number): string {
+  return `\u0000${id}\u0000`;
 }
 
 interface CallArguments {
@@ -39,15 +49,15 @@ interface CallArguments {
   readonly record?: string;
 }
 
-function callFunction(callee: IrFunction, args: CallArguments): string {
+function callFunction(callee: IrFunction, name: string, args: CallArguments): string {
   const record = callee.receives && args.record !== undefined ? [args.record] : [];
-  return `${functionName(callee.id)}(${[args.value, args.path ?? PATH, args.issues, args.all, ...record].join(', ')})`;
+  return `${name}(${[args.value, args.path ?? PATH, args.issues, args.all, ...record].join(', ')})`;
 }
 
 const LOCAL_HELPERS: Readonly<Record<LocalHelper, string>> = {
   // A key whose value is `undefined` is absent: a model's optional field may be set to `undefined` and JSON has no such value.
   definedKeys: 'const definedKeys = value => Object.keys(value).filter(key => value[key] !== undefined);',
-  hasOwn: 'const hasOwn = { call: (value, key) => Object.prototype.hasOwnProperty.call(value, key) && value[key] !== undefined };',
+  hasOwn: 'const hasOwn = (value, key) => Object.prototype.hasOwnProperty.call(value, key) && value[key] !== undefined;',
   isObject: "const isObject = value => typeof value === 'object' && value !== null && !Array.isArray(value);",
   // The quotient of two doubles is off by rounding (0.3 / 0.1), so a quotient within a few ulps of a non-zero
   // whole number counts. An infinite quotient falls back to the exact remainder.
@@ -113,6 +123,8 @@ class ModuleState {
   private readonly runtime = new Set<RuntimeHelper>();
   private readonly helpers = new Set<LocalHelper>();
   private readonly declarations: string[] = [];
+  /** The name of each declared constant, by what it holds: one constant serves every use of the same value. */
+  private readonly constants = new Map<string, string>();
   private imports: readonly IrValidationImport[] = [];
 
   public runtimeHelper(name: RuntimeHelper): string {
@@ -134,10 +146,17 @@ class ModuleState {
     return `v${index}`;
   }
 
-  /** Declares a module-level constant and returns its name. */
-  public constant(prefix: string, expression: string): string {
+  /**
+   * Declares a module-level constant and returns its name. A constant that holds the same value, as `key` says
+   * (the expression itself by default), is declared once.
+   */
+  public constant(prefix: string, expression: string, key = expression): string {
+    const identity = `${prefix}\u0000${key}`;
+    const known = this.constants.get(identity);
+    if (known !== undefined) return known;
     const name = `${prefix}${this.declarations.length}`;
     this.declarations.push(`const ${name} = ${expression};`);
+    this.constants.set(identity, name);
     return name;
   }
 
@@ -161,16 +180,20 @@ class FunctionWriter {
   /** The record that checks of the value being checked fill; undefined when this function keeps none, or while a child value is checked. */
   private record: string | undefined;
 
+  /** The functions this one calls, by the id they have after forwarding. */
+  public readonly calls = new Set<number>();
+
   public constructor(
     private readonly state: ModuleState,
     private readonly functions: readonly IrFunction[],
+    private readonly target: (id: number) => number,
     private readonly fn: IrFunction,
   ) {
     this.record = fn.collects || fn.receives ? EVALUATION : undefined;
   }
 
+  /** The body of the function, without its header line. */
   public write(): string {
-    this.lines.push(functionHeader(this.fn));
     this.line(`const pl = ${PATH}.length;`);
     this.line('let ok = true;');
     if (this.fn.collects) this.line(`const ${EVALUATION} = ${this.state.localHelper('newEvaluation')}();`);
@@ -241,7 +264,9 @@ class FunctionWriter {
   }
 
   private call(id: number, args: CallArguments): string {
-    return callFunction(this.functions[id], args);
+    const target = this.target(id);
+    this.calls.add(target);
+    return callFunction(this.functions[target], functionMark(target), args);
   }
 
   /** The function `id` applies to the same value in place: it fails this function when it fails, and fills this function's record. */
@@ -253,7 +278,21 @@ class FunctionWriter {
 
   private schema(schema: IrSchema, value: string): void {
     if (schema.kind === 'never') this.issue("code: 'never'");
-    else if (schema.kind === 'checks') for (const check of schema.checks) this.check(check, value);
+    else if (schema.kind === 'checks') this.checks(schema.checks, value);
+  }
+
+  private checks(checks: readonly IrCheck[], value: string): void {
+    for (let position = 0; position < checks.length; position++) {
+      const check = checks[position];
+      const next = checks[position + 1];
+      // A value that is not an object has already failed the type check, so the object keywords have nothing to test.
+      if (check.kind === 'type' && check.names.every(name => name === 'object') && next?.kind === 'object') {
+        this.objectOrTypeIssue(check, next, value);
+        position++;
+      } else {
+        this.check(check, value);
+      }
+    }
   }
 
   /** Runs `body` for the child `token` of the current value with the path extended; the child has its own evaluation, so no record is filled. */
@@ -318,7 +357,7 @@ class FunctionWriter {
         const hasOwn = this.state.localHelper('hasOwn');
         this.open(`if (isObject(${value}))`);
         for (const { trigger, fn } of check.entries) {
-          this.open(`if (${hasOwn}.call(${value}, ${literal(trigger)}))`);
+          this.open(`if (${hasOwn}(${value}, ${literal(trigger)}))`);
           this.callInPlace(fn, value);
           this.close();
         }
@@ -497,99 +536,120 @@ class FunctionWriter {
 
   private objectCheck(check: IrObject, value: string): void {
     this.state.localHelper('isObject');
+    this.block(`if (isObject(${value}))`, () => this.objectKeywords(check, value));
+  }
+
+  /** The type check that requires an object, and the object keywords in its `else`: the value is tested once. */
+  private objectOrTypeIssue(type: IrType, check: IrObject, value: string): void {
+    this.state.localHelper('isObject');
+    this.open(`if (!isObject(${value}))`);
+    this.issue(`code: 'type', expected: ${JSON.stringify(type.names)}`);
+    this.depth--;
+    this.line('} else {');
+    this.depth++;
+    const start = this.lines.length;
+    this.objectKeywords(check, value);
+    if (this.lines.length === start) {
+      this.lines.pop();
+      this.depth--;
+      this.line('}');
+    } else {
+      this.close();
+    }
+  }
+
+  private objectKeywords(check: IrObject, value: string): void {
     const hasOwn = this.state.localHelper('hasOwn');
-    this.block(`if (isObject(${value}))`, () => {
-      const marks = this.record !== undefined;
-      // A key that matches a pattern is not "additional" even when the pattern's schema accepts everything.
-      const patterns = check.patternProperties.map(entry => ({ entry, expression: this.state.constant('pattern', `new RegExp(${literal(entry.pattern)}, 'u')`) }));
-      const patternsToRun = patterns.filter(({ entry }) => entry.schema.kind !== 'always' || marks);
-      const visitsAdditional = check.additional !== undefined && (check.additional.kind === 'forbid' || check.additional.schema.kind !== 'always');
-      const keys = this.fresh('keys');
-      if (check.minProperties !== undefined || check.maxProperties !== undefined || patternsToRun.length > 0 || visitsAdditional || check.propertyNames !== undefined) {
-        this.line(`const ${keys} = ${this.state.localHelper('definedKeys')}(${value});`);
-      }
-      if (check.minProperties !== undefined) {
-        this.open(`if (${keys}.length < ${JSON.stringify(check.minProperties)})`);
-        this.limitIssue('tooSmall', 'properties', check.minProperties, true);
-        this.close();
-      }
-      if (check.maxProperties !== undefined) {
-        this.open(`if (${keys}.length > ${JSON.stringify(check.maxProperties)})`);
-        this.limitIssue('tooBig', 'properties', check.maxProperties, true);
-        this.close();
-      }
-      for (const key of check.required) {
-        this.open(`if (!${hasOwn}.call(${value}, ${literal(key)}))`);
+    const marks = this.record !== undefined;
+    // A key that matches a pattern is not "additional" even when the pattern's schema accepts everything.
+    const patterns = check.patternProperties.map(entry => ({ entry, expression: this.state.constant('pattern', `new RegExp(${literal(entry.pattern)}, 'u')`) }));
+    const patternsToRun = patterns.filter(({ entry }) => entry.schema.kind !== 'always' || marks);
+    const visitsAdditional = check.additional !== undefined && (check.additional.kind === 'forbid' || check.additional.schema.kind !== 'always');
+    const keys = this.fresh('keys');
+    if (check.minProperties !== undefined || check.maxProperties !== undefined || patternsToRun.length > 0 || visitsAdditional || check.propertyNames !== undefined) {
+      this.line(`const ${keys} = ${this.state.localHelper('definedKeys')}(${value});`);
+    }
+    if (check.minProperties !== undefined) {
+      this.open(`if (${keys}.length < ${JSON.stringify(check.minProperties)})`);
+      this.limitIssue('tooSmall', 'properties', check.minProperties, true);
+      this.close();
+    }
+    if (check.maxProperties !== undefined) {
+      this.open(`if (${keys}.length > ${JSON.stringify(check.maxProperties)})`);
+      this.limitIssue('tooBig', 'properties', check.maxProperties, true);
+      this.close();
+    }
+    for (const key of check.required) {
+      this.open(`if (!${hasOwn}(${value}, ${literal(key)}))`);
+      this.issue(`code: 'required', key: ${literal(key)}`, `[...${PATH}, ${literal(key)}]`);
+      this.close();
+    }
+    for (const { trigger, keys: dependents } of check.dependentRequired) {
+      if (dependents.length === 0) continue;
+      this.open(`if (${hasOwn}(${value}, ${literal(trigger)}))`);
+      for (const key of dependents) {
+        this.open(`if (!${hasOwn}(${value}, ${literal(key)}))`);
         this.issue(`code: 'required', key: ${literal(key)}`, `[...${PATH}, ${literal(key)}]`);
         this.close();
       }
-      for (const { trigger, keys: dependents } of check.dependentRequired) {
-        if (dependents.length === 0) continue;
-        this.open(`if (${hasOwn}.call(${value}, ${literal(trigger)}))`);
-        for (const key of dependents) {
-          this.open(`if (!${hasOwn}.call(${value}, ${literal(key)}))`);
-          this.issue(`code: 'required', key: ${literal(key)}`, `[...${PATH}, ${literal(key)}]`);
-          this.close();
-        }
-        this.close();
+      this.close();
+    }
+    // Ahead of `properties`: with fail-fast the first issue is the object's own unknown key.
+    if (check.additional && visitsAdditional) {
+      const additional = check.additional;
+      const key = this.fresh('key');
+      const known = check.properties.length > 0 ? this.state.constant('known', `new Set(${JSON.stringify(check.properties.map(property => property.key))})`, JSON.stringify([...new Set(check.properties.map(property => property.key))].sort())) : undefined;
+      const skipped = [...(known === undefined ? [] : [`${known}.has(${key})`]), ...patterns.map(({ expression }) => `${expression}.test(${key})`)];
+      this.open(`for (const ${key} of ${keys})`);
+      if (skipped.length > 0) this.line(`if (${skipped.join(' || ')}) continue;`);
+      if (additional.kind === 'forbid') {
+        this.issue(`code: 'unknownKey', key: ${key}`, `[...${PATH}, ${key}]`);
+      } else {
+        const schema = additional.schema;
+        const member = this.fresh('member');
+        this.line(`const ${member} = ${value}[${key}];`);
+        this.atChild(key, () => this.schema(schema, member));
       }
-      // Ahead of `properties`: with fail-fast the first issue is the object's own unknown key.
-      if (check.additional && visitsAdditional) {
-        const additional = check.additional;
-        const key = this.fresh('key');
-        const known = check.properties.length > 0 ? this.state.constant('known', `new Set(${JSON.stringify(check.properties.map(property => property.key))})`) : undefined;
-        const skipped = [...(known === undefined ? [] : [`${known}.has(${key})`]), ...patterns.map(({ expression }) => `${expression}.test(${key})`)];
-        this.open(`for (const ${key} of ${keys})`);
-        if (skipped.length > 0) this.line(`if (${skipped.join(' || ')}) continue;`);
-        if (additional.kind === 'forbid') {
-          this.issue(`code: 'unknownKey', key: ${key}`, `[...${PATH}, ${key}]`);
-        } else {
-          const schema = additional.schema;
+      this.close();
+    }
+    for (const property of check.properties) {
+      if (property.schema.kind === 'always' && !marks) continue;
+      const schema = property.schema;
+      this.open(`if (${hasOwn}(${value}, ${literal(property.key)}))`);
+      this.mark(record => `${record}.keys.add(${literal(property.key)});`);
+      if (schema.kind !== 'always') {
+        const member = this.fresh('member');
+        this.line(`const ${member} = ${value}[${literal(property.key)}];`);
+        this.atChild(literal(property.key), () => this.schema(schema, member));
+      }
+      this.close();
+    }
+    if (patternsToRun.length > 0) {
+      const key = this.fresh('key');
+      this.open(`for (const ${key} of ${keys})`);
+      for (const { entry, expression } of patternsToRun) {
+        this.open(`if (${expression}.test(${key}))`);
+        this.mark(record => `${record}.keys.add(${key});`);
+        if (entry.schema.kind !== 'always') {
+          const schema = entry.schema;
           const member = this.fresh('member');
           this.line(`const ${member} = ${value}[${key}];`);
           this.atChild(key, () => this.schema(schema, member));
         }
         this.close();
       }
-      for (const property of check.properties) {
-        if (property.schema.kind === 'always' && !marks) continue;
-        const schema = property.schema;
-        this.open(`if (${hasOwn}.call(${value}, ${literal(property.key)}))`);
-        this.mark(record => `${record}.keys.add(${literal(property.key)});`);
-        if (schema.kind !== 'always') {
-          const member = this.fresh('member');
-          this.line(`const ${member} = ${value}[${literal(property.key)}];`);
-          this.atChild(literal(property.key), () => this.schema(schema, member));
-        }
-        this.close();
-      }
-      if (patternsToRun.length > 0) {
-        const key = this.fresh('key');
-        this.open(`for (const ${key} of ${keys})`);
-        for (const { entry, expression } of patternsToRun) {
-          this.open(`if (${expression}.test(${key}))`);
-          this.mark(record => `${record}.keys.add(${key});`);
-          if (entry.schema.kind !== 'always') {
-            const schema = entry.schema;
-            const member = this.fresh('member');
-            this.line(`const ${member} = ${value}[${key}];`);
-            this.atChild(key, () => this.schema(schema, member));
-          }
-          this.close();
-        }
-        this.close();
-      }
-      // `additionalProperties` takes every key the other two did not.
-      if (check.additional !== undefined) this.mark(record => `${record}.allKeys = true;`);
-      if (check.propertyNames !== undefined) {
-        const key = this.fresh('key');
-        this.open(`for (const ${key} of ${keys})`);
-        this.open(`if (!${this.call(check.propertyNames, { value: key, issues: '[]', all: 'false' })})`);
-        this.issue(`code: 'invalidKey', key: ${key}`);
-        this.close();
-        this.close();
-      }
-    });
+      this.close();
+    }
+    // `additionalProperties` takes every key the other two did not.
+    if (check.additional !== undefined) this.mark(record => `${record}.allKeys = true;`);
+    if (check.propertyNames !== undefined) {
+      const key = this.fresh('key');
+      this.open(`for (const ${key} of ${keys})`);
+      this.open(`if (!${this.call(check.propertyNames, { value: key, issues: '[]', all: 'false' })})`);
+      this.issue(`code: 'invalidKey', key: ${key}`);
+      this.close();
+      this.close();
+    }
   }
 
   /** `unevaluatedProperties`: the keys that nothing evaluated. */
@@ -709,7 +769,7 @@ class FunctionWriter {
     const tag = this.fresh('tag');
     const selected = this.fresh('branch');
     const property = literal(discriminator.property);
-    this.line(`const ${tag} = isObject(${value}) && ${hasOwn}.call(${value}, ${property}) ? ${value}[${property}] : undefined;`);
+    this.line(`const ${tag} = isObject(${value}) && ${hasOwn}(${value}, ${property}) ? ${value}[${property}] : undefined;`);
     this.line(`const ${selected} = ${tags}.findIndex(list => list.some(item => ${jsonEqual}(${tag}, item)));`);
     check.branches.forEach((fn, position) => {
       this.open(`if (${selected} === ${position})`);
@@ -727,21 +787,116 @@ function wrapperName(name: string, index: number): string {
   return `validate_${name.replace(/[^A-Za-z0-9_$]/g, '_')}_${index}`;
 }
 
-/** Emits the module: one function per IR function, one wrapper per root, and `export const validators`. */
+/**
+ * The function that stands for `id`: a function whose body only passes the value to another one (a `$ref`, or a
+ * schema that is nothing else) is that other function. It must take the evaluation record the other takes, so a
+ * caller passes the same arguments either way.
+ */
+function forwardingTarget(functions: readonly IrFunction[]): (id: number) => number {
+  const forwardsTo = (fn: IrFunction): number | undefined => {
+    if (fn.collects || fn.body.kind !== 'checks' || fn.body.checks.length !== 1) return undefined;
+    const [only] = fn.body.checks;
+    return only.kind === 'call' && functions[only.fn].receives === fn.receives ? only.fn : undefined;
+  };
+  return id => {
+    // A forwarding cycle is a `$ref` cycle, which the lowering reports; the guard only stops the walk.
+    const seen = new Set<number>();
+    let current = id;
+    while (!seen.has(current)) {
+      seen.add(current);
+      const next = forwardsTo(functions[current]);
+      if (next === undefined) break;
+      current = next;
+    }
+    return current;
+  };
+}
+
+interface WrittenFunction {
+  readonly id: number;
+  readonly parameters: string;
+  /** The body, with the functions it calls as marks. */
+  readonly body: string;
+  readonly calls: ReadonlySet<number>;
+}
+
+function writeFunction(state: ModuleState, module: IrModule, target: (id: number) => number, fn: IrFunction): WrittenFunction {
+  const writer = new FunctionWriter(state, module.functions, target, fn);
+  const body = writer.write();
+  return { id: fn.id, parameters: functionParameters(fn), body, calls: writer.calls };
+}
+
+/**
+ * Groups the functions that behave alike: those with the same parameters whose bodies are the same text once each
+ * call names the group of its callee. Groups start as one and split until stable, so recursive functions that
+ * mirror each other (a model and its wire form) end up together. A group is named by its lowest id.
+ */
+function groupFunctions(written: readonly WrittenFunction[]): ReadonlyMap<number, number> {
+  let groups = new Map<number, number>(written.map(entry => [entry.id, 0]));
+  let size = 1;
+  for (;;) {
+    const keys = new Map<string, number>();
+    const next = new Map<number, number>();
+    for (const entry of written) {
+      const body = entry.body.replace(FUNCTION_MARK, (_, id: string) => functionName(groups.get(Number(id)) ?? -1));
+      const key = `${groups.get(entry.id)}\n${entry.parameters}\n${body}`;
+      if (!keys.has(key)) keys.set(key, keys.size);
+      next.set(entry.id, keys.get(key) ?? 0);
+    }
+    if (keys.size === size) break;
+    groups = next;
+    size = keys.size;
+  }
+  const lowest = new Map<number, number>();
+  for (const entry of written) {
+    const group = groups.get(entry.id) ?? 0;
+    if (!lowest.has(group)) lowest.set(group, entry.id);
+  }
+  return new Map(written.map(entry => [entry.id, lowest.get(groups.get(entry.id) ?? 0) ?? entry.id]));
+}
+
+/**
+ * Emits the module: one function per distinct behavior, one wrapper per root, and `export const validators`.
+ * Every check is written once: a forwarding function, and a function the same as another, are not emitted, and
+ * their callers call the one that is.
+ */
 export function emit(module: IrModule, options: EmitOptions): string {
+  const target = forwardingTarget(module.functions);
+  // First pass: every function as text, to learn which of those the roots reach are the same.
+  const survey = new ModuleState();
+  survey.importValidations(module.validations);
+  const written = new Map(module.functions.filter(fn => target(fn.id) === fn.id).map(fn => [fn.id, writeFunction(survey, module, target, fn)] as const));
+  const reached = new Set<number>();
+  const pending = module.exports.map(({ fn }) => target(fn));
+  for (let id = pending.pop(); id !== undefined; id = pending.pop()) {
+    if (reached.has(id)) continue;
+    reached.add(id);
+    pending.push(...(written.get(id)?.calls ?? []));
+  }
+  const representative = groupFunctions([...written.values()].filter(entry => reached.has(entry.id)));
+  const kept = [...new Set(representative.values())].sort((first, second) => first - second);
+  const names = new Map(kept.map((id, index) => [id, functionName(index)] as const));
+  const nameOf = (id: number): string => {
+    const name = names.get(representative.get(target(id)) ?? -1);
+    if (name === undefined) throw new Error(`The validator compiler has no emitted function for the schema function ${id}.`);
+    return name;
+  };
+  // Second pass: only the functions that stay, so the constants and helpers are those they use.
   const state = new ModuleState();
   state.importValidations(module.validations);
-  const functions = module.functions.map(fn => new FunctionWriter(state, module.functions, fn).write());
+  const functions = kept.map(id => {
+    const { parameters, body } = writeFunction(state, module, target, module.functions[id]);
+    return `function ${names.get(id)}(${parameters}) {\n${body.replace(FUNCTION_MARK, (_, called: string) => nameOf(Number(called)))}`;
+  });
   const wrappers = module.exports.map(({ fn }, index) => [
     `function ${wrapperName(module.exports[index].name, index)}(value, all) {`,
     '  const issues = [];',
-    `  ${callFunction(module.functions[fn], { value: 'value', path: '[]', issues: 'issues', all: 'all' })};`,
+    `  ${callFunction(module.functions[target(fn)], nameOf(fn), { value: 'value', path: '[]', issues: 'issues', all: 'all' })};`,
     '  return issues;',
     '}',
   ].join('\n'));
   const entries = module.exports.map(({ name }, index) => `  [${literal(name)}]: ${wrapperName(name, index)},`);
   return [
-    '// Generated by golem. Do not edit.',
     ...(options.typed ? [`import type { Validator } from ${literal(options.runtimeModule)};`] : []),
     ...state.prelude(options.runtimeModule),
     ...functions,

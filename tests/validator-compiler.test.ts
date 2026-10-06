@@ -924,3 +924,65 @@ test('number and integer reject NaN and the infinities, and other number keyword
   for (const value of [0, -1.5, 3, 1e300, Number.MIN_VALUE]) await assertIssues({ type: 'number' }, value, []);
   for (const value of [0, -3, 2 ** 40]) await assertIssues({ type: 'integer' }, value, []);
 });
+
+/** The compiled module text of `roots` (named by `resources` for `$ref` targets). */
+function emitted(roots: Record<string, unknown>, resources: Record<string, unknown> = {}): string {
+  const { source } = compile({ roots: new Map(Object.entries(roots)), resources: new Map(Object.entries(resources)) }, { unknownFormats: 'warn' });
+  return source;
+}
+
+function count(source: string, pattern: RegExp): number {
+  return source.match(pattern)?.length ?? 0;
+}
+
+const FUNCTION_DECLARATIONS = /^function f\d+\(/gm;
+
+test('a $ref chain emits the function of its target only, and the root still validates', async () => {
+  const roots = { root: { $ref: 'one' } };
+  const resources = { one: { $ref: 'two' }, two: { $ref: 'three' }, three: { type: 'string', minLength: 2 } };
+  assert.equal(count(emitted(roots, resources), FUNCTION_DECLARATIONS), 1);
+  const { root } = await compileValidators({ roots, resources });
+  assert.deepEqual(root('a', true), [{ path: [], code: 'tooSmall', measure: 'length', limit: 2, inclusive: true }]);
+  assert.deepEqual(root(5, true), [{ path: [], code: 'type', expected: ['string'] }]);
+  assert.deepEqual(root('ab', true), []);
+});
+
+test('identical sets, patterns and literals are declared once for the module', async () => {
+  const model = {
+    type: 'object',
+    properties: { k: { type: 'string', pattern: '^p' }, m: { const: 'x' } },
+    additionalProperties: false,
+  };
+  const roots = { first: model, second: { ...model, minProperties: 1 } };
+  const source = emitted(roots);
+  assert.equal(count(source, /new Set\(/g), 1);
+  assert.equal(count(source, /new RegExp\(/g), 1);
+  assert.equal(count(source, /JSON\.parse\(/g), 1);
+  const { first, second } = await compileValidators({ roots });
+  assert.deepEqual(first({ k: 'pa', m: 'x', z: 1 }, true), [{ path: ['z'], code: 'unknownKey', key: 'z' }]);
+  assert.deepEqual(second({}, true), [{ path: [], code: 'tooSmall', measure: 'properties', limit: 1, inclusive: true }]);
+  assert.deepEqual(second({ k: 'q', m: 'y' }, true), [
+    { path: ['k'], code: 'pattern', pattern: '^p' },
+    { path: ['m'], code: 'literal', expected: ['x'] },
+  ]);
+});
+
+test('schemas that compile to the same body share one function, recursive ones included', async () => {
+  const wire = (): unknown => ({ type: 'object', properties: { next: { $ref: '#' }, id: { type: 'integer' } } });
+  const roots = { model: wire(), wire: wire(), other: { type: 'string' } };
+  assert.equal(count(emitted(roots), FUNCTION_DECLARATIONS), 2);
+  const { model, wire: wireValidator } = await compileValidators({ roots });
+  const value = { id: 1, next: { id: 'x' } };
+  const expected = [{ path: ['next', 'id'], code: 'type', expected: ['integer'] }];
+  assert.deepEqual(model(value, true), expected);
+  assert.deepEqual(wireValidator(value, true), expected);
+});
+
+test('functions that reference different targets stay separate', async () => {
+  const roots = { textHolder: { properties: { v: { $ref: 'text' } } }, countHolder: { properties: { v: { $ref: 'count' } } } };
+  const resources = { text: { type: 'string' }, count: { type: 'integer' } };
+  assert.equal(count(emitted(roots, resources), FUNCTION_DECLARATIONS), 4);
+  const { textHolder, countHolder } = await compileValidators({ roots, resources });
+  assert.deepEqual(textHolder({ v: 1 }, true), [{ path: ['v'], code: 'type', expected: ['string'] }]);
+  assert.deepEqual(countHolder({ v: 'a' }, true), [{ path: ['v'], code: 'type', expected: ['integer'] }]);
+});
