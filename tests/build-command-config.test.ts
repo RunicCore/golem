@@ -320,6 +320,15 @@ test('a source the tsconfig includes outside its directory fails golem check as 
   // A project that emits no JavaScript, a bundler's type check for one, builds nothing that a stage would hold, so golem build skips the rule and so does the check.
   editTsconfig(app, (tsconfig) => { tsconfig.compilerOptions.noEmit = true; });
   await runPipeline(config, { check: true });
+  // A source outside the root that has a rewrite site is still reported there, with its line: a rewrite cannot apply to it, whatever the project emits.
+  write(outer, 'shared/site.ts', `import { parse } from '@exprtlabs/golem/serde';
+import type { TMoney } from '../app/src/money.model.js';
+declare const text: string;
+export const money = parse<TMoney>(text);
+`);
+  editTsconfig(app, (tsconfig) => { tsconfig.include = ['src/**/*.ts', '../shared/plain.ts', '../shared/site.ts']; });
+  await assert.rejects(runPipeline(config, { check: true }), /RUNM1070 \(\.\.\/shared\/site\.ts:4:22\): "\.\.\/shared\/site\.ts" has a rewrite site but lies outside the project root/);
+  editTsconfig(app, (tsconfig) => { tsconfig.include = ['src/**/*.ts', '../shared/plain.ts']; });
   editTsconfig(app, (tsconfig) => {
     delete tsconfig.compilerOptions.noEmit;
     tsconfig.compilerOptions.declaration = true;
