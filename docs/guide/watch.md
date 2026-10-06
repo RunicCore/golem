@@ -52,7 +52,7 @@ each job. A project that ignores its generated files runs `golem generate` or `g
 
 ## Generated files and the inventory
 
-Generation skips a job whose inputs and options did not change since its last run, when its outputs exist. `.golem/jobs.json` keeps what each job read; do not commit it. Generation replaces the files it generated before. Put custom behavior in your classes or application code; do not edit `*.generated.ts` files.
+Generation skips a job whose inputs, options and generator code did not change since its last run, when its outputs exist. `.golem/jobs.json` keeps what each job read; do not commit it. Generation replaces the files it generated before. Put custom behavior in your classes or application code; do not edit `*.generated.ts` files.
 
 `.golem/outputs.json` lists the files written by each job, so the CLI
 can delete files it generated earlier that are no longer produced. Identical

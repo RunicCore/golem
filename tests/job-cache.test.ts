@@ -3,12 +3,11 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { loadConfig } from '#golem/config';
-import { inputDigest, insideAny, jobIsCurrent, loadJobRecords, saveJobRecords, type JobRecord, type JobSetup } from '#golem/job-cache';
+import { golemCode, inputDigest, insideAny, jobIsCurrent, loadJobRecords, saveJobRecords, type JobRecord, type JobSetup } from '#golem/job-cache';
 import { digest, type Inventory } from '#golem/outputs';
-import { GOLEM_VERSION } from '#golem/version';
 import { createFixtureProject } from './fixture-project.js';
 
-const SETUP: JobSetup = { provider: '1.0.0', manifestInputs: [] };
+const SETUP: JobSetup = { providerCode: 'provider-code-digest', manifestInputs: [] };
 
 /** The inventory of a job's files: each as it is on disk now. */
 function inventoryOf(root: string, files: readonly string[]): Inventory {
@@ -36,8 +35,8 @@ function project(t: TestContext): { root: string; record: JobRecord; inventory: 
   const job = config.jobs[0];
   assert.ok(job);
   const record: JobRecord = {
-    golem: GOLEM_VERSION,
-    provider: SETUP.provider ?? '',
+    golemCode: golemCode(),
+    providerCode: SETUP.providerCode ?? '',
     options: JSON.stringify(job.options),
     inputs: {
       'api.yaml': inputDigest(path.join(root, 'api.yaml'), () => false, root),
@@ -59,16 +58,16 @@ test('records survive a save and load, and an absent or unreadable file holds no
   assert.deepEqual([...loadJobRecords(config)], [['openapi:sdk', record]]);
   fs.writeFileSync(path.join(root, '.golem/jobs.json'), '{"version":');
   assert.equal(loadJobRecords(config).size, 0);
-  fs.writeFileSync(path.join(root, '.golem/jobs.json'), JSON.stringify({ version: 1, jobs: { 'openapi:sdk': { golem: 1 } } }));
+  fs.writeFileSync(path.join(root, '.golem/jobs.json'), JSON.stringify({ version: 1, jobs: { 'openapi:sdk': { golemCode: 1 } } }));
   assert.equal(loadJobRecords(config).size, 0, 'a record of the wrong shape is no record');
 });
 
-test('a job is current while its version, options, outputs and every input are as its record holds them', (t: TestContext) => {
+test('a job is current while its golem code, provider code, options, outputs and every input are as its record holds them', (t: TestContext) => {
   const { root, config, record, inventory } = project(t);
   const job = config.jobs[0];
   assert.ok(job);
   assert.equal(jobIsCurrent(config, job, undefined, SETUP, inventory), false);
-  assert.equal(jobIsCurrent(config, job, { ...record, golem: '0.0.0' }, SETUP, inventory), false, 'another golem version');
+  assert.equal(jobIsCurrent(config, job, { ...record, golemCode: 'other-golem-code-digest' }, SETUP, inventory), false, 'other golem code');
   assert.equal(jobIsCurrent(config, job, { ...record, options: '{}' }, SETUP, inventory), false, 'other options');
   assert.equal(jobIsCurrent(config, job, { ...record, outputs: ['sdk.ts', 'gone.ts'] }, SETUP, inventory), false, 'an output is gone');
   assert.equal(jobIsCurrent(config, job, record, SETUP, inventory), true);
@@ -105,8 +104,8 @@ test('a directory outside the golem.yaml directory is recorded by existence, one
   fs.writeFileSync(path.join(outside, 'one.ts'), 'export {};\n');
   const inputs = { 'api.yaml': inputDigest(path.join(root, 'api.yaml'), () => false, root) };
   const recorded = {
-    golem: GOLEM_VERSION,
-    provider: SETUP.provider ?? '',
+    golemCode: golemCode(),
+    providerCode: SETUP.providerCode ?? '',
     options: JSON.stringify(job.options),
     inputs: { ...inputs, [path.relative(root, outside)]: inputDigest(outside, () => false, root), src: inputDigest(path.join(root, 'src'), () => false, root) },
     manifestInputs: [],
@@ -165,14 +164,14 @@ test('a job that recorded no input is never current', (t: TestContext) => {
   assert.equal(jobIsCurrent(config, job, { ...record, inputs: {} }, SETUP, inventory), false);
 });
 
-test('a job is stale when its provider version or the manifests it receives are not those of its record', (t: TestContext) => {
+test('a job is stale when its provider code or the manifests it receives are not those of its record', (t: TestContext) => {
   const { root, config, record, inventory } = project(t);
   const job = config.jobs[0];
   assert.ok(job);
   const manifest = path.join(root, 'sdk/model-manifest.json');
   assert.equal(jobIsCurrent(config, job, record, SETUP, inventory), true);
-  assert.equal(jobIsCurrent(config, job, record, { ...SETUP, provider: '1.1.0' }, inventory), false, 'another provider version');
-  assert.equal(jobIsCurrent(config, job, record, { ...SETUP, provider: undefined }, inventory), false, 'a provider that cannot be resolved');
+  assert.equal(jobIsCurrent(config, job, record, { ...SETUP, providerCode: 'other-provider-code-digest' }, inventory), false, 'other provider code');
+  assert.equal(jobIsCurrent(config, job, record, { ...SETUP, providerCode: undefined }, inventory), false, 'a provider that cannot be resolved');
   assert.equal(jobIsCurrent(config, job, record, { ...SETUP, manifestInputs: [manifest] }, inventory), false, 'a manifest the record did not receive');
   const received = { ...record, manifestInputs: ['sdk/model-manifest.json'] };
   assert.equal(jobIsCurrent(config, job, received, { ...SETUP, manifestInputs: [manifest] }, inventory), true);

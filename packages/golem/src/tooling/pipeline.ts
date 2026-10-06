@@ -6,14 +6,13 @@ import { contains, resolveConfig, validateConfigInputs } from './config.js';
 import type { GolemConfig, GolemJob } from './config.js';
 import { codecKeysPath } from './generated-paths.js';
 import { loadInventory, applyJob, removeRetiredJobs } from './outputs.js';
-import { absoluteRecordPath, insideAny, inventoryPaths, JobInputs, jobIsCurrent, loadJobRecords, recordPath, sameSetup, saveJobRecords } from './job-cache.js';
+import { absoluteRecordPath, codeDigest, golemCode, insideAny, inventoryPaths, JobInputs, jobIsCurrent, loadJobRecords, recordPath, sameSetup, saveJobRecords } from './job-cache.js';
 import type { JobRecord } from './job-cache.js';
 import { DEFAULT_CONTROLLER_SUFFIXES, DEFAULT_MODEL_SUFFIXES, GolemDiagnosticSeverity, errorMessage, hasErrorCode, isRecord, suffixPattern } from './generator-api.js';
 import { validateModelManifest } from './model-manifest.js';
 import type { GolemArtifact, GolemDiagnostic, GolemResult, GeneratorSession } from './generator-api.js';
 import { assertRuntimeCompatible } from './runtime-compatibility.js';
 import { TypeScriptNotInstalledError, resolveTypeScript } from './typescript-version.js';
-import { GOLEM_VERSION } from './version.js';
 
 export type InputKind = 'config' | 'controllers' | 'openapi' | 'models' | 'generator';
 
@@ -136,28 +135,34 @@ export function golemVersion(): string {
   return manifest.version;
 }
 
-/** Version of the package that owns `filename`, found by walking up to its package.json. */
-function packageVersion(specifier: string, filename: string): string {
+/** The directory and manifest of the package that owns `filename`, found by walking up to its package.json. */
+function owningPackage(specifier: string, filename: string): { readonly directory: string; readonly manifest: Record<string, unknown> } {
   for (let directory = path.dirname(filename); ; directory = path.dirname(directory)) {
     const manifestFile = path.join(directory, 'package.json');
     if (fs.existsSync(manifestFile)) {
       const manifest: unknown = JSON.parse(fs.readFileSync(manifestFile, 'utf8'));
-      if (isRecord(manifest) && manifest.name === specifier) {
-        if (typeof manifest.version !== 'string') throw new Error(`${specifier} package.json has no version.`);
-        return manifest.version;
-      }
+      if (isRecord(manifest) && manifest.name === specifier) return { directory, manifest };
     }
     if (path.dirname(directory) === directory) throw new Error(`Cannot find the package.json of ${specifier}.`);
   }
 }
 
-/** The version of the package that provides a job, or undefined when it cannot be resolved. */
-function providerVersion(config: GolemConfig, job: GolemJob): string | undefined {
+/** Version of the package that owns `filename`. */
+function packageVersion(specifier: string, filename: string): string {
+  const { manifest } = owningPackage(specifier, filename);
+  if (typeof manifest.version !== 'string') throw new Error(`${specifier} package.json has no version.`);
+  return manifest.version;
+}
+
+/** The digest of the code of the package that provides a job, or undefined when it cannot be resolved. */
+function providerCode(config: GolemConfig, job: GolemJob): string | undefined {
+  let directory: string;
   try {
-    return packageVersion(job.package, createRequire(path.join(config.directory, 'package.json')).resolve(`${job.package}/generator`));
+    directory = owningPackage(job.package, createRequire(path.join(config.directory, 'package.json')).resolve(`${job.package}/generator`)).directory;
   } catch {
     return undefined;
   }
+  return codeDigest(directory);
 }
 
 /** The providers of the configured jobs, or of the jobs named by `only`. */
@@ -413,10 +418,10 @@ export async function runPipeline(filename: string, options: PipelineOptions = {
   // The outputs of removed jobs go before the first job runs, so a job that reads one is not current.
   const active = new Set(config.jobs.map(job => job.id));
   const retired = new Set(Object.entries(inventory.files).filter(([, entry]) => !active.has(entry.job)).map(([key]) => path.resolve(config.directory, key)));
-  const providerVersions = new Map<string, string | undefined>();
-  const versionOf = (job: GolemJob): string | undefined => {
-    if (!providerVersions.has(job.package)) providerVersions.set(job.package, providerVersion(config, job));
-    return providerVersions.get(job.package);
+  const providerCodes = new Map<string, string | undefined>();
+  const codeOf = (job: GolemJob): string | undefined => {
+    if (!providerCodes.has(job.package)) providerCodes.set(job.package, providerCode(config, job));
+    return providerCodes.get(job.package);
   };
   const current = new Set<string>();
   // The manifests a job receives are those of the jobs before it; their records say what to expect before anything runs.
@@ -425,7 +430,7 @@ export async function runPipeline(filename: string, options: PipelineOptions = {
     for (const job of config.jobs) {
       const record = records.get(job.id);
       if (record && !readsAny(config, record, retired)
-        && jobIsCurrent(config, job, record, { provider: versionOf(job), manifestInputs: expectedManifests }, inventory, ignoredDirectories)) current.add(job.id);
+        && jobIsCurrent(config, job, record, { providerCode: codeOf(job), manifestInputs: expectedManifests }, inventory, ignoredDirectories)) current.add(job.id);
       expectedManifests.push(...(record?.manifests ?? []).map(manifest => absoluteRecordPath(config, manifest)));
     }
   }
@@ -459,7 +464,7 @@ export async function runPipeline(filename: string, options: PipelineOptions = {
       && previous
       && JSON.stringify(previousJob?.options) === JSON.stringify(job.options);
     const record = records.get(job.id);
-    if (jobCache && record && current.has(job.id) && !readsAny(config, record, ranOutputs) && sameSetup(config, record, { provider: versionOf(job), manifestInputs: manifests })) {
+    if (jobCache && record && current.has(job.id) && !readsAny(config, record, ranOutputs) && sameSetup(config, record, { providerCode: codeOf(job), manifestInputs: manifests })) {
       // Its inputs and outputs are as its record holds them: there is no result to reuse, and nothing to write.
       const outputs = record.outputs.map(output => absoluteRecordPath(config, output));
       for (const output of outputs) {
@@ -514,8 +519,8 @@ export async function runPipeline(filename: string, options: PipelineOptions = {
       if (read) {
         const own = new Set([...previousOutputs, ...result.artifacts.map(artifact => artifact.path)]);
         nextRecords.set(job.id, {
-          golem: GOLEM_VERSION,
-          provider: versionOf(job) ?? '',
+          golemCode: golemCode(),
+          providerCode: codeOf(job) ?? '',
           options: JSON.stringify(job.options),
           manifestInputs: manifests.map(manifest => recordPath(config, manifest)),
           inputs: read.finish(config, result.watchInputs, own),

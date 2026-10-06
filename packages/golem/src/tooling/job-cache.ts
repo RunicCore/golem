@@ -1,22 +1,22 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { contains } from './config.js';
 import type { GolemConfig, GolemJob } from './config.js';
 import { hasErrorCode, isRecord } from './generator-api.js';
 import { atomicWrite, loadInventory } from './outputs.js';
 import type { Inventory, InventoryEntry } from './outputs.js';
-import { GOLEM_VERSION } from './version.js';
 
 /**
  * What one job read and wrote the last time it ran, kept in `.golem/jobs.json` beside `.golem/outputs.json`. A later run
  * skips a job whose record is still true. Every path is relative to the directory of golem.yaml, with `/` separators.
  */
 export interface JobRecord {
-  /** The golem version that ran the job. */
-  readonly golem: string;
-  /** The version of the job's provider package, which can change with its options and inputs unchanged. */
-  readonly provider: string;
+  /** The digest of the JavaScript of the golem package that ran the job. */
+  readonly golemCode: string;
+  /** The digest of the JavaScript of the job's provider package, which can change with its options and inputs unchanged; empty when the package could not be resolved. */
+  readonly providerCode: string;
   /** JSON of the job's resolved options. */
   readonly options: string;
   /** Every input, by the digest it had when the job read it: a file's content, the file listing of a directory under the golem.yaml's directory, `directory` for one outside it, `missing` for an absent path, `unstable` for a reported input the job never announced. */
@@ -31,7 +31,7 @@ export interface JobRecord {
 const MISSING = 'missing';
 const UNSTABLE = 'unstable';
 const OUTSIDE_DIRECTORY = 'directory';
-const RECORDS_VERSION = 1;
+const RECORDS_VERSION = 2;
 
 function jobsFile(config: GolemConfig): string {
   return path.join(path.dirname(config.inventoryFile), 'jobs.json');
@@ -49,8 +49,8 @@ export function absoluteRecordPath(config: GolemConfig, recorded: string): strin
 function isJobRecord(value: unknown): value is JobRecord {
   const strings = (items: unknown): boolean => Array.isArray(items) && items.every(item => typeof item === 'string');
   return isRecord(value)
-    && typeof value.golem === 'string'
-    && typeof value.provider === 'string'
+    && typeof value.golemCode === 'string'
+    && typeof value.providerCode === 'string'
     && typeof value.options === 'string'
     && strings(value.manifestInputs)
     && isRecord(value.inputs) && Object.values(value.inputs).every(digest => typeof digest === 'string')
@@ -79,8 +79,8 @@ export function saveJobRecords(config: GolemConfig, records: ReadonlyMap<string,
   const jobs = Object.fromEntries([...records]
     .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
     .map(([id, record]) => [id, {
-      golem: record.golem,
-      provider: record.provider,
+      golemCode: record.golemCode,
+      providerCode: record.providerCode,
       options: record.options,
       inputs: Object.fromEntries(Object.entries(record.inputs).sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))),
       manifestInputs: record.manifestInputs,
@@ -155,16 +155,44 @@ export function inputDigest(filename: string, excluded: (filename: string) => bo
   }
 }
 
-/** What the run supplies to a job besides its inputs: the version of its provider package, and the manifests of the jobs before it (absolute paths). */
+/**
+ * The digest of the JavaScript in a package: the `.js`, `.cjs` and `.mjs` files under `directory`, node_modules left out, each by its
+ * path relative to `directory` and its content, in path order. A version string does not stand for code: a generator that changes under
+ * the same version, as one does during development or in a linked install, must run its jobs again.
+ */
+export function codeDigest(directory: string): string {
+  const files: string[] = [];
+  const walk = (current: string, prefix: string): void => {
+    for (const entry of fs.readdirSync(current, { withFileTypes: true })) {
+      if (entry.isDirectory()) {
+        if (entry.name !== 'node_modules') walk(path.join(current, entry.name), `${prefix}${entry.name}/`);
+      } else if (/\.[cm]?js$/.test(entry.name)) files.push(`${prefix}${entry.name}`);
+    }
+  };
+  walk(directory, '');
+  const digest = crypto.createHash('sha256');
+  for (const file of files.sort()) digest.update(`${file}\0${crypto.createHash('sha256').update(fs.readFileSync(path.join(directory, file))).digest('hex')}\n`);
+  return digest.digest('hex');
+}
+
+let golemCodeDigest: string | undefined;
+
+/** The digest of the golem package that is running, found from this module: `dist/tooling` sits two directories below the package. Computed once. */
+export function golemCode(): string {
+  golemCodeDigest ??= codeDigest(fileURLToPath(new URL('../../', import.meta.url)));
+  return golemCodeDigest;
+}
+
+/** What the run supplies to a job besides its inputs: the digest of its provider package's code, and the manifests of the jobs before it (absolute paths). */
 export interface JobSetup {
   /** Undefined when the provider package cannot be resolved. */
-  readonly provider: string | undefined;
+  readonly providerCode: string | undefined;
   readonly manifestInputs: readonly string[];
 }
 
-/** Whether the provider version and the manifest set are those the record holds. */
+/** Whether the provider code and the manifest set are those the record holds. */
 export function sameSetup(config: GolemConfig, record: JobRecord, setup: JobSetup): boolean {
-  return record.provider === setup.provider
+  return record.providerCode === setup.providerCode
     && JSON.stringify(record.manifestInputs) === JSON.stringify(setup.manifestInputs.map(manifest => recordPath(config, manifest)));
 }
 
@@ -180,7 +208,7 @@ function outputIsRecorded(entry: InventoryEntry | undefined, filename: string): 
 }
 
 /**
- * Whether the job would produce what its record holds: the golem version, provider version, options and manifest set
+ * Whether the job would produce what its record holds: the golem code, provider code, options and manifest set
  * match, every output still has the digest the inventory recorded for it and every input still has the digest it had when the job
  * read it. An output that is missing, edited or absent from the inventory is not current: the job runs again and rewrites it. The
  * files the inventory records are left out of directory listings; `inventory` defaults to the one on disk.
@@ -193,7 +221,7 @@ export function jobIsCurrent(
   inventory: Inventory = loadInventory(config),
   ignoredDirectories: readonly string[] = [],
 ): boolean {
-  if (!record || record.golem !== GOLEM_VERSION || record.options !== JSON.stringify(job.options) || !sameSetup(config, record, setup)) return false;
+  if (!record || record.golemCode !== golemCode() || record.options !== JSON.stringify(job.options) || !sameSetup(config, record, setup)) return false;
   // A job that announced no input hides what it reads: nothing can show that it is still true.
   if (Object.keys(record.inputs).length === 0) return false;
   const outputs = new Set(record.outputs.map(output => absoluteRecordPath(config, output)));

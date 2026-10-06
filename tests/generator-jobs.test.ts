@@ -5,7 +5,7 @@ import path from 'node:path';
 import { runPipeline } from '#golem/cli';
 import { loadConfig } from '#golem/config';
 import { copyFixtureFile, createFixtureProject, linkProjectPackages } from './fixture-project.js';
-import { workspace } from './support/process.js';
+import { command, golem, workspace } from './support/process.js';
 
 const VERSION = (JSON.parse(fs.readFileSync(path.join(workspace, 'packages/golem/package.json'), 'utf8')) as { version: string }).version;
 // outputs.ts `marker()` recognizes a generator's files by this header.
@@ -111,4 +111,66 @@ test('a failing generator names its package and leaves earlier outputs and the i
   fs.writeFileSync(path.join(root, 'fail-generator'), '');
   await assert.rejects(runPipeline(config), /@fixture\/gen/);
   assert.deepEqual(files.map(file => fs.readFileSync(path.join(root, file), 'utf8')), before);
+});
+
+// ---------------------------------------------------------------------------
+// The job cache follows the generator's code, not its version
+// ---------------------------------------------------------------------------
+
+/** A generator that announces one input, counts its runs in `runs.log` and stamps its output with `emitter`. */
+function cachedProviderSource(emitter: string): string {
+  return `import fs from 'node:fs';
+import path from 'node:path';
+export const apiVersion = 1;
+export function generate(context) {
+  fs.appendFileSync(path.join(context.directory, 'runs.log'), 'run\\n');
+  const input = path.join(context.directory, 'generator-input.txt');
+  context.onInput(input);
+  return { apiVersion: 1, artifacts: [{ path: path.join(context.output, 'item.model.ts'), content: ${JSON.stringify(`${ITEM}// emitter ${emitter}\n`)} }], manifestPaths: [], watchInputs: [input] };
+}
+`;
+}
+
+/** A project whose generator is cachedProviderSource('one'), with `generate` and `check` as the golem CLI runs them. */
+function cachedProject(t: TestContext): { root: string; rewriteGenerator: (emitter: string) => void; generate: () => Promise<void>; check: () => Promise<{ code: number | null; stderr: string }>; runs: () => number } {
+  const { root } = project(t);
+  const providerFile = path.join(root, 'node_modules/@fixture/gen/index.js');
+  fs.writeFileSync(providerFile, cachedProviderSource('one'));
+  fs.writeFileSync(path.join(root, 'generator-input.txt'), 'input');
+  return {
+    root,
+    rewriteGenerator: emitter => fs.writeFileSync(providerFile, cachedProviderSource(emitter)),
+    generate: async () => { await command(root, process.execPath, [golem, 'generate']); },
+    check: () => command(root, process.execPath, [golem, 'check'], { allowFailure: true }),
+    runs: () => fs.readFileSync(path.join(root, 'runs.log'), 'utf8').split('\n').filter(Boolean).length,
+  };
+}
+
+const EMITTED = 'src/gen/item.model.ts';
+
+test('a generator whose code changed under the same package version runs again and writes the new output', async t => {
+  const { root, rewriteGenerator, generate, runs } = cachedProject(t);
+  await generate();
+  assert.match(fs.readFileSync(path.join(root, EMITTED), 'utf8'), /\/\/ emitter one\n$/);
+  rewriteGenerator('two');
+  await generate();
+  assert.equal(runs(), 2);
+  assert.match(fs.readFileSync(path.join(root, EMITTED), 'utf8'), /\/\/ emitter two\n$/);
+});
+
+test('check reports the output of a generator whose code changed under the same package version as out of date', async t => {
+  const { root, rewriteGenerator, generate, check } = cachedProject(t);
+  await generate();
+  rewriteGenerator('two');
+  const result = await check();
+  assert.notEqual(result.code, 0);
+  assert.match(result.stderr, /Generated outputs are stale for generator:src\/gen:\n\s+src\/gen\/item\.model\.ts/);
+  assert.match(fs.readFileSync(path.join(root, EMITTED), 'utf8'), /\/\/ emitter one\n$/);
+});
+
+test('a second generate with the generator code and its inputs unchanged runs no job', async t => {
+  const { generate, runs } = cachedProject(t);
+  await generate();
+  await generate();
+  assert.equal(runs(), 1);
 });

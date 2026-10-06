@@ -1,5 +1,4 @@
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
 import test from 'node:test';
 
 import {
@@ -9,7 +8,6 @@ import {
   type RewriteImport,
 } from '#golem/rewrite';
 import { composeSourceMaps, decodeMappings, encodeMappings, type SourceMapV3 } from '#golem/source-map';
-import { GOLEM_VERSION } from '#golem/version';
 
 const SERDE = '@exprtlabs/golem/serde';
 const CALL = 'parse<TPayment>';
@@ -260,9 +258,4 @@ test('composing maps resolves an output position to the original, whatever the o
     [2 + secondLine.indexOf('(v)'), 0, 1, original.split('\n')[1]!.indexOf('(v)')],
     [2 + secondLine.indexOf('v)'), 0, 1, original.split('\n')[1]!.indexOf('v)')],
   ]]);
-});
-
-test('GOLEM_VERSION equals the golem package version', () => {
-  const { version } = JSON.parse(fs.readFileSync(new URL('../../packages/golem/package.json', import.meta.url), 'utf8')) as { version: string };
-  assert.equal(GOLEM_VERSION, version);
 });

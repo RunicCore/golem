@@ -295,7 +295,7 @@ test('an edited model source reruns the models job, an edited OpenAPI document r
   assert.deepEqual(ranKinds(await runPipeline(config)), ['openapi', 'models'], 'the manifest the OpenAPI job writes is the same, the job after it still runs');
 });
 
-test('a deleted output reruns its job, and a changed option or golem version reruns the jobs it applies to', async (t: TestContext) => {
+test('a deleted output reruns its job, and a changed option or golem code reruns the jobs it applies to', async (t: TestContext) => {
   const { root, config } = fixture(t);
   await runPipeline(config);
   const companion = path.join(root, 'src/cart.model.generated.ts');
@@ -305,10 +305,10 @@ test('a deleted output reruns its job, and a changed option or golem version rer
   assert.equal(fs.readFileSync(companion, 'utf8'), original);
 
   const records = path.join(root, '.golem/jobs.json');
-  const written = JSON.parse(fs.readFileSync(records, 'utf8')) as { jobs: Record<string, { golem: string }> };
+  const written = JSON.parse(fs.readFileSync(records, 'utf8')) as { jobs: Record<string, { golemCode: string }> };
   const modelsId = Object.keys(written.jobs).find((id) => id.startsWith('models:'));
   assert.ok(modelsId, 'the models job has a record');
-  written.jobs[modelsId].golem = '0.0.0-other';
+  written.jobs[modelsId].golemCode = 'other-golem-code-digest';
   fs.writeFileSync(records, JSON.stringify(written));
   assert.deepEqual(ranKinds(await runPipeline(config)), ['models']);
 
@@ -411,12 +411,10 @@ export function generate(context) {
   return { root, config: path.join(root, 'golem.yaml'), install };
 }
 
-test('a new version of a generator package reruns its job although its options and inputs are the same', async (t: TestContext) => {
+test('a new version of a generator package with the same code does not rerun its job', async (t: TestContext) => {
   const { config, install } = generatorProject(t, true);
   assert.equal((await runPipeline(config)).ran.size, 1);
-  assert.equal((await runPipeline(config)).ran.size, 0);
   install('1.1.0');
-  assert.equal((await runPipeline(config)).ran.size, 1);
   assert.equal((await runPipeline(config)).ran.size, 0);
 });
 

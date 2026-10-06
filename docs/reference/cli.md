@@ -55,7 +55,7 @@ npx golem build --declaration --noEmitOnError
 
 A build runs three steps:
 
-1. It generates the outputs of `golem.yaml`, as `golem generate` does. A job whose inputs did not change since the last run is skipped: `.golem/jobs.json` keeps, per job, the golem version, the job's options and a hash of every input it read, so a second build with no change runs no job. An input change runs the job and every job after it that reads its outputs.
+1. It generates the outputs of `golem.yaml`, as `golem generate` does. A job whose inputs did not change since the last run is skipped: `.golem/jobs.json` keeps, per job, a hash of the code of golem and of the job's generator package, the job's options and a hash of every input it read, so a second build with no change runs no job. A job whose generator code changed runs again, even under the same version. An input change runs the job and every job after it that reads its outputs.
 2. It type-checks the sources you wrote with the TypeScript in your project, TypeScript 6.0 or 7, and prints its messages unchanged. An error points at your line, and the declarations come from your sources.
 3. It emits JavaScript with the calls rewritten. Source maps point at your sources.
 
