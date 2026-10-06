@@ -317,10 +317,10 @@ test('a deleted output reruns its job, and a changed option or golem code reruns
   assert.deepEqual(ranKinds(await runPipeline(config)), []);
 });
 
-test('a generated file, the codec key table or the model manifest edited by hand is restored by the next run, because its job is not current', async (t: TestContext) => {
+test('a generated file or the codec key table edited by hand is restored by the next run, because its job is not current', async (t: TestContext) => {
   const { root, config } = fixture(t);
   await runPipeline(config);
-  for (const edited of ['src/cart.model.generated.ts', '.golem/codec-keys.json', 'src/generated/models/model-manifest.json']) {
+  for (const edited of ['src/cart.model.generated.ts', '.golem/codec-keys.json']) {
     const filename = path.join(root, edited);
     const original = fs.readFileSync(filename, 'utf8');
     fs.writeFileSync(filename, `${original}\n// edited by hand\n`);
@@ -328,20 +328,6 @@ test('a generated file, the codec key table or the model manifest edited by hand
     assert.equal(fs.readFileSync(filename, 'utf8'), original, edited);
     assert.deepEqual(ranKinds(await runPipeline(config)), [], `${edited} is current again`);
   }
-});
-
-test('the models job owns its model manifest: the inventory lists it, and check reports a hand edit of it as stale without writing', async (t: TestContext) => {
-  const { root, config } = fixture(t);
-  await runPipeline(config);
-  const relative = 'src/generated/models/model-manifest.json';
-  const inventory: { files: Record<string, { job: string }> } = JSON.parse(fs.readFileSync(path.join(root, '.golem/outputs.json'), 'utf8'));
-  assert.equal(inventory.files[relative]?.job, 'models:.');
-
-  const filename = path.join(root, relative);
-  const edited = `${fs.readFileSync(filename, 'utf8')}\n// edited by hand\n`;
-  fs.writeFileSync(filename, edited);
-  await assert.rejects(runPipeline(config, { check: true }), /stale/);
-  assert.equal(fs.readFileSync(filename, 'utf8'), edited, 'check does not restore it');
 });
 
 test('a job that edits an input after it read it runs again, because its record holds the digest from the read', async (t: TestContext) => {

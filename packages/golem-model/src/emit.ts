@@ -993,10 +993,6 @@ export function codecEntriesForGraph(
   readonly name: string;
   readonly codecId: string;
   readonly classNames: readonly string[];
-  /** The model emits a base class (`IModel`); an `IObject` emits codecs only. */
-  readonly emitClass: boolean;
-  /** The model's own `allowAny` policy; undefined inherits the generation profile's. */
-  readonly allowAny: boolean | undefined;
 }> {
   const internedSchemaGraph = schemaGraph ?? internSourceDefinitions(graph.definitions, graph.emitted);
   return graph.emitted.map((specification) => {
@@ -1006,8 +1002,6 @@ export function codecEntriesForGraph(
       source: portableRelativeFilename(specification.sourceFile.fileName, graph.identityRoot),
       name: specification.name,
       classNames: linkedClassNames(checker, specification, specifications, graph.compilerOptions),
-      emitClass: specification.emitClass,
-      allowAny: specification.allowAny,
       codecId: node?.codecId ?? codecPublicId(specification.name, descriptor ?? { kind: 'unknown' }, undefined, { source: 'typescript', constructs: specification.emitClass }),
     };
   });
