@@ -6,7 +6,7 @@ import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { runPipeline, type PipelineState } from '#golem/cli';
 import { loadConfig } from '#golem/config';
-import { applyJob, loadInventory } from '#golem/outputs';
+import { applyJob, loadInventory, removeRetiredJobs } from '#golem/outputs';
 import { runBuild } from '#golem/build';
 import { command, workspace } from './support/process.js';
 import { writeFixture } from './support/consumer.js';
@@ -558,4 +558,77 @@ test('a models job does not write a companion into node_modules through a link t
     { message: `Generated output escapes the ${job.id} destination: ${viaLink}` },
   );
   assert.equal(fs.existsSync(path.join(installed, 'other.model.generated.ts')), false);
+});
+
+/** The fixture's models job after it has written the companion of `other.model.ts` in the sibling folder. */
+function jobWithSharedCompanion(t: TestContext): ReturnType<typeof modelsJobWithSiblingFolder> & { source: string; companion: string } {
+  const context = modelsJobWithSiblingFolder(t);
+  const source = path.join(context.shared, 'other.model.ts');
+  const companion = path.join(context.shared, 'other.model.generated.ts');
+  fs.writeFileSync(source, 'export {};\n');
+  applyJob(context.config, loadInventory(context.config), context.job, [{ path: companion, content: COMPANION_TEXT }]);
+  return { ...context, source, companion };
+}
+
+test('an app that stops including a shared folder keeps its shared companions', (t: TestContext) => {
+  const { config, job, companion } = jobWithSharedCompanion(t);
+  const key = Object.keys(loadInventory(config).files).find(file => file.endsWith('other.model.generated.ts'));
+  assert.ok(key, 'the companion is recorded');
+  assert.equal(loadInventory(config).files[key]?.shared, true);
+
+  applyJob(config, loadInventory(config), job, []);
+
+  assert.equal(fs.readFileSync(companion, 'utf8'), COMPANION_TEXT);
+  assert.equal(loadInventory(config).files[key], undefined);
+});
+
+test('deleting a shared model source deletes its companion', (t: TestContext) => {
+  const { config, job, source, companion } = jobWithSharedCompanion(t);
+  fs.rmSync(source);
+
+  applyJob(config, loadInventory(config), job, []);
+
+  assert.equal(fs.existsSync(companion), false);
+  assert.deepEqual(Object.keys(loadInventory(config).files).filter(file => file.endsWith('other.model.generated.ts')), []);
+});
+
+test('a job does not overwrite a shared companion without a golem header', (t: TestContext) => {
+  const { config, job, shared } = modelsJobWithSiblingFolder(t);
+  fs.writeFileSync(path.join(shared, 'other.model.ts'), 'export {};\n');
+  const companion = path.join(shared, 'other.model.generated.ts');
+  fs.writeFileSync(companion, 'export const mine = 1;\n');
+
+  assert.throws(
+    () => applyJob(config, loadInventory(config), job, [{ path: companion, content: COMPANION_TEXT }]),
+    (error: unknown) => error instanceof Error && error.message.includes(`Refusing to overwrite ${companion}`),
+  );
+  assert.equal(fs.readFileSync(companion, 'utf8'), 'export const mine = 1;\n');
+});
+
+test('the inventory file records a shared companion as shared', (t: TestContext) => {
+  const { config } = jobWithSharedCompanion(t);
+  const files = (JSON.parse(fs.readFileSync(config.inventoryFile, 'utf8')) as { files: Record<string, { shared?: true }> }).files;
+  const shared = Object.entries(files).filter(([, entry]) => entry.shared === true).map(([key]) => key);
+  assert.equal(shared.length, 1);
+  assert.match(shared[0] ?? '', /^\.\.\/.*other\.model\.generated\.ts$/);
+});
+
+test('removing a job keeps its shared companion while the source exists', (t: TestContext) => {
+  const { config, companion } = jobWithSharedCompanion(t);
+  const withoutJobs = { ...config, jobs: [] };
+
+  removeRetiredJobs(withoutJobs, loadInventory(withoutJobs));
+
+  assert.equal(fs.readFileSync(companion, 'utf8'), COMPANION_TEXT);
+  assert.deepEqual(Object.keys(loadInventory(config).files).filter(file => file.endsWith('other.model.generated.ts')), []);
+});
+
+test('removing a job deletes its shared companion once the source is gone', (t: TestContext) => {
+  const { config, source, companion } = jobWithSharedCompanion(t);
+  fs.rmSync(source);
+  const withoutJobs = { ...config, jobs: [] };
+
+  removeRetiredJobs(withoutJobs, loadInventory(withoutJobs));
+
+  assert.equal(fs.existsSync(companion), false);
 });
