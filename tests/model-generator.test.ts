@@ -37,9 +37,8 @@ test('exports API 1 and emits profile-specific model companions without writes',
   for (const [profile, expected] of profileCases()) {
     const result = generate({ root, sources: [source], profile });
     assert.deepEqual(result.manifestPaths, []);
-    // A job without validation or serde bindings writes the companion and the codec keys only. A validating
-    // job also writes the shared models.generated.ts and the generated validators.
-    assert.equal(result.artifacts.length, expected.validation ? 4 : 2);
+    // Every job writes the companion, the layer and the codec keys. A validating job also writes the generated validators.
+    assert.equal(result.artifacts.length, expected.validation ? 4 : 3);
     assert.equal(
       result.artifacts.some(artifact => artifact.path.endsWith('models.validators.generated.ts')),
       expected.validation,
@@ -83,7 +82,7 @@ export type TAccount = IModel<{ id: string }>;`,
   });
   assert.deepEqual(discoverModelSources(root), [source]);
   const result = generate({ root, profile: { mobx: false, validation: false } });
-  assert.deepEqual(result.artifacts.map((artifact) => artifact.path).sort(), [path.join(root, '.golem/codec-keys.json'), path.join(sourceRoot, 'nested/account.models.generated.ts')], 'the run writes the companion and the codec keys under .golem/');
+  assert.deepEqual(result.artifacts.map((artifact) => artifact.path).sort(), [path.join(root, '.golem/codec-keys.json'), path.join(sourceRoot, 'generated/models/models.generated.ts'), path.join(sourceRoot, 'nested/account.models.generated.ts')], 'the run writes the companion, the layer and the codec keys under .golem/');
   assert.deepEqual(result.watchInputs, [source, path.join(root, 'tsconfig.json')]);
   assert.equal(result.watchInputs.some((filename) => filename.endsWith('.generated.ts')), false);
 });
@@ -161,7 +160,7 @@ test('prospective companions permit a concrete subclass field rename and still r
   writeGeneratedArtifacts(first.artifacts);
   writeModelSources(sourceRoot, { 'account.model.ts': accountModelWithField({ field: 'complete' }) });
   const second = generate({ root, sources: [source], profile: { mobx: false, validation: true } });
-  // The validating job writes the companion, the codec keys, the shared module and the generated validators.
+  // The validating job writes the companion, the codec keys, the layer and the generated validators.
   assert.equal(second.artifacts.length, 4);
   writeModelSources(sourceRoot, { 'account.model.ts': accountModelWithMissingImport({ field: 'complete' }) });
   assert.throws(
@@ -421,4 +420,115 @@ export type TAccount = IModel<{ id: string }>;`,
   const table = JSON.parse(keys.content) as { version: number; keys: Record<string, string> };
   assert.equal(table.version, 1);
   assert.deepEqual(Object.keys(table.keys), ['src/account.model.ts#TAccount']);
+});
+
+/** A fixture of two files: `TMoney` (a tagged field, an `unknown` field, a Date field) and `TPayment`, which nests it. */
+function nestedPaymentProject(t: TestContext) {
+  const { root, sourceRoot } = project(t);
+  writeModelSources(sourceRoot, {
+    'money.model.ts': tsSource`import type { IObject } from '@exprtlabs/golem/model';
+import type { MinLength } from '@exprtlabs/golem/tags';
+export type TMoney = IObject<{ currency: string & MinLength<3>; note: unknown; at: Date }>;
+`,
+    'payment.model.ts': tsSource`import type { IModel } from '@exprtlabs/golem/model';
+import type { TMoney } from './money.model.js';
+export type TPayment = IModel<{ id: string; total: TMoney }>;
+`,
+  });
+  return { root, sourceRoot };
+}
+
+test('a companion is byte-identical under every profile', (t: TestContext) => {
+  const { root } = nestedPaymentProject(t);
+  const profiles = [
+    { mobx: false, validation: false },
+    { mobx: true, validation: true },
+    { mobx: false, validation: true, allowAny: true },
+  ];
+  const runs = profiles.map(profile => generate({ root, profile }).artifacts);
+  const contentOf = (artifacts: typeof runs[number], name: string): string | undefined => artifacts.find(artifact => artifact.path.endsWith(name))?.content;
+  for (const name of ['money.model.generated.ts', 'payment.model.generated.ts']) {
+    const [first, second, third] = runs.map(artifacts => contentOf(artifacts, name));
+    assert.ok(first, `${name} is generated`);
+    assert.equal(second, first, `${name} differs between the first and second profile`);
+    assert.equal(third, first, `${name} differs between the first and third profile`);
+  }
+  const layers = runs.map(artifacts => contentOf(artifacts, 'models.generated.ts'));
+  assert.equal(new Set(layers).size, 3, 'the three layers differ');
+});
+
+test('a shared companion is byte-identical for two jobs at different depths that use it differently', (t: TestContext) => {
+  const outer = createFixtureProject(t, 'golem-shared-depth-');
+  linkProjectPackages(outer, { '@exprtlabs/golem': path.join(workspace, 'packages/golem') });
+  const sharedFolder = path.join(outer, 'shared');
+  fs.mkdirSync(sharedFolder, { recursive: true });
+  fs.writeFileSync(path.join(sharedFolder, 'package.json'), JSON.stringify({ name: 'shared', private: true, type: 'module' }));
+  writeModelSources(sharedFolder, {
+    'money.model.ts': tsSource`import type { IObject } from '@exprtlabs/golem/model';
+import type { MinLength } from '@exprtlabs/golem/tags';
+export type TMoney = IObject<{ currency: string & MinLength<3>; at: Date }>;
+`,
+    'account.model.ts': tsSource`import type { IModel } from '@exprtlabs/golem/model';
+import type { TMoney } from './money.model.js';
+export type TAccount = IModel<{ id: string; owner: string; balance: TMoney }>;
+export type TSummary = IModel<{ view: Omit<TAccount, 'id'> }>;
+`,
+  });
+  const sharedSources = [path.join(sharedFolder, 'money.model.ts'), path.join(sharedFolder, 'account.model.ts')];
+  const app = (relative: string, include: string): string => {
+    const root = path.join(outer, relative);
+    fs.mkdirSync(path.join(root, 'src'), { recursive: true });
+    fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ name: path.basename(root), private: true, type: 'module' }));
+    fs.writeFileSync(path.join(root, 'tsconfig.json'), JSON.stringify({
+      compilerOptions: { strict: true, target: 'ES2022', module: 'NodeNext', moduleResolution: 'NodeNext', skipLibCheck: true, noEmit: true },
+      include: ['src/**/*.ts', include],
+    }));
+    return root;
+  };
+  // App A has a model of its own that nests the shared TMoney, and a site that converts it to wire format.
+  const rootA = app('a', '../shared/**/*.ts');
+  writeModelSources(path.join(rootA, 'src'), {
+    'order.model.ts': tsSource`import type { IModel } from '@exprtlabs/golem/model';
+import type { TMoney } from '../../shared/money.model.js';
+export type TOrder = IModel<{ total: TMoney }>;
+`,
+    'site.ts': tsSource`import { toWireFormat } from '@exprtlabs/golem/serde';
+import type { TMoney } from '../../shared/money.model.js';
+export const wire = (money: TMoney) => toWireFormat<TMoney>(money);
+`,
+  });
+  // App B only reads the shared TMoney in a site file; it has no model of its own.
+  const rootB = app('apps/deep/b', '../../../shared/**/*.ts');
+  writeModelSources(path.join(rootB, 'src'), {
+    'site.ts': tsSource`import { parse } from '@exprtlabs/golem/serde';
+import type { TMoney } from '../../../../shared/money.model.js';
+export const money = parse<TMoney>('{}');
+`,
+  });
+  const profile = { mobx: false, validation: true };
+  const a = generate({ root: rootA, sources: [...sharedSources, path.join(rootA, 'src/order.model.ts')], profile });
+  const b = generate({ root: rootB, sources: sharedSources, profile });
+  const sharedCompanions = (artifacts: readonly { readonly path: string; readonly content: string }[]) => Object.fromEntries(
+    artifacts.filter(artifact => artifact.path.startsWith(`${sharedFolder}${path.sep}`)).map(artifact => [path.basename(artifact.path), artifact.content]),
+  );
+  const sharedA = sharedCompanions(a.artifacts);
+  assert.deepEqual(Object.keys(sharedA).sort(), ['account.model.generated.ts', 'money.model.generated.ts']);
+  assert.deepEqual(sharedCompanions(b.artifacts), sharedA);
+});
+
+test('a companion imports only #golem-models and the companions its source imports', (t: TestContext) => {
+  const { root } = nestedPaymentProject(t);
+  const result = generate({ root, profile: { mobx: true, validation: true } });
+  const payment = result.artifacts.find(artifact => artifact.path.endsWith('payment.model.generated.ts'))?.content ?? '';
+  const imports = payment.split('\n').filter(line => line.startsWith('import '));
+  assert.deepEqual(imports, [
+    "import { registerGeneratedModel, type GeneratedModel, type GeneratedModelConstructor, type generatedModelWireBrand, type generatedModelFieldsBrand } from '@exprtlabs/golem/model';",
+    "import { decodeCheckedInput, decodeDetachedInput, convertModelField, defineModelProperty, requireModelObject } from '@exprtlabs/golem/conversion';",
+    "import { deserializeDate, serializeDate } from '@exprtlabs/golem/conversion';",
+    "import { assertModelValue, createObjectCodec, isValidModelValue, layerValidator, parseJson, registerIModelClass, requireObjectCodec, serdeValidates, stringifyJsonString, IssueRepresentation, IssueSource, type SerdeOptions as __GolemSerdeOptions, type ValidateOptions as __GolemValidateOptions } from '@exprtlabs/golem/serde';",
+    'import { layer } from "#golem-models";',
+    'import "./money.model.generated.js";',
+    'import { type TMoneyFields, type TMoneyJSON, type TMoneyInit, __golemDecode_TMoney_a7a327f3, __golemInit_TMoney_a7a327f3, __golemEncode_TMoney_a7a327f3 } from "./money.model.generated.js";',
+  ]);
+  assert.doesNotMatch(payment, /models\.generated|model-manifest/);
 });

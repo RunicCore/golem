@@ -17,7 +17,7 @@ import {
   createJobAnalysis,
   deduplicateTagSchemas,
   describeJob,
-  emitSharedSource,
+  emitLayerSource,
   emitSource,
   validatorImports,
   codecEntriesForGraph,
@@ -216,7 +216,6 @@ function canonicalSourceKey(filename: string): string {
  */
 function internJobSchemaGraphs(
   graphs: readonly SourceModelGraph[],
-  validation: boolean,
   closure: readonly CodecSchemaClosureEntry[] = [],
 ): SourceSchemaGraph[] {
   const codecIds = new Map<ModelSpecification, string>();
@@ -254,7 +253,7 @@ function internJobSchemaGraphs(
     const members = new Set(component);
     if (component.length === 1) {
       const [graph] = component;
-      const schemaGraph = internSourceDefinitions(graph.definitions, graph.emitted, validation, {
+      const schemaGraph = internSourceDefinitions(graph.definitions, graph.emitted, {
         codecIds: idsFor(graph, new Map()),
         siblings: graph.siblings,
         externalResidualIds: residualIds,
@@ -283,7 +282,7 @@ function internJobSchemaGraphs(
       }
       for (const [name, descriptor] of Object.entries(graph.definitions)) definitions[name] ??= descriptor;
     }
-    const shared = internSourceDefinitions(definitions, emitted, validation, {
+    const shared = internSourceDefinitions(definitions, emitted, {
       codecIds: new Map(outside.flatMap((sibling) => {
         const id = codecIds.get(sibling);
         return id === undefined ? [] : [[sibling.name, id] as const];
@@ -299,7 +298,7 @@ function internJobSchemaGraphs(
           const id = codecIds.get(specification);
           return id === undefined ? [] : [[specification.name, id] as const];
         }));
-      const schemaGraph = internSourceDefinitions(graph.definitions, graph.emitted, validation, {
+      const schemaGraph = internSourceDefinitions(graph.definitions, graph.emitted, {
         codecIds: idsFor(graph, own),
         siblings: graph.siblings,
         externalResidualIds: residualIds,
@@ -409,6 +408,7 @@ export function generate(context: GolemModelContext): GolemModelResult {
     sources,
     normalized.root,
     programInfo.options,
+    (filename) => program.getSourceFile(filename),
   );
   describeJob(job, specifications);
   const graphs = sources
@@ -424,18 +424,12 @@ export function generate(context: GolemModelContext): GolemModelResult {
       job,
     ))
     .filter((graph): graph is NonNullable<typeof graph> => graph !== undefined);
-  const sharedOutput = join(normalized.output, 'models.generated.ts');
-  const graphSchemaPairs = internJobSchemaGraphs(graphs, normalized.profile.validation, manifestIndex.validationSchemaClosure);
+  const layerOutput = join(normalized.output, 'models.generated.ts');
+  const graphSchemaPairs = internJobSchemaGraphs(graphs, manifestIndex.validationSchemaClosure);
   const schemaGraphs = graphSchemaPairs.map(({ schemaGraph }) => schemaGraph);
   // A model can ask for validation when the profile does not.
   const anyValidation = normalized.profile.validation
     || schemaGraphs.some((graph) => [...graph.nodes.values()].some((node) => node.kind !== 'reference' && node.validationEnabled === true));
-  const needsShared = anyValidation
-    || graphs.some((graph) => graph.registry.serde.size > 0);
-  const sharedBase = needsShared ? {
-    modulePath: sharedOutput,
-    keyFor: (source: string, modelName: string): string => `${portableRelativeFilename(source, normalized.root)}\0${modelName}`,
-  } : undefined;
   const schemaEntries = deduplicateTagSchemas(
     graphs.flatMap((graph) => graph.schemas)
       .sort((left, right) => left.key.localeCompare(right.key)
@@ -472,31 +466,22 @@ export function generate(context: GolemModelContext): GolemModelResult {
   const planSchemas = validationPlan && validators
     ? Object.fromEntries(validationPlan.ownSchemas.map((id) => [id, validationPlan.schemas[id]]))
     : undefined;
-  const shared = sharedBase && validators
-    ? { ...sharedBase, validators: { module: validatorsOutput, exports: validators.exports }, schemasName: 'modelSchemas' }
-    : sharedBase;
-  const artifacts: GolemModelArtifact[] = [];
-  const sharedContent = needsShared
-    ? emitSharedSource({
-      output: sharedOutput,
+  // The layer is the app's: it is written for every job, and carries what differs between apps.
+  const artifacts: GolemModelArtifact[] = [{
+    path: layerOutput,
+    content: emitLayerSource({
+      output: layerOutput,
       profile: normalized.profile,
       graphs,
-      ...(planSchemas ? { schemas: planSchemas } : {}),
-    })
-    : undefined;
-  if (sharedContent !== undefined) artifacts.push({ path: sharedOutput, content: sharedContent });
+      schemaGraphs,
+      anyValidation,
+      ...(planSchemas ? { planSchemas } : {}),
+      ...(validators ? { validators: { module: validatorsOutput, exports: validators.exports } } : {}),
+    }),
+  }];
   if (validators) {
     artifacts.push({ path: validatorsOutput, content: validators.source });
   }
-  // Codecs some companion writes through their owner's wire stringify.
-  const referencedWireCodecIds = new Set(graphSchemaPairs.flatMap(({ schemaGraph, siblingWireCodecIds }) =>
-    [...schemaGraph.nodes.values()]
-      .filter((node) => node.siblingCodec && siblingWireCodecIds.has(node.codecId))
-      .map((node) => node.codecId)));
-  // Object-only models some companion converts through their owner's helpers.
-  const referencedObjectCodecIds = new Set(graphSchemaPairs.flatMap(({ graph, schemaGraph }) =>
-    graph.siblings.filter((sibling) => !sibling.emitClass).flatMap((sibling) =>
-      [...schemaGraph.nodes.values()].filter((node) => node.siblingCodec && node.name === sibling.name).map((node) => node.codecId))));
   for (const { graph, schemaGraph, siblingWireCodecIds, cyclicSiblings } of graphSchemaPairs) {
     const { source, output } = graph;
     const content = emitSource(
@@ -506,18 +491,17 @@ export function generate(context: GolemModelContext): GolemModelResult {
       specifications,
       manifestIndex,
       normalized.profile,
-      shared,
       normalized.root,
       graph,
       schemaGraph,
-      { siblingWireCodecIds, cyclicSiblings, referencedWireCodecIds, referencedObjectCodecIds },
+      { siblingWireCodecIds, cyclicSiblings },
     );
     if (content !== undefined) artifacts.push({ path: output, content });
   }
   // The keys name each source by its path from the tsconfig's directory, which is the root a rewrite resolves files from.
   const tsconfigDirectory = programInfo.configPath === undefined ? normalized.root : dirname(programInfo.configPath);
-  const codecEntries = graphSchemaPairs.flatMap(({ graph, schemaGraph }) => codecEntriesForGraph(graph, schemaGraph, checker, specifications))
-    .map((entry) => ({ ...entry, source: portableRelativeFilename(resolve(normalized.root, entry.source), tsconfigDirectory) }));
+  const codecEntries = graphSchemaPairs.flatMap(({ graph, schemaGraph }) => codecEntriesForGraph(graph, schemaGraph, checker, specifications)
+    .map((entry) => ({ ...entry, source: portableRelativeFilename(resolve(graph.identityRoot, entry.source), tsconfigDirectory) })));
   if (codecEntries.length > 0) {
     artifacts.push({
       path: codecKeysPath(normalized.directory),

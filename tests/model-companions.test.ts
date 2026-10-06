@@ -51,7 +51,7 @@ test('generated model names are scoped to their companion modules', (t) => {
     'second.model.ts': tsSource`import type { IModel } from '@exprtlabs/golem/model';\nexport type TItem = IModel<{ second: string }>;\n`,
   });
   const result = generate({ root, profile: { mobx: false, validation: false } });
-  assert.equal(result.artifacts.length, 3);
+  assert.equal(result.artifacts.length, 4);
   assert.equal(result.artifacts.filter((artifact) => artifact.content.includes('export abstract class TItemBaseModel')).length, 2);
   assert.equal(result.artifacts.some((artifact) => artifact.content.includes('first')), true);
   assert.equal(result.artifacts.some((artifact) => artifact.content.includes('second')), true);
@@ -183,7 +183,7 @@ test('re-exported IModel and IObject symbols preserve class versus plain-object 
   assert.deepEqual(loaded.plain, { label: 'plain' });
 });
 
-test('a job without validation or serde bindings writes no shared bindings file', (t) => {
+test('a job without validation writes a layer that holds no validators', (t) => {
   const { root, sourceRoot } = modelProject(t);
   writeModelSources(sourceRoot, {
     'item.model.ts': tsSource`import type { IModel } from '@exprtlabs/golem/model';
@@ -192,10 +192,41 @@ export type TItem = IModel<{ title: string & MinLength<1> }>;
 `,
   });
   const result = generate({ root, profile: { mobx: false, validation: false } });
-  assert.equal(result.artifacts.some(artifact => artifact.path.endsWith('models.generated.ts')), false);
+  const layer = result.artifacts.find(artifact => artifact.path.endsWith('models.generated.ts'));
+  assert.match(layer?.content ?? '', /profile: Object\.freeze\(\{ validation: false, mobx: false \}\)/);
+  assert.match(layer?.content ?? '', /validators: Object\.freeze\(\{ \}\)/);
+  assert.equal(result.artifacts.some(artifact => artifact.path.endsWith('models.validators.generated.ts')), false);
 });
 
-test('a custom validation binding is imported by the generated validators and the companion imports those', (t) => {
+/** Builds a project whose layer has `profile`, then runs the verifier against the built companion. */
+async function verifyLayerProfile(
+  t: TestContext,
+  profile: { readonly mobx: boolean; readonly validation: boolean },
+  expectation: 'validates' | 'accepts',
+): Promise<void> {
+  const { root, sourceRoot } = companionModelProject(t, 'layer-profile');
+  writeModelSources(sourceRoot, {
+    'order.model.ts': tsSource`import type { IModel, IObject } from '@exprtlabs/golem/model';
+import type { MinLength } from '@exprtlabs/golem/tags';
+export type TMoney = IObject<{ currency: string & MinLength<3> }>;
+export type TOrder = IModel<{ total: TMoney }>;
+`,
+  });
+  writeModelGolemYaml(root, profile);
+  await buildModelProject(root);
+  const verifier = copyFixtureFile(root, 'models/model-companions/verify-layer-profile.mjs', 'verify-layer-profile.mjs');
+  await command(root, process.execPath, [verifier, generatedCodecIdFromRoot(root, 'TOrder'), expectation]);
+}
+
+test('validation and the MobX hook follow the layer: a validating app rejects the short currency and observes the validator', async (t) => {
+  await verifyLayerProfile(t, { mobx: true, validation: true }, 'validates');
+});
+
+test('validation and the MobX hook follow the layer: an app without validation parses the same value', async (t) => {
+  await verifyLayerProfile(t, { mobx: true, validation: false }, 'accepts');
+});
+
+test('a custom validation binding is imported by the generated validators and the layer imports those', (t) => {
   const { root, sourceRoot } = modelProject(t);
   writeModelSources(sourceRoot, {
     'rules.ts': tsSource`export function isEven(value: number): boolean | string { return value % 2 === 0 || 'must be even'; }
@@ -211,5 +242,7 @@ export type TItem = IModel<{ count: number & TValidation<typeof isEven> }>;
   assert.ok(validators, 'the validators file is written');
   assert.match(validators.content, /import \{ isEven as \w+ \} from "[^"]*rules\.js"/);
   const companion = result.artifacts.find(artifact => artifact.path.endsWith('item.model.generated.ts'));
-  assert.match(companion?.content ?? '', /from "\.\/generated\/models\/models\.validators\.generated\.js"/);
+  const layer = result.artifacts.find(artifact => artifact.path.endsWith('models.generated.ts'));
+  assert.match(layer?.content ?? '', /from "\.\/models\.validators\.generated\.js"/);
+  assert.doesNotMatch(companion?.content ?? '', /validators\.generated/);
 });
