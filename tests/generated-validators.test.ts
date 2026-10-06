@@ -21,7 +21,7 @@ import { buildModelProject, generatedModelFiles, writeModelGolemYaml } from './m
 import type { ModelValidationContext } from '@exprtlabs/golem/model';
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 import type { Validator } from '@exprtlabs/golem/validation-runtime';
-import { compileSchema } from './support/compiled-validators.js';
+import { compileSchema, compileValidationPlan } from './support/compiled-validators.js';
 import { runPipeline } from '#golem/pipeline';
 
 interface Fixture {
@@ -167,6 +167,42 @@ test('validation plan identity compares owned definitions per model and wire pla
     error => error instanceof TypeError && error.message === `Conflicting standalone schema identity "${money.codecId}#wire".`,
     'a changed child wire constraint cannot be mistaken for the model schema',
   );
+});
+
+test('a validating model brings the shared object it references into the plan when the default is off', async () => {
+  const sharedDescriptor: ModelTypeDescriptor = {
+    kind: 'object',
+    properties: { code: { kind: 'string', constraints: [{ kind: 'minLength', value: 3 }] } },
+    required: ['code'],
+    additionalProperties: false,
+  };
+  const ownerDescriptor: ModelTypeDescriptor = {
+    kind: 'object',
+    properties: { shared: { kind: 'reference', name: 'Shared', construct: true } },
+    required: ['shared'],
+    additionalProperties: false,
+  };
+  // The shared object did not choose validation; the owner asked for it. The default is off.
+  const sharedGraph = createSchemaGraph();
+  sharedGraph.intern(sharedDescriptor, 'Shared');
+  sharedGraph.seal();
+  const shared = [...sharedGraph.nodes.values()].find(node => node.name === 'Shared');
+  assert.ok(shared);
+  assert.equal(shared.validationEnabled, undefined);
+  const ownerGraph = createSchemaGraph({}, { codecIds: new Map([['Shared', shared.codecId]]) });
+  ownerGraph.intern({ kind: 'reference', name: 'Shared' }, 'Shared');
+  ownerGraph.intern(ownerDescriptor, 'Owner', false, true);
+  ownerGraph.seal();
+  const owner = [...ownerGraph.nodes.values()].find(node => node.name === 'Owner');
+  assert.ok(owner);
+
+  const plan = buildCodecValidationPlan([sharedGraph, ownerGraph], [], {}, false);
+  assert.ok(plan.ownSchemas.includes(owner.codecId), 'the owner is validated');
+  assert.ok(plan.ownSchemas.includes(shared.codecId), 'the object the owner references is validated with it');
+  const { [owner.codecId]: validateOwner } = await compileValidationPlan(plan);
+  assert.ok(validateOwner);
+  assert.deepEqual(validateOwner({ shared: { code: 'abc' } }, false), []);
+  assert.deepEqual(validateOwner({ shared: { code: 'x' } }, false).map(issue => issue.path.join('.')), ['shared.code']);
 });
 
 test('generated object codecs close nested schemas and keep first/all and context behavior', async t => {
@@ -316,6 +352,39 @@ test('a project with validation off generates no validators and refuses validate
     error => error instanceof LibError && error.kind === LibErrorKind.ValidationUnavailable,
   );
   assert.doesNotThrow(() => requireObjectCodec(codecId).parse(wire));
+});
+
+test('a project with validation off generates when one model opts in, and the shared object keeps its own schemas', async t => {
+  const value = fixture(t);
+  writeFileSync(path.join(value.sourceRoot, 'a.model.ts'), [
+    "import type { IObject } from '@exprtlabs/golem/model';",
+    'export type TChild = IObject<{ at: Date }>;',
+    '',
+  ].join('\n'));
+  writeFileSync(path.join(value.sourceRoot, 'b.model.ts'), [
+    "import type { IModel } from '@exprtlabs/golem/model';",
+    "import type { TChild } from './a.model.js';",
+    "import { TParentBaseModel } from './b.model.generated.js';",
+    'export type TParent = IModel<{ child: TChild }, { validation: true }>;',
+    'export class Parent extends TParentBaseModel {}',
+    '',
+  ].join('\n'));
+  writeModelGolemYaml(value.root, { mobx: false, validation: false });
+  await compile(value.root);
+
+  const { Parent } = await import(pathToFileURL(path.join(value.root, 'build/b.model.js')).href) as {
+    Parent: new (values?: never) => object;
+  };
+  const { requireObjectCodec } = await import('@exprtlabs/golem/serde');
+  assert.equal(requireObjectCodec('TParent').validate(new Parent({ child: { at: new Date(0) } } as never)), true);
+  // The shared object does not validate itself, so its codec publishes the schemas it was generated with (Nest reads them for query shapes).
+  const child = requireObjectCodec('TChild');
+  assert.equal(typeof child.schema, 'object');
+  assert.equal(typeof child.wireSchema, 'object');
+  assert.throws(
+    () => child.validate({ at: new Date(0) }),
+    error => error instanceof LibError && error.kind === LibErrorKind.ValidationUnavailable,
+  );
 });
 
 test('unknownFormats: error makes generation fail with VALIDATE_UNKNOWN_FORMAT', async t => {

@@ -1759,7 +1759,7 @@ function emitNodeRuntime(
     ]
     : [];
 
-  const resolved = (id: string): string | undefined => ctx.resolvedSchemasExpr !== undefined && node.validationEnabled !== false
+  const resolved = (id: string): string | undefined => ctx.resolvedSchemasExpr !== undefined && validationEnabled
     ? `${ctx.resolvedSchemasExpr}[${JSON.stringify(id)}] as object`
     : undefined;
   const modelSchemaExpr = resolved(node.codecId)

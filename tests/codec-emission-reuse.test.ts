@@ -168,3 +168,11 @@ test('a nested trusted call to a model of another module shares one frozen optio
   assert.match(functionBody(source, 'stringifyOwnerCore'), /stringifyPet\(item as never, __golemTrusted\)/);
   assert.match(functionBody(source, 'toWireFormatOwnerCore'), /toWireFormatPet\(record\["pet"\] as never, __golemTrusted\)/);
 });
+
+test('a codec that does not validate publishes its own schemas, not the plan entries it has none of', () => {
+  // The profile is off and no node chose: the plan compiles none of them, so `modelSchemas` holds no entry to read.
+  const source = paymentRuntimeSource({ validationEnabled: false, resolvedSchemasExpr: 'modelSchemas' });
+  assert.doesNotMatch(source, /modelSchemas\[/);
+  assert.match(source, /schema: JSON\.parse\(/);
+  assert.doesNotMatch(source, /schemaRefsResolved/);
+});

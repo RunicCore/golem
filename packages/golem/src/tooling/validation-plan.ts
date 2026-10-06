@@ -107,6 +107,35 @@ function schemaNodeAliases(node: SchemaNode): readonly string[] {
 }
 
 /**
+ * The codecs the plan compiles: those that validate, and the reachable codecs that did not choose, which a validating
+ * model's schema references by id (as the runtime path did). A codec that sets `validation: false` stays out: the schemas
+ * that reference it leave its structure open.
+ */
+function compiledCodecIds(
+  nodes: readonly { readonly node: SchemaNode; readonly graph: SchemaGraph }[],
+  defaultValidation: boolean,
+): ReadonlySet<string> {
+  const own = new Map<string, { readonly node: SchemaNode; readonly graph: SchemaGraph }>();
+  for (const entry of nodes) {
+    if (entry.node.kind !== 'reference') own.set(entry.node.codecId, entry);
+  }
+  const compiled = new Set<string>();
+  const pending = [...own.values()].filter(({ node }) => node.validationEnabled ?? defaultValidation);
+  for (let entry = pending.pop(); entry !== undefined; entry = pending.pop()) {
+    if (compiled.has(entry.node.codecId)) continue;
+    compiled.add(entry.node.codecId);
+    for (const edge of entry.node.edges) {
+      const reached = entry.graph.nodes.get(edge);
+      if (reached === undefined) continue;
+      // A reference node stands for the codec another graph of the job owns.
+      const target = reached.kind === 'reference' ? own.get(reached.codecId) : { node: reached, graph: entry.graph };
+      if (target !== undefined && target.node.validationEnabled !== false) pending.push(target);
+    }
+  }
+  return compiled;
+}
+
+/**
  * Build the complete data-only schema set for generated object codecs.
  * Generated-model placeholder refs are resolved while generation still has
  * graph and manifest identity; the emitted runtime never discovers schemas.
@@ -122,6 +151,7 @@ export function buildCodecValidationPlan(
   const nodes = graphs.flatMap(graph => [...graph.nodes.values()]
     .map(node => ({ graph, node })))
     .sort((left, right) => left.node.codecId.localeCompare(right.node.codecId) || left.node.id.localeCompare(right.node.id));
+  const compiled = compiledCodecIds(nodes, defaultValidation);
   const aliases = new Map<string, Set<string>>();
   const addAlias = (target: Map<string, Set<string>>, alias: string, codecId: string): void => {
     let codecIds = target.get(alias);
@@ -145,7 +175,7 @@ export function buildCodecValidationPlan(
     for (const node of graph.nodes.values()) {
       if (node.kind === 'reference') continue;
       for (const alias of schemaNodeAliases(node)) addAlias(graphAliases, alias, node.codecId);
-      if (node.validationEnabled ?? defaultValidation) {
+      if (compiled.has(node.codecId)) {
         modelDefinitions.set(node.codecId, {
           reference: node.codecId,
           schema: node.modelJsonSchema ?? node.jsonSchema,
@@ -203,7 +233,7 @@ export function buildCodecValidationPlan(
   };
   const ownSchemas = new Set<string>();
   for (const { graph, node } of nodes) {
-    if (node.kind === 'reference' || !(node.validationEnabled ?? defaultValidation)) continue;
+    if (node.kind === 'reference' || !compiled.has(node.codecId)) continue;
     ownSchemas.add(node.codecId);
     if (!node.sameSchema) ownSchemas.add(`${node.codecId}#wire`);
     if (node.modelOnlyJsonSchema !== undefined) ownSchemas.add(`${node.codecId}#model-only`);
