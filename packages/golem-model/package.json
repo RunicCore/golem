@@ -43,8 +43,7 @@
     }
   },
   "dependencies": {
-    "@exprtlabs/golem": "1.0.0-rc",
-    "esbuild": "^0.25.12"
+    "@exprtlabs/golem": "1.0.0-rc"
   },
   "peerDependencies": {
     "typescript": ">=6.0.0 <8"
