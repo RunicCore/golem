@@ -7,7 +7,9 @@ import { GolemDiagnosticSeverity } from '@exprtlabs/golem/generator-api';
 import type { Validator } from '@exprtlabs/golem/validation-runtime';
 import { compile } from '@exprtlabs/golem/validator-compiler';
 
-import { compileSchema } from './support/compiled-validators.js';
+import { JSON_SCHEMA_2020_12_ID, JSON_SCHEMA_2020_12_META_SCHEMAS } from '#openapi/openapi-schemas/json-schema-2020-12';
+
+import { compileValidators } from './support/compiled-validators.js';
 import { workspace } from './support/process.js';
 
 // The official JSON-Schema-Test-Suite, draft 2020-12 (see SOURCE.md next to the files). Every case runs unless a
@@ -43,7 +45,6 @@ const NOT_RESOLVED = { code: 'VALIDATE_UNRESOLVED_REF' } as const;
 const UNKNOWN_FORMAT = { code: 'VALIDATE_UNKNOWN_FORMAT', unknownFormats: 'error' } as const;
 
 const DYNAMIC_REF = 'golem supports neither $dynamicRef nor $dynamicAnchor';
-const DIALECT_META_SCHEMA = 'the dialect meta-schema uses $dynamicRef; vendored and proved in the OpenAPI document check task';
 const REMOTE_DOCUMENT = 'the schema refers to a document the suite serves from localhost:1234; golem resolves no remote documents, and only the test folder is vendored';
 const FORMAT_ASSERTED = 'golem checks the formats it implements, so a value that does not fit the format is invalid; the suite expects an annotation only';
 const LEGACY_DEPENDENCIES = 'dependencies is a draft 7 keyword outside the 2020-12 dialect; golem implements dependentRequired and dependentSchemas';
@@ -54,8 +55,6 @@ const EXCLUSIONS: readonly Exclusion[] = [
   { file: 'optional/dynamicRef.json', reason: DYNAMIC_REF, diagnostic: NOT_SUPPORTED },
   { file: 'unevaluatedItems.json', group: 'unevaluatedItems with $dynamicRef', reason: DYNAMIC_REF, diagnostic: NOT_SUPPORTED },
   { file: 'unevaluatedProperties.json', group: 'unevaluatedProperties with $dynamicRef', reason: DYNAMIC_REF, diagnostic: NOT_SUPPORTED },
-  { file: 'defs.json', group: 'validate definition against metaschema', reason: DIALECT_META_SCHEMA, diagnostic: NOT_RESOLVED },
-  { file: 'ref.json', group: 'remote ref, containing refs itself', reason: DIALECT_META_SCHEMA, diagnostic: NOT_RESOLVED },
   { file: 'refRemote.json', reason: REMOTE_DOCUMENT, diagnostic: NOT_RESOLVED },
   { file: 'format.json', test: 'invalid email string is only an annotation by default', reason: FORMAT_ASSERTED },
   { file: 'format.json', test: 'invalid regex string is only an annotation by default', reason: FORMAT_ASSERTED },
@@ -111,10 +110,18 @@ for (const row of EXCLUSIONS) {
 
 const compiled = new Map<SuiteGroup, Promise<Validator>>();
 
+// A schema that `$ref`s the dialect meta-schema gets the vendored meta-schema and its vocabularies as resources.
+function usesDialectMetaSchema(group: SuiteGroup): boolean {
+  return JSON.stringify(group.schema).includes(`"$ref":"${JSON_SCHEMA_2020_12_ID}"`);
+}
+
 function validatorOf(group: SuiteGroup): Promise<Validator> {
   const known = compiled.get(group);
   if (known) return known;
-  const created = compileSchema(group.schema);
+  const created = compileValidators({
+    roots: { root: group.schema },
+    ...(usesDialectMetaSchema(group) ? { resources: JSON_SCHEMA_2020_12_META_SCHEMAS } : {}),
+  }).then(validators => validators.root);
   compiled.set(group, created);
   return created;
 }

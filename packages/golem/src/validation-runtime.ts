@@ -204,6 +204,8 @@ const stringFormats: Readonly<Record<string, (text: string) => boolean>> = {
   'uri-reference': text => isUri(text, true),
   uuid: text => UUID.test(text),
   regex: isRegex,
+  // The OpenAPI meta-schemas name this format for media type keys; as before, any string passes.
+  'media-range': () => true,
 };
 
 const numberFormats: Readonly<Record<string, (value: number) => boolean>> = {

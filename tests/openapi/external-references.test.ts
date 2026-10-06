@@ -55,7 +55,7 @@ test('validation errors point at the file that contains the problem', async (t) 
       assert.ok(error instanceof Error);
       assert.match(
         error.message,
-        /^OpenAPI validation failed with 1 error\(s\):\nschema: must be equal to one of the allowed values \(schemas\/bad\.json#\/type\)$/,
+        /^OpenAPI validation failed with 1 error\(s\):\nschema: Does not match any of the allowed alternatives \(schemas\/bad\.json#\/type\)$/,
       );
       return true;
     },

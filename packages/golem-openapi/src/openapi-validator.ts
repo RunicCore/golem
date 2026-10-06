@@ -1,8 +1,10 @@
-import { Ajv2020, type ErrorObject, type ValidateFunction } from 'ajv/dist/2020.js';
-import * as FormatsModule from 'ajv-formats';
-import type { FormatsPlugin } from 'ajv-formats';
+import { escapePointerToken } from '@exprtlabs/golem/schema';
+import { schemaIssueMessage, type SchemaIssue, type Validator } from '@exprtlabs/golem/validation-runtime';
+import { GolemDiagnosticSeverity } from '@exprtlabs/golem/generator-api';
+import { compile } from '@exprtlabs/golem/validator-compiler';
 import { openApiLine, type OpenApiLine } from './json.js';
 import { checkOpenApiRules } from './openapi-rules.js';
+import { JSON_SCHEMA_2020_12_ID, JSON_SCHEMA_2020_12_META_SCHEMAS } from './openapi-schemas/json-schema-2020-12.js';
 import { OAS_3_1_DOCUMENT_SCHEMA } from './openapi-schemas/oas-3-1.js';
 import { OAS_3_2_DOCUMENT_SCHEMA } from './openapi-schemas/oas-3-2.js';
 import { visitOpenApiSchemaTree } from './schema-projection.js';
@@ -18,45 +20,51 @@ export interface OpenApiProblem {
 
 export const MAX_REPORTED_PROBLEMS = 20;
 
-const JSON_SCHEMA_2020_12 = 'https://json-schema.org/draft/2020-12/schema';
-
-export interface OpenApiValidators {
-  readonly documents: Readonly<Record<OpenApiLine, ValidateFunction>>;
-  readonly schemaObject: ValidateFunction;
+interface OpenApiValidators {
+  readonly documents: Readonly<Record<OpenApiLine, Validator>>;
+  readonly schemaObject: Validator;
 }
 
-let compiled: OpenApiValidators | undefined;
-
-function isFormatsPlugin(value: unknown): value is FormatsPlugin {
-  return typeof value === 'function';
-}
-
-/** Compiled once per process: watch mode validates on every regeneration. */
-export function openApiValidators(): OpenApiValidators {
-  if (compiled) return compiled;
-  const addFormats: unknown = FormatsModule.default;
-  if (!isFormatsPlugin(addFormats)) throw new TypeError('ajv-formats export is unavailable');
-  const ajv = new Ajv2020({ strict: false, allErrors: true });
-  addFormats(ajv);
-  ajv.addFormat('media-range', true);
-  const schemaObject = ajv.getSchema(JSON_SCHEMA_2020_12);
-  if (!schemaObject) throw new Error('the JSON Schema 2020-12 meta-schema is unavailable');
-  compiled = {
-    documents: { '3.1': ajv.compile(OAS_3_1_DOCUMENT_SCHEMA), '3.2': ajv.compile(OAS_3_2_DOCUMENT_SCHEMA) },
-    schemaObject,
+/**
+ * Compiles the OAS and JSON Schema 2020-12 meta-schemas with golem's own validator compiler and loads the module
+ * from a `data:` URL; it imports the validation runtime by its absolute URL. A diagnostic, including a format
+ * the runtime does not check, is a defect of the vendored schemas and stops the process.
+ */
+async function compileOpenApiValidators(): Promise<OpenApiValidators> {
+  const roots = new Map<string, unknown>([
+    ['3.1', OAS_3_1_DOCUMENT_SCHEMA],
+    ['3.2', OAS_3_2_DOCUMENT_SCHEMA],
+    ['schemaObject', JSON_SCHEMA_2020_12_META_SCHEMAS[JSON_SCHEMA_2020_12_ID]],
+  ]);
+  const resources = new Map(Object.entries(JSON_SCHEMA_2020_12_META_SCHEMAS).filter(([id]) => id !== JSON_SCHEMA_2020_12_ID));
+  const { source, diagnostics } = compile(
+    { roots, resources },
+    { unknownFormats: 'error', runtimeModule: import.meta.resolve('@exprtlabs/golem/validation-runtime'), documentName: 'the OpenAPI meta-schemas' },
+  );
+  const errors = diagnostics.filter((entry) => entry.severity === GolemDiagnosticSeverity.Error);
+  if (errors.length) throw new Error(`the OpenAPI meta-schemas do not compile: ${errors.map((entry) => entry.message).join('; ')}`);
+  const loaded = await import(`data:text/javascript,${encodeURIComponent(source)}`) as { readonly validators: Readonly<Record<string, Validator>> };
+  return {
+    documents: { '3.1': loaded.validators['3.1'], '3.2': loaded.validators['3.2'] },
+    schemaObject: loaded.validators.schemaObject,
   };
-  return compiled;
 }
 
-function ajvProblem(ruleId: string, error: ErrorObject, basePointer: string): OpenApiProblem {
-  const params: Readonly<Record<string, unknown>> = error.params;
-  const property = typeof params.unevaluatedProperty === 'string'
-    ? params.unevaluatedProperty
-    : typeof params.additionalProperty === 'string' ? params.additionalProperty : undefined;
-  const message = property === undefined
-    ? error.message ?? error.keyword
-    : `property ${JSON.stringify(property)} is not allowed`;
-  return { ruleId, message, pointer: `${basePointer}${error.instancePath}` };
+// Compiled when the module loads, once per process: watch mode validates on every regeneration, and the check
+// functions below stay synchronous.
+const validators = await compileOpenApiValidators();
+
+/**
+ * The pointer of the object that holds the problem: a missing or unknown key is reported at its object, as the
+ * issue path ends at the key.
+ */
+function issueProblem(ruleId: string, issue: SchemaIssue, basePointer: string): OpenApiProblem {
+  const keyed = issue.code === 'required' || issue.code === 'unknownKey';
+  const path = keyed ? issue.path.slice(0, -1) : issue.path;
+  const message = issue.code === 'unknownKey'
+    ? `property ${JSON.stringify(issue.key)} is not allowed`
+    : schemaIssueMessage(issue);
+  return { ruleId, message, pointer: `${basePointer}${path.map((token) => `/${escapePointerToken(String(token))}`).join('')}` };
 }
 
 export function uniqueProblems(problems: readonly OpenApiProblem[]): OpenApiProblem[] {
@@ -70,7 +78,7 @@ export function uniqueProblems(problems: readonly OpenApiProblem[]): OpenApiProb
 }
 
 /**
- * Ajv reports wrapper errors (`anyOf`, a parent's `unevaluatedProperties`
+ * The validators report wrapper issues (a `union` over its alternatives, a parent's `unknownKey`
  * after a failed branch) beside the specific one. Keep the first error at
  * each pointer, and drop an error when a deeper error explains it.
  */
@@ -84,18 +92,14 @@ export function mostSpecificProblems(problems: readonly OpenApiProblem[]): OpenA
     .filter((problem) => !pointers.some((other) => other.startsWith(`${problem.pointer}/`)));
 }
 
-/** Document shape against the official OAS schema; `if` errors only wrap the specific error. */
+/** Document shape against the official OAS schema. */
 export function checkOpenApiStructure(document: unknown): OpenApiProblem[] {
-  const validate = openApiValidators().documents[openApiLine(document)];
-  if (validate(document)) return [];
-  return mostSpecificProblems((validate.errors ?? [])
-    .filter((error) => error.keyword !== 'if')
-    .map((error) => ajvProblem('struct', error, '')));
+  const issues = validators.documents[openApiLine(document)](document, true);
+  return mostSpecificProblems(issues.map((issue) => issueProblem('struct', issue, '')));
 }
 
 /** Each outermost Schema Object against the JSON Schema 2020-12 meta-schema. */
 export function checkSchemaObjects(document: unknown): OpenApiProblem[] {
-  const { schemaObject } = openApiValidators();
   const checkedRoots = new Set<string>();
   const problems: OpenApiProblem[] = [];
   const insideCheckedRoot = (pointer: string): boolean => {
@@ -109,8 +113,7 @@ export function checkSchemaObjects(document: unknown): OpenApiProblem[] {
       const pointer = walkerPointer.slice(1);
       if (insideCheckedRoot(pointer)) return;
       checkedRoots.add(pointer);
-      if (schemaObject(schema)) return;
-      for (const error of schemaObject.errors ?? []) problems.push(ajvProblem('schema', error, pointer));
+      for (const issue of validators.schemaObject(schema, true)) problems.push(issueProblem('schema', issue, pointer));
     },
   });
   return mostSpecificProblems(problems);

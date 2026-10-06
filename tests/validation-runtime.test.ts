@@ -4,6 +4,7 @@ import { test } from 'node:test';
 import {
   checkFormat,
   codePointLength,
+  isKnownFormat,
   jsonEqual,
   schemaIssueMessage,
   type SchemaIssueDetail,
@@ -141,6 +142,9 @@ const formatRows: readonly (readonly [format: string, value: unknown, valid: boo
   ['double', 1.7976931348623157e308, true],
   ['double', Number.NaN, false],
   ['double', Number.NEGATIVE_INFINITY, false],
+  ['media-range', 'text/*', true],
+  ['media-range', 'not a media range', true],
+  ['media-range', 7, true],
   ['email', null, true],
   ['uuid', 7, true],
   ['int32', true, true],
@@ -153,6 +157,11 @@ test('checkFormat accepts valid values, rejects invalid ones, and ignores other 
   const failures = formatRows.filter(([format, value, valid]) => checkFormat(format, value) !== valid)
     .map(([format, value, valid]) => `${format} ${JSON.stringify(value)} should be ${valid ? 'valid' : 'invalid'}`);
   assert.deepEqual(failures, []);
+});
+
+test('isKnownFormat names the OpenAPI media-range format, which checks no value', () => {
+  assert.equal(isKnownFormat('media-range'), true);
+  assert.equal(isKnownFormat('unknown-format'), false);
 });
 
 const equalRows: readonly (readonly [left: unknown, right: unknown, equal: boolean])[] = [

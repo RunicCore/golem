@@ -218,6 +218,6 @@ test('style cookie is accepted for a cookie parameter and rejected for a header 
       output: path.join(directory, 'sdk-header'),
       profile: { mobx: false, validation: false },
     }),
-    /^Error: OpenAPI validation failed with 1 error\(s\):\nstruct: must be equal to constant \(header\.json#\/paths\/~1bad\/get\/parameters\/0\/style\)$/,
+    /^Error: OpenAPI validation failed with 1 error\(s\):\nstruct: Must be "simple" \(header\.json#\/paths\/~1bad\/get\/parameters\/0\/style\)$/,
   );
 });

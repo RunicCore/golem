@@ -58,6 +58,14 @@ test('misplaced $ref is a struct error (spec-strict-refs)', () => {
   assert.match(problems[0]?.message ?? '', /property "\$ref" is not allowed/);
 });
 
+test('an unknown key under info is a struct error at info', () => {
+  const problems = checkOpenApiStructure(documentBase('3.1.0', {
+    info: { title: 'x', version: '1', summry: 'typo' },
+  }));
+  assert.deepEqual(pointers(problems), [['struct', '/info']]);
+  assert.equal(problems[0]?.message, 'property "summry" is not allowed');
+});
+
 test('example value exclusivity is a struct error (spec-example-values)', () => {
   const external = documentBase('3.1.0', {
     components: { examples: { E: { value: 1, externalValue: 'https://x.example/e.json' } } },
