@@ -49,3 +49,11 @@ test('every model manifest entry carries the codec id a rewrite stamps, and vali
   const empty = { ...manifest, models: manifest.models.map(entry => ({ ...entry, codecId: '' })) };
   assert.throws(() => validateModelManifest(empty), /Invalid model entry/);
 });
+
+test('a manifest profile with a field golem no longer reads is rejected and says to regenerate', () => {
+  const profile = { mobx: false, validation: true, allowAny: false, retiredOption: true };
+  assert.throws(
+    () => validateModelManifest({ profile, models: [] }, 'sdk/model-manifest.json'),
+    /Invalid model manifest sdk\/model-manifest\.json: profile has unsupported field\(s\): retiredOption\. Regenerate the models\./,
+  );
+});

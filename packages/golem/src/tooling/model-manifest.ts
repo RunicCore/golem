@@ -76,7 +76,7 @@ export function validateModelProfile(profile: unknown, filename = MODEL_MANIFEST
   const unknown = Object.keys(profile).filter((key) => !['mobx', 'validation', 'allowAny', 'unknownFormats'].includes(key));
   if (unknown.length > 0) {
     throw new Error(
-      `Invalid model manifest ${filename}: profile has unsupported field(s): ${unknown.join(', ')}.`,
+      `Invalid model manifest ${filename}: profile has unsupported field(s): ${unknown.join(', ')}. Regenerate the models.`,
     );
   }
   return resolveProfile(profile);
