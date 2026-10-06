@@ -11,7 +11,6 @@
     "openapi",
     "nestjs",
     "models",
-    "ajv",
     "mobx"
   ],
   "author": "exprtlabs.ai",
@@ -42,7 +41,6 @@
     "LICENSE"
   ],
   "sideEffects": [
-    "./dist/ajv.js",
     "./dist/bin/golem.js",
     "./dist/tooling/register.js"
   ],
@@ -61,11 +59,6 @@
       "types": "./dist/validation-runtime.d.ts",
       "import": "./dist/validation-runtime.js",
       "default": "./dist/validation-runtime.js"
-    },
-    "./ajv": {
-      "types": "./dist/ajv.d.ts",
-      "import": "./dist/ajv.js",
-      "default": "./dist/ajv.js"
     },
     "./mobx": {
       "types": "./dist/mobx.d.ts",
@@ -172,11 +165,6 @@
       "import": "./dist/nest.js",
       "default": "./dist/nest.js"
     },
-    "./ajv-tooling": {
-      "types": "./dist/tooling/ajv-tooling.d.ts",
-      "import": "./dist/tooling/ajv-tooling.js",
-      "default": "./dist/tooling/ajv-tooling.js"
-    },
     "./validation-plan": {
       "types": "./dist/tooling/validation-plan.d.ts",
       "import": "./dist/tooling/validation-plan.js",
@@ -203,8 +191,6 @@
   },
   "peerDependencies": {
     "@nestjs/common": "^11.0.0",
-    "ajv": "^8.20.0",
-    "ajv-formats": "^3.0.1",
     "esbuild": "^0.25.12",
     "mobx": "^6.13.0",
     "rxjs": "^7.8.0",
@@ -216,12 +202,6 @@
       "optional": true
     },
     "mobx": {
-      "optional": true
-    },
-    "ajv": {
-      "optional": true
-    },
-    "ajv-formats": {
       "optional": true
     },
     "esbuild": {
@@ -239,8 +219,6 @@
   },
   "devDependencies": {
     "@nestjs/common": "11.2.3",
-    "ajv": "^8.20.0",
-    "ajv-formats": "^3.0.1",
     "esbuild": "0.25.12",
     "mobx": "^6.16.1",
     "rxjs": "7.8.2",

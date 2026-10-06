@@ -47,8 +47,6 @@
   },
   "dependencies": {
     "@exprtlabs/golem": "1.0.0-rc",
-    "ajv": "^8.20.0",
-    "ajv-formats": "^3.0.1",
     "esbuild": "^0.25.12",
     "yaml": "^2.9.0"
   },
