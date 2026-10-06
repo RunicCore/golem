@@ -15,6 +15,7 @@ import { golem as vitePlugin } from '#golem/vite';
 import { copyFixtureFile, createFixtureProject, linkProjectPackages, snapshotFilesystem, writeGeneratedArtifacts } from './fixture-project.js';
 import { createModelProject } from './model-project.js';
 import { command, workspace } from './support/process.js';
+import { ORDER_WIRE, runSite, sharedFolderProject } from './support/shared-folder-project.js';
 
 const SERDE = '@exprtlabs/golem/serde';
 
@@ -275,6 +276,16 @@ for (const bundler of BUNDLERS) {
     const bundle = await build(bundler, t, root, 'src/linked.ts');
     const result = await command(root, process.execPath, [bundle]);
     assert.deepEqual(JSON.parse(result.stdout), { currency: 'USD', value: '1' });
+  });
+
+  test(`${bundler.name}: a bundle of app A runs the companions of the shared folder, which import #golem-models`, async (t) => {
+    const project = sharedFolderProject(t, `${bundler.name}-shared-folder`);
+    await runPipeline(path.join(project.appA, 'golem.yaml'));
+    const bundle = await build(bundler, t, project.appA, 'src/site.ts');
+    const outcome = await runSite(project.appA, bundle);
+    assert.deepEqual(outcome.wire, ORDER_WIRE);
+    assert.equal(outcome.validityObservable, true);
+    assert.match(outcome.rejected ?? '', /Model validation failed/);
   });
 
   test(`${bundler.name}: a bundle resolves #golem-models to the layer of the project`, async (t) => {

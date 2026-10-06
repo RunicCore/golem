@@ -11,6 +11,7 @@ import { copyFixtureFile, createFixtureProject, linkProjectPackages, readFixture
 import { createControllerFixture } from './fixture-templates/controllers/project.js';
 import { createModelProject } from './model-project.js';
 import { command, workspace, type CommandResult } from './support/process.js';
+import { ORDER_WIRE, runSite, sharedFolderProject } from './support/shared-folder-project.js';
 
 const NODE_FLAGS = ['--import', '@exprtlabs/golem/register', '--experimental-strip-types', '--enable-source-maps'] as const;
 const SERDE = '@exprtlabs/golem/serde';
@@ -224,6 +225,15 @@ test('the Node loader resolves #golem-models in a file outside the project to th
   const result = await run(root, 'src/layer.ts');
   assert.equal(result.code, 0, result.stderr);
   assert.equal(result.stdout, 'true\n');
+});
+
+test('the Node loader runs app A over the companions of a shared folder, which import #golem-models', async (t) => {
+  const project = sharedFolderProject(t, 'loader-shared-folder');
+  await runPipeline(path.join(project.appA, 'golem.yaml'));
+  const outcome = await runSite(project.appA, path.join(project.appA, 'src/site.ts'), NODE_FLAGS);
+  assert.deepEqual(outcome.wire, ORDER_WIRE);
+  assert.equal(outcome.validityObservable, true);
+  assert.match(outcome.rejected ?? '', /Model validation failed/);
 });
 
 test('a project with no models job that imports #golem-models fails the Node loader with the missing-layer error', async (t) => {

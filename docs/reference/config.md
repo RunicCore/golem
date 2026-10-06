@@ -154,9 +154,9 @@ Install `@exprtlabs/golem-model` to use `models`.
 | Key | Type | Required | Default | Meaning |
 | --- | --- | --- | --- | --- |
 | `root` | path | No | `.` | TypeScript project directory. |
-| `sources` | array of paths | No | — | Explicit config-relative model files, which may have any `.ts`, `.mts` or `.cts` name. When omitted, scans `src/**` below `root` for the `suffixes`. |
-| `suffixes` | array of strings | No | `[".model.ts", ".models.ts"]` | File-name endings that make a file below `root/src` a model source. Each entry starts with `.`, ends in `.ts`, `.mts` or `.cts`, appears once, and does not end in `.generated.<ext>`. |
-| `output` | path | No | `<root>/src/generated/models` | Shared generated model output. It must not overlap another job. |
+| `sources` | array of paths | No | — | Explicit config-relative model files, which may have any `.ts`, `.mts` or `.cts` name. When omitted, every file below `<root>/src` and every file that the tsconfig includes or imports is a model source when it ends in one of the `suffixes`, also outside `root` ([shared folder](#a-folder-shared-by-several-apps)). |
+| `suffixes` | array of strings | No | `[".model.ts", ".models.ts"]` | File-name endings that make a file a model source. Each entry starts with `.`, ends in `.ts`, `.mts` or `.cts`, appears once, and does not end in `.generated.<ext>`. |
+| `output` | path | No | `<root>/src/generated/models` | The layer of the app and its validators. It must not overlap another job. |
 
 The generated file for each model source stays beside it and puts `.generated`
 before the final extension: `order.entity.ts` gets `order.entity.generated.ts`.
@@ -175,16 +175,7 @@ models:
 
 ### A folder shared by several apps
 
-Give a folder that several apps share its own `golem.yaml` and tsconfig, and run `golem generate` there. The models of the folder are generated into the folder.
-
-```yaml
-# shared/golem.yaml
-version: 1
-mobx: false
-validation: true
-models:
-  root: .
-```
+Several apps can include one folder of models. The folder has no `golem.yaml`, and the app needs no configuration for it.
 
 Each app includes the folder in its own tsconfig, with a `rootDir` that contains both:
 
@@ -195,26 +186,25 @@ Each app includes the folder in its own tsconfig, with a `rootDir` that contains
 }
 ```
 
-Run `golem generate` in the folder first. The folder then holds a `model-manifest.json` beside its generated models. It names the codec id of each model of the folder.
+A models job generates every model file that its tsconfig includes or imports, also outside `<root>/src`. So `golem generate` and `golem build` in the app generate the models of the folder, and a model of the app can use one as a field type. A model file of the folder imports only files of the folder and installed packages.
 
-The app does not list a model of the folder in `models.sources`, and it does not generate one. `golem generate`, `golem check`, `golem build` and every host read the codec ids from the manifest of the folder. The app can then rewrite the `parse<T>()` calls that use the models of the folder. The `.golem/codec-keys.json` of the app names only the models of the app.
+The generated files beside the models of the folder are the same text in every app. Each app has its own layer, `models.generated.ts` in `models.output`. The layer holds the `mobx` and `validation` settings of the app and the schemas, validators and serde bindings of its models. A generated file of the folder imports the layer through the specifier `#golem-models`. So each app runs the shared models with its own profile.
 
-The app can have models of its own, with its own `mobx` and `validation`. They do not have to match the folder.
+Golem resolves `#golem-models` for `golem build`, the Node loader, the Vite plugin, the esbuild plugin and TypeScript. The tsconfig needs no `paths` entry. A tool outside golem needs an entry in the `package.json` of the app, or its own alias:
 
-```yaml
-# app/golem.yaml
-version: 1
-mobx: true
-validation: false
-models:
-  root: .
-  sources:
-    - src/order.model.ts
+```json
+{
+  "imports": { "#golem-models": "./src/generated/models/models.generated.js" }
+}
 ```
 
-If a generated file of the folder names a `model-manifest.json` that does not exist, golem stops and names the missing file. Run `golem generate` in the folder.
+Use the `models.output` of the app in the path.
 
-The apps share one generated copy of each model. `golem build`, `golem check` and every host rewrite the `parse<T>()` calls in the shared files for the app that builds them.
+Give the shared folder a `package.json` with a `name`. Golem then names each `TSerde` and `TValidation` function of the folder by that package, so its id is the same in every app. Two shared folders without a name that have a function with the same file name and export name fail with a collision error.
+
+One process at a time writes the generated files of a shared folder. It keeps the lock in `.golem.lock` in the folder. Put `.golem.lock` in `.gitignore`. The lock rules are in the [watch guide](/guide/watch#shared-model-folders).
+
+An app that stops including the folder leaves the generated files in it, because another app can use them. Golem deletes the generated file of a model file that no longer exists.
 
 The global `allowAny` policy defaults to `false`. An `IObject` or `IModel` can
 opt in with `IObject<Fields, { allowAny: true }>` or tighten a global `true`

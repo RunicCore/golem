@@ -9,7 +9,8 @@ import { BUNDLER_TYPESCRIPT_FILE, GolemHostError, LAYER_SPECIFIER, layerOf, NODE
  * rewrite in memory before esbuild strips the types. The rewritten text carries its source map inline, which esbuild
  * chains into the bundle's map. A file the scan cannot rewrite is an error located at the file and line; a file with
  * no rewrite goes on to the plugins after this one, and a failed file watches the key tables `golem generate` writes. The first TypeScript file loads the compiler. The files a rewrite
- * depends on are watched, and each rebuild scans the files it loads again.
+ * depends on are watched, and each rebuild scans the files it loads again. The plugin also resolves `#golem-models`, the
+ * specifier that generated companions use for the layer, to the layer file of the project.
  */
 export type { GolemHostOptions };
 
