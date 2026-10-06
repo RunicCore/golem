@@ -12,14 +12,12 @@ import { command } from './support/process.js';
 
 const profiles: readonly (readonly [string, GolemProfile])[] = [
   ['validation off', { mobx: false, validation: false }],
-  ['runtime Ajv', { mobx: false, validation: true }],
-  ['standalone', { mobx: false, validation: true, ajvStandalone: true }],
+  // Models validate with the generated validators whatever `ajvStandalone` says, so one validating profile covers them.
+  ['generated validators', { mobx: false, validation: true }],
 ];
 
-function project(t: TestContext, prefix: string, profile: GolemProfile) {
-  return createModelProject(t, {
-    prefix, linkTypescript: true, allowJs: profile.ajvStandalone === true,
-  });
+function project(t: TestContext, prefix: string) {
+  return createModelProject(t, { prefix, linkTypescript: true });
 }
 
 interface Chain {
@@ -80,7 +78,7 @@ for (const [label, profile] of profiles) for (const chain of [modelChain, object
   test(`a companion emits only its own ${kind} models of a chained job and references the rest by codec id (${label})`, (t: TestContext) => {
     const count = 12;
     const last = count - 1;
-    const { root, sourceRoot } = project(t, 'golem-model-chain-', profile);
+    const { root, sourceRoot } = project(t, 'golem-model-chain-');
     writeModelSources(sourceRoot, chainSources(count, chain));
     const { artifacts } = generate({ root, profile });
     const companion = (index: number): string =>
@@ -91,7 +89,6 @@ for (const [label, profile] of profiles) for (const chain of [modelChain, object
       const expectations: Readonly<Record<string, boolean>> = {
         [`function fillT${name}${index}(`]: true,
         [`function stringifyT${name}${index}Core(`]: true,
-        [`__resolvedModelSchema_T${name}${index} `]: profile.validation === true && profile.ajvStandalone !== true,
         [`class T${name}${index}BaseModel`]: kind === 'IModel',
         [`function decodeT${name}${index}(`]: kind === 'IObject',
         [`function encodeT${name}${index}(`]: kind === 'IObject',
@@ -101,11 +98,33 @@ for (const [label, profile] of profiles) for (const chain of [modelChain, object
         if (expected) assert.ok(owner.includes(owned), `${name.toLowerCase()}-${index} emits its own ${owned}`);
       }
     }
+    // Each companion binds its own models to the shared validators and reaches the rest by codec id.
+    for (const index of [0, last]) {
+      assert.equal(companion(index).includes('requireModelValidator(validators, '), profile.validation === true, `${name.toLowerCase()}-${index} validator binding`);
+    }
     assert.ok(lastCompanion.includes(kind === 'IModel' ? `class T${name}${last}BaseModel` : `function stringifyT${name}${last}Core(`));
     // Each companion carries its own model; its size does not grow with the chain behind it.
     assert.ok(lastCompanion.length < companion(1).length * 1.5, `${name.toLowerCase()}-${last} ${lastCompanion.length} B vs ${name.toLowerCase()}-1 ${companion(1).length} B`);
   });
 }
+
+test('with validation off a companion imports the validators and plan schemas only when one of its models validates', (t: TestContext) => {
+  const { root, sourceRoot } = project(t, 'golem-model-imports-');
+  writeModelSources(sourceRoot, {
+    'plain.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
+export type TPlain = IModel<{ at: Date }>;
+`,
+    'opted.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
+export type TOpted = IModel<{ at: Date }, { validation: true }>;
+`,
+  });
+  const { artifacts } = generate({ root, profile: { mobx: false, validation: false } });
+  const companion = (stem: string): string => artifacts.find((artifact) => artifact.path.endsWith(`${stem}.model.generated.ts`))?.content ?? '';
+  assert.match(companion('opted'), /import \{ validators \} from /);
+  assert.match(companion('opted'), /import \{ modelSchemas \} from /);
+  assert.doesNotMatch(companion('plain'), /import \{ validators \} from /);
+  assert.doesNotMatch(companion('plain'), /modelSchemas/);
+});
 
 const cycleSources = {
   'a.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
@@ -148,7 +167,7 @@ console.log(JSON.stringify({
 
 test('editing a leaf model regenerates the ids its dependents reference', (t: TestContext) => {
   const profile: GolemProfile = { mobx: false, validation: true };
-  const { root, sourceRoot } = project(t, 'golem-model-leaf-edit-', profile);
+  const { root, sourceRoot } = project(t, 'golem-model-leaf-edit-');
   writeModelSources(sourceRoot, chainSources(3));
   const ids = (): { readonly owned: string; readonly referenced: readonly string[] } => {
     const artifacts = generate({ root, profile }).artifacts;
@@ -209,7 +228,7 @@ console.log(JSON.stringify({
 // One project per profile holds a short chain of each kind and both cycles, so the profile compiles once.
 for (const [label, profile] of profiles) {
   test(`chained, cyclic and mixed-kind jobs compile in one project (${label})`, async (t: TestContext) => {
-    const { root, sourceRoot } = project(t, 'golem-model-job-graph-', profile);
+    const { root, sourceRoot } = project(t, 'golem-model-job-graph-');
     writeModelSources(sourceRoot, {
       ...chainSources(3, modelChain),
       ...chainSources(3, objectChain),

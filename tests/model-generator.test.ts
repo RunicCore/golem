@@ -37,11 +37,14 @@ test('exports API 1 and emits profile-specific model companions without writes',
   for (const [profile, expected] of profileCases()) {
     const result = generate({ root, sources: [source], profile });
     assert.deepEqual(result.manifestPaths, []);
-    // payment.model.ts has no custom validation/serde bindings, so the shared
-    // models.generated.ts module is never emitted for either profile (see
-    // "a job without validation or serde bindings writes no shared bindings
-    // file" in tests/model-companions.test.ts).
-    assert.equal(result.artifacts.length, 2);
+    // A job without validation or serde bindings writes the companion and the codec keys only. A validating job also
+    // writes the shared models.generated.ts and the generated validators.
+    assert.equal(result.artifacts.length, expected.validation ? 4 : 2);
+    assert.equal(
+      result.artifacts.some(artifact => artifact.path.endsWith('models.validators.generated.ts')),
+      expected.validation,
+      'the validators file is written exactly when the profile validates',
+    );
     assert.ok(result.artifacts.some(artifact => artifact.path === path.join(sourceRoot, 'payment.model.generated.ts')));
     assert.equal(fs.existsSync(path.join(sourceRoot, 'payment.model.generated.ts')), false);
     const output = result.artifacts.map(artifact => artifact.content).join('\n');
@@ -160,9 +163,8 @@ test('prospective companions permit a concrete subclass field rename and still r
   writeGeneratedArtifacts(first.artifacts);
   writeModelSources(sourceRoot, { 'account.model.ts': accountModelWithField({ field: 'complete' }) });
   const second = generate({ root, sources: [source], profile: { mobx: false, validation: true } });
-  // account.model.ts has no custom validation/serde bindings, so no shared
-  // models.generated.ts module is emitted (companion + codec keys only).
-  assert.equal(second.artifacts.length, 2);
+  // The validating job writes the companion, the codec keys, the shared module and the generated validators.
+  assert.equal(second.artifacts.length, 4);
   writeModelSources(sourceRoot, { 'account.model.ts': accountModelWithMissingImport({ field: 'complete' }) });
   assert.throws(
     () => generate({ root, sources: [source], profile: { mobx: false, validation: true } }),
