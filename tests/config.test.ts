@@ -183,7 +183,8 @@ test('configuration errors reject unknown overrides, duplicate keys and overlapp
     ['version: 1\nopenapi: [{input: api.yaml, output: sdk, maxRefBytes: 0}]', /positive/],
     ['version: 1\nallowAny: maybe\nmodels: {}\n', /allowAny must be a boolean/],
     ['version: 1\nunknownFormats: strict\nmodels: {}\n', /unknownFormats must be "warn" or "error"/],
-    ['version: 1\nopenapi:\n  - input: api.yaml\n    output: sdk\n    ajvStandalone: true\n', /Unknown openapi\[0\] key/],
+    ['version: 1\nretiredOption: true\nmodels: {}\n', /Unknown configuration key: retiredOption\./],
+    ['version: 1\nopenapi:\n  - input: api.yaml\n    output: sdk\n    retiredOption: true\n', /Unknown openapi\[0\] key/],
     ['version: 1\nopenapi:\n  - input: api.yaml\n    output: sdk\nmodels:\n  root: .\n  output: sdk/models\n', /Overlapping/],
     ['version: 1\nopenapi:\n  - input: api.yaml\n    output: src\nmodels:\n  root: .\n', /Overlapping/],
   ];
@@ -191,14 +192,6 @@ test('configuration errors reject unknown overrides, duplicate keys and overlapp
     const { filename } = fixture(t, yaml);
     assert.throws(() => loadConfig(filename), error);
   }
-});
-
-test('ajvStandalone is an unknown key', (t: TestContext) => {
-  const { filename } = fixture(t, 'version: 1\najvStandalone: true\nmodels: {}\n');
-  assert.throws(
-    () => loadConfig(filename),
-    (error: unknown) => error instanceof Error && error.message === 'Unknown configuration key: ajvStandalone.',
-  );
 });
 
 test('configured provider absence and incompatible API have distinct actionable errors', async (t: TestContext) => {
