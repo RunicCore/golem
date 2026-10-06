@@ -63,32 +63,29 @@ const expected: Readonly<Record<string, boolean>> = {
   catModelForeignTag: false,
 };
 
-for (const ajvStandalone of [false, true]) {
-  test(`discriminator mapping: validation agrees with encode and round trip (ajvStandalone=${ajvStandalone})`, async (t) => {
-    const output = path.join(createFixtureProject(t, 'golem-openapi-standalone-discriminator-'), 'sdk');
-    await generateMaterializedSdk(petDocument, { output, name: 'Pets', profile: { mobx: false, validation: true, ajvStandalone } });
-    compileGeneratedSdk(output, [], { strict: true });
-    copyFixtureFile(output, 'openapi/standalone-discriminator/verify.mjs', 'verify.mjs');
-    // Standalone validators must run where code generation from strings is blocked.
-    const flags = ajvStandalone ? ['--disallow-code-generation-from-strings'] : [];
-    const result = await command(output, process.execPath, [...flags, 'verify.mjs']);
-    const { codeGeneration, report } = JSON.parse(result.stdout) as {
-      readonly codeGeneration: string;
-      readonly report: Readonly<Record<string, CaseReport>>;
-    };
-    if (ajvStandalone) assert.equal(codeGeneration, 'blocked');
-    for (const [name, outcome] of Object.entries(report)) {
-      assert.deepEqual(outcome, {
-        validateCodec: expected[name],
-        validateModel: expected[name],
-        encodeOwner: expected[name],
-        toWireFormat: expected[name],
-        stringify: expected[name],
-      }, name);
-    }
-    assert.deepEqual(Object.keys(report).sort(), Object.keys(expected).sort());
-  });
-}
+test('discriminator mapping: validation agrees with encode and round trip', async (t) => {
+  const output = path.join(createFixtureProject(t, 'golem-openapi-discriminator-validation-'), 'sdk');
+  await generateMaterializedSdk(petDocument, { output, name: 'Pets', profile: { mobx: false, validation: true } });
+  compileGeneratedSdk(output, [], { strict: true });
+  copyFixtureFile(output, 'openapi/standalone-discriminator/verify.mjs', 'verify.mjs');
+  // Generated validators must run where code generation from strings is blocked.
+  const result = await command(output, process.execPath, ['--disallow-code-generation-from-strings', 'verify.mjs']);
+  const { codeGeneration, report } = JSON.parse(result.stdout) as {
+    readonly codeGeneration: string;
+    readonly report: Readonly<Record<string, CaseReport>>;
+  };
+  assert.equal(codeGeneration, 'blocked');
+  for (const [name, outcome] of Object.entries(report)) {
+    assert.deepEqual(outcome, {
+      validateCodec: expected[name],
+      validateModel: expected[name],
+      encodeOwner: expected[name],
+      toWireFormat: expected[name],
+      stringify: expected[name],
+    }, name);
+  }
+  assert.deepEqual(Object.keys(report).sort(), Object.keys(expected).sort());
+});
 
 interface MappedNames {
   /** Capitalized prefix that keeps the case's union, operation and variant fields distinct within the shared document. */
@@ -144,32 +141,28 @@ function mappedDocument(cases: readonly MappedNames[]): Record<string, unknown> 
   return { openapi: '3.1.0', info: { title: 'Names', version: '1' }, paths, components: { schemas } };
 }
 
-// Each profile generates, compiles and runs the SDK: runtime Ajv lowers mappings as the
-// generated modules register schemas; standalone lowers them at generation.
-for (const ajvStandalone of [false, true]) {
-  test(`discriminator mappings select variants for escaped names and $id references (ajvStandalone=${ajvStandalone})`, async (t) => {
-    const output = path.join(createFixtureProject(t, 'golem-openapi-mapped-names-'), 'sdk');
-    // These component names are outside the OpenAPI component-key pattern, so the document is not re-validated.
-    writeGeneratedSdk(writeSdk, mappedDocument(mappedCases), { output, name: 'Names', profile: { mobx: false, validation: true, ajvStandalone } });
-    compileGeneratedSdk(output, [], { strict: true });
-    copyFixtureFile(output, 'openapi/standalone-discriminator/verify-mapping.mjs', 'verify-mapping.mjs');
-    const requests = Object.fromEntries(mappedCases.map((mapped) => [mapped.id, {
-      operation: `create${mapped.id}Pet`,
-      bodies: {
-        cat: { kind: 'cat', [catField(mapped)]: 'Miso' },
-        dog: { kind: 'dog', [dogField(mapped)]: true },
-        dogTagWithCatFields: { kind: 'dog', [catField(mapped)]: 'Miso' },
-        unknownTag: { kind: 'bird', [catField(mapped)]: 'Miso' },
-      },
-    }]));
-    const flags = ajvStandalone ? ['--disallow-code-generation-from-strings'] : [];
-    const result = await command(output, process.execPath, [...flags, 'verify-mapping.mjs', JSON.stringify(requests)]);
-    assert.deepEqual(
-      JSON.parse(result.stdout),
-      Object.fromEntries(mappedCases.map(({ id }) => [id, { cat: true, dog: true, dogTagWithCatFields: false, unknownTag: false }])),
-    );
-  });
-}
+// The generator lowers the mappings of every operation schema when it compiles the validators.
+test('discriminator mappings select variants for escaped names and $id references', async (t) => {
+  const output = path.join(createFixtureProject(t, 'golem-openapi-mapped-names-'), 'sdk');
+  // These component names are outside the OpenAPI component-key pattern, so the document is not re-validated.
+  writeGeneratedSdk(writeSdk, mappedDocument(mappedCases), { output, name: 'Names', profile: { mobx: false, validation: true } });
+  compileGeneratedSdk(output, [], { strict: true });
+  copyFixtureFile(output, 'openapi/standalone-discriminator/verify-mapping.mjs', 'verify-mapping.mjs');
+  const requests = Object.fromEntries(mappedCases.map((mapped) => [mapped.id, {
+    operation: `create${mapped.id}Pet`,
+    bodies: {
+      cat: { kind: 'cat', [catField(mapped)]: 'Miso' },
+      dog: { kind: 'dog', [dogField(mapped)]: true },
+      dogTagWithCatFields: { kind: 'dog', [catField(mapped)]: 'Miso' },
+      unknownTag: { kind: 'bird', [catField(mapped)]: 'Miso' },
+    },
+  }]));
+  const result = await command(output, process.execPath, ['--disallow-code-generation-from-strings', 'verify-mapping.mjs', JSON.stringify(requests)]);
+  assert.deepEqual(
+    JSON.parse(result.stdout),
+    Object.fromEntries(mappedCases.map(({ id }) => [id, { cat: true, dog: true, dogTagWithCatFields: false, unknownTag: false }])),
+  );
+});
 
 test('discriminator mapping lowering matches branches by resolved schema, not by name', () => {
   const registry = {
@@ -266,38 +259,36 @@ test('component names that collide once escaped keep separate validators, not ea
       },
     },
   };
-  for (const ajvStandalone of [false, true]) {
-    const output = path.join(createFixtureProject(t, 'golem-openapi-urn-collision-'), 'sdk');
-    writeGeneratedSdk(writeSdk, document, { output, name: 'Collide', profile: { mobx: false, validation: true, ajvStandalone } });
-    compileGeneratedSdk(output);
-    const module = requireRecord(
-      await import(pathToFileURL(path.join(output, 'dist/client.js')).href),
-      'collide client',
-    );
-    const Client = module.CollideClient;
-    assert.equal(isGeneratedClientClass(Client), true);
-    if (!isGeneratedClientClass(Client)) throw new TypeError('CollideClient');
-    const client = new Client({
-      baseUrl: 'https://api.example',
-      fetchImpl: async () => new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } }),
-    });
-    await assert.doesNotReject(
-      () => client.postTilde().execute({ body: { tilde: 'x' } }),
-      `postTilde must validate its own body (requires "tilde") (ajvStandalone=${ajvStandalone})`,
-    );
-    await assert.rejects(
-      () => client.postTilde().execute({ body: { escaped: 'x' } }),
-      /validation failed/i,
-      `postTilde must validate against its own schema (requires "tilde"), not "a%7Eb"'s (ajvStandalone=${ajvStandalone})`,
-    );
-    await assert.doesNotReject(
-      () => client.postEscaped().execute({ body: { escaped: 'x' } }),
-      `postEscaped must validate its own body (requires "escaped") (ajvStandalone=${ajvStandalone})`,
-    );
-    await assert.rejects(
-      () => client.postEscaped().execute({ body: { tilde: 'x' } }),
-      /validation failed/i,
-      `postEscaped must validate against its own schema (requires "escaped"), not "a~b"'s (ajvStandalone=${ajvStandalone})`,
-    );
-  }
+  const output = path.join(createFixtureProject(t, 'golem-openapi-urn-collision-'), 'sdk');
+  writeGeneratedSdk(writeSdk, document, { output, name: 'Collide', profile: { mobx: false, validation: true } });
+  compileGeneratedSdk(output);
+  const module = requireRecord(
+    await import(pathToFileURL(path.join(output, 'dist/client.js')).href),
+    'collide client',
+  );
+  const Client = module.CollideClient;
+  assert.equal(isGeneratedClientClass(Client), true);
+  if (!isGeneratedClientClass(Client)) throw new TypeError('CollideClient');
+  const client = new Client({
+    baseUrl: 'https://api.example',
+    fetchImpl: async () => new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } }),
+  });
+  await assert.doesNotReject(
+    () => client.postTilde().execute({ body: { tilde: 'x' } }),
+    'postTilde must validate its own body (requires "tilde")',
+  );
+  await assert.rejects(
+    () => client.postTilde().execute({ body: { escaped: 'x' } }),
+    /validation failed/i,
+    'postTilde must validate against its own schema (requires "tilde"), not "a%7Eb"\'s',
+  );
+  await assert.doesNotReject(
+    () => client.postEscaped().execute({ body: { escaped: 'x' } }),
+    'postEscaped must validate its own body (requires "escaped")',
+  );
+  await assert.rejects(
+    () => client.postEscaped().execute({ body: { tilde: 'x' } }),
+    /validation failed/i,
+    'postEscaped must validate against its own schema (requires "escaped"), not "a~b"\'s',
+  );
 });

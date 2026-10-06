@@ -130,7 +130,7 @@ test('JSON-seq yields delimited numbers, booleans and null, and an empty stream 
 });
 
 test('breaking a live stream cancels the source and releases the reader, with and without item validators', async () => {
-  const pass = Object.assign((): boolean => true, { errors: [] as readonly unknown[] });
+  const pass = (): readonly [] => [];
   const validators = { input: pass, responses: new Map([['200:application/x-ndjson', pass]]) };
   for (const [label, check] of [['no validators', NO_VALIDATORS], ['item validators', responseCheck(validators)]] as const) {
     const source = observed('application/x-ndjson', [encode('{"id":1}\n')], 'hanging');

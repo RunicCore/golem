@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 import { ClientRuntime, isUndeclaredResponseError, type RuntimeResponseContract } from '@exprtlabs/golem/client';
-import { responseCheck, type RuntimeValidationEngine } from '@exprtlabs/golem/validation';
+import { responseCheck } from '@exprtlabs/golem/validation';
+import type { SchemaIssue } from '@exprtlabs/golem/validation-runtime';
 
 // The emitted runtime has no `validate` option: validation is off when the caller passes no response check.
 const NO_VALIDATORS = undefined;
@@ -84,28 +85,6 @@ test('a declared integer response header decodes to a number', async () => {
   });
   const result = await runtime.readResponse<DecodedResponse<unknown>>('listTasks', response, [contract], NO_VALIDATORS);
   assert.deepEqual(result.headers, { 'x-total': 42 });
-});
-
-const stubEngine = (): RuntimeValidationEngine => ({ addSchema: () => undefined, getSchema: () => undefined });
-
-test('a default engine factory supplies one engine shared by runtimes built with it', () => {
-  let created = 0;
-  const createValidationEngine = () => { created += 1; return stubEngine(); };
-  const first = new ClientRuntime('Tasks', { baseUrl: 'https://api.test' }, { createValidationEngine });
-  const second = new ClientRuntime('Payments', { baseUrl: 'https://api.test' }, { createValidationEngine });
-  assert.ok(first.validationEngine);
-  assert.equal(first.validationEngine, second.validationEngine);
-  assert.equal(created, 1);
-});
-
-test('an engine in the options wins over the factory, and no factory means no engine', () => {
-  const own = stubEngine();
-  let created = 0;
-  const withOwn = new ClientRuntime('Tasks', { baseUrl: 'https://api.test', validationEngine: own },
-    { createValidationEngine: () => { created += 1; return stubEngine(); } });
-  assert.equal(withOwn.validationEngine, own);
-  assert.equal(created, 0);
-  assert.equal(new ClientRuntime('Tasks', { baseUrl: 'https://api.test' }).validationEngine, undefined);
 });
 
 const runtime = new ClientRuntime('Tasks', { baseUrl: 'https://api.test' });
@@ -218,7 +197,7 @@ test('an SSE stream yields its data payloads', async () => {
 });
 
 test('a stream item that fails validation raises the validation error', async () => {
-  const reject = Object.assign((): boolean => false, { errors: [] as readonly unknown[] });
+  const reject = (): readonly SchemaIssue[] => [{ code: 'custom', path: [] }];
   const validators = { input: reject, responses: new Map([['200:application/x-ndjson', reject]]) };
   const response = new Response('{"id":1}\n', { headers: { 'content-type': 'application/x-ndjson' } });
   const result = await runtime.readResponse<DecodedResponse<AsyncIterable<unknown>>>(
