@@ -169,6 +169,39 @@ test('validation plan identity compares owned definitions per model and wire pla
   );
 });
 
+test('the validation plan of nested models refers to each child by its id and does not repeat owned definitions', () => {
+  const leaf: ModelTypeDescriptor = {
+    kind: 'object', properties: { code: { kind: 'string' } }, required: ['code'], additionalProperties: false,
+  };
+  const middle: ModelTypeDescriptor = {
+    kind: 'object', properties: { leaf: { kind: 'reference', name: 'Leaf' } }, required: ['leaf'], additionalProperties: false,
+  };
+  const root: ModelTypeDescriptor = {
+    kind: 'object', properties: { first: { kind: 'reference', name: 'Middle' } }, required: ['first'], additionalProperties: false,
+  };
+  const graph = createSchemaGraph();
+  graph.intern(leaf, 'Leaf');
+  graph.intern(middle, 'Middle');
+  graph.intern(root, 'Root');
+  graph.seal();
+  const byName = (name: string) => {
+    const node = [...graph.nodes.values()].find(item => item.kind !== 'reference' && item.name === name);
+    assert.ok(node, name);
+    return node;
+  };
+  const [leafNode, middleNode, rootNode] = [byName('Leaf'), byName('Middle'), byName('Root')];
+  const plan = buildCodecValidationPlan(graph, [], {}, true);
+  assert.deepEqual(plan.references, [leafNode.codecId, middleNode.codecId, rootNode.codecId].sort());
+  const rootSchema = schemaRecord(plan.schemas[rootNode.codecId], 'root plan schema');
+  assert.equal(schemaRecord(schemaRecord(rootSchema.properties, 'properties').first, 'first').$ref, middleNode.codecId);
+  const middleSchema = schemaRecord(plan.schemas[middleNode.codecId], 'middle plan schema');
+  assert.equal(schemaRecord(schemaRecord(middleSchema.properties, 'properties').leaf, 'leaf').$ref, leafNode.codecId);
+  for (const schema of [rootSchema, middleSchema]) {
+    const definitions = Object.keys(schema.$defs === undefined ? {} : schemaRecord(schema.$defs, 'definitions'));
+    assert.deepEqual(definitions.filter(name => [leafNode.codecId, middleNode.codecId, rootNode.codecId].includes(name)), [], 'an owned definition is a plan schema, not a copy');
+  }
+});
+
 test('a validating model brings the shared object it references into the plan when the default is off', async () => {
   const sharedDescriptor: ModelTypeDescriptor = {
     kind: 'object',
@@ -303,6 +336,11 @@ test('generated object codecs close nested schemas and keep first/all and contex
       assert.throws(
         () => codec.validate(invalid, { validationContext: asyncOverride }),
         error => error instanceof LibError && error.kind === LibErrorKind.ValidationUnavailable,
+      );
+      await assert.rejects(
+        () => validateInstance(invalid, { validationContext: asyncOverride }),
+        error => error instanceof LibError && error.kind === LibErrorKind.ValidationUnavailable,
+        'the async API refuses an async validator the same way',
       );
     }
     await new Promise<void>(resolve => setImmediate(resolve));
