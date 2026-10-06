@@ -30,8 +30,13 @@ test('the public exports of generated model companions match the frozen list', t
   for (const name of ['codecs.ts', 'payment.model.ts']) {
     fs.writeFileSync(path.join(sourceRoot, name), readFixture(`public-model-layout/src/${name}`));
   }
-  const result = generate({ root, profile: { mobx: false, validation: true, ajvStandalone: false } });
+  const result = generate({ root, profile: { mobx: false, validation: true } });
   const companions = result.artifacts.filter(a => a.path.endsWith('.model.generated.ts'));
+  // Every other generated file is internal, the validators module included.
+  assert.deepEqual(
+    result.artifacts.filter(a => !a.path.endsWith('.model.generated.ts')).map(a => path.basename(a.path)).sort(),
+    ['codec-keys.json', 'models.generated.ts', 'models.validators.generated.ts'],
+  );
   for (const artifact of companions) {
     fs.mkdirSync(path.dirname(artifact.path), { recursive: true });
     fs.writeFileSync(artifact.path, artifact.content);

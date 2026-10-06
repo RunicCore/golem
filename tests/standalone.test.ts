@@ -101,7 +101,7 @@ function compileStandaloneSdk(output: string): string {
   return outDir;
 }
 
-test('OpenAPI standalone profile emits self-contained validators while default validation stays runtime based', () => {
+test('OpenAPI standalone profile emits per-operation validators; models always use generated validators', () => {
   const document = standaloneDocument();
   const runtime = writeSdk(document, {
     output: path.join(tmpdir(), 'runtime-profile'),
@@ -118,8 +118,8 @@ test('OpenAPI standalone profile emits self-contained validators while default v
   for (const name of ['getTask.validators.generated.js', 'getTask.validators.generated.d.ts', 'getTask.validators.generated.NOTICES.txt']) {
     assert.equal(runtimeNames.includes(name), false, name);
   }
-  const runtimeModels = generatedModelSource(runtime.artifacts);
-  assert.match(runtimeModels, /@exprtlabs\/golem\/ajv/);
+  // Models validate with generated validators whichever Ajv mode the client uses.
+  assert.match(generatedModelSource(runtime.artifacts), /validators\.generated\.js/);
   const runtimeManifest = JSON.parse(runtime.artifacts.find(item => item.path.endsWith('/model-manifest.json'))?.content ?? '{}') as {
     profile?: { ajvStandalone?: boolean; allowAny?: boolean };
   };
@@ -190,7 +190,7 @@ test('standalone SDK compiles with its generated JavaScript, exposes every opera
     assert.match(readFileSync(path.join(output, `operations/${operation}.validators.generated.NOTICES.txt`), 'utf8'), /ajv/);
     assert.ok(result.artifacts.some(item => item.path.endsWith(`/operations/${operation}.validators.generated.d.ts`)));
   }
-  assert.ok(result.artifacts.some(item => /\/models\/_[^/]*\.validators\.generated\.js$/.test(item.path)), 'model groups carry their own validators');
+  assert.ok(result.artifacts.some(item => /\/models\/_[^/]*\.validators\.generated\.ts$/.test(item.path)), 'model groups carry their own validators');
 
   const fragment = (reference: string): string => reference.slice(reference.indexOf('#'));
   const expected: Record<string, string[]> = {

@@ -7,14 +7,6 @@ import { builtinTagsModelSource } from './fixture-templates/models/builtin-tags.
 import { buildModelProject, createModelProject, generatedModelFiles, writeModelGolemYaml, writeModelSources } from './model-project.js';
 import { getValidator } from '@exprtlabs/golem/validation';
 
-function materializeStandalone(root: string, sourceRoot: string): void {
-  const artifact = generatedModelFiles(root).find((item) => item.path.endsWith('/models.validators.generated.ts'));
-  assert.ok(artifact, 'standalone validator artifact');
-  const target = path.join(root, 'build', path.relative(sourceRoot, artifact.path));
-  fs.mkdirSync(path.dirname(target), { recursive: true });
-  fs.copyFileSync(artifact.path, target);
-}
-
 const valid = {
   integer: 2,
   minimum: 3,
@@ -60,19 +52,13 @@ const invalidCases: readonly {
 ];
 
 // mobx does not change constraint execution, so each axis runs once.
-const profiles = [
-  { mobx: false, ajvStandalone: false },
-  { mobx: true, ajvStandalone: true },
-] as const;
-
-for (const { mobx, ajvStandalone } of profiles) {
-  test(`all built-in model tags execute independently with mobx=${mobx} and ${ajvStandalone ? 'standalone' : 'runtime'} Ajv`, async t => {
+for (const mobx of [false, true] as const) {
+  test(`all built-in model tags execute independently with mobx=${mobx}`, async t => {
     const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-builtin-tags-', name: 'builtin-tags' });
     writeModelSources(sourceRoot, { 'a.model.ts': builtinTagsModelSource({ mobx }) });
 
-    writeModelGolemYaml(root, { mobx, validation: true, ajvStandalone });
+    writeModelGolemYaml(root, { mobx, validation: true });
     await buildModelProject(root);
-    if (ajvStandalone) materializeStandalone(root, sourceRoot);
     const { A } = await import(path.toNamespacedPath(path.join(root, 'build/a.model.js')));
 
     assert.equal(await getValidator(new A(valid)).validate(), true);

@@ -50,3 +50,17 @@ export async function compileValidators(input: CompiledValidatorInput): Promise<
 export async function compileSchema(schema: unknown): Promise<Validator> {
   return (await compileValidators({ roots: { root: schema } })).root;
 }
+
+/** Compiles every schema of a validation plan, each under its plan id, as the generated validators module does. */
+export async function compileValidationPlan(
+  plan: { readonly schemas: Readonly<Record<string, object | boolean>> },
+  input: Omit<CompiledValidatorInput, 'roots'> = {},
+): Promise<Readonly<Record<string, Validator>>> {
+  const roots = Object.fromEntries(Object.entries(plan.schemas).map(([id, schema]) => {
+    if (typeof schema === 'boolean') return [id, schema] as const;
+    // The plan id is the root's address; the schema's own `$id` repeats it.
+    const { $id: _id, ...rest } = schema as Record<string, unknown>;
+    return [id, rest] as const;
+  }));
+  return compileValidators({ ...input, roots });
+}

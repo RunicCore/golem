@@ -91,7 +91,7 @@ export const tag = parse<TTag>('{"label":"a"}');
 `;
 
 /** A generated project: the model source and its generated files. */
-async function generatedProject(t: TestContext, name: string, options: { readonly generate?: boolean } = {}): Promise<string> {
+async function generatedProject(t: TestContext, name: string, options: { readonly generate?: boolean; readonly validation?: boolean } = {}): Promise<string> {
   const { root } = createModelProject(t, {
     prefix: 'golem-bundler-',
     name,
@@ -99,7 +99,7 @@ async function generatedProject(t: TestContext, name: string, options: { readonl
     packages: { '@exprtlabs/golem-model': path.join(workspace, 'packages/golem-model') },
     compilerOptions: { noEmit: true },
   });
-  write(root, 'golem.yaml', 'version: 1\nmobx: false\nvalidation: false\nmodels:\n  root: .\n');
+  write(root, 'golem.yaml', `version: 1\nmobx: false\nvalidation: ${options.validation === true}\nmodels:\n  root: .\n`);
   copyFixtureFile(root, 'models/serde/base-payment-model/money.model.ts', 'src/money.model.ts');
   write(root, 'src/money.model.ts', fs.readFileSync(path.join(root, 'src/money.model.ts'), 'utf8') + TAG_MODEL);
   write(root, 'src/main.ts', MAIN);
@@ -396,6 +396,22 @@ async function watching(t: TestContext, root: string, entry: string): Promise<{ 
     },
   };
 }
+
+test('esbuild: a build of a validating model bundles its generated validators from the TypeScript file', async (t) => {
+  const root = await generatedProject(t, 'esbuild-validating', { validation: true });
+  const outfile = path.join(root, 'out/bundle.mjs');
+  await esbuild({ absWorkingDir: root, entryPoints: ['src/main.ts'], bundle: true, format: 'esm', platform: 'node', outfile, logLevel: 'silent', plugins: [esbuildPlugin()] });
+  const result = await command(root, process.execPath, [outfile]);
+  assert.deepEqual(JSON.parse(result.stdout.split('\n')[0]!), { money: { currency: 'USD', value: '1' }, twice: 42 });
+});
+
+test('vite serve: a validating model resolves its generated validators to the TypeScript file', async (t) => {
+  const root = await generatedProject(t, 'vite-validating', { validation: true });
+  const server = await serve(t, root);
+  const result = await server.transformRequest('/src/money.model.generated.ts');
+  assert.match(result?.code ?? '', /from "\/src\/generated\/models\/models\.validators\.generated\.ts"/, 'the .js specifier resolves to the .ts file');
+  assert.ok(await server.transformRequest('/src/generated/models/models.validators.generated.ts'), 'the validators module is served from its .ts file');
+});
 
 test('esbuild: an error is located at the file and the line of the call', async (t) => {
   const root = await generatedProject(t, 'esbuild-error-location', { generate: false });

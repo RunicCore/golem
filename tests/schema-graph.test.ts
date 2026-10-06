@@ -4,10 +4,11 @@ import test from 'node:test';
 import { createSchemaGraph, emitCodecDeclarationTable, codecPublicId } from '@exprtlabs/golem/schema-graph';
 import { emitCodecRuntime, emitGraphStringify } from '@exprtlabs/golem/emitter';
 import type { ModelTypeDescriptor } from '@exprtlabs/golem/model';
-import * as ajv from '@exprtlabs/golem/ajv';
+import { buildCodecValidationPlan } from '@exprtlabs/golem/validation-plan';
 import * as serde from '@exprtlabs/golem/serde';
 import { LibError } from '@exprtlabs/golem/errors';
 import { instantiate, instantiateRuntime } from './emitted-runtime.js';
+import { compileValidationPlan } from './support/compiled-validators.js';
 
 const money: ModelTypeDescriptor = {
   kind: 'object',
@@ -216,7 +217,7 @@ test('construct skips identity-only fill and reuses extras-allowed identity nest
   assert.ok(result.item instanceof ItemStub, 'a construct:true reference is constructed via the registered class instead of an identity-only fill');
 });
 
-test('TSerde intern emits a second Ajv schema only when wire and model intern keys differ', () => {
+test('TSerde intern emits a second schema only when wire and model intern keys differ', () => {
   const converted: ModelTypeDescriptor = {
     kind: 'object',
     properties: {
@@ -242,8 +243,8 @@ test('TSerde intern emits a second Ajv schema only when wire and model intern ke
   assert.equal(permission?.sameSchema, false);
   assert.equal(name?.sameSchema, true);
   const source = emitCodecRuntime(graph);
-  assert.match(source, /PermissionInput_[0-9a-f]{8}#wire/, 'a second Ajv schema is registered for PermissionInput because its wire and model intern keys differ');
-  assert.doesNotMatch(source, /NameInput_[0-9a-f]{8}#wire/, 'no second Ajv schema is registered for NameInput because its wire and model intern keys are identical');
+  assert.match(source, /PermissionInput_[0-9a-f]{8}#wire/, 'a second schema is registered for PermissionInput because its wire and model intern keys differ');
+  assert.doesNotMatch(source, /NameInput_[0-9a-f]{8}#wire/, 'no second schema is registered for NameInput because its wire and model intern keys are identical');
   // The only way to observe that stringify composes through its own wire-plane function
   // instead of degenerating to a naive JSON.stringify(wire): both produce the same bytes
   // for this fixture, so a round trip alone cannot catch a regression to the fallback.
@@ -296,11 +297,9 @@ test('IObject and IModel with the same TSerde fields intern as separate stringif
   assert.equal(wireProperties.properties?.permissions?.type, 'string', 'the wire plane keeps the TSerde field as its wire type');
   assert.equal(Object.hasOwn(modelJsonSchema, '$ref'), false, 'the object node schema does not $ref the unrelated IModel node');
   const source = emitCodecRuntime(graph);
-  // One hoisted model-only and one wire-only $ref-resolved schema per node (PermissionInput, Permission).
-  assert.equal((source.match(/const __resolved(?:ModelOnly|WireOnly)Schema_/g) ?? []).length, 4, 'one hoisted model-only and one wire-only $ref-resolved schema per node');
-  assert.match(source, /const __resolvedModelSchema_PermissionInput = resolveGeneratedModelSchemaRefs/);
-  assert.match(source, /structuredClone\(__resolvedModelSchema_PermissionInput\)/, 'each schema is resolved once and reused via structuredClone, not re-resolved per Ajv instance');
-  assert.doesNotMatch(source, /addSchema\(resolveGeneratedModelSchemaRefs/, 'schemas are hoisted to a named const instead of being resolved inline at each addSchema call');
+  // One model-only and one wire-only residual schema per node (PermissionInput, Permission).
+  const plan = buildCodecValidationPlan([graph], [], {}, true);
+  assert.equal(plan.ownSchemas.filter((id) => /#(?:model|wire)-only$/.test(id)).length, 4, 'one model-only and one wire-only residual schema per node');
   class PermissionModel {
     public constructor(values: object = {}) {
       Object.assign(this, values);
@@ -516,7 +515,7 @@ test('named refs inside constraints rewrite to hashed codec ids', () => {
   assert.equal(modelSchema?.not?.$ref, `#/$defs/${childNode.codecId}`, 'the constraint ref rewrites to the hashed codec id instead of the literal "Child" name');
 });
 
-test('wire schema drops model-only Not predicates and IObject assert checks the model shape', () => {
+test('wire schema drops model-only Not predicates and IObject assert checks the model shape', async () => {
   const descriptor: ModelTypeDescriptor = {
     kind: 'object',
     properties: {
@@ -541,13 +540,12 @@ test('wire schema drops model-only Not predicates and IObject assert checks the 
   assert.notEqual(modelNegSchema?.not, undefined, 'the model plane keeps the Not predicate');
   assert.equal(wireNegSchema?.not, undefined, 'the wire plane drops the model-only Not predicate');
   const source = emitCodecRuntime(graph);
-  // The emitted source hardcodes an empty validationBindings object; the "positive" keyword
-  // used by the model-only Not predicate is normally supplied by the surrounding generator.
-  const positiveBinding = { positive: (value: unknown) => typeof value === 'number' && value > 0 };
-  const { assertA, fromWireFormatA, parseA } = instantiateRuntime(source, {
-    createOpenApiSyncAjvEngine: (options: Parameters<typeof ajv.createOpenApiSyncAjvEngine>[0]) =>
-      ajv.createOpenApiSyncAjvEngine({ ...options, validationBindings: { ...options?.validationBindings, ...positiveBinding } }),
+  // The "positive" function of the model-only Not predicate is supplied by the surrounding generator.
+  const validators = await compileValidationPlan(buildCodecValidationPlan([graph], [], {}, true), {
+    validations: { positive: { importPath: './rules.mjs', exportName: 'positive' } },
+    modules: { 'rules.mjs': "export const positive = value => typeof value === 'number' && value > 0;" },
   });
+  const { assertA, fromWireFormatA, parseA } = instantiateRuntime(source, { validators });
   assert.throws(
     () => assertA({ neg: 5 }),
     (error: unknown) => error instanceof LibError

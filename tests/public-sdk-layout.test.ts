@@ -67,6 +67,9 @@ test('the public SDK layout generated from a fixture document matches the frozen
     const sdk = path.join(createFixtureProject(t, `golem-sdk-layout-${name}-`), 'sdk');
     writeGeneratedArtifacts(writeSdk(document, { output: sdk, name: 'Payments', profile }).artifacts);
     actual[name] = publicLayout(sdk);
+    // A model group's validators module is internal: its name starts with `_`, so the public layout never lists it.
+    const validators = fs.readdirSync(path.join(sdk, 'models')).filter(f => f.endsWith('.validators.generated.ts'));
+    assert.ok(validators.length > 0 && validators.every(f => f.startsWith('_')), name);
   }
   assert.deepEqual(actual, expected, `Public SDK layout changed. If intended (major release), replace tests/fixtures/public-sdk-layout.json with:\n${JSON.stringify(actual, null, 2)}`);
 });

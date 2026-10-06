@@ -240,7 +240,7 @@ test('inferred literal tags require the tag on an instance too', () => {
     'the variant schema requires its literal tag, so encoding must not invent it');
 });
 
-test('a short model name shared with an external codec keeps its registry schema reference', () => {
+test('a short model name shared with an external codec keeps its generated-model schema reference', () => {
   const graph = createSchemaGraph();
   graph.intern(variant({ name: { kind: 'string' } }), 'Shadow');
   // `sdk/Shadow` is another module's model with the same short name.
@@ -249,9 +249,8 @@ test('a short model name shared with an external codec keeps its registry schema
     local: { kind: 'union', variants: [{ kind: 'generated-model', id: 'Shadow' }, { kind: 'null' }] },
   }), 'ShadowOwner');
   graph.seal();
-  const source = emitCodecRuntime(graph, { validationEnabled: true });
-  const owner = /__resolvedModelSchema_ShadowOwner = resolveGeneratedModelSchemaRefs\(JSON\.parse\((".*?")\)/.exec(source);
-  assert.ok(owner, 'the owner schema is hoisted');
-  const schema = JSON.parse(JSON.parse(owner[1])) as { properties: { external: { $ref: string } } };
+  const owner = [...graph.nodes.values()].find((node) => node.name === 'ShadowOwner');
+  assert.ok(owner && owner.kind !== 'reference', 'the owner node has a schema');
+  const schema = owner.modelJsonSchema as { properties: { external: { $ref: string } } };
   assert.equal(schema.properties.external.$ref, '__exprtGeneratedModel:Shadow', 'the ambiguous name is not rewritten to the local schema');
 });

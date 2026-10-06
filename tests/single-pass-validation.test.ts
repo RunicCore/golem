@@ -228,7 +228,7 @@ export class Trip extends TTripBaseModel {}
   const { Trip } = await import(pathToFileURL(path.join(root, 'build/visit.model.js')).href) as { Trip: new (v?: object) => object };
   const validatorsFile = generatedModelFiles(root).find(item => item.path.endsWith('/models.validators.generated.ts'));
   assert.ok(validatorsFile);
-  const { validators } = await import(pathToFileURL(path.join(root, 'build', path.relative(sourceRoot, validatorsFile.path))).href) as { validators: Readonly<Record<string, Validator>> };
+  const { validators } = await import(pathToFileURL(path.join(root, 'build', path.relative(sourceRoot, validatorsFile.path).replace(/\.ts$/, '.js'))).href) as { validators: Readonly<Record<string, Validator>> };
   const requested: string[] = [];
   const context: ModelValidationContext = { resolve: (reference) => { requested.push(reference); return validators[reference]; } };
   const codec = requireObjectCodec('TTrip');

@@ -67,12 +67,11 @@ function generatedText(root: string): string {
   return files.map((filename) => fs.readFileSync(filename, 'utf8')).join('\n');
 }
 
-function assertAjvEngineCreated(source: string): void {
-  const engines = source.match(/createOpenApiSyncAjvEngine/g) ?? [];
-  assert.ok(engines.length >= 1, 'codec Ajv engine is emitted');
+function assertGeneratedValidatorsBound(source: string): void {
+  assert.ok((source.match(/requireModelValidator\(validators, /g) ?? []).length >= 1, 'a codec binds to the generated validators');
 }
 
-test('global validation true emits codec Ajv for IObject and IModel', async (t: TestContext) => {
+test('global validation true binds IObject and IModel codecs to generated validators', async (t: TestContext) => {
   const { root, sourceRoot } = fixture(t);
   writeGeneratedArtifacts([{
     path: path.join(sourceRoot, 'payload.model.ts'),
@@ -81,13 +80,13 @@ test('global validation true emits codec Ajv for IObject and IModel', async (t: 
   writeModelGolemYaml(root, { mobx: false, validation: true });
   await compile(root);
   const source = generatedText(root);
-  assertAjvEngineCreated(source);
+  assertGeneratedValidatorsBound(source);
   assert.match(source, /export function validateTPayload\b/);
   assert.match(source, /export function validateTAlias\b/);
   const { Payload } = await import(pathToFileURL(path.join(root, 'build/payload.model.js')).href);
   const codec = requireObjectCodec(generatedCodecIdFromRoot(root, 'TPayload'));
   const model = new Payload({ title: 'ok' });
-  assert.equal(codec.validate(model), false, 'interned Ajv sees handwritten extra keys');
+  assert.equal(codec.validate(model), false, 'the interned schema sees handwritten extra keys');
   assert.deepEqual((await validateInstance(model)).map((issue) => issue.path), []);
   assert.equal(await getValidator(model).validate(), true);
   const invalid = new Payload({ title: 1 as never });
@@ -109,7 +108,7 @@ test('I* validation option overrides the global flag in both directions and mixe
   const checkedCodec = requireObjectCodec(generatedCodecIdFromRoot(root, 'TChecked'));
   const trustedCodec = requireObjectCodec(generatedCodecIdFromRoot(root, 'TTrusted'));
   assert.equal(checkedCodec.validate(new Checked({ title: 'ok' })), true);
-  assert.equal(checkedCodec.validate({ title: 5 }), false, 'the per-type override still runs a real Ajv schema check');
+  assert.equal(checkedCodec.validate({ title: 5 }), false, 'the per-type override still runs a real schema check');
   assert.throws(() => trustedCodec.validate({ id: '1' }));
   assert.throws(() => trustedCodec.stringify({ id: '1' }, { validate: true }));
 });
@@ -163,9 +162,9 @@ test('SDK Money $ref plus extra TValidation, local TValidation, and TSerde compi
   writeModelGolemYaml(root, { mobx: false, validation: true });
   await compile(root);
   const source = generatedText(root);
-  assertAjvEngineCreated(source);
+  assertGeneratedValidatorsBound(source);
   const companion = fs.readFileSync(path.join(sourceRoot, 'checkout.model.generated.ts'), 'utf8');
-  assert.equal((companion.match(/createOpenApiSyncAjvEngine\(\{ allErrors: false/g) ?? []).length, 1, 'one fast engine in the parent companion');
+  assert.equal((companion.match(/^import \{ validators \} from /gm) ?? []).length, 1, 'the parent companion imports the shared validators once');
   const { Checkout } = await import(pathToFileURL(path.join(root, 'build/checkout.model.js')).href);
   const codec = requireObjectCodec(generatedCodecIdFromRoot(root, 'TCheckout'));
   const validWire = {
@@ -228,20 +227,8 @@ test('SDK Money $ref plus extra TValidation, local TValidation, and TSerde compi
   assert.throws(() => codec.parse(JSON.stringify({ ...validWire, code: 'gg' })));
   assert.equal((companion.match(/function validateTCheckout\b/g) ?? []).length, 1);
   assert.doesNotMatch(companion, /function validateMoney\b/, 'the parent companion does not duplicate the interned Money validator');
-  const nestedCalls = companion.match(/addNestedCodecSchema\([\s\S]*?\);/g) ?? [];
-  assert.ok(nestedCalls.length >= 1, 'interned Money codec schema is registered on the parent Ajv engines');
-  assert.equal(nestedCalls.length, new Set(nestedCalls).size, nestedCalls.join('\n---\n'));
-  assert.equal(
-    (companion.match(/ = resolveGeneratedModelSchemaRefs/g) ?? []).length,
-    (companion.match(/const __resolved(?:Model|Wire|ModelOnly|WireOnly)Schema_/g) ?? []).length,
-    'interned $ref rewrite runs once per hoisted schema, residual schemas included',
-  );
   const validateTCheckout = companion.match(/export function validateTCheckout[\s\S]*?\n\}/)?.[0] ?? '';
   assert.notEqual(validateTCheckout, '', 'validateTCheckout is found in the companion');
-  assert.match(validateTCheckout, /runSynchronousValidation\(validator, value\)/);
-  assert.doesNotMatch(
-    validateTCheckout,
-    /addNestedCodecSchema|resolveGeneratedModelSchemaRefs|createOpenApiSyncAjvEngine/,
-    'engine setup and schema ref resolution run once at module scope, not on every validateTCheckout call',
-  );
+  assert.match(validateTCheckout, /isValidModelValue\(value, options, requireModelValidator\(validators, /);
+  assert.doesNotMatch(validateTCheckout, /resolve|JSON\.parse/, 'schema work runs once at module scope, not on every validateTCheckout call');
 });

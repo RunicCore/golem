@@ -8,9 +8,15 @@ import { runPipeline } from '#golem/pipeline';
 import { workspace } from './support/process.js';
 import { writeFixture } from './support/consumer.js';
 
-/** Standalone SDK model groups carry their own validator modules; nothing is written at the SDK root. */
-function sdkValidatorModules(root: string): string[] {
+/** SDK model groups carry their own validator modules in every mode; nothing is written at the SDK root. */
+function sdkModelValidatorModules(root: string): string[] {
   const directory = path.join(root, 'sdk/models');
+  return fs.existsSync(directory) ? fs.readdirSync(directory).filter(name => name.endsWith('.validators.generated.ts')) : [];
+}
+
+/** Only a standalone SDK carries a validator module for each operation. */
+function sdkOperationValidatorModules(root: string): string[] {
+  const directory = path.join(root, 'sdk/operations');
   return fs.existsSync(directory) ? fs.readdirSync(directory).filter(name => name.endsWith('.validators.generated.js')) : [];
 }
 
@@ -32,9 +38,11 @@ function fixture(t: TestContext) {
   return { root, model, config, setStandalone, inventory: path.join(root, '.golem/outputs.json') };
 }
 
-test('JIT to standalone inventory interruption recovers and switching back retires generated validators', async t => {
+test('JIT to standalone inventory interruption recovers and switching back retires the operation validators', async t => {
   const setup = fixture(t);
   await runPipeline(setup.config);
+  assert.ok(sdkModelValidatorModules(setup.root).length > 0, 'model validators do not depend on the mode');
+  assert.equal(sdkOperationValidatorModules(setup.root).length, 0);
   const originalInventory = fs.readFileSync(setup.inventory, 'utf8');
   setup.setStandalone(true);
   const rename = fs.renameSync;
@@ -45,7 +53,7 @@ test('JIT to standalone inventory interruption recovers and switching back retir
   await assert.rejects(runPipeline(setup.config), /interrupted inventory replacement/);
   fault.mock.restore();
   assert.equal(fs.readFileSync(setup.inventory, 'utf8'), originalInventory);
-  assert.ok(sdkValidatorModules(setup.root).length > 0);
+  assert.ok(sdkOperationValidatorModules(setup.root).length > 0, 'the interrupted run had written its operation validators');
   const standalone = await runPipeline(setup.config);
   await runPipeline(setup.config, { check: true });
   const files: Record<string, unknown> = JSON.parse(fs.readFileSync(setup.inventory, 'utf8')).files;
@@ -54,12 +62,14 @@ test('JIT to standalone inventory interruption recovers and switching back retir
     .filter(artifact => artifact.path.endsWith('.generated.js'))
     .map(artifact => path.relative(setup.root, artifact.path));
   assert.deepEqual(new Set(validators), new Set(emittedValidators), 'inventory includes every emitted validator module');
-  assert.ok(validators.some(filename => filename.startsWith('sdk/models/')), 'SDK model validators are inventoried');
   assert.ok(validators.some(filename => filename.startsWith('sdk/operations/')), 'SDK operation validators are inventoried');
-  assert.ok(validators.some(filename => filename.startsWith('src/')), 'frontend validators are inventoried');
+  const modelValidators = Object.keys(files).filter(filename => filename.endsWith('.validators.generated.ts'));
+  assert.ok(modelValidators.some(filename => filename.startsWith('sdk/models/')), 'SDK model validators are inventoried');
+  assert.ok(modelValidators.some(filename => filename.startsWith('src/')), 'frontend validators are inventoried');
   setup.setStandalone(false);
   await runPipeline(setup.config);
   for (const filename of validators) assert.equal(fs.existsSync(path.join(setup.root, filename)), false, filename);
+  for (const filename of modelValidators) assert.equal(fs.existsSync(path.join(setup.root, filename)), true, filename);
   await runPipeline(setup.config, { check: true });
 });
 
@@ -83,11 +93,12 @@ test('watch regenerates SDK then frontend through both validator modes without o
   await untilRun(1);
   setup.setStandalone(true);
   await untilRun(2);
-  assert.ok(sdkValidatorModules(setup.root).length > 0);
+  assert.ok(sdkOperationValidatorModules(setup.root).length > 0);
   await runPipeline(setup.config, { check: true });
   setup.setStandalone(false);
   await untilRun(3);
-  assert.equal(sdkValidatorModules(setup.root).length, 0);
+  assert.equal(sdkOperationValidatorModules(setup.root).length, 0);
+  assert.ok(sdkModelValidatorModules(setup.root).length > 0);
   const before = fs.statSync(setup.inventory).mtimeMs;
   await runPipeline(setup.config, { check: true });
   assert.equal(fs.statSync(setup.inventory).mtimeMs, before, 'check leaves the inventory untouched');
