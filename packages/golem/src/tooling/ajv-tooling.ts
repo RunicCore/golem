@@ -296,7 +296,7 @@ export function compileStandaloneValidatorSet(input: StandaloneValidatorInput): 
   const setDeclaration = `export interface StandaloneValidatorSet { readonly first: Readonly<Record<string, ModelRuntimeSyncValidator>>; readonly all: Readonly<Record<string, ModelRuntimeSyncValidator>>; readonly schemas: Readonly<Record<string, object | boolean>>; }\nexport declare function createValidatorSet(bindings?: Readonly<Record<string, (value: unknown) => boolean | string>>): StandaloneValidatorSet;\n`;
   return {
     code: banner + result.outputFiles[0].text,
-    declarations: banner + `import type { ModelRuntimeValidator, ModelRuntimeSyncValidator } from '@exprtlabs/golem/model';\nexport declare function createValidators(bindings?: Readonly<Record<string, (value: unknown) => boolean | string>>): Readonly<Record<string, ModelRuntimeValidator>>;\n${setDeclaration}`,
+    declarations: banner + `import type { ModelRuntimeValidator, ModelRuntimeSyncValidator } from '@exprtlabs/golem/ajv';\nexport declare function createValidators(bindings?: Readonly<Record<string, (value: unknown) => boolean | string>>): Readonly<Record<string, ModelRuntimeValidator>>;\n${setDeclaration}`,
     notices: banner + licenses.join('\n\n'),
   };
 }

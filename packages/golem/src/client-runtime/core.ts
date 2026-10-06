@@ -1,23 +1,6 @@
 import { LibError, LibErrorKind } from '../errors.js';
-import type { OperationRuntimeValidators, RuntimeValidationEngine } from '../schema-registry-validation.js';
-
-export interface ClientRuntimeDefaults {
-  /** Builds the engine used when the caller supplies none. Without it a runtime has no default engine. */
-  readonly createValidationEngine?: () => RuntimeValidationEngine;
-}
-
-const sharedValidationEngines = new WeakMap<() => RuntimeValidationEngine, RuntimeValidationEngine>();
-
-/** Runtimes built with the same factory validate through one engine unless the caller supplies one. */
-function defaultValidationEngine(create: (() => RuntimeValidationEngine) | undefined): RuntimeValidationEngine | undefined {
-  if (!create) return undefined;
-  let engine = sharedValidationEngines.get(create);
-  if (!engine) {
-    engine = create();
-    sharedValidationEngines.set(create, engine);
-  }
-  return engine;
-}
+import type { OperationRuntimeValidators } from '../schema-registry-validation.js';
+import type { Validator } from '../validation-runtime.js';
 
 export interface ParameterSerializerContext {
   readonly operation: string;
@@ -98,8 +81,6 @@ export interface ClientOptions {
   streamDecoders?: Record<string, StreamDecoder>;
   /** Overrides generated validators for individual operations. */
   operationValidators?: ReadonlyMap<string, OperationRuntimeValidators>;
-  /** Shared schema engine for generated operation and model validation. */
-  validationEngine?: RuntimeValidationEngine;
 }
 
 export interface RequestOptions {
@@ -142,8 +123,8 @@ export type RuntimeSecuritySchemes = Readonly<Record<string, RuntimeSecuritySche
 export interface OperationValidationSources {
   readonly inputReference: string;
   readonly responseReferences: readonly { readonly status: string; readonly contentType: string; readonly reference: string }[];
-  readonly schemas: ReadonlyMap<string, object | boolean>;
-  readonly standaloneValidators?: () => OperationRuntimeValidators;
+  /** The operation's generated validators, keyed by the references above. */
+  readonly validators: Readonly<Record<string, Validator>>;
 }
 
 /** The matched response a check runs against. */
@@ -229,7 +210,6 @@ export class ClientRuntime {
   public readonly baseUrl: string;
   public readonly fetchImpl: typeof fetch;
   public readonly defaultHeaders: Headers;
-  public readonly validationEngine: RuntimeValidationEngine | undefined;
   private readonly responseDecoders: Record<string, ResponseDecoder>;
   private readonly responseHeaderDecoders: Record<string, ResponseHeaderDecoder>;
   private readonly streamDecoders: Record<string, StreamDecoder>;
@@ -242,7 +222,6 @@ export class ClientRuntime {
   constructor(
     public readonly client: string,
     public readonly options: ClientOptions,
-    defaults: ClientRuntimeDefaults = {},
   ) {
     const baseUrl = options.baseUrl.trim();
     if (!baseUrl) throw new Error(`${client}Client requires a non-empty baseUrl`);
@@ -258,7 +237,6 @@ export class ClientRuntime {
     this.responseHeaderDecoders = options.responseHeaderDecoders ?? {};
     this.streamDecoders = options.streamDecoders ?? {};
     this.operationValidatorOverrides = options.operationValidators;
-    this.validationEngine = options.validationEngine ?? defaultValidationEngine(defaults.createValidationEngine);
   }
 
   public url(route: string, query: readonly string[]): string {

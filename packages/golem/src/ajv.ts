@@ -9,11 +9,6 @@ import {
   type ValidateFunction,
 } from 'ajv/dist/2020.js';
 import type { FormatsPlugin } from 'ajv-formats';
-import type {
-  ModelRuntimeValidationEngine,
-  ModelRuntimeSyncValidator,
-  ModelRuntimeValidator,
-} from './model.js';
 import { lowerDiscriminatorMappings } from './discriminator-mapping.js';
 import {
   addModelKeywords,
@@ -21,6 +16,23 @@ import {
   type ValidationBindings,
 } from './ajv-keywords.js';
 import { LibError, LibErrorKind } from './errors.js';
+
+/** The Ajv-era validator contracts, kept with the Ajv adapter until it is removed. */
+export interface ModelRuntimeValidator {
+  (value: unknown): boolean | Promise<boolean>;
+  readonly errors?: readonly unknown[] | null;
+}
+
+/** A generated/JIT Ajv validator whose provider guarantees synchronous execution. */
+export interface ModelRuntimeSyncValidator {
+  (value: unknown): boolean;
+  readonly errors?: readonly unknown[] | null;
+}
+
+export interface ModelRuntimeValidationEngine {
+  addSchema(schema: object | boolean, id: string): void;
+  getSchema(reference: string): ModelRuntimeValidator | undefined;
+}
 
 type AnyValidateFunction = ValidateFunction | AsyncValidateFunction;
 

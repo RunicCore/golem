@@ -244,23 +244,6 @@ export type ModelField<Model extends object> = {
     : never;
 }[keyof Model];
 
-/** The next three types are the Ajv-era engine contract the generated client uses until it validates with generated validators. */
-export interface ModelRuntimeValidator {
-  (value: unknown): boolean | Promise<boolean>;
-  readonly errors?: readonly unknown[] | null;
-}
-
-/** A generated/JIT Ajv validator whose provider guarantees synchronous execution. */
-export interface ModelRuntimeSyncValidator {
-  (value: unknown): boolean;
-  readonly errors?: readonly unknown[] | null;
-}
-
-export interface ModelRuntimeValidationEngine {
-  addSchema(schema: object | boolean, id: string): void;
-  getSchema(reference: string): ModelRuntimeValidator | undefined;
-}
-
 /** Supplies the validators a call uses instead of the generated ones. */
 export interface ModelValidationContext {
   /**

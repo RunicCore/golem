@@ -1,33 +1,18 @@
-import { runValidation } from './validation-runner.js';
+import { runValidation, type ValidationResult } from './validation-runner.js';
+import type { Validator } from './validation-runtime.js';
 
-export interface ValidationResult {
-  valid: boolean;
-  errors?: readonly unknown[] | null;
-}
+export type { ValidationResult };
 
-export interface RuntimeValidator {
-  (value: unknown): boolean | Promise<boolean>;
-  readonly errors?: readonly unknown[] | null;
-}
-
-/**
- * Adapter boundary for a JSON Schema implementation that supports the emitted
- * schemaDialect. Constraints not representable in TypeScript remain enforced
- * by this runtime engine.
- */
-export interface RuntimeValidationEngine {
-  addSchema(schema: object | boolean, id: string): void;
-  getSchema(reference: string): RuntimeValidator | undefined;
-}
-
+/** The validators of one operation: its input and the body of each response, keyed `<status>:<content type>`. */
 export interface OperationRuntimeValidators {
-  readonly input: RuntimeValidator;
-  readonly responses: ReadonlyMap<string, RuntimeValidator>;
+  readonly input: Validator;
+  readonly responses: ReadonlyMap<string, Validator>;
 }
 
 export async function validateWith(
-  validator: RuntimeValidator,
+  validator: Validator,
   value: unknown,
+  all = true,
 ): Promise<ValidationResult> {
-  return runValidation(validator, value);
+  return runValidation(validator, value, all);
 }
