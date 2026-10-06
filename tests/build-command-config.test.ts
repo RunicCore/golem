@@ -281,3 +281,39 @@ export function read(text: string): unknown { return parse<{ note: string }>(tex
   assert.equal((await build(app)).exitCode, 0);
   assert.match(fs.readFileSync(path.join(app, 'build/use.js'), 'utf8'), /requireObjectCodec\("TMoney_[0-9a-f]{8}"\)\.stringify\(/, 'the app\'s own sites are rewritten');
 });
+
+test('a source the tsconfig includes outside its directory fails golem check as it fails golem build, with or without a rewrite site', async (t) => {
+  const { root: outer } = createModelProject(t, {
+    prefix: 'golem-build-outside-source-',
+    name: 'build-outside-source',
+    linkTypescript: true,
+    packages: { '@exprtlabs/golem-model': path.join(workspace, 'packages/golem-model') },
+  });
+  const app = path.join(outer, 'app');
+  write(app, 'package.json', '{"name":"outside-app","type":"module"}');
+  write(app, 'tsconfig.json', JSON.stringify({
+    compilerOptions: { target: 'ES2022', module: 'NodeNext', moduleResolution: 'NodeNext', strict: true, skipLibCheck: true, outDir: 'build', rootDir: 'src' },
+    include: ['src/**/*.ts'],
+  }));
+  write(app, 'golem.yaml', 'version: 1\nmobx: false\nvalidation: false\nmodels:\n  root: .\n');
+  copyFixtureFile(app, 'models/serde/base-payment-model/money.model.ts', 'src/money.model.ts');
+  write(app, 'src/use.ts', USE);
+  const config = path.join(app, 'golem.yaml');
+  await runPipeline(config);
+  await runPipeline(config, { check: true });
+
+  // A declaration file outside the root is not subject to rootDir, so the compiler accepts it; the build cannot stage it and the check says so.
+  write(outer, 'shared/typings.d.ts', 'export declare const typed: number;\n');
+  editTsconfig(app, (tsconfig) => { tsconfig.include = ['src/**/*.ts', '../shared/typings.d.ts']; });
+  await assert.rejects(runPipeline(config, { check: true }), /RUNM1070 \(\.\.\/shared\/typings\.d\.ts\): "\.\.\/shared\/typings\.d\.ts" lies outside the project root/);
+  await assert.rejects(build(app), /golem build cannot stage .*shared\/typings\.d\.ts: it is outside the project root/);
+
+  // A TypeScript source outside the root, with no rewrite site: without an emit the compiler accepts it too.
+  write(outer, 'shared/plain.ts', 'export const plain = 1;\n');
+  editTsconfig(app, (tsconfig) => {
+    delete tsconfig.compilerOptions.outDir;
+    delete tsconfig.compilerOptions.rootDir;
+    tsconfig.include = ['src/**/*.ts', '../shared/plain.ts'];
+  });
+  await assert.rejects(runPipeline(config, { check: true }), /RUNM1070 \(\.\.\/shared\/plain\.ts\): "\.\.\/shared\/plain\.ts" lies outside the project root/);
+});
