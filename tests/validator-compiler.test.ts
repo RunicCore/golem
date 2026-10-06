@@ -393,7 +393,7 @@ test('a union of a constant and another shape keeps the union issue', async () =
   await assertIssues(schema, 'b', [{ path: [], code: 'union', matched: 0 }]);
   await assertIssues(schema, 'a', []);
   await assertIssues(schema, {}, []);
-  await assertIssues({ anyOf: [{ const: 'a', type: 'string' }, { const: 'b' }] }, 'c', [{ path: [], code: 'union', matched: 0 }]);
+  await assertIssues({ anyOf: [{ const: 'a', minLength: 1 }, { const: 'b' }] }, 'c', [{ path: [], code: 'union', matched: 0 }]);
 });
 
 test('a union reports its own path, not the paths inside its branches', async () => {
