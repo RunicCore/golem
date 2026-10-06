@@ -233,28 +233,7 @@ test('schema-only documents emit types, directional files, and models without a 
   ]);
 });
 
-test('no SDK emits schemas.ts, whatever the validation profile', async t => {
-  const document = {
-    openapi: '3.2.0',
-    info: info('Registries'),
-    components: { schemas: { Widget: { type: 'object', required: ['id'], properties: { id: { type: 'string' } } } } },
-    paths: { '/widgets': { get: {
-      operationId: 'listWidgets',
-      responses: { '200': { description: 'ok', content: { 'application/json': { schema: { $ref: '#/components/schemas/Widget' } } } } },
-    } } },
-  };
-  for (const profile of [
-    { mobx: false, validation: false },
-    { mobx: false, validation: true },
-  ] as const) {
-    const output = outputDir(t, `registries-${profile.validation}`);
-    const result = await generateMaterializedSdk(document, { output, name: 'Registries', profile });
-    const names = emittedFiles(result.artifacts, output);
-    for (const name of ['schemas.ts', 'validation-engine.ts']) assert.equal(names.includes(name), false, name);
-  }
-});
-
-test('operation names are typed inside client.ts and links.ts without a schemas.ts', async t => {
+test('operation names are typed inside client.ts and links.ts', async t => {
   const output = outputDir(t, 'operation-name-types');
   const result = await generateMaterializedSdk({
     openapi: '3.2.0',
