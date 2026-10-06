@@ -1,6 +1,7 @@
 import type { EmissionPlan } from '../emission-plan.js';
 import { mediaFraming } from '../emission-plan.js';
-import { compileStandaloneValidatorSet } from '@exprtlabs/golem/ajv-tooling';
+import { compileSchemaValidators } from '@exprtlabs/golem/validation-plan';
+import type { GolemDiagnostic } from '@exprtlabs/golem/generator-api';
 import { asRecord, isJsonObject, objectEntries } from '../json.js';
 import { identifier, NameScope, propertyName } from '@exprtlabs/golem/generator-api';
 import {
@@ -118,12 +119,9 @@ export interface GeneratedClientModules {
   readonly client: string;
   /** Module paths are relative to the generated package root. */
   readonly operations: ReadonlyMap<string, string>;
-  readonly standaloneValidators: ReadonlyMap<string, {
-    readonly source: string;
-    readonly declarations: string;
-    readonly notices: string;
-  }>;
-  readonly sharedSchemas: ReadonlyMap<string, string>;
+  /** One validators module per operation, keyed like `operations`; empty when validation is off or a compile diagnostic is an error. */
+  readonly operationValidators: ReadonlyMap<string, string>;
+  readonly diagnostics: readonly GolemDiagnostic[];
 }
 
 function operationFactoryName(operation: NormalizedOperation): string {
@@ -139,7 +137,6 @@ function operationSource(
   responseContracts: readonly unknown[],
   securitySchemes: Readonly<Record<string, unknown>>,
   validationBundle: ReturnType<typeof buildOperationValidationSchemaBundle> | undefined,
-  sharedSchemaAliases: readonly { readonly id: string; readonly alias: string }[],
 ): string {
   const usedFunctions = new Set<string>();
   const use = (name: string): string => {
@@ -212,7 +209,6 @@ function operationSource(
   const validationFunctions = !profile.validation ? []
     : validatesWithSources ? ['operationValidators', 'responseCheck', 'validateOperationInput'] : ['validateOperationInput'];
   const runtimeFunctions = [...usedFunctions].sort();
-  const defaultAjvEngine = profile.validation && !profile.ajvStandalone;
   const importedNames: Array<readonly [string, string]> = [
     ['ClientRuntime', 'client runtime import'],
     ['ClientOptions', 'client options import'],
@@ -228,80 +224,29 @@ function operationSource(
   if (surfaces.auth || surfaces.mutualTls) importedNames.push(['__golemSecuritySchemes', 'security metadata']);
   if (appliesSecurity) importedNames.push(['RuntimeSecuritySchemes', 'security scheme type import']);
   if (profile.validation) importedNames.push(['OperationValidationSources', 'validation source type import']);
-  if (defaultAjvEngine) importedNames.push(['createOpenApiAjvEngine', 'default validation engine import']);
-  if (profile.ajvStandalone && profile.validation) importedNames.push(['createValidatorSet', 'standalone validator import'], ['RuntimeValidator', 'validator type']);
-  if (profile.validation && !profile.ajvStandalone) {
-    for (const { alias } of sharedSchemaAliases) importedNames.push([alias, 'validation schema resource import']);
-  }
+  if (validatesWithSources) importedNames.push(['validators', 'generated operation validators import']);
   const moduleScope = new NameScope(`operation ${JSON.stringify(operation.name)}`);
   for (const [name, origin] of importedNames) {
     moduleScope.claim(name, origin);
   }
   moduleScope.claim(operation.name, `operation factory ${JSON.stringify(operation.name)}`);
   moduleScope.claim(factoryName, `internal operation factory ${JSON.stringify(operation.name)}`);
-  let validationSourcesName = '__resolveOperationValidationSources';
-  let validationSourcesSuffix = 0;
-  while (moduleScope.has(validationSourcesName)) {
-    validationSourcesSuffix += 1;
-    validationSourcesName = `__resolveOperationValidationSources${validationSourcesSuffix}`;
-  }
-  if (profile.validation && validationBundle) {
-    moduleScope.claim(validationSourcesName, 'operation validation source resolver');
-  }
-  // The sources and the standalone validator set are built on first use and shared by every runtime of this module.
-  const claimModuleName = (base: string, origin: string): string => {
-    let name = base;
-    for (let suffix = 1; moduleScope.has(name); suffix += 1) name = `${base}${suffix}`;
-    if (profile.validation && validationBundle) moduleScope.claim(name, origin);
-    return name;
-  };
-  const validationSourcesCacheName = claimModuleName('__operationValidationSources', 'operation validation source cache');
-  const validatorSetCacheName = claimModuleName('__operationValidatorSet', 'operation validator set cache');
+  let validationSourcesName = '__operationValidationSources';
+  for (let suffix = 1; moduleScope.has(validationSourcesName); suffix += 1) validationSourcesName = `__operationValidationSources${suffix}`;
+  if (validatesWithSources) moduleScope.claim(validationSourcesName, 'operation validation sources');
   const inputType = `Types.${operation.typeName}OperationInput`;
   const responseType = `Types.${operation.typeName}OperationHttpResponse`;
   const validatorSetup = validatesWithSources
     ? `  const validators = operationValidators(runtime, ${JSON.stringify(operation.name)}, ${validationSourcesName});\n  const checkResponse = responseCheck(validators);`
     : profile.validation ? '  const validators = undefined;' : '';
-  const standaloneResponseValidation = validationBundle?.responseReferences.length
-    ? `    for (const item of ${JSON.stringify(validationBundle.responseReferences)}) {
-      const validator = validatorSet.all[item.reference];
-      if (!validator) throw new LibError(LibErrorKind.ValidationUnavailable, \`Runtime validator could not compile operation response: ${JSON.stringify(operation.name)} \${item.status} \${item.contentType}\`);
-      responses.set(\`\${item.status}:\${item.contentType}\`, validator);
-    }`
-    : '';
-  const validationSources = profile.validation && validationBundle
+  const validationSources = validationBundle && validatesWithSources
     ? [
-      `let ${validationSourcesCacheName}: OperationValidationSources | undefined;`,
-      ...(profile.ajvStandalone ? [`let ${validatorSetCacheName}: ReturnType<typeof createValidatorSet> | undefined;`] : []),
-      `const ${validationSourcesName} = (): OperationValidationSources => ${validationSourcesCacheName} ??= {`,
+      `const ${validationSourcesName}: OperationValidationSources = {`,
       `  inputReference: ${JSON.stringify(validationBundle.inputReference)},`,
       `  responseReferences: ${JSON.stringify(validationBundle.responseReferences)},`,
-      '  schemas: new Map([',
-      ...(profile.ajvStandalone ? [] : [
-        `    [${JSON.stringify(validationBundle.operationRootId)}, JSON.parse(${JSON.stringify(JSON.stringify(validationBundle.operationSchema))}) as object | boolean],`,
-        ...sharedSchemaAliases.map(({ id, alias }) => `    [${JSON.stringify(id)}, ${alias}],`),
-      ]),
-      '  ]),',
-      ...(profile.ajvStandalone ? [
-        '  standaloneValidators: () => {',
-        `    const validatorSet = ${validatorSetCacheName} ??= createValidatorSet();`,
-        `    const input = validatorSet.all[${JSON.stringify(validationBundle.inputReference)}];`,
-        `    if (!input) throw new LibError(LibErrorKind.ValidationUnavailable, ${JSON.stringify(`Runtime validator could not compile operation input: ${operation.name}`)});`,
-        '    const responses = new Map<string, RuntimeValidator>();',
-        standaloneResponseValidation,
-        '    return { input, responses };',
-        '  },',
-      ] : []),
+      '  validators,',
       '};',
-    ].filter(Boolean).join('\n')
-    : '';
-  const operationSchemaImports = profile.validation && !profile.ajvStandalone
-    ? sharedSchemaAliases.map(({ id: _id, alias }, index) => {
-      const resource = validationBundle?.sharedResources[index];
-      if (!resource) return '';
-      const modulePath = `../${resource.moduleName.replace(/\.ts$/, '.js')}`;
-      return `import { schema as ${alias} } from ${JSON.stringify(modulePath)};`;
-    }).filter(Boolean).join('\n')
+    ].join('\n')
     : '';
   const runtimeImports = [
     `import { ClientRuntime${runtimeFunctions.map(name => `, ${name}`).join('')}${profile.mobx ? '' : ', createApiOperation, type ApiOperation'}, type RuntimeResponseContract${appliesSecurity ? ', type RuntimeSecuritySchemes' : ''}${profile.validation ? ', type OperationValidationSources' : ''} } from '@exprtlabs/golem/client';`,
@@ -310,17 +255,10 @@ function operationSource(
     profile.mobx
       ? `import { createObservableApiOperation as createApiOperation, type ObservableApiOperation as ApiOperation } from '@exprtlabs/golem/mobx';`
       : '',
-    defaultAjvEngine ? `import { createOpenApiAjvEngine } from '@exprtlabs/golem/ajv';` : '',
-    profile.ajvStandalone && profile.validation
-      ? `import { createValidatorSet } from './${operation.name}.validators.generated.js';`
-      : '',
-    profile.validation && profile.ajvStandalone
-      ? `import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';`
-      : '',
+    validatesWithSources ? `import { validators } from './${operation.name}.validators.generated.js';` : '',
     validationFunctions.length
-      ? `import { ${validationFunctions.join(', ')}${profile.ajvStandalone ? ', type RuntimeValidator' : ''} } from '@exprtlabs/golem/validation';`
+      ? `import { ${validationFunctions.join(', ')} } from '@exprtlabs/golem/validation';`
       : '',
-    operationSchemaImports,
   ].filter(Boolean).join('\n');
   // The client module imports `__golemSecuritySchemes` from every operation module.
   const securityDeclaration = surfaces.auth || surfaces.mutualTls
@@ -371,7 +309,7 @@ ${bodyLines.join('\n')}
   ].filter((part, index) => part !== '' || index === 2).join('\n')}
 
 export function ${operation.name}(options: ClientOptions): ApiOperation<${inputType}, ${responseType}, RequestOptions> {
-  return ${factoryName}(new ClientRuntime(${JSON.stringify(clientName)}, options${defaultAjvEngine ? ', { createValidationEngine: createOpenApiAjvEngine }' : ''}));
+  return ${factoryName}(new ClientRuntime(${JSON.stringify(clientName)}, options));
 }
 
 export function ${factoryName}(runtime: ClientRuntime): ApiOperation<${inputType}, ${responseType}, RequestOptions> {
@@ -467,7 +405,6 @@ function emitClient(
 ): string {
   const scope = new NameScope(`${clientName}Client`);
   const surfaces = plan.clientSurfaces;
-  const defaultAjvEngine = profile.validation && !profile.ajvStandalone;
   scope.claim('ClientRuntime', 'shared client runtime');
   scope.claim('Runtime', 'shared client runtime types');
   scope.claim('ClientOptions', 'client options import');
@@ -479,7 +416,6 @@ function emitClient(
   if (plan.helpers.has('selectResponse')) scope.claim(`${clientName}UndeclaredResponseError`, 'undeclared response error export');
   if (plan.helpers.has('selectResponse')) scope.claim(`is${clientName}UndeclaredResponseError`, 'undeclared response error guard');
   if (plan.helpers.has('selectResponse')) scope.claim('isUndeclaredResponseError', 'shared undeclared response error guard');
-  if (defaultAjvEngine) scope.claim('createOpenApiAjvEngine', 'default validation engine import');
   if (profile.validation) {
     scope.claim('__GolemOperationName', 'operation name type');
     scope.claim('__GolemOperationRuntimeValidators', 'operation validators type import');
@@ -535,7 +471,6 @@ ${[...securityAliases.values()].map((alias) => `  ...${alias},`).join('\n')}
     ...(surfaces.mutualTls ? [] : ['mutualTls']),
     'auth',
     'operationValidators',
-    ...(profile.validation ? [] : ['validationEngine']),
   ];
   const optionsType = `Omit<Runtime.ClientOptions, ${omittedOptions.map((name) => JSON.stringify(name)).join(' | ')}>${optionExtensions.length ? ` & {\n${optionExtensions.join('\n')}\n}` : ''}`;
   const aliases_ = [
@@ -569,7 +504,7 @@ ${[...securityAliases.values()].map((alias) => `  ...${alias},`).join('\n')}
   return `${generatedBanner()}
 import { ${runtimeValueImports.join(', ')} } from '@exprtlabs/golem/client';
 import type * as Runtime from '@exprtlabs/golem/client';
-${defaultAjvEngine ? "import { createOpenApiAjvEngine } from '@exprtlabs/golem/ajv';\n" : ''}${profile.validation ? "import type { OperationRuntimeValidators as __GolemOperationRuntimeValidators } from '@exprtlabs/golem/validation';\n" : ''}import type * as Types from './types.js';
+${profile.validation ? "import type { OperationRuntimeValidators as __GolemOperationRuntimeValidators } from '@exprtlabs/golem/validation';\n" : ''}import type * as Types from './types.js';
 ${profile.mobx
     ? "import type { ObservableApiOperation as ApiOperation } from '@exprtlabs/golem/mobx';"
     : "import type { ApiOperation } from '@exprtlabs/golem/client';"}
@@ -585,7 +520,7 @@ export class ${clientName}Client implements ${clientName}ClientPort {
   private readonly runtime: ClientRuntime;
 
   constructor(options: ${clientName}ClientOptions) {
-    this.runtime = new ClientRuntime(${JSON.stringify(clientName)}, options${defaultAjvEngine ? ', { createValidationEngine: createOpenApiAjvEngine }' : ''});
+    this.runtime = new ClientRuntime(${JSON.stringify(clientName)}, options);
   }
 
 ${implementations}
@@ -620,44 +555,27 @@ export function generateClientModules(
   const validationBundles = profile.validation
     ? buildOperationValidationSchemaBundles(document, operations, schemaData)
     : new Map<string, ReturnType<typeof buildOperationValidationSchemaBundle>>();
-  const sharedSchemas = new Map<string, string>();
-  if (profile.validation && !profile.ajvStandalone) {
-    for (const bundle of validationBundles.values()) {
-      for (const resource of bundle.sharedResources) {
-        const previous = sharedSchemas.get(resource.moduleName);
-        if (previous !== undefined && previous !== resource.source) {
-          throw new Error(`Conflicting generated validation schema module: ${resource.moduleName}`);
-        }
-        sharedSchemas.set(resource.moduleName, resource.source);
-      }
-    }
-  }
-  const standaloneValidators = new Map<string, { source: string; declarations: string; notices: string }>();
-  if (profile.validation && profile.ajvStandalone) {
-    for (const operation of operations) {
-      const bundle = validationBundles.get(operation.name);
-      if (!bundle) throw new Error(`Missing generated validation schema bundle for operation ${operation.name}`);
-      const compiled = compileStandaloneValidatorSet({
-        schemas: bundle.schemas,
-        references: [bundle.inputReference, ...bundle.responseReferences.map((item) => item.reference)],
+  const operationValidators = new Map<string, string>();
+  const diagnostics: GolemDiagnostic[] = [];
+  for (const operation of operations) {
+    const bundle = validationBundles.get(operation.name);
+    if (!profile.validation) continue;
+    if (!bundle) throw new Error(`Missing generated validation schema bundle for operation ${operation.name}`);
+    const compiled = compileSchemaValidators(
+      { roots: bundle.roots, resources: bundle.schemas },
+      {
         owner: '@exprtlabs/golem-openapi',
-      });
-      standaloneValidators.set(`operations/${operation.name}.validators.generated.js`, {
-        source: compiled.code,
-        declarations: compiled.declarations,
-        notices: compiled.notices,
-      });
-    }
+        unknownFormats: profile.unknownFormats ?? 'warn',
+        documentName: 'the OpenAPI document',
+      },
+    );
+    diagnostics.push(...compiled.diagnostics);
+    operationValidators.set(`operations/${operation.name}.validators.generated.ts`, compiled.source);
   }
 
   const emittedOperations = new Map<string, string>();
   for (const operation of operations) {
     const operationSchemes = operationSecuritySchemeData(operation, securitySchemes);
-    const bundle = validationBundles.get(operation.name);
-    const schemaAliases = (bundle?.sharedResources ?? []).map((resource, index) => ({
-      id: resource.id,
-      alias: `__golemSchema${index}`,
-    }));
     emittedOperations.set(`operations/${operation.name}.ts`, operationSource(
       clientName,
       operation,
@@ -666,11 +584,10 @@ export function generateClientModules(
       plan,
       responseContractsForOperation(document, operation),
       operationSchemes,
-      bundle,
-      schemaAliases,
+      validationBundles.get(operation.name),
     ));
   }
   const client = emitClient(clientName, operations, profile, plan, rawSecuritySchemes);
-  return { client, operations: emittedOperations, standaloneValidators, sharedSchemas };
+  return { client, operations: emittedOperations, operationValidators, diagnostics };
 }
 

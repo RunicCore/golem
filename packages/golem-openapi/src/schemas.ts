@@ -9,7 +9,6 @@ import {
   type NormalizedOperation,
   type OpenApiSchema,
 } from './normalize.js';
-import { generatedBanner } from './package-info.js';
 import {
   buildRuntimeProjections,
   collectCanonicalResources,
@@ -267,12 +266,12 @@ export interface OpenApiOperationValidationSchemaBundle {
   }[];
   /** Selected operation root and its complete canonical component/resource closure. */
   readonly schemas: Readonly<Record<string, object | boolean>>;
-  /** Shared schema resources emitted once and imported only by operations that use them. */
-  readonly sharedResources: readonly {
-    readonly id: string;
-    readonly moduleName: string;
-    readonly source: string;
-  }[];
+  /**
+   * What `compile` validates, one root for the input and one for each response, keyed by the references above.
+   * Each root names its schema inside the operation root; a reference never equals the pointer it names, so the
+   * compiler reads the pointer as a reference to the operation root and not as the root itself.
+   */
+  readonly roots: Readonly<Record<string, object>>;
 }
 
 
@@ -294,36 +293,6 @@ function stableResourceSuffix(value: string): string {
     hash = BigInt.asUintN(64, hash * 0x100000001b3n);
   }
   return hash.toString(16).padStart(16, '0');
-}
-
-// 19 characters of directory + stem + ".output" + "-xxxxxx" + ".ts" stay within 100.
-const MAX_SCHEMA_FILE_STEM = 64;
-
-function schemaFileStem(name: string): string {
-  const safe = name.replace(/[^A-Za-z0-9_$-]/g, '_').slice(0, MAX_SCHEMA_FILE_STEM);
-  return safe || 'schema';
-}
-
-/**
- * Names validation-schema files `<Component>.<direction>.ts`. A short id suffix
- * is added only when two names collide on a case-insensitive file system. The
- * suffix hashes the id without the document digest, so editing the document
- * does not rename files.
- */
-export function validationSchemaModuleNames(
-  entries: readonly { readonly id: string; readonly name: string; readonly direction: SchemaDirection }[],
-  rootId: string,
-): ReadonlyMap<string, string> {
-  const base = entries.map(item => ({ ...item, file: `${schemaFileStem(item.name)}.${item.direction}` }));
-  const counts = new Map<string, number>();
-  for (const item of base) counts.set(item.file.toLowerCase(), (counts.get(item.file.toLowerCase()) ?? 0) + 1);
-  const names = new Map<string, string>();
-  for (const item of base) {
-    const stableId = item.id.startsWith(rootId) ? item.id.slice(rootId.length) : item.id;
-    const collides = (counts.get(item.file.toLowerCase()) ?? 0) > 1;
-    names.set(item.id, `validation-schemas/${item.file}${collides ? `-${stableResourceSuffix(stableId).slice(0, 6)}` : ''}.ts`);
-  }
-  return names;
 }
 
 const schemaMapKeywords = new Set([
@@ -448,11 +417,9 @@ interface OperationValidationSchemaIndex {
   readonly outputProjectionId: string;
   readonly componentById: Map<string, object | boolean>;
   readonly componentNamesById: Map<string, { readonly name: string; readonly direction: SchemaDirection }>;
-  readonly moduleNames: ReadonlyMap<string, string>;
   readonly resourceById: Map<string, DirectionalResource>;
   readonly resourceIdsBySource: Map<string, string>;
   readonly rewrittenResources: Map<string, object | boolean>;
-  readonly moduleSources: Map<string, { readonly moduleName: string; readonly source: string }>;
 }
 
 function resourceBaseId(value: string): string {
@@ -521,8 +488,6 @@ function createOperationValidationSchemaIndex(
       componentNamesById.set(id, { name, direction });
     }
   }
-  const moduleNames = validationSchemaModuleNames(
-    [...componentNamesById].map(([id, { name, direction }]) => ({ id, name, direction })), rootId);
   return {
     data,
     rootId,
@@ -531,11 +496,9 @@ function createOperationValidationSchemaIndex(
     outputProjectionId: data.outputResourceId,
     componentById,
     componentNamesById,
-    moduleNames,
     resourceById,
     resourceIdsBySource,
     rewrittenResources: new Map(),
-    moduleSources: new Map(),
   };
 }
 
@@ -740,7 +703,6 @@ function operationBundleFromIndex(
     for (const schema of Object.values(asRecord(content))) visitRefs(schema, 'output', collectReference);
   }
   const visited = new Set<string>();
-  const moduleById = new Map<string, string>();
   while (pending.length) {
     const item = pending.pop();
     if (!item) continue;
@@ -756,39 +718,25 @@ function operationBundleFromIndex(
       throw new Error(`Unresolved OpenAPI validation schema reference ${JSON.stringify(item.ref)}.`);
     }
     schemas[baseId] = schema;
-    const moduleName = index.moduleNames.get(baseId)
-      ?? `validation-schemas/resource-${stableResourceSuffix(baseId.startsWith(index.rootId) ? baseId.slice(index.rootId.length) : baseId).slice(0, 12)}.ts`;
-    moduleById.set(baseId, moduleName);
-    let module = index.moduleSources.get(baseId);
-    if (!module) {
-      const schemaJson = JSON.stringify(schema);
-      if (schemaJson === undefined) throw new TypeError(`OpenAPI schema resource ${JSON.stringify(baseId)} is not serializable.`);
-      module = {
-        moduleName,
-        source: `${generatedBanner()}\nexport const schema = JSON.parse(${JSON.stringify(schemaJson)}) as object | boolean;\n`,
-      };
-      index.moduleSources.set(baseId, module);
-    }
     visitRefs(schema, item.direction, collectReference);
   }
 
-  const inputReference = `${operationRootId}#/operations/${escapePointerToken(operation.name)}/input`;
-  const responseReferences = operation.responses.flatMap((response) => response.content.map((media) => ({
-    status: response.status,
-    contentType: media.contentType,
-    reference: `${operationRootId}#/operations/${escapePointerToken(operation.name)}/responses/${escapePointerToken(response.status)}/${escapePointerToken(media.contentType)}`,
-  })));
+  const pointerBase = `${operationRootId}#/operations/${escapePointerToken(operation.name)}`;
+  const inputReference = `${operationRootId}:input`;
+  const roots = Object.create(null) as Record<string, object>;
+  roots[inputReference] = { $ref: `${pointerBase}/input` };
+  const responseReferences = operation.responses.flatMap((response) => response.content.map((media) => {
+    const reference = `${operationRootId}:response:${urnSegment(response.status)}:${urnSegment(media.contentType)}`;
+    roots[reference] = { $ref: `${pointerBase}/responses/${escapePointerToken(response.status)}/${escapePointerToken(media.contentType)}` };
+    return { status: response.status, contentType: media.contentType, reference };
+  }));
   return {
     operationRootId,
     operationSchema: schemaRoot,
     inputReference,
     responseReferences,
     schemas,
-    sharedResources: [...moduleById].map(([id, moduleName]) => ({
-      id,
-      moduleName,
-      source: index.moduleSources.get(id)?.source ?? '',
-    })).sort((left, right) => left.id.localeCompare(right.id)),
+    roots,
   };
 }
 

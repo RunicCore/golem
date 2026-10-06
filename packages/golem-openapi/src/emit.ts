@@ -194,12 +194,8 @@ function buildGeneratedFiles(document: unknown, options: WriteSdkOptions): Gener
     const clientModules = generateClientModules(clientName, operations, document, profile, plan, schemaData);
     files.set('client.ts', clientModules.client);
     for (const [name, source] of clientModules.operations) files.set(name, source);
-    for (const [name, source] of clientModules.sharedSchemas) files.set(name, source);
-    for (const [name, compiled] of clientModules.standaloneValidators) {
-      files.set(name, compiled.source);
-      files.set(`${name.slice(0, -3)}.d.ts`, compiled.declarations);
-      files.set(`${name.slice(0, -3)}.NOTICES.txt`, compiled.notices);
-    }
+    for (const [name, source] of clientModules.operationValidators) files.set(name, source);
+    modelDiagnostics.push(...clientModules.diagnostics);
   }
   if (plan.artifacts.has('inbound.ts')) {
     files.set('inbound.ts', generateInbound(clientName, inboundOperations));
