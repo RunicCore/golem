@@ -54,6 +54,6 @@ test('a manifest profile with a field golem no longer reads is rejected and says
   const profile = { mobx: false, validation: true, allowAny: false, retiredOption: true };
   assert.throws(
     () => validateModelManifest({ profile, models: [] }, 'sdk/model-manifest.json'),
-    /Invalid model manifest sdk\/model-manifest\.json: profile has unsupported field\(s\): retiredOption\. Regenerate the models\./,
+    /Invalid model manifest sdk\/model-manifest\.json: profile has unsupported field\(s\): retiredOption\. Regenerate or remove the older generated SDK\./,
   );
 });
