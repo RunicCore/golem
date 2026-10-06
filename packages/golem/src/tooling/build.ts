@@ -12,7 +12,7 @@ import { GeneratorSessionResources, runPipeline } from './pipeline.js';
 import type { PipelineState } from './pipeline.js';
 import { applyRewrites } from './rewrite.js';
 import type { FileRewrite } from './rewrite.js';
-import { outsideProjectRoot, projectSources, RewriteScanner } from './rewrite-scan.js';
+import { emitsJavaScript, outsideProjectRoot, projectSources, RewriteScanner } from './rewrite-scan.js';
 import { composeSourceMaps } from './source-map.js';
 import type { SourceMapV3 } from './source-map.js';
 import * as ts from './typescript-ns.js';
@@ -142,7 +142,7 @@ function readProject(configFile: string, parsed: { readonly options: ts.Compiler
     ...(baseUrl === undefined ? {} : { baseUrl }),
     ...(paths === undefined ? {} : { paths: rebasePaths(paths, baseUrl ?? stringOption(options, 'pathsBasePath') ?? root) }),
     declaration: effective.declaration,
-    emitsJavaScript: !noEmit && options.emitDeclarationOnly !== true,
+    emitsJavaScript: emitsJavaScript(options),
     noEmit,
     noEmitOnError: effective.noEmitOnError,
   };

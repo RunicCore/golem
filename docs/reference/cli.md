@@ -30,7 +30,7 @@ Commands that need TypeScript use the one installed in the directory of the tsco
 | Command | What it does |
 | --- | --- |
 | `generate` | Writes all outputs and the inventory. A job whose inputs and options did not change since its last run, and whose outputs exist, is skipped. |
-| `check` | Generates the expected artifact set in memory and fails when files are missing, stale, conflicting or obsolete inventoried outputs remain. It also fails on a source of the TypeScript project that lies outside the tsconfig's directory, as `golem build` does, reports every `parse<T>()` call that no host can rewrite, with its file, its line and what to run, and checks that the Nest codecs agree with the generated registry. It does not write files. |
+| `check` | Generates the expected artifact set in memory and fails when files are missing, stale, conflicting or obsolete inventoried outputs remain. When the project emits JavaScript (neither `noEmit` nor `emitDeclarationOnly` is set), it also fails on a source of the TypeScript project that lies outside the tsconfig's directory, as `golem build` does. It reports every `parse<T>()` call that no host can rewrite, with its file, its line and what to run, and checks that the Nest codecs agree with the generated registry. It does not write files. |
 | `watch` | Generates once, then reruns affected jobs when observed configuration, API, model, TypeScript or manifest inputs change. |
 | `exec -- <command> [args...]` | Generates once, starts the child command only after generation succeeds, and forwards its exit status and signals. |
 | `exec --watch -- <command> [args...]` | Does the same and keeps the generator watching until the child exits. |

@@ -282,7 +282,7 @@ export function read(text: string): unknown { return parse<{ note: string }>(tex
   assert.match(fs.readFileSync(path.join(app, 'build/use.js'), 'utf8'), /requireObjectCodec\("TMoney_[0-9a-f]{8}"\)\.stringify\(/, 'the app\'s own sites are rewritten');
 });
 
-test('a source the tsconfig includes outside its directory fails golem check as it fails golem build, with or without a rewrite site', async (t) => {
+test('a source the tsconfig includes outside its directory fails golem check as it fails golem build, with or without a rewrite site, and only in a project that emits JavaScript', async (t) => {
   const { root: outer } = createModelProject(t, {
     prefix: 'golem-build-outside-source-',
     name: 'build-outside-source',
@@ -316,4 +316,14 @@ test('a source the tsconfig includes outside its directory fails golem check as 
     tsconfig.include = ['src/**/*.ts', '../shared/plain.ts'];
   });
   await assert.rejects(runPipeline(config, { check: true }), /RUNM1070 \(\.\.\/shared\/plain\.ts\): "\.\.\/shared\/plain\.ts" lies outside the project root/);
+
+  // A project that emits no JavaScript, a bundler's type check for one, builds nothing that a stage would hold, so golem build skips the rule and so does the check.
+  editTsconfig(app, (tsconfig) => { tsconfig.compilerOptions.noEmit = true; });
+  await runPipeline(config, { check: true });
+  editTsconfig(app, (tsconfig) => {
+    delete tsconfig.compilerOptions.noEmit;
+    tsconfig.compilerOptions.declaration = true;
+    tsconfig.compilerOptions.emitDeclarationOnly = true;
+  });
+  await runPipeline(config, { check: true });
 });

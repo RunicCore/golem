@@ -605,6 +605,11 @@ export function projectSources(program: ts.Program): ts.SourceFile[] {
     && !file.fileName.split(/[\\/]/).includes('node_modules'));
 }
 
+/** `noEmit` and `emitDeclarationOnly` leave no JavaScript to emit: `golem build` stages nothing then, and the project scan of `golem check` has no outside source to reject. */
+export function emitsJavaScript(options: ts.CompilerOptions): boolean {
+  return options.noEmit !== true && options.emitDeclarationOnly !== true;
+}
+
 /** The sources of `sources` outside `root`, the tsconfig's directory: a staged copy of the project cannot hold them, so `golem build` and the project scan of `golem check` both reject each one. */
 export function outsideProjectRoot(root: string, sources: readonly ts.SourceFile[]): ts.SourceFile[] {
   return sources.filter((file) => !contains(root, file.fileName));
@@ -663,10 +668,11 @@ export class RewriteScanner {
 
   /**
    * Every project source that needs a rewrite, by root-relative POSIX path in path order, and the diagnostics of all candidates in the same order: what `golem build` stages and rewrites.
-   * A project source outside the root fails here as it fails `golem build`, whether or not it has a rewrite site, so `files` holds none of them.
+   * In a project that emits JavaScript, a source outside the root fails here as it fails `golem build`, whether or not it has a rewrite site, so `files` holds none of them.
    */
   scanProgram(): { readonly files: ReadonlyMap<string, FileScanResult>; readonly diagnostics: readonly GolemDiagnostic[] } {
     const sources = projectSources(this.program);
+    if (!emitsJavaScript(this.program.getCompilerOptions())) return this.scanFiles(sources.map((file) => file.fileName));
     const outside = outsideProjectRoot(this.root, sources)
       .map((file) => portable(this.root, file.fileName))
       .sort(compareText)
