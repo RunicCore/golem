@@ -16,11 +16,14 @@ validator compiler can compile them; `scripts/vendor-openapi-schemas.ts` reprodu
 The Apache License 2.0 text ships with this package as `LICENSES/Apache-2.0.txt`.
 
 The JSON Schema 2020-12 meta-schema in `src/openapi-schemas/json-schema-2020-12.ts`
-is derived from `https://json-schema.org/draft/2020-12/schema` and its
-`meta/` vocabulary schemas (core, applicator, unevaluated, validation,
-meta-data, format-annotation, content; sha256 of the files in that order
-1ea2456fb0988458861a90632d9c8a2afaa7d391aa335d9b12cff3b6c743f957), published by
-the JSON Schema organization. Each `$dynamicRef: "#meta"` is replaced by a
-`$ref` to the meta-schema and each `$dynamicAnchor` is removed so golem's
-validator compiler can compile them; `scripts/vendor-openapi-schemas.ts`
-reproduces the file.
+was produced from Ajv 8's bundled copy of the upstream meta-schemas
+`https://json-schema.org/draft/2020-12/schema` and its `meta/` vocabulary
+schemas (core, applicator, unevaluated, validation, meta-data,
+format-annotation, content), published by the JSON Schema organization. The
+sha256 of the copy's files in that order is
+1ea2456fb0988458861a90632d9c8a2afaa7d391aa335d9b12cff3b6c743f957; the copy keeps
+the `$vocabulary` entries. Each `$dynamicRef: "#meta"` is replaced by a `$ref`
+to the meta-schema and each `$dynamicAnchor` is removed so golem's validator
+compiler can compile them. The next run of `scripts/vendor-openapi-schemas.ts`
+(`npm run vendor:openapi-schemas`) takes the upstream bytes and records their
+sha256 here and in the file header.
