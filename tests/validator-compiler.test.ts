@@ -986,3 +986,24 @@ test('functions that reference different targets stay separate', async () => {
   assert.deepEqual(textHolder({ v: 1 }, true), [{ path: ['v'], code: 'type', expected: ['string'] }]);
   assert.deepEqual(countHolder({ v: 'a' }, true), [{ path: ['v'], code: 'type', expected: ['integer'] }]);
 });
+
+test('a forwarding function stays when its target takes an evaluation record that the forwarder is not handed', async () => {
+  // `target` is reached in place by the root, which keeps a record, so it takes one; `viaForwarder` is reached only through a property, so it takes none.
+  const roots = {
+    root: {
+      type: 'object',
+      properties: { child: { $ref: 'viaForwarder' } },
+      allOf: [{ $ref: 'target' }],
+      unevaluatedProperties: false,
+    },
+  };
+  const resources = { target: { type: 'object', properties: { a: { type: 'string' } } }, viaForwarder: { $ref: 'target' } };
+  assert.equal(count(emitted(roots, resources), FUNCTION_DECLARATIONS), 3);
+  const { root } = await compileValidators({ roots, resources });
+  assert.deepEqual(root({ a: 'x', child: { a: 'y' } }, true), []);
+  assert.deepEqual(root({ a: 1, child: { a: 2 } }, true), [
+    { path: ['child', 'a'], code: 'type', expected: ['string'] },
+    { path: ['a'], code: 'type', expected: ['string'] },
+  ]);
+  assert.deepEqual(root({ a: 'x', child: { a: 'y' }, z: 1 }, true), [{ path: ['z'], code: 'unknownKey', key: 'z' }]);
+});

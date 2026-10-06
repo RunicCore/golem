@@ -25,7 +25,7 @@ function functionParameters(fn: IrFunction): string {
   return [VALUE, PATH, ISSUES, ALL, ...(fn.receives ? [INHERITED] : [])].join(', ');
 }
 
-/** The name a function has in the emitted module: functions that need no code of their own share their target's. */
+/** The name of the function written at position `index` among the functions the module keeps. */
 function functionName(index: number): string {
   return `f${index}`;
 }
