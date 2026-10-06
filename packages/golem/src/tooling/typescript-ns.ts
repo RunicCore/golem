@@ -1,9 +1,10 @@
 // The only door to TypeScript: picks the backend for the project's installed TypeScript.
 // Add a name to the value list below when golem code starts using it through this seam.
-import { assertGolemLoadsTypeScript, resolveTypeScript } from './typescript-version.js';
+import { selectedTypeScript } from './typescript-selection.js';
+import { assertGolemLoadsTypeScript } from './typescript-version.js';
 import type * as Golem from './typescript-types.js';
 
-const selected = resolveTypeScript(process.env.GOLEM_TYPESCRIPT_ROOT ?? process.cwd());
+const selected = selectedTypeScript();
 if (selected.major === 7) assertGolemLoadsTypeScript(selected);
 // The single boundary between TypeScript's own types and golem's: both backend modules are cast here to the
 // golem-owned shape in typescript-types.ts, so no published declaration names a TypeScript package.

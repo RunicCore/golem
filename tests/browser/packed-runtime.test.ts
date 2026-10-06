@@ -156,16 +156,14 @@ test('packed React form survives StrictMode, validation, retry and disposal', as
   const { golem } = await import(pathToFileURL(path.join(root, 'node_modules/@exprtlabs/golem/dist/tooling/esbuild.js')).href) as typeof import('@exprtlabs/golem/esbuild');
   // The packed esbuild plugin scans the project's sources itself, so it loads TypeScript, a production dependency of this app, when it first rewrites a file. TypeScript runs from an optional native package that the prune removed, so the install restores it.
   await npm(root, ['install', '--omit=dev']);
-  // A consumer bundles from its project directory: the plugin opens ./golem.yaml there and loads the project's TypeScript.
-  const testDirectory = process.cwd();
-  process.chdir(root);
+  // The plugin opens the golem.yaml in the working directory of the build and loads the TypeScript beside that project's tsconfig, wherever this process runs from.
   const bundled = await build({
     entryPoints: [path.join(root, 'src/browser-test-entry.tsx')], outfile: path.join(root, 'browser/app.js'),
-    bundle: true, platform: 'browser', format: 'esm', write: false, metafile: true,
+    bundle: true, platform: 'browser', format: 'esm', write: false, metafile: true, absWorkingDir: root,
     // The development React build is the one where StrictMode replays effects.
     define: { 'process.env.NODE_ENV': JSON.stringify('development') },
     plugins: [golem()],
-  }).finally(() => { process.chdir(testDirectory); });
+  });
   const javascript = bundled.outputFiles.find(file => file.path.endsWith('.js'))?.text;
   const css = bundled.outputFiles.find(file => file.path.endsWith('.css'))?.text;
   assert.ok(javascript && css, 'the app bundles its entry and styles');

@@ -1,0 +1,60 @@
+import { realpathSync } from 'node:fs';
+import { resolveTypeScript } from './typescript-version.js';
+
+/** The TypeScript install a process loads, as `resolveTypeScript` describes it. */
+export type SelectedTypeScript = ReturnType<typeof resolveTypeScript>;
+
+/** What the choice came from: the user's override, the project a host asked for, or the working directory. */
+type SelectionSource = 'GOLEM_TYPESCRIPT_ROOT' | 'request' | 'cwd';
+
+interface Selection {
+  readonly typescript: SelectedTypeScript;
+  readonly source: SelectionSource;
+  readonly root: string;
+}
+
+let requested: string | undefined;
+let selection: Selection | undefined;
+
+/** The directory whose TypeScript the process loads, and where that directory came from. GOLEM_TYPESCRIPT_ROOT overrides a request, which overrides the working directory. */
+function chosenRoot(): { readonly root: string; readonly source: SelectionSource } {
+  const override = process.env.GOLEM_TYPESCRIPT_ROOT;
+  if (override !== undefined) return { root: override, source: 'GOLEM_TYPESCRIPT_ROOT' };
+  if (requested !== undefined) return { root: requested, source: 'request' };
+  return { root: process.cwd(), source: 'cwd' };
+}
+
+function origin(chosen: Selection): string {
+  if (chosen.source === 'request') return `the project at ${chosen.root}`;
+  return `the working directory ${chosen.root}, before any project asked for its TypeScript: a module that loads the compiler early selected it`;
+}
+
+/**
+ * The one TypeScript this process loads, chosen on first use and kept. A process loads one compiler, so the compiler seam
+ * and its backends all read this answer.
+ */
+export function selectedTypeScript(): SelectedTypeScript {
+  if (selection === undefined) {
+    const { root, source } = chosenRoot();
+    selection = { typescript: resolveTypeScript(root), source, root };
+  }
+  return selection.typescript;
+}
+
+/**
+ * A project asks for the TypeScript beside its tsconfig. It takes effect when nothing has selected one yet; afterwards
+ * the process must already hold the same install, compared by real path so that two projects sharing a hoisted or linked
+ * install agree. A different install throws: run one host per TypeScript install. GOLEM_TYPESCRIPT_ROOT overrides every
+ * request and is never compared.
+ */
+export function requestTypeScriptRoot(root: string): void {
+  if (process.env.GOLEM_TYPESCRIPT_ROOT !== undefined) return;
+  const wanted = resolveTypeScript(root);
+  const held = selection ?? (requested === undefined ? undefined : { typescript: resolveTypeScript(requested), source: 'request' as const, root: requested });
+  if (held === undefined) {
+    requested = root;
+    return;
+  }
+  if (held.source === 'GOLEM_TYPESCRIPT_ROOT' || realpathSync(held.typescript.packageDir) === realpathSync(wanted.packageDir)) return;
+  throw new Error(`One golem process loads one TypeScript: ${held.typescript.version} at ${held.typescript.packageDir} was selected from ${origin(held)}, but the project at ${root} uses ${wanted.version} at ${wanted.packageDir}. Run one golem host per TypeScript install.`);
+}

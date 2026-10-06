@@ -9,7 +9,7 @@
 import { statSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { basename, dirname, isAbsolute, join, normalize, resolve as resolvePath, sep } from 'node:path';
-import { resolveTypeScript } from './typescript-version.js';
+import { selectedTypeScript } from './typescript-selection.js';
 import type * as Golem from './typescript-types.js';
 
 // The classic compiler's own objects. This build compiles against TypeScript 7, whose main export carries no classic
@@ -161,7 +161,7 @@ interface ClassicTypeScript extends Omit<Golem.TypeScriptBackend, Implemented | 
   flattenDiagnosticMessageText(message: string | ClassicMessageChain | undefined, newLine: string): string;
 }
 
-const selected = resolveTypeScript(process.env.GOLEM_TYPESCRIPT_ROOT ?? process.cwd());
+const selected = selectedTypeScript();
 // Load the project's TypeScript by the directory the version check found; a bare `typescript` import would load golem's own.
 const require = createRequire(import.meta.url);
 const classic = require(selected.packageDir) as ClassicTypeScript;

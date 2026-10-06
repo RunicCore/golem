@@ -12,7 +12,7 @@ import { GeneratorSessionResources, runPipeline } from './pipeline.js';
 import type { PipelineState } from './pipeline.js';
 import { applyRewrites } from './rewrite.js';
 import type { FileRewrite } from './rewrite.js';
-import { projectSources, RewriteScanner } from './rewrite-scan.js';
+import { emitsJavaScript, outsideProjectRoot, projectSources, RewriteScanner } from './rewrite-scan.js';
 import { composeSourceMaps } from './source-map.js';
 import type { SourceMapV3 } from './source-map.js';
 import * as ts from './typescript-ns.js';
@@ -142,7 +142,7 @@ function readProject(configFile: string, parsed: { readonly options: ts.Compiler
     ...(baseUrl === undefined ? {} : { baseUrl }),
     ...(paths === undefined ? {} : { paths: rebasePaths(paths, baseUrl ?? stringOption(options, 'pathsBasePath') ?? root) }),
     declaration: effective.declaration,
-    emitsJavaScript: !noEmit && options.emitDeclarationOnly !== true,
+    emitsJavaScript: emitsJavaScript(options),
     noEmit,
     noEmitOnError: effective.noEmitOnError,
   };
@@ -423,11 +423,10 @@ async function buildOnce(session: ts.ProgramSession, run: BuildRun, changed?: re
 
   using program = session.openProgram({ root, sources: parsed.fileNames, configFile, onInput: observe });
   const sources = projectSources(program);
-  for (const source of sources) {
-    observe(source.fileName);
-    if (!contains(root, source.fileName)) {
-      throw new Error(`golem build cannot stage ${source.fileName}: it is outside the project root ${root}. Move it under the root, or build the package that holds it with golem build -p.`);
-    }
+  for (const source of sources) observe(source.fileName);
+  const [outside] = outsideProjectRoot(root, sources);
+  if (outside) {
+    throw new Error(`golem build cannot stage ${outside.fileName}: it is outside the project root ${root}. Move it under the root, or build the package that holds it with golem build -p.`);
   }
   const scanned = new RewriteScanner({ root, program, checker: program.getTypeChecker(), codecKeysFile: codecKeysPath(golemConfig.directory), nest: golemConfig.jobs.some((job) => job.kind === 'controllers') })
     .scanFiles(sources.map((source) => source.fileName));
