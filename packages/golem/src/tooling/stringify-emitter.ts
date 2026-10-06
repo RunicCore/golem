@@ -1518,8 +1518,9 @@ function emitSerdeValidates(validationEnabled: boolean, ctx: EmitCtx, node: Sche
   return `  const validates = serdeValidates(options, ${enabled});`;
 }
 
-function validatorReference(ctx: EmitCtx, id: string): string {
-  if (ctx.layer !== undefined) return `layerValidator(${ctx.layer}, ${JSON.stringify(id)})`;
+function validatorReference(ctx: EmitCtx, id: string, node: SchemaNode): string {
+  // A node that sets no `validation` validates only when the layer's profile does.
+  if (ctx.layer !== undefined) return `layerValidator(${ctx.layer}, ${JSON.stringify(id)}${node.validationEnabled === undefined ? ', true' : ''})`;
   if (ctx.validatorName === undefined) throw new Error(`The codec of ${JSON.stringify(id)} validates, and the module names no validators to import.`);
   return ctx.validatorName(id);
 }
@@ -1535,7 +1536,7 @@ function emitModelGuard(
   const reference = plane === 'model-only' || plane === 'wire-only'
     ? `${node.codecId}#${plane}`
     : wire ? `${node.codecId}#wire` : node.codecId;
-  return `assertModelValue(${value}, options, ${validatorReference(ctx, reference)}, ${JSON.stringify(reference)}, IssueRepresentation.${representation}, IssueSource.${ctx.issueSource});`;
+  return `assertModelValue(${value}, options, ${validatorReference(ctx, reference, node)}, ${JSON.stringify(reference)}, IssueRepresentation.${representation}, IssueSource.${ctx.issueSource});`;
 }
 
 function emitNodeRuntime(
@@ -1737,7 +1738,7 @@ function emitNodeRuntime(
   const validateLines = validationEnabled
     ? [
       `${exported}function ${validateName}(value: unknown, options?: ${VALIDATE_OPTIONS}): value is ${modelType} {`,
-      `  return isValidModelValue(value, options, ${validatorReference(ctx, node.codecId)}, ${JSON.stringify(node.codecId)});`,
+      `  return isValidModelValue(value, options, ${validatorReference(ctx, node.codecId, node)}, ${JSON.stringify(node.codecId)});`,
       '}',
       '',
       `${exported}function ${assertName}(value: unknown, options?: ${VALIDATE_OPTIONS}): ${modelType} {`,

@@ -316,9 +316,12 @@ function runModelValidator(
   throw new TypeError('A validator must return an array of issues.');
 }
 
-/** The validator the app layer holds for `reference`. An app that does not validate holds none. */
-export function layerValidator(layer: GolemLayer, reference: string): Validator {
-  if (!Object.hasOwn(layer.validators, reference)) return validationUnavailable();
+/**
+ * The validator the app layer holds for `reference`. An app that does not validate holds none. With `followsProfile`,
+ * a model that sets no `validation` is validated only when the profile validates, even if the layer compiled its validator.
+ */
+export function layerValidator(layer: GolemLayer, reference: string, followsProfile = false): Validator {
+  if ((followsProfile && !layer.profile.validation) || !Object.hasOwn(layer.validators, reference)) return validationUnavailable();
   return layer.validators[reference];
 }
 
@@ -392,29 +395,36 @@ function holdsSchemaPlaceholder(value: unknown): boolean {
   ) || holdsSchemaPlaceholder(item));
 }
 
-/** The schemas the app layer holds for codec `id`, with the references to other codecs resolved. */
-function layerSchemas(layer: GolemLayer, id: string): Pick<ObjectCodecImpl, 'schema' | 'wireSchema' | 'modelOnlySchema' | 'wireOnlySchema' | 'schemaRefsResolved'> {
-  const planeSchema = (key: string, plane: ValidationPlane): object | undefined => {
-    if (!Object.hasOwn(layer.schemas, key)) return undefined;
-    const schema = layer.schemas[key];
-    return holdsSchemaPlaceholder(schema) ? resolveGeneratedModelSchemaRefs(schema, plane) : schema;
+/**
+ * The schema planes the app layer holds for codec `id`, each resolved on first use. A schema refers to other codecs by
+ * id, and the codec of a model in an import cycle is not registered yet when this one is.
+ */
+function layerSchemaPlanes(layer: GolemLayer, id: string): Pick<ObjectCodec, 'schema' | 'wireSchema' | 'modelOnlySchema' | 'wireOnlySchema'> {
+  const lazyPlane = (key: string, plane: ValidationPlane): (() => object | undefined) => {
+    let resolved: object | undefined;
+    return () => {
+      if (resolved === undefined && Object.hasOwn(layer.schemas, key)) {
+        const schema = layer.schemas[key];
+        resolved = holdsSchemaPlaceholder(schema) ? resolveGeneratedModelSchemaRefs(schema, plane) : schema;
+      }
+      return resolved;
+    };
   };
-  const schema = planeSchema(id, 'model');
-  const wireSchema = planeSchema(`${id}#wire`, 'wire');
-  const modelOnlySchema = planeSchema(`${id}#model-only`, 'model-only');
-  const wireOnlySchema = planeSchema(`${id}#wire-only`, 'wire-only');
+  const schema = lazyPlane(id, 'model');
+  const wireSchema = lazyPlane(`${id}#wire`, 'wire');
+  const modelOnlySchema = lazyPlane(`${id}#model-only`, 'model-only');
+  const wireOnlySchema = lazyPlane(`${id}#wire-only`, 'wire-only');
   return {
-    ...(schema ? { schema } : {}),
-    ...(wireSchema ? { wireSchema } : {}),
-    ...(modelOnlySchema ? { modelOnlySchema } : {}),
-    ...(wireOnlySchema ? { wireOnlySchema } : {}),
-    schemaRefsResolved: true,
+    get schema() { return schema(); },
+    get wireSchema() { return wireSchema(); },
+    get modelOnlySchema() { return modelOnlySchema(); },
+    get wireOnlySchema() { return wireOnlySchema(); },
   };
 }
 
 /** Registers the codec of `id`. With `layer`, its schemas come from `layer.schemas`; without it, from `impl`. */
-export function createObjectCodec<T>(id: string, implementation: ObjectCodecImpl<T>, layer?: GolemLayer): ObjectCodec<T> {
-  const impl: ObjectCodecImpl<T> = layer === undefined ? implementation : { ...implementation, ...layerSchemas(layer, id) };
+export function createObjectCodec<T>(id: string, impl: ObjectCodecImpl<T>, layer?: GolemLayer): ObjectCodec<T> {
+  const schemaRefs = layer === undefined ? undefined : layerSchemaPlanes(layer, id);
   const schema = impl.schema
     ? impl.schemaRefsResolved ? impl.schema : resolveGeneratedModelSchemaRefs(impl.schema)
     : undefined;
@@ -426,10 +436,12 @@ export function createObjectCodec<T>(id: string, implementation: ObjectCodecImpl
   const wireOnlySchema = planeSchema(impl.wireOnlySchema, 'wire-only');
   const codec: ObjectCodec<T> = {
     id,
-    schema,
-    wireSchema,
-    ...(modelOnlySchema ? { modelOnlySchema } : {}),
-    ...(wireOnlySchema ? { wireOnlySchema } : {}),
+    ...(schemaRefs === undefined ? {
+      schema,
+      wireSchema,
+      ...(modelOnlySchema ? { modelOnlySchema } : {}),
+      ...(wireOnlySchema ? { wireOnlySchema } : {}),
+    } : {}),
     issueSource: impl.issueSource,
     stringify: (value, options) => impl.stringify(value, options),
     parse: (text, options) => impl.parse(text, options),
@@ -439,6 +451,8 @@ export function createObjectCodec<T>(id: string, implementation: ObjectCodecImpl
     toWireFormat: <Value extends T>(value: Value, options?: SerdeOptions) => impl.toWireFormat(value, options) as WireFormat<Value>,
     fromWireFormat: (wire, options) => impl.fromWireFormat(wire, options),
   };
+  // Copy the descriptors, not the values: a spread would run the getters and resolve the schemas now.
+  if (schemaRefs !== undefined) Object.defineProperties(codec, Object.getOwnPropertyDescriptors(schemaRefs));
   registerObjectCodec(codec);
   return codec;
 }
