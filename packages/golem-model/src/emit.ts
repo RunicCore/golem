@@ -296,6 +296,8 @@ function describeFunction(binding: ValueBinding): string {
 
 /** One id names one function. Two functions with the same id would bind a model to the wrong one, so the second fails. */
 function assertSameFunction(id: string, first: ValueBinding, second: ValueBinding): void {
+  // A packaged function is its package import: copies of one package at two paths are one function.
+  if (first.specifier !== undefined && first.specifier === second.specifier && first.exportName === second.exportName) return;
   if (first.module === second.module && first.exportName === second.exportName) return;
   throw new Error(
     `Two functions have the id ${JSON.stringify(id)}: ${describeFunction(first)} and ${describeFunction(second)}. `

@@ -9,6 +9,7 @@ import { copyFixture, copyFixtureFile, createFixtureProject, linkProjectPackages
 import { accountModelWithField, accountModelWithMissingImport } from './fixture-templates/models/model-generator.js';
 import { buildModelProject, createModelProject, generatedModelFiles, writeModelGolemYaml, writeModelSources } from './model-project.js';
 import { taggedModelSource } from './fixture-templates/models/model-tags.js';
+import { COUNT_DIST_FILES, writeCodecPackage } from './fixture-templates/models/codec-package.js';
 import { tsSource } from './source-template.js';
 
 import {
@@ -603,28 +604,50 @@ export type TCount = IModel<{ count: number & TValidation<typeof isEven> }>;
   );
 });
 
-test('two named shared folders with the same file and export names generate in one job and each model binds its own folder\'s function', (t: TestContext) => {
-  const outer = sharedWorkspace(t);
+/** What the layer binds `serialize` of the serde binding `id` to: the file and export its import names. */
+function serdeBindingTarget(layer: { readonly path: string; readonly content: string }, id: string): { readonly file: string; readonly exportName: string } | undefined {
+  const alias = new RegExp(`${id.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&')}": \\{ serialize: \\(value: unknown\\): unknown => \\(\\((\\w+)\\)`).exec(layer.content)?.[1];
+  const imported = alias === undefined ? null : new RegExp(`import \\{ (\\w+) as ${alias} \\} from "([^"]+)"`).exec(layer.content);
+  return imported === null ? undefined : { file: path.resolve(path.dirname(layer.path), imported[2]!).replace(/\.js$/, '.ts'), exportName: imported[1]! };
+}
+
+/** Two shared folders that each have a `rules.ts` and a `codecs.ts` with the same names, and one model that uses both. */
+function twoSharedFolders(outer: string, packageJson: (folder: string) => string | undefined): string[] {
   const sources: string[] = [];
   for (const folder of ['first', 'second']) {
     const directory = path.join(outer, 'shared', folder);
     fs.mkdirSync(directory, { recursive: true });
-    fs.writeFileSync(path.join(directory, 'package.json'), JSON.stringify({ name: `@acme/${folder}`, private: true, type: 'module' }));
+    const manifest = packageJson(folder);
+    if (manifest !== undefined) fs.writeFileSync(path.join(directory, 'package.json'), manifest);
     writeModelSources(directory, {
       'rules.ts': folder === 'first' ? rulesSource : tsSource`export function isEven(value: number): boolean | string { return value % 4 === 0 || 'must be a multiple of four'; }
 `,
+      'codecs.ts': tsSource`export function toCents(value: number): string { return String(Math.round(value * 100)); }
+export function fromCents(cents: string): number { return Number(cents) / 100; }
+`,
       'count.model.ts': tsSource`import type { IModel } from '@exprtlabs/golem/model';
-import type { TValidation } from '@exprtlabs/golem/tags';
+import type { TSerde, TValidation } from '@exprtlabs/golem/tags';
+import type { fromCents, toCents } from './codecs.js';
 import { isEven } from './rules.js';
-export type TCount = IModel<{ count: number & TValidation<typeof isEven> }>;
+export type TCount = IModel<{ count: number & TValidation<typeof isEven>; price: number & TSerde<typeof toCents, typeof fromCents> }>;
 `,
     });
     sources.push(path.join(directory, 'count.model.ts'));
   }
+  return sources;
+}
+
+test('two named shared folders with the same file and export names generate in one job and each id binds its own folder\'s functions', (t: TestContext) => {
+  const outer = sharedWorkspace(t);
+  const sources = twoSharedFolders(outer, folder => JSON.stringify({ name: `@acme/${folder}`, private: true, type: 'module' }));
   const result = generate({ root: appProject(outer, 'a', '../shared/**/*.ts'), sources, profile: { mobx: false, validation: true } });
-  const layer = result.artifacts.find(artifact => artifact.path.endsWith('models.generated.ts'))?.content ?? '';
-  for (const id of ['@acme/first/rules.ts#isEven', '@acme/second/rules.ts#isEven']) {
-    assert.ok(layer.includes(id), `the layer schemas name ${id}`);
+  const layer = result.artifacts.find(artifact => artifact.path.endsWith('models.generated.ts'));
+  assert.ok(layer);
+  for (const folder of ['first', 'second']) {
+    assert.ok(layer.content.includes(`@acme/${folder}/rules.ts#isEven`), `the layer schemas name the ${folder} validation function`);
+    // The serde id names the pair, and the layer binds it to the functions of that folder.
+    const id = `@acme/${folder}/codecs.ts#toCents\\u0000@acme/${folder}/codecs.ts#fromCents`;
+    assert.deepEqual(serdeBindingTarget(layer, id), { file: path.join(outer, 'shared', folder, 'codecs.ts'), exportName: 'toCents' }, `${folder} serialize binding`);
   }
   const validators = result.artifacts.find(artifact => artifact.path.endsWith('models.validators.generated.ts'));
   assert.ok(validators);
@@ -632,6 +655,37 @@ export type TCount = IModel<{ count: number & TValidation<typeof isEven> }>;
     .map(match => path.resolve(path.dirname(validators.path), match[1]!).replace(/\.js$/, '.ts'))
     .sort();
   assert.deepEqual(targets, [path.join(outer, 'shared/first/rules.ts'), path.join(outer, 'shared/second/rules.ts')]);
+});
+
+test('a shared folder with a nameless package.json inside a named package is named from that package', (t: TestContext) => {
+  const outer = sharedWorkspace(t);
+  const named = path.join(outer, 'shared');
+  fs.mkdirSync(named, { recursive: true });
+  fs.writeFileSync(path.join(named, 'package.json'), JSON.stringify({ name: '@acme/outer', private: true, type: 'module' }));
+  // Each inner folder only scopes the module format; the named package above is the owner, as for a package import.
+  const sources = twoSharedFolders(outer, () => '{"type":"module"}');
+  const result = generate({ root: appProject(outer, 'a', '../shared/**/*.ts'), sources, profile: { mobx: false, validation: true } });
+  const layer = result.artifacts.find(artifact => artifact.path.endsWith('models.generated.ts'));
+  assert.ok(layer);
+  for (const folder of ['first', 'second']) {
+    assert.ok(layer.content.includes(`@acme/outer/${folder}/rules.ts#isEven`), `the ${folder} function is named from the package above`);
+  }
+});
+
+test('one package installed at two paths and used by models of one job is one binding', (t: TestContext) => {
+  const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-two-copies-', name: 'two-copies', linkTypescript: true });
+  const exports = { './codecs': { types: './dist/codecs.d.ts', import: './dist/codecs.js' }, './tags': { types: './dist/tags.d.ts', import: './dist/tags.js' } };
+  // Two physical copies of one package: one beside the app, one under a folder that has its own node_modules.
+  writeCodecPackage(path.join(root, 'node_modules/@fixture/pg'), { name: '@fixture/pg', exports, files: COUNT_DIST_FILES });
+  writeCodecPackage(path.join(sourceRoot, 'two/node_modules/@fixture/pg'), { name: '@fixture/pg', exports, files: COUNT_DIST_FILES });
+  // The compiler reads two copies of one name and version as one file; another version keeps the copies apart.
+  const copyManifest = path.join(sourceRoot, 'two/node_modules/@fixture/pg/package.json');
+  fs.writeFileSync(copyManifest, JSON.stringify({ ...JSON.parse(fs.readFileSync(copyManifest, 'utf8')) as object, version: '0.0.1' }));
+  const model = (name: string): string => taggedModelSource({ name, imports: tsSource`import type { PkgCount } from '@fixture/pg/tags';`, fields: tsSource`count: PkgCount` }).text;
+  writeModelSources(sourceRoot, { 'a.model.ts': model('A'), 'two/b.model.ts': model('B') });
+  const result = generate({ root, profile: { mobx: false, validation: true } });
+  const layer = result.artifacts.find(artifact => artifact.path.endsWith('models.generated.ts'))?.content ?? '';
+  assert.equal([...layer.matchAll(/"@fixture\/pg\/codecs#encodeCount\\u0000@fixture\/pg\/codecs#decodeCount": \{/g)].length, 1, 'one binding for both copies');
 });
 
 test('with validation off, a model that opts in generates and validates, and the default model it nests stays open', async (t: TestContext) => {
@@ -657,4 +711,21 @@ export type TParent = IModel<{ name: string & MinLength<3>; child: TChild }, { v
   await buildModelProject(root);
   const verifier = copyFixtureFile(root, 'models/model-generator/verify-open-child.mjs', 'verify-open-child.mjs');
   await command(root, process.execPath, [verifier, generatedCodecIdFromRoot(root, 'TParent')]);
+});
+
+test('a companion imports only #golem-models and the companions its source imports', (t: TestContext) => {
+  const { root } = nestedPaymentProject(t);
+  const result = generate({ root, profile: { mobx: true, validation: true } });
+  const payment = result.artifacts.find(artifact => artifact.path.endsWith('payment.model.generated.ts'))?.content ?? '';
+  const imports = payment.split('\n').filter(line => line.startsWith('import '));
+  assert.deepEqual(imports, [
+    "import { registerGeneratedModel, type GeneratedModel, type GeneratedModelConstructor, type generatedModelWireBrand, type generatedModelFieldsBrand } from '@exprtlabs/golem/model';",
+    "import { decodeCheckedInput, decodeDetachedInput, convertModelField, defineModelProperty, requireModelObject } from '@exprtlabs/golem/conversion';",
+    "import { deserializeDate, serializeDate } from '@exprtlabs/golem/conversion';",
+    "import { assertModelValue, createObjectCodec, isValidModelValue, layerValidator, parseJson, registerIModelClass, requireObjectCodec, serdeValidates, stringifyJsonString, IssueRepresentation, IssueSource, type SerdeOptions as __GolemSerdeOptions, type ValidateOptions as __GolemValidateOptions } from '@exprtlabs/golem/serde';",
+    'import { layer } from "#golem-models";',
+    'import "./money.model.generated.js";',
+    'import { type TMoneyFields, type TMoneyJSON, type TMoneyInit, __golemDecode_TMoney_a7a327f3, __golemInit_TMoney_a7a327f3, __golemEncode_TMoney_a7a327f3 } from "./money.model.generated.js";',
+  ]);
+  assert.doesNotMatch(payment, /models\.generated|model-manifest/);
 });
