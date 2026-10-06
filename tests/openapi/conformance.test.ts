@@ -11,7 +11,6 @@ import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/golem/con
 import { requireObjectCodec } from '@exprtlabs/golem/serde';
 import { LibError, LibErrorKind, IssueSource } from '@exprtlabs/golem/errors';
 import type { GeneratedModel } from '@exprtlabs/golem/model';
-import { createOpenApiAjvEngine } from '@exprtlabs/golem/ajv';
 import { generatedCodecId } from '../support/consumer.js';
 import {
   findRemoteRefs,
@@ -204,7 +203,7 @@ test('complex example projects polymorphic nested models and exact HTTP contract
   compileGeneratedSdk(output, [assertFile], { strict: true });
 });
 
-test('OpenAPI 3.1 generation preserves its dialect', (t) => {
+test('OpenAPI 3.1 generation preserves its dialect', async (t) => {
   const document = {
     openapi: '3.1.2',
     jsonSchemaDialect: 'https://json-schema.org/draft/2020-12/schema',
@@ -239,11 +238,18 @@ test('OpenAPI 3.1 generation preserves its dialect', (t) => {
     },
   };
   const output = createFixtureProject(t, 'golem-openapi-31-');
-  writeSdk(document, { output, name: 'Oas31' });
-  assert.match(
-    fs.readFileSync(path.join(output, 'operations/getValues.ts'), 'utf8'),
-    /https:\/\/json-schema\.org\/draft\/2020-12\/schema/,
-  );
+  writeGeneratedSdk(writeSdk, document, { output, name: 'Oas31', profile: { mobx: false, validation: true } });
+  compileGeneratedSdk(output, []);
+  const module = requireRecord(await import(pathToFileURL(path.join(output, 'dist/client.js')).href), 'oas31 client');
+  const Client = module.Oas31Client;
+  if (!isGeneratedClientClass(Client)) throw new TypeError('Oas31Client');
+  const respond = (body: unknown) => new Client({
+    baseUrl: 'https://api.example',
+    fetchImpl: async () => Response.json(body),
+  });
+  // 2020-12 dialect behavior: unevaluatedProperties rejects a property no keyword evaluated.
+  await assert.doesNotReject(() => respond({ value: null }).getValues().execute({}));
+  await assert.rejects(() => respond({ value: 'x', extra: 1 }).getValues().execute({}), /validation failed/i);
 });
 
 test('component-root dynamic anchors retain their local recursive scope', (t) => {
@@ -459,9 +465,7 @@ test('generation is deterministic', async (t) => {
   assert.deepEqual(second.artifacts, first.artifacts, 'repeated generation from the same document produces identical artifacts');
   writeSdk(document, { output, name: 'ExamplePayments' });
   assert.equal(fs.existsSync(path.join(output, 'schemas.ts')), false);
-  const schemaModules = fs.readdirSync(path.join(output, 'validation-schemas'))
-    .map((name) => fs.readFileSync(path.join(output, 'validation-schemas', name), 'utf8'));
-  assert.ok(schemaModules.some((source) => /minimum/.test(source)));
+  assert.ok(fs.readdirSync(path.join(output, 'operations')).some((name) => name.endsWith('.validators.generated.ts')));
   assert.ok(fs.existsSync(path.join(output, 'input-schemas.ts')));
   assert.ok(fs.existsSync(path.join(output, 'output-schemas.ts')));
   const manifestText = fs.readFileSync(path.join(output, 'model-manifest.json'), 'utf8');
@@ -1444,7 +1448,6 @@ test('generated SDK operation validators and client enforce request/response sch
   let responseBody = { amount: 0, currency: 'vnd' };
   const client = new RuntimeOperationsClient({
     baseUrl: 'https://api.example',
-    validationEngine: createOpenApiAjvEngine(),
     fetchImpl: async () => {
       fetchCount += 1;
       return new Response(JSON.stringify(responseBody), {
@@ -1812,10 +1815,10 @@ test('OpenAPI 3.2 querystring, sequential stream, and binary responses work on t
     operationValidators: new Map([[
       'multipartEvents',
       {
-        input: () => true,
+        input: () => [],
         responses: new Map([[
           '200:multipart/mixed',
-          (value: unknown) => Boolean(value && typeof value === 'object' && 'id' in value),
+          (value: unknown) => value && typeof value === 'object' && 'id' in value ? [] : [{ code: 'custom' as const, path: [] }],
         ]]),
       },
     ]]),

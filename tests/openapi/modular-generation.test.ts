@@ -315,8 +315,8 @@ function contextDocument(marker: string): Record<string, unknown> {
   };
 }
 
-function schemaClosureArtifacts(artifacts: readonly { readonly path: string; readonly content: string }[]): readonly { readonly path: string; readonly content: string }[] {
-  return artifacts.filter((artifact) => artifact.path.includes(`${path.sep}validation-schemas${path.sep}`));
+function operationValidatorArtifacts(artifacts: readonly { readonly path: string; readonly content: string }[]): readonly { readonly path: string; readonly content: string }[] {
+  return artifacts.filter((artifact) => artifact.path.endsWith('.validators.generated.ts') && artifact.path.includes(`${path.sep}operations${path.sep}`));
 }
 
 test('direct operation and model entrypoints load only their generated closures and share canonical model exports', async t => {
@@ -380,7 +380,7 @@ test('direct operation and model entrypoints load only their generated closures 
   const operationInputs = Object.keys(operationBundle.metafile.inputs).map(value => value.replaceAll('\\', '/'));
   const operationInputSet = operationInputs.join('\n');
   assert.ok(operationInputs.some(value => value.endsWith('/operations/echoTree.js')));
-  assert.ok(operationInputs.some(value => value.includes('/validation-schemas/')));
+  assert.ok(operationInputs.some(value => value.endsWith('/operations/echoTree.validators.generated.js')));
   assert.doesNotMatch(operationInputSet, /\/src\/dist\/(?:client|models|schemas)\.js(?:\s|$)/);
   assert.doesNotMatch(operationInputSet, /\/operations\/getOther\.js(?:\s|$)/);
 
@@ -651,10 +651,8 @@ test('a Nest-style Payment keeps canonical codec identity across repeated compac
   );
 });
 
-test('10 and 100 operations share one nested schema closure and grow linearly', () => {
+test('10 and 100 operations each get one validators module and the generated source grows linearly', () => {
   const sizes: number[] = [];
-  const closureCounts: number[] = [];
-  const closureBytes: number[] = [];
   for (const count of [10, 100]) {
     const output = path.join(tmpdir(), `openapi-scale-${count}`);
     const result = writeSdk(scaleDocument(count), {
@@ -663,18 +661,13 @@ test('10 and 100 operations share one nested schema closure and grow linearly', 
       profile: { mobx: false, validation: true },
     });
     const operationArtifacts = result.artifacts.filter(artifact => artifact.path.includes(`${path.sep}operations${path.sep}`)
-      && artifact.path.endsWith('.ts') && !artifact.path.endsWith('.d.ts'));
-    const shared = schemaClosureArtifacts(result.artifacts);
+      && artifact.path.endsWith('.ts') && !artifact.path.endsWith('.validators.generated.ts'));
     assert.equal(operationArtifacts.length, count);
-    assert.ok(shared.length >= 2, 'nested component dependencies are extracted into shared modules');
+    assert.equal(operationValidatorArtifacts(result.artifacts).length, count);
     sizes.push(result.artifacts.reduce((total, artifact) => total + Buffer.byteLength(artifact.content), 0));
-    closureCounts.push(shared.length);
-    closureBytes.push(shared.reduce((total, artifact) => total + Buffer.byteLength(artifact.content), 0));
   }
   assert.ok(sizes[1] !== undefined && sizes[0] !== undefined && sizes[1] <= sizes[0] * 12,
     `100-operation source set remains proportional to 10 operations: ${sizes.join(', ')}`);
-  assert.equal(new Set(closureCounts).size, 1, 'operation count does not duplicate shared nested component modules');
-  assert.equal(new Set(closureBytes).size, 1, 'shared component schema bytes stay constant as endpoints grow');
 });
 
 test('sequential same-title generation jobs keep schema and resource contexts isolated', () => {
@@ -688,8 +681,8 @@ test('sequential same-title generation jobs keep schema and resource contexts is
     name: 'Context',
     profile: { mobx: false, validation: true },
   });
-  const firstShared = schemaClosureArtifacts(first.artifacts);
-  const secondShared = schemaClosureArtifacts(second.artifacts);
+  const firstShared = operationValidatorArtifacts(first.artifacts);
+  const secondShared = operationValidatorArtifacts(second.artifacts);
   assert.ok(firstShared.length > 0);
   assert.ok(secondShared.length > 0);
   assert.ok(firstShared.every(artifact => !artifact.content.includes('beta')));
@@ -701,16 +694,16 @@ test('sequential same-title generation jobs keep schema and resource contexts is
   assert.notEqual(firstOperation, secondOperation, 'operation references carry each job’s digest-qualified schema context');
 });
 
-test('validation-schemas modules export only their schema', () => {
+test('operation validators modules export only their validators', () => {
   const result = writeSdk(contextDocument('alpha'), {
     output: path.join(tmpdir(), 'openapi-schema-exports'),
     name: 'Context',
     profile: { mobx: false, validation: true },
   });
-  const modules = schemaClosureArtifacts(result.artifacts);
+  const modules = operationValidatorArtifacts(result.artifacts);
   assert.ok(modules.length > 0);
   for (const artifact of modules) {
-    assert.deepEqual([...artifact.content.matchAll(/^export const (\w+)/gm)].map(match => match[1]), ['schema'], artifact.path);
+    assert.deepEqual([...artifact.content.matchAll(/^export const (\w+)/gm)].map(match => match[1]), ['validators'], artifact.path);
   }
 });
 

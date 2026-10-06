@@ -3,7 +3,6 @@ import assert from 'node:assert/strict';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import test from 'node:test';
-import { createOpenApiAjvEngine } from '@exprtlabs/golem/ajv';
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 import { schemaType } from '#openapi/generator';
 import {
@@ -108,7 +107,6 @@ test('prefixItems closed and rest tuples compile in strict TypeScript and valida
   const acceptsResponse = async (operation: 'putTuple' | 'putRestTuple', reply: unknown): Promise<boolean> => {
     const client = new Client({
       baseUrl: 'https://api.example',
-      validationEngine: createOpenApiAjvEngine(),
       fetchImpl: async () => new Response(JSON.stringify(reply), { status: 200, headers: { 'content-type': 'application/json' } }),
     });
     try {

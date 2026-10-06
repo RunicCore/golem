@@ -319,12 +319,13 @@ test('generated SDKs import the client runtime instead of copying it', async t =
 });
 
 test('minimal GET without content omits codec options and unused helpers', async (t) => {
-  await assertFilesPerProfile(t, pingDocument(), 'Ping', () => [
+  await assertFilesPerProfile(t, pingDocument(), 'Ping', (profile) => [
     'index.ts',
     'types.ts',
     'model-manifest.json',
     'client.ts',
     'operations/ping.ts',
+    ...(profile.validation ? ['operations/ping.validators.generated.ts'] : []),
   ], false);
 
   const output = outputDir(t, 'codec-omit');

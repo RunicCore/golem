@@ -609,10 +609,18 @@ test('literal example and default $ref values are not treated as schema referenc
       name: 'LiteralRef',
       profile: { mobx: false, validation: true },
     });
-    const schemaModules = result.artifacts.filter((artifact) => /[\\/](?:validation-schemas|operations)[\\/]/.test(artifact.path))
-      .map((artifact) => artifact.content).join('\n');
-    assert.match(schemaModules, /https:\/\/evil\.example\/not-a-schema/);
-    assert.match(schemaModules, /https:\/\/evil\.example\/default-ref/);
+    assert.ok(result.artifacts.some((artifact) => artifact.path.endsWith('operations/putX.validators.generated.ts')));
+    compileGeneratedSdk(output, []);
+    const module = requireRecord(await import(pathToFileURL(path.join(output, 'dist/client.js')).href), 'literal ref client');
+    const Client = module.LiteralRefClient;
+    if (!isGeneratedClientClass(Client)) throw new TypeError('LiteralRefClient');
+    const client = new Client({
+      baseUrl: 'https://api.example',
+      fetchImpl: async (_url: RequestInfo | URL, init?: RequestInit) => new Response(String(init?.body), { headers: { 'content-type': 'application/json' } }),
+    });
+    const planted = { planted: { $ref: 'https://evil.example/default-ref' } };
+    assert.deepEqual((await client.putX().execute({ body: planted })).body, planted);
+    await assert.rejects(() => client.putX().execute({ body: { other: 1 } }), /validation failed/i);
     assert.equal(fetched, false);
   } finally {
     globalThis.fetch = originalFetch;

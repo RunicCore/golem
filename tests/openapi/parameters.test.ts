@@ -1,6 +1,6 @@
 import { copyFixtureFile, createFixtureProject } from '../fixture-project.js';
 import assert from 'node:assert/strict';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import test from 'node:test';
@@ -87,8 +87,8 @@ test('operation parameters override path parameters by (in, name) and repeated p
   );
 });
 
-test('generated content parameters validate before execute with runtime and standalone Ajv', async t => {
-  for (const ajvStandalone of [false, true] as const) {
+test('generated content parameters validate before execute', async t => {
+  {
     const directory = createFixtureProject(t, 'golem-openapi-content-parameters-');
     const output = path.join(directory, 'sdk');
     const contentSchema = (required: string) => ({
@@ -161,28 +161,10 @@ test('generated content parameters validate before execute with runtime and stan
     await generateMaterializedSdk(document, {
       output,
       name: 'ContentParameters',
-      profile: { mobx: false, validation: true, ajvStandalone },
+      profile: { mobx: false, validation: true },
     });
     copyFixtureFile(output, 'openapi/parameters/parameters-content-false-assert.ts', 'parameters-content-false-assert.ts');
     compileGeneratedSdk(output, [path.join(output, 'parameters-content-false-assert.ts')]);
-    // A `false` parameter content schema stays `false` through normalization into the schemas the SDK validates with.
-    if (ajvStandalone) {
-      const validators = requireRecord(
-        await import(pathToFileURL(path.join(output, 'dist/operations/blocked.validators.generated.js')).href),
-        'blocked standalone validators',
-      );
-      if (typeof validators.createValidatorSet !== 'function') throw new TypeError('createValidatorSet');
-      const schemas = requireRecord(requireRecord(validators.createValidatorSet(), 'blocked validator set').schemas, 'blocked schemas');
-      const root = Object.values(schemas).map((schema) => requireRecord(schema, 'blocked schema'))
-        .find((schema) => 'blocked' in requireRecord(schema.operations ?? {}, 'operations'));
-      assert.ok(root, 'the operation schema root is embedded in the validator module');
-      const operation = requireRecord(requireRecord(root.operations, 'content false operations').blocked, 'blocked operation');
-      const input = requireRecord(operation.input, 'blocked input');
-      const query = requireRecord(requireRecord(input.properties, 'blocked input properties').query, 'blocked query');
-      assert.equal(requireRecord(query.properties, 'blocked query properties').queryValue, false);
-    } else {
-      assert.match(readFileSync(path.join(output, 'operations/blocked.ts'), 'utf8'), /\\"queryValue\\":false/);
-    }
     const module = requireRecord(
       await import(pathToFileURL(path.join(output, 'dist/client.js')).href),
       'content parameter client',

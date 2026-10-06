@@ -221,9 +221,9 @@ test('generated factory is inert, reusable, and reads auth at execute time', asy
   let inputValidationCalls = 0;
   let token = 'first-token';
   const headers: string[] = [];
-  const inputValidator = (): boolean => {
+  const inputValidator = (): readonly [] => {
     inputValidationCalls += 1;
-    return true;
+    return [];
   };
   const client = new Client({
     baseUrl: 'https://example.test',

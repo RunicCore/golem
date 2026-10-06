@@ -18,15 +18,15 @@ test('client validation failures use library errors while network failures prese
   compileGeneratedSdk(output);
   const { FailuresClient } = await import(pathToFileURL(path.join(output, 'dist/client.js')).href);
   assert.ok(isGeneratedClientClass(FailuresClient));
-  const validatorFailure = new Error('Engine stopped');
+  const validatorFailure = new Error('Validator stopped');
   let failure: unknown = validatorFailure;
   let shouldThrow = true;
-  const engine = {
-    addSchema() {},
-    getSchema() { return () => { if (shouldThrow) throw failure; return true; }; },
-  };
+  const operationValidators = new Map([['getValue', {
+    input: () => [],
+    responses: new Map([['200:application/json', () => { if (shouldThrow) throw failure; return []; }]]),
+  }]]);
   const client = new FailuresClient({
-    baseUrl: 'https://api.example.test', validationEngine: engine,
+    baseUrl: 'https://api.example.test', operationValidators,
     fetchImpl: async () => new Response('1', { headers: { 'content-type': 'application/json' } }),
   });
   await assert.rejects(() => client.getValue().execute({}), (error: unknown) => {
@@ -40,15 +40,8 @@ test('client validation failures use library errors while network failures prese
   shouldThrow = false;
   const networkFailure = new TypeError('Fetch failed');
   const disconnected = new FailuresClient({
-    baseUrl: 'https://api.example.test', validationEngine: engine,
+    baseUrl: 'https://api.example.test', operationValidators,
     fetchImpl: async () => { throw networkFailure; },
   });
   await assert.rejects(() => disconnected.getValue().execute({}), error => error === networkFailure);
-  const missingValidators = new FailuresClient({
-    baseUrl: 'https://api.example.test',
-    validationEngine: { addSchema() {}, getSchema() { return undefined; } },
-  });
-  assert.throws(() => missingValidators.getValue(),
-    (error: unknown) => error instanceof LibError && error.kind === LibErrorKind.ValidationUnavailable,
-    'first use must fail clearly when the supplied engine cannot resolve its operation schemas');
 });
