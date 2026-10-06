@@ -3,6 +3,7 @@ import path from 'node:path';
 import { contains } from './config.js';
 import type { GolemConfig } from './config.js';
 import { DEFAULT_CONTROLLER_SUFFIXES, DEFAULT_MODEL_SUFFIXES, discoverSources, errorMessage, hasErrorCode, suffixPattern } from './generator-api.js';
+import { sharedFolderOf } from './type-analysis/project.js';
 import { GeneratorSessionResources, runPipeline, strongestInputKind } from './pipeline.js';
 import type { InputKind, PipelineState } from './pipeline.js';
 
@@ -19,14 +20,19 @@ function sourceCandidates(config: GolemConfig, kind: 'models' | 'controllers', k
     for (const source of sources) found.add(source);
     if (kind !== 'models' || job.options.sources !== undefined) continue;
     // A models job also generates the model files its tsconfig includes outside its root, such as a shared folder. The
-    // last run recorded them as inputs; a model file added beside them is a candidate too.
+    // last run recorded the files it read as inputs; the shared folder of each local source outside the root is scanned
+    // whole, so a model file added beside them or in a new subfolder is a candidate too.
     const pattern = suffixPattern(suffixes);
-    const sharedDirectories = new Set<string>();
+    const sharedFolders = new Set<string>();
     for (const [input, inputKind] of known) {
-      if (inputKind === 'models' && pattern.test(input) && !contains(job.options.root, input)) sharedDirectories.add(path.dirname(input));
+      if (inputKind === 'models' && /(?<!\.d)\.[cm]?ts$/.test(input) && !input.split(path.sep).includes('node_modules') && !contains(job.options.root, input)) {
+        sharedFolders.add(sharedFolderOf(path.dirname(input)));
+      }
     }
-    for (const directory of sharedDirectories) {
-      for (const source of discoverSources(directory, { source: pattern, skip })) found.add(source);
+    for (const folder of sharedFolders) {
+      // A folder inside another is scanned with it.
+      if ([...sharedFolders].some(other => other !== folder && contains(other, folder))) continue;
+      for (const source of discoverSources(folder, { source: pattern, skip })) found.add(source);
     }
   }
   return found;

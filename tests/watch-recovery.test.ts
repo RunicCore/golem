@@ -197,6 +197,37 @@ test('watch generates a new file that ends in a configured model suffix', async 
   }
 });
 
+test('watch generates a model file added beside a shared model and one added in a new subfolder of its shared folder', async (t: TestContext) => {
+  const { root, config } = fixture(t);
+  const app = path.join(root, 'app');
+  const shared = path.join(root, 'shared');
+  fs.mkdirSync(path.join(app, 'src'), { recursive: true });
+  fs.mkdirSync(path.join(shared, 'src'), { recursive: true });
+  fs.rmSync(path.join(root, 'src'), { recursive: true, force: true });
+  fs.writeFileSync(path.join(shared, 'package.json'), '{"name":"shared","private":true,"type":"module"}');
+  fs.writeFileSync(path.join(app, 'tsconfig.json'), JSON.stringify({
+    compilerOptions: { target: 'ES2022', module: 'NodeNext', moduleResolution: 'NodeNext', strict: true, skipLibCheck: true },
+    include: ['src/**/*.ts', '../shared/**/*.ts'],
+  }));
+  const model = (name: string): string => `import type { IModel } from '@exprtlabs/golem/model';\n\nexport type T${name} = IModel<{ id: string }>;\n`;
+  fs.writeFileSync(path.join(app, 'src/cart.model.ts'), model('Cart'));
+  fs.writeFileSync(path.join(shared, 'src/money.model.ts'), model('Money'));
+  fs.writeFileSync(config, `tsconfig: app/tsconfig.json\n${fs.readFileSync(config, 'utf8').replace('root: .', 'root: app')}`);
+  const errors: unknown[] = [];
+  const stop = watchPipeline(config, error => { errors.push(error); });
+  const context = (): string => `(errors=${errors.map(String).join('; ')})`;
+  try {
+    await until(() => fs.existsSync(path.join(shared, 'src/money.model.generated.ts')), () => `initial generation ${context()}`);
+    fs.writeFileSync(path.join(shared, 'src/tax.model.ts'), model('Tax'));
+    await until(() => fs.existsSync(path.join(shared, 'src/tax.model.generated.ts')), () => `a model beside a shared model is generated ${context()}`);
+    fs.mkdirSync(path.join(shared, 'vat'));
+    fs.writeFileSync(path.join(shared, 'vat/rate.model.ts'), model('Rate'));
+    await until(() => fs.existsSync(path.join(shared, 'vat/rate.model.generated.ts')), () => `a model in a new shared subfolder is generated ${context()}`);
+  } finally {
+    stop();
+  }
+});
+
 function compilerChildren(parent: number): number[] {
   return execFileSync('ps', ['-A', '-o', 'pid=,ppid=,command='], { encoding: 'utf8' })
     .split('\n')

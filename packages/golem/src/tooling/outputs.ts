@@ -142,9 +142,11 @@ function jobDestinations(job: GolemJob): readonly string[] {
  */
 function isCompanionOfModelSource(job: Extract<GolemJob, { kind: 'models' }>, filename: string): boolean {
   const source = filename.replace(/\.generated\.([cm]?ts)$/, '.$1');
-  if (source === filename || path.normalize(filename).split(path.sep).includes('node_modules')) return false;
-  if (!suffixPattern(job.options.suffixes ?? DEFAULT_MODEL_SUFFIXES).test(path.basename(source))) return false;
+  if (source === filename || !suffixPattern(job.options.suffixes ?? DEFAULT_MODEL_SUFFIXES).test(path.basename(source))) return false;
+  const inNodeModules = (file: string): boolean => path.normalize(file).split(path.sep).includes('node_modules');
   try {
+    // A link inside the project can lead into node_modules, so the real directory counts too.
+    if (inNodeModules(filename) || inNodeModules(path.join(fs.realpathSync(path.dirname(source)), path.basename(source)))) return false;
     return fs.statSync(source).isFile();
   } catch (error) {
     if (hasErrorCode(error, 'ENOENT') || hasErrorCode(error, 'ENOTDIR')) return false;

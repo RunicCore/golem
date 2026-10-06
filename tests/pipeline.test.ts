@@ -544,3 +544,18 @@ test('a models job does not write a generated file outside its root when its sou
   );
   assert.equal(fs.existsSync(stray), false);
 });
+
+test('a models job does not write a companion into node_modules through a link that the project includes', (t: TestContext) => {
+  const { config, job, shared } = modelsJobWithSiblingFolder(t);
+  const installed = path.join(shared, 'node_modules/pkg');
+  fs.mkdirSync(installed, { recursive: true });
+  fs.writeFileSync(path.join(installed, 'other.model.ts'), 'export {};\n');
+  fs.symlinkSync(installed, path.join(shared, 'vendor'), 'dir');
+  const viaLink = path.join(shared, 'vendor/other.model.generated.ts');
+
+  assert.throws(
+    () => applyJob(config, loadInventory(config), job, [{ path: viaLink, content: COMPANION_TEXT }]),
+    { message: `Generated output escapes the ${job.id} destination: ${viaLink}` },
+  );
+  assert.equal(fs.existsSync(path.join(installed, 'other.model.generated.ts')), false);
+});

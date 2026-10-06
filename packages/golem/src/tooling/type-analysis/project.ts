@@ -132,7 +132,8 @@ export function includedModelSources(files: readonly string[], suffixes: readonl
 /**
  * The error for a shared model source (outside the folder of the tsconfig) that imports a file outside its own shared
  * folder, or undefined when it imports none. Its companion would then depend on files that another app does not include.
- * `projectFiles` are the canonical names of the program's own files: a package, a linked one too, is not among them.
+ * `projectFiles` are the canonical names of the program's own files. Only relative imports count: a package, a linked
+ * one too, is not a place outside the shared folder.
  */
 export function sharedImportOutsideItsFolder(
   source: ts.SourceFile,
@@ -143,7 +144,7 @@ export function sharedImportOutsideItsFolder(
   const filename = canonicalFilename(source.fileName);
   if (!isOutside(tsconfigDirectory, filename)) return undefined;
   const sharedFolder = sharedFolderOf(filename);
-  const target = projectFilesImportedBy(source, compilerOptions)
+  const target = projectFilesImportedBy(source, compilerOptions, true)
     .find((imported) => projectFiles.has(imported) && isOutside(sharedFolder, imported));
   return target === undefined
     ? undefined
@@ -151,12 +152,16 @@ export function sharedImportOutsideItsFolder(
       + 'A shared model may import only files in its shared folder.';
 }
 
-/** The project files that `file` imports or re-exports, by canonical filename. A declaration file and a file in `node_modules` are left out. */
-export function projectFilesImportedBy(file: ts.SourceFile, compilerOptions: ts.CompilerOptions): string[] {
+/**
+ * The project files that `file` imports or re-exports, by canonical filename. A declaration file and a file in `node_modules`
+ * are left out, and so are the packages when `relativeOnly`: a bare specifier names a package, not a place beside the file.
+ */
+export function projectFilesImportedBy(file: ts.SourceFile, compilerOptions: ts.CompilerOptions, relativeOnly = false): string[] {
   const found = new Set<string>();
   for (const statement of file.statements) {
     const specifier = ts.isImportDeclaration(statement) || ts.isExportDeclaration(statement) ? statement.moduleSpecifier : undefined;
     if (specifier === undefined || !ts.isStringLiteralLike(specifier)) continue;
+    if (relativeOnly && !specifier.text.startsWith('.') && !isAbsolute(specifier.text)) continue;
     const resolved = ts.resolveModuleName(specifier.text, file.fileName, compilerOptions, ts.sys).resolvedModule?.resolvedFileName;
     if (resolved === undefined || isAmbientDeclaration(resolved) || /(?:^|[\\/])node_modules[\\/]/.test(resolved)) continue;
     found.add(canonicalFilename(resolved));

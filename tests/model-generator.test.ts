@@ -797,3 +797,48 @@ export type TMoney = IObject<{ currency: string }>;
     },
   );
 });
+
+test('a model file in an included shared folder that no model imports is generated', (t: TestContext) => {
+  const outer = sharedWorkspace(t);
+  const sharedFolder = path.join(outer, 'shared');
+  fs.mkdirSync(sharedFolder, { recursive: true });
+  fs.writeFileSync(path.join(sharedFolder, 'package.json'), JSON.stringify({ name: 'shared', private: true, type: 'module' }));
+  writeModelSources(sharedFolder, {
+    'src/tax.model.ts': tsSource`import type { IModel } from '@exprtlabs/golem/model';
+export type TTax = IModel<{ rate: number }>;
+`,
+  });
+  const root = appProject(outer, 'a', '../shared/**/*.ts');
+  writeModelSources(path.join(root, 'src'), {
+    'order.model.ts': tsSource`import type { IModel } from '@exprtlabs/golem/model';
+export type TOrder = IModel<{ id: string }>;
+`,
+  });
+
+  const { artifacts } = generate({ root, profile: { mobx: false, validation: true } });
+  assert.deepEqual(Object.keys(filesIn(sharedFolder, artifacts)), ['tax.model.generated.ts']);
+});
+
+test('a shared model that imports a package linked from the workspace generates without the shared-folder error', (t: TestContext) => {
+  const outer = sharedWorkspace(t);
+  const sharedFolder = path.join(outer, 'shared');
+  const limits = path.join(outer, 'libs/limits');
+  fs.mkdirSync(sharedFolder, { recursive: true });
+  fs.writeFileSync(path.join(sharedFolder, 'package.json'), JSON.stringify({ name: 'shared', private: true, type: 'module' }));
+  writeModelSources(limits, {
+    'package.json': JSON.stringify({ name: '@acme/limits', version: '1.0.0', type: 'module', types: './index.ts', main: './index.ts' }),
+    'index.ts': 'export const LIMIT: number = 3;\n',
+  });
+  linkProjectPackages(outer, { '@acme/limits': limits });
+  writeModelSources(sharedFolder, {
+    'money.model.ts': tsSource`import type { IObject } from '@exprtlabs/golem/model';
+import { LIMIT } from '@acme/limits';
+export const limit: number = LIMIT;
+export type TMoney = IObject<{ currency: string }>;
+`,
+  });
+  const root = appProject(outer, 'a', '../shared/**/*.ts');
+
+  const { artifacts } = generate({ root, profile: { mobx: false, validation: true } });
+  assert.deepEqual(Object.keys(filesIn(sharedFolder, artifacts)), ['money.model.generated.ts']);
+});
