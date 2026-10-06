@@ -6,6 +6,7 @@ import { codecKeysPath } from './generated-paths.js';
 import type { GolemConfig } from './config.js';
 import { GolemDiagnosticSeverity } from './generator-api.js';
 import { applyRewrites } from './rewrite.js';
+import { requestTypeScriptRoot } from './typescript-selection.js';
 import type { RewriteScanner } from './rewrite-scan.js';
 import type { SourceMapV3 } from './source-map.js';
 import type * as ts from './typescript-ns.js';
@@ -191,6 +192,8 @@ export async function openRewriteProject(options: GolemHostOptions & { cwd: stri
       holders: 0,
       project: (async (): Promise<ScanningProject> => {
         if (!existsSync(config.tsconfig)) throw new GolemHostError(`golem cannot find ${config.tsconfig}, the tsconfig ${config.configFile} names; create it or name another with tsconfig:`);
+        // The compiler seam loads once per process, so the project's TypeScript is requested before the seam is imported.
+        requestTypeScriptRoot(path.dirname(config.tsconfig));
         const [seam, scan, analysis] = await Promise.all([import('./typescript-ns.js'), import('./rewrite-scan.js'), import('./type-analysis/project.js')]);
         return new ScanningProject(config, config.jobs.some((job) => job.kind === 'controllers'),
           { ts: seam, RewriteScanner: scan.RewriteScanner, canonicalFilename: analysis.canonicalFilename });
