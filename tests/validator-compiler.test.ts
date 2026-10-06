@@ -968,7 +968,7 @@ function count(source: string, pattern: RegExp): number {
   return source.match(pattern)?.length ?? 0;
 }
 
-const FUNCTION_DECLARATIONS = /^function f\d+\(/gm;
+const FUNCTION_DECLARATIONS = /^function f\d+(?:_[\w$]*)?\(/gm;
 
 test('a $ref chain emits the function of its target only, and the root still validates', async () => {
   const roots = { root: { $ref: 'one' } };
@@ -1018,6 +1018,35 @@ test('functions that reference different targets stay separate', async () => {
   const { textHolder, countHolder } = await compileValidators({ roots, resources });
   assert.deepEqual(textHolder({ v: 1 }, true), [{ path: ['v'], code: 'type', expected: ['string'] }]);
   assert.deepEqual(countHolder({ v: 'a' }, true), [{ path: ['v'], code: 'type', expected: ['integer'] }]);
+});
+
+test('a function carries the name of its root or $ref target, and a branch function stays anonymous', async () => {
+  const roots = {
+    'Pet.v1': {
+      type: 'object',
+      properties: { owner: { $ref: '#/$defs/Owner' }, tag: { anyOf: [{ type: 'string' }, { type: 'object' }] } },
+      $defs: { Owner: { type: 'object', properties: { id: { type: 'integer' } } } },
+    },
+    ['L'.repeat(60)]: { type: 'boolean' },
+  };
+  const source = emitted(roots);
+  assert.equal(count(source, /^function f\d+_Pet_v1\(/gm), 1);
+  assert.equal(count(source, /^function f\d+_Owner\(/gm), 1);
+  assert.equal(count(source, /^function f\d+_L{40}\(/gm), 1);
+  assert.equal(count(source, /^function f\d+\(/gm), 2);
+  const validators = await compileValidators({ roots });
+  assert.deepEqual(validators['Pet.v1']({ owner: { id: 'x' }, tag: 1 }, true), [
+    { path: ['owner', 'id'], code: 'type', expected: ['integer'] },
+    { path: ['tag'], code: 'union', matched: 0 },
+  ]);
+  assert.deepEqual(validators['Pet.v1']({ owner: { id: 1 }, tag: {} }, true), []);
+});
+
+test('merged functions keep the name of the first of them', async () => {
+  const wire = (): unknown => ({ type: 'object', properties: { next: { $ref: '#' }, id: { type: 'integer' } } });
+  const source = emitted({ Model: wire(), Wire: wire() });
+  assert.equal(count(source, FUNCTION_DECLARATIONS), 1);
+  assert.equal(count(source, /^function f\d+_Model\(/gm), 1);
 });
 
 test('a forwarding function stays when its target takes an evaluation record that the forwarder is not handed', async () => {

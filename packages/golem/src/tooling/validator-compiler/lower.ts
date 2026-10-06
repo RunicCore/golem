@@ -1,4 +1,5 @@
 import { MODEL_DATE_KEYWORD, MODEL_INSTANCE_KEYWORD, VALIDATION_KEYWORD } from '../../schema-keywords.js';
+import { unescapePointerToken } from '../../json-pointer.js';
 import { isKnownFormat, jsonEqual } from '../../validation-runtime.js';
 import { GolemDiagnosticSeverity, type GolemDiagnostic } from '../generator-api.js';
 import type { CompileInput, CompileOptions } from './index.js';
@@ -91,6 +92,12 @@ function literalUnionValues(branches: readonly unknown[]): readonly unknown[] | 
   return values.length > 0 && distinct ? values : undefined;
 }
 
+/** What a `$ref` target is called: the last segment of its pointer, or its resource when the pointer is empty. */
+function referenceName(target: SchemaLocation): string {
+  const last = target.pointer.slice(target.pointer.lastIndexOf('/') + 1);
+  return target.pointer === '' ? target.resource.slice(target.resource.lastIndexOf('/') + 1) : unescapePointerToken(last);
+}
+
 function isTypeName(value: unknown): value is IrTypeName {
   return TYPE_NAMES.some(name => name === value);
 }
@@ -156,7 +163,7 @@ class Lowering {
   }
 
   public run(): LoweringResult {
-    const exports = [...this.input.roots.keys()].map(name => ({ name, fn: this.functionFor(this.resolver.rootLocation(name)) }));
+    const exports = [...this.input.roots.keys()].map(name => ({ name, fn: this.functionFor(this.resolver.rootLocation(name), name) }));
     // Lowering a function can add more; the list grows while it is walked.
     for (let next = 0; next < this.pending.length; next++) {
       const { id, location } = this.pending[next];
@@ -175,13 +182,17 @@ class Lowering {
    * The function that validates `location`'s schema, created on first use and shared by every
    * referrer. The id exists before the body is lowered, so a schema that refers to itself terminates.
    */
-  private functionFor(location: SchemaLocation): number {
+  private functionFor(location: SchemaLocation, name?: string): number {
     const { node } = location;
     const shared = typeof node === 'object' && node !== null;
     const known = shared ? this.functionIds.get(node) : undefined;
-    if (known !== undefined) return known;
+    if (known !== undefined) {
+      // The first name a schema is given stays: a root's name wins over the name of a `$ref` to the same schema.
+      if (name !== undefined && this.functions[known].name === undefined) this.functions[known].name = name;
+      return known;
+    }
     const id = this.functions.length;
-    this.functions.push({ id, body: ALWAYS, collects: false, receives: false });
+    this.functions.push({ id, ...(name === undefined ? {} : { name }), body: ALWAYS, collects: false, receives: false });
     if (shared) this.functionIds.set(node, id);
     this.pending.push({ id, location });
     return id;
@@ -388,7 +399,7 @@ class Lowering {
     if (typeof node.$ref === 'string') {
       const target = this.resolver.resolve(node.$ref, here.base);
       if (target) {
-        const to = this.functionFor(target);
+        const to = this.functionFor(target, referenceName(target));
         sameValue.push({ to, location: here, keyword: '$ref' });
         checks.push({ kind: 'call', fn: to });
       }

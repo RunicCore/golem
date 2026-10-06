@@ -223,6 +223,8 @@ export type IrSchema =
  */
 export interface IrFunction {
   readonly id: number;
+  /** What the schema is called, for stack traces and profiles: a root's name, or the last pointer segment of a `$ref` target. Absent for an inline schema. */
+  readonly name?: string;
   readonly body: IrSchema;
   readonly collects: boolean;
   readonly receives: boolean;

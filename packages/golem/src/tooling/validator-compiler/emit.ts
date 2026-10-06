@@ -25,9 +25,20 @@ function functionParameters(fn: IrFunction): string {
   return [VALUE, PATH, ISSUES, ALL, ...(fn.receives ? [INHERITED] : [])].join(', ');
 }
 
-/** The name of the function written at position `index` among the functions the module keeps. */
-function functionName(index: number): string {
-  return `f${index}`;
+/** The longest part of a schema's name that a function name keeps. */
+const NAME_LIMIT = 40;
+
+/** Characters that cannot appear in a name become `_`. */
+function identifier(text: string): string {
+  return text.replace(/[^A-Za-z0-9_$]/g, '_');
+}
+
+/**
+ * The name of the function written at position `index` among the functions the module keeps. The index keeps names
+ * unique; the schema's name, when it has one, shows in stack traces and profiles.
+ */
+function functionName(index: number, schemaName?: string): string {
+  return schemaName === undefined ? `f${index}` : `f${index}_${identifier(schemaName).slice(0, NAME_LIMIT)}`;
 }
 
 /**
@@ -784,7 +795,7 @@ class FunctionWriter {
 
 /** The name of the exported wrapper for the root at `index`; any character that is not valid in a name becomes `_`. */
 function wrapperName(name: string, index: number): string {
-  return `validate_${name.replace(/[^A-Za-z0-9_$]/g, '_')}_${index}`;
+  return `validate_${identifier(name)}_${index}`;
 }
 
 /**
@@ -875,7 +886,7 @@ export function emit(module: IrModule, options: EmitOptions): string {
   }
   const representative = groupFunctions([...written.values()].filter(entry => reached.has(entry.id)));
   const kept = [...new Set(representative.values())].sort((first, second) => first - second);
-  const names = new Map(kept.map((id, index) => [id, functionName(index)] as const));
+  const names = new Map(kept.map((id, index) => [id, functionName(index, module.functions[id].name)] as const));
   const nameOf = (id: number): string => {
     const name = names.get(representative.get(target(id)) ?? -1);
     if (name === undefined) throw new Error(`The validator compiler has no emitted function for the schema function ${id}.`);
