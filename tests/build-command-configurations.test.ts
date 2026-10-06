@@ -206,6 +206,29 @@ test('a tsconfig that includes ../shared builds the output tree that tsc emits, 
   assert.equal((await importBuilt(app, 'app/src/main.js')).doubled, 42);
 });
 
+test('an app model with a shared IObject field and a shared IModel field generates, builds and runs', async (t) => {
+  const { outer, app } = appBesideShared(t, 'build-shared-fields');
+  write(outer, 'shared/money.model.ts', "import type { IObject } from '@exprtlabs/golem/model';\nexport type TMoney = IObject<{ currency: string; value: string }>;\n");
+  write(outer, 'shared/payment.model.ts', "import type { IModel } from '@exprtlabs/golem/model';\nexport type TPayment = IModel<{ id: string; note: string }>;\n");
+  write(app, 'src/order.model.ts', `import type { IModel } from '@exprtlabs/golem/model';
+import type { TMoney } from '../../shared/money.model.js';
+import type { TPayment } from '../../shared/payment.model.js';
+export type TOrder = IModel<{ total: TMoney; payment: TPayment }>;
+`);
+  write(app, 'src/main.ts', `import { parse, stringify } from '@exprtlabs/golem/serde';
+import type { TOrder } from './order.model.js';
+import './order.model.js';
+import '../../shared/money.model.js';
+import '../../shared/payment.model.js';
+
+export const text = stringify<TOrder>({ total: { currency: 'USD', value: '5' }, payment: { id: 'p1', note: 'paid' } });
+export const order = parse<TOrder>(text);
+`);
+
+  assert.equal((await build(app)).exitCode, 0);
+  assert.deepEqual((await importBuilt(app, 'app/src/main.js')).order, { total: { currency: 'USD', value: '5' }, payment: { id: 'p1', note: 'paid' } });
+});
+
 /** A layer as `golem generate` will write it, by hand: the build points `#golem-models` at the file, whatever generated it. */
 const LAYER = 'export const layer = { profile: { mobx: true, validation: false }, schemas: {}, serdeBindings: {} };\n';
 /** The import of the serde entry puts the ambient `#golem-models` declaration into the program. */
