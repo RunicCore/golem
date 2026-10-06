@@ -63,11 +63,10 @@ Every other file in an SDK is internal and may change in a minor release. Do not
 - `types.ts`
 - `input-schemas.ts`
 - `output-schemas.ts`
-- `validation-schemas/*`
 - `client.ts`
 - `inbound.ts` and `links.ts` (their names are public through `sdk/index.js`)
 - `model-manifest.json`
-- `operations/<name>.validators.generated.*` (with `ajvStandalone: true`) and `models/_*.validators.generated.ts`
+- `operations/<name>.validators.generated.ts` and `models/_*.validators.generated.ts`
 
 ## Internal model files
 

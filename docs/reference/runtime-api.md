@@ -113,7 +113,7 @@ function registerModelValidationEngineFactory(factory: () => ModelRuntimeValidat
 
 `configureModelValidationEngine` adds the registry schema to `engine` if missing and uses that engine for models of that registry. `registerModelValidationEngineFactory` sets the engine created for a registry on its first validation; importing [`ajv`](#ajv) registers one. Register a factory during startup: a registry keeps the engine it already created.
 
-Used by generated code: `runValidation`, `issuesFromErrors`, `getModelRuntimeValidator`, and in operation modules `operationValidators` (resolves an operation's input and response validators once per client), `validateOperationInput` and `responseCheck` (the response check `ClientRuntime.readResponse` runs on each decoded body or stream item).
+Used by generated code: `runValidation`, `issuesFromErrors`, and in operation modules `operationValidators` (resolves an operation's input and response validators once per client), `validateOperationInput` and `responseCheck` (the response check `ClientRuntime.readResponse` runs on each decoded body or stream item).
 
 ### Runtime validators {#runtime-validators}
 
@@ -123,7 +123,7 @@ function validateWith(validator: RuntimeValidator, value: unknown): Promise<Vali
 
 `validateWith` runs one validator and returns `{ valid, errors }`.
 
-Types: `RuntimeValidator`, `RuntimeValidationEngine`, `OperationRuntimeValidators` and `ValidationResult`. `RuntimeValidationEngine` is the two-method adapter that [`ajv`](#ajv) implements: `addSchema(schema, id)` and `getSchema(reference)`. `OperationRuntimeValidators` is the value type of a client's `operationValidators` option: the input validator and the response validators keyed `status:contentType`.
+Types: `OperationRuntimeValidators` and `ValidationResult`. `OperationRuntimeValidators` is the value type of a client's `operationValidators` option: the input validator and the response validators keyed `status:contentType`. Each validator is a `Validator`: `(value, all) => readonly SchemaIssue[]`, empty when the value is valid.
 
 ## `@exprtlabs/golem/ajv` {#ajv}
 

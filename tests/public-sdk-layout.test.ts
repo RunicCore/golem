@@ -41,7 +41,7 @@ const PROFILES = {
 function publicLayout(sdk: string): Record<string, string[]> {
   const files = ['index.ts',
     ...fs.readdirSync(path.join(sdk, 'models')).filter(f => f.endsWith('.ts') && !f.startsWith('_')).map(f => `models/${f}`),
-    ...(fs.existsSync(path.join(sdk, 'operations')) ? fs.readdirSync(path.join(sdk, 'operations')).filter(f => f.endsWith('.ts')).map(f => `operations/${f}`) : [])];
+    ...(fs.existsSync(path.join(sdk, 'operations')) ? fs.readdirSync(path.join(sdk, 'operations')).filter(f => f.endsWith('.ts') && !f.endsWith('.validators.generated.ts')).map(f => `operations/${f}`) : [])];
   using program = ts.createProgramFromSources({ root: sdk, sources: files.map(file => path.join(sdk, file)) });
   return Object.fromEntries(files.sort().map(file => [file, exportedNames(program, path.join(sdk, file))]));
 }
@@ -70,6 +70,8 @@ test('the public SDK layout generated from a fixture document matches the frozen
     // A model group's validators module is internal: its name starts with `_`, so the public layout never lists it.
     const validators = fs.readdirSync(path.join(sdk, 'models')).filter(f => f.endsWith('.validators.generated.ts'));
     assert.ok(validators.length > 0 && validators.every(f => f.startsWith('_')), name);
+    // An operation's validators module sits next to it and is internal as well: the layout lists only the operation files.
+    assert.ok(fs.readdirSync(path.join(sdk, 'operations')).some(f => f.endsWith('.validators.generated.ts')), name);
   }
   assert.deepEqual(actual, expected, `Public SDK layout changed. If intended (major release), replace tests/fixtures/public-sdk-layout.json with:\n${JSON.stringify(actual, null, 2)}`);
 });

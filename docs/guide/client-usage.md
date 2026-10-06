@@ -26,7 +26,6 @@ These examples use this contract, generated as `ProviderClient` from the [client
 | `fetchImpl` | Defaults to the environment's `fetch`, called without a receiver. |
 | `headers` | Merged into every request from this client. |
 | `auth` | Values or lazy providers keyed by security-scheme name ([authentication](/guide/auth)). |
-| `validationEngine` | Shared schema engine for generated operation and model validation. |
 | `operationValidators` | Overrides generated validators for individual operations. |
 
 Response bodies are plain data; call `fromWireFormat<T>(response.body)` for a model instance.
@@ -48,7 +47,7 @@ A feature that uses one endpoint can import its factory directly:
 
 The factory has the existing operation name and accepts client options. It returns the same reusable operation interface as `client.getCharge()`, including MobX loading state when enabled. Keep the operation for repeated requests so its setup and validators can be reused.
 
-A client resolves an operation's validators when that operation is first created and reuses them for later calls from the same client instance. A standalone factory builds its own runtime, so it does not share validators with `client.getCharge()`. A supplied [`validationEngine`](#create-a-client) that cannot resolve the required schemas fails at that first call.
+A client resolves an operation's validators when that operation is first created and reuses them for later calls from the same client instance. A standalone factory builds its own runtime, so it does not share validators with `client.getCharge()`. A generated operation without its validator fails at that first call with a `ValidationUnavailable` error that names the operation.
 
 Models have corresponding public entries:
 
