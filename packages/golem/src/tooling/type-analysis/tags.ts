@@ -1,6 +1,6 @@
 import path from 'node:path';
 import * as ts from '../typescript-ns.js';
-import { canonicalFilename, identityRootOf, portableRelativeFilename } from './project.js';
+import { canonicalFilename, identityPathOf } from './project.js';
 import { packageSpecifier } from './package-specifier.js';
 import { canonicalConstraintKey } from '../schema.js';
 import type { ConstraintSchemaValue, ModelConstraint } from '../schema.js';
@@ -190,7 +190,7 @@ function canonicalIdentity(declaration: ts.Declaration, exportName: string, iden
   const filename = declaration.getSourceFile().fileName;
   // A function of a shared folder outside the project keeps one id in every app: it is named from its shared folder.
   const source = identityRoot
-    ? portableRelativeFilename(filename, identityRootOf(filename, identityRoot))
+    ? identityPathOf(filename, identityRoot)
     : filename.replace(/\\/g, '/').split('/').pop() ?? 'source.ts';
   return `${source}#${exportName}`;
 }

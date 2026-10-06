@@ -43,10 +43,15 @@ export function sharedFolderOf(source: string): string {
   }
 }
 
-/** The directory a file's identity is relative to: the project root, or the shared folder of a file outside it. */
-export function identityRootOf(filename: string, root: string): string {
+/**
+ * The stable name of a project function's file. A file of the project is named from the project root. A file outside it
+ * belongs to a shared folder and is named from that folder, so the name is the same in every app that includes the
+ * folder. A function a named package exports is identified by its package import instead (see `packageSpecifier`).
+ */
+export function identityPathOf(filename: string, root: string): string {
   const path = relative(canonicalFilename(root), canonicalFilename(filename));
-  return path === '..' || path.startsWith(`..${sep}`) || isAbsolute(path) ? sharedFolderOf(filename) : canonicalFilename(root);
+  if (!(path === '..' || path.startsWith(`..${sep}`) || isAbsolute(path))) return portableRelativeFilename(filename, root);
+  return portableRelativeFilename(filename, sharedFolderOf(filename));
 }
 
 /** Find a stable project root when a direct generator root is unavailable. */

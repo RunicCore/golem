@@ -217,6 +217,7 @@ function canonicalSourceKey(filename: string): string {
 function internJobSchemaGraphs(
   graphs: readonly SourceModelGraph[],
   closure: readonly CodecSchemaClosureEntry[] = [],
+  defaultValidation?: boolean,
 ): SourceSchemaGraph[] {
   const codecIds = new Map<ModelSpecification, string>();
   const wireSchemas = new Set<string>();
@@ -256,6 +257,7 @@ function internJobSchemaGraphs(
       const schemaGraph = internSourceDefinitions(graph.definitions, graph.emitted, {
         codecIds: idsFor(graph, new Map()),
         siblings: graph.siblings,
+        ...(defaultValidation === undefined ? {} : { defaultValidation }),
         externalResidualIds: residualIds,
       });
       record(graph, schemaGraph);
@@ -288,6 +290,7 @@ function internJobSchemaGraphs(
         return id === undefined ? [] : [[sibling.name, id] as const];
       })),
       siblings: outside,
+      ...(defaultValidation === undefined ? {} : { defaultValidation }),
       externalResidualIds: residualIds,
     });
     for (const graph of component) record(graph, shared);
@@ -301,6 +304,7 @@ function internJobSchemaGraphs(
       const schemaGraph = internSourceDefinitions(graph.definitions, graph.emitted, {
         codecIds: idsFor(graph, own),
         siblings: graph.siblings,
+        ...(defaultValidation === undefined ? {} : { defaultValidation }),
         externalResidualIds: residualIds,
       });
       const cyclicSiblings = new Set(graph.siblings
@@ -435,9 +439,14 @@ export function generate(context: GolemModelContext): GolemModelResult {
       .sort((left, right) => left.key.localeCompare(right.key)
         || JSON.stringify(left.schema).localeCompare(JSON.stringify(right.schema))),
   );
+  // The plan is the app's: a model that sets no `validation` follows the profile, so with validation off a default model
+  // an opt-in model nests stays open. The companions follow the layer at run time and are interned without a default.
+  const planGraphs = normalized.profile.validation || !anyValidation
+    ? schemaGraphs
+    : internJobSchemaGraphs(graphs, manifestIndex.validationSchemaClosure, false).map(({ schemaGraph }) => schemaGraph);
   const validationPlan = anyValidation
     ? buildCodecValidationPlan(
-      schemaGraphs,
+      planGraphs,
       manifestIndex.validationSchemaClosure,
       Object.fromEntries(schemaEntries.map((compilation) => [compilation.id, compilation.schema])),
       normalized.profile.validation,

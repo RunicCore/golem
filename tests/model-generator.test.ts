@@ -457,9 +457,34 @@ test('a companion is byte-identical under every profile', (t: TestContext) => {
   assert.equal(new Set(layers).size, 3, 'the three layers differ');
 });
 
-test('a shared companion is byte-identical for two jobs at different depths that use it differently', (t: TestContext) => {
+/** A workspace folder with `@exprtlabs/golem` linked, for projects that include a folder outside their own root. */
+function sharedWorkspace(t: TestContext): string {
   const outer = createFixtureProject(t, 'golem-shared-depth-');
   linkProjectPackages(outer, { '@exprtlabs/golem': path.join(workspace, 'packages/golem') });
+  return outer;
+}
+
+/** An app at `relative` under `outer` whose tsconfig includes `include`, which names a shared folder. */
+function appProject(outer: string, relative: string, include: string): string {
+  const root = path.join(outer, relative);
+  fs.mkdirSync(path.join(root, 'src'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ name: path.basename(root), private: true, type: 'module' }));
+  fs.writeFileSync(path.join(root, 'tsconfig.json'), JSON.stringify({
+    compilerOptions: { strict: true, target: 'ES2022', module: 'NodeNext', moduleResolution: 'NodeNext', skipLibCheck: true, noEmit: true },
+    include: ['src/**/*.ts', include],
+  }));
+  return root;
+}
+
+/** The generated files inside `folder`, by file name. */
+function filesIn(folder: string, artifacts: readonly { readonly path: string; readonly content: string }[]): Record<string, string> {
+  return Object.fromEntries(
+    artifacts.filter(artifact => artifact.path.startsWith(`${folder}${path.sep}`)).map(artifact => [path.basename(artifact.path), artifact.content]),
+  );
+}
+
+test('a shared companion is byte-identical for two jobs at different depths that use it differently', (t: TestContext) => {
+  const outer = sharedWorkspace(t);
   const sharedFolder = path.join(outer, 'shared');
   fs.mkdirSync(sharedFolder, { recursive: true });
   fs.writeFileSync(path.join(sharedFolder, 'package.json'), JSON.stringify({ name: 'shared', private: true, type: 'module' }));
@@ -475,18 +500,8 @@ export type TSummary = IModel<{ view: Omit<TAccount, 'id'> }>;
 `,
   });
   const sharedSources = [path.join(sharedFolder, 'money.model.ts'), path.join(sharedFolder, 'account.model.ts')];
-  const app = (relative: string, include: string): string => {
-    const root = path.join(outer, relative);
-    fs.mkdirSync(path.join(root, 'src'), { recursive: true });
-    fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ name: path.basename(root), private: true, type: 'module' }));
-    fs.writeFileSync(path.join(root, 'tsconfig.json'), JSON.stringify({
-      compilerOptions: { strict: true, target: 'ES2022', module: 'NodeNext', moduleResolution: 'NodeNext', skipLibCheck: true, noEmit: true },
-      include: ['src/**/*.ts', include],
-    }));
-    return root;
-  };
   // App A has a model of its own that nests the shared TMoney, and a site that converts it to wire format.
-  const rootA = app('a', '../shared/**/*.ts');
+  const rootA = appProject(outer, 'a', '../shared/**/*.ts');
   writeModelSources(path.join(rootA, 'src'), {
     'order.model.ts': tsSource`import type { IModel } from '@exprtlabs/golem/model';
 import type { TMoney } from '../../shared/money.model.js';
@@ -498,7 +513,7 @@ export const wire = (money: TMoney) => toWireFormat<TMoney>(money);
 `,
   });
   // App B only reads the shared TMoney in a site file; it has no model of its own.
-  const rootB = app('apps/deep/b', '../../../shared/**/*.ts');
+  const rootB = appProject(outer, 'apps/deep/b', '../../../shared/**/*.ts');
   writeModelSources(path.join(rootB, 'src'), {
     'site.ts': tsSource`import { parse } from '@exprtlabs/golem/serde';
 import type { TMoney } from '../../../../shared/money.model.js';
@@ -508,27 +523,107 @@ export const money = parse<TMoney>('{}');
   const profile = { mobx: false, validation: true };
   const a = generate({ root: rootA, sources: [...sharedSources, path.join(rootA, 'src/order.model.ts')], profile });
   const b = generate({ root: rootB, sources: sharedSources, profile });
-  const sharedCompanions = (artifacts: readonly { readonly path: string; readonly content: string }[]) => Object.fromEntries(
-    artifacts.filter(artifact => artifact.path.startsWith(`${sharedFolder}${path.sep}`)).map(artifact => [path.basename(artifact.path), artifact.content]),
-  );
-  const sharedA = sharedCompanions(a.artifacts);
+  const sharedA = filesIn(sharedFolder, a.artifacts);
   assert.deepEqual(Object.keys(sharedA).sort(), ['account.model.generated.ts', 'money.model.generated.ts']);
-  assert.deepEqual(sharedCompanions(b.artifacts), sharedA);
+  assert.deepEqual(filesIn(sharedFolder, b.artifacts), sharedA);
 });
 
-test('a companion imports only #golem-models and the companions its source imports', (t: TestContext) => {
-  const { root } = nestedPaymentProject(t);
-  const result = generate({ root, profile: { mobx: true, validation: true } });
-  const payment = result.artifacts.find(artifact => artifact.path.endsWith('payment.model.generated.ts'))?.content ?? '';
-  const imports = payment.split('\n').filter(line => line.startsWith('import '));
-  assert.deepEqual(imports, [
-    "import { registerGeneratedModel, type GeneratedModel, type GeneratedModelConstructor, type generatedModelWireBrand, type generatedModelFieldsBrand } from '@exprtlabs/golem/model';",
-    "import { decodeCheckedInput, decodeDetachedInput, convertModelField, defineModelProperty, requireModelObject } from '@exprtlabs/golem/conversion';",
-    "import { deserializeDate, serializeDate } from '@exprtlabs/golem/conversion';",
-    "import { assertModelValue, createObjectCodec, isValidModelValue, layerValidator, parseJson, registerIModelClass, requireObjectCodec, serdeValidates, stringifyJsonString, IssueRepresentation, IssueSource, type SerdeOptions as __GolemSerdeOptions, type ValidateOptions as __GolemValidateOptions } from '@exprtlabs/golem/serde';",
-    'import { layer } from "#golem-models";',
-    'import "./money.model.generated.js";',
-    'import { type TMoneyFields, type TMoneyJSON, type TMoneyInit, __golemDecode_TMoney_a7a327f3, __golemInit_TMoney_a7a327f3, __golemEncode_TMoney_a7a327f3 } from "./money.model.generated.js";',
-  ]);
-  assert.doesNotMatch(payment, /models\.generated|model-manifest/);
+const rulesSource = tsSource`export function isEven(value: number): boolean | string { return value % 2 === 0 || 'must be even'; }
+`;
+
+/** The file the first `import { <name> ... } from "<specifier>"` of `source` names, resolved from `file`'s folder. */
+function importedFile(source: string, name: string, file: string): string | undefined {
+  const specifier = new RegExp(`import \\{[^}]*\\b${name}\\b[^}]*\\} from "([^"]+)"`).exec(source)?.[1];
+  return specifier === undefined ? undefined : path.resolve(path.dirname(file), specifier).replace(/\.js$/, '.ts');
+}
+
+test('a TValidation and a TSerde function of a shared folder get the same ids at two depths and each layer binds those functions', (t: TestContext) => {
+  const outer = sharedWorkspace(t);
+  const sharedFolder = path.join(outer, 'shared');
+  fs.mkdirSync(sharedFolder, { recursive: true });
+  fs.writeFileSync(path.join(sharedFolder, 'package.json'), JSON.stringify({ name: '@acme/shared', private: true, type: 'module' }));
+  writeModelSources(sharedFolder, {
+    'rules.ts': rulesSource,
+    'codecs.ts': tsSource`export function toCents(value: number): string { return String(Math.round(value * 100)); }
+export function fromCents(cents: string): number { return Number(cents) / 100; }
+`,
+    'count.model.ts': tsSource`import type { IModel } from '@exprtlabs/golem/model';
+import type { TSerde, TValidation } from '@exprtlabs/golem/tags';
+import type { fromCents, toCents } from './codecs.js';
+import { isEven } from './rules.js';
+export type TCount = IModel<{ count: number & TValidation<typeof isEven>; price: number & TSerde<typeof toCents, typeof fromCents> }>;
+`,
+  });
+  const sources = [path.join(sharedFolder, 'count.model.ts')];
+  const profile = { mobx: false, validation: true };
+  const apps = [appProject(outer, 'a', '../shared/**/*.ts'), appProject(outer, 'apps/deep/b', '../../../shared/**/*.ts')]
+    .map(root => ({ root, result: generate({ root, sources, profile }) }));
+  const [near, deep] = apps.map(app => filesIn(sharedFolder, app.result.artifacts));
+  assert.deepEqual(Object.keys(near), ['count.model.generated.ts']);
+  assert.deepEqual(deep, near, 'the shared companion is the same text');
+  const codecId = (artifacts: typeof apps[number]['result']['artifacts']): string | undefined =>
+    /count\.model\.ts#TCount": "([^"]+)"/.exec(artifacts.find(artifact => artifact.path.endsWith('codec-keys.json'))?.content ?? '')?.[1];
+  assert.match(codecId(apps[0].result.artifacts) ?? '', /^TCount_[0-9a-f]{8}$/);
+  assert.equal(codecId(apps[1].result.artifacts), codecId(apps[0].result.artifacts), 'the codec ids are equal');
+  for (const { result } of apps) {
+    const layerArtifact = result.artifacts.find(artifact => artifact.path.endsWith('models.generated.ts'));
+    const validatorsArtifact = result.artifacts.find(artifact => artifact.path.endsWith('models.validators.generated.ts'));
+    assert.ok(layerArtifact && validatorsArtifact);
+    // The serde binding id is the same in both apps and names the pair of shared functions.
+    assert.ok(layerArtifact.content.includes('"codecs.ts#toCents\\u0000codecs.ts#fromCents":'), 'the layer holds the serde binding under its shared-folder id');
+    assert.equal(importedFile(layerArtifact.content, 'toCents', layerArtifact.path), path.join(sharedFolder, 'codecs.ts'));
+    assert.equal(importedFile(layerArtifact.content, 'fromCents', layerArtifact.path), path.join(sharedFolder, 'codecs.ts'));
+    // The validation binding id is in the validation schema the layer carries; the validators module imports the function.
+    assert.ok(layerArtifact.content.includes('rules.ts#isEven'), 'the layer schema names the validation function by its shared-folder id');
+    assert.equal(importedFile(validatorsArtifact.content, 'isEven', validatorsArtifact.path), path.join(sharedFolder, 'rules.ts'));
+  }
+});
+
+test('two shared folders without a package name that give a function the same id fail with both functions named', (t: TestContext) => {
+  const outer = sharedWorkspace(t);
+  const sources: string[] = [];
+  for (const folder of ['first', 'second']) {
+    const directory = path.join(outer, 'shared', folder);
+    // The second folder's function has the same file name and export name, and a different body.
+    writeModelSources(directory, {
+      'rules.ts': folder === 'first' ? rulesSource : tsSource`export function isEven(value: number): boolean | string { return value % 4 === 0 || 'must be a multiple of four'; }
+`,
+      'count.model.ts': tsSource`import type { IModel } from '@exprtlabs/golem/model';
+import type { TValidation } from '@exprtlabs/golem/tags';
+import { isEven } from './rules.js';
+export type TCount = IModel<{ count: number & TValidation<typeof isEven> }>;
+`,
+    });
+    sources.push(path.join(directory, 'count.model.ts'));
+  }
+  const root = appProject(outer, 'a', '../shared/**/*.ts');
+  assert.throws(
+    () => generate({ root, sources, profile: { mobx: false, validation: true } }),
+    /Two functions have the id "rules\.ts#isEven": .*shared\/first\/rules\.ts#isEven and .*shared\/second\/rules\.ts#isEven\. Give each shared folder a package\.json with a name and exports/,
+  );
+});
+
+test('with validation off, a model that opts in generates and validates, and the default model it nests stays open', async (t: TestContext) => {
+  const { root, sourceRoot } = project(t);
+  writeModelSources(sourceRoot, {
+    'rules.ts': rulesSource,
+    'child.model.ts': tsSource`import type { IObject } from '@exprtlabs/golem/model';
+import type { TValidation } from '@exprtlabs/golem/tags';
+import { isEven } from './rules.js';
+export type TChild = IObject<{ count: number & TValidation<typeof isEven> }>;
+`,
+    'parent.model.ts': tsSource`import type { IModel } from '@exprtlabs/golem/model';
+import type { MinLength } from '@exprtlabs/golem/tags';
+import type { TChild } from './child.model.js';
+export type TParent = IModel<{ name: string & MinLength<3>; child: TChild }, { validation: true }>;
+`,
+  });
+  const result = generate({ root, profile: { mobx: false, validation: false } });
+  const validators = result.artifacts.find(artifact => artifact.path.endsWith('models.validators.generated.ts'))?.content ?? '';
+  assert.match(validators, /TParent_/);
+  assert.doesNotMatch(validators, /rules\.js/, 'the default model stays open, so its function is not imported');
+  writeModelGolemYaml(root, { mobx: false, validation: false });
+  await buildModelProject(root);
+  const verifier = copyFixtureFile(root, 'models/model-generator/verify-open-child.mjs', 'verify-open-child.mjs');
+  await command(root, process.execPath, [verifier, generatedCodecIdFromRoot(root, 'TParent')]);
 });

@@ -38,6 +38,7 @@ import type {
   ModelConstraint,
   SerdeBinding,
   ValidationBinding,
+  ValueBinding,
 } from '@exprtlabs/golem/type-analysis';
 import {
   canonicalSchemaKey,
@@ -289,14 +290,41 @@ interface BindingRegistry {
   readonly serde: Map<string, SerdeBinding>;
 }
 
+function describeFunction(binding: ValueBinding): string {
+  return `${binding.module}#${binding.exportName}`;
+}
+
+/** One id names one function. Two functions with the same id would bind a model to the wrong one, so the second fails. */
+function assertSameFunction(id: string, first: ValueBinding, second: ValueBinding): void {
+  if (first.module === second.module && first.exportName === second.exportName) return;
+  throw new Error(
+    `Two functions have the id ${JSON.stringify(id)}: ${describeFunction(first)} and ${describeFunction(second)}. `
+    + 'Give each shared folder a package.json with a name and exports, so the id names the package.',
+  );
+}
+
+function registerValidation(bindings: Map<string, ValidationBinding>, binding: ValidationBinding): void {
+  const known = bindings.get(binding.id);
+  if (known) assertSameFunction(binding.id, known, binding);
+  else bindings.set(binding.id, binding);
+}
+
+function registerSerde(bindings: Map<string, SerdeBinding>, binding: SerdeBinding): void {
+  const known = bindings.get(binding.id);
+  if (known) {
+    assertSameFunction(binding.id, known.serialize, binding.serialize);
+    assertSameFunction(binding.id, known.deserialize, binding.deserialize);
+  } else bindings.set(binding.id, binding);
+}
+
 function visitDescriptor(
   descriptor: ModelConversionDescriptor,
   registry: BindingRegistry,
 ): void {
   const rich = richDescriptor(descriptor);
-  for (const binding of rich.validations ?? []) registry.validations.set(binding.id, binding);
+  for (const binding of rich.validations ?? []) registerValidation(registry.validations, binding);
   if (rich.serde) {
-    registry.serde.set(rich.serde.id, rich.serde);
+    registerSerde(registry.serde, rich.serde);
     if (rich.serde.wireDescriptor) visitDescriptor(rich.serde.wireDescriptor, registry);
   }
   for (const constraint of rich.constraints ?? []) {
@@ -986,6 +1014,8 @@ export interface SourceSchemaGraphOptions {
   readonly codecIds?: ReadonlyMap<string, string>;
   /** Models emitted by another companion of the job. */
   readonly siblings?: readonly ModelSpecification[];
+  /** What a model that sets no `validation` does. Without it the node follows the app layer at run time (the companions); the validation plan names the profile. */
+  readonly defaultValidation?: boolean;
   /** Codec ids and aliases of models emitted elsewhere that publish residual schemas. */
   readonly externalResidualIds?: { readonly modelOnly: ReadonlySet<string>; readonly wireOnly: ReadonlySet<string> };
 }
@@ -1017,12 +1047,12 @@ export function internSourceDefinitions(
       descriptor: siblings.has(specification) ? { kind: 'reference', name: specification.name } : descriptor,
       emitClass: siblings.has(specification) ? false : specification.emitClass,
       // The profile is the app's, not the companion's: a model that sets `validation` keeps it, any other follows the layer.
-      ...(specification.validation === undefined ? {} : { validationEnabled: specification.validation }),
+      ...(specification.validation ?? options.defaultValidation) === undefined ? {} : { validationEnabled: specification.validation ?? options.defaultValidation },
     });
   }
   for (const [name, descriptor] of Object.entries(definitions)) {
     if (interned.has(name)) continue;
-    entries.push({ name, descriptor, emitClass: false });
+    entries.push({ name, descriptor, emitClass: false, ...(options.defaultValidation === undefined ? {} : { validationEnabled: options.defaultValidation }) });
   }
   internDescriptors(schemaGraph, entries);
   schemaGraph.seal();
@@ -1074,14 +1104,14 @@ export function validatorImports(
   profile: GolemProfile,
   validatorsFile: string,
 ): ReadonlyMap<string, { readonly importPath: string; readonly exportName: string }> {
-  const imports = new Map<string, { readonly importPath: string; readonly exportName: string }>();
+  const bindings = new Map<string, ValidationBinding>();
   for (const graph of graphs) {
     if (!graph.emitted.some((specification) => specification.validation ?? profile.validation)) continue;
-    for (const binding of graph.registry.validations.values()) {
-      imports.set(binding.id, { importPath: bindingImportPath(binding, validatorsFile), exportName: binding.exportName });
-    }
+    for (const binding of graph.registry.validations.values()) registerValidation(bindings, binding);
   }
-  return new Map([...imports].sort(([left], [right]) => left.localeCompare(right)));
+  return new Map([...bindings]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([id, binding]) => [id, { importPath: bindingImportPath(binding, validatorsFile), exportName: binding.exportName }] as const));
 }
 
 /**
@@ -1092,7 +1122,7 @@ export function emitLayerSource(options: LayerSourceOptions): string {
   const { output, graphs, profile, validators } = options;
   const serdeMap = new Map<string, SerdeBinding>();
   for (const graph of graphs) {
-    for (const binding of graph.registry.serde.values()) serdeMap.set(binding.id, binding);
+    for (const binding of graph.registry.serde.values()) registerSerde(serdeMap, binding);
   }
   const serde = [...serdeMap.values()].sort((left, right) => left.id.localeCompare(right.id));
   const serdeNames = new Map(serde.map((binding, index) => [binding.id, {
