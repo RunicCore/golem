@@ -143,6 +143,7 @@ export function sharedImportOutsideItsFolder(
  * A check that answers whether a golem.yaml other than the one in `ownDirectory` has a models job that covers a source.
  * The source is covered when such a yaml lies in the source's directory or in a directory above it, up to the source's
  * shared folder. That job generates the source with ids of its own folder, so this job must leave the source alone.
+ * The walk stops at the directory of this job's own golem.yaml: that one and every one above it is never another job.
  * The answer for a directory is read once.
  */
 export function anotherModelsJobCheck(ownDirectory: string, onInput?: InputObserver): (source: string) => boolean {
@@ -171,7 +172,8 @@ export function anotherModelsJobCheck(ownDirectory: string, onInput?: InputObser
   return (source) => {
     const sharedFolder = sharedFolderOf(source);
     for (let directory = dirname(canonicalFilename(source)); ; directory = dirname(directory)) {
-      if (directory !== own && directoryHasModelsJob(directory)) return true;
+      if (directory === own || own.startsWith(`${directory}${sep}`)) return false;
+      if (directoryHasModelsJob(directory)) return true;
       if (directory === sharedFolder || dirname(directory) === directory) return false;
     }
   };

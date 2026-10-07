@@ -1,4 +1,3 @@
-| `sources` | array of paths | No | — | Explicit config-relative model files, which may have any `.ts`, `.mts` or `.cts` name. Each one must have an exported `IModel` or `IObject` alias. When omitted, every file below `<root>/src` and every file that the tsconfig includes or imports is a model source when it ends in one of the `suffixes`, also outside `root` ([shared folder](#a-folder-shared-by-several-apps)). The job skips such a file when it has no `IModel` or `IObject` alias, or when the `golem.yaml` of its folder has a `models` job of its own. |
 # Configuration
 
 Put `golem.yaml` in the project that owns the source files. Paths
@@ -155,7 +154,7 @@ Install `@exprtlabs/golem-model` to use `models`.
 | Key | Type | Required | Default | Meaning |
 | --- | --- | --- | --- | --- |
 | `root` | path | No | `.` | TypeScript project directory. |
-| `sources` | array of paths | No | — | Explicit config-relative model files, which may have any `.ts`, `.mts` or `.cts` name. When omitted, every file below `<root>/src` and every file that the tsconfig includes or imports is a model source when it ends in one of the `suffixes`, also outside `root` ([shared folder](#a-folder-shared-by-several-apps)). |
+| `sources` | array of paths | No | — | Explicit config-relative model files, which may have any `.ts`, `.mts` or `.cts` name. Each one must export an `IModel` or `IObject` alias, or generation stops. When omitted, every file below `<root>/src` and every file that the tsconfig includes or imports is a model source when it ends in one of the `suffixes`, also outside `root` ([shared folder](#a-folder-shared-by-several-apps)). The job skips a discovered file that has no `IModel` or `IObject` alias. It also skips a discovered file that a `models` job of another `golem.yaml` covers: that `golem.yaml` is in the folder of the file or above it, up to its shared folder, and is not the `golem.yaml` of this job. |
 | `suffixes` | array of strings | No | `[".model.ts", ".models.ts"]` | File-name endings that make a file a model source. Each entry starts with `.`, ends in `.ts`, `.mts` or `.cts`, appears once, and does not end in `.generated.<ext>`. |
 | `output` | path | No | `<root>/src/generated/models` | The layer of the app and its validators. It must not overlap another job. The tsconfig must include it. When the layer is outside the `include` of the tsconfig, `golem build` stops with an error that names the layer and the tsconfig. |
 
