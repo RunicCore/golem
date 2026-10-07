@@ -38,7 +38,6 @@ import type {
   ModelConstraint,
   SerdeBinding,
   ValidationBinding,
-  ValueBinding,
 } from '@exprtlabs/golem/type-analysis';
 import {
   canonicalSchemaKey,
@@ -290,33 +289,13 @@ interface BindingRegistry {
   readonly serde: Map<string, SerdeBinding>;
 }
 
-function describeFunction(binding: ValueBinding): string {
-  return `${binding.module}#${binding.exportName}`;
-}
-
-/** One id names one function. Two functions with the same id would bind a model to the wrong one, so the second fails. */
-function assertSameFunction(id: string, first: ValueBinding, second: ValueBinding): void {
-  // A packaged function is its package import: copies of one package at two paths are one function.
-  if (first.specifier !== undefined && first.specifier === second.specifier && first.exportName === second.exportName) return;
-  if (first.module === second.module && first.exportName === second.exportName) return;
-  throw new Error(
-    `Two functions have the id ${JSON.stringify(id)}: ${describeFunction(first)} and ${describeFunction(second)}. `
-    + 'Give each shared folder a package.json with a name and exports, so the id names the package.',
-  );
-}
-
+/** An id names one function: a path from the project root, or a package import. A second binding with the id is the same function reached again, so the first stays. */
 function registerValidation(bindings: Map<string, ValidationBinding>, binding: ValidationBinding): void {
-  const known = bindings.get(binding.id);
-  if (known) assertSameFunction(binding.id, known, binding);
-  else bindings.set(binding.id, binding);
+  if (!bindings.has(binding.id)) bindings.set(binding.id, binding);
 }
 
 function registerSerde(bindings: Map<string, SerdeBinding>, binding: SerdeBinding): void {
-  const known = bindings.get(binding.id);
-  if (known) {
-    assertSameFunction(binding.id, known.serialize, binding.serialize);
-    assertSameFunction(binding.id, known.deserialize, binding.deserialize);
-  } else bindings.set(binding.id, binding);
+  if (!bindings.has(binding.id)) bindings.set(binding.id, binding);
 }
 
 function visitDescriptor(

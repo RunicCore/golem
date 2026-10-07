@@ -217,6 +217,34 @@ test('a model inside models.root but outside src writes its generated file', (t:
   assert.equal(loadInventory(config).files['lib/money.model.generated.ts']?.destination, '.');
 });
 
+test('an inventory entry that an earlier release marked shared and put outside the root is dropped and its file stays', (t: TestContext) => {
+  const directory = fixture(t);
+  const root = path.join(directory, 'app');
+  const shared = path.join(directory, 'shared');
+  fs.mkdirSync(root, { recursive: true });
+  fs.mkdirSync(shared, { recursive: true });
+  const stale = path.join(shared, 'money.model.generated.ts');
+  fs.writeFileSync(stale, modelContent(7));
+  const job = modelJob(root, path.join(root, 'generated'));
+  const config = configFor(root, job);
+  fs.mkdirSync(path.dirname(config.inventoryFile), { recursive: true });
+  fs.writeFileSync(config.inventoryFile, JSON.stringify({
+    version: 1,
+    files: {
+      '../shared/money.model.generated.ts': {
+        job: job.id, owner: '@exprtlabs/golem-model', digest: 'a'.repeat(64), destination: '../shared', destinationKind: 'directory', shared: true,
+      },
+    },
+  }));
+  const own = path.join(root, 'src/order.model.generated.ts');
+
+  applyJob(config, loadInventory(config), job, [{ path: own, content: modelContent(1) }]);
+
+  assert.equal(fs.readFileSync(stale, 'utf8'), modelContent(7));
+  assert.deepEqual(Object.keys(loadInventory(config).files), ['src/order.model.generated.ts']);
+  assert.deepEqual(Object.keys((JSON.parse(fs.readFileSync(config.inventoryFile, 'utf8')) as { files: object }).files), ['src/order.model.generated.ts']);
+});
+
 test('an inventory entry without its destination or destination kind is invalid', (t: TestContext) => {
   const directory = fixture(t);
   const output = path.join(directory, 'generated');

@@ -133,7 +133,8 @@ function modelSourceDirectories(job: Extract<GolemJob, { kind: 'models' }>): rea
 /**
  * A models job writes anywhere inside its root: a model outside `src` that its tsconfig includes gets its generated file
  * beside it. It also owns the codec key file under the configuration directory's `.golem/`. The narrower directories come
- * first, so the inventory keeps recording them as the destination of their files.
+ * first, so the inventory keeps recording them as the destination of their files. The whole root is a destination, so the
+ * generator's `isOwnModelFile` is what keeps `node_modules` and the folders of nested jobs out.
  */
 function jobDestinations(config: GolemConfig, job: GolemJob): readonly string[] {
   if (job.kind === 'generator') return [job.options.output];
@@ -256,6 +257,9 @@ export function loadInventory(config: GolemConfig): Inventory {
     if (entry.destinationKind !== kind) throw new Error(`Invalid generated inventory destination kind: ${filename}`);
     const absolute = inventoryPath(config, key);
     assertProtectedPath(config, absolute);
+    // An earlier release recorded the generated file of a shared model outside the root with `shared: true`. Golem no longer writes
+    // or deletes there, and another app may still use the file, so the entry is dropped and the file stays.
+    if (entry.shared === true && !config.jobs.some(job => job.kind === 'models' && contains(canonicalPath(job.options.root), canonicalPath(absolute)))) continue;
     const recorded: InventoryEntry = { job: entry.job, owner: entry.owner, digest: entry.digest, destination, destinationKind: kind };
     try { assertDestinationPath(absolute, inventoryDestination(config, absolute, recorded), 'recorded'); }
     catch (error) { throw new Error(`Invalid generated inventory entry: ${filename}. ${error instanceof Error ? error.message : String(error)}`); }

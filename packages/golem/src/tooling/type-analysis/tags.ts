@@ -50,7 +50,7 @@ export interface TagAnalysisContext {
   readonly checker: ts.TypeChecker;
   readonly sourceFile: ts.SourceFile;
   /** Absolute project root used to keep emitted binding IDs relocatable. */
-  readonly identityRoot?: string;
+  readonly identityRoot: string;
   /** Whether a file is a model source of the job, so it has a generated companion. */
   readonly isModelSource?: (filename: string) => boolean;
   readonly diagnostic: (node: ts.Node, code: string, message: string) => Error;
@@ -186,13 +186,9 @@ function canonicalValue(
 }
 
 /** A project function is identified by its file and export name, like a packaged one, so reformatting the file keeps the id. */
-function canonicalIdentity(declaration: ts.Declaration, exportName: string, identityRoot?: string): string {
-  const filename = declaration.getSourceFile().fileName;
+function canonicalIdentity(declaration: ts.Declaration, exportName: string, identityRoot: string): string {
   // A function outside the project is named by its path from the identity root, which may start with `..`.
-  const source = identityRoot
-    ? portableRelativeFilename(filename, identityRoot)
-    : filename.replace(/\\/g, '/').split('/').pop() ?? 'source.ts';
-  return `${source}#${exportName}`;
+  return `${portableRelativeFilename(declaration.getSourceFile().fileName, identityRoot)}#${exportName}`;
 }
 
 function isGolemTagsSource(filename: string): boolean {
