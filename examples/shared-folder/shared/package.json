@@ -1,5 +1,4 @@
 {
-  "name": "@acme/shared",
   "private": true,
   "type": "module"
 }

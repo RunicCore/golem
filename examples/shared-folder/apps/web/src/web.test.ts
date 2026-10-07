@@ -15,12 +15,12 @@ test('the web app reads and writes an order that nests the shared customer and m
   assert.equal(writeOrder(read), order);
 });
 
-test('the web app rejects an empty city, a rule on a plain type inside the shared customer', () => {
+test('the web app rejects an empty city, a rule on a plain type nested in the shared customer', () => {
   const emptyCity = order.replace('"city":"Leeds"', '"city":""');
   assert.throws(() => readOrder(emptyCity), (error: unknown) => error instanceof LibError && error.kind === LibErrorKind.Validation);
 });
 
-test('the web app rejects a currency code of the wrong length, a rule on the shared money', () => {
-  const longCode = order.replace('"GBP"', '"GBPX"');
-  assert.throws(() => readOrder(longCode), (error: unknown) => error instanceof LibError && error.kind === LibErrorKind.Validation);
+test('the web app rejects a currency code that the shared isCurrencyCode rule refuses', () => {
+  const lowerCase = order.replace('"GBP"', '"gbp"');
+  assert.throws(() => readOrder(lowerCase), (error: unknown) => error instanceof LibError && error.kind === LibErrorKind.Validation);
 });

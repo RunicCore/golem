@@ -8,7 +8,7 @@ explain the examples and show source regions from these maintained files.
 | Example | Shows |
 | --- | --- |
 | [models](models/) | An offline task tracker: models, tags, validation, serialization, composition and dates. Start here to define models without a server. |
-| [shared-folder](shared-folder/) | A folder of models that two apps share, one through a plain include and one through a folder link. The web app validates and the worker does not. |
+| [shared-folder](shared-folder/) | A folder of plain types that two apps share, one through a plain include and one through a folder link. Each app declares its own model. The web app validates and the worker does not. |
 | [payments](payments/) | A merchant payments app: NestJS controllers that produce an OpenAPI document, a typed client, a React and MobX editor, and a client for a third-party provider with auth, streams, codecs and dates. |
 
 The guides walk through them: [models](../docs/guide/models.md),

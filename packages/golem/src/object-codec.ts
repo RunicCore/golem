@@ -210,9 +210,9 @@ export function requireObjectCodec<T = unknown>(id: string): ObjectCodec<T> {
     throw new LibError(
       LibErrorKind.ValidationUnavailable,
       `IObject codec ${JSON.stringify(id)} for model ${model} is not registered. `
-      + `The generated file that registers it (the model file's \`.generated.js\` companion, such as \`order.entity.generated.js\` for \`order.entity.ts\`) has not been loaded; `
+      + `The generated file that registers it, the \`.model.generated.ts\` file beside the model file (such as \`order.entity.generated.js\` for \`order.entity.ts\`), has not been loaded; `
       + `a type-only import such as \`import type { ${model} }\` does not load it. `
-      + `Import the model's \`.generated.js\` companion, or a value from its model file, before calling parse, stringify, validate or the wire-format functions.`,
+      + `Import that generated file, or a value from its model file, before calling parse, stringify, validate or the wire-format functions.`,
     );
   }
   return codec;
