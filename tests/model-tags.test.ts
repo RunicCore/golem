@@ -34,7 +34,7 @@ import { validate } from './validators.js';`,
   writeModelGolemYaml(first.root, { mobx: false, validation: true });
   await buildModelProject(first.root);
   const firstArtifacts = generatedModelFiles(first.root);
-  const firstShared = firstArtifacts.find((artifact) => artifact.path.endsWith('/models.generated.ts'))?.content ?? '';
+  const firstShared = firstArtifacts.filter((artifact) => artifact.path.endsWith('.model.generated.ts')).map((artifact) => artifact.content).join('\n');
   assert.ok(firstShared);
   assert.doesNotMatch(firstShared, new RegExp(first.root.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   const firstValidators = firstArtifacts.find((artifact) => artifact.path.endsWith('/models.validators.generated.ts'))?.content ?? '';

@@ -51,7 +51,7 @@ test('generated model names are scoped to their companion modules', (t) => {
     'second.model.ts': tsSource`import type { IModel } from '@exprtlabs/golem/model';\nexport type TItem = IModel<{ second: string }>;\n`,
   });
   const result = generate({ root, profile: { mobx: false, validation: false } });
-  assert.equal(result.artifacts.length, 4);
+  assert.equal(result.artifacts.length, 3);
   assert.equal(result.artifacts.filter((artifact) => artifact.content.includes('export abstract class TItemBaseModel')).length, 2);
   assert.equal(result.artifacts.some((artifact) => artifact.content.includes('first')), true);
   assert.equal(result.artifacts.some((artifact) => artifact.content.includes('second')), true);
@@ -183,28 +183,102 @@ test('re-exported IModel and IObject symbols preserve class versus plain-object 
   assert.deepEqual(loaded.plain, { label: 'plain' });
 });
 
-test('a job without validation writes a layer that holds no validators', (t) => {
-  const { root, sourceRoot } = modelProject(t);
+test('a generated model file imports only the validators of its own models', async (t) => {
+  const { root, sourceRoot } = companionModelProject(t, 'own-validators');
   writeModelSources(sourceRoot, {
-    'item.model.ts': tsSource`import type { IModel } from '@exprtlabs/golem/model';
+    'a.model.ts': tsSource`import type { IModel } from '@exprtlabs/golem/model';
 import type { MinLength } from '@exprtlabs/golem/tags';
-export type TItem = IModel<{ title: string & MinLength<1> }>;
+export type TA = IModel<{ title: string & MinLength<1> }>;
+`,
+    'b.model.ts': tsSource`import type { IModel } from '@exprtlabs/golem/model';
+import type { MinLength } from '@exprtlabs/golem/tags';
+export type TB = IModel<{ label: string & MinLength<2> }>;
 `,
   });
-  const result = generate({ root, profile: { mobx: false, validation: false } });
-  const layer = result.artifacts.find(artifact => artifact.path.endsWith('models.generated.ts'));
-  assert.match(layer?.content ?? '', /profile: Object\.freeze\(\{ validation: false, mobx: false \}\)/);
-  assert.match(layer?.content ?? '', /validators: Object\.freeze\(\{ \}\)/);
-  assert.equal(result.artifacts.some(artifact => artifact.path.endsWith('models.validators.generated.ts')), false);
+  writeModelGolemYaml(root, { mobx: false, validation: true });
+  await buildModelProject(root);
+  const files = generatedModelFiles(root);
+  const text = (name: string): string => files.find((file) => file.path.endsWith(name))?.content ?? '';
+  const imported = (name: string): string => text(name).match(/^import \{ ([^}]+) \} from "[^"]*models\.validators\.generated\.js";$/m)?.[1] ?? '';
+  assert.match(imported('a.model.generated.ts'), /^validate_TA_\w+(, validate_TA_\w+)*$/);
+  assert.match(imported('b.model.generated.ts'), /^validate_TB_\w+(, validate_TB_\w+)*$/);
+  assert.equal(files.some((file) => file.path.endsWith('models.generated.ts')), false);
 });
 
-/** Builds a project whose layer has `profile`, then runs the verifier against the built companion. */
-async function verifyLayerProfile(
+test('with validation off a generated model file has no validator import and validate true is unavailable', async (t) => {
+  const { root, sourceRoot } = companionModelProject(t, 'validation-off');
+  writeModelSources(sourceRoot, {
+    'a.model.ts': tsSource`import type { IModel } from '@exprtlabs/golem/model';
+import type { MinLength } from '@exprtlabs/golem/tags';
+export type TA = IModel<{ title: string & MinLength<1> }>;
+`,
+  });
+  writeModelGolemYaml(root, { mobx: false, validation: false });
+  await buildModelProject(root);
+  const generated = generatedModelFiles(root).find((file) => file.path.endsWith('a.model.generated.ts'))?.content ?? '';
+  assert.doesNotMatch(generated, /models\.validators\.generated/);
+  const verifier = copyFixtureFile(root, 'models/model-companions/verify-validation-unavailable.mjs', 'verify-validation-unavailable.mjs');
+  await command(root, process.execPath, [verifier, generatedCodecIdFromRoot(root, 'TA')]);
+});
+
+test('schema references resolve between two models that import each other', async (t) => {
+  const { root, sourceRoot } = companionModelProject(t, 'import-cycle');
+  writeModelSources(sourceRoot, {
+    'node.model.ts': tsSource`import type { IObject } from '@exprtlabs/golem/model';
+import type { TLink } from './link.model.js';
+export type TNode = IObject<{ next?: TLink }>;
+`,
+    'link.model.ts': tsSource`import type { IObject } from '@exprtlabs/golem/model';
+import type { TNode } from './node.model.js';
+export type TLink = IObject<{ node: TNode }>;
+`,
+  });
+  writeModelGolemYaml(root, { mobx: false, validation: true });
+  await buildModelProject(root);
+  const verifier = copyFixtureFile(root, 'models/model-companions/verify-import-cycle.mjs', 'verify-import-cycle.mjs');
+  await command(root, process.execPath, [verifier, generatedCodecIdFromRoot(root, 'TNode')]);
+});
+
+test('the first generation after an upgrade deletes the old models.generated.ts', async (t) => {
+  const { root, sourceRoot } = companionModelProject(t, 'upgrade-layer');
+  writeModelSources(sourceRoot, {
+    'a.model.ts': tsSource`import type { IModel } from '@exprtlabs/golem/model';
+export type TA = IModel<{ title: string }>;
+`,
+  });
+  writeModelGolemYaml(root, { mobx: false, validation: true });
+  await buildModelProject(root);
+  // The inventory a release before this change wrote: it owns models.generated.ts beside the validators.
+  const inventoryFile = path.join(root, '.golem/outputs.json');
+  const inventory = JSON.parse(fs.readFileSync(inventoryFile, 'utf8')) as { files: Record<string, unknown> };
+  const validatorsKey = Object.keys(inventory.files).find((key) => key.endsWith('models.validators.generated.ts')) ?? '';
+  assert.notEqual(validatorsKey, '');
+  const oldKey = validatorsKey.replace('models.validators.generated.ts', 'models.generated.ts');
+  inventory.files[oldKey] = inventory.files[validatorsKey];
+  fs.writeFileSync(inventoryFile, `${JSON.stringify(inventory, null, 2)}\n`);
+  const oldFile = path.join(root, oldKey);
+  // A new release also runs its jobs again: the job cache of the old release does not apply.
+  fs.rmSync(path.join(root, '.golem/jobs.json'));
+  fs.writeFileSync(oldFile, '/* Generated by @exprtlabs/golem-model. Do not edit. */\nexport const layer = {};\n');
+  const outside = path.join(path.dirname(root), `${path.basename(root)}-outside`);
+  fs.mkdirSync(outside);
+  t.after(() => fs.rmSync(outside, { recursive: true, force: true }));
+  const handwritten = path.join(outside, 'models.generated.ts');
+  fs.writeFileSync(handwritten, 'handwritten\n');
+
+  await buildModelProject(root);
+
+  assert.equal(fs.existsSync(oldFile), false);
+  assert.equal(fs.readFileSync(handwritten, 'utf8'), 'handwritten\n');
+});
+
+/** Builds a project with `profile`, then runs the verifier against the built model file. */
+async function verifyProfile(
   t: TestContext,
   profile: { readonly mobx: boolean; readonly validation: boolean },
   expectation: 'validates' | 'accepts',
 ): Promise<void> {
-  const { root, sourceRoot } = companionModelProject(t, 'layer-profile');
+  const { root, sourceRoot } = companionModelProject(t, 'app-profile');
   writeModelSources(sourceRoot, {
     'order.model.ts': tsSource`import type { IModel, IObject } from '@exprtlabs/golem/model';
 import type { MinLength } from '@exprtlabs/golem/tags';
@@ -218,15 +292,15 @@ export type TOrder = IModel<{ total: TMoney }>;
   await command(root, process.execPath, [verifier, generatedCodecIdFromRoot(root, 'TOrder'), expectation]);
 }
 
-test('validation and the MobX hook follow the layer: a validating app rejects the short currency and observes the validator', async (t) => {
-  await verifyLayerProfile(t, { mobx: true, validation: true }, 'validates');
+test('validation and the MobX hook follow the profile of the app: a validating app rejects the short currency and observes the validator', async (t) => {
+  await verifyProfile(t, { mobx: true, validation: true }, 'validates');
 });
 
-test('validation and the MobX hook follow the layer: an app without validation parses the same value', async (t) => {
-  await verifyLayerProfile(t, { mobx: true, validation: false }, 'accepts');
+test('validation and the MobX hook follow the profile of the app: an app without validation parses the same value', async (t) => {
+  await verifyProfile(t, { mobx: true, validation: false }, 'accepts');
 });
 
-test('a custom validation binding is imported by the generated validators and the layer imports those', (t) => {
+test('a custom validation binding is imported by the generated validators and the model file imports those', (t) => {
   const { root, sourceRoot } = modelProject(t);
   writeModelSources(sourceRoot, {
     'rules.ts': tsSource`export function isEven(value: number): boolean | string { return value % 2 === 0 || 'must be even'; }
@@ -242,7 +316,6 @@ export type TItem = IModel<{ count: number & TValidation<typeof isEven> }>;
   assert.ok(validators, 'the validators file is written');
   assert.match(validators.content, /import \{ isEven as \w+ \} from "[^"]*rules\.js"/);
   const companion = result.artifacts.find(artifact => artifact.path.endsWith('item.model.generated.ts'));
-  const layer = result.artifacts.find(artifact => artifact.path.endsWith('models.generated.ts'));
-  assert.match(layer?.content ?? '', /from "\.\/models\.validators\.generated\.js"/);
-  assert.doesNotMatch(companion?.content ?? '', /validators\.generated/);
+  assert.match(companion?.content ?? '', /^import \{ validate_TItem_\w+(, validate_TItem_\w+)* \} from "\.\/generated\/models\/models\.validators\.generated\.js";$/m);
+  assert.doesNotMatch(companion?.content ?? '', /rules\.js/);
 });

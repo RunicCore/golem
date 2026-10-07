@@ -30,7 +30,7 @@ test('model companions compile with --noUnusedLocals for empty, scalar and neste
       const modelName = modelNames.find(name => path.basename(artifact.path) === `${name.toLowerCase()}.model.generated.ts`);
       if (!modelName) {
         const base = path.basename(artifact.path);
-        assert.ok(base === 'models.generated.ts' || base === 'models.validators.generated.ts' || base === 'codec-keys.json', base);
+        assert.ok(base === 'models.validators.generated.ts' || base === 'codec-keys.json', base);
         continue;
       }
       assert.match(artifact.content, new RegExp(`function fillT${modelName}\\(`), `${modelName}: shared fill`);

@@ -38,8 +38,8 @@ test('exports API 1 and emits profile-specific model companions without writes',
   for (const [profile, expected] of profileCases()) {
     const result = generate({ root, sources: [source], profile });
     assert.deepEqual(result.manifestPaths, []);
-    // Every job writes the companion, the layer and the codec keys. A validating job also writes the generated validators.
-    assert.equal(result.artifacts.length, expected.validation ? 4 : 3);
+    // Every job writes the companion and the codec keys. A validating job also writes the generated validators.
+    assert.equal(result.artifacts.length, expected.validation ? 3 : 2);
     assert.equal(
       result.artifacts.some(artifact => artifact.path.endsWith('models.validators.generated.ts')),
       expected.validation,
@@ -83,7 +83,7 @@ export type TAccount = IModel<{ id: string }>;`,
   });
   assert.deepEqual(discoverModelSources(root), [source]);
   const result = generate({ root, profile: { mobx: false, validation: false } });
-  assert.deepEqual(result.artifacts.map((artifact) => artifact.path).sort(), [path.join(root, '.golem/codec-keys.json'), path.join(sourceRoot, 'generated/models/models.generated.ts'), path.join(sourceRoot, 'nested/account.models.generated.ts')], 'the run writes the companion, the layer and the codec keys under .golem/');
+  assert.deepEqual(result.artifacts.map((artifact) => artifact.path).sort(), [path.join(root, '.golem/codec-keys.json'), path.join(sourceRoot, 'nested/account.models.generated.ts')], 'the run writes the companion and the codec keys under .golem/');
   assert.deepEqual(result.watchInputs, [source, path.join(root, 'tsconfig.json')]);
   assert.equal(result.watchInputs.some((filename) => filename.endsWith('.generated.ts')), false);
 });
@@ -161,8 +161,8 @@ test('prospective companions permit a concrete subclass field rename and still r
   writeGeneratedArtifacts(first.artifacts);
   writeModelSources(sourceRoot, { 'account.model.ts': accountModelWithField({ field: 'complete' }) });
   const second = generate({ root, sources: [source], profile: { mobx: false, validation: true } });
-  // The validating job writes the companion, the codec keys, the layer and the generated validators.
-  assert.equal(second.artifacts.length, 4);
+  // The validating job writes the companion, the codec keys and the generated validators.
+  assert.equal(second.artifacts.length, 3);
   writeModelSources(sourceRoot, { 'account.model.ts': accountModelWithMissingImport({ field: 'complete' }) });
   assert.throws(
     () => generate({ root, sources: [source], profile: { mobx: false, validation: true } }),
@@ -419,23 +419,19 @@ export type TPayment = IModel<{ id: string; total: TMoney }>;
   return { root, sourceRoot };
 }
 
-test('a companion is byte-identical under every profile', (t: TestContext) => {
+test('a model file records the profile of the app and imports the MobX hook only when it validates under MobX', (t: TestContext) => {
   const { root } = nestedPaymentProject(t);
-  const profiles = [
-    { mobx: false, validation: false },
-    { mobx: true, validation: true },
-    { mobx: false, validation: true, allowAny: true },
-  ];
-  const runs = profiles.map(profile => generate({ root, profile }).artifacts);
-  const contentOf = (artifacts: typeof runs[number], name: string): string | undefined => artifacts.find(artifact => artifact.path.endsWith(name))?.content;
-  for (const name of ['money.model.generated.ts', 'payment.model.generated.ts']) {
-    const [first, second, third] = runs.map(artifacts => contentOf(artifacts, name));
-    assert.ok(first, `${name} is generated`);
-    assert.equal(second, first, `${name} differs between the first and second profile`);
-    assert.equal(third, first, `${name} differs between the first and third profile`);
-  }
-  const layers = runs.map(artifacts => contentOf(artifacts, 'models.generated.ts'));
-  assert.equal(new Set(layers).size, 3, 'the three layers differ');
+  const paymentOf = (profile: { readonly mobx: boolean; readonly validation: boolean }): string =>
+    generate({ root, profile }).artifacts.find(artifact => artifact.path.endsWith('payment.model.generated.ts'))?.content ?? '';
+  const plain = paymentOf({ mobx: false, validation: false });
+  assert.match(plain, /profile: \{ validation: false, mobx: false \},/);
+  assert.doesNotMatch(plain, /mobx-validation|enhanceValidator/);
+  const observed = paymentOf({ mobx: true, validation: false });
+  assert.match(observed, /profile: \{ validation: false, mobx: true \},/);
+  assert.doesNotMatch(observed, /mobx-validation|enhanceValidator/);
+  const validating = paymentOf({ mobx: true, validation: true });
+  assert.match(validating, /profile: \{ validation: true, mobx: true \},\n  enhanceValidator: enhanceValidatorWithMobX,/);
+  assert.match(validating, /import \{ enhanceValidatorWithMobX \} from '@exprtlabs\/golem\/mobx-validation';/);
 });
 
 /** A workspace folder with `@exprtlabs/golem` linked, for projects that include a folder outside their own root. */
@@ -472,8 +468,10 @@ test('one package installed at two paths and used by models of one job is one bi
   const model = (name: string): string => taggedModelSource({ name, imports: tsSource`import type { PkgCount } from '@fixture/pg/tags';`, fields: tsSource`count: PkgCount` }).text;
   writeModelSources(sourceRoot, { 'a.model.ts': model('A'), 'two/b.model.ts': model('B') });
   const result = generate({ root, profile: { mobx: false, validation: true } });
-  const layer = result.artifacts.find(artifact => artifact.path.endsWith('models.generated.ts'))?.content ?? '';
-  assert.equal([...layer.matchAll(/"@fixture\/pg\/codecs#encodeCount\\u0000@fixture\/pg\/codecs#decodeCount": \{/g)].length, 1, 'one binding for both copies');
+  for (const name of ['a.model.generated.ts', 'two/b.model.generated.ts']) {
+    const generated = result.artifacts.find(artifact => artifact.path.endsWith(name))?.content ?? '';
+    assert.equal([...generated.matchAll(/^import \{ encodeCount as __golemSerialize0Source \} from "@fixture\/pg\/codecs";$/gm)].length, 1, `${name} binds the package import, not a copy`);
+  }
 });
 
 test('with validation off, a model that opts in generates and validates, and the default model it nests stays open', async (t: TestContext) => {
@@ -501,17 +499,18 @@ export type TParent = IModel<{ name: string & MinLength<3>; child: TChild }, { v
   await command(root, process.execPath, [verifier, generatedCodecIdFromRoot(root, 'TParent')]);
 });
 
-test('a companion imports only #golem-models and the companions its source imports', (t: TestContext) => {
+test('a companion imports only the validators of its own models and the companions its source imports', (t: TestContext) => {
   const { root } = nestedPaymentProject(t);
   const result = generate({ root, profile: { mobx: true, validation: true } });
   const payment = result.artifacts.find(artifact => artifact.path.endsWith('payment.model.generated.ts'))?.content ?? '';
   const imports = payment.split('\n').filter(line => line.startsWith('import '));
   assert.deepEqual(imports, [
+    'import { validate_TPayment_c98a45aa } from "./generated/models/models.validators.generated.js";',
     "import { registerGeneratedModel, type GeneratedModel, type GeneratedModelConstructor, type generatedModelWireBrand, type generatedModelFieldsBrand } from '@exprtlabs/golem/model';",
     "import { decodeCheckedInput, decodeDetachedInput, convertModelField, defineModelProperty, requireModelObject } from '@exprtlabs/golem/conversion';",
     "import { deserializeDate, serializeDate } from '@exprtlabs/golem/conversion';",
-    "import { assertModelValue, createObjectCodec, isValidModelValue, layerValidator, parseJson, registerIModelClass, requireObjectCodec, serdeValidates, stringifyJsonString, IssueRepresentation, IssueSource, type SerdeOptions as __GolemSerdeOptions, type ValidateOptions as __GolemValidateOptions } from '@exprtlabs/golem/serde';",
-    'import { layer } from "#golem-models";',
+    "import { assertModelValue, createObjectCodec, isValidModelValue, parseJson, registerIModelClass, requireObjectCodec, serdeValidates, stringifyJsonString, IssueRepresentation, IssueSource, type SerdeOptions as __GolemSerdeOptions, type ValidateOptions as __GolemValidateOptions } from '@exprtlabs/golem/serde';",
+    "import { enhanceValidatorWithMobX } from '@exprtlabs/golem/mobx-validation';",
     'import "./money.model.generated.js";',
     'import { type TMoneyFields, type TMoneyJSON, type TMoneyInit, __golemDecode_TMoney_a7a327f3, __golemInit_TMoney_a7a327f3, __golemEncode_TMoney_a7a327f3 } from "./money.model.generated.js";',
   ]);

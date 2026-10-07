@@ -7,7 +7,6 @@ export {
   emitStringifyFunction,
   fillFunctionName,
   fromWireFunctionName,
-  nodeSchemaPayloads,
   parseFunctionName,
   pruneNamedImport,
   stringifyFunctionName,

@@ -72,14 +72,14 @@ function assertModelArtifactRoles(
   assert.ok(companion, `generated companion artifact ${companionPath}`);
   assert.match(companion.content, /registerGeneratedModel/);
 
-  const sharedPath = path.join(root, 'src/generated/models/models.generated.ts');
+  const validatorsPath = path.join(root, 'src/generated/models/models.validators.generated.ts');
   if (validation) {
     assert.match(companion.content, /createObjectCodec|validatePayload/);
   }
 
   // The provider is pure: artifact discovery must not write either generated role.
   assert.equal(fs.existsSync(companionPath), false);
-  assert.equal(fs.existsSync(sharedPath), false);
+  assert.equal(fs.existsSync(validatorsPath), false);
 }
 
 for (const validation of [true, false] as const) {

@@ -18,15 +18,15 @@ function project(t: TestContext, packages: Record<string, string> = {}) {
   });
 }
 
-// Codec imports are emitted into the shared models file, not the model's companion.
-const SHARED_MODELS = 'src/generated/models/models.generated.ts';
+// The model's generated file imports the codecs from their package.
+const MODEL_FILE = 'src/a.model.generated.ts';
 const EXPORTS = { './codecs': { types: './dist/codecs.d.ts', import: './dist/codecs.js' }, './tags': { types: './dist/tags.d.ts', import: './dist/tags.js' } };
 const model = taggedModelSource({ name: 'A', imports: tsSource`import type { PkgCount, PkgVarchar } from '@fixture/pg/tags';`, fields: tsSource`count: PkgCount; name: PkgVarchar<4>` }).text;
 
-/** Builds the project, whose models job generates once, then checks the shared models file that build wrote. */
+/** Builds the project, whose models job generates once, then checks the generated model file that build wrote. */
 async function roundTrip(root: string): Promise<void> {
   await buildModelProject(root);
-  const generated = fs.readFileSync(path.join(root, SHARED_MODELS), 'utf8');
+  const generated = fs.readFileSync(path.join(root, MODEL_FILE), 'utf8');
   assert.match(generated, /from "@fixture\/pg\/codecs"/);
   assert.doesNotMatch(generated, /node_modules|\.d\.js/);
   const { A } = await import(path.toNamespacedPath(path.join(root, 'build/a.model.js')));
@@ -56,7 +56,7 @@ export function decodeCount(value: CountWire): number { return Number(value); }
   } });
   const { root, sourceRoot } = project(t, { '@fixture/pg': vendor });
   fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), model);
-  const generated = generate({ root, profile: { mobx: false, validation: true } }).artifacts.find(a => a.path.endsWith(SHARED_MODELS))?.content ?? '';
+  const generated = generate({ root, profile: { mobx: false, validation: true } }).artifacts.find(a => a.path.endsWith(MODEL_FILE))?.content ?? '';
   assert.match(generated, /from "@fixture\/pg\/codecs"/);
 });
 
@@ -110,7 +110,7 @@ test('two codecs from one package share one specifier', t => {
   const { root, sourceRoot } = project(t);
   writeCodecPackage(path.join(root, 'node_modules/@fixture/pg'), { name: '@fixture/pg', exports: EXPORTS, files: COUNT_DIST_FILES });
   fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), taggedModelSource({ name: 'A', imports: tsSource`import type { PkgCount } from '@fixture/pg/tags';`, fields: tsSource`one: PkgCount; two: PkgCount[]` }).text);
-  const generated = generate({ root, profile: { mobx: false, validation: true } }).artifacts.find(a => a.path.endsWith(SHARED_MODELS))?.content ?? '';
+  const generated = generate({ root, profile: { mobx: false, validation: true } }).artifacts.find(a => a.path.endsWith(MODEL_FILE))?.content ?? '';
   assert.equal([...generated.matchAll(/import \{ encodeCount as /g)].length, 1);
   assert.equal([...generated.matchAll(/from "@fixture\/pg\/codecs"/g)].length, 2); // one encode, one decode import
 });
@@ -148,8 +148,8 @@ test('a nameless package.json in the project keeps project codecs relative', t =
   fs.writeFileSync(path.join(sourceRoot, 'lib/codecs.ts'), "export function encodeCount(value: number): string { return String(value); }\nexport function decodeCount(value: string): number { return Number(value); }\n");
   fs.writeFileSync(path.join(sourceRoot, 'models/package.json'), '{"type":"module"}');
   fs.writeFileSync(path.join(sourceRoot, 'models/a.model.ts'), taggedModelSource({ name: 'A', imports: tsSource`import type { TSerde } from '@exprtlabs/golem/tags';\nimport { encodeCount, decodeCount } from '../lib/codecs.js';\ntype Count = number & TSerde<typeof encodeCount, typeof decodeCount>;`, fields: tsSource`count: Count` }).text);
-  const generated = generate({ root, profile: { mobx: false, validation: true } }).artifacts.find(a => a.path.endsWith(SHARED_MODELS))?.content ?? '';
-  assert.match(generated, /from "\.\.\/\.\.\/lib\/codecs\.js"/);
+  const generated = generate({ root, profile: { mobx: false, validation: true } }).artifacts.find(a => a.path.endsWith('src/models/a.model.generated.ts'))?.content ?? '';
+  assert.match(generated, /from "\.\.\/lib\/codecs\.js"/);
 });
 
 test('an edited package.json is read again by the next generation in the same process', t => {
@@ -184,7 +184,7 @@ function generatedFor(t: TestContext, exports: Record<string, unknown>, nested =
   const { root, sourceRoot } = project(t);
   writeCodecPackage(path.join(root, 'node_modules/@fixture/pg'), { name: '@fixture/pg', exports, files: nested ? NESTED_FILES : COUNT_DIST_FILES });
   fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), nested ? model.replace('@fixture/pg/tags', '@fixture/pg/sub/tags') : model);
-  return generate({ root, profile: { mobx: false, validation: true } }).artifacts.find(a => a.path.endsWith(SHARED_MODELS))?.content ?? '';
+  return generate({ root, profile: { mobx: false, validation: true } }).artifacts.find(a => a.path.endsWith(MODEL_FILE))?.content ?? '';
 }
 
 function rejected(t: TestContext, exports: Record<string, unknown>, nested = false): void {
@@ -225,7 +225,7 @@ test('one package installed at two paths collapses to one binding', t => {
   writeCodecPackage(path.join(root, 'node_modules/dep'), { name: 'dep', exports: { '.': { types: './index.d.ts' } }, files: { 'index.d.ts': "export type { PkgCount as DepCount } from '@fixture/pg/tags';\n" } });
   writeCodecPackage(path.join(root, 'node_modules/dep/node_modules/@fixture/pg'), { name: '@fixture/pg', exports: EXPORTS, files: COUNT_DIST_FILES });
   fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), taggedModelSource({ name: 'A', imports: tsSource`import type { PkgCount } from '@fixture/pg/tags';\nimport type { DepCount } from 'dep';`, fields: tsSource`one: PkgCount; two: DepCount` }).text);
-  const generated = generate({ root, profile: { mobx: false, validation: true } }).artifacts.find(a => a.path.endsWith(SHARED_MODELS))?.content ?? '';
+  const generated = generate({ root, profile: { mobx: false, validation: true } }).artifacts.find(a => a.path.endsWith(MODEL_FILE))?.content ?? '';
   assert.equal([...generated.matchAll(/import \{ encodeCount as /g)].length, 1);
   assert.equal([...generated.matchAll(/import \{ decodeCount as /g)].length, 1);
   assert.doesNotMatch(generated, /__golemSerialize1/);

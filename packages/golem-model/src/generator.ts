@@ -17,7 +17,6 @@ import {
   createJobAnalysis,
   deduplicateTagSchemas,
   describeJob,
-  emitLayerSource,
   emitSource,
   validatorImports,
   codecEntriesForGraph,
@@ -225,8 +224,8 @@ function canonicalSourceKey(filename: string): string {
  */
 function internJobSchemaGraphs(
   graphs: readonly SourceModelGraph[],
+  defaultValidation: boolean,
   closure: readonly CodecSchemaClosureEntry[] = [],
-  defaultValidation?: boolean,
 ): SourceSchemaGraph[] {
   const codecIds = new Map<ModelSpecification, string>();
   const wireSchemas = new Set<string>();
@@ -266,7 +265,7 @@ function internJobSchemaGraphs(
       const schemaGraph = internSourceDefinitions(graph.definitions, graph.emitted, {
         codecIds: idsFor(graph, new Map()),
         siblings: graph.siblings,
-        ...(defaultValidation === undefined ? {} : { defaultValidation }),
+        defaultValidation,
         externalResidualIds: residualIds,
       });
       record(graph, schemaGraph);
@@ -299,7 +298,7 @@ function internJobSchemaGraphs(
         return id === undefined ? [] : [[sibling.name, id] as const];
       })),
       siblings: outside,
-      ...(defaultValidation === undefined ? {} : { defaultValidation }),
+      defaultValidation,
       externalResidualIds: residualIds,
     });
     for (const graph of component) record(graph, shared);
@@ -313,7 +312,7 @@ function internJobSchemaGraphs(
       const schemaGraph = internSourceDefinitions(graph.definitions, graph.emitted, {
         codecIds: idsFor(graph, own),
         siblings: graph.siblings,
-        ...(defaultValidation === undefined ? {} : { defaultValidation }),
+        defaultValidation,
         externalResidualIds: residualIds,
       });
       const cyclicSiblings = new Set(graph.siblings
@@ -462,8 +461,7 @@ export function generate(context: GolemModelContext): GolemModelResult {
       job,
     ))
     .filter((graph): graph is NonNullable<typeof graph> => graph !== undefined);
-  const layerOutput = join(normalized.output, 'models.generated.ts');
-  const graphSchemaPairs = internJobSchemaGraphs(graphs, manifestIndex.validationSchemaClosure);
+  const graphSchemaPairs = internJobSchemaGraphs(graphs, normalized.profile.validation, manifestIndex.validationSchemaClosure);
   const schemaGraphs = graphSchemaPairs.map(({ schemaGraph }) => schemaGraph);
   // A model can ask for validation when the profile does not.
   const anyValidation = normalized.profile.validation
@@ -473,14 +471,9 @@ export function generate(context: GolemModelContext): GolemModelResult {
       .sort((left, right) => left.key.localeCompare(right.key)
         || JSON.stringify(left.schema).localeCompare(JSON.stringify(right.schema))),
   );
-  // The plan is the app's: a model that sets no `validation` follows the profile, so with validation off a default model
-  // an opt-in model nests stays open. The companions follow the layer at run time and are interned without a default.
-  const planGraphs = normalized.profile.validation || !anyValidation
-    ? schemaGraphs
-    : internJobSchemaGraphs(graphs, manifestIndex.validationSchemaClosure, false).map(({ schemaGraph }) => schemaGraph);
   const validationPlan = anyValidation
     ? buildCodecValidationPlan(
-      planGraphs,
+      schemaGraphs,
       manifestIndex.validationSchemaClosure,
       Object.fromEntries(schemaEntries.map((compilation) => [compilation.id, compilation.schema])),
       normalized.profile.validation,
@@ -498,7 +491,7 @@ export function generate(context: GolemModelContext): GolemModelResult {
     : undefined;
   const validatorDiagnostics = withoutRepeatedFieldTypeWarnings(validators?.diagnostics ?? []);
   if (validatorDiagnostics.some((diagnostic) => diagnostic.severity === GolemDiagnosticSeverity.Error)) {
-    // Nothing is written: the companions import the validators this job could not compile.
+    // Nothing is written: the model files import the validators this job could not compile.
     return {
       artifacts: [],
       manifestPaths: [],
@@ -509,19 +502,7 @@ export function generate(context: GolemModelContext): GolemModelResult {
   const planSchemas = validationPlan && validators
     ? Object.fromEntries(validationPlan.ownSchemas.map((id) => [id, validationPlan.schemas[id]]))
     : undefined;
-  // The layer is the app's: it is written for every job, and carries what differs between apps.
-  const artifacts: GolemModelArtifact[] = [{
-    path: layerOutput,
-    content: emitLayerSource({
-      output: layerOutput,
-      profile: normalized.profile,
-      graphs,
-      schemaGraphs,
-      anyValidation,
-      ...(planSchemas ? { planSchemas } : {}),
-      ...(validators ? { validators: { module: validatorsOutput, exports: validators.exports } } : {}),
-    }),
-  }];
+  const artifacts: GolemModelArtifact[] = [];
   if (validators) {
     artifacts.push({ path: validatorsOutput, content: validators.source });
   }
@@ -538,6 +519,10 @@ export function generate(context: GolemModelContext): GolemModelResult {
       graph,
       schemaGraph,
       { siblingWireCodecIds, cyclicSiblings },
+      {
+        ...(planSchemas ? { planSchemas } : {}),
+        ...(validators ? { validators: { module: validatorsOutput, exports: validators.exports } } : {}),
+      },
     );
     if (content !== undefined) artifacts.push({ path: output, content });
   }

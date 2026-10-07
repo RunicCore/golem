@@ -1,14 +1,12 @@
 import { deduplicateProjections, exportedConcreteClass, linkedClassNames } from '@exprtlabs/golem/type-analysis';
 import { dirname, relative } from 'node:path';
 import * as ts from '@exprtlabs/golem/ts';
-import { LAYER_SPECIFIER } from '@exprtlabs/golem/generated-paths';
 import { PACKAGE_VERSION } from './package-info.js';
 import {
   emitModelFromJSON,
   emitModelFromInit,
   emitModelToJSON,
   emitCodecRuntime,
-  nodeSchemaPayloads,
   FIELD_CONVERSION_INPUT,
   singleCallConverter,
   pruneNamedImport,
@@ -1012,7 +1010,7 @@ export interface SourceSchemaGraphOptions {
   readonly codecIds?: ReadonlyMap<string, string>;
   /** Models emitted by another companion of the job. */
   readonly siblings?: readonly ModelSpecification[];
-  /** What a model that sets no `validation` does. Without it the node follows the app layer at run time (the companions); the validation plan names the profile. */
+  /** What a model that sets no `validation` does: the validation of the app's profile. */
   readonly defaultValidation?: boolean;
   /** Codec ids and aliases of models emitted elsewhere that publish residual schemas. */
   readonly externalResidualIds?: { readonly modelOnly: ReadonlySet<string>; readonly wireOnly: ReadonlySet<string> };
@@ -1044,7 +1042,7 @@ export function internSourceDefinitions(
       // A sibling is a codec reference: its schema and code come from its companion.
       descriptor: siblings.has(specification) ? { kind: 'reference', name: specification.name } : descriptor,
       emitClass: siblings.has(specification) ? false : specification.emitClass,
-      // The profile is the app's, not the companion's: a model that sets `validation` keeps it, any other follows the layer.
+      // A model that sets `validation` keeps it; any other follows the profile of the app.
       ...(specification.validation ?? options.defaultValidation) === undefined ? {} : { validationEnabled: specification.validation ?? options.defaultValidation },
     });
   }
@@ -1082,20 +1080,6 @@ export function codecEntriesForGraph(
   });
 }
 
-export interface LayerSourceOptions {
-  readonly output: string;
-  readonly profile: GolemProfile;
-  readonly graphs: readonly SourceModelGraph[];
-  /** The schema graph of each source; the layer publishes the schemas of their codecs. */
-  readonly schemaGraphs: readonly SchemaGraph[];
-  /** The validation plan's resolved schemas by codec id and plane; they replace the unresolved schema of the same key. */
-  readonly planSchemas?: Readonly<Record<string, object | boolean>>;
-  /** The generated validators module and the name it exports each root under (see `PlanValidators.exports`); set when the app validates. */
-  readonly validators?: { readonly module: string; readonly exports: ReadonlyMap<string, string> };
-  /** Whether any model validates: the profile validates, or a model sets `validation: true`. */
-  readonly anyValidation: boolean;
-}
-
 /** The user validation functions a job's generated validators import, keyed by binding id; import paths are relative to `validatorsFile`. */
 export function validatorImports(
   graphs: readonly SourceModelGraph[],
@@ -1112,69 +1096,13 @@ export function validatorImports(
     .map(([id, binding]) => [id, { importPath: bindingImportPath(binding, validatorsFile), exportName: binding.exportName }] as const));
 }
 
-/**
- * The layer of an app: its profile, the MobX hook, and the validators, schemas and serde bindings of every codec of
- * its models job. Companions read all of these from here by codec id, so a companion is the same text in every app.
- */
-export function emitLayerSource(options: LayerSourceOptions): string {
-  const { output, graphs, profile, validators } = options;
-  const serdeMap = new Map<string, SerdeBinding>();
-  for (const graph of graphs) {
-    for (const binding of graph.registry.serde.values()) registerSerde(serdeMap, binding);
-  }
-  const serde = [...serdeMap.values()].sort((left, right) => left.id.localeCompare(right.id));
-  const serdeNames = new Map(serde.map((binding, index) => [binding.id, {
-    serialize: `__golemSerialize${index}`,
-    deserialize: `__golemDeserialize${index}`,
-  }] as const));
-  const validatorEntries = validators === undefined
-    ? []
-    : [...validators.exports].sort(([left], [right]) => left.localeCompare(right));
-  const hook = profile.mobx && options.anyValidation;
-  // Unresolved schemas of every codec, then the plan's resolved ones over them.
-  const schemas: Record<string, object | boolean> = {};
-  for (const schemaGraph of options.schemaGraphs) {
-    for (const node of schemaGraph.nodes.values()) {
-      if (node.kind === 'reference' || node.descriptor.kind === 'generated-model' || node.descriptor.kind === 'reference') continue;
-      Object.assign(schemas, nodeSchemaPayloads(node));
-    }
-  }
-  Object.assign(schemas, options.planSchemas);
-  const sortedSchemas = Object.fromEntries(Object.entries(schemas).sort(([left], [right]) => left.localeCompare(right)));
-  const lines: string[] = [
-    `/* Generated by @exprtlabs/golem-model ${PACKAGE_VERSION}. Do not edit. */`,
-    "import type { GolemLayer } from '@exprtlabs/golem/serde';",
-    ...(hook ? ["import { enhanceValidatorWithMobX } from '@exprtlabs/golem/mobx-validation';"] : []),
-    ...(validators !== undefined && validatorEntries.length > 0
-      ? [`import { ${validatorEntries.map(([, name]) => name).sort().join(', ')} } from ${JSON.stringify(sourceImportPath(validators.module, output))};`]
-      : []),
-    ...serde.flatMap((binding) => {
-      const names = serdeNames.get(binding.id);
-      return [
-        `import { ${binding.serialize.exportName} as ${names?.serialize}Source } from ${JSON.stringify(bindingImportPath(binding.serialize, output))};`,
-        `import { ${binding.deserialize.exportName} as ${names?.deserialize}Source } from ${JSON.stringify(bindingImportPath(binding.deserialize, output))};`,
-      ];
-    }),
-    '',
-    'export const layer: GolemLayer = Object.freeze({',
-    `  profile: Object.freeze({ validation: ${profile.validation ? 'true' : 'false'}, mobx: ${profile.mobx ? 'true' : 'false'} }),`,
-    ...(hook ? ['  enhanceValidator: enhanceValidatorWithMobX,'] : []),
-    `  validators: Object.freeze({${validatorEntries.map(([id, name]) => ` ${JSON.stringify(id)}: ${name},`).join('')} }),`,
-    `  schemas: Object.freeze(${jsonDataExpression(sortedSchemas)} as Readonly<Record<string, object>>),`,
-    '  serdeBindings: Object.freeze({',
-    ...serde.map((binding) => {
-      const names = serdeNames.get(binding.id);
-      return `    ${JSON.stringify(binding.id)}: { serialize: (value: unknown): unknown => ((${names?.serialize}Source) as (value: unknown) => unknown)(value), deserialize: (value: unknown): unknown => ((${names?.deserialize}Source) as (value: unknown) => unknown)(value) },`;
-    }),
-    '  }),',
-    '});',
-    '',
-  ];
-  return lines.join('\n');
+/** What the app generated beside its model files, which a model file reads. */
+export interface AppOutputs {
+  /** The generated validators module and the name it exports each root under (see `PlanValidators.exports`); set when the app validates. */
+  readonly validators?: { readonly module: string; readonly exports: ReadonlyMap<string, string> };
+  /** The validation plan's resolved schemas by codec id and plane. A validating model file publishes its own as its codecs' schemas. */
+  readonly planSchemas?: Readonly<Record<string, object | boolean>>;
 }
-
-/** The name a companion gives the app layer it imports from `#golem-models`. */
-const LAYER_NAME = 'layer';
 
 /** How this companion relates to the companions of the files its source imports. */
 export interface SiblingCodecOptions {
@@ -1204,6 +1132,7 @@ export function emitSource(
   preparedGraph?: SourceModelGraph,
   preparedSchemaGraph?: SchemaGraph,
   siblingCodecs: SiblingCodecOptions = {},
+  appOutputs: AppOutputs = {},
 ): string | undefined {
   const { siblingWireCodecIds, cyclicSiblings } = siblingCodecs;
   const graph = preparedGraph ?? analyzeSourceGraph(source, output, checker, specifications, manifestIndex, profile, identityRoot);
@@ -1273,7 +1202,7 @@ export function emitSource(
     }));
   };
   const conversionHelpers = new Set<'field' | 'define'>();
-  const schemaGraph = preparedSchemaGraph ?? internSourceDefinitions(definitions, emitted, { siblings: graph.siblings });
+  const schemaGraph = preparedSchemaGraph ?? internSourceDefinitions(definitions, emitted, { siblings: graph.siblings, defaultValidation: profile.validation });
   const classModelNames = new Set(emitted.filter((specification) => specification.emitClass).map((specification) => specification.name));
   const projectionNames = new Set([
     ...Object.keys(definitions).filter((name) => !localNames.has(name) && !classModelNames.has(name)),
@@ -1343,9 +1272,16 @@ export function emitSource(
     if (localImports.some((item) => item.name === id) && classModelNames.has(id)) return resolveImportedModel(id);
     return resolveFromJsonModel(externalNames, id);
   };
-  // A serde function is the app's binding: the layer holds it by id.
-  const serdeExpression = (id: string, direction: 'serialize' | 'deserialize', value: string): string =>
-    `${LAYER_NAME}.serdeBindings[${JSON.stringify(id)}]!.${direction}(${value})`;
+  const serdeBindings = [...registry.serde.values()].sort((left, right) => left.id.localeCompare(right.id));
+  const serdeNames = new Map<string, { readonly serialize: string; readonly deserialize: string }>();
+  serdeBindings.forEach((binding, index) => serdeNames.set(binding.id, {
+    serialize: `__golemSerialize${index}`,
+    deserialize: `__golemDeserialize${index}`,
+  }));
+  const serdeExpression = (id: string, direction: 'serialize' | 'deserialize', value: string): string => {
+    const names = serdeNames.get(id);
+    return names ? `${names[direction]}(${value})` : value;
+  };
   const projectionExpressions = new Map<string, {
     readonly decode: string;
     readonly init: string;
@@ -1548,11 +1484,11 @@ export function emitSource(
   }
   if (hasDate) lines.push("import { deserializeDate, serializeDate } from '@exprtlabs/golem/conversion';");
   lines.push(...classValueImports);
-  lines.push("import { assertModelValue, createObjectCodec, isValidModelValue, layerValidator, modelValueIssues, parseJson, registerIModelClass, requireIModelClass, requireObjectCodec, resolveGeneratedModelSchemaRefs, serdeValidates, stringifyJsonArray, stringifyJsonBoolean, stringifyJsonNumber, stringifyJsonScalar, stringifyJsonString, validationFailure, validationUnavailable, IssueRepresentation, IssueSource, type SerdeOptions as __GolemSerdeOptions, type ValidateOptions as __GolemValidateOptions } from '@exprtlabs/golem/serde';");
-  const codecUsesLayer = [...schemaGraph.nodes.values()].some((node) => node.kind !== 'reference'
-    && node.descriptor.kind !== 'generated-model' && node.descriptor.kind !== 'reference');
-  if (codecUsesLayer || registry.serde.size > 0 || localEmissions.some(({ specification }) => specification.emitClass)) {
-    lines.push(`import { ${LAYER_NAME} } from ${JSON.stringify(LAYER_SPECIFIER)};`);
+  lines.push("import { assertModelValue, createObjectCodec, isValidModelValue, modelValueIssues, parseJson, registerIModelClass, requireIModelClass, requireObjectCodec, resolveGeneratedModelSchemaRefs, serdeValidates, stringifyJsonArray, stringifyJsonBoolean, stringifyJsonNumber, stringifyJsonScalar, stringifyJsonString, validationFailure, validationUnavailable, IssueRepresentation, IssueSource, type SerdeOptions as __GolemSerdeOptions, type ValidateOptions as __GolemValidateOptions } from '@exprtlabs/golem/serde';");
+  // A class model registers the MobX validator hook when the app validates it and uses MobX.
+  const observesValidator = (specification: ModelSpecification): boolean => profile.mobx && (specification.validation ?? profile.validation);
+  if (localEmissions.some(({ specification }) => specification.emitClass && observesValidator(specification))) {
+    lines.push("import { enhanceValidatorWithMobX } from '@exprtlabs/golem/mobx-validation';");
   }
   lines.push(
     // A sibling companion registers the codecs this module references by id.
@@ -1584,8 +1520,27 @@ export function emitSource(
       const short = codecShortName(id);
       return `import { ${binding}, ${stringifyFunctionName(short)}, ${fromWireFunctionName(short)}, ${toWireFunctionName(short)} } from ${JSON.stringify(sourceImportPath(model.generatedFile, output))};`;
     }),
+    ...serdeBindings.flatMap((binding) => {
+      const names = serdeNames.get(binding.id);
+      return [
+        `import { ${binding.serialize.exportName} as ${names?.serialize}Source } from ${JSON.stringify(bindingImportPath(binding.serialize, output))};`,
+        `import { ${binding.deserialize.exportName} as ${names?.deserialize}Source } from ${JSON.stringify(bindingImportPath(binding.deserialize, output))};`,
+      ];
+    }),
     '',
   );
+  if (serdeBindings.length > 0) {
+    lines.push(
+      ...serdeBindings.flatMap((binding) => {
+        const names = serdeNames.get(binding.id);
+        return names ? [
+          `const ${names.serialize} = (value: unknown): unknown => ((${names.serialize}Source) as (value: unknown) => unknown)(value);`,
+          `const ${names.deserialize} = (value: unknown): unknown => ((${names.deserialize}Source) as (value: unknown) => unknown)(value);`,
+        ] : [];
+      }),
+      '',
+    );
+  }
   lines.push(
     'function modelObject(json: unknown, name: string): Record<string, unknown> {',
     '  return requireModelObject(json, name);',
@@ -1704,8 +1659,8 @@ export function emitSource(
       `    encode: encode${specification.name}Model,`,
       '  },',
       `  codecId: ${JSON.stringify(schemaGraph.nodeFor(definition, specification.name)?.codecId ?? specification.name)},`,
-      ...(specification.validation === undefined ? [] : [`  validation: ${specification.validation ? 'true' : 'false'},`]),
-      `  layer: ${LAYER_NAME},`,
+      `  profile: { validation: ${(specification.validation ?? profile.validation) ? 'true' : 'false'}, mobx: ${profile.mobx ? 'true' : 'false'} },`,
+      ...(observesValidator(specification) ? ['  enhanceValidator: enhanceValidatorWithMobX,'] : []),
       '});',
       '',
       `registerIModelClass(${JSON.stringify(
@@ -1745,10 +1700,28 @@ export function emitSource(
       toWire: toWireFunctionName(short),
     };
   };
+  // The validators the codecs use, by export name: the model file imports those and no others.
+  const usedValidators = new Set<string>();
+  const validators = appOutputs.validators;
+  // The plan's resolved schemas of this file's codecs: a validating codec publishes these instead of its unresolved ones.
+  const ownSchemaKeys = new Set([...schemaGraph.nodes.values()]
+    .filter((node) => node.kind !== 'reference' && node.descriptor.kind !== 'generated-model' && node.descriptor.kind !== 'reference')
+    .flatMap((node) => [node.codecId, `${node.codecId}#wire`, `${node.codecId}#model-only`, `${node.codecId}#wire-only`]));
+  const ownPlanSchemas = Object.fromEntries(Object.entries(appOutputs.planSchemas ?? {}).filter(([key]) => ownSchemaKeys.has(key)).sort(([left], [right]) => left.localeCompare(right)));
+  const hasPlanSchemas = Object.keys(ownPlanSchemas).length > 0;
   const codecRuntime = emitCodecRuntime(
     schemaGraph,
     {
-      layer: LAYER_NAME,
+      validationEnabled: profile.validation,
+      ...(validators ? {
+        validatorName: (id: string) => {
+          const name = validators.exports.get(id);
+          if (name === undefined) throw new Error(`The generated validators module has no validator for ${JSON.stringify(id)}.`);
+          usedValidators.add(name);
+          return name;
+        },
+      } : {}),
+      ...(hasPlanSchemas ? { resolvedSchemasExpr: 'modelSchemas' } : {}),
       serde: {
         deserialize: (id, value) => serdeExpression(id, 'deserialize', value),
         serialize: (id, value) => serdeExpression(id, 'serialize', value),
@@ -1764,6 +1737,7 @@ export function emitSource(
       exportWireStringify: true,
     },
   );
+  if (hasPlanSchemas) lines.push(`const modelSchemas = ${jsonDataExpression(ownPlanSchemas)} as Readonly<Record<string, object>>;`, '');
   lines.push(codecRuntime);
   // Wire stringify functions of sibling codecs this module writes.
   const siblingWireImports = [...schemaGraph.nodes.values()].flatMap((node) => {
@@ -1774,6 +1748,9 @@ export function emitSource(
       : [];
   });
   lines.splice(1, 0, ...siblingWireImports);
+  if (validators && usedValidators.size > 0) {
+    lines.splice(1, 0, `import { ${[...usedValidators].sort().join(', ')} } from ${JSON.stringify(sourceImportPath(validators.module, output))};`);
+  }
   const companion = pruneExternalCodecImports(pruneNamedImport(
     pruneNamedImport(
       pruneNamedImport(pruneUnusedHelpers(`${lines.join('\n').trim()}\n`), '@exprtlabs/golem/serde'),
