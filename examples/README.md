@@ -1,16 +1,18 @@
 # Golem examples
 
-Two complete TypeScript projects, each with its source contract, configuration
-and a runnable entrypoint. Neither commits its generated files. Browse them in the
+Three complete TypeScript projects, each with its source contract, configuration
+and a runnable entrypoint. None commits its generated files. Browse them in the
 [Golem repository](https://github.com/RunicCore/golem). The documentation pages
 explain the examples and show source regions from these maintained files.
 
 | Example | Shows |
 | --- | --- |
 | [models](models/) | An offline task tracker: models, tags, validation, serialization, composition and dates. Start here to define models without a server. |
+| [shared-folder](shared-folder/) | A folder of models that two apps share, one through a plain include and one through a folder link. The web app validates and the worker does not. |
 | [payments](payments/) | A merchant payments app: NestJS controllers that produce an OpenAPI document, a typed client, a React and MobX editor, and a client for a third-party provider with auth, streams, codecs and dates. |
 
 The guides walk through them: [models](../docs/guide/models.md),
+[a shared folder](../docs/reference/config.md#a-folder-shared-by-several-apps),
 [type tags](../docs/guide/tags.md),
 [NestJS](../docs/guide/nestjs.md),
 [an API client](../docs/guide/client.md),
@@ -19,7 +21,7 @@ The guides walk through them: [models](../docs/guide/models.md),
 
 ## Install and run
 
-Both examples depend on `1.0.0-rc` of `@exprtlabs/golem*`, which is not
+Every example depends on `1.0.0-rc` of `@exprtlabs/golem*`, which is not
 published yet. Run them from this repository checkout: run `npm install` once at
 the repository root, then in the example directory:
 
@@ -30,6 +32,7 @@ npm test           # offline; golem build generates first
 
 - `models`: `npm start` prints a walkthrough, one line per feature. It needs no
   server, browser or network.
+- `shared-folder`: `npm test` builds both apps and runs their tests.
 - `payments`: `npm run demo` starts the API and a stand-in provider on free
   ports and submits one payment. `npm run dev` starts the API on port 3000, the
   provider on 3001 and the editor at `http://127.0.0.1:5173`. `API_PORT` sets
