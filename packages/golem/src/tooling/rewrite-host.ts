@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs';
 import path from 'node:path';
 
 import { modelsRootOf, resolveConfig } from './config.js';
-import { codecKeysPath, defaultModelOutput, LAYER_SPECIFIER } from './generated-paths.js';
+import { codecKeysPath } from './generated-paths.js';
 import type { GolemConfig } from './config.js';
 import { GolemDiagnosticSeverity } from './generator-api.js';
 import { applyRewrites } from './rewrite.js';
@@ -29,19 +29,6 @@ export function withInlineSourceMap(code: string, map: SourceMapV3, file: string
   return `${code}\n//# sourceMappingURL=data:application/json;base64,${Buffer.from(json, 'utf8').toString('base64')}\n`;
 }
 
-export { LAYER_SPECIFIER };
-
-/** The layer file the golem.yaml's models job writes, whether or not it exists yet; undefined when the yaml has no models job. */
-export function layerFileOf(config: GolemConfig): string | undefined {
-  const job = config.jobs.find((candidate) => candidate.kind === 'models');
-  return job === undefined ? undefined : path.join(job.options.output ?? defaultModelOutput(job.options.root), 'models.generated.ts');
-}
-
-/** What every host and `golem build` say about a file that imports the layer of a project that has none. */
-export function missingLayerMessage(importer: string, configFile: string): string {
-  return `${importer} imports ${LAYER_SPECIFIER}, but ${configFile} has no models job. Add a models job to golem.yaml.`;
-}
-
 /** A host cannot rewrite a file; the message names the file and line and what to run. */
 export class GolemHostError extends Error {
   /** The file and 1-based line of the first scan error, for a host that reports locations itself. */
@@ -54,12 +41,6 @@ export class GolemHostError extends Error {
   }
 }
 
-/** The layer file of `project` for the host that resolves `#golem-models` in `importer`; a project with no models job has none. */
-export function layerOf(project: Pick<RewriteProject, 'configFile' | 'layerFile'>, importer: string): string {
-  if (project.layerFile === undefined) throw new GolemHostError(missingLayerMessage(importer, project.configFile));
-  return project.layerFile;
-}
-
 export interface GolemHostOptions {
   /** The golem.yaml. Default: `GOLEM_CONFIG`, else `./golem.yaml` from the host's working directory. */
   readonly config?: string;
@@ -70,8 +51,6 @@ export interface RewriteProject {
   readonly root: string;
   /** The golem.yaml of the project. */
   readonly configFile: string;
-  /** The layer `#golem-models` names: the file the yaml's models job writes, whether or not it exists yet; undefined when the yaml has no models job. */
-  readonly layerFile: string | undefined;
   /** The codec key file the yaml's models job writes, whether or not it exists yet: what a host watches after a failed rewrite so that `golem generate` brings it back. */
   readonly expectedGenerated: readonly string[];
   /**
@@ -103,7 +82,6 @@ interface Compiler {
 class ScanningProject {
   readonly root: string;
   readonly configFile: string;
-  readonly layerFile: string | undefined;
   readonly expectedGenerated: readonly string[];
   private readonly session: ts.ProgramSession;
   private program: ts.Program | undefined;
@@ -117,7 +95,6 @@ class ScanningProject {
   constructor(private readonly config: GolemConfig, private readonly nest: boolean, private readonly compiler: Compiler) {
     this.root = path.dirname(config.tsconfig);
     this.configFile = config.configFile;
-    this.layerFile = layerFileOf(config);
     this.expectedGenerated = config.jobs.some((job) => job.kind === 'models') ? [codecKeysPath(config.directory)] : [];
     this.session = new compiler.ts.ProgramSession({ cwd: this.root });
   }
@@ -243,7 +220,6 @@ export async function openRewriteProject(options: GolemHostOptions & { cwd: stri
   return {
     root: project.root,
     configFile: project.configFile,
-    layerFile: project.layerFile,
     expectedGenerated: project.expectedGenerated,
     rewrite: (filename, text) => project.rewrite(filename, text),
     changed: (filenames) => { project.changed(filenames); },

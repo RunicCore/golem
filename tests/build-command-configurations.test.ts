@@ -231,47 +231,6 @@ export const order = parse<TOrder>(text);
   assert.deepEqual(fs.readdirSync(path.join(outer, 'shared')).sort(), ['money.ts', 'payment.ts'], 'golem wrote nothing into the shared folder');
 });
 
-/** A layer as `golem generate` will write it, by hand: the build points `#golem-models` at the file, whatever generated it. */
-const LAYER = 'export const layer = { profile: { mobx: true, validation: false }, schemas: {}, serdeBindings: {} };\n';
-/** The import of the serde entry puts the ambient `#golem-models` declaration into the program. */
-const LAYER_USE = `import type { GolemLayer } from '@exprtlabs/golem/serde';
-import * as layerModule from '#golem-models';
-
-const layer: GolemLayer = layerModule.layer;
-export const mobx: boolean = layer.profile.mobx;
-`;
-
-test('golem build output that imports #golem-models runs under plain node with no package.json imports entry', async (t) => {
-  const { outer, app } = appBesideShared(t, 'build-layer');
-  write(app, 'src/main.ts', 'export const main: number = 1;\n');
-  write(app, 'src/generated/models/models.generated.ts', LAYER);
-  write(outer, 'shared/use.ts', LAYER_USE);
-
-  assert.equal((await build(app)).exitCode, 0);
-  assert.doesNotMatch(fs.readFileSync(path.join(app, 'build/shared/use.js'), 'utf8'), /#golem-models/);
-  const result = await command(app, process.execPath, ['--input-type=module', '--eval', "import { mobx } from './build/shared/use.js'; console.log(mobx);"]);
-  assert.equal(result.stdout, 'true\n');
-});
-
-test('a project with no models job that imports #golem-models fails golem build with the missing-layer error', async (t) => {
-  const root = sourceOnlyProject(t, 'build-layer-missing');
-  write(root, 'golem.yaml', 'version: 1\n');
-  countingGenerator(root);
-  write(root, 'src/use.ts', LAYER_USE);
-  await assert.rejects(build(root), { message: `${path.join(root, 'src/use.ts')} imports #golem-models, but ${path.join(root, 'golem.yaml')} has no models job. Add a models job to golem.yaml.` });
-});
-
-test('a tsconfig whose include leaves out the layer fails golem build with the layer and the tsconfig named', async (t) => {
-  const { outer, app } = appBesideShared(t, 'build-layer-excluded');
-  write(app, 'src/main.ts', 'export const main: number = 1;\n');
-  write(app, 'src/generated/models/models.generated.ts', LAYER);
-  write(outer, 'shared/use.ts', LAYER_USE);
-  editTsconfig(app, (tsconfig) => { tsconfig.include = ['src/main.ts', '../shared/*.ts']; });
-
-  await assert.rejects(build(app), { message: `${path.join(outer, 'shared/use.ts')} imports #golem-models, but the layer ${path.join(app, 'src/generated/models/models.generated.ts')} is not in the program of ${path.join(app, 'tsconfig.json')}. Include the models output in the tsconfig.` });
-  assert.equal(fs.existsSync(path.join(app, 'build/shared/use.js')), false, 'no JavaScript that imports a missing file is emitted');
-});
-
 test('a declaration file outside the project, imported under a rootDir inside it, builds the layout tsc emits', async (t) => {
   // The compiler leaves a declaration file out of the rootDir check, so a project that only imports one keeps its own layout.
   const { outer, app } = appBesideShared(t, 'build-shared-declaration', { rootDir: 'src' });
@@ -414,6 +373,22 @@ test('tsc type-checks both apps with no paths entry', { timeout: HEAVY_TEST_TIME
     assert.equal(tsconfig.compilerOptions.paths, undefined);
     await command(app, process.execPath, [TSC, '-p', 'tsconfig.json', '--noEmit']);
   }
+});
+
+test('an app built with plain tsc runs its generated models under node with no imports entry', { timeout: HEAVY_TEST_TIMEOUT_MS }, async (t) => {
+  const { appA } = sharedFolderProject(t, 'shared-folder-plain-tsc');
+  write(appA, 'src/plain.ts', `import { parseTMoney } from './order.model.generated.js';
+
+export const money = parseTMoney('{"currency":"USD","value":"5"}');
+export const parseShortCurrency = (): unknown => parseTMoney('{"currency":"US","value":"5"}');
+`);
+  await runPipeline(CONFIG_OF(appA));
+  await command(appA, process.execPath, [TSC, '-p', 'tsconfig.json']);
+  const script = "import('./build/a/src/plain.js').then((plain) => { let rejected = null; try { plain.parseShortCurrency(); } catch (error) { rejected = error.message; } console.log(JSON.stringify({ money: plain.money, rejected })); });";
+  const result = await command(appA, process.execPath, ['--input-type=module', '--eval', script]);
+  const outcome = JSON.parse(result.stdout) as { readonly money: unknown; readonly rejected: string | null };
+  assert.deepEqual(outcome.money, { currency: 'USD', value: '5' });
+  assert.match(outcome.rejected ?? '', /Model validation failed/);
 });
 
 test('a project with no shared folder needs no new configuration', async (t) => {

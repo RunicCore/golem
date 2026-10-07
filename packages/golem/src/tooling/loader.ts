@@ -1,6 +1,6 @@
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
 
-import { LAYER_SPECIFIER, layerOf, NODE_MODULES, openRewriteProject, withInlineSourceMap } from './rewrite-host.js';
+import { NODE_MODULES, openRewriteProject, withInlineSourceMap } from './rewrite-host.js';
 import type { RewriteProject } from './rewrite-host.js';
 
 /**
@@ -9,7 +9,7 @@ import type { RewriteProject } from './rewrite-host.js';
  * the working directory; with neither, a TypeScript file outside `node_modules` fails the load. The scan needs
  * TypeScript, so the first TypeScript file loads it. The loader thread owns its own compiler session, a second-tier
  * cost beside the one of the build: the program is opened once in the thread and reopened for a file it does not hold.
- * The `resolve` hook maps `#golem-models` to the layer file of the project, and lets a relative `.js`, `.mjs` or `.cjs` import name the TypeScript source that has no built file yet,
+ * The `resolve` hook lets a relative `.js`, `.mjs` or `.cjs` import name the TypeScript source that has no built file yet,
  * the way the generated companions and validators name their siblings. ES modules only: a rewrite adds imports, which CommonJS cannot run. `.tsx` goes straight to Node, which cannot strip it.
  */
 
@@ -40,10 +40,6 @@ function projectOfThisProcess(): Promise<RewriteProject> {
 }
 
 export async function resolve(specifier: string, context: ResolveContext, nextResolve: NextResolve): Promise<ResolveResult> {
-  if (specifier === LAYER_SPECIFIER) {
-    const importer = context.parentURL?.startsWith('file:') ? fileURLToPath(context.parentURL) : (context.parentURL ?? specifier);
-    return nextResolve(pathToFileURL(layerOf(await projectOfThisProcess(), importer)).href, context);
-  }
   try {
     return await nextResolve(specifier, context);
   } catch (error) {
