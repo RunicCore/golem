@@ -1,6 +1,7 @@
 
 import { existsSync, readFileSync } from 'node:fs';
-import { dirname, isAbsolute, join, normalize, parse, relative, resolve, sep } from 'node:path';
+import { dirname, isAbsolute, join, parse, relative, resolve, sep } from 'node:path';
+import YAML from 'yaml';
 import * as ts from '../typescript-ns.js';
 import { canonicalFilename, sharedFolderOf } from '../shared-folder.js';
 import { DEFAULT_MODEL_SUFFIXES, discoverSources, suffixPattern, type GeneratorSession, type InputObserver } from '../generator-api.js';
@@ -136,6 +137,44 @@ export function sharedImportOutsideItsFolder(
     ? undefined
     : `${filename} is outside ${tsconfigDirectory} and imports ${target}, which is outside its shared folder ${sharedFolder}. `
       + 'A shared model may import only files in its shared folder.';
+}
+
+/**
+ * A check that answers whether a golem.yaml other than the one in `ownDirectory` has a models job that covers a source.
+ * The source is covered when such a yaml lies in the source's directory or in a directory above it, up to the source's
+ * shared folder. That job generates the source with ids of its own folder, so this job must leave the source alone.
+ * The answer for a directory is read once.
+ */
+export function anotherModelsJobCheck(ownDirectory: string, onInput?: InputObserver): (source: string) => boolean {
+  const own = canonicalFilename(ownDirectory);
+  const hasModelsJob = new Map<string, boolean>();
+  const directoryHasModelsJob = (directory: string): boolean => {
+    const known = hasModelsJob.get(directory);
+    if (known !== undefined) return known;
+    const file = join(directory, 'golem.yaml');
+    onInput?.(file);
+    let found = false;
+    if (existsSync(file)) {
+      let configuration: unknown;
+      try {
+        configuration = YAML.parse(readFileSync(file, 'utf8'));
+      } catch (error) {
+        // A golem.yaml that is not YAML is the project's to fix; whether it covers a source cannot be read without it.
+        if (error instanceof YAML.YAMLParseError) throw new Error(`${file} is not valid YAML: ${error.message}`);
+        throw error;
+      }
+      found = typeof configuration === 'object' && configuration !== null && 'models' in configuration && configuration.models !== null && configuration.models !== undefined;
+    }
+    hasModelsJob.set(directory, found);
+    return found;
+  };
+  return (source) => {
+    const sharedFolder = sharedFolderOf(source);
+    for (let directory = dirname(canonicalFilename(source)); ; directory = dirname(directory)) {
+      if (directory !== own && directoryHasModelsJob(directory)) return true;
+      if (directory === sharedFolder || dirname(directory) === directory) return false;
+    }
+  };
 }
 
 /**

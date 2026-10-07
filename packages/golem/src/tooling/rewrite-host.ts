@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs';
 import path from 'node:path';
 
 import { resolveConfig } from './config.js';
-import { codecKeysPath, defaultModelOutput } from './generated-paths.js';
+import { codecKeysPath, defaultModelOutput, LAYER_SPECIFIER } from './generated-paths.js';
 import type { GolemConfig } from './config.js';
 import { GolemDiagnosticSeverity } from './generator-api.js';
 import { applyRewrites } from './rewrite.js';
@@ -29,8 +29,7 @@ export function withInlineSourceMap(code: string, map: SourceMapV3, file: string
   return `${code}\n//# sourceMappingURL=data:application/json;base64,${Buffer.from(json, 'utf8').toString('base64')}\n`;
 }
 
-/** The module specifier a companion imports the layer of its app from. */
-export const LAYER_SPECIFIER = '#golem-models';
+export { LAYER_SPECIFIER };
 
 /** The layer file the golem.yaml's models job writes, whether or not it exists yet; undefined when the yaml has no models job. */
 export function layerFileOf(config: GolemConfig): string | undefined {

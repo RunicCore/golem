@@ -393,9 +393,11 @@ function assertNoUnrecordedOutputs(config: GolemConfig, inventory: Inventory, jo
 
 /**
  * Take the lock of each shared folder the job writes into. Where another live process holds it, this process writes no shared
- * companion there: each must equal the file, or the job fails before it writes anything.
+ * companion there: each must equal the file, or the job fails before it writes anything. Returns the artifacts it must not
+ * write: the holder may write newer text before this process writes.
  */
-function holdSharedFolders(expected: ReadonlyMap<string, ExpectedArtifact>, locks: SharedFolderLocks): void {
+function holdSharedFolders(expected: ReadonlyMap<string, ExpectedArtifact>, locks: SharedFolderLocks): ReadonlySet<string> {
+  const unheld = new Set<string>();
   const holders = new Map<string, ReturnType<SharedFolderLocks['hold']>>();
   for (const artifact of expected.values()) {
     if (!artifact.shared) continue;
@@ -404,12 +406,16 @@ function holdSharedFolders(expected: ReadonlyMap<string, ExpectedArtifact>, lock
     if (held === undefined) holders.set(folder, held = locks.hold(folder));
     if (held === 'held') continue;
     const current = readFile(artifact.filename);
-    if (current === artifact.content) continue;
+    if (current === artifact.content) {
+      unheld.add(artifact.filename);
+      continue;
+    }
     const theirs = current === undefined ? undefined : companionVersion(current);
     const ours = companionVersion(artifact.content);
     const versions = theirs !== undefined && ours !== undefined && theirs !== ours ? `: written by golem ${theirs}, this project uses golem ${ours}` : '';
     throw new IncompatibleSharedCompanionError(artifact.filename, `${artifact.filename} is incompatible with the shared companion that ${held.holder.config} (process ${held.holder.pid}) writes${versions}. Generate in that project, or stop it. If no golem process runs, delete ${lockFileOf(folder)}.`);
   }
+  return unheld;
 }
 
 /** `locks` are the shared-folder locks of a run that writes; a check writes nothing and takes none. */
@@ -435,7 +441,7 @@ export function applyJob(config: GolemConfig, inventory: Inventory, job: GolemJo
     }
     expected.set(key, { filename, content: artifact.content, destination, shared: isSharedCompanion(config, job, filename) });
   }
-  if (!check && locks) holdSharedFolders(expected, locks);
+  const unheld = !check && locks ? holdSharedFolders(expected, locks) : new Set<string>();
   assertNoUnrecordedOutputs(config, inventory, job, expected, check);
   const stale: string[] = [];
   // A shared companion whose source still exists leaves the inventory but stays on disk: another app may use it.
@@ -460,7 +466,7 @@ export function applyJob(config: GolemConfig, inventory: Inventory, job: GolemJo
   if (!check) {
     for (const [key, artifact] of expected) {
       assertDestinationPath(artifact.filename, recordedDestinationPath(config, artifact.destination), 'job');
-      atomicWrite(artifact.filename, artifact.content);
+      if (!unheld.has(artifact.filename)) atomicWrite(artifact.filename, artifact.content);
       inventory.files[key] = {
         job: job.id,
         owner: job.package,

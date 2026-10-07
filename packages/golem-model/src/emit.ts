@@ -1,6 +1,7 @@
 import { deduplicateProjections, exportedConcreteClass, linkedClassNames } from '@exprtlabs/golem/type-analysis';
 import { dirname, relative } from 'node:path';
 import * as ts from '@exprtlabs/golem/ts';
+import { LAYER_SPECIFIER } from '@exprtlabs/golem/generated-paths';
 import { PACKAGE_VERSION } from './package-info.js';
 import {
   emitModelFromJSON,
@@ -1172,8 +1173,6 @@ export function emitLayerSource(options: LayerSourceOptions): string {
 
 /** The name a companion gives the app layer it imports from `#golem-models`. */
 const LAYER_NAME = 'layer';
-/** The module alias every companion imports the layer from. */
-const LAYER_SPECIFIER = '#golem-models';
 
 /** How this companion relates to the companions of the files its source imports. */
 export interface SiblingCodecOptions {

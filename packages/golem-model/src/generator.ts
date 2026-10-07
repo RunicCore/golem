@@ -31,6 +31,7 @@ import { discoverModelManifests } from '@exprtlabs/golem/manifest';
 import { loadModelManifests } from '@exprtlabs/golem/type-analysis';
 import type { ManifestIndex } from '@exprtlabs/golem/type-analysis';
 import {
+  anotherModelsJobCheck,
   assertAbsolute,
   canonicalFilename,
   createOverlayProgram,
@@ -389,9 +390,20 @@ export function generate(context: GolemModelContext): GolemModelResult {
   // The program holds the files the tsconfig includes and the files they import, so a model file outside the root (a
   // shared folder) is a source of this job. `models.sources` limits the list.
   const projectFiles = programFilenames(program);
-  const sources = listed || programInfo.configPath === undefined
+  const candidates = listed || programInfo.configPath === undefined
     ? discovered
     : [...new Set([...discovered, ...includedModelSources(projectFiles, normalized.suffixes)])].sort();
+  // A discovered file that another golem.yaml's models job covers is that job's: it gives the file ids of its own folder.
+  const coveredByAnother = anotherModelsJobCheck(normalized.directory, normalized.onInput);
+  const ownCandidates = listed ? candidates : candidates.filter((source) => !coveredByAnother(source));
+  if (ownCandidates.length === 0) {
+    return emptyResult(programInfo, program, normalized.root);
+  }
+  const { checker, specifications } = collectSpecifications(program, ownCandidates);
+  // A discovered file with no IModel or IObject alias is not a model file: it is skipped, and so is its companion.
+  // A file that `models.sources` names must have one.
+  const withModels = new Set(specifications.map((specification) => canonicalFilename(specification.sourceFile.fileName)));
+  const sources = listed ? ownCandidates : ownCandidates.filter((source) => withModels.has(canonicalFilename(source)));
   if (sources.length === 0) {
     return emptyResult(programInfo, program, normalized.root);
   }
@@ -409,7 +421,6 @@ export function generate(context: GolemModelContext): GolemModelResult {
     normalized.profile,
     normalized.onInput,
   );
-  const { checker, specifications } = collectSpecifications(program, sources);
   if (specifications.length === 0) {
     const diagnostics = ownDiagnostics(ts.getPreEmitDiagnostics(programInfo.program), sources.map(generatedFilename), sources);
     if (diagnostics.length > 0) throw new Error(formatDiagnostics(diagnostics, normalized.root));
