@@ -62,7 +62,7 @@ export type AnotherModelsJobOf = (filename: string) => string | undefined;
  */
 export function foreignModelReason(declaration: ts.TypeAliasDeclaration, anotherModelsJobOf?: AnotherModelsJobOf): string | undefined {
   const filename = declaration.getSourceFile().fileName;
-  const model = `${filename}#${declaration.name.text}`;
+  const model = `${canonicalFilename(filename)}#${declaration.name.text}`;
   if (filename.split(/[\\/]/).includes('node_modules')) {
     return `${model} is a model in an installed package. Golem does not generate models in node_modules. Declare the model in your own source, for example \`type ${declaration.name.text} = IObject<...>\` over the package's plain type.`;
   }
