@@ -330,7 +330,11 @@ An error prints its code, location when known, and message, then stops generatio
 
 ### RUNM1074
 
-**Model golem does not generate for this app.** A model field, or a `stringify`, `parse`, `validate`, `assertValue`, `toWireFormat` or `fromWireFormat` call, names a model that this app cannot use. The model is an `IModel` or `IObject` alias in one of two places. The first place is an installed package: golem does not generate models in `node_modules`, and packages hold no generated code. The second place is a folder that has its own `golem.yaml` with a `models` job: that job generates the model for its own folder. The message names the model as `file#export` and gives the reason. **Fix:** For a package model, declare the model in your own source over the package's plain type, such as `type TMoney = IObject<...>`. For a model of another job, declare it in a folder that has no `golem.yaml` of its own and include that folder in your tsconfig, or stop using it as a model.
+**Model golem does not generate for this app.** A model field, or a `stringify`, `parse`, `validate`, `assertValue`, `toWireFormat` or `fromWireFormat` call, names an `IModel` or `IObject` alias that is not a model of this app. The message names the alias as `file#export` and gives one of three reasons. The model is in `node_modules`: golem does not generate models in installed packages, and packages hold no generated code. The model is outside `models.root`: golem generates only files whose real path, after it follows folder links, is inside the root. The model belongs to the `models` job of a `golem.yaml` below the root: that job generates it for its own folder. **Fix:** For a model in `node_modules` or outside the root, declare the model in your own source over the plain type, such as `type TMoney = IObject<...>`. For a model of another job, stop using it as a model, or move it out of that job's folder.
+
+### RUNM1075
+
+**`models.sources` entry outside the models root.** An entry of `models.sources` has a real path outside `models.root`. A link to a file outside the root counts as that file. A `models` job generates only files inside its root, so the job stops before it generates. The message names the entry and the root. **Fix:** Remove the entry, move the file into the root, or set `models.root` to a folder that holds the file.
 
 ## Validators (VALIDATE)
 

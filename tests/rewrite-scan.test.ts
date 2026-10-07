@@ -36,7 +36,7 @@ function scan(root: string): ProgramScan {
 function withScanner<T>(root: string, use: (scanner: RewriteScanner) => T): T {
   const info = createProjectProgram(root, undefined, undefined, path.join(root, 'tsconfig.json'));
   using program = info.program;
-  return use(new RewriteScanner({ root, directory: root, program, checker: program.getTypeChecker(), codecKeysFile: path.join(root, CODEC_KEYS), nest: false }));
+  return use(new RewriteScanner({ root, directory: root, modelsRoot: root, program, checker: program.getTypeChecker(), codecKeysFile: path.join(root, CODEC_KEYS), nest: false }));
 }
 
 function scanned(result: ProgramScan, file: string): FileScanResult {
@@ -393,15 +393,28 @@ function appBesideForeignModels(t: TestContext, site: string): { readonly app: s
   };
 }
 
-test('golem check reports a serde call on a model of a folder whose golem.yaml has a models job, with the model and that golem.yaml', async (t) => {
-  const { shared, config } = appBesideForeignModels(t, `import { parse } from '@exprtlabs/golem/serde';
+test('golem check reports a serde call on a model of a folder outside the root with its own golem.yaml, as outside the root', async (t) => {
+  const { app, shared, config } = appBesideForeignModels(t, `import { parse } from '@exprtlabs/golem/serde';
 import type { TMoney } from '../../shared/src/money.model.js';
 export const money = parse<TMoney>('{}');
 `);
   await runPipeline(config);
   await assert.rejects(
     runPipeline(config, { check: true }),
-    { message: `golem rewrite scan reported 1 error diagnostic:\n  RUNM1074 (src/use.ts:3:22): ${path.join(shared, 'src/money.model.ts')}#TMoney belongs to the models job of ${path.join(shared, 'golem.yaml')}. That job generates it for its own folder, so this app cannot use it as a model.` },
+    { message: `golem rewrite scan reported 1 error diagnostic:\n  RUNM1074 (src/use.ts:3:22): ${path.join(shared, 'src/money.model.ts')}#TMoney is outside the models root ${app}. Golem does not generate models outside the root of the app. Declare the model in your own source, for example \`type TMoney = IObject<...>\` over a plain type.` },
+  );
+});
+
+test('golem check reports a serde call on a model outside the models root, with the model and the root', async (t) => {
+  const { app, shared, config } = appBesideForeignModels(t, `import { parse } from '@exprtlabs/golem/serde';
+import type { TMoney } from '../../shared/src/money.model.js';
+export const money = parse<TMoney>('{}');
+`);
+  fs.rmSync(path.join(shared, 'golem.yaml'));
+  await runPipeline(config);
+  await assert.rejects(
+    runPipeline(config, { check: true }),
+    { message: `golem rewrite scan reported 1 error diagnostic:\n  RUNM1074 (src/use.ts:3:22): ${path.join(shared, 'src/money.model.ts')}#TMoney is outside the models root ${app}. Golem does not generate models outside the root of the app. Declare the model in your own source, for example \`type TMoney = IObject<...>\` over a plain type.` },
   );
 });
 

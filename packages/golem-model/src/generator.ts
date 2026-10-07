@@ -31,7 +31,6 @@ import { discoverModelManifests } from '@exprtlabs/golem/manifest';
 import { loadModelManifests } from '@exprtlabs/golem/type-analysis';
 import type { ManifestIndex } from '@exprtlabs/golem/type-analysis';
 import {
-  anotherModelsJobOf,
   assertAbsolute,
   canonicalFilename,
   createOverlayProgram,
@@ -41,10 +40,11 @@ import {
   generatedFilename,
   includedModelSources,
   isModelSource,
+  isOwnModelFile,
+  modelBoundary,
   portableRelativeFilename,
   projectWatchInputs,
   retainedProgramSession,
-  sharedImportOutsideItsFolder,
   type ProgramInfo,
 } from '@exprtlabs/golem/type-analysis';
 
@@ -387,15 +387,13 @@ export function generate(context: GolemModelContext): GolemModelResult {
     retainedProgramSession(normalized.session, SESSION_OWNER, normalized.root),
   );
   using program = programInfo.program;
-  // The program holds the files the tsconfig includes and the files they import, so a model file outside the root (a
-  // shared folder) is a source of this job. `models.sources` limits the list.
-  const projectFiles = programFilenames(program);
+  // The program holds the files the tsconfig includes and the files they import. A model file is the job's own only when its
+  // real path is inside the models root; an outside file, a shared folder for one, works as a file of an installed package.
+  const boundary = modelBoundary(normalized.root, normalized.directory, normalized.onInput);
   const candidates = listed || programInfo.configPath === undefined
     ? discovered
-    : [...new Set([...discovered, ...includedModelSources(projectFiles, normalized.suffixes)])].sort();
-  // A discovered file that another golem.yaml's models job covers is that job's: it gives the file ids of its own folder.
-  const anotherJobOf = anotherModelsJobOf(normalized.directory, normalized.onInput);
-  const ownCandidates = listed ? candidates : candidates.filter((source) => anotherJobOf(source) === undefined);
+    : [...new Set([...discovered, ...includedModelSources(programFilenames(program), normalized.suffixes)])].sort();
+  const ownCandidates = candidates.filter((source) => isOwnModelFile(boundary, source));
   if (ownCandidates.length === 0) {
     return emptyResult(programInfo, program, normalized.root);
   }
@@ -408,12 +406,6 @@ export function generate(context: GolemModelContext): GolemModelResult {
     return emptyResult(programInfo, program, normalized.root);
   }
   const tsconfigDirectory = programInfo.configPath === undefined ? normalized.root : dirname(programInfo.configPath);
-  const projectFileSet = new Set(projectFiles.map(canonicalFilename));
-  for (const source of sources) {
-    const sourceFile = program.getSourceFile(source);
-    const outsideImport = sourceFile && sharedImportOutsideItsFolder(sourceFile, tsconfigDirectory, projectFileSet, programInfo.options);
-    if (outsideImport !== undefined) throw new Error(outsideImport);
-  }
   const manifestIndex = loadModelManifests(
     normalized.root,
     programInfo,
@@ -439,7 +431,7 @@ export function generate(context: GolemModelContext): GolemModelResult {
     normalized.root,
     programInfo.options,
     (filename) => program.getSourceFile(filename),
-    anotherJobOf,
+    boundary,
   );
   describeJob(job, specifications);
   const graphs = sources

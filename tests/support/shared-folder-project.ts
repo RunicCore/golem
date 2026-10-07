@@ -1,5 +1,4 @@
-// Two apps that include one shared folder of models: the fixture of the shared-model-folder acceptance tests.
-import fs from 'node:fs';
+// Two apps that include one shared folder of plain types, and declare their own models over them.
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { TestContext } from 'node:test';
@@ -10,38 +9,29 @@ import { command } from './process.js';
 export interface SharedFolderProject {
   /** The directory that holds the linked packages the apps and the shared folder resolve. */
   readonly outer: string;
-  /** The shared folder: a package with a name and no golem.yaml. */
+  /** The shared folder: a folder with a package.json that sets only the module type, plain types with a constraint, and no golem.yaml. */
   readonly shared: string;
-  /** `outer/a`: `mobx` and `validation` on. It nests `TMoney` and calls `toWireFormat`. */
+  /** `outer/a`: `mobx` and `validation` on. It declares `TMoney` and `TOrder` over the shared types and calls `toWireFormat`. */
   readonly appA: string;
-  /** `outer/apps/deep/b`: `mobx` and `validation` off. It only calls `parse<TMoney>()`. */
+  /** `outer/apps/deep/b`: `mobx` and `validation` off. It declares `TMoney` and only calls `parse<TMoney>()`. */
   readonly appB: string;
 }
 
 /** The wire value of the order that app A's site encodes. */
 export const ORDER_WIRE = { total: { currency: 'USD', value: '5' }, payment: { id: 'p1', amount: { currency: 'EUR', value: '7' }, priced: { currency: 'EUR' } } } as const;
 
-/** The shared companions the two apps write, relative to the shared folder. */
-export const SHARED_COMPANIONS = ['src/money.model.generated.ts', 'src/payment.model.generated.ts'] as const;
+const MONEY = `import type { MinLength } from '@exprtlabs/golem/tags';
 
-const MONEY = `import type { IObject } from '@exprtlabs/golem/model';
-import type { MinLength } from '@exprtlabs/golem/tags';
-
-export type TMoney = IObject<{ currency: string & MinLength<3>; value: string }>;
+export type TMoneyFields = { currency: string & MinLength<3>; value: string };
 `;
 
-const PAYMENT = `import type { IModel } from '@exprtlabs/golem/model';
-import type { TMoney } from './money.model.js';
-
-export type TPayment = IModel<{ id: string; amount: TMoney; priced: Omit<TMoney, 'value'> }>;
-`;
-
-/** App A: the order has a `TMoney` field and a `TPayment` field. */
-const ORDER = (toShared: string): string => `import type { IModel } from '@exprtlabs/golem/model';
-import type { TMoney } from '${toShared}/src/money.model.js';
-import type { TPayment } from '${toShared}/src/payment.model.js';
+/** App A: the order has a `TMoney` field and a `TPayment` field, and both are the app's own models over the shared plain type. */
+const ORDER = (toShared: string): string => `import type { IModel, IObject } from '@exprtlabs/golem/model';
+import type { TMoneyFields } from '${toShared}/src/money.js';
 import { TOrderBaseModel } from './order.model.generated.js';
 
+export type TMoney = IObject<TMoneyFields>;
+export type TPayment = IModel<{ id: string; amount: TMoney; priced: Omit<TMoney, 'value'> }>;
 export type TOrder = IModel<{ total: TMoney; payment: TPayment }>;
 export class Order extends TOrderBaseModel {}
 `;
@@ -51,12 +41,10 @@ function relativeSpecifier(from: string, to: string): string {
   return relative.startsWith('.') ? relative : `./${relative}`;
 }
 
-const SITE_A = (toShared: string): string => `import { parse, toWireFormat } from '@exprtlabs/golem/serde';
+const SITE_A = `import { parse, toWireFormat } from '@exprtlabs/golem/serde';
 import { getValidator } from '@exprtlabs/golem/validation';
 import { isComputedProp } from 'mobx';
 import { Order } from './order.model.js';
-import '${toShared}/src/money.model.generated.js';
-import '${toShared}/src/payment.model.generated.js';
 
 const order = new Order({ total: { currency: 'USD', value: '5' }, payment: { id: 'p1', amount: { currency: 'EUR', value: '7' }, priced: { currency: 'EUR' } } });
 export const wire = toWireFormat<Order>(order);
@@ -65,9 +53,16 @@ export const validityObservable: boolean = isComputedProp(getValidator(order), '
 export const parseShortCurrency = (): Order => parse<Order>('{"total":{"currency":"US","value":"5"},"payment":{"id":"p1","amount":{"currency":"EUR","value":"7"},"priced":{"currency":"EUR"}}}');
 `;
 
-const SITE_B = (toShared: string): string => `import { parse } from '@exprtlabs/golem/serde';
-import type { TMoney } from '${toShared}/src/money.model.js';
-import '${toShared}/src/money.model.generated.js';
+/** App B: its own `TMoney` over the shared plain type. */
+const MONEY_B = (toShared: string): string => `import type { IObject } from '@exprtlabs/golem/model';
+import type { TMoneyFields } from '${toShared}/src/money.js';
+
+export type TMoney = IObject<TMoneyFields>;
+`;
+
+const SITE_B = `import { parse } from '@exprtlabs/golem/serde';
+import type { TMoney } from './money.model.js';
+import './money.model.generated.js';
 
 export const parseShortCurrency = (): TMoney => parse<TMoney>('{"currency":"US","value":"5"}');
 `;
@@ -88,7 +83,7 @@ function writeApp(app: string, shared: string, name: string, profile: string, so
 }
 
 /**
- * `outer/shared` (a named package with a `TMoney` object and a `TPayment` model, no golem.yaml), app A at `outer/a` and app B at
+ * `outer/shared` (plain types with a constraint, a package.json without a name, no golem.yaml), app A at `outer/a` and app B at
  * `outer/apps/deep/b`. Nothing is generated yet. Neither app has configuration for the shared folder.
  */
 export function sharedFolderProject(t: TestContext, name: string): SharedFolderProject {
@@ -97,23 +92,12 @@ export function sharedFolderProject(t: TestContext, name: string): SharedFolderP
   const appA = path.join(outer, 'a');
   const appB = path.join(outer, 'apps/deep/b');
   writeGeneratedArtifacts([
-    { path: path.join(shared, 'package.json'), content: JSON.stringify({ name: '@fixture/shared-models', type: 'module' }) },
-    { path: path.join(shared, 'src/money.model.ts'), content: MONEY },
-    { path: path.join(shared, 'src/payment.model.ts'), content: PAYMENT },
+    { path: path.join(shared, 'package.json'), content: JSON.stringify({ type: 'module' }) },
+    { path: path.join(shared, 'src/money.ts'), content: MONEY },
   ]);
-  writeApp(appA, shared, 'app-a', 'mobx: true\nvalidation: true\n', (toShared) => ({ 'src/order.model.ts': ORDER(toShared), 'src/site.ts': SITE_A(toShared) }));
-  writeApp(appB, shared, 'app-b', 'mobx: false\nvalidation: false\n', (toShared) => ({ 'src/site.ts': SITE_B(toShared) }));
+  writeApp(appA, shared, 'app-a', 'mobx: true\nvalidation: true\n', (toShared) => ({ 'src/order.model.ts': ORDER(toShared), 'src/site.ts': SITE_A }));
+  writeApp(appB, shared, 'app-b', 'mobx: false\nvalidation: false\n', (toShared) => ({ 'src/money.model.ts': MONEY_B(toShared), 'src/site.ts': SITE_B }));
   return { outer, shared, appA, appB };
-}
-
-/** The text of every shared companion, by its path from the shared folder. */
-export function sharedCompanions(project: SharedFolderProject): Readonly<Record<string, string>> {
-  return Object.fromEntries(SHARED_COMPANIONS.map((relative) => [relative, fs.readFileSync(path.join(project.shared, relative), 'utf8')]));
-}
-
-/** The codec ids of the app's key table, by key. */
-export function codecKeys(app: string): Readonly<Record<string, string>> {
-  return (JSON.parse(fs.readFileSync(path.join(app, '.golem/codec-keys.json'), 'utf8')) as { keys: Record<string, string> }).keys;
 }
 
 /** What the `site` module of an app does under Node, as `runSite` reports it. */

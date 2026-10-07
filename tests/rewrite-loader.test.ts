@@ -227,7 +227,7 @@ test('the Node loader resolves #golem-models in a file outside the project to th
   assert.equal(result.stdout, 'true\n');
 });
 
-test('the Node loader runs app A over the companions of a shared folder, which import #golem-models', async (t) => {
+test('the Node loader runs app A over the plain types of a shared folder', async (t) => {
   const project = sharedFolderProject(t, 'loader-shared-folder');
   await runPipeline(path.join(project.appA, 'golem.yaml'));
   const outcome = await runSite(project.appA, path.join(project.appA, 'src/site.ts'), NODE_FLAGS);

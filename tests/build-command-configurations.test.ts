@@ -9,7 +9,7 @@ import { copyFixtureFile, createFixtureProject, linkProjectPackages, readFixture
 import { createControllerFixture } from './fixture-templates/controllers/project.js';
 import { command, workspace } from './support/process.js';
 import { createModelProject, MINIMAL_GOLEM_YAML } from './model-project.js';
-import { codecKeys, ORDER_WIRE, runSite, sharedCompanions, sharedFolderProject, SHARED_COMPANIONS } from './support/shared-folder-project.js';
+import { ORDER_WIRE, runSite, sharedFolderProject } from './support/shared-folder-project.js';
 import { TSC, HEAVY_TEST_TIMEOUT_MS, write, editTsconfig, serdeProject, sourceOnlyProject, countingGenerator, PAYMENTS_CONTROLLER, USE, snapshot, build, mtimes, importBuilt, assertCallMap } from './support/build-project.js';
 
 // Output the incremental state cannot see, and configurations that differ in one directory
@@ -207,27 +207,28 @@ test('a tsconfig that includes ../shared builds the output tree that tsc emits, 
   assert.equal((await importBuilt(app, 'app/src/main.js')).doubled, 42);
 });
 
-test('an app model with a shared IObject field and a shared IModel field generates, builds and runs', async (t) => {
+test('an app model with fields of plain shared types generates, builds and runs', async (t) => {
   const { outer, app } = appBesideShared(t, 'build-shared-fields');
-  write(outer, 'shared/money.model.ts', "import type { IObject } from '@exprtlabs/golem/model';\nexport type TMoney = IObject<{ currency: string; value: string }>;\n");
-  write(outer, 'shared/payment.model.ts', "import type { IModel } from '@exprtlabs/golem/model';\nexport type TPayment = IModel<{ id: string; note: string }>;\n");
-  write(app, 'src/order.model.ts', `import type { IModel } from '@exprtlabs/golem/model';
-import type { TMoney } from '../../shared/money.model.js';
-import type { TPayment } from '../../shared/payment.model.js';
+  write(outer, 'shared/money.ts', 'export type TMoneyFields = { currency: string; value: string };\n');
+  write(outer, 'shared/payment.ts', "import type { TMoneyFields } from './money.js';\nexport type TPaymentFields = { id: string; note: string; paid: TMoneyFields };\n");
+  write(app, 'src/order.model.ts', `import type { IModel, IObject } from '@exprtlabs/golem/model';
+import type { TMoneyFields } from '../../shared/money.js';
+import type { TPaymentFields } from '../../shared/payment.js';
+export type TMoney = IObject<TMoneyFields>;
+export type TPayment = IModel<TPaymentFields>;
 export type TOrder = IModel<{ total: TMoney; payment: TPayment }>;
 `);
   write(app, 'src/main.ts', `import { parse, stringify } from '@exprtlabs/golem/serde';
 import type { TOrder } from './order.model.js';
 import './order.model.generated.js';
-import '../../shared/money.model.generated.js';
-import '../../shared/payment.model.generated.js';
 
-export const text = stringify<TOrder>({ total: { currency: 'USD', value: '5' }, payment: { id: 'p1', note: 'paid' } });
+export const text = stringify<TOrder>({ total: { currency: 'USD', value: '5' }, payment: { id: 'p1', note: 'paid', paid: { currency: 'USD', value: '5' } } });
 export const order = parse<TOrder>(text);
 `);
 
   assert.equal((await build(app)).exitCode, 0);
-  assert.deepEqual((await importBuilt(app, 'app/src/main.js')).order, { total: { currency: 'USD', value: '5' }, payment: { id: 'p1', note: 'paid' } });
+  assert.deepEqual((await importBuilt(app, 'app/src/main.js')).order, { total: { currency: 'USD', value: '5' }, payment: { id: 'p1', note: 'paid', paid: { currency: 'USD', value: '5' } } });
+  assert.deepEqual(fs.readdirSync(path.join(outer, 'shared')).sort(), ['money.ts', 'payment.ts'], 'golem wrote nothing into the shared folder');
 });
 
 /** A layer as `golem generate` will write it, by hand: the build points `#golem-models` at the file, whatever generated it. */
@@ -382,58 +383,18 @@ test('a rewrite site in a source outside the tsconfig directory passes golem che
   assertCallMap(app, 'build/shared/site.js', '../shared/site.ts');
 });
 
-// Two apps, one shared folder: the shared companions are the same text for both, and each app has its own layer
+// Two apps, one shared folder of plain types: each app declares its own models and has its own profile
 
 const CONFIG_OF = (app: string): string => path.join(app, 'golem.yaml');
-const LAYER_OF = (app: string): string => fs.readFileSync(path.join(app, 'src/generated/models/models.generated.ts'), 'utf8');
-/** The id the shared money model has in every app: it comes from the shape, the source kind and the class flag. */
-const MONEY_ID = 'TMoney_b19d74dc';
-const PAYMENT_ID = 'TPayment_c55f59c7';
 
-test('two apps write byte-identical companions for a shared folder and different layers', { timeout: HEAVY_TEST_TIMEOUT_MS }, async (t) => {
-  const project = sharedFolderProject(t, 'shared-folder-identical');
-  await runPipeline(CONFIG_OF(project.appA));
-  const writtenByA = sharedCompanions(project);
-  assert.deepEqual(Object.keys(writtenByA), [...SHARED_COMPANIONS]);
-  for (const relative of SHARED_COMPANIONS) fs.rmSync(path.join(project.shared, relative));
-  await runPipeline(CONFIG_OF(project.appB));
-
-  assert.deepEqual(sharedCompanions(project), writtenByA, 'the companions app B writes are the bytes app A wrote');
-  for (const text of Object.values(writtenByA)) {
-    assert.match(text, /^\/\* Generated by @exprtlabs\/golem-model \d+\.\d+\.\d+\S*\. Do not edit\. \*\/\n/, 'the header records the golem version');
-    assert.match(text, /import \{ layer \} from "#golem-models";/);
-    assert.deepEqual([...text.matchAll(/from ["']([^"']+)["']/g)].map((match) => match[1]!).filter((specifier) => specifier.startsWith('.') && !specifier.startsWith('./')), [], 'a shared companion imports nothing from outside its folder');
-  }
-  assert.deepEqual(codecKeys(project.appA), {
-    '../shared/src/money.model.ts#TMoney': MONEY_ID,
-    '../shared/src/payment.model.ts#TPayment': PAYMENT_ID,
-    'src/order.model.ts#Order': 'TOrder_95de102d',
-    'src/order.model.ts#TOrder': 'TOrder_95de102d',
-  });
-  assert.deepEqual(codecKeys(project.appB), {
-    '../../../shared/src/money.model.ts#TMoney': MONEY_ID,
-    '../../../shared/src/payment.model.ts#TPayment': PAYMENT_ID,
-  });
-  assert.match(LAYER_OF(project.appA), /profile: Object\.freeze\(\{ validation: true, mobx: true \}\)/);
-  assert.match(LAYER_OF(project.appB), /profile: Object\.freeze\(\{ validation: false, mobx: false \}\)/);
-  assert.match(LAYER_OF(project.appA), new RegExp(`"${MONEY_ID}": validate_${MONEY_ID}`));
-  assert.match(LAYER_OF(project.appB), /validators: Object\.freeze\(\{ \}\)/);
-
-  await runPipeline(CONFIG_OF(project.appA));
-  assert.deepEqual(sharedCompanions(project), writtenByA, 'a later run of app A finds the same text');
-  await runPipeline(CONFIG_OF(project.appA), { check: true });
-  await runPipeline(CONFIG_OF(project.appB), { check: true });
-});
-
-test('each app builds and runs a model with shared IObject and IModel fields under its own profile', { timeout: HEAVY_TEST_TIMEOUT_MS }, async (t) => {
+test('each app builds and runs a model over the shared plain types under its own profile', { timeout: HEAVY_TEST_TIMEOUT_MS }, async (t) => {
   const project = sharedFolderProject(t, 'shared-folder-run');
   for (const app of [project.appA, project.appB]) {
     await runPipeline(CONFIG_OF(app));
     await runPipeline(CONFIG_OF(app), { check: true });
     assert.equal((await build(app)).exitCode, 0);
   }
-  const builtShared = fs.readFileSync(path.join(project.appA, 'build/shared/src/money.model.generated.js'), 'utf8');
-  assert.doesNotMatch(builtShared, /#golem-models/, 'the build output names the layer by its path');
+  assert.deepEqual(fs.readdirSync(path.join(project.shared, 'src')).sort(), ['money.ts'], 'golem wrote nothing into the shared folder');
 
   const appA = await runSite(project.appA, path.join(project.appA, 'build/a/src/site.js'));
   assert.deepEqual(appA.wire, ORDER_WIRE);
@@ -464,29 +425,4 @@ test('a project with no shared folder needs no new configuration', async (t) => 
   const result = await command(root, process.execPath, ['--input-type=module', '--eval', "import('./build/use.js').then((use) => console.log(JSON.stringify(use.money)));"]);
   assert.equal(result.stdout, '{"currency":"USD","value":"1"}\n');
   assert.equal(fs.existsSync(path.join(root, '.golem.lock')), false);
-});
-
-test('the shared companions stay when an app drops the folder from its tsconfig', async (t) => {
-  const project = sharedFolderProject(t, 'shared-folder-drop');
-  const appB = project.appB;
-  await runPipeline(CONFIG_OF(appB));
-  const written = sharedCompanions(project);
-
-  write(appB, 'src/site.ts', 'export const parseShortCurrency = (): number => 1;\n');
-  editTsconfig(appB, (tsconfig) => { tsconfig.include = ['src/**/*.ts']; });
-  await runPipeline(CONFIG_OF(appB));
-  assert.deepEqual((JSON.parse(fs.readFileSync(path.join(appB, '.golem/outputs.json'), 'utf8')) as { files: unknown }).files, {}, 'the app no longer generates or records the shared models');
-  assert.deepEqual(sharedCompanions(project), written, 'the companions stay: another app may use them');
-  await runPipeline(CONFIG_OF(appB), { check: true });
-});
-
-test('the companion of a shared source that is deleted is deleted', async (t) => {
-  const project = sharedFolderProject(t, 'shared-folder-delete');
-  await runPipeline(CONFIG_OF(project.appB));
-  assert.deepEqual(fs.readdirSync(path.join(project.shared, 'src')).sort(), ['money.model.generated.ts', 'money.model.ts', 'payment.model.generated.ts', 'payment.model.ts']);
-
-  fs.rmSync(path.join(project.shared, 'src/payment.model.ts'));
-  await runPipeline(CONFIG_OF(project.appB));
-  assert.deepEqual(fs.readdirSync(path.join(project.shared, 'src')).sort(), ['money.model.generated.ts', 'money.model.ts']);
-  assert.deepEqual(codecKeys(project.appB), { '../../../shared/src/money.model.ts#TMoney': MONEY_ID });
 });

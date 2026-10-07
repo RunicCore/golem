@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { pathToFileURL } from 'node:url';
-import { contains, jobTsconfigDiagnostics, resolveConfig, validateConfigInputs } from './config.js';
+import { contains, jobTsconfigDiagnostics, modelsRootOf, resolveConfig, validateConfigInputs } from './config.js';
 import type { GolemConfig, GolemJob } from './config.js';
 import { codecKeysPath } from './generated-paths.js';
 import { IncompatibleSharedCompanionError, loadInventory, applyJob, removeRetiredJobs } from './outputs.js';
@@ -590,6 +590,7 @@ export async function runPipeline(filename: string, options: PipelineOptions = {
     const scanned = rewriteScan.scanProject({
       root,
       directory: config.directory,
+      modelsRoot: modelsRootOf(config),
       configFile: config.tsconfig,
       nest,
       codecKeysFile: codecKeysPath(config.directory),

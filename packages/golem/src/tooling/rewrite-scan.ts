@@ -7,17 +7,18 @@ import { CODEC_KEY_FILE, operationCodecRegistryPath } from './generated-paths.js
 import { REWRITE_IMPORT_PREFIX } from './rewrite.js';
 import type { FileRewrite, RewriteEdit, RewriteImport } from './rewrite.js';
 import { readModelManifest } from './model-manifest.js';
-import { anotherModelsJobOf, createProjectProgram, canonicalFilename, isGeneratedCompanion, retainedProgramSession } from './type-analysis/project.js';
+import { createProjectProgram, canonicalFilename, isGeneratedCompanion, modelBoundary, retainedProgramSession, type ModelBoundary } from './type-analysis/project.js';
 import { advertisedModelManifests } from './type-analysis/provenance.js';
 import { fieldProvenance } from './type-analysis/projections.js';
 import { declaredModelAlias, foreignModelReason, modelDeclarationKind, resolveSymbol } from './type-analysis/symbols.js';
-import type { AnotherModelsJobOf } from './type-analysis/symbols.js';
 
 export interface ScanInput {
   /** Absolute project root; file paths in results are relative to it. */
   readonly root: string;
   /** The directory of the golem.yaml. A model that the models job of another golem.yaml covers is not this project's. */
   readonly directory: string;
+  /** `models.root` of the project's models job: a model whose real path is outside it is not this project's. */
+  readonly modelsRoot: string;
   readonly program: ts.Program;
   readonly checker: ts.TypeChecker;
   /** The project's `.golem/codec-keys.json`, which the program does not hold; a missing file holds no keys. */
@@ -57,7 +58,7 @@ const CODE_RESERVED_PREFIX = 'RUNM1068';
 const CODE_IMPORT_CLASH = 'RUNM1069';
 const CODE_NEST_NO_CODEC = 'RUNM1071';
 const CODE_NEST_REGISTRY = 'RUNM1072';
-/** A model that golem does not generate for this project: it is in an installed package, or another golem.yaml's models job generates it. */
+/** A model that golem does not generate for this project: it is in an installed package, outside the models root, or another golem.yaml's models job generates it. */
 const CODE_FOREIGN_MODEL = 'RUNM1074';
 
 /** The serde functions a type argument turns into a codec call, and the runtime method each becomes. */
@@ -468,10 +469,10 @@ function constructOptionEdits(text: string, file: ts.SourceFile, call: ts.CallEx
 }
 
 function scanFile(
-  input: { readonly root: string; readonly checker: ts.TypeChecker; readonly keys: CodecKeys; readonly nest: boolean; readonly anotherModelsJobOf: AnotherModelsJobOf },
+  input: { readonly root: string; readonly checker: ts.TypeChecker; readonly keys: CodecKeys; readonly nest: boolean; readonly boundary: ModelBoundary },
   file: ts.SourceFile,
 ): FileScan {
-  const { root, checker, keys, nest, anotherModelsJobOf } = input;
+  const { root, checker, keys, nest, boundary } = input;
   const text = file.text;
   const scan: FileScan = { edits: [], imports: new Map(), diagnostics: [], nestSites: [], dependencies: new Set() };
   const classes: { readonly name: string; readonly id: string; readonly end: number }[] = [];
@@ -492,7 +493,7 @@ function scanFile(
     if (id === '') {
       const model = fieldProvenance(checker, call.typeArguments[0], []).anonymous;
       const alias = model && declaredModelAlias(model);
-      const foreign = alias ? foreignModelReason(alias, anotherModelsJobOf) : undefined;
+      const foreign = alias ? foreignModelReason(alias, boundary) : undefined;
       scan.diagnostics.push(foreign !== undefined
         ? locate(root, file, call, CODE_FOREIGN_MODEL, foreign)
         : locate(root, file, call, CODE_NO_CODEC, `${method}<${call.typeArguments[0].getText(file)}> has no unique codec id`));
@@ -626,11 +627,11 @@ export class RewriteScanner {
   private readonly checker: ts.TypeChecker;
   private readonly nest: boolean;
   private readonly keys: CodecKeys;
-  private readonly anotherModelsJobOf: AnotherModelsJobOf;
+  private readonly boundary: ModelBoundary;
 
   constructor(input: ScanInput) {
     this.root = input.root;
-    this.anotherModelsJobOf = anotherModelsJobOf(input.directory);
+    this.boundary = modelBoundary(input.modelsRoot, input.directory);
     this.program = input.program;
     this.checker = input.checker;
     this.nest = input.nest;
@@ -646,7 +647,7 @@ export class RewriteScanner {
   }
 
   private scan(file: ts.SourceFile): FileScanResult {
-    return resultOf(scanFile({ root: this.root, checker: this.checker, keys: this.keys, nest: this.nest, anotherModelsJobOf: this.anotherModelsJobOf }, file));
+    return resultOf(scanFile({ root: this.root, checker: this.checker, keys: this.keys, nest: this.nest, boundary: this.boundary }, file));
   }
 
   /**
@@ -718,6 +719,8 @@ interface ProjectScanInput {
   readonly root: string;
   /** The directory of the golem.yaml. */
   readonly directory: string;
+  /** `models.root` of the project's models job. */
+  readonly modelsRoot: string;
   /** The tsconfig whose files are scanned, from the golem.yaml; its directory is what the file paths are relative to. */
   readonly configFile: string;
   readonly nest: boolean;
@@ -730,9 +733,9 @@ interface ProjectScanInput {
 
 /** Open the project's program and ask the scanner about its sources: what `golem check` reports. Writes nothing. */
 export function scanProject(input: ProjectScanInput): ProgramScan {
-  const { root, directory, configFile, nest, codecKeysFile, session, sessionOwner } = input;
+  const { root, directory, modelsRoot, configFile, nest, codecKeysFile, session, sessionOwner } = input;
   const info = createProjectProgram(root, undefined, sessionOwner === undefined ? undefined : retainedProgramSession(session, sessionOwner, root), configFile);
   using program = info.program;
-  const { files, diagnostics } = new RewriteScanner({ root: path.dirname(configFile), directory, program, checker: program.getTypeChecker(), nest, codecKeysFile }).scanProgram();
+  const { files, diagnostics } = new RewriteScanner({ root: path.dirname(configFile), directory, modelsRoot, program, checker: program.getTypeChecker(), nest, codecKeysFile }).scanProgram();
   return { files, diagnostics, nestCodecSites: [...files.values()].flatMap((file) => file.nestCodecSites) };
 }

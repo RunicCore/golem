@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 
-import { resolveConfig } from './config.js';
+import { modelsRootOf, resolveConfig } from './config.js';
 import { codecKeysPath, defaultModelOutput, LAYER_SPECIFIER } from './generated-paths.js';
 import type { GolemConfig } from './config.js';
 import { GolemDiagnosticSeverity } from './generator-api.js';
@@ -129,7 +129,7 @@ class ScanningProject {
     const program = this.session.openProgram({ root: this.root, sources, configFile: this.config.tsconfig, overlays: new Map(this.overlays) });
     this.program?.close();
     this.program = program;
-    this.scanner = new this.compiler.RewriteScanner({ root: this.root, directory: this.config.directory, program, codecKeysFile: codecKeysPath(this.config.directory), checker: program.getTypeChecker(), nest: this.nest });
+    this.scanner = new this.compiler.RewriteScanner({ root: this.root, directory: this.config.directory, modelsRoot: modelsRootOf(this.config), program, codecKeysFile: codecKeysPath(this.config.directory), checker: program.getTypeChecker(), nest: this.nest });
     this.stale = false;
   }
 

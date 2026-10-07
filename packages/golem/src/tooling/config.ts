@@ -366,6 +366,12 @@ export function resolveConfig(filename = 'golem.yaml', onInput?: InputObserver):
       if (!Array.isArray(value.models.sources) || !value.models.sources.length) throw new Error('models.sources must be a nonempty array.');
       sources = value.models.sources.map(source => inputPath(source, 'model source'));
       if (new Set(sources).size !== sources.length) throw new Error('Duplicate model source paths.');
+      // The paths are real paths already, so a link to a file outside the root shows as that file.
+      for (const source of sources) {
+        if (!contains(root, source)) {
+          throw new Error(`RUNM1075: models.sources entry ${source} is outside the models root ${root}. A models job generates only files inside its root.`);
+        }
+      }
     }
     const sourceSuffixes = suffixes(value.models.suffixes, 'models.suffixes');
     jobs.push({ id: `models:${path.relative(directory, root) || '.'}`, kind: 'models', package: '@exprtlabs/golem-model', options: { root, directory, output, profile, ...(sources ? { sources } : {}), ...(sourceSuffixes ? { suffixes: sourceSuffixes } : {}) } });
@@ -386,6 +392,12 @@ export function resolveConfig(filename = 'golem.yaml', onInput?: InputObserver):
     }
   }
   return { configFile, directory, tsconfig, tsconfigNamed: value.tsconfig !== undefined, profile, jobs, inventoryFile: path.join(directory, '.golem', 'outputs.json') };
+}
+
+/** The `models.root` of the config's models job: where its own model sources are. Without a models job, the directory of the golem.yaml. */
+export function modelsRootOf(config: Pick<GolemConfig, 'directory' | 'jobs'>): string {
+  const job = config.jobs.find((candidate) => candidate.kind === 'models');
+  return job === undefined ? config.directory : job.options.root;
 }
 
 export function validateConfigInputs(config: GolemConfig): void {

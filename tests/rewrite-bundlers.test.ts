@@ -278,7 +278,7 @@ for (const bundler of BUNDLERS) {
     assert.deepEqual(JSON.parse(result.stdout), { currency: 'USD', value: '1' });
   });
 
-  test(`${bundler.name}: a bundle of app A runs the companions of the shared folder, which import #golem-models`, async (t) => {
+  test(`${bundler.name}: a bundle of app A runs over the plain types of the shared folder`, async (t) => {
     const project = sharedFolderProject(t, `${bundler.name}-shared-folder`);
     await runPipeline(path.join(project.appA, 'golem.yaml'));
     const bundle = await build(bundler, t, project.appA, 'src/site.ts');
