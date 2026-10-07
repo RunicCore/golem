@@ -258,8 +258,12 @@ export function loadInventory(config: GolemConfig): Inventory {
     const absolute = inventoryPath(config, key);
     assertProtectedPath(config, absolute);
     // An earlier release recorded the generated file of a shared model outside the root with `shared: true`. Golem no longer writes
-    // or deletes there, and another app may still use the file, so the entry is dropped and the file stays.
-    if (entry.shared === true && !config.jobs.some(job => job.kind === 'models' && contains(canonicalPath(job.options.root), canonicalPath(absolute)))) continue;
+    // or deletes there, and another app may still use the file, so the entry stays only while its own models job has the file in its
+    // root; otherwise it is dropped and the file stays.
+    if (entry.shared === true) {
+      const owner = config.jobs.find(job => job.id === entry.job);
+      if (owner?.kind !== 'models' || !contains(canonicalPath(owner.options.root), canonicalPath(absolute))) continue;
+    }
     const recorded: InventoryEntry = { job: entry.job, owner: entry.owner, digest: entry.digest, destination, destinationKind: kind };
     try { assertDestinationPath(absolute, inventoryDestination(config, absolute, recorded), 'recorded'); }
     catch (error) { throw new Error(`Invalid generated inventory entry: ${filename}. ${error instanceof Error ? error.message : String(error)}`); }

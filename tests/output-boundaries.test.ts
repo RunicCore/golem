@@ -245,6 +245,34 @@ test('an inventory entry that an earlier release marked shared and put outside t
   assert.deepEqual(Object.keys((JSON.parse(fs.readFileSync(config.inventoryFile, 'utf8')) as { files: object }).files), ['src/order.model.generated.ts']);
 });
 
+test('an old shared entry of one models job does not let that job delete a file in the root of another', (t: TestContext) => {
+  const directory = fixture(t);
+  const rootA = path.join(directory, 'a');
+  const rootB = path.join(directory, 'b');
+  fs.mkdirSync(path.join(rootB, 'lib'), { recursive: true });
+  const jobA = { ...modelJob(rootA, path.join(rootA, 'generated')), id: 'models:a' } satisfies GolemJob;
+  const jobB = { ...modelJob(rootB, path.join(rootB, 'generated')), id: 'models:../b' } satisfies GolemJob;
+  const config: GolemConfig = { ...configFor(rootA, jobA), jobs: [jobA, jobB] };
+  const inB = path.join(rootB, 'lib/money.model.generated.ts');
+  fs.writeFileSync(inB, modelContent(7));
+  fs.mkdirSync(path.dirname(config.inventoryFile), { recursive: true });
+  fs.writeFileSync(config.inventoryFile, JSON.stringify({
+    version: 1,
+    files: {
+      '../b/lib/money.model.generated.ts': {
+        job: jobA.id, owner: '@exprtlabs/golem-model', digest: 'a'.repeat(64), destination: '../b/lib', destinationKind: 'directory', shared: true,
+      },
+    },
+  }));
+
+  applyJob(config, loadInventory(config), jobA, [{ path: path.join(rootA, 'src/order.model.generated.ts'), content: modelContent(1) }]);
+  assert.equal(fs.readFileSync(inB, 'utf8'), modelContent(7), 'job a leaves the file of job b');
+
+  applyJob(config, loadInventory(config), jobB, [{ path: inB, content: modelContent(2) }]);
+  assert.equal(fs.readFileSync(inB, 'utf8'), modelContent(2));
+  assert.equal(loadInventory(config).files['../b/lib/money.model.generated.ts']?.job, jobB.id);
+});
+
 test('an inventory entry without its destination or destination kind is invalid', (t: TestContext) => {
   const directory = fixture(t);
   const output = path.join(directory, 'generated');
