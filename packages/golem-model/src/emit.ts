@@ -1,11 +1,14 @@
 import { deduplicateProjections, exportedConcreteClass, linkedClassNames } from '@exprtlabs/golem/type-analysis';
 import { dirname, relative } from 'node:path';
 import * as ts from '@exprtlabs/golem/ts';
+import { LAYER_SPECIFIER } from '@exprtlabs/golem/generated-paths';
+import { PACKAGE_VERSION } from './package-info.js';
 import {
   emitModelFromJSON,
   emitModelFromInit,
   emitModelToJSON,
   emitCodecRuntime,
+  nodeSchemaPayloads,
   FIELD_CONVERSION_INPUT,
   singleCallConverter,
   pruneNamedImport,
@@ -30,12 +33,14 @@ import {
   commonDirectory,
   generatedFilename,
   portableRelativeFilename,
+  projectFilesImportedBy,
 } from '@exprtlabs/golem/type-analysis';
 import type {
   ConstraintSchemaValue,
   ModelConstraint,
   SerdeBinding,
   ValidationBinding,
+  ValueBinding,
 } from '@exprtlabs/golem/type-analysis';
 import {
   canonicalSchemaKey,
@@ -287,14 +292,43 @@ interface BindingRegistry {
   readonly serde: Map<string, SerdeBinding>;
 }
 
+function describeFunction(binding: ValueBinding): string {
+  return `${binding.module}#${binding.exportName}`;
+}
+
+/** One id names one function. Two functions with the same id would bind a model to the wrong one, so the second fails. */
+function assertSameFunction(id: string, first: ValueBinding, second: ValueBinding): void {
+  // A packaged function is its package import: copies of one package at two paths are one function.
+  if (first.specifier !== undefined && first.specifier === second.specifier && first.exportName === second.exportName) return;
+  if (first.module === second.module && first.exportName === second.exportName) return;
+  throw new Error(
+    `Two functions have the id ${JSON.stringify(id)}: ${describeFunction(first)} and ${describeFunction(second)}. `
+    + 'Give each shared folder a package.json with a name and exports, so the id names the package.',
+  );
+}
+
+function registerValidation(bindings: Map<string, ValidationBinding>, binding: ValidationBinding): void {
+  const known = bindings.get(binding.id);
+  if (known) assertSameFunction(binding.id, known, binding);
+  else bindings.set(binding.id, binding);
+}
+
+function registerSerde(bindings: Map<string, SerdeBinding>, binding: SerdeBinding): void {
+  const known = bindings.get(binding.id);
+  if (known) {
+    assertSameFunction(binding.id, known.serialize, binding.serialize);
+    assertSameFunction(binding.id, known.deserialize, binding.deserialize);
+  } else bindings.set(binding.id, binding);
+}
+
 function visitDescriptor(
   descriptor: ModelConversionDescriptor,
   registry: BindingRegistry,
 ): void {
   const rich = richDescriptor(descriptor);
-  for (const binding of rich.validations ?? []) registry.validations.set(binding.id, binding);
+  for (const binding of rich.validations ?? []) registerValidation(registry.validations, binding);
   if (rich.serde) {
-    registry.serde.set(rich.serde.id, rich.serde);
+    registerSerde(registry.serde, rich.serde);
     if (rich.serde.wireDescriptor) visitDescriptor(rich.serde.wireDescriptor, registry);
   }
   for (const constraint of rich.constraints ?? []) {
@@ -756,6 +790,11 @@ export interface JobAnalysis {
   /** Canonical filenames of the job's model sources. */
   readonly sources: ReadonlySet<string>;
   readonly executableMemo: ExecutableValidationMemo;
+  /** The files each file imports or re-exports, by canonical filename; filled as the import graphs are read. */
+  readonly directImports: Map<string, readonly string[]>;
+  readonly compilerOptions: ts.CompilerOptions;
+  /** The parsed file of a canonical filename, when the program holds it. */
+  readonly sourceFileOf: (filename: string) => ts.SourceFile | undefined;
   /**
    * Descriptors of every job model and projection by name, for schema
    * lookups that follow a sibling model's own references. Built once every
@@ -790,6 +829,7 @@ export function createJobAnalysis(
   sources: readonly string[],
   identityRoot?: string,
   compilerOptions?: ts.CompilerOptions,
+  sourceFileOf?: (filename: string) => ts.SourceFile | undefined,
 ): JobAnalysis {
   const stableIdentityRoot = canonicalFilename(identityRoot ?? commonDirectory(
     specifications.map((specification) => specification.sourceFile.fileName),
@@ -811,7 +851,36 @@ export function createJobAnalysis(
     described: new Map(),
     sources: modelSources,
     executableMemo: createExecutableValidationMemo(),
+    directImports: new Map(),
+    compilerOptions: compilerOptions ?? { moduleResolution: ts.ModuleResolutionKind.NodeNext },
+    sourceFileOf: sourceFileOf ?? ((filename) => specifications
+      .find((specification) => canonicalFilename(specification.sourceFile.fileName) === filename)?.sourceFile),
   };
+}
+
+/** The project files a file imports or re-exports. A package, a declaration file and a file the program lacks are left out. */
+function directImports(job: JobAnalysis, file: ts.SourceFile): readonly string[] {
+  const key = canonicalFilename(file.fileName);
+  const known = job.directImports.get(key);
+  if (known) return known;
+  const imports = projectFilesImportedBy(file, job.compilerOptions);
+  job.directImports.set(key, imports);
+  return imports;
+}
+
+/** Every project file `file` reaches through imports and re-exports, whatever the depth. */
+function importedFiles(job: JobAnalysis, file: ts.SourceFile): ReadonlySet<string> {
+  const reached = new Set<string>();
+  const pending = [file];
+  for (let next = pending.pop(); next !== undefined; next = pending.pop()) {
+    for (const imported of directImports(job, next)) {
+      if (reached.has(imported)) continue;
+      reached.add(imported);
+      const parsed = job.sourceFileOf(imported);
+      if (parsed) pending.push(parsed);
+    }
+  }
+  return reached;
 }
 
 /** Build one source graph without emitting application or generated code. */
@@ -841,10 +910,12 @@ export function analyzeSourceGraph(
   const canonicalSource = canonicalFilename(source);
   const local = specifications.filter((item) => canonicalFilename(item.sourceFile.fileName) === canonicalSource);
   if (local.length === 0) return undefined;
-  // A model of another job source is emitted by that source's companion.
+  // A model of another file this source imports is emitted by that file's companion. The import graph is the source's
+  // own, so the companion is the same in every app that generates it.
+  const imported = importedFiles(job, local[0].sourceFile);
   const isSibling = (specification: ModelSpecification): boolean => {
     const owner = canonicalFilename(specification.sourceFile.fileName);
-    return owner !== canonicalSource && job.sources.has(owner);
+    return owner !== canonicalSource && imported.has(owner);
   };
   const byName = new Map<string, ModelSpecification[]>();
   for (const specification of specifications) {
@@ -939,6 +1010,8 @@ export interface SourceSchemaGraphOptions {
   readonly codecIds?: ReadonlyMap<string, string>;
   /** Models emitted by another companion of the job. */
   readonly siblings?: readonly ModelSpecification[];
+  /** What a model that sets no `validation` does. Without it the node follows the app layer at run time (the companions); the validation plan names the profile. */
+  readonly defaultValidation?: boolean;
   /** Codec ids and aliases of models emitted elsewhere that publish residual schemas. */
   readonly externalResidualIds?: { readonly modelOnly: ReadonlySet<string>; readonly wireOnly: ReadonlySet<string> };
 }
@@ -946,7 +1019,6 @@ export interface SourceSchemaGraphOptions {
 export function internSourceDefinitions(
   definitions: Readonly<Record<string, ModelConversionDescriptor>>,
   emitted: readonly ModelSpecification[],
-  profileValidation = true,
   options: SourceSchemaGraphOptions = {},
 ): ReturnType<typeof createSchemaGraph> {
   const schemaGraph = createSchemaGraph({}, {
@@ -970,12 +1042,13 @@ export function internSourceDefinitions(
       // A sibling is a codec reference: its schema and code come from its companion.
       descriptor: siblings.has(specification) ? { kind: 'reference', name: specification.name } : descriptor,
       emitClass: siblings.has(specification) ? false : specification.emitClass,
-      validationEnabled: specification.validation ?? profileValidation,
+      // The profile is the app's, not the companion's: a model that sets `validation` keeps it, any other follows the layer.
+      ...(specification.validation ?? options.defaultValidation) === undefined ? {} : { validationEnabled: specification.validation ?? options.defaultValidation },
     });
   }
   for (const [name, descriptor] of Object.entries(definitions)) {
     if (interned.has(name)) continue;
-    entries.push({ name, descriptor, emitClass: false, validationEnabled: profileValidation });
+    entries.push({ name, descriptor, emitClass: false, ...(options.defaultValidation === undefined ? {} : { validationEnabled: options.defaultValidation }) });
   }
   internDescriptors(schemaGraph, entries);
   schemaGraph.seal();
@@ -993,10 +1066,6 @@ export function codecEntriesForGraph(
   readonly name: string;
   readonly codecId: string;
   readonly classNames: readonly string[];
-  /** The model emits a base class (`IModel`); an `IObject` emits codecs only. */
-  readonly emitClass: boolean;
-  /** The model's own `allowAny` policy; undefined inherits the generation profile's. */
-  readonly allowAny: boolean | undefined;
 }> {
   const internedSchemaGraph = schemaGraph ?? internSourceDefinitions(graph.definitions, graph.emitted);
   return graph.emitted.map((specification) => {
@@ -1006,36 +1075,23 @@ export function codecEntriesForGraph(
       source: portableRelativeFilename(specification.sourceFile.fileName, graph.identityRoot),
       name: specification.name,
       classNames: linkedClassNames(checker, specification, specifications, graph.compilerOptions),
-      emitClass: specification.emitClass,
-      allowAny: specification.allowAny,
       codecId: node?.codecId ?? codecPublicId(specification.name, descriptor ?? { kind: 'unknown' }, undefined, { source: 'typescript', constructs: specification.emitClass }),
     };
   });
 }
 
-export interface SharedSourceOptions {
+export interface LayerSourceOptions {
   readonly output: string;
   readonly profile: GolemProfile;
   readonly graphs: readonly SourceModelGraph[];
-  /** The validation plan's resolved schemas by codec id and plane, which the companions publish as their codecs' schemas. */
-  readonly schemas?: Readonly<Record<string, object | boolean>>;
-}
-
-export interface SharedSourceReference {
-  readonly modulePath: string;
-  readonly keyFor: (source: string, modelName: string) => string;
-  /** The generated validators module and the name it exports each root under (see `PlanValidators.exports`); set when the job validates. */
+  /** The schema graph of each source; the layer publishes the schemas of their codecs. */
+  readonly schemaGraphs: readonly SchemaGraph[];
+  /** The validation plan's resolved schemas by codec id and plane; they replace the unresolved schema of the same key. */
+  readonly planSchemas?: Readonly<Record<string, object | boolean>>;
+  /** The generated validators module and the name it exports each root under (see `PlanValidators.exports`); set when the app validates. */
   readonly validators?: { readonly module: string; readonly exports: ReadonlyMap<string, string> };
-  /** The shared constant that holds the plan's resolved schemas; set when the shared module has it. */
-  readonly schemasName?: string;
-}
-
-function sharedGraphKey(graph: SourceModelGraph, name: string): string {
-  return `${portableRelativeFilename(graph.source, graph.identityRoot)}\0${name}`;
-}
-
-function canonicalKey(graph: SourceModelGraph): string {
-  return portableRelativeFilename(graph.source, graph.identityRoot);
+  /** Whether any model validates: the profile validates, or a model sets `validation: true`. */
+  readonly anyValidation: boolean;
 }
 
 /** The user validation functions a job's generated validators import, keyed by binding id; import paths are relative to `validatorsFile`. */
@@ -1044,33 +1100,52 @@ export function validatorImports(
   profile: GolemProfile,
   validatorsFile: string,
 ): ReadonlyMap<string, { readonly importPath: string; readonly exportName: string }> {
-  const imports = new Map<string, { readonly importPath: string; readonly exportName: string }>();
+  const bindings = new Map<string, ValidationBinding>();
   for (const graph of graphs) {
     if (!graph.emitted.some((specification) => specification.validation ?? profile.validation)) continue;
-    for (const binding of graph.registry.validations.values()) {
-      imports.set(binding.id, { importPath: bindingImportPath(binding, validatorsFile), exportName: binding.exportName });
-    }
+    for (const binding of graph.registry.validations.values()) registerValidation(bindings, binding);
   }
-  return new Map([...imports].sort(([left], [right]) => left.localeCompare(right)));
+  return new Map([...bindings]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([id, binding]) => [id, { importPath: bindingImportPath(binding, validatorsFile), exportName: binding.exportName }] as const));
 }
 
-/** Emit one job-level registry so bindings are shared. */
-export function emitSharedSource(options: SharedSourceOptions): string | undefined {
-  const { output, graphs } = options;
+/**
+ * The layer of an app: its profile, the MobX hook, and the validators, schemas and serde bindings of every codec of
+ * its models job. Companions read all of these from here by codec id, so a companion is the same text in every app.
+ */
+export function emitLayerSource(options: LayerSourceOptions): string {
+  const { output, graphs, profile, validators } = options;
   const serdeMap = new Map<string, SerdeBinding>();
   for (const graph of graphs) {
-    for (const binding of graph.registry.serde.values()) serdeMap.set(binding.id, binding);
+    for (const binding of graph.registry.serde.values()) registerSerde(serdeMap, binding);
   }
   const serde = [...serdeMap.values()].sort((left, right) => left.id.localeCompare(right.id));
   const serdeNames = new Map(serde.map((binding, index) => [binding.id, {
     serialize: `__golemSerialize${index}`,
     deserialize: `__golemDeserialize${index}`,
   }] as const));
-  const hasSerdeBindings = serde.length > 0;
-  const hasSchemas = options.schemas !== undefined && Object.keys(options.schemas).length > 0;
-  if (!hasSerdeBindings && !hasSchemas) return undefined;
-  const lines: string[] = ['/* Generated by @exprtlabs/golem-model. Do not edit. */'];
-  lines.push(
+  const validatorEntries = validators === undefined
+    ? []
+    : [...validators.exports].sort(([left], [right]) => left.localeCompare(right));
+  const hook = profile.mobx && options.anyValidation;
+  // Unresolved schemas of every codec, then the plan's resolved ones over them.
+  const schemas: Record<string, object | boolean> = {};
+  for (const schemaGraph of options.schemaGraphs) {
+    for (const node of schemaGraph.nodes.values()) {
+      if (node.kind === 'reference' || node.descriptor.kind === 'generated-model' || node.descriptor.kind === 'reference') continue;
+      Object.assign(schemas, nodeSchemaPayloads(node));
+    }
+  }
+  Object.assign(schemas, options.planSchemas);
+  const sortedSchemas = Object.fromEntries(Object.entries(schemas).sort(([left], [right]) => left.localeCompare(right)));
+  const lines: string[] = [
+    `/* Generated by @exprtlabs/golem-model ${PACKAGE_VERSION}. Do not edit. */`,
+    "import type { GolemLayer } from '@exprtlabs/golem/serde';",
+    ...(hook ? ["import { enhanceValidatorWithMobX } from '@exprtlabs/golem/mobx-validation';"] : []),
+    ...(validators !== undefined && validatorEntries.length > 0
+      ? [`import { ${validatorEntries.map(([, name]) => name).sort().join(', ')} } from ${JSON.stringify(sourceImportPath(validators.module, output))};`]
+      : []),
     ...serde.flatMap((binding) => {
       const names = serdeNames.get(binding.id);
       return [
@@ -1078,26 +1153,28 @@ export function emitSharedSource(options: SharedSourceOptions): string | undefin
         `import { ${binding.deserialize.exportName} as ${names?.deserialize}Source } from ${JSON.stringify(bindingImportPath(binding.deserialize, output))};`,
       ];
     }),
-  );
-  if (hasSerdeBindings) {
-    lines.push(
-      '',
-      'export const modelSerdeBindings = Object.freeze({',
-      ...serde.map((binding) => {
-        const names = serdeNames.get(binding.id);
-        return `  ${JSON.stringify(binding.id)}: { serialize: (value: unknown): unknown => ((${names?.serialize}Source) as (value: unknown) => unknown)(value), deserialize: (value: unknown): unknown => ((${names?.deserialize}Source) as (value: unknown) => unknown)(value) },`;
-      }),
-      '});',
-    );
-  }
-  if (hasSchemas) {
-    lines.push('', `export const modelSchemas = ${jsonDataExpression(options.schemas)} as Readonly<Record<string, object>>;`);
-  }
-  lines.push('');
-  return `${lines.join('\n').trim()}\n`;
+    '',
+    'export const layer: GolemLayer = Object.freeze({',
+    `  profile: Object.freeze({ validation: ${profile.validation ? 'true' : 'false'}, mobx: ${profile.mobx ? 'true' : 'false'} }),`,
+    ...(hook ? ['  enhanceValidator: enhanceValidatorWithMobX,'] : []),
+    `  validators: Object.freeze({${validatorEntries.map(([id, name]) => ` ${JSON.stringify(id)}: ${name},`).join('')} }),`,
+    `  schemas: Object.freeze(${jsonDataExpression(sortedSchemas)} as Readonly<Record<string, object>>),`,
+    '  serdeBindings: Object.freeze({',
+    ...serde.map((binding) => {
+      const names = serdeNames.get(binding.id);
+      return `    ${JSON.stringify(binding.id)}: { serialize: (value: unknown): unknown => ((${names?.serialize}Source) as (value: unknown) => unknown)(value), deserialize: (value: unknown): unknown => ((${names?.deserialize}Source) as (value: unknown) => unknown)(value) },`;
+    }),
+    '  }),',
+    '});',
+    '',
+  ];
+  return lines.join('\n');
 }
 
-/** How this companion relates to the job's other companions. */
+/** The name a companion gives the app layer it imports from `#golem-models`. */
+const LAYER_NAME = 'layer';
+
+/** How this companion relates to the companions of the files its source imports. */
 export interface SiblingCodecOptions {
   /** Sibling codecs whose companion exports a wire stringify. */
   readonly siblingWireCodecIds?: ReadonlySet<string>;
@@ -1107,10 +1184,6 @@ export interface SiblingCodecOptions {
    * module whose base class is not initialized yet.
    */
   readonly cyclicSiblings?: ReadonlySet<string>;
-  /** This companion's codecs another companion writes with their wire stringify. */
-  readonly referencedWireCodecIds?: ReadonlySet<string>;
-  /** This companion's object-only models another companion converts with their helpers. */
-  readonly referencedObjectCodecIds?: ReadonlySet<string>;
 }
 
 /** Export name of an object-only model's conversion helper, keyed by codec id. */
@@ -1125,13 +1198,12 @@ export function emitSource(
   specifications: readonly ModelSpecification[],
   manifestIndex: ManifestIndex,
   profile: GolemProfile,
-  shared?: SharedSourceReference,
   identityRoot?: string,
   preparedGraph?: SourceModelGraph,
   preparedSchemaGraph?: SchemaGraph,
   siblingCodecs: SiblingCodecOptions = {},
 ): string | undefined {
-  const { siblingWireCodecIds, cyclicSiblings, referencedWireCodecIds, referencedObjectCodecIds } = siblingCodecs;
+  const { siblingWireCodecIds, cyclicSiblings } = siblingCodecs;
   const graph = preparedGraph ?? analyzeSourceGraph(source, output, checker, specifications, manifestIndex, profile, identityRoot);
   if (!graph) return undefined;
   const { definitions, externalIds, externalNames, registry } = graph;
@@ -1199,7 +1271,7 @@ export function emitSource(
     }));
   };
   const conversionHelpers = new Set<'field' | 'define'>();
-  const schemaGraph = preparedSchemaGraph ?? internSourceDefinitions(definitions, emitted, profile.validation, { siblings: graph.siblings });
+  const schemaGraph = preparedSchemaGraph ?? internSourceDefinitions(definitions, emitted, { siblings: graph.siblings });
   const classModelNames = new Set(emitted.filter((specification) => specification.emitClass).map((specification) => specification.name));
   const projectionNames = new Set([
     ...Object.keys(definitions).filter((name) => !localNames.has(name) && !classModelNames.has(name)),
@@ -1269,17 +1341,9 @@ export function emitSource(
     if (localImports.some((item) => item.name === id) && classModelNames.has(id)) return resolveImportedModel(id);
     return resolveFromJsonModel(externalNames, id);
   };
-  const serdeBindings = [...registry.serde.values()].sort((left, right) => left.id.localeCompare(right.id));
-  const serdeNames = new Map<string, { readonly serialize: string; readonly deserialize: string }>();
-  serdeBindings.forEach((binding, index) => serdeNames.set(binding.id, {
-    serialize: `__golemSerialize${index}`,
-    deserialize: `__golemDeserialize${index}`,
-  }));
-  const serdeExpression = (id: string, direction: 'serialize' | 'deserialize', value: string): string => {
-    if (shared) return `modelSerdeBindings[${JSON.stringify(id)}].${direction}(${value})`;
-    const names = serdeNames.get(id);
-    return names ? `${names[direction]}(${value})` : value;
-  };
+  // A serde function is the app's binding: the layer holds it by id.
+  const serdeExpression = (id: string, direction: 'serialize' | 'deserialize', value: string): string =>
+    `${LAYER_NAME}.serdeBindings[${JSON.stringify(id)}]!.${direction}(${value})`;
   const projectionExpressions = new Map<string, {
     readonly decode: string;
     readonly init: string;
@@ -1445,10 +1509,7 @@ export function emitSource(
     };
     return visit(descriptor);
   });
-  const anyCodecValidation = [...schemaGraph.nodes.values()].some(
-    (node) => node.kind !== 'reference' && (node.validationEnabled ?? profile.validation),
-  );
-  const lines: string[] = ['/* Generated by @exprtlabs/golem-model. Do not edit. */'];
+  const lines: string[] = [`/* Generated by @exprtlabs/golem-model ${PACKAGE_VERSION}. Do not edit. */`];
   lines.push(
     'import {',
     '  registerGeneratedModel,',
@@ -1485,8 +1546,12 @@ export function emitSource(
   }
   if (hasDate) lines.push("import { deserializeDate, serializeDate } from '@exprtlabs/golem/conversion';");
   lines.push(...classValueImports);
-  lines.push("import { assertModelValue, createObjectCodec, isValidModelValue, modelValueIssues, parseJson, registerIModelClass, requireIModelClass, requireObjectCodec, resolveGeneratedModelSchemaRefs, serdeValidates, stringifyJsonArray, stringifyJsonBoolean, stringifyJsonNumber, stringifyJsonScalar, stringifyJsonString, validationFailure, validationUnavailable, IssueRepresentation, IssueSource, type SerdeOptions as __GolemSerdeOptions, type ValidateOptions as __GolemValidateOptions } from '@exprtlabs/golem/serde';");
-  if (anyCodecValidation && profile.mobx) lines.push("import { enhanceValidatorWithMobX } from '@exprtlabs/golem/mobx-validation';");
+  lines.push("import { assertModelValue, createObjectCodec, isValidModelValue, layerValidator, modelValueIssues, parseJson, registerIModelClass, requireIModelClass, requireObjectCodec, resolveGeneratedModelSchemaRefs, serdeValidates, stringifyJsonArray, stringifyJsonBoolean, stringifyJsonNumber, stringifyJsonScalar, stringifyJsonString, validationFailure, validationUnavailable, IssueRepresentation, IssueSource, type SerdeOptions as __GolemSerdeOptions, type ValidateOptions as __GolemValidateOptions } from '@exprtlabs/golem/serde';");
+  const codecUsesLayer = [...schemaGraph.nodes.values()].some((node) => node.kind !== 'reference'
+    && node.descriptor.kind !== 'generated-model' && node.descriptor.kind !== 'reference');
+  if (codecUsesLayer || registry.serde.size > 0 || localEmissions.some(({ specification }) => specification.emitClass)) {
+    lines.push(`import { ${LAYER_NAME} } from ${JSON.stringify(LAYER_SPECIFIER)};`);
+  }
   lines.push(
     // A sibling companion registers the codecs this module references by id.
     ...[...new Set(graph.siblings.map((item) => sourceImportPath(generatedFilename(item.sourceFile.fileName), output)))]
@@ -1507,15 +1572,6 @@ export function emitSource(
     // file extends this companion). The build-time rewrite registers the class under
     // the hashed codec id after the handwritten module finishes evaluating.
     // Cross-file class fields import the class.
-    ...(shared ? (() => {
-      const names = [
-        ...(serdeBindings.length > 0 ? ['modelSerdeBindings'] : []),
-        ...(anyCodecValidation && shared.schemasName ? [shared.schemasName] : []),
-      ];
-      return names.length
-        ? [`import { ${names.join(', ')} } from ${JSON.stringify(sourceImportPath(shared.modulePath, output))};`]
-        : [];
-    })() : []),
     ...externalIds.map((id) => {
       const model = manifestIndex.byId.get(id);
       if (!model) throw new Error(`Generated model manifest id is missing: ${id}`);
@@ -1526,27 +1582,8 @@ export function emitSource(
       const short = codecShortName(id);
       return `import { ${binding}, ${stringifyFunctionName(short)}, ${fromWireFunctionName(short)}, ${toWireFunctionName(short)} } from ${JSON.stringify(sourceImportPath(model.generatedFile, output))};`;
     }),
-    ...(!shared ? serdeBindings.flatMap((binding) => {
-      const names = serdeNames.get(binding.id);
-      return [
-        `import { ${binding.serialize.exportName} as ${names?.serialize}Source } from ${JSON.stringify(bindingImportPath(binding.serialize, output))};`,
-        `import { ${binding.deserialize.exportName} as ${names?.deserialize}Source } from ${JSON.stringify(bindingImportPath(binding.deserialize, output))};`,
-      ];
-    }) : []),
     '',
   );
-  if (serdeBindings.length > 0 && !shared) {
-    lines.push(
-      ...serdeBindings.flatMap((binding) => {
-        const names = serdeNames.get(binding.id);
-        return names ? [
-          `const ${names.serialize} = (value: unknown): unknown => ((${names.serialize}Source) as (value: unknown) => unknown)(value);`,
-          `const ${names.deserialize} = (value: unknown): unknown => ((${names.deserialize}Source) as (value: unknown) => unknown)(value);`,
-        ] : [];
-      }),
-      '',
-    );
-  }
   lines.push(
     'function modelObject(json: unknown, name: string): Record<string, unknown> {',
     '  return requireModelObject(json, name);',
@@ -1584,12 +1621,12 @@ export function emitSource(
       '',
     );
   }
-  // Another companion converts these object-only models with their helpers.
+  // A companion of another source converts these object-only models with their helpers.
   for (const name of objectOnlyNames) {
     if (!fileLocalNames.has(name)) continue;
     const codecId = schemaGraph.nodeFor(definitions[name] ?? { kind: 'unknown' }, name)?.codecId;
     const representative = projectionHelperByName.get(name)?.representative;
-    if (!codecId || !representative || !referencedObjectCodecIds?.has(codecId)) continue;
+    if (!codecId || !representative) continue;
     lines.push(
       `export { decode${representative} as ${objectHelperExportName('decode', codecId)}, init${representative} as ${objectHelperExportName('init', codecId)}, encode${representative} as ${objectHelperExportName('encode', codecId)} };`,
       '',
@@ -1665,8 +1702,8 @@ export function emitSource(
       `    encode: encode${specification.name}Model,`,
       '  },',
       `  codecId: ${JSON.stringify(schemaGraph.nodeFor(definition, specification.name)?.codecId ?? specification.name)},`,
-      `  profile: { validation: ${(specification.validation ?? profile.validation) ? 'true' : 'false'}, mobx: ${profile.mobx ? 'true' : 'false'} },`,
-      ...((specification.validation ?? profile.validation) && profile.mobx ? ['  enhanceValidator: enhanceValidatorWithMobX,'] : []),
+      ...(specification.validation === undefined ? [] : [`  validation: ${specification.validation ? 'true' : 'false'},`]),
+      `  layer: ${LAYER_NAME},`,
       '});',
       '',
       `registerIModelClass(${JSON.stringify(
@@ -1706,22 +1743,10 @@ export function emitSource(
       toWire: toWireFunctionName(short),
     };
   };
-  // The validators the codecs use, by export name: the companion imports those and no others.
-  const usedValidators = new Set<string>();
-  const validators = shared?.validators;
   const codecRuntime = emitCodecRuntime(
     schemaGraph,
     {
-      validationEnabled: profile.validation,
-      ...(validators ? {
-        validatorName: (id: string) => {
-          const name = validators.exports.get(id);
-          if (name === undefined) throw new Error(`The generated validators module has no validator for ${JSON.stringify(id)}.`);
-          usedValidators.add(name);
-          return name;
-        },
-      } : {}),
-      ...(shared?.schemasName ? { resolvedSchemasExpr: shared.schemasName } : {}),
+      layer: LAYER_NAME,
       serde: {
         deserialize: (id, value) => serdeExpression(id, 'deserialize', value),
         serialize: (id, value) => serdeExpression(id, 'serialize', value),
@@ -1734,7 +1759,7 @@ export function emitSource(
       // A derived projection (an Omit, Pick or alias of a model) is not a model the user declared; other files reach it by codec id.
       privateCodec: (node) => Object.hasOwn(definitions, node.name) && !localNames.has(node.name),
       ...(siblingWireCodecIds ? { siblingWireCodecIds } : {}),
-      ...(referencedWireCodecIds ? { exportedWireStringifyIds: referencedWireCodecIds } : {}),
+      exportWireStringify: true,
     },
   );
   lines.push(codecRuntime);
@@ -1747,9 +1772,6 @@ export function emitSource(
       : [];
   });
   lines.splice(1, 0, ...siblingWireImports);
-  if (validators && usedValidators.size > 0) {
-    lines.splice(1, 0, `import { ${[...usedValidators].sort().join(', ')} } from ${JSON.stringify(sourceImportPath(validators.module, output))};`);
-  }
   const companion = pruneExternalCodecImports(pruneNamedImport(
     pruneNamedImport(
       pruneNamedImport(pruneUnusedHelpers(`${lines.join('\n').trim()}\n`), '@exprtlabs/golem/serde'),

@@ -76,7 +76,7 @@ test('equivalent MinLength tags of two companions compile to one validators modu
   assert.equal(artifacts.filter((item) => item.path.endsWith('.validators.generated.ts')).length, 1, 'one validators module serves every companion');
   const companions = artifacts.filter((item) => item.path.endsWith('.model.generated.ts')).map((item) => item.content);
   assert.equal(companions.length, 2);
-  for (const companion of companions) assert.match(companion, /\bvalidate_\w+_[0-9a-f]{8}\b/, 'each companion binds to the shared validators');
+  for (const companion of companions) assert.match(companion, /layerValidator\(layer, "\w+_[0-9a-f]{8}", true\)/, 'each companion reads its validators from the layer');
   const { Item } = await import(`${pathToFileURL(path.join(fixtureValue.root, 'build/item.model.js')).href}`) as {
     Item: new (values?: { value?: string; extra?: string }) => { value: string; extra: string };
   };
@@ -210,7 +210,7 @@ test('validation-disabled serde artifacts omit executable predicate bindings', t
   const result = generate({ root: value.root, profile: { mobx: false, validation: false } });
   const output = result.artifacts.filter(item => item.path.endsWith('.ts')).map(item => item.content).join('\n');
   assert.doesNotMatch(output, /modelValidationBindings|import\s*\{\s*accepts\b|\/validation['"]/);
-  assert.match(output, /modelSerdeBindings/);
+  assert.match(output, /serdeBindings: Object\.freeze\(\{\n\s+"[^"]+": \{ serialize/);
 });
 
 test('array item models validate at their full path, recursive ones included', async (t) => {

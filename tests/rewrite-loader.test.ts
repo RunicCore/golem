@@ -11,6 +11,7 @@ import { copyFixtureFile, createFixtureProject, linkProjectPackages, readFixture
 import { createControllerFixture } from './fixture-templates/controllers/project.js';
 import { createModelProject } from './model-project.js';
 import { command, workspace, type CommandResult } from './support/process.js';
+import { ORDER_WIRE, runSite, sharedFolderProject } from './support/shared-folder-project.js';
 
 const NODE_FLAGS = ['--import', '@exprtlabs/golem/register', '--experimental-strip-types', '--enable-source-maps'] as const;
 const SERDE = '@exprtlabs/golem/serde';
@@ -202,6 +203,45 @@ test('a file outside the project with no rewrite site loads normally', async (t)
   const result = await run(root, 'src/outside.ts');
   assert.equal(result.code, 0, result.stderr);
   assert.equal(result.stdout, '42\n');
+});
+
+/** A layer as `golem generate` will write it, by hand: `#golem-models` resolves to the file, whatever generated it. */
+const LAYER = 'export const layer = { profile: { mobx: true, validation: false }, schemas: {}, serdeBindings: {} };\n';
+const LAYER_USE = "import { layer } from '#golem-models';\nexport const mobx: boolean = layer.profile.mobx;\n";
+const NO_MODELS_YAML = 'version: 1\ncontrollers:\n  - root: .\n    output: generated/api.json\n    info: { title: Payments, version: "1" }\n';
+
+/** A project and a directory next to it: `src/layer.ts` of the project prints what `use.ts` of the directory reads through `#golem-models`. */
+async function layerProject(t: TestContext, name: string): Promise<{ readonly root: string; readonly outside: string }> {
+  const root = await project(t, name, { generate: false });
+  const outside = createFixtureProject(t, 'golem-loader-layer-');
+  write(outside, 'use.ts', LAYER_USE);
+  write(root, 'src/layer.ts', `import { mobx } from '${pathToFileURL(path.join(outside, 'use.ts')).href}';\nconsole.log(mobx);\n`);
+  return { root, outside };
+}
+
+test('the Node loader resolves #golem-models in a file outside the project to the layer of the project', async (t) => {
+  const { root } = await layerProject(t, 'loader-layer');
+  write(root, 'src/generated/models/models.generated.ts', LAYER);
+  const result = await run(root, 'src/layer.ts');
+  assert.equal(result.code, 0, result.stderr);
+  assert.equal(result.stdout, 'true\n');
+});
+
+test('the Node loader runs app A over the companions of a shared folder, which import #golem-models', async (t) => {
+  const project = sharedFolderProject(t, 'loader-shared-folder');
+  await runPipeline(path.join(project.appA, 'golem.yaml'));
+  const outcome = await runSite(project.appA, path.join(project.appA, 'src/site.ts'), NODE_FLAGS);
+  assert.deepEqual(outcome.wire, ORDER_WIRE);
+  assert.equal(outcome.validityObservable, true);
+  assert.match(outcome.rejected ?? '', /Model validation failed/);
+});
+
+test('a project with no models job that imports #golem-models fails the Node loader with the missing-layer error', async (t) => {
+  const { root, outside } = await layerProject(t, 'loader-layer-missing');
+  write(root, 'golem.yaml', NO_MODELS_YAML);
+  const result = await run(root, 'src/layer.ts');
+  assert.notEqual(result.code, 0);
+  assert.ok(result.stderr.includes(`${path.join(outside, 'use.ts')} imports #golem-models, but ${path.join(root, 'golem.yaml')} has no models job. Add a models job to golem.yaml.`), result.stderr);
 });
 
 /** A CommonJS file with a rewrite site: the import the rewrite adds cannot run in CommonJS. */

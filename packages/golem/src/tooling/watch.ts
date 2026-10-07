@@ -3,20 +3,44 @@ import path from 'node:path';
 import { contains } from './config.js';
 import type { GolemConfig } from './config.js';
 import { DEFAULT_CONTROLLER_SUFFIXES, DEFAULT_MODEL_SUFFIXES, discoverSources, errorMessage, hasErrorCode, suffixPattern } from './generator-api.js';
+import { sharedFolderOf } from './shared-folder.js';
+import { IncompatibleSharedCompanionError } from './outputs.js';
 import { GeneratorSessionResources, runPipeline, strongestInputKind } from './pipeline.js';
 import type { InputKind, PipelineState } from './pipeline.js';
 
-function sourceCandidates(config: GolemConfig, kind: 'models' | 'controllers'): Set<string> {
+function sourceCandidates(config: GolemConfig, kind: 'models' | 'controllers', known: ReadonlyMap<string, InputKind>): Set<string> {
   const found = new Set<string>();
   // Generated outputs can contain model-named files; they are not model sources.
   const outputs = config.jobs.flatMap(job => job.kind === 'openapi' || job.kind === 'controllers' ? [job.options.output] : []);
+  const skip = (directory: string): boolean => outputs.some(output => contains(output, directory));
   for (const job of config.jobs) {
     if (job.kind !== kind) continue;
     found.add(path.join(job.options.root, 'tsconfig.json'));
-    const sources = job.options.sources ?? discoverSources(path.join(job.options.root, 'src'), kind === 'models'
-      ? { source: suffixPattern(job.options.suffixes ?? DEFAULT_MODEL_SUFFIXES), skip: directory => outputs.some(output => contains(output, directory)) }
-      : { source: suffixPattern(job.options.suffixes ?? DEFAULT_CONTROLLER_SUFFIXES) });
+    const suffixes = job.options.suffixes ?? (kind === 'models' ? DEFAULT_MODEL_SUFFIXES : DEFAULT_CONTROLLER_SUFFIXES);
+    const sources = job.options.sources ?? discoverSources(path.join(job.options.root, 'src'), { source: suffixPattern(suffixes), ...(kind === 'models' ? { skip } : {}) });
     for (const source of sources) found.add(source);
+    if (kind !== 'models' || job.options.sources !== undefined) continue;
+    // A models job also generates the model files its tsconfig includes outside its root, such as a shared folder. The
+    // last run recorded the files it read as inputs; the shared folder of each local source outside the root is scanned
+    // whole, so a model file added beside them or in a new subfolder is a candidate too. A "shared folder" that holds
+    // the project itself is the repository: only the directory of the source is scanned then.
+    const pattern = suffixPattern(suffixes);
+    const sharedFolders = new Set<string>();
+    const inputOfDirectory = new Map<string, string>();
+    for (const [input, inputKind] of known) {
+      if (inputKind === 'models' && /(?<!\.d)\.[cm]?ts$/.test(input) && !input.split(path.sep).includes('node_modules') && !contains(job.options.root, input)) {
+        inputOfDirectory.set(path.dirname(input), input);
+      }
+    }
+    for (const [directory, input] of inputOfDirectory) {
+      const folder = sharedFolderOf(input);
+      sharedFolders.add(contains(folder, job.options.root) ? directory : folder);
+    }
+    for (const folder of sharedFolders) {
+      // A folder inside another is scanned with it.
+      if ([...sharedFolders].some(other => other !== folder && contains(other, folder))) continue;
+      for (const source of discoverSources(folder, { source: pattern, skip })) found.add(source);
+    }
   }
   return found;
 }
@@ -68,19 +92,23 @@ export class OwnedOutputIndex {
   }
 }
 
-/** Serialized polling of specific inputs, including reads attempted by failed runs. */
-export function watchPipeline(initial: PipelineState | string, reportError: (error: unknown) => void = error => { process.stderr.write(`${errorMessage(error)}\n`); }): () => void {
+/**
+ * Serialized polling of specific inputs, including reads attempted by failed runs. A `session` from the first run of the same
+ * command is kept, with the locks it holds; the watch closes it when it stops. Without one, the watch opens its own.
+ */
+export function watchPipeline(initial: PipelineState | string, reportError: (error: unknown) => void = error => { process.stderr.write(`${errorMessage(error)}\n`); }, session: GeneratorSessionResources = new GeneratorSessionResources('process')): () => void {
   let state = typeof initial === 'string' ? undefined : initial;
   const filename = path.resolve(typeof initial === 'string' ? initial : initial.config.configFile);
   let config = state?.config;
   let attempted = new Map<string, InputKind>();
+  // Shared companions that another process writes and this one found different: a change to one starts the next run, which compares again.
+  let awaited = new Set<string>();
   const owned = new OwnedOutputIndex(state?.owned);
   let retryFull = !state;
   let first = !state;
   let busy = false;
   let stopped = false;
   // Compiler processes stay warm between runs and close with the watch.
-  const session = new GeneratorSessionResources();
   const closeSession = (): void => {
     try { session[Symbol.dispose](); } catch (error) { reportError(error); }
   };
@@ -94,14 +122,16 @@ export function watchPipeline(initial: PipelineState | string, reportError: (err
           inputs.set(job.options.root, strongestInputKind(inputs.get(job.options.root), 'controllers'));
         } else if (job.kind === 'openapi') inputs.set(job.options.input, strongestInputKind(inputs.get(job.options.input), 'openapi'));
       }
-      for (const source of sourceCandidates(config, 'controllers')) inputs.set(source, strongestInputKind(inputs.get(source), 'controllers'));
-      for (const source of sourceCandidates(config, 'models')) inputs.set(source, strongestInputKind(inputs.get(source), 'models'));
+      for (const source of sourceCandidates(config, 'controllers', inputs)) inputs.set(source, strongestInputKind(inputs.get(source), 'controllers'));
+      for (const source of sourceCandidates(config, 'models', inputs)) inputs.set(source, strongestInputKind(inputs.get(source), 'models'));
     }
     // A new output directory can have been observed as missing during module
     // resolution. Its creation is output work, not a source edit. Discovery
     // still scans model filenames, so adding a source beneath it is visible.
-    return new Map([...inputs].filter(([input]) => !owned.covers(input))
+    const watched = new Map([...inputs].filter(([input]) => !owned.covers(input))
       .map(([input, kind]) => [input, { kind, signature: signature(input) }]));
+    for (const companion of awaited) watched.set(companion, { kind: 'models', signature: signature(companion) });
+    return watched;
   };
   let previous = fingerprints();
   const tick = async (): Promise<void> => {
@@ -130,8 +160,13 @@ export function watchPipeline(initial: PipelineState | string, reportError: (err
         state = next;
         config = next.config;
         retryFull = false;
+        awaited = new Set();
         process.stdout.write('Generated configured outputs.\n');
-      } catch (error) { retryFull = true; reportError(error); }
+      } catch (error) {
+        retryFull = true;
+        if (error instanceof IncompatibleSharedCompanionError) awaited.add(error.filename);
+        reportError(error);
+      }
       attempted = latestAttempt;
       // Keep pre-read signatures so edits during work trigger the next serialized run.
       previous = new Map([...fingerprints()].map(([input, value]) => [input, before.get(input) ?? observed.get(input) ?? value]));

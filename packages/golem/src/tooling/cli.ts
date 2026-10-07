@@ -1,7 +1,8 @@
 import { spawn } from 'node:child_process';
 import path from 'node:path';
 import { resolveConfig } from './config.js';
-import { runPipeline } from './pipeline.js';
+import { GeneratorSessionResources, runPipeline } from './pipeline.js';
+import type { PipelineState } from './pipeline.js';
 import { watchPipeline } from './watch.js';
 export { providersFor, runPipeline } from './pipeline.js';
 export { watchPipeline } from './watch.js';
@@ -115,9 +116,17 @@ export async function main(argv = process.argv.slice(2)) {
     for (const signal of ['SIGINT', 'SIGTERM'] as const) process.once(signal, () => { stop(); process.exitCode = signal === 'SIGINT' ? 130 : 143; });
     return;
   }
-  const state = await runPipeline(options.config, { check: options.action === 'check' });
+  // A watching command keeps one session from its first run on, so the shared-folder locks the first run takes last as long as the watch.
+  const watchSession = options.watch ? new GeneratorSessionResources('process') : undefined;
+  let state: PipelineState;
+  try {
+    state = await runPipeline(options.config, { check: options.action === 'check', ...(watchSession === undefined ? {} : { session: watchSession }) });
+  } catch (error) {
+    watchSession?.[Symbol.dispose]();
+    throw error;
+  }
   process.stdout.write(`${options.action === 'check' ? 'Checked' : 'Generated'} configured outputs.\n`);
-  const stop = options.watch ? watchPipeline(state) : () => {};
+  const stop = watchSession === undefined ? () => {} : watchPipeline(state, undefined, watchSession);
   if (options.action === 'exec') {
     await new Promise<void>((resolve, reject) => {
       const child = spawn(options.command[0], options.command.slice(1), { stdio: 'inherit', shell: process.platform === 'win32', env: userTypeScriptRoot === undefined ? childEnvironment : process.env });

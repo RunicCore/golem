@@ -11,14 +11,13 @@ import type {
 import { buildCodecValidationPlan, compilePlanValidators, type CodecSchemaClosureEntry } from '@exprtlabs/golem/validation-plan';
 import { DEFAULT_MODEL_SUFFIXES, GolemDiagnosticSeverity, resolveProfile, suffixPattern, type GolemDiagnostic } from '@exprtlabs/golem/generator-api';
 import { codecKeysPath, defaultModelOutput } from '@exprtlabs/golem/generated-paths';
-import { codecShortName, emitCodecDeclarationTable } from '@exprtlabs/golem/schema-graph';
-import { stringifyFunctionName } from '@exprtlabs/golem/emitter';
+import { emitCodecDeclarationTable } from '@exprtlabs/golem/schema-graph';
 import {
   analyzeSourceGraph,
   createJobAnalysis,
   deduplicateTagSchemas,
   describeJob,
-  emitSharedSource,
+  emitLayerSource,
   emitSource,
   validatorImports,
   codecEntriesForGraph,
@@ -28,10 +27,11 @@ import {
 import type { SchemaGraph } from '@exprtlabs/golem/schema-graph';
 import type { ModelSpecification } from '@exprtlabs/golem/type-analysis';
 import { collectSpecifications } from '@exprtlabs/golem/type-analysis';
-import { discoverModelManifests, manifestMarker, MODEL_MANIFEST_FILENAME, stableJson } from '@exprtlabs/golem/manifest';
+import { discoverModelManifests } from '@exprtlabs/golem/manifest';
 import { loadModelManifests } from '@exprtlabs/golem/type-analysis';
 import type { ManifestIndex } from '@exprtlabs/golem/type-analysis';
 import {
+  anotherModelsJobCheck,
   assertAbsolute,
   canonicalFilename,
   createOverlayProgram,
@@ -39,10 +39,13 @@ import {
   discoverModelSources,
   formatDiagnostics,
   generatedFilename,
+  includedModelSources,
   isModelSource,
   portableRelativeFilename,
   projectWatchInputs,
   retainedProgramSession,
+  sharedImportOutsideItsFolder,
+  type ProgramInfo,
 } from '@exprtlabs/golem/type-analysis';
 
 export interface GolemModelProfile extends GolemProfile {}
@@ -135,15 +138,17 @@ function validateContext(context: GolemModelContext): NormalizedContext {
 
 const SESSION_OWNER = '@exprtlabs/golem-model';
 
-function emptyResult(
-  root: string,
-  onInput?: InputObserver,
-  session?: GeneratorSession,
-): GolemModelResult {
-  const info = createProgram([], root, onInput, retainedProgramSession(session, SESSION_OWNER, root));
-  using program = info.program;
+/** A job without model files still watches the project, so a model file added later is seen. */
+function emptyResult(info: ProgramInfo, program: ts.Program, root: string): GolemModelResult {
   const watchInputs = projectWatchInputs(info, program, root, [], discoverModelManifests(root));
   return { artifacts: [], manifestPaths: [], watchInputs };
+}
+
+/** The files of the project's own program: not a library, not a package from node_modules. */
+function programFilenames(program: ts.Program): string[] {
+  return program.getSourceFiles()
+    .filter((sourceFile) => !program.isSourceFileFromExternalLibrary(sourceFile) && !program.isSourceFileDefaultLibrary(sourceFile))
+    .map((sourceFile) => sourceFile.fileName);
 }
 
 function referencedManifestFiles(
@@ -217,8 +222,8 @@ function canonicalSourceKey(filename: string): string {
  */
 function internJobSchemaGraphs(
   graphs: readonly SourceModelGraph[],
-  validation: boolean,
   closure: readonly CodecSchemaClosureEntry[] = [],
+  defaultValidation?: boolean,
 ): SourceSchemaGraph[] {
   const codecIds = new Map<ModelSpecification, string>();
   const wireSchemas = new Set<string>();
@@ -255,9 +260,10 @@ function internJobSchemaGraphs(
     const members = new Set(component);
     if (component.length === 1) {
       const [graph] = component;
-      const schemaGraph = internSourceDefinitions(graph.definitions, graph.emitted, validation, {
+      const schemaGraph = internSourceDefinitions(graph.definitions, graph.emitted, {
         codecIds: idsFor(graph, new Map()),
         siblings: graph.siblings,
+        ...(defaultValidation === undefined ? {} : { defaultValidation }),
         externalResidualIds: residualIds,
       });
       record(graph, schemaGraph);
@@ -284,12 +290,13 @@ function internJobSchemaGraphs(
       }
       for (const [name, descriptor] of Object.entries(graph.definitions)) definitions[name] ??= descriptor;
     }
-    const shared = internSourceDefinitions(definitions, emitted, validation, {
+    const shared = internSourceDefinitions(definitions, emitted, {
       codecIds: new Map(outside.flatMap((sibling) => {
         const id = codecIds.get(sibling);
         return id === undefined ? [] : [[sibling.name, id] as const];
       })),
       siblings: outside,
+      ...(defaultValidation === undefined ? {} : { defaultValidation }),
       externalResidualIds: residualIds,
     });
     for (const graph of component) record(graph, shared);
@@ -300,9 +307,10 @@ function internJobSchemaGraphs(
           const id = codecIds.get(specification);
           return id === undefined ? [] : [[specification.name, id] as const];
         }));
-      const schemaGraph = internSourceDefinitions(graph.definitions, graph.emitted, validation, {
+      const schemaGraph = internSourceDefinitions(graph.definitions, graph.emitted, {
         codecIds: idsFor(graph, own),
         siblings: graph.siblings,
+        ...(defaultValidation === undefined ? {} : { defaultValidation }),
         externalResidualIds: residualIds,
       });
       const cyclicSiblings = new Set(graph.siblings
@@ -346,75 +354,19 @@ function withoutRepeatedFieldTypeWarnings(diagnostics: readonly GolemDiagnostic[
   ));
 }
 
-/** The path of `file` from `directory`, written as a module specifier. */
-function relativeModule(directory: string, file: string): string {
-  const relativePath = portableRelativeFilename(file, directory);
-  return relativePath.startsWith('.') ? relativePath : `./${relativePath}`;
-}
-
-/** A model's codec entry with the absolute path of its source. */
-type ManifestModel = ReturnType<typeof codecEntriesForGraph>[number] & { readonly file: string };
-
-/**
- * The models job's `model-manifest.json`: the codec id of each model, and the declarations that stand for it (its type alias,
- * its linked classes and what it generated), in the shape an SDK's manifest has. A project that includes these files reads the
- * ids from it, without generating the models itself.
- */
-function emitModelManifest(manifestFile: string, generationProfile: GolemModelProfile, tsconfigDirectory: string, models: readonly ManifestModel[]): string {
-  const directory = dirname(manifestFile);
-  const profile = resolveProfile(generationProfile);
-  const entries = new Map(models.map((model) => {
-    // The last segment of an id is the model name that the helpers of its generated module carry.
-    const id = `typescript:${portableRelativeFilename(model.file, tsconfigDirectory)}#/${model.name}`;
-    const typeModule = relativeModule(directory, model.file);
-    return [id, {
-      id,
-      codecId: model.codecId,
-      sourceKind: 'typescript',
-      allowAny: model.allowAny ?? profile.allowAny,
-      type: {
-        module: typeModule,
-        export: model.name,
-        ...(model.classNames.length > 0 ? { aliases: model.classNames.map((className) => ({ module: typeModule, export: className })) } : {}),
-      },
-      generated: {
-        module: relativeModule(directory, generatedFilename(model.file)),
-        export: model.emitClass ? `${model.name}BaseModel` : stringifyFunctionName(codecShortName(model.name)),
-      },
-    }] as const;
-  }));
-  return stableJson({
-    generator: { name: SESSION_OWNER },
-    profile,
-    models: [...entries.values()].sort((left, right) => left.id.localeCompare(right.id)),
-  });
-}
-
-/** The companion advertises the manifest after its ownership header, so a program that holds the companion finds the manifest. */
-function withManifestMarker(companion: { readonly path: string; readonly content: string }, manifestFile: string): string {
-  const headerEnd = companion.content.indexOf('\n') + 1;
-  return `${companion.content.slice(0, headerEnd)}${manifestMarker(relativeModule(dirname(companion.path), manifestFile))}\n${companion.content.slice(headerEnd)}`;
-}
-
 export function generate(context: GolemModelContext): GolemModelResult {
   const normalized = validateContext(context);
-  const sources = normalized.sources === undefined
+  const listed = normalized.sources !== undefined;
+  const discovered = normalized.sources === undefined
     ? discoverModelSources(normalized.root, normalized.onInput, normalized.suffixes)
     : [...normalized.sources].sort();
-  if (sources.length === 0) {
-    if (normalized.sources !== undefined) {
-      throw new Error(
-        `No model sources found under ${join(normalized.root, 'src')}. `
-        + `Add a file ending in ${normalized.suffixes.join(' or ')}, or provide context.sources.`,
-      );
-    }
-    return emptyResult(
-      normalized.root,
-      normalized.onInput,
-      normalized.session,
+  if (listed && discovered.length === 0) {
+    throw new Error(
+      `No model sources found under ${join(normalized.root, 'src')}. `
+      + `Add a file ending in ${normalized.suffixes.join(' or ')}, or provide context.sources.`,
     );
   }
-  for (const source of sources) {
+  for (const source of discovered) {
     normalized.onInput?.(source);
     if (!isModelSource(source)) {
       throw new Error(`Model source must be a .ts, .mts or .cts file that golem did not generate: ${source}`);
@@ -429,23 +381,46 @@ export function generate(context: GolemModelContext): GolemModelResult {
   // companions are then overlaid in phase two, whose unsuppressed diagnostics
   // are the write gate and preserve genuine handwritten-source failures.
   const programInfo = createProgram(
-    sources,
+    discovered,
     normalized.root,
     normalized.onInput,
     retainedProgramSession(normalized.session, SESSION_OWNER, normalized.root),
   );
   using program = programInfo.program;
-  // This job writes the manifest, so it neither reads it nor needs it to exist when a companion's marker names it.
-  const manifestFile = join(normalized.output, MODEL_MANIFEST_FILENAME);
+  // The program holds the files the tsconfig includes and the files they import, so a model file outside the root (a
+  // shared folder) is a source of this job. `models.sources` limits the list.
+  const projectFiles = programFilenames(program);
+  const candidates = listed || programInfo.configPath === undefined
+    ? discovered
+    : [...new Set([...discovered, ...includedModelSources(projectFiles, normalized.suffixes)])].sort();
+  // A discovered file that another golem.yaml's models job covers is that job's: it gives the file ids of its own folder.
+  const coveredByAnother = anotherModelsJobCheck(normalized.directory, normalized.onInput);
+  const ownCandidates = listed ? candidates : candidates.filter((source) => !coveredByAnother(source));
+  if (ownCandidates.length === 0) {
+    return emptyResult(programInfo, program, normalized.root);
+  }
+  const { checker, specifications } = collectSpecifications(program, ownCandidates);
+  // A discovered file with no IModel or IObject alias is not a model file: it is skipped, and so is its companion.
+  // A file that `models.sources` names must have one.
+  const withModels = new Set(specifications.map((specification) => canonicalFilename(specification.sourceFile.fileName)));
+  const sources = listed ? ownCandidates : ownCandidates.filter((source) => withModels.has(canonicalFilename(source)));
+  if (sources.length === 0) {
+    return emptyResult(programInfo, program, normalized.root);
+  }
+  const tsconfigDirectory = programInfo.configPath === undefined ? normalized.root : dirname(programInfo.configPath);
+  const projectFileSet = new Set(projectFiles.map(canonicalFilename));
+  for (const source of sources) {
+    const sourceFile = program.getSourceFile(source);
+    const outsideImport = sourceFile && sharedImportOutsideItsFolder(sourceFile, tsconfigDirectory, projectFileSet, programInfo.options);
+    if (outsideImport !== undefined) throw new Error(outsideImport);
+  }
   const manifestIndex = loadModelManifests(
     normalized.root,
     programInfo,
     normalized.manifestInputs,
     normalized.profile,
     normalized.onInput,
-    manifestFile,
   );
-  const { checker, specifications } = collectSpecifications(program, sources);
   if (specifications.length === 0) {
     const diagnostics = ownDiagnostics(ts.getPreEmitDiagnostics(programInfo.program), sources.map(generatedFilename), sources);
     if (diagnostics.length > 0) throw new Error(formatDiagnostics(diagnostics, normalized.root));
@@ -463,6 +438,7 @@ export function generate(context: GolemModelContext): GolemModelResult {
     sources,
     normalized.root,
     programInfo.options,
+    (filename) => program.getSourceFile(filename),
   );
   describeJob(job, specifications);
   const graphs = sources
@@ -478,26 +454,25 @@ export function generate(context: GolemModelContext): GolemModelResult {
       job,
     ))
     .filter((graph): graph is NonNullable<typeof graph> => graph !== undefined);
-  const sharedOutput = join(normalized.output, 'models.generated.ts');
-  const graphSchemaPairs = internJobSchemaGraphs(graphs, normalized.profile.validation, manifestIndex.validationSchemaClosure);
+  const layerOutput = join(normalized.output, 'models.generated.ts');
+  const graphSchemaPairs = internJobSchemaGraphs(graphs, manifestIndex.validationSchemaClosure);
   const schemaGraphs = graphSchemaPairs.map(({ schemaGraph }) => schemaGraph);
   // A model can ask for validation when the profile does not.
   const anyValidation = normalized.profile.validation
     || schemaGraphs.some((graph) => [...graph.nodes.values()].some((node) => node.kind !== 'reference' && node.validationEnabled === true));
-  const needsShared = anyValidation
-    || graphs.some((graph) => graph.registry.serde.size > 0);
-  const sharedBase = needsShared ? {
-    modulePath: sharedOutput,
-    keyFor: (source: string, modelName: string): string => `${portableRelativeFilename(source, normalized.root)}\0${modelName}`,
-  } : undefined;
   const schemaEntries = deduplicateTagSchemas(
     graphs.flatMap((graph) => graph.schemas)
       .sort((left, right) => left.key.localeCompare(right.key)
         || JSON.stringify(left.schema).localeCompare(JSON.stringify(right.schema))),
   );
+  // The plan is the app's: a model that sets no `validation` follows the profile, so with validation off a default model
+  // an opt-in model nests stays open. The companions follow the layer at run time and are interned without a default.
+  const planGraphs = normalized.profile.validation || !anyValidation
+    ? schemaGraphs
+    : internJobSchemaGraphs(graphs, manifestIndex.validationSchemaClosure, false).map(({ schemaGraph }) => schemaGraph);
   const validationPlan = anyValidation
     ? buildCodecValidationPlan(
-      schemaGraphs,
+      planGraphs,
       manifestIndex.validationSchemaClosure,
       Object.fromEntries(schemaEntries.map((compilation) => [compilation.id, compilation.schema])),
       normalized.profile.validation,
@@ -526,39 +501,22 @@ export function generate(context: GolemModelContext): GolemModelResult {
   const planSchemas = validationPlan && validators
     ? Object.fromEntries(validationPlan.ownSchemas.map((id) => [id, validationPlan.schemas[id]]))
     : undefined;
-  const shared = sharedBase && validators
-    ? { ...sharedBase, validators: { module: validatorsOutput, exports: validators.exports }, schemasName: 'modelSchemas' }
-    : sharedBase;
-  // The keys name each source by its path from the tsconfig's directory, which is the root a rewrite resolves files from.
-  const tsconfigDirectory = programInfo.configPath === undefined ? normalized.root : dirname(programInfo.configPath);
-  const models = graphSchemaPairs.flatMap(({ graph, schemaGraph }) => codecEntriesForGraph(graph, schemaGraph, checker, specifications))
-    .map((entry) => ({ ...entry, file: resolve(normalized.root, entry.source) }));
-  // The manifest comes first: files are written in this order, so no companion names a manifest that does not exist yet.
+  // The layer is the app's: it is written for every job, and carries what differs between apps.
   const artifacts: GolemModelArtifact[] = [{
-    path: manifestFile,
-    content: emitModelManifest(manifestFile, normalized.profile, tsconfigDirectory, models),
-  }];
-  const sharedContent = needsShared
-    ? emitSharedSource({
-      output: sharedOutput,
+    path: layerOutput,
+    content: emitLayerSource({
+      output: layerOutput,
       profile: normalized.profile,
       graphs,
-      ...(planSchemas ? { schemas: planSchemas } : {}),
-    })
-    : undefined;
-  if (sharedContent !== undefined) artifacts.push({ path: sharedOutput, content: sharedContent });
+      schemaGraphs,
+      anyValidation,
+      ...(planSchemas ? { planSchemas } : {}),
+      ...(validators ? { validators: { module: validatorsOutput, exports: validators.exports } } : {}),
+    }),
+  }];
   if (validators) {
     artifacts.push({ path: validatorsOutput, content: validators.source });
   }
-  // Codecs some companion writes through their owner's wire stringify.
-  const referencedWireCodecIds = new Set(graphSchemaPairs.flatMap(({ schemaGraph, siblingWireCodecIds }) =>
-    [...schemaGraph.nodes.values()]
-      .filter((node) => node.siblingCodec && siblingWireCodecIds.has(node.codecId))
-      .map((node) => node.codecId)));
-  // Object-only models some companion converts through their owner's helpers.
-  const referencedObjectCodecIds = new Set(graphSchemaPairs.flatMap(({ graph, schemaGraph }) =>
-    graph.siblings.filter((sibling) => !sibling.emitClass).flatMap((sibling) =>
-      [...schemaGraph.nodes.values()].filter((node) => node.siblingCodec && node.name === sibling.name).map((node) => node.codecId))));
   for (const { graph, schemaGraph, siblingWireCodecIds, cyclicSiblings } of graphSchemaPairs) {
     const { source, output } = graph;
     const content = emitSource(
@@ -568,15 +526,16 @@ export function generate(context: GolemModelContext): GolemModelResult {
       specifications,
       manifestIndex,
       normalized.profile,
-      shared,
       normalized.root,
       graph,
       schemaGraph,
-      { siblingWireCodecIds, cyclicSiblings, referencedWireCodecIds, referencedObjectCodecIds },
+      { siblingWireCodecIds, cyclicSiblings },
     );
-    if (content !== undefined) artifacts.push({ path: output, content: withManifestMarker({ path: output, content }, manifestFile) });
+    if (content !== undefined) artifacts.push({ path: output, content });
   }
-  const codecEntries = models.map((entry) => ({ ...entry, source: portableRelativeFilename(entry.file, tsconfigDirectory) }));
+  // The keys name each source by its path from the tsconfig's directory, which is the root a rewrite resolves files from.
+  const codecEntries = graphSchemaPairs.flatMap(({ graph, schemaGraph }) => codecEntriesForGraph(graph, schemaGraph, checker, specifications)
+    .map((entry) => ({ ...entry, source: portableRelativeFilename(resolve(graph.identityRoot, entry.source), tsconfigDirectory) })));
   if (codecEntries.length > 0) {
     artifacts.push({
       path: codecKeysPath(normalized.directory),
@@ -604,7 +563,8 @@ export function generate(context: GolemModelContext): GolemModelResult {
 
   return {
     artifacts,
-    manifestPaths: [manifestFile],
+    // Model generation consumes SDK manifests; it does not own or emit them.
+    manifestPaths: [],
     watchInputs: projectWatchInputs(
       programInfo,
       prospective,

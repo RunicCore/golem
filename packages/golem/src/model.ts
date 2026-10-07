@@ -6,6 +6,7 @@
  * themselves through the interfaces below.
  */
 
+import type { GolemLayer } from './serde.js';
 import type { TSerdeWire } from './tags.js';
 import type { ModelValidator } from './validation.js';
 import type { Validator } from './validation-runtime.js';
@@ -290,6 +291,19 @@ export interface GeneratedModelDefinition<Model extends object, Wire = unknown> 
   readonly enhanceValidator?: GeneratedModelValidatorEnhancer;
 }
 
+/**
+ * What a model companion of a models job registers. The companion holds only what its source sets; the profile, which
+ * is the app's, comes from the app layer (`#golem-models`).
+ */
+export interface GeneratedModelLayerDefinition<Model extends object, Wire = unknown> {
+  readonly fields: readonly ModelField<Model>[];
+  readonly conversion?: GeneratedModelConversion<Model, Wire>;
+  readonly codecId?: string;
+  /** The model's own `validation` setting; without it the layer's profile decides. */
+  readonly validation?: boolean;
+  readonly layer: GolemLayer;
+}
+
 /** Internal metadata shape shared by the optional runtime integrations. */
 export interface RegisteredGeneratedModelDefinition {
   readonly constructor: Function;
@@ -304,11 +318,26 @@ export interface RegisteredGeneratedModelDefinition {
 const generatedModelMarker = Symbol('exprtlabs.generatedModel');
 const generatedModelDefinition = Symbol('exprtlabs.generatedModelDefinition');
 
+/** The profile and validator hook of a model that reads the app layer; the model's `validation` setting wins. */
+function layerProfile(
+  definition: { readonly layer: GolemLayer; readonly validation?: boolean },
+): Pick<RegisteredGeneratedModelDefinition, 'profile' | 'enhanceValidator'> {
+  const { layer } = definition;
+  const validation = definition.validation ?? layer.profile.validation;
+  return {
+    profile: { validation, mobx: layer.profile.mobx },
+    ...(validation && layer.profile.mobx && layer.enhanceValidator ? { enhanceValidator: layer.enhanceValidator } : {}),
+  };
+}
+
 export function registerGeneratedModel<Model extends object, Wire = unknown>(
   constructor: abstract new (...arguments_: never[]) => Model,
-  definition: GeneratedModelDefinition<Model, Wire>,
+  definition: GeneratedModelDefinition<Model, Wire> | GeneratedModelLayerDefinition<Model, Wire>,
 ): void {
   const conversion = definition.conversion;
+  const settings = 'layer' in definition
+    ? layerProfile(definition)
+    : { profile: definition.profile, enhanceValidator: definition.enhanceValidator };
   const registered: RegisteredGeneratedModelDefinition = {
     constructor,
     fields: definition.fields,
@@ -318,10 +347,10 @@ export function registerGeneratedModel<Model extends object, Wire = unknown>(
         encode: (model) => conversion.encode(model as Model),
       }
       : undefined,
-    profile: definition.profile,
+    profile: settings.profile,
     codecId: definition.codecId,
-    additionalProperties: definition.additionalProperties,
-    enhanceValidator: definition.enhanceValidator,
+    additionalProperties: 'layer' in definition ? undefined : definition.additionalProperties,
+    enhanceValidator: settings.enhanceValidator,
   };
   // The same descriptor is attached to the constructor and its prototype.
   // Normal property inheritance then makes handwritten subclasses resolve the

@@ -45,6 +45,12 @@ export interface NestedImportedSerde {
 export interface CodecRuntimeOptions {
   readonly validationEnabled?: boolean;
   /**
+   * The name of the app layer (`GolemLayer`) the module imports. With it the module holds only what its models set:
+   * validation follows `layer.profile.validation` unless a node sets it, and the validators and schemas come from the
+   * layer by codec id. The text is the same for every profile.
+   */
+  readonly layer?: string;
+  /**
    * The name the module imports the validator of a root under; the root is a codec id and plane (`Id`, `Id#wire`,
    * `Id#model-only`, `Id#wire-only`). Called once for each use, so the caller knows which validators to import.
    */
@@ -64,8 +70,8 @@ export interface CodecRuntimeOptions {
   readonly fieldsType?: (node: SchemaNode) => string | undefined;
   /** Codec ids of sibling models that register a separate wire schema (`${id}#wire`). */
   readonly siblingWireCodecIds?: ReadonlySet<string>;
-  /** Local codecs whose wire stringify other generated modules import. */
-  readonly exportedWireStringifyIds?: ReadonlySet<string>;
+  /** Export the wire stringify of every public codec (`wireStringifyExportName`), for other generated modules to import. */
+  readonly exportWireStringify?: boolean;
   /** Export anonymous codecs' functions: OpenAPI group modules import them from each other. Model companions keep them private. */
   readonly exportAnonymousCodecs?: boolean;
   /** Codecs whose functions stay module-private, such as a model job's derived projections. */
@@ -74,6 +80,7 @@ export interface CodecRuntimeOptions {
 
 interface EmitCtx {
   readonly graph: SchemaGraph;
+  readonly layer?: string;
   readonly validatorName?: (id: string) => string;
   readonly resolvedSchemasExpr?: string;
   readonly serde?: StringifySerdeResolver;
@@ -89,7 +96,7 @@ interface EmitCtx {
   readonly wireStringifyIds?: ReadonlySet<string>;
   /** Sibling codecs whose companion exports a wire stringify (`wireStringifyExportName`). */
   readonly siblingWireCodecIds?: ReadonlySet<string>;
-  readonly exportedWireStringifyIds?: ReadonlySet<string>;
+  readonly exportWireStringify?: boolean;
   readonly exportAnonymousCodecs?: boolean;
   readonly privateCodec?: (node: SchemaNode) => boolean;
   /** Nodes being inlined into the current wire stringify, to reject unbounded expansion. */
@@ -1504,13 +1511,16 @@ function wireOnlyAssertName(node: SchemaNode): string {
   return `__golemAssertWireOnly_${node.id}`;
 }
 
-function emitSerdeValidates(validationEnabled: boolean): string {
-  return validationEnabled
-    ? '  const validates = serdeValidates(options, true);'
-    : '  serdeValidates(options, false);';
+/** Whether the generated function validates: a model that sets `validation` decides, else the layer's profile does. */
+function emitSerdeValidates(validationEnabled: boolean, ctx: EmitCtx, node: SchemaNode): string {
+  if (!validationEnabled) return '  serdeValidates(options, false);';
+  const enabled = ctx.layer !== undefined && node.validationEnabled === undefined ? `${ctx.layer}.profile.validation` : 'true';
+  return `  const validates = serdeValidates(options, ${enabled});`;
 }
 
-function validatorReference(ctx: EmitCtx, id: string): string {
+function validatorReference(ctx: EmitCtx, id: string, node: SchemaNode): string {
+  // A node that sets no `validation` validates only when the layer's profile does.
+  if (ctx.layer !== undefined) return `layerValidator(${ctx.layer}, ${JSON.stringify(id)}${node.validationEnabled === undefined ? ', true' : ''})`;
   if (ctx.validatorName === undefined) throw new Error(`The codec of ${JSON.stringify(id)} validates, and the module names no validators to import.`);
   return ctx.validatorName(id);
 }
@@ -1526,7 +1536,7 @@ function emitModelGuard(
   const reference = plane === 'model-only' || plane === 'wire-only'
     ? `${node.codecId}#${plane}`
     : wire ? `${node.codecId}#wire` : node.codecId;
-  return `assertModelValue(${value}, options, ${validatorReference(ctx, reference)}, ${JSON.stringify(reference)}, IssueRepresentation.${representation}, IssueSource.${ctx.issueSource});`;
+  return `assertModelValue(${value}, options, ${validatorReference(ctx, reference, node)}, ${JSON.stringify(reference)}, IssueRepresentation.${representation}, IssueSource.${ctx.issueSource});`;
 }
 
 function emitNodeRuntime(
@@ -1595,7 +1605,7 @@ function emitNodeRuntime(
     : emitEncodeValue(node.descriptor, '(value as never)', encodedWireContext);
   const wireStringifySrc = emitsValidatedWire
     ? `${emitStringifyFunction(node, ctx.graph, ctx.serde, { ...ctx, wireIdentity: true, withoutOptions: true })
-      .replace(`function ${stringifyName}(`, `function ${stringifyName}Wire(`)}${ctx.exportedWireStringifyIds?.has(node.codecId)
+      .replace(`function ${stringifyName}(`, `function ${stringifyName}Wire(`)}${ctx.exportWireStringify === true && exported !== ''
       ? `export { ${stringifyName}Wire as ${wireStringifyExportName(node.codecId)} };\n`
       : ''}`
     : '';
@@ -1604,7 +1614,7 @@ function emitNodeRuntime(
     stringifySrc.replace(`function ${stringifyName}(`, `function ${stringifyName}Core(`),
     wireStringifySrc,
     `${exported}function ${stringifyName}(value: ${modelType}, options?: ${SERDE_OPTIONS}): string {`,
-    emitSerdeValidates(validationEnabled),
+    emitSerdeValidates(validationEnabled, ctx, node),
     ...(emitsValidatedWire ? inlineLocalDeclarations(encodedStringifyContext) : []),
     ...(validationEnabled ? [
       '  if (validates) {',
@@ -1631,7 +1641,7 @@ function emitNodeRuntime(
 
   const convertLines: string[] = [
     `function ${convertName}(wire: unknown, options: ${SERDE_OPTIONS} | undefined): unknown {`,
-    emitSerdeValidates(validationEnabled),
+    emitSerdeValidates(validationEnabled, ctx, node),
   ];
   if (validationEnabled) {
     convertLines.push(
@@ -1701,7 +1711,7 @@ function emitNodeRuntime(
   const toWireLines = [
     ...toWireCoreLines,
     `${exported}function ${toWire}(value: ${fieldsType ?? 'unknown'}, options?: ${SERDE_OPTIONS}): ${wireType ?? 'unknown'} {`,
-    emitSerdeValidates(validationEnabled),
+    emitSerdeValidates(validationEnabled, ctx, node),
     ...(validationEnabled ? [
       '  if (validates) {',
       `    ${assertName}(value, options);`,
@@ -1728,7 +1738,7 @@ function emitNodeRuntime(
   const validateLines = validationEnabled
     ? [
       `${exported}function ${validateName}(value: unknown, options?: ${VALIDATE_OPTIONS}): value is ${modelType} {`,
-      `  return isValidModelValue(value, options, ${validatorReference(ctx, node.codecId)}, ${JSON.stringify(node.codecId)});`,
+      `  return isValidModelValue(value, options, ${validatorReference(ctx, node.codecId, node)}, ${JSON.stringify(node.codecId)});`,
       '}',
       '',
       `${exported}function ${assertName}(value: unknown, options?: ${VALIDATE_OPTIONS}): ${modelType} {`,
@@ -1780,7 +1790,19 @@ function emitNodeRuntime(
   };
   const modelOnlySchemaExpr = residualSchemaExpr('model-only');
   const wireOnlySchemaExpr = residualSchemaExpr('wire-only');
-  const codec = [
+  // With a layer the schemas are the layer's: the module neither holds nor resolves them.
+  const codec = ctx.layer !== undefined ? [
+    `createObjectCodec(${JSON.stringify(node.codecId)}, {`,
+    `  stringify: ${stringifyName} as (value: never, options?: ${SERDE_OPTIONS}) => string,`,
+    `  parse: ${parseName} as (text: string, options?: ${SERDE_OPTIONS}) => never,`,
+    `  validate: ${validateName},`,
+    `  assert: ${assertName},`,
+    `  toWireFormat: ${toWire},`,
+    `  fromWireFormat: ${fromWire},`,
+    `  issueSource: IssueSource.${ctx.issueSource},`,
+    `}, ${ctx.layer});`,
+    '',
+  ] : [
     `createObjectCodec(${JSON.stringify(node.codecId)}, {`,
     `  stringify: ${stringifyName} as (value: never, options?: ${SERDE_OPTIONS}) => string,`,
     `  parse: ${parseName} as (text: string, options?: ${SERDE_OPTIONS}) => never,`,
@@ -1799,6 +1821,19 @@ function emitNodeRuntime(
   ];
 
   return [ctx.hoisted?.sources.join('\n') ?? '', fillSrc, wrappedStringify, convertLines.join('\n'), fromWireLines.join('\n'), toWireLines.join('\n'), parseLines.join('\n'), validateLines.join('\n'), wireAssertLines.join('\n'), codec.join('\n')].join('\n');
+}
+
+/**
+ * The schemas a codec publishes, by schema key (`Id`, `Id#wire`, `Id#model-only`, `Id#wire-only`), as data with
+ * placeholders for the codecs they reference. A validation plan resolves those; an app that does not validate has none.
+ */
+export function nodeSchemaPayloads(node: SchemaNode): Readonly<Record<string, object>> {
+  const payloads: Record<string, object> = { [node.codecId]: schemaPayload(node.modelJsonSchema ?? node.jsonSchema, node.codecId) };
+  if (!node.sameSchema) payloads[`${node.codecId}#wire`] = schemaPayload(node.jsonSchema, `${node.codecId}#wire`);
+  if (node.validationEnabled === false) return payloads;
+  if (node.modelOnlyJsonSchema !== undefined) payloads[`${node.codecId}#model-only`] = schemaPayload(node.modelOnlyJsonSchema, `${node.codecId}#model-only`);
+  if (node.wireOnlyJsonSchema !== undefined) payloads[`${node.codecId}#wire-only`] = schemaPayload(node.wireOnlyJsonSchema, `${node.codecId}#wire-only`);
+  return payloads;
 }
 
 function schemaPayload(schema: JsonSchema, id: string): object {
@@ -1859,7 +1894,8 @@ export function emitCodecRuntime(
     localCoreIds: new Set(nodes.filter((node) => !isExternalCodecNode(node)).map((node) => node.id)),
     trustedOptions: TRUSTED_CONSTANT,
     siblingWireCodecIds: options.siblingWireCodecIds,
-    exportedWireStringifyIds: options.exportedWireStringifyIds,
+    exportWireStringify: options.exportWireStringify,
+    layer: options.layer,
     validatorName: options.validatorName,
     resolvedSchemasExpr: options.resolvedSchemasExpr,
     serde: options.serde,

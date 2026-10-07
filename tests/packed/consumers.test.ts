@@ -6,7 +6,7 @@ import { build } from 'esbuild';
 import { workspace, command, npm, cli } from '../support/process.js';
 import { writeFixture, filesUnder } from '../support/consumer.js';
 import { startRegistry, packageSpec, type PackedRegistry } from '../../scripts/packed-registry.js';
-import { MOBX, NEST_COMMON, NEST_SWAGGER, TYPESCRIPT } from '../../scripts/third-party-installs.js';
+import { MOBX, NEST_COMMON, NEST_SWAGGER, TYPESCRIPT, TYPESCRIPT6 } from '../../scripts/third-party-installs.js';
 import { copyFixture, copyFixtureFile } from '../fixture-project.js';
 
 let registry: PackedRegistry;
@@ -155,6 +155,18 @@ test('packed public generator declarations retain synchronous models and asynchr
   copyFixture(root, 'packed/declarations');
   await command(root, process.execPath, [path.join(root, 'node_modules/typescript/bin/tsc'), '-p', 'tsconfig.contracts.json']);
 });
+
+
+for (const [label, typescript] of [['TypeScript 7', TYPESCRIPT], ['TypeScript 6', TYPESCRIPT6]]) {
+  test(`a consumer file that imports layer from #golem-models type-checks with no paths entry on ${label}`, async t => {
+    const root = registry.create(t, 'layer-specifier');
+    await npm(root, ['install', '--save-prod', packageSpec(registry, '@exprtlabs/golem')]);
+    await npm(root, ['install', '--save-dev', typescript]);
+    copyFixture(root, 'packed/layer-specifier');
+    const check = await command(root, process.execPath, [path.join(root, 'node_modules/typescript/bin/tsc'), '-p', 'app/tsconfig.json'], { allowFailure: true });
+    assert.deepEqual({ code: check.code, stdout: check.stdout, stderr: check.stderr }, { code: 0, stdout: '', stderr: '' });
+  });
+}
 
 
 test('packed model and SDK validators work without code generation from strings', async t => {

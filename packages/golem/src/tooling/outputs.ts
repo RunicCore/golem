@@ -2,11 +2,14 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 
-import { hasErrorCode, isRecord } from './generator-api.js';
+import { DEFAULT_MODEL_SUFFIXES, hasErrorCode, isRecord, suffixPattern } from './generator-api.js';
 import type { GolemArtifact } from './generator-api.js';
 import { canonicalPath, contains } from './config.js';
 import { codecKeysPath, defaultModelOutput, isOperationCodecRegistry, operationCodecRegistryPath } from './generated-paths.js';
 import type { GolemConfig, GolemJob } from './config.js';
+import { sharedFolderOf } from './shared-folder.js';
+import { lockFileOf } from './shared-lock.js';
+import type { SharedFolderLocks } from './shared-lock.js';
 
 export interface InventoryEntry {
   job: string;
@@ -16,9 +19,14 @@ export interface InventoryEntry {
   destination: string;
   /** A controllers job owns exact files; other jobs own directories. */
   destinationKind: 'file' | 'directory';
+  /**
+   * Set for the companion of a model source outside the configuration directory. Another app may use the file, so this
+   * inventory deletes it only when its source is gone, never because the job stopped writing it or was removed.
+   */
+  shared?: true;
 }
 export interface Inventory { version: 1; files: Record<string, InventoryEntry> }
-interface ExpectedArtifact { filename: string; content: string; destination: string }
+interface ExpectedArtifact { filename: string; content: string; destination: string; shared: boolean }
 const BUILT_IN_OWNERS = new Set(['@exprtlabs/golem-model', '@exprtlabs/golem-openapi', '@exprtlabs/golem-ts-openapi']);
 
 /** Packages whose ownership header marks a generated file: the built-in generators plus every configured generator job. */
@@ -136,6 +144,24 @@ function jobDestinations(job: GolemJob): readonly string[] {
   return [modelOutputOf(job), ...sourceDirectories];
 }
 
+/**
+ * Whether `filename` is the companion of a model source that exists and ends in one of the job's model suffixes, outside
+ * `node_modules`. A models job writes such a companion wherever its source is, as for a shared model folder outside the root.
+ */
+function isCompanionOfModelSource(job: Extract<GolemJob, { kind: 'models' }>, filename: string): boolean {
+  const source = filename.replace(/\.generated\.([cm]?ts)$/, '.$1');
+  if (source === filename || !suffixPattern(job.options.suffixes ?? DEFAULT_MODEL_SUFFIXES).test(path.basename(source))) return false;
+  const inNodeModules = (file: string): boolean => path.normalize(file).split(path.sep).includes('node_modules');
+  try {
+    // A link inside the project can lead into node_modules, so the real directory counts too.
+    if (inNodeModules(filename) || inNodeModules(path.join(fs.realpathSync(path.dirname(source)), path.basename(source)))) return false;
+    return fs.statSync(source).isFile();
+  } catch (error) {
+    if (hasErrorCode(error, 'ENOENT') || hasErrorCode(error, 'ENOTDIR')) return false;
+    throw error;
+  }
+}
+
 function artifactDestination(config: GolemConfig, job: GolemJob, filename: string): string {
   // A models job also owns the codec key file under the configuration directory's `.golem/`.
   const destinations = job.kind === 'models' ? [...jobDestinations(job), path.dirname(codecKeysPath(config.directory))] : jobDestinations(job);
@@ -151,12 +177,30 @@ function artifactDestination(config: GolemConfig, job: GolemJob, filename: strin
       return contains(canonicalPath(candidate), canonicalPath(filename));
     } catch { return false; }
   });
-  if (destination === undefined) {
+  const owner = destination ?? (job.kind === 'models' && isCompanionOfModelSource(job, filename) ? path.dirname(filename) : undefined);
+  if (owner === undefined) {
     throw new Error(`Generated output escapes the ${job.id} destination: ${filename}`);
   }
-  const configured = configuredDestinationPath(destination);
+  const configured = configuredDestinationPath(owner);
   assertDestinationPath(filename, configured, 'job');
   return relativePath(config, configured);
+}
+
+/** Whether a models job writes `filename` as the companion of a model source that lies outside the configuration directory. */
+function isSharedCompanion(config: GolemConfig, job: GolemJob, filename: string): boolean {
+  const key = inventoryKey(config, filename);
+  return job.kind === 'models' && (key === '..' || key.startsWith('../')) && isCompanionOfModelSource(job, filename);
+}
+
+/** Whether the model source of the companion `filename` exists. */
+function companionSourceExists(filename: string): boolean {
+  const source = filename.replace(/\.generated\.([cm]?ts)$/, '.$1');
+  if (source === filename) return false;
+  try { return fs.statSync(source).isFile(); }
+  catch (error) {
+    if (hasErrorCode(error, 'ENOENT') || hasErrorCode(error, 'ENOTDIR')) return false;
+    throw error;
+  }
 }
 
 function destinationKind(owner: string): InventoryEntry['destinationKind'] {
@@ -223,6 +267,19 @@ export function marker(content: string, owner: string): boolean {
   } catch { return false; }
 }
 
+/** The golem version that the header of a model companion records, or undefined when the text has no such header. */
+export function companionVersion(content: string): string | undefined {
+  return /^\/\* Generated by @exprtlabs\/golem-model (\S+)\. Do not edit\. \*\//.exec(content)?.[1];
+}
+
+/** A shared companion that this process may not write differs from the one this project generates. */
+export class IncompatibleSharedCompanionError extends Error {
+  constructor(readonly filename: string, message: string) {
+    super(message);
+    this.name = 'IncompatibleSharedCompanionError';
+  }
+}
+
 export function loadInventory(config: GolemConfig): Inventory {
   assertInventoryPath(config);
   const content = readFile(config.inventoryFile);
@@ -243,13 +300,13 @@ export function loadInventory(config: GolemConfig): Inventory {
           ? 'openapi:'
           : 'generator:';
     if (!entry.job.startsWith(prefix) || entry.job.length === prefix.length) throw new Error(`Generated output ownership conflict: ${filename}. Inventory owner and job disagree.`);
-    if (typeof entry.destination !== 'string') throw new Error(`Invalid generated inventory entry: ${filename}`);
+    if (typeof entry.destination !== 'string' || (entry.shared !== undefined && entry.shared !== true)) throw new Error(`Invalid generated inventory entry: ${filename}`);
     const destination = validateRelativePath(entry.destination, 'inventory destination', true);
     const kind = destinationKind(entry.owner);
     if (entry.destinationKind !== kind) throw new Error(`Invalid generated inventory destination kind: ${filename}`);
     const absolute = inventoryPath(config, key);
     assertProtectedPath(config, absolute);
-    const recorded = { job: entry.job, owner: entry.owner, digest: entry.digest, destination, destinationKind: kind };
+    const recorded: InventoryEntry = { job: entry.job, owner: entry.owner, digest: entry.digest, destination, destinationKind: kind, ...(entry.shared === true ? { shared: true as const } : {}) };
     try { assertDestinationPath(absolute, inventoryDestination(config, absolute, recorded), 'recorded'); }
     catch (error) { throw new Error(`Invalid generated inventory entry: ${filename}. ${error instanceof Error ? error.message : String(error)}`); }
     files[key] = recorded;
@@ -280,6 +337,7 @@ function saveInventory(config: GolemConfig, inventory: Inventory): void {
       digest: entry.digest,
       destination: entry.destination,
       destinationKind: entry.destinationKind,
+      ...(entry.shared === true ? { shared: true } : {}),
     }]));
   atomicWrite(config.inventoryFile, `${JSON.stringify({ version: 1, files }, null, 2)}\n`);
 }
@@ -319,6 +377,8 @@ function assertNoUnrecordedOutputs(config: GolemConfig, inventory: Inventory, jo
       if (!entry.isFile() || (!entry.name.endsWith('.ts') && !entry.name.endsWith('.js') && !entry.name.endsWith('.NOTICES.txt') && entry.name !== 'model-manifest.json')) continue;
       const key = inventoryKey(config, filename);
       if (expected.has(key) || inventory.files[key]) continue;
+      // Another app may have written, or this job may have stopped writing, the companion of a shared source: it is not drift.
+      if (isSharedCompanion(config, job, filename)) continue;
       if (knownOwner(fs.readFileSync(filename, 'utf8'), owners) !== undefined) drift.push(filename);
     }
   };
@@ -331,7 +391,35 @@ function assertNoUnrecordedOutputs(config: GolemConfig, inventory: Inventory, jo
   return drift;
 }
 
-export function applyJob(config: GolemConfig, inventory: Inventory, job: GolemJob, artifacts: readonly GolemArtifact[], check = false): string[] {
+/**
+ * Take the lock of each shared folder the job writes into. Where another live process holds it, this process writes no shared
+ * companion there: each must equal the file, or the job fails before it writes anything. Returns the artifacts it must not
+ * write: the holder may write newer text before this process writes.
+ */
+function holdSharedFolders(expected: ReadonlyMap<string, ExpectedArtifact>, locks: SharedFolderLocks): ReadonlySet<string> {
+  const unheld = new Set<string>();
+  const holders = new Map<string, ReturnType<SharedFolderLocks['hold']>>();
+  for (const artifact of expected.values()) {
+    if (!artifact.shared) continue;
+    const folder = sharedFolderOf(artifact.filename);
+    let held = holders.get(folder);
+    if (held === undefined) holders.set(folder, held = locks.hold(folder));
+    if (held === 'held') continue;
+    const current = readFile(artifact.filename);
+    if (current === artifact.content) {
+      unheld.add(artifact.filename);
+      continue;
+    }
+    const theirs = current === undefined ? undefined : companionVersion(current);
+    const ours = companionVersion(artifact.content);
+    const versions = theirs !== undefined && ours !== undefined && theirs !== ours ? `: written by golem ${theirs}, this project uses golem ${ours}` : '';
+    throw new IncompatibleSharedCompanionError(artifact.filename, `${artifact.filename} is incompatible with the shared companion that ${held.holder.config} (process ${held.holder.pid}) writes${versions}. Generate in that project, or stop it. If no golem process runs, delete ${lockFileOf(folder)}.`);
+  }
+  return unheld;
+}
+
+/** `locks` are the shared-folder locks of a run that writes; a check writes nothing and takes none. */
+export function applyJob(config: GolemConfig, inventory: Inventory, job: GolemJob, artifacts: readonly GolemArtifact[], check = false, locks?: SharedFolderLocks): string[] {
   assertInventoryPath(config);
   if (!Array.isArray(artifacts)) throw new Error(`${job.package} returned invalid artifacts.`);
   const expected = new Map<string, ExpectedArtifact>();
@@ -351,15 +439,17 @@ export function applyJob(config: GolemConfig, inventory: Inventory, job: GolemJo
     if (current !== undefined && !marker(current, job.package)) {
       throw new Error(`Refusing to overwrite ${filename}: it was not generated by ${job.package}. Remove or rename it, or change the job's output path.`);
     }
-    expected.set(key, { filename, content: artifact.content, destination });
+    expected.set(key, { filename, content: artifact.content, destination, shared: isSharedCompanion(config, job, filename) });
   }
+  const unheld = !check && locks ? holdSharedFolders(expected, locks) : new Set<string>();
   assertNoUnrecordedOutputs(config, inventory, job, expected, check);
   const stale: string[] = [];
-  const deletions: Array<[string, string]> = [];
+  // A shared companion whose source still exists leaves the inventory but stays on disk: another app may use it.
+  const deletions: Array<{ key: string; filename: string; keepFile: boolean }> = [];
   for (const [key, artifact] of expected) {
     const current = readFile(artifact.filename);
     const entry = inventory.files[key];
-    if (current !== artifact.content || !entry || entry.digest !== digest(artifact.content) || entry.destination !== artifact.destination || entry.destinationKind !== destinationKind(job.package)) stale.push(key);
+    if (current !== artifact.content || !entry || entry.digest !== digest(artifact.content) || entry.destination !== artifact.destination || entry.destinationKind !== destinationKind(job.package) || (entry.shared === true) !== artifact.shared) stale.push(key);
   }
   for (const [key, entry] of Object.entries(inventory.files)) {
     if (entry.job !== job.id || expected.has(key)) continue;
@@ -369,24 +459,25 @@ export function applyJob(config: GolemConfig, inventory: Inventory, job: GolemJo
     const destination = inventoryDestination(config, filename, entry);
     assertDestinationPath(filename, destination, 'recorded');
     readFile(filename);
-    deletions.push([key, filename]);
+    deletions.push({ key, filename, keepFile: entry.shared === true && companionSourceExists(filename) });
     stale.push(key);
   }
   if (check && stale.length) throw new Error(`Generated outputs are stale for ${job.id}:\n${stale.sort().map(key => `  ${key}`).join('\n')}`);
   if (!check) {
     for (const [key, artifact] of expected) {
       assertDestinationPath(artifact.filename, recordedDestinationPath(config, artifact.destination), 'job');
-      atomicWrite(artifact.filename, artifact.content);
+      if (!unheld.has(artifact.filename)) atomicWrite(artifact.filename, artifact.content);
       inventory.files[key] = {
         job: job.id,
         owner: job.package,
         digest: digest(artifact.content),
         destination: artifact.destination,
         destinationKind: destinationKind(job.package),
+        ...(artifact.shared ? { shared: true as const } : {}),
       };
     }
-    for (const [key, filename] of deletions) {
-      if (readFile(filename) !== undefined) fs.unlinkSync(filename);
+    for (const { key, filename, keepFile } of deletions) {
+      if (!keepFile && readFile(filename) !== undefined) fs.unlinkSync(filename);
       delete inventory.files[key];
     }
     saveInventory(config, inventory);
@@ -407,9 +498,10 @@ export function removeRetiredJobs(config: GolemConfig, inventory: Inventory, che
   }
   if (check && retired.length) throw new Error(`Generated outputs belong to removed jobs:\n${retired.map(([key]) => `  ${key}`).join('\n')}`);
   if (!check && retired.length) {
-    for (const [key] of retired) {
+    for (const [key, entry] of retired) {
       const filename = inventoryPath(config, key);
-      if (readFile(filename) !== undefined) fs.unlinkSync(filename);
+      // The job is gone, so nothing says its shared companion is unused; only a missing source deletes it.
+      if (!(entry.shared === true && companionSourceExists(filename)) && readFile(filename) !== undefined) fs.unlinkSync(filename);
       delete inventory.files[key];
     }
     saveInventory(config, inventory);

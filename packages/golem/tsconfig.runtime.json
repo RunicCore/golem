@@ -2,6 +2,7 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "composite": true,
+    "moduleDetection": "legacy",
     "sourceMap": false,
     "rootDir": "src",
     "outDir": "dist",

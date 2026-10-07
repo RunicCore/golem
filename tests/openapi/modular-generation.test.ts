@@ -506,6 +506,10 @@ test('compact OpenAPI schema closure feeds nested model first/all validation and
     'nested manifest schemas point to canonical closure entries instead of embedding repeated child schemas');
   assert.ok(sdkResult.artifacts.some(artifact => artifact.path.endsWith('/models/Order.ts')));
 
+  // Plain Node runs the tsc output, so the project names the layer in its package.json, as the docs tell a tool outside golem.
+  const packageFile = path.join(source, 'package.json');
+  const packageJson = requireRecord(JSON.parse(readFileSync(packageFile, 'utf8')), 'SDK package.json');
+  writeFileSync(packageFile, JSON.stringify({ ...packageJson, imports: { '#golem-models': './dist/generated/models/models.generated.js' } }));
   const purchaseSource = path.join(source, 'purchase.model.ts');
   copyFixtureFile(source, "openapi/modular-generation/purchase.model.ts", "purchase.model.ts");
   const generateCompanion = () => generateModels({
@@ -518,7 +522,8 @@ test('compact OpenAPI schema closure feeds nested model first/all validation and
   const validatorModule = companion.artifacts.find(artifact => artifact.path.endsWith('/models.validators.generated.ts'));
   assert.ok(validatorModule, 'golem-model consumes the transitive OpenAPI closure in one validator module');
   writeGeneratedArtifacts(companion.artifacts);
-  compileGeneratedSdk(source, [purchaseSource], {
+  // The project includes the layer in its program, as the docs tell it to, so tsc emits it.
+  compileGeneratedSdk(source, [purchaseSource, path.join(source, 'generated/models/models.generated.ts')], {
     strict: true,
     noUnusedLocals: true,
     noUnusedParameters: true,

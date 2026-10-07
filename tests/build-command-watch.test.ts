@@ -14,7 +14,7 @@ const STOP_TIMEOUT_MS = 15_000;
 
 // Watch
 
-interface Watching { readonly output: () => string; readonly stop: () => Promise<number | null> }
+interface Watching { readonly pid: number; readonly output: () => string; readonly stop: () => Promise<number | null> }
 
 function watching(t: TestContext, root: string): Watching {
   const child: ChildProcess = spawn(process.execPath, [golem, 'build', '--watch', '-p', 'tsconfig.json'], { cwd: root, stdio: ['ignore', 'pipe', 'pipe'] });
@@ -35,7 +35,8 @@ function watching(t: TestContext, root: string): Watching {
       clearTimeout(timer);
     }
   };
-  return { output: () => output, stop };
+  assert.ok(child.pid, 'the watching build started');
+  return { pid: child.pid, output: () => output, stop };
 }
 
 async function until(condition: () => boolean, label: string, timeout = 20_000): Promise<void> {
@@ -113,6 +114,66 @@ test('golem build --watch rebuilds for an edit to a source outside the tsconfig 
   await until(() => count(watcher.output(), /^Built /) === 3, 'the rebuild after a file was added beside the outside source');
   assert.match(fs.readFileSync(path.join(app, 'build/shared/added.js'), 'utf8'), /added = 3/);
   assert.equal(await watcher.stop(), 130);
+});
+
+const sharedMoneyModel = (fields: string): string => `import type { IModel } from '@exprtlabs/golem/model';\n\nexport type TMoney = IModel<{ ${fields} }>;\n`;
+
+/** Projects `names` beside one shared folder with a model in it, which each project includes. */
+function appsOfSharedFolder(t: TestContext, names: readonly string[]): { readonly outer: string; readonly apps: readonly string[]; readonly companion: string; readonly lock: string } {
+  const { root: outer } = createModelProject(t, { prefix: 'golem-build-watch-lock-', name: 'build-watch-lock', linkTypescript: true, packages: { '@exprtlabs/golem-model': path.join(workspace, 'packages/golem-model') } });
+  write(outer, 'shared/package.json', '{"name":"lock-shared","type":"module"}');
+  write(outer, 'shared/money.model.ts', sharedMoneyModel('id: string'));
+  const apps = names.map((name) => {
+    const app = path.join(outer, name);
+    write(app, 'package.json', `{"name":"lock-${name}","type":"module"}`);
+    write(app, 'golem.yaml', MINIMAL_GOLEM_YAML);
+    write(app, 'tsconfig.json', JSON.stringify({
+      compilerOptions: { strict: true, target: 'ES2022', module: 'NodeNext', moduleResolution: 'NodeNext', skipLibCheck: true, outDir: 'build', rootDir: '..' },
+      include: ['src/**/*.ts', '../shared/*.ts'],
+    }));
+    write(app, 'src/main.ts', 'export const main: number = 1;\n');
+    return app;
+  });
+  return { outer, apps, companion: path.join(outer, 'shared/money.model.generated.ts'), lock: path.join(outer, 'shared/.golem.lock') };
+}
+
+test('a one-shot build gives up the lock of a shared folder when its generate step ends, before the compiler runs', { timeout: HEAVY_TEST_TIMEOUT_MS }, async (t) => {
+  const { apps: [app], companion, lock } = appsOfSharedFolder(t, ['only']);
+  // `onGenerated` runs when the generate step has returned and the compiler has not started.
+  const afterGenerate: { companion: boolean; lock: boolean }[] = [];
+  const result = await runBuild({ watch: false, config: path.join(app, 'golem.yaml'), onGenerated: () => { afterGenerate.push({ companion: fs.existsSync(companion), lock: fs.existsSync(lock) }); } });
+  assert.equal(result.exitCode, 0);
+  assert.deepEqual(afterGenerate, [{ companion: true, lock: false }]);
+  assert.equal(fs.existsSync(lock), false);
+});
+
+test('two watchers on one shared folder: only the first writes, the second passes after a shared edit', { timeout: 90_000 }, async (t) => {
+  const { outer, apps: [first, second], companion, lock } = appsOfSharedFolder(t, ['first', 'second']);
+  const model = sharedMoneyModel;
+  const holder = watching(t, first);
+  await until(() => count(holder.output(), /^Built /) >= 1, 'the first build of the holder');
+  assert.deepEqual(JSON.parse(fs.readFileSync(lock, 'utf8')), { pid: holder.pid, config: path.join(first, 'golem.yaml') }, 'the first watcher holds the lock');
+  const waiting = watching(t, second);
+  await until(() => count(waiting.output(), /^Built /) >= 1, 'the first build of the second watcher, which finds the companion it would write');
+  const written = fs.statSync(companion).mtimeMs;
+
+  // The holder is stopped, not ended, so it still holds the lock while the shared model changes.
+  process.kill(holder.pid, 'SIGSTOP');
+  t.after(() => { try { process.kill(holder.pid, 'SIGCONT'); } catch { /* ended */ } });
+  write(outer, 'shared/money.model.ts', model('id: string; extra: number'));
+  await until(() => count(waiting.output(), /^Build failed/) >= 1, 'the second watcher to find a different companion');
+  assert.ok(waiting.output().includes(`${companion} is incompatible with the shared companion that ${path.join(first, 'golem.yaml')} (process ${holder.pid}) writes. Generate in that project, or stop it. If no golem process runs, delete ${lock}.`), waiting.output());
+  assert.equal(fs.statSync(companion).mtimeMs, written, 'the second watcher wrote no shared file');
+  assert.doesNotMatch(fs.readFileSync(companion, 'utf8'), /extra/);
+
+  // The holder writes the new companion, and the second watcher runs again because it changed.
+  process.kill(holder.pid, 'SIGCONT');
+  await until(() => /extra/.test(fs.readFileSync(companion, 'utf8')), 'the holder to write the new companion');
+  await until(() => /extra/.test(fs.readFileSync(path.join(second, 'build/shared/money.model.generated.js'), 'utf8')), 'the second watcher to build with the companion the holder wrote');
+  assert.deepEqual(JSON.parse(fs.readFileSync(lock, 'utf8')), { pid: holder.pid, config: path.join(first, 'golem.yaml') }, 'the lock still names the first watcher');
+  assert.equal(await waiting.stop(), 130);
+  assert.equal(await holder.stop(), 130);
+  assert.equal(fs.existsSync(lock), false, 'the lock ends with the process that held it');
 });
 
 test('golem build --watch regenerates and rebuilds once after a model edit; any other source edit rebuilds and reruns the models job, which reads the whole project', { timeout: HEAVY_TEST_TIMEOUT_MS }, async (t) => {
