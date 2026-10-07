@@ -210,7 +210,13 @@ Give the shared folder a `package.json` with a `name`. Golem then names each `TS
 
 One process at a time writes the generated files of a shared folder. It keeps the lock in `.golem.lock` in the folder. Put `.golem.lock` in `.gitignore`. The lock rules are in the [watch guide](/guide/watch#shared-model-folders).
 
-A shared folder can have a `golem.yaml` with a `models` job of its own. Then that job generates the files of the folder, and an app that includes the folder generates none of them.
+Golem never generates models in `node_modules`, and a package ships no generated code. Declare the `IObject` or `IModel` at the top level in your own source. A type from a package or from the shared folder needs no alias when it nests inside that declaration. Here the order uses two models of the folder and a plain line type:
+
+<<< ../../examples/shared-folder/apps/web/src/order.model.ts#app-model
+
+Full example: [`examples/shared-folder`](https://github.com/RunicCore/golem/tree/master/examples/shared-folder), with one app that includes the folder and one that reaches it through a folder link.
+
+A shared folder can have a `golem.yaml` with a `models` job of its own. Then that job generates the files of its folder. An app that uses one of its models as a field, or in a serde call, stops with [RUNM1074](/reference/diagnostics#runm1074).
 
 An app that stops including the folder leaves the generated files in it, because another app can use them. Golem deletes the generated file of a model file that no longer exists.
 
