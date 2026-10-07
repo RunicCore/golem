@@ -659,7 +659,7 @@ export function descriptorBuilder(
     const provenance = fieldProvenance(checker, node ?? provenanceNode ?? analysis.baseNode, specifications);
     if (provenance.anonymous) {
       const alias = declaredModelAlias(provenance.anonymous);
-      const foreign = alias && boundary ? foreignModelReason(alias, boundary) : undefined;
+      const foreign = alias ? foreignModelReason(alias, boundary) : undefined;
       if (foreign !== undefined) throw diagnostic(context.sourceFile, node ?? context.declaration, '1074', foreign);
       throw diagnostic(context.sourceFile, node ?? context.declaration, '1053', 'Nested IModel definitions need a named, exported declaration.');
     }

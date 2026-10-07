@@ -818,3 +818,44 @@ export type TOrder = IObject<{ shared: TShared }>;
   assert.deepEqual(fs.readdirSync(path.join(outer, 'shared')).sort(), ['money.model.ts', 'package.json', 'plain.ts']);
   assert.deepEqual(artifacts.map(artifact => artifact.path).filter(file => !file.startsWith(`${root}${path.sep}`)), []);
 });
+
+test('a sources entry outside the models root stops generation with RUNM1075 naming the entry and the root', (t: TestContext) => {
+  const outer = sharedWorkspace(t);
+  const money = sharedMoneyModel(outer);
+  const root = appProject(outer, 'a', 'src/**/*.ts');
+  writeModelSources(path.join(root, 'src'), { 'order.model.ts': ORDER_MODEL });
+
+  assert.throws(
+    () => generate({ root, sources: [path.join(root, 'src/order.model.ts'), money], profile: { mobx: false, validation: true } }),
+    { message: `RUNM1075: models.sources entry ${money} is outside the models root ${root}. A models job generates only files inside its root.` },
+  );
+});
+
+test('a sources entry that links to a file outside the models root stops generation with RUNM1075 and its real path', (t: TestContext) => {
+  const outer = sharedWorkspace(t);
+  const money = sharedMoneyModel(outer);
+  const root = appProject(outer, 'a', 'src/**/*.ts');
+  fs.symlinkSync(money, path.join(root, 'src/money.model.ts'));
+
+  assert.throws(
+    () => generate({ root, sources: [path.join(root, 'src/money.model.ts')], profile: { mobx: false, validation: true } }),
+    { message: `RUNM1075: models.sources entry ${money} is outside the models root ${root}. A models job generates only files inside its root.` },
+  );
+});
+
+test('a sources entry inside a nested golem.yaml with a models job stops generation naming the entry and that golem.yaml', (t: TestContext) => {
+  const outer = sharedWorkspace(t);
+  const root = appProject(outer, 'a', 'src/**/*.ts');
+  writeModelSources(path.join(root, 'src'), {
+    'lib/golem.yaml': 'version: 1\nmodels:\n  root: .\n',
+    'lib/money.model.ts': tsSource`import type { IObject } from '@exprtlabs/golem/model';
+export type TMoney = IObject<{ currency: string }>;
+`,
+  });
+
+  assert.throws(
+    () => generate({ root, sources: [path.join(root, 'src/lib/money.model.ts')], profile: { mobx: false, validation: true } }),
+    { message: `models.sources entry ${path.join(root, 'src/lib/money.model.ts')} belongs to the models job of ${path.join(root, 'src/lib/golem.yaml')}. That job generates it for its own folder, so this job cannot generate it.` },
+  );
+});
+

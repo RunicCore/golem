@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import YAML from 'yaml';
-import { GolemDiagnosticSeverity, isRecord, resolveProfile } from './generator-api.js';
+import { GolemDiagnosticSeverity, isRecord, outsideModelsRootMessage, resolveProfile } from './generator-api.js';
 import { defaultModelOutput } from './generated-paths.js';
 import type {
   GolemDiagnostic,
@@ -369,7 +369,7 @@ export function resolveConfig(filename = 'golem.yaml', onInput?: InputObserver):
       // The paths are real paths already, so a link to a file outside the root shows as that file.
       for (const source of sources) {
         if (!contains(root, source)) {
-          throw new Error(`RUNM1075: models.sources entry ${source} is outside the models root ${root}. A models job generates only files inside its root.`);
+          throw new Error(outsideModelsRootMessage(source, root));
         }
       }
     }

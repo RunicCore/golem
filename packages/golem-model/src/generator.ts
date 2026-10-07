@@ -9,7 +9,7 @@ import type {
   InputObserver,
 } from '@exprtlabs/golem/generator-api';
 import { buildCodecValidationPlan, compilePlanValidators, type CodecSchemaClosureEntry } from '@exprtlabs/golem/validation-plan';
-import { DEFAULT_MODEL_SUFFIXES, GolemDiagnosticSeverity, resolveProfile, suffixPattern, type GolemDiagnostic } from '@exprtlabs/golem/generator-api';
+import { DEFAULT_MODEL_SUFFIXES, GolemDiagnosticSeverity, outsideModelsRootMessage, resolveProfile, suffixPattern, type GolemDiagnostic } from '@exprtlabs/golem/generator-api';
 import { codecKeysPath, defaultModelOutput } from '@exprtlabs/golem/generated-paths';
 import { emitCodecDeclarationTable } from '@exprtlabs/golem/schema-graph';
 import {
@@ -40,11 +40,14 @@ import {
   generatedFilename,
   includedModelSources,
   isModelSource,
+  isOutside,
   isOwnModelFile,
   modelBoundary,
+  realFilename,
   portableRelativeFilename,
   projectWatchInputs,
   retainedProgramSession,
+  type ModelBoundary,
   type ProgramInfo,
 } from '@exprtlabs/golem/type-analysis';
 
@@ -354,6 +357,17 @@ function withoutRepeatedFieldTypeWarnings(diagnostics: readonly GolemDiagnostic[
   ));
 }
 
+/** A `sources` entry is a file of this job: one outside the models root, in node_modules or covered by another models job stops generation. */
+function assertListedSourceIsOwn(boundary: ModelBoundary, source: string): void {
+  const real = realFilename(source);
+  if (isOutside(boundary.root, real)) throw new Error(outsideModelsRootMessage(real, boundary.root));
+  const yaml = boundary.anotherModelsJobOf(source);
+  if (yaml !== undefined) {
+    throw new Error(`models.sources entry ${real} belongs to the models job of ${yaml}. That job generates it for its own folder, so this job cannot generate it.`);
+  }
+  if (!isOwnModelFile(boundary, source)) throw new Error(`models.sources entry ${real} is in node_modules. Golem does not generate models in node_modules.`);
+}
+
 export function generate(context: GolemModelContext): GolemModelResult {
   const normalized = validateContext(context);
   const listed = normalized.sources !== undefined;
@@ -366,6 +380,7 @@ export function generate(context: GolemModelContext): GolemModelResult {
       + `Add a file ending in ${normalized.suffixes.join(' or ')}, or provide context.sources.`,
     );
   }
+  const boundary = modelBoundary(normalized.root, normalized.directory, normalized.onInput);
   for (const source of discovered) {
     normalized.onInput?.(source);
     if (!isModelSource(source)) {
@@ -374,6 +389,7 @@ export function generate(context: GolemModelContext): GolemModelResult {
     if (!existsSync(source) || !statSync(source).isFile()) {
       throw new Error(`Model source does not exist: ${source}`);
     }
+    if (listed) assertListedSourceIsOwn(boundary, source);
   }
 
   // Phase one intentionally tolerates diagnostics from stale companions.  It
@@ -389,7 +405,6 @@ export function generate(context: GolemModelContext): GolemModelResult {
   using program = programInfo.program;
   // The program holds the files the tsconfig includes and the files they import. A model file is the job's own only when its
   // real path is inside the models root; an outside file, a shared folder for one, works as a file of an installed package.
-  const boundary = modelBoundary(normalized.root, normalized.directory, normalized.onInput);
   const candidates = listed || programInfo.configPath === undefined
     ? discovered
     : [...new Set([...discovered, ...includedModelSources(programFilenames(program), normalized.suffixes)])].sort();

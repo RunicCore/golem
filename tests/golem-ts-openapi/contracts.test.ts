@@ -430,3 +430,33 @@ test('a model with a class is the component named by the class; a model without 
   assert.equal(schemas.TOrder, undefined, 'the alias of a model with a class is not a component');
   assert.ok(schemas.TInvoice, 'a model without a class keeps its alias');
 });
+
+test('a controller field that nests a model of an installed package stops with RUNM1074 and the way to declare it in the app', async t => {
+  const root = fixture(t, `import { Controller, Get } from '@nestjs/common';
+import { ApiOkResponse } from '@nestjs/swagger';
+import type { TPkgMoney } from '@acme/money';
+
+class OrderDto {
+  total!: TPkgMoney;
+}
+
+@Controller('orders')
+export class OrdersController {
+  @Get()
+  @ApiOkResponse({ type: OrderDto })
+  value(): OrderDto { return { total: { currency: 'USD' } }; }
+}
+`, {
+    files: {
+      'node_modules/@acme/money/package.json': JSON.stringify({ name: '@acme/money', version: '1.0.0', type: 'module', types: './index.d.ts', exports: { '.': { types: './index.d.ts' } } }),
+      'node_modules/@acme/money/index.d.ts': "import type { IObject } from '@exprtlabs/golem/model';\nexport type TPkgMoney = IObject<{ currency: string }>;\n",
+    },
+  });
+  const declaration = fs.realpathSync(path.join(root, 'node_modules/@acme/money/index.d.ts'));
+
+  await assert.rejects(
+    generateFixture(root),
+    (error: unknown) => String(error).includes(`RUNM1074: ${declaration}#TPkgMoney is a model in an installed package. Golem does not generate models in node_modules. Declare the model in your own source, for example \`type TPkgMoney = IObject<...>\` over the package's plain type.`),
+  );
+});
+
