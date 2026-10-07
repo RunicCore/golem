@@ -5,7 +5,8 @@ import { resolveSymbol, isModelDeclarationReference } from './symbols.js';
 interface Provenance {
   readonly models: readonly ModelSpecification[];
   readonly projection: boolean;
-  readonly anonymous: boolean;
+  /** The first IModel or IObject reference reached that no model specification declares. */
+  readonly anonymous: ts.TypeReferenceNode | undefined;
 }
 
 /** Follow authored symbols and instantiated arguments; structural equality never establishes identity. */
@@ -15,7 +16,7 @@ export function fieldProvenance(
   specifications: readonly ModelSpecification[],
 ): Provenance {
   const walk = (current: ts.TypeNode | undefined, substitutions = new Map<ts.Symbol, ts.TypeNode>(), seen = new Set<ts.Node>()): Provenance => {
-    const empty: Provenance = { models: [], projection: false, anonymous: false };
+    const empty: Provenance = { models: [], projection: false, anonymous: undefined };
     if (!current || seen.has(current)) return empty;
     const next = new Set(seen).add(current);
     if (ts.isParenthesizedTypeNode(current)) return walk(current.type, substitutions, next);
@@ -31,11 +32,11 @@ export function fieldProvenance(
         models: [...new Set(members.flatMap(member => member.models))],
         projection: ts.isIntersectionTypeNode(current) && members.some(member => member.models.length > 0)
           || members.some(member => member.projection),
-        anonymous: members.some(member => member.anonymous),
+        anonymous: members.find(member => member.anonymous)?.anonymous,
       };
     }
     if (!ts.isTypeReferenceNode(current)) return empty;
-    if (isModelDeclarationReference(checker, current)) return { ...empty, anonymous: true };
+    if (isModelDeclarationReference(checker, current)) return { ...empty, anonymous: current };
     const symbol = resolveSymbol(checker, checker.getSymbolAtLocation(current.typeName));
     if (!symbol) return empty;
     const replacement = substitutionFor(symbol, substitutions, typeReferenceName(current));
@@ -57,7 +58,7 @@ export function fieldProvenance(
       return {
         models: [...new Set(branches.flatMap(branch => branch.models))],
         projection: branches.some(branch => branch.projection),
-        anonymous: branches.some(branch => branch.anonymous),
+        anonymous: branches.find(branch => branch.anonymous)?.anonymous,
       };
     }
     return walk(declaration.type, environment, next);

@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { fieldProvenance, isPropertyMapping, isReadonlySequenceType, readonlyPropertyNames, instantiatedTypeSource, substituteTypeNode, authoredPropertyTypeNode, type TypeSubstitutions } from './projections.js';
 import * as ts from '../typescript-ns.js';
-import { diagnostic, modelSpecificationForClass, propertyType, resolveSymbol } from './symbols.js';
+import { declaredModelAlias, diagnostic, foreignModelReason, modelSpecificationForClass, propertyType, resolveSymbol, type AnotherModelsJobOf } from './symbols.js';
 import { projectionIdentity } from './graph.js';
 import { isProjectionName, pascalIdentifier, policySuffix, projectionBaseName, safeNameHint, unionVariantNaming } from './projection-names.js';
 import { commonDirectory, canonicalFilename } from './project.js';
@@ -537,6 +537,8 @@ export function descriptorBuilder(
   nameFor?: (specification: ModelSpecification) => string,
   /** Canonical model source files of the job, which have a generated companion; omitted when the analysis emits none. */
   modelSources?: ReadonlySet<string>,
+  /** The golem.yaml of another models job that covers a model file, for the diagnostic of a field that nests one of its models. */
+  anotherModelsJobOf?: AnotherModelsJobOf,
 ): {
   (type: ts.Type, context: TypeAnalysisContext, seen?: ReadonlySet<ts.Type>, node?: ts.TypeNode): ModelConversionDescriptor;
   readonly projections: ReadonlyMap<string, ModelConversionDescriptor>;
@@ -656,6 +658,9 @@ export function descriptorBuilder(
 
     const provenance = fieldProvenance(checker, node ?? provenanceNode ?? analysis.baseNode, specifications);
     if (provenance.anonymous) {
+      const alias = declaredModelAlias(provenance.anonymous);
+      const foreign = alias ? foreignModelReason(alias, anotherModelsJobOf) : undefined;
+      if (foreign !== undefined) throw diagnostic(context.sourceFile, node ?? context.declaration, '1074', foreign);
       throw diagnostic(context.sourceFile, node ?? context.declaration, '1053', 'Nested IModel definitions need a named, exported declaration.');
     }
     const projection = provenance.projection || isPropertyMapping(type);

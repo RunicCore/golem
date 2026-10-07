@@ -26,7 +26,7 @@ import {
 import { createSchemaGraph, codecPublicId, codecShortName, internDescriptors, type SchemaGraph } from '@exprtlabs/golem/schema-graph';
 import { propertyName, RESERVED_MODEL_MEMBERS, type GolemProfile } from '@exprtlabs/golem/generator-api';
 import type { ManifestIndex } from '@exprtlabs/golem/type-analysis';
-import type { ModelSpecification } from '@exprtlabs/golem/type-analysis';
+import type { AnotherModelsJobOf, ModelSpecification } from '@exprtlabs/golem/type-analysis';
 import { descriptorBuilder, propertyType } from '@exprtlabs/golem/type-analysis';
 import {
   canonicalFilename,
@@ -830,6 +830,7 @@ export function createJobAnalysis(
   identityRoot?: string,
   compilerOptions?: ts.CompilerOptions,
   sourceFileOf?: (filename: string) => ts.SourceFile | undefined,
+  anotherModelsJobOf?: AnotherModelsJobOf,
 ): JobAnalysis {
   const stableIdentityRoot = canonicalFilename(identityRoot ?? commonDirectory(
     specifications.map((specification) => specification.sourceFile.fileName),
@@ -847,6 +848,7 @@ export function createJobAnalysis(
       true,
       undefined,
       modelSources,
+      anotherModelsJobOf,
     ),
     described: new Map(),
     sources: modelSources,

@@ -53,6 +53,31 @@ export function modelDeclarationKind(checker: ts.TypeChecker, node: ts.TypeNode)
 }
 
 
+/** The golem.yaml of another models job that covers a source file, or undefined. */
+export type AnotherModelsJobOf = (filename: string) => string | undefined;
+
+/**
+ * Why golem cannot generate `declaration`, an IModel or IObject alias that no model of this job declares, or undefined when
+ * the declaration has no such reason: a type that is only nested without a name, for one. A model is `file#export`.
+ */
+export function foreignModelReason(declaration: ts.TypeAliasDeclaration, anotherModelsJobOf?: AnotherModelsJobOf): string | undefined {
+  const filename = declaration.getSourceFile().fileName;
+  const model = `${filename}#${declaration.name.text}`;
+  if (filename.split(/[\\/]/).includes('node_modules')) {
+    return `${model} is a model in an installed package. Golem does not generate models in node_modules. Declare the model in your own source, for example \`type ${declaration.name.text} = IObject<...>\` over the package's plain type.`;
+  }
+  const yaml = anotherModelsJobOf?.(filename);
+  return yaml === undefined
+    ? undefined
+    : `${model} belongs to the models job of ${yaml}. That job generates it for its own folder, so this app cannot use it as a model.`;
+}
+
+/** The alias that declares the model the type reference names, when it is written as `type Name = IModel<...>` or `IObject<...>`. */
+export function declaredModelAlias(reference: ts.TypeReferenceNode): ts.TypeAliasDeclaration | undefined {
+  return ts.isTypeAliasDeclaration(reference.parent) && reference.parent.type === reference ? reference.parent : undefined;
+}
+
+
 /** Identify a model class through its generated base import, including first generation. */
 export function modelSpecificationForClass(
   checker: ts.TypeChecker,

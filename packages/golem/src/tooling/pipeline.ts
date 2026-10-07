@@ -589,6 +589,7 @@ export async function runPipeline(filename: string, options: PipelineOptions = {
     if (job && keys) used.set(job.id, keys);
     const scanned = rewriteScan.scanProject({
       root,
+      directory: config.directory,
       configFile: config.tsconfig,
       nest,
       codecKeysFile: codecKeysPath(config.directory),

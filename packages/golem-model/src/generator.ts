@@ -31,7 +31,7 @@ import { discoverModelManifests } from '@exprtlabs/golem/manifest';
 import { loadModelManifests } from '@exprtlabs/golem/type-analysis';
 import type { ManifestIndex } from '@exprtlabs/golem/type-analysis';
 import {
-  anotherModelsJobCheck,
+  anotherModelsJobOf,
   assertAbsolute,
   canonicalFilename,
   createOverlayProgram,
@@ -394,8 +394,8 @@ export function generate(context: GolemModelContext): GolemModelResult {
     ? discovered
     : [...new Set([...discovered, ...includedModelSources(projectFiles, normalized.suffixes)])].sort();
   // A discovered file that another golem.yaml's models job covers is that job's: it gives the file ids of its own folder.
-  const coveredByAnother = anotherModelsJobCheck(normalized.directory, normalized.onInput);
-  const ownCandidates = listed ? candidates : candidates.filter((source) => !coveredByAnother(source));
+  const anotherJobOf = anotherModelsJobOf(normalized.directory, normalized.onInput);
+  const ownCandidates = listed ? candidates : candidates.filter((source) => anotherJobOf(source) === undefined);
   if (ownCandidates.length === 0) {
     return emptyResult(programInfo, program, normalized.root);
   }
@@ -439,6 +439,7 @@ export function generate(context: GolemModelContext): GolemModelResult {
     normalized.root,
     programInfo.options,
     (filename) => program.getSourceFile(filename),
+    anotherJobOf,
   );
   describeJob(job, specifications);
   const graphs = sources

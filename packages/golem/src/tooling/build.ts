@@ -529,7 +529,7 @@ async function buildOnce(session: ts.ProgramSession, run: BuildRun, changed?: re
   using program = session.openProgram({ root, sources: parsed.fileNames, configFile, onInput: observe });
   const sources = projectSources(program);
   for (const source of sources) observeSource(source.fileName);
-  const scanned = new RewriteScanner({ root, program, checker: program.getTypeChecker(), codecKeysFile: codecKeysPath(golemConfig.directory), nest: golemConfig.jobs.some((job) => job.kind === 'controllers') })
+  const scanned = new RewriteScanner({ root, directory: golemConfig.directory, program, checker: program.getTypeChecker(), codecKeysFile: codecKeysPath(golemConfig.directory), nest: golemConfig.jobs.some((job) => job.kind === 'controllers') })
     .scanFiles(sources.map((source) => source.fileName));
   const errors = scanned.diagnostics.filter((diagnostic) => diagnostic.severity === GolemDiagnosticSeverity.Error);
   if (errors.length > 0) throw scanFailure(errors);

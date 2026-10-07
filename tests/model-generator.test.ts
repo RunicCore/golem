@@ -946,3 +946,82 @@ test('a golem.yaml above the golem.yaml of the job is not another job: the sourc
     [path.join(root, 'src/order.model.generated.ts')],
   );
 });
+
+/** An installed package `@acme/money` whose declaration file declares `TPkgMoney` as an IObject alias and `TPlain` as a plain type. */
+function installPackageWithModel(outer: string): string {
+  const packageRoot = path.join(outer, 'node_modules/@acme/money');
+  writeModelSources(packageRoot, {
+    'package.json': JSON.stringify({ name: '@acme/money', version: '1.0.0', type: 'module', types: './index.d.ts', exports: { '.': { types: './index.d.ts' } } }),
+    'index.d.ts': tsSource`import type { IObject } from '@exprtlabs/golem/model';
+export type TPkgMoney = IObject<{ currency: string }>;
+export type TPlain = { currency: string };
+`,
+  });
+  return fs.realpathSync(path.join(packageRoot, 'index.d.ts'));
+}
+
+/** Each shape of an app model that reaches the package's model, with where the diagnostic points: the type of the field. */
+const PACKAGE_MODEL_FIELDS = {
+  'a field that nests the model': { position: '3:38', source: tsSource`import type { IModel } from '@exprtlabs/golem/model';
+import type { TPkgMoney } from '@acme/money';
+export type TOrder = IModel<{ total: TPkgMoney }>;
+` },
+  'a field that nests an alias of the model': { position: '4:38', source: tsSource`import type { IModel } from '@exprtlabs/golem/model';
+import type { TPkgMoney } from '@acme/money';
+type TMoney = TPkgMoney;
+export type TOrder = IModel<{ total: TMoney }>;
+` },
+  'an IObject that nests the model': { position: '3:39', source: tsSource`import type { IObject } from '@exprtlabs/golem/model';
+import type { TPkgMoney } from '@acme/money';
+export type TOrder = IObject<{ total: TPkgMoney }>;
+` },
+};
+
+for (const [shape, { position, source }] of Object.entries(PACKAGE_MODEL_FIELDS)) {
+  test(`${shape} that an installed package declares fails with the model and why golem cannot generate it`, (t: TestContext) => {
+    const outer = sharedWorkspace(t);
+    const declaration = installPackageWithModel(outer);
+    const root = appProject(outer, 'a', '../shared/**/*.ts');
+    writeModelSources(path.join(root, 'src'), { 'order.model.ts': source });
+
+    assert.throws(
+      () => generate({ root, profile: { mobx: false, validation: true } }),
+      { code: 'RUNM1074', message: `${path.join(root, 'src/order.model.ts')}:${position} RUNM1074: ${declaration}#TPkgMoney is a model in an installed package. Golem does not generate models in node_modules. Declare the model in your own source, for example \`type TPkgMoney = IObject<...>\` over the package's plain type.` },
+    );
+  });
+}
+
+test('a plain type from an installed package or a shared folder is a field of a model', (t: TestContext) => {
+  const outer = sharedWorkspace(t);
+  installPackageWithModel(outer);
+  writeModelSources(path.join(outer, 'shared'), {
+    'package.json': JSON.stringify({ name: '@acme/shared', private: true, type: 'module' }),
+    'plain.ts': 'export type TShared = { amount: number };\n',
+  });
+  const root = appProject(outer, 'a', '../shared/**/*.ts');
+  writeModelSources(path.join(root, 'src'), {
+    'order.model.ts': tsSource`import type { IObject } from '@exprtlabs/golem/model';
+import type { TPlain } from '@acme/money';
+import type { TShared } from '../../shared/plain.js';
+export type TOrder = IObject<{ total: TPlain; shared: TShared }>;
+`,
+  });
+
+  const { artifacts } = generate({ root, profile: { mobx: false, validation: true } });
+  assert.deepEqual(artifacts.map(artifact => artifact.path).filter(file => file.endsWith('.model.generated.ts')), [path.join(root, 'src/order.model.generated.ts')]);
+});
+
+test('a field that nests a model of a folder whose golem.yaml has a models job fails with the model and that golem.yaml', (t: TestContext) => {
+  const { root, sharedFolder } = sharedFolderWithConfig(t, 'version: 1\nmodels:\n  root: .\n');
+  writeModelSources(path.join(root, 'src'), {
+    'order.model.ts': tsSource`import type { IModel } from '@exprtlabs/golem/model';
+import type { TMoney } from '../../shared/src/money.model.js';
+export type TOrder = IModel<{ total: TMoney }>;
+`,
+  });
+
+  assert.throws(
+    () => generate({ root, profile: { mobx: false, validation: true } }),
+    { code: 'RUNM1074', message: `${path.join(root, 'src/order.model.ts')}:3:38 RUNM1074: ${path.join(sharedFolder, 'src/money.model.ts')}#TMoney belongs to the models job of ${path.join(sharedFolder, 'golem.yaml')}. That job generates it for its own folder, so this app cannot use it as a model.` },
+  );
+});
