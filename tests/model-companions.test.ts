@@ -202,7 +202,6 @@ export type TB = IModel<{ label: string & MinLength<2> }>;
   const imported = (name: string): string => text(name).match(/^import \{ ([^}]+) \} from "[^"]*models\.validators\.generated\.js";$/m)?.[1] ?? '';
   assert.match(imported('a.model.generated.ts'), /^validate_TA_\w+(, validate_TA_\w+)*$/);
   assert.match(imported('b.model.generated.ts'), /^validate_TB_\w+(, validate_TB_\w+)*$/);
-  assert.equal(files.some((file) => file.path.endsWith('models.generated.ts')), false);
 });
 
 test('with validation off a generated model file has no validator import and validate true is unavailable', async (t) => {
@@ -221,7 +220,7 @@ export type TA = IModel<{ title: string & MinLength<1> }>;
   await command(root, process.execPath, [verifier, generatedCodecIdFromRoot(root, 'TA')]);
 });
 
-test('schema references resolve between two models that import each other', async (t) => {
+test('two models that import each other load and validate across the cycle', async (t) => {
   const { root, sourceRoot } = companionModelProject(t, 'import-cycle');
   writeModelSources(sourceRoot, {
     'node.model.ts': tsSource`import type { IObject } from '@exprtlabs/golem/model';

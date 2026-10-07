@@ -1280,7 +1280,8 @@ export function emitSource(
   }));
   const serdeExpression = (id: string, direction: 'serialize' | 'deserialize', value: string): string => {
     const names = serdeNames.get(id);
-    return names ? `${names[direction]}(${value})` : value;
+    if (names === undefined) throw new Error(`The generated model file of ${source} has no ${direction} function for the serde id ${JSON.stringify(id)}.`);
+    return `${names[direction]}(${value})`;
   };
   const projectionExpressions = new Map<string, {
     readonly decode: string;

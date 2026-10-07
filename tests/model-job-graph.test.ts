@@ -103,7 +103,8 @@ for (const [label, profile] of profiles) for (const chain of [modelChain, object
       const imported = companion(index).match(/^import \{ ([^}]+) \} from "[^"]*models\.validators\.generated\.js";$/m)?.[1] ?? '';
       assert.equal(imported !== '', profile.validation === true, `${name.toLowerCase()}-${index} imports its validators only when the app validates`);
       for (const validator of imported.split(', ').filter((item) => item !== '')) {
-        assert.ok(validator.startsWith(`validate_T${name}${index}_`) || validator.startsWith('validate_Anonymous_'), `${name.toLowerCase()}-${index} imports only its own validators, not ${validator}`);
+        const codecId = validator.replace(/^validate_/, '').replace(/_(?:wire|model_only|wire_only)$/, '');
+        assert.ok(companion(index).includes(`createObjectCodec("${codecId}", {`), `${name.toLowerCase()}-${index} imports only its own validators, not ${validator}`);
       }
     }
     assert.ok(lastCompanion.includes(kind === 'IModel' ? `class T${name}${last}BaseModel` : `function stringifyT${name}${last}Core(`));
