@@ -19,7 +19,7 @@ delete files it generated earlier that are no longer produced.
 
 ## Regenerate while editing
 
-Watch reruns when `golem.yaml`, the tsconfig and its `extends` files, a file that matches a configured suffix (also a new one), a file those import, an OpenAPI document or a manifest changes, and regenerates everything that depends on it. A model-only edit does not rerun an unchanged SDK job. The models job reads the whole project, so an edit to any project source runs it again. An edit to a file of a [shared folder](/reference/config#a-folder-shared-by-several-apps) that a model imports runs it again too. Type errors that come only
+Watch reruns when `golem.yaml`, the tsconfig and its `extends` files, a file that matches a configured suffix (also a new one), a file those import, an OpenAPI document or a manifest changes, and regenerates everything that depends on it. A model-only edit does not rerun an unchanged SDK job. The models job reads the whole project, so an edit to any project source runs it again. Type errors that come only
 from an outdated `.model.generated.ts` file don't block regeneration. A type error in a model source stops the write; a type error in another file is for `tsc` and `golem build` to report. Remote references are
 fetched during generation; the watcher does not poll them. Each model and
 controller job keeps its TypeScript compiler process running between runs; it
