@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import test, { type TestContext } from 'node:test';
 import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/golem/conversion';
+import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 import { createModelProject, buildModelProject, writeModelGolemYaml } from './model-project.js';
 import { taggedModelSource } from './fixture-templates/models/model-tags.js';
 import { COUNT_DIST_FILES, writeCodecPackage } from './fixture-templates/models/codec-package.js';
@@ -57,6 +58,44 @@ export function decodeCount(value: CountWire): number { return Number(value); }
   fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), model);
   const generated = generate({ root, profile: { mobx: false, validation: true } }).artifacts.find(a => a.path.endsWith(SHARED_MODELS))?.content ?? '';
   assert.match(generated, /from "@fixture\/pg\/codecs"/);
+});
+
+test('a TValidation predicate that only an installed package declares checks the field directly and through its tag alias', async t => {
+  const { root, sourceRoot } = project(t);
+  writeCodecPackage(path.join(root, 'node_modules/@fixture/rules'), {
+    name: '@fixture/rules',
+    exports: { './rules': { types: './dist/rules.d.ts', import: './dist/rules.js' }, './tags': { types: './dist/tags.d.ts', import: './dist/tags.js' } },
+    files: {
+      'dist/rules.d.ts': 'export declare function isEven(value: number): boolean | string;\n',
+      'dist/rules.js': "export function isEven(value) { return value % 2 === 0 || 'must be even'; }\n",
+      'dist/tags.d.ts': tsSource`import type { TValidation } from '@exprtlabs/golem/tags';
+import type { isEven } from './rules.js';
+export type EvenCount = number & TValidation<typeof isEven>;
+`.text,
+      'dist/tags.js': 'export {};\n',
+    },
+  });
+  fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), tsSource`import type { IObject } from '@exprtlabs/golem/model';
+import type { TValidation } from '@exprtlabs/golem/tags';
+import type { isEven } from '@fixture/rules/rules';
+import type { EvenCount } from '@fixture/rules/tags';
+export type TA = IObject<{ viaAlias: EvenCount; direct: number & TValidation<typeof isEven> }>;
+`.text);
+  writeModelGolemYaml(root, { mobx: false, validation: true });
+  await buildModelProject(root);
+  const { parseTA } = await import(path.toNamespacedPath(path.join(root, 'build/a.model.generated.js')));
+
+  assert.deepEqual(parseTA('{"viaAlias":2,"direct":4}'), { viaAlias: 2, direct: 4 });
+  assert.throws(() => parseTA('{"viaAlias":3,"direct":4}'), (error: unknown) => {
+    assert.ok(error instanceof LibError && error.kind === LibErrorKind.Validation);
+    assert.deepEqual(error.issues.map(({ path, message }) => ({ path, message })), [{ path: ['viaAlias'], message: 'must be even' }]);
+    return true;
+  });
+  assert.throws(() => parseTA('{"viaAlias":2,"direct":5}'), (error: unknown) => {
+    assert.ok(error instanceof LibError && error.kind === LibErrorKind.Validation);
+    assert.deepEqual(error.issues.map(({ path, message }) => ({ path, message })), [{ path: ['direct'], message: 'must be even' }]);
+    return true;
+  });
 });
 
 test('wildcard export reaches the codec', async t => {
