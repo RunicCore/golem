@@ -202,6 +202,21 @@ test('model output changes retire old shared artifacts through recorded destinat
   assert.equal(inventory.files[key].destination, path.relative(directory, newOutput).replaceAll(path.sep, '/'));
 });
 
+test('a model inside models.root but outside src writes its generated file', (t: TestContext) => {
+  const directory = fixture(t);
+  const model = path.join(directory, 'lib/money.model.ts');
+  fs.mkdirSync(path.dirname(model), { recursive: true });
+  fs.writeFileSync(model, 'export type TMoney = unknown;\n');
+  const job = modelJob(directory, path.join(directory, 'generated'));
+  const config = configFor(directory, job);
+  const filename = path.join(directory, 'lib/money.model.generated.ts');
+
+  applyJob(config, loadInventory(config), job, [{ path: filename, content: modelContent(1) }]);
+
+  assert.equal(fs.readFileSync(filename, 'utf8'), modelContent(1));
+  assert.equal(loadInventory(config).files['lib/money.model.generated.ts']?.destination, '.');
+});
+
 test('an inventory entry without its destination or destination kind is invalid', (t: TestContext) => {
   const directory = fixture(t);
   const output = path.join(directory, 'generated');

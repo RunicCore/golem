@@ -5,16 +5,19 @@ import test, { type TestContext } from 'node:test';
 import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/golem/conversion';
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 import { createModelProject, buildModelProject, writeModelGolemYaml } from './model-project.js';
+import { createFixtureProject, linkProjectPackages } from './fixture-project.js';
+import { workspace } from './support/process.js';
 import { taggedModelSource } from './fixture-templates/models/model-tags.js';
 import { COUNT_DIST_FILES, writeCodecPackage } from './fixture-templates/models/codec-package.js';
 import { tsSource } from './source-template.js';
 import { generate } from '#model/generator';
 
-function project(t: TestContext, packages: Record<string, string> = {}) {
+function project(t: TestContext, packages: Record<string, string> = {}, options: { readonly rootDir?: string } = {}) {
   return createModelProject(t, {
     prefix: 'golem-packaged-codecs-', name: 'packaged-codecs',
     linkTypescript: true,
     packages,
+    ...options,
   });
 }
 
@@ -58,6 +61,39 @@ export function decodeCount(value: CountWire): number { return Number(value); }
   fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), model);
   const generated = generate({ root, profile: { mobx: false, validation: true } }).artifacts.find(a => a.path.endsWith(MODEL_FILE))?.content ?? '';
   assert.match(generated, /from "@fixture\/pg\/codecs"/);
+});
+
+test('a TSerde codec of a folder outside the root round-trips in an app model', async t => {
+  const { root, sourceRoot } = project(t, {}, { rootDir: '..' });
+  const shared = createFixtureProject(t, 'golem-shared-codecs-');
+  linkProjectPackages(shared, { '@exprtlabs/golem': path.join(workspace, 'packages/golem') });
+  fs.writeFileSync(path.join(shared, 'package.json'), JSON.stringify({ private: true, type: 'module' }));
+  fs.writeFileSync(path.join(shared, 'codecs.ts'), `import type { Pattern, TSerde } from '@exprtlabs/golem/tags';
+export type CountWire = string & Pattern<'^-?\\\\d+$'>;
+export function encodeCount(value: number): CountWire { return value.toString() as CountWire; }
+export function decodeCount(value: CountWire): number { return Number(value); }
+export type PkgCount = number & TSerde<typeof encodeCount, typeof decodeCount>;
+`);
+  const toShared = path.relative(root, shared).split(path.sep).join('/');
+  fs.writeFileSync(path.join(root, 'tsconfig.json'), JSON.stringify({
+    compilerOptions: { strict: true, target: 'ES2022', module: 'NodeNext', moduleResolution: 'NodeNext', skipLibCheck: true, outDir: 'build', rootDir: '..' },
+    include: ['src/**/*.ts', `${toShared}/**/*.ts`],
+  }));
+  fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), `import type { IModel } from '@exprtlabs/golem/model';
+import type { PkgCount } from '../${toShared}/codecs.js';
+import { TABaseModel, type TAFields } from './a.model.generated.js';
+export type TA = IModel<{ count: PkgCount }>;
+export class A extends TABaseModel { constructor(values: Partial<TAFields> = {}) { super(values); } }
+`);
+  writeModelGolemYaml(root, { mobx: false, validation: true });
+
+  await buildModelProject(root);
+
+  const { A } = await import(path.toNamespacedPath(path.join(root, 'build', path.basename(root), 'src/a.model.js')));
+  const decoded = decodeGeneratedModel(A, { count: '42' });
+  assert.equal(decoded.count, 42);
+  assert.deepEqual(encodeGeneratedModel(decoded), { count: '42' });
+  assert.deepEqual(fs.readdirSync(shared).sort(), ['codecs.ts', 'node_modules', 'package.json']);
 });
 
 test('a TValidation predicate that only an installed package declares checks the field directly and through its tag alias', async t => {

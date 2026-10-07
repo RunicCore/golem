@@ -5,8 +5,7 @@ import { pathToFileURL } from 'node:url';
 import { contains, jobTsconfigDiagnostics, modelsRootOf, resolveConfig, validateConfigInputs } from './config.js';
 import type { GolemConfig, GolemJob } from './config.js';
 import { codecKeysPath } from './generated-paths.js';
-import { IncompatibleSharedCompanionError, loadInventory, applyJob, removeRetiredJobs } from './outputs.js';
-import { SharedFolderLocks } from './shared-lock.js';
+import { loadInventory, applyJob, removeRetiredJobs } from './outputs.js';
 import { absoluteRecordPath, codeDigest, golemCode, insideAny, inventoryPaths, JobInputs, jobIsCurrent, loadJobRecords, recordPath, sameSetup, saveJobRecords } from './job-cache.js';
 import type { JobRecord } from './job-cache.js';
 import { DEFAULT_CONTROLLER_SUFFIXES, DEFAULT_MODEL_SUFFIXES, GolemDiagnosticSeverity, errorMessage, hasErrorCode, isRecord, suffixPattern } from './generator-api.js';
@@ -69,26 +68,9 @@ function disposeAll(resources: Iterable<Disposable>): void {
   if (errors.length > 1) throw new AggregateError(errors, 'Closing generator session resources failed.');
 }
 
-/**
- * Owns provider resources, per job, for one pipeline run or watch session, and the locks of the shared folders it writes. A
- * session that lasts as long as its process, such as a watch, holds those locks until it is disposed; a one-shot run's own
- * session is `run` and gives them up when its write step ends.
- */
+/** Owns provider resources, per job, for one pipeline run or watch session. */
 export class GeneratorSessionResources implements Disposable {
   private readonly jobs = new Map<string, Map<string, SessionResource>>();
-  private locks: SharedFolderLocks | undefined;
-
-  constructor(private readonly lifetime: 'process' | 'run' = 'process') {}
-
-  /** The locks of the shared folders this session writes; the project in a lock is the one whose `golem.yaml` is `configFile`. */
-  sharedFolderLocks(configFile: string): SharedFolderLocks {
-    return this.locks ??= new SharedFolderLocks({ pid: process.pid, config: configFile }, this.lifetime);
-  }
-
-  /** The write step of a run has ended. */
-  endWriteStep(): void {
-    this.locks?.endRun();
-  }
 
   /** The session a job's provider sees; `used` collects the keys it retains in this run. */
   forJob(jobId: string, used: Set<string>): GeneratorSession {
@@ -132,8 +114,6 @@ export class GeneratorSessionResources implements Disposable {
   [Symbol.dispose](): void {
     const resources: Disposable[] = [...this.jobs.values()].flatMap((job) => [...job.values()]);
     this.jobs.clear();
-    if (this.locks) resources.push(this.locks);
-    this.locks = undefined;
     disposeAll(resources);
   }
 }
@@ -402,7 +382,7 @@ function affectedJobs(config: GolemConfig, options: PipelineOptions): ReadonlySe
 
 export async function runPipeline(filename: string, options: PipelineOptions = {}): Promise<PipelineState> {
   const ignoredDirectories = options.ignoredDirectories ?? [];
-  const session = options.session ?? new GeneratorSessionResources('run');
+  const session = options.session ?? new GeneratorSessionResources();
   using ownedSession = options.session ? undefined : session;
   const inputs = new Map<string, InputKind>();
   const dependencies = new Map<string, Set<string>>();
@@ -565,20 +545,13 @@ export async function runPipeline(filename: string, options: PipelineOptions = {
     }
     options.onOwned?.(result.artifacts.map(artifact => artifact.path));
     if (!cached) {
-      try {
-        applyJob(config, inventory, job, result.artifacts, Boolean(options.check), options.check ? undefined : session.sharedFolderLocks(config.configFile));
-      } catch (error) {
-        // A watching build waits for the holder to write the companion.
-        if (error instanceof IncompatibleSharedCompanionError) options.onInput?.(error.filename, 'models');
-        throw error;
-      }
+      applyJob(config, inventory, job, result.artifacts, Boolean(options.check));
       for (const output of [...previousOutputs, ...result.artifacts.map(artifact => artifact.path)]) ranOutputs.add(output);
     }
     for (const input of result.watchInputs) observe(input, job.kind, job.id);
     manifests.push(...result.manifestPaths);
     results.set(job.id, result);
   }
-  session.endWriteStep();
   // `golem check` reads the project's sources too: it reports the sites golem cannot rewrite, and writes nothing. A yaml
   // without a tsconfig, an openapi-only one for instance, has no project to scan.
   const rewriteScan = options.check && fs.existsSync(config.tsconfig) ? await loadRewriteScan(rewriteRoot(config).job !== undefined) : undefined;

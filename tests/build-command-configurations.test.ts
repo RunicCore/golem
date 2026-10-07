@@ -10,7 +10,7 @@ import { createControllerFixture } from './fixture-templates/controllers/project
 import { command, workspace } from './support/process.js';
 import { createModelProject, MINIMAL_GOLEM_YAML } from './model-project.js';
 import { ORDER_WIRE, runSite, sharedFolderProject } from './support/shared-folder-project.js';
-import { TSC, HEAVY_TEST_TIMEOUT_MS, write, editTsconfig, serdeProject, sourceOnlyProject, countingGenerator, PAYMENTS_CONTROLLER, USE, snapshot, build, mtimes, importBuilt, assertCallMap } from './support/build-project.js';
+import { TSC, HEAVY_TEST_TIMEOUT_MS, write, editTsconfig, serdeProject, sourceOnlyProject, PAYMENTS_CONTROLLER, USE, snapshot, build, mtimes, importBuilt, assertCallMap } from './support/build-project.js';
 
 // Output the incremental state cannot see, and configurations that differ in one directory
 
@@ -399,5 +399,4 @@ test('a project with no shared folder needs no new configuration', async (t) => 
   assert.equal((await build(root)).exitCode, 0);
   const result = await command(root, process.execPath, ['--input-type=module', '--eval', "import('./build/use.js').then((use) => console.log(JSON.stringify(use.money)));"]);
   assert.equal(result.stdout, '{"currency":"USD","value":"1"}\n');
-  assert.equal(fs.existsSync(path.join(root, '.golem.lock')), false);
 });
