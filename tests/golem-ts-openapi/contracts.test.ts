@@ -1,4 +1,5 @@
-import { readFixture } from '../fixture-project.js';
+import { linkProjectPackages, readFixture } from '../fixture-project.js';
+import { workspace } from '../support/process.js';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -460,3 +461,35 @@ export class OrdersController {
   );
 });
 
+
+// todo: the controllers analysis takes every non-node_modules file of the program as a model source, so an outside model is a model
+// of the job and never reaches the RUNM1074 check; passing a boundary to `descriptorBuilder` alone changes nothing.
+test('a controller field that nests a model of a folder outside the controllers root stops with RUNM1074 and the way to declare it in the app', { todo: 'the controllers analysis treats an outside model as its own; it needs a source filter by boundary as well as a boundary argument' }, async t => {
+  const root = fixture(t, '');
+  const shared = `${root}-shared`;
+  t.after(() => fs.rmSync(shared, { recursive: true, force: true }));
+  fs.mkdirSync(shared);
+  linkProjectPackages(shared, { '@exprtlabs/golem': path.join(workspace, 'packages/golem') });
+  fs.writeFileSync(path.join(shared, 'package.json'), JSON.stringify({ private: true, type: 'module' }));
+  fs.writeFileSync(path.join(shared, 'money.ts'), "import type { IObject } from '@exprtlabs/golem/model';\nexport type TSharedMoney = IObject<{ currency: string }>;\n");
+  fs.writeFileSync(path.join(root, 'src/contracts.controller.ts'), `import { Controller, Get } from '@nestjs/common';
+import { ApiOkResponse } from '@nestjs/swagger';
+import type { TSharedMoney } from '../../${path.basename(shared)}/money.js';
+
+class OrderDto {
+  total!: TSharedMoney;
+}
+
+@Controller('orders')
+export class OrdersController {
+  @Get()
+  @ApiOkResponse({ type: OrderDto })
+  value(): OrderDto { return { total: { currency: 'USD' } }; }
+}
+`);
+
+  await assert.rejects(
+    generateFixture(root),
+    (error: unknown) => String(error).includes(`RUNM1074: ${path.join(fs.realpathSync(shared), 'money.ts')}#TSharedMoney is outside the models root ${fs.realpathSync(root)}. Golem does not generate models outside the root of the app. Declare the model in your own source, for example \`type TSharedMoney = IObject<...>\` over a plain type.`),
+  );
+});

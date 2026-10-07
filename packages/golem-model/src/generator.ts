@@ -9,7 +9,7 @@ import type {
   InputObserver,
 } from '@exprtlabs/golem/generator-api';
 import { buildCodecValidationPlan, compilePlanValidators, type CodecSchemaClosureEntry } from '@exprtlabs/golem/validation-plan';
-import { DEFAULT_MODEL_SUFFIXES, GolemDiagnosticSeverity, outsideModelsRootMessage, resolveProfile, suffixPattern, type GolemDiagnostic } from '@exprtlabs/golem/generator-api';
+import { DEFAULT_MODEL_SUFFIXES, GolemDiagnosticSeverity, canonicalPath, outsideModelsRootMessage, resolveProfile, suffixPattern, type GolemDiagnostic } from '@exprtlabs/golem/generator-api';
 import { codecKeysPath, defaultModelOutput } from '@exprtlabs/golem/generated-paths';
 import { emitCodecDeclarationTable } from '@exprtlabs/golem/schema-graph';
 import {
@@ -42,7 +42,6 @@ import {
   isOutside,
   isOwnModelFile,
   modelBoundary,
-  realFilename,
   portableRelativeFilename,
   projectWatchInputs,
   retainedProgramSession,
@@ -358,7 +357,7 @@ function withoutRepeatedFieldTypeWarnings(diagnostics: readonly GolemDiagnostic[
 
 /** A `sources` entry is a file of this job: one outside the models root, in node_modules or covered by another models job stops generation. */
 function assertListedSourceIsOwn(boundary: ModelBoundary, source: string): void {
-  const real = realFilename(source);
+  const real = canonicalPath(source);
   if (isOutside(boundary.root, real)) throw new Error(outsideModelsRootMessage(real, boundary.root));
   const yaml = boundary.anotherModelsJobOf(source);
   if (yaml !== undefined) {

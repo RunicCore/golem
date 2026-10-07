@@ -1,9 +1,9 @@
 
-import { existsSync, readFileSync, realpathSync } from 'node:fs';
-import { basename, dirname, isAbsolute, join, normalize, parse, relative, resolve, sep } from 'node:path';
+import { existsSync, readFileSync } from 'node:fs';
+import { dirname, isAbsolute, join, normalize, parse, relative, resolve, sep } from 'node:path';
 import YAML from 'yaml';
 import * as ts from '../typescript-ns.js';
-import { DEFAULT_MODEL_SUFFIXES, discoverSources, suffixPattern, type GeneratorSession, type InputObserver } from '../generator-api.js';
+import { DEFAULT_MODEL_SUFFIXES, canonicalPath, discoverSources, suffixPattern, type GeneratorSession, type InputObserver } from '../generator-api.js';
 
 export function canonicalFilename(filename: string): string {
   return normalize(resolve(filename));
@@ -80,22 +80,6 @@ export function includedModelSources(files: readonly string[], suffixes: readonl
     .sort((left, right) => left < right ? -1 : left > right ? 1 : 0);
 }
 
-/**
- * The real path of `filename`: each link of its existing prefix is followed, and the part that does not exist yet stays
- * as written. A file reached through a folder link has the same real path as the file itself.
- */
-export function realFilename(filename: string): string {
-  let ancestor = canonicalFilename(filename);
-  const missing: string[] = [];
-  while (!existsSync(ancestor)) {
-    const parent = dirname(ancestor);
-    if (parent === ancestor) break;
-    missing.unshift(basename(ancestor));
-    ancestor = parent;
-  }
-  return join(realpathSync.native(ancestor), ...missing);
-}
-
 /** What decides which files are the model sources of one models job. */
 export interface ModelBoundary {
   /** The real path of `models.root`. */
@@ -105,8 +89,8 @@ export interface ModelBoundary {
 }
 
 export function modelBoundary(modelsRoot: string, ownDirectory: string, onInput?: InputObserver): ModelBoundary {
-  const root = realFilename(modelsRoot);
-  return { root, anotherModelsJobOf: modelsJobBelowRoot(root, realFilename(ownDirectory), onInput) };
+  const root = canonicalPath(modelsRoot);
+  return { root, anotherModelsJobOf: modelsJobBelowRoot(root, canonicalPath(ownDirectory), onInput) };
 }
 
 /**
@@ -115,7 +99,7 @@ export function modelBoundary(modelsRoot: string, ownDirectory: string, onInput?
  * as a file of an installed package does: golem generates nothing for it.
  */
 export function isOwnModelFile(boundary: ModelBoundary, filename: string): boolean {
-  const real = realFilename(filename);
+  const real = canonicalPath(filename);
   return !isOutside(boundary.root, real)
     && !relative(boundary.root, real).split(sep).includes('node_modules')
     && boundary.anotherModelsJobOf(real) === undefined;
@@ -151,7 +135,7 @@ function modelsJobBelowRoot(root: string, own: string, onInput?: InputObserver):
     return found;
   };
   return (filename) => {
-    const real = realFilename(filename);
+    const real = canonicalPath(filename);
     if (isOutside(root, real)) return undefined;
     for (let directory = dirname(real); ; directory = dirname(directory)) {
       if (directory === own || own.startsWith(`${directory}${sep}`)) return undefined;

@@ -1,6 +1,7 @@
 import { relative } from 'node:path';
 import * as ts from '../typescript-ns.js';
-import { canonicalFilename, generatedFilename, isOutside, realFilename, type ModelBoundary } from './project.js';
+import { canonicalPath } from '../generator-api.js';
+import { canonicalFilename, generatedFilename, isOutside, type ModelBoundary } from './project.js';
 import type { ModelSpecification } from './models.js';
 
 /** A located model-analysis error with its RUNM code. */
@@ -62,7 +63,7 @@ export function modelDeclarationKind(checker: ts.TypeChecker, node: ts.TypeNode)
  * analysis) only the `node_modules` reason applies.
  */
 export function foreignModelReason(declaration: ts.TypeAliasDeclaration, boundary: ModelBoundary | undefined): string | undefined {
-  const filename = realFilename(declaration.getSourceFile().fileName);
+  const filename = canonicalPath(declaration.getSourceFile().fileName);
   const name = declaration.name.text;
   const model = `${filename}#${name}`;
   const insideRoot = boundary !== undefined && !isOutside(boundary.root, filename);

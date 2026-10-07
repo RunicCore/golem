@@ -96,6 +96,46 @@ export class A extends TABaseModel { constructor(values: Partial<TAFields> = {})
   assert.deepEqual(fs.readdirSync(shared).sort(), ['codecs.ts', 'node_modules', 'package.json']);
 });
 
+/**
+ * A monorepo: a named root package with workspaces, a named app below it, and a `shared/` folder beside the app with a
+ * `rules.ts` that only the app's model imports. `sharedManifest` is the shared folder's package.json, when it has one.
+ * Returns the app's root.
+ */
+function monorepo(t: TestContext, sharedManifest?: Readonly<Record<string, unknown>>): string {
+  const repo = createFixtureProject(t, 'golem-monorepo-');
+  const web = path.join(repo, 'apps/web');
+  fs.mkdirSync(path.join(web, 'src'), { recursive: true });
+  fs.mkdirSync(path.join(repo, 'shared'), { recursive: true });
+  linkProjectPackages(repo, { '@exprtlabs/golem': path.join(workspace, 'packages/golem'), typescript: path.join(workspace, 'node_modules/typescript') });
+  fs.writeFileSync(path.join(repo, 'package.json'), JSON.stringify({ name: 'acme', private: true, type: 'module', workspaces: ['apps/*'] }));
+  fs.writeFileSync(path.join(web, 'package.json'), JSON.stringify({ name: 'web', private: true, type: 'module' }));
+  fs.writeFileSync(path.join(web, 'tsconfig.json'), JSON.stringify({
+    compilerOptions: { strict: true, target: 'ES2022', module: 'NodeNext', moduleResolution: 'NodeNext', skipLibCheck: true, outDir: 'build', rootDir: '../..' },
+    include: ['src/**/*.ts', '../../shared/**/*.ts'],
+  }));
+  if (sharedManifest) fs.writeFileSync(path.join(repo, 'shared/package.json'), JSON.stringify(sharedManifest));
+  fs.writeFileSync(path.join(repo, 'shared/rules.ts'), "export function isCurrencyCode(value: string): boolean | string { return /^[A-Z]{3}$/.test(value) || 'must be a currency code'; }\n");
+  fs.writeFileSync(path.join(web, 'src/a.model.ts'), tsSource`import type { IObject } from '@exprtlabs/golem/model';
+import type { TValidation } from '@exprtlabs/golem/tags';
+import type { isCurrencyCode } from '../../../shared/rules.js';
+export type TA = IObject<{ currency: string & TValidation<typeof isCurrencyCode> }>;
+`.text);
+  return web;
+}
+
+test('a shared folder with no name of its own keeps its functions relative when only the named root above the app owns it', t => {
+  const web = monorepo(t);
+  const artifacts = generate({ root: web, profile: { mobx: false, validation: true } }).artifacts;
+  const validators = artifacts.find(a => a.path.endsWith('models.validators.generated.ts'))?.content ?? '';
+  assert.match(validators, /import \{ isCurrencyCode as \w+ \} from "(\.\.\/)+shared\/rules\.js"/);
+  assert.doesNotMatch(validators, /acme/);
+});
+
+test('RUNM1060 when a shared folder with its own name has no export that reaches the function', t => {
+  const web = monorepo(t, { name: '@acme/shared', version: '0.0.0', type: 'module' });
+  assert.throws(() => generate({ root: web, profile: { mobx: false, validation: true } }), /RUNM1060: .*isCurrencyCode.*@acme\/shared.*rules\.ts/);
+});
+
 test('a TValidation predicate that only an installed package declares checks the field directly and through its tag alias', async t => {
   const { root, sourceRoot } = project(t);
   writeCodecPackage(path.join(root, 'node_modules/@fixture/rules'), {

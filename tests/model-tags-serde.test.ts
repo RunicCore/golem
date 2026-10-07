@@ -201,3 +201,29 @@ test('generic utility aliases retain nested constraints, predicates, and serde b
   assert.deepEqual(encodeGeneratedModel(valid), { payload: { value: 'good', when: '2025-01-02T03:04:05.000Z' } });
   assert.equal(bindings.serialized, 1, 'an explicit serialize call serializes once for that call');
 });
+
+test('two model files that import each other round-trip a TSerde field, also when the other file picks it with Pick', async t => {
+  const { root, sourceRoot } = fixture(t);
+  fs.writeFileSync(path.join(sourceRoot, 'codecs.ts'), `export function encode(value: number): string { return String(value); }
+export function decode(value: string): number { return Number(value); }
+`);
+  fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), tsSource`import type { IObject } from '@exprtlabs/golem/model';
+import type { TSerde } from '@exprtlabs/golem/tags';
+import type { TB } from './b.model.js';
+import { encode, decode } from './codecs.js';
+export type TA = IObject<{ token: number & TSerde<typeof encode, typeof decode>; other?: TB }>;
+`.text);
+  fs.writeFileSync(path.join(sourceRoot, 'b.model.ts'), tsSource`import type { IObject } from '@exprtlabs/golem/model';
+import type { TA } from './a.model.js';
+export type TB = IObject<{ back?: TA; copy: Pick<TA, 'token'> }>;
+`.text);
+  writeModelGolemYaml(root, { mobx: false, validation: true });
+  await buildModelProject(root);
+  const a = await import(path.toNamespacedPath(path.join(root, 'build/a.model.generated.js')));
+  const b = await import(path.toNamespacedPath(path.join(root, 'build/b.model.generated.js')));
+
+  assert.deepEqual(a.parseTA('{"token":"4","other":{"copy":{"token":"5"}}}'), { token: 4, other: { copy: { token: 5 } } });
+  assert.deepEqual(JSON.parse(a.stringifyTA({ token: 4, other: { copy: { token: 5 } } })), { token: '4', other: { copy: { token: '5' } } });
+  assert.deepEqual(b.parseTB('{"back":{"token":"6"},"copy":{"token":"7"}}'), { back: { token: 6 }, copy: { token: 7 } });
+  assert.deepEqual(JSON.parse(b.stringifyTB({ back: { token: 6 }, copy: { token: 7 } })), { back: { token: '6' }, copy: { token: '7' } });
+});

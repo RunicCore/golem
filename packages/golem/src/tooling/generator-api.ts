@@ -31,6 +31,22 @@ export function outsideModelsRootMessage(entry: string, root: string): string {
   return `RUNM1075: models.sources entry ${entry} is outside the models root ${root}. A models job generates only files inside its root.`;
 }
 
+/**
+ * The real path of `filename`: each link of its existing prefix is followed, and the part that does not exist yet stays
+ * as written. A file reached through a folder link has the same real path as the file itself.
+ */
+export function canonicalPath(filename: string): string {
+  let ancestor = path.resolve(filename);
+  const missing: string[] = [];
+  while (!fs.existsSync(ancestor)) {
+    missing.unshift(path.basename(ancestor));
+    const parent = path.dirname(ancestor);
+    if (parent === ancestor) break;
+    ancestor = parent;
+  }
+  return path.join(fs.realpathSync.native(ancestor), ...missing);
+}
+
 /** Programmatic callers receive the same defaults and checks as YAML users. */
 export function resolveProfile(profile: GolemProfile): ResolvedGolemProfile {
   if (!isRecord(profile)) throw new TypeError('Generation profile must be an object.');

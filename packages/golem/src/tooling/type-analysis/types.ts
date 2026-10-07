@@ -143,6 +143,7 @@ function classValueReference(
   type: ts.Type,
   context: TypeAnalysisContext,
   node: ts.Node,
+  identityRoot: string,
 ): { typeName: string; typeImport?: { exportName: string; module: string; specifier?: string } } {
   // The class's own symbol, never a local alias such as `type Bytes = Uint8Array & TSerde<…>`,
   // which the model file need not export.
@@ -180,7 +181,7 @@ function classValueReference(
     throw diagnostic(context.sourceFile, node, '1063', `Class ${typeName} is not exported from ${path.relative(path.dirname(context.sourceFile.fileName), sourceFile.fileName)}, so generated code cannot import it. Export it.`);
   }
   const module = canonicalFilename(sourceFile.fileName);
-  const resolved = packageSpecifier(module, context.sourceFile.fileName);
+  const resolved = packageSpecifier(module, context.sourceFile.fileName, identityRoot);
   if (resolved.kind === 'unexported') {
     throw diagnostic(context.sourceFile, node, '1060', `Class ${typeName} is in package ${resolved.packageName}, but no "exports" entry reaches ${module}. Export that file from the package.`);
   }
@@ -653,7 +654,7 @@ export function descriptorBuilder(
       return withMetadata({ kind: 'class-value', typeName: 'bigint' } as ModelConversionDescriptor, metadata);
     }
     if (metadata.serde && isClassValueType(checker, type)) {
-      return withMetadata({ kind: 'class-value', ...classValueReference(checker, type, context, node ?? context.declaration) } as ModelConversionDescriptor, metadata);
+      return withMetadata({ kind: 'class-value', ...classValueReference(checker, type, context, node ?? context.declaration, stableIdentityRoot) } as ModelConversionDescriptor, metadata);
     }
 
     const provenance = fieldProvenance(checker, node ?? provenanceNode ?? analysis.baseNode, specifications);

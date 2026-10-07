@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import YAML from 'yaml';
-import { GolemDiagnosticSeverity, isRecord, outsideModelsRootMessage, resolveProfile } from './generator-api.js';
+import { GolemDiagnosticSeverity, canonicalPath, isRecord, outsideModelsRootMessage, resolveProfile } from './generator-api.js';
 import { defaultModelOutput } from './generated-paths.js';
 import type {
   GolemDiagnostic,
@@ -144,22 +144,6 @@ function controllerUriVersioning(value: unknown, label: string): ControllerUriVe
     ...(prefix === undefined ? {} : { prefix }),
     ...(defaultVersion === undefined ? {} : { defaultVersion }),
   } as ControllerUriVersioning;
-}
-
-/**
- * Resolve a path through its existing prefix while retaining future path
- * components, so a symlinked ancestor cannot change a not-yet-created target.
- */
-export function canonicalPath(filename: string): string {
-  let ancestor = path.resolve(filename);
-  const missing: string[] = [];
-  while (!fs.existsSync(ancestor)) {
-    missing.unshift(path.basename(ancestor));
-    const parent = path.dirname(ancestor);
-    if (parent === ancestor) break;
-    ancestor = parent;
-  }
-  return path.join(fs.realpathSync.native(ancestor), ...missing);
 }
 
 /** A file's name under its canonical directory: a link to the file is not followed, so the file stays where it is named. */

@@ -191,7 +191,7 @@ A models job generates only for a model file whose real path is inside `models.r
 An outside folder can hold:
 
 - Plain types. A plain type is a field type of a model of the app. Its constraints, such as `MinLength`, apply in the generated file of that model.
-- `TSerde` and `TValidation` functions. Golem imports a function of the folder by a relative path.
+- `TSerde` and `TValidation` functions. Golem imports a function of the folder by a relative path, also when a named package above the app, such as a monorepo root, holds the folder.
 
 A `package.json` in the folder with a `name` makes the folder a package. Golem then imports its functions by that name. Each app must resolve the name, and an `exports` entry must reach the file of the function. Without it, generation fails with [RUNM1060](/reference/diagnostics#runm1060). A `package.json` without a `name` has no effect on these imports.
 
@@ -203,7 +203,7 @@ Each app declares its own model and has its own profile. The worker below declar
 
 <<< ../../examples/shared-folder/apps/worker/src/customer.model.ts#worker-model
 
-A field type, or a serde call, that uses an outside `IModel` or `IObject` alias stops generation with [RUNM1074](/reference/diagnostics#runm1074). The message names the model and tells you what to declare.
+A field type that uses an outside `IModel` or `IObject` alias stops generation with [RUNM1074](/reference/diagnostics#runm1074). A serde call that uses one gets the same error from `golem check`, `golem build` and the hosts. The message names the model and tells you what to declare.
 
 A `golem.yaml` below the root can have a `models` job of its own. Then that job generates the files of its folder, and the outer job skips them.
 

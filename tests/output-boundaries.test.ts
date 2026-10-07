@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { test, type TestContext } from 'node:test';
 import type { GolemConfig, GolemJob } from '#golem/config';
+import { codecKeysPath } from '#golem/generated-paths';
 import { applyJob, loadInventory, removeRetiredJobs } from '#golem/outputs';
 
 function modelContent(value: number): string {
@@ -243,6 +244,32 @@ test('an inventory entry that an earlier release marked shared and put outside t
   assert.equal(fs.readFileSync(stale, 'utf8'), modelContent(7));
   assert.deepEqual(Object.keys(loadInventory(config).files), ['src/order.model.generated.ts']);
   assert.deepEqual(Object.keys((JSON.parse(fs.readFileSync(config.inventoryFile, 'utf8')) as { files: object }).files), ['src/order.model.generated.ts']);
+});
+
+test('an old inventory entry for a file outside its models root is dropped and its file stays, while the entry for the codec keys outside the root stays', (t: TestContext) => {
+  const directory = fixture(t);
+  const root = path.join(directory, 'apps/web');
+  fs.mkdirSync(path.join(directory, 'shared'), { recursive: true });
+  fs.mkdirSync(root, { recursive: true });
+  const stale = path.join(directory, 'shared/x.model.generated.ts');
+  fs.writeFileSync(stale, modelContent(7));
+  const job = modelJob(root, path.join(root, 'generated'));
+  const config = configFor(directory, job);
+  const keys = codecKeysPath(directory);
+  fs.mkdirSync(path.dirname(keys), { recursive: true });
+  fs.writeFileSync(keys, '{"version":1,"keys":{}}\n');
+  fs.writeFileSync(config.inventoryFile, JSON.stringify({
+    version: 1,
+    files: {
+      'shared/x.model.generated.ts': { job: job.id, owner: '@exprtlabs/golem-model', digest: 'a'.repeat(64), destination: 'shared', destinationKind: 'directory' },
+      '.golem/codec-keys.json': { job: job.id, owner: '@exprtlabs/golem-model', digest: 'b'.repeat(64), destination: '.golem', destinationKind: 'directory' },
+    },
+  }));
+
+  assert.deepEqual(Object.keys(loadInventory(config).files), ['.golem/codec-keys.json']);
+  applyJob(config, loadInventory(config), job, [{ path: path.join(root, 'src/order.model.generated.ts'), content: modelContent(1) }]);
+
+  assert.equal(fs.readFileSync(stale, 'utf8'), modelContent(7));
 });
 
 test('an old shared entry of one models job does not let that job delete a file in the root of another', (t: TestContext) => {

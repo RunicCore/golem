@@ -251,7 +251,7 @@ function valueBindingForSymbol(
       `${kind} function must be exported so generated code can call it.`,
     );
   }
-  const resolved = packageSpecifier(canonicalFilename(sourceFile.fileName), context.sourceFile.fileName);
+  const resolved = packageSpecifier(canonicalFilename(sourceFile.fileName), context.sourceFile.fileName, context.identityRoot);
   if (resolved.kind !== 'package' && context.isModelSource?.(canonicalFilename(sourceFile.fileName))) {
     // The shared generated module imports this function; from a model file that would close a cycle with the
     // file's generated companion, which breaks start-up whenever the companion loads first.
