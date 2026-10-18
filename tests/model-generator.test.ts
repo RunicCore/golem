@@ -508,7 +508,6 @@ test('a companion imports only the validators of its own models and the companio
     'import { validate_TPayment_c98a45aa } from "./generated/models/models.validators.generated.js";',
     "import { registerGeneratedModel, type GeneratedModel, type GeneratedModelConstructor, type generatedModelWireBrand, type generatedModelFieldsBrand } from '@exprtlabs/golem/model';",
     "import { decodeCheckedInput, decodeDetachedInput, convertModelField, defineModelProperty, requireModelObject } from '@exprtlabs/golem/conversion';",
-    "import { deserializeDate, serializeDate } from '@exprtlabs/golem/conversion';",
     "import { assertModelValue, createObjectCodec, isValidModelValue, parseJson, registerIModelClass, requireObjectCodec, serdeValidates, stringifyJsonString, IssueRepresentation, IssueSource, type SerdeOptions as __GolemSerdeOptions, type ValidateOptions as __GolemValidateOptions } from '@exprtlabs/golem/serde';",
     "import { enhanceValidatorWithMobX } from '@exprtlabs/golem/mobx-validation';",
     'import "./money.model.generated.js";',

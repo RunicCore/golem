@@ -9,7 +9,7 @@ import {
   emitCodecRuntime,
   FIELD_CONVERSION_INPUT,
   singleCallConverter,
-  pruneNamedImport,
+  pruneGeneratedImports,
   stringifyFunctionName,
   wireStringifyExportName,
   fromWireFunctionName,
@@ -1731,13 +1731,7 @@ export function emitSource(
   if (validators && usedValidators.size > 0) {
     lines.splice(1, 0, `import { ${[...usedValidators].sort().join(', ')} } from ${JSON.stringify(sourceImportPath(validators.module, output))};`);
   }
-  const companion = pruneExternalCodecImports(pruneNamedImport(
-    pruneNamedImport(
-      pruneNamedImport(pruneUnusedHelpers(`${lines.join('\n').trim()}\n`), '@exprtlabs/golem/serde'),
-      '@exprtlabs/golem/conversion',
-    ),
-    '@exprtlabs/golem/model',
-  ));
+  const companion = pruneGeneratedImports(pruneUnusedHelpers(`${lines.join('\n').trim()}\n`));
   assertExternalImportsExported(companion, externalIds, manifestIndex, source, output);
   return companion;
 }
@@ -1792,31 +1786,4 @@ function assertExternalImportsExported(
       );
     }
   }
-}
-
-function specifierLocalName(specifier: string): string {
-  let name = specifier.trim();
-  if (name.startsWith('type ')) name = name.slice('type '.length).trim();
-  const alias = name.split(/\s+as\s+/);
-  return (alias.length === 2 ? alias[1] : name).trim();
-}
-
-/** Drop codec helpers an external model import never calls. Keep the class when the body uses it. */
-function pruneExternalCodecImports(source: string): string {
-  return source.replace(
-    /import \{([^}]+)\} from ("(?:\\.|[^"])+");\n?/g,
-    (statement, names: string) => {
-      const specifiers = names.split(',').map((name) => name.trim()).filter((name) => name.length > 0);
-      const importsCodecHelper = specifiers.some((name) => /^(?:stringify|fromWireFormat|toWireFormat)/.test(specifierLocalName(name)));
-      if (!importsCodecHelper) return statement.endsWith('\n') ? statement : `${statement}\n`;
-      const body = source.split(statement).join('');
-      const used = specifiers.filter((name) => {
-        const local = specifierLocalName(name);
-        return local.length > 0 && new RegExp(`\\b${local.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`).test(body);
-      });
-      if (used.length === 0) return '';
-      const from = statement.slice(statement.lastIndexOf(' from ') + ' from '.length).replace(/;\n?$/, '');
-      return `import { ${used.join(', ')} } from ${from};\n`;
-    },
-  );
 }

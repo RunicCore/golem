@@ -1814,23 +1814,6 @@ function jsonDataExpression(value: unknown): string {
   return `JSON.parse(${JSON.stringify(json)})`;
 }
 
-export function pruneNamedImport(source: string, moduleName: string): string {
-  const escaped = moduleName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  return source.replace(
-    new RegExp(`import \\{([^}]+)\\} from '${escaped}';\\n?`),
-    (statement, names: string) => {
-      const body = source.replace(statement, '');
-      // A specifier is used when its local name is: `type A as B` binds B.
-      const localName = (specifier: string): string => specifier.replace(/^type\s+/, '').split(/\s+as\s+/).at(-1) ?? specifier;
-      const used = names
-        .split(',')
-        .map((name) => name.trim())
-        .filter((name) => name.length > 0 && new RegExp(`\\b${localName(name).replace(/\$/g, '\\$')}\\b`).test(body));
-      return used.length > 0 ? `import { ${used.join(', ')} } from '${moduleName}';\n` : '';
-    },
-  );
-}
-
 function nodeValidates(node: SchemaNode, defaultEnabled: boolean): boolean {
   if (node.validationEnabled === true) return true;
   if (node.validationEnabled === false) return false;
