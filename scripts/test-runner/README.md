@@ -34,4 +34,14 @@ After you change what a test installs, run `npm run test:prepare` before the nex
 - `Timed out after … ms`: the named command exceeded its limit and its processes were killed.
 - `The … tier exceeded its …s ceiling and was stopped`: the whole run passed its time limit.
 
-Results and timings land in `.cache/test-results/`. `npm run test:native` runs the unit tests without Docker, for Windows and other Node versions.
+## Results and timings
+
+Results land in `.cache/test-results/`: one TAP file for each test step, and `<tier>-timings.json`. The runner writes the timings file when a step starts and again when it ends, so a run that the ceiling stops keeps every finished step. Its fields:
+
+- `timings`: one entry for each finished step, with `label`, `seconds`, `status` and `file_seconds`.
+- `file_seconds`: the seconds of each test file, keyed by source path (`tests/serde.test.ts`), summed over the steps. A file that the TypeScript 6 lane reruns counts both runs. The entries in `timings` hold the seconds of each step alone.
+- `running`: the step that was running at the last write. It is absent when every step ended.
+
+A file's seconds are the wall time of its test process, from start to exit, including the load of the file. Each test step also writes `<step>.files.jsonl`, one line for each file that ended. When the ceiling stops a step, that step's finished files are only in this file.
+
+`npm run test:native` runs the unit tests without Docker, for Windows and other Node versions. It writes no results.

@@ -5,7 +5,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 export type Tier = 'prepare' | 'focused' | 'full' | 'acceptance' | 'docs';
-export interface Step { readonly label: string; readonly run: () => number }
+/** `fileTimings` is the JSON-lines file that the test-file reporter fills while the step runs. */
+export interface Step { readonly label: string; readonly run: () => number; readonly fileTimings?: string }
 
 export const UNIT_FILES = ['.build/tests/*.test.js', '.build/tests/openapi/*.test.js', '.build/tests/golem-ts-openapi/*.test.js'] as const;
 // The model-only smoke file runs in Full; Acceptance runs the others so it runs once.
@@ -85,8 +86,16 @@ function run(executable: string, args: readonly string[], cwd: string = root, en
 
 function nodeTest(label: string, files: readonly string[], timeout: number, concurrency: number, extra: readonly string[] = [], env: NodeJS.ProcessEnv = {}): Step {
   const reporters = ['--test-reporter=spec', '--test-reporter-destination=stdout'];
-  if (resultsDir) reporters.push('--test-reporter=tap', `--test-reporter-destination=${path.join(resultsDir, `${label}.tap`)}`);
-  return { label, run: () => run(process.execPath, ['--test', `--test-timeout=${timeout}`, `--test-concurrency=${concurrency}`, ...reporters, ...extra, ...files], root, env) };
+  let fileTimings: string | undefined;
+  const nodeFlags: string[] = [];
+  if (resultsDir) {
+    // Spec, TAP and the file reporter put 11 `end` listeners on the run's event stream; node warns above 10.
+    nodeFlags.push('--disable-warning=MaxListenersExceededWarning');
+    fileTimings = path.join(resultsDir, `${label}.files.jsonl`);
+    reporters.push('--test-reporter=tap', `--test-reporter-destination=${path.join(resultsDir, `${label}.tap`)}`);
+    reporters.push(`--test-reporter=${fileURLToPath(new URL('./test-file-timings.js', import.meta.url))}`, `--test-reporter-destination=${fileTimings}`);
+  }
+  return { label, fileTimings, run: () => run(process.execPath, [...nodeFlags, '--test', `--test-timeout=${timeout}`, `--test-concurrency=${concurrency}`, ...reporters, ...extra, ...files], root, env) };
 }
 
 /** Environment that points the compiler seam at the container's TypeScript 6 install. */
@@ -185,6 +194,30 @@ function assertContainer(tier: Tier, native: boolean): void {
   if (mismatches.length) throw new Error(`The test image is stale: ${mismatches.join('; ')}. Run: npm run test:prepare`);
 }
 
+interface StepTiming { readonly label: string; readonly seconds: number; readonly status: number; readonly file_seconds?: Readonly<Record<string, number>> }
+
+/** Reads the lines of the test-file reporter. A step with no lines is reported, never read as zero files. */
+function readFileSeconds(file: string, label: string): Record<string, number> | undefined {
+  const lines = fs.existsSync(file) ? fs.readFileSync(file, 'utf8').split('\n').filter(Boolean) : [];
+  if (!lines.length) {
+    process.stderr.write(`No test file timings for the ${label} step (${file}).\n`);
+    return undefined;
+  }
+  const fileSeconds: Record<string, number> = {};
+  for (const line of lines) {
+    const { file: source, seconds } = JSON.parse(line) as { file: string; seconds: number };
+    fileSeconds[source] = seconds;
+  }
+  return fileSeconds;
+}
+
+/** The seconds of each file over all steps; a file that two steps run counts both. */
+function sumFileSeconds(timings: readonly StepTiming[]): Record<string, number> {
+  const total: Record<string, number> = {};
+  for (const { file_seconds } of timings) for (const [source, seconds] of Object.entries(file_seconds ?? {})) total[source] = Math.round(((total[source] ?? 0) + seconds) * 10) / 10;
+  return total;
+}
+
 function main(argv: readonly string[]): void {
   const [tierArg, ...rest] = argv;
   const native = rest.includes('--native');
@@ -197,19 +230,30 @@ function main(argv: readonly string[]): void {
   if (resultsDir) {
     fs.mkdirSync(resultsDir, { recursive: true });
     // A run's results never mix with an earlier run's.
-    for (const name of fs.readdirSync(resultsDir)) if (name.endsWith('.tap') || name.endsWith('-timings.json')) fs.rmSync(path.join(resultsDir, name));
+    for (const name of fs.readdirSync(resultsDir)) if (name.endsWith('.tap') || name.endsWith('-timings.json') || name.endsWith('.files.jsonl')) fs.rmSync(path.join(resultsDir, name));
   }
-  const timings: { label: string; seconds: number; status: number }[] = [];
+  const timings: StepTiming[] = [];
   const started = Date.now();
+  // The ceiling can kill this process at any time, so the file is complete after every step. `running` names the
+  // step that was cut; the files that step finished stay in its `.files.jsonl`.
+  const writeTimings = (running?: string): void => {
+    if (!resultsDir) return;
+    const file = path.join(resultsDir, `${tier}-timings.json`);
+    const total = Math.round((Date.now() - started) / 1000);
+    fs.writeFileSync(`${file}.tmp`, JSON.stringify({ tier, total, running, timings, file_seconds: sumFileSeconds(timings) }, null, 2) + '\n');
+    fs.renameSync(`${file}.tmp`, file);
+  };
   for (const step of steps(tier, args, native)) {
+    writeTimings(step.label);
     const stepStarted = Date.now();
     const status = step.run();
-    timings.push({ label: step.label, seconds: Math.round((Date.now() - stepStarted) / 1000), status });
+    const seconds = Math.round((Date.now() - stepStarted) / 1000);
+    const fileSeconds = step.fileTimings && readFileSeconds(step.fileTimings, step.label);
+    timings.push({ label: step.label, seconds, status, ...(fileSeconds && { file_seconds: fileSeconds }) });
+    process.stdout.write(`${tier} ${step.label}: ${status === 0 ? 'passed' : 'FAILED'} in ${seconds}s\n`);
+    writeTimings();
   }
-  const total = Math.round((Date.now() - started) / 1000);
-  for (const entry of timings) process.stdout.write(`${tier} ${entry.label}: ${entry.status === 0 ? 'passed' : 'FAILED'} in ${entry.seconds}s\n`);
-  process.stdout.write(`${tier} finished in ${total}s\n`);
-  if (resultsDir) fs.writeFileSync(path.join(resultsDir, `${tier}-timings.json`), JSON.stringify({ tier, total, timings }, null, 2) + '\n');
+  process.stdout.write(`${tier} finished in ${Math.round((Date.now() - started) / 1000)}s\n`);
   if (timings.some(entry => entry.status !== 0)) process.exitCode = 1;
 }
 
