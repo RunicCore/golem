@@ -88,6 +88,57 @@ export function convertModelField<Arg, Value>(
   }
 }
 
+/**
+ * The loop of `convertModelItems` and `convertModelTupleItems`: a new array of the same length that skips holes, as
+ * `map` does. Each item runs under its index on the active path, with the error rules of `convertModelField`.
+ */
+function convertEachItem<Value>(
+  direction: 'serialize' | 'deserialize',
+  items: readonly unknown[],
+  convert: (item: unknown, index: number, items: readonly unknown[]) => Value,
+): Value[] {
+  const converted = new Array<Value>(items.length);
+  const depth = activeConversionPath.push(0) - 1;
+  try {
+    for (let index = 0; index < items.length; index++) {
+      if (!(index in items)) continue;
+      activeConversionPath[depth] = index;
+      converted[index] = convert(items[index], index, items);
+    }
+  } catch (error) {
+    if (error instanceof LibError) throw error;
+    const kind = direction === 'serialize' ? LibErrorKind.Serialization : LibErrorKind.Deserialization;
+    const message = error instanceof Error && error.message
+      ? error.message
+      : `Field ${direction === 'serialize' ? 'serialization' : 'deserialization'} failed.`;
+    throw conversionError(kind, message, activeConversionPath, error);
+  } finally {
+    activeConversionPath.length = depth;
+  }
+  return converted;
+}
+
+/**
+ * Generated synchronous conversion of each array item, under its index in the error path. `convert` gets the item
+ * only, so a converter with an optional second parameter, such as `deserializeDate`, keeps its default path.
+ */
+export function convertModelItems<Value>(
+  direction: 'serialize' | 'deserialize',
+  convert: (item: unknown) => Value,
+  items: readonly unknown[],
+): Value[] {
+  return convertEachItem(direction, items, item => convert(item));
+}
+
+/** Generated synchronous conversion of each tuple item, under its index in the error path. `convert` gets the item, its index and the array. */
+export function convertModelTupleItems<Value>(
+  direction: 'serialize' | 'deserialize',
+  convert: (item: unknown, index: number, items: readonly unknown[]) => Value,
+  items: readonly unknown[],
+): Value[] {
+  return convertEachItem(direction, items, convert);
+}
+
 let activeDecodeValues: WeakMap<object, Function | Set<Function>> | undefined;
 let activeEncodeModels: Set<object> | undefined;
 /** Wire objects a generated recursive `fill` is decoding; a wire already in it is a cycle. */

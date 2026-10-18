@@ -9,7 +9,7 @@ import type { ValidationPlane } from '../object-codec.js';
 import type { SchemaGraph, SchemaNode } from './schema-graph.js';
 import { codecShortName, serdeWireDescriptor } from './schema-graph.js';
 import type { JsonSchema } from './schema.js';
-import { emitTupleConversion } from './sequence-conversion.js';
+import { emitArrayConversion, emitArrayItems, emitTupleConversion, singleCallConverter } from './sequence-conversion.js';
 import {
   AMBIGUOUS_UNION_CONVERSION_ERROR,
   OBJECT_UNION_DISCRIMINATOR_ERROR,
@@ -330,11 +330,18 @@ function emitValue(
   if (descriptor.kind === 'null') return "'null'";
   if (descriptor.kind === 'literal') return emitJsonLiteral(descriptor.value);
   if (descriptor.kind === 'array') {
-    const itemNode = ctx.graph.nodeFor(descriptor.item);
-    const item = itemNode && isObjectish(descriptor.item) && !ctx.wireIdentity
-      ? nestedStringifyCall(itemNode.id, 'item', ctx)
-      : emitValue(descriptor.item, 'item', ctx);
-    return `stringifyJsonArray(${expression} as ArrayLike<unknown>, (item) => ${item})`;
+    return emitArrayConversion(descriptor.item, expression, {
+      output: 'json',
+      item: (item, value) => {
+        const itemNode = ctx.graph.nodeFor(item);
+        return {
+          code: itemNode && isObjectish(item) && !ctx.wireIdentity
+            ? nestedStringifyCall(itemNode.id, value, ctx)
+            : emitValue(item, value, ctx),
+          throws: false,
+        };
+      },
+    });
   }
   if (descriptor.kind === 'tuple') {
     return emitTupleConversion(descriptor, expression, {
@@ -358,7 +365,8 @@ function emitValue(
       ) {
         return `stringifyJsonScalar(${expression} as never)`;
       }
-      return `(Array.isArray(${expression}) ? stringifyJsonArray(${expression} as ArrayLike<unknown>, (item) => ${item}) : (${scalar}))`;
+      const items = emitArrayItems(array.item, expression, { output: 'json', item: () => ({ code: item, throws: false }) });
+      return `(Array.isArray(${expression}) ? ${items} : (${scalar}))`;
     }
     const tagged = emitTaggedVariantUnion(
       descriptor,
@@ -984,9 +992,7 @@ function emitUnionDecode(
   if (array) {
     const item = emitDecodeValue(array.item, 'item', ctx);
     const scalar = emitDecodeValue(array.item, expression, ctx);
-    const mapped = item === 'item'
-      ? expression
-      : `(${expression} as readonly unknown[]).map((item) => ${item})`;
+    const mapped = emitArrayItems(array.item, expression, { output: 'value', item: () => ({ code: item, throws: false }) });
     return emitScalarOrArrayConversion(expression, mapped, scalar);
   }
   const tagged = emitTaggedVariantUnion(
@@ -1059,9 +1065,7 @@ function emitUnionEncode(
   if (array) {
     const item = emitEncodeValue(array.item, 'item', ctx);
     const scalar = emitEncodeValue(array.item, expression, ctx);
-    const mapped = item === 'item'
-      ? expression
-      : `(${expression} as readonly unknown[]).map((item) => ${item})`;
+    const mapped = emitArrayItems(array.item, expression, { output: 'value', item: () => ({ code: item, throws: false }) });
     return emitScalarOrArrayConversion(expression, mapped, scalar);
   }
   const tagged = emitTaggedVariantUnion(
@@ -1158,12 +1162,21 @@ function emitDecodeValue(descriptor: ModelTypeDescriptor, expression: string, ct
     return emitInternedObjectDecode(named, descriptor, expression, ctx);
   }
   if (descriptor.kind === 'array') {
-    const before = fallibleCount(ctx);
-    const item = emitDecodeValue(descriptor.item, 'item', { ...ctx, decodeLocals: undefined });
-    // An item that can throw runs under its index.
-    return emittedFallible(before, item, ctx)
-      ? `Array.isArray(${expression}) ? (${expression} as readonly unknown[]).map((item, index) => ${emitFieldConversion('index', 'item', descriptor.item, 'item', ctx)}) : ${expression}`
-      : `Array.isArray(${expression}) ? ${emitArrayCopy(expression, item)} : ${expression}`;
+    return emitArrayConversion(descriptor.item, expression, {
+      output: 'value',
+      paths: 'deserialize',
+      item: (item, value) => {
+        const before = fallibleCount(ctx);
+        const code = emitDecodeValue(item, value, { ...ctx, decodeLocals: undefined });
+        // An item that can throw runs under its index, as a module-level function when it is hoisted.
+        if (!emittedFallible(before, code, ctx)) return { code, throws: false };
+        const scope: EmitCtx = { ...ctx, decodeLocals: [] };
+        const decoded = emitDecodeValue(item, value, scope);
+        const converter = hoistConverter(value, decoded, scope.decodeLocals ?? [], ctx);
+        const call = `${converter}(${value})`;
+        return { code: singleCallConverter(call, value) === converter ? call : decoded, throws: true };
+      },
+    });
   }
   if (descriptor.kind === 'tuple') {
     return emitTupleConversion(descriptor, expression, {
@@ -1181,12 +1194,6 @@ function emitDecodeValue(descriptor: ModelTypeDescriptor, expression: string, ct
     return emitDecodedRecord(descriptor, expression, ctx);
   }
   return expression;
-}
-
-/** A new array of `expression` whose items are `item`; an unchanged item is copied without a callback. */
-function emitArrayCopy(expression: string, item: string): string {
-  const array = `(${expression} as readonly unknown[])`;
-  return item === 'item' ? `${array}.slice()` : `${array}.map((item) => ${item})`;
 }
 
 function emitComputedRecord(fields: readonly (readonly [string, string])[]): string {
@@ -1416,8 +1423,10 @@ function emitEncodeValue(descriptor: ModelTypeDescriptor, expression: string, ct
     return nestedToWireCall(named.id, expression, ctx);
   }
   if (descriptor.kind === 'array') {
-    const item = emitEncodeValue(descriptor.item, 'item', ctx);
-    return `Array.isArray(${expression}) ? ${emitArrayCopy(expression, item)} : ${expression}`;
+    return emitArrayConversion(descriptor.item, expression, {
+      output: 'value',
+      item: (item, value) => ({ code: emitEncodeValue(item, value, ctx), throws: false }),
+    });
   }
   if (descriptor.kind === 'tuple') {
     return emitTupleConversion(descriptor, expression, {

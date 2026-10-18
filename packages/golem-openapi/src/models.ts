@@ -1596,7 +1596,7 @@ export function generateModels(
     generatedBanner(),
     ...(profile.validation && profile.mobx ? ["import { enhanceValidatorWithMobX } from '@exprtlabs/golem/mobx-validation';"] : []),
     `import { registerGeneratedModel, type ModelInit, type GeneratedModelConstructor, type generatedModelWireBrand, type generatedModelFieldsBrand${ordered.some(definition => definition.isUnion) ? ", type generatedModelResultBrand" : ""}${emitCopy ? ", findGeneratedModelDefinition, findGeneratedModelDefinitionForConstructor" : ""} } from '@exprtlabs/golem/model';`,
-    `import { assertPropertyAcyclic, assertWireAcyclic, beginDecode, convertModelField, decodeCheckedInput, decodeDetachedInput, endDecode, decodeGeneratedModelTrusted, defineModelProperty, encodeGeneratedModel${usesDate ? ", deserializeDate, serializeDate" : ""} } from '@exprtlabs/golem/conversion';`,
+    `import { assertPropertyAcyclic, assertWireAcyclic, beginDecode, convertModelField, convertModelItems, convertModelTupleItems, decodeCheckedInput, decodeDetachedInput, endDecode, decodeGeneratedModelTrusted, defineModelProperty, encodeGeneratedModel${usesDate ? ", deserializeDate, serializeDate" : ""} } from '@exprtlabs/golem/conversion';`,
     "import { assertModelValue, createObjectCodec, isValidModelValue, modelValueIssues, parseJson, registerIModelClass, requireIModelClass, requireObjectCodec, resolveGeneratedModelSchemaRefs, serdeFailFast, serdeValidates, stringifyJsonArray, stringifyJsonBoolean, stringifyJsonNumber, stringifyJsonScalar, stringifyJsonString, validationFailure, validationUnavailable, IssueRepresentation, IssueSource, type SerdeOptions as __GolemSerdeOptions, type ValidateOptions as __GolemValidateOptions } from '@exprtlabs/golem/serde';",
     ...(profile.mobx ? [
       "import { asGenObservable } from '@exprtlabs/golem/mobx';",
@@ -1847,7 +1847,7 @@ export function generateModels(
   // Only import converter helpers actually used by this model graph. A converter passed to `convertModelField` is referenced, not called.
   const sourceBody = source.replace(/^import \{[^\n]+\} from '@exprtlabs\/golem\/conversion';\n/m, '');
   const conversionImports = [
-    'assertAcyclicValue', 'assertPropertyAcyclic', 'assertWireAcyclic', 'beginDecode', 'decodeCheckedInput', 'decodeDetachedInput', 'endDecode', 'convertModelField', 'decodeGeneratedModel', 'decodeGeneratedModelTrusted', 'defineModelProperty', 'encodeGeneratedModel', 'deserializeDate', 'serializeDate', 'unknownDiscriminatorValue', 'withDiscriminatorValue', 'jsonWithDiscriminator', 'requireModelObject',
+    'assertAcyclicValue', 'assertPropertyAcyclic', 'assertWireAcyclic', 'beginDecode', 'decodeCheckedInput', 'decodeDetachedInput', 'endDecode', 'convertModelField', 'convertModelItems', 'convertModelTupleItems', 'decodeGeneratedModel', 'decodeGeneratedModelTrusted', 'defineModelProperty', 'encodeGeneratedModel', 'deserializeDate', 'serializeDate', 'unknownDiscriminatorValue', 'withDiscriminatorValue', 'jsonWithDiscriminator', 'requireModelObject',
   ].filter(name => new RegExp(`\\b${name}\\b`).test(sourceBody));
   // `dates: temporal` fields call their codecs from `@exprtlabs/golem/temporal`; import exactly those used.
   const temporalImports = [...new Set(source.match(/\b(?:de)?serializeTemporal[A-Za-z]+(?=\()/g) ?? [])].sort();

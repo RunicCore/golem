@@ -1451,7 +1451,7 @@ export function emitSource(
     'endDecode',
     ...(needsGeneratedDecode ? ['decodeGeneratedModelTrusted'] : []),
     ...(needsGeneratedEncode ? ['encodeGeneratedModel'] : []),
-    ...(conversionHelpers.has('field') ? ['convertModelField'] : []),
+    ...(conversionHelpers.has('field') ? ['convertModelField', 'convertModelItems', 'convertModelTupleItems'] : []),
     ...(conversionHelpers.has('define') ? ['defineModelProperty'] : []),
     // Tagged union dispatch rejects unknown tags; the import is pruned when unused.
     'unknownDiscriminatorValue',

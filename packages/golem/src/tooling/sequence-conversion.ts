@@ -1,7 +1,7 @@
 /**
- * The layout of generated tuple conversions, shared by the codec walkers (stringify, decode, encode) and the model walker.
- * A walker gives the conversion of one item; this module owns the guard, the loop, the position of each item and the
- * error path of an item. It imports no walker.
+ * The layout of generated tuple and array conversions, shared by the codec walkers (stringify, decode, encode) and the
+ * model walker. A walker gives the conversion of one item; this module owns the guard, the loop, the position of each
+ * item and the error path of an item. It imports no walker.
  */
 import type { ModelTypeDescriptor } from '../model.js';
 
@@ -37,7 +37,7 @@ const IDENTIFIER = /^[A-Za-z_$][\w$]*$/;
 
 /**
  * The function name when a conversion emitted against `input` is exactly one call on it.
- * A caller passes that function and the value to `convertModelField` instead of allocating a closure.
+ * A caller passes that function and the value to `convertModelField` or `convertModelItems` instead of allocating a closure.
  */
 export function singleCallConverter(converted: string, input: string = FIELD_CONVERSION_INPUT): string | undefined {
   const call = `(${input})`;
@@ -53,6 +53,32 @@ const TUPLE = 'tuple';
 const JSON_SCALAR_ITEM = `stringifyJsonScalar(${ITEM} as never)`;
 
 /**
+ * A whole array conversion, with its guard. An unchanged `value` array is a `slice`; a `json` array has no guard and
+ * always writes its items.
+ */
+export function emitArrayConversion(item: ModelTypeDescriptor, expression: string, items: SequenceItems): string {
+  const converted = emitArrayItems(item, expression, items);
+  if (items.output === 'json') return converted;
+  return `Array.isArray(${expression}) ? ${converted === expression ? `(${expression} as readonly unknown[]).slice()` : converted} : ${expression}`;
+}
+
+/**
+ * The items of an array, with no guard. It returns `expression` when no item changes (`value` output). An item that
+ * throws runs under its index in `convertModelItems`, which takes the item conversion as a function name when it is
+ * one call, so a loop makes no function inside its own body.
+ */
+export function emitArrayItems(item: ModelTypeDescriptor, expression: string, items: SequenceItems): string {
+  const { code, throws } = items.item(item, ITEM);
+  if (items.output === 'json') return `stringifyJsonArray(${expression} as ArrayLike<unknown>, (${ITEM}) => ${code})`;
+  if (code === ITEM) return expression;
+  const array = `(${expression} as readonly unknown[])`;
+  if (items.paths && throws) {
+    return `convertModelItems('${items.paths}', ${singleCallConverter(code, ITEM) ?? `(${ITEM}) => (${code})`}, ${array})`;
+  }
+  return `${array}.map((${ITEM}) => ${code})`;
+}
+
+/**
  * A whole tuple conversion, with its guard. One loop over the input keeps its exact length: a short input stays short
  * and extra items stay. The loop callback selects the conversion by position; only items that change get a branch.
  * A tuple with no change is a `slice`. A callback finds the region of an item (before the rest, the rest, after the
@@ -63,12 +89,12 @@ export function emitTupleConversion(descriptor: TupleConversionDescriptor, expre
   const unchanged = json ? JSON_SCALAR_ITEM : ITEM;
   let usesIndex = false;
   let usesTuple = false;
+  let pathed = false;
 
   const convert = (item: ModelTypeDescriptor): string => {
     const { code, throws } = items.item(item, ITEM);
-    if (code === unchanged || !items.paths || !throws) return code;
-    usesIndex = true;
-    return `convertModelField('${items.paths}', ${INDEX}, ${singleCallConverter(code, ITEM) ?? `(${ITEM}: unknown) => (${code})`}, ${ITEM})`;
+    if (code !== unchanged && items.paths && throws) pathed = true;
+    return code;
   };
   /**
    * The branches of the items that change, in order, each tested by `position`; the other items stay as they are.
@@ -120,6 +146,14 @@ export function emitTupleConversion(descriptor: TupleConversionDescriptor, expre
   }
 
   const params = usesIndex ? `${ITEM}, ${INDEX}` : ITEM;
+  if (pathed && items.paths) {
+    // An item that throws runs under its index. A loop that selects by position gets the index and the array.
+    const array = `(${expression} as readonly unknown[])`;
+    const converted = usesIndex
+      ? `convertModelTupleItems('${items.paths}', (${usesTuple ? `${params}, ${TUPLE}` : params}) => ${selected}, ${array})`
+      : `convertModelItems('${items.paths}', ${singleCallConverter(selected, ITEM) ?? `(${ITEM}) => (${selected})`}, ${array})`;
+    return `Array.isArray(${expression}) ? ${converted} : ${expression}`;
+  }
   if (json) {
     const write = `(${params}) => ${selected}`;
     const written = usesTuple

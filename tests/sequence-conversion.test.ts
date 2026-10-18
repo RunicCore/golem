@@ -3,7 +3,7 @@ import test from 'node:test';
 
 import { LibError } from '@exprtlabs/golem/errors';
 import type { ModelTypeDescriptor } from '@exprtlabs/golem/model';
-import { emitTupleConversion, type SequenceItem, type TupleConversionDescriptor } from '#golem/sequence-conversion';
+import { emitArrayConversion, emitArrayItems, emitTupleConversion, type SequenceItem, type TupleConversionDescriptor } from '#golem/sequence-conversion';
 import { instantiateRuntime } from './emitted-runtime.js';
 
 const string: ModelTypeDescriptor = { kind: 'string' };
@@ -134,4 +134,43 @@ test('a failing tuple item names its position in the error path, before and afte
   assert.deepEqual(issuePath(() => convert(['a', good, 'bad', good])), [2]);
   assert.deepEqual(issuePath(() => convert(['a', good, good, good, 'bad'])), [4]);
   assert.deepEqual(issuePath(() => convert(['a', 'bad'])), [1]);
+});
+
+test('an array converts each item and keeps a non-array as it is', () => {
+  const convert = compile(emitArrayConversion(string, 'input', { output: 'value', item: valueItem }));
+  assert.deepEqual(convert(['a', 'b']), ['A', 'B']);
+  assert.equal(convert('text'), 'text');
+});
+
+test('an array that needs no conversion returns a new array of the same items', () => {
+  const convert = compile(emitArrayConversion(nothing, 'input', { output: 'value', item: valueItem }));
+  const input = [null, 'x'];
+  const output = convert(input);
+  assert.deepEqual(output, [null, 'x']);
+  assert.notStrictEqual(output, input);
+});
+
+test('an array writes JSON with no guard', () => {
+  const convert = compile(emitArrayConversion(string, 'input', { output: 'json', item: jsonItem }));
+  assert.equal(convert(['a', 'b']), '["a","b"]');
+});
+
+test('the items of a scalar-or-array union change the array and leave an unchanged array as it is', () => {
+  const changed = compile(emitArrayItems(string, 'input', { output: 'value', item: valueItem }));
+  assert.deepEqual(changed(['a']), ['A']);
+  const unchanged = compile(emitArrayItems(nothing, 'input', { output: 'value', item: valueItem }));
+  const input = [null];
+  assert.strictEqual(unchanged(input), input);
+});
+
+test('a failing array item names its index, and the date converter keeps its default path', () => {
+  const convert = compile(emitArrayConversion(date, 'input', { output: 'value', paths: 'deserialize', item: dateItem }));
+  const good = '2024-05-06T07:08:09.000Z';
+  assert.deepEqual(convert([good]), [new Date(good)]);
+  assert.deepEqual(issuePath(() => convert([good, 'bad'])), [1]);
+});
+
+test('a rest tuple with only a failing rest item names the item index', () => {
+  const convert = deserializeConversion(tuple([], { index: 0, item: date }));
+  assert.deepEqual(issuePath(() => convert(['2024-05-06T07:08:09.000Z', 'bad'])), [1]);
 });

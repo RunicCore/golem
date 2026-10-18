@@ -18,7 +18,7 @@ export {
 } from './stringify-emitter.js';
 export { pruneGeneratedImports } from './generated-imports.js';
 export { FIELD_CONVERSION_INPUT, singleCallConverter, type TupleConversionDescriptor } from './sequence-conversion.js';
-import { FIELD_CONVERSION_INPUT, emitTupleConversion, singleCallConverter } from './sequence-conversion.js';
+import { FIELD_CONVERSION_INPUT, emitArrayConversion, emitArrayItems, emitTupleConversion, singleCallConverter, type SequenceItems } from './sequence-conversion.js';
 import {
   AMBIGUOUS_UNION_CONVERSION_ERROR,
   OBJECT_UNION_DISCRIMINATOR_ERROR,
@@ -214,6 +214,22 @@ function atField(emit: (value: string) => string, input: string, field: string, 
   return `convertModelField('${direction === 'toJSON' ? 'serialize' : 'deserialize'}', ${field}, ${convert}, ${input})`;
 }
 
+/** The item conversion of a tuple or an array in the model family: `fromInit` has no error paths, the other directions have. */
+function sequenceItems(
+  direction: 'fromJSON' | 'toJSON' | 'fromInit',
+  resolveModel: (id: string) => FromJsonModelResolver | ToJsonModelResolver,
+  resolveSerde?: SerdeResolver,
+): SequenceItems {
+  return {
+    output: 'value',
+    ...(direction === 'fromInit' ? {} : { paths: direction === 'toJSON' ? 'serialize' as const : 'deserialize' as const }),
+    item: (item, value) => {
+      const code = emitNested(item, value, direction, resolveModel, resolveSerde);
+      return { code, throws: code !== value };
+    },
+  };
+}
+
 function emitNested(
   descriptor: ModelConversionDescriptor,
   expression: string,
@@ -268,13 +284,8 @@ function emitNested(
     }
     const array = scalarOrArrayItem(present);
     if (array) {
-      const item = atField(value => emitNested(array.item, value, direction, resolveModel, resolveSerde), 'item', 'index', direction);
       const scalar = emitNested(array.item, expression, direction, resolveModel, resolveSerde);
-      if (item === 'item' && scalar === expression) return expression;
-      const indexParam = direction !== 'fromInit' && item.includes('index') ? ', index' : '';
-      const mapped = item === 'item'
-        ? expression
-        : `(${expression} as readonly unknown[]).map((item${indexParam}) => ${item})`;
+      const mapped = emitArrayItems(array.item, expression, sequenceItems(direction, resolveModel, resolveSerde));
       return emitScalarOrArrayConversion(expression, mapped, scalar);
     }
     const indices = presentUnionIndices(descriptor);
@@ -407,23 +418,10 @@ function emitNested(
     return `${expression} instanceof ${model.className} ? ${encode(expression)} : ${expression}`;
   }
   if (descriptor.kind === 'array') {
-    const item = atField(value => emitNested(descriptor.item, value, direction, resolveModel, resolveSerde), 'item', 'index', direction);
-    const indexParam = direction !== 'fromInit' && item.includes('index') ? ', index' : '';
-    // An unchanged item needs no callback: slice copies the same way map does.
-    const copy = item === 'item'
-      ? `(${expression} as readonly unknown[]).slice()`
-      : `(${expression} as readonly unknown[]).map((item${indexParam}) => ${item})`;
-    return `Array.isArray(${expression}) ? ${copy} : ${expression}`;
+    return emitArrayConversion(descriptor.item, expression, sequenceItems(direction, resolveModel, resolveSerde));
   }
   if (descriptor.kind === 'tuple') {
-    return emitTupleConversion(descriptor, expression, {
-      output: 'value',
-      ...(direction === 'fromInit' ? {} : { paths: direction === 'toJSON' ? 'serialize' as const : 'deserialize' as const }),
-      item: (item, value) => {
-        const code = emitNested(item, value, direction, resolveModel, resolveSerde);
-        return { code, throws: code !== value };
-      },
-    });
+    return emitTupleConversion(descriptor, expression, sequenceItems(direction, resolveModel, resolveSerde));
   }
   if (descriptor.kind === 'object') {
     // A projection copies its fields inside a function whose `source` parameter is the record.
