@@ -215,19 +215,37 @@ export function emitDispatch(options: DispatchOptions): string {
   return `(${converted})`;
 }
 
+/** The variants of a `scalar | scalar[]` union: its one array, and the scalar variants beside it. */
+export interface ScalarOrArray {
+  readonly array: ArrayTypeDescriptor;
+  readonly scalars: readonly ModelTypeDescriptor[];
+}
+
 /**
- * `T | T[]` where T is a JSON scalar or literal union — the query-style shape.
- * Date, generated models, and untagged objects are not scalarish.
+ * A union of one array and scalar variants (a JSON scalar or a literal union),
+ * the query-style shape. Date, generated models, and untagged objects are not scalarish.
  */
-export function scalarOrArrayItem(
+export function scalarOrArray(
   present: readonly ModelTypeDescriptor[],
-): ArrayTypeDescriptor | undefined {
+): ScalarOrArray | undefined {
   const arrays = present.filter((variant): variant is ArrayTypeDescriptor => variant.kind === 'array');
   if (arrays.length !== 1) return undefined;
-  if (!present.every((variant) => variant === arrays[0] || isScalarishDescriptor(variant))) {
-    return undefined;
-  }
-  return arrays[0];
+  const scalars = present.filter((variant) => variant !== arrays[0]);
+  if (!scalars.every(isScalarishDescriptor)) return undefined;
+  return { array: arrays[0], scalars };
+}
+
+/**
+ * The scalar variant whose own converter the scalar branch uses, or undefined
+ * when no scalar variant needs a conversion. A scalar variant that needs a
+ * conversion must be the only scalar variant, as in a plain union: the wire
+ * value cannot tell it from its siblings, so the union is rejected.
+ */
+export function scalarBranchVariant(scalars: readonly ModelTypeDescriptor[]): ModelTypeDescriptor | undefined {
+  const converting = scalars.filter(descriptorNeedsConversion);
+  if (converting.length === 0) return undefined;
+  if (scalars.length > 1) throw new Error(AMBIGUOUS_UNION_CONVERSION_ERROR);
+  return converting[0];
 }
 
 export function emitScalarOrArrayConversion(

@@ -29,7 +29,8 @@ import {
   objectValueExpression,
   objectVariant,
   presentUnionVariants,
-  scalarOrArrayItem,
+  scalarBranchVariant,
+  scalarOrArray,
   emitDispatch,
   presentUnionIndices,
   unionDispatch,
@@ -282,9 +283,11 @@ function emitNested(
       const converted = emitNested(present[0], expression, direction, resolveModel, resolveSerde);
       return converted === expression ? expression : `${expression} == null ? ${expression} : (${converted})`;
     }
-    const array = scalarOrArrayItem(present);
-    if (array) {
-      const scalar = emitNested(array.item, expression, direction, resolveModel, resolveSerde);
+    const scalarOrArrayUnion = scalarOrArray(present);
+    if (scalarOrArrayUnion) {
+      const { array, scalars } = scalarOrArrayUnion;
+      const scalarVariant = scalarBranchVariant(scalars);
+      const scalar = scalarVariant ? emitNested(scalarVariant, expression, direction, resolveModel, resolveSerde) : expression;
       const mapped = emitArrayItems(array.item, expression, sequenceItems(direction, resolveModel, resolveSerde));
       return emitScalarOrArrayConversion(expression, mapped, scalar);
     }

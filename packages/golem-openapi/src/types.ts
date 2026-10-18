@@ -367,15 +367,16 @@ export function schemaType(schema: unknown, context: SchemaTypeContext = {}): st
   return schemaTypeNode(projected, context);
 }
 
-function prefixItemsType(schema: JsonObjectLike, context: SchemaTypeContext): string {
+/** The type of a `prefixItems` array: a union of the prefix lengths that min/max allow. `itemType` gives the type of one item schema. */
+export function prefixItemsType(schema: JsonObjectLike, itemType: (item: unknown) => string): string {
   const prefix = (Array.isArray(schema.prefixItems) ? schema.prefixItems : [])
-    .map((item) => schemaTypeNode(item, context));
+    .map(itemType);
   const min = typeof schema.minItems === 'number' ? schema.minItems : 0;
   const max = typeof schema.maxItems === 'number' ? schema.maxItems : undefined;
   const additional = schema.items === false
     ? null
     : schema.items !== undefined && schema.items !== null
-      ? schemaTypeNode(schema.items, context)
+      ? itemType(schema.items)
       : 'unknown';
   if (max !== undefined && max < min) return 'never';
   if (additional === null && min > prefix.length) return 'never';
@@ -618,7 +619,7 @@ function schemaTypeNode(rawSchema: unknown, context: SchemaTypeContext = {}): st
     case 'number': return 'number';
     case 'boolean': return 'boolean';
     case 'array': {
-      if (Array.isArray(schema.prefixItems)) return prefixItemsType(schema, inner);
+      if (Array.isArray(schema.prefixItems)) return prefixItemsType(schema, (item) => schemaTypeNode(item, inner));
       return schema.items === false ? '[]' : arrayType(schemaTypeNode(schema.items, inner));
     }
     case 'object': return objectType(schema, inner);
