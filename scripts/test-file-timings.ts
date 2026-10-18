@@ -1,4 +1,9 @@
+import { EventEmitter } from 'node:events';
 import path from 'node:path';
+
+// Spec, TAP and this reporter put 11 `end` listeners on the run's event stream, and node warns above 10.
+// This module loads only in the runner parent, before the third reporter attaches.
+EventEmitter.defaultMaxListeners = 20;
 
 interface TestEvent {
   readonly type: string;
@@ -22,6 +27,7 @@ export default async function* testFileTimings(source: AsyncIterable<TestEvent>)
   for await (const { type, data } of source) {
     if (type !== 'test:complete' || data.nesting !== 0 || data.file === undefined || data.name === undefined || path.resolve(data.name) !== data.file) continue;
     const durationMs = data.details?.duration_ms;
+    // Deliberate: the image pins Node 22.15.0 (assertContainer), so a changed event contract cannot pass unnoticed.
     if (durationMs === undefined) throw new Error(`The test file ${data.file} ended with no duration_ms; the node:test event contract changed.`);
     yield `${JSON.stringify({ file: sourcePath(data.file, process.cwd()), seconds: Math.round(durationMs / 100) / 10 })}\n`;
   }

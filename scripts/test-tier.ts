@@ -87,15 +87,12 @@ function run(executable: string, args: readonly string[], cwd: string = root, en
 function nodeTest(label: string, files: readonly string[], timeout: number, concurrency: number, extra: readonly string[] = [], env: NodeJS.ProcessEnv = {}): Step {
   const reporters = ['--test-reporter=spec', '--test-reporter-destination=stdout'];
   let fileTimings: string | undefined;
-  const nodeFlags: string[] = [];
   if (resultsDir) {
-    // Spec, TAP and the file reporter put 11 `end` listeners on the run's event stream; node warns above 10.
-    nodeFlags.push('--disable-warning=MaxListenersExceededWarning');
     fileTimings = path.join(resultsDir, `${label}.files.jsonl`);
     reporters.push('--test-reporter=tap', `--test-reporter-destination=${path.join(resultsDir, `${label}.tap`)}`);
     reporters.push(`--test-reporter=${fileURLToPath(new URL('./test-file-timings.js', import.meta.url))}`, `--test-reporter-destination=${fileTimings}`);
   }
-  return { label, fileTimings, run: () => run(process.execPath, [...nodeFlags, '--test', `--test-timeout=${timeout}`, `--test-concurrency=${concurrency}`, ...reporters, ...extra, ...files], root, env) };
+  return { label, fileTimings, run: () => run(process.execPath, ['--test', `--test-timeout=${timeout}`, `--test-concurrency=${concurrency}`, ...reporters, ...extra, ...files], root, env) };
 }
 
 /** Environment that points the compiler seam at the container's TypeScript 6 install. */
@@ -194,20 +191,29 @@ function assertContainer(tier: Tier, native: boolean): void {
   if (mismatches.length) throw new Error(`The test image is stale: ${mismatches.join('; ')}. Run: npm run test:prepare`);
 }
 
-interface StepTiming { readonly label: string; readonly seconds: number; readonly status: number; readonly file_seconds?: Readonly<Record<string, number>> }
+interface StepTiming { readonly label: string; readonly seconds: number; readonly status: number; file_seconds?: Record<string, number> }
 
-/** Reads the lines of the test-file reporter. A step with no lines is reported, never read as zero files. */
-function readFileSeconds(file: string, label: string): Record<string, number> | undefined {
+/**
+ * Reads the lines of the test-file reporter. A step with no lines is reported, never read as zero files.
+ * A malformed line is skipped and reported with `onMalformed`: a kill can truncate the last line.
+ */
+function readFileSeconds(file: string, label: string, onMalformed: () => void): Record<string, number> | undefined {
   const lines = fs.existsSync(file) ? fs.readFileSync(file, 'utf8').split('\n').filter(Boolean) : [];
   if (!lines.length) {
     process.stderr.write(`No test file timings for the ${label} step (${file}).\n`);
     return undefined;
   }
   const fileSeconds: Record<string, number> = {};
-  for (const line of lines) {
-    const { file: source, seconds } = JSON.parse(line) as { file: string; seconds: number };
-    fileSeconds[source] = seconds;
-  }
+  lines.forEach((line, index) => {
+    try {
+      const { file: source, seconds } = JSON.parse(line) as { file: string; seconds: number };
+      fileSeconds[source] = seconds;
+    } catch (error) {
+      if (!(error instanceof SyntaxError)) throw error;
+      process.stderr.write(`Skipped a malformed test file timing at ${file}:${index + 1}.\n`);
+      onMalformed();
+    }
+  });
   return fileSeconds;
 }
 
@@ -233,6 +239,7 @@ function main(argv: readonly string[]): void {
     for (const name of fs.readdirSync(resultsDir)) if (name.endsWith('.tap') || name.endsWith('-timings.json') || name.endsWith('.files.jsonl')) fs.rmSync(path.join(resultsDir, name));
   }
   const timings: StepTiming[] = [];
+  let timingsFault = false;
   const started = Date.now();
   // The ceiling can kill this process at any time, so the file is complete after every step. `running` names the
   // step that was cut; the files that step finished stay in its `.files.jsonl`.
@@ -248,13 +255,20 @@ function main(argv: readonly string[]): void {
     const stepStarted = Date.now();
     const status = step.run();
     const seconds = Math.round((Date.now() - stepStarted) / 1000);
-    const fileSeconds = step.fileTimings && readFileSeconds(step.fileTimings, step.label);
-    timings.push({ label: step.label, seconds, status, ...(fileSeconds && { file_seconds: fileSeconds }) });
+    // The verdict of the step is recorded before its file timings are read, so a bad timings file cannot lose it.
+    const entry: StepTiming = { label: step.label, seconds, status };
+    timings.push(entry);
     process.stdout.write(`${tier} ${step.label}: ${status === 0 ? 'passed' : 'FAILED'} in ${seconds}s\n`);
     writeTimings();
+    const fileSeconds = step.fileTimings && readFileSeconds(step.fileTimings, step.label, () => { timingsFault = true; });
+    if (fileSeconds) {
+      entry.file_seconds = fileSeconds;
+      writeTimings();
+    }
   }
   process.stdout.write(`${tier} finished in ${Math.round((Date.now() - started) / 1000)}s\n`);
   if (timings.some(entry => entry.status !== 0)) process.exitCode = 1;
+  if (timingsFault) process.exitCode = 2;
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
