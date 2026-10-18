@@ -650,3 +650,58 @@ test('an array field with an allOf sibling converts its items to Dates and is ty
   assert.deepEqual(visit.visits, [new Date('2024-05-06T07:08:09.000Z')]);
   assert.deepEqual(encodeGeneratedModel(generated(visit)), { visits: ['2024-05-06T07:08:09.000Z'] });
 });
+
+test('an array or tuple field with no type or a nullable type converts like type array, and null stays null', async t => {
+  const output = path.join(createFixtureProject(t, 'golem-openapi-sequence-shapes-'), 'sdk');
+  await generateMaterializedSdk(sequenceSerdeDocument({
+    maybeVisits: { type: ['array', 'null'], items: { type: 'string', format: 'date-time' } },
+    untypedVisits: { items: { type: 'string', format: 'date-time' } },
+    maybeLeg: {
+      type: ['array', 'null'],
+      prefixItems: [{ type: 'string' }, { type: 'string', format: 'date-time' }],
+      items: false,
+    },
+    untypedLeg: {
+      prefixItems: [{ type: 'string' }, { type: 'string', format: 'date-time' }],
+      items: false,
+    },
+  }), {
+    output,
+    name: 'SequenceSerde',
+    profile: { mobx: false, validation: false, allowAny: false },
+  });
+  copyFixtureFile(output, 'openapi/model-serde/sequence-shape-types.ts', 'sequence-shape-types.ts');
+  compileGeneratedSdk(output, [path.join(output, 'sequence-shape-types.ts')], { strict: true, skipLibCheck: true });
+
+  const models = requireRecord(
+    await import(pathToFileURL(path.join(output, 'dist/index.js')).href),
+    'generated sequence models',
+  );
+  const VisitModel = models.VisitModel as unknown as new (values?: Record<string, unknown>) => Record<string, unknown>;
+
+  const visit = decodeGeneratedModel(VisitModel, {
+    maybeVisits: ['2024-05-06T07:08:09.000Z'],
+    untypedVisits: ['2024-05-07T08:09:10.000Z'],
+    maybeLeg: ['gate', '2024-05-08T09:10:11.000Z'],
+    untypedLeg: ['door', '2024-05-09T10:11:12.000Z'],
+  });
+  assert.deepEqual(visit.maybeVisits, [new Date('2024-05-06T07:08:09.000Z')]);
+  assert.deepEqual(visit.untypedVisits, [new Date('2024-05-07T08:09:10.000Z')]);
+  assert.deepEqual(visit.maybeLeg, ['gate', new Date('2024-05-08T09:10:11.000Z')]);
+  assert.deepEqual(visit.untypedLeg, ['door', new Date('2024-05-09T10:11:12.000Z')]);
+  assert.deepEqual(encodeGeneratedModel(generated(visit)), {
+    maybeVisits: ['2024-05-06T07:08:09.000Z'],
+    untypedVisits: ['2024-05-07T08:09:10.000Z'],
+    maybeLeg: ['gate', '2024-05-08T09:10:11.000Z'],
+    untypedLeg: ['door', '2024-05-09T10:11:12.000Z'],
+  });
+
+  const absent = decodeGeneratedModel(VisitModel, {
+    maybeVisits: null,
+    untypedVisits: [],
+    maybeLeg: null,
+    untypedLeg: [],
+  });
+  assert.equal(absent.maybeVisits, null);
+  assert.equal(absent.maybeLeg, null);
+});

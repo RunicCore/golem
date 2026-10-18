@@ -293,11 +293,12 @@ function modelFieldType(
       .map((type) => `(${type})`)
       .join(' | ');
   }
-  if (isJsonObject(schema) && schema.type === 'array' && Array.isArray(schema.prefixItems)) {
-    return prefixItemsType(schema, (item) => modelFieldType(item, definitions, nested, seen));
-  }
-  if (isJsonObject(schema) && schema.type === 'array' && schema.items) {
-    return `Array<${modelFieldType(schema.items, definitions, nested, seen)}>`;
+  if (isJsonObject(schema) && isSequenceSchema(schema)) {
+    const orNull = admitsNull(schema) ? ' | null' : '';
+    if (Array.isArray(schema.prefixItems)) {
+      return `${prefixItemsType(schema, (item) => modelFieldType(item, definitions, nested, seen))}${orNull}`;
+    }
+    if (schema.items) return `Array<${modelFieldType(schema.items, definitions, nested, seen)}>${orNull}`;
   }
   if (isJsonObject(schema) && (schema.properties || isJsonObject(schema.additionalProperties))) {
     const required = new Set(Array.isArray(schema.required) ? schema.required : []);
@@ -383,6 +384,13 @@ function hasAllOfMembers(schema: Readonly<Record<string, unknown>>): schema is R
   return Array.isArray(schema.allOf) && schema.allOf.length > 0;
 }
 
+/** `type: array` or `[array, null]`, or no `type` at all beside `prefixItems` or `items`, which only an array can satisfy. */
+function isSequenceSchema(schema: Readonly<Record<string, unknown>>): boolean {
+  const declared = Array.isArray(schema.type) ? schema.type : schema.type === undefined ? [] : [schema.type];
+  if (declared.length === 0) return Array.isArray(schema.prefixItems) || Boolean(schema.items);
+  return declared.includes('array') && declared.every((type) => type === 'array' || type === 'null');
+}
+
 /** A tuple (prefixItems) or an array (items) schema: each prefix item converts by its own schema, and `items` converts the rest. */
 function sequenceConversionDescriptor(
   schema: Readonly<Record<string, unknown>>,
@@ -391,7 +399,18 @@ function sequenceConversionDescriptor(
   direction: 'from' | 'to',
   seen: ReadonlySet<unknown>,
 ): ModelTypeDescriptor | undefined {
-  if (schema.type !== 'array') return undefined;
+  if (!isSequenceSchema(schema)) return undefined;
+  const sequence = sequenceBodyDescriptor(schema, definitions, env, direction, seen);
+  return sequence && admitsNull(schema) ? { kind: 'union', variants: [sequence, { kind: 'null' }] } : sequence;
+}
+
+function sequenceBodyDescriptor(
+  schema: Readonly<Record<string, unknown>>,
+  definitions: ReadonlyMap<string, ModelDefinition>,
+  env: ModelResolveEnv,
+  direction: 'from' | 'to',
+  seen: ReadonlySet<unknown>,
+): ModelTypeDescriptor | undefined {
   if (Array.isArray(schema.prefixItems)) {
     const items = schema.prefixItems.map((item) => modelConversionDescriptor(item, definitions, env, direction, seen));
     return schema.items === false
