@@ -323,6 +323,14 @@ test('ambiguous union conversions fail generation instead of probing codecs', ()
       },
       message: /ambiguous conversions/i,
     },
+    {
+      name: 'converting scalar beside a string and a tuple of the same scalar',
+      descriptor: {
+        kind: 'union',
+        variants: [token, { kind: 'string' }, { kind: 'tuple', items: [token] }],
+      },
+      message: /ambiguous conversions/i,
+    },
   ];
   for (const { name, descriptor, message } of cases) {
     assert.throws(() => emitModelFromJSON(descriptor, 'value', () => fromChild, serde), message, name);

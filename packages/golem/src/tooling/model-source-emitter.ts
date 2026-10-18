@@ -18,12 +18,13 @@ export {
 } from './stringify-emitter.js';
 export { pruneGeneratedImports } from './generated-imports.js';
 export { FIELD_CONVERSION_INPUT, singleCallConverter, type TupleConversionDescriptor } from './sequence-conversion.js';
-import { FIELD_CONVERSION_INPUT, emitArrayConversion, emitArrayItems, emitTupleConversion, singleCallConverter, type SequenceItems } from './sequence-conversion.js';
+import { FIELD_CONVERSION_INPUT, emitArrayConversion, emitTupleConversion, singleCallConverter, type SequenceItems } from './sequence-conversion.js';
 import {
   AMBIGUOUS_UNION_CONVERSION_ERROR,
   OBJECT_UNION_DISCRIMINATOR_ERROR,
   discriminatorMatch,
   emitScalarOrArrayConversion,
+  emitSequenceBranch,
   literalDiscriminator,
   objectDiscriminator,
   objectValueExpression,
@@ -285,10 +286,10 @@ function emitNested(
     }
     const scalarOrArrayUnion = scalarOrArray(present);
     if (scalarOrArrayUnion) {
-      const { array, scalars } = scalarOrArrayUnion;
+      const { sequence, scalars } = scalarOrArrayUnion;
       const scalarVariant = scalarBranchVariant(scalars);
       const scalar = scalarVariant ? emitNested(scalarVariant, expression, direction, resolveModel, resolveSerde) : expression;
-      const mapped = emitArrayItems(array.item, expression, sequenceItems(direction, resolveModel, resolveSerde));
+      const mapped = emitSequenceBranch(sequence, expression, sequenceItems(direction, resolveModel, resolveSerde));
       return emitScalarOrArrayConversion(expression, mapped, scalar);
     }
     const indices = presentUnionIndices(descriptor);

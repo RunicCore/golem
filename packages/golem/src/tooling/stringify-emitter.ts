@@ -9,12 +9,13 @@ import type { ValidationPlane } from '../object-codec.js';
 import type { SchemaGraph, SchemaNode } from './schema-graph.js';
 import { codecShortName, serdeWireDescriptor } from './schema-graph.js';
 import type { JsonSchema } from './schema.js';
-import { emitArrayConversion, emitArrayItems, emitTupleConversion, singleCallConverter } from './sequence-conversion.js';
+import { emitArrayConversion, emitTupleConversion, singleCallConverter } from './sequence-conversion.js';
 import {
   AMBIGUOUS_UNION_CONVERSION_ERROR,
   OBJECT_UNION_DISCRIMINATOR_ERROR,
   descriptorNeedsConversion,
   emitScalarOrArrayConversion,
+  emitSequenceBranch,
   isScalarishDescriptor,
   discriminatorMatch,
   emitDispatch,
@@ -358,19 +359,25 @@ function emitValue(
     }
     const scalarOrArrayUnion = scalarOrArray(present);
     if (scalarOrArrayUnion) {
-      const { array, scalars } = scalarOrArrayUnion;
-      const item = emitValue(array.item, 'item', ctx);
+      const { sequence, scalars } = scalarOrArrayUnion;
+      let itemsUnchanged = true;
+      const jsonItem = (item: ModelTypeDescriptor, value: string): { code: string; throws: false } => {
+        const code = emitValue(item, value, ctx);
+        if (code !== 'stringifyJsonScalar(item as never)') itemsUnchanged = false;
+        return { code, throws: false };
+      };
       const scalarVariant = scalarBranchVariant(scalars) ?? (scalars.length === 1 ? scalars[0] : undefined);
       const scalar = scalarVariant
         ? emitValue(scalarVariant, expression, ctx)
         : `stringifyJsonScalar(${expression} as never)`;
+      const items = emitSequenceBranch(sequence, expression, { output: 'json', item: jsonItem });
       if (
-        item === 'stringifyJsonScalar(item as never)'
+        sequence.kind === 'array'
+        && itemsUnchanged
         && scalar === `stringifyJsonScalar(${expression} as never)`
       ) {
         return `stringifyJsonScalar(${expression} as never)`;
       }
-      const items = emitArrayItems(array.item, expression, { output: 'json', item: () => ({ code: item, throws: false }) });
       return `(Array.isArray(${expression}) ? ${items} : (${scalar}))`;
     }
     const tagged = emitTaggedVariantUnion(
@@ -995,10 +1002,10 @@ function emitUnionDecode(
   }
   const scalarOrArrayUnion = scalarOrArray(present);
   if (scalarOrArrayUnion) {
-    const { array, scalars } = scalarOrArrayUnion;
+    const { sequence, scalars } = scalarOrArrayUnion;
     const scalarVariant = scalarBranchVariant(scalars);
     const scalar = scalarVariant ? emitDecodeValue(scalarVariant, expression, ctx) : expression;
-    const mapped = emitArrayItems(array.item, expression, {
+    const mapped = emitSequenceBranch(sequence, expression, {
       output: 'value',
       paths: 'deserialize',
       item: (item, value) => {
@@ -1083,11 +1090,13 @@ function emitUnionEncode(
   }
   const scalarOrArrayUnion = scalarOrArray(present);
   if (scalarOrArrayUnion) {
-    const { array, scalars } = scalarOrArrayUnion;
-    const item = emitEncodeValue(array.item, 'item', ctx);
+    const { sequence, scalars } = scalarOrArrayUnion;
     const scalarVariant = scalarBranchVariant(scalars);
     const scalar = scalarVariant ? emitEncodeValue(scalarVariant, expression, ctx) : expression;
-    const mapped = emitArrayItems(array.item, expression, { output: 'value', item: () => ({ code: item, throws: false }) });
+    const mapped = emitSequenceBranch(sequence, expression, {
+      output: 'value',
+      item: (item, value) => ({ code: emitEncodeValue(item, value, ctx), throws: false }),
+    });
     return emitScalarOrArrayConversion(expression, mapped, scalar);
   }
   const tagged = emitTaggedVariantUnion(
