@@ -5,7 +5,7 @@ Run tests in the golem test-runner image. Tier runs are offline.
 | Command | Budget | Runs |
 | --- | --- | --- |
 | `npm run test -- <files or --test-name-pattern>` | 1 min | The tests you select. A packed or browser file packs first. |
-| `npm run test:full` | 5 min | Unit tests, the TypeScript 6 lane and the packed model-only smoke test. Run before a commit. |
+| `npm run test:full` | 5 min | Unit tests, the TypeScript 6 lane and the packed model-only smoke test. Run before a commit. Pack and the smoke test run beside the TypeScript 6 lane. |
 | `npm run test:acceptance` | 10 min | Full, the public-source and OpenAPI compliance checks, the acceptance unit tests, and the packed and browser tests. Run before a release. |
 | `npm run test:prepare` | 5 min (plus a first-time image build), online | Builds the image and fills the npm, packed and typia plugin caches. Runs no tests. Run it first, and again after a lockfile or image change. |
 | `npm run docs:check` | 2 min | Builds the documentation site and checks it. |
@@ -31,13 +31,13 @@ After you change what a test installs, run `npm run test:prepare` before the nex
 - `The golem test image … is missing or out of date`: run `npm run test:prepare`.
 - `The npm cache is missing a package`: a test installs a package the cache lacks. Run `npm run test:prepare`.
 - `Another golem test run holds /cache/run.lock`: one run uses the cache at a time. Wait for it.
-- `The … tier exceeded its …s ceiling and was stopped`: the whole run passed its time limit. The line after it names the step that was running and the files of that step that started and did not finish. See [A hung test file](#a-hung-test-file).
+- `The … tier exceeded its …s ceiling and was stopped`: the whole run passed its time limit. The lines after it name each step that was running and the files of that step that started and did not finish. See [A hung test file](#a-hung-test-file).
 
 ## A hung test file
 
 The tier ceiling is the one hang catcher. A test step sets no limit on a file or a test, and the helper that tests use to run a command sets none on a command, so a slow host does not fail a file that works. The ceilings are 180 s for `npm run test`, 450 s for Full, 600 s for Acceptance and 300 s for docs. They are the same on every machine.
 
-A file that hangs stops the run at the ceiling, not sooner. The runner prints the ceiling message and the step that was cut, then the files of that step that started and did not finish. The hung file is among them. A file that was only slow when the ceiling hit appears there too.
+A file that hangs stops the run at the ceiling, not sooner. The runner prints the ceiling message and each step that was cut, then the files of each step that started and did not finish. The hung file is among them. A file that was only slow when the ceiling hit appears there too.
 
 ```text
 The focused tier exceeded its 180s ceiling and was stopped.
@@ -52,8 +52,8 @@ Run the named file alone with `npm run test -- <file>` to see which test hangs.
 Results land in `.cache/test-results/`: one TAP file for each test step, and `<tier>-timings.json`. The runner writes the timings file when a step starts and again when it ends, so a run that the ceiling stops keeps every finished step. Its fields:
 
 - `timings`: one entry for each finished step, with `label`, `seconds`, `status` and `file_seconds`.
-- `file_seconds`: the seconds of each test file, keyed by source path (`tests/serde.test.ts`), summed over the steps. A file that the TypeScript 6 lane reruns counts both runs. The entries in `timings` hold the seconds of each step alone.
-- `running`: the step that was running at the last write. It is absent when every step ended.
+- `file_seconds`: the seconds of each test file, keyed by source path (`tests/serde.test.ts`), summed over the steps. A file that the TypeScript 6 lane reruns counts both runs. The entries in `timings` hold the seconds of each step alone; steps that run beside each other overlap, so their seconds add up to more than the total.
+- `running`: the steps that were running at the last write. It is absent when every step ended.
 
 A file's seconds are the wall time of its test process, from start to exit, including the load of the file. Each test step also writes `<step>.files.jsonl`: one line when a file starts and one line, with its seconds, when it ends. When the ceiling stops a step, that step's files are only in this file.
 
