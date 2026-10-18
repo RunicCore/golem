@@ -990,9 +990,11 @@ function emitUnionDecode(
   }
   const array = scalarOrArrayItem(present);
   if (array) {
+    const before = fallibleCount(ctx);
     const item = emitDecodeValue(array.item, 'item', ctx);
+    const throws = emittedFallible(before, item, ctx);
     const scalar = emitDecodeValue(array.item, expression, ctx);
-    const mapped = emitArrayItems(array.item, expression, { output: 'value', item: () => ({ code: item, throws: false }) });
+    const mapped = emitArrayItems(array.item, expression, { output: 'value', paths: 'deserialize', item: () => ({ code: item, throws }) });
     return emitScalarOrArrayConversion(expression, mapped, scalar);
   }
   const tagged = emitTaggedVariantUnion(
@@ -1181,6 +1183,7 @@ function emitDecodeValue(descriptor: ModelTypeDescriptor, expression: string, ct
   if (descriptor.kind === 'tuple') {
     return emitTupleConversion(descriptor, expression, {
       output: 'value',
+      paths: 'deserialize',
       item: (item, value) => {
         const before = fallibleCount(ctx);
         const code = emitDecodeValue(item, value, ctx);

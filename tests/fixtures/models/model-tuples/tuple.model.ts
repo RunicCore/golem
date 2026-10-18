@@ -6,6 +6,7 @@ export type TTuple = IModel<{
   nested?: [string, number?];
   rest: [string, ...number[], boolean];
   dated?: [string, ...Date[], Date];
+  when?: string | Date[];
 }>;
 export class Tuple extends TTupleBaseModel {
   constructor(values: Partial<TTupleFields> = {}) { super(values); }

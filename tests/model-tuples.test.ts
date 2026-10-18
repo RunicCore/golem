@@ -151,3 +151,29 @@ test('a model keeps a short rest tuple at its own length and a hole in it a hole
   assert.ok(Array.isArray(decoded));
   assert.deepEqual(decoded[2], new Date('2024-05-06T07:08:09.000Z'));
 });
+
+test('a codec decode error names the index of a bad tuple item and of a bad item in a scalar-or-array union', async (t) => {
+  const { root, sourceRoot } = tupleModelProject(t, 'tuple-item-paths');
+  fs.writeFileSync(path.join(sourceRoot, 'tuple.model.ts'), readFixture('models/model-tuples/tuple.model.ts'));
+  writeModelGolemYaml(root, { mobx: false, validation: false });
+  await buildModelProject(root);
+  const codec = requireObjectCodec(generatedCodecIdFromRoot(root, 'TTuple'));
+
+  const base = { required: ['required', 9], maybe: ['x'], rest: ['prefix', true] };
+  const failure = (override: object): readonly (string | number)[] => {
+    try {
+      codec.fromWireFormat({ ...base, ...override }, { validate: false });
+    } catch (error) {
+      assert.ok(error instanceof Error && 'issues' in error && Array.isArray(error.issues));
+      const [issue] = error.issues;
+      assert.ok(typeof issue === 'object' && issue !== null && 'path' in issue && Array.isArray(issue.path));
+      return issue.path;
+    }
+    return assert.fail('Expected the decode to throw.');
+  };
+
+  const date = '2024-05-06T07:08:09.000Z';
+  assert.deepEqual(failure({ dated: ['first', date, 'not a date', date] }), ['dated', 2]);
+  assert.deepEqual(failure({ dated: ['first', date, 'not a date'] }), ['dated', 2]);
+  assert.deepEqual(failure({ when: [date, 'not a date'] }), ['when', 1]);
+});
