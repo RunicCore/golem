@@ -9,6 +9,7 @@
 
 export * from 'typescript/unstable/ast';
 
+import { ChildProcess } from 'node:child_process';
 import {
   existsSync,
   lstatSync,
@@ -1105,6 +1106,24 @@ function programRequest(options: OpenProgramOptions): ProgramRequest {
   return { configPath: baseConfigPath, files: [...new Set(options.sources.map(canonical))], overlays, hidden };
 }
 
+/** The compiler process of an API, or undefined when this TypeScript build keeps it somewhere else. */
+function compilerProcess(api: API): ChildProcess | undefined {
+  const child: unknown = api['client']?.['channel']?.['child'];
+  return child instanceof ChildProcess ? child : undefined;
+}
+
+/**
+ * Stop the compiler process. `api.close()` ends it with SIGTERM, right after it closes the compiler's input. The compiler
+ * server reacts to SIGTERM by cancelling its context, and when the signal lands between its last response and its next read
+ * it reports `context canceled` on the inherited stderr, a line that no golem command wrote. SIGKILL cannot be reported on.
+ * The compiler holds no state that must be written out, since golem only reads its answers, so it is killed first and the
+ * API then releases its side of the channel. `session.close()` has already released every snapshot.
+ */
+function closeCompiler(api: API): void {
+  compilerProcess(api)?.kill('SIGKILL');
+  api.close();
+}
+
 /** Release a snapshot; one on an exited compiler is already gone. */
 function disposeSnapshot(snapshot: Snapshot): void {
   try {
@@ -1293,7 +1312,7 @@ export class ProgramSession implements Disposable {
     const snapshots = [this.latest, ...[...this.held.keys()].map((program) => program.snapshot)];
     this.reset();
     for (const snapshot of snapshots) if (snapshot) disposeSnapshot(snapshot);
-    api?.close();
+    if (api) closeCompiler(api);
   }
 
   [Symbol.dispose](): void {

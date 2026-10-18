@@ -379,6 +379,32 @@ test('a reused program session replays recorded inputs, sees file changes and re
   await tracker.assertClosed('disposed program session');
 });
 
+// The compiler server prints `context canceled` to the inherited stderr when SIGTERM reaches it between its last
+// response and its next read. Whether it does depends on scheduling, so the test pins the cause instead: the session
+// ends the compiler with SIGKILL, which the server cannot report on.
+test('closing a program session ends the compiler with a signal it cannot report on', async t => {
+  const tracker = trackApiChildren(t);
+  const fixture = projectFixture(t, 'compiler-lifecycle-close');
+  const source = path.join(fixture.sourceRoot, 'value.ts');
+  fs.writeFileSync(source, 'export const value = 1;\n');
+  const session = new ts.ProgramSession({ cwd: fixture.root });
+  t.after(() => session[Symbol.dispose]());
+  {
+    using program = session.openProgram({ root: fixture.root, sources: [source] });
+    assert.deepEqual(ts.getPreEmitDiagnostics(program), []);
+  }
+  const [compiler] = tracker.live();
+  assert.ok(compiler);
+  const exited = new Promise<{ readonly code: number | null; readonly signal: NodeJS.Signals | null }>(resolve => {
+    compiler.once('exit', (code, signal) => resolve({ code, signal }));
+  });
+  // TypeScript unrefs its compiler child; a ref'd timer keeps the event loop alive until it exits.
+  const keepAlive = setTimeout(() => undefined, 10_000);
+  session[Symbol.dispose]();
+  assert.deepEqual(await exited, { code: null, signal: 'SIGKILL' });
+  clearTimeout(keepAlive);
+});
+
 function captureSnapshotRequests(t: TestContext): unknown[] {
   const prototype = API.prototype as unknown as { updateSnapshot(this: API, ...args: unknown[]): unknown };
   const original = prototype.updateSnapshot;

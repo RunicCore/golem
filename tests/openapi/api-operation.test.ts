@@ -262,8 +262,9 @@ test('generated factory is inert, reusable, and reads auth at execute time', asy
 });
 
 test('overlapping generated execute calls warn in both profiles and clean up on failure', async (t) => {
+  const warnings = captureWarnings(t);
   for (const mobx of [false, true]) {
-    const warnings = captureWarnings(t);
+    warnings.length = 0;
     if (mobx) enforceActions(t);
     const { Client } = await loadItemsClient({ mobx, validation: true });
     let release: (() => void) | undefined;
@@ -436,8 +437,9 @@ test('generated execute recovers from pipeline failures on the same object', asy
 });
 
 test('generated loading stays true when a failed execute overlaps a pending success', async (t) => {
+  const warnings = captureWarnings(t);
   for (const mobx of [false, true]) {
-    const warnings = captureWarnings(t);
+    warnings.length = 0;
     if (mobx) enforceActions(t);
     const { Client } = await loadItemsClient({ mobx, validation: true });
     let release: (() => void) | undefined;
@@ -479,8 +481,9 @@ test('generated loading stays true when a failed execute overlaps a pending succ
 });
 
 test('generated factory objects and clients isolate pending counters and overlap warnings', async (t) => {
+  const warnings = captureWarnings(t);
   for (const mobx of [false, true]) {
-    const warnings = captureWarnings(t);
+    warnings.length = 0;
     if (mobx) enforceActions(t);
     const { Client } = await loadItemsClient({ mobx, validation: true });
     let release: (() => void) | undefined;
