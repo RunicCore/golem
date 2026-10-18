@@ -6,7 +6,7 @@
 import type { DiscriminatorValue, ModelTypeDescriptor } from '../model.js';
 import {
   emitArrayItems,
-  emitTupleConversion,
+  emitTupleItems,
   type SequenceItems,
   type TupleConversionDescriptor,
 } from './sequence-conversion.js';
@@ -245,8 +245,8 @@ export function scalarOrArray(
 }
 
 /**
- * The sequence branch of a scalar-or-array union, converted by item. An array gives its items; a tuple
- * gives its whole conversion, so each position converts as it does outside the union.
+ * The sequence branch of a scalar-or-array union, converted by item and with no guard: the union tests
+ * `Array.isArray` once. A tuple converts each position as it does outside the union.
  */
 export function emitSequenceBranch(
   sequence: ScalarOrArray['sequence'],
@@ -255,7 +255,7 @@ export function emitSequenceBranch(
 ): string {
   return sequence.kind === 'array'
     ? emitArrayItems(sequence.item, expression, items)
-    : emitTupleConversion(sequence, expression, items);
+    : emitTupleItems(sequence, expression, items);
 }
 
 /**

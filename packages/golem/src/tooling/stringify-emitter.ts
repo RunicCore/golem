@@ -372,8 +372,7 @@ function emitValue(
         : `stringifyJsonScalar(${expression} as never)`;
       const items = emitSequenceBranch(sequence, expression, { output: 'json', item: jsonItem });
       if (
-        sequence.kind === 'array'
-        && itemsUnchanged
+        itemsUnchanged
         && scalar === `stringifyJsonScalar(${expression} as never)`
       ) {
         return `stringifyJsonScalar(${expression} as never)`;
