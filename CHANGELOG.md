@@ -63,7 +63,6 @@ The first release candidate includes four independently installable packages:
 - `parse<T>` / `stringify<T>` and the other generic serde calls work on TypeScript 6 and 7: golem's own rewrite replaces `ttsc`.
 - **Breaking:** `@exprtlabs/golem/ts` publishes Golem-owned types narrowed to what Golem uses. Its type declarations no longer reference `typescript`; `Program`, `CompilerOptions` (now an untyped options map) and `Diagnostic` are narrower; the `API` class and the TypeScript 7 process-client types are no longer exported from it. It exports only the value names Golem uses.
 - Union members in generated types and schemas are emitted in a fixed canonical order (code-unit order of their canonical key, independent of compiler and locale), so regenerating changes member order and codec ids once.
-- Golem sorts names, keys and imports in generated files, `.golem/outputs.json` and `.golem/codec-keys.json` by code unit, so the same sources give byte-identical files under any machine locale. Regenerate once: an order that followed your locale (such as `maximum` before `maxLength`) changes.
 - On TypeScript 7, generation type-checks newly generated files before writing them. Previously new files were skipped, so a run that produced non-compiling output could succeed; it now fails with the compiler diagnostic. The check uses the project tsconfig's file set and checks only the job's own generated files, so sibling model folders under one tsconfig no longer interfere.
 
 ### OpenAPI
@@ -175,6 +174,7 @@ See [OpenAPI client support](docs/reference/openapi-support.md) for supported ve
 - **Breaking:** install `@exprtlabs/golem` at or above the version the SDK was generated for, with the same major version. Generation commands fail before writing when it is older.
 - **Breaking:** codec ids in generated files change. A hand-written model and an SDK model with the same name and shape no longer share an id.
 - **Breaking:** the output inventory (`.golem/outputs.json`) records a `destination` and `destinationKind` for every file.
+- Golem sorts names, keys and imports in generated files, `.golem/outputs.json` and `.golem/codec-keys.json` by code unit, so the same sources give byte-identical files under any machine locale. Regenerate once: an order that followed your locale (such as `maximum` before `maxLength`) changes. Field order feeds the codec id, so regenerating changes codec ids and SDK `_group-<hash>` file names once. For example, the fields `eTag` and `email` swap places.
 
 ### Removed APIs (pre-1.0)
 
