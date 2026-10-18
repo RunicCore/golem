@@ -58,13 +58,26 @@ export function writeIfChanged(filename: string, content: string): void {
   writeFileSync(filename, content);
 }
 
-export function writeComplianceMatrix(): void {
-  writeIfChanged(path.join(packageDirectory, 'MATRIX.md'), renderComplianceMatrix());
-  writeIfChanged(path.join(packageDirectory, 'compliance', 'capabilities.json'), renderCapabilitiesMetadata());
+function generatedFiles(directory: string): Array<{ filename: string; content: string }> {
+  return [
+    { filename: path.join(directory, 'MATRIX.md'), content: renderComplianceMatrix() },
+    { filename: path.join(directory, 'compliance', 'capabilities.json'), content: renderCapabilitiesMetadata() },
+  ];
 }
 
-export function checkComplianceMatrix(): void {
-  writeComplianceMatrix();
+export function writeComplianceMatrix(directory: string = packageDirectory): void {
+  for (const { filename, content } of generatedFiles(directory)) writeIfChanged(filename, content);
+}
+
+/** Compare the generated files with the files on disk and write nothing. */
+export function checkComplianceMatrix(directory: string = packageDirectory): void {
+  const stale = generatedFiles(directory)
+    .filter(({ filename, content }) => !existsSync(filename) || readFileSync(filename, 'utf8') !== content)
+    .map(({ filename }) => path.relative(directory, filename));
+  if (stale.length === 0) return;
+  throw new Error(
+    `The OpenAPI compliance files are stale: ${stale.join(', ')}. Run npm run generate:openapi-compliance.`,
+  );
 }
 
 function isMainModule(): boolean {
