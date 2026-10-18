@@ -13,6 +13,7 @@ import type { ModelConstraint } from '../model.js';
 import {
   GENERATED_MODEL_SCHEMA_REF_PREFIX,
   MODEL_DATE_KEYWORD,
+  MODEL_CODEC_IDS_KEY,
   MODEL_INSTANCE_KEYWORD,
   VALIDATION_KEYWORD,
 } from '../schema-keywords.js';
@@ -22,7 +23,7 @@ export { assertSupportedModelFieldName } from '../model-field-names.js';
 export { escapePointerToken, unescapePointerToken } from '../json-pointer.js';
 export { compareText };
 export type { ConstraintSchemaValue, ModelConstraint } from '../model.js';
-export { GENERATED_MODEL_SCHEMA_REF_PREFIX, MODEL_DATE_KEYWORD, MODEL_INSTANCE_KEYWORD, VALIDATION_KEYWORD };
+export { GENERATED_MODEL_SCHEMA_REF_PREFIX, MODEL_CODEC_IDS_KEY, MODEL_DATE_KEYWORD, MODEL_INSTANCE_KEYWORD, VALIDATION_KEYWORD };
 export { validationTagKey, validationTagSchemaDescriptor, type ValidationTagGroup } from './validation-tags.js';
 
 /** Structural inputs used when a nested schema contains a named reference. */

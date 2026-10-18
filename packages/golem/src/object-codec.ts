@@ -15,7 +15,7 @@ import type { SchemaIssue } from './issue-messages.js';
 import type { ModelValidationContext, WireFormat } from './model.js';
 import type { Validator } from './validation-runtime.js';
 
-import { GENERATED_MODEL_SCHEMA_REF_PREFIX } from './schema-keywords.js';
+import { GENERATED_MODEL_SCHEMA_REF_PREFIX, MODEL_CODEC_IDS_KEY } from './schema-keywords.js';
 
 /** The error a generic serde call throws when no build has rewritten its type argument. */
 export function untransformedCallError(name: string): LibError {
@@ -122,7 +122,7 @@ export function resolveModelValidationContextValidator(
  * its prototype. Validation reads it without a registry import, so generated
  * validators need no import of this module. The compiler emits the same key.
  */
-export const MODEL_CODEC_IDS = Symbol.for('@exprtlabs/golem:modelCodecIds');
+export const MODEL_CODEC_IDS = Symbol.for(MODEL_CODEC_IDS_KEY);
 
 function markModelCodecId(ctor: abstract new (values?: never) => object, name: string): void {
   const prototype: object = ctor.prototype;

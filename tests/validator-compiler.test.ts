@@ -7,6 +7,7 @@ import { test } from 'node:test';
 import { build } from 'esbuild';
 
 import { GolemDiagnosticSeverity } from '@exprtlabs/golem/generator-api';
+import { MODEL_CODEC_IDS_KEY } from '@exprtlabs/golem/schema';
 import type { Validator } from '@exprtlabs/golem/validation-runtime';
 import { compile } from '@exprtlabs/golem/validator-compiler';
 
@@ -705,7 +706,7 @@ test('diagnostics from every root are collected before the source is withheld', 
 
 // golem's own keywords
 
-const MODEL_CODEC_IDS = Symbol.for('@exprtlabs/golem:modelCodecIds');
+const MODEL_CODEC_IDS = Symbol.for(MODEL_CODEC_IDS_KEY);
 
 /** A class whose prototype lists `ids` the way a registered model does. */
 function modelClass(...ids: string[]): new () => object {
