@@ -9,7 +9,7 @@
 
 export type JsonSchema = boolean | Readonly<Record<string, unknown>>;
 
-import type { ConstraintSchemaValue, ModelConstraint } from '../model.js';
+import type { ModelConstraint } from '../model.js';
 import {
   GENERATED_MODEL_SCHEMA_REF_PREFIX,
   MODEL_DATE_KEYWORD,
