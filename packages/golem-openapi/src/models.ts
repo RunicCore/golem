@@ -19,6 +19,7 @@ import type { DiscriminatorValue, ModelConstraint, ModelTypeDescriptor, UnionDis
 
 import { asRecord, isJsonObject, jsonLiteral, objectEntries } from './json.js';
 import {
+  compareText,
   GolemDiagnosticSeverity,
   identifier,
   NameScope,
@@ -1101,7 +1102,7 @@ function openApiValidationSchemaClosure(
   };
   return [...schemaGraph.nodes.values()]
     .filter((node) => node.kind !== 'reference')
-    .sort((left, right) => left.codecId.localeCompare(right.codecId))
+    .sort((left, right) => compareText(left.codecId, right.codecId))
     .map((node) => ({
       codecId: node.codecId,
       modelSchema: asJsonSchema(compact(node.modelJsonSchema ?? node.jsonSchema, false)),
@@ -1227,7 +1228,7 @@ function schemaGraphGroups(
     const id = `group-${hashGroup([...ids].map((nodeId) => schemaGraph.nodes.get(nodeId)?.codecId ?? nodeId))}`;
     for (const nodeId of ids) owner.set(nodeId, id);
     return { id, filename: `models/_${id}.ts`, nodes: new Set(ids), models };
-  }).sort((left, right) => left.id.localeCompare(right.id));
+  }).sort((left, right) => compareText(left.id, right.id));
   return { groups, owner, runtimeEdges };
 }
 
@@ -1471,7 +1472,7 @@ export function generateOpenApiModelArtifacts(
       }
     }
     const moduleImports = [...importsByModule]
-      .sort(([left], [right]) => left.localeCompare(right))
+      .sort(([left], [right]) => compareText(left, right))
       .map(([moduleName, imports]) => `import { ${[...imports].sort().join(', ')} } from ${JSON.stringify(moduleName)};`);
     const dependencyGroups = new Set([...dependencyIds].flatMap((nodeId) => {
       const dependencyGroupId = owner.get(nodeId);

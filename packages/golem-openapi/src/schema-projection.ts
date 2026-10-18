@@ -1,5 +1,5 @@
 import { asRecord, isJsonObject, jsonPointerJoin, objectEntries, type JsonObject } from './json.js';
-import { identifier } from '@exprtlabs/golem/generator-api';
+import { compareText, identifier } from '@exprtlabs/golem/generator-api';
 import { canonicalSchemaKey, escapePointerToken } from '@exprtlabs/golem/schema';
 import {
   decodePointerToken,
@@ -1213,7 +1213,7 @@ function idBearingResources(resources: ResourceIndex): CanonicalResource[] {
     seen.add(resource.canonical);
     ordered.push(resource);
   }
-  return ordered.sort((left, right) => left.canonical.localeCompare(right.canonical));
+  return ordered.sort((left, right) => compareText(left.canonical, right.canonical));
 }
 
 function projectDirectionalResource(

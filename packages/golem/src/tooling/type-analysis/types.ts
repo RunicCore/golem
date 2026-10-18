@@ -6,7 +6,8 @@ import { projectionIdentity } from './graph.js';
 import { isProjectionName, pascalIdentifier, policySuffix, projectionBaseName, safeNameHint, unionVariantNaming } from './projection-names.js';
 import { commonDirectory, canonicalFilename, type ModelBoundary } from './project.js';
 import { packageSpecifier } from './package-specifier.js';
-import { assertSupportedModelFieldName, canonicalDescriptorKey, compareText } from '../schema.js';
+import { compareText } from '../generator-api.js';
+import { assertSupportedModelFieldName, canonicalDescriptorKey } from '../schema.js';
 import type {
   ModelConversionDescriptor,
   TupleConversionDescriptor,

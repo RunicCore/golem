@@ -1,3 +1,5 @@
+import { compareText } from './generator-api.js';
+
 interface Parsed { readonly core: readonly number[]; readonly pre: readonly string[] }
 
 function parse(version: string): Parsed {
@@ -13,7 +15,7 @@ function comparePre(a: readonly string[], b: readonly string[]): number {
     if (left === undefined) return -1;
     if (right === undefined) return 1;
     const numeric = /^\d+$/.test(left) && /^\d+$/.test(right);
-    const order = numeric ? Number(left) - Number(right) : left.localeCompare(right);
+    const order = numeric ? Number(left) - Number(right) : compareText(left, right);
     if (order !== 0) return Math.sign(order);
   }
   return 0;

@@ -9,7 +9,7 @@ import type {
   InputObserver,
 } from '@exprtlabs/golem/generator-api';
 import { buildCodecValidationPlan, compilePlanValidators, type CodecSchemaClosureEntry } from '@exprtlabs/golem/validation-plan';
-import { DEFAULT_MODEL_SUFFIXES, GolemDiagnosticSeverity, canonicalPath, outsideModelsRootMessage, resolveProfile, suffixPattern, type GolemDiagnostic } from '@exprtlabs/golem/generator-api';
+import { DEFAULT_MODEL_SUFFIXES, GolemDiagnosticSeverity, canonicalPath, compareText, outsideModelsRootMessage, resolveProfile, suffixPattern, type GolemDiagnostic } from '@exprtlabs/golem/generator-api';
 import { codecKeysPath, defaultModelOutput } from '@exprtlabs/golem/generated-paths';
 import { emitCodecDeclarationTable } from '@exprtlabs/golem/schema-graph';
 import {
@@ -467,8 +467,8 @@ export function generate(context: GolemModelContext): GolemModelResult {
     || schemaGraphs.some((graph) => [...graph.nodes.values()].some((node) => node.kind !== 'reference' && node.validationEnabled === true));
   const schemaEntries = deduplicateTagSchemas(
     graphs.flatMap((graph) => graph.schemas)
-      .sort((left, right) => left.key.localeCompare(right.key)
-        || JSON.stringify(left.schema).localeCompare(JSON.stringify(right.schema))),
+      .sort((left, right) => compareText(left.key, right.key)
+        || compareText(JSON.stringify(left.schema), JSON.stringify(right.schema))),
   );
   const validationPlan = anyValidation
     ? buildCodecValidationPlan(

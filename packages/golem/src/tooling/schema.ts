@@ -16,9 +16,11 @@ import {
   MODEL_INSTANCE_KEYWORD,
   VALIDATION_KEYWORD,
 } from '../schema-keywords.js';
+import { compareText } from './generator-api.js';
 
 export { assertSupportedModelFieldName } from '../model-field-names.js';
 export { escapePointerToken, unescapePointerToken } from '../json-pointer.js';
+export { compareText };
 export type { ConstraintSchemaValue, ModelConstraint } from '../model.js';
 export { GENERATED_MODEL_SCHEMA_REF_PREFIX, MODEL_DATE_KEYWORD, MODEL_INSTANCE_KEYWORD, VALIDATION_KEYWORD };
 export { validationTagKey, validationTagSchemaDescriptor, type ValidationTagGroup } from './validation-tags.js';
@@ -209,7 +211,7 @@ function canonicalDescriptorValue(value: unknown): unknown {
       result[key] = { ...item, ...(item.item === undefined ? {} : { item: canonicalDescriptorValue(item.item) }) };
     } else if (key === 'constraints' && Array.isArray(item)) {
       // Constraint tags are a set: written order must not change a codec id.
-      result[key] = item.map(canonicalConstraintValue).sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right)));
+      result[key] = item.map(canonicalConstraintValue).sort((left, right) => compareText(JSON.stringify(left), JSON.stringify(right)));
     } else if (key === 'typeImport' && isRecord(item)) {
       // A class-value import's `module` is an absolute path; codec ids must not depend on the checkout directory.
       result[key] = { exportName: item.exportName, ...(item.specifier === undefined ? {} : { specifier: item.specifier }) };
@@ -222,11 +224,6 @@ function canonicalDescriptorValue(value: unknown): unknown {
 
 function canonicalSchemaValue(value: unknown): unknown {
   return isRecord(value) ? canonicalDescriptorValue(value) : value;
-}
-
-/** Canonical text order: by UTF-16 code unit, so output does not depend on the machine's ICU data. */
-export function compareText(left: string, right: string): number {
-  return left < right ? -1 : left > right ? 1 : 0;
 }
 
 /** Stable intern key for model descriptors. Keeps serde ids; skips checker graphs. */
@@ -775,7 +772,7 @@ function assembleConstraintSchemaInternal(
 ): Readonly<Record<string, unknown>> {
   const direct: Record<string, unknown> = {};
   const conflicts: Readonly<Record<string, unknown>>[] = [];
-  const sorted = [...(options.portable ? projectPortableConstraints(constraints, options) : constraints)].sort((left, right) => canonicalConstraintKey(left).localeCompare(canonicalConstraintKey(right)));
+  const sorted = [...(options.portable ? projectPortableConstraints(constraints, options) : constraints)].sort((left, right) => compareText(canonicalConstraintKey(left), canonicalConstraintKey(right)));
   for (const constraint of sorted) {
     for (const [keyword, value] of constraintEntries(constraint, options, state)) {
       if (keyword === 'patternProperties' || keyword === 'dependentRequired' || keyword === 'dependentSchemas') {

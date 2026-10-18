@@ -63,6 +63,7 @@ The first release candidate includes four independently installable packages:
 - `parse<T>` / `stringify<T>` and the other generic serde calls work on TypeScript 6 and 7: golem's own rewrite replaces `ttsc`.
 - **Breaking:** `@exprtlabs/golem/ts` publishes Golem-owned types narrowed to what Golem uses. Its type declarations no longer reference `typescript`; `Program`, `CompilerOptions` (now an untyped options map) and `Diagnostic` are narrower; the `API` class and the TypeScript 7 process-client types are no longer exported from it. It exports only the value names Golem uses.
 - Union members in generated types and schemas are emitted in a fixed canonical order (code-unit order of their canonical key, independent of compiler and locale), so regenerating changes member order and codec ids once.
+- Generated files, `.golem/outputs.json` and `.golem/codec-keys.json` sort names, keys and imports in code-unit order, so the same sources give byte-identical files under any machine locale. Regenerate once: an order that followed your locale (such as `maximum` before `maxLength`) changes.
 - On TypeScript 7, generation type-checks newly generated files before writing them. Previously new files were skipped, so a run that produced non-compiling output could succeed; it now fails with the compiler diagnostic. The check uses the project tsconfig's file set and checks only the job's own generated files, so sibling model folders under one tsconfig no longer interfere.
 
 ### OpenAPI

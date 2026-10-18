@@ -13,6 +13,11 @@ export {
   RESERVED_MODEL_MEMBERS,
 } from './names.js';
 
+/** Canonical text order: by UTF-16 code unit, so output does not depend on the machine's locale or ICU data. */
+export function compareText(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0;
+}
+
 export interface GolemProfile {
   readonly mobx: boolean;
   readonly validation: boolean;

@@ -1,6 +1,6 @@
 import { lowerDiscriminatorMappings } from '../discriminator-mapping.js';
 import { GENERATED_MODEL_SCHEMA_REF_PREFIX } from '../schema-keywords.js';
-import type { GolemDiagnostic } from './generator-api.js';
+import { compareText, type GolemDiagnostic } from './generator-api.js';
 import { codecShortName, type SchemaGraph, type SchemaNode } from './schema-graph.js';
 import type { JsonSchema } from './schema.js';
 import { compile, type CompileInput, type CompileOptions, type SchemaPlace } from './validator-compiler/index.js';
@@ -154,7 +154,7 @@ export function buildCodecValidationPlan(
   const graphs = Array.isArray(graphOrGraphs) ? graphOrGraphs : [graphOrGraphs];
   const nodes = graphs.flatMap(graph => [...graph.nodes.values()]
     .map(node => ({ graph, node })))
-    .sort((left, right) => left.node.codecId.localeCompare(right.node.codecId) || left.node.id.localeCompare(right.node.id));
+    .sort((left, right) => compareText(left.node.codecId, right.node.codecId) || compareText(left.node.id, right.node.id));
   const compiled = compiledCodecIds(nodes, defaultValidation);
   const aliases = new Map<string, Set<string>>();
   const addAlias = (target: Map<string, Set<string>>, alias: string, codecId: string): void => {
@@ -275,7 +275,7 @@ export function buildCodecValidationPlan(
     if (codec.modelOnlySchema !== undefined) addSchema(`${codec.codecId}#model-only`, codec.modelOnlySchema);
     if (codec.wireOnlySchema !== undefined) addSchema(`${codec.codecId}#wire-only`, codec.wireOnlySchema);
   }
-  for (const [id, schema] of Object.entries(additionalSchemas).sort(([left], [right]) => left.localeCompare(right))) {
+  for (const [id, schema] of Object.entries(additionalSchemas).sort(([left], [right]) => compareText(left, right))) {
     addSchema(id, schema);
   }
 

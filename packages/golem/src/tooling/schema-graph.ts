@@ -7,13 +7,13 @@ import type { ModelTypeDescriptor } from '../model.js';
 import {
   canonicalDescriptorKey,
   canonicalSchemaKey,
-  compareText,
   constraintSchemaValues,
   GENERATED_MODEL_SCHEMA_REF_PREFIX,
   schemaForDescriptor,
   type JsonSchema,
   type ModelConstraint,
 } from './schema.js';
+import { compareText } from './generator-api.js';
 
 export type SchemaNodeKind = 'object' | 'array' | 'tuple' | 'union' | 'intersection' | 'scalar' | 'reference' | 'operation';
 
@@ -200,7 +200,7 @@ function codecShapeDescriptor(
       kind: 'object',
       properties: Object.fromEntries(
         Object.entries(descriptor.properties)
-          .sort(([left], [right]) => left.localeCompare(right))
+          .sort(([left], [right]) => compareText(left, right))
           .map(([name, property]) => [name, codecShapeDescriptor(property, lookup)]),
       ),
       required: [...descriptor.required].sort(),
@@ -334,7 +334,7 @@ export function emitCodecDeclarationTable(
       seen.set(key, entry.codecId);
     }
   }
-  const keys = Object.fromEntries([...seen.entries()].sort(([left], [right]) => left.localeCompare(right)));
+  const keys = Object.fromEntries([...seen.entries()].sort(([left], [right]) => compareText(left, right)));
   return `${JSON.stringify({ version: 1, keys }, null, 2)}\n`;
 }
 

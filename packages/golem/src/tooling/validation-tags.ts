@@ -3,6 +3,7 @@
  * model generator uses the key to share one compiled validator per tag.
  */
 import type { ModelConstraint, ModelTypeDescriptor } from '../model.js';
+import { compareText } from './generator-api.js';
 import { canonicalSchemaKey } from './schema.js';
 
 export interface ValidationTagGroup {
@@ -179,7 +180,7 @@ export function validationTagKey(
   if (found) return found.key;
   const context: TagKeyContext = { definitions: options.definitions, active: new Set() };
   const constraints = group.constraints.map(constraint => tagKeyConstraint(constraint, context))
-    .sort((left, right) => canonicalSchemaKey(left).localeCompare(canonicalSchemaKey(right)));
+    .sort((left, right) => compareText(canonicalSchemaKey(left), canonicalSchemaKey(right)));
   const key = canonicalSchemaKey({
     ...(options.representation === undefined ? {} : { representation: options.representation }),
     descriptor: tagKeySchema(tagSchemaShell(descriptor, options.definitions), context),
