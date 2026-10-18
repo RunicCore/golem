@@ -286,19 +286,27 @@ function modelFieldType(
     && (schema.type === 'string' || (Array.isArray(schema.type) && schema.type.includes('string')))) {
     return admitsNull(schema) ? 'Date | null' : 'Date';
   }
+  // The conversion's order and rule: typed allOf members win, then the schema's own array keywords, then oneOf and anyOf.
+  const typedMembers = isJsonObject(schema) && hasAllOfMembers(schema)
+    ? schema.allOf.filter((item) => !isConstraintOnlyPart(modelConversionDescriptor(item, definitions, nested, 'from', seen)))
+    : [];
+  const [onlyTypedMember] = typedMembers;
+  if (typedMembers.length === 1 && isSequenceDescriptor(modelConversionDescriptor(onlyTypedMember, definitions, nested, 'from', seen))) {
+    return modelFieldType(onlyTypedMember, definitions, nested, seen);
+  }
+  if (isJsonObject(schema) && typedMembers.length === 0 && isSequenceSchema(schema)) {
+    const orNull = admitsNull(schema) ? ' | null' : '';
+    if (Array.isArray(schema.prefixItems)) {
+      return `${prefixItemsType(schema, (item) => modelFieldType(item, definitions, nested, seen))}${orNull}`;
+    }
+    if (schema.items) return `Array<${modelFieldType(schema.items, definitions, nested, seen)}>${orNull}`;
+  }
   if (isJsonObject(schema) && (schema.oneOf || schema.anyOf)) {
     const variants = Array.isArray(schema.oneOf) ? schema.oneOf : Array.isArray(schema.anyOf) ? schema.anyOf : [];
     return variants
       .map((item) => modelFieldType(item, definitions, nested, seen))
       .map((type) => `(${type})`)
       .join(' | ');
-  }
-  if (isJsonObject(schema) && isSequenceSchema(schema)) {
-    const orNull = admitsNull(schema) ? ' | null' : '';
-    if (Array.isArray(schema.prefixItems)) {
-      return `${prefixItemsType(schema, (item) => modelFieldType(item, definitions, nested, seen))}${orNull}`;
-    }
-    if (schema.items) return `Array<${modelFieldType(schema.items, definitions, nested, seen)}>${orNull}`;
   }
   if (isJsonObject(schema) && (schema.properties || isJsonObject(schema.additionalProperties))) {
     const required = new Set(Array.isArray(schema.required) ? schema.required : []);
@@ -348,15 +356,21 @@ function withOpenApiConstraints(
   return { ...descriptor, constraints: [...(descriptor.constraints ?? []), ...extra] };
 }
 
+/** An allOf member that converts nothing: it adds constraints, or nothing at all (`{ description }`, `{}`). */
+function isConstraintOnlyPart(part: ModelTypeDescriptor): boolean {
+  return part.kind === 'unknown' && part.validations === undefined && part.serde === undefined;
+}
+
+function isSequenceDescriptor(descriptor: ModelTypeDescriptor): boolean {
+  if (descriptor.kind === 'union') return descriptor.variants.some(isSequenceDescriptor);
+  return descriptor.kind === 'array' || descriptor.kind === 'tuple';
+}
+
 function mergeAllOfDescriptors(parts: readonly ModelTypeDescriptor[]): ModelTypeDescriptor {
   const extras: ModelConstraint[] = [];
   const typed: ModelTypeDescriptor[] = [];
   for (const part of parts) {
-    const constraintOnly = part.kind === 'unknown'
-      && part.constraints?.length
-      && part.validations === undefined
-      && part.serde === undefined;
-    if (constraintOnly) extras.push(...(part.constraints ?? []));
+    if (isConstraintOnlyPart(part)) extras.push(...(part.constraints ?? []));
     else typed.push(part);
   }
   if (typed.length === 1) {
@@ -464,12 +478,12 @@ function modelConversionDescriptor(
       ? { kind: 'union', variants: [date, { kind: 'null' }] } : date;
   }
   if (isJsonObject(schema) && hasAllOfMembers(schema)) {
-    const members = mergeAllOfDescriptors(
-      schema.allOf.map((item) => modelConversionDescriptor(item, definitions, nested, direction, seen)),
-    );
-    // Members that only constrain leave the schema's own array keywords to convert the items, as the field type reads them.
-    const sequence = members.kind === 'unknown' ? sequenceConversionDescriptor(schema, definitions, nested, direction, seen) : undefined;
-    return sequence ? mergeAllOfDescriptors([sequence, members]) : members;
+    const members = schema.allOf.map((item) => modelConversionDescriptor(item, definitions, nested, direction, seen));
+    // Typed members win. Members that only constrain leave the schema's own array keywords to convert the items.
+    const sequence = members.every(isConstraintOnlyPart)
+      ? sequenceConversionDescriptor(schema, definitions, nested, direction, seen)
+      : undefined;
+    return mergeAllOfDescriptors(sequence ? [sequence, ...members] : members);
   }
   const sequence = isJsonObject(schema) ? sequenceConversionDescriptor(schema, definitions, nested, direction, seen) : undefined;
   if (sequence) return sequence;

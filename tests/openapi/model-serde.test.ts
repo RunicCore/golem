@@ -705,3 +705,90 @@ test('an array or tuple field with no type or a nullable type converts like type
   assert.equal(absent.maybeVisits, null);
   assert.equal(absent.maybeLeg, null);
 });
+
+test('allOf members decide an array field: typed members win over its own items, and members without constraints change nothing', async t => {
+  const output = path.join(createFixtureProject(t, 'golem-openapi-array-allof-members-'), 'sdk');
+  await generateMaterializedSdk(sequenceSerdeDocument({
+    memberWins: {
+      items: { type: 'string', format: 'date-time' },
+      type: 'array',
+      allOf: [{ type: 'array', items: { type: 'string' } }],
+    },
+    membersCarry: {
+      allOf: [{ type: 'array', items: { type: 'string', format: 'date-time' } }],
+    },
+    describedMember: {
+      type: 'array',
+      items: { type: 'string', format: 'date-time' },
+      allOf: [{ description: 'when the visits happened' }],
+    },
+    bareArrayMember: {
+      type: 'array',
+      items: { type: 'string', format: 'date-time' },
+      allOf: [{ type: 'array' }],
+    },
+  }), {
+    output,
+    name: 'SequenceSerde',
+    profile: { mobx: false, validation: false, allowAny: false },
+  });
+  copyFixtureFile(output, 'openapi/model-serde/allof-sequence-types.ts', 'allof-sequence-types.ts');
+  compileGeneratedSdk(output, [path.join(output, 'allof-sequence-types.ts')], { strict: true, skipLibCheck: true });
+
+  const models = requireRecord(
+    await import(pathToFileURL(path.join(output, 'dist/index.js')).href),
+    'generated allOf array models',
+  );
+  const VisitModel = models.VisitModel as unknown as new (values?: Record<string, unknown>) => Record<string, unknown>;
+
+  const visit = decodeGeneratedModel(VisitModel, {
+    memberWins: ['2024-05-06T07:08:09.000Z'],
+    membersCarry: ['2024-05-07T08:09:10.000Z'],
+    describedMember: ['2024-05-08T09:10:11.000Z'],
+    bareArrayMember: ['2024-05-09T10:11:12.000Z'],
+  });
+  assert.deepEqual(visit.memberWins, ['2024-05-06T07:08:09.000Z']);
+  assert.deepEqual(visit.membersCarry, [new Date('2024-05-07T08:09:10.000Z')]);
+  assert.deepEqual(visit.describedMember, [new Date('2024-05-08T09:10:11.000Z')]);
+  assert.deepEqual(visit.bareArrayMember, [new Date('2024-05-09T10:11:12.000Z')]);
+});
+
+test('a nullable array field with an allOf minItems keeps null, rejects an empty array and accepts dates', async t => {
+  const output = path.join(createFixtureProject(t, 'golem-openapi-nullable-array-allof-'), 'sdk');
+  await generateMaterializedSdk(sequenceSerdeDocument({
+    visits: {
+      type: ['array', 'null'],
+      items: { type: 'string', format: 'date-time' },
+      allOf: [{ minItems: 1 }],
+    },
+  }), {
+    output,
+    name: 'SequenceSerde',
+    profile: { mobx: false, validation: true, allowAny: false },
+  });
+  copyFixtureFile(output, 'openapi/model-serde/nullable-array-types.ts', 'nullable-array-types.ts');
+  compileGeneratedSdk(output, [path.join(output, 'nullable-array-types.ts')], { strict: true, skipLibCheck: true });
+
+  const models = requireRecord(
+    await import(pathToFileURL(path.join(output, 'dist/index.js')).href),
+    'generated nullable array models',
+  );
+  const VisitModel = models.VisitModel as unknown as new (values?: Record<string, unknown>) => Record<string, unknown>;
+
+  assert.equal(decodeGeneratedModel(VisitModel, { visits: null }).visits, null);
+  assert.deepEqual(
+    decodeGeneratedModel(VisitModel, { visits: ['2024-05-06T07:08:09.000Z'] }).visits,
+    [new Date('2024-05-06T07:08:09.000Z')],
+  );
+  assert.throws(
+    () => requireObjectCodec(generatedCodecIdFromRoot(output, 'Visit')).fromWireFormat(
+      { visits: [] },
+      { construct: VisitModel as unknown as abstract new (values?: never) => object },
+    ),
+    (error: unknown): true => {
+      assert.ok(error instanceof LibError);
+      assert.equal(error.kind, LibErrorKind.Validation);
+      return true;
+    },
+  );
+});
