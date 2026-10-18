@@ -52,6 +52,14 @@ const TUPLE = 'tuple';
 /** What a `json` tuple writes for an item past the declared items, and for an item that needs no conversion. */
 const JSON_SCALAR_ITEM = `stringifyJsonScalar(${ITEM} as never)`;
 
+/** A name or a chain of property and index reads. Any other expression needs parentheses before `as`. */
+const ACCESS_CHAIN = /^[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*|\[(?:\d+|"[^"\\]*"|'[^'\\]*')\])*$/;
+
+/** The array argument of a runtime loop function. */
+function asArray(expression: string): string {
+  return ACCESS_CHAIN.test(expression) ? `${expression} as readonly unknown[]` : `(${expression} as readonly unknown[])`;
+}
+
 /**
  * A whole array conversion, with its guard. An unchanged `value` array is a `slice`; a `json` array has no guard and
  * always writes its items.
@@ -71,11 +79,10 @@ export function emitArrayItems(item: ModelTypeDescriptor, expression: string, it
   const { code, throws } = items.item(item, ITEM);
   if (items.output === 'json') return `stringifyJsonArray(${expression} as ArrayLike<unknown>, (${ITEM}) => ${code})`;
   if (code === ITEM) return expression;
-  const array = `(${expression} as readonly unknown[])`;
   if (items.paths && throws) {
-    return `convertModelItems('${items.paths}', ${singleCallConverter(code, ITEM) ?? `(${ITEM}) => (${code})`}, ${array})`;
+    return `convertModelItems(${JSON.stringify(items.paths)}, ${singleCallConverter(code, ITEM) ?? `(${ITEM}) => (${code})`}, ${asArray(expression)})`;
   }
-  return `${array}.map((${ITEM}) => ${code})`;
+  return `(${expression} as readonly unknown[]).map((${ITEM}) => ${code})`;
 }
 
 /**
@@ -116,7 +123,9 @@ export function emitTupleConversion(descriptor: TupleConversionDescriptor, expre
   const restIndex = rest?.index ?? descriptor.items.length;
   const before = descriptor.items.slice(0, restIndex).map(convert);
   const middle = rest ? convert(rest.item) : unchanged;
-  const after = rest ? descriptor.items.slice(restIndex).map(convert) : [];
+  const afterItems = rest ? descriptor.items.slice(restIndex).map(convert) : [];
+  // Items after the rest that convert as the rest does are part of it.
+  const after = afterItems.every(code => code === middle) ? [] : afterItems;
 
   let selected: string;
   if (!rest || (middle === unchanged && after.every(code => code === unchanged))) {
@@ -148,10 +157,11 @@ export function emitTupleConversion(descriptor: TupleConversionDescriptor, expre
   const params = usesIndex ? `${ITEM}, ${INDEX}` : ITEM;
   if (pathed && items.paths) {
     // An item that throws runs under its index. A loop that selects by position gets the index and the array.
-    const array = `(${expression} as readonly unknown[])`;
+    const direction = JSON.stringify(items.paths);
+    const array = asArray(expression);
     const converted = usesIndex
-      ? `convertModelTupleItems('${items.paths}', (${usesTuple ? `${params}, ${TUPLE}` : params}) => ${selected}, ${array})`
-      : `convertModelItems('${items.paths}', ${singleCallConverter(selected, ITEM) ?? `(${ITEM}) => (${selected})`}, ${array})`;
+      ? `convertModelTupleItems(${direction}, (${usesTuple ? `${params}, ${TUPLE}` : params}) => ${selected}, ${array})`
+      : `convertModelItems(${direction}, ${singleCallConverter(selected, ITEM) ?? `(${ITEM}) => (${selected})`}, ${array})`;
     return `Array.isArray(${expression}) ? ${converted} : ${expression}`;
   }
   if (json) {

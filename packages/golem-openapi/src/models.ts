@@ -587,7 +587,7 @@ function rootFieldConversion(
     convert = helperName(helpers.length);
     helpers.push(`function ${convert}(${FIELD_CONVERSION_INPUT}: ${inputType}) { return ${converted}; }`);
   }
-  return `convertModelField('${direction}', ${JSON.stringify(field)}, ${convert}, ${input})`;
+  return `convertModelField(${JSON.stringify(direction)}, ${JSON.stringify(field)}, ${convert}, ${input})`;
 }
 
 function modelFieldDeclaration(

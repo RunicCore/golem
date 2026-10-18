@@ -211,7 +211,7 @@ function atField(emit: (value: string) => string, input: string, field: string, 
   const converted = emit(FIELD_CONVERSION_INPUT);
   if (converted === FIELD_CONVERSION_INPUT) return input;
   const convert = singleCallConverter(converted) ?? `(${FIELD_CONVERSION_INPUT}: unknown) => (${converted})`;
-  return `convertModelField('${direction === 'toJSON' ? 'serialize' : 'deserialize'}', ${field}, ${convert}, ${input})`;
+  return `convertModelField(${JSON.stringify(direction === 'toJSON' ? 'serialize' : 'deserialize')}, ${field}, ${convert}, ${input})`;
 }
 
 /** The item conversion of a tuple or an array in the model family: `fromInit` has no error paths, the other directions have. */

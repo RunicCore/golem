@@ -174,3 +174,11 @@ test('a rest tuple with only a failing rest item names the item index', () => {
   const convert = deserializeConversion(tuple([], { index: 0, item: date }));
   assert.deepEqual(issuePath(() => convert(['2024-05-06T07:08:09.000Z', 'bad'])), [1]);
 });
+
+test('an item after the rest that converts as the rest names its index like the rest', () => {
+  const good = '2024-05-06T07:08:09.000Z';
+  const convert = deserializeConversion(tuple([date], { index: 0, item: date }));
+  assert.deepEqual(convert([good, good]), [new Date(good), new Date(good)]);
+  assert.deepEqual(issuePath(() => convert(['bad', good])), [0]);
+  assert.deepEqual(issuePath(() => convert([good, 'bad'])), [1]);
+});
