@@ -299,6 +299,36 @@ function tupleSerdeDocument(): Record<string, unknown> {
   };
 }
 
+function sequenceSerdeDocument(properties: Record<string, unknown>): Record<string, unknown> {
+  return {
+    openapi: '3.1.0',
+    info: { title: 'SequenceSerde', version: '1' },
+    paths: {
+      '/visits': {
+        get: {
+          operationId: 'getVisit',
+          responses: {
+            200: {
+              description: 'ok',
+              content: { 'application/json': { schema: { $ref: '#/components/schemas/Visit' } } },
+            },
+          },
+        },
+      },
+    },
+    components: {
+      schemas: {
+        Visit: {
+          type: 'object',
+          additionalProperties: false,
+          required: Object.keys(properties),
+          properties,
+        },
+      },
+    },
+  };
+}
+
 async function assertNestedDateInheritedAndDictionaryConversions(
   models: Record<string, unknown>,
   label: string,
@@ -577,8 +607,7 @@ test('a tuple field converts each item by its own schema: the prefix stays a str
   });
   assert.deepEqual(itinerary.stops, ['label', new Date('2024-05-06T07:08:09.000Z')]);
   assert.deepEqual(itinerary.leg, ['gate', new Date('2024-05-07T08:09:10.000Z')]);
-  // An allOf wrapper keeps the field's wire type and value.
-  assert.deepEqual(itinerary.held, ['2024-05-08T09:10:11.000Z']);
+  assert.deepEqual(itinerary.held, [new Date('2024-05-08T09:10:11.000Z')]);
   assert.deepEqual(encodeGeneratedModel(generated(itinerary)), {
     stops: ['label', '2024-05-06T07:08:09.000Z'],
     leg: ['gate', '2024-05-07T08:09:10.000Z'],
@@ -593,4 +622,31 @@ test('a tuple field converts each item by its own schema: the prefix stays a str
       return true;
     },
   );
+});
+
+test('an array field with an allOf sibling converts its items to Dates and is typed Date[]', async t => {
+  const output = path.join(createFixtureProject(t, 'golem-openapi-array-allof-'), 'sdk');
+  await generateMaterializedSdk(sequenceSerdeDocument({
+    visits: {
+      type: 'array',
+      items: { type: 'string', format: 'date-time' },
+      allOf: [{ minItems: 1 }],
+    },
+  }), {
+    output,
+    name: 'SequenceSerde',
+    profile: { mobx: false, validation: false, allowAny: false },
+  });
+  copyFixtureFile(output, 'openapi/model-serde/array-types.ts', 'array-types.ts');
+  compileGeneratedSdk(output, [path.join(output, 'array-types.ts')], { strict: true, skipLibCheck: true });
+
+  const models = requireRecord(
+    await import(pathToFileURL(path.join(output, 'dist/index.js')).href),
+    'generated array models',
+  );
+  const VisitModel = models.VisitModel as unknown as new (values?: Record<string, unknown>) => Record<string, unknown>;
+
+  const visit = decodeGeneratedModel(VisitModel, { visits: ['2024-05-06T07:08:09.000Z'] });
+  assert.deepEqual(visit.visits, [new Date('2024-05-06T07:08:09.000Z')]);
+  assert.deepEqual(encodeGeneratedModel(generated(visit)), { visits: ['2024-05-06T07:08:09.000Z'] });
 });

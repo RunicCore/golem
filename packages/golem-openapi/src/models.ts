@@ -293,8 +293,7 @@ function modelFieldType(
       .map((type) => `(${type})`)
       .join(' | ');
   }
-  // The conversion reads an allOf field from its members only, so its type stays the wire type.
-  if (isJsonObject(schema) && !hasAllOfMembers(schema) && schema.type === 'array' && Array.isArray(schema.prefixItems)) {
+  if (isJsonObject(schema) && schema.type === 'array' && Array.isArray(schema.prefixItems)) {
     return prefixItemsType(schema, (item) => modelFieldType(item, definitions, nested, seen));
   }
   if (isJsonObject(schema) && schema.type === 'array' && schema.items) {
@@ -384,6 +383,34 @@ function hasAllOfMembers(schema: Readonly<Record<string, unknown>>): schema is R
   return Array.isArray(schema.allOf) && schema.allOf.length > 0;
 }
 
+/** A tuple (prefixItems) or an array (items) schema: each prefix item converts by its own schema, and `items` converts the rest. */
+function sequenceConversionDescriptor(
+  schema: Readonly<Record<string, unknown>>,
+  definitions: ReadonlyMap<string, ModelDefinition>,
+  env: ModelResolveEnv,
+  direction: 'from' | 'to',
+  seen: ReadonlySet<unknown>,
+): ModelTypeDescriptor | undefined {
+  if (schema.type !== 'array') return undefined;
+  if (Array.isArray(schema.prefixItems)) {
+    const items = schema.prefixItems.map((item) => modelConversionDescriptor(item, definitions, env, direction, seen));
+    return schema.items === false
+      ? { kind: 'tuple', items }
+      : {
+        kind: 'tuple',
+        items,
+        rest: {
+          index: items.length,
+          item: schema.items === undefined ? { kind: 'unknown' } : modelConversionDescriptor(schema.items, definitions, env, direction, seen),
+        },
+      };
+  }
+  if (schema.items) {
+    return { kind: 'array', item: modelConversionDescriptor(schema.items, definitions, env, direction, seen) };
+  }
+  return undefined;
+}
+
 function modelConversionDescriptor(
   schema: unknown,
   definitions: ReadonlyMap<string, ModelDefinition>,
@@ -418,30 +445,15 @@ function modelConversionDescriptor(
       ? { kind: 'union', variants: [date, { kind: 'null' }] } : date;
   }
   if (isJsonObject(schema) && hasAllOfMembers(schema)) {
-    return mergeAllOfDescriptors(
+    const members = mergeAllOfDescriptors(
       schema.allOf.map((item) => modelConversionDescriptor(item, definitions, nested, direction, seen)),
     );
+    // Members that only constrain leave the schema's own array keywords to convert the items, as the field type reads them.
+    const sequence = members.kind === 'unknown' ? sequenceConversionDescriptor(schema, definitions, nested, direction, seen) : undefined;
+    return sequence ? mergeAllOfDescriptors([sequence, members]) : members;
   }
-  if (isJsonObject(schema) && schema.type === 'array' && Array.isArray(schema.prefixItems)) {
-    // Each prefix item converts by its own schema; `items` converts the items after the prefix.
-    const items = schema.prefixItems.map((item) => modelConversionDescriptor(item, definitions, nested, direction, seen));
-    return schema.items === false
-      ? { kind: 'tuple', items }
-      : {
-        kind: 'tuple',
-        items,
-        rest: {
-          index: items.length,
-          item: schema.items === undefined ? { kind: 'unknown' } : modelConversionDescriptor(schema.items, definitions, nested, direction, seen),
-        },
-      };
-  }
-  if (isJsonObject(schema) && schema.type === 'array' && schema.items) {
-    return {
-      kind: 'array',
-      item: modelConversionDescriptor(schema.items, definitions, nested, direction, seen),
-    };
-  }
+  const sequence = isJsonObject(schema) ? sequenceConversionDescriptor(schema, definitions, nested, direction, seen) : undefined;
+  if (sequence) return sequence;
   if (isJsonObject(schema) && (schema.oneOf || schema.anyOf)) {
     const variants = Array.isArray(schema.oneOf) ? schema.oneOf : Array.isArray(schema.anyOf) ? schema.anyOf : [];
     const convertedVariants = variants.map(item => isNullBranch(item)
