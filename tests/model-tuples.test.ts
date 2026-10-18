@@ -117,19 +117,37 @@ test('validation-enabled codec emission compiles and preserves array and tuple g
   await command(root, process.execPath, [verifier, codecId]);
 });
 
-test('a model keeps the length of a short rest tuple in every direction with validation off', async (t) => {
+test('a model keeps a short rest tuple at its own length and a hole in it a hole, with validation off', async (t) => {
   const { root, sourceRoot } = tupleModelProject(t, 'tuple-short-rest');
   fs.writeFileSync(path.join(sourceRoot, 'tuple.model.ts'), readFixture('models/model-tuples/tuple.model.ts'));
   writeModelGolemYaml(root, { mobx: false, validation: false });
   await buildModelProject(root);
 
   const { Tuple } = await import(pathToFileURL(path.join(root, 'build/tuple.model.js')).href);
-  const init = { required: ['required', 9], maybe: ['x'], rest: ['only'] };
-  const restOf = (value: unknown): unknown => {
-    assert.ok(typeof value === 'object' && value !== null && 'rest' in value);
-    return value.rest;
+  const field = (value: unknown, name: string): unknown => {
+    assert.ok(typeof value === 'object' && value !== null && name in value);
+    return Reflect.get(value, name);
   };
-  assert.deepEqual(restOf(new Tuple(init)), ['only']);
-  assert.deepEqual(restOf(decodeGeneratedModel(Tuple, init)), ['only']);
-  assert.deepEqual(restOf(encodeGeneratedModel(new Tuple(init))), ['only']);
+  const init = { required: ['required', 9], maybe: ['x'], rest: ['only'] };
+  assert.deepEqual(field(new Tuple(init), 'rest'), ['only']);
+  assert.deepEqual(field(decodeGeneratedModel(Tuple, init), 'rest'), ['only']);
+  assert.deepEqual(field(encodeGeneratedModel(new Tuple(init)), 'rest'), ['only']);
+
+  // The Date item after the rest has no input, so converting it would throw on `undefined`.
+  const short = { ...init, dated: ['only'] };
+  assert.deepEqual(field(new Tuple(short), 'dated'), ['only']);
+  assert.deepEqual(field(decodeGeneratedModel(Tuple, short), 'dated'), ['only']);
+  assert.deepEqual(field(encodeGeneratedModel(new Tuple(short)), 'dated'), ['only']);
+
+  const holey: unknown[] = ['first'];
+  holey[2] = '2024-05-06T07:08:09.000Z';
+  const sparse = { ...init, dated: holey };
+  for (const dated of [field(new Tuple(sparse), 'dated'), field(decodeGeneratedModel(Tuple, sparse), 'dated')]) {
+    assert.ok(Array.isArray(dated));
+    assert.equal(dated.length, 3);
+    assert.equal(1 in dated, false);
+  }
+  const decoded = field(decodeGeneratedModel(Tuple, sparse), 'dated');
+  assert.ok(Array.isArray(decoded));
+  assert.deepEqual(decoded[2], new Date('2024-05-06T07:08:09.000Z'));
 });
