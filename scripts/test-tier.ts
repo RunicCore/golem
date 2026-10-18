@@ -1,4 +1,4 @@
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -6,7 +6,11 @@ import { fileURLToPath } from 'node:url';
 
 export type Tier = 'prepare' | 'focused' | 'full' | 'acceptance' | 'docs';
 /** `fileTimings` is the JSON-lines file that the test-file reporter fills while the step runs. */
-export interface Step { readonly label: string; readonly run: () => number; readonly fileTimings?: string }
+export interface Step { readonly label: string; readonly run: () => Promise<number>; readonly fileTimings?: string }
+/** The steps of a chain run one after another. The chains of a group run at the same time; groups run in order. */
+export type Group = readonly (readonly Step[])[];
+/** Each step is a group of its own: the steps run in order. */
+const inOrder = (...steps: readonly Step[]): Group[] => steps.map(step => [[step]]);
 
 // The public-source and release-version tests stay in this step: the Acceptance tier's "public source" step and the pack
 // step (test-pack, verify-package) run those scripts as release gates, and these tests hold their rejection cases.
@@ -29,7 +33,7 @@ export const TYPESCRIPT6_FILES = [
     // `golem build` runs as a child process and reads GOLEM_TYPESCRIPT_ROOT (buildModelProject):
     'model-tags', 'model-tags-serde', 'model-composition', 'model-projections', 'model-job-graph', 'constraint-parity',
     'model-companion-build', 'model-union-tags', 'model-tuples', 'projection-integration', 'tag-alias-generics',
-    'tag-model-boundaries', 'constraint-portability', 'constraint-callback-composition', 'wire-format',
+    'tag-model-boundaries', 'constraint-portability', 'constraint-callback-composition', 'wire-format', 'wire-format-sdk',
     // `generate` of the model or controller generator runs the checker in this process:
     'projection-names', 'model-generator', 'model-codec-location', 'model-field-names',
     // The pipeline, build, rewrite host or CLI selects the backend in this process or in `golem` child processes:
@@ -85,10 +89,12 @@ export function selectFocused(args: readonly string[], lane6 = false): { readonl
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const resultsDir = process.env.FE_DEPS_RESULTS_DIR;
 
-function run(executable: string, args: readonly string[], cwd: string = root, env: NodeJS.ProcessEnv = {}): number {
-  const result = spawnSync(executable, args, { cwd, env: { ...process.env, ...env }, stdio: 'inherit' });
-  if (result.error) throw result.error;
-  return result.status ?? 1;
+function run(executable: string, args: readonly string[], cwd: string = root, env: NodeJS.ProcessEnv = {}): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(executable, args, { cwd, env: { ...process.env, ...env }, stdio: 'inherit' });
+    child.once('error', reject);
+    child.once('close', status => resolve(status ?? 1));
+  });
 }
 
 /**
@@ -130,39 +136,45 @@ function splitTypescriptLane(args: readonly string[]): { readonly lane6: boolean
 const npmRun = (label: string, script: string): Step => ({ label, run: () => run('npm', ['run', script]) });
 const pack: Step = { label: 'pack', run: () => run(process.execPath, ['.build/scripts/test-pack.js']) };
 // Prepare only fills caches; it never runs a test.
-const prepareSteps: Step[] = [
+const prepareSteps: Group[] = inOrder(
   pack,
   { label: 'warm', run: () => run(process.execPath, ['.build/scripts/test-warm.js']) },
-];
+);
 
-function steps(tier: Tier, args: readonly string[], native: boolean): Step[] {
+function steps(tier: Tier, args: readonly string[], native: boolean): Group[] {
   if (tier === 'prepare') return prepareSteps;
   if (tier === 'focused') {
     const { lane6, rest } = splitTypescriptLane(args);
     // `--typescript 6` alone runs the lane's whole list; with files it runs those files on TypeScript 6.
     const selection = selectFocused(rest, lane6);
     const focused = nodeTest('focused', selection.files, CONCURRENCY.unit, selection.passThrough, lane6 ? typescript6Env() : {});
-    return selection.needsPack ? [pack, focused] : [focused];
+    return selection.needsPack ? inOrder(pack, focused) : inOrder(focused);
   }
   if (tier === 'docs') {
-    return [
+    return inOrder(
       npmRun('docs build', 'docs:build'),
       nodeTest('docs site', ['.build/tests/docs-site.site-test.js'], 1),
       { label: 'docs public content', run: () => run(process.execPath, ['.build/scripts/public-source.js', 'scan', 'docs/.vitepress/dist']) },
-    ];
+    );
   }
-  const full: Step[] = [nodeTest('unit', UNIT_FILES, CONCURRENCY.unit)];
+  const unit = nodeTest('unit', UNIT_FILES, CONCURRENCY.unit);
   if (tier === 'full') {
-    if (native) return full;
-    return [...full, nodeTest('typescript 6', TYPESCRIPT6_FILES, CONCURRENCY.unit, [], typescript6Env()), pack, nodeTest('packed smoke', [SMOKE_FILE], 1)];
+    if (native) return inOrder(unit);
+    // Pack and the smoke test read the workspace and /cache/packed, never a file that the lane writes. The lane's last files
+    // leave cores idle, so they run beside it and add no time of their own.
+    return [...inOrder(unit), [[nodeTest('typescript 6', TYPESCRIPT6_FILES, CONCURRENCY.unit, [], typescript6Env())], [pack, nodeTest('packed smoke', [SMOKE_FILE], 1)]]];
   }
   return [
-    { label: 'public source', run: () => run(process.execPath, ['.build/scripts/public-source.js', 'check']) },
-    { label: 'OpenAPI compliance', run: () => run(process.execPath, ['.build/packages/golem-openapi/compliance/generate-matrix.js', '--check']) },
+    ...inOrder(
+      { label: 'public source', run: () => run(process.execPath, ['.build/scripts/public-source.js', 'check']) },
+      { label: 'OpenAPI compliance', run: () => run(process.execPath, ['.build/packages/golem-openapi/compliance/generate-matrix.js', '--check']) },
+    ),
     ...steps('full', args, false),
-    nodeTest('acceptance unit', ACCEPTANCE_UNIT_FILES, CONCURRENCY.unit),
-    nodeTest('packed', PACKED_FILES, CONCURRENCY.packed),
-    nodeTest('browser', BROWSER_FILES, CONCURRENCY.packed),
+    ...inOrder(
+      nodeTest('acceptance unit', ACCEPTANCE_UNIT_FILES, CONCURRENCY.unit),
+      nodeTest('packed', PACKED_FILES, CONCURRENCY.packed),
+      nodeTest('browser', BROWSER_FILES, CONCURRENCY.packed),
+    ),
   ];
 }
 
@@ -236,7 +248,7 @@ function sumFileSeconds(timings: readonly StepTiming[]): Record<string, number> 
   return total;
 }
 
-function main(argv: readonly string[]): void {
+async function main(argv: readonly string[]): Promise<void> {
   const [tierArg, ...rest] = argv;
   const native = rest.includes('--native');
   const args = rest.filter(value => value !== '--native');
@@ -251,21 +263,28 @@ function main(argv: readonly string[]): void {
     for (const name of fs.readdirSync(resultsDir)) if (name.endsWith('.tap') || name.endsWith('-timings.json') || name.endsWith('.files.jsonl')) fs.rmSync(path.join(resultsDir, name));
   }
   const timings: StepTiming[] = [];
+  const running = new Set<string>();
   let timingsFault = false;
   const started = Date.now();
   // The ceiling can kill this process at any time, so the file is complete after every step. `running` names the
-  // step that was cut; the files that step finished stay in its `.files.jsonl`.
-  const writeTimings = (running?: string): void => {
+  // steps that were cut; the files those steps finished stay in their `.files.jsonl`.
+  const writeTimings = (): void => {
     if (!resultsDir) return;
     const file = path.join(resultsDir, `${tier}-timings.json`);
     const total = Math.round((Date.now() - started) / 1000);
-    fs.writeFileSync(`${file}.tmp`, JSON.stringify({ tier, total, running, timings, file_seconds: sumFileSeconds(timings) }, null, 2) + '\n');
+    fs.writeFileSync(`${file}.tmp`, JSON.stringify({ tier, total, running: running.size ? [...running] : undefined, timings, file_seconds: sumFileSeconds(timings) }, null, 2) + '\n');
     fs.renameSync(`${file}.tmp`, file);
   };
-  for (const step of steps(tier, args, native)) {
-    writeTimings(step.label);
+  const runStep = async (step: Step): Promise<void> => {
+    running.add(step.label);
+    writeTimings();
     const stepStarted = Date.now();
-    const status = step.run();
+    let status: number;
+    try {
+      status = await step.run();
+    } finally {
+      running.delete(step.label);
+    }
     const seconds = Math.round((Date.now() - stepStarted) / 1000);
     // The verdict of the step is recorded before its file timings are read, so a bad timings file cannot lose it.
     const entry: StepTiming = { label: step.label, seconds, status };
@@ -277,6 +296,11 @@ function main(argv: readonly string[]): void {
       entry.file_seconds = fileSeconds;
       writeTimings();
     }
+  };
+  for (const group of steps(tier, args, native)) {
+    // A chain that fails to start a step leaves the other chains running; wait for all of them before the fault is reported.
+    const chains = await Promise.allSettled(group.map(async chain => { for (const step of chain) await runStep(step); }));
+    for (const chain of chains) if (chain.status === 'rejected') throw chain.reason;
   }
   process.stdout.write(`${tier} finished in ${Math.round((Date.now() - started) / 1000)}s\n`);
   if (timings.some(entry => entry.status !== 0)) process.exitCode = 1;
@@ -284,6 +308,8 @@ function main(argv: readonly string[]): void {
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  try { main(process.argv.slice(2)); }
-  catch (error) { process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`); process.exitCode = 2; }
+  main(process.argv.slice(2)).catch((error: unknown) => {
+    process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+    process.exitCode = 2;
+  });
 }

@@ -43,15 +43,19 @@ export default async function* testFileTimings(source: AsyncIterable<TestEvent>)
 }
 
 /**
- * The message that the entrypoint prints when the tier ceiling stops a run: the step that was running (`running` in
+ * The message that the entrypoint prints when the tier ceiling stops a run: each step that was running (`running` in
  * `<tier>-timings.json`) and the files of that step that started and did not end (its `.files.jsonl`).
  * A missing results file is part of the message. A results file that cannot be read throws, and the entrypoint prints that.
  */
 export function ceilingReport(resultsDir: string, tier: string): string {
   const timingsFile = path.join(resultsDir, `${tier}-timings.json`);
   if (!fs.existsSync(timingsFile)) return `No ${tier}-timings.json: the run ended before its first step.`;
-  const { running } = JSON.parse(fs.readFileSync(timingsFile, 'utf8')) as { running?: string };
-  if (running === undefined) return 'No step was running.';
+  const { running } = JSON.parse(fs.readFileSync(timingsFile, 'utf8')) as { running?: readonly string[] };
+  if (running === undefined || running.length === 0) return 'No step was running.';
+  return running.map(label => stepReport(resultsDir, label)).join('\n');
+}
+
+function stepReport(resultsDir: string, running: string): string {
   const stepFile = path.join(resultsDir, `${running}.files.jsonl`);
   if (!fs.existsSync(stepFile)) return `The ${running} step was running; it runs no test files.`;
   const started = new Set<string>();
