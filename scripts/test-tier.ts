@@ -14,20 +14,29 @@ export const UNIT_FILES = ['.build/tests/*.test.js', '.build/tests/openapi/*.tes
 // The model-only smoke file runs in Full; Acceptance runs the others so it runs once.
 export const PACKED_FILES = ['.build/tests/packed/consumers.test.js', '.build/tests/packed/nest-workflows.test.js'] as const;
 const SMOKE_FILE = '.build/tests/packed/model-only.test.js';
-// The TypeScript 6 lane runs these files with GOLEM_TYPESCRIPT_ROOT at the container's TypeScript 6 install.
+// The TypeScript 6 lane runs these files with GOLEM_TYPESCRIPT_ROOT at the container's TypeScript 6 install. A file is in the
+// lane only when it runs a TypeScript-version path: it reaches the compiler seam (typescript-ns.ts) or the backend selection
+// (GOLEM_TYPESCRIPT_ROOT, read in tooling/{cli,pipeline,build,typescript-selection}.ts). Each group below names that path.
 // Left out on purpose: compiler-lifecycle (asserts TypeScript 7 server reports), model-generation-scale (patches
-// `Checker.prototype` from typescript/unstable/sync, which TypeScript 6 has no equivalent of), and
-// typescript-identity (it compares both versions itself, so it runs once, in the unit step).
+// `Checker.prototype` from typescript/unstable/sync, which TypeScript 6 has no equivalent of), typescript-identity (it
+// compares both versions itself, so it runs once, in the unit step), and four files that run no TypeScript-version path:
+// union-conversion (emitted runtime only), and openapi/operation-validators, openapi/discriminator-validation and
+// resource-projection (the SDK generator loads no TypeScript, and tests/tsc-cli.mjs compiles with the workspace's own install).
 export const TYPESCRIPT6_FILES = [
   ...[
-    'typescript-backends', 'typescript-ts6', 'model-tags', 'model-tags-serde', 'model-composition', 'model-projections', 'projection-names', 'model-job-graph',
-    'constraint-parity', 'model-companions', 'model-companion-build', 'model-union-tags', 'union-conversion', 'model-tuples', 'projection-integration',
-    'resource-projection', 'tag-alias-generics', 'tag-model-boundaries', 'model-generator', 'model-codec-location',
-    'model-field-names', 'constraint-portability', 'constraint-callback-composition', 'public-model-layout', 'public-sdk-layout',
+    // Reach the compiler seam directly (typescript-ns.ts, @exprtlabs/golem/ts):
+    'typescript-backends', 'typescript-ts6', 'model-companions', 'public-model-layout', 'public-sdk-layout',
+    // `golem build` runs as a child process and reads GOLEM_TYPESCRIPT_ROOT (buildModelProject):
+    'model-tags', 'model-tags-serde', 'model-composition', 'model-projections', 'model-job-graph', 'constraint-parity',
+    'model-companion-build', 'model-union-tags', 'model-tuples', 'projection-integration', 'tag-alias-generics',
+    'tag-model-boundaries', 'constraint-portability', 'constraint-callback-composition',
+    // `generate` of the model or controller generator runs the checker in this process:
+    'projection-names', 'model-generator', 'model-codec-location', 'model-field-names',
+    // The pipeline, build, rewrite host or CLI selects the backend in this process or in `golem` child processes:
     'controllers-tooling', 'watch-recovery', 'pipeline', 'rewrite-scan', 'rewrite-loader', 'rewrite-bundlers', 'build-command',
     'build-command-config', 'build-command-configurations', 'build-command-watch',
-    'openapi/operation-validators', 'openapi/discriminator-validation',
   ].map(name => `.build/tests/${name}.test.js`),
+  // `generate` of the controller generator, or the evaluation and rewrite code it uses, runs the checker in this process:
   '.build/tests/golem-ts-openapi/*.test.js',
 ] as const;
 export const BROWSER_FILES = ['.build/tests/browser/*.test.js'] as const;

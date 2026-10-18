@@ -14,7 +14,7 @@ Pass a test source path, such as `tests/serde.test.ts`, or any `node --test` fla
 
 ## TypeScript 6 lane
 
-Unit tests run on TypeScript 7. The lane runs the generator, analysis and controller suites again on TypeScript 6; its file list is `TYPESCRIPT6_FILES` in `scripts/test-tier.ts`, which also names what the lane leaves out and why. Full runs it as the `typescript 6` step.
+Unit tests run on TypeScript 7. The lane runs the generator, analysis and controller suites again on TypeScript 6; its file list is `TYPESCRIPT6_FILES` in `scripts/test-tier.ts`. A file is in the list only when it reaches the compiler seam or the backend selection (`GOLEM_TYPESCRIPT_ROOT`); the list names that path for each group and what the lane leaves out and why. Full runs it as the `typescript 6` step.
 
 The container's entrypoint installs TypeScript 6 once into `/cache/typescript6` and exports `GOLEM_TYPESCRIPT6_ROOT`. The lane sets `GOLEM_TYPESCRIPT_ROOT` to that path, which is how the compiler seam picks its backend. `tests/typescript-identity.test.ts` runs in the unit step and generates the same projects on both versions, then compares every artifact byte for byte.
 
