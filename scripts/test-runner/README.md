@@ -32,7 +32,21 @@ After you change what a test installs, run `npm run test:prepare` before the nex
 - `The npm cache is missing a package`: a test installs a package the cache lacks. Run `npm run test:prepare`.
 - `Another golem test run holds /cache/run.lock`: one run uses the cache at a time. Wait for it.
 - `Timed out after … ms`: the named command exceeded its limit and its processes were killed.
-- `The … tier exceeded its …s ceiling and was stopped`: the whole run passed its time limit.
+- `The … tier exceeded its …s ceiling and was stopped`: the whole run passed its time limit. The line after it names the step that was running and the files of that step that started and did not finish. See [A hung test file](#a-hung-test-file).
+
+## A hung test file
+
+The tier ceiling is the one hang catcher. A test step sets no limit on a file, and none on a test, so a slow host never fails a file that works. The ceilings are 180 s for `npm run test`, 450 s for Full, 600 s for Acceptance and 300 s for docs. They are the same on every machine.
+
+A file that hangs stops the run at the ceiling, not sooner. The runner prints the ceiling message and the step that was cut, then the files of that step that started and did not finish. The hung file is among them. A file that was only slow when the ceiling hit appears there too.
+
+```text
+The focused tier exceeded its 180s ceiling and was stopped.
+The focused step was running; 1 of 2 started files finished. Started and not finished:
+  tests/hang.test.ts
+```
+
+Run the named file alone with `npm run test -- <file>` to see which test hangs.
 
 ## Results and timings
 
@@ -42,6 +56,6 @@ Results land in `.cache/test-results/`: one TAP file for each test step, and `<t
 - `file_seconds`: the seconds of each test file, keyed by source path (`tests/serde.test.ts`), summed over the steps. A file that the TypeScript 6 lane reruns counts both runs. The entries in `timings` hold the seconds of each step alone.
 - `running`: the step that was running at the last write. It is absent when every step ended.
 
-A file's seconds are the wall time of its test process, from start to exit, including the load of the file. Each test step also writes `<step>.files.jsonl`, one line for each file that ended. When the ceiling stops a step, that step's finished files are only in this file.
+A file's seconds are the wall time of its test process, from start to exit, including the load of the file. Each test step also writes `<step>.files.jsonl`: one line when a file starts and one line, with its seconds, when it ends. When the ceiling stops a step, that step's files are only in this file.
 
 `npm run test:native` runs the unit tests without Docker, for Windows and other Node versions. It writes no results.

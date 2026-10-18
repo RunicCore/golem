@@ -65,8 +65,9 @@ fi
 export GOLEM_TYPESCRIPT6_ROOT="$typescript6_root"
 # npm ci ran before packages/*/dist existed, so workspace bins (golem) were not linked; link them now, without lifecycle scripts.
 npm rebuild --ignore-scripts --no-audit --no-fund
-# Run-level ceiling (F1: no run exceeds 10 min). --test-timeout only fails a
-# test; a hung file process or a stuck await is ended here.
+# Run-level ceiling (F1: no run exceeds 10 min). It is the one hang catcher: a test step passes no
+# per-file or per-test limit, so a loaded host never fails a file that works. A hung file process or a
+# stuck await is ended here, and the files that started and did not finish are named below.
 case "$tier" in
   focused) ceiling=180 ;; full) ceiling=450 ;; acceptance) ceiling=600 ;; docs) ceiling=300 ;; prepare) ceiling=300 ;;
   *) ceiling=60 ;;
@@ -84,5 +85,7 @@ while :; do
 done
 if [ "$status" -eq 124 ] || [ "$status" -eq 137 ]; then
   echo "The $tier tier exceeded its ${ceiling}s ceiling and was stopped." >&2
+  node -e "import('./.build/scripts/test-file-timings.js').then(({ ceilingReport }) => console.error(ceilingReport(process.argv[1], process.argv[2])))" /results "$tier" \
+    || echo "Could not name the unfinished files from /results." >&2
 fi
 exit "$status"

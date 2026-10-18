@@ -42,10 +42,6 @@ export const TYPESCRIPT6_FILES = [
 export const BROWSER_FILES = ['.build/tests/browser/*.test.js'] as const;
 // Unit-level tests too slow for Full are named *.acceptance.ts and run only in Acceptance.
 export const ACCEPTANCE_UNIT_FILES = ['.build/tests/*.acceptance.js', '.build/tests/openapi/*.acceptance.js'] as const;
-// On Node 22 --test-timeout also limits each whole file, so each tier allows twice
-// its slowest file (2026-09-30, 694b437): serde about 44 s of tests in Full,
-// packed/consumers 146 s in Acceptance. Focused keeps its 1-minute budget.
-export const TEST_TIMEOUT_MS = { focused: 60_000, full: 90_000, acceptance: 300_000 } as const;
 // Unit: 8 files at once peaked at 3.5 of 7.7 GiB and halved the unit step (136 s to 69 s),
 // so the machine's parallelism is the only limit up to 8. Packed: Acceptance has two packed
 // files, so two at once is the most that helps.
@@ -95,7 +91,11 @@ function run(executable: string, args: readonly string[], cwd: string = root, en
   return result.status ?? 1;
 }
 
-function nodeTest(label: string, files: readonly string[], timeout: number, concurrency: number, extra: readonly string[] = [], env: NodeJS.ProcessEnv = {}): Step {
+/**
+ * No file or test limit is set here: on Node 22 `--test-timeout` also cancels a whole file, which a loaded host turns into a
+ * false failure. The tier ceiling in `scripts/test-runner/entrypoint.sh` is the one hang catcher.
+ */
+function nodeTest(label: string, files: readonly string[], concurrency: number, extra: readonly string[] = [], env: NodeJS.ProcessEnv = {}): Step {
   const reporters = ['--test-reporter=spec', '--test-reporter-destination=stdout'];
   let fileTimings: string | undefined;
   if (resultsDir) {
@@ -103,7 +103,7 @@ function nodeTest(label: string, files: readonly string[], timeout: number, conc
     reporters.push('--test-reporter=tap', `--test-reporter-destination=${path.join(resultsDir, `${label}.tap`)}`);
     reporters.push(`--test-reporter=${fileURLToPath(new URL('./test-file-timings.js', import.meta.url))}`, `--test-reporter-destination=${fileTimings}`);
   }
-  return { label, fileTimings, run: () => run(process.execPath, ['--test', `--test-timeout=${timeout}`, `--test-concurrency=${concurrency}`, ...reporters, ...extra, ...files], root, env) };
+  return { label, fileTimings, run: () => run(process.execPath, ['--test', `--test-concurrency=${concurrency}`, ...reporters, ...extra, ...files], root, env) };
 }
 
 /** Environment that points the compiler seam at the container's TypeScript 6 install. */
@@ -141,28 +141,28 @@ function steps(tier: Tier, args: readonly string[], native: boolean): Step[] {
     const { lane6, rest } = splitTypescriptLane(args);
     // `--typescript 6` alone runs the lane's whole list; with files it runs those files on TypeScript 6.
     const selection = selectFocused(rest, lane6);
-    const focused = nodeTest('focused', selection.files, TEST_TIMEOUT_MS.focused, CONCURRENCY.unit, selection.passThrough, lane6 ? typescript6Env() : {});
+    const focused = nodeTest('focused', selection.files, CONCURRENCY.unit, selection.passThrough, lane6 ? typescript6Env() : {});
     return selection.needsPack ? [pack, focused] : [focused];
   }
   if (tier === 'docs') {
     return [
       npmRun('docs build', 'docs:build'),
-      nodeTest('docs site', ['.build/tests/docs-site.site-test.js'], TEST_TIMEOUT_MS.full, 1),
+      nodeTest('docs site', ['.build/tests/docs-site.site-test.js'], 1),
       { label: 'docs public content', run: () => run(process.execPath, ['.build/scripts/public-source.js', 'scan', 'docs/.vitepress/dist']) },
     ];
   }
-  const full: Step[] = [nodeTest('unit', UNIT_FILES, TEST_TIMEOUT_MS.full, CONCURRENCY.unit)];
+  const full: Step[] = [nodeTest('unit', UNIT_FILES, CONCURRENCY.unit)];
   if (tier === 'full') {
     if (native) return full;
-    return [...full, nodeTest('typescript 6', TYPESCRIPT6_FILES, TEST_TIMEOUT_MS.full, CONCURRENCY.unit, [], typescript6Env()), pack, nodeTest('packed smoke', [SMOKE_FILE], TEST_TIMEOUT_MS.full, 1)];
+    return [...full, nodeTest('typescript 6', TYPESCRIPT6_FILES, CONCURRENCY.unit, [], typescript6Env()), pack, nodeTest('packed smoke', [SMOKE_FILE], 1)];
   }
   return [
     { label: 'public source', run: () => run(process.execPath, ['.build/scripts/public-source.js', 'check']) },
     { label: 'OpenAPI compliance', run: () => run(process.execPath, ['.build/packages/golem-openapi/compliance/generate-matrix.js', '--check']) },
     ...steps('full', args, false),
-    nodeTest('acceptance unit', ACCEPTANCE_UNIT_FILES, TEST_TIMEOUT_MS.acceptance, CONCURRENCY.unit),
-    nodeTest('packed', PACKED_FILES, TEST_TIMEOUT_MS.acceptance, CONCURRENCY.packed),
-    nodeTest('browser', BROWSER_FILES, TEST_TIMEOUT_MS.acceptance, CONCURRENCY.packed),
+    nodeTest('acceptance unit', ACCEPTANCE_UNIT_FILES, CONCURRENCY.unit),
+    nodeTest('packed', PACKED_FILES, CONCURRENCY.packed),
+    nodeTest('browser', BROWSER_FILES, CONCURRENCY.packed),
   ];
 }
 
@@ -217,8 +217,9 @@ function readFileSeconds(file: string, label: string, onMalformed: () => void): 
   const fileSeconds: Record<string, number> = {};
   lines.forEach((line, index) => {
     try {
-      const { file: source, seconds } = JSON.parse(line) as { file: string; seconds: number };
-      fileSeconds[source] = seconds;
+      const { file: source, seconds } = JSON.parse(line) as { file: string; seconds?: number };
+      // A line with no seconds says the file started; the ceiling report reads those lines.
+      if (seconds !== undefined) fileSeconds[source] = seconds;
     } catch (error) {
       if (!(error instanceof SyntaxError)) throw error;
       process.stderr.write(`Skipped a malformed test file timing at ${file}:${index + 1}.\n`);
