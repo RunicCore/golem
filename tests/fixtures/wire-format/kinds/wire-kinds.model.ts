@@ -1,4 +1,4 @@
-import type { IModel, IObject } from '@exprtlabs/golem/model';
+import type { IModel } from '@exprtlabs/golem/model';
 import type { Maximum, MinLength, TValidation } from '@exprtlabs/golem/tags';
 import { isKnown } from './rules.js';
 import { TWireKindsBaseModel } from './wire-kinds.model.generated.js';
@@ -11,8 +11,5 @@ export type TWireKinds = IModel<{
   label: string & MinLength<1>;
   count: number & Maximum<10>;
 }>;
-
-/** A tagged literal keeps its tag in WireFormat; see KNOWN_DRIFT in tests/wire-format.test.ts. */
-export type TTaggedLiterals = IObject<{ status: ('open' | 'closed') & TValidation<typeof isKnown>; level: 1 & TValidation<typeof isKnown> }>;
 
 export class WireKinds extends TWireKindsBaseModel {}
