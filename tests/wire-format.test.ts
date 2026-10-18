@@ -2,56 +2,79 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import test from 'node:test';
+import test, { type TestContext } from 'node:test';
 
 import { generate as generateOpenApi } from '@exprtlabs/golem-openapi/generator';
 import { command } from './support/process.js';
 import { fixturePath, writeGeneratedArtifacts } from './fixture-project.js';
-import { buildModelProject, createModelProject, writeModelGolemYaml, writeModelSources } from './model-project.js';
+import { buildModelProject, createModelProject, writeModelGolemYaml, writeModelSources, type ModelProject } from './model-project.js';
 
 interface WireClaim {
   readonly claim: string;
   /** The directory under tests/fixtures/wire-format: its sources and its `*.wire-check.ts`, which state the claim as type assertions. */
   readonly fixture: string;
-  /** An OpenAPI document in the fixture whose SDK the project uses, generated with this mobx setting. */
-  readonly sdk?: { readonly spec: string; readonly mobx: boolean };
 }
 
-const WIRE_CLAIMS: readonly WireClaim[] = [
+interface SdkWireClaim extends WireClaim {
+  /** An OpenAPI document in the fixture; its SDK is generated with this mobx setting, and the models job uses the same one. */
+  readonly spec: string;
+  readonly mobx: boolean;
+}
+
+const MODEL_CLAIMS: readonly WireClaim[] = [
   { claim: 'tags drop and literals stay literal, for the alias and the handwritten class', fixture: 'kinds' },
   { claim: 'a tagged literal keeps its tag, mutually assignable with the emitted type', fixture: 'tagged-literals' },
   { claim: 'a Date is a string and a TSerde field is its deserializer input', fixture: 'dates-and-serde' },
   { claim: 'tuples with optional, rest, labeled and readonly positions map each position', fixture: 'tuples' },
+  { claim: 'readonly arrays and tuples, explicit undefined and generic optional tuple positions', fixture: 'readonly-and-optional-tuples' },
   { claim: 'arrays, records, unknown, null, unions and optional fields map element-wise', fixture: 'containers' },
+  { claim: 'model-typed record values, tuple positions, tuple rest, union members and array items', fixture: 'model-containers' },
+  { claim: 'object intersections, unions of intersections, a literal with a non-tag object, and a root intersection', fixture: 'intersections' },
   { claim: 'nested, projected, recursive and union-selected models map to their own emitted type', fixture: 'nested-models' },
   { claim: 'constraint tags on objects and arrays are dropped', fixture: 'constraint-tags' },
-  { claim: 'a model that uses an SDK model, and the SDK model class and fields', fixture: 'sdk-money', sdk: { spec: 'money.yaml', mobx: false } },
-  { claim: 'nested and omitted-field SDK models without mobx', fixture: 'nested-sdk', sdk: { spec: 'payments.yaml', mobx: false } },
-  { claim: 'nested and omitted-field SDK models with mobx', fixture: 'nested-sdk', sdk: { spec: 'payments.yaml', mobx: true } },
 ];
 
-// Each claim builds its own project: the fixture's check files fail the build when WireFormat<T> differs from the emitted JSON type.
-for (const { claim, fixture, sdk } of WIRE_CLAIMS) {
+const SDK_CLAIMS: readonly SdkWireClaim[] = [
+  { claim: 'a model that uses an SDK model, and the SDK model class and fields', fixture: 'sdk-money', spec: 'money.yaml', mobx: false },
+  { claim: 'nested and omitted-field SDK models without mobx', fixture: 'nested-sdk', spec: 'payments.yaml', mobx: false },
+  { claim: 'nested and omitted-field SDK models with mobx', fixture: 'nested-sdk', spec: 'payments.yaml', mobx: true },
+];
+
+/** A project of its own for one claim: the fixture's check files fail the build when WireFormat<T> differs from the emitted JSON type. */
+function wireClaimProject(t: TestContext, fixture: string, mobx: boolean): ModelProject {
+  const project = createModelProject(t, {
+    prefix: 'golem-wire-format-',
+    name: 'wire-format',
+    linkWorkspaceNodeModules: true,
+    compilerOptions: { noEmit: true },
+  });
+  fs.cpSync(fixturePath(`wire-format/${fixture}`), project.sourceRoot, { recursive: true });
+  fs.copyFileSync(fixturePath('wire-format/wire-assert.ts'), path.join(project.sourceRoot, 'wire-assert.ts'));
+  writeModelGolemYaml(project.root, { mobx, validation: true });
+  return project;
+}
+
+async function assertWireClaimBuilds(root: string): Promise<void> {
+  const result = await buildModelProject(root, [], { allowFailure: true });
+  assert.equal(result.code, 0, `${result.stdout}\n${result.stderr}`);
+}
+
+for (const { claim, fixture } of MODEL_CLAIMS) {
   test(`WireFormat<T> equals the emitted JSON type: ${claim}`, async t => {
-    const { root, sourceRoot } = createModelProject(t, {
-      prefix: 'golem-wire-format-',
-      name: 'wire-format',
-      linkWorkspaceNodeModules: true,
-      compilerOptions: { noEmit: true },
-    });
-    fs.cpSync(fixturePath(`wire-format/${fixture}`), sourceRoot, { recursive: true });
-    fs.copyFileSync(fixturePath('wire-format/wire-assert.ts'), path.join(sourceRoot, 'wire-assert.ts'));
-    if (sdk) {
-      writeGeneratedArtifacts((await generateOpenApi({
-        input: path.join(sourceRoot, sdk.spec),
-        output: path.join(sourceRoot, 'sdk'),
-        name: 'Payments',
-        profile: { mobx: sdk.mobx, validation: true },
-      })).artifacts);
-    }
-    writeModelGolemYaml(root, { mobx: sdk?.mobx ?? false, validation: true });
-    const result = await buildModelProject(root, [], { allowFailure: true });
-    assert.equal(result.code, 0, `${result.stdout}\n${result.stderr}`);
+    await assertWireClaimBuilds(wireClaimProject(t, fixture, false).root);
+  });
+}
+
+for (const { claim, fixture, spec, mobx } of SDK_CLAIMS) {
+  test(`WireFormat<T> equals the emitted JSON type: ${claim}`, async t => {
+    const { root, sourceRoot } = wireClaimProject(t, fixture, mobx);
+    writeGeneratedArtifacts((await generateOpenApi({
+      input: path.join(sourceRoot, spec),
+      output: path.join(sourceRoot, 'sdk'),
+      name: 'Payments',
+      profile: { mobx, validation: true },
+    })).artifacts);
+    await assertWireClaimBuilds(root);
   });
 }
 

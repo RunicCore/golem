@@ -29,7 +29,7 @@ export const TYPESCRIPT6_FILES = [
     // `golem build` runs as a child process and reads GOLEM_TYPESCRIPT_ROOT (buildModelProject):
     'model-tags', 'model-tags-serde', 'model-composition', 'model-projections', 'model-job-graph', 'constraint-parity',
     'model-companion-build', 'model-union-tags', 'model-tuples', 'projection-integration', 'tag-alias-generics',
-    'tag-model-boundaries', 'constraint-portability', 'constraint-callback-composition',
+    'tag-model-boundaries', 'constraint-portability', 'constraint-callback-composition', 'wire-format',
     // `generate` of the model or controller generator runs the checker in this process:
     'projection-names', 'model-generator', 'model-codec-location', 'model-field-names',
     // The pipeline, build, rewrite host or CLI selects the backend in this process or in `golem` child processes:
