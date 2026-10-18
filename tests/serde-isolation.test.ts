@@ -263,7 +263,7 @@ function generatedSource(t: TestContext, name: string): string {
 test('fill paths pass converters as module-level functions, not per-value closures', (t) => {
   const source = generatedSource(t, 'calendar');
   assert.match(source, /convertModelField\("deserialize", "event", __golemDecode_TCalendar_\d+, /);
-  assert.match(source, /\.map\(\(item, index\) => convertModelField\("deserialize", index, __golemDecode_TCalendar_\d+, item\)\)/);
+  assert.match(source, /convertModelItems\("deserialize", __golemDecode_TCalendar_\d+, \w+ as readonly unknown\[\]\)/);
   assert.doesNotMatch(source, /convertModelField\("deserialize", [^\n]*, \(\w+\) =>/);
 });
 

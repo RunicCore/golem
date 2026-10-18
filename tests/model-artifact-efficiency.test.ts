@@ -315,7 +315,7 @@ test('converted model items inside an array call their converter without a per-i
   const result = generate({ root: project.root, profile: { mobx: false, validation: false } });
   const generated = result.artifacts.find((item) => item.path.endsWith('wallet.model.generated.ts'));
   assert.ok(generated);
-  assert.match(generated.content, /\.map\(\(item, index\) => convertModelField\('deserialize', index, decodeTMoney, item\)\)/);
-  assert.match(generated.content, /\.map\(\(item, index\) => convertModelField\('serialize', index, encodeTMoney, item\)\)/);
+  assert.match(generated.content, /convertModelItems\("deserialize", decodeTMoney, \w+ as readonly unknown\[\]\)/);
+  assert.match(generated.content, /convertModelItems\("serialize", encodeTMoney, \w+ as readonly unknown\[\]\)/);
   assert.doesNotMatch(generated.content, /convertModelField\([^\n]*\(\) =>/);
 });

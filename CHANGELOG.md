@@ -64,6 +64,7 @@ The first release candidate includes four independently installable packages:
 - **Breaking:** `@exprtlabs/golem/ts` publishes Golem-owned types narrowed to what Golem uses. Its type declarations no longer reference `typescript`; `Program`, `CompilerOptions` (now an untyped options map) and `Diagnostic` are narrower; the `API` class and the TypeScript 7 process-client types are no longer exported from it. It exports only the value names Golem uses.
 - Union members in generated types and schemas are emitted in a fixed canonical order (code-unit order of their canonical key, independent of compiler and locale), so regenerating changes member order and codec ids once.
 - On TypeScript 7, generation type-checks newly generated files before writing them. Previously new files were skipped, so a run that produced non-compiling output could succeed; it now fails with the compiler diagnostic. The check uses the project tsconfig's file set and checks only the job's own generated files, so sibling model folders under one tsconfig no longer interfere.
+- A decode error inside a tuple item, or inside an array item of a scalar-or-array union, now ends its path with the item index, such as `['dated', 2]` or `['when', 1]`. It named the field only.
 
 ### OpenAPI
 

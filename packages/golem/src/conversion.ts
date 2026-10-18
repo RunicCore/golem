@@ -88,6 +88,66 @@ export function convertModelField<Arg, Value>(
   }
 }
 
+/** The error `convertModelItems` and `convertModelTupleItems` throw for a failed item, with the rules of `convertModelField`. */
+function itemFailure(direction: 'serialize' | 'deserialize', error: unknown): LibError {
+  if (error instanceof LibError) return error;
+  const kind = direction === 'serialize' ? LibErrorKind.Serialization : LibErrorKind.Deserialization;
+  const message = error instanceof Error && error.message
+    ? error.message
+    : `Field ${direction === 'serialize' ? 'serialization' : 'deserialization'} failed.`;
+  return conversionError(kind, message, activeConversionPath, error);
+}
+
+/**
+ * Generated synchronous conversion of each array item, under its index in the error path. The result is a new array
+ * of the same length that skips holes, as `map` does. `convert` gets the item only, so a converter with an optional
+ * second parameter, such as `deserializeDate`, keeps its default path.
+ */
+export function convertModelItems<Value>(
+  direction: 'serialize' | 'deserialize',
+  convert: (item: unknown) => Value,
+  items: readonly unknown[],
+): Value[] {
+  const length = items.length;
+  const converted = new Array<Value>(length);
+  const depth = activeConversionPath.push(0) - 1;
+  try {
+    for (let index = 0; index < length; index++) {
+      if (!(index in items)) continue;
+      activeConversionPath[depth] = index;
+      converted[index] = convert(items[index]);
+    }
+  } catch (error) {
+    throw itemFailure(direction, error);
+  } finally {
+    activeConversionPath.length = depth;
+  }
+  return converted;
+}
+
+/** Generated synchronous conversion of each tuple item, under its index in the error path. `convert` gets the item, its index and the array. */
+export function convertModelTupleItems<Value>(
+  direction: 'serialize' | 'deserialize',
+  convert: (item: unknown, index: number, items: readonly unknown[]) => Value,
+  items: readonly unknown[],
+): Value[] {
+  const length = items.length;
+  const converted = new Array<Value>(length);
+  const depth = activeConversionPath.push(0) - 1;
+  try {
+    for (let index = 0; index < length; index++) {
+      if (!(index in items)) continue;
+      activeConversionPath[depth] = index;
+      converted[index] = convert(items[index], index, items);
+    }
+  } catch (error) {
+    throw itemFailure(direction, error);
+  } finally {
+    activeConversionPath.length = depth;
+  }
+  return converted;
+}
+
 let activeDecodeValues: WeakMap<object, Function | Set<Function>> | undefined;
 let activeEncodeModels: Set<object> | undefined;
 /** Wire objects a generated recursive `fill` is decoding; a wire already in it is a cycle. */

@@ -3,6 +3,8 @@ import { test } from 'node:test';
 
 import {
   convertModelField,
+  convertModelItems,
+  convertModelTupleItems,
   deserializeDate,
   serializeDate,
 } from '@exprtlabs/golem/conversion';
@@ -26,6 +28,41 @@ test('conversion scopes preserve LibError identity and restore paths after failu
     assertConversionError(() => convertModelField('deserialize', 'at', deserializeDate, invalid),
       LibErrorKind.Deserialization, IssueRepresentation.Wire, ['at']);
   }
+});
+
+test('convertModelItems runs each item under its index and passes the item only', () => {
+  assert.deepEqual(convertModelItems('deserialize', deserializeDate, ['1970-01-01T00:00:00.000Z']), [new Date(0)]);
+  assertConversionError(() => convertModelItems('deserialize', deserializeDate, ['1970-01-01T00:00:00.000Z', 'bad']),
+    LibErrorKind.Deserialization, IssueRepresentation.Wire, [1]);
+  assertConversionError(() => convertModelField('serialize', 'dates', (value: unknown) =>
+    convertModelItems('serialize', serializeDate, value as unknown[]), [new Date(0), 'bad']),
+  LibErrorKind.Serialization, IssueRepresentation.Model, ['dates', 1]);
+});
+
+test('convertModelTupleItems gives the item, its index and the array', () => {
+  const positions = convertModelTupleItems('deserialize', (item, index, items) => `${String(item)}:${index}/${items.length}`, ['a', 'b']);
+  assert.deepEqual(positions, ['a:0/2', 'b:1/2']);
+  assertConversionError(() => convertModelTupleItems('deserialize', (item, index) =>
+    index === 0 ? item : deserializeDate(item), ['x', 'bad']),
+  LibErrorKind.Deserialization, IssueRepresentation.Wire, [1]);
+});
+
+test('the item loops send a LibError out as it is and keep holes', () => {
+  const original = new LibError(LibErrorKind.Deserialization, 'Explicit callback failure', [{
+    code: 'deserialization', message: 'Explicit callback failure', path: ['custom'],
+    source: IssueSource.Custom, representation: IssueRepresentation.Wire,
+  }]);
+  assert.throws(() => convertModelItems('deserialize', () => { throw original; }, [1]), error => error === original);
+  const holes: unknown[] = [];
+  holes[2] = 'c';
+  const converted = convertModelItems('deserialize', (item: unknown) => String(item).toUpperCase(), holes);
+  assert.equal(converted.length, 3);
+  assert.equal(0 in converted, false);
+  assert.equal(converted[2], 'C');
+  assertConversionError(() => convertModelItems('serialize', () => { throw new Error('boom'); }, [1]),
+    LibErrorKind.Serialization, IssueRepresentation.Model, [0]);
+  assertConversionError(() => convertModelField('serialize', 'after', () => { throw new Error('boom'); }, 1),
+    LibErrorKind.Serialization, IssueRepresentation.Model, ['after']);
 });
 
 function thrown(action: () => unknown): unknown {
