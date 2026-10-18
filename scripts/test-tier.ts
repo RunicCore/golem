@@ -8,6 +8,8 @@ export type Tier = 'prepare' | 'focused' | 'full' | 'acceptance' | 'docs';
 /** `fileTimings` is the JSON-lines file that the test-file reporter fills while the step runs. */
 export interface Step { readonly label: string; readonly run: () => number; readonly fileTimings?: string }
 
+// The public-source and release-version tests stay in this step: the Acceptance tier's "public source" step and the pack
+// step (test-pack, verify-package) run those scripts as release gates, and these tests hold their rejection cases.
 export const UNIT_FILES = ['.build/tests/*.test.js', '.build/tests/openapi/*.test.js', '.build/tests/golem-ts-openapi/*.test.js'] as const;
 // The model-only smoke file runs in Full; Acceptance runs the others so it runs once.
 export const PACKED_FILES = ['.build/tests/packed/consumers.test.js', '.build/tests/packed/nest-workflows.test.js'] as const;
