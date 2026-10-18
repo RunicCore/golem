@@ -4,6 +4,7 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import test, { type TestContext } from 'node:test';
 
+import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/golem/conversion';
 import { requireObjectCodec } from '@exprtlabs/golem/serde';
 import { createSchemaGraph } from '@exprtlabs/golem/schema-graph';
 import { command } from './support/process.js';
@@ -114,4 +115,21 @@ test('validation-enabled codec emission compiles and preserves array and tuple g
   const codecId = generatedCodecIdFromRoot(root, 'TSnapshot');
   const verifier = path.join(root, 'verify-array-getters.mjs');
   await command(root, process.execPath, [verifier, codecId]);
+});
+
+test('a model keeps the length of a short rest tuple in every direction with validation off', async (t) => {
+  const { root, sourceRoot } = tupleModelProject(t, 'tuple-short-rest');
+  fs.writeFileSync(path.join(sourceRoot, 'tuple.model.ts'), readFixture('models/model-tuples/tuple.model.ts'));
+  writeModelGolemYaml(root, { mobx: false, validation: false });
+  await buildModelProject(root);
+
+  const { Tuple } = await import(pathToFileURL(path.join(root, 'build/tuple.model.js')).href);
+  const init = { required: ['required', 9], maybe: ['x'], rest: ['only'] };
+  const restOf = (value: unknown): unknown => {
+    assert.ok(typeof value === 'object' && value !== null && 'rest' in value);
+    return value.rest;
+  };
+  assert.deepEqual(restOf(new Tuple(init)), ['only']);
+  assert.deepEqual(restOf(decodeGeneratedModel(Tuple, init)), ['only']);
+  assert.deepEqual(restOf(encodeGeneratedModel(new Tuple(init))), ['only']);
 });

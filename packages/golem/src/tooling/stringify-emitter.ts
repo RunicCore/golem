@@ -9,6 +9,7 @@ import type { ValidationPlane } from '../object-codec.js';
 import type { SchemaGraph, SchemaNode } from './schema-graph.js';
 import { codecShortName, serdeWireDescriptor } from './schema-graph.js';
 import type { JsonSchema } from './schema.js';
+import { emitTupleConversion } from './sequence-conversion.js';
 import {
   AMBIGUOUS_UNION_CONVERSION_ERROR,
   OBJECT_UNION_DISCRIMINATOR_ERROR,
@@ -336,8 +337,10 @@ function emitValue(
     return `stringifyJsonArray(${expression} as ArrayLike<unknown>, (item) => ${item})`;
   }
   if (descriptor.kind === 'tuple') {
-    const item = emitTupleItem(descriptor, item => emitValue(item, '_item', ctx), 'stringifyJsonScalar(_item as never)');
-    return `(Array.isArray(${expression}) ? ((_tuple: readonly unknown[]) => stringifyJsonArray(_tuple, (_item, _index) => ${item}))(${expression} as readonly unknown[]) : stringifyJsonScalar(${expression} as never))`;
+    return emitTupleConversion(descriptor, expression, {
+      output: 'json',
+      item: (item, value) => ({ code: emitValue(item, value, ctx), throws: false }),
+    });
   }
   if (descriptor.kind === 'union') {
     const present = presentUnionVariants(descriptor);
@@ -424,24 +427,6 @@ function emitValue(
     return emitObjectInline(descriptor, expression, ctx);
   }
   return `stringifyJsonScalar(${expression} as never)`;
-}
-
-/** Select a tuple element by its actual position, including a variable-length rest. */
-function emitTupleItem(
-  descriptor: Extract<ModelTypeDescriptor, { kind: 'tuple' }>,
-  emit: (item: ModelTypeDescriptor) => string,
-  fallback = '_item',
-): string {
-  const rest = descriptor.rest;
-  const suffixLength = rest ? descriptor.items.length - rest.index : 0;
-  let value = rest ? emit(rest.item) : fallback;
-  for (let index = descriptor.items.length - 1; index >= 0; index--) {
-    const position = rest && index >= rest.index
-      ? `Math.max(${rest.index}, _tuple.length - ${suffixLength}) + ${index - rest.index}`
-      : String(index);
-    value = `(_index === ${position} ? ${emit(descriptor.items[index])} : ${value})`;
-  }
-  return value;
 }
 
 function emitObjectInline(
@@ -1181,8 +1166,14 @@ function emitDecodeValue(descriptor: ModelTypeDescriptor, expression: string, ct
       : `Array.isArray(${expression}) ? ${emitArrayCopy(expression, item)} : ${expression}`;
   }
   if (descriptor.kind === 'tuple') {
-    const item = emitTupleItem(descriptor, item => emitDecodeValue(item, '_item', ctx));
-    return `Array.isArray(${expression}) ? (${expression} as readonly unknown[]).map((_item, _index, _tuple) => ${item}) : ${expression}`;
+    return emitTupleConversion(descriptor, expression, {
+      output: 'value',
+      item: (item, value) => {
+        const before = fallibleCount(ctx);
+        const code = emitDecodeValue(item, value, ctx);
+        return { code, throws: emittedFallible(before, code, ctx) };
+      },
+    });
   }
   if (descriptor.kind === 'object') {
     const node = ctx.graph.nodeFor(descriptor);
@@ -1429,8 +1420,10 @@ function emitEncodeValue(descriptor: ModelTypeDescriptor, expression: string, ct
     return `Array.isArray(${expression}) ? ${emitArrayCopy(expression, item)} : ${expression}`;
   }
   if (descriptor.kind === 'tuple') {
-    const item = emitTupleItem(descriptor, item => emitEncodeValue(item, '_item', ctx));
-    return `Array.isArray(${expression}) ? (${expression} as readonly unknown[]).map((_item, _index, _tuple) => ${item}) : ${expression}`;
+    return emitTupleConversion(descriptor, expression, {
+      output: 'value',
+      item: (item, value) => ({ code: emitEncodeValue(item, value, ctx), throws: false }),
+    });
   }
   if (descriptor.kind === 'union') {
     return emitUnionEncode(descriptor, expression, ctx);

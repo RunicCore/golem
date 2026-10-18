@@ -17,6 +17,8 @@ export {
   type StringifySerdeResolver,
 } from './stringify-emitter.js';
 export { pruneGeneratedImports } from './generated-imports.js';
+export { FIELD_CONVERSION_INPUT, singleCallConverter, type TupleConversionDescriptor } from './sequence-conversion.js';
+import { FIELD_CONVERSION_INPUT, emitTupleConversion, singleCallConverter } from './sequence-conversion.js';
 import {
   AMBIGUOUS_UNION_CONVERSION_ERROR,
   OBJECT_UNION_DISCRIMINATOR_ERROR,
@@ -38,7 +40,6 @@ import {
 /** Generators read tag values through the same rule as the shared union conversion. */
 export { literalValues } from './union-conversion.js';
 
-export type TupleConversionDescriptor = Extract<ModelTypeDescriptor, { readonly kind: 'tuple' }>;
 export type ModelConversionDescriptor = ModelTypeDescriptor;
 
 /** A model's required tag properties and their literal value or values. */
@@ -198,57 +199,6 @@ function unionGeneratedToJson(
   const model = resolveModel(generated.id);
   const encode = model.encode ?? ((value: string) => `encodeGeneratedModel(${value})`);
   return `${expression} instanceof ${model.className} ? ${encode(expression)} : ${expression}`;
-}
-
-function tupleRest(
-  descriptor: Extract<ModelConversionDescriptor, { readonly kind: 'tuple' }>,
-): TupleConversionDescriptor['rest'] {
-  return descriptor.rest;
-}
-
-function emitTuple(
-  descriptor: Extract<ModelConversionDescriptor, { readonly kind: 'tuple' }>,
-  expression: string,
-  withPaths: boolean,
-  emit: (item: ModelConversionDescriptor, value: string, index: string) => string,
-): string {
-  const rest = tupleRest(descriptor);
-  const array = `(${expression} as readonly unknown[])`;
-  if (!rest) {
-    const mapped = descriptor.items
-      .map((item, index) => `index === ${index} ? (${emit(item, 'item', String(index))}) : `)
-      .join('') + 'item';
-    return `Array.isArray(${expression}) ? ${array}.map((item, index) => ${mapped}) : ${expression}`;
-  }
-
-  const prefix = descriptor.items.slice(0, rest.index);
-  const suffix = descriptor.items.slice(rest.index);
-  const prefixValues = prefix.map((item, index) => emit(item, `${array}[${index}]`, String(index)));
-  const suffixValues = suffix.map((item, index) =>
-    emit(item, `${array}[Math.max(${rest.index}, ${array}.length - ${suffix.length}) + ${index}]`, `Math.max(${rest.index}, ${array}.length - ${suffix.length}) + ${index}`),
-  );
-  const restValue = emit(rest.item, 'item', `index + ${rest.index}`);
-  const restValues = restValue === 'item'
-    ? `Array.from(${expression}).slice(${rest.index}, Math.max(${rest.index}, ${expression}.length - ${suffix.length}))`
-    : `Array.from(${expression}).slice(${rest.index}, Math.max(${rest.index}, ${expression}.length - ${suffix.length})).map((item${withPaths ? ', index' : ''}) => ${restValue})`;
-  const values = [...prefixValues, `...${restValues}`, ...suffixValues];
-  return `Array.isArray(${expression}) ? [${values.join(', ')}] : ${expression}`;
-}
-
-/**
- * Input identifier for a root field conversion emitted once to find its shape.
- * No nested conversion binds this name.
- */
-export const FIELD_CONVERSION_INPUT = 'fieldValue';
-
-const SINGLE_CALL_ON_FIELD_INPUT = new RegExp(`^([A-Za-z_$][\\w$]*)\\(${FIELD_CONVERSION_INPUT}\\)$`);
-
-/**
- * The function name when a conversion emitted with `FIELD_CONVERSION_INPUT` is exactly one call on it.
- * A caller passes that function and the field value to `convertModelField` instead of allocating a closure.
- */
-export function singleCallConverter(converted: string): string | undefined {
-  return SINGLE_CALL_ON_FIELD_INPUT.exec(converted)?.[1];
 }
 
 /**
@@ -466,7 +416,14 @@ function emitNested(
     return `Array.isArray(${expression}) ? ${copy} : ${expression}`;
   }
   if (descriptor.kind === 'tuple') {
-    return emitTuple(descriptor, expression, direction !== 'fromInit', (item, value, index) => atField(input => emitNested(item, input, direction, resolveModel, resolveSerde), value, index, direction));
+    return emitTupleConversion(descriptor, expression, {
+      output: 'value',
+      ...(direction === 'fromInit' ? {} : { paths: direction === 'toJSON' ? 'serialize' as const : 'deserialize' as const }),
+      item: (item, value) => {
+        const code = emitNested(item, value, direction, resolveModel, resolveSerde);
+        return { code, throws: code !== value };
+      },
+    });
   }
   if (descriptor.kind === 'object') {
     // A projection copies its fields inside a function whose `source` parameter is the record.
