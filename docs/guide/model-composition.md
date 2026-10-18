@@ -20,7 +20,7 @@ Supported:
 
 - literal unions, such as `'paid' | 'pending'`
 - optional and nullish values: `T | undefined`, `T | null`
-- a scalar or an array of it: `T | T[]`, as in query objects (`status?: Status | Status[]`)
+- a scalar or several scalars beside one array: `string | Date[]`, `T | T[]`, as in query objects (`status?: Status | Status[]`); a scalar that converts, such as `Date` or a model, must be the only scalar
 - object unions with one unique, required literal discriminator
 - an SDK model class (generated from an OpenAPI document) plus a primitive or a uniquely tagged object
 

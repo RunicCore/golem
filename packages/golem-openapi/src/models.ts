@@ -293,7 +293,8 @@ function modelFieldType(
       .map((type) => `(${type})`)
       .join(' | ');
   }
-  if (isJsonObject(schema) && schema.type === 'array' && Array.isArray(schema.prefixItems)) {
+  // The conversion reads an allOf field from its members only, so its type stays the wire type.
+  if (isJsonObject(schema) && !hasAllOfMembers(schema) && schema.type === 'array' && Array.isArray(schema.prefixItems)) {
     return prefixItemsType(schema, (item) => modelFieldType(item, definitions, nested, seen));
   }
   if (isJsonObject(schema) && schema.type === 'array' && schema.items) {
@@ -379,6 +380,10 @@ function openApiPrimitiveDescriptor(schema: { readonly type?: unknown }): ModelT
   return undefined;
 }
 
+function hasAllOfMembers(schema: Readonly<Record<string, unknown>>): schema is Readonly<Record<string, unknown>> & { readonly allOf: readonly unknown[] } {
+  return Array.isArray(schema.allOf) && schema.allOf.length > 0;
+}
+
 function modelConversionDescriptor(
   schema: unknown,
   definitions: ReadonlyMap<string, ModelDefinition>,
@@ -412,7 +417,7 @@ function modelConversionDescriptor(
     return admitsNull(schema)
       ? { kind: 'union', variants: [date, { kind: 'null' }] } : date;
   }
-  if (isJsonObject(schema) && Array.isArray(schema.allOf) && schema.allOf.length > 0) {
+  if (isJsonObject(schema) && hasAllOfMembers(schema)) {
     return mergeAllOfDescriptors(
       schema.allOf.map((item) => modelConversionDescriptor(item, definitions, nested, direction, seen)),
     );

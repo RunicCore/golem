@@ -274,7 +274,7 @@ function tupleSerdeDocument(): Record<string, unknown> {
         Itinerary: {
           type: 'object',
           additionalProperties: false,
-          required: ['stops', 'leg'],
+          required: ['stops', 'leg', 'held'],
           properties: {
             stops: {
               type: 'array',
@@ -285,6 +285,12 @@ function tupleSerdeDocument(): Record<string, unknown> {
               type: 'array',
               prefixItems: [{ type: 'string' }, { type: 'string', format: 'date-time' }],
               items: false,
+            },
+            held: {
+              type: 'array',
+              prefixItems: [{ type: 'string', format: 'date-time' }],
+              items: false,
+              allOf: [{ minItems: 1 }],
             },
           },
         },
@@ -567,16 +573,20 @@ test('a tuple field converts each item by its own schema: the prefix stays a str
   const itinerary = decodeGeneratedModel(ItineraryModel, {
     stops: ['label', '2024-05-06T07:08:09.000Z'],
     leg: ['gate', '2024-05-07T08:09:10.000Z'],
+    held: ['2024-05-08T09:10:11.000Z'],
   });
   assert.deepEqual(itinerary.stops, ['label', new Date('2024-05-06T07:08:09.000Z')]);
   assert.deepEqual(itinerary.leg, ['gate', new Date('2024-05-07T08:09:10.000Z')]);
+  // An allOf wrapper keeps the field's wire type and value.
+  assert.deepEqual(itinerary.held, ['2024-05-08T09:10:11.000Z']);
   assert.deepEqual(encodeGeneratedModel(generated(itinerary)), {
     stops: ['label', '2024-05-06T07:08:09.000Z'],
     leg: ['gate', '2024-05-07T08:09:10.000Z'],
+    held: ['2024-05-08T09:10:11.000Z'],
   });
 
   assert.throws(
-    () => decodeGeneratedModel(ItineraryModel, { stops: ['label', '2024-05-06T07:08:09.000Z', 'not a date'], leg: [] }),
+    () => decodeGeneratedModel(ItineraryModel, { stops: ['label', '2024-05-06T07:08:09.000Z', 'not a date'], leg: [], held: [] }),
     (error: unknown): true => {
       assert.ok(error instanceof LibError);
       assert.deepEqual(error.issues[0]?.path, ['stops', 2]);
