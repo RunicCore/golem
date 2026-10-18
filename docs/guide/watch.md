@@ -59,10 +59,7 @@ can delete files it generated earlier that are no longer produced. Identical
 content keeps its modification time. Changed output is replaced even if it was
 edited or its generated marker was removed. `check` flags files that carry a
 generator marker but aren't in `.golem/outputs.json`; other files are
-left alone. A generated file beside a model file outside the folder of
-`golem.yaml` is a shared generated file, and the inventory records it as
-shared. Golem keeps it while its model file exists, because another app can
-use it, and deletes it when the model file is gone.
+left alone.
 
 Each recorded path also stores which job and package generated it and a
 digest of its content. The job and package keep two jobs from claiming the
@@ -75,17 +72,6 @@ Configured destinations such as `output: ../shared-sdk` are relative to the
 configuration file and follow the same rules. Colliding outputs and paths that
 escape a destination through a symbolic link are rejected before generation
 writes them.
-
-## Shared model folders {#shared-model-folders}
-
-Several apps can include one folder of models ([configuration](/reference/config#a-folder-shared-by-several-apps)). Each app generates the files beside the models of the folder, and the text is the same in every app. One process at a time writes them. That process holds the lock `.golem.lock` in the folder. Put `.golem.lock` in `.gitignore`.
-
-- A watcher (`golem watch`, `golem generate --watch` or `golem build --watch`) takes the lock when it first reaches the folder. It keeps the lock until it stops. The first watcher of a folder writes the files. The other watchers compare their text with the files and write nothing.
-- After you edit a shared model, the holder writes the new files. A watcher that does not hold the lock passes when its text is equal. When its text is different, it reports an error that names the file and the project that holds the lock, and it runs again when the file changes.
-- `golem generate` and `golem build` without `--watch` write the files when no live process holds the lock. They release it when the write ends. `golem check` writes nothing and takes no lock.
-- The lock of a process that does not run is free. The next process removes it.
-
-Run the apps that share a folder on one machine.
 
 ## Recover after a failed run
 

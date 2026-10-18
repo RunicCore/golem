@@ -328,6 +328,14 @@ An error prints its code, location when known, and message, then stops generatio
 
 **Job reads the tsconfig above its root.** A `models` or `controllers` job's `root` has no `tsconfig.json` and `golem.yaml` sets no `tsconfig`, so the job reads the nearest `tsconfig.json` above its root, as `tsc` does: that file's `paths` and compiler options apply to the job. When that file is a solution tsconfig, the options of the referenced project that holds the job's sources apply, and the message names the solution file. This is a warning: generation continues. The job prints it when it runs, before it generates, so a failure that follows still names the file; a job skipped as unchanged prints nothing. The message names the job and the file. **Fix:** Add a `tsconfig.json` to the job's root to give it its own options, or set `tsconfig` in `golem.yaml` to the file the message names to state that the job is meant to use it.
 
+### RUNM1074
+
+**Model golem does not generate for this app.** A model field, or a `stringify`, `parse`, `validate`, `assertValue`, `toWireFormat` or `fromWireFormat` call, names an `IModel` or `IObject` alias that is not a model of this app. The message names the alias as `file#export` and gives one of three reasons. The model is in `node_modules`: golem does not generate models in installed packages, and packages hold no generated code. The model is outside `models.root`: golem generates only files whose real path, after it follows folder links, is inside the root. The model belongs to the `models` job of a `golem.yaml` below the root: that job generates it for its own folder. **Fix:** For a model in `node_modules` or outside the root, declare the model in your own source over the plain type, such as `type TMoney = IObject<...>`. For a model of another job, stop using it as a model, or move it out of that job's folder.
+
+### RUNM1075
+
+**`models.sources` entry outside the models root.** An entry of `models.sources` has a real path outside `models.root`. A link to a file outside the root counts as that file. A `models` job generates only files inside its root, so the job stops before it generates. The message names the entry and the root. **Fix:** Remove the entry, move the file into the root, or set `models.root` to a folder that holds the file.
+
 ## Validators (VALIDATE)
 
 The validator compiler writes the checks that generated models and SDKs run. Its messages name the document, the schema and the JSON pointer of the keyword it rejects, such as `orders.yaml: schema "Order" at /properties/total/pattern: ...`. An error stops generation before any validator is written; a warning lets generation continue, as its entry notes.

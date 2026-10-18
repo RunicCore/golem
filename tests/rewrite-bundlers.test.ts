@@ -278,7 +278,7 @@ for (const bundler of BUNDLERS) {
     assert.deepEqual(JSON.parse(result.stdout), { currency: 'USD', value: '1' });
   });
 
-  test(`${bundler.name}: a bundle of app A runs the companions of the shared folder, which import #golem-models`, async (t) => {
+  test(`${bundler.name}: a bundle of app A runs over the plain types of the shared folder`, async (t) => {
     const project = sharedFolderProject(t, `${bundler.name}-shared-folder`);
     await runPipeline(path.join(project.appA, 'golem.yaml'));
     const bundle = await build(bundler, t, project.appA, 'src/site.ts');
@@ -286,18 +286,6 @@ for (const bundler of BUNDLERS) {
     assert.deepEqual(outcome.wire, ORDER_WIRE);
     assert.equal(outcome.validityObservable, true);
     assert.match(outcome.rejected ?? '', /Model validation failed/);
-  });
-
-  test(`${bundler.name}: a bundle resolves #golem-models to the layer of the project`, async (t) => {
-    const root = await generatedProject(t, `${bundler.name}-layer`, { generate: false });
-    // A layer as `golem generate` will write it, by hand: `#golem-models` resolves to the file, whatever generated it.
-    write(root, 'src/generated/models/models.generated.ts', 'export const layer = { profile: { mobx: true, validation: false }, schemas: {}, serdeBindings: {} };\n');
-    const outside = createFixtureProject(t, 'golem-bundler-layer-');
-    write(outside, 'use.ts', "import { layer } from '#golem-models';\nexport const mobx: boolean = layer.profile.mobx;\n");
-    write(root, 'src/layer.ts', `import { mobx } from '${path.join(outside, 'use.js')}';\nconsole.log(mobx);\n`);
-    const bundle = await build(bundler, t, root, 'src/layer.ts');
-    const result = await command(root, process.execPath, [bundle]);
-    assert.equal(result.stdout, 'true\n');
   });
 }
 
@@ -450,14 +438,11 @@ test('esbuild: a build of a validating model bundles its generated validators fr
   assert.deepEqual(JSON.parse(result.stdout.split('\n')[0]!), { money: { currency: 'USD', value: '1' }, twice: 42 });
 });
 
-test('vite serve: a validating model reaches its layer, which resolves the generated validators to the TypeScript file', async (t) => {
+test('vite serve: a validating model file imports its validators, which resolve from the .js specifier to the TypeScript file', async (t) => {
   const root = await generatedProject(t, 'vite-validating', { validation: true });
   const server = await serve(t, root);
   const companion = await server.transformRequest('/src/money.model.generated.ts');
-  assert.doesNotMatch(companion?.code ?? '', /#golem-models/, 'the layer specifier is resolved');
-  assert.match(companion?.code ?? '', /from "\/src\/generated\/models\/models\.generated\.ts"/, 'the companion imports the layer file');
-  const layer = await server.transformRequest('/src/generated/models/models.generated.ts');
-  assert.match(layer?.code ?? '', /from "\/src\/generated\/models\/models\.validators\.generated\.ts"/, 'the .js specifier resolves to the .ts file');
+  assert.match(companion?.code ?? '', /from "\/src\/generated\/models\/models\.validators\.generated\.ts"/, 'the .js specifier resolves to the .ts file');
   assert.ok(await server.transformRequest('/src/generated/models/models.validators.generated.ts'), 'the validators module is served from its .ts file');
 });
 

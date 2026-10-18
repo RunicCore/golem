@@ -1,5 +1,7 @@
+import { relative } from 'node:path';
 import * as ts from '../typescript-ns.js';
-import { canonicalFilename, generatedFilename } from './project.js';
+import { canonicalPath } from '../generator-api.js';
+import { canonicalFilename, generatedFilename, isOutside, type ModelBoundary } from './project.js';
 import type { ModelSpecification } from './models.js';
 
 /** A located model-analysis error with its RUNM code. */
@@ -50,6 +52,37 @@ export function modelDeclarationKind(checker: ts.TypeChecker, node: ts.TypeNode)
     const filename = declaration.getSourceFile().fileName.replace(/\\/g, '/');
     return /\/(?:@exprtlabs\/)?golem\/(?:src|dist)\/model\.(?:d\.)?ts$/.test(filename);
   }) ? name : undefined;
+}
+
+
+/**
+ * Why golem cannot generate `declaration`, an IModel or IObject alias that no model of this job declares, or undefined when
+ * the declaration has no such reason: a type that is only nested without a name, for one. A model is `file#export`, with the
+ * real path of the file. The reasons, in order: the model is in `node_modules`, another models job below the root owns it,
+ * the file is outside the models root. Without a boundary (an analysis that has no models job, such as the controllers
+ * analysis) only the `node_modules` reason applies.
+ */
+export function foreignModelReason(declaration: ts.TypeAliasDeclaration, boundary: ModelBoundary | undefined): string | undefined {
+  const filename = canonicalPath(declaration.getSourceFile().fileName);
+  const name = declaration.name.text;
+  const model = `${filename}#${name}`;
+  const insideRoot = boundary !== undefined && !isOutside(boundary.root, filename);
+  if ((boundary !== undefined && insideRoot ? relative(boundary.root, filename) : filename).split(/[\\/]/).includes('node_modules')) {
+    return `${model} is a model in an installed package. Golem does not generate models in node_modules. Declare the model in your own source, for example \`type ${name} = IObject<...>\` over the package's plain type.`;
+  }
+  if (boundary === undefined) return undefined;
+  const yaml = boundary.anotherModelsJobOf(filename);
+  if (yaml !== undefined) {
+    return `${model} belongs to the models job of ${yaml}. That job generates it for its own folder, so this app cannot use it as a model.`;
+  }
+  return !insideRoot
+    ? `${model} is outside the models root ${boundary.root}. Golem does not generate models outside the root of the app. Declare the model in your own source, for example \`type ${name} = IObject<...>\` over a plain type.`
+    : undefined;
+}
+
+/** The alias that declares the model the type reference names, when it is written as `type Name = IModel<...>` or `IObject<...>`. */
+export function declaredModelAlias(reference: ts.TypeReferenceNode): ts.TypeAliasDeclaration | undefined {
+  return ts.isTypeAliasDeclaration(reference.parent) && reference.parent.type === reference ? reference.parent : undefined;
 }
 
 

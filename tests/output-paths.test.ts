@@ -22,12 +22,11 @@ function pipelineFixture(t: TestContext): { root: string; config: string; extern
   const external = path.join(path.dirname(root), `golem-output-paths-external-${path.basename(root)}`);
   const sourceDirectory = path.join(external, 'sources');
   const source = path.join(sourceDirectory, 'cart.model.ts');
-  fs.mkdirSync(path.join(external, 'model-root'), { recursive: true });
   fs.mkdirSync(sourceDirectory, { recursive: true });
   fs.mkdirSync(path.join(external, 'node_modules/@exprtlabs'), { recursive: true });
   fs.symlinkSync(path.join(workspace, 'packages/golem'), path.join(external, 'node_modules/@exprtlabs/golem'), 'dir');
   fs.writeFileSync(source, "import type { IModel } from '@exprtlabs/golem/model';\nexport type TCart = IModel<{ value: string }>;\n");
-  // One golem.yaml serves one tsconfig, and the model root lies inside its directory: the external project owns the tsconfig.
+  // One golem.yaml serves one tsconfig, and the model root holds its sources: the external project owns the tsconfig.
   fs.writeFileSync(path.join(external, 'tsconfig.json'), JSON.stringify({
     compilerOptions: { target: 'ES2022', module: 'NodeNext', moduleResolution: 'NodeNext', strict: true, skipLibCheck: true },
     include: ['sources/**/*.ts'],
@@ -45,7 +44,7 @@ function pipelineFixture(t: TestContext): { root: string; config: string; extern
     '    output: ../' + path.basename(external) + '/sdk',
     '    name: External',
     'models:',
-    '  root: ../' + path.basename(external) + '/model-root',
+    '  root: ../' + path.basename(external),
     '  sources:',
     '    - ../' + path.basename(external) + '/sources/cart.model.ts',
     '  output: ../' + path.basename(external) + '/models-output',
@@ -90,14 +89,12 @@ test('YAML pipeline supports external OpenAPI and model roots, sources, and outp
 
   const sdkClient = path.join(external, 'sdk/client.ts');
   // The job validates, so besides the codec keys (.golem/codec-keys.json, beside
-  // the inventory) it writes the shared models.generated.ts and the validators.
+  // the inventory) it writes the validators.
   const modelOutput = path.join(root, '.golem/codec-keys.json');
-  const sharedModelOutput = path.join(external, 'models-output/models.generated.ts');
   const validatorsOutput = path.join(external, 'models-output/models.validators.generated.ts');
   const companion = path.join(path.dirname(source), 'cart.model.generated.ts');
   assert.equal(fs.existsSync(sdkClient), true);
   assert.equal(fs.existsSync(modelOutput), true);
-  assert.equal(fs.existsSync(sharedModelOutput), true);
   assert.equal(fs.existsSync(validatorsOutput), true);
   assert.equal(fs.existsSync(companion), true);
 

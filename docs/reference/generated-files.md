@@ -21,7 +21,7 @@ Whether to commit generated files is your choice. Golem works with every generat
 
 Golem writes these generated files:
 
-- `<name>.model.generated.ts` beside each model file, and the layer and the validators under `models.output` (default `src/generated/models/`)
+- `<name>.model.generated.ts` beside each model file, and the validators under `models.output` (default `src/generated/models/`)
 - the SDK folders, the OpenAPI document of a `controllers` job, and the files of a `generators` job
 - `.golem/outputs.json`, the list of files that golem owns
 
@@ -36,13 +36,10 @@ An example `.gitignore` for the first choice:
 
 ```text
 .golem/
-.golem.lock
 *.generated.ts
 src/generated/
 sdk/
 ```
-
-`.golem.lock` is the lock of a [shared model folder](/reference/config#a-folder-shared-by-several-apps). Ignore it in every choice.
 
 A model suffix such as `.entity.mts` or `.entity.cts` makes `.generated.mts` or `.generated.cts` files; add a line for each extension your suffixes use.
 
@@ -73,15 +70,15 @@ Every other file in an SDK is internal and may change in a minor release. Do not
 
 ## Internal model files
 
-In the model output (`src/generated/models/` by default), every file is internal: `models.generated.ts` and `models.validators.generated.ts` (the validators of every model). Each `<name>.model.generated.ts` is public for the models its source declares: `<Alias>BaseModel` for an `IModel`, the `<Alias>Fields`, `<Alias>JSON` and `<Alias>Init` types, and `parse<Alias>`, `stringify<Alias>`, `validate<Alias>`, `assert<Alias>`, `toWireFormat<Alias>` and `fromWireFormat<Alias>` functions. `<Alias>` is the exact type alias: `type TPayment = IModel<…>` gives `TPaymentBaseModel` and `parseTPayment`, `type Payment = IModel<…>` gives `PaymentBaseModel`, and `type TPermissionModel = IModel<…>` gives `TPermissionModelBaseModel`. A class links to its model through `extends <Alias>BaseModel` and can have any name; a file can't export two classes that extend the same generated class directly. Codecs of [derived types](#derived-type-names) and exports that start with `__golem` are internal.
+In the model output (`src/generated/models/` by default), the file `models.validators.generated.ts` is internal. It holds the validators of the models. Each `<name>.model.generated.ts` is public for the models its source declares: `<Alias>BaseModel` for an `IModel`, the `<Alias>Fields`, `<Alias>JSON` and `<Alias>Init` types, and `parse<Alias>`, `stringify<Alias>`, `validate<Alias>`, `assert<Alias>`, `toWireFormat<Alias>` and `fromWireFormat<Alias>` functions. `<Alias>` is the exact type alias: `type TPayment = IModel<…>` gives `TPaymentBaseModel` and `parseTPayment`, `type Payment = IModel<…>` gives `PaymentBaseModel`, and `type TPermissionModel = IModel<…>` gives `TPermissionModelBaseModel`. A class links to its model through `extends <Alias>BaseModel` and can have any name; a file can't export two classes that extend the same generated class directly. Codecs of [derived types](#derived-type-names) and exports that start with `__golem` are internal.
 
-`models.generated.ts` is the layer of the app. It holds the profile of the app (`mobx` and `validation`), the MobX validator hook when both are on, and the schemas, validators and serde bindings of every model. Each `<name>.model.generated.ts` reads them from the layer through the specifier `#golem-models`, so it holds only what its own source sets. The layer is different for each app; the `<name>.model.generated.ts` file is not.
+Each `<name>.model.generated.ts` file holds the profile of the app (`mobx` and `validation`) and the schemas of its own models. With `validation: true`, it imports only the validators of its own models from `models.validators.generated.ts`. The import is a relative path, so the file needs no alias or `imports` entry. With `validation: false`, it imports no validator.
 
-A `<name>.model.generated.ts` file beside a model file outside the folder of `golem.yaml`, such as `../shared/money.model.ts`, is a shared generated file. It has the same text in every app that includes the folder. `.golem/outputs.json` lists it as shared, not as owned. One process at a time writes it ([shared folder](/reference/config#a-folder-shared-by-several-apps)). Golem deletes it only when its model file is gone.
+Golem writes a generated file only beside a model file inside `models.root`. A file outside the root, such as a [shared folder](/reference/config#a-folder-shared-by-several-apps), gets no generated file.
 
-The models job writes a generated file only for a model file that has an `IModel` or `IObject` alias. It skips a discovered model file that has none, and it leaves the file beside it as it is. It also skips a discovered model file that the `models` job of another `golem.yaml` covers. A file that `models.sources` names is never skipped ([rules](/reference/config#typescript-models)).
+The models job writes a generated file only for a model file that has an `IModel` or `IObject` alias. It skips a discovered model file that has none, and it leaves the file beside it as it is. It also skips a discovered model file that the `models` job of another `golem.yaml` below the root covers. A file that `models.sources` names is never skipped ([rules](/reference/config#typescript-models)).
 
-The first line of a generated model file names the golem version that wrote it, for example `/* Generated by @exprtlabs/golem-model 1.0.0. Do not edit. */`. When another process holds the lock and the text of a shared generated file is different, the error names the file and the project that holds the lock. It also names both versions when they differ.
+The first line of a generated model file names the golem version that wrote it, for example `/* Generated by @exprtlabs/golem-model 1.0.0. Do not edit. */`.
 
 The models job also writes `.golem/codec-keys.json`, in the directory of `golem.yaml`. It lists the generated codec each model and class uses, for `golem build`, the loader and the bundler plugins. An SDK lists the same in the `codecId` of each entry in `models[]` of its `model-manifest.json`. An SDK made by an older version holds an `iobject-plugin-keys.ts` table instead, and golem still reads it. Commit or ignore `.golem/codec-keys.json` with the other generated files.
 

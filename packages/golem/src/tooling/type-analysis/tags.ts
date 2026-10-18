@@ -1,6 +1,6 @@
 import path from 'node:path';
 import * as ts from '../typescript-ns.js';
-import { canonicalFilename, identityPathOf } from './project.js';
+import { canonicalFilename, portableRelativeFilename } from './project.js';
 import { packageSpecifier } from './package-specifier.js';
 import { canonicalConstraintKey } from '../schema.js';
 import type { ConstraintSchemaValue, ModelConstraint } from '../schema.js';
@@ -50,7 +50,7 @@ export interface TagAnalysisContext {
   readonly checker: ts.TypeChecker;
   readonly sourceFile: ts.SourceFile;
   /** Absolute project root used to keep emitted binding IDs relocatable. */
-  readonly identityRoot?: string;
+  readonly identityRoot: string;
   /** Whether a file is a model source of the job, so it has a generated companion. */
   readonly isModelSource?: (filename: string) => boolean;
   readonly diagnostic: (node: ts.Node, code: string, message: string) => Error;
@@ -186,13 +186,9 @@ function canonicalValue(
 }
 
 /** A project function is identified by its file and export name, like a packaged one, so reformatting the file keeps the id. */
-function canonicalIdentity(declaration: ts.Declaration, exportName: string, identityRoot?: string): string {
-  const filename = declaration.getSourceFile().fileName;
-  // A function of a shared folder outside the project keeps one id in every app: it is named from its shared folder.
-  const source = identityRoot
-    ? identityPathOf(filename, identityRoot)
-    : filename.replace(/\\/g, '/').split('/').pop() ?? 'source.ts';
-  return `${source}#${exportName}`;
+function canonicalIdentity(declaration: ts.Declaration, exportName: string, identityRoot: string): string {
+  // A function outside the project is named by its path from the identity root, which may start with `..`.
+  return `${portableRelativeFilename(declaration.getSourceFile().fileName, identityRoot)}#${exportName}`;
 }
 
 function isGolemTagsSource(filename: string): boolean {
@@ -255,7 +251,7 @@ function valueBindingForSymbol(
       `${kind} function must be exported so generated code can call it.`,
     );
   }
-  const resolved = packageSpecifier(canonicalFilename(sourceFile.fileName), context.sourceFile.fileName);
+  const resolved = packageSpecifier(canonicalFilename(sourceFile.fileName), context.sourceFile.fileName, context.identityRoot);
   if (resolved.kind !== 'package' && context.isModelSource?.(canonicalFilename(sourceFile.fileName))) {
     // The shared generated module imports this function; from a model file that would close a cycle with the
     // file's generated companion, which breaks start-up whenever the companion loads first.

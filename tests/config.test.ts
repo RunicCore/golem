@@ -268,3 +268,26 @@ test('a suffix that is empty, malformed, repeated or names a generated file is a
     assert.throws(() => loadConfig(filename), (error: unknown) => error instanceof Error && error.message === message, message);
   }
 });
+
+test('a models.sources entry outside models.root stops with RUNM1075 naming the entry and the root', (t: TestContext) => {
+  const { root, filename } = fixture(t, 'version: 1\nmodels:\n  root: app\n  sources: [shared/money.model.ts]\n');
+  fs.writeFileSync(path.join(root, 'tsconfig.json'), '{}');
+  fs.mkdirSync(path.join(root, 'app/src'), { recursive: true });
+  fs.mkdirSync(path.join(root, 'shared'));
+  fs.writeFileSync(path.join(root, 'shared/money.model.ts'), 'export {};\n');
+
+  assert.throws(() => loadConfig(filename), (error: unknown) => error instanceof Error
+    && error.message === `RUNM1075: models.sources entry ${path.join(root, 'shared/money.model.ts')} is outside the models root ${path.join(root, 'app')}. A models job generates only files inside its root.`);
+});
+
+test('a models.sources entry that links to a file outside the root stops with RUNM1075', (t: TestContext) => {
+  const { root, filename } = fixture(t, 'version: 1\nmodels:\n  root: app\n  sources: [app/src/money.model.ts]\n');
+  fs.writeFileSync(path.join(root, 'tsconfig.json'), '{}');
+  fs.mkdirSync(path.join(root, 'app/src'), { recursive: true });
+  fs.mkdirSync(path.join(root, 'shared'));
+  fs.writeFileSync(path.join(root, 'shared/money.model.ts'), 'export {};\n');
+  fs.symlinkSync('../../shared/money.model.ts', path.join(root, 'app/src/money.model.ts'));
+
+  assert.throws(() => loadConfig(filename), (error: unknown) => error instanceof Error
+    && error.message === `RUNM1075: models.sources entry ${path.join(root, 'shared/money.model.ts')} is outside the models root ${path.join(root, 'app')}. A models job generates only files inside its root.`);
+});

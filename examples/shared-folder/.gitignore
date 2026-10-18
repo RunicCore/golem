@@ -1,0 +1,5 @@
+.golem/
+.build/
+*.generated.ts
+apps/*/src/generated/
+apps/worker/shared

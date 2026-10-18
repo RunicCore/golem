@@ -9,7 +9,7 @@ import type {
   InputObserver,
 } from '@exprtlabs/golem/generator-api';
 import { buildCodecValidationPlan, compilePlanValidators, type CodecSchemaClosureEntry } from '@exprtlabs/golem/validation-plan';
-import { DEFAULT_MODEL_SUFFIXES, GolemDiagnosticSeverity, resolveProfile, suffixPattern, type GolemDiagnostic } from '@exprtlabs/golem/generator-api';
+import { DEFAULT_MODEL_SUFFIXES, GolemDiagnosticSeverity, canonicalPath, outsideModelsRootMessage, resolveProfile, suffixPattern, type GolemDiagnostic } from '@exprtlabs/golem/generator-api';
 import { codecKeysPath, defaultModelOutput } from '@exprtlabs/golem/generated-paths';
 import { emitCodecDeclarationTable } from '@exprtlabs/golem/schema-graph';
 import {
@@ -17,7 +17,6 @@ import {
   createJobAnalysis,
   deduplicateTagSchemas,
   describeJob,
-  emitLayerSource,
   emitSource,
   validatorImports,
   codecEntriesForGraph,
@@ -31,7 +30,6 @@ import { discoverModelManifests } from '@exprtlabs/golem/manifest';
 import { loadModelManifests } from '@exprtlabs/golem/type-analysis';
 import type { ManifestIndex } from '@exprtlabs/golem/type-analysis';
 import {
-  anotherModelsJobCheck,
   assertAbsolute,
   canonicalFilename,
   createOverlayProgram,
@@ -41,10 +39,13 @@ import {
   generatedFilename,
   includedModelSources,
   isModelSource,
+  isOutside,
+  isOwnModelFile,
+  modelBoundary,
   portableRelativeFilename,
   projectWatchInputs,
   retainedProgramSession,
-  sharedImportOutsideItsFolder,
+  type ModelBoundary,
   type ProgramInfo,
 } from '@exprtlabs/golem/type-analysis';
 
@@ -222,8 +223,8 @@ function canonicalSourceKey(filename: string): string {
  */
 function internJobSchemaGraphs(
   graphs: readonly SourceModelGraph[],
+  defaultValidation: boolean,
   closure: readonly CodecSchemaClosureEntry[] = [],
-  defaultValidation?: boolean,
 ): SourceSchemaGraph[] {
   const codecIds = new Map<ModelSpecification, string>();
   const wireSchemas = new Set<string>();
@@ -263,7 +264,7 @@ function internJobSchemaGraphs(
       const schemaGraph = internSourceDefinitions(graph.definitions, graph.emitted, {
         codecIds: idsFor(graph, new Map()),
         siblings: graph.siblings,
-        ...(defaultValidation === undefined ? {} : { defaultValidation }),
+        defaultValidation,
         externalResidualIds: residualIds,
       });
       record(graph, schemaGraph);
@@ -296,7 +297,7 @@ function internJobSchemaGraphs(
         return id === undefined ? [] : [[sibling.name, id] as const];
       })),
       siblings: outside,
-      ...(defaultValidation === undefined ? {} : { defaultValidation }),
+      defaultValidation,
       externalResidualIds: residualIds,
     });
     for (const graph of component) record(graph, shared);
@@ -310,7 +311,7 @@ function internJobSchemaGraphs(
       const schemaGraph = internSourceDefinitions(graph.definitions, graph.emitted, {
         codecIds: idsFor(graph, own),
         siblings: graph.siblings,
-        ...(defaultValidation === undefined ? {} : { defaultValidation }),
+        defaultValidation,
         externalResidualIds: residualIds,
       });
       const cyclicSiblings = new Set(graph.siblings
@@ -354,6 +355,17 @@ function withoutRepeatedFieldTypeWarnings(diagnostics: readonly GolemDiagnostic[
   ));
 }
 
+/** A `sources` entry is a file of this job: one outside the models root, in node_modules or covered by another models job stops generation. */
+function assertListedSourceIsOwn(boundary: ModelBoundary, source: string): void {
+  const real = canonicalPath(source);
+  if (isOutside(boundary.root, real)) throw new Error(outsideModelsRootMessage(real, boundary.root));
+  const yaml = boundary.anotherModelsJobOf(source);
+  if (yaml !== undefined) {
+    throw new Error(`models.sources entry ${real} belongs to the models job of ${yaml}. That job generates it for its own folder, so this job cannot generate it.`);
+  }
+  if (!isOwnModelFile(boundary, source)) throw new Error(`models.sources entry ${real} is in node_modules. Golem does not generate models in node_modules.`);
+}
+
 export function generate(context: GolemModelContext): GolemModelResult {
   const normalized = validateContext(context);
   const listed = normalized.sources !== undefined;
@@ -366,6 +378,7 @@ export function generate(context: GolemModelContext): GolemModelResult {
       + `Add a file ending in ${normalized.suffixes.join(' or ')}, or provide context.sources.`,
     );
   }
+  const boundary = modelBoundary(normalized.root, normalized.directory, normalized.onInput);
   for (const source of discovered) {
     normalized.onInput?.(source);
     if (!isModelSource(source)) {
@@ -374,6 +387,7 @@ export function generate(context: GolemModelContext): GolemModelResult {
     if (!existsSync(source) || !statSync(source).isFile()) {
       throw new Error(`Model source does not exist: ${source}`);
     }
+    if (listed) assertListedSourceIsOwn(boundary, source);
   }
 
   // Phase one intentionally tolerates diagnostics from stale companions.  It
@@ -387,15 +401,12 @@ export function generate(context: GolemModelContext): GolemModelResult {
     retainedProgramSession(normalized.session, SESSION_OWNER, normalized.root),
   );
   using program = programInfo.program;
-  // The program holds the files the tsconfig includes and the files they import, so a model file outside the root (a
-  // shared folder) is a source of this job. `models.sources` limits the list.
-  const projectFiles = programFilenames(program);
+  // The program holds the files the tsconfig includes and the files they import. A model file is the job's own only when its
+  // real path is inside the models root; an outside file, a shared folder for one, works as a file of an installed package.
   const candidates = listed || programInfo.configPath === undefined
     ? discovered
-    : [...new Set([...discovered, ...includedModelSources(projectFiles, normalized.suffixes)])].sort();
-  // A discovered file that another golem.yaml's models job covers is that job's: it gives the file ids of its own folder.
-  const coveredByAnother = anotherModelsJobCheck(normalized.directory, normalized.onInput);
-  const ownCandidates = listed ? candidates : candidates.filter((source) => !coveredByAnother(source));
+    : [...new Set([...discovered, ...includedModelSources(programFilenames(program), normalized.suffixes)])].sort();
+  const ownCandidates = candidates.filter((source) => isOwnModelFile(boundary, source));
   if (ownCandidates.length === 0) {
     return emptyResult(programInfo, program, normalized.root);
   }
@@ -408,12 +419,6 @@ export function generate(context: GolemModelContext): GolemModelResult {
     return emptyResult(programInfo, program, normalized.root);
   }
   const tsconfigDirectory = programInfo.configPath === undefined ? normalized.root : dirname(programInfo.configPath);
-  const projectFileSet = new Set(projectFiles.map(canonicalFilename));
-  for (const source of sources) {
-    const sourceFile = program.getSourceFile(source);
-    const outsideImport = sourceFile && sharedImportOutsideItsFolder(sourceFile, tsconfigDirectory, projectFileSet, programInfo.options);
-    if (outsideImport !== undefined) throw new Error(outsideImport);
-  }
   const manifestIndex = loadModelManifests(
     normalized.root,
     programInfo,
@@ -439,6 +444,7 @@ export function generate(context: GolemModelContext): GolemModelResult {
     normalized.root,
     programInfo.options,
     (filename) => program.getSourceFile(filename),
+    boundary,
   );
   describeJob(job, specifications);
   const graphs = sources
@@ -454,8 +460,7 @@ export function generate(context: GolemModelContext): GolemModelResult {
       job,
     ))
     .filter((graph): graph is NonNullable<typeof graph> => graph !== undefined);
-  const layerOutput = join(normalized.output, 'models.generated.ts');
-  const graphSchemaPairs = internJobSchemaGraphs(graphs, manifestIndex.validationSchemaClosure);
+  const graphSchemaPairs = internJobSchemaGraphs(graphs, normalized.profile.validation, manifestIndex.validationSchemaClosure);
   const schemaGraphs = graphSchemaPairs.map(({ schemaGraph }) => schemaGraph);
   // A model can ask for validation when the profile does not.
   const anyValidation = normalized.profile.validation
@@ -465,14 +470,9 @@ export function generate(context: GolemModelContext): GolemModelResult {
       .sort((left, right) => left.key.localeCompare(right.key)
         || JSON.stringify(left.schema).localeCompare(JSON.stringify(right.schema))),
   );
-  // The plan is the app's: a model that sets no `validation` follows the profile, so with validation off a default model
-  // an opt-in model nests stays open. The companions follow the layer at run time and are interned without a default.
-  const planGraphs = normalized.profile.validation || !anyValidation
-    ? schemaGraphs
-    : internJobSchemaGraphs(graphs, manifestIndex.validationSchemaClosure, false).map(({ schemaGraph }) => schemaGraph);
   const validationPlan = anyValidation
     ? buildCodecValidationPlan(
-      planGraphs,
+      schemaGraphs,
       manifestIndex.validationSchemaClosure,
       Object.fromEntries(schemaEntries.map((compilation) => [compilation.id, compilation.schema])),
       normalized.profile.validation,
@@ -490,7 +490,7 @@ export function generate(context: GolemModelContext): GolemModelResult {
     : undefined;
   const validatorDiagnostics = withoutRepeatedFieldTypeWarnings(validators?.diagnostics ?? []);
   if (validatorDiagnostics.some((diagnostic) => diagnostic.severity === GolemDiagnosticSeverity.Error)) {
-    // Nothing is written: the companions import the validators this job could not compile.
+    // Nothing is written: the model files import the validators this job could not compile.
     return {
       artifacts: [],
       manifestPaths: [],
@@ -501,19 +501,7 @@ export function generate(context: GolemModelContext): GolemModelResult {
   const planSchemas = validationPlan && validators
     ? Object.fromEntries(validationPlan.ownSchemas.map((id) => [id, validationPlan.schemas[id]]))
     : undefined;
-  // The layer is the app's: it is written for every job, and carries what differs between apps.
-  const artifacts: GolemModelArtifact[] = [{
-    path: layerOutput,
-    content: emitLayerSource({
-      output: layerOutput,
-      profile: normalized.profile,
-      graphs,
-      schemaGraphs,
-      anyValidation,
-      ...(planSchemas ? { planSchemas } : {}),
-      ...(validators ? { validators: { module: validatorsOutput, exports: validators.exports } } : {}),
-    }),
-  }];
+  const artifacts: GolemModelArtifact[] = [];
   if (validators) {
     artifacts.push({ path: validatorsOutput, content: validators.source });
   }
@@ -530,6 +518,10 @@ export function generate(context: GolemModelContext): GolemModelResult {
       graph,
       schemaGraph,
       { siblingWireCodecIds, cyclicSiblings },
+      {
+        ...(planSchemas ? { planSchemas } : {}),
+        ...(validators ? { validators: { module: validatorsOutput, exports: validators.exports } } : {}),
+      },
     );
     if (content !== undefined) artifacts.push({ path: output, content });
   }

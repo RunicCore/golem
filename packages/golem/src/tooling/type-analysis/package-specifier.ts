@@ -1,5 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { canonicalPath } from '../generator-api.js';
+import { isOutside } from './project.js';
 
 export type PackageSpecifierResult =
   | { readonly kind: 'same-package' }
@@ -137,13 +139,16 @@ function subpathFor(exportsField: unknown, relativeFile: string): string | undef
 }
 
 /**
- * How code in `fromFile` imports `file`: relatively within one package, or by
- * the owning package's name plus the `exports` subpath that reaches `file`.
+ * How code in `fromFile` imports `file`: relatively when the file's package is the consumer's own, or by the owning
+ * package's name plus the `exports` subpath that reaches `file`. The owner is the nearest package.json with a name. It
+ * is the consumer's own package when it is the package of `fromFile`, or when it holds the consumer's root: a named
+ * monorepo root above an app owns the folders beside the app, and an app imports them as it imports its own files.
+ * `consumerRoot` is the root of the app or job whose generated code imports `file`.
  */
-export function packageSpecifier(file: string, fromFile: string): PackageSpecifierResult {
+export function packageSpecifier(file: string, fromFile: string, consumerRoot: string): PackageSpecifierResult {
   const owner = nearestManifest(file);
   const consumer = nearestManifest(fromFile);
-  if (!owner || owner.root === consumer?.root) return { kind: 'same-package' };
+  if (!owner || owner.root === consumer?.root || !isOutside(canonicalPath(owner.root), canonicalPath(consumerRoot))) return { kind: 'same-package' };
   const relativeFile = path.relative(owner.root, file).replace(/\\/g, '/');
   const subpath = subpathFor(owner.exports, relativeFile);
   if (subpath === undefined) return { kind: 'unexported', packageName: owner.name, packageRoot: owner.root };

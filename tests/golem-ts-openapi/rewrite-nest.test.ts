@@ -36,7 +36,7 @@ function paymentsProject(t: TestContext, extra: Readonly<Record<string, string>>
 }
 
 function scan(root: string, nest = true): ProgramScan {
-  return scanProject({ root, configFile: path.join(root, 'tsconfig.json'), nest, codecKeysFile: path.join(root, '.golem/codec-keys.json') });
+  return scanProject({ root, directory: root, modelsRoot: root, configFile: path.join(root, 'tsconfig.json'), nest, codecKeysFile: path.join(root, '.golem/codec-keys.json') });
 }
 
 function rewritten(root: string, result: ProgramScan, relative: string): string {

@@ -3,29 +3,33 @@ import fs from 'node:fs';
 import path from 'node:path';
 import test, { type TestContext } from 'node:test';
 import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/golem/conversion';
+import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 import { createModelProject, buildModelProject, writeModelGolemYaml } from './model-project.js';
+import { createFixtureProject, linkProjectPackages } from './fixture-project.js';
+import { workspace } from './support/process.js';
 import { taggedModelSource } from './fixture-templates/models/model-tags.js';
 import { COUNT_DIST_FILES, writeCodecPackage } from './fixture-templates/models/codec-package.js';
 import { tsSource } from './source-template.js';
 import { generate } from '#model/generator';
 
-function project(t: TestContext, packages: Record<string, string> = {}) {
+function project(t: TestContext, packages: Record<string, string> = {}, options: { readonly rootDir?: string } = {}) {
   return createModelProject(t, {
     prefix: 'golem-packaged-codecs-', name: 'packaged-codecs',
     linkTypescript: true,
     packages,
+    ...options,
   });
 }
 
-// Codec imports are emitted into the shared models file, not the model's companion.
-const SHARED_MODELS = 'src/generated/models/models.generated.ts';
+// The model's generated file imports the codecs from their package.
+const MODEL_FILE = 'src/a.model.generated.ts';
 const EXPORTS = { './codecs': { types: './dist/codecs.d.ts', import: './dist/codecs.js' }, './tags': { types: './dist/tags.d.ts', import: './dist/tags.js' } };
 const model = taggedModelSource({ name: 'A', imports: tsSource`import type { PkgCount, PkgVarchar } from '@fixture/pg/tags';`, fields: tsSource`count: PkgCount; name: PkgVarchar<4>` }).text;
 
-/** Builds the project, whose models job generates once, then checks the shared models file that build wrote. */
+/** Builds the project, whose models job generates once, then checks the generated model file that build wrote. */
 async function roundTrip(root: string): Promise<void> {
   await buildModelProject(root);
-  const generated = fs.readFileSync(path.join(root, SHARED_MODELS), 'utf8');
+  const generated = fs.readFileSync(path.join(root, MODEL_FILE), 'utf8');
   assert.match(generated, /from "@fixture\/pg\/codecs"/);
   assert.doesNotMatch(generated, /node_modules|\.d\.js/);
   const { A } = await import(path.toNamespacedPath(path.join(root, 'build/a.model.js')));
@@ -55,8 +59,119 @@ export function decodeCount(value: CountWire): number { return Number(value); }
   } });
   const { root, sourceRoot } = project(t, { '@fixture/pg': vendor });
   fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), model);
-  const generated = generate({ root, profile: { mobx: false, validation: true } }).artifacts.find(a => a.path.endsWith(SHARED_MODELS))?.content ?? '';
+  const generated = generate({ root, profile: { mobx: false, validation: true } }).artifacts.find(a => a.path.endsWith(MODEL_FILE))?.content ?? '';
   assert.match(generated, /from "@fixture\/pg\/codecs"/);
+});
+
+test('a TSerde codec of a folder outside the root round-trips in an app model', async t => {
+  const { root, sourceRoot } = project(t, {}, { rootDir: '..' });
+  const shared = createFixtureProject(t, 'golem-shared-codecs-');
+  linkProjectPackages(shared, { '@exprtlabs/golem': path.join(workspace, 'packages/golem') });
+  fs.writeFileSync(path.join(shared, 'package.json'), JSON.stringify({ private: true, type: 'module' }));
+  fs.writeFileSync(path.join(shared, 'codecs.ts'), `import type { Pattern, TSerde } from '@exprtlabs/golem/tags';
+export type CountWire = string & Pattern<'^-?\\\\d+$'>;
+export function encodeCount(value: number): CountWire { return value.toString() as CountWire; }
+export function decodeCount(value: CountWire): number { return Number(value); }
+export type PkgCount = number & TSerde<typeof encodeCount, typeof decodeCount>;
+`);
+  const toShared = path.relative(root, shared).split(path.sep).join('/');
+  fs.writeFileSync(path.join(root, 'tsconfig.json'), JSON.stringify({
+    compilerOptions: { strict: true, target: 'ES2022', module: 'NodeNext', moduleResolution: 'NodeNext', skipLibCheck: true, outDir: 'build', rootDir: '..' },
+    include: ['src/**/*.ts', `${toShared}/**/*.ts`],
+  }));
+  fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), `import type { IModel } from '@exprtlabs/golem/model';
+import type { PkgCount } from '../${toShared}/codecs.js';
+import { TABaseModel, type TAFields } from './a.model.generated.js';
+export type TA = IModel<{ count: PkgCount }>;
+export class A extends TABaseModel { constructor(values: Partial<TAFields> = {}) { super(values); } }
+`);
+  writeModelGolemYaml(root, { mobx: false, validation: true });
+
+  await buildModelProject(root);
+
+  const { A } = await import(path.toNamespacedPath(path.join(root, 'build', path.basename(root), 'src/a.model.js')));
+  const decoded = decodeGeneratedModel(A, { count: '42' });
+  assert.equal(decoded.count, 42);
+  assert.deepEqual(encodeGeneratedModel(decoded), { count: '42' });
+  assert.deepEqual(fs.readdirSync(shared).sort(), ['codecs.ts', 'node_modules', 'package.json']);
+});
+
+/**
+ * A monorepo: a named root package with workspaces, a named app below it, and a `shared/` folder beside the app with a
+ * `rules.ts` that only the app's model imports. `sharedManifest` is the shared folder's package.json, when it has one.
+ * Returns the app's root.
+ */
+function monorepo(t: TestContext, sharedManifest?: Readonly<Record<string, unknown>>): string {
+  const repo = createFixtureProject(t, 'golem-monorepo-');
+  const web = path.join(repo, 'apps/web');
+  fs.mkdirSync(path.join(web, 'src'), { recursive: true });
+  fs.mkdirSync(path.join(repo, 'shared'), { recursive: true });
+  linkProjectPackages(repo, { '@exprtlabs/golem': path.join(workspace, 'packages/golem'), typescript: path.join(workspace, 'node_modules/typescript') });
+  fs.writeFileSync(path.join(repo, 'package.json'), JSON.stringify({ name: 'acme', private: true, type: 'module', workspaces: ['apps/*'] }));
+  fs.writeFileSync(path.join(web, 'package.json'), JSON.stringify({ name: 'web', private: true, type: 'module' }));
+  fs.writeFileSync(path.join(web, 'tsconfig.json'), JSON.stringify({
+    compilerOptions: { strict: true, target: 'ES2022', module: 'NodeNext', moduleResolution: 'NodeNext', skipLibCheck: true, outDir: 'build', rootDir: '../..' },
+    include: ['src/**/*.ts', '../../shared/**/*.ts'],
+  }));
+  if (sharedManifest) fs.writeFileSync(path.join(repo, 'shared/package.json'), JSON.stringify(sharedManifest));
+  fs.writeFileSync(path.join(repo, 'shared/rules.ts'), "export function isCurrencyCode(value: string): boolean | string { return /^[A-Z]{3}$/.test(value) || 'must be a currency code'; }\n");
+  fs.writeFileSync(path.join(web, 'src/a.model.ts'), tsSource`import type { IObject } from '@exprtlabs/golem/model';
+import type { TValidation } from '@exprtlabs/golem/tags';
+import type { isCurrencyCode } from '../../../shared/rules.js';
+export type TA = IObject<{ currency: string & TValidation<typeof isCurrencyCode> }>;
+`.text);
+  return web;
+}
+
+test('a shared folder with no name of its own keeps its functions relative when only the named root above the app owns it', t => {
+  const web = monorepo(t);
+  const artifacts = generate({ root: web, profile: { mobx: false, validation: true } }).artifacts;
+  const validators = artifacts.find(a => a.path.endsWith('models.validators.generated.ts'))?.content ?? '';
+  assert.match(validators, /import \{ isCurrencyCode as \w+ \} from "(\.\.\/)+shared\/rules\.js"/);
+  assert.doesNotMatch(validators, /acme/);
+});
+
+test('RUNM1060 when a shared folder with its own name has no export that reaches the function', t => {
+  const web = monorepo(t, { name: '@acme/shared', version: '0.0.0', type: 'module' });
+  assert.throws(() => generate({ root: web, profile: { mobx: false, validation: true } }), /RUNM1060: .*isCurrencyCode.*@acme\/shared.*rules\.ts/);
+});
+
+test('a TValidation predicate that only an installed package declares checks the field directly and through its tag alias', async t => {
+  const { root, sourceRoot } = project(t);
+  writeCodecPackage(path.join(root, 'node_modules/@fixture/rules'), {
+    name: '@fixture/rules',
+    exports: { './rules': { types: './dist/rules.d.ts', import: './dist/rules.js' }, './tags': { types: './dist/tags.d.ts', import: './dist/tags.js' } },
+    files: {
+      'dist/rules.d.ts': 'export declare function isEven(value: number): boolean | string;\n',
+      'dist/rules.js': "export function isEven(value) { return value % 2 === 0 || 'must be even'; }\n",
+      'dist/tags.d.ts': tsSource`import type { TValidation } from '@exprtlabs/golem/tags';
+import type { isEven } from './rules.js';
+export type EvenCount = number & TValidation<typeof isEven>;
+`.text,
+      'dist/tags.js': 'export {};\n',
+    },
+  });
+  fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), tsSource`import type { IObject } from '@exprtlabs/golem/model';
+import type { TValidation } from '@exprtlabs/golem/tags';
+import type { isEven } from '@fixture/rules/rules';
+import type { EvenCount } from '@fixture/rules/tags';
+export type TA = IObject<{ viaAlias: EvenCount; direct: number & TValidation<typeof isEven> }>;
+`.text);
+  writeModelGolemYaml(root, { mobx: false, validation: true });
+  await buildModelProject(root);
+  const { parseTA } = await import(path.toNamespacedPath(path.join(root, 'build/a.model.generated.js')));
+
+  assert.deepEqual(parseTA('{"viaAlias":2,"direct":4}'), { viaAlias: 2, direct: 4 });
+  assert.throws(() => parseTA('{"viaAlias":3,"direct":4}'), (error: unknown) => {
+    assert.ok(error instanceof LibError && error.kind === LibErrorKind.Validation);
+    assert.deepEqual(error.issues.map(({ path, message }) => ({ path, message })), [{ path: ['viaAlias'], message: 'must be even' }]);
+    return true;
+  });
+  assert.throws(() => parseTA('{"viaAlias":2,"direct":5}'), (error: unknown) => {
+    assert.ok(error instanceof LibError && error.kind === LibErrorKind.Validation);
+    assert.deepEqual(error.issues.map(({ path, message }) => ({ path, message })), [{ path: ['direct'], message: 'must be even' }]);
+    return true;
+  });
 });
 
 test('wildcard export reaches the codec', async t => {
@@ -71,7 +186,7 @@ test('two codecs from one package share one specifier', t => {
   const { root, sourceRoot } = project(t);
   writeCodecPackage(path.join(root, 'node_modules/@fixture/pg'), { name: '@fixture/pg', exports: EXPORTS, files: COUNT_DIST_FILES });
   fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), taggedModelSource({ name: 'A', imports: tsSource`import type { PkgCount } from '@fixture/pg/tags';`, fields: tsSource`one: PkgCount; two: PkgCount[]` }).text);
-  const generated = generate({ root, profile: { mobx: false, validation: true } }).artifacts.find(a => a.path.endsWith(SHARED_MODELS))?.content ?? '';
+  const generated = generate({ root, profile: { mobx: false, validation: true } }).artifacts.find(a => a.path.endsWith(MODEL_FILE))?.content ?? '';
   assert.equal([...generated.matchAll(/import \{ encodeCount as /g)].length, 1);
   assert.equal([...generated.matchAll(/from "@fixture\/pg\/codecs"/g)].length, 2); // one encode, one decode import
 });
@@ -109,8 +224,8 @@ test('a nameless package.json in the project keeps project codecs relative', t =
   fs.writeFileSync(path.join(sourceRoot, 'lib/codecs.ts'), "export function encodeCount(value: number): string { return String(value); }\nexport function decodeCount(value: string): number { return Number(value); }\n");
   fs.writeFileSync(path.join(sourceRoot, 'models/package.json'), '{"type":"module"}');
   fs.writeFileSync(path.join(sourceRoot, 'models/a.model.ts'), taggedModelSource({ name: 'A', imports: tsSource`import type { TSerde } from '@exprtlabs/golem/tags';\nimport { encodeCount, decodeCount } from '../lib/codecs.js';\ntype Count = number & TSerde<typeof encodeCount, typeof decodeCount>;`, fields: tsSource`count: Count` }).text);
-  const generated = generate({ root, profile: { mobx: false, validation: true } }).artifacts.find(a => a.path.endsWith(SHARED_MODELS))?.content ?? '';
-  assert.match(generated, /from "\.\.\/\.\.\/lib\/codecs\.js"/);
+  const generated = generate({ root, profile: { mobx: false, validation: true } }).artifacts.find(a => a.path.endsWith('src/models/a.model.generated.ts'))?.content ?? '';
+  assert.match(generated, /from "\.\.\/lib\/codecs\.js"/);
 });
 
 test('an edited package.json is read again by the next generation in the same process', t => {
@@ -145,7 +260,7 @@ function generatedFor(t: TestContext, exports: Record<string, unknown>, nested =
   const { root, sourceRoot } = project(t);
   writeCodecPackage(path.join(root, 'node_modules/@fixture/pg'), { name: '@fixture/pg', exports, files: nested ? NESTED_FILES : COUNT_DIST_FILES });
   fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), nested ? model.replace('@fixture/pg/tags', '@fixture/pg/sub/tags') : model);
-  return generate({ root, profile: { mobx: false, validation: true } }).artifacts.find(a => a.path.endsWith(SHARED_MODELS))?.content ?? '';
+  return generate({ root, profile: { mobx: false, validation: true } }).artifacts.find(a => a.path.endsWith(MODEL_FILE))?.content ?? '';
 }
 
 function rejected(t: TestContext, exports: Record<string, unknown>, nested = false): void {
@@ -186,7 +301,7 @@ test('one package installed at two paths collapses to one binding', t => {
   writeCodecPackage(path.join(root, 'node_modules/dep'), { name: 'dep', exports: { '.': { types: './index.d.ts' } }, files: { 'index.d.ts': "export type { PkgCount as DepCount } from '@fixture/pg/tags';\n" } });
   writeCodecPackage(path.join(root, 'node_modules/dep/node_modules/@fixture/pg'), { name: '@fixture/pg', exports: EXPORTS, files: COUNT_DIST_FILES });
   fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), taggedModelSource({ name: 'A', imports: tsSource`import type { PkgCount } from '@fixture/pg/tags';\nimport type { DepCount } from 'dep';`, fields: tsSource`one: PkgCount; two: DepCount` }).text);
-  const generated = generate({ root, profile: { mobx: false, validation: true } }).artifacts.find(a => a.path.endsWith(SHARED_MODELS))?.content ?? '';
+  const generated = generate({ root, profile: { mobx: false, validation: true } }).artifacts.find(a => a.path.endsWith(MODEL_FILE))?.content ?? '';
   assert.equal([...generated.matchAll(/import \{ encodeCount as /g)].length, 1);
   assert.equal([...generated.matchAll(/import \{ decodeCount as /g)].length, 1);
   assert.doesNotMatch(generated, /__golemSerialize1/);

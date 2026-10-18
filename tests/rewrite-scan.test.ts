@@ -36,7 +36,7 @@ function scan(root: string): ProgramScan {
 function withScanner<T>(root: string, use: (scanner: RewriteScanner) => T): T {
   const info = createProjectProgram(root, undefined, undefined, path.join(root, 'tsconfig.json'));
   using program = info.program;
-  return use(new RewriteScanner({ root, program, checker: program.getTypeChecker(), codecKeysFile: path.join(root, CODEC_KEYS), nest: false }));
+  return use(new RewriteScanner({ root, directory: root, modelsRoot: root, program, checker: program.getTypeChecker(), codecKeysFile: path.join(root, CODEC_KEYS), nest: false }));
 }
 
 function scanned(result: ProgramScan, file: string): FileScanResult {
@@ -356,6 +356,79 @@ test('a models job owns .golem/codec-keys.json, and the project it generates pas
   assert.equal(table.version, 1);
   assert.match(table.keys['src/money.model.ts#Payment'] ?? '', /^TPayment_[0-9a-f]{8}$/, 'keys name the source from the tsconfig directory');
   await runPipeline(config, { check: true });
+});
+
+/**
+ * An app beside a shared folder whose own golem.yaml has a models job, and an installed package `@acme/money` whose declaration
+ * file declares the IObject alias `TPkgMoney`. The app's golem.yaml has a models job, and `src/use.ts` is the app's own site.
+ */
+function appBesideForeignModels(t: TestContext, site: string): { readonly app: string; readonly shared: string; readonly declaration: string; readonly config: string } {
+  const { root: outer } = createModelProject(t, {
+    prefix: 'golem-rewrite-foreign-',
+    linkTypescript: true,
+    packages: { '@exprtlabs/golem-model': path.join(workspace, 'packages/golem-model') },
+  });
+  const compilerOptions = { strict: true, target: 'ES2022', module: 'NodeNext', moduleResolution: 'NodeNext', skipLibCheck: true, noEmit: true };
+  const write = (file: string, text: string): void => {
+    fs.mkdirSync(path.dirname(path.join(outer, file)), { recursive: true });
+    fs.writeFileSync(path.join(outer, file), text);
+  };
+  write('shared/package.json', JSON.stringify({ name: '@acme/shared', private: true, type: 'module' }));
+  write('shared/golem.yaml', 'version: 1\nmodels:\n  root: .\n');
+  write('shared/tsconfig.json', JSON.stringify({ compilerOptions, include: ['src/**/*.ts'] }));
+  write('shared/src/money.model.ts', "import type { IObject } from '@exprtlabs/golem/model';\nexport type TMoney = IObject<{ currency: string }>;\n");
+  write('node_modules/@acme/money/package.json', JSON.stringify({ name: '@acme/money', version: '1.0.0', type: 'module', types: './index.d.ts', exports: { '.': { types: './index.d.ts' } } }));
+  write('node_modules/@acme/money/index.d.ts', "import type { IObject } from '@exprtlabs/golem/model';\nexport type TPkgMoney = IObject<{ currency: string }>;\n");
+  write('app/package.json', JSON.stringify({ name: 'app', private: true, type: 'module' }));
+  write('app/golem.yaml', 'version: 1\nmobx: false\nvalidation: false\nmodels:\n  root: .\n');
+  write('app/tsconfig.json', JSON.stringify({ compilerOptions, include: ['src/**/*.ts', '../shared/**/*.ts'] }));
+  write('app/src/order.model.ts', "import type { IModel } from '@exprtlabs/golem/model';\nexport type TOrder = IModel<{ id: string }>;\n");
+  write('app/src/use.ts', site);
+  const app = path.join(outer, 'app');
+  return {
+    app,
+    shared: path.join(outer, 'shared'),
+    declaration: fs.realpathSync(path.join(outer, 'node_modules/@acme/money/index.d.ts')),
+    config: path.join(app, 'golem.yaml'),
+  };
+}
+
+test('golem check reports a serde call on a model of a folder outside the root with its own golem.yaml, as outside the root', async (t) => {
+  const { app, shared, config } = appBesideForeignModels(t, `import { parse } from '@exprtlabs/golem/serde';
+import type { TMoney } from '../../shared/src/money.model.js';
+export const money = parse<TMoney>('{}');
+`);
+  await runPipeline(config);
+  await assert.rejects(
+    runPipeline(config, { check: true }),
+    { message: `golem rewrite scan reported 1 error diagnostic:\n  RUNM1074 (src/use.ts:3:22): ${path.join(shared, 'src/money.model.ts')}#TMoney is outside the models root ${app}. Golem does not generate models outside the root of the app. Declare the model in your own source, for example \`type TMoney = IObject<...>\` over a plain type.` },
+  );
+});
+
+test('golem check reports a serde call on a model outside the models root, with the model and the root', async (t) => {
+  const { app, shared, config } = appBesideForeignModels(t, `import { parse } from '@exprtlabs/golem/serde';
+import type { TMoney } from '../../shared/src/money.model.js';
+export const money = parse<TMoney>('{}');
+`);
+  fs.rmSync(path.join(shared, 'golem.yaml'));
+  await runPipeline(config);
+  await assert.rejects(
+    runPipeline(config, { check: true }),
+    { message: `golem rewrite scan reported 1 error diagnostic:\n  RUNM1074 (src/use.ts:3:22): ${path.join(shared, 'src/money.model.ts')}#TMoney is outside the models root ${app}. Golem does not generate models outside the root of the app. Declare the model in your own source, for example \`type TMoney = IObject<...>\` over a plain type.` },
+  );
+});
+
+test('golem check reports a serde call on a model of an installed package, with the model and the way to declare it in the app', async (t) => {
+  const { declaration, config } = appBesideForeignModels(t, `import { stringify } from '@exprtlabs/golem/serde';
+import type { TPkgMoney } from '@acme/money';
+declare const money: TPkgMoney;
+export const text = stringify<TPkgMoney>(money);
+`);
+  await runPipeline(config);
+  await assert.rejects(
+    runPipeline(config, { check: true }),
+    { message: `golem rewrite scan reported 1 error diagnostic:\n  RUNM1074 (src/use.ts:4:21): ${declaration}#TPkgMoney is a model in an installed package. Golem does not generate models in node_modules. Declare the model in your own source, for example \`type TPkgMoney = IObject<...>\` over the package's plain type.` },
+  );
 });
 
 test('a config without a models or controllers job still checks the project that calls an SDK', async (t) => {

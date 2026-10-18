@@ -5,9 +5,6 @@ export const DEFAULT_MODEL_OUTPUT = 'src/generated/models';
 /** Operation-codec registry written by a controllers job, relative to its root. Public at 1.0. */
 export const OPERATION_CODEC_REGISTRY = 'src/generated/operation-codecs.ts';
 
-/** The module specifier a companion imports the layer of its app from, and the hosts and `golem build` resolve. */
-export const LAYER_SPECIFIER = '#golem-models';
-
 export function defaultModelOutput(root: string): string {
   return path.join(root, DEFAULT_MODEL_OUTPUT);
 }

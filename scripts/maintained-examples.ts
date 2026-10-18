@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 /** Source examples with no toolchain of their own: they resolve the workspace packages from the root `node_modules`. */
-export const SOURCE_EXAMPLES = ['models'] as const;
+export const SOURCE_EXAMPLES = ['models', 'shared-folder'] as const;
 
 /** Framework projects with their own toolchain. */
 export const FRAMEWORK_EXAMPLES = ['payments'] as const;

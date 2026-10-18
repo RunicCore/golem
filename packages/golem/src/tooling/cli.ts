@@ -116,8 +116,8 @@ export async function main(argv = process.argv.slice(2)) {
     for (const signal of ['SIGINT', 'SIGTERM'] as const) process.once(signal, () => { stop(); process.exitCode = signal === 'SIGINT' ? 130 : 143; });
     return;
   }
-  // A watching command keeps one session from its first run on, so the shared-folder locks the first run takes last as long as the watch.
-  const watchSession = options.watch ? new GeneratorSessionResources('process') : undefined;
+  // A watching command keeps one session from its first run on, so the compilers of the first run stay warm for the watch.
+  const watchSession = options.watch ? new GeneratorSessionResources() : undefined;
   let state: PipelineState;
   try {
     state = await runPipeline(options.config, { check: options.action === 'check', ...(watchSession === undefined ? {} : { session: watchSession }) });

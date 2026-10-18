@@ -98,12 +98,14 @@ for (const [label, profile] of profiles) for (const chain of [modelChain, object
         if (expected) assert.ok(owner.includes(owned), `${name.toLowerCase()}-${index} emits its own ${owned}`);
       }
     }
-    // Each companion reads its validators from the layer, which binds them only when the app validates; the companion text is the same either way.
-    const layer = artifacts.find((artifact) => artifact.path.endsWith('models.generated.ts'))?.content ?? '';
-    assert.equal(/\bvalidate_\w+_[0-9a-f]{8}\b/.test(layer), profile.validation === true, 'layer validator binding');
+    // A companion imports the validators of its own models when the app validates, and no validator of another model.
     for (const index of [0, last]) {
-      assert.ok(companion(index).includes('layerValidator(layer, '), `${name.toLowerCase()}-${index} reads its validators from the layer`);
-      assert.equal(/\bvalidate_\w+_[0-9a-f]{8}\b/.test(companion(index)), false, `${name.toLowerCase()}-${index} imports no validator`);
+      const imported = companion(index).match(/^import \{ ([^}]+) \} from "[^"]*models\.validators\.generated\.js";$/m)?.[1] ?? '';
+      assert.equal(imported !== '', profile.validation === true, `${name.toLowerCase()}-${index} imports its validators only when the app validates`);
+      for (const validator of imported.split(', ').filter((item) => item !== '')) {
+        const codecId = validator.replace(/^validate_/, '').replace(/_(?:wire|model_only|wire_only)$/, '');
+        assert.ok(companion(index).includes(`createObjectCodec("${codecId}", {`), `${name.toLowerCase()}-${index} imports only its own validators, not ${validator}`);
+      }
     }
     assert.ok(lastCompanion.includes(kind === 'IModel' ? `class T${name}${last}BaseModel` : `function stringifyT${name}${last}Core(`));
     // Each companion carries its own model; its size does not grow with the chain behind it.
@@ -111,7 +113,7 @@ for (const [label, profile] of profiles) for (const chain of [modelChain, object
   });
 }
 
-test('with validation off the layer binds validators when one of the models validates, and no companion imports them', (t: TestContext) => {
+test('with validation off only the model that opts in imports validators', (t: TestContext) => {
   const { root, sourceRoot } = project(t, 'golem-model-imports-');
   writeModelSources(sourceRoot, {
     'plain.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
@@ -123,12 +125,10 @@ export type TOpted = IModel<{ at: Date }, { validation: true }>;
   });
   const { artifacts } = generate({ root, profile: { mobx: false, validation: false } });
   const content = (name: string): string => artifacts.find((artifact) => artifact.path.endsWith(name))?.content ?? '';
-  assert.match(content('models.generated.ts'), /import \{ validate_[^}]+ \} from /);
-  assert.match(content('models.generated.ts'), /profile: Object\.freeze\(\{ validation: false, mobx: false \}\)/);
-  for (const stem of ['opted', 'plain']) {
-    assert.doesNotMatch(content(`${stem}.model.generated.ts`), /import \{ validate_[^}]+ \} from /);
-    assert.match(content(`${stem}.model.generated.ts`), /import \{ layer \} from "#golem-models";/);
-  }
+  assert.match(content('opted.model.generated.ts'), /import \{ validate_TOpted_\w+[^}]* \} from "[^"]*models\.validators\.generated\.js";/);
+  assert.doesNotMatch(content('plain.model.generated.ts'), /models\.validators\.generated/);
+  assert.match(content('plain.model.generated.ts'), /profile: \{ validation: false, mobx: false \}/);
+  assert.match(content('opted.model.generated.ts'), /profile: \{ validation: true, mobx: false \}/);
 });
 
 const cycleSources = {

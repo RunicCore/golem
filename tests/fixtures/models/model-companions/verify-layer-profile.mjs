@@ -12,7 +12,7 @@ const shortCurrency = JSON.stringify({ total: { currency: 'US' } });
 if (expectation === 'validates') {
   assert.throws(() => codec.parse(shortCurrency));
   const order = decodeGeneratedModel(TOrderBaseModel, { total: { currency: 'USD' } });
-  assert.equal(isComputedProp(getValidator(order), 'valid'), true, 'the layer hook makes the validator observable');
+  assert.equal(isComputedProp(getValidator(order), 'valid'), true, 'the MobX hook makes the validator observable');
 } else {
   assert.deepEqual(codec.parse(shortCurrency), { total: { currency: 'US' } });
 }

@@ -1,12 +1,13 @@
 
 import { existsSync, readFileSync } from 'node:fs';
-import { dirname, isAbsolute, join, parse, relative, resolve, sep } from 'node:path';
+import { dirname, isAbsolute, join, normalize, parse, relative, resolve, sep } from 'node:path';
 import YAML from 'yaml';
 import * as ts from '../typescript-ns.js';
-import { canonicalFilename, sharedFolderOf } from '../shared-folder.js';
-import { DEFAULT_MODEL_SUFFIXES, discoverSources, suffixPattern, type GeneratorSession, type InputObserver } from '../generator-api.js';
+import { DEFAULT_MODEL_SUFFIXES, canonicalPath, discoverSources, suffixPattern, type GeneratorSession, type InputObserver } from '../generator-api.js';
 
-export { canonicalFilename, sharedFolderOf };
+export function canonicalFilename(filename: string): string {
+  return normalize(resolve(filename));
+}
 
 export interface ProgramInfo {
   readonly configPath?: string;
@@ -28,43 +29,6 @@ export interface ProgramInfo {
  */
 export function portableRelativeFilename(filename: string, root: string): string {
   return relative(canonicalFilename(root), canonicalFilename(filename)).replace(/\\/g, '/');
-}
-
-/**
- * The nearest package.json at or above `folder` that has a `name`, as `packageSpecifier` finds the owner of a file. A
- * nameless one (such as `{"type":"module"}`) only scopes the module format.
- */
-function namedPackageAbove(folder: string): { readonly root: string; readonly name: string } | undefined {
-  for (let directory = folder; ; directory = dirname(directory)) {
-    const file = join(directory, 'package.json');
-    if (existsSync(file)) {
-      let manifest: unknown;
-      try {
-        manifest = JSON.parse(readFileSync(file, 'utf8'));
-      } catch (error) {
-        // A package.json that is not JSON is the project's to fix; the name of a shared folder cannot be read without it.
-        if (error instanceof SyntaxError) throw new Error(`${file} is not valid JSON: ${error.message}`);
-        throw error;
-      }
-      const name = typeof manifest === 'object' && manifest !== null && 'name' in manifest ? manifest.name : undefined;
-      if (typeof name === 'string' && name !== '') return { root: directory, name };
-    }
-    if (dirname(directory) === directory) return undefined;
-  }
-}
-
-/**
- * The stable name of a project function's file. A file of the project is named from the project root. A file outside it
- * belongs to a shared folder. It is named from the nearest package that has a `name`, with the name in front, or from
- * its shared folder when no package above it has one. The name is the same in every app that includes the folder, and
- * two named packages do not share a name. A function that a named package exports is identified by its package import
- * instead (see `packageSpecifier`).
- */
-export function identityPathOf(filename: string, root: string): string {
-  if (!isOutside(root, filename)) return portableRelativeFilename(filename, root);
-  const folder = sharedFolderOf(filename);
-  const named = namedPackageAbove(folder);
-  return named === undefined ? portableRelativeFilename(filename, folder) : `${named.name}/${portableRelativeFilename(filename, named.root)}`;
 }
 
 /** Find a stable project root when a direct generator root is unavailable. */
@@ -105,49 +69,50 @@ export function discoverModelSources(
 }
 
 /**
- * The model files among `files`: those that end in a model suffix, are not in `node_modules` and are not generated
- * companions. A models job generates each of them, wherever it lies. Pass the files of the project's program, which are the
- * files the tsconfig includes and the files they import.
+ * The model files among `files`: those that end in a model suffix and are not generated companions. Pass the files of the
+ * project's program, which are the files the tsconfig includes and the files they import. Which of them are the job's own
+ * is `isOwnModelFile`'s answer.
  */
 export function includedModelSources(files: readonly string[], suffixes: readonly string[]): string[] {
   const pattern = suffixPattern(suffixes);
   return uniqueFilenames(files)
-    .filter((filename) => pattern.test(filename) && !isGeneratedCompanion(filename) && !filename.split(sep).includes('node_modules'))
+    .filter((filename) => pattern.test(filename) && !isGeneratedCompanion(filename))
     .sort((left, right) => left < right ? -1 : left > right ? 1 : 0);
 }
 
-/**
- * The error for a shared model source (outside the folder of the tsconfig) that imports a file outside its own shared
- * folder, or undefined when it imports none. Its companion would then depend on files that another app does not include.
- * `projectFiles` are the canonical names of the program's own files. Only relative imports count: a package, a linked
- * one too, is not a place outside the shared folder.
- */
-export function sharedImportOutsideItsFolder(
-  source: ts.SourceFile,
-  tsconfigDirectory: string,
-  projectFiles: ReadonlySet<string>,
-  compilerOptions: ts.CompilerOptions,
-): string | undefined {
-  const filename = canonicalFilename(source.fileName);
-  if (!isOutside(tsconfigDirectory, filename)) return undefined;
-  const sharedFolder = sharedFolderOf(filename);
-  const target = projectFilesImportedBy(source, compilerOptions, true)
-    .find((imported) => projectFiles.has(imported) && isOutside(sharedFolder, imported));
-  return target === undefined
-    ? undefined
-    : `${filename} is outside ${tsconfigDirectory} and imports ${target}, which is outside its shared folder ${sharedFolder}. `
-      + 'A shared model may import only files in its shared folder.';
+/** What decides which files are the model sources of one models job. */
+export interface ModelBoundary {
+  /** The real path of `models.root`. */
+  readonly root: string;
+  /** The golem.yaml of another models job below the root that covers a file, or undefined when none does. */
+  readonly anotherModelsJobOf: (filename: string) => string | undefined;
+}
+
+export function modelBoundary(modelsRoot: string, ownDirectory: string, onInput?: InputObserver): ModelBoundary {
+  const root = canonicalPath(modelsRoot);
+  return { root, anotherModelsJobOf: modelsJobBelowRoot(root, canonicalPath(ownDirectory), onInput) };
 }
 
 /**
- * A check that answers whether a golem.yaml other than the one in `ownDirectory` has a models job that covers a source.
- * The source is covered when such a yaml lies in the source's directory or in a directory above it, up to the source's
- * shared folder. That job generates the source with ids of its own folder, so this job must leave the source alone.
+ * Whether the models job of `boundary` owns `filename` as a model source: its real path is inside the models root, no folder
+ * between the root and the file is `node_modules`, and no golem.yaml of another models job covers it. Any other file works
+ * as a file of an installed package does: golem generates nothing for it.
+ */
+export function isOwnModelFile(boundary: ModelBoundary, filename: string): boolean {
+  const real = canonicalPath(filename);
+  return !isOutside(boundary.root, real)
+    && !relative(boundary.root, real).split(sep).includes('node_modules')
+    && boundary.anotherModelsJobOf(real) === undefined;
+}
+
+/**
+ * A lookup of the golem.yaml of another models job that covers a file inside the models root, or undefined when none does.
+ * The file is covered when such a yaml lies in the file's directory or in a directory above it, up to the root. That job
+ * generates the file with ids of its own folder, so this job must leave the file alone. A file outside the root has no such job.
  * The walk stops at the directory of this job's own golem.yaml: that one and every one above it is never another job.
  * The answer for a directory is read once.
  */
-export function anotherModelsJobCheck(ownDirectory: string, onInput?: InputObserver): (source: string) => boolean {
-  const own = canonicalFilename(ownDirectory);
+function modelsJobBelowRoot(root: string, own: string, onInput?: InputObserver): (filename: string) => string | undefined {
   const hasModelsJob = new Map<string, boolean>();
   const directoryHasModelsJob = (directory: string): boolean => {
     const known = hasModelsJob.get(directory);
@@ -160,7 +125,7 @@ export function anotherModelsJobCheck(ownDirectory: string, onInput?: InputObser
       try {
         configuration = YAML.parse(readFileSync(file, 'utf8'));
       } catch (error) {
-        // A golem.yaml that is not YAML is the project's to fix; whether it covers a source cannot be read without it.
+        // A golem.yaml that is not YAML is the project's to fix; whether it covers a file cannot be read without it.
         if (error instanceof YAML.YAMLParseError) throw new Error(`${file} is not valid YAML: ${error.message}`);
         throw error;
       }
@@ -169,26 +134,23 @@ export function anotherModelsJobCheck(ownDirectory: string, onInput?: InputObser
     hasModelsJob.set(directory, found);
     return found;
   };
-  return (source) => {
-    const sharedFolder = sharedFolderOf(source);
-    for (let directory = dirname(canonicalFilename(source)); ; directory = dirname(directory)) {
-      if (directory === own || own.startsWith(`${directory}${sep}`)) return false;
-      if (directoryHasModelsJob(directory)) return true;
-      if (directory === sharedFolder || dirname(directory) === directory) return false;
+  return (filename) => {
+    const real = canonicalPath(filename);
+    if (isOutside(root, real)) return undefined;
+    for (let directory = dirname(real); ; directory = dirname(directory)) {
+      if (directory === own || own.startsWith(`${directory}${sep}`)) return undefined;
+      if (directoryHasModelsJob(directory)) return join(directory, 'golem.yaml');
+      if (directory === root || dirname(directory) === directory) return undefined;
     }
   };
 }
 
-/**
- * The project files that `file` imports or re-exports, by canonical filename. A declaration file and a file in `node_modules`
- * are left out, and so are the packages when `relativeOnly`: a bare specifier names a package, not a place beside the file.
- */
-export function projectFilesImportedBy(file: ts.SourceFile, compilerOptions: ts.CompilerOptions, relativeOnly = false): string[] {
+/** The project files that `file` imports or re-exports, by canonical filename. A declaration file and a file in `node_modules` are left out. */
+export function projectFilesImportedBy(file: ts.SourceFile, compilerOptions: ts.CompilerOptions): string[] {
   const found = new Set<string>();
   for (const statement of file.statements) {
     const specifier = ts.isImportDeclaration(statement) || ts.isExportDeclaration(statement) ? statement.moduleSpecifier : undefined;
     if (specifier === undefined || !ts.isStringLiteralLike(specifier)) continue;
-    if (relativeOnly && !specifier.text.startsWith('.') && !isAbsolute(specifier.text)) continue;
     const resolved = ts.resolveModuleName(specifier.text, file.fileName, compilerOptions, ts.sys).resolvedModule?.resolvedFileName;
     if (resolved === undefined || isAmbientDeclaration(resolved) || /(?:^|[\\/])node_modules[\\/]/.test(resolved)) continue;
     found.add(canonicalFilename(resolved));
@@ -196,7 +158,8 @@ export function projectFilesImportedBy(file: ts.SourceFile, compilerOptions: ts.
   return [...found];
 }
 
-function isOutside(directory: string, filename: string): boolean {
+/** Whether `filename` lies outside `directory`, by path alone. */
+export function isOutside(directory: string, filename: string): boolean {
   const path = relative(canonicalFilename(directory), canonicalFilename(filename));
   return path === '..' || path.startsWith(`..${sep}`) || isAbsolute(path);
 }
