@@ -283,6 +283,7 @@ test('discriminated plain object unions convert only the selected branch', () =>
 });
 
 test('ambiguous union conversions fail generation instead of probing codecs', () => {
+  const token: ModelConversionDescriptor = { kind: 'number', serde: { id: 'token', wire: { kind: 'string' } } };
   const cases: readonly { name: string; descriptor: ModelConversionDescriptor; message: RegExp }[] = [
     {
       name: 'object variants with the same discriminator',
@@ -306,9 +307,25 @@ test('ambiguous union conversions fail generation instead of probing codecs', ()
       },
       message: /ambiguous conversions/i,
     },
+    {
+      name: 'converting scalar beside a number and an array of the same scalar',
+      descriptor: {
+        kind: 'union',
+        variants: [token, { kind: 'number' }, { kind: 'array', item: token }],
+      },
+      message: /ambiguous conversions/i,
+    },
+    {
+      name: 'converting scalar beside a string and an array of the same scalar',
+      descriptor: {
+        kind: 'union',
+        variants: [token, { kind: 'string' }, { kind: 'array', item: token }],
+      },
+      message: /ambiguous conversions/i,
+    },
   ];
   for (const { name, descriptor, message } of cases) {
-    assert.throws(() => emitModelFromJSON(descriptor, 'value', () => fromChild), message, name);
+    assert.throws(() => emitModelFromJSON(descriptor, 'value', () => fromChild, serde), message, name);
   }
 });
 

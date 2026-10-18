@@ -237,12 +237,14 @@ export function scalarOrArray(
 
 /**
  * The scalar variant whose own converter the scalar branch uses, or undefined
- * when no scalar variant needs a conversion. Two scalar variants that need a
- * conversion each cannot be told apart by the wire value, so the union is rejected.
+ * when no scalar variant needs a conversion. A scalar variant that needs a
+ * conversion must be the only scalar variant, as in a plain union: the wire
+ * value cannot tell it from its siblings, so the union is rejected.
  */
 export function scalarBranchVariant(scalars: readonly ModelTypeDescriptor[]): ModelTypeDescriptor | undefined {
   const converting = scalars.filter(descriptorNeedsConversion);
-  if (converting.length > 1) throw new Error(AMBIGUOUS_UNION_CONVERSION_ERROR);
+  if (converting.length === 0) return undefined;
+  if (scalars.length > 1) throw new Error(AMBIGUOUS_UNION_CONVERSION_ERROR);
   return converting[0];
 }
 
