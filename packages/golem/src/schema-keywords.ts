@@ -10,6 +10,11 @@ export const MODEL_DATE_KEYWORD = 'golemModelDate';
 /** Model plane only: ties a union branch to the variant class its encoder selects. */
 export const MODEL_INSTANCE_KEYWORD = 'golemModelInstance';
 /**
+ * Registry key of the codec ids a model class lists on its prototype. The runtime
+ * registers under it and generated validators read it, so both take it from here.
+ */
+export const MODEL_CODEC_IDS_KEY = '@exprtlabs/golem:modelCodecIds';
+/**
  * Placeholder `$ref` for an external generated-model codec. Emit replaces this
  * with the nested codec's runtime id and `addSchema`s that codec's payload.
  */

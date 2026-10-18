@@ -76,6 +76,7 @@ The first release candidate includes four independently installable packages:
 - Client methods create reusable operation objects. `.execute(input, options)` sends the request.
 - Clients support authentication, body codecs, cancellation and supported streaming responses.
 - With MobX enabled, each operation exposes observable `loading`. Concurrent executions are allowed and produce a warning.
+- A local `$ref` into a folder whose name starts with `..`, such as `./..shared/pet.yaml`, loads. Only a reference that leaves the input directory is rejected.
 - Controller generation reads NestJS routes and TypeScript types without starting the application.
 - Controller decorator metadata is read from literals, `const` declarations, enum members and whole enums, `const` objects, spreads and string templates. **Breaking:** a structural option (`type`, `enum`, `schema`, `format`, bounds, `required`, `nullable`, tags, security, status) that is not a compile-time constant fails generation with `NEST1504`; a non-constant documentation option (`description`, `summary`, `title`, `example`, `externalDocs`) is dropped with a `NEST1504` warning. `let` and `var` route constants are rejected.
 - `getSchemaPath()` and `refs()` become component references and honor `@ApiSchema({ name })`. `@ApiProperty` accepts `type: 'integer'`, `Date` and enums, applies to array and optional nested DTOs, and keeps metadata for every nested property.
@@ -173,6 +174,7 @@ See [OpenAPI client support](docs/reference/openapi-support.md) for supported ve
 - **Breaking:** install `@exprtlabs/golem` at or above the version the SDK was generated for, with the same major version. Generation commands fail before writing when it is older.
 - **Breaking:** codec ids in generated files change. A hand-written model and an SDK model with the same name and shape no longer share an id.
 - **Breaking:** the output inventory (`.golem/outputs.json`) records a `destination` and `destinationKind` for every file.
+- Golem sorts names, keys and imports in generated files, `.golem/outputs.json` and `.golem/codec-keys.json` by code unit, so the same sources give byte-identical files under any machine locale. Regenerate once: an order that followed your locale (such as `maximum` before `maxLength`) changes. Field order feeds the codec id, so regenerating changes codec ids and SDK `_group-<hash>` file names once. For example, the fields `eTag` and `email` swap places.
 
 ### Removed APIs (pre-1.0)
 
@@ -183,6 +185,6 @@ See [OpenAPI client support](docs/reference/openapi-support.md) for supported ve
 - `@exprtlabs/golem/serde`: `bindCodecIdToConstructor`, `lookupOperationCodec` and `PUBLIC_SERDE_CALLS` (the call table now lives with the docs).
 - `@exprtlabs/golem/conversion`: `createJsonValue`.
 - `@exprtlabs/golem/schema`: `constraintSchema`. `@exprtlabs/golem/schema-graph`: `jsonSchemaBundle` and `codecDeclarationKey`. Both entries are build-time tooling for the generators.
-- `@exprtlabs/golem/type-analysis`: `isIModelReference` (use `isModelDeclarationReference(checker, node)`). `@exprtlabs/golem/ts`: `readConfigFile`, `parseConfigFileTextToJson`, `flattenDiagnosticMessageText`, `createSourceFile`, `createProgram` (use `createProgramFromSources`) and the `errors` result of `parseJsonConfigFileContent`. `@exprtlabs/golem/emitter`: `generatedVariant`.
+- `@exprtlabs/golem/type-analysis`: `isIModelReference` (use `isModelDeclarationReference(checker, node)`). `@exprtlabs/golem/ts`: `readConfigFile`, `parseConfigFileTextToJson`, `flattenDiagnosticMessageText`, `createSourceFile`, `createProgram` (use `createProgramFromSources`) and the `errors` result of `parseJsonConfigFileContent`. `@exprtlabs/golem/emitter`: `generatedVariant` and `pruneNamedImport`.
 
 See [installation](docs/guide/install.md) for npm commands and release availability.

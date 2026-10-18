@@ -8,7 +8,6 @@ export {
   fillFunctionName,
   fromWireFunctionName,
   parseFunctionName,
-  pruneNamedImport,
   stringifyFunctionName,
   wireStringifyExportName,
   toWireFunctionName,
@@ -17,6 +16,7 @@ export {
   type NestedImportedSerde,
   type StringifySerdeResolver,
 } from './stringify-emitter.js';
+export { pruneGeneratedImports } from './generated-imports.js';
 import {
   AMBIGUOUS_UNION_CONVERSION_ERROR,
   OBJECT_UNION_DISCRIMINATOR_ERROR,

@@ -6,6 +6,7 @@ import {
   emitModelToJSON,
   emitCodecRuntime,
   fillFunctionName,
+  pruneGeneratedImports,
   type CodecRuntimeOptions,
   type FromJsonModelResolver,
   type ModelDiscriminators,
@@ -19,6 +20,7 @@ import type { DiscriminatorValue, ModelConstraint, ModelTypeDescriptor, UnionDis
 
 import { asRecord, isJsonObject, jsonLiteral, objectEntries } from './json.js';
 import {
+  compareText,
   GolemDiagnosticSeverity,
   identifier,
   NameScope,
@@ -1101,7 +1103,7 @@ function openApiValidationSchemaClosure(
   };
   return [...schemaGraph.nodes.values()]
     .filter((node) => node.kind !== 'reference')
-    .sort((left, right) => left.codecId.localeCompare(right.codecId))
+    .sort((left, right) => compareText(left.codecId, right.codecId))
     .map((node) => ({
       codecId: node.codecId,
       modelSchema: asJsonSchema(compact(node.modelJsonSchema ?? node.jsonSchema, false)),
@@ -1227,7 +1229,7 @@ function schemaGraphGroups(
     const id = `group-${hashGroup([...ids].map((nodeId) => schemaGraph.nodes.get(nodeId)?.codecId ?? nodeId))}`;
     for (const nodeId of ids) owner.set(nodeId, id);
     return { id, filename: `models/_${id}.ts`, nodes: new Set(ids), models };
-  }).sort((left, right) => left.id.localeCompare(right.id));
+  }).sort((left, right) => compareText(left.id, right.id));
   return { groups, owner, runtimeEdges };
 }
 
@@ -1260,53 +1262,6 @@ function generatedFunctionName(nodeId: string, functionName: 'stringify' | 'fill
   if (functionName === 'stringify') return `stringify${nodeId}`;
   if (functionName === 'fill') return fillFunctionName(nodeId);
   return functionName === 'fromWire' ? `fromWireFormat${nodeId}` : `toWireFormat${nodeId}`;
-}
-
-function generatedCodeWithoutLiterals(source: string): string {
-  return source.replace(
-    /\/\*[\s\S]*?\*\/|\/\/[^\n]*|`(?:\\.|[^`\\])*`|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'/g,
-    (literal) => literal.replace(/[^\n]/g, ' '),
-  );
-}
-
-function pruneGeneratedImports(source: string): string {
-  const lines = source.match(/^import[^\n]*(?:\n|$)/gm) ?? [];
-  if (lines.length === 0) return source;
-  const body = generatedCodeWithoutLiterals(source.replace(/^import[^\n]*(?:\n|$)/gm, ''));
-  const uses = (name: string): boolean => {
-    const escapedName = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    return new RegExp(`(?:^|[^\\w$])${escapedName}(?![\\w$])`).test(body);
-  };
-  const pruned = new Map<string, string>();
-  for (const line of lines) {
-    const named = line.match(/^(import\s+)(type\s+)?\{([^}]*)\}(\s+from\s+.+;)(\n?)$/);
-    if (named) {
-      const [, prefix, typeOnly, contents, suffix, newline] = named;
-      const imported = (contents ?? '').split(',').map((specifier) => specifier.trim()).filter(Boolean);
-      // An empty import list is deliberate: it only keeps a module in the program.
-      if (imported.length === 0) {
-        pruned.set(line, line);
-        continue;
-      }
-      const retained = imported.filter((specifier) => {
-        const withoutKind = specifier.replace(/^type\s+/, '');
-        const localName = withoutKind.split(/\s+as\s+/).at(-1);
-        return Boolean(localName && uses(localName));
-      });
-      pruned.set(line, retained.length
-        ? `${prefix}${typeOnly ?? ''}{ ${retained.join(', ')} }${suffix}${newline ?? ''}`
-        : '');
-      continue;
-    }
-    const namespace = line.match(/^(import\s+(?:type\s+)?\*\s+as\s+)([A-Za-z_$][\w$]*)(\s+from\s+.+;)(\n?)$/);
-    if (namespace) {
-      pruned.set(line, uses(namespace[2] ?? '') ? line : '');
-      continue;
-    }
-    // Side-effect imports are intentional: a group module's import of another group registers its codecs.
-    pruned.set(line, line);
-  }
-  return source.replace(/^import[^\n]*(?:\n|$)/gm, (line) => pruned.get(line) ?? line);
 }
 
 export function generateOpenApiModelArtifacts(
@@ -1471,7 +1426,7 @@ export function generateOpenApiModelArtifacts(
       }
     }
     const moduleImports = [...importsByModule]
-      .sort(([left], [right]) => left.localeCompare(right))
+      .sort(([left], [right]) => compareText(left, right))
       .map(([moduleName, imports]) => `import { ${[...imports].sort().join(', ')} } from ${JSON.stringify(moduleName)};`);
     const dependencyGroups = new Set([...dependencyIds].flatMap((nodeId) => {
       const dependencyGroupId = owner.get(nodeId);

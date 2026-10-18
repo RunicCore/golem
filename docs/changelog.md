@@ -38,6 +38,7 @@ Generation runs on TypeScript 6.0+ or 7.x, chosen from the `typescript` installe
 
 - **Breaking:** `@exprtlabs/golem/ts` publishes Golem-owned types narrowed to what Golem uses. Its declarations no longer reference `typescript`, and it no longer exports the `API` class or the TypeScript 7 process-client types ([`ts`](/reference/runtime-api#ts)).
 - Union members in generated types and schemas appear in a fixed order that doesn't depend on the compiler or locale. Regenerate once; member order changes, and so do the ids of generated codecs.
+- Golem sorts names, keys and imports by code unit, so the same sources write byte-identical files under any machine locale. Regenerate once: an order that followed your locale changes. Fields such as `eTag` and `email` swap places, so the ids of generated codecs and the `_group-` file names of an SDK change too.
 - On TypeScript 7, generation type-checks new files before writing them, so output that doesn't compile now fails with the compiler's message. Sibling model folders under one `tsconfig` no longer interfere.
 
 ## Validation

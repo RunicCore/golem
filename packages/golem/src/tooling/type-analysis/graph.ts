@@ -1,5 +1,6 @@
 import type { ModelConversionDescriptor } from '../model-source-emitter.js';
 import type { SerdeBinding, ValidationBinding } from './tags.js';
+import { compareText } from '../generator-api.js';
 import { canonicalConstraintKey } from '../schema.js';
 import type { ConstraintSchemaValue, ModelConstraint } from '../schema.js';
 
@@ -69,7 +70,7 @@ function canonicalIdentity(
     switch (descriptor.kind) {
       case 'object': structure = {
         kind: descriptor.kind, projection: descriptor.projection,
-        properties: Object.fromEntries(Object.entries(descriptor.properties).sort(([a], [b]) => a.localeCompare(b)).map(([key, value]) => [key, canonical(value, stack)])),
+        properties: Object.fromEntries(Object.entries(descriptor.properties).sort(([a], [b]) => compareText(a, b)).map(([key, value]) => [key, canonical(value, stack)])),
         required: [...descriptor.required].sort(), readonlyProperties: [...(descriptor.readonlyProperties ?? [])].sort(),
         additionalProperties: typeof descriptor.additionalProperties === 'object' ? canonical(descriptor.additionalProperties, stack) : descriptor.additionalProperties,
       }; break;

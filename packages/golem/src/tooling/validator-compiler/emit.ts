@@ -1,5 +1,7 @@
 import type { IrArray, IrCheck, IrDiscriminator, IrFunction, IrInstance, IrModule, IrNumber, IrObject, IrSchema, IrString, IrType, IrTypeName, IrUnion, IrValidation, IrValidationImport } from './ir.js';
 
+import { MODEL_CODEC_IDS_KEY } from '../../schema-keywords.js';
+
 export interface EmitOptions {
   /** The module specifier the generated file imports its runtime helpers from. */
   readonly runtimeModule: string;
@@ -101,15 +103,15 @@ const LOCAL_HELPERS: Readonly<Record<LocalHelper, string>> = {
     '  return nearest !== 0 && Math.abs(quotient - nearest) <= 4 * Number.EPSILON * Math.abs(nearest);',
     '}',
   ].join('\n'),
-  // The registered model class a value is an instance of, as `golemModelInstance` reads it. The symbol key must match
-  // `MODEL_CODEC_IDS` in object-codec.ts: the generated module imports nothing that registers classes. The most derived
+  // The registered model class a value is an instance of, as `golemModelInstance` reads it. The symbol key is
+  // `MODEL_CODEC_IDS_KEY`, which object-codec.ts registers under: the generated module imports nothing that registers classes. The most derived
   // registered prototype on the chain wins. A hashed codec id (`Name_1a2b3c4d`) matches exactly; an unhashed name also
   // matches the hashed ids of that name.
   selectedModel: [
     'const hashedId = /_[0-9a-f]{8}$/;',
     'function selectedModel(value, among) {',
     "  if (typeof value !== 'object' || value === null) return undefined;",
-    '  const key = Symbol.for("@exprtlabs/golem:modelCodecIds");',
+    `  const key = Symbol.for(${JSON.stringify(MODEL_CODEC_IDS_KEY)});`,
     '  const matches = (registered, id) => registered === id',
     '    || (!hashedId.test(id) && registered.length === id.length + 9 && registered.startsWith(id + "_") && hashedId.test(registered));',
     '  for (let prototype = Object.getPrototypeOf(value); prototype !== null; prototype = Object.getPrototypeOf(prototype)) {',

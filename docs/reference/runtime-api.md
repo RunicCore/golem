@@ -493,7 +493,7 @@ import type { GolemProvider, ModelContext } from '@exprtlabs/golem/generator-api
 
 The contracts, `resolveProfile` and `GolemDiagnosticSeverity` for tools that embed a generator are in the [generator API](/reference/generator-api).
 
-Used by the generators: `discoverSources`, `isRecord`, `errorMessage`, `hasErrorCode`, `identifier`, `camelIdentifier`, `bindingName`, `propertyName`, `NameScope`, `assertPortableFilenames`, `assertUniquePublicExports`, `RESERVED_BINDING_NAMES`, `RESERVED_MODEL_MEMBERS`.
+Used by the generators: `discoverSources`, `compareText`, `isRecord`, `errorMessage`, `hasErrorCode`, `identifier`, `camelIdentifier`, `bindingName`, `propertyName`, `NameScope`, `assertPortableFilenames`, `assertUniquePublicExports`, `RESERVED_BINDING_NAMES`, `RESERVED_MODEL_MEMBERS`.
 
 ## `@exprtlabs/golem/manifest` {#manifest}
 

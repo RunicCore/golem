@@ -9,7 +9,7 @@ import {
   emitCodecRuntime,
   FIELD_CONVERSION_INPUT,
   singleCallConverter,
-  pruneNamedImport,
+  pruneGeneratedImports,
   stringifyFunctionName,
   wireStringifyExportName,
   fromWireFunctionName,
@@ -22,7 +22,7 @@ import {
   type ToJsonModelResolver,
 } from '@exprtlabs/golem/emitter';
 import { createSchemaGraph, codecPublicId, codecShortName, internDescriptors, type SchemaGraph } from '@exprtlabs/golem/schema-graph';
-import { propertyName, RESERVED_MODEL_MEMBERS, type GolemProfile } from '@exprtlabs/golem/generator-api';
+import { compareText, propertyName, RESERVED_MODEL_MEMBERS, type GolemProfile } from '@exprtlabs/golem/generator-api';
 import type { ManifestIndex } from '@exprtlabs/golem/type-analysis';
 import type { ModelBoundary, ModelSpecification } from '@exprtlabs/golem/type-analysis';
 import { descriptorBuilder, propertyType } from '@exprtlabs/golem/type-analysis';
@@ -384,7 +384,7 @@ export function deduplicateTagSchemas(
     }
   }
   return [...groups.values()]
-    .sort((left, right) => left.schemaKey.localeCompare(right.schemaKey)
+    .sort((left, right) => compareText(left.schemaKey, right.schemaKey)
       || left.order - right.order)
     .map((group, index) => ({
       id: `golem:model-tag:${index}`,
@@ -412,7 +412,7 @@ function tagSchemas(
   const visit = (descriptor: ModelConversionDescriptor): void => {
     const rich = richDescriptor(descriptor);
     const constraints = [...(rich.constraints ?? [])].sort((left, right) =>
-      canonicalConstraintKey(left).localeCompare(canonicalConstraintKey(right)));
+      compareText(canonicalConstraintKey(left), canonicalConstraintKey(right)));
     const validations = [...(rich.validations ?? [])]
       .map((binding) => typeof binding === 'string' ? binding : (binding as ValidationBinding).id).sort();
     if (constraints.length > 0) {
@@ -452,7 +452,7 @@ function tagSchemas(
   };
   descriptors.forEach(visit);
   return [...schemas.entries()]
-    .sort(([left], [right]) => left.localeCompare(right))
+    .sort(([left], [right]) => compareText(left, right))
     .map(([key, schema], index) => ({ key, schema, id: `golem:model-tag:${index}` }));
 }
 
@@ -495,7 +495,7 @@ function projectDescriptor(
           true,
           retainPredicates,
           definitions,
-        )).sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right)))
+        )).sort((left, right) => compareText(JSON.stringify(left), JSON.stringify(right)))
         : [];
       const normalizedValidations = [...(rich.validations ?? [])]
         .map((binding) => typeof binding === 'string' ? binding : (binding as ValidationBinding).id)
@@ -556,7 +556,7 @@ function projectDescriptor(
   }
   const normalizedConstraints = validationEnabled
     ? constraints.map(constraint => mapConstraint(constraint, validationEnabled, wire, retainPredicates, definitions))
-      .sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right)))
+      .sort((left, right) => compareText(JSON.stringify(left), JSON.stringify(right)))
     : [];
   const normalizedValidations = [...(rich.validations ?? [])]
     .map((binding) => typeof binding === 'string' ? binding : (binding as ValidationBinding).id)
@@ -1071,7 +1071,7 @@ export function validatorImports(
     for (const binding of graph.registry.validations.values()) registerValidation(bindings, binding);
   }
   return new Map([...bindings]
-    .sort(([left], [right]) => left.localeCompare(right))
+    .sort(([left], [right]) => compareText(left, right))
     .map(([id, binding]) => [id, { importPath: bindingImportPath(binding, validatorsFile), exportName: binding.exportName }] as const));
 }
 
@@ -1142,7 +1142,7 @@ export function emitSource(
     };
     visit(descriptor);
   }
-  const classEntries = [...classImports].sort(([, left], [, right]) => `${left.importPath}\0${left.exportName}`.localeCompare(`${right.importPath}\0${right.exportName}`));
+  const classEntries = [...classImports].sort(([, left], [, right]) => compareText(`${left.importPath}\0${left.exportName}`, `${right.importPath}\0${right.exportName}`));
   const classNames = new Map(classEntries.map(([key], index) => [key, `__golemClass${index}`] as const));
   const classValueImports = classEntries.map(([key, item]) => `import type { ${item.exportName} as ${classNames.get(key)} } from ${JSON.stringify(item.importPath)};`);
   // Object-only models of another source convert through their companion's exported helpers.
@@ -1170,7 +1170,7 @@ export function emitSource(
   );
   const localImports = [...emitted]
     .filter((specification) => !local.some((item) => item === specification) && !siblingObjectNames.has(specification.name))
-    .sort((left, right) => left.name.localeCompare(right.name) || left.sourceFile.fileName.localeCompare(right.sourceFile.fileName));
+    .sort((left, right) => compareText(left.name, right.name) || compareText(left.sourceFile.fileName, right.sourceFile.fileName));
   const discriminators = (name: string): ModelDiscriminators => {
     const definition = definitions[name];
     if (definition?.kind !== 'object') return {};
@@ -1251,7 +1251,7 @@ export function emitSource(
     if (localImports.some((item) => item.name === id) && classModelNames.has(id)) return resolveImportedModel(id);
     return resolveFromJsonModel(externalNames, id);
   };
-  const serdeBindings = [...registry.serde.values()].sort((left, right) => left.id.localeCompare(right.id));
+  const serdeBindings = [...registry.serde.values()].sort((left, right) => compareText(left.id, right.id));
   const serdeNames = new Map<string, { readonly serialize: string; readonly deserialize: string }>();
   serdeBindings.forEach((binding, index) => serdeNames.set(binding.id, {
     serialize: `__golemSerialize${index}`,
@@ -1687,7 +1687,7 @@ export function emitSource(
   const ownSchemaKeys = new Set([...schemaGraph.nodes.values()]
     .filter((node) => node.kind !== 'reference' && node.descriptor.kind !== 'generated-model' && node.descriptor.kind !== 'reference')
     .flatMap((node) => [node.codecId, `${node.codecId}#wire`, `${node.codecId}#model-only`, `${node.codecId}#wire-only`]));
-  const ownPlanSchemas = Object.fromEntries(Object.entries(appOutputs.planSchemas ?? {}).filter(([key]) => ownSchemaKeys.has(key)).sort(([left], [right]) => left.localeCompare(right)));
+  const ownPlanSchemas = Object.fromEntries(Object.entries(appOutputs.planSchemas ?? {}).filter(([key]) => ownSchemaKeys.has(key)).sort(([left], [right]) => compareText(left, right)));
   const hasPlanSchemas = Object.keys(ownPlanSchemas).length > 0;
   const codecRuntime = emitCodecRuntime(
     schemaGraph,
@@ -1731,13 +1731,7 @@ export function emitSource(
   if (validators && usedValidators.size > 0) {
     lines.splice(1, 0, `import { ${[...usedValidators].sort().join(', ')} } from ${JSON.stringify(sourceImportPath(validators.module, output))};`);
   }
-  const companion = pruneExternalCodecImports(pruneNamedImport(
-    pruneNamedImport(
-      pruneNamedImport(pruneUnusedHelpers(`${lines.join('\n').trim()}\n`), '@exprtlabs/golem/serde'),
-      '@exprtlabs/golem/conversion',
-    ),
-    '@exprtlabs/golem/model',
-  ));
+  const companion = pruneGeneratedImports(pruneUnusedHelpers(`${lines.join('\n').trim()}\n`));
   assertExternalImportsExported(companion, externalIds, manifestIndex, source, output);
   return companion;
 }
@@ -1792,31 +1786,4 @@ function assertExternalImportsExported(
       );
     }
   }
-}
-
-function specifierLocalName(specifier: string): string {
-  let name = specifier.trim();
-  if (name.startsWith('type ')) name = name.slice('type '.length).trim();
-  const alias = name.split(/\s+as\s+/);
-  return (alias.length === 2 ? alias[1] : name).trim();
-}
-
-/** Drop codec helpers an external model import never calls. Keep the class when the body uses it. */
-function pruneExternalCodecImports(source: string): string {
-  return source.replace(
-    /import \{([^}]+)\} from ("(?:\\.|[^"])+");\n?/g,
-    (statement, names: string) => {
-      const specifiers = names.split(',').map((name) => name.trim()).filter((name) => name.length > 0);
-      const importsCodecHelper = specifiers.some((name) => /^(?:stringify|fromWireFormat|toWireFormat)/.test(specifierLocalName(name)));
-      if (!importsCodecHelper) return statement.endsWith('\n') ? statement : `${statement}\n`;
-      const body = source.split(statement).join('');
-      const used = specifiers.filter((name) => {
-        const local = specifierLocalName(name);
-        return local.length > 0 && new RegExp(`\\b${local.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`).test(body);
-      });
-      if (used.length === 0) return '';
-      const from = statement.slice(statement.lastIndexOf(' from ') + ' from '.length).replace(/;\n?$/, '');
-      return `import { ${used.join(', ')} } from ${from};\n`;
-    },
-  );
 }

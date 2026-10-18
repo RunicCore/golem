@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 
-import { DEFAULT_MODEL_SUFFIXES, canonicalPath, hasErrorCode, isRecord, suffixPattern } from './generator-api.js';
+import { DEFAULT_MODEL_SUFFIXES, canonicalPath, compareText, hasErrorCode, isRecord, suffixPattern } from './generator-api.js';
 import type { GolemArtifact } from './generator-api.js';
 import { contains } from './config.js';
 import { codecKeysPath, defaultModelOutput, isOperationCodecRegistry, operationCodecRegistryPath } from './generated-paths.js';
@@ -294,7 +294,7 @@ export function atomicWrite(filename: string, content: string): boolean {
 function saveInventory(config: GolemConfig, inventory: Inventory): void {
   assertInventoryPath(config);
   const files = Object.fromEntries(Object.entries(inventory.files)
-    .sort(([a], [b]) => a.localeCompare(b))
+    .sort(([a], [b]) => compareText(a, b))
     .map(([filename, entry]) => [filename, {
       job: entry.job,
       owner: entry.owner,
