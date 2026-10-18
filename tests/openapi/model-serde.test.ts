@@ -252,6 +252,47 @@ function discriminatedUnionSerdeDocument(): Record<string, unknown> {
   };
 }
 
+function tupleSerdeDocument(): Record<string, unknown> {
+  return {
+    openapi: '3.1.0',
+    info: { title: 'TupleSerde', version: '1' },
+    paths: {
+      '/itineraries': {
+        get: {
+          operationId: 'getItinerary',
+          responses: {
+            200: {
+              description: 'ok',
+              content: { 'application/json': { schema: { $ref: '#/components/schemas/Itinerary' } } },
+            },
+          },
+        },
+      },
+    },
+    components: {
+      schemas: {
+        Itinerary: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['stops', 'leg'],
+          properties: {
+            stops: {
+              type: 'array',
+              prefixItems: [{ type: 'string' }],
+              items: { type: 'string', format: 'date-time' },
+            },
+            leg: {
+              type: 'array',
+              prefixItems: [{ type: 'string' }, { type: 'string', format: 'date-time' }],
+              items: false,
+            },
+          },
+        },
+      },
+    },
+  };
+}
+
 async function assertNestedDateInheritedAndDictionaryConversions(
   models: Record<string, unknown>,
   label: string,
@@ -505,4 +546,41 @@ test('generated discriminated unions infer abstract, concrete, and handwritten s
   assert.equal('fromJSON' in (modelExports.PetModel as object), false);
   assert.equal('fromJSON' in (modelExports.CatModel as object), false);
   assert.equal('toJSON' in (cat as object), false);
+});
+
+test('a tuple field converts each item by its own schema: the prefix stays a string and the rest items are Dates', async t => {
+  const output = path.join(createFixtureProject(t, 'golem-openapi-tuple-serde-'), 'sdk');
+  await generateMaterializedSdk(tupleSerdeDocument(), {
+    output,
+    name: 'TupleSerde',
+    profile: { mobx: false, validation: false, allowAny: false },
+  });
+  copyFixtureFile(output, 'openapi/model-serde/tuple-types.ts', 'tuple-types.ts');
+  compileGeneratedSdk(output, [path.join(output, 'tuple-types.ts')], { strict: true, skipLibCheck: true });
+
+  const models = requireRecord(
+    await import(pathToFileURL(path.join(output, 'dist/index.js')).href),
+    'generated tuple models',
+  );
+  const ItineraryModel = models.ItineraryModel as unknown as new (values?: Record<string, unknown>) => Record<string, unknown>;
+
+  const itinerary = decodeGeneratedModel(ItineraryModel, {
+    stops: ['label', '2024-05-06T07:08:09.000Z'],
+    leg: ['gate', '2024-05-07T08:09:10.000Z'],
+  });
+  assert.deepEqual(itinerary.stops, ['label', new Date('2024-05-06T07:08:09.000Z')]);
+  assert.deepEqual(itinerary.leg, ['gate', new Date('2024-05-07T08:09:10.000Z')]);
+  assert.deepEqual(encodeGeneratedModel(generated(itinerary)), {
+    stops: ['label', '2024-05-06T07:08:09.000Z'],
+    leg: ['gate', '2024-05-07T08:09:10.000Z'],
+  });
+
+  assert.throws(
+    () => decodeGeneratedModel(ItineraryModel, { stops: ['label', '2024-05-06T07:08:09.000Z', 'not a date'], leg: [] }),
+    (error: unknown): true => {
+      assert.ok(error instanceof LibError);
+      assert.deepEqual(error.issues[0]?.path, ['stops', 2]);
+      return true;
+    },
+  );
 });

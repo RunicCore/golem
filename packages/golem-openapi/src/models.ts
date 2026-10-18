@@ -33,7 +33,7 @@ import { effectiveSchemaTypes, resolveLocal, type OpenApiSchema } from './normal
 import { generatedBanner, GENERATOR_NAME, PACKAGE_VERSION } from './package-info.js';
 import type { OpenApiGenerationProfile } from './profile.js';
 import { requireProfile } from './profile.js';
-import { schemaContext, schemaType, type SchemaTypeContext } from './types.js';
+import { prefixItemsType, schemaContext, schemaType, type SchemaTypeContext } from './types.js';
 import {
   collectCanonicalResources,
   nextSchemaBase,
@@ -293,6 +293,9 @@ function modelFieldType(
       .map((type) => `(${type})`)
       .join(' | ');
   }
+  if (isJsonObject(schema) && schema.type === 'array' && Array.isArray(schema.prefixItems)) {
+    return prefixItemsType(schema, (item) => modelFieldType(item, definitions, nested, seen));
+  }
   if (isJsonObject(schema) && schema.type === 'array' && schema.items) {
     return `Array<${modelFieldType(schema.items, definitions, nested, seen)}>`;
   }
@@ -413,6 +416,20 @@ function modelConversionDescriptor(
     return mergeAllOfDescriptors(
       schema.allOf.map((item) => modelConversionDescriptor(item, definitions, nested, direction, seen)),
     );
+  }
+  if (isJsonObject(schema) && schema.type === 'array' && Array.isArray(schema.prefixItems)) {
+    // Each prefix item converts by its own schema; `items` converts the items after the prefix.
+    const items = schema.prefixItems.map((item) => modelConversionDescriptor(item, definitions, nested, direction, seen));
+    return schema.items === false
+      ? { kind: 'tuple', items }
+      : {
+        kind: 'tuple',
+        items,
+        rest: {
+          index: items.length,
+          item: schema.items === undefined ? { kind: 'unknown' } : modelConversionDescriptor(schema.items, definitions, nested, direction, seen),
+        },
+      };
   }
   if (isJsonObject(schema) && schema.type === 'array' && schema.items) {
     return {

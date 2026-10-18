@@ -126,6 +126,7 @@ The first release candidate includes four independently installable packages:
 - An `x-` key under `paths` or `webhooks` is an extension, not a path item: validation and schema generation skip it.
 - **Breaking:** `collectLocalReferenceInputs` from `@exprtlabs/golem-openapi/generator` now returns a `Promise`.
 - A name in the `required` list of any `allOf` member is required in the generated TypeScript type wherever a member declares the property, as the validator already required it (`allOf: [{ $ref: Pet }, { required: [name] }]` makes `name` required in that type; `Pet` itself is unchanged), including inside the `oneOf` and `anyOf` branches of an `allOf` member, and a schema's own `required` names that it does not declare itself apply to its own `oneOf` and `anyOf` branches.
+- Fixed: a generated model's `prefixItems` tuple field converts each item by its own schema. With `prefixItems: [{ type: string }]` and `items: { type: string, format: date-time }`, the first item stays a string and the rest decode to `Date`; before, every item was converted as a `Date`, so the string failed to decode. The field type is the tuple (`[] | [string] | [string, ...Date[]]`), not `Date[]`, and a tuple with `items: false` converts its items too.
 
 See [OpenAPI client support](docs/reference/openapi-support.md) for supported versions and contract limitations.
 
