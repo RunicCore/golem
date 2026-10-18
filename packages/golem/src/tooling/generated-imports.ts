@@ -9,7 +9,7 @@ function generatedCodeWithoutLiterals(source: string): string {
 /** One import statement, with the rest of its last line. Only a name list in braces may span lines. */
 const IMPORT_STATEMENT = /^import\s(?:[^;{\n]|\{[^}]*\})*;[^\n]*(?:\n|$)/gm;
 const NAMED_IMPORT = /^(import\s+)(type\s+)?\{([^}]*)\}(\s+from\s+[^;]+;)([^\n]*\n?)$/;
-const NAMESPACE_IMPORT = /^import\s+(?:type\s+)?\*\s+as\s+([A-Za-z_$][\w$]*)\s+from\s+[^;]+;/;
+const NAMESPACE_IMPORT = /^import\s+(?:type\s+)?\*\s+as\s+([\p{ID_Start}$_][\p{ID_Continue}$]*)\s+from\s+[^;]+;/u;
 
 /**
  * Drop the imported names that generated code never uses, and the import statement when none is left.
@@ -18,7 +18,7 @@ const NAMESPACE_IMPORT = /^import\s+(?:type\s+)?\*\s+as\s+([A-Za-z_$][\w$]*)\s+f
  * such as a sibling companion that registers its codecs. Default imports stay too.
  */
 export function pruneGeneratedImports(source: string): string {
-  const used = new Set(generatedCodeWithoutLiterals(source.replace(IMPORT_STATEMENT, '')).match(/[\w$]+/g));
+  const used = new Set(generatedCodeWithoutLiterals(source.replace(IMPORT_STATEMENT, '')).match(/[\p{ID_Continue}$]+/gu));
   return source.replace(IMPORT_STATEMENT, (statement) => {
     const named = NAMED_IMPORT.exec(statement);
     if (named) {

@@ -184,6 +184,6 @@ See [OpenAPI client support](docs/reference/openapi-support.md) for supported ve
 - `@exprtlabs/golem/serde`: `bindCodecIdToConstructor`, `lookupOperationCodec` and `PUBLIC_SERDE_CALLS` (the call table now lives with the docs).
 - `@exprtlabs/golem/conversion`: `createJsonValue`.
 - `@exprtlabs/golem/schema`: `constraintSchema`. `@exprtlabs/golem/schema-graph`: `jsonSchemaBundle` and `codecDeclarationKey`. Both entries are build-time tooling for the generators.
-- `@exprtlabs/golem/type-analysis`: `isIModelReference` (use `isModelDeclarationReference(checker, node)`). `@exprtlabs/golem/ts`: `readConfigFile`, `parseConfigFileTextToJson`, `flattenDiagnosticMessageText`, `createSourceFile`, `createProgram` (use `createProgramFromSources`) and the `errors` result of `parseJsonConfigFileContent`. `@exprtlabs/golem/emitter`: `generatedVariant`.
+- `@exprtlabs/golem/type-analysis`: `isIModelReference` (use `isModelDeclarationReference(checker, node)`). `@exprtlabs/golem/ts`: `readConfigFile`, `parseConfigFileTextToJson`, `flattenDiagnosticMessageText`, `createSourceFile`, `createProgram` (use `createProgramFromSources`) and the `errors` result of `parseJsonConfigFileContent`. `@exprtlabs/golem/emitter`: `generatedVariant` and `pruneNamedImport`.
 
 See [installation](docs/guide/install.md) for npm commands and release availability.
