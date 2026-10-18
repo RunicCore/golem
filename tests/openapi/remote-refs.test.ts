@@ -328,7 +328,7 @@ test('streamed native bodies never fall back to response.text() and past the cap
   assert.equal(cancelled, true);
 });
 
-test('maxRefBytes timeout is preserved through body read and cancels the reader', { timeout: 2_000 }, async (t) => {
+test('maxRefBytes timeout is preserved through body read and cancels the reader', async (t) => {
   let cancelled = false;
   // Node's AbortSignal.timeout timer is unref'ed. Keep this deliberately
   // pending mock reader alive until the timeout callback can run.

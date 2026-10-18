@@ -3,7 +3,7 @@ import test from 'node:test';
 import { checkFeatures } from '../scripts/benchmark/feature-check.js';
 import { FEATURE_FIXTURES, MODES, OPERATIONS } from '../scripts/benchmark/fixture-contract.js';
 
-test('Golem feature fixtures pass correctness checks for every operation in every mode', { timeout: 600_000 }, () => {
+test('Golem feature fixtures pass correctness checks for every operation in every mode', () => {
   const result = checkFeatures();
   assert.deepEqual(result.fixtures, [...FEATURE_FIXTURES]);
   assert.deepEqual(result.modes.map(m => m.mode), [...MODES]);

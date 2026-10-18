@@ -2,19 +2,17 @@ import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
-export interface CommandOptions { readonly env?: NodeJS.ProcessEnv; readonly timeout?: number; readonly allowFailure?: boolean }
+export interface CommandOptions { readonly env?: NodeJS.ProcessEnv; readonly allowFailure?: boolean }
 export interface NpmOptions { readonly includeOptional?: boolean; readonly env?: NodeJS.ProcessEnv }
 export interface CommandResult { readonly code: number | null; readonly signal: NodeJS.Signals | null; readonly stdout: string; readonly stderr: string }
 
 export const workspace = fileURLToPath(new URL('../../../', import.meta.url));
 /** The workspace's `golem` CLI, for a project that does not link it into its own node_modules. */
 export const golem = path.join(workspace, 'packages/golem/dist/bin/golem.js');
-/** Time a timed-out command's process group gets to exit after SIGTERM before SIGKILL. */
-export const KILL_GRACE_MS = 5000;
 
-// Children run in their own process groups so a timeout can end their whole
-// tree. A test process that is itself stopped (a file timeout, Ctrl-C) would
-// leave those groups running, so it ends them on the way out.
+// Children run in their own process groups so that they end with the test process. A test process that is
+// stopped (the tier ceiling, Ctrl-C) would leave those groups running, so it ends them on the way out.
+// A command has no time limit here: the tier ceiling is the one hang catcher.
 const liveGroups = new Set<number>();
 let exitCleanupInstalled = false;
 
@@ -43,25 +41,12 @@ export function command(cwd: string, executable: string, args: readonly string[]
     const group = process.platform !== 'win32';
     const child = spawn(executable, args, { cwd, env, stdio: ['ignore', 'pipe', 'pipe'], detached: group });
     if (group && child.pid) { installExitCleanup(); liveGroups.add(child.pid); }
-    let stdout = '', stderr = '', timedOut = false;
-    let escalation: NodeJS.Timeout | undefined;
-    const signal = (name: NodeJS.Signals): void => {
-      try { if (group && child.pid) process.kill(-child.pid, name); else child.kill(name); } catch { /* already exited */ }
-    };
+    let stdout = '', stderr = '';
     child.stdout.on('data', value => { stdout += value; });
     child.stderr.on('data', value => { stderr += value; });
-    const limit = options.timeout ?? 120_000;
-    const timer = setTimeout(() => {
-      timedOut = true;
-      signal('SIGTERM');
-      escalation = setTimeout(() => signal('SIGKILL'), KILL_GRACE_MS);
-    }, limit);
-    child.once('error', error => { clearTimeout(timer); clearTimeout(escalation); if (child.pid) liveGroups.delete(child.pid); reject(error); });
+    child.once('error', error => { if (child.pid) liveGroups.delete(child.pid); reject(error); });
     child.once('close', (code, exitSignal) => {
-      clearTimeout(timer); clearTimeout(escalation);
       if (child.pid) liveGroups.delete(child.pid);
-      // A timed-out child's descendants may still hold the group; end them too.
-      if (timedOut) { signal('SIGKILL'); reject(new Error(`Timed out after ${limit} ms: ${executable} ${args.join(' ')}\n${stderr.slice(-4000)}`)); return; }
       const result = { code, signal: exitSignal, stdout, stderr };
       if ((code !== 0 || exitSignal !== null) && !options.allowFailure) reject(new Error(`${executable} ${args.join(' ')} failed (${code}):\n${stdout.slice(-6000)}\n${stderr.slice(-6000)}`));
       else resolve(result);

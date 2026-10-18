@@ -5,11 +5,11 @@ import path from 'node:path';
 import test from 'node:test';
 import { parseArguments } from '#golem/cli';
 import { command } from './support/process.js';
-import { TSC, HEAVY_TEST_TIMEOUT_MS, REJECTION, write, editTsconfig, serdeProject, sourceOnlyProject, countingGenerator, USE, snapshot, build, buildAndListJobs, mtimes, importBuilt, golemBuild, assertCallMap } from './support/build-project.js';
+import { TSC, REJECTION, write, editTsconfig, serdeProject, sourceOnlyProject, countingGenerator, USE, snapshot, build, buildAndListJobs, mtimes, importBuilt, golemBuild, assertCallMap } from './support/build-project.js';
 
 // Original sources are checked, rewritten sources are emitted
 
-test('golem build checks the original sources and emits the rewritten ones', { timeout: HEAVY_TEST_TIMEOUT_MS }, async (t) => {
+test('golem build checks the original sources and emits the rewritten ones', async (t) => {
   const root = serdeProject(t, 'build-main');
   write(root, 'src/use.ts', USE);
   write(root, 'src/plain.ts', 'export const answer: number = 42;\n');
@@ -66,7 +66,7 @@ export function load(t: string) { return parse<Payment>(t); }
 
 // Generating first, and incremental builds
 
-test('a project with no generated file builds in one golem build, and the built JavaScript runs', { timeout: HEAVY_TEST_TIMEOUT_MS }, async (t) => {
+test('a project with no generated file builds in one golem build, and the built JavaScript runs', async (t) => {
   const root = sourceOnlyProject(t, 'build-generates');
   write(root, 'src/use.ts', USE);
   const companion = path.join(root, 'src/money.model.generated.ts');
@@ -78,7 +78,7 @@ test('a project with no generated file builds in one golem build, and the built 
   assert.deepEqual(built.money, { currency: 'USD', value: '1' });
 });
 
-test('a second build with no change runs no job and emits nothing again', { timeout: HEAVY_TEST_TIMEOUT_MS }, async (t) => {
+test('a second build with no change runs no job and emits nothing again', async (t) => {
   const root = sourceOnlyProject(t, 'build-second');
   write(root, 'src/use.ts', USE);
   countingGenerator(root);
@@ -159,7 +159,7 @@ test('an argument golem build sets itself is rejected with the reason and the wo
   assert.equal(fs.existsSync(path.join(root, 'build')), false, 'a rejected argument builds nothing');
 });
 
-test('a forwarded --declaration writes declarations from the original sources', { timeout: HEAVY_TEST_TIMEOUT_MS }, async (t) => {
+test('a forwarded --declaration writes declarations from the original sources', async (t) => {
   const root = sourceOnlyProject(t, 'build-declaration-argument');
   editTsconfig(root, (tsconfig) => { tsconfig.compilerOptions.declaration = false; });
   write(root, 'src/use.ts', USE);

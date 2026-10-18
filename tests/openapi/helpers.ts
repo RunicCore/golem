@@ -35,19 +35,12 @@ export function requireRecord(value: unknown, label: string): Record<string, unk
 export function writeGeneratedSdk(
   writeSdk: typeof WriteSdk,
   document: unknown,
-  options: { output: string; name?: string; profile?: OpenApiGenerationProfile; check?: boolean },
+  options: { output: string; name?: string; profile?: OpenApiGenerationProfile },
 ): ReturnType<typeof WriteSdk> {
   const output = resolve(options.output);
   const profile = options.profile ?? defaultTestProfile;
   const result = writeSdk(document, { output, name: options.name, profile });
-  if (options.check) {
-    const changed = result.artifacts.filter(({ path: filename, content }) =>
-      !existsSync(filename) || readFileSync(filename, 'utf8') !== content,
-    ).map(({ path: filename }) => basename(filename));
-    if (changed.length) throw new Error(`generated SDK is stale: ${changed.join(', ')}`);
-  } else {
-    writeGeneratedArtifacts(result.artifacts);
-  }
+  writeGeneratedArtifacts(result.artifacts);
   prepareSdkProject(output);
   for (const name of ['typescript', '@types/node'] as const) {
     const source = join(repoRoot(), 'node_modules', name);

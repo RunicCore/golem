@@ -40,7 +40,6 @@ async function generateArtifacts(
   // An explicit undefined removes GOLEM_TYPESCRIPT_ROOT even when this process runs in the TypeScript 6 lane.
   const run = await command(workspace, process.execPath, [path.join(workspace, '.build/tests/support/identity-generate.js'), casesFile, outputDirectory], {
     env: { GOLEM_TYPESCRIPT_ROOT: typescriptRoot },
-    timeout: 60_000,
   });
   const artifacts = new Map<string, string>();
   const visit = (directory: string): void => {
