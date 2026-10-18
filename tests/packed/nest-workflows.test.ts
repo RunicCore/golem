@@ -28,7 +28,7 @@ test(`packed Nest consumer round trips on ${ADAPTERS.join(' and ')}`, async t =>
     // arrays, invalid body and query, malformed JSON, rejection before the
     // controller runs, and codec identity. It throws on any failure.
     await t.test(adapter, async () => {
-      await command(root, process.execPath, ['verify.mjs'], { env: { TEST_HTTP_ADAPTER: adapter }, timeout: 120_000 });
+      await command(root, process.execPath, ['verify.mjs'], { env: { TEST_HTTP_ADAPTER: adapter } });
     });
   }
 });

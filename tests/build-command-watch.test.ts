@@ -6,7 +6,7 @@ import path from 'node:path';
 import test, { type TestContext } from 'node:test';
 import { runBuild } from '#golem/build';
 import { createModelProject, MINIMAL_GOLEM_YAML } from './model-project.js';
-import { HEAVY_TEST_TIMEOUT_MS, write, serdeProject, sourceOnlyProject, countingGenerator, USE, snapshot } from './support/build-project.js';
+import { write, serdeProject, sourceOnlyProject, countingGenerator, USE, snapshot } from './support/build-project.js';
 import { golem, workspace } from './support/process.js';
 
 /** How long a watching build gets to exit after SIGINT before the test fails with what it printed. */
@@ -49,7 +49,7 @@ async function until(condition: () => boolean, label: string, timeout = 20_000):
 
 const count = (output: string, pattern: RegExp): number => output.split('\n').filter((line) => pattern.test(line)).length;
 
-test('golem build --watch rebuilds once per edit, reports an error, recovers, and sees a new file', { timeout: HEAVY_TEST_TIMEOUT_MS }, async (t) => {
+test('golem build --watch rebuilds once per edit, reports an error, recovers, and sees a new file', async (t) => {
   const root = serdeProject(t, 'build-watch');
   write(root, 'src/use.ts', USE);
   const before = snapshot(root);
@@ -91,7 +91,7 @@ test('golem build --watch rebuilds once per edit, reports an error, recovers, an
   assert.deepEqual(after, expected, 'a watching build changes no file it does not own');
 });
 
-test('golem build --watch rebuilds for an edit to a source outside the tsconfig directory and for a file added beside it', { timeout: HEAVY_TEST_TIMEOUT_MS }, async (t) => {
+test('golem build --watch rebuilds for an edit to a source outside the tsconfig directory and for a file added beside it', async (t) => {
   const { root: outer } = createModelProject(t, { prefix: 'golem-build-watch-shared-', name: 'build-watch-shared', linkTypescript: true, packages: { '@exprtlabs/golem-model': path.join(workspace, 'packages/golem-model') } });
   const app = path.join(outer, 'app');
   write(app, 'package.json', '{"name":"watch-shared-app","type":"module"}');
@@ -116,7 +116,7 @@ test('golem build --watch rebuilds for an edit to a source outside the tsconfig 
   assert.equal(await watcher.stop(), 130);
 });
 
-test('golem build --watch regenerates and rebuilds once after a model edit; any other source edit rebuilds and reruns the models job, which reads the whole project', { timeout: HEAVY_TEST_TIMEOUT_MS }, async (t) => {
+test('golem build --watch regenerates and rebuilds once after a model edit; any other source edit rebuilds and reruns the models job, which reads the whole project', async (t) => {
   const root = sourceOnlyProject(t, 'build-watch-generate');
   write(root, 'src/use.ts', USE);
   countingGenerator(root);
@@ -161,7 +161,7 @@ test('golem build --watch regenerates and rebuilds once after a model edit; any 
   for (const file of ['golem.yaml', 'package.json', 'tsconfig.json']) assert.equal(after.get(file), before.get(file), `${file} is not a file golem build owns`);
 });
 
-test('a source edited the moment the first build is announced still starts the next build', { timeout: HEAVY_TEST_TIMEOUT_MS }, async (t) => {
+test('a source edited the moment the first build is announced still starts the next build', async (t) => {
   const root = serdeProject(t, 'build-watch-announce');
   write(root, 'src/use.ts', USE);
   const controller = new AbortController();
@@ -183,7 +183,7 @@ test('a source edited the moment the first build is announced still starts the n
   assert.match(fs.readFileSync(path.join(root, 'build/use.js'), 'utf8'), /second = 2/);
 });
 
-test('a source fixed while the first build is still running starts the next build', { timeout: HEAVY_TEST_TIMEOUT_MS }, async (t) => {
+test('a source fixed while the first build is still running starts the next build', async (t) => {
   const root = serdeProject(t, 'build-watch-first');
   write(root, 'src/use.ts', `${USE}export const wrong: number = 'text';\n`);
   const controller = new AbortController();

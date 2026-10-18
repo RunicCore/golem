@@ -48,7 +48,6 @@ test('(g) the facade refuses a TypeScript 7 project that is not the install gole
   const result = await command(workspace, process.execPath, ['--input-type=module', '-e', "await import('#golem/typescript-ns');"], {
     env: { GOLEM_TYPESCRIPT_ROOT: root },
     allowFailure: true,
-    timeout: 30_000,
   });
   assert.notEqual(result.code, 0);
   assert.match(result.stderr, /golem loads TypeScript 7 .* but the project uses 7\.0\.2 at .*; install one TypeScript 7 for both/);

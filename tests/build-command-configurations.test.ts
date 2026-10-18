@@ -10,7 +10,7 @@ import { createControllerFixture } from './fixture-templates/controllers/project
 import { command, workspace } from './support/process.js';
 import { createModelProject, MINIMAL_GOLEM_YAML } from './model-project.js';
 import { ORDER_WIRE, runSite, sharedFolderProject } from './support/shared-folder-project.js';
-import { TSC, HEAVY_TEST_TIMEOUT_MS, write, editTsconfig, serdeProject, sourceOnlyProject, PAYMENTS_CONTROLLER, USE, snapshot, build, mtimes, importBuilt, assertCallMap } from './support/build-project.js';
+import { TSC, write, editTsconfig, serdeProject, sourceOnlyProject, PAYMENTS_CONTROLLER, USE, snapshot, build, mtimes, importBuilt, assertCallMap } from './support/build-project.js';
 
 // Output the incremental state cannot see, and configurations that differ in one directory
 
@@ -68,7 +68,7 @@ test('a noEmit or emitDeclarationOnly project is checked and writes no JavaScrip
 
 // Decorator metadata
 
-test('a Nest controller builds with the design:paramtypes of a plain tsc emit of the original', { timeout: HEAVY_TEST_TIMEOUT_MS }, async (t) => {
+test('a Nest controller builds with the design:paramtypes of a plain tsc emit of the original', async (t) => {
   const nest = 'controllers/nest-plugin/project';
   const root = createControllerFixture(t, {
     prefix: 'golem-build-nest-',
@@ -326,7 +326,7 @@ test('a staged copy of a source that left the program is pruned and the node_mod
   assert.equal(fs.readFileSync(path.join(outer, 'shared/util.ts'), 'utf8'), "import { Dep } from '@fixture/dep';\nexport const value = (dep: Dep): string => dep.name;\n");
 });
 
-test('a rewrite site in a source outside the tsconfig directory passes golem check, is rewritten by golem build, and its source map names the original file and line', { timeout: HEAVY_TEST_TIMEOUT_MS }, async (t) => {
+test('a rewrite site in a source outside the tsconfig directory passes golem check, is rewritten by golem build, and its source map names the original file and line', async (t) => {
   const { outer, app } = appBesideShared(t, 'build-shared-site', { sourceMap: true });
   copyFixtureFile(app, 'models/serde/base-payment-model/money.model.ts', 'src/money.model.ts');
   write(app, 'src/main.ts', "export const main: number = 1;\n");
@@ -346,7 +346,7 @@ test('a rewrite site in a source outside the tsconfig directory passes golem che
 
 const CONFIG_OF = (app: string): string => path.join(app, 'golem.yaml');
 
-test('each app builds and runs a model over the shared plain types under its own profile', { timeout: HEAVY_TEST_TIMEOUT_MS }, async (t) => {
+test('each app builds and runs a model over the shared plain types under its own profile', async (t) => {
   const project = sharedFolderProject(t, 'shared-folder-run');
   for (const app of [project.appA, project.appB]) {
     await runPipeline(CONFIG_OF(app));
@@ -365,7 +365,7 @@ test('each app builds and runs a model over the shared plain types under its own
   assert.deepEqual(appB, { wire: null, validityObservable: null, accepted: { currency: 'US', value: '5' }, rejected: null });
 });
 
-test('tsc type-checks both apps with no paths entry', { timeout: HEAVY_TEST_TIMEOUT_MS }, async (t) => {
+test('tsc type-checks both apps with no paths entry', async (t) => {
   const project = sharedFolderProject(t, 'shared-folder-tsc');
   for (const app of [project.appA, project.appB]) {
     await runPipeline(CONFIG_OF(app));
@@ -375,7 +375,7 @@ test('tsc type-checks both apps with no paths entry', { timeout: HEAVY_TEST_TIME
   }
 });
 
-test('an app built with plain tsc runs its generated models under node with no imports entry', { timeout: HEAVY_TEST_TIMEOUT_MS }, async (t) => {
+test('an app built with plain tsc runs its generated models under node with no imports entry', async (t) => {
   const { appA } = sharedFolderProject(t, 'shared-folder-plain-tsc');
   write(appA, 'src/plain.ts', `import { parseTMoney } from './order.model.generated.js';
 

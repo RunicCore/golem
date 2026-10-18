@@ -14,8 +14,6 @@ import { command, golem, workspace } from './process.js';
 
 export const TSC = path.join(resolveTypeScript(process.env.GOLEM_TYPESCRIPT_ROOT ?? workspace).packageDir, 'bin/tsc');
 export const PROFILE = { mobx: false, validation: true } as const;
-/** A heavy test is bounded below the file's 90 s budget, so a kill names the test. */
-export const HEAVY_TEST_TIMEOUT_MS = 45_000;
 export const REJECTION = 'golem build does not support project references (-b); run golem build -p <tsconfig> per project.';
 
 // Fixture projects

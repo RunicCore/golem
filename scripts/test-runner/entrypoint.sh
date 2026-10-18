@@ -66,7 +66,7 @@ export GOLEM_TYPESCRIPT6_ROOT="$typescript6_root"
 # npm ci ran before packages/*/dist existed, so workspace bins (golem) were not linked; link them now, without lifecycle scripts.
 npm rebuild --ignore-scripts --no-audit --no-fund
 # Run-level ceiling (F1: no run exceeds 10 min). It is the one hang catcher: a test step passes no
-# per-file or per-test limit, so a loaded host never fails a file that works. A hung file process or a
+# per-file or per-test limit, so a loaded host does not fail a file that works. A hung file process or a
 # stuck await is ended here, and the files that started and did not finish are named below.
 case "$tier" in
   focused) ceiling=180 ;; full) ceiling=450 ;; acceptance) ceiling=600 ;; docs) ceiling=300 ;; prepare) ceiling=300 ;;
