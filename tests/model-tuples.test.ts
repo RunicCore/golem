@@ -5,6 +5,7 @@ import { pathToFileURL } from 'node:url';
 import test, { type TestContext } from 'node:test';
 
 import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/golem/conversion';
+import { LibError } from '@exprtlabs/golem/errors';
 import { requireObjectCodec } from '@exprtlabs/golem/serde';
 import { createSchemaGraph } from '@exprtlabs/golem/schema-graph';
 import { command } from './support/process.js';
@@ -159,21 +160,15 @@ test('a codec decode error names the index of a bad tuple item and of a bad item
   await buildModelProject(root);
   const codec = requireObjectCodec(generatedCodecIdFromRoot(root, 'TTuple'));
 
-  const base = { required: ['required', 9], maybe: ['x'], rest: ['prefix', true] };
-  const failure = (override: object): readonly (string | number)[] => {
-    try {
-      codec.fromWireFormat({ ...base, ...override }, { validate: false });
-    } catch (error) {
-      assert.ok(error instanceof Error && 'issues' in error && Array.isArray(error.issues));
-      const [issue] = error.issues;
-      assert.ok(typeof issue === 'object' && issue !== null && 'path' in issue && Array.isArray(issue.path));
-      return issue.path;
-    }
-    return assert.fail('Expected the decode to throw.');
+  const decode = (override: object) => () =>
+    codec.fromWireFormat({ required: ['required', 9], maybe: ['x'], rest: ['prefix', true], ...override }, { validate: false });
+  const failsAt = (path: readonly (string | number)[]) => (error: unknown): true => {
+    assert.ok(error instanceof LibError);
+    assert.deepEqual(error.issues[0]?.path, path);
+    return true;
   };
 
-  const date = '2024-05-06T07:08:09.000Z';
-  assert.deepEqual(failure({ dated: ['first', date, 'not a date', date] }), ['dated', 2]);
-  assert.deepEqual(failure({ dated: ['first', date, 'not a date'] }), ['dated', 2]);
-  assert.deepEqual(failure({ when: [date, 'not a date'] }), ['when', 1]);
+  assert.throws(decode({ dated: ['first', '2024-05-06T07:08:09.000Z', 'not a date', '2024-05-06T07:08:09.000Z'] }), failsAt(['dated', 2]));
+  assert.throws(decode({ dated: ['first', '2024-05-06T07:08:09.000Z', 'not a date'] }), failsAt(['dated', 2]));
+  assert.throws(decode({ when: ['2024-05-06T07:08:09.000Z', 'not a date'] }), failsAt(['when', 1]));
 });

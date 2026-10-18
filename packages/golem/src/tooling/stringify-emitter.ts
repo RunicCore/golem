@@ -990,11 +990,22 @@ function emitUnionDecode(
   }
   const array = scalarOrArrayItem(present);
   if (array) {
-    const before = fallibleCount(ctx);
-    const item = emitDecodeValue(array.item, 'item', ctx);
-    const throws = emittedFallible(before, item, ctx);
     const scalar = emitDecodeValue(array.item, expression, ctx);
-    const mapped = emitArrayItems(array.item, expression, { output: 'value', paths: 'deserialize', item: () => ({ code: item, throws }) });
+    const mapped = emitArrayItems(array.item, expression, {
+      output: 'value',
+      paths: 'deserialize',
+      item: (item, value) => {
+        const before = fallibleCount(ctx);
+        const code = emitDecodeValue(item, value, { ...ctx, decodeLocals: undefined });
+        // An item that can throw runs under its index, as a module-level function when it is hoisted.
+        if (!emittedFallible(before, code, ctx)) return { code, throws: false };
+        const scope: EmitCtx = { ...ctx, decodeLocals: [] };
+        const decoded = emitDecodeValue(item, value, scope);
+        const converter = hoistConverter(value, decoded, scope.decodeLocals ?? [], ctx);
+        const call = `${converter}(${value})`;
+        return { code: singleCallConverter(call, value) === converter ? call : decoded, throws: true };
+      },
+    });
     return emitScalarOrArrayConversion(expression, mapped, scalar);
   }
   const tagged = emitTaggedVariantUnion(
