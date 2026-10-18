@@ -65,6 +65,7 @@ The first release candidate includes four independently installable packages:
 - Union members in generated types and schemas are emitted in a fixed canonical order (code-unit order of their canonical key, independent of compiler and locale), so regenerating changes member order and codec ids once.
 - On TypeScript 7, generation type-checks newly generated files before writing them. Previously new files were skipped, so a run that produced non-compiling output could succeed; it now fails with the compiler diagnostic. The check uses the project tsconfig's file set and checks only the job's own generated files, so sibling model folders under one tsconfig no longer interfere.
 - A decode error inside a tuple item, or inside an array item of a scalar-or-array union, now ends its path with the item index, such as `['dated', 2]` or `['when', 1]`. It named the field only.
+- A scalar value of a scalar-or-array union such as `string | Date[]` now converts by its own type. Before, golem converted it like an array item, so a valid string failed as a bad date (HTTP 400), a number string such as `'12'` became a `Date`, and encoding the string threw. A union whose scalar variants need different conversions is rejected at generation, as `Date | Date[]` already is.
 
 ### OpenAPI
 

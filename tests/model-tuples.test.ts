@@ -172,3 +172,38 @@ test('a codec decode error names the index of a bad tuple item and of a bad item
   assert.throws(decode({ dated: ['first', '2024-05-06T07:08:09.000Z', 'not a date'] }), failsAt(['dated', 2]));
   assert.throws(decode({ when: ['2024-05-06T07:08:09.000Z', 'not a date'] }), failsAt(['when', 1]));
 });
+
+test('a scalar value of a scalar-or-array union stays as it is, and the array items still convert', async (t) => {
+  const { root, sourceRoot } = tupleModelProject(t, 'tuple-scalar-or-array');
+  fs.writeFileSync(path.join(sourceRoot, 'tuple.model.ts'), readFixture('models/model-tuples/tuple.model.ts'));
+  writeModelGolemYaml(root, { mobx: false, validation: false });
+  await buildModelProject(root);
+  const { Tuple } = await import(pathToFileURL(path.join(root, 'build/tuple.model.js')).href);
+  const codec = requireObjectCodec(generatedCodecIdFromRoot(root, 'TTuple'));
+  const options = { validate: false };
+  const field = (value: unknown, name: string): unknown => {
+    assert.ok(typeof value === 'object' && value !== null && name in value);
+    return Reflect.get(value, name);
+  };
+  const base = { required: ['required', 9], maybe: ['x'], rest: ['prefix', true] };
+  const day = '2024-05-06T07:08:09.000Z';
+
+  // codec decode
+  assert.equal(field(codec.fromWireFormat({ ...base, when: 'hello' }, options), 'when'), 'hello');
+  assert.equal(field(codec.fromWireFormat({ ...base, when: '12' }, options), 'when'), '12');
+  assert.deepEqual(field(codec.fromWireFormat({ ...base, when: [day] }, options), 'when'), [new Date(day)]);
+  assert.equal(field(codec.parse(JSON.stringify({ ...base, when: '12' }), options), 'when'), '12');
+
+  // codec encode and the JSON text
+  assert.equal(field(codec.toWireFormat(new Tuple({ ...base, when: 'hello' }), options), 'when'), 'hello');
+  assert.deepEqual(field(codec.toWireFormat(new Tuple({ ...base, when: [new Date(day)] }), options), 'when'), [day]);
+  assert.equal(field(JSON.parse(codec.stringify(new Tuple({ ...base, when: 'hello' }), options)), 'when'), 'hello');
+  assert.deepEqual(field(JSON.parse(codec.stringify(new Tuple({ ...base, when: [new Date(day)] }), options)), 'when'), [day]);
+
+  // model fromJSON and toJSON
+  assert.equal(field(decodeGeneratedModel(Tuple, { ...base, when: 'hello' }), 'when'), 'hello');
+  assert.equal(field(decodeGeneratedModel(Tuple, { ...base, when: '12' }), 'when'), '12');
+  assert.deepEqual(field(decodeGeneratedModel(Tuple, { ...base, when: [day] }), 'when'), [new Date(day)]);
+  assert.equal(field(encodeGeneratedModel(new Tuple({ ...base, when: 'hello' })), 'when'), 'hello');
+  assert.deepEqual(field(encodeGeneratedModel(new Tuple({ ...base, when: [new Date(day)] })), 'when'), [day]);
+});

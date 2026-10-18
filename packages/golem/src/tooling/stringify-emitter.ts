@@ -25,7 +25,8 @@ import {
   presentUnionVariants,
   unionDispatch,
   type DispatchOptions,
-  scalarOrArrayItem,
+  scalarBranchVariant,
+  scalarOrArray,
   type ObjectTypeDescriptor,
   type UnionTypeDescriptor,
 } from './union-conversion.js';
@@ -355,10 +356,14 @@ function emitValue(
       const converted = emitValue(present[0], expression, ctx);
       return `(${expression} == null ? 'null' : (${converted}))`;
     }
-    const array = scalarOrArrayItem(present);
-    if (array) {
+    const scalarOrArrayUnion = scalarOrArray(present);
+    if (scalarOrArrayUnion) {
+      const { array, scalars } = scalarOrArrayUnion;
       const item = emitValue(array.item, 'item', ctx);
-      const scalar = emitValue(array.item, expression, ctx);
+      const scalarVariant = scalarBranchVariant(scalars) ?? (scalars.length === 1 ? scalars[0] : undefined);
+      const scalar = scalarVariant
+        ? emitValue(scalarVariant, expression, ctx)
+        : `stringifyJsonScalar(${expression} as never)`;
       if (
         item === 'stringifyJsonScalar(item as never)'
         && scalar === `stringifyJsonScalar(${expression} as never)`
@@ -988,9 +993,11 @@ function emitUnionDecode(
     const converted = emitDecodeValue(present[0], expression, ctx);
     return converted === expression ? expression : `${expression} == null ? ${expression} : (${converted})`;
   }
-  const array = scalarOrArrayItem(present);
-  if (array) {
-    const scalar = emitDecodeValue(array.item, expression, ctx);
+  const scalarOrArrayUnion = scalarOrArray(present);
+  if (scalarOrArrayUnion) {
+    const { array, scalars } = scalarOrArrayUnion;
+    const scalarVariant = scalarBranchVariant(scalars);
+    const scalar = scalarVariant ? emitDecodeValue(scalarVariant, expression, ctx) : expression;
     const mapped = emitArrayItems(array.item, expression, {
       output: 'value',
       paths: 'deserialize',
@@ -1074,10 +1081,12 @@ function emitUnionEncode(
     const converted = emitEncodeValue(present[0], expression, ctx);
     return converted === expression ? expression : `${expression} == null ? ${expression} : (${converted})`;
   }
-  const array = scalarOrArrayItem(present);
-  if (array) {
+  const scalarOrArrayUnion = scalarOrArray(present);
+  if (scalarOrArrayUnion) {
+    const { array, scalars } = scalarOrArrayUnion;
     const item = emitEncodeValue(array.item, 'item', ctx);
-    const scalar = emitEncodeValue(array.item, expression, ctx);
+    const scalarVariant = scalarBranchVariant(scalars);
+    const scalar = scalarVariant ? emitEncodeValue(scalarVariant, expression, ctx) : expression;
     const mapped = emitArrayItems(array.item, expression, { output: 'value', item: () => ({ code: item, throws: false }) });
     return emitScalarOrArrayConversion(expression, mapped, scalar);
   }
