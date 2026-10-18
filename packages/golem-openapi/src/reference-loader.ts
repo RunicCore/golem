@@ -115,7 +115,7 @@ function localReferenceEscapes(rootDirectory: string, candidate: string): boolea
   const rootReal = realpathOrNearestAncestor(rootDirectory);
   const boundaryPath = realpathOrNearestAncestor(candidate);
   const relative = path.relative(rootReal, boundaryPath);
-  return relative.startsWith('..') || path.isAbsolute(relative);
+  return relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative);
 }
 
 export interface ReferenceLoadOptions extends ReferenceResolutionOptions {

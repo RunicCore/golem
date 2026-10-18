@@ -77,6 +77,7 @@ The first release candidate includes four independently installable packages:
 - Client methods create reusable operation objects. `.execute(input, options)` sends the request.
 - Clients support authentication, body codecs, cancellation and supported streaming responses.
 - With MobX enabled, each operation exposes observable `loading`. Concurrent executions are allowed and produce a warning.
+- A local `$ref` into a folder whose name starts with `..`, such as `./..shared/pet.yaml`, loads. Only a reference that leaves the input directory is rejected.
 - Controller generation reads NestJS routes and TypeScript types without starting the application.
 - Controller decorator metadata is read from literals, `const` declarations, enum members and whole enums, `const` objects, spreads and string templates. **Breaking:** a structural option (`type`, `enum`, `schema`, `format`, bounds, `required`, `nullable`, tags, security, status) that is not a compile-time constant fails generation with `NEST1504`; a non-constant documentation option (`description`, `summary`, `title`, `example`, `externalDocs`) is dropped with a `NEST1504` warning. `let` and `var` route constants are rejected.
 - `getSchemaPath()` and `refs()` become component references and honor `@ApiSchema({ name })`. `@ApiProperty` accepts `type: 'integer'`, `Date` and enums, applies to array and optional nested DTOs, and keeps metadata for every nested property.

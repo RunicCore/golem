@@ -298,6 +298,23 @@ test('a missing reference under a symlinked root directory is watched, not repor
   assert.ok(observed.includes(path.join(linked, 'later.json')));
 });
 
+// Regression: a folder whose name starts with `..` lies inside the input directory; only a real
+// parent step (`../`) leaves it.
+test('a local ref into a folder named ..shared loads, while ../outside.yaml is still an escape', async (t) => {
+  const directory = createFixtureProject(t, 'golem-loader-dotdot-folder-');
+  const input = path.join(directory, 'input');
+  write(input, '..shared/pet.yaml', { Pet: { type: 'object' } });
+  write(directory, 'outside.yaml', { type: 'string' });
+  const inside = root({ components: { schemas: { Pet: { $ref: './..shared/pet.yaml#/Pet' } } } });
+  const graph = await loadReferenceGraph(write(input, 'api.json', inside), inside);
+  assert.deepEqual(targetsOf(graph, input), ['schemas ./..shared/pet.yaml#/Pet preserve=false']);
+  const outside = root({ components: { schemas: { Escaped: { $ref: '../outside.yaml' } } } });
+  await assert.rejects(
+    () => loadReferenceGraph(write(input, 'escape.json', outside), outside),
+    /local reference escapes the input directory/,
+  );
+});
+
 // Regression: a ref to an absolute non-http `$id` (`urn:`) must not depend on load order. Every
 // absolute non-`file:` reference waits, like http(s), until every local `$id` is registered.
 for (const order of [['Order', 'Money'], ['Money', 'Order']] as const) {
