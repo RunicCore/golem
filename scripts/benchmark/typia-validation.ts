@@ -116,8 +116,16 @@ function generatedFunction(exports: ValidatorExports, prefix: 'is' | 'validate',
 /** How many subjects' valid values the generated fast check accepts: each of those takes the fast route in the codec. */
 const fastRoute = { accepted: 0, subjects: 0, probes: 0 };
 
-function toggleCases(subjects: readonly Subject[], validators: Readonly<Record<TwinKind, ValidatorExports>>): CompareCase[] {
+/**
+ * The timed cases, and the contract checks of their functions. The checks call the same functions with edge values of
+ * other shapes (a missing key, an unknown key, a NaN), so they run after the timed window: run before it, they leave the
+ * property reads of every checked function megamorphic, and the timed valid value reads about a third slower.
+ */
+interface ToggleRun { readonly cases: CompareCase[]; readonly checks: (() => void)[] }
+
+function toggleCases(subjects: readonly Subject[], validators: Readonly<Record<TwinKind, ValidatorExports>>): ToggleRun {
   const cases: CompareCase[] = [];
+  const checks: (() => void)[] = [];
   for (const subject of subjects) {
     const { model, twin } = subject;
     const entry = (side: string, run: () => unknown): void => { cases.push({ model, twin, task: 'toggle', side, run }); };
@@ -126,15 +134,18 @@ function toggleCases(subjects: readonly Subject[], validators: Readonly<Record<T
     const validator = generatedFunction(validators[twin], 'validate', subject.codecId);
     // The full validator decides what each probe must give; the codec, the fast check and the exact scratch rows agree with it.
     const probes = [['valid', subject.valid], ['early', subject.early], ['late', subject.late], ['extra', subject.extra], ...subject.probes] as const;
-    const expected = new Map(probes.map(([name, value]) => [name, validator(value, true).length === 0] as const));
-    if (expected.get('valid') !== true || expected.get('extra') !== false) throw new Error(`The validator of ${model}/${twin} does not accept the valid value or rejects no unknown property`);
-    for (const [name, value] of probes) {
-      const full = expected.get(name);
-      if (codec.validate(value) !== full || isValid(value) !== full) throw new Error(`On ${model}/${twin} '${name}': the codec or the fast check differs from the validator (${full})`);
-    }
-    fastRoute.subjects++;
-    if (isValid(subject.valid) === true) fastRoute.accepted++;
-    fastRoute.probes += probes.length;
+    const expected = new Map<string, boolean>();
+    checks.push(() => {
+      for (const [name, value] of probes) expected.set(name, validator(value, true).length === 0);
+      if (expected.get('valid') !== true || expected.get('extra') !== false) throw new Error(`The validator of ${model}/${twin} does not accept the valid value or rejects no unknown property`);
+      for (const [name, value] of probes) {
+        const full = expected.get(name);
+        if (codec.validate(value) !== full || isValid(value) !== full) throw new Error(`On ${model}/${twin} '${name}': the codec or the fast check differs from the validator (${full})`);
+      }
+      fastRoute.subjects++;
+      if (isValid(subject.valid) === true) fastRoute.accepted++;
+      fastRoute.probes += probes.length;
+    });
     entry('typia equals', () => subject.equals(subject.valid));
     entry('typia is', () => subject.is(subject.valid));
     entry('golem is_X', () => isValid(subject.valid));
@@ -148,16 +159,18 @@ function toggleCases(subjects: readonly Subject[], validators: Readonly<Record<T
     for (const [side, toggles] of TOGGLE_ROWS) {
       if (twin !== 'plain' && !TWIN_TOGGLE_ROWS.has(side)) continue;
       const scratch = scratchValidator(model, toggles);
-      for (const [probe, value] of probes) {
-        const exact = CONTRACT_ROWS.has(side) || (KEY_EXACT_ROWS.has(side) && ['valid', 'early', 'late', 'extra', 'missing key', 'undefined unknown key'].includes(probe));
-        const required = exact || ['valid', 'early', 'late'].includes(probe);
-        if (required && scratch(value) !== expected.get(probe)) throw new Error(`Scratch validator '${side}' on ${model}/${twin}: '${probe}' is not ${expected.get(probe)}`);
-      }
+      checks.push(() => {
+        for (const [probe, value] of probes) {
+          const exact = CONTRACT_ROWS.has(side) || (KEY_EXACT_ROWS.has(side) && ['valid', 'early', 'late', 'extra', 'missing key', 'undefined unknown key'].includes(probe));
+          const required = exact || ['valid', 'early', 'late'].includes(probe);
+          if (required && scratch(value) !== expected.get(probe)) throw new Error(`Scratch validator '${side}' on ${model}/${twin}: '${probe}' is not ${expected.get(probe)}`);
+        }
+      });
       entry(side, () => scratch(subject.valid));
     }
-    if (model === 'flat') presenceCases(subject, entry);
+    if (model === 'flat') presenceCases(subject, entry, checks);
   }
-  return cases;
+  return { cases, checks };
 }
 
 /**
@@ -165,7 +178,7 @@ function toggleCases(subjects: readonly Subject[], validators: Readonly<Record<T
  * Each exact form must give the result of `enumerable` (golem today) on the probes, on a non-enumerable field, on an
  * undefined-valued field and on an inherited field.
  */
-function presenceCases(subject: Subject, entry: (side: string, run: () => unknown) => void): void {
+function presenceCases(subject: Subject, entry: (side: string, run: () => unknown) => void, checks: (() => void)[]): void {
   const valid = subject.valid;
   if (typeof valid !== 'object' || valid === null) throw new Error('The flat valid value is not an object');
   const plain: Record<string, unknown> = { ...valid };
@@ -181,10 +194,12 @@ function presenceCases(subject: Subject, entry: (side: string, run: () => unknow
     const walk = presenceWalk(form);
     const fill = presenceFill(form);
     if (EXACT_PRESENCE_FORMS.has(form)) {
-      for (const probe of probes) if (walk(probe) !== reference.walk(probe)) throw new Error(`Presence walk '${form}' differs from 'enumerable' on ${subject.twin}`);
-      for (const probe of fillProbes) {
-        if (JSON.stringify(Object.entries(fill(probe))) !== JSON.stringify(Object.entries(reference.fill(probe)))) throw new Error(`Presence fill '${form}' differs from 'enumerable'`);
-      }
+      checks.push(() => {
+        for (const probe of probes) if (walk(probe) !== reference.walk(probe)) throw new Error(`Presence walk '${form}' differs from 'enumerable' on ${subject.twin}`);
+        for (const probe of fillProbes) {
+          if (JSON.stringify(Object.entries(fill(probe))) !== JSON.stringify(Object.entries(reference.fill(probe)))) throw new Error(`Presence fill '${form}' differs from 'enumerable'`);
+        }
+      });
     }
     entry(`walk ${form}`, () => walk(valid));
     if (subject.twin === 'plain') entry(`fill ${form}`, () => fill(valid));
@@ -260,15 +275,19 @@ async function main(): Promise<void> {
     reportAgreement(module.agreements(subjects));
     const validators = async (project: string): Promise<ValidatorExports> => import(pathToFileURL(path.join(path.dirname(project), 'generated/models/models.validators.generated.js')).href);
     const plainValidators = await validators(built);
-    // The toggle cases check every probe on the codec, the fast check and the scratch rows when they are made.
     const toggles = toggleCases(subjects, { plain: plainValidators, imodel: plainValidators, mobx: await validators(builtMobx) });
-    process.stdout.write(`The fast check accepts the valid value of ${fastRoute.accepted} of ${fastRoute.subjects} subjects (plain, IModel, MobX), so the codec answers those without the full validator; ${fastRoute.probes} probes agree with the full validator\n\n`);
-    if (mode === 'verify') return;
-    const cases = mode === 'toggles' ? toggles : module.createCompareCases(twins);
+    // The checks run every probe on the codec, the fast check and the scratch rows; they follow the timed window (see ToggleRun).
+    const runChecks = (): void => {
+      for (const check of toggles.checks) check();
+      process.stdout.write(`The fast check accepts the valid value of ${fastRoute.accepted} of ${fastRoute.subjects} subjects (plain, IModel, MobX), so the codec answers those without the full validator; ${fastRoute.probes} probes agree with the full validator\n\n`);
+    };
+    if (mode === 'verify') { runChecks(); return; }
+    const cases = mode === 'toggles' ? toggles.cases : module.createCompareCases(twins);
     const loadBefore = load();
     const started = performance.now();
     const samples = measure(module.consume, cases);
     const windowSeconds = (performance.now() - started) / 1000;
+    runChecks();
     if (mode === 'toggles') reportToggles(cases, samples); else reportBench(cases, samples);
     process.stdout.write(`Measured window ${windowSeconds.toFixed(1)} s for ${cases.length} cases; load average before ${loadBefore}, after ${load()}\n`);
     const raw = path.join(root, `.cache/benchmark/typia-validation${mode === 'toggles' ? '-toggles' : ''}.json`);
