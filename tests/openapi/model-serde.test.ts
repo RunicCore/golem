@@ -1309,3 +1309,38 @@ test(`an allOf of object members that share a property name is typed and convert
   const model = codec.fromWireFormat(wire, { construct: VisitModel as unknown as abstract new (values?: never) => object });
   assert.deepEqual(codec.toWireFormat(model), wire);
 });
+
+for (const validation of [true, false]) test(`an array whose items are an allOf of object members converts every item (validation ${validation})`, async t => {
+  const output = path.join(createFixtureProject(t, 'golem-openapi-allof-object-items-'), 'sdk');
+  await generateMaterializedSdk(sequenceSerdeDocument({
+    entries: {
+      type: 'array',
+      items: {
+        allOf: [
+          { type: 'object', properties: { a: { type: 'string', format: 'date-time' } } },
+          { type: 'object', properties: { b: { type: 'string', format: 'date-time' } } },
+        ],
+      },
+    },
+  }), {
+    output,
+    name: 'SequenceSerde',
+    profile: { mobx: false, validation, allowAny: false },
+  });
+  copyFixtureFile(output, 'openapi/model-serde/allof-object-items-types.ts', 'allof-object-items-types.ts');
+  compileGeneratedSdk(output, [path.join(output, 'allof-object-items-types.ts')], { strict: true, skipLibCheck: true });
+
+  const models = requireRecord(
+    await import(pathToFileURL(path.join(output, 'dist/index.js')).href),
+    'generated allOf object items models',
+  );
+  const VisitModel = models.VisitModel as unknown as new (values?: Record<string, unknown>) => Record<string, unknown>;
+  const codec = requireObjectCodec<{ entries: unknown }>(generatedCodecIdFromRoot(output, 'Visit'));
+  const wire = { entries: [{ a: '2024-05-06T07:08:09.000Z', b: '2024-05-07T08:09:10.000Z' }, { a: '2024-05-08T09:10:11.000Z' }] };
+  const model = codec.fromWireFormat(wire, { construct: VisitModel as unknown as abstract new (values?: never) => object });
+  assert.deepEqual(model.entries, [
+    { a: new Date('2024-05-06T07:08:09.000Z'), b: new Date('2024-05-07T08:09:10.000Z') },
+    { a: new Date('2024-05-08T09:10:11.000Z') },
+  ]);
+  assert.deepEqual(codec.toWireFormat(model), wire);
+});
