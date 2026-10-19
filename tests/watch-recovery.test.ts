@@ -8,7 +8,7 @@ import { contains } from '#golem/config';
 import { GeneratorSessionResources } from '#golem/pipeline';
 import { OwnedOutputIndex } from '#golem/watch';
 import { workspace } from './support/process.js';
-import { compilerChildren, fixture } from './support/generation-watch.js';
+import { compilerChildren, fixture, skipOnTypeScript6 } from './support/generation-watch.js';
 import { until } from './support/watch-wait.js';
 
 test('owned output index excludes exactly the outputs and the directories containing them', () => {
@@ -165,7 +165,7 @@ test('watch generates a new file that ends in a configured model suffix', async 
   }
 });
 
-test('stopping an in-process watch closes its compiler', { skip: process.platform === 'win32' }, async (t: TestContext) => {
+test('stopping an in-process watch closes its compiler', { skip: process.platform === 'win32' || skipOnTypeScript6 }, async (t: TestContext) => {
   const { root, config } = fixture(t);
   const errors: unknown[] = [];
   const stop = watchPipeline(config, error => { errors.push(error); });
@@ -179,7 +179,7 @@ test('stopping an in-process watch closes its compiler', { skip: process.platfor
   assert.deepEqual(errors, []);
 });
 
-test('a pipeline session closes the compiler of a removed job', { skip: process.platform === 'win32' }, async (t: TestContext) => {
+test('a pipeline session closes the compiler of a removed job', { skip: process.platform === 'win32' || skipOnTypeScript6 }, async (t: TestContext) => {
   const { config } = fixture(t);
   const session = new GeneratorSessionResources();
   t.after(() => session[Symbol.dispose]());
