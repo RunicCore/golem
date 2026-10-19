@@ -10,7 +10,7 @@ Run tests in the golem test-runner image. Tier runs are offline.
 | `npm run test:prepare` | 5 min (plus a first-time image build), online | Builds the image and fills the npm, packed and typia plugin caches. Runs no tests. Run it first, and again after a lockfile or image change. |
 | `npm run docs:check` | 2 min | Builds the documentation site and checks it. |
 
-Pass a test source path, such as `tests/serde.test.ts`, or any `node --test` flag.
+Pass a test source path, such as `tests/serde.test.ts`, or a `node --test` flag for the test files, such as `--test-name-pattern`. The run rejects the flags that set up the run itself (`--test-reporter`, `--test-concurrency`, `--test-timeout`, `--test-shard`) with exit 2. A path that names no file fails the step. A `*` works in the file name only, not in a directory (`tests/*.test.ts`, not `tests/**/x.test.ts`).
 
 ## TypeScript 6 lane
 
@@ -46,6 +46,12 @@ The focused step was running; 1 of 2 started files finished. Started and not fin
 ```
 
 Run the named file alone with `npm run test -- <file>` to see which test hangs.
+
+## File order
+
+A step starts its files longest first, so one slow file does not start last and set the step's time. The order is the seconds recorded for the step by the last run of the same tier in which that step passed. The record is `test-order/<tier>.json` in the cache volume, beside `packed/`, so a new checkout or worktree starts in the same order. A record from another branch only changes the order. Files with no record start first, in path order. With no record, or one that cannot be read (the run says so), every file starts in path order. The order changes no result. Spec output and the TAP numbers follow the start order, and the spec output of a file appears after the files that started before it have reported.
+
+`node --test` sorts its files by path. The runner starts the files with `run({ files })` of `node:test` (`scripts/test-run-ordered.ts`), which keeps the given order, and wires the same spec, TAP and file-timing reporters and the same exit status (1 when a test fails).
 
 ## Results and timings
 

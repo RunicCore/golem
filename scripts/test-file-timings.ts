@@ -3,7 +3,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 // Spec, TAP and this reporter put 11 `end` listeners on the run's event stream, and node warns above 10.
-// This module loads only in the runner parent, before the third reporter attaches.
+// The limit is needed in the process that runs the files, where this module loads before the third reporter attaches.
+// The tier process loads it too, for `sourcePath`, and gets the same limit.
 EventEmitter.defaultMaxListeners = 20;
 
 interface TestEvent {
@@ -23,7 +24,7 @@ function isFileTest(data: TestEvent['data']): data is TestEvent['data'] & { read
 
 /**
  * node:test reporter that writes one JSON line when a test file starts, `{"file":"tests/x.test.ts"}`, and one when it
- * ends, `{"file":"tests/x.test.ts","seconds":1.2}`. Use it with `--test-reporter-destination=<file>`: the lines stay
+ * ends, `{"file":"tests/x.test.ts","seconds":1.2}`. Pipe it to a file: the lines stay
  * on disk when the run is killed, so `unfinishedFiles` can name the files that were running.
  *
  * The runner holds the events of a file until the files before it have reported, so the arrival time of an event

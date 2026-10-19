@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { TestContext } from 'node:test';
+import { after } from 'node:test';
 
 const fixtures = path.resolve(fileURLToPath(new URL('../../tests/fixtures/', import.meta.url)));
 
@@ -30,7 +30,32 @@ export function copyFixtureFile(root: string, fixtureRelative: string, destinati
   return destination;
 }
 
-export function createFixtureProject(t: TestContext, prefix: string): string {
+/** What a fixture needs from its owner: a place to register its cleanup. A test context is one. */
+export interface FixtureScope { after(cleanup: () => void): void }
+
+/**
+ * A scope for fixtures that several tests of one file share: the file's last test ends and the fixtures go. Call it at module
+ * level, where `after` registers for the file. Every cleanup runs; the first error that one throws is thrown after them.
+ */
+export function fileFixtureScope(): FixtureScope {
+  const cleanups: (() => void)[] = [];
+  after(() => {
+    const errors: unknown[] = [];
+    for (const cleanup of cleanups) {
+      try { cleanup(); } catch (error) { errors.push(error); }
+    }
+    if (errors.length) throw errors[0];
+  });
+  return { after: (cleanup) => { cleanups.push(cleanup); } };
+}
+
+/** Builds a fixture on first use and hands every later caller the same one. */
+export function onceShared<T>(build: () => Promise<T>): () => Promise<T> {
+  let shared: Promise<T> | undefined;
+  return () => (shared ??= build());
+}
+
+export function createFixtureProject(t: FixtureScope, prefix: string): string {
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), prefix)));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   return root;

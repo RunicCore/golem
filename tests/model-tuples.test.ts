@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import test, { type TestContext } from 'node:test';
+import test from 'node:test';
 
 import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/golem/conversion';
 import { LibError } from '@exprtlabs/golem/errors';
@@ -10,31 +10,41 @@ import { requireObjectCodec } from '@exprtlabs/golem/serde';
 import { createSchemaGraph } from '@exprtlabs/golem/schema-graph';
 import { command } from './support/process.js';
 import { generatedCodecIdFromRoot } from './support/consumer.js';
-import { copyFixture, readFixture } from './fixture-project.js';
+import { copyFixture, fileFixtureScope, onceShared, readFixture, type FixtureScope } from './fixture-project.js';
 import { buildModelProject, createModelProject, writeModelGolemYaml } from './model-project.js';
 
-function tupleModelProject(t: TestContext, name: string) {
-  return createModelProject(t, {
+function tupleModelProject(scope: FixtureScope, name: string) {
+  return createModelProject(scope, {
     prefix: `golem-${name}-`,
     name,
     linkWorkspaceNodeModules: true,
   });
 }
 
+interface BuiltTuple {
+  readonly Tuple: new (values?: object) => object;
+  readonly codec: ReturnType<typeof requireObjectCodec>;
+}
+
+/** Builds the tuple model with `validation` and loads it. */
+async function buildTuple(scope: FixtureScope, name: string, validation: boolean): Promise<BuiltTuple> {
+  const { root, sourceRoot } = tupleModelProject(scope, name);
+  fs.writeFileSync(path.join(sourceRoot, 'tuple.model.ts'), readFixture('models/model-tuples/tuple.model.ts'));
+  writeModelGolemYaml(root, { mobx: false, validation });
+  await buildModelProject(root);
+  const loaded = await import(pathToFileURL(path.join(root, 'build/tuple.model.js')).href) as Pick<BuiltTuple, 'Tuple'>;
+  return { Tuple: loaded.Tuple, codec: requireObjectCodec(generatedCodecIdFromRoot(root, 'TTuple')) };
+}
+
+// The tests that only read the tuple model with validation off share one build of it.
+const fileScope = fileFixtureScope();
+const trustedTuple = onceShared(() => buildTuple(fileScope, 'tuple-trusted', false));
+
 test('generated optional and rest tuples retain exact lengths through every serde direction with validation on and off', async t => {
   for (const validation of [false, true]) {
-    const { root, sourceRoot } = tupleModelProject(t, `tuple-${validation ? 'validated' : 'trusted'}`);
-    fs.writeFileSync(path.join(sourceRoot, 'tuple.model.ts'), readFixture('models/model-tuples/tuple.model.ts'));
-    writeModelGolemYaml(root, { mobx: false, validation });
-    await buildModelProject(root);
-
-    const loaded = await import(pathToFileURL(path.join(root, 'build/tuple.model.js')).href) as {
-      readonly Tuple: new (values?: object) => object;
-    };
-    const codecId = generatedCodecIdFromRoot(root, 'TTuple');
-    const codec = requireObjectCodec(codecId);
-    const omitted = new loaded.Tuple({ required: ['required', 9], maybe: ['x'], rest: ['prefix', true] });
-    const full = new loaded.Tuple({ required: ['required', 9], maybe: ['x', 2], nested: ['inner'], rest: ['prefix', 1, 2, true] });
+    const { Tuple, codec } = await buildTuple(t, `tuple-${validation ? 'validated' : 'trusted'}`, validation);
+    const omitted = new Tuple({ required: ['required', 9], maybe: ['x'], rest: ['prefix', true] });
+    const full = new Tuple({ required: ['required', 9], maybe: ['x', 2], nested: ['inner'], rest: ['prefix', 1, 2, true] });
     const options = { validate: validation };
 
     for (const value of [omitted, full]) {
@@ -59,7 +69,7 @@ test('generated optional and rest tuples retain exact lengths through every serd
       }
     }
 
-    const invalidRequired = new loaded.Tuple({ required: ['only'] as never, maybe: ['x'], rest: ['prefix'] as never });
+    const invalidRequired = new Tuple({ required: ['only'] as never, maybe: ['x'], rest: ['prefix'] as never });
     if (validation) {
       assert.throws(() => codec.stringify(invalidRequired, options), /validation|tuple|boolean/i);
     } else {
@@ -118,13 +128,8 @@ test('validation-enabled codec emission compiles and preserves array and tuple g
   await command(root, process.execPath, [verifier, codecId]);
 });
 
-test('a model keeps a short rest tuple at its own length and a hole in it a hole, with validation off', async (t) => {
-  const { root, sourceRoot } = tupleModelProject(t, 'tuple-short-rest');
-  fs.writeFileSync(path.join(sourceRoot, 'tuple.model.ts'), readFixture('models/model-tuples/tuple.model.ts'));
-  writeModelGolemYaml(root, { mobx: false, validation: false });
-  await buildModelProject(root);
-
-  const { Tuple } = await import(pathToFileURL(path.join(root, 'build/tuple.model.js')).href);
+test('a model keeps a short rest tuple at its own length and a hole in it a hole, with validation off', async () => {
+  const { Tuple } = await trustedTuple();
   const field = (value: unknown, name: string): unknown => {
     assert.ok(typeof value === 'object' && value !== null && name in value);
     return Reflect.get(value, name);
@@ -153,12 +158,8 @@ test('a model keeps a short rest tuple at its own length and a hole in it a hole
   assert.deepEqual(decoded[2], new Date('2024-05-06T07:08:09.000Z'));
 });
 
-test('a codec decode error names the index of a bad tuple item and of a bad item in a scalar-or-array union', async (t) => {
-  const { root, sourceRoot } = tupleModelProject(t, 'tuple-item-paths');
-  fs.writeFileSync(path.join(sourceRoot, 'tuple.model.ts'), readFixture('models/model-tuples/tuple.model.ts'));
-  writeModelGolemYaml(root, { mobx: false, validation: false });
-  await buildModelProject(root);
-  const codec = requireObjectCodec(generatedCodecIdFromRoot(root, 'TTuple'));
+test('a codec decode error names the index of a bad tuple item and of a bad item in a scalar-or-array union', async () => {
+  const { codec } = await trustedTuple();
 
   const decode = (override: object) => () =>
     codec.fromWireFormat({ required: ['required', 9], maybe: ['x'], rest: ['prefix', true], ...override }, { validate: false });
@@ -173,13 +174,8 @@ test('a codec decode error names the index of a bad tuple item and of a bad item
   assert.throws(decode({ when: ['2024-05-06T07:08:09.000Z', 'not a date'] }), failsAt(['when', 1]));
 });
 
-test('a scalar value of a scalar-or-array union stays as it is, and the array items still convert', async (t) => {
-  const { root, sourceRoot } = tupleModelProject(t, 'tuple-scalar-or-array');
-  fs.writeFileSync(path.join(sourceRoot, 'tuple.model.ts'), readFixture('models/model-tuples/tuple.model.ts'));
-  writeModelGolemYaml(root, { mobx: false, validation: false });
-  await buildModelProject(root);
-  const { Tuple } = await import(pathToFileURL(path.join(root, 'build/tuple.model.js')).href);
-  const codec = requireObjectCodec(generatedCodecIdFromRoot(root, 'TTuple'));
+test('a scalar value of a scalar-or-array union stays as it is, and the array items still convert', async () => {
+  const { Tuple, codec } = await trustedTuple();
   const options = { validate: false };
   const field = (value: unknown, name: string): unknown => {
     assert.ok(typeof value === 'object' && value !== null && name in value);
@@ -208,13 +204,8 @@ test('a scalar value of a scalar-or-array union stays as it is, and the array it
   assert.deepEqual(field(encodeGeneratedModel(new Tuple({ ...base, when: [new Date(day)] })), 'when'), [day]);
 });
 
-test('a scalar-or-tuple union keeps its scalar and converts the items of its tuple', async (t) => {
-  const { root, sourceRoot } = tupleModelProject(t, 'tuple-scalar-or-tuple');
-  fs.writeFileSync(path.join(sourceRoot, 'tuple.model.ts'), readFixture('models/model-tuples/tuple.model.ts'));
-  writeModelGolemYaml(root, { mobx: false, validation: false });
-  await buildModelProject(root);
-  const { Tuple } = await import(pathToFileURL(path.join(root, 'build/tuple.model.js')).href);
-  const codec = requireObjectCodec(generatedCodecIdFromRoot(root, 'TTuple'));
+test('a scalar-or-tuple union keeps its scalar and converts the items of its tuple', async () => {
+  const { Tuple, codec } = await trustedTuple();
   const options = { validate: false };
   const field = (value: unknown, name: string): unknown => {
     assert.ok(typeof value === 'object' && value !== null && name in value);
