@@ -304,3 +304,27 @@ export function descriptorNeedsConversion(descriptor: ModelTypeDescriptor): bool
   }
   return false;
 }
+
+/**
+ * The one object an intersection of objects converts as: same-named properties intersect, the
+ * required names join, and the additional-property schemas intersect. Anything else is not merged.
+ */
+export function mergeObjectVariants(variants: readonly ModelTypeDescriptor[]): ObjectTypeDescriptor | undefined {
+  const objects = variants.filter((variant): variant is ObjectTypeDescriptor => variant.kind === 'object');
+  if (objects.length === 0 || objects.length !== variants.length) return undefined;
+  const properties: Record<string, ModelTypeDescriptor> = Object.create(null);
+  for (const object of objects) {
+    for (const [name, property] of Object.entries(object.properties)) {
+      properties[name] = properties[name]
+        ? { kind: 'intersection', variants: [properties[name], property] }
+        : property;
+    }
+  }
+  const additional = objects.flatMap((object) => typeof object.additionalProperties === 'object' ? [object.additionalProperties] : []);
+  return {
+    kind: 'object',
+    properties,
+    required: [...new Set(objects.flatMap((object) => object.required))],
+    additionalProperties: additional.length ? { kind: 'intersection', variants: additional } : true,
+  };
+}

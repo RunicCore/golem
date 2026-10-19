@@ -1008,7 +1008,7 @@ test('a field that references a nullable component object is typed with | null a
   assert.equal(JSON.stringify(decodeGeneratedModel(VisitModel, { pet: { name: 'Miso' } }).pet), '{"name":"Miso"}');
 });
 
-test('an object field with its own properties and an allOf member that adds properties types and converts both alike', async t => {
+for (const validation of [true, false]) test(`an object field with its own properties and an allOf member that adds properties types and converts both alike (validation ${validation})`, async t => {
   const output = path.join(createFixtureProject(t, 'golem-openapi-allof-member-properties-'), 'sdk');
   await generateMaterializedSdk(sequenceSerdeDocument({
     merged: {
@@ -1019,7 +1019,7 @@ test('an object field with its own properties and an allOf member that adds prop
   }), {
     output,
     name: 'SequenceSerde',
-    profile: { mobx: false, validation: true, allowAny: false },
+    profile: { mobx: false, validation, allowAny: false },
   });
   copyFixtureFile(output, 'openapi/model-serde/allof-members-types.ts', 'allof-members-types.ts');
   compileGeneratedSdk(output, [path.join(output, 'allof-members-types.ts')], { strict: true, skipLibCheck: true });
@@ -1034,6 +1034,12 @@ test('an object field with its own properties and an allOf member that adds prop
     decodeGeneratedModel(VisitModel, { merged: { at: '2024-05-06T07:08:09.000Z', b: '2024-05-07T08:09:10.000Z' } }).merged,
     { at: new Date('2024-05-06T07:08:09.000Z'), b: new Date('2024-05-07T08:09:10.000Z') },
   );
+
+  const codec = requireObjectCodec<{ merged: unknown }>(generatedCodecIdFromRoot(output, 'Visit'));
+  const wire = { merged: { at: '2024-05-06T07:08:09.000Z', b: '2024-05-07T08:09:10.000Z' } };
+  const model = codec.fromWireFormat(wire, { construct: VisitModel as unknown as abstract new (values?: never) => object });
+  assert.deepEqual(model.merged, { at: new Date('2024-05-06T07:08:09.000Z'), b: new Date('2024-05-07T08:09:10.000Z') });
+  assert.deepEqual(codec.toWireFormat(model), wire);
 });
 
 test('a name in the required list of an allOf member is required in the field type and by the validator', async t => {
@@ -1074,7 +1080,7 @@ test('a name in the required list of an allOf member is required in the field ty
   );
 });
 
-test('an allOf of object members is typed by the same members that convert it', async t => {
+for (const validation of [true, false]) test(`an allOf of object members is typed by the same members that convert it (validation ${validation})`, async t => {
   const output = path.join(createFixtureProject(t, 'golem-openapi-allof-object-members-'), 'sdk');
   await generateMaterializedSdk(sequenceSerdeDocument({
     members: {
@@ -1086,7 +1092,7 @@ test('an allOf of object members is typed by the same members that convert it', 
   }), {
     output,
     name: 'SequenceSerde',
-    profile: { mobx: false, validation: true, allowAny: false },
+    profile: { mobx: false, validation, allowAny: false },
   });
   copyFixtureFile(output, 'openapi/model-serde/allof-object-members-types.ts', 'allof-object-members-types.ts');
   compileGeneratedSdk(output, [path.join(output, 'allof-object-members-types.ts')], { strict: true, skipLibCheck: true });
@@ -1101,6 +1107,12 @@ test('an allOf of object members is typed by the same members that convert it', 
     decodeGeneratedModel(VisitModel, { members: { at: '2024-05-06T07:08:09.000Z', b: '2024-05-07T08:09:10.000Z' } }).members,
     { at: new Date('2024-05-06T07:08:09.000Z'), b: new Date('2024-05-07T08:09:10.000Z') },
   );
+
+  const codec = requireObjectCodec<{ members: unknown }>(generatedCodecIdFromRoot(output, 'Visit'));
+  const wire = { members: { at: '2024-05-06T07:08:09.000Z', b: '2024-05-07T08:09:10.000Z' } };
+  const model = codec.fromWireFormat(wire, { construct: VisitModel as unknown as abstract new (values?: never) => object });
+  assert.deepEqual(model.members, { at: new Date('2024-05-06T07:08:09.000Z'), b: new Date('2024-05-07T08:09:10.000Z') });
+  assert.deepEqual(codec.toWireFormat(model), wire);
 });
 
 test('an object field with own properties and an allOf reference to a model still generates and is typed by its own properties', async t => {
