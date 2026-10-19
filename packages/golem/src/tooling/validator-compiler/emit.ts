@@ -590,6 +590,19 @@ class FunctionWriter {
     }
   }
 
+  /**
+   * Writes `body` under the guard `head`, or without it when the value already has one of the types `guardTypes` that
+   * the guard tests for: a type check before it left the function on any other type. `dropsEmpty` leaves out a guard
+   * whose body writes nothing, as `block` does.
+   */
+  private guarded(head: string, guardTypes: readonly IrTypeName[], types: readonly IrTypeName[] | undefined, body: () => void, dropsEmpty: boolean): void {
+    if (types !== undefined && types.every(name => guardTypes.includes(name))) return body();
+    if (dropsEmpty) return this.block(head, body);
+    this.open(head);
+    body();
+    this.close();
+  }
+
   public fresh(prefix: string): string {
     return `${prefix}${this.counter++}`;
   }
@@ -656,6 +669,8 @@ class FunctionWriter {
   }
 
   private checks(checks: readonly IrCheck[], value: string): void {
+    // In a mode that leaves at a failure, the checks after a type check run only on a value of its types.
+    let types: readonly IrTypeName[] | undefined;
     for (let position = 0; position < checks.length; position++) {
       const check = checks[position];
       const next = checks[position + 1];
@@ -664,8 +679,9 @@ class FunctionWriter {
         this.objectOrTypeIssue(check, next, value);
         position++;
       } else {
-        this.check(check, value);
+        this.check(check, value, types);
       }
+      if (check.kind === 'type' && this.mode.fail.leaves) types = check.names;
     }
   }
 
@@ -677,7 +693,8 @@ class FunctionWriter {
     this.record = record;
   }
 
-  private check(check: IrCheck, value: string): void {
+  /** `types`, when given, lists the types the value already has: a guard on one of them is not written again. */
+  private check(check: IrCheck, value: string, types?: readonly IrTypeName[]): void {
     if (this.microLeaf !== undefined && !hasFastForm(check)) return this.microLeaf(this, check, value);
     switch (check.kind) {
       case 'type':
@@ -705,10 +722,10 @@ class FunctionWriter {
         return this.leaf({ fails: `!(${value} instanceof Date) || !Number.isFinite(${value}.getTime())`, issue: "code: 'type', expected: ['Date']" });
       case 'instance': return this.instanceCheck(check, value);
       case 'validation': return this.validationCheck(check, value);
-      case 'string': return this.stringCheck(check, value);
-      case 'number': return this.numberCheck(check, value);
-      case 'array': return this.arrayCheck(check, value);
-      case 'object': return this.objectCheck(check, value);
+      case 'string': return this.stringCheck(check, value, types);
+      case 'number': return this.numberCheck(check, value, types);
+      case 'array': return this.arrayCheck(check, value, types);
+      case 'object': return this.objectCheck(check, value, types);
       case 'call': return this.callInPlace(check.fn, value);
       case 'allOf':
         for (const branch of check.branches) this.schema(branch, value);
@@ -766,8 +783,11 @@ class FunctionWriter {
     this.close();
   }
 
-  private stringCheck(check: IrString, value: string): void {
-    this.open(`if (typeof ${value} === 'string')`);
+  private stringCheck(check: IrString, value: string, types: readonly IrTypeName[] | undefined): void {
+    this.guarded(`if (typeof ${value} === 'string')`, ['string'], types, () => this.stringKeywords(check, value), false);
+  }
+
+  private stringKeywords(check: IrString, value: string): void {
     // The full validator counts the code points once, in a local written before the first limit that reads it.
     let counted: string | undefined;
     const length = (): string => {
@@ -787,11 +807,13 @@ class FunctionWriter {
       const expression = this.state.constant('pattern', `new RegExp(${literal(check.pattern)}, 'u')`);
       this.leaf({ fails: `!${expression}.test(${value})`, issue: `code: 'pattern', pattern: ${literal(check.pattern)}` });
     }
-    this.close();
   }
 
-  private numberCheck(check: IrNumber, value: string): void {
-    this.open(`if (typeof ${value} === 'number')`);
+  private numberCheck(check: IrNumber, value: string, types: readonly IrTypeName[] | undefined): void {
+    this.guarded(`if (typeof ${value} === 'number')`, ['number', 'integer'], types, () => this.numberKeywords(check, value), false);
+  }
+
+  private numberKeywords(check: IrNumber, value: string): void {
     const bounds = [
       ['minimum', '<', 'tooSmall', true],
       ['exclusiveMinimum', '<=', 'tooSmall', false],
@@ -804,11 +826,10 @@ class FunctionWriter {
       this.leaf({ fails: `${value} ${operator} ${JSON.stringify(limit)}`, issue: limitFields(code, 'value', limit, inclusive) });
     }
     if (check.multipleOf !== undefined) this.leaf({ fails: `!${this.state.localHelper('isMultipleOf')}(${value}, ${JSON.stringify(check.multipleOf)})`, issue: `code: 'multipleOf', divisor: ${JSON.stringify(check.multipleOf)}` });
-    this.close();
   }
 
-  private arrayCheck(check: IrArray, value: string): void {
-    this.block(`if (Array.isArray(${value}))`, () => {
+  private arrayCheck(check: IrArray, value: string, types: readonly IrTypeName[] | undefined): void {
+    this.guarded(`if (Array.isArray(${value}))`, ['array'], types, () => {
       this.limitLeaves('items', `${value}.length`, check.minItems, check.maxItems);
       if (check.closed) this.leaf({ fails: `${value}.length > ${check.prefixItems.length}`, issue: limitFields('tooBig', 'items', check.prefixItems.length, true) });
       if (check.prefixItems.length > 0) this.mark(record => `${record}.prefix = Math.max(${record}.prefix, Math.min(${value}.length, ${check.prefixItems.length}));`);
@@ -847,7 +868,7 @@ class FunctionWriter {
         this.close();
         this.close();
       }
-    });
+    }, true);
   }
 
   /** Counts the items that pass `contains`; the count must lie between its limits, and each match counts as evaluated. */
@@ -868,9 +889,9 @@ class FunctionWriter {
     this.limitLeaves('matches', count, contains.min > 0 ? contains.min : undefined, contains.max);
   }
 
-  private objectCheck(check: IrObject, value: string): void {
+  private objectCheck(check: IrObject, value: string, types: readonly IrTypeName[] | undefined): void {
     this.state.localHelper('isObject');
-    this.block(`if (${TYPE_TESTS.object(value)})`, () => this.objectKeywords(check, value));
+    this.guarded(`if (${TYPE_TESTS.object(value)})`, ['object'], types, () => this.objectKeywords(check, value), true);
   }
 
   /** The type check that requires an object, and the object keywords in its `else`: the value is tested once. */
@@ -943,17 +964,20 @@ class FunctionWriter {
       }
       this.close();
     }
+    // In a mode that leaves at a failure, a required key is present once its check passed.
+    const present = new Set(this.mode.fail.leaves ? check.required : []);
     for (const property of check.properties) {
       if (property.schema.kind === 'always' && !marks) continue;
       const schema = property.schema;
-      this.open(`if (${presence.present(property.key)})`);
+      const guarded = !present.has(property.key);
+      if (guarded) this.open(`if (${presence.present(property.key)})`);
       this.mark(record => `${record}.keys.add(${literal(property.key)});`);
       if (schema.kind !== 'always') {
         const member = this.fresh('member');
         this.line(`const ${member} = ${presence.read(property.key)};`);
         this.atChild(literal(property.key), () => this.schema(schema, member));
       }
-      this.close();
+      if (guarded) this.close();
     }
     if (patternsToRun.length > 0) {
       const key = this.fresh('key');
@@ -1240,12 +1264,35 @@ function decidesFast(check: IrCheck, has: (id: number) => boolean): boolean {
 }
 
 /**
- * True when a fast check of `body` pays: a check of it decides something itself, and its top-level object or array
- * check is not a micro-leaf, which a failing value would run twice for nothing (spec 5.4 a).
+ * True when an object or array check of the value `schema` checks itself is a micro-leaf: a check of the schema, of an
+ * `allOf` branch, or of a function that a union branch, `not` or `$ref` runs on the same value. `seen` holds the
+ * functions already walked, so a `$ref` cycle ends.
  */
-function fastBody(body: IrSchema, has: (id: number) => boolean): boolean {
-  if (body.kind !== 'checks') return true;
-  return body.checks.some(check => decidesFast(check, has)) && !body.checks.some(check => (check.kind === 'object' || check.kind === 'array') && !hasFastForm(check));
+function topLevelMicroLeaf(schema: IrSchema, functions: readonly IrFunction[], seen: Set<number>): boolean {
+  if (schema.kind !== 'checks') return false;
+  const inFunction = (id: number): boolean => {
+    if (seen.has(id)) return false;
+    seen.add(id);
+    return topLevelMicroLeaf(functions[id].body, functions, seen);
+  };
+  return schema.checks.some(check => {
+    switch (check.kind) {
+      case 'object': case 'array': return !hasFastForm(check);
+      case 'allOf': return check.branches.some(branch => topLevelMicroLeaf(branch, functions, seen));
+      case 'union': return check.branches.some(inFunction);
+      case 'not': case 'call': return inFunction(check.fn);
+      default: return false;
+    }
+  });
+}
+
+/**
+ * True when a fast check of `fn` pays: a check of it decides something itself, and no object or array check of the
+ * value itself is a micro-leaf, which a failing value would run twice for nothing (spec 5.4 a).
+ */
+function fastBody(fn: IrFunction, functions: readonly IrFunction[], has: (id: number) => boolean): boolean {
+  if (fn.body.kind !== 'checks') return true;
+  return fn.body.checks.some(check => decidesFast(check, has)) && !topLevelMicroLeaf(fn.body, functions, new Set([fn.id]));
 }
 
 /**
@@ -1265,7 +1312,7 @@ class FastPlan {
     for (let grew = true; grew;) {
       grew = false;
       for (const fn of candidates) {
-        if (this.fast.has(fn.id) || !fastBody(fn.body, has)) continue;
+        if (this.fast.has(fn.id) || !fastBody(fn, functions, has)) continue;
         this.fast.add(fn.id);
         grew = true;
       }
@@ -1377,8 +1424,9 @@ function reachable(start: Iterable<number>, next: (id: number) => Iterable<numbe
 export function emit(module: IrModule, options: EmitOptions): EmitResult {
   const target = forwardingTarget(module.functions);
   const fastPath = options.fastPath;
-  const plan = fastPath === true || (fastPath instanceof Set && fastPath.size > 0) ? new FastPlan(module.functions) : undefined;
-  const wantsFastCheck = (name: string): boolean => fastPath === true || (fastPath instanceof Set && fastPath.has(name));
+  // A set of root names is any `ReadonlySet`, not only a `Set`.
+  const plan = fastPath === true || (typeof fastPath === 'object' && fastPath.size > 0) ? new FastPlan(module.functions) : undefined;
+  const wantsFastCheck = (name: string): boolean => fastPath === true || (typeof fastPath === 'object' && fastPath.has(name));
   const fastMode = plan === undefined ? undefined : fastCheckMode(plan);
   const fullMode = plan === undefined ? FULL_VALIDATOR : fullValidatorBeside(plan);
   const hasFastCheck = (id: number): boolean => plan?.has(id) ?? false;

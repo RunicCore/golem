@@ -441,7 +441,7 @@ test('no fast check for a root that reaches a validation function, also through 
   assert.deepEqual([...result.fastExports], [['Note', 'is_Note']]);
 });
 
-test('no fast check for a root whose top-level object or array check is a micro-leaf, whose tree holds only micro-leaves, or that keeps an evaluation record', () => {
+test('no fast check for a root whose object or array check of the value itself, also inside allOf, a union branch or $ref, is a micro-leaf, whose tree holds only micro-leaves, or that keeps an evaluation record', () => {
   const result = compile(
     {
       roots: new Map<string, unknown>([
@@ -451,6 +451,9 @@ test('no fast check for a root whose top-level object or array check is a micro-
         ['AllOfOfLeaves', { allOf: [{ if: { type: 'string' }, then: { minLength: 2 } }, { dependentSchemas: { a: { required: ['b'] } } }] }],
         ['AnyOfOfLeaves', { anyOf: [{ type: 'object', propertyNames: { maxLength: 1 } }, { type: 'array', contains: { type: 'string' } }] }],
         ['RefToLeaf', { $ref: '#/$defs/Leaf', $defs: { Leaf: { type: 'object', patternProperties: { '^a': { type: 'string' } } } } }],
+        ['AllOfWithLeafObject', { allOf: [{ type: 'object', patternProperties: { '^x': { type: 'integer' } } }, { type: 'object' }] }],
+        ['AnyOfWithLeafObject', { anyOf: [{ type: 'object', patternProperties: { '^x': { type: 'integer' } } }, { type: 'string' }] }],
+        ['RefToLeafBesideType', { type: 'object', $ref: '#/$defs/Leaf', $defs: { Leaf: { type: 'object', patternProperties: { '^a': { type: 'string' } } } } }],
         ['Unevaluated', { type: 'object', properties: { a: {} }, unevaluatedProperties: false }],
       ]),
     },
@@ -469,11 +472,26 @@ test('the fast check captures each required or dependent key that properties doe
   assert.deepEqual(cards.map(value => [dependent.validate(value, true).length === 0, dependent.isValid(value)]), [[false, false], [true, true], [true, true], [false, false]]);
 });
 
-// A seeded schema generator: object schemas from a small grammar (required, properties, dependentRequired,
-// additionalProperties false or a schema, key counts, nested objects, arrays, enums and scalars), each checked on values
-// made for it.
+// A seeded schema generator: schemas from a small grammar (objects with required, properties, dependentRequired,
+// additionalProperties, key counts and patternProperties; arrays and tuples; oneOf, anyOf, not and tagged unions;
+// $ref, const and enums of objects, formats, Dates, model instances and scalars), each checked on values made for it.
 
 const KEYS = ['a', 'b', 'c', 'd'] as const;
+
+/** Samples of each generated format: a valid one first, then one that fails. */
+const FORMAT_SAMPLES: Readonly<Record<string, readonly string[]>> = {
+  'date-time': ['2024-01-01T00:00:00Z', '2024-01-01'],
+  date: ['2024-01-01', '2024-13-01'],
+  email: ['a@b.co', 'a'],
+  uuid: ['123e4567-e89b-12d3-a456-426614174000', 'x'],
+};
+
+/** The schemas `$ref` reaches, by resource name; `Node` reaches itself. */
+const SHARED: Readonly<Record<string, Record<string, unknown>>> = {
+  Item: ITEM,
+  Node: { type: 'object', required: ['value'], properties: { value: { type: 'integer' }, children: { type: 'array', items: { $ref: 'Node' } } }, additionalProperties: false },
+  Code: { type: 'string', format: 'uuid' },
+};
 
 function pick<T>(random: () => number, items: readonly T[]): T {
   return items[Math.floor(random() * items.length)];
@@ -483,24 +501,45 @@ function subset<T>(random: () => number, items: readonly T[]): T[] {
   return items.filter(() => random() < 0.5);
 }
 
-function randomSchema(random: () => number, depth: number): Record<string, unknown> {
-  const kinds = depth < 2 ? ['string', 'integer', 'number', 'boolean', 'enum', 'array', 'object', 'object'] : ['string', 'integer', 'number', 'boolean', 'enum'];
+/**
+ * A schema at `depth`. `own` is true for a schema of the root value itself (union branches, `not` and `allOf` keep
+ * it): such a schema gets no `patternProperties`, whose micro-leaf would leave the root without a fast check.
+ */
+function randomSchema(random: () => number, depth: number, own: boolean): Record<string, unknown> {
+  const child = (): Record<string, unknown> => randomSchema(random, depth + 1, false);
+  const same = (): Record<string, unknown> => randomSchema(random, depth + 1, own);
+  const leaves = ['string', 'integer', 'number', 'boolean', 'enum', 'const', 'format', 'date', 'instance', 'ref'];
+  const kinds = depth < 2 ? [...leaves, 'array', 'tuple', 'object', 'object', 'object', 'oneOf', 'anyOf', 'not', 'tagged'] : leaves;
   switch (pick(random, kinds)) {
     case 'string': return random() < 0.5 ? { type: 'string' } : { type: 'string', minLength: 1, maxLength: 2 };
     case 'integer': return { type: 'integer', ...(random() < 0.5 ? { minimum: 0 } : {}) };
     case 'number': return { type: 'number' };
     case 'boolean': return { type: 'boolean' };
-    case 'enum': return { enum: subset(random, ['x', 'y', 1, null, true]).concat(['x']) };
-    case 'array': return { type: 'array', items: randomSchema(random, depth + 1), ...(random() < 0.3 ? { minItems: 1 } : {}), ...(random() < 0.3 ? { uniqueItems: true } : {}) };
+    case 'enum': return { enum: subset(random, ['y', 1, null, true, { k: 1 }, [1, 'x']]).concat(['x']) };
+    case 'const': return { const: pick(random, ['x', 1, null, { k: 1, m: [2] }]) };
+    case 'format': return { type: 'string', format: pick(random, Object.keys(FORMAT_SAMPLES)) };
+    case 'date': return { golemModelDate: true };
+    case 'instance': return { golemModelInstance: { of: 'Cat', among: ['Cat', 'Dog'], required: random() < 0.5 } };
+    case 'ref': return { $ref: pick(random, Object.keys(SHARED)) };
+    case 'array': return { type: 'array', items: child(), ...(random() < 0.3 ? { minItems: 1 } : {}), ...(random() < 0.3 ? { uniqueItems: true } : {}) };
+    case 'tuple': return { type: 'array', prefixItems: [child(), child()], ...pick(random, [{}, { items: false }, { items: child() }]), ...(random() < 0.3 ? { minItems: 1 } : {}) };
+    case 'oneOf': return { oneOf: [same(), same()] };
+    case 'anyOf': return { anyOf: [same(), same(), same()] };
+    case 'not': return { not: same() };
+    case 'tagged': {
+      const branch = (tag: string): Record<string, unknown> => ({ type: 'object', required: ['kind', 'a'], properties: { kind: { const: tag }, a: child() } });
+      return { oneOf: [branch('p'), branch('q')], discriminator: { propertyName: 'kind' } };
+    }
     default: {
       const named = subset(random, KEYS);
       const trigger = pick(random, KEYS);
       return {
         type: 'object',
-        properties: Object.fromEntries(named.map(key => [key, randomSchema(random, depth + 1)])),
+        properties: Object.fromEntries(named.map(key => [key, child()])),
         required: subset(random, KEYS),
         ...(random() < 0.3 ? { dependentRequired: { [trigger]: subset(random, KEYS.filter(key => key !== trigger)) } } : {}),
-        ...pick(random, [{}, { additionalProperties: false }, { additionalProperties: { type: 'string' } }, { additionalProperties: randomSchema(random, depth + 1) }]),
+        ...pick(random, [{}, { additionalProperties: false }, { additionalProperties: { type: 'string' } }, { additionalProperties: child() }]),
+        ...(!own && random() < 0.5 ? { patternProperties: { '^x': child() } } : {}),
         ...(random() < 0.2 ? { minProperties: 1 } : {}),
         ...(random() < 0.2 ? { maxProperties: 2 } : {}),
       };
@@ -510,32 +549,48 @@ function randomSchema(random: () => number, depth: number): Record<string, unkno
 
 /** A value made for `schema`, often valid: each required, dependent and some optional keys get a value of their schema. */
 function valueFor(schema: Record<string, unknown>, random: () => number): unknown {
-  if (Array.isArray(schema.enum)) return pick(random, schema.enum);
+  if (typeof schema.$ref === 'string') return valueFor(SHARED[schema.$ref], random);
+  if (Array.isArray(schema.enum)) return copy(pick(random, schema.enum));
+  if ('const' in schema) return copy(schema.const);
+  if (schema.golemModelDate === true) return random() < 0.9 ? new Date(0) : new Date(Number.NaN);
+  if (schema.golemModelInstance !== undefined) return random() < 0.8 ? new Cat() : new Dog();
+  const branches = schema.oneOf ?? schema.anyOf;
+  if (Array.isArray(branches)) {
+    const branch = pick(random, branches);
+    return isPlainRecord(branch) ? valueFor(branch, random) : null;
+  }
+  if (schema.not !== undefined) return odd(random);
+  if (typeof schema.format === 'string') return pick(random, [...FORMAT_SAMPLES[schema.format], FORMAT_SAMPLES[schema.format][0]]);
   switch (schema.type) {
     case 'string': return pick(random, ['x', 'ab', '']);
     case 'integer': return pick(random, [0, 1, -1]);
     case 'number': return pick(random, [0.5, 2]);
     case 'boolean': return random() < 0.5;
     case 'array': {
+      const prefix = Array.isArray(schema.prefixItems) ? schema.prefixItems.filter(isPlainRecord) : [];
       const items = schema.items;
-      return isPlainRecord(items) ? Array.from({ length: Math.floor(random() * 3) }, () => valueFor(items, random)) : [];
+      const head = prefix.slice(0, Math.floor(random() * (prefix.length + 1))).map(item => valueFor(item, random));
+      const tail = isPlainRecord(items) && head.length === prefix.length ? Array.from({ length: Math.floor(random() * 3) }, () => valueFor(items, random)) : [];
+      return [...head, ...tail];
     }
     default: {
       const properties = isPlainRecord(schema.properties) ? schema.properties : {};
       const additional = schema.additionalProperties;
       const keys = new Set([...(Array.isArray(schema.required) ? schema.required : []), ...subset(random, Object.keys(properties))]);
-      return Object.fromEntries([...keys].map(key => {
+      const value = Object.fromEntries([...keys].map(key => {
         const own = properties[key] ?? additional;
         return [key, isPlainRecord(own) ? valueFor(own, random) : 'x'];
       }));
+      const pattern = isPlainRecord(schema.patternProperties) ? schema.patternProperties['^x'] : undefined;
+      return isPlainRecord(pattern) && random() < 0.7 ? { ...value, x1: valueFor(pattern, random) } : value;
     }
   }
 }
 
 test('fast check equals the full validator in both directions on generated schemas and values made for them', async () => {
   const random = seeded(7);
-  const schemas = Array.from({ length: 300 }, () => randomSchema(random, 0));
-  const module = await compileValidatorModule({ roots: Object.fromEntries(schemas.map((schema, index) => [`s${index}`, schema])), fastPath: true });
+  const schemas = Array.from({ length: 400 }, () => randomSchema(random, 0, true));
+  const module = await compileValidatorModule({ roots: Object.fromEntries(schemas.map((schema, index) => [`s${index}`, schema])), resources: SHARED, fastPath: true });
   const cases = schemas.flatMap((schema, index) => {
     const sample = valueFor(schema, random);
     return [sample, ...oddValues(sample, 5000 + index, 30)].map(value => ({ root: `s${index}`, value }));
