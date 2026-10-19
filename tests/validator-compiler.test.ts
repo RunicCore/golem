@@ -945,6 +945,23 @@ test('a key whose value is undefined counts as absent for required, properties, 
   await assertIssues({ required: ['a'] }, { a: null }, []);
 });
 
+test('a non-enumerable own key counts as absent for required, properties and dependentRequired', async () => {
+  const hidden = (): object => Object.defineProperty({}, 'a', { value: 5, enumerable: false });
+  await assertIssues({ required: ['a'] }, hidden(), [{ path: ['a'], code: 'required', key: 'a' }]);
+  await assertIssues({ properties: { a: { type: 'string' } } }, hidden(), []);
+  await assertIssues({ dependentRequired: { a: ['b'] } }, hidden(), []);
+});
+
+test('uniqueItems rejects items that differ only by undefined-valued keys', async () => {
+  await assertIssues({ uniqueItems: true }, [{ a: 1, b: undefined }, { a: 1 }], [{ path: [], code: 'unique', indexes: [0, 1] }]);
+  await assertIssues({ uniqueItems: true }, [[undefined], [null]], [{ path: [], code: 'unique', indexes: [0, 1] }]);
+});
+
+test('const and enum accept a value with an extra undefined-valued key', async () => {
+  await assertIssues({ const: { a: 1 } }, { a: 1, b: undefined }, []);
+  await assertIssues({ enum: [{ a: 1 }, 2] }, { a: 1, b: undefined }, []);
+});
+
 test('compile with typed types each exported validator and imports the issue type', () => {
   const { source } = compile({ roots: new Map([['root', { type: 'string' }]]) }, { unknownFormats: 'warn', typed: true });
   assert.match(source, /^import type \{ SchemaIssue \} from "@exprtlabs\/golem\/validation-runtime";$/m);

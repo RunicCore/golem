@@ -20,7 +20,13 @@ export function codePointLength(text: string): number {
   return count;
 }
 
-/** JSON Schema equality: numbers by value, arrays by position, objects by own keys in any order. */
+const propertyIsEnumerable = Object.prototype.propertyIsEnumerable;
+
+/**
+ * JSON Schema equality over the JSON view, as `JSON.stringify` writes a value: numbers by value; arrays by position,
+ * with an `undefined` item and a hole equal to `null`; objects by their own enumerable keys whose value is not
+ * `undefined`, in any order.
+ */
 export function jsonEqual(left: unknown, right: unknown): boolean {
   if (left === right) return true;
   if (typeof left !== 'object' || typeof right !== 'object' || left === null || right === null) return false;
@@ -29,12 +35,26 @@ export function jsonEqual(left: unknown, right: unknown): boolean {
   }
   if (Array.isArray(left) || Array.isArray(right)) {
     if (!Array.isArray(left) || !Array.isArray(right) || left.length !== right.length) return false;
-    return left.every((item, index) => jsonEqual(item, right[index]));
+    for (let index = 0; index < left.length; index++) {
+      if (!jsonEqual(left[index] ?? null, right[index] ?? null)) return false;
+    }
+    return true;
   }
-  const leftKeys = Object.keys(left);
-  if (leftKeys.length !== Object.keys(right).length) return false;
-  return leftKeys.every(key => Object.hasOwn(right, key)
-    && jsonEqual((left as Record<string, unknown>)[key], (right as Record<string, unknown>)[key]));
+  // Counts the keys of each side inline, so a comparison allocates no key list.
+  let count = 0;
+  for (const key in left) {
+    if (!propertyIsEnumerable.call(left, key)) continue;
+    const value: unknown = Reflect.get(left, key);
+    if (value === undefined) continue;
+    if (!propertyIsEnumerable.call(right, key)) return false;
+    const other: unknown = Reflect.get(right, key);
+    if (other === undefined || !jsonEqual(value, other)) return false;
+    count++;
+  }
+  for (const key in right) {
+    if (propertyIsEnumerable.call(right, key) && Reflect.get(right, key) !== undefined) count--;
+  }
+  return count === 0;
 }
 
 const DIGIT = '[0-9]';

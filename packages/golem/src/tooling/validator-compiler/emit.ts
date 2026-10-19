@@ -10,7 +10,7 @@ export interface EmitOptions {
 }
 
 type RuntimeHelper = 'checkFormat' | 'codePointLength' | 'jsonEqual';
-type LocalHelper = 'hasOwn' | 'definedKeys' | 'isObject' | 'isMultipleOf' | 'selectedModel' | 'newEvaluation' | 'mergeEvaluation';
+type LocalHelper = 'isPresent' | 'definedKeys' | 'isObject' | 'isMultipleOf' | 'selectedModel' | 'newEvaluation' | 'mergeEvaluation';
 
 // Parameters of every generated function: the value, the path stack, the issue list and the all-errors flag,
 // then, for a function that receives an evaluation record (see `IrFunction`), the caller's record. Every call and
@@ -88,9 +88,10 @@ function callFunction(callee: IrFunction, name: string, args: CallArguments): st
 }
 
 const LOCAL_HELPERS: Readonly<Record<LocalHelper, string>> = {
-  // A key whose value is `undefined` is absent: a model's optional field may be set to `undefined` and JSON has no such value.
+  // The JSON view: a key is present when it is own, enumerable and not `undefined`, as `JSON.stringify` writes it. A
+  // model's optional field may be set to `undefined` and JSON has no such value.
   definedKeys: 'const definedKeys = value => Object.keys(value).filter(key => value[key] !== undefined);',
-  hasOwn: 'const hasOwn = (value, key) => Object.prototype.hasOwnProperty.call(value, key) && value[key] !== undefined;',
+  isPresent: 'const isPresent = (value, key) => Object.prototype.propertyIsEnumerable.call(value, key) && value[key] !== undefined;',
   isObject: "const isObject = value => typeof value === 'object' && value !== null && !Array.isArray(value);",
   // The quotient of two doubles is off by rounding (0.3 / 0.1), so a quotient within a few ulps of a non-zero
   // whole number counts. An infinite quotient falls back to the exact remainder.
@@ -389,10 +390,10 @@ class FunctionWriter {
       case 'conditional': return this.conditionalCheck(check, value);
       case 'dependentSchemas': {
         this.state.localHelper('isObject');
-        const hasOwn = this.state.localHelper('hasOwn');
+        const isPresent = this.state.localHelper('isPresent');
         this.open(`if (isObject(${value}))`);
         for (const { trigger, fn } of check.entries) {
-          this.open(`if (${hasOwn}(${value}, ${literal(trigger)}))`);
+          this.open(`if (${isPresent}(${value}, ${literal(trigger)}))`);
           this.callInPlace(fn, value);
           this.close();
         }
@@ -594,7 +595,7 @@ class FunctionWriter {
   }
 
   private objectKeywords(check: IrObject, value: string): void {
-    const hasOwn = this.state.localHelper('hasOwn');
+    const isPresent = this.state.localHelper('isPresent');
     const marks = this.record !== undefined;
     // A key that matches a pattern is not "additional" even when the pattern's schema accepts everything.
     const patterns = check.patternProperties.map(entry => ({ entry, expression: this.state.constant('pattern', `new RegExp(${literal(entry.pattern)}, 'u')`) }));
@@ -615,15 +616,15 @@ class FunctionWriter {
       this.close();
     }
     for (const key of check.required) {
-      this.open(`if (!${hasOwn}(${value}, ${literal(key)}))`);
+      this.open(`if (!${isPresent}(${value}, ${literal(key)}))`);
       this.issue(`code: 'required', key: ${literal(key)}`, `[...${PATH}, ${literal(key)}]`);
       this.close();
     }
     for (const { trigger, keys: dependents } of check.dependentRequired) {
       if (dependents.length === 0) continue;
-      this.open(`if (${hasOwn}(${value}, ${literal(trigger)}))`);
+      this.open(`if (${isPresent}(${value}, ${literal(trigger)}))`);
       for (const key of dependents) {
-        this.open(`if (!${hasOwn}(${value}, ${literal(key)}))`);
+        this.open(`if (!${isPresent}(${value}, ${literal(key)}))`);
         this.issue(`code: 'required', key: ${literal(key)}`, `[...${PATH}, ${literal(key)}]`);
         this.close();
       }
@@ -650,7 +651,7 @@ class FunctionWriter {
     for (const property of check.properties) {
       if (property.schema.kind === 'always' && !marks) continue;
       const schema = property.schema;
-      this.open(`if (${hasOwn}(${value}, ${literal(property.key)}))`);
+      this.open(`if (${isPresent}(${value}, ${literal(property.key)}))`);
       this.mark(record => `${record}.keys.add(${literal(property.key)});`);
       if (schema.kind !== 'always') {
         const member = this.fresh('member');
@@ -797,14 +798,14 @@ class FunctionWriter {
   /** The tag selects the branch; only that branch's issues are reported, and an unknown tag is a `literal` issue on the tag property. */
   private discriminatedUnion(check: IrUnion, discriminator: IrDiscriminator, value: string): void {
     this.state.localHelper('isObject');
-    const hasOwn = this.state.localHelper('hasOwn');
+    const isPresent = this.state.localHelper('isPresent');
     const jsonEqual = this.state.runtimeHelper('jsonEqual');
     const tags = this.state.constant('tags', `Object.freeze(/*#__PURE__*/ JSON.parse(${literal(JSON.stringify(discriminator.tags))}))`);
     const allTags = this.state.constant('lit', `Object.freeze(/*#__PURE__*/ JSON.parse(${literal(JSON.stringify(discriminator.tags.flat()))}))`);
     const tag = this.fresh('tag');
     const selected = this.fresh('branch');
     const property = literal(discriminator.property);
-    this.line(`const ${tag} = isObject(${value}) && ${hasOwn}(${value}, ${property}) ? ${value}[${property}] : undefined;`);
+    this.line(`const ${tag} = isObject(${value}) && ${isPresent}(${value}, ${property}) ? ${value}[${property}] : undefined;`);
     this.line(`const ${selected} = ${tags}.findIndex(list => list.some(item => ${jsonEqual}(${tag}, item)));`);
     check.branches.forEach((fn, position) => {
       this.open(`if (${selected} === ${position})`);
