@@ -371,7 +371,7 @@ Pass one `ModelValidationContext` to repeated serde, `validateInstance` and `Mod
 
 Types: `ObjectCodec`, `ObjectCodecImpl`, `SerdeOptions`, `ValidateOptions`, `ValidationPlane`, `WireFormat`; `IssueRepresentation` and `IssueSource` are re-exported from [`errors`](#errors).
 
-Used by generated code: `createObjectCodec`, `registerObjectCodec`, `getObjectCodec`, `requireObjectCodec`, `registerIModelClass`, `getIModelClass`, `requireIModelClass`, `findCodecIdForConstructor`, `resolveGeneratedModelSchemaRefs`, `resolveModelValidationContextValidator`, `parseJson`, `serdeValidates`, `serdeFailFast`, `validationFailure`, `validationUnavailable` and the `stringifyJson*` writers.
+Used by generated code: `createObjectCodec`, `registerObjectCodec`, `getObjectCodec`, `requireObjectCodec`, `registerIModelClass`, `getIModelClass`, `requireIModelClass`, `findCodecIdForConstructor`, `resolveGeneratedModelSchemaRefs`, `resolveModelValidationContextValidator`, `assertModelValue`, `isValidModelValue`, `assertModelValueFast`, `isValidModelValueFast`, `parseJson`, `serdeValidates`, `serdeFailFast`, `validationFailure`, `validationUnavailable` and the `stringifyJson*` writers.
 
 ## `@exprtlabs/golem/nest` {#nest}
 

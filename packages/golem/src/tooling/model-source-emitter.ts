@@ -16,7 +16,7 @@ export {
   type NestedImportedSerde,
   type StringifySerdeResolver,
 } from './stringify-emitter.js';
-export { presentKeysSource, presentValueSource } from '../presence.js';
+export { presentKeysSource } from '../presence.js';
 export { pruneGeneratedImports } from './generated-imports.js';
 export { FIELD_CONVERSION_INPUT, singleCallConverter, type TupleConversionDescriptor } from './sequence-conversion.js';
 /** The allOf object merge, for generators that read schemas (golem-openapi). */
