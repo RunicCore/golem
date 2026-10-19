@@ -92,10 +92,10 @@ export class TwinOptional extends TTwinOptionalBaseModel {}
 
 // A value is built from plain initial data; the constructor makes each nested model a class instance.
 export const imodelTwins: TwinFactories = {
-  flat: { codecId: 'TTwinFlat', make: init => new TwinFlat(init as TTwinFlatInit) },
-  nested: { codecId: 'TTwinNested', make: init => new TwinNested(init as TTwinNestedInit) },
-  union: { codecId: 'TTwinUnion', make: init => new TwinUnion(init as TTwinUnionInit) },
-  array: { codecId: 'TTwinArray', make: init => new TwinArray(init as TTwinArrayInit) },
-  tuple: { codecId: 'TTwinTuple', make: init => new TwinTuple(init as TTwinTupleInit) },
-  optional: { codecId: 'TTwinOptional', make: init => new TwinOptional(init as TTwinOptionalInit) },
+  flat: { codecId: 'TTwinFlat', make(init: TTwinFlatInit) { return new TwinFlat(init); } },
+  nested: { codecId: 'TTwinNested', make(init: TTwinNestedInit) { return new TwinNested(init); } },
+  union: { codecId: 'TTwinUnion', make(init: TTwinUnionInit) { return new TwinUnion(init); } },
+  array: { codecId: 'TTwinArray', make(init: TTwinArrayInit) { return new TwinArray(init); } },
+  tuple: { codecId: 'TTwinTuple', make(init: TTwinTupleInit) { return new TwinTuple(init); } },
+  optional: { codecId: 'TTwinOptional', make(init: TTwinOptionalInit) { return new TwinOptional(init); } },
 };

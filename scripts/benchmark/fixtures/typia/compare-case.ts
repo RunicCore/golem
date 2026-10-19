@@ -5,7 +5,8 @@ export type TwinKind = 'plain' | 'imodel' | 'mobx';
 /** One timed call of the typia comparison; the runner and the fixture module share this shape. */
 export interface CompareCase { readonly model: string; readonly twin: TwinKind; readonly task: CompareTask; readonly side: string; readonly run: () => unknown }
 /** How a twin set builds one model value from plain initial data, and the id of the codec that validates it. */
-export interface TwinFactory { readonly codecId: string; readonly make: (init: unknown) => object }
+/** `make` is a method on purpose: its parameter is checked bivariantly, so a factory declares the init type of its own model. */
+export interface TwinFactory { readonly codecId: string; make(init: unknown): object }
 export type TwinFactories = Readonly<Record<string, TwinFactory>>;
 
 /** The twin sets that live in other projects: the MobX twins need their own generation profile. */

@@ -114,12 +114,15 @@ export class MobxOptional extends TMobxOptionalBaseModel {
   public constructor(values: TMobxOptionalInit) { super(values); asGenObservable(this); }
 }
 
-/** The twin factories of this file; the typia comparison builds each MobX value from plain initial data. */
-export const mobxTwins: Readonly<Record<string, { readonly codecId: string; readonly make: (init: unknown) => object }>> = {
-  flat: { codecId: 'TMobxFlat', make: init => new MobxFlat(init as TMobxFlatInit) },
-  nested: { codecId: 'TMobxNested', make: init => new MobxNested(init as TMobxNestedInit) },
-  union: { codecId: 'TMobxUnion', make: init => new MobxUnion(init as TMobxUnionInit) },
-  array: { codecId: 'TMobxArray', make: init => new MobxArray(init as TMobxArrayInit) },
-  tuple: { codecId: 'TMobxTuple', make: init => new MobxTuple(init as TMobxTupleInit) },
-  optional: { codecId: 'TMobxOptional', make: init => new MobxOptional(init as TMobxOptionalInit) },
+/**
+ * The twin factories of this file; the typia comparison builds each MobX value from plain initial data. This is the
+ * `TwinFactories` shape of typia/compare-case.ts, written out: the MobX project is generated and compiled from this folder alone.
+ */
+export const mobxTwins: Readonly<Record<string, { readonly codecId: string; make(init: unknown): object }>> = {
+  flat: { codecId: 'TMobxFlat', make(init: TMobxFlatInit) { return new MobxFlat(init); } },
+  nested: { codecId: 'TMobxNested', make(init: TMobxNestedInit) { return new MobxNested(init); } },
+  union: { codecId: 'TMobxUnion', make(init: TMobxUnionInit) { return new MobxUnion(init); } },
+  array: { codecId: 'TMobxArray', make(init: TMobxArrayInit) { return new MobxArray(init); } },
+  tuple: { codecId: 'TMobxTuple', make(init: TMobxTupleInit) { return new MobxTuple(init); } },
+  optional: { codecId: 'TMobxOptional', make(init: TMobxOptionalInit) { return new MobxOptional(init); } },
 };
