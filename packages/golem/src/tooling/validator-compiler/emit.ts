@@ -439,33 +439,36 @@ function fastKeyTest(writer: FunctionWriter, { check, value, captured, visitsAdd
   const locals = [...captured.map(([, local]) => local), ...(count === undefined ? [] : [`${count} = 0`])];
   if (locals.length > 0) writer.line(`let ${locals.join(', ')};`);
   const key = writer.fresh('key');
-  const item = writer.fresh('item');
-  writer.open(`for (const ${key} of Object.keys(${value}))`);
-  writer.line(`const ${item} = ${value}[${key}];`);
-  writer.line(`if (${item} === undefined) continue;`);
-  if (count !== undefined) writer.line(`${count}++;`);
   const named = new Set(check.properties.map(property => property.key));
   const capturedKeys = new Set(captured.map(([name]) => name));
   const additional = visitsAdditional ? check.additional : undefined;
+  // A declared key is read in its own case by its name, which V8 reads faster than a read by the loop's key; only the
+  // keys that reach `default` are read by the loop's key. A key counts when its value is not `undefined`.
+  const counted = (read: string): string => (count === undefined ? '' : ` if (${read} !== undefined) ${count}++;`);
   const cases = [
-    ...captured.filter(([name]) => additional === undefined || named.has(name)).map(([name, local]) => `case ${literal(name)}: ${local} = ${item}; break;`),
-    ...(additional === undefined ? [] : [...named].filter(name => !capturedKeys.has(name)).map(name => `case ${literal(name)}: break;`)),
+    ...captured.filter(([name]) => additional === undefined || named.has(name)).map(([name, local]) => `case ${literal(name)}: ${local} = ${value}[${literal(name)}];${counted(local)} break;`),
+    ...(additional === undefined ? [] : [...named].filter(name => !capturedKeys.has(name)).map(name => `case ${literal(name)}:${counted(`${value}[${literal(name)}]`)} break;`)),
   ];
   // A required or dependent key that `properties` does not name is still additional: `default` captures it, then tests it.
   const unnamed = captured.filter(([name]) => !named.has(name));
-  if (cases.length > 0 || additional !== undefined) {
-    writer.open(`switch (${key})`);
-    for (const entry of cases) writer.line(entry);
-    if (additional?.kind === 'forbid') {
-      writer.line(`default: ${writer.mode.fail.fail()}`);
-    } else if (additional !== undefined) {
-      writer.open('default:');
+  writer.open(`for (const ${key} of Object.keys(${value}))`);
+  writer.open(`switch (${key})`);
+  for (const entry of cases) writer.line(entry);
+  if (additional?.kind === 'forbid') {
+    writer.line(`default: if (${value}[${key}] !== undefined) ${writer.mode.fail.fail()}`);
+  } else if (additional !== undefined || count !== undefined) {
+    const item = writer.fresh('item');
+    writer.open('default:');
+    writer.line(`const ${item} = ${value}[${key}];`);
+    writer.line(`if (${item} === undefined) continue;`);
+    if (count !== undefined) writer.line(`${count}++;`);
+    if (additional !== undefined) {
       unnamed.forEach(([name, local], position) => writer.line(`${position === 0 ? '' : 'else '}if (${key} === ${literal(name)}) ${local} = ${item};`));
       writer.atChild(key, () => writer.schema(additional.schema, item));
-      writer.close();
     }
     writer.close();
   }
+  writer.close();
   writer.close();
   return { presence, ...(count === undefined ? {} : { count }) };
 }
