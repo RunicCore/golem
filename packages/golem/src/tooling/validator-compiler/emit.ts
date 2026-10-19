@@ -1083,6 +1083,8 @@ class FunctionWriter {
 
   private unionCheck(check: IrUnion, value: string): void {
     if (this.record !== undefined) return this.recordingUnionCheck(check, value);
+    const inferred = this.inferredTag(check);
+    if (inferred !== undefined) return this.mergedUnion(inferred.branches, inferred.discriminator, value);
     const attempt = (fn: number): string => this.call(fn, { value, issues: '[]', all: 'false' });
     if (!check.exactlyOne) return this.leaf({ fails: `!(${check.branches.map(attempt).join(' || ')})`, issue: "code: 'union', matched: 0" });
     const matched = this.fresh('matched');
@@ -1181,6 +1183,29 @@ class FunctionWriter {
       objects.push(object);
     }
     return objects;
+  }
+
+  /**
+   * A tag for a union without one, when the mode merges its branches: a key every branch requires and holds to one
+   * primitive value of its own. At most one branch can then pass, the one whose value the key holds, so the union's
+   * verdict is that branch's verdict, for `anyOf` and `oneOf` alike. The full validator keeps its union issues.
+   */
+  private inferredTag(check: IrUnion): { readonly branches: readonly IrObject[]; readonly discriminator: IrDiscriminator } | undefined {
+    const branches = this.mergedBranches(check);
+    if (branches === undefined) return undefined;
+    const valueOf = (object: IrObject, key: string): { readonly value: unknown } | undefined => {
+      const schema = object.properties.find(property => property.key === key)?.schema;
+      if (!object.required.includes(key) || schema?.kind !== 'checks') return undefined;
+      const literal = schema.checks.find(entry => entry.kind === 'literal' && entry.values.length === 1 && isPrimitive(entry.values[0]));
+      return literal?.kind === 'literal' ? { value: literal.values[0] } : undefined;
+    };
+    for (const key of branches[0].required) {
+      const values = branches.map(object => valueOf(object, key));
+      if (!values.every(found => found !== undefined)) continue;
+      const tags = values.map(found => found.value);
+      if (new Set(tags).size === tags.length) return { branches, discriminator: { property: key, tags: tags.map(tag => [tag]) } };
+    }
+    return undefined;
   }
 
   /** A branch object that `additionalProperties: false` closes. */

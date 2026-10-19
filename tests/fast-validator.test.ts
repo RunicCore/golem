@@ -491,6 +491,10 @@ const SHARED: Readonly<Record<string, Record<string, unknown>>> = {
   Item: ITEM,
   Node: { type: 'object', required: ['value'], properties: { value: { type: 'integer' }, children: { type: 'array', items: { $ref: 'Node' } } }, additionalProperties: false },
   Code: { type: 'string', format: 'uuid' },
+  // A tagged union of $ref branches: each branch is judged at its target.
+  Circle: { type: 'object', required: ['kind', 'r'], properties: { kind: { const: 'circle' }, r: { type: 'number' } }, additionalProperties: false },
+  Square: { type: 'object', required: ['kind', 'side'], properties: { kind: { const: 'square' }, side: { type: 'number' }, r: { type: 'string' } } },
+  Shape: { oneOf: [{ $ref: 'Circle' }, { $ref: 'Square' }], discriminator: { propertyName: 'kind' } },
 };
 
 function pick<T>(random: () => number, items: readonly T[]): T {
@@ -509,7 +513,7 @@ function randomSchema(random: () => number, depth: number, own: boolean): Record
   const child = (): Record<string, unknown> => randomSchema(random, depth + 1, false);
   const same = (): Record<string, unknown> => randomSchema(random, depth + 1, own);
   const leaves = ['string', 'integer', 'number', 'boolean', 'enum', 'const', 'format', 'date', 'instance', 'ref'];
-  const kinds = depth < 2 ? [...leaves, 'array', 'tuple', 'object', 'object', 'object', 'oneOf', 'anyOf', 'not', 'tagged'] : leaves;
+  const kinds = depth < 2 ? [...leaves, 'array', 'tuple', 'object', 'object', 'object', 'oneOf', 'anyOf', 'not', 'tagged', 'constTagged'] : leaves;
   switch (pick(random, kinds)) {
     case 'string': return random() < 0.5 ? { type: 'string' } : { type: 'string', minLength: 1, maxLength: 2 };
     case 'integer': return { type: 'integer', ...(random() < 0.5 ? { minimum: 0 } : {}) };
@@ -535,6 +539,18 @@ function randomSchema(random: () => number, depth: number, own: boolean): Record
         ...pick(random, [{}, { additionalProperties: false }, { additionalProperties: false }, { additionalProperties: { type: 'string' } }]),
       });
       return { oneOf: [branch('p', 'b'), branch('q', 'c')], discriminator: { propertyName: 'kind' } };
+    }
+    case 'constTagged': {
+      // A union with no discriminator whose branches each require `t` and hold it to one value of their own, or a near
+      // miss: `t` not required in one branch, two branches with one value, an enum of two, or a branch that is no object.
+      const miss = pick(random, ['none', 'none', 'optional', 'duplicate', 'enum', 'nonObject']);
+      const branch = (tag: string, own: string, last: boolean): Record<string, unknown> => ({
+        type: 'object',
+        required: miss === 'optional' && last ? ['a'] : ['t', 'a'],
+        properties: { t: miss === 'enum' && last ? { enum: [tag, 'r'] } : { const: miss === 'duplicate' && last ? 'p' : tag }, a: child(), [own]: child() },
+        ...pick(random, [{}, { additionalProperties: false }, { additionalProperties: false }]),
+      });
+      return { [pick(random, ['anyOf', 'oneOf'])]: [branch('p', 'b', false), miss === 'nonObject' ? { type: 'string' } : branch('q', 'c', true)] };
     }
     default: {
       const named = subset(random, KEYS);
@@ -565,8 +581,10 @@ function valueFor(schema: Record<string, unknown>, random: () => number): unknow
     const branch = pick(random, branches);
     const value = isPlainRecord(branch) ? valueFor(branch, random) : null;
     // Half the time a key that only another branch declares, with a value that branch accepts.
-    const other = pick(random, branches.filter(entry => entry !== branch));
-    const declared = isPlainRecord(branch) && isPlainRecord(branch.properties) ? Object.keys(branch.properties) : [];
+    const target = (entry: unknown): unknown => (isPlainRecord(entry) && typeof entry.$ref === 'string' ? SHARED[entry.$ref] : entry);
+    const own = target(branch);
+    const other = target(pick(random, branches.filter(entry => entry !== branch)));
+    const declared = isPlainRecord(own) && isPlainRecord(own.properties) ? Object.keys(own.properties) : [];
     const foreign = isPlainRecord(other) && isPlainRecord(other.properties) ? Object.entries(other.properties).filter(([key]) => !declared.includes(key)) : [];
     if (!isPlainRecord(value) || foreign.length === 0 || random() >= 0.5) return value;
     const [key, schema] = pick(random, foreign);
