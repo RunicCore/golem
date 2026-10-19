@@ -61,8 +61,8 @@ test('a program session reuses the SourceFile of an unchanged input and parses a
   first.close();
 });
 
-// The build paths whose compiler calls differ by version: `--showConfig` of forwarded arguments, the emit run's `--listEmittedFiles` lines and the incremental state. No `skip`: it runs on both versions.
-test('golem build --declaration builds, runs and rebuilds incrementally, and a type error under --noEmitOnError emits nothing', async (t) => {
+// The build paths whose compiler calls differ by version: `--showConfig` of forwarded arguments, the emit run's `--listEmittedFiles` lines and the incremental state. On TypeScript 7 build-command.test.ts proves the same claims.
+test('golem build --declaration builds, runs and rebuilds incrementally, and a type error under --noEmitOnError emits nothing', { skip }, async (t) => {
   const root = sourceOnlyProject(t, 'ts6-build');
   // The tsconfig does not ask for declarations, so only the forwarded argument can produce them: golem build must read it with --showConfig.
   editTsconfig(root, (tsconfig) => { tsconfig.compilerOptions.declaration = false; });

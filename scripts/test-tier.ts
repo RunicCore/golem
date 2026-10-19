@@ -22,7 +22,7 @@ export const PACKED_FILES = ['.build/tests/packed/consumers.test.js', '.build/te
 const SMOKE_FILE = '.build/tests/packed/model-only.test.js';
 // The TypeScript 6 lane runs these files with GOLEM_TYPESCRIPT_ROOT at the container's TypeScript 6 install. The identity test
 // (typescript-identity, unit step) proves that TypeScript 6 and 7 write the same bytes for its corpus and compiles that corpus
-// once on TypeScript 6, so the lane reruns only the tests that reach a place of the TypeScript 6 shim (ts6.ts, build.ts).
+// once on TypeScript 6, so the lane reruns only the tests that reach a place of the TypeScript 6 shim (typescript-ts6.ts, build.ts).
 // A new version-path claim adds an identity fixture, not a file here. Each entry names the shim place it proves:
 export const TYPESCRIPT6_FILES = [
   ...[
