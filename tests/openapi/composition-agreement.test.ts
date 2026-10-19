@@ -495,6 +495,38 @@ const rows: readonly Row[] = [
     }],
     rejected: [{ pet: { name: 'n', lives: 'x' } }],
   },
+  // Arrays and tuples that convert alike combine by their items, so items that differ in null or required names agree.
+  {
+    shape: 'a derived component narrows an inherited array of nullable date-times to date-times',
+    fixture: 'narrowed-items',
+    root: 'Derived',
+    document: componentDocument('Derived', {
+      Base: object({ stamps: { type: 'array', items: { type: ['string', 'null'], format: 'date-time' } } }),
+      Derived: { allOf: [ref('Base'), object({ stamps: { type: 'array', items: dateTime } })] },
+    }),
+    accepted: [{ wire: { stamps: [AT] }, model: { stamps: [new Date(AT)] } }],
+    rejected: [{ stamps: [null] }],
+  },
+  {
+    shape: 'a derived component requires a name in the items of an inherited array',
+    root: 'Derived',
+    document: componentDocument('Derived', {
+      Base: object({ visits: { type: 'array', items: object({ a: dateTime }) } }),
+      Derived: { allOf: [ref('Base'), object({ visits: { type: 'array', items: object({ a: dateTime }, { required: ['a'] }) } })] },
+    }),
+    accepted: [{ wire: { visits: [{ a: AT }] }, model: { visits: [{ a: new Date(AT) }] } }],
+    rejected: [{ visits: [{}] }],
+  },
+  {
+    shape: 'a derived component narrows an inherited tuple of a nullable date-time to a date-time',
+    root: 'Derived',
+    document: componentDocument('Derived', {
+      Base: object({ pair: { type: 'array', prefixItems: [{ type: ['string', 'null'], format: 'date-time' }], items: false } }),
+      Derived: { allOf: [ref('Base'), object({ pair: { type: 'array', prefixItems: [dateTime], items: false } })] },
+    }),
+    accepted: [{ wire: { pair: [AT] }, model: { pair: [new Date(AT)] } }],
+    rejected: [{ pair: [null] }],
+  },
   // A lone model reference keeps the model; unevaluatedProperties: false beside it closes the model's names on the wire.
   {
     shape: 'a property that wraps one model $ref in allOf with unevaluatedProperties false',

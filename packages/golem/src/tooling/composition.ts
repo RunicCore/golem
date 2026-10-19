@@ -6,8 +6,9 @@
  * 2. A part with `additionalProperties: false` that does not list a name closes it: the slot has no valid value (`never`).
  * 3. The slot rule picks one child for the children of a name, as JSON Schema AND: equal children are one; null stays only
  *    when every child admits it; a union keeps the variants that the other children admit; objects compose by these rules;
- *    a model whose base chain holds another child's model narrows it (a covariant override; arrays of them alike); one
- *    conversion decides and the other children constrain the wire value that it converts: a scalar decider takes their
+ *    a model whose base chain holds another child's model narrows it (a covariant override); arrays, and tuples of one
+ *    shape, combine item by item; one conversion decides and the other children constrain the wire value that it
+ *    converts: a scalar decider takes their
  *    constraints, and an object or array decider also takes each other child as a whole-value check; a scalar
  *    intersection reduces (`string` and `'cat'` give `'cat'`); disjoint JSON types give `never`; and children
  *    that convert differently are rejected.
@@ -118,6 +119,8 @@ function combineDescriptors(children: readonly ModelTypeDescriptor[], models: Mo
   if (distinct.some(isNullableUnion)) return combineNullable(distinct, models);
   const narrowed = narrowUnions(distinct) ?? mostDerivedModels(distinct, models);
   if (narrowed) return combineDescriptors(narrowed, models);
+  const sequence = combineSequences(distinct, models);
+  if (sequence) return sequence;
   if (distinct.every((child) => child.kind === 'object')) return composeObjectDescriptors(distinct, models) ?? NEVER;
   const converting = distinct.filter(descriptorNeedsConversion);
   const [decider] = converting;
@@ -152,6 +155,41 @@ function combineDescriptors(children: readonly ModelTypeDescriptor[], models: Mo
     return base ? withConstraints(base, constraints) : NEVER;
   }
   return { kind: 'intersection', variants: distinct };
+}
+
+type ArrayDescriptor = Extract<ModelTypeDescriptor, { readonly kind: 'array' }>;
+type TupleDescriptor = Extract<ModelTypeDescriptor, { readonly kind: 'tuple' }>;
+
+/**
+ * Arrays, or tuples of one shape, combine item by item by this rule, so items that differ only in null, constraints or
+ * required names are one item. Their own constraints join. Undefined when the children are not all such sequences.
+ */
+function combineSequences(children: readonly ModelTypeDescriptor[], models: ModelBases): ModelTypeDescriptor | Rejected | undefined {
+  const constraints = children.flatMap((child) => child.constraints ?? []);
+  const arrays = children.filter((child): child is ArrayDescriptor => child.kind === 'array');
+  const [array] = arrays;
+  if (array && arrays.length === children.length) {
+    const item = combineDescriptors(arrays.map((each) => each.item), models);
+    return isRejected(item) ? item : withConstraints({ ...array, item }, constraints);
+  }
+  const tuples = children.filter((child): child is TupleDescriptor => child.kind === 'tuple');
+  const [tuple] = tuples;
+  if (!tuple || tuples.length !== children.length || tuples.some((each) => !sameTupleShape(each, tuple))) return undefined;
+  const items: ModelTypeDescriptor[] = [];
+  for (const [index] of tuple.items.entries()) {
+    const item = combineDescriptors(tuples.flatMap((each) => each.items[index] ?? []), models);
+    if (isRejected(item)) return item;
+    items.push(item);
+  }
+  if (!tuple.rest) return withConstraints({ ...tuple, items }, constraints);
+  const rest = combineDescriptors(tuples.flatMap((each) => each.rest?.item ?? []), models);
+  if (isRejected(rest)) return rest;
+  return withConstraints({ ...tuple, items, rest: { index: tuple.rest.index, item: rest } }, constraints);
+}
+
+function sameTupleShape(left: TupleDescriptor, right: TupleDescriptor): boolean {
+  return left.items.length === right.items.length && left.optionalFrom === right.optionalFrom
+    && left.rest?.index === right.rest?.index;
 }
 
 /** Null stays when every child admits it; the other variants combine without it. */
@@ -194,7 +232,7 @@ function admits(child: ModelTypeDescriptor, variant: ModelTypeDescriptor): boole
 
 /**
  * A covariant override: a child whose model's base chain holds another child's model narrows it, so the most derived model
- * decides (`Pet` and `Cat`, where `Cat` extends `Pet`, give `Cat`); arrays of such models alike. The narrowed child's
+ * decides (`Pet` and `Cat`, where `Cat` extends `Pet`, give `Cat`); arrays of them combine by their items. The narrowed child's
  * constraints join the child that narrows it. Undefined when no child narrows another.
  */
 function mostDerivedModels(children: readonly ModelTypeDescriptor[], models: ModelBases): ModelTypeDescriptor[] | undefined {
@@ -207,7 +245,6 @@ function mostDerivedModels(children: readonly ModelTypeDescriptor[], models: Mod
 }
 
 function narrowsModel(derived: ModelTypeDescriptor, base: ModelTypeDescriptor, models: ModelBases): boolean {
-  if (derived.kind === 'array' && base.kind === 'array') return narrowsModel(derived.item, base.item, models);
   const derivedId = modelName(derived);
   const baseId = modelName(base);
   if (derivedId === undefined || baseId === undefined) return false;
