@@ -31,7 +31,7 @@ import { isJsonObject, objectEntries } from './json.js';
 import { effectiveSchemaTypes } from './normalize.js';
 
 export const COMPOSITION_CONVERSION_CONFLICT = 'OPENAPI_COMPOSITION_CONVERSION_CONFLICT';
-export const COMPOSITION_UNSATISFIABLE = 'OPENAPI_COMPOSITION_UNSATISFIABLE';
+const COMPOSITION_UNSATISFIABLE = 'OPENAPI_COMPOSITION_UNSATISFIABLE';
 export const COMPOSITION_PROPERTY_NEVER = 'OPENAPI_COMPOSITION_PROPERTY_NEVER';
 
 /** A schema in the scope it is read in. */

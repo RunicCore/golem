@@ -257,7 +257,7 @@ export function conversionKey(descriptor: ModelTypeDescriptor): string {
 }
 
 /** The one object that an intersection of object descriptors converts as; undefined when a variant is not an object. */
-export function composeObjectDescriptors(
+function composeObjectDescriptors(
   variants: readonly ModelTypeDescriptor[],
   models: ModelBases = NO_BASES,
 ): ObjectTypeDescriptor | Rejected | undefined {

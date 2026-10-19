@@ -19,7 +19,7 @@ import { sourceDigest } from '@exprtlabs/golem/manifest';
 import { buildCodecValidationPlan, uniqueDiagnostics } from '@exprtlabs/golem/validation-plan';
 import type { DiscriminatorValue, ModelConstraint, ModelTypeDescriptor, UnionDiscriminator } from '@exprtlabs/golem/model';
 
-import { asRecord, isJsonObject, jsonLiteral, objectEntries } from './json.js';
+import { asRecord, isJsonObject, objectEntries } from './json.js';
 import {
   compareText,
   CompositionConflictError,

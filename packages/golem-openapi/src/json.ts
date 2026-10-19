@@ -76,14 +76,3 @@ export function resolveJsonPointer(document: unknown, pointer: string): unknown 
   }
   return current;
 }
-
-/**
- * Emit JSON data as a JavaScript object/array literal while keeping an own
- * `__proto__` property. A quoted `__proto__` key in an object literal invokes
- * the legacy prototype setter; a computed key retains the wire schema data.
- */
-export function jsonLiteral(value: unknown, space?: string | number): string {
-  const serialized = JSON.stringify(value, null, space);
-  if (serialized === undefined) throw new TypeError('Generated JSON data is not serializable.');
-  return serialized.replace(/(^|[{,]\s*)"__proto__":/g, '$1["__proto__"]:');
-}
