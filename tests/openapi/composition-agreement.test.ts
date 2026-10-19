@@ -231,7 +231,7 @@ const rows: readonly Row[] = [
     accepted: [{ wire: { m: { a: 'x' } }, model: { m: { a: 'x' } } }],
     rejected: [{ m: { a: 'x', b: 'y' } }, { m: { b: 'y' } }],
     // The type shows `b?: never`.
-    warnings: [/^OPENAPI_COMPOSITION_PROPERTY_NEVER: Property "b" of schema "Visit" at #\/components\/schemas\/Visit\/properties\/m .*Remove additionalProperties: false/],
+    warnings: [/^OPENAPI_COMPOSITION_PROPERTY_NEVER: Property "b" of schema "Visit" at #\/components\/schemas\/Visit\/properties\/m .*allOf member \d sets additionalProperties: false\. Replace it with unevaluatedProperties: false/],
   },
   // A closed base with a derived optional own property: the validator rejects `b`, and the type shows `b?: never`.
   {
@@ -248,6 +248,18 @@ const rows: readonly Row[] = [
   },
   // The user's answer: strict JSON Schema, and `unevaluatedProperties: false` closes an object to every name that any member
   // declares. An open base and a derived component that sets it accept the base and own names and reject any other name.
+  {
+    shape: 'a component whose own allOf member is closed rejects an optional base property',
+    root: 'Cat',
+    document: componentDocument('Cat', {
+      Pet: object({ name: text }),
+      Cat: { allOf: [ref('Pet'), object({ meow: text }, { additionalProperties: false })] },
+    }),
+    accepted: [{ wire: { meow: 'm' }, model: { meow: 'm' } }],
+    rejected: [],
+    rejectedOnWire: [{ meow: 'm', name: 'n' }],
+    warnings: [/^OPENAPI_COMPOSITION_PROPERTY_NEVER: Property "name" of schema "Cat" at #\/components\/schemas\/Cat .*allOf member 1 sets additionalProperties: false\. Replace it with unevaluatedProperties: false beside the allOf\./],
+  },
   {
     shape: 'an open base and a component with unevaluatedProperties false',
     fixture: 'unevaluated-open-base',
@@ -745,7 +757,7 @@ const stopped: readonly { readonly shape: string; readonly error: RegExp; readon
   },
   {
     shape: 'a closed derived member and a required base property',
-    error: /schema "Derived" at #\/components\/schemas\/Derived(?=[ :]).*OPENAPI_COMPOSITION_UNSATISFIABLE: .*"a".*Remove additionalProperties: false/,
+    error: /schema "Derived" at #\/components\/schemas\/Derived(?=[ :]).*OPENAPI_COMPOSITION_UNSATISFIABLE: .*"a".*allOf member \d sets additionalProperties: false\. Replace it with unevaluatedProperties: false/,
     document: componentDocument('Derived', {
       Base: object({ a: text }, { required: ['a'] }),
       Derived: { allOf: [ref('Base'), { type: 'object', additionalProperties: false, properties: { b: text } }] },

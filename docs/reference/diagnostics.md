@@ -376,7 +376,7 @@ The validator compiler writes the checks that generated models and SDKs run. Its
 
 ### OPENAPI_COMPOSITION_PROPERTY_NEVER
 
-**allOf property that cannot hold a value.** An optional property of an `allOf` has no value that every member accepts. A member with `additionalProperties: false` judges each name that its own `properties` do not list, also the names of its sibling members. Two members can also give the property types that have no common value. This is a warning: generation continues, and the property is typed `never`. **Fix:** For a closed base, remove `additionalProperties: false` from the base, then add `unevaluatedProperties: false` to each component that extends it. For two types, give the property one type in every member.
+**allOf property that cannot hold a value.** An optional property of an `allOf` has no value that every member accepts. A member with `additionalProperties: false` judges each name that its own `properties` do not list, also the names of its sibling members. Two members can also give the property types that have no common value. This is a warning: generation continues, and the property is typed `never`. **Fix:** For a closed base, remove `additionalProperties: false` from the base, then add `unevaluatedProperties: false` to each component that extends it. For a closed member of the schema itself, replace its `additionalProperties: false` with `unevaluatedProperties: false` beside the `allOf`. The message names that member. For two types, give the property one type in every member.
 
 ### OPENAPI_COMPOSITION_UNSATISFIABLE
 

@@ -52,10 +52,14 @@ export interface CompositionReader<S> {
   baseOf(id: string): string | undefined;
 }
 
-/** A name that no value can hold, and whether a closed part (`additionalProperties: false`) rejects it. */
+/**
+ * A name that no value can hold, and whether a closed part (`additionalProperties: false`) rejects it. `closer` names that
+ * part when it is the schema's own (its own keywords or an inline allOf member); a `$ref` base leaves it undefined.
+ */
 export interface NeverName {
   readonly name: string;
   readonly closed: boolean;
+  readonly closer?: string;
 }
 
 /** One name's child: its descriptor, and the schemas whose type it shows (none for a name that no value can hold). */
@@ -135,7 +139,7 @@ function resolveObjects<S>(
     }
     const composed = composeObjects(parts, rule);
     if (isRejected(composed)) return conflict(composed.rejected);
-    const never = neverSlots(composed);
+    const never = neverSlots(composed, parts, partNames(schema, ownPart, deciding, nested, reader));
     const required = never.filter(({ name }) => composed.required.includes(name));
     if (required.length) return unsatisfiable(required);
     const closes = schema.unevaluatedProperties === false && parts.every((part) => part.extra.mode === 'open');
@@ -161,7 +165,7 @@ function resolveObjects<S>(
   parts.push({ slots: {}, required: composedRequired(schema), extra: { mode: 'open' } });
   const composed = composeObjects(parts, rule);
   if (isRejected(composed)) return conflict(composed.rejected);
-  const never = neverSlots(composed);
+  const never = neverSlots(composed, parts, partNames(schema, ownPart, deciding, nested, reader));
   const unsatisfied = never.filter(({ name }) => composed.required.includes(name));
   if (unsatisfied.length) return unsatisfiable(unsatisfied);
   const extra = composed.extra.mode === 'open' ? unevaluatedExtra(schema, nested, reader) : composed.extra;
@@ -201,13 +205,35 @@ export function neverNames<S>(composition: Composition<S>): readonly NeverName[]
 
 /** Why a name holds no value, and the fix: the two-step fix for a closed member, one schema for disjoint types. */
 export function neverReason(never: NeverName): string {
-  return never.closed ? neverFix : disjointFix;
+  if (!never.closed) return disjointFix;
+  return never.closer === undefined ? neverFix
+    : `cannot hold a value, because ${never.closer} sets additionalProperties: false. `
+      + 'Replace it with unevaluatedProperties: false beside the allOf.';
 }
 
-function neverSlots<S>(composed: ObjectResult<SlotChild<S>>): NeverName[] {
+/** The schema's own parts by name, in the order of `parts`; a `$ref` member is undefined. */
+function partNames<S>(
+  schema: Readonly<Record<string, unknown>>,
+  ownPart: ObjectPart<SlotChild<S>> | undefined,
+  deciding: readonly { readonly member: unknown }[],
+  scope: S,
+  reader: CompositionReader<S>,
+): (string | undefined)[] {
+  const members = Array.isArray(schema.allOf) ? schema.allOf : [];
+  return [
+    ...(ownPart ? ['the schema itself'] : []),
+    ...deciding.map(({ member }) => reader.reference(member, scope) ? undefined : `allOf member ${members.indexOf(member)}`),
+  ];
+}
+
+function neverSlots<S>(composed: ObjectResult<SlotChild<S>>, parts: readonly ObjectPart<SlotChild<S>>[], names: readonly (string | undefined)[]): NeverName[] {
   return Object.entries(composed.slots)
     .filter(([, child]) => child.descriptor.kind === 'never')
-    .map(([name]) => ({ name, closed: composed.closed.includes(name) }));
+    .map(([name]) => {
+      if (!composed.closed.includes(name)) return { name, closed: false };
+      const closer = names[parts.findIndex((part) => part.extra.mode === 'closed' && !Object.hasOwn(part.slots, name))];
+      return closer === undefined ? { name, closed: true } : { name, closed: true, closer };
+    });
 }
 
 function describe<S>(schema: unknown, scope: S, reader: CompositionReader<S>): ModelTypeDescriptor {
