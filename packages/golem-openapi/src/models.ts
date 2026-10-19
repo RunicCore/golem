@@ -507,10 +507,21 @@ function hasOwnObjectKeywords(schema: Readonly<Record<string, unknown>>): boolea
   return Boolean(schema.properties) || isJsonObject(schema.additionalProperties);
 }
 
-/** Deciding members that are all plain objects join the schema's own properties in one intersection; a nullable schema keeps the member path. */
+/**
+ * Deciding members that are all plain objects join the schema's own properties in one intersection, when the codec merges
+ * them (`isDisjointObjectIntersection`); a nullable schema keeps the member path.
+ */
 function joinsObjectMembers(schema: Readonly<Record<string, unknown>>, deciding: readonly ModelTypeDescriptor[]): boolean {
-  return deciding.length > 0 && deciding.every((part) => part.kind === 'object')
-    && !(hasOwnObjectKeywords(schema) && admitsNull(schema));
+  if (deciding.length === 0 || !deciding.every((part) => part.kind === 'object')) return false;
+  if (!hasOwnObjectKeywords(schema)) return true;
+  if (admitsNull(schema)) return false;
+  const own: ModelTypeDescriptor = {
+    kind: 'object',
+    properties: Object.fromEntries(objectEntries(schema.properties).map(([name]) => [name, { kind: 'unknown' } as const])),
+    required: [],
+    additionalProperties: isJsonObject(schema.additionalProperties) ? { kind: 'unknown' } : true,
+  };
+  return isDisjointObjectIntersection([own, ...deciding]);
 }
 
 /** The schema converts by its own keywords: array items, oneOf, anyOf, properties or additionalProperties. */

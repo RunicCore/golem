@@ -1344,3 +1344,31 @@ for (const validation of [true, false]) test(`an array whose items are an allOf 
   ]);
   assert.deepEqual(codec.toWireFormat(model), wire);
 });
+
+test('an object field with own additionalProperties and an allOf member that adds properties accepts its input with validation on', async t => {
+  const output = path.join(createFixtureProject(t, 'golem-openapi-own-additional-members-'), 'sdk');
+  await generateMaterializedSdk(sequenceSerdeDocument({
+    members: {
+      type: 'object',
+      additionalProperties: { type: 'string', format: 'date-time' },
+      allOf: [{ type: 'object', properties: { b: { type: 'string', format: 'date-time' } } }],
+    },
+  }), {
+    output,
+    name: 'SequenceSerde',
+    profile: { mobx: false, validation: true, allowAny: false },
+  });
+  copyFixtureFile(output, 'openapi/model-serde/allof-own-additional-types.ts', 'allof-own-additional-types.ts');
+  compileGeneratedSdk(output, [path.join(output, 'allof-own-additional-types.ts')], { strict: true, skipLibCheck: true });
+
+  const models = requireRecord(
+    await import(pathToFileURL(path.join(output, 'dist/index.js')).href),
+    'generated own additionalProperties and allOf member models',
+  );
+  const VisitModel = models.VisitModel as unknown as new (values?: Record<string, unknown>) => Record<string, unknown>;
+  const codec = requireObjectCodec(generatedCodecIdFromRoot(output, 'Visit'));
+  const construct = VisitModel as unknown as abstract new (values?: never) => object;
+
+  assert.doesNotThrow(() => codec.fromWireFormat({ members: { b: '2024-05-07T08:09:10.000Z' } }, { construct }));
+  assert.doesNotThrow(() => codec.fromWireFormat({ members: { x: '2024-05-06T07:08:09.000Z', b: '2024-05-07T08:09:10.000Z' } }, { construct }));
+});
