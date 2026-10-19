@@ -13,7 +13,7 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import test, { type TestContext } from 'node:test';
 
-import { buildCodecValidationPlan, type CodecSchemaClosureEntry } from '@exprtlabs/golem/validation-plan';
+import { buildCodecValidationPlan, compilePlanValidators, type CodecSchemaClosureEntry } from '@exprtlabs/golem/validation-plan';
 import type { ModelTypeDescriptor } from '@exprtlabs/golem/model';
 import { createSchemaGraph } from '@exprtlabs/golem/schema-graph';
 import { workspace } from './support/process.js';
@@ -200,6 +200,21 @@ test('the validation plan of nested models refers to each child by its id and do
     const definitions = Object.keys(schema.$defs === undefined ? {} : schemaRecord(schema.$defs, 'definitions'));
     assert.deepEqual(definitions.filter(name => [leafNode.codecId, middleNode.codecId, rootNode.codecId].includes(name)), [], 'an owned definition is a plan schema, not a copy');
   }
+});
+
+test('a plan root that is no model of the plan gets a validator and no fast check', () => {
+  const descriptor: ModelTypeDescriptor = {
+    kind: 'object', properties: { code: { kind: 'string' } }, required: ['code'], additionalProperties: false,
+  };
+  const graph = createSchemaGraph();
+  graph.intern(descriptor, 'Coded');
+  graph.seal();
+  const plan = buildCodecValidationPlan(graph, [], { 'Tag#positive': { type: 'number', minimum: 0 } }, true);
+  assert.ok(Object.hasOwn(plan.schemas, 'Tag#positive'));
+  assert.ok(!plan.ownSchemas.includes('Tag#positive'), 'a tag schema is no model of the plan');
+  const { exports, fastExports } = compilePlanValidators(plan, { owner: 'test', unknownFormats: 'warn', documentName: 'the plan' });
+  assert.deepEqual([...exports.keys()].sort(), Object.keys(plan.schemas).sort(), 'every root has a validator');
+  assert.deepEqual([...fastExports.keys()].sort(), [...plan.ownSchemas].sort(), 'only the models of the plan have a fast check');
 });
 
 test('a validating model brings the shared object it references into the plan when the default is off', async () => {

@@ -1209,3 +1209,14 @@ test('a forwarding function stays when its target takes an evaluation record tha
   ]);
   assert.deepEqual(root({ a: 'x', child: { a: 'y' }, z: 1 }, true), [{ path: ['z'], code: 'unknownKey', key: 'z' }]);
 });
+
+test('fastPath as a set of root names gives a fast check to the roots in it that have one, and to no other', () => {
+  const roots = new Map<string, unknown>([
+    ['Included', { type: 'string' }],
+    ['Excluded', { type: 'string' }],
+    ['AlsoIncluded', { type: 'object', required: ['id'], properties: { id: { type: 'integer' } } }],
+  ]);
+  const { fastExports, exports } = compile({ roots }, { unknownFormats: 'warn', fastPath: new Set(['Included', 'AlsoIncluded', 'NotARoot']) });
+  assert.deepEqual([...fastExports.keys()].sort(), ['AlsoIncluded', 'Included']);
+  assert.deepEqual([...exports.keys()].sort(), ['AlsoIncluded', 'Excluded', 'Included'], 'every root keeps its validator');
+});

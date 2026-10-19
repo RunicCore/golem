@@ -4,7 +4,8 @@ import { test } from 'node:test';
 import { LibError } from '@exprtlabs/golem/errors';
 import type { ModelTypeDescriptor } from '@exprtlabs/golem/model';
 import { createSchemaGraph } from '@exprtlabs/golem/schema-graph';
-import { emitCodecRuntime } from '@exprtlabs/golem/emitter';
+import { registerIModelClass } from '@exprtlabs/golem/serde';
+import { emitCodecRuntime, type StringifySerdeResolver } from '@exprtlabs/golem/emitter';
 import { buildCodecValidationPlan } from '@exprtlabs/golem/validation-plan';
 import type { Validator } from '@exprtlabs/golem/validation-runtime';
 
@@ -12,40 +13,88 @@ import { instantiateRuntime, type RuntimeFunction } from './emitted-runtime.js';
 import { compileValidationPlanBinding, type FastCheck } from './support/compiled-validators.js';
 
 // The generated codec of one model `Order`, run on its compiled validators. The scope the codec runs in is the test's:
-// each validator and fast check in it counts its calls, which shows the route a value took (spec 7.1).
+// each validator and fast check in it records the plane it checks, which shows the route a value took (spec 7.1).
 
 const RULES_MODULE = 'export const positive = value => { globalThis.positiveCalls = (globalThis.positiveCalls ?? 0) + 1; return typeof value === "number" && value > 0; };';
 
-interface Codec {
-  readonly functions: Record<string, RuntimeFunction>;
-  /** Calls of the full validators and of the fast checks since the codec was made. */
-  readonly calls: { validator: number; fast: number };
+/** What a check judges: the model, its wire form, or what is left to check after the other form's check (`#model-only`, `#wire-only`). */
+type Plane = 'model' | 'wire' | 'model-only' | 'wire-only' | 'item';
+
+/** The model class of the IModel `Item`, which the codec constructs and the validators select. */
+class ItemModel {
+  public constructor(values: object = {}) {
+    Object.assign(this, values);
+  }
 }
 
-async function orderCodec(descriptor: ModelTypeDescriptor, fastPath: boolean): Promise<Codec> {
+/** A class value: the model holds the instance, the wire holds its text. */
+class Bytes {
+  public constructor(public readonly text: string) {}
+}
+
+const BYTES_SERDE: StringifySerdeResolver = {
+  deserialize: (id, value) => id === 'bytes' ? `new Bytes(${value} as string)` : `Number(${value})`,
+  serialize: (id, value) => id === 'bytes' ? `(${value} as Bytes).text` : `String(${value})`,
+};
+
+interface Routes {
+  readonly validator: Plane[];
+  readonly fast: Plane[];
+}
+
+interface Codec {
+  readonly functions: Record<string, RuntimeFunction>;
+  /** The planes of the full validators and of the fast checks called since the last `take`. */
+  readonly calls: Routes;
+  readonly binding: Awaited<ReturnType<typeof compileValidationPlanBinding>>;
+  readonly codecId: string;
+}
+
+/** The routes taken since the last call. */
+function take(calls: Routes): Routes {
+  const taken = { validator: [...calls.validator], fast: [...calls.fast] };
+  calls.validator.length = 0;
+  calls.fast.length = 0;
+  return taken;
+}
+
+/** `nested` adds the IModel `Item`, which a field of the order refers to as a constructed class. */
+async function orderCodec(descriptor: ModelTypeDescriptor, fastPath: boolean, nested = false): Promise<Codec> {
   const graph = createSchemaGraph();
-  graph.intern(descriptor, 'Order');
+  const item = nested ? graph.intern(ITEM, 'Item', true) : undefined;
+  const root = graph.intern(descriptor, 'Order');
   graph.seal();
-  const binding = await compileValidationPlanBinding(buildCodecValidationPlan([graph], [], {}, true), {
+  if (item !== undefined) registerIModelClass(item.codecId, ItemModel);
+  const plan = buildCodecValidationPlan([graph], [], {}, true);
+  const binding = await compileValidationPlanBinding(plan, {
     fastPath,
     validations: { positive: { importPath: './rules.mjs', exportName: 'positive' } },
     modules: { 'rules.mjs': RULES_MODULE },
   });
-  const calls = { validator: 0, fast: 0 };
-  const countValidator = (run: Validator): Validator => (value, all) => {
-    calls.validator++;
+  const planes: [string, Plane][] = [[root.codecId, 'model'], [`${root.codecId}#wire`, 'wire'], [`${root.codecId}#model-only`, 'model-only'], [`${root.codecId}#wire-only`, 'wire-only']];
+  const planeOf = new Map<string, Plane>();
+  for (const [id, plane] of planes) {
+    if (!Object.hasOwn(plan.schemas, id)) continue;
+    planeOf.set(binding.validatorName(id), plane);
+    const fast = binding.fastCheckName(id);
+    if (fast !== undefined) planeOf.set(fast, plane);
+  }
+  const calls: Routes = { validator: [], fast: [] };
+  const countValidator = (name: string, run: Validator): Validator => (value, all) => {
+    calls.validator.push(planeOf.get(name) ?? 'item');
     return run(value, all);
   };
-  const countFast = (run: FastCheck): FastCheck => value => {
-    calls.fast++;
+  const countFast = (name: string, run: FastCheck): FastCheck => value => {
+    calls.fast.push(planeOf.get(name) ?? 'item');
     return run(value);
   };
   const scope = {
-    ...Object.fromEntries(Object.entries(binding.scope).map(([name, run]) => [name, countValidator(run)])),
-    ...Object.fromEntries(Object.entries(binding.fastScope).map(([name, run]) => [name, countFast(run)])),
+    Bytes,
+    ...Object.fromEntries(Object.entries(binding.scope).map(([name, run]) => [name, countValidator(name, run)])),
+    ...Object.fromEntries(Object.entries(binding.fastScope).map(([name, run]) => [name, countFast(name, run)])),
   };
-  const source = emitCodecRuntime(graph, { validatorName: binding.validatorName, fastCheckName: binding.fastCheckName });
-  return { functions: instantiateRuntime(source, scope), calls };
+  const source = emitCodecRuntime(graph, { validatorName: binding.validatorName, fastCheckName: binding.fastCheckName, serde: BYTES_SERDE });
+  return { functions: instantiateRuntime(source, scope), calls, binding, codecId: root.codecId };
 }
 
 const order = (properties: Record<string, ModelTypeDescriptor>, required: readonly string[]): ModelTypeDescriptor => ({
@@ -59,54 +108,247 @@ const hidden = (value: Record<string, unknown>, key: string): Record<string, unk
 };
 
 const LINE = order({ sku: { kind: 'string' }, qty: { kind: 'number' } }, ['sku', 'qty']);
+const ITEM = order({ sku: { kind: 'string' } }, ['sku']);
+const ITEM_FIELD: ModelTypeDescriptor = { kind: 'reference', name: 'Item', construct: true };
+/** A class value that only its TSerde codec converts: the model schema accepts any value, the wire schema wants text. */
+const BYTES: ModelTypeDescriptor = { kind: 'class-value', typeName: 'Bytes', serde: { id: 'bytes', wire: { kind: 'string' } } };
+/** A number the wire holds as at most four digits of text: each plane keeps a rule that the other plane cannot check. */
+const STOCK: ModelTypeDescriptor = {
+  kind: 'number',
+  constraints: [{ kind: 'minimum', value: 0 }],
+  serde: { id: 'stock', wire: { kind: 'string', constraints: [{ kind: 'pattern', value: '^-?[0-9]+$' }, { kind: 'maxLength', value: 4 }] } },
+};
 
-const FIXTURES: readonly (readonly [name: string, descriptor: ModelTypeDescriptor, valid: unknown, invalid: unknown])[] = [
-  ['a Date field', order({ id: { kind: 'string' }, at: { kind: 'date' } }, ['id', 'at']), { id: 'a', at: new Date(0) }, { id: 'a', at: new Date(Number.NaN) }],
+const ID_ONLY = order({ id: { kind: 'string' } }, ['id']);
+const WITH_DATE = order({ id: { kind: 'string' }, at: { kind: 'date' } }, ['id', 'at']);
+const WITH_STOCK = order({ id: { kind: 'string' }, stock: STOCK }, ['id', 'stock']);
+const WITH_ITEM = order({ id: { kind: 'string' }, item: ITEM_FIELD }, ['id', 'item']);
+const WITH_BYTES = order({ id: { kind: 'string' }, blob: BYTES }, ['id', 'blob']);
+
+/** A model value that the codec accepts, with an invalid one, and whether the model refers to the IModel `Item`. */
+const FIXTURES: readonly (readonly [name: string, descriptor: ModelTypeDescriptor, valid: unknown, invalid: unknown, nested?: true])[] = [
+  ['a Date field', WITH_DATE, { id: 'a', at: new Date(0) }, { id: 'a', at: new Date(Number.NaN) }],
   ['an undefined-valued optional field', order({ id: { kind: 'string' }, note: { kind: 'string' } }, ['id']), { id: 'a', note: undefined }, { id: 'a', note: 1 }],
-  ['a non-enumerable field', order({ id: { kind: 'string' } }, ['id']), hidden({ id: 'a', extra: 1 }, 'extra'), hidden({ id: 'a' }, 'id')],
+  ['a non-enumerable field', ID_ONLY, hidden({ id: 'a', extra: 1 }, 'extra'), hidden({ id: 'a' }, 'id')],
   ['an array of nested objects', order({ lines: { kind: 'array', item: LINE } }, ['lines']), { lines: [{ sku: 'a', qty: 1 }] }, { lines: [{ sku: 'a' }] }],
+  ['an IModel instance', WITH_ITEM, { id: 'a', item: new ItemModel({ sku: 's' }) }, { id: 'a', item: new ItemModel() }, true],
+  ['a class value', WITH_BYTES, { id: 'a', blob: new Bytes('AQID') }, { id: 'a' }],
 ];
 
-for (const [name, descriptor, valid, invalid] of FIXTURES) {
+for (const [name, descriptor, valid, invalid, nested] of FIXTURES) {
   test(`generated codec, ${name}: a valid value takes the fast route, an invalid one the validator's`, async () => {
-    const { functions, calls } = await orderCodec(descriptor, true);
+    const { functions, calls } = await orderCodec(descriptor, true, nested);
     assert.equal(functions.validateOrder(valid), true);
     assert.equal(functions.assertOrder(valid), valid);
-    assert.deepEqual({ ...calls }, { validator: 0, fast: 2 });
+    assert.deepEqual(take(calls), { validator: [], fast: ['model', 'model'] });
     assert.equal(functions.validateOrder(invalid), false);
     assert.throws(() => functions.assertOrder(invalid), LibError);
-    assert.deepEqual({ ...calls }, { validator: 2, fast: 4 });
+    assert.deepEqual(take(calls), { validator: ['model', 'model'], fast: ['model', 'model'] });
+  });
+}
+
+/** The planes each public conversion checks on a valid value; none of them reaches the full validator. */
+interface ConversionRoutes {
+  readonly toWireFormat: readonly Plane[];
+  readonly fromWireFormat: readonly Plane[];
+  readonly parse: readonly Plane[];
+  readonly stringify: readonly Plane[];
+}
+
+const CONVERSIONS: readonly {
+  readonly name: string;
+  readonly descriptor: ModelTypeDescriptor;
+  readonly model: unknown;
+  readonly wire: unknown;
+  readonly nested?: true;
+  readonly fast: ConversionRoutes;
+}[] = [
+  {
+    name: 'a model whose wire is its model',
+    descriptor: LINE,
+    model: { sku: 'a', qty: 1 },
+    wire: { sku: 'a', qty: 1 },
+    fast: { toWireFormat: ['model'], fromWireFormat: ['model'], parse: ['model'], stringify: ['model'] },
+  },
+  {
+    name: 'a Date field',
+    descriptor: WITH_DATE,
+    model: { id: 'a', at: new Date(0) },
+    wire: { id: 'a', at: '1970-01-01T00:00:00.000Z' },
+    fast: { toWireFormat: ['model', 'wire-only'], fromWireFormat: ['wire', 'model-only'], parse: ['wire', 'model-only'], stringify: ['model', 'wire-only'] },
+  },
+  {
+    name: 'a TSerde number with a rule on each plane',
+    descriptor: WITH_STOCK,
+    model: { id: 'a', stock: 5 },
+    wire: { id: 'a', stock: '5' },
+    fast: { toWireFormat: ['model', 'wire-only'], fromWireFormat: ['wire', 'model-only'], parse: ['wire', 'model-only'], stringify: ['model', 'wire-only'] },
+  },
+  {
+    name: 'an IModel instance',
+    descriptor: WITH_ITEM,
+    model: { id: 'a', item: new ItemModel({ sku: 's' }) },
+    wire: { id: 'a', item: { sku: 's' } },
+    nested: true,
+    fast: { toWireFormat: ['model'], fromWireFormat: ['model'], parse: ['model'], stringify: ['model'] },
+  },
+  {
+    name: 'a class value',
+    descriptor: WITH_BYTES,
+    model: { id: 'a', blob: new Bytes('AQID') },
+    wire: { id: 'a', blob: 'AQID' },
+    fast: { toWireFormat: ['model', 'wire-only'], fromWireFormat: ['wire', 'model-only'], parse: ['wire', 'model-only'], stringify: ['model', 'wire-only'] },
+  },
+];
+
+for (const { name, descriptor, model, wire, nested, fast } of CONVERSIONS) {
+  test(`generated codec, ${name}: every conversion of a valid value runs fast checks only`, async () => {
+    const { functions, calls } = await orderCodec(descriptor, true, nested);
+    const conversions: readonly (readonly [keyof ConversionRoutes, () => unknown, unknown])[] = [
+      ['toWireFormat', () => functions.toWireFormatOrder(model), wire],
+      ['fromWireFormat', () => functions.fromWireFormatOrder(wire), model],
+      ['parse', () => functions.parseOrder(JSON.stringify(wire)), model],
+      ['stringify', () => functions.stringifyOrder(model), JSON.stringify(wire)],
+    ];
+    const taken = conversions.map(([conversion, run, expected]) => {
+      assert.deepEqual(run(), expected, conversion);
+      return [conversion, take(calls)] as const;
+    });
+    assert.deepEqual(
+      { validator: taken.flatMap(([, routes]) => routes.validator), fast: Object.fromEntries(taken.map(([conversion, routes]) => [conversion, routes.fast])) },
+      { validator: [], fast },
+    );
+  });
+}
+
+/** One invalid value for each plane that the public conversions check, with the validator that must then run. */
+const PLANE_FAILURES: readonly (readonly [plane: Plane, run: (functions: Record<string, RuntimeFunction>) => unknown, fast: readonly Plane[]])[] = [
+  ['model', functions => functions.toWireFormatOrder({ id: 5, stock: 1 }), ['model']],
+  ['wire', functions => functions.fromWireFormatOrder({ id: 'a', stock: 5 }), ['wire']],
+  ['model-only', functions => functions.fromWireFormatOrder({ id: 'a', stock: '-5' }), ['wire', 'model-only']],
+  ['wire-only', functions => functions.toWireFormatOrder({ id: 'a', stock: 12345 }), ['model', 'wire-only']],
+];
+
+for (const [plane, run, fast] of PLANE_FAILURES) {
+  test(`generated codec: an invalid value of the ${plane} plane fails its fast check and takes that plane's validator`, async () => {
+    const { functions, calls } = await orderCodec(WITH_STOCK, true);
+    assert.throws(() => run(functions), LibError);
+    assert.deepEqual(take(calls), { validator: [plane], fast });
+  });
+}
+
+// No silent decline: each of these model roots gets a fast check, and it gives its validator's verdict on a valid and an invalid value.
+const FAST_ROOTS: readonly (readonly [feature: string, descriptor: ModelTypeDescriptor, valid: unknown, invalid: unknown, nested?: true])[] = [
+  ...FIXTURES,
+  ['scalars', order({ id: { kind: 'string' }, n: { kind: 'number' }, ok: { kind: 'boolean' } }, ['id', 'n', 'ok']), { id: 'a', n: 1, ok: true }, { id: 'a', n: '1', ok: true }],
+  ['a literal and a nullable string', order({ kind: { kind: 'literal', value: 'open' }, note: { kind: 'union', variants: [{ kind: 'string' }, { kind: 'null' }] } }, ['kind', 'note']), { kind: 'open', note: null }, { kind: 'closed', note: null }],
+  [
+    'string and number limits (K5, K6)',
+    order({
+      code: { kind: 'string', constraints: [{ kind: 'minLength', value: 2 }, { kind: 'pattern', value: '^a' }] },
+      amount: { kind: 'number', constraints: [{ kind: 'minimum', value: 0 }, { kind: 'multipleOf', value: 5 }] },
+    }, ['code', 'amount']),
+    { code: 'ab', amount: 10 },
+    { code: 'ab', amount: 7 },
+  ],
+  ['a tuple (K7)', order({ pair: { kind: 'tuple', items: [{ kind: 'string' }, { kind: 'number' }] } }, ['pair']), { pair: ['a', 1] }, { pair: ['a', 'b'] }],
+  [
+    'an array with limits and unique items (K7, K8)',
+    order({ tags: { kind: 'array', item: { kind: 'string' }, constraints: [{ kind: 'minItems', value: 1 }, { kind: 'uniqueItems' }] } }, ['tags']),
+    { tags: ['a', 'b'] },
+    { tags: ['a', 'a'] },
+  ],
+  [
+    'a record of numbers (K13)',
+    order({ bag: { kind: 'object', properties: {}, required: [], additionalProperties: { kind: 'number' } } }, ['bag']),
+    { bag: { a: 1 } },
+    { bag: { a: 'x' } },
+  ],
+  [
+    'a tagged union (K21)',
+    order({
+      pet: {
+        kind: 'union',
+        variants: [
+          order({ kind: { kind: 'literal', value: 'cat' }, lives: { kind: 'number' } }, ['kind', 'lives']),
+          order({ kind: { kind: 'literal', value: 'dog' }, barks: { kind: 'boolean' } }, ['kind', 'barks']),
+        ],
+      },
+    }, ['pet']),
+    { pet: { kind: 'dog', barks: true } },
+    { pet: { kind: 'dog' } },
+  ],
+  ['an untagged union (K22)', order({ v: { kind: 'union', variants: [{ kind: 'string' }, { kind: 'number' }] } }, ['v']), { v: 1 }, { v: true }],
+  ['a never field (K30)', order({ id: { kind: 'string' }, gone: { kind: 'never' } }, ['id']), { id: 'a' }, { id: 'a', gone: 1 }],
+];
+
+for (const [feature, descriptor, valid, invalid, nested] of FAST_ROOTS) {
+  test(`the model root of ${feature} has a fast check that agrees with its validator`, async () => {
+    const { binding, codecId } = await orderCodec(descriptor, true, nested);
+    const name = binding.fastCheckName(codecId);
+    assert.notEqual(name, undefined, 'the root has a fast check');
+    const isValid = binding.fastScope[name ?? ''];
+    const validate = binding.scope[binding.validatorName(codecId)];
+    assert.deepEqual(
+      { fast: [isValid(valid), isValid(invalid)], full: [validate(valid, true).length === 0, validate(invalid, true).length === 0] },
+      { fast: [true, false], full: [true, false] },
+    );
+  });
+}
+
+// The same table for the planes of one model: each has a fast check that agrees with its validator.
+const PLANE_ROOTS: readonly (readonly [plane: Plane, suffix: string, valid: unknown, invalid: unknown])[] = [
+  ['model', '', { id: 'a', stock: 1 }, { id: 'a', stock: -1 }],
+  ['wire', '#wire', { id: 'a', stock: '1' }, { id: 'a', stock: 1 }],
+  ['model-only', '#model-only', { id: 'a', stock: 1 }, { id: 'a', stock: -1 }],
+  ['wire-only', '#wire-only', { id: 'a', stock: '1' }, { id: 'a', stock: '12345' }],
+];
+
+for (const [plane, suffix, valid, invalid] of PLANE_ROOTS) {
+  test(`the ${plane} root of a TSerde model has a fast check that agrees with its validator`, async () => {
+    const { binding, codecId } = await orderCodec(WITH_STOCK, true);
+    const name = binding.fastCheckName(`${codecId}${suffix}`);
+    assert.notEqual(name, undefined, 'the root has a fast check');
+    const isValid = binding.fastScope[name ?? ''];
+    const validate = binding.scope[binding.validatorName(`${codecId}${suffix}`)];
+    assert.deepEqual(
+      { fast: [isValid(valid), isValid(invalid)], full: [validate(valid, true).length === 0, validate(invalid, true).length === 0] },
+      { fast: [true, false], full: [true, false] },
+    );
   });
 }
 
 test('generated codec with a TValidation predicate keeps the validator route, and the predicate runs once per conversion', async () => {
-  const { functions, calls } = await orderCodec(order({ amount: { kind: 'number', validations: ['positive'] } }, ['amount']), true);
+  const { functions, calls, binding, codecId } = await orderCodec(order({ amount: { kind: 'number', validations: ['positive'] } }, ['amount']), true);
+  assert.equal(binding.fastCheckName(codecId), undefined, 'a root that reaches a predicate has no fast check');
   Reflect.set(globalThis, 'positiveCalls', 0);
   assert.equal(functions.validateOrder({ amount: 5 }), true);
   assert.throws(() => functions.assertOrder({ amount: -1 }), LibError);
-  assert.deepEqual({ ...calls, predicate: Reflect.get(globalThis, 'positiveCalls') }, { validator: 2, fast: 0, predicate: 2 });
+  assert.deepEqual({ ...take(calls), predicate: Reflect.get(globalThis, 'positiveCalls') }, { validator: ['model', 'model'], fast: [], predicate: 2 });
 });
 
 // Golden: a failing value gives the same error, issues and messages with the fast check as without it.
-const FAILING: readonly (readonly [descriptor: ModelTypeDescriptor, value: unknown])[] = [
-  ...FIXTURES.map(([, descriptor, , invalid]) => [descriptor, invalid] as const),
+const FAILING: readonly (readonly [descriptor: ModelTypeDescriptor, value: unknown, nested?: true])[] = [
+  ...FIXTURES.map(([, descriptor, , invalid, nested]) => [descriptor, invalid, nested] as const),
   [order({ id: { kind: 'string' }, at: { kind: 'date' } }, ['id', 'at']), { at: 'x', extra: true }],
   [order({ lines: { kind: 'array', item: LINE } }, ['lines']), { lines: [{ qty: 'one' }, 5] }],
   [order({ amount: { kind: 'number', validations: ['positive'] } }, ['amount']), { amount: -1 }],
 ];
 
+/** The error `run` throws as data. Any error that is not a LibError is a fault of the test, so it ends the test. */
 function failure(run: () => unknown): unknown {
   try {
     run();
   } catch (error) {
-    return error instanceof LibError ? { message: error.message, kind: error.kind, issues: error.issues } : error;
+    if (!(error instanceof LibError)) throw error;
+    return { message: error.message, kind: error.kind, issues: error.issues };
   }
   return 'no error';
 }
 
 test('failing values report the same error, issues and messages with the fast check as without it', async () => {
-  const outcomes = async (fastPath: boolean): Promise<readonly unknown[]> => Promise.all(FAILING.map(async ([descriptor, value]) => {
-    const { functions } = await orderCodec(descriptor, fastPath);
+  const outcomes = async (fastPath: boolean): Promise<readonly unknown[]> => Promise.all(FAILING.map(async ([descriptor, value, nested]) => {
+    const { functions } = await orderCodec(descriptor, fastPath, nested);
     return [failure(() => functions.assertOrder(value)), failure(() => functions.assertOrder(value, { failFast: false })), failure(() => functions.fromWireFormatOrder(value, { validate: true }))];
   }));
   const [fast, full] = await Promise.all([outcomes(true), outcomes(false)]);

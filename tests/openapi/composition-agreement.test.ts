@@ -50,6 +50,11 @@ interface Row {
   readonly rejectedOnWire?: readonly Wire[];
   /** The composition warnings of generation, each as `code: message`; a row without it expects none. */
   readonly warnings?: readonly RegExp[];
+  /**
+   * The models whose root keeps the full validator because it reaches `unevaluatedProperties`: they get no fast check
+   * for the model and its wire form. Every other model root of the row has one, on every plane.
+   */
+  readonly slowRoots?: readonly string[];
 }
 
 const AT = '2024-05-06T07:08:09.000Z';
@@ -264,6 +269,7 @@ const rows: readonly Row[] = [
     shape: 'an open base and a component with unevaluatedProperties false',
     fixture: 'unevaluated-open-base',
     root: 'Derived',
+    slowRoots: ['Derived'],
     document: componentDocument('Derived', {
       Base: object({ a: text }),
       Derived: { allOf: [ref('Base'), object({ b: dateTime })], unevaluatedProperties: false },
@@ -556,6 +562,7 @@ const rows: readonly Row[] = [
     shape: 'a component with own properties beside allOf and unevaluatedProperties false',
     fixture: 'unevaluated-sibling-properties',
     root: 'Derived',
+    slowRoots: ['Derived'],
     document: componentDocument('Derived', {
       Base: object({ a: text }),
       Derived: { allOf: [ref('Base'), object({ c: text })], properties: { b: text }, unevaluatedProperties: false },
@@ -567,6 +574,7 @@ const rows: readonly Row[] = [
   {
     shape: 'a component that is allOf [$ref Base] with unevaluatedProperties false',
     root: 'Derived',
+    slowRoots: ['Derived'],
     document: componentDocument('Derived', {
       Base: object({ a: text }),
       Derived: { allOf: [ref('Base')], unevaluatedProperties: false },
@@ -682,21 +690,31 @@ async function assertValidatorJudges(built: Built, row: Row): Promise<void> {
   }
 }
 
+/** A model validator of the generated module: `validate_<Model>_<hash>` with the plane of its schema. */
+const MODEL_VALIDATOR = /^validate_(\w+?)_[0-9a-f]{8}(_wire|_model_only|_wire_only)?$/;
+
 /**
- * Each fast check of the generated validators module (`is_X`) gives the answer of its validator (`validate_X`) on every
- * input of the row, accepted and rejected (spec 5.1 rule 1).
+ * Each model root of the generated validators module has a fast check (`is_X`) on every plane, except the roots the row
+ * lists as `slowRoots`, which have none for the model and its wire form. Each fast check gives the answer of its
+ * validator (`validate_X`) on every input of the row, accepted and rejected (spec 5.1 rule 1).
  */
 async function assertFastChecksAgree(built: Built, row: Row): Promise<void> {
   const validators = requireRecord(await import(pathToFileURL(path.join(built.output, 'dist/validators.generated.js')).href), `generated ${row.shape} validators`);
   const inputs: readonly unknown[] = [...row.accepted.map(({ wire }) => wire), ...row.rejected, ...(row.rejectedOnWire ?? [])];
-  const pairs = Object.entries(validators).flatMap(([name, isValid]) => {
-    const validate = validators[`validate_${name.slice('is_'.length)}`];
-    return name.startsWith('is_') && typeof isValid === 'function' && typeof validate === 'function' ? [{ name, isValid, validate }] : [];
+  const roots = Object.keys(validators).flatMap(name => {
+    const match = MODEL_VALIDATOR.exec(name);
+    if (match === null) return [];
+    const slow = (row.slowRoots ?? []).includes(match[1]) && (match[2] === undefined || match[2] === '_wire');
+    return [{ model: match[1], validate: validators[name], isValid: validators[`is_${name.slice('validate_'.length)}`], slow }];
   });
-  assert.ok(pairs.length > 0, 'the model roots have fast checks');
-  const disagreeing = pairs.flatMap(({ name, isValid, validate }) => inputs
+  assert.ok(roots.some(({ model }) => model === row.root), `the generated validators have the root ${row.root}`);
+  assert.deepEqual({
+    withoutFastCheck: roots.filter(({ isValid, slow }) => typeof isValid !== 'function' && !slow).map(({ model }) => model),
+    slowWithFastCheck: roots.filter(({ isValid, slow }) => typeof isValid === 'function' && slow).map(({ model }) => model),
+  }, { withoutFastCheck: [], slowWithFastCheck: [] });
+  const disagreeing = roots.flatMap(({ model, validate, isValid }) => typeof isValid !== 'function' || typeof validate !== 'function' ? [] : inputs
     .filter(input => isValid(input) !== (validate(input, true).length === 0))
-    .map(input => ({ name, input })));
+    .map(input => ({ model, input })));
   assert.deepEqual(disagreeing, []);
 }
 
