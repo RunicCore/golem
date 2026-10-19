@@ -20,11 +20,24 @@ export interface Toggles {
   readonly keyTest: KeyTest;
   /** `sub` is `x - x === 0`; `isFinite` is `Number.isFinite(x)`; `off` is `typeof x === 'number'` alone. */
   readonly finite: FiniteTest;
-  /** `valid` adds `t - t === 0` for a Date; `off` is `instanceof Date` alone. */
-  readonly date: 'valid' | 'off';
+  /** `valid` adds `t - t === 0` for a Date; `isFinite` adds `Number.isFinite(x.getTime())`; `off` is `instanceof Date` alone. */
+  readonly date: 'valid' | 'isFinite' | 'off';
+  /** F1 only. `case` reads a declared value in its own case (spec 5.2); `item` reads every key's value before the switch and skips an `undefined` one. */
+  readonly keyRead: 'case' | 'item';
+  /** `separate` tests each required key `!== undefined` ahead of the value tests; `implied` leaves that to the value test, which rejects `undefined`. */
+  readonly required: 'implied' | 'separate';
+  /** `helper` calls a module-level `isObject`; `inline` writes the object test. */
+  readonly objectTest: 'inline' | 'helper';
+  /** `chain` joins the value tests with `&&`; `statements` copies each value to a `const` and returns `false` after each failed test. */
+  readonly body: 'chain' | 'statements';
+  /** `read` switches on the plain tag read; `enumerable` reads the tag by the JSON view, picks a branch number, then tests that branch. */
+  readonly tag: 'read' | 'enumerable';
 }
 
-export const BASE_TOGGLES: Toggles = { keyTest: 'F1', finite: 'sub', date: 'valid' };
+export const BASE_TOGGLES: Toggles = { keyTest: 'F1', finite: 'sub', date: 'valid', keyRead: 'case', required: 'implied', objectTest: 'inline', body: 'chain', tag: 'read' };
+
+/** The base with each form the generated `is_X` writes today: what each lead row of a toggle run adds on its own. */
+export const GENERATED_TOGGLES: Toggles = { ...BASE_TOGGLES, finite: 'isFinite', date: 'isFinite', keyRead: 'item', required: 'separate', objectTest: 'helper', body: 'statements', tag: 'enumerable' };
 
 type Shape =
   | 'number' | 'string' | 'boolean' | 'date'
@@ -79,7 +92,10 @@ class Writer {
       return `typeof ${x} === 'number'${finite === 'sub' ? ` && ${x} - ${x} === 0` : finite === 'isFinite' ? ` && Number.isFinite(${x})` : ''}`;
     }
     if (shape === 'string' || shape === 'boolean') return `typeof ${x} === '${shape}'`;
-    if (shape === 'date') return `${x} instanceof Date${this.toggles.date === 'valid' ? ` && ${x}.getTime() - ${x}.getTime() === 0` : ''}`;
+    if (shape === 'date') {
+      const { date } = this.toggles;
+      return `${x} instanceof Date${date === 'valid' ? ` && ${x}.getTime() - ${x}.getTime() === 0` : date === 'isFinite' ? ` && Number.isFinite(${x}.getTime())` : ''}`;
+    }
     if ('literal' in shape) return `${x} === ${JSON.stringify(shape.literal)}`;
     if ('optional' in shape) return `(${x} === undefined || ${this.test(shape.optional, x)})`;
     if ('object' in shape) return `${this.object(shape.object)}(${x})`;
@@ -100,12 +116,20 @@ class Writer {
     const name = this.next('u');
     this.functions.push('');
     const slot = this.functions.length - 1;
-    const cases = shape.members.map(member => {
+    const members = shape.members.map(member => {
       const tag = member[shape.union];
       if (typeof tag === 'string' || !('literal' in tag)) throw new Error('A union member needs a literal tag');
-      return `case ${JSON.stringify(tag.literal)}: return ${this.object(member)}(x);`;
+      return [JSON.stringify(tag.literal), this.object(member)] as const;
     });
-    this.functions[slot] = `function ${name}(x) { if (typeof x !== 'object' || x === null) return false; switch (x.${shape.union}) { ${cases.join(' ')} } return false; }`;
+    if (this.toggles.tag === 'read') {
+      const cases = members.map(([tag, check]) => `case ${tag}: return ${check}(x);`);
+      this.functions[slot] = `function ${name}(x) { if (typeof x !== 'object' || x === null) return false; switch (x.${shape.union}) { ${cases.join(' ')} } return false; }`;
+    } else {
+      const key = JSON.stringify(shape.union);
+      const select = members.map(([tag], position) => `t === ${tag} ? ${position} : `).join('');
+      const branches = members.map(([, check], position) => `if (b === ${position}) { if (!${check}(x)) return false; }`).join(' ');
+      this.functions[slot] = `function ${name}(x) { const t = isObject(x) ? (pie.call(x, ${key}) ? x[${key}] : undefined) : undefined; const b = ${select}-1; ${branches} if (b < 0) return false; return true; }`;
+    }
     return `${name}(${x})`;
   }
 
@@ -122,7 +146,9 @@ class Writer {
     let head: string;
     switch (this.toggles.keyTest) {
       case 'F1':
-        head = `let ${locals.join(', ')}; for (const k of Object.keys(v)) switch (k) { ${reads} default: if (v[k] !== undefined) return false; }`;
+        head = this.toggles.keyRead === 'case'
+          ? `let ${locals.join(', ')}; for (const k of Object.keys(v)) switch (k) { ${reads} default: if (v[k] !== undefined) return false; }`
+          : `let ${locals.join(', ')}; for (const k of Object.keys(v)) { const item = v[k]; if (item === undefined) continue; switch (k) { ${keys.map((key, i) => `case ${JSON.stringify(key)}: x${i} = item; break;`).join(' ')} default: return false; } }`;
         break;
       case 'F2':
         head = `let m = 0; ${keys.map((key, i) => `const x${i} = pie.call(v, ${JSON.stringify(key)}) ? v.${key} : undefined; if (x${i} !== undefined) m++;`).join(' ')} if (Object.keys(v).length !== m) { ${unknownLoop} }`;
@@ -137,8 +163,15 @@ class Writer {
         head = keys.map((key, i) => `const x${i} = v.${key};`).join(' ');
         break;
     }
-    const body = keys.map((key, i) => `(${this.test(fields[key], `x${i}`)})`).join(' && ');
-    this.functions[slot] = `function ${name}(v) { if (typeof v !== 'object' || v === null || Array.isArray(v)) return false; ${head} return ${body}; }`;
+    const required = this.toggles.required === 'separate'
+      ? keys.filter(key => { const shape = fields[key]; return typeof shape !== 'object' || !('optional' in shape); }).map(key => `x${keys.indexOf(key)} !== undefined`)
+      : [];
+    const tests = keys.map((key, i) => this.test(fields[key], this.toggles.body === 'chain' ? `x${i}` : `m${i}`));
+    const body = this.toggles.body === 'chain'
+      ? `return ${[...required, ...tests].map(test => `(${test})`).join(' && ')};`
+      : `${required.map(test => `if (!(${test})) return false;`).join(' ')} ${tests.map((test, i) => `const m${i} = x${i}; if (!(${test})) return false;`).join(' ')} return true;`;
+    const objectTest = this.toggles.objectTest === 'inline' ? `typeof v !== 'object' || v === null || Array.isArray(v)` : '!isObject(v)';
+    this.functions[slot] = `function ${name}(v) { if (${objectTest}) return false; ${head} ${body} }`;
     return name;
   }
 }
@@ -149,7 +182,8 @@ export function scratchValidator(model: string, toggles: Toggles): (value: unkno
   if (!fields) throw new Error(`No scratch model ${model}`);
   const writer = new Writer(toggles);
   const root = writer.object(fields);
-  const make = new Function('pie', `${writer.functions.join('\n')}\nreturn ${root};`) as (pie: typeof Object.prototype.propertyIsEnumerable) => (value: unknown) => boolean;
+  const isObject = 'const isObject = value => typeof value === \'object\' && value !== null && !Array.isArray(value);';
+  const make = new Function('pie', `${isObject}\n${writer.functions.join('\n')}\nreturn ${root};`) as (pie: typeof Object.prototype.propertyIsEnumerable) => (value: unknown) => boolean;
   return make(Object.prototype.propertyIsEnumerable);
 }
 
