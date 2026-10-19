@@ -16,8 +16,11 @@ const featureSources = [
   'comparison-features-class-transformer.ts', 'comparison-features-class-validator.ts', 'access-rules.ts',
 ];
 
-/** `extraFixtures` are directories copied into the project beside the upstream fixtures; the other benchmarks pass none. */
-export function prepare(directory: string, kind: ProjectKind, extraFixtures: readonly string[] = []): string {
+/**
+ * `extraFixtures` are directories copied into the project beside the upstream fixtures; the other benchmarks pass none.
+ * `mobx` is the generation profile's `mobx` flag: the MobX twins of the typia comparison need a project of their own.
+ */
+export function prepare(directory: string, kind: ProjectKind, extraFixtures: readonly string[] = [], mobx = false): string {
   const project = path.join(directory, kind);
   const src = path.join(project, 'src');
   cpSync(upstreamDirectory, src, { recursive: true });
@@ -34,8 +37,8 @@ export function prepare(directory: string, kind: ProjectKind, extraFixtures: rea
     },
     include: ['src/**/*.ts'],
   }));
-  const profile = { mobx: false, validation: kind !== 'plain' };
-  const manifest = generateFeatureMoneySdk(project, src, { validation: profile.validation });
+  const profile = { mobx, validation: kind !== 'plain' };
+  const manifest = generateFeatureMoneySdk(project, src, { validation: profile.validation, mobx });
   const { artifacts } = generate({ root: project, profile, manifestInputs: [manifest] });
   for (const artifact of artifacts) {
     mkdirSync(path.dirname(artifact.path), { recursive: true });

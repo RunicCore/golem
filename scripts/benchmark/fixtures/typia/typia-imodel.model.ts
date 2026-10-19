@@ -1,0 +1,91 @@
+import type { IModel } from '@exprtlabs/golem/model';
+import type { TwinFactories } from './compare-case.js';
+import {
+  TTwinAddressBaseModel, TTwinArrayBaseModel, TTwinCircleBaseModel, TTwinFlatBaseModel, TTwinItemBaseModel,
+  TTwinLabelBaseModel, TTwinNestedBaseModel, TTwinOwnerBaseModel, TTwinRectBaseModel, TTwinTupleBaseModel,
+  TTwinUnionBaseModel,
+  type TTwinArrayInit, type TTwinFlatInit, type TTwinNestedInit, type TTwinTupleInit, type TTwinUnionInit,
+} from './typia-imodel.model.generated.js';
+
+// The IModel twins of the typia comparison models (typia-comparison.model.ts): the same fields, declared as IModel, so
+// each validated value is a class instance. Nested models are classes, as the models guide declares them.
+export type TTwinFlat = IModel<{
+  id: number;
+  name: string;
+  email: string;
+  age: number;
+  score: number;
+  active: boolean;
+  createdAt: Date;
+}>;
+export class TwinFlat extends TTwinFlatBaseModel {}
+
+export type TTwinAddress = IModel<{
+  street: string;
+  city: string;
+  zip: string;
+  lat: number;
+  lng: number;
+}>;
+export class TwinAddress extends TTwinAddressBaseModel {}
+
+export type TTwinOwner = IModel<{
+  name: string;
+  email: string;
+  address: TwinAddress;
+}>;
+export class TwinOwner extends TTwinOwnerBaseModel {}
+
+export type TTwinNested = IModel<{
+  id: number;
+  owner: TwinOwner;
+  billing: TwinAddress;
+  shipping: TwinAddress;
+  createdAt: Date;
+}>;
+export class TwinNested extends TTwinNestedBaseModel {}
+
+export type TTwinCircle = IModel<{ kind: 'circle'; radius: number; at: Date }>;
+export class TwinCircle extends TTwinCircleBaseModel {}
+export type TTwinRect = IModel<{ kind: 'rect'; width: number; height: number; at: Date }>;
+export class TwinRect extends TTwinRectBaseModel {}
+export type TTwinLabel = IModel<{ kind: 'label'; text: string; at: Date }>;
+export class TwinLabel extends TTwinLabelBaseModel {}
+
+export type TTwinUnion = IModel<{
+  id: number;
+  shape: TwinCircle | TwinRect | TwinLabel;
+}>;
+export class TwinUnion extends TTwinUnionBaseModel {}
+
+export type TTwinItem = IModel<{
+  id: number;
+  sku: string;
+  name: string;
+  price: number;
+  quantity: number;
+  createdAt: Date;
+}>;
+export class TwinItem extends TTwinItemBaseModel {}
+
+export type TTwinArray = IModel<{
+  id: number;
+  items: TwinItem[];
+}>;
+export class TwinArray extends TTwinArrayBaseModel {}
+
+export type TTwinTuple = IModel<{
+  id: number;
+  row: [number, string, boolean, Date];
+  range: [number, number];
+}>;
+export class TwinTuple extends TTwinTupleBaseModel {}
+
+// A value is built from plain initial data; the constructor makes each nested model a class instance.
+export const imodelTwins: TwinFactories = {
+  flat: { codecId: 'TTwinFlat', make: init => new TwinFlat(init as TTwinFlatInit) },
+  nested: { codecId: 'TTwinNested', make: init => new TwinNested(init as TTwinNestedInit) },
+  union: { codecId: 'TTwinUnion', make: init => new TwinUnion(init as TTwinUnionInit) },
+  array: { codecId: 'TTwinArray', make: init => new TwinArray(init as TTwinArrayInit) },
+  tuple: { codecId: 'TTwinTuple', make: init => new TwinTuple(init as TTwinTupleInit) },
+};

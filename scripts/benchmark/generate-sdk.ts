@@ -9,7 +9,7 @@ const moneyYaml = path.join(root, 'scripts/benchmark/fixtures/features/money.yam
 export function generateFeatureMoneySdk(
   project: string,
   source: string,
-  options: { readonly validation: boolean },
+  options: { readonly validation: boolean; readonly mobx?: boolean },
   generatorModule?: string,
 ): string {
   copyFileSync(moneyYaml, path.join(project, 'money.yaml'));
@@ -22,7 +22,7 @@ const result = await generate({
   input: ${JSON.stringify(path.join(project, 'money.yaml'))},
   output: ${JSON.stringify(output)},
   name: 'Payments',
-  profile: { mobx: false, validation: ${options.validation} },
+  profile: { mobx: ${options.mobx === true}, validation: ${options.validation} },
 });
 for (const artifact of result.artifacts) {
   mkdirSync(path.dirname(artifact.path), { recursive: true });
