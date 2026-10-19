@@ -51,7 +51,7 @@ const ITEM = 'item';
 const INDEX = 'index';
 const TUPLE = 'tuple';
 /** What a `json` tuple writes for an item past the declared items, and for an item that needs no conversion. */
-const JSON_SCALAR_ITEM = `stringifyJsonScalar(${ITEM} as never)`;
+export const JSON_SCALAR_ITEM = `stringifyJsonScalar(${ITEM} as never)`;
 
 /** A name or a chain of property and index reads. Any other expression needs parentheses before `as`. */
 const ACCESS_CHAIN = /^[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*|\[(?:\d+|"[^"\\]*"|'[^'\\]*')\])*$/;

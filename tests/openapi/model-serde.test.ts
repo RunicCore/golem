@@ -706,13 +706,16 @@ test('an array or tuple field with no type or a nullable type converts like type
   assert.equal(absent.maybeLeg, null);
 });
 
-test('allOf members decide an array field: typed members win over its own items, and members without constraints change nothing', async t => {
+test('allOf members decide an array field: constraint-only and restating members change nothing, a converting member wins', async t => {
   const output = path.join(createFixtureProject(t, 'golem-openapi-array-allof-members-'), 'sdk');
   await generateMaterializedSdk(sequenceSerdeDocument({
-    memberWins: {
-      items: { type: 'string', format: 'date-time' },
+    restatingMember: {
       type: 'array',
-      allOf: [{ type: 'array', items: { type: 'string' } }],
+      items: { type: 'string', format: 'date-time' },
+      allOf: [{ items: { maxLength: 30 } }],
+    },
+    restatedByMember: {
+      allOf: [{ type: 'array', items: { type: 'string', format: 'date-time' } }, { items: { maxLength: 30 } }],
     },
     membersCarry: {
       allOf: [{ type: 'array', items: { type: 'string', format: 'date-time' } }],
@@ -726,6 +729,11 @@ test('allOf members decide an array field: typed members win over its own items,
       type: 'array',
       items: { type: 'string', format: 'date-time' },
       allOf: [{ type: 'array' }],
+    },
+    convertingMemberWins: {
+      type: 'array',
+      items: { type: 'string' },
+      allOf: [{ type: 'array', items: { type: 'string', format: 'date-time' } }],
     },
   }), {
     output,
@@ -742,15 +750,59 @@ test('allOf members decide an array field: typed members win over its own items,
   const VisitModel = models.VisitModel as unknown as new (values?: Record<string, unknown>) => Record<string, unknown>;
 
   const visit = decodeGeneratedModel(VisitModel, {
-    memberWins: ['2024-05-06T07:08:09.000Z'],
-    membersCarry: ['2024-05-07T08:09:10.000Z'],
-    describedMember: ['2024-05-08T09:10:11.000Z'],
-    bareArrayMember: ['2024-05-09T10:11:12.000Z'],
+    restatingMember: ['2024-05-06T07:08:09.000Z'],
+    restatedByMember: ['2024-05-07T08:09:10.000Z'],
+    membersCarry: ['2024-05-08T09:10:11.000Z'],
+    describedMember: ['2024-05-09T10:11:12.000Z'],
+    bareArrayMember: ['2024-05-10T11:12:13.000Z'],
+    convertingMemberWins: ['2024-05-11T12:13:14.000Z'],
   });
-  assert.deepEqual(visit.memberWins, ['2024-05-06T07:08:09.000Z']);
-  assert.deepEqual(visit.membersCarry, [new Date('2024-05-07T08:09:10.000Z')]);
-  assert.deepEqual(visit.describedMember, [new Date('2024-05-08T09:10:11.000Z')]);
-  assert.deepEqual(visit.bareArrayMember, [new Date('2024-05-09T10:11:12.000Z')]);
+  assert.deepEqual(visit.restatingMember, [new Date('2024-05-06T07:08:09.000Z')]);
+  assert.deepEqual(visit.restatedByMember, [new Date('2024-05-07T08:09:10.000Z')]);
+  assert.deepEqual(visit.membersCarry, [new Date('2024-05-08T09:10:11.000Z')]);
+  assert.deepEqual(visit.describedMember, [new Date('2024-05-09T10:11:12.000Z')]);
+  assert.deepEqual(visit.bareArrayMember, [new Date('2024-05-10T11:12:13.000Z')]);
+  assert.deepEqual(visit.convertingMemberWins, [new Date('2024-05-11T12:13:14.000Z')]);
+});
+
+test('a oneOf of a scalar and a nullable array or tuple converts the sequence, keeps the scalar and keeps null', async t => {
+  const output = path.join(createFixtureProject(t, 'golem-openapi-scalar-or-nullable-sequence-'), 'sdk');
+  await generateMaterializedSdk(sequenceSerdeDocument({
+    plainOrDates: {
+      oneOf: [{ type: 'string' }, { type: ['array', 'null'], items: { type: 'string', format: 'date-time' } }],
+    },
+    plainOrLeg: {
+      oneOf: [
+        { type: 'string' },
+        { type: ['array', 'null'], prefixItems: [{ type: 'string', format: 'date-time' }], items: false },
+      ],
+    },
+  }), {
+    output,
+    name: 'SequenceSerde',
+    profile: { mobx: false, validation: false, allowAny: false },
+  });
+  copyFixtureFile(output, 'openapi/model-serde/scalar-or-sequence-types.ts', 'scalar-or-sequence-types.ts');
+  compileGeneratedSdk(output, [path.join(output, 'scalar-or-sequence-types.ts')], { strict: true, skipLibCheck: true });
+
+  const models = requireRecord(
+    await import(pathToFileURL(path.join(output, 'dist/index.js')).href),
+    'generated scalar-or-sequence models',
+  );
+  const VisitModel = models.VisitModel as unknown as new (values?: Record<string, unknown>) => Record<string, unknown>;
+
+  const scalars = decodeGeneratedModel(VisitModel, { plainOrDates: 'plain', plainOrLeg: 'plain' });
+  assert.equal(scalars.plainOrDates, 'plain');
+  assert.equal(scalars.plainOrLeg, 'plain');
+  const sequences = decodeGeneratedModel(VisitModel, {
+    plainOrDates: ['2024-05-06T07:08:09.000Z'],
+    plainOrLeg: ['2024-05-07T08:09:10.000Z'],
+  });
+  assert.deepEqual(sequences.plainOrDates, [new Date('2024-05-06T07:08:09.000Z')]);
+  assert.deepEqual(sequences.plainOrLeg, [new Date('2024-05-07T08:09:10.000Z')]);
+  const nulls = decodeGeneratedModel(VisitModel, { plainOrDates: null, plainOrLeg: null });
+  assert.equal(nulls.plainOrDates, null);
+  assert.equal(nulls.plainOrLeg, null);
 });
 
 test('a nullable array field with an allOf minItems keeps null, rejects an empty array and accepts dates', async t => {

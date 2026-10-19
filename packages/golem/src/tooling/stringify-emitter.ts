@@ -9,7 +9,7 @@ import type { ValidationPlane } from '../object-codec.js';
 import type { SchemaGraph, SchemaNode } from './schema-graph.js';
 import { codecShortName, serdeWireDescriptor } from './schema-graph.js';
 import type { JsonSchema } from './schema.js';
-import { emitArrayConversion, emitTupleConversion, singleCallConverter } from './sequence-conversion.js';
+import { emitArrayConversion, emitTupleConversion, JSON_SCALAR_ITEM, singleCallConverter } from './sequence-conversion.js';
 import {
   AMBIGUOUS_UNION_CONVERSION_ERROR,
   OBJECT_UNION_DISCRIMINATOR_ERROR,
@@ -363,7 +363,7 @@ function emitValue(
       let itemsUnchanged = true;
       const jsonItem = (item: ModelTypeDescriptor, value: string): { code: string; throws: false } => {
         const code = emitValue(item, value, ctx);
-        if (code !== 'stringifyJsonScalar(item as never)') itemsUnchanged = false;
+        if (code !== JSON_SCALAR_ITEM) itemsUnchanged = false;
         return { code, throws: false };
       };
       const scalarVariant = scalarBranchVariant(scalars) ?? (scalars.length === 1 ? scalars[0] : undefined);

@@ -1,4 +1,5 @@
 import {
+  descriptorNeedsConversion,
   emitModelFromJSON,
   FIELD_CONVERSION_INPUT,
   singleCallConverter,
@@ -286,15 +287,17 @@ function modelFieldType(
     && (schema.type === 'string' || (Array.isArray(schema.type) && schema.type.includes('string')))) {
     return admitsNull(schema) ? 'Date | null' : 'Date';
   }
-  // The conversion's order and rule: typed allOf members win, then the schema's own array keywords, then oneOf and anyOf.
-  const typedMembers = isJsonObject(schema) && hasAllOfMembers(schema)
-    ? schema.allOf.filter((item) => !isConstraintOnlyPart(modelConversionDescriptor(item, definitions, nested, 'from', seen)))
+  // The conversion's order and rule: deciding allOf members win, then the schema's own array keywords, then oneOf and anyOf.
+  const decidingMembers = isJsonObject(schema) && hasAllOfMembers(schema)
+    ? schema.allOf
+      .map((item) => ({ item, descriptor: modelConversionDescriptor(item, definitions, nested, 'from', seen) }))
+      .filter(({ descriptor }) => isDecidingPart(descriptor))
     : [];
-  const [onlyTypedMember] = typedMembers;
-  if (typedMembers.length === 1 && isSequenceDescriptor(modelConversionDescriptor(onlyTypedMember, definitions, nested, 'from', seen))) {
-    return modelFieldType(onlyTypedMember, definitions, nested, seen);
+  const [decidingMember] = decidingMembers;
+  if (decidingMembers.length === 1 && decidingMember && isSequenceDescriptor(decidingMember.descriptor)) {
+    return modelFieldType(decidingMember.item, definitions, nested, seen);
   }
-  if (isJsonObject(schema) && typedMembers.length === 0 && isSequenceSchema(schema)) {
+  if (isJsonObject(schema) && decidingMembers.length === 0 && isSequenceSchema(schema)) {
     const orNull = admitsNull(schema) ? ' | null' : '';
     if (Array.isArray(schema.prefixItems)) {
       return `${prefixItemsType(schema, (item) => modelFieldType(item, definitions, nested, seen))}${orNull}`;
@@ -361,6 +364,14 @@ function isConstraintOnlyPart(part: ModelTypeDescriptor): boolean {
   return part.kind === 'unknown' && part.validations === undefined && part.serde === undefined;
 }
 
+/**
+ * An allOf member that decides the field: not constraint-only, and not an array or tuple that converts nothing
+ * (`{ items: { maxLength: 30 } }` restates a shape and cannot undo another schema's conversion).
+ */
+function isDecidingPart(part: ModelTypeDescriptor): boolean {
+  return !isConstraintOnlyPart(part) && (descriptorNeedsConversion(part) || !isSequenceDescriptor(part));
+}
+
 function isSequenceDescriptor(descriptor: ModelTypeDescriptor): boolean {
   if (descriptor.kind === 'union') return descriptor.variants.some(isSequenceDescriptor);
   return descriptor.kind === 'array' || descriptor.kind === 'tuple';
@@ -398,10 +409,16 @@ function hasAllOfMembers(schema: Readonly<Record<string, unknown>>): schema is R
   return Array.isArray(schema.allOf) && schema.allOf.length > 0;
 }
 
-/** `type: array` or `[array, null]`, or no `type` at all beside `prefixItems` or `items`, which only an array can satisfy. */
+/**
+ * `type: array` or `[array, null]`, or no `type` beside `prefixItems` or `items`. Without a `type`, `properties`
+ * or `additionalProperties` make the schema an object, as the wire type reads it.
+ */
 function isSequenceSchema(schema: Readonly<Record<string, unknown>>): boolean {
   const declared = Array.isArray(schema.type) ? schema.type : schema.type === undefined ? [] : [schema.type];
-  if (declared.length === 0) return Array.isArray(schema.prefixItems) || Boolean(schema.items);
+  if (declared.length === 0) {
+    if (schema.properties || schema.additionalProperties !== undefined) return false;
+    return Array.isArray(schema.prefixItems) || Boolean(schema.items);
+  }
   return declared.includes('array') && declared.every((type) => type === 'array' || type === 'null');
 }
 
@@ -479,19 +496,24 @@ function modelConversionDescriptor(
   }
   if (isJsonObject(schema) && hasAllOfMembers(schema)) {
     const members = schema.allOf.map((item) => modelConversionDescriptor(item, definitions, nested, direction, seen));
-    // Typed members win. Members that only constrain leave the schema's own array keywords to convert the items.
-    const sequence = members.every(isConstraintOnlyPart)
+    // Deciding members win. Members that only constrain, or restate an array without converting it, leave the schema's own array keywords to convert the items.
+    const deciding = members.filter(isDecidingPart);
+    const sequence = deciding.length === 0
       ? sequenceConversionDescriptor(schema, definitions, nested, direction, seen)
       : undefined;
-    return mergeAllOfDescriptors(sequence ? [sequence, ...members] : members);
+    if (sequence) return mergeAllOfDescriptors([sequence, ...members.filter(isConstraintOnlyPart)]);
+    return mergeAllOfDescriptors(deciding.length ? members.filter((part) => isConstraintOnlyPart(part) || isDecidingPart(part)) : members);
   }
   const sequence = isJsonObject(schema) ? sequenceConversionDescriptor(schema, definitions, nested, direction, seen) : undefined;
   if (sequence) return sequence;
   if (isJsonObject(schema) && (schema.oneOf || schema.anyOf)) {
     const variants = Array.isArray(schema.oneOf) ? schema.oneOf : Array.isArray(schema.anyOf) ? schema.anyOf : [];
-    const convertedVariants = variants.map(item => isNullBranch(item)
-      ? { kind: 'null' as const }
-      : modelConversionDescriptor(item, definitions, nested, direction, seen));
+    // A nullable array variant is a plain union of its own; its branches join the outer union.
+    const convertedVariants = variants.flatMap((item): readonly ModelTypeDescriptor[] => {
+      if (isNullBranch(item)) return [{ kind: 'null' }];
+      const converted = modelConversionDescriptor(item, definitions, nested, direction, seen);
+      return converted.kind === 'union' && converted.discriminator === undefined ? converted.variants : [converted];
+    });
     const temporalVariants = convertedVariants.filter(isTemporalDescriptor);
     if (temporalVariants.length) {
       if (temporalVariants.length !== 1 || convertedVariants.some(item => !isTemporalDescriptor(item) && item.kind !== 'null')) {

@@ -40,7 +40,7 @@ import {
 } from './union-conversion.js';
 
 /** Generators read tag values through the same rule as the shared union conversion. */
-export { literalValues } from './union-conversion.js';
+export { descriptorNeedsConversion, literalValues } from './union-conversion.js';
 
 export type ModelConversionDescriptor = ModelTypeDescriptor;
 
