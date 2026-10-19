@@ -22,8 +22,6 @@ export interface Toggles {
   readonly finite: FiniteTest;
   /** `valid` adds `t - t === 0` for a Date; `isFinite` adds `Number.isFinite(x.getTime())`; `off` is `instanceof Date` alone. */
   readonly date: 'valid' | 'isFinite' | 'off';
-  /** F1 only. `case` reads a declared value in its own case (spec 5.2); `item` reads every key's value before the switch and skips an `undefined` one. */
-  readonly keyRead: 'case' | 'item';
   /** `separate` tests each required key `!== undefined` ahead of the value tests; `implied` leaves that to the value test, which rejects `undefined`. */
   readonly required: 'implied' | 'separate';
   /** `helper` calls a module-level `isObject`; `inline` writes the object test. */
@@ -31,17 +29,23 @@ export interface Toggles {
   /** `chain` joins the value tests with `&&`; `statements` copies each value to a `const` and returns `false` after each failed test. */
   readonly body: 'chain' | 'statements';
   /**
-   * `read` switches on the plain tag read; `enumerable` reads the tag by the JSON view, picks a branch number, then tests
-   * that branch; `merged` reads the declared keys of every branch in one `Object.keys` pass, then switches on the captured
-   * tag and tests that branch's values, with each key only another branch declares absent (exact, no `propertyIsEnumerable`).
+   * `read` switches on the plain tag read; `merged` reads the declared keys of every branch in one `Object.keys` pass,
+   * then switches on the captured tag and tests that branch's values, with each key only another branch declares absent
+   * (exact, no `propertyIsEnumerable`).
    */
-  readonly tag: 'read' | 'enumerable' | 'merged';
+  readonly tag: 'read' | 'merged';
+  /**
+   * The item loop of an array: `index` reads `a.length` and `a[i]` on each turn; `hoisted` reads `a.length` once;
+   * `forOf` iterates the array; `every` calls `a.every` with the item check (not exact: it skips the holes of a sparse
+   * array, and it runs an `every` the array may override).
+   */
+  readonly loop: 'index' | 'hoisted' | 'forOf' | 'every';
 }
 
-export const BASE_TOGGLES: Toggles = { keyTest: 'F1', finite: 'sub', date: 'valid', keyRead: 'case', required: 'implied', objectTest: 'inline', body: 'chain', tag: 'read' };
+export const BASE_TOGGLES: Toggles = { keyTest: 'F1', finite: 'sub', date: 'valid', required: 'implied', objectTest: 'inline', body: 'chain', tag: 'read', loop: 'index' };
 
 /** The base with each form the generated `is_X` writes today: what each lead row of a toggle run adds on its own. */
-export const GENERATED_TOGGLES: Toggles = { ...BASE_TOGGLES, finite: 'isFinite', date: 'isFinite', keyRead: 'item', required: 'separate', objectTest: 'helper', body: 'statements', tag: 'enumerable' };
+export const GENERATED_TOGGLES: Toggles = { ...BASE_TOGGLES, finite: 'isFinite', date: 'isFinite', required: 'separate', objectTest: 'helper', body: 'statements', tag: 'merged' };
 
 type Shape =
   | 'number' | 'string' | 'boolean' | 'date'
@@ -107,7 +111,14 @@ class Writer {
       const name = this.next('a');
       this.functions.push('');
       const slot = this.functions.length - 1;
-      this.functions[slot] = `function ${name}(a) { if (!Array.isArray(a)) return false; for (let i = 0; i < a.length; i++) { if (!(${this.test(shape.array, 'a[i]')})) return false; } return true; }`;
+      const item = shape.array;
+      const { loop } = this.toggles;
+      const body = loop === 'every' && typeof item === 'object' && 'object' in item
+        ? `return a.every(${this.object(item.object)});`
+        : loop === 'forOf'
+          ? `for (const x of a) { if (!(${this.test(item, 'x')})) return false; } return true;`
+          : `for (let i = 0${loop === 'hoisted' ? ', n = a.length' : ''}; i < ${loop === 'hoisted' ? 'n' : 'a.length'}; i++) { if (!(${this.test(item, 'a[i]')})) return false; } return true;`;
+      this.functions[slot] = `function ${name}(a) { if (!Array.isArray(a)) return false; ${body} }`;
       return `${name}(${x})`;
     }
     if ('tuple' in shape) {
@@ -140,11 +151,6 @@ class Writer {
       });
       this.functions[slot] = `function ${name}(x) { if (typeof x !== 'object' || x === null || Array.isArray(x)) return false; let ${keys.map(local).join(', ')}; `
         + `for (const k of Object.keys(x)) switch (k) { ${reads} default: if (x[k] !== undefined) return false; } switch (${local(shape.union)}) { ${cases.join(' ')} } return false; }`;
-    } else {
-      const key = JSON.stringify(shape.union);
-      const select = members.map(([tag], position) => `t === ${tag} ? ${position} : `).join('');
-      const branches = members.map(([, check], position) => `if (b === ${position}) { if (!${check}(x)) return false; }`).join(' ');
-      this.functions[slot] = `function ${name}(x) { const t = isObject(x) ? (pie.call(x, ${key}) ? x[${key}] : undefined) : undefined; const b = ${select}-1; ${branches} if (b < 0) return false; return true; }`;
     }
     return `${name}(${x})`;
   }
@@ -162,9 +168,7 @@ class Writer {
     let head: string;
     switch (this.toggles.keyTest) {
       case 'F1':
-        head = this.toggles.keyRead === 'case'
-          ? `let ${locals.join(', ')}; for (const k of Object.keys(v)) switch (k) { ${reads} default: if (v[k] !== undefined) return false; }`
-          : `let ${locals.join(', ')}; for (const k of Object.keys(v)) { const item = v[k]; if (item === undefined) continue; switch (k) { ${keys.map((key, i) => `case ${JSON.stringify(key)}: x${i} = item; break;`).join(' ')} default: return false; } }`;
+        head = `let ${locals.join(', ')}; for (const k of Object.keys(v)) switch (k) { ${reads} default: if (v[k] !== undefined) return false; }`;
         break;
       case 'F2':
         head = `let m = 0; ${keys.map((key, i) => `const x${i} = pie.call(v, ${JSON.stringify(key)}) ? v.${key} : undefined; if (x${i} !== undefined) m++;`).join(' ')} if (Object.keys(v).length !== m) { ${unknownLoop} }`;

@@ -97,16 +97,17 @@ const TOGGLE_ROWS: readonly (readonly [string, Toggles, ReadonlySet<string>?])[]
   ['floor', { ...BASE_TOGGLES, keyTest: 'none', finite: 'off', date: 'off' }, LEAD_MODELS],
   ['finite isFinite', { ...BASE_TOGGLES, finite: 'isFinite' }, LEAD_MODELS],
   ['date isFinite', { ...BASE_TOGGLES, date: 'isFinite' }, LEAD_MODELS],
-  ['key read item', { ...BASE_TOGGLES, keyRead: 'item' }, LEAD_MODELS],
   ['required separate', { ...BASE_TOGGLES, required: 'separate' }, LEAD_MODELS],
   ['object helper', { ...BASE_TOGGLES, objectTest: 'helper' }, LEAD_MODELS],
   ['statements', { ...BASE_TOGGLES, body: 'statements' }, LEAD_MODELS],
-  ['tag enumerable', { ...BASE_TOGGLES, tag: 'enumerable' }, new Set(['union'])],
   ['tag merged', { ...BASE_TOGGLES, tag: 'merged' }, new Set(['union'])],
+  ['loop hoisted', { ...BASE_TOGGLES, loop: 'hoisted' }, new Set(['array'])],
+  ['loop forOf', { ...BASE_TOGGLES, loop: 'forOf' }, new Set(['array'])],
+  ['loop every', { ...BASE_TOGGLES, loop: 'every' }, new Set(['array'])],
   ['generated', GENERATED_TOGGLES, LEAD_MODELS],
 ];
-/** Only the key test depends on how an instance is built, so the twins run these rows. */
-const TWIN_TOGGLE_ROWS = new Set(['base', 'key F2', 'generated']);
+/** Only the key test and the array loop depend on how an instance is built, so the twins run these rows. */
+const TWIN_TOGGLE_ROWS = new Set(['base', 'key F2', 'generated', 'loop hoisted', 'loop forOf', 'loop every']);
 /** The row that drops contracts: it must give the full validator's answer on the valid value and on a wrong field only. */
 const FLOOR_ROW = 'floor';
 /** The generated functions of one project's validator module, by export name. */
