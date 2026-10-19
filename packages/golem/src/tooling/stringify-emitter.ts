@@ -9,6 +9,7 @@ import type { ValidationPlane } from '../object-codec.js';
 import type { SchemaGraph, SchemaNode } from './schema-graph.js';
 import { codecShortName, serdeWireDescriptor } from './schema-graph.js';
 import type { JsonSchema } from './schema.js';
+import { requireComposedObject } from './composition.js';
 import { emitArrayConversion, emitTupleConversion, JSON_SCALAR_ITEM, singleCallConverter } from './sequence-conversion.js';
 import {
   AMBIGUOUS_UNION_CONVERSION_ERROR,
@@ -17,7 +18,6 @@ import {
   emitScalarOrArrayConversion,
   emitSequenceBranch,
   isScalarishDescriptor,
-  mergeObjectVariants,
   discriminatorMatch,
   emitDispatch,
   literalDiscriminator,
@@ -838,35 +838,14 @@ function emitInternedObjectDecode(
   return fallibleConversion(ctx, `${fromWireFunctionName(node.id)}(${expression}, ${trustedOptions(ctx)})`);
 }
 
-function mergeResolvedObjects(
-  parts: readonly (ObjectTypeDescriptor | undefined)[],
-): ObjectTypeDescriptor | undefined {
-  const objects = parts.filter((part): part is ObjectTypeDescriptor => part !== undefined);
-  if (objects.length === 0) return undefined;
-  if (objects.length === 1) return objects[0];
-  const properties: Record<string, ModelTypeDescriptor> = {};
-  const required: string[] = [];
-  let additionalProperties: ObjectTypeDescriptor['additionalProperties'] = true;
-  for (const object of objects) {
-    Object.assign(properties, object.properties);
-    required.push(...object.required);
-    additionalProperties = object.additionalProperties;
-  }
-  return {
-    kind: 'object',
-    properties,
-    required: [...new Set(required)],
-    additionalProperties,
-  };
-}
-
 function resolveObjectDescriptor(
   descriptor: ModelTypeDescriptor,
   ctx: EmitCtx,
 ): ObjectTypeDescriptor | undefined {
   if (descriptor.kind === 'object') return descriptor;
   if (descriptor.kind === 'intersection') {
-    return mergeResolvedObjects(descriptor.variants.map((variant) => resolveObjectDescriptor(variant, ctx)));
+    const objects = descriptor.variants.flatMap((variant) => resolveObjectDescriptor(variant, ctx) ?? []);
+    return objects.length > 1 ? requireComposedObject(objects) : objects[0];
   }
   const short = descriptor.kind === 'generated-model'
     ? codecShortName(descriptor.id)
@@ -1177,7 +1156,7 @@ function emitDecodeValue(descriptor: ModelTypeDescriptor, expression: string, ct
     return emitUnionDecode(descriptor, expression, ctx);
   }
   // An intersection of objects decodes as the one merged object, so each member's fields convert.
-  const decodedMerge = descriptor.kind === 'intersection' ? mergeObjectVariants(descriptor.variants, true) : undefined;
+  const decodedMerge = descriptor.kind === 'intersection' ? requireComposedObject(descriptor.variants) : undefined;
   if (decodedMerge) return emitDecodeValue(decodedMerge, expression, ctx);
   if (descriptor.kind === 'object' && typeof descriptor.additionalProperties === 'object') {
     if (!descriptorNeedsConversion(descriptor)) {
@@ -1471,7 +1450,7 @@ function emitEncodeValue(descriptor: ModelTypeDescriptor, expression: string, ct
       item: (item, value) => ({ code: emitEncodeValue(item, value, ctx), throws: false }),
     });
   }
-  const encodedMerge = descriptor.kind === 'intersection' ? mergeObjectVariants(descriptor.variants, true) : undefined;
+  const encodedMerge = descriptor.kind === 'intersection' ? requireComposedObject(descriptor.variants) : undefined;
   if (encodedMerge) return emitEncodeValue(encodedMerge, expression, ctx);
   if (descriptor.kind === 'union') {
     return emitUnionEncode(descriptor, expression, ctx);

@@ -18,6 +18,7 @@ export {
 } from './stringify-emitter.js';
 export { pruneGeneratedImports } from './generated-imports.js';
 export { FIELD_CONVERSION_INPUT, singleCallConverter, type TupleConversionDescriptor } from './sequence-conversion.js';
+import { requireComposedObject } from './composition.js';
 import { FIELD_CONVERSION_INPUT, emitArrayConversion, emitTupleConversion, singleCallConverter, type SequenceItems } from './sequence-conversion.js';
 import {
   AMBIGUOUS_UNION_CONVERSION_ERROR,
@@ -34,14 +35,13 @@ import {
   scalarOrArray,
   emitDispatch,
   presentUnionIndices,
-  mergeObjectVariants,
   unionDispatch,
   type ObjectTypeDescriptor,
   type VariantDispatch,
 } from './union-conversion.js';
 
 /** Generators read tag values through the same rule as the shared union conversion. */
-export { descriptorNeedsConversion, isDisjointObjectIntersection, literalValues } from './union-conversion.js';
+export { descriptorNeedsConversion, literalValues } from './union-conversion.js';
 
 export type ModelConversionDescriptor = ModelTypeDescriptor;
 
@@ -256,12 +256,13 @@ function emitNested(
         : expression;
   }
   if (descriptor.kind === 'intersection') {
-    const merged = descriptor.variants.every(variant => !metadata(variant).serde) ? mergeObjectVariants(descriptor.variants) : undefined;
+    const merged = descriptor.variants.every(variant => !metadata(variant).serde) ? requireComposedObject(descriptor.variants) : undefined;
     if (merged) return emitNested(merged, expression, direction, resolveModel, resolveSerde);
+    // A scalar intersection converts by its one converting part.
     const conversions = [...new Set(descriptor.variants
       .map(variant => emitNested(variant, expression, direction, resolveModel, resolveSerde))
       .filter(converted => converted !== expression))];
-    if (conversions.length > 1) throw new Error('Intersection has conflicting conversions. Use one serde pair for the intersected value.');
+    if (conversions.length > 1) throw new Error('Intersection cannot be converted: two parts convert it differently. Use one serde pair for the intersected value.');
     return conversions[0] ?? expression;
   }
   if (descriptor.kind === 'union') {
