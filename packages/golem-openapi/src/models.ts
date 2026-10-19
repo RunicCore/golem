@@ -305,6 +305,12 @@ function modelFieldType(
   if (decidingMembers.length === 1 && decidingMember && isSequenceDescriptor(decidingMember.descriptor)) {
     return modelFieldType(decidingMember.item, definitions, nested, seen);
   }
+  // Own properties and deciding members are one intersection, as the conversion merges them.
+  if (isJsonObject(schema) && decidingMembers.length > 0 && hasOwnObjectKeywords(schema)) {
+    return [withoutAllOf(schema), ...decidingMembers.map(({ item }) => item)]
+      .map((part) => `(${modelFieldType(part, definitions, nested, seen)})`)
+      .join(' & ');
+  }
   if (isJsonObject(schema) && decidingMembers.length === 0 && isSequenceSchema(schema)) {
     const orNull = admitsNull(schema) ? ' | null' : '';
     if (Array.isArray(schema.prefixItems)) {
@@ -469,6 +475,15 @@ function sequenceBodyDescriptor(
   return undefined;
 }
 
+function withoutAllOf(schema: Readonly<Record<string, unknown>>): Readonly<Record<string, unknown>> {
+  const { allOf: _members, ...own } = schema;
+  return own;
+}
+
+function hasOwnObjectKeywords(schema: Readonly<Record<string, unknown>>): boolean {
+  return Boolean(schema.properties) || schema.additionalProperties !== undefined;
+}
+
 /** The schema converts by its own keywords: array items, oneOf, anyOf, properties or additionalProperties. */
 function hasOwnConversionKeywords(schema: Readonly<Record<string, unknown>>): boolean {
   return isSequenceSchema(schema) || Boolean(schema.oneOf || schema.anyOf || schema.properties)
@@ -514,13 +529,19 @@ function modelConversionDescriptor(
     // array, oneOf, anyOf and properties keywords to convert the field; the constraints join that descriptor.
     const deciding = members.filter(isDecidingPart);
     if (deciding.length === 0 && hasOwnConversionKeywords(schema)) {
-      const { allOf: _constraintMembers, ...own } = schema;
       return mergeAllOfDescriptors([
-        modelConversionDescriptor(own, definitions, nested, direction, seen),
+        modelConversionDescriptor(withoutAllOf(schema), definitions, nested, direction, seen),
         ...members.filter(isConstraintOnlyPart),
       ]);
     }
-    return mergeAllOfDescriptors(deciding.length ? members.filter((part) => isConstraintOnlyPart(part) || isDecidingPart(part)) : members);
+    // The schema's own properties join the deciding members as one more part, as modelFieldType types them.
+    const own = deciding.length > 0 && hasOwnObjectKeywords(schema)
+      ? [modelConversionDescriptor(withoutAllOf(schema), definitions, nested, direction, seen)]
+      : [];
+    return mergeAllOfDescriptors([
+      ...own,
+      ...(deciding.length ? members.filter((part) => isConstraintOnlyPart(part) || isDecidingPart(part)) : members),
+    ]);
   }
   const sequence = isJsonObject(schema) ? sequenceConversionDescriptor(schema, definitions, nested, direction, seen) : undefined;
   if (sequence) return sequence;

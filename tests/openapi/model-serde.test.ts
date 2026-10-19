@@ -1007,3 +1007,31 @@ test('a field that references a nullable component object is typed with | null a
   assert.doesNotThrow(() => codec.fromWireFormat({ pet: null }, { construct }));
   assert.equal(JSON.stringify(decodeGeneratedModel(VisitModel, { pet: { name: 'Miso' } }).pet), '{"name":"Miso"}');
 });
+
+test('an object field with its own properties and an allOf member that adds properties types and converts both alike', async t => {
+  const output = path.join(createFixtureProject(t, 'golem-openapi-allof-member-properties-'), 'sdk');
+  await generateMaterializedSdk(sequenceSerdeDocument({
+    merged: {
+      type: 'object',
+      properties: { at: { type: 'string', format: 'date-time' } },
+      allOf: [{ properties: { b: { type: 'string', format: 'date-time' } } }],
+    },
+  }), {
+    output,
+    name: 'SequenceSerde',
+    profile: { mobx: false, validation: true, allowAny: false },
+  });
+  copyFixtureFile(output, 'openapi/model-serde/allof-members-types.ts', 'allof-members-types.ts');
+  compileGeneratedSdk(output, [path.join(output, 'allof-members-types.ts')], { strict: true, skipLibCheck: true });
+
+  const models = requireRecord(
+    await import(pathToFileURL(path.join(output, 'dist/index.js')).href),
+    'generated allOf member properties models',
+  );
+  const VisitModel = models.VisitModel as unknown as new (values?: Record<string, unknown>) => Record<string, unknown>;
+
+  assert.deepEqual(
+    decodeGeneratedModel(VisitModel, { merged: { at: '2024-05-06T07:08:09.000Z', b: '2024-05-07T08:09:10.000Z' } }).merged,
+    { at: new Date('2024-05-06T07:08:09.000Z'), b: new Date('2024-05-07T08:09:10.000Z') },
+  );
+});
