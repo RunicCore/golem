@@ -239,7 +239,7 @@ const ROWS: readonly Row[] = [
     valid: [{ value: 1, children: [{ value: 2 }, { value: 3, children: [{ value: 4 }] }] }],
   },
   {
-    name: 'micro-leaves inside a model: contains, patternProperties, propertyNames, oneOf, not, if, dependentSchemas',
+    name: 'micro-leaves and unions inside a model: contains, patternProperties, propertyNames, oneOf, a discriminator, not, if, dependentSchemas',
     schema: {
       type: 'object',
       required: ['list'],
@@ -255,6 +255,59 @@ const ROWS: readonly Row[] = [
       },
     },
     valid: [{ list: [1, 2] }, { list: [1, 1], map: { x1: 2 }, names: { ab: 1 }, choice: 'ab', shape: { kind: 'b', size: 1 }, other: 1, when: 6, card: { number: 1, cvv: 2 } }],
+  },
+  {
+    name: 'tagged union: the tag selects one branch, an unknown or missing tag fails (K21)',
+    schema: {
+      type: 'array',
+      items: {
+        oneOf: [
+          { type: 'object', required: ['kind', 'radius'], properties: { kind: { const: 'circle' }, radius: { type: 'number', minimum: 0 } }, additionalProperties: false },
+          { type: 'object', required: ['kind', 'side'], properties: { kind: { enum: ['square', 'box'] }, side: { type: 'integer' } }, additionalProperties: false },
+          { type: 'object', required: ['kind'], properties: { kind: { const: 7 } } },
+        ],
+        discriminator: { propertyName: 'kind' },
+      },
+    },
+    valid: [[{ kind: 'circle', radius: 1 }, { kind: 'box', side: 2 }, { kind: 7, extra: true }], [{ kind: 'square', side: 0 }]],
+  },
+  {
+    name: 'untagged oneOf counts exactly one match, anyOf takes any, and not inverts an exact child (K20, K22, K23)',
+    schema: {
+      type: 'object',
+      properties: {
+        one: { oneOf: [{ type: 'integer' }, { type: 'number', minimum: 10 }, { type: 'string' }] },
+        any: { anyOf: [{ type: 'string', maxLength: 1 }, { type: 'array', items: { type: 'string' } }, { type: 'null' }] },
+        notText: { not: { type: 'string' } },
+        notShape: { not: { type: 'object', required: ['a'] } },
+      },
+    },
+    valid: [{ one: 1, any: 'a', notText: 1, notShape: { b: 1 } }, { one: 'x', any: ['a', 'b'], notText: null, notShape: [] }],
+  },
+  {
+    name: 'IModel class union: a tagged plain object or an untagged instance of its class (K21, K23, K26)',
+    schema: {
+      type: 'array',
+      items: {
+        oneOf: [
+          {
+            allOf: [{ type: 'object', properties: { kind: { type: 'string' }, lives: { type: 'integer' } } }],
+            anyOf: [
+              { properties: { kind: { const: 'cat' } }, required: ['kind'], golemModelInstance: { of: 'Cat', among: ['Cat', 'Dog'], required: false } },
+              { not: { required: ['kind'] }, golemModelInstance: { of: 'Cat', among: ['Cat', 'Dog'], required: true } },
+            ],
+          },
+          {
+            allOf: [{ type: 'object', properties: { kind: { type: 'string' }, barks: { type: 'boolean' } } }],
+            anyOf: [
+              { properties: { kind: { const: 'dog' } }, required: ['kind'], golemModelInstance: { of: 'Dog', among: ['Cat', 'Dog'], required: false } },
+              { not: { required: ['kind'] }, golemModelInstance: { of: 'Dog', among: ['Cat', 'Dog'], required: true } },
+            ],
+          },
+        ],
+      },
+    },
+    valid: [[{ kind: 'cat', lives: 9 }, { kind: 'dog', barks: true }, new Cat(), new Dog()]],
   },
 ];
 
@@ -352,9 +405,10 @@ const FAST_FORM_ROWS: readonly (readonly [row: string, schema: unknown, microLea
   ['K9 contains', NESTED({ type: 'array', contains: { type: 'string' } }), true],
   ['K16 patternProperties', NESTED({ type: 'object', patternProperties: { '^a': { type: 'string' } } }), true],
   ['K17 propertyNames', NESTED({ type: 'object', propertyNames: { minLength: 2 } }), true],
-  ['K21 oneOf with a discriminator', NESTED({ oneOf: [{ properties: { k: { const: 'a' } }, required: ['k'] }, { properties: { k: { const: 'b' } }, required: ['k'] }], discriminator: { propertyName: 'k' } }), true],
-  ['K22 oneOf', NESTED({ oneOf: [{ type: 'string' }, { type: 'integer' }] }), true],
-  ['K23 not', NESTED({ not: { type: 'string' } }), true],
+  ['K21 oneOf with a discriminator', { oneOf: [{ properties: { k: { const: 'a' } }, required: ['k'] }, { properties: { k: { const: 'b' } }, required: ['k'] }], discriminator: { propertyName: 'k' } }, false],
+  ['K22 oneOf', { oneOf: [{ type: 'string' }, { type: 'integer' }] }, false],
+  ['K23 not', { not: { type: 'string' } }, false],
+  ['K23 an IModel class union branch', { anyOf: [{ not: { required: ['kind'] }, golemModelInstance: { of: 'Cat', among: ['Cat'], required: true } }, { required: ['kind'] }] }, false],
   ['K24 if, then and else', NESTED({ if: { type: 'string' }, then: { minLength: 2 } }), true],
   ['K25 dependentSchemas', NESTED({ dependentSchemas: { a: { required: ['b'] } } }), true],
 ];
@@ -389,7 +443,7 @@ test('no fast check for a root whose top-level object or array check is a micro-
       roots: new Map<string, unknown>([
         ['Patterns', { type: 'object', patternProperties: { '^a': { type: 'string' } } }],
         ['Contains', { type: 'array', contains: { type: 'string' } }],
-        ['OnlyOneOf', { oneOf: [{ type: 'string' }, { type: 'integer' }] }],
+        ['OnlyIf', { if: { type: 'string' }, then: { minLength: 2 } }],
         ['Unevaluated', { type: 'object', properties: { a: {} }, unevaluatedProperties: false }],
       ]),
     },

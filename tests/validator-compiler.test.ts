@@ -337,6 +337,12 @@ test('uniqueItems reports the first duplicate pair by index', async () => {
   await assertIssues({ uniqueItems: false }, [1, 1], []);
 });
 
+test('uniqueItems compares items by the JSON view: an undefined item and a hole equal null', async () => {
+  await assertIssues({ uniqueItems: true }, [undefined, null], [{ path: [], code: 'unique', indexes: [0, 1] }]);
+  await assertIssues({ uniqueItems: true }, [1, , null], [{ path: [], code: 'unique', indexes: [1, 2] }]);
+  await assertIssues({ uniqueItems: true }, [undefined, 0], []);
+});
+
 test('allOf reports the issues of every failing branch', async () => {
   await assertIssues({ allOf: [{ minLength: 3 }, { pattern: '^b' }, { type: 'string' }] }, 'a', [
     { path: [], code: 'tooSmall', measure: 'length', limit: 3, inclusive: true },

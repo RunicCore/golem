@@ -1,7 +1,7 @@
 import type { IrArray, IrCheck, IrDiscriminator, IrFunction, IrInstance, IrModule, IrNumber, IrObject, IrSchema, IrString, IrType, IrTypeName, IrUnion, IrValidation, IrValidationImport } from './ir.js';
 
 import { MODEL_CODEC_IDS_KEY } from '../../schema-keywords.js';
-import { presentKeysSource } from '../../presence.js';
+import { presentKeysSource, presentValueSource } from '../../presence.js';
 
 export interface EmitOptions {
   /** The module specifier the generated file imports its runtime helpers from. */
@@ -332,8 +332,8 @@ interface WriterMode {
   readonly fail: FailMode;
   /** `captured` names a local for each declared key the object's checks read; a key outside it is read on its own. */
   readonly presence: (state: ModuleState, value: string, captured?: readonly (readonly [key: string, local: string])[]) => PresenceReader;
-  /** The test of a leaf check that the mode writes. */
-  readonly leafTest: (check: LeafCheck) => Text;
+  /** The form the mode writes of a check that has a full form and may have a cheaper fast one. */
+  readonly form: (full: Text, fast: Text | undefined) => Text;
   /** Writes the key test of an object: it reads the declared keys, and in the fast check also tests the unknown keys and counts the keys. */
   readonly keyTest: (writer: FunctionWriter, request: KeyTestRequest) => KeyTest;
   /** An expression that is true when the function `id` passes `args.value`. */
@@ -371,7 +371,7 @@ const FULL_VALIDATOR: WriterMode = {
     leaves: false,
   },
   presence: objectPresence,
-  leafTest: check => check.fails,
+  form: full => full,
   // Reads the declared keys; the checks after it loop over the key list for unknown keys and patterns.
   keyTest: (writer, { value, captured, needsKeys }) => {
     const presence = objectPresence(writer.state, value, captured);
@@ -454,7 +454,7 @@ function fastCheckMode(plan: FastPlan): WriterMode {
   return {
     fail: { start: [], end: 'return true;', issue: () => ['return false;'], fail: () => 'return false;', leaves: true },
     presence: objectPresence,
-    leafTest: check => check.fast ?? check.fails,
+    form: (full, fast) => fast ?? full,
     keyTest: fastKeyTest,
     call: (writer, id, args) => {
       const target = writer.target(id);
@@ -580,7 +580,7 @@ class FunctionWriter {
   }
 
   private leaf(check: LeafCheck): void {
-    const test = text(this.mode.leafTest(check));
+    const test = text(this.mode.form(check.fails, check.fast));
     if (this.mode.fail.leaves) return this.failWhen(test);
     this.open(`if (${test})`);
     this.issue(text(check.issue), check.path);
@@ -806,7 +806,8 @@ class FunctionWriter {
         const jsonEqual = this.state.runtimeHelper('jsonEqual');
         this.open(`${label === undefined ? '' : `${label}: `}for (let ${first} = 0; ${first} < ${value}.length - 1; ${first}++)`);
         this.open(`for (let ${second} = ${first} + 1; ${second} < ${value}.length; ${second}++)`);
-        this.open(`if (${jsonEqual}(${value}[${first}], ${value}[${second}]))`);
+        // An `undefined` item and a hole are `null` in the JSON view, as `jsonEqual` reads nested items.
+        this.open(`if (${jsonEqual}(${value}[${first}] ?? null, ${value}[${second}] ?? null))`);
         this.issue(`code: 'unique', indexes: [${first}, ${second}]`);
         if (label !== undefined) this.line(`break ${label};`);
         this.close();
@@ -1036,23 +1037,42 @@ class FunctionWriter {
     this.leaf({ fails: check.exactlyOne ? `${matched} !== 1` : `${matched} === 0`, issue: `code: 'union', matched: ${matched}` });
   }
 
-  /** The tag selects the branch; only that branch's issues are reported, and an unknown tag is a `literal` issue on the tag property. */
+  /**
+   * The tag selects the branch; only that branch's issues are reported, and an unknown tag is a `literal` issue on the
+   * tag property. The tag is read once; the first branch whose list holds it is selected, as a tag lies in one list.
+   */
   private discriminatedUnion(check: IrUnion, discriminator: IrDiscriminator, value: string): void {
     this.state.localHelper('isObject');
     const presence = this.mode.presence(this.state, value);
-    const jsonEqual = this.state.runtimeHelper('jsonEqual');
-    const tags = this.state.constant('tags', `Object.freeze(/*#__PURE__*/ JSON.parse(${literal(JSON.stringify(discriminator.tags))}))`);
-    const allTags = this.state.constant('lit', `Object.freeze(/*#__PURE__*/ JSON.parse(${literal(JSON.stringify(discriminator.tags.flat()))}))`);
+    const property = literal(discriminator.property);
+    const jsonEqual = (): string => this.state.runtimeHelper('jsonEqual');
+    const tags = (): string => this.state.constant('tags', `Object.freeze(/*#__PURE__*/ JSON.parse(${literal(JSON.stringify(discriminator.tags))}))`);
     const tag = this.fresh('tag');
     const selected = this.fresh('branch');
-    this.line(`const ${tag} = isObject(${value}) && ${presence.present(discriminator.property)} ? ${presence.read(discriminator.property)} : undefined;`);
-    this.line(`const ${selected} = ${tags}.findIndex(list => list.some(item => ${jsonEqual}(${tag}, item)));`);
+    const read = this.mode.form(
+      () => `isObject(${value}) && ${presence.present(discriminator.property)} ? ${presence.read(discriminator.property)} : undefined`,
+      `isObject(${value}) ? (${presentValueSource(value, property, `${value}[${property}]`)}) : undefined`,
+    );
+    this.line(`const ${tag} = ${text(read)};`);
+    // The fast check compares a primitive tag with `===`, which `jsonEqual` starts with, and makes no function per call.
+    const matches = (position: number): string => discriminator.tags[position]
+      .map((item, index) => (isPrimitive(item) ? `${tag} === ${JSON.stringify(item)}` : `${jsonEqual()}(${tag}, ${tags()}[${position}][${index}])`))
+      .join(' || ') || 'false';
+    const selection = this.mode.form(
+      () => `${tags()}.findIndex(list => list.some(item => ${jsonEqual()}(${tag}, item)))`,
+      () => `${discriminator.tags.map((_, position) => `${matches(position)} ? ${position} : `).join('')}-1`,
+    );
+    this.line(`const ${selected} = ${text(selection)};`);
     check.branches.forEach((fn, position) => {
       this.open(`if (${selected} === ${position})`);
       this.callInPlace(fn, value);
       this.close();
     });
-    this.leaf({ fails: `${selected} < 0`, issue: `code: 'literal', expected: ${allTags}`, path: `[...${PATH}, ${literal(discriminator.property)}]` });
+    this.leaf({
+      fails: `${selected} < 0`,
+      issue: () => `code: 'literal', expected: ${this.state.constant('lit', `Object.freeze(/*#__PURE__*/ JSON.parse(${literal(JSON.stringify(discriminator.tags.flat()))}))`)}`,
+      path: `[...${PATH}, ${property}]`,
+    });
   }
 }
 
@@ -1150,17 +1170,18 @@ function reachingValidation(functions: readonly IrFunction[]): ReadonlySet<numbe
 
 /**
  * True when the fast check writes `check` itself; any other check is a micro-leaf (spec 5.4 b), so a kind without a
- * form, a new one included, is never skipped. `not`, `oneOf`, `if`, `dependentSchemas`, `contains`, `patternProperties`
- * and `propertyNames` get their forms in later steps; `unevaluated*` and validation functions have none.
+ * form, a new one included, is never skipped. `if`, `dependentSchemas`, `contains`, `patternProperties` and
+ * `propertyNames` get their forms in a later step; `unevaluated*` and validation functions have none.
  */
 function hasFastForm(check: IrCheck): boolean {
   switch (check.kind) {
     case 'type': case 'literal': case 'format': case 'date': case 'string': case 'number': case 'instance': case 'call': case 'allOf':
+    // Branches and `not` call exact checks (spec 5.4 c), so their verdicts count as the full validator's do.
+    case 'union': case 'not':
       return true;
     case 'array': return check.contains === undefined;
     // One IR check is one unit: an object check with either keyword is one micro-leaf as a whole.
     case 'object': return check.patternProperties.length === 0 && check.propertyNames === undefined;
-    case 'union': return !check.exactlyOne && check.discriminator === undefined;
     default: return false;
   }
 }
