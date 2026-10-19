@@ -279,11 +279,13 @@ function modelFieldType(
   definitions: ReadonlyMap<string, ModelDefinition>,
   env: ModelResolveEnv,
   visiting: ReadonlySet<unknown> = new Set(),
+  nullThroughReference = true,
 ): string {
   const nested = withSchemaBase(env, schema);
   const reference = modelSchemaReference(schema, nested);
   if (reference && definitions.has(reference)) {
-    return `${reference}Model${admitsNullThroughReference(schema, reference, definitions) ? ' | null' : ''}`;
+    const nullable = nullThroughReference ? admitsNullThroughReference(schema, reference, definitions) : admitsNull(asRecord(schema));
+    return `${reference}Model${nullable ? ' | null' : ''}`;
   }
   if (visiting.has(schema)) throw new Error('Recursive schema aliases must resolve to an object model.');
   const seen = new Set(visiting).add(schema);
@@ -321,7 +323,7 @@ function modelFieldType(
   if (isJsonObject(schema) && (schema.oneOf || schema.anyOf)) {
     const variants = Array.isArray(schema.oneOf) ? schema.oneOf : Array.isArray(schema.anyOf) ? schema.anyOf : [];
     return variants
-      .map((item) => modelFieldType(item, definitions, nested, seen))
+      .map((item) => modelFieldType(item, definitions, nested, seen, false))
       .map((type) => `(${type})`)
       .join(' | ');
   }
@@ -515,12 +517,13 @@ function modelConversionDescriptor(
   env: ModelResolveEnv,
   direction: 'from' | 'to' = 'from',
   visiting: ReadonlySet<unknown> = new Set(),
+  nullThroughReference = true,
 ): ModelTypeDescriptor {
   const nested = withSchemaBase(env, schema);
   const reference = modelSchemaReference(schema, nested);
   if (reference && definitions.has(reference)) {
     const generated: ModelTypeDescriptor = { kind: 'generated-model', id: reference };
-    return admitsNullThroughReference(schema, reference, definitions)
+    return (nullThroughReference ? admitsNullThroughReference(schema, reference, definitions) : admitsNull(asRecord(schema)))
       ? { kind: 'union', variants: [generated, { kind: 'null' }] }
       : generated;
   }
@@ -569,7 +572,7 @@ function modelConversionDescriptor(
     // A nullable array variant is a plain union of its own; its branches join the outer union.
     const convertedVariants = variants.flatMap((item): readonly ModelTypeDescriptor[] => {
       if (isNullBranch(item)) return [{ kind: 'null' }];
-      const converted = modelConversionDescriptor(item, definitions, nested, direction, seen);
+      const converted = modelConversionDescriptor(item, definitions, nested, direction, seen, false);
       return converted.kind === 'union' && converted.discriminator === undefined ? converted.variants : [converted];
     });
     const temporalVariants = convertedVariants.filter(isTemporalDescriptor);

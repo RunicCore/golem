@@ -1158,3 +1158,76 @@ test('a nullable object field whose allOf member adds properties still generates
 
   assert.doesNotThrow(() => codec.fromWireFormat({ window: { b: '2024-05-07T08:09:10.000Z' } }, { construct }));
 });
+
+test('a discriminated oneOf with a nullable component variant still generates and converts its variants', async t => {
+  const output = path.join(createFixtureProject(t, 'golem-openapi-oneof-nullable-variant-'), 'sdk');
+  const document = sequenceSerdeDocument({
+    pet: {
+      oneOf: [{ $ref: '#/components/schemas/Dog' }, { $ref: '#/components/schemas/Cat' }],
+      discriminator: {
+        propertyName: 'kind',
+        mapping: { dog: '#/components/schemas/Dog', cat: '#/components/schemas/Cat' },
+      },
+    },
+  }) as { components: { schemas: Record<string, Record<string, unknown>> } };
+  document.components.schemas.Dog = {
+    type: ['object', 'null'],
+    required: ['kind', 'name'],
+    properties: { kind: { const: 'dog' }, name: { type: 'string' } },
+  };
+  document.components.schemas.Cat = {
+    type: 'object',
+    required: ['kind', 'name'],
+    properties: { kind: { const: 'cat' }, name: { type: 'string' } },
+  };
+  await generateMaterializedSdk(document, {
+    output,
+    name: 'SequenceSerde',
+    profile: { mobx: false, validation: true, allowAny: false },
+  });
+  copyFixtureFile(output, 'openapi/model-serde/oneof-discriminated-nullable-types.ts', 'oneof-discriminated-nullable-types.ts');
+  compileGeneratedSdk(output, [path.join(output, 'oneof-discriminated-nullable-types.ts')], { strict: true, skipLibCheck: true });
+
+  const models = requireRecord(
+    await import(pathToFileURL(path.join(output, 'dist/index.js')).href),
+    'generated discriminated nullable variant models',
+  );
+  const VisitModel = models.VisitModel as unknown as new (values?: Record<string, unknown>) => Record<string, unknown>;
+  const codec = requireObjectCodec(generatedCodecIdFromRoot(output, 'Visit'));
+  const construct = VisitModel as unknown as abstract new (values?: never) => object;
+
+  assert.equal(JSON.stringify(decodeGeneratedModel(VisitModel, { pet: { kind: 'cat', name: 'Miso' } }).pet), '{"kind":"cat","name":"Miso"}');
+  assert.doesNotThrow(() => codec.fromWireFormat({ pet: { kind: 'dog', name: 'Rex' } }, { construct }));
+});
+
+test('a oneOf of a nullable component and a string has a type and a validator that agree on null', async t => {
+  const output = path.join(createFixtureProject(t, 'golem-openapi-oneof-nullable-reference-'), 'sdk');
+  const document = sequenceSerdeDocument({
+    either: { oneOf: [{ $ref: '#/components/schemas/Pet' }, { type: 'string' }] },
+  }) as { components: { schemas: Record<string, Record<string, unknown>> } };
+  document.components.schemas.Pet = { type: ['object', 'null'], properties: { name: { type: 'string' } } };
+  await generateMaterializedSdk(document, {
+    output,
+    name: 'SequenceSerde',
+    profile: { mobx: false, validation: true, allowAny: false },
+  });
+  copyFixtureFile(output, 'openapi/model-serde/oneof-nullable-reference-types.ts', 'oneof-nullable-reference-types.ts');
+  compileGeneratedSdk(output, [path.join(output, 'oneof-nullable-reference-types.ts')], { strict: true, skipLibCheck: true });
+
+  const models = requireRecord(
+    await import(pathToFileURL(path.join(output, 'dist/index.js')).href),
+    'generated oneOf nullable reference models',
+  );
+  const VisitModel = models.VisitModel as unknown as new (values?: Record<string, unknown>) => Record<string, unknown>;
+  const codec = requireObjectCodec(generatedCodecIdFromRoot(output, 'Visit'));
+  const construct = VisitModel as unknown as abstract new (values?: never) => object;
+
+  assert.doesNotThrow(() => codec.fromWireFormat({ either: { name: 'Miso' } }, { construct }));
+  assert.throws(
+    () => codec.fromWireFormat({ either: null }, { construct }),
+    (error: unknown): true => {
+      assert.ok(error instanceof LibError);
+      return true;
+    },
+  );
+});
