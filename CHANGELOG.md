@@ -67,6 +67,7 @@ The first release candidate includes four independently installable packages:
 - A decode error inside a tuple item, or inside an array item of a scalar-or-array union, now ends its path with the item index, such as `['dated', 2]` or `['when', 1]`. It named the field only.
 - A scalar value of a scalar-or-array union such as `string | Date[]` now converts by its own type. Before, golem converted it like an array item, so a valid string failed as a bad date (HTTP 400), a number string such as `'12'` became a `Date`, and encoding the string threw. A scalar variant that needs a conversion must be the only scalar variant, as in `Token | Token[]`; a union such as `Token | number | Token[]` is now rejected at generation, as `Date | Date[]` already is.
 - A scalar-or-array union may hold one tuple instead of an array, such as `string | [Date]` or `oneOf` of `string` and a `prefixItems` tuple. The tuple converts by item, with the item index in a decode error path, and the scalar converts as in `string | Date[]`. `string | [Date]` was rejected as ambiguous; a union whose tuple items need no conversion, such as `string | [string]`, already generated.
+- `ModelConstraint` from `@exprtlabs/golem/model` has a new kind, `allOf`: the value must hold each schema in its `schemas` list. Code that switches over the constraint kinds must handle it.
 
 ### OpenAPI
 
