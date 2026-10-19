@@ -1102,3 +1102,59 @@ test('an allOf of object members is typed by the same members that convert it', 
     { at: new Date('2024-05-06T07:08:09.000Z'), b: new Date('2024-05-07T08:09:10.000Z') },
   );
 });
+
+test('an object field with own properties and an allOf reference to a model still generates and is typed by its own properties', async t => {
+  const output = path.join(createFixtureProject(t, 'golem-openapi-allof-own-reference-'), 'sdk');
+  const document = sequenceSerdeDocument({
+    based: {
+      type: 'object',
+      properties: { at: { type: 'string', format: 'date-time' } },
+      allOf: [{ $ref: '#/components/schemas/Base' }],
+    },
+  }) as { components: { schemas: Record<string, Record<string, unknown>> } };
+  document.components.schemas.Base = { type: 'object', properties: { name: { type: 'string' } } };
+  await generateMaterializedSdk(document, {
+    output,
+    name: 'SequenceSerde',
+    profile: { mobx: false, validation: true, allowAny: false },
+  });
+  copyFixtureFile(output, 'openapi/model-serde/allof-own-reference-types.ts', 'allof-own-reference-types.ts');
+  compileGeneratedSdk(output, [path.join(output, 'allof-own-reference-types.ts')], { strict: true, skipLibCheck: true });
+
+  const models = requireRecord(
+    await import(pathToFileURL(path.join(output, 'dist/index.js')).href),
+    'generated own properties and allOf reference models',
+  );
+  const VisitModel = models.VisitModel as unknown as new (values?: Record<string, unknown>) => Record<string, unknown>;
+  const codec = requireObjectCodec(generatedCodecIdFromRoot(output, 'Visit'));
+  const construct = VisitModel as unknown as abstract new (values?: never) => object;
+
+  assert.doesNotThrow(() => codec.fromWireFormat({ based: { name: 'Miso' } }, { construct }));
+});
+
+test('a nullable object field whose allOf member adds properties still generates', async t => {
+  const output = path.join(createFixtureProject(t, 'golem-openapi-nullable-allof-members-'), 'sdk');
+  await generateMaterializedSdk(sequenceSerdeDocument({
+    window: {
+      type: ['object', 'null'],
+      properties: { at: { type: 'string', format: 'date-time' } },
+      allOf: [{ properties: { b: { type: 'string', format: 'date-time' } } }],
+    },
+  }), {
+    output,
+    name: 'SequenceSerde',
+    profile: { mobx: false, validation: true, allowAny: false },
+  });
+  copyFixtureFile(output, 'openapi/model-serde/nullable-allof-members-types.ts', 'nullable-allof-members-types.ts');
+  compileGeneratedSdk(output, [path.join(output, 'nullable-allof-members-types.ts')], { strict: true, skipLibCheck: true });
+
+  const models = requireRecord(
+    await import(pathToFileURL(path.join(output, 'dist/index.js')).href),
+    'generated nullable allOf member models',
+  );
+  const VisitModel = models.VisitModel as unknown as new (values?: Record<string, unknown>) => Record<string, unknown>;
+  const codec = requireObjectCodec(generatedCodecIdFromRoot(output, 'Visit'));
+  const construct = VisitModel as unknown as abstract new (values?: never) => object;
+
+  assert.doesNotThrow(() => codec.fromWireFormat({ window: { b: '2024-05-07T08:09:10.000Z' } }, { construct }));
+});

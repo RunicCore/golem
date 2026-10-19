@@ -305,9 +305,8 @@ function modelFieldType(
   if (decidingMembers.length === 1 && decidingMember && isSequenceDescriptor(decidingMember.descriptor)) {
     return modelFieldType(decidingMember.item, definitions, nested, seen);
   }
-  // Own properties and deciding members are one intersection, as the conversion merges them; so are members that are all objects.
-  if (isJsonObject(schema) && decidingMembers.length > 0
-    && (hasOwnObjectKeywords(schema) || decidingMembers.every(({ descriptor }) => descriptor.kind === 'object'))) {
+  // Plain object members are one intersection, with the schema's own properties when it has them, as the conversion merges them.
+  if (isJsonObject(schema) && joinsObjectMembers(schema, decidingMembers.map(({ descriptor }) => descriptor))) {
     const parts = [...(hasOwnObjectKeywords(schema) ? [withoutAllOf(schema)] : []), ...decidingMembers.map(({ item }) => item)]
       .map((part) => modelFieldType(part, definitions, nested, seen));
     return parts.length === 1 ? parts.join('') : parts.map((part) => `(${part})`).join(' & ');
@@ -495,7 +494,13 @@ function withoutAllOf(schema: Readonly<Record<string, unknown>>): Readonly<Recor
 }
 
 function hasOwnObjectKeywords(schema: Readonly<Record<string, unknown>>): boolean {
-  return Boolean(schema.properties) || schema.additionalProperties !== undefined;
+  return Boolean(schema.properties) || isJsonObject(schema.additionalProperties);
+}
+
+/** Deciding members that are all plain objects join the schema's own properties in one intersection; a nullable schema keeps the member path. */
+function joinsObjectMembers(schema: Readonly<Record<string, unknown>>, deciding: readonly ModelTypeDescriptor[]): boolean {
+  return deciding.length > 0 && deciding.every((part) => part.kind === 'object')
+    && !(hasOwnObjectKeywords(schema) && admitsNull(schema));
 }
 
 /** The schema converts by its own keywords: array items, oneOf, anyOf, properties or additionalProperties. */
@@ -549,7 +554,7 @@ function modelConversionDescriptor(
       ]);
     }
     // The schema's own properties join the deciding members as one more part, as modelFieldType types them.
-    const own = deciding.length > 0 && hasOwnObjectKeywords(schema)
+    const own = joinsObjectMembers(schema, deciding) && hasOwnObjectKeywords(schema)
       ? [modelConversionDescriptor(withoutAllOf(schema), definitions, nested, direction, seen)]
       : [];
     return mergeAllOfDescriptors([
