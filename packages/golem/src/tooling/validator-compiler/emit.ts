@@ -208,7 +208,69 @@ class ModuleState {
   }
 }
 
-/** Writes one function. A failed check pushes its issue, then returns at once unless all errors are wanted. */
+/** What a written function does when a check fails. */
+interface FailMode {
+  /** The lines that open the body, before the first check. */
+  readonly start: readonly string[];
+  /** The line that ends the body once every check passed or was reported. */
+  readonly end: string;
+  /** The statements of a check that failed with the issue `fields` at `path`. */
+  issue(fields: string, path: string): readonly string[];
+  /** The statement of a check that failed where a callee already reported the issue. */
+  fail(): string;
+}
+
+/** How the checks of one object tell that a declared key is present, and read its value once it is. */
+interface PresenceReader {
+  /** An expression that is true when `key` is present by the JSON view. */
+  present(key: string): string;
+  /** An expression that reads the value of `key`; written only where `present(key)` holds. */
+  read(key: string): string;
+}
+
+/**
+ * The mode of a `FunctionWriter`: one traversal and one definition of each leaf check, written as the function the mode
+ * asks for. `presence` gives the reader for the object `value`.
+ */
+interface WriterMode {
+  readonly fail: FailMode;
+  readonly presence: (state: ModuleState, value: string) => PresenceReader;
+}
+
+const REPORT_FAILURE = `ok = false; if (!${ALL}) { ${PATH}.length = pl; return false; }`;
+
+/** The full validator: a failed check pushes its issue, then returns at once unless all errors are wanted; a key is read through `isPresent`. */
+const FULL_VALIDATOR: WriterMode = {
+  fail: {
+    start: [`const pl = ${PATH}.length;`, 'let ok = true;'],
+    end: 'return ok;',
+    issue: (fields, path) => [`${ISSUES}.push({ path: ${path}, ${fields} });`, REPORT_FAILURE],
+    fail: () => REPORT_FAILURE,
+  },
+  presence: (state, value) => {
+    const isPresent = state.localHelper('isPresent');
+    return {
+      present: key => `${isPresent}(${value}, ${literal(key)})`,
+      read: key => `${value}[${literal(key)}]`,
+    };
+  },
+};
+
+/** A leaf check: the expression that is true when the value fails it, and the issue it then reports. */
+interface LeafCheck {
+  readonly fails: string;
+  /** The fields of the issue after its path. */
+  readonly issue: string;
+  /** The path of the issue; the current path by default. */
+  readonly path?: string;
+}
+
+/** The issue fields of a limit; `limit` is a number, or an expression of the generated code. */
+function limitFields(code: 'tooSmall' | 'tooBig', measure: string, limit: number | string, inclusive: boolean): string {
+  return `code: ${literal(code)}, measure: ${literal(measure)}, limit: ${typeof limit === 'number' ? JSON.stringify(limit) : limit}, inclusive: ${inclusive}`;
+}
+
+/** Writes one function in the given mode: the mode decides what a failed check writes and how a declared key is read. */
 class FunctionWriter {
   private readonly lines: string[] = [];
   private depth = 1;
@@ -224,20 +286,20 @@ class FunctionWriter {
     private readonly functions: readonly IrFunction[],
     private readonly target: (id: number) => number,
     private readonly fn: IrFunction,
+    private readonly mode: WriterMode,
   ) {
     this.record = fn.collects || fn.receives ? EVALUATION : undefined;
   }
 
   /** The body of the function, without its header line. */
   public write(): string {
-    this.line(`const pl = ${PATH}.length;`);
-    this.line('let ok = true;');
+    for (const text of this.mode.fail.start) this.line(text);
     if (this.fn.collects) this.line(`const ${EVALUATION} = ${this.state.localHelper('newEvaluation')}();`);
     else if (this.fn.receives) this.line(`const ${EVALUATION} = ${INHERITED} ?? ${this.state.localHelper('newEvaluation')}();`);
     this.schema(this.fn.body, VALUE);
     // A function that both keeps a record and receives one hands what it evaluated to its caller once it passed.
     if (this.fn.collects && this.fn.receives) this.line(`if (ok && ${INHERITED} !== undefined) ${this.state.localHelper('mergeEvaluation')}(${INHERITED}, ${EVALUATION});`);
-    this.line('return ok;');
+    this.line(this.mode.fail.end);
     this.lines.push('}');
     return this.lines.join('\n');
   }
@@ -274,19 +336,20 @@ class FunctionWriter {
     return `${prefix}${this.counter++}`;
   }
 
-  /** Records the issue at `path` (the current path by default) and ends the function unless all errors are wanted. */
+  /** A failed check with the issue `fields` at `path` (the current path by default), as the mode writes it. */
   private issue(fields: string, path = `${PATH}.slice()`): void {
-    this.line(`${ISSUES}.push({ path: ${path}, ${fields} });`);
-    this.fail();
+    for (const text of this.mode.fail.issue(fields, path)) this.line(text);
   }
 
+  /** A failed check whose issue a callee already reported, as the mode writes it. */
   private fail(): void {
-    this.line(`ok = false; if (!${ALL}) { ${PATH}.length = pl; return false; }`);
+    this.line(this.mode.fail.fail());
   }
 
-  /** `limit` is a number, or an expression of the generated code. */
-  private limitIssue(code: 'tooSmall' | 'tooBig', measure: string, limit: number | string, inclusive: boolean): void {
-    this.issue(`code: ${literal(code)}, measure: ${literal(measure)}, limit: ${typeof limit === 'number' ? JSON.stringify(limit) : limit}, inclusive: ${inclusive}`);
+  private leaf(check: LeafCheck): void {
+    this.open(`if (${check.fails})`);
+    this.issue(check.issue, check.path);
+    this.close();
   }
 
   /** Adds a statement that marks what the current value evaluated, when this function keeps a record. */
@@ -343,34 +406,19 @@ class FunctionWriter {
 
   private check(check: IrCheck, value: string): void {
     switch (check.kind) {
-      case 'type': {
-        const tests = check.names.map(name => TYPE_TESTS[name](value));
+      case 'type':
         if (check.names.includes('object')) this.state.localHelper('isObject');
-        this.open(`if (!(${tests.join(' || ')}))`);
-        this.issue(`code: 'type', expected: ${JSON.stringify(check.names)}`);
-        this.close();
-        return;
-      }
+        return this.leaf({ fails: `!(${check.names.map(name => TYPE_TESTS[name](value)).join(' || ')})`, issue: `code: 'type', expected: ${JSON.stringify(check.names)}` });
       case 'literal': {
         const jsonEqual = this.state.runtimeHelper('jsonEqual');
         const values = this.state.constant('lit', `Object.freeze(/*#__PURE__*/ JSON.parse(${literal(JSON.stringify(check.values))}))`);
         const missing = check.values.length === 1 ? `!${jsonEqual}(${value}, ${values}[0])` : `!${values}.some(item => ${jsonEqual}(${value}, item))`;
-        this.open(`if (${missing})`);
-        this.issue(`code: 'literal', expected: ${values}`);
-        this.close();
-        return;
+        return this.leaf({ fails: missing, issue: `code: 'literal', expected: ${values}` });
       }
-      case 'format': {
-        this.open(`if (!${this.state.runtimeHelper('checkFormat')}(${literal(check.format)}, ${value}))`);
-        this.issue(`code: 'format', format: ${literal(check.format)}`);
-        this.close();
-        return;
-      }
+      case 'format':
+        return this.leaf({ fails: `!${this.state.runtimeHelper('checkFormat')}(${literal(check.format)}, ${value})`, issue: `code: 'format', format: ${literal(check.format)}` });
       case 'date':
-        this.open(`if (!(${value} instanceof Date) || !Number.isFinite(${value}.getTime()))`);
-        this.issue("code: 'type', expected: ['Date']");
-        this.close();
-        return;
+        return this.leaf({ fails: `!(${value} instanceof Date) || !Number.isFinite(${value}.getTime())`, issue: "code: 'type', expected: ['Date']" });
       case 'instance': return this.instanceCheck(check, value);
       case 'validation': return this.validationCheck(check, value);
       case 'string': return this.stringCheck(check, value);
@@ -383,17 +431,14 @@ class FunctionWriter {
         return;
       case 'union': return check.discriminator ? this.discriminatedUnion(check, check.discriminator, value) : this.unionCheck(check, value);
       case 'not':
-        this.open(`if (${this.call(check.fn, { value, issues: '[]', all: 'false' })})`);
-        this.issue("code: 'not'");
-        this.close();
-        return;
+        return this.leaf({ fails: this.call(check.fn, { value, issues: '[]', all: 'false' }), issue: "code: 'not'" });
       case 'conditional': return this.conditionalCheck(check, value);
       case 'dependentSchemas': {
         this.state.localHelper('isObject');
-        const isPresent = this.state.localHelper('isPresent');
+        const presence = this.mode.presence(this.state, value);
         this.open(`if (isObject(${value}))`);
         for (const { trigger, fn } of check.entries) {
-          this.open(`if (${isPresent}(${value}, ${literal(trigger)}))`);
+          this.open(`if (${presence.present(trigger)})`);
           this.callInPlace(fn, value);
           this.close();
         }
@@ -410,11 +455,10 @@ class FunctionWriter {
     const selected = this.fresh('selected');
     this.line(`const ${selected} = ${this.state.localHelper('selectedModel')}(${value}, ${JSON.stringify(check.among)});`);
     const expected = check.of === undefined ? 'undefined' : literal(check.of);
-    this.open(check.required || check.of === undefined
-      ? `if (${selected} !== ${expected})`
-      : `if (${selected} !== undefined && ${selected} !== ${expected})`);
-    this.issue(`code: 'instance', model: ${literal(check.of ?? check.among[0])}`);
-    this.close();
+    this.leaf({
+      fails: check.required || check.of === undefined ? `${selected} !== ${expected}` : `${selected} !== undefined && ${selected} !== ${expected}`,
+      issue: `code: 'instance', model: ${literal(check.of ?? check.among[0])}`,
+    });
   }
 
   /** The functions run only after the structural schema passed, so they never see a value of the wrong shape. */
@@ -426,9 +470,7 @@ class FunctionWriter {
         this.open(`if (typeof ${result} !== 'boolean' && typeof ${result} !== 'string')`);
         this.line('throw new TypeError("Validation functions must return boolean or string.");');
         this.close();
-        this.open(`if (${result} !== true)`);
-        this.issue(`code: 'custom', ...(typeof ${result} === 'string' && ${result}.length > 0 ? { reason: ${result} } : {})`);
-        this.close();
+        this.leaf({ fails: `${result} !== true`, issue: `code: 'custom', ...(typeof ${result} === 'string' && ${result}.length > 0 ? { reason: ${result} } : {})` });
       }
     };
     if (check.fn === undefined) return runCalls();
@@ -445,22 +487,12 @@ class FunctionWriter {
     if (check.minLength !== undefined || check.maxLength !== undefined) {
       const length = this.fresh('n');
       this.line(`const ${length} = ${this.state.runtimeHelper('codePointLength')}(${value});`);
-      if (check.minLength !== undefined) {
-        this.open(`if (${length} < ${JSON.stringify(check.minLength)})`);
-        this.limitIssue('tooSmall', 'length', check.minLength, true);
-        this.close();
-      }
-      if (check.maxLength !== undefined) {
-        this.open(`if (${length} > ${JSON.stringify(check.maxLength)})`);
-        this.limitIssue('tooBig', 'length', check.maxLength, true);
-        this.close();
-      }
+      if (check.minLength !== undefined) this.leaf({ fails: `${length} < ${JSON.stringify(check.minLength)}`, issue: limitFields('tooSmall', 'length', check.minLength, true) });
+      if (check.maxLength !== undefined) this.leaf({ fails: `${length} > ${JSON.stringify(check.maxLength)}`, issue: limitFields('tooBig', 'length', check.maxLength, true) });
     }
     if (check.pattern !== undefined) {
       const expression = this.state.constant('pattern', `new RegExp(${literal(check.pattern)}, 'u')`);
-      this.open(`if (!${expression}.test(${value}))`);
-      this.issue(`code: 'pattern', pattern: ${literal(check.pattern)}`);
-      this.close();
+      this.leaf({ fails: `!${expression}.test(${value})`, issue: `code: 'pattern', pattern: ${literal(check.pattern)}` });
     }
     this.close();
   }
@@ -476,35 +508,17 @@ class FunctionWriter {
     for (const [keyword, operator, code, inclusive] of bounds) {
       const limit = check[keyword];
       if (limit === undefined) continue;
-      this.open(`if (${value} ${operator} ${JSON.stringify(limit)})`);
-      this.limitIssue(code, 'value', limit, inclusive);
-      this.close();
+      this.leaf({ fails: `${value} ${operator} ${JSON.stringify(limit)}`, issue: limitFields(code, 'value', limit, inclusive) });
     }
-    if (check.multipleOf !== undefined) {
-      this.open(`if (!${this.state.localHelper('isMultipleOf')}(${value}, ${JSON.stringify(check.multipleOf)}))`);
-      this.issue(`code: 'multipleOf', divisor: ${JSON.stringify(check.multipleOf)}`);
-      this.close();
-    }
+    if (check.multipleOf !== undefined) this.leaf({ fails: `!${this.state.localHelper('isMultipleOf')}(${value}, ${JSON.stringify(check.multipleOf)})`, issue: `code: 'multipleOf', divisor: ${JSON.stringify(check.multipleOf)}` });
     this.close();
   }
 
   private arrayCheck(check: IrArray, value: string): void {
     this.block(`if (Array.isArray(${value}))`, () => {
-      if (check.minItems !== undefined) {
-        this.open(`if (${value}.length < ${JSON.stringify(check.minItems)})`);
-        this.limitIssue('tooSmall', 'items', check.minItems, true);
-        this.close();
-      }
-      if (check.maxItems !== undefined) {
-        this.open(`if (${value}.length > ${JSON.stringify(check.maxItems)})`);
-        this.limitIssue('tooBig', 'items', check.maxItems, true);
-        this.close();
-      }
-      if (check.closed) {
-        this.open(`if (${value}.length > ${check.prefixItems.length})`);
-        this.limitIssue('tooBig', 'items', check.prefixItems.length, true);
-        this.close();
-      }
+      if (check.minItems !== undefined) this.leaf({ fails: `${value}.length < ${JSON.stringify(check.minItems)}`, issue: limitFields('tooSmall', 'items', check.minItems, true) });
+      if (check.maxItems !== undefined) this.leaf({ fails: `${value}.length > ${JSON.stringify(check.maxItems)}`, issue: limitFields('tooBig', 'items', check.maxItems, true) });
+      if (check.closed) this.leaf({ fails: `${value}.length > ${check.prefixItems.length}`, issue: limitFields('tooBig', 'items', check.prefixItems.length, true) });
       if (check.prefixItems.length > 0) this.mark(record => `${record}.prefix = Math.max(${record}.prefix, Math.min(${value}.length, ${check.prefixItems.length}));`);
       check.prefixItems.forEach((schema, position) => {
         if (schema.kind === 'always') return;
@@ -533,8 +547,7 @@ class FunctionWriter {
         this.open(`${label}: for (let ${first} = 0; ${first} < ${value}.length - 1; ${first}++)`);
         this.open(`for (let ${second} = ${first} + 1; ${second} < ${value}.length; ${second}++)`);
         this.open(`if (${jsonEqual}(${value}[${first}], ${value}[${second}]))`);
-        this.line(`${ISSUES}.push({ path: ${PATH}.slice(), code: 'unique', indexes: [${first}, ${second}] });`);
-        this.fail();
+        this.issue(`code: 'unique', indexes: [${first}, ${second}]`);
         this.line(`break ${label};`);
         this.close();
         this.close();
@@ -558,16 +571,8 @@ class FunctionWriter {
     if (contains.max === undefined && !marks) this.line(`if (${count} >= ${contains.min}) break;`);
     this.close();
     this.close();
-    if (contains.min > 0) {
-      this.open(`if (${count} < ${JSON.stringify(contains.min)})`);
-      this.limitIssue('tooSmall', 'matches', contains.min, true);
-      this.close();
-    }
-    if (contains.max !== undefined) {
-      this.open(`if (${count} > ${JSON.stringify(contains.max)})`);
-      this.limitIssue('tooBig', 'matches', contains.max, true);
-      this.close();
-    }
+    if (contains.min > 0) this.leaf({ fails: `${count} < ${JSON.stringify(contains.min)}`, issue: limitFields('tooSmall', 'matches', contains.min, true) });
+    if (contains.max !== undefined) this.leaf({ fails: `${count} > ${JSON.stringify(contains.max)}`, issue: limitFields('tooBig', 'matches', contains.max, true) });
   }
 
   private objectCheck(check: IrObject, value: string): void {
@@ -595,7 +600,7 @@ class FunctionWriter {
   }
 
   private objectKeywords(check: IrObject, value: string): void {
-    const isPresent = this.state.localHelper('isPresent');
+    const presence = this.mode.presence(this.state, value);
     const marks = this.record !== undefined;
     // A key that matches a pattern is not "additional" even when the pattern's schema accepts everything.
     const patterns = check.patternProperties.map(entry => ({ entry, expression: this.state.constant('pattern', `new RegExp(${literal(entry.pattern)}, 'u')`) }));
@@ -605,29 +610,14 @@ class FunctionWriter {
     if (check.minProperties !== undefined || check.maxProperties !== undefined || patternsToRun.length > 0 || visitsAdditional || check.propertyNames !== undefined) {
       this.line(`const ${keys} = ${this.state.localHelper('definedKeys')}(${value});`);
     }
-    if (check.minProperties !== undefined) {
-      this.open(`if (${keys}.length < ${JSON.stringify(check.minProperties)})`);
-      this.limitIssue('tooSmall', 'properties', check.minProperties, true);
-      this.close();
-    }
-    if (check.maxProperties !== undefined) {
-      this.open(`if (${keys}.length > ${JSON.stringify(check.maxProperties)})`);
-      this.limitIssue('tooBig', 'properties', check.maxProperties, true);
-      this.close();
-    }
-    for (const key of check.required) {
-      this.open(`if (!${isPresent}(${value}, ${literal(key)}))`);
-      this.issue(`code: 'required', key: ${literal(key)}`, `[...${PATH}, ${literal(key)}]`);
-      this.close();
-    }
+    if (check.minProperties !== undefined) this.leaf({ fails: `${keys}.length < ${JSON.stringify(check.minProperties)}`, issue: limitFields('tooSmall', 'properties', check.minProperties, true) });
+    if (check.maxProperties !== undefined) this.leaf({ fails: `${keys}.length > ${JSON.stringify(check.maxProperties)}`, issue: limitFields('tooBig', 'properties', check.maxProperties, true) });
+    const required = (key: string): LeafCheck => ({ fails: `!${presence.present(key)}`, issue: `code: 'required', key: ${literal(key)}`, path: `[...${PATH}, ${literal(key)}]` });
+    for (const key of check.required) this.leaf(required(key));
     for (const { trigger, keys: dependents } of check.dependentRequired) {
       if (dependents.length === 0) continue;
-      this.open(`if (${isPresent}(${value}, ${literal(trigger)}))`);
-      for (const key of dependents) {
-        this.open(`if (!${isPresent}(${value}, ${literal(key)}))`);
-        this.issue(`code: 'required', key: ${literal(key)}`, `[...${PATH}, ${literal(key)}]`);
-        this.close();
-      }
+      this.open(`if (${presence.present(trigger)})`);
+      for (const key of dependents) this.leaf(required(key));
       this.close();
     }
     // Ahead of `properties`: with fail-fast the first issue is the object's own unknown key.
@@ -651,11 +641,11 @@ class FunctionWriter {
     for (const property of check.properties) {
       if (property.schema.kind === 'always' && !marks) continue;
       const schema = property.schema;
-      this.open(`if (${isPresent}(${value}, ${literal(property.key)}))`);
+      this.open(`if (${presence.present(property.key)})`);
       this.mark(record => `${record}.keys.add(${literal(property.key)});`);
       if (schema.kind !== 'always') {
         const member = this.fresh('member');
-        this.line(`const ${member} = ${value}[${literal(property.key)}];`);
+        this.line(`const ${member} = ${presence.read(property.key)};`);
         this.atChild(literal(property.key), () => this.schema(schema, member));
       }
       this.close();
@@ -681,9 +671,7 @@ class FunctionWriter {
     if (check.propertyNames !== undefined) {
       const key = this.fresh('key');
       this.open(`for (const ${key} of ${keys})`);
-      this.open(`if (!${this.call(check.propertyNames, { value: key, issues: '[]', all: 'false' })})`);
-      this.issue(`code: 'invalidKey', key: ${key}`);
-      this.close();
+      this.leaf({ fails: `!${this.call(check.propertyNames, { value: key, issues: '[]', all: 'false' })}`, issue: `code: 'invalidKey', key: ${key}` });
       this.close();
     }
   }
@@ -731,11 +719,7 @@ class FunctionWriter {
         this.atChild(index, () => this.schema(schema, item));
       }
       this.close();
-      if (schema.kind === 'never') {
-        this.open(`if (${unevaluated} > 0)`);
-        this.limitIssue('tooBig', 'items', `${value}.length - ${unevaluated}`, true);
-        this.close();
-      }
+      if (schema.kind === 'never') this.leaf({ fails: `${unevaluated} > 0`, issue: limitFields('tooBig', 'items', `${value}.length - ${unevaluated}`, true) });
       this.close();
     }
     this.line(`${record}.allItems = true;`);
@@ -760,19 +744,12 @@ class FunctionWriter {
   private unionCheck(check: IrUnion, value: string): void {
     if (this.record !== undefined) return this.recordingUnionCheck(check, value);
     const attempt = (fn: number): string => this.call(fn, { value, issues: '[]', all: 'false' });
-    if (!check.exactlyOne) {
-      this.open(`if (!(${check.branches.map(attempt).join(' || ')}))`);
-      this.issue("code: 'union', matched: 0");
-      this.close();
-      return;
-    }
+    if (!check.exactlyOne) return this.leaf({ fails: `!(${check.branches.map(attempt).join(' || ')})`, issue: "code: 'union', matched: 0" });
     const matched = this.fresh('matched');
     this.line(`let ${matched} = 0;`);
     // Two matches already decide the outcome, so later branches are not run.
     check.branches.forEach((fn, position) => this.line(`if (${position === 0 ? '' : `${matched} < 2 && `}${attempt(fn)}) ${matched}++;`));
-    this.open(`if (${matched} !== 1)`);
-    this.issue(`code: 'union', matched: ${matched}`);
-    this.close();
+    this.leaf({ fails: `${matched} !== 1`, issue: `code: 'union', matched: ${matched}` });
   }
 
   /** Every branch that passes marks what it evaluated, so `anyOf` runs all of its branches here. */
@@ -790,31 +767,26 @@ class FunctionWriter {
       this.close();
       this.close();
     });
-    this.open(check.exactlyOne ? `if (${matched} !== 1)` : `if (${matched} === 0)`);
-    this.issue(`code: 'union', matched: ${matched}`);
-    this.close();
+    this.leaf({ fails: check.exactlyOne ? `${matched} !== 1` : `${matched} === 0`, issue: `code: 'union', matched: ${matched}` });
   }
 
   /** The tag selects the branch; only that branch's issues are reported, and an unknown tag is a `literal` issue on the tag property. */
   private discriminatedUnion(check: IrUnion, discriminator: IrDiscriminator, value: string): void {
     this.state.localHelper('isObject');
-    const isPresent = this.state.localHelper('isPresent');
+    const presence = this.mode.presence(this.state, value);
     const jsonEqual = this.state.runtimeHelper('jsonEqual');
     const tags = this.state.constant('tags', `Object.freeze(/*#__PURE__*/ JSON.parse(${literal(JSON.stringify(discriminator.tags))}))`);
     const allTags = this.state.constant('lit', `Object.freeze(/*#__PURE__*/ JSON.parse(${literal(JSON.stringify(discriminator.tags.flat()))}))`);
     const tag = this.fresh('tag');
     const selected = this.fresh('branch');
-    const property = literal(discriminator.property);
-    this.line(`const ${tag} = isObject(${value}) && ${isPresent}(${value}, ${property}) ? ${value}[${property}] : undefined;`);
+    this.line(`const ${tag} = isObject(${value}) && ${presence.present(discriminator.property)} ? ${presence.read(discriminator.property)} : undefined;`);
     this.line(`const ${selected} = ${tags}.findIndex(list => list.some(item => ${jsonEqual}(${tag}, item)));`);
     check.branches.forEach((fn, position) => {
       this.open(`if (${selected} === ${position})`);
       this.callInPlace(fn, value);
       this.close();
     });
-    this.open(`if (${selected} < 0)`);
-    this.issue(`code: 'literal', expected: ${allTags}`, `[...${PATH}, ${property}]`);
-    this.close();
+    this.leaf({ fails: `${selected} < 0`, issue: `code: 'literal', expected: ${allTags}`, path: `[...${PATH}, ${literal(discriminator.property)}]` });
   }
 }
 
@@ -852,7 +824,7 @@ interface WrittenFunction {
 }
 
 function writeFunction(state: ModuleState, module: IrModule, target: (id: number) => number, fn: IrFunction): WrittenFunction {
-  const writer = new FunctionWriter(state, module.functions, target, fn);
+  const writer = new FunctionWriter(state, module.functions, target, fn, FULL_VALIDATOR);
   const body = writer.write();
   return { id: fn.id, parameters: functionParameters(fn), body, calls: writer.calls };
 }
