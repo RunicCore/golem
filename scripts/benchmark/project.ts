@@ -16,10 +16,12 @@ const featureSources = [
   'comparison-features-class-transformer.ts', 'comparison-features-class-validator.ts', 'access-rules.ts',
 ];
 
-function prepare(directory: string, kind: ProjectKind): string {
+/** `extraFixtures` are directories copied into the project beside the upstream fixtures; the other benchmarks pass none. */
+export function prepare(directory: string, kind: ProjectKind, extraFixtures: readonly string[] = []): string {
   const project = path.join(directory, kind);
   const src = path.join(project, 'src');
   cpSync(upstreamDirectory, src, { recursive: true });
+  for (const extra of extraFixtures) cpSync(extra, src, { recursive: true });
   symlinkSync(path.join(root, 'node_modules'), path.join(project, 'node_modules'), 'dir');
   writeFileSync(path.join(project, 'package.json'), JSON.stringify({ private: true, type: 'module' }));
   copyFileSync(path.join(root, 'scripts/benchmark/fixture-contract.ts'), path.join(src, 'fixture-contract.ts'));
