@@ -305,11 +305,12 @@ function modelFieldType(
   if (decidingMembers.length === 1 && decidingMember && isSequenceDescriptor(decidingMember.descriptor)) {
     return modelFieldType(decidingMember.item, definitions, nested, seen);
   }
-  // Own properties and deciding members are one intersection, as the conversion merges them.
-  if (isJsonObject(schema) && decidingMembers.length > 0 && hasOwnObjectKeywords(schema)) {
-    return [withoutAllOf(schema), ...decidingMembers.map(({ item }) => item)]
-      .map((part) => `(${modelFieldType(part, definitions, nested, seen)})`)
-      .join(' & ');
+  // Own properties and deciding members are one intersection, as the conversion merges them; so are members that are all objects.
+  if (isJsonObject(schema) && decidingMembers.length > 0
+    && (hasOwnObjectKeywords(schema) || decidingMembers.every(({ descriptor }) => descriptor.kind === 'object'))) {
+    const parts = [...(hasOwnObjectKeywords(schema) ? [withoutAllOf(schema)] : []), ...decidingMembers.map(({ item }) => item)]
+      .map((part) => modelFieldType(part, definitions, nested, seen));
+    return parts.length === 1 ? parts.join('') : parts.map((part) => `(${part})`).join(' & ');
   }
   if (isJsonObject(schema) && decidingMembers.length === 0 && isSequenceSchema(schema)) {
     const orNull = admitsNull(schema) ? ' | null' : '';

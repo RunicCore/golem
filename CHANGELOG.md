@@ -135,6 +135,7 @@ The first release candidate includes four independently installable packages:
 - Fixed: a generated model field that references a nullable component object (`Pet: { type: [object, null] }`, `pet: { $ref: Pet }`) is typed `PetModel | null` and its validator admits `null`. Before, the field type was `PetModel` and validation rejected `null` with `PetModel expected an object`.
 - Fixed: a generated model's inline object field with its own `properties` and an `allOf` member that declares properties is typed and converted from both. With `properties: { at: date-time }` and `allOf: [{ properties: { b: date-time } }]`, the type is `{ at?: Date } & { b?: Date }`, and `at` and `b` both decode to `Date`. Before, the type held only `at` while the conversion read only `b`, so `at` stayed a string.
 - Fixed: a generated model's inline object field takes the names in the `required` list of its `allOf` members as required, in the type and in the validator. With `properties: { at: date-time }` and `allOf: [{ required: [at] }]`, the type is `{ at: Date }` and `{}` fails validation; before, `at` was optional in both.
+- Fixed: a generated model's inline field that is an `allOf` of object members with no keywords of its own is typed from the same members that convert it. With members that declare `at` and `b` as `date-time`, the type is `{ at?: Date } & { b?: Date }`; before, it was `{ at?: string } & { b?: string }` while both decoded to `Date`.
 
 See [OpenAPI client support](docs/reference/openapi-support.md) for supported versions and contract limitations.
 

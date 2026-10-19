@@ -1073,3 +1073,32 @@ test('a name in the required list of an allOf member is required in the field ty
     },
   );
 });
+
+test('an allOf of object members is typed by the same members that convert it', async t => {
+  const output = path.join(createFixtureProject(t, 'golem-openapi-allof-object-members-'), 'sdk');
+  await generateMaterializedSdk(sequenceSerdeDocument({
+    members: {
+      allOf: [
+        { type: 'object', properties: { at: { type: 'string', format: 'date-time' } } },
+        { type: 'object', properties: { b: { type: 'string', format: 'date-time' } } },
+      ],
+    },
+  }), {
+    output,
+    name: 'SequenceSerde',
+    profile: { mobx: false, validation: true, allowAny: false },
+  });
+  copyFixtureFile(output, 'openapi/model-serde/allof-object-members-types.ts', 'allof-object-members-types.ts');
+  compileGeneratedSdk(output, [path.join(output, 'allof-object-members-types.ts')], { strict: true, skipLibCheck: true });
+
+  const models = requireRecord(
+    await import(pathToFileURL(path.join(output, 'dist/index.js')).href),
+    'generated allOf object member models',
+  );
+  const VisitModel = models.VisitModel as unknown as new (values?: Record<string, unknown>) => Record<string, unknown>;
+
+  assert.deepEqual(
+    decodeGeneratedModel(VisitModel, { members: { at: '2024-05-06T07:08:09.000Z', b: '2024-05-07T08:09:10.000Z' } }).members,
+    { at: new Date('2024-05-06T07:08:09.000Z'), b: new Date('2024-05-07T08:09:10.000Z') },
+  );
+});
