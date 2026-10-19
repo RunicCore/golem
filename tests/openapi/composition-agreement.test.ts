@@ -455,6 +455,7 @@ const rows: readonly Row[] = [
   },
   {
     shape: 'a member narrows a oneOf of a model and a string to its object variant',
+    fixture: 'narrowed-object-variant',
     root: 'Visit',
     document: visitDocument(
       { m: { allOf: [object({ x: { oneOf: [ref('M'), text] } }), object({ x: object({ n: text }) })] } },
@@ -462,6 +463,29 @@ const rows: readonly Row[] = [
     ),
     accepted: [{ wire: { m: { x: { n: 'a' } } }, model: ({ MModel }) => ({ m: { x: construct(MModel, { n: 'a' }) } }) }],
     rejected: [{ m: { x: 'a' } }],
+  },
+  // An object member beside a model it does not convert still checks the wire value: a required name must be there.
+  {
+    shape: 'a member narrows an inherited model property with an object that requires a name',
+    root: 'Visit',
+    document: visitDocument(
+      { m: { allOf: [ref('VisitBase'), object({ owner: object({ nick: text }, { required: ['nick'] }) })] } },
+      { VisitBase: object({ owner: ref('Person') }), Person: object({ name: text }) },
+    ),
+    accepted: [],
+    rejected: [{ m: { owner: { name: 'n' } } }, { m: { owner: { name: 'n', nick: 5 } } }],
+  },
+  // A lone model reference keeps the model; unevaluatedProperties: false beside it closes the model's names on the wire.
+  {
+    shape: 'a property that wraps one model $ref in allOf with unevaluatedProperties false',
+    root: 'Visit',
+    document: visitDocument(
+      { owner: { allOf: [ref('Person')], unevaluatedProperties: false } },
+      { Person: object({ name: text }) },
+    ),
+    accepted: [{ wire: { owner: { name: 'n' } }, model: ({ PersonModel }) => ({ owner: construct(PersonModel, { name: 'n' }) }) }],
+    rejected: [],
+    rejectedOnWire: [{ owner: { name: 'n', z: 'q' } }],
   },
   // A component's own properties beside its allOf are its own names, and unevaluatedProperties: false keeps them.
   {
@@ -684,6 +708,22 @@ const stopped: readonly { readonly shape: string; readonly error: RegExp; readon
     shape: 'members that convert one property to a Date and to a model',
     error: /#\/components\/schemas\/Visit\/properties\/m(?=[ :]).*OPENAPI_COMPOSITION_CONVERSION_CONFLICT: /,
     document: visitDocument({ m: { allOf: [object({ x: dateTime }), object({ x: ref('M') })] } }, { M: object({ n: text }) }),
+  },
+  {
+    shape: 'members that give a required property a model and a string',
+    error: /#\/components\/schemas\/Visit\/properties\/m(?=[ :]).*OPENAPI_COMPOSITION_UNSATISFIABLE: .*"x" has no value that every member accepts/,
+    document: visitDocument(
+      { m: { allOf: [object({ x: ref('M') }, { required: ['x'] }), object({ x: text })] } },
+      { M: object({ n: text }) },
+    ),
+  },
+  {
+    shape: 'an array component whose items convert one property to a Date and to a model',
+    error: /schema "Events" at #\/components\/schemas\/Events\/items(?=[ :]).*OPENAPI_COMPOSITION_CONVERSION_CONFLICT: /,
+    document: visitDocument(
+      { e: ref('Events') },
+      { Events: { type: 'array', items: { allOf: [object({ x: dateTime }), object({ x: ref('M') })] } }, M: object({ n: text }) },
+    ),
   },
   {
     shape: 'array items whose members convert one property to a Date and to a model',

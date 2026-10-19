@@ -6,9 +6,11 @@
  * 2. A part with `additionalProperties: false` that does not list a name closes it: the slot has no valid value (`never`).
  * 3. The slot rule picks one child for the children of a name, as JSON Schema AND: equal children are one; null stays only
  *    when every child admits it; a union keeps the variants that the other children admit; objects compose by these rules;
- *    one conversion decides and the other children's constraints join it (they constrain the wire value); a scalar
- *    intersection reduces (`string` and `'cat'` give `'cat'`); disjoint types give `never`; and children that convert
- *    differently are rejected.
+ *    a model whose base chain holds another child's model narrows it (a covariant override; arrays of them alike); one
+ *    conversion decides and the other children constrain the wire value that it converts: a scalar decider takes their
+ *    constraints, and an object or array decider also takes each other child as a whole-value check; a scalar
+ *    intersection reduces (`string` and `'cat'` give `'cat'`); disjoint JSON types give `never`; and children
+ *    that convert differently are rejected.
  * 4. The required names are the union of the parts' lists. A name that only a list mentions is judged by the value schemas.
  * 5. The names that no part lists take every part's value schema; one closed part closes them.
  */
@@ -48,7 +50,7 @@ export interface SlotRule<C> {
 }
 
 export function isRejected(value: unknown): value is Rejected {
-  return typeof value === 'object' && value !== null && typeof (value as { readonly rejected?: unknown }).rejected === 'string';
+  return typeof value === 'object' && value !== null && 'rejected' in value && typeof value.rejected === 'string';
 }
 
 export function composeObjects<C>(parts: readonly ObjectPart<C>[], slot: SlotRule<C>): ObjectResult<C> | Rejected {
@@ -58,7 +60,10 @@ export function composeObjects<C>(parts: readonly ObjectPart<C>[], slot: SlotRul
   const slots: Record<string, C> = Object.create(null);
   const closed: string[] = [];
   for (const name of names) {
-    const declarers = parts.flatMap((part) => Object.hasOwn(part.slots, name) ? [part.slots[name] as C] : []);
+    const declarers = parts.flatMap((part) => {
+      const own = part.slots[name];
+      return Object.hasOwn(part.slots, name) && own !== undefined ? [own] : [];
+    });
     const judges = parts.filter((part) => !Object.hasOwn(part.slots, name));
     if (judges.some((part) => part.extra.mode === 'closed')) {
       slots[name] = slot.never;
@@ -66,16 +71,18 @@ export function composeObjects<C>(parts: readonly ObjectPart<C>[], slot: SlotRul
       continue;
     }
     const children = [...declarers, ...judges.flatMap((part) => part.extra.mode === 'values' ? [part.extra.child] : [])];
-    if (children.length === 0) continue;
-    const child = children.length === 1 ? children[0] as C : slot.combine(children);
+    const [first, second] = children;
+    if (first === undefined) continue;
+    const child = second === undefined ? first : slot.combine(children);
     if (isRejected(child)) return { rejected: `property ${JSON.stringify(name)}: ${child.rejected}` };
     slots[name] = child;
   }
   const values = parts.flatMap((part) => part.extra.mode === 'values' ? [part.extra.child] : []);
+  const [value, nextValue] = values;
   let extra: ObjectExtra<C> = { mode: 'open' };
   if (parts.some((part) => part.extra.mode === 'closed')) extra = { mode: 'closed' };
-  else if (values.length) {
-    const child = values.length === 1 ? values[0] as C : slot.combine(values);
+  else if (value !== undefined) {
+    const child = nextValue === undefined ? value : slot.combine(values);
     if (isRejected(child)) return { rejected: `additional properties: ${child.rejected}` };
     extra = { mode: 'values', child };
   }
@@ -84,21 +91,31 @@ export function composeObjects<C>(parts: readonly ObjectPart<C>[], slot: SlotRul
 
 const NEVER: ModelTypeDescriptor = { kind: 'never' };
 
-/** The slot rule of descriptors: the codec, the model path and the OpenAPI resolver pick a property's descriptor with it. */
-export const descriptorSlotRule: SlotRule<ModelTypeDescriptor> = {
-  never: NEVER,
-  combine: combineDescriptors,
-};
+/** The base of each generated model, so a derived model narrows its base in one slot (a covariant override). */
+export interface ModelBases {
+  baseOf(id: string): string | undefined;
+}
 
-function combineDescriptors(children: readonly ModelTypeDescriptor[]): ModelTypeDescriptor | Rejected {
+const NO_BASES: ModelBases = { baseOf: () => undefined };
+
+/**
+ * The slot rule of descriptors: the codec, the model path and the OpenAPI resolver pick a property's descriptor with it.
+ * `models` names the base of each generated model; without it, two different models in one slot convert differently.
+ */
+export function descriptorSlotRule(models: ModelBases = NO_BASES): SlotRule<ModelTypeDescriptor> {
+  return { never: NEVER, combine: (children) => combineDescriptors(children, models) };
+}
+
+function combineDescriptors(children: readonly ModelTypeDescriptor[], models: ModelBases): ModelTypeDescriptor | Rejected {
   const distinct = distinctDescriptors(children.filter((child) => !isAnyValue(child)));
-  if (distinct.length === 0) return children[0] ?? { kind: 'unknown' };
-  if (distinct.length === 1) return distinct[0] as ModelTypeDescriptor;
+  const [first, second] = distinct;
+  if (first === undefined) return children[0] ?? { kind: 'unknown' };
+  if (second === undefined) return first;
   if (distinct.some((child) => child.kind === 'never')) return NEVER;
-  if (distinct.some(isNullableUnion)) return combineNullable(distinct);
-  const narrowed = narrowUnions(distinct);
-  if (narrowed) return combineDescriptors(narrowed);
-  if (distinct.every((child) => child.kind === 'object')) return composeObjectDescriptors(distinct) ?? NEVER;
+  if (distinct.some(isNullableUnion)) return combineNullable(distinct, models);
+  const narrowed = narrowUnions(distinct) ?? mostDerivedModels(distinct, models);
+  if (narrowed) return combineDescriptors(narrowed, models);
+  if (distinct.every((child) => child.kind === 'object')) return composeObjectDescriptors(distinct, models) ?? NEVER;
   const converting = distinct.filter(descriptorNeedsConversion);
   const [decider] = converting;
   if (decider) {
@@ -106,10 +123,21 @@ function combineDescriptors(children: readonly ModelTypeDescriptor[]): ModelType
     if (converting.some((child) => conversionKey(child) !== conversion)) return { rejected: 'two parts convert it differently' };
     const others = distinct.filter((child) => !converting.includes(child));
     const wire = scalarWireKind(decider);
-    if (wire !== undefined && others.some((child) => child.kind !== 'unknown' && scalarWireKind(child) !== wire)) return NEVER;
-    // The other children constrain the wire value that the decider converts: their constraints join it.
-    const constraining = wire === undefined ? others.filter((child) => child.kind === 'unknown') : others;
-    return withConstraints(decider, [...converting, ...constraining].flatMap((child) => child.constraints ?? []));
+    if (wire !== undefined) {
+      if (others.some((child) => child.kind !== 'unknown' && scalarWireKind(child) !== wire)) return NEVER;
+      // The other children constrain the wire value that the decider converts: their constraints join it.
+      return withConstraints(decider, [...converting, ...others].flatMap((child) => child.constraints ?? []));
+    }
+    const json = jsonType(decider);
+    if (others.some((child) => {
+      const type = jsonType(child);
+      return json !== undefined && type !== undefined && type !== json;
+    })) return NEVER;
+    // An object or array decider converts the value; each other child still checks its wire value as a whole.
+    return withConstraints(decider, [
+      ...[...converting, ...others.filter((child) => child.kind === 'unknown')].flatMap((child) => child.constraints ?? []),
+      ...others.filter((child) => child.kind !== 'unknown').map(wholeValueCheck),
+    ]);
   }
   const kinds = distinct.map(scalarWireKind);
   if (kinds.every((kind) => kind !== undefined)) {
@@ -124,11 +152,12 @@ function combineDescriptors(children: readonly ModelTypeDescriptor[]): ModelType
 }
 
 /** Null stays when every child admits it; the other variants combine without it. */
-function combineNullable(children: readonly ModelTypeDescriptor[]): ModelTypeDescriptor | Rejected {
+function combineNullable(children: readonly ModelTypeDescriptor[], models: ModelBases): ModelTypeDescriptor | Rejected {
   const nullable = children.every(admitsNull);
   if (!nullable && children.some((child) => child.kind === 'null')) return NEVER;
   const values = children.flatMap((child) => child.kind === 'null' ? [] : [withoutNull(child)]);
-  const value = values.length === 0 ? NULL : values.length === 1 ? values[0] as ModelTypeDescriptor : combineDescriptors(values);
+  const [first, second] = values;
+  const value = first === undefined ? NULL : second === undefined ? first : combineDescriptors(values, models);
   if (isRejected(value) || !nullable || value.kind === 'null') return value;
   return value.kind === 'never' ? NULL : { kind: 'union', variants: [value, NULL] };
 }
@@ -158,6 +187,31 @@ function admits(child: ModelTypeDescriptor, variant: ModelTypeDescriptor): boole
   if (isObjectLike(child) && isObjectLike(variant)) return true;
   const wire = scalarWireKind(variant);
   return wire !== undefined && scalarWireKind(child) === wire;
+}
+
+/**
+ * A covariant override: a child whose model's base chain holds another child's model narrows it, so the most derived model
+ * decides (`Pet` and `Cat`, where `Cat` extends `Pet`, give `Cat`); arrays of such models alike. The narrowed child's
+ * constraints join the child that narrows it. Undefined when no child narrows another.
+ */
+function mostDerivedModels(children: readonly ModelTypeDescriptor[], models: ModelBases): ModelTypeDescriptor[] | undefined {
+  const bases = children.filter((child) => children.some((other) => narrowsModel(other, child, models)));
+  if (bases.length === 0) return undefined;
+  return children.flatMap((child) => bases.includes(child) ? [] : [withConstraints(child, [
+    ...(child.constraints ?? []),
+    ...bases.filter((base) => narrowsModel(child, base, models)).flatMap((base) => base.constraints ?? []),
+  ])]);
+}
+
+function narrowsModel(derived: ModelTypeDescriptor, base: ModelTypeDescriptor, models: ModelBases): boolean {
+  if (derived.kind === 'array' && base.kind === 'array') return narrowsModel(derived.item, base.item, models);
+  if (derived.kind !== 'generated-model' || base.kind !== 'generated-model') return false;
+  const seen = new Set<string>();
+  for (let id = models.baseOf(derived.id); id !== undefined && !seen.has(id); id = models.baseOf(id)) {
+    if (id === base.id) return true;
+    seen.add(id);
+  }
+  return false;
 }
 
 const NULL: ModelTypeDescriptor = { kind: 'null' };
@@ -193,10 +247,13 @@ function conversionKey(descriptor: ModelTypeDescriptor): string {
 }
 
 /** The one object that an intersection of object descriptors converts as; undefined when a variant is not an object. */
-export function composeObjectDescriptors(variants: readonly ModelTypeDescriptor[]): ObjectTypeDescriptor | Rejected | undefined {
+export function composeObjectDescriptors(
+  variants: readonly ModelTypeDescriptor[],
+  models: ModelBases = NO_BASES,
+): ObjectTypeDescriptor | Rejected | undefined {
   const objects = variants.filter((variant): variant is ObjectTypeDescriptor => variant.kind === 'object');
   if (objects.length === 0 || objects.length !== variants.length) return undefined;
-  const composed = composeObjects(objects.map(descriptorPart), descriptorSlotRule);
+  const composed = composeObjects(objects.map(descriptorPart), descriptorSlotRule(models));
   if (isRejected(composed)) return composed;
   return {
     kind: 'object',
@@ -254,6 +311,31 @@ function scalarWireKind(descriptor: ModelTypeDescriptor): string | undefined {
     default:
       return undefined;
   }
+}
+
+/** The JSON type of a descriptor's wire value; undefined when it is not one type (unknown, a union, an intersection). */
+function jsonType(descriptor: ModelTypeDescriptor): string | undefined {
+  const scalar = scalarWireKind(descriptor);
+  if (scalar !== undefined || descriptor.serde) return scalar;
+  switch (descriptor.kind) {
+    case 'object':
+    case 'generated-model':
+    case 'reference':
+      return 'object';
+    case 'array':
+    case 'tuple':
+      return 'array';
+    default:
+      return undefined;
+  }
+}
+
+/**
+ * A child as one constraint that its whole schema must hold. The constraint vocabulary has no allOf; a oneOf of one schema
+ * accepts exactly the values of that schema.
+ */
+function wholeValueCheck(child: ModelTypeDescriptor): ModelConstraint {
+  return { kind: 'oneOf', schemas: [child] };
 }
 
 function withConstraints(descriptor: ModelTypeDescriptor, constraints: readonly ModelConstraint[]): ModelTypeDescriptor {

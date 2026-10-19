@@ -631,6 +631,7 @@ function compositionReader(
     },
     nested: (schema, env) => withSchemaBase(env, schema),
     descriptor: (schema, env) => seen.has(schema) ? undefined : modelConversionDescriptor(schema, definitions, env, direction, seen),
+    baseOf: (id) => definitions.get(id)?.baseName ?? undefined,
   };
 }
 
@@ -904,30 +905,33 @@ function exactComponentTarget(schema: unknown, env: ModelResolveEnv): ExactCompo
 /**
  * Stops generation for an allOf that no object satisfies or that converts one property differently, and warns about each
  * property that no value can hold. Reads every schema inside the component, so the error names the schema's pointer. Such
- * a property of the component becomes `never`, so its class field passes the value through.
+ * a property of a model component becomes `never`, so its class field passes the value through. A component that is not
+ * a model (an array or a union) is read at field position, as the schemas that refer to it read it.
  */
 function checkComposition(
-  definition: ModelDefinition,
+  schemaName: string,
+  rawSchema: unknown,
+  definition: ModelDefinition | undefined,
   definitions: ReadonlyMap<string, ModelDefinition>,
   document: unknown,
   resources: ResourceIndex | undefined,
   warn: (code: string, message: string) => void,
 ): void {
-  const named = `schema ${JSON.stringify(definition.schemaName)}`;
+  const named = `schema ${JSON.stringify(schemaName)}`;
   const visit = (schema: unknown, scope: ModelResolveEnv, position: 'field' | 'definition', pointer: string): void => {
     if (!isJsonObject(schema) || directComponentSchemaRef(schema, withSchemaBase(scope, schema))) return;
-    const where = `${named} at #/components/schemas/${pointerToken(definition.schemaName)}${pointer}`;
+    const where = `${named} at #/components/schemas/${pointerToken(schemaName)}${pointer}`;
     if (hasAllOfMembers(schema)) {
       let composition: Composition<ModelResolveEnv>;
       try {
         composition = resolvedComposition(schema, definitions, scope, 'to', new Set([schema]), position);
       } catch (error) {
         if (!(error instanceof CompositionError)) throw error;
-        throw new LocatedError(`${where}: ${error.message}`, [componentOrigin('schemas', definition.schemaName, where)], { cause: error });
+        throw new LocatedError(`${where}: ${error.message}`, [componentOrigin('schemas', schemaName, where)], { cause: error });
       }
       for (const never of neverNames(composition)) {
         warn(COMPOSITION_PROPERTY_NEVER, `Property ${JSON.stringify(never.name)} of ${where} ${neverReason(never)}`);
-        if (position === 'definition' && definition.properties.has(never.name)) definition.properties.set(never.name, false);
+        if (position === 'definition' && definition?.properties.has(never.name)) definition.properties.set(never.name, false);
       }
     }
     const nested = withSchemaBase(scope, schema);
@@ -940,7 +944,7 @@ function checkComposition(
       if (Array.isArray(items)) items.forEach((item, index) => visit(item, nested, 'field', `${pointer}/${keyword}/${index}`));
     }
   };
-  visit(definition.rawSchema, modelEnv(document, undefined, undefined, resources), 'definition', '');
+  visit(rawSchema, modelEnv(document, undefined, undefined, resources), definition ? 'definition' : 'field', '');
 }
 
 /** One JSON Pointer token. */
@@ -1017,7 +1021,11 @@ export function collectOpenApiModelDefinitions(document: unknown, resources?: Re
     };
     collectRequired(definition.rawSchema);
   }
-  for (const definition of definitions.values()) checkComposition(definition, definitions, document, resources, warn);
+  for (const [rawName, rawSchema] of objectEntries(schemas)) {
+    const definition = definitions.get(identifier(rawName));
+    const model = definition?.schemaName === rawName ? definition : undefined;
+    checkComposition(rawName, model ? model.rawSchema : rawSchema, model, definitions, document, resources, warn);
+  }
 
   // Union models are decided against declared inheritance only, so the result
   // does not depend on component order. A union model class requires its

@@ -5,7 +5,8 @@
  *
  * - Field position: a `$ref` member expands to the component's flat shape, so own properties plus `allOf [$ref Base]` give
  *   one plain object.
- * - Field position: one model `$ref` with no own object keywords stays that model (`allOf [$ref Pet]` plus a description).
+ * - Field position: one model `$ref` with no own object keywords stays that model (`allOf [$ref Pet]` plus a description);
+ *   `unevaluatedProperties: false` beside it closes the model's names.
  *   An expansion that meets the schema it resolves (a model that wraps a reference to itself) keeps the members too.
  * - Definition position: a component that extends a generated model keeps its base; the resolver decides which names no
  *   value can hold, inherited ones included, and closes the object for `unevaluatedProperties`. The component's own
@@ -46,6 +47,8 @@ export interface CompositionReader<S> {
   nested(schema: unknown, scope: S): S;
   /** The schema's descriptor; undefined when the schema is being resolved on this path (it refers back to itself). */
   descriptor(schema: unknown, scope: S): ModelTypeDescriptor | undefined;
+  /** The generated model that the model `id` extends, so a derived model narrows its base in one slot. */
+  baseOf(id: string): string | undefined;
 }
 
 /** A name that no value can hold, and whether a closed part (`additionalProperties: false`) rejects it. */
@@ -72,7 +75,8 @@ export type Composition<S> =
   }
   /**
    * A component that extends a generated model keeps its base: the descriptor joins its members, with the own names that
-   * no value can hold as `never` and `unevaluatedProperties: false` as a constraint.
+   * no value can hold as `never` and `unevaluatedProperties: false` as a constraint. A field that is one model reference
+   * with `unevaluatedProperties: false` keeps that model the same way.
    */
   | { readonly kind: 'inherits'; readonly descriptor: ModelTypeDescriptor; readonly never: readonly NeverName[] }
   /** Not an object composition: a scalar, sequence, oneOf or constraint-only allOf; the caller keeps its own reading. */
@@ -114,11 +118,11 @@ function resolveObjects<S>(
   const deciding = members.filter(({ descriptor }) => !isConstraintOnlyPart(descriptor));
   if (deciding.length === 0) return { kind: 'members' };
   const constraints = members.flatMap(({ descriptor }) => isConstraintOnlyPart(descriptor) ? descriptor.constraints ?? [] : []);
-  const rule = slotRule<S>();
+  const rule = slotRule(reader);
   const ownPart = ownObjectPart(schema, scope, reader);
   const [only] = deciding;
   if (position === 'field' && ownPart === undefined && deciding.length === 1 && only && reader.reference(only.member, nested)?.model) {
-    return { kind: 'members' };
+    return loneReference(schema, only.member, members.map(({ descriptor }) => descriptor), nested, reader);
   }
 
   if (position === 'definition' && deciding.some(({ member }) => reader.reference(member, nested)?.model)) {
@@ -171,6 +175,24 @@ function resolveObjects<S>(
   };
 }
 
+/**
+ * One model reference at field position stays the model. With `unevaluatedProperties: false` and an open model, the names
+ * that the model lists are the only evaluated names, so they become a `propertyNames` constraint on the model.
+ */
+function loneReference<S>(
+  schema: Readonly<Record<string, unknown>>,
+  member: unknown,
+  descriptors: readonly ModelTypeDescriptor[],
+  scope: S,
+  reader: CompositionReader<S>,
+): Composition<S> {
+  if (schema.unevaluatedProperties !== false) return { kind: 'members' };
+  const part = objectPart(member, scope, reader, new Set());
+  if (part === undefined || part.extra.mode !== 'open') return { kind: 'members' };
+  const joined = joinMembers(descriptors);
+  return { kind: 'inherits', descriptor: { ...joined, constraints: [...(joined.constraints ?? []), evaluatedNamesOnly(part.slots)] }, never: [] };
+}
+
 /** The names of a composition that no value can hold; the caller warns about each. */
 export function neverNames<S>(composition: Composition<S>): readonly NeverName[] {
   return composition.kind === 'inherits' || composition.kind === 'object' ? composition.never : [];
@@ -193,20 +215,44 @@ function describe<S>(schema: unknown, scope: S, reader: CompositionReader<S>): M
   return descriptor;
 }
 
-function slotRule<S>(): SlotRule<SlotChild<S>> {
+/**
+ * The slot rule of schema children: the descriptors combine by the golem rule, and the type shows the schemas of the child
+ * that decides. A union child that the rule narrows to one variant shows that variant's schema.
+ */
+function slotRule<S>(reader: CompositionReader<S>): SlotRule<SlotChild<S>> {
+  const rule = descriptorSlotRule(reader);
   return {
-    never: { descriptor: descriptorSlotRule.never, sources: [] },
+    never: { descriptor: rule.never, sources: [] },
     combine(children) {
-      const merged = descriptorSlotRule.combine(children.map((child) => child.descriptor));
+      const merged = rule.combine(children.map((child) => child.descriptor));
       if (isRejected(merged)) return merged;
       if (merged.kind === 'never') return { descriptor: merged, sources: [] };
+      const candidates = children.map((child) => narrowedVariant(child, merged, reader));
       const key = JSON.stringify(merged);
-      const exact = children.find((child) => JSON.stringify(child.descriptor) === key);
+      const exact = candidates.find((child) => JSON.stringify(child.descriptor) === key);
       if (exact) return { descriptor: merged, sources: exact.sources };
-      const sameKind = children.filter((child) => child.descriptor.kind === merged.kind);
-      return { descriptor: merged, sources: (sameKind.length === 1 ? sameKind : children).flatMap((child) => child.sources) };
+      const sameKind = candidates.filter((child) => child.descriptor.kind === merged.kind);
+      return { descriptor: merged, sources: (sameKind.length === 1 ? sameKind : candidates).flatMap((child) => child.sources) };
     },
   };
+}
+
+/**
+ * A oneOf or anyOf child as the one variant that converts as `merged` (the checks that the merge joined aside); the child
+ * itself when none or several do.
+ */
+function narrowedVariant<S>(child: SlotChild<S>, merged: ModelTypeDescriptor, reader: CompositionReader<S>): SlotChild<S> {
+  const [source, other] = child.sources;
+  if (child.descriptor.kind !== 'union' || source === undefined || other !== undefined || !isJsonObject(source.schema)) return child;
+  const items = Array.isArray(source.schema.oneOf) ? source.schema.oneOf : Array.isArray(source.schema.anyOf) ? source.schema.anyOf : [];
+  const key = conversionKey(merged);
+  const scope = reader.nested(source.schema, source.scope);
+  const matches = items.flatMap((item) => {
+    const descriptor = reader.descriptor(item, scope);
+    return descriptor !== undefined && conversionKey(descriptor) === key ? [{ descriptor, sources: [{ schema: item, scope }] }] : [];
+  });
+  const [match, again] = matches;
+  return match !== undefined && again === undefined ? match : child;
 }
 
 function conflict(reason: string): Composition<never> {
@@ -275,7 +321,7 @@ function objectPart<S>(schema: unknown, scope: S, reader: CompositionReader<S>, 
   if (parts.length === 0) return types.length === 1 && types[0] === 'object' ? { slots: {}, required: [], extra: { mode: 'open' } } : undefined;
   if (types.length > 0 && !types.includes('object')) return undefined;
   if (parts.length === 1) return parts[0];
-  const composed = composeObjects(parts, slotRule<S>());
+  const composed = composeObjects(parts, slotRule(reader));
   return isRejected(composed) ? undefined : { slots: composed.slots, required: composed.required, extra: composed.extra };
 }
 
@@ -367,8 +413,16 @@ function evaluatedNamesOnly<C>(slots: Readonly<Record<string, C>>): ModelConstra
 function withNeverProperties(descriptor: ModelTypeDescriptor, never: readonly string[]): ModelTypeDescriptor {
   if (descriptor.kind !== 'object' || !never.some((name) => Object.hasOwn(descriptor.properties, name))) return descriptor;
   const properties = Object.fromEntries(Object.entries(descriptor.properties)
-    .map(([name, property]) => [name, never.includes(name) ? descriptorSlotRule.never : property]));
+    .map(([name, property]) => [name, never.includes(name) ? NEVER : property]));
   return { ...descriptor, properties };
+}
+
+const NEVER: ModelTypeDescriptor = descriptorSlotRule().never;
+
+/** A descriptor's conversion: the descriptor without the constraints and validations that only check values. */
+function conversionKey(descriptor: ModelTypeDescriptor): string {
+  const { constraints: _constraints, validations: _validations, ...conversion } = descriptor;
+  return JSON.stringify(conversion);
 }
 
 function requiredNames(schema: unknown): string[] {
