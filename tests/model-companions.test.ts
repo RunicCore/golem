@@ -15,7 +15,7 @@ import {
   writeModelGolemYaml,
   writeModelSources,
 } from './model-project.js';
-import { copyFixtureFile, readFixture, writeGeneratedArtifacts } from './fixture-project.js';
+import { copyFixtureFile, fileFixtureScope, onceShared, readFixture, writeGeneratedArtifacts } from './fixture-project.js';
 import { tsSource } from './source-template.js';
 import { generate } from '#model/generator';
 
@@ -44,6 +44,52 @@ function writeManifest(
   }));
 }
 
+const fileScope = fileFixtureScope();
+
+// The tests below that only read a build share it: one project of the models they read, built once.
+/** Models with validation off, in one project: the duplicate-name pair, the re-exported kinds, and a model with a tag. */
+const trustedProject = onceShared(async () => {
+  const { root, sourceRoot } = companionModelProject(fileScope, 'validation-off');
+  writeModelSources(sourceRoot, {
+    'payment.model.ts': readFixture('models/model-companions/duplicate-model/payment.model.ts'),
+    'contracts.ts': readFixture('models/model-companions/contracts.ts'),
+    'provenance.model.ts': readFixture('models/model-companions/provenance.model.ts'),
+    'a.model.ts': tsSource`import type { IModel } from '@exprtlabs/golem/model';
+import type { MinLength } from '@exprtlabs/golem/tags';
+export type TA = IModel<{ title: string & MinLength<1> }>;
+`,
+  });
+  writeModelGolemYaml(root, { mobx: false, validation: false });
+  await buildModelProject(root);
+  return { root, sourceRoot, artifacts: generatedModelFiles(root) };
+});
+
+/** Models with validation on, in one project: two models with a tag each, and two models that import each other. */
+const validatingProject = onceShared(async () => {
+  const { root, sourceRoot } = companionModelProject(fileScope, 'validation-on');
+  writeModelSources(sourceRoot, {
+    'a.model.ts': tsSource`import type { IModel } from '@exprtlabs/golem/model';
+import type { MinLength } from '@exprtlabs/golem/tags';
+export type TA = IModel<{ title: string & MinLength<1> }>;
+`,
+    'b.model.ts': tsSource`import type { IModel } from '@exprtlabs/golem/model';
+import type { MinLength } from '@exprtlabs/golem/tags';
+export type TB = IModel<{ label: string & MinLength<2> }>;
+`,
+    'node.model.ts': tsSource`import type { IObject } from '@exprtlabs/golem/model';
+import type { TLink } from './link.model.js';
+export type TNode = IObject<{ next?: TLink }>;
+`,
+    'link.model.ts': tsSource`import type { IObject } from '@exprtlabs/golem/model';
+import type { TNode } from './node.model.js';
+export type TLink = IObject<{ node: TNode }>;
+`,
+  });
+  writeModelGolemYaml(root, { mobx: false, validation: true });
+  await buildModelProject(root);
+  return { root, artifacts: generatedModelFiles(root) };
+});
+
 test('generated model names are scoped to their companion modules', (t) => {
   const { root, sourceRoot } = modelProject(t);
   writeModelSources(sourceRoot, {
@@ -63,14 +109,8 @@ test('generated model names are scoped to their companion modules', (t) => {
   assert.notEqual(firstId, secondId);
 });
 
-test('same-file aliases that differ only by the T prefix generate two separate models', async (t) => {
-  const { root, sourceRoot } = modelProject(t);
-  writeModelSources(sourceRoot, {
-    'payment.model.ts': readFixture('models/model-companions/duplicate-model/payment.model.ts'),
-  });
-  writeModelGolemYaml(root, { mobx: false, validation: false });
-  await buildModelProject(root);
-  const artifacts = generatedModelFiles(root);
+test('same-file aliases that differ only by the T prefix generate two separate models', async () => {
+  const { artifacts } = await trustedProject();
   const companion = artifacts.find((artifact) => artifact.path.endsWith('payment.model.generated.ts'))?.content ?? '';
   assert.match(companion, /export abstract class TPaymentBaseModel\b/);
   assert.match(companion, /export abstract class PaymentBaseModel\b/);
@@ -155,15 +195,10 @@ test('public generation compiles and executes conversion and rest tuple behavior
   await command(root, process.execPath, [verifier]);
 });
 
-test('re-exported IModel and IObject symbols preserve class versus plain-object generation', async t => {
-  const { root, sourceRoot } = companionModelProject(t, 'model-kind-provenance');
-  fs.writeFileSync(path.join(sourceRoot, 'contracts.ts'), readFixture('models/model-companions/contracts.ts'));
+test('re-exported IModel and IObject symbols preserve class versus plain-object generation', async () => {
+  const { root, sourceRoot, artifacts } = await trustedProject();
   const sourceFile = path.join(sourceRoot, 'provenance.model.ts');
-  fs.writeFileSync(sourceFile, readFixture('models/model-companions/provenance.model.ts'));
-
-  writeModelGolemYaml(root, { mobx: false, validation: false });
-  await buildModelProject(root);
-  const generated = generatedModelFiles(root).find(artifact => artifact.path.endsWith('provenance.model.generated.ts'))?.content ?? '';
+  const generated = artifacts.find(artifact => artifact.path.endsWith('provenance.model.generated.ts'))?.content ?? '';
   assert.match(generated, /export abstract class TProvenanceBaseModel/);
   assert.doesNotMatch(generated, /export abstract class PlainBaseModel/);
   {
@@ -183,57 +218,24 @@ test('re-exported IModel and IObject symbols preserve class versus plain-object 
   assert.deepEqual(loaded.plain, { label: 'plain' });
 });
 
-test('a generated model file imports only the validators of its own models', async (t) => {
-  const { root, sourceRoot } = companionModelProject(t, 'own-validators');
-  writeModelSources(sourceRoot, {
-    'a.model.ts': tsSource`import type { IModel } from '@exprtlabs/golem/model';
-import type { MinLength } from '@exprtlabs/golem/tags';
-export type TA = IModel<{ title: string & MinLength<1> }>;
-`,
-    'b.model.ts': tsSource`import type { IModel } from '@exprtlabs/golem/model';
-import type { MinLength } from '@exprtlabs/golem/tags';
-export type TB = IModel<{ label: string & MinLength<2> }>;
-`,
-  });
-  writeModelGolemYaml(root, { mobx: false, validation: true });
-  await buildModelProject(root);
-  const files = generatedModelFiles(root);
-  const text = (name: string): string => files.find((file) => file.path.endsWith(name))?.content ?? '';
+test('a generated model file imports only the validators of its own models', async () => {
+  const { artifacts } = await validatingProject();
+  const text = (name: string): string => artifacts.find((file) => file.path.endsWith(name))?.content ?? '';
   const imported = (name: string): string => text(name).match(/^import \{ ([^}]+) \} from "[^"]*models\.validators\.generated\.js";$/m)?.[1] ?? '';
   assert.match(imported('a.model.generated.ts'), /^validate_TA_\w+(, validate_TA_\w+)*$/);
   assert.match(imported('b.model.generated.ts'), /^validate_TB_\w+(, validate_TB_\w+)*$/);
 });
 
-test('with validation off a generated model file has no validator import and validate true is unavailable', async (t) => {
-  const { root, sourceRoot } = companionModelProject(t, 'validation-off');
-  writeModelSources(sourceRoot, {
-    'a.model.ts': tsSource`import type { IModel } from '@exprtlabs/golem/model';
-import type { MinLength } from '@exprtlabs/golem/tags';
-export type TA = IModel<{ title: string & MinLength<1> }>;
-`,
-  });
-  writeModelGolemYaml(root, { mobx: false, validation: false });
-  await buildModelProject(root);
-  const generated = generatedModelFiles(root).find((file) => file.path.endsWith('a.model.generated.ts'))?.content ?? '';
+test('with validation off a generated model file has no validator import and validate true is unavailable', async () => {
+  const { root, artifacts } = await trustedProject();
+  const generated = artifacts.find((file) => file.path.endsWith('a.model.generated.ts'))?.content ?? '';
   assert.doesNotMatch(generated, /models\.validators\.generated/);
   const verifier = copyFixtureFile(root, 'models/model-companions/verify-validation-unavailable.mjs', 'verify-validation-unavailable.mjs');
   await command(root, process.execPath, [verifier, generatedCodecIdFromRoot(root, 'TA')]);
 });
 
-test('two models that import each other load and validate across the cycle', async (t) => {
-  const { root, sourceRoot } = companionModelProject(t, 'import-cycle');
-  writeModelSources(sourceRoot, {
-    'node.model.ts': tsSource`import type { IObject } from '@exprtlabs/golem/model';
-import type { TLink } from './link.model.js';
-export type TNode = IObject<{ next?: TLink }>;
-`,
-    'link.model.ts': tsSource`import type { IObject } from '@exprtlabs/golem/model';
-import type { TNode } from './node.model.js';
-export type TLink = IObject<{ node: TNode }>;
-`,
-  });
-  writeModelGolemYaml(root, { mobx: false, validation: true });
-  await buildModelProject(root);
+test('two models that import each other load and validate across the cycle', async () => {
+  const { root } = await validatingProject();
   const verifier = copyFixtureFile(root, 'models/model-companions/verify-import-cycle.mjs', 'verify-import-cycle.mjs');
   await command(root, process.execPath, [verifier, generatedCodecIdFromRoot(root, 'TNode')]);
 });

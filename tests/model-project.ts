@@ -1,12 +1,12 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { TestContext } from 'node:test';
 
 import { command, golem, type CommandOptions, type CommandResult } from './support/process.js';
 import {
   createFixtureProject,
   linkProjectPackages,
+  type FixtureScope,
 } from './fixture-project.js';
 import type { SourceFragment } from './source-template.js';
 
@@ -32,7 +32,7 @@ export interface ModelProject {
 }
 
 /** Create the standard temporary ESM consumer used by golem-model tests. */
-export function createModelProject(t: TestContext, options: ModelProjectOptions): ModelProject {
+export function createModelProject(t: FixtureScope, options: ModelProjectOptions): ModelProject {
   const root = createFixtureProject(t, options.prefix);
   const sourceRoot = path.join(root, 'src');
   fs.mkdirSync(sourceRoot, { recursive: true });

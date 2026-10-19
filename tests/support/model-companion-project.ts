@@ -1,5 +1,4 @@
-import type { TestContext } from 'node:test';
-
+import type { FixtureScope } from '../fixture-project.js';
 import { createModelProject } from '../model-project.js';
 
 export const modelProject = (t: Parameters<typeof createModelProject>[0]) => createModelProject(t, {
@@ -7,7 +6,7 @@ export const modelProject = (t: Parameters<typeof createModelProject>[0]) => cre
   name: 'model-companions',
 });
 
-export function companionModelProject(t: TestContext, name: string) {
+export function companionModelProject(t: FixtureScope, name: string) {
   return createModelProject(t, {
     prefix: `golem-${name}-`,
     name,
