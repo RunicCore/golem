@@ -66,6 +66,8 @@ const tiers: Readonly<Record<Tier, { readonly budget: string; readonly purpose: 
   docs: { budget: 'about 2 min', purpose: 'Does the documentation site build and pass its checks?' },
 };
 
+const RUNNER_FLAGS = ['--test-shard', '--test-timeout', '--test-concurrency', '--test-reporter'] as const;
+
 export function selectFocused(args: readonly string[], lane6 = false): { readonly files: readonly string[]; readonly passThrough: readonly string[]; readonly needsPack: boolean } {
   const files: string[] = [];
   const passThrough: string[] = [];
@@ -74,6 +76,9 @@ export function selectFocused(args: readonly string[], lane6 = false): { readonl
   for (let index = 0; index < args.length; index++) {
     const value = args[index];
     if (value.startsWith('--')) {
+      const name = value.split('=')[0];
+      // These set up the run itself, which this runner owns; dropping one would make a run look different from what it did.
+      if (RUNNER_FLAGS.some(flag => name.startsWith(flag))) throw new Error(`${name} is not supported: the runner sets the reporters, the concurrency and the files of a step, and the tier ceiling is the time limit.`);
       passThrough.push(value);
       const next = args[index + 1];
       if (!value.includes('=') && next !== undefined && !next.startsWith('--') && !testFile(next)) passThrough.push(args[++index]);
@@ -159,8 +164,8 @@ function expandFiles(patterns: readonly string[]): string[] {
     if (directory.includes('*')) throw new Error(`Put * in the file name only: '${pattern}'`);
     const name = new RegExp(`^${path.posix.basename(pattern).split('*').map(part => part.replace(/[.+?^${}()|[\]\\]/g, '\\$&')).join('[^/]*')}$`);
     const matches = pattern.includes('*')
-      ? fs.readdirSync(path.join(root, directory), { withFileTypes: true }).filter(entry => entry.isFile() && name.test(entry.name)).map(entry => path.posix.join(directory, entry.name))
-      : fs.existsSync(path.join(root, pattern)) ? [pattern] : [];
+      ? fs.readdirSync(path.resolve(root, directory), { withFileTypes: true }).filter(entry => entry.isFile() && name.test(entry.name)).map(entry => path.posix.join(directory, entry.name))
+      : fs.existsSync(path.resolve(root, pattern)) ? [pattern] : [];
     if (!matches.length) throw new Error(`Could not find '${pattern}'`);
     return matches;
   });
@@ -178,7 +183,15 @@ function nodeTest(label: string, patterns: readonly string[], concurrency: numbe
     label,
     fileTimings,
     run: () => {
-      const request: OrderedRun = { label, concurrency, execArgv: extra, files: longestFirst(expandFiles(patterns), recordedFileSeconds.get(label)) };
+      let files: string[];
+      try {
+        files = expandFiles(patterns);
+      } catch (error) {
+        // A selection that names no file is the caller's input: the step fails, and runStep records it.
+        process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+        return Promise.resolve(2);
+      }
+      const request: OrderedRun = { label, concurrency, execArgv: extra, files: longestFirst(files, recordedFileSeconds.get(label)) };
       return run(process.execPath, [fileURLToPath(new URL('./test-run-ordered.js', import.meta.url)), JSON.stringify(request)], root, env);
     },
   };

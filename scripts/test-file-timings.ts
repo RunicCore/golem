@@ -3,7 +3,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 // Spec, TAP and this reporter put 11 `end` listeners on the run's event stream, and node warns above 10.
-// This module loads in the process that runs the files, before the third reporter attaches.
+// The limit is needed in the process that runs the files, where this module loads before the third reporter attaches.
+// The tier process loads it too, for `sourcePath`, and gets the same limit.
 EventEmitter.defaultMaxListeners = 20;
 
 interface TestEvent {
