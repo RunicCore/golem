@@ -256,3 +256,14 @@ export function checkFormat(format: string, value: unknown): boolean {
   if (typeof value === 'number') return Object.hasOwn(numberFormats, format) ? numberFormats[format](value) : true;
   return true;
 }
+
+/** `checkFormat` for one `format`, with the format looked up once: a generated fast check calls it per value. */
+export function formatTest(format: string): (value: unknown) => boolean {
+  const forString = Object.hasOwn(stringFormats, format) ? stringFormats[format] : undefined;
+  const forNumber = Object.hasOwn(numberFormats, format) ? numberFormats[format] : undefined;
+  return value => {
+    if (typeof value === 'string') return forString === undefined || forString(value);
+    if (typeof value === 'number') return forNumber === undefined || forNumber(value);
+    return true;
+  };
+}

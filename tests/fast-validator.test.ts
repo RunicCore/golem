@@ -1,0 +1,406 @@
+import assert from 'node:assert/strict';
+import { test } from 'node:test';
+
+import { MODEL_CODEC_IDS_KEY } from '@exprtlabs/golem/schema';
+import type { Validator } from '@exprtlabs/golem/validation-runtime';
+import { compile } from '@exprtlabs/golem/validator-compiler';
+
+import { compileValidatorModule, type FastCheck } from './support/compiled-validators.js';
+
+// The fast check `is_X` of the validator compiler (`fastPath`) is exact: `is(v)` is true if and only if `validate(v,
+// true)` reports no issue. Each row compiles one schema with `fastPath` on and compares both functions of that module.
+
+const MODEL_CODEC_IDS = Symbol.for(MODEL_CODEC_IDS_KEY);
+
+/** A class whose prototype lists `ids` the way a registered model does. */
+function modelClass(...ids: string[]): new () => object {
+  const model = class {};
+  Object.defineProperty(model.prototype, MODEL_CODEC_IDS, { value: ids });
+  return model;
+}
+
+const Cat = modelClass('Cat');
+const Dog = modelClass('Dog');
+
+interface Compiled {
+  readonly validate: Validator;
+  readonly isValid: FastCheck;
+}
+
+async function compileFast(schema: unknown, resources: Readonly<Record<string, unknown>> = {}): Promise<Compiled> {
+  const module = await compileValidatorModule({ roots: { root: schema }, resources, fastPath: true });
+  const isValid = module.fastByRoot.root;
+  assert.ok(isValid, 'the root has a fast check');
+  return { validate: module.byRoot.root, isValid };
+}
+
+/** What a function did with a value: its answer, or the name of the error it threw. */
+function outcome(run: () => boolean): boolean | string {
+  try {
+    return run();
+  } catch (error) {
+    return error instanceof Error ? `throws ${error.name}` : 'throws';
+  }
+}
+
+/** The values on which the fast check and the full validator disagree, with both answers. */
+function disagreements({ validate, isValid }: Compiled, values: readonly unknown[]): readonly unknown[] {
+  return values
+    .map(value => ({ value, full: outcome(() => validate(value, true).length === 0), fast: outcome(() => isValid(value)) }))
+    .filter(entry => entry.full !== entry.fast);
+}
+
+// A seeded generator of odd values: each value is a valid sample with one change at a random place in it.
+
+/** mulberry32: a small seeded generator, so a failing value is the same on every run. */
+function seeded(seed: number): () => number {
+  let state = seed >>> 0;
+  return () => {
+    state = (state + 0x6d2b79f5) >>> 0;
+    let mixed = Math.imul(state ^ (state >>> 15), 1 | state);
+    mixed = (mixed + Math.imul(mixed ^ (mixed >>> 7), 61 | mixed)) ^ mixed;
+    return ((mixed ^ (mixed >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+const ODD_VALUES: readonly (() => unknown)[] = [
+  () => Number.NaN, () => Number.POSITIVE_INFINITY, () => Number.NEGATIVE_INFINITY, () => -0, () => 1.5, () => 2 ** 53, () => 0.30000000000000004,
+  () => new Date(Number.NaN), () => new Date(0), () => '', () => 'a', () => '😀', () => '😀😀', () => 'a😀b', () => '\ud800', () => '2024-01-01T00:00:00Z',
+  () => null, () => undefined, () => true, () => 0, () => 7, () => -1, () => [], () => [undefined], () => [, 1], () => [1, 1], () => [{ a: 1 }, { a: 1, b: undefined }],
+  () => ({}), () => Object.create(null), () => ({ [Symbol('s')]: 1 }), () => new Proxy({ id: 1 }, {}), () => new Cat(), () => new Dog(), () => ({ a: undefined }),
+];
+
+function odd(random: () => number): unknown {
+  return ODD_VALUES[Math.floor(random() * ODD_VALUES.length)]();
+}
+
+/** A plain object of the samples, which a change may edit. */
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value) && Object.getPrototypeOf(value) === Object.prototype;
+}
+
+/** A copy of a sample: plain objects, arrays (holes kept) and Dates are copied, other values shared. */
+function copy(value: unknown): unknown {
+  if (value instanceof Date) return new Date(value.getTime());
+  if (Array.isArray(value)) {
+    const result: unknown[] = new Array(value.length);
+    for (let index = 0; index < value.length; index++) if (index in value) result[index] = copy(value[index]);
+    return result;
+  }
+  return isPlainRecord(value) ? Object.fromEntries(Object.entries(value).map(([key, item]) => [key, copy(item)])) : value;
+}
+
+/** The plain objects and arrays inside `value`, itself included. */
+function containers(value: unknown): readonly (Record<string, unknown> | unknown[])[] {
+  if (Array.isArray(value)) return [value, ...value.flatMap(containers)];
+  return isPlainRecord(value) ? [value, ...Object.values(value).flatMap(containers)] : [];
+}
+
+/** One change to an object: a field replaced, removed, set to `undefined`, hidden or added, or the object made odd. */
+function changeObject(target: Record<string, unknown>, random: () => number): unknown {
+  const keys = Object.keys(target);
+  const key = keys.length === 0 ? 'id' : keys[Math.floor(random() * keys.length)];
+  switch (Math.floor(random() * 8)) {
+    case 0: target[key] = odd(random); return undefined;
+    case 1: delete target[key]; return undefined;
+    case 2: target[key] = undefined; return undefined;
+    case 3: Object.defineProperty(target, key, { enumerable: false }); return undefined;
+    case 4: target[`extra${Math.floor(random() * 3)}`] = random() < 0.3 ? undefined : odd(random); return undefined;
+    case 5: Object.defineProperty(target, Symbol('extra'), { value: 1, enumerable: true }); return undefined;
+    case 6: return new Proxy(target, {});
+    default: return Object.create(target);
+  }
+}
+
+/** One change to an array: an item replaced, the array shortened, a hole, or an extra item. */
+function changeArray(target: unknown[], random: () => number): void {
+  const index = Math.floor(random() * Math.max(target.length, 1));
+  switch (Math.floor(random() * 4)) {
+    case 0: target[index] = odd(random); return;
+    case 1: target.length = Math.max(0, target.length - 1); return;
+    case 2: target.length += 1; return;
+    default: target.push(odd(random));
+  }
+}
+
+/** `count` values, each `sample` with one change at a random place; a change that wraps an object wraps the whole value. */
+function oddValues(sample: unknown, seed: number, count: number): readonly unknown[] {
+  const random = seeded(seed);
+  return Array.from({ length: count }, () => {
+    const value = copy(sample);
+    const places = containers(value);
+    if (places.length === 0) return odd(random);
+    const place = places[Math.floor(random() * places.length)];
+    if (Array.isArray(place)) {
+      changeArray(place, random);
+      return value;
+    }
+    const wrapped = changeObject(place, random);
+    return wrapped !== undefined && place === value ? wrapped : value;
+  });
+}
+
+const ITEM = { type: 'object', required: ['sku', 'qty'], properties: { sku: { type: 'string', minLength: 1 }, qty: { type: 'integer', minimum: 1 } }, additionalProperties: false };
+
+interface Row {
+  readonly name: string;
+  readonly schema: unknown;
+  readonly resources?: Readonly<Record<string, unknown>>;
+  /** Valid values of the schema; each also seeds the generated values. */
+  readonly valid: readonly unknown[];
+}
+
+const ROWS: readonly Row[] = [
+  {
+    name: 'flat model: scalars, a Date, an enum, a format and no unknown keys (K1-K4, K10-K12)',
+    schema: {
+      type: 'object',
+      required: ['id', 'name', 'active', 'score', 'createdAt'],
+      properties: {
+        id: { type: 'integer' }, name: { type: 'string' }, active: { type: 'boolean' }, score: { type: 'number' },
+        createdAt: { golemModelDate: true }, status: { enum: ['open', 'closed', null] }, at: { type: 'string', format: 'date-time' },
+      },
+      additionalProperties: false,
+    },
+    valid: [{ id: 1, name: 'n', active: true, score: 1.5, createdAt: new Date(0), status: 'open', at: '2024-01-01T00:00:00Z' }, { id: 2, name: '', active: false, score: 0, createdAt: new Date(1), status: null }],
+  },
+  {
+    name: 'nested model and a nullable child (K11, K18, K20)',
+    schema: {
+      type: 'object',
+      required: ['owner'],
+      properties: { owner: { $ref: '#/$defs/Person' }, partner: { anyOf: [{ $ref: '#/$defs/Person' }, { type: 'null' }] } },
+      additionalProperties: false,
+      $defs: { Person: { type: 'object', required: ['name'], properties: { name: { type: 'string' }, age: { type: 'integer', minimum: 0 } }, additionalProperties: false } },
+    },
+    valid: [{ owner: { name: 'a', age: 3 }, partner: null }, { owner: { name: 'b' }, partner: { name: 'c' } }],
+  },
+  {
+    name: 'array of models with limits and unique items (K7, K8)',
+    schema: { type: 'array', items: ITEM, minItems: 1, maxItems: 3, uniqueItems: true },
+    valid: [[{ sku: 'a', qty: 1 }], [{ sku: 'a', qty: 1 }, { sku: 'b', qty: 2 }]],
+  },
+  {
+    name: 'tuple with an optional tail and no extra items (K7)',
+    schema: { type: 'array', prefixItems: [{ type: 'string' }, { type: 'number' }, { golemModelDate: true }], items: false, minItems: 2 },
+    valid: [['a', 1], ['a', 1, new Date(0)]],
+  },
+  {
+    name: 'record of numbers with a key count (K13, K14)',
+    schema: { type: 'object', additionalProperties: { type: 'number', minimum: 0 }, minProperties: 1, maxProperties: 3 },
+    valid: [{ a: 1 }, { a: 0, b: 2, c: 3 }],
+  },
+  {
+    name: 'allOf of two members with shared names, one closed (K19)',
+    schema: {
+      allOf: [
+        { type: 'object', required: ['id'], properties: { id: { type: 'string' }, note: { type: 'string' } } },
+        { type: 'object', properties: { id: { type: 'string', minLength: 2 }, note: { type: 'string' } }, additionalProperties: false },
+      ],
+    },
+    valid: [{ id: 'ab' }, { id: 'abc', note: 'n' }],
+  },
+  {
+    name: 'dependentRequired, a required any, a never property and a required key that properties does not name (K10, K15, K30)',
+    schema: {
+      type: 'object',
+      required: ['anything', 'tag'],
+      properties: { anything: {}, card: { type: 'string' }, billing: { type: 'string' }, forbidden: false },
+      dependentRequired: { card: ['billing'] },
+      additionalProperties: { type: 'string' },
+    },
+    valid: [{ anything: null, tag: 't' }, { anything: [1], tag: 'x', card: 'c', billing: 'b' }],
+  },
+  {
+    name: 'string limits by code point and a pattern, number bounds and multipleOf (K5, K6)',
+    schema: {
+      type: 'object',
+      required: ['code', 'price'],
+      properties: {
+        code: { type: 'string', minLength: 2, maxLength: 3, pattern: '^[a-z😀]+$' },
+        price: { type: 'number', exclusiveMinimum: 0, maximum: 100, multipleOf: 0.1 },
+        count: { type: 'integer', minimum: -1, exclusiveMaximum: 10 },
+      },
+    },
+    valid: [{ code: '😀😀', price: 0.3 }, { code: 'abc', price: 100, count: -1 }],
+  },
+  {
+    name: 'model instance in a property (K26)',
+    schema: {
+      type: 'object',
+      required: ['pet'],
+      properties: { pet: { golemModelInstance: { of: 'Cat', among: ['Cat', 'Dog'], required: true } }, other: { golemModelInstance: { among: ['Cat', 'Dog'], required: false } } },
+    },
+    valid: [{ pet: new Cat() }, { pet: new Cat(), other: { plain: 1 } }],
+  },
+  {
+    name: 'recursive tree through $ref (K18)',
+    schema: { $ref: '#/$defs/Node', $defs: { Node: { type: 'object', required: ['value'], properties: { value: { type: 'integer' }, children: { type: 'array', items: { $ref: '#/$defs/Node' } } }, additionalProperties: false } } },
+    valid: [{ value: 1, children: [{ value: 2 }, { value: 3, children: [{ value: 4 }] }] }],
+  },
+  {
+    name: 'micro-leaves inside a model: contains, patternProperties, propertyNames, oneOf, not, if, dependentSchemas',
+    schema: {
+      type: 'object',
+      required: ['list'],
+      properties: {
+        list: { type: 'array', contains: { const: 1 }, maxContains: 2 },
+        map: { type: 'object', patternProperties: { '^x': { type: 'integer' } }, additionalProperties: false },
+        names: { type: 'object', propertyNames: { maxLength: 2 } },
+        choice: { oneOf: [{ type: 'string' }, { type: 'string', minLength: 3 }, { type: 'integer' }] },
+        shape: { oneOf: [{ type: 'object', required: ['kind'], properties: { kind: { const: 'a' } } }, { type: 'object', required: ['kind'], properties: { kind: { const: 'b' }, size: { type: 'integer' } } }], discriminator: { propertyName: 'kind' } },
+        other: { not: { type: 'string' } },
+        when: { if: { type: 'integer' }, then: { minimum: 5 }, else: { type: 'string' } },
+        card: { type: 'object', dependentSchemas: { number: { required: ['cvv'] } } },
+      },
+    },
+    valid: [{ list: [1, 2] }, { list: [1, 1], map: { x1: 2 }, names: { ab: 1 }, choice: 'ab', shape: { kind: 'b', size: 1 }, other: 1, when: 6, card: { number: 1, cvv: 2 } }],
+  },
+];
+
+for (const row of ROWS) {
+  test(`fast check equals the full validator in both directions on generated odd values: ${row.name}`, async () => {
+    const compiled = await compileFast(row.schema, row.resources);
+    const values = [...row.valid, ...row.valid.flatMap((sample, position) => oddValues(sample, 1000 + position, 400))];
+    assert.deepEqual(disagreements(compiled, values), []);
+    assert.deepEqual(row.valid.map(value => compiled.isValid(value)), row.valid.map(() => true), 'every valid value passes the fast check');
+    const verdicts = new Set(values.map(value => outcome(() => compiled.isValid(value))));
+    assert.ok(verdicts.has(true) && verdicts.has(false), 'the generated values hold both valid and invalid ones');
+  });
+}
+
+// The JSON view (spec section 4): a field is present when it is an own enumerable property whose value is not undefined.
+
+const NON_ENUMERABLE_ID: Record<string, unknown> = { extra: 1 };
+Object.defineProperty(NON_ENUMERABLE_ID, 'id', { value: 1, enumerable: false });
+const SYMBOL_EXTRA = { id: 1, [Symbol('extra')]: 2 };
+const INHERITED_ID: object = Object.create({ id: 1 });
+const NULL_PROTOTYPE: Record<string, unknown> = Object.assign(Object.create(null), { id: 1 });
+const OWN_PROTO_KEY: Record<string, unknown> = JSON.parse('{"id":1,"__proto__":2}');
+const PROXY = new Proxy({ id: 1 }, {});
+
+const CLOSED = { type: 'object', required: ['id'], properties: { id: { type: 'number' }, note: { type: 'string' } }, additionalProperties: false };
+
+const JSON_VIEW_ROWS: readonly (readonly [name: string, schema: unknown, value: unknown, valid: boolean])[] = [
+  ['NaN is not a number', { type: 'number' }, Number.NaN, false],
+  ['Infinity is not a number', { type: 'number' }, Number.POSITIVE_INFINITY, false],
+  ['-0 is an integer', { type: 'integer' }, -0, true],
+  ['an invalid Date is not a Date', { golemModelDate: true }, new Date(Number.NaN), false],
+  ['a declared key that is not enumerable is absent, and the other key is unknown', CLOSED, NON_ENUMERABLE_ID, false],
+  ['a symbol key is not a key of the JSON view', CLOSED, SYMBOL_EXTRA, true],
+  ['an inherited declared key is absent', CLOSED, INHERITED_ID, false],
+  ['a null-prototype object is an object', CLOSED, NULL_PROTOTYPE, true],
+  ['an own __proto__ data key is an unknown key', CLOSED, OWN_PROTO_KEY, false],
+  ['a Proxy is read through its traps', CLOSED, PROXY, true],
+  ['an optional key set to undefined is absent, and an extra key is unknown', CLOSED, { id: 1, note: undefined, extra: 1 }, false],
+  ['an extra key set to undefined is absent', CLOSED, { id: 1, extra: undefined }, true],
+  ['an astral string counts code points at minLength', { type: 'string', minLength: 2 }, '😀', false],
+  ['two astral code points meet minLength 2', { type: 'string', minLength: 2 }, '😀😀', true],
+  ['three astral code points pass maxLength 3', { type: 'string', maxLength: 3 }, '😀😀😀', true],
+  ['a lone surrogate is one code point', { type: 'string', minLength: 2 }, '\ud800', false],
+  ['a short tuple skips its missing items', { prefixItems: [{ type: 'string' }, { type: 'number' }] }, ['a'], true],
+  ['a hole in a tuple is an undefined item', { prefixItems: [{ type: 'string' }, { type: 'number' }] }, [, 1], false],
+  ['a required any rejects an undefined value', { type: 'object', required: ['any'], properties: { any: {} } }, { any: undefined }, false],
+  ['a required any accepts null', { type: 'object', required: ['any'], properties: { any: {} } }, { any: null }, true],
+  ['a never property accepts its key set to undefined', { properties: { name: false } }, { name: undefined }, true],
+  ['a never property rejects its key', { properties: { name: false } }, { name: 1 }, false],
+  ['a const object ignores an undefined-valued key', { const: { a: 1 } }, { a: 1, b: undefined }, true],
+  ['a primitive enum compares by value', { enum: [1, 'a', null] }, 1.0, true],
+  ['a primitive enum rejects a string of a number', { enum: [1] }, '1', false],
+  ['a subclass of a registered model selects the model', { golemModelInstance: { of: 'Cat', among: ['Cat'], required: true } }, new (class extends Cat {})(), true],
+  ['a plain object with a tag is no instance', { golemModelInstance: { of: 'Cat', among: ['Cat'], required: true } }, { kind: 'Cat' }, false],
+];
+
+for (const [name, schema, value, valid] of JSON_VIEW_ROWS) {
+  test(`JSON view: ${name}`, async () => {
+    const { validate, isValid } = await compileFast(schema);
+    assert.deepEqual({ full: validate(value, true).length === 0, fast: isValid(value) }, { full: valid, fast: valid });
+  });
+}
+
+test('a throwing getter of a declared key throws from the fast check as from the full validator', async () => {
+  const { validate, isValid } = await compileFast(CLOSED);
+  const value = { get id(): number { throw new RangeError('getter'); } };
+  assert.throws(() => validate(value, true), RangeError);
+  assert.throws(() => isValid(value), RangeError);
+});
+
+// No silent decline: which keyword rows the fast check writes itself, which it runs as a micro-leaf (a full validator
+// of that one check), and which roots get no fast check.
+
+const NESTED = (schema: object): object => ({ type: 'object', properties: { field: schema } });
+
+const FAST_FORM_ROWS: readonly (readonly [row: string, schema: unknown, microLeaf: boolean])[] = [
+  ['K1 type', { type: ['string', 'integer'] }, false],
+  ['K2 const and enum', { enum: ['a', 1, { b: 2 }] }, false],
+  ['K3 format', { type: 'string', format: 'uuid' }, false],
+  ['K4 Date', { golemModelDate: true }, false],
+  ['K5 string limits and pattern', { type: 'string', minLength: 1, maxLength: 4, pattern: '^a' }, false],
+  ['K6 number bounds and multipleOf', { type: 'number', minimum: 0, exclusiveMaximum: 9, multipleOf: 3 }, false],
+  ['K7 tuple and items', { type: 'array', prefixItems: [{ type: 'string' }], items: false, minItems: 1 }, false],
+  ['K8 uniqueItems', { type: 'array', uniqueItems: true }, false],
+  ['K10 and K11 required and properties', { type: 'object', required: ['a'], properties: { a: { type: 'string' } } }, false],
+  ['K12 additionalProperties false', { type: 'object', properties: { a: {} }, additionalProperties: false }, false],
+  ['K13 additionalProperties schema', { type: 'object', additionalProperties: { type: 'string' } }, false],
+  ['K14 minProperties and maxProperties', { type: 'object', minProperties: 1, maxProperties: 2 }, false],
+  ['K15 dependentRequired', { type: 'object', dependentRequired: { a: ['b'] } }, false],
+  ['K18 $ref', { $ref: '#/$defs/A', $defs: { A: { type: 'string' } } }, false],
+  ['K19 allOf', { allOf: [{ type: 'object', required: ['a'] }, { type: 'object', required: ['b'] }] }, false],
+  ['K20 anyOf', { anyOf: [{ type: 'string' }, { type: 'null' }] }, false],
+  ['K26 golemModelInstance', { golemModelInstance: { of: 'Cat', among: ['Cat'], required: true } }, false],
+  ['K30 a never property', { properties: { a: false } }, false],
+  ['K9 contains', NESTED({ type: 'array', contains: { type: 'string' } }), true],
+  ['K16 patternProperties', NESTED({ type: 'object', patternProperties: { '^a': { type: 'string' } } }), true],
+  ['K17 propertyNames', NESTED({ type: 'object', propertyNames: { minLength: 2 } }), true],
+  ['K21 oneOf with a discriminator', NESTED({ oneOf: [{ properties: { k: { const: 'a' } }, required: ['k'] }, { properties: { k: { const: 'b' } }, required: ['k'] }], discriminator: { propertyName: 'k' } }), true],
+  ['K22 oneOf', NESTED({ oneOf: [{ type: 'string' }, { type: 'integer' }] }), true],
+  ['K23 not', NESTED({ not: { type: 'string' } }), true],
+  ['K24 if, then and else', NESTED({ if: { type: 'string' }, then: { minLength: 2 } }), true],
+  ['K25 dependentSchemas', NESTED({ dependentSchemas: { a: { required: ['b'] } } }), true],
+];
+
+for (const [row, schema, microLeaf] of FAST_FORM_ROWS) {
+  test(`fast form table: ${row} ${microLeaf ? 'runs as a micro-leaf' : 'has a fast form'}`, () => {
+    const result = compile({ roots: new Map([['root', schema]]) }, { unknownFormats: 'warn', fastPath: true });
+    assert.deepEqual({ fastCheck: result.fastExports.get('root'), microLeaf: result.source.includes('leafPasses(') }, { fastCheck: 'is_root', microLeaf });
+  });
+}
+
+const RULES = new Map([['rules.isEven', { importPath: './rules.mjs', exportName: 'isEven' }]]);
+
+test('no fast check for a root that reaches a validation function, also through $ref, while a root beside it keeps its own', () => {
+  const result = compile(
+    {
+      roots: new Map<string, unknown>([
+        ['Money', { type: 'integer', exprtValidation: ['rules.isEven'] }],
+        ['Order', { type: 'object', properties: { total: { $ref: 'Money' } } }],
+        ['Note', { type: 'string' }],
+      ]),
+      validations: RULES,
+    },
+    { unknownFormats: 'warn', fastPath: true },
+  );
+  assert.deepEqual([...result.fastExports], [['Note', 'is_Note']]);
+});
+
+test('no fast check for a root whose top-level object or array check is a micro-leaf, or that holds only micro-leaves or an evaluation record', () => {
+  const result = compile(
+    {
+      roots: new Map<string, unknown>([
+        ['Patterns', { type: 'object', patternProperties: { '^a': { type: 'string' } } }],
+        ['Contains', { type: 'array', contains: { type: 'string' } }],
+        ['OnlyOneOf', { oneOf: [{ type: 'string' }, { type: 'integer' }] }],
+        ['Unevaluated', { type: 'object', properties: { a: {} }, unevaluatedProperties: false }],
+      ]),
+    },
+    { unknownFormats: 'warn', fastPath: true },
+  );
+  assert.deepEqual([...result.fastExports], []);
+});
+
+test('with fastPath off the module exports no fast check and is the same as without the option', () => {
+  const schema = { type: 'object', required: ['a'], properties: { a: { type: 'string', format: 'date' } } };
+  const plain = compile({ roots: new Map([['root', schema]]) }, { unknownFormats: 'warn' });
+  const off = compile({ roots: new Map([['root', schema]]) }, { unknownFormats: 'warn', fastPath: false });
+  assert.deepEqual({ source: off.source, fastExports: [...off.fastExports] }, { source: plain.source, fastExports: [] });
+});

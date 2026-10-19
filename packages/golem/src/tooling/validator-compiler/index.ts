@@ -32,6 +32,11 @@ export interface CompileOptions {
   readonly locate?: (resource: string, pointer: string) => SchemaPlace | undefined;
   /** Emit TypeScript: each exported validator carries its type. */
   readonly typed?: boolean;
+  /**
+   * Also export `is_X(value)` beside `validate_X` for each root that has a fast check: true exactly when `validate_X`
+   * reports no issue, with no issue or path built. Off by default; with it off the module is as without the option.
+   */
+  readonly fastPath?: boolean;
 }
 
 export interface CompileResult {
@@ -39,6 +44,11 @@ export interface CompileResult {
   readonly source: string;
   /** The name each root's validator is exported under, by root name. The names depend on the roots' own names only, and exist when the source is empty. */
   readonly exports: ReadonlyMap<string, string>;
+  /**
+   * The name each root's fast check is exported under, by root name, with `fastPath`. A root has none when its schema
+   * reaches a validation function, keeps an evaluation record, or has no check with a fast form; empty when the source is.
+   */
+  readonly fastExports: ReadonlyMap<string, string>;
   readonly diagnostics: readonly GolemDiagnostic[];
 }
 
@@ -48,6 +58,11 @@ const DEFAULT_RUNTIME_MODULE = '@exprtlabs/golem/validation-runtime';
 export function compile(input: CompileInput, options: CompileOptions): CompileResult {
   const { module, diagnostics } = lower(input, options);
   const exports = exportNames(input.roots.keys());
-  if (diagnostics.some(entry => entry.severity === GolemDiagnosticSeverity.Error)) return { source: '', exports, diagnostics };
-  return { source: emit(module, { runtimeModule: options.runtimeModule ?? DEFAULT_RUNTIME_MODULE, ...(options.typed ? { typed: true } : {}) }), exports, diagnostics };
+  if (diagnostics.some(entry => entry.severity === GolemDiagnosticSeverity.Error)) return { source: '', exports, fastExports: new Map(), diagnostics };
+  const { source, fastExports } = emit(module, {
+    runtimeModule: options.runtimeModule ?? DEFAULT_RUNTIME_MODULE,
+    ...(options.typed ? { typed: true } : {}),
+    ...(options.fastPath ? { fastPath: true } : {}),
+  });
+  return { source, exports, fastExports, diagnostics };
 }

@@ -20,27 +20,36 @@ export interface CompiledValidatorInput {
   readonly validations?: Readonly<Record<string, { readonly importPath: string; readonly exportName: string }>>;
   /** Files written next to the emitted module, by file name. */
   readonly modules?: Readonly<Record<string, string>>;
+  /** Compiles with `fastPath`, so the module also exports the fast check of each root that has one. */
+  readonly fastPath?: boolean;
 }
+
+/** A generated fast check: true exactly when the root's validator reports no issue. */
+export type FastCheck = (value: unknown) => boolean;
 
 /** The validators of a compiled module: what it exports, and the export name of each root. */
 export interface CompiledValidatorModule {
   /** Each root's validator, by root name. */
   readonly byRoot: Readonly<Record<string, Validator>>;
-  /** Every export of the module, by export name: the scope a module that imports them runs in. */
+  /** Every validator the module exports, by export name: the scope a module that imports them runs in. */
   readonly byExport: Readonly<Record<string, Validator>>;
   /** The export name of each root, by root name. */
   readonly exports: ReadonlyMap<string, string>;
+  /** The fast check of each root that has one, by root name; empty without `fastPath`. */
+  readonly fastByRoot: Readonly<Record<string, FastCheck>>;
+  /** The emitted module. */
+  readonly source: string;
 }
 
 /** Compiles the roots, writes the module to a temp directory and imports it. */
 export async function compileValidatorModule(input: CompiledValidatorInput): Promise<CompiledValidatorModule> {
-  const { source, exports, diagnostics } = compile(
+  const { source, exports, fastExports, diagnostics } = compile(
     {
       roots: new Map(Object.entries(input.roots)),
       resources: new Map(Object.entries(input.resources ?? {})),
       validations: new Map(Object.entries(input.validations ?? {})),
     },
-    { unknownFormats: input.unknownFormats ?? 'warn', runtimeModule },
+    { unknownFormats: input.unknownFormats ?? 'warn', runtimeModule, ...(input.fastPath ? { fastPath: true } : {}) },
   );
   const errors = diagnostics.filter(entry => entry.severity === GolemDiagnosticSeverity.Error);
   if (errors.length > 0) throw new Error(`Compile failed: ${errors.map(entry => `${entry.code} ${entry.message}`).join('; ')}`);
@@ -49,9 +58,17 @@ export async function compileValidatorModule(input: CompiledValidatorInput): Pro
     const file = path.join(directory, 'validators.mjs');
     writeFileSync(file, source);
     for (const [name, text] of Object.entries(input.modules ?? {})) writeFileSync(path.join(directory, name), text);
-    const loaded = await import(pathToFileURL(file).href) as Readonly<Record<string, Validator>>;
-    const byExport = Object.fromEntries(Object.entries(loaded).filter(([, value]) => typeof value === 'function'));
-    return { byRoot: Object.fromEntries([...exports].map(([root, exported]) => [root, loaded[exported]] as const)), byExport, exports };
+    const namespace = await import(pathToFileURL(file).href);
+    const loaded: Readonly<Record<string, Validator>> = namespace;
+    const fastChecks: Readonly<Record<string, FastCheck>> = namespace;
+    const byExport = Object.fromEntries(Object.entries(loaded).filter(([name, value]) => typeof value === 'function' && name.startsWith('validate_')));
+    return {
+      byRoot: Object.fromEntries([...exports].map(([root, exported]) => [root, loaded[exported]] as const)),
+      byExport,
+      exports,
+      fastByRoot: Object.fromEntries([...fastExports].map(([root, exported]) => [root, fastChecks[exported]] as const)),
+      source,
+    };
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }

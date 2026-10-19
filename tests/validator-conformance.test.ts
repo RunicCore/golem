@@ -9,7 +9,7 @@ import { compile } from '@exprtlabs/golem/validator-compiler';
 
 import { JSON_SCHEMA_2020_12_ID, JSON_SCHEMA_2020_12_META_SCHEMAS } from '#openapi/openapi-schemas/json-schema-2020-12';
 
-import { compileValidators } from './support/compiled-validators.js';
+import { compileValidatorModule, compileValidators, type FastCheck } from './support/compiled-validators.js';
 import { workspace } from './support/process.js';
 
 // The official JSON-Schema-Test-Suite, draft 2020-12 (see SOURCE.md next to the files). Every case runs unless a
@@ -126,6 +126,21 @@ function validatorOf(group: SuiteGroup): Promise<Validator> {
   return created;
 }
 
+const compiledFast = new Map<SuiteGroup, Promise<FastCheck | undefined>>();
+
+/** The root's fast check with `fastPath` on; undefined when the root has none (a validation function, an evaluation record, or no check with a fast form). */
+function fastCheckOf(group: SuiteGroup): Promise<FastCheck | undefined> {
+  const known = compiledFast.get(group);
+  if (known) return known;
+  const created = compileValidatorModule({
+    roots: { root: group.schema },
+    ...(usesDialectMetaSchema(group) ? { resources: JSON_SCHEMA_2020_12_META_SCHEMAS } : {}),
+    fastPath: true,
+  }).then(module => module.fastByRoot.root);
+  compiledFast.set(group, created);
+  return created;
+}
+
 for (const { file, groups } of suite) {
   for (const group of groups) {
     for (const testCase of group.tests) {
@@ -135,6 +150,9 @@ for (const { file, groups } of suite) {
         const issues = validate(testCase.data, true);
         assert.equal(issues.length === 0, testCase.valid, `all errors: ${JSON.stringify(issues)}`);
         assert.equal(validate(testCase.data, false).length === 0, testCase.valid, 'first error only');
+        // The fast check gives the same answer in both directions; a root without one takes the full route.
+        const isValid = await fastCheckOf(group);
+        assert.equal(isValid === undefined ? testCase.valid : isValid(testCase.data), testCase.valid, 'fast check');
       });
     }
   }
