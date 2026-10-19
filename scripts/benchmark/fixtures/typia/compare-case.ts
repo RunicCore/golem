@@ -21,6 +21,8 @@ export interface Subject {
   readonly late: object;
   /** The valid value plus one unknown property. */
   readonly extra: object;
+  /** Edge values of the contract checks, by name; the full validator decides what each must give. */
+  readonly probes: readonly (readonly [name: string, value: object])[];
   readonly is: (value: unknown) => boolean;
   readonly equals: (value: unknown) => boolean;
 }

@@ -6,15 +6,21 @@ import './typia-comparison.model.generated.js';
 import type { Agreement, CompareCase, CompareTask, MobxTwins, Subject, TwinFactories, TwinKind } from './compare-case.js';
 import { imodelTwins } from './typia-imodel.model.js';
 import type {
-  TCompareArray, TCompareFlat, TCompareItem, TCompareNested, TCompareTuple, TCompareUnion,
+  TCompareArray, TCompareFlat, TCompareItem, TCompareNested, TCompareOptional, TCompareTuple, TCompareUnion,
 } from './typia-comparison.model.js';
 
 
 /** The JSON form of a model value: a `Date` is an ISO string, everything else keeps its type. */
 type Wire<T> = T extends Date ? string : T extends object ? { [K in keyof T]: Wire<T[K]> } : T;
 
-/** A wrong value at a path of the initial data. */
-interface Mutation { readonly path: readonly (string | number)[]; readonly value: unknown }
+/** Stands for a key removed from the initial data. */
+const MISSING = Symbol('missing');
+
+/**
+ * A wrong value at a path of the initial data, or `MISSING` to remove the key. `onValue` sets it on the built value
+ * instead, for a value that a twin's constructor refuses (an unknown union tag).
+ */
+interface Mutation { readonly path: readonly (string | number)[]; readonly value: unknown; readonly onValue?: true }
 
 interface ModelSpec<T extends { id: number }> {
   readonly name: string;
@@ -25,6 +31,8 @@ interface ModelSpec<T extends { id: number }> {
   /** One wrong type that the validators meet early (the first field) and one that they meet late (the last field checked). */
   readonly early: Mutation;
   readonly late: Mutation;
+  /** Edge values of the contract checks (finite numbers, valid Dates, required keys, union tags, tuple length), by name. */
+  readonly probes: readonly (readonly [name: string, mutation: Mutation])[];
   readonly is: (value: unknown) => value is T;
   readonly assert: (value: unknown) => T;
   readonly equals: (value: unknown) => value is T;
@@ -51,6 +59,8 @@ const flat: ModelSpec<TCompareFlat> = {
   invalid: [{ ...{ id: 7, name: 'Ada', email: 'a@b.c', age: 36, score: 1, active: true, createdAt: at }, age: '36' }, { id: 7 }],
   early: { path: ['id'], value: '7' },
   late: { path: ['createdAt'], value: 'not a date' },
+  probes: [['NaN', { path: ['age'], value: Number.NaN }], ['Infinity', { path: ['score'], value: Number.POSITIVE_INFINITY }],
+    ['invalid Date', { path: ['createdAt'], value: new Date(Number.NaN) }], ['missing key', { path: ['email'], value: MISSING }]],
   is: typia.createIs<TCompareFlat>(),
   assert: typia.createAssert<TCompareFlat>(),
   equals: typia.createEquals<TCompareFlat>(),
@@ -68,6 +78,8 @@ const nested: ModelSpec<TCompareNested> = {
   ],
   early: { path: ['id'], value: '11' },
   late: { path: ['shipping', 'lng'], value: 'north' },
+  probes: [['NaN', { path: ['shipping', 'lat'], value: Number.NaN }], ['Infinity', { path: ['owner', 'address', 'lng'], value: Number.NEGATIVE_INFINITY }],
+    ['invalid Date', { path: ['createdAt'], value: new Date(Number.NaN) }], ['missing key', { path: ['billing', 'zip'], value: MISSING }]],
   is: typia.createIs<TCompareNested>(),
   assert: typia.createAssert<TCompareNested>(),
   equals: typia.createEquals<TCompareNested>(),
@@ -95,6 +107,9 @@ const union: ModelSpec<TCompareUnion> = {
   invalid: [{ id: 5, shape: { kind: 'rect', width: '3', height: 4, at } }, { id: 5, shape: { kind: 'hexagon', at } }],
   early: { path: ['id'], value: '5' },
   late: { path: ['shape', 'at'], value: 'not a date' },
+  probes: [['NaN', { path: ['shape', 'width'], value: Number.NaN }], ['invalid Date', { path: ['shape', 'at'], value: new Date(Number.NaN) }],
+    ['null tag', { path: ['shape', 'kind'], value: null, onValue: true }], ['wrong tag', { path: ['shape', 'kind'], value: 'circle', onValue: true }],
+    ['missing key', { path: ['shape', 'height'], value: MISSING }]],
   is: typia.createIs<TCompareUnion>(),
   assert: typia.createAssert<TCompareUnion>(),
   equals: typia.createEquals<TCompareUnion>(),
@@ -124,6 +139,8 @@ const array: ModelSpec<TCompareArray> = {
   invalid: [{ id: 3, items: 'none' }, { id: 3, items: items.map((item, i) => i === 99 ? { ...item, price: '9.99' } : item) }],
   early: { path: ['id'], value: '3' },
   late: { path: ['items', 99, 'price'], value: '9.99' },
+  probes: [['NaN', { path: ['items', 50, 'price'], value: Number.NaN }], ['invalid Date', { path: ['items', 99, 'createdAt'], value: new Date(Number.NaN) }],
+    ['missing key', { path: ['items', 10, 'sku'], value: MISSING }]],
   is: typia.createIs<TCompareArray>(),
   assert: typia.createAssert<TCompareArray>(),
   equals: typia.createEquals<TCompareArray>(),
@@ -138,11 +155,29 @@ const tuple: ModelSpec<TCompareTuple> = {
   invalid: [{ id: 9, row: [1, 'one', true, at], range: [10] }, { id: 9, row: [1, 2, true, at], range: [10, 20] }],
   early: { path: ['id'], value: '9' },
   late: { path: ['range', 1], value: 'twenty' },
+  probes: [['NaN', { path: ['row', 0], value: Number.NaN }], ['Infinity', { path: ['range', 0], value: Number.POSITIVE_INFINITY }],
+    ['invalid Date', { path: ['row', 3], value: new Date(Number.NaN) }], ['tuple length', { path: ['range'], value: [10] }]],
   is: typia.createIs<TCompareTuple>(),
   assert: typia.createAssert<TCompareTuple>(),
   equals: typia.createEquals<TCompareTuple>(),
   decode: w => ({ id: w.id, row: [w.row[0], w.row[1], w.row[2], new Date(w.row[3])], range: [w.range[0], w.range[1]] }),
   encode: m => ({ id: m.id, row: [m.row[0], m.row[1], m.row[2], m.row[3].toISOString()], range: [m.range[0], m.range[1]] }),
+};
+
+const optional: ModelSpec<TCompareOptional> = {
+  name: 'optional',
+  codecId: 'TCompareOptional',
+  model: { id: 13, name: 'Alan Turing', note: 'enigma', createdAt: at },
+  invalid: [{ id: 13, name: 'A', nickname: 1, createdAt: at }, { id: 13 }],
+  early: { path: ['id'], value: '13' },
+  late: { path: ['createdAt'], value: 'not a date' },
+  probes: [['Infinity', { path: ['id'], value: Number.POSITIVE_INFINITY }], ['invalid Date', { path: ['createdAt'], value: new Date(Number.NaN) }],
+    ['missing key', { path: ['name'], value: MISSING }], ['wrong optional', { path: ['nickname'], value: 1 }]],
+  is: typia.createIs<TCompareOptional>(),
+  assert: typia.createAssert<TCompareOptional>(),
+  equals: typia.createEquals<TCompareOptional>(),
+  decode: w => ({ id: w.id, name: w.name, ...(w.nickname === undefined ? {} : { nickname: w.nickname }), ...(w.note === undefined ? {} : { note: w.note }), createdAt: new Date(w.createdAt) }),
+  encode: m => ({ id: m.id, name: m.name, ...(m.nickname === undefined ? {} : { nickname: m.nickname }), ...(m.note === undefined ? {} : { note: m.note }), createdAt: m.createdAt.toISOString() }),
 };
 
 /** Each result is reduced to one number so a timed call cannot be dropped; every model has a numeric `id`. */
@@ -156,8 +191,20 @@ function mutated(init: unknown, mutation: Mutation): unknown {
   const copy = structuredClone(init);
   let target = copy as Record<PropertyKey, unknown>;
   for (const key of mutation.path.slice(0, -1)) target = target[key] as Record<PropertyKey, unknown>;
-  target[mutation.path[mutation.path.length - 1]] = mutation.value;
+  const last = mutation.path[mutation.path.length - 1];
+  if (mutation.value === MISSING) delete target[last];
+  else target[last] = mutation.value;
   return copy;
+}
+
+/** Sets the mutation's value on a built value, a class instance included, and returns that value. */
+function setAt(value: object, mutation: Mutation): object {
+  let target: unknown = value;
+  for (const key of mutation.path.slice(0, -1)) target = typeof target === 'object' && target !== null ? Reflect.get(target, key) : undefined;
+  if (typeof target !== 'object' || target === null || !Reflect.set(target, mutation.path[mutation.path.length - 1], mutation.value)) {
+    throw new Error(`Cannot set ${mutation.path.join('.')} on the built value`);
+  }
+  return value;
 }
 
 /** A twin's value must be what its name says: every nested model a class instance, and observable for MobX. */
@@ -169,7 +216,7 @@ function assertInstances(value: unknown, twin: TwinKind, where: string): void {
   for (const [key, entry] of Object.entries(value)) assertInstances(entry, twin, `${where}.${key}`);
 }
 
-const specs = [flat, nested, union, array, tuple] as const;
+const specs = [flat, nested, union, array, tuple, optional] as const;
 
 /** Every model in each form that exists: plain, IModel twin, MobX twin. A value is built from plain initial data. */
 export function createSubjects(twins: MobxTwins): readonly Subject[] {
@@ -190,6 +237,10 @@ export function createSubjects(twins: MobxTwins): readonly Subject[] {
       early: make(mutated(spec.model, spec.early)),
       late: make(mutated(spec.model, spec.late)),
       extra: Object.assign(make(structuredClone(spec.model)), { unknownProperty: 1 }),
+      probes: [
+        ...spec.probes.map(([name, mutation]) => [name, mutation.onValue ? setAt(make(structuredClone(spec.model)), mutation) : make(mutated(spec.model, mutation))] as const),
+        ['undefined unknown key', Object.assign(make(structuredClone(spec.model)), { unknownProperty: undefined })] as const,
+      ],
       is: spec.is,
       equals: spec.equals,
     };
@@ -249,7 +300,8 @@ function check<T extends { id: number }>(spec: ModelSpec<T>): void {
   assert.deepEqual(spec.encode(spec.model), wire, where('hand-written encode'));
 }
 
-function casesOf<T extends { id: number }>(spec: ModelSpec<T>): CompareCase[] {
+/** `conversions` adds decode and encode; the optional-field model runs validation only, to keep the window short. */
+function casesOf<T extends { id: number }>(spec: ModelSpec<T>, conversions = true): CompareCase[] {
   // Resolve the codec once, as the other fixtures do; timed calls do only the work.
   const codec = requireObjectCodec<T>(spec.codecId);
   const { model } = spec;
@@ -262,12 +314,14 @@ function casesOf<T extends { id: number }>(spec: ModelSpec<T>): CompareCase[] {
     entry('validate', 'typia is', () => spec.is(model)),
     entry('validate', 'typia assert', () => spec.assert(model)),
     entry('validate', 'typia equals', () => spec.equals(model)),
-    entry('decode', 'golem fromWireFormat', () => codec.fromWireFormat(wire)),
-    entry('decode', 'golem fromWireFormat, validate off', () => codec.fromWireFormat(wire, off)),
-    entry('decode', 'hand-written', () => spec.decode(wire)),
-    entry('encode', 'golem toWireFormat', () => codec.toWireFormat(model)),
-    entry('encode', 'golem toWireFormat, validate off', () => codec.toWireFormat(model, off)),
-    entry('encode', 'hand-written', () => spec.encode(model)),
+    ...(conversions ? [
+      entry('decode', 'golem fromWireFormat', () => codec.fromWireFormat(wire)),
+      entry('decode', 'golem fromWireFormat, validate off', () => codec.fromWireFormat(wire, off)),
+      entry('decode', 'hand-written', () => spec.decode(wire)),
+      entry('encode', 'golem toWireFormat', () => codec.toWireFormat(model)),
+      entry('encode', 'golem toWireFormat, validate off', () => codec.toWireFormat(model, off)),
+      entry('encode', 'hand-written', () => spec.encode(model)),
+    ] : []),
   ];
 }
 
@@ -291,9 +345,9 @@ function subjectCases(subject: Subject): CompareCase[] {
 
 /** Each library's own checks: valid and invalid input, and the agreement of decode and encode. Run before timing. */
 export function verifyCompareModels(): void {
-  check(flat); check(nested); check(union); check(array); check(tuple);
+  check(flat); check(nested); check(union); check(array); check(tuple); check(optional);
 }
 
 export function createCompareCases(twins: MobxTwins): readonly CompareCase[] {
-  return [...[casesOf(flat), casesOf(nested), casesOf(union), casesOf(array), casesOf(tuple)].flat(), ...createSubjects(twins).flatMap(subjectCases)];
+  return [...[casesOf(flat), casesOf(nested), casesOf(union), casesOf(array), casesOf(tuple), casesOf(optional, false)].flat(), ...createSubjects(twins).flatMap(subjectCases)];
 }

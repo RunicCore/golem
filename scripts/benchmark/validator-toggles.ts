@@ -3,9 +3,9 @@
  * `validator-speed-design`, section 5) writes them, with one cost switched on or off at a time. They are hand-made
  * JavaScript, not golem output, so no toggle needs product code. Each row of a toggle run names what it changed.
  *
- * A toggle that is not here needs the fast check to exist first: the per-item call and the union tag read are written
- * inline by the generator below, and the real hop chain (codec, generated `validate`, `isValidModelValue`,
- * `runModelValidator`) is only approximated by `hops` forwarding closures.
+ * The per-item call and the union tag read are written inline by the generator below. The real call chain (codec,
+ * generated `validate`, `isValidModelValueFast`, the generated `is_X`) is timed on the generated code itself, beside
+ * these rows (typia-validation.ts).
  */
 
 /** How unknown keys are found. F1 and F2 are exact under the JSON-view rule; `count` and `none` are not. */
@@ -22,19 +22,14 @@ export interface Toggles {
   readonly finite: FiniteTest;
   /** `valid` adds `t - t === 0` for a Date; `off` is `instanceof Date` alone. */
   readonly date: 'valid' | 'off';
-  /**
-   * Forwarding closures between the caller and the validator, each with the codec call's signature. They share one code
-   * body across every scratch validator, as the codec wrappers do across codecs, so in a run with many models the
-   * call is megamorphic; the cost grows with the number of validators in the process.
-   */
-  readonly hops: number;
 }
 
-export const BASE_TOGGLES: Toggles = { keyTest: 'F1', finite: 'sub', date: 'valid', hops: 0 };
+export const BASE_TOGGLES: Toggles = { keyTest: 'F1', finite: 'sub', date: 'valid' };
 
 type Shape =
   | 'number' | 'string' | 'boolean' | 'date'
   | { readonly literal: string }
+  | { readonly optional: Shape }
   | { readonly object: Fields }
   | { readonly array: Shape }
   | { readonly tuple: readonly Shape[] }
@@ -68,6 +63,7 @@ const MODELS: Readonly<Record<string, Fields>> = {
   },
   array: { id: 'number', items: { array: { object: item } } },
   tuple: { id: 'number', row: { tuple: ['number', 'string', 'boolean', 'date'] }, range: { tuple: ['number', 'number'] } },
+  optional: { id: 'number', name: 'string', nickname: { optional: 'string' }, note: { optional: 'string' }, createdAt: 'date' },
 };
 
 class Writer {
@@ -85,6 +81,7 @@ class Writer {
     if (shape === 'string' || shape === 'boolean') return `typeof ${x} === '${shape}'`;
     if (shape === 'date') return `${x} instanceof Date${this.toggles.date === 'valid' ? ` && ${x}.getTime() - ${x}.getTime() === 0` : ''}`;
     if ('literal' in shape) return `${x} === ${JSON.stringify(shape.literal)}`;
+    if ('optional' in shape) return `(${x} === undefined || ${this.test(shape.optional, x)})`;
     if ('object' in shape) return `${this.object(shape.object)}(${x})`;
     if ('array' in shape) {
       const name = this.next('a');
@@ -130,9 +127,12 @@ class Writer {
       case 'F2':
         head = `let m = 0; ${keys.map((key, i) => `const x${i} = pie.call(v, ${JSON.stringify(key)}) ? v.${key} : undefined; if (x${i} !== undefined) m++;`).join(' ')} if (Object.keys(v).length !== m) { ${unknownLoop} }`;
         break;
-      case 'count':
-        head = `if (Object.keys(v).length !== ${keys.length}) return false; ${keys.map((key, i) => `const x${i} = v.${key};`).join(' ')}`;
+      case 'count': {
+        // With optional fields a valid value can hold fewer keys, so the count is only an upper bound there.
+        const optional = keys.some(key => { const shape = fields[key]; return typeof shape === 'object' && 'optional' in shape; });
+        head = `if (Object.keys(v).length ${optional ? '>' : '!=='} ${keys.length}) return false; ${keys.map((key, i) => `const x${i} = v.${key};`).join(' ')}`;
         break;
+      }
       case 'none':
         head = keys.map((key, i) => `const x${i} = v.${key};`).join(' ');
         break;
@@ -150,12 +150,7 @@ export function scratchValidator(model: string, toggles: Toggles): (value: unkno
   const writer = new Writer(toggles);
   const root = writer.object(fields);
   const make = new Function('pie', `${writer.functions.join('\n')}\nreturn ${root};`) as (pie: typeof Object.prototype.propertyIsEnumerable) => (value: unknown) => boolean;
-  let validator: (value: unknown, options?: unknown) => boolean = make(Object.prototype.propertyIsEnumerable);
-  for (let hop = 0; hop < toggles.hops; hop++) {
-    const inner = validator;
-    validator = (value, options) => inner(value, options);
-  }
-  return validator;
+  return make(Object.prototype.propertyIsEnumerable);
 }
 
 /**

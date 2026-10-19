@@ -2,9 +2,9 @@ import type { IModel } from '@exprtlabs/golem/model';
 import type { TwinFactories } from './compare-case.js';
 import {
   TTwinAddressBaseModel, TTwinArrayBaseModel, TTwinCircleBaseModel, TTwinFlatBaseModel, TTwinItemBaseModel,
-  TTwinLabelBaseModel, TTwinNestedBaseModel, TTwinOwnerBaseModel, TTwinRectBaseModel, TTwinTupleBaseModel,
-  TTwinUnionBaseModel,
-  type TTwinArrayInit, type TTwinFlatInit, type TTwinNestedInit, type TTwinTupleInit, type TTwinUnionInit,
+  TTwinLabelBaseModel, TTwinNestedBaseModel, TTwinOptionalBaseModel, TTwinOwnerBaseModel, TTwinRectBaseModel,
+  TTwinTupleBaseModel, TTwinUnionBaseModel,
+  type TTwinArrayInit, type TTwinFlatInit, type TTwinNestedInit, type TTwinOptionalInit, type TTwinTupleInit, type TTwinUnionInit,
 } from './typia-imodel.model.generated.js';
 
 // The IModel twins of the typia comparison models (typia-comparison.model.ts): the same fields, declared as IModel, so
@@ -81,6 +81,15 @@ export type TTwinTuple = IModel<{
 }>;
 export class TwinTuple extends TTwinTupleBaseModel {}
 
+export type TTwinOptional = IModel<{
+  id: number;
+  name: string;
+  nickname?: string;
+  note?: string;
+  createdAt: Date;
+}>;
+export class TwinOptional extends TTwinOptionalBaseModel {}
+
 // A value is built from plain initial data; the constructor makes each nested model a class instance.
 export const imodelTwins: TwinFactories = {
   flat: { codecId: 'TTwinFlat', make: init => new TwinFlat(init as TTwinFlatInit) },
@@ -88,4 +97,5 @@ export const imodelTwins: TwinFactories = {
   union: { codecId: 'TTwinUnion', make: init => new TwinUnion(init as TTwinUnionInit) },
   array: { codecId: 'TTwinArray', make: init => new TwinArray(init as TTwinArrayInit) },
   tuple: { codecId: 'TTwinTuple', make: init => new TwinTuple(init as TTwinTupleInit) },
+  optional: { codecId: 'TTwinOptional', make: init => new TwinOptional(init as TTwinOptionalInit) },
 };

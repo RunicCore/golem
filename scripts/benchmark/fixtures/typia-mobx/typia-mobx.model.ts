@@ -2,9 +2,9 @@ import type { IModel } from '@exprtlabs/golem/model';
 import { asGenObservable } from '@exprtlabs/golem/mobx';
 import {
   TMobxAddressBaseModel, TMobxArrayBaseModel, TMobxCircleBaseModel, TMobxFlatBaseModel, TMobxItemBaseModel,
-  TMobxLabelBaseModel, TMobxNestedBaseModel, TMobxOwnerBaseModel, TMobxRectBaseModel, TMobxTupleBaseModel,
-  TMobxUnionBaseModel,
-  type TMobxArrayInit, type TMobxFlatInit, type TMobxNestedInit, type TMobxTupleInit, type TMobxUnionInit,
+  TMobxLabelBaseModel, TMobxNestedBaseModel, TMobxOptionalBaseModel, TMobxOwnerBaseModel, TMobxRectBaseModel,
+  TMobxTupleBaseModel, TMobxUnionBaseModel,
+  type TMobxArrayInit, type TMobxFlatInit, type TMobxNestedInit, type TMobxOptionalInit, type TMobxTupleInit, type TMobxUnionInit,
 } from './typia-mobx.model.generated.js';
 
 // The MobX twins of the typia comparison models: the IModel twins (typia-imodel.model.ts) with `mobx: true`, each class
@@ -103,6 +103,17 @@ export class MobxTuple extends TMobxTupleBaseModel {
   public constructor(values: TMobxTupleInit) { super(values); asGenObservable(this); }
 }
 
+export type TMobxOptional = IModel<{
+  id: number;
+  name: string;
+  nickname?: string;
+  note?: string;
+  createdAt: Date;
+}>;
+export class MobxOptional extends TMobxOptionalBaseModel {
+  public constructor(values: TMobxOptionalInit) { super(values); asGenObservable(this); }
+}
+
 /** The twin factories of this file; the typia comparison builds each MobX value from plain initial data. */
 export const mobxTwins: Readonly<Record<string, { readonly codecId: string; readonly make: (init: unknown) => object }>> = {
   flat: { codecId: 'TMobxFlat', make: init => new MobxFlat(init as TMobxFlatInit) },
@@ -110,4 +121,5 @@ export const mobxTwins: Readonly<Record<string, { readonly codecId: string; read
   union: { codecId: 'TMobxUnion', make: init => new MobxUnion(init as TMobxUnionInit) },
   array: { codecId: 'TMobxArray', make: init => new MobxArray(init as TMobxArrayInit) },
   tuple: { codecId: 'TMobxTuple', make: init => new MobxTuple(init as TMobxTupleInit) },
+  optional: { codecId: 'TMobxOptional', make: init => new MobxOptional(init as TMobxOptionalInit) },
 };

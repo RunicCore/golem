@@ -62,3 +62,12 @@ export type TCompareTuple = IObject<{
   row: [number, string, boolean, Date];
   range: [number, number];
 }>;
+
+// One optional field absent and one present: MobX defines the absent one as an own `undefined` key.
+export type TCompareOptional = IObject<{
+  id: number;
+  name: string;
+  nickname?: string;
+  note?: string;
+  createdAt: Date;
+}>;

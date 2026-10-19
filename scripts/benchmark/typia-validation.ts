@@ -6,6 +6,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { prepare, root } from './project.js';
 import { summarize, type BatchSample } from './results.js';
 import { sampleSync, schedule } from './sampling.js';
+import { requireObjectCodec } from '@exprtlabs/golem/serde';
 import { BASE_TOGGLES, EXACT_PRESENCE_FORMS, PRESENCE_FORMS, presenceFill, presenceWalk, scratchValidator, type Toggles } from './validator-toggles.js';
 import type { Agreement, CompareCase, CompareTask, MobxTwins, Subject, TwinFactories, TwinKind } from './fixtures/typia/compare-case.js';
 
@@ -17,7 +18,8 @@ import type { Agreement, CompareCase, CompareTask, MobxTwins, Subject, TwinFacto
  * Writes nothing under docs/: the committed results.json belongs to `npm run bench`.
  *
  * `npm run bench:typia`              validation, twins, failing values, decode and encode (one window)
- * `npm run bench:typia -- --toggles` the cost toggles on the scratch validators (one window)
+ * `npm run bench:typia -- --toggles` the cost toggles on the scratch validators beside the generated fast checks and
+ *                                    the codec call chain (one window)
  * `npm run bench:typia -- --verify`  the checks only, no timing
  */
 const SETTINGS = { warmupMs: 45, batchMs: 24, batches: 5 };
@@ -32,7 +34,9 @@ interface CompareModule {
   consume(value: unknown): number;
 }
 
-const MODELS = ['flat', 'nested', 'union', 'array', 'tuple'] as const;
+const MODELS = ['flat', 'nested', 'union', 'array', 'tuple', 'optional'] as const;
+/** The models whose decode and encode are timed; the optional-field model times validation only. */
+const CONVERSION_MODELS = MODELS.filter(model => model !== 'optional');
 const TWINS: readonly TwinKind[] = ['plain', 'imodel', 'mobx'];
 const fixed = (value: number): string => Math.round(value).toLocaleString('en-US');
 const ratio = (a: number, b: number): string => (a / b).toFixed(2);
@@ -84,33 +88,71 @@ function reportAgreement(rows: readonly Agreement[]): void {
 const TOGGLE_ROWS: readonly (readonly [string, Toggles])[] = [
   ['base', BASE_TOGGLES],
   ['key F2', { ...BASE_TOGGLES, keyTest: 'F2' }],
-  ['key count', { ...BASE_TOGGLES, keyTest: 'count' }],
-  ['key none', { ...BASE_TOGGLES, keyTest: 'none' }],
   ['finite isFinite', { ...BASE_TOGGLES, finite: 'isFinite' }],
   ['finite off', { ...BASE_TOGGLES, finite: 'off' }],
   ['date off', { ...BASE_TOGGLES, date: 'off' }],
-  ['hops 4', { ...BASE_TOGGLES, hops: 4 }],
-  ['floor', { keyTest: 'none', finite: 'off', date: 'off', hops: 0 }],
+  ['floor', { keyTest: 'none', finite: 'off', date: 'off' }],
 ];
-/** Only the key test and the floor depend on how an instance is built, so the twins run these rows. */
-const TWIN_TOGGLE_ROWS = new Set(['base', 'key F2', 'key count', 'key none', 'floor']);
-/** The rows whose result must equal typia `equals` on an unknown property: the sound key tests. */
-const EXACT_ROWS = new Set(['base', 'key F2', 'finite isFinite', 'finite off', 'date off', 'hops 4']);
+/** Only the key test depends on how an instance is built, so the twins run these rows. */
+const TWIN_TOGGLE_ROWS = new Set(['base', 'key F2']);
+/** The rows that keep every key-test contract: each must give the full validator's answer on every probe. */
+const KEY_EXACT_ROWS = new Set(['base', 'key F2', 'finite isFinite', 'finite off', 'date off']);
+/** The rows that also keep the finite and Date checks: each must give the full validator's answer on the edge probes too. */
+const CONTRACT_ROWS = new Set(['base', 'key F2', 'finite isFinite']);
 
-function toggleCases(subjects: readonly Subject[]): CompareCase[] {
+/** The generated functions of one project's validator module, by export name. */
+type ValidatorExports = Readonly<Record<string, unknown>>;
+
+/** The generated `is_X` or `validate_X` of a codec id: the export of that name, with or without the hash suffix. */
+function generatedFunction(exports: ValidatorExports, prefix: 'is' | 'validate', codecId: string): Function {
+  const pattern = new RegExp(`^${prefix}_${codecId}(_[0-9a-f]{8})?$`);
+  const names = Object.keys(exports).filter(name => pattern.test(name));
+  if (names.length !== 1) throw new Error(`The validator module has ${names.length} exports for ${prefix}_${codecId}: ${names.join(', ')}`);
+  const found = exports[names[0]];
+  if (typeof found !== 'function') throw new Error(`${names[0]} is not a function`);
+  return found;
+}
+
+/** How many subjects' valid values the generated fast check accepts: each of those takes the fast route in the codec. */
+const fastRoute = { accepted: 0, subjects: 0, probes: 0 };
+
+function toggleCases(subjects: readonly Subject[], validators: Readonly<Record<TwinKind, ValidatorExports>>): CompareCase[] {
   const cases: CompareCase[] = [];
   for (const subject of subjects) {
     const { model, twin } = subject;
     const entry = (side: string, run: () => unknown): void => { cases.push({ model, twin, task: 'toggle', side, run }); };
+    const codec = requireObjectCodec<object>(subject.codecId);
+    const isValid = generatedFunction(validators[twin], 'is', subject.codecId);
+    const validator = generatedFunction(validators[twin], 'validate', subject.codecId);
+    // The full validator decides what each probe must give; the codec, the fast check and the exact scratch rows agree with it.
+    const probes = [['valid', subject.valid], ['early', subject.early], ['late', subject.late], ['extra', subject.extra], ...subject.probes] as const;
+    const expected = new Map(probes.map(([name, value]) => [name, validator(value, true).length === 0] as const));
+    if (expected.get('valid') !== true || expected.get('extra') !== false) throw new Error(`The validator of ${model}/${twin} does not accept the valid value or rejects no unknown property`);
+    for (const [name, value] of probes) {
+      const full = expected.get(name);
+      if (codec.validate(value) !== full || isValid(value) !== full) throw new Error(`On ${model}/${twin} '${name}': the codec or the fast check differs from the validator (${full})`);
+    }
+    fastRoute.subjects++;
+    if (isValid(subject.valid) === true) fastRoute.accepted++;
+    fastRoute.probes += probes.length;
     entry('typia equals', () => subject.equals(subject.valid));
     entry('typia is', () => subject.is(subject.valid));
+    entry('golem is_X', () => isValid(subject.valid));
+    entry('golem validate', () => codec.validate(subject.valid));
+    if (twin === 'plain') {
+      // A rejected value: the fast check, then the whole full route again (spec 7.5).
+      entry('late is_X', () => isValid(subject.late));
+      entry('late validator', () => validator(subject.late, false));
+      entry('late validate', () => codec.validate(subject.late));
+    }
     for (const [side, toggles] of TOGGLE_ROWS) {
       if (twin !== 'plain' && !TWIN_TOGGLE_ROWS.has(side)) continue;
       const scratch = scratchValidator(model, toggles);
-      for (const [probe, value, expected] of [['valid', subject.valid, true], ['early', subject.early, false], ['late', subject.late, false]] as const) {
-        if (scratch(value) !== expected) throw new Error(`Scratch validator '${side}' on ${model}/${twin}: ${probe} is not ${expected}`);
+      for (const [probe, value] of probes) {
+        const exact = CONTRACT_ROWS.has(side) || (KEY_EXACT_ROWS.has(side) && ['valid', 'early', 'late', 'extra', 'missing key', 'undefined unknown key'].includes(probe));
+        const required = exact || ['valid', 'early', 'late'].includes(probe);
+        if (required && scratch(value) !== expected.get(probe)) throw new Error(`Scratch validator '${side}' on ${model}/${twin}: '${probe}' is not ${expected.get(probe)}`);
       }
-      if (EXACT_ROWS.has(side) && scratch(subject.extra) !== false) throw new Error(`Scratch validator '${side}' on ${model}/${twin} accepts an unknown property`);
       entry(side, () => scratch(subject.valid));
     }
     if (model === 'flat') presenceCases(subject, entry);
@@ -152,17 +194,20 @@ function presenceCases(subject: Subject, entry: (side: string, run: () => unknow
 function reportToggles(cases: readonly CompareCase[], samples: Map<CompareCase, BatchSample[]>): void {
   const median = medians(cases, samples);
   const sides = TOGGLE_ROWS.map(([side]) => side);
-  const against: string[][] = [['model', 'twin', 'equals ops/s', 'is/equals', ...sides]];
-  const gain: string[][] = [['model', 'twin', ...sides.slice(1)]];
+  const against: string[][] = [['model', 'twin', 'equals ops/s', 'is/equals', 'is_X/equals', 'validate/equals', ...sides]];
+  const gain: string[][] = [['model', 'twin', 'is_X/base', 'validate/is_X', ...sides.slice(1)]];
+  const late: string[][] = [['model', 'is_X ops/s', 'validator ops/s', 'validate ops/s', 'validate/validator']];
   for (const model of MODELS) for (const twin of TWINS) {
     const equals = median(model, twin, 'toggle', 'typia equals');
     const has = (side: string): boolean => cases.some(c => c.model === model && c.twin === twin && c.side === side);
     const value = (side: string): number => median(model, twin, 'toggle', side);
-    against.push([model, twin, fixed(equals), ratio(value('typia is'), equals), ...sides.map(side => has(side) ? ratio(value(side), equals) : '-')]);
-    gain.push([model, twin, ...sides.slice(1).map(side => has(side) ? ratio(value(side), value('base')) : '-')]);
+    against.push([model, twin, fixed(equals), ratio(value('typia is'), equals), ratio(value('golem is_X'), equals), ratio(value('golem validate'), equals), ...sides.map(side => has(side) ? ratio(value(side), equals) : '-')]);
+    gain.push([model, twin, ratio(value('golem is_X'), value('base')), ratio(value('golem validate'), value('golem is_X')), ...sides.slice(1).map(side => has(side) ? ratio(value(side), value('base')) : '-')]);
+    if (twin === 'plain') late.push([model, fixed(value('late is_X')), fixed(value('late validator')), fixed(value('late validate')), ratio(value('late validate'), value('late validator'))]);
   }
-  process.stdout.write(`Scratch validators, ratio to typia equals (median of ${SETTINGS.batches} batches of ${SETTINGS.batchMs} ms)\n${table(against)}\n\n`);
-  process.stdout.write(`Each toggle against the base row (above 1 is faster)\n${table(gain)}\n\n`);
+  process.stdout.write(`Generated fast check (is_X, called directly), the codec chain (codec.validate) and the scratch validators, ratio to typia equals (median of ${SETTINGS.batches} batches of ${SETTINGS.batchMs} ms)\n${table(against)}\n\n`);
+  process.stdout.write(`is_X against the scratch base, the codec chain against is_X, and each toggle against the base row (above 1 is faster)\n${table(gain)}\n\n`);
+  process.stdout.write(`A value rejected late: the fast check alone, the full validator alone, and codec.validate (the fast check, then the full route)\n${table(late)}\n\n`);
   const presence: string[][] = [['shape', 'twin', ...PRESENCE_FORMS.map(form => `${form} ops/s`), ...PRESENCE_FORMS.slice(1).map(form => `${form}/enumerable`)]];
   for (const [shape, twins] of [['walk', TWINS], ['fill', ['plain']]] as const) for (const twin of twins) {
     const value = (form: string): number => median('flat', twin, 'toggle', `${shape} ${form}`);
@@ -188,7 +233,7 @@ function reportBench(cases: readonly CompareCase[], samples: Map<CompareCase, Ba
     failing.push([model, twin, fixed(ge), fixed(ee), ratio(ge, ee), ratio(ge, gv), fixed(gl), fixed(el), ratio(gl, el), ratio(gl, gv)]);
   }
   const conversion: string[][] = [['model', 'task', 'golem', 'golem validate off', 'hand-written', 'golem/hand', 'off/hand']];
-  for (const model of MODELS) for (const [task, name] of [['decode', 'fromWireFormat'], ['encode', 'toWireFormat']] as const) {
+  for (const model of CONVERSION_MODELS) for (const [task, name] of [['decode', 'fromWireFormat'], ['encode', 'toWireFormat']] as const) {
     const [g, off, hand] = [`golem ${name}`, `golem ${name}, validate off`, 'hand-written'].map(side => median(model, 'plain', task, side));
     conversion.push([model, task, fixed(g), fixed(off), fixed(hand), ratio(g, hand), ratio(off, hand)]);
   }
@@ -213,8 +258,13 @@ async function main(): Promise<void> {
     module.verifyCompareModels();
     const subjects = module.createSubjects(twins);
     reportAgreement(module.agreements(subjects));
+    const validators = async (project: string): Promise<ValidatorExports> => import(pathToFileURL(path.join(path.dirname(project), 'generated/models/models.validators.generated.js')).href);
+    const plainValidators = await validators(built);
+    // The toggle cases check every probe on the codec, the fast check and the scratch rows when they are made.
+    const toggles = toggleCases(subjects, { plain: plainValidators, imodel: plainValidators, mobx: await validators(builtMobx) });
+    process.stdout.write(`The fast check accepts the valid value of ${fastRoute.accepted} of ${fastRoute.subjects} subjects (plain, IModel, MobX), so the codec answers those without the full validator; ${fastRoute.probes} probes agree with the full validator\n\n`);
     if (mode === 'verify') return;
-    const cases = mode === 'toggles' ? toggleCases(subjects) : module.createCompareCases(twins);
+    const cases = mode === 'toggles' ? toggles : module.createCompareCases(twins);
     const loadBefore = load();
     const started = performance.now();
     const samples = measure(module.consume, cases);
