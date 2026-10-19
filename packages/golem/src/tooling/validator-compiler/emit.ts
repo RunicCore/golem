@@ -1373,11 +1373,14 @@ function writeFastCheck(state: ModuleState, module: IrModule, target: (id: numbe
 }
 
 /**
- * Groups the functions that behave alike: those with the same parameters whose bodies, and fast checks, are the same
- * text once each call names the group of its callee. Groups start as one and split until stable, so recursive functions
- * that mirror each other (a model and its wire form) end up together. A group is named by its lowest id.
+ * Groups the functions that behave alike: those with the same parameters whose bodies are the same text once each call
+ * names the group of its callee. Groups start as one and split until stable, so recursive functions that mirror each
+ * other (a model and its wire form) end up together. The fast check is no part of the key: it follows from the body, and
+ * a model root and an operation root of the same schema must share one function whether or not the fast check is
+ * written for both. A group is named by its lowest id that `fastReached` holds, else by its lowest id, so the group's
+ * fast check is written from a function whose micro-leaves are reached.
  */
-function groupFunctions(written: readonly WrittenFunction[]): ReadonlyMap<number, number> {
+function groupFunctions(written: readonly WrittenFunction[], fastReached: ReadonlySet<number>): ReadonlyMap<number, number> {
   let groups = new Map<number, number>(written.map(entry => [entry.id, 0]));
   let size = 1;
   for (;;) {
@@ -1387,7 +1390,7 @@ function groupFunctions(written: readonly WrittenFunction[]): ReadonlyMap<number
       .replace(FUNCTION_MARK, (_, id: string) => functionName(groups.get(Number(id)) ?? -1))
       .replace(FAST_MARK, (_, id: string) => fastName(functionName(groups.get(Number(id)) ?? -1)));
     for (const entry of written) {
-      const key = `${groups.get(entry.id)}\n${entry.parameters}\n${named(entry.body)}${entry.fast === undefined ? '' : `\n${named(entry.fast.body)}`}`;
+      const key = `${groups.get(entry.id)}\n${entry.parameters}\n${named(entry.body)}`;
       if (!keys.has(key)) keys.set(key, keys.size);
       next.set(entry.id, keys.get(key) ?? 0);
     }
@@ -1396,7 +1399,7 @@ function groupFunctions(written: readonly WrittenFunction[]): ReadonlyMap<number
     size = keys.size;
   }
   const lowest = new Map<number, number>();
-  for (const entry of written) {
+  for (const entry of [...written].sort((first, second) => Number(fastReached.has(second.id)) - Number(fastReached.has(first.id)) || first.id - second.id)) {
     const group = groups.get(entry.id) ?? 0;
     if (!lowest.has(group)) lowest.set(group, entry.id);
   }
@@ -1452,7 +1455,7 @@ export function emit(module: IrModule, options: EmitOptions): EmitResult {
     [...module.exports.map(({ fn }) => target(fn)), ...[...fastReached].flatMap(id => [...(written.get(id)?.fast?.calls ?? [])])],
     id => written.get(id)?.calls ?? [],
   );
-  const representative = groupFunctions([...written.values()].filter(entry => reached.has(entry.id)));
+  const representative = groupFunctions([...written.values()].filter(entry => reached.has(entry.id)), fastReached);
   const kept = [...new Set(representative.values())].sort((first, second) => first - second);
   const names = new Map(kept.map((id, index) => [id, functionName(index, functionAt(id).name)] as const));
   // A mark holds the id after forwarding.
