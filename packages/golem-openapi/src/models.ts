@@ -326,7 +326,7 @@ function modelFieldType(
       .join(' | ');
   }
   if (isJsonObject(schema) && (schema.properties || isJsonObject(schema.additionalProperties))) {
-    const required = new Set(Array.isArray(schema.required) ? schema.required : []);
+    const required = new Set(allOfRequiredNames(schema));
     const fields = objectEntries(schema.properties).map(([name, child]) => `${propertyName(name)}${required.has(name) ? '' : '?'}: ${modelFieldType(child, definitions, nested, seen)}`);
     if (isJsonObject(schema.additionalProperties)) fields.push(`[key: string]: ${fields.length ? 'unknown' : modelFieldType(schema.additionalProperties, definitions, nested, seen)}`);
     return `{ ${fields.join('; ')} }${admitsNull(schema) ? ' | null' : ''}`;
@@ -475,9 +475,22 @@ function sequenceBodyDescriptor(
   return undefined;
 }
 
+/** The required names of a schema: its own, and those that its allOf members list. */
+function allOfRequiredNames(schema: Readonly<Record<string, unknown>>): string[] {
+  const names = (value: unknown): string[] => Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === 'string')
+    : [];
+  return [
+    ...names(schema.required),
+    ...(hasAllOfMembers(schema) ? schema.allOf.flatMap((member) => names(asRecord(member).required)) : []),
+  ];
+}
+
+/** The schema as its own keywords, with the required names of its allOf members folded in. */
 function withoutAllOf(schema: Readonly<Record<string, unknown>>): Readonly<Record<string, unknown>> {
   const { allOf: _members, ...own } = schema;
-  return own;
+  const required = allOfRequiredNames(schema);
+  return required.length ? { ...own, required } : own;
 }
 
 function hasOwnObjectKeywords(schema: Readonly<Record<string, unknown>>): boolean {

@@ -1035,3 +1035,41 @@ test('an object field with its own properties and an allOf member that adds prop
     { at: new Date('2024-05-06T07:08:09.000Z'), b: new Date('2024-05-07T08:09:10.000Z') },
   );
 });
+
+test('a name in the required list of an allOf member is required in the field type and by the validator', async t => {
+  const output = path.join(createFixtureProject(t, 'golem-openapi-allof-required-'), 'sdk');
+  await generateMaterializedSdk(sequenceSerdeDocument({
+    window: {
+      type: 'object',
+      properties: { at: { type: 'string', format: 'date-time' } },
+      allOf: [{ required: ['at'] }],
+    },
+  }), {
+    output,
+    name: 'SequenceSerde',
+    profile: { mobx: false, validation: true, allowAny: false },
+  });
+  copyFixtureFile(output, 'openapi/model-serde/allof-required-types.ts', 'allof-required-types.ts');
+  compileGeneratedSdk(output, [path.join(output, 'allof-required-types.ts')], { strict: true, skipLibCheck: true });
+
+  const models = requireRecord(
+    await import(pathToFileURL(path.join(output, 'dist/index.js')).href),
+    'generated allOf required models',
+  );
+  const VisitModel = models.VisitModel as unknown as new (values?: Record<string, unknown>) => Record<string, unknown>;
+  const codec = requireObjectCodec(generatedCodecIdFromRoot(output, 'Visit'));
+  const construct = VisitModel as unknown as abstract new (values?: never) => object;
+
+  assert.deepEqual(
+    decodeGeneratedModel(VisitModel, { window: { at: '2024-05-06T07:08:09.000Z' } }).window,
+    { at: new Date('2024-05-06T07:08:09.000Z') },
+  );
+  assert.throws(
+    () => codec.fromWireFormat({ window: {} }, { construct }),
+    (error: unknown): true => {
+      assert.ok(error instanceof LibError);
+      assert.equal(error.kind, LibErrorKind.Validation);
+      return true;
+    },
+  );
+});
