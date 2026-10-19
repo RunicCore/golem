@@ -42,6 +42,11 @@ interface Row {
   readonly accepted: readonly Accepted[];
   /** Inputs that the validator rejects, checked with validation on. */
   readonly rejected: readonly Wire[];
+  /**
+   * Inputs that the codec rejects, whose rejected names a generated class does not hold: its constructor keeps only its
+   * declared fields, so the model path has no such name to check.
+   */
+  readonly rejectedOnWire?: readonly Wire[];
 }
 
 const AT = '2024-05-06T07:08:09.000Z';
@@ -246,7 +251,8 @@ const rows: readonly Row[] = [
       Derived: { allOf: [ref('Base'), object({ b: dateTime })], unevaluatedProperties: false },
     }),
     accepted: [{ wire: { a: 'x', b: B }, model: { a: 'x', b: new Date(B) } }],
-    rejected: [{ a: 'x', b: B, z: 'q' }],
+    rejected: [],
+    rejectedOnWire: [{ a: 'x', b: B, z: 'q' }],
   },
   // The T-99 shapes reject invalid input as strict JSON Schema does.
   {
@@ -438,17 +444,36 @@ async function assertValidatorJudges(built: Built, row: Row): Promise<void> {
   }
   for (const wire of row.rejected) {
     await forInput(wire, async () => {
-      assert.throws(
-        () => built.codec.fromWireFormat(wire, { construct: built.construct }),
-        (error: unknown): true => {
-          assert.ok(error instanceof LibError, 'codec rejects the input');
-          assert.equal(error.kind, LibErrorKind.Validation);
-          return true;
-        },
-      );
-      assert.equal(await getValidator(decodeGeneratedModel(built.Model, wire)).validate(), false, 'validator rejects the model');
+      assertCodecRejects(built, wire);
+      assert.equal(await modelPathAccepts(built, wire), false, 'model path rejects the input');
     });
   }
+  for (const wire of row.rejectedOnWire ?? []) {
+    await forInput(wire, () => assertCodecRejects(built, wire));
+  }
+}
+
+function assertCodecRejects(built: Built, wire: Wire): void {
+  assert.throws(
+    () => built.codec.fromWireFormat(wire, { construct: built.construct }),
+    (error: unknown): true => {
+      assert.ok(error instanceof LibError, 'codec rejects the input');
+      assert.equal(error.kind, LibErrorKind.Validation);
+      return true;
+    },
+  );
+}
+
+/** The model path rejects an input when it cannot convert it, or when the validator rejects the decoded model. */
+async function modelPathAccepts(built: Built, wire: Wire): Promise<boolean> {
+  let model: object;
+  try {
+    model = decodeGeneratedModel(built.Model, wire);
+  } catch (error) {
+    if (error instanceof LibError && error.kind === LibErrorKind.Deserialization) return false;
+    throw error;
+  }
+  return getValidator(model).validate();
 }
 
 for (const row of rows) {

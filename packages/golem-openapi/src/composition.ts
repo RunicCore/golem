@@ -105,9 +105,7 @@ export function resolveComposition<S>(
     const joined = joinMembers(members.map(({ descriptor }) => withNeverProperties(descriptor, never)));
     return {
       kind: 'inherits',
-      descriptor: closes
-        ? { ...joined, constraints: [...(joined.constraints ?? []), { kind: 'unevaluatedProperties', schema: false }] }
-        : joined,
+      descriptor: closes ? { ...joined, constraints: [...(joined.constraints ?? []), evaluatedNamesOnly(composed.slots)] } : joined,
       never,
     };
   }
@@ -286,6 +284,17 @@ export function ownKeywords(schema: Readonly<Record<string, unknown>>): Readonly
   const { allOf: _members, ...own } = schema;
   const required = composedRequired(schema);
   return required.length ? { ...own, required } : own;
+}
+
+/**
+ * `unevaluatedProperties: false` of a component whose parts are all open: the evaluated names are exactly the names that
+ * the parts list, so the constraint is `propertyNames` over them. The descriptor's members are objects with
+ * `additionalProperties: true`, which in JSON Schema evaluates every name, so the keyword itself would close nothing.
+ */
+function evaluatedNamesOnly<C>(slots: Readonly<Record<string, C>>): ModelConstraint {
+  const names = Object.keys(slots).sort().map((value): ModelTypeDescriptor => ({ kind: 'literal', value }));
+  const [only] = names;
+  return { kind: 'propertyNames', schema: names.length === 1 && only ? only : names.length === 0 ? false : { kind: 'union', variants: names } };
 }
 
 function withNeverProperties(descriptor: ModelTypeDescriptor, never: readonly string[]): ModelTypeDescriptor {

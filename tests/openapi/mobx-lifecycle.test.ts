@@ -48,9 +48,9 @@ function lifecycleDocument(): Record<string, unknown> {
             },
           },
         },
+        // An open base, closed on each derived component by unevaluatedProperties: false.
         PaymentBase: {
           type: 'object',
-          additionalProperties: false,
           required: ['amount', 'kind'],
           properties: {
             amount: { type: 'integer' },
@@ -69,6 +69,7 @@ function lifecycleDocument(): Record<string, unknown> {
               },
             },
           ],
+          unevaluatedProperties: false,
         },
         BankTransferPayment: {
           allOf: [
@@ -82,6 +83,7 @@ function lifecycleDocument(): Record<string, unknown> {
               },
             },
           ],
+          unevaluatedProperties: false,
         },
         Payment: {
           oneOf: [
