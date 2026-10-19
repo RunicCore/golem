@@ -44,8 +44,10 @@ type Fields = Readonly<Record<string, Shape>>;
 const address: Fields = { street: 'string', city: 'string', zip: 'string', lat: 'number', lng: 'number' };
 const item: Fields = { id: 'number', sku: 'string', name: 'string', price: 'number', quantity: 'number', createdAt: 'date' };
 
+const flat: Fields = { id: 'number', name: 'string', email: 'string', age: 'number', score: 'number', active: 'boolean', createdAt: 'date' };
+
 const MODELS: Readonly<Record<string, Fields>> = {
-  flat: { id: 'number', name: 'string', email: 'string', age: 'number', score: 'number', active: 'boolean', createdAt: 'date' },
+  flat,
   nested: {
     id: 'number',
     owner: { object: { name: 'string', email: 'string', address: { object: address } } },
@@ -154,4 +156,68 @@ export function scratchValidator(model: string, toggles: Toggles): (value: unkno
     validator = (value, options) => inner(value, options);
   }
   return validator;
+}
+
+/**
+ * How a read decides that a declared key is present under the JSON view (own, enumerable, not `undefined`).
+ * `enumerable`: `propertyIsEnumerable.call` per key, then the read (golem today). `own`: `hasOwnProperty.call` per key
+ * and `!== undefined` (the old form; it counts a non-enumerable own key, so it is not exact). `keys`: one
+ * `Object.keys` pass whose switch captures the declared values (exact by construction). `defined-first`: the read
+ * first, `propertyIsEnumerable.call` only when it is defined (exact; an absent key costs no call).
+ */
+export type PresenceForm = 'enumerable' | 'own' | 'keys' | 'defined-first';
+export const PRESENCE_FORMS: readonly PresenceForm[] = ['enumerable', 'own', 'keys', 'defined-first'];
+export const EXACT_PRESENCE_FORMS: ReadonlySet<PresenceForm> = new Set(['enumerable', 'keys', 'defined-first']);
+
+const PRESENCE_FIELDS = Object.entries(flat);
+const PRESENCE_KEYS = PRESENCE_FIELDS.map(([key]) => key);
+
+/** A test of one flat field shape, as the slow validator writes it. */
+function flatTest(shape: Shape, x: string): string {
+  if (shape === 'number') return `typeof ${x} === 'number' && ${x} - ${x} === 0`;
+  if (shape === 'date') return `${x} instanceof Date && ${x}.getTime() - ${x}.getTime() === 0`;
+  if (shape === 'string' || shape === 'boolean') return `typeof ${x} === '${shape}'`;
+  throw new Error('The presence rows read only flat fields');
+}
+
+/** The per-key presence helper of a form that has one; `keys` reads all keys in one pass instead. */
+const PRESENT_HELPER: Readonly<Record<Exclude<PresenceForm, 'keys'>, string>> = {
+  enumerable: 'const present = (v, k) => pie.call(v, k) && v[k] !== undefined;',
+  own: 'const present = (v, k) => hop.call(v, k) && v[k] !== undefined;',
+  'defined-first': 'const present = (v, k) => v[k] !== undefined && pie.call(v, k);',
+};
+
+const keysCapture = (source: string): string => `let ${PRESENCE_KEYS.map((_, i) => `x${i}`).join(', ')}; `
+  + `for (const k of Object.keys(${source})) switch (k) { ${PRESENCE_KEYS.map((key, i) => `case ${JSON.stringify(key)}: x${i} = ${source}.${key}; break;`).join(' ')} }`;
+
+function compilePresence<T>(body: string): T {
+  const make = new Function('pie', 'hop', body) as (pie: typeof Object.prototype.propertyIsEnumerable, hop: typeof Object.prototype.hasOwnProperty) => T;
+  return make(Object.prototype.propertyIsEnumerable, Object.prototype.hasOwnProperty);
+}
+
+/**
+ * The slow validator's walk over the seven flat fields: `required` tests each key, then `properties` tests each present
+ * key and checks its value. It returns the number of issues.
+ */
+export function presenceWalk(form: PresenceForm): (value: unknown) => number {
+  if (form === 'keys') {
+    const checks = PRESENCE_FIELDS.map(([, shape], i) => `if (x${i} === undefined) n++; else if (!(${flatTest(shape, `x${i}`)})) n++;`).join(' ');
+    return compilePresence(`return function walk(v) { if (typeof v !== 'object' || v === null) return 1; let n = 0; ${keysCapture('v')} ${checks} return n; };`);
+  }
+  const required = PRESENCE_KEYS.map(key => `if (!present(v, ${JSON.stringify(key)})) n++;`).join(' ');
+  const properties = PRESENCE_FIELDS.map(([key, shape]) => `if (present(v, ${JSON.stringify(key)})) { const m = v.${key}; if (!(${flatTest(shape, 'm')})) n++; }`).join(' ');
+  return compilePresence(`${PRESENT_HELPER[form]} return function walk(v) { if (typeof v !== 'object' || v === null) return 1; let n = 0; ${required} ${properties} return n; };`);
+}
+
+/** A decode fill of the seven flat fields: a new object holding each present field. */
+export function presenceFill(form: PresenceForm): (wire: object) => Record<string, unknown> {
+  const writes = PRESENCE_KEYS.map((key, i) => `if (x${i} !== undefined) out.${key} = x${i};`).join(' ');
+  if (form === 'keys') return compilePresence(`return function fill(w) { const out = {}; ${keysCapture('w')} ${writes} return out; };`);
+  const reads = PRESENCE_KEYS.map((key, i) => {
+    const k = JSON.stringify(key);
+    if (form === 'enumerable') return `const x${i} = pie.call(w, ${k}) ? w.${key} : undefined;`;
+    if (form === 'own') return `const x${i} = hop.call(w, ${k}) ? w.${key} : undefined;`;
+    return `let x${i} = w.${key}; if (x${i} !== undefined && !pie.call(w, ${k})) x${i} = undefined;`;
+  }).join(' ');
+  return compilePresence(`return function fill(w) { const out = {}; ${reads} ${writes} return out; };`);
 }

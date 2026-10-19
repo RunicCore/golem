@@ -1,6 +1,7 @@
 import type { IrArray, IrCheck, IrDiscriminator, IrFunction, IrInstance, IrModule, IrNumber, IrObject, IrSchema, IrString, IrType, IrTypeName, IrUnion, IrValidation, IrValidationImport } from './ir.js';
 
 import { MODEL_CODEC_IDS_KEY } from '../../schema-keywords.js';
+import { presentKeysSource } from '../../presence.js';
 
 export interface EmitOptions {
   /** The module specifier the generated file imports its runtime helpers from. */
@@ -222,6 +223,8 @@ interface FailMode {
 
 /** How the checks of one object tell that a declared key is present, and read its value once it is. */
 interface PresenceReader {
+  /** Statements that run before the first `present` or `read`. */
+  readonly setup: readonly string[];
   /** An expression that is true when `key` is present by the JSON view. */
   present(key: string): string;
   /** An expression that reads the value of `key`; written only where `present(key)` holds. */
@@ -234,7 +237,8 @@ interface PresenceReader {
  */
 interface WriterMode {
   readonly fail: FailMode;
-  readonly presence: (state: ModuleState, value: string) => PresenceReader;
+  /** `captured` names a local for each declared key the object's checks read; a key outside it is read on its own. */
+  readonly presence: (state: ModuleState, value: string, captured?: readonly (readonly [key: string, local: string])[]) => PresenceReader;
 }
 
 const REPORT_FAILURE = `ok = false; if (!${ALL}) { ${PATH}.length = pl; return false; }`;
@@ -247,11 +251,14 @@ const FULL_VALIDATOR: WriterMode = {
     issue: (fields, path) => [`${ISSUES}.push({ path: ${path}, ${fields} });`, REPORT_FAILURE],
     fail: () => REPORT_FAILURE,
   },
-  presence: (state, value) => {
-    const isPresent = state.localHelper('isPresent');
+  presence: (state, value, captured = []) => {
+    // One Object.keys pass reads the declared keys of an object; the faster exact form of the JSON view.
+    const locals = new Map(captured);
+    const single = (): string => state.localHelper('isPresent');
     return {
-      present: key => `${isPresent}(${value}, ${literal(key)})`,
-      read: key => `${value}[${literal(key)}]`,
+      setup: captured.length > 0 ? [presentKeysSource(value, captured)] : [],
+      present: key => { const local = locals.get(key); return local !== undefined ? `(${local} !== undefined)` : `${single()}(${value}, ${literal(key)})`; },
+      read: key => locals.get(key) ?? `${value}[${literal(key)}]`,
     };
   },
 };
@@ -600,8 +607,14 @@ class FunctionWriter {
   }
 
   private objectKeywords(check: IrObject, value: string): void {
-    const presence = this.mode.presence(this.state, value);
     const marks = this.record !== undefined;
+    const declared = new Set([
+      ...check.required,
+      ...check.dependentRequired.flatMap(({ trigger, keys }) => keys.length > 0 ? [trigger, ...keys] : []),
+      ...check.properties.filter(property => property.schema.kind !== 'always' || marks).map(property => property.key),
+    ]);
+    const presence = this.mode.presence(this.state, value, [...declared].map(key => [key, this.fresh('present')] as const));
+    for (const line of presence.setup) this.line(line);
     // A key that matches a pattern is not "additional" even when the pattern's schema accepts everything.
     const patterns = check.patternProperties.map(entry => ({ entry, expression: this.state.constant('pattern', `new RegExp(${literal(entry.pattern)}, 'u')`) }));
     const patternsToRun = patterns.filter(({ entry }) => entry.schema.kind !== 'always' || marks);

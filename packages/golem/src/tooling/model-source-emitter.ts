@@ -16,7 +16,7 @@ export {
   type NestedImportedSerde,
   type StringifySerdeResolver,
 } from './stringify-emitter.js';
-export { presentValueSource } from '../presence.js';
+export { presentKeysSource, presentValueSource } from '../presence.js';
 export { pruneGeneratedImports } from './generated-imports.js';
 export { FIELD_CONVERSION_INPUT, singleCallConverter, type TupleConversionDescriptor } from './sequence-conversion.js';
 /** The allOf object merge, for generators that read schemas (golem-openapi). */
@@ -33,7 +33,7 @@ export {
   type Rejected,
   type SlotRule,
 } from './composition.js';
-import { presentValueSource } from '../presence.js';
+import { presentKeysSource, presentValueSource } from '../presence.js';
 import { CompositionConflictError, requireComposedObject, type ModelBases } from './composition.js';
 import { FIELD_CONVERSION_INPUT, emitArrayConversion, emitTupleConversion, singleCallConverter, type SequenceItems } from './sequence-conversion.js';
 import {
@@ -61,8 +61,8 @@ export { descriptorNeedsConversion, literalValues } from './union-conversion.js'
 
 export type ModelConversionDescriptor = ModelTypeDescriptor;
 
-/** The block-scoped local that a projection decoder reads each field into. */
-const PROJECTION_FIELD = '__golemProjected';
+/** The local that a projection decoder reads the field at `index` into. */
+const projectionLocal = (index: number): string => `__golemProjected${index}`;
 
 /** A model's required tag properties and their literal value or values. */
 export type ModelDiscriminators = Readonly<Record<string, DiscriminatorValue | readonly DiscriminatorValue[]>>;
@@ -447,12 +447,12 @@ function emitNested(
   if (descriptor.kind === 'object') {
     // A projection copies its fields inside a function whose `source` parameter is the record.
     const fieldSource = descriptor.projection ? 'source' : expression;
-    const assignments = Object.entries(descriptor.properties).map(([name, item]) => {
+    const assignments = Object.entries(descriptor.properties).map(([name, item], index) => {
       const property = JSON.stringify(name);
       // `data` and `source` are already record bindings. Other expressions are cast once here.
       const sourceValue = recordIndex(fieldSource, property);
       const convert = (input: string): string => atField(value => emitNested(item, value, direction, resolveModel, resolveSerde), input, property, direction);
-      return { name, property, sourceValue, value: convert(sourceValue), presentValue: convert(PROJECTION_FIELD) };
+      return { name, property, sourceValue, value: convert(sourceValue), presentValue: convert(projectionLocal(index)) };
     });
     const additionalItem = descriptor.additionalProperties;
     const additional = typeof additionalItem === 'object'
@@ -465,13 +465,14 @@ function emitNested(
       const extras = typeof descriptor.additionalProperties === 'object'
         ? `for (const [key, value] of Object.entries(source)) if (value !== undefined && !([${knownKeys}] as readonly string[]).includes(key)) defineModelProperty(out, key, ${additional});`
         : '';
-      // A decoder reads its input by the JSON view, each field once into a block-scoped local.
-      const fields = assignments.map(({ name, property, sourceValue, value, presentValue }) => direction !== 'toJSON'
-        ? `{ const ${PROJECTION_FIELD} = ${presentValueSource('source', property, sourceValue)}; if (${PROJECTION_FIELD} !== undefined) defineModelProperty(out, ${property}, ${presentValue}); }`
+      // A decoder reads its input by the JSON view: one Object.keys pass reads each field once into a local.
+      const capture = direction === 'toJSON' || assignments.length === 0 ? [] : [presentKeysSource('source', assignments.map(({ name }, index) => [name, projectionLocal(index)] as const), local => `${local}: unknown`)];
+      const fields = assignments.map(({ name, property, sourceValue, value, presentValue }, index) => direction !== 'toJSON'
+        ? `if (${projectionLocal(index)} !== undefined) defineModelProperty(out, ${property}, ${presentValue});`
         : omitsUndefined(name)
           ? `if (${sourceValue} !== undefined) defineModelProperty(out, ${property}, ${value});`
           : `if (Object.hasOwn(source, ${property})) defineModelProperty(out, ${property}, ${sourceValue} === undefined ? undefined : (${value}));`);
-      return `${objectValueExpression(expression)} ? ((source: Record<string, unknown>) => { const out: Record<string, unknown> = {}; ${[...fields, extras].filter(Boolean).join(' ')} return out; })(${recordExpression(expression)}) : ${expression}`;
+      return `${objectValueExpression(expression)} ? ((source: Record<string, unknown>) => { const out: Record<string, unknown> = {}; ${[...capture, ...fields, extras].filter(Boolean).join(' ')} return out; })(${recordExpression(expression)}) : ${expression}`;
     }
     const additionalChanged = additional !== 'value';
     const knownChanged = assignments.some(({ sourceValue, value }) => value !== sourceValue);

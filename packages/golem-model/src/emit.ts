@@ -20,7 +20,7 @@ import {
   type ModelDiscriminators,
   type SerdeResolver,
   type ToJsonModelResolver,
-  presentValueSource,
+  presentKeysSource,
 } from '@exprtlabs/golem/emitter';
 import { createSchemaGraph, codecPublicId, codecShortName, internDescriptors, type SchemaGraph } from '@exprtlabs/golem/schema-graph';
 import { compareText, propertyName, RESERVED_MODEL_MEMBERS, type GolemProfile } from '@exprtlabs/golem/generator-api';
@@ -1392,11 +1392,13 @@ export function emitSource(
     });
     const decode: string[] = [];
     const init: string[] = [];
+    const decodeCaptures: [key: string, local: string][] = [];
+    const initCaptures: [key: string, local: string][] = [];
     for (const [index, field] of fields.entries()) {
       const name = JSON.stringify(field.getName());
-      // The JSON view, read once into a local. Decode reads the own copy in `result`, so a getter of the input runs once.
+      // The JSON view, read once into a local by one Object.keys pass. Decode reads the own copy in `result`, so a
+      // getter of the input runs once.
       const input = `__golemValue${index}`;
-      const readFrom = (record: string): string => `const ${input} = ${presentValueSource(record, name, `${record}[${name}]`)};`;
       const descriptor = descriptors.get(field.getName());
       if (!descriptor) throw new Error(`Missing descriptor for field ${field.getName()}.`);
       const emitDecode = (value: string): string => emitModelFromJSON(
@@ -1412,10 +1414,17 @@ export function emitSource(
       const converted = wrapRootConversion(helpers, specification.name, 'deserialize', name, input, emitDecode, 'unknown');
       if (converted !== input) {
         conversionHelpers.add('define');
-        decode.push(`  ${readFrom('result')}`, `  if (${input} !== undefined) defineModelProperty(result, ${name}, ${converted});`);
+        decodeCaptures.push([field.getName(), input]);
+        decode.push(`  if (${input} !== undefined) defineModelProperty(result, ${name}, ${converted});`);
       }
       conversionHelpers.add('define');
-      init.push(`    ${readFrom('values')}`, `    if (${input} !== undefined) defineModelProperty(this, ${name}, ${fromInit});`);
+      initCaptures.push([field.getName(), input]);
+      init.push(`    if (${input} !== undefined) defineModelProperty(this, ${name}, ${fromInit});`);
+    }
+    if (decodeCaptures.length > 0) decode.unshift(`  ${presentKeysSource('result', decodeCaptures, local => `${local}: unknown`)}`);
+    if (initCaptures.length > 0) {
+      const initType = (local: string): string => `${local}: ${specification.name}Init[${JSON.stringify(initCaptures.find(([, name]) => name === local)?.[0])}]`;
+      init.unshift(`    ${presentKeysSource('values', initCaptures, initType)}`);
     }
     rootFieldExpressions.set(specification.name, { helpers, encode, decode, init });
   }

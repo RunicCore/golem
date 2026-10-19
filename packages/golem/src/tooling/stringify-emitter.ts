@@ -5,7 +5,7 @@
  */
 
 import type { ModelTypeDescriptor } from '../model.js';
-import { presentValueSource } from '../presence.js';
+import { presentKeysSource, presentValueSource } from '../presence.js';
 import type { ValidationPlane } from '../object-codec.js';
 import type { SchemaGraph, SchemaNode } from './schema-graph.js';
 import { codecShortName, serdeWireDescriptor } from './schema-graph.js';
@@ -1370,14 +1370,15 @@ function emitFillFunction(
   let needsFill = false;
   // A recursive fill throws on a cycle; a carried value is checked for cycles.
   let fallible = recursive;
+  // Fields whose write depends on presence; one Object.keys pass reads them all at the top of the function.
+  const captured: [key: string, local: string][] = [];
   properties.forEach(([name, property], index) => {
     const field = JSON.stringify(name);
     // The JSON view: a wire field is present when it is own, enumerable and not undefined. Where a write depends on
-    // presence, the field is read once into a local before the check; a required field written as it is reads the wire.
+    // presence, the field is read into a local by the one Object.keys pass; a carried required field reads the wire.
     const optional = !required.has(name);
     const direct = access('wire', name);
     const present = `__golemPresent${index}`;
-    const readPresent = `const ${present} = ${presentValueSource('wire', field, direct)};`;
     const readDirect = (line: string): string => line.replaceAll(present, direct);
     const fill = emitFillValue(property, present, field, `__golemWire${index}`, ctx);
     const proto = name === '__proto__';
@@ -1385,8 +1386,8 @@ function emitFillFunction(
     if (fill.fallible || fill.checked) fallible = true;
     if (!fill.converted && !fill.checked && !proto) {
       copyIdentity = true;
+      captured.push([name, present]);
       identityWrites.push(
-        `    ${readPresent}`,
         `    if (${present} !== undefined) {`,
         emitFillPropertyWrite(name, fill.value, '      '),
         '    }',
@@ -1397,18 +1398,18 @@ function emitFillFunction(
       // Carried by reference: checked on every call, written only when the caller wants identity fields copied.
       copyIdentity = true;
       const write = (value: string): string[] => ['  if (copyIdentity) {', emitFillPropertyWrite(name, value, '    '), '  }'];
+      if (optional) captured.push([name, present]);
       propertyWrites.push(...(!optional
         ? [...fill.statements.map((line) => `  ${readDirect(line)}`), ...write(readDirect(fill.value))]
         : [
-          `  ${readPresent}`,
           `  if (${present} !== undefined) {`,
           ...[...fill.statements, ...write(fill.value)].map((line) => line.startsWith('  ') ? `  ${line}` : `    ${line}`),
           '  }',
         ]));
       return;
     }
+    captured.push([name, present]);
     propertyWrites.push(
-      `  ${readPresent}`,
       `  if (${present} !== undefined) {`,
       ...fill.statements.map((line) => `    ${line}`),
       emitFillPropertyWrite(name, fill.value),
@@ -1420,6 +1421,7 @@ function emitFillFunction(
     : `${exported}function ${fn}(out: Record<string, unknown>, wire: Record<string, unknown>): Record<string, unknown> {`;
   const lines: string[] = [
     declaration,
+    ...(captured.length > 0 ? [`  ${presentKeysSource('wire', captured, local => `${local}: unknown`)}`] : []),
     ...(identityWrites.length > 0
       ? ['  if (copyIdentity) {', ...identityWrites, '  }']
       : []),

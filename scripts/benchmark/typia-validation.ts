@@ -6,7 +6,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { prepare, root } from './project.js';
 import { summarize, type BatchSample } from './results.js';
 import { sampleSync, schedule } from './sampling.js';
-import { BASE_TOGGLES, scratchValidator, type Toggles } from './validator-toggles.js';
+import { BASE_TOGGLES, EXACT_PRESENCE_FORMS, PRESENCE_FORMS, presenceFill, presenceWalk, scratchValidator, type Toggles } from './validator-toggles.js';
 import type { Agreement, CompareCase, CompareTask, MobxTwins, Subject, TwinFactories, TwinKind } from './fixtures/typia/compare-case.js';
 
 /**
@@ -113,8 +113,40 @@ function toggleCases(subjects: readonly Subject[]): CompareCase[] {
       if (EXACT_ROWS.has(side) && scratch(subject.extra) !== false) throw new Error(`Scratch validator '${side}' on ${model}/${twin} accepts an unknown property`);
       entry(side, () => scratch(subject.valid));
     }
+    if (model === 'flat') presenceCases(subject, entry);
   }
   return cases;
+}
+
+/**
+ * The presence forms on the flat model: the slow validator's walk on every twin, the decode fill on the plain value.
+ * Each exact form must give the result of `enumerable` (golem today) on the probes, on a non-enumerable field, on an
+ * undefined-valued field and on an inherited field.
+ */
+function presenceCases(subject: Subject, entry: (side: string, run: () => unknown) => void): void {
+  const valid = subject.valid;
+  if (typeof valid !== 'object' || valid === null) throw new Error('The flat valid value is not an object');
+  const plain: Record<string, unknown> = { ...valid };
+  const probes: readonly unknown[] = [
+    valid, subject.early, subject.late, subject.extra,
+    Object.defineProperty({ ...plain }, 'email', { value: plain.email, enumerable: false }),
+    { ...plain, age: undefined },
+    Object.assign(Object.create({ name: plain.name }), Object.fromEntries(Object.entries(plain).filter(([key]) => key !== 'name'))),
+  ];
+  const fillProbes = probes.filter((probe): probe is object => typeof probe === 'object' && probe !== null);
+  const reference = { walk: presenceWalk('enumerable'), fill: presenceFill('enumerable') };
+  for (const form of PRESENCE_FORMS) {
+    const walk = presenceWalk(form);
+    const fill = presenceFill(form);
+    if (EXACT_PRESENCE_FORMS.has(form)) {
+      for (const probe of probes) if (walk(probe) !== reference.walk(probe)) throw new Error(`Presence walk '${form}' differs from 'enumerable' on ${subject.twin}`);
+      for (const probe of fillProbes) {
+        if (JSON.stringify(Object.entries(fill(probe))) !== JSON.stringify(Object.entries(reference.fill(probe)))) throw new Error(`Presence fill '${form}' differs from 'enumerable'`);
+      }
+    }
+    entry(`walk ${form}`, () => walk(valid));
+    if (subject.twin === 'plain') entry(`fill ${form}`, () => fill(valid));
+  }
 }
 
 function reportToggles(cases: readonly CompareCase[], samples: Map<CompareCase, BatchSample[]>): void {
@@ -131,6 +163,12 @@ function reportToggles(cases: readonly CompareCase[], samples: Map<CompareCase, 
   }
   process.stdout.write(`Scratch validators, ratio to typia equals (median of ${SETTINGS.batches} batches of ${SETTINGS.batchMs} ms)\n${table(against)}\n\n`);
   process.stdout.write(`Each toggle against the base row (above 1 is faster)\n${table(gain)}\n\n`);
+  const presence: string[][] = [['shape', 'twin', ...PRESENCE_FORMS.map(form => `${form} ops/s`), ...PRESENCE_FORMS.slice(1).map(form => `${form}/enumerable`)]];
+  for (const [shape, twins] of [['walk', TWINS], ['fill', ['plain']]] as const) for (const twin of twins) {
+    const value = (form: string): number => median('flat', twin, 'toggle', `${shape} ${form}`);
+    presence.push([shape, twin, ...PRESENCE_FORMS.map(form => fixed(value(form))), ...PRESENCE_FORMS.slice(1).map(form => ratio(value(form), value('enumerable')))]);
+  }
+  process.stdout.write(`Presence forms on the flat model: the slow validator's required and properties walk, and a seven-field decode fill\n${table(presence)}\n\n`);
 }
 
 function reportBench(cases: readonly CompareCase[], samples: Map<CompareCase, BatchSample[]>): void {
