@@ -4,9 +4,11 @@
  * 1. A name that several parts declare is one slot. Its children are its declarers, then the value schema of each part that
  *    does not list the name (strict JSON Schema: a part judges every name it does not list by its `additionalProperties`).
  * 2. A part with `additionalProperties: false` that does not list a name closes it: the slot has no valid value (`never`).
- * 3. The slot rule picks one child for the children of a name: equal children are one, one converting child decides and
- *    the others only constrain the wire value, a scalar intersection reduces (`string` and `'cat'` give `'cat'`), disjoint
- *    scalars give `never`, and two children that convert differently are rejected.
+ * 3. The slot rule picks one child for the children of a name, as JSON Schema AND: equal children are one; null stays only
+ *    when every child admits it; a union keeps the variants that the other children admit; objects compose by these rules;
+ *    one conversion decides and the other children's constraints join it (they constrain the wire value); a scalar
+ *    intersection reduces (`string` and `'cat'` give `'cat'`); disjoint types give `never`; and children that convert
+ *    differently are rejected.
  * 4. The required names are the union of the parts' lists. A name that only a list mentions is judged by the value schemas.
  * 5. The names that no part lists take every part's value schema; one closed part closes them.
  */
@@ -34,6 +36,8 @@ export interface ObjectResult<C> {
   readonly slots: Readonly<Record<string, C>>;
   readonly required: readonly string[];
   readonly extra: ObjectExtra<C>;
+  /** The names that a closed part rejects (rule 2); other `never` slots have children with no common value. */
+  readonly closed: readonly string[];
 }
 
 export interface SlotRule<C> {
@@ -52,11 +56,13 @@ export function composeObjects<C>(parts: readonly ObjectPart<C>[], slot: SlotRul
   const declared = [...new Set(parts.flatMap((part) => Object.keys(part.slots)))];
   const names = [...declared, ...required.filter((name) => !declared.includes(name))];
   const slots: Record<string, C> = Object.create(null);
+  const closed: string[] = [];
   for (const name of names) {
     const declarers = parts.flatMap((part) => Object.hasOwn(part.slots, name) ? [part.slots[name] as C] : []);
     const judges = parts.filter((part) => !Object.hasOwn(part.slots, name));
     if (judges.some((part) => part.extra.mode === 'closed')) {
       slots[name] = slot.never;
+      closed.push(name);
       continue;
     }
     const children = [...declarers, ...judges.flatMap((part) => part.extra.mode === 'values' ? [part.extra.child] : [])];
@@ -73,7 +79,7 @@ export function composeObjects<C>(parts: readonly ObjectPart<C>[], slot: SlotRul
     if (isRejected(child)) return { rejected: `additional properties: ${child.rejected}` };
     extra = { mode: 'values', child };
   }
-  return { slots, required, extra };
+  return { slots, required, extra, closed };
 }
 
 const NEVER: ModelTypeDescriptor = { kind: 'never' };
@@ -81,35 +87,105 @@ const NEVER: ModelTypeDescriptor = { kind: 'never' };
 /** The slot rule of descriptors: the codec, the model path and the OpenAPI resolver pick a property's descriptor with it. */
 export const descriptorSlotRule: SlotRule<ModelTypeDescriptor> = {
   never: NEVER,
-  combine(children) {
-    const distinct = distinctDescriptors(children.filter((child) => !isAnyValue(child)));
-    if (distinct.length === 0) return children[0] ?? { kind: 'unknown' };
-    if (distinct.length === 1) return distinct[0] as ModelTypeDescriptor;
-    if (distinct.some((child) => child.kind === 'never')) return NEVER;
-    const converting = distinct.filter(descriptorNeedsConversion);
-    if (converting.length > 1) return { rejected: 'two parts convert it differently' };
-    const [decider] = converting;
-    if (decider) {
-      const wire = scalarWireKind(decider);
-      return distinct.some((child) => child !== decider && scalarWireKind(child) !== undefined && scalarWireKind(child) !== wire)
-        ? NEVER
-        : decider;
-    }
-    if (distinct.every((child) => child.kind === 'object')) {
-      return composeObjectDescriptors(distinct) ?? { kind: 'intersection', variants: distinct };
-    }
-    const kinds = distinct.map(scalarWireKind);
-    if (kinds.every((kind) => kind !== undefined)) {
-      if (new Set(kinds).size > 1) return NEVER;
-      const literals = distinct.filter((child) => child.kind === 'literal');
-      if (literals.length > 1) return NEVER;
-      const [base] = literals.length ? literals : distinct;
-      const constraints = distinct.flatMap((child) => child.constraints ?? []);
-      return base ? withConstraints(base, constraints) : NEVER;
-    }
-    return { kind: 'intersection', variants: distinct };
-  },
+  combine: combineDescriptors,
 };
+
+function combineDescriptors(children: readonly ModelTypeDescriptor[]): ModelTypeDescriptor | Rejected {
+  const distinct = distinctDescriptors(children.filter((child) => !isAnyValue(child)));
+  if (distinct.length === 0) return children[0] ?? { kind: 'unknown' };
+  if (distinct.length === 1) return distinct[0] as ModelTypeDescriptor;
+  if (distinct.some((child) => child.kind === 'never')) return NEVER;
+  if (distinct.some(isNullableUnion)) return combineNullable(distinct);
+  const narrowed = narrowUnions(distinct);
+  if (narrowed) return narrowed.includes(NEVER) ? NEVER : combineDescriptors(narrowed);
+  if (distinct.every((child) => child.kind === 'object')) return composeObjectDescriptors(distinct) ?? NEVER;
+  const converting = distinct.filter(descriptorNeedsConversion);
+  const [decider] = converting;
+  if (decider) {
+    const conversion = conversionKey(decider);
+    if (converting.some((child) => conversionKey(child) !== conversion)) return { rejected: 'two parts convert it differently' };
+    const others = distinct.filter((child) => !converting.includes(child));
+    const wire = scalarWireKind(decider);
+    if (wire !== undefined && others.some((child) => child.kind !== 'unknown' && scalarWireKind(child) !== wire)) return NEVER;
+    // The other children constrain the wire value that the decider converts: their constraints join it.
+    const constraining = wire === undefined ? others.filter((child) => child.kind === 'unknown') : others;
+    return withConstraints(decider, [...converting, ...constraining].flatMap((child) => child.constraints ?? []));
+  }
+  const kinds = distinct.map(scalarWireKind);
+  if (kinds.every((kind) => kind !== undefined)) {
+    if (new Set(kinds).size > 1) return NEVER;
+    const literals = distinct.filter((child) => child.kind === 'literal');
+    if (new Set(literals.map((literal) => literal.value)).size > 1) return NEVER;
+    const [base] = literals.length ? literals : distinct;
+    const constraints = distinct.flatMap((child) => child.constraints ?? []);
+    return base ? withConstraints(base, constraints) : NEVER;
+  }
+  return { kind: 'intersection', variants: distinct };
+}
+
+/** Null stays when every child admits it; the other variants combine without it. */
+function combineNullable(children: readonly ModelTypeDescriptor[]): ModelTypeDescriptor | Rejected {
+  const nullable = children.every(admitsNull);
+  if (!nullable && children.some((child) => child.kind === 'null')) return NEVER;
+  const values = children.flatMap((child) => child.kind === 'null' ? [] : [withoutNull(child)]);
+  const value = values.length === 0 ? NULL : values.length === 1 ? values[0] as ModelTypeDescriptor : combineDescriptors(values);
+  if (isRejected(value) || !nullable || value.kind === 'null') return value;
+  return value.kind === 'never' ? NULL : { kind: 'union', variants: [value, NULL] };
+}
+
+/**
+ * A union keeps the variants that every other child admits (`oneOf [M, string]` and `M` give `M`); undefined when no union
+ * loses a variant. A union with no admitted variant is `never`.
+ */
+function narrowUnions(children: readonly ModelTypeDescriptor[]): ModelTypeDescriptor[] | undefined {
+  const others = children.filter((child) => !isPlainUnion(child));
+  if (others.length === 0) return undefined;
+  let narrowed = false;
+  const result = children.map((child) => {
+    if (!isPlainUnion(child)) return child;
+    const kept = child.variants.filter((variant) => others.every((other) => admits(other, variant)));
+    if (kept.length === child.variants.length) return child;
+    narrowed = true;
+    const [only] = kept;
+    return kept.length === 0 ? NEVER : kept.length === 1 && only ? only : { ...child, variants: kept };
+  });
+  return narrowed ? result : undefined;
+}
+
+/** Whether `child` admits some values of `variant`: the same conversion, the same scalar wire type, or both objects. */
+function admits(child: ModelTypeDescriptor, variant: ModelTypeDescriptor): boolean {
+  if (child.kind === 'unknown' || conversionKey(child) === conversionKey(variant)) return true;
+  if (child.kind === 'object' && variant.kind === 'object') return true;
+  const wire = scalarWireKind(variant);
+  return wire !== undefined && scalarWireKind(child) === wire;
+}
+
+const NULL: ModelTypeDescriptor = { kind: 'null' };
+
+function isPlainUnion(descriptor: ModelTypeDescriptor): descriptor is Extract<ModelTypeDescriptor, { readonly kind: 'union' }> {
+  return descriptor.kind === 'union' && descriptor.discriminator === undefined;
+}
+
+function isNullableUnion(descriptor: ModelTypeDescriptor): boolean {
+  return isPlainUnion(descriptor) && descriptor.variants.some((variant) => variant.kind === 'null');
+}
+
+function admitsNull(descriptor: ModelTypeDescriptor): boolean {
+  return descriptor.kind === 'null' || descriptor.kind === 'unknown' || isNullableUnion(descriptor);
+}
+
+function withoutNull(descriptor: ModelTypeDescriptor): ModelTypeDescriptor {
+  if (!isPlainUnion(descriptor) || !isNullableUnion(descriptor)) return descriptor;
+  const variants = descriptor.variants.filter((variant) => variant.kind !== 'null');
+  const [only] = variants;
+  return variants.length === 1 && only ? only : { ...descriptor, variants };
+}
+
+/** A descriptor's conversion: the descriptor without its own constraints and validations, which only check values. */
+function conversionKey(descriptor: ModelTypeDescriptor): string {
+  const { constraints: _constraints, validations: _validations, ...conversion } = descriptor;
+  return JSON.stringify(conversion);
+}
 
 /** The one object that an intersection of object descriptors converts as; undefined when a variant is not an object. */
 export function composeObjectDescriptors(variants: readonly ModelTypeDescriptor[]): ObjectTypeDescriptor | Rejected | undefined {
