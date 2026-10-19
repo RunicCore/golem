@@ -4,8 +4,8 @@
  * JavaScript, not golem output, so no toggle needs product code. Each row of a toggle run names what it changed.
  *
  * The per-item call and the union tag read are written inline by the generator below. The real call chain (codec,
- * generated `validate`, `isValidModelValueFast`, the generated `is_X`) is timed on the generated code itself, beside
- * these rows (typia-validation.ts).
+ * generated `validate`, the generated `is_X`) is timed on the generated code itself, beside these rows
+ * (typia-validation.ts).
  */
 
 /** How unknown keys are found. F1 and F2 are exact under the JSON-view rule; `count` and `none` are not. */
@@ -30,8 +30,12 @@ export interface Toggles {
   readonly objectTest: 'inline' | 'helper';
   /** `chain` joins the value tests with `&&`; `statements` copies each value to a `const` and returns `false` after each failed test. */
   readonly body: 'chain' | 'statements';
-  /** `read` switches on the plain tag read; `enumerable` reads the tag by the JSON view, picks a branch number, then tests that branch. */
-  readonly tag: 'read' | 'enumerable';
+  /**
+   * `read` switches on the plain tag read; `enumerable` reads the tag by the JSON view, picks a branch number, then tests
+   * that branch; `merged` reads the declared keys of every branch in one `Object.keys` pass, then switches on the captured
+   * tag and tests that branch's values, with each key only another branch declares absent (exact, no `propertyIsEnumerable`).
+   */
+  readonly tag: 'read' | 'enumerable' | 'merged';
 }
 
 export const BASE_TOGGLES: Toggles = { keyTest: 'F1', finite: 'sub', date: 'valid', keyRead: 'case', required: 'implied', objectTest: 'inline', body: 'chain', tag: 'read' };
@@ -124,6 +128,18 @@ class Writer {
     if (this.toggles.tag === 'read') {
       const cases = members.map(([tag, check]) => `case ${tag}: return ${check}(x);`);
       this.functions[slot] = `function ${name}(x) { if (typeof x !== 'object' || x === null) return false; switch (x.${shape.union}) { ${cases.join(' ')} } return false; }`;
+    } else if (this.toggles.tag === 'merged') {
+      const keys = [...new Set(shape.members.flatMap(member => Object.keys(member)))];
+      const local = (key: string): string => `k${keys.indexOf(key)}`;
+      const reads = keys.map(key => `case ${JSON.stringify(key)}: ${local(key)} = x[${JSON.stringify(key)}]; break;`).join(' ');
+      const cases = shape.members.map(member => {
+        const tests = keys.filter(key => key !== shape.union).map(key => (key in member ? this.test(member[key], local(key)) : `${local(key)} === undefined`));
+        const tag = member[shape.union];
+        if (typeof tag === 'string' || !('literal' in tag)) throw new Error('A union member needs a literal tag');
+        return `case ${JSON.stringify(tag.literal)}: return ${tests.map(test => `(${test})`).join(' && ')};`;
+      });
+      this.functions[slot] = `function ${name}(x) { if (typeof x !== 'object' || x === null || Array.isArray(x)) return false; let ${keys.map(local).join(', ')}; `
+        + `for (const k of Object.keys(x)) switch (k) { ${reads} default: if (x[k] !== undefined) return false; } switch (${local(shape.union)}) { ${cases.join(' ')} } return false; }`;
     } else {
       const key = JSON.stringify(shape.union);
       const select = members.map(([tag], position) => `t === ${tag} ? ${position} : `).join('');

@@ -6,7 +6,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { prepare, root } from './project.js';
 import { summarize, type BatchSample } from './results.js';
 import { sampleSync, schedule } from './sampling.js';
-import { isValidModelValue, isValidModelValueFast, requireObjectCodec, type ValidateOptions } from '@exprtlabs/golem/serde';
+import { requireObjectCodec } from '@exprtlabs/golem/serde';
 import { BASE_TOGGLES, EXACT_PRESENCE_FORMS, GENERATED_TOGGLES, PRESENCE_FORMS, presenceFill, presenceWalk, scratchValidator, type Toggles } from './validator-toggles.js';
 import type { Agreement, CompareCase, CompareTask, MobxTwins, Subject, TwinFactories, TwinKind } from './fixtures/typia/compare-case.js';
 
@@ -102,31 +102,13 @@ const TOGGLE_ROWS: readonly (readonly [string, Toggles, ReadonlySet<string>?])[]
   ['object helper', { ...BASE_TOGGLES, objectTest: 'helper' }, LEAD_MODELS],
   ['statements', { ...BASE_TOGGLES, body: 'statements' }, LEAD_MODELS],
   ['tag enumerable', { ...BASE_TOGGLES, tag: 'enumerable' }, new Set(['union'])],
+  ['tag merged', { ...BASE_TOGGLES, tag: 'merged' }, new Set(['union'])],
   ['generated', GENERATED_TOGGLES, LEAD_MODELS],
 ];
 /** Only the key test depends on how an instance is built, so the twins run these rows. */
 const TWIN_TOGGLE_ROWS = new Set(['base', 'key F2', 'generated']);
 /** The row that drops contracts: it must give the full validator's answer on the valid value and on a wrong field only. */
 const FLOOR_ROW = 'floor';
-/**
- * The codec call chain around a fresh scratch base, on the lead models: `hop codec` is today's chain (one arrow per
- * codec from one factory, a validate function per model, the runtime fast route), `hop direct` drops the arrow, and
- * `hop inline` writes the fast route in the model's validate function.
- */
-const HOP_ROWS = ['hop codec', 'hop direct', 'hop inline'] as const;
-type Check = (value: unknown, options?: ValidateOptions) => boolean;
-/** One arrow site for every codec, as `createObjectCodec` makes them. */
-const codecArrow = (validate: Check): Check => (value, options) => validate(value, options);
-/** A validate function of its own per model, as each generated model module has one. */
-function modelValidate(form: 'runtime' | 'inline', isValid: (value: unknown) => boolean, validator: Function, codecId: string): Check {
-  const body = form === 'runtime'
-    ? 'return fast(value, options, isValid, validator, id);'
-    : 'if (options?.validationContext === undefined && isValid(value)) return true; return slow(value, options, validator, id);';
-  const make = new Function('fast', 'slow', 'isValid', 'validator', 'id', `return function validate(value, options) { ${body} };`) as
-    (fast: typeof isValidModelValueFast, slow: typeof isValidModelValue, isValid: (value: unknown) => boolean, validator: Function, id: string) => Check;
-  return make(isValidModelValueFast, isValidModelValue, isValid, validator, codecId);
-}
-
 /** The generated functions of one project's validator module, by export name. */
 type ValidatorExports = Readonly<Record<string, unknown>>;
 
@@ -188,20 +170,6 @@ function toggleCases(subjects: readonly Subject[], validators: Readonly<Record<T
       });
       entry(side, () => scratch(subject.valid));
     }
-    if (twin === 'plain' && LEAD_MODELS.has(model)) {
-      const hops: Readonly<Record<(typeof HOP_ROWS)[number], Check>> = {
-        'hop codec': codecArrow(modelValidate('runtime', scratchValidator(model, BASE_TOGGLES), validator, subject.codecId)),
-        'hop direct': modelValidate('runtime', scratchValidator(model, BASE_TOGGLES), validator, subject.codecId),
-        'hop inline': codecArrow(modelValidate('inline', scratchValidator(model, BASE_TOGGLES), validator, subject.codecId)),
-      };
-      for (const side of HOP_ROWS) {
-        const run = hops[side];
-        checks.push(() => {
-          for (const [probe, value] of probes) if (run(value) !== expected.get(probe)) throw new Error(`'${side}' on ${model}: '${probe}' is not ${expected.get(probe)}`);
-        });
-        entry(side, () => run(subject.valid));
-      }
-    }
     if (model === 'flat') presenceCases(subject, entry, checks);
   }
   return { cases, checks };
@@ -242,7 +210,7 @@ function presenceCases(subject: Subject, entry: (side: string, run: () => unknow
 
 function reportToggles(cases: readonly CompareCase[], samples: Map<CompareCase, BatchSample[]>): void {
   const median = medians(cases, samples);
-  const sides = [...TOGGLE_ROWS.map(([side]) => side), ...HOP_ROWS];
+  const sides = TOGGLE_ROWS.map(([side]) => side);
   const against: string[][] = [['model', 'twin', 'equals ops/s', 'is/equals', 'is_X/equals', 'validate/equals', ...sides]];
   const gain: string[][] = [['model', 'twin', 'is_X/base', 'validate/is_X', ...sides.slice(1)]];
   for (const model of MODELS) for (const twin of TWINS) {
