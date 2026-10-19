@@ -70,6 +70,24 @@ const MOBX_CASES: ReadonlySet<string> = new Set([
 /** Directories under tests/fixtures/wire-format that hold an OpenAPI document get its SDK; the others are plain model claims. */
 const SDK_SPEC = /\.ya?ml$/;
 
+/**
+ * The cases whose claim is a rejection: generation or the rewrite scan ends in an error, and the diagnostics file holds a `generate error`
+ * or `rewrite error` line. Every other case must write none, so a broken fixture cannot pass on an error string that both versions share.
+ */
+export const EXPECTED_REJECTIONS: ReadonlySet<string> = new Set<string>([
+  'model-composition/a-projected-child-applies-the-containing-model-allowany-policy',
+  'model-composition/anonymous-nested-imodel-declarations-fail-with-an-actionable-diagnostic',
+  'model-composition/generic-model-templates-require-a-concrete-named-declaration',
+  'model-composition/imodel-exposes-fields-and-rejects-root-unions-before-emitting-artifacts',
+  'controller/does-not-treat-a-project-local-string-function-as-a-swagger-primitive-construc',
+  'controller/keeps-nest-runtime-status-authoritative-over-apinocontentresponse',
+  'controller/rejects-a-swagger-schema-that-conflicts-with-an-authoritative-imodel-wire-cont',
+  'controller/rejects-a-swagger-success-status-that-contradicts-nest-post-runtime-status',
+  'controller/rejects-conflicting-static-routes-with-a-structured-diagnostic',
+  'controller/rejects-stream-responses-without-explicit-swagger-content',
+  'controller/rejects-unresolved-local-component-references-in-raw-swagger-response-metadata',
+]);
+
 /** A fixture directory that discovery finds and leaves out, with the one reason it cannot run on its own. */
 const EXCLUDED: Readonly<Record<string, string>> = {
   'model-composition/first-generation-resolves-model-class-bases-through-project-path-aliases': 'needs its own tsconfig: the `#generated/*` path alias',
@@ -216,13 +234,14 @@ export const IDENTITY_CASES: readonly IdentityCase[] = (() => {
   const cases = [...EXPLICIT, ...discover()];
   const duplicate = cases.find((item, index) => cases.findIndex(other => other.name === item.name) !== index);
   if (duplicate) throw new Error(`The identity corpus holds the case ${duplicate.name} twice`);
+  const unknownMobx = [...MOBX_CASES].filter(name => !cases.some(item => item.name === name));
+  if (unknownMobx.length > 0) throw new Error(`The identity corpus generates cases with mobx that it does not hold: ${unknownMobx.join(', ')}`);
+  const unknownRejections = [...EXPECTED_REJECTIONS].filter(name => !cases.some(item => item.name === name));
+  if (unknownRejections.length > 0) throw new Error(`The identity corpus expects rejections from cases that it does not hold: ${unknownRejections.join(', ')}`);
   const unknown = Object.keys(COMPILE_EXCLUDED).filter(name => !cases.some(item => item.name === name && item.kind === 'model'));
   if (unknown.length > 0) throw new Error(`The identity corpus leaves model cases out of the compile that it does not hold: ${unknown.join(', ')}`);
   return cases;
 })();
-
-/** The discovered cases that the corpus leaves out, each with its reason. */
-export const EXCLUDED_CASES: Readonly<Record<string, string>> = EXCLUDED;
 
 /** The model cases of the corpus that the one TypeScript 6 compile checks. */
 export function isCompiled(item: IdentityCase): boolean {

@@ -9,7 +9,7 @@ import { copyFixtureFile, createFixtureProject, fileFixtureScope, fixturePath, o
 import { createControllerFixture } from './fixture-templates/controllers/project.js';
 import { resolveTypeScript } from '#golem/typescript-version';
 import { createModelProject } from './model-project.js';
-import { caseFolder, DIAGNOSTICS, GENERATED, IDENTITY_CASES, isCompiled, shardOf, type IdentityCase, type IdentityProject } from './support/identity-corpus.js';
+import { caseFolder, DIAGNOSTICS, EXPECTED_REJECTIONS, GENERATED, IDENTITY_CASES, isCompiled, shardOf, type IdentityCase, type IdentityProject } from './support/identity-corpus.js';
 import { command, workspace } from './support/process.js';
 
 const typescript6Root = process.env.GOLEM_TYPESCRIPT6_ROOT;
@@ -111,6 +111,9 @@ function filesOfCase(shards: readonly ShardRun[], version: string, name: string)
   return new Map([...shard.artifacts].filter(([file]) => file.startsWith(folder)).map(([file, content]) => [file.slice(folder.length), content]));
 }
 
+/** Whether the diagnostics file holds a stage that ended in an error, rather than a diagnostic the stage reported. */
+const REJECTION_LINE = /^(?:generate|rewrite) error: /m;
+
 /** The first line where the two texts differ, with two lines before it; a file that one version did not write shows as missing. */
 function diffHunk(seven: string | undefined, six: string | undefined): string {
   const text = (content: string | undefined): string[] => (content === undefined ? ['<file missing>'] : Buffer.from(content, 'latin1').toString('utf8').split('\n'));
@@ -198,6 +201,10 @@ if (!typescript6Root) {
       // The diagnostics file is always written; a case that wrote a file besides it, or a diagnostic, wrote an artifact.
       for (const [version, files] of [['7', sevenFiles], ['6', sixFiles]] as const) {
         assert.ok([...files].some(([file, content]) => file !== DIAGNOSTICS || content !== ''), `${item.name} wrote no artifact on TypeScript ${version}`);
+      }
+      // Only the cases that claim a rejection may end in one; for the others the error would pass on a message that both versions share.
+      for (const [version, files] of [['7', sevenFiles], ['6', sixFiles]] as const) {
+        assert.equal(REJECTION_LINE.test(files.get(DIAGNOSTICS) ?? ''), EXPECTED_REJECTIONS.has(item.name), `${item.name} ${EXPECTED_REJECTIONS.has(item.name) ? 'is expected to end in an error' : 'ended in an error'} on TypeScript ${version}:\n${files.get(DIAGNOSTICS)}`);
       }
       const difference = describeDifference(item.name, sevenFiles, sixFiles);
       assert.ok(difference === '', difference);
