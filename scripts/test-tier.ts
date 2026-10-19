@@ -48,8 +48,8 @@ export const TYPESCRIPT6_FILES = [
 export const BROWSER_FILES = ['.build/tests/browser/*.test.js'] as const;
 // Unit-level tests too slow for Full are named *.acceptance.ts and run only in Acceptance.
 export const ACCEPTANCE_UNIT_FILES = ['.build/tests/*.acceptance.js', '.build/tests/openapi/*.acceptance.js'] as const;
-// Unit: 8 files at once peaked at 3.5 of 7.7 GiB and halved the unit step (136 s to 69 s),
-// so the machine's parallelism is the only limit up to 8. Packed: Acceptance has two packed
+// Unit: 8 files at once peaked at 3.5 of 7.7 GiB (measured with the files in path order) and halved the unit step (136 s to
+// 69 s), so the machine's parallelism is the only limit up to 8. Packed: Acceptance has two packed
 // files, so two at once is the most that helps.
 const UNIT_CAP = 8;
 const PACKED_CAP = 2;
@@ -142,7 +142,7 @@ function saveFileSeconds(file: string | undefined): void {
 }
 
 /** Files with no record first, in path order (one of them may be the new slow file), then the recorded files, longest first. */
-function longestFirst(files: readonly string[], recorded: Readonly<Record<string, number>> | undefined): string[] {
+function longestFirst(files: readonly string[], recorded: Readonly<Record<string, number>> | undefined): { readonly ordered: string[]; readonly recordedCount: number } {
   const seconds = (file: string): number | undefined => {
     const value: unknown = recorded?.[sourcePath(path.resolve(root, file), root)];
     return typeof value === 'number' ? value : undefined;
@@ -150,7 +150,7 @@ function longestFirst(files: readonly string[], recorded: Readonly<Record<string
   const byPath = [...new Set(files)].sort();
   const unrecorded = byPath.filter(file => seconds(file) === undefined);
   const known = byPath.filter(file => seconds(file) !== undefined).sort((a, b) => (seconds(b) ?? 0) - (seconds(a) ?? 0));
-  return [...unrecorded, ...known];
+  return { ordered: [...unrecorded, ...known], recordedCount: known.length };
 }
 
 /**
@@ -163,6 +163,9 @@ function expandFiles(patterns: readonly string[]): string[] {
     const directory = path.posix.dirname(pattern);
     if (directory.includes('*')) throw new Error(`Put * in the file name only: '${pattern}'`);
     const name = new RegExp(`^${path.posix.basename(pattern).split('*').map(part => part.replace(/[.+?^${}()|[\]\\]/g, '\\$&')).join('[^/]*')}$`);
+    if (pattern.includes('*') && !fs.existsSync(path.resolve(root, directory))) {
+      throw new Error(`The folder '${directory}' does not exist. For a compiled test folder (.build/...) the test build is missing or failed: run npm run build:tests.`);
+    }
     const matches = pattern.includes('*')
       ? fs.readdirSync(path.resolve(root, directory), { withFileTypes: true }).filter(entry => entry.isFile() && name.test(entry.name)).map(entry => path.posix.join(directory, entry.name))
       : fs.existsSync(path.resolve(root, pattern)) ? [pattern] : [];
@@ -189,13 +192,18 @@ function nodeTest(label: string, patterns: readonly string[], concurrency: numbe
       } catch (error) {
         // A selection that names no file is the caller's input: the step fails, and runStep records it.
         process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
-        return Promise.resolve(2);
+        return Promise.resolve(STEP_FAULT);
       }
-      const request: OrderedRun = { label, concurrency, execArgv: extra, files: longestFirst(files, recordedFileSeconds.get(label)) };
+      const { ordered, recordedCount } = longestFirst(files, recordedFileSeconds.get(label));
+      process.stdout.write(`${label}: ${ordered.length} files, ${recordedCount} ordered by record, ${ordered.length - recordedCount} new first\n`);
+      const request: OrderedRun = { label, concurrency, execArgv: extra, files: ordered };
       return run(process.execPath, [fileURLToPath(new URL('./test-run-ordered.js', import.meta.url)), JSON.stringify(request)], root, env);
     },
   };
 }
+
+/** The status of a step that failed before it ran a file (no files selected, or a fault of the runner itself). */
+const STEP_FAULT = 2;
 
 /** Environment that points the compiler seam at the container's TypeScript 6 install. */
 function typescript6Env(): NodeJS.ProcessEnv {
@@ -378,7 +386,7 @@ async function main(argv: readonly string[]): Promise<void> {
     timings.push(entry);
     process.stdout.write(`${tier} ${step.label}: ${status === 0 ? 'passed' : 'FAILED'} in ${seconds}s\n`);
     writeTimings();
-    const fileSeconds = step.fileTimings && readFileSeconds(step.fileTimings, step.label, () => { timingsFault = true; });
+    const fileSeconds = step.fileTimings && status !== STEP_FAULT && readFileSeconds(step.fileTimings, step.label, () => { timingsFault = true; });
     if (fileSeconds) {
       entry.file_seconds = fileSeconds;
       writeTimings();

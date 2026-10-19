@@ -33,10 +33,19 @@ export function copyFixtureFile(root: string, fixtureRelative: string, destinati
 /** What a fixture needs from its owner: a place to register its cleanup. A test context is one. */
 export interface FixtureScope { after(cleanup: () => void): void }
 
-/** A scope for fixtures that several tests of one file share: the file's last test ends and the fixtures go. */
+/**
+ * A scope for fixtures that several tests of one file share: the file's last test ends and the fixtures go. Call it at module
+ * level, where `after` registers for the file. Every cleanup runs; the first error that one throws is thrown after them.
+ */
 export function fileFixtureScope(): FixtureScope {
   const cleanups: (() => void)[] = [];
-  after(() => { for (const cleanup of cleanups) cleanup(); });
+  after(() => {
+    const errors: unknown[] = [];
+    for (const cleanup of cleanups) {
+      try { cleanup(); } catch (error) { errors.push(error); }
+    }
+    if (errors.length) throw errors[0];
+  });
   return { after: (cleanup) => { cleanups.push(cleanup); } };
 }
 
