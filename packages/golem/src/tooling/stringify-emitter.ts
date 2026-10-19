@@ -460,6 +460,10 @@ function emitObjectInline(
     if (descriptor.additionalProperties === false) return "'{}'";
     return `stringifyJsonScalar(${expression} as never)`;
   }
+  if (typeof descriptor.additionalProperties === 'object') {
+    // A schema for the other names: the encoded record keeps them, and a wire value is already encoded.
+    return `stringifyJsonScalar(${ctx.wireIdentity ? expression : emitEncodedRecord(descriptor, expression, ctx)} as never)`;
+  }
   if (properties.every(([name]) => required.has(name))) {
     return `'{' + ${emitRequiredObjectConcat(properties, expression, ctx)}`;
   }
@@ -492,7 +496,8 @@ function emitObjectStringify(
     }
     return `function ${fn}(${stringifyParameters('value: Record<string, unknown>', ctx)}): string {\n  return stringifyJsonScalar(value as never);\n}\n`;
   }
-  if (properties.every(([name]) => required.has(name))) {
+  const additional = typeof descriptor.additionalProperties === 'object' ? descriptor.additionalProperties : undefined;
+  if (!additional && properties.every(([name]) => required.has(name))) {
     const concatenated = emitRequiredObjectConcat(properties, 'value', ctx);
     return [
       `function ${fn}(${stringifyParameters('value: Record<string, unknown>', ctx)}): string {`,
@@ -533,6 +538,19 @@ function emitObjectStringify(
         '  }',
       );
     }
+  }
+  if (additional) {
+    // A schema for the other names: they are written after the listed names, each by that schema.
+    lines.push(
+      '  for (const key of Object.keys(value)) {',
+      `    if (${JSON.stringify(properties.map(([name]) => name))}.includes(key)) continue;`,
+      '    const __golemExtra = value[key];',
+      '    if (__golemExtra === undefined) continue;',
+      '    if (sep) out += ",";',
+      `    out += stringifyJsonString(key) + ":" + ${emitValue(additional, '__golemExtra', ctx)};`,
+      '    sep = true;',
+      '  }',
+    );
   }
   lines.splice(1, 0, ...inlineLocalDeclarations(ctx));
   lines.push("  return out + '}';", '}', '');
@@ -1159,7 +1177,9 @@ function emitDecodeValue(descriptor: ModelTypeDescriptor, expression: string, ct
   const decodedMerge = descriptor.kind === 'intersection' ? requireComposedObject(descriptor.variants) : undefined;
   if (decodedMerge) return emitDecodeValue(decodedMerge, expression, ctx);
   if (descriptor.kind === 'object' && typeof descriptor.additionalProperties === 'object') {
-    if (!descriptorNeedsConversion(descriptor)) {
+    const listed = Object.keys(descriptor.properties);
+    // A node's fill converts each listed name by its own schema and every other name by the additional schema.
+    if (listed.length > 0 || !descriptorNeedsConversion(descriptor)) {
       const named = ctx.graph.nodeFor(descriptor);
       if (named) return emitInternedObjectDecode(named, descriptor, expression, ctx);
     }
@@ -1168,7 +1188,10 @@ function emitDecodeValue(descriptor: ModelTypeDescriptor, expression: string, ct
     const entry = emittedFallible(before, decoded, ctx)
       ? emitFieldConversion('key', 'value', descriptor.additionalProperties, 'value', ctx)
       : decoded;
-    return `Object.fromEntries(Object.entries((${expression} ?? {}) as Record<string, unknown>).map(([key, value]) => [key, ${entry}]))`;
+    const entries = `Object.entries((${expression} ?? {}) as Record<string, unknown>)`;
+    if (listed.length === 0) return `Object.fromEntries(${entries}.map(([key, value]) => [key, ${entry}]))`;
+    const extras = `Object.fromEntries(${entries}.filter(([key]) => !${JSON.stringify(listed)}.includes(key)).map(([key, value]) => [key, ${entry}]))`;
+    return `{ ...${extras}, ...${emitDecodedRecord(descriptor, expression, ctx)} }`;
   }
   const named = ctx.graph.nodeFor(descriptor);
   if (named && isObjectish(descriptor)) {
@@ -1491,9 +1514,14 @@ function emitEncodedRecord(
     }
     return [name, `(${local} = ${read}, ${value.replaceAll(read, local)})`] as const;
   });
-  const record = `{ ${values.map(([name, value]) => value.startsWith('...')
+  // A schema for the other names: they are kept and encoded by it. An open object writes its listed names only.
+  const additional = typeof descriptor.additionalProperties === 'object' ? descriptor.additionalProperties : undefined;
+  const extras = additional
+    ? [`...Object.fromEntries(Object.entries(${asRecord(expression)}).filter(([key, extra]) => extra !== undefined && !${JSON.stringify(fields.map(([name]) => name))}.includes(key)).map(([key, extra]) => [key, ${emitEncodeValue(additional, 'extra', ctx)}]))`]
+    : [];
+  const record = `{ ${[...extras, ...values.map(([name, value]) => value.startsWith('...')
     ? value
-    : `[${JSON.stringify(name)}]: ${value}`).join(', ')} }`;
+    : `[${JSON.stringify(name)}]: ${value}`)].join(', ')} }`;
   // Inline nested records can receive a getter expression from their parent.
   // Bind that object only when its expression would otherwise be evaluated
   // more than once; ordinary top-level `value`/`record` paths stay direct.
