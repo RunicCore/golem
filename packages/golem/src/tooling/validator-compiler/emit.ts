@@ -349,6 +349,11 @@ interface WriterMode {
   readonly microLeaf?: { readonly applies: (fn: IrFunction) => boolean; readonly write: (writer: FunctionWriter, check: IrCheck, value: string) => void };
   /** The mode writes functions that keep or receive an evaluation record. */
   readonly records: boolean;
+  /**
+   * True for a function whose checks a tagged union may write in place of calling it (see `mergedBranches`); absent
+   * when the mode always calls each branch.
+   */
+  readonly mergesBranch?: (id: number) => boolean;
 }
 
 const REPORT_FAILURE = `ok = false; if (!${ALL}) { ${PATH}.length = pl; return false; }`;
@@ -498,6 +503,8 @@ function fastCheckMode(plan: FastPlan): WriterMode {
     selectModel: modelOfSelection,
     microLeaf: { applies: () => true, write: (writer, check, value) => writer.failWhen(`!${leafCall(writer, plan.microLeaf(check), value)}`) },
     records: false,
+    // A branch with a fast check is exact on its own, so its checks are exact in place too.
+    mergesBranch: id => plan.has(id),
   };
 }
 
@@ -921,7 +928,8 @@ class FunctionWriter {
     }
   }
 
-  private objectKeywords(check: IrObject, value: string): void {
+  /** `prepared` is the key test a caller already wrote for this object; without it the mode's key test is written here. */
+  private objectKeywords(check: IrObject, value: string, prepared?: KeyTest): void {
     const marks = this.record !== undefined;
     const declared = new Set([
       ...check.required,
@@ -934,7 +942,7 @@ class FunctionWriter {
     const patternsToRun = patterns.filter(({ entry }) => entry.schema.kind !== 'always' || marks);
     const visitsAdditional = check.additional !== undefined && (check.additional.kind === 'forbid' || check.additional.schema.kind !== 'always');
     const needsKeys = check.minProperties !== undefined || check.maxProperties !== undefined || patternsToRun.length > 0 || visitsAdditional || check.propertyNames !== undefined;
-    const { presence, count, keys } = this.mode.keyTest(this, { check, value, captured, needsKeys, visitsAdditional });
+    const { presence, count, keys } = prepared ?? this.mode.keyTest(this, { check, value, captured, needsKeys, visitsAdditional });
     // The key test makes the key list or the count for each check below that reads it.
     const listed = (what: string | undefined): string => {
       if (what === undefined) throw new Error('The key test of this validator mode left no key list or count for an object check that reads it.');
@@ -1107,6 +1115,8 @@ class FunctionWriter {
    * tag property. The tag is read once; the first branch whose list holds it is selected, as a tag lies in one list.
    */
   private discriminatedUnion(check: IrUnion, discriminator: IrDiscriminator, value: string): void {
+    const merged = this.mergedBranches(check);
+    if (merged !== undefined) return this.mergedUnion(merged, discriminator, value);
     this.state.localHelper('isObject');
     const presence = this.mode.presence(this.state, value);
     const property = literal(discriminator.property);
@@ -1119,13 +1129,9 @@ class FunctionWriter {
       `isObject(${value}) ? (${presentValueSource(value, property, `${value}[${property}]`)}) : undefined`,
     );
     this.line(`const ${tag} = ${text(read)};`);
-    // The fast check compares a primitive tag with `===`, which `jsonEqual` starts with, and makes no function per call.
-    const matches = (position: number): string => discriminator.tags[position]
-      .map((item, index) => (isPrimitive(item) ? `${tag} === ${JSON.stringify(item)}` : `${jsonEqual()}(${tag}, ${tags()}[${position}][${index}])`))
-      .join(' || ') || 'false';
     const selection = this.mode.form(
       () => `${tags()}.findIndex(list => list.some(item => ${jsonEqual()}(${tag}, item)))`,
-      () => `${discriminator.tags.map((_, position) => `${matches(position)} ? ${position} : `).join('')}-1`,
+      () => this.tagSelection(discriminator, tag),
     );
     this.line(`const ${selected} = ${text(selection)};`);
     check.branches.forEach((fn, position) => {
@@ -1138,6 +1144,87 @@ class FunctionWriter {
       issue: () => `code: 'literal', expected: ${this.state.constant('lit', `Object.freeze(/*#__PURE__*/ JSON.parse(${literal(JSON.stringify(discriminator.tags.flat()))}))`)}`,
       path: `[...${PATH}, ${property}]`,
     });
+  }
+
+  /**
+   * The branch position of the tag held by `tag`, or -1: the first branch whose list holds it, as a tag lies in one list.
+   * A primitive tag is compared with `===`, which `jsonEqual` starts with, and no function is made per call.
+   */
+  private tagSelection(discriminator: IrDiscriminator, tag: string): string {
+    const tags = (): string => this.state.constant('tags', `Object.freeze(/*#__PURE__*/ JSON.parse(${literal(JSON.stringify(discriminator.tags))}))`);
+    const matches = (position: number): string => discriminator.tags[position]
+      .map((item, index) => (isPrimitive(item) ? `${tag} === ${JSON.stringify(item)}` : `${this.state.runtimeHelper('jsonEqual')}(${tag}, ${tags()}[${position}][${index}])`))
+      .join(' || ') || 'false';
+    return `${discriminator.tags.map((_, position) => `${matches(position)} ? ${position} : `).join('')}-1`;
+  }
+
+  /**
+   * The object check of each branch, when the mode merges every branch of this union: each is, after forwarding, a
+   * function of a type `object` check and one object check that only `properties`, `required` inside them and
+   * `additionalProperties` absent, `true` or `false` make. Any other branch leaves the union to the branch calls.
+   */
+  private mergedBranches(check: IrUnion): readonly IrObject[] | undefined {
+    const merges = this.mode.mergesBranch;
+    if (merges === undefined) return undefined;
+    const objects: IrObject[] = [];
+    for (const id of check.branches) {
+      const target = this.target(id);
+      const fn = this.functions[target];
+      if (!merges(target) || fn.collects || fn.receives || fn.body.kind !== 'checks' || fn.body.checks.length !== 2) return undefined;
+      const [type, object] = fn.body.checks;
+      if (type.kind !== 'type' || type.names.length !== 1 || type.names[0] !== 'object' || object.kind !== 'object') return undefined;
+      const named = new Set(object.properties.map(property => property.key));
+      const additional = object.additional;
+      if (object.patternProperties.length > 0 || object.propertyNames !== undefined || object.minProperties !== undefined || object.maxProperties !== undefined
+        || object.dependentRequired.length > 0 || !object.required.every(key => named.has(key))
+        || (additional?.kind === 'schema' && additional.schema.kind !== 'always')) return undefined;
+      objects.push(object);
+    }
+    return objects;
+  }
+
+  /** A branch object that `additionalProperties: false` closes. */
+  private static closed(object: IrObject): boolean {
+    return object.additional?.kind === 'forbid';
+  }
+
+  /**
+   * A tagged union of plain object branches as one key pass (spec 5.2 F1 over every key a branch declares): the tag is
+   * the captured value, so a tag outside the JSON view selects no branch, and the selected branch runs its object
+   * checks on the captured values. A closed branch also requires each key only another branch declares to be absent,
+   * and no key that no branch declares. Every read is of an own enumerable key (spec 5.1 rule 3).
+   */
+  private mergedUnion(branches: readonly IrObject[], discriminator: IrDiscriminator, value: string): void {
+    this.failWhen(`!${TYPE_TESTS.object(value)}`);
+    this.state.localHelper('isObject');
+    const keys = [...new Set([discriminator.property, ...branches.flatMap(object => object.properties.map(property => property.key))])];
+    const captured = keys.map(key => [key, this.fresh('present')] as const);
+    const closed = branches.map(FunctionWriter.closed);
+    const extra = closed.some(Boolean) && !closed.every(Boolean) ? this.fresh('extra') : undefined;
+    this.line(`let ${[...captured.map(([, name]) => name), ...(extra === undefined ? [] : [`${extra} = false`])].join(', ')};`);
+    const key = this.fresh('key');
+    this.open(`for (const ${key} of Object.keys(${value}))`);
+    this.open(`switch (${key})`);
+    for (const [name, capture] of captured) this.line(`case ${literal(name)}: ${capture} = ${value}[${literal(name)}]; break;`);
+    if (extra !== undefined) this.line(`default: if (${value}[${key}] !== undefined) ${extra} = true;`);
+    else if (closed.every(Boolean)) this.line(`default: if (${value}[${key}] !== undefined) ${this.mode.fail.fail()}`);
+    this.close();
+    this.close();
+    const selected = this.fresh('branch');
+    // `keys` starts with the tag property, so the first local holds the tag.
+    this.line(`const ${selected} = ${this.tagSelection(discriminator, captured[0][1])};`);
+    const presence = objectPresence(this.state, value, captured);
+    branches.forEach((object, position) => {
+      this.open(`if (${selected} === ${position})`);
+      if (closed[position]) {
+        const named = new Set(object.properties.map(property => property.key));
+        for (const [name, capture] of captured) if (!named.has(name)) this.failWhen(`${capture} !== undefined`);
+        if (extra !== undefined) this.failWhen(extra);
+      }
+      this.objectKeywords(object, value, { presence });
+      this.close();
+    });
+    this.failWhen(`${selected} < 0`);
   }
 }
 

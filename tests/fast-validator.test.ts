@@ -527,8 +527,14 @@ function randomSchema(random: () => number, depth: number, own: boolean): Record
     case 'anyOf': return { anyOf: [same(), same(), same()] };
     case 'not': return { not: same() };
     case 'tagged': {
-      const branch = (tag: string): Record<string, unknown> => ({ type: 'object', required: ['kind', 'a'], properties: { kind: { const: tag }, a: child() } });
-      return { oneOf: [branch('p'), branch('q')], discriminator: { propertyName: 'kind' } };
+      // Both branches declare `a`, each with its own check; `own` is a key only one branch declares.
+      const branch = (tag: string, own: string): Record<string, unknown> => ({
+        type: 'object',
+        required: ['kind', 'a'],
+        properties: { kind: { const: tag }, a: child(), [own]: child() },
+        ...pick(random, [{}, { additionalProperties: false }, { additionalProperties: false }, { additionalProperties: { type: 'string' } }]),
+      });
+      return { oneOf: [branch('p', 'b'), branch('q', 'c')], discriminator: { propertyName: 'kind' } };
     }
     default: {
       const named = subset(random, KEYS);
@@ -557,7 +563,14 @@ function valueFor(schema: Record<string, unknown>, random: () => number): unknow
   const branches = schema.oneOf ?? schema.anyOf;
   if (Array.isArray(branches)) {
     const branch = pick(random, branches);
-    return isPlainRecord(branch) ? valueFor(branch, random) : null;
+    const value = isPlainRecord(branch) ? valueFor(branch, random) : null;
+    // Half the time a key that only another branch declares, with a value that branch accepts.
+    const other = pick(random, branches.filter(entry => entry !== branch));
+    const declared = isPlainRecord(branch) && isPlainRecord(branch.properties) ? Object.keys(branch.properties) : [];
+    const foreign = isPlainRecord(other) && isPlainRecord(other.properties) ? Object.entries(other.properties).filter(([key]) => !declared.includes(key)) : [];
+    if (!isPlainRecord(value) || foreign.length === 0 || random() >= 0.5) return value;
+    const [key, schema] = pick(random, foreign);
+    return isPlainRecord(schema) ? { ...value, [key]: valueFor(schema, random) } : value;
   }
   if (schema.not !== undefined) return odd(random);
   if (typeof schema.format === 'string') return pick(random, [...FORMAT_SAMPLES[schema.format], FORMAT_SAMPLES[schema.format][0]]);
