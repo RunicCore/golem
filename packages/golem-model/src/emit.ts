@@ -1406,13 +1406,15 @@ export function emitSource(
         },
       );
       const fromInit = emitModelFromInit(descriptor, input, resolveFromAny);
+      // The JSON view: an input field is present when it is own, enumerable and not undefined.
+      const present = `Object.prototype.propertyIsEnumerable.call(values, ${name}) && ${input} !== undefined`;
       const converted = wrapRootConversion(helpers, specification.name, 'deserialize', name, input, emitDecode, 'unknown');
       if (converted !== input) {
         conversionHelpers.add('define');
-        decode.push(`  if (Object.prototype.hasOwnProperty.call(values, ${name})) defineModelProperty(result, ${name}, ${converted});`);
+        decode.push(`  if (${present}) defineModelProperty(result, ${name}, ${converted});`);
       }
       conversionHelpers.add('define');
-      init.push(`    if (Object.prototype.hasOwnProperty.call(values, ${name})) defineModelProperty(this, ${name}, ${fromInit});`);
+      init.push(`    if (${present}) defineModelProperty(this, ${name}, ${fromInit});`);
     }
     rootFieldExpressions.set(specification.name, { helpers, encode, decode, init });
   }

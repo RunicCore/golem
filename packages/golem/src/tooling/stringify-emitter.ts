@@ -1368,17 +1368,24 @@ function emitFillFunction(
   let fallible = recursive;
   properties.forEach(([name, property], index) => {
     const field = JSON.stringify(name);
-    const read = access('wire', name);
-    const fill = emitFillValue(property, read, field, `__golemWire${index}`, ctx);
+    // The JSON view: a wire field is present when it is own, enumerable and not undefined. Where a write depends on
+    // presence, the field is read once into a local before the check; a required field written as it is reads the wire.
+    const optional = !required.has(name);
+    const direct = access('wire', name);
+    const present = `__golemPresent${index}`;
+    const readPresent = `const ${present} = Object.prototype.propertyIsEnumerable.call(wire, ${field}) ? ${direct} : undefined;`;
+    const readDirect = (line: string): string => line.replaceAll(present, direct);
+    const fill = emitFillValue(property, present, field, `__golemWire${index}`, ctx);
     const proto = name === '__proto__';
     if (fill.converted || fill.checked || proto) needsFill = true;
     if (fill.fallible || fill.checked) fallible = true;
     if (!fill.converted && !fill.checked && !proto) {
       copyIdentity = true;
-      identityWrites.push(...(required.has(name)
-        ? [emitFillPropertyWrite(name, fill.value)]
+      identityWrites.push(...(!optional
+        ? [emitFillPropertyWrite(name, readDirect(fill.value))]
         : [
-          `    if (Object.prototype.hasOwnProperty.call(wire, ${field})) {`,
+          `    ${readPresent}`,
+          `    if (${present} !== undefined) {`,
           emitFillPropertyWrite(name, fill.value, '      '),
           '    }',
         ]));
@@ -1387,18 +1394,20 @@ function emitFillFunction(
     if (!fill.converted && !proto) {
       // Carried by reference: checked on every call, written only when the caller wants identity fields copied.
       copyIdentity = true;
-      const write = ['  if (copyIdentity) {', emitFillPropertyWrite(name, fill.value, '    '), '  }'];
-      propertyWrites.push(...(required.has(name)
-        ? [...fill.statements.map((line) => `  ${line}`), ...write]
+      const write = (value: string): string[] => ['  if (copyIdentity) {', emitFillPropertyWrite(name, value, '    '), '  }'];
+      propertyWrites.push(...(!optional
+        ? [...fill.statements.map((line) => `  ${readDirect(line)}`), ...write(readDirect(fill.value))]
         : [
-          `  if (Object.prototype.hasOwnProperty.call(wire, ${field})) {`,
-          ...[...fill.statements, ...write].map((line) => line.startsWith('  ') ? `  ${line}` : `    ${line}`),
+          `  ${readPresent}`,
+          `  if (${present} !== undefined) {`,
+          ...[...fill.statements, ...write(fill.value)].map((line) => line.startsWith('  ') ? `  ${line}` : `    ${line}`),
           '  }',
         ]));
       return;
     }
     propertyWrites.push(
-      `  if (Object.prototype.hasOwnProperty.call(wire, ${field})) {`,
+      `  ${readPresent}`,
+      `  if (${present} !== undefined) {`,
       ...fill.statements.map((line) => `    ${line}`),
       emitFillPropertyWrite(name, fill.value),
       '  }',

@@ -106,6 +106,36 @@ test('generated decode with a constructor reads each declared property once and 
   });
 });
 
+/** A payment wire whose optional `charge` is an own `undefined` value, or an own non-enumerable object. */
+function wireWithCharge(charge: 'undefined' | 'hidden'): Record<string, unknown> {
+  const wire: Record<string, unknown> = { id: 'p1', note: 'n', merchant: { id: 'm', name: 'M' }, billing: { name: 'B' }, money: { amount: '1.00', currency: 'USD' } };
+  if (charge === 'undefined') wire.charge = undefined;
+  else Object.defineProperty(wire, 'charge', { value: { id: 'c', status: 'pending', settlesOn: 'later' }, enumerable: false });
+  return wire;
+}
+
+function hasOwnCharge(value: unknown): boolean {
+  return typeof value === 'object' && value !== null && Object.hasOwn(value, 'charge');
+}
+
+test('fromWireFormat leaves out a field that is undefined or not enumerable in the wire', async (t) => {
+  const { fromWireFormatTPayment } = await loadCodecs(t, 'payment');
+  assert.equal(hasOwnCharge(fromWireFormatTPayment(wireWithCharge('undefined'), { validate: false })), false);
+  assert.equal(hasOwnCharge(fromWireFormatTPayment(wireWithCharge('hidden'), { validate: false })), false);
+});
+
+test('the generated constructor and decode leave out a field that is undefined or not enumerable in the input', async (t) => {
+  const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-serde-isolation-', name: 'serde-isolation', linkWorkspaceNodeModules: true });
+  fs.writeFileSync(path.join(sourceRoot, 'payment.model.ts'), readFixture('models/serde-isolation/payment.model.ts'));
+  writeModelGolemYaml(root, { mobx: false, validation: false });
+  await buildModelProject(root);
+  const { Payment } = await import(pathToFileURL(path.join(root, 'build/payment.model.js')).href);
+  assert.equal(hasOwnCharge(new Payment(wireWithCharge('undefined'))), false);
+  assert.equal(hasOwnCharge(new Payment(wireWithCharge('hidden'))), false);
+  assert.equal(hasOwnCharge(decodeGeneratedModel(Payment, wireWithCharge('undefined'))), false);
+  assert.equal(hasOwnCharge(decodeGeneratedModel(Payment, wireWithCharge('hidden'))), false);
+});
+
 test('a conversion that fails inside a nested model reports the outer field, the index and the inner field', async (t) => {
   const { fromWireFormatTCalendar } = await loadCodecs(t, 'calendar');
   const note = {};

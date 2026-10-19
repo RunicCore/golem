@@ -458,9 +458,12 @@ function emitNested(
       const extras = typeof descriptor.additionalProperties === 'object'
         ? `for (const [key, value] of Object.entries(source)) if (!([${knownKeys}] as readonly string[]).includes(key)) defineModelProperty(out, key, ${additional});`
         : '';
-      const fields = assignments.map(({ name, property, sourceValue, value }) => omitsUndefined(name)
-        ? `if (${sourceValue} !== undefined) defineModelProperty(out, ${property}, ${value});`
-        : `if (Object.hasOwn(source, ${property})) defineModelProperty(out, ${property}, ${sourceValue} === undefined ? undefined : (${value}));`);
+      // A decoder reads its input by the JSON view: a field is present when it is own, enumerable and not undefined.
+      const fields = assignments.map(({ name, property, sourceValue, value }) => direction !== 'toJSON'
+        ? `if (Object.prototype.propertyIsEnumerable.call(source, ${property}) && ${sourceValue} !== undefined) defineModelProperty(out, ${property}, ${value});`
+        : omitsUndefined(name)
+          ? `if (${sourceValue} !== undefined) defineModelProperty(out, ${property}, ${value});`
+          : `if (Object.hasOwn(source, ${property})) defineModelProperty(out, ${property}, ${sourceValue} === undefined ? undefined : (${value}));`);
       return `${objectValueExpression(expression)} ? ((source: Record<string, unknown>) => { const out: Record<string, unknown> = {}; ${[...fields, extras].filter(Boolean).join(' ')} return out; })(${recordExpression(expression)}) : ${expression}`;
     }
     const additionalChanged = additional !== 'value';

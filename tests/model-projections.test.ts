@@ -60,6 +60,17 @@ test('projection decoders and encoders copy fields with assignments and keep the
   assert.deepEqual(encodeGeneratedModel(office), { place: { city: 'Hue', country: 'VN' } });
 });
 
+test('a projection decoder leaves out a field that is undefined or not enumerable in the input', async t => {
+  const { root, sourceRoot } = fixture(t);
+  fs.writeFileSync(path.join(sourceRoot, 'place.model.ts'), readFixture("models/model-composition/projection-decoders-copy-fields-with-assignments/place.model.ts"));
+  writeModelGolemYaml(root, { mobx: false, validation: false });
+  await buildModelProject(root);
+  const { Office } = await import(path.join(root, 'build/place.model.js'));
+  const hidden = Object.defineProperty({ city: 'Hue' }, 'country', { value: 'VN', enumerable: false });
+  assert.deepEqual(Object.keys(decodeGeneratedModel(Office, { place: { city: 'Hue', country: undefined } }).place), ['city']);
+  assert.deepEqual(Object.keys(decodeGeneratedModel(Office, { place: hidden }).place), ['city']);
+});
+
 test('equivalent projections share helpers and execute only retained field codecs', async t => {
   const { root, sourceRoot } = fixture(t);
   fs.writeFileSync(path.join(sourceRoot, 'codecs.ts'), readFixture("models/model-composition/equivalent-projections-share-helpers-and-execute-only-retained-field-codecs/codecs.ts"));
