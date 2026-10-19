@@ -15,8 +15,7 @@ import { compileGeneratedSdk, generateMaterializedSdk, requireRecord } from './h
 /**
  * One row is one allOf shape. For each row the generated SDK is checked on every path that reads the shape: the generated type
  * (a compile-time fixture), the model path (decodeGeneratedModel and encodeGeneratedModel), the codec (fromWireFormat and
- * toWireFormat) and the validator, with validation on and off. A row marked `todo` names the task whose fix makes the paths
- * agree; its expected values state the agreed meaning, so the row turns green when the task lands.
+ * toWireFormat) and the validator, with validation on and off.
  *
  * `additionalProperties` inside an allOf member follows strict JSON Schema: a member judges every name that it does not list in
  * its own `properties`, the names of its siblings included.
@@ -43,18 +42,12 @@ interface Row {
   readonly accepted: readonly Accepted[];
   /** Inputs that the validator rejects, checked with validation on. */
   readonly rejected: readonly Wire[];
-  /** The task whose fix makes the paths agree, for each claim that disagrees today. */
-  readonly todo?: Readonly<{ type?: string; on?: string; off?: string }>;
 }
 
 const AT = '2024-05-06T07:08:09.000Z';
 const B = '2024-05-07T08:09:10.000Z';
 const dateTime = { type: 'string', format: 'date-time' };
 const text = { type: 'string' };
-
-function agreeing(task: string): NonNullable<Row['todo']> {
-  return { type: task, on: task, off: task };
-}
 
 /** A `Visit` object whose one field `m` (or the named property) holds the schema under test. */
 function visitDocument(properties: Record<string, unknown>, components: Record<string, unknown> = {}): Record<string, unknown> {
@@ -90,7 +83,6 @@ const object = (properties: Record<string, unknown>, more: Record<string, unknow
 });
 
 const rows: readonly Row[] = [
-  // Rows that agree today.
   {
     shape: 'disjoint inline objects (T-80, T-91)',
     fixture: 'disjoint-objects',
@@ -210,8 +202,7 @@ const rows: readonly Row[] = [
       { wire: { m: { x: 'q' } }, model: { m: { x: 'q' } } },
     ],
     rejected: [{ m: { n: 1 } }],
-    // Spec 4.7: the type of a name that the validator always rejects is `n?: never`; today it shows `n?: number`.
-    todo: { type: 'T-99' },
+    // The type of a name that the validator always rejects is `n?: never`.
   },
   {
     shape: 'strict b1: the same members accept a string sibling',
@@ -230,11 +221,9 @@ const rows: readonly Row[] = [
     }),
     accepted: [{ wire: { m: { a: 'x' } }, model: { m: { a: 'x' } } }],
     rejected: [{ m: { a: 'x', b: 'y' } }, { m: { b: 'y' } }],
-    // Spec 4.7: `b?: never`; today it shows `b?: string`.
-    todo: { type: 'T-99' },
+    // The type shows `b?: never`.
   },
-  // A closed base with a derived own property. The validator rejections are correct under strict JSON Schema and stay normal
-  // tests. The type shows `b`, which the validator always rejects; spec 4.7 types it `b?: never`.
+  // A closed base with a derived optional own property: the validator rejects `b`, and the type shows `b?: never`.
   {
     shape: 'closed base and a component with an optional own property',
     fixture: 'closed-base-optional',
@@ -245,19 +234,6 @@ const rows: readonly Row[] = [
     }),
     accepted: [{ wire: { a: 'x' }, model: { a: 'x' } }],
     rejected: [{ a: 'x', b: B }, { b: B }],
-    todo: { type: 'T-101' },
-  },
-  {
-    shape: 'closed base and a component with a required own property',
-    root: 'Derived',
-    document: componentDocument('Derived', {
-      Base: { type: 'object', additionalProperties: false, properties: { a: text } },
-      Derived: { allOf: [ref('Base'), object({ b: dateTime }, { required: ['b'] })] },
-    }),
-    accepted: [],
-    rejected: [{ a: 'x', b: B }, { a: 'x' }, { b: B }],
-    // No object is valid, so A2 replaces this row with the coded generation error that the last tests of this file expect.
-    todo: { on: 'T-101: A2 replaces this with the coded error OPENAPI_COMPOSITION_UNSATISFIABLE' },
   },
   // The user's answer: strict JSON Schema, and `unevaluatedProperties: false` closes an object to every name that any member
   // declares. An open base and a derived component that sets it accept the base and own names and reject any other name.
@@ -271,12 +247,8 @@ const rows: readonly Row[] = [
     }),
     accepted: [{ wire: { a: 'x', b: B }, model: { a: 'x', b: new Date(B) } }],
     rejected: [{ a: 'x', b: B, z: 'q' }],
-    // The type and the validation-off paths agree today; only the validator still accepts the extra name.
-    todo: { on: 'T-101' },
   },
-  // The T-99 shapes already reject invalid input as strict JSON Schema does. The todo rows of the same shapes below repeat these
-  // inputs, but a todo test stops at its first failing claim (the valid input), so its rejections never run. These rows keep
-  // the rejections running as normal tests.
+  // The T-99 shapes reject invalid input as strict JSON Schema does.
   {
     shape: 'T-99b strict: an additionalProperties string member rejects a number name',
     root: 'Visit',
@@ -293,7 +265,6 @@ const rows: readonly Row[] = [
     accepted: [],
     rejected: [{ m: { z: 1 } }],
   },
-  // Rows that disagree today. Each names the task that fixes them.
   {
     shape: 'T-96: a nullable object with own properties and an allOf object member',
     fixture: 'nullable-own-plus-member',
@@ -304,7 +275,6 @@ const rows: readonly Row[] = [
       { wire: { m: { at: AT, b: B } }, model: { m: { at: new Date(AT), b: new Date(B) } } },
     ],
     rejected: [],
-    todo: agreeing('T-96'),
   },
   {
     shape: 'T-98: own properties plus an allOf $ref member',
@@ -316,7 +286,6 @@ const rows: readonly Row[] = [
     ),
     accepted: [{ wire: { m: { at: AT, name: 'x' } }, model: { m: { at: new Date(AT), name: 'x' } } }],
     rejected: [],
-    todo: agreeing('T-98'),
   },
   {
     shape: 'T-98: an inline allOf of a $ref member and a properties member',
@@ -328,7 +297,6 @@ const rows: readonly Row[] = [
     ),
     accepted: [{ wire: { m: { at: AT, name: 'x' } }, model: { m: { at: new Date(AT), name: 'x' } } }],
     rejected: [],
-    todo: agreeing('T-98'),
   },
   {
     shape: 'T-99a: two members declare the same property',
@@ -340,7 +308,6 @@ const rows: readonly Row[] = [
       { wire: { m: {} }, model: { m: {} } },
     ],
     rejected: [],
-    todo: agreeing('T-99'),
   },
   {
     shape: 'T-99b: an additionalProperties-only member beside a date property',
@@ -352,7 +319,6 @@ const rows: readonly Row[] = [
       { wire: { m: { at: AT } }, model: { m: { at: new Date(AT) } } },
     ],
     rejected: [{ m: { other: 1 } }],
-    todo: agreeing('T-99'),
   },
   {
     shape: 'strict b3: a date property, then an additionalProperties string member',
@@ -361,7 +327,6 @@ const rows: readonly Row[] = [
     document: visitDocument({ m: { allOf: [object({ at: dateTime }), { type: 'object', additionalProperties: text }] } }),
     accepted: [{ wire: { m: { at: AT } }, model: { m: { at: new Date(AT) } } }],
     rejected: [{ m: { x: 1 } }],
-    todo: agreeing('T-99'),
   },
   {
     shape: 'T-99c: a member with properties and additionalProperties beside a date property',
@@ -375,7 +340,6 @@ const rows: readonly Row[] = [
       { wire: { m: { at: AT, z: 'q' } }, model: { m: { at: new Date(AT), z: 'q' } } },
     ],
     rejected: [{ m: { z: 1 } }],
-    todo: agreeing('T-99'),
   },
   {
     shape: 'T-99: own additionalProperties dates plus an allOf properties member',
@@ -389,7 +353,6 @@ const rows: readonly Row[] = [
       { wire: { m: { x: AT, b: B } }, model: { m: { x: new Date(AT), b: new Date(B) } } },
     ],
     rejected: [{ m: { x: 1 } }],
-    todo: { on: 'T-99', off: 'T-99' },
   },
 ];
 
@@ -494,21 +457,21 @@ for (const row of rows) {
 
   const fixture = row.fixture;
   if (fixture !== undefined) {
-    test(`${row.shape}: the generated type`, { todo: row.todo?.type }, async () => {
+    test(`${row.shape}: the generated type`, async () => {
       const { output } = await checked();
       copyFixtureFile(output, `openapi/composition/${fixture}-types.ts`, 'row-types.ts');
       compileGeneratedSdk(output, [path.join(output, 'row-types.ts')], { strict: true, skipLibCheck: true, noEmit: true });
     });
   }
 
-  test(`${row.shape}: validation on`, { todo: row.todo?.on }, async () => {
+  test(`${row.shape}: validation on`, async () => {
     const built = await checked();
     await assertPathsAgree(built, row.accepted);
     await assertValidatorJudges(built, row);
   });
 
   if (row.accepted.length > 0) {
-    test(`${row.shape}: validation off`, { todo: row.todo?.off }, async () => {
+    test(`${row.shape}: validation off`, async () => {
       await assertPathsAgree(await unchecked(), row.accepted);
     });
   }
@@ -527,7 +490,7 @@ const unsatisfiable: readonly { readonly shape: string; readonly code: string; r
 ];
 
 for (const { shape, code, document } of unsatisfiable) {
-  test(`${shape}: generation fails with ${code}`, { todo: 'T-101' }, async t => {
+  test(`${shape}: generation fails with ${code}`, async t => {
     const output = path.join(createFixtureProject(t, 'golem-composition-unsatisfiable-'), 'sdk');
     await assert.rejects(
       generateMaterializedSdk(document, { output, name: 'Composition', profile: { mobx: false, validation: true, allowAny: false } }),
