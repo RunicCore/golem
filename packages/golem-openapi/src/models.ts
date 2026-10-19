@@ -1,5 +1,6 @@
 import {
   descriptorNeedsConversion,
+  isDisjointObjectIntersection,
   emitModelFromJSON,
   FIELD_CONVERSION_INPUT,
   singleCallConverter,
@@ -298,20 +299,27 @@ function modelFieldType(
     return admitsNull(schema) ? 'Date | null' : 'Date';
   }
   // The conversion's order and rule: deciding allOf members win, then the schema's own array keywords, then oneOf and anyOf.
-  const decidingMembers = isJsonObject(schema) && hasAllOfMembers(schema)
-    ? schema.allOf
-      .map((item) => ({ item, descriptor: modelConversionDescriptor(item, definitions, nested, 'from', seen) }))
-      .filter(({ descriptor }) => isDecidingPart(descriptor))
+  const allOfMembers = isJsonObject(schema) && hasAllOfMembers(schema)
+    ? schema.allOf.map((item) => ({ item, descriptor: modelConversionDescriptor(item, definitions, nested, 'from', seen) }))
     : [];
+  const decidingMembers = allOfMembers.filter(({ descriptor }) => isDecidingPart(descriptor));
   const [decidingMember] = decidingMembers;
   if (decidingMembers.length === 1 && decidingMember && isSequenceDescriptor(decidingMember.descriptor)) {
     return modelFieldType(decidingMember.item, definitions, nested, seen);
   }
-  // Plain object members are one intersection, with the schema's own properties when it has them, as the conversion merges them.
+  // Plain object members are one intersection, with the schema's own properties when it has them, as the conversion merges them
+  // and the codec merges them when `isDisjointObjectIntersection` accepts the parts.
   if (isJsonObject(schema) && joinsObjectMembers(schema, decidingMembers.map(({ descriptor }) => descriptor))) {
-    const parts = [...(hasOwnObjectKeywords(schema) ? [withoutAllOf(schema)] : []), ...decidingMembers.map(({ item }) => item)]
-      .map((part) => modelFieldType(part, definitions, nested, seen));
-    return parts.length === 1 ? parts.join('') : parts.map((part) => `(${part})`).join(' & ');
+    const ownParts = hasOwnObjectKeywords(schema) ? [withoutAllOf(schema)] : [];
+    const mergedParts = [
+      ...ownParts.map((part) => modelConversionDescriptor(part, definitions, nested, 'from', seen)),
+      ...allOfMembers.filter(({ descriptor }) => isConstraintOnlyPart(descriptor) || isDecidingPart(descriptor)).map(({ descriptor }) => descriptor),
+    ];
+    if (mergedParts.filter((part) => !isConstraintOnlyPart(part)).length === 1 || isDisjointObjectIntersection(mergedParts)) {
+      const parts = [...ownParts, ...decidingMembers.map(({ item }) => item)]
+        .map((part) => modelFieldType(part, definitions, nested, seen));
+      return parts.length === 1 ? parts.join('') : parts.map((part) => `(${part})`).join(' & ');
+    }
   }
   if (isJsonObject(schema) && decidingMembers.length === 0 && isSequenceSchema(schema)) {
     const orNull = admitsNull(schema) ? ' | null' : '';
