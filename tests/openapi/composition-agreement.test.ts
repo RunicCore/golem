@@ -210,6 +210,8 @@ const rows: readonly Row[] = [
       { wire: { m: { x: 'q' } }, model: { m: { x: 'q' } } },
     ],
     rejected: [{ m: { n: 1 } }],
+    // Spec 4.7: the type of a name that the validator always rejects is `n?: never`; today it shows `n?: number`.
+    todo: { type: 'T-99' },
   },
   {
     shape: 'strict b1: the same members accept a string sibling',
@@ -228,8 +230,11 @@ const rows: readonly Row[] = [
     }),
     accepted: [{ wire: { m: { a: 'x' } }, model: { m: { a: 'x' } } }],
     rejected: [{ m: { a: 'x', b: 'y' } }, { m: { b: 'y' } }],
+    // Spec 4.7: `b?: never`; today it shows `b?: string`.
+    todo: { type: 'T-99' },
   },
-  // A closed base with a derived own property: the type shows `b`, the validator rejects every object that has it.
+  // A closed base with a derived own property. The validator rejections are correct under strict JSON Schema and stay normal
+  // tests. The type shows `b`, which the validator always rejects; spec 4.7 types it `b?: never`.
   {
     shape: 'closed base and a component with an optional own property',
     fixture: 'closed-base-optional',
@@ -240,10 +245,10 @@ const rows: readonly Row[] = [
     }),
     accepted: [{ wire: { a: 'x' }, model: { a: 'x' } }],
     rejected: [{ a: 'x', b: B }, { b: B }],
+    todo: { type: 'T-101' },
   },
   {
     shape: 'closed base and a component with a required own property',
-    fixture: 'closed-base-required',
     root: 'Derived',
     document: componentDocument('Derived', {
       Base: { type: 'object', additionalProperties: false, properties: { a: text } },
@@ -251,8 +256,27 @@ const rows: readonly Row[] = [
     }),
     accepted: [],
     rejected: [{ a: 'x', b: B }, { a: 'x' }, { b: B }],
+    // No object is valid, so A2 replaces this row with the coded generation error that the last tests of this file expect.
+    todo: { on: 'T-101: A2 replaces this with the coded error OPENAPI_COMPOSITION_UNSATISFIABLE' },
   },
-  // The T-99 shapes already reject invalid input as strict JSON Schema does; their valid input is the disagreeing row below.
+  // The user's answer: strict JSON Schema, and `unevaluatedProperties: false` closes an object to every name that any member
+  // declares. An open base and a derived component that sets it accept the base and own names and reject any other name.
+  {
+    shape: 'an open base and a component with unevaluatedProperties false',
+    fixture: 'unevaluated-open-base',
+    root: 'Derived',
+    document: componentDocument('Derived', {
+      Base: object({ a: text }),
+      Derived: { allOf: [ref('Base'), object({ b: dateTime })], unevaluatedProperties: false },
+    }),
+    accepted: [{ wire: { a: 'x', b: B }, model: { a: 'x', b: new Date(B) } }],
+    rejected: [{ a: 'x', b: B, z: 'q' }],
+    // The type and the validation-off paths agree today; only the validator still accepts the extra name.
+    todo: { on: 'T-101' },
+  },
+  // The T-99 shapes already reject invalid input as strict JSON Schema does. The todo rows of the same shapes below repeat these
+  // inputs, but a todo test stops at its first failing claim (the valid input), so its rejections never run. These rows keep
+  // the rejections running as normal tests.
   {
     shape: 'T-99b strict: an additionalProperties string member rejects a number name',
     root: 'Visit',
@@ -364,7 +388,7 @@ const rows: readonly Row[] = [
       { wire: { m: { b: B } }, model: { m: { b: new Date(B) } } },
       { wire: { m: { x: AT, b: B } }, model: { m: { x: new Date(AT), b: new Date(B) } } },
     ],
-    rejected: [],
+    rejected: [{ m: { x: 1 } }],
     todo: { on: 'T-99', off: 'T-99' },
   },
 ];
@@ -418,36 +442,49 @@ function asGenerated(model: object): GeneratedModel<unknown> {
   return model as GeneratedModel<unknown>;
 }
 
+/** A failure names the input that caused it. */
+async function forInput(wire: Wire, check: () => void | Promise<void>): Promise<void> {
+  try {
+    await check();
+  } catch (error) {
+    if (error instanceof Error) error.message = `input ${JSON.stringify(wire)}: ${error.message}`;
+    throw error;
+  }
+}
+
 /** Model path and codec read and write the same fields for each accepted input. */
-function assertPathsAgree(built: Built, accepted: readonly Accepted[]): void {
+async function assertPathsAgree(built: Built, accepted: readonly Accepted[]): Promise<void> {
   for (const { wire, model } of accepted) {
-    const label = JSON.stringify(wire);
-    const decoded = decodeGeneratedModel(built.Model, wire);
-    assert.deepEqual(fieldsOf(decoded), model, `model path decodes ${label}`);
-    assert.deepEqual(withoutUndefined(encodeGeneratedModel(asGenerated(decoded))), wire, `model path encodes ${label}`);
-    const viaCodec = built.codec.fromWireFormat(wire, { construct: built.construct });
-    assert.deepEqual(fieldsOf(viaCodec), model, `codec decodes ${label}`);
-    assert.deepEqual(withoutUndefined(built.codec.toWireFormat(viaCodec)), wire, `codec encodes ${label}`);
+    await forInput(wire, () => {
+      const decoded = decodeGeneratedModel(built.Model, wire);
+      assert.deepEqual(fieldsOf(decoded), model, 'model path decodes');
+      assert.deepEqual(withoutUndefined(encodeGeneratedModel(asGenerated(decoded))), wire, 'model path encodes');
+      const viaCodec = built.codec.fromWireFormat(wire, { construct: built.construct });
+      assert.deepEqual(fieldsOf(viaCodec), model, 'codec decodes');
+      assert.deepEqual(withoutUndefined(built.codec.toWireFormat(viaCodec)), wire, 'codec encodes');
+    });
   }
 }
 
 /** The validator accepts each accepted input as a model and rejects each rejected input on the wire and as a model. */
 async function assertValidatorJudges(built: Built, row: Row): Promise<void> {
   for (const { wire } of row.accepted) {
-    const label = JSON.stringify(wire);
-    assert.equal(await getValidator(decodeGeneratedModel(built.Model, wire)).validate(), true, `validator accepts ${label}`);
+    await forInput(wire, async () => {
+      assert.equal(await getValidator(decodeGeneratedModel(built.Model, wire)).validate(), true, 'validator accepts the model');
+    });
   }
   for (const wire of row.rejected) {
-    const label = JSON.stringify(wire);
-    assert.throws(
-      () => built.codec.fromWireFormat(wire, { construct: built.construct }),
-      (error: unknown): true => {
-        assert.ok(error instanceof LibError, `codec rejects ${label}`);
-        assert.equal(error.kind, LibErrorKind.Validation);
-        return true;
-      },
-    );
-    assert.equal(await getValidator(decodeGeneratedModel(built.Model, wire)).validate(), false, `validator rejects ${label}`);
+    await forInput(wire, async () => {
+      assert.throws(
+        () => built.codec.fromWireFormat(wire, { construct: built.construct }),
+        (error: unknown): true => {
+          assert.ok(error instanceof LibError, 'codec rejects the input');
+          assert.equal(error.kind, LibErrorKind.Validation);
+          return true;
+        },
+      );
+      assert.equal(await getValidator(decodeGeneratedModel(built.Model, wire)).validate(), false, 'validator rejects the model');
+    });
   }
 }
 
@@ -466,13 +503,39 @@ for (const row of rows) {
 
   test(`${row.shape}: validation on`, { todo: row.todo?.on }, async () => {
     const built = await checked();
-    assertPathsAgree(built, row.accepted);
+    await assertPathsAgree(built, row.accepted);
     await assertValidatorJudges(built, row);
   });
 
   if (row.accepted.length > 0) {
     test(`${row.shape}: validation off`, { todo: row.todo?.off }, async () => {
-      assertPathsAgree(await unchecked(), row.accepted);
+      await assertPathsAgree(await unchecked(), row.accepted);
     });
   }
+}
+
+/** Shapes that no object can satisfy stop generation with a code that names the fix. */
+const unsatisfiable: readonly { readonly shape: string; readonly code: string; readonly document: Record<string, unknown> }[] = [
+  {
+    shape: 'closed base and a component with a required own property',
+    code: 'OPENAPI_COMPOSITION_UNSATISFIABLE',
+    document: componentDocument('Derived', {
+      Base: { type: 'object', additionalProperties: false, properties: { a: text } },
+      Derived: { allOf: [ref('Base'), object({ b: dateTime }, { required: ['b'] })] },
+    }),
+  },
+];
+
+for (const { shape, code, document } of unsatisfiable) {
+  test(`${shape}: generation fails with ${code}`, { todo: 'T-101' }, async t => {
+    const output = path.join(createFixtureProject(t, 'golem-composition-unsatisfiable-'), 'sdk');
+    await assert.rejects(
+      generateMaterializedSdk(document, { output, name: 'Composition', profile: { mobx: false, validation: true, allowAny: false } }),
+      (error: unknown): true => {
+        assert.ok(error instanceof Error);
+        assert.match(error.message, new RegExp(code));
+        return true;
+      },
+    );
+  });
 }
