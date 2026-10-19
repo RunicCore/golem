@@ -65,7 +65,6 @@ const MODEL_GROUPS = [
 /** The cases whose model is generated with `mobx: true`; every other case uses `mobx: false`. */
 const MOBX_CASES: ReadonlySet<string> = new Set([
   'model-composition/model-composition-item-model',
-  'wire-format/nested-sdk',
 ]);
 
 /** Directories under tests/fixtures/wire-format that hold an OpenAPI document get its SDK; the others are plain model claims. */
@@ -82,6 +81,7 @@ const EXCLUDED: Readonly<Record<string, string>> = {
   'constraint-callback-composition/nested-value-callbacks': 'not self-contained: its test adds the sibling files that the model imports',
   'constraint-portability/constraint-portability-a-model': 'not self-contained: its test adds the sibling files that the model imports',
   'model-tags/generic-aliases-preserve-concrete-local-model-identity-for-nested-conversion': 'not self-contained: its test adds the sibling files that the model imports',
+  'wire-format/nested-sdk': 'its SDK claim needs the SDK generator, which loads no TypeScript',
   'model-companions/serde-edit': 'not self-contained: its test adds the sibling files that the model imports',
 };
 

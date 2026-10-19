@@ -3,9 +3,9 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import test, { type TestContext } from 'node:test';
+import test from 'node:test';
 import { generate as generateOpenApi } from '@exprtlabs/golem-openapi/generator';
-import { copyFixtureFile, createFixtureProject, fixturePath, readFixture, writeGeneratedArtifacts } from './fixture-project.js';
+import { copyFixtureFile, createFixtureProject, fileFixtureScope, fixturePath, onceShared, readFixture, writeGeneratedArtifacts, type FixtureScope } from './fixture-project.js';
 import { createControllerFixture } from './fixture-templates/controllers/project.js';
 import { createModelProject } from './model-project.js';
 import { caseFolder, DIAGNOSTICS, IDENTITY_CASES, shardOf, type IdentityCase, type IdentityProject } from './support/identity-corpus.js';
@@ -31,7 +31,7 @@ interface IdentityRun {
 }
 
 /** The project of one case: the fixture files in place, the SDK of an SDK case written beside them. */
-async function createProject(t: TestContext, item: IdentityCase, label: string): Promise<IdentityProject> {
+async function createProject(t: FixtureScope, item: IdentityCase, label: string): Promise<IdentityProject> {
   const slug = item.name.toLowerCase().replace(/[^a-z0-9]+/g, '-');
   const prefix = `golem-identity-${label}-`;
   if (item.kind === 'controller') {
@@ -66,7 +66,7 @@ function readTree(directory: string): Map<string, string> {
 }
 
 /** Builds the projects of one shard, runs its child process on one TypeScript version and reads what the child wrote. */
-async function runShard(t: TestContext, label: string, cases: readonly IdentityCase[], typescriptRoot: string | undefined): Promise<ShardRun> {
+async function runShard(t: FixtureScope, label: string, cases: readonly IdentityCase[], typescriptRoot: string | undefined): Promise<ShardRun> {
   const scratch = createFixtureProject(t, `golem-identity-out-${label}-`);
   const projectsFile = path.join(scratch, 'projects.json');
   const outputDirectory = path.join(scratch, 'artifacts');
@@ -85,20 +85,17 @@ async function runShard(t: TestContext, label: string, cases: readonly IdentityC
   };
 }
 
-/**
- * Every shard of both versions runs at once, once per test file. The test that asks first owns the projects; they go when it ends,
- * after the children have written their output, which is all the later tests read.
- */
-const generateOnce = (() => {
-  let started: Promise<IdentityRun> | undefined;
-  return (t: TestContext): Promise<IdentityRun> => (started ??= (async () => {
-    const [seven, six] = await Promise.all([
-      Promise.all(Array.from({ length: SEVEN_SHARDS }, (_, index) => runShard(t, `7-${index}`, shardOf(IDENTITY_CASES, SEVEN_SHARDS, index), undefined))),
-      Promise.all(Array.from({ length: SIX_SHARDS }, (_, index) => runShard(t, `6-${index}`, shardOf(IDENTITY_CASES, SIX_SHARDS, index), typescript6Root))),
-    ]);
-    return { seven, six };
-  })());
-})();
+/** The projects of the children live until the file's last test ends. */
+const scope = fileFixtureScope();
+
+/** Every shard of both versions runs at once, once per test file. */
+const generateOnce = onceShared(async (): Promise<IdentityRun> => {
+  const [seven, six] = await Promise.all([
+    Promise.all(Array.from({ length: SEVEN_SHARDS }, (_, index) => runShard(scope, `7-${index}`, shardOf(IDENTITY_CASES, SEVEN_SHARDS, index), undefined))),
+    Promise.all(Array.from({ length: SIX_SHARDS }, (_, index) => runShard(scope, `6-${index}`, shardOf(IDENTITY_CASES, SIX_SHARDS, index), typescript6Root))),
+  ]);
+  return { seven, six };
+});
 
 /** The files of one case in a version's run, keyed by path relative to the case's folder. A shard that failed names the case it was in. */
 function filesOfCase(shards: readonly ShardRun[], version: string, name: string): ReadonlyMap<string, string> {
@@ -134,19 +131,22 @@ if (!typescript6Root) {
     assert.fail('GOLEM_TYPESCRIPT6_ROOT is not set: run this in the test container (npm run test -- tests/typescript-identity.test.ts), where the entrypoint installs TypeScript 6');
   });
 } else {
-  test('the TypeScript 7 children ran TypeScript 7 and the TypeScript 6 children ran TypeScript 6', async t => {
-    const { seven, six } = await generateOnce(t);
+  test('the TypeScript 7 children ran TypeScript 7 and the TypeScript 6 children ran TypeScript 6', async () => {
+    const { seven, six } = await generateOnce();
     // Each child must have run the version its side names, or the comparison below compares one compiler with itself.
     for (const shard of seven) assert.match(shard.typescriptVersion ?? `no version (${shard.failure})`, /^7\./, 'a child of the TypeScript 7 side ran TypeScript 7');
     for (const shard of six) assert.match(shard.typescriptVersion ?? `no version (${shard.failure})`, /^6\./, 'a child of the TypeScript 6 side ran TypeScript 6');
   });
 
   for (const item of IDENTITY_CASES) {
-    test(item.name, async t => {
-      const { seven, six } = await generateOnce(t);
+    test(item.name, async () => {
+      const { seven, six } = await generateOnce();
       const sevenFiles = filesOfCase(seven, '7', item.name);
       const sixFiles = filesOfCase(six, '6', item.name);
-      assert.ok(sevenFiles.has(DIAGNOSTICS) && sixFiles.has(DIAGNOSTICS), `${item.name} wrote its diagnostics file on both versions`);
+      // The diagnostics file is always written; a case that wrote a file besides it, or a diagnostic, wrote an artifact.
+      for (const [version, files] of [['7', sevenFiles], ['6', sixFiles]] as const) {
+        assert.ok([...files].some(([file, content]) => file !== DIAGNOSTICS || content !== ''), `${item.name} wrote no artifact on TypeScript ${version}`);
+      }
       const difference = describeDifference(item.name, sevenFiles, sixFiles);
       assert.ok(difference === '', difference);
     });
