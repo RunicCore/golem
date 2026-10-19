@@ -9,6 +9,7 @@ import { createFixtureProject } from './fixture-project.js';
 import { createModelProject } from './model-project.js';
 import { taggedModelSource } from './fixture-templates/models/model-tags.js';
 import { tsSource } from './source-template.js';
+import { write, editTsconfig, sourceOnlyProject, USE, mtimes, importBuilt, golemBuild, assertCallMap } from './support/build-project.js';
 
 // The cases marked `skip` run only on the TypeScript 6 lane: GOLEM_TYPESCRIPT_ROOT names a project whose `typescript` is 6.x.
 const skip = resolveTypeScript(process.env.GOLEM_TYPESCRIPT_ROOT ?? process.cwd()).major !== 6
@@ -58,4 +59,48 @@ test('a program session reuses the SourceFile of an unchanged input and parses a
   assert.ok(after && after !== before.changed, 'a changed input is parsed again');
   assert.match(after.text, /value = 2/);
   first.close();
+});
+
+// The build paths whose compiler calls differ by version: `--showConfig` of forwarded arguments, the emit run's `--listEmittedFiles` lines and the incremental state. On TypeScript 7 build-command.test.ts proves the same claims.
+test('golem build --declaration builds, runs and rebuilds incrementally, and a type error under --noEmitOnError emits nothing', { skip }, async (t) => {
+  const root = sourceOnlyProject(t, 'ts6-build');
+  // The tsconfig does not ask for declarations, so only the forwarded argument can produce them: golem build must read it with --showConfig.
+  editTsconfig(root, (tsconfig) => { tsconfig.compilerOptions.declaration = false; });
+  write(root, 'src/use.ts', USE);
+  // `Payment` is a class imported with `import type`: the build rewrites the call to construct it from a value import.
+  write(root, 'src/load.ts', `import { parse } from '@exprtlabs/golem/serde';
+import type { Payment } from './money.model.js';
+export function load(text: string) { return parse<Payment>(text); }
+`);
+
+  const first = await golemBuild(root, ['--declaration']);
+  assert.equal(first.code, 0, `${first.stdout}${first.stderr}`);
+  assert.match(fs.readFileSync(path.join(root, 'build/use.d.ts'), 'utf8'), /export declare const money: \{\s*currency: string;\s*value: string;\s*\};/);
+  const { load } = await importBuilt(root, 'load.js') as { load: (text: string) => { amount: { currency: string } } };
+  const { Payment } = await importBuilt(root, 'money.model.js') as { Payment: new (...args: never[]) => unknown };
+  const payment = load('{"id":"1","amount":{"currency":"USD","value":"1"},"note":"n"}');
+  assert.ok(payment instanceof Payment, 'the rewritten call constructs the class that was imported as a type');
+  assert.equal(payment.amount.currency, 'USD');
+
+  // An old fixed time on every built file: a file the rebuild writes again shows on any file-system clock.
+  const old = new Date('2001-01-01T00:00:00Z');
+  for (const file of mtimes(path.join(root, 'build'), '.js').keys()) fs.utimesSync(path.join(root, 'build', file), old, old);
+  const emitted = mtimes(path.join(root, 'build'), '.js');
+  write(root, 'src/use.ts', `${USE}export const again = stringify<TMoney>({ currency: 'EUR', value: '2' });\n`);
+  const second = await golemBuild(root, ['--declaration']);
+  assert.equal(second.code, 0, `${second.stdout}${second.stderr}`);
+  const rebuilt = mtimes(path.join(root, 'build'), '.js');
+  assert.deepEqual([...rebuilt].filter(([file, time]) => emitted.get(file) !== time).map(([file]) => file), ['use.js'], 'only the edited file is emitted again');
+  assert.equal((await importBuilt(root, 'use.js')).again, '{"currency":"EUR","value":"2"}');
+  assertCallMap(root, 'build/use.js', 'src/use.ts');
+
+  write(root, 'src/broken.ts', "export const n: number = 'text';\n");
+  const jsBefore = mtimes(path.join(root, 'build'), '.js');
+  const declarationsBefore = mtimes(path.join(root, 'build'), '.d.ts');
+  const third = await golemBuild(root, ['--declaration', '--noEmitOnError']);
+  assert.notEqual(third.code, 0);
+  assert.match(`${third.stdout}${third.stderr}`, /src\/broken\.ts\(1,14\): error TS2322/);
+  assert.deepEqual(mtimes(path.join(root, 'build'), '.js'), jsBefore, 'no JavaScript is emitted');
+  assert.deepEqual(mtimes(path.join(root, 'build'), '.d.ts'), declarationsBefore, 'no declaration is emitted');
+  assert.equal(jsBefore.has('broken.js'), false);
 });

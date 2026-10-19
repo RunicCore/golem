@@ -14,9 +14,9 @@ Pass a test source path, such as `tests/serde.test.ts`, or a `node --test` flag 
 
 ## TypeScript 6 lane
 
-Unit tests run on TypeScript 7. The lane runs the generator, analysis and controller suites again on TypeScript 6; its file list is `TYPESCRIPT6_FILES` in `scripts/test-tier.ts`. A file is in the list only when it reaches the compiler seam or the backend selection (`GOLEM_TYPESCRIPT_ROOT`); the list names that path for each group and what the lane leaves out and why. Full runs it as the `typescript 6` step.
+Unit tests run on TypeScript 7. The lane runs again only the tests that reach a place of the TypeScript 6 shim; its file list is `TYPESCRIPT6_FILES` in `scripts/test-tier.ts`, and each entry names the place it proves. Full runs it as the `typescript 6` step.
 
-The container's entrypoint installs TypeScript 6 once into `/cache/typescript6` and exports `GOLEM_TYPESCRIPT6_ROOT`. The lane sets `GOLEM_TYPESCRIPT_ROOT` to that path, which is how the compiler seam picks its backend. `tests/typescript-identity.test.ts` runs in the unit step and generates the same projects on both versions, then compares every artifact byte for byte.
+The container's entrypoint installs TypeScript 6 once into `/cache/typescript6` and exports `GOLEM_TYPESCRIPT6_ROOT`. The lane sets `GOLEM_TYPESCRIPT_ROOT` to that path, which is how the compiler seam picks its backend. `tests/typescript-identity.test.ts` runs in the unit step. It generates the corpus projects on both versions and compares the generated files, the rewritten text and the diagnostics byte for byte. It also compiles the corpus once on TypeScript 6. When a claim needs a new TypeScript-version path, add a fixture to the corpus, in `tests/fixtures/models/identity/<claim>/` or in a group listed in `MODEL_GROUPS` (`tests/support/identity-corpus.ts`); a fixture anywhere else is not a case. Do not add a test file to the lane.
 
 Run the lane's files with `npm run test -- --typescript 6`, or run chosen files on TypeScript 6 with `npm run test -- --typescript 6 tests/model-tags.test.ts`. To point a focused run at another TypeScript 6 install, set `GOLEM_TYPESCRIPT_ROOT` in your shell; `run.sh` passes it into the container. A TypeScript 7 install must be the one Golem itself loads, or the run fails at load.
 

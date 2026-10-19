@@ -1,7 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import type { TestContext } from 'node:test';
-import { createFixtureProject, linkProjectPackages, writeGeneratedArtifacts } from '../../fixture-project.js';
+import { createFixtureProject, linkProjectPackages, writeGeneratedArtifacts, type FixtureScope } from '../../fixture-project.js';
 import { workspace } from '../../support/process.js';
 
 export interface ControllerFixtureOptions {
@@ -27,7 +26,7 @@ const defaultTsconfig = {
   include: ['src/**/*.ts'],
 };
 
-export function createControllerFixture(t: TestContext, options: ControllerFixtureOptions): string {
+export function createControllerFixture(t: FixtureScope, options: ControllerFixtureOptions): string {
   const root = createFixtureProject(t, options.prefix);
 
   if (options.links === 'workspace') {

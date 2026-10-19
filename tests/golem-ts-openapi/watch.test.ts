@@ -8,6 +8,7 @@ import { test, type TestContext } from 'node:test';
 import { runPipeline } from '#golem/cli';
 import { workspace } from '../support/process.js';
 import { readGeneratedClientSource } from '../openapi/helpers.js';
+import { until } from '../support/watch-wait.js';
 import { createControllerFixture } from '../fixture-templates/controllers/project.js';
 
 interface RealFixture {
@@ -111,15 +112,6 @@ async function stopChild(child: ChildProcess): Promise<void> {
     child.once('close', () => resolve());
     child.kill('SIGTERM');
   });
-}
-
-async function until(check: () => boolean, message: string, timeout = 25000): Promise<void> {
-  const deadline = Date.now() + timeout;
-  while (Date.now() < deadline) {
-    if (check()) return;
-    await new Promise((resolve) => setTimeout(resolve, 100));
-  }
-  throw new Error(`Timed out: ${message}`);
 }
 
 function successCount(stdout: string): number {

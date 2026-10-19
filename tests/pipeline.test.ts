@@ -10,6 +10,7 @@ import { applyJob, loadInventory } from '#golem/outputs';
 import { runBuild } from '#golem/build';
 import { command, workspace } from './support/process.js';
 import { writeFixture } from './support/consumer.js';
+import { until } from './support/watch-wait.js';
 import { readGeneratedModelSource } from './openapi/helpers.js';
 
 function fixture(t: TestContext): { root: string; config: string } {
@@ -21,15 +22,6 @@ function fixture(t: TestContext): { root: string; config: string } {
   fs.writeFileSync(path.join(root, 'package.json'), '{"name":"pipeline-fixture","type":"module"}');
   writeFixture(root, { mobx: false, validation: true });
   return { root, config: path.join(root, 'golem.yaml') };
-}
-
-async function until(check: () => boolean, message: string, timeout = 20000): Promise<void> {
-  const deadline = Date.now() + timeout;
-  while (Date.now() < deadline) {
-    if (check()) return;
-    await new Promise((resolve) => setTimeout(resolve, 100));
-  }
-  throw new Error(`Timed out: ${message}`);
 }
 
 test('frontend models generated from an out-of-src SDK manifest do not re-emit its validation pattern', async (t: TestContext) => {
