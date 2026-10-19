@@ -475,6 +475,26 @@ const rows: readonly Row[] = [
     accepted: [],
     rejected: [{ m: { owner: { name: 'n' } } }, { m: { owner: { name: 'n', nick: 5 } } }],
   },
+  // A covariant override: a derived component narrows an inherited model property to a model that extends it.
+  {
+    shape: 'a derived component narrows an inherited model property to a model that extends it',
+    fixture: 'covariant-override',
+    root: 'Derived',
+    document: componentDocument('Derived', {
+      Pet: object({ name: text }, { required: ['name'] }),
+      Cat: { allOf: [ref('Pet'), object({ lives: { type: 'integer' } })] },
+      Base: object({ pet: ref('Pet'), pets: { type: 'array', items: ref('Pet') } }),
+      Derived: { allOf: [ref('Base'), object({ pet: ref('Cat'), pets: { type: 'array', items: ref('Cat') } })] },
+    }),
+    accepted: [{
+      wire: { pet: { name: 'n', lives: 9 }, pets: [{ name: 'm', lives: 1 }] },
+      model: ({ CatModel }) => ({
+        pet: construct(CatModel, { name: 'n', lives: 9 }),
+        pets: [construct(CatModel, { name: 'm', lives: 1 })],
+      }),
+    }],
+    rejected: [{ pet: { name: 'n', lives: 'x' } }],
+  },
   // A lone model reference keeps the model; unevaluatedProperties: false beside it closes the model's names on the wire.
   {
     shape: 'a property that wraps one model $ref in allOf with unevaluatedProperties false',

@@ -116,6 +116,7 @@ function forEachConstraintSchema(
       Object.values(constraint.value).forEach(one);
       break;
     case 'oneOf':
+    case 'allOf':
       constraint.schemas.forEach(one);
       break;
     case 'ifThenElse':
@@ -154,6 +155,7 @@ function mapConstraint(
     case 'dependentSchemas':
       return { ...constraint, value: Object.fromEntries(Object.entries(constraint.value).map(([name, value]) => [name, project(value)])) };
     case 'oneOf':
+    case 'allOf':
       return { ...constraint, schemas: constraint.schemas.map(project) };
     case 'ifThenElse':
       return {

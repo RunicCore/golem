@@ -91,7 +91,10 @@ export function composeObjects<C>(parts: readonly ObjectPart<C>[], slot: SlotRul
 
 const NEVER: ModelTypeDescriptor = { kind: 'never' };
 
-/** The base of each generated model, so a derived model narrows its base in one slot (a covariant override). */
+/**
+ * The base of each model, so a derived model narrows its base in one slot (a covariant override). A model is named by the
+ * `id` of a generated-model descriptor or the `name` of a reference descriptor, as the caller's descriptors name it.
+ */
 export interface ModelBases {
   baseOf(id: string): string | undefined;
 }
@@ -205,13 +208,20 @@ function mostDerivedModels(children: readonly ModelTypeDescriptor[], models: Mod
 
 function narrowsModel(derived: ModelTypeDescriptor, base: ModelTypeDescriptor, models: ModelBases): boolean {
   if (derived.kind === 'array' && base.kind === 'array') return narrowsModel(derived.item, base.item, models);
-  if (derived.kind !== 'generated-model' || base.kind !== 'generated-model') return false;
+  const derivedId = modelName(derived);
+  const baseId = modelName(base);
+  if (derivedId === undefined || baseId === undefined) return false;
   const seen = new Set<string>();
-  for (let id = models.baseOf(derived.id); id !== undefined && !seen.has(id); id = models.baseOf(id)) {
-    if (id === base.id) return true;
+  for (let id = models.baseOf(derivedId); id !== undefined && !seen.has(id); id = models.baseOf(id)) {
+    if (id === baseId) return true;
     seen.add(id);
   }
   return false;
+}
+
+/** The name of a model descriptor: a generated model's id or a reference's name. */
+export function modelName(descriptor: ModelTypeDescriptor): string | undefined {
+  return descriptor.kind === 'generated-model' ? descriptor.id : descriptor.kind === 'reference' ? descriptor.name : undefined;
 }
 
 const NULL: ModelTypeDescriptor = { kind: 'null' };
@@ -241,7 +251,7 @@ function withoutNull(descriptor: ModelTypeDescriptor): ModelTypeDescriptor {
 }
 
 /** A descriptor's conversion: the descriptor without its own constraints and validations, which only check values. */
-function conversionKey(descriptor: ModelTypeDescriptor): string {
+export function conversionKey(descriptor: ModelTypeDescriptor): string {
   const { constraints: _constraints, validations: _validations, ...conversion } = descriptor;
   return JSON.stringify(conversion);
 }
@@ -263,10 +273,20 @@ export function composeObjectDescriptors(
   };
 }
 
+/** An intersection whose parts convert one name differently: generation stops, and a generator may add its own code. */
+export class CompositionConflictError extends Error {
+  constructor(readonly reason: string) {
+    super(`Intersection cannot be converted: ${reason}. Use one serde pair for the intersected value.`);
+  }
+}
+
 /** `composeObjectDescriptors` for an emitter: a rejected composition stops generation. */
-export function requireComposedObject(variants: readonly ModelTypeDescriptor[]): ObjectTypeDescriptor | undefined {
-  const composed = composeObjectDescriptors(variants);
-  if (isRejected(composed)) throw new Error(`Intersection cannot be converted: ${composed.rejected}. Use one serde pair for the intersected value.`);
+export function requireComposedObject(
+  variants: readonly ModelTypeDescriptor[],
+  models: ModelBases = NO_BASES,
+): ObjectTypeDescriptor | undefined {
+  const composed = composeObjectDescriptors(variants, models);
+  if (isRejected(composed)) throw new CompositionConflictError(composed.rejected);
   return composed;
 }
 
@@ -330,12 +350,9 @@ function jsonType(descriptor: ModelTypeDescriptor): string | undefined {
   }
 }
 
-/**
- * A child as one constraint that its whole schema must hold. The constraint vocabulary has no allOf; a oneOf of one schema
- * accepts exactly the values of that schema.
- */
+/** A child as one constraint that its whole schema must hold. */
 function wholeValueCheck(child: ModelTypeDescriptor): ModelConstraint {
-  return { kind: 'oneOf', schemas: [child] };
+  return { kind: 'allOf', schemas: [child] };
 }
 
 function withConstraints(descriptor: ModelTypeDescriptor, constraints: readonly ModelConstraint[]): ModelTypeDescriptor {

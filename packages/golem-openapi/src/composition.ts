@@ -17,6 +17,7 @@
 
 import {
   composeObjects,
+  conversionKey,
   descriptorSlotRule,
   isRejected,
   type ObjectExtra,
@@ -256,11 +257,12 @@ function narrowedVariant<S>(child: SlotChild<S>, merged: ModelTypeDescriptor, re
 }
 
 function conflict(reason: string): Composition<never> {
-  return {
-    kind: 'rejected',
-    code: COMPOSITION_CONVERSION_CONFLICT,
-    message: `The allOf members convert one property differently (${reason}). Give the property one schema.`,
-  };
+  return { kind: 'rejected', code: COMPOSITION_CONVERSION_CONFLICT, message: conflictMessage(reason) };
+}
+
+/** The message of `OPENAPI_COMPOSITION_CONVERSION_CONFLICT`, from the resolver or from the codec emitter. */
+export function conflictMessage(reason: string): string {
+  return `The allOf members convert one property differently (${reason}). Give the property one schema.`;
 }
 
 function unsatisfiable(names: readonly NeverName[]): Composition<never> {
@@ -418,12 +420,6 @@ function withNeverProperties(descriptor: ModelTypeDescriptor, never: readonly st
 }
 
 const NEVER: ModelTypeDescriptor = descriptorSlotRule().never;
-
-/** A descriptor's conversion: the descriptor without the constraints and validations that only check values. */
-function conversionKey(descriptor: ModelTypeDescriptor): string {
-  const { constraints: _constraints, validations: _validations, ...conversion } = descriptor;
-  return JSON.stringify(conversion);
-}
 
 function requiredNames(schema: unknown): string[] {
   return isJsonObject(schema) && Array.isArray(schema.required)

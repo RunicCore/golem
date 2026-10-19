@@ -22,6 +22,7 @@ import type { DiscriminatorValue, ModelConstraint, ModelTypeDescriptor, UnionDis
 import { asRecord, isJsonObject, jsonLiteral, objectEntries } from './json.js';
 import {
   compareText,
+  CompositionConflictError,
   GolemDiagnosticSeverity,
   identifier,
   NameScope,
@@ -31,8 +32,10 @@ import {
 } from '@exprtlabs/golem/generator-api';
 import { componentOrigin, componentPlace, ComponentNameScope, LocatedError, type OriginLocator } from './origin.js';
 import {
+  COMPOSITION_CONVERSION_CONFLICT,
   COMPOSITION_PROPERTY_NEVER,
   composedRequired,
+  conflictMessage,
   isConstraintOnlyPart,
   joinMembers,
   neverNames,
@@ -1777,7 +1780,11 @@ function emitSchemaCodecRuntime(
   options = { ...options, exportAnonymousCodecs: true };
   try {
     return emitCodecRuntime(graph, options);
-  } catch (error) {
+  } catch (thrown) {
+    // A conversion conflict that the emitter finds carries the resolver's code.
+    const error = thrown instanceof CompositionConflictError
+      ? new CompositionError(COMPOSITION_CONVERSION_CONFLICT, conflictMessage(thrown.reason))
+      : thrown;
     const message = error instanceof Error ? error.message : String(error);
     const failing = graph.topo().find((node) => {
       try {

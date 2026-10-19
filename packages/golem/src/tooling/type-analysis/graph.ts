@@ -38,6 +38,7 @@ function rewriteConstraint(
         value: Object.fromEntries(Object.entries(constraint.value).map(([name, value]) => [name, project(value)])),
       };
     case 'oneOf':
+    case 'allOf':
       return { ...constraint, schemas: constraint.schemas.map(project) };
     case 'ifThenElse':
       return {

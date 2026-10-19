@@ -14,8 +14,11 @@ export {
 } from './names.js';
 export {
   composeObjects,
+  CompositionConflictError,
+  conversionKey,
   descriptorSlotRule,
   isRejected,
+  type ModelBases,
   type ObjectExtra,
   type ObjectPart,
   type ObjectResult,

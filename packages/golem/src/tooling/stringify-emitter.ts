@@ -9,7 +9,7 @@ import type { ValidationPlane } from '../object-codec.js';
 import type { SchemaGraph, SchemaNode } from './schema-graph.js';
 import { codecShortName, serdeWireDescriptor } from './schema-graph.js';
 import type { JsonSchema } from './schema.js';
-import { requireComposedObject } from './composition.js';
+import { modelName, requireComposedObject, type ModelBases } from './composition.js';
 import { emitArrayConversion, emitTupleConversion, JSON_SCALAR_ITEM, singleCallConverter } from './sequence-conversion.js';
 import {
   AMBIGUOUS_UNION_CONVERSION_ERROR,
@@ -856,6 +856,20 @@ function emitInternedObjectDecode(
   return fallibleConversion(ctx, `${fromWireFunctionName(node.id)}(${expression}, ${trustedOptions(ctx)})`);
 }
 
+/**
+ * The base of each model in the graph: the node of a model that extends another is an intersection that holds the base
+ * model, so a derived model narrows its base when two parts declare one name (a covariant override).
+ */
+function graphModelBases(graph: SchemaGraph): ModelBases {
+  return {
+    baseOf(name) {
+      const descriptor = graph.nodeFor({ kind: 'reference', name })?.descriptor;
+      if (descriptor?.kind !== 'intersection') return undefined;
+      return descriptor.variants.map(modelName).find((base) => base !== undefined);
+    },
+  };
+}
+
 function resolveObjectDescriptor(
   descriptor: ModelTypeDescriptor,
   ctx: EmitCtx,
@@ -863,7 +877,7 @@ function resolveObjectDescriptor(
   if (descriptor.kind === 'object') return descriptor;
   if (descriptor.kind === 'intersection') {
     const objects = descriptor.variants.flatMap((variant) => resolveObjectDescriptor(variant, ctx) ?? []);
-    return objects.length > 1 ? requireComposedObject(objects) : objects[0];
+    return objects.length > 1 ? requireComposedObject(objects, graphModelBases(ctx.graph)) : objects[0];
   }
   const short = descriptor.kind === 'generated-model'
     ? codecShortName(descriptor.id)
@@ -1174,7 +1188,7 @@ function emitDecodeValue(descriptor: ModelTypeDescriptor, expression: string, ct
     return emitUnionDecode(descriptor, expression, ctx);
   }
   // An intersection of objects decodes as the one merged object, so each member's fields convert.
-  const decodedMerge = descriptor.kind === 'intersection' ? requireComposedObject(descriptor.variants) : undefined;
+  const decodedMerge = descriptor.kind === 'intersection' ? requireComposedObject(descriptor.variants, graphModelBases(ctx.graph)) : undefined;
   if (decodedMerge) return emitDecodeValue(decodedMerge, expression, ctx);
   if (descriptor.kind === 'object' && typeof descriptor.additionalProperties === 'object') {
     const listed = Object.keys(descriptor.properties);
@@ -1473,7 +1487,7 @@ function emitEncodeValue(descriptor: ModelTypeDescriptor, expression: string, ct
       item: (item, value) => ({ code: emitEncodeValue(item, value, ctx), throws: false }),
     });
   }
-  const encodedMerge = descriptor.kind === 'intersection' ? requireComposedObject(descriptor.variants) : undefined;
+  const encodedMerge = descriptor.kind === 'intersection' ? requireComposedObject(descriptor.variants, graphModelBases(ctx.graph)) : undefined;
   if (encodedMerge) return emitEncodeValue(encodedMerge, expression, ctx);
   if (descriptor.kind === 'union') {
     return emitUnionEncode(descriptor, expression, ctx);
