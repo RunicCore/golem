@@ -3,35 +3,13 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { execFileSync } from 'node:child_process';
 import { runPipeline, watchPipeline } from '#golem/cli';
 import { contains } from '#golem/config';
-import { resolveTypeScript } from '#golem/typescript-version';
 import { GeneratorSessionResources } from '#golem/pipeline';
 import { OwnedOutputIndex } from '#golem/watch';
 import { workspace } from './support/process.js';
-import { writeFixture } from './support/consumer.js';
-
-// These tests count the TypeScript 7 compiler's server processes and sessions, which TypeScript 6 does not have.
-const skipOnTypeScript6 = resolveTypeScript(process.env.GOLEM_TYPESCRIPT_ROOT ?? process.cwd()).major === 6
-  && 'TypeScript 6 runs no compiler server process';
-
-function fixture(t: TestContext): { root: string; config: string } {
-  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'golem-watch-recovery-')));
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  fs.mkdirSync(path.join(root, 'node_modules/@exprtlabs'), { recursive: true });
-  for (const name of ['golem', 'golem-model', 'golem-openapi']) {
-    fs.symlinkSync(path.join(workspace, 'packages', name), path.join(root, 'node_modules/@exprtlabs', name), 'dir');
-  }
-  fs.writeFileSync(path.join(root, 'package.json'), '{"name":"watch-recovery-fixture","type":"module"}');
-  writeFixture(root, { mobx: false, validation: true });
-  const config = path.join(root, 'golem.yaml');
-  fs.writeFileSync(config, fs.readFileSync(config, 'utf8').replace(
-    'validation: true\n',
-    'validation: true\nallowAny: false\n',
-  ));
-  return { root, config };
-}
+import { compilerChildren, fixture, skipOnTypeScript6 } from './support/generation-watch.js';
+import { until } from './support/watch-wait.js';
 
 test('owned output index excludes exactly the outputs and the directories containing them', () => {
   const root = path.resolve(os.tmpdir(), 'owned-index');
@@ -57,16 +35,6 @@ test('owned output index excludes exactly the outputs and the directories contai
   }
   assert.equal(index.covers(path.join(root, 'sdk2/models.ts')), false, 'a sibling with a shared prefix is not owned');
 });
-
-/** A message that reports state is a function: it runs when the wait times out, not when the wait starts. */
-async function until(check: () => boolean, message: string | (() => string), timeout = 25000): Promise<void> {
-  const deadline = Date.now() + timeout;
-  while (Date.now() < deadline) {
-    if (check()) return;
-    await new Promise((resolve) => setTimeout(resolve, 100));
-  }
-  throw new Error(`Timed out: ${typeof message === 'function' ? message() : message}`);
-}
 
 test('watch recovers when a referenced local schema file is introduced after the document that references it', async (t: TestContext) => {
   const { root, config } = fixture(t);
@@ -196,14 +164,6 @@ test('watch generates a new file that ends in a configured model suffix', async 
     stop();
   }
 });
-
-function compilerChildren(parent: number): number[] {
-  return execFileSync('ps', ['-A', '-o', 'pid=,ppid=,command='], { encoding: 'utf8' })
-    .split('\n')
-    .map(line => line.trim().match(/^(\d+)\s+(\d+)\s+(.*)$/))
-    .filter((match): match is RegExpMatchArray => match !== null && Number(match[2]) === parent && match[3].includes('--api'))
-    .map(match => Number(match[1]));
-}
 
 test('stopping an in-process watch closes its compiler', { skip: process.platform === 'win32' || skipOnTypeScript6 }, async (t: TestContext) => {
   const { root, config } = fixture(t);

@@ -1,53 +1,14 @@
 // golem build --watch: sources outside the tsconfig directory, model edits, and edits made while a build runs.
 import assert from 'node:assert/strict';
-import { spawn, type ChildProcess } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import test, { type TestContext } from 'node:test';
+import test from 'node:test';
 import { runBuild } from '#golem/build';
 import { createModelProject, MINIMAL_GOLEM_YAML } from './model-project.js';
 import { write, serdeProject, sourceOnlyProject, countingGenerator, USE, snapshot } from './support/build-project.js';
-import { golem, workspace } from './support/process.js';
-
-/** How long a watching build gets to exit after SIGINT before the test fails with what it printed. */
-const STOP_TIMEOUT_MS = 15_000;
-
-// Watch
-
-interface Watching { readonly pid: number; readonly output: () => string; readonly stop: () => Promise<number | null> }
-
-function watching(t: TestContext, root: string): Watching {
-  const child: ChildProcess = spawn(process.execPath, [golem, 'build', '--watch', '-p', 'tsconfig.json'], { cwd: root, stdio: ['ignore', 'pipe', 'pipe'] });
-  let output = '';
-  child.stdout?.on('data', (chunk: Buffer) => { output += chunk; });
-  child.stderr?.on('data', (chunk: Buffer) => { output += chunk; });
-  const exited = new Promise<number | null>((resolve) => child.once('exit', (code) => resolve(code)));
-  t.after(() => { child.kill('SIGKILL'); });
-  const stop = async (): Promise<number | null> => {
-    child.kill('SIGINT');
-    let timer: NodeJS.Timeout | undefined;
-    const expired = new Promise<never>((_resolve, reject) => {
-      timer = setTimeout(() => { child.kill('SIGKILL'); reject(new Error(`golem build --watch did not exit ${STOP_TIMEOUT_MS} ms after SIGINT. Output:\n${output}`)); }, STOP_TIMEOUT_MS);
-    });
-    try {
-      return await Promise.race([exited, expired]);
-    } finally {
-      clearTimeout(timer);
-    }
-  };
-  assert.ok(child.pid, 'the watching build started');
-  return { pid: child.pid, output: () => output, stop };
-}
-
-async function until(condition: () => boolean, label: string, timeout = 20_000): Promise<void> {
-  const deadline = Date.now() + timeout;
-  while (!condition()) {
-    if (Date.now() > deadline) throw new Error(`Timed out waiting for ${label}`);
-    await new Promise((resolve) => setTimeout(resolve, 50));
-  }
-}
-
-const count = (output: string, pattern: RegExp): number => output.split('\n').filter((line) => pattern.test(line)).length;
+import { workspace } from './support/process.js';
+import { count, watching } from './support/build-watching.js';
+import { until } from './support/watch-wait.js';
 
 test('golem build --watch rebuilds for an edit to a source outside the tsconfig directory and for a file added beside it', async (t) => {
   const { root: outer } = createModelProject(t, { prefix: 'golem-build-watch-shared-', name: 'build-watch-shared', linkTypescript: true, packages: { '@exprtlabs/golem-model': path.join(workspace, 'packages/golem-model') } });

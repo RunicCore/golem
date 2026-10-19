@@ -1,51 +1,11 @@
 import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
-import { execFileSync, spawn } from 'node:child_process';
-import { resolveTypeScript } from '#golem/typescript-version';
+import { spawn } from 'node:child_process';
 import { workspace } from './support/process.js';
-import { writeFixture } from './support/consumer.js';
-
-// The compiler-process claims run on TypeScript 7, which has a compiler server process; the edits regenerate on both versions.
-const skipOnTypeScript6 = resolveTypeScript(process.env.GOLEM_TYPESCRIPT_ROOT ?? process.cwd()).major === 6
-  && 'TypeScript 6 runs no compiler server process';
-
-function fixture(t: TestContext): { root: string; config: string } {
-  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'golem-watch-compiler-reuse-')));
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  fs.mkdirSync(path.join(root, 'node_modules/@exprtlabs'), { recursive: true });
-  for (const name of ['golem', 'golem-model', 'golem-openapi']) {
-    fs.symlinkSync(path.join(workspace, 'packages', name), path.join(root, 'node_modules/@exprtlabs', name), 'dir');
-  }
-  fs.writeFileSync(path.join(root, 'package.json'), '{"name":"watch-compiler-reuse-fixture","type":"module"}');
-  writeFixture(root, { mobx: false, validation: true });
-  const config = path.join(root, 'golem.yaml');
-  fs.writeFileSync(config, fs.readFileSync(config, 'utf8').replace(
-    'validation: true\n',
-    'validation: true\nallowAny: false\n',
-  ));
-  return { root, config };
-}
-
-/** A message that reports state is a function: it runs when the wait times out, not when the wait starts. */
-async function until(check: () => boolean, message: string | (() => string), timeout = 25000): Promise<void> {
-  const deadline = Date.now() + timeout;
-  while (Date.now() < deadline) {
-    if (check()) return;
-    await new Promise((resolve) => setTimeout(resolve, 100));
-  }
-  throw new Error(`Timed out: ${typeof message === 'function' ? message() : message}`);
-}
-
-function compilerChildren(parent: number): number[] {
-  return execFileSync('ps', ['-A', '-o', 'pid=,ppid=,command='], { encoding: 'utf8' })
-    .split('\n')
-    .map(line => line.trim().match(/^(\d+)\s+(\d+)\s+(.*)$/))
-    .filter((match): match is RegExpMatchArray => match !== null && Number(match[2]) === parent && match[3].includes('--api'))
-    .map(match => Number(match[1]));
-}
+import { compilerChildren, fixture, skipOnTypeScript6 } from './support/generation-watch.js';
+import { until } from './support/watch-wait.js';
 
 test('watch reuses one compiler across edits and tsconfig path-mapping changes', { skip: process.platform === 'win32' }, async (t: TestContext) => {
   const { root, config } = fixture(t);

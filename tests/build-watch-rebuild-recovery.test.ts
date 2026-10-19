@@ -1,49 +1,12 @@
 // golem build --watch: one build per edit, an error, and recovery.
 import assert from 'node:assert/strict';
-import { spawn, type ChildProcess } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import test, { type TestContext } from 'node:test';
+import test from 'node:test';
 import { write, serdeProject, USE, snapshot } from './support/build-project.js';
-import { golem } from './support/process.js';
+import { count, watching } from './support/build-watching.js';
+import { until } from './support/watch-wait.js';
 
-/** How long a watching build gets to exit after SIGINT before the test fails with what it printed. */
-const STOP_TIMEOUT_MS = 15_000;
-
-interface Watching { readonly pid: number; readonly output: () => string; readonly stop: () => Promise<number | null> }
-
-function watching(t: TestContext, root: string): Watching {
-  const child: ChildProcess = spawn(process.execPath, [golem, 'build', '--watch', '-p', 'tsconfig.json'], { cwd: root, stdio: ['ignore', 'pipe', 'pipe'] });
-  let output = '';
-  child.stdout?.on('data', (chunk: Buffer) => { output += chunk; });
-  child.stderr?.on('data', (chunk: Buffer) => { output += chunk; });
-  const exited = new Promise<number | null>((resolve) => child.once('exit', (code) => resolve(code)));
-  t.after(() => { child.kill('SIGKILL'); });
-  const stop = async (): Promise<number | null> => {
-    child.kill('SIGINT');
-    let timer: NodeJS.Timeout | undefined;
-    const expired = new Promise<never>((_resolve, reject) => {
-      timer = setTimeout(() => { child.kill('SIGKILL'); reject(new Error(`golem build --watch did not exit ${STOP_TIMEOUT_MS} ms after SIGINT. Output:\n${output}`)); }, STOP_TIMEOUT_MS);
-    });
-    try {
-      return await Promise.race([exited, expired]);
-    } finally {
-      clearTimeout(timer);
-    }
-  };
-  assert.ok(child.pid, 'the watching build started');
-  return { pid: child.pid, output: () => output, stop };
-}
-
-async function until(condition: () => boolean, label: string, timeout = 20_000): Promise<void> {
-  const deadline = Date.now() + timeout;
-  while (!condition()) {
-    if (Date.now() > deadline) throw new Error(`Timed out waiting for ${label}`);
-    await new Promise((resolve) => setTimeout(resolve, 50));
-  }
-}
-
-const count = (output: string, pattern: RegExp): number => output.split('\n').filter((line) => pattern.test(line)).length;
 test('golem build --watch rebuilds once per edit, reports an error, recovers, and sees a new file', async (t) => {
   const root = serdeProject(t, 'build-watch');
   write(root, 'src/use.ts', USE);
