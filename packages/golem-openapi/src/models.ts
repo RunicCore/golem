@@ -315,7 +315,7 @@ function modelFieldType(
     const required = new Set(Array.isArray(schema.required) ? schema.required : []);
     const fields = objectEntries(schema.properties).map(([name, child]) => `${propertyName(name)}${required.has(name) ? '' : '?'}: ${modelFieldType(child, definitions, nested, seen)}`);
     if (isJsonObject(schema.additionalProperties)) fields.push(`[key: string]: ${fields.length ? 'unknown' : modelFieldType(schema.additionalProperties, definitions, nested, seen)}`);
-    return `{ ${fields.join('; ')} }`;
+    return `{ ${fields.join('; ')} }${admitsNull(schema) ? ' | null' : ''}`;
   }
   return schemaType(schema, typeContext(nested));
 }
@@ -570,7 +570,7 @@ function modelConversionDescriptor(
     const required = Array.isArray(schema.required)
       ? schema.required.filter((item): item is string => typeof item === 'string')
       : [];
-    return {
+    const object: ModelTypeDescriptor = {
       kind: 'object',
       properties: Object.fromEntries(objectEntries(schema.properties).map(([name, child]) => [name, modelConversionDescriptor(child, definitions, nested, direction, seen)])),
       required,
@@ -580,6 +580,7 @@ function modelConversionDescriptor(
           ? modelConversionDescriptor(schema.additionalProperties, definitions, nested, direction, seen)
           : true,
     };
+    return admitsNull(schema) ? { kind: 'union', variants: [object, { kind: 'null' }] } : object;
   }
   if (isJsonObject(schema) && schema.const !== undefined
     && (typeof schema.const === 'string' || typeof schema.const === 'number' || typeof schema.const === 'boolean')) {

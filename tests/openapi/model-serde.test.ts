@@ -909,3 +909,70 @@ test('a oneOf field whose allOf members only add constraints converts by its own
   );
   assert.equal(decodeGeneratedModel(VisitModel, { either: null }).either, null);
 });
+
+test('a nullable object field admits null and converts its properties', async t => {
+  const output = path.join(createFixtureProject(t, 'golem-openapi-nullable-object-'), 'sdk');
+  await generateMaterializedSdk(sequenceSerdeDocument({
+    window: {
+      type: ['object', 'null'],
+      properties: { at: { type: 'string', format: 'date-time' } },
+    },
+  }), {
+    output,
+    name: 'SequenceSerde',
+    profile: { mobx: false, validation: true, allowAny: false },
+  });
+  copyFixtureFile(output, 'openapi/model-serde/nullable-object-types.ts', 'nullable-object-types.ts');
+  compileGeneratedSdk(output, [path.join(output, 'nullable-object-types.ts')], { strict: true, skipLibCheck: true });
+
+  const models = requireRecord(
+    await import(pathToFileURL(path.join(output, 'dist/index.js')).href),
+    'generated nullable object models',
+  );
+  const VisitModel = models.VisitModel as unknown as new (values?: Record<string, unknown>) => Record<string, unknown>;
+  const codec = requireObjectCodec(generatedCodecIdFromRoot(output, 'Visit'));
+  const construct = VisitModel as unknown as abstract new (values?: never) => object;
+
+  assert.equal(decodeGeneratedModel(VisitModel, { window: null }).window, null);
+  assert.deepEqual(
+    decodeGeneratedModel(VisitModel, { window: { at: '2024-05-06T07:08:09.000Z' } }).window,
+    { at: new Date('2024-05-06T07:08:09.000Z') },
+  );
+  assert.doesNotThrow(() => codec.fromWireFormat({ window: null }, { construct }));
+});
+
+test('a nullable object field with a constraint-only allOf admits null and still rejects an empty object', async t => {
+  const output = path.join(createFixtureProject(t, 'golem-openapi-nullable-object-allof-'), 'sdk');
+  await generateMaterializedSdk(sequenceSerdeDocument({
+    window: {
+      type: ['object', 'null'],
+      properties: { at: { type: 'string', format: 'date-time' } },
+      allOf: [{ minProperties: 1 }],
+    },
+  }), {
+    output,
+    name: 'SequenceSerde',
+    profile: { mobx: false, validation: true, allowAny: false },
+  });
+  copyFixtureFile(output, 'openapi/model-serde/nullable-object-types.ts', 'nullable-object-types.ts');
+  compileGeneratedSdk(output, [path.join(output, 'nullable-object-types.ts')], { strict: true, skipLibCheck: true });
+
+  const models = requireRecord(
+    await import(pathToFileURL(path.join(output, 'dist/index.js')).href),
+    'generated nullable object allOf models',
+  );
+  const VisitModel = models.VisitModel as unknown as new (values?: Record<string, unknown>) => Record<string, unknown>;
+  const codec = requireObjectCodec(generatedCodecIdFromRoot(output, 'Visit'));
+  const construct = VisitModel as unknown as abstract new (values?: never) => object;
+
+  assert.equal(decodeGeneratedModel(VisitModel, { window: null }).window, null);
+  assert.doesNotThrow(() => codec.fromWireFormat({ window: null }, { construct }));
+  assert.throws(
+    () => codec.fromWireFormat({ window: {} }, { construct }),
+    (error: unknown): true => {
+      assert.ok(error instanceof LibError);
+      assert.equal(error.kind, LibErrorKind.Validation);
+      return true;
+    },
+  );
+});
