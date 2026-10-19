@@ -708,8 +708,10 @@ test('the SDK validators module exports one named function per root and no recor
   const exported = [...module.content.matchAll(/^export (?:function|const) (\w+)/gm)].map(match => match[1]);
   assert.ok(exported.includes('validate_putEnvelope_input'), 'the operation roots are named by operation and slot');
   assert.ok(exported.includes('validate_putEnvelope_response_200_application_json'));
-  for (const name of exported) assert.match(name, /^validate_\w+$/);
-  assert.doesNotMatch(module.content, /^export const /m);
+  for (const name of exported) assert.match(name, /^(?:validate|is)_\w+$/);
+  // A model root's fast check is exported as the function itself; the operation roots get none.
+  assert.deepEqual(exported.filter(name => name.startsWith('is_putEnvelope')), []);
+  assert.doesNotMatch(module.content, /^export const (?!is_\w+(?:: \(value: unknown\) => boolean)? = is\d+)/m);
 });
 
 test('schemas whose names the codec rule shortens still get output files and exports', t => {

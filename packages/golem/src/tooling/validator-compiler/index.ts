@@ -33,10 +33,11 @@ export interface CompileOptions {
   /** Emit TypeScript: each exported validator carries its type. */
   readonly typed?: boolean;
   /**
-   * Also export `is_X(value)` beside `validate_X` for each root that has a fast check: true exactly when `validate_X`
-   * reports no issue, with no issue or path built. Off by default; with it off the module is as without the option.
+   * Also export `is_X(value)` beside `validate_X` for each root that has a fast check, or for each root of a set that
+   * names it: true exactly when `validate_X` reports no issue, with no issue or path built. Off by default; with it off
+   * the module is as without the option.
    */
-  readonly fastPath?: boolean;
+  readonly fastPath?: boolean | ReadonlySet<string>;
 }
 
 export interface CompileResult {
@@ -65,7 +66,7 @@ export function compile(input: CompileInput, options: CompileOptions): CompileRe
   const { source, fastExports } = emit(module, {
     runtimeModule: options.runtimeModule ?? DEFAULT_RUNTIME_MODULE,
     ...(options.typed ? { typed: true } : {}),
-    ...(options.fastPath ? { fastPath: true } : {}),
+    ...(options.fastPath === undefined || options.fastPath === false ? {} : { fastPath: options.fastPath }),
   });
   return { source, exports, fastExports, diagnostics };
 }

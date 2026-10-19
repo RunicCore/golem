@@ -8,8 +8,8 @@ export interface EmitOptions {
   readonly runtimeModule: string;
   /** Types each exported validator as a `Validator`, for a TypeScript file. */
   readonly typed?: boolean;
-  /** Also writes the boolean fast check `is_X` beside `validate_X`, for each root that has one (see `FastPlan`). */
-  readonly fastPath?: boolean;
+  /** Also writes the boolean fast check `is_X` beside `validate_X`, for each root, or each root named, that has one (see `FastPlan`). */
+  readonly fastPath?: boolean | ReadonlySet<string>;
 }
 
 export interface EmitResult {
@@ -1376,7 +1376,9 @@ function reachable(start: Iterable<number>, next: (id: number) => Iterable<numbe
  */
 export function emit(module: IrModule, options: EmitOptions): EmitResult {
   const target = forwardingTarget(module.functions);
-  const plan = options.fastPath ? new FastPlan(module.functions) : undefined;
+  const fastPath = options.fastPath;
+  const plan = fastPath === true || (fastPath instanceof Set && fastPath.size > 0) ? new FastPlan(module.functions) : undefined;
+  const wantsFastCheck = (name: string): boolean => fastPath === true || (fastPath instanceof Set && fastPath.has(name));
   const fastMode = plan === undefined ? undefined : fastCheckMode(plan);
   const fullMode = plan === undefined ? FULL_VALIDATOR : fullValidatorBeside(plan);
   const hasFastCheck = (id: number): boolean => plan?.has(id) ?? false;
@@ -1395,7 +1397,8 @@ export function emit(module: IrModule, options: EmitOptions): EmitResult {
     if (fn === undefined) throw new Error(`The validator compiler has no schema function ${id}.`);
     return fn;
   };
-  const fastRoots = module.exports.map(({ fn }) => target(fn)).filter(hasFastCheck);
+  const fastRootExports = module.exports.filter(({ name, fn }) => wantsFastCheck(name) && hasFastCheck(target(fn)));
+  const fastRoots = fastRootExports.map(({ fn }) => target(fn));
   const fastReached = reachable(fastRoots, id => written.get(id)?.fast?.fastCalls ?? []);
   const reached = reachable(
     [...module.exports.map(({ fn }) => target(fn)), ...[...fastReached].flatMap(id => [...(written.get(id)?.fast?.calls ?? [])])],
@@ -1438,9 +1441,9 @@ export function emit(module: IrModule, options: EmitOptions): EmitResult {
     '  return issues;',
     '}',
   ].join('\n'));
-  const fastExports = new Map(module.exports.filter(({ fn }) => hasFastCheck(target(fn))).map(({ name }) => [name, fastExportName(exportName(name))] as const));
+  const fastExports = new Map(fastRootExports.map(({ name }) => [name, fastExportName(exportName(name))] as const));
   // The fast check itself is the export: a valid value takes no extra call.
-  const fastWrappers = module.exports.filter(({ name }) => fastExports.has(name)).map(({ name, fn }) => options.typed
+  const fastWrappers = fastRootExports.map(({ name, fn }) => options.typed
     ? `export const ${fastExportName(exportName(name))}: (value: unknown) => boolean = ${fastName(nameOf(fn))};`
     : `export const ${fastExportName(exportName(name))} = ${fastName(nameOf(fn))};`);
   return {

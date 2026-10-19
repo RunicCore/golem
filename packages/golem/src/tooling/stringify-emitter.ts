@@ -54,6 +54,11 @@ export interface CodecRuntimeOptions {
    * `Id#model-only`, `Id#wire-only`). Called once for each use, so the caller knows which validators to import.
    */
   readonly validatorName?: (id: string) => string;
+  /**
+   * The name the module imports the fast check of a root under, by the same keys; undefined for a root that has none,
+   * which keeps the validator's route. Called once for each use, as `validatorName` is.
+   */
+  readonly fastCheckName?: (id: string) => string | undefined;
   /** Expression of a record of the validation plan's resolved schemas by the same keys. A validated codec publishes these as its schemas; without it the codec carries its own unresolved payload. */
   readonly resolvedSchemasExpr?: string;
   readonly serde?: StringifySerdeResolver;
@@ -80,6 +85,7 @@ export interface CodecRuntimeOptions {
 interface EmitCtx {
   readonly graph: SchemaGraph;
   readonly validatorName?: (id: string) => string;
+  readonly fastCheckName?: (id: string) => string | undefined;
   readonly resolvedSchemasExpr?: string;
   readonly serde?: StringifySerdeResolver;
   readonly nestedConstruct?: (name: string, className?: string) => string;
@@ -1593,6 +1599,14 @@ function validatorReference(ctx: EmitCtx, id: string): string {
   return ctx.validatorName(id);
 }
 
+/** Whether `value` passes the validator of `reference`, from the fast check first when the root has one (spec 7.1). */
+function validModelValueCall(ctx: EmitCtx, reference: string): string {
+  const fast = ctx.fastCheckName?.(reference);
+  return fast === undefined
+    ? `isValidModelValue(value, options, ${validatorReference(ctx, reference)}, ${JSON.stringify(reference)})`
+    : `isValidModelValueFast(value, options, ${fast}, ${validatorReference(ctx, reference)}, ${JSON.stringify(reference)})`;
+}
+
 function emitModelGuard(
   node: SchemaNode,
   value: string,
@@ -1604,7 +1618,11 @@ function emitModelGuard(
   const reference = plane === 'model-only' || plane === 'wire-only'
     ? `${node.codecId}#${plane}`
     : wire ? `${node.codecId}#wire` : node.codecId;
-  return `assertModelValue(${value}, options, ${validatorReference(ctx, reference)}, ${JSON.stringify(reference)}, IssueRepresentation.${representation}, IssueSource.${ctx.issueSource});`;
+  // A valid value passes the fast check first, unless a validation context decides (spec 7.1).
+  const fast = ctx.fastCheckName?.(reference);
+  return fast === undefined
+    ? `assertModelValue(${value}, options, ${validatorReference(ctx, reference)}, ${JSON.stringify(reference)}, IssueRepresentation.${representation}, IssueSource.${ctx.issueSource});`
+    : `assertModelValueFast(${value}, options, ${fast}, ${validatorReference(ctx, reference)}, ${JSON.stringify(reference)}, IssueRepresentation.${representation}, IssueSource.${ctx.issueSource});`;
 }
 
 function emitNodeRuntime(
@@ -1806,7 +1824,7 @@ function emitNodeRuntime(
   const validateLines = validationEnabled
     ? [
       `${exported}function ${validateName}(value: unknown, options?: ${VALIDATE_OPTIONS}): value is ${modelType} {`,
-      `  return isValidModelValue(value, options, ${validatorReference(ctx, node.codecId)}, ${JSON.stringify(node.codecId)});`,
+      `  return ${validModelValueCall(ctx, node.codecId)};`,
       '}',
       '',
       `${exported}function ${assertName}(value: unknown, options?: ${VALIDATE_OPTIONS}): ${modelType} {`,
@@ -1922,6 +1940,7 @@ export function emitCodecRuntime(
     siblingWireCodecIds: options.siblingWireCodecIds,
     exportWireStringify: options.exportWireStringify,
     validatorName: options.validatorName,
+    fastCheckName: options.fastCheckName,
     resolvedSchemasExpr: options.resolvedSchemasExpr,
     serde: options.serde,
     nestedConstruct: options.nestedConstruct,

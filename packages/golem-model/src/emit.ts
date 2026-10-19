@@ -1080,8 +1080,11 @@ export function validatorImports(
 
 /** What the app generated beside its model files, which a model file reads. */
 export interface AppOutputs {
-  /** The generated validators module and the name it exports each root under (see `PlanValidators.exports`); set when the app validates. */
-  readonly validators?: { readonly module: string; readonly exports: ReadonlyMap<string, string> };
+  /**
+   * The generated validators module, the name it exports each root under and the name of each root's fast check (see
+   * `PlanValidators.exports` and `fastExports`); set when the app validates.
+   */
+  readonly validators?: { readonly module: string; readonly exports: ReadonlyMap<string, string>; readonly fastExports: ReadonlyMap<string, string> };
   /** The validation plan's resolved schemas by codec id and plane. A validating model file publishes its own as its codecs' schemas. */
   readonly planSchemas?: Readonly<Record<string, object | boolean>>;
 }
@@ -1478,7 +1481,7 @@ export function emitSource(
   }
   if (hasDate) lines.push("import { deserializeDate, serializeDate } from '@exprtlabs/golem/conversion';");
   lines.push(...classValueImports);
-  lines.push("import { assertModelValue, createObjectCodec, isValidModelValue, modelValueIssues, parseJson, registerIModelClass, requireIModelClass, requireObjectCodec, resolveGeneratedModelSchemaRefs, serdeValidates, stringifyJsonArray, stringifyJsonBoolean, stringifyJsonNumber, stringifyJsonScalar, stringifyJsonString, validationFailure, validationUnavailable, IssueRepresentation, IssueSource, type SerdeOptions as __GolemSerdeOptions, type ValidateOptions as __GolemValidateOptions } from '@exprtlabs/golem/serde';");
+  lines.push("import { assertModelValue, assertModelValueFast, createObjectCodec, isValidModelValue, isValidModelValueFast, modelValueIssues, parseJson, registerIModelClass, requireIModelClass, requireObjectCodec, resolveGeneratedModelSchemaRefs, serdeValidates, stringifyJsonArray, stringifyJsonBoolean, stringifyJsonNumber, stringifyJsonScalar, stringifyJsonString, validationFailure, validationUnavailable, IssueRepresentation, IssueSource, type SerdeOptions as __GolemSerdeOptions, type ValidateOptions as __GolemValidateOptions } from '@exprtlabs/golem/serde';");
   // A class model registers the MobX validator hook when the app validates it and uses MobX.
   const observesValidator = (specification: ModelSpecification): boolean => profile.mobx && (specification.validation ?? profile.validation);
   if (localEmissions.some(({ specification }) => specification.emitClass && observesValidator(specification))) {
@@ -1712,6 +1715,11 @@ export function emitSource(
           const name = validators.exports.get(id);
           if (name === undefined) throw new Error(`The generated validators module has no validator for ${JSON.stringify(id)}.`);
           usedValidators.add(name);
+          return name;
+        },
+        fastCheckName: (id: string) => {
+          const name = validators.fastExports.get(id);
+          if (name !== undefined) usedValidators.add(name);
           return name;
         },
       } : {}),
