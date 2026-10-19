@@ -40,7 +40,10 @@ export interface CompileOptions {
 }
 
 export interface CompileResult {
-  /** An ES module with one named export, a function, for each root (see `exports`); empty when any diagnostic is an error. */
+  /**
+   * An ES module with one named export, a function, for each root (see `exports`), and with `fastPath` one more for each
+   * root that has a fast check (see `fastExports`); empty when any diagnostic is an error.
+   */
   readonly source: string;
   /** The name each root's validator is exported under, by root name. The names depend on the roots' own names only, and exist when the source is empty. */
   readonly exports: ReadonlyMap<string, string>;

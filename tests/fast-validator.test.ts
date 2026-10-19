@@ -378,45 +378,49 @@ test('a throwing getter of a declared key throws from the fast check as from the
   assert.throws(() => isValid(value), RangeError);
 });
 
-// No silent decline: which keyword rows the fast check writes itself, which it runs as a micro-leaf (a full validator
-// of that one check), and which roots get no fast check.
+// No silent decline: each keyword row gets a fast check that accepts a valid value and rejects an invalid one, and the
+// roots the spec excludes get none.
 
 const NESTED = (schema: object): object => ({ type: 'object', properties: { field: schema } });
+const inField = (value: unknown): object => ({ field: value });
 
-const FAST_FORM_ROWS: readonly (readonly [row: string, schema: unknown, microLeaf: boolean])[] = [
-  ['K1 type', { type: ['string', 'integer'] }, false],
-  ['K2 const and enum', { enum: ['a', 1, { b: 2 }] }, false],
-  ['K3 format', { type: 'string', format: 'uuid' }, false],
-  ['K4 Date', { golemModelDate: true }, false],
-  ['K5 string limits and pattern', { type: 'string', minLength: 1, maxLength: 4, pattern: '^a' }, false],
-  ['K6 number bounds and multipleOf', { type: 'number', minimum: 0, exclusiveMaximum: 9, multipleOf: 3 }, false],
-  ['K7 tuple and items', { type: 'array', prefixItems: [{ type: 'string' }], items: false, minItems: 1 }, false],
-  ['K8 uniqueItems', { type: 'array', uniqueItems: true }, false],
-  ['K10 and K11 required and properties', { type: 'object', required: ['a'], properties: { a: { type: 'string' } } }, false],
-  ['K12 additionalProperties false', { type: 'object', properties: { a: {} }, additionalProperties: false }, false],
-  ['K13 additionalProperties schema', { type: 'object', additionalProperties: { type: 'string' } }, false],
-  ['K14 minProperties and maxProperties', { type: 'object', minProperties: 1, maxProperties: 2 }, false],
-  ['K15 dependentRequired', { type: 'object', dependentRequired: { a: ['b'] } }, false],
-  ['K18 $ref', { $ref: '#/$defs/A', $defs: { A: { type: 'string' } } }, false],
-  ['K19 allOf', { allOf: [{ type: 'object', required: ['a'] }, { type: 'object', required: ['b'] }] }, false],
-  ['K20 anyOf', { anyOf: [{ type: 'string' }, { type: 'null' }] }, false],
-  ['K26 golemModelInstance', { golemModelInstance: { of: 'Cat', among: ['Cat'], required: true } }, false],
-  ['K30 a never property', { properties: { a: false } }, false],
-  ['K9 contains', NESTED({ type: 'array', contains: { type: 'string' } }), true],
-  ['K16 patternProperties', NESTED({ type: 'object', patternProperties: { '^a': { type: 'string' } } }), true],
-  ['K17 propertyNames', NESTED({ type: 'object', propertyNames: { minLength: 2 } }), true],
-  ['K21 oneOf with a discriminator', { oneOf: [{ properties: { k: { const: 'a' } }, required: ['k'] }, { properties: { k: { const: 'b' } }, required: ['k'] }], discriminator: { propertyName: 'k' } }, false],
-  ['K22 oneOf', { oneOf: [{ type: 'string' }, { type: 'integer' }] }, false],
-  ['K23 not', { not: { type: 'string' } }, false],
-  ['K23 an IModel class union branch', { anyOf: [{ not: { required: ['kind'] }, golemModelInstance: { of: 'Cat', among: ['Cat'], required: true } }, { required: ['kind'] }] }, false],
-  ['K24 if, then and else', NESTED({ if: { type: 'string' }, then: { minLength: 2 } }), true],
-  ['K25 dependentSchemas', NESTED({ dependentSchemas: { a: { required: ['b'] } } }), true],
+const FAST_FORM_ROWS: readonly (readonly [row: string, schema: unknown, valid: unknown, invalid: unknown])[] = [
+  ['K1 type', { type: ['string', 'integer'] }, 1, 1.5],
+  ['K2 const and enum', { enum: ['a', 1, { b: 2 }] }, { b: 2 }, 'b'],
+  ['K3 format', { type: 'string', format: 'uuid' }, '123e4567-e89b-12d3-a456-426614174000', 'x'],
+  ['K4 Date', { golemModelDate: true }, new Date(0), '1970-01-01'],
+  ['K5 string limits and pattern', { type: 'string', minLength: 1, maxLength: 4, pattern: '^a' }, 'ab', 'ba'],
+  ['K6 number bounds and multipleOf', { type: 'number', minimum: 0, exclusiveMaximum: 9, multipleOf: 3 }, 6, 9],
+  ['K7 tuple and items', { type: 'array', prefixItems: [{ type: 'string' }], items: false, minItems: 1 }, ['a'], ['a', 1]],
+  ['K8 uniqueItems', { type: 'array', uniqueItems: true }, [1, 2], [{ a: 1 }, { a: 1 }]],
+  ['K9 contains', NESTED({ type: 'array', contains: { type: 'string' } }), inField(['a']), inField([1])],
+  ['K10 and K11 required and properties', { type: 'object', required: ['a'], properties: { a: { type: 'string' } } }, { a: 'x' }, { a: 1 }],
+  ['K12 additionalProperties false', { type: 'object', properties: { a: {} }, additionalProperties: false }, { a: 1 }, { b: 1 }],
+  ['K13 additionalProperties schema', { type: 'object', additionalProperties: { type: 'string' } }, { b: 'x' }, { b: 1 }],
+  ['K14 minProperties and maxProperties', { type: 'object', minProperties: 1, maxProperties: 2 }, { a: 1 }, { a: undefined }],
+  ['K15 dependentRequired', { type: 'object', dependentRequired: { a: ['b'] } }, { a: 1, b: 1 }, { a: 1 }],
+  ['K16 patternProperties', NESTED({ type: 'object', patternProperties: { '^a': { type: 'string' } } }), inField({ ab: 'x' }), inField({ ab: 1 })],
+  ['K17 propertyNames', NESTED({ type: 'object', propertyNames: { minLength: 2 } }), inField({ ab: 1 }), inField({ a: 1 })],
+  ['K18 $ref', { $ref: '#/$defs/A', $defs: { A: { type: 'string' } } }, 'a', 1],
+  ['K19 allOf', { allOf: [{ type: 'object', required: ['a'] }, { type: 'object', required: ['b'] }] }, { a: 1, b: 1 }, { a: 1 }],
+  ['K20 anyOf', { anyOf: [{ type: 'string' }, { type: 'null' }] }, null, 1],
+  ['K21 oneOf with a discriminator', { oneOf: [{ properties: { k: { const: 'a' } }, required: ['k'] }, { properties: { k: { const: 'b' } }, required: ['k'] }], discriminator: { propertyName: 'k' } }, { k: 'b' }, { k: 'c' }],
+  ['K22 oneOf', { oneOf: [{ type: 'string' }, { type: 'integer' }] }, 'a', 1.5],
+  ['K23 not', { not: { type: 'string' } }, 1, 'a'],
+  ['K23 an IModel class union branch', { anyOf: [{ not: { required: ['kind'] }, golemModelInstance: { of: 'Cat', among: ['Cat'], required: true } }, { required: ['kind'] }] }, new Cat(), {}],
+  ['K24 if, then and else', NESTED({ if: { type: 'string' }, then: { minLength: 2 } }), inField('ab'), inField('a')],
+  ['K25 dependentSchemas', NESTED({ dependentSchemas: { a: { required: ['b'] } } }), inField({ a: 1, b: 1 }), inField({ a: 1 })],
+  ['K26 golemModelInstance', { golemModelInstance: { of: 'Cat', among: ['Cat'], required: true } }, new Cat(), new Dog()],
+  ['K30 a never property', { properties: { a: false } }, { b: 1 }, { a: 1 }],
 ];
 
-for (const [row, schema, microLeaf] of FAST_FORM_ROWS) {
-  test(`fast form table: ${row} ${microLeaf ? 'runs as a micro-leaf' : 'has a fast form'}`, () => {
-    const result = compile({ roots: new Map([['root', schema]]) }, { unknownFormats: 'warn', fastPath: true });
-    assert.deepEqual({ fastCheck: result.fastExports.get('root'), microLeaf: result.source.includes('leafPasses(') }, { fastCheck: 'is_root', microLeaf });
+for (const [row, schema, valid, invalid] of FAST_FORM_ROWS) {
+  test(`fast form table: ${row} has a fast check that accepts a valid value and rejects an invalid one`, async () => {
+    const { validate, isValid } = await compileFast(schema);
+    assert.deepEqual(
+      { full: [validate(valid, true).length === 0, validate(invalid, true).length === 0], fast: [isValid(valid), isValid(invalid)] },
+      { full: [true, false], fast: [true, false] },
+    );
   });
 }
 
@@ -437,19 +441,110 @@ test('no fast check for a root that reaches a validation function, also through 
   assert.deepEqual([...result.fastExports], [['Note', 'is_Note']]);
 });
 
-test('no fast check for a root whose top-level object or array check is a micro-leaf, or that holds only micro-leaves or an evaluation record', () => {
+test('no fast check for a root whose top-level object or array check is a micro-leaf, whose tree holds only micro-leaves, or that keeps an evaluation record', () => {
   const result = compile(
     {
       roots: new Map<string, unknown>([
         ['Patterns', { type: 'object', patternProperties: { '^a': { type: 'string' } } }],
         ['Contains', { type: 'array', contains: { type: 'string' } }],
         ['OnlyIf', { if: { type: 'string' }, then: { minLength: 2 } }],
+        ['AllOfOfLeaves', { allOf: [{ if: { type: 'string' }, then: { minLength: 2 } }, { dependentSchemas: { a: { required: ['b'] } } }] }],
+        ['AnyOfOfLeaves', { anyOf: [{ type: 'object', propertyNames: { maxLength: 1 } }, { type: 'array', contains: { type: 'string' } }] }],
+        ['RefToLeaf', { $ref: '#/$defs/Leaf', $defs: { Leaf: { type: 'object', patternProperties: { '^a': { type: 'string' } } } } }],
         ['Unevaluated', { type: 'object', properties: { a: {} }, unevaluatedProperties: false }],
       ]),
     },
     { unknownFormats: 'warn', fastPath: true },
   );
   assert.deepEqual([...result.fastExports], []);
+});
+
+// Declared keys that `properties` does not name: each is captured, then tested as an unknown key.
+test('the fast check captures each required or dependent key that properties does not name, and tests it as an additional key', async () => {
+  const required = await compileFast({ required: ['a', 'b'], additionalProperties: { type: 'string' } });
+  const dependent = await compileFast({ dependentRequired: { card: ['billing'] }, additionalProperties: { type: 'string' } });
+  const values = [{ a: 'x' }, { a: 'x', b: 'y' }, { a: 'x', b: 1 }, { b: 'y' }];
+  assert.deepEqual(values.map(value => [required.validate(value, true).length === 0, required.isValid(value)]), [[false, false], [true, true], [false, false], [false, false]]);
+  const cards = [{ card: 'x' }, { card: 'x', billing: 'y' }, { billing: 'y' }, { card: 1, billing: 'y' }];
+  assert.deepEqual(cards.map(value => [dependent.validate(value, true).length === 0, dependent.isValid(value)]), [[false, false], [true, true], [true, true], [false, false]]);
+});
+
+// A seeded schema generator: object schemas from a small grammar (required, properties, dependentRequired,
+// additionalProperties false or a schema, key counts, nested objects, arrays, enums and scalars), each checked on values
+// made for it.
+
+const KEYS = ['a', 'b', 'c', 'd'] as const;
+
+function pick<T>(random: () => number, items: readonly T[]): T {
+  return items[Math.floor(random() * items.length)];
+}
+
+function subset<T>(random: () => number, items: readonly T[]): T[] {
+  return items.filter(() => random() < 0.5);
+}
+
+function randomSchema(random: () => number, depth: number): Record<string, unknown> {
+  const kinds = depth < 2 ? ['string', 'integer', 'number', 'boolean', 'enum', 'array', 'object', 'object'] : ['string', 'integer', 'number', 'boolean', 'enum'];
+  switch (pick(random, kinds)) {
+    case 'string': return random() < 0.5 ? { type: 'string' } : { type: 'string', minLength: 1, maxLength: 2 };
+    case 'integer': return { type: 'integer', ...(random() < 0.5 ? { minimum: 0 } : {}) };
+    case 'number': return { type: 'number' };
+    case 'boolean': return { type: 'boolean' };
+    case 'enum': return { enum: subset(random, ['x', 'y', 1, null, true]).concat(['x']) };
+    case 'array': return { type: 'array', items: randomSchema(random, depth + 1), ...(random() < 0.3 ? { minItems: 1 } : {}), ...(random() < 0.3 ? { uniqueItems: true } : {}) };
+    default: {
+      const named = subset(random, KEYS);
+      const trigger = pick(random, KEYS);
+      return {
+        type: 'object',
+        properties: Object.fromEntries(named.map(key => [key, randomSchema(random, depth + 1)])),
+        required: subset(random, KEYS),
+        ...(random() < 0.3 ? { dependentRequired: { [trigger]: subset(random, KEYS.filter(key => key !== trigger)) } } : {}),
+        ...pick(random, [{}, { additionalProperties: false }, { additionalProperties: { type: 'string' } }, { additionalProperties: randomSchema(random, depth + 1) }]),
+        ...(random() < 0.2 ? { minProperties: 1 } : {}),
+        ...(random() < 0.2 ? { maxProperties: 2 } : {}),
+      };
+    }
+  }
+}
+
+/** A value made for `schema`, often valid: each required, dependent and some optional keys get a value of their schema. */
+function valueFor(schema: Record<string, unknown>, random: () => number): unknown {
+  if (Array.isArray(schema.enum)) return pick(random, schema.enum);
+  switch (schema.type) {
+    case 'string': return pick(random, ['x', 'ab', '']);
+    case 'integer': return pick(random, [0, 1, -1]);
+    case 'number': return pick(random, [0.5, 2]);
+    case 'boolean': return random() < 0.5;
+    case 'array': {
+      const items = schema.items;
+      return isPlainRecord(items) ? Array.from({ length: Math.floor(random() * 3) }, () => valueFor(items, random)) : [];
+    }
+    default: {
+      const properties = isPlainRecord(schema.properties) ? schema.properties : {};
+      const additional = schema.additionalProperties;
+      const keys = new Set([...(Array.isArray(schema.required) ? schema.required : []), ...subset(random, Object.keys(properties))]);
+      return Object.fromEntries([...keys].map(key => {
+        const own = properties[key] ?? additional;
+        return [key, isPlainRecord(own) ? valueFor(own, random) : 'x'];
+      }));
+    }
+  }
+}
+
+test('fast check equals the full validator in both directions on generated schemas and values made for them', async () => {
+  const random = seeded(7);
+  const schemas = Array.from({ length: 300 }, () => randomSchema(random, 0));
+  const module = await compileValidatorModule({ roots: Object.fromEntries(schemas.map((schema, index) => [`s${index}`, schema])), fastPath: true });
+  const cases = schemas.flatMap((schema, index) => {
+    const sample = valueFor(schema, random);
+    return [sample, ...oddValues(sample, 5000 + index, 30)].map(value => ({ root: `s${index}`, value }));
+  });
+  const disagreeing = cases.filter(({ root, value }) => outcome(() => module.byRoot[root](value, true).length === 0) !== outcome(() => module.fastByRoot[root](value)));
+  assert.deepEqual(disagreeing.map(({ root, value }) => ({ root, schema: schemas[Number(root.slice(1))], value })), []);
+  assert.equal(Object.keys(module.fastByRoot).length, schemas.length, 'every generated schema has a fast check');
+  const verdicts = new Set(cases.map(({ root, value }) => outcome(() => module.fastByRoot[root](value))));
+  assert.ok(verdicts.has(true) && verdicts.has(false), 'the values hold both valid and invalid ones');
 });
 
 test('with fastPath off the module exports no fast check and is the same as without the option', () => {
