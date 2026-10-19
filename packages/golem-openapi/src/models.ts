@@ -622,7 +622,7 @@ function compositionReader(
       const nested = withSchemaBase(env, schema);
       const name = directComponentSchemaRef(schema, nested);
       const target = name ? componentSchemaTarget(schema, nested) : undefined;
-      return name && target !== undefined ? { name, target, scope: nested, model: definitions.has(name) } : undefined;
+      return name && target !== undefined ? { name, referenced: target, scope: nested, model: definitions.has(name) } : undefined;
     },
     nested: (schema, env) => withSchemaBase(env, schema),
     descriptor: (schema, env) => seen.has(schema) ? undefined : modelConversionDescriptor(schema, definitions, env, direction, seen),

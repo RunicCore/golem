@@ -43,7 +43,7 @@ export interface ScopedSchema<S> {
 /** How the resolver reads schemas: the caller owns `$ref` resolution, scopes and descriptors. */
 export interface CompositionReader<S> {
   /** A `$ref` member: the component it names, read in its own scope; `model` when the component is a generated model. */
-  reference(schema: unknown, scope: S): { readonly name: string; readonly target: unknown; readonly scope: S; readonly model: boolean } | undefined;
+  reference(schema: unknown, scope: S): { readonly name: string; readonly referenced: unknown; readonly scope: S; readonly model: boolean } | undefined;
   /** The scope of a schema nested in `scope`. */
   nested(schema: unknown, scope: S): S;
   /** The schema's descriptor; undefined when the schema is being resolved on this path (it refers back to itself). */
@@ -326,7 +326,7 @@ function objectPart<S>(schema: unknown, scope: S, reader: CompositionReader<S>, 
   const reference = reader.reference(schema, scope);
   if (reference) {
     visiting.add(schema);
-    const part = objectPart(reference.target, reference.scope, reader, visiting);
+    const part = objectPart(reference.referenced, reference.scope, reader, visiting);
     visiting.delete(schema);
     return part;
   }
@@ -387,7 +387,7 @@ function nullVerdicts<S>(schema: unknown, scope: S, reader: CompositionReader<S>
   const reference = reader.reference(schema, scope);
   if (reference) {
     visiting.add(schema);
-    const verdicts = nullVerdicts(reference.target, reference.scope, reader, visiting);
+    const verdicts = nullVerdicts(reference.referenced, reference.scope, reader, visiting);
     visiting.delete(schema);
     return verdicts;
   }
