@@ -844,3 +844,58 @@ test('a nullable array field with an allOf minItems keeps null, rejects an empty
     },
   );
 });
+
+test('an object field whose allOf members only add constraints converts by its own properties', async t => {
+  const output = path.join(createFixtureProject(t, 'golem-openapi-constraint-allof-object-'), 'sdk');
+  await generateMaterializedSdk(sequenceSerdeDocument({
+    window: {
+      type: 'object',
+      properties: { at: { type: 'string', format: 'date-time' } },
+      required: ['at'],
+      allOf: [{ minProperties: 1 }],
+    },
+  }), {
+    output,
+    name: 'SequenceSerde',
+    profile: { mobx: false, validation: false, allowAny: false },
+  });
+  copyFixtureFile(output, 'openapi/model-serde/allof-object-types.ts', 'allof-object-types.ts');
+  compileGeneratedSdk(output, [path.join(output, 'allof-object-types.ts')], { strict: true, skipLibCheck: true });
+
+  const models = requireRecord(
+    await import(pathToFileURL(path.join(output, 'dist/index.js')).href),
+    'generated constraint-only allOf object models',
+  );
+  const VisitModel = models.VisitModel as unknown as new (values?: Record<string, unknown>) => Record<string, unknown>;
+
+  const visit = decodeGeneratedModel(VisitModel, { window: { at: '2024-05-06T07:08:09.000Z' } });
+  assert.deepEqual(visit.window, { at: new Date('2024-05-06T07:08:09.000Z') });
+});
+
+test('a oneOf field whose allOf members only add constraints converts by its own oneOf', async t => {
+  const output = path.join(createFixtureProject(t, 'golem-openapi-constraint-allof-oneof-'), 'sdk');
+  await generateMaterializedSdk(sequenceSerdeDocument({
+    either: {
+      oneOf: [{ type: 'string', format: 'date-time' }, { type: 'null' }],
+      allOf: [{ description: 'when the visit happened' }],
+    },
+  }), {
+    output,
+    name: 'SequenceSerde',
+    profile: { mobx: false, validation: false, allowAny: false },
+  });
+  copyFixtureFile(output, 'openapi/model-serde/allof-oneof-types.ts', 'allof-oneof-types.ts');
+  compileGeneratedSdk(output, [path.join(output, 'allof-oneof-types.ts')], { strict: true, skipLibCheck: true });
+
+  const models = requireRecord(
+    await import(pathToFileURL(path.join(output, 'dist/index.js')).href),
+    'generated constraint-only allOf oneOf models',
+  );
+  const VisitModel = models.VisitModel as unknown as new (values?: Record<string, unknown>) => Record<string, unknown>;
+
+  assert.deepEqual(
+    decodeGeneratedModel(VisitModel, { either: '2024-05-07T08:09:10.000Z' }).either,
+    new Date('2024-05-07T08:09:10.000Z'),
+  );
+  assert.equal(decodeGeneratedModel(VisitModel, { either: null }).either, null);
+});
