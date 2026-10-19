@@ -66,7 +66,7 @@ function medians(cases: readonly CompareCase[], samples: Map<CompareCase, BatchS
   };
 }
 
-/** What each library says about each probe value; a disagreement stops the run before any timing. */
+/** What each library says about each probe value; a disagreement fails the run before any result is reported. */
 function reportAgreement(rows: readonly Agreement[]): void {
   const mark = (value: boolean): string => value ? 'T' : 'F';
   const cell = (row: Agreement | undefined): string => row ? `${mark(row.golem)}${mark(row.typiaIs)}${mark(row.typiaEquals)}` : '?';
@@ -301,14 +301,15 @@ async function main(): Promise<void> {
     const module: CompareModule = await import(pathToFileURL(path.join(path.dirname(built), 'typia-comparison.js')).href);
     const mobx: { mobxTwins: TwinFactories } = await import(pathToFileURL(path.join(path.dirname(builtMobx), 'typia-mobx.model.js')).href);
     const twins: MobxTwins = { mobx: mobx.mobxTwins };
-    module.verifyCompareModels();
     const subjects = module.createSubjects(twins);
-    reportAgreement(module.agreements(subjects));
     const validators = async (project: string): Promise<ValidatorExports> => import(pathToFileURL(path.join(path.dirname(project), 'generated/models/models.validators.generated.js')).href);
     const plainValidators = await validators(built);
     const toggles = toggleCases(subjects, { plain: plainValidators, imodel: plainValidators, mobx: await validators(builtMobx) });
-    // The checks run every probe on the codec, the fast check and the scratch rows; they follow the timed window (see ToggleRun).
+    // The checks run every probe on golem, typia and the scratch rows; they follow the timed window (see ToggleRun), so
+    // no timed function, golem's or typia's, has seen a failing value before it is timed.
     const runChecks = (): void => {
+      module.verifyCompareModels();
+      reportAgreement(module.agreements(subjects));
       for (const check of toggles.checks) check();
       process.stdout.write(`The fast check accepts the valid value of ${fastRoute.accepted} of ${fastRoute.subjects} subjects (plain, IModel, MobX), so the codec answers those without the full validator; ${fastRoute.probes} probes agree with the full validator\n\n`);
     };
