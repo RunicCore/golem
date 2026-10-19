@@ -315,7 +315,7 @@ function modelFieldType(
     const required = new Set(Array.isArray(schema.required) ? schema.required : []);
     const fields = objectEntries(schema.properties).map(([name, child]) => `${propertyName(name)}${required.has(name) ? '' : '?'}: ${modelFieldType(child, definitions, nested, seen)}`);
     if (isJsonObject(schema.additionalProperties)) fields.push(`[key: string]: ${fields.length ? 'unknown' : modelFieldType(schema.additionalProperties, definitions, nested, seen)}`);
-    return `{ ${fields.join('; ')} }`;
+    return `{ ${fields.join('; ')} }${admitsNull(schema) ? ' | null' : ''}`;
   }
   return schemaType(schema, typeContext(nested));
 }
@@ -461,6 +461,12 @@ function sequenceBodyDescriptor(
   return undefined;
 }
 
+/** The schema converts by its own keywords: array items, oneOf, anyOf, properties or additionalProperties. */
+function hasOwnConversionKeywords(schema: Readonly<Record<string, unknown>>): boolean {
+  return isSequenceSchema(schema) || Boolean(schema.oneOf || schema.anyOf || schema.properties)
+    || schema.additionalProperties !== undefined;
+}
+
 function modelConversionDescriptor(
   schema: unknown,
   definitions: ReadonlyMap<string, ModelDefinition>,
@@ -496,12 +502,16 @@ function modelConversionDescriptor(
   }
   if (isJsonObject(schema) && hasAllOfMembers(schema)) {
     const members = schema.allOf.map((item) => modelConversionDescriptor(item, definitions, nested, direction, seen));
-    // Deciding members win. Members that only constrain, or restate an array without converting it, leave the schema's own array keywords to convert the items.
+    // Deciding members win. Members that only constrain, or restate an array without converting it, leave the schema's own
+    // array, oneOf, anyOf and properties keywords to convert the field; the constraints join that descriptor.
     const deciding = members.filter(isDecidingPart);
-    const sequence = deciding.length === 0
-      ? sequenceConversionDescriptor(schema, definitions, nested, direction, seen)
-      : undefined;
-    if (sequence) return mergeAllOfDescriptors([sequence, ...members.filter(isConstraintOnlyPart)]);
+    if (deciding.length === 0 && hasOwnConversionKeywords(schema)) {
+      const { allOf: _constraintMembers, ...own } = schema;
+      return mergeAllOfDescriptors([
+        modelConversionDescriptor(own, definitions, nested, direction, seen),
+        ...members.filter(isConstraintOnlyPart),
+      ]);
+    }
     return mergeAllOfDescriptors(deciding.length ? members.filter((part) => isConstraintOnlyPart(part) || isDecidingPart(part)) : members);
   }
   const sequence = isJsonObject(schema) ? sequenceConversionDescriptor(schema, definitions, nested, direction, seen) : undefined;
@@ -560,7 +570,7 @@ function modelConversionDescriptor(
     const required = Array.isArray(schema.required)
       ? schema.required.filter((item): item is string => typeof item === 'string')
       : [];
-    return {
+    const object: ModelTypeDescriptor = {
       kind: 'object',
       properties: Object.fromEntries(objectEntries(schema.properties).map(([name, child]) => [name, modelConversionDescriptor(child, definitions, nested, direction, seen)])),
       required,
@@ -570,6 +580,7 @@ function modelConversionDescriptor(
           ? modelConversionDescriptor(schema.additionalProperties, definitions, nested, direction, seen)
           : true,
     };
+    return admitsNull(schema) ? { kind: 'union', variants: [object, { kind: 'null' }] } : object;
   }
   if (isJsonObject(schema) && schema.const !== undefined
     && (typeof schema.const === 'string' || typeof schema.const === 'number' || typeof schema.const === 'boolean')) {
