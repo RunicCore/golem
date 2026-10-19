@@ -16,7 +16,7 @@ const featureSources = [
   'comparison-features-class-transformer.ts', 'comparison-features-class-validator.ts', 'access-rules.ts',
 ];
 
-function prepare(directory: string, kind: ProjectKind): string {
+export function prepare(directory: string, kind: ProjectKind): string {
   const project = path.join(directory, kind);
   const src = path.join(project, 'src');
   cpSync(upstreamDirectory, src, { recursive: true });
