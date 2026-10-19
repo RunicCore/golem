@@ -33,18 +33,25 @@ test('golem build --watch rebuilds once per edit, reports an error, recovers, an
   await until(() => count(watcher.output(), /^Built /) === 4, 'the rebuild after a new file');
   assert.ok(fs.existsSync(path.join(root, 'build/added.js')));
 
+  // A model edit regenerates the companion, and the rebuild that follows reads the regenerated file, not the one it read before.
+  write(root, 'src/money.model.ts', fs.readFileSync(path.join(root, 'src/money.model.ts'), 'utf8').replace('note: string', 'note: string; edited: number'));
+  await until(() => count(watcher.output(), /^Built /) === 5, 'the rebuild after a model edit');
+  assert.match(fs.readFileSync(path.join(root, 'src/money.model.generated.ts'), 'utf8'), /\bedited\b/);
+  assert.match(fs.readFileSync(path.join(root, 'build/money.model.generated.js'), 'utf8'), /\bedited\b/);
+  assert.equal(count(watcher.output(), /^Build failed/), 1, 'the model edit builds without a new failure');
+
   // Deleting the output starts one rebuild that writes it again; writing it is not a change.
   fs.rmSync(path.join(root, 'build'), { recursive: true });
-  await until(() => count(watcher.output(), /^Built /) === 5, 'the rebuild after outDir was deleted');
+  await until(() => count(watcher.output(), /^Built /) === 6, 'the rebuild after outDir was deleted');
   await new Promise((resolve) => setTimeout(resolve, 1_000));
-  assert.equal(count(watcher.output(), /^Built /), 5, 'deleting outDir triggers exactly one rebuild');
+  assert.equal(count(watcher.output(), /^Built /), 6, 'deleting outDir triggers exactly one rebuild');
   assert.ok(fs.existsSync(path.join(root, 'build/use.js')));
   assert.equal(await watcher.stop(), 130);
 
-  const after = new Map(snapshot(root));
-  after.delete('src/added.ts');
-  after.delete('src/use.ts');
-  const expected = new Map(before);
-  expected.delete('src/use.ts');
+  // The edited model, the new files and the files the model edit regenerated are the changes this test made or caused.
+  const changed = new Set(['src/added.ts', 'src/use.ts', 'src/money.model.ts', 'src/money.model.generated.ts', 'src/generated/models/models.validators.generated.ts']);
+  const withoutChanged = (files: ReadonlyMap<string, string>): Map<string, string> => new Map([...files].filter(([file]) => !changed.has(file)));
+  const after = withoutChanged(snapshot(root));
+  const expected = withoutChanged(before);
   assert.deepEqual(after, expected, 'a watching build changes no file it does not own');
 });

@@ -8,7 +8,7 @@ import { contains } from '#golem/config';
 import { GeneratorSessionResources } from '#golem/pipeline';
 import { OwnedOutputIndex } from '#golem/watch';
 import { workspace } from './support/process.js';
-import { compilerChildren, fixture, skipOnTypeScript6 } from './support/generation-watch.js';
+import { compilerChildren, generationWatchFixture, skipOnTypeScript6 } from './support/generation-watch.js';
 import { until } from './support/watch-wait.js';
 
 test('owned output index excludes exactly the outputs and the directories containing them', () => {
@@ -37,7 +37,7 @@ test('owned output index excludes exactly the outputs and the directories contai
 });
 
 test('watch recovers when a referenced local schema file is introduced after the document that references it', async (t: TestContext) => {
-  const { root, config } = fixture(t);
+  const { root, config } = generationWatchFixture(t);
   const runs = countRuns(t);
   const errors: unknown[] = [];
   const stop = watchPipeline(config, error => { errors.push(error); });
@@ -87,7 +87,7 @@ test('watch recovers when a referenced local schema file is introduced after the
 });
 
 test('watch keeps model dependencies outside the models root after a run that reuses the models job', async (t: TestContext) => {
-  const { root, config } = fixture(t);
+  const { root, config } = generationWatchFixture(t);
   const app = path.join(root, 'app');
   fs.mkdirSync(path.join(app, 'src'), { recursive: true });
   fs.mkdirSync(path.join(root, 'shared'), { recursive: true });
@@ -149,7 +149,7 @@ test('watch keeps model dependencies outside the models root after a run that re
 });
 
 test('watch generates a new file that ends in a configured model suffix', async (t: TestContext) => {
-  const { root, config } = fixture(t);
+  const { root, config } = generationWatchFixture(t);
   fs.writeFileSync(config, fs.readFileSync(config, 'utf8').replace('models:\n  root: .\n', 'models:\n  root: .\n  suffixes: [.entity.ts]\n'));
   const entity = (name: string): string => `import type { IModel } from '@exprtlabs/golem/model';\n\nexport type T${name} = IModel<{ id: string }>;\n`;
   fs.writeFileSync(path.join(root, 'src/cart.entity.ts'), entity('Cart'));
@@ -166,7 +166,7 @@ test('watch generates a new file that ends in a configured model suffix', async 
 });
 
 test('stopping an in-process watch closes its compiler', { skip: process.platform === 'win32' || skipOnTypeScript6 }, async (t: TestContext) => {
-  const { root, config } = fixture(t);
+  const { root, config } = generationWatchFixture(t);
   const errors: unknown[] = [];
   const stop = watchPipeline(config, error => { errors.push(error); });
   const companion = path.join(root, 'src/cart.model.generated.ts');
@@ -180,7 +180,7 @@ test('stopping an in-process watch closes its compiler', { skip: process.platfor
 });
 
 test('a pipeline session closes the compiler of a removed job', { skip: process.platform === 'win32' || skipOnTypeScript6 }, async (t: TestContext) => {
-  const { config } = fixture(t);
+  const { config } = generationWatchFixture(t);
   const session = new GeneratorSessionResources();
   t.after(() => session[Symbol.dispose]());
   await runPipeline(config, { session });
@@ -205,7 +205,7 @@ function countRuns(t: TestContext): () => number {
 }
 
 test('edits that land between two polls produce one run with the final content', async (t: TestContext) => {
-  const { root, config } = fixture(t);
+  const { root, config } = generationWatchFixture(t);
   const runs = countRuns(t);
   const errors: unknown[] = [];
   const source = path.join(root, 'src/cart.model.ts');
@@ -233,7 +233,7 @@ test('edits that land between two polls produce one run with the final content',
 });
 
 test('an edit during a running generation triggers exactly one follow-up run with the latest content', async (t: TestContext) => {
-  const { root, config } = fixture(t);
+  const { root, config } = generationWatchFixture(t);
   const runs = countRuns(t);
   const errors: unknown[] = [];
   const source = path.join(root, 'src/cart.model.ts');

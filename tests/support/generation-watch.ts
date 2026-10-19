@@ -12,7 +12,7 @@ export const skipOnTypeScript6 = resolveTypeScript(process.env.GOLEM_TYPESCRIPT_
   && 'TypeScript 6 runs no compiler server process';
 
 /** A generation project in a temp directory: a model, an OpenAPI document and a golem.yaml that runs both, with the golem packages linked. */
-export function fixture(t: TestContext): { root: string; config: string } {
+export function generationWatchFixture(t: TestContext): { root: string; config: string } {
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'golem-watch-')));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   fs.mkdirSync(path.join(root, 'node_modules/@exprtlabs'), { recursive: true });

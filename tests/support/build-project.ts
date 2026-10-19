@@ -1,4 +1,4 @@
-// Shared fixtures and helpers of the golem build suites: build-command, build-command-config and build-command-watch.
+// Shared fixtures and helpers of the golem build tests: the build-command files, build-watch-rebuild-recovery and typescript-ts6.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';

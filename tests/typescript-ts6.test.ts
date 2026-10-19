@@ -82,6 +82,9 @@ export function load(text: string) { return parse<Payment>(text); }
   assert.ok(payment instanceof Payment, 'the rewritten call constructs the class that was imported as a type');
   assert.equal(payment.amount.currency, 'USD');
 
+  // An old fixed time on every built file: a file the rebuild writes again shows on any file-system clock.
+  const old = new Date('2001-01-01T00:00:00Z');
+  for (const file of mtimes(path.join(root, 'build'), '.js').keys()) fs.utimesSync(path.join(root, 'build', file), old, old);
   const emitted = mtimes(path.join(root, 'build'), '.js');
   write(root, 'src/use.ts', `${USE}export const again = stringify<TMoney>({ currency: 'EUR', value: '2' });\n`);
   const second = await golemBuild(root, ['--declaration']);

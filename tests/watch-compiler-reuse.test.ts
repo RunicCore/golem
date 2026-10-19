@@ -4,11 +4,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { workspace } from './support/process.js';
-import { compilerChildren, fixture, skipOnTypeScript6 } from './support/generation-watch.js';
+import { compilerChildren, generationWatchFixture, skipOnTypeScript6 } from './support/generation-watch.js';
 import { until } from './support/watch-wait.js';
 
 test('watch reuses one compiler across edits and tsconfig path-mapping changes', { skip: process.platform === 'win32' }, async (t: TestContext) => {
-  const { root, config } = fixture(t);
+  const { root, config } = generationWatchFixture(t);
   const tsconfigFile = path.join(root, 'tsconfig.json');
   const tsconfig = JSON.parse(fs.readFileSync(tsconfigFile, 'utf8')) as { compilerOptions: Record<string, unknown>; include: string[] };
   const writeTsconfig = (paths: string, include: readonly string[]): void => {
