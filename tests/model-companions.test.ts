@@ -222,8 +222,8 @@ test('a generated model file imports only the validators of its own models', asy
   const { artifacts } = await validatingProject();
   const text = (name: string): string => artifacts.find((file) => file.path.endsWith(name))?.content ?? '';
   const imported = (name: string): string => text(name).match(/^import \{ ([^}]+) \} from "[^"]*models\.validators\.generated\.js";$/m)?.[1] ?? '';
-  assert.match(imported('a.model.generated.ts'), /^validate_TA_\w+(, validate_TA_\w+)*$/);
-  assert.match(imported('b.model.generated.ts'), /^validate_TB_\w+(, validate_TB_\w+)*$/);
+  assert.match(imported('a.model.generated.ts'), /^(?:is|validate)_TA_\w+(, (?:is|validate)_TA_\w+)*$/);
+  assert.match(imported('b.model.generated.ts'), /^(?:is|validate)_TB_\w+(, (?:is|validate)_TB_\w+)*$/);
 });
 
 test('with validation off a generated model file has no validator import and validate true is unavailable', async () => {
@@ -311,6 +311,6 @@ export type TItem = IModel<{ count: number & TValidation<typeof isEven> }>;
   assert.ok(validators, 'the validators file is written');
   assert.match(validators.content, /import \{ isEven as \w+ \} from "[^"]*rules\.js"/);
   const companion = result.artifacts.find(artifact => artifact.path.endsWith('item.model.generated.ts'));
-  assert.match(companion?.content ?? '', /^import \{ validate_TItem_\w+(, validate_TItem_\w+)* \} from "\.\/generated\/models\/models\.validators\.generated\.js";$/m);
+  assert.match(companion?.content ?? '', /^import \{ (?:is|validate)_TItem_\w+(, (?:is|validate)_TItem_\w+)* \} from "\.\/generated\/models\/models\.validators\.generated\.js";$/m);
   assert.doesNotMatch(companion?.content ?? '', /rules\.js/);
 });

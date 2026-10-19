@@ -103,7 +103,7 @@ for (const [label, profile] of profiles) for (const chain of [modelChain, object
       const imported = companion(index).match(/^import \{ ([^}]+) \} from "[^"]*models\.validators\.generated\.js";$/m)?.[1] ?? '';
       assert.equal(imported !== '', profile.validation === true, `${name.toLowerCase()}-${index} imports its validators only when the app validates`);
       for (const validator of imported.split(', ').filter((item) => item !== '')) {
-        const codecId = validator.replace(/^validate_/, '').replace(/_(?:wire|model_only|wire_only)$/, '');
+        const codecId = validator.replace(/^(?:is|validate)_/, '').replace(/_(?:wire|model_only|wire_only)$/, '');
         assert.ok(companion(index).includes(`createObjectCodec("${codecId}", {`), `${name.toLowerCase()}-${index} imports only its own validators, not ${validator}`);
       }
     }
@@ -125,7 +125,7 @@ export type TOpted = IModel<{ at: Date }, { validation: true }>;
   });
   const { artifacts } = generate({ root, profile: { mobx: false, validation: false } });
   const content = (name: string): string => artifacts.find((artifact) => artifact.path.endsWith(name))?.content ?? '';
-  assert.match(content('opted.model.generated.ts'), /import \{ validate_TOpted_\w+[^}]* \} from "[^"]*models\.validators\.generated\.js";/);
+  assert.match(content('opted.model.generated.ts'), /import \{ [^}]*validate_TOpted_\w+[^}]* \} from "[^"]*models\.validators\.generated\.js";/);
   assert.doesNotMatch(content('plain.model.generated.ts'), /models\.validators\.generated/);
   assert.match(content('plain.model.generated.ts'), /profile: \{ validation: false, mobx: false \}/);
   assert.match(content('opted.model.generated.ts'), /profile: \{ validation: true, mobx: false \}/);

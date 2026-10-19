@@ -164,7 +164,7 @@ test('SDK Money $ref plus extra TValidation, local TValidation, and TSerde compi
   const source = generatedText(root);
   assertGeneratedValidatorsBound(source);
   const companion = fs.readFileSync(path.join(sourceRoot, 'checkout.model.generated.ts'), 'utf8');
-  assert.equal((companion.match(/^import \{ validate_[^}]+\} from /gm) ?? []).length, 1, 'the parent companion imports the shared validators once');
+  assert.equal((companion.match(/^import \{ [^}]*validate_[^}]+\} from /gm) ?? []).length, 1, 'the parent companion imports the shared validators once');
   const { Checkout } = await import(pathToFileURL(path.join(root, 'build/checkout.model.js')).href);
   const codec = requireObjectCodec(generatedCodecIdFromRoot(root, 'TCheckout'));
   const validWire = {

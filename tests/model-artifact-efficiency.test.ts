@@ -76,7 +76,7 @@ test('equivalent MinLength tags of two companions compile to one validators modu
   assert.equal(artifacts.filter((item) => item.path.endsWith('.validators.generated.ts')).length, 1, 'one validators module serves every companion');
   const companions = artifacts.filter((item) => item.path.endsWith('.model.generated.ts')).map((item) => item.content);
   assert.equal(companions.length, 2);
-  for (const companion of companions) assert.match(companion, /import \{ validate_\w+_[0-9a-f]{8}[^}]*\} from "[^"]*models\.validators\.generated\.js";/, 'each companion imports its validators');
+  for (const companion of companions) assert.match(companion, /import \{ [^}]*validate_\w+_[0-9a-f]{8}[^}]*\} from "[^"]*models\.validators\.generated\.js";/, 'each companion imports its validators');
   const { Item } = await import(`${pathToFileURL(path.join(fixtureValue.root, 'build/item.model.js')).href}`) as {
     Item: new (values?: { value?: string; extra?: string }) => { value: string; extra: string };
   };
