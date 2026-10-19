@@ -34,13 +34,14 @@ import {
   scalarOrArray,
   emitDispatch,
   presentUnionIndices,
+  mergeObjectVariants,
   unionDispatch,
   type ObjectTypeDescriptor,
   type VariantDispatch,
 } from './union-conversion.js';
 
 /** Generators read tag values through the same rule as the shared union conversion. */
-export { descriptorNeedsConversion, literalValues } from './union-conversion.js';
+export { descriptorNeedsConversion, isDisjointObjectIntersection, literalValues } from './union-conversion.js';
 
 export type ModelConversionDescriptor = ModelTypeDescriptor;
 
@@ -255,23 +256,8 @@ function emitNested(
         : expression;
   }
   if (descriptor.kind === 'intersection') {
-    const objects = descriptor.variants.filter((variant): variant is ObjectDescriptor => variant.kind === 'object' && !metadata(variant).serde);
-    if (objects.length === descriptor.variants.length) {
-      const properties: Record<string, ModelConversionDescriptor> = Object.create(null);
-      for (const object of objects) {
-        for (const [name, property] of Object.entries(object.properties)) {
-          properties[name] = properties[name]
-            ? { kind: 'intersection', variants: [properties[name], property] }
-            : property;
-        }
-      }
-      const additional = objects.flatMap(object => typeof object.additionalProperties === 'object' ? [object.additionalProperties] : []);
-      return emitNested({
-        kind: 'object', properties,
-        required: [...new Set(objects.flatMap(object => object.required))],
-        additionalProperties: additional.length ? { kind: 'intersection', variants: additional } : true,
-      }, expression, direction, resolveModel, resolveSerde);
-    }
+    const merged = descriptor.variants.every(variant => !metadata(variant).serde) ? mergeObjectVariants(descriptor.variants) : undefined;
+    if (merged) return emitNested(merged, expression, direction, resolveModel, resolveSerde);
     const conversions = [...new Set(descriptor.variants
       .map(variant => emitNested(variant, expression, direction, resolveModel, resolveSerde))
       .filter(converted => converted !== expression))];

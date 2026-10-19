@@ -1,5 +1,6 @@
 import {
   descriptorNeedsConversion,
+  isDisjointObjectIntersection,
   emitModelFromJSON,
   FIELD_CONVERSION_INPUT,
   singleCallConverter,
@@ -182,6 +183,15 @@ function admitsNull(schema: Readonly<Record<string, unknown>>): boolean {
   return effectiveSchemaTypes(schema).includes('null');
 }
 
+/** A reference admits null when it says so, or when the component it names does. */
+function admitsNullThroughReference(
+  schema: unknown,
+  reference: string,
+  definitions: ReadonlyMap<string, ModelDefinition>,
+): boolean {
+  return admitsNull(asRecord(schema)) || admitsNull(asRecord(definitions.get(reference)?.schema));
+}
+
 function modelSchemaProperties(
   env: ModelResolveEnv,
   rawSchema: unknown,
@@ -270,12 +280,13 @@ function modelFieldType(
   definitions: ReadonlyMap<string, ModelDefinition>,
   env: ModelResolveEnv,
   visiting: ReadonlySet<unknown> = new Set(),
+  nullThroughReference = true,
 ): string {
   const nested = withSchemaBase(env, schema);
   const reference = modelSchemaReference(schema, nested);
   if (reference && definitions.has(reference)) {
-    const record = asRecord(schema);
-    return `${reference}Model${admitsNull(record) ? ' | null' : ''}`;
+    const nullable = nullThroughReference ? admitsNullThroughReference(schema, reference, definitions) : admitsNull(asRecord(schema));
+    return `${reference}Model${nullable ? ' | null' : ''}`;
   }
   if (visiting.has(schema)) throw new Error('Recursive schema aliases must resolve to an object model.');
   const seen = new Set(visiting).add(schema);
@@ -288,14 +299,27 @@ function modelFieldType(
     return admitsNull(schema) ? 'Date | null' : 'Date';
   }
   // The conversion's order and rule: deciding allOf members win, then the schema's own array keywords, then oneOf and anyOf.
-  const decidingMembers = isJsonObject(schema) && hasAllOfMembers(schema)
-    ? schema.allOf
-      .map((item) => ({ item, descriptor: modelConversionDescriptor(item, definitions, nested, 'from', seen) }))
-      .filter(({ descriptor }) => isDecidingPart(descriptor))
+  const allOfMembers = isJsonObject(schema) && hasAllOfMembers(schema)
+    ? schema.allOf.map((item) => ({ item, descriptor: modelConversionDescriptor(item, definitions, nested, 'from', seen) }))
     : [];
+  const decidingMembers = allOfMembers.filter(({ descriptor }) => isDecidingPart(descriptor));
   const [decidingMember] = decidingMembers;
   if (decidingMembers.length === 1 && decidingMember && isSequenceDescriptor(decidingMember.descriptor)) {
     return modelFieldType(decidingMember.item, definitions, nested, seen);
+  }
+  // Plain object members are one intersection, with the schema's own properties when it has them, as the conversion merges them
+  // and the codec merges them when `isDisjointObjectIntersection` accepts the parts.
+  if (isJsonObject(schema) && joinsObjectMembers(schema, decidingMembers.map(({ descriptor }) => descriptor))) {
+    const ownParts = hasOwnObjectKeywords(schema) ? [withoutAllOf(schema)] : [];
+    const mergedParts = [
+      ...ownParts.map((part) => modelConversionDescriptor(part, definitions, nested, 'from', seen)),
+      ...allOfMembers.filter(({ descriptor }) => isConstraintOnlyPart(descriptor) || isDecidingPart(descriptor)).map(({ descriptor }) => descriptor),
+    ];
+    if (mergedParts.filter((part) => !isConstraintOnlyPart(part)).length === 1 || isDisjointObjectIntersection(mergedParts)) {
+      const parts = [...ownParts, ...decidingMembers.map(({ item }) => item)]
+        .map((part) => modelFieldType(part, definitions, nested, seen));
+      return parts.length === 1 ? parts.join('') : parts.map((part) => `(${part})`).join(' & ');
+    }
   }
   if (isJsonObject(schema) && decidingMembers.length === 0 && isSequenceSchema(schema)) {
     const orNull = admitsNull(schema) ? ' | null' : '';
@@ -307,12 +331,12 @@ function modelFieldType(
   if (isJsonObject(schema) && (schema.oneOf || schema.anyOf)) {
     const variants = Array.isArray(schema.oneOf) ? schema.oneOf : Array.isArray(schema.anyOf) ? schema.anyOf : [];
     return variants
-      .map((item) => modelFieldType(item, definitions, nested, seen))
+      .map((item) => modelFieldType(item, definitions, nested, seen, false))
       .map((type) => `(${type})`)
       .join(' | ');
   }
   if (isJsonObject(schema) && (schema.properties || isJsonObject(schema.additionalProperties))) {
-    const required = new Set(Array.isArray(schema.required) ? schema.required : []);
+    const required = new Set(allOfRequiredNames(schema));
     const fields = objectEntries(schema.properties).map(([name, child]) => `${propertyName(name)}${required.has(name) ? '' : '?'}: ${modelFieldType(child, definitions, nested, seen)}`);
     if (isJsonObject(schema.additionalProperties)) fields.push(`[key: string]: ${fields.length ? 'unknown' : modelFieldType(schema.additionalProperties, definitions, nested, seen)}`);
     return `{ ${fields.join('; ')} }${admitsNull(schema) ? ' | null' : ''}`;
@@ -461,6 +485,45 @@ function sequenceBodyDescriptor(
   return undefined;
 }
 
+/** The required names of a schema: its own, and those that its allOf members list. */
+function allOfRequiredNames(schema: Readonly<Record<string, unknown>>): string[] {
+  const names = (value: unknown): string[] => Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === 'string')
+    : [];
+  return [
+    ...names(schema.required),
+    ...(hasAllOfMembers(schema) ? schema.allOf.flatMap((member) => names(asRecord(member).required)) : []),
+  ];
+}
+
+/** The schema as its own keywords, with the required names of its allOf members folded in. */
+function withoutAllOf(schema: Readonly<Record<string, unknown>>): Readonly<Record<string, unknown>> {
+  const { allOf: _members, ...own } = schema;
+  const required = allOfRequiredNames(schema);
+  return required.length ? { ...own, required } : own;
+}
+
+function hasOwnObjectKeywords(schema: Readonly<Record<string, unknown>>): boolean {
+  return Boolean(schema.properties) || isJsonObject(schema.additionalProperties);
+}
+
+/**
+ * Deciding members that are all plain objects join the schema's own properties in one intersection, when the codec merges
+ * them (`isDisjointObjectIntersection`); a nullable schema keeps the member path.
+ */
+function joinsObjectMembers(schema: Readonly<Record<string, unknown>>, deciding: readonly ModelTypeDescriptor[]): boolean {
+  if (deciding.length === 0 || !deciding.every((part) => part.kind === 'object')) return false;
+  if (!hasOwnObjectKeywords(schema)) return true;
+  if (admitsNull(schema)) return false;
+  const own: ModelTypeDescriptor = {
+    kind: 'object',
+    properties: Object.fromEntries(objectEntries(schema.properties).map(([name]) => [name, { kind: 'unknown' } as const])),
+    required: [],
+    additionalProperties: isJsonObject(schema.additionalProperties) ? { kind: 'unknown' } : true,
+  };
+  return isDisjointObjectIntersection([own, ...deciding]);
+}
+
 /** The schema converts by its own keywords: array items, oneOf, anyOf, properties or additionalProperties. */
 function hasOwnConversionKeywords(schema: Readonly<Record<string, unknown>>): boolean {
   return isSequenceSchema(schema) || Boolean(schema.oneOf || schema.anyOf || schema.properties)
@@ -473,12 +536,13 @@ function modelConversionDescriptor(
   env: ModelResolveEnv,
   direction: 'from' | 'to' = 'from',
   visiting: ReadonlySet<unknown> = new Set(),
+  nullThroughReference = true,
 ): ModelTypeDescriptor {
   const nested = withSchemaBase(env, schema);
   const reference = modelSchemaReference(schema, nested);
   if (reference && definitions.has(reference)) {
     const generated: ModelTypeDescriptor = { kind: 'generated-model', id: reference };
-    return admitsNull(asRecord(schema))
+    return (nullThroughReference ? admitsNullThroughReference(schema, reference, definitions) : admitsNull(asRecord(schema)))
       ? { kind: 'union', variants: [generated, { kind: 'null' }] }
       : generated;
   }
@@ -506,13 +570,19 @@ function modelConversionDescriptor(
     // array, oneOf, anyOf and properties keywords to convert the field; the constraints join that descriptor.
     const deciding = members.filter(isDecidingPart);
     if (deciding.length === 0 && hasOwnConversionKeywords(schema)) {
-      const { allOf: _constraintMembers, ...own } = schema;
       return mergeAllOfDescriptors([
-        modelConversionDescriptor(own, definitions, nested, direction, seen),
+        modelConversionDescriptor(withoutAllOf(schema), definitions, nested, direction, seen),
         ...members.filter(isConstraintOnlyPart),
       ]);
     }
-    return mergeAllOfDescriptors(deciding.length ? members.filter((part) => isConstraintOnlyPart(part) || isDecidingPart(part)) : members);
+    // The schema's own properties join the deciding members as one more part, as modelFieldType types them.
+    const own = joinsObjectMembers(schema, deciding) && hasOwnObjectKeywords(schema)
+      ? [modelConversionDescriptor(withoutAllOf(schema), definitions, nested, direction, seen)]
+      : [];
+    return mergeAllOfDescriptors([
+      ...own,
+      ...(deciding.length ? members.filter((part) => isConstraintOnlyPart(part) || isDecidingPart(part)) : members),
+    ]);
   }
   const sequence = isJsonObject(schema) ? sequenceConversionDescriptor(schema, definitions, nested, direction, seen) : undefined;
   if (sequence) return sequence;
@@ -521,7 +591,7 @@ function modelConversionDescriptor(
     // A nullable array variant is a plain union of its own; its branches join the outer union.
     const convertedVariants = variants.flatMap((item): readonly ModelTypeDescriptor[] => {
       if (isNullBranch(item)) return [{ kind: 'null' }];
-      const converted = modelConversionDescriptor(item, definitions, nested, direction, seen);
+      const converted = modelConversionDescriptor(item, definitions, nested, direction, seen, false);
       return converted.kind === 'union' && converted.discriminator === undefined ? converted.variants : [converted];
     });
     const temporalVariants = convertedVariants.filter(isTemporalDescriptor);

@@ -61,6 +61,11 @@ function asArray(expression: string): string {
   return ACCESS_CHAIN.test(expression) ? `${expression} as readonly unknown[]` : `(${expression} as readonly unknown[])`;
 }
 
+/** An arrow body that is an object literal needs parentheses, or it parses as a block. */
+function arrowBody(code: string): string {
+  return code.startsWith('{') ? `(${code})` : code;
+}
+
 /**
  * A whole array conversion, with its guard. An unchanged `value` array is a `slice`; a `json` array has no guard and
  * always writes its items.
@@ -78,12 +83,12 @@ export function emitArrayConversion(item: ModelTypeDescriptor, expression: strin
  */
 export function emitArrayItems(item: ModelTypeDescriptor, expression: string, items: SequenceItems): string {
   const { code, throws } = items.item(item, ITEM);
-  if (items.output === 'json') return `stringifyJsonArray(${expression} as ArrayLike<unknown>, (${ITEM}) => ${code})`;
+  if (items.output === 'json') return `stringifyJsonArray(${expression} as ArrayLike<unknown>, (${ITEM}) => ${arrowBody(code)})`;
   if (code === ITEM) return expression;
   if (items.paths && throws) {
     return `convertModelItems(${JSON.stringify(items.paths)}, ${singleCallConverter(code, ITEM) ?? `(${ITEM}) => (${code})`}, ${asArray(expression)})`;
   }
-  return `(${expression} as readonly unknown[]).map((${ITEM}) => ${code})`;
+  return `(${expression} as readonly unknown[]).map((${ITEM}) => ${arrowBody(code)})`;
 }
 
 /**
@@ -171,15 +176,15 @@ export function emitTupleItems(descriptor: TupleConversionDescriptor, expression
     const direction = JSON.stringify(items.paths);
     const array = asArray(expression);
     return usesIndex
-      ? `convertModelTupleItems(${direction}, (${usesTuple ? `${params}, ${TUPLE}` : params}) => ${selected}, ${array})`
+      ? `convertModelTupleItems(${direction}, (${usesTuple ? `${params}, ${TUPLE}` : params}) => ${arrowBody(selected)}, ${array})`
       : `convertModelItems(${direction}, ${singleCallConverter(selected, ITEM) ?? `(${ITEM}) => (${selected})`}, ${array})`;
   }
   if (json) {
-    const write = `(${params}) => ${selected}`;
+    const write = `(${params}) => ${arrowBody(selected)}`;
     return usesTuple
       ? `((${TUPLE}: readonly unknown[]) => stringifyJsonArray(${TUPLE}, ${write}))(${expression} as readonly unknown[])`
       : `stringifyJsonArray(${expression} as ArrayLike<unknown>, ${write})`;
   }
   if (selected === unchanged) return expression;
-  return `(${expression} as readonly unknown[]).map((${usesTuple ? `${params}, ${TUPLE}` : params}) => ${selected})`;
+  return `(${expression} as readonly unknown[]).map((${usesTuple ? `${params}, ${TUPLE}` : params}) => ${arrowBody(selected)})`;
 }

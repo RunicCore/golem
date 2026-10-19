@@ -304,3 +304,37 @@ export function descriptorNeedsConversion(descriptor: ModelTypeDescriptor): bool
   }
   return false;
 }
+
+/** Plain objects with disjoint property names and no additional-property schema: the intersections that the codec merges. */
+export function isDisjointObjectIntersection(variants: readonly ModelTypeDescriptor[]): boolean {
+  const objects = variants.filter((variant): variant is ObjectTypeDescriptor => variant.kind === 'object');
+  if (objects.length === 0 || objects.length !== variants.length) return false;
+  const names = objects.flatMap((object) => Object.keys(object.properties));
+  return new Set(names).size === names.length && objects.every((object) => typeof object.additionalProperties !== 'object');
+}
+
+/**
+ * The one object an intersection of objects converts as: same-named properties intersect, the required names join,
+ * and the additional-property schemas intersect. With `disjoint`, only an intersection that
+ * `isDisjointObjectIntersection` accepts merges, and anything else is not merged.
+ */
+export function mergeObjectVariants(variants: readonly ModelTypeDescriptor[], disjoint = false): ObjectTypeDescriptor | undefined {
+  const objects = variants.filter((variant): variant is ObjectTypeDescriptor => variant.kind === 'object');
+  if (objects.length === 0 || objects.length !== variants.length) return undefined;
+  if (disjoint && !isDisjointObjectIntersection(variants)) return undefined;
+  const properties: Record<string, ModelTypeDescriptor> = Object.create(null);
+  for (const object of objects) {
+    for (const [name, property] of Object.entries(object.properties)) {
+      properties[name] = properties[name]
+        ? { kind: 'intersection', variants: [properties[name], property] }
+        : property;
+    }
+  }
+  const additional = objects.flatMap((object) => typeof object.additionalProperties === 'object' ? [object.additionalProperties] : []);
+  return {
+    kind: 'object',
+    properties,
+    required: [...new Set(objects.flatMap((object) => object.required))],
+    additionalProperties: additional.length ? { kind: 'intersection', variants: additional } : true,
+  };
+}
