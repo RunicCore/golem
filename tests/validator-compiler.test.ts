@@ -337,6 +337,12 @@ test('uniqueItems reports the first duplicate pair by index', async () => {
   await assertIssues({ uniqueItems: false }, [1, 1], []);
 });
 
+test('uniqueItems compares items by the JSON view: an undefined item and a hole equal null', async () => {
+  await assertIssues({ uniqueItems: true }, [undefined, null], [{ path: [], code: 'unique', indexes: [0, 1] }]);
+  await assertIssues({ uniqueItems: true }, [1, , null], [{ path: [], code: 'unique', indexes: [1, 2] }]);
+  await assertIssues({ uniqueItems: true }, [undefined, 0], []);
+});
+
 test('allOf reports the issues of every failing branch', async () => {
   await assertIssues({ allOf: [{ minLength: 3 }, { pattern: '^b' }, { type: 'string' }] }, 'a', [
     { path: [], code: 'tooSmall', measure: 'length', limit: 3, inclusive: true },
@@ -945,6 +951,23 @@ test('a key whose value is undefined counts as absent for required, properties, 
   await assertIssues({ required: ['a'] }, { a: null }, []);
 });
 
+test('a non-enumerable own key counts as absent for required, properties and dependentRequired', async () => {
+  const hidden = (): object => Object.defineProperty({}, 'a', { value: 5, enumerable: false });
+  await assertIssues({ required: ['a'] }, hidden(), [{ path: ['a'], code: 'required', key: 'a' }]);
+  await assertIssues({ properties: { a: { type: 'string' } } }, hidden(), []);
+  await assertIssues({ dependentRequired: { a: ['b'] } }, hidden(), []);
+});
+
+test('uniqueItems rejects items that differ only by undefined-valued keys', async () => {
+  await assertIssues({ uniqueItems: true }, [{ a: 1, b: undefined }, { a: 1 }], [{ path: [], code: 'unique', indexes: [0, 1] }]);
+  await assertIssues({ uniqueItems: true }, [[undefined], [null]], [{ path: [], code: 'unique', indexes: [0, 1] }]);
+});
+
+test('const and enum accept a value with an extra undefined-valued key', async () => {
+  await assertIssues({ const: { a: 1 } }, { a: 1, b: undefined }, []);
+  await assertIssues({ enum: [{ a: 1 }, 2] }, { a: 1, b: undefined }, []);
+});
+
 test('compile with typed types each exported validator and imports the issue type', () => {
   const { source } = compile({ roots: new Map([['root', { type: 'string' }]]) }, { unknownFormats: 'warn', typed: true });
   assert.match(source, /^import type \{ SchemaIssue \} from "@exprtlabs\/golem\/validation-runtime";$/m);
@@ -1185,4 +1208,15 @@ test('a forwarding function stays when its target takes an evaluation record tha
     { path: ['a'], code: 'type', expected: ['string'] },
   ]);
   assert.deepEqual(root({ a: 'x', child: { a: 'y' }, z: 1 }, true), [{ path: ['z'], code: 'unknownKey', key: 'z' }]);
+});
+
+test('fastPath as a set of root names gives a fast check to the roots in it that have one, and to no other', () => {
+  const roots = new Map<string, unknown>([
+    ['Included', { type: 'string' }],
+    ['Excluded', { type: 'string' }],
+    ['AlsoIncluded', { type: 'object', required: ['id'], properties: { id: { type: 'integer' } } }],
+  ]);
+  const { fastExports, exports } = compile({ roots }, { unknownFormats: 'warn', fastPath: new Set(['Included', 'AlsoIncluded', 'NotARoot']) });
+  assert.deepEqual([...fastExports.keys()].sort(), ['AlsoIncluded', 'Included']);
+  assert.deepEqual([...exports.keys()].sort(), ['AlsoIncluded', 'Excluded', 'Included'], 'every root keeps its validator');
 });

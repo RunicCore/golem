@@ -590,7 +590,8 @@ test('fill assigns known fields, keeps __proto__ defineProperty, and nested mode
     validatorName: (id) => `validate_${id.replace(/[^\w$]/g, '_')}`,
     nestedGenerated: (id) => id === 'Money' ? 'MoneyModel' : id,
   });
-  assert.match(source, /if \(copyIdentity\) \{\n    out\["note"\] = /, 'budget: defineModelProperty is heavier than a plain assignment, so an ordinary field is copied with a direct assignment');
+  // The fill reads each field once by the JSON view, then copies a present one.
+  assert.match(source, /if \(copyIdentity\) \{\n    if \(__golemPresent\d+ !== undefined\) \{\n      out\["note"\] = __golemPresent\d+;/, 'budget: defineModelProperty is heavier than a plain assignment, so an ordinary field is copied with a direct assignment');
   class MoneyModel {
     public constructor(values: object = {}) {
       Object.assign(this, values);

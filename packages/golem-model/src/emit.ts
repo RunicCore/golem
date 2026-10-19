@@ -20,6 +20,7 @@ import {
   type ModelDiscriminators,
   type SerdeResolver,
   type ToJsonModelResolver,
+  presentKeysSource,
 } from '@exprtlabs/golem/emitter';
 import { createSchemaGraph, codecPublicId, codecShortName, internDescriptors, type SchemaGraph } from '@exprtlabs/golem/schema-graph';
 import { compareText, propertyName, RESERVED_MODEL_MEMBERS, type GolemProfile } from '@exprtlabs/golem/generator-api';
@@ -1079,8 +1080,11 @@ export function validatorImports(
 
 /** What the app generated beside its model files, which a model file reads. */
 export interface AppOutputs {
-  /** The generated validators module and the name it exports each root under (see `PlanValidators.exports`); set when the app validates. */
-  readonly validators?: { readonly module: string; readonly exports: ReadonlyMap<string, string> };
+  /**
+   * The generated validators module, the name it exports each root under and the name of each root's fast check (see
+   * `PlanValidators.exports` and `fastExports`); set when the app validates.
+   */
+  readonly validators?: { readonly module: string; readonly exports: ReadonlyMap<string, string>; readonly fastExports: ReadonlyMap<string, string> };
   /** The validation plan's resolved schemas by codec id and plane. A validating model file publishes its own as its codecs' schemas. */
   readonly planSchemas?: Readonly<Record<string, object | boolean>>;
 }
@@ -1391,9 +1395,13 @@ export function emitSource(
     });
     const decode: string[] = [];
     const init: string[] = [];
-    for (const field of fields) {
+    const decodeCaptures: [key: string, local: string][] = [];
+    const initCaptures: [key: string, local: string][] = [];
+    for (const [index, field] of fields.entries()) {
       const name = JSON.stringify(field.getName());
-      const input = `values[${name}]`;
+      // The JSON view, read once into a local by one Object.keys pass. Decode reads the own copy in `result`, so a
+      // getter of the input runs once.
+      const input = `__golemValue${index}`;
       const descriptor = descriptors.get(field.getName());
       if (!descriptor) throw new Error(`Missing descriptor for field ${field.getName()}.`);
       const emitDecode = (value: string): string => emitModelFromJSON(
@@ -1409,10 +1417,17 @@ export function emitSource(
       const converted = wrapRootConversion(helpers, specification.name, 'deserialize', name, input, emitDecode, 'unknown');
       if (converted !== input) {
         conversionHelpers.add('define');
-        decode.push(`  if (Object.prototype.hasOwnProperty.call(values, ${name})) defineModelProperty(result, ${name}, ${converted});`);
+        decodeCaptures.push([field.getName(), input]);
+        decode.push(`  if (${input} !== undefined) defineModelProperty(result, ${name}, ${converted});`);
       }
       conversionHelpers.add('define');
-      init.push(`    if (Object.prototype.hasOwnProperty.call(values, ${name})) defineModelProperty(this, ${name}, ${fromInit});`);
+      initCaptures.push([field.getName(), input]);
+      init.push(`    if (${input} !== undefined) defineModelProperty(this, ${name}, ${fromInit});`);
+    }
+    if (decodeCaptures.length > 0) decode.unshift(`  ${presentKeysSource('result', decodeCaptures, local => `${local}: unknown`)}`);
+    if (initCaptures.length > 0) {
+      const initType = (local: string): string => `${local}: ${specification.name}Init[${JSON.stringify(initCaptures.find(([, name]) => name === local)?.[0])}]`;
+      init.unshift(`    ${presentKeysSource('values', initCaptures, initType)}`);
     }
     rootFieldExpressions.set(specification.name, { helpers, encode, decode, init });
   }
@@ -1466,7 +1481,7 @@ export function emitSource(
   }
   if (hasDate) lines.push("import { deserializeDate, serializeDate } from '@exprtlabs/golem/conversion';");
   lines.push(...classValueImports);
-  lines.push("import { assertModelValue, createObjectCodec, isValidModelValue, modelValueIssues, parseJson, registerIModelClass, requireIModelClass, requireObjectCodec, resolveGeneratedModelSchemaRefs, serdeValidates, stringifyJsonArray, stringifyJsonBoolean, stringifyJsonNumber, stringifyJsonScalar, stringifyJsonString, validationFailure, validationUnavailable, IssueRepresentation, IssueSource, type SerdeOptions as __GolemSerdeOptions, type ValidateOptions as __GolemValidateOptions } from '@exprtlabs/golem/serde';");
+  lines.push("import { assertModelValue, assertModelValueFast, createObjectCodec, isValidModelValue, isValidModelValueFast, modelValueIssues, parseJson, registerIModelClass, requireIModelClass, requireObjectCodec, resolveGeneratedModelSchemaRefs, serdeValidates, stringifyJsonArray, stringifyJsonBoolean, stringifyJsonNumber, stringifyJsonScalar, stringifyJsonString, validationFailure, validationUnavailable, IssueRepresentation, IssueSource, type SerdeOptions as __GolemSerdeOptions, type ValidateOptions as __GolemValidateOptions } from '@exprtlabs/golem/serde';");
   // A class model registers the MobX validator hook when the app validates it and uses MobX.
   const observesValidator = (specification: ModelSpecification): boolean => profile.mobx && (specification.validation ?? profile.validation);
   if (localEmissions.some(({ specification }) => specification.emitClass && observesValidator(specification))) {
@@ -1700,6 +1715,11 @@ export function emitSource(
           const name = validators.exports.get(id);
           if (name === undefined) throw new Error(`The generated validators module has no validator for ${JSON.stringify(id)}.`);
           usedValidators.add(name);
+          return name;
+        },
+        fastCheckName: (id: string) => {
+          const name = validators.fastExports.get(id);
+          if (name !== undefined) usedValidators.add(name);
           return name;
         },
       } : {}),

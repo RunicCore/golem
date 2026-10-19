@@ -13,6 +13,7 @@ import {
 } from '@exprtlabs/golem/model';
 import { installCodecModel } from './register-codec-model.js';
 import { enhanceValidatorWithMobX } from '@exprtlabs/golem/mobx-validation';
+import { asGenObservable } from '@exprtlabs/golem/mobx';
 import {
   getValidator,
   validateInstance,
@@ -216,11 +217,32 @@ test('an instance never inherits the validator or rules of another instance', as
   const original = generated(new NumberModel());
   const originalValidator = getValidator(original).extend({ value: () => 'Only the original.' });
   const derived = generated(Object.create(original) as NumberModel);
+  // A declared field counts only as an own property, so the derived instance holds its own value.
+  derived.value = 1;
   const derivedValidator = getValidator(derived);
   assert.notStrictEqual(derivedValidator, originalValidator);
   assert.equal(await originalValidator.validate(), false);
   assert.equal(await derivedValidator.validate(), true);
   assert.deepEqual(await validateInstance(derived), []);
+});
+
+test('validateInstance rejects a declared field that a prototype getter supplies, as the codec validator does', async () => {
+  class GetterModel { get value(): number { return 1; } }
+  await registerNumberModel(GetterModel);
+  const model = generated(new GetterModel());
+  assert.deepEqual((await validateInstance(model)).map(issue => [issue.path, issue.code]), [[['value'], 'required']]);
+});
+
+test('validateInstance reads a MobX model by its own observable fields', async () => {
+  class MobxNumberModel { declare value: number; }
+  await registerNumberModel(MobxNumberModel, { validation: true, enhanceValidator: enhanceValidatorWithMobX });
+  const valid = generated(new MobxNumberModel());
+  valid.value = 1;
+  asGenObservable(valid);
+  assert.deepEqual(await validateInstance(valid), []);
+  const missing = generated(new MobxNumberModel());
+  asGenObservable(missing);
+  assert.deepEqual((await validateInstance(missing)).map(issue => [issue.path, issue.code]), [[['value'], 'required']]);
 });
 
 test('derived registration shadows inherited metadata and failed replacement leaves both attachments intact', async () => {

@@ -205,7 +205,7 @@ function buildGeneratedFiles(document: unknown, options: WriteSdkOptions): Gener
       copyAdditionalProperties: plan.copyAdditionalProperties,
       objectFromJSON: plan.objectFromJSON,
       locate: options.locate,
-      ...(profile.validation ? { compileValidators: ({ plan, locateModel }: { plan: CodecValidationPlan; locateModel: (name: string) => SchemaPlace }) => compileValidators(plan, locateModel).exports } : {}),
+      ...(profile.validation ? { compileValidators: ({ plan, locateModel }: { plan: CodecValidationPlan; locateModel: (name: string) => SchemaPlace }) => compileValidators(plan, locateModel) } : {}),
     });
     for (const [name, source] of models.files) files.set(name, source);
     modelReexports = models.entryReexports;

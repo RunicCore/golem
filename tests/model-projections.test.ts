@@ -60,6 +60,28 @@ test('projection decoders and encoders copy fields with assignments and keep the
   assert.deepEqual(encodeGeneratedModel(office), { place: { city: 'Hue', country: 'VN' } });
 });
 
+test('a projection decoder leaves out a field that is undefined or not enumerable in the input', async t => {
+  const { root, sourceRoot } = fixture(t);
+  fs.writeFileSync(path.join(sourceRoot, 'place.model.ts'), readFixture("models/model-composition/projection-decoders-copy-fields-with-assignments/place.model.ts"));
+  writeModelGolemYaml(root, { mobx: false, validation: false });
+  await buildModelProject(root);
+  const { Office } = await import(path.join(root, 'build/place.model.js'));
+  const hidden = Object.defineProperty({ city: 'Hue' }, 'country', { value: 'VN', enumerable: false });
+  assert.deepEqual(Object.keys(decodeGeneratedModel(Office, { place: { city: 'Hue', country: undefined } }).place), ['city']);
+  assert.deepEqual(Object.keys(decodeGeneratedModel(Office, { place: hidden }).place), ['city']);
+});
+
+test('a projection decoder leaves out an undeclared key whose value is undefined', async t => {
+  const { root, sourceRoot } = fixture(t);
+  fs.writeFileSync(path.join(sourceRoot, 'board.model.ts'), readFixture("models/model-composition/projection-extras/board.model.ts"));
+  writeModelGolemYaml(root, { mobx: false, validation: false });
+  await buildModelProject(root);
+  const { Board } = await import(path.join(root, 'build/board.model.js'));
+  const board = decodeGeneratedModel(Board, { slots: { x: undefined, y: { at: '2026-01-02T00:00:00.000Z' } } });
+  assert.deepEqual(Object.keys(board.slots), ['y']);
+  assert.ok(board.slots.y.at instanceof Date);
+});
+
 test('equivalent projections share helpers and execute only retained field codecs', async t => {
   const { root, sourceRoot } = fixture(t);
   fs.writeFileSync(path.join(sourceRoot, 'codecs.ts'), readFixture("models/model-composition/equivalent-projections-share-helpers-and-execute-only-retained-field-codecs/codecs.ts"));

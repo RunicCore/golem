@@ -1,4 +1,5 @@
 import type { SchemaIssue } from './issue-messages.js';
+import { presentValue } from './presence.js';
 export type { JsonTypeName, SchemaIssue, SchemaIssueDetail } from './issue-messages.js';
 export { schemaIssueMessage } from './issue-messages.js';
 
@@ -20,7 +21,11 @@ export function codePointLength(text: string): number {
   return count;
 }
 
-/** JSON Schema equality: numbers by value, arrays by position, objects by own keys in any order. */
+/**
+ * JSON Schema equality over the JSON view, as `JSON.stringify` writes a value: numbers by value; arrays by position,
+ * with an `undefined` item and a hole equal to `null`; objects by their own enumerable keys whose value is not
+ * `undefined`, in any order.
+ */
 export function jsonEqual(left: unknown, right: unknown): boolean {
   if (left === right) return true;
   if (typeof left !== 'object' || typeof right !== 'object' || left === null || right === null) return false;
@@ -29,12 +34,24 @@ export function jsonEqual(left: unknown, right: unknown): boolean {
   }
   if (Array.isArray(left) || Array.isArray(right)) {
     if (!Array.isArray(left) || !Array.isArray(right) || left.length !== right.length) return false;
-    return left.every((item, index) => jsonEqual(item, right[index]));
+    for (let index = 0; index < left.length; index++) {
+      if (!jsonEqual(left[index] ?? null, right[index] ?? null)) return false;
+    }
+    return true;
   }
-  const leftKeys = Object.keys(left);
-  if (leftKeys.length !== Object.keys(right).length) return false;
-  return leftKeys.every(key => Object.hasOwn(right, key)
-    && jsonEqual((left as Record<string, unknown>)[key], (right as Record<string, unknown>)[key]));
+  // Counts the keys of each side inline, so a comparison allocates no key list.
+  let count = 0;
+  for (const key in left) {
+    const value = presentValue(left, key);
+    if (value === undefined) continue;
+    const other = presentValue(right, key);
+    if (other === undefined || !jsonEqual(value, other)) return false;
+    count++;
+  }
+  for (const key in right) {
+    if (presentValue(right, key) !== undefined) count--;
+  }
+  return count === 0;
 }
 
 const DIGIT = '[0-9]';
@@ -238,4 +255,15 @@ export function checkFormat(format: string, value: unknown): boolean {
   if (typeof value === 'string') return Object.hasOwn(stringFormats, format) ? stringFormats[format](value) : true;
   if (typeof value === 'number') return Object.hasOwn(numberFormats, format) ? numberFormats[format](value) : true;
   return true;
+}
+
+/** `checkFormat` for one `format`, with the format looked up once: a generated fast check calls it per value. */
+export function formatTest(format: string): (value: unknown) => boolean {
+  const forString = Object.hasOwn(stringFormats, format) ? stringFormats[format] : undefined;
+  const forNumber = Object.hasOwn(numberFormats, format) ? numberFormats[format] : undefined;
+  return value => {
+    if (typeof value === 'string') return forString === undefined || forString(value);
+    if (typeof value === 'number') return forNumber === undefined || forNumber(value);
+    return true;
+  };
 }

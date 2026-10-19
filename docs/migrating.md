@@ -95,7 +95,10 @@ A NestJS application's HTTP 400 response body carries the new issue shape: type-
 
 - A `ValidationRule` returns `true`, a message, `{ message }` or nothing. It no longer returns a code: an issue from a rule has the code `custom`.
 - `ModelValidationContext` is `{ resolve }`. The `engine` field is removed.
-- A property whose value is `undefined` counts as absent for `required`, unknown keys and property counts.
+- A field is present only when it is an own enumerable property and its value is not `undefined`, as `JSON.stringify` writes it. This rule applies to validation, decode, constructors and `validateInstance`.
+- A property whose value is `undefined`, a non-enumerable property and an inherited property are absent. `new Model({ a: undefined })` does not define `a`.
+- A getter on your class does not supply a declared field to `validateInstance`. Set the field on the instance.
+- In `const`, `enum` and `uniqueItems`, a key whose value is `undefined` is absent, and `[undefined]`, `[ , ]` and `[null]` are equal.
 - The `source` of an issue from a nested model is the source of the model that holds it.
 
 ### Client validators

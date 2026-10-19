@@ -106,6 +106,101 @@ test('generated decode with a constructor reads each declared property once and 
   });
 });
 
+/** A payment wire whose optional `charge` is an own `undefined` value, or an own non-enumerable object. */
+function wireWithCharge(charge: 'undefined' | 'hidden'): Record<string, unknown> {
+  const wire: Record<string, unknown> = { id: 'p1', note: 'n', merchant: { id: 'm', name: 'M' }, billing: { name: 'B' }, money: { amount: '1.00', currency: 'USD' } };
+  if (charge === 'undefined') wire.charge = undefined;
+  else Object.defineProperty(wire, 'charge', { value: { id: 'c', status: 'pending', settlesOn: 'later' }, enumerable: false });
+  return wire;
+}
+
+function hasOwnCharge(value: unknown): boolean {
+  return typeof value === 'object' && value !== null && Object.hasOwn(value, 'charge');
+}
+
+test('fromWireFormat leaves out a field that is undefined or not enumerable in the wire', async (t) => {
+  const { fromWireFormatTPayment } = await loadCodecs(t, 'payment');
+  assert.equal(hasOwnCharge(fromWireFormatTPayment(wireWithCharge('undefined'), { validate: false })), false);
+  assert.equal(hasOwnCharge(fromWireFormatTPayment(wireWithCharge('hidden'), { validate: false })), false);
+});
+
+test('the generated constructor and decode leave out a field that is undefined or not enumerable in the input', async (t) => {
+  const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-serde-isolation-', name: 'serde-isolation', linkWorkspaceNodeModules: true });
+  fs.writeFileSync(path.join(sourceRoot, 'payment.model.ts'), readFixture('models/serde-isolation/payment.model.ts'));
+  writeModelGolemYaml(root, { mobx: false, validation: false });
+  await buildModelProject(root);
+  const { Payment } = await import(pathToFileURL(path.join(root, 'build/payment.model.js')).href);
+  assert.equal(hasOwnCharge(new Payment(wireWithCharge('undefined'))), false);
+  assert.equal(hasOwnCharge(new Payment(wireWithCharge('hidden'))), false);
+  assert.equal(hasOwnCharge(decodeGeneratedModel(Payment, wireWithCharge('undefined'))), false);
+  assert.equal(hasOwnCharge(decodeGeneratedModel(Payment, wireWithCharge('hidden'))), false);
+});
+
+/** Builds one model file, imports its generated codecs and gives the URL of its model module. */
+async function loadModel(t: TestContext, name: string): Promise<{ codecs: Record<string, FromWire>; modelUrl: string }> {
+  const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-serde-isolation-', name: 'serde-isolation', linkWorkspaceNodeModules: true });
+  fs.writeFileSync(path.join(sourceRoot, `${name}.model.ts`), readFixture(`models/serde-isolation/${name}.model.ts`));
+  writeModelGolemYaml(root, { mobx: false, validation: false });
+  await buildModelProject(root);
+  const codecs: Record<string, FromWire> = await import(pathToFileURL(path.join(root, `build/${name}.model.generated.js`)).href);
+  return { codecs, modelUrl: pathToFileURL(path.join(root, `build/${name}.model.js`)).href };
+}
+
+function ownKeys(value: unknown, field?: string): readonly string[] {
+  const target = field === undefined ? value : typeof value === 'object' && value !== null ? Reflect.get(value, field) : undefined;
+  return typeof target === 'object' && target !== null ? Object.keys(target).sort() : [];
+}
+
+function stampsWire(change: Record<string, unknown> = {}): Record<string, unknown> {
+  return { id: 's1', at: '2026-01-01T00:00:00.000Z', stamps: { y: '2026-01-02T00:00:00.000Z' }, ...change };
+}
+
+test('the generated constructor and decode read each declared field once', async (t) => {
+  const { modelUrl } = await loadModel(t, 'payment');
+  const { Payment } = await import(modelUrl);
+  let reads = 0;
+  const wire = (): Record<string, unknown> => Object.defineProperty(wireWithCharge('undefined'), 'billing', { enumerable: true, get() { reads++; return { name: 'B' }; } });
+  new Payment(wire());
+  assert.equal(reads, 1);
+  reads = 0;
+  // The trusted entry runs the generated decode alone, without the caller's cycle check of the input.
+  decodeGeneratedModelTrusted(Payment, wire());
+  assert.equal(reads, 1);
+});
+
+test('decode leaves out an undeclared key whose value is undefined', async (t) => {
+  const { codecs, modelUrl } = await loadModel(t, 'stamps');
+  const { Stamps } = await import(modelUrl);
+  const { fromWireFormatTBag } = await loadCodecs(t, 'bag');
+  const wire = stampsWire({ stamps: { x: undefined, y: '2026-01-02T00:00:00.000Z' } });
+  assert.deepEqual(ownKeys(codecs.fromWireFormatTStamps(wire, { validate: false }), 'stamps'), ['y']);
+  assert.deepEqual(ownKeys(decodeGeneratedModel(Stamps, wire), 'stamps'), ['y']);
+  assert.deepEqual(ownKeys(fromWireFormatTBag({ k: undefined, j: 'v' }, { validate: false })), ['j']);
+});
+
+test('fromWireFormat leaves out a required or optional field that is undefined, and an optional one that is not enumerable', async (t) => {
+  const { codecs } = await loadModel(t, 'stamps');
+  const decode = (wire: Record<string, unknown>): readonly string[] => ownKeys(codecs.fromWireFormatTStamps(wire, { validate: false }));
+  assert.deepEqual(decode(stampsWire({ id: undefined })), ['at', 'stamps']);
+  assert.deepEqual(decode(stampsWire({ at: undefined })), ['id', 'stamps']);
+  assert.deepEqual(decode(stampsWire({ label: undefined })), ['at', 'id', 'stamps']);
+  assert.deepEqual(decode(Object.defineProperty(stampsWire(), 'label', { value: 'l', enumerable: false })), ['at', 'id', 'stamps']);
+  assert.deepEqual(decode(stampsWire({ label: 'l' })), ['at', 'id', 'label', 'stamps']);
+});
+
+test('a union tag that is inherited or not enumerable selects no branch', async (t) => {
+  const { fromWireFormatTContact } = await loadCodecs(t, 'union');
+  const unknownTag = (error: unknown): boolean => {
+    assert.ok(error instanceof LibError);
+    assert.deepEqual(error.issues[0]?.path, ['value', 'kind']);
+    return true;
+  };
+  const inherited = Object.assign(Object.create({ kind: 'email' }), { address: 'a@example.com' });
+  const hidden = Object.defineProperty({ address: 'a@example.com' }, 'kind', { value: 'email', enumerable: false });
+  assert.throws(() => fromWireFormatTContact({ value: inherited }, { validate: false }), unknownTag);
+  assert.throws(() => fromWireFormatTContact({ value: hidden }, { validate: false }), unknownTag);
+});
+
 test('a conversion that fails inside a nested model reports the outer field, the index and the inner field', async (t) => {
   const { fromWireFormatTCalendar } = await loadCodecs(t, 'calendar');
   const note = {};

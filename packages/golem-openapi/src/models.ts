@@ -14,7 +14,7 @@ import {
   type ModelDiscriminators,
 } from '@exprtlabs/golem/emitter';
 import { createSchemaGraph, codecPublicId, internDescriptors, type SchemaGraph, type SchemaNode } from '@exprtlabs/golem/schema-graph';
-import type { CodecSchemaClosureEntry, CodecValidationPlan, SchemaPlace } from '@exprtlabs/golem/validation-plan';
+import type { CodecSchemaClosureEntry, CodecValidationPlan, PlanValidators, SchemaPlace } from '@exprtlabs/golem/validation-plan';
 import { assertSupportedModelFieldName, type JsonSchema } from '@exprtlabs/golem/schema';
 import { sourceDigest } from '@exprtlabs/golem/manifest';
 import { buildCodecValidationPlan, uniqueDiagnostics } from '@exprtlabs/golem/validation-plan';
@@ -1552,10 +1552,10 @@ export function generateOpenApiModelArtifacts(
     readonly locate?: OriginLocator | undefined;
     /**
      * Compiles the SDK's validators module from the validation plan of every model and returns the name it exports
-     * each root under (`PlanValidators.exports`). `groupPlans` are the plans the model groups' own schemas come from:
+     * each root and each root's fast check under (`PlanValidators.exports` and `fastExports`). `groupPlans` are the plans the model groups' own schemas come from:
      * a companion imports the validators of its group's plan ids. Called once, and required when the profile validates.
      */
-    readonly compileValidators?: (input: { readonly plan: CodecValidationPlan; readonly groupPlans: ReadonlyMap<string, CodecValidationPlan>; readonly locateModel: (name: string) => SchemaPlace }) => ReadonlyMap<string, string>;
+    readonly compileValidators?: (input: { readonly plan: CodecValidationPlan; readonly groupPlans: ReadonlyMap<string, CodecValidationPlan>; readonly locateModel: (name: string) => SchemaPlace }) => Pick<PlanValidators, 'exports' | 'fastExports'>;
   } = {},
 ): { readonly files: ReadonlyMap<string, string>; readonly entryReexports: string; readonly diagnostics: readonly GolemDiagnostic[] } {
   const { schemaGraph, definitions, ordered, grouping } = analysis;
@@ -1648,13 +1648,15 @@ export function generateOpenApiModelArtifacts(
     }
   }
   if (profile.validation && !helpers.compileValidators) throw new Error('A validating SDK compiles its model validators with the operation validators; the caller names how.');
-  const validatorExports = profile.validation && helpers.compileValidators
+  const compiledValidators = profile.validation && helpers.compileValidators
     ? helpers.compileValidators({
       plan: buildCodecValidationPlan(schemaGraph),
       groupPlans,
       locateModel: (name) => componentPlace(helpers.locate, schemaNameByModelName.get(name) ?? name, ''),
     })
     : undefined;
+  const validatorExports = compiledValidators?.exports;
+  const fastCheckExports = compiledValidators?.fastExports;
   for (const group of groups) {
     const localIds = group.nodes;
     const dependencyIds = dependenciesByGroup.get(group.id) ?? new Set<string>();
@@ -1722,8 +1724,9 @@ export function generateOpenApiModelArtifacts(
       const names = Object.keys(groupPlan.schemas).map((id) => {
         const name = validatorExports.get(id);
         if (name === undefined) throw new Error(`The SDK validators module has no validator for the codec ${JSON.stringify(id)} of model group ${group.id}.`);
-        return name;
-      });
+        const fast = fastCheckExports?.get(id);
+        return fast === undefined ? [name] : [name, fast];
+      }).flat();
       if (names.length > 0) moduleImports.push(`import { ${[...new Set(names)].sort().join(', ')} } from '../validators.generated.js';`);
     }
     const modelModule = generateModels(document, profile, {
@@ -1737,6 +1740,7 @@ export function generateOpenApiModelArtifacts(
       moduleFile: group.filename,
       moduleImports,
       ...(validatorExports ? { validatorExports } : {}),
+      ...(fastCheckExports ? { fastCheckExports } : {}),
       codecFunctionImport: (nodeId, functionName) => {
         const dependencyGroupId = owner.get(nodeId);
         if (!dependencyGroupId || dependencyGroupId === group.id) return undefined;
@@ -1840,6 +1844,8 @@ export function generateModels(
     readonly moduleImports?: readonly string[];
     /** The name the module's generated validators are exported under, by codec id and plane; set when `moduleImports` imports them. */
     readonly validatorExports?: ReadonlyMap<string, string>;
+    /** The name of each root's fast check, by the same keys, for the roots that have one. */
+    readonly fastCheckExports?: ReadonlyMap<string, string>;
     /** The validation plan's resolved schemas of this module's models by codec id and plane. */
     readonly resolvedSchemas?: Readonly<Record<string, object | boolean>>;
     readonly exportedFillFunctionIds?: ReadonlySet<string>;
@@ -1878,7 +1884,7 @@ export function generateModels(
     ...(profile.validation && profile.mobx ? ["import { enhanceValidatorWithMobX } from '@exprtlabs/golem/mobx-validation';"] : []),
     `import { registerGeneratedModel, type ModelInit, type GeneratedModelConstructor, type generatedModelWireBrand, type generatedModelFieldsBrand${ordered.some(definition => definition.isUnion) ? ", type generatedModelResultBrand" : ""}${emitCopy ? ", findGeneratedModelDefinition, findGeneratedModelDefinitionForConstructor" : ""} } from '@exprtlabs/golem/model';`,
     `import { assertPropertyAcyclic, assertWireAcyclic, beginDecode, convertModelField, convertModelItems, convertModelTupleItems, decodeCheckedInput, decodeDetachedInput, endDecode, decodeGeneratedModelTrusted, defineModelProperty, encodeGeneratedModel${usesDate ? ", deserializeDate, serializeDate" : ""} } from '@exprtlabs/golem/conversion';`,
-    "import { assertModelValue, createObjectCodec, isValidModelValue, modelValueIssues, parseJson, registerIModelClass, requireIModelClass, requireObjectCodec, resolveGeneratedModelSchemaRefs, serdeFailFast, serdeValidates, stringifyJsonArray, stringifyJsonBoolean, stringifyJsonNumber, stringifyJsonScalar, stringifyJsonString, validationFailure, validationUnavailable, IssueRepresentation, IssueSource, type SerdeOptions as __GolemSerdeOptions, type ValidateOptions as __GolemValidateOptions } from '@exprtlabs/golem/serde';",
+    "import { assertModelValue, assertModelValueFast, createObjectCodec, isValidModelValue, isValidModelValueFast, modelValueIssues, parseJson, registerIModelClass, requireIModelClass, requireObjectCodec, resolveGeneratedModelSchemaRefs, serdeFailFast, serdeValidates, stringifyJsonArray, stringifyJsonBoolean, stringifyJsonNumber, stringifyJsonScalar, stringifyJsonString, validationFailure, validationUnavailable, IssueRepresentation, IssueSource, type SerdeOptions as __GolemSerdeOptions, type ValidateOptions as __GolemValidateOptions } from '@exprtlabs/golem/serde';",
     ...(profile.mobx ? [
       "import { asGenObservable } from '@exprtlabs/golem/mobx';",
     ] : []),
@@ -2085,6 +2091,7 @@ export function generateModels(
         return name;
       },
     } : {}),
+    ...(helpers.fastCheckExports ? { fastCheckName: (id: string) => helpers.fastCheckExports?.get(id) } : {}),
     ...(helpers.resolvedSchemas ? { resolvedSchemasExpr: 'modelSchemas' } : {}),
     issueSource: 'OpenAPI',
     wireType: (node) => {

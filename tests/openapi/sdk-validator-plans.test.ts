@@ -81,7 +81,7 @@ test('the whole-graph plan validates every model as the plan of its own group do
     compileValidators: ({ plan, groupPlans }) => {
       whole = plan;
       groups = groupPlans;
-      return compilePlanValidators(plan, { owner: 'test', unknownFormats: 'warn', documentName: 'the document' }).exports;
+      return compilePlanValidators(plan, { owner: 'test', unknownFormats: 'warn', documentName: 'the document' });
     },
   });
   assert.ok(whole && groups);

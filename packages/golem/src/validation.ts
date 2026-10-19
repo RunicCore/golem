@@ -2,6 +2,7 @@ import {
   findGeneratedModelDefinition,
   findGeneratedModelDefinitionForConstructor,
 } from './model.js';
+import { presentValue } from './presence.js';
 import type {
   generatedModelFieldsBrand,
   GeneratedModelConstructor,
@@ -369,15 +370,12 @@ function evaluateInstanceRules(root: object, mode: ValidationMode): ValidationSt
 
 function codecValidationValue(model: object, definition: RegisteredGeneratedModelDefinition): object {
   if (definition.additionalProperties) return model;
+  // The JSON view, as the codec validator reads it: a declared field counts when it is own, enumerable and not
+  // `undefined`. A prototype getter does not supply a field.
   const payload: Record<string, unknown> = {};
   for (const field of definition.fields) {
-    if (Object.hasOwn(model, field)) {
-      defineModelProperty(payload, field, Reflect.get(model, field));
-      continue;
-    }
-    const value = Reflect.get(model, field);
-    if (value === undefined) continue;
-    defineModelProperty(payload, field, value);
+    const value = presentValue(model, field);
+    if (value !== undefined) defineModelProperty(payload, field, value);
   }
   return payload;
 }

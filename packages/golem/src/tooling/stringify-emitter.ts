@@ -5,6 +5,7 @@
  */
 
 import type { ModelTypeDescriptor } from '../model.js';
+import { presentKeysSource, presentValueSource } from '../presence.js';
 import type { ValidationPlane } from '../object-codec.js';
 import type { SchemaGraph, SchemaNode } from './schema-graph.js';
 import { codecShortName, serdeWireDescriptor } from './schema-graph.js';
@@ -53,6 +54,11 @@ export interface CodecRuntimeOptions {
    * `Id#model-only`, `Id#wire-only`). Called once for each use, so the caller knows which validators to import.
    */
   readonly validatorName?: (id: string) => string;
+  /**
+   * The name the module imports the fast check of a root under, by the same keys; undefined for a root that has none,
+   * which keeps the validator's route. Called once for each use, as `validatorName` is.
+   */
+  readonly fastCheckName?: (id: string) => string | undefined;
   /** Expression of a record of the validation plan's resolved schemas by the same keys. A validated codec publishes these as its schemas; without it the codec carries its own unresolved payload. */
   readonly resolvedSchemasExpr?: string;
   readonly serde?: StringifySerdeResolver;
@@ -79,6 +85,7 @@ export interface CodecRuntimeOptions {
 interface EmitCtx {
   readonly graph: SchemaGraph;
   readonly validatorName?: (id: string) => string;
+  readonly fastCheckName?: (id: string) => string | undefined;
   readonly resolvedSchemasExpr?: string;
   readonly serde?: StringifySerdeResolver;
   readonly nestedConstruct?: (name: string, className?: string) => string;
@@ -415,7 +422,7 @@ function emitValue(
       const generatedText = emitValue(generated[0], expression, ctx);
       const objects = present.filter((variant): variant is ObjectTypeDescriptor => variant.kind === 'object');
       if (objects.length > 0 && !objectDiscriminator(objects)) throw new Error(OBJECT_UNION_DISCRIMINATOR_ERROR);
-      const tagged = objectTagMatch(objects, expression);
+      const tagged = objectTagMatch(objects, expression, false);
       if (tagged.length) {
         const objectText = objects.length === 1
           ? emitValue(objects[0], expression, ctx)
@@ -996,9 +1003,12 @@ function emitTaggedObjects(
 }
 
 /** Match any required literal tag of `objects`, for mixing them with one generated model. */
-function objectTagMatch(objects: readonly ObjectTypeDescriptor[], expression: string): string[] {
-  return objects.flatMap((object) => [...literalDiscriminator(object)].map(([name, values]) =>
-    discriminatorMatch(tagAccess(expression, name), values)));
+function objectTagMatch(objects: readonly ObjectTypeDescriptor[], expression: string, decode: boolean): string[] {
+  // Decoding reads the tag by the JSON view, so an inherited or non-enumerable tag matches no object.
+  const read = (name: string): string => decode
+    ? `(${presentValueSource(expression, JSON.stringify(name), tagAccess(expression, name))})`
+    : tagAccess(expression, name);
+  return objects.flatMap((object) => [...literalDiscriminator(object)].map(([name, values]) => discriminatorMatch(read(name), values)));
 }
 
 function emitUnionDecode(
@@ -1051,7 +1061,7 @@ function emitUnionDecode(
       const objects = present.filter((variant): variant is ObjectTypeDescriptor => variant.kind === 'object');
       const discriminator = objectDiscriminator(objects);
       if (objects.length > 0 && !discriminator) throw new Error(OBJECT_UNION_DISCRIMINATOR_ERROR);
-      const tagged = objectTagMatch(objects, expression);
+      const tagged = objectTagMatch(objects, expression, true);
       if (tagged.length) {
         return `(${objectValueExpression(expression)} && !(${tagged.join(' || ')}) ? ${converted} : ${expression})`;
       }
@@ -1066,7 +1076,7 @@ function emitUnionDecode(
       const node = ctx.graph.nodeFor(ref);
       const object = node?.descriptor.kind === 'object' ? node.descriptor : undefined;
       if (!object) throw new Error(AMBIGUOUS_UNION_CONVERSION_ERROR);
-      const tags = objectTagMatch([object], expression);
+      const tags = objectTagMatch([object], expression, true);
       if (tags.length === 0) throw new Error(OBJECT_UNION_DISCRIMINATOR_ERROR);
       branches.push(`${tags.join(' && ')} ? ${emitDecodeValue(ref, expression, ctx)}`);
     }
@@ -1126,7 +1136,7 @@ function emitUnionEncode(
     const generatedText = emitEncodeValue(generated[0], expression, ctx);
     const objects = present.filter((variant): variant is ObjectTypeDescriptor => variant.kind === 'object');
     if (objects.length > 0 && !objectDiscriminator(objects)) throw new Error(OBJECT_UNION_DISCRIMINATOR_ERROR);
-    const taggedObjects = objectTagMatch(objects, expression);
+    const taggedObjects = objectTagMatch(objects, expression, false);
     if (taggedObjects.length) {
       const objectText = objects.length === 1
         ? emitEncodeValue(objects[0], expression, ctx)
@@ -1351,7 +1361,7 @@ function emitFillFunction(
   if (properties.length === 0 && !additionalSchema && patternConstraints.length === 0) {
     // Every property is carried over as it is and checked; an own `__proto__` stays a data property.
     return {
-      source: `${exported}function ${fn}(out: Record<string, unknown>, wire: Record<string, unknown>): Record<string, unknown> {\n  for (const key of Object.keys(wire)) {\n    const value = assertPropertyAcyclic(wire, key, wire[key]);\n    if (out !== wire) defineModelProperty(out, key, value);\n  }\n  return out;\n}\n`,
+      source: `${exported}function ${fn}(out: Record<string, unknown>, wire: Record<string, unknown>): Record<string, unknown> {\n  for (const key of Object.keys(wire)) {\n    const extra = wire[key];\n    if (extra === undefined) continue;\n    const value = assertPropertyAcyclic(wire, key, extra);\n    if (out !== wire) defineModelProperty(out, key, value);\n  }\n  return out;\n}\n`,
       copyIdentity: false,
       needsFill: true,
       fallible: true,
@@ -1366,39 +1376,47 @@ function emitFillFunction(
   let needsFill = false;
   // A recursive fill throws on a cycle; a carried value is checked for cycles.
   let fallible = recursive;
+  // Fields whose write depends on presence; one Object.keys pass reads them all at the top of the function.
+  const captured: [key: string, local: string][] = [];
   properties.forEach(([name, property], index) => {
     const field = JSON.stringify(name);
-    const read = access('wire', name);
-    const fill = emitFillValue(property, read, field, `__golemWire${index}`, ctx);
+    // The JSON view: a wire field is present when it is own, enumerable and not undefined. Where a write depends on
+    // presence, the field is read into a local by the one Object.keys pass; a carried required field reads the wire.
+    const optional = !required.has(name);
+    const direct = access('wire', name);
+    const present = `__golemPresent${index}`;
+    const readDirect = (line: string): string => line.replaceAll(present, direct);
+    const fill = emitFillValue(property, present, field, `__golemWire${index}`, ctx);
     const proto = name === '__proto__';
     if (fill.converted || fill.checked || proto) needsFill = true;
     if (fill.fallible || fill.checked) fallible = true;
     if (!fill.converted && !fill.checked && !proto) {
       copyIdentity = true;
-      identityWrites.push(...(required.has(name)
-        ? [emitFillPropertyWrite(name, fill.value)]
-        : [
-          `    if (Object.prototype.hasOwnProperty.call(wire, ${field})) {`,
-          emitFillPropertyWrite(name, fill.value, '      '),
-          '    }',
-        ]));
+      captured.push([name, present]);
+      identityWrites.push(
+        `    if (${present} !== undefined) {`,
+        emitFillPropertyWrite(name, fill.value, '      '),
+        '    }',
+      );
       return;
     }
     if (!fill.converted && !proto) {
       // Carried by reference: checked on every call, written only when the caller wants identity fields copied.
       copyIdentity = true;
-      const write = ['  if (copyIdentity) {', emitFillPropertyWrite(name, fill.value, '    '), '  }'];
-      propertyWrites.push(...(required.has(name)
-        ? [...fill.statements.map((line) => `  ${line}`), ...write]
+      const write = (value: string): string[] => ['  if (copyIdentity) {', emitFillPropertyWrite(name, value, '    '), '  }'];
+      if (optional) captured.push([name, present]);
+      propertyWrites.push(...(!optional
+        ? [...fill.statements.map((line) => `  ${readDirect(line)}`), ...write(readDirect(fill.value))]
         : [
-          `  if (Object.prototype.hasOwnProperty.call(wire, ${field})) {`,
-          ...[...fill.statements, ...write].map((line) => line.startsWith('  ') ? `  ${line}` : `    ${line}`),
+          `  if (${present} !== undefined) {`,
+          ...[...fill.statements, ...write(fill.value)].map((line) => line.startsWith('  ') ? `  ${line}` : `    ${line}`),
           '  }',
         ]));
       return;
     }
+    captured.push([name, present]);
     propertyWrites.push(
-      `  if (Object.prototype.hasOwnProperty.call(wire, ${field})) {`,
+      `  if (${present} !== undefined) {`,
       ...fill.statements.map((line) => `    ${line}`),
       emitFillPropertyWrite(name, fill.value),
       '  }',
@@ -1409,6 +1427,7 @@ function emitFillFunction(
     : `${exported}function ${fn}(out: Record<string, unknown>, wire: Record<string, unknown>): Record<string, unknown> {`;
   const lines: string[] = [
     declaration,
+    ...(captured.length > 0 ? [`  ${presentKeysSource('wire', captured, local => `${local}: unknown`)}`] : []),
     ...(identityWrites.length > 0
       ? ['  if (copyIdentity) {', ...identityWrites, '  }']
       : []),
@@ -1419,12 +1438,15 @@ function emitFillFunction(
     lines.push(
       `  for (const key of Object.keys(wire)) {`,
       `    if (${known ? `[${known}].includes(key)` : 'false'}) continue;`,
+      // An undeclared key whose value is undefined is absent, as the validator and encode treat it.
+      '    const __golemExtra = wire[key];',
+      '    if (__golemExtra === undefined) continue;',
     );
     const emitExtra = (schema: ModelTypeDescriptor | undefined, indent: string): string[] => {
       // A pattern without a field schema carries the value by reference.
       const value = schema === undefined
-        ? { statements: [], value: 'assertPropertyAcyclic(wire, key, wire[key])', converted: false, checked: true, fallible: true }
-        : emitFillValue(schema, 'wire[key]', 'key', '__golemValue', ctx);
+        ? { statements: [], value: 'assertPropertyAcyclic(wire, key, __golemExtra)', converted: false, checked: true, fallible: true }
+        : emitFillValue(schema, '__golemExtra', 'key', '__golemValue', ctx);
       if (value.converted || value.checked) needsFill = true;
       if (value.fallible || value.checked) fallible = true;
       return [
@@ -1577,6 +1599,14 @@ function validatorReference(ctx: EmitCtx, id: string): string {
   return ctx.validatorName(id);
 }
 
+/** Whether `value` passes the validator of `reference`, from the fast check first when the root has one (spec 7.1). */
+function validModelValueCall(ctx: EmitCtx, reference: string): string {
+  const fast = ctx.fastCheckName?.(reference);
+  return fast === undefined
+    ? `isValidModelValue(value, options, ${validatorReference(ctx, reference)}, ${JSON.stringify(reference)})`
+    : `isValidModelValueFast(value, options, ${fast}, ${validatorReference(ctx, reference)}, ${JSON.stringify(reference)})`;
+}
+
 function emitModelGuard(
   node: SchemaNode,
   value: string,
@@ -1588,7 +1618,11 @@ function emitModelGuard(
   const reference = plane === 'model-only' || plane === 'wire-only'
     ? `${node.codecId}#${plane}`
     : wire ? `${node.codecId}#wire` : node.codecId;
-  return `assertModelValue(${value}, options, ${validatorReference(ctx, reference)}, ${JSON.stringify(reference)}, IssueRepresentation.${representation}, IssueSource.${ctx.issueSource});`;
+  // A valid value passes the fast check first, unless a validation context decides (spec 7.1).
+  const fast = ctx.fastCheckName?.(reference);
+  return fast === undefined
+    ? `assertModelValue(${value}, options, ${validatorReference(ctx, reference)}, ${JSON.stringify(reference)}, IssueRepresentation.${representation}, IssueSource.${ctx.issueSource});`
+    : `assertModelValueFast(${value}, options, ${fast}, ${validatorReference(ctx, reference)}, ${JSON.stringify(reference)}, IssueRepresentation.${representation}, IssueSource.${ctx.issueSource});`;
 }
 
 function emitNodeRuntime(
@@ -1790,7 +1824,7 @@ function emitNodeRuntime(
   const validateLines = validationEnabled
     ? [
       `${exported}function ${validateName}(value: unknown, options?: ${VALIDATE_OPTIONS}): value is ${modelType} {`,
-      `  return isValidModelValue(value, options, ${validatorReference(ctx, node.codecId)}, ${JSON.stringify(node.codecId)});`,
+      `  return ${validModelValueCall(ctx, node.codecId)};`,
       '}',
       '',
       `${exported}function ${assertName}(value: unknown, options?: ${VALIDATE_OPTIONS}): ${modelType} {`,
@@ -1906,6 +1940,7 @@ export function emitCodecRuntime(
     siblingWireCodecIds: options.siblingWireCodecIds,
     exportWireStringify: options.exportWireStringify,
     validatorName: options.validatorName,
+    fastCheckName: options.fastCheckName,
     resolvedSchemasExpr: options.resolvedSchemasExpr,
     serde: options.serde,
     nestedConstruct: options.nestedConstruct,
