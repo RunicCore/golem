@@ -1083,8 +1083,13 @@ class FunctionWriter {
 
   private unionCheck(check: IrUnion, value: string): void {
     if (this.record !== undefined) return this.recordingUnionCheck(check, value);
-    const inferred = this.inferredTag(check);
-    if (inferred !== undefined) return this.mergedUnion(inferred.branches, inferred.discriminator, value);
+    // `oneOf` runs every branch before its verdict, so the merged pass reads what each branch reads. `anyOf` stops at
+    // the first branch that passes and, after a failing one, runs the rest, so no single read set matches it.
+    const inferred = check.exactlyOne ? this.inferredTag(check) : undefined;
+    if (inferred !== undefined) {
+      const all = inferred.branches.map((_, position) => position);
+      return this.mergedUnion(inferred.branches, inferred.discriminator, value, selected => all.filter(position => position !== selected));
+    }
     const attempt = (fn: number): string => this.call(fn, { value, issues: '[]', all: 'false' });
     if (!check.exactlyOne) return this.leaf({ fails: `!(${check.branches.map(attempt).join(' || ')})`, issue: "code: 'union', matched: 0" });
     const matched = this.fresh('matched');
@@ -1118,12 +1123,12 @@ class FunctionWriter {
    */
   private discriminatedUnion(check: IrUnion, discriminator: IrDiscriminator, value: string): void {
     const merged = this.mergedBranches(check);
-    if (merged !== undefined) return this.mergedUnion(merged, discriminator, value);
+    // The full validator runs the selected branch only, and no branch for an unknown tag.
+    if (merged !== undefined) return this.mergedUnion(merged, discriminator, value, () => []);
     this.state.localHelper('isObject');
     const presence = this.mode.presence(this.state, value);
     const property = literal(discriminator.property);
     const jsonEqual = (): string => this.state.runtimeHelper('jsonEqual');
-    const tags = (): string => this.state.constant('tags', `Object.freeze(/*#__PURE__*/ JSON.parse(${literal(JSON.stringify(discriminator.tags))}))`);
     const tag = this.fresh('tag');
     const selected = this.fresh('branch');
     const read = this.mode.form(
@@ -1132,7 +1137,7 @@ class FunctionWriter {
     );
     this.line(`const ${tag} = ${text(read)};`);
     const selection = this.mode.form(
-      () => `${tags()}.findIndex(list => list.some(item => ${jsonEqual()}(${tag}, item)))`,
+      () => `${this.tagLists(discriminator)}.findIndex(list => list.some(item => ${jsonEqual()}(${tag}, item)))`,
       () => this.tagSelection(discriminator, tag),
     );
     this.line(`const ${selected} = ${text(selection)};`);
@@ -1148,14 +1153,18 @@ class FunctionWriter {
     });
   }
 
+  /** The module constant that holds the tag lists of `discriminator`. */
+  private tagLists(discriminator: IrDiscriminator): string {
+    return this.state.constant('tags', `Object.freeze(/*#__PURE__*/ JSON.parse(${literal(JSON.stringify(discriminator.tags))}))`);
+  }
+
   /**
    * The branch position of the tag held by `tag`, or -1: the first branch whose list holds it, as a tag lies in one list.
    * A primitive tag is compared with `===`, which `jsonEqual` starts with, and no function is made per call.
    */
   private tagSelection(discriminator: IrDiscriminator, tag: string): string {
-    const tags = (): string => this.state.constant('tags', `Object.freeze(/*#__PURE__*/ JSON.parse(${literal(JSON.stringify(discriminator.tags))}))`);
     const matches = (position: number): string => discriminator.tags[position]
-      .map((item, index) => (isPrimitive(item) ? `${tag} === ${JSON.stringify(item)}` : `${this.state.runtimeHelper('jsonEqual')}(${tag}, ${tags()}[${position}][${index}])`))
+      .map((item, index) => (isPrimitive(item) ? `${tag} === ${JSON.stringify(item)}` : `${this.state.runtimeHelper('jsonEqual')}(${tag}, ${this.tagLists(discriminator)}[${position}][${index}])`))
       .join(' || ') || 'false';
     return `${discriminator.tags.map((_, position) => `${matches(position)} ? ${position} : `).join('')}-1`;
   }
@@ -1172,7 +1181,8 @@ class FunctionWriter {
     for (const id of check.branches) {
       const target = this.target(id);
       const fn = this.functions[target];
-      if (!merges(target) || fn.collects || fn.receives || fn.body.kind !== 'checks' || fn.body.checks.length !== 2) return undefined;
+      // A function that keeps or receives an evaluation record has no fast check, so `merges` excludes it.
+      if (!merges(target) || fn.body.kind !== 'checks' || fn.body.checks.length !== 2) return undefined;
       const [type, object] = fn.body.checks;
       if (type.kind !== 'type' || type.names.length !== 1 || type.names[0] !== 'object' || object.kind !== 'object') return undefined;
       const named = new Set(object.properties.map(property => property.key));
@@ -1188,7 +1198,7 @@ class FunctionWriter {
   /**
    * A tag for a union without one, when the mode merges its branches: a key every branch requires and holds to one
    * primitive value of its own. At most one branch can then pass, the one whose value the key holds, so the union's
-   * verdict is that branch's verdict, for `anyOf` and `oneOf` alike. The full validator keeps its union issues.
+   * verdict is that branch's verdict. The full validator keeps its union issues.
    */
   private inferredTag(check: IrUnion): { readonly branches: readonly IrObject[]; readonly discriminator: IrDiscriminator } | undefined {
     const branches = this.mergedBranches(check);
@@ -1208,48 +1218,92 @@ class FunctionWriter {
     return undefined;
   }
 
-  /** A branch object that `additionalProperties: false` closes. */
-  private static closed(object: IrObject): boolean {
-    return object.additional?.kind === 'forbid';
-  }
-
   /**
    * A tagged union of plain object branches as one key pass (spec 5.2 F1 over every key a branch declares): the tag is
    * the captured value, so a tag outside the JSON view selects no branch, and the selected branch runs its object
-   * checks on the captured values. A closed branch also requires each key only another branch declares to be absent,
-   * and no key that no branch declares. Every read is of an own enumerable key (spec 5.1 rule 3).
+   * checks. The pass reads the tag and each key every branch declares, as the selected branch reads them; it only marks
+   * any other key, which is read once a branch that reads it is selected (spec 7.3: a getter runs as in the full
+   * validator). A closed branch also requires each key only another branch declares, and each key no branch declares,
+   * to be absent. `alsoRuns` names the other branches the full validator runs beside the selected one: the keys they
+   * read are read too, so each getter runs as there. Every read is of an own enumerable key (spec 5.1 rule 3).
    */
-  private mergedUnion(branches: readonly IrObject[], discriminator: IrDiscriminator, value: string): void {
+  private mergedUnion(branches: readonly IrObject[], discriminator: IrDiscriminator, value: string, alsoRuns: (selected: number) => readonly number[]): void {
     this.failWhen(`!${TYPE_TESTS.object(value)}`);
     this.state.localHelper('isObject');
-    const keys = [...new Set([discriminator.property, ...branches.flatMap(object => object.properties.map(property => property.key))])];
-    const captured = keys.map(key => [key, this.fresh('present')] as const);
-    const closed = branches.map(FunctionWriter.closed);
+    const declares = branches.map(object => new Set(object.properties.map(property => property.key)));
+    const keys = [...new Set([discriminator.property, ...declares.flatMap(names => [...names])])];
+    const read = (key: string): boolean => key === discriminator.property || declares.every(names => names.has(key));
+    // `keys` starts with the tag property, so the first slot holds the tag.
+    const slots = keys.map(key => [key, this.fresh(read(key) ? 'present' : 'seen')] as const);
+    const closed = branches.map(object => object.additional?.kind === 'forbid');
     const extra = closed.some(Boolean) && !closed.every(Boolean) ? this.fresh('extra') : undefined;
-    this.line(`let ${[...captured.map(([, name]) => name), ...(extra === undefined ? [] : [`${extra} = false`])].join(', ')};`);
+    this.line(`let ${[...slots.map(([, slot]) => slot), ...(extra === undefined ? [] : [`${extra} = false`])].join(', ')};`);
     const key = this.fresh('key');
     this.open(`for (const ${key} of Object.keys(${value}))`);
     this.open(`switch (${key})`);
-    for (const [name, capture] of captured) this.line(`case ${literal(name)}: ${capture} = ${value}[${literal(name)}]; break;`);
-    if (extra !== undefined) this.line(`default: if (${value}[${key}] !== undefined) ${extra} = true;`);
+    for (const [name, slot] of slots) this.line(`case ${literal(name)}: ${slot} = ${read(name) ? `${value}[${literal(name)}]` : 'true'}; break;`);
+    // With open and closed branches, a key no branch declares is only marked; a selected closed branch reads it.
+    if (extra !== undefined) this.line(`default: ${extra} = true;`);
     else if (closed.every(Boolean)) this.line(`default: if (${value}[${key}] !== undefined) ${this.mode.fail.fail()}`);
     this.close();
     this.close();
     const selected = this.fresh('branch');
-    // `keys` starts with the tag property, so the first local holds the tag.
-    this.line(`const ${selected} = ${this.tagSelection(discriminator, captured[0][1])};`);
-    const presence = objectPresence(this.state, value, captured);
+    this.line(`const ${selected} = ${this.tagSelection(discriminator, slots[0][1])};`);
+    // Reads only to run each getter that the full validator runs in the branches `runs` (spec 7.3): the keys they
+    // declare that the pass only marked, and every key when one of them is closed. `owned` keys are read elsewhere.
+    const touch = (runs: readonly number[], owned: (name: string) => boolean): void => {
+      const readsAll = runs.some(run => closed[run]);
+      for (const [name, slot] of slots) {
+        if (!read(name) && !owned(name) && (readsAll || runs.some(run => declares[run].has(name)))) this.line(`if (${slot}) ${value}[${literal(name)}];`);
+      }
+      if (readsAll && extra !== undefined) this.unknownKeys(value, keys, extra, other => `${value}[${other}];`);
+    };
+    const none = alsoRuns(-1);
+    if (none.length === 0) {
+      this.failWhen(`${selected} < 0`);
+    } else {
+      this.open(`if (${selected} < 0)`);
+      touch(none, () => false);
+      this.line(this.mode.fail.fail());
+      this.close();
+    }
     branches.forEach((object, position) => {
       this.open(`if (${selected} === ${position})`);
-      if (closed[position]) {
-        const named = new Set(object.properties.map(property => property.key));
-        for (const [name, capture] of captured) if (!named.has(name)) this.failWhen(`${capture} !== undefined`);
-        if (extra !== undefined) this.failWhen(extra);
+      const captured: (readonly [string, string])[] = [];
+      for (const [name, slot] of slots) {
+        if (read(name)) {
+          captured.push([name, slot]);
+        } else if (declares[position].has(name)) {
+          const local = this.fresh('present');
+          this.line(`const ${local} = ${slot} ? ${value}[${literal(name)}] : undefined;`);
+          captured.push([name, local]);
+        } else if (closed[position]) {
+          this.failWhen(`${slot} && ${value}[${literal(name)}] !== undefined`);
+        }
       }
-      this.objectKeywords(object, value, { presence });
+      // A closed branch reads every key itself.
+      if (!closed[position]) touch(alsoRuns(position), name => declares[position].has(name));
+      if (closed[position]) {
+        // The tag is read in the pass; when this branch does not declare it, it must be absent too.
+        if (!declares[position].has(discriminator.property)) this.failWhen(`${slots[0][1]} !== undefined`);
+        if (extra !== undefined) this.unknownKeys(value, keys, extra, other => `if (${value}[${other}] !== undefined) ${this.mode.fail.fail()}`);
+      }
+      this.objectKeywords(object, value, { presence: objectPresence(this.state, value, captured) });
       this.close();
     });
-    this.failWhen(`${selected} < 0`);
+  }
+
+  /** When `extra` marks a key that no branch declares, runs `each` on each such key of `value`; `keys` are the declared ones. */
+  private unknownKeys(value: string, keys: readonly string[], extra: string, each: (key: string) => string): void {
+    const key = this.fresh('key');
+    this.open(`if (${extra})`);
+    this.open(`for (const ${key} of Object.keys(${value}))`);
+    this.open(`switch (${key})`);
+    this.line(`${keys.map(name => `case ${literal(name)}:`).join(' ')} break;`);
+    this.line(`default: ${each(key)}`);
+    this.close();
+    this.close();
+    this.close();
   }
 }
 

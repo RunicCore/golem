@@ -87,13 +87,20 @@ function copy(value: unknown): unknown {
     for (let index = 0; index < value.length; index++) if (index in value) result[index] = copy(value[index]);
     return result;
   }
-  return isPlainRecord(value) ? Object.fromEntries(Object.entries(value).map(([key, item]) => [key, copy(item)])) : value;
+  if (!isPlainRecord(value)) return value;
+  // Each property keeps its descriptor, so a getter is not run and a non-enumerable key stays one.
+  const result: Record<string, unknown> = {};
+  for (const [key, descriptor] of Object.entries(Object.getOwnPropertyDescriptors(value))) {
+    Object.defineProperty(result, key, 'value' in descriptor ? { ...descriptor, value: copy(descriptor.value) } : descriptor);
+  }
+  return result;
 }
 
 /** The plain objects and arrays inside `value`, itself included. */
 function containers(value: unknown): readonly (Record<string, unknown> | unknown[])[] {
   if (Array.isArray(value)) return [value, ...value.flatMap(containers)];
-  return isPlainRecord(value) ? [value, ...Object.values(value).flatMap(containers)] : [];
+  // Through the descriptors, so a getter is not run.
+  return isPlainRecord(value) ? [value, ...Object.values(Object.getOwnPropertyDescriptors(value)).flatMap(descriptor => ('value' in descriptor ? containers(descriptor.value) : []))] : [];
 }
 
 /** One change to an object: a field replaced, removed, set to `undefined`, hidden or added, or the object made odd. */
@@ -534,7 +541,8 @@ function randomSchema(random: () => number, depth: number, own: boolean): Record
       // Both branches declare `a`, each with its own check; `own` is a key only one branch declares.
       const branch = (tag: string, own: string): Record<string, unknown> => ({
         type: 'object',
-        required: ['kind', 'a'],
+        // The tag may be optional in a branch: the discriminator reads it from `properties` alone.
+        required: random() < 0.3 ? ['a'] : ['kind', 'a'],
         properties: { kind: { const: tag }, a: child(), [own]: child() },
         ...pick(random, [{}, { additionalProperties: false }, { additionalProperties: false }, { additionalProperties: { type: 'string' } }]),
       });
@@ -570,6 +578,19 @@ function randomSchema(random: () => number, depth: number, own: boolean): Record
 }
 
 /** A value made for `schema`, often valid: each required, dependent and some optional keys get a value of their schema. */
+/** `value` with a key that only another branch declares, with a value that branch accepts. */
+function withForeignKey(value: Record<string, unknown>, [key, schema]: readonly [string, unknown], random: () => number): Record<string, unknown> {
+  return isPlainRecord(schema) ? { ...value, [key]: valueFor(schema, random) } : value;
+}
+
+/** `value` whose `key` is not in the JSON view: a non-enumerable own property, or a property of its prototype. */
+function withHiddenKey(value: Record<string, unknown>, key: string, random: () => number): Record<string, unknown> {
+  const { [key]: own, ...rest } = Object.getOwnPropertyDescriptors(value);
+  if (own === undefined) return value;
+  if (random() < 0.5) return Object.defineProperties({}, { ...rest, [key]: { ...own, enumerable: false } });
+  return Object.defineProperties(Object.create(Object.defineProperties({}, { [key]: own })), rest);
+}
+
 function valueFor(schema: Record<string, unknown>, random: () => number): unknown {
   if (typeof schema.$ref === 'string') return valueFor(SHARED[schema.$ref], random);
   if (Array.isArray(schema.enum)) return copy(pick(random, schema.enum));
@@ -586,9 +607,9 @@ function valueFor(schema: Record<string, unknown>, random: () => number): unknow
     const other = target(pick(random, branches.filter(entry => entry !== branch)));
     const declared = isPlainRecord(own) && isPlainRecord(own.properties) ? Object.keys(own.properties) : [];
     const foreign = isPlainRecord(other) && isPlainRecord(other.properties) ? Object.entries(other.properties).filter(([key]) => !declared.includes(key)) : [];
-    if (!isPlainRecord(value) || foreign.length === 0 || random() >= 0.5) return value;
-    const [key, schema] = pick(random, foreign);
-    return isPlainRecord(schema) ? { ...value, [key]: valueFor(schema, random) } : value;
+    const result = isPlainRecord(value) && foreign.length > 0 && random() < 0.5 ? withForeignKey(value, pick(random, foreign), random) : value;
+    const tag = isPlainRecord(schema.discriminator) ? schema.discriminator.propertyName : undefined;
+    return typeof tag === 'string' && isPlainRecord(result) && random() < 0.3 ? withHiddenKey(result, tag, random) : result;
   }
   if (schema.not !== undefined) return odd(random);
   if (typeof schema.format === 'string') return pick(random, [...FORMAT_SAMPLES[schema.format], FORMAT_SAMPLES[schema.format][0]]);
