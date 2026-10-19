@@ -62,3 +62,21 @@ export type TCompareTuple = IObject<{
   row: [number, string, boolean, Date];
   range: [number, number];
 }>;
+
+// An allOf: one value that satisfies three object members, one of them with a date-time field.
+export type TCompareAllOfBase = IObject<{
+  id: number;
+  name: string;
+}>;
+
+export type TCompareAllOfDated = IObject<{
+  createdAt: Date;
+  tag: string;
+}>;
+
+export type TCompareAllOfAudit = IObject<{
+  revision: number;
+  updatedBy: string;
+}>;
+
+export type TCompareAllOf = IObject<TCompareAllOfBase & TCompareAllOfDated & TCompareAllOfAudit>;

@@ -12,12 +12,12 @@ import { sampleSync, schedule } from './sampling.js';
  * process, interleaved, so host load moves both sides together; read the ratios, not the absolute numbers.
  * Writes nothing under docs/: the committed results.json belongs to `npm run bench`.
  */
-const SETTINGS: Settings = { warmupMs: 90, batchMs: 40, batches: 8, rounds: 1 };
+const SETTINGS: Settings = { warmupMs: 90, batchMs: 35, batches: 8, rounds: 1 };
 
 interface CompareCase { readonly model: string; readonly task: 'validate' | 'decode' | 'encode'; readonly side: string; readonly run: () => unknown }
 interface CompareModule { verifyCompareModels(): void; createCompareCases(): readonly CompareCase[]; consume(value: unknown): number }
 
-const MODELS = ['flat', 'nested', 'union', 'array', 'tuple'] as const;
+const MODELS = ['flat', 'nested', 'union', 'array', 'tuple', 'allOf'] as const;
 const fixed = (value: number): string => Math.round(value).toLocaleString('en-US');
 const ratio = (a: number, b: number): string => (a / b).toFixed(2);
 
