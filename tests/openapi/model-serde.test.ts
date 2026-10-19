@@ -115,9 +115,9 @@ function modelSerdeDocument(): Record<string, unknown> {
           required: ['code', 'message'],
           properties: { code: { type: 'string' }, message: { type: 'string' } },
         },
+        // An open base, closed on each derived component by unevaluatedProperties: false.
         BaseEvent: {
           type: 'object',
-          additionalProperties: false,
           required: ['baseWhen'],
           properties: {
             baseWhen: { type: 'string', format: 'date-time' },
@@ -129,13 +129,13 @@ function modelSerdeDocument(): Record<string, unknown> {
             { $ref: '#/components/schemas/BaseEvent' },
             {
               type: 'object',
-              additionalProperties: false,
               required: ['derivedWhen'],
               properties: {
                 derivedWhen: { type: 'string', format: 'date-time' },
               },
             },
           ],
+          unevaluatedProperties: false,
         },
         Dictionary: {
           type: 'object',
@@ -170,7 +170,12 @@ function modelSerdeDocument(): Record<string, unknown> {
                 },
               },
               required: ['derivedWhen'],
-              properties: { derivedWhen: { type: 'string', format: 'date-time' } },
+              // Strict JSON Schema: this member's additionalProperties judges every name it does not list, so it lists the
+              // inherited baseWhen too.
+              properties: {
+                baseWhen: { type: 'string', format: 'date-time' },
+                derivedWhen: { type: 'string', format: 'date-time' },
+              },
             },
           ],
         },
@@ -198,9 +203,10 @@ function discriminatedUnionSerdeDocument(): Record<string, unknown> {
     },
     components: {
       schemas: {
+        // An open base, and unevaluatedProperties: false on each derived component: strict JSON Schema closes Cat and Dog
+        // to the base and own names. A closed base would reject the required own name.
         PetBase: {
           type: 'object',
-          additionalProperties: false,
           required: ['kind'],
           properties: {
             kind: { type: 'string' },
@@ -211,7 +217,6 @@ function discriminatedUnionSerdeDocument(): Record<string, unknown> {
             { $ref: '#/components/schemas/PetBase' },
             {
               type: 'object',
-              additionalProperties: false,
               required: ['kind', 'name'],
               properties: {
                 kind: { const: 'cat' },
@@ -219,13 +224,13 @@ function discriminatedUnionSerdeDocument(): Record<string, unknown> {
               },
             },
           ],
+          unevaluatedProperties: false,
         },
         Dog: {
           allOf: [
             { $ref: '#/components/schemas/PetBase' },
             {
               type: 'object',
-              additionalProperties: false,
               required: ['kind', 'name'],
               properties: {
                 kind: { const: 'dog' },
@@ -233,6 +238,7 @@ function discriminatedUnionSerdeDocument(): Record<string, unknown> {
               },
             },
           ],
+          unevaluatedProperties: false,
         },
         Pet: {
           oneOf: [
@@ -1254,7 +1260,7 @@ test('a oneOf of a nullable component and a string has a type and a validator th
   );
 });
 
-test(`an allOf of an additionalProperties member and a properties member is typed and converted as its input (validation false)`, async t => {
+test(`an allOf of an additionalProperties member and a properties member converts every name by the merged object (validation false)`, async t => {
   const output = path.join(createFixtureProject(t, 'golem-openapi-allof-additional-members-'), 'sdk');
   await generateMaterializedSdk(sequenceSerdeDocument({
     members: {
@@ -1276,13 +1282,14 @@ test(`an allOf of an additionalProperties member and a properties member is type
     'generated allOf additionalProperties member models',
   );
   const VisitModel = models.VisitModel as unknown as new (values?: Record<string, unknown>) => Record<string, unknown>;
-  const codec = requireObjectCodec(generatedCodecIdFromRoot(output, 'Visit'));
+  const codec = requireObjectCodec<Record<string, unknown>>(generatedCodecIdFromRoot(output, 'Visit'));
   const wire = { members: { x: '2024-05-06T07:08:09.000Z', b: '2024-05-07T08:09:10.000Z' } };
   const model = codec.fromWireFormat(wire, { construct: VisitModel as unknown as abstract new (values?: never) => object });
+  assert.deepEqual(model.members, { x: new Date('2024-05-06T07:08:09.000Z'), b: new Date('2024-05-07T08:09:10.000Z') });
   assert.deepEqual(codec.toWireFormat(model), wire);
 });
 
-test(`an allOf of object members that share a property name is typed and converted as its input (validation false)`, async t => {
+test(`an allOf of object members that share a property name converts it once (validation false)`, async t => {
   const output = path.join(createFixtureProject(t, 'golem-openapi-allof-same-name-members-'), 'sdk');
   await generateMaterializedSdk(sequenceSerdeDocument({
     members: {
@@ -1304,9 +1311,10 @@ test(`an allOf of object members that share a property name is typed and convert
     'generated allOf additionalProperties member models',
   );
   const VisitModel = models.VisitModel as unknown as new (values?: Record<string, unknown>) => Record<string, unknown>;
-  const codec = requireObjectCodec(generatedCodecIdFromRoot(output, 'Visit'));
+  const codec = requireObjectCodec<Record<string, unknown>>(generatedCodecIdFromRoot(output, 'Visit'));
   const wire = { members: { at: '2024-05-06T07:08:09.000Z' } };
   const model = codec.fromWireFormat(wire, { construct: VisitModel as unknown as abstract new (values?: never) => object });
+  assert.deepEqual(model.members, { at: new Date('2024-05-06T07:08:09.000Z') });
   assert.deepEqual(codec.toWireFormat(model), wire);
 });
 

@@ -403,6 +403,7 @@ function rewriteConstraint(
         ),
       };
     case 'oneOf':
+    case 'allOf':
       return {
         ...constraint,
         schemas: constraint.schemas.map((schema) => rewriteValue(schema) as typeof schema),

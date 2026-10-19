@@ -84,6 +84,7 @@ export function constraintSchemaValues(constraint: ModelConstraint): readonly un
     case 'dependentSchemas':
       return Object.values(constraint.value);
     case 'oneOf':
+    case 'allOf':
       return constraint.schemas;
     case 'ifThenElse':
       return [constraint.if, ...(constraint.then === undefined ? [] : [constraint.then]), ...(constraint.else === undefined ? [] : [constraint.else])];
@@ -705,7 +706,8 @@ function constraintEntries(
     case 'dependentSchemas': return [['dependentSchemas', Object.fromEntries(
       Object.keys(constraint.value).sort().map((name) => [name, descriptorSchema(constraint.value[name], state, options)]),
     )]];
-    case 'oneOf': return [['oneOf', constraint.schemas.map((schema) => descriptorSchema(schema, state, options))]];
+    case 'oneOf':
+    case 'allOf': return [[constraint.kind, constraint.schemas.map((schema) => descriptorSchema(schema, state, options))]];
     case 'ifThenElse': return [
       ['if', descriptorSchema(constraint.if, state, options)],
       ...(constraint.then === undefined ? [] : [['then', descriptorSchema(constraint.then, state, options)] as const]),
@@ -772,10 +774,15 @@ function assembleConstraintSchemaInternal(
   state: SchemaAssemblyState,
 ): Readonly<Record<string, unknown>> {
   const direct: Record<string, unknown> = {};
-  const conflicts: Readonly<Record<string, unknown>>[] = [];
+  const conflicts: JsonSchema[] = [];
   const sorted = [...(options.portable ? projectPortableConstraints(constraints, options) : constraints)].sort((left, right) => compareText(canonicalConstraintKey(left), canonicalConstraintKey(right)));
   for (const constraint of sorted) {
     for (const [keyword, value] of constraintEntries(constraint, options, state)) {
+      // An allOf constraint's schemas are branches beside the direct keywords, as conflicting keywords are.
+      if (keyword === 'allOf' && Array.isArray(value)) {
+        conflicts.push(...value.filter((item): item is JsonSchema => typeof item === 'boolean' || isRecord(item)));
+        continue;
+      }
       if (keyword === 'patternProperties' || keyword === 'dependentRequired' || keyword === 'dependentSchemas') {
         if (mergeMapKeyword(direct, keyword, value)) continue;
       }

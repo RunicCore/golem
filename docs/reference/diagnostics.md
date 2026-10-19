@@ -370,6 +370,18 @@ The validator compiler writes the checks that generated models and SDKs run. Its
 
 **Browser-inaccessible cookie.** An operation has a `cookie` parameter, or uses a security scheme that's an API key sent through a cookie; browsers don't let scripts set the `Cookie` header, so a client generated for the browser can't supply it there. This is a warning: generation continues. **Fix:** Call this operation from a non-browser client, or move the parameter or security scheme to a header or query location if it must work from a browser.
 
+### OPENAPI_COMPOSITION_CONVERSION_CONFLICT
+
+**allOf members that convert one value in two ways.** The members of an `allOf` give one property, or the value itself, two conversions, such as `format: date-time` (a `Date`) and a `$ref` to a model. No generated value can be both. The message names the schema, and the property when the conflict is in one property. **Fix:** Give that property, or the value, one schema in every member.
+
+### OPENAPI_COMPOSITION_PROPERTY_NEVER
+
+**allOf property that cannot hold a value.** An optional property of an `allOf` has no value that every member accepts. A member with `additionalProperties: false` judges each name that its own `properties` do not list, also the names of its sibling members. Two members can also give the property types that have no common value. This is a warning: generation continues, and the property is typed `never`. **Fix:** For a closed base, remove `additionalProperties: false` from the base, then add `unevaluatedProperties: false` to each component that extends it. For a closed member of the schema itself, replace its `additionalProperties: false` with `unevaluatedProperties: false` beside the `allOf`. The message names that member. For two types, give the property one type in every member.
+
+### OPENAPI_COMPOSITION_UNSATISFIABLE
+
+**allOf that no object satisfies.** A required property of an `allOf` cannot hold a value, for the reasons that [OPENAPI_COMPOSITION_PROPERTY_NEVER](#openapi-composition-property-never) gives, so the schema accepts no object. Generation stops. The message names each such property, its cause and the fix. **Fix:** Apply the fix of OPENAPI_COMPOSITION_PROPERTY_NEVER to each property that the message names.
+
 ### OPENAPI_DISCRIMINATOR_IMPLICIT_VALUE
 
 **Implicit discriminator value.** A discriminated-union variant has no explicit `discriminator.mapping` entry, so it's selected by its raw component name — which differs from the generated model name. This is a warning: generation continues, and decoding still works using the raw component name as the implicit value. **Fix:** Add an explicit `mapping` entry if the wire value should differ from the raw component name.

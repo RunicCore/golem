@@ -26,6 +26,13 @@ function objectDescriptor(
   };
 }
 
+/** An object member of an intersection: it lists some names and leaves the others to its siblings (strict JSON Schema). */
+function openObjectDescriptor(
+  properties: Readonly<Record<string, ModelConversionDescriptor>>,
+): ModelConversionDescriptor {
+  return { kind: 'object', properties, required: Object.keys(properties), additionalProperties: true };
+}
+
 function literal(value: string | number | boolean): ModelConversionDescriptor {
   return { kind: 'literal', value };
 }
@@ -146,8 +153,8 @@ test('intersection conversion merges object fields and runs overlapping conversi
   const descriptor: ModelConversionDescriptor = {
     kind: 'intersection',
     variants: [
-      objectDescriptor({ when: date, child, token }),
-      objectDescriptor({ when: date, token, label: { kind: 'string' } }),
+      openObjectDescriptor({ when: date, child, token }),
+      openObjectDescriptor({ when: date, token, label: { kind: 'string' } }),
     ],
   };
 
@@ -194,8 +201,8 @@ test('intersection and nullable fromInit preserve domain Date values while const
   const descriptor: ModelConversionDescriptor = {
     kind: 'intersection',
     variants: [
-      objectDescriptor({ when: { kind: 'date' }, child: { kind: 'generated-model', id: 'child' } }),
-      objectDescriptor({ when: { kind: 'date' }, token: { kind: 'number', serde: { id: 'token', wire: { kind: 'string' } } } }),
+      openObjectDescriptor({ when: { kind: 'date' }, child: { kind: 'generated-model', id: 'child' } }),
+      openObjectDescriptor({ when: { kind: 'date' }, token: { kind: 'number', serde: { id: 'token', wire: { kind: 'string' } } } }),
     ],
   };
   const fromInit = compileConversion(

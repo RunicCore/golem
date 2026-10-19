@@ -18,6 +18,21 @@ export {
 } from './stringify-emitter.js';
 export { pruneGeneratedImports } from './generated-imports.js';
 export { FIELD_CONVERSION_INPUT, singleCallConverter, type TupleConversionDescriptor } from './sequence-conversion.js';
+/** The allOf object merge, for generators that read schemas (golem-openapi). */
+export {
+  composeObjects,
+  CompositionConflictError,
+  conversionKey,
+  descriptorSlotRule,
+  isRejected,
+  type ModelBases,
+  type ObjectExtra,
+  type ObjectPart,
+  type ObjectResult,
+  type Rejected,
+  type SlotRule,
+} from './composition.js';
+import { CompositionConflictError, requireComposedObject, type ModelBases } from './composition.js';
 import { FIELD_CONVERSION_INPUT, emitArrayConversion, emitTupleConversion, singleCallConverter, type SequenceItems } from './sequence-conversion.js';
 import {
   AMBIGUOUS_UNION_CONVERSION_ERROR,
@@ -34,14 +49,13 @@ import {
   scalarOrArray,
   emitDispatch,
   presentUnionIndices,
-  mergeObjectVariants,
   unionDispatch,
   type ObjectTypeDescriptor,
   type VariantDispatch,
 } from './union-conversion.js';
 
 /** Generators read tag values through the same rule as the shared union conversion. */
-export { descriptorNeedsConversion, isDisjointObjectIntersection, literalValues } from './union-conversion.js';
+export { descriptorNeedsConversion, literalValues } from './union-conversion.js';
 
 export type ModelConversionDescriptor = ModelTypeDescriptor;
 
@@ -51,6 +65,8 @@ export type ModelDiscriminators = Readonly<Record<string, DiscriminatorValue | r
 export interface FromJsonModelResolver {
   readonly className: string;
   readonly discriminators?: ModelDiscriminators;
+  /** The model that this model extends, so a derived model narrows its base where both judge one property. */
+  readonly base?: string;
   /** Internal generated-model wire decoder expression. */
   readonly decode: (value: string) => string;
   /** Construct a domain model from a nested model initializer. */
@@ -60,6 +76,8 @@ export interface FromJsonModelResolver {
 export interface ToJsonModelResolver {
   readonly className: string;
   readonly discriminators?: ModelDiscriminators;
+  /** The model that this model extends, so a derived model narrows its base where both judge one property. */
+  readonly base?: string;
   /** Internal generated-model wire encoder expression. */
   readonly encode?: (value: string) => string;
 }
@@ -256,12 +274,14 @@ function emitNested(
         : expression;
   }
   if (descriptor.kind === 'intersection') {
-    const merged = descriptor.variants.every(variant => !metadata(variant).serde) ? mergeObjectVariants(descriptor.variants) : undefined;
+    const bases: ModelBases = { baseOf: (id) => resolveModel(id).base };
+    const merged = descriptor.variants.every(variant => !metadata(variant).serde) ? requireComposedObject(descriptor.variants, bases) : undefined;
     if (merged) return emitNested(merged, expression, direction, resolveModel, resolveSerde);
+    // A scalar intersection converts by its one converting part.
     const conversions = [...new Set(descriptor.variants
       .map(variant => emitNested(variant, expression, direction, resolveModel, resolveSerde))
       .filter(converted => converted !== expression))];
-    if (conversions.length > 1) throw new Error('Intersection has conflicting conversions. Use one serde pair for the intersected value.');
+    if (conversions.length > 1) throw new CompositionConflictError('two parts convert it differently');
     return conversions[0] ?? expression;
   }
   if (descriptor.kind === 'union') {

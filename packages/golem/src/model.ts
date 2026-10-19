@@ -71,7 +71,7 @@ export type ModelConstraint =
   | { readonly kind: 'patternProperties'; readonly pattern: string; readonly schema: ConstraintSchemaValue }
   | { readonly kind: 'dependentRequired'; readonly value: Readonly<Record<string, readonly string[]>> }
   | { readonly kind: 'dependentSchemas'; readonly value: Readonly<Record<string, ConstraintSchemaValue>> }
-  | { readonly kind: 'oneOf'; readonly schemas: readonly ConstraintSchemaValue[] }
+  | { readonly kind: 'oneOf' | 'allOf'; readonly schemas: readonly ConstraintSchemaValue[] }
   | {
     readonly kind: 'ifThenElse';
     readonly if: ConstraintSchemaValue;
