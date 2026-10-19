@@ -1,5 +1,6 @@
 import {
   descriptorNeedsConversion,
+  CompositionConflictError,
   emitModelFromJSON,
   FIELD_CONVERSION_INPUT,
   singleCallConverter,
@@ -22,7 +23,6 @@ import type { DiscriminatorValue, ModelConstraint, ModelTypeDescriptor, UnionDis
 import { asRecord, isJsonObject, objectEntries } from './json.js';
 import {
   compareText,
-  CompositionConflictError,
   GolemDiagnosticSeverity,
   identifier,
   NameScope,

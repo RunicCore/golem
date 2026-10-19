@@ -12,19 +12,6 @@ export {
   RESERVED_BINDING_NAMES,
   RESERVED_MODEL_MEMBERS,
 } from './names.js';
-export {
-  composeObjects,
-  CompositionConflictError,
-  conversionKey,
-  descriptorSlotRule,
-  isRejected,
-  type ModelBases,
-  type ObjectExtra,
-  type ObjectPart,
-  type ObjectResult,
-  type Rejected,
-  type SlotRule,
-} from './composition.js';
 
 /** Canonical text order: by UTF-16 code unit, so output does not depend on the machine's locale or ICU data. */
 export function compareText(left: string, right: string): number {

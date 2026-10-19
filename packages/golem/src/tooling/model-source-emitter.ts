@@ -18,6 +18,20 @@ export {
 } from './stringify-emitter.js';
 export { pruneGeneratedImports } from './generated-imports.js';
 export { FIELD_CONVERSION_INPUT, singleCallConverter, type TupleConversionDescriptor } from './sequence-conversion.js';
+/** The allOf object merge, for generators that read schemas (golem-openapi). */
+export {
+  composeObjects,
+  CompositionConflictError,
+  conversionKey,
+  descriptorSlotRule,
+  isRejected,
+  type ModelBases,
+  type ObjectExtra,
+  type ObjectPart,
+  type ObjectResult,
+  type Rejected,
+  type SlotRule,
+} from './composition.js';
 import { CompositionConflictError, requireComposedObject, type ModelBases } from './composition.js';
 import { FIELD_CONVERSION_INPUT, emitArrayConversion, emitTupleConversion, singleCallConverter, type SequenceItems } from './sequence-conversion.js';
 import {
