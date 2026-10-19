@@ -20,6 +20,7 @@ import {
   type ModelDiscriminators,
   type SerdeResolver,
   type ToJsonModelResolver,
+  presentValueSource,
 } from '@exprtlabs/golem/emitter';
 import { createSchemaGraph, codecPublicId, codecShortName, internDescriptors, type SchemaGraph } from '@exprtlabs/golem/schema-graph';
 import { compareText, propertyName, RESERVED_MODEL_MEMBERS, type GolemProfile } from '@exprtlabs/golem/generator-api';
@@ -1391,9 +1392,11 @@ export function emitSource(
     });
     const decode: string[] = [];
     const init: string[] = [];
-    for (const field of fields) {
+    for (const [index, field] of fields.entries()) {
       const name = JSON.stringify(field.getName());
-      const input = `values[${name}]`;
+      // The JSON view, read once into a local. Decode reads the own copy in `result`, so a getter of the input runs once.
+      const input = `__golemValue${index}`;
+      const readFrom = (record: string): string => `const ${input} = ${presentValueSource(record, name, `${record}[${name}]`)};`;
       const descriptor = descriptors.get(field.getName());
       if (!descriptor) throw new Error(`Missing descriptor for field ${field.getName()}.`);
       const emitDecode = (value: string): string => emitModelFromJSON(
@@ -1406,15 +1409,13 @@ export function emitSource(
         },
       );
       const fromInit = emitModelFromInit(descriptor, input, resolveFromAny);
-      // The JSON view: an input field is present when it is own, enumerable and not undefined.
-      const present = `Object.prototype.propertyIsEnumerable.call(values, ${name}) && ${input} !== undefined`;
       const converted = wrapRootConversion(helpers, specification.name, 'deserialize', name, input, emitDecode, 'unknown');
       if (converted !== input) {
         conversionHelpers.add('define');
-        decode.push(`  if (${present}) defineModelProperty(result, ${name}, ${converted});`);
+        decode.push(`  ${readFrom('result')}`, `  if (${input} !== undefined) defineModelProperty(result, ${name}, ${converted});`);
       }
       conversionHelpers.add('define');
-      init.push(`    if (${present}) defineModelProperty(this, ${name}, ${fromInit});`);
+      init.push(`    ${readFrom('values')}`, `    if (${input} !== undefined) defineModelProperty(this, ${name}, ${fromInit});`);
     }
     rootFieldExpressions.set(specification.name, { helpers, encode, decode, init });
   }

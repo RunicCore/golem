@@ -4,6 +4,7 @@
  */
 
 import type { DiscriminatorValue, ModelTypeDescriptor } from '../model.js';
+import { presentValueSource } from '../presence.js';
 import {
   emitArrayItems,
   emitTupleItems,
@@ -179,7 +180,9 @@ export interface DispatchOptions {
 export function emitDispatch(options: DispatchOptions): string {
   const { expression, property, branches, direction, tagLocal } = options;
   const encode = direction !== 'decode';
-  const tagRead = `(${expression} as unknown as Record<string, unknown>)[${JSON.stringify(property)}]`;
+  const propertyRead = `(${expression} as unknown as Record<string, unknown>)[${JSON.stringify(property)}]`;
+  // Decoding reads the tag by the JSON view, so an inherited or non-enumerable tag selects no branch.
+  const tagRead = encode ? propertyRead : `(${presentValueSource(expression, JSON.stringify(property), propertyRead)})`;
   const tag = tagLocal ?? tagRead;
   const reject = `unknownDiscriminatorValue(${JSON.stringify(property)}, ${tag}, ${encode ? "'serialize'" : "'deserialize'"})`;
   const key = JSON.stringify(property);

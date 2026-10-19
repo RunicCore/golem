@@ -1,4 +1,5 @@
 import type { SchemaIssue } from './issue-messages.js';
+import { presentValue } from './presence.js';
 export type { JsonTypeName, SchemaIssue, SchemaIssueDetail } from './issue-messages.js';
 export { schemaIssueMessage } from './issue-messages.js';
 
@@ -19,8 +20,6 @@ export function codePointLength(text: string): number {
   }
   return count;
 }
-
-const propertyIsEnumerable = Object.prototype.propertyIsEnumerable;
 
 /**
  * JSON Schema equality over the JSON view, as `JSON.stringify` writes a value: numbers by value; arrays by position,
@@ -43,16 +42,14 @@ export function jsonEqual(left: unknown, right: unknown): boolean {
   // Counts the keys of each side inline, so a comparison allocates no key list.
   let count = 0;
   for (const key in left) {
-    if (!propertyIsEnumerable.call(left, key)) continue;
-    const value: unknown = Reflect.get(left, key);
+    const value = presentValue(left, key);
     if (value === undefined) continue;
-    if (!propertyIsEnumerable.call(right, key)) return false;
-    const other: unknown = Reflect.get(right, key);
+    const other = presentValue(right, key);
     if (other === undefined || !jsonEqual(value, other)) return false;
     count++;
   }
   for (const key in right) {
-    if (propertyIsEnumerable.call(right, key) && Reflect.get(right, key) !== undefined) count--;
+    if (presentValue(right, key) !== undefined) count--;
   }
   return count === 0;
 }

@@ -2,6 +2,7 @@ import {
   findGeneratedModelDefinition,
   findGeneratedModelDefinitionForConstructor,
 } from './model.js';
+import { presentValue } from './presence.js';
 import type {
   generatedModelFieldsBrand,
   GeneratedModelConstructor,
@@ -373,8 +374,7 @@ function codecValidationValue(model: object, definition: RegisteredGeneratedMode
   // `undefined`. A prototype getter does not supply a field.
   const payload: Record<string, unknown> = {};
   for (const field of definition.fields) {
-    if (!Object.prototype.propertyIsEnumerable.call(model, field)) continue;
-    const value: unknown = Reflect.get(model, field);
+    const value = presentValue(model, field);
     if (value !== undefined) defineModelProperty(payload, field, value);
   }
   return payload;

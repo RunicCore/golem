@@ -5,6 +5,7 @@
  */
 
 import type { ModelTypeDescriptor } from '../model.js';
+import { presentValueSource } from '../presence.js';
 import type { ValidationPlane } from '../object-codec.js';
 import type { SchemaGraph, SchemaNode } from './schema-graph.js';
 import { codecShortName, serdeWireDescriptor } from './schema-graph.js';
@@ -415,7 +416,7 @@ function emitValue(
       const generatedText = emitValue(generated[0], expression, ctx);
       const objects = present.filter((variant): variant is ObjectTypeDescriptor => variant.kind === 'object');
       if (objects.length > 0 && !objectDiscriminator(objects)) throw new Error(OBJECT_UNION_DISCRIMINATOR_ERROR);
-      const tagged = objectTagMatch(objects, expression);
+      const tagged = objectTagMatch(objects, expression, false);
       if (tagged.length) {
         const objectText = objects.length === 1
           ? emitValue(objects[0], expression, ctx)
@@ -996,9 +997,12 @@ function emitTaggedObjects(
 }
 
 /** Match any required literal tag of `objects`, for mixing them with one generated model. */
-function objectTagMatch(objects: readonly ObjectTypeDescriptor[], expression: string): string[] {
-  return objects.flatMap((object) => [...literalDiscriminator(object)].map(([name, values]) =>
-    discriminatorMatch(tagAccess(expression, name), values)));
+function objectTagMatch(objects: readonly ObjectTypeDescriptor[], expression: string, decode: boolean): string[] {
+  // Decoding reads the tag by the JSON view, so an inherited or non-enumerable tag matches no object.
+  const read = (name: string): string => decode
+    ? `(${presentValueSource(expression, JSON.stringify(name), tagAccess(expression, name))})`
+    : tagAccess(expression, name);
+  return objects.flatMap((object) => [...literalDiscriminator(object)].map(([name, values]) => discriminatorMatch(read(name), values)));
 }
 
 function emitUnionDecode(
@@ -1051,7 +1055,7 @@ function emitUnionDecode(
       const objects = present.filter((variant): variant is ObjectTypeDescriptor => variant.kind === 'object');
       const discriminator = objectDiscriminator(objects);
       if (objects.length > 0 && !discriminator) throw new Error(OBJECT_UNION_DISCRIMINATOR_ERROR);
-      const tagged = objectTagMatch(objects, expression);
+      const tagged = objectTagMatch(objects, expression, true);
       if (tagged.length) {
         return `(${objectValueExpression(expression)} && !(${tagged.join(' || ')}) ? ${converted} : ${expression})`;
       }
@@ -1066,7 +1070,7 @@ function emitUnionDecode(
       const node = ctx.graph.nodeFor(ref);
       const object = node?.descriptor.kind === 'object' ? node.descriptor : undefined;
       if (!object) throw new Error(AMBIGUOUS_UNION_CONVERSION_ERROR);
-      const tags = objectTagMatch([object], expression);
+      const tags = objectTagMatch([object], expression, true);
       if (tags.length === 0) throw new Error(OBJECT_UNION_DISCRIMINATOR_ERROR);
       branches.push(`${tags.join(' && ')} ? ${emitDecodeValue(ref, expression, ctx)}`);
     }
@@ -1126,7 +1130,7 @@ function emitUnionEncode(
     const generatedText = emitEncodeValue(generated[0], expression, ctx);
     const objects = present.filter((variant): variant is ObjectTypeDescriptor => variant.kind === 'object');
     if (objects.length > 0 && !objectDiscriminator(objects)) throw new Error(OBJECT_UNION_DISCRIMINATOR_ERROR);
-    const taggedObjects = objectTagMatch(objects, expression);
+    const taggedObjects = objectTagMatch(objects, expression, false);
     if (taggedObjects.length) {
       const objectText = objects.length === 1
         ? emitEncodeValue(objects[0], expression, ctx)
@@ -1351,7 +1355,7 @@ function emitFillFunction(
   if (properties.length === 0 && !additionalSchema && patternConstraints.length === 0) {
     // Every property is carried over as it is and checked; an own `__proto__` stays a data property.
     return {
-      source: `${exported}function ${fn}(out: Record<string, unknown>, wire: Record<string, unknown>): Record<string, unknown> {\n  for (const key of Object.keys(wire)) {\n    const value = assertPropertyAcyclic(wire, key, wire[key]);\n    if (out !== wire) defineModelProperty(out, key, value);\n  }\n  return out;\n}\n`,
+      source: `${exported}function ${fn}(out: Record<string, unknown>, wire: Record<string, unknown>): Record<string, unknown> {\n  for (const key of Object.keys(wire)) {\n    const extra = wire[key];\n    if (extra === undefined) continue;\n    const value = assertPropertyAcyclic(wire, key, extra);\n    if (out !== wire) defineModelProperty(out, key, value);\n  }\n  return out;\n}\n`,
       copyIdentity: false,
       needsFill: true,
       fallible: true,
@@ -1373,7 +1377,7 @@ function emitFillFunction(
     const optional = !required.has(name);
     const direct = access('wire', name);
     const present = `__golemPresent${index}`;
-    const readPresent = `const ${present} = Object.prototype.propertyIsEnumerable.call(wire, ${field}) ? ${direct} : undefined;`;
+    const readPresent = `const ${present} = ${presentValueSource('wire', field, direct)};`;
     const readDirect = (line: string): string => line.replaceAll(present, direct);
     const fill = emitFillValue(property, present, field, `__golemWire${index}`, ctx);
     const proto = name === '__proto__';
@@ -1381,14 +1385,12 @@ function emitFillFunction(
     if (fill.fallible || fill.checked) fallible = true;
     if (!fill.converted && !fill.checked && !proto) {
       copyIdentity = true;
-      identityWrites.push(...(!optional
-        ? [emitFillPropertyWrite(name, readDirect(fill.value))]
-        : [
-          `    ${readPresent}`,
-          `    if (${present} !== undefined) {`,
-          emitFillPropertyWrite(name, fill.value, '      '),
-          '    }',
-        ]));
+      identityWrites.push(
+        `    ${readPresent}`,
+        `    if (${present} !== undefined) {`,
+        emitFillPropertyWrite(name, fill.value, '      '),
+        '    }',
+      );
       return;
     }
     if (!fill.converted && !proto) {
@@ -1428,12 +1430,15 @@ function emitFillFunction(
     lines.push(
       `  for (const key of Object.keys(wire)) {`,
       `    if (${known ? `[${known}].includes(key)` : 'false'}) continue;`,
+      // An undeclared key whose value is undefined is absent, as the validator and encode treat it.
+      '    const __golemExtra = wire[key];',
+      '    if (__golemExtra === undefined) continue;',
     );
     const emitExtra = (schema: ModelTypeDescriptor | undefined, indent: string): string[] => {
       // A pattern without a field schema carries the value by reference.
       const value = schema === undefined
-        ? { statements: [], value: 'assertPropertyAcyclic(wire, key, wire[key])', converted: false, checked: true, fallible: true }
-        : emitFillValue(schema, 'wire[key]', 'key', '__golemValue', ctx);
+        ? { statements: [], value: 'assertPropertyAcyclic(wire, key, __golemExtra)', converted: false, checked: true, fallible: true }
+        : emitFillValue(schema, '__golemExtra', 'key', '__golemValue', ctx);
       if (value.converted || value.checked) needsFill = true;
       if (value.fallible || value.checked) fallible = true;
       return [
