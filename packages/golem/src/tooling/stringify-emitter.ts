@@ -1177,7 +1177,7 @@ function emitDecodeValue(descriptor: ModelTypeDescriptor, expression: string, ct
     return emitUnionDecode(descriptor, expression, ctx);
   }
   // An intersection of objects decodes as the one merged object, so each member's fields convert.
-  const decodedMerge = descriptor.kind === 'intersection' ? mergeObjectVariants(descriptor.variants) : undefined;
+  const decodedMerge = descriptor.kind === 'intersection' ? mergeObjectVariants(descriptor.variants, true) : undefined;
   if (decodedMerge) return emitDecodeValue(decodedMerge, expression, ctx);
   if (descriptor.kind === 'object' && typeof descriptor.additionalProperties === 'object') {
     if (!descriptorNeedsConversion(descriptor)) {
@@ -1233,7 +1233,7 @@ function emitDecodeValue(descriptor: ModelTypeDescriptor, expression: string, ct
 
 function emitComputedRecord(fields: readonly (readonly [string, string])[]): string {
   if (fields.length === 0) return '{}';
-  return `{ ${fields.map(([name, value]) => `[${JSON.stringify(name)}]: ${value}`).join(', ')} }`;
+  return `{ ${fields.map(([name, value]) => value.startsWith('...') ? value : `[${JSON.stringify(name)}]: ${value}`).join(', ')} }`;
 }
 
 function emitDecodedRecord(
@@ -1243,21 +1243,23 @@ function emitDecodedRecord(
 ): string {
   const fields = Object.entries(descriptor.properties);
   if (fields.length === 0) return expression;
+  const required = new Set(descriptor.required);
   return emitComputedRecord(fields.map(([name, property]) => {
     const source = access(expression, name);
     const before = fallibleCount(ctx);
     const decoded = emitDecodeValue(property, source, { ...ctx, decodeLocals: undefined });
     // A source property is read once: a conversion that can throw runs under its field's path with the
     // property as its argument, and another conversion binds it to a parameter when it uses it again.
-    if (emittedFallible(before, decoded, ctx)) {
-      return [name, emitFieldConversion(JSON.stringify(name), NESTED_SOURCE, property, source, ctx)];
-    }
-    return [
-      name,
-      countOccurrences(decoded, source) > 1
+    const converted = emittedFallible(before, decoded, ctx)
+      ? emitFieldConversion(JSON.stringify(name), NESTED_SOURCE, property, source, ctx)
+      : countOccurrences(decoded, source) > 1
         ? `((${NESTED_SOURCE}) => ${emitDecodeValue(property, NESTED_SOURCE, ctx)})(${source})`
-        : decoded,
-    ];
+        : decoded;
+    // An optional property that converts is read only when the input has it.
+    if (!required.has(name) && decoded !== source) {
+      return [name, `...(${source} !== undefined ? { [${JSON.stringify(name)}]: ${converted} } : {})`];
+    }
+    return [name, converted];
   }));
 }
 
@@ -1469,7 +1471,7 @@ function emitEncodeValue(descriptor: ModelTypeDescriptor, expression: string, ct
       item: (item, value) => ({ code: emitEncodeValue(item, value, ctx), throws: false }),
     });
   }
-  const encodedMerge = descriptor.kind === 'intersection' ? mergeObjectVariants(descriptor.variants) : undefined;
+  const encodedMerge = descriptor.kind === 'intersection' ? mergeObjectVariants(descriptor.variants, true) : undefined;
   if (encodedMerge) return emitEncodeValue(encodedMerge, expression, ctx);
   if (descriptor.kind === 'union') {
     return emitUnionEncode(descriptor, expression, ctx);

@@ -1040,6 +1040,11 @@ for (const validation of [true, false]) test(`an object field with its own prope
   const model = codec.fromWireFormat(wire, { construct: VisitModel as unknown as abstract new (values?: never) => object });
   assert.deepEqual(model.merged, { at: new Date('2024-05-06T07:08:09.000Z'), b: new Date('2024-05-07T08:09:10.000Z') });
   assert.deepEqual(codec.toWireFormat(model), wire);
+  const partial = [{}, { at: '2024-05-06T07:08:09.000Z' }, { b: '2024-05-07T08:09:10.000Z' }];
+  for (const part of partial) {
+    const partialModel = codec.fromWireFormat({ merged: part }, { construct: VisitModel as unknown as abstract new (values?: never) => object });
+    assert.deepEqual(codec.toWireFormat(partialModel), { merged: part });
+  }
 });
 
 test('a name in the required list of an allOf member is required in the field type and by the validator', async t => {
@@ -1113,6 +1118,11 @@ for (const validation of [true, false]) test(`an allOf of object members is type
   const model = codec.fromWireFormat(wire, { construct: VisitModel as unknown as abstract new (values?: never) => object });
   assert.deepEqual(model.members, { at: new Date('2024-05-06T07:08:09.000Z'), b: new Date('2024-05-07T08:09:10.000Z') });
   assert.deepEqual(codec.toWireFormat(model), wire);
+  const partial = [{}, { at: '2024-05-06T07:08:09.000Z' }, { b: '2024-05-07T08:09:10.000Z' }];
+  for (const part of partial) {
+    const partialModel = codec.fromWireFormat({ members: part }, { construct: VisitModel as unknown as abstract new (values?: never) => object });
+    assert.deepEqual(codec.toWireFormat(partialModel), { members: part });
+  }
 });
 
 test('an object field with own properties and an allOf reference to a model still generates and is typed by its own properties', async t => {
@@ -1242,4 +1252,32 @@ test('a oneOf of a nullable component and a string has a type and a validator th
       return true;
     },
   );
+});
+
+for (const validation of [false]) test(`an allOf of an additionalProperties member and a properties member keeps its input as it is (validation ${validation})`, async t => {
+  const output = path.join(createFixtureProject(t, 'golem-openapi-allof-additional-members-'), 'sdk');
+  await generateMaterializedSdk(sequenceSerdeDocument({
+    members: {
+      allOf: [
+        { type: 'object', additionalProperties: { type: 'string', format: 'date-time' } },
+        { type: 'object', properties: { b: { type: 'string', format: 'date-time' } } },
+      ],
+    },
+  }), {
+    output,
+    name: 'SequenceSerde',
+    profile: { mobx: false, validation, allowAny: false },
+  });
+  copyFixtureFile(output, 'openapi/model-serde/allof-additional-members-types.ts', 'allof-additional-members-types.ts');
+  compileGeneratedSdk(output, [path.join(output, 'allof-additional-members-types.ts')], { strict: true, skipLibCheck: true });
+
+  const models = requireRecord(
+    await import(pathToFileURL(path.join(output, 'dist/index.js')).href),
+    'generated allOf additionalProperties member models',
+  );
+  const VisitModel = models.VisitModel as unknown as new (values?: Record<string, unknown>) => Record<string, unknown>;
+  const codec = requireObjectCodec(generatedCodecIdFromRoot(output, 'Visit'));
+  const wire = { members: { x: '2024-05-06T07:08:09.000Z', b: '2024-05-07T08:09:10.000Z' } };
+  const model = codec.fromWireFormat(wire, { construct: VisitModel as unknown as abstract new (values?: never) => object });
+  assert.deepEqual(codec.toWireFormat(model), wire);
 });

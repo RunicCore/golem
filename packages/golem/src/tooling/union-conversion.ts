@@ -306,12 +306,17 @@ export function descriptorNeedsConversion(descriptor: ModelTypeDescriptor): bool
 }
 
 /**
- * The one object an intersection of objects converts as: same-named properties intersect, the
- * required names join, and the additional-property schemas intersect. Anything else is not merged.
+ * The one object an intersection of objects converts as: same-named properties intersect, the required names join,
+ * and the additional-property schemas intersect. With `disjoint`, plain objects whose property names differ and
+ * that carry no additional-property schema merge, and anything else is not merged.
  */
-export function mergeObjectVariants(variants: readonly ModelTypeDescriptor[]): ObjectTypeDescriptor | undefined {
+export function mergeObjectVariants(variants: readonly ModelTypeDescriptor[], disjoint = false): ObjectTypeDescriptor | undefined {
   const objects = variants.filter((variant): variant is ObjectTypeDescriptor => variant.kind === 'object');
   if (objects.length === 0 || objects.length !== variants.length) return undefined;
+  if (disjoint) {
+    const names = objects.flatMap((object) => Object.keys(object.properties));
+    if (new Set(names).size !== names.length || objects.some((object) => typeof object.additionalProperties === 'object')) return undefined;
+  }
   const properties: Record<string, ModelTypeDescriptor> = Object.create(null);
   for (const object of objects) {
     for (const [name, property] of Object.entries(object.properties)) {
