@@ -729,6 +729,12 @@ const stopped: readonly { readonly shape: string; readonly error: RegExp; readon
     error: /#\/components\/schemas\/Visit\/properties\/m(?=[ :]).*OPENAPI_COMPOSITION_CONVERSION_CONFLICT: /,
     document: visitDocument({ m: { allOf: [object({ x: dateTime }), object({ x: ref('M') })] } }, { M: object({ n: text }) }),
   },
+  // The model path finds this conflict: the members are not objects, so the resolver keeps them.
+  {
+    shape: 'members that convert the value to a Date and to a model',
+    error: /OPENAPI_COMPOSITION_CONVERSION_CONFLICT: The allOf members convert one property differently \(two parts convert it differently\)/,
+    document: visitDocument({ m: { allOf: [dateTime, ref('M')] } }, { M: object({ n: text }) }),
+  },
   {
     shape: 'members that give a required property a model and a string',
     error: /#\/components\/schemas\/Visit\/properties\/m(?=[ :]).*OPENAPI_COMPOSITION_UNSATISFIABLE: .*"x" has no value that every member accepts/,

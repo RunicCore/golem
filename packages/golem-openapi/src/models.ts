@@ -721,6 +721,7 @@ function modelDiscriminators(definition: ModelDefinition | undefined): ModelDisc
 /** How generated conversion code decodes and constructs a referenced model. */
 function modelResolver(reference: string, definitions: ReadonlyMap<string, ModelDefinition>): FromJsonModelResolver {
   const discriminators = modelDiscriminators(definitions.get(reference));
+  const base = definitions.get(reference)?.baseName;
   return {
     className: `${reference}Model`,
     decode: (value) => `decodeGeneratedModelTrusted(${reference}Model, ${value})`,
@@ -728,7 +729,18 @@ function modelResolver(reference: string, definitions: ReadonlyMap<string, Model
       ? `initialize${reference}(${value})`
       : `new ${reference}Model(${value} as ${reference}Init)`,
     ...(discriminators ? { discriminators } : {}),
+    ...(base ? { base } : {}),
   };
+}
+
+/** A conversion conflict that the model path finds carries the resolver's code, as one that the codec emitter finds does. */
+function withConflictCode(emit: () => string): string {
+  try {
+    return emit();
+  } catch (thrown) {
+    if (thrown instanceof CompositionConflictError) throw new CompositionError(COMPOSITION_CONVERSION_CONFLICT, conflictMessage(thrown.reason));
+    throw thrown;
+  }
 }
 
 function modelFromJSONExpression(
@@ -737,17 +749,17 @@ function modelFromJSONExpression(
   definitions: ReadonlyMap<string, ModelDefinition>,
   env: ModelResolveEnv,
 ): string {
-  return emitModelFromJSON(
+  return withConflictCode(() => emitModelFromJSON(
     modelConversionDescriptor(schema, definitions, env, 'from'),
     expression,
     (reference) => modelResolver(reference, definitions),
     TEMPORAL_SERDE,
-  );
+  ));
 }
 
 function modelInitExpression(schema: unknown, expression: string, definitions: ReadonlyMap<string, ModelDefinition>, env: ModelResolveEnv): string {
   const descriptor = modelConversionDescriptor(schema, definitions, env, 'from');
-  return emitModelFromInit(descriptor, expression, reference => modelResolver(reference, definitions));
+  return withConflictCode(() => emitModelFromInit(descriptor, expression, reference => modelResolver(reference, definitions)));
 }
 
 function modelToJSONExpression(
@@ -756,12 +768,15 @@ function modelToJSONExpression(
   definitions: ReadonlyMap<string, ModelDefinition>,
   env: ModelResolveEnv,
 ): string {
-  return emitModelToJSON(
+  return withConflictCode(() => emitModelToJSON(
     modelConversionDescriptor(schema, definitions, env, 'to'),
     expression,
-    (reference) => ({ className: `${reference}Model`, encode: value => `encodeGeneratedModel(${value})` }),
+    (reference) => {
+      const base = definitions.get(reference)?.baseName;
+      return { className: `${reference}Model`, encode: value => `encodeGeneratedModel(${value})`, ...(base ? { base } : {}) };
+    },
     TEMPORAL_SERDE,
-  );
+  ));
 }
 
 /**
