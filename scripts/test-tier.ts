@@ -3,6 +3,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { sourcePath } from './test-file-timings.js';
+import type { OrderedRun } from './test-run-ordered.js';
 
 export type Tier = 'prepare' | 'focused' | 'full' | 'acceptance' | 'docs';
 /** `fileTimings` is the JSON-lines file that the test-file reporter fills while the step runs. */
@@ -97,19 +99,89 @@ function run(executable: string, args: readonly string[], cwd: string = root, en
   });
 }
 
+/** The seconds of each test file in the last runs of this tier, by step label. */
+const recordedFileSeconds = new Map<string, Readonly<Record<string, number>>>();
+
 /**
+ * The record of a tier lives in the shared cache volume (beside the packed dir), not in the checkout's results, so the first
+ * run in a fresh checkout starts its files in the same order. A record from another branch only changes the order.
+ */
+function fileSecondsRecord(tier: Tier): string | undefined {
+  const packedDir = process.env.FE_DEPS_PACKED_DIR;
+  return packedDir ? path.join(path.dirname(packedDir), 'test-order', `${tier}.json`) : undefined;
+}
+
+/** Order is an optimization: a missing record is normal, and one that cannot be read is reported and ignored. */
+function loadFileSeconds(file: string | undefined): void {
+  if (!file || !fs.existsSync(file)) return;
+  try {
+    const record: unknown = JSON.parse(fs.readFileSync(file, 'utf8'));
+    if (typeof record !== 'object' || record === null || Array.isArray(record)) throw new SyntaxError('not an object of steps');
+    for (const [label, seconds] of Object.entries(record)) recordedFileSeconds.set(label, seconds as Record<string, number>);
+  } catch (error) {
+    process.stderr.write(`Could not read the test file seconds at ${file} (${error instanceof Error ? error.message : String(error)}); the files run in path order.\n`);
+    recordedFileSeconds.clear();
+  }
+}
+
+/** Written whole through a temporary file, so a kill never leaves half a record. A failed write is reported; the run goes on. */
+function saveFileSeconds(file: string | undefined): void {
+  if (!file) return;
+  try {
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(`${file}.tmp`, JSON.stringify(Object.fromEntries(recordedFileSeconds)) + '\n');
+    fs.renameSync(`${file}.tmp`, file);
+  } catch (error) {
+    process.stderr.write(`Could not save the test file seconds at ${file} (${error instanceof Error ? error.message : String(error)}); the next run may start its files in path order.\n`);
+  }
+}
+
+/** Files with no record first, in path order (one of them may be the new slow file), then the recorded files, longest first. */
+function longestFirst(files: readonly string[], recorded: Readonly<Record<string, number>> | undefined): string[] {
+  const seconds = (file: string): number | undefined => {
+    const value: unknown = recorded?.[sourcePath(path.resolve(root, file), root)];
+    return typeof value === 'number' ? value : undefined;
+  };
+  const byPath = [...new Set(files)].sort();
+  const unrecorded = byPath.filter(file => seconds(file) === undefined);
+  const known = byPath.filter(file => seconds(file) !== undefined).sort((a, b) => (seconds(b) ?? 0) - (seconds(a) ?? 0));
+  return [...unrecorded, ...known];
+}
+
+/**
+ * Lists the files of the patterns: a path, or a directory with `*` in the file name (`.build/tests/*.test.js`), the only forms
+ * that the tiers and focused runs use. `fs.globSync` would do the same, but it prints an experimental warning on Node 22.
+ * A pattern with no file is a fault of the selection, as in `node --test`.
+ */
+function expandFiles(patterns: readonly string[]): string[] {
+  return patterns.flatMap(pattern => {
+    const directory = path.posix.dirname(pattern);
+    if (directory.includes('*')) throw new Error(`Put * in the file name only: '${pattern}'`);
+    const name = new RegExp(`^${path.posix.basename(pattern).split('*').map(part => part.replace(/[.+?^${}()|[\]\\]/g, '\\$&')).join('[^/]*')}$`);
+    const matches = pattern.includes('*')
+      ? fs.readdirSync(path.join(root, directory), { withFileTypes: true }).filter(entry => entry.isFile() && name.test(entry.name)).map(entry => path.posix.join(directory, entry.name))
+      : fs.existsSync(path.join(root, pattern)) ? [pattern] : [];
+    if (!matches.length) throw new Error(`Could not find '${pattern}'`);
+    return matches;
+  });
+}
+
+/**
+ * Runs the files longest first by their seconds in the last run of this tier, so one slow file does not start last and set
+ * the step's floor. The order changes no result.
  * No file or test limit is set here: on Node 22 `--test-timeout` also cancels a whole file, which a loaded host turns into a
  * false failure. The tier ceiling in `scripts/test-runner/entrypoint.sh` is the one hang catcher.
  */
-function nodeTest(label: string, files: readonly string[], concurrency: number, extra: readonly string[] = [], env: NodeJS.ProcessEnv = {}): Step {
-  const reporters = ['--test-reporter=spec', '--test-reporter-destination=stdout'];
-  let fileTimings: string | undefined;
-  if (resultsDir) {
-    fileTimings = path.join(resultsDir, `${label}.files.jsonl`);
-    reporters.push('--test-reporter=tap', `--test-reporter-destination=${path.join(resultsDir, `${label}.tap`)}`);
-    reporters.push(`--test-reporter=${fileURLToPath(new URL('./test-file-timings.js', import.meta.url))}`, `--test-reporter-destination=${fileTimings}`);
-  }
-  return { label, fileTimings, run: () => run(process.execPath, ['--test', `--test-concurrency=${concurrency}`, ...reporters, ...extra, ...files], root, env) };
+function nodeTest(label: string, patterns: readonly string[], concurrency: number, extra: readonly string[] = [], env: NodeJS.ProcessEnv = {}): Step {
+  const fileTimings = resultsDir ? path.join(resultsDir, `${label}.files.jsonl`) : undefined;
+  return {
+    label,
+    fileTimings,
+    run: () => {
+      const request: OrderedRun = { label, concurrency, execArgv: extra, files: longestFirst(expandFiles(patterns), recordedFileSeconds.get(label)) };
+      return run(process.execPath, [fileURLToPath(new URL('./test-run-ordered.js', import.meta.url)), JSON.stringify(request)], root, env);
+    },
+  };
 }
 
 /** Environment that points the compiler seam at the container's TypeScript 6 install. */
@@ -262,6 +334,8 @@ async function main(argv: readonly string[]): Promise<void> {
     // A run's results never mix with an earlier run's.
     for (const name of fs.readdirSync(resultsDir)) if (name.endsWith('.tap') || name.endsWith('-timings.json') || name.endsWith('.files.jsonl')) fs.rmSync(path.join(resultsDir, name));
   }
+  const orderRecord = fileSecondsRecord(tier);
+  loadFileSeconds(orderRecord);
   const timings: StepTiming[] = [];
   const running = new Set<string>();
   let timingsFault = false;
@@ -295,6 +369,11 @@ async function main(argv: readonly string[]): Promise<void> {
     if (fileSeconds) {
       entry.file_seconds = fileSeconds;
       writeTimings();
+      // A failed step can hold cut or crashed files with short seconds, which would misplace them next time.
+      if (status === 0) {
+        recordedFileSeconds.set(step.label, fileSeconds);
+        saveFileSeconds(orderRecord);
+      }
     }
   };
   for (const group of steps(tier, args, native)) {
