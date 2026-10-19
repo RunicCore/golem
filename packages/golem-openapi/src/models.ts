@@ -182,6 +182,15 @@ function admitsNull(schema: Readonly<Record<string, unknown>>): boolean {
   return effectiveSchemaTypes(schema).includes('null');
 }
 
+/** A reference admits null when it says so, or when the component it names does. */
+function admitsNullThroughReference(
+  schema: unknown,
+  reference: string,
+  definitions: ReadonlyMap<string, ModelDefinition>,
+): boolean {
+  return admitsNull(asRecord(schema)) || admitsNull(asRecord(definitions.get(reference)?.schema));
+}
+
 function modelSchemaProperties(
   env: ModelResolveEnv,
   rawSchema: unknown,
@@ -274,8 +283,7 @@ function modelFieldType(
   const nested = withSchemaBase(env, schema);
   const reference = modelSchemaReference(schema, nested);
   if (reference && definitions.has(reference)) {
-    const record = asRecord(schema);
-    return `${reference}Model${admitsNull(record) ? ' | null' : ''}`;
+    return `${reference}Model${admitsNullThroughReference(schema, reference, definitions) ? ' | null' : ''}`;
   }
   if (visiting.has(schema)) throw new Error('Recursive schema aliases must resolve to an object model.');
   const seen = new Set(visiting).add(schema);
@@ -478,7 +486,7 @@ function modelConversionDescriptor(
   const reference = modelSchemaReference(schema, nested);
   if (reference && definitions.has(reference)) {
     const generated: ModelTypeDescriptor = { kind: 'generated-model', id: reference };
-    return admitsNull(asRecord(schema))
+    return admitsNullThroughReference(schema, reference, definitions)
       ? { kind: 'union', variants: [generated, { kind: 'null' }] }
       : generated;
   }

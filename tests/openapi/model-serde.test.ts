@@ -976,3 +976,34 @@ test('a nullable object field with a constraint-only allOf admits null and still
     },
   );
 });
+
+test('a field that references a nullable component object is typed with | null and admits null', async t => {
+  const output = path.join(createFixtureProject(t, 'golem-openapi-nullable-reference-'), 'sdk');
+  const document = sequenceSerdeDocument({ pet: { $ref: '#/components/schemas/Pet' } }) as {
+    components: { schemas: Record<string, Record<string, unknown>> };
+  };
+  document.components.schemas.Pet = {
+    type: ['object', 'null'],
+    properties: { name: { type: 'string' } },
+    additionalProperties: false,
+  };
+  await generateMaterializedSdk(document, {
+    output,
+    name: 'SequenceSerde',
+    profile: { mobx: false, validation: true, allowAny: false },
+  });
+  copyFixtureFile(output, 'openapi/model-serde/nullable-reference-types.ts', 'nullable-reference-types.ts');
+  compileGeneratedSdk(output, [path.join(output, 'nullable-reference-types.ts')], { strict: true, skipLibCheck: true });
+
+  const models = requireRecord(
+    await import(pathToFileURL(path.join(output, 'dist/index.js')).href),
+    'generated nullable reference models',
+  );
+  const VisitModel = models.VisitModel as unknown as new (values?: Record<string, unknown>) => Record<string, unknown>;
+  const codec = requireObjectCodec(generatedCodecIdFromRoot(output, 'Visit'));
+  const construct = VisitModel as unknown as abstract new (values?: never) => object;
+
+  assert.equal(decodeGeneratedModel(VisitModel, { pet: null }).pet, null);
+  assert.doesNotThrow(() => codec.fromWireFormat({ pet: null }, { construct }));
+  assert.equal(JSON.stringify(decodeGeneratedModel(VisitModel, { pet: { name: 'Miso' } }).pet), '{"name":"Miso"}');
+});
