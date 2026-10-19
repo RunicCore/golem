@@ -7,17 +7,21 @@ import test from 'node:test';
 import { generate as generateOpenApi } from '@exprtlabs/golem-openapi/generator';
 import { copyFixtureFile, createFixtureProject, fileFixtureScope, fixturePath, onceShared, readFixture, writeGeneratedArtifacts, type FixtureScope } from './fixture-project.js';
 import { createControllerFixture } from './fixture-templates/controllers/project.js';
+import { resolveTypeScript } from '#golem/typescript-version';
 import { createModelProject } from './model-project.js';
-import { caseFolder, DIAGNOSTICS, IDENTITY_CASES, shardOf, type IdentityCase, type IdentityProject } from './support/identity-corpus.js';
+import { caseFolder, DIAGNOSTICS, GENERATED, IDENTITY_CASES, isCompiled, shardOf, type IdentityCase, type IdentityProject } from './support/identity-corpus.js';
 import { command, workspace } from './support/process.js';
 
 const typescript6Root = process.env.GOLEM_TYPESCRIPT6_ROOT;
 // The shard counts keep the peak memory of the children beside the unit step low; TypeScript 6 runs slower per case, so it has more shards.
 const SEVEN_SHARDS = 3;
 const SIX_SHARDS = 4;
+const SDK_ONLY_WIRE_CLAIM = 'wire-format/nested-sdk';
 
 interface ShardRun {
   readonly cases: ReadonlySet<string>;
+  /** The projects the child generated in; the generator wrote its files into them. */
+  readonly projects: readonly IdentityProject[];
   readonly typescriptVersion: string | undefined;
   /** What the child printed to stderr when it ended non-zero, else undefined. */
   readonly failure: string | undefined;
@@ -79,6 +83,7 @@ async function runShard(t: FixtureScope, label: string, cases: readonly Identity
   });
   return {
     cases: new Set(cases.map(item => item.name)),
+    projects,
     typescriptVersion: /^typescript (\S+)$/m.exec(result.stdout)?.[1],
     failure: result.code === 0 && result.signal === null ? undefined : `exit ${result.code ?? result.signal}\n${result.stderr.slice(-4000)}`,
     artifacts: readTree(outputDirectory),
@@ -125,6 +130,53 @@ function describeDifference(name: string, seven: ReadonlyMap<string, string>, si
   return first === undefined ? '' : `${name}: TypeScript 6 and 7 differ in ${differing.length} of ${paths.length} files: ${differing.join(', ')}\nfirst: ${first}\n${diffHunk(seven.get(first), six.get(first))}`;
 }
 
+/**
+ * The one TypeScript 6 compile: a folder for each compiled case, holding the sources of its project and the files the TypeScript 6 child
+ * generated into it (the wire-check files and wire-assert.ts among them). It is a model project: ESM package, the workspace's node_modules,
+ * so `tsc` reads the published types of @exprtlabs/golem, and the options of createModelProject with `noEmit` and a `rootDir` that holds
+ * the case folders. Returns the root and the case that each folder belongs to; a model case whose generation was rejected has no file to compile.
+ */
+async function createCompileTree(shards: readonly ShardRun[]): Promise<{ readonly root: string; readonly casesByFolder: ReadonlyMap<string, string> }> {
+  const { root } = createModelProject(scope, {
+    prefix: 'golem-identity-compile-',
+    name: 'identity-compile',
+    linkWorkspaceNodeModules: true,
+    rootDir: '.',
+    compilerOptions: { noEmit: true },
+    include: ['*/src/**/*.ts'],
+  });
+  const casesByFolder = new Map<string, string>();
+  for (const shard of shards) {
+    for (const project of shard.projects) {
+      const item = IDENTITY_CASES.find(candidate => candidate.name === project.name);
+      assert.ok(item, `${project.name} is a case of the corpus`);
+      const generated = [...filesOfCase(shards, '6', item.name).keys()].some(file => file.startsWith(`${GENERATED}${path.sep}`));
+      if (!isCompiled(item) || !generated) continue;
+      fs.cpSync(path.join(project.root, 'src'), path.join(root, caseFolder(item.name), 'src'), { recursive: true });
+      casesByFolder.set(caseFolder(item.name), item.name);
+    }
+  }
+  // The SDK-only wire claim has no model for the generators, so it is no case of the corpus. Its check joins the compile with the SDK
+  // generated here with mobx on; the SDK generator loads no TypeScript, so this one run serves both versions.
+  const sdkSource = path.join(root, caseFolder(SDK_ONLY_WIRE_CLAIM), 'src');
+  fs.cpSync(fixturePath(SDK_ONLY_WIRE_CLAIM), sdkSource, { recursive: true });
+  fs.copyFileSync(fixturePath('wire-format/wire-assert.ts'), path.join(sdkSource, 'wire-assert.ts'));
+  writeGeneratedArtifacts((await generateOpenApi({
+    input: path.join(sdkSource, 'payments.yaml'),
+    output: path.join(sdkSource, 'sdk'),
+    name: 'Payments',
+    profile: { mobx: true, validation: true },
+  })).artifacts);
+  casesByFolder.set(caseFolder(SDK_ONLY_WIRE_CLAIM), SDK_ONLY_WIRE_CLAIM);
+  return { root, casesByFolder };
+}
+
+/** The cases whose files a `tsc` error line names, in the order of the output. Paths in the output are relative to the compile folder. */
+function casesNamedBy(output: string, casesByFolder: ReadonlyMap<string, string>): string[] {
+  const folders = [...output.matchAll(/^([^\s(]+)\(\d+,\d+\): error TS\d+:/gm)].map(match => match[1]!.split('/')[0]!);
+  return [...new Set(folders.flatMap(folder => casesByFolder.get(folder) ?? []))];
+}
+
 if (!typescript6Root) {
   // The entrypoint of the test container installs TypeScript 6 and exports its root; without it there is nothing to compare.
   test('TypeScript 6 is installed for the identity test', () => {
@@ -151,4 +203,15 @@ if (!typescript6Root) {
       assert.ok(difference === '', difference);
     });
   }
+  test('the files that TypeScript 6 generated type-check in one TypeScript 6 compile', async t => {
+    const { six } = await generateOnce();
+    const { root, casesByFolder } = await createCompileTree(six);
+    assert.ok(casesByFolder.size > 0, 'the compile holds at least one model case');
+    t.diagnostic(`${casesByFolder.size} cases in the compile`);
+    const tsc = path.join(resolveTypeScript(typescript6Root).packageDir, 'bin/tsc');
+    const result = await command(root, process.execPath, [tsc, '-p', root, '--pretty', 'false'], { allowFailure: true });
+    const output = `${result.stdout}${result.stderr}`.trim();
+    const named = casesNamedBy(output, casesByFolder);
+    assert.ok(result.code === 0 && result.signal === null, `tsc of TypeScript 6 failed (${result.code ?? result.signal}) in ${named.length > 0 ? `the cases ${named.join(', ')}` : 'no case file'}:\n${output}`);
+  });
 }

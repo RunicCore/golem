@@ -85,6 +85,11 @@ const EXCLUDED: Readonly<Record<string, string>> = {
   'model-companions/serde-edit': 'not self-contained: its test adds the sibling files that the model imports',
 };
 
+/** Model cases that stay in the identity corpus and leave the one TypeScript 6 compile, each with its reason. */
+const COMPILE_EXCLUDED: Readonly<Record<string, string>> = {
+  'model-tuples/readonly': 'sets exactOptionalPropertyTypes and noUncheckedIndexedAccess in its own compilerOptions, which the shared compile does not hold',
+};
+
 function modelFiles(directory: string, names: readonly string[]): IdentityFile[] {
   return names.map(name => ({ from: `${directory}/${name}`, to: `src/${name}` }));
 }
@@ -211,11 +216,18 @@ export const IDENTITY_CASES: readonly IdentityCase[] = (() => {
   const cases = [...EXPLICIT, ...discover()];
   const duplicate = cases.find((item, index) => cases.findIndex(other => other.name === item.name) !== index);
   if (duplicate) throw new Error(`The identity corpus holds the case ${duplicate.name} twice`);
+  const unknown = Object.keys(COMPILE_EXCLUDED).filter(name => !cases.some(item => item.name === name && item.kind === 'model'));
+  if (unknown.length > 0) throw new Error(`The identity corpus leaves model cases out of the compile that it does not hold: ${unknown.join(', ')}`);
   return cases;
 })();
 
 /** The discovered cases that the corpus leaves out, each with its reason. */
 export const EXCLUDED_CASES: Readonly<Record<string, string>> = EXCLUDED;
+
+/** The model cases of the corpus that the one TypeScript 6 compile checks. */
+export function isCompiled(item: IdentityCase): boolean {
+  return item.kind === 'model' && !(item.name in COMPILE_EXCLUDED);
+}
 
 /** The cases of shard `index` of `count`: every `count`-th case, so each shard holds the same mix of kinds. */
 export function shardOf(cases: readonly IdentityCase[], count: number, index: number): IdentityCase[] {
