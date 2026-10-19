@@ -4,6 +4,12 @@
  */
 
 import type { DiscriminatorValue, ModelTypeDescriptor } from '../model.js';
+import {
+  emitArrayItems,
+  emitTupleItems,
+  type SequenceItems,
+  type TupleConversionDescriptor,
+} from './sequence-conversion.js';
 
 export type ObjectTypeDescriptor = Extract<ModelTypeDescriptor, { readonly kind: 'object' }>;
 export type ArrayTypeDescriptor = Extract<ModelTypeDescriptor, { readonly kind: 'array' }>;
@@ -215,24 +221,41 @@ export function emitDispatch(options: DispatchOptions): string {
   return `(${converted})`;
 }
 
-/** The variants of a `scalar | scalar[]` union: its one array, and the scalar variants beside it. */
+/** The variants of a `scalar | scalar[]` or `scalar | [T, ...]` union: its one sequence, and the scalar variants beside it. */
 export interface ScalarOrArray {
-  readonly array: ArrayTypeDescriptor;
+  readonly sequence: ArrayTypeDescriptor | TupleConversionDescriptor;
   readonly scalars: readonly ModelTypeDescriptor[];
 }
 
 /**
- * A union of one array and scalar variants (a JSON scalar or a literal union),
+ * A union of one array or tuple and scalar variants (a JSON scalar or a literal union),
  * the query-style shape. Date, generated models, and untagged objects are not scalarish.
  */
 export function scalarOrArray(
   present: readonly ModelTypeDescriptor[],
 ): ScalarOrArray | undefined {
-  const arrays = present.filter((variant): variant is ArrayTypeDescriptor => variant.kind === 'array');
-  if (arrays.length !== 1) return undefined;
-  const scalars = present.filter((variant) => variant !== arrays[0]);
+  const sequences = present.filter(
+    (variant): variant is ArrayTypeDescriptor | TupleConversionDescriptor =>
+      variant.kind === 'array' || variant.kind === 'tuple',
+  );
+  if (sequences.length !== 1) return undefined;
+  const scalars = present.filter((variant) => variant !== sequences[0]);
   if (!scalars.every(isScalarishDescriptor)) return undefined;
-  return { array: arrays[0], scalars };
+  return { sequence: sequences[0], scalars };
+}
+
+/**
+ * The sequence branch of a scalar-or-array union, converted by item and with no guard: the union tests
+ * `Array.isArray` once. A tuple converts each position as it does outside the union.
+ */
+export function emitSequenceBranch(
+  sequence: ScalarOrArray['sequence'],
+  expression: string,
+  items: SequenceItems,
+): string {
+  return sequence.kind === 'array'
+    ? emitArrayItems(sequence.item, expression, items)
+    : emitTupleItems(sequence, expression, items);
 }
 
 /**

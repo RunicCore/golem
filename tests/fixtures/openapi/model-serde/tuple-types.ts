@@ -8,6 +8,6 @@ const itinerary = decodeGeneratedModel(ItineraryModel, {
 });
 const stops: [] | [string] | [string, ...Date[]] = itinerary.stops;
 const leg: [] | [string] | [string, Date] = itinerary.leg;
-const held: [] | [string] = itinerary.held;
+const held: [] | [Date] = itinerary.held;
 
 void stops; void leg; void held;

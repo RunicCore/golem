@@ -1,7 +1,8 @@
 /**
  * The layout of generated tuple and array conversions, shared by the codec walkers (stringify, decode, encode) and the
- * model walker. A walker gives the conversion of one item; this module owns the guard, the loop, the position of each
- * item and the error path of an item. It imports no walker.
+ * model walker. A walker gives the conversion of one item; this module owns the loop, the position of each item and the
+ * error path of an item. The guard sits only in `emitArrayConversion` and `emitTupleConversion`; `emitArrayItems` and
+ * `emitTupleItems` have none. It imports no walker.
  */
 import type { ModelTypeDescriptor } from '../model.js';
 
@@ -50,7 +51,7 @@ const ITEM = 'item';
 const INDEX = 'index';
 const TUPLE = 'tuple';
 /** What a `json` tuple writes for an item past the declared items, and for an item that needs no conversion. */
-const JSON_SCALAR_ITEM = `stringifyJsonScalar(${ITEM} as never)`;
+export const JSON_SCALAR_ITEM = `stringifyJsonScalar(${ITEM} as never)`;
 
 /** A name or a chain of property and index reads. Any other expression needs parentheses before `as`. */
 const ACCESS_CHAIN = /^[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*|\[(?:\d+|"[^"\\]*"|'[^'\\]*')\])*$/;
@@ -86,12 +87,22 @@ export function emitArrayItems(item: ModelTypeDescriptor, expression: string, it
 }
 
 /**
- * A whole tuple conversion, with its guard. One loop over the input keeps its exact length: a short input stays short
- * and extra items stay. The loop callback selects the conversion by position; only items that change get a branch.
- * A tuple with no change is a `slice`. A callback finds the region of an item (before the rest, the rest, after the
- * rest) with `index` and `tuple`, and declares each one only when its own text reads it.
+ * A whole tuple conversion, with its guard: the items of `emitTupleItems` for an array, the input for anything else.
+ * An unchanged `value` tuple is a `slice`; a `json` tuple writes its items, or a non-array as a scalar.
  */
 export function emitTupleConversion(descriptor: TupleConversionDescriptor, expression: string, items: SequenceItems): string {
+  const converted = emitTupleItems(descriptor, expression, items);
+  if (items.output === 'json') return `(Array.isArray(${expression}) ? ${converted} : stringifyJsonScalar(${expression} as never))`;
+  return `Array.isArray(${expression}) ? ${converted === expression ? `(${expression} as readonly unknown[]).slice()` : converted} : ${expression}`;
+}
+
+/**
+ * The items of a tuple, with no guard. One loop over the input keeps its exact length: a short input stays short
+ * and extra items stay. The loop callback selects the conversion by position; only items that change get a branch.
+ * It returns `expression` when no item changes (`value` output). A callback finds the region of an item (before the
+ * rest, the rest, after the rest) with `index` and `tuple`, and declares each one only when its own text reads it.
+ */
+export function emitTupleItems(descriptor: TupleConversionDescriptor, expression: string, items: SequenceItems): string {
   const json = items.output === 'json';
   const unchanged = json ? JSON_SCALAR_ITEM : ITEM;
   let usesIndex = false;
@@ -159,21 +170,16 @@ export function emitTupleConversion(descriptor: TupleConversionDescriptor, expre
     // An item that throws runs under its index. A loop that selects by position gets the index and the array.
     const direction = JSON.stringify(items.paths);
     const array = asArray(expression);
-    const converted = usesIndex
+    return usesIndex
       ? `convertModelTupleItems(${direction}, (${usesTuple ? `${params}, ${TUPLE}` : params}) => ${selected}, ${array})`
       : `convertModelItems(${direction}, ${singleCallConverter(selected, ITEM) ?? `(${ITEM}) => (${selected})`}, ${array})`;
-    return `Array.isArray(${expression}) ? ${converted} : ${expression}`;
   }
   if (json) {
     const write = `(${params}) => ${selected}`;
-    const written = usesTuple
+    return usesTuple
       ? `((${TUPLE}: readonly unknown[]) => stringifyJsonArray(${TUPLE}, ${write}))(${expression} as readonly unknown[])`
       : `stringifyJsonArray(${expression} as ArrayLike<unknown>, ${write})`;
-    return `(Array.isArray(${expression}) ? ${written} : stringifyJsonScalar(${expression} as never))`;
   }
-  const array = `(${expression} as readonly unknown[])`;
-  const copied = selected === unchanged
-    ? `${array}.slice()`
-    : `${array}.map((${usesTuple ? `${params}, ${TUPLE}` : params}) => ${selected})`;
-  return `Array.isArray(${expression}) ? ${copied} : ${expression}`;
+  if (selected === unchanged) return expression;
+  return `(${expression} as readonly unknown[]).map((${usesTuple ? `${params}, ${TUPLE}` : params}) => ${selected})`;
 }
