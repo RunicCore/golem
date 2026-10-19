@@ -682,6 +682,24 @@ async function assertValidatorJudges(built: Built, row: Row): Promise<void> {
   }
 }
 
+/**
+ * Each fast check of the generated validators module (`is_X`) gives the answer of its validator (`validate_X`) on every
+ * input of the row, accepted and rejected (spec 5.1 rule 1).
+ */
+async function assertFastChecksAgree(built: Built, row: Row): Promise<void> {
+  const validators = requireRecord(await import(pathToFileURL(path.join(built.output, 'dist/validators.generated.js')).href), `generated ${row.shape} validators`);
+  const inputs: readonly unknown[] = [...row.accepted.map(({ wire }) => wire), ...row.rejected, ...(row.rejectedOnWire ?? [])];
+  const pairs = Object.entries(validators).flatMap(([name, isValid]) => {
+    const validate = validators[`validate_${name.slice('is_'.length)}`];
+    return name.startsWith('is_') && typeof isValid === 'function' && typeof validate === 'function' ? [{ name, isValid, validate }] : [];
+  });
+  assert.ok(pairs.length > 0, 'the model roots have fast checks');
+  const disagreeing = pairs.flatMap(({ name, isValid, validate }) => inputs
+    .filter(input => isValid(input) !== (validate(input, true).length === 0))
+    .map(input => ({ name, input })));
+  assert.deepEqual(disagreeing, []);
+}
+
 function assertCodecRejects(built: Built, wire: Wire): void {
   assert.throws(
     () => built.codec.fromWireFormat(wire, { construct: built.construct }),
@@ -725,6 +743,7 @@ for (const row of rows) {
     warnings.forEach((warning, index) => assert.match(built.warnings[index] ?? '', warning));
     await assertPathsAgree(built, row.accepted);
     await assertValidatorJudges(built, row);
+    await assertFastChecksAgree(built, row);
   });
 
   if (row.accepted.length > 0) {

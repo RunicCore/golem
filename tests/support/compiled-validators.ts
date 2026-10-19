@@ -102,20 +102,28 @@ export async function compileValidationPlan(
 }
 
 /**
- * What a generated codec module needs to run on a plan's validators: the `validatorName` option for the emitter,
- * and the scope that holds the validators under those names.
+ * What a generated codec module needs to run on a plan's validators: the `validatorName` and, with `fastPath`, the
+ * `fastCheckName` options for the emitter, and the scope that holds the validators and fast checks under those names.
  */
 export async function compileValidationPlanBinding(
   plan: { readonly schemas: Readonly<Record<string, object | boolean>> },
   input: Omit<CompiledValidatorInput, 'roots'> = {},
-): Promise<{ readonly validatorName: (id: string) => string; readonly scope: Readonly<Record<string, Validator>> }> {
+): Promise<{
+  readonly validatorName: (id: string) => string;
+  readonly fastCheckName: (id: string) => string | undefined;
+  readonly scope: Readonly<Record<string, Validator>>;
+  readonly fastScope: Readonly<Record<string, FastCheck>>;
+}> {
   const compiled = await compileValidatorModule({ ...input, roots: planRoots(plan) });
+  const fastNames = new Map(Object.keys(compiled.fastByRoot).map(root => [root, `is_${(compiled.exports.get(root) ?? '').slice('validate_'.length)}`] as const));
   return {
     validatorName: id => {
       const name = compiled.exports.get(id);
       if (name === undefined) throw new Error(`No validator for ${id}`);
       return name;
     },
+    fastCheckName: id => fastNames.get(id),
     scope: compiled.byExport,
+    fastScope: Object.fromEntries([...fastNames].map(([root, name]) => [name, compiled.fastByRoot[root]] as const)),
   };
 }
