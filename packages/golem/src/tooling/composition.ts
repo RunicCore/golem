@@ -97,7 +97,7 @@ function combineDescriptors(children: readonly ModelTypeDescriptor[]): ModelType
   if (distinct.some((child) => child.kind === 'never')) return NEVER;
   if (distinct.some(isNullableUnion)) return combineNullable(distinct);
   const narrowed = narrowUnions(distinct);
-  if (narrowed) return narrowed.includes(NEVER) ? NEVER : combineDescriptors(narrowed);
+  if (narrowed) return combineDescriptors(narrowed);
   if (distinct.every((child) => child.kind === 'object')) return composeObjectDescriptors(distinct) ?? NEVER;
   const converting = distinct.filter(descriptorNeedsConversion);
   const [decider] = converting;
@@ -135,7 +135,7 @@ function combineNullable(children: readonly ModelTypeDescriptor[]): ModelTypeDes
 
 /**
  * A union keeps the variants that every other child admits (`oneOf [M, string]` and `M` give `M`); undefined when no union
- * loses a variant. A union with no admitted variant is `never`.
+ * loses a variant. Narrowing only removes variants: a union with no admitted variant stays whole for the rules after it.
  */
 function narrowUnions(children: readonly ModelTypeDescriptor[]): ModelTypeDescriptor[] | undefined {
   const others = children.filter((child) => !isPlainUnion(child));
@@ -144,10 +144,10 @@ function narrowUnions(children: readonly ModelTypeDescriptor[]): ModelTypeDescri
   const result = children.map((child) => {
     if (!isPlainUnion(child)) return child;
     const kept = child.variants.filter((variant) => others.every((other) => admits(other, variant)));
-    if (kept.length === child.variants.length) return child;
+    if (kept.length === child.variants.length || kept.length === 0) return child;
     narrowed = true;
     const [only] = kept;
-    return kept.length === 0 ? NEVER : kept.length === 1 && only ? only : { ...child, variants: kept };
+    return kept.length === 1 && only ? only : { ...child, variants: kept };
   });
   return narrowed ? result : undefined;
 }
@@ -155,12 +155,17 @@ function narrowUnions(children: readonly ModelTypeDescriptor[]): ModelTypeDescri
 /** Whether `child` admits some values of `variant`: the same conversion, the same scalar wire type, or both objects. */
 function admits(child: ModelTypeDescriptor, variant: ModelTypeDescriptor): boolean {
   if (child.kind === 'unknown' || conversionKey(child) === conversionKey(variant)) return true;
-  if (child.kind === 'object' && variant.kind === 'object') return true;
+  if (isObjectLike(child) && isObjectLike(variant)) return true;
   const wire = scalarWireKind(variant);
   return wire !== undefined && scalarWireKind(child) === wire;
 }
 
 const NULL: ModelTypeDescriptor = { kind: 'null' };
+
+/** An object on the wire: an object descriptor or a generated model. */
+function isObjectLike(descriptor: ModelTypeDescriptor): boolean {
+  return descriptor.kind === 'object' || descriptor.kind === 'generated-model';
+}
 
 function isPlainUnion(descriptor: ModelTypeDescriptor): descriptor is Extract<ModelTypeDescriptor, { readonly kind: 'union' }> {
   return descriptor.kind === 'union' && descriptor.discriminator === undefined;

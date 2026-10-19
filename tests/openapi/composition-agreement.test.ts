@@ -453,6 +453,16 @@ const rows: readonly Row[] = [
     accepted: [{ wire: { m: { x: { n: 'a' } } }, model: ({ MModel }) => ({ m: { x: construct(MModel, { n: 'a' }) } }) }],
     rejected: [{ m: { x: 'a' } }],
   },
+  {
+    shape: 'a member narrows a oneOf of a model and a string to its object variant',
+    root: 'Visit',
+    document: visitDocument(
+      { m: { allOf: [object({ x: { oneOf: [ref('M'), text] } }), object({ x: object({ n: text }) })] } },
+      { M: object({ n: text }) },
+    ),
+    accepted: [{ wire: { m: { x: { n: 'a' } } }, model: ({ MModel }) => ({ m: { x: construct(MModel, { n: 'a' }) } }) }],
+    rejected: [{ m: { x: 'a' } }],
+  },
   // A component's own properties beside its allOf are its own names, and unevaluatedProperties: false keeps them.
   {
     shape: 'a component with own properties beside allOf and unevaluatedProperties false',
