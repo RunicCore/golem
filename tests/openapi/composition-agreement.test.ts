@@ -447,8 +447,8 @@ async function forInput(wire: Wire, check: () => void | Promise<void>): Promise<
   try {
     await check();
   } catch (error) {
-    if (error instanceof Error) error.message = `input ${JSON.stringify(wire)}: ${error.message}`;
-    throw error;
+    const reason = error instanceof Error ? error.message : String(error);
+    throw new Error(`input ${JSON.stringify(wire)}: ${reason}`, { cause: error });
   }
 }
 
