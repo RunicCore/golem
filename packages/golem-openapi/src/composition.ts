@@ -113,7 +113,7 @@ function resolveObjects<S>(
   position: 'field' | 'definition',
 ): Composition<S> {
   if (!isJsonObject(schema) || !Array.isArray(schema.allOf) || schema.allOf.length === 0) return { kind: 'members' };
-  if (schema.oneOf !== undefined || schema.anyOf !== undefined || isSequence(schema)) return { kind: 'members' };
+  if (schema.oneOf !== undefined || schema.anyOf !== undefined || isSequenceSchema(schema)) return { kind: 'members' };
   const nested = reader.nested(schema, scope);
   const members = schema.allOf.map((member) => ({ member, descriptor: describe(member, nested, reader) }));
   const deciding = members.filter(({ descriptor }) => !isConstraintOnlyPart(descriptor));
@@ -262,7 +262,7 @@ function conflict(reason: string): Composition<never> {
 
 /** The message of `OPENAPI_COMPOSITION_CONVERSION_CONFLICT`, from the resolver or from the codec emitter. */
 export function conflictMessage(reason: string): string {
-  return `The allOf members convert one property differently (${reason}). Give the property one schema.`;
+  return `The allOf members convert one value in two ways (${reason}). Give that value one schema in every member.`;
 }
 
 function unsatisfiable(names: readonly NeverName[]): Composition<never> {
@@ -304,7 +304,7 @@ function objectPart<S>(schema: unknown, scope: S, reader: CompositionReader<S>, 
     visiting.delete(schema);
     return part;
   }
-  if (schema.oneOf !== undefined || schema.anyOf !== undefined || isSequence(schema)) return undefined;
+  if (schema.oneOf !== undefined || schema.anyOf !== undefined || isSequenceSchema(schema)) return undefined;
   const nested = reader.nested(schema, scope);
   const members = Array.isArray(schema.allOf) ? schema.allOf : [];
   const parts: ObjectPart<SlotChild<S>>[] = [];
@@ -427,11 +427,12 @@ function requiredNames(schema: unknown): string[] {
     : [];
 }
 
-function isSequence(schema: Readonly<Record<string, unknown>>): boolean {
-  const declared = effectiveSchemaTypes(schema).filter((type) => type !== 'null');
+/** An array or tuple schema: `type: array` (null beside it allowed), or `items` or `prefixItems` with no object keywords. */
+export function isSequenceSchema(schema: Readonly<Record<string, unknown>>): boolean {
+  const declared = Array.isArray(schema.type) ? schema.type : schema.type === undefined ? [] : [schema.type];
   if (declared.length === 0) {
     if (schema.properties || schema.additionalProperties !== undefined) return false;
     return Array.isArray(schema.prefixItems) || Boolean(schema.items);
   }
-  return declared.every((type) => type === 'array');
+  return declared.includes('array') && declared.every((type) => type === 'array' || type === 'null');
 }

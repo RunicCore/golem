@@ -372,7 +372,7 @@ The validator compiler writes the checks that generated models and SDKs run. Its
 
 ### OPENAPI_COMPOSITION_CONVERSION_CONFLICT
 
-**allOf members that convert one value in two ways.** The members of an `allOf` give one property, or the value itself, two conversions, such as `format: date-time` (a `Date`) and a `$ref` to a model. No generated value can be both. The message names the property and the schema. **Fix:** Give the property one schema in every member.
+**allOf members that convert one value in two ways.** The members of an `allOf` give one property, or the value itself, two conversions, such as `format: date-time` (a `Date`) and a `$ref` to a model. No generated value can be both. The message names the schema, and the property when the conflict is in one property. **Fix:** Give that property, or the value, one schema in every member.
 
 ### OPENAPI_COMPOSITION_PROPERTY_NEVER
 

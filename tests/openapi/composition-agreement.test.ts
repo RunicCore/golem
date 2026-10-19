@@ -723,7 +723,7 @@ for (const row of rows) {
 }
 
 /**
- * Shapes that stop generation: no object satisfies them, or two members convert one property differently. The error names
+ * Shapes that stop generation: no object satisfies them, or two members convert one value in two ways. The error names
  * its code, the schema pointer and the fix.
  */
 const stopped: readonly { readonly shape: string; readonly error: RegExp; readonly document: Record<string, unknown> }[] = [
@@ -764,7 +764,7 @@ const stopped: readonly { readonly shape: string; readonly error: RegExp; readon
   // The model path finds this conflict: the members are not objects, so the resolver keeps them.
   {
     shape: 'members that convert the value to a Date and to a model',
-    error: /OPENAPI_COMPOSITION_CONVERSION_CONFLICT: The allOf members convert one property differently \(two parts convert it differently\)/,
+    error: /schema "Visit" at #\/components\/schemas\/Visit(?=[ :]).*OPENAPI_COMPOSITION_CONVERSION_CONFLICT: The allOf members convert one value in two ways \(two parts convert it differently\)/,
     document: visitDocument({ m: { allOf: [dateTime, ref('M')] } }, { M: object({ n: text }) }),
   },
   {

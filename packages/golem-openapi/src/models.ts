@@ -20,7 +20,7 @@ import { sourceDigest } from '@exprtlabs/golem/manifest';
 import { buildCodecValidationPlan, uniqueDiagnostics } from '@exprtlabs/golem/validation-plan';
 import type { DiscriminatorValue, ModelConstraint, ModelTypeDescriptor, UnionDiscriminator } from '@exprtlabs/golem/model';
 
-import { asRecord, isJsonObject, objectEntries } from './json.js';
+import { asRecord, escapeJsonPointerToken, isJsonObject, objectEntries } from './json.js';
 import {
   compareText,
   GolemDiagnosticSeverity,
@@ -37,6 +37,7 @@ import {
   composedRequired,
   conflictMessage,
   isConstraintOnlyPart,
+  isSequenceSchema,
   joinMembers,
   neverNames,
   neverReason,
@@ -422,15 +423,6 @@ function hasAllOfMembers(schema: Readonly<Record<string, unknown>>): schema is R
  * `type: array` or `[array, null]`, or no `type` beside `prefixItems` or `items`. Without a `type`, `properties`
  * or `additionalProperties` make the schema an object, as the wire type reads it.
  */
-function isSequenceSchema(schema: Readonly<Record<string, unknown>>): boolean {
-  const declared = Array.isArray(schema.type) ? schema.type : schema.type === undefined ? [] : [schema.type];
-  if (declared.length === 0) {
-    if (schema.properties || schema.additionalProperties !== undefined) return false;
-    return Array.isArray(schema.prefixItems) || Boolean(schema.items);
-  }
-  return declared.includes('array') && declared.every((type) => type === 'array' || type === 'null');
-}
-
 /** A tuple (prefixItems) or an array (items) schema: each prefix item converts by its own schema, and `items` converts the rest. */
 function sequenceConversionDescriptor(
   schema: Readonly<Record<string, unknown>>,
@@ -613,7 +605,7 @@ function modelConversionDescriptor(
   return { kind: 'unknown' };
 }
 
-/** An allOf that no object satisfies, or whose members convert one property differently: generation stops with its code. */
+/** An allOf that no object satisfies, or whose members convert one value in two ways: generation stops with its code. */
 export class CompositionError extends Error {
   constructor(readonly code: string, message: string) {
     super(`${code}: ${message}`);
@@ -733,13 +725,22 @@ function modelResolver(reference: string, definitions: ReadonlyMap<string, Model
   };
 }
 
-/** A conversion conflict that the model path finds carries the resolver's code, as one that the codec emitter finds does. */
-function withConflictCode(emit: () => string): string {
+/** A conversion conflict that an emitter finds carries the resolver's code. */
+function codedConflict(thrown: unknown): unknown {
+  return thrown instanceof CompositionConflictError
+    ? new CompositionError(COMPOSITION_CONVERSION_CONFLICT, conflictMessage(thrown.reason))
+    : thrown;
+}
+
+/** A conversion conflict of the model path carries its code and names the component whose field it converts. */
+function withConflictCode(owner: string, emit: () => string): string {
   try {
     return emit();
   } catch (thrown) {
-    if (thrown instanceof CompositionConflictError) throw new CompositionError(COMPOSITION_CONVERSION_CONFLICT, conflictMessage(thrown.reason));
-    throw thrown;
+    if (!(thrown instanceof CompositionConflictError)) throw thrown;
+    const coded = new CompositionError(COMPOSITION_CONVERSION_CONFLICT, conflictMessage(thrown.reason));
+    const where = `schema ${JSON.stringify(owner)} at #/components/schemas/${escapeJsonPointerToken(owner)}`;
+    throw new LocatedError(`${where}: ${coded.message}`, [componentOrigin('schemas', owner, where)], { cause: coded });
   }
 }
 
@@ -748,8 +749,9 @@ function modelFromJSONExpression(
   expression: string,
   definitions: ReadonlyMap<string, ModelDefinition>,
   env: ModelResolveEnv,
+  owner: string,
 ): string {
-  return withConflictCode(() => emitModelFromJSON(
+  return withConflictCode(owner, () => emitModelFromJSON(
     modelConversionDescriptor(schema, definitions, env, 'from'),
     expression,
     (reference) => modelResolver(reference, definitions),
@@ -757,9 +759,15 @@ function modelFromJSONExpression(
   ));
 }
 
-function modelInitExpression(schema: unknown, expression: string, definitions: ReadonlyMap<string, ModelDefinition>, env: ModelResolveEnv): string {
+function modelInitExpression(
+  schema: unknown,
+  expression: string,
+  definitions: ReadonlyMap<string, ModelDefinition>,
+  env: ModelResolveEnv,
+  owner: string,
+): string {
   const descriptor = modelConversionDescriptor(schema, definitions, env, 'from');
-  return withConflictCode(() => emitModelFromInit(descriptor, expression, reference => modelResolver(reference, definitions)));
+  return withConflictCode(owner, () => emitModelFromInit(descriptor, expression, reference => modelResolver(reference, definitions)));
 }
 
 function modelToJSONExpression(
@@ -767,8 +775,9 @@ function modelToJSONExpression(
   expression: string,
   definitions: ReadonlyMap<string, ModelDefinition>,
   env: ModelResolveEnv,
+  owner: string,
 ): string {
-  return withConflictCode(() => emitModelToJSON(
+  return withConflictCode(owner, () => emitModelToJSON(
     modelConversionDescriptor(schema, definitions, env, 'to'),
     expression,
     (reference) => {
@@ -938,7 +947,7 @@ function checkComposition(
   const named = `schema ${JSON.stringify(schemaName)}`;
   const visit = (schema: unknown, scope: ModelResolveEnv, position: 'field' | 'definition', pointer: string): void => {
     if (!isJsonObject(schema) || directComponentSchemaRef(schema, withSchemaBase(scope, schema))) return;
-    const where = `${named} at #/components/schemas/${pointerToken(schemaName)}${pointer}`;
+    const where = `${named} at #/components/schemas/${escapeJsonPointerToken(schemaName)}${pointer}`;
     if (hasAllOfMembers(schema)) {
       let composition: Composition<ModelResolveEnv>;
       try {
@@ -953,7 +962,7 @@ function checkComposition(
       }
     }
     const nested = withSchemaBase(scope, schema);
-    for (const [name, child] of objectEntries(schema.properties)) visit(child, nested, 'field', `${pointer}/properties/${pointerToken(name)}`);
+    for (const [name, child] of objectEntries(schema.properties)) visit(child, nested, 'field', `${pointer}/properties/${escapeJsonPointerToken(name)}`);
     for (const keyword of ['items', 'additionalProperties', 'unevaluatedProperties'] as const) {
       visit(schema[keyword], nested, 'field', `${pointer}/${keyword}`);
     }
@@ -966,10 +975,6 @@ function checkComposition(
 }
 
 /** One JSON Pointer token. */
-function pointerToken(name: string): string {
-  return name.replace(/~/g, '~0').replace(/\//g, '~1');
-}
-
 export function collectOpenApiModelDefinitions(document: unknown, resources?: ResourceIndex): {
   definitions: Map<string, ModelDefinition>;
   ordered: ModelDefinition[];
@@ -1598,7 +1603,7 @@ export function generateOpenApiModelArtifacts(
   for (const group of groups) {
     const groupDefinitions = definitionsByGroup.get(group.id) ?? [];
     const initializerCalls = groupDefinitions.flatMap((definition) =>
-      [...definition.properties.values()].map((schema) => modelInitExpression(schema, 'value', definitions, sharedModelEnv)),
+      [...definition.properties.values()].map((schema) => modelInitExpression(schema, 'value', definitions, sharedModelEnv, definition.schemaName)),
     ).join('\n');
     for (const match of initializerCalls.matchAll(/\binitialize([A-Za-z_$][\w$]*)\(/g)) {
       const initializerName = match[1];
@@ -1688,7 +1693,7 @@ export function generateOpenApiModelArtifacts(
       addImport(`./_${baseGroupId}.js`, `encode${definition.baseName}`);
     }
     const initializerCalls = groupDefinitions.flatMap((definition) =>
-      [...definition.properties.values()].map((schema) => modelInitExpression(schema, 'value', definitions, sharedModelEnv)),
+      [...definition.properties.values()].map((schema) => modelInitExpression(schema, 'value', definitions, sharedModelEnv, definition.schemaName)),
     ).join('\n');
     for (const match of initializerCalls.matchAll(/\binitialize([A-Za-z_$][\w$]*)\(/g)) {
       const initializerName = match[1];
@@ -1771,7 +1776,8 @@ function unionConversion(
     return direction === 'fromJSON'
       ? emitModelFromJSON(descriptor, 'value', resolve, TEMPORAL_SERDE)
       : emitModelFromInit(descriptor, 'value', resolve);
-  } catch (error) {
+  } catch (thrown) {
+    const error = codedConflict(thrown);
     const message = error instanceof Error ? error.message : String(error);
     const named = `schema ${JSON.stringify(definition.schemaName)}`;
     throw new LocatedError(
@@ -1797,9 +1803,7 @@ function emitSchemaCodecRuntime(
     return emitCodecRuntime(graph, options);
   } catch (thrown) {
     // A conversion conflict that the emitter finds carries the resolver's code.
-    const error = thrown instanceof CompositionConflictError
-      ? new CompositionError(COMPOSITION_CONVERSION_CONFLICT, conflictMessage(thrown.reason))
-      : thrown;
+    const error = codedConflict(thrown);
     const message = error instanceof Error ? error.message : String(error);
     const failing = graph.topo().find((node) => {
       try {
@@ -1860,7 +1864,7 @@ export function generateModels(
   const reservedMembers = new Set(RESERVED_MODEL_MEMBERS);
   const sharedModelEnv = modelEnv(document, undefined, undefined, analysis.resources, analysis.selections, analysis.dates);
   const usesDate = ordered.some(definition => [...definition.properties.values(), definition.additionalProperties].some(schema => /\bDate\b/.test(modelFieldType(schema, definitions, sharedModelEnv))));
-  const initializerCalls = ordered.flatMap(definition => [...definition.properties.values()].map(schema => modelInitExpression(schema, 'value', definitions, sharedModelEnv))).join('\n');
+  const initializerCalls = ordered.flatMap(definition => [...definition.properties.values()].map(schema => modelInitExpression(schema, 'value', definitions, sharedModelEnv, definition.schemaName))).join('\n');
   const schemaGraph = analysis.schemaGraph;
   const emittedSchemaGraph = helpers.graphNodeIds
     ? schemaGraphView(schemaGraph, helpers.graphNodeIds, helpers.dependencyNodeIds)
@@ -1934,7 +1938,7 @@ export function generateModels(
       modelFieldDeclaration(name, schema, definition.required.has(name), definitions, fieldEnv),
     );
     const assignments = fields.map(([name, schema]) =>
-      `    if (${modelPropertyCondition('values', name)}) ${modelPropertyAssignment('this', name, `(${modelInitExpression(schema, `values${modelPropertyAccess(name)}`, definitions, fieldEnv)}) as ${modelFieldType(schema, definitions, fieldEnv)}`)}`,
+      `    if (${modelPropertyCondition('values', name)}) ${modelPropertyAssignment('this', name, `(${modelInitExpression(schema, `values${modelPropertyAccess(name)}`, definitions, fieldEnv, definition.schemaName)}) as ${modelFieldType(schema, definitions, fieldEnv)}`)}`,
     );
     const fieldHelpers: string[] = [];
     const fieldHelperName = (direction: 'encode' | 'decode') => (index: number): string => {
@@ -1946,7 +1950,7 @@ export function generateModels(
       const input = `model${modelPropertyAccess(name)}`;
       const converted = rootFieldConversion(
         fieldHelpers, fieldHelperName('encode'), 'serialize', name, input,
-        (value) => modelToJSONExpression(schema, value, definitions, fieldEnv),
+        (value) => modelToJSONExpression(schema, value, definitions, fieldEnv, definition.schemaName),
         // The guard on the property excludes an undefined value before the conversion runs.
         `Exclude<${className}${modelPropertyAccess(name)}, undefined>`,
       );
@@ -1958,14 +1962,14 @@ export function generateModels(
     const additionalConverter = (direction: 'from' | 'init' | 'to'): string => {
       if (!isJsonObject(definition.additionalProperties)) return '';
       const emit = direction === 'from' ? modelFromJSONExpression : direction === 'init' ? modelInitExpression : modelToJSONExpression;
-      const expression = emit(definition.additionalProperties, 'value', definitions, fieldEnv);
+      const expression = emit(definition.additionalProperties, 'value', definitions, fieldEnv, definition.schemaName);
       return expression === 'value' ? '' : `, (value) => ${expression}`;
     };
     const decodeLines = [...allProperties].flatMap(([name, schema]) => {
       const expression = `value${modelPropertyAccess(name)}`;
       const rootConverted = rootFieldConversion(
         fieldHelpers, fieldHelperName('decode'), 'deserialize', name, expression,
-        (input) => modelFromJSONExpression(schema, input, definitions, fieldEnv),
+        (input) => modelFromJSONExpression(schema, input, definitions, fieldEnv, definition.schemaName),
         'unknown',
       );
       // `result` already contains every own enumerable input property.  Keep
