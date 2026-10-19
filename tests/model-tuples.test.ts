@@ -26,7 +26,7 @@ interface BuiltTuple {
   readonly codec: ReturnType<typeof requireObjectCodec>;
 }
 
-/** Builds the tuple model with `validation` and loads it; the codec is the one the registry holds right after the load. */
+/** Builds the tuple model with `validation` and loads it. */
 async function buildTuple(scope: FixtureScope, name: string, validation: boolean): Promise<BuiltTuple> {
   const { root, sourceRoot } = tupleModelProject(scope, name);
   fs.writeFileSync(path.join(sourceRoot, 'tuple.model.ts'), readFixture('models/model-tuples/tuple.model.ts'));
@@ -36,14 +36,13 @@ async function buildTuple(scope: FixtureScope, name: string, validation: boolean
   return { Tuple: loaded.Tuple, codec: requireObjectCodec(generatedCodecIdFromRoot(root, 'TTuple')) };
 }
 
-// The tests that only read the tuple model with validation off share one build of it. Both builds of the tuple model have one codec id,
-// and the registry keeps the codec of the model that loaded last, so the first test loads this build after its validating one.
+// The tests that only read the tuple model with validation off share one build of it.
 const fileScope = fileFixtureScope();
 const trustedTuple = onceShared(() => buildTuple(fileScope, 'tuple-trusted', false));
 
 test('generated optional and rest tuples retain exact lengths through every serde direction with validation on and off', async t => {
-  for (const validation of [true, false]) {
-    const { Tuple, codec } = validation ? await buildTuple(t, 'tuple-validated', true) : await trustedTuple();
+  for (const validation of [false, true]) {
+    const { Tuple, codec } = await buildTuple(t, `tuple-${validation ? 'validated' : 'trusted'}`, validation);
     const omitted = new Tuple({ required: ['required', 9], maybe: ['x'], rest: ['prefix', true] });
     const full = new Tuple({ required: ['required', 9], maybe: ['x', 2], nested: ['inner'], rest: ['prefix', 1, 2, true] });
     const options = { validate: validation };
