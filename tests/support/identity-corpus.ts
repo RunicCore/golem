@@ -71,22 +71,23 @@ const MOBX_CASES: ReadonlySet<string> = new Set([
 const SDK_SPEC = /\.ya?ml$/;
 
 /**
- * The cases whose claim is a rejection: generation or the rewrite scan ends in an error, and the diagnostics file holds a `generate error`
- * or `rewrite error` line. Every other case must write none, so a broken fixture cannot pass on an error string that both versions share.
+ * The cases whose claim is a rejection, each with a fragment of the message it claims: generation or the rewrite scan ends in an error,
+ * and the diagnostics file holds a `generate error` or `rewrite error` line with the fragment. Every other case must write no such line,
+ * and a setup fault in a rejection case (a missing file, an unresolved module) does not carry its fragment, so none can pass as the claim.
  */
-export const EXPECTED_REJECTIONS: ReadonlySet<string> = new Set<string>([
-  'model-composition/a-projected-child-applies-the-containing-model-allowany-policy',
-  'model-composition/anonymous-nested-imodel-declarations-fail-with-an-actionable-diagnostic',
-  'model-composition/generic-model-templates-require-a-concrete-named-declaration',
-  'model-composition/imodel-exposes-fields-and-rejects-root-unions-before-emitting-artifacts',
-  'controller/does-not-treat-a-project-local-string-function-as-a-swagger-primitive-construc',
-  'controller/keeps-nest-runtime-status-authoritative-over-apinocontentresponse',
-  'controller/rejects-a-swagger-schema-that-conflicts-with-an-authoritative-imodel-wire-cont',
-  'controller/rejects-a-swagger-success-status-that-contradicts-nest-post-runtime-status',
-  'controller/rejects-conflicting-static-routes-with-a-structured-diagnostic',
-  'controller/rejects-stream-responses-without-explicit-swagger-content',
-  'controller/rejects-unresolved-local-component-references-in-raw-swagger-response-metadata',
-]);
+export const EXPECTED_REJECTIONS: Readonly<Record<string, string>> = {
+  'model-composition/a-projected-child-applies-the-containing-model-allowany-policy': 'RUNM1011: Model TContainer contains any',
+  'model-composition/anonymous-nested-imodel-declarations-fail-with-an-actionable-diagnostic': 'RUNM1053: Nested IModel definitions need a named, exported declaration',
+  'model-composition/generic-model-templates-require-a-concrete-named-declaration': 'RUNM1057: IModel declarations must have concrete fields',
+  'model-composition/imodel-exposes-fields-and-rejects-root-unions-before-emitting-artifacts': 'RUNM1052: Root IModel unions are unsupported',
+  'controller/does-not-treat-a-project-local-string-function-as-a-swagger-primitive-construc': 'NEST1503: Swagger property value type conflicts',
+  'controller/keeps-nest-runtime-status-authoritative-over-apinocontentresponse': 'NEST1311: Swagger success response status 204 conflicts',
+  'controller/rejects-a-swagger-schema-that-conflicts-with-an-authoritative-imodel-wire-cont': 'NEST1503: Swagger schema at response.200.application/json.properties.id.type is "number"',
+  'controller/rejects-a-swagger-success-status-that-contradicts-nest-post-runtime-status': 'NEST1311: Swagger success response status 200 conflicts',
+  'controller/rejects-conflicting-static-routes-with-a-structured-diagnostic': 'NEST1306: Route GET /api/conflicts/same is declared more than once',
+  'controller/rejects-stream-responses-without-explicit-swagger-content': 'NEST1310: File, stream, and Observable responses require explicit Swagger content',
+  'controller/rejects-unresolved-local-component-references-in-raw-swagger-response-metadata': 'NEST1505: OpenAPI metadata references missing local schema component',
+};
 
 /** A fixture directory that discovery finds and leaves out, with the one reason it cannot run on its own. */
 const EXCLUDED: Readonly<Record<string, string>> = {
@@ -236,7 +237,7 @@ export const IDENTITY_CASES: readonly IdentityCase[] = (() => {
   if (duplicate) throw new Error(`The identity corpus holds the case ${duplicate.name} twice`);
   const unknownMobx = [...MOBX_CASES].filter(name => !cases.some(item => item.name === name));
   if (unknownMobx.length > 0) throw new Error(`The identity corpus generates cases with mobx that it does not hold: ${unknownMobx.join(', ')}`);
-  const unknownRejections = [...EXPECTED_REJECTIONS].filter(name => !cases.some(item => item.name === name));
+  const unknownRejections = Object.keys(EXPECTED_REJECTIONS).filter(name => !cases.some(item => item.name === name));
   if (unknownRejections.length > 0) throw new Error(`The identity corpus expects rejections from cases that it does not hold: ${unknownRejections.join(', ')}`);
   const unknown = Object.keys(COMPILE_EXCLUDED).filter(name => !cases.some(item => item.name === name && item.kind === 'model'));
   if (unknown.length > 0) throw new Error(`The identity corpus leaves model cases out of the compile that it does not hold: ${unknown.join(', ')}`);

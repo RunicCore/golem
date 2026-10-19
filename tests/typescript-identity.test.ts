@@ -111,8 +111,10 @@ function filesOfCase(shards: readonly ShardRun[], version: string, name: string)
   return new Map([...shard.artifacts].filter(([file]) => file.startsWith(folder)).map(([file, content]) => [file.slice(folder.length), content]));
 }
 
-/** Whether the diagnostics file holds a stage that ended in an error, rather than a diagnostic the stage reported. */
-const REJECTION_LINE = /^(?:generate|rewrite) error: /m;
+/** The lines of a diagnostics file where a stage ended in an error, rather than reporting a diagnostic. */
+function rejectionLines(diagnostics: string | undefined): string[] {
+  return (diagnostics ?? '').split('\n').filter(line => /^(?:generate|rewrite) error: /.test(line));
+}
 
 /** The first line where the two texts differ, with two lines before it; a file that one version did not write shows as missing. */
 function diffHunk(seven: string | undefined, six: string | undefined): string {
@@ -149,16 +151,26 @@ async function createCompileTree(shards: readonly ShardRun[]): Promise<{ readonl
     include: ['*/src/**/*.ts'],
   });
   const casesByFolder = new Map<string, string>();
+  const withoutGeneratedFiles: string[] = [];
   for (const shard of shards) {
     for (const project of shard.projects) {
       const item = IDENTITY_CASES.find(candidate => candidate.name === project.name);
       assert.ok(item, `${project.name} is a case of the corpus`);
       const generated = [...filesOfCase(shards, '6', item.name).keys()].some(file => file.startsWith(`${GENERATED}${path.sep}`));
-      if (!isCompiled(item) || !generated) continue;
+      if (!isCompiled(item)) continue;
+      if (!generated) {
+        withoutGeneratedFiles.push(item.name);
+        continue;
+      }
       fs.cpSync(path.join(project.root, 'src'), path.join(root, caseFolder(item.name), 'src'), { recursive: true });
       casesByFolder.set(caseFolder(item.name), item.name);
     }
   }
+  // A compiled model case may have no generated file only when it claims a rejection; then every other one is in the compile.
+  const unexpected = withoutGeneratedFiles.filter(name => !(name in EXPECTED_REJECTIONS));
+  assert.deepEqual(unexpected, [], 'a model case that wrote no generated file on TypeScript 6 claims a rejection');
+  const expectedCount = IDENTITY_CASES.filter(isCompiled).length - withoutGeneratedFiles.length;
+  assert.equal(casesByFolder.size, expectedCount, 'the compile holds every model case that is not excluded and did not claim a rejection');
   // The SDK-only wire claim has no model for the generators, so it is no case of the corpus. Its check joins the compile with the SDK
   // generated here with mobx on; the SDK generator loads no TypeScript, so this one run serves both versions.
   const sdkSource = path.join(root, caseFolder(SDK_ONLY_WIRE_CLAIM), 'src');
@@ -202,9 +214,12 @@ if (!typescript6Root) {
       for (const [version, files] of [['7', sevenFiles], ['6', sixFiles]] as const) {
         assert.ok([...files].some(([file, content]) => file !== DIAGNOSTICS || content !== ''), `${item.name} wrote no artifact on TypeScript ${version}`);
       }
-      // Only the cases that claim a rejection may end in one; for the others the error would pass on a message that both versions share.
+      // Only the cases that claim a rejection end in one, and each ends in the message it claims, on both versions.
+      const claimed = EXPECTED_REJECTIONS[item.name];
       for (const [version, files] of [['7', sevenFiles], ['6', sixFiles]] as const) {
-        assert.equal(REJECTION_LINE.test(files.get(DIAGNOSTICS) ?? ''), EXPECTED_REJECTIONS.has(item.name), `${item.name} ${EXPECTED_REJECTIONS.has(item.name) ? 'is expected to end in an error' : 'ended in an error'} on TypeScript ${version}:\n${files.get(DIAGNOSTICS)}`);
+        const lines = rejectionLines(files.get(DIAGNOSTICS));
+        const matches = claimed === undefined ? lines.length === 0 : lines.some(line => line.includes(claimed));
+        assert.ok(matches, `${item.name} ${claimed === undefined ? 'ended in an error' : `did not end in the error "${claimed}"`} on TypeScript ${version}:\n${files.get(DIAGNOSTICS)}`);
       }
       const difference = describeDifference(item.name, sevenFiles, sixFiles);
       assert.ok(difference === '', difference);
@@ -213,7 +228,6 @@ if (!typescript6Root) {
   test('the files that TypeScript 6 generated type-check in one TypeScript 6 compile', async t => {
     const { six } = await generateOnce();
     const { root, casesByFolder } = await createCompileTree(six);
-    assert.ok(casesByFolder.size > 0, 'the compile holds at least one model case');
     t.diagnostic(`${casesByFolder.size} cases in the compile`);
     const tsc = path.join(resolveTypeScript(typescript6Root).packageDir, 'bin/tsc');
     const result = await command(root, process.execPath, [tsc, '-p', root, '--pretty', 'false'], { allowFailure: true });
