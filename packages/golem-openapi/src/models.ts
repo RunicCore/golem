@@ -682,8 +682,13 @@ function objectCompositionType(
   const slots = Object.entries(composition.slots);
   const fields = slots.map(([name, child]) => `${propertyName(name)}${required.has(name) ? '' : '?'}: ${childType(child)}`);
   const { extra } = composition;
-  // An index signature holds every property, so it is `unknown` beside properties, as the own-keyword branch renders it.
-  if (extra.mode === 'values') fields.push(`[key: string]: ${slots.length ? 'unknown' : childType(extra.child)}`);
+  if (extra.mode === 'values') {
+    // An index signature holds every property: it names the value type when each property has it, else `unknown`.
+    const key = JSON.stringify(extra.child.descriptor);
+    const uniform = slots.every(([, child]) => JSON.stringify(child.descriptor) === key);
+    const optional = slots.some(([name]) => !required.has(name));
+    fields.push(`[key: string]: ${uniform ? `${childType(extra.child)}${optional ? ' | undefined' : ''}` : 'unknown'}`);
+  }
   return `{ ${fields.join('; ')} }${composition.nullable ? ' | null' : ''}`;
 }
 
