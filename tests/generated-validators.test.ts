@@ -260,7 +260,7 @@ test('generated object codecs close nested schemas and keep first/all and contex
   writeModelGolemYaml(value.root, { mobx: false, validation: true });
   await compile(value.root);
   const generated = generatedModelFiles(value.root).filter(item => item.path.endsWith('.ts')).map(item => item.content).join('\n');
-  assert.match(generated, /\bisValidModelValueFast\(value, options, is_(\w+_[0-9a-f]{8}), validate_\1, "\1"\)/, 'object codecs call the fast check, then the validator, they import');
+  assert.match(generated, /\(options\?\.validationContext === undefined && is_(\w+_[0-9a-f]{8})\(value\)\) \|\| isValidModelValue\(value, options, validate_\1, "\1"\)/, 'object codecs call the fast check, then the validator, they import');
   assert.match(generated, /import \{ [^}]*\bvalidate_\w+_[0-9a-f]{8}[^}]*\} from "[^"]*models\.validators\.generated\.js";/, 'a model file imports the generated validators');
 
   const validatorsPath = builtValidators(value);

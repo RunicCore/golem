@@ -1599,12 +1599,20 @@ function validatorReference(ctx: EmitCtx, id: string): string {
   return ctx.validatorName(id);
 }
 
+/**
+ * True when the fast check `fast` answers for `value`: no validation context decides instead (spec 7.1). The test is
+ * written in each model's function, not in a shared runtime helper, so each call of a fast check sees one check only
+ * and V8 can inline it.
+ */
+function fastPasses(fast: string, value: string): string {
+  return `options?.validationContext === undefined && ${fast}(${value})`;
+}
+
 /** Whether `value` passes the validator of `reference`, from the fast check first when the root has one (spec 7.1). */
 function validModelValueCall(ctx: EmitCtx, reference: string): string {
   const fast = ctx.fastCheckName?.(reference);
-  return fast === undefined
-    ? `isValidModelValue(value, options, ${validatorReference(ctx, reference)}, ${JSON.stringify(reference)})`
-    : `isValidModelValueFast(value, options, ${fast}, ${validatorReference(ctx, reference)}, ${JSON.stringify(reference)})`;
+  const slow = `isValidModelValue(value, options, ${validatorReference(ctx, reference)}, ${JSON.stringify(reference)})`;
+  return fast === undefined ? slow : `(${fastPasses(fast, 'value')}) || ${slow}`;
 }
 
 function emitModelGuard(
@@ -1620,9 +1628,8 @@ function emitModelGuard(
     : wire ? `${node.codecId}#wire` : node.codecId;
   // A valid value passes the fast check first, unless a validation context decides (spec 7.1).
   const fast = ctx.fastCheckName?.(reference);
-  return fast === undefined
-    ? `assertModelValue(${value}, options, ${validatorReference(ctx, reference)}, ${JSON.stringify(reference)}, IssueRepresentation.${representation}, IssueSource.${ctx.issueSource});`
-    : `assertModelValueFast(${value}, options, ${fast}, ${validatorReference(ctx, reference)}, ${JSON.stringify(reference)}, IssueRepresentation.${representation}, IssueSource.${ctx.issueSource});`;
+  const slow = `assertModelValue(${value}, options, ${validatorReference(ctx, reference)}, ${JSON.stringify(reference)}, IssueRepresentation.${representation}, IssueSource.${ctx.issueSource});`;
+  return fast === undefined ? slow : `if (!(${fastPasses(fast, value)})) ${slow}`;
 }
 
 function emitNodeRuntime(

@@ -352,38 +352,6 @@ export function assertModelValue(
   if (issues.length > 0) validationFailure(issues);
 }
 
-/** A generated fast check: true exactly when the model's validator reports no issue, with no issue built. */
-export type FastModelCheck = (value: unknown) => boolean;
-
-/**
- * `isValidModelValue` that answers a valid value from the fast check. A validation context decides alone, and a
- * value the fast check rejects takes the validator's route, so the answer is the same (spec 7.1).
- */
-export function isValidModelValueFast(
-  value: unknown,
-  options: ValidateOptions | undefined,
-  isValid: FastModelCheck,
-  validator: Validator,
-  reference: string,
-): boolean {
-  if (options?.validationContext === undefined && isValid(value)) return true;
-  return isValidModelValue(value, options, validator, reference);
-}
-
-/** `assertModelValue` that lets a valid value through from the fast check; the issues, error and messages are the validator's (spec 7.1). */
-export function assertModelValueFast(
-  value: unknown,
-  options: ValidateOptions | undefined,
-  isValid: FastModelCheck,
-  validator: Validator,
-  reference: string,
-  representation: IssueRepresentation,
-  source: IssueSource,
-): void {
-  if (options?.validationContext === undefined && isValid(value)) return;
-  assertModelValue(value, options, validator, reference, representation, source);
-}
-
 export function validationFailure(issues: readonly Issue[]): never {
   throw new LibError(LibErrorKind.Validation, 'Model validation failed.', issues);
 }
