@@ -35,8 +35,8 @@ import {
   composedRequired,
   isConstraintOnlyPart,
   joinMembers,
-  neverFix,
   neverNames,
+  neverReason,
   ownKeywords,
   resolveComposition,
   type Composition,
@@ -319,7 +319,9 @@ function modelFieldType(
     : [];
   const decidingMembers = allOfMembers.filter(({ descriptor }) => isDecidingPart(descriptor));
   const [decidingMember] = decidingMembers;
-  if (decidingMembers.length === 1 && decidingMember && isSequenceDescriptor(decidingMember.descriptor)) {
+  // One deciding sequence or model reference is the field's type, as it is its conversion (a lone `allOf [$ref Pet]`).
+  if (decidingMembers.length === 1 && decidingMember
+    && (isSequenceDescriptor(decidingMember.descriptor) || decidingMember.descriptor.kind === 'generated-model')) {
     return modelFieldType(decidingMember.item, definitions, nested, seen);
   }
   if (isJsonObject(schema) && decidingMembers.length === 0 && isSequenceSchema(schema)) {
@@ -628,7 +630,7 @@ function compositionReader(
       return name && target !== undefined ? { name, target, scope: nested, model: definitions.has(name) } : undefined;
     },
     nested: (schema, env) => withSchemaBase(env, schema),
-    descriptor: (schema, env) => modelConversionDescriptor(schema, definitions, env, direction, seen),
+    descriptor: (schema, env) => seen.has(schema) ? undefined : modelConversionDescriptor(schema, definitions, env, direction, seen),
   };
 }
 
@@ -901,8 +903,8 @@ function exactComponentTarget(schema: unknown, env: ModelResolveEnv): ExactCompo
 
 /**
  * Stops generation for an allOf that no object satisfies or that converts one property differently, and warns about each
- * property that no value can hold. Such a property of a component becomes `never`, so its class field passes the value
- * through. Reads the component and its own properties.
+ * property that no value can hold. Reads every schema inside the component, so the error names the schema's pointer. Such
+ * a property of the component becomes `never`, so its class field passes the value through.
  */
 function checkComposition(
   definition: ModelDefinition,
@@ -911,29 +913,39 @@ function checkComposition(
   resources: ResourceIndex | undefined,
   warn: (code: string, message: string) => void,
 ): void {
-  const env = modelEnv(document, undefined, undefined, resources);
-  const nested = withSchemaBase(env, definition.rawSchema);
-  const resolve = (schema: unknown, scope: ModelResolveEnv, position: 'field' | 'definition', pointer: string): readonly string[] => {
-    if (!isJsonObject(schema) || !hasAllOfMembers(schema)) return [];
-    const where = `schema ${JSON.stringify(definition.schemaName)} at #/components/schemas/${definition.schemaName}${pointer}`;
-    try {
-      return neverNames(resolvedComposition(schema, definitions, scope, 'to', new Set(), position));
-    } catch (error) {
-      if (!(error instanceof CompositionError)) throw error;
-      throw new LocatedError(`${where}: ${error.message}`, [componentOrigin('schemas', definition.schemaName, where)], { cause: error });
+  const named = `schema ${JSON.stringify(definition.schemaName)}`;
+  const visit = (schema: unknown, scope: ModelResolveEnv, position: 'field' | 'definition', pointer: string): void => {
+    if (!isJsonObject(schema) || directComponentSchemaRef(schema, withSchemaBase(scope, schema))) return;
+    const where = `${named} at #/components/schemas/${pointerToken(definition.schemaName)}${pointer}`;
+    if (hasAllOfMembers(schema)) {
+      let composition: Composition<ModelResolveEnv>;
+      try {
+        composition = resolvedComposition(schema, definitions, scope, 'to', new Set([schema]), position);
+      } catch (error) {
+        if (!(error instanceof CompositionError)) throw error;
+        throw new LocatedError(`${where}: ${error.message}`, [componentOrigin('schemas', definition.schemaName, where)], { cause: error });
+      }
+      for (const never of neverNames(composition)) {
+        warn(COMPOSITION_PROPERTY_NEVER, `Property ${JSON.stringify(never.name)} of ${where} ${neverReason(never)}`);
+        if (position === 'definition' && definition.properties.has(never.name)) definition.properties.set(never.name, false);
+      }
+    }
+    const nested = withSchemaBase(scope, schema);
+    for (const [name, child] of objectEntries(schema.properties)) visit(child, nested, 'field', `${pointer}/properties/${pointerToken(name)}`);
+    for (const keyword of ['items', 'additionalProperties', 'unevaluatedProperties'] as const) {
+      visit(schema[keyword], nested, 'field', `${pointer}/${keyword}`);
+    }
+    for (const keyword of ['prefixItems', 'allOf', 'oneOf', 'anyOf'] as const) {
+      const items = schema[keyword];
+      if (Array.isArray(items)) items.forEach((item, index) => visit(item, nested, 'field', `${pointer}/${keyword}/${index}`));
     }
   };
-  const neverMessage = (name: string, where: string): string =>
-    `Property ${JSON.stringify(name)} of ${where} ${neverFix}`;
-  for (const name of resolve(definition.rawSchema, env, 'definition', '')) {
-    warn(COMPOSITION_PROPERTY_NEVER, neverMessage(name, `schema ${JSON.stringify(definition.schemaName)}`));
-    if (definition.properties.has(name)) definition.properties.set(name, false);
-  }
-  for (const [name, property] of definition.properties) {
-    for (const never of resolve(property, nested, 'field', `/properties/${name}`)) {
-      warn(COMPOSITION_PROPERTY_NEVER, neverMessage(never, `property ${JSON.stringify(name)} of schema ${JSON.stringify(definition.schemaName)}`));
-    }
-  }
+  visit(definition.rawSchema, modelEnv(document, undefined, undefined, resources), 'definition', '');
+}
+
+/** One JSON Pointer token. */
+function pointerToken(name: string): string {
+  return name.replace(/~/g, '~0').replace(/\//g, '~1');
 }
 
 export function collectOpenApiModelDefinitions(document: unknown, resources?: ResourceIndex): {
@@ -1214,7 +1226,12 @@ function modelClassDescriptor(
   // The alias has exactly its base's shape, including its policy for undeclared members.
   const base = definitions.get(descriptor.id);
   const baseDescriptor = base ? modelConversionDescriptor(base.rawSchema, definitions, env, 'to', new Set(), true, 'definition') : undefined;
-  if (baseDescriptor?.kind === 'object') return { ...baseDescriptor };
+  // The alias keeps its own constraints (`unevaluatedProperties: false` of `allOf [$ref Base]`).
+  if (baseDescriptor?.kind === 'object') {
+    return descriptor.constraints
+      ? { ...baseDescriptor, constraints: [...(baseDescriptor.constraints ?? []), ...descriptor.constraints] }
+      : { ...baseDescriptor };
+  }
   return {
     kind: 'intersection',
     variants: [descriptor, { kind: 'object', properties: {}, required: [], additionalProperties: true }],

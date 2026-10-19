@@ -24,12 +24,13 @@ import { compileGeneratedSdk, generateMaterializedSdk, requireRecord } from './h
 type Wire = Record<string, unknown>;
 type Fields = Record<string, unknown>;
 type ModelConstructor = new (values?: Record<string, unknown>) => Record<string, unknown>;
+type Models = Readonly<Record<string, ModelConstructor>>;
 
 interface Accepted {
   /** The JSON the codec reads and writes. */
   readonly wire: Wire;
-  /** The decoded model's own fields. */
-  readonly model: Fields;
+  /** The decoded model's own fields; a function builds the nested model instances from the generated models. */
+  readonly model: Fields | ((models: Models) => Fields);
 }
 
 interface Row {
@@ -43,10 +44,12 @@ interface Row {
   /** Inputs that the validator rejects, checked with validation on. */
   readonly rejected: readonly Wire[];
   /**
-   * Inputs that the codec rejects, whose rejected names a generated class does not hold: its constructor keeps only its
-   * declared fields, so the model path has no such name to check.
+   * Inputs that the codec rejects and the model path cannot see: a name that a generated class does not hold (its
+   * constructor keeps only its declared fields, also for a closed class), or a wire string that the model holds as a Date.
    */
   readonly rejectedOnWire?: readonly Wire[];
+  /** The composition warnings of generation, each as `code: message`; a row without it expects none. */
+  readonly warnings?: readonly RegExp[];
 }
 
 const AT = '2024-05-06T07:08:09.000Z';
@@ -207,7 +210,8 @@ const rows: readonly Row[] = [
       { wire: { m: { x: 'q' } }, model: { m: { x: 'q' } } },
     ],
     rejected: [{ m: { n: 1 } }],
-    // The type of a name that the validator always rejects is `n?: never`.
+    // The type of a name that the validator always rejects is `n?: never`. No member is closed: the types do not intersect.
+    warnings: [/^OPENAPI_COMPOSITION_PROPERTY_NEVER: Property "n" of schema "Visit" at #\/components\/schemas\/Visit\/properties\/m has no value that every member accepts/],
   },
   {
     shape: 'strict b1: the same members accept a string sibling',
@@ -227,6 +231,7 @@ const rows: readonly Row[] = [
     accepted: [{ wire: { m: { a: 'x' } }, model: { m: { a: 'x' } } }],
     rejected: [{ m: { a: 'x', b: 'y' } }, { m: { b: 'y' } }],
     // The type shows `b?: never`.
+    warnings: [/^OPENAPI_COMPOSITION_PROPERTY_NEVER: Property "b" of schema "Visit" at #\/components\/schemas\/Visit\/properties\/m .*Remove additionalProperties: false/],
   },
   // A closed base with a derived optional own property: the validator rejects `b`, and the type shows `b?: never`.
   {
@@ -239,6 +244,7 @@ const rows: readonly Row[] = [
     }),
     accepted: [{ wire: { a: 'x' }, model: { a: 'x' } }],
     rejected: [{ a: 'x', b: B }, { b: B }],
+    warnings: [/^OPENAPI_COMPOSITION_PROPERTY_NEVER: Property "b" of schema "Derived" at #\/components\/schemas\/Derived .*Remove additionalProperties: false/],
   },
   // The user's answer: strict JSON Schema, and `unevaluatedProperties: false` closes an object to every name that any member
   // declares. An open base and a derived component that sets it accept the base and own names and reject any other name.
@@ -360,10 +366,124 @@ const rows: readonly Row[] = [
     ],
     rejected: [{ m: { x: 1 } }],
   },
+  // A property that wraps one model reference stays that model, and a model may wrap a reference to itself.
+  {
+    shape: 'a property that wraps one model $ref in allOf with a description',
+    fixture: 'reference-wrapper',
+    root: 'Visit',
+    document: visitDocument(
+      { owner: { allOf: [ref('Person')], description: 'Owner' } },
+      { Person: object({ name: text, born: dateTime }) },
+    ),
+    accepted: [{
+      wire: { owner: { name: 'n', born: AT } },
+      model: ({ PersonModel }) => ({ owner: construct(PersonModel, { name: 'n', born: new Date(AT) }) }),
+    }],
+    rejected: [{ owner: { born: 1 } }],
+  },
+  {
+    shape: 'a model whose properties wrap a $ref to itself in allOf',
+    fixture: 'self-reference-wrapper',
+    root: 'TreeNode',
+    document: componentDocument('TreeNode', {
+      TreeNode: object({
+        name: text,
+        parent: { allOf: [ref('TreeNode')], description: 'Up' },
+        children: { type: 'array', items: { allOf: [ref('TreeNode')] } },
+      }),
+    }),
+    accepted: [{
+      wire: { name: 'r', parent: { name: 'p' }, children: [{ name: 'c' }] },
+      model: ({ TreeNodeModel }) => ({
+        name: 'r',
+        parent: construct(TreeNodeModel, { name: 'p' }),
+        children: [construct(TreeNodeModel, { name: 'c' })],
+      }),
+    }],
+    rejected: [{ name: 'r', parent: { name: 1 } }],
+  },
+  // JSON Schema AND: a derived member that narrows a nullable base date to a date is a date, not a conflict.
+  {
+    shape: 'a derived component narrows a nullable base date-time to a date-time',
+    fixture: 'narrowed-nullable-date',
+    root: 'Derived',
+    document: componentDocument('Derived', {
+      Base: object({ deletedAt: { type: ['string', 'null'], format: 'date-time' } }),
+      Derived: { allOf: [ref('Base'), object({ deletedAt: dateTime })] },
+    }),
+    accepted: [{ wire: { deletedAt: AT }, model: { deletedAt: new Date(AT) } }],
+    rejected: [{ deletedAt: null }],
+  },
+  // Two members declare one object property: the objects resolve as one allOf, also when both convert a date in it.
+  {
+    shape: 'two members declare one object property with dates under different names',
+    fixture: 'same-name-objects',
+    root: 'Visit',
+    document: visitDocument({
+      m: { allOf: [object({ o: object({ at: dateTime }) }), object({ o: object({ b: text, when: dateTime }) })] },
+    }),
+    accepted: [
+      { wire: { m: { o: { at: AT, b: 'x', when: B } } }, model: { m: { o: { at: new Date(AT), b: 'x', when: new Date(B) } } } },
+      { wire: { m: { o: { b: 'x' } } }, model: { m: { o: { b: 'x' } } } },
+    ],
+    rejected: [{ m: { o: { b: 5 } } }],
+  },
+  // A member's additionalProperties schema constrains the wire value of a sibling's date-time; the date still decides. The
+  // model holds a Date, so only the wire check sees the string (spec 4.7).
+  {
+    shape: 'an additionalProperties pattern member constrains a date-time sibling',
+    fixture: 'additional-pattern-date',
+    root: 'Visit',
+    document: visitDocument({
+      m: { allOf: [{ type: 'object', additionalProperties: { type: 'string', pattern: '^2024-' } }, object({ at: dateTime })] },
+    }),
+    accepted: [{ wire: { m: { at: AT } }, model: { m: { at: new Date(AT) } } }],
+    rejected: [],
+    rejectedOnWire: [{ m: { at: '2023-05-06T07:08:09.000Z' } }],
+  },
+  // A oneOf of a model and a string AND that model is the model, whichever direction the conversion is read in.
+  {
+    shape: 'a member narrows a oneOf of a model and a string to that model',
+    fixture: 'narrowed-model-union',
+    root: 'Visit',
+    document: visitDocument(
+      { m: { allOf: [object({ x: { oneOf: [ref('M'), text] } }), object({ x: ref('M') })] } },
+      { M: object({ n: text }) },
+    ),
+    accepted: [{ wire: { m: { x: { n: 'a' } } }, model: ({ MModel }) => ({ m: { x: construct(MModel, { n: 'a' }) } }) }],
+    rejected: [{ m: { x: 'a' } }],
+  },
+  // A component's own properties beside its allOf are its own names, and unevaluatedProperties: false keeps them.
+  {
+    shape: 'a component with own properties beside allOf and unevaluatedProperties false',
+    fixture: 'unevaluated-sibling-properties',
+    root: 'Derived',
+    document: componentDocument('Derived', {
+      Base: object({ a: text }),
+      Derived: { allOf: [ref('Base'), object({ c: text })], properties: { b: text }, unevaluatedProperties: false },
+    }),
+    accepted: [{ wire: { a: 'x', b: 'y', c: 'z' }, model: { a: 'x', b: 'y', c: 'z' } }],
+    rejected: [],
+    rejectedOnWire: [{ a: 'x', b: 'y', z: 'q' }],
+  },
+  {
+    shape: 'a component that is allOf [$ref Base] with unevaluatedProperties false',
+    root: 'Derived',
+    document: componentDocument('Derived', {
+      Base: object({ a: text }),
+      Derived: { allOf: [ref('Base')], unevaluatedProperties: false },
+    }),
+    accepted: [{ wire: { a: 'x' }, model: { a: 'x' } }],
+    rejected: [],
+    rejectedOnWire: [{ a: 'x', z: 'q' }],
+  },
 ];
 
 interface Built {
   readonly output: string;
+  readonly models: Models;
+  /** The composition warnings of generation, as `code: message`. */
+  readonly warnings: readonly string[];
   readonly Model: ModelConstructor;
   readonly construct: abstract new (values?: never) => object;
   readonly codec: ReturnType<typeof requireObjectCodec<Fields>>;
@@ -374,7 +494,7 @@ const scope = fileFixtureScope();
 function builder(row: Row, validation: boolean): () => Promise<Built> {
   return onceShared(async () => {
     const output = path.join(createFixtureProject(scope, 'golem-composition-agreement-'), 'sdk');
-    await generateMaterializedSdk(row.document, {
+    const result = await generateMaterializedSdk(row.document, {
       output,
       name: 'Composition',
       profile: { mobx: false, validation, allowAny: false },
@@ -387,6 +507,9 @@ function builder(row: Row, validation: boolean): () => Promise<Built> {
     const Model = models[`${row.root}Model`] as ModelConstructor;
     return {
       output,
+      models: models as Models,
+      warnings: (result.diagnostics ?? []).filter(({ code }) => code.startsWith('OPENAPI_COMPOSITION_'))
+        .map(({ code, message }) => `${code}: ${message}`),
       Model,
       construct: Model as unknown as abstract new (values?: never) => object,
       codec: requireObjectCodec<Fields>(generatedCodecIdFromRoot(output, row.root)),
@@ -394,17 +517,24 @@ function builder(row: Row, validation: boolean): () => Promise<Built> {
   });
 }
 
+function construct(Model: ModelConstructor | undefined, values: Record<string, unknown>): Record<string, unknown> {
+  if (Model === undefined) throw new Error('The row names a model that was not generated.');
+  return new Model(values);
+}
+
 /** Fields and wire values count an absent optional property and one set to undefined alike, as JSON does. */
 function fieldsOf(model: object): Fields {
   return withoutUndefined({ ...model }) as Fields;
 }
 
+/** The value without undefined fields; an object keeps its prototype, so a nested model stays an instance of its class. */
 function withoutUndefined(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(withoutUndefined);
   if (typeof value !== 'object' || value === null || value instanceof Date) return value;
-  return Object.fromEntries(
+  const fields = Object.fromEntries(
     Object.entries(value).filter(([, field]) => field !== undefined).map(([name, field]) => [name, withoutUndefined(field)]),
   );
+  return Object.assign(Object.create(Object.getPrototypeOf(value)), fields);
 }
 
 function asGenerated(model: object): GeneratedModel<unknown> {
@@ -423,7 +553,8 @@ async function forInput(wire: Wire, check: () => void | Promise<void>): Promise<
 
 /** Model path and codec read and write the same fields for each accepted input. */
 async function assertPathsAgree(built: Built, accepted: readonly Accepted[]): Promise<void> {
-  for (const { wire, model } of accepted) {
+  for (const { wire, model: expected } of accepted) {
+    const model = withoutUndefined(typeof expected === 'function' ? expected(built.models) : expected);
     await forInput(wire, () => {
       const decoded = decodeGeneratedModel(built.Model, wire);
       assert.deepEqual(fieldsOf(decoded), model, 'model path decodes');
@@ -491,6 +622,9 @@ for (const row of rows) {
 
   test(`${row.shape}: validation on`, async () => {
     const built = await checked();
+    const warnings = row.warnings ?? [];
+    assert.equal(built.warnings.length, warnings.length, `composition warnings: ${JSON.stringify(built.warnings)}`);
+    warnings.forEach((warning, index) => assert.match(built.warnings[index] ?? '', warning));
     await assertPathsAgree(built, row.accepted);
     await assertValidatorJudges(built, row);
   });
@@ -502,26 +636,63 @@ for (const row of rows) {
   }
 }
 
-/** Shapes that no object can satisfy stop generation with a code that names the fix. */
-const unsatisfiable: readonly { readonly shape: string; readonly code: string; readonly document: Record<string, unknown> }[] = [
+/**
+ * Shapes that stop generation: no object satisfies them, or two members convert one property differently. The error names
+ * its code, the schema pointer and the fix.
+ */
+const stopped: readonly { readonly shape: string; readonly error: RegExp; readonly document: Record<string, unknown> }[] = [
   {
     shape: 'closed base and a component with a required own property',
-    code: 'OPENAPI_COMPOSITION_UNSATISFIABLE',
+    error: /schema "Derived" at #\/components\/schemas\/Derived(?=[ :]).*OPENAPI_COMPOSITION_UNSATISFIABLE: .*"b".*Remove additionalProperties: false/,
     document: componentDocument('Derived', {
       Base: { type: 'object', additionalProperties: false, properties: { a: text } },
       Derived: { allOf: [ref('Base'), object({ b: dateTime }, { required: ['b'] })] },
     }),
   },
+  {
+    shape: 'closed base and a component that requires an own property beside its allOf',
+    error: /schema "Derived" at #\/components\/schemas\/Derived(?=[ :]).*OPENAPI_COMPOSITION_UNSATISFIABLE: .*"b"/,
+    document: componentDocument('Derived', {
+      Base: { type: 'object', additionalProperties: false, properties: { a: text } },
+      Derived: { allOf: [ref('Base')], properties: { b: text }, required: ['b'] },
+    }),
+  },
+  {
+    shape: 'a closed derived member and a required base property',
+    error: /schema "Derived" at #\/components\/schemas\/Derived(?=[ :]).*OPENAPI_COMPOSITION_UNSATISFIABLE: .*"a".*Remove additionalProperties: false/,
+    document: componentDocument('Derived', {
+      Base: object({ a: text }, { required: ['a'] }),
+      Derived: { allOf: [ref('Base'), { type: 'object', additionalProperties: false, properties: { b: text } }] },
+    }),
+  },
+  {
+    shape: 'members that give a required property disjoint types',
+    error: /#\/components\/schemas\/Visit\/properties\/m(?=[ :]).*OPENAPI_COMPOSITION_UNSATISFIABLE: .*"a" has no value that every member accepts/,
+    document: visitDocument({ m: { allOf: [object({ a: text }, { required: ['a'] }), object({ a: { type: 'number' } })] } }),
+  },
+  {
+    shape: 'members that convert one property to a Date and to a model',
+    error: /#\/components\/schemas\/Visit\/properties\/m(?=[ :]).*OPENAPI_COMPOSITION_CONVERSION_CONFLICT: /,
+    document: visitDocument({ m: { allOf: [object({ x: dateTime }), object({ x: ref('M') })] } }, { M: object({ n: text }) }),
+  },
+  {
+    shape: 'array items whose members convert one property to a Date and to a model',
+    error: /#\/components\/schemas\/Visit\/properties\/e\/items(?=[ :]).*OPENAPI_COMPOSITION_CONVERSION_CONFLICT: /,
+    document: visitDocument(
+      { e: { type: 'array', items: { allOf: [object({ x: dateTime }), object({ x: ref('M') })] } } },
+      { M: object({ n: text }) },
+    ),
+  },
 ];
 
-for (const { shape, code, document } of unsatisfiable) {
-  test(`${shape}: generation fails with ${code}`, async t => {
-    const output = path.join(createFixtureProject(t, 'golem-composition-unsatisfiable-'), 'sdk');
+for (const { shape, error: expected, document } of stopped) {
+  test(`${shape}: generation stops with a coded error`, async t => {
+    const output = path.join(createFixtureProject(t, 'golem-composition-stopped-'), 'sdk');
     await assert.rejects(
       generateMaterializedSdk(document, { output, name: 'Composition', profile: { mobx: false, validation: true, allowAny: false } }),
       (error: unknown): true => {
         assert.ok(error instanceof Error);
-        assert.match(error.message, new RegExp(code));
+        assert.match(error.message, expected);
         return true;
       },
     );

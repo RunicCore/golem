@@ -5,8 +5,11 @@
  *
  * - Field position: a `$ref` member expands to the component's flat shape, so own properties plus `allOf [$ref Base]` give
  *   one plain object.
- * - Definition position: a component that extends a generated model keeps its base; the resolver only decides which own
- *   names no value can hold and closes the object for `unevaluatedProperties`.
+ * - Field position: one model `$ref` with no own object keywords stays that model (`allOf [$ref Pet]` plus a description).
+ *   An expansion that meets the schema it resolves (a model that wraps a reference to itself) keeps the members too.
+ * - Definition position: a component that extends a generated model keeps its base; the resolver decides which names no
+ *   value can hold, inherited ones included, and closes the object for `unevaluatedProperties`. The component's own
+ *   keywords beside its allOf are one more part.
  * - Null follows JSON Schema AND: the object admits null when every part that declares a `type` admits it.
  * - `unevaluatedProperties` judges the names that no part lists, when no part has `additionalProperties`.
  */
@@ -17,6 +20,7 @@ import {
   isRejected,
   type ObjectExtra,
   type ObjectPart,
+  type ObjectResult,
   type SlotRule,
 } from '@exprtlabs/golem/generator-api';
 import type { ModelConstraint, ModelTypeDescriptor } from '@exprtlabs/golem/model';
@@ -40,7 +44,14 @@ export interface CompositionReader<S> {
   reference(schema: unknown, scope: S): { readonly name: string; readonly target: unknown; readonly scope: S; readonly model: boolean } | undefined;
   /** The scope of a schema nested in `scope`. */
   nested(schema: unknown, scope: S): S;
-  descriptor(schema: unknown, scope: S): ModelTypeDescriptor;
+  /** The schema's descriptor; undefined when the schema is being resolved on this path (it refers back to itself). */
+  descriptor(schema: unknown, scope: S): ModelTypeDescriptor | undefined;
+}
+
+/** A name that no value can hold, and whether a closed part (`additionalProperties: false`) rejects it. */
+export interface NeverName {
+  readonly name: string;
+  readonly closed: boolean;
 }
 
 /** One name's child: its descriptor, and the schemas whose type it shows (none for a name that no value can hold). */
@@ -57,12 +68,13 @@ export type Composition<S> =
     readonly extra: ObjectExtra<SlotChild<S>>;
     readonly nullable: boolean;
     readonly constraints: readonly ModelConstraint[];
+    readonly never: readonly NeverName[];
   }
   /**
    * A component that extends a generated model keeps its base: the descriptor joins its members, with the own names that
    * no value can hold as `never` and `unevaluatedProperties: false` as a constraint.
    */
-  | { readonly kind: 'inherits'; readonly descriptor: ModelTypeDescriptor; readonly never: readonly string[] }
+  | { readonly kind: 'inherits'; readonly descriptor: ModelTypeDescriptor; readonly never: readonly NeverName[] }
   /** Not an object composition: a scalar, sequence, oneOf or constraint-only allOf; the caller keeps its own reading. */
   | { readonly kind: 'members' }
   | { readonly kind: 'rejected'; readonly code: string; readonly message: string };
@@ -78,31 +90,55 @@ export function resolveComposition<S>(
   reader: CompositionReader<S>,
   position: 'field' | 'definition',
 ): Composition<S> {
+  try {
+    return resolveObjects(schema, scope, reader, position);
+  } catch (error) {
+    if (error instanceof ExpansionCycle) return { kind: 'members' };
+    throw error;
+  }
+}
+
+/** An expansion reached the schema that it resolves: the plain object would contain itself, so the members stay. */
+class ExpansionCycle extends Error {}
+
+function resolveObjects<S>(
+  schema: unknown,
+  scope: S,
+  reader: CompositionReader<S>,
+  position: 'field' | 'definition',
+): Composition<S> {
   if (!isJsonObject(schema) || !Array.isArray(schema.allOf) || schema.allOf.length === 0) return { kind: 'members' };
   if (schema.oneOf !== undefined || schema.anyOf !== undefined || isSequence(schema)) return { kind: 'members' };
   const nested = reader.nested(schema, scope);
-  const members = schema.allOf.map((member) => ({ member, descriptor: reader.descriptor(member, nested) }));
+  const members = schema.allOf.map((member) => ({ member, descriptor: describe(member, nested, reader) }));
   const deciding = members.filter(({ descriptor }) => !isConstraintOnlyPart(descriptor));
   if (deciding.length === 0) return { kind: 'members' };
   const constraints = members.flatMap(({ descriptor }) => isConstraintOnlyPart(descriptor) ? descriptor.constraints ?? [] : []);
   const rule = slotRule<S>();
+  const ownPart = ownObjectPart(schema, scope, reader);
+  const [only] = deciding;
+  if (position === 'field' && ownPart === undefined && deciding.length === 1 && only && reader.reference(only.member, nested)?.model) {
+    return { kind: 'members' };
+  }
 
   if (position === 'definition' && deciding.some(({ member }) => reader.reference(member, nested)?.model)) {
-    const parts: ObjectPart<SlotChild<S>>[] = [];
-    const own = new Set<string>();
+    const parts: ObjectPart<SlotChild<S>>[] = ownPart ? [ownPart] : [];
     for (const { member } of deciding) {
       const part = objectPart(member, nested, reader, new Set());
       if (part === undefined) return { kind: 'members' };
-      if (!reader.reference(member, nested)?.model) for (const name of Object.keys(part.slots)) own.add(name);
       parts.push(part);
     }
     const composed = composeObjects(parts, rule);
     if (isRejected(composed)) return conflict(composed.rejected);
-    const never = [...own].filter((name) => composed.slots[name]?.descriptor.kind === 'never');
-    const required = never.filter((name) => composed.required.includes(name));
+    const never = neverSlots(composed);
+    const required = never.filter(({ name }) => composed.required.includes(name));
     if (required.length) return unsatisfiable(required);
     const closes = schema.unevaluatedProperties === false && parts.every((part) => part.extra.mode === 'open');
-    const joined = joinMembers(members.map(({ descriptor }) => withNeverProperties(descriptor, never)));
+    const names = never.map(({ name }) => name);
+    const joined = joinMembers([
+      ...(ownPart ? [ownPartDescriptor(ownPart, requiredNames(schema))] : []),
+      ...members.map(({ descriptor }) => withNeverProperties(descriptor, names)),
+    ]);
     return {
       kind: 'inherits',
       descriptor: closes ? { ...joined, constraints: [...(joined.constraints ?? []), evaluatedNamesOnly(composed.slots)] } : joined,
@@ -111,7 +147,6 @@ export function resolveComposition<S>(
   }
 
   const parts: ObjectPart<SlotChild<S>>[] = [];
-  const ownPart = ownObjectPart(schema, scope, reader);
   if (ownPart) parts.push(ownPart);
   for (const { member } of deciding) {
     const part = objectPart(member, nested, reader, new Set());
@@ -121,7 +156,8 @@ export function resolveComposition<S>(
   parts.push({ slots: {}, required: composedRequired(schema), extra: { mode: 'open' } });
   const composed = composeObjects(parts, rule);
   if (isRejected(composed)) return conflict(composed.rejected);
-  const unsatisfied = composed.required.filter((name) => composed.slots[name]?.descriptor.kind === 'never');
+  const never = neverSlots(composed);
+  const unsatisfied = never.filter(({ name }) => composed.required.includes(name));
   if (unsatisfied.length) return unsatisfiable(unsatisfied);
   const extra = composed.extra.mode === 'open' ? unevaluatedExtra(schema, nested, reader) : composed.extra;
   return {
@@ -131,14 +167,30 @@ export function resolveComposition<S>(
     extra,
     nullable: admitsNull(schema, scope, reader, new Set()),
     constraints,
+    never,
   };
 }
 
-/** The own names of a composition that no value can hold; the caller warns about each. */
-export function neverNames<S>(composition: Composition<S>): readonly string[] {
-  if (composition.kind === 'inherits') return composition.never;
-  if (composition.kind !== 'object') return [];
-  return Object.entries(composition.slots).filter(([, child]) => child.descriptor.kind === 'never').map(([name]) => name);
+/** The names of a composition that no value can hold; the caller warns about each. */
+export function neverNames<S>(composition: Composition<S>): readonly NeverName[] {
+  return composition.kind === 'inherits' || composition.kind === 'object' ? composition.never : [];
+}
+
+/** Why a name holds no value, and the fix: the two-step fix for a closed member, one schema for disjoint types. */
+export function neverReason(never: NeverName): string {
+  return never.closed ? neverFix : disjointFix;
+}
+
+function neverSlots<S>(composed: ObjectResult<SlotChild<S>>): NeverName[] {
+  return Object.entries(composed.slots)
+    .filter(([, child]) => child.descriptor.kind === 'never')
+    .map(([name]) => ({ name, closed: composed.closed.includes(name) }));
+}
+
+function describe<S>(schema: unknown, scope: S, reader: CompositionReader<S>): ModelTypeDescriptor {
+  const descriptor = reader.descriptor(schema, scope);
+  if (descriptor === undefined) throw new ExpansionCycle();
+  return descriptor;
 }
 
 function slotRule<S>(): SlotRule<SlotChild<S>> {
@@ -165,17 +217,21 @@ function conflict(reason: string): Composition<never> {
   };
 }
 
-function unsatisfiable(names: readonly string[]): Composition<never> {
+function unsatisfiable(names: readonly NeverName[]): Composition<never> {
   return {
     kind: 'rejected',
     code: COMPOSITION_UNSATISFIABLE,
-    message: `No object satisfies this allOf: the required ${names.length === 1 ? 'property' : 'properties'} ${names.map((name) => JSON.stringify(name)).join(', ')} ${neverFix}`,
+    message: `No object satisfies this allOf: ${names.map((never) => `the required property ${JSON.stringify(never.name)} ${neverReason(never)}`).join(' ')}`,
   };
 }
 
-/** The two-step fix for a name that a member's `additionalProperties` rejects. */
-export const neverFix = 'cannot hold a value, because a member\'s additionalProperties rejects it. '
+/** The two-step fix for a name that a member's `additionalProperties: false` rejects. */
+const neverFix = 'cannot hold a value, because a member\'s additionalProperties: false rejects it. '
   + 'Remove additionalProperties: false from the base, then add unevaluatedProperties: false to each derived component.';
+
+/** The fix for a name whose declarations and judging additionalProperties schemas share no value. */
+const disjointFix = 'has no value that every member accepts: its declarations and the additionalProperties schemas of the members '
+  + 'that do not list it have no common type. Give it one type in every member.';
 
 /** A schema's own object keywords as one part; undefined when it has none. */
 function ownObjectPart<S>(schema: Readonly<Record<string, unknown>>, scope: S, reader: CompositionReader<S>): ObjectPart<SlotChild<S>> | undefined {
@@ -207,7 +263,7 @@ function objectPart<S>(schema: unknown, scope: S, reader: CompositionReader<S>, 
   const own = ownObjectPart(schema, scope, reader);
   if (own) parts.push(own);
   for (const member of members) {
-    if (isConstraintOnlyPart(reader.descriptor(member, nested))) {
+    if (isConstraintOnlyPart(describe(member, nested, reader))) {
       parts.push({ slots: {}, required: requiredNames(member), extra: { mode: 'open' } });
       continue;
     }
@@ -220,11 +276,22 @@ function objectPart<S>(schema: unknown, scope: S, reader: CompositionReader<S>, 
   if (types.length > 0 && !types.includes('object')) return undefined;
   if (parts.length === 1) return parts[0];
   const composed = composeObjects(parts, slotRule<S>());
-  return isRejected(composed) ? undefined : composed;
+  return isRejected(composed) ? undefined : { slots: composed.slots, required: composed.required, extra: composed.extra };
 }
 
 function leaf<S>(schema: unknown, scope: S, reader: CompositionReader<S>): SlotChild<S> {
-  return { descriptor: reader.descriptor(schema, scope), sources: [{ schema, scope }] };
+  return { descriptor: describe(schema, scope, reader), sources: [{ schema, scope }] };
+}
+
+/** The own part as an object descriptor, so the component's descriptor holds its own names beside the allOf. */
+function ownPartDescriptor<S>(part: ObjectPart<SlotChild<S>>, required: readonly string[]): ModelTypeDescriptor {
+  const { extra } = part;
+  return {
+    kind: 'object',
+    properties: Object.fromEntries(Object.entries(part.slots).map(([name, child]) => [name, child.descriptor])),
+    required,
+    additionalProperties: extra.mode === 'values' ? extra.child.descriptor : extra.mode === 'open',
+  };
 }
 
 /** `unevaluatedProperties` of the node: the names that no part lists, when no part judges them by `additionalProperties`. */
