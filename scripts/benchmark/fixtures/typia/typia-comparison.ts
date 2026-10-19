@@ -2,12 +2,11 @@ import assert from 'node:assert/strict';
 import typia from 'typia';
 import { requireObjectCodec } from '@exprtlabs/golem/serde';
 import './typia-comparison.model.generated.js';
+import type { CompareCase, CompareTask } from './compare-case.js';
 import type {
-  TCompareAllOf, TCompareArray, TCompareFlat, TCompareItem, TCompareNested, TCompareTuple, TCompareUnion,
+  TCompareArray, TCompareFlat, TCompareItem, TCompareNested, TCompareTuple, TCompareUnion,
 } from './typia-comparison.model.js';
 
-export type CompareTask = 'validate' | 'decode' | 'encode';
-export interface CompareCase { readonly model: string; readonly task: CompareTask; readonly side: string; readonly run: () => unknown }
 
 /** The JSON form of a model value: a `Date` is an ISO string, everything else keeps its type. */
 type Wire<T> = T extends Date ? string : T extends object ? { [K in keyof T]: Wire<T[K]> } : T;
@@ -128,21 +127,6 @@ const tuple: ModelSpec<TCompareTuple> = {
   encode: m => ({ id: m.id, row: [m.row[0], m.row[1], m.row[2], m.row[3].toISOString()], range: [m.range[0], m.range[1]] }),
 };
 
-const allOf: ModelSpec<TCompareAllOf> = {
-  name: 'allOf',
-  codecId: 'TCompareAllOf',
-  model: { id: 13, name: 'Linus', createdAt: at, tag: 'release', revision: 4, updatedBy: 'ada' },
-  invalid: [
-    { id: '13', name: 'Linus', createdAt: at, tag: 'release', revision: 4, updatedBy: 'ada' },
-    { id: 13, name: 'Linus', createdAt: at, tag: 'release', revision: 4 },
-  ],
-  is: typia.createIs<TCompareAllOf>(),
-  assert: typia.createAssert<TCompareAllOf>(),
-  equals: typia.createEquals<TCompareAllOf>(),
-  decode: w => ({ id: w.id, name: w.name, createdAt: new Date(w.createdAt), tag: w.tag, revision: w.revision, updatedBy: w.updatedBy }),
-  encode: m => ({ id: m.id, name: m.name, createdAt: m.createdAt.toISOString(), tag: m.tag, revision: m.revision, updatedBy: m.updatedBy }),
-};
-
 /** Each result is reduced to one number so a timed call cannot be dropped; every model has a numeric `id`. */
 export function consume(value: unknown): number {
   if (value === true) return 1;
@@ -206,9 +190,9 @@ function casesOf<T extends { id: number }>(spec: ModelSpec<T>): CompareCase[] {
 
 /** Each library's own checks: valid and invalid input, and the agreement of decode and encode. Run before timing. */
 export function verifyCompareModels(): void {
-  check(flat); check(nested); check(union); check(array); check(tuple); check(allOf);
+  check(flat); check(nested); check(union); check(array); check(tuple);
 }
 
 export function createCompareCases(): readonly CompareCase[] {
-  return [...casesOf(flat), ...casesOf(nested), ...casesOf(union), ...casesOf(array), ...casesOf(tuple), ...casesOf(allOf)];
+  return [...casesOf(flat), ...casesOf(nested), ...casesOf(union), ...casesOf(array), ...casesOf(tuple)];
 }

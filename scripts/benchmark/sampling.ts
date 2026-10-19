@@ -20,7 +20,7 @@ function rotation(caseCount: number, round: number): number[] {
  * code sees every case before sampling starts; then rotate the order per batch
  * so no case always runs in the same slot.
  */
-export function schedule(caseCount: number, settings: Settings): Step[] {
+export function schedule(caseCount: number, settings: Pick<Settings, 'warmupMs' | 'batchMs' | 'batches'>): Step[] {
   const steps: Step[] = [];
   if (settings.warmupMs > 0) {
     for (let round = 0; round < WARMUP_ROUNDS; round++) {

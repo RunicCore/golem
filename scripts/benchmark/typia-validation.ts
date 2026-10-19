@@ -3,21 +3,22 @@ import path from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { prepare, root } from './project.js';
-import { summarize, type BatchSample, type Settings } from './results.js';
+import { summarize, type BatchSample } from './results.js';
 import { sampleSync, schedule } from './sampling.js';
+import type { CompareCase } from './fixtures/typia/compare-case.js';
 
 /**
  * Golem's validators and codecs against typia's `is`, `assert` and `equals`, and against hand-written decode and
- * encode, on one set of models (scripts/benchmark/fixtures/upstream/typia-comparison.ts). Every case runs in this
+ * encode, on one set of models (scripts/benchmark/fixtures/typia/typia-comparison.ts). Every case runs in this
  * process, interleaved, so host load moves both sides together; read the ratios, not the absolute numbers.
  * Writes nothing under docs/: the committed results.json belongs to `npm run bench`.
  */
-const SETTINGS: Settings = { warmupMs: 90, batchMs: 35, batches: 8, rounds: 1 };
+const SETTINGS = { warmupMs: 90, batchMs: 40, batches: 8 };
+const TYPIA_FIXTURES = path.join(root, 'scripts/benchmark/fixtures/typia');
 
-interface CompareCase { readonly model: string; readonly task: 'validate' | 'decode' | 'encode'; readonly side: string; readonly run: () => unknown }
 interface CompareModule { verifyCompareModels(): void; createCompareCases(): readonly CompareCase[]; consume(value: unknown): number }
 
-const MODELS = ['flat', 'nested', 'union', 'array', 'tuple', 'allOf'] as const;
+const MODELS = ['flat', 'nested', 'union', 'array', 'tuple'] as const;
 const fixed = (value: number): string => Math.round(value).toLocaleString('en-US');
 const ratio = (a: number, b: number): string => (a / b).toFixed(2);
 
@@ -41,7 +42,7 @@ async function main(): Promise<void> {
   const directory = mkdtempSync(path.join(root, '.cache/benchmark-work-'));
   try {
     process.stderr.write('Preparing the project (generation and compile)…\n');
-    const built = prepare(directory, 'validating');
+    const built = prepare(directory, 'validating', [TYPIA_FIXTURES]);
     const module: CompareModule = await import(pathToFileURL(path.join(path.dirname(built), 'typia-comparison.js')).href);
     module.verifyCompareModels();
     const cases = module.createCompareCases();
