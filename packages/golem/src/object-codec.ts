@@ -289,7 +289,7 @@ export function stringifyJsonScalar(value: unknown): string {
   if (typeof value === 'boolean') return value ? 'true' : 'false';
   if (typeof value === 'number') return String(stringifyJsonNumber(value));
   if (typeof value === 'string') return stringifyJsonString(value);
-  const encoded = JSON.stringify(typeof value === 'object' && !Array.isArray(value) ? withoutInstanceState(value) : value);
+  const encoded = JSON.stringify(withoutInstanceState(value));
   return encoded === undefined ? 'null' : encoded;
 }
 

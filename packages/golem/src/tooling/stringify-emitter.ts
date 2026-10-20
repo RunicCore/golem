@@ -1532,6 +1532,8 @@ function emitEncodeValue(descriptor: ModelTypeDescriptor, expression: string, ct
     if (node) return nestedToWireCall(node.id, expression, ctx);
     return emitEncodedRecord(descriptor, expression, ctx);
   }
+  // An intersection with a member that is no object is written as it is, without the program state of a model instance.
+  if (descriptor.kind === 'intersection') return `withoutInstanceState(${expression})`;
   return expression;
 }
 

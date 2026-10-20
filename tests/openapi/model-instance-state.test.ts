@@ -139,3 +139,12 @@ test('an object that is open only by default writes its declared fields only, in
   assert.equal(base.stringify({ name: 'n', extra: 'x' }), '{"name":"n"}');
   assert.deepEqual(base.toWireFormat({ name: 'n', extra: 'x' }), { name: 'n' });
 });
+
+test('a composed root with a member that is no object encodes the declared fields of a model instance only', async (t) => {
+  // protects: P-10 no codec writes program state; toWireFormat of this root returned the instance as it was
+  const { output, models } = await generateSdk(t, 'ComposedWire', false);
+  const Mixed = models.MixedModel as Model;
+  const codec = requireObjectCodec(generatedCodecIdFromRoot(output, 'Mixed'));
+  assert.deepEqual(codec.toWireFormat(Object.assign(new Mixed({ name: 'n' }), { cache: new Map<string, string>(), hits: 3 })), { name: 'n' });
+  assert.deepEqual(codec.toWireFormat({ name: 'n', a: 'x' }), { name: 'n', a: 'x' }, 'a plain value is kept');
+});
