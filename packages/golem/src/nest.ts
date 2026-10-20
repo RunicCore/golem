@@ -20,13 +20,15 @@ import {
   type NestInterceptor,
 } from '@nestjs/common';
 import { mergeMap, type Observable } from 'rxjs';
-import { LibError } from './errors.js';
+import { conversionError } from './conversion-error.js';
+import { LibError, LibErrorKind } from './errors.js';
 import { VALIDATION_KEYWORD } from './schema-keywords.js';
 import { getIModelClass, getObjectCodec, type ObjectCodec } from './object-codec.js';
 
 const NEST_MODEL_CODEC_ID = Symbol.for('@exprtlabs/golem:nestModelCodec');
 const NEST_MODEL_CODEC = Symbol.for('@exprtlabs/golem:nestModelCodec.codec');
 const NEST_MODEL_CONSTRUCT = Symbol.for('@exprtlabs/golem:nestModelCodec.construct');
+const NEST_MODEL_ARRAY = Symbol.for('@exprtlabs/golem:nestModelCodec.array');
 const NEST_MODEL_RETURN = '@exprtlabs/golem:nestModelReturn';
 const ROUTE_ARGS_METADATA = '__routeArguments__';
 const NEST_BODY = 3;
@@ -79,16 +81,18 @@ type NestModelToken = Function & {
   readonly [NEST_MODEL_CODEC_ID]?: unknown;
   readonly [NEST_MODEL_CODEC]?: ObjectCodec;
   readonly [NEST_MODEL_CONSTRUCT]?: NestModelConstruct;
+  readonly [NEST_MODEL_ARRAY]?: true;
 };
 
 function reflectMeta(): ReflectParamtypes {
   return Reflect as typeof Reflect & ReflectParamtypes;
 }
 
-function nestModelMetatype(id: string): Function {
+function nestModelMetatype(id: string, array: boolean): Function {
   const Token = class {};
   Object.defineProperty(Token, 'name', { value: id });
   Object.defineProperty(Token, NEST_MODEL_CODEC_ID, { value: id });
+  if (array) Object.defineProperty(Token, NEST_MODEL_ARRAY, { value: true });
   const codec = getObjectCodec(id);
   if (codec) {
     Object.defineProperty(Token, NEST_MODEL_CODEC, { value: codec });
@@ -111,6 +115,10 @@ function codecIdFromMetatype(metatype: unknown): string | undefined {
 
 function boundCodec(metatype: unknown): ObjectCodec | undefined {
   return asToken(metatype)?.[NEST_MODEL_CODEC];
+}
+
+function boundArray(metatype: unknown): boolean {
+  return asToken(metatype)?.[NEST_MODEL_ARRAY] === true;
 }
 
 function boundConstruct(metatype: unknown): NestModelConstruct | undefined {
@@ -146,8 +154,8 @@ export function nestModelReturn(id: string, array?: boolean): MethodDecorator {
   };
 }
 
-export function nestModelCodec(id: string): ParameterDecorator {
-  const token = nestModelMetatype(id);
+export function nestModelCodec(id: string, array?: boolean): ParameterDecorator {
+  const token = nestModelMetatype(id, array === true);
   return (target, propertyKey, parameterIndex) => {
     if (propertyKey === undefined) return;
     const meta = reflectMeta();
@@ -405,14 +413,35 @@ function queryWireDecoder(codec: ObjectCodec): QueryWireDecoder {
 
 const NO_DECODE = (value: unknown): unknown => value;
 
-/** The model of one wire value. */
+/** The error of one array item, with the item's index in front of each issue path. */
+function itemError(error: unknown, index: number): unknown {
+  if (!(error instanceof LibError)) return error;
+  return new LibError(
+    error.kind,
+    error.message,
+    error.issues.map((issue) => ({ ...issue, path: [index, ...issue.path] })),
+    { causedByInput: error.causedByInput, ...(error.cause === undefined ? {} : { cause: error.cause }) },
+  );
+}
+
+/** The model of one wire value, or of each item of an array wire value; an item that fails reports its index. */
 function convertInput(
   codec: ObjectCodec,
   construct: NestModelConstruct | undefined,
+  array: boolean,
   wire: unknown,
   decode: (wire: unknown) => unknown,
 ): unknown {
-  return codec.fromWireFormat(decode(wire), { failFast: true, construct });
+  const options = { failFast: true, construct };
+  if (!array) return codec.fromWireFormat(decode(wire), options);
+  if (!Array.isArray(wire)) throw conversionError(LibErrorKind.Deserialization, 'Expected an array.', [], undefined, true);
+  return wire.map((item, index) => {
+    try {
+      return codec.fromWireFormat(decode(item), options);
+    } catch (error) {
+      throw itemError(error, index);
+    }
+  });
 }
 
 function inputDecorator(paramtype: number, field: string | undefined): string {
@@ -472,7 +501,7 @@ export class NestModelInterceptor implements NestInterceptor {
           ?? [];
         const req = context.switchToHttp().getRequest<HttpRequest>();
         // A whole parameter keys by its source, a one-field parameter by its source and field.
-        let converted: Map<number | string, { codec: ObjectCodec; construct: NestModelConstruct | undefined }> | undefined;
+        let converted: Map<number | string, { codec: ObjectCodec; construct: NestModelConstruct | undefined; array: boolean }> | undefined;
         // Bit 1 is the body, bit 2 the query.
         let wholeSources = 0;
         let fieldSources = 0;
@@ -490,6 +519,7 @@ export class NestModelInterceptor implements NestInterceptor {
             );
           }
           const construct = boundConstruct(metatype);
+          const array = boundArray(metatype);
           const source = paramtype === NEST_BODY ? 1 : 2;
           if (field === undefined ? (fieldSources & source) !== 0 : (wholeSources & source) !== 0) {
             // The whole conversion replaces the value that a one-field parameter reads, so the two cannot both convert.
@@ -497,10 +527,15 @@ export class NestModelInterceptor implements NestInterceptor {
               `NestModelInterceptor cannot convert a whole and a one-field ${paramtype === NEST_BODY ? '@Body' : '@Query'}() of ${klass.name}.${handler.name} together. Declare the whole input as one model, or use one-field parameters only.`,
             );
           }
+          if (field === undefined && array && paramtype === NEST_QUERY) {
+            throw new TypeError(
+              `NestModelInterceptor cannot convert a whole @Query() array of ${klass.name}.${handler.name}: a query is an object. Declare the query as one model.`,
+            );
+          }
           const convertedKey = field === undefined ? paramtype : `${paramtype}:${field}`;
           const previous = converted?.get(convertedKey);
           if (previous) {
-            if (previous.codec !== codec || previous.construct !== construct) {
+            if (previous.codec !== codec || previous.construct !== construct || previous.array !== array) {
               throw new TypeError(field === undefined
                 ? 'NestModelInterceptor requires one model type for each whole body or query object.'
                 : `NestModelInterceptor requires one model type for ${inputDecorator(paramtype, field)} of ${klass.name}.${handler.name}.`);
@@ -510,13 +545,13 @@ export class NestModelInterceptor implements NestInterceptor {
           const decode = paramtype === NEST_BODY ? NO_DECODE : queryWireDecoder(codec);
           // @Body() and @Query() read these values when next.handle() runs.
           if (field === undefined) {
-            const value = convertInput(codec, construct, paramtype === NEST_BODY ? req.body : req.query, decode);
+            const value = convertInput(codec, construct, array, paramtype === NEST_BODY ? req.body : req.query, decode);
             if (paramtype === NEST_BODY) req.body = value;
             else replaceQuery(req, value);
             wholeSources |= source;
           } else {
             const record = schemaRecord(paramtype === NEST_BODY ? req.body : req.query);
-            const value = convertInput(codec, construct, record && Object.hasOwn(record, field) ? record[field] : undefined, decode);
+            const value = convertInput(codec, construct, array, record && Object.hasOwn(record, field) ? record[field] : undefined, decode);
             // Copy so the incoming object is not mutated; define so a field named __proto__ stays data.
             const copy = { ...record };
             Object.defineProperty(copy, field, { value, writable: true, enumerable: true, configurable: true });
@@ -524,7 +559,7 @@ export class NestModelInterceptor implements NestInterceptor {
             else replaceQuery(req, copy);
             fieldSources |= source;
           }
-          (converted ??= new Map()).set(convertedKey, { codec, construct });
+          (converted ??= new Map()).set(convertedKey, { codec, construct, array });
         }
       }
     } catch (error) {

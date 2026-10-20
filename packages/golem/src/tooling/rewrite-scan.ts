@@ -299,14 +299,15 @@ function isNamed(typeName: ts.EntityName, ...names: readonly string[]): boolean 
   return names.includes(ts.isIdentifier(typeName) ? typeName.text : typeName.right.text);
 }
 
-/** The element type of `T[]`, `Array<T>` and `ReadonlyArray<T>`, through parentheses; any other type as it is. */
-function nestModelTypeNode(typeNode: ts.TypeNode): ts.TypeNode {
+/** The element type of `T[]`, `Array<T>` and `ReadonlyArray<T>`, through parentheses, and whether an array was removed; any other type as it is. */
+function nestModelTypeNode(typeNode: ts.TypeNode): { readonly model: ts.TypeNode; readonly array: boolean } {
   let node = typeNode;
+  let array = false;
   for (;;) {
     if (ts.isParenthesizedTypeNode(node)) node = node.type;
-    else if (ts.isArrayTypeNode(node)) node = node.elementType;
-    else if (ts.isTypeReferenceNode(node) && node.typeArguments?.length === 1 && isNamed(node.typeName, 'Array', 'ReadonlyArray')) node = node.typeArguments[0];
-    else return node;
+    else if (ts.isArrayTypeNode(node)) { array = true; node = node.elementType; }
+    else if (ts.isTypeReferenceNode(node) && node.typeArguments?.length === 1 && isNamed(node.typeName, 'Array', 'ReadonlyArray')) { array = true; node = node.typeArguments[0]; }
+    else return { model: node, array };
   }
 }
 
@@ -369,6 +370,8 @@ interface NestBinding {
   readonly golemModel: boolean;
   /** The model type as written, array wrappers removed. */
   readonly label: string;
+  /** The type is an array of the model. */
+  readonly array: boolean;
 }
 
 function nestBinding(
@@ -376,9 +379,9 @@ function nestBinding(
   typeNode: ts.TypeNode,
 ): NestBinding {
   const { checker, keys, file, dependencies } = input;
-  const model = nestModelTypeNode(typeNode);
+  const { model, array } = nestModelTypeNode(typeNode);
   const label = model.getText(file);
-  const unbound = { id: '', primitive: false, golemModel: false, label };
+  const unbound = { id: '', primitive: false, golemModel: false, label, array };
   if (NEST_PRIMITIVE_TYPES.has(label.slice(label.lastIndexOf('.') + 1))) return { ...unbound, primitive: true };
   const name = serdeTypeName(model);
   const symbol = name && resolvedSymbolAt(checker, name);
@@ -520,13 +523,13 @@ function scanFile(
     const names = decoratorNames(parameter);
     const decorator = names.find((name) => NEST_PARAMETER_DECORATORS.includes(name));
     if (!parameter.type || decorator === undefined || hasDecorator(names, NEST_CODEC_DECORATOR)) return;
-    const { id, primitive, golemModel, label } = nestBinding({ checker, keys, file, dependencies: scan.dependencies }, parameter.type);
+    const { id, primitive, golemModel, label, array } = nestBinding({ checker, keys, file, dependencies: scan.dependencies }, parameter.type);
     if (primitive) return;
     if (id === '') {
       if (golemModel) scan.diagnostics.push(locate(root, file, parameter.type, CODE_NEST_NO_CODEC, `@${decorator}() type ${label} has no unique codec id; run golem generate`));
       return;
     }
-    scan.edits.push(insertion(parameter.name.getStart(file), `@${REWRITE_IMPORT_PREFIX}${NEST_CODEC_DECORATOR}(${JSON.stringify(id)}) `));
+    scan.edits.push(insertion(parameter.name.getStart(file), `@${REWRITE_IMPORT_PREFIX}${NEST_CODEC_DECORATOR}(${JSON.stringify(id)}${array ? ', true' : ''}) `));
     importOf(scan, root, file, parameter, NEST_CODEC_DECORATOR, NEST_MODULE);
     const { line, character } = file.getLineAndCharacterOfPosition(parameter.type.getStart(file));
     scan.nestSites.push({ file: portable(root, file.fileName), line: line + 1, column: character + 1, decorator, label, id });

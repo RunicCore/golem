@@ -70,7 +70,9 @@ What happens to a request:
 4. An `IModel` or `IObject` return, including a `Promise` or an array of that type, is stringified with that type; any other return stays Nest JSON.
 5. An application converter that throws, and missing generated metadata, stay HTTP 500.
 
-`@Param()` and `@Headers()` stay as Nest received them. Interfaces and array element types are erased from Nest metadata; for a collection body, declare a model that contains the array field.
+`@Param()` and `@Headers()` stay as Nest received them. Interfaces and array element types are erased from Nest metadata, so the rewrite records the model and whether the parameter is an array of it.
+
+An array of models, such as `@Body() items: Item[]` or `@Body('items') items: Item[]`, converts item by item. An invalid item returns HTTP 400, and each issue path starts with the item index. A value that is not an array returns HTTP 400. A whole `@Query()` cannot be an array, and the interceptor throws a `TypeError`.
 
 ### Input that is not a model
 

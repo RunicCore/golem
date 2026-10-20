@@ -580,6 +580,66 @@ test('NestModelInterceptor converts a model-typed one-field @Body() and @Query()
   }
 });
 
+test('NestModelInterceptor converts an array @Body() and a one-field array item by item and answers 400 with the item index', async () => {
+  const id = 'ArrayItem_78787878';
+  const descriptor: ModelTypeDescriptor = {
+    kind: 'object',
+    properties: { name: { kind: 'string' }, at: { kind: 'string' } },
+    required: ['name'],
+    additionalProperties: false,
+  };
+  const assembled = schemaForDescriptor(descriptor, { representation: 'model' });
+  assert.ok(typeof assembled === 'object');
+  const schema = { $id: id, ...assembled };
+  const validate = await compileSchema(schema);
+  createObjectCodec(id, {
+    stringify: (value) => JSON.stringify(value),
+    parse: (text) => JSON.parse(text) as never,
+    validate: (value) => isValidModelValue(value, undefined, validate, id),
+    assert: (value) => value as never,
+    toWireFormat: (value) => value,
+    fromWireFormat: (wire) => {
+      assertModelValue(wire, undefined, validate, id, IssueRepresentation.Wire, IssueSource.OpenAPI);
+      return { ...(wire as object), converted: true } as never;
+    },
+    schema,
+  });
+  const received = (input: unknown) => input;
+  const wholeController = inputController('ArrayWhole', Body, undefined, Object, received);
+  nestModelCodec(id, true)(wholeController.prototype, 'handle', 0);
+  const fieldController = inputController('ArrayField', Body, 'items', Object, received);
+  nestModelCodec(id, true)(fieldController.prototype, 'handle', 0);
+  class AppModule {}
+  Module({ controllers: [wholeController, fieldController] as never[] })(AppModule);
+  const application = await NestFactory.create(AppModule, { logger: false });
+  application.useGlobalInterceptors(new NestModelInterceptor());
+  await application.listen(0, '127.0.0.1');
+  try {
+    const base = await application.getUrl();
+    const post = (path: string, body: unknown) => fetch(`${base}/${path}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const items = [{ name: 'a' }, { name: 'b' }];
+    const whole = await post('ArrayWhole', items);
+    assert.equal(whole.status, 201);
+    assert.deepEqual(await whole.json(), [{ name: 'a', converted: true }, { name: 'b', converted: true }]);
+    const field = await post('ArrayField', { items });
+    assert.equal(field.status, 201);
+    assert.deepEqual(await field.json(), [{ name: 'a', converted: true }, { name: 'b', converted: true }]);
+
+    const invalid = await post('ArrayWhole', [{ name: 'a' }, { at: 'x' }]);
+    assert.equal(invalid.status, 400);
+    const { issues } = await invalid.json() as { issues: { path: unknown[] }[] };
+    assert.deepEqual(issues.map((issue) => issue.path), [[1, 'name']]);
+    assert.equal((await post('ArrayField', { items: [{ name: 'a' }, { at: 'x' }] })).status, 400);
+    assert.equal((await post('ArrayWhole', { name: 'a' })).status, 400, 'an object is not an array');
+  } finally {
+    await application.close();
+  }
+});
+
 test('NestModelInterceptor leaves a non-HTTP handler alone, even when its parameter type is not a model', () => {
   // A Nest RPC @Payload() shares the paramtype number of @Body().
   const klass = inputController('RpcPayload', Body, undefined, Object);
