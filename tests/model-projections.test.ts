@@ -227,7 +227,7 @@ test('validation-on projection cases share one generated project', async t => {
     fs.writeFileSync(path.join(strict.sourceRoot, 'item.model.ts'), readFixture("models/model-composition/a-projected-child-applies-the-containing-model-allowany-policy/item.model.ts"));
     assert.throws(
       () => generate({ root: strict.root, profile: { mobx: false, validation: true } }),
-      /RUNM1011.*contains any\. .*IModel<Fields, \{ allowAny: true \}>.*allowAny: true in golem\.yaml/,
+      /RUNM1011.*contains any\. Replace it with a concrete type, or allow it with .*IModel<Fields, \{ allowAny: true \}>.*allowAny: true in golem\.yaml/,
     );
     const { Container } = await load('projected-child', 'item.model.js');
     const container = decodeGeneratedModel(Container, { child: { raw: () => 'allowed by containing policy' } });

@@ -574,6 +574,18 @@ export function descriptorBuilder(
     return match;
   };
 
+  const rejectUnlessAllowAny = (context: TypeAnalysisContext, kind: 'any' | 'unknown'): void => {
+    if (context.allowAny ?? allowAny) return;
+    throw diagnostic(
+      context.sourceFile,
+      context.declaration,
+      '1011',
+      `Model ${context.name} contains ${kind}. Replace it with a concrete type, or allow it with `
+        + `{ allowAny: true } as the model's second type argument (IModel<Fields, { allowAny: true }>) `
+        + 'or allowAny: true in golem.yaml.',
+    );
+  };
+
   const describe = (
     originalType: ts.Type,
     context: TypeAnalysisContext,
@@ -706,20 +718,14 @@ export function descriptorBuilder(
     if (externalModel) return withMetadata({ kind: 'generated-model', id: externalModel.id }, metadata);
     if (type.flags & ts.TypeFlags.Any) {
       if (!allowUnresolved && isErrorAny(type)) throw diagnostic(context.sourceFile, node ?? context.declaration, '1058', 'A contract type could not be resolved. Fix its declaration or import before generating OpenAPI.');
-      const effectiveAllowAny = context.allowAny ?? allowAny;
-      if (!effectiveAllowAny && !isErrorAny(type)) {
-        throw diagnostic(
-          context.sourceFile,
-          context.declaration,
-          '1011',
-          `Model ${context.name} contains any. Replace it with a concrete type or unknown, or allow it with `
-            + `{ allowAny: true } as the model's second type argument (IModel<Fields, { allowAny: true }>) `
-            + 'or allowAny: true in golem.yaml.',
-        );
-      }
+      if (!isErrorAny(type)) rejectUnlessAllowAny(context, 'any');
       return withMetadata(isErrorAny(type) ? { kind: 'unknown' } : { kind: 'any' }, metadata);
     }
-    if (type.flags & ts.TypeFlags.Unknown) return withMetadata({ kind: 'unknown' }, metadata);
+    if (type.flags & ts.TypeFlags.Unknown) {
+      // A tag argument is schema data, not a field type, so `Not<unknown>` stays valid.
+      if (!context.schemaData) rejectUnlessAllowAny(context, 'unknown');
+      return withMetadata({ kind: 'unknown' }, metadata);
+    }
     if (type.flags & ts.TypeFlags.Never) return withMetadata({ kind: 'never' }, metadata);
     if (type.flags & ts.TypeFlags.String) return withMetadata({ kind: 'string' }, metadata);
     if (type.flags & ts.TypeFlags.Number) return withMetadata({ kind: 'number' }, metadata);
