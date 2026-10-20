@@ -359,6 +359,36 @@ test('same-name same-shape class and plain models share one component and keep t
   assert.deepEqual(Object.keys(expectValue(document.components, 'OpenAPI components').schemas ?? {}), ['TPayment'], 'one shared component');
 });
 
+test('exact: false gives a model with no exact option an open schema and the same codec id in the controllers job and the models job', async t => {
+  const root = fixture(t, [
+    "import { Body, Controller, Post } from '@nestjs/common';",
+    "import { type TPayment } from './payment.model.js';",
+    "@Controller('payments')",
+    'export class PaymentController {',
+    '  @Post()',
+    '  create(@Body() input: TPayment): TPayment { return input; }',
+    '}',
+    '',
+  ].join('\n'), {
+    files: { 'src/payment.model.ts': "import type { IObject } from '@exprtlabs/golem/model';\nexport type TPayment = IObject<{ amount: string }>;\n" },
+  });
+  const contracts = await generate({
+    root,
+    output: path.join(root, 'openapi.json'),
+    info: { title: 'Contract fixture', version: '1' },
+    profile: { mobx: false, validation: false },
+    exact: false,
+  });
+  const models = await generateModels({ root, profile: { mobx: false, validation: true }, exact: false });
+  const registry = contracts.artifacts.find(artifact => artifact.path.endsWith('operation-codecs.ts'))?.content ?? '';
+  const keys = models.artifacts.find(artifact => artifact.path.endsWith('codec-keys.json'))?.content ?? '';
+  const routeId = registry.match(/"POST \/payments": "([^"]+)"/)?.[1];
+  const modelId = keys.match(/src\/payment\.model\.ts#TPayment": "([^"]+)"/)?.[1];
+  assert.ok(routeId && modelId, 'the route and the model have a codec id');
+  assert.equal(routeId, modelId);
+  assert.equal(schemaOf(documentOf(contracts), 'TPayment').additionalProperties, true);
+});
+
 /** One route per model file; every model is `TPayment` and `field` makes its schema differ. */
 async function clashComponents(t: TestContext, models: Record<string, string>): Promise<string[]> {
   const files: Record<string, string> = {};

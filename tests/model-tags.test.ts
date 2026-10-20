@@ -131,6 +131,7 @@ import { first, second } from './predicates.js';`,
       name: 'A',
       imports: tsSource`import type { Contains } from '@exprtlabs/golem/tags';\nimport type { TLeaf } from './leaf.model.js';`,
       fields: tsSource`children: unknown[] & Contains<TLeaf>`,
+      options: tsSource`{ allowAny: true }`,
     }).text,
   });
   write('union-branches', {

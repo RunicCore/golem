@@ -1,14 +1,15 @@
-import { readFixture } from './fixture-project.js';
+import { generate as generateOpenApi } from '@exprtlabs/golem-openapi/generator';
+import { readFixture, writeGeneratedArtifacts } from './fixture-project.js';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import test from 'node:test';
+import test, { type TestContext } from 'node:test';
 
 import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/golem/conversion';
 import { requireObjectCodec } from '@exprtlabs/golem/serde';
 import { generatedCodecId, generatedCodecIdFromRoot } from './support/consumer.js';
 import { compositionProject as fixture } from './support/model-composition-project.js';
-import { buildModelProject, generatedModelFiles, writeModelGolemYaml, writeModelSources } from './model-project.js';
+import { buildModelProject, createModelProject, generatedModelFiles, writeModelGolemYaml, writeModelSources } from './model-project.js';
 import { projectionPolicyModelSource } from './fixture-templates/models/model-composition.js';
 import { generate } from '#model/generator';
 
@@ -234,4 +235,65 @@ test('validation-on projection cases share one generated project', async t => {
     assert.equal(Object.getPrototypeOf(container.child), Object.prototype);
     assert.equal(typeof container.child.raw, 'function');
   });
+});
+
+/** A project with an SDK of one model, `Envelope`, whose `payload` property has no type; `writeView` writes a model file with one field of the given type. */
+async function envelopeSdkProject(t: TestContext) {
+  const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-sdk-envelope-', name: 'sdk-envelope', linkWorkspaceNodeModules: true });
+  fs.writeFileSync(path.join(sourceRoot, 'envelope.yaml'), `openapi: 3.1.0
+info: { title: Envelopes, version: "1" }
+paths:
+  /envelopes:
+    get:
+      operationId: getEnvelope
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Envelope" }
+components:
+  schemas:
+    Envelope:
+      type: object
+      additionalProperties: false
+      required: [id, payload]
+      properties:
+        id: { type: string }
+        payload: { description: Any JSON value }
+`);
+  writeGeneratedArtifacts((await generateOpenApi({
+    input: path.join(sourceRoot, 'envelope.yaml'),
+    output: path.join(sourceRoot, 'sdk'),
+    name: 'Envelopes',
+    profile: { mobx: false, validation: true },
+  })).artifacts);
+  writeModelGolemYaml(root, { mobx: false, validation: true });
+  const writeView = (field: string, options = ''): void => writeModelSources(sourceRoot, {
+    'view.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
+import type { Envelope } from './sdk/index.js';
+import { TViewBaseModel } from './view.model.generated.js';
+export type TView = IModel<{ envelope: ${field} }${options}>;
+export class View extends TViewBaseModel {}
+`,
+  });
+  return { root, writeView };
+}
+
+test('a model that references an SDK model with an untyped property builds under the default allowAny', async t => {
+  const { root, writeView } = await envelopeSdkProject(t);
+  writeView('Envelope');
+  const built = await buildModelProject(root, [], { allowFailure: true });
+  assert.equal(built.code, 0, `${built.stdout}\n${built.stderr}`);
+});
+
+test('a model that projects an SDK model with an unknown field is rejected by default and allowed by allowAny', async t => {
+  const { root, writeView } = await envelopeSdkProject(t);
+  writeView("Pick<Envelope, 'id' | 'payload'>");
+  const rejected = await buildModelProject(root, [], { allowFailure: true });
+  assert.notEqual(rejected.code, 0);
+  assert.match(`${rejected.stdout}\n${rejected.stderr}`, /RUNM1011.*contains unknown/);
+  writeView("Pick<Envelope, 'id' | 'payload'>", ', { allowAny: true }');
+  const allowed = await buildModelProject(root, [], { allowFailure: true });
+  assert.equal(allowed.code, 0, `${allowed.stdout}\n${allowed.stderr}`);
 });

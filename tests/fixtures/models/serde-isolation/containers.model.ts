@@ -7,4 +7,4 @@ export type TContainers = IObject<{
   matrix: string[][];
   open: TOpen;
   payload: unknown;
-}>;
+}, { allowAny: true }>;
