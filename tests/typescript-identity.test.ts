@@ -10,6 +10,7 @@ import { createControllerFixture } from './fixture-templates/controllers/project
 import { resolveTypeScript } from '#golem/typescript-version';
 import { createModelProject } from './model-project.js';
 import { caseFolder, DIAGNOSTICS, EXPECTED_REJECTIONS, GENERATED, IDENTITY_CASES, isCompiled, shardOf, type IdentityCase, type IdentityProject } from './support/identity-corpus.js';
+import { createNodeSpecifierProject } from './support/node-specifiers-project.js';
 import { command, workspace } from './support/process.js';
 
 const typescript6Root = process.env.GOLEM_TYPESCRIPT6_ROOT;
@@ -41,6 +42,12 @@ async function createProject(t: FixtureScope, item: IdentityCase, label: string)
   if (item.kind === 'controller') {
     const files = Object.fromEntries(item.files.map(file => [file.to, readFixture(file.from)]));
     return { name: item.name, kind: item.kind, mobx: item.mobx, root: createControllerFixture(t, { prefix, files }) };
+  }
+  if (item.kind === 'specifiers') {
+    // The jsx option makes the .tsx edge case spell its emitted extension, which the two versions must number alike.
+    const root = createNodeSpecifierProject(t, { prefix, compilerOptions: { jsx: 'preserve' } });
+    for (const file of item.files) copyFixtureFile(root, file.from, file.to);
+    return { name: item.name, kind: item.kind, mobx: item.mobx, root };
   }
   const { root } = createModelProject(t, { prefix, name: `identity-${slug}`, linkTypescript: item.kind === 'rewrite' });
   for (const file of item.files) copyFixtureFile(root, file.from, file.to);

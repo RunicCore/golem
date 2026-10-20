@@ -3,7 +3,9 @@ import path from 'node:path';
 import { generate as generateControllers } from '#controllers/generator';
 import { generate as generateModels } from '#model/generator';
 import { applyRewrites } from '#golem/rewrite';
-import { scanProject } from '#golem/rewrite-scan';
+import { projectSources, scanProject } from '#golem/rewrite-scan';
+import { nodeSpecifierEdits } from '#golem/node-specifiers';
+import { createProjectProgram } from '@exprtlabs/golem/type-analysis';
 import { typescriptVersion } from '#golem/typescript-ns';
 import type { GolemDiagnostic } from '#golem/generator-api';
 import { writeGeneratedArtifacts } from '../fixture-project.js';
@@ -64,6 +66,24 @@ function rewriteStage(item: IdentityProject, lines: string[]): ReadonlyMap<strin
   return rewritten;
 }
 
+/** The text the specifier edits make of each project source of the project that they change, keyed by path relative to the root. */
+function specifierStage(item: IdentityProject, lines: string[]): ReadonlyMap<string, string> {
+  const rewritten = new Map<string, string>();
+  try {
+    using program = createProjectProgram(item.root, undefined, undefined, path.join(item.root, 'tsconfig.json')).program;
+    const checker = program.getTypeChecker();
+    const sources = projectSources(program);
+    const options = { compilerOptions: program.getCompilerOptions(), projectSources: new Set(sources.map(file => file.fileName)) };
+    for (const file of sources.filter(source => !source.isDeclarationFile)) {
+      const { edits } = nodeSpecifierEdits(file, checker, options);
+      if (edits.length > 0) rewritten.set(path.relative(item.root, file.fileName), applyRewrites(file.text, { edits, imports: [] }, file.fileName).code);
+    }
+  } catch (error) {
+    lines.push(describeError('rewrite', error));
+  }
+  return rewritten;
+}
+
 function write(filename: string, content: string): void {
   fs.mkdirSync(path.dirname(filename), { recursive: true });
   fs.writeFileSync(filename, content);
@@ -74,13 +94,13 @@ async function run(projects: readonly IdentityProject[], outputDirectory: string
     begin(item.name);
     const lines: string[] = [];
     // A rewrite case's companions are fixtures; the other cases write their generated files into the project, where the scan reads them.
-    const artifacts = item.kind === 'rewrite' ? [] : await generateStage(item, lines);
+    const artifacts = item.kind === 'rewrite' || item.kind === 'specifiers' ? [] : await generateStage(item, lines);
     const folder = path.join(outputDirectory, caseFolder(item.name));
     // A rejected generation leaves nothing to rewrite.
     if (artifacts) {
       writeGeneratedArtifacts(artifacts);
       for (const artifact of artifacts) write(path.join(folder, GENERATED, path.relative(item.root, artifact.path)), artifact.content);
-      for (const [relative, text] of rewriteStage(item, lines)) write(path.join(folder, REWRITTEN, relative), text);
+      for (const [relative, text] of item.kind === 'specifiers' ? specifierStage(item, lines) : rewriteStage(item, lines)) write(path.join(folder, REWRITTEN, relative), text);
     }
     write(path.join(folder, DIAGNOSTICS), lines.map(line => `${line.replaceAll(item.root, '<root>')}\n`).join(''));
   }
