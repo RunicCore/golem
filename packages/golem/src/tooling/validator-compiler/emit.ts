@@ -1,4 +1,4 @@
-import type { IrArray, IrCheck, IrDiscriminator, IrFunction, IrInstance, IrModule, IrNumber, IrObject, IrSchema, IrString, IrType, IrTypeName, IrUnion, IrValidation, IrValidationImport } from './ir.js';
+import type { IrArray, IrCheck, IrDiscriminator, IrFunction, IrInstance, IrModule, IrNumber, IrObject, IrPatternProperty, IrSchema, IrString, IrType, IrTypeName, IrUnion, IrValidation, IrValidationImport } from './ir.js';
 
 import { MODEL_CODEC_IDS_KEY } from '../../schema-keywords.js';
 import { presentKeysSource, presentValueSource } from '../../presence.js';
@@ -309,10 +309,8 @@ interface KeyTestRequest {
   readonly value: string;
   /** A local for each declared key the object's checks read. */
   readonly captured: readonly (readonly [key: string, local: string])[];
-  /** A check after the key test loops over the keys of the object by the JSON view. */
-  readonly needsKeys: boolean;
-  /** `additionalProperties` tests the keys that `properties` does not name. */
-  readonly visitsAdditional: boolean;
+  /** The object's read set; `captured` holds its declared keys. */
+  readonly reads: ReadSet;
 }
 
 /** What the key test of one object leaves for the checks after it. */
@@ -320,8 +318,40 @@ interface KeyTest {
   readonly presence: PresenceReader;
   /** An expression that holds the number of keys by the JSON view, when `minProperties` or `maxProperties` reads it. */
   readonly count?: string;
-  /** The local that lists the keys by the JSON view; absent when the key test already ran the checks that loop over them. */
+  /** An expression that lists the keys by the JSON view, for the checks that loop over them; `undefinedToo` when it also lists keys whose value is `undefined`. */
   readonly keys?: string;
+  readonly undefinedToo?: boolean;
+  /** A local that is true when the key test met a key that `additionalProperties: false` forbids; the test runs after `required`. */
+  readonly unknown?: string;
+}
+
+/** Which own values of an object the full validator reads before its checks (spec 7.3). */
+interface ReadSet {
+  /** The declared keys whose checks read their values; the full validator reads these first. */
+  readonly declared: readonly string[];
+  /** The `patternProperties` entries whose checks run. */
+  readonly patterns: readonly IrPatternProperty[];
+  /** `additionalProperties` tests the keys that `properties` does not name. */
+  readonly visitsAdditional: boolean;
+  /** A keyword judges the whole key list, so every own value is read (`definedKeys`). */
+  readonly all: boolean;
+}
+
+/**
+ * The full validator's read set of an object check (spec 7.3), the one rule for the full validator, the fast key test
+ * and the merged union pass. `marks`: the function keeps an evaluation record, so a check that accepts anything still
+ * marks its key.
+ */
+function readSet(check: IrObject, marks: boolean): ReadSet {
+  const declared = [...new Set([
+    ...check.required,
+    ...check.dependentRequired.flatMap(({ trigger, keys }) => keys.length > 0 ? [trigger, ...keys] : []),
+    ...check.properties.filter(property => property.schema.kind !== 'always' || marks).map(property => property.key),
+  ])];
+  const patterns = check.patternProperties.filter(entry => entry.schema.kind !== 'always' || marks);
+  const visitsAdditional = check.additional !== undefined && (check.additional.kind === 'forbid' || check.additional.schema.kind !== 'always');
+  const all = check.minProperties !== undefined || check.maxProperties !== undefined || patterns.length > 0 || visitsAdditional || check.propertyNames !== undefined;
+  return { declared, patterns, visitsAdditional, all };
 }
 
 /**
@@ -381,12 +411,12 @@ const FULL_VALIDATOR: WriterMode = {
   presence: objectPresence,
   form: full => full,
   // Reads the declared keys; the checks after it loop over the key list for unknown keys and patterns.
-  keyTest: (writer, { value, captured, needsKeys }) => {
+  keyTest: (writer, { value, captured, reads }) => {
     const presence = objectPresence(writer.state, value, captured);
     for (const line of presence.setup) writer.line(line);
     const keys = writer.fresh('keys');
-    if (needsKeys) writer.line(`const ${keys} = ${writer.state.localHelper('definedKeys')}(${value});`);
-    return { presence, count: `${keys}.length`, ...(needsKeys ? { keys } : {}) };
+    if (reads.all) writer.line(`const ${keys} = ${writer.state.localHelper('definedKeys')}(${value});`);
+    return { presence, count: `${keys}.length`, ...(reads.all ? { keys } : {}) };
   },
   call: (writer, id, args) => {
     const target = writer.target(id);
@@ -428,54 +458,55 @@ function fullValidatorBeside(plan: FastPlan): WriterMode {
 }
 
 /**
- * The key test of the fast check (spec 5.2, F1): one `Object.keys` pass reads each declared key into its local, and,
- * when the object has unknown keys to test or keys to count, reads every key once, skips an `undefined` value, counts
- * the rest and tests each key that `properties` does not name. Without either, it reads only the declared keys, as the
- * full validator does, so a getter of another key never runs.
+ * The key test of the fast check (spec 5.2, F1). An object whose full validator reads only its declared keys reads
+ * them as the full validator does. Any other reads every own value in one `Object.keys` pass, as `definedKeys` does,
+ * with no exit inside the pass (spec 7.3: a caller such as `not` or a union can turn a `false` into `true`, and then the
+ * reads must be the full validator's): a declared key in its own case by its name, every other key in `default`. A key
+ * that `additionalProperties: false` forbids is only marked, and a schema of `additionalProperties` runs after
+ * `required` in a second pass, both in the full validator's order.
  */
-function fastKeyTest(writer: FunctionWriter, { check, value, captured, visitsAdditional }: KeyTestRequest): KeyTest {
+function fastKeyTest(writer: FunctionWriter, { check, value, captured, reads }: KeyTestRequest): KeyTest {
   const presence = objectPresence(writer.state, value, captured);
-  const counts = check.minProperties !== undefined || check.maxProperties !== undefined;
-  if (!counts && !visitsAdditional) {
+  if (!reads.all) {
     for (const line of presence.setup) writer.line(line);
     return { presence };
   }
+  const counts = check.minProperties !== undefined || check.maxProperties !== undefined;
   const count = counts ? writer.fresh('count') : undefined;
-  const locals = [...captured.map(([, local]) => local), ...(count === undefined ? [] : [`${count} = 0`])];
+  const additional = reads.visitsAdditional ? check.additional : undefined;
+  const unknown = additional?.kind === 'forbid' ? writer.fresh('unknown') : undefined;
+  const locals = [...captured.map(([, local]) => local), ...(count === undefined ? [] : [`${count} = 0`]), ...(unknown === undefined ? [] : [`${unknown} = false`])];
   if (locals.length > 0) writer.line(`let ${locals.join(', ')};`);
   const key = writer.fresh('key');
   const named = new Set(check.properties.map(property => property.key));
   const capturedKeys = new Set(captured.map(([name]) => name));
-  const additional = visitsAdditional ? check.additional : undefined;
-  // A declared key is read in its own case by its name, which V8 reads faster than a read by the loop's key; only the
-  // keys that reach `default` are read by the loop's key. A key counts when its value is not `undefined`.
-  const counted = (read: string): string => (count === undefined ? '' : ` if (${read} !== undefined) ${count}++;`);
+  // A key counts when its value is not `undefined`; a key nothing else reads is read on its own.
+  const counted = (read: string): string => (count === undefined ? ` ${read};` : ` if (${read} !== undefined) ${count}++;`);
   const cases = [
-    ...captured.filter(([name]) => additional === undefined || named.has(name)).map(([name, local]) => `case ${literal(name)}: ${local} = ${value}[${literal(name)}];${counted(local)} break;`),
-    ...(additional === undefined ? [] : [...named].filter(name => !capturedKeys.has(name)).map(name => `case ${literal(name)}:${counted(`${value}[${literal(name)}]`)} break;`)),
+    ...captured.filter(([name]) => additional === undefined || named.has(name)).map(([name, local]) => `case ${literal(name)}: ${local} = ${value}[${literal(name)}];${count === undefined ? '' : counted(local)} break;`),
+    ...[...named].filter(name => !capturedKeys.has(name)).map(name => `case ${literal(name)}:${counted(`${value}[${literal(name)}]`)} break;`),
   ];
-  // A required or dependent key that `properties` does not name is still additional: `default` captures it, then tests it.
-  const unnamed = captured.filter(([name]) => !named.has(name));
+  // A required or dependent key that `properties` does not name is still additional: `default` captures it.
+  const unnamed = additional === undefined ? [] : captured.filter(([name]) => !named.has(name));
+  const item = writer.fresh('item');
   writer.open(`for (const ${key} of Object.keys(${value}))`);
   writer.open(`switch (${key})`);
   for (const entry of cases) writer.line(entry);
-  if (additional?.kind === 'forbid') {
-    writer.line(`default: if (${value}[${key}] !== undefined) ${writer.mode.fail.fail()}`);
-  } else if (additional !== undefined || count !== undefined) {
-    const item = writer.fresh('item');
-    writer.open('default:');
-    writer.line(`const ${item} = ${value}[${key}];`);
-    writer.line(`if (${item} === undefined) continue;`);
-    if (count !== undefined) writer.line(`${count}++;`);
-    if (additional !== undefined) {
-      unnamed.forEach(([name, local], position) => writer.line(`${position === 0 ? '' : 'else '}if (${key} === ${literal(name)}) ${local} = ${item};`));
-      writer.atChild(key, () => writer.schema(additional.schema, item));
-    }
-    writer.close();
-  }
+  writer.open('default:');
+  writer.line(`const ${item} = ${value}[${key}];`);
+  writer.line(`if (${item} === undefined) continue;`);
+  if (count !== undefined) writer.line(`${count}++;`);
+  unnamed.forEach(([name, local], position) => writer.line(`${position === 0 ? '' : 'else '}if (${key} === ${literal(name)}) ${local} = ${item};`));
+  if (unknown !== undefined) writer.line(`${unknown} = true;`);
   writer.close();
   writer.close();
-  return { presence, ...(count === undefined ? {} : { count }) };
+  writer.close();
+  return {
+    presence,
+    ...(count === undefined ? {} : { count }),
+    ...(unknown === undefined ? {} : { unknown }),
+    ...(additional?.kind === 'schema' ? { keys: `Object.keys(${value})`, undefinedToo: true } : {}),
+  };
 }
 
 /**
@@ -931,18 +962,13 @@ class FunctionWriter {
   /** `prepared` is the key test a caller already wrote for this object; without it the mode's key test is written here. */
   private objectKeywords(check: IrObject, value: string, prepared?: KeyTest): void {
     const marks = this.record !== undefined;
-    const declared = new Set([
-      ...check.required,
-      ...check.dependentRequired.flatMap(({ trigger, keys }) => keys.length > 0 ? [trigger, ...keys] : []),
-      ...check.properties.filter(property => property.schema.kind !== 'always' || marks).map(property => property.key),
-    ]);
-    const captured = [...declared].map(key => [key, this.fresh('present')] as const);
+    const reads = readSet(check, marks);
+    const { visitsAdditional } = reads;
+    const captured = reads.declared.map(key => [key, this.fresh('present')] as const);
     // A key that matches a pattern is not "additional" even when the pattern's schema accepts everything.
     const patterns = check.patternProperties.map(entry => ({ entry, expression: this.state.constant('pattern', `new RegExp(${literal(entry.pattern)}, 'u')`) }));
-    const patternsToRun = patterns.filter(({ entry }) => entry.schema.kind !== 'always' || marks);
-    const visitsAdditional = check.additional !== undefined && (check.additional.kind === 'forbid' || check.additional.schema.kind !== 'always');
-    const needsKeys = check.minProperties !== undefined || check.maxProperties !== undefined || patternsToRun.length > 0 || visitsAdditional || check.propertyNames !== undefined;
-    const { presence, count, keys } = prepared ?? this.mode.keyTest(this, { check, value, captured, needsKeys, visitsAdditional });
+    const patternsToRun = patterns.filter(({ entry }) => reads.patterns.includes(entry));
+    const { presence, count, keys, undefinedToo, unknown } = prepared ?? this.mode.keyTest(this, { check, value, captured, reads });
     // The key test makes the key list or the count for each check below that reads it.
     const listed = (what: string | undefined): string => {
       if (what === undefined) throw new Error('The key test of this validator mode left no key list or count for an object check that reads it.');
@@ -958,6 +984,7 @@ class FunctionWriter {
       this.close();
     }
     // Ahead of `properties`: with fail-fast the first issue is the object's own unknown key. A key test without a key list ran it.
+    if (unknown !== undefined) this.failWhen(unknown);
     if (check.additional && visitsAdditional && keys !== undefined) {
       const additional = check.additional;
       const key = this.fresh('key');
@@ -971,6 +998,7 @@ class FunctionWriter {
         const schema = additional.schema;
         const member = this.fresh('member');
         this.line(`const ${member} = ${value}[${key}];`);
+        if (undefinedToo) this.line(`if (${member} === undefined) continue;`);
         this.atChild(key, () => this.schema(schema, member));
       }
       this.close();
@@ -1083,13 +1111,6 @@ class FunctionWriter {
 
   private unionCheck(check: IrUnion, value: string): void {
     if (this.record !== undefined) return this.recordingUnionCheck(check, value);
-    // `oneOf` runs every branch before its verdict, so the merged pass reads what each branch reads. `anyOf` stops at
-    // the first branch that passes and, after a failing one, runs the rest, so no single read set matches it.
-    const inferred = check.exactlyOne ? this.inferredTag(check) : undefined;
-    if (inferred !== undefined) {
-      const all = inferred.branches.map((_, position) => position);
-      return this.mergedUnion(inferred.branches, inferred.discriminator, value, selected => all.filter(position => position !== selected));
-    }
     const attempt = (fn: number): string => this.call(fn, { value, issues: '[]', all: 'false' });
     if (!check.exactlyOne) return this.leaf({ fails: `!(${check.branches.map(attempt).join(' || ')})`, issue: "code: 'union', matched: 0" });
     const matched = this.fresh('matched');
@@ -1123,8 +1144,7 @@ class FunctionWriter {
    */
   private discriminatedUnion(check: IrUnion, discriminator: IrDiscriminator, value: string): void {
     const merged = this.mergedBranches(check);
-    // The full validator runs the selected branch only, and no branch for an unknown tag.
-    if (merged !== undefined) return this.mergedUnion(merged, discriminator, value, () => []);
+    if (merged !== undefined) return this.mergedUnion(merged, discriminator, value);
     this.state.localHelper('isObject');
     const presence = this.mode.presence(this.state, value);
     const property = literal(discriminator.property);
@@ -1196,114 +1216,68 @@ class FunctionWriter {
   }
 
   /**
-   * A tag for a union without one, when the mode merges its branches: a key every branch requires and holds to one
-   * primitive value of its own. At most one branch can then pass, the one whose value the key holds, so the union's
-   * verdict is that branch's verdict. The full validator keeps its union issues.
+   * A tagged union of plain object branches as one key pass: the pass reads the tag only, as the full validator does
+   * before it selects a branch, and marks every other key it meets. A tag outside the JSON view selects no branch. The
+   * selected branch then reads its read set (`readSet`) before any of its checks can fail, as the full branch reads it
+   * up front, and runs its checks in the full branch's order (spec 7.3). A closed branch also requires each key it does
+   * not name to be absent. Every read is of an own enumerable key (spec 5.1 rule 3).
    */
-  private inferredTag(check: IrUnion): { readonly branches: readonly IrObject[]; readonly discriminator: IrDiscriminator } | undefined {
-    const branches = this.mergedBranches(check);
-    if (branches === undefined) return undefined;
-    const valueOf = (object: IrObject, key: string): { readonly value: unknown } | undefined => {
-      const schema = object.properties.find(property => property.key === key)?.schema;
-      if (!object.required.includes(key) || schema?.kind !== 'checks') return undefined;
-      const literal = schema.checks.find(entry => entry.kind === 'literal' && entry.values.length === 1 && isPrimitive(entry.values[0]));
-      return literal?.kind === 'literal' ? { value: literal.values[0] } : undefined;
-    };
-    for (const key of branches[0].required) {
-      const values = branches.map(object => valueOf(object, key));
-      if (!values.every(found => found !== undefined)) continue;
-      const tags = values.map(found => found.value);
-      if (new Set(tags).size === tags.length) return { branches, discriminator: { property: key, tags: tags.map(tag => [tag]) } };
-    }
-    return undefined;
-  }
-
-  /**
-   * A tagged union of plain object branches as one key pass (spec 5.2 F1 over every key a branch declares): the tag is
-   * the captured value, so a tag outside the JSON view selects no branch, and the selected branch runs its object
-   * checks. The pass reads the tag and each key every branch declares, as the selected branch reads them; it only marks
-   * any other key, which is read once a branch that reads it is selected (spec 7.3: a getter runs as in the full
-   * validator). A closed branch also requires each key only another branch declares, and each key no branch declares,
-   * to be absent. `alsoRuns` names the other branches the full validator runs beside the selected one: the keys they
-   * read are read too, so each getter runs as there. Every read is of an own enumerable key (spec 5.1 rule 3).
-   */
-  private mergedUnion(branches: readonly IrObject[], discriminator: IrDiscriminator, value: string, alsoRuns: (selected: number) => readonly number[]): void {
+  private mergedUnion(branches: readonly IrObject[], discriminator: IrDiscriminator, value: string): void {
     this.failWhen(`!${TYPE_TESTS.object(value)}`);
     this.state.localHelper('isObject');
-    const declares = branches.map(object => new Set(object.properties.map(property => property.key)));
-    const keys = [...new Set([discriminator.property, ...declares.flatMap(names => [...names])])];
-    const read = (key: string): boolean => key === discriminator.property || declares.every(names => names.has(key));
-    // `keys` starts with the tag property, so the first slot holds the tag.
-    const slots = keys.map(key => [key, this.fresh(read(key) ? 'present' : 'seen')] as const);
+    const reads = branches.map(object => readSet(object, false));
+    const named = branches.map(object => new Set(object.properties.map(property => property.key)));
     const closed = branches.map(object => object.additional?.kind === 'forbid');
-    const extra = closed.some(Boolean) && !closed.every(Boolean) ? this.fresh('extra') : undefined;
-    this.line(`let ${[...slots.map(([, slot]) => slot), ...(extra === undefined ? [] : [`${extra} = false`])].join(', ')};`);
+    const keys = [...new Set([discriminator.property, ...named.flatMap(names => [...names]), ...reads.flatMap(set => set.declared)])];
+    const tag = this.fresh('tag');
+    const seen = keys.slice(1).map(key => [key, this.fresh('seen')] as const);
+    // A key that no branch declares, for a closed branch to test.
+    const extra = closed.some(Boolean) ? this.fresh('extra') : undefined;
+    this.line(`let ${[tag, ...seen.map(([, mark]) => mark), ...(extra === undefined ? [] : [`${extra} = false`])].join(', ')};`);
     const key = this.fresh('key');
     this.open(`for (const ${key} of Object.keys(${value}))`);
     this.open(`switch (${key})`);
-    for (const [name, slot] of slots) this.line(`case ${literal(name)}: ${slot} = ${read(name) ? `${value}[${literal(name)}]` : 'true'}; break;`);
-    // With open and closed branches, a key no branch declares is only marked; a selected closed branch reads it.
+    this.line(`case ${literal(discriminator.property)}: ${tag} = ${value}[${literal(discriminator.property)}]; break;`);
+    for (const [name, mark] of seen) this.line(`case ${literal(name)}: ${mark} = true; break;`);
     if (extra !== undefined) this.line(`default: ${extra} = true;`);
-    else if (closed.every(Boolean)) this.line(`default: if (${value}[${key}] !== undefined) ${this.mode.fail.fail()}`);
     this.close();
     this.close();
     const selected = this.fresh('branch');
-    this.line(`const ${selected} = ${this.tagSelection(discriminator, slots[0][1])};`);
-    // Reads only to run each getter that the full validator runs in the branches `runs` (spec 7.3): the keys they
-    // declare that the pass only marked, and every key when one of them is closed. `owned` keys are read elsewhere.
-    const touch = (runs: readonly number[], owned: (name: string) => boolean): void => {
-      const readsAll = runs.some(run => closed[run]);
-      for (const [name, slot] of slots) {
-        if (!read(name) && !owned(name) && (readsAll || runs.some(run => declares[run].has(name)))) this.line(`if (${slot}) ${value}[${literal(name)}];`);
-      }
-      if (readsAll && extra !== undefined) this.unknownKeys(value, keys, extra, other => `${value}[${other}];`);
-    };
-    const none = alsoRuns(-1);
-    if (none.length === 0) {
-      this.failWhen(`${selected} < 0`);
-    } else {
-      this.open(`if (${selected} < 0)`);
-      touch(none, () => false);
-      this.line(this.mode.fail.fail());
-      this.close();
-    }
+    this.line(`const ${selected} = ${this.tagSelection(discriminator, tag)};`);
+    this.failWhen(`${selected} < 0`);
     branches.forEach((object, position) => {
       this.open(`if (${selected} === ${position})`);
-      const captured: (readonly [string, string])[] = [];
-      for (const [name, slot] of slots) {
-        if (read(name)) {
-          captured.push([name, slot]);
-        } else if (declares[position].has(name)) {
-          const local = this.fresh('present');
-          this.line(`const ${local} = ${slot} ? ${value}[${literal(name)}] : undefined;`);
-          captured.push([name, local]);
-        } else if (closed[position]) {
-          this.failWhen(`${slot} && ${value}[${literal(name)}] !== undefined`);
-        }
+      const { declared, all } = reads[position];
+      const captured: (readonly [string, string])[] = [[discriminator.property, tag]];
+      const absent: string[] = [];
+      for (const [name, mark] of seen) {
+        if (!all && !declared.includes(name)) continue;
+        const local = this.fresh('present');
+        this.line(`const ${local} = ${mark} ? ${value}[${literal(name)}] : undefined;`);
+        if (named[position].has(name) || declared.includes(name)) captured.push([name, local]);
+        else absent.push(local);
       }
-      // A closed branch reads every key itself.
-      if (!closed[position]) touch(alsoRuns(position), name => declares[position].has(name));
+      const unknown = closed[position] && extra !== undefined ? this.fresh('unknown') : undefined;
+      if (unknown !== undefined) {
+        const other = this.fresh('key');
+        this.line(`let ${unknown} = false;`);
+        this.open(`if (${extra})`);
+        this.open(`for (const ${other} of Object.keys(${value}))`);
+        this.open(`switch (${other})`);
+        this.line(`${keys.map(name => `case ${literal(name)}:`).join(' ')} break;`);
+        this.line(`default: if (${value}[${other}] !== undefined) ${unknown} = true;`);
+        this.close();
+        this.close();
+        this.close();
+      }
       if (closed[position]) {
-        // The tag is read in the pass; when this branch does not declare it, it must be absent too.
-        if (!declares[position].has(discriminator.property)) this.failWhen(`${slots[0][1]} !== undefined`);
-        if (extra !== undefined) this.unknownKeys(value, keys, extra, other => `if (${value}[${other}] !== undefined) ${this.mode.fail.fail()}`);
+        if (!named[position].has(discriminator.property)) this.failWhen(`${tag} !== undefined`);
+        for (const local of absent) this.failWhen(`${local} !== undefined`);
+        if (unknown !== undefined) this.failWhen(unknown);
       }
       this.objectKeywords(object, value, { presence: objectPresence(this.state, value, captured) });
       this.close();
     });
-  }
-
-  /** When `extra` marks a key that no branch declares, runs `each` on each such key of `value`; `keys` are the declared ones. */
-  private unknownKeys(value: string, keys: readonly string[], extra: string, each: (key: string) => string): void {
-    const key = this.fresh('key');
-    this.open(`if (${extra})`);
-    this.open(`for (const ${key} of Object.keys(${value}))`);
-    this.open(`switch (${key})`);
-    this.line(`${keys.map(name => `case ${literal(name)}:`).join(' ')} break;`);
-    this.line(`default: ${each(key)}`);
-    this.close();
-    this.close();
-    this.close();
   }
 }
 
