@@ -2,7 +2,7 @@
 import { computed, nextTick, ref } from 'vue';
 import raw from '../../public/benchmarks/results.json';
 import { isBenchmarkResults, type ResultCase } from '../../../scripts/benchmark/results-schema.js';
-import { GROUPS } from '../../../scripts/benchmark/cases.js';
+import { BENCH_SERIES_COUNT, GROUPS } from '../../../scripts/benchmark/cases.js';
 
 const data = isBenchmarkResults(raw) ? raw : undefined;
 // An empty placeholder means nothing is published yet; anything else that fails the check is a broken file.
@@ -37,7 +37,7 @@ const blocks = computed(() => {
       operation,
       rows: rows.map((adapter, index) => ({
         adapter,
-        series: `s${(members.indexOf(adapter) % 4) + 1}`,
+        series: `s${(members.indexOf(adapter) % BENCH_SERIES_COUNT) + 1}`,
         cells: payloads.map(p => {
           const found = find(p.id, operation.id, adapter.id);
           const median = found?.opsPerSec?.median;

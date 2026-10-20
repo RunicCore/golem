@@ -9,7 +9,7 @@ Benchmarks are for reference purposes only.
 <BenchmarkChart>
 <template #plain>
 
-Each library turns JSON into plain objects, checks every rule and rejects unknown properties. Golem uses an [`IObject` declaration](/guide/models#iobject-or-imodel) and also converts dates and [`TSerde` fields](/guide/tags#convert-a-field-to-a-different-json-value); Typia and [Ajv](https://ajv.js.org) check shapes only, so they can't run the Checkout payload. Ajv is an outside library, here for comparison. It compiles a JSON Schema to a function, and the timed calls pair that function with `JSON.parse` and `JSON.stringify`.
+Each library turns JSON into plain objects, checks every rule and rejects unknown properties. Golem uses an [`IObject` declaration](/guide/models#iobject-or-imodel) and also converts dates and [`TSerde` fields](/guide/tags#convert-a-field-to-a-different-json-value); Typia and [Ajv](https://ajv.js.org) check every rule but do not convert values, so they can't run the Checkout payload. Ajv is an outside library, here for comparison. It compiles a JSON Schema to a function, and the timed calls pair that function with `JSON.parse` and `JSON.stringify`.
 
 </template>
 <template #classes>
@@ -301,11 +301,11 @@ Hand-written code copies each field and converts each date, and checks nothing. 
 | Tuple | 0.44 | 0.76 | 0.71 | 0.85 |
 | Optional fields | 0.64 | 0.85 | 0.77 | 0.84 |
 
-To measure them on your machine, run `npm run bench:typia`.
+They were measured at commit c7513ad. To measure them on your machine, run `npm run bench:typia`.
 
 ## What is measured
 
-Every library gets the same JSON payload. Before timing, each library must turn its parsed value back into the original JSON, and the libraries that validate must reject invalid variants of it. Those checks run in a separate process, so every library is timed on valid input only. A validator runs slower after it has rejected differently shaped input: V8 re-optimises a validator's generated function for the new object shapes. typia shows the same effect. Each library is timed in its own process. Each case is warmed up for 200 ms, then timed in four batches of 90 ms; the table shows the median. The run is short, so read the ratios between libraries and not the absolute numbers. A library that can't do a case says why instead of showing a number.
+Every library gets the same JSON payload. Before timing, each library must turn its parsed value back into the original JSON, and the libraries that validate must reject invalid variants of it. Those checks run in a separate process, so every library is timed on valid input only. A validator runs slower after it has rejected differently shaped input: V8 re-optimises a validator's generated function for the new object shapes. typia shows the same effect. Each library is timed in its own process, in two rounds with the library order reversed in the second. In each round a case is warmed up for 120 ms, then timed in two batches of 90 ms; the table shows the median of the four batches. The run is short, so read the ratios between libraries and not the absolute numbers. A library that can't do a case says why instead of showing a number.
 
 ## Run it yourself
 

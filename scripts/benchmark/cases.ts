@@ -1,5 +1,8 @@
 import type { Adapter, Operation } from './fixture-contract.js';
 
+/** Series colors the benchmark page defines (`--cg-series-N` in docs/.vitepress/theme/tokens.css); a group lists at most this many libraries. */
+export const BENCH_SERIES_COUNT = 4;
+
 export const REPOSITORY_BLOB_URL = 'https://github.com/RunicCore/golem/blob/master';
 
 export type PayloadId = 'simple' | 'nested' | 'array' | 'checkout';
@@ -59,7 +62,7 @@ export const BENCH_ADAPTERS: readonly AdapterSpec[] = [
   { id: 'class-validator', fixtureAdapter: 'class-validator', project: 'plain', group: 'validated-classes', label: 'class-transformer + class-validator', library: 'class-validator', checked: true, sourceFile: `${F}/class-validator.ts` },
 ];
 
-const noConversion = (library: string): string => `${library} checks JSON shapes but does not convert values, so the hex code and the dates would stay strings.`;
+const noConversion = (library: string): string => `${library} checks every rule but does not convert values, so the hex code and the dates would stay strings.`;
 const UNSUPPORTED: readonly CaseSpec[] = (['typia', 'ajv'] as const).flatMap(adapter => BENCH_OPERATIONS.map(o =>
   ({ payload: 'checkout', operation: o.id, adapter, support: 'none', note: noConversion(adapterSpec(adapter).label) } satisfies CaseSpec)));
 
