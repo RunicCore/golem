@@ -1895,6 +1895,7 @@ function emitNodeRuntime(
     `  validate: ${validateName},`,
     `  assert: ${assertName},`,
     `  toWireFormat: ${toWire},`,
+    ...(objectDescriptor ? [`  fields: ${JSON.stringify(Object.keys(objectDescriptor.properties))},`] : []),
     `  fromWireFormat: ${fromWire},`,
     `  schema: ${modelSchemaExpr},`,
     ...(wireSchemaExpr ? [`  wireSchema: ${wireSchemaExpr},`] : []),

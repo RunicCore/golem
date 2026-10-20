@@ -17,6 +17,21 @@ export function presentValueSource(object: string, key: string, read: string): s
   return `Object.prototype.propertyIsEnumerable.call(${object}, ${key}) ? ${read} : undefined`;
 }
 
+const fieldsKey = Symbol.for(MODEL_FIELDS_KEY);
+
+/**
+ * The names that the own model of a golem model instance declares, or `undefined` when the value holds no program
+ * state. `instanceFieldsSource` is the same walk as source text for the generated validators.
+ */
+export function instanceFields(value: object): readonly string[] | undefined {
+  let prototype = Object.getPrototypeOf(value);
+  if (prototype === Object.prototype) return undefined;
+  for (; prototype !== null; prototype = Object.getPrototypeOf(prototype)) {
+    if (Object.prototype.hasOwnProperty.call(prototype, fieldsKey)) return prototype[fieldsKey] ?? undefined;
+  }
+  return undefined;
+}
+
 /**
  * Source text of `instanceFields(value)`: the names that the own model of a golem model instance declares, or
  * `undefined` when the value holds no program state. The nearest prototype that owns a field entry decides, also when

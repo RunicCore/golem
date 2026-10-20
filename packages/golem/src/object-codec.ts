@@ -11,6 +11,7 @@ import {
   toIssue,
   type Issue,
 } from './errors.js';
+import { readRootFields } from './conversion.js';
 import type { SchemaIssue } from './issue-messages.js';
 import type { ModelValidationContext, WireFormat } from './model.js';
 import type { Validator } from './validation-runtime.js';
@@ -28,6 +29,15 @@ export function untransformedCallError(name: string): LibError {
 export interface ValidateOptions {
   readonly failFast?: boolean;
   readonly validationContext?: ModelValidationContext;
+}
+
+/** The option of one `stringify`, `toWireFormat`, `validate` or `assert` call. Decode does not take it. */
+export interface AllowGetterOptions {
+  /**
+   * Counts a declared field of the root value when a getter or an inherited value supplies it. The default reads own
+   * enumerable properties only, as `JSON.stringify` does. Nested values are judged without it.
+   */
+  readonly allowGetter?: boolean;
 }
 
 export interface SerdeOptions {
@@ -50,12 +60,12 @@ export interface ObjectCodec<T = unknown> {
   readonly wireOnlySchema?: object;
   /** Origin of generated issues; TypeScript IObject/IModel vs OpenAPI SDK. */
   readonly issueSource?: IssueSource;
-  stringify(value: T, options?: SerdeOptions): string;
+  stringify(value: T, options?: SerdeOptions & AllowGetterOptions): string;
   parse(text: string, options?: SerdeOptions): T;
-  validate(value: unknown, options?: ValidateOptions): value is T;
-  assert(value: unknown, options?: ValidateOptions): T;
+  validate(value: unknown, options?: ValidateOptions & AllowGetterOptions): value is T;
+  assert(value: unknown, options?: ValidateOptions & AllowGetterOptions): T;
   /** Returns the wire type of the argument; a registry codec (`T = unknown`) still types a model argument. */
-  toWireFormat<Value extends T>(value: Value, options?: SerdeOptions): WireFormat<Value>;
+  toWireFormat<Value extends T>(value: Value, options?: SerdeOptions & AllowGetterOptions): WireFormat<Value>;
   fromWireFormat(wire: unknown, options?: SerdeOptions): T;
 }
 
@@ -70,6 +80,8 @@ export interface ObjectCodecImpl<T = unknown> {
   readonly wireSchema?: object;
   readonly modelOnlySchema?: object;
   readonly wireOnlySchema?: object;
+  /** The declared field names of a root object; `allowGetter` reads these. Another root has none, and the option has no effect. */
+  readonly fields?: readonly string[];
   /** Schemas from a generated closed validator plan already have resolved refs. */
   readonly schemaRefsResolved?: true;
   readonly issueSource?: IssueSource;
@@ -407,15 +419,23 @@ export function createObjectCodec<T>(id: string, impl: ObjectCodecImpl<T>): Obje
     ...(impl.modelOnlySchema ? { modelOnlySchema: lazySchemaPlane(impl.modelOnlySchema, 'model-only', resolved) } : {}),
     ...(impl.wireOnlySchema ? { wireOnlySchema: lazySchemaPlane(impl.wireOnlySchema, 'wire-only', resolved) } : {}),
   };
+  const fields = impl.fields;
+  // Without `allowGetter` the value is the root as it is: no copy.
+  const root = <Root>(value: Root, options: AllowGetterOptions | undefined): Root =>
+    fields !== undefined && options?.allowGetter === true ? readRootFields(value, fields) as Root : value;
   const codec: ObjectCodec<T> = {
     id,
     issueSource: impl.issueSource,
-    stringify: (value, options) => impl.stringify(value, options),
+    stringify: (value, options) => impl.stringify(root(value, options), options),
     parse: (text, options) => impl.parse(text, options),
-    validate: (value, options): value is T => impl.validate(value, options),
-    assert: (value, options) => impl.assert(value, options),
+    validate: (value, options): value is T => impl.validate(root(value, options), options),
+    assert: (value, options) => {
+      const checked = root(value, options);
+      const result = impl.assert(checked, options);
+      return checked === value ? result : value as T;
+    },
     // The generated implementation returns the emitted JSON type, which WireFormat mirrors.
-    toWireFormat: <Value extends T>(value: Value, options?: SerdeOptions) => impl.toWireFormat(value, options) as WireFormat<Value>,
+    toWireFormat: <Value extends T>(value: Value, options?: SerdeOptions & AllowGetterOptions) => impl.toWireFormat(root(value, options), options) as WireFormat<Value>,
     fromWireFormat: (wire, options) => impl.fromWireFormat(wire, options),
   };
   Object.defineProperties(codec, Object.fromEntries(Object.entries(planes).map(([name, read]) => [
