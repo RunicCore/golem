@@ -34,6 +34,8 @@ export const TYPESCRIPT6_FILES = [
     'watch-compiler-reuse',
     // ProgramSession in the `golem build --watch` driver, where users run it:
     'build-watch-rebuild-recovery',
+    // The build.ts emit of the edited stage through the TypeScript 6 `tsc`: Node runs what a Bundler project builds to:
+    'build-node-specifiers',
   ].map(name => `.build/tests/${name}.test.js`),
   // Checker guards: the controller generator and the rewrite code it uses run the checker in this process:
   '.build/tests/golem-ts-openapi/*.test.js',

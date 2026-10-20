@@ -7,6 +7,7 @@ import type { GolemConfig } from './config.js';
 import { codecKeysPath } from './generated-paths.js';
 import { GolemDiagnosticSeverity, isRecord } from './generator-api.js';
 import type { GolemDiagnostic } from './generator-api.js';
+import { nodeSpecifierEdits } from './node-specifiers.js';
 import { atomicWrite } from './outputs.js';
 import { GeneratorSessionResources, runPipeline } from './pipeline.js';
 import type { PipelineState } from './pipeline.js';
@@ -299,7 +300,7 @@ interface StageResult {
 }
 
 /**
- * Mirror the program's local sources into `<root>/.golem/build/<config name>/stage`: the rewritten text for a file the scan found a site in, the file itself
+ * Mirror the program's local sources into `<root>/.golem/build/<config name>/stage`: the rewritten text for a file with a site to rewrite or a specifier to change, the file itself
  * otherwise. A file is written only when its content differs, so the compiler's incremental state keeps every other file.
  * The stage mirrors the common directory of the tsconfig's directory and every source, as the compiler's own source root is, so a source
  * outside the tsconfig's directory lands in the output where the compiler would put it. A mirrored directory holds a copy of its original's `package.json`
@@ -374,6 +375,26 @@ function writeStage(project: Project, sources: readonly ts.SourceFile[], rewrite
   };
   atomicWrite(insideStage(stageDirectory, configFile), `${JSON.stringify(stageConfig, null, 2)}\n`);
   return { configFile, directory: stageDirectory, base, maps, manifests };
+}
+
+/**
+ * The scanner's rewrites with the edits that give each import specifier of a staged source the text Node loads as ESM. An import
+ * the scanner adds for a type-only import copies that import's path text, so it takes the new text of the same specifier.
+ */
+function withNodeSpecifiers(root: string, sources: readonly ts.SourceFile[], checker: ts.TypeChecker, compilerOptions: ts.CompilerOptions, scanned: ReadonlyMap<string, FileRewrite>): ReadonlyMap<string, FileRewrite> {
+  const options = { compilerOptions, projectSources: new Set(sources.map((source) => source.fileName)) };
+  const rewrites = new Map(scanned);
+  for (const source of sources.filter((candidate) => !candidate.isDeclarationFile)) {
+    const { edits, specifiers } = nodeSpecifierEdits(source, checker, options);
+    if (edits.length === 0) continue;
+    const key = posix(path.relative(root, source.fileName));
+    const scan = scanned.get(key);
+    rewrites.set(key, {
+      edits: [...scan?.edits ?? [], ...edits].sort((left, right) => left.start - right.start || left.end - right.end),
+      imports: (scan?.imports ?? []).map((added) => ({ ...added, from: specifiers.get(added.from) ?? added.from })),
+    });
+  }
+  return rewrites;
 }
 
 /** The emitted files the compiler listed (`--listEmittedFiles`), and its output without those lines. */
@@ -501,12 +522,13 @@ async function buildOnce(session: ts.ProgramSession, run: BuildRun, changed?: re
   using program = session.openProgram({ root, sources: parsed.fileNames, configFile, onInput: observe });
   const sources = projectSources(program);
   for (const source of sources) observeSource(source.fileName);
-  const scanned = new RewriteScanner({ root, directory: golemConfig.directory, modelsRoot: modelsRootOf(golemConfig), program, checker: program.getTypeChecker(), codecKeysFile: codecKeysPath(golemConfig.directory), nest: golemConfig.jobs.some((job) => job.kind === 'controllers') })
+  const checker = program.getTypeChecker();
+  const scanned = new RewriteScanner({ root, directory: golemConfig.directory, modelsRoot: modelsRootOf(golemConfig), program, checker, codecKeysFile: codecKeysPath(golemConfig.directory), nest: golemConfig.jobs.some((job) => job.kind === 'controllers') })
     .scanFiles(sources.map((source) => source.fileName));
   const errors = scanned.diagnostics.filter((diagnostic) => diagnostic.severity === GolemDiagnosticSeverity.Error);
   if (errors.length > 0) throw scanFailure(errors);
 
-  const stage = writeStage(project, sources, scanned.files);
+  const stage = writeStage(project, sources, withNodeSpecifiers(root, sources, checker, program.getCompilerOptions(), scanned.files));
   // The stage holds copies of these: a change to one is a change to build for.
   for (const manifest of stage.manifests) observe(manifest);
   const emit = await runTsc(cli, root, [
