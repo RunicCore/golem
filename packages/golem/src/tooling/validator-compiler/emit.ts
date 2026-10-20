@@ -426,8 +426,8 @@ const FULL_VALIDATOR: WriterMode = {
     const key = writer.fresh('key');
     const fields = writer.fresh('fields');
     writer.line(`const ${fields} = ${writer.state.localHelper('instanceFields')}(${value});`);
-    writer.line(`let ${count} = 0;`);
-    writer.line(`for (const ${key} of ${keys}) if (!(${stateTest(fields, key)})) ${count}++;`);
+    writer.line(`let ${count} = ${keys}.length;`);
+    writer.line(`if (${fields} !== undefined) for (const ${key} of ${keys}) if (${stateTest(fields, key)}) ${count}--;`);
     return { presence, count, keys };
   },
   call: (writer, id, args) => {

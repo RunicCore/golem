@@ -28,7 +28,9 @@ export function instanceFieldsSource(): string {
   return [
     `const fieldsKey = /*#__PURE__*/ Symbol.for(${JSON.stringify(MODEL_FIELDS_KEY)});`,
     'function instanceFields(value) {',
-    '  for (let prototype = Object.getPrototypeOf(value); prototype !== null; prototype = Object.getPrototypeOf(prototype)) {',
+    '  let prototype = Object.getPrototypeOf(value);',
+    '  if (prototype === Object.prototype) return undefined;',
+    '  for (; prototype !== null; prototype = Object.getPrototypeOf(prototype)) {',
     '    if (Object.prototype.hasOwnProperty.call(prototype, fieldsKey)) return prototype[fieldsKey] ?? undefined;',
     '  }',
     '  return undefined;',
