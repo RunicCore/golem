@@ -30,6 +30,7 @@ import {
   sep,
 } from 'node:path';
 import * as ast from 'typescript/unstable/ast';
+import { matchStarPattern } from './star-pattern.js';
 import {
   API,
   Checker,
@@ -824,7 +825,8 @@ function firstExisting(host: ModuleResolutionHost, filenames: readonly string[])
 function resolveRelative(moduleName: string, containingFile: string, host: ModuleResolutionHost): string | undefined {
   const base = resolvePath(dirname(containingFile), moduleName);
   const extension = extname(base);
-  if (extension) {
+  // A dot inside a name (`./user.model`) is no extension: the name takes one below.
+  if (SOURCE_EXTENSIONS.includes(extension) || JS_EXTENSIONS.has(extension)) {
     const match = firstExisting(host, sourceCandidates(base));
     if (match) return match;
     if (JS_EXTENSIONS.has(extension)) {
@@ -852,15 +854,6 @@ function importMapTarget(value: unknown): string | undefined {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
   const record = value as Record<string, unknown>;
   return importMapTarget(record.default) ?? importMapTarget(record.import);
-}
-
-function matchStarPattern(pattern: string, moduleName: string): string | undefined {
-  const star = pattern.indexOf('*');
-  if (star < 0) return moduleName === pattern ? '' : undefined;
-  const prefix = pattern.slice(0, star);
-  const suffix = pattern.slice(star + 1);
-  if (!moduleName.startsWith(prefix) || !moduleName.endsWith(suffix)) return undefined;
-  return moduleName.slice(prefix.length, moduleName.length - suffix.length);
 }
 
 function applyStar(target: string, star: string): string {

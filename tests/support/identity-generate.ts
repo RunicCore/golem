@@ -7,6 +7,7 @@ import { scanProject } from '#golem/rewrite-scan';
 import { typescriptVersion } from '#golem/typescript-ns';
 import type { GolemDiagnostic } from '#golem/generator-api';
 import { writeGeneratedArtifacts } from '../fixture-project.js';
+import { editProjectSources } from './node-specifiers-project.js';
 import { caseFolder, DIAGNOSTICS, GENERATED, REWRITTEN, type IdentityProject } from './identity-corpus.js';
 
 function describeDiagnostic(stage: string, diagnostic: GolemDiagnostic): string {
@@ -64,6 +65,16 @@ function rewriteStage(item: IdentityProject, lines: string[]): ReadonlyMap<strin
   return rewritten;
 }
 
+/** The text the specifier edits make of each project source of the project that they change, keyed by path relative to the root. */
+function specifierStage(item: IdentityProject, lines: string[]): ReadonlyMap<string, string> {
+  try {
+    return new Map([...editProjectSources(item.root)].filter(([, edited]) => edited.edits.length > 0).map(([relative, edited]) => [relative, edited.code]));
+  } catch (error) {
+    lines.push(describeError('rewrite', error));
+    return new Map();
+  }
+}
+
 function write(filename: string, content: string): void {
   fs.mkdirSync(path.dirname(filename), { recursive: true });
   fs.writeFileSync(filename, content);
@@ -74,13 +85,13 @@ async function run(projects: readonly IdentityProject[], outputDirectory: string
     begin(item.name);
     const lines: string[] = [];
     // A rewrite case's companions are fixtures; the other cases write their generated files into the project, where the scan reads them.
-    const artifacts = item.kind === 'rewrite' ? [] : await generateStage(item, lines);
+    const artifacts = item.kind === 'rewrite' || item.kind === 'specifiers' ? [] : await generateStage(item, lines);
     const folder = path.join(outputDirectory, caseFolder(item.name));
     // A rejected generation leaves nothing to rewrite.
     if (artifacts) {
       writeGeneratedArtifacts(artifacts);
       for (const artifact of artifacts) write(path.join(folder, GENERATED, path.relative(item.root, artifact.path)), artifact.content);
-      for (const [relative, text] of rewriteStage(item, lines)) write(path.join(folder, REWRITTEN, relative), text);
+      for (const [relative, text] of item.kind === 'specifiers' ? specifierStage(item, lines) : rewriteStage(item, lines)) write(path.join(folder, REWRITTEN, relative), text);
     }
     write(path.join(folder, DIAGNOSTICS), lines.map(line => `${line.replaceAll(item.root, '<root>')}\n`).join(''));
   }

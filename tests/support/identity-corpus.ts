@@ -8,8 +8,8 @@ export interface IdentityFile { readonly from: string; readonly to: string }
 /** One project that the identity test generates and rewrites on both TypeScript versions. */
 export interface IdentityCase {
   readonly name: string;
-  /** `model`: the model generator, then the rewrite scan. `controller`: the controller generator, then the rewrite scan with the Nest rule. `rewrite`: the rewrite scan alone, over generated companions that are fixtures. */
-  readonly kind: 'model' | 'controller' | 'rewrite';
+  /** `model`: the model generator, then the rewrite scan. `controller`: the controller generator, then the rewrite scan with the Nest rule. `rewrite`: the rewrite scan alone, over generated companions that are fixtures. `specifiers`: the Node-loadable specifier edits alone, over a Bundler project. */
+  readonly kind: 'model' | 'controller' | 'rewrite' | 'specifiers';
   readonly files: readonly IdentityFile[];
   /** The generation profile's `mobx`. */
   readonly mobx: boolean;
@@ -117,13 +117,18 @@ function entries(directory: string): fs.Dirent[] {
   return fs.readdirSync(fixturePath(directory), { withFileTypes: true }).sort((left, right) => (left.name < right.name ? -1 : left.name > right.name ? 1 : 0));
 }
 
-/** Every `.ts` file under `directory`, as paths relative to it. */
-function sourcesUnder(directory: string, relative = ''): string[] {
+/** Every file under `directory` that `keep` accepts by name, as paths relative to it. */
+function filesUnder(directory: string, keep: (name: string) => boolean, relative = ''): string[] {
   return entries(path.posix.join(directory, relative)).flatMap(entry => {
     const child = path.posix.join(relative, entry.name);
-    if (entry.isDirectory()) return sourcesUnder(directory, child);
-    return entry.name.endsWith('.ts') ? [child] : [];
+    if (entry.isDirectory()) return filesUnder(directory, keep, child);
+    return keep(entry.name) ? [child] : [];
   });
+}
+
+/** Every `.ts` file under `directory`, as paths relative to it. */
+function sourcesUnder(directory: string): string[] {
+  return filesUnder(directory, name => name.endsWith('.ts'));
 }
 
 function placed(directory: string, root: string, relatives: readonly string[]): IdentityFile[] {
@@ -183,6 +188,20 @@ function controllerClaims(): IdentityCase[] {
   });
 }
 
+/** The Node-loadable specifier fixture: its runnable sources, and its compile-only edge cases under `src/edges/`. */
+function nodeSpecifierCase(): IdentityCase {
+  const all = (): boolean => true;
+  return {
+    name: 'node-specifiers',
+    kind: 'specifiers',
+    mobx: false,
+    files: [
+      ...placed('node-specifiers/src', 'src', filesUnder('node-specifiers/src', all)),
+      ...placed('node-specifiers/edges/src', 'src/edges', filesUnder('node-specifiers/edges/src', all)),
+    ],
+  };
+}
+
 const MODEL_PAIR = /\.model\.(?:generated\.)?ts$/;
 
 /** The files in `start` and, for each, the files of `directory` that it imports by a relative `.js` specifier and those import in turn. */
@@ -232,7 +251,7 @@ function discover(): IdentityCase[] {
 
 /** The explicit cases, then the discovered ones. Read once, with synchronous calls, so a test file registers one test for each case when it loads. */
 export const IDENTITY_CASES: readonly IdentityCase[] = (() => {
-  const cases = [...EXPLICIT, ...discover()];
+  const cases = [...EXPLICIT, ...discover(), nodeSpecifierCase()];
   const duplicate = cases.find((item, index) => cases.findIndex(other => other.name === item.name) !== index);
   if (duplicate) throw new Error(`The identity corpus holds the case ${duplicate.name} twice`);
   const unknownMobx = [...MOBX_CASES].filter(name => !cases.some(item => item.name === name));

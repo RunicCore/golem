@@ -20,6 +20,16 @@ test('every name the facade exports is defined on the active backend', () => {
   assert.match(ts.typescriptVersion, /^[67]\./);
 });
 
+test('a relative specifier with a dot in its name resolves to the source that bears the name', t => {
+  const root = createFixtureProject(t, 'golem-dotted-specifier-');
+  const main = path.join(root, 'main.ts');
+  fs.writeFileSync(path.join(root, 'user.model.ts'), 'export class User {}\n');
+  const resolve = (specifier: string): string | undefined => ts.resolveModuleName(specifier, main, {}, ts.sys).resolvedModule?.resolvedFileName;
+  assert.equal(resolve('./user.model'), path.join(root, 'user.model.ts'));
+  assert.equal(resolve('./user.model.js'), path.join(root, 'user.model.ts'));
+  assert.equal(resolve('./user.other'), undefined);
+});
+
 /** A project whose one source imports `dependency.ts` from disk. */
 function sessionOnDiskDependency(t: TestContext): { readonly root: string; readonly main: string; readonly dependency: string } {
   const root = createFixtureProject(t, 'golem-session-disk-');
