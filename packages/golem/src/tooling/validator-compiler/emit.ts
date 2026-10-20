@@ -479,9 +479,6 @@ function fastKeyTest(writer: FunctionWriter, { check, value, captured, reads }: 
   if (locals.length > 0) writer.line(`let ${locals.join(', ')};`);
   const list = additional?.kind === 'schema' || reads.patterns.length > 0 || check.propertyNames !== undefined ? writer.fresh('keys') : undefined;
   if (list !== undefined) writer.line(`const ${list} = Object.keys(${value});`);
-  // The names that the instance's own model declares, read once: a key outside them is program state and does not count.
-  const fields = count === undefined ? undefined : writer.fresh('fields');
-  if (fields !== undefined) writer.line(`const ${fields} = ${writer.state.localHelper('instanceFields')}(${value});`);
   const key = writer.fresh('key');
   const named = new Set(check.properties.map(property => property.key));
   const capturedKeys = new Set(captured.map(([name]) => name));
@@ -500,7 +497,7 @@ function fastKeyTest(writer: FunctionWriter, { check, value, captured, reads }: 
   writer.open('default:');
   writer.line(`const ${item} = ${value}[${key}];`);
   writer.line(`if (${item} === undefined) continue;`);
-  if (count !== undefined && fields !== undefined) writer.line(`if (!(${stateTest(fields, key)})) ${count}++;`);
+  if (count !== undefined) writer.line(`${count}++;`);
   unnamed.forEach(([name, local], position) => writer.line(`${position === 0 ? '' : 'else '}if (${key} === ${literal(name)}) ${local} = ${item};`));
   if (unknown !== undefined) {
     const patterns = check.patternProperties.map(entry => `${patternExpression(writer.state, entry.pattern)}.test(${key})`);
@@ -510,6 +507,13 @@ function fastKeyTest(writer: FunctionWriter, { check, value, captured, reads }: 
   writer.close();
   writer.close();
   writer.close();
+  if (count !== undefined) {
+    // The names that the instance's own model declares: a key outside them is program state and does not count, the
+    // full validator's rule. A plain value has no such names and runs no second pass.
+    const fields = writer.fresh('fields');
+    writer.line(`const ${fields} = ${writer.state.localHelper('instanceFields')}(${value});`);
+    writer.line(`if (${fields} !== undefined) for (const ${key} of ${list ?? `Object.keys(${value})`}) if (!${fields}.includes(${key}) && ${value}[${key}] !== undefined) ${count}--;`);
+  }
   return {
     presence,
     ...(count === undefined ? {} : { count }),
@@ -1080,8 +1084,9 @@ class FunctionWriter {
       this.open(`if (!${record}.allKeys)`);
       this.open(`for (const ${key} of ${this.state.localHelper('definedKeys')}(${value}))`);
       this.line(`if (${record}.keys.has(${key})) continue;`);
+      // Program state of a model instance is no unevaluated key, whether the schema forbids it or judges its value.
+      this.line(`if (${this.state.localHelper('isInstanceState')}(${value}, ${key})) continue;`);
       if (schema.kind === 'never') {
-        this.line(`if (${this.state.localHelper('isInstanceState')}(${value}, ${key})) continue;`);
         this.issue(`code: 'unknownKey', key: ${key}`, `[...${PATH}, ${key}]`);
       } else {
         const member = this.fresh('member');

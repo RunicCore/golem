@@ -26,6 +26,10 @@ function modelClass(...ids: string[]): new () => object {
 class Stateful {}
 registerGeneratedModel(Stateful as new () => Record<string, unknown>, { fields: ['a', 'b', 'c', 'd', 'kind', 't', 'sku', 'qty', 'id', 'value', 'children', 'r', 'side'] });
 
+/** A model that declares only some of those keys: a schema key outside its list is program state of its instances. */
+class Narrow {}
+registerGeneratedModel(Narrow as new () => Record<string, unknown>, { fields: ['a', 'kind', 't', 'id'] });
+
 const Cat = modelClass('Cat');
 const Dog = modelClass('Dog');
 
@@ -203,7 +207,7 @@ function oddValues(sample: unknown, seed: number, count: number): readonly unkno
       return value;
     }
     // Now and then the object is a model instance, so a key that the change adds may be program state.
-    if (random() < 0.25) Object.setPrototypeOf(place, Stateful.prototype);
+    if (random() < 0.25) Object.setPrototypeOf(place, (random() < 0.5 ? Stateful : Narrow).prototype);
     const wrapped = changeObject(place, random);
     return wrapped !== undefined && place === value ? wrapped : value;
   });

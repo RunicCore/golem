@@ -41,16 +41,18 @@ function instance<Model extends object>(Model: new () => Model, keys: Record<str
 
 const CLOSED = { type: 'object', required: ['title'], properties: { title: { type: 'string' }, done: { type: 'boolean' } }, additionalProperties: false };
 const EVALUATED = { allOf: [{ type: 'object', properties: { title: { type: 'string' } } }], unevaluatedProperties: false };
+const EVALUATED_VALUED = { allOf: [{ type: 'object', properties: { title: { type: 'string' } } }], unevaluatedProperties: { type: 'number' } };
 const branch = (tag: string, key: string): object => ({ type: 'object', required: ['kind', key], properties: { kind: { const: tag }, [key]: { type: 'number' } }, additionalProperties: false });
 const TAGGED = { oneOf: [branch('a', 'x'), branch('b', 'y')], discriminator: { propertyName: 'kind' } };
 // An open model that lists its names, as golem-openapi writes `unevaluatedProperties: false` over an open base.
 const NAMED = { type: 'object', properties: { title: { type: 'string' } }, propertyNames: { enum: ['title'] } };
 const COUNTED_MAX = { type: 'object', properties: { title: { type: 'string' } }, maxProperties: 1 };
+const COUNTED_MAX_NAMED = { type: 'object', properties: { title: { type: 'string' }, note: { type: 'string' } }, maxProperties: 1 };
 const COUNTED_MIN = { type: 'object', properties: { title: { type: 'string' }, note: { type: 'string' } }, minProperties: 2 };
 const PATTERNED = { type: 'object', properties: { title: { type: 'string' } }, patternProperties: { '^x': { type: 'number' } } };
 const VALUED = { type: 'object', properties: { title: { type: 'string' } }, additionalProperties: { type: 'number' } };
 const compiled = compileValidatorModule({
-  roots: { closed: CLOSED, evaluated: EVALUATED, tagged: TAGGED, named: NAMED, countedMax: COUNTED_MAX, countedMin: COUNTED_MIN, patterned: PATTERNED, valued: VALUED },
+  roots: { closed: CLOSED, evaluated: EVALUATED, evaluatedValued: EVALUATED_VALUED, tagged: TAGGED, named: NAMED, countedMax: COUNTED_MAX, countedMaxNamed: COUNTED_MAX_NAMED, countedMin: COUNTED_MIN, patterned: PATTERNED, valued: VALUED },
   fastPath: true,
 });
 
@@ -70,6 +72,11 @@ const PLACES: readonly { readonly root: string; readonly fast: boolean; readonly
     ['a model instance with own state', instance(Task, { cache: 1 }), true],
     ['a model instance with a declared key that nothing evaluated', instance(Wide, { note: 'n' }), false],
   ] },
+  { root: 'evaluatedValued', fast: false, rows: [
+    ['a plain value with a wrong unevaluated value', { title: 'a', cache: 'text' }, false],
+    ['a model instance with own state of another type', instance(Task, { cache: 'text' }), true],
+    ['a model instance with a declared key that only the unevaluated schema judges', instance(Wide, { note: 'n' }), false],
+  ] },
   { root: 'named', fast: true, rows: [
     ['a plain value with a name outside the list', { title: 'a', cache: 1 }, false],
     ['a model instance with own state', instance(Task, { cache: 1 }), true],
@@ -79,10 +86,15 @@ const PLACES: readonly { readonly root: string; readonly fast: boolean; readonly
     ['a plain value over the limit', { title: 'a', cache: 1 }, false],
     ['a model instance whose own state would pass the limit', instance(Task, { cache: 1 }), true],
   ] },
+  { root: 'countedMaxNamed', fast: true, rows: [
+    ['a plain value with both named keys', { title: 'a', note: 'n' }, false],
+    ['a model instance whose named key is not declared by its model', instance(Task, { note: 'n' }), true],
+  ] },
   { root: 'countedMin', fast: true, rows: [
     ['a plain value that reaches the minimum', { title: 'a', cache: 1 }, true],
     ['a model instance whose own state would reach the minimum', instance(Wide, { cache: 1 }), false],
     ['a model instance whose declared keys reach the minimum', instance(Wide, { note: 'n' }), true],
+    ['a model instance whose named key is not declared by its model', instance(Task, { title: 'a', note: 'n' }), false],
   ] },
   { root: 'patterned', fast: true, rows: [
     ['a plain value with a wrong value at a pattern key', { title: 'a', xcache: 'text' }, false],
