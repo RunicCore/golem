@@ -282,6 +282,21 @@ Class instances are checked against their rules on the way in and out. Golem run
 </template>
 </BenchmarkChart>
 
+## Against hand-written code
+
+Hand-written code copies each field and converts each date, and checks nothing. The table shows Golem's speed with validation on as a fraction of that code's speed, so 1.00 means equal. Golem checks the value before and after each conversion. Parse is `JSON.parse` then the hand-written decode; stringify is the hand-written encode then `JSON.stringify`.
+
+| Model | Decode | Encode | Parse | Stringify |
+| --- | --- | --- | --- | --- |
+| Flat | 0.49 | 0.79 | 0.74 | 1.06 |
+| Nested | 0.36 | 0.65 | 0.83 | 0.85 |
+| Union | 0.40 | 0.71 | 0.70 | 0.91 |
+| Array of 100 items | 0.53 | 0.78 | 0.75 | 0.82 |
+| Tuple | 0.44 | 0.76 | 0.71 | 0.85 |
+| Optional fields | 0.64 | 0.85 | 0.77 | 0.84 |
+
+To measure them on your machine, run `npm run bench:typia`.
+
 ## What is measured
 
 Every library gets the same JSON payload. Before timing, each library must turn its parsed value back into the original JSON, and the libraries that validate must reject invalid variants of it. Those checks run in a separate process, so every library is timed on valid input only. A validator runs slower after it has rejected differently shaped input: V8 re-optimises a validator's generated function for the new object shapes. typia shows the same effect. Each library is timed in its own process, in two rounds with the library order reversed in the second. Each case is warmed up, then timed in six short batches; the table shows the median. A library that can't do a case says why instead of showing a number.
