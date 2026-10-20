@@ -176,9 +176,9 @@ const LOCAL_HELPERS: Readonly<Record<LocalHelper, string>> = {
     '  into.allItems = into.allItems || from.allItems;',
     '}',
   ].join('\n'),
-  // The fast check runs a check that has no fast form through its full validator, fail-fast, and reads only the verdict.
-  // The path and issue lists are module-level and emptied on each call, so a pass allocates nothing, and a call made
-  // while another runs (a getter that validates) changes no verdict: only the returned boolean is read.
+  // The fast check runs a function that has no fast check through its full validator, fail-fast, and reads only the
+  // verdict. The path and issue lists are module-level and emptied on each call, so a pass allocates nothing, and a call
+  // made while another runs (a getter that validates) changes no verdict: only the returned boolean is read.
   leafPasses: [
     'const scratchPath = [];',
     'const scratchIssues = [];',
@@ -372,11 +372,6 @@ interface WriterMode {
   readonly child: (writer: FunctionWriter, token: string, body: () => void) => void;
   /** An expression that selects the model class of `value` among the codec ids `among`. */
   readonly selectModel: (state: ModuleState, value: string, among: readonly string[]) => string;
-  /**
-   * For the functions it `applies` to, writes a check without a fast form (see `hasFastForm`) as a call of its
-   * micro-leaf, the full validator of that one check; absent when the mode writes every check itself.
-   */
-  readonly microLeaf?: { readonly applies: (fn: IrFunction) => boolean; readonly write: (writer: FunctionWriter, check: IrCheck, value: string) => void };
   /** The mode writes functions that keep or receive an evaluation record. */
   readonly records: boolean;
   /**
@@ -439,23 +434,9 @@ function modelOfSelection(state: ModuleState, value: string, among: readonly str
 
 /**
  * The full validator of a module with fast checks: it selects a model class as the fast check does, so the module has
- * one selection helper, and a function with a fast check calls each micro-leaf in place, so each such check is written
- * once (F-129, F-164). Without fast checks the full validator is `FULL_VALIDATOR`, unchanged.
+ * one selection helper (F-129, F-164). Without fast checks the full validator is `FULL_VALIDATOR`, unchanged.
  */
-function fullValidatorBeside(plan: FastPlan): WriterMode {
-  return {
-    ...FULL_VALIDATOR,
-    selectModel: modelOfSelection,
-    microLeaf: {
-      applies: fn => plan.has(fn.id),
-      write: (writer, check, value) => {
-        const id = plan.microLeaf(check);
-        writer.calls.add(id);
-        writer.failWhen(`!${callFunction(plan.microLeafFunction(id), functionMark(id), { value, issues: ISSUES, all: ALL })}`);
-      },
-    },
-  };
-}
+const FULL_VALIDATOR_BESIDE_FAST_CHECKS: WriterMode = { ...FULL_VALIDATOR, selectModel: modelOfSelection };
 
 /**
  * The key test of the fast check (spec 5.2, F1). An object whose full validator reads only its declared keys reads
@@ -463,7 +444,9 @@ function fullValidatorBeside(plan: FastPlan): WriterMode {
  * with no exit inside the pass (spec 7.3: a caller such as `not` or a union can turn a `false` into `true`, and then the
  * reads must be the full validator's): a declared key in its own case by its name, every other key in `default`. A key
  * that `additionalProperties: false` forbids is only marked, and a schema of `additionalProperties` runs after
- * `required` in a second pass, both in the full validator's order.
+ * `required` in a second pass, both in the full validator's order. A key that matches a pattern of `patternProperties` is
+ * not additional. A keyword that loops over the keys (a schema of `additionalProperties`, `patternProperties`,
+ * `propertyNames`) gets the one key list, which also holds the keys whose value is `undefined`.
  */
 function fastKeyTest(writer: FunctionWriter, { check, value, captured, reads }: KeyTestRequest): KeyTest {
   const presence = objectPresence(writer.state, value, captured);
@@ -477,6 +460,8 @@ function fastKeyTest(writer: FunctionWriter, { check, value, captured, reads }: 
   const unknown = additional?.kind === 'forbid' ? writer.fresh('unknown') : undefined;
   const locals = [...captured.map(([, local]) => local), ...(count === undefined ? [] : [`${count} = 0`]), ...(unknown === undefined ? [] : [`${unknown} = false`])];
   if (locals.length > 0) writer.line(`let ${locals.join(', ')};`);
+  const list = additional?.kind === 'schema' || reads.patterns.length > 0 || check.propertyNames !== undefined ? writer.fresh('keys') : undefined;
+  if (list !== undefined) writer.line(`const ${list} = Object.keys(${value});`);
   const key = writer.fresh('key');
   const named = new Set(check.properties.map(property => property.key));
   const capturedKeys = new Set(captured.map(([name]) => name));
@@ -489,7 +474,7 @@ function fastKeyTest(writer: FunctionWriter, { check, value, captured, reads }: 
   // A required or dependent key that `properties` does not name is still additional: `default` captures it.
   const unnamed = additional === undefined ? [] : captured.filter(([name]) => !named.has(name));
   const item = writer.fresh('item');
-  writer.open(`for (const ${key} of Object.keys(${value}))`);
+  writer.open(`for (const ${key} of ${list ?? `Object.keys(${value})`})`);
   writer.open(`switch (${key})`);
   for (const entry of cases) writer.line(entry);
   writer.open('default:');
@@ -497,7 +482,10 @@ function fastKeyTest(writer: FunctionWriter, { check, value, captured, reads }: 
   writer.line(`if (${item} === undefined) continue;`);
   if (count !== undefined) writer.line(`${count}++;`);
   unnamed.forEach(([name, local], position) => writer.line(`${position === 0 ? '' : 'else '}if (${key} === ${literal(name)}) ${local} = ${item};`));
-  if (unknown !== undefined) writer.line(`${unknown} = true;`);
+  if (unknown !== undefined) {
+    const patterns = check.patternProperties.map(entry => `${patternExpression(writer.state, entry.pattern)}.test(${key})`);
+    writer.line(patterns.length === 0 ? `${unknown} = true;` : `if (!(${patterns.join(' || ')})) ${unknown} = true;`);
+  }
   writer.close();
   writer.close();
   writer.close();
@@ -505,14 +493,14 @@ function fastKeyTest(writer: FunctionWriter, { check, value, captured, reads }: 
     presence,
     ...(count === undefined ? {} : { count }),
     ...(unknown === undefined ? {} : { unknown }),
-    ...(additional?.kind === 'schema' ? { keys: `Object.keys(${value})`, undefinedToo: true } : {}),
+    ...(list === undefined ? {} : { keys: list, undefinedToo: true }),
   };
 }
 
 /**
  * The fast check `is_X(v)` (spec 5.1): true exactly when the full validator reports no issue. A failed check returns
  * `false`; no path and no issue is built. A function with a fast check is called as `isN(v)`; any other through its full
- * validator (`leafPasses`), and a check without a fast form through a full validator of that one check (a micro-leaf).
+ * validator (`leafPasses`).
  */
 function fastCheckMode(plan: FastPlan): WriterMode {
   const leafCall = (writer: FunctionWriter, id: number, value: string): string => {
@@ -532,7 +520,6 @@ function fastCheckMode(plan: FastPlan): WriterMode {
     },
     child: (_writer, _token, body) => body(),
     selectModel: modelOfSelection,
-    microLeaf: { applies: () => true, write: (writer, check, value) => writer.failWhen(`!${leafCall(writer, plan.microLeaf(check), value)}`) },
     records: false,
     // A branch with a fast check is exact on its own, so its checks are exact in place too.
     mergesBranch: id => plan.has(id),
@@ -560,6 +547,11 @@ function isPrimitive(value: unknown): boolean {
   return value === null || typeof value !== 'object';
 }
 
+/** The module constant that holds the regular expression of `pattern`; it has no `g` flag, so a test leaves no `lastIndex`. */
+function patternExpression(state: ModuleState, pattern: string): string {
+  return state.constant('pattern', `new RegExp(${literal(pattern)}, 'u')`);
+}
+
 /** Writes one function in the given mode: the mode decides what a failed check writes and how a declared key is read. */
 class FunctionWriter {
   private readonly lines: string[] = [];
@@ -567,9 +559,6 @@ class FunctionWriter {
   private counter = 0;
   /** The record that checks of the value being checked fill; undefined when this function keeps none, or while a child value is checked. */
   private record: string | undefined;
-
-  /** Writes a check without a fast form as its micro-leaf, in a function the mode's `microLeaf` applies to. */
-  private readonly microLeaf: ((writer: FunctionWriter, check: IrCheck, value: string) => void) | undefined;
 
   /** The full validators this one calls, by the id they have after forwarding. */
   public readonly calls = new Set<number>();
@@ -586,7 +575,6 @@ class FunctionWriter {
     // The record travels through the full validators' arguments, so a function that keeps or receives one is a leaf of the fast check.
     if (!mode.records && (fn.collects || fn.receives)) throw new Error(`The validator compiler writes no fast check for the schema function ${fn.id}: it keeps or receives an evaluation record.`);
     this.record = fn.collects || fn.receives ? EVALUATION : undefined;
-    this.microLeaf = mode.microLeaf?.applies(fn) ? mode.microLeaf.write : undefined;
   }
 
   /** The body of the function, without its header line. */
@@ -704,11 +692,6 @@ class FunctionWriter {
     else if (schema.kind === 'checks') this.checks(schema.checks, value);
   }
 
-  /** True when the mode writes `check` itself rather than as a micro-leaf. */
-  private writes(check: IrCheck): boolean {
-    return this.microLeaf === undefined || hasFastForm(check);
-  }
-
   private checks(checks: readonly IrCheck[], value: string): void {
     // In a mode that leaves at a failure, the checks after a type check run only on a value of its types.
     let types: readonly IrTypeName[] | undefined;
@@ -716,7 +699,7 @@ class FunctionWriter {
       const check = checks[position];
       const next = checks[position + 1];
       // A value that is not an object has already failed the type check, so the object keywords have nothing to test.
-      if (check.kind === 'type' && check.names.every(name => name === 'object') && next?.kind === 'object' && this.writes(next)) {
+      if (check.kind === 'type' && check.names.every(name => name === 'object') && next?.kind === 'object') {
         this.objectOrTypeIssue(check, next, value);
         position++;
       } else {
@@ -736,7 +719,6 @@ class FunctionWriter {
 
   /** `types`, when given, lists the types the value already has: a guard on one of them is not written again. */
   private check(check: IrCheck, value: string, types?: readonly IrTypeName[]): void {
-    if (this.microLeaf !== undefined && !hasFastForm(check)) return this.microLeaf(this, check, value);
     switch (check.kind) {
       case 'type':
         if (check.names.includes('object')) this.state.localHelper('isObject');
@@ -789,6 +771,11 @@ class FunctionWriter {
       }
       case 'unevaluatedProperties': return this.unevaluatedProperties(check.schema, value);
       case 'unevaluatedItems': return this.unevaluatedItems(check.schema, value);
+      default: {
+        // A new kind of check fails the build here, and generation, instead of being skipped.
+        const unwritten: never = check;
+        throw new Error(`The validator compiler writes no check of the kind ${JSON.stringify(unwritten)}.`);
+      }
     }
   }
 
@@ -805,6 +792,8 @@ class FunctionWriter {
 
   /** The functions run only after the structural schema passed, so they never see a value of the wrong shape. */
   private validationCheck(check: IrValidation, value: string): void {
+    // A function that reaches a validation function has no fast check (spec 5.1 rule 7): the predicate runs once.
+    if (!this.mode.records) throw new Error(`The validator compiler writes no fast check for the schema function ${this.fn.id}: it reaches a validation function.`);
     const runCalls = (): void => {
       for (const index of check.calls) {
         const result = this.fresh('result');
@@ -845,7 +834,7 @@ class FunctionWriter {
       max: limit => `${value}.length > ${JSON.stringify(limit)} && ${codePoints()} > ${JSON.stringify(limit)}`,
     });
     if (check.pattern !== undefined) {
-      const expression = this.state.constant('pattern', `new RegExp(${literal(check.pattern)}, 'u')`);
+      const expression = patternExpression(this.state, check.pattern);
       this.leaf({ fails: `!${expression}.test(${value})`, issue: `code: 'pattern', pattern: ${literal(check.pattern)}` });
     }
   }
@@ -966,7 +955,7 @@ class FunctionWriter {
     const { visitsAdditional } = reads;
     const captured = reads.declared.map(key => [key, this.fresh('present')] as const);
     // A key that matches a pattern is not "additional" even when the pattern's schema accepts everything.
-    const patterns = check.patternProperties.map(entry => ({ entry, expression: this.state.constant('pattern', `new RegExp(${literal(entry.pattern)}, 'u')`) }));
+    const patterns = check.patternProperties.map(entry => ({ entry, expression: patternExpression(this.state, entry.pattern) }));
     const patternsToRun = patterns.filter(({ entry }) => reads.patterns.includes(entry));
     const { presence, count, keys, undefinedToo, unknown } = prepared ?? this.mode.keyTest(this, { check, value, captured, reads });
     // The key test makes the key list or the count for each check below that reads it.
@@ -983,9 +972,9 @@ class FunctionWriter {
       for (const key of dependents) this.leaf(required(key));
       this.close();
     }
-    // Ahead of `properties`: with fail-fast the first issue is the object's own unknown key. A key test without a key list ran it.
+    // Ahead of `properties`: with fail-fast the first issue is the object's own unknown key. A key test that made `unknown` ran it.
     if (unknown !== undefined) this.failWhen(unknown);
-    if (check.additional && visitsAdditional && keys !== undefined) {
+    if (check.additional && visitsAdditional && keys !== undefined && unknown === undefined) {
       const additional = check.additional;
       const key = this.fresh('key');
       const known = check.properties.length > 0 ? this.state.constant('known', `new Set(${JSON.stringify(check.properties.map(property => property.key))})`, JSON.stringify([...new Set(check.properties.map(property => property.key))].sort())) : undefined;
@@ -1021,13 +1010,19 @@ class FunctionWriter {
     if (patternsToRun.length > 0) {
       const key = this.fresh('key');
       this.open(`for (const ${key} of ${listed(keys)})`);
+      // A key list that also holds the keys whose value is `undefined` (`undefinedToo`) is read once, and those keys are left out.
+      const held = undefinedToo ? this.fresh('member') : undefined;
+      if (held !== undefined) {
+        this.line(`const ${held} = ${value}[${key}];`);
+        this.line(`if (${held} === undefined) continue;`);
+      }
       for (const { entry, expression } of patternsToRun) {
         this.open(`if (${expression}.test(${key}))`);
         this.mark(record => `${record}.keys.add(${key});`);
         if (entry.schema.kind !== 'always') {
           const schema = entry.schema;
-          const member = this.fresh('member');
-          this.line(`const ${member} = ${value}[${key}];`);
+          const member = held ?? this.fresh('member');
+          if (held === undefined) this.line(`const ${member} = ${value}[${key}];`);
           this.atChild(key, () => this.schema(schema, member));
         }
         this.close();
@@ -1039,6 +1034,7 @@ class FunctionWriter {
     if (check.propertyNames !== undefined) {
       const key = this.fresh('key');
       this.open(`for (const ${key} of ${listed(keys)})`);
+      if (undefinedToo) this.line(`if (${value}[${key}] === undefined) continue;`);
       this.leaf({ fails: `!${this.call(check.propertyNames, { value: key, issues: '[]', all: 'false' })}`, issue: `code: 'invalidKey', key: ${key}` });
       this.close();
     }
@@ -1376,87 +1372,45 @@ function reachingValidation(functions: readonly IrFunction[]): ReadonlySet<numbe
 }
 
 /**
- * True when the fast check writes `check` itself; any other check is a micro-leaf (spec 5.4 b), so a kind without a
- * form, a new one included, is never skipped. `if`, `dependentSchemas`, `contains`, `patternProperties` and
- * `propertyNames` get their forms in a later step; `unevaluated*` and validation functions have none.
- */
-function hasFastForm(check: IrCheck): boolean {
-  switch (check.kind) {
-    case 'type': case 'literal': case 'format': case 'date': case 'string': case 'number': case 'instance': case 'call': case 'allOf':
-    // Branches and `not` call exact checks (spec 5.4 c), so their verdicts count as the full validator's do.
-    case 'union': case 'not':
-      return true;
-    case 'array': return check.contains === undefined;
-    // One IR check is one unit: an object check with either keyword is one micro-leaf as a whole.
-    case 'object': return check.patternProperties.length === 0 && check.propertyNames === undefined;
-    default: return false;
-  }
-}
-
-/**
- * True when `check` is a fast form that decides something itself, not one that only passes the value to micro-leaves:
- * `allOf` through its branches, a union, `not` and `$ref` through the functions they call (spec 5.4 a).
+ * True when a check of a fast check decides something itself, not one that only passes the value to other functions:
+ * `allOf` through its branches, a union, `not`, `$ref`, `if` and `dependentSchemas` through the functions they call,
+ * which must have a fast check of their own (spec 5.4 a). A validation function and `unevaluated*` have no fast form;
+ * a function that holds one is never planned (`FastPlan`).
  */
 function decidesFast(check: IrCheck, has: (id: number) => boolean): boolean {
-  if (!hasFastForm(check)) return false;
   switch (check.kind) {
     case 'allOf': return check.branches.some(branch => branch.kind === 'never' || (branch.kind === 'checks' && branch.checks.some(inner => decidesFast(inner, has))));
     case 'union': return check.branches.some(has);
     case 'not': case 'call': return has(check.fn);
-    default: return true;
+    case 'conditional': return [check.if, check.then, check.else].some(id => id !== undefined && has(id));
+    case 'dependentSchemas': return check.entries.some(entry => has(entry.fn));
+    case 'validation': case 'unevaluatedProperties': case 'unevaluatedItems': return false;
+    case 'type': case 'literal': case 'format': case 'date': case 'string': case 'number': case 'instance': case 'array': case 'object':
+      return true;
   }
 }
 
-/**
- * True when an object or array check of the value `schema` checks itself is a micro-leaf: a check of the schema, of an
- * `allOf` branch, or of a function that a union branch, `not` or `$ref` runs on the same value. `seen` holds the
- * functions already walked, so a `$ref` cycle ends.
- */
-function topLevelMicroLeaf(schema: IrSchema, functions: readonly IrFunction[], seen: Set<number>): boolean {
-  if (schema.kind !== 'checks') return false;
-  const inFunction = (id: number): boolean => {
-    if (seen.has(id)) return false;
-    seen.add(id);
-    return topLevelMicroLeaf(functions[id].body, functions, seen);
-  };
-  return schema.checks.some(check => {
-    switch (check.kind) {
-      case 'object': case 'array': return !hasFastForm(check);
-      case 'allOf': return check.branches.some(branch => topLevelMicroLeaf(branch, functions, seen));
-      case 'union': return check.branches.some(inFunction);
-      case 'not': case 'call': return inFunction(check.fn);
-      default: return false;
-    }
-  });
+/** True when a fast check of `fn` pays: a check of it decides something itself, so a failing value is not run twice for nothing (spec 5.4 a). */
+function fastBody(fn: IrFunction, has: (id: number) => boolean): boolean {
+  return fn.body.kind !== 'checks' || fn.body.checks.some(check => decidesFast(check, has));
 }
 
 /**
- * True when a fast check of `fn` pays: a check of it decides something itself, and no object or array check of the
- * value itself is a micro-leaf, which a failing value would run twice for nothing (spec 5.4 a).
- */
-function fastBody(fn: IrFunction, functions: readonly IrFunction[], has: (id: number) => boolean): boolean {
-  if (fn.body.kind !== 'checks') return true;
-  return fn.body.checks.some(check => decidesFast(check, has)) && !topLevelMicroLeaf(fn.body, functions, new Set([fn.id]));
-}
-
-/**
- * Which functions get a fast check, and the micro-leaves the fast checks call. A function gets one when it keeps and
- * receives no evaluation record (spec 5.4, the record travels through full validators), its IR call graph reaches no
- * validation function, so each predicate runs once per conversion (rule 7), and its body pays (`fastBody`), counting a
- * call only to a function that has a fast check itself.
+ * Which functions get a fast check. A function gets one when it keeps and receives no evaluation record (spec 5.4, the
+ * record travels through full validators), its IR call graph reaches no validation function, so each predicate runs once
+ * per conversion (rule 7), and its body pays (`fastBody`), counting a call only to a function that has a fast check itself.
  */
 class FastPlan {
   private readonly fast = new Set<number>();
-  private readonly micro = new Map<IrCheck, IrFunction>();
 
-  public constructor(private readonly functions: readonly IrFunction[]) {
+  public constructor(functions: readonly IrFunction[]) {
     const reaching = reachingValidation(functions);
     const candidates = functions.filter(fn => !fn.collects && !fn.receives && !reaching.has(fn.id));
     const has = (id: number): boolean => this.fast.has(id);
     for (let grew = true; grew;) {
       grew = false;
       for (const fn of candidates) {
-        if (this.fast.has(fn.id) || !fastBody(fn, functions, has)) continue;
+        if (this.fast.has(fn.id) || !fastBody(fn, has)) continue;
         this.fast.add(fn.id);
         grew = true;
       }
@@ -1465,25 +1419,6 @@ class FastPlan {
 
   public has(id: number): boolean {
     return this.fast.has(id);
-  }
-
-  /** The id of the function that is `check` alone, written as a full validator; the same check gets the same function. */
-  public microLeaf(check: IrCheck): number {
-    const known = this.micro.get(check);
-    if (known !== undefined) return known.id;
-    const fn: IrFunction = { id: this.functions.length + this.micro.size, body: { kind: 'checks', checks: [check] }, collects: false, receives: false };
-    this.micro.set(check, fn);
-    return fn.id;
-  }
-
-  public microLeafFunction(id: number): IrFunction {
-    const fn = [...this.micro.values()].find(entry => entry.id === id);
-    if (fn === undefined) throw new Error(`The validator compiler has no micro-leaf ${id}.`);
-    return fn;
-  }
-
-  public microLeaves(): readonly IrFunction[] {
-    return [...this.micro.values()];
   }
 }
 
@@ -1522,7 +1457,7 @@ function writeFastCheck(state: ModuleState, module: IrModule, target: (id: numbe
  * other (a model and its wire form) end up together. The fast check is no part of the key: it follows from the body, and
  * a model root and an operation root of the same schema must share one function whether or not the fast check is
  * written for both. A group is named by its lowest id that `fastReached` holds, else by its lowest id, so the group's
- * fast check is written from a function whose micro-leaves are reached.
+ * fast check is written from a function that has one.
  */
 function groupFunctions(written: readonly WrittenFunction[], fastReached: ReadonlySet<number>): ReadonlyMap<number, number> {
   let groups = new Map<number, number>(written.map(entry => [entry.id, 0]));
@@ -1575,7 +1510,7 @@ export function emit(module: IrModule, options: EmitOptions): EmitResult {
   const plan = fastPath === true || (typeof fastPath === 'object' && fastPath.size > 0) ? new FastPlan(module.functions) : undefined;
   const wantsFastCheck = (name: string): boolean => fastPath === true || (typeof fastPath === 'object' && fastPath.has(name));
   const fastMode = plan === undefined ? undefined : fastCheckMode(plan);
-  const fullMode = plan === undefined ? FULL_VALIDATOR : fullValidatorBeside(plan);
+  const fullMode = plan === undefined ? FULL_VALIDATOR : FULL_VALIDATOR_BESIDE_FAST_CHECKS;
   const hasFastCheck = (id: number): boolean => plan?.has(id) ?? false;
   // First pass: every function as text, to learn which of those the roots reach are the same.
   const survey = new ModuleState();
@@ -1584,14 +1519,6 @@ export function emit(module: IrModule, options: EmitOptions): EmitResult {
     ...writeFunction(survey, module, target, fn, fullMode),
     ...(fastMode !== undefined && hasFastCheck(fn.id) ? { fast: writeFastCheck(survey, module, target, fn, fastMode) } : {}),
   }] as const));
-  // The micro-leaves the fast checks call; each is a full validator of one check, which makes no micro-leaf.
-  const microLeaves = new Map((plan?.microLeaves() ?? []).map(fn => [fn.id, fn] as const));
-  for (const fn of microLeaves.values()) written.set(fn.id, writeFunction(survey, module, target, fn, fullMode));
-  const functionAt = (id: number): IrFunction => {
-    const fn = id < module.functions.length ? module.functions[id] : microLeaves.get(id);
-    if (fn === undefined) throw new Error(`The validator compiler has no schema function ${id}.`);
-    return fn;
-  };
   const fastRootExports = module.exports.filter(({ name, fn }) => wantsFastCheck(name) && hasFastCheck(target(fn)));
   const fastRoots = fastRootExports.map(({ fn }) => target(fn));
   const fastReached = reachable(fastRoots, id => written.get(id)?.fast?.fastCalls ?? []);
@@ -1601,7 +1528,7 @@ export function emit(module: IrModule, options: EmitOptions): EmitResult {
   );
   const representative = groupFunctions([...written.values()].filter(entry => reached.has(entry.id)), fastReached);
   const kept = [...new Set(representative.values())].sort((first, second) => first - second);
-  const names = new Map(kept.map((id, index) => [id, functionName(index, functionAt(id).name)] as const));
+  const names = new Map(kept.map((id, index) => [id, functionName(index, module.functions[id].name)] as const));
   // A mark holds the id after forwarding.
   const markName = (id: number): string => {
     const name = names.get(representative.get(id) ?? -1);
@@ -1616,7 +1543,7 @@ export function emit(module: IrModule, options: EmitOptions): EmitResult {
   const state = new ModuleState();
   state.importValidations(module.validations);
   const functions = kept.map(id => {
-    const { parameters, body } = writeFunction(state, module, target, functionAt(id), fullMode);
+    const { parameters, body } = writeFunction(state, module, target, module.functions[id], fullMode);
     return `function ${names.get(id)}(${parameters}) {\n${resolved(body)}`;
   });
   const fastKept = [...new Set([...fastReached].map(id => representative.get(id) ?? id))].sort((first, second) => first - second);

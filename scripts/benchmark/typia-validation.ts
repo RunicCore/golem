@@ -11,18 +11,18 @@ import { BASE_TOGGLES, EXACT_PRESENCE_FORMS, GENERATED_TOGGLES, PRESENCE_FORMS, 
 import type { Agreement, CompareCase, CompareTask, MobxTwins, Subject, TwinFactories, TwinKind } from './fixtures/typia/compare-case.js';
 
 /**
- * Golem's validators and codecs against typia's `is`, `assert` and `equals`, and against hand-written decode and
- * encode, on one set of models (scripts/benchmark/fixtures/typia/typia-comparison.ts), with their IModel and MobX
+ * Golem's validators and codecs against typia's `is`, `assert` and `equals`, and against hand-written decode, encode,
+ * parse and stringify, on one set of models (scripts/benchmark/fixtures/typia/typia-comparison.ts), with their IModel and MobX
  * twins, with failing values, and with scratch validators that switch one cost at a time. Every case runs in this
  * process, interleaved, so host load moves both sides together; read the ratios, not the absolute numbers.
  * Writes nothing under docs/: the committed results.json belongs to `npm run bench`.
  *
- * `npm run bench:typia`              validation, twins, failing values, decode and encode (one window)
+ * `npm run bench:typia`              validation, twins, failing values, decode, encode, parse and stringify (one window)
  * `npm run bench:typia -- --toggles` the cost toggles on the scratch validators beside the generated fast checks and
  *                                    the codec call chain (one window)
  * `npm run bench:typia -- --verify`  the checks only, no timing
  */
-const SETTINGS = { warmupMs: 45, batchMs: 24, batches: 5 };
+const SETTINGS = { warmupMs: 30, batchMs: 18, batches: 5 };
 const TYPIA_FIXTURES = path.join(root, 'scripts/benchmark/fixtures/typia');
 const MOBX_FIXTURES = path.join(root, 'scripts/benchmark/fixtures/typia-mobx');
 
@@ -35,8 +35,6 @@ interface CompareModule {
 }
 
 const MODELS = ['flat', 'nested', 'union', 'array', 'tuple', 'optional'] as const;
-/** The models whose decode and encode are timed; the optional-field model times validation only. */
-const CONVERSION_MODELS = MODELS.filter(model => model !== 'optional');
 const TWINS: readonly TwinKind[] = ['plain', 'imodel', 'mobx'];
 const fixed = (value: number): string => Math.round(value).toLocaleString('en-US');
 const ratio = (a: number, b: number): string => (a / b).toFixed(2);
@@ -248,7 +246,7 @@ function reportBench(cases: readonly CompareCase[], samples: Map<CompareCase, Ba
     failing.push([model, twin, fixed(ge), fixed(ee), ratio(ge, ee), ratio(ge, gv), fixed(gl), fixed(el), ratio(gl, el), ratio(gl, gv)]);
   }
   const conversion: string[][] = [['model', 'task', 'golem', 'golem validate off', 'hand-written', 'golem/hand', 'off/hand']];
-  for (const model of CONVERSION_MODELS) for (const [task, name] of [['decode', 'fromWireFormat'], ['encode', 'toWireFormat']] as const) {
+  for (const model of MODELS) for (const [task, name] of [['decode', 'fromWireFormat'], ['encode', 'toWireFormat'], ['parse', 'parse'], ['stringify', 'stringify']] as const) {
     const [g, off, hand] = [`golem ${name}`, `golem ${name}, validate off`, 'hand-written'].map(side => median(model, 'plain', task, side));
     conversion.push([model, task, fixed(g), fixed(off), fixed(hand), ratio(g, hand), ratio(off, hand)]);
   }
@@ -256,7 +254,7 @@ function reportBench(cases: readonly CompareCase[], samples: Map<CompareCase, Ba
   process.stdout.write(`Validation of the plain IObject value, ops/s (${header})\n${table(rows)}\n\n`);
   process.stdout.write(`Validation of the twins (IModel class instance, MobX class instance), ops/s\n${table(twins)}\n\n`);
   process.stdout.write(`Failing values through codec.validate: one wrong field met early (first) or late (last); ratio to typia equals on the same value; early/valid and late/valid are golem's failing ops/s over its valid ops/s\n${table(failing)}\n\n`);
-  process.stdout.write(`Decode and encode, ops/s\n${table(conversion)}\n\n`);
+  process.stdout.write(`Decode, encode, parse and stringify, ops/s; the hand-written parse is JSON.parse then the hand-written decode, the stringify is the hand-written encode then JSON.stringify\n${table(conversion)}\n\n`);
 }
 
 async function main(): Promise<void> {

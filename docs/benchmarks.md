@@ -9,7 +9,7 @@ Benchmarks are for reference purposes only.
 <BenchmarkChart>
 <template #plain>
 
-Each library turns JSON into plain objects, checks every rule and rejects unknown properties. Golem uses an [`IObject` declaration](/guide/models#iobject-or-imodel) and also converts dates and [`TSerde` fields](/guide/tags#convert-a-field-to-a-different-json-value); Typia checks shapes only, so it can't run the Checkout payload.
+Each library turns JSON into plain objects, checks every rule and rejects unknown properties. Golem uses an [`IObject` declaration](/guide/models#iobject-or-imodel) and also converts dates and [`TSerde` fields](/guide/tags#convert-a-field-to-a-different-json-value); Typia and [Ajv](https://ajv.js.org) check every rule but do not convert values, so they can't run the Checkout payload. Ajv is an outside library, here for comparison. It compiles a JSON Schema to a function, and the timed calls pair that function with `JSON.parse` and `JSON.stringify`.
 
 </template>
 <template #classes>
@@ -31,6 +31,7 @@ Class instances are checked against their rules on the way in and out. Golem run
 <<< @/../scripts/benchmark/fixtures/upstream/golem.object.model.ts#simple [Golem (IObject)]
 <<< @/../scripts/benchmark/fixtures/upstream/typia.models.ts#simple [Typia]
 <<< @/../scripts/benchmark/fixtures/upstream/zod.ts#simple [Zod]
+<<< @/../scripts/benchmark/fixtures/upstream/ajv.ts#simple [Ajv]
 
 :::
 
@@ -41,6 +42,7 @@ Class instances are checked against their rules on the way in and out. Golem run
 <<< @/../scripts/benchmark/fixtures/upstream/golem-object.ts#calls [Golem (IObject)]
 <<< @/../scripts/benchmark/fixtures/upstream/typia.ts#calls [Typia]
 <<< @/../scripts/benchmark/fixtures/upstream/zod.ts#calls [Zod]
+<<< @/../scripts/benchmark/fixtures/upstream/ajv.ts#calls [Ajv]
 
 :::
 
@@ -54,6 +56,7 @@ Class instances are checked against their rules on the way in and out. Golem run
 <<< @/../scripts/benchmark/fixtures/upstream/golem.object.model.ts#nested [Golem (IObject)]
 <<< @/../scripts/benchmark/fixtures/upstream/typia.models.ts#nested [Typia]
 <<< @/../scripts/benchmark/fixtures/upstream/zod.ts#nested [Zod]
+<<< @/../scripts/benchmark/fixtures/upstream/ajv.ts#nested [Ajv]
 
 :::
 
@@ -64,6 +67,7 @@ Class instances are checked against their rules on the way in and out. Golem run
 <<< @/../scripts/benchmark/fixtures/upstream/golem-object.ts#calls [Golem (IObject)]
 <<< @/../scripts/benchmark/fixtures/upstream/typia.ts#calls [Typia]
 <<< @/../scripts/benchmark/fixtures/upstream/zod.ts#calls [Zod]
+<<< @/../scripts/benchmark/fixtures/upstream/ajv.ts#calls [Ajv]
 
 :::
 
@@ -77,6 +81,7 @@ Class instances are checked against their rules on the way in and out. Golem run
 <<< @/../scripts/benchmark/fixtures/upstream/golem.object.model.ts#array [Golem (IObject)]
 <<< @/../scripts/benchmark/fixtures/upstream/typia.models.ts#array [Typia]
 <<< @/../scripts/benchmark/fixtures/upstream/zod.ts#array [Zod]
+<<< @/../scripts/benchmark/fixtures/upstream/ajv.ts#array [Ajv]
 
 :::
 
@@ -87,6 +92,7 @@ Class instances are checked against their rules on the way in and out. Golem run
 <<< @/../scripts/benchmark/fixtures/upstream/golem-object.ts#calls [Golem (IObject)]
 <<< @/../scripts/benchmark/fixtures/upstream/typia.ts#calls [Typia]
 <<< @/../scripts/benchmark/fixtures/upstream/zod.ts#calls [Zod]
+<<< @/../scripts/benchmark/fixtures/upstream/ajv.ts#calls [Ajv]
 
 :::
 
@@ -282,9 +288,24 @@ Class instances are checked against their rules on the way in and out. Golem run
 </template>
 </BenchmarkChart>
 
+## Against hand-written code
+
+Hand-written code copies each field and converts each date, and checks nothing. The table shows Golem's speed with validation on as a fraction of that code's speed, so 1.00 means equal. Golem checks the value before and after each conversion. Parse is `JSON.parse` then the hand-written decode; stringify is the hand-written encode then `JSON.stringify`.
+
+| Model | Decode | Encode | Parse | Stringify |
+| --- | --- | --- | --- | --- |
+| Flat | 0.49 | 0.79 | 0.74 | 1.06 |
+| Nested | 0.36 | 0.65 | 0.83 | 0.85 |
+| Union | 0.40 | 0.71 | 0.70 | 0.91 |
+| Array of 100 items | 0.53 | 0.78 | 0.75 | 0.82 |
+| Tuple | 0.44 | 0.76 | 0.71 | 0.85 |
+| Optional fields | 0.64 | 0.85 | 0.77 | 0.84 |
+
+They were measured at commit c7513ad. To measure them on your machine, run `npm run bench:typia`.
+
 ## What is measured
 
-Every library gets the same JSON payload. Before timing, each library must turn its parsed value back into the original JSON, and the libraries that validate must reject invalid variants of it. Those checks run in a separate process, so every library is timed on valid input only. A validator runs slower after it has rejected differently shaped input: V8 re-optimises a validator's generated function for the new object shapes. typia shows the same effect. Each library is timed in its own process, in two rounds with the library order reversed in the second. Each case is warmed up, then timed in six short batches; the table shows the median. A library that can't do a case says why instead of showing a number.
+Every library gets the same JSON payload. Before timing, each library must turn its parsed value back into the original JSON, and the libraries that validate must reject invalid variants of it. Those checks run in a separate process, so every library is timed on valid input only. A validator runs slower after it has rejected differently shaped input: V8 re-optimises a validator's generated function for the new object shapes. typia shows the same effect. Each library is timed in its own process, in two rounds with the library order reversed in the second. In each round a case is warmed up for 120 ms, then timed in two batches of 90 ms; the table shows the median of the four batches. The run is short, so read the ratios between libraries and not the absolute numbers. A library that can't do a case says why instead of showing a number.
 
 ## Run it yourself
 
@@ -292,7 +313,7 @@ Every library gets the same JSON payload. Before timing, each library must turn 
 npm run bench
 ```
 
-It takes under three minutes and rewrites `docs/public/benchmarks/results.json`. To compare two runs:
+It takes about one minute and rewrites `docs/public/benchmarks/results.json`. To compare two runs:
 
 ```bash
 npm run bench:compare -- before.json after.json

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
+import { BENCH_SERIES_COUNT } from '../scripts/benchmark/cases.js';
 import { PAGE_LINKS } from '../docs/.vitepress/sidebar.js';
 
 const root = path.resolve(import.meta.dirname, '../..');
@@ -82,7 +83,7 @@ test('home stage, how-it-works text (4.5:1) and benchmark series colors (3:1) ar
   const { light, dark } = themePalettes();
   const style = ['HomeStage.vue', 'HowItWorks.vue'].map(file => readFileSync(path.join(docs, '.vitepress/theme', file), 'utf8').split('<style')[1] ?? '').join('\n');
   const textColors = [...new Set([...style.matchAll(/(?:^|[;{\s])color:\s*var\((--cg-[a-z0-9-]+)\)/g)].map(m => m[1]))];
-  const seriesColors = ['--cg-series-1', '--cg-series-2', '--cg-series-3'];
+  const seriesColors = Array.from({ length: BENCH_SERIES_COUNT }, (_, index) => `--cg-series-${index + 1}`);
   for (const [theme, palette] of [['light', light], ['dark', dark]] as const) {
     for (const [names, minimum] of [[textColors, 4.5], [seriesColors, 3]] as const) {
       for (const name of names) {
@@ -91,7 +92,14 @@ test('home stage, how-it-works text (4.5:1) and benchmark series colors (3:1) ar
         assert.ok(contrast(fg, bg) >= minimum, `${theme}: ${name} ${fg} on ${bg} is ${contrast(fg, bg).toFixed(2)}:1, needs ${minimum}:1`);
       }
     }
+    assert.equal(new Set(seriesColors.map(name => palette.get(name))).size, seriesColors.length, `${theme}: series colors differ`);
   }
+});
+
+test('no two libraries of one benchmark group share a series color', () => {
+  const results = JSON.parse(readFileSync(path.join(docs, 'public/benchmarks/results.json'), 'utf8')) as { adapters: { group: string }[] };
+  const largest = Math.max(...[...new Set(results.adapters.map(a => a.group))].map(group => results.adapters.filter(a => a.group === group).length));
+  assert.ok(largest <= BENCH_SERIES_COUNT, `a group has ${largest} libraries and the page defines ${BENCH_SERIES_COUNT} series colors`);
 });
 
 test('the guide index mounts the How it works illustration', () => {

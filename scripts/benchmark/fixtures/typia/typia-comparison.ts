@@ -180,9 +180,10 @@ const optional: ModelSpec<TCompareOptional> = {
   encode: m => ({ id: m.id, name: m.name, ...(m.nickname === undefined ? {} : { nickname: m.nickname }), ...(m.note === undefined ? {} : { note: m.note }), createdAt: m.createdAt.toISOString() }),
 };
 
-/** Each result is reduced to one number so a timed call cannot be dropped; every model has a numeric `id`. */
+/** Each result is reduced to one number so a timed call cannot be dropped; every model has a numeric `id`, and a JSON text has a length. */
 export function consume(value: unknown): number {
   if (value === true) return 1;
+  if (typeof value === 'string') return value.length;
   if (typeof value === 'object' && value !== null && 'id' in value && typeof value.id === 'number') return value.id + 1;
   return 1;
 }
@@ -298,14 +299,20 @@ function check<T extends { id: number }>(spec: ModelSpec<T>): void {
   assert.deepEqual(codec.toWireFormat(spec.model), wire, where('golem encode'));
   assert.deepEqual(codec.toWireFormat(spec.model, { validate: false }), wire, where('golem encode, no validation'));
   assert.deepEqual(spec.encode(spec.model), wire, where('hand-written encode'));
+  // Parse and stringify: the text round trip of the same three sides.
+  const text = JSON.stringify(wire);
+  assert.deepEqual(codec.parse(text), spec.model, where('golem parse'));
+  assert.deepEqual(spec.decode(JSON.parse(text)), spec.model, where('hand-written parse'));
+  assert.deepEqual(JSON.parse(codec.stringify(spec.model)), wire, where('golem stringify'));
+  assert.deepEqual(JSON.parse(JSON.stringify(spec.encode(spec.model))), wire, where('hand-written stringify'));
 }
 
-/** `conversions` adds decode and encode; the optional-field model runs validation only, to keep the window short. */
-function casesOf<T extends { id: number }>(spec: ModelSpec<T>, conversions = true): CompareCase[] {
+function casesOf<T extends { id: number }>(spec: ModelSpec<T>): CompareCase[] {
   // Resolve the codec once, as the other fixtures do; timed calls do only the work.
   const codec = requireObjectCodec<T>(spec.codecId);
   const { model } = spec;
   const wire = wireOf(model);
+  const text = JSON.stringify(wire);
   const off = { validate: false };
   const entry = (task: CompareTask, side: string, run: () => unknown): CompareCase => ({ model: spec.name, twin: 'plain', task, side, run });
   return [
@@ -314,14 +321,18 @@ function casesOf<T extends { id: number }>(spec: ModelSpec<T>, conversions = tru
     entry('validate', 'typia is', () => spec.is(model)),
     entry('validate', 'typia assert', () => spec.assert(model)),
     entry('validate', 'typia equals', () => spec.equals(model)),
-    ...(conversions ? [
-      entry('decode', 'golem fromWireFormat', () => codec.fromWireFormat(wire)),
-      entry('decode', 'golem fromWireFormat, validate off', () => codec.fromWireFormat(wire, off)),
-      entry('decode', 'hand-written', () => spec.decode(wire)),
-      entry('encode', 'golem toWireFormat', () => codec.toWireFormat(model)),
-      entry('encode', 'golem toWireFormat, validate off', () => codec.toWireFormat(model, off)),
-      entry('encode', 'hand-written', () => spec.encode(model)),
-    ] : []),
+    entry('decode', 'golem fromWireFormat', () => codec.fromWireFormat(wire)),
+    entry('decode', 'golem fromWireFormat, validate off', () => codec.fromWireFormat(wire, off)),
+    entry('decode', 'hand-written', () => spec.decode(wire)),
+    entry('encode', 'golem toWireFormat', () => codec.toWireFormat(model)),
+    entry('encode', 'golem toWireFormat, validate off', () => codec.toWireFormat(model, off)),
+    entry('encode', 'hand-written', () => spec.encode(model)),
+    entry('parse', 'golem parse', () => codec.parse(text)),
+    entry('parse', 'golem parse, validate off', () => codec.parse(text, off)),
+    entry('parse', 'hand-written', () => spec.decode(JSON.parse(text))),
+    entry('stringify', 'golem stringify', () => codec.stringify(model)),
+    entry('stringify', 'golem stringify, validate off', () => codec.stringify(model, off)),
+    entry('stringify', 'hand-written', () => JSON.stringify(spec.encode(model))),
   ];
 }
 
@@ -349,5 +360,5 @@ export function verifyCompareModels(): void {
 }
 
 export function createCompareCases(twins: MobxTwins): readonly CompareCase[] {
-  return [...[casesOf(flat), casesOf(nested), casesOf(union), casesOf(array), casesOf(tuple), casesOf(optional, false)].flat(), ...createSubjects(twins).flatMap(subjectCases)];
+  return [...[casesOf(flat), casesOf(nested), casesOf(union), casesOf(array), casesOf(tuple), casesOf(optional)].flat(), ...createSubjects(twins).flatMap(subjectCases)];
 }
