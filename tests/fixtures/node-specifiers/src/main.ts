@@ -21,11 +21,12 @@ import { feature } from 'guarded/feature';
 import { nestedThing } from 'guarded/nested/thing';
 
 const { lazyValue } = await import('./lazy');
+const { lazy2Value } = await import /* a comment before the parenthesis */ ('./lazy2');
 const money: Money = { amount: 1 };
 const declared: DeclOnly = { label: 'declared' };
 const shape: Shape = { sides: 3 };
 
 console.log([
   x, dirValue, siblingValue, tsNamedValue, id, alreadyValue, legacyValue, chain, plain, thing, folderValue, kitUtil, feature,
-  nestedThing, lazyValue, money.amount, declared.label, shape.sides, slashDirValue, exactId, debounce, (globalThis as { setupRan?: boolean }).setupRan,
+  nestedThing, lazyValue, money.amount, declared.label, shape.sides, slashDirValue, exactId, debounce, (globalThis as { setupRan?: boolean }).setupRan, lazy2Value,
 ].join(','));

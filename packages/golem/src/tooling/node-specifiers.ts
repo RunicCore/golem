@@ -157,7 +157,11 @@ function scriptTarget(specifier: string, file: string, options: NodeSpecifierOpt
   return names.find((name) => options.projectSources.has(name) && !name.endsWith('.d.ts'));
 }
 
-/** The new text of one specifier, or undefined when it stays. Never throws on a specifier that it cannot resolve. */
+/**
+ * The new text of one specifier, or undefined when it stays. A specifier that the checker cannot resolve stays, with one exception:
+ * a relative specifier with no module symbol (a side-effect import of a script file) takes the new text of the project source it names.
+ * It throws only when a package.json that a deep path needs is not a JSON object: `readManifest` names the file.
+ */
 function newSpecifier(literal: ts.StringLiteral, file: ts.SourceFile, checker: ts.TypeChecker, options: NodeSpecifierOptions): string | undefined {
   const specifier = literal.text;
   // A query or fragment, a URL scheme, an absolute path or a `#` import is no file path that golem knows.
@@ -175,7 +179,8 @@ function newSpecifier(literal: ts.StringLiteral, file: ts.SourceFile, checker: t
   return isRelative(specifier) ? undefined : packageSpecifier(specifier, file.fileName, options);
 }
 
-const DYNAMIC_IMPORT = /\bimport\s*\(/;
+// `import` then `(`, with whitespace and comments between: `import /* c */ ('./x')`.
+const DYNAMIC_IMPORT = /\bimport(?:\s|\/\*[\s\S]*?\*\/|\/\/[^\n]*\n)*\(/;
 
 // Characters by code, not a regex literal: emit would print U+2028 raw in one.
 const UNSAFE_IN_LITERAL = ['\\', '\n', '\r', '\u2028', '\u2029'];
@@ -194,7 +199,7 @@ function specifierLiteral(node: ts.Node): ts.StringLiteral | undefined {
 /**
  * The edits that give each relative, `paths` alias and exports-less package deep-path specifier of `file` the text that Node
  * loads as ESM: the extension of the emitted file, `/index.js` for a folder. The target is the checker's own: the source file of the
- * specifier's module symbol. Every other specifier, and one the checker cannot resolve, stays.
+ * specifier's module symbol, or, for a relative specifier with no symbol, the project source it names. Every other specifier stays.
  */
 export function nodeSpecifierEdits(file: ts.SourceFile, checker: ts.TypeChecker, options: NodeSpecifierOptions): NodeSpecifierEdits {
   const edits: RewriteEdit[] = [];

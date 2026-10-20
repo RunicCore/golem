@@ -67,7 +67,9 @@ test('a specifier whose target is a .d.ts program source or a .json file keeps i
 
 test('export from and a dynamic import with one string literal change like an import', async () => {
   assert.equal((await edited('src/reexport.ts')).code, "export * from './x.js';\nexport { dirInner as chain } from './dir/inner.js';\n");
-  assert.equal((await edited('src/main.ts')).specifiers.get('./lazy'), './lazy.js');
+  const { specifiers } = await edited('src/main.ts');
+  assert.equal(specifiers.get('./lazy'), './lazy.js');
+  assert.equal(specifiers.get('./lazy2'), './lazy2.js');
 });
 
 test('a type-only import changes too, so an import that the rewrite adds can copy its text', async () => {

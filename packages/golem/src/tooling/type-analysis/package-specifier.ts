@@ -19,7 +19,11 @@ export function readManifest(filename: string): { readonly name?: string; readon
   const cached = manifests.get(filename);
   if (cached?.mtimeMs === mtimeMs) return cached;
   let json: { name?: string; exports?: unknown };
-  try { json = JSON.parse(fs.readFileSync(filename, 'utf8')) as { name?: string; exports?: unknown }; }
+  try {
+    const parsed: unknown = JSON.parse(fs.readFileSync(filename, 'utf8'));
+    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('the JSON is not an object');
+    json = parsed as { name?: string; exports?: unknown };
+  }
   catch (error) { throw new Error(`Cannot read ${filename} to resolve a package import: ${error instanceof Error ? error.message : String(error)}`, { cause: error }); }
   const manifest = { mtimeMs, name: json.name, exports: json.exports };
   manifests.set(filename, manifest);
