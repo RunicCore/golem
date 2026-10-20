@@ -381,9 +381,9 @@ test('exact: false gives a model with no exact option an open schema and the sam
   });
   const models = await generateModels({ root, profile: { mobx: false, validation: true }, exact: false });
   const registry = contracts.artifacts.find(artifact => artifact.path.endsWith('operation-codecs.ts'))?.content ?? '';
-  const keys = models.artifacts.find(artifact => artifact.path.endsWith('codec-keys.json'))?.content ?? '';
+  const keys = JSON.parse(models.artifacts.find(artifact => artifact.path.endsWith('codec-keys.json'))?.content ?? '{}') as { keys?: Record<string, string> };
   const routeId = registry.match(/"POST \/payments": "([^"]+)"/)?.[1];
-  const modelId = keys.match(/src\/payment\.model\.ts#TPayment": "([^"]+)"/)?.[1];
+  const modelId = keys.keys?.['src/payment.model.ts#TPayment'];
   assert.ok(routeId && modelId, 'the route and the model have a codec id');
   assert.equal(routeId, modelId);
   assert.equal(schemaOf(documentOf(contracts), 'TPayment').additionalProperties, true);

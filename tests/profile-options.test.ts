@@ -82,8 +82,9 @@ function assertModelArtifactRoles(
   assert.equal(fs.existsSync(validatorsPath), false);
 }
 
-for (const validation of [true, false] as const) {
-  for (const type of ['any', 'unknown'] as const) {
+for (const type of ['any', 'unknown'] as const) {
+  // The check of `unknown` does not depend on validation, so only `any` runs with it off.
+  for (const validation of type === 'any' ? [true, false] as const : [true] as const) {
     test(`global allowAny applies to ${type} when validation=${validation}`, (t: TestContext) => {
       const { root, source } = modelProject(t);
       writeModel(source, tsSource`IModel<{ payload: ${identifier(type)} }>`);

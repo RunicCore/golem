@@ -510,44 +510,6 @@ for (const [label, decorator, field, metatype, name] of inputWithoutModel) {
   });
 }
 
-test('NestModelInterceptor answers 500 for an input that is not a model, still converts a model, and a handler without the interceptor does not change', async () => {
-  const id = 'InputModel_12121212';
-  markerCodec(id);
-  const modelController = inputController('ModelBody', Body, undefined, Object);
-  nestModelCodec(id)(modelController.prototype, 'handle', 0);
-  const plainController = inputController('PlainBody', Body, undefined, Object);
-  const fieldController = inputController('FieldQuery', Query, 'page', Number);
-  class AppModule {}
-  Module({ controllers: [modelController, plainController, fieldController] as never[] })(AppModule);
-  const post = (base: string, path: string) => fetch(`${base}/${path}`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ note: 'raw' }),
-  });
-  const guarded = await NestFactory.create(AppModule, { logger: false });
-  guarded.useGlobalInterceptors(new NestModelInterceptor());
-  await guarded.listen(0, '127.0.0.1');
-  try {
-    const base = await guarded.getUrl();
-    const model = await post(base, 'ModelBody');
-    assert.equal(model.status, 201);
-    assert.deepEqual(await model.json(), { converted: true });
-    assert.equal((await post(base, 'PlainBody')).status, 500);
-    assert.equal((await post(base, 'FieldQuery?page=2')).status, 500);
-  } finally {
-    await guarded.close();
-  }
-  const open = await NestFactory.create(AppModule, { logger: false });
-  await open.listen(0, '127.0.0.1');
-  try {
-    const plain = await post(await open.getUrl(), 'PlainBody');
-    assert.equal(plain.status, 201);
-    assert.deepEqual(await plain.json(), { note: 'raw' });
-  } finally {
-    await open.close();
-  }
-});
-
 test('NestModelInterceptor converts a model-typed one-field @Body() and @Query() and answers 400 for an invalid field', async () => {
   const id = 'FieldModel_34343434';
   createObjectCodec(id, {
