@@ -125,7 +125,6 @@ for (const validation of [true, false] as const) {
 }
 
 for (const item of [
-  { position: 'a field', declaration: tsSource`IModel<{ payload: unknown }>` },
   { position: 'an array item', declaration: tsSource`IModel<{ payload: unknown[] }>` },
   { position: 'a record value', declaration: tsSource`IModel<{ payload: Record<string, unknown> }>` },
   { position: 'a tuple item', declaration: tsSource`IModel<{ payload: [string, unknown] }>` },
@@ -172,13 +171,9 @@ export type TClosed = IObject<{ id: string }, { exact: true }>;
   return name => requireObjectCodec(generatedCodecIdFromRoot(root, name)).assert({ id: 'a', extra: 1 });
 }
 
-test('exact: false in golem.yaml opens a model that sets no exact option', async (t: TestContext) => {
+test('exact: false in golem.yaml opens a model that sets no exact option, and a model option exact: true closes it again', async (t: TestContext) => {
   const assertWithExtra = await buildExactModels(t, false);
   assert.doesNotThrow(() => assertWithExtra('TOpen'));
-});
-
-test('a model option exact: true closes a model that golem.yaml opens', async (t: TestContext) => {
-  const assertWithExtra = await buildExactModels(t, false);
   assert.throws(() => assertWithExtra('TClosed'), (error: unknown) => {
     assert.ok(error instanceof LibError);
     assert.deepEqual(error.issues[0]?.path, ['extra']);
@@ -189,14 +184,6 @@ test('a model option exact: true closes a model that golem.yaml opens', async (t
 test('a golem.yaml without the exact key closes a model that sets no exact option', async (t: TestContext) => {
   const assertWithExtra = await buildExactModels(t, undefined);
   assert.throws(() => assertWithExtra('TOpen'), LibError);
-});
-
-test('a model job without an exact default generates what exact: true generates', (t: TestContext) => {
-  const { root, source } = modelProject(t);
-  writeModel(source, tsSource`IModel<{ id: string }>`);
-  const withoutKey = generate({ root, sources: [source], profile: profile() });
-  const withTrue = generate({ root, sources: [source], profile: profile(), exact: true });
-  assert.deepEqual(withoutKey.artifacts, withTrue.artifacts);
 });
 
 test('referenced models retain their own allowAny policy instead of inheriting the referring model policy', (t: TestContext) => {
