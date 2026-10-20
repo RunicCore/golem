@@ -70,3 +70,9 @@ test('the source map of a line with an edited specifier points at the original l
   assert.ok(segment, 'a segment covers the edited specifier');
   assert.equal(segment[2], main.split('\n').findIndex(text => text.includes("import('./lazy')")));
 });
+
+test('a second golem build keeps the codec key of the class model that imports its generated base without .js', async () => {
+  const { root } = await built();
+  assert.equal((await build(root)).exitCode, 0);
+  assert.equal(await runBuilt('construct.js'), 'Item:built');
+});
