@@ -305,7 +305,7 @@ To measure them on your machine, run `npm run bench:typia`.
 
 ## What is measured
 
-Every library gets the same JSON payload. Before timing, each library must turn its parsed value back into the original JSON, and the libraries that validate must reject invalid variants of it. Those checks run in a separate process, so every library is timed on valid input only. A validator runs slower after it has rejected differently shaped input: V8 re-optimises a validator's generated function for the new object shapes. typia shows the same effect. Each library is timed in its own process. Each case is warmed up for 60 ms, then timed in five batches of 25 ms; the table shows the median. The run is short, so read the ratios between libraries and not the absolute numbers. A library that can't do a case says why instead of showing a number.
+Every library gets the same JSON payload. Before timing, each library must turn its parsed value back into the original JSON, and the libraries that validate must reject invalid variants of it. Those checks run in a separate process, so every library is timed on valid input only. A validator runs slower after it has rejected differently shaped input: V8 re-optimises a validator's generated function for the new object shapes. typia shows the same effect. Each library is timed in its own process. Each case is warmed up for 200 ms, then timed in four batches of 90 ms; the table shows the median. The run is short, so read the ratios between libraries and not the absolute numbers. A library that can't do a case says why instead of showing a number.
 
 ## Run it yourself
 
@@ -313,7 +313,7 @@ Every library gets the same JSON payload. Before timing, each library must turn 
 npm run bench
 ```
 
-It takes about half a minute and rewrites `docs/public/benchmarks/results.json`. To compare two runs:
+It takes about one minute and rewrites `docs/public/benchmarks/results.json`. To compare two runs:
 
 ```bash
 npm run bench:compare -- before.json after.json

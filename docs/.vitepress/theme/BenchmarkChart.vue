@@ -37,7 +37,7 @@ const blocks = computed(() => {
       operation,
       rows: rows.map((adapter, index) => ({
         adapter,
-        series: `s${(members.indexOf(adapter) % 3) + 1}`,
+        series: `s${(members.indexOf(adapter) % 4) + 1}`,
         cells: payloads.map(p => {
           const found = find(p.id, operation.id, adapter.id);
           const median = found?.opsPerSec?.median;
@@ -175,7 +175,7 @@ async function onTabKey(event: KeyboardEvent, index: number): Promise<void> {
 .bench-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 8px; vertical-align: 1px; }
 .bench-mini { display: block; height: 3px; margin-top: 4px; background: var(--vp-c-bg-soft); border-radius: 2px; position: relative; }
 .bench-mini span, .bench-track span { position: absolute; inset: 0 auto 0 0; border-radius: 2px; }
-.s1 { background: var(--cg-series-1); } .s2 { background: var(--cg-series-2); } .s3 { background: var(--cg-series-3); }
+.s1 { background: var(--cg-series-1); } .s2 { background: var(--cg-series-2); } .s3 { background: var(--cg-series-3); } .s4 { background: var(--cg-series-4); }
 .bench-na { color: var(--vp-c-text-2); font-size: 13px; }
 .bench-notes { font-size: 13px; color: var(--vp-c-text-2); margin: 10px 0 0; }
 .bench-payloads { font-size: 13px; margin: 16px 0 0; }
