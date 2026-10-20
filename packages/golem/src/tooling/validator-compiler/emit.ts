@@ -1,7 +1,7 @@
 import type { IrArray, IrCheck, IrDiscriminator, IrFunction, IrInstance, IrModule, IrNumber, IrObject, IrPatternProperty, IrSchema, IrString, IrType, IrTypeName, IrUnion, IrValidation, IrValidationImport } from './ir.js';
 
 import { MODEL_CODEC_IDS_KEY } from '../../schema-keywords.js';
-import { presentKeysSource, presentValueSource } from '../../presence.js';
+import { isInstanceStateSource, presentKeysSource, presentValueSource } from '../../presence.js';
 
 export interface EmitOptions {
   /** The module specifier the generated file imports its runtime helpers from. */
@@ -19,7 +19,7 @@ export interface EmitResult {
 }
 
 type RuntimeHelper = 'checkFormat' | 'codePointLength' | 'formatTest' | 'jsonEqual';
-type LocalHelper = 'isPresent' | 'definedKeys' | 'isObject' | 'isMultipleOf' | 'hashedId' | 'selectedModel' | 'modelOf' | 'newEvaluation' | 'mergeEvaluation' | 'leafPasses';
+type LocalHelper = 'isPresent' | 'definedKeys' | 'isObject' | 'isInstanceState' | 'isMultipleOf' | 'hashedId' | 'selectedModel' | 'modelOf' | 'newEvaluation' | 'mergeEvaluation' | 'leafPasses';
 
 // Parameters of every generated function: the value, the path stack, the issue list and the all-errors flag,
 // then, for a function that receives an evaluation record (see `IrFunction`), the caller's record. Every call and
@@ -122,6 +122,8 @@ const LOCAL_HELPERS: Readonly<Record<LocalHelper, string>> = {
   definedKeys: 'const definedKeys = value => Object.keys(value).filter(key => value[key] !== undefined);',
   isPresent: 'const isPresent = (value, key) => Object.prototype.propertyIsEnumerable.call(value, key) && value[key] !== undefined;',
   isObject: "const isObject = value => typeof value === 'object' && value !== null && !Array.isArray(value);",
+  // An own key that the value's own model does not declare is program state, never an unknown key (see `isInstanceState`).
+  isInstanceState: isInstanceStateSource(),
   // The quotient of two doubles is off by rounding (0.3 / 0.1), so a quotient within a few ulps of a non-zero
   // whole number counts. An infinite quotient falls back to the exact remainder.
   isMultipleOf: [
@@ -484,7 +486,8 @@ function fastKeyTest(writer: FunctionWriter, { check, value, captured, reads }: 
   unnamed.forEach(([name, local], position) => writer.line(`${position === 0 ? '' : 'else '}if (${key} === ${literal(name)}) ${local} = ${item};`));
   if (unknown !== undefined) {
     const patterns = check.patternProperties.map(entry => `${patternExpression(writer.state, entry.pattern)}.test(${key})`);
-    writer.line(patterns.length === 0 ? `${unknown} = true;` : `if (!(${patterns.join(' || ')})) ${unknown} = true;`);
+    const state = `!${writer.state.localHelper('isInstanceState')}(${value}, ${key})`;
+    writer.line(`if (${patterns.length === 0 ? state : `!(${patterns.join(' || ')}) && ${state}`}) ${unknown} = true;`);
   }
   writer.close();
   writer.close();
@@ -982,6 +985,7 @@ class FunctionWriter {
       this.open(`for (const ${key} of ${keys})`);
       if (skipped.length > 0) this.line(`if (${skipped.join(' || ')}) continue;`);
       if (additional.kind === 'forbid') {
+        this.line(`if (${this.state.localHelper('isInstanceState')}(${value}, ${key})) continue;`);
         this.issue(`code: 'unknownKey', key: ${key}`, `[...${PATH}, ${key}]`);
       } else {
         const schema = additional.schema;
@@ -1051,6 +1055,7 @@ class FunctionWriter {
       this.open(`for (const ${key} of ${this.state.localHelper('definedKeys')}(${value}))`);
       this.line(`if (${record}.keys.has(${key})) continue;`);
       if (schema.kind === 'never') {
+        this.line(`if (${this.state.localHelper('isInstanceState')}(${value}, ${key})) continue;`);
         this.issue(`code: 'unknownKey', key: ${key}`, `[...${PATH}, ${key}]`);
       } else {
         const member = this.fresh('member');
@@ -1246,13 +1251,13 @@ class FunctionWriter {
       this.open(`if (${selected} === ${position})`);
       const { declared, all } = reads[position];
       const captured: (readonly [string, string])[] = [[discriminator.property, tag]];
-      const absent: string[] = [];
+      const absent: (readonly [string, string])[] = [];
       for (const [name, mark] of seen) {
         if (!all && !declared.includes(name)) continue;
         const local = this.fresh('present');
         this.line(`const ${local} = ${mark} ? ${value}[${literal(name)}] : undefined;`);
         if (named[position].has(name) || declared.includes(name)) captured.push([name, local]);
-        else absent.push(local);
+        else absent.push([name, local]);
       }
       const unknown = closed[position] && extra !== undefined ? this.fresh('unknown') : undefined;
       if (unknown !== undefined) {
@@ -1262,14 +1267,16 @@ class FunctionWriter {
         this.open(`for (const ${other} of Object.keys(${value}))`);
         this.open(`switch (${other})`);
         this.line(`${keys.map(name => `case ${literal(name)}:`).join(' ')} break;`);
-        this.line(`default: if (${value}[${other}] !== undefined) ${unknown} = true;`);
+        this.line(`default: if (${value}[${other}] !== undefined && !${this.state.localHelper('isInstanceState')}(${value}, ${other})) ${unknown} = true;`);
         this.close();
         this.close();
         this.close();
       }
       if (closed[position]) {
-        if (!named[position].has(discriminator.property)) this.failWhen(`${tag} !== undefined`);
-        for (const local of absent) this.failWhen(`${local} !== undefined`);
+        // A key that the instance's own model declares is judged; any other own key is program state.
+        const stays = (name: string, local: string): string => `${local} !== undefined && !${this.state.localHelper('isInstanceState')}(${value}, ${literal(name)})`;
+        if (!named[position].has(discriminator.property)) this.failWhen(stays(discriminator.property, tag));
+        for (const [name, local] of absent) this.failWhen(stays(name, local));
         if (unknown !== undefined) this.failWhen(unknown);
       }
       this.objectKeywords(object, value, { presence: objectPresence(this.state, value, captured) });

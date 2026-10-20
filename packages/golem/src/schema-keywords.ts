@@ -15,6 +15,11 @@ export const MODEL_INSTANCE_KEYWORD = 'golemModelInstance';
  */
 export const MODEL_CODEC_IDS_KEY = '@exprtlabs/golem:modelCodecIds';
 /**
+ * Registry key of the declared field names a generated model lists on its own prototype: a frozen array, or `null` for
+ * a model that allows additional keys. `isInstanceState` (presence.ts) reads it to tell a declared key from program state.
+ */
+export const MODEL_FIELDS_KEY = '@exprtlabs/golem:modelFields';
+/**
  * Placeholder `$ref` for an external generated-model codec. Emit replaces this
  * with the nested codec's runtime id and `addSchema`s that codec's payload.
  */

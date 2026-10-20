@@ -1,0 +1,103 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import test, { type TestContext } from 'node:test';
+import { pathToFileURL } from 'node:url';
+
+import { registerGeneratedModel } from '@exprtlabs/golem/model';
+import { requireObjectCodec } from '@exprtlabs/golem/serde';
+
+import { readFixture } from './fixture-project.js';
+import { buildModelProject, createModelProject, writeModelGolemYaml } from './model-project.js';
+import { compileValidatorModule } from './support/compiled-validators.js';
+import { generatedCodecIdFromRoot } from './support/consumer.js';
+// An own key of a golem model instance that its own model does not declare is program state, never an unknown key
+// (T-148). A key that the instance's own model declares is judged as before, and so is a value without a model.
+
+class Task { title = 't'; done?: boolean; }
+registerGeneratedModel(Task, { fields: ['title', 'done'] });
+class Wide { title = 't'; note?: string; }
+registerGeneratedModel(Wide, { fields: ['title', 'note'] });
+// A derived model registers its full list: the nearest list decides, not the base's.
+class Kid extends Task { mode?: string; }
+registerGeneratedModel(Kid, { fields: ['title', 'done', 'mode'] });
+// A dynamic-map model: every own key is data.
+class Bag { title = 't'; }
+registerGeneratedModel(Bag, { fields: ['title'], additionalProperties: true });
+class Circle { kind = 'a'; x = 1; }
+registerGeneratedModel(Circle, { fields: ['kind', 'x'] });
+class Reach { kind = 'a'; x = 1; y?: number; }
+registerGeneratedModel(Reach, { fields: ['kind', 'x', 'y'] });
+
+/** An instance of `Model` with `keys` set as own properties. */
+function instance<Model extends object>(Model: new () => Model, keys: Record<string, unknown>): Model {
+  return Object.assign(new Model(), keys);
+}
+
+const CLOSED = { type: 'object', required: ['title'], properties: { title: { type: 'string' }, done: { type: 'boolean' } }, additionalProperties: false };
+const EVALUATED = { allOf: [{ type: 'object', properties: { title: { type: 'string' } } }], unevaluatedProperties: false };
+const branch = (tag: string, key: string): object => ({ type: 'object', required: ['kind', key], properties: { kind: { const: tag }, [key]: { type: 'number' } }, additionalProperties: false });
+const TAGGED = { oneOf: [branch('a', 'x'), branch('b', 'y')], discriminator: { propertyName: 'kind' } };
+const compiled = compileValidatorModule({ roots: { closed: CLOSED, evaluated: EVALUATED, tagged: TAGGED }, fastPath: true });
+
+// The places that report "this key is not allowed": the key test, unevaluatedProperties and the tagged-union pass.
+const PLACES: readonly { readonly root: string; readonly fast: boolean; readonly rows: readonly (readonly [name: string, value: unknown, valid: boolean])[] }[] = [
+  { root: 'closed', fast: true, rows: [
+    ['a plain value with an extra key', { title: 'a', cache: 1 }, false],
+    ['a model instance with own state', instance(Task, { cache: 1, hits: 3 }), true],
+    ['a model instance with a declared key that the schema forbids', instance(Wide, { note: 'n' }), false],
+    ['a derived instance whose own model declares the key', instance(Kid, { mode: 'm' }), false],
+    ['a derived instance with own state', instance(Kid, { cache: 1 }), true],
+    ['a dynamic-map instance, whose own keys are data', instance(Bag, { cache: 1 }), false],
+  ] },
+  { root: 'evaluated', fast: false, rows: [
+    ['a plain value with an unevaluated key', { title: 'a', cache: 1 }, false],
+    ['a model instance with own state', instance(Task, { cache: 1 }), true],
+    ['a model instance with a declared key that nothing evaluated', instance(Wide, { note: 'n' }), false],
+  ] },
+  { root: 'tagged', fast: true, rows: [
+    ['a plain value with a key that another branch declares', { kind: 'a', x: 1, y: 1 }, false],
+    ['an instance with a key that no branch declares', instance(Circle, { cache: 1 }), true],
+    ['an instance with a key that another branch declares', instance(Circle, { y: 1 }), true],
+    ['an instance whose own model declares the key of another branch', instance(Reach, { y: 1 }), false],
+    ['an instance with state and a wrong declared value', instance(Circle, { x: 'text', cache: 1 }), false],
+  ] },
+];
+
+for (const { root, fast, rows } of PLACES) {
+  for (const [name, value, valid] of rows) {
+    test(`the ${root} check ${valid ? 'accepts' : 'rejects'} ${name}`, async () => {
+      // protects: bug T-148 program state of a model instance is no unknown key, a declared key is still judged
+      const module = await compiled;
+      assert.equal(module.byRoot[root](value, false).length === 0, valid, 'the full validator');
+      assert.equal(module.fastByRoot[root]?.(value), fast ? valid : undefined, 'the fast check');
+    });
+  }
+}
+
+async function buildState(t: TestContext, mobx: boolean) {
+  const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-model-instance-state-', name: 'model-instance-state', linkWorkspaceNodeModules: true });
+  fs.writeFileSync(path.join(sourceRoot, 'state.model.ts'), readFixture('models/model-instance-state/own-state/state.model.ts'));
+  writeModelGolemYaml(root, { mobx, validation: true });
+  await buildModelProject(root);
+  const models = await import(`${pathToFileURL(path.join(root, 'build/state.model.js')).href}?mobx=${mobx}`);
+  const codec = (name: string) => requireObjectCodec(generatedCodecIdFromRoot(root, name));
+  return { Task: models.Task as new (values?: object) => object, Board: models.Board as new (values?: object) => object, task: codec('TTask'), small: codec('TSmall'), board: codec('TBoard') };
+}
+
+for (const mobx of [false, true]) {
+  test(`codec checks and encode keep the own state of a model class (mobx ${mobx})`, async (t) => {
+    // protects: bug T-148 validate, assert, toWireFormat and stringify of a class with own state
+    const { Task: Model, Board, task, small, board } = await buildState(t, mobx);
+    const value = new Model({ title: 'a', done: true });
+    assert.equal(task.validate(value), true);
+    assert.equal(task.assert(value), value);
+    assert.deepEqual(task.toWireFormat(value), { title: 'a', done: true });
+    assert.equal(task.stringify(value), '{"title":"a","done":true}');
+    assert.equal(board.stringify(new Board({ lead: value })), '{"lead":{"title":"a","done":true}}', 'a nested instance with own state');
+    assert.equal(small.validate(new Model({ title: 'a' })), true, 'own state beside the declared keys of an exact IObject');
+    assert.equal(small.validate(value), false, 'the declared key done is not in the exact IObject');
+    assert.equal(task.validate({ ...value }), false, 'a copy carries no model, so its own keys are data');
+    assert.throws(() => task.fromWireFormat({ title: 'a', cache: 1 }), 'a wire value with an extra key');
+  });
+}
