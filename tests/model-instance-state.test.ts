@@ -128,6 +128,20 @@ for (const { root, fast, rows } of PLACES) {
   }
 }
 
+for (const root of ['valued', 'patterned'] as const) {
+  test(`the ${root} check looks up the field entry once for a plain value with many keys`, async () => {
+    // protects: T-151 review the lazy field entry is cached also when it is null, so a plain value runs the lookup once
+    const module = await compiled;
+    let lookups = 0;
+    const plain = new Proxy({ title: 'a', x1: 1, x2: 2, x3: 3, y1: 4, y2: 5 }, { getPrototypeOf: () => { lookups++; return Object.prototype; } });
+    assert.equal(module.byRoot[root](plain, false).length, 0);
+    assert.equal(lookups, 1, 'the full validator');
+    lookups = 0;
+    assert.equal(module.fastByRoot[root]?.(plain), true);
+    assert.equal(lookups, 1,'the fast check');
+  });
+}
+
 test('the runtime walk of the field entry and the walk the validators generate return the same names', () => {
   // protects: T-150 review the allowGetter copy and the generated validators decide program state by one rule
   const generated = new Function(`${instanceFieldsSource()}\nreturn instanceFields;`)() as (value: object) => readonly string[] | undefined;

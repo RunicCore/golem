@@ -590,12 +590,12 @@ export function emitStringifyFunction(
   let source: string;
   // An intersection (allOf) is one merged object: the root writes its declared fields, as decode and encode do. With
   // validation off a required field can be missing, so the merged root writes each field that is present, as the
-  // generic fallback did.
+  // generic fallback did. The validated wire stringify has checked the value, so it keeps the all-required fast path.
   const merged = node.descriptor.kind === 'intersection' && node.descriptor.variants.every(variant => resolveObjectDescriptor(variant, ctx) !== undefined)
     ? resolveObjectDescriptor(node.descriptor, ctx)
     : undefined;
   if (node.descriptor.kind === 'object') source = emitObjectStringify(fn, node.descriptor, ctx);
-  else if (merged) source = emitObjectStringify(fn, { ...merged, required: [] }, ctx);
+  else if (merged) source = emitObjectStringify(fn, ctx.wireIdentity ? merged : { ...merged, required: [] }, ctx);
   else if (node.descriptor.kind === 'generated-model' || node.descriptor.kind === 'reference') {
     source = `function ${fn}(value: unknown, options?: { readonly validate?: boolean; readonly failFast?: boolean }): string {\n  return requireObjectCodec(${JSON.stringify(node.codecId)}).stringify(value as never, options);\n}\n`;
   } else {

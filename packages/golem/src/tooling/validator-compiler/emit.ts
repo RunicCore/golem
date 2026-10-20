@@ -200,11 +200,12 @@ function stateTest(fields: string, key: string): string {
 
 /**
  * True when `key` is program state, with `fields` read on first use: a local declared with `let`, `undefined` until a
- * key needs it, then the names or `null` for a value without program state. A value whose keys the schema all names
- * never reads them, so a failing check of a model instance does not walk its prototypes.
+ * key needs it, then the names or `false` for a value without program state. The lookup runs once for the object, also
+ * for a plain value. A value whose keys the schema all names never reads them, so a failing check of a model instance
+ * does not walk its prototypes.
  */
 function lazyStateTest(fields: string, value: string, key: string, instanceFields: string): string {
-  return `(${fields} ??= ${instanceFields}(${value}) ?? null) !== null && !${fields}.includes(${key})`;
+  return `(${fields} === undefined ? (${fields} = ${instanceFields}(${value}) ?? false) : ${fields}) !== false && !${fields}.includes(${key})`;
 }
 
 /** The helpers a helper's text uses. */
