@@ -180,9 +180,10 @@ const optional: ModelSpec<TCompareOptional> = {
   encode: m => ({ id: m.id, name: m.name, ...(m.nickname === undefined ? {} : { nickname: m.nickname }), ...(m.note === undefined ? {} : { note: m.note }), createdAt: m.createdAt.toISOString() }),
 };
 
-/** Each result is reduced to one number so a timed call cannot be dropped; every model has a numeric `id`. */
+/** Each result is reduced to one number so a timed call cannot be dropped; every model has a numeric `id`, and a JSON text has a length. */
 export function consume(value: unknown): number {
   if (value === true) return 1;
+  if (typeof value === 'string') return value.length;
   if (typeof value === 'object' && value !== null && 'id' in value && typeof value.id === 'number') return value.id + 1;
   return 1;
 }

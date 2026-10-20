@@ -22,7 +22,7 @@ import type { Agreement, CompareCase, CompareTask, MobxTwins, Subject, TwinFacto
  *                                    the codec call chain (one window)
  * `npm run bench:typia -- --verify`  the checks only, no timing
  */
-const SETTINGS = { warmupMs: 45, batchMs: 24, batches: 5 };
+const SETTINGS = { warmupMs: 30, batchMs: 18, batches: 5 };
 const TYPIA_FIXTURES = path.join(root, 'scripts/benchmark/fixtures/typia');
 const MOBX_FIXTURES = path.join(root, 'scripts/benchmark/fixtures/typia-mobx');
 

@@ -33,6 +33,8 @@ const formatRows: readonly (readonly [format: string, value: unknown, valid: boo
   ['date-time', '2026-10-06T22:59:60Z', false],
   ['date-time', '2026-10-06T10:00Z', false],
   ['date-time', '2026-10-06T10-00-00Z', false],
+  ['date-time', '2026-10-06T10:00:0:Z', false],
+  ['date-time', '2026-10-06T10:00:/0Z', false],
   ['date-time', '٢٠٢٦-10-06T10:00:00Z', false],
   ['date', '2024-02-29', true],
   ['date', '2026-02-29', false],
