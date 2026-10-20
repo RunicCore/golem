@@ -6,7 +6,7 @@ import { pathToFileURL } from 'node:url';
 import { LibError } from '@exprtlabs/golem/errors';
 import { requireObjectCodec } from '@exprtlabs/golem/serde';
 
-import { createFixtureProject } from '../fixture-project.js';
+import { createFixtureProject, fileFixtureScope, onceShared } from '../fixture-project.js';
 import { generatedCodecIdFromRoot } from '../support/consumer.js';
 import { compileGeneratedSdk, generateMaterializedSdk, requireRecord } from './helpers.js';
 
@@ -46,12 +46,9 @@ type Model = new (values?: object) => object;
 type Issues = readonly { readonly code: string; readonly path: readonly unknown[] }[];
 type Validator = (value: unknown, all: boolean) => Issues;
 
-test('the own state of an SDK model instance is no unknown key; a declared key stays judged, in a derived model too', async (t) => {
+test('the own state of an SDK model instance is no unknown key; a declared key stays judged, in a derived model too', async () => {
   // protects: bug T-148 program state of an SDK model instance passes, a declared key is still judged on the request plane
-  const output = path.join(createFixtureProject(t, 'golem-openapi-instance-state-'), 'sdk');
-  await generateMaterializedSdk(document, { output, name: 'InstanceState', profile: { mobx: false, validation: true, allowAny: false } });
-  compileGeneratedSdk(output, [], { strict: true, skipLibCheck: true, outDir: path.join(output, 'dist') });
-  const models = requireRecord(await import(pathToFileURL(path.join(output, 'dist/index.js')).href), 'generated models');
+  const { output, models } = await validatedSdk();
   const validators = await import(pathToFileURL(path.join(output, 'dist/validators.generated.js')).href) as Record<string, Validator>;
   const [Item, Base, Derived, Bag] = [models.ItemModel, models.BaseModel, models.DerivedModel, models.BagModel] as Model[];
   const issues = (operation: string, body: object) => validators[`validate_${operation}_input`]({ body }, true).map(issue => [issue.code, issue.path]);
@@ -81,52 +78,50 @@ test('the own state of an SDK model instance is no unknown key; a declared key s
   assert.deepEqual(bag.toWireFormat(map), { id: 'a', extra: 'x' });
 });
 
-test('a composed root with a member that is no object stringifies the declared fields of a model instance only', async (t) => {
+test('a composed root with a member that is no object stringifies the declared fields of a model instance only', async () => {
   // protects: bug T-155 the fallback of a composed root wrote every own key, program state of a model instance included
-  const output = path.join(createFixtureProject(t, 'golem-openapi-composed-state-'), 'sdk');
-  await generateMaterializedSdk(document, { output, name: 'ComposedState', profile: { mobx: false, validation: false, allowAny: false } });
-  compileGeneratedSdk(output, [], { strict: true, skipLibCheck: true, outDir: path.join(output, 'dist') });
-  const models = requireRecord(await import(pathToFileURL(path.join(output, 'dist/index.js')).href), 'generated models');
+  const { models } = await unvalidatedSdk();
   const Mixed = models.MixedModel as Model;
   const stringify = models.stringifyMixed as (value: unknown) => string;
   assert.equal(stringify(Object.assign(new Mixed({ name: 'n' }), { cache: new Map<string, string>(), hits: 3 })), '{"name":"n"}');
   assert.equal(stringify({ name: 'n', a: 'x' }), '{"name":"n","a":"x"}', 'a plain value is written as it is');
 });
 
-async function generateSdk(t: test.TestContext, name: string, validation = true) {
-  const output = path.join(createFixtureProject(t, `golem-openapi-${name}-`), 'sdk');
+// Each SDK is generated and compiled once for the file: one with validation on, one with it off.
+const scope = fileFixtureScope();
+const buildSdk = (name: string, validation: boolean) => async () => {
+  const output = path.join(createFixtureProject(scope, `golem-openapi-${name}-`), 'sdk');
   await generateMaterializedSdk(document, { output, name, profile: { mobx: false, validation, allowAny: false } });
   compileGeneratedSdk(output, [], { strict: true, skipLibCheck: true, outDir: path.join(output, 'dist') });
   const models = requireRecord(await import(pathToFileURL(path.join(output, 'dist/index.js')).href), 'generated models');
   return { output, models };
-}
+};
+const validatedSdk = onceShared(buildSdk('ValidatedState', true));
+const unvalidatedSdk = onceShared(buildSdk('UnvalidatedState', false));
 
-async function generateOpen(t: test.TestContext, name: string) {
-  const { output, models } = await generateSdk(t, name);
+async function generateOpen() {
+  const { output, models } = await validatedSdk();
   const Open = models.OpenModel as Model;
   return { codec: requireObjectCodec(generatedCodecIdFromRoot(output, 'Open')), instance: Object.assign(new Open({ id: 'a' }), { extra: 'x' }) };
 }
 
-test('stringify writes the extra keys of a model with additionalProperties true as data', async (t) => {
+test('stringify writes the extra keys of a model with additionalProperties true as data', async () => {
   // protects: bug T-154 the codec wrote the declared fields only, where encodeGeneratedModel keeps the extra keys
-  const { codec, instance } = await generateOpen(t, 'OpenStringify');
+  const { codec, instance } = await generateOpen();
   assert.equal(codec.stringify(instance), '{"id":"a","extra":"x"}');
   assert.equal(codec.stringify({ id: 'a', extra: 'x' }), '{"id":"a","extra":"x"}', 'a plain value');
 });
 
-test('toWireFormat keeps the extra keys of a model with additionalProperties true as data', async (t) => {
+test('toWireFormat keeps the extra keys of a model with additionalProperties true as data', async () => {
   // protects: bug T-154 the codec wire encoding dropped the extra keys, where encodeGeneratedModel keeps them
-  const { codec, instance } = await generateOpen(t, 'OpenWire');
+  const { codec, instance } = await generateOpen();
   assert.deepEqual(codec.toWireFormat(instance), { id: 'a', extra: 'x' });
   assert.deepEqual(codec.toWireFormat({ id: 'a', extra: 'x' }), { id: 'a', extra: 'x' }, 'a plain value');
 });
 
-test('an object root with validation off stringifies the fields it holds when a required field is missing', async (t) => {
+test('an object root with validation off stringifies the fields it holds when a required field is missing', async () => {
   // protects: bug T-156 a plain root threw a TypeError on a missing required field with validation off; validation on still rejects it
-  const output = path.join(createFixtureProject(t, 'golem-openapi-root-lenient-'), 'sdk');
-  await generateMaterializedSdk(document, { output, name: 'RootLenient', profile: { mobx: false, validation: true, allowAny: false } });
-  compileGeneratedSdk(output, [], { strict: true, skipLibCheck: true, outDir: path.join(output, 'dist') });
-  const models = requireRecord(await import(pathToFileURL(path.join(output, 'dist/index.js')).href), 'generated models');
+  const { models } = await validatedSdk();
   const [stringifyItem, stringifyBase] = [models.stringifyItem, models.stringifyBase] as ((value: unknown, options?: { validate: boolean }) => string)[];
   assert.equal(stringifyItem({ serverId: 's' }, { validate: false }), '{"serverId":"s"}', 'the required name is missing');
   assert.equal(stringifyBase({}, { validate: false }), '{}', 'a root that holds no field');
@@ -134,43 +129,43 @@ test('an object root with validation off stringifies the fields it holds when a 
   assert.throws(() => stringifyItem({ serverId: 's' }), (error: unknown) => error instanceof LibError, 'validation on still rejects the missing field');
 });
 
-test('an object that is open only by default writes its declared fields only, in stringify and toWireFormat', async (t) => {
+test('an object that is open only by default writes its declared fields only, in stringify and toWireFormat', async () => {
   // protects: F-56 stringify writes the declared fields; only an explicit additionalProperties true keeps extra keys
-  const { output } = await generateSdk(t, 'DefaultOpen');
+  const { output } = await validatedSdk();
   const base = requireObjectCodec(generatedCodecIdFromRoot(output, 'Base'));
   assert.equal(base.stringify({ name: 'n', extra: 'x' }), '{"name":"n"}');
   assert.deepEqual(base.toWireFormat({ name: 'n', extra: 'x' }), { name: 'n' });
 });
 
-test('a composed root with a member that is no object encodes the declared fields of a model instance only', async (t) => {
+test('a composed root with a member that is no object encodes the declared fields of a model instance only', async () => {
   // protects: P-10 no codec writes program state; toWireFormat of this root returned the instance as it was
-  const { output, models } = await generateSdk(t, 'ComposedWire', false);
+  const { output, models } = await unvalidatedSdk();
   const Mixed = models.MixedModel as Model;
   const codec = requireObjectCodec(generatedCodecIdFromRoot(output, 'Mixed'));
   assert.deepEqual(codec.toWireFormat(Object.assign(new Mixed({ name: 'n' }), { cache: new Map<string, string>(), hits: 3 })), { name: 'n' });
   assert.deepEqual(codec.toWireFormat({ name: 'n', a: 'x' }), { name: 'n', a: 'x' }, 'a plain value is kept');
 });
 
-test('with validation off a nested object that lacks a required field is written with the fields it holds', async (t) => {
+test('with validation off a nested object that lacks a required field is written with the fields it holds', async () => {
   // protects: T-156 a nested object of the same module threw a TypeError on a missing required field where its parent wrote around it
-  const { models } = await generateSdk(t, 'NestedLenient');
+  const { models } = await validatedSdk();
   const stringifyTree = models.stringifyTree as (value: unknown, options?: { validate: boolean }) => string;
   assert.equal(stringifyTree({ label: 'a', child: {} }, { validate: false }), '{"label":"a","child":{}}');
   assert.equal(stringifyTree({ label: 'a', child: { label: 'b' } }), '{"label":"a","child":{"label":"b"}}');
 });
 
-test('a validated parent trusts its check: a child of another module writes its required fields without a presence test', async (t) => {
+test('a validated parent trusts its check: a child of another module writes its required fields without a presence test', async () => {
   // protects: T-156 validation off writes around a missing field, but a validated call keeps the all-required fast path
-  const { models } = await generateSdk(t, 'CheckedNested');
+  const { models } = await validatedSdk();
   const stringifyHolder = models.stringifyHolder as (value: unknown, options?: { validate?: boolean; validationContext?: unknown }) => string;
   const acceptAll = { resolve: () => () => [] };
   assert.throws(() => stringifyHolder({ base: {} }, { validationContext: acceptAll }), TypeError, 'the check accepted the missing name');
   assert.equal(stringifyHolder({ base: {} }, { validate: false }), '{"base":{}}', 'validation off writes what is there');
 });
 
-test('options a user passes with a checked key still take the lenient path', async (t) => {
+test('options a user passes with a checked key still take the lenient path', async () => {
   // protects: bug T-156 the internal checked mark was a plain key, so user options carrying it skipped the lenient path
-  const { models } = await generateSdk(t, 'CheckedKey');
+  const { models } = await validatedSdk();
   const stringifyItem = models.stringifyItem as (value: unknown, options?: object) => string;
   assert.equal(stringifyItem({ serverId: 's' }, { validate: false, checked: true }), '{"serverId":"s"}', 'the missing name is left out');
 });
