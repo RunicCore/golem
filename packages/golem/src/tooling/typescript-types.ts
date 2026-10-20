@@ -557,6 +557,7 @@ export interface TypeScriptBackend {
     readonly ExportKeyword: SyntaxKind;
     readonly ExtendsKeyword: SyntaxKind;
     readonly FalseKeyword: SyntaxKind;
+    readonly ImportKeyword: SyntaxKind;
     readonly MinusToken: SyntaxKind;
     readonly NullKeyword: SyntaxKind;
     readonly PlusToken: SyntaxKind;

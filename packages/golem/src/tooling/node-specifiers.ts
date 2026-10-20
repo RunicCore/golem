@@ -5,7 +5,7 @@ import { hasErrorCode, isRecord } from './generator-api.js';
 import type { RewriteEdit } from './rewrite.js';
 
 export interface NodeSpecifierOptions {
-  /** The program's compiler options: `paths`, `baseUrl` and `jsx` decide the new text. */
+  /** The program's compiler options: `paths` and `jsx` decide the new text. */
   readonly compilerOptions: ts.CompilerOptions;
   /** The absolute file names of the program's project sources (`projectSources` of rewrite-scan.ts). The checker alone cannot tell a project source from a package file. */
   readonly projectSources: ReadonlySet<string>;
@@ -113,9 +113,7 @@ function projectSourceSpecifier(specifier: string, file: string, target: string,
     const suffix = suffixFor(path.posix.resolve(path.posix.dirname(file), base), target, extension);
     return suffix && base.slice(0, base.length - suffix.strip) + suffix.add;
   }
-  const baseUrl = typeof options.baseUrl === 'string' ? options.baseUrl : undefined;
-  const underBaseUrl = baseUrl !== undefined && suffixFor(path.posix.resolve(baseUrl, specifier), target, extension) !== undefined;
-  return matchesPaths(specifier, options.paths) || underBaseUrl ? relativeSpecifier(file, target, extension) : undefined;
+  return matchesPaths(specifier, options.paths) ? relativeSpecifier(file, target, extension) : undefined;
 }
 
 /** The new text of a deep path into a package whose manifest has no `exports`, or undefined when the specifier stays. */
@@ -164,18 +162,18 @@ function escapedFor(quote: string, text: string): string {
 }
 
 /** The module specifier of an import declaration, an `export … from`, or a dynamic `import()` with one string literal. */
-function specifierLiteral(node: ts.Node, file: ts.SourceFile): ts.StringLiteral | undefined {
+function specifierLiteral(node: ts.Node): ts.StringLiteral | undefined {
   if ((ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) && node.moduleSpecifier && ts.isStringLiteral(node.moduleSpecifier)) {
     return node.moduleSpecifier;
   }
-  if (ts.isCallExpression(node) && node.expression.getText(file) === 'import' && node.arguments.length >= 1 && ts.isStringLiteral(node.arguments[0]!)) {
+  if (ts.isCallExpression(node) && node.expression.kind === ts.SyntaxKind.ImportKeyword && node.arguments.length >= 1 && ts.isStringLiteral(node.arguments[0]!)) {
     return node.arguments[0];
   }
   return undefined;
 }
 
 /**
- * The edits that give each relative, `paths`/`baseUrl` and exports-less package deep-path specifier of `file` the text that Node
+ * The edits that give each relative, `paths` alias and exports-less package deep-path specifier of `file` the text that Node
  * loads as ESM: the extension of the emitted file, `/index.js` for a folder. The target is the checker's own: the source file of the
  * specifier's module symbol. Every other specifier, and one the checker cannot resolve, stays.
  */
@@ -183,7 +181,7 @@ export function nodeSpecifierEdits(file: ts.SourceFile, checker: ts.TypeChecker,
   const edits: RewriteEdit[] = [];
   const specifiers = new Map<string, string>();
   const visit = (node: ts.Node): undefined => {
-    const literal = specifierLiteral(node, file);
+    const literal = specifierLiteral(node);
     if (literal) {
       const next = newSpecifier(literal, file, checker, options);
       if (next !== undefined && next !== literal.text) {
