@@ -1,7 +1,10 @@
 import 'reflect-metadata';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
 import test from 'node:test';
+import { pathToFileURL } from 'node:url';
 import {
   Body,
   Controller,
@@ -33,7 +36,10 @@ import {
   IssueRepresentation,
   IssueSource,
 } from '@exprtlabs/golem/serde';
+import { readFixture } from './fixture-project.js';
+import { buildModelProject, createModelProject, writeModelGolemYaml } from './model-project.js';
 import { compileSchema } from './support/compiled-validators.js';
+import { generatedCodecIdFromRoot } from './support/consumer.js';
 
 function markerCodec(id: string) {
   return createObjectCodec(id, {
@@ -980,6 +986,43 @@ test('NestModelInterceptor model returns reach the client without an ExceptionsH
     assert.match(errors[0] ?? '', /handler fault/);
     assert.match(errors[1] ?? '', /model codec received a non-model value/);
     assert.doesNotMatch(errors.join('\n'), /EmptyError|no elements in sequence/);
+  } finally {
+    await application.close();
+  }
+});
+
+test('NestModelInterceptor answers 200 with the declared fields of a returned model instance that holds its own state', async (t) => {
+  // protects: bug T-148 a handler that returns a model instance with program state answered 500
+  const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-nest-instance-state-', name: 'nest-instance-state', linkWorkspaceNodeModules: true });
+  fs.writeFileSync(path.join(sourceRoot, 'state.model.ts'), readFixture('models/model-instance-state/own-state/state.model.ts'));
+  writeModelGolemYaml(root, { mobx: false, validation: true });
+  await buildModelProject(root);
+  const { Task } = await import(pathToFileURL(path.join(root, 'build/state.model.js')).href) as { Task: new (values: object) => object };
+  const id = generatedCodecIdFromRoot(root, 'TTask');
+  class StateController {
+    one() { return new Task({ title: 'a', done: true }); }
+    list() { return [new Task({ title: 'b' }), new Task({ title: 'c', done: false })]; }
+  }
+  Controller('state')(StateController);
+  for (const [name, array] of [['one', false], ['list', true]] as const) {
+    const descriptor = Object.getOwnPropertyDescriptor(StateController.prototype, name);
+    assert.ok(descriptor);
+    Get(name)(StateController.prototype, name, descriptor);
+    nestModelReturn(id, array)(StateController.prototype, name, descriptor);
+  }
+  class AppModule {}
+  Module({ controllers: [StateController] })(AppModule);
+  const application = await NestFactory.create(AppModule, { logger: false });
+  application.useGlobalInterceptors(new NestModelInterceptor());
+  await application.listen(0, '127.0.0.1');
+  try {
+    const base = await application.getUrl();
+    const one = await fetch(`${base}/state/one`);
+    assert.equal(one.status, 200);
+    assert.deepEqual(await one.json(), { title: 'a', done: true });
+    const list = await fetch(`${base}/state/list`);
+    assert.equal(list.status, 200);
+    assert.deepEqual(await list.json(), [{ title: 'b' }, { title: 'c', done: false }]);
   } finally {
     await application.close();
   }

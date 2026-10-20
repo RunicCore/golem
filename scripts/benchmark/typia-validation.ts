@@ -73,7 +73,7 @@ function reportAgreement(rows: readonly Agreement[]): void {
     const find = (probe: Agreement['probe']) => rows.find(r => r.model === model && r.twin === twin && r.probe === probe);
     lines.push([model, twin, cell(find('valid')), cell(find('early')), cell(find('late')), cell(find('extra'))]);
   }
-  process.stdout.write(`Agreement: golem validate, typia is, typia equals (T accepts, F rejects). Expected: TTT, FFF, FFF, FTF\n${table(lines)}\n`);
+  process.stdout.write(`Agreement: golem validate, typia is, typia equals (T accepts, F rejects). Expected: TTT, FFF, FFF, FTF; an IModel or MobX instance with an unknown own key holds program state, so its extra is TTF\n${table(lines)}\n`);
   for (const twin of ['imodel', 'mobx'] as const) {
     const accepted = rows.filter(r => r.twin === twin && r.probe === 'valid').every(r => r.typiaEquals);
     process.stdout.write(`typia equals accepts a ${twin} class instance of plain fields: ${accepted ? 'yes' : 'no'}\n`);
@@ -143,9 +143,11 @@ function toggleCases(subjects: readonly Subject[], validators: Readonly<Record<T
     // The full validator decides what each probe must give; the codec, the fast check and the exact scratch rows agree with it.
     const probes = [['valid', subject.valid], ['early', subject.early], ['late', subject.late], ['extra', subject.extra], ...subject.probes] as const;
     const expected = new Map<string, boolean>();
+    // The unknown key of a class instance is program state, which the full validator accepts; the scratch validators know no models.
+    const state = twin !== 'plain';
     checks.push(() => {
       for (const [name, value] of probes) expected.set(name, validator(value, true).length === 0);
-      if (expected.get('valid') !== true || expected.get('extra') !== false) throw new Error(`The validator of ${model}/${twin} does not accept the valid value or rejects no unknown property`);
+      if (expected.get('valid') !== true || expected.get('extra') !== state) throw new Error(`The validator of ${model}/${twin} does not accept the valid value or ${state ? 'rejects program state' : 'rejects no unknown property'}`);
       for (const [name, value] of probes) {
         const full = expected.get(name);
         if (codec.validate(value) !== full || isValid(value) !== full) throw new Error(`On ${model}/${twin} '${name}': the codec or the fast check differs from the validator (${full})`);
@@ -163,7 +165,7 @@ function toggleCases(subjects: readonly Subject[], validators: Readonly<Record<T
       const scratch = scratchValidator(model, toggles);
       checks.push(() => {
         for (const [probe, value] of probes) {
-          const required = side !== FLOOR_ROW || ['valid', 'early', 'late'].includes(probe);
+          const required = (side !== FLOOR_ROW || ['valid', 'early', 'late'].includes(probe)) && !(state && probe === 'extra');
           if (required && scratch(value) !== expected.get(probe)) throw new Error(`Scratch validator '${side}' on ${model}/${twin}: '${probe}' is not ${expected.get(probe)}`);
         }
       });
@@ -250,11 +252,13 @@ function reportBench(cases: readonly CompareCase[], samples: Map<CompareCase, Ba
     const [g, off, hand] = [`golem ${name}`, `golem ${name}, validate off`, 'hand-written'].map(side => median(model, 'plain', task, side));
     conversion.push([model, task, fixed(g), fixed(off), fixed(hand), ratio(g, hand), ratio(off, hand)]);
   }
+  const [valid, state] = ['golem toWireFormat', 'golem toWireFormat, program state'].map(side => median('flat', 'imodel', 'encode', side));
   const header = `median of ${SETTINGS.batches} batches of ${SETTINGS.batchMs} ms`;
   process.stdout.write(`Validation of the plain IObject value, ops/s (${header})\n${table(rows)}\n\n`);
   process.stdout.write(`Validation of the twins (IModel class instance, MobX class instance), ops/s\n${table(twins)}\n\n`);
   process.stdout.write(`Failing values through codec.validate: one wrong field met early (first) or late (last); ratio to typia equals on the same value; early/valid and late/valid are golem's failing ops/s over its valid ops/s\n${table(failing)}\n\n`);
   process.stdout.write(`Decode, encode, parse and stringify, ops/s; the hand-written parse is JSON.parse then the hand-written decode, the stringify is the hand-written encode then JSON.stringify\n${table(conversion)}\n\n`);
+  process.stdout.write(`Encode of the flat IModel class instance, ops/s: its fields only, and with program state (one unknown own key)\n${table([['fields only', 'program state', 'state/fields'], [fixed(valid), fixed(state), ratio(state, valid)]])}\n\n`);
 }
 
 async function main(): Promise<void> {

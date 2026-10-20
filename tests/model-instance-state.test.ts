@@ -39,9 +39,11 @@ const CLOSED = { type: 'object', required: ['title'], properties: { title: { typ
 const EVALUATED = { allOf: [{ type: 'object', properties: { title: { type: 'string' } } }], unevaluatedProperties: false };
 const branch = (tag: string, key: string): object => ({ type: 'object', required: ['kind', key], properties: { kind: { const: tag }, [key]: { type: 'number' } }, additionalProperties: false });
 const TAGGED = { oneOf: [branch('a', 'x'), branch('b', 'y')], discriminator: { propertyName: 'kind' } };
-const compiled = compileValidatorModule({ roots: { closed: CLOSED, evaluated: EVALUATED, tagged: TAGGED }, fastPath: true });
+// An open model that lists its names, as golem-openapi writes `unevaluatedProperties: false` over an open base.
+const NAMED = { type: 'object', properties: { title: { type: 'string' } }, propertyNames: { enum: ['title'] } };
+const compiled = compileValidatorModule({ roots: { closed: CLOSED, evaluated: EVALUATED, tagged: TAGGED, named: NAMED }, fastPath: true });
 
-// The places that report "this key is not allowed": the key test, unevaluatedProperties and the tagged-union pass.
+// The places that report "this key is not allowed": the key test, unevaluatedProperties, propertyNames and the tagged-union pass.
 const PLACES: readonly { readonly root: string; readonly fast: boolean; readonly rows: readonly (readonly [name: string, value: unknown, valid: boolean])[] }[] = [
   { root: 'closed', fast: true, rows: [
     ['a plain value with an extra key', { title: 'a', cache: 1 }, false],
@@ -56,6 +58,11 @@ const PLACES: readonly { readonly root: string; readonly fast: boolean; readonly
     ['a plain value with an unevaluated key', { title: 'a', cache: 1 }, false],
     ['a model instance with own state', instance(Task, { cache: 1 }), true],
     ['a model instance with a declared key that nothing evaluated', instance(Wide, { note: 'n' }), false],
+  ] },
+  { root: 'named', fast: true, rows: [
+    ['a plain value with a name outside the list', { title: 'a', cache: 1 }, false],
+    ['a model instance with own state', instance(Task, { cache: 1 }), true],
+    ['a model instance with a declared key outside the list', instance(Wide, { note: 'n' }), false],
   ] },
   { root: 'tagged', fast: true, rows: [
     ['a plain value with a key that another branch declares', { kind: 'a', x: 1, y: 1 }, false],
@@ -84,13 +91,13 @@ async function buildState(t: TestContext, mobx: boolean) {
   await buildModelProject(root);
   const models = await import(`${pathToFileURL(path.join(root, 'build/state.model.js')).href}?mobx=${mobx}`);
   const codec = (name: string) => requireObjectCodec(generatedCodecIdFromRoot(root, name));
-  return { Task: models.Task as new (values?: object) => object, Board: models.Board as new (values?: object) => object, task: codec('TTask'), small: codec('TSmall'), board: codec('TBoard') };
+  return { Task: models.Task as new (values?: object) => object, Board: models.Board as new (values?: object) => object, task: codec('TTask'), small: codec('TSmall'), board: codec('TBoard'), Bag: models.Bag as new (values?: object) => object, bag: codec('TBag') };
 }
 
 for (const mobx of [false, true]) {
   test(`codec checks and encode keep the own state of a model class (mobx ${mobx})`, async (t) => {
-    // protects: bug T-148 validate, assert, toWireFormat and stringify of a class with own state
-    const { Task: Model, Board, task, small, board } = await buildState(t, mobx);
+    // protects: bug T-148 validate, assert, toWireFormat and stringify of a class with own state; a dynamic-map model keeps its keys
+    const { Task: Model, Board, task, small, board, Bag, bag } = await buildState(t, mobx);
     const value = new Model({ title: 'a', done: true });
     assert.equal(task.validate(value), true);
     assert.equal(task.assert(value), value);
@@ -105,5 +112,9 @@ for (const mobx of [false, true]) {
       return true;
     });
     assert.equal(task.validate({ ...value }), false, 'a copy carries no model, so its own keys are data');
+    const map = Object.assign(new Bag({ id: 'a' }), { extra: 1 });
+    assert.equal(bag.validate(map), true);
+    assert.equal(bag.stringify(map), '{"id":"a","extra":1}', 'a dynamic-map model writes its extra keys as data');
+    assert.deepEqual(bag.toWireFormat(map), { id: 'a', extra: 1 });
   });
 }

@@ -1039,7 +1039,8 @@ class FunctionWriter {
       const key = this.fresh('key');
       this.open(`for (const ${key} of ${listed(keys)})`);
       if (undefinedToo) this.line(`if (${value}[${key}] === undefined) continue;`);
-      this.leaf({ fails: `!${this.call(check.propertyNames, { value: key, issues: '[]', all: 'false' })}`, issue: `code: 'invalidKey', key: ${key}` });
+      // A name that the instance's own model does not declare is program state, not a property name to judge.
+      this.leaf({ fails: `!${this.call(check.propertyNames, { value: key, issues: '[]', all: 'false' })} && !${this.state.localHelper('isInstanceState')}(${value}, ${key})`, issue: `code: 'invalidKey', key: ${key}` });
       this.close();
     }
   }
