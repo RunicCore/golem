@@ -146,6 +146,7 @@ The first release candidate includes four independently installable packages:
 - An `allOf` that no object satisfies stops generation with `OPENAPI_COMPOSITION_UNSATISFIABLE`, and an `allOf` whose members convert one property in two ways, such as to a `Date` and to a model, stops it with `OPENAPI_COMPOSITION_CONVERSION_CONFLICT`. Before, such a schema generated code that read only some of its members.
 - Fixed: a field that joins a `$ref` and properties in one object, as `allOf: [{ $ref: Base }, { properties: { at } }]` or as own `properties` beside `allOf: [{ $ref: Base }]`, is one plain object with the fields of `Base` and its own fields, in the type, the model and the codec. Before, own properties beside the `$ref` lost the fields of `Base`. A component with the same `allOf` still extends `BaseModel`, and a field that is only `allOf: [{ $ref: Pet }]` stays a `PetModel`.
 - **Breaking:** `null` in an `allOf` follows JSON Schema: the object admits `null` only when each member that declares a `type` admits `null`. `{ type: [object, null], allOf: [{ $ref: Pet }] }` now rejects `null` when `Pet` is `type: object`. To admit `null`, use `oneOf: [{ $ref: Pet }, { type: 'null' }]`.
+- A model with an explicit `additionalProperties: true` now writes its extra keys in `stringify` and `toWireFormat`. Before, they wrote only the declared fields. Its codec id changes, so regenerate. A model that is open only by the JSON Schema default still writes its declared fields only.
 
 See [OpenAPI client support](docs/reference/openapi-support.md) for supported versions and contract limitations.
 
@@ -168,6 +169,7 @@ See [OpenAPI client support](docs/reference/openapi-support.md) for supported ve
 - **Breaking:** a field typed `unknown` fails generation with `RUNM1011`, as `any` does, unless `allowAny` is `true` in `golem.yaml` or in the model's options. This includes the parameter of a `TSerde` deserializer. `RUNM1011` is now titled "Field contains any or unknown"; its fix is a concrete type or `allowAny: true`.
 - **Breaking:** `$dynamicRef` and `$dynamicAnchor` in an external OpenAPI document fail generation with `VALIDATE_UNSUPPORTED_KEYWORD`.
 - `golem.yaml` gains the root key `exact` (default `true`). It is the default for the `exact` option of every model that sets none; the model option overrides it.
+- With validation off, `stringify` and `toWireFormat` write the declared fields that an object has and leave out a missing required field. Before, a missing required field threw a `TypeError` or was written as an invented default. A validated call still rejects the object.
 
 ### Generation
 

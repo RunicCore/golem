@@ -54,6 +54,6 @@ Each rule runs once; your decoders only see values that passed the JSON check.
 
 `failFast: false` throws with every issue. `validate<T>(value)` returns whether the value matches, without throwing. `validateInstance(model)` returns the issues.
 
-When `validation` is off, generated output has no checks. `{ validate: true }` then throws `LibErrorKind.ValidationUnavailable`, described in the [runtime reference](/reference/runtime-api#errors). `{ validate: false }` skips the check for data you already trust.
+When `validation` is off, generated output has no checks. `{ validate: true }` then throws `LibErrorKind.ValidationUnavailable`, described in the [runtime reference](/reference/runtime-api#errors). `{ validate: false }` skips the check for data you already trust. With validation off, `stringify` and `toWireFormat` write the declared fields an object has and leave out a missing required field.
 
 Full example: [`examples/models`](https://github.com/RunicCore/golem/tree/master/examples/models)
