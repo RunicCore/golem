@@ -12,5 +12,5 @@ export type TA = IModel<{
   counts?: unknown[] & Contains<Positive> & MaxContains<1>;
   annotated?: unknown & OneOf<[{ a: Positive }, { b: string }]> & UnevaluatedProperties<never>;
   builtin?: unknown & Not<number>;
-}>;
+}, { allowAny: true }>;
 export class A extends TABaseModel {}

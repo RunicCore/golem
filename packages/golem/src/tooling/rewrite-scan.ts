@@ -299,33 +299,28 @@ function isNamed(typeName: ts.EntityName, ...names: readonly string[]): boolean 
   return names.includes(ts.isIdentifier(typeName) ? typeName.text : typeName.right.text);
 }
 
-/** The element type of `T[]`, `Array<T>` and `ReadonlyArray<T>`, through parentheses; any other type as it is. */
-function nestModelTypeNode(typeNode: ts.TypeNode): ts.TypeNode {
-  let node = typeNode;
-  for (;;) {
-    if (ts.isParenthesizedTypeNode(node)) node = node.type;
-    else if (ts.isArrayTypeNode(node)) node = node.elementType;
-    else if (ts.isTypeReferenceNode(node) && node.typeArguments?.length === 1 && isNamed(node.typeName, 'Array', 'ReadonlyArray')) node = node.typeArguments[0];
-    else return node;
-  }
-}
-
-/** The model a method returns, through `Promise<T>`, `T[]`, `readonly T[]`, `Array<T>`; none for a union. */
-function nestReturnModel(typeNode: ts.TypeNode): { readonly model: ts.TypeNode; readonly array: boolean } | undefined {
+/**
+ * The model of a parameter or return type and whether it is an array of it, through parentheses, `readonly`, and one
+ * `T[]`, `Array<T>` or `ReadonlyArray<T>`; `Promise<T>` too for a return. Nested arrays have no model. A return union has
+ * none either; a parameter union stays one type, which binds to no codec.
+ */
+function nestModelType(typeNode: ts.TypeNode, forReturn: boolean): { readonly model: ts.TypeNode; readonly array: boolean } | undefined {
   let node = typeNode;
   let array = false;
+  const wrapArray = (element: ts.TypeNode): boolean => {
+    if (array) return false;
+    array = true;
+    node = element;
+    return true;
+  };
   for (;;) {
     if (ts.isParenthesizedTypeNode(node)) node = node.type;
-    else if (ts.isArrayTypeNode(node)) { array = true; node = node.elementType; }
-    else if (ts.isTypeOperatorNode(node)) {
-      if (node.operator !== ts.SyntaxKind.ReadonlyKeyword) return undefined;
-      node = node.type;
-    } else if (ts.isUnionTypeNode(node)) return undefined;
-    else if (ts.isTypeReferenceNode(node) && node.typeArguments?.length === 1 && isNamed(node.typeName, 'Promise')) node = node.typeArguments[0];
-    else if (ts.isTypeReferenceNode(node) && node.typeArguments?.length === 1 && isNamed(node.typeName, 'Array', 'ReadonlyArray')) {
-      array = true;
-      node = node.typeArguments[0];
-    } else return { model: node, array };
+    else if (ts.isArrayTypeNode(node)) { if (!wrapArray(node.elementType)) return undefined; }
+    else if (ts.isTypeOperatorNode(node) && node.operator === ts.SyntaxKind.ReadonlyKeyword) node = node.type;
+    else if (ts.isTypeOperatorNode(node) || ts.isUnionTypeNode(node)) return forReturn ? undefined : { model: node, array };
+    else if (forReturn && ts.isTypeReferenceNode(node) && node.typeArguments?.length === 1 && isNamed(node.typeName, 'Promise')) node = node.typeArguments[0];
+    else if (ts.isTypeReferenceNode(node) && node.typeArguments?.length === 1 && isNamed(node.typeName, 'Array', 'ReadonlyArray')) { if (!wrapArray(node.typeArguments[0])) return undefined; }
+    else return { model: node, array };
   }
 }
 
@@ -369,6 +364,8 @@ interface NestBinding {
   readonly golemModel: boolean;
   /** The model type as written, array wrappers removed. */
   readonly label: string;
+  /** The type is an array of the model. */
+  readonly array: boolean;
 }
 
 function nestBinding(
@@ -376,9 +373,11 @@ function nestBinding(
   typeNode: ts.TypeNode,
 ): NestBinding {
   const { checker, keys, file, dependencies } = input;
-  const model = nestModelTypeNode(typeNode);
-  const label = model.getText(file);
-  const unbound = { id: '', primitive: false, golemModel: false, label };
+  const walked = nestModelType(typeNode, false);
+  const model = walked?.model;
+  const unbound = { id: '', primitive: false, golemModel: false, label: (model ?? typeNode).getText(file), array: walked?.array ?? false };
+  if (!model) return unbound;
+  const { label } = unbound;
   if (NEST_PRIMITIVE_TYPES.has(label.slice(label.lastIndexOf('.') + 1))) return { ...unbound, primitive: true };
   const name = serdeTypeName(model);
   const symbol = name && resolvedSymbolAt(checker, name);
@@ -520,13 +519,13 @@ function scanFile(
     const names = decoratorNames(parameter);
     const decorator = names.find((name) => NEST_PARAMETER_DECORATORS.includes(name));
     if (!parameter.type || decorator === undefined || hasDecorator(names, NEST_CODEC_DECORATOR)) return;
-    const { id, primitive, golemModel, label } = nestBinding({ checker, keys, file, dependencies: scan.dependencies }, parameter.type);
+    const { id, primitive, golemModel, label, array } = nestBinding({ checker, keys, file, dependencies: scan.dependencies }, parameter.type);
     if (primitive) return;
     if (id === '') {
       if (golemModel) scan.diagnostics.push(locate(root, file, parameter.type, CODE_NEST_NO_CODEC, `@${decorator}() type ${label} has no unique codec id; run golem generate`));
       return;
     }
-    scan.edits.push(insertion(parameter.name.getStart(file), `@${REWRITE_IMPORT_PREFIX}${NEST_CODEC_DECORATOR}(${JSON.stringify(id)}) `));
+    scan.edits.push(insertion(parameter.name.getStart(file), `@${REWRITE_IMPORT_PREFIX}${NEST_CODEC_DECORATOR}(${JSON.stringify(id)}${array ? ', true' : ''}) `));
     importOf(scan, root, file, parameter, NEST_CODEC_DECORATOR, NEST_MODULE);
     const { line, character } = file.getLineAndCharacterOfPosition(parameter.type.getStart(file));
     scan.nestSites.push({ file: portable(root, file.fileName), line: line + 1, column: character + 1, decorator, label, id });
@@ -536,7 +535,7 @@ function scanFile(
   const visitMethod = (method: ts.MethodDeclaration): void => {
     // A decorator is a syntax error on an object literal method, an abstract method and an overload signature.
     if (!method.type || !method.body || !ts.isClassLike(method.parent)) return;
-    const returned = nestReturnModel(method.type);
+    const returned = nestModelType(method.type, true);
     if (!returned || hasDecorator(decoratorNames(method), NEST_RETURN_DECORATOR)) return;
     const { id, primitive } = nestBinding({ checker, keys, file, dependencies: scan.dependencies }, returned.model);
     if (primitive || id === '') return;

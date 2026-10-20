@@ -9,7 +9,7 @@ export type TA = IModel<{
   one?: unknown & OneOf<[number & TValidation<typeof positive>, string & TValidation<typeof nonEmpty>]>;
   blocked?: unknown & Not<number & TValidation<typeof positive>>;
   conditional?: { kind?: string; value?: number } & IfThenElse<{ kind: 'number' }, { value: number & TValidation<typeof positive> }, { kind: 'text' }>;
-}>;
+}, { allowAny: true }>;
 
 export class A extends TABaseModel {
   constructor(values: Partial<TAFields> = {}) { super(values); }

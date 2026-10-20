@@ -33,6 +33,13 @@ test('frontend models generated from an out-of-src SDK manifest do not re-emit i
   assert.equal(state.inputs.has(path.join(root, 'sdk/model-manifest.json')), false);
 });
 
+test('a golem.yaml with an openapi job and the exact key generates the SDK and the models that use it', async (t: TestContext) => {
+  const { config } = fixture(t);
+  fs.writeFileSync(config, fs.readFileSync(config, 'utf8').replace('validation: true', 'validation: true\nexact: false'));
+  await runPipeline(config);
+  await runPipeline(config, { check: true });
+});
+
 test('global profile changes remove obsolete validation and keep manifest identity', async (t: TestContext) => {
   const { root, config } = fixture(t);
   await runPipeline(config);

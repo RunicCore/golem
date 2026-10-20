@@ -6,7 +6,7 @@ from the current directory.
 
 - `version: 1` selects the configuration format and is independent of the package release.
 - `tsconfig` names the TypeScript project that `golem generate` reads and `golem build` builds. The Vite and esbuild plugins and the Node loader open the same project from `golem.yaml`: the `config` option of the plugin, else `GOLEM_CONFIG`, else `./golem.yaml`.
-- `mobx`, `validation` and `allowAny` apply to every job. A named `IObject` or `IModel` can still set `validation` and `allowAny` for that declaration.
+- `mobx`, `validation` and `allowAny` apply to every job. `exact` applies to the models job and to the models that controller jobs describe. A named `IObject` or `IModel` can still set `validation`, `allowAny` and `exact` for that declaration.
 - Unknown keys are errors.
 - Configure at least one `generators`, `controllers`, `openapi` or `models` job.
 
@@ -22,7 +22,8 @@ It records what it writes in an [inventory](/guide/watch#generated-files-and-the
 | `tsconfig` | path | No | `tsconfig.json` | The project's tsconfig, relative to `golem.yaml`. The file must exist when you set the key. One tsconfig belongs to one `golem.yaml`: the `root` of a `models` or `controllers` job must lie inside its directory, and each job must find that same file as the nearest `tsconfig.json` from its `root` upward. A `tsconfig` that names another file is not supported yet. |
 | `mobx` | boolean | No | `false` | Generate MobX observability hooks. |
 | `validation` | boolean | No | `true` | Generate runtime validation metadata and checks. Named `IObject` / `IModel` `{ validation: true or false }` overrides this per declaration. |
-| `allowAny` | boolean | No | `false` | Permit inferred `any` fields in models. An `IObject` or `IModel` can opt in with `IObject<F, { allowAny: true }>`, or tighten this policy explicitly. |
+| `allowAny` | boolean | No | `false` | Permit fields typed `any` or `unknown` in models. Without it, such a field fails with [`RUNM1011`](/reference/diagnostics#runm1011). An `IObject` or `IModel` can opt in with `IObject<F, { allowAny: true }>`, or tighten this policy explicitly. |
+| `exact` | boolean | No | `true` | Reject extra properties in models. `false` admits keys that a model does not list. An `IObject` or `IModel` can override it with `IObject<F, { exact: false }>`. |
 | `unknownFormats` | `warn` or `error` | No | `warn` | What generation does with a schema `format` that golem does not check. `warn` reports [`VALIDATE_UNKNOWN_FORMAT`](/reference/diagnostics#validate-unknown-format) and does not check that format; `error` stops generation. |
 | `generators` | array of generator jobs | No | — | A non-empty list of [jobs from installed packages](#generator-jobs). |
 | `controllers` | array of controller jobs | No | — | A non-empty list of controller-to-OpenAPI jobs. |
@@ -34,6 +35,7 @@ version: 1
 mobx: false
 validation: true
 allowAny: false
+exact: true
 unknownFormats: warn
 openapi:
   - input: api.yaml
@@ -209,12 +211,15 @@ A `golem.yaml` below the root can have a `models` job of its own. Then that job 
 
 Full example: [`examples/shared-folder`](https://github.com/RunicCore/golem/tree/master/examples/shared-folder), with one app that includes the folder and one that reaches it through a folder link.
 
-The global `allowAny` policy defaults to `false`. An `IObject` or `IModel` can
-opt in with `IObject<Fields, { allowAny: true }>` or tighten a global `true`
-profile with `IObject<Fields, { allowAny: false }>`. The declaration's own
-setting wins when present; otherwise the global profile applies. `allowAny`
-does not change `unknown`, suppress explicit tags or bypass JSON
-representability. Referenced models keep their own policy.
+The global `allowAny` and `exact` settings default to `false` and `true`. A
+model that has an `any` or `unknown` field needs `allowAny: true`. An `IObject`
+or `IModel` can opt in with `IObject<Fields, { allowAny: true }>` or tighten a
+global `true` with `IObject<Fields, { allowAny: false }>`. The same holds for
+`exact`: `IObject<Fields, { exact: false }>` admits extra keys in one model,
+and `exact: false` in `golem.yaml` admits them in every model. The
+declaration's own setting wins when present; then the `golem.yaml` value
+applies, then the default. `allowAny` does not suppress explicit tags or bypass
+JSON representability. Referenced models keep their own policy.
 
 ## Generator jobs
 

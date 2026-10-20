@@ -409,7 +409,7 @@ function nestedPaymentProject(t: TestContext) {
   writeModelSources(sourceRoot, {
     'money.model.ts': tsSource`import type { IObject } from '@exprtlabs/golem/model';
 import type { MinLength } from '@exprtlabs/golem/tags';
-export type TMoney = IObject<{ currency: string & MinLength<3>; note: unknown; at: Date }>;
+export type TMoney = IObject<{ currency: string & MinLength<3>; note: unknown; at: Date }, { allowAny: true }>;
 `,
     'payment.model.ts': tsSource`import type { IModel } from '@exprtlabs/golem/model';
 import type { TMoney } from './money.model.js';

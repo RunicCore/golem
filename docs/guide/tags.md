@@ -105,6 +105,7 @@ Here `PermissionWire` is a string tagged with a hexadecimal pattern, and the mod
 - The decoder's parameter type defines the JSON schema.
 - The encoder's return type is checked for TypeScript compatibility. Tags on the return type alone add no JSON validation.
 - A plain `string` parameter keeps the string check and drops the tagged validation constraints on the JSON value. This also applies to aliases such as `ProjectName = string & MinLength<3>`.
+- A parameter typed `any` or `unknown` fails with [`RUNM1011`](/reference/diagnostics#runm1011) unless `allowAny` is `true`, in `golem.yaml` or in the model's options. Type the parameter as the JSON value the decoder reads.
 
 Calling `encodePermissions()` or `decodePermissions()` directly runs only the function body. Type annotations do not perform runtime checks by themselves.
 

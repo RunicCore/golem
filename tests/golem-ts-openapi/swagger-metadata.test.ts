@@ -76,13 +76,14 @@ async function generated(
   t: TestContext,
   name: string,
   files: Readonly<Record<string, string>> = {},
+  allowAny = false,
 ): Promise<Awaited<ReturnType<typeof generate>>> {
   const root = fixture(t, name, files);
   return generate({
     root,
     output: path.join(root, 'openapi.json'),
     info: { title: 'Swagger metadata', version: '1' },
-    profile: { mobx: false, validation: false },
+    profile: { mobx: false, validation: false, allowAny },
   });
 }
 
@@ -243,7 +244,7 @@ test('evaluates getSchemaPath() and refs() and emits the named components', asyn
 });
 
 test('accepts compatible Swagger types: formatted strings, base classes, nullable array items and unknown', async t => {
-  const result = await generated(t, 'swagger-type-compatibility');
+  const result = await generated(t, 'swagger-type-compatibility', {}, true);
   const document = documentOf(result);
   const upload = objectSchema(document, jsonSchema(document.paths['/uploads']?.get, '200'));
   const file = property(document, upload, 'file');
@@ -258,6 +259,13 @@ test('accepts compatible Swagger types: formatted strings, base classes, nullabl
   const payload = property(document, upload, 'payload');
   assert.equal(payload.type, 'number');
   assert.equal(payload.description, 'Opaque payload');
+});
+
+test('a controller DTO field typed unknown is rejected with RUNM1011 under the default allowAny', async t => {
+  await assert.rejects(
+    () => generated(t, 'swagger-type-compatibility'),
+    (error: unknown) => /RUNM1011.*contains unknown/.test(String(error)),
+  );
 });
 
 test('reads decorator options supplied by constants and spreads in source order', async t => {

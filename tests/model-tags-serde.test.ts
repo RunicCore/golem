@@ -38,6 +38,20 @@ test('validation false retains Date and serde conversions without a validator re
   assert.deepEqual(encodeGeneratedModel(dated), { when: '2025-01-02T03:04:05.000Z', token: '5' });
 });
 
+test('a TSerde deserializer whose parameter is unknown is rejected by default and allowed by allowAny', (t) => {
+  const { root, sourceRoot } = fixture(t);
+  fs.writeFileSync(path.join(sourceRoot, 'codecs.ts'), `export function encode(value: number): string { return String(value); }
+export function decode(wire: unknown): number { return Number(wire); }
+`);
+  fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), taggedModelSource({
+    name: 'A',
+    imports: tsSource`import type { TSerde } from '@exprtlabs/golem/tags';\nimport { encode, decode } from './codecs.js';`,
+    fields: tsSource`value: number & TSerde<typeof encode, typeof decode>`,
+  }).text);
+  assert.throws(() => generate({ root, profile: { mobx: false, validation: true } }), /RUNM1011.*contains unknown/);
+  assert.doesNotThrow(() => generate({ root, profile: { mobx: false, validation: true, allowAny: true } }));
+});
+
 test('serde wire descriptors validate nested constraints before decode and after encode', async t => {
   const { root, sourceRoot } = fixture(t);
   fs.writeFileSync(path.join(sourceRoot, 'codecs.ts'), readFixture("models/model-tags/serde-wire-descriptors-validate-nested-constraints-before-decode-and-after-e/codecs.ts"));

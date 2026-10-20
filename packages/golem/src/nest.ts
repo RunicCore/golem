@@ -20,13 +20,14 @@ import {
   type NestInterceptor,
 } from '@nestjs/common';
 import { mergeMap, type Observable } from 'rxjs';
-import { LibError } from './errors.js';
+import { IssueRepresentation, IssueSource, LibError, LibErrorKind, type IssuePath } from './errors.js';
 import { VALIDATION_KEYWORD } from './schema-keywords.js';
 import { getIModelClass, getObjectCodec, type ObjectCodec } from './object-codec.js';
 
 const NEST_MODEL_CODEC_ID = Symbol.for('@exprtlabs/golem:nestModelCodec');
 const NEST_MODEL_CODEC = Symbol.for('@exprtlabs/golem:nestModelCodec.codec');
 const NEST_MODEL_CONSTRUCT = Symbol.for('@exprtlabs/golem:nestModelCodec.construct');
+const NEST_MODEL_ARRAY = Symbol.for('@exprtlabs/golem:nestModelCodec.array');
 const NEST_MODEL_RETURN = '@exprtlabs/golem:nestModelReturn';
 const ROUTE_ARGS_METADATA = '__routeArguments__';
 const NEST_BODY = 3;
@@ -73,20 +74,24 @@ type NestReturnMeta = {
   readonly array: boolean;
 };
 
+type NestModelConstruct = abstract new (values?: never) => object;
+
 type NestModelToken = Function & {
   readonly [NEST_MODEL_CODEC_ID]?: unknown;
   readonly [NEST_MODEL_CODEC]?: ObjectCodec;
-  readonly [NEST_MODEL_CONSTRUCT]?: abstract new (values?: never) => object;
+  readonly [NEST_MODEL_CONSTRUCT]?: NestModelConstruct;
+  readonly [NEST_MODEL_ARRAY]?: true;
 };
 
 function reflectMeta(): ReflectParamtypes {
   return Reflect as typeof Reflect & ReflectParamtypes;
 }
 
-function nestModelMetatype(id: string): Function {
+function nestModelMetatype(id: string, array: boolean): Function {
   const Token = class {};
   Object.defineProperty(Token, 'name', { value: id });
   Object.defineProperty(Token, NEST_MODEL_CODEC_ID, { value: id });
+  if (array) Object.defineProperty(Token, NEST_MODEL_ARRAY, { value: true });
   const codec = getObjectCodec(id);
   if (codec) {
     Object.defineProperty(Token, NEST_MODEL_CODEC, { value: codec });
@@ -111,7 +116,11 @@ function boundCodec(metatype: unknown): ObjectCodec | undefined {
   return asToken(metatype)?.[NEST_MODEL_CODEC];
 }
 
-function boundConstruct(metatype: unknown): (abstract new (values?: never) => object) | undefined {
+function boundArray(metatype: unknown): boolean {
+  return asToken(metatype)?.[NEST_MODEL_ARRAY] === true;
+}
+
+function boundConstruct(metatype: unknown): NestModelConstruct | undefined {
   return asToken(metatype)?.[NEST_MODEL_CONSTRUCT];
 }
 
@@ -144,8 +153,8 @@ export function nestModelReturn(id: string, array?: boolean): MethodDecorator {
   };
 }
 
-export function nestModelCodec(id: string): ParameterDecorator {
-  const token = nestModelMetatype(id);
+export function nestModelCodec(id: string, array?: boolean): ParameterDecorator {
+  const token = nestModelMetatype(id, array === true);
   return (target, propertyKey, parameterIndex) => {
     if (propertyKey === undefined) return;
     const meta = reflectMeta();
@@ -401,6 +410,58 @@ function queryWireDecoder(codec: ObjectCodec): QueryWireDecoder {
   return decoder;
 }
 
+const NO_DECODE = (value: unknown): unknown => value;
+
+/** The error with `path` in front of each issue path; a path of no segments, or an error that is not a LibError, stays as it is. */
+function prefixedError(error: unknown, path: IssuePath): unknown {
+  if (path.length === 0 || !(error instanceof LibError)) return error;
+  return new LibError(
+    error.kind,
+    error.message,
+    error.issues.map((issue) => ({ ...issue, path: [...path, ...issue.path] })),
+    { causedByInput: error.causedByInput, ...(error.cause === undefined ? {} : { cause: error.cause }) },
+  );
+}
+
+/**
+ * The model of one wire value, or of each item of an array wire value. `field` is the key of a one-field parameter, which
+ * starts the path of each issue; an item that fails adds its index.
+ */
+function convertInput(
+  codec: ObjectCodec,
+  construct: NestModelConstruct | undefined,
+  array: boolean,
+  wire: unknown,
+  decode: (wire: unknown) => unknown,
+  field: string | undefined,
+): unknown {
+  const options = { failFast: true, construct };
+  if (!array) {
+    try {
+      return codec.fromWireFormat(decode(wire), options);
+    } catch (error) {
+      throw prefixedError(error, field === undefined ? [] : [field]);
+    }
+  }
+  if (!Array.isArray(wire)) {
+    throw new LibError(LibErrorKind.Validation, 'Model validation failed.', [{
+      code: 'type', expected: ['array'], message: 'Expected array', path: field === undefined ? [] : [field],
+      source: IssueSource.Serde, representation: IssueRepresentation.Wire,
+    }]);
+  }
+  return wire.map((item, index) => {
+    try {
+      return codec.fromWireFormat(decode(item), options);
+    } catch (error) {
+      throw prefixedError(error, field === undefined ? [index] : [field, index]);
+    }
+  });
+}
+
+function inputDecorator(paramtype: number, field: string | undefined): string {
+  return `@${paramtype === NEST_BODY ? 'Body' : 'Query'}(${field === undefined ? '' : `'${field}'`})`;
+}
+
 // #region nest-model-interceptor
 export class NestModelInterceptor implements NestInterceptor {
   // Nest return decorators are installed before controllers run, so an absent
@@ -442,6 +503,8 @@ export class NestModelInterceptor implements NestInterceptor {
   }
 
   intercept(context: ExecutionContext, next: CallHandler<unknown>): Observable<unknown> {
+    // Body and query parameters are HTTP request input. An RPC or WebSocket handler has other parameters under the same numbers.
+    if (context.getType() !== 'http') return next.handle();
     const handler = context.getHandler();
     const klass = context.getClass();
     // Inbound conversion only. Validation and invalid JSON become HTTP 400. Any other error stays HTTP 500.
@@ -451,33 +514,68 @@ export class NestModelInterceptor implements NestInterceptor {
         const types = (reflectMeta().getMetadata('design:paramtypes', klass.prototype, handler.name) as unknown[] | undefined)
           ?? [];
         const req = context.switchToHttp().getRequest<HttpRequest>();
-        const convertedSources = new Map<number, { codec: ObjectCodec; construct: unknown }>();
+        // A whole parameter keys by its source, a one-field parameter by its source and field.
+        let converted: Map<number | string, { codec: ObjectCodec; construct: NestModelConstruct | undefined; array: boolean }> | undefined;
+        // Bit 1 is the body, bit 2 the query.
+        let wholeSources = 0;
+        let fieldSources = 0;
         for (const [key, meta] of Object.entries(args)) {
           const colon = key.indexOf(':');
           const paramtype = Number(colon >= 0 ? key.slice(0, colon) : key);
           if (paramtype !== NEST_BODY && paramtype !== NEST_QUERY) continue;
-          // @Body('field') or @Query('field') is one field, so leave it with Nest.
-          if (typeof meta.data === 'string' && meta.data !== '') continue;
+          const field = typeof meta.data === 'string' && meta.data !== '' ? meta.data : undefined;
           const metatype = types[meta.index];
           const codec = boundCodec(metatype);
-          if (!codec) continue;
+          if (!codec) {
+            // A controller declaration fault, not bad input: Nest answers 500 for this request.
+            const where = `${inputDecorator(paramtype, field)} parameter ${meta.index} of ${klass.name}.${handler.name}`;
+            const id = codecIdFromMetatype(metatype);
+            throw new TypeError(id === undefined
+              ? `NestModelInterceptor needs an IModel or IObject type for ${where}. Declare the input as an IModel or IObject, or write your own interceptor.`
+              : `NestModelInterceptor found no registered codec "${id}" for ${where}. Import the model module as a value, so its codec registers before the controller class loads.`);
+          }
           const construct = boundConstruct(metatype);
-          const previous = convertedSources.get(paramtype);
+          const array = boundArray(metatype);
+          const source = paramtype === NEST_BODY ? 1 : 2;
+          if (field === undefined ? (fieldSources & source) !== 0 : (wholeSources & source) !== 0) {
+            // The whole conversion replaces the value that a one-field parameter reads, so the two cannot both convert.
+            throw new TypeError(
+              `NestModelInterceptor cannot convert a whole and a one-field ${paramtype === NEST_BODY ? '@Body' : '@Query'}() of ${klass.name}.${handler.name} together. Declare the whole input as one model, or use one-field parameters only.`,
+            );
+          }
+          if (field === undefined && array && paramtype === NEST_QUERY) {
+            throw new TypeError(
+              `NestModelInterceptor cannot convert a whole @Query() array of ${klass.name}.${handler.name}: a query is an object. Declare the query as one model.`,
+            );
+          }
+          const convertedKey = field === undefined ? paramtype : `${paramtype}:${field}`;
+          const previous = converted?.get(convertedKey);
           if (previous) {
-            if (previous.codec !== codec || previous.construct !== construct) {
-              throw new TypeError('NestModelInterceptor requires one model type for each whole body or query object.');
+            if (previous.codec !== codec || previous.construct !== construct || previous.array !== array) {
+              throw new TypeError(field === undefined
+                ? 'NestModelInterceptor requires one model type for each whole body or query object.'
+                : `NestModelInterceptor requires one model type for ${inputDecorator(paramtype, field)} of ${klass.name}.${handler.name}.`);
             }
             continue;
           }
-          const wire = paramtype === NEST_BODY ? req.body : queryWireDecoder(codec)(req.query);
-          const converted = codec.fromWireFormat(wire, {
-            failFast: true,
-            construct,
-          });
-          // @Body() and @Query() read this field when next.handle() runs.
-          if (paramtype === NEST_BODY) req.body = converted;
-          else replaceQuery(req, converted);
-          convertedSources.set(paramtype, { codec, construct });
+          const decode = paramtype === NEST_BODY ? NO_DECODE : queryWireDecoder(codec);
+          // @Body() and @Query() read these values when next.handle() runs.
+          if (field === undefined) {
+            const value = convertInput(codec, construct, array, paramtype === NEST_BODY ? req.body : req.query, decode, undefined);
+            if (paramtype === NEST_BODY) req.body = value;
+            else replaceQuery(req, value);
+            wholeSources |= source;
+          } else {
+            const record = schemaRecord(paramtype === NEST_BODY ? req.body : req.query);
+            const value = convertInput(codec, construct, array, record && Object.hasOwn(record, field) ? record[field] : undefined, decode, field);
+            // Copy so the incoming object is not mutated; define so a field named __proto__ stays data.
+            const copy = { ...record };
+            Object.defineProperty(copy, field, { value, writable: true, enumerable: true, configurable: true });
+            if (paramtype === NEST_BODY) req.body = copy;
+            else replaceQuery(req, copy);
+            fieldSources |= source;
+          }
+          (converted ??= new Map()).set(convertedKey, { codec, construct, array });
         }
       }
     } catch (error) {

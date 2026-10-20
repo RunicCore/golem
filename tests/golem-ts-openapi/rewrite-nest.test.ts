@@ -80,8 +80,8 @@ test('with nest on, a model @Body() or @Query() parameter and a model return gai
   // A non-model return, and a union that includes a model, are left alone.
   assert.doesNotMatch(method(code, 'count').decorators, /nestModelReturn/);
   assert.doesNotMatch(method(code, 'either').decorators, /nestModelReturn/);
-  // An array @Body() is stamped with the element codec; a pipe passed to @Body() or @Query() is kept.
-  assert.match(method(code, 'createBatch').signature, /@Body\(\) @__golem_nestModelCodec\("TPaymentInput_[0-9a-f]{8}"\) inputs: TPaymentInput\[\]/);
+  // An array @Body() is stamped with the element codec and the array flag; a pipe passed to @Body() or @Query() is kept.
+  assert.match(method(code, 'createBatch').signature, /@Body\(\) @__golem_nestModelCodec\("TPaymentInput_[0-9a-f]{8}", true\) inputs: TPaymentInput\[\]/);
   assert.match(method(code, 'createPiped').signature, /@Body\(customPipe\) @__golem_nestModelCodec\("TPaymentInput_[0-9a-f]{8}"\) input:/);
   assert.match(method(code, 'listPiped').signature, /@Query\(customPipe\) @__golem_nestModelCodec\("TPaymentFilter_[0-9a-f]{8}"\) filter:/);
 
@@ -208,7 +208,7 @@ test('a parameter decorator reached through a namespace import is stamped', (t) 
   ]);
 });
 
-test('Array<T> and Promise<T[]> returns record an array, and an Array<T> body takes the element codec', (t) => {
+test('Array<T> and Promise<T[]> returns record an array, and an Array<T> or readonly T[] body takes the element codec', (t) => {
   const root = paymentsProject(t, { 'src/arrays.controller.ts': readFixture(`${FORMS}/arrays.controller.ts`) });
   const result = scan(root);
   assert.deepEqual(result.diagnostics, []);
@@ -218,7 +218,10 @@ test('Array<T> and Promise<T[]> returns record an array, and an Array<T> body ta
   assertLines(code, [
     `  @__golem_nestModelReturn("${payment}", true) @Get('generic')`,
     `  @__golem_nestModelReturn("${payment}", true) @Get('promised')`,
-    `  batch(@Body() @__golem_nestModelCodec("${input}") inputs: Array<TPaymentInput>): number { return inputs.length; }`,
+    `  batch(@Body() @__golem_nestModelCodec("${input}", true) inputs: Array<TPaymentInput>): number { return inputs.length; }`,
+    `  readonlyBatch(@Body() @__golem_nestModelCodec("${input}", true) inputs: readonly TPaymentInput[]): number { return inputs.length; }`,
+    // An array of arrays has no one element codec, so it is left unstamped.
+    '  nestedBatch(@Body() inputs: TPaymentInput[][]): number { return inputs.length; }',
   ]);
   assert.equal(code.match(/__golem_nestModelReturn\(/g)?.length, 2);
 });

@@ -30,7 +30,7 @@ Internal subpaths `cli`, `emitter`, `schema`, `schema-graph`, `type-analysis`, `
 
 ## Feature defaults
 
-- Validation is enabled by default. MobX and `allowAny` are disabled by default.
-- Feature flags apply to every job. An individual `IObject` or `IModel` can override `allowAny` and `validation`.
+- Validation and `exact` are enabled by default. MobX and `allowAny` are disabled by default.
+- `exact` applies to the models job and to the models that controller jobs describe; the other feature flags apply to every job. An individual `IObject` or `IModel` can override `exact`, `allowAny` and `validation`.
 - Callback and webhook types are generated; your application implements their handlers.
 - Response links are emitted as metadata; clients don't follow them automatically.

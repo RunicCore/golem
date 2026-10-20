@@ -14,7 +14,7 @@ import { buildModelProject, writeModelGolemYaml } from './model-project.js';
 import { generatedCodecIdFromRoot } from './support/consumer.js';
 import { readFixture } from './fixture-project.js';
 import { modelAliasSource, referencedPolicyModelSource, taggedProfilePayloadSource } from './fixture-templates/models/profile-options.js';
-import { tsSource, type SourceFragment } from './source-template.js';
+import { identifier, tsSource, type SourceFragment } from './source-template.js';
 
 function profile(overrides: Partial<GolemProfile> = {}): GolemProfile {
   return {
@@ -82,45 +82,110 @@ function assertModelArtifactRoles(
   assert.equal(fs.existsSync(validatorsPath), false);
 }
 
-for (const validation of [true, false] as const) {
-  test(`global allowAny applies when validation=${validation}`, (t: TestContext) => {
-    const { root, source } = modelProject(t);
-    writeModel(source, tsSource`IModel<{ payload: any }>`);
-    assert.throws(
-      () => generate({ root, sources: [source], profile: profile({ validation }) }),
-      /contains any|allowAny/,
-    );
+for (const type of ['any', 'unknown'] as const) {
+  // The check of `unknown` does not depend on validation, so only `any` runs with it off.
+  for (const validation of type === 'any' ? [true, false] as const : [true] as const) {
+    test(`global allowAny applies to ${type} when validation=${validation}`, (t: TestContext) => {
+      const { root, source } = modelProject(t);
+      writeModel(source, tsSource`IModel<{ payload: ${identifier(type)} }>`);
+      assert.throws(
+        () => generate({ root, sources: [source], profile: profile({ validation }) }),
+        /RUNM1011.*allowAny/,
+      );
 
-    const allowed = generate({
-      root,
-      sources: [source],
-      profile: profile({ validation, allowAny: true }),
-    });
-    assertModelArtifactRoles(root, source, allowed, validation);
-  });
-
-  test(`per-model allowAny=true opts in and false tightens the global policy when validation=${validation}`, (t: TestContext) => {
-    const optedIn = modelProject(t);
-    writeModel(optedIn.source, tsSource`IModel<{ payload: any }, { allowAny: true }>`);
-    const optedInResult = generate({
-      root: optedIn.root,
-      sources: [optedIn.source],
-      profile: profile({ validation }),
-    });
-    assertModelArtifactRoles(optedIn.root, optedIn.source, optedInResult, validation);
-
-    const tightened = modelProject(t);
-    writeModel(tightened.source, tsSource`IModel<{ payload: any }, { allowAny: false }>`);
-    assert.throws(
-      () => generate({
-        root: tightened.root,
-        sources: [tightened.source],
+      const allowed = generate({
+        root,
+        sources: [source],
         profile: profile({ validation, allowAny: true }),
-      }),
-      /contains any|allowAny/,
-    );
+      });
+      assertModelArtifactRoles(root, source, allowed, validation);
+    });
+
+    test(`per-model allowAny=true opts in and false tightens the global policy for ${type} when validation=${validation}`, (t: TestContext) => {
+      const optedIn = modelProject(t);
+      writeModel(optedIn.source, tsSource`IModel<{ payload: ${identifier(type)} }, { allowAny: true }>`);
+      const optedInResult = generate({
+        root: optedIn.root,
+        sources: [optedIn.source],
+        profile: profile({ validation }),
+      });
+      assertModelArtifactRoles(optedIn.root, optedIn.source, optedInResult, validation);
+
+      const tightened = modelProject(t);
+      writeModel(tightened.source, tsSource`IModel<{ payload: ${identifier(type)} }, { allowAny: false }>`);
+      assert.throws(
+        () => generate({
+          root: tightened.root,
+          sources: [tightened.source],
+          profile: profile({ validation, allowAny: true }),
+        }),
+        /RUNM1011.*allowAny/,
+      );
+    });
+  }
+}
+
+for (const item of [
+  { position: 'an array item', declaration: tsSource`IModel<{ payload: unknown[] }>` },
+  { position: 'a record value', declaration: tsSource`IModel<{ payload: Record<string, unknown> }>` },
+  { position: 'a tuple item', declaration: tsSource`IModel<{ payload: [string, unknown] }>` },
+] as const) {
+  test(`a default model rejects unknown as ${item.position} with RUNM1011`, (t: TestContext) => {
+    const { root, source } = modelProject(t);
+    writeModel(source, item.declaration);
+    assert.throws(() => generate({ root, sources: [source], profile: profile() }), /RUNM1011.*contains unknown/);
   });
 }
+
+test('a tagged unknown field is rejected by default and allowed by allowAny, as a tagged any is', (t: TestContext) => {
+  const { root, source } = modelProject(t);
+  fs.writeFileSync(source, tsSource`import type { IModel } from '@exprtlabs/golem/model';
+import type { Format } from '@exprtlabs/golem/tags';
+export type TPayload = IModel<{ opaque: unknown & Format<'domain-specific'> }>;
+`.text);
+  assert.throws(() => generate({ root, sources: [source], profile: profile() }), /RUNM1011.*contains unknown/);
+  assertModelArtifactRoles(root, source, generate({ root, sources: [source], profile: profile({ allowAny: true }) }), true);
+});
+
+test('a tag argument typed unknown passes by default, and a tag argument typed any is still rejected', (t: TestContext) => {
+  const { root, source } = modelProject(t);
+  const tagged = (argument: string): string => tsSource`import type { IModel } from '@exprtlabs/golem/model';
+import type { Not } from '@exprtlabs/golem/tags';
+export type TPayload = IModel<{ value: string & Not<${identifier(argument)}> }>;
+`.text;
+  fs.writeFileSync(source, tagged('unknown'));
+  assertModelArtifactRoles(root, source, generate({ root, sources: [source], profile: profile() }), true);
+  fs.writeFileSync(source, tagged('any'));
+  assert.throws(() => generate({ root, sources: [source], profile: profile() }), /RUNM1011.*contains any/);
+});
+
+/** Builds a project of `TOpen` (no `exact` option) and `TClosed` (`exact: true`) whose golem.yaml sets the root `exact` default, and gives each model's codec check. */
+async function buildExactModels(t: TestContext, exact: boolean | undefined): Promise<(name: 'TOpen' | 'TClosed') => unknown> {
+  const { root, sourceRoot } = modelProject(t);
+  fs.writeFileSync(path.join(sourceRoot, 'exact.model.ts'), `import type { IObject } from '@exprtlabs/golem/model';
+export type TOpen = IObject<{ id: string }>;
+export type TClosed = IObject<{ id: string }, { exact: true }>;
+`);
+  writeModelGolemYaml(root, { ...profile(), ...(exact === undefined ? {} : { exact }) });
+  await compileModel(root);
+  await import(path.toNamespacedPath(path.join(root, 'build/exact.model.generated.js')));
+  return name => requireObjectCodec(generatedCodecIdFromRoot(root, name)).assert({ id: 'a', extra: 1 });
+}
+
+test('exact: false in golem.yaml opens a model that sets no exact option, and a model option exact: true closes it again', async (t: TestContext) => {
+  const assertWithExtra = await buildExactModels(t, false);
+  assert.doesNotThrow(() => assertWithExtra('TOpen'));
+  assert.throws(() => assertWithExtra('TClosed'), (error: unknown) => {
+    assert.ok(error instanceof LibError);
+    assert.deepEqual(error.issues[0]?.path, ['extra']);
+    return true;
+  });
+});
+
+test('a golem.yaml without the exact key closes a model that sets no exact option', async (t: TestContext) => {
+  const assertWithExtra = await buildExactModels(t, undefined);
+  assert.throws(() => assertWithExtra('TOpen'), LibError);
+});
 
 test('referenced models retain their own allowAny policy instead of inheriting the referring model policy', (t: TestContext) => {
   const allowed = modelProject(t);

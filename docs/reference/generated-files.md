@@ -105,7 +105,7 @@ The first matching rule gives the name:
 
 When the members of a union fall back to the owner plus the property, each member adds a part. The part is the discriminant value: the PascalCase value of a string-literal property that every member has, with values that stay different. If several properties qualify, the first in code-unit order wins, such as `TOrderEitherCard`. Otherwise the part is the member's position in the union as written, such as `TOrderEither1`. A union written through a type alias counts the alias's members in place. Members named by rules 1 to 3 keep those names.
 
-Non-default settings add suffixes, in this order: `Loose` for `exact: false`, `Any` for `allowAny: true`, and `Wire` for the wire representation. Controller signatures use `exact: false`, so their names end in `Loose`, such as `PaymentsCreateBodyMerchantLoose` for the `merchant` field of an inline body.
+Non-default settings, from the model option or from `golem.yaml`, add suffixes, in this order: `Loose` for `exact: false`, `Any` for `allowAny: true`, and `Wire` for the wire representation. Controller signatures use `exact: false`, so their names end in `Loose`, such as `PaymentsCreateBodyMerchantLoose` for the `merchant` field of an inline body.
 
 Equal shapes from different expressions merge into one schema. The alphabetically first name stays.
 

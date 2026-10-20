@@ -10,6 +10,6 @@ export type TInventory = IModel<{
   channel: { kind: 'open' } | { kind: 'hold'; until: Date };
   tag?: 'a' | 'b' | ('a' | 'b')[];
   memo?: string;
-}>;
+}, { allowAny: true }>;
 
 export class Inventory extends TInventoryBaseModel {}

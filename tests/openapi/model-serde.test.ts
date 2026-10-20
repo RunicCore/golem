@@ -657,6 +657,48 @@ test('an array field with an allOf sibling converts its items to Dates and is ty
   assert.deepEqual(encodeGeneratedModel(generated(visit)), { visits: ['2024-05-06T07:08:09.000Z'] });
 });
 
+test('an SDK model with a property that has no type generates under the default allowAny and accepts any value', async t => {
+  const output = path.join(createFixtureProject(t, 'golem-openapi-untyped-property-'), 'sdk');
+  await generateMaterializedSdk({
+    openapi: '3.1.0',
+    info: { title: 'Untyped', version: '1' },
+    paths: {
+      '/envelopes': {
+        get: {
+          operationId: 'getEnvelope',
+          responses: {
+            200: { description: 'ok', content: { 'application/json': { schema: { $ref: '#/components/schemas/Envelope' } } } },
+          },
+        },
+      },
+    },
+    components: {
+      schemas: {
+        Envelope: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['id', 'payload'],
+          properties: { id: { type: 'string' }, payload: { description: 'Any JSON value' } },
+        },
+      },
+    },
+  }, {
+    output,
+    name: 'Untyped',
+    profile: { mobx: false, validation: true, allowAny: false },
+  });
+  compileGeneratedSdk(output, [], { strict: true, skipLibCheck: true });
+
+  const models = requireRecord(
+    await import(pathToFileURL(path.join(output, 'dist/index.js')).href),
+    'generated untyped models',
+  );
+  const EnvelopeModel = models.EnvelopeModel as unknown as new (values: { id: string; payload: unknown }) => object;
+  assert.equal(await getValidator(new EnvelopeModel({ id: 'a', payload: { nested: [1] } })).validate(), true);
+  assert.equal(await getValidator(new EnvelopeModel({ id: 'a', payload: 'text' })).validate(), true);
+  assert.equal(await getValidator(new EnvelopeModel({ id: 'a', payload: 7 })).validate(), true);
+});
+
 test('an array or tuple field with no type or a nullable type converts like type array, and null stays null', async t => {
   const output = path.join(createFixtureProject(t, 'golem-openapi-sequence-shapes-'), 'sdk');
   await generateMaterializedSdk(sequenceSerdeDocument({

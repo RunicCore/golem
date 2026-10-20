@@ -27,13 +27,13 @@ export interface ContractAnalysis {
 /** Shared source interpretation for controller contracts; it never loads application modules. */
 export function createContractAnalysis(
   program: ts.Program,
-  options: { readonly root: string; readonly allowAny?: boolean },
+  options: { readonly root: string; readonly allowAny?: boolean; readonly exact?: boolean },
 ): ContractAnalysis {
   const checker = program.getTypeChecker();
   const sources = program.getSourceFiles().filter(source => !source.isDeclarationFile
     && !source.fileName.replace(/\\/g, '/').includes('/node_modules/')
     && !isGeneratedCompanion(source.fileName)).map(source => source.fileName);
-  const { specifications } = collectSpecifications(program, sources);
+  const { specifications } = collectSpecifications(program, sources, options.exact);
   const emptyManifests: ManifestIndex = {
     byId: new Map(), byProvenance: new Map(), files: [], localFiles: [], validationSchemaClosure: [], runtimeExports: () => new Set(), externalModelForType: () => undefined,
   };

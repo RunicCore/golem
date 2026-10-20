@@ -6,7 +6,7 @@ import { childPredicate } from './predicates-2.js';
 
 export type TParent = IModel<{
   children?: unknown[] & Contains<TChild & TValidation<typeof childPredicate>>;
-}>;
+}, { allowAny: true }>;
 
 export class Parent extends TParentBaseModel {
   constructor(values: Partial<TParentFields> = {}) { super(values); }

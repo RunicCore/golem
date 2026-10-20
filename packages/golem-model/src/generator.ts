@@ -64,6 +64,8 @@ export interface GolemModelContext {
   readonly suffixes?: readonly string[];
   /** Runtime features selected for generated model companions. */
   readonly profile: GolemModelProfile;
+  /** The `golem.yaml` default for the `exact` option of a model that sets none; omitted means `true`. */
+  readonly exact?: boolean;
   /** Absolute model-manifest paths to add to marker and source discovery. */
   readonly manifestInputs?: readonly string[];
   /** Observe attempted paths before reads and existence checks. */
@@ -85,6 +87,7 @@ interface NormalizedContext {
   readonly sources: readonly string[] | undefined;
   readonly suffixes: readonly string[];
   readonly profile: GolemModelProfile;
+  readonly exact: boolean | undefined;
   readonly manifestInputs: readonly string[];
   readonly onInput?: InputObserver;
   readonly session?: GeneratorSession;
@@ -131,6 +134,7 @@ function validateContext(context: GolemModelContext): NormalizedContext {
     sources,
     suffixes: context.suffixes ?? DEFAULT_MODEL_SUFFIXES,
     profile,
+    exact: context.exact,
     manifestInputs,
     onInput: context.onInput,
     session: context.session,
@@ -410,7 +414,7 @@ export function generate(context: GolemModelContext): GolemModelResult {
   if (ownCandidates.length === 0) {
     return emptyResult(programInfo, program, normalized.root);
   }
-  const { checker, specifications } = collectSpecifications(program, ownCandidates);
+  const { checker, specifications } = collectSpecifications(program, ownCandidates, normalized.exact);
   // A discovered file with no IModel or IObject alias is not a model file: it is skipped, and so is its companion.
   // A file that `models.sources` names must have one.
   const withModels = new Set(specifications.map((specification) => canonicalFilename(specification.sourceFile.fileName)));

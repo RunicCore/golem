@@ -49,11 +49,11 @@ import type { IModel, IObject } from '@exprtlabs/golem/model';
 
 | `IModelOptions` key | Default | Effect |
 | --- | --- | --- |
-| `exact` | `true` | `false` admits keys the declaration does not list. |
-| `allowAny` | root `allowAny`, `false` | Permits `any` fields in this declaration; `false` tightens a root `true`. |
+| `exact` | root `exact`, `true` | `false` admits keys the declaration does not list; `true` tightens a root `false`. |
+| `allowAny` | root `allowAny`, `false` | Permits `any` and `unknown` fields in this declaration; `false` tightens a root `true`. |
 | `validation` | root `validation`, `true` | Generates checks for this named `IObject` or `IModel`. A nested declaration uses its own setting. |
 
-`allowAny` does not change `unknown`, remove validation constraints or skip JSON checks.
+`allowAny` does not remove validation constraints or skip JSON checks. A field typed `any` or `unknown` fails with [`RUNM1011`](/reference/diagnostics#runm1011) unless `allowAny` is `true`.
 
 Generation writes `task.model.generated.ts` with `TTaskBaseModel`, `TTaskFields` (field types), `TTaskJSON` (JSON shape) and `TTaskInit` (constructor values). The `TTaskBaseModel` constructor copies the values it receives and does not validate, so an incomplete draft is valid state.
 
@@ -293,7 +293,7 @@ Every export is a type. Intersect a tag with a field type; assignment is unchang
 | `TSerdeWire` | `TSerdeWire<Value>` | `[Wire]`, the deserializer's input type, or `[]` without `TSerde`. |
 | `BuiltinModelTag` | union type | Every built-in constraint. |
 
-The `TSerde` deserializer's parameter type sets the JSON schema of the field ([which type controls validation](/guide/tags#which-type-controls-validation)).
+The `TSerde` deserializer's parameter type sets the JSON schema of the field ([which type controls validation](/guide/tags#which-type-controls-validation)). A parameter typed `unknown` fails with [`RUNM1011`](/reference/diagnostics#runm1011) unless `allowAny` is `true`.
 
 Also exported: `ModelValidationFunction`, `ModelSerializeFunction`, `ModelDeserializeFunction`.
 
@@ -383,15 +383,18 @@ import { NestModelInterceptor } from '@exprtlabs/golem/nest';
 
 | Member | Signature | Behavior |
 | --- | --- | --- |
-| `NestModelInterceptor` | `class NestModelInterceptor implements NestInterceptor` | Runs `fromWireFormat` with fail-fast checks on a whole `@Body()` or `@Query()` model before the handler. Writes a declared `IModel` or `IObject` return, a `Promise` of one or an array of one with `stringify`. |
+| `NestModelInterceptor` | `class NestModelInterceptor implements NestInterceptor` | Runs `fromWireFormat` with fail-fast checks on a whole `@Body()` or `@Query()` model before the handler. Converts a model-typed one-field `@Body('field')` or `@Query('field')` the same way. Throws a `TypeError` for a `@Body()` or `@Query()` parameter that has no model type. Writes a declared `IModel` or `IObject` return, a `Promise` of one or an array of one with `stringify`. |
 | `nestModelStringifyInterceptor` | `(codec: ObjectCodec): NestInterceptor` | Writes every non-null result with that codec's `stringify`, an array item by item. |
 | `objectCodecFromMetatype` | `<T>(metatype: unknown): ObjectCodec<T> \| undefined` | The codec of a parameter token that `nestModelCodec` placed, such as the `design:paramtypes` entry of a `@Body()` parameter. `undefined` for a raw class. |
 | `nestModelConstruct` | `(metatype: unknown)` | The class that token constructs, or `undefined`. |
-| `nestModelCodec` | `(id: string): ParameterDecorator` | Inserted by the rewrite on `@Body()` and `@Query()` parameters typed with a model. Replaces the parameter type with a token carrying the model's codec and class. |
+| `nestModelCodec` | `(id: string, array?: boolean): ParameterDecorator` | Inserted by the rewrite on `@Body()` and `@Query()` parameters typed with a model or an array of one (`array` is `true`). Replaces the parameter type with a token carrying the model's codec and class. |
 | `nestModelReturn` | `(id: string, array?: boolean): MethodDecorator` | Inserted by the rewrite on a handler that returns a model. `NestModelInterceptor` reads it. |
 
 - A `LibError` with `causedByInput: true` becomes HTTP 400 with `{ issues }`. Other errors, such as missing generated metadata or a throwing converter, stay HTTP 500.
-- `@Param()`, `@Body('field')` and `@Query('field')` stay as Nest received them.
+- An array of models in `@Body()` or `@Body('field')` converts item by item; HTTP 400 answers an invalid item or a value that is not an array. Each issue path starts with the field name, if any, and the item index.
+- A one-field `@Body('field')` or `@Query('field')` with a model type converts that field, and HTTP 400 answers a missing or invalid field. A one-field `@Query` model needs a nested query parser, for example Express `query parser` set to `extended`. A handler cannot take a whole and a one-field parameter of the same source. The interceptor throws a `TypeError`.
+- A `@Body()` or `@Query()` parameter, whole or one field such as `@Body('name')`, that is not an `IModel` or `IObject` throws a `TypeError` that names the controller, the method and the parameter. Nest answers HTTP 500. For plain types, write your own interceptor.
+- `@Param()` and `@Headers()` stay as Nest received them.
 - Query strings are decoded to the schema's scalar and array types before `fromWireFormat` ([query objects](/guide/nestjs-in-depth#query-objects)).
 
 For inbound conversion in your own interceptor or pipe, get the codec with `objectCodecFromMetatype` and call its `fromWireFormat`. The request and response contract is in [NestModelInterceptor](/guide/nestjs-in-depth#nestmodelinterceptor).
