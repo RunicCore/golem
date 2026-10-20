@@ -10,6 +10,7 @@ Each item names a breaking change and the action to take.
 - Decoding no longer clones the input first. Getters run once per declared property, and a cycle is reported when conversion reaches it rather than before any decoder runs. `fromWireFormat` and `parse` still copy objects, maps and arrays, but a value typed `unknown` or `any`, including the undeclared properties of an open object, is the input's own object, so later changes to the input show in the result. `decodeGeneratedModel` does not copy: fields without conversion are the input's own values. Copy such a value before you change it, and regenerate.
 - `LibErrorKind` gains `response`. Add a case to exhaustive `switch` statements over the kind.
 - `NestModelInterceptor` answers input failures (`causedByInput`) with HTTP 400 instead of 500. A custom validation rule that rejects input returns `false` or a message instead of throwing.
+- `NestModelInterceptor` throws a `TypeError`, and Nest answers HTTP 500, for a `@Body()` or `@Query()` parameter that is not an `IModel` or `IObject`, whole or one field such as `@Body('name')`. Declare the input as an `IModel` or `IObject`, or write your own interceptor with `objectCodecFromMetatype`.
 - Removed exports: replace `getModelValidator` with `getValidator(model)` (also in `mobx-validation`), `isIModelReference` with `isModelDeclarationReference(checker, node)`, and `createProgram` with `createProgramFromSources`. `validationTagKey` and `validationTagSchemaDescriptor` moved to `@exprtlabs/golem/schema`.
 
 ## Controllers

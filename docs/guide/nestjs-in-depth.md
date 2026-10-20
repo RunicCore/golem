@@ -70,7 +70,13 @@ What happens to a request:
 4. An `IModel` or `IObject` return, including a `Promise` or an array of that type, is stringified with that type; any other return stays Nest JSON.
 5. An application converter that throws, and missing generated metadata, stay HTTP 500.
 
-`@Param()`, and a `@Body('field')` or `@Query('field')` that names one field, stay as Nest received them. Interfaces and array element types are erased from Nest metadata; for a collection body, declare a model that contains the array field.
+`@Param()` and `@Headers()` stay as Nest received them. Interfaces and array element types are erased from Nest metadata; for a collection body, declare a model that contains the array field.
+
+### Input that is not a model
+
+Every `@Body()` and `@Query()` parameter needs an `IModel` or `IObject` type. If a parameter has another type, the interceptor throws a `TypeError` that names the controller, the method and the parameter, and Nest answers HTTP 500. This covers a plain interface, a plain class, a primitive, a parameter with no type, and one field such as `@Body('name')` or `@Query('page')` with a plain type. The interceptor throws on the first request to the handler. Return types are not affected.
+
+To take plain types, declare the input as an `IModel` or `IObject`. Or write your own interceptor and get the codec with `objectCodecFromMetatype`.
 
 Compile-time recording of these types needs the project settings in [Set up TypeScript](/guide/nestjs#set-up-typescript) and a value import of the model module, so the codec exists before the interceptor runs. The full `@exprtlabs/golem/nest` import is in the [runtime API](/reference/runtime-api#nest).
 

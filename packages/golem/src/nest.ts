@@ -456,11 +456,18 @@ export class NestModelInterceptor implements NestInterceptor {
           const colon = key.indexOf(':');
           const paramtype = Number(colon >= 0 ? key.slice(0, colon) : key);
           if (paramtype !== NEST_BODY && paramtype !== NEST_QUERY) continue;
-          // @Body('field') or @Query('field') is one field, so leave it with Nest.
-          if (typeof meta.data === 'string' && meta.data !== '') continue;
+          const field = typeof meta.data === 'string' && meta.data !== '' ? meta.data : undefined;
           const metatype = types[meta.index];
           const codec = boundCodec(metatype);
-          if (!codec) continue;
+          if (!codec) {
+            // A controller declaration fault, not bad input: Nest answers 500 for this request.
+            const decorator = `@${paramtype === NEST_BODY ? 'Body' : 'Query'}(${field === undefined ? '' : `'${field}'`})`;
+            throw new TypeError(
+              `NestModelInterceptor needs an IModel or IObject type for ${decorator} parameter ${meta.index} of ${klass.name}.${handler.name}. Declare the input as an IModel or IObject, or write your own interceptor.`,
+            );
+          }
+          // A model-typed @Body('field') or @Query('field') is one field, so leave it with Nest.
+          if (field !== undefined) continue;
           const construct = boundConstruct(metatype);
           const previous = convertedSources.get(paramtype);
           if (previous) {
