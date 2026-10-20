@@ -80,9 +80,13 @@ Every `@Body()` and `@Query()` parameter needs an `IModel` or `IObject` type. If
 
 A one-field parameter with a model type, such as `@Body('address') address: Address`, converts that field with the same checks as a whole body. A missing field or a field that fails validation returns HTTP 400, and each issue path starts with the field name, such as `['address', 'street']`. A handler cannot take a whole `@Body()` and a one-field `@Body()` together, and the same holds for `@Query()`. In that case the interceptor throws a `TypeError`.
 
+The [`controllers` job](/guide/nestjs#configure-and-generate) rejects `@Body('field')` with [`NEST1103`](/reference/diagnostics#nest1103), so the one-field body form is for apps without that job.
+
 A one-field model in `@Query('address')` reads a nested query key such as `address[street]=Main`. The app needs a nested query parser for that, for example Express `query parser` set to `extended`.
 
 To take plain types, declare the input as an `IModel` or `IObject`, or write your own interceptor.
+
+The interceptor converts HTTP handlers only. A handler of another context, such as RPC, passes through unchanged.
 
 Compile-time recording of these types needs the project settings in [Set up TypeScript](/guide/nestjs#set-up-typescript) and a value import of the model module, so the codec exists before the interceptor runs. The full `@exprtlabs/golem/nest` import is in the [runtime API](/reference/runtime-api#nest).
 

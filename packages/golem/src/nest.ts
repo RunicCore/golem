@@ -528,9 +528,11 @@ export class NestModelInterceptor implements NestInterceptor {
           const codec = boundCodec(metatype);
           if (!codec) {
             // A controller declaration fault, not bad input: Nest answers 500 for this request.
-            throw new TypeError(
-              `NestModelInterceptor needs an IModel or IObject type for ${inputDecorator(paramtype, field)} parameter ${meta.index} of ${klass.name}.${handler.name}. Declare the input as an IModel or IObject, or write your own interceptor.`,
-            );
+            const where = `${inputDecorator(paramtype, field)} parameter ${meta.index} of ${klass.name}.${handler.name}`;
+            const id = codecIdFromMetatype(metatype);
+            throw new TypeError(id === undefined
+              ? `NestModelInterceptor needs an IModel or IObject type for ${where}. Declare the input as an IModel or IObject, or write your own interceptor.`
+              : `NestModelInterceptor found no registered codec "${id}" for ${where}. Import the model module as a value, so its codec registers before the controller class loads.`);
           }
           const construct = boundConstruct(metatype);
           const array = boundArray(metatype);

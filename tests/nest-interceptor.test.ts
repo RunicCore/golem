@@ -422,7 +422,17 @@ test('nestModelCodec before register leaves the parameter without a codec, so th
   markerCodec(id);
   class AppModule {}
   Module({ controllers: [LateController] })(AppModule);
-  const application = await NestFactory.create(AppModule, { logger: false });
+  const errors: string[] = [];
+  const logger = {
+    log() {},
+    warn() {},
+    debug() {},
+    verbose() {},
+    error(message: unknown, ...rest: unknown[]) {
+      errors.push([message, ...rest].map((part) => part instanceof Error ? part.message : String(part)).join(' '));
+    },
+  };
+  const application = await NestFactory.create(AppModule, { logger });
   application.useGlobalInterceptors(new NestModelInterceptor());
   await application.listen(0, '127.0.0.1');
   try {
@@ -432,6 +442,9 @@ test('nestModelCodec before register leaves the parameter without a codec, so th
       body: JSON.stringify({ note: 'raw' }),
     });
     assert.equal(response.status, 500);
+    // Nest reports an unhandled error after the response settles; let it flush.
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    assert.match(errors.join('\n'), /found no registered codec "Late_bbbbbbbb" for @Body\(\) parameter 0 of LateController\.create/);
   } finally {
     await application.close();
   }
