@@ -198,6 +198,15 @@ function stateTest(fields: string, key: string): string {
   return `${fields} !== undefined && !${fields}.includes(${key})`;
 }
 
+/**
+ * True when `key` is program state, with `fields` read on first use: a local declared with `let`, `undefined` until a
+ * key needs it, then the names or `null` for a value without program state. A value whose keys the schema all names
+ * never reads them, so a failing check of a model instance does not walk its prototypes.
+ */
+function lazyStateTest(fields: string, value: string, key: string, instanceFields: string): string {
+  return `(${fields} ??= ${instanceFields}(${value}) ?? null) !== null && !${fields}.includes(${key})`;
+}
+
 /** The helpers a helper's text uses. */
 const HELPER_NEEDS: Readonly<Partial<Record<LocalHelper, readonly LocalHelper[]>>> = {
   selectedModel: ['hashedId'],
@@ -1006,10 +1015,10 @@ class FunctionWriter {
       const skipped = [...(known === undefined ? [] : [`${known}.has(${key})`]), ...patterns.map(({ expression }) => `${expression}.test(${key})`)];
       // A key that the instance's own model does not declare is program state: no unknown key, no value to judge.
       const fields = this.fresh('fields');
-      this.line(`const ${fields} = ${this.state.localHelper('instanceFields')}(${value});`);
+      this.line(`let ${fields};`);
       this.open(`for (const ${key} of ${keys})`);
       if (skipped.length > 0) this.line(`if (${skipped.join(' || ')}) continue;`);
-      this.line(`if (${stateTest(fields, key)}) continue;`);
+      this.line(`if (${lazyStateTest(fields, value, key, this.state.localHelper('instanceFields'))}) continue;`);
       if (additional.kind === 'forbid') {
         this.issue(`code: 'unknownKey', key: ${key}`, `[...${PATH}, ${key}]`);
       } else {
@@ -1038,7 +1047,7 @@ class FunctionWriter {
     }
     if (patternsToRun.length > 0) {
       const fields = this.fresh('fields');
-      this.line(`const ${fields} = ${this.state.localHelper('instanceFields')}(${value});`);
+      this.line(`let ${fields};`);
       const key = this.fresh('key');
       this.open(`for (const ${key} of ${listed(keys)})`);
       // A key list that also holds the keys whose value is `undefined` (`undefinedToo`) is read once, and those keys are left out.
@@ -1050,7 +1059,7 @@ class FunctionWriter {
       for (const { entry, expression } of patternsToRun) {
         this.open(`if (${expression}.test(${key}))`);
         // Program state is no property to judge, and it is not evaluated.
-        this.line(`if (${stateTest(fields, key)}) continue;`);
+        this.line(`if (${lazyStateTest(fields, value, key, this.state.localHelper('instanceFields'))}) continue;`);
         this.mark(record => `${record}.keys.add(${key});`);
         if (entry.schema.kind !== 'always') {
           const schema = entry.schema;
