@@ -73,7 +73,7 @@ A NestJS app needs extra compiler settings ([NestJS setup](/guide/nestjs#set-up-
 - `"type": "module"` in `package.json`
 - `"module": "NodeNext"` and `"moduleResolution": "NodeNext"`
 - target `ES2022` or newer for top-level `await`
-- `.js` extensions on relative imports, including generated files
+- `.js` extensions on relative imports, including generated files. `golem build` adds them to the JavaScript it writes ([import paths](/reference/cli#import-paths))
 - `"outDir": ".build"`
 - `"rootDir": "."`
 - `@exprtlabs/*` package subpaths are ESM-only; import them from ESM application code, or invoke the CLI directly.
