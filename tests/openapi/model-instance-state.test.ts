@@ -77,3 +77,14 @@ test('the own state of an SDK model instance is no unknown key; a declared key s
   assert.equal(bag.stringify(map), '{"id":"a","extra":"x"}', 'a dynamic-map model writes its extra keys as data');
   assert.deepEqual(bag.toWireFormat(map), { id: 'a', extra: 'x' });
 });
+
+test('a composed root with validation off stringifies the fields it holds when a required field is missing', async (t) => {
+  // protects: bug T-151 the merged allOf root threw on a missing required field that the generic fallback wrote around
+  const output = path.join(createFixtureProject(t, 'golem-openapi-composed-lenient-'), 'sdk');
+  await generateMaterializedSdk(document, { output, name: 'ComposedLenient', profile: { mobx: false, validation: false, allowAny: false } });
+  compileGeneratedSdk(output, [], { strict: true, skipLibCheck: true, outDir: path.join(output, 'dist') });
+  const models = requireRecord(await import(pathToFileURL(path.join(output, 'dist/index.js')).href), 'generated models');
+  const [parse, stringify] = [models.parseDerived, models.stringifyDerived] as ((value: unknown) => unknown)[];
+  assert.equal(stringify(parse('{"mode":"m"}')), '{"mode":"m"}', 'the required name is missing');
+  assert.equal(stringify(parse('{"name":"n","mode":"m"}')), '{"name":"n","mode":"m"}');
+});
