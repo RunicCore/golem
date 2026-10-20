@@ -124,6 +124,7 @@ console.log(result.artifacts[0]?.path); // /absolute/app/api/payments.yaml
 | `output` | Yes | — | The `.json`, `.yaml` or `.yml` file to generate. |
 | `info` | Yes | — | OpenAPI `info` object. |
 | `profile` | Yes | — | `GolemProfile`. |
+| `exact` | No | `true` | Default for the `exact` option of a model that sets none. `golem.yaml` passes its root `exact`. |
 | `sources` | No | `*.controller.ts` below `<root>/src` | Non-empty list of controller files. |
 | `openapiVersion` | No | `'3.2.0'` | `'3.2.0'` or `'3.1.2'`. |
 | `servers`, `securitySchemes`, `tags`, `globalPrefix`, `uriVersioning` | No | omitted | Same as the [controller job keys](/reference/config#controller-jobs). |
@@ -212,6 +213,7 @@ console.log(apiVersion, result.artifacts.length);
 | --- | --- | --- | --- |
 | `root` | Yes | — | Existing TypeScript project directory. |
 | `profile` | Yes | — | `GolemProfile`. |
+| `exact` | No | `true` | Default for the `exact` option of a model that sets none. `golem.yaml` passes its root `exact`. |
 | `output` | No | `<root>/src/generated/models` | Directory for files shared by all models of the job. |
 | `sources` | No | `*.model.ts` and `*.models.ts` below `<root>/src` | Model files. |
 | `manifestInputs` | No | `[]` | SDK `model-manifest.json` files whose models your declarations use. |

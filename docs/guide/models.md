@@ -83,15 +83,15 @@ The field type decides construction, conversion and validation.
 | `bigint` | needs a [`TSerde`](/guide/tags#convert-a-field-to-a-different-json-value) codec that writes it as JSON, such as a string; without one, `stringify` rejects it |
 | string, number and boolean literals | kept and checked |
 | arrays and tuples | items convert recursively; tuple length and optional or rest positions are checked |
-| object types | known properties convert; extra properties fail validation unless [`{ exact: false }`](/guide/model-composition#strict-objects-and-any) |
+| object types | known properties convert; extra properties fail validation unless [`exact` is `false`](/guide/model-composition#strict-objects-and-any) |
 | unions and intersections | intersections merge fields; [supported unions](/guide/model-composition#unions) |
 | another type-only `IModel` | a nested plain object, still converted |
 | your class (extends a `*Base`) | a nested instance of that class |
 | `Date` | an ISO date-time string in JSON, restored with `Date` parsing; add format checks with [tags](/guide/tags) |
 | `TemporalInstant`, `TemporalPlainDate` and the other [`@exprtlabs/golem/temporal`](/reference/runtime-api#temporal) types | an ISO 8601 string in JSON; needs a `Temporal` global ([Dates and times](/guide/dates)) |
-| `unknown` | accepted without structural checks |
+| `unknown` | accepted without structural checks only when `allowAny` is `true` |
 
-`any` is accepted only when `allowAny` is `true`, set in `golem.yaml` or per model ([strict objects](/guide/model-composition#strict-objects-and-any)).
+`any` and `unknown` are accepted only when `allowAny` is `true`, set in `golem.yaml` or per model; otherwise generation fails with [`RUNM1011`](/reference/diagnostics#runm1011) ([strict objects](/guide/model-composition#strict-objects-and-any)).
 
 ## Regenerate
 

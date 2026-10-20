@@ -49,11 +49,11 @@ import type { IModel, IObject } from '@exprtlabs/golem/model';
 
 | `IModelOptions` key | Default | Effect |
 | --- | --- | --- |
-| `exact` | `true` | `false` admits keys the declaration does not list. |
-| `allowAny` | root `allowAny`, `false` | Permits `any` fields in this declaration; `false` tightens a root `true`. |
+| `exact` | root `exact`, `true` | `false` admits keys the declaration does not list; `true` tightens a root `false`. |
+| `allowAny` | root `allowAny`, `false` | Permits `any` and `unknown` fields in this declaration; `false` tightens a root `true`. |
 | `validation` | root `validation`, `true` | Generates checks for this named `IObject` or `IModel`. A nested declaration uses its own setting. |
 
-`allowAny` does not change `unknown`, remove validation constraints or skip JSON checks.
+`allowAny` does not remove validation constraints or skip JSON checks. A field typed `any` or `unknown` fails with [`RUNM1011`](/reference/diagnostics#runm1011) unless `allowAny` is `true`.
 
 Generation writes `task.model.generated.ts` with `TTaskBaseModel`, `TTaskFields` (field types), `TTaskJSON` (JSON shape) and `TTaskInit` (constructor values). The `TTaskBaseModel` constructor copies the values it receives and does not validate, so an incomplete draft is valid state.
 
@@ -293,7 +293,7 @@ Every export is a type. Intersect a tag with a field type; assignment is unchang
 | `TSerdeWire` | `TSerdeWire<Value>` | `[Wire]`, the deserializer's input type, or `[]` without `TSerde`. |
 | `BuiltinModelTag` | union type | Every built-in constraint. |
 
-The `TSerde` deserializer's parameter type sets the JSON schema of the field ([which type controls validation](/guide/tags#which-type-controls-validation)).
+The `TSerde` deserializer's parameter type sets the JSON schema of the field ([which type controls validation](/guide/tags#which-type-controls-validation)). A parameter typed `unknown` fails with [`RUNM1011`](/reference/diagnostics#runm1011) unless `allowAny` is `true`.
 
 Also exported: `ModelValidationFunction`, `ModelSerializeFunction`, `ModelDeserializeFunction`.
 
