@@ -139,6 +139,11 @@ const TRUSTED = '{ validate: false }';
 const STRINGIFY_OPTIONS = '_options?: { readonly validate?: boolean; readonly failFast?: boolean }';
 /** Declared once per emitted module that passes trusted options to a function in another module. */
 const TRUSTED_CONSTANT = '__golemTrusted';
+/**
+ * The options of a nested call whose caller already checked the whole value. The `checked` mark is internal: a function
+ * that has a lenient copy runs its all-required fast path for it, and any other options run the lenient copy.
+ */
+const CHECKED_CONSTANT = '__golemChecked';
 // Generated modules import these as `type ValidateOptions as __GolemValidateOptions` and
 // `type SerdeOptions as __GolemSerdeOptions` from @exprtlabs/golem/serde.
 const VALIDATE_OPTIONS = '__GolemValidateOptions';
@@ -150,9 +155,11 @@ function trustedOptions(ctx: EmitCtx): string {
 
 /** A nested stringify call that skips validation: the node's Core function when this module emits it. */
 function nestedStringifyCall(id: string, expression: string, ctx: EmitCtx): string {
-  return ctx.localCoreIds?.has(id) && !(ctx.lenientRoot && ctx.strictCoreIds?.has(id))
-    ? `${stringifyFunctionName(id)}Core(${expression} as never)`
-    : `${stringifyFunctionName(id)}(${expression} as never, ${trustedOptions(ctx)})`;
+  if (ctx.localCoreIds?.has(id) && !(ctx.lenientRoot && ctx.strictCoreIds?.has(id))) {
+    return `${stringifyFunctionName(id)}Core(${expression} as never)`;
+  }
+  const options = ctx.trustedOptions !== undefined && !ctx.lenientRoot ? CHECKED_CONSTANT : trustedOptions(ctx);
+  return `${stringifyFunctionName(id)}(${expression} as never, ${options})`;
 }
 
 /** A nested toWireFormat call that skips validation: the node's Core function when this module emits it. */
@@ -1745,7 +1752,9 @@ function emitNodeRuntime(
       ] : lenientStringify ? [`    return ${stringifyName}Core(value as never);`] : []),
       '  }',
     ] : []),
-    `  return ${stringifyName}${lenientStringify ? 'Lenient' : 'Core'}(value as never);`,
+    lenientStringify
+      ? `  return (options as { readonly checked?: true } | undefined)?.checked === true ? ${stringifyName}Core(value as never) : ${stringifyName}Lenient(value as never);`
+      : `  return ${stringifyName}Core(value as never);`,
     '}',
     '',
   ].join('\n');
@@ -1994,10 +2003,12 @@ export function emitCodecRuntime(
     if (runtime) lines.push(runtime);
   }
   const runtime = lines.join('\n');
-  // One frozen object serves every nested call that passes trusted options to another module's function.
-  return runtime.includes(TRUSTED_CONSTANT)
-    ? `const ${TRUSTED_CONSTANT} = Object.freeze({ validate: false });\n\n${runtime}`
-    : runtime;
+  // One frozen object of each kind serves every nested call that passes options to another module's function.
+  const constants = [
+    ...(runtime.includes(TRUSTED_CONSTANT) ? [`const ${TRUSTED_CONSTANT} = Object.freeze({ validate: false });`] : []),
+    ...(runtime.includes(CHECKED_CONSTANT) ? [`const ${CHECKED_CONSTANT} = Object.freeze({ validate: false, checked: true });`] : []),
+  ];
+  return constants.length ? `${constants.join('\n')}\n\n${runtime}` : runtime;
 }
 
 export function emitCodecRegistration(node: SchemaNode, graph: SchemaGraph): string {

@@ -34,6 +34,7 @@ const document = {
       },
       // A member that is no object (a oneOf) does not resolve to one merged object.
       Mixed: { allOf: [ref('Base'), { oneOf: [{ type: 'object', required: ['a'], properties: { a: { type: 'string' } } }, { type: 'object', required: ['b'], properties: { b: { type: 'string' } } }] }] },
+      Holder: { type: 'object', required: ['base'], properties: { base: ref('Base') } },
       Tree: { type: 'object', required: ['label'], properties: { label: { type: 'string' }, child: ref('Tree') } },
       Open: { type: 'object', additionalProperties: true, required: ['id'], properties: { id: { type: 'string' } } },
       Bag: { type: 'object', additionalProperties: { type: 'string' }, required: ['id'], properties: { id: { type: 'string' } } },
@@ -156,4 +157,13 @@ test('with validation off a nested object that lacks a required field is written
   const stringifyTree = models.stringifyTree as (value: unknown, options?: { validate: boolean }) => string;
   assert.equal(stringifyTree({ label: 'a', child: {} }, { validate: false }), '{"label":"a","child":{}}');
   assert.equal(stringifyTree({ label: 'a', child: { label: 'b' } }), '{"label":"a","child":{"label":"b"}}');
+});
+
+test('a validated parent trusts its check: a child of another module writes its required fields without a presence test', async (t) => {
+  // protects: T-156 validation off writes around a missing field, but a validated call keeps the all-required fast path
+  const { models } = await generateSdk(t, 'CheckedNested');
+  const stringifyHolder = models.stringifyHolder as (value: unknown, options?: { validate?: boolean; validationContext?: unknown }) => string;
+  const acceptAll = { resolve: () => () => [] };
+  assert.throws(() => stringifyHolder({ base: {} }, { validationContext: acceptAll }), TypeError, 'the check accepted the missing name');
+  assert.equal(stringifyHolder({ base: {} }, { validate: false }), '{"base":{}}', 'validation off writes what is there');
 });
