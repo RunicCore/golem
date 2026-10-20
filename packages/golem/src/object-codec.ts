@@ -420,22 +420,21 @@ export function createObjectCodec<T>(id: string, impl: ObjectCodecImpl<T>): Obje
     ...(impl.wireOnlySchema ? { wireOnlySchema: lazySchemaPlane(impl.wireOnlySchema, 'wire-only', resolved) } : {}),
   };
   const fields = impl.fields;
-  // Without `allowGetter` the value is the root as it is: no copy.
-  const root = <Root>(value: Root, options: AllowGetterOptions | undefined): Root =>
-    fields !== undefined && options?.allowGetter === true ? readRootFields(value, fields) as Root : value;
+  // Without `allowGetter` the value is the root as it is: the check is written in each call, so no function call and no copy.
   const codec: ObjectCodec<T> = {
     id,
     issueSource: impl.issueSource,
-    stringify: (value, options) => impl.stringify(root(value, options), options),
+    stringify: (value, options) => impl.stringify(options?.allowGetter === true && fields !== undefined ? readRootFields(value, fields) as typeof value : value, options),
     parse: (text, options) => impl.parse(text, options),
-    validate: (value, options): value is T => impl.validate(root(value, options), options),
+    validate: (value, options): value is T => impl.validate(options?.allowGetter === true && fields !== undefined ? readRootFields(value, fields) : value, options),
     assert: (value, options) => {
-      const checked = root(value, options);
+      if (options?.allowGetter !== true || fields === undefined) return impl.assert(value, options);
+      const checked = readRootFields(value, fields);
       const result = impl.assert(checked, options);
       return checked === value ? result : value as T;
     },
     // The generated implementation returns the emitted JSON type, which WireFormat mirrors.
-    toWireFormat: <Value extends T>(value: Value, options?: SerdeOptions & AllowGetterOptions) => impl.toWireFormat(root(value, options), options) as WireFormat<Value>,
+    toWireFormat: <Value extends T>(value: Value, options?: SerdeOptions & AllowGetterOptions) => impl.toWireFormat(options?.allowGetter === true && fields !== undefined ? readRootFields(value, fields) as Value : value, options) as WireFormat<Value>,
     fromWireFormat: (wire, options) => impl.fromWireFormat(wire, options),
   };
   Object.defineProperties(codec, Object.fromEntries(Object.entries(planes).map(([name, read]) => [
