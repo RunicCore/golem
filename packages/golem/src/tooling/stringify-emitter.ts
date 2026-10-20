@@ -96,6 +96,8 @@ interface EmitCtx {
   readonly wireType?: (node: SchemaNode) => string | undefined;
   readonly fieldsType?: (node: SchemaNode) => string | undefined;
   readonly wireIdentity?: boolean;
+  /** An object root writes each field it holds, and a missing required field is no error: validation did not run. */
+  readonly lenientRoot?: boolean;
   /** Nodes whose `stringify<Id>Wire` function this module emits; wire stringify calls them instead of inlining. */
   readonly wireStringifyIds?: ReadonlySet<string>;
   /** Sibling codecs whose companion exports a wire stringify (`wireStringifyExportName`). */
@@ -524,7 +526,7 @@ function emitObjectStringify(
   for (const [index, [name, property]] of properties.entries()) {
     const read = access('value', name);
     const value = emitValue(property, read, ctx);
-    const local = `__golemField${index}`;
+    const local = `__golemValue${index}`;
     const needsSnapshot = occurrenceCount(value, read) + (required.has(name) ? 0 : 1) > 1;
     const valueExpr = needsSnapshot ? value.replaceAll(read, local) : value;
     const fieldExpr = needsSnapshot ? local : read;
@@ -581,6 +583,7 @@ export function emitStringifyFunction(
     nestedImportedSerde: extra?.nestedImportedSerde,
     issueSource: extra?.issueSource ?? 'TypeScript',
     wireIdentity: extra?.wireIdentity,
+    lenientRoot: extra?.lenientRoot,
     wireStringifyIds: extra?.wireStringifyIds,
     siblingWireCodecIds: extra?.siblingWireCodecIds,
     localCoreIds: extra?.localCoreIds,
@@ -592,13 +595,13 @@ export function emitStringifyFunction(
   const fn = stringifyFunctionName(node.id);
   let source: string;
   // An intersection (allOf) is one merged object: the root writes its declared fields, as decode and encode do. With
-  // validation off a required field can be missing, so the merged root writes each field that is present, as the
-  // generic fallback did. The validated wire stringify has checked the value, so it keeps the all-required fast path.
+  // validation off a required field can be missing, so a lenient root writes each field that is present. A checked
+  // root, such as the validated wire stringify, keeps the all-required fast path.
   const merged = node.descriptor.kind === 'intersection' && node.descriptor.variants.every(variant => resolveObjectDescriptor(variant, ctx) !== undefined)
     ? resolveObjectDescriptor(node.descriptor, ctx)
     : undefined;
-  if (node.descriptor.kind === 'object') source = emitObjectStringify(fn, node.descriptor, ctx);
-  else if (merged) source = emitObjectStringify(fn, ctx.wireIdentity ? merged : { ...merged, required: [] }, ctx);
+  const root = node.descriptor.kind === 'object' ? node.descriptor : merged;
+  if (root) source = emitObjectStringify(fn, ctx.lenientRoot ? { ...root, required: [] } : root, ctx);
   else if (node.descriptor.kind === 'generated-model' || node.descriptor.kind === 'reference') {
     source = `function ${fn}(value: unknown, options?: { readonly validate?: boolean; readonly failFast?: boolean }): string {\n  return requireObjectCodec(${JSON.stringify(node.codecId)}).stringify(value as never, options);\n}\n`;
   } else {
@@ -1677,7 +1680,12 @@ function emitNodeRuntime(
     hoisted: { prefix: node.id, names: new Map(), sources: [] },
     fillThrows: moduleCtx.fillThrows ?? new Map(),
   };
-  const stringifySrc = emitStringifyFunction(node, ctx.graph, ctx.serde, { ...ctx, withoutOptions: true });
+  // The validated call of a codec whose wire and model schemas agree runs this function after its check, so it keeps the
+  // all-required fast path and a call with validation off runs a lenient copy. Any other call is lenient.
+  const checkedCore = validationEnabled && node.sameSchema;
+  const stringifySrc = emitStringifyFunction(node, ctx.graph, ctx.serde, { ...ctx, withoutOptions: true, lenientRoot: !checkedCore });
+  const lenientSource = checkedCore ? emitStringifyFunction(node, ctx.graph, ctx.serde, { ...ctx, withoutOptions: true, lenientRoot: true }) : stringifySrc;
+  const lenientStringify = lenientSource === stringifySrc ? '' : lenientSource.replace(`function ${stringifyFunctionName(node.id)}(`, `function ${stringifyFunctionName(node.id)}Lenient(`);
   const stringifyName = stringifyFunctionName(node.id);
   const fillName = fillFunctionName(node.id);
   const fromWire = fromWireFunctionName(node.id);
@@ -1716,6 +1724,7 @@ function emitNodeRuntime(
 
   const wrappedStringify = [
     stringifySrc.replace(`function ${stringifyName}(`, `function ${stringifyName}Core(`),
+    lenientStringify,
     wireStringifySrc,
     `${exported}function ${stringifyName}(value: ${modelType}, options?: ${SERDE_OPTIONS}): string {`,
     emitSerdeValidates(validationEnabled),
@@ -1728,10 +1737,10 @@ function emitNodeRuntime(
         // The full model check already ran; check only the JSON encoding produced.
         ...(node.wireOnlyJsonSchema !== undefined ? [`    ${wireOnlyAssertName(node)}(wire, options);`] : []),
         `    return ${stringifyName}Wire(wire as never);`,
-      ] : []),
+      ] : lenientStringify ? [`    return ${stringifyName}Core(value as never);`] : []),
       '  }',
     ] : []),
-    `  return ${stringifyName}Core(value as never);`,
+    `  return ${stringifyName}${lenientStringify ? 'Lenient' : 'Core'}(value as never);`,
     '}',
     '',
   ].join('\n');

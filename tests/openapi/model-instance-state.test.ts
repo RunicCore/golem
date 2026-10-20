@@ -113,3 +113,16 @@ test('toWireFormat keeps the extra keys of a model with additionalProperties tru
   assert.deepEqual(codec.toWireFormat(instance), { id: 'a', extra: 'x' });
   assert.deepEqual(codec.toWireFormat({ id: 'a', extra: 'x' }), { id: 'a', extra: 'x' }, 'a plain value');
 });
+
+test('an object root with validation off stringifies the fields it holds when a required field is missing', async (t) => {
+  // protects: bug T-156 a plain root threw a TypeError on a missing required field with validation off; validation on still rejects it
+  const output = path.join(createFixtureProject(t, 'golem-openapi-root-lenient-'), 'sdk');
+  await generateMaterializedSdk(document, { output, name: 'RootLenient', profile: { mobx: false, validation: true, allowAny: false } });
+  compileGeneratedSdk(output, [], { strict: true, skipLibCheck: true, outDir: path.join(output, 'dist') });
+  const models = requireRecord(await import(pathToFileURL(path.join(output, 'dist/index.js')).href), 'generated models');
+  const [stringifyItem, stringifyBase] = [models.stringifyItem, models.stringifyBase] as ((value: unknown, options?: { validate: boolean }) => string)[];
+  assert.equal(stringifyItem({ serverId: 's' }, { validate: false }), '{"serverId":"s"}', 'the required name is missing');
+  assert.equal(stringifyBase({}, { validate: false }), '{}', 'a root that holds no field');
+  assert.equal(stringifyItem({ name: 'n', serverId: 's' }), '{"name":"n","serverId":"s"}');
+  assert.throws(() => stringifyItem({ serverId: 's' }), (error: unknown) => error instanceof LibError, 'validation on still rejects the missing field');
+});
