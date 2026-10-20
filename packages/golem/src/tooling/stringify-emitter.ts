@@ -140,10 +140,13 @@ const STRINGIFY_OPTIONS = '_options?: { readonly validate?: boolean; readonly fa
 /** Declared once per emitted module that passes trusted options to a function in another module. */
 const TRUSTED_CONSTANT = '__golemTrusted';
 /**
- * The options of a nested call whose caller already checked the whole value. The `checked` mark is internal: a function
- * that has a lenient copy runs its all-required fast path for it, and any other options run the lenient copy.
+ * The options of a nested call whose caller already checked the whole value. The mark is a symbol key from the global
+ * symbol registry, so options a user writes or parses from JSON cannot carry it by accident, and every generated module
+ * reads the same key. A function that has a lenient copy runs its all-required fast path for it, and any other options
+ * run the lenient copy.
  */
 const CHECKED_CONSTANT = '__golemChecked';
+const CHECKED_KEY = '__golemMark';
 // Generated modules import these as `type ValidateOptions as __GolemValidateOptions` and
 // `type SerdeOptions as __GolemSerdeOptions` from @exprtlabs/golem/serde.
 const VALIDATE_OPTIONS = '__GolemValidateOptions';
@@ -1753,7 +1756,7 @@ function emitNodeRuntime(
       '  }',
     ] : []),
     lenientStringify
-      ? `  return (options as { readonly checked?: true } | undefined)?.checked === true ? ${stringifyName}Core(value as never) : ${stringifyName}Lenient(value as never);`
+      ? `  return (options as Record<symbol, unknown> | undefined)?.[${CHECKED_KEY}] === true ? ${stringifyName}Core(value as never) : ${stringifyName}Lenient(value as never);`
       : `  return ${stringifyName}Core(value as never);`,
     '}',
     '',
@@ -2002,15 +2005,19 @@ export function emitCodecRuntime(
     const runtime = emitNodeRuntime(node, ctx, validates(node));
     if (runtime) lines.push(runtime);
   }
-  const runtime = lines.join('\n');
-  // One frozen object of each kind serves every nested call that passes options to another module's function.
+  return withModuleConstants(lines.join('\n'));
+}
+
+/** One frozen object of each kind serves every nested call that passes options to another module's function. */
+function withModuleConstants(runtime: string): string {
   const constants = [
     ...(runtime.includes(TRUSTED_CONSTANT) ? [`const ${TRUSTED_CONSTANT} = Object.freeze({ validate: false });`] : []),
-    ...(runtime.includes(CHECKED_CONSTANT) ? [`const ${CHECKED_CONSTANT} = Object.freeze({ validate: false, checked: true });`] : []),
+    ...(runtime.includes(CHECKED_KEY) || runtime.includes(CHECKED_CONSTANT) ? [`const ${CHECKED_KEY} = Symbol.for('@exprtlabs/golem:checked');`] : []),
+    ...(runtime.includes(CHECKED_CONSTANT) ? [`const ${CHECKED_CONSTANT} = Object.freeze({ validate: false, [${CHECKED_KEY}]: true });`] : []),
   ];
   return constants.length ? `${constants.join('\n')}\n\n${runtime}` : runtime;
 }
 
 export function emitCodecRegistration(node: SchemaNode, graph: SchemaGraph): string {
-  return emitNodeRuntime(node, { graph, serde: undefined, issueSource: 'TypeScript' }, true);
+  return withModuleConstants(emitNodeRuntime(node, { graph, serde: undefined, issueSource: 'TypeScript' }, true));
 }

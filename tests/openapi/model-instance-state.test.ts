@@ -167,3 +167,10 @@ test('a validated parent trusts its check: a child of another module writes its 
   assert.throws(() => stringifyHolder({ base: {} }, { validationContext: acceptAll }), TypeError, 'the check accepted the missing name');
   assert.equal(stringifyHolder({ base: {} }, { validate: false }), '{"base":{}}', 'validation off writes what is there');
 });
+
+test('options a user passes with a checked key still take the lenient path', async (t) => {
+  // protects: bug T-156 the internal checked mark was a plain key, so user options carrying it skipped the lenient path
+  const { models } = await generateSdk(t, 'CheckedKey');
+  const stringifyItem = models.stringifyItem as (value: unknown, options?: object) => string;
+  assert.equal(stringifyItem({ serverId: 's' }, { validate: false, checked: true }), '{"serverId":"s"}', 'the missing name is left out');
+});
