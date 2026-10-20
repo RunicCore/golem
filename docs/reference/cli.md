@@ -75,7 +75,7 @@ Node needs the full file name in an import. So the JavaScript that `golem build`
 
 Static `import`, `export … from` and `import()` with a string literal change. An import that already ends in `.js` stays as it is.
 
-Every other specifier stays: a bare package name, a `#` import, a URL, a specifier with `?` or `#`, and a specifier that only `baseUrl` resolves. A `paths` alias to a file that is not a source, such as a `.css` file, also stays, and Node cannot load it. The declaration files keep the specifiers of your sources.
+Every other specifier stays: a bare package name, a `#` import, a URL, a specifier with `?` or `#`, and a specifier that only `baseUrl` resolves. A `paths` alias to a file that is not a source, such as a `.css` file, also stays, and Node cannot load it.
 
 The build changes only the copy of your sources under `.golem/build/`, so your source files stay as you wrote them.
 
