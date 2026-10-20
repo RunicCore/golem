@@ -76,6 +76,8 @@ What happens to a request:
 
 Every `@Body()` and `@Query()` parameter needs an `IModel` or `IObject` type. If a parameter has another type, the interceptor throws a `TypeError` that names the controller, the method and the parameter, and Nest answers HTTP 500. This covers a plain interface, a plain class, a primitive, a parameter with no type, and one field such as `@Body('name')` or `@Query('page')` with a plain type. The interceptor throws on the first request to the handler. Return types are not affected.
 
+A one-field parameter with a model type, such as `@Body('address') address: Address`, converts that field with the same checks as a whole body. A field that fails validation returns HTTP 400. A handler cannot take a whole `@Body()` and a one-field `@Body()` together, and the same holds for `@Query()`. In that case the interceptor throws a `TypeError`.
+
 To take plain types, declare the input as an `IModel` or `IObject`. Or write your own interceptor and get the codec with `objectCodecFromMetatype`.
 
 Compile-time recording of these types needs the project settings in [Set up TypeScript](/guide/nestjs#set-up-typescript) and a value import of the model module, so the codec exists before the interceptor runs. The full `@exprtlabs/golem/nest` import is in the [runtime API](/reference/runtime-api#nest).

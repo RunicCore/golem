@@ -383,7 +383,7 @@ import { NestModelInterceptor } from '@exprtlabs/golem/nest';
 
 | Member | Signature | Behavior |
 | --- | --- | --- |
-| `NestModelInterceptor` | `class NestModelInterceptor implements NestInterceptor` | Runs `fromWireFormat` with fail-fast checks on a whole `@Body()` or `@Query()` model before the handler. Throws a `TypeError` for a `@Body()` or `@Query()` parameter that has no model type. Writes a declared `IModel` or `IObject` return, a `Promise` of one or an array of one with `stringify`. |
+| `NestModelInterceptor` | `class NestModelInterceptor implements NestInterceptor` | Runs `fromWireFormat` with fail-fast checks on a whole `@Body()` or `@Query()` model before the handler. Converts a model-typed one-field `@Body('field')` or `@Query('field')` the same way. Throws a `TypeError` for a `@Body()` or `@Query()` parameter that has no model type. Writes a declared `IModel` or `IObject` return, a `Promise` of one or an array of one with `stringify`. |
 | `nestModelStringifyInterceptor` | `(codec: ObjectCodec): NestInterceptor` | Writes every non-null result with that codec's `stringify`, an array item by item. |
 | `objectCodecFromMetatype` | `<T>(metatype: unknown): ObjectCodec<T> \| undefined` | The codec of a parameter token that `nestModelCodec` placed, such as the `design:paramtypes` entry of a `@Body()` parameter. `undefined` for a raw class. |
 | `nestModelConstruct` | `(metatype: unknown)` | The class that token constructs, or `undefined`. |
@@ -391,6 +391,7 @@ import { NestModelInterceptor } from '@exprtlabs/golem/nest';
 | `nestModelReturn` | `(id: string, array?: boolean): MethodDecorator` | Inserted by the rewrite on a handler that returns a model. `NestModelInterceptor` reads it. |
 
 - A `LibError` with `causedByInput: true` becomes HTTP 400 with `{ issues }`. Other errors, such as missing generated metadata or a throwing converter, stay HTTP 500.
+- A one-field `@Body('field')` or `@Query('field')` with a model type converts that field. A handler cannot take a whole and a one-field parameter of the same source. The interceptor throws a `TypeError`.
 - A `@Body()` or `@Query()` parameter, whole or one field such as `@Body('name')`, that is not an `IModel` or `IObject` throws a `TypeError` that names the controller, the method and the parameter. Nest answers HTTP 500. For plain types, write your own interceptor with `objectCodecFromMetatype`.
 - `@Param()` and `@Headers()` stay as Nest received them.
 - Query strings are decoded to the schema's scalar and array types before `fromWireFormat` ([query objects](/guide/nestjs-in-depth#query-objects)).

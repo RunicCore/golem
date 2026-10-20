@@ -441,10 +441,11 @@ function inputController(
   decorator: typeof Body | typeof Query,
   field: string | undefined,
   metatype: unknown,
+  respond: (input: unknown) => unknown = (input) => input,
 ): Function {
   class InputController {
     handle(input: unknown) {
-      return input;
+      return respond(input);
     }
   }
   Object.defineProperty(InputController, 'name', { value: name });
@@ -529,6 +530,74 @@ test('NestModelInterceptor answers 500 for an input that is not a model, still c
   } finally {
     await open.close();
   }
+});
+
+test('NestModelInterceptor converts a model-typed one-field @Body() and @Query() and answers 400 for an invalid field', async () => {
+  const id = 'FieldModel_34343434';
+  createObjectCodec(id, {
+    stringify: (value) => JSON.stringify(value),
+    parse: (text) => JSON.parse(text) as never,
+    validate: () => true,
+    assert: (value) => value as never,
+    toWireFormat: (value) => value,
+    fromWireFormat: (wire) => ({ at: deserializeDate((wire as { at?: unknown } | undefined)?.at) }) as never,
+  });
+  const received = (input: unknown) => ({ atIsDate: (input as { at?: unknown }).at instanceof Date });
+  const bodyController = inputController('FieldModelBody', Body, 'addr', Object, received);
+  nestModelCodec(id)(bodyController.prototype, 'handle', 0);
+  const queryController = inputController('FieldModelQuery', Query, 'addr', Object, received);
+  nestModelCodec(id)(queryController.prototype, 'handle', 0);
+  class AppModule {}
+  Module({ controllers: [bodyController, queryController] as never[] })(AppModule);
+  const application = await NestFactory.create(AppModule, { logger: false });
+  // Express 5 reads `addr[at]=x` as one flat key unless the app opts in to nested query keys.
+  application.getHttpAdapter().getInstance().set('query parser', 'extended');
+  application.useGlobalInterceptors(new NestModelInterceptor());
+  await application.listen(0, '127.0.0.1');
+  try {
+    const base = await application.getUrl();
+    const postBody = (body: unknown) => fetch(`${base}/FieldModelBody`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const valid = await postBody({ addr: { at: '2020-01-01T00:00:00.000Z' }, other: 1 });
+    assert.equal(valid.status, 201);
+    assert.deepEqual(await valid.json(), { atIsDate: true });
+    assert.equal((await postBody({ addr: { at: 'not a date' } })).status, 400);
+    assert.equal((await postBody({ other: 1 })).status, 400, 'a missing field is rejected by the model');
+
+    const query = (text: string) => fetch(`${base}/FieldModelQuery?${text}`, { method: 'POST' });
+    const validQuery = await query('addr[at]=2020-01-01T00:00:00.000Z');
+    assert.equal(validQuery.status, 201);
+    assert.deepEqual(await validQuery.json(), { atIsDate: true });
+    assert.equal((await query('addr[at]=not+a+date')).status, 400);
+  } finally {
+    await application.close();
+  }
+});
+
+test('NestModelInterceptor throws a TypeError for a whole and a one-field @Body() of one handler', () => {
+  const id = 'MixedModel_56565656';
+  markerCodec(id);
+  class MixedController {
+    handle(_whole: unknown, _field: unknown) {
+      return undefined;
+    }
+  }
+  Body()(MixedController.prototype, 'handle', 0);
+  nestModelCodec(id)(MixedController.prototype, 'handle', 0);
+  Body('addr')(MixedController.prototype, 'handle', 1);
+  nestModelCodec(id)(MixedController.prototype, 'handle', 1);
+  const context = {
+    getHandler: () => MixedController.prototype.handle,
+    getClass: () => MixedController,
+    switchToHttp: () => ({ getRequest: () => ({ body: { addr: {} } }), getResponse: () => ({}) }),
+  } as unknown as ExecutionContext;
+  assert.throws(
+    () => new NestModelInterceptor().intercept(context, { handle: () => of(undefined) }),
+    new TypeError('NestModelInterceptor cannot convert a whole and a one-field @Body() of MixedController.handle together. Declare the whole input as one model, or use one-field parameters only.'),
+  );
 });
 
 test('NestModelInterceptor sends a declared null return as an empty body', async () => {
