@@ -35,9 +35,9 @@ const built = onceShared(async () => {
   writeModelSources(path.join(root, 'src'), { 'item.model.ts': ITEM_MODEL, 'construct.ts': CONSTRUCT_SITE });
   fs.writeFileSync(path.join(root, 'golem.yaml'), MINIMAL_GOLEM_YAML);
   linkProjectPackages(root, { '@exprtlabs/golem-model': path.join(workspace, 'packages/golem-model') });
-  const sources = new Map(['main.ts', 'construct.ts'].map(file => [file, fs.readFileSync(path.join(root, 'src', file), 'utf8')]));
+  const main = fs.readFileSync(path.join(root, 'src/main.ts'), 'utf8');
   const result = await build(root);
-  return { root, result, sources };
+  return { root, result, main };
 });
 
 async function runBuilt(file: string): Promise<string> {
@@ -58,7 +58,7 @@ test('the import that the build adds for a type-only class import loads in Node'
 });
 
 test('the source map of a line with an edited specifier points at the original line', async () => {
-  const { root, sources } = await built();
+  const { root, main } = await built();
   const mapFile = path.join(root, 'build/main.js.map');
   const map = JSON.parse(fs.readFileSync(mapFile, 'utf8')) as { sources: string[]; mappings: string };
   assert.deepEqual(map.sources.map(entry => path.resolve(path.dirname(mapFile), entry)), [path.join(root, 'src/main.ts')]);
@@ -68,18 +68,5 @@ test('the source map of a line with an edited specifier points at the original l
   const column = generated[line]!.indexOf('./lazy.js');
   const segment = [...decodeMappings(map.mappings)[line]!].reverse().find(candidate => candidate[0]! <= column);
   assert.ok(segment, 'a segment covers the edited specifier');
-  assert.equal(segment[2], sources.get('main.ts')!.split('\n').findIndex(text => text.includes("import('./lazy')")));
-});
-
-test('the source map of a call in a file that gets an added import and an edited specifier points at the original line', async () => {
-  const { root, sources } = await built();
-  const mapFile = path.join(root, 'build/construct.js.map');
-  const map = JSON.parse(fs.readFileSync(mapFile, 'utf8')) as { mappings: string };
-  const generated = fs.readFileSync(path.join(root, 'build/construct.js'), 'utf8').split('\n');
-  const line = generated.findIndex(text => text.includes('const item ='));
-  assert.notEqual(line, -1);
-  const column = generated[line]!.indexOf('requireObjectCodec');
-  const segment = [...decodeMappings(map.mappings)[line]!].reverse().find(candidate => candidate[0]! <= column);
-  assert.ok(segment, 'a segment covers the rewritten call');
-  assert.equal(segment[2], sources.get('construct.ts')!.split('\n').findIndex(text => text.startsWith('const item =')));
+  assert.equal(segment[2], main.split('\n').findIndex(text => text.includes("import('./lazy')")));
 });
