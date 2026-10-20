@@ -91,11 +91,16 @@ test('a composed root with a member that is no object stringifies the declared f
   assert.equal(stringify({ name: 'n', a: 'x' }), '{"name":"n","a":"x"}', 'a plain value is written as it is');
 });
 
-async function generateOpen(t: test.TestContext, name: string) {
+async function generateSdk(t: test.TestContext, name: string, validation = true) {
   const output = path.join(createFixtureProject(t, `golem-openapi-${name}-`), 'sdk');
-  await generateMaterializedSdk(document, { output, name, profile: { mobx: false, validation: true, allowAny: false } });
+  await generateMaterializedSdk(document, { output, name, profile: { mobx: false, validation, allowAny: false } });
   compileGeneratedSdk(output, [], { strict: true, skipLibCheck: true, outDir: path.join(output, 'dist') });
   const models = requireRecord(await import(pathToFileURL(path.join(output, 'dist/index.js')).href), 'generated models');
+  return { output, models };
+}
+
+async function generateOpen(t: test.TestContext, name: string) {
+  const { output, models } = await generateSdk(t, name);
   const Open = models.OpenModel as Model;
   return { codec: requireObjectCodec(generatedCodecIdFromRoot(output, 'Open')), instance: Object.assign(new Open({ id: 'a' }), { extra: 'x' }) };
 }
@@ -125,4 +130,12 @@ test('an object root with validation off stringifies the fields it holds when a 
   assert.equal(stringifyBase({}, { validate: false }), '{}', 'a root that holds no field');
   assert.equal(stringifyItem({ name: 'n', serverId: 's' }), '{"name":"n","serverId":"s"}');
   assert.throws(() => stringifyItem({ serverId: 's' }), (error: unknown) => error instanceof LibError, 'validation on still rejects the missing field');
+});
+
+test('an object that is open only by default writes its declared fields only, in stringify and toWireFormat', async (t) => {
+  // protects: F-56 stringify writes the declared fields; only an explicit additionalProperties true keeps extra keys
+  const { output } = await generateSdk(t, 'DefaultOpen');
+  const base = requireObjectCodec(generatedCodecIdFromRoot(output, 'Base'));
+  assert.equal(base.stringify({ name: 'n', extra: 'x' }), '{"name":"n"}');
+  assert.deepEqual(base.toWireFormat({ name: 'n', extra: 'x' }), { name: 'n' });
 });

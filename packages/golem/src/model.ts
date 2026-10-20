@@ -138,6 +138,11 @@ export type ModelTypeDescriptor = ModelTypeMetadata & (
       readonly properties: Readonly<Record<string, ModelTypeDescriptor>>;
       readonly required: readonly string[];
       readonly additionalProperties: boolean | ModelTypeDescriptor;
+      /**
+       * The schema states `additionalProperties: true`: the object declares its extra keys as data, so JSON writers
+       * keep them. An object that is open only by default declares none, and writers keep its declared fields only.
+       */
+      readonly additionalPropertiesDeclared?: true;
     }
   | {
       readonly kind: 'union';

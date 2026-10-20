@@ -584,6 +584,7 @@ function modelConversionDescriptor(
         : isJsonObject(schema.additionalProperties)
           ? modelConversionDescriptor(schema.additionalProperties, definitions, nested, direction, seen)
           : true,
+      ...(schema.additionalProperties === true ? { additionalPropertiesDeclared: true as const } : {}),
     };
     return admitsNull(schema) ? { kind: 'union', variants: [object, { kind: 'null' }] } : object;
   }
