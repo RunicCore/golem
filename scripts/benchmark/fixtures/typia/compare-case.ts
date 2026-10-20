@@ -1,5 +1,5 @@
 /** `fail-early` and `fail-late` validate a value with one wrong field, met first and last. `toggle` is a scratch validator. */
-export type CompareTask = 'validate' | 'fail-early' | 'fail-late' | 'decode' | 'encode' | 'toggle';
+export type CompareTask = 'validate' | 'fail-early' | 'fail-late' | 'decode' | 'encode' | 'parse' | 'stringify' | 'toggle';
 /** The plain `IObject` value, its `IModel` twin (a class instance) and its MobX twin (an observable class instance). */
 export type TwinKind = 'plain' | 'imodel' | 'mobx';
 /** One timed call of the typia comparison; the runner and the fixture module share this shape. */
