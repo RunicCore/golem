@@ -357,7 +357,6 @@ By default a field counts when it is an own enumerable property, as in `JSON.str
 
 - It applies to the root value of an `IObject` or `IModel` codec. Nested values are judged as without it.
 - `parse`, `fromWireFormat`, `validateInstance` and `ModelValidator` do not take it.
-- The generated functions of a model, such as `stringifyTTask`, ignore it.
 - With `allowGetter`, a field can also come from a polluted `Object.prototype`.
 
 - `JSON.stringify(model)` does not convert or validate.
