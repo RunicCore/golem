@@ -39,6 +39,11 @@ export interface SchemaDescriptorOptions {
   readonly executableBindings?: boolean;
   /** Use component references when assembling an OpenAPI document. */
   readonly referencePrefix?: string;
+  /**
+   * Give a discriminator of $ref branches a mapping from each tag to its branch. An OpenAPI document needs it: without
+   * one, a tag names a component.
+   */
+  readonly discriminatorMapping?: boolean;
   readonly portable?: boolean;
   readonly onNonportable?: (message: string) => void;
   /** Resolve a descriptor reference without executing application code. */
@@ -619,9 +624,7 @@ function descriptorSchema(
         const referenced = objects.map((object, position) => object !== present[position].variant);
         const tagged = propertyName !== undefined
           && branches.every((branch, position) => (referenced[position] ? hasLiteralTag(objects[position], propertyName) : hasDiscriminatorTag(branch, propertyName)));
-        // An OpenAPI document names a $ref branch by its component, not by
-        // its tag, so the mapping gives each referenced model's tag.
-        const mapping = tagged && options.referencePrefix !== undefined && referenced.every(Boolean)
+        const mapping = tagged && options.discriminatorMapping === true && referenced.every(Boolean)
           ? Object.fromEntries(objects.map((object, position) => {
             const branch = branches[position];
             return [literalTag(object, propertyName), isRecord(branch) ? branch.$ref : undefined];

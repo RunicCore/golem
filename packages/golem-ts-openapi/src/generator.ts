@@ -238,6 +238,7 @@ export async function generate(context: TsToOpenApiContext): Promise<TsToOpenApi
     representation: 'wire' as const,
     portable: true,
     referencePrefix: '#/components/schemas/',
+    discriminatorMapping: true,
     onNonportable: (message: string): void => reportSchemaDiagnostic(diagnostic(
       sourceNode?.getSourceFile(),
       sourceNode,

@@ -160,7 +160,7 @@ test('a union of references to models of this job uses the discriminator of thei
   assert.deepEqual(forms(schemaForDescriptor(union(reference('A'), reference('B')), { definitions })), {
     discriminator: { propertyName: 'tag' }, oneOf: [{ $ref: '#/$defs/A' }, { $ref: '#/$defs/B' }], anyOf: undefined,
   });
-  assert.deepEqual(forms(schemaForDescriptor(union(reference('A'), reference('B')), { definitions, referencePrefix: '#/components/schemas/' })), {
+  assert.deepEqual(forms(schemaForDescriptor(union(reference('A'), reference('B')), { definitions, referencePrefix: '#/components/schemas/', discriminatorMapping: true })), {
     discriminator: { propertyName: 'tag', mapping: { a: '#/components/schemas/A', b: '#/components/schemas/B' } },
     oneOf: [{ $ref: '#/components/schemas/A' }, { $ref: '#/components/schemas/B' }],
     anyOf: undefined,
