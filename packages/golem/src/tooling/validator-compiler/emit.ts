@@ -771,6 +771,11 @@ class FunctionWriter {
       }
       case 'unevaluatedProperties': return this.unevaluatedProperties(check.schema, value);
       case 'unevaluatedItems': return this.unevaluatedItems(check.schema, value);
+      default: {
+        // A new kind of check fails the build here, and generation, instead of being skipped.
+        const unwritten: never = check;
+        throw new Error(`The validator compiler writes no check of the kind ${JSON.stringify(unwritten)}.`);
+      }
     }
   }
 

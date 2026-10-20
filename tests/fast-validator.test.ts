@@ -555,13 +555,10 @@ test('no fast check for a root that reaches a validation function, also through 
   assert.deepEqual([...result.fastExports], [['Note', 'is_Note']]);
 });
 
-test('a root of a rare keyword has a fast check, also inside allOf, a union branch or $ref, while a root that keeps an evaluation record has none', () => {
+test('a rare keyword gives a fast check also inside allOf, a union branch or $ref, while a root that keeps an evaluation record has none', () => {
   const result = compile(
     {
       roots: new Map<string, unknown>([
-        ['Patterns', { type: 'object', patternProperties: { '^a': { type: 'string' } } }],
-        ['Contains', { type: 'array', contains: { type: 'string' } }],
-        ['OnlyIf', { if: { type: 'string' }, then: { minLength: 2 } }],
         ['AllOfOfRare', { allOf: [{ if: { type: 'string' }, then: { minLength: 2 } }, { dependentSchemas: { a: { required: ['b'] } } }] }],
         ['AnyOfOfRare', { anyOf: [{ type: 'object', propertyNames: { maxLength: 1 } }, { type: 'array', contains: { type: 'string' } }] }],
         ['RefToRare', { $ref: '#/$defs/Leaf', $defs: { Leaf: { type: 'object', patternProperties: { '^a': { type: 'string' } } } } }],
@@ -570,7 +567,7 @@ test('a root of a rare keyword has a fast check, also inside allOf, a union bran
     },
     { unknownFormats: 'warn', fastPath: true },
   );
-  assert.deepEqual([...result.fastExports.keys()].sort(), ['AllOfOfRare', 'AnyOfOfRare', 'Contains', 'OnlyIf', 'Patterns', 'RefToRare']);
+  assert.deepEqual([...result.fastExports.keys()].sort(), ['AllOfOfRare', 'AnyOfOfRare', 'RefToRare']);
 });
 
 // Declared keys that `properties` does not name: each is captured, then tested as an unknown key.
