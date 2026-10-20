@@ -467,8 +467,8 @@ function emitObjectInline(
     if (descriptor.additionalProperties === false) return "'{}'";
     return `stringifyJsonScalar(${expression} as never)`;
   }
-  if (typeof descriptor.additionalProperties === 'object') {
-    // A schema for the other names: the encoded record keeps them, and a wire value is already encoded.
+  if (typeof descriptor.additionalProperties === 'object' || descriptor.additionalProperties === true) {
+    // The other names are data: the encoded record keeps them, and a wire value is already encoded.
     return `stringifyJsonScalar(${ctx.wireIdentity ? expression : emitEncodedRecord(descriptor, expression, ctx)} as never)`;
   }
   if (properties.every(([name]) => required.has(name))) {
@@ -503,7 +503,9 @@ function emitObjectStringify(
     }
     return `function ${fn}(${stringifyParameters('value: Record<string, unknown>', ctx)}): string {\n  return stringifyJsonScalar(value as never);\n}\n`;
   }
-  const additional = typeof descriptor.additionalProperties === 'object' ? descriptor.additionalProperties : undefined;
+  const additional = typeof descriptor.additionalProperties === 'object'
+    ? descriptor.additionalProperties
+    : descriptor.additionalProperties === true ? { kind: 'unknown' as const } : undefined;
   if (!additional && properties.every(([name]) => required.has(name))) {
     const concatenated = emitRequiredObjectConcat(properties, 'value', ctx);
     return [
@@ -547,9 +549,10 @@ function emitObjectStringify(
     }
   }
   if (additional) {
-    // A schema for the other names: they are written after the listed names, each by that schema.
+    // A schema for the other names: they are written after the listed names, each by that schema. Without one they are
+    // data of unknown type. Program state of a model instance is no name.
     lines.push(
-      '  for (const key of Object.keys(value)) {',
+      '  for (const key of Object.keys(withoutInstanceState(value))) {',
       `    if (${JSON.stringify(properties.map(([name]) => name))}.includes(key)) continue;`,
       '    const __golemExtra = value[key];',
       '    if (__golemExtra === undefined) continue;',
@@ -1557,10 +1560,11 @@ function emitEncodedRecord(
     }
     return [name, `(${local} = ${read}, ${value.replaceAll(read, local)})`] as const;
   });
-  // A schema for the other names: they are kept and encoded by it. An open object writes its listed names only.
+  // A schema for the other names: they are kept and encoded by it. Without one they are kept as they are. Program state
+  // of a model instance is no name.
   const additional = typeof descriptor.additionalProperties === 'object' ? descriptor.additionalProperties : undefined;
-  const extras = additional
-    ? [`...Object.fromEntries(Object.entries(${asRecord(expression)}).filter(([key, extra]) => extra !== undefined && !${JSON.stringify(fields.map(([name]) => name))}.includes(key)).map(([key, extra]) => [key, ${emitEncodeValue(additional, 'extra', ctx)}]))`]
+  const extras = additional || descriptor.additionalProperties === true
+    ? [`...Object.fromEntries(Object.entries(withoutInstanceState(${asRecord(expression)})).filter(([key, extra]) => extra !== undefined && !${JSON.stringify(fields.map(([name]) => name))}.includes(key))${additional ? `.map(([key, extra]) => [key, ${emitEncodeValue(additional, 'extra', ctx)}])` : ''})`]
     : [];
   const record = `{ ${[...extras, ...values.map(([name, value]) => value.startsWith('...')
     ? value

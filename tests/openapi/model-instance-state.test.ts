@@ -34,6 +34,7 @@ const document = {
       },
       // A member that is no object (a oneOf) does not resolve to one merged object.
       Mixed: { allOf: [ref('Base'), { oneOf: [{ type: 'object', required: ['a'], properties: { a: { type: 'string' } } }, { type: 'object', required: ['b'], properties: { b: { type: 'string' } } }] }] },
+      Open: { type: 'object', additionalProperties: true, required: ['id'], properties: { id: { type: 'string' } } },
       Bag: { type: 'object', additionalProperties: { type: 'string' }, required: ['id'], properties: { id: { type: 'string' } } },
     },
   },
@@ -88,4 +89,27 @@ test('a composed root with a member that is no object stringifies the declared f
   const stringify = models.stringifyMixed as (value: unknown) => string;
   assert.equal(stringify(Object.assign(new Mixed({ name: 'n' }), { cache: new Map<string, string>(), hits: 3 })), '{"name":"n"}');
   assert.equal(stringify({ name: 'n', a: 'x' }), '{"name":"n","a":"x"}', 'a plain value is written as it is');
+});
+
+async function generateOpen(t: test.TestContext, name: string) {
+  const output = path.join(createFixtureProject(t, `golem-openapi-${name}-`), 'sdk');
+  await generateMaterializedSdk(document, { output, name, profile: { mobx: false, validation: true, allowAny: false } });
+  compileGeneratedSdk(output, [], { strict: true, skipLibCheck: true, outDir: path.join(output, 'dist') });
+  const models = requireRecord(await import(pathToFileURL(path.join(output, 'dist/index.js')).href), 'generated models');
+  const Open = models.OpenModel as Model;
+  return { codec: requireObjectCodec(generatedCodecIdFromRoot(output, 'Open')), instance: Object.assign(new Open({ id: 'a' }), { extra: 'x' }) };
+}
+
+test('stringify writes the extra keys of a model with additionalProperties true as data', async (t) => {
+  // protects: bug T-154 the codec wrote the declared fields only, where encodeGeneratedModel keeps the extra keys
+  const { codec, instance } = await generateOpen(t, 'OpenStringify');
+  assert.equal(codec.stringify(instance), '{"id":"a","extra":"x"}');
+  assert.equal(codec.stringify({ id: 'a', extra: 'x' }), '{"id":"a","extra":"x"}', 'a plain value');
+});
+
+test('toWireFormat keeps the extra keys of a model with additionalProperties true as data', async (t) => {
+  // protects: bug T-154 the codec wire encoding dropped the extra keys, where encodeGeneratedModel keeps them
+  const { codec, instance } = await generateOpen(t, 'OpenWire');
+  assert.deepEqual(codec.toWireFormat(instance), { id: 'a', extra: 'x' });
+  assert.deepEqual(codec.toWireFormat({ id: 'a', extra: 'x' }), { id: 'a', extra: 'x' }, 'a plain value');
 });
