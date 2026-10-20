@@ -74,11 +74,13 @@ What happens to a request:
 
 ### Input that is not a model
 
-Every `@Body()` and `@Query()` parameter needs an `IModel` or `IObject` type. If a parameter has another type, the interceptor throws a `TypeError` that names the controller, the method and the parameter, and Nest answers HTTP 500. This covers a plain interface, a plain class, a primitive, a parameter with no type, and one field such as `@Body('name')` or `@Query('page')` with a plain type. The interceptor throws on the first request to the handler. Return types are not affected.
+Every `@Body()` and `@Query()` parameter needs an `IModel` or `IObject` type. If a parameter has another type, the interceptor throws a `TypeError` that names the controller, the method and the parameter, and Nest answers HTTP 500. This covers a plain interface, a plain class, a primitive, a parameter with no type, and one field such as `@Body('name')` or `@Query('page')` with a plain type. The interceptor throws on each request to the handler, not at startup. Return types are not affected.
 
-A one-field parameter with a model type, such as `@Body('address') address: Address`, converts that field with the same checks as a whole body. A field that fails validation returns HTTP 400. A handler cannot take a whole `@Body()` and a one-field `@Body()` together, and the same holds for `@Query()`. In that case the interceptor throws a `TypeError`.
+A one-field parameter with a model type, such as `@Body('address') address: Address`, converts that field with the same checks as a whole body. A missing field or a field that fails validation returns HTTP 400. A handler cannot take a whole `@Body()` and a one-field `@Body()` together, and the same holds for `@Query()`. In that case the interceptor throws a `TypeError`.
 
-To take plain types, declare the input as an `IModel` or `IObject`. Or write your own interceptor and get the codec with `objectCodecFromMetatype`.
+A one-field model in `@Query('address')` reads a nested query key such as `address[street]=Main`. The app needs a nested query parser for that, for example Express `query parser` set to `extended`.
+
+To take plain types, declare the input as an `IModel` or `IObject`, or write your own interceptor.
 
 Compile-time recording of these types needs the project settings in [Set up TypeScript](/guide/nestjs#set-up-typescript) and a value import of the model module, so the codec exists before the interceptor runs. The full `@exprtlabs/golem/nest` import is in the [runtime API](/reference/runtime-api#nest).
 
@@ -109,7 +111,7 @@ HTTP query values are strings, and repeated keys arrive as string arrays. Declar
 - A field that also accepts a string keeps it: for `string | number`, `'42'` stays `'42'`.
 - Only the query object's own properties are decoded; a query model that is a `$ref` to another model or a union at its root is passed through unchanged.
 - A JSON body is not decoded.
-- The interceptor stores the converted query on the individual request. Whole-query parameters on one route must use the same model type; repeated bindings share the converted value. The same rule applies to whole-body parameters. Field bindings such as `@Query('limit')` keep Nest's normal behavior.
+- The interceptor stores the converted query on the individual request. Whole-query parameters on one route must use the same model type; repeated bindings share the converted value. The same rule applies to whole-body parameters. A one-field binding such as `@Query('address')` converts its field with its own model type.
 
 <<< @/../examples/payments/server/src/payment.model.ts#payment-filter
 

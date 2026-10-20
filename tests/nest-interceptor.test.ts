@@ -86,6 +86,7 @@ async function runInterceptor(
   const context = {
     getHandler: () => AdapterWriterController.prototype.write,
     getClass: () => AdapterWriterController,
+    getType: () => 'http',
     switchToHttp: () => ({ getRequest: () => ({}), getResponse: () => response }),
   } as unknown as ExecutionContext;
   const next: CallHandler<unknown> = { handle: () => of(value) };
@@ -105,6 +106,7 @@ function interceptResponse(
   const context = {
     getHandler: () => target.handler,
     getClass: () => target.klass,
+    getType: () => 'http',
     switchToHttp: () => ({ getRequest: () => ({}), getResponse: () => response }),
   } as unknown as ExecutionContext;
   const next: CallHandler<unknown> = { handle: () => of(...values) };
@@ -485,6 +487,7 @@ for (const [label, decorator, field, metatype, name] of inputWithoutModel) {
     const context = {
       getHandler: () => klass.prototype.handle,
       getClass: () => klass,
+      getType: () => 'http',
       switchToHttp: () => ({ getRequest: () => ({ body: { note: 'raw' }, query: {} }), getResponse: () => ({}) }),
     } as unknown as ExecutionContext;
     assert.throws(
@@ -577,6 +580,18 @@ test('NestModelInterceptor converts a model-typed one-field @Body() and @Query()
   }
 });
 
+test('NestModelInterceptor leaves a non-HTTP handler alone, even when its parameter type is not a model', () => {
+  // A Nest RPC @Payload() shares the paramtype number of @Body().
+  const klass = inputController('RpcPayload', Body, undefined, Object);
+  const context = {
+    getType: () => 'rpc',
+    getHandler: () => klass.prototype.handle,
+    getClass: () => klass,
+  } as unknown as ExecutionContext;
+  const handled = of('handled');
+  assert.equal(new NestModelInterceptor().intercept(context, { handle: () => handled }), handled);
+});
+
 test('NestModelInterceptor throws a TypeError for a whole and a one-field @Body() of one handler', () => {
   const id = 'MixedModel_56565656';
   markerCodec(id);
@@ -592,6 +607,7 @@ test('NestModelInterceptor throws a TypeError for a whole and a one-field @Body(
   const context = {
     getHandler: () => MixedController.prototype.handle,
     getClass: () => MixedController,
+    getType: () => 'http',
     switchToHttp: () => ({ getRequest: () => ({ body: { addr: {} } }), getResponse: () => ({}) }),
   } as unknown as ExecutionContext;
   assert.throws(
@@ -747,6 +763,7 @@ test('NestModelInterceptor passes @Query() through unchanged unless a present fi
     const context = {
       getHandler: () => QueryController.prototype.list,
       getClass: () => QueryController,
+      getType: () => 'http',
       switchToHttp: () => ({ getRequest: () => request, getResponse: () => ({}) }),
     } as unknown as ExecutionContext;
     received.length = 0;

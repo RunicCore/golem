@@ -73,10 +73,12 @@ type NestReturnMeta = {
   readonly array: boolean;
 };
 
+type NestModelConstruct = abstract new (values?: never) => object;
+
 type NestModelToken = Function & {
   readonly [NEST_MODEL_CODEC_ID]?: unknown;
   readonly [NEST_MODEL_CODEC]?: ObjectCodec;
-  readonly [NEST_MODEL_CONSTRUCT]?: abstract new (values?: never) => object;
+  readonly [NEST_MODEL_CONSTRUCT]?: NestModelConstruct;
 };
 
 function reflectMeta(): ReflectParamtypes {
@@ -111,7 +113,7 @@ function boundCodec(metatype: unknown): ObjectCodec | undefined {
   return asToken(metatype)?.[NEST_MODEL_CODEC];
 }
 
-function boundConstruct(metatype: unknown): (abstract new (values?: never) => object) | undefined {
+function boundConstruct(metatype: unknown): NestModelConstruct | undefined {
   return asToken(metatype)?.[NEST_MODEL_CONSTRUCT];
 }
 
@@ -401,6 +403,22 @@ function queryWireDecoder(codec: ObjectCodec): QueryWireDecoder {
   return decoder;
 }
 
+const NO_DECODE = (value: unknown): unknown => value;
+
+/** The model of one wire value. */
+function convertInput(
+  codec: ObjectCodec,
+  construct: NestModelConstruct | undefined,
+  wire: unknown,
+  decode: (wire: unknown) => unknown,
+): unknown {
+  return codec.fromWireFormat(decode(wire), { failFast: true, construct });
+}
+
+function inputDecorator(paramtype: number, field: string | undefined): string {
+  return `@${paramtype === NEST_BODY ? 'Body' : 'Query'}(${field === undefined ? '' : `'${field}'`})`;
+}
+
 // #region nest-model-interceptor
 export class NestModelInterceptor implements NestInterceptor {
   // Nest return decorators are installed before controllers run, so an absent
@@ -442,6 +460,8 @@ export class NestModelInterceptor implements NestInterceptor {
   }
 
   intercept(context: ExecutionContext, next: CallHandler<unknown>): Observable<unknown> {
+    // Body and query parameters are HTTP request input. An RPC or WebSocket handler has other parameters under the same numbers.
+    if (context.getType() !== 'http') return next.handle();
     const handler = context.getHandler();
     const klass = context.getClass();
     // Inbound conversion only. Validation and invalid JSON become HTTP 400. Any other error stays HTTP 500.
@@ -451,61 +471,60 @@ export class NestModelInterceptor implements NestInterceptor {
         const types = (reflectMeta().getMetadata('design:paramtypes', klass.prototype, handler.name) as unknown[] | undefined)
           ?? [];
         const req = context.switchToHttp().getRequest<HttpRequest>();
-        const convertedSources = new Map<number, { codec: ObjectCodec; construct: unknown }>();
-        const convertedFields = new Map<string, { codec: ObjectCodec; construct: unknown }>();
+        // A whole parameter keys by its source, a one-field parameter by its source and field.
+        let converted: Map<number | string, { codec: ObjectCodec; construct: NestModelConstruct | undefined }> | undefined;
+        // Bit 1 is the body, bit 2 the query.
+        let wholeSources = 0;
+        let fieldSources = 0;
         for (const [key, meta] of Object.entries(args)) {
           const colon = key.indexOf(':');
           const paramtype = Number(colon >= 0 ? key.slice(0, colon) : key);
           if (paramtype !== NEST_BODY && paramtype !== NEST_QUERY) continue;
           const field = typeof meta.data === 'string' && meta.data !== '' ? meta.data : undefined;
-          const decorator = `@${paramtype === NEST_BODY ? 'Body' : 'Query'}(${field === undefined ? '' : `'${field}'`})`;
           const metatype = types[meta.index];
           const codec = boundCodec(metatype);
           if (!codec) {
             // A controller declaration fault, not bad input: Nest answers 500 for this request.
             throw new TypeError(
-              `NestModelInterceptor needs an IModel or IObject type for ${decorator} parameter ${meta.index} of ${klass.name}.${handler.name}. Declare the input as an IModel or IObject, or write your own interceptor.`,
+              `NestModelInterceptor needs an IModel or IObject type for ${inputDecorator(paramtype, field)} parameter ${meta.index} of ${klass.name}.${handler.name}. Declare the input as an IModel or IObject, or write your own interceptor.`,
             );
           }
           const construct = boundConstruct(metatype);
-          const fieldKey = `${paramtype}:${field}`;
-          const mixed = field === undefined
-            ? [...convertedFields.keys()].some((converted) => converted.startsWith(`${paramtype}:`))
-            : convertedSources.has(paramtype);
-          if (mixed) {
+          const source = paramtype === NEST_BODY ? 1 : 2;
+          if (field === undefined ? (fieldSources & source) !== 0 : (wholeSources & source) !== 0) {
             // The whole conversion replaces the value that a one-field parameter reads, so the two cannot both convert.
             throw new TypeError(
               `NestModelInterceptor cannot convert a whole and a one-field ${paramtype === NEST_BODY ? '@Body' : '@Query'}() of ${klass.name}.${handler.name} together. Declare the whole input as one model, or use one-field parameters only.`,
             );
           }
-          const previous = field === undefined ? convertedSources.get(paramtype) : convertedFields.get(fieldKey);
+          const convertedKey = field === undefined ? paramtype : `${paramtype}:${field}`;
+          const previous = converted?.get(convertedKey);
           if (previous) {
             if (previous.codec !== codec || previous.construct !== construct) {
               throw new TypeError(field === undefined
                 ? 'NestModelInterceptor requires one model type for each whole body or query object.'
-                : `NestModelInterceptor requires one model type for ${decorator} of ${klass.name}.${handler.name}.`);
+                : `NestModelInterceptor requires one model type for ${inputDecorator(paramtype, field)} of ${klass.name}.${handler.name}.`);
             }
             continue;
           }
-          const options = { failFast: true, construct };
+          const decode = paramtype === NEST_BODY ? NO_DECODE : queryWireDecoder(codec);
           // @Body() and @Query() read these values when next.handle() runs.
           if (field === undefined) {
-            const wire = paramtype === NEST_BODY ? req.body : queryWireDecoder(codec)(req.query);
-            const converted = codec.fromWireFormat(wire, options);
-            if (paramtype === NEST_BODY) req.body = converted;
-            else replaceQuery(req, converted);
-            convertedSources.set(paramtype, { codec, construct });
+            const value = convertInput(codec, construct, paramtype === NEST_BODY ? req.body : req.query, decode);
+            if (paramtype === NEST_BODY) req.body = value;
+            else replaceQuery(req, value);
+            wholeSources |= source;
           } else {
             const record = schemaRecord(paramtype === NEST_BODY ? req.body : req.query);
-            const value = record && Object.hasOwn(record, field) ? record[field] : undefined;
-            const converted = codec.fromWireFormat(paramtype === NEST_BODY ? value : queryWireDecoder(codec)(value), options);
+            const value = convertInput(codec, construct, record && Object.hasOwn(record, field) ? record[field] : undefined, decode);
             // Copy so the incoming object is not mutated; define so a field named __proto__ stays data.
             const copy = { ...record };
-            Object.defineProperty(copy, field, { value: converted, writable: true, enumerable: true, configurable: true });
+            Object.defineProperty(copy, field, { value, writable: true, enumerable: true, configurable: true });
             if (paramtype === NEST_BODY) req.body = copy;
             else replaceQuery(req, copy);
-            convertedFields.set(fieldKey, { codec, construct });
+            fieldSources |= source;
           }
+          (converted ??= new Map()).set(convertedKey, { codec, construct });
         }
       }
     } catch (error) {
