@@ -16,7 +16,7 @@ const scope = fileFixtureScope();
 
 // A class model that a call site imports with `import type`: the build adds the value import of the class for `construct`, and it copies the specifier of the type-only import.
 const ITEM_MODEL = `import type { IModel } from '@exprtlabs/golem/model';
-import { TItemBaseModel } from './item.model.generated.js';
+import { TItemBaseModel } from './item.model.generated';
 
 export type TItem = IModel<{ title: string }>;
 export class Item extends TItemBaseModel {}

@@ -824,7 +824,8 @@ function firstExisting(host: ModuleResolutionHost, filenames: readonly string[])
 function resolveRelative(moduleName: string, containingFile: string, host: ModuleResolutionHost): string | undefined {
   const base = resolvePath(dirname(containingFile), moduleName);
   const extension = extname(base);
-  if (extension) {
+  // A dot inside a name (`./user.model`) is no extension: the name takes one below.
+  if (SOURCE_EXTENSIONS.includes(extension) || JS_EXTENSIONS.has(extension)) {
     const match = firstExisting(host, sourceCandidates(base));
     if (match) return match;
     if (JS_EXTENSIONS.has(extension)) {
