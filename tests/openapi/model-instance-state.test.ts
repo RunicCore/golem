@@ -34,6 +34,7 @@ const document = {
       },
       // A member that is no object (a oneOf) does not resolve to one merged object.
       Mixed: { allOf: [ref('Base'), { oneOf: [{ type: 'object', required: ['a'], properties: { a: { type: 'string' } } }, { type: 'object', required: ['b'], properties: { b: { type: 'string' } } }] }] },
+      Tree: { type: 'object', required: ['label'], properties: { label: { type: 'string' }, child: ref('Tree') } },
       Open: { type: 'object', additionalProperties: true, required: ['id'], properties: { id: { type: 'string' } } },
       Bag: { type: 'object', additionalProperties: { type: 'string' }, required: ['id'], properties: { id: { type: 'string' } } },
     },
@@ -147,4 +148,12 @@ test('a composed root with a member that is no object encodes the declared field
   const codec = requireObjectCodec(generatedCodecIdFromRoot(output, 'Mixed'));
   assert.deepEqual(codec.toWireFormat(Object.assign(new Mixed({ name: 'n' }), { cache: new Map<string, string>(), hits: 3 })), { name: 'n' });
   assert.deepEqual(codec.toWireFormat({ name: 'n', a: 'x' }), { name: 'n', a: 'x' }, 'a plain value is kept');
+});
+
+test('with validation off a nested object that lacks a required field is written with the fields it holds', async (t) => {
+  // protects: T-156 a nested object of the same module threw a TypeError on a missing required field where its parent wrote around it
+  const { models } = await generateSdk(t, 'NestedLenient');
+  const stringifyTree = models.stringifyTree as (value: unknown, options?: { validate: boolean }) => string;
+  assert.equal(stringifyTree({ label: 'a', child: {} }, { validate: false }), '{"label":"a","child":{}}');
+  assert.equal(stringifyTree({ label: 'a', child: { label: 'b' } }), '{"label":"a","child":{"label":"b"}}');
 });

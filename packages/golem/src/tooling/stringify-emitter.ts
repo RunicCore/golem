@@ -113,6 +113,8 @@ interface EmitCtx {
    * A nested trusted call to one skips its validating wrapper.
    */
   readonly localCoreIds?: ReadonlySet<string>;
+  /** Local nodes whose Core keeps the all-required fast path: a lenient caller runs their public function instead. */
+  readonly strictCoreIds?: ReadonlySet<string>;
   /** Expression of the trusted options passed to a nested call; the module-level constant when the module declares one. */
   readonly trustedOptions?: string;
   /** Emit stringify functions that take no options; they only run trusted. */
@@ -148,7 +150,7 @@ function trustedOptions(ctx: EmitCtx): string {
 
 /** A nested stringify call that skips validation: the node's Core function when this module emits it. */
 function nestedStringifyCall(id: string, expression: string, ctx: EmitCtx): string {
-  return ctx.localCoreIds?.has(id)
+  return ctx.localCoreIds?.has(id) && !(ctx.lenientRoot && ctx.strictCoreIds?.has(id))
     ? `${stringifyFunctionName(id)}Core(${expression} as never)`
     : `${stringifyFunctionName(id)}(${expression} as never, ${trustedOptions(ctx)})`;
 }
@@ -587,6 +589,7 @@ export function emitStringifyFunction(
     wireStringifyIds: extra?.wireStringifyIds,
     siblingWireCodecIds: extra?.siblingWireCodecIds,
     localCoreIds: extra?.localCoreIds,
+    strictCoreIds: extra?.strictCoreIds,
     trustedOptions: extra?.trustedOptions,
     withoutOptions: extra?.withoutOptions,
     wireInlining: extra?.wireIdentity ? new Set([node.id]) : undefined,
@@ -1966,6 +1969,7 @@ export function emitCodecRuntime(
     wireStringifyIds: new Set(nodes.filter((node) => !isExternalCodecNode(node) && validates(node) && !node.sameSchema).map((node) => node.id)),
     // emitNodeRuntime emits stringify<Id>Core and toWireFormat<Id>Core for every node that is not external.
     localCoreIds: new Set(nodes.filter((node) => !isExternalCodecNode(node)).map((node) => node.id)),
+    strictCoreIds: new Set(nodes.filter((node) => !isExternalCodecNode(node) && validates(node) && node.sameSchema).map((node) => node.id)),
     trustedOptions: TRUSTED_CONSTANT,
     siblingWireCodecIds: options.siblingWireCodecIds,
     exportWireStringify: options.exportWireStringify,
