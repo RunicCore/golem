@@ -22,7 +22,7 @@ const post = (operationId: string, name: string) => ({
 const document = {
   openapi: '3.1.0',
   info: { title: 'Instance state', version: '1' },
-  paths: { '/items': post('createItem', 'Item'), '/derived': post('createDerived', 'Derived') },
+  paths: { '/items': post('createItem', 'Item'), '/derived': post('createDerived', 'Derived'), '/mixed': post('createMixed', 'Mixed') },
   components: {
     schemas: {
       // serverId is declared by the model, and the request plane forbids it.
@@ -32,6 +32,8 @@ const document = {
         allOf: [ref('Base'), { type: 'object', properties: { mode: { type: 'string' }, serverId: { type: 'string', readOnly: true } } }],
         unevaluatedProperties: false,
       },
+      // A member that is no object (a oneOf) does not resolve to one merged object.
+      Mixed: { allOf: [ref('Base'), { oneOf: [{ type: 'object', required: ['a'], properties: { a: { type: 'string' } } }, { type: 'object', required: ['b'], properties: { b: { type: 'string' } } }] }] },
       Bag: { type: 'object', additionalProperties: { type: 'string' }, required: ['id'], properties: { id: { type: 'string' } } },
     },
   },
@@ -68,6 +70,7 @@ test('the own state of an SDK model instance is no unknown key; a declared key s
   assert.equal(derived.stringify(withState), '{"name":"n","mode":"m"}', 'the composed root writes its declared fields only');
   assert.throws(() => derived.stringify({ name: 'n', cache: 1 }), (error: unknown) => error instanceof LibError, 'a plain value with an extra key is judged as input');
 
+  assert.equal(stringified('Mixed', { name: 'n', a: 'x' }), '{"name":"n","a":"x"}', 'a composition with a member that is no object keeps the fields of both members');
   const bag = requireObjectCodec(generatedCodecIdFromRoot(output, 'Bag'));
   const map = Object.assign(new Bag({ id: 'a' }), { extra: 'x' });
   assert.equal(bag.validate(map), true);

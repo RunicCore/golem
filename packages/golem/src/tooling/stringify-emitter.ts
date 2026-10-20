@@ -589,7 +589,9 @@ export function emitStringifyFunction(
   const fn = stringifyFunctionName(node.id);
   let source: string;
   // An intersection (allOf) is one merged object: the root writes its declared fields, as decode and encode do.
-  const merged = node.descriptor.kind === 'intersection' ? resolveObjectDescriptor(node.descriptor, ctx) : undefined;
+  const merged = node.descriptor.kind === 'intersection' && node.descriptor.variants.every(variant => resolveObjectDescriptor(variant, ctx) !== undefined)
+    ? resolveObjectDescriptor(node.descriptor, ctx)
+    : undefined;
   if (node.descriptor.kind === 'object') source = emitObjectStringify(fn, node.descriptor, ctx);
   else if (merged) source = emitObjectStringify(fn, merged, ctx);
   else if (node.descriptor.kind === 'generated-model' || node.descriptor.kind === 'reference') {

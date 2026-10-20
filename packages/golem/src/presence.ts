@@ -18,21 +18,20 @@ export function presentValueSource(object: string, key: string, read: string): s
 }
 
 /**
- * Source text of `isInstanceState(value, key)`: true when `key` is program state of a golem model instance, an own key
- * that the instance's own model does not declare. The nearest prototype that owns a field entry decides, also when the
- * entry is `null` (a model that allows additional keys has no program state). A plain value, or a model of an older
- * runtime, has no entry: false.
+ * Source text of `instanceFields(value)`: the names that the own model of a golem model instance declares, or
+ * `undefined` when the value holds no program state. The nearest prototype that owns a field entry decides, also when
+ * the entry is `null` (a model that allows additional keys has no program state). A plain value, or a model of an older
+ * runtime, has no entry. An own key outside the names is program state, never an unknown key. A loop reads the names
+ * once for the object; the failure places ask `isInstanceState(value, key)` once for a key.
  */
-export function isInstanceStateSource(): string {
+export function instanceFieldsSource(): string {
   return [
     `const fieldsKey = /*#__PURE__*/ Symbol.for(${JSON.stringify(MODEL_FIELDS_KEY)});`,
-    'function isInstanceState(value, key) {',
+    'function instanceFields(value) {',
     '  for (let prototype = Object.getPrototypeOf(value); prototype !== null; prototype = Object.getPrototypeOf(prototype)) {',
-    '    if (!Object.prototype.hasOwnProperty.call(prototype, fieldsKey)) continue;',
-    '    const fields = prototype[fieldsKey];',
-    '    return fields !== null && !fields.includes(key);',
+    '    if (Object.prototype.hasOwnProperty.call(prototype, fieldsKey)) return prototype[fieldsKey] ?? undefined;',
     '  }',
-    '  return false;',
+    '  return undefined;',
     '}',
   ].join('\n');
 }
