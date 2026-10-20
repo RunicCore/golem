@@ -1227,7 +1227,8 @@ class FunctionWriter {
     this.state.localHelper('isObject');
     const reads = branches.map(object => readSet(object, false));
     const named = branches.map(object => new Set(object.properties.map(property => property.key)));
-    const closed = branches.map(object => object.additional?.kind === 'forbid');
+    // A merged branch reads every value only when `additionalProperties: false` closes it (see `mergedBranches`).
+    const closed = reads.map(set => set.all);
     const keys = [...new Set([discriminator.property, ...named.flatMap(names => [...names]), ...reads.flatMap(set => set.declared)])];
     const tag = this.fresh('tag');
     const seen = keys.slice(1).map(key => [key, this.fresh('seen')] as const);

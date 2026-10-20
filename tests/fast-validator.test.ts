@@ -7,8 +7,10 @@ import { compile } from '@exprtlabs/golem/validator-compiler';
 
 import { compileValidatorModule, type FastCheck } from './support/compiled-validators.js';
 
-// The fast check `is_X` of the validator compiler (`fastPath`) is exact: `is(v)` is true if and only if `validate(v,
-// true)` reports no issue. Each row compiles one schema with `fastPath` on and compares both functions of that module.
+// The fast check `is_X` of the validator compiler (`fastPath`) gives the full validator's verdict whenever the full
+// validator gives one, and throws only where it throws. When `is_X` returns true it has read every own value the full
+// validator reads; when it returns false, no other (spec 7.3). Each row compiles one schema with `fastPath` on and
+// compares both functions of that module.
 
 const MODEL_CODEC_IDS = Symbol.for(MODEL_CODEC_IDS_KEY);
 
@@ -56,19 +58,22 @@ function observed(run: () => boolean): { readonly outcome: boolean | string; rea
 const within = (inner: ReadonlySet<string>, outer: ReadonlySet<string>): boolean => [...inner].every(label => outer.has(label));
 
 /**
- * How the fast check breaks its contract on `value`, or undefined (spec 5.1 rule 1 and 7.3): it gives the full
- * validator's verdict whenever the full validator gives one; it throws only where the full validator throws; when it
- * returns true it ran every getter the full validator runs, and when it returns false no other one. The full
- * validator's reads are those of its fail-fast run, as the codec runs it.
+ * How the fast check breaks its contract on `value`, or undefined (spec 5.1 rule 1 and 7.3). The reference is the full
+ * validator's fail-fast run, as the codec runs it: the fast check gives its verdict whenever it gives one, and throws
+ * only where it throws. When neither throws, the fast check that returns true ran every getter the full validator
+ * runs, and the one that returns false no other one; a throw ends a run part way, so its reads are not compared. The
+ * verdict with all errors is the same as the fail-fast one whenever both are given.
  */
 function contractBreak({ validate, isValid }: Compiled, value: unknown): string | undefined {
-  const verdict = outcome(() => validate(value, true).length === 0);
   const full = observed(() => validate(value, false).length === 0);
   const fast = observed(() => isValid(value));
-  if (typeof verdict === 'boolean' && fast.outcome !== verdict) return `full ${verdict}, fast ${fast.outcome}`;
-  if (typeof verdict !== 'boolean' && fast.outcome === true) return 'full throws, fast true';
-  if (fast.outcome === true && !within(full.reads, fast.reads)) return 'fast true reads less';
-  if (fast.outcome !== true && !within(fast.reads, full.reads)) return 'fast not true reads more';
+  const allErrors = outcome(() => validate(value, true).length === 0);
+  if (typeof full.outcome === 'boolean' && fast.outcome !== full.outcome) return `full ${full.outcome}, fast ${fast.outcome}`;
+  if (typeof full.outcome !== 'boolean' && fast.outcome === true) return 'full throws, fast true';
+  if (typeof allErrors === 'boolean' && typeof fast.outcome === 'boolean' && allErrors !== fast.outcome) return `full with all errors ${allErrors}, fast ${fast.outcome}`;
+  if (typeof full.outcome !== 'boolean' || typeof fast.outcome !== 'boolean') return undefined;
+  if (fast.outcome && !within(full.reads, fast.reads)) return 'fast true reads less';
+  if (!fast.outcome && !within(fast.reads, full.reads)) return 'fast false reads more';
   return undefined;
 }
 
@@ -570,7 +575,7 @@ function randomSchema(random: () => number, depth: number, own: boolean): Record
   const child = (): Record<string, unknown> => randomSchema(random, depth + 1, false);
   const same = (): Record<string, unknown> => randomSchema(random, depth + 1, own);
   const leaves = ['string', 'integer', 'number', 'boolean', 'enum', 'const', 'format', 'date', 'instance', 'ref'];
-  const kinds = depth < 2 ? [...leaves, 'array', 'tuple', 'object', 'object', 'object', 'oneOf', 'anyOf', 'not', 'tagged', 'constTagged'] : leaves;
+  const kinds = depth < 2 ? [...leaves, 'array', 'tuple', 'object', 'object', 'object', 'oneOf', 'anyOf', 'not', 'tagged', 'countUnion'] : leaves;
   switch (pick(random, kinds)) {
     case 'string': return random() < 0.5 ? { type: 'string' } : { type: 'string', minLength: 1, maxLength: 2 };
     case 'integer': return { type: 'integer', ...(random() < 0.5 ? { minimum: 0 } : {}) };
@@ -598,9 +603,10 @@ function randomSchema(random: () => number, depth: number, own: boolean): Record
       });
       return { oneOf: [branch('p', 'b'), branch('q', 'c')], discriminator: { propertyName: 'kind' } };
     }
-    case 'constTagged': {
-      // A union with no discriminator whose branches each require `t` and hold it to one value of their own, or a near
-      // miss: `t` not required in one branch, two branches with one value, an enum of two, or a branch that is no object.
+    case 'countUnion': {
+      // A union with no discriminator, which the fast check writes as branch calls: each branch fails early in its own
+      // check, and the union must still read what the full validator's branches read (spec 7.3). The branches hold `t`
+      // to a value of their own, or nearly: `t` not required, one value twice, an enum of two, or a branch that is no object.
       const miss = pick(random, ['none', 'none', 'optional', 'duplicate', 'enum', 'nonObject']);
       const branch = (tag: string, own: string, last: boolean): Record<string, unknown> => ({
         type: 'object',
@@ -628,7 +634,6 @@ function randomSchema(random: () => number, depth: number, own: boolean): Record
   }
 }
 
-/** A value made for `schema`, often valid: each required, dependent and some optional keys get a value of their schema. */
 /** `value` with a key that only another branch declares, with a value that branch accepts, now and then behind a getter. */
 function withForeignKey(value: Record<string, unknown>, [key, schema]: readonly [string, unknown], random: () => number): Record<string, unknown> {
   const result = isPlainRecord(schema) ? { ...value, [key]: valueFor(schema, random) } : value;
@@ -644,6 +649,7 @@ function withHiddenKey(value: Record<string, unknown>, key: string, random: () =
   return Object.defineProperties(Object.create(Object.defineProperties({}, { [key]: own })), rest);
 }
 
+/** A value made for `schema`, often valid: each required, dependent and some optional keys get a value of their schema. */
 function valueFor(schema: Record<string, unknown>, random: () => number): unknown {
   if (typeof schema.$ref === 'string') return valueFor(SHARED[schema.$ref], random);
   if (Array.isArray(schema.enum)) return copy(pick(random, schema.enum));
