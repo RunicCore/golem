@@ -31,7 +31,8 @@ export interface Toggles {
   /**
    * `read` switches on the plain tag read; `merged` reads the declared keys of every branch in one `Object.keys` pass,
    * then switches on the captured tag and tests that branch's values, with each key only another branch declares absent
-   * (exact, no `propertyIsEnumerable`).
+   * (no `propertyIsEnumerable`). Its verdict is exact, but its reads do not follow spec 7.3: it reads values in the pass
+   * and returns inside the key loop, where the emitted pass only marks keys.
    */
   readonly tag: 'read' | 'merged';
   /**
