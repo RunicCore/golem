@@ -408,12 +408,18 @@ const FULL_VALIDATOR: WriterMode = {
   presence: objectPresence,
   form: full => full,
   // Reads the declared keys; the checks after it loop over the key list for unknown keys and patterns.
-  keyTest: (writer, { value, captured, reads }) => {
+  keyTest: (writer, { check, value, captured, reads }) => {
     const presence = objectPresence(writer.state, value, captured);
     for (const line of presence.setup) writer.line(line);
     const keys = writer.fresh('keys');
     if (reads.all) writer.line(`const ${keys} = ${writer.state.localHelper('definedKeys')}(${value});`);
-    return { presence, count: `${keys}.length`, ...(reads.all ? { keys } : {}) };
+    if (check.minProperties === undefined && check.maxProperties === undefined) return { presence, count: `${keys}.length`, ...(reads.all ? { keys } : {}) };
+    // The program state of a model instance does not count.
+    const count = writer.fresh('count');
+    const key = writer.fresh('key');
+    writer.line(`let ${count} = 0;`);
+    writer.line(`for (const ${key} of ${keys}) if (!${writer.state.localHelper('isInstanceState')}(${value}, ${key})) ${count}++;`);
+    return { presence, count, keys };
   },
   call: (writer, id, args) => {
     const target = writer.target(id);
@@ -482,7 +488,7 @@ function fastKeyTest(writer: FunctionWriter, { check, value, captured, reads }: 
   writer.open('default:');
   writer.line(`const ${item} = ${value}[${key}];`);
   writer.line(`if (${item} === undefined) continue;`);
-  if (count !== undefined) writer.line(`${count}++;`);
+  if (count !== undefined) writer.line(`if (!${writer.state.localHelper('isInstanceState')}(${value}, ${key})) ${count}++;`);
   unnamed.forEach(([name, local], position) => writer.line(`${position === 0 ? '' : 'else '}if (${key} === ${literal(name)}) ${local} = ${item};`));
   if (unknown !== undefined) {
     const patterns = check.patternProperties.map(entry => `${patternExpression(writer.state, entry.pattern)}.test(${key})`);
@@ -984,8 +990,9 @@ class FunctionWriter {
       const skipped = [...(known === undefined ? [] : [`${known}.has(${key})`]), ...patterns.map(({ expression }) => `${expression}.test(${key})`)];
       this.open(`for (const ${key} of ${keys})`);
       if (skipped.length > 0) this.line(`if (${skipped.join(' || ')}) continue;`);
+      // A key that the instance's own model does not declare is program state: no unknown key, no value to judge.
+      this.line(`if (${this.state.localHelper('isInstanceState')}(${value}, ${key})) continue;`);
       if (additional.kind === 'forbid') {
-        this.line(`if (${this.state.localHelper('isInstanceState')}(${value}, ${key})) continue;`);
         this.issue(`code: 'unknownKey', key: ${key}`, `[...${PATH}, ${key}]`);
       } else {
         const schema = additional.schema;
@@ -1020,6 +1027,7 @@ class FunctionWriter {
         this.line(`const ${held} = ${value}[${key}];`);
         this.line(`if (${held} === undefined) continue;`);
       }
+      this.line(`if (${this.state.localHelper('isInstanceState')}(${value}, ${key})) continue;`);
       for (const { entry, expression } of patternsToRun) {
         this.open(`if (${expression}.test(${key}))`);
         this.mark(record => `${record}.keys.add(${key});`);

@@ -25,6 +25,9 @@ registerGeneratedModel(Kid, { fields: ['title', 'done', 'mode'] });
 // A dynamic-map model: every own key is data.
 class Bag { title = 't'; }
 registerGeneratedModel(Bag, { fields: ['title'], additionalProperties: true });
+// A declared key that a pattern of patternProperties matches.
+class Pat { title = 't'; xdeclared?: string; }
+registerGeneratedModel(Pat, { fields: ['title', 'xdeclared'] });
 class Circle { kind = 'a'; x = 1; }
 registerGeneratedModel(Circle, { fields: ['kind', 'x'] });
 class Reach { kind = 'a'; x = 1; y?: number; }
@@ -41,7 +44,14 @@ const branch = (tag: string, key: string): object => ({ type: 'object', required
 const TAGGED = { oneOf: [branch('a', 'x'), branch('b', 'y')], discriminator: { propertyName: 'kind' } };
 // An open model that lists its names, as golem-openapi writes `unevaluatedProperties: false` over an open base.
 const NAMED = { type: 'object', properties: { title: { type: 'string' } }, propertyNames: { enum: ['title'] } };
-const compiled = compileValidatorModule({ roots: { closed: CLOSED, evaluated: EVALUATED, tagged: TAGGED, named: NAMED }, fastPath: true });
+const COUNTED_MAX = { type: 'object', properties: { title: { type: 'string' } }, maxProperties: 1 };
+const COUNTED_MIN = { type: 'object', properties: { title: { type: 'string' }, note: { type: 'string' } }, minProperties: 2 };
+const PATTERNED = { type: 'object', properties: { title: { type: 'string' } }, patternProperties: { '^x': { type: 'number' } } };
+const VALUED = { type: 'object', properties: { title: { type: 'string' } }, additionalProperties: { type: 'number' } };
+const compiled = compileValidatorModule({
+  roots: { closed: CLOSED, evaluated: EVALUATED, tagged: TAGGED, named: NAMED, countedMax: COUNTED_MAX, countedMin: COUNTED_MIN, patterned: PATTERNED, valued: VALUED },
+  fastPath: true,
+});
 
 // The places that report "this key is not allowed": the key test, unevaluatedProperties, propertyNames and the tagged-union pass.
 const PLACES: readonly { readonly root: string; readonly fast: boolean; readonly rows: readonly (readonly [name: string, value: unknown, valid: boolean])[] }[] = [
@@ -63,6 +73,27 @@ const PLACES: readonly { readonly root: string; readonly fast: boolean; readonly
     ['a plain value with a name outside the list', { title: 'a', cache: 1 }, false],
     ['a model instance with own state', instance(Task, { cache: 1 }), true],
     ['a model instance with a declared key outside the list', instance(Wide, { note: 'n' }), false],
+  ] },
+  { root: 'countedMax', fast: true, rows: [
+    ['a plain value over the limit', { title: 'a', cache: 1 }, false],
+    ['a model instance whose own state would pass the limit', instance(Task, { cache: 1 }), true],
+  ] },
+  { root: 'countedMin', fast: true, rows: [
+    ['a plain value that reaches the minimum', { title: 'a', cache: 1 }, true],
+    ['a model instance whose own state would reach the minimum', instance(Wide, { cache: 1 }), false],
+    ['a model instance whose declared keys reach the minimum', instance(Wide, { note: 'n' }), true],
+  ] },
+  { root: 'patterned', fast: true, rows: [
+    ['a plain value with a wrong value at a pattern key', { title: 'a', xcache: 'text' }, false],
+    ['a model instance with own state at a pattern key', instance(Task, { xcache: 'text' }), true],
+    ['a model instance with a declared pattern key and a wrong value', instance(Pat, { xdeclared: 'text' }), false],
+  ] },
+  { root: 'valued', fast: true, rows: [
+    ['a plain value with a wrong extra value', { title: 'a', cache: 'text' }, false],
+    ['a model instance with own state of another type', instance(Task, { cache: 'text' }), true],
+    ['a model instance with a declared key that only the extra schema judges', instance(Wide, { note: 'n' }), false],
+    ['a dynamic-map instance with a wrong extra value', instance(Bag, { cache: 'text' }), false],
+    ['a dynamic-map instance with a right extra value', instance(Bag, { cache: 1 }), true],
   ] },
   { root: 'tagged', fast: true, rows: [
     ['a plain value with a key that another branch declares', { kind: 'a', x: 1, y: 1 }, false],
@@ -91,13 +122,13 @@ async function buildState(t: TestContext, mobx: boolean) {
   await buildModelProject(root);
   const models = await import(`${pathToFileURL(path.join(root, 'build/state.model.js')).href}?mobx=${mobx}`);
   const codec = (name: string) => requireObjectCodec(generatedCodecIdFromRoot(root, name));
-  return { Task: models.Task as new (values?: object) => object, Board: models.Board as new (values?: object) => object, task: codec('TTask'), small: codec('TSmall'), board: codec('TBoard'), Bag: models.Bag as new (values?: object) => object, bag: codec('TBag') };
+  return { Task: models.Task as new (values?: object) => object, Board: models.Board as new (values?: object) => object, task: codec('TTask'), small: codec('TSmall'), board: codec('TBoard'), Bag: models.Bag as new (values?: object) => object, bag: codec('TBag'), Tally: models.Tally as new (values?: object) => object, tally: codec('TTally') };
 }
 
 for (const mobx of [false, true]) {
   test(`codec checks and encode keep the own state of a model class (mobx ${mobx})`, async (t) => {
     // protects: bug T-148 validate, assert, toWireFormat and stringify of a class with own state; a dynamic-map model keeps its keys
-    const { Task: Model, Board, task, small, board, Bag, bag } = await buildState(t, mobx);
+    const { Task: Model, Board, task, small, board, Bag, bag, Tally, tally } = await buildState(t, mobx);
     const value = new Model({ title: 'a', done: true });
     assert.equal(task.validate(value), true);
     assert.equal(task.assert(value), value);
@@ -116,5 +147,7 @@ for (const mobx of [false, true]) {
     assert.equal(bag.validate(map), true);
     assert.equal(bag.stringify(map), '{"id":"a","extra":1}', 'a dynamic-map model writes its extra keys as data');
     assert.deepEqual(bag.toWireFormat(map), { id: 'a', extra: 1 });
+    assert.equal(tally.validate(Object.assign(new Tally({ id: 'a' }), { n: 'x' })), true);
+    assert.equal(tally.validate(Object.assign(new Tally({ id: 'a' }), { n: 1 })), false, 'an extra key of a dynamic map is data, judged by the map');
   });
 }

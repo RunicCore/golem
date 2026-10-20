@@ -3,6 +3,7 @@ import path from 'node:path';
 import test from 'node:test';
 import { pathToFileURL } from 'node:url';
 
+import { LibError } from '@exprtlabs/golem/errors';
 import { requireObjectCodec } from '@exprtlabs/golem/serde';
 
 import { createFixtureProject } from '../fixture-project.js';
@@ -64,6 +65,8 @@ test('the own state of an SDK model instance is no unknown key; a declared key s
   const withState = Object.assign(new Derived({ name: 'n', mode: 'm' }), state);
   assert.equal(derived.validate(withState), true);
   assert.deepEqual(derived.toWireFormat(withState), { name: 'n', mode: 'm' });
+  assert.equal(derived.stringify(withState), '{"name":"n","mode":"m"}', 'the composed root writes its declared fields only');
+  assert.throws(() => derived.stringify({ name: 'n', cache: 1 }), (error: unknown) => error instanceof LibError, 'a plain value with an extra key is judged as input');
 
   const bag = requireObjectCodec(generatedCodecIdFromRoot(output, 'Bag'));
   const map = Object.assign(new Bag({ id: 'a' }), { extra: 'x' });

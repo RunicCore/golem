@@ -1658,6 +1658,8 @@ export function emitSource(
       `  codecId: ${JSON.stringify(schemaGraph.nodeFor(definition, specification.name)?.codecId ?? specification.name)},`,
       `  profile: { validation: ${(specification.validation ?? profile.validation) ? 'true' : 'false'}, mobx: ${profile.mobx ? 'true' : 'false'} },`,
       ...(observesValidator(specification) ? ['  enhanceValidator: enhanceValidatorWithMobX,'] : []),
+      // A model with a dynamic map has no program state: the keys outside its fields are data.
+      ...(definition.kind === 'object' && definition.additionalProperties ? ['  additionalProperties: true,'] : []),
       '});',
       '',
       `registerIModelClass(${JSON.stringify(
