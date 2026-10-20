@@ -30,6 +30,7 @@ import {
   findCodecIdForConstructor,
   requireObjectCodec,
   untransformedCallError,
+  type AllowGetterOptions,
   type ObjectCodec,
   type ValidateOptions,
 } from './object-codec.js';
@@ -461,7 +462,7 @@ function requireObjectCodecForConstructor(constructor: Function): ObjectCodec {
  * Type predicate for a named interned IObject or IModel.
  * The build-time rewrite replaces the call with the generated codec. An unrewritten call throws.
  */
-export function validate<T>(_value: unknown, _options?: ValidateOptions): _value is T {
+export function validate<T>(_value: unknown, _options?: ValidateOptions & AllowGetterOptions): _value is T {
   throw untransformedCallError('validate');
 }
 

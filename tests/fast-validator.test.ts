@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
+import { registerGeneratedModel } from '@exprtlabs/golem/model';
 import { MODEL_CODEC_IDS_KEY } from '@exprtlabs/golem/schema';
 import type { Validator } from '@exprtlabs/golem/validation-runtime';
 import { compile } from '@exprtlabs/golem/validator-compiler';
@@ -20,6 +21,14 @@ function modelClass(...ids: string[]): new () => object {
   Object.defineProperty(model.prototype, MODEL_CODEC_IDS, { value: ids });
   return model;
 }
+
+/** A model that declares every key the generated schemas name; any other own key of its instances is program state. */
+class Stateful {}
+registerGeneratedModel(Stateful as new () => Record<string, unknown>, { fields: ['a', 'b', 'c', 'd', 'kind', 't', 'sku', 'qty', 'id', 'value', 'children', 'r', 'side'] });
+
+/** A model that declares only some of those keys: a schema key outside its list is program state of its instances. */
+class Narrow {}
+registerGeneratedModel(Narrow as new () => Record<string, unknown>, { fields: ['a', 'kind', 't', 'id'] });
 
 const Cat = modelClass('Cat');
 const Dog = modelClass('Dog');
@@ -197,6 +206,8 @@ function oddValues(sample: unknown, seed: number, count: number): readonly unkno
       changeArray(place, random);
       return value;
     }
+    // Now and then the object is a model instance, so a key that the change adds may be program state.
+    if (random() < 0.25) Object.setPrototypeOf(place, (random() < 0.5 ? Stateful : Narrow).prototype);
     const wrapped = changeObject(place, random);
     return wrapped !== undefined && place === value ? wrapped : value;
   });

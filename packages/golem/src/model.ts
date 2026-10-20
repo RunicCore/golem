@@ -6,6 +6,7 @@
  * themselves through the interfaces below.
  */
 
+import { MODEL_FIELDS_KEY } from './schema-keywords.js';
 import type { TSerdeWire } from './tags.js';
 import type { ModelValidator } from './validation.js';
 import type { Validator } from './validation-runtime.js';
@@ -327,10 +328,12 @@ export function registerGeneratedModel<Model extends object, Wire = unknown>(
   // Normal property inheritance then makes handwritten subclasses resolve the
   // nearest generated contract without a constructor-chain registry walk.
   const prototype = constructor.prototype;
+  const fieldsKey = Symbol.for(MODEL_FIELDS_KEY);
   const targets = [
     [constructor, generatedModelDefinition],
     [prototype, generatedModelDefinition],
     [prototype, generatedModelMarker],
+    [prototype, fieldsKey],
   ] as const;
   for (const [target, key] of targets) {
     const current = Object.getOwnPropertyDescriptor(target, key);
@@ -354,6 +357,14 @@ export function registerGeneratedModel<Model extends object, Wire = unknown>(
     });
     Object.defineProperty(prototype, generatedModelMarker, {
       value: conversion !== undefined,
+      configurable: true,
+      enumerable: false,
+      writable: false,
+    });
+    // The declared names, so a key outside them is program state of an instance (`isInstanceState`); a model that
+    // allows additional keys has none.
+    Object.defineProperty(prototype, fieldsKey, {
+      value: definition.additionalProperties ? null : Object.freeze([...registered.fields]),
       configurable: true,
       enumerable: false,
       writable: false,

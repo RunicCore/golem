@@ -1,3 +1,5 @@
+import { MODEL_FIELDS_KEY } from './schema-keywords.js';
+
 /**
  * The JSON view of a field, as `JSON.stringify` writes it: a field is present when it is an own enumerable property
  * whose value is not `undefined`. Every read that judges input uses this one rule: the runtime calls `presentValue`,
@@ -13,6 +15,42 @@ export function presentValue(value: object, key: string): unknown {
 /** Source text of `presentValue`: `object` and `key` are expressions, and `read` reads the field from `object`. */
 export function presentValueSource(object: string, key: string, read: string): string {
   return `Object.prototype.propertyIsEnumerable.call(${object}, ${key}) ? ${read} : undefined`;
+}
+
+const fieldsKey = Symbol.for(MODEL_FIELDS_KEY);
+
+/**
+ * The names that the own model of a golem model instance declares, or `undefined` when the value holds no program
+ * state. `instanceFieldsSource` is the same walk as source text for the generated validators.
+ */
+export function instanceFields(value: object): readonly string[] | undefined {
+  let prototype = Object.getPrototypeOf(value);
+  if (prototype === Object.prototype) return undefined;
+  for (; prototype !== null; prototype = Object.getPrototypeOf(prototype)) {
+    if (Object.prototype.hasOwnProperty.call(prototype, fieldsKey)) return prototype[fieldsKey] ?? undefined;
+  }
+  return undefined;
+}
+
+/**
+ * Source text of `instanceFields(value)`: the names that the own model of a golem model instance declares, or
+ * `undefined` when the value holds no program state. The nearest prototype that owns a field entry decides, also when
+ * the entry is `null` (a model that allows additional keys has no program state). A plain value, or a model of an older
+ * runtime, has no entry. An own key outside the names is program state, never an unknown key. A loop reads the names
+ * once for the object; the failure places ask `isInstanceState(value, key)` once for a key.
+ */
+export function instanceFieldsSource(): string {
+  return [
+    `const fieldsKey = /*#__PURE__*/ Symbol.for(${JSON.stringify(MODEL_FIELDS_KEY)});`,
+    'function instanceFields(value) {',
+    '  let prototype = Object.getPrototypeOf(value);',
+    '  if (prototype === Object.prototype) return undefined;',
+    '  for (; prototype !== null; prototype = Object.getPrototypeOf(prototype)) {',
+    '    if (Object.prototype.hasOwnProperty.call(prototype, fieldsKey)) return prototype[fieldsKey] ?? undefined;',
+    '  }',
+    '  return undefined;',
+    '}',
+  ].join('\n');
 }
 
 /**

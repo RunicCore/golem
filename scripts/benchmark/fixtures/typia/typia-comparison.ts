@@ -250,15 +250,17 @@ export function createSubjects(twins: MobxTwins): readonly Subject[] {
 
 /**
  * golem `validate`, typia `is` and typia `equals` on each subject's probes. A valid value passes all three; a value
- * with a wrong field fails all three; an unknown property fails golem and `equals` and passes `is`. This also answers
+ * with a wrong field fails all three; an unknown property fails golem and `equals` and passes `is`, except on a class
+ * instance, where golem takes it as program state and accepts it. This also answers
  * whether typia `equals` accepts a class instance of plain fields (the `valid` row of each twin).
  */
 export function agreements(subjects: readonly Subject[]): Agreement[] {
   const rows: Agreement[] = [];
   for (const subject of subjects) {
     const codec = requireObjectCodec<object>(subject.codecId);
+    // The unknown key of a class instance is program state, which golem accepts.
     const probes = [['valid', subject.valid, [true, true, true]], ['early', subject.early, [false, false, false]],
-      ['late', subject.late, [false, false, false]], ['extra', subject.extra, [false, true, false]]] as const;
+      ['late', subject.late, [false, false, false]], ['extra', subject.extra, [subject.twin !== 'plain', true, false]]] as const;
     for (const [probe, value, expected] of probes) {
       const golem = codec.validate(value);
       const typiaIs = subject.is(value);
@@ -336,12 +338,18 @@ function casesOf<T extends { id: number }>(spec: ModelSpec<T>): CompareCase[] {
   ];
 }
 
-/** The twins' valid-value cases and the failing-value cases of every subject: golem `validate` against typia. */
+/** The twins' valid-value cases and the failing-value cases of every subject: golem `validate` against typia, and the IModel flat encode. */
 function subjectCases(subject: Subject): CompareCase[] {
   const codec = requireObjectCodec<object>(subject.codecId);
   const entry = (task: CompareTask, side: string, run: () => unknown): CompareCase => ({ model: subject.model, twin: subject.twin, task, side, run });
   const { valid, early, late } = subject;
   return [
+    // New in the instance-state change, so the base commit has no value for these two rows: the encode of an IModel instance
+    // with its fields only and with program state (the unknown key of `extra`).
+    ...(subject.twin === 'imodel' && subject.model === 'flat' ? [
+      entry('encode', 'golem toWireFormat', () => codec.toWireFormat(valid)),
+      entry('encode', 'golem toWireFormat, program state', () => codec.toWireFormat(subject.extra)),
+    ] : []),
     ...(subject.twin === 'plain' ? [] : [
       entry('validate', 'golem validate', () => codec.validate(valid)),
       entry('validate', 'typia is', () => subject.is(valid)),

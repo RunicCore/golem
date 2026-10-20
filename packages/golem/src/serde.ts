@@ -9,7 +9,7 @@
  */
 
 import type { WireFormat } from './model.js';
-import { untransformedCallError, type SerdeOptions, type ValidateOptions } from './object-codec.js';
+import { untransformedCallError, type AllowGetterOptions, type SerdeOptions, type ValidateOptions } from './object-codec.js';
 
 export {
   assertModelValue,
@@ -37,7 +37,7 @@ export {
   validationFailure,
   validationUnavailable,
 } from './object-codec.js';
-export type { ObjectCodec, ObjectCodecImpl, SerdeOptions, ValidateOptions, ValidationPlane } from './object-codec.js';
+export type { AllowGetterOptions, ObjectCodec, ObjectCodecImpl, SerdeOptions, ValidateOptions, ValidationPlane } from './object-codec.js';
 export type { WireFormat } from './model.js';
 export { IssueRepresentation, IssueSource } from './errors.js';
 
@@ -45,7 +45,7 @@ function untransformed(name: string): never {
   throw untransformedCallError(name);
 }
 
-export function stringify<T>(_value: T, _options?: SerdeOptions): string {
+export function stringify<T>(_value: T, _options?: SerdeOptions & AllowGetterOptions): string {
   untransformed('stringify');
 }
 
@@ -53,11 +53,11 @@ export function parse<T>(_text: string, _options?: SerdeOptions): T {
   untransformed('parse');
 }
 
-export function assertValue<T>(_value: unknown, _options?: ValidateOptions): T {
+export function assertValue<T>(_value: unknown, _options?: ValidateOptions & AllowGetterOptions): T {
   untransformed('assertValue');
 }
 
-export function toWireFormat<T>(_value: T, _options?: SerdeOptions): WireFormat<T> {
+export function toWireFormat<T>(_value: T, _options?: SerdeOptions & AllowGetterOptions): WireFormat<T> {
   untransformed('toWireFormat');
 }
 

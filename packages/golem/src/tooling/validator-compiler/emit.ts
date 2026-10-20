@@ -1,7 +1,7 @@
 import type { IrArray, IrCheck, IrDiscriminator, IrFunction, IrInstance, IrModule, IrNumber, IrObject, IrPatternProperty, IrSchema, IrString, IrType, IrTypeName, IrUnion, IrValidation, IrValidationImport } from './ir.js';
 
 import { MODEL_CODEC_IDS_KEY } from '../../schema-keywords.js';
-import { presentKeysSource, presentValueSource } from '../../presence.js';
+import { instanceFieldsSource, presentKeysSource, presentValueSource } from '../../presence.js';
 
 export interface EmitOptions {
   /** The module specifier the generated file imports its runtime helpers from. */
@@ -19,7 +19,7 @@ export interface EmitResult {
 }
 
 type RuntimeHelper = 'checkFormat' | 'codePointLength' | 'formatTest' | 'jsonEqual';
-type LocalHelper = 'isPresent' | 'definedKeys' | 'isObject' | 'isMultipleOf' | 'hashedId' | 'selectedModel' | 'modelOf' | 'newEvaluation' | 'mergeEvaluation' | 'leafPasses';
+type LocalHelper = 'isPresent' | 'definedKeys' | 'isObject' | 'instanceFields' | 'isInstanceState' | 'isMultipleOf' | 'hashedId' | 'selectedModel' | 'modelOf' | 'newEvaluation' | 'mergeEvaluation' | 'leafPasses';
 
 // Parameters of every generated function: the value, the path stack, the issue list and the all-errors flag,
 // then, for a function that receives an evaluation record (see `IrFunction`), the caller's record. Every call and
@@ -122,6 +122,9 @@ const LOCAL_HELPERS: Readonly<Record<LocalHelper, string>> = {
   definedKeys: 'const definedKeys = value => Object.keys(value).filter(key => value[key] !== undefined);',
   isPresent: 'const isPresent = (value, key) => Object.prototype.propertyIsEnumerable.call(value, key) && value[key] !== undefined;',
   isObject: "const isObject = value => typeof value === 'object' && value !== null && !Array.isArray(value);",
+  // An own key that the value's own model does not declare is program state, never an unknown key (see `instanceFieldsSource`).
+  instanceFields: instanceFieldsSource(),
+  isInstanceState: 'function isInstanceState(value, key) { const fields = instanceFields(value); return fields !== undefined && !fields.includes(key); }',
   // The quotient of two doubles is off by rounding (0.3 / 0.1), so a quotient within a few ulps of a non-zero
   // whole number counts. An infinite quotient falls back to the exact remainder.
   isMultipleOf: [
@@ -190,10 +193,26 @@ const LOCAL_HELPERS: Readonly<Record<LocalHelper, string>> = {
   ].join('\n'),
 };
 
+/** True when `key` is program state of the instance whose `instanceFields` is the local `fields`. */
+function stateTest(fields: string, key: string): string {
+  return `${fields} !== undefined && !${fields}.includes(${key})`;
+}
+
+/**
+ * True when `key` is program state, with `fields` read on first use: a local declared with `let`, `undefined` until a
+ * key needs it, then the names or `false` for a value without program state. The lookup runs once for the object, also
+ * for a plain value. A value whose keys the schema all names never reads them, so a failing check of a model instance
+ * does not walk its prototypes.
+ */
+function lazyStateTest(fields: string, value: string, key: string, instanceFields: string): string {
+  return `(${fields} === undefined ? (${fields} = ${instanceFields}(${value}) ?? false) : ${fields}) !== false && !${fields}.includes(${key})`;
+}
+
 /** The helpers a helper's text uses. */
 const HELPER_NEEDS: Readonly<Partial<Record<LocalHelper, readonly LocalHelper[]>>> = {
   selectedModel: ['hashedId'],
   modelOf: ['hashedId'],
+  isInstanceState: ['instanceFields'],
 };
 
 const TYPE_TESTS: Readonly<Record<IrTypeName, (value: string) => string>> = {
@@ -406,12 +425,20 @@ const FULL_VALIDATOR: WriterMode = {
   presence: objectPresence,
   form: full => full,
   // Reads the declared keys; the checks after it loop over the key list for unknown keys and patterns.
-  keyTest: (writer, { value, captured, reads }) => {
+  keyTest: (writer, { check, value, captured, reads }) => {
     const presence = objectPresence(writer.state, value, captured);
     for (const line of presence.setup) writer.line(line);
     const keys = writer.fresh('keys');
     if (reads.all) writer.line(`const ${keys} = ${writer.state.localHelper('definedKeys')}(${value});`);
-    return { presence, count: `${keys}.length`, ...(reads.all ? { keys } : {}) };
+    if (check.minProperties === undefined && check.maxProperties === undefined) return { presence, count: `${keys}.length`, ...(reads.all ? { keys } : {}) };
+    // The program state of a model instance does not count.
+    const count = writer.fresh('count');
+    const key = writer.fresh('key');
+    const fields = writer.fresh('fields');
+    writer.line(`const ${fields} = ${writer.state.localHelper('instanceFields')}(${value});`);
+    writer.line(`let ${count} = ${keys}.length;`);
+    writer.line(`if (${fields} !== undefined) for (const ${key} of ${keys}) if (${stateTest(fields, key)}) ${count}--;`);
+    return { presence, count, keys };
   },
   call: (writer, id, args) => {
     const target = writer.target(id);
@@ -484,11 +511,19 @@ function fastKeyTest(writer: FunctionWriter, { check, value, captured, reads }: 
   unnamed.forEach(([name, local], position) => writer.line(`${position === 0 ? '' : 'else '}if (${key} === ${literal(name)}) ${local} = ${item};`));
   if (unknown !== undefined) {
     const patterns = check.patternProperties.map(entry => `${patternExpression(writer.state, entry.pattern)}.test(${key})`);
-    writer.line(patterns.length === 0 ? `${unknown} = true;` : `if (!(${patterns.join(' || ')})) ${unknown} = true;`);
+    const state = `!${writer.state.localHelper('isInstanceState')}(${value}, ${key})`;
+    writer.line(`if (${patterns.length === 0 ? state : `!(${patterns.join(' || ')}) && ${state}`}) ${unknown} = true;`);
   }
   writer.close();
   writer.close();
   writer.close();
+  if (count !== undefined) {
+    // The names that the instance's own model declares: a key outside them is program state and does not count, the
+    // full validator's rule. A plain value has no such names and runs no second pass.
+    const fields = writer.fresh('fields');
+    writer.line(`const ${fields} = ${writer.state.localHelper('instanceFields')}(${value});`);
+    writer.line(`if (${fields} !== undefined) for (const ${key} of ${list ?? `Object.keys(${value})`}) if (!${fields}.includes(${key}) && ${value}[${key}] !== undefined) ${count}--;`);
+  }
   return {
     presence,
     ...(count === undefined ? {} : { count }),
@@ -979,8 +1014,12 @@ class FunctionWriter {
       const key = this.fresh('key');
       const known = check.properties.length > 0 ? this.state.constant('known', `new Set(${JSON.stringify(check.properties.map(property => property.key))})`, JSON.stringify([...new Set(check.properties.map(property => property.key))].sort())) : undefined;
       const skipped = [...(known === undefined ? [] : [`${known}.has(${key})`]), ...patterns.map(({ expression }) => `${expression}.test(${key})`)];
+      // A key that the instance's own model does not declare is program state: no unknown key, no value to judge.
+      const fields = this.fresh('fields');
+      this.line(`let ${fields};`);
       this.open(`for (const ${key} of ${keys})`);
       if (skipped.length > 0) this.line(`if (${skipped.join(' || ')}) continue;`);
+      this.line(`if (${lazyStateTest(fields, value, key, this.state.localHelper('instanceFields'))}) continue;`);
       if (additional.kind === 'forbid') {
         this.issue(`code: 'unknownKey', key: ${key}`, `[...${PATH}, ${key}]`);
       } else {
@@ -1008,6 +1047,8 @@ class FunctionWriter {
       if (guarded) this.close();
     }
     if (patternsToRun.length > 0) {
+      const fields = this.fresh('fields');
+      this.line(`let ${fields};`);
       const key = this.fresh('key');
       this.open(`for (const ${key} of ${listed(keys)})`);
       // A key list that also holds the keys whose value is `undefined` (`undefinedToo`) is read once, and those keys are left out.
@@ -1018,6 +1059,8 @@ class FunctionWriter {
       }
       for (const { entry, expression } of patternsToRun) {
         this.open(`if (${expression}.test(${key}))`);
+        // Program state is no property to judge, and it is not evaluated.
+        this.line(`if (${lazyStateTest(fields, value, key, this.state.localHelper('instanceFields'))}) continue;`);
         this.mark(record => `${record}.keys.add(${key});`);
         if (entry.schema.kind !== 'always') {
           const schema = entry.schema;
@@ -1035,7 +1078,8 @@ class FunctionWriter {
       const key = this.fresh('key');
       this.open(`for (const ${key} of ${listed(keys)})`);
       if (undefinedToo) this.line(`if (${value}[${key}] === undefined) continue;`);
-      this.leaf({ fails: `!${this.call(check.propertyNames, { value: key, issues: '[]', all: 'false' })}`, issue: `code: 'invalidKey', key: ${key}` });
+      // A name that the instance's own model does not declare is program state, not a property name to judge.
+      this.leaf({ fails: `!${this.call(check.propertyNames, { value: key, issues: '[]', all: 'false' })} && !${this.state.localHelper('isInstanceState')}(${value}, ${key})`, issue: `code: 'invalidKey', key: ${key}` });
       this.close();
     }
   }
@@ -1050,6 +1094,8 @@ class FunctionWriter {
       this.open(`if (!${record}.allKeys)`);
       this.open(`for (const ${key} of ${this.state.localHelper('definedKeys')}(${value}))`);
       this.line(`if (${record}.keys.has(${key})) continue;`);
+      // Program state of a model instance is no unevaluated key, whether the schema forbids it or judges its value.
+      this.line(`if (${this.state.localHelper('isInstanceState')}(${value}, ${key})) continue;`);
       if (schema.kind === 'never') {
         this.issue(`code: 'unknownKey', key: ${key}`, `[...${PATH}, ${key}]`);
       } else {
@@ -1246,13 +1292,13 @@ class FunctionWriter {
       this.open(`if (${selected} === ${position})`);
       const { declared, all } = reads[position];
       const captured: (readonly [string, string])[] = [[discriminator.property, tag]];
-      const absent: string[] = [];
+      const absent: (readonly [string, string])[] = [];
       for (const [name, mark] of seen) {
         if (!all && !declared.includes(name)) continue;
         const local = this.fresh('present');
         this.line(`const ${local} = ${mark} ? ${value}[${literal(name)}] : undefined;`);
         if (named[position].has(name) || declared.includes(name)) captured.push([name, local]);
-        else absent.push(local);
+        else absent.push([name, local]);
       }
       const unknown = closed[position] && extra !== undefined ? this.fresh('unknown') : undefined;
       if (unknown !== undefined) {
@@ -1262,14 +1308,15 @@ class FunctionWriter {
         this.open(`for (const ${other} of Object.keys(${value}))`);
         this.open(`switch (${other})`);
         this.line(`${keys.map(name => `case ${literal(name)}:`).join(' ')} break;`);
-        this.line(`default: if (${value}[${other}] !== undefined) ${unknown} = true;`);
+        this.line(`default: if (${value}[${other}] !== undefined && !${this.state.localHelper('isInstanceState')}(${value}, ${other})) ${unknown} = true;`);
         this.close();
         this.close();
         this.close();
       }
       if (closed[position]) {
         if (!named[position].has(discriminator.property)) this.failWhen(`${tag} !== undefined`);
-        for (const local of absent) this.failWhen(`${local} !== undefined`);
+        // A key that the instance's own model declares is judged; any other own key is program state.
+        for (const [name, local] of absent) this.failWhen(`${local} !== undefined && !${this.state.localHelper('isInstanceState')}(${value}, ${literal(name)})`);
         if (unknown !== undefined) this.failWhen(unknown);
       }
       this.objectKeywords(object, value, { presence: objectPresence(this.state, value, captured) });

@@ -43,6 +43,6 @@ The second type argument of `IModel` controls extra properties, `any` and `unkno
 
 <<< ../../examples/models/src/metadata.model.ts#exact-and-any
 
-`exact` defaults to `true`: extra properties fail validation, including in nested plain objects. Set `exact: false` in `golem.yaml` to change the default for every model; the model option overrides it. Constructors still assign declared fields only, and extra keys added to an instance aren't serialized.
+`exact` defaults to `true`: extra properties fail validation, including in nested plain objects. The own state of a model instance is not an extra property. Set `exact: false` in `golem.yaml` to change the default for every model; the model option overrides it. Constructors still assign declared fields only, and extra keys added to an instance aren't serialized.
 
 A field typed `any` or `unknown` fails with [`RUNM1011`](/reference/diagnostics#runm1011) unless `allowAny` is `true` for the model or in `golem.yaml`. `allowAny: true` skips inferred structure and conversion for that field; explicit tags still run. `{ allowAny: false }` tightens a permissive global setting. Neither option changes which fields `toWireFormat` emits.

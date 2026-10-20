@@ -8,6 +8,7 @@ import {
   type GeneratedModelResult,
   type GeneratedModelWire,
 } from './model.js';
+import { instanceFields } from './presence.js';
 
 /**
  * Generated union conversions call this when an object's tag selects no
@@ -64,6 +65,31 @@ export function defineModelProperty(target: object, name: string, value: unknown
     configurable: true,
     writable: true,
   });
+}
+
+/**
+ * The root of a call with `allowGetter`: a copy with the root's prototype, so a model instance keeps its model. Each
+ * declared field is read once, so its getter runs once and the copy never runs a prototype getter again: a defined
+ * value is an own enumerable property, and `undefined` is an own non-enumerable one, absent in the JSON view and
+ * shadowing the prototype. Another own enumerable key keeps its defined value, except program state of a model
+ * instance, which is left out and never read. Nested values are shared. A root that is no object stays as it is.
+ */
+export function readRootFields(value: unknown, fields: readonly string[]): unknown {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return value;
+  const root = value as Record<string, unknown>;
+  const copy: object = Object.create(Object.getPrototypeOf(value));
+  for (const name of fields) {
+    const read = root[name];
+    if (read === undefined) Object.defineProperty(copy, name, { value: undefined, configurable: true, writable: true });
+    else defineModelProperty(copy, name, read);
+  }
+  const declared = instanceFields(value);
+  for (const key of Object.keys(root)) {
+    if (Object.hasOwn(copy, key) || (declared !== undefined && !declared.includes(key))) continue;
+    const read = root[key];
+    if (read !== undefined) defineModelProperty(copy, key, read);
+  }
+  return copy;
 }
 
 /** Generated synchronous conversion scope; no instance or result state is retained. */

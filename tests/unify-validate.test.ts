@@ -86,7 +86,7 @@ test('global validation true binds IObject and IModel codecs to generated valida
   const { Payload } = await import(pathToFileURL(path.join(root, 'build/payload.model.js')).href);
   const codec = requireObjectCodec(generatedCodecIdFromRoot(root, 'TPayload'));
   const model = new Payload({ title: 'ok' });
-  assert.equal(codec.validate(model), false, 'the interned schema sees handwritten extra keys');
+  assert.equal(codec.validate(model), true, 'the handwritten own state of a model instance is not an extra key');
   assert.deepEqual((await validateInstance(model)).map((issue) => issue.path), []);
   assert.equal(await getValidator(model).validate(), true);
   const invalid = new Payload({ title: 1 as never });

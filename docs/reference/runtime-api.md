@@ -75,7 +75,7 @@ function getValidator<Fields extends object, Owner extends object>(
 | --- | --- | --- |
 | `getValidator` | `(model): ModelValidator<Fields, Owner>` | Returns the same stateful validator for a model instance every time. `Fields` are the generated field types, so methods of your class are not fields. |
 | `validateInstance` | `(model, options?: ValidateOptions): Promise<readonly Issue[]>` | Returns the current issues without changing the stored state ([validation](/guide/validation)). |
-| `validate` | `<T>(value: unknown, options?: ValidateOptions): value is T` | Checks a value against a named `IObject` or `IModel` and narrows it. Needs a [build that rewrites it](/guide/install#typescript-setup). |
+| `validate` | `<T>(value: unknown, options?: ValidateOptions & AllowGetterOptions): value is T` | Checks a value against a named `IObject` or `IModel` and narrows it. Needs a [build that rewrites it](/guide/install#typescript-setup). |
 | `ModelValidator` | `class ModelValidator<Fields, Owner = Fields>` | The stateful validator; members below. |
 
 `validateInstance`, `validate` and `ModelValidator.validate` stop at the first issue unless you pass `{ failFast: false }`. An invalid value is an ordinary result. They throw `LibError` when validation can't run: the model was generated with `validation: false` (`ValidationUnavailable`), generated metadata is missing, or a converter throws.
@@ -331,18 +331,33 @@ import { fromWireFormat, parse, stringify, toWireFormat } from '@exprtlabs/golem
 | Member | Signature | Behavior |
 | --- | --- | --- |
 | `parse` | `<T>(text: string, options?: SerdeOptions): T` | JSON text to a value. Checks the JSON, runs `TSerde` decoders, checks the result. |
-| `stringify` | `<T>(value: T, options?: SerdeOptions): string` | Value to JSON text of the declared fields, with `TSerde` applied and both sides checked. |
+| `stringify` | `<T>(value: T, options?: SerdeOptions & AllowGetterOptions): string` | Value to JSON text of the declared fields, with `TSerde` applied and both sides checked. |
 | `fromWireFormat` | `<T>(wire: unknown, options?: SerdeOptions): T` | `parse` for a plain object instead of text. |
-| `toWireFormat` | `<T>(value: T, options?: SerdeOptions): WireFormat<T>` | `stringify` that returns the plain object, such as `TTaskJSON`. |
-| `assertValue` | `<T>(value: unknown, options?: ValidateOptions): T` | Checks the value and returns it unchanged, typed as `T`. Throws `LibError` `Validation` with the issues. |
+| `toWireFormat` | `<T>(value: T, options?: SerdeOptions & AllowGetterOptions): WireFormat<T>` | `stringify` that returns the plain object, such as `TTaskJSON`. |
+| `assertValue` | `<T>(value: unknown, options?: ValidateOptions & AllowGetterOptions): T` | Checks the value and returns it unchanged, typed as `T`. Throws `LibError` `Validation` with the issues. |
 
 | Option | In | Default | Effect |
 | --- | --- | --- | --- |
 | `validate` | `SerdeOptions` | `true` when generated | `false` skips the checks. `true` throws `ValidationUnavailable` if checks were not generated. |
 | `failFast` | both | `true` | `false` reports every issue. It does not skip checks. |
 | `validationContext` | both | none | Resolves validators from your own function ([validation context](#validation-context)). |
+| `allowGetter` | `AllowGetterOptions` | `false` | `true` reads declared root fields through getters and inherited values ([below](#allow-getter)). |
 
 `ValidateOptions` has `failFast` and `validationContext`. The rewrite also passes `construct` in `SerdeOptions` for a class `T`. The call order and checks per call are in [Validation during conversion](/guide/serialization#validation-during-conversion).
+
+### `allowGetter` {#allow-getter}
+
+`AllowGetterOptions` has `allowGetter?: boolean`. `stringify`, `toWireFormat`, `validate` and `assertValue` take it, and so do the same calls of an `ObjectCodec`.
+
+```ts
+stringify<TTask>(task, { allowGetter: true });
+```
+
+By default a field counts when it is an own enumerable property, as in `JSON.stringify`. With `allowGetter: true`, a declared field of the root object also counts when a getter or an inherited value supplies it.
+
+- It applies to the root value of an `IObject` or `IModel` codec. Nested values are judged as without it.
+- `parse`, `fromWireFormat`, `validateInstance` and `ModelValidator` do not take it.
+- With `allowGetter`, a field can also come from a polluted `Object.prototype`.
 
 - `JSON.stringify(model)` does not convert or validate.
 - A `Date` field decodes with ECMAScript `Date` parsing; a non-string or unparsable value throws `Deserialization` with `causedByInput: true`. Put format rules on `Format<'date-time'>` or `TValidation`.
@@ -369,7 +384,7 @@ Pass one `ModelValidationContext` to repeated serde, `validateInstance` and `Mod
 - Resolved validators are cached per context object, reference and mode. Create a new context when schemas change.
 - A validator must return an array of issues, empty when the value is valid. Any other result throws `TypeError`, and a promise throws `ValidationUnavailable` in synchronous serde calls.
 
-Types: `ObjectCodec`, `ObjectCodecImpl`, `SerdeOptions`, `ValidateOptions`, `ValidationPlane`, `WireFormat`; `IssueRepresentation` and `IssueSource` are re-exported from [`errors`](#errors).
+Types: `AllowGetterOptions`, `ObjectCodec`, `ObjectCodecImpl`, `SerdeOptions`, `ValidateOptions`, `ValidationPlane`, `WireFormat`; `IssueRepresentation` and `IssueSource` are re-exported from [`errors`](#errors).
 
 Used by generated code: `createObjectCodec`, `registerObjectCodec`, `getObjectCodec`, `requireObjectCodec`, `registerIModelClass`, `getIModelClass`, `requireIModelClass`, `findCodecIdForConstructor`, `resolveGeneratedModelSchemaRefs`, `resolveModelValidationContextValidator`, `assertModelValue`, `isValidModelValue`, `parseJson`, `serdeValidates`, `serdeFailFast`, `validationFailure`, `validationUnavailable` and the `stringifyJson*` writers.
 
