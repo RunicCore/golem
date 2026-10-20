@@ -12,6 +12,7 @@ import {
   type Issue,
 } from './errors.js';
 import { readRootFields } from './conversion.js';
+import { withoutInstanceState } from './presence.js';
 import type { SchemaIssue } from './issue-messages.js';
 import type { ModelValidationContext, WireFormat } from './model.js';
 import type { Validator } from './validation-runtime.js';
@@ -288,7 +289,7 @@ export function stringifyJsonScalar(value: unknown): string {
   if (typeof value === 'boolean') return value ? 'true' : 'false';
   if (typeof value === 'number') return String(stringifyJsonNumber(value));
   if (typeof value === 'string') return stringifyJsonString(value);
-  const encoded = JSON.stringify(value);
+  const encoded = JSON.stringify(typeof value === 'object' && !Array.isArray(value) ? withoutInstanceState(value) : value);
   return encoded === undefined ? 'null' : encoded;
 }
 

@@ -77,3 +77,15 @@ test('the own state of an SDK model instance is no unknown key; a declared key s
   assert.equal(bag.stringify(map), '{"id":"a","extra":"x"}', 'a dynamic-map model writes its extra keys as data');
   assert.deepEqual(bag.toWireFormat(map), { id: 'a', extra: 'x' });
 });
+
+test('a composed root with a member that is no object stringifies the declared fields of a model instance only', async (t) => {
+  // protects: bug T-155 the fallback of a composed root wrote every own key, program state of a model instance included
+  const output = path.join(createFixtureProject(t, 'golem-openapi-composed-state-'), 'sdk');
+  await generateMaterializedSdk(document, { output, name: 'ComposedState', profile: { mobx: false, validation: false, allowAny: false } });
+  compileGeneratedSdk(output, [], { strict: true, skipLibCheck: true, outDir: path.join(output, 'dist') });
+  const models = requireRecord(await import(pathToFileURL(path.join(output, 'dist/index.js')).href), 'generated models');
+  const Mixed = models.MixedModel as Model;
+  const stringify = models.stringifyMixed as (value: unknown) => string;
+  assert.equal(stringify(Object.assign(new Mixed({ name: 'n' }), { cache: new Map<string, string>(), hits: 3 })), '{"name":"n"}');
+  assert.equal(stringify({ name: 'n', a: 'x' }), '{"name":"n","a":"x"}', 'a plain value is written as it is');
+});
