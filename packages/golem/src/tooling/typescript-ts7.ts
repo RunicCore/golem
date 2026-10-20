@@ -30,6 +30,7 @@ import {
   sep,
 } from 'node:path';
 import * as ast from 'typescript/unstable/ast';
+import { matchStarPattern } from './star-pattern.js';
 import {
   API,
   Checker,
@@ -853,15 +854,6 @@ function importMapTarget(value: unknown): string | undefined {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
   const record = value as Record<string, unknown>;
   return importMapTarget(record.default) ?? importMapTarget(record.import);
-}
-
-function matchStarPattern(pattern: string, moduleName: string): string | undefined {
-  const star = pattern.indexOf('*');
-  if (star < 0) return moduleName === pattern ? '' : undefined;
-  const prefix = pattern.slice(0, star);
-  const suffix = pattern.slice(star + 1);
-  if (!moduleName.startsWith(prefix) || !moduleName.endsWith(suffix)) return undefined;
-  return moduleName.slice(prefix.length, moduleName.length - suffix.length);
 }
 
 function applyStar(target: string, star: string): string {

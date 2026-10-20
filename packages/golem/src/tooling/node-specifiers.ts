@@ -1,10 +1,12 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import * as ts from './typescript-ns.js';
-import { hasErrorCode, isRecord } from './generator-api.js';
+import { isRecord } from './generator-api.js';
+import { matchStarPattern } from './star-pattern.js';
+import { readManifest } from './type-analysis/package-specifier.js';
 import type { RewriteEdit } from './rewrite.js';
 
-/** Pass one object for all the files of a build: it also keys what the build reads from the disk (package roots, manifests, files), so each is read once. */
+/** Pass one object for all the files of a build: it also keys what the build reads from the disk (package roots and files), so each is read once. */
 export interface NodeSpecifierOptions {
   /** The program's compiler options: `paths` and `jsx` decide the new text. */
   readonly compilerOptions: ts.CompilerOptions;
@@ -69,16 +71,9 @@ function suffixFor(p: string, target: string, extension: string): Suffix | undef
   return undefined;
 }
 
-/** Whether `specifier` matches a key of the `paths` option: an exact key, or a key with one `*`. */
+/** Whether `specifier` matches a key of the `paths` option. */
 function matchesPaths(specifier: string, paths: unknown): boolean {
-  if (!isRecord(paths)) return false;
-  return Object.keys(paths).some((pattern) => {
-    const star = pattern.indexOf('*');
-    if (star < 0) return pattern === specifier;
-    const prefix = pattern.slice(0, star);
-    const suffix = pattern.slice(star + 1);
-    return specifier.length >= prefix.length + suffix.length && specifier.startsWith(prefix) && specifier.endsWith(suffix);
-  });
+  return isRecord(paths) && Object.keys(paths).some((pattern) => matchStarPattern(pattern, specifier) !== undefined);
 }
 
 /** The package name at the start of a bare specifier: `pkg` or `@scope/pkg`. */
@@ -87,7 +82,7 @@ function packageName(specifier: string): string {
   return specifier.startsWith('@') ? segments.slice(0, 2).join('/') : segments[0]!;
 }
 
-/** What one build learned from the disk, kept for the options object it passes to every file: a package root, a manifest, a file. */
+/** What one build learned from the disk, kept for the options object it passes to every file: a package root, a file. */
 const diskAnswers = new WeakMap<NodeSpecifierOptions, Map<string, unknown>>();
 
 function remembered<T>(options: NodeSpecifierOptions, key: string, read: () => T): T {
@@ -95,17 +90,6 @@ function remembered<T>(options: NodeSpecifierOptions, key: string, read: () => T
   if (!answers) diskAnswers.set(options, answers = new Map());
   if (!answers.has(key)) answers.set(key, read());
   return answers.get(key) as T;
-}
-
-/** The `exports` field is the only thing Node reads of a package manifest here; null when the manifest is missing or is not JSON. */
-function manifestOf(directory: string): Record<string, unknown> | null {
-  try {
-    const manifest: unknown = JSON.parse(fs.readFileSync(`${directory}/package.json`, 'utf8'));
-    return isRecord(manifest) ? manifest : null;
-  } catch (error) {
-    if (hasErrorCode(error, 'ENOENT') || error instanceof SyntaxError) return null;
-    throw error;
-  }
 }
 
 /** The package folder that Node finds for `name`: the nearest `node_modules/<name>` from the folder of the importing file upward. */
@@ -150,8 +134,9 @@ function packageSpecifier(specifier: string, file: string, options: NodeSpecifie
   if (deep === '') return undefined;
   const root = packageRoot(path.posix.dirname(file), name, options);
   if (root === undefined) return undefined;
-  const manifest = remembered(options, `manifest:${root}`, () => manifestOf(root));
-  if (manifest === null || (manifest.exports !== undefined && manifest.exports !== null)) return undefined;
+  // readManifest throws for a package.json that is not JSON: the build stops and names the file.
+  const manifest = readManifest(`${root}/package.json`);
+  if (manifest === undefined || (manifest.exports !== undefined && manifest.exports !== null)) return undefined;
   const runtime = path.posix.join(root, deep);
   if (isFile(runtime, options)) return undefined;
   if (isFile(`${runtime}.js`, options)) return `${name}${deep}.js`;
@@ -159,18 +144,38 @@ function packageSpecifier(specifier: string, file: string, options: NodeSpecifie
   return undefined;
 }
 
+const EXTENSIONLESS = ['.ts', '.tsx', '.js', '.jsx'];
+
+/**
+ * The project source that a relative specifier names when the checker gives it no module symbol: a script file (no import or
+ * export, so a side-effect import of it has no symbol). The names that TypeScript tries, in its order.
+ */
+function scriptTarget(specifier: string, file: string, options: NodeSpecifierOptions): string | undefined {
+  if (!isRelative(specifier)) return undefined;
+  const p = path.posix.resolve(path.posix.dirname(file), specifier.replace(/\/+$/, '') || specifier);
+  const names = [p, ...EXTENSIONLESS.map((extension) => `${p}${extension}`), ...EXTENSIONLESS.map((extension) => `${p}/index${extension}`)];
+  return names.find((name) => options.projectSources.has(name) && !name.endsWith('.d.ts'));
+}
+
 /** The new text of one specifier, or undefined when it stays. Never throws on a specifier that it cannot resolve. */
 function newSpecifier(literal: ts.StringLiteral, file: ts.SourceFile, checker: ts.TypeChecker, options: NodeSpecifierOptions): string | undefined {
   const specifier = literal.text;
   // A query or fragment, a URL scheme, an absolute path or a `#` import is no file path that golem knows.
   if (/[?#]/.test(specifier) || /^(?:[a-zA-Z][a-zA-Z0-9+.-]*:|\/)/.test(specifier)) return undefined;
-  const declaration = checker.getSymbolAtLocation(literal)?.declarations[0];
+  const symbol = checker.getSymbolAtLocation(literal);
+  if (!symbol) {
+    const script = scriptTarget(specifier, file.fileName, options);
+    return script && projectSourceSpecifier(specifier, file.fileName, script, options.compilerOptions);
+  }
+  const declaration = symbol.declarations[0];
   if (!declaration || !ts.isSourceFile(declaration)) return undefined;
   if (options.projectSources.has(declaration.fileName) && !declaration.isDeclarationFile) {
     return projectSourceSpecifier(specifier, file.fileName, declaration.fileName, options.compilerOptions);
   }
   return isRelative(specifier) ? undefined : packageSpecifier(specifier, file.fileName, options);
 }
+
+const DYNAMIC_IMPORT = /\bimport\s*\(/;
 
 // Characters by code, not a regex literal: emit would print U+2028 raw in one.
 const UNSAFE_IN_LITERAL = ['\\', '\n', '\r', '\u2028', '\u2029'];
@@ -194,7 +199,9 @@ function specifierLiteral(node: ts.Node): ts.StringLiteral | undefined {
 export function nodeSpecifierEdits(file: ts.SourceFile, checker: ts.TypeChecker, options: NodeSpecifierOptions): NodeSpecifierEdits {
   const edits: RewriteEdit[] = [];
   const specifiers = new Map<string, string>();
-  const visit = (node: ts.Node): undefined => {
+  // An import declaration and an `export … from` are top-level statements; only an `import(` call can sit deeper.
+  const dynamic = DYNAMIC_IMPORT.test(file.text);
+  const rewrite = (node: ts.Node): undefined => {
     const literal = specifierLiteral(node);
     if (literal) {
       const next = newSpecifier(literal, file, checker, options);
@@ -207,9 +214,9 @@ export function nodeSpecifierEdits(file: ts.SourceFile, checker: ts.TypeChecker,
         specifiers.set(literal.text, next);
       }
     }
-    ts.forEachChild(node, visit);
+    if (dynamic) ts.forEachChild(node, rewrite);
     return undefined;
   };
-  visit(file);
+  for (const statement of file.statements) rewrite(statement);
   return { edits: edits.sort((left, right) => left.start - right.start), specifiers };
 }

@@ -1,5 +1,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { nodeSpecifierEdits, type NodeSpecifierEdits } from '#golem/node-specifiers';
+import { applyRewrites } from '#golem/rewrite';
+import { projectSources } from '#golem/rewrite-scan';
+import { createProjectProgram } from '@exprtlabs/golem/type-analysis';
 import { copyFixture, fixturePath, type FixtureScope } from '../fixture-project.js';
 import { createModelProject } from '../model-project.js';
 
@@ -33,4 +37,22 @@ export function createNodeSpecifierProject(t: FixtureScope, options: { readonly 
     }
   }
   return root;
+}
+
+export interface EditedSource extends NodeSpecifierEdits {
+  /** The source after `applyRewrites`. */
+  readonly code: string;
+}
+
+/** `nodeSpecifierEdits` on every project source of the project that is not a declaration file, by path relative to the root. */
+export function editProjectSources(root: string): ReadonlyMap<string, EditedSource> {
+  using program = createProjectProgram(root, undefined, undefined, path.join(root, 'tsconfig.json')).program;
+  const checker = program.getTypeChecker();
+  const sources = projectSources(program);
+  const options = { compilerOptions: program.getCompilerOptions(), projectSources: new Set(sources.map(file => file.fileName)) };
+  return new Map(sources.filter(file => !file.isDeclarationFile).map(file => {
+    const relative = path.relative(root, file.fileName);
+    const edited = nodeSpecifierEdits(file, checker, options);
+    return [relative, { ...edited, code: applyRewrites(file.text, { edits: edited.edits, imports: [] }, relative).code }];
+  }));
 }

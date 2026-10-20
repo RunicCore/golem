@@ -1,3 +1,4 @@
+import './setup';
 import { x } from './x';
 import { dirValue } from './dir';
 import { dirValue as slashDirValue } from './dir/';
@@ -26,5 +27,5 @@ const shape: Shape = { sides: 3 };
 
 console.log([
   x, dirValue, siblingValue, tsNamedValue, id, alreadyValue, legacyValue, chain, plain, thing, folderValue, kitUtil, feature,
-  nestedThing, lazyValue, money.amount, declared.label, shape.sides, slashDirValue, exactId, debounce,
+  nestedThing, lazyValue, money.amount, declared.label, shape.sides, slashDirValue, exactId, debounce, (globalThis as { setupRan?: boolean }).setupRan,
 ].join(','));

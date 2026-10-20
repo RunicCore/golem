@@ -13,7 +13,7 @@ interface PackageManifest { readonly root: string; readonly name: string; readon
 /** Parsed package.json files, re-read when the file changes (watch mode keeps this process alive). */
 const manifests = new Map<string, { readonly mtimeMs: number; readonly name?: string; readonly exports?: unknown }>();
 
-function readManifest(filename: string): { readonly name?: string; readonly exports?: unknown } | undefined {
+export function readManifest(filename: string): { readonly name?: string; readonly exports?: unknown } | undefined {
   let mtimeMs: number;
   try { mtimeMs = fs.statSync(filename).mtimeMs; } catch { return undefined; }
   const cached = manifests.get(filename);

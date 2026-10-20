@@ -2,23 +2,11 @@
 // specifier. The fixture (tests/fixtures/node-specifiers) is a Bundler project: no `.js` on its relative imports, an alias with no
 // `baseUrl`, and fake packages with and without an `exports` map. TypeScript 6 and 7 writing the same text is the identity test's claim.
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
-import { nodeSpecifierEdits } from '#golem/node-specifiers';
-import { applyRewrites } from '#golem/rewrite';
-import { projectSources } from '#golem/rewrite-scan';
-import { createProjectProgram } from '@exprtlabs/golem/type-analysis';
 import { copyFixture, fileFixtureScope, onceShared, type FixtureScope } from './fixture-project.js';
 import { writeModelSources } from './model-project.js';
-import { createNodeSpecifierProject } from './support/node-specifiers-project.js';
-
-interface EditedFile {
-  /** Old text to new text of each changed specifier. */
-  readonly specifiers: ReadonlyMap<string, string>;
-  /** The source after `applyRewrites`. */
-  readonly code: string;
-}
+import { createNodeSpecifierProject, editProjectSources, type EditedSource } from './support/node-specifiers-project.js';
 
 const scope = fileFixtureScope();
 
@@ -30,20 +18,9 @@ function fixtureProject(t: FixtureScope, compilerOptions?: Readonly<Record<strin
   return root;
 }
 
-/** `nodeSpecifierEdits` on every project source of the project, by path relative to its root. */
-function editAll(root: string): ReadonlyMap<string, EditedFile> {
-  using program = createProjectProgram(root, undefined, undefined, path.join(root, 'tsconfig.json')).program;
-  const checker = program.getTypeChecker();
-  const options = { compilerOptions: program.getCompilerOptions(), projectSources: new Set(projectSources(program).map(file => file.fileName)) };
-  return new Map(projectSources(program).filter(file => !file.isDeclarationFile).map(file => {
-    const { edits, specifiers } = nodeSpecifierEdits(file, checker, options);
-    return [path.relative(root, file.fileName), { specifiers, code: applyRewrites(fs.readFileSync(file.fileName, 'utf8'), { edits, imports: [] }).code }];
-  }));
-}
+const fixtureRun = onceShared(async () => editProjectSources(fixtureProject(scope)));
 
-const fixtureRun = onceShared(async () => editAll(fixtureProject(scope)));
-
-async function edited(file: string): Promise<EditedFile> {
+async function edited(file: string): Promise<EditedSource> {
   const found = (await fixtureRun()).get(file);
   assert.ok(found, `${file} is a project source`);
   return found;
@@ -51,6 +28,10 @@ async function edited(file: string): Promise<EditedFile> {
 
 test('relative import without an extension gets the emitted extension', async () => {
   assert.equal((await edited('src/main.ts')).specifiers.get('./x'), './x.js');
+});
+
+test('a side-effect import of a script file, which has no module symbol, gets the emitted extension', async () => {
+  assert.equal((await edited('src/main.ts')).specifiers.get('./setup'), './setup.js');
 });
 
 test('relative folder import gets /index and the emitted extension, also with a trailing slash', async () => {
@@ -144,8 +125,8 @@ test('.mts and .cts targets get .mjs and .cjs, and a .mjs import keeps its text'
 });
 
 test('a .tsx target gets .jsx when jsx is preserve, else .js', async t => {
-  const preserved = editAll(fixtureProject(t, { jsx: 'preserve' })).get('src/edges/edges.ts');
-  const compiled = editAll(fixtureProject(t, { jsx: 'react-jsx' })).get('src/edges/edges.ts');
+  const preserved = editProjectSources(fixtureProject(t, { jsx: 'preserve' })).get('src/edges/edges.ts');
+  const compiled = editProjectSources(fixtureProject(t, { jsx: 'react-jsx' })).get('src/edges/edges.ts');
   assert.equal(preserved?.specifiers.get('./view'), './view.jsx');
   assert.equal(compiled?.specifiers.get('./view'), './view.js');
 });
@@ -156,7 +137,7 @@ test('an escaped specifier literal is replaced by its source position and keeps 
     'x.ts': 'export const x = 1;\n',
     'escaped.ts': 'import "./\\u0078";\nexport * from \'./\\x78\';\n',
   });
-  assert.equal(editAll(root).get('src/escaped.ts')?.code, 'import "./x.js";\nexport * from \'./x.js\';\n');
+  assert.equal(editProjectSources(root).get('src/escaped.ts')?.code, 'import "./x.js";\nexport * from \'./x.js\';\n');
 });
 
 test('a specifier whose new text holds the quote of its literal keeps its text', t => {
@@ -166,7 +147,7 @@ test('a specifier whose new text holds the quote of its literal keeps its text',
     'single.ts': "import './it\\'s';\n",
     'double.ts': 'import "./it\'s";\n',
   });
-  const results = editAll(root);
+  const results = editProjectSources(root);
   assert.equal(results.get('src/single.ts')?.code, "import './it\\'s';\n");
   assert.equal(results.get('src/double.ts')?.code, 'import "./it\'s.js";\n');
 });

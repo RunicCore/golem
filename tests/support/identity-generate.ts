@@ -3,12 +3,11 @@ import path from 'node:path';
 import { generate as generateControllers } from '#controllers/generator';
 import { generate as generateModels } from '#model/generator';
 import { applyRewrites } from '#golem/rewrite';
-import { projectSources, scanProject } from '#golem/rewrite-scan';
-import { nodeSpecifierEdits } from '#golem/node-specifiers';
-import { createProjectProgram } from '@exprtlabs/golem/type-analysis';
+import { scanProject } from '#golem/rewrite-scan';
 import { typescriptVersion } from '#golem/typescript-ns';
 import type { GolemDiagnostic } from '#golem/generator-api';
 import { writeGeneratedArtifacts } from '../fixture-project.js';
+import { editProjectSources } from './node-specifiers-project.js';
 import { caseFolder, DIAGNOSTICS, GENERATED, REWRITTEN, type IdentityProject } from './identity-corpus.js';
 
 function describeDiagnostic(stage: string, diagnostic: GolemDiagnostic): string {
@@ -68,20 +67,12 @@ function rewriteStage(item: IdentityProject, lines: string[]): ReadonlyMap<strin
 
 /** The text the specifier edits make of each project source of the project that they change, keyed by path relative to the root. */
 function specifierStage(item: IdentityProject, lines: string[]): ReadonlyMap<string, string> {
-  const rewritten = new Map<string, string>();
   try {
-    using program = createProjectProgram(item.root, undefined, undefined, path.join(item.root, 'tsconfig.json')).program;
-    const checker = program.getTypeChecker();
-    const sources = projectSources(program);
-    const options = { compilerOptions: program.getCompilerOptions(), projectSources: new Set(sources.map(file => file.fileName)) };
-    for (const file of sources.filter(source => !source.isDeclarationFile)) {
-      const { edits } = nodeSpecifierEdits(file, checker, options);
-      if (edits.length > 0) rewritten.set(path.relative(item.root, file.fileName), applyRewrites(file.text, { edits, imports: [] }, file.fileName).code);
-    }
+    return new Map([...editProjectSources(item.root)].filter(([, edited]) => edited.edits.length > 0).map(([relative, edited]) => [relative, edited.code]));
   } catch (error) {
     lines.push(describeError('rewrite', error));
+    return new Map();
   }
-  return rewritten;
 }
 
 function write(filename: string, content: string): void {

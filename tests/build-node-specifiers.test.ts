@@ -49,7 +49,7 @@ test('golem build emits JavaScript that Node runs as ESM from extensionless, fol
   assert.equal((await built()).result.exitCode, 0);
   assert.equal(
     await runBuilt('main.js'),
-    'x,dir,sibling+root+id,ts-named,id,already,legacy,inner,plain,thing,folder,kit,feature,nested,lazy,1,declared,3,dir,id,debounce',
+    'x,dir,sibling+root+id,ts-named,id,already,legacy,inner,plain,thing,folder,kit,feature,nested,lazy,1,declared,3,dir,id,debounce,true',
   );
 });
 
