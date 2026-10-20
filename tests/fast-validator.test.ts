@@ -43,11 +43,41 @@ function outcome(run: () => boolean): boolean | string {
   }
 }
 
-/** The values on which the fast check and the full validator disagree, with both answers. */
-function disagreements({ validate, isValid }: Compiled, values: readonly unknown[]): readonly unknown[] {
-  return values
-    .map(value => ({ value, full: outcome(() => validate(value, true).length === 0), fast: outcome(() => isValid(value)) }))
-    .filter(entry => entry.full !== entry.fast);
+/** The labels of the recording getters that ran, in order; each run of a check empties it first. */
+const READS: string[] = [];
+
+/** What a check did with a value: its outcome, and the recording getters it ran. */
+function observed(run: () => boolean): { readonly outcome: boolean | string; readonly reads: ReadonlySet<string> } {
+  READS.length = 0;
+  const result = outcome(run);
+  return { outcome: result, reads: new Set(READS) };
+}
+
+const within = (inner: ReadonlySet<string>, outer: ReadonlySet<string>): boolean => [...inner].every(label => outer.has(label));
+
+/**
+ * How the fast check breaks its contract on `value`, or undefined (spec 5.1 rule 1 and 7.3): it gives the full
+ * validator's verdict whenever the full validator gives one; it throws only where the full validator throws; when it
+ * returns true it ran every getter the full validator runs, and when it returns false no other one. The full
+ * validator's reads are those of its fail-fast run, as the codec runs it.
+ */
+function contractBreak({ validate, isValid }: Compiled, value: unknown): string | undefined {
+  const verdict = outcome(() => validate(value, true).length === 0);
+  const full = observed(() => validate(value, false).length === 0);
+  const fast = observed(() => isValid(value));
+  if (typeof verdict === 'boolean' && fast.outcome !== verdict) return `full ${verdict}, fast ${fast.outcome}`;
+  if (typeof verdict !== 'boolean' && fast.outcome === true) return 'full throws, fast true';
+  if (fast.outcome === true && !within(full.reads, fast.reads)) return 'fast true reads less';
+  if (fast.outcome !== true && !within(fast.reads, full.reads)) return 'fast not true reads more';
+  return undefined;
+}
+
+/** The values on which the fast check breaks its contract, with how. */
+function disagreements(compiled: Compiled, values: readonly unknown[]): readonly unknown[] {
+  return values.flatMap(value => {
+    const broken = contractBreak(compiled, value);
+    return broken === undefined ? [] : [{ value, broken }];
+  });
 }
 
 // A seeded generator of odd values: each value is a valid sample with one change at a random place in it.
@@ -107,7 +137,7 @@ function containers(value: unknown): readonly (Record<string, unknown> | unknown
 function changeObject(target: Record<string, unknown>, random: () => number): unknown {
   const keys = Object.keys(target);
   const key = keys.length === 0 ? 'id' : keys[Math.floor(random() * keys.length)];
-  switch (Math.floor(random() * 8)) {
+  switch (Math.floor(random() * 10)) {
     case 0: target[key] = odd(random); return undefined;
     case 1: delete target[key]; return undefined;
     case 2: target[key] = undefined; return undefined;
@@ -115,8 +145,28 @@ function changeObject(target: Record<string, unknown>, random: () => number): un
     case 4: target[`extra${Math.floor(random() * 3)}`] = random() < 0.3 ? undefined : odd(random); return undefined;
     case 5: Object.defineProperty(target, Symbol('extra'), { value: 1, enumerable: true }); return undefined;
     case 6: return new Proxy(target, {});
+    case 7: withGetter(target, key, random); return undefined;
+    case 8: withGetter(target, `extra${Math.floor(random() * 3)}`, random); return undefined;
     default: return Object.create(target);
   }
+}
+
+let getterCount = 0;
+
+/**
+ * Replaces `key` of `target` with an enumerable getter of its value (an odd one for a new key): one that records that
+ * it ran in `READS`, or one that throws. An assignment replaces the getter with a data property.
+ */
+function withGetter(target: Record<string, unknown>, key: string, random: () => number): void {
+  const descriptor = Object.getOwnPropertyDescriptor(target, key);
+  const held = descriptor !== undefined && 'value' in descriptor ? descriptor.value : odd(random);
+  const label = `${key}@${getterCount++}`;
+  Object.defineProperty(target, key, {
+    get: random() < 0.3 ? () => { throw new Error(`getter ${label}`); } : () => { READS.push(label); return held; },
+    set(this: Record<string, unknown>, item: unknown) { Object.defineProperty(this, key, { value: item, writable: true, enumerable: true, configurable: true }); },
+    enumerable: true,
+    configurable: true,
+  });
 }
 
 /** One change to an array: an item replaced, the array shortened, a hole, or an extra item. */
@@ -543,7 +593,7 @@ function randomSchema(random: () => number, depth: number, own: boolean): Record
         type: 'object',
         // The tag may be optional in a branch: the discriminator reads it from `properties` alone.
         required: random() < 0.3 ? ['a'] : ['kind', 'a'],
-        properties: { kind: { const: tag }, a: child(), [own]: child() },
+        properties: { kind: { const: tag }, a: child(), [own]: random() < 0.3 ? pick(random, [{}, true]) : child() },
         ...pick(random, [{}, { additionalProperties: false }, { additionalProperties: false }, { additionalProperties: { type: 'string' } }]),
       });
       return { oneOf: [branch('p', 'b'), branch('q', 'c')], discriminator: { propertyName: 'kind' } };
@@ -565,7 +615,8 @@ function randomSchema(random: () => number, depth: number, own: boolean): Record
       const trigger = pick(random, KEYS);
       return {
         type: 'object',
-        properties: Object.fromEntries(named.map(key => [key, child()])),
+        // Now and then a property that accepts anything, `{}` or `true`.
+        properties: Object.fromEntries(named.map(key => [key, random() < 0.2 ? pick(random, [{}, true]) : child()])),
         required: subset(random, KEYS),
         ...(random() < 0.3 ? { dependentRequired: { [trigger]: subset(random, KEYS.filter(key => key !== trigger)) } } : {}),
         ...pick(random, [{}, { additionalProperties: false }, { additionalProperties: { type: 'string' } }, { additionalProperties: child() }]),
@@ -578,9 +629,11 @@ function randomSchema(random: () => number, depth: number, own: boolean): Record
 }
 
 /** A value made for `schema`, often valid: each required, dependent and some optional keys get a value of their schema. */
-/** `value` with a key that only another branch declares, with a value that branch accepts. */
+/** `value` with a key that only another branch declares, with a value that branch accepts, now and then behind a getter. */
 function withForeignKey(value: Record<string, unknown>, [key, schema]: readonly [string, unknown], random: () => number): Record<string, unknown> {
-  return isPlainRecord(schema) ? { ...value, [key]: valueFor(schema, random) } : value;
+  const result = isPlainRecord(schema) ? { ...value, [key]: valueFor(schema, random) } : value;
+  if (random() < 0.4) withGetter(result, key, random);
+  return result;
 }
 
 /** `value` whose `key` is not in the JSON view: a non-enumerable own property, or a property of its prototype. */
@@ -647,8 +700,11 @@ test('fast check equals the full validator in both directions on generated schem
     const sample = valueFor(schema, random);
     return [sample, ...oddValues(sample, 5000 + index, 30)].map(value => ({ root: `s${index}`, value }));
   });
-  const disagreeing = cases.filter(({ root, value }) => outcome(() => module.byRoot[root](value, true).length === 0) !== outcome(() => module.fastByRoot[root](value)));
-  assert.deepEqual(disagreeing.map(({ root, value }) => ({ root, schema: schemas[Number(root.slice(1))], value })), []);
+  const disagreeing = cases.flatMap(({ root, value }) => {
+    const broken = contractBreak({ validate: module.byRoot[root], isValid: module.fastByRoot[root] }, value);
+    return broken === undefined ? [] : [{ root, schema: schemas[Number(root.slice(1))], value, broken }];
+  });
+  assert.deepEqual(disagreeing, []);
   assert.equal(Object.keys(module.fastByRoot).length, schemas.length, 'every generated schema has a fast check');
   const verdicts = new Set(cases.map(({ root, value }) => outcome(() => module.fastByRoot[root](value))));
   assert.ok(verdicts.has(true) && verdicts.has(false), 'the values hold both valid and invalid ones');
