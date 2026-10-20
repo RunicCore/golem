@@ -152,6 +152,28 @@ test('only unions tagged by required non-empty string consts use the discriminat
   assert.ok(Array.isArray(numberTagged.anyOf));
 });
 
+test('a union of references to models of this job uses the discriminator of their string tags, and an OpenAPI document maps each tag', () => {
+  const definitions = { A: taggedBranch({ kind: 'literal', value: 'a' }), B: taggedBranch({ kind: 'literal', value: 'b' }), N: taggedBranch({ kind: 'literal', value: 1 }) };
+  const union = (...variants: ModelTypeDescriptor[]): ModelTypeDescriptor => ({ kind: 'union', variants });
+  const reference = (name: string): ModelTypeDescriptor => ({ kind: 'reference', name });
+  const forms = (schema: ReturnType<typeof schemaForDescriptor>) => (typeof schema === 'object' ? { discriminator: schema.discriminator, oneOf: schema.oneOf, anyOf: schema.anyOf } : schema);
+  assert.deepEqual(forms(schemaForDescriptor(union(reference('A'), reference('B')), { definitions })), {
+    discriminator: { propertyName: 'tag' }, oneOf: [{ $ref: '#/$defs/A' }, { $ref: '#/$defs/B' }], anyOf: undefined,
+  });
+  assert.deepEqual(forms(schemaForDescriptor(union(reference('A'), reference('B')), { definitions, referencePrefix: '#/components/schemas/' })), {
+    discriminator: { propertyName: 'tag', mapping: { a: '#/components/schemas/A', b: '#/components/schemas/B' } },
+    oneOf: [{ $ref: '#/components/schemas/A' }, { $ref: '#/components/schemas/B' }],
+    anyOf: undefined,
+  });
+  // A number tag, and a generated model of another job, keep anyOf.
+  assert.deepEqual(forms(schemaForDescriptor(union(reference('A'), reference('N')), { definitions })), {
+    discriminator: undefined, oneOf: undefined, anyOf: [{ $ref: '#/$defs/A' }, { $ref: '#/$defs/N' }],
+  });
+  assert.deepEqual(forms(schemaForDescriptor(union(reference('A'), { kind: 'generated-model', id: 'other/B' }), { definitions })), {
+    discriminator: undefined, oneOf: undefined, anyOf: [{ $ref: '#/$defs/A' }, { $ref: '__exprtGeneratedModel:B' }],
+  });
+});
+
 test('an explicit tag table validates each variant against its own tag values', async () => {
   const variant = (properties: Record<string, ModelTypeDescriptor>): ModelTypeDescriptor => ({
     kind: 'object',

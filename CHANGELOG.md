@@ -148,6 +148,7 @@ See [OpenAPI client support](docs/reference/openapi-support.md) for supported ve
 
 ### Validation
 
+- **Breaking:** a union of models of the same job gets the discriminator of its inline form when each model has a required string tag with a value of its own. Its schema is `oneOf` with `discriminator`, not `anyOf`. A value with a wrong tag gets the issue of the tag (`literal` at the tag property), not `union` with `matched: 0`. A value with a known tag gets the issues of its model. The OpenAPI document that golem-ts-openapi writes gets `discriminator` with a `mapping` from each tag to the `$ref` of its model. A union with a model of another job keeps `anyOf`.
 - **Breaking:** Ajv is removed. golem validates with validators it generates, in one mode; `ajv` and `ajv-formats` are no longer peer or optional dependencies. The `@exprtlabs/golem/ajv` and `@exprtlabs/golem/ajv-tooling` subpaths, `OpenApiAjvOptions`, `createOpenApiAjvEngine`, `createOpenApiSyncAjvEngine`, `configureModelValidationEngine` and `registerModelValidationEngineFactory` are removed.
 - **Breaking:** `ajvStandalone` is removed from `golem.yaml` and `GolemProfile`; the key is now an unknown-key error.
 - `golem.yaml` gains `unknownFormats: warn | error` (default `warn`) for a schema `format` that golem does not check. golem checks `byte`, `json-pointer` and `relative-json-pointer`; Ajv also checked `uri-template`, `url`, `iso-time` and `iso-date-time`, which now report a warning and are not checked.
