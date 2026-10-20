@@ -50,13 +50,13 @@ async function edited(file: string): Promise<EditedFile> {
 }
 
 test('relative import without an extension gets the emitted extension', async () => {
-  const { specifiers, code } = await edited('src/main.ts');
-  assert.equal(specifiers.get('./x'), './x.js');
-  assert.match(code, /^import \{ x \} from '\.\/x\.js';$/m);
+  assert.equal((await edited('src/main.ts')).specifiers.get('./x'), './x.js');
 });
 
-test('relative folder import gets /index and the emitted extension', async () => {
-  assert.equal((await edited('src/main.ts')).specifiers.get('./dir'), './dir/index.js');
+test('relative folder import gets /index and the emitted extension, also with a trailing slash', async () => {
+  const { specifiers } = (await edited('src/main.ts'));
+  assert.equal(specifiers.get('./dir'), './dir/index.js');
+  assert.equal(specifiers.get('./dir/'), './dir/index.js');
 });
 
 test('a barrel import of . and .. names the index file of that folder', async () => {
@@ -69,40 +69,34 @@ test('a relative .ts import becomes the emitted .js path', async () => {
   assert.equal((await edited('src/main.ts')).specifiers.get('./ts-named.ts'), './ts-named.js');
 });
 
-test('a relative import that already ends in .js keeps its text', async () => {
-  const { specifiers, code } = await edited('src/main.ts');
-  assert.equal(specifiers.has('./already.js'), false);
-  assert.match(code, /^import \{ alreadyValue \} from '\.\/already\.js';$/m);
-});
-
-test('a relative import of a .js program source keeps its name and gets .js when it has no extension', async () => {
+test('a relative import of a .js program source gets .js when it has no extension', async () => {
   assert.equal((await edited('src/main.ts')).specifiers.get('./legacy'), './legacy.js');
 });
 
-test('a relative import of a .d.ts program source keeps its text', async () => {
-  const { specifiers, code } = await edited('src/main.ts');
-  assert.equal(specifiers.has('./decl-only'), false);
-  assert.match(code, /^import type \{ DeclOnly \} from '\.\/decl-only';$/m);
+test('a relative import that already ends in .js keeps its text', async () => {
+  assert.match((await edited('src/main.ts')).code, /^import \{ alreadyValue \} from '\.\/already\.js';$/m);
 });
 
-test('a paths alias to a .d.ts program source keeps its text', async () => {
-  const { specifiers, code } = await edited('src/main.ts');
-  assert.equal(specifiers.has('@lib/shapes'), false);
+test('a specifier whose target is a .d.ts program source or a .json file keeps its text', async () => {
+  const { code } = await edited('src/main.ts');
+  assert.match(code, /^import type \{ DeclOnly \} from '\.\/decl-only';$/m);
   assert.match(code, /^import type \{ Shape \} from '@lib\/shapes';$/m);
+  assert.match((await edited('src/edges/edges.ts')).code, /^import data from '\.\/data\.json' with \{ type: 'json' \};$/m);
 });
 
 test('export from and a dynamic import with one string literal change like an import', async () => {
-  const reexport = await edited('src/reexport.ts');
-  assert.equal(reexport.code, "export * from './x.js';\nexport { dirInner as chain } from './dir/inner.js';\n");
-  assert.match((await edited('src/main.ts')).code, /await import\('\.\/lazy\.js'\)/);
+  assert.equal((await edited('src/reexport.ts')).code, "export * from './x.js';\nexport { dirInner as chain } from './dir/inner.js';\n");
+  assert.equal((await edited('src/main.ts')).specifiers.get('./lazy'), './lazy.js');
 });
 
 test('a type-only import changes too, so an import that the rewrite adds can copy its text', async () => {
   assert.equal((await edited('src/main.ts')).specifiers.get('./types'), './types.js');
 });
 
-test('a paths alias with no baseUrl becomes the relative path to its target', async () => {
-  assert.equal((await edited('src/main.ts')).specifiers.get('@lib/ids'), './lib/ids.js');
+test('a paths alias, also a key with no *, becomes the relative path to its target', async () => {
+  const main = (await edited('src/main.ts')).specifiers;
+  assert.equal(main.get('@lib/ids'), './lib/ids.js');
+  assert.equal(main.get('@ids'), './lib/ids.js');
   assert.equal((await edited('src/sub/a.ts')).specifiers.get('@lib/ids'), '../lib/ids.js');
 });
 
@@ -116,10 +110,13 @@ test('a deep path of a scoped package gets .js', async () => {
   assert.equal((await edited('src/main.ts')).specifiers.get('@scoped/kit/deep/util'), '@scoped/kit/deep/util.js');
 });
 
+test('a deep path of a package typed by @types gets .js when the package has the runtime file', async () => {
+  assert.equal((await edited('src/main.ts')).specifiers.get('lodashy/debounce'), 'lodashy/debounce.js');
+});
+
 test('a deep path of a package with exports keeps its text, also when a nested package.json has none', async () => {
-  const { specifiers, code } = await edited('src/main.ts');
-  assert.equal(specifiers.has('guarded/feature'), false);
-  assert.equal(specifiers.has('guarded/nested/thing'), false);
+  const { code } = await edited('src/main.ts');
+  assert.match(code, /^import \{ feature \} from 'guarded\/feature';$/m);
   assert.match(code, /^import \{ nestedThing \} from 'guarded\/nested\/thing';$/m);
 });
 
@@ -140,10 +137,10 @@ test('a specifier with a # in its path keeps its text', async () => {
 });
 
 test('.mts and .cts targets get .mjs and .cjs, and a .mjs import keeps its text', async () => {
-  const { specifiers, code } = await edited('src/edges/edges.ts');
+  const { specifiers } = await edited('src/edges/edges.ts');
   assert.equal(specifiers.get('./esm.mts'), './esm.mjs');
   assert.equal(specifiers.get('./cjs.cts'), './cjs.cjs');
-  assert.match(code, /^import \{ esm \} from '\.\/esm\.mjs';$/m);
+  assert.equal(specifiers.has('./esm.mjs'), false);
 });
 
 test('a .tsx target gets .jsx when jsx is preserve, else .js', async t => {
@@ -160,4 +157,16 @@ test('an escaped specifier literal is replaced by its source position and keeps 
     'escaped.ts': 'import "./\\u0078";\nexport * from \'./\\x78\';\n',
   });
   assert.equal(editAll(root).get('src/escaped.ts')?.code, 'import "./x.js";\nexport * from \'./x.js\';\n');
+});
+
+test('a specifier whose new text holds the quote of its literal keeps its text', t => {
+  const root = createNodeSpecifierProject(t, { prefix: 'golem-node-specifiers-quote-' });
+  writeModelSources(path.join(root, 'src'), {
+    "it's.ts": 'export const quoted = 1;\n',
+    'single.ts': "import './it\\'s';\n",
+    'double.ts': 'import "./it\'s";\n',
+  });
+  const results = editAll(root);
+  assert.equal(results.get('src/single.ts')?.code, "import './it\\'s';\n");
+  assert.equal(results.get('src/double.ts')?.code, 'import "./it\'s.js";\n');
 });

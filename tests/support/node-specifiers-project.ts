@@ -3,13 +3,14 @@ import path from 'node:path';
 import { copyFixture, fixturePath, type FixtureScope } from '../fixture-project.js';
 import { createModelProject } from '../model-project.js';
 
-/** The fixture project of the Node-loadable import paths (tests/fixtures/node-specifiers): ESNext modules, Bundler resolution and an `@lib/*` alias with no `baseUrl`. */
+/** The fixture project of the Node-loadable import paths (tests/fixtures/node-specifiers): ESNext modules, Bundler resolution and the aliases `@lib/*` and `@ids` with no `baseUrl`. */
 export const NODE_SPECIFIER_COMPILER_OPTIONS = {
   target: 'ES2022',
   module: 'ESNext',
   moduleResolution: 'Bundler',
   rewriteRelativeImportExtensions: true,
-  paths: { '@lib/*': ['./src/lib/*'] },
+  resolveJsonModule: true,
+  paths: { '@lib/*': ['./src/lib/*'], '@ids': ['./src/lib/ids'] },
 } as const;
 
 /**

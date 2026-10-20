@@ -1,8 +1,10 @@
 import { x } from './x';
 import { dirValue } from './dir';
+import { dirValue as slashDirValue } from './dir/';
 import { siblingValue } from './sub/a';
 import { tsNamedValue } from './ts-named.ts';
 import { id } from '@lib/ids';
+import { id as exactId } from '@ids';
 import { alreadyValue } from './already.js';
 import { legacyValue } from './legacy';
 import { chain } from './reexport';
@@ -11,6 +13,7 @@ import type { DeclOnly } from './decl-only';
 import type { Shape } from '@lib/shapes';
 import plain from 'plain';
 import { thing } from 'plain/helpers/thing';
+import { debounce } from 'lodashy/debounce';
 import { folderValue } from 'plain/folder';
 import { kitUtil } from '@scoped/kit/deep/util';
 import { feature } from 'guarded/feature';
@@ -23,5 +26,5 @@ const shape: Shape = { sides: 3 };
 
 console.log([
   x, dirValue, siblingValue, tsNamedValue, id, alreadyValue, legacyValue, chain, plain, thing, folderValue, kitUtil, feature,
-  nestedThing, lazyValue, money.amount, declared.label, shape.sides,
+  nestedThing, lazyValue, money.amount, declared.label, shape.sides, slashDirValue, exactId, debounce,
 ].join(','));

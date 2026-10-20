@@ -4,6 +4,7 @@ import * as ts from './typescript-ns.js';
 import { hasErrorCode, isRecord } from './generator-api.js';
 import type { RewriteEdit } from './rewrite.js';
 
+/** Pass one object for all the files of a build: it also keys what the build reads from the disk (package roots, manifests, files), so each is read once. */
 export interface NodeSpecifierOptions {
   /** The program's compiler options: `paths` and `jsx` decide the new text. */
   readonly compilerOptions: ts.CompilerOptions;
@@ -86,6 +87,16 @@ function packageName(specifier: string): string {
   return specifier.startsWith('@') ? segments.slice(0, 2).join('/') : segments[0]!;
 }
 
+/** What one build learned from the disk, kept for the options object it passes to every file: a package root, a manifest, a file. */
+const diskAnswers = new WeakMap<NodeSpecifierOptions, Map<string, unknown>>();
+
+function remembered<T>(options: NodeSpecifierOptions, key: string, read: () => T): T {
+  let answers = diskAnswers.get(options);
+  if (!answers) diskAnswers.set(options, answers = new Map());
+  if (!answers.has(key)) answers.set(key, read());
+  return answers.get(key) as T;
+}
+
 /** The `exports` field is the only thing Node reads of a package manifest here; null when the manifest is missing or is not JSON. */
 function manifestOf(directory: string): Record<string, unknown> | null {
   try {
@@ -95,6 +106,19 @@ function manifestOf(directory: string): Record<string, unknown> | null {
     if (hasErrorCode(error, 'ENOENT') || error instanceof SyntaxError) return null;
     throw error;
   }
+}
+
+/** The package folder that Node finds for `name`: the nearest `node_modules/<name>` from the folder of the importing file upward. */
+function packageRoot(directory: string, name: string, options: NodeSpecifierOptions): string | undefined {
+  for (let current = directory; ; current = path.posix.dirname(current)) {
+    const candidate = path.posix.join(current, 'node_modules', name);
+    if (remembered(options, `directory:${candidate}`, () => fs.statSync(candidate, { throwIfNoEntry: false })?.isDirectory() === true)) return candidate;
+    if (path.posix.dirname(current) === current) return undefined;
+  }
+}
+
+function isFile(filename: string, options: NodeSpecifierOptions): boolean {
+  return remembered(options, `file:${filename}`, () => fs.statSync(filename, { throwIfNoEntry: false })?.isFile() === true);
 }
 
 /** The spelled path of a project source from `file`: relative, with `./` in front, and the emitted extension. */
@@ -116,25 +140,22 @@ function projectSourceSpecifier(specifier: string, file: string, target: string,
   return matchesPaths(specifier, options.paths) ? relativeSpecifier(file, target, extension) : undefined;
 }
 
-/** The new text of a deep path into a package whose manifest has no `exports`, or undefined when the specifier stays. */
-function packageSpecifier(specifier: string, target: string): string | undefined {
+/**
+ * The new text of a deep path into a package whose manifest has no `exports`, or undefined when the specifier stays. The
+ * runtime files are the package's own, where Node looks for them; the types may come from elsewhere, such as `@types/<name>`.
+ */
+function packageSpecifier(specifier: string, file: string, options: NodeSpecifierOptions): string | undefined {
   const name = packageName(specifier);
   const deep = specifier.slice(name.length).replace(/\/+$/, '');
-  if (deep === '' || !target.endsWith('.d.ts')) return undefined;
-  // Node reads `exports` from the manifest at the package root: the last node_modules/<name> segment of the path.
-  const marker = `/node_modules/${name}/`;
-  const at = target.lastIndexOf(marker);
-  if (at < 0) return undefined;
-  const root = target.slice(0, at + marker.length - 1);
-  const manifest = manifestOf(root);
+  if (deep === '') return undefined;
+  const root = packageRoot(path.posix.dirname(file), name, options);
+  if (root === undefined) return undefined;
+  const manifest = remembered(options, `manifest:${root}`, () => manifestOf(root));
   if (manifest === null || (manifest.exports !== undefined && manifest.exports !== null)) return undefined;
-  const stem = target.slice(0, -'.d.ts'.length);
-  const runtime = `${stem}.js`;
-  if (!fs.existsSync(runtime)) return undefined;
-  const p = path.posix.join(root, deep);
-  const base = `${name}${deep}`;
-  if (p === stem) return `${base}.js`;
-  if (`${p}/index` === stem) return `${base}/index.js`;
+  const runtime = path.posix.join(root, deep);
+  if (isFile(runtime, options)) return undefined;
+  if (isFile(`${runtime}.js`, options)) return `${name}${deep}.js`;
+  if (isFile(`${runtime}/index.js`, options)) return `${name}${deep}/index.js`;
   return undefined;
 }
 
@@ -148,18 +169,11 @@ function newSpecifier(literal: ts.StringLiteral, file: ts.SourceFile, checker: t
   if (options.projectSources.has(declaration.fileName) && !declaration.isDeclarationFile) {
     return projectSourceSpecifier(specifier, file.fileName, declaration.fileName, options.compilerOptions);
   }
-  return isRelative(specifier) ? undefined : packageSpecifier(specifier, declaration.fileName);
+  return isRelative(specifier) ? undefined : packageSpecifier(specifier, file.fileName, options);
 }
 
-// Insertion order matters: the backslash goes first. Characters by code, not a regex literal: emit would print U+2028 raw in one.
-const LITERAL_ESCAPES: readonly (readonly [string, string])[] = [
-  ['\\', '\\\\'], ['\n', '\\n'], ['\r', '\\r'], ['\u2028', '\\u2028'], ['\u2029', '\\u2029'],
-];
-
-/** `text` as the inside of a string literal that `quote` opens. */
-function escapedFor(quote: string, text: string): string {
-  return [...LITERAL_ESCAPES, [quote, `\\${quote}`] as const].reduce((escaped, [character, escape]) => escaped.replaceAll(character, escape), text);
-}
+// Characters by code, not a regex literal: emit would print U+2028 raw in one.
+const UNSAFE_IN_LITERAL = ['\\', '\n', '\r', '\u2028', '\u2029'];
 
 /** The module specifier of an import declaration, an `export … from`, or a dynamic `import()` with one string literal. */
 function specifierLiteral(node: ts.Node): ts.StringLiteral | undefined {
@@ -184,10 +198,12 @@ export function nodeSpecifierEdits(file: ts.SourceFile, checker: ts.TypeChecker,
     const literal = specifierLiteral(node);
     if (literal) {
       const next = newSpecifier(literal, file, checker, options);
-      if (next !== undefined && next !== literal.text) {
-        const start = literal.getStart(file) + 1;
+      const start = literal.getStart(file) + 1;
+      const quote = file.text.charAt(start - 1);
+      // A new text that needs an escape in this literal is a file name that golem does not rewrite: the specifier stays.
+      if (next !== undefined && next !== literal.text && ![...UNSAFE_IN_LITERAL, quote].some((character) => next.includes(character))) {
         const end = literal.end - 1;
-        edits.push({ start, end, expect: file.text.slice(start, end), text: escapedFor(file.text.charAt(start - 1), next) });
+        edits.push({ start, end, expect: file.text.slice(start, end), text: next });
         specifiers.set(literal.text, next);
       }
     }
