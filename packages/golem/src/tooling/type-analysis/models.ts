@@ -56,9 +56,11 @@ function readOptionalBooleanOption(
   return checker.typeToString(type) === 'true';
 }
 
+/** `exact` is the `golem.yaml` default for a model whose own `exact` option is absent. */
 export function collectSpecifications(
   program: ts.Program,
   sources: readonly string[],
+  exact = true,
 ): CollectedSpecifications {
   const checker = program.getTypeChecker();
   const specifications: ModelSpecification[] = [];
@@ -90,7 +92,7 @@ export function collectSpecifications(
         name: statement.name.text,
         fieldsNode,
         fieldsType,
-        exact: readOptionalBooleanOption(checker, optionsNode, 'exact') ?? true,
+        exact: readOptionalBooleanOption(checker, optionsNode, 'exact') ?? exact,
         allowAny: readOptionalBooleanOption(checker, optionsNode, 'allowAny'),
         emitClass: declarationKind === 'IModel',
         validation: readOptionalBooleanOption(checker, optionsNode, 'validation'),

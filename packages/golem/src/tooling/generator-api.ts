@@ -146,6 +146,8 @@ export interface ModelContext {
   readonly output?: string;
   readonly sources?: readonly string[];
   readonly profile: GolemProfile;
+  /** The `golem.yaml` default for the `exact` option of a model that sets none; omitted means `true`. */
+  readonly exact?: boolean;
   readonly manifestInputs?: readonly string[];
   readonly onInput?: InputObserver;
   readonly session?: GeneratorSession;
@@ -201,6 +203,8 @@ export interface ControllerContext {
   readonly globalPrefix?: string;
   readonly uriVersioning?: ControllerUriVersioning;
   readonly profile: GolemProfile;
+  /** The `golem.yaml` default for the `exact` option of a model that sets none; omitted means `true`. */
+  readonly exact?: boolean;
   readonly onInput?: InputObserver;
   readonly session?: GeneratorSession;
 }

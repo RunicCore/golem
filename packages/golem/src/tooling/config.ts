@@ -215,7 +215,7 @@ export function resolveConfig(filename = 'golem.yaml', onInput?: InputObserver):
   onInput?.(configFile);
   const directory = path.dirname(configFile);
   const value: unknown = YAML.parse(fs.readFileSync(configFile, 'utf8'), { uniqueKeys: true });
-  keys(value, ['version', 'tsconfig', 'mobx', 'validation', 'allowAny', 'unknownFormats', 'generators', 'controllers', 'openapi', 'models'], 'configuration');
+  keys(value, ['version', 'tsconfig', 'mobx', 'validation', 'allowAny', 'exact', 'unknownFormats', 'generators', 'controllers', 'openapi', 'models'], 'configuration');
   if (value.version !== 1) throw new Error('Configuration version must be 1.');
   if (value.unknownFormats !== undefined && value.unknownFormats !== 'warn' && value.unknownFormats !== 'error') throw new Error('unknownFormats must be "warn" or "error".');
   const profile = resolveProfile({
@@ -223,6 +223,8 @@ export function resolveConfig(filename = 'golem.yaml', onInput?: InputObserver):
     allowAny: boolean(value.allowAny, false, 'allowAny'),
     ...(value.unknownFormats === undefined ? {} : { unknownFormats: value.unknownFormats }),
   });
+  // `exact` is a default for the models and controllers jobs only, so it stays out of the profile that every SDK manifest records.
+  const exact = value.exact === undefined ? {} : { exact: boolean(value.exact, true, 'exact') };
   const tsconfigRequested = path.resolve(directory, value.tsconfig === undefined ? 'tsconfig.json' : nonempty(value.tsconfig, 'tsconfig'));
   onInput?.(tsconfigRequested);
   // The directory is canonical and the file keeps its name: a linked tsconfig.json belongs to the directory that holds the link.
@@ -296,6 +298,7 @@ export function resolveConfig(filename = 'golem.yaml', onInput?: InputObserver):
         root,
         output,
         profile,
+        ...exact,
         openapiVersion,
         info,
         ...(sourceValues ? { sources: sourceValues } : {}),
@@ -358,7 +361,7 @@ export function resolveConfig(filename = 'golem.yaml', onInput?: InputObserver):
       }
     }
     const sourceSuffixes = suffixes(value.models.suffixes, 'models.suffixes');
-    jobs.push({ id: `models:${path.relative(directory, root) || '.'}`, kind: 'models', package: '@exprtlabs/golem-model', options: { root, directory, output, profile, ...(sources ? { sources } : {}), ...(sourceSuffixes ? { suffixes: sourceSuffixes } : {}) } });
+    jobs.push({ id: `models:${path.relative(directory, root) || '.'}`, kind: 'models', package: '@exprtlabs/golem-model', options: { root, directory, output, profile, ...exact, ...(sources ? { sources } : {}), ...(sourceSuffixes ? { suffixes: sourceSuffixes } : {}) } });
   }
   if (!jobs.length) throw new Error('Configure at least one generators, controllers, openapi, or models section.');
   // A misspelled path is that, not a tsconfig the jobs happen to find elsewhere.

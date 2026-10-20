@@ -53,6 +53,7 @@ function validateContext(context: TsToOpenApiContext): {
   readonly suffixes: readonly string[];
   readonly openapiVersion: '3.2.0' | '3.1.2';
   readonly profile: ResolvedGolemProfile;
+  readonly exact?: boolean;
   readonly onInput?: InputObserver;
 } {
   if (!context || typeof context !== 'object' || Array.isArray(context)) {
@@ -85,7 +86,7 @@ function validateContext(context: TsToOpenApiContext): {
       if (new Set(resolved).size !== resolved.length) throw new TypeError('context.sources must not contain duplicates.');
       return [...resolved].sort();
     })();
-  return { root, output, ...(sources ? { sources } : {}), suffixes: context.suffixes ?? DEFAULT_CONTROLLER_SUFFIXES, openapiVersion, profile, onInput: context.onInput };
+  return { root, output, ...(sources ? { sources } : {}), suffixes: context.suffixes ?? DEFAULT_CONTROLLER_SUFFIXES, openapiVersion, profile, exact: context.exact, onInput: context.onInput };
 }
 
 function asGolemDiagnostic(value: TsToOpenApiDiagnostic): GolemDiagnostic {
@@ -224,6 +225,7 @@ export async function generate(context: TsToOpenApiContext): Promise<TsToOpenApi
   const contractAnalysis = createContractAnalysis(program, {
     root: normalized.root,
     allowAny: normalized.profile.allowAny,
+    exact: normalized.exact,
   });
   const schemaDiagnostics: TsToOpenApiDiagnostic[] = [];
   const schemaDiagnosticKeys = new Set<string>();
