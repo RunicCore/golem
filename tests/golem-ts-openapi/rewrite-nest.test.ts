@@ -208,7 +208,7 @@ test('a parameter decorator reached through a namespace import is stamped', (t) 
   ]);
 });
 
-test('Array<T> and Promise<T[]> returns record an array, and an Array<T> body takes the element codec', (t) => {
+test('Array<T> and Promise<T[]> returns record an array, and an Array<T> or readonly T[] body takes the element codec', (t) => {
   const root = paymentsProject(t, { 'src/arrays.controller.ts': readFixture(`${FORMS}/arrays.controller.ts`) });
   const result = scan(root);
   assert.deepEqual(result.diagnostics, []);
@@ -219,6 +219,9 @@ test('Array<T> and Promise<T[]> returns record an array, and an Array<T> body ta
     `  @__golem_nestModelReturn("${payment}", true) @Get('generic')`,
     `  @__golem_nestModelReturn("${payment}", true) @Get('promised')`,
     `  batch(@Body() @__golem_nestModelCodec("${input}", true) inputs: Array<TPaymentInput>): number { return inputs.length; }`,
+    `  readonlyBatch(@Body() @__golem_nestModelCodec("${input}", true) inputs: readonly TPaymentInput[]): number { return inputs.length; }`,
+    // An array of arrays has no one element codec, so it is left unstamped.
+    '  nestedBatch(@Body() inputs: TPaymentInput[][]): number { return inputs.length; }',
   ]);
   assert.equal(code.match(/__golem_nestModelReturn\(/g)?.length, 2);
 });

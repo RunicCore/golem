@@ -391,7 +391,7 @@ import { NestModelInterceptor } from '@exprtlabs/golem/nest';
 | `nestModelReturn` | `(id: string, array?: boolean): MethodDecorator` | Inserted by the rewrite on a handler that returns a model. `NestModelInterceptor` reads it. |
 
 - A `LibError` with `causedByInput: true` becomes HTTP 400 with `{ issues }`. Other errors, such as missing generated metadata or a throwing converter, stay HTTP 500.
-- An array of models in `@Body()` or `@Body('field')` converts item by item; HTTP 400 answers an invalid item (its issue path starts with the index) or a value that is not an array.
+- An array of models in `@Body()` or `@Body('field')` converts item by item; HTTP 400 answers an invalid item or a value that is not an array. Each issue path starts with the field name, if any, and the item index.
 - A one-field `@Body('field')` or `@Query('field')` with a model type converts that field, and HTTP 400 answers a missing or invalid field. A one-field `@Query` model needs a nested query parser, for example Express `query parser` set to `extended`. A handler cannot take a whole and a one-field parameter of the same source. The interceptor throws a `TypeError`.
 - A `@Body()` or `@Query()` parameter, whole or one field such as `@Body('name')`, that is not an `IModel` or `IObject` throws a `TypeError` that names the controller, the method and the parameter. Nest answers HTTP 500. For plain types, write your own interceptor.
 - `@Param()` and `@Headers()` stay as Nest received them.

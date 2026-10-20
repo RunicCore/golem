@@ -20,8 +20,7 @@ import {
   type NestInterceptor,
 } from '@nestjs/common';
 import { mergeMap, type Observable } from 'rxjs';
-import { conversionError } from './conversion-error.js';
-import { LibError, LibErrorKind } from './errors.js';
+import { IssueRepresentation, IssueSource, LibError, LibErrorKind, type IssuePath } from './errors.js';
 import { VALIDATION_KEYWORD } from './schema-keywords.js';
 import { getIModelClass, getObjectCodec, type ObjectCodec } from './object-codec.js';
 
@@ -413,33 +412,48 @@ function queryWireDecoder(codec: ObjectCodec): QueryWireDecoder {
 
 const NO_DECODE = (value: unknown): unknown => value;
 
-/** The error of one array item, with the item's index in front of each issue path. */
-function itemError(error: unknown, index: number): unknown {
-  if (!(error instanceof LibError)) return error;
+/** The error with `path` in front of each issue path; a path of no segments, or an error that is not a LibError, stays as it is. */
+function prefixedError(error: unknown, path: IssuePath): unknown {
+  if (path.length === 0 || !(error instanceof LibError)) return error;
   return new LibError(
     error.kind,
     error.message,
-    error.issues.map((issue) => ({ ...issue, path: [index, ...issue.path] })),
+    error.issues.map((issue) => ({ ...issue, path: [...path, ...issue.path] })),
     { causedByInput: error.causedByInput, ...(error.cause === undefined ? {} : { cause: error.cause }) },
   );
 }
 
-/** The model of one wire value, or of each item of an array wire value; an item that fails reports its index. */
+/**
+ * The model of one wire value, or of each item of an array wire value. `field` is the key of a one-field parameter, which
+ * starts the path of each issue; an item that fails adds its index.
+ */
 function convertInput(
   codec: ObjectCodec,
   construct: NestModelConstruct | undefined,
   array: boolean,
   wire: unknown,
   decode: (wire: unknown) => unknown,
+  field: string | undefined,
 ): unknown {
   const options = { failFast: true, construct };
-  if (!array) return codec.fromWireFormat(decode(wire), options);
-  if (!Array.isArray(wire)) throw conversionError(LibErrorKind.Deserialization, 'Expected an array.', [], undefined, true);
+  if (!array) {
+    try {
+      return codec.fromWireFormat(decode(wire), options);
+    } catch (error) {
+      throw prefixedError(error, field === undefined ? [] : [field]);
+    }
+  }
+  if (!Array.isArray(wire)) {
+    throw new LibError(LibErrorKind.Validation, 'Model validation failed.', [{
+      code: 'type', expected: ['array'], message: 'Expected array', path: field === undefined ? [] : [field],
+      source: IssueSource.Serde, representation: IssueRepresentation.Wire,
+    }]);
+  }
   return wire.map((item, index) => {
     try {
       return codec.fromWireFormat(decode(item), options);
     } catch (error) {
-      throw itemError(error, index);
+      throw prefixedError(error, field === undefined ? [index] : [field, index]);
     }
   });
 }
@@ -545,13 +559,13 @@ export class NestModelInterceptor implements NestInterceptor {
           const decode = paramtype === NEST_BODY ? NO_DECODE : queryWireDecoder(codec);
           // @Body() and @Query() read these values when next.handle() runs.
           if (field === undefined) {
-            const value = convertInput(codec, construct, array, paramtype === NEST_BODY ? req.body : req.query, decode);
+            const value = convertInput(codec, construct, array, paramtype === NEST_BODY ? req.body : req.query, decode, undefined);
             if (paramtype === NEST_BODY) req.body = value;
             else replaceQuery(req, value);
             wholeSources |= source;
           } else {
             const record = schemaRecord(paramtype === NEST_BODY ? req.body : req.query);
-            const value = convertInput(codec, construct, array, record && Object.hasOwn(record, field) ? record[field] : undefined, decode);
+            const value = convertInput(codec, construct, array, record && Object.hasOwn(record, field) ? record[field] : undefined, decode, field);
             // Copy so the incoming object is not mutated; define so a field named __proto__ stays data.
             const copy = { ...record };
             Object.defineProperty(copy, field, { value, writable: true, enumerable: true, configurable: true });

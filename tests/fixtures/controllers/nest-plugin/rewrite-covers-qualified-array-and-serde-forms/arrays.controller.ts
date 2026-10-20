@@ -8,4 +8,8 @@ export class ArraysController {
   promised(): Promise<TPayment[]> { return Promise.resolve([]); }
   @Post('batch')
   batch(@Body() inputs: Array<TPaymentInput>): number { return inputs.length; }
+  @Post('readonly')
+  readonlyBatch(@Body() inputs: readonly TPaymentInput[]): number { return inputs.length; }
+  @Post('nested')
+  nestedBatch(@Body() inputs: TPaymentInput[][]): number { return inputs.length; }
 }

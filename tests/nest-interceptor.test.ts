@@ -543,7 +543,7 @@ test('NestModelInterceptor converts a model-typed one-field @Body() and @Query()
     validate: () => true,
     assert: (value) => value as never,
     toWireFormat: (value) => value,
-    fromWireFormat: (wire) => ({ at: deserializeDate((wire as { at?: unknown } | undefined)?.at) }) as never,
+    fromWireFormat: (wire) => ({ at: deserializeDate((wire as { at?: unknown } | undefined)?.at, ['at']) }) as never,
   });
   const received = (input: unknown) => ({ atIsDate: (input as { at?: unknown }).at instanceof Date });
   const bodyController = inputController('FieldModelBody', Body, 'addr', Object, received);
@@ -567,7 +567,9 @@ test('NestModelInterceptor converts a model-typed one-field @Body() and @Query()
     const valid = await postBody({ addr: { at: '2020-01-01T00:00:00.000Z' }, other: 1 });
     assert.equal(valid.status, 201);
     assert.deepEqual(await valid.json(), { atIsDate: true });
-    assert.equal((await postBody({ addr: { at: 'not a date' } })).status, 400);
+    const invalid = await postBody({ addr: { at: 'not a date' } });
+    assert.equal(invalid.status, 400);
+    assert.deepEqual(((await invalid.json()) as { issues: { path: unknown[] }[] }).issues.map((issue) => issue.path), [['addr', 'at']]);
     assert.equal((await postBody({ other: 1 })).status, 400, 'a missing field is rejected by the model');
 
     const query = (text: string) => fetch(`${base}/FieldModelQuery?${text}`, { method: 'POST' });
@@ -629,12 +631,19 @@ test('NestModelInterceptor converts an array @Body() and a one-field array item 
     assert.equal(field.status, 201);
     assert.deepEqual(await field.json(), [{ name: 'a', converted: true }, { name: 'b', converted: true }]);
 
+    type WireIssue = { code: string; path: unknown[]; expected?: string[] };
+    const issuesOf = async (response: Response) => ((await response.json()) as { issues: WireIssue[] }).issues;
+    const issuePaths = async (response: Response) => (await issuesOf(response)).map((issue) => [issue.code, issue.path]);
     const invalid = await post('ArrayWhole', [{ name: 'a' }, { at: 'x' }]);
     assert.equal(invalid.status, 400);
-    const { issues } = await invalid.json() as { issues: { path: unknown[] }[] };
-    assert.deepEqual(issues.map((issue) => issue.path), [[1, 'name']]);
-    assert.equal((await post('ArrayField', { items: [{ name: 'a' }, { at: 'x' }] })).status, 400);
-    assert.equal((await post('ArrayWhole', { name: 'a' })).status, 400, 'an object is not an array');
+    assert.deepEqual(await issuePaths(invalid), [['required', [1, 'name']]]);
+    const invalidField = await post('ArrayField', { items: [{ name: 'a' }, { at: 'x' }] });
+    assert.equal(invalidField.status, 400);
+    assert.deepEqual(await issuePaths(invalidField), [['required', ['items', 1, 'name']]]);
+    const notArrayWhole = await post('ArrayWhole', { name: 'a' });
+    assert.equal(notArrayWhole.status, 400, 'an object is not an array');
+    assert.deepEqual((await issuesOf(notArrayWhole)).map(({ code, path, expected }) => ({ code, path, expected })), [{ code: 'type', path: [], expected: ['array'] }]);
+    assert.deepEqual(await issuePaths(await post('ArrayField', { items: {} })), [['type', ['items']]]);
   } finally {
     await application.close();
   }

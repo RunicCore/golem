@@ -72,13 +72,13 @@ What happens to a request:
 
 `@Param()` and `@Headers()` stay as Nest received them. Interfaces and array element types are erased from Nest metadata, so the rewrite records the model and whether the parameter is an array of it.
 
-An array of models, such as `@Body() items: Item[]` or `@Body('items') items: Item[]`, converts item by item. An invalid item returns HTTP 400, and each issue path starts with the item index. A value that is not an array returns HTTP 400. A whole `@Query()` cannot be an array, and the interceptor throws a `TypeError`.
+An array of models, such as `@Body() items: Item[]` or `@Body('items') items: Item[]`, converts item by item. An invalid item returns HTTP 400, and each issue path starts with the field name, if any, and the item index, such as `['items', 1, 'name']`. A value that is not an array returns HTTP 400 with a `type` issue. A whole `@Query()` cannot be an array, and the interceptor throws a `TypeError`.
 
 ### Input that is not a model
 
 Every `@Body()` and `@Query()` parameter needs an `IModel` or `IObject` type. If a parameter has another type, the interceptor throws a `TypeError` that names the controller, the method and the parameter, and Nest answers HTTP 500. This covers a plain interface, a plain class, a primitive, a parameter with no type, and one field such as `@Body('name')` or `@Query('page')` with a plain type. The interceptor throws on each request to the handler, not at startup. Return types are not affected.
 
-A one-field parameter with a model type, such as `@Body('address') address: Address`, converts that field with the same checks as a whole body. A missing field or a field that fails validation returns HTTP 400. A handler cannot take a whole `@Body()` and a one-field `@Body()` together, and the same holds for `@Query()`. In that case the interceptor throws a `TypeError`.
+A one-field parameter with a model type, such as `@Body('address') address: Address`, converts that field with the same checks as a whole body. A missing field or a field that fails validation returns HTTP 400, and each issue path starts with the field name, such as `['address', 'street']`. A handler cannot take a whole `@Body()` and a one-field `@Body()` together, and the same holds for `@Query()`. In that case the interceptor throws a `TypeError`.
 
 A one-field model in `@Query('address')` reads a nested query key such as `address[street]=Main`. The app needs a nested query parser for that, for example Express `query parser` set to `extended`.
 
