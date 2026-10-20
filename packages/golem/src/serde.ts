@@ -13,9 +13,7 @@ import { untransformedCallError, type SerdeOptions, type ValidateOptions } from 
 
 export {
   assertModelValue,
-  assertModelValueFast,
   isValidModelValue,
-  isValidModelValueFast,
   modelValueIssues,
   createObjectCodec,
   findCodecIdForConstructor,
@@ -39,7 +37,7 @@ export {
   validationFailure,
   validationUnavailable,
 } from './object-codec.js';
-export type { FastModelCheck, ObjectCodec, ObjectCodecImpl, SerdeOptions, ValidateOptions, ValidationPlane } from './object-codec.js';
+export type { ObjectCodec, ObjectCodecImpl, SerdeOptions, ValidateOptions, ValidationPlane } from './object-codec.js';
 export type { WireFormat } from './model.js';
 export { IssueRepresentation, IssueSource } from './errors.js';
 

@@ -7,7 +7,7 @@ import { prepare, root } from './project.js';
 import { summarize, type BatchSample } from './results.js';
 import { sampleSync, schedule } from './sampling.js';
 import { requireObjectCodec } from '@exprtlabs/golem/serde';
-import { BASE_TOGGLES, EXACT_PRESENCE_FORMS, PRESENCE_FORMS, presenceFill, presenceWalk, scratchValidator, type Toggles } from './validator-toggles.js';
+import { BASE_TOGGLES, EXACT_PRESENCE_FORMS, GENERATED_TOGGLES, PRESENCE_FORMS, presenceFill, presenceWalk, scratchValidator, type Toggles } from './validator-toggles.js';
 import type { Agreement, CompareCase, CompareTask, MobxTwins, Subject, TwinFactories, TwinKind } from './fixtures/typia/compare-case.js';
 
 /**
@@ -66,7 +66,7 @@ function medians(cases: readonly CompareCase[], samples: Map<CompareCase, BatchS
   };
 }
 
-/** What each library says about each probe value; a disagreement stops the run before any timing. */
+/** What each library says about each probe value; a disagreement fails the run before any result is reported. */
 function reportAgreement(rows: readonly Agreement[]): void {
   const mark = (value: boolean): string => value ? 'T' : 'F';
   const cell = (row: Agreement | undefined): string => row ? `${mark(row.golem)}${mark(row.typiaIs)}${mark(row.typiaEquals)}` : '?';
@@ -85,21 +85,31 @@ function reportAgreement(rows: readonly Agreement[]): void {
   if (wrong.length > 0) throw new Error(`Validators disagree: ${wrong.map(r => `${r.model}/${r.twin}/${r.probe}`).join(', ')}`);
 }
 
-const TOGGLE_ROWS: readonly (readonly [string, Toggles])[] = [
+/** The models whose generated fast check is below the scratch base; the lead rows run on these only. */
+const LEAD_MODELS: ReadonlySet<string> = new Set(['flat', 'nested', 'union', 'array']);
+/**
+ * Each row: its toggles and the models it runs on (all when absent). A lead row adds one form the generated `is_X`
+ * writes today to the base; `generated` adds them all.
+ */
+const TOGGLE_ROWS: readonly (readonly [string, Toggles, ReadonlySet<string>?])[] = [
   ['base', BASE_TOGGLES],
   ['key F2', { ...BASE_TOGGLES, keyTest: 'F2' }],
-  ['finite isFinite', { ...BASE_TOGGLES, finite: 'isFinite' }],
-  ['finite off', { ...BASE_TOGGLES, finite: 'off' }],
-  ['date off', { ...BASE_TOGGLES, date: 'off' }],
-  ['floor', { keyTest: 'none', finite: 'off', date: 'off' }],
+  ['floor', { ...BASE_TOGGLES, keyTest: 'none', finite: 'off', date: 'off' }, LEAD_MODELS],
+  ['finite isFinite', { ...BASE_TOGGLES, finite: 'isFinite' }, LEAD_MODELS],
+  ['date isFinite', { ...BASE_TOGGLES, date: 'isFinite' }, LEAD_MODELS],
+  ['required separate', { ...BASE_TOGGLES, required: 'separate' }, LEAD_MODELS],
+  ['object helper', { ...BASE_TOGGLES, objectTest: 'helper' }, LEAD_MODELS],
+  ['statements', { ...BASE_TOGGLES, body: 'statements' }, LEAD_MODELS],
+  ['tag merged', { ...BASE_TOGGLES, tag: 'merged' }, new Set(['union'])],
+  ['loop hoisted', { ...BASE_TOGGLES, loop: 'hoisted' }, new Set(['array'])],
+  ['loop forOf', { ...BASE_TOGGLES, loop: 'forOf' }, new Set(['array'])],
+  ['loop every', { ...BASE_TOGGLES, loop: 'every' }, new Set(['array'])],
+  ['generated', GENERATED_TOGGLES, LEAD_MODELS],
 ];
-/** Only the key test depends on how an instance is built, so the twins run these rows. */
-const TWIN_TOGGLE_ROWS = new Set(['base', 'key F2']);
-/** The rows that keep every key-test contract: each must give the full validator's answer on every probe. */
-const KEY_EXACT_ROWS = new Set(['base', 'key F2', 'finite isFinite', 'finite off', 'date off']);
-/** The rows that also keep the finite and Date checks: each must give the full validator's answer on the edge probes too. */
-const CONTRACT_ROWS = new Set(['base', 'key F2', 'finite isFinite']);
-
+/** Only the key test and the array loop depend on how an instance is built, so the twins run these rows. */
+const TWIN_TOGGLE_ROWS = new Set(['base', 'key F2', 'generated', 'loop hoisted', 'loop forOf', 'loop every']);
+/** The row that drops contracts: it must give the full validator's answer on the valid value and on a wrong field only. */
+const FLOOR_ROW = 'floor';
 /** The generated functions of one project's validator module, by export name. */
 type ValidatorExports = Readonly<Record<string, unknown>>;
 
@@ -116,8 +126,16 @@ function generatedFunction(exports: ValidatorExports, prefix: 'is' | 'validate',
 /** How many subjects' valid values the generated fast check accepts: each of those takes the fast route in the codec. */
 const fastRoute = { accepted: 0, subjects: 0, probes: 0 };
 
-function toggleCases(subjects: readonly Subject[], validators: Readonly<Record<TwinKind, ValidatorExports>>): CompareCase[] {
+/**
+ * The timed cases, and the contract checks of their functions. The checks call the same functions with edge values of
+ * other shapes (a missing key, an unknown key, a NaN), so they run after the timed window: run before it, they leave the
+ * property reads of every checked function megamorphic, and the timed valid value reads about a third slower.
+ */
+interface ToggleRun { readonly cases: CompareCase[]; readonly checks: (() => void)[] }
+
+function toggleCases(subjects: readonly Subject[], validators: Readonly<Record<TwinKind, ValidatorExports>>): ToggleRun {
   const cases: CompareCase[] = [];
+  const checks: (() => void)[] = [];
   for (const subject of subjects) {
     const { model, twin } = subject;
     const entry = (side: string, run: () => unknown): void => { cases.push({ model, twin, task: 'toggle', side, run }); };
@@ -126,38 +144,36 @@ function toggleCases(subjects: readonly Subject[], validators: Readonly<Record<T
     const validator = generatedFunction(validators[twin], 'validate', subject.codecId);
     // The full validator decides what each probe must give; the codec, the fast check and the exact scratch rows agree with it.
     const probes = [['valid', subject.valid], ['early', subject.early], ['late', subject.late], ['extra', subject.extra], ...subject.probes] as const;
-    const expected = new Map(probes.map(([name, value]) => [name, validator(value, true).length === 0] as const));
-    if (expected.get('valid') !== true || expected.get('extra') !== false) throw new Error(`The validator of ${model}/${twin} does not accept the valid value or rejects no unknown property`);
-    for (const [name, value] of probes) {
-      const full = expected.get(name);
-      if (codec.validate(value) !== full || isValid(value) !== full) throw new Error(`On ${model}/${twin} '${name}': the codec or the fast check differs from the validator (${full})`);
-    }
-    fastRoute.subjects++;
-    if (isValid(subject.valid) === true) fastRoute.accepted++;
-    fastRoute.probes += probes.length;
+    const expected = new Map<string, boolean>();
+    checks.push(() => {
+      for (const [name, value] of probes) expected.set(name, validator(value, true).length === 0);
+      if (expected.get('valid') !== true || expected.get('extra') !== false) throw new Error(`The validator of ${model}/${twin} does not accept the valid value or rejects no unknown property`);
+      for (const [name, value] of probes) {
+        const full = expected.get(name);
+        if (codec.validate(value) !== full || isValid(value) !== full) throw new Error(`On ${model}/${twin} '${name}': the codec or the fast check differs from the validator (${full})`);
+      }
+      fastRoute.subjects++;
+      if (isValid(subject.valid) === true) fastRoute.accepted++;
+      fastRoute.probes += probes.length;
+    });
     entry('typia equals', () => subject.equals(subject.valid));
     entry('typia is', () => subject.is(subject.valid));
     entry('golem is_X', () => isValid(subject.valid));
     entry('golem validate', () => codec.validate(subject.valid));
-    if (twin === 'plain') {
-      // A rejected value: the fast check, then the whole full route again (spec 7.5).
-      entry('late is_X', () => isValid(subject.late));
-      entry('late validator', () => validator(subject.late, false));
-      entry('late validate', () => codec.validate(subject.late));
-    }
-    for (const [side, toggles] of TOGGLE_ROWS) {
-      if (twin !== 'plain' && !TWIN_TOGGLE_ROWS.has(side)) continue;
+    for (const [side, toggles, models] of TOGGLE_ROWS) {
+      if ((twin !== 'plain' && !TWIN_TOGGLE_ROWS.has(side)) || (models !== undefined && !models.has(model))) continue;
       const scratch = scratchValidator(model, toggles);
-      for (const [probe, value] of probes) {
-        const exact = CONTRACT_ROWS.has(side) || (KEY_EXACT_ROWS.has(side) && ['valid', 'early', 'late', 'extra', 'missing key', 'undefined unknown key'].includes(probe));
-        const required = exact || ['valid', 'early', 'late'].includes(probe);
-        if (required && scratch(value) !== expected.get(probe)) throw new Error(`Scratch validator '${side}' on ${model}/${twin}: '${probe}' is not ${expected.get(probe)}`);
-      }
+      checks.push(() => {
+        for (const [probe, value] of probes) {
+          const required = side !== FLOOR_ROW || ['valid', 'early', 'late'].includes(probe);
+          if (required && scratch(value) !== expected.get(probe)) throw new Error(`Scratch validator '${side}' on ${model}/${twin}: '${probe}' is not ${expected.get(probe)}`);
+        }
+      });
       entry(side, () => scratch(subject.valid));
     }
-    if (model === 'flat') presenceCases(subject, entry);
+    if (model === 'flat') presenceCases(subject, entry, checks);
   }
-  return cases;
+  return { cases, checks };
 }
 
 /**
@@ -165,7 +181,7 @@ function toggleCases(subjects: readonly Subject[], validators: Readonly<Record<T
  * Each exact form must give the result of `enumerable` (golem today) on the probes, on a non-enumerable field, on an
  * undefined-valued field and on an inherited field.
  */
-function presenceCases(subject: Subject, entry: (side: string, run: () => unknown) => void): void {
+function presenceCases(subject: Subject, entry: (side: string, run: () => unknown) => void, checks: (() => void)[]): void {
   const valid = subject.valid;
   if (typeof valid !== 'object' || valid === null) throw new Error('The flat valid value is not an object');
   const plain: Record<string, unknown> = { ...valid };
@@ -181,10 +197,12 @@ function presenceCases(subject: Subject, entry: (side: string, run: () => unknow
     const walk = presenceWalk(form);
     const fill = presenceFill(form);
     if (EXACT_PRESENCE_FORMS.has(form)) {
-      for (const probe of probes) if (walk(probe) !== reference.walk(probe)) throw new Error(`Presence walk '${form}' differs from 'enumerable' on ${subject.twin}`);
-      for (const probe of fillProbes) {
-        if (JSON.stringify(Object.entries(fill(probe))) !== JSON.stringify(Object.entries(reference.fill(probe)))) throw new Error(`Presence fill '${form}' differs from 'enumerable'`);
-      }
+      checks.push(() => {
+        for (const probe of probes) if (walk(probe) !== reference.walk(probe)) throw new Error(`Presence walk '${form}' differs from 'enumerable' on ${subject.twin}`);
+        for (const probe of fillProbes) {
+          if (JSON.stringify(Object.entries(fill(probe))) !== JSON.stringify(Object.entries(reference.fill(probe)))) throw new Error(`Presence fill '${form}' differs from 'enumerable'`);
+        }
+      });
     }
     entry(`walk ${form}`, () => walk(valid));
     if (subject.twin === 'plain') entry(`fill ${form}`, () => fill(valid));
@@ -196,18 +214,15 @@ function reportToggles(cases: readonly CompareCase[], samples: Map<CompareCase, 
   const sides = TOGGLE_ROWS.map(([side]) => side);
   const against: string[][] = [['model', 'twin', 'equals ops/s', 'is/equals', 'is_X/equals', 'validate/equals', ...sides]];
   const gain: string[][] = [['model', 'twin', 'is_X/base', 'validate/is_X', ...sides.slice(1)]];
-  const late: string[][] = [['model', 'is_X ops/s', 'validator ops/s', 'validate ops/s', 'validate/validator']];
   for (const model of MODELS) for (const twin of TWINS) {
     const equals = median(model, twin, 'toggle', 'typia equals');
     const has = (side: string): boolean => cases.some(c => c.model === model && c.twin === twin && c.side === side);
     const value = (side: string): number => median(model, twin, 'toggle', side);
     against.push([model, twin, fixed(equals), ratio(value('typia is'), equals), ratio(value('golem is_X'), equals), ratio(value('golem validate'), equals), ...sides.map(side => has(side) ? ratio(value(side), equals) : '-')]);
     gain.push([model, twin, ratio(value('golem is_X'), value('base')), ratio(value('golem validate'), value('golem is_X')), ...sides.slice(1).map(side => has(side) ? ratio(value(side), value('base')) : '-')]);
-    if (twin === 'plain') late.push([model, fixed(value('late is_X')), fixed(value('late validator')), fixed(value('late validate')), ratio(value('late validate'), value('late validator'))]);
   }
   process.stdout.write(`Generated fast check (is_X, called directly), the codec chain (codec.validate) and the scratch validators, ratio to typia equals (median of ${SETTINGS.batches} batches of ${SETTINGS.batchMs} ms)\n${table(against)}\n\n`);
   process.stdout.write(`is_X against the scratch base, the codec chain against is_X, and each toggle against the base row (above 1 is faster)\n${table(gain)}\n\n`);
-  process.stdout.write(`A value rejected late: the fast check alone, the full validator alone, and codec.validate (the fast check, then the full route)\n${table(late)}\n\n`);
   const presence: string[][] = [['shape', 'twin', ...PRESENCE_FORMS.map(form => `${form} ops/s`), ...PRESENCE_FORMS.slice(1).map(form => `${form}/enumerable`)]];
   for (const [shape, twins] of [['walk', TWINS], ['fill', ['plain']]] as const) for (const twin of twins) {
     const value = (form: string): number => median('flat', twin, 'toggle', `${shape} ${form}`);
@@ -255,20 +270,25 @@ async function main(): Promise<void> {
     const module: CompareModule = await import(pathToFileURL(path.join(path.dirname(built), 'typia-comparison.js')).href);
     const mobx: { mobxTwins: TwinFactories } = await import(pathToFileURL(path.join(path.dirname(builtMobx), 'typia-mobx.model.js')).href);
     const twins: MobxTwins = { mobx: mobx.mobxTwins };
-    module.verifyCompareModels();
     const subjects = module.createSubjects(twins);
-    reportAgreement(module.agreements(subjects));
     const validators = async (project: string): Promise<ValidatorExports> => import(pathToFileURL(path.join(path.dirname(project), 'generated/models/models.validators.generated.js')).href);
     const plainValidators = await validators(built);
-    // The toggle cases check every probe on the codec, the fast check and the scratch rows when they are made.
     const toggles = toggleCases(subjects, { plain: plainValidators, imodel: plainValidators, mobx: await validators(builtMobx) });
-    process.stdout.write(`The fast check accepts the valid value of ${fastRoute.accepted} of ${fastRoute.subjects} subjects (plain, IModel, MobX), so the codec answers those without the full validator; ${fastRoute.probes} probes agree with the full validator\n\n`);
-    if (mode === 'verify') return;
-    const cases = mode === 'toggles' ? toggles : module.createCompareCases(twins);
+    // The checks run every probe on golem, typia and the scratch rows; they follow the timed window (see ToggleRun), so
+    // no timed function, golem's or typia's, has seen a failing value before it is timed.
+    const runChecks = (): void => {
+      module.verifyCompareModels();
+      reportAgreement(module.agreements(subjects));
+      for (const check of toggles.checks) check();
+      process.stdout.write(`The fast check accepts the valid value of ${fastRoute.accepted} of ${fastRoute.subjects} subjects (plain, IModel, MobX), so the codec answers those without the full validator; ${fastRoute.probes} probes agree with the full validator\n\n`);
+    };
+    if (mode === 'verify') { runChecks(); return; }
+    const cases = mode === 'toggles' ? toggles.cases : module.createCompareCases(twins);
     const loadBefore = load();
     const started = performance.now();
     const samples = measure(module.consume, cases);
     const windowSeconds = (performance.now() - started) / 1000;
+    runChecks();
     if (mode === 'toggles') reportToggles(cases, samples); else reportBench(cases, samples);
     process.stdout.write(`Measured window ${windowSeconds.toFixed(1)} s for ${cases.length} cases; load average before ${loadBefore}, after ${load()}\n`);
     const raw = path.join(root, `.cache/benchmark/typia-validation${mode === 'toggles' ? '-toggles' : ''}.json`);

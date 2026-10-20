@@ -4,8 +4,8 @@
  * JavaScript, not golem output, so no toggle needs product code. Each row of a toggle run names what it changed.
  *
  * The per-item call and the union tag read are written inline by the generator below. The real call chain (codec,
- * generated `validate`, `isValidModelValueFast`, the generated `is_X`) is timed on the generated code itself, beside
- * these rows (typia-validation.ts).
+ * generated `validate`, the generated `is_X`) is timed on the generated code itself, beside these rows
+ * (typia-validation.ts).
  */
 
 /** How unknown keys are found. F1 and F2 are exact under the JSON-view rule; `count` and `none` are not. */
@@ -20,11 +20,33 @@ export interface Toggles {
   readonly keyTest: KeyTest;
   /** `sub` is `x - x === 0`; `isFinite` is `Number.isFinite(x)`; `off` is `typeof x === 'number'` alone. */
   readonly finite: FiniteTest;
-  /** `valid` adds `t - t === 0` for a Date; `off` is `instanceof Date` alone. */
-  readonly date: 'valid' | 'off';
+  /** `valid` adds `t - t === 0` for a Date; `isFinite` adds `Number.isFinite(x.getTime())`; `off` is `instanceof Date` alone. */
+  readonly date: 'valid' | 'isFinite' | 'off';
+  /** `separate` tests each required key `!== undefined` ahead of the value tests; `implied` leaves that to the value test, which rejects `undefined`. */
+  readonly required: 'implied' | 'separate';
+  /** `helper` calls a module-level `isObject`; `inline` writes the object test. */
+  readonly objectTest: 'inline' | 'helper';
+  /** `chain` joins the value tests with `&&`; `statements` copies each value to a `const` and returns `false` after each failed test. */
+  readonly body: 'chain' | 'statements';
+  /**
+   * `read` switches on the plain tag read; `merged` reads the declared keys of every branch in one `Object.keys` pass,
+   * then switches on the captured tag and tests that branch's values, with each key only another branch declares absent
+   * (no `propertyIsEnumerable`). Its verdict is exact, but its reads do not follow spec 7.3: it reads values in the pass
+   * and returns inside the key loop, where the emitted pass only marks keys.
+   */
+  readonly tag: 'read' | 'merged';
+  /**
+   * The item loop of an array: `index` reads `a.length` and `a[i]` on each turn; `hoisted` reads `a.length` once;
+   * `forOf` iterates the array; `every` calls `a.every` with the item check (not exact: it skips the holes of a sparse
+   * array, and it runs an `every` the array may override).
+   */
+  readonly loop: 'index' | 'hoisted' | 'forOf' | 'every';
 }
 
-export const BASE_TOGGLES: Toggles = { keyTest: 'F1', finite: 'sub', date: 'valid' };
+export const BASE_TOGGLES: Toggles = { keyTest: 'F1', finite: 'sub', date: 'valid', required: 'implied', objectTest: 'inline', body: 'chain', tag: 'read', loop: 'index' };
+
+/** The base with each form the generated `is_X` writes today: what each lead row of a toggle run adds on its own. */
+export const GENERATED_TOGGLES: Toggles = { ...BASE_TOGGLES, finite: 'isFinite', date: 'isFinite', required: 'separate', objectTest: 'helper', body: 'statements', tag: 'merged' };
 
 type Shape =
   | 'number' | 'string' | 'boolean' | 'date'
@@ -79,7 +101,10 @@ class Writer {
       return `typeof ${x} === 'number'${finite === 'sub' ? ` && ${x} - ${x} === 0` : finite === 'isFinite' ? ` && Number.isFinite(${x})` : ''}`;
     }
     if (shape === 'string' || shape === 'boolean') return `typeof ${x} === '${shape}'`;
-    if (shape === 'date') return `${x} instanceof Date${this.toggles.date === 'valid' ? ` && ${x}.getTime() - ${x}.getTime() === 0` : ''}`;
+    if (shape === 'date') {
+      const { date } = this.toggles;
+      return `${x} instanceof Date${date === 'valid' ? ` && ${x}.getTime() - ${x}.getTime() === 0` : date === 'isFinite' ? ` && Number.isFinite(${x}.getTime())` : ''}`;
+    }
     if ('literal' in shape) return `${x} === ${JSON.stringify(shape.literal)}`;
     if ('optional' in shape) return `(${x} === undefined || ${this.test(shape.optional, x)})`;
     if ('object' in shape) return `${this.object(shape.object)}(${x})`;
@@ -87,7 +112,14 @@ class Writer {
       const name = this.next('a');
       this.functions.push('');
       const slot = this.functions.length - 1;
-      this.functions[slot] = `function ${name}(a) { if (!Array.isArray(a)) return false; for (let i = 0; i < a.length; i++) { if (!(${this.test(shape.array, 'a[i]')})) return false; } return true; }`;
+      const item = shape.array;
+      const { loop } = this.toggles;
+      const body = loop === 'every' && typeof item === 'object' && 'object' in item
+        ? `return a.every(${this.object(item.object)});`
+        : loop === 'forOf'
+          ? `for (const x of a) { if (!(${this.test(item, 'x')})) return false; } return true;`
+          : `for (let i = 0${loop === 'hoisted' ? ', n = a.length' : ''}; i < ${loop === 'hoisted' ? 'n' : 'a.length'}; i++) { if (!(${this.test(item, 'a[i]')})) return false; } return true;`;
+      this.functions[slot] = `function ${name}(a) { if (!Array.isArray(a)) return false; ${body} }`;
       return `${name}(${x})`;
     }
     if ('tuple' in shape) {
@@ -100,12 +132,27 @@ class Writer {
     const name = this.next('u');
     this.functions.push('');
     const slot = this.functions.length - 1;
-    const cases = shape.members.map(member => {
+    const members = shape.members.map(member => {
       const tag = member[shape.union];
       if (typeof tag === 'string' || !('literal' in tag)) throw new Error('A union member needs a literal tag');
-      return `case ${JSON.stringify(tag.literal)}: return ${this.object(member)}(x);`;
+      return [JSON.stringify(tag.literal), this.object(member)] as const;
     });
-    this.functions[slot] = `function ${name}(x) { if (typeof x !== 'object' || x === null) return false; switch (x.${shape.union}) { ${cases.join(' ')} } return false; }`;
+    if (this.toggles.tag === 'read') {
+      const cases = members.map(([tag, check]) => `case ${tag}: return ${check}(x);`);
+      this.functions[slot] = `function ${name}(x) { if (typeof x !== 'object' || x === null) return false; switch (x.${shape.union}) { ${cases.join(' ')} } return false; }`;
+    } else if (this.toggles.tag === 'merged') {
+      const keys = [...new Set(shape.members.flatMap(member => Object.keys(member)))];
+      const local = (key: string): string => `k${keys.indexOf(key)}`;
+      const reads = keys.map(key => `case ${JSON.stringify(key)}: ${local(key)} = x[${JSON.stringify(key)}]; break;`).join(' ');
+      const cases = shape.members.map(member => {
+        const tests = keys.filter(key => key !== shape.union).map(key => (key in member ? this.test(member[key], local(key)) : `${local(key)} === undefined`));
+        const tag = member[shape.union];
+        if (typeof tag === 'string' || !('literal' in tag)) throw new Error('A union member needs a literal tag');
+        return `case ${JSON.stringify(tag.literal)}: return ${tests.map(test => `(${test})`).join(' && ')};`;
+      });
+      this.functions[slot] = `function ${name}(x) { if (typeof x !== 'object' || x === null || Array.isArray(x)) return false; let ${keys.map(local).join(', ')}; `
+        + `for (const k of Object.keys(x)) switch (k) { ${reads} default: if (x[k] !== undefined) return false; } switch (${local(shape.union)}) { ${cases.join(' ')} } return false; }`;
+    }
     return `${name}(${x})`;
   }
 
@@ -137,8 +184,15 @@ class Writer {
         head = keys.map((key, i) => `const x${i} = v.${key};`).join(' ');
         break;
     }
-    const body = keys.map((key, i) => `(${this.test(fields[key], `x${i}`)})`).join(' && ');
-    this.functions[slot] = `function ${name}(v) { if (typeof v !== 'object' || v === null || Array.isArray(v)) return false; ${head} return ${body}; }`;
+    const required = this.toggles.required === 'separate'
+      ? keys.filter(key => { const shape = fields[key]; return typeof shape !== 'object' || !('optional' in shape); }).map(key => `x${keys.indexOf(key)} !== undefined`)
+      : [];
+    const tests = keys.map((key, i) => this.test(fields[key], this.toggles.body === 'chain' ? `x${i}` : `m${i}`));
+    const body = this.toggles.body === 'chain'
+      ? `return ${[...required, ...tests].map(test => `(${test})`).join(' && ')};`
+      : `${required.map(test => `if (!(${test})) return false;`).join(' ')} ${tests.map((test, i) => `const m${i} = x${i}; if (!(${test})) return false;`).join(' ')} return true;`;
+    const objectTest = this.toggles.objectTest === 'inline' ? `typeof v !== 'object' || v === null || Array.isArray(v)` : '!isObject(v)';
+    this.functions[slot] = `function ${name}(v) { if (${objectTest}) return false; ${head} ${body} }`;
     return name;
   }
 }
@@ -149,7 +203,8 @@ export function scratchValidator(model: string, toggles: Toggles): (value: unkno
   if (!fields) throw new Error(`No scratch model ${model}`);
   const writer = new Writer(toggles);
   const root = writer.object(fields);
-  const make = new Function('pie', `${writer.functions.join('\n')}\nreturn ${root};`) as (pie: typeof Object.prototype.propertyIsEnumerable) => (value: unknown) => boolean;
+  const isObject = 'const isObject = value => typeof value === \'object\' && value !== null && !Array.isArray(value);';
+  const make = new Function('pie', `${isObject}\n${writer.functions.join('\n')}\nreturn ${root};`) as (pie: typeof Object.prototype.propertyIsEnumerable) => (value: unknown) => boolean;
   return make(Object.prototype.propertyIsEnumerable);
 }
 

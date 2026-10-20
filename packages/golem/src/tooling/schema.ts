@@ -39,6 +39,11 @@ export interface SchemaDescriptorOptions {
   readonly executableBindings?: boolean;
   /** Use component references when assembling an OpenAPI document. */
   readonly referencePrefix?: string;
+  /**
+   * Give a discriminator of $ref branches a mapping from each tag to its branch. An OpenAPI document needs it: without
+   * one, a tag names a component.
+   */
+  readonly discriminatorMapping?: boolean;
   readonly portable?: boolean;
   readonly onNonportable?: (message: string) => void;
   /** Resolve a descriptor reference without executing application code. */
@@ -296,6 +301,19 @@ function hasDiscriminatorTag(branch: JsonSchema, propertyName: string): boolean 
   if (!Array.isArray(branch.required) || !branch.required.includes(propertyName) || !isRecord(tag)) return false;
   const values = 'const' in tag ? [tag.const] : Array.isArray(tag.enum) ? tag.enum : [];
   return values.length > 0 && values.every((item) => typeof item === 'string' && item !== '');
+}
+
+/** The tag of a model descriptor: the value of its required literal `propertyName`, or undefined. */
+function literalTag(object: unknown, propertyName: string): unknown {
+  if (!isRecord(object) || !isRecord(object.properties) || !Array.isArray(object.required) || !object.required.includes(propertyName)) return undefined;
+  const tag = object.properties[propertyName];
+  return isRecord(tag) && tag.kind === 'literal' ? tag.value : undefined;
+}
+
+/** `hasDiscriminatorTag` for the descriptor of a referenced model: a required, non-empty string literal. */
+function hasLiteralTag(object: unknown, propertyName: string): boolean {
+  const tag = literalTag(object, propertyName);
+  return typeof tag === 'string' && tag !== '';
 }
 
 /** The registered codec id of a model class variant, as its schema references it. */
@@ -590,13 +608,34 @@ function descriptorSchema(
             ],
           };
         });
-        const propertyName = table?.propertyName ?? objectUnionDiscriminator(variants);
+        // Without a tag table, a reference to a model of this job counts as its
+        // target object when it lowers to a $ref, resolved as withDefinitions
+        // resolves it. A generated model of another job keeps anyOf, and so
+        // does a target with its own serde: its $ref schema can be the serde's
+        // wire form, which need not hold the tag.
+        const objects = present.map(({ variant }, position) => {
+          const branch = branches[position];
+          if (table || !isRecord(variant) || variant.kind !== 'reference' || typeof variant.name !== 'string' || !isRecord(branch) || typeof branch.$ref !== 'string') return variant;
+          const target = options.resolveReference?.(variant.name) ?? options.definitions?.[variant.name];
+          return isRecord(target) && target.serde === undefined ? target : variant;
+        });
+        const propertyName = table?.propertyName ?? objectUnionDiscriminator(objects);
         // A discriminator requires a required tag with non-empty string
-        // const or enum values directly under each branch. Other tags keep anyOf.
-        schema = propertyName !== undefined
-          && branches.every((branch) => hasDiscriminatorTag(branch, propertyName))
-          ? { discriminator: { propertyName }, oneOf: branches }
-          : { anyOf: branches };
+        // const or enum values directly under each branch, or under the model a
+        // branch refers to. Other tags keep anyOf.
+        // A union that mixes inline objects with references keeps anyOf: the
+        // mapping of an OpenAPI document could name only its $ref branches.
+        const referenced = objects.map((object, position) => object !== present[position].variant);
+        const mixed = referenced.some(Boolean) && !referenced.every(Boolean);
+        const tagged = propertyName !== undefined && !mixed
+          && branches.every((branch, position) => (referenced[position] ? hasLiteralTag(objects[position], propertyName) : hasDiscriminatorTag(branch, propertyName)));
+        const mapping = tagged && options.discriminatorMapping === true && referenced.every(Boolean)
+          ? Object.fromEntries(objects.map((object, position) => {
+            const branch = branches[position];
+            return [literalTag(object, propertyName), isRecord(branch) ? branch.$ref : undefined];
+          }))
+          : undefined;
+        schema = tagged ? { discriminator: { propertyName, ...(mapping ? { mapping } : {}) }, oneOf: branches } : { anyOf: branches };
         break;
       }
       case 'intersection': {
