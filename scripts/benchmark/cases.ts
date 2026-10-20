@@ -4,7 +4,7 @@ export const REPOSITORY_BLOB_URL = 'https://github.com/RunicCore/golem/blob/mast
 
 export type PayloadId = 'simple' | 'nested' | 'array' | 'checkout';
 export type OperationId = 'parse' | 'stringify' | 'validate';
-export type AdapterId = 'golem' | 'golem-validated' | 'golem-object' | 'class-transformer' | 'class-validator' | 'typia' | 'zod';
+export type AdapterId = 'golem' | 'golem-validated' | 'golem-object' | 'class-transformer' | 'class-validator' | 'typia' | 'zod' | 'ajv';
 export type GroupId = 'plain' | 'classes' | 'validated-classes';
 export type Support = 'full' | 'none';
 export type ProjectKind = 'plain' | 'validating';
@@ -38,7 +38,7 @@ const F = 'scripts/benchmark/fixtures/upstream';
 /** Libraries are compared only within a group, where every adapter does the same job. */
 export const GROUPS: readonly GroupSpec[] = [
   { id: 'plain', label: 'Plain objects, validated', description: 'JSON text to validated plain objects and back. Golem uses an IObject declaration.',
-    operations: { parse: ['golem-object', 'typia', 'zod'], stringify: ['golem-object', 'typia', 'zod'], validate: ['golem-object', 'typia', 'zod'] },
+    operations: { parse: ['golem-object', 'typia', 'zod', 'ajv'], stringify: ['golem-object', 'typia', 'zod', 'ajv'], validate: ['golem-object', 'typia', 'zod', 'ajv'] },
     operationDescriptions: { parse: 'JSON text to a checked plain object', stringify: 'plain object, checked, to JSON text', validate: 'check a plain object' } },
   { id: 'classes', label: 'Class instances', description: 'JSON text to class instances and back, without validation. Golem uses an IModel declaration.',
     operations: { parse: ['golem', 'class-transformer'], stringify: ['golem', 'class-transformer'], validate: [] },
@@ -52,14 +52,16 @@ export const BENCH_ADAPTERS: readonly AdapterSpec[] = [
   { id: 'golem-object', fixtureAdapter: 'golem-object', project: 'validating', group: 'plain', label: 'Golem (IObject)', library: '@exprtlabs/golem', checked: true, sourceFile: `${F}/golem-object.ts` },
   { id: 'typia', fixtureAdapter: 'typia', project: 'plain', group: 'plain', label: 'Typia', library: 'typia', checked: true, sourceFile: `${F}/typia.ts` },
   { id: 'zod', fixtureAdapter: 'zod', project: 'plain', group: 'plain', label: 'Zod', library: 'zod', checked: true, sourceFile: `${F}/zod.ts` },
+  { id: 'ajv', fixtureAdapter: 'ajv', project: 'plain', group: 'plain', label: 'Ajv', library: 'ajv', checked: true, sourceFile: `${F}/ajv.ts` },
   { id: 'golem', fixtureAdapter: 'golem', project: 'plain', group: 'classes', label: 'Golem (IModel)', library: '@exprtlabs/golem', checked: false, sourceFile: `${F}/golem.ts` },
   { id: 'class-transformer', fixtureAdapter: 'class-transformer', project: 'plain', group: 'classes', label: 'class-transformer', library: 'class-transformer', checked: false, sourceFile: `${F}/class-transformer.ts` },
   { id: 'golem-validated', fixtureAdapter: 'golem-validated', project: 'validating', group: 'validated-classes', label: 'Golem (IModel, validated)', library: '@exprtlabs/golem', checked: true, sourceFile: `${F}/golem.ts` },
   { id: 'class-validator', fixtureAdapter: 'class-validator', project: 'plain', group: 'validated-classes', label: 'class-transformer + class-validator', library: 'class-validator', checked: true, sourceFile: `${F}/class-validator.ts` },
 ];
 
-const TYPIA_CHECKOUT = 'Typia checks JSON shapes but does not convert values, so the hex code and the dates would stay strings.';
-const UNSUPPORTED: readonly CaseSpec[] = BENCH_OPERATIONS.map(o => ({ payload: 'checkout', operation: o.id, adapter: 'typia', support: 'none', note: TYPIA_CHECKOUT }));
+const noConversion = (library: string): string => `${library} checks JSON shapes but does not convert values, so the hex code and the dates would stay strings.`;
+const UNSUPPORTED: readonly CaseSpec[] = (['typia', 'ajv'] as const).flatMap(adapter => BENCH_OPERATIONS.map(o =>
+  ({ payload: 'checkout', operation: o.id, adapter, support: 'none', note: noConversion(adapterSpec(adapter).label) } satisfies CaseSpec)));
 
 function buildCases(): readonly CaseSpec[] {
   const cases: CaseSpec[] = [];

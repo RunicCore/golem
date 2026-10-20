@@ -1,4 +1,5 @@
 import type { Adapter, ComparisonFixture } from './fixture-contract.js';
+import { createAjvFixtures } from './ajv.js';
 import { createClassTransformerFixtures } from './class-transformer.js';
 import { createClassValidatorFixtures } from './class-validator.js';
 import { createGolemFixtures } from './golem.js';
@@ -21,5 +22,7 @@ export async function createComparisonFixtures(adapter: Adapter): Promise<readon
       return createTypiaFixtures(adapter);
     case 'zod':
       return createZodFixtures(adapter);
+    case 'ajv':
+      return createAjvFixtures(adapter);
   }
 }
