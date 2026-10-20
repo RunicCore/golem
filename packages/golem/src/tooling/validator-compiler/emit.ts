@@ -1273,10 +1273,9 @@ class FunctionWriter {
         this.close();
       }
       if (closed[position]) {
+        if (!named[position].has(discriminator.property)) this.failWhen(`${tag} !== undefined`);
         // A key that the instance's own model declares is judged; any other own key is program state.
-        const stays = (name: string, local: string): string => `${local} !== undefined && !${this.state.localHelper('isInstanceState')}(${value}, ${literal(name)})`;
-        if (!named[position].has(discriminator.property)) this.failWhen(stays(discriminator.property, tag));
-        for (const [name, local] of absent) this.failWhen(stays(name, local));
+        for (const [name, local] of absent) this.failWhen(`${local} !== undefined && !${this.state.localHelper('isInstanceState')}(${value}, ${literal(name)})`);
         if (unknown !== undefined) this.failWhen(unknown);
       }
       this.objectKeywords(object, value, { presence: objectPresence(this.state, value, captured) });

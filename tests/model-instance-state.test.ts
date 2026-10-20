@@ -4,6 +4,7 @@ import path from 'node:path';
 import test, { type TestContext } from 'node:test';
 import { pathToFileURL } from 'node:url';
 
+import { LibError } from '@exprtlabs/golem/errors';
 import { registerGeneratedModel } from '@exprtlabs/golem/model';
 import { requireObjectCodec } from '@exprtlabs/golem/serde';
 
@@ -48,6 +49,7 @@ const PLACES: readonly { readonly root: string; readonly fast: boolean; readonly
     ['a model instance with a declared key that the schema forbids', instance(Wide, { note: 'n' }), false],
     ['a derived instance whose own model declares the key', instance(Kid, { mode: 'm' }), false],
     ['a derived instance with own state', instance(Kid, { cache: 1 }), true],
+    ['a value made from the model prototype, which holds an extra own key', Object.assign(Object.create(Task.prototype), { title: 'a', cache: 1 }), true],
     ['a dynamic-map instance, whose own keys are data', instance(Bag, { cache: 1 }), false],
   ] },
   { root: 'evaluated', fast: false, rows: [
@@ -97,7 +99,11 @@ for (const mobx of [false, true]) {
     assert.equal(board.stringify(new Board({ lead: value })), '{"lead":{"title":"a","done":true}}', 'a nested instance with own state');
     assert.equal(small.validate(new Model({ title: 'a' })), true, 'own state beside the declared keys of an exact IObject');
     assert.equal(small.validate(value), false, 'the declared key done is not in the exact IObject');
+    assert.throws(() => task.fromWireFormat({ title: 'a', cache: 1 }), (error: unknown) => {
+      assert.ok(error instanceof LibError, 'a wire value with an extra key');
+      assert.deepEqual(error.issues.map(issue => [issue.code, 'key' in issue ? issue.key : undefined]), [['unknownKey', 'cache']]);
+      return true;
+    });
     assert.equal(task.validate({ ...value }), false, 'a copy carries no model, so its own keys are data');
-    assert.throws(() => task.fromWireFormat({ title: 'a', cache: 1 }), 'a wire value with an extra key');
   });
 }
