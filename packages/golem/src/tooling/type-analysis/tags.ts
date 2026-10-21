@@ -1059,7 +1059,3 @@ export function analyzeNode(
   }
   return { baseNode: result.baseNode, metadata };
 }
-
-export function mergeTagMetadata(...metadata: readonly TagMetadata[]): TagMetadata {
-  return metadata.reduce(mergeMetadata, EMPTY);
-}

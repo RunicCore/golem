@@ -198,7 +198,6 @@ function descriptorExternalIds(
 
 function assertGeneratedNames(
   specifications: readonly ModelSpecification[],
-  profile: GolemProfile,
   externalIds: readonly string[],
   manifestIndex: ManifestIndex,
 ): Map<string, string> {
@@ -336,7 +335,7 @@ export interface TagSchema {
   readonly schema: Readonly<Record<string, unknown>>;
 }
 
-export interface TagSchemaCompilation {
+interface TagSchemaCompilation {
   readonly id: string;
   readonly schema: Readonly<Record<string, unknown>>;
   /** Metadata lookup keys that may share this compiled validator. */
@@ -764,7 +763,7 @@ export interface SourceModelGraph {
 const executableMemos = new WeakMap<object, ExecutableValidationMemo>();
 
 /** One job's type analysis: every model is described once, shared by all companions. */
-export interface JobAnalysis {
+interface JobAnalysis {
   readonly describe: ReturnType<typeof descriptorBuilder>;
   readonly described: Map<ModelSpecification, ModelConversionDescriptor>;
   /** Canonical filenames of the job's model sources. */
@@ -943,7 +942,7 @@ export function analyzeSourceGraph(
     (found, descriptor) => descriptorExternalIds(descriptor, found),
     new Set<string>(),
   )].sort();
-  const externalNames = assertGeneratedNames([...emitted], profile, externalIds, manifestIndex);
+  const externalNames = assertGeneratedNames([...emitted], externalIds, manifestIndex);
   const registry: BindingRegistry = { validations: new Map(), serde: new Map() };
   Object.values(owned).forEach((descriptor) => visitDescriptor(descriptor, registry));
   const ownedSpecifications = [...emitted].filter((specification) => !siblings.has(specification));
@@ -987,7 +986,7 @@ export function analyzeSourceGraph(
   };
 }
 
-export interface SourceSchemaGraphOptions {
+interface SourceSchemaGraphOptions {
   /** Job-fixed codec ids by model name, for this source's models and its siblings. */
   readonly codecIds?: ReadonlyMap<string, string>;
   /** Models emitted by another companion of the job. */
@@ -1082,7 +1081,7 @@ export function validatorImports(
 }
 
 /** What the app generated beside its model files, which a model file reads. */
-export interface AppOutputs {
+interface AppOutputs {
   /**
    * The generated validators module, the name it exports each root under and the name of each root's fast check (see
    * `PlanValidators.exports` and `fastExports`); set when the app validates.
@@ -1093,7 +1092,7 @@ export interface AppOutputs {
 }
 
 /** How this companion relates to the companions of the files its source imports. */
-export interface SiblingCodecOptions {
+interface SiblingCodecOptions {
   /** Sibling codecs whose companion exports a wire stringify. */
   readonly siblingWireCodecIds?: ReadonlySet<string>;
   /** Whether each sibling codec's model is recursive, by codec id. */
@@ -1107,7 +1106,7 @@ export interface SiblingCodecOptions {
 }
 
 /** Export name of an object-only model's conversion helper, keyed by codec id. */
-export function objectHelperExportName(kind: 'decode' | 'init' | 'encode', codecId: string): string {
+function objectHelperExportName(kind: 'decode' | 'init' | 'encode', codecId: string): string {
   return `__golem${kind[0].toUpperCase()}${kind.slice(1)}_${codecId.replace(/[^A-Za-z0-9_$]/g, '_')}`;
 }
 
@@ -1686,7 +1685,7 @@ export function emitSource(
       `    encode: encode${specification.name}Model,`,
       '  },',
       `  codecId: ${JSON.stringify(schemaGraph.nodeFor(definition, specification.name)?.codecId ?? specification.name)},`,
-      `  profile: { validation: ${(specification.validation ?? profile.validation) ? 'true' : 'false'}, mobx: ${profile.mobx ? 'true' : 'false'} },`,
+      `  profile: { validation: ${(specification.validation ?? profile.validation) ? 'true' : 'false'} },`,
       ...(observesValidator(specification) ? ['  enhanceValidator: enhanceValidatorWithMobX,'] : []),
       // A model with a dynamic map has no program state: the keys outside its fields are data.
       ...(definition.kind === 'object' && definition.additionalProperties ? ['  additionalProperties: true,'] : []),

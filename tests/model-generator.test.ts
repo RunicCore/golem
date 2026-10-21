@@ -424,13 +424,13 @@ test('a model file records the profile of the app and imports the MobX hook only
   const paymentOf = (profile: { readonly mobx: boolean; readonly validation: boolean }): string =>
     generate({ root, profile }).artifacts.find(artifact => artifact.path.endsWith('payment.model.generated.ts'))?.content ?? '';
   const plain = paymentOf({ mobx: false, validation: false });
-  assert.match(plain, /profile: \{ validation: false, mobx: false \},/);
+  assert.match(plain, /profile: \{ validation: false \},/);
   assert.doesNotMatch(plain, /mobx-validation|enhanceValidator/);
   const observed = paymentOf({ mobx: true, validation: false });
-  assert.match(observed, /profile: \{ validation: false, mobx: true \},/);
+  assert.match(observed, /profile: \{ validation: false \},/);
   assert.doesNotMatch(observed, /mobx-validation|enhanceValidator/);
   const validating = paymentOf({ mobx: true, validation: true });
-  assert.match(validating, /profile: \{ validation: true, mobx: true \},\n  enhanceValidator: enhanceValidatorWithMobX,/);
+  assert.match(validating, /profile: \{ validation: true \},\n  enhanceValidator: enhanceValidatorWithMobX,/);
   assert.match(validating, /import \{ enhanceValidatorWithMobX \} from '@exprtlabs\/golem\/mobx-validation';/);
 });
 
