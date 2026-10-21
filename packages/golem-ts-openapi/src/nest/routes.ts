@@ -11,7 +11,7 @@ import { baseClassDeclarations, classHierarchyBaseToDerived, evaluateContextExpr
 import { callStringValues, decoratorOptions, parseSecurity, parseTags, readBoolean, type MetadataReader } from './metadata.js';
 import { resolveValueSymbol, unwrapExpression } from '../evaluation/static-value.js';
 import { NEST_COMMON, NEST_SWAGGER, callArguments, decoratorsOf, propertyInitializer, staticObject } from './symbols.js';
-import { parseParameters, parseParameterOverride } from './parameters.js';
+import { classParameterDecorators, parseParameters, parseParameterOverride } from './parameters.js';
 import { assertManualResponseContract, parseRequestBody, parseResponses } from './responses.js';
 import type {
   AnalyzedController,
@@ -395,7 +395,10 @@ async function analyzeController(
     const apiBody = parsedBody && parameterResult.body
       ? { ...parsedBody, declaredType: parameterResult.body.type }
       : parsedBody;
-    const parameterOverrides = parseParameterOverride(context, decorators);
+    const parameterOverrides = {
+      ...parseParameterOverride(context, classParameterDecorators(context.checker, method, classDeclaration)),
+      ...parseParameterOverride(context, decorators),
+    };
     const pathExpansion = routePaths.length > 1 || classPaths.length > 1;
     const versionExpansion = effectiveVersions.length > 1;
     const operationBase = operation.operationId ?? `${controllerName}_${method.name.getText()}`;

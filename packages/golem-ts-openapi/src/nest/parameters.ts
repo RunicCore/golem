@@ -6,6 +6,7 @@ import {
 } from '../diagnostics.js';
 import {
   authoritativeTypeReference,
+  classHierarchyBaseToDerived,
   containsUndefined,
   controllerMethodSignature,
   controllerParameterType,
@@ -39,6 +40,26 @@ const SWAGGER_PARAMETER_LOCATIONS: readonly (readonly [string, 'query' | 'path' 
  */
 export function parameterOverrideKey(location: string, name: string): string {
   return `${location === 'querystring' ? 'query' : location}:${name}`;
+}
+
+/**
+ * The class-level Swagger parameter decorators of a route, base class first.
+ * `@nestjs/swagger` merges `@ApiHeader` from the whole constructor chain into
+ * every route, and applies `@ApiQuery` and `@ApiParam` only to the methods
+ * that the decorated class itself declares.
+ */
+export function classParameterDecorators(
+  checker: ts.TypeChecker,
+  method: ts.MethodDeclaration,
+  controllerClass: ts.ClassLikeDeclaration,
+): readonly DecoratorInfo[] {
+  const headers = classHierarchyBaseToDerived(checker, controllerClass)
+    .flatMap(declaration => hasAnyDecorator(decoratorsOf(checker, declaration), ['ApiHeader'], NEST_SWAGGER));
+  const declaring = method.parent;
+  const own = ts.isClassLike(declaring)
+    ? hasAnyDecorator(decoratorsOf(checker, declaring), ['ApiQuery', 'ApiParam'], NEST_SWAGGER)
+    : [];
+  return [...headers, ...own];
 }
 
 export function parseParameterOverride(
@@ -315,11 +336,16 @@ export function parseParameters(
     parameters.push(...flattenParameter(context, parameter, parameterType, index, location.location, decorators));
   });
   const methodDecorators = decoratorsOf(context.checker, method);
+  const classDecorators = classParameterDecorators(context.checker, method, controllerClass);
+  // `@nestjs/swagger` puts class-level headers before the route's own parameters.
+  const classHeaders: ControllerParameter[] = [];
   for (const [decoratorName, location] of SWAGGER_PARAMETER_LOCATIONS) {
-    for (const decorator of hasAnyDecorator(methodDecorators, [decoratorName], NEST_SWAGGER)) {
+    const inherited = [...hasAnyDecorator(classDecorators, [decoratorName], NEST_SWAGGER)].reverse();
+    // A method's declaration wins over its class's, and a derived class's over its base's.
+    for (const decorator of [...hasAnyDecorator(methodDecorators, [decoratorName], NEST_SWAGGER), ...inherited]) {
       const options = decoratorOptions(context, decorator);
       const name = options.string('name');
-      if (!name || parameters.some(parameter => parameter.name === name
+      if (!name || [...parameters, ...classHeaders].some(parameter => parameter.name === name
         && parameterOverrideKey(String(parameter.location), name) === parameterOverrideKey(location, name))) continue;
       // In OpenAPI 3.2 a query DTO field is documented inside the querystring schema, as 3.1 documents its flattened parameter.
       if (location === 'query' && parameters.some(parameter => querystringHasProperty(context, parameter, name))) continue;
@@ -328,8 +354,8 @@ export function parseParameters(
         type: context.checker.getStringType(),
         sourceFile: method.getSourceFile(),
       } satisfies TypeReference;
-      parameters.push({
-        index: method.parameters.length + parameters.length,
+      (location === 'header' && inherited.includes(decorator) ? classHeaders : parameters).push({
+        index: method.parameters.length + parameters.length + classHeaders.length,
         node: method,
         type,
         location,
@@ -340,6 +366,7 @@ export function parseParameters(
       });
     }
   }
-  assertDistinctParameters(context, parameters);
-  return { parameters, ...(body ? { body } : {}), ...(manualResponse ? { manualResponse } : {}) };
+  const allParameters = [...classHeaders.reverse(), ...parameters];
+  assertDistinctParameters(context, allParameters);
+  return { parameters: allParameters, ...(body ? { body } : {}), ...(manualResponse ? { manualResponse } : {}) };
 }
