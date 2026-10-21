@@ -326,7 +326,7 @@ An error prints its code, location when known, and message, then stops generatio
 
 ### RUNM1074
 
-**Model declared in a file that is not a model file.** A model field, or a `stringify`, `parse`, `validate`, `assertValue`, `toWireFormat` or `fromWireFormat` call, names an `IModel` or `IObject` alias that sits in a file whose name does not end in one of the `models.suffixes`. Golem reads a model from a model file only; a shared folder or an installed package declares its models in model files too, such as `customer.model.ts` or `customer.model.d.ts`. The message names the alias as `file#export`. **Fix:** Move the alias into a file whose name ends in a model suffix.
+**Model declared in a file that is not a model file.** A model field, or a `stringify`, `parse`, `validate`, `assertValue`, `toWireFormat` or `fromWireFormat` call, names an `IModel` or `IObject` alias that sits in a file whose name does not end in one of the `models.suffixes`. Golem reads a model from a model file only. A shared folder or an installed package declares its models in model files too, such as `customer.model.ts` or `customer.model.d.ts` ([shared folder](/reference/config#a-folder-shared-by-several-apps)). The message names the alias as `file#export`. **Fix:** Move the alias into a file whose name ends in a model suffix.
 
 ### RUNM1075
 
@@ -334,11 +334,15 @@ An error prints its code, location when known, and message, then stops generatio
 
 ### RUNM1076
 
-**Golem ignores a file beside a shared model file.** A `golem.yaml` in the folder of a shared model file, or in a folder between the file and its package folder, or a generated file (`.generated.ts`, `.generated.js` or `.generated.d.ts`) beside the model file. A shared folder or package declares models only. Golem does not read the `golem.yaml` and does not use the generated file. This is a warning: generation continues, and the message names the file. When the `golem.yaml` configures another app, the message tells you to move the model into a shared package that holds no `golem.yaml`. **Fix:** Delete the file, or move the model into a shared package.
+**Golem ignores a file in a shared package.** A shared model file that declares a model has a `golem.yaml` in its package folder or in a folder between the file and its package folder, or a generated file beside it: `customer.model.generated.ts`, `.generated.js` or `.generated.d.ts`. A shared package declares models and holds no `golem.yaml` and no generated file. Golem does not read the `golem.yaml` and does not use the generated file. The app uses its own generated file in `models.output`. This is a warning: generation continues. The message names the file, and golem writes it once for each run. When the `golem.yaml` configures another app that generates the same model file, the message tells you to move the model into a shared package that holds no `golem.yaml`. **Fix:** Delete the file, or move the model into a shared package.
 
 ### RUNM1077
 
-**Models job below the root of another models job.** A `golem.yaml` with a `models` job lies below the `models.root` of another `golem.yaml`, in a folder with model files. Both jobs would generate the same files, so generation and `golem check` stop. The message names the nested `golem.yaml`. **Fix:** Remove the `models` job from the nested `golem.yaml`, or move its folder out of the `models.root`.
+**Models job below the root of another models job.** A `golem.yaml` with a `models` job lies below the `models.root` of another `golem.yaml`, in a folder with model files. Both jobs would write the generated files of those model files, so `golem generate` and `golem check` stop. The message names the nested `golem.yaml`. **Fix:** Remove the `models` job from the nested `golem.yaml`, or move its folder out of the `models.root`.
+
+### RUNM1078
+
+**Two shared model files have one generated file.** Each app writes the generated file of a shared model file in `models.output`, at `<package name>/<path of the file in the package>.generated.ts`. Two shared model files in different folders that have the same package name and the same path in the package would write one file, so generation stops. The message names both model files and the path. **Fix:** Rename one model file, or move it into a package folder with another name.
 
 ## Validators (VALIDATE)
 

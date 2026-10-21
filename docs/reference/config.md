@@ -156,9 +156,9 @@ Install `@exprtlabs/golem-model` to use `models`.
 | Key | Type | Required | Default | Meaning |
 | --- | --- | --- | --- | --- |
 | `root` | path | No | `.` | TypeScript project directory. |
-| `sources` | array of paths | No | — | Explicit config-relative model files, which may have any `.ts`, `.mts` or `.cts` name. Each one must export an `IModel` or `IObject` alias, or generation stops. Each one must be inside `root`, or generation stops with [RUNM1075](/reference/diagnostics#runm1075). When omitted, every file below `<root>/src` and every file that the tsconfig includes or imports is a model source when it ends in one of the `suffixes` and its real path is inside `root` ([shared folder](#a-folder-shared-by-several-apps)). The job skips a discovered file that has no `IModel` or `IObject` alias. It also skips a discovered file that a `models` job of another `golem.yaml` below `root` covers. |
+| `sources` | array of paths | No | — | Explicit config-relative model files, which may have any `.ts`, `.mts` or `.cts` name. Each one must export an `IModel` or `IObject` alias, or generation stops. Each one must be inside `root`, or generation stops with [RUNM1075](/reference/diagnostics#runm1075). When omitted, every file below `<root>/src` and every file that the tsconfig includes or imports is a model source when it ends in one of the `suffixes`. A model source outside `root` is a [shared model file](#a-folder-shared-by-several-apps). The job skips a discovered file that has no `IModel` or `IObject` alias. |
 | `suffixes` | array of strings | No | `[".model.ts", ".models.ts"]` | File-name endings that make a file a model source. Each entry starts with `.`, ends in `.ts`, `.mts` or `.cts`, appears once, and does not end in `.generated.<ext>`. |
-| `output` | path | No | `<root>/src/generated/models` | The folder of the validators file, `models.validators.generated.ts`. It must not overlap another job. The tsconfig must include it. |
+| `output` | path | No | `<root>/src/generated/models` | The folder of the validators file, `models.validators.generated.ts`, and of the generated files of shared model files. It must not overlap another job. The tsconfig must include it. |
 
 The generated file for each model source stays beside it and puts `.generated`
 before the final extension: `order.entity.ts` gets `order.entity.generated.ts`.
@@ -177,7 +177,7 @@ models:
 
 ### A folder shared by several apps
 
-A shared folder works like an installed package in `node_modules`. Several apps can include one folder of plain types and functions. The folder needs no `golem.yaml`, and the app needs no configuration for it.
+A shared folder or package declares models. Several apps can include one folder of types, link it, or install it from `node_modules`. The folder needs no `golem.yaml`, and the app needs no configuration for it.
 
 Each app includes the folder in its own tsconfig, with a `rootDir` that contains both:
 
@@ -188,28 +188,49 @@ Each app includes the folder in its own tsconfig, with a `rootDir` that contains
 }
 ```
 
-A models job generates only for a model file whose real path is inside `models.root`. Golem follows folder links to find the real path. A file that is not inside the root works like a file of an installed package, whether the app reaches it by a plain include, a folder link, a linked workspace package or `node_modules`. Golem writes no file for it and nothing next to it.
+The shared folder declares the `IModel` or `IObject` aliases in a model file, a file whose name ends in one of the `models.suffixes`. It declares the alias and nothing else: no class and no generated file.
 
-An outside folder can hold:
+<<< ../../examples/shared-folder/shared/customer.model.ts#shared-model
 
-- Plain types. A plain type is a field type of a model of the app. Its constraints, such as `MinLength`, apply in the generated file of that model.
+A model file whose real path is inside `models.root` is a model file of the app, and its generated file stays beside it. Golem follows folder links to find the real path. Every other model file is a shared model file, whether the app reaches it by a plain include, a folder link, a linked workspace package or `node_modules`. Its aliases are models of the app. A declaration file such as `customer.model.d.ts` is always a shared model file, also inside `models.root`, because it cannot hold your class. The models of an SDK are the exception: a model file that a `model-manifest.json` lists keeps the generated code of the SDK.
+
+Each app generates the shared models in its own `models.output`, so several apps never write to one file, and golem writes nothing into the shared folder. The generated file is at:
+
+```text
+<models.output>/<package name>/<path of the file in the package>.generated.ts
+```
+
+The package is the nearest folder above the file whose `package.json` has a `name`, and the package name is that `name`. When no such folder exists, the package is the top folder below the folder that holds both the file and your `golem.yaml`, and the package name is the folder name. With a `package.json` named `@acme/shared`, the file `shared/customer.model.ts` gives `src/generated/models/@acme/shared/customer.model.generated.ts` in `apps/web`. For a declaration file, the generated name drops `.d`.
+
+A package name that is absolute or has a `..` segment stops generation, because the name is a folder of `models.output`. Two shared model files that get one path stop generation with [RUNM1078](/reference/diagnostics#runm1078).
+
+Your code imports the generated base class from the file in its own `models.output`, and the class that extends it stays in the app. Each app can add its own methods:
+
+<<< ../../examples/shared-folder/apps/web/src/customer.ts#web-class
+
+Each app has its own profile. The worker below uses the same shared model with `validation: false`, and loads the generated file of its own `models.output`:
+
+<<< ../../examples/shared-folder/apps/worker/src/customers.ts#worker-use
+
+A shared folder can also hold:
+
+- Plain types. A plain type is a field type of a model. Its constraints, such as `MinLength`, apply in the generated file of that model.
 - `TSerde` and `TValidation` functions. Golem imports a function of the folder by a relative path, also when a named package above the app, such as a monorepo root, holds the folder.
 
-A `package.json` in the folder with a `name` makes the folder a package. Golem then imports its functions by that name. Each app must resolve the name, and an `exports` entry must reach the file of the function. Without it, generation fails with [RUNM1060](/reference/diagnostics#runm1060). A `package.json` without a `name` has no effect on these imports.
+A `package.json` in the folder with a `name` makes the folder a package. Golem then imports its functions by that name. Each app must resolve the name, and an `exports` entry must reach the file of the function. Without it, generation fails with [RUNM1060](/reference/diagnostics#runm1060). A file in `node_modules` always imports by the package name. A `package.json` without a `name` has no effect on these imports.
 
-An `IObject` or `IModel` alias in an outside folder is not a model of the app. Declare the `IObject` or `IModel` at the top level in your own source. The plain types of the folder nest inside it. Here the order uses two plain types of the folder and a plain line type:
+A shared folder holds no `golem.yaml` and no generated file. When one is there, golem writes the warning [RUNM1076](/reference/diagnostics#runm1076), ignores the file and continues:
 
-<<< ../../examples/shared-folder/apps/web/src/order.model.ts#app-model
+- A `golem.yaml` in the folder of a shared model file, or in a folder between the file and its package folder. Golem does not read it.
+- A generated file beside a shared model file, such as `customer.model.generated.ts`, `.generated.js` or `.generated.d.ts`. Golem does not use it. The app uses its own generated file.
 
-Each app declares its own model and has its own profile. The worker below declares its own `IObject` over the same plain type, with `validation: false`:
+`golem generate`, `golem check`, `golem build` and watch write each warning once for each run.
 
-<<< ../../examples/shared-folder/apps/worker/src/customer.model.ts#worker-model
+A `golem.yaml` with a `models` job below the `models.root` of another `golem.yaml` stops `golem generate` and `golem check` with [RUNM1077](/reference/diagnostics#runm1077). Both jobs would write the same generated files. Remove the `models` job from the nested `golem.yaml`, or move its folder out of the root.
 
-A field type that uses an outside `IModel` or `IObject` alias stops generation with [RUNM1074](/reference/diagnostics#runm1074). A serde call that uses one gets the same error from `golem check`, `golem build` and the hosts. The message names the model and tells you what to declare.
+An `IModel` or `IObject` alias in a file that does not end in a model suffix is not a model. A field type or a serde call that uses it stops with [RUNM1074](/reference/diagnostics#runm1074). Move the alias into a model file.
 
-A `golem.yaml` below the root can have a `models` job of its own. Then that job generates the files of its folder, and the outer job skips them.
-
-Full example: [`examples/shared-folder`](https://github.com/RunicCore/golem/tree/master/examples/shared-folder), with one app that includes the folder and one that reaches it through a folder link.
+Full example: [`examples/shared-folder`](https://github.com/RunicCore/golem/tree/master/examples/shared-folder), with a shared folder that declares a model, one app that includes the folder and one that reaches it through a folder link.
 
 The global `allowAny` and `exact` settings default to `false` and `true`. A
 model that has an `any` or `unknown` field needs `allowAny: true`. An `IObject`
