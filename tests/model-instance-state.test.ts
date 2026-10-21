@@ -327,3 +327,28 @@ test('an AdditionalProperties tag with a value type converts the extra values li
   assert.deepEqual(encodeGeneratedModel(parsed), JSON.parse(text), 'the class-level encode');
   assert.equal(stamped.stringify(Object.assign(new Stamped({ id: 'a' }), { at: new Date(0) })), '{"id":"a","at":"1970-01-01T00:00:00.000Z"}');
 });
+
+test('an AdditionalProperties tag on a projection field keeps its extra keys in the constructor, the class-level encode and the wire form', async (t) => {
+  // protects: bug T-192 a projection (Pick<Source, 'id'> & AdditionalProperties<unknown>) dropped the extra keys of its value
+  const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-model-projection-extras-', name: 'model-projection-extras', linkWorkspaceNodeModules: true });
+  fs.writeFileSync(path.join(sourceRoot, 'view.model.ts'), `import type { IModel } from '@exprtlabs/golem/model';
+import type { AdditionalProperties } from '@exprtlabs/golem/tags';
+import { TViewBaseModel, type TViewFields } from './view.model.generated.js';
+type Source = { id: string; name: string };
+export type TView = IModel<{ view: Pick<Source, 'id'> & AdditionalProperties<unknown> }>;
+export class View extends TViewBaseModel {
+  constructor(values: Partial<TViewFields> = {}) { super(values); }
+}
+`);
+  writeModelGolemYaml(root, { mobx: false, validation: true, exact: false });
+  await buildModelProject(root);
+  const { View } = await import(pathToFileURL(path.join(root, 'build/view.model.js')).href) as { View: new (values?: object) => object };
+  const codec = requireObjectCodec(generatedCodecIdFromRoot(root, 'TView'));
+  const written = { view: { id: 'a', extra: 1 } };
+  const instance = new View(written);
+  assert.deepEqual({ ...(instance as { view: object }).view }, written.view, 'the constructor keeps the extra key');
+  assert.deepEqual(encodeGeneratedModel(instance), written, 'the class-level encode');
+  assert.equal(codec.stringify(instance), JSON.stringify(written));
+  assert.deepEqual(codec.toWireFormat(instance), written);
+  assert.deepEqual({ ...(codec.parse(JSON.stringify(written), { construct: View }) as { view: object }).view }, written.view, 'parse with construct');
+});

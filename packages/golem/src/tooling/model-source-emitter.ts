@@ -462,7 +462,8 @@ function emitNested(
     const omitsUndefined = (name: string): boolean => direction === 'toJSON' && !descriptor.required.includes(name);
     if (descriptor.projection) {
       const knownKeys = Object.keys(descriptor.properties).map(name => JSON.stringify(name)).join(', ');
-      const extras = typeof descriptor.additionalProperties === 'object'
+      // An additionalProperties tag declares the other keys as data: they are copied as they are or by the tag's type.
+      const extras = typeof descriptor.additionalProperties === 'object' || descriptor.additionalPropertiesDeclared
         ? `for (const [key, value] of Object.entries(source)) if (value !== undefined && !([${knownKeys}] as readonly string[]).includes(key)) defineModelProperty(out, key, ${additional});`
         : '';
       // A decoder reads its input by the JSON view: one Object.keys pass reads each field once into a local.
