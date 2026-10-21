@@ -28,15 +28,15 @@ function project(t: TestContext, files: readonly string[] = []): string {
 type ProgramScan = ReturnType<RewriteScanner['scanProgram']>;
 
 /** The scanner's answer for every file of the project's own program. */
-function scan(root: string): ProgramScan {
-  return withScanner(root, (scanner) => scanner.scanProgram());
+function scan(root: string, nest = false): ProgramScan {
+  return withScanner(root, (scanner) => scanner.scanProgram(), nest);
 }
 
 /** Run `use` against a scanner of the project's own program, which closes with it. */
-function withScanner<T>(root: string, use: (scanner: RewriteScanner) => T): T {
+function withScanner<T>(root: string, use: (scanner: RewriteScanner) => T, nest = false): T {
   const info = createProjectProgram(root, undefined, undefined, path.join(root, 'tsconfig.json'));
   using program = info.program;
-  return use(new RewriteScanner({ root, directory: root, modelsRoot: root, program, checker: program.getTypeChecker(), codecKeysFile: path.join(root, CODEC_KEYS), nest: false }));
+  return use(new RewriteScanner({ root, directory: root, modelsRoot: root, program, checker: program.getTypeChecker(), codecKeysFile: path.join(root, CODEC_KEYS), nest }));
 }
 
 function scanned(result: ProgramScan, file: string): FileScanResult {
@@ -214,6 +214,43 @@ test('a model class registers once, several classes of one model register under 
   assert.deepEqual(result.files.get('src/ledger.model.ts')?.imports, [{ from: '@exprtlabs/golem/serde', names: ['registerIModelClass'] }]);
   assert.equal(result.files.get('src/registered.model.ts'), undefined, 'the plain statement exists');
   assert.equal(result.files.get('src/rewritten.model.ts'), undefined, 'the aliased statement exists');
+});
+
+test('classes of one model in several files register under <id>#<class>, and the model has no default class', (t) => {
+  // protects: T-195 review: the default class of a model never depends on which file loads last
+  const root = project(t);
+  for (const name of ['A', 'B']) fs.writeFileSync(path.join(root, `src/${name.toLowerCase()}.ts`), `import { TPaymentBaseModel } from './payment.model.generated.js';\nexport class ${name} extends TPaymentBaseModel {}\n`);
+
+  const result = scan(root);
+
+  assert.deepEqual(result.diagnostics, []);
+  assertLines(rewritten(root, result, 'payment.model.ts'), ['__golem_registerIModelClass("TPayment_22222222#Payment", Payment);']);
+  assertLines(rewritten(root, result, 'a.ts'), ['__golem_registerIModelClass("TPayment_22222222#A", A);']);
+  assertLines(rewritten(root, result, 'b.ts'), ['__golem_registerIModelClass("TPayment_22222222#B", B);']);
+});
+
+test('a @Body() class that reaches the generated base through another class gets the codec of its model', (t) => {
+  // protects: T-195 review: a chain class was a model in the document and had no codec at run time
+  const root = project(t);
+  fs.writeFileSync(path.join(root, 'src/rush.controller.ts'), 'import type { Payment } from \'./payment.model.js\';\nexport class RushPayment extends Payment {}\ndeclare const Body: () => ParameterDecorator;\nexport class RushController {\n  create(@Body() input: RushPayment): void {}\n}\n');
+
+  const result = scan(root, true);
+
+  assert.deepEqual(result.diagnostics, []);
+  assert.ok(rewritten(root, result, 'rush.controller.ts').includes('@__golem_nestModelCodec("TPayment_22222222") input: RushPayment'));
+});
+
+test('a @Body() model that is a default export says to export the class by name', (t) => {
+  // protects: T-195 review: "run golem generate" never fixes a default export, so the message names the fix
+  const root = project(t, ['default-class.model.ts', 'default-class.model.generated.ts']);
+  fs.writeFileSync(path.join(root, 'src/default.controller.ts'), 'import type DefaultClass from \'./default-class.model.js\';\ndeclare const Body: () => ParameterDecorator;\nexport class DefaultController {\n  create(@Body() input: DefaultClass): void {}\n}\n');
+
+  const { diagnostics } = scan(root, true);
+
+  assert.deepEqual(diagnostics.map(({ code, message }) => ({ code, message })), [{
+    code: 'RUNM1071',
+    message: '@Body() type DefaultClass is the default export of its file, which has no codec id; golem generate cannot add one. Export the class by name (export class DefaultClass) and import it by name.',
+  }]);
 });
 
 /** Install a one-model SDK as `node_modules/sdk`; returns its directory. */
@@ -548,18 +585,19 @@ declare const text: string;
 export const money = parse<TMoney>(text);
 `);
   fs.writeFileSync(path.join(outer, 'shared/payment.model.ts'), `import { TPaymentBaseModel } from '../app/src/payment.model.generated.js';
-export class Payment extends TPaymentBaseModel {}
+export class SharedPayment extends TPaymentBaseModel {}
 `);
   fs.writeFileSync(path.join(outer, 'shared/plain.ts'), "export const plain = 1;\n");
   // Keys are exact paths from the tsconfig directory, so the class outside the root has a key of its own.
   const keysFile = path.join(root, CODEC_KEYS);
   const table: { version: number; keys: Record<string, string> } = JSON.parse(fs.readFileSync(keysFile, 'utf8'));
-  fs.writeFileSync(keysFile, JSON.stringify({ ...table, keys: { ...table.keys, '../shared/payment.model.ts#Payment': 'TPayment_22222222' } }));
+  fs.writeFileSync(keysFile, JSON.stringify({ ...table, keys: { ...table.keys, '../shared/payment.model.ts#SharedPayment': 'TPayment_22222222' } }));
   const { diagnostics, files } = scan(root);
   const xBefore = fs.readFileSync(path.join(outer, 'shared/x.ts'), 'utf8');
   const classBefore = fs.readFileSync(path.join(outer, 'shared/payment.model.ts'), 'utf8');
   const money = 'export const money = __golem_requireObjectCodec("TMoney_11111111").parse(text);';
-  const registration = '__golem_registerIModelClass("TPayment_22222222", Payment);';
+  // The app's own Payment is a second class of the model, so each registers under its own key.
+  const registration = '__golem_registerIModelClass("TPayment_22222222#SharedPayment", SharedPayment);';
   const outsideCode = (file: string, before: string, from: ProgramScan['files']): string => applyRewrites(before, from.get(file)!).code;
   assert.deepEqual(diagnostics, []);
   assert.deepEqual([...files.keys()], ['../shared/payment.model.ts', '../shared/x.ts', 'src/payment.model.ts']);
