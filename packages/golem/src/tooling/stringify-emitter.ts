@@ -484,6 +484,7 @@ function emitObjectInline(
   const hasExtras = typeof descriptor.additionalProperties === 'object' || descriptor.additionalPropertiesDeclared;
   // An object with no declared field writes `{}`, unless it declares its other names as data.
   if (properties.length === 0 && !hasExtras) return "'{}'";
+  if (isPlainDataMap(descriptor)) return `stringifyJsonScalar(${expression} as never)`;
   if (hasExtras) {
     // The other names are data: the encoded record keeps them, and a wire value is already encoded.
     return `stringifyJsonScalar(${ctx.wireIdentity ? expression : emitEncodedRecord(descriptor, expression, ctx)} as never)`;
@@ -507,6 +508,19 @@ function stringifyParameters(value: string, ctx: EmitCtx): string {
   return ctx.withoutOptions ? value : `${value}, ${STRINGIFY_OPTIONS}`;
 }
 
+/**
+ * Whether the object is a map with no declared field whose values are plain data (scalars, or lists of them). The keys
+ * of a map are data, and plain values hold no model instance and need no conversion, so the native JSON writer writes
+ * the value as the encoder would.
+ */
+function isPlainDataMap(descriptor: Extract<ModelTypeDescriptor, { kind: 'object' }>): boolean {
+  const isPlainData = (value: ModelTypeDescriptor): boolean =>
+    !descriptorNeedsConversion(value) && (isScalarishDescriptor(value) || (value.kind === 'array' && isPlainData(value.item)));
+  return Object.keys(descriptor.properties).length === 0
+    && typeof descriptor.additionalProperties === 'object'
+    && isPlainData(descriptor.additionalProperties);
+}
+
 function emitObjectStringify(
   fn: string,
   descriptor: Extract<ModelTypeDescriptor, { kind: 'object' }>,
@@ -519,6 +533,9 @@ function emitObjectStringify(
     : descriptor.additionalPropertiesDeclared ? { kind: 'unknown' as const } : undefined;
   if (properties.length === 0 && !additional) {
     return `function ${fn}(${stringifyParameters('_value: Record<string, unknown>', ctx)}): string {\n  return '{}';\n}\n`;
+  }
+  if (isPlainDataMap(descriptor)) {
+    return `function ${fn}(${stringifyParameters('value: Record<string, unknown>', ctx)}): string {\n  return stringifyJsonScalar(value as never);\n}\n`;
   }
   if (!additional && properties.every(([name]) => required.has(name))) {
     const concatenated = emitRequiredObjectConcat(properties, 'value', ctx);
