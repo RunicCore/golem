@@ -546,6 +546,8 @@ export async function runPipeline(filename: string, options: PipelineOptions = {
     options.onOwned?.(result.artifacts.map(artifact => artifact.path));
     if (!cached) {
       applyJob(config, inventory, job, result.artifacts, Boolean(options.check));
+      // The job's record and its written output change together: a later job's failure leaves a record that matches the files.
+      if (!options.check) saveJobRecords(config, nextRecords);
       for (const output of [...previousOutputs, ...result.artifacts.map(artifact => artifact.path)]) ranOutputs.add(output);
     }
     for (const input of result.watchInputs) observe(input, job.kind, job.id);
@@ -579,7 +581,7 @@ export async function runPipeline(filename: string, options: PipelineOptions = {
     const disagreements = nest ? rewriteScan.checkNestCodecs(controllerRoots, scanned) : [];
     if (disagreements.length > 0) throw new Error(errorDiagnosticsMessage('golem nest codec check', disagreements));
   }
-  // Records are saved last, and only by a run that writes: `check` writes nothing.
+  // The last save drops the records of removed jobs, which a run where every job is current has not saved. `check` writes nothing.
   if (!options.check) saveJobRecords(config, nextRecords);
   for (const output of owned) inputs.delete(output);
   session.retainUsed(new Set(config.jobs.map((job) => job.id)), used);
