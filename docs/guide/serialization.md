@@ -30,11 +30,11 @@ With validation on, the default, these calls check the value. `{ validate: false
 `validate<T>(value)` from `@exprtlabs/golem/validation` narrows `value` to that model. `validateInstance(model)` returns the issue list and does not throw for an ordinary invalid value.
 
 `parse<TMoney>` returns a plain object; `parse<Task>` returns a `Task`.
-`new Task(parse<TTask>(text))` parses an IObject and passes it to the `Task` constructor; use it when the constructor takes extra arguments. Nested fields follow the field type, not the root type argument.
+`new Task(parse<TTask>(text))` parses an IObject and passes it to the `Task` constructor; use it when the constructor takes extra arguments. Nested fields follow the field type, not the root type argument. A class whose model has a dynamic map keeps the extra keys of the input and converts each by the type of the map value.
 
 `JSON.stringify(model)` does not run conversion or validation.
 
-`fromWireFormat` and `parse` copy objects, maps (`Record<string, V>`) and arrays, and read each declared property once, so a getter runs once. Values typed `unknown` or `any` (the model sets `allowAny: true`), including the undeclared properties of an open object, are carried by reference: the result holds the same object as the input. `decodeGeneratedModel` copies nothing: fields without conversion are the input's own values. Cyclic input throws `LibError` of kind `deserialization`.
+`fromWireFormat` and `parse` copy objects, maps (`Record<string, V>`) and arrays, and read each declared property once, so a getter runs once. Values typed `unknown` or `any` (the model sets `allowAny: true`), including the undeclared properties of an open object, are carried by reference: the result holds the same object as the input. `decodeGeneratedModel` copies nothing: fields without conversion are the input's own values. Cyclic input throws `LibError` of kind `deserialization`. Encoding a cyclic value throws `LibError` of kind `serialization`.
 
 Do not write `stringify(toWireFormat(x))` or `fromWireFormat(parse(text))` on the JSON path. `stringify` writes JSON for the declared fields, applying each `TSerde` serialize formatter. `parse` reads that JSON back.
 

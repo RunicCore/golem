@@ -49,7 +49,7 @@ The generated file puts `.generated` before the final extension of its source: `
 
 Your class holds methods, getters, defaults and extra constructor state. The base constructor assigns the supplied values, so call `super(values)` before you read a field. With [MobX](/guide/mobx) on, call `asGenObservable(this)` right after `super(values)`.
 
-`toWireFormat` emits declared fields only. Getters and other state on your class stay on the instance. A key on an instance that its own model does not declare is program state: codecs never report it as an unknown key and never write it to JSON. Declared keys are judged as always, and input from JSON or a request stays exact.
+`toWireFormat` emits declared fields only. Getters and other state on your class stay on the instance. A key on an instance that its own model does not declare is program state: codecs never report it as an unknown key and never write it to JSON. This holds at any depth inside an `unknown` or `any` field. Declared keys are judged as always, and input from JSON or a request stays exact.
 
 ## Load the generated class before parse
 

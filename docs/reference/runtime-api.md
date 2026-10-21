@@ -165,7 +165,7 @@ import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 | `LibErrorKind` | Value | Thrown when |
 | --- | --- | --- |
 | `Validation` | `validation` | A checked call rejects a value. |
-| `Serialization` | `serialization` | A value can't be written as JSON, such as an invalid `Date`. |
+| `Serialization` | `serialization` | A value can't be written as JSON, such as an invalid `Date` or a value that holds itself. |
 | `Deserialization` | `deserialization` | JSON can't be decoded, such as an unparsable date. |
 | `InvalidJson` | `invalid_json` | `parse` receives text that is not JSON. |
 | `ValidationUnavailable` | `validation_unavailable` | Checks were not generated, no build rewrote a call, or a validation context lacks a validator. |
