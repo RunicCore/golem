@@ -938,6 +938,8 @@ export function descriptorBuilder(
           : taggedAdditional !== undefined
             ? taggedAdditional
             : !context.exact,
+        // Only an explicit tag that admits extra keys declares them as data; `exact: false` leaves an object open by default.
+        ...(!indexType && taggedAdditional === true ? { additionalPropertiesDeclared: true as const } : {}),
       }, metadata);
       if (projectionName) {
         const existing = projections.get(projectionName);

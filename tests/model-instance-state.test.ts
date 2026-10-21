@@ -270,3 +270,27 @@ export class Loose extends TLooseBaseModel {
   assert.deepEqual({ ...parsed }, { id: 'a' });
   assert.equal(codec.stringify(new Loose({ id: 'a', extra: 1 } as object)), '{"id":"a"}');
 });
+
+async function buildLoose(t: TestContext) {
+  const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-model-loose-state-', name: 'model-loose-state', linkWorkspaceNodeModules: true });
+  fs.writeFileSync(path.join(sourceRoot, 'loose.model.ts'), readFixture('models/model-instance-state/loose-state/loose.model.ts'));
+  writeModelGolemYaml(root, { mobx: false, validation: true, exact: false });
+  await buildModelProject(root);
+  const models = await import(pathToFileURL(path.join(root, 'build/loose.model.js')).href);
+  const codec = (name: string) => requireObjectCodec(generatedCodecIdFromRoot(root, name));
+  type Make = new (values?: object) => object;
+  return { Loose: models.Loose as Make, LooseNote: models.LooseNote as Make, loose: codec('TLoose'), note: codec('TLooseNote') };
+}
+
+test('a loose model instance inside an unknown field writes no program state', async (t) => {
+  // protects: bug T-191 a loose (exact: false) model registered an open map, so the program state of its instance was written inside an unknown value
+  const { Loose, LooseNote, note } = await buildLoose(t);
+  const inner = Object.assign(new Loose({ id: 'a' }), { cache: new Map<string, string>(), hits: 3 });
+  const value = new LooseNote({ title: 'n', data: { list: [inner], direct: inner } });
+  const written = { title: 'n', data: { list: [{ id: 'a' }], direct: { id: 'a' } } };
+  assert.deepEqual(note.toWireFormat(value), written);
+  assert.equal(note.stringify(value), JSON.stringify(written));
+  assert.deepEqual(note.toWireFormat(value, { validate: false }), written, 'validation off');
+  assert.equal(note.stringify(value, { validate: false }), JSON.stringify(written), 'validation off');
+  assert.deepEqual(encodeGeneratedModel(value), written, 'the class-level encode');
+});

@@ -550,6 +550,7 @@ function projectDescriptor(
         additionalProperties: typeof descriptor.additionalProperties === 'object'
           ? projectDescriptor(descriptor.additionalProperties, validationEnabled, wire, retainPredicates, definitions)
           : descriptor.additionalProperties,
+        ...(descriptor.additionalPropertiesDeclared ? { additionalPropertiesDeclared: true as const } : {}),
       };
       break;
     // `typeImport` is an absolute path used only while emitting imports; generated data keeps the name.
@@ -1698,8 +1699,9 @@ export function emitSource(
       `  codecId: ${JSON.stringify(schemaGraph.nodeFor(definition, specification.name)?.codecId ?? specification.name)},`,
       `  profile: { validation: ${(specification.validation ?? profile.validation) ? 'true' : 'false'} },`,
       ...(observesValidator(specification) ? ['  enhanceValidator: enhanceValidatorWithMobX,'] : []),
-      // A model with a dynamic map has no program state: the keys outside its fields are data.
-      ...(definition.kind === 'object' && definition.additionalProperties ? ['  additionalProperties: true,'] : []),
+      // A model with a dynamic map, or an explicit additionalProperties true, has no program state: the keys outside its
+      // fields are data. A default-open model declares none, so its other own keys are program state.
+      ...(definition.kind === 'object' && (typeof definition.additionalProperties === 'object' || definition.additionalPropertiesDeclared) ? ['  additionalProperties: true,'] : []),
       '});',
       '',
       `registerIModelClass(${JSON.stringify(
