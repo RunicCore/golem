@@ -13,10 +13,10 @@ export const DEFAULT_SETTINGS: Settings = { warmupMs: 120, batchMs: 90, batches:
 export interface RunOptions { readonly settings: Settings; readonly outputFile: string; readonly rawFile: string; readonly adapters?: readonly AdapterId[]; readonly log?: (line: string) => void }
 
 /** A bad command line or option value. The caller fixes it; `main` prints it without a stack trace. */
-export class BenchmarkUsageError extends Error {}
+class BenchmarkUsageError extends Error {}
 
 /** The adapters to run, in `BENCH_ADAPTERS` order. A name that no adapter has, or an empty list, is a usage error. */
-export function selectAdapters(requested?: readonly string[]): readonly AdapterSpec[] {
+function selectAdapters(requested?: readonly string[]): readonly AdapterSpec[] {
   if (requested === undefined) return BENCH_ADAPTERS;
   const valid = BENCH_ADAPTERS.map(a => a.id).join(', ');
   if (requested.length === 0) throw new BenchmarkUsageError(`No adapter named. Valid adapters: ${valid}`);
