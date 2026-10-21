@@ -278,7 +278,7 @@ An error prints its code, location when known, and message, then stops generatio
 
 ### RUNM1060
 
-**Codec not exported by its package.** A `TSerde` or `TValidation` function, or a `TSerde` class, lives in another package, and no `exports` entry in that package's `package.json` reaches its file. The message names the function, the package and the file. **Fix:** Add an `exports` entry for that file to the package.
+**Codec not exported by its package.** A `TSerde` or `TValidation` function, or a `TSerde` class, lives in another package, and the `exports` field in that package's `package.json` has no entry that reaches its file. The message names the function, the package and the file. **Fix:** Add an `exports` entry for that file to the package.
 
 ### RUNM1061
 

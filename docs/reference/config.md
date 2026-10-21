@@ -132,7 +132,7 @@ JSON document and writes one SDK directory.
 
 | Key | Type | Required | Default | Meaning |
 | --- | --- | --- | --- | --- |
-| `input` | path | Yes | — | Config-relative OpenAPI YAML or JSON file. |
+| `input` | path | Yes | — | Config-relative OpenAPI YAML or JSON file. An earlier job of the file may write it. |
 | `output` | path | Yes | — | Config-relative SDK output directory. |
 | `name` | string | No | — | Prefix used for generated client and operation types. |
 | `allowRemoteRefs` | boolean | No | `false` | Permit HTTPS `$ref` documents. |
@@ -162,7 +162,7 @@ Install `@exprtlabs/golem-model` to use `models`.
 
 The generated file for each model source stays beside it and puts `.generated`
 before the final extension: `order.entity.ts` gets `order.entity.generated.ts`.
-Explicit `sources` must be non-empty and must not contain duplicates.
+Explicit `sources` must be non-empty and must not contain duplicates. A source file may be one that an earlier job writes.
 
 ```yaml
 version: 1
