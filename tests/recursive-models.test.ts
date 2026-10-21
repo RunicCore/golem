@@ -5,7 +5,11 @@ import { pathToFileURL } from 'node:url';
 import test, { type TestContext } from 'node:test';
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 import type { GolemProfile } from '@exprtlabs/golem/generator-api';
+import { requireObjectCodec } from '@exprtlabs/golem/serde';
+import { createFixtureProject } from './fixture-project.js';
 import { buildModelProject, createModelProject, writeModelGolemYaml, writeModelSources } from './model-project.js';
+import { compileGeneratedSdk, generateMaterializedSdk } from './openapi/helpers.js';
+import { generatedCodecIdFromRoot } from './support/consumer.js';
 
 const sources = {
   'tree.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
@@ -164,5 +168,63 @@ for (const [label, profile] of profiles) {
     }
     const acyclic = { chain: { name: 'a', next: { name: 'b' } } };
     assert.equal(owner.stringifyTOwner(acyclic), JSON.stringify(acyclic));
+  });
+}
+
+const isSerializationError = (error: unknown): boolean =>
+  error instanceof LibError && error.kind === LibErrorKind.Serialization && error.causedByInput === false;
+
+// An expression tree: a leaf, or a branch whose children are again expressions. In golem-model a union is a field
+// type and never a codec of its own; only an OpenAPI oneOf component whose variants share a base is a union model.
+const nestedBranch = { kind: 'branch', children: [{ kind: 'leaf', value: 1 }, { kind: 'branch', children: [{ kind: 'branch', children: [{ kind: 'leaf', value: 2 }] }] }] };
+
+const unionDocument = {
+  openapi: '3.1.0',
+  info: { title: 'Expr', version: '1' },
+  paths: {},
+  components: {
+    schemas: {
+      Base: { type: 'object', required: ['kind'], properties: { kind: { type: 'string' } } },
+      Leaf: { allOf: [{ $ref: '#/components/schemas/Base' }, { type: 'object', required: ['value'], properties: { value: { type: 'number' } } }] },
+      Branch: {
+        allOf: [{ $ref: '#/components/schemas/Base' }, {
+          type: 'object',
+          required: ['children'],
+          properties: { children: { type: 'array', items: { $ref: '#/components/schemas/Node' } } },
+        }],
+      },
+      Node: {
+        oneOf: [{ $ref: '#/components/schemas/Leaf' }, { $ref: '#/components/schemas/Branch' }],
+        discriminator: {
+          propertyName: 'kind',
+          mapping: { leaf: '#/components/schemas/Leaf', branch: '#/components/schemas/Branch' },
+        },
+      },
+      Owner: { type: 'object', required: ['root'], properties: { root: { $ref: '#/components/schemas/Node' } } },
+    },
+  },
+};
+
+for (const validation of [false, true]) {
+  test(`a recursive oneOf model encodes a nested branch and still throws on a cycle (validation ${validation ? 'on' : 'off'})`, async (t: TestContext) => {
+    // protects: T-165 a recursive union encodes a nested value and a real cycle still throws
+    const output = path.join(createFixtureProject(t, 'golem-openapi-recursive-union-'), 'sdk');
+    await generateMaterializedSdk(unionDocument, { output, name: 'Expr', profile: { mobx: false, validation, allowAny: false } });
+    compileGeneratedSdk(output, [], { strict: true, skipLibCheck: true });
+    await import(pathToFileURL(path.join(output, 'dist/index.js')).href);
+    type Encoder = { stringify(value: unknown): string; toWireFormat(value: unknown): unknown };
+    const branch = requireObjectCodec<object>(generatedCodecIdFromRoot(output, 'Branch')) as unknown as Encoder;
+    const owner = requireObjectCodec<object>(generatedCodecIdFromRoot(output, 'Owner')) as unknown as Encoder;
+
+    assert.equal(branch.stringify(nestedBranch), JSON.stringify(nestedBranch));
+    assert.deepEqual(json(branch.toWireFormat(nestedBranch)), nestedBranch);
+    assert.equal(owner.stringify({ root: nestedBranch }), JSON.stringify({ root: nestedBranch }));
+    assert.deepEqual(json(owner.toWireFormat({ root: nestedBranch })), { root: nestedBranch });
+
+    const cyclic: { kind: string; children: unknown[] } = { kind: 'branch', children: [] };
+    cyclic.children.push({ kind: 'branch', children: [cyclic] });
+    for (const encode of [(value: unknown) => branch.stringify(value), (value: unknown) => branch.toWireFormat(value)]) {
+      assert.throws(() => encode(cyclic), isSerializationError);
+    }
   });
 }

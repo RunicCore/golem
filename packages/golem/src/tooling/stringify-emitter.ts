@@ -629,7 +629,8 @@ export function emitStringifyFunction(
     ].join('\n');
   }
   const delegates = node.descriptor.kind === 'generated-model' || node.descriptor.kind === 'reference';
-  return !ctx.wireIdentity && !delegates && reachesNode(node.descriptor, node.id, ctx) ? guardEncodeCycle(source) : source;
+  const startsLevel = !passesValueOn(node.descriptor, root !== undefined);
+  return !ctx.wireIdentity && !delegates && startsLevel && reachesNode(node.descriptor, node.id, ctx) ? guardEncodeCycle(source) : source;
 }
 
 export function emitGraphStringify(graph: SchemaGraph, serde?: StringifySerdeResolver): string {
@@ -874,6 +875,15 @@ function reachesRecursion(descriptor: ModelTypeDescriptor, ctx: EmitCtx, seen: S
     return reachesNode(node.descriptor, node.id, ctx) || reachesRecursion(node.descriptor, ctx, seen);
   }
   return heldDescriptors(descriptor).some((held) => reachesRecursion(held, ctx, seen));
+}
+
+/**
+ * Whether the encoder of `descriptor` hands the same value to another encoder: a union picks a variant, and an
+ * intersection that is not one merged object writes its parts. Only an encoder that starts a new level (an object,
+ * array or tuple) guards the value; a guard here would meet the variant's guard on the same value and report a cycle.
+ */
+function passesValueOn(descriptor: ModelTypeDescriptor, writesMergedObject: boolean): boolean {
+  return descriptor.kind === 'union' || (descriptor.kind === 'intersection' && !writesMergedObject);
 }
 
 /**
@@ -1750,7 +1760,7 @@ function emitNodeRuntime(
   const emitsValidatedWire = validationEnabled && !node.sameSchema;
   // A validator and an encoder walk a cyclic value under a recursive model until the stack ends.
   const reachesCycle = reachesRecursion(node.descriptor, ctx);
-  const recursiveNode = reachesNode(node.descriptor, node.id, ctx);
+  const recursiveNode = reachesNode(node.descriptor, node.id, ctx) && !passesValueOn(node.descriptor, objectDescriptor !== undefined);
   const encodedStringifyContext: EmitCtx = { ...ctx, inlineLocals: new Set() };
   const encodedWireContext: EmitCtx = { ...ctx, inlineLocals: new Set() };
   const encodedExpr = objectDescriptor
