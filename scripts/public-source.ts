@@ -27,7 +27,7 @@ function forbiddenPath(filename: string, packaged = false): boolean {
   const name = parts.at(-1) ?? '';
   return parts.some((part, index) => excludedDirectories.has(part) && !(packaged && index === 0 && part === 'dist'))
     || /(?:^|\/)\.vitepress\/(?:cache|dist|\.temp)(?:\/|$)/.test(portable(filename))
-    || /(?:^|\/)\.golem\/(?:build\/|jobs\.json$)/.test(portable(filename))
+    || /(?:^|\/)\.golem\//.test(portable(filename))
     || /^(?:AGENTS(?:\.override)?\.md|CLAUDE\.md|CODE_REVIEW\.md|VERIFICATION\.md|\.DS_Store|\.npmrc)$/.test(name)
     || /^\.env(?:\.|$)/.test(name)
     || /\.(?:log|jsonl|tgz|tsbuildinfo|pem|key)$/i.test(name);

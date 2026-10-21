@@ -168,6 +168,33 @@ test('check reports the output of a generator whose code changed under the same 
   assert.match(fs.readFileSync(path.join(root, EMITTED), 'utf8'), /\/\/ emitter one\n$/);
 });
 
+const NO_RECORD = /No generation record \(\.golem\/outputs\.json does not exist\)\. Run golem generate or golem build first\./;
+
+test('check on a project that never generated names the missing generation record and writes nothing', async t => {
+  // protects: T-32 check names the missing generation record, not a list of stale files
+  const { root, check } = cachedProject(t);
+  const result = await check();
+  assert.equal(result.code, 1);
+  assert.match(result.stderr, NO_RECORD);
+  assert.doesNotMatch(result.stderr, /stale/);
+  assert.equal(fs.existsSync(path.join(root, '.golem')), false);
+  assert.equal(fs.existsSync(path.join(root, EMITTED)), false);
+});
+
+test('check after generate and a deleted .golem folder names the missing generation record and writes nothing', async t => {
+  // protects: T-32 a deleted .golem folder gives the same message as a project that never generated
+  const { root, generate, check } = cachedProject(t);
+  await generate();
+  const generated = fs.readFileSync(path.join(root, EMITTED), 'utf8');
+  fs.rmSync(path.join(root, '.golem'), { recursive: true });
+  const result = await check();
+  assert.equal(result.code, 1);
+  assert.match(result.stderr, NO_RECORD);
+  assert.doesNotMatch(result.stderr, /stale|drift/);
+  assert.equal(fs.existsSync(path.join(root, '.golem')), false);
+  assert.equal(fs.readFileSync(path.join(root, EMITTED), 'utf8'), generated);
+});
+
 test('a second generate with the generator code and its inputs unchanged runs no job', async t => {
   const { generate, runs } = cachedProject(t);
   await generate();

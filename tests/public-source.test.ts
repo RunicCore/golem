@@ -65,7 +65,6 @@ function publicFixture(t: TestContext): string {
   writeFixture(root, 'examples/model/package.json', '{"name":"model-example"}\n');
   writeFixture(root, 'examples/model/src/main.ts', 'export {};\n');
   writeFixture(root, 'examples/model/sdk/model-manifest.json', '{"manifestVersion":2}\n');
-  writeFixture(root, 'examples/model/.golem/outputs.json', '{}\n');
   writeFixture(root, '.github/workflows/check.yml', 'name: checks\n');
   return root;
 }
@@ -121,7 +120,6 @@ test('public source inventory keeps licenses, generated example metadata, and so
     'packages/golem-ts-openapi/LICENSE',
     'packages/golem-ts-openapi/src/index.ts',
     'examples/model/sdk/model-manifest.json',
-    'examples/model/.golem/outputs.json',
     '.github/workflows/check.yml',
   ];
   for (const relative of expected) assert.ok(files.includes(relative), relative);
@@ -164,15 +162,14 @@ test('interrupted documentation build output stays outside a public source expor
   ]);
 });
 
-test('golem build state and the job records stay outside a public source export, but the committed outputs index stays in', (t) => {
+test('the .golem folder, with its outputs index and codec keys, stays outside a public source export', (t) => {
+  // protects: T-32 generated output and .golem state are never part of a public source export
   const root = publicFixture(t);
-  const generated = ['examples/app/.golem/jobs.json', 'examples/app/.golem/build/tsconfig/stage/tsconfig.json'];
-  const committed = 'examples/app/.golem/outputs.json';
-  for (const relative of [...generated, committed]) writeFixture(root, relative, '{}\n');
+  const local = ['examples/app/.golem/jobs.json', 'examples/app/.golem/build/tsconfig/stage/tsconfig.json', 'examples/app/.golem/outputs.json', 'examples/app/.golem/codec-keys.json'];
+  for (const relative of local) writeFixture(root, relative, '{}\n');
   const destination = path.join(root, '.cache', 'export');
   const result = exportPublicSource(root, destination);
-  for (const relative of generated) assert.equal(result.files.includes(relative), false, relative);
-  assert.equal(result.files.includes(committed), true);
+  assert.deepEqual(result.files.filter(relative => relative.includes('/.golem/')), []);
 });
 
 test('a file the repository ignores is neither listed, exported nor hashed, and an ignore file in a folder applies to that folder', (t) => {

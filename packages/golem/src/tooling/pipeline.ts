@@ -417,6 +417,8 @@ export async function runPipeline(filename: string, options: PipelineOptions = {
   }
   validateConfigInputs(config);
   const inventory = loadInventory(config);
+  // The record is local state in the ignored .golem folder. Without it every generated file would read as stale.
+  if (options.check && !fs.existsSync(config.inventoryFile)) throw new Error('No generation record (.golem/outputs.json does not exist). Run golem generate or golem build first.');
   const generated = inventoryPaths(config, inventory);
   // The job cache serves a run that holds nothing in memory; a watch run with `previous` reuses by its own rules.
   const jobCache = !options.check && !options.previous;
