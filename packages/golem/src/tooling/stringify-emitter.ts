@@ -1543,6 +1543,8 @@ function emitEncodeValue(descriptor: ModelTypeDescriptor, expression: string, ct
   }
   // An intersection with a member that is no object is written as it is, without the program state of a model instance.
   if (descriptor.kind === 'intersection') return `withoutInstanceState(${expression})`;
+  // A value of unknown type can hold a model instance at any depth.
+  if (descriptor.kind === 'unknown' || descriptor.kind === 'any') return `withoutInstanceState(${expression})`;
   return expression;
 }
 
@@ -1574,7 +1576,7 @@ function emitEncodedRecord(
   // keeps them as they are. Any other object writes its listed names only.
   const additional = typeof descriptor.additionalProperties === 'object' ? descriptor.additionalProperties : undefined;
   const extras = additional || descriptor.additionalPropertiesDeclared
-    ? [`...Object.fromEntries(Object.entries(${asRecord(expression)}).filter(([key, extra]) => extra !== undefined${fields.length === 0 ? '' : ` && !${JSON.stringify(fields.map(([name]) => name))}.includes(key)`})${additional ? `.map(([key, extra]) => [key, ${emitEncodeValue(additional, 'extra', ctx)}])` : ''})`]
+    ? [`...Object.fromEntries(Object.entries(${asRecord(expression)}).filter(([key, extra]) => extra !== undefined${fields.length === 0 ? '' : ` && !${JSON.stringify(fields.map(([name]) => name))}.includes(key)`}).map(([key, extra]) => [key, ${emitEncodeValue(additional ?? { kind: 'unknown' }, 'extra', ctx)}]))`]
     : [];
   const entries = [...extras, ...values.map(([name, value]) => value.startsWith('...')
     ? value

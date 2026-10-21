@@ -41,6 +41,9 @@ const document = {
       EmptyClosed: { type: 'object', additionalProperties: false },
       EmptyDefault: { type: 'object', properties: {} },
       EmptyOpen: { type: 'object', additionalProperties: true },
+      // A field of unknown type, and a composed root with a model in a field.
+      Note: { type: 'object', required: ['title'], properties: { title: { type: 'string' }, data: {} } },
+      Lead: { allOf: [{ type: 'object', required: ['lead'], properties: { lead: ref('Base') } }, { oneOf: [{ type: 'object', required: ['a'], properties: { a: { type: 'string' } } }, { type: 'object', required: ['b'], properties: { b: { type: 'string' } } }] }] },
       Bag: { type: 'object', additionalProperties: { type: 'string' }, required: ['id'], properties: { id: { type: 'string' } } },
     },
   },
@@ -193,3 +196,41 @@ for (const [name, root, keeps] of [['closed', 'EmptyClosed', false], ['open only
     assert.equal(codec.stringify(plain), keeps ? '{"extra":"x"}' : '{}', 'a plain value');
   });
 }
+
+for (const validation of [true, false]) {
+  test(`a model instance at any depth in an unknown field writes no program state (validation ${validation ? 'on' : 'off'})`, async () => {
+    // protects: bug T-164 only the top value of an unknown field lost its program state; an instance inside an array or object kept it
+    const { output, models } = await (validation ? validatedSdk : unvalidatedSdk)();
+    const [Base, EmptyOpen] = [models.BaseModel, models.EmptyOpenModel] as Model[];
+    const note = requireObjectCodec(generatedCodecIdFromRoot(output, 'Note'));
+    const task = () => Object.assign(new Base({ name: 't' }), programState());
+    const cases: readonly [string, unknown, unknown][] = [
+      ['an array', [task()], [{ name: 't' }]],
+      ['a nested plain object', { inner: { list: [1, task()] } }, { inner: { list: [1, { name: 't' }] } }],
+      ['an instance', task(), { name: 't' }],
+      ['a value with no model instance', { a: [1, { b: null }], c: 'x', d: [] }, { a: [1, { b: null }], c: 'x', d: [] }],
+      ['a scalar', 'text', 'text'],
+    ];
+    for (const [label, data, expected] of cases) {
+      const value = { title: 'n', data };
+      assert.deepEqual(note.toWireFormat(value), { title: 'n', data: expected }, `toWireFormat of ${label}`);
+      assert.equal(note.stringify(value), JSON.stringify({ title: 'n', data: expected }), `stringify of ${label}`);
+    }
+    const open = codec('EmptyOpen');
+    const extra = Object.assign(new EmptyOpen({}), { extra: task() });
+    assert.deepEqual(open.toWireFormat(extra), { extra: { name: 't' } }, 'an extra key of an explicit additionalProperties true');
+    assert.equal(open.stringify(extra), '{"extra":{"name":"t"}}');
+
+    function codec(root: string) { return requireObjectCodec(generatedCodecIdFromRoot(output, root)); }
+  });
+}
+
+test('a model instance in a field of a composed root writes no program state', async () => {
+  // protects: bug T-157 a composed root with a member that is no object wrote an instance of a field as it was
+  const { output, models } = await unvalidatedSdk();
+  const Base = models.BaseModel as Model;
+  const codec = requireObjectCodec(generatedCodecIdFromRoot(output, 'Lead'));
+  const value = { lead: Object.assign(new Base({ name: 'n' }), programState()), a: 'x' };
+  assert.deepEqual(codec.toWireFormat(value), { lead: { name: 'n' }, a: 'x' });
+  assert.equal(codec.stringify(value), '{"lead":{"name":"n"},"a":"x"}');
+});

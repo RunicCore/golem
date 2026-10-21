@@ -160,7 +160,7 @@ async function buildState(t: TestContext, mobx: boolean) {
   await buildModelProject(root);
   const models = await import(`${pathToFileURL(path.join(root, 'build/state.model.js')).href}?mobx=${mobx}`);
   const codec = (name: string) => requireObjectCodec(generatedCodecIdFromRoot(root, name));
-  return { Task: models.Task as new (values?: object) => object, Board: models.Board as new (values?: object) => object, task: codec('TTask'), small: codec('TSmall'), board: codec('TBoard'), Bag: models.Bag as new (values?: object) => object, bag: codec('TBag'), Tally: models.Tally as new (values?: object) => object, tally: codec('TTally'), Empty: models.Empty as new (values?: object) => object, empty: codec('TEmpty'), Free: models.Free as new (values?: object) => object, free: codec('TFree') };
+  return { Task: models.Task as new (values?: object) => object, Board: models.Board as new (values?: object) => object, task: codec('TTask'), small: codec('TSmall'), board: codec('TBoard'), Bag: models.Bag as new (values?: object) => object, bag: codec('TBag'), Tally: models.Tally as new (values?: object) => object, tally: codec('TTally'), Empty: models.Empty as new (values?: object) => object, empty: codec('TEmpty'), Free: models.Free as new (values?: object) => object, free: codec('TFree'), Note: models.Note as new (values?: object) => object, note: codec('TNote') };
 }
 
 for (const mobx of [false, true]) {
@@ -200,3 +200,24 @@ test('an object with no declared field writes the same in stringify and toWireFo
   assert.deepEqual(free.toWireFormat(map), { extra: 'x' }, 'a dynamic map keeps its keys as data');
   assert.equal(free.stringify(map), '{"extra":"x"}');
 });
+
+for (const validation of [true, false]) {
+  test(`a model instance at any depth in an unknown field writes no program state (validation ${validation ? 'on' : 'off'})`, async (t) => {
+    // protects: bug T-164 only the top value of an unknown field lost its program state; an instance inside an array or object kept it
+    const { Task: TaskModel, Note, note } = await buildState(t, false);
+    const task = () => Object.assign(new TaskModel({ title: 't' }), { cache: new Map<string, string>(), hits: 3 });
+    const options = { validate: validation };
+    const cases: readonly [string, unknown, unknown][] = [
+      ['an array', [task()], [{ title: 't' }]],
+      ['a nested plain object', { inner: { list: [1, task()] } }, { inner: { list: [1, { title: 't' }] } }],
+      ['an instance', task(), { title: 't' }],
+      ['a value with no model instance', { a: [1, { b: null }], c: 'x', d: [] }, { a: [1, { b: null }], c: 'x', d: [] }],
+      ['a scalar', 'text', 'text'],
+    ];
+    for (const [label, data, expected] of cases) {
+      const value = new Note({ title: 'n', data });
+      assert.deepEqual(note.toWireFormat(value, options), { title: 'n', data: expected }, `toWireFormat of ${label}`);
+      assert.equal(note.stringify(value, options), JSON.stringify({ title: 'n', data: expected }), `stringify of ${label}`);
+    }
+  });
+}
