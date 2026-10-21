@@ -17,6 +17,8 @@ export interface CodecSchemaClosureEntry {
   /** What stringify checks after encoding (`codecId#wire-only`). */
   readonly wireOnlySchema?: JsonSchema;
   readonly aliases?: readonly string[];
+  /** Whether the model reaches a recursive model. An entry without it counts as recursive. */
+  readonly recursive?: boolean;
 }
 
 export interface CodecValidationPlan {

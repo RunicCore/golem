@@ -236,7 +236,8 @@ function internJobSchemaGraphs(
   const wireSchemas = new Set<string>();
   // Every codec emitted elsewhere that publishes a `#wire` schema: the companions above and the manifests below.
   const wirePlanes = new Set<string>();
-  // Whether each model emitted by this job is recursive. A model of an SDK manifest has no entry and counts as recursive.
+  // Whether each model reaches a recursive model: those emitted by this job, and those of an SDK manifest that publishes
+  // it. A model with no entry counts as recursive.
   const recursion = new Map<string, boolean>();
   // Models emitted elsewhere (SDK manifests, earlier companions) that publish residual schemas.
   const residualIds = { modelOnly: new Set<string>(), wireOnly: new Set<string>() };
@@ -245,6 +246,7 @@ function internJobSchemaGraphs(
     if (entry.modelOnlySchema !== undefined) names.forEach((name) => residualIds.modelOnly.add(name));
     if (entry.wireOnlySchema !== undefined) names.forEach((name) => residualIds.wireOnly.add(name));
     if (entry.wireSchema !== undefined) names.forEach((name) => wirePlanes.add(name));
+    if (entry.recursive !== undefined) names.forEach((name) => recursion.set(name, entry.recursive ?? true));
   }
   const byGraph = new Map<SourceModelGraph, SourceSchemaGraph>();
   const idsFor = (graph: SourceModelGraph, own: ReadonlyMap<string, string>): Map<string, string> => new Map([

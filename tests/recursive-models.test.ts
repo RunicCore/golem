@@ -6,9 +6,10 @@ import test, { type TestContext } from 'node:test';
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 import type { GolemProfile } from '@exprtlabs/golem/generator-api';
 import { requireObjectCodec } from '@exprtlabs/golem/serde';
+import { writeSdk } from '#openapi/generator';
 import { createFixtureProject } from './fixture-project.js';
 import { buildModelProject, createModelProject, writeModelGolemYaml, writeModelSources } from './model-project.js';
-import { compileGeneratedSdk, generateMaterializedSdk } from './openapi/helpers.js';
+import { compileGeneratedSdk, generateMaterializedSdk, writeGeneratedSdk } from './openapi/helpers.js';
 import { generatedCodecIdFromRoot } from './support/consumer.js';
 
 const sources = {
@@ -228,3 +229,46 @@ for (const validation of [false, true]) {
     }
   });
 }
+
+const sdkHolderSources = {
+  'holder.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
+import type { Link, Money } from './sdk/types.js';
+import { TWalletBaseModel, TChainHolderBaseModel } from './holder.model.generated.js';
+export type TWallet = IModel<{ money: Money }>;
+export type TChainHolder = IModel<{ link: Link }>;
+export class Wallet extends TWalletBaseModel {}
+export class ChainHolder extends TChainHolderBaseModel {}
+`,
+};
+
+const sdkDocument = {
+  openapi: '3.1.0',
+  info: { title: 'Held models', version: '1' },
+  components: {
+    schemas: {
+      Money: { type: 'object', required: ['amount'], properties: { amount: { type: 'number' } } },
+      Link: { type: 'object', required: ['name'], properties: { name: { type: 'string' }, next: { $ref: '#/components/schemas/Link' } } },
+    },
+  },
+};
+
+test('a model that holds an SDK model walks for cycles only when that model is recursive', async (t: TestContext) => {
+  // protects: T-165 a parent of a non-recursive SDK model pays no cycle walk; a recursive SDK model still throws on a cycle
+  const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-sdk-recursion-', linkTypescript: true });
+  writeGeneratedSdk(writeSdk, sdkDocument, { output: path.join(sourceRoot, 'sdk'), profile: { mobx: false, validation: true, allowAny: false } });
+  writeModelSources(sourceRoot, sdkHolderSources);
+  writeModelGolemYaml(root, { mobx: false, validation: true });
+  await buildModelProject(root);
+  const generated = fs.readFileSync(path.join(root, 'src/holder.model.generated.ts'), 'utf8');
+  const walkers = [...generated.matchAll(/^(?:export )?function (\w+)\([^)]*\)[^{]*\{\n(?:(?!^\}).*\n)*?\s+assertAcyclicEncodeInput\(/gm)].map(match => match[1]);
+  assert.deepEqual(walkers.filter(name => name.endsWith('TWallet')), [], 'the wallet holds a Money model that never reaches itself');
+  assert.ok(walkers.some(name => name.endsWith('TChainHolder')), 'the holder of a recursive Link walks for cycles before its validator');
+
+  const codecs = await import(pathToFileURL(path.join(root, 'build/holder.model.generated.js')).href) as Codecs;
+  const link: { name: string; next?: unknown } = { name: 'a' };
+  link.next = link;
+  for (const encode of [codecs.stringifyTChainHolder, codecs.toWireFormatTChainHolder]) {
+    assert.throws(() => encode({ link }), isSerializationError);
+  }
+  assert.equal(codecs.stringifyTWallet({ money: { amount: 1 } }), '{"money":{"amount":1}}');
+});

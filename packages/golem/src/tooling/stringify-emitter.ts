@@ -864,7 +864,7 @@ export function isRecursiveNode(graph: SchemaGraph, node: SchemaNode): boolean {
 }
 
 /** Whether `descriptor` reaches a recursive model node, so a cyclic value under it would run a validator or encoder forever. */
-function reachesRecursion(descriptor: ModelTypeDescriptor, ctx: EmitCtx, seen: Set<string> = new Set()): boolean {
+function reachesRecursion(descriptor: ModelTypeDescriptor, ctx: Pick<EmitCtx, 'graph' | 'siblingRecursion'>, seen: Set<string> = new Set()): boolean {
   if (descriptor.kind === 'reference' || descriptor.kind === 'generated-model') {
     const node = ctx.graph.nodeFor(descriptor);
     if (!node || seen.has(node.id)) return false;
@@ -875,6 +875,15 @@ function reachesRecursion(descriptor: ModelTypeDescriptor, ctx: EmitCtx, seen: S
     return reachesNode(node.descriptor, node.id, ctx) || reachesRecursion(node.descriptor, ctx, seen);
   }
   return heldDescriptors(descriptor).some((held) => reachesRecursion(held, ctx, seen));
+}
+
+/**
+ * Whether the model `node` reaches a recursive model (itself or another). A manifest publishes it, so a job that holds
+ * the model knows whether its value needs the cycle walk before a validator.
+ */
+export function reachesRecursiveNode(graph: SchemaGraph, node: SchemaNode, siblingRecursion?: ReadonlyMap<string, boolean>): boolean {
+  return node.descriptor.kind !== 'reference' && node.descriptor.kind !== 'generated-model'
+    && reachesRecursion(node.descriptor, { graph, siblingRecursion });
 }
 
 /**

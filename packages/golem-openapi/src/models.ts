@@ -10,6 +10,7 @@ import {
   fillFunctionName,
   presentKeysSource,
   pruneGeneratedImports,
+  reachesRecursiveNode,
   type CodecRuntimeOptions,
   type FromJsonModelResolver,
   type ModelDiscriminators,
@@ -1400,6 +1401,7 @@ function openApiValidationSchemaClosure(
       ...(node.sameSchema ? {} : { wireSchema: asJsonSchema(compact(node.jsonSchema, true)) }),
       ...(node.modelOnlyJsonSchema === undefined ? {} : { modelOnlySchema: asJsonSchema(compact(node.modelOnlyJsonSchema, false)) }),
       ...(node.wireOnlyJsonSchema === undefined ? {} : { wireOnlySchema: asJsonSchema(compact(node.wireOnlyJsonSchema, true)) }),
+      recursive: reachesRecursiveNode(schemaGraph, node),
       aliases: [...new Set([
         node.id,
         node.name,
