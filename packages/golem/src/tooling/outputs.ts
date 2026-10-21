@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 
-import { DEFAULT_MODEL_SUFFIXES, canonicalPath, compareText, hasErrorCode, isRecord, suffixPattern } from './generator-api.js';
+import { canonicalPath, compareText, hasErrorCode, isRecord } from './generator-api.js';
 import type { GolemArtifact } from './generator-api.js';
 import { contains } from './config.js';
 import { codecKeysPath, defaultModelOutput, isOperationCodecRegistry, operationCodecRegistryPath } from './generated-paths.js';
@@ -231,12 +231,6 @@ export function marker(content: string, owner: string): boolean {
   } catch { return false; }
 }
 
-/** Whether `filename` has the shape of the generated file of a model source of the job: `x.model.generated.ts` for `x.model.ts`. */
-function isGeneratedFileOfModelSource(job: Extract<GolemJob, { kind: 'models' }>, filename: string): boolean {
-  const source = filename.replace(/\.generated\.([cm]?ts)$/, '.$1');
-  return source !== filename && suffixPattern(job.options.suffixes ?? DEFAULT_MODEL_SUFFIXES).test(path.basename(source));
-}
-
 export function loadInventory(config: GolemConfig): Inventory {
   assertInventoryPath(config);
   const content = readFile(config.inventoryFile);
@@ -263,13 +257,6 @@ export function loadInventory(config: GolemConfig): Inventory {
     if (entry.destinationKind !== kind) throw new Error(`Invalid generated inventory destination kind: ${filename}`);
     const absolute = inventoryPath(config, key);
     assertProtectedPath(config, absolute);
-    // An earlier release wrote the generated file of a shared model beside the model, outside the root of the models job that used
-    // it, and recorded some of them with `shared: true`. Golem no longer writes or deletes there, and another app may still use
-    // the file, so such an entry is dropped and the file stays. The output of a models job and its codec keys may lie outside the
-    // root, and their entries stay. An entry of another kind of job is dropped only with the old mark.
-    const owner = config.jobs.find(job => job.id === entry.job);
-    const outsideRoot = owner?.kind === 'models' && !contains(canonicalPath(owner.options.root), canonicalPath(absolute));
-    if (owner?.kind === 'models' ? outsideRoot && (entry.shared === true || isGeneratedFileOfModelSource(owner, key)) : entry.shared === true) continue;
     const recorded: InventoryEntry = { job: entry.job, owner: entry.owner, digest: entry.digest, destination, destinationKind: kind };
     try { assertDestinationPath(absolute, inventoryDestination(config, absolute, recorded), 'recorded'); }
     catch (error) { throw new Error(`Invalid generated inventory entry: ${filename}. ${error instanceof Error ? error.message : String(error)}`); }

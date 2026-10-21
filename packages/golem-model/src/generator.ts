@@ -38,11 +38,13 @@ import {
   discoverModelSources,
   formatDiagnostics,
   generatedFilename,
+  ignoredSharedFileWarnings,
   includedModelSources,
   isModelSource,
   isOutside,
   isOwnModelFile,
   modelBoundary,
+  nestedModelsJobs,
   portableRelativeFilename,
   projectWatchInputs,
   retainedProgramSession,
@@ -150,11 +152,16 @@ function emptyResult(info: ProgramInfo, program: ts.Program, root: string): Gole
   return { artifacts: [], manifestPaths: [], watchInputs };
 }
 
-/** The files of the project's own program: not a library, not a package from node_modules. */
+/** The files of the program that a model file can be: every file but the TypeScript libraries. Installed packages are included. */
 function programFilenames(program: ts.Program): string[] {
   return program.getSourceFiles()
-    .filter((sourceFile) => !program.isSourceFileFromExternalLibrary(sourceFile) && !program.isSourceFileDefaultLibrary(sourceFile))
+    .filter((sourceFile) => !program.isSourceFileDefaultLibrary(sourceFile))
     .map((sourceFile) => sourceFile.fileName);
+}
+
+/** The real files that a model manifest lists as the declaration of an SDK model. A job uses the SDK's generated code for them. */
+function sdkModelFiles(manifestIndex: ManifestIndex): ReadonlySet<string> {
+  return new Set([...manifestIndex.byProvenance.keys()].map((key) => canonicalPath(key.slice(0, key.indexOf('\0')))));
 }
 
 function referencedManifestFiles(
@@ -375,15 +382,15 @@ function withoutRepeatedFieldTypeWarnings(diagnostics: readonly GolemDiagnostic[
   ));
 }
 
-/** A `sources` entry is a file of this job: one outside the models root, in node_modules or covered by another models job stops generation. */
+/** A `sources` entry is a file of this job: one outside the models root, in node_modules or a declaration file stops generation. */
 function assertListedSourceIsOwn(boundary: ModelBoundary, source: string): void {
   const real = canonicalPath(source);
   if (isOutside(boundary.root, real)) throw new Error(outsideModelsRootMessage(real, boundary.root));
-  const yaml = boundary.anotherModelsJobOf(source);
-  if (yaml !== undefined) {
-    throw new Error(`models.sources entry ${real} belongs to the models job of ${yaml}. That job generates it for its own folder, so this job cannot generate it.`);
+  if (!isOwnModelFile(boundary, source)) {
+    throw new Error(real.split(sep).includes('node_modules')
+      ? `models.sources entry ${real} is in node_modules. Golem does not generate models in node_modules.`
+      : `models.sources entry ${real} is a declaration file. Golem generates models from .ts sources.`);
   }
-  if (!isOwnModelFile(boundary, source)) throw new Error(`models.sources entry ${real} is in node_modules. Golem does not generate models in node_modules.`);
 }
 
 export function generate(context: GolemModelContext): GolemModelResult {
@@ -398,7 +405,7 @@ export function generate(context: GolemModelContext): GolemModelResult {
       + `Add a file ending in ${normalized.suffixes.join(' or ')}, or provide context.sources.`,
     );
   }
-  const boundary = modelBoundary(normalized.root, normalized.directory, normalized.onInput);
+  const boundary = modelBoundary(normalized.root, normalized.suffixes);
   for (const source of discovered) {
     normalized.onInput?.(source);
     if (!isModelSource(source)) {
@@ -422,23 +429,20 @@ export function generate(context: GolemModelContext): GolemModelResult {
   );
   using program = programInfo.program;
   // The program holds the files the tsconfig includes and the files they import. A model file is the job's own only when its
-  // real path is inside the models root; an outside file, a shared folder for one, works as a file of an installed package.
+  // real path is inside the models root and it is not a declaration file; any other model file, whether a shared folder, a linked
+  // workspace package or an installed package holds it, is shared: its aliases are models of this app.
+  const programModelFiles = includedModelSources(programFilenames(program), normalized.suffixes);
   const candidates = listed || programInfo.configPath === undefined
     ? discovered
-    : [...new Set([...discovered, ...includedModelSources(programFilenames(program), normalized.suffixes)])].sort();
+    : [...new Set([...discovered, ...programModelFiles])].sort();
   const ownCandidates = candidates.filter((source) => isOwnModelFile(boundary, source));
+  const nested = nestedModelsJobs(boundary.root, canonicalPath(normalized.directory), ownCandidates, normalized.onInput);
+  if (nested.length > 0) {
+    throw new Error(`RUNM1077: ${nested.join(', ')} declares a models job below the models root ${boundary.root}, where the models job of ${join(normalized.directory, 'golem.yaml')} already generates the same model files. Two jobs would write one generated file. Remove the models job from ${nested.length === 1 ? 'it' : 'each'}, or move the folder out of the models root.`);
+  }
   if (ownCandidates.length === 0) {
     return emptyResult(programInfo, program, normalized.root);
   }
-  const { checker, specifications } = collectSpecifications(program, ownCandidates, normalized.exact);
-  // A discovered file with no IModel or IObject alias is not a model file: it is skipped, and so is its companion.
-  // A file that `models.sources` names must have one.
-  const withModels = new Set(specifications.map((specification) => canonicalFilename(specification.sourceFile.fileName)));
-  const sources = listed ? ownCandidates : ownCandidates.filter((source) => withModels.has(canonicalFilename(source)));
-  if (sources.length === 0) {
-    return emptyResult(programInfo, program, normalized.root);
-  }
-  const tsconfigDirectory = programInfo.configPath === undefined ? normalized.root : dirname(programInfo.configPath);
   const manifestIndex = loadModelManifests(
     normalized.root,
     programInfo,
@@ -446,6 +450,24 @@ export function generate(context: GolemModelContext): GolemModelResult {
     normalized.profile,
     normalized.onInput,
   );
+  // A model file that an SDK manifest lists stays an SDK file: the SDK's generated code serves it.
+  const sdkFiles = sdkModelFiles(manifestIndex);
+  const sharedCandidates = programModelFiles.filter((source) => !isOwnModelFile(boundary, source) && isModelSource(source) && !sdkFiles.has(canonicalPath(source)));
+  const { checker, specifications } = collectSpecifications(program, [...ownCandidates, ...sharedCandidates], normalized.exact);
+  // A discovered file with no IModel or IObject alias is not a model file: it is skipped, and so is its companion.
+  // A file that `models.sources` names must have one.
+  const withModels = new Set(specifications.map((specification) => canonicalFilename(specification.sourceFile.fileName)));
+  const sources = listed ? ownCandidates : ownCandidates.filter((source) => withModels.has(canonicalFilename(source)));
+  if (sources.length === 0) {
+    return emptyResult(programInfo, program, normalized.root);
+  }
+  // Golem uses no golem.yaml and no generated file of a shared package: it reports each one once and goes on without it.
+  const ignoredWarnings = ignoredSharedFileWarnings(
+    sharedCandidates.filter((source) => withModels.has(canonicalFilename(source))).map(canonicalPath),
+    normalized.directory,
+    normalized.onInput,
+  );
+  const tsconfigDirectory = programInfo.configPath === undefined ? normalized.root : dirname(programInfo.configPath);
   if (specifications.length === 0) {
     const diagnostics = ownDiagnostics(ts.getPreEmitDiagnostics(programInfo.program), sources.map(generatedFilename), sources);
     if (diagnostics.length > 0) throw new Error(formatDiagnostics(diagnostics, normalized.root));
@@ -515,7 +537,7 @@ export function generate(context: GolemModelContext): GolemModelResult {
       artifacts: [],
       manifestPaths: [],
       watchInputs: projectWatchInputs(programInfo, programInfo.program, sources, referencedManifestFiles(graphs, manifestIndex)),
-      diagnostics: validatorDiagnostics,
+      diagnostics: [...ignoredWarnings, ...validatorDiagnostics],
     };
   }
   const planSchemas = validationPlan && validators
@@ -583,7 +605,7 @@ export function generate(context: GolemModelContext): GolemModelResult {
       sources,
       referencedManifestFiles(graphs, manifestIndex),
     ),
-    ...(validatorDiagnostics.length > 0 ? { diagnostics: validatorDiagnostics } : {}),
+    ...(ignoredWarnings.length + validatorDiagnostics.length > 0 ? { diagnostics: [...ignoredWarnings, ...validatorDiagnostics] } : {}),
   };
 }
 

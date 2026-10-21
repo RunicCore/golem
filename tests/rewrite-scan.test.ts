@@ -498,32 +498,7 @@ function appBesideForeignModels(t: TestContext, site: string): { readonly app: s
   };
 }
 
-test('golem check reports a serde call on a model of a folder outside the root with its own golem.yaml, as outside the root', async (t) => {
-  const { app, shared, config } = appBesideForeignModels(t, `import { parse } from '@exprtlabs/golem/serde';
-import type { TMoney } from '../../shared/src/money.model.js';
-export const money = parse<TMoney>('{}');
-`);
-  await runPipeline(config);
-  await assert.rejects(
-    runPipeline(config, { check: true }),
-    { message: `golem rewrite scan reported 1 error diagnostic:\n  RUNM1074 (src/use.ts:3:22): ${path.join(shared, 'src/money.model.ts')}#TMoney is outside the models root ${app}. Golem does not generate models outside the root of the app. Declare the model in your own source, for example \`type TMoney = IObject<...>\` over a plain type.` },
-  );
-});
-
-test('golem check reports a serde call on a model outside the models root, with the model and the root', async (t) => {
-  const { app, shared, config } = appBesideForeignModels(t, `import { parse } from '@exprtlabs/golem/serde';
-import type { TMoney } from '../../shared/src/money.model.js';
-export const money = parse<TMoney>('{}');
-`);
-  fs.rmSync(path.join(shared, 'golem.yaml'));
-  await runPipeline(config);
-  await assert.rejects(
-    runPipeline(config, { check: true }),
-    { message: `golem rewrite scan reported 1 error diagnostic:\n  RUNM1074 (src/use.ts:3:22): ${path.join(shared, 'src/money.model.ts')}#TMoney is outside the models root ${app}. Golem does not generate models outside the root of the app. Declare the model in your own source, for example \`type TMoney = IObject<...>\` over a plain type.` },
-  );
-});
-
-test('golem check reports a serde call on a model of an installed package, with the model and the way to declare it in the app', async (t) => {
+test('golem check reports a serde call on a model of an installed package whose file has no model suffix, with the model and the suffix', async (t) => {
   const { declaration, config } = appBesideForeignModels(t, `import { stringify } from '@exprtlabs/golem/serde';
 import type { TPkgMoney } from '@acme/money';
 declare const money: TPkgMoney;
@@ -532,7 +507,7 @@ export const text = stringify<TPkgMoney>(money);
   await runPipeline(config);
   await assert.rejects(
     runPipeline(config, { check: true }),
-    { message: `golem rewrite scan reported 1 error diagnostic:\n  RUNM1074 (src/use.ts:4:21): ${declaration}#TPkgMoney is a model in an installed package. Golem does not generate models in node_modules. Declare the model in your own source, for example \`type TPkgMoney = IObject<...>\` over the package's plain type.` },
+    { message: `golem rewrite scan reported 1 error diagnostic:\n  RUNM1074 (src/use.ts:4:21): ${declaration}#TPkgMoney is declared in a file whose name has no model suffix. Golem reads a model from a file whose name ends in .model.ts or .models.ts. Move the model into such a file.` },
   );
 });
 

@@ -16,10 +16,12 @@ import { declaredModelAlias, foreignModelReason, modelDeclarationKind, resolveSy
 interface ScanInput {
   /** Absolute project root; file paths in results are relative to it. */
   readonly root: string;
-  /** The directory of the golem.yaml. A model that the models job of another golem.yaml covers is not this project's. */
+  /** The directory of the golem.yaml. */
   readonly directory: string;
-  /** `models.root` of the project's models job: a model whose real path is outside it is not this project's. */
+  /** `models.root` of the project's models job. */
   readonly modelsRoot: string;
+  /** The `suffixes` of the models job: a model is declared in a file whose name ends in one of them. Defaults to the golem default. */
+  readonly suffixes?: readonly string[];
   readonly program: ts.Program;
   readonly checker: ts.TypeChecker;
   /** The project's `.golem/codec-keys.json`, which the program does not hold; a missing file holds no keys. */
@@ -59,7 +61,7 @@ const CODE_RESERVED_PREFIX = 'RUNM1068';
 const CODE_IMPORT_CLASH = 'RUNM1069';
 const CODE_NEST_NO_CODEC = 'RUNM1071';
 const CODE_NEST_REGISTRY = 'RUNM1072';
-/** A model that golem does not generate for this project: it is in an installed package, outside the models root, or another golem.yaml's models job generates it. */
+/** A model that golem does not generate for this project: its file name has no model suffix. */
 const CODE_FOREIGN_MODEL = 'RUNM1074';
 
 /** The serde functions a type argument turns into a codec call, and the runtime method each becomes. */
@@ -733,7 +735,7 @@ export class RewriteScanner {
 
   constructor(input: ScanInput) {
     this.root = input.root;
-    this.boundary = modelBoundary(input.modelsRoot, input.directory);
+    this.boundary = modelBoundary(input.modelsRoot, input.suffixes);
     this.program = input.program;
     this.checker = input.checker;
     this.nest = input.nest;
@@ -823,6 +825,8 @@ interface ProjectScanInput {
   readonly directory: string;
   /** `models.root` of the project's models job. */
   readonly modelsRoot: string;
+  /** The `suffixes` of the models job. Defaults to the golem default. */
+  readonly suffixes?: readonly string[];
   /** The tsconfig whose files are scanned, from the golem.yaml; its directory is what the file paths are relative to. */
   readonly configFile: string;
   readonly nest: boolean;
@@ -835,9 +839,9 @@ interface ProjectScanInput {
 
 /** Open the project's program and ask the scanner about its sources: what `golem check` reports. Writes nothing. */
 export function scanProject(input: ProjectScanInput): ProgramScan {
-  const { root, directory, modelsRoot, configFile, nest, codecKeysFile, session, sessionOwner } = input;
+  const { root, directory, modelsRoot, suffixes, configFile, nest, codecKeysFile, session, sessionOwner } = input;
   const info = createProjectProgram(root, undefined, sessionOwner === undefined ? undefined : retainedProgramSession(session, sessionOwner, root), configFile);
   using program = info.program;
-  const { files, diagnostics } = new RewriteScanner({ root: path.dirname(configFile), directory, modelsRoot, program, checker: program.getTypeChecker(), nest, codecKeysFile }).scanProgram();
+  const { files, diagnostics } = new RewriteScanner({ root: path.dirname(configFile), directory, modelsRoot, ...(suffixes ? { suffixes } : {}), program, checker: program.getTypeChecker(), nest, codecKeysFile }).scanProgram();
   return { files, diagnostics, nestCodecSites: [...files.values()].flatMap((file) => file.nestCodecSites) };
 }

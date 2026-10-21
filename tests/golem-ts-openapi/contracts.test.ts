@@ -462,7 +462,7 @@ test('a model with a class is the component named by the class; a model without 
   assert.ok(schemas.TInvoice, 'a model without a class keeps its alias');
 });
 
-test('a controller field that nests a model of an installed package stops with RUNM1074 and the way to declare it in the app', async t => {
+test('a controller field that nests a model of an installed package whose file has no model suffix stops with RUNM1074', async t => {
   const root = fixture(t, `import { Controller, Get } from '@nestjs/common';
 import { ApiOkResponse } from '@nestjs/swagger';
 import type { TPkgMoney } from '@acme/money';
@@ -487,39 +487,6 @@ export class OrdersController {
 
   await assert.rejects(
     generateFixture(root),
-    (error: unknown) => String(error).includes(`RUNM1074: ${declaration}#TPkgMoney is a model in an installed package. Golem does not generate models in node_modules. Declare the model in your own source, for example \`type TPkgMoney = IObject<...>\` over the package's plain type.`),
-  );
-});
-
-
-// todo: the controllers analysis takes every non-node_modules file of the program as a model source, so an outside model is a model
-// of the job and never reaches the RUNM1074 check; passing a boundary to `descriptorBuilder` alone changes nothing.
-test('a controller field that nests a model of a folder outside the controllers root stops with RUNM1074 and the way to declare it in the app', { todo: 'the controllers analysis treats an outside model as its own; it needs a source filter by boundary as well as a boundary argument' }, async t => {
-  const root = fixture(t, '');
-  const shared = `${root}-shared`;
-  t.after(() => fs.rmSync(shared, { recursive: true, force: true }));
-  fs.mkdirSync(shared);
-  linkProjectPackages(shared, { '@exprtlabs/golem': path.join(workspace, 'packages/golem') });
-  fs.writeFileSync(path.join(shared, 'package.json'), JSON.stringify({ private: true, type: 'module' }));
-  fs.writeFileSync(path.join(shared, 'money.ts'), "import type { IObject } from '@exprtlabs/golem/model';\nexport type TSharedMoney = IObject<{ currency: string }>;\n");
-  fs.writeFileSync(path.join(root, 'src/contracts.controller.ts'), `import { Controller, Get } from '@nestjs/common';
-import { ApiOkResponse } from '@nestjs/swagger';
-import type { TSharedMoney } from '../../${path.basename(shared)}/money.js';
-
-class OrderDto {
-  total!: TSharedMoney;
-}
-
-@Controller('orders')
-export class OrdersController {
-  @Get()
-  @ApiOkResponse({ type: OrderDto })
-  value(): OrderDto { return { total: { currency: 'USD' } }; }
-}
-`);
-
-  await assert.rejects(
-    generateFixture(root),
-    (error: unknown) => String(error).includes(`RUNM1074: ${path.join(fs.realpathSync(shared), 'money.ts')}#TSharedMoney is outside the models root ${fs.realpathSync(root)}. Golem does not generate models outside the root of the app. Declare the model in your own source, for example \`type TSharedMoney = IObject<...>\` over a plain type.`),
+    (error: unknown) => String(error).includes(`RUNM1074: ${declaration}#TPkgMoney is declared in a file whose name has no model suffix. Golem reads a model from a file whose name ends in .model.ts or .models.ts. Move the model into such a file.`),
   );
 });
