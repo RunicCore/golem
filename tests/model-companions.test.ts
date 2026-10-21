@@ -215,6 +215,26 @@ export type TOrder = IObject<{ id: string; money: Money }>;
   await command(root, process.execPath, [verifier, generatedCodecIdFromRoot(root, 'TOrder')]);
 });
 
+test('an SDK IObject alias nested as Money | null, (Money | null)[] and NonNullable<Money> uses the SDK class, and null stays null', async (t) => {
+  // protects: T-206 final review: a nullable SDK alias is the SDK model, never an inlined plain object
+  const { root, sourceRoot } = modelProject(t);
+  const sdk = path.join(sourceRoot, 'sdk');
+  fs.mkdirSync(sdk, { recursive: true });
+  fs.writeFileSync(path.join(sdk, 'types.ts'), "/* @golem-model-manifest ./model-manifest.json */\nimport type { IObject } from '@exprtlabs/golem/model';\nexport type Money = IObject<{ currency: string; amount: number }>;\n");
+  fs.writeFileSync(path.join(sdk, 'models.ts'), readFixture('models/model-companions/public-generation-compiles-and-executes-conversion-and-rest-tuple-behavior/models.ts'));
+  writeManifest(path.join(sdk, 'model-manifest.json'), './models.ts', 'MoneyModel', './types.ts', { mobx: false, validation: true });
+  writeModelSources(sourceRoot, {
+    'order.model.ts': tsSource`import type { IObject } from '@exprtlabs/golem/model';
+import type { Money } from './sdk/types.js';
+export type TOrder = IObject<{ id: string; money: Money | null; history: (Money | null)[]; kept: NonNullable<Money> }>;
+`,
+  });
+  writeModelGolemYaml(root, { mobx: false, validation: true });
+  await buildModelProject(root);
+  const verifier = copyFixtureFile(root, 'models/model-companions/verify-sdk-alias-nullable.mjs', 'verify-sdk-alias-nullable.mjs');
+  await command(root, process.execPath, [verifier, generatedCodecIdFromRoot(root, 'TOrder')]);
+});
+
 test('re-exported IModel and IObject symbols preserve class versus plain-object generation', async () => {
   const { root, sourceRoot, artifacts } = await trustedProject();
   const sourceFile = path.join(sourceRoot, 'provenance.model.ts');

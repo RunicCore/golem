@@ -153,40 +153,56 @@ test('a model file that the program holds under two names is one model source of
 });
 
 // An interface has no model of the app, so the document inlines it; an IObject alias is a model of the controllers analysis, so the document names it.
-for (const [kind, declaration, moneyField, schemaNames] of [['interface', 'export interface TMoney { currency: string }', { type: 'object', properties: { currency: { type: 'string' } }, required: ['currency'], additionalProperties: false }, ['TOrder']], ['IObject alias', "import type { IObject } from '@exprtlabs/golem/model';\nexport type TMoney = IObject<{ currency: string }>;", { $ref: '#/components/schemas/TMoney' }, ['TMoney', 'TOrder']]] as const) {
-test(`an app model that nests an SDK ${kind} has one codec id in the codecs of the controllers job, the codec keys of the models job and both Nest marks`, async (t) => {
-  // protects: T-195 P-12 check, T-206: the three places that name a codec id agree for an app model that nests an SDK model, written as an interface or an IObject alias
-  const order = "import type { IObject } from '@exprtlabs/golem/model';\nimport type { TMoney } from '@acme/sdk/money.model';\nexport type TOrder = IObject<{ id: string; money: TMoney }>;\n";
-  const yaml = ['version: 1', 'mobx: false', 'validation: false', 'controllers:', '  - root: .', '    sources:', '      - src/customers.controller.ts', '    output: generated/api.json', '    info: { title: Test API, version: "1" }', 'models:', '  root: .', ''].join('\n');
-  const { app, config } = appWithSharedModel(t, sharedModel('IObject'), { 'src/order.model.ts': order, 'src/customers.controller.ts': controller('TOrder', './order.model.js'), 'golem.yaml': yaml }, true);
-  const outer = path.dirname(app);
-  // The SDK type is listed by the manifest, so a models job nests it as the generated SDK model.
-  const sdk = {
-    ...SDK_PACKAGE,
-    'model-manifest.json': SDK_PACKAGE['model-manifest.json']!.replace('"validation":true', '"validation":false'),
-    'money.model.d.ts': `/* @golem-model-manifest ./model-manifest.json */\n${declaration}\n`,
-    'models.ts': 'export class MoneyModel {}\nexport function stringifysdk_money(value: object, _options?: object): string { return JSON.stringify(value); }\nexport function toWireFormatsdk_money(value: unknown, _options?: object): unknown { return value; }\n',
-  };
-  writeGeneratedArtifacts(Object.entries(sdk).map(([relative, content]) => ({ path: path.join(outer, 'node_modules/@acme/sdk', relative), content })));
+const SDK_MONEY_KINDS = [
+  {
+    kind: 'interface',
+    declaration: 'export interface TMoney { currency: string }',
+    moneyField: { type: 'object', properties: { currency: { type: 'string' } }, required: ['currency'], additionalProperties: false },
+    schemaNames: ['TOrder'],
+  },
+  {
+    kind: 'IObject alias',
+    declaration: "import type { IObject } from '@exprtlabs/golem/model';\nexport type TMoney = IObject<{ currency: string }>;",
+    moneyField: { $ref: '#/components/schemas/TMoney' },
+    schemaNames: ['TMoney', 'TOrder'],
+  },
+] as const;
 
-  await runPipeline(config);
+for (const { kind, declaration, moneyField, schemaNames } of SDK_MONEY_KINDS) {
+  test(`an app model that nests an SDK ${kind} has one codec id in the codecs of the controllers job, the codec keys of the models job and both Nest marks`, async (t) => {
+    // protects: T-195 P-12 check, T-206: the three places that name a codec id agree for an app model that nests an SDK model, written as an interface or an IObject alias
+    const order = "import type { IObject } from '@exprtlabs/golem/model';\nimport type { TMoney } from '@acme/sdk/money.model';\nexport type TOrder = IObject<{ id: string; money: TMoney }>;\n";
+    const yaml = ['version: 1', 'mobx: false', 'validation: false', 'controllers:', '  - root: .', '    sources:', '      - src/customers.controller.ts', '    output: generated/api.json', '    info: { title: Test API, version: "1" }', 'models:', '  root: .', ''].join('\n');
+    const { app, config } = appWithSharedModel(t, sharedModel('IObject'), { 'src/order.model.ts': order, 'src/customers.controller.ts': controller('TOrder', './order.model.js'), 'golem.yaml': yaml }, true);
+    const outer = path.dirname(app);
+    // The SDK type is listed by the manifest, so a models job nests it as the generated SDK model.
+    const sdk = {
+      ...SDK_PACKAGE,
+      'model-manifest.json': SDK_PACKAGE['model-manifest.json']!.replace('"validation":true', '"validation":false'),
+      'money.model.d.ts': `/* @golem-model-manifest ./model-manifest.json */\n${declaration}\n`,
+      'models.ts': 'export class MoneyModel {}\nexport function stringifysdk_money(value: object, _options?: object): string { return JSON.stringify(value); }\nexport function toWireFormatsdk_money(value: unknown, _options?: object): unknown { return value; }\n',
+    };
+    writeGeneratedArtifacts(Object.entries(sdk).map(([relative, content]) => ({ path: path.join(outer, 'node_modules/@acme/sdk', relative), content })));
 
-  const id = codecKey(app, 'src/order.model.ts#TOrder');
-  assert.match(id, /^TOrder_[0-9a-f]{8}$/);
-  const registry = readText(app, 'src/generated/operation-codecs.ts');
-  assert.deepEqual([...new Set(registry.match(/TOrder_[0-9a-f]{8}/g))], [id], registry);
-  const code = rewrittenController(app);
-  assert.ok(code.includes(`@__golem_nestModelCodec(${JSON.stringify(id)}) input: TOrder`), code);
-  assert.ok(code.includes(`@__golem_nestModelReturn(${JSON.stringify(id)})`), code);
-  const document = readJson(app, 'generated/api.json');
-  assert.deepEqual(document.paths['/customers'].post.requestBody.content['application/json'].schema, { $ref: '#/components/schemas/TOrder' });
-  assert.deepEqual(document.components.schemas.TOrder, {
-    type: 'object', required: ['id', 'money'], additionalProperties: false,
-    properties: { id: { type: 'string' }, money: moneyField },
+    await runPipeline(config);
+
+    const id = codecKey(app, 'src/order.model.ts#TOrder');
+    assert.match(id, /^TOrder_[0-9a-f]{8}$/);
+    const registry = readText(app, 'src/generated/operation-codecs.ts');
+    assert.deepEqual([...new Set(registry.match(/TOrder_[0-9a-f]{8}/g))], [id], registry);
+    const code = rewrittenController(app);
+    assert.ok(code.includes(`@__golem_nestModelCodec(${JSON.stringify(id)}) input: TOrder`), code);
+    assert.ok(code.includes(`@__golem_nestModelReturn(${JSON.stringify(id)})`), code);
+    const document = readJson(app, 'generated/api.json');
+    assert.deepEqual(document.paths['/customers'].post.requestBody.content['application/json'].schema, { $ref: '#/components/schemas/TOrder' });
+    assert.deepEqual(document.components.schemas.TOrder, {
+      type: 'object', required: ['id', 'money'], additionalProperties: false,
+      properties: { id: { type: 'string' }, money: moneyField },
+    });
+    assert.deepEqual(Object.keys(document.components.schemas).sort(), schemaNames);
+    assert.doesNotMatch(JSON.stringify(document), /__exprtGeneratedModel/);
   });
-  assert.deepEqual(Object.keys(document.components.schemas).sort(), schemaNames);
-  assert.doesNotMatch(JSON.stringify(document), /__exprtGeneratedModel/);
-});}
+}
 
 test('a controller that returns an app class extending the generated base of a shared IModel is matched to the model: the document and the return mark use it', async (t) => {
   // protects: T-195 the controllers analysis finds a shared companion in models.output, as the models job writes it

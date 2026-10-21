@@ -183,14 +183,19 @@ test('two apps with different profiles each write the companion of a shared alia
   assert.doesNotMatch(companion(worker), /models\.validators\.generated/);
 });
 
-test('a field typed with an app class of a shared model generates and imports the shared companion', (t: TestContext) => {
+test('a field typed with an app class of a shared model generates, imports the shared companion and compiles', async (t: TestContext) => {
   // protects: T-205 a field typed with a class of a shared model generates
+  const outer = sharedFolder(t);
+  linkProjectPackages(outer, { '@exprtlabs/golem-model': path.join(workspace, 'packages/golem-model') });
   const order = "import type { IModel } from '@exprtlabs/golem/model';\nimport type { Customer } from './customer.js';\nexport type TOrder = IModel<{ customer: Customer }>;\n";
-  const app = appWithShared(sharedFolder(t), 'web', false, { 'src/order.model.ts': order, 'src/customer.ts': SHARED_CUSTOMER_BASE });
+  const app = appWithShared(outer, 'web', false, { 'src/order.model.ts': order, 'src/customer.ts': SHARED_CUSTOMER_BASE, 'golem.yaml': 'version: 1\nmodels:\n  root: .\n' });
 
-  const { artifacts } = generate({ root: app, profile: PROFILE });
+  fs.writeFileSync(path.join(app, 'tsconfig.json'), JSON.stringify({ compilerOptions: { strict: true, target: 'ES2022', module: 'NodeNext', moduleResolution: 'NodeNext', skipLibCheck: true, outDir: 'build', rootDir: '..' }, include: ['src/**/*.ts', '../shared/**/*.ts'] }));
 
-  assert.match(artifacts.find((artifact) => artifact.path === path.join(app, 'src/order.model.generated.ts'))?.content ?? '', /import \{ TCustomerBaseModel, .* \} from "\.\/generated\/models\/@acme\/shared\/customer\.model\.generated\.js";/);
+  await command(app, process.execPath, [golem, 'build']);
+
+  const companion = fs.readFileSync(path.join(app, 'src/order.model.generated.ts'), 'utf8');
+  assert.match(companion, /import \{ TCustomerBaseModel, .* \} from "\.\/generated\/models\/@acme\/shared\/customer\.model\.generated\.js";/);
 });
 
 test('on the first run an app class that imports the shared base through a paths alias is the class of the shared model', (t: TestContext) => {
@@ -395,6 +400,27 @@ test('an anonymous IObject nested in an app model still stops generation with RU
 
   assert.throws(() => generate({ root: app, profile: PROFILE }), /RUNM1053.*named, exported declaration/);
 });
+
+/** The companion of `order.model.ts` for an app whose order has `field` of the SDK type `Money`, written as `declaration`. */
+function sdkOrderCompanion(t: TestContext, declaration: string, field: string): string {
+  const order = `import type { IObject } from '@exprtlabs/golem/model';\nimport type { Money } from '@acme/sdk/money.model';\nexport type TOrder = IObject<{ id: string; ${field} }>;\n`;
+  const app = appWithSdk(t, 'installed', './money.model.d.ts', declaration, order);
+  const { artifacts, diagnostics } = generate({ root: app, profile: PROFILE });
+  assert.equal(diagnostics, undefined);
+  return artifacts.find((artifact) => artifact.path === path.join(app, 'src/order.model.generated.ts'))?.content ?? '';
+}
+
+for (const field of ['total: Money | null', 'total: NonNullable<Money>', 'total: (Money | null)[]', 'total?: Money']) {
+  test(`an SDK IObject alias in the field "${field}" uses the SDK codec and gives the companion of the SDK interface`, (t: TestContext) => {
+    // protects: T-206 final review: an SDK alias nested in a union, NonNullable, an array or an optional field is the SDK model, never an inlined object
+    const alias = sdkOrderCompanion(t, 'export type Money = IObject<{ currency: string }>;', field);
+    const sdkInterface = sdkOrderCompanion(t, 'export interface Money { currency: string }', field);
+
+    assert.match(alias, /stringifysdk_money/);
+    assert.doesNotMatch(alias, /currency/);
+    assert.equal(alias, sdkInterface);
+  });
+}
 
 test('a .model.d.ts file of an installed package whose manifest names the .ts file is an SDK file: no warning, no companion of its own', (t: TestContext) => {
   // protects: R-20 an SDK keeps working: a published package ships .d.ts for the .ts file its manifest names

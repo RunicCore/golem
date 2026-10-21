@@ -8,8 +8,13 @@ interface Provenance {
   readonly projection: boolean;
   /** The first IModel or IObject reference reached that no model specification declares. */
   readonly anonymous: ts.TypeReferenceNode | undefined;
-  /** The SDK model that a reference to a type alias listed in a model manifest reaches. A union or intersection reaches none. */
-  readonly external?: ResolvedModelManifestEntry | undefined;
+  /** The SDK models that references to type aliases listed in a model manifest reach, each with the type of its reference. */
+  readonly externals: readonly ExternalReference[];
+}
+
+interface ExternalReference {
+  readonly model: ResolvedModelManifestEntry;
+  readonly type: ts.Type;
 }
 
 /** Follow authored symbols and instantiated arguments; structural equality never establishes identity. */
@@ -20,15 +25,15 @@ export function fieldProvenance(
   manifests?: ReadonlyMap<string, ResolvedModelManifestEntry>,
 ): Provenance {
   const walk = (current: ts.TypeNode | undefined, substitutions = new Map<ts.Symbol, ts.TypeNode>(), seen = new Set<ts.Node>()): Provenance => {
-    const empty: Provenance = { models: [], projection: false, anonymous: undefined };
+    const empty: Provenance = { models: [], projection: false, anonymous: undefined, externals: [] };
     if (!current || seen.has(current)) return empty;
     const next = new Set(seen).add(current);
     if (ts.isParenthesizedTypeNode(current)) return walk(current.type, substitutions, next);
-    if (ts.isTypeOperatorNode(current)) return { ...walk(current.type, substitutions, next), external: undefined };
-    if (ts.isIndexedAccessTypeNode(current)) return { ...walk(current.objectType, substitutions, next), external: undefined };
+    if (ts.isTypeOperatorNode(current)) return { ...walk(current.type, substitutions, next), externals: [] };
+    if (ts.isIndexedAccessTypeNode(current)) return { ...walk(current.objectType, substitutions, next), externals: [] };
     if (ts.isMappedTypeNode(current)) {
       const source = walk(current.typeParameter.constraint, substitutions, next);
-      return { ...source, projection: true, external: undefined };
+      return { ...source, projection: true, externals: [] };
     }
     if (ts.isUnionTypeNode(current) || ts.isIntersectionTypeNode(current)) {
       const members = current.types.map(member => walk(member, substitutions, next));
@@ -37,6 +42,7 @@ export function fieldProvenance(
         projection: ts.isIntersectionTypeNode(current) && members.some(member => member.models.length > 0)
           || members.some(member => member.projection),
         anonymous: members.find(member => member.anonymous)?.anonymous,
+        externals: members.flatMap(member => member.externals),
       };
     }
     if (!ts.isTypeReferenceNode(current)) return empty;
@@ -48,7 +54,7 @@ export function fieldProvenance(
     const declaration = symbol.declarations?.find(ts.isTypeAliasDeclaration);
     if (!declaration) return empty;
     const external = manifests && manifestModelOfSymbol(manifests, symbol);
-    if (external) return { ...empty, external };
+    if (external) return { ...empty, externals: [{ model: external, type: checker.getTypeFromTypeNode(current) }] };
     const direct = specifications.find(specification => specification.declaration === declaration);
     if (direct) return { ...empty, models: [direct] };
     const environment = new Map(substitutions);
@@ -65,6 +71,7 @@ export function fieldProvenance(
         models: [...new Set(branches.flatMap(branch => branch.models))],
         projection: branches.some(branch => branch.projection),
         anonymous: branches.find(branch => branch.anonymous)?.anonymous,
+        externals: branches.flatMap(branch => branch.externals),
       };
     }
     return walk(declaration.type, environment, next);
