@@ -459,15 +459,26 @@ async function analyzeController(
   };
 }
 
+/**
+ * Nest Swagger stores the argument of `@ApiExcludeController(disable = true)`
+ * and skips the controller when the first stored value (the decorator nearest
+ * the class) is true.
+ */
+function apiExcludeController(reader: MetadataReader, decorators: readonly DecoratorInfo[]): boolean {
+  const nearest = hasAnyDecorator(decorators, ['ApiExcludeController'], NEST_SWAGGER).at(-1);
+  if (!nearest) return false;
+  return readBoolean(reader, callArguments(nearest)[0], '@ApiExcludeController()', TsToOpenApiDiagnosticCode.UnsupportedRouteDecorator) ?? true;
+}
+
 function exportedControllerClasses(
-  checker: ts.TypeChecker,
+  context: NestAnalysisContext,
   sourceFile: ts.SourceFile,
 ): readonly ts.ClassDeclaration[] {
   const controllers: ts.ClassDeclaration[] = [];
   for (const statement of sourceFile.statements) {
     if (!ts.isClassDeclaration(statement) || !exportClass(statement)) continue;
-    const decorators = decoratorsOf(checker, statement);
-    if (hasDecorator(decorators, 'ApiExcludeController', NEST_SWAGGER)) continue;
+    const decorators = decoratorsOf(context.checker, statement);
+    if (apiExcludeController(context, decorators)) continue;
     if (hasDecorator(decorators, 'Controller', NEST_COMMON)) controllers.push(statement);
   }
   return controllers;
@@ -484,7 +495,7 @@ export async function analyzeControllers(
     if (!sourceFile) {
       throw new Error(`Could not load controller source: ${filename}`);
     }
-    for (const declaration of exportedControllerClasses(context.checker, sourceFile)) {
+    for (const declaration of exportedControllerClasses(context, sourceFile)) {
       const controller = await analyzeController(context, declaration, options.globalPrefix, uriVersioning);
       controllers.push(controller);
     }
