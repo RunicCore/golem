@@ -21,8 +21,8 @@ import {
   typeExpressionFromApiOption,
   typeReference,
 } from './analysis-utils.js';
-import { evaluateStaticValue, isStaticArray, unwrapExpression } from '../evaluation/static-value.js';
-import { decoratorOptions, objectOptions, readString, type DecoratorOptions, type MetadataReader } from './metadata.js';
+import { evaluateStaticValue, isStaticArray } from '../evaluation/static-value.js';
+import { decoratorOptions, headerOptionsList, readString, type DecoratorOptions, type MetadataReader } from './metadata.js';
 import { NEST_COMMON, NEST_SWAGGER, callArguments, decoratorsOf, staticObject } from './symbols.js';
 import type { ControllerParameter, DecoratorInfo, NestAnalysisContext, TypeReference } from './types.js';
 
@@ -49,17 +49,7 @@ function parameterOptionsOf(
 ): readonly ParameterOptions[] {
   return hasAnyDecorator(decorators, names, NEST_SWAGGER).flatMap((decorator): readonly ParameterOptions[] => {
     if (decorator.name !== 'ApiHeaders') return [{ decorator, options: decoratorOptions(reader, decorator) }];
-    const list = callArguments(decorator)[0];
-    const array = list && unwrapExpression(list);
-    if (!array || !ts.isArrayLiteralExpression(array)) {
-      throw new TsToOpenApiError(diagnostic(
-        decorator.decorator.getSourceFile(),
-        list ?? decorator.decorator,
-        TsToOpenApiDiagnosticCode.UnsupportedSchemaMetadata,
-        '@ApiHeaders() must be passed an array literal of header options.',
-      ));
-    }
-    return array.elements.map(element => ({ decorator, options: objectOptions(reader, element, '@ApiHeaders') }));
+    return headerOptionsList(reader, decorator).map(options => ({ decorator, options }));
   });
 }
 

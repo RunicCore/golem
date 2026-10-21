@@ -400,6 +400,19 @@ export class ListedController {
   list(): void {}
 }
 
+const COMMON = [
+  { name: 'X-Tenant', required: true, description: 'Tenant', schema: { type: 'string', format: 'uuid' } },
+  { name: 'X-Trace' },
+] as const;
+
+@ApiHeaders(COMMON)
+@Controller('constant')
+export class ConstantController {
+  @Get()
+  @ApiHeaders([{ name: 'X-Lang', required: false, description: 'Language' }, { name: 'X-Debug', required: true }])
+  list(): void {}
+}
+
 @ApiHeader({ name: 'X-Tenant', required: true, description: 'Tenant', schema: { type: 'string', format: 'uuid' } })
 @ApiHeader({ name: 'X-Trace' })
 @Controller('single')
@@ -419,4 +432,5 @@ export class SingleController {
     ['header', 'X-Debug', undefined, true],
   ]);
   assert.deepEqual(listed, document.paths['/single']?.get?.parameters);
+  assert.deepEqual(listed, document.paths['/constant']?.get?.parameters);
 });
