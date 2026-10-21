@@ -987,6 +987,17 @@ export function descriptorBuilder(
           }
         }
       }
+      // The analysis never sees the generated base of the class, so a mapped type over `keyof Customer` has no keys (a utility
+      // that the user wrote, or an inline mapped type). Without this check the field would silently have no members.
+      if (sourceModel && !library && members.length === 0 && checker.getPropertiesOfType(sourceModel.fieldsType).length > 0) {
+        throw diagnostic(
+          context.sourceFile,
+          node ?? context.declaration,
+          '1058',
+          `Field${context.field === undefined ? '' : ` "${context.field}"`} of ${context.name} maps over ${checker.typeToString(sourceObject!)}, and golem finds no members in it. `
+            + 'Use Pick, Omit, Partial, Required or Readonly, or name the keys in the mapped type.',
+        );
+      }
       for (const { name, property, fromModel, absentFromSource } of members) {
         const optional = fromModel
           ? library?.name === 'Partial' || (library?.name !== 'Required' && (property.flags & ts.SymbolFlags.Optional) !== 0)

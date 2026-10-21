@@ -175,3 +175,21 @@ for (const row of [
     assert.deepEqual(generatedModelFiles(root), firstFiles);
   });
 }
+
+for (const row of [
+  { label: 'a utility that the user wrote', before: 'type MyPartial<T> = { [K in keyof T]?: T[K] };\n', projection: 'MyPartial<Customer>' },
+  { label: 'an inline mapped type over keyof', before: '', projection: '{ [K in keyof Customer]: Customer[K] }' },
+] as const) {
+  test(`a field typed by ${row.label} over an app class stops the build with a diagnostic, not a field with no members`, async t => {
+    // protects: T-211 a mapped type over keyof of an app class gives RUNM1058, not an empty field type
+    const { root, sourceRoot } = companionModelProject(t, 'model-class-keyof');
+    const imodel = "import type { IModel } from '@exprtlabs/golem/model';\n";
+    writeModelSources(sourceRoot, {
+      'customer.model.ts': `${imodel}export type TCustomer = IModel<{ name: string; age: number }>;\n`,
+      'customer.ts': "import { TCustomerBaseModel } from './customer.model.generated.js';\nexport class Customer extends TCustomerBaseModel {}\n",
+      'order.model.ts': `${imodel}import type { Customer } from './customer.js';\n${row.before}export type TOrder = IModel<{ id: string; summary: ${row.projection} }>;\n`,
+    });
+    writeModelGolemYaml(root, { mobx: false, validation: true });
+    await assert.rejects(buildModelProject(root), /RUNM1058: Field "summary" of TOrder maps over Customer, and golem finds no members in it\. Use Pick, Omit, Partial, Required or Readonly, or name the keys in the mapped type\./);
+  });
+}
