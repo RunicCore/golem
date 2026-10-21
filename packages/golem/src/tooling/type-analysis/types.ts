@@ -989,7 +989,7 @@ export function descriptorBuilder(
       }
       // The analysis never sees the generated base of the class, so a mapped type over `keyof Customer` has no keys (a utility
       // that the user wrote, or an inline mapped type). Without this check the field would silently have no members.
-      if (sourceModel && !library && members.length === 0 && checker.getPropertiesOfType(sourceModel.fieldsType).length > 0) {
+      if (sourceModel && !library && !context.schemaData && members.length === 0 && checker.getPropertiesOfType(sourceModel.fieldsType).length > 0) {
         throw diagnostic(
           context.sourceFile,
           node ?? context.declaration,
