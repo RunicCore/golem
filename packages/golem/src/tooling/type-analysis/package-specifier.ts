@@ -1,7 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { canonicalPath } from '../generator-api.js';
-import { isOutside } from './project.js';
 
 type PackageSpecifierResult =
   | { readonly kind: 'same-package' }
@@ -151,6 +150,12 @@ function installedAt(consumerRoot: string, name: string, packageRoot: string): b
   }
 }
 
+/** True when the canonical path `inner` does not lie inside the canonical folder `outer`. */
+function liesOutside(outer: string, inner: string): boolean {
+  const relative = path.relative(outer, inner);
+  return relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative);
+}
+
 /**
  * How code in `fromFile` imports `file`: relatively when the file's package is the consumer's own, or by the owning
  * package's name plus the `exports` subpath that reaches `file`. The owner is the nearest package.json with a name. It
@@ -161,7 +166,7 @@ function installedAt(consumerRoot: string, name: string, packageRoot: string): b
 export function packageSpecifier(file: string, fromFile: string, consumerRoot: string): PackageSpecifierResult {
   const owner = nearestManifest(file);
   const consumer = nearestManifest(fromFile);
-  if (!owner || owner.root === consumer?.root || !isOutside(canonicalPath(owner.root), canonicalPath(consumerRoot))) return { kind: 'same-package' };
+  if (!owner || owner.root === consumer?.root || !liesOutside(canonicalPath(owner.root), canonicalPath(consumerRoot))) return { kind: 'same-package' };
   const relativeFile = path.relative(owner.root, file).replace(/\\/g, '/');
   if (owner.exports === undefined || owner.exports === null) {
     // Without an `exports` field Node serves every file by its path, so the runtime file's path is the subpath. That
