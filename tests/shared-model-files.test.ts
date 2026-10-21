@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 
 import { createFixtureProject, linkProjectPackages, writeGeneratedArtifacts } from './fixture-project.js';
 import { writeModelSources } from './model-project.js';
+import { TSC } from './support/build-project.js';
 import { command, golem } from './support/process.js';
 import { literal, tsSource, type SourceFragment } from './source-template.js';
 import { createJobAnalysis } from '#model/emit';
@@ -336,6 +337,28 @@ test('a model file of a workspace package linked into node_modules is a watch in
 
   assert.ok(inputs.includes(path.join(app, 'node_modules/@acme/shared/customer.model.d.ts')), inputs.join('\n'));
 });
+
+for (const form of ['d.ts', 'ts'] as const) {
+  test(`a model of a workspace package linked into node_modules generates and type-checks with preserveSymlinks off (customer.model.${form})`, async (t: TestContext) => {
+    // protects: T-214 both TypeScript lanes resolve a linked package to the real path, so the order companion imports the shared companion
+    const outer = createFixtureProject(t, 'golem-shared-linked-');
+    linkProjectPackages(outer, { '@exprtlabs/golem': path.join(workspace, 'packages/golem') });
+    writeModelSources(path.join(outer, 'shared'), {
+      'package.json': JSON.stringify({ name: '@acme/shared', private: true, type: 'module', exports: { './customer.model': { types: `./customer.model.${form}` } } }),
+      [`customer.model.${form}`]: "import type { IModel } from '@exprtlabs/golem/model';\nexport type TCustomer = IModel<{ name: string }>;\n",
+    });
+    const app = appWithShared(outer, 'lib', false, { 'src/order.model.ts': SHARED_ORDER('@acme/shared/customer.model') }, ['src/**/*.ts']);
+    fs.mkdirSync(path.join(app, 'node_modules/@acme'), { recursive: true });
+    fs.symlinkSync('../../../shared', path.join(app, 'node_modules/@acme/shared'), 'dir');
+
+    const { artifacts } = generate({ root: app, profile: PROFILE });
+    writeGeneratedArtifacts(artifacts);
+
+    const order = artifacts.find((artifact) => artifact.path === path.join(app, 'src/order.model.generated.ts'));
+    assert.match(order?.content ?? '', /from "\.\/generated\/models\/@acme\/shared\/customer\.model\.generated\.js";/);
+    await command(app, process.execPath, [TSC, '-p', 'tsconfig.json', '--noEmit']);
+  });
+}
 
 test('a generated .d.ts beside the .model.d.ts file of an installed package gives one warning that names it, and the app writes its own companion', (t: TestContext) => {
   // protects: D-34 warn about a companion in an installed package, no hard reject

@@ -955,10 +955,12 @@ export function resolveModuleName(
       ? resolveRelative(moduleName, containingFile, host)
       : resolvePackage(moduleName, containingFile, host));
   if (!resolved) return {};
+  const isExternalLibraryImport = resolved.replace(/\\/g, '/').includes('/node_modules/');
   return {
     resolvedModule: {
-      resolvedFileName: resolved,
-      isExternalLibraryImport: resolved.replace(/\\/g, '/').includes('/node_modules/'),
+      // As the real resolver does: a file found through node_modules is named by its real path, unless preserveSymlinks keeps the link.
+      resolvedFileName: isExternalLibraryImport && !compilerOptions.preserveSymlinks ? host.realpath?.(resolved) ?? resolved : resolved,
+      isExternalLibraryImport,
     },
   };
 }
