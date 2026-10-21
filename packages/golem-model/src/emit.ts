@@ -1433,24 +1433,21 @@ export function emitSource(
       const initType = (local: string): string => `${local}: ${specification.name}Init[${JSON.stringify(initCaptures.find(([, name]) => name === local)?.[0])}]`;
       init.unshift(`    ${presentKeysSource('values', initCaptures, initType)}`);
     }
-    // A model with a dynamic map keeps the keys outside its fields as data: the constructor and encode copy them, and
-    // decode converts them, each by the conversion of the map value. A map of unknown values copies them as they are.
+    // A model with a dynamic map (an index signature) keeps the keys outside its fields as data: the constructor and
+    // encode copy them, and decode converts them, each by the conversion of the map value. A default-open model has no
+    // map and writes its declared fields only.
     const mapDefinition = definitions[specification.name];
-    if (mapDefinition?.kind === 'object' && mapDefinition.additionalProperties) {
-      const mapValue = typeof mapDefinition.additionalProperties === 'object' ? mapDefinition.additionalProperties : undefined;
+    if (mapDefinition?.kind === 'object' && typeof mapDefinition.additionalProperties === 'object') {
+      const mapValue = mapDefinition.additionalProperties;
       const known = `__knownKeys_${specification.name}`;
       helpers.push(`const ${known}: ReadonlySet<string> = new Set<string>([${fields.map((field) => JSON.stringify(field.getName())).join(', ')}]);`);
       const serde = {
         deserialize: (id: string, value: string) => serdeExpression(id, 'deserialize', value),
         serialize: (id: string, value: string) => serdeExpression(id, 'serialize', value),
       };
-      const decodeMapValue = mapValue
-        ? wrapRootConversion(helpers, specification.name, 'deserialize', 'key', 'value', (value) => emitModelFromJSON(mapValue, value, resolveFromAny, { ...serde, serialize: (_id, value) => value }), 'unknown')
-        : 'value';
-      const encodeMapValue = mapValue
-        ? wrapRootConversion(helpers, specification.name, 'serialize', 'key', 'value', (value) => emitModelToJSON(mapValue, value, resolveToJsonAny, { ...serde, deserialize: (_id, value) => value }), `${specification.name}Fields[string]`)
-        : 'value';
-      const initMapValue = mapValue ? emitModelFromInit(mapValue, 'value', resolveFromAny) : 'value';
+      const decodeMapValue = wrapRootConversion(helpers, specification.name, 'deserialize', 'key', 'value', (value) => emitModelFromJSON(mapValue, value, resolveFromAny, { ...serde, serialize: (_id, value) => value }), 'unknown');
+      const encodeMapValue = wrapRootConversion(helpers, specification.name, 'serialize', 'key', 'value', (value) => emitModelToJSON(mapValue, value, resolveToJsonAny, { ...serde, deserialize: (_id, value) => value }), `${specification.name}Fields[string]`);
+      const initMapValue = emitModelFromInit(mapValue, 'value', resolveFromAny);
       if (decodeMapValue !== 'value') {
         decode.push(`  for (const key of Object.keys(result)) if (!${known}.has(key)) { const value = result[key]; if (value !== undefined) defineModelProperty(result, key, ${decodeMapValue}); }`);
       }

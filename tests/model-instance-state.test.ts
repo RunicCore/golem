@@ -250,3 +250,23 @@ test('parse with construct keeps the extra keys of a dynamic map, converts them,
   assert.deepEqual(encodeGeneratedModel(dated), JSON.parse(text));
   assert.equal(stamps.stringify(new Stamps({ first: new Date(0), later: new Date(1000) })), '{"first":"1970-01-01T00:00:00.000Z","later":"1970-01-01T00:00:01.000Z"}', 'the constructor keeps and converts extra keys');
 });
+
+test('a default-open model without a dynamic map generates, and parse with construct and stringify write its declared fields only', async (t) => {
+  // protects: bug T-163 the dynamic-map copy was emitted for exact: false models, whose generated types have no index signature
+  const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-model-loose-', name: 'model-loose', linkWorkspaceNodeModules: true });
+  fs.writeFileSync(path.join(sourceRoot, 'loose.model.ts'), `import type { IModel } from '@exprtlabs/golem/model';
+import { TLooseBaseModel, type TLooseFields } from './loose.model.generated.js';
+export type TLoose = IModel<{ id: string }>;
+export class Loose extends TLooseBaseModel {
+  constructor(values: Partial<TLooseFields> = {}) { super(values); }
+}
+`);
+  writeModelGolemYaml(root, { mobx: false, validation: true, exact: false });
+  await buildModelProject(root);
+  const { Loose } = await import(pathToFileURL(path.join(root, 'build/loose.model.js')).href) as { Loose: new (values?: object) => object };
+  const codec = requireObjectCodec(generatedCodecIdFromRoot(root, 'TLoose'));
+  const parsed = codec.parse('{"id":"a","extra":1}', { construct: Loose });
+  assert.ok(parsed instanceof Loose);
+  assert.deepEqual({ ...parsed }, { id: 'a' });
+  assert.equal(codec.stringify(new Loose({ id: 'a', extra: 1 } as object)), '{"id":"a"}');
+});
