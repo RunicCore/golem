@@ -362,6 +362,11 @@ export function resolveConfig(filename = 'golem.yaml', onInput?: InputObserver):
     }
     const sourceSuffixes = suffixes(value.models.suffixes, 'models.suffixes');
     jobs.push({ id: `models:${path.relative(directory, root) || '.'}`, kind: 'models', package: '@exprtlabs/golem-model', options: { root, directory, output, profile, ...exact, ...(sources ? { sources } : {}), ...(sourceSuffixes ? { suffixes: sourceSuffixes } : {}) } });
+    // A controllers job reads the same boundary: the models job writes the generated file of a shared model where a controller class extends it.
+    const models = { root, directory, output, ...(sourceSuffixes ? { suffixes: sourceSuffixes } : {}) };
+    for (const [index, job] of jobs.entries()) {
+      if (job.kind === 'controllers') jobs[index] = { ...job, options: { ...job.options, models } };
+    }
   }
   if (!jobs.length) throw new Error('Configure at least one generators, controllers, openapi, or models section.');
   // A misspelled path is that, not a tsconfig the jobs happen to find elsewhere.

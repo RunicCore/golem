@@ -119,6 +119,8 @@ class CodecKeys {
   private readonly byTail = new Map<string, Map<string, Set<string>>>();
   /** The generated module that registers each codec id, where a key file or a manifest says which. */
   private readonly modules = new Map<string, string>();
+  /** The id of each generated base class of a key file's model, by `<companion file>#<Name>BaseModel`: a class in any file that extends the base is a class of that model. */
+  private readonly bases = new Map<string, { readonly id: string; readonly table: string }>();
 
   /** The real path of the tsconfig's directory: a key is a file's real path from it, as `golem generate` writes it. */
   private readonly base: string;
@@ -130,7 +132,9 @@ class CodecKeys {
     for (const [declaration, id] of Object.entries(readCodecKeysFile(codecKeysFile))) {
       if (declaration.lastIndexOf('#') > 0 && id !== '') {
         this.add(declaration.replace(/\\/g, '/'), id, table);
-        this.addModule(id, this.companionOf(path.resolve(this.base, declaration.slice(0, declaration.lastIndexOf('#')))));
+        const companion = this.companionOf(path.resolve(this.base, declaration.slice(0, declaration.lastIndexOf('#'))));
+        this.addModule(id, companion);
+        if (companion !== undefined) this.bases.set(`${canonicalFilename(companion)}#${declaration.slice(declaration.lastIndexOf('#') + 1)}${BASE_MODEL_SUFFIX}`, { id, table });
       }
     }
     this.addManifests();
@@ -250,6 +254,13 @@ class CodecKeys {
     return id;
   }
 
+  /** The id of the model whose generated base class `base` is, from the key file of this project. */
+  idForBase(base: GeneratedBase, dependencies: Set<string>): string {
+    const found = this.bases.get(`${canonicalFilename(base.file)}#${base.name}`);
+    if (found !== undefined) dependencies.add(found.table);
+    return found?.id ?? '';
+  }
+
   idForSymbol(symbol: ts.Symbol, dependencies: Set<string>): string {
     for (const declaration of symbol.declarations ?? []) {
       const id = this.idFor(declaration.getSourceFile().fileName, symbol.name, dependencies);
@@ -304,8 +315,14 @@ function serdeTypeName(typeNode: ts.TypeNode): ts.EntityName | undefined {
   return undefined;
 }
 
+/** The generated base class a model class extends: its name, and the generated module that declares it. */
+interface GeneratedBase {
+  readonly file: string;
+  readonly name: string;
+}
+
 /** The generated model module that declares `YBaseModel` in `class X extends YBaseModel`; `Mixin(YBaseModel)` and any other base have none. */
-function generatedBaseFile(checker: ts.TypeChecker, declaration: ts.ClassDeclaration): string | undefined {
+function generatedBase(checker: ts.TypeChecker, declaration: ts.ClassDeclaration): GeneratedBase | undefined {
   for (const base of (declaration.heritageClauses ?? [])
     .filter((clause) => clause.token === ts.SyntaxKind.ExtendsKeyword)
     .flatMap((clause) => clause.types)) {
@@ -315,9 +332,27 @@ function generatedBaseFile(checker: ts.TypeChecker, declaration: ts.ClassDeclara
     if (symbol === undefined || (symbol.flags & ts.SymbolFlags.Class) === 0 || !symbol.name.endsWith(BASE_MODEL_SUFFIX)) continue;
     const generated = (symbol.declarations ?? []).find((candidate) => ts.isClassDeclaration(candidate)
       && GENERATED_MODEL_MODULE.test(candidate.getSourceFile().fileName));
-    if (generated) return generated.getSourceFile().fileName;
+    if (generated) return { file: generated.getSourceFile().fileName, name: symbol.name };
   }
   return undefined;
+}
+
+/** The id of the model whose generated base `declaration` extends, wherever the class is written: a shared model's class is the app's own. A default export has none. */
+function idOfBaseOf(checker: ts.TypeChecker, keys: CodecKeys, declaration: ts.ClassDeclaration, dependencies: Set<string>): string {
+  const isDefault = declaration.name !== undefined && checker.getSymbolAtLocation(declaration.name)?.name === 'default';
+  const base = isDefault ? undefined : generatedBase(checker, declaration);
+  return base === undefined ? '' : keys.idForBase(base, dependencies);
+}
+
+/** The codec id of a symbol: its own key, or, for a class, the id of the model whose generated base it extends. */
+function codecIdOf(checker: ts.TypeChecker, keys: CodecKeys, symbol: ts.Symbol, dependencies: Set<string>): string {
+  const own = keys.idForSymbol(symbol, dependencies);
+  if (own !== '') return own;
+  for (const declaration of symbol.declarations ?? []) {
+    const id = ts.isClassDeclaration(declaration) ? idOfBaseOf(checker, keys, declaration, dependencies) : '';
+    if (id !== '') return id;
+  }
+  return '';
 }
 
 function insertion(at: number, text: string): RewriteEdit {
@@ -386,7 +421,7 @@ function isGolemModel(checker: ts.TypeChecker, symbol: ts.Symbol, seen = new Set
   if (seen.has(symbol)) return false;
   seen.add(symbol);
   return (symbol.declarations ?? []).some((declaration) => {
-    if (ts.isClassDeclaration(declaration)) return generatedBaseFile(checker, declaration) !== undefined;
+    if (ts.isClassDeclaration(declaration)) return generatedBase(checker, declaration) !== undefined;
     if (!ts.isTypeAliasDeclaration(declaration)) return false;
     if (modelDeclarationKind(checker, declaration.type) !== undefined) return true;
     const target = ts.isTypeReferenceNode(declaration.type) ? resolvedSymbolAt(checker, declaration.type.typeName) : undefined;
@@ -421,7 +456,7 @@ function nestBinding(
   const name = serdeTypeName(model);
   const symbol = name && resolvedSymbolAt(checker, name);
   if (!symbol) return { ...unbound, golemModel: modelDeclarationKind(checker, model) !== undefined };
-  return { ...unbound, id: keys.idForSymbol(symbol, dependencies), golemModel: isGolemModel(checker, symbol), name };
+  return { ...unbound, id: codecIdOf(checker, keys, symbol, dependencies), golemModel: isGolemModel(checker, symbol), name };
 }
 
 // One file
@@ -602,7 +637,7 @@ function scanFile(
       return;
     }
     const symbol = resolvedSymbolAt(checker, typeName);
-    const id = symbol ? keys.idForSymbol(symbol, scan.dependencies) : '';
+    const id = symbol ? codecIdOf(checker, keys, symbol, scan.dependencies) : '';
     if (id === '') {
       const model = fieldProvenance(checker, call.typeArguments[0], []).anonymous;
       const alias = model && declaredModelAlias(model);
@@ -665,11 +700,11 @@ function scanFile(
     else if (nest && ts.isMethodDeclaration(node)) visitMethod(node);
     if (ts.isCallExpression(node)) visitCall(node);
     else if (ts.isClassDeclaration(node) && node.name) {
-      const base = generatedBaseFile(checker, node);
-      const id = base === undefined ? '' : keys.idFor(file.fileName, node.name.text, scan.dependencies);
+      const base = generatedBase(checker, node);
+      const id = base === undefined ? '' : keys.idFor(file.fileName, node.name.text, scan.dependencies) || idOfBaseOf(checker, keys, node, scan.dependencies);
       if (base !== undefined && id !== '') {
         classes.push({ name: node.name.text, id, end: node.end });
-        scan.dependencies.add(portable(root, base));
+        scan.dependencies.add(portable(root, base.file));
       }
     } else if (ts.isIdentifier(node) && !reserved && node.text.startsWith(REWRITE_IMPORT_PREFIX)) reserved = node;
     ts.forEachChild(node, (child) => { visit(child); return undefined; });

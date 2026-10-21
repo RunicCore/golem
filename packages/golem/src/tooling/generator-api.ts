@@ -205,8 +205,25 @@ export interface ControllerContext {
   readonly profile: GolemProfile;
   /** The `golem.yaml` default for the `exact` option of a model that sets none; omitted means `true`. */
   readonly exact?: boolean;
+  /**
+   * The models job of the same golem.yaml, absent when it has none. A controller type that is a shared model of the app, or a
+   * class that extends the generated base of one, is matched to its model through the file this job writes for it.
+   */
+  readonly models?: ControllerModels;
   readonly onInput?: InputObserver;
   readonly session?: GeneratorSession;
+}
+
+/** What the controllers analysis needs to know of the models job: the inputs of its model boundary. */
+export interface ControllerModels {
+  /** `models.root`, absolute. */
+  readonly root: string;
+  /** The directory of the golem.yaml. */
+  readonly directory: string;
+  /** `models.output`, absolute. */
+  readonly output: string;
+  /** The file-name endings of a model file; omitted means the golem default. */
+  readonly suffixes?: readonly string[];
 }
 
 export interface GolemProvider<Context> {

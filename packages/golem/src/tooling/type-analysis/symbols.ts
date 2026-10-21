@@ -1,3 +1,4 @@
+import { dirname, resolve } from 'node:path';
 import * as ts from '../typescript-ns.js';
 import { DEFAULT_MODEL_SUFFIXES, canonicalPath } from '../generator-api.js';
 import { canonicalFilename, generatedFilename, isModelFileName, type ModelBoundary } from './project.js';
@@ -78,6 +79,16 @@ export function companionOfSpecification(specification: ModelSpecification): str
   return specification.companionFile ?? generatedFilename(specification.sourceFile.fileName);
 }
 
+/**
+ * The companion a relative import names when it is not written yet. Module resolution finds only a file whose folder exists,
+ * and the folder of a shared companion in `models.output` is made when the models job writes it.
+ */
+function unwrittenCompanion(specifier: string, importer: string, expected: ReadonlySet<string>): string | undefined {
+  if (!specifier.startsWith('.')) return undefined;
+  const target = canonicalFilename(resolve(dirname(importer), specifier).replace(/\.([cm]?)js$/, '.$1ts'));
+  return expected.has(target) ? target : undefined;
+}
+
 /** Identify a model class through its generated base import, including first generation. */
 export function modelSpecificationForClass(
   checker: ts.TypeChecker,
@@ -110,8 +121,10 @@ export function modelSpecificationForClass(
         if (!ts.isImportSpecifier(alias)) continue;
         const statement = alias.parent.parent.parent;
         if (!ts.isImportDeclaration(statement) || !ts.isStringLiteralLike(statement.moduleSpecifier)) continue;
-        const module = ts.resolveModuleName(statement.moduleSpecifier.text, statement.getSourceFile().fileName, compilerOptions, host).resolvedModule;
-        const specification = module && match(module.resolvedFileName, (alias.propertyName ?? alias.name).text);
+        const importer = statement.getSourceFile().fileName;
+        const resolved = ts.resolveModuleName(statement.moduleSpecifier.text, importer, compilerOptions, host).resolvedModule?.resolvedFileName
+          ?? unwrittenCompanion(statement.moduleSpecifier.text, importer, expected);
+        const specification = resolved && match(resolved, (alias.propertyName ?? alias.name).text);
         if (specification) return specification;
       }
       const inherited = modelSpecificationForClass(checker, checker.getTypeAtLocation(base), specifications, compilerOptions, seen);

@@ -2,7 +2,7 @@ import * as path from 'node:path';
 import * as ts from '../typescript-ns.js';
 import { collectSpecifications, type ModelSpecification, type TypeAnalysisContext } from './models.js';
 import { descriptorBuilder, type ModelConversionDescriptor } from './types.js';
-import { isGeneratedCompanion } from './project.js';
+import { companionFilename, includedModelSources, isGeneratedCompanion, type ModelBoundary } from './project.js';
 import { pascalIdentifier } from './projection-names.js';
 import { fieldProvenance } from './projections.js';
 import { canonicalDescriptorKey } from '../schema.js';
@@ -27,13 +27,25 @@ export interface ContractAnalysis {
 /** Shared source interpretation for controller contracts; it never loads application modules. */
 export function createContractAnalysis(
   program: ts.Program,
-  options: { readonly root: string; readonly allowAny?: boolean; readonly exact?: boolean },
+  options: {
+    readonly root: string;
+    readonly allowAny?: boolean;
+    readonly exact?: boolean;
+    /** The models job of the app: a shared model's generated file is where that job writes it. Without it every generated file is beside its model file. */
+    readonly boundary?: ModelBoundary;
+  },
 ): ContractAnalysis {
   const checker = program.getTypeChecker();
-  const sources = program.getSourceFiles().filter(source => !source.isDeclarationFile
+  const ownSources = program.getSourceFiles().filter(source => !source.isDeclarationFile
     && !source.fileName.replace(/\\/g, '/').includes('/node_modules/')
     && !isGeneratedCompanion(source.fileName)).map(source => source.fileName);
-  const { specifications } = collectSpecifications(program, sources, options.exact);
+  // With the models job known, a model file of an installed package or a declaration file is a shared model file of the app, as it is for that job.
+  const sharedSources = options.boundary === undefined ? [] : includedModelSources(
+    program.getSourceFiles().filter(source => !program.isSourceFileDefaultLibrary(source)).map(source => source.fileName),
+    options.boundary.suffixes,
+  );
+  const sources = [...new Set([...ownSources, ...sharedSources])];
+  const { specifications } = collectSpecifications(program, sources, options.exact, options.boundary && ((file) => companionFilename(options.boundary, file)));
   const emptyManifests: ManifestIndex = {
     byId: new Map(), byProvenance: new Map(), files: [], localFiles: [], validationSchemaClosure: [], runtimeExports: () => new Set(), externalModelForType: () => undefined,
   };
