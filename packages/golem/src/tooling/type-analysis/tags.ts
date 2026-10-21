@@ -962,19 +962,14 @@ function metadataFromType(
   return EMPTY;
 }
 
-function isUserValueDeclaration(declaration: ts.Node | undefined): boolean {
-  const file = declaration?.getSourceFile?.();
-  return file !== undefined && file.isDeclarationFile === false;
-}
-
-/** Whether `symbol` is declared by a library or ambient declaration file, not by the user's own source. */
+/**
+ * Whether a library or an ambient declaration file declares `symbol`. A `declare global` block in the user's source
+ * augments such a symbol and does not change that; a type that only the user's own source declares is not one.
+ */
 export function isAmbientOrGlobalSymbol(symbol: ts.Symbol | undefined): boolean {
   if (!symbol) return true;
   const declarations = symbol.declarations ?? [];
-  if (isUserValueDeclaration(symbol.valueDeclaration) || declarations.some(isUserValueDeclaration)) {
-    return false;
-  }
-  return true;
+  return declarations.length === 0 || declarations.some((declaration) => declaration.getSourceFile().isDeclarationFile);
 }
 
 export function isDateType(checker: ts.TypeChecker, type: ts.Type): boolean {

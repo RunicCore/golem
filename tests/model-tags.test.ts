@@ -389,6 +389,7 @@ export function noDigits(value: string): boolean | string { return !/\\d/.test(v
 
 for (const item of [
   { name: 'a module interface named Date keeps its own fields', declaration: tsSource`interface Date { label: string }`, wire: { when: { label: 'launch' } }, isDate: false },
+  { name: 'a global augmentation of Date keeps it a date', declaration: tsSource`declare global { interface Date { toUnix(): number } }`, wire: { when: '2025-01-02T03:04:05.000Z' }, isDate: true },
   { name: 'the global Date is a date', declaration: tsSource``, wire: { when: '2025-01-02T03:04:05.000Z' }, isDate: true },
 ] as const) {
   test(`${item.name}`, async t => {
