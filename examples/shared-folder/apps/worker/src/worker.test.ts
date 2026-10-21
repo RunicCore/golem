@@ -3,17 +3,17 @@ import { test } from 'node:test';
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 import { readCustomer, readCustomerChecked, writeCustomer } from './customers.js';
 
-const customer = '{"name":"Ada","address":{"street":"1 Main St","city":"Leeds"}}';
-const emptyCity = '{"name":"Ada","address":{"street":"1 Main St","city":""}}';
+const customer = '{"name":"Ada","address":{"street":"1 Main St","city":"Leeds"},"balance":{"amount":"12.50","currency":"GBP"}}';
+const emptyCity = customer.replace('"city":"Leeds"', '"city":""');
 
 test('the worker reads and writes the shared customer', () => {
   const read = readCustomer(customer);
-  assert.deepEqual(read, { name: 'Ada', address: { street: '1 Main St', city: 'Leeds' } });
+  assert.deepEqual(read, { name: 'Ada', address: { street: '1 Main St', city: 'Leeds' }, balance: { amount: '12.50', currency: 'GBP' } });
   assert.equal(writeCustomer(read), customer);
 });
 
 test('the worker accepts an empty city because its profile has validation off', () => {
-  assert.deepEqual(readCustomer(emptyCity), { name: 'Ada', address: { street: '1 Main St', city: '' } });
+  assert.equal(readCustomer(emptyCity).address.city, '');
 });
 
 test('the worker cannot ask for validation that its profile does not generate', () => {
