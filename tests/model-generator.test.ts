@@ -691,6 +691,7 @@ export type TOrder = IObject<{ total: TPkgMoney }>;
 
 for (const [shape, { position, source }] of Object.entries(PACKAGE_MODEL_FIELDS)) {
   test(`${shape} that an installed package declares in a file with no model suffix fails with the model and the suffix`, (t: TestContext) => {
+    // protects: R-20 RUNM1074 keeps one reason: the model file has no model suffix
     const outer = sharedWorkspace(t);
     const declaration = installPackageWithModel(outer);
     const root = appProject(outer, 'a', '../shared/**/*.ts');
@@ -791,6 +792,7 @@ test('a sources entry that links to a file outside the models root stops generat
 });
 
 test('a sources entry inside a nested golem.yaml with a models job stops generation with RUNM1077', (t: TestContext) => {
+  // protects: R-20 nested models job is an error, also for a listed sources entry
   const outer = sharedWorkspace(t);
   const root = appProject(outer, 'a', 'src/**/*.ts');
   writeModelSources(path.join(root, 'src'), {
@@ -802,7 +804,8 @@ export type TMoney = IObject<{ currency: string }>;
 
   assert.throws(
     () => generate({ root, sources: [path.join(root, 'src/lib/money.model.ts')], profile: { mobx: false, validation: true } }),
-    { message: /^RUNM1077: .*lib\/golem\.yaml declares a models job below the models root/ },
+    (error: unknown) => error instanceof Error
+      && error.message.startsWith(`RUNM1077: ${path.join(fs.realpathSync(root), 'src/lib/golem.yaml')} declares a models job below the models root ${fs.realpathSync(root)}, where `),
   );
 });
 

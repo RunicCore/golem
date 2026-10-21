@@ -46,6 +46,7 @@ function project(t: TestContext): { root: string; record: JobRecord; inventory: 
     manifestInputs: [],
     outputs: ['sdk.ts'],
     manifests: [],
+    warnings: [],
   };
   const inventory = inventoryOf(root, ['sdk.ts']);
   return { root, record, inventory, config, current: () => jobIsCurrent(config, job, record, SETUP, inventory) };
@@ -111,6 +112,7 @@ test('a directory outside the golem.yaml directory is recorded by existence, one
     manifestInputs: [],
     outputs: ['sdk.ts'],
     manifests: [],
+    warnings: [],
   } satisfies JobRecord;
   const current = (): boolean => jobIsCurrent(config, job, recorded, SETUP, inventory);
   assert.equal(current(), true);

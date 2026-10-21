@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 
 import { createFixtureProject, linkProjectPackages, writeGeneratedArtifacts } from './fixture-project.js';
 import { writeModelSources } from './model-project.js';
+import { command, golem } from './support/process.js';
 import { literal, tsSource, type SourceFragment } from './source-template.js';
 import { createJobAnalysis } from '#model/emit';
 import { generate } from '#model/generator';
@@ -248,4 +249,124 @@ test('a shared model file of the program is a watch input, and a model file of n
 
   assert.ok(inputs(folder).includes(path.join(fs.realpathSync(outer), 'shared/customer.model.ts')));
   assert.deepEqual(inputs(installed).filter((file) => file.includes('node_modules')), []);
+});
+
+test('a generated .d.ts beside the .model.d.ts file of an installed package gives one warning that names it, and the app writes its own companion', (t: TestContext) => {
+  // protects: D-34 warn about a companion in an installed package, no hard reject
+  const outer = createFixtureProject(t, 'golem-shared-installed-');
+  linkProjectPackages(outer, { '@exprtlabs/golem': path.join(workspace, 'packages/golem') });
+  const declaration = installSharedDeclarations(outer);
+  const published = path.join(path.dirname(declaration), 'customer.model.generated.d.ts');
+  fs.writeFileSync(published, 'export {};\n');
+  const app = appWithShared(outer, 'web', false, { 'src/order.model.ts': SHARED_ORDER('@acme/shared/customer.model') }, ['src/**/*.ts']);
+
+  const { artifacts, diagnostics } = generate({ root: app, profile: PROFILE });
+
+  assert.deepEqual(diagnostics?.map(({ code, file }) => ({ code, file })), [{ code: 'RUNM1076', file: published }]);
+  assert.ok(diagnostics?.[0].message.startsWith(`${published} is a generated file beside the shared model file ${declaration}. Golem does not use it`));
+  assert.ok(artifacts.some((artifact) => artifact.path === path.join(app, 'src/generated/models/@acme/shared/customer.model.generated.ts')));
+});
+
+const SDK_ORDER = "import type { IModel } from '@exprtlabs/golem/model';\nimport type { Money } from '@acme/sdk/money.model';\nexport type TOrder = IModel<{ total: Money }>;\n";
+
+/** An SDK package at `directory`: `money.model.d.ts` holds the SDK type `Money` and an alias, and advertises the manifest, which names `Money` by `typeModule`. */
+function writeSdkPackage(directory: string, typeModule: string): void {
+  writeModelSources(directory, {
+    'package.json': JSON.stringify({ name: '@acme/sdk', version: '1.0.0', type: 'module', exports: { './money.model': { types: './money.model.d.ts' } } }),
+    'money.model.d.ts': "/* @golem-model-manifest ./model-manifest.json */\nimport type { IObject } from '@exprtlabs/golem/model';\nexport interface Money { currency: string }\nexport type Extra = IObject<{ note: string }>;\n",
+    'money.model.generated.d.ts': 'export {};\n',
+    'models.ts': 'export class MoneyModel {}\nexport function stringifysdk_money(value: object, _options?: object): string { return JSON.stringify(value); }\nexport function toWireFormatsdk_money(value: unknown, _options?: object): unknown { return value; }\n',
+    'model-manifest.json': JSON.stringify({
+      profile: { mobx: false, validation: false, allowAny: false },
+      models: [{ id: 'sdk:money', allowAny: false, type: { module: typeModule, export: 'Money' }, generated: { module: './models.ts', export: 'MoneyModel' } }],
+    }),
+  });
+}
+
+/** An app that nests the SDK type of `@acme/sdk`, which `place` installs or links. */
+function appWithSdk(t: TestContext, place: 'installed' | 'linked', typeModule: string): string {
+  const outer = createFixtureProject(t, 'golem-shared-sdk-');
+  linkProjectPackages(outer, { '@exprtlabs/golem': path.join(workspace, 'packages/golem') });
+  if (place === 'linked') {
+    writeSdkPackage(path.join(outer, 'sdk-src'), typeModule);
+    fs.mkdirSync(path.join(outer, 'node_modules/@acme'), { recursive: true });
+    fs.symlinkSync('../../sdk-src', path.join(outer, 'node_modules/@acme/sdk'), 'dir');
+  } else writeSdkPackage(path.join(outer, 'node_modules/@acme/sdk'), typeModule);
+  return appWithShared(outer, 'web', false, { 'src/order.model.ts': SDK_ORDER }, ['src/**/*.ts']);
+}
+
+for (const place of ['installed', 'linked'] as const) {
+  test(`a .model.d.ts file that a model manifest lists in an SDK package that is ${place} is an SDK file: the app uses it as an SDK, with no warning and no companion of its own`, (t: TestContext) => {
+    // protects: R-20 an SDK keeps working: the manifest decides, not the folder
+    const app = appWithSdk(t, place, './money.model.d.ts');
+
+    const { artifacts, diagnostics } = generate({ root: app, profile: PROFILE });
+
+    assert.equal(diagnostics, undefined);
+    assert.deepEqual(artifacts.map((artifact) => path.relative(app, artifact.path)).filter((file) => file.includes('@acme')), []);
+    assert.match(artifacts.find((artifact) => artifact.path === path.join(app, 'src/order.model.generated.ts'))?.content ?? '', /MoneyModel/);
+  });
+}
+
+test('a .model.d.ts file of an installed package whose manifest names the .ts file is an SDK file: no warning, no companion of its own', (t: TestContext) => {
+  // protects: R-20 an SDK keeps working: a published package ships .d.ts for the .ts file its manifest names
+  const app = appWithSdk(t, 'installed', './money.model.ts');
+
+  const { artifacts, diagnostics } = generate({ root: app, profile: PROFILE });
+
+  assert.equal(diagnostics, undefined);
+  assert.deepEqual(artifacts.map((artifact) => path.relative(app, artifact.path)).filter((file) => file.includes('@acme')), []);
+});
+
+for (const [kind, yaml] of [['controllers', 'version: 1\ncontrollers:\n  root: .\n'], ['openapi', 'version: 1\nopenapi:\n  input: api.json\n'], ['generators', 'version: 1\ngenerators:\n  - package: x\n']] as const) {
+  test(`a golem.yaml with only the ${kind} job beside a shared model file is another app: the warning says to move the model`, (t: TestContext) => {
+    // protects: D-34 another app's golem.yaml warning names the way out, whichever job it has
+    const { diagnostics } = generate({ root: appBesideShared(t, undefined, { 'golem.yaml': yaml }).root, profile: PROFILE });
+
+    assert.equal(diagnostics?.length, 1);
+    assert.match(diagnostics?.[0].message ?? '', /It configures another app that generates customer\.model\.ts\. Move the model into a shared package that holds no golem\.yaml/);
+  });
+}
+
+for (const [shape, golemYaml] of [['is not YAML', 'models: [unclosed\n'], ['cannot be read (it is a folder)', undefined]] as const) {
+  test(`a golem.yaml in a shared folder that ${shape} gives the warning, and generation goes on`, (t: TestContext) => {
+    // protects: D-34 a golem.yaml that golem ignores never stops the run
+    const { outer, root } = appBesideShared(t, undefined);
+    const yaml = path.join(fs.realpathSync(path.join(outer, 'shared')), 'golem.yaml');
+    if (golemYaml === undefined) fs.mkdirSync(yaml);
+    else fs.writeFileSync(yaml, golemYaml);
+
+    const { artifacts, diagnostics } = generate({ root, profile: PROFILE });
+
+    assert.deepEqual(diagnostics?.map(({ code, file }) => ({ code, file })), [{ code: 'RUNM1076', file: yaml }]);
+    assert.match(diagnostics?.[0].message ?? '', /Golem does not read it\. A shared package holds no golem\.yaml\. Delete it\.$/);
+    assert.ok(artifacts.some((artifact) => artifact.path === path.join(root, 'src/order.model.generated.ts')));
+  });
+}
+
+test('a golem run that skips the models job still writes its RUNM1076 warning, once', async (t: TestContext) => {
+  // protects: P-12 done check 4: each run writes the warning once, a skipped job included
+  const outer = sharedFolder(t);
+  linkProjectPackages(outer, { '@exprtlabs/golem-model': path.join(workspace, 'packages/golem-model') });
+  fs.writeFileSync(path.join(outer, 'shared/golem.yaml'), 'version: 1\n');
+  const app = appWithShared(outer, 'web', false, { 'src/order.model.ts': SHARED_ORDER('../../shared/customer.model.js'), 'golem.yaml': 'version: 1\nmodels:\n  root: src\n' });
+
+  const first = await command(app, process.execPath, [golem, 'generate']);
+  const second = await command(app, process.execPath, [golem, 'generate']);
+
+  const warning = (stderr: string): string[] => stderr.split('\n').filter((line) => line.startsWith('RUNM1076'));
+  assert.equal(warning(first.stderr).length, 1, first.stderr);
+  assert.deepEqual(warning(second.stderr), warning(first.stderr));
+});
+
+test('a job that generates nothing does not read the model manifests its program advertises', (t: TestContext) => {
+  // protects: P-12 a models job with no alias behaves as before: a stale advertised manifest does not stop it
+  const outer = createFixtureProject(t, 'golem-no-aliases-');
+  linkProjectPackages(outer, { '@exprtlabs/golem': path.join(workspace, 'packages/golem') });
+  const app = appWithShared(outer, 'web', false, {
+    'src/plain.model.ts': 'export type Plain = string;\n',
+    'src/sdk/types.ts': '/* @golem-model-manifest ./missing-manifest.json */\nexport interface Money { currency: string }\n',
+  }, ['src/**/*.ts']);
+
+  assert.deepEqual(generate({ root: app, profile: PROFILE }).artifacts, []);
 });

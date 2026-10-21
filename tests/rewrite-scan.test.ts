@@ -499,6 +499,7 @@ function appBesideForeignModels(t: TestContext, site: string): { readonly app: s
 }
 
 test('golem check reports a serde call on a model of an installed package whose file has no model suffix, with the model and the suffix', async (t) => {
+  // protects: R-20 RUNM1074 keeps one reason in golem check: the model file has no model suffix
   const { declaration, config } = appBesideForeignModels(t, `import { stringify } from '@exprtlabs/golem/serde';
 import type { TPkgMoney } from '@acme/money';
 declare const money: TPkgMoney;

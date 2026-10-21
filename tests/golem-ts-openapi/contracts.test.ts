@@ -463,6 +463,7 @@ test('a model with a class is the component named by the class; a model without 
 });
 
 test('a controller field that nests a model of an installed package whose file has no model suffix stops with RUNM1074', async t => {
+  // protects: R-20 RUNM1074 keeps one reason in the controllers job: the model file has no model suffix
   const root = fixture(t, `import { Controller, Get } from '@nestjs/common';
 import { ApiOkResponse } from '@nestjs/swagger';
 import type { TPkgMoney } from '@acme/money';

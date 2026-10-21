@@ -479,6 +479,8 @@ export async function runPipeline(filename: string, options: PipelineOptions = {
       }
       options.onOwned?.(outputs);
       for (const input of Object.keys(record.inputs)) observe(absoluteRecordPath(config, input), job.kind, job.id);
+      // The job's inputs are as they were, so its warnings still hold: each run writes them once.
+      writeWarnings(record.warnings);
       manifests.push(...record.manifests.map(manifest => absoluteRecordPath(config, manifest)));
       skippedOutputs.set(job.id, outputs);
       continue;
@@ -534,6 +536,7 @@ export async function runPipeline(filename: string, options: PipelineOptions = {
           inputs: read.finish(config, result.watchInputs, own),
           outputs: result.artifacts.map(artifact => recordPath(config, artifact.path)).sort(),
           manifests: result.manifestPaths.map(manifest => recordPath(config, manifest)),
+          warnings: (result.diagnostics ?? []).filter(diagnostic => diagnostic.severity === GolemDiagnosticSeverity.Warning),
         });
       }
     }

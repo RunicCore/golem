@@ -4,7 +4,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { contains } from './config.js';
 import type { GolemConfig, GolemJob } from './config.js';
-import { hasErrorCode, isRecord } from './generator-api.js';
+import { GolemDiagnosticSeverity, hasErrorCode, isRecord } from './generator-api.js';
+import type { GolemDiagnostic } from './generator-api.js';
 import { atomicWrite, loadInventory } from './outputs.js';
 import type { Inventory, InventoryEntry } from './outputs.js';
 
@@ -26,6 +27,8 @@ export interface JobRecord {
   readonly outputs: readonly string[];
   /** The manifests the job reported: its outputs that later jobs read as `manifestInputs`. */
   readonly manifests: readonly string[];
+  /** The warnings the job reported. A later run that skips the job writes them again: its inputs are as they were, so they still hold. */
+  readonly warnings: readonly GolemDiagnostic[];
 }
 
 const MISSING = 'missing';
@@ -55,7 +58,17 @@ function isJobRecord(value: unknown): value is JobRecord {
     && strings(value.manifestInputs)
     && isRecord(value.inputs) && Object.values(value.inputs).every(digest => typeof digest === 'string')
     && strings(value.outputs)
-    && strings(value.manifests);
+    && strings(value.manifests)
+    && Array.isArray(value.warnings) && value.warnings.every(isWarning);
+}
+
+function isWarning(value: unknown): value is GolemDiagnostic {
+  return isRecord(value)
+    && value.severity === GolemDiagnosticSeverity.Warning
+    && typeof value.code === 'string'
+    && typeof value.message === 'string'
+    && ['file', 'path'].every(key => value[key] === undefined || typeof value[key] === 'string')
+    && ['line', 'column'].every(key => value[key] === undefined || typeof value[key] === 'number');
 }
 
 /** The records of the last run. A missing or unreadable file holds none: every job then runs. */
@@ -86,6 +99,7 @@ export function saveJobRecords(config: GolemConfig, records: ReadonlyMap<string,
       manifestInputs: record.manifestInputs,
       outputs: record.outputs,
       manifests: record.manifests,
+      warnings: record.warnings,
     }]));
   atomicWrite(jobsFile(config), `${JSON.stringify({ version: RECORDS_VERSION, jobs }, null, 2)}\n`);
 }

@@ -171,9 +171,18 @@ function byRealPath(files: readonly string[]): string[] {
   return [...byReal.values()];
 }
 
-/** The real files that a model manifest lists as the declaration of an SDK model. A job uses the SDK's generated code for them. */
+/**
+ * The real files that a model manifest lists as the declaration of an SDK model. A job uses the SDK's generated code for them.
+ * A published package ships `x.model.d.ts` for the `x.model.ts` its manifest names, so both forms count.
+ */
 function sdkModelFiles(manifestIndex: ManifestIndex): ReadonlySet<string> {
-  return new Set([...manifestIndex.byProvenance.keys()].map((key) => canonicalPath(key.slice(0, key.indexOf('\0')))));
+  const files = new Set<string>();
+  for (const key of manifestIndex.byProvenance.keys()) {
+    const module = canonicalPath(key.slice(0, key.indexOf('\0')));
+    files.add(module);
+    files.add(module.replace(/(?<!\.d)\.([cm]?)ts$/, '.d.$1ts'));
+  }
+  return files;
 }
 
 function referencedManifestFiles(
@@ -452,11 +461,15 @@ export function generate(context: GolemModelContext): GolemModelResult {
   if (nested.length > 0) {
     throw new Error(`RUNM1077: ${nested.join(', ')} declares a models job below the models root ${boundary.root}, where the models job of ${join(normalized.directory, 'golem.yaml')} already generates the same model files. Two jobs would write one generated file. Remove the models job from ${nested.length === 1 ? 'it' : 'each'}, or move the folder out of the models root.`);
   }
+  const sharedModelFiles = programModelFiles.filter((source) => !isOwnModelFile(boundary, source) && isModelSource(source));
   // A job with no model file of its own still generates the shared models its program holds.
-  if (ownCandidates.length === 0 && !programModelFiles.some((source) => !isOwnModelFile(boundary, source) && isModelSource(source))) {
+  if (ownCandidates.length === 0 && sharedModelFiles.length === 0) {
     return emptyResult(programInfo, program, normalized.root);
   }
-  const manifestIndex = loadModelManifests(
+  // The manifests are read when a decision needs them: a shared file may be an SDK file, and a job that has models emits against them.
+  // A job that generates nothing reads none.
+  let loaded: ManifestIndex | undefined;
+  const manifests = (): ManifestIndex => loaded ??= loadModelManifests(
     normalized.root,
     programInfo,
     normalized.manifestInputs,
@@ -464,8 +477,8 @@ export function generate(context: GolemModelContext): GolemModelResult {
     normalized.onInput,
   );
   // A model file that an SDK manifest lists stays an SDK file: the SDK's generated code serves it.
-  const sdkFiles = sdkModelFiles(manifestIndex);
-  const sharedCandidates = programModelFiles.filter((source) => !isOwnModelFile(boundary, source) && isModelSource(source) && !sdkFiles.has(canonicalPath(source)));
+  const sdkFiles = sharedModelFiles.length === 0 ? new Set<string>() : sdkModelFiles(manifests());
+  const sharedCandidates = sharedModelFiles.filter((source) => !sdkFiles.has(canonicalPath(source)));
   const { checker, specifications } = collectSpecifications(program, [...ownCandidates, ...sharedCandidates], normalized.exact, (file) => companionFilename(boundary, file));
   // A discovered file with no IModel or IObject alias is not a model file: it is skipped, and so is its companion.
   // A file that `models.sources` names must have one.
@@ -477,11 +490,12 @@ export function generate(context: GolemModelContext): GolemModelResult {
   if (sources.length === 0) {
     return emptyResult(programInfo, program, normalized.root);
   }
+  const manifestIndex = manifests();
   assertDistinctCompanions(boundary, sources);
   const companionOf = (source: string): string => companionFilename(boundary, source);
   // Golem uses no golem.yaml and no generated file of a shared package: it reports each one once and goes on without it.
   const ignoredWarnings = ignoredSharedFileWarnings(
-    sharedCandidates.filter((source) => withModels.has(canonicalFilename(source))).map(canonicalPath),
+    sharedSources.map(canonicalPath),
     normalized.directory,
     normalized.onInput,
   );
