@@ -9,6 +9,7 @@ import { Module } from '@nestjs/common';
 import { NestModelInterceptor } from '@exprtlabs/golem/nest';
 import { runPipeline } from '#golem/cli';
 import { scanProject } from '#golem/rewrite-scan';
+import { createContractAnalysis, createProgram, modelBoundary } from '@exprtlabs/golem/type-analysis';
 import { applyRewrites } from '#golem/rewrite';
 import { createFixtureProject, linkProjectPackages, writeGeneratedArtifacts } from '../fixture-project.js';
 import { command, golem, workspace } from '../support/process.js';
@@ -72,7 +73,7 @@ function rewrittenController(app: string): string {
 }
 
 test('a shared IObject alias in a controller signature is a model of the app: its schema is the alias, and the Nest codec id is the id the app generated', async (t) => {
-  // protects: T-195 a shared alias in a controller signature uses the codec id of the app (A-55 3.8)
+  // protects: A-55 3.8 the shared-alias contract path: schema, codecs and marks of a shared alias use the app's own codec id
   const { app, config } = appWithSharedModel(t, sharedModel('IObject'), { 'src/customers.controller.ts': controller('TCustomer', '../../shared/customer.model.js') });
 
   await runPipeline(config);
@@ -136,6 +137,21 @@ for (const place of ['installed', 'linked'] as const) {
   });
 }
 
+test('a model file that the program holds under two names is one model source of the controllers analysis', (t) => {
+  // protects: T-195 review: one file under two spellings made collectSpecifications throw RUNM1005
+  const outer = createFixtureProject(t, 'golem-controllers-names-');
+  fs.symlinkSync(path.join(workspace, 'node_modules'), path.join(outer, 'node_modules'), 'dir');
+  writeGeneratedArtifacts([{ path: path.join(outer, 'shared/customer.model.ts'), content: sharedModel('IObject') }]);
+  fs.mkdirSync(path.join(outer, 'app'));
+  fs.symlinkSync('../shared', path.join(outer, 'app/link'), 'dir');
+  const app = path.join(outer, 'app');
+  const { program } = createProgram([path.join(app, 'link/customer.model.ts'), path.join(outer, 'shared/customer.model.ts')], app);
+
+  const analysis = createContractAnalysis(program, { root: app, boundary: modelBoundary(app, undefined, { directory: app, output: path.join(app, 'generated') }) });
+
+  assert.deepEqual(analysis.specifications.map(({ name }) => name), ['TCustomer']);
+});
+
 test('a controller that returns an app class extending the generated base of a shared IModel is matched to the model: the document and the return mark use it', async (t) => {
   // protects: T-195 the controllers analysis finds a shared companion in models.output, as the models job writes it
   const { app, config } = appWithSharedModel(t, sharedModel('IModel'), {
@@ -155,7 +171,7 @@ test('a controller that returns an app class extending the generated base of a s
 });
 
 test('at run time the @Body() of a shared alias is parsed with the codec of the app, and the codec module loads with no import in the controller', async (t) => {
-  // protects: T-195 the built controller of a shared alias loads the app companion by itself
+  // protects: A-55 3.8 the run-time path: a built controller of a shared alias loads the app codec by itself and validates a @Body()
   const { app } = appWithSharedModel(t, sharedModel('IObject'), { 'src/customers.controller.ts': controller('TCustomer', '../../shared/customer.model.js') });
 
   const built = await command(app, process.execPath, [golem, 'build', '--config', path.join(app, 'golem.yaml')]);

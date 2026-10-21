@@ -2,7 +2,7 @@ import * as path from 'node:path';
 import * as ts from '../typescript-ns.js';
 import { collectSpecifications, type ModelSpecification, type TypeAnalysisContext } from './models.js';
 import { descriptorBuilder, type ModelConversionDescriptor } from './types.js';
-import { companionFilename, includedModelSources, isGeneratedCompanion, type ModelBoundary } from './project.js';
+import { byRealPath, companionFilename, includedModelSources, isGeneratedCompanion, type ModelBoundary } from './project.js';
 import { pascalIdentifier } from './projection-names.js';
 import { fieldProvenance } from './projections.js';
 import { canonicalDescriptorKey } from '../schema.js';
@@ -46,7 +46,8 @@ export function createContractAnalysis(
     program.getSourceFiles().filter(source => !program.isSourceFileDefaultLibrary(source)).map(source => source.fileName),
     options.boundary.suffixes,
   );
-  const sources = [...new Set([...ownSources, ...sharedSources])];
+  // A file has one name: TypeScript's own spelling and the normalized one of a shared file are the same file.
+  const sources = byRealPath([...ownSources, ...sharedSources]);
   const { specifications } = collectSpecifications(program, sources, options.exact, options.boundary && ((file) => companionFilename(options.boundary, file)));
   const emptyManifests: ManifestIndex = {
     byId: new Map(), byProvenance: new Map(), files: [], localFiles: [], validationSchemaClosure: [], runtimeExports: () => new Set(), externalModelForType: () => undefined,

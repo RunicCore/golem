@@ -1,14 +1,13 @@
 
 import { existsSync, readFileSync } from 'node:fs';
-import { basename, dirname, isAbsolute, join, normalize, parse, relative, resolve, sep } from 'node:path';
+import { basename, dirname, isAbsolute, join, parse, relative, resolve, sep } from 'node:path';
 import YAML from 'yaml';
 import * as ts from '../typescript-ns.js';
 import { readManifest } from './package-specifier.js';
 import { DEFAULT_MODEL_SUFFIXES, GolemDiagnosticSeverity, canonicalPath, discoverSources, hasErrorCode, suffixPattern, type GeneratorSession, type GolemDiagnostic, type InputObserver } from '../generator-api.js';
+import { canonicalFilename, isOutside } from './path-identity.js';
 
-export function canonicalFilename(filename: string): string {
-  return normalize(resolve(filename));
-}
+export { canonicalFilename, isOutside };
 
 export interface ProgramInfo {
   readonly configPath?: string;
@@ -84,6 +83,16 @@ export function includedModelSources(files: readonly string[], suffixes: readonl
   return uniqueFilenames(files)
     .filter((filename) => pattern.test(filename) && !isGeneratedCompanion(filename))
     .sort((left, right) => left < right ? -1 : left > right ? 1 : 0);
+}
+
+/** `files` without a second name for one file: a file reached through a folder link counts once, by its real path when the program holds it. */
+export function byRealPath(files: readonly string[]): string[] {
+  const byReal = new Map<string, string>();
+  for (const file of files) {
+    const real = canonicalPath(file);
+    if (!byReal.has(real) || file === real) byReal.set(real, file);
+  }
+  return [...byReal.values()];
 }
 
 /** What decides which files are the own model sources of one models job. */
@@ -300,12 +309,6 @@ export function projectFilesImportedBy(file: ts.SourceFile, compilerOptions: ts.
     found.add(canonicalFilename(resolved));
   }
   return [...found];
-}
-
-/** Whether `filename` lies outside `directory`, by path alone. */
-export function isOutside(directory: string, filename: string): boolean {
-  const path = relative(canonicalFilename(directory), canonicalFilename(filename));
-  return path === '..' || path.startsWith(`..${sep}`) || isAbsolute(path);
 }
 
 /** The companion of a source: `.generated` before its final extension. */

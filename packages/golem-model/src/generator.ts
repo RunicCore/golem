@@ -33,6 +33,7 @@ import type { ManifestIndex } from '@exprtlabs/golem/type-analysis';
 import {
   assertAbsolute,
   assertDistinctCompanions,
+  byRealPath,
   canonicalFilename,
   companionFilename,
   createOverlayProgram,
@@ -159,16 +160,6 @@ function programFilenames(program: ts.Program): string[] {
   return program.getSourceFiles()
     .filter((sourceFile) => !program.isSourceFileDefaultLibrary(sourceFile))
     .map((sourceFile) => sourceFile.fileName);
-}
-
-/** `files` without a second name for one file: a file reached through a folder link counts once, by its real path when the program holds it. */
-function byRealPath(files: readonly string[]): string[] {
-  const byReal = new Map<string, string>();
-  for (const file of files) {
-    const real = canonicalPath(file);
-    if (!byReal.has(real) || file === real) byReal.set(real, file);
-  }
-  return [...byReal.values()];
 }
 
 function referencedManifestFiles(
