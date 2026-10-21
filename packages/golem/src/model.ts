@@ -268,9 +268,6 @@ export interface GeneratedModelConversion<Model extends object = object, Wire = 
 
 export interface GeneratedModelProfile {
   readonly validation: boolean;
-  readonly mobx?: boolean;
-  readonly allowAny?: boolean;
-  readonly unknownFormats?: 'warn' | 'error';
 }
 
 /**

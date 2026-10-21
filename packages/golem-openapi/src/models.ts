@@ -96,7 +96,7 @@ interface ModelResolveEnv {
   readonly selections?: DiscriminatorSelections;
 }
 
-export interface OpenApiModelAnalysis {
+interface OpenApiModelAnalysis {
   readonly definitions: ReadonlyMap<string, ModelDefinition>;
   readonly ordered: readonly ModelDefinition[];
   readonly schemaGraph: SchemaGraph;
@@ -608,7 +608,7 @@ function modelConversionDescriptor(
 }
 
 /** An allOf that no object satisfies, or whose members convert one value in two ways: generation stops with its code. */
-export class CompositionError extends Error {
+class CompositionError extends Error {
   constructor(readonly code: string, message: string) {
     super(`${code}: ${message}`);
   }
@@ -1281,7 +1281,7 @@ function modelClassDescriptor(
   };
 }
 
-export function internOpenApiSchemaGraph(
+function internOpenApiSchemaGraph(
   document: unknown,
   ordered: readonly ModelDefinition[],
   definitions: ReadonlyMap<string, ModelDefinition>,
@@ -1557,8 +1557,6 @@ export function generateOpenApiModelArtifacts(
   profile: OpenApiGenerationProfile,
   analysis: OpenApiModelAnalysis,
   helpers: {
-    readonly copyAdditionalProperties?: boolean;
-    readonly objectFromJSON?: boolean;
     readonly locate?: OriginLocator | undefined;
     /**
      * Compiles the SDK's validators module from the validation plan of every model and returns the name it exports
@@ -1742,7 +1740,7 @@ export function generateOpenApiModelArtifacts(
     const modelModule = generateModels(document, profile, {
       ...helpers,
       copyAdditionalProperties: groupDefinitions.some((definition) => Boolean(definition.additionalProperties)),
-      objectFromJSON: group.models.size === 0 ? false : helpers.objectFromJSON,
+      objectFromJSON: group.models.size > 0,
       analysis,
       onlyNames: group.models,
       graphNodeIds: localIds,
@@ -1894,7 +1892,7 @@ export function generateModels(
     ...(profile.validation && profile.mobx ? ["import { enhanceValidatorWithMobX } from '@exprtlabs/golem/mobx-validation';"] : []),
     `import { registerGeneratedModel, type ModelInit, type GeneratedModelConstructor, type generatedModelWireBrand, type generatedModelFieldsBrand${ordered.some(definition => definition.isUnion) ? ", type generatedModelResultBrand" : ""}${emitCopy ? ", findGeneratedModelDefinition, findGeneratedModelDefinitionForConstructor" : ""} } from '@exprtlabs/golem/model';`,
     `import { assertPropertyAcyclic, assertWireAcyclic, beginDecode, convertModelField, convertModelItems, convertModelTupleItems, decodeCheckedInput, decodeDetachedInput, endDecode, decodeGeneratedModelTrusted, defineModelProperty, encodeGeneratedModel${usesDate ? ", deserializeDate, serializeDate" : ""} } from '@exprtlabs/golem/conversion';`,
-    "import { assertModelValue, createObjectCodec, isValidModelValue, modelValueIssues, parseJson, registerIModelClass, requireIModelClass, requireObjectCodec, resolveGeneratedModelSchemaRefs, serdeFailFast, serdeValidates, stringifyJsonArray, stringifyJsonBoolean, stringifyJsonNumber, stringifyJsonScalar, stringifyJsonString, validationFailure, validationUnavailable, withoutInstanceState, IssueRepresentation, IssueSource, type SerdeOptions as __GolemSerdeOptions, type ValidateOptions as __GolemValidateOptions } from '@exprtlabs/golem/serde';",
+    "import { assertModelValue, createObjectCodec, isValidModelValue, parseJson, registerIModelClass, requireIModelClass, requireObjectCodec, serdeValidates, stringifyJsonArray, stringifyJsonBoolean, stringifyJsonNumber, stringifyJsonScalar, stringifyJsonString, validationUnavailable, withoutInstanceState, IssueRepresentation, IssueSource, type SerdeOptions as __GolemSerdeOptions, type ValidateOptions as __GolemValidateOptions } from '@exprtlabs/golem/serde';",
     ...(profile.mobx ? [
       "import { asGenObservable } from '@exprtlabs/golem/mobx';",
     ] : []),
@@ -2086,7 +2084,7 @@ export function generateModels(
         `  fields: [${allFieldNames.map((name) => JSON.stringify(name)).join(', ')}] as const,`,
         `  conversion: { decode: decode${typeName}, encode: encode${typeName} },`,
         `  codecId: ${JSON.stringify(codecIdFor(definition.name))},`,
-        `  profile: ${JSON.stringify(profile)},`,
+        `  profile: { validation: ${profile.validation} },`,
         ...(profile.validation && profile.mobx ? ['  enhanceValidator: enhanceValidatorWithMobX,'] : []),
         ...(additionalPropertyType ? ['  additionalProperties: true,'] : []),
         '});',
@@ -2153,7 +2151,7 @@ export function generateModels(
   // Only import converter helpers actually used by this model graph. A converter passed to `convertModelField` is referenced, not called.
   const sourceBody = source.replace(/^import \{[^\n]+\} from '@exprtlabs\/golem\/conversion';\n/m, '');
   const conversionImports = [
-    'assertAcyclicEncodeInput', 'assertAcyclicValue', 'assertPropertyAcyclic', 'assertWireAcyclic', 'beginDecode', 'beginEncode', 'decodeCheckedInput', 'decodeDetachedInput', 'endDecode', 'endEncode', 'convertModelField', 'convertModelItems', 'convertModelTupleItems', 'decodeGeneratedModel', 'decodeGeneratedModelTrusted', 'defineModelProperty', 'encodeGeneratedModel', 'deserializeDate', 'serializeDate', 'unknownDiscriminatorValue', 'withDiscriminatorValue', 'jsonWithDiscriminator', 'requireModelObject',
+    'assertAcyclicEncodeInput', 'assertPropertyAcyclic', 'assertWireAcyclic', 'beginDecode', 'beginEncode', 'decodeCheckedInput', 'decodeDetachedInput', 'endDecode', 'endEncode', 'convertModelField', 'convertModelItems', 'convertModelTupleItems', 'decodeGeneratedModelTrusted', 'defineModelProperty', 'encodeGeneratedModel', 'deserializeDate', 'serializeDate', 'unknownDiscriminatorValue', 'withDiscriminatorValue', 'jsonWithDiscriminator', 'requireModelObject',
   ].filter(name => new RegExp(`\\b${name}\\b`).test(sourceBody));
   // `dates: temporal` fields call their codecs from `@exprtlabs/golem/temporal`; import exactly those used.
   const temporalImports = [...new Set(source.match(/\b(?:de)?serializeTemporal[A-Za-z]+(?=\()/g) ?? [])].sort();

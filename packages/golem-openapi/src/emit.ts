@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { GolemDiagnosticSeverity, type GolemArtifact, type GolemDiagnostic, type GolemResult } from '@exprtlabs/golem/generator-api';
+import { GolemDiagnosticSeverity, type GolemDiagnostic, type GolemResult } from '@exprtlabs/golem/generator-api';
 import { isRecord } from '@exprtlabs/golem/generator-api';
 import { stableJson } from '@exprtlabs/golem/manifest';
 import { buildOperationValidationSchemas, generateClientModules } from './client/emit.js';
@@ -23,11 +23,9 @@ import { buildSchemaData } from './schemas.js';
 import { compileSdkValidators, uniqueDiagnostics, type CodecValidationPlan, type PlanValidators, type SchemaPlace } from '@exprtlabs/golem/validation-plan';
 import { generateDirectionalSchemas, generateTypes } from './types.js';
 
-export interface OpenApiArtifact extends GolemArtifact {}
+interface WriteSdkResult extends GolemResult {}
 
-export interface WriteSdkResult extends GolemResult {}
-
-export interface WriteSdkOptions {
+interface WriteSdkOptions {
   readonly output: string;
   readonly name?: string;
   readonly profile: OpenApiGenerationProfile;
@@ -37,7 +35,7 @@ export interface WriteSdkOptions {
   readonly locate?: OriginLocator;
 }
 
-export function generateLinks(operations: readonly NormalizedOperation[]): string {
+function generateLinks(operations: readonly NormalizedOperation[]): string {
   const operationNames = new Set(operations.map((operation) => operation.name));
   const links: Record<string, Record<string, Record<string, unknown>>> = {};
   for (const operation of operations) {
@@ -112,7 +110,7 @@ export const responseLinks = ${JSON.stringify(links, null, 2)} as const satisfie
 `;
 }
 
-export function generateIndex(profile: OpenApiGenerationProfile, plan?: EmissionPlan, modelReexports = ''): string {
+function generateIndex(profile: OpenApiGenerationProfile, plan?: EmissionPlan, modelReexports = ''): string {
   requireProfile(profile);
   const artifacts = plan?.artifacts;
   const include = (name: ArtifactFile): boolean => artifacts ? artifacts.has(name) : true;
@@ -127,7 +125,7 @@ ${include('links.ts') ? "export * from './links.js';" : ''}
 `;
 }
 
-export function generateInbound(clientName: string, operations: readonly NormalizedOperation[]): string {
+function generateInbound(clientName: string, operations: readonly NormalizedOperation[]): string {
   const methods = operations.map((operation) =>
     `  /** ${operation.sourceKind} ${operation.sourceName}: ${operation.method} ${operation.route} */\n` +
     `  ${operation.name}(input: Types.${operation.typeName}OperationInput): Promise<Types.${operation.typeName}OperationHttpResponse>;`
@@ -202,8 +200,6 @@ function buildGeneratedFiles(document: unknown, options: WriteSdkOptions): Gener
   const modelDiagnostics: GolemDiagnostic[] = [];
   if (plan.hasModels) {
     const models = generateOpenApiModelArtifacts(document, profile, modelAnalysis, {
-      copyAdditionalProperties: plan.copyAdditionalProperties,
-      objectFromJSON: plan.objectFromJSON,
       locate: options.locate,
       ...(profile.validation ? { compileValidators: ({ plan, locateModel }: { plan: CodecValidationPlan; locateModel: (name: string) => SchemaPlace }) => compileValidators(plan, locateModel) } : {}),
     });

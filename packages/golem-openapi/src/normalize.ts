@@ -5,7 +5,7 @@ import { inboundOperationName, operationName } from './names.js';
 const HTTP_METHODS_31 = ['get', 'put', 'post', 'delete', 'options', 'head', 'patch', 'trace'] as const;
 export const HTTP_METHODS_32 = [...HTTP_METHODS_31, 'query'] as const;
 
-export const VERSION_ADAPTERS = {
+const VERSION_ADAPTERS = {
   '3.1': {
     featureLine: '3.1',
     schemaDialect: 'https://spec.openapis.org/oas/3.1/dialect/base',
@@ -20,7 +20,7 @@ export const VERSION_ADAPTERS = {
   },
 } as const;
 
-export type OpenApiFeatureLine = keyof typeof VERSION_ADAPTERS;
+type OpenApiFeatureLine = keyof typeof VERSION_ADAPTERS;
 export type OpenApiSchema = boolean | JsonObject;
 
 export interface OpenApiMediaType {
@@ -102,7 +102,7 @@ export function resolveLocal(document: unknown, value: unknown): unknown {
   return resolveLocalPointer(document, value.$ref) ?? value;
 }
 
-export function contentEntries(content: unknown, featureLine?: OpenApiFeatureLine): OpenApiMediaType[] {
+function contentEntries(content: unknown, featureLine?: OpenApiFeatureLine): OpenApiMediaType[] {
   return objectEntries(content).map(([contentType, media]) => {
     const mediaObject = asRecord(media);
     const itemSchemaPresent = Object.prototype.hasOwnProperty.call(mediaObject, 'itemSchema')
@@ -128,7 +128,7 @@ function schemaValue(value: unknown): OpenApiSchema | null {
   return null;
 }
 
-export function preferredSchema(content: unknown): OpenApiSchema | null {
+function preferredSchema(content: unknown): OpenApiSchema | null {
   if (!isJsonObject(content)) return null;
   const preferred = content['application/json'] ?? content['application/problem+json'];
   if (isJsonObject(preferred) && 'schema' in preferred) return schemaValue(preferred.schema);

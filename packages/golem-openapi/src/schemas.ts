@@ -144,7 +144,7 @@ function normalizeRuntimeSchemaRecursive(schema: unknown): unknown {
   return result;
 }
 
-export function normalizeRuntimeSchema(schema: unknown): unknown {
+function normalizeRuntimeSchema(schema: unknown): unknown {
   return normalizeRuntimeSchemaRecursive(schema);
 }
 
@@ -255,7 +255,7 @@ export function buildSchemaData(document: unknown, preparedIr?: NormalizedDocume
   };
 }
 
-export interface OpenApiOperationValidationSchemaBundle {
+interface OpenApiOperationValidationSchemaBundle {
   readonly inputReference: string;
   readonly responseReferences: readonly {
     readonly status: string;

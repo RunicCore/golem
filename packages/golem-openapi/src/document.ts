@@ -13,7 +13,7 @@ import {
   visitOpenApiSchemaTree,
 } from './schema-projection.js';
 
-export interface RemoteRef {
+interface RemoteRef {
   readonly ref: string;
   readonly pointer: string;
 }
