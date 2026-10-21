@@ -188,7 +188,7 @@ Each app includes the folder in its own tsconfig, with a `rootDir` that contains
 }
 ```
 
-The shared folder declares the `IModel` or `IObject` aliases in a model file, a file whose name ends in one of the `models.suffixes`. It declares the alias and nothing else: no class and no generated file.
+The shared folder declares the `IModel` or `IObject` aliases in a model file, a file whose name ends in one of the `models.suffixes`. A shared folder or package holds declarations and the functions its tags use, such as a `TSerde` function: no class and no generated file.
 
 <<< ../../examples/shared-folder/shared/customer.model.ts#shared-model
 

@@ -338,7 +338,7 @@ An error prints its code, location when known, and message, then stops generatio
 
 ### RUNM1077
 
-**Models job below the root of another models job.** A `golem.yaml` with a `models` job lies below the `models.root` of another `golem.yaml`, in a folder with model files. Both jobs would write the generated files of those model files, so `golem generate` and `golem check` stop. The message names the nested `golem.yaml`. **Fix:** Remove the `models` job from the nested `golem.yaml`, or move its folder out of the `models.root`.
+**Models job below the root of another models job.** A `golem.yaml` with a `models` job lies below the `models.root` of another `golem.yaml`, in a folder with model files. Both jobs would write the generated files of those model files, so `golem generate` and `golem check` stop. The message names each nested `golem.yaml`. **Fix:** Remove the `models` job from the nested `golem.yaml`, or move its folder out of the `models.root`.
 
 ### RUNM1078
 
