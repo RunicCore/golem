@@ -319,6 +319,24 @@ test('a shared model file of the program is a watch input, and a model file of n
   assert.deepEqual(inputs(installed).filter((file) => file.includes('node_modules')), []);
 });
 
+test('a model file of a workspace package linked into node_modules is a watch input when preserveSymlinks names it by the link', (t: TestContext) => {
+  // protects: T-208 the watch filter reads the real path: a link under node_modules to a workspace folder is no installed package
+  const outer = createFixtureProject(t, 'golem-shared-linked-');
+  linkProjectPackages(outer, { '@exprtlabs/golem': path.join(workspace, 'packages/golem') });
+  writeModelSources(path.join(outer, 'shared'), {
+    'package.json': JSON.stringify({ name: '@acme/shared', private: true, type: 'module', exports: { './customer.model': { types: './customer.model.d.ts' } } }),
+    'customer.model.d.ts': "import type { IModel } from '@exprtlabs/golem/model';\nexport type TCustomer = IModel<{ name: string }>;\n",
+  });
+  const tsconfig = JSON.stringify({ compilerOptions: { strict: true, target: 'ES2022', module: 'NodeNext', moduleResolution: 'NodeNext', skipLibCheck: true, noEmit: true, preserveSymlinks: true }, include: ['src/**/*.ts'] });
+  const app = appWithShared(outer, 'lib', false, { 'src/order.model.ts': SHARED_ORDER('@acme/shared/customer.model'), 'tsconfig.json': tsconfig }, ['src/**/*.ts']);
+  fs.mkdirSync(path.join(app, 'node_modules/@acme'), { recursive: true });
+  fs.symlinkSync('../../../shared', path.join(app, 'node_modules/@acme/shared'), 'dir');
+
+  const inputs = generate({ root: app, profile: PROFILE }).watchInputs ?? [];
+
+  assert.ok(inputs.includes(path.join(app, 'node_modules/@acme/shared/customer.model.d.ts')), inputs.join('\n'));
+});
+
 test('a generated .d.ts beside the .model.d.ts file of an installed package gives one warning that names it, and the app writes its own companion', (t: TestContext) => {
   // protects: D-34 warn about a companion in an installed package, no hard reject
   const outer = createFixtureProject(t, 'golem-shared-installed-');
