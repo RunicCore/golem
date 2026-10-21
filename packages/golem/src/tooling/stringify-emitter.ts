@@ -858,11 +858,6 @@ function reachesNode(
   return heldDescriptors(descriptor).some((held) => reachesNode(held, id, ctx, seen));
 }
 
-/** Whether the model `node` of `graph` reaches itself again. A placeholder of a model in another module does not. */
-export function isRecursiveNode(graph: SchemaGraph, node: SchemaNode): boolean {
-  return node.descriptor.kind !== 'reference' && node.descriptor.kind !== 'generated-model' && reachesNode(node.descriptor, node.id, { graph });
-}
-
 /** Whether `descriptor` reaches a recursive model node, so a cyclic value under it would run a validator or encoder forever. */
 function reachesRecursion(descriptor: ModelTypeDescriptor, ctx: Pick<EmitCtx, 'graph' | 'siblingRecursion'>, seen: Set<string> = new Set()): boolean {
   if (descriptor.kind === 'reference' || descriptor.kind === 'generated-model') {

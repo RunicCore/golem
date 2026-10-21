@@ -172,6 +172,44 @@ for (const [label, profile] of profiles) {
   });
 }
 
+const chainedFileSources = {
+  'link.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
+import { TLinkBaseModel } from './link.model.generated.js';
+export type TLink = IModel<{ name: string; next?: TLink }>;
+export class Link extends TLinkBaseModel {}
+`,
+  'middle.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
+import type { TLink } from './link.model.js';
+import { TMiddleBaseModel } from './middle.model.generated.js';
+export type TMiddle = IModel<{ link: TLink }>;
+export class Middle extends TMiddleBaseModel {}
+`,
+  'top.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
+import type { TMiddle } from './middle.model.js';
+import { TTopBaseModel } from './top.model.generated.js';
+export type TTop = IModel<{ middle: TMiddle }>;
+export class Top extends TTopBaseModel {}
+`,
+};
+
+test('a model two files away from a recursive model throws a Serialization LibError on a cycle', async (t: TestContext) => {
+  // protects: T-165 a model that reaches a recursive model through a non-recursive file still checks for a cycle
+  const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-encode-cycle-chain-', linkTypescript: true });
+  writeModelSources(sourceRoot, chainedFileSources);
+  writeModelGolemYaml(root, { mobx: false, validation: true });
+  await buildModelProject(root);
+  const top = await import(pathToFileURL(path.join(root, 'build/top.model.generated.js')).href) as Codecs;
+
+  const link: { name: string; next?: unknown } = { name: 'a' };
+  link.next = link;
+  for (const encode of [top.stringifyTTop, top.toWireFormatTTop]) {
+    assert.throws(() => encode({ middle: { link } }), (error: unknown) =>
+      error instanceof LibError && error.kind === LibErrorKind.Serialization && error.causedByInput === false);
+  }
+  const acyclic = { middle: { link: { name: 'a', next: { name: 'b' } } } };
+  assert.equal(top.stringifyTTop(acyclic), JSON.stringify(acyclic));
+});
+
 const isSerializationError = (error: unknown): boolean =>
   error instanceof LibError && error.kind === LibErrorKind.Serialization && error.causedByInput === false;
 

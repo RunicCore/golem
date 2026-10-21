@@ -11,7 +11,7 @@ import type {
 import { buildCodecValidationPlan, compilePlanValidators, type CodecSchemaClosureEntry } from '@exprtlabs/golem/validation-plan';
 import { DEFAULT_MODEL_SUFFIXES, GolemDiagnosticSeverity, canonicalPath, compareText, outsideModelsRootMessage, resolveProfile, suffixPattern, type GolemDiagnostic } from '@exprtlabs/golem/generator-api';
 import { codecKeysPath, defaultModelOutput } from '@exprtlabs/golem/generated-paths';
-import { isRecursiveNode } from '@exprtlabs/golem/emitter';
+import { reachesRecursiveNode } from '@exprtlabs/golem/emitter';
 import { emitCodecDeclarationTable } from '@exprtlabs/golem/schema-graph';
 import {
   analyzeSourceGraph,
@@ -263,7 +263,7 @@ function internJobSchemaGraphs(
       const node = descriptor ? schemaGraph.nodeFor(descriptor, specification.name) : undefined;
       if (!node) continue;
       codecIds.set(specification, node.codecId);
-      recursion.set(node.codecId, isRecursiveNode(schemaGraph, node));
+      recursion.set(node.codecId, reachesRecursiveNode(schemaGraph, node, recursion));
       if (!node.sameSchema) {
         wireSchemas.add(node.codecId);
         wirePlanes.add(node.codecId);
