@@ -14,7 +14,7 @@ const root = fileURLToPath(new URL('../../../', import.meta.url));
 
 /** Runtime entry points an application bundle can import; the tooling ones never reach a browser. */
 export const RUNTIME_ENTRIES = [
-  'model', 'conversion', 'tags', 'temporal', 'serde', 'errors', 'schema',
+  'model', 'conversion', 'tags', 'temporal', 'serde', 'errors', 'internal/schema',
   'validation', 'mobx', 'mobx-validation', 'client',
 ] as const;
 
@@ -77,7 +77,7 @@ export async function main(): Promise<void> {
     const results: BundleResult[] = [];
     const runtime = createProject(directory, 'runtime');
     for (const entry of RUNTIME_ENTRIES) {
-      const file = path.join(runtime, 'src', `${entry}.ts`);
+      const file = path.join(runtime, 'src', `${entry.replace('/', '-')}.ts`);
       writeFileSync(file, `export * from '@exprtlabs/golem/${entry}';\n`);
       results.push(await measure(`@exprtlabs/golem/${entry}`, file));
     }

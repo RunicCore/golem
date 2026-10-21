@@ -16,12 +16,12 @@ import {
   type CodecRuntimeOptions,
   type FromJsonModelResolver,
   type ModelDiscriminators,
-} from '@exprtlabs/golem/emitter';
-import { createSchemaGraph, codecPublicId, internDescriptors, type SchemaGraph, type SchemaNode } from '@exprtlabs/golem/schema-graph';
-import type { CodecSchemaClosureEntry, CodecValidationPlan, PlanValidators, SchemaPlace } from '@exprtlabs/golem/validation-plan';
-import { assertSupportedModelFieldName, type JsonSchema } from '@exprtlabs/golem/schema';
+} from '@exprtlabs/golem/internal/emitter';
+import { createSchemaGraph, codecPublicId, internDescriptors, type SchemaGraph, type SchemaNode } from '@exprtlabs/golem/internal/schema-graph';
+import type { CodecSchemaClosureEntry, CodecValidationPlan, PlanValidators, SchemaPlace } from '@exprtlabs/golem/internal/validation-plan';
+import { assertSupportedModelFieldName, type JsonSchema } from '@exprtlabs/golem/internal/schema';
 import { sourceDigest } from '@exprtlabs/golem/manifest';
-import { buildCodecValidationPlan, uniqueDiagnostics } from '@exprtlabs/golem/validation-plan';
+import { buildCodecValidationPlan, uniqueDiagnostics } from '@exprtlabs/golem/internal/validation-plan';
 import type { DiscriminatorValue, ModelConstraint, ModelTypeDescriptor, UnionDiscriminator } from '@exprtlabs/golem/model';
 
 import { asRecord, escapeJsonPointerToken, isJsonObject, objectEntries } from './json.js';

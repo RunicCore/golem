@@ -3,7 +3,7 @@ import path from 'node:path';
 import { nodeSpecifierEdits, type NodeSpecifierEdits } from '#golem/node-specifiers';
 import { applyRewrites } from '#golem/rewrite';
 import { projectSources } from '#golem/rewrite-scan';
-import { createProjectProgram } from '@exprtlabs/golem/type-analysis';
+import { createProjectProgram } from '@exprtlabs/golem/internal/type-analysis';
 import { copyFixture, fixturePath, type FixtureScope } from '../fixture-project.js';
 import { createModelProject } from '../model-project.js';
 

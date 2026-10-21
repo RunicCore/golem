@@ -7,7 +7,7 @@ import test, { type TestContext } from 'node:test';
 import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/golem/conversion';
 import { requireObjectCodec } from '@exprtlabs/golem/serde';
 import { getValidator } from '@exprtlabs/golem/validation';
-import { validationTagKey } from '@exprtlabs/golem/schema';
+import { validationTagKey } from '@exprtlabs/golem/internal/schema';
 import type { ModelTypeDescriptor } from '@exprtlabs/golem/model';
 import { generatedCodecId } from './support/consumer.js';
 import { buildModelProject, createModelProject, writeModelGolemYaml } from './model-project.js';

@@ -9,7 +9,7 @@ import { Module } from '@nestjs/common';
 import { NestModelInterceptor } from '@exprtlabs/golem/nest';
 import { runPipeline } from '#golem/cli';
 import { scanProject } from '#golem/rewrite-scan';
-import { createContractAnalysis, createProgram, modelBoundary } from '@exprtlabs/golem/type-analysis';
+import { createContractAnalysis, createProgram, modelBoundary } from '@exprtlabs/golem/internal/type-analysis';
 import { applyRewrites } from '#golem/rewrite';
 import { writeSdk } from '#openapi/generator';
 import { createFixtureProject, linkProjectPackages, writeGeneratedArtifacts } from '../fixture-project.js';

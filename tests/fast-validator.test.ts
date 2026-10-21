@@ -2,9 +2,9 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { registerGeneratedModel } from '@exprtlabs/golem/model';
-import { MODEL_CODEC_IDS_KEY } from '@exprtlabs/golem/schema';
+import { MODEL_CODEC_IDS_KEY } from '@exprtlabs/golem/internal/schema';
 import type { Validator } from '@exprtlabs/golem/validation-runtime';
-import { compile } from '@exprtlabs/golem/validator-compiler';
+import { compile } from '@exprtlabs/golem/internal/validator-compiler';
 
 import { compileValidatorModule, type FastCheck } from './support/compiled-validators.js';
 

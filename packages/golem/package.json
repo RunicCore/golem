@@ -70,17 +70,12 @@
       "import": "./dist/mobx-validation.js",
       "default": "./dist/mobx-validation.js"
     },
-    "./cli": {
-      "types": "./dist/tooling/cli.d.ts",
-      "import": "./dist/tooling/cli.js",
-      "default": "./dist/tooling/cli.js"
-    },
     "./manifest": {
       "types": "./dist/tooling/model-manifest.d.ts",
       "import": "./dist/tooling/model-manifest.js",
       "default": "./dist/tooling/model-manifest.js"
     },
-    "./emitter": {
+    "./internal/emitter": {
       "types": "./dist/tooling/model-source-emitter.d.ts",
       "import": "./dist/tooling/model-source-emitter.js",
       "default": "./dist/tooling/model-source-emitter.js"
@@ -90,7 +85,7 @@
       "import": "./dist/tooling/generator-api.js",
       "default": "./dist/tooling/generator-api.js"
     },
-    "./generated-paths": {
+    "./internal/generated-paths": {
       "types": "./dist/tooling/generated-paths.d.ts",
       "import": "./dist/tooling/generated-paths.js",
       "default": "./dist/tooling/generated-paths.js"
@@ -145,12 +140,12 @@
       "import": "./dist/temporal.js",
       "default": "./dist/temporal.js"
     },
-    "./schema": {
+    "./internal/schema": {
       "types": "./dist/tooling/schema.d.ts",
       "import": "./dist/tooling/schema.js",
       "default": "./dist/tooling/schema.js"
     },
-    "./schema-graph": {
+    "./internal/schema-graph": {
       "types": "./dist/tooling/schema-graph.d.ts",
       "import": "./dist/tooling/schema-graph.js",
       "default": "./dist/tooling/schema-graph.js"
@@ -165,22 +160,22 @@
       "import": "./dist/nest.js",
       "default": "./dist/nest.js"
     },
-    "./validation-plan": {
+    "./internal/validation-plan": {
       "types": "./dist/tooling/validation-plan.d.ts",
       "import": "./dist/tooling/validation-plan.js",
       "default": "./dist/tooling/validation-plan.js"
     },
-    "./validator-compiler": {
+    "./internal/validator-compiler": {
       "types": "./dist/tooling/validator-compiler/index.d.ts",
       "import": "./dist/tooling/validator-compiler/index.js",
       "default": "./dist/tooling/validator-compiler/index.js"
     },
-    "./type-analysis": {
+    "./internal/type-analysis": {
       "types": "./dist/tooling/type-analysis/index.d.ts",
       "import": "./dist/tooling/type-analysis/index.js",
       "default": "./dist/tooling/type-analysis/index.js"
     },
-    "./ts": {
+    "./internal/ts": {
       "types": "./dist/tooling/typescript-ns.d.ts",
       "import": "./dist/tooling/typescript-ns.js",
       "default": "./dist/tooling/typescript-ns.js"

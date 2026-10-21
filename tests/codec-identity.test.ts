@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
-import { codecPublicId } from '@exprtlabs/golem/schema-graph';
+import { codecPublicId } from '@exprtlabs/golem/internal/schema-graph';
 import type { ModelTypeDescriptor } from '@exprtlabs/golem/model';
 import { runPipeline } from '#golem/cli';
 import { copyFixtureFile, createFixtureProject, linkProjectPackages } from './fixture-project.js';

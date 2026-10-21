@@ -30,7 +30,7 @@ export function objectEntries(value: unknown): ReadonlyArray<readonly [string, u
 /**
  * Plain RFC 6901 JSON Pointer token escaping (`~` -> `~0`, `/` -> `~1`), with
  * no percent-encoding. `escapePointerToken`/`unescapePointerToken` from
- * `@exprtlabs/golem/schema` additionally apply `encodeURIComponent`; that
+ * `@exprtlabs/golem/internal/schema` additionally apply `encodeURIComponent`; that
  * is for URI-fragment `$ref` values (e.g. `#/components/schemas/A%20B`), not
  * for a plain in-document JSON Pointer like `OpenApiProblem.pointer`.
  */

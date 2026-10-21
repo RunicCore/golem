@@ -1,7 +1,7 @@
 import { existsSync, statSync } from 'node:fs';
 import path from 'node:path';
-import * as ts from '@exprtlabs/golem/ts';
-import { operationCodecRegistryPath } from '@exprtlabs/golem/generated-paths';
+import * as ts from '@exprtlabs/golem/internal/ts';
+import { operationCodecRegistryPath } from '@exprtlabs/golem/internal/generated-paths';
 import {
   assertAbsolute,
   canonicalFilename,
@@ -12,8 +12,8 @@ import {
   retainedProgramSession,
   projectWatchInputs,
   type ModelBoundary,
-} from '@exprtlabs/golem/type-analysis';
-import { schemaForDescriptor } from '@exprtlabs/golem/schema';
+} from '@exprtlabs/golem/internal/type-analysis';
+import { schemaForDescriptor } from '@exprtlabs/golem/internal/schema';
 import type {
   GolemArtifact,
   GolemDiagnostic,

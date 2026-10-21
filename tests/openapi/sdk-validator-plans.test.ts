@@ -8,7 +8,7 @@ import test from 'node:test';
 import { transformSync } from 'esbuild';
 
 import type { Validator } from '@exprtlabs/golem/validation-runtime';
-import { compilePlanValidators, type CodecValidationPlan, type PlanValidators } from '@exprtlabs/golem/validation-plan';
+import { compilePlanValidators, type CodecValidationPlan, type PlanValidators } from '@exprtlabs/golem/internal/validation-plan';
 import { analyzeOpenApiModels, generateOpenApiModelArtifacts } from '#openapi/models';
 
 import { workspace } from '../support/process.js';

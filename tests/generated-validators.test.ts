@@ -14,9 +14,9 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import test, { type TestContext } from 'node:test';
 
-import { buildCodecValidationPlan, compilePlanValidators, type CodecSchemaClosureEntry } from '@exprtlabs/golem/validation-plan';
+import { buildCodecValidationPlan, compilePlanValidators, type CodecSchemaClosureEntry } from '@exprtlabs/golem/internal/validation-plan';
 import type { ModelTypeDescriptor } from '@exprtlabs/golem/model';
-import { createSchemaGraph } from '@exprtlabs/golem/schema-graph';
+import { createSchemaGraph } from '@exprtlabs/golem/internal/schema-graph';
 import { workspace } from './support/process.js';
 import { buildModelProject, generatedModelFiles, writeModelGolemYaml } from './model-project.js';
 import type { ModelValidationContext } from '@exprtlabs/golem/model';

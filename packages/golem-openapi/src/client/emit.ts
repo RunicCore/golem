@@ -1,6 +1,6 @@
 import type { EmissionPlan } from '../emission-plan.js';
 import { mediaFraming } from '../emission-plan.js';
-import type { SchemaPlace, SdkValidatorsInput } from '@exprtlabs/golem/validation-plan';
+import type { SchemaPlace, SdkValidatorsInput } from '@exprtlabs/golem/internal/validation-plan';
 import { asRecord, escapeJsonPointerToken, isJsonObject, objectEntries } from '../json.js';
 import { componentPlace, type OriginLocator } from '../origin.js';
 import { identifier, NameScope, propertyName } from '@exprtlabs/golem/generator-api';

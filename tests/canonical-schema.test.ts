@@ -5,7 +5,7 @@ import {
   schemaForDescriptor,
   type JsonSchema,
   type ModelConstraint,
-} from '@exprtlabs/golem/schema';
+} from '@exprtlabs/golem/internal/schema';
 import type { Validator } from '@exprtlabs/golem/validation-runtime';
 import { compileSchema } from './support/compiled-validators.js';
 

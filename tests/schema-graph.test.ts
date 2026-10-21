@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { createSchemaGraph, emitCodecDeclarationTable, codecPublicId } from '@exprtlabs/golem/schema-graph';
-import { emitCodecRuntime, emitGraphStringify } from '@exprtlabs/golem/emitter';
+import { createSchemaGraph, emitCodecDeclarationTable, codecPublicId } from '@exprtlabs/golem/internal/schema-graph';
+import { emitCodecRuntime, emitGraphStringify } from '@exprtlabs/golem/internal/emitter';
 import type { ModelTypeDescriptor } from '@exprtlabs/golem/model';
-import { buildCodecValidationPlan } from '@exprtlabs/golem/validation-plan';
+import { buildCodecValidationPlan } from '@exprtlabs/golem/internal/validation-plan';
 import * as serde from '@exprtlabs/golem/serde';
 import { LibError } from '@exprtlabs/golem/errors';
 import { instantiate, instantiateRuntime } from './emitted-runtime.js';

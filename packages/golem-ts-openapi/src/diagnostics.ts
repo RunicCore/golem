@@ -1,4 +1,4 @@
-import type * as ts from '@exprtlabs/golem/ts';
+import type * as ts from '@exprtlabs/golem/internal/ts';
 import { GolemDiagnosticSeverity } from '@exprtlabs/golem/generator-api';
 
 export { GolemDiagnosticSeverity } from '@exprtlabs/golem/generator-api';

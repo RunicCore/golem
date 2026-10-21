@@ -3,10 +3,10 @@ import test from 'node:test';
 import { transformSync } from 'esbuild';
 
 import * as conversion from '@exprtlabs/golem/conversion';
-import { emitCodecRuntime, emitModelFromInit, emitModelFromJSON, emitModelToJSON } from '@exprtlabs/golem/emitter';
+import { emitCodecRuntime, emitModelFromInit, emitModelFromJSON, emitModelToJSON } from '@exprtlabs/golem/internal/emitter';
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 import type { DiscriminatorValue, ModelTypeDescriptor } from '@exprtlabs/golem/model';
-import { createSchemaGraph } from '@exprtlabs/golem/schema-graph';
+import { createSchemaGraph } from '@exprtlabs/golem/internal/schema-graph';
 import * as serde from '@exprtlabs/golem/serde';
 import { instantiateRuntime, type RuntimeFunction } from './emitted-runtime.js';
 

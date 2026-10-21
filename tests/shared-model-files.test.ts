@@ -13,7 +13,7 @@ import { createJobAnalysis } from '#model/emit';
 import { generate } from '#model/generator';
 import { applyRewrites } from '#golem/rewrite';
 import { scanProject } from '#golem/rewrite-scan';
-import { collectSpecifications, companionFilename, createProgram, isOwnModelFile, loadModelManifests, modelBoundary, modelSpecificationForClass } from '@exprtlabs/golem/type-analysis';
+import { collectSpecifications, companionFilename, createProgram, isOwnModelFile, loadModelManifests, modelBoundary, modelSpecificationForClass } from '@exprtlabs/golem/internal/type-analysis';
 
 const workspace = fileURLToPath(new URL('../../', import.meta.url));
 const PROFILE = { mobx: false, validation: false };

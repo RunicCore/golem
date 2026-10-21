@@ -2,7 +2,7 @@ import { createFixtureProject, readFixture, writeGeneratedArtifacts } from '../f
 import assert from 'node:assert/strict';
 import path from 'node:path';
 import test, { type TestContext } from 'node:test';
-import * as ts from '@exprtlabs/golem/ts';
+import * as ts from '@exprtlabs/golem/internal/ts';
 import { evaluateRouteExpression } from '#controllers/evaluation/evaluate';
 import { TsToOpenApiError } from '#controllers/diagnostics';
 

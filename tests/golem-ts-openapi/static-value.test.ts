@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import test, { after } from 'node:test';
-import * as ts from '@exprtlabs/golem/ts';
+import * as ts from '@exprtlabs/golem/internal/ts';
 import { evaluateStaticValue } from '#controllers/evaluation/static-value';
 
 const FILES: Readonly<Record<string, string>> = {

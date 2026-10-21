@@ -1,4 +1,4 @@
-import type * as ts from '@exprtlabs/golem/ts';
+import type * as ts from '@exprtlabs/golem/internal/ts';
 import {
   assertRouteResultSize,
   isLiteralRouteExpression,

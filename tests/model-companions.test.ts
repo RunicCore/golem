@@ -4,8 +4,8 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import test, { type TestContext } from 'node:test';
 
-import * as ts from '@exprtlabs/golem/ts';
-import { isModelDeclarationReference } from '@exprtlabs/golem/type-analysis';
+import * as ts from '@exprtlabs/golem/internal/ts';
+import { isModelDeclarationReference } from '@exprtlabs/golem/internal/type-analysis';
 import { command } from './support/process.js';
 import { generatedCodecIdFromRoot } from './support/consumer.js';
 import { companionModelProject, modelProject } from './support/model-companion-project.js';

@@ -1,7 +1,7 @@
 import { asRecord, isJsonObject, objectEntries } from './json.js';
 import { identifier } from '@exprtlabs/golem/generator-api';
 import { sourceDigest } from '@exprtlabs/golem/manifest';
-import { escapePointerToken, unescapePointerToken } from '@exprtlabs/golem/schema';
+import { escapePointerToken, unescapePointerToken } from '@exprtlabs/golem/internal/schema';
 import {
   normalizeDocument,
   parameterSchema,

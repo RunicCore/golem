@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import test, { type TestContext } from 'node:test';
-import * as ts from '@exprtlabs/golem/ts';
+import * as ts from '@exprtlabs/golem/internal/ts';
 import type * as Six from '#golem/typescript-ts6';
 import type * as Seven from '#golem/typescript-ts7';
 import type { TypeScriptBackend } from '#golem/typescript-types';

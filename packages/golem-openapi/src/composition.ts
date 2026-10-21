@@ -24,7 +24,7 @@ import {
   type ObjectPart,
   type ObjectResult,
   type SlotRule,
-} from '@exprtlabs/golem/emitter';
+} from '@exprtlabs/golem/internal/emitter';
 import type { ModelConstraint, ModelTypeDescriptor } from '@exprtlabs/golem/model';
 
 import { isJsonObject, objectEntries } from './json.js';

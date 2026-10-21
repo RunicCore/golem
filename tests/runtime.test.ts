@@ -11,7 +11,7 @@ import * as model from '@exprtlabs/golem/model';
 import * as validation from '@exprtlabs/golem/validation';
 import * as mobxRuntime from '@exprtlabs/golem/mobx';
 import * as mobxValidation from '@exprtlabs/golem/mobx-validation';
-import * as emitter from '@exprtlabs/golem/emitter';
+import * as emitter from '@exprtlabs/golem/internal/emitter';
 import { installCodecModel } from './register-codec-model.js';
 import { copyFixtureFile, createFixtureProject, linkProjectPackages } from './fixture-project.js';
 import { workspace } from './support/process.js';

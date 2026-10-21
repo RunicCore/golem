@@ -1,4 +1,4 @@
-import * as ts from '@exprtlabs/golem/ts';
+import * as ts from '@exprtlabs/golem/internal/ts';
 import {
   TsToOpenApiDiagnosticCode,
   TsToOpenApiError,

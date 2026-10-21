@@ -1,5 +1,5 @@
 import { identifier } from '@exprtlabs/golem/generator-api';
-import { escapePointerToken } from '@exprtlabs/golem/schema';
+import { escapePointerToken } from '@exprtlabs/golem/internal/schema';
 import { escapeJsonPointerToken, isJsonObject, resolveJsonPointer, unescapeJsonPointerToken } from './json.js';
 import { displayLocation, displayUri } from './origin.js';
 import type { ReferenceGraph, ReferenceSite, ReferenceTarget } from './reference-loader.js';

@@ -9,7 +9,7 @@ import { copyFixtureFile } from './fixture-project.js';
 import { buildModelProject, createModelProject, writeModelGolemYaml } from './model-project.js';
 import { isGeneratedModelClass, requireRecord, type GeneratedModelClass } from './openapi/helpers.js';
 
-import { schemaForDescriptor } from '@exprtlabs/golem/schema';
+import { schemaForDescriptor } from '@exprtlabs/golem/internal/schema';
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 import { registerIModelClass } from '@exprtlabs/golem/serde';
 import type { ModelTypeDescriptor, ModelTypeMetadata } from '@exprtlabs/golem/model';

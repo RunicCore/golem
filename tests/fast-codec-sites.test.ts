@@ -3,10 +3,10 @@ import { test } from 'node:test';
 
 import { LibError } from '@exprtlabs/golem/errors';
 import type { ModelTypeDescriptor } from '@exprtlabs/golem/model';
-import { createSchemaGraph } from '@exprtlabs/golem/schema-graph';
+import { createSchemaGraph } from '@exprtlabs/golem/internal/schema-graph';
 import { registerIModelClass } from '@exprtlabs/golem/serde';
-import { emitCodecRuntime, type StringifySerdeResolver } from '@exprtlabs/golem/emitter';
-import { buildCodecValidationPlan } from '@exprtlabs/golem/validation-plan';
+import { emitCodecRuntime, type StringifySerdeResolver } from '@exprtlabs/golem/internal/emitter';
+import { buildCodecValidationPlan } from '@exprtlabs/golem/internal/validation-plan';
 import type { Validator } from '@exprtlabs/golem/validation-runtime';
 
 import { instantiateRuntime, type RuntimeFunction } from './emitted-runtime.js';

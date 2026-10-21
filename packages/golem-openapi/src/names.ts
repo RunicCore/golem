@@ -1,4 +1,4 @@
-import { unescapePointerToken } from '@exprtlabs/golem/schema';
+import { unescapePointerToken } from '@exprtlabs/golem/internal/schema';
 import { bindingName, camelIdentifier, identifier, RESERVED_BINDING_NAMES } from '@exprtlabs/golem/generator-api';
 
 /**

@@ -1,4 +1,4 @@
-import * as ts from '@exprtlabs/golem/ts';
+import * as ts from '@exprtlabs/golem/internal/ts';
 import { TsToOpenApiDiagnosticCode, TsToOpenApiError, diagnostic } from './diagnostics.js';
 import { mergeSchemaMetadata } from './nest/json-schema-merge.js';
 import type { ControllerParameter, ControllerRoute, ResponseDescription, TypeReference } from './nest/types.js';

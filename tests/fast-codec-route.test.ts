@@ -3,8 +3,8 @@ import { test } from 'node:test';
 
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 import type { ModelValidationContext } from '@exprtlabs/golem/model';
-import { emitCodecRuntime } from '@exprtlabs/golem/emitter';
-import { createSchemaGraph } from '@exprtlabs/golem/schema-graph';
+import { emitCodecRuntime } from '@exprtlabs/golem/internal/emitter';
+import { createSchemaGraph } from '@exprtlabs/golem/internal/schema-graph';
 import { assertModelValue, IssueRepresentation, IssueSource } from '@exprtlabs/golem/serde';
 import type { SchemaIssue, Validator } from '@exprtlabs/golem/validation-runtime';
 

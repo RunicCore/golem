@@ -27,7 +27,7 @@ import {
 } from '@exprtlabs/golem/nest';
 import { decodeGeneratedModel, deserializeDate, unknownDiscriminatorValue } from '@exprtlabs/golem/conversion';
 import type { ModelTypeDescriptor } from '@exprtlabs/golem/model';
-import { schemaForDescriptor } from '@exprtlabs/golem/schema';
+import { schemaForDescriptor } from '@exprtlabs/golem/internal/schema';
 import {
   assertModelValue,
   createObjectCodec,

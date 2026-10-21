@@ -1,5 +1,5 @@
-import * as ts from '@exprtlabs/golem/ts';
-import { resolveSymbol } from '@exprtlabs/golem/type-analysis';
+import * as ts from '@exprtlabs/golem/internal/ts';
+import { resolveSymbol } from '@exprtlabs/golem/internal/type-analysis';
 import {
   isTypeScriptLibFile,
   resolveValueSymbol,

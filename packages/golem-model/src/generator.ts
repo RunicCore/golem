@@ -1,6 +1,6 @@
 import { existsSync, statSync } from 'node:fs';
 import { basename, dirname, join, resolve, sep } from 'node:path';
-import * as ts from '@exprtlabs/golem/ts';
+import * as ts from '@exprtlabs/golem/internal/ts';
 import type {
   GolemArtifact,
   GolemProfile,
@@ -8,11 +8,11 @@ import type {
   GeneratorSession,
   InputObserver,
 } from '@exprtlabs/golem/generator-api';
-import { buildCodecValidationPlan, compilePlanValidators, type CodecSchemaClosureEntry } from '@exprtlabs/golem/validation-plan';
+import { buildCodecValidationPlan, compilePlanValidators, type CodecSchemaClosureEntry } from '@exprtlabs/golem/internal/validation-plan';
 import { DEFAULT_MODEL_SUFFIXES, GolemDiagnosticSeverity, canonicalPath, compareText, outsideModelsRootMessage, resolveProfile, suffixPattern, type GolemDiagnostic, type ResolvedGolemProfile } from '@exprtlabs/golem/generator-api';
-import { codecKeysPath, defaultModelOutput } from '@exprtlabs/golem/generated-paths';
-import { reachesRecursiveNode } from '@exprtlabs/golem/emitter';
-import { emitCodecDeclarationTable } from '@exprtlabs/golem/schema-graph';
+import { codecKeysPath, defaultModelOutput } from '@exprtlabs/golem/internal/generated-paths';
+import { reachesRecursiveNode } from '@exprtlabs/golem/internal/emitter';
+import { emitCodecDeclarationTable } from '@exprtlabs/golem/internal/schema-graph';
 import {
   analyzeSourceGraph,
   createJobAnalysis,
@@ -24,12 +24,12 @@ import {
   internSourceDefinitions,
   type SourceModelGraph,
 } from './emit.js';
-import type { SchemaGraph } from '@exprtlabs/golem/schema-graph';
-import type { ModelSpecification } from '@exprtlabs/golem/type-analysis';
-import { collectSpecifications } from '@exprtlabs/golem/type-analysis';
+import type { SchemaGraph } from '@exprtlabs/golem/internal/schema-graph';
+import type { ModelSpecification } from '@exprtlabs/golem/internal/type-analysis';
+import { collectSpecifications } from '@exprtlabs/golem/internal/type-analysis';
 import { discoverModelManifests } from '@exprtlabs/golem/manifest';
-import { loadModelManifests, sdkModelFiles } from '@exprtlabs/golem/type-analysis';
-import type { ManifestIndex } from '@exprtlabs/golem/type-analysis';
+import { loadModelManifests, sdkModelFiles } from '@exprtlabs/golem/internal/type-analysis';
+import type { ManifestIndex } from '@exprtlabs/golem/internal/type-analysis';
 import {
   assertAbsolute,
   assertDistinctCompanions,
@@ -53,7 +53,7 @@ import {
   retainedProgramSession,
   type ModelBoundary,
   type ProgramInfo,
-} from '@exprtlabs/golem/type-analysis';
+} from '@exprtlabs/golem/internal/type-analysis';
 
 export interface GolemModelProfile extends GolemProfile {}
 

@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import test, { type TestContext } from 'node:test';
 
-import * as ts from '@exprtlabs/golem/ts';
+import * as ts from '@exprtlabs/golem/internal/ts';
 import { API } from '#golem/typescript-ts7';
 import { createFixtureProject, readFixture } from './fixture-project.js';
 import { generate as generateController } from '#controllers/generator';

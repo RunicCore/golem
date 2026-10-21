@@ -5,7 +5,7 @@ import { pathToFileURL } from 'node:url';
 
 import { GolemDiagnosticSeverity } from '@exprtlabs/golem/generator-api';
 import type { Validator } from '@exprtlabs/golem/validation-runtime';
-import { compile, type CompileOptions } from '@exprtlabs/golem/validator-compiler';
+import { compile, type CompileOptions } from '@exprtlabs/golem/internal/validator-compiler';
 
 import { workspace } from './process.js';
 

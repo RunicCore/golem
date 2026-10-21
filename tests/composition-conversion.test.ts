@@ -11,7 +11,7 @@ import {
   type ModelConversionDescriptor,
   type SerdeResolver,
   type ToJsonModelResolver,
-} from '@exprtlabs/golem/emitter';
+} from '@exprtlabs/golem/internal/emitter';
 
 type CompiledConversion = (value: unknown) => unknown;
 

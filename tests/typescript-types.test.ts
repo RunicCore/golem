@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const tooling = path.join(root, 'packages/golem/dist/tooling');
 
-/** The declaration files a consumer of `@exprtlabs/golem/ts` type-checks: the seam's own files and everything they import by relative path. */
+/** The declaration files a consumer of `@exprtlabs/golem/internal/ts` type-checks: the seam's own files and everything they import by relative path. */
 function publishedDeclarations(entries: readonly string[]): Map<string, string> {
   const files = new Map<string, string>();
   const pending = [...entries];

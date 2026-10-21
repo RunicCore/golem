@@ -1,6 +1,6 @@
-import { deduplicateProjections, exportedConcreteClass, linkedClassNames } from '@exprtlabs/golem/type-analysis';
+import { deduplicateProjections, exportedConcreteClass, linkedClassNames } from '@exprtlabs/golem/internal/type-analysis';
 import { dirname, relative } from 'node:path';
-import * as ts from '@exprtlabs/golem/ts';
+import * as ts from '@exprtlabs/golem/internal/ts';
 import { PACKAGE_VERSION } from './package-info.js';
 import {
   emitModelFromJSON,
@@ -21,25 +21,25 @@ import {
   type SerdeResolver,
   type ToJsonModelResolver,
   presentKeysSource,
-} from '@exprtlabs/golem/emitter';
-import { createSchemaGraph, codecPublicId, codecShortName, internDescriptors, type SchemaGraph } from '@exprtlabs/golem/schema-graph';
+} from '@exprtlabs/golem/internal/emitter';
+import { createSchemaGraph, codecPublicId, codecShortName, internDescriptors, type SchemaGraph } from '@exprtlabs/golem/internal/schema-graph';
 import { compareText, propertyName, RESERVED_MODEL_MEMBERS, type GolemProfile } from '@exprtlabs/golem/generator-api';
-import type { ManifestIndex } from '@exprtlabs/golem/type-analysis';
-import type { ModelBoundary, ModelSpecification } from '@exprtlabs/golem/type-analysis';
-import { descriptorBuilder, propertyType } from '@exprtlabs/golem/type-analysis';
+import type { ManifestIndex } from '@exprtlabs/golem/internal/type-analysis';
+import type { ModelBoundary, ModelSpecification } from '@exprtlabs/golem/internal/type-analysis';
+import { descriptorBuilder, propertyType } from '@exprtlabs/golem/internal/type-analysis';
 import {
   canonicalFilename,
   commonDirectory,
   companionOfSpecification,
   portableRelativeFilename,
   projectFilesImportedBy,
-} from '@exprtlabs/golem/type-analysis';
+} from '@exprtlabs/golem/internal/type-analysis';
 import type {
   ConstraintSchemaValue,
   ModelConstraint,
   SerdeBinding,
   ValidationBinding,
-} from '@exprtlabs/golem/type-analysis';
+} from '@exprtlabs/golem/internal/type-analysis';
 import {
   canonicalSchemaKey,
   canonicalConstraintKey,
@@ -50,7 +50,7 @@ import {
   validationTagKey,
   validationTagSchemaDescriptor,
   VALIDATION_KEYWORD,
-} from '@exprtlabs/golem/schema';
+} from '@exprtlabs/golem/internal/schema';
 
 type RichDescriptor = ModelConversionDescriptor & {
   readonly validations?: readonly ValidationBinding[];

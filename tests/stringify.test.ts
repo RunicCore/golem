@@ -8,8 +8,8 @@ import {
   stringifyJsonScalar,
   stringifyJsonString,
 } from '@exprtlabs/golem/serde';
-import { createSchemaGraph } from '@exprtlabs/golem/schema-graph';
-import { emitCodecRuntime, emitGraphStringify } from '@exprtlabs/golem/emitter';
+import { createSchemaGraph } from '@exprtlabs/golem/internal/schema-graph';
+import { emitCodecRuntime, emitGraphStringify } from '@exprtlabs/golem/internal/emitter';
 import type { ModelTypeDescriptor } from '@exprtlabs/golem/model';
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 import { instantiate } from './emitted-runtime.js';

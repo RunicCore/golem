@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
-import * as ts from '@exprtlabs/golem/ts';
+import * as ts from '@exprtlabs/golem/internal/ts';
 import { generate } from '#model/generator';
 import { resolveTypeScript } from '#golem/typescript-version';
 import { createFixtureProject } from './fixture-project.js';

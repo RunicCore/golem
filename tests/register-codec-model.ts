@@ -4,7 +4,7 @@ import {
   type GeneratedModelValidatorEnhancer,
   type ModelTypeDescriptor,
 } from '@exprtlabs/golem/model';
-import { GENERATED_MODEL_SCHEMA_REF_PREFIX, schemaForDescriptor } from '@exprtlabs/golem/schema';
+import { GENERATED_MODEL_SCHEMA_REF_PREFIX, schemaForDescriptor } from '@exprtlabs/golem/internal/schema';
 import {
   assertModelValue,
   createObjectCodec,

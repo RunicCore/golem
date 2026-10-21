@@ -1,6 +1,6 @@
 import path from 'node:path';
-import * as ts from '@exprtlabs/golem/ts';
-import { resolveSymbol } from '@exprtlabs/golem/type-analysis';
+import * as ts from '@exprtlabs/golem/internal/ts';
+import { resolveSymbol } from '@exprtlabs/golem/internal/type-analysis';
 import { TsToOpenApiDiagnosticCode, TsToOpenApiError, diagnostic } from '../diagnostics.js';
 import type { RouteEvaluationOptions } from './dependencies.js';
 import { evaluateStaticValue, isTypeScriptLibFile, singleReturnExpression, unwrapExpression as unwrap } from './static-value.js';

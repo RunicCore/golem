@@ -1,7 +1,7 @@
-import { escapePointerToken } from '@exprtlabs/golem/schema';
+import { escapePointerToken } from '@exprtlabs/golem/internal/schema';
 import { schemaIssueMessage, type SchemaIssue, type Validator } from '@exprtlabs/golem/validation-runtime';
 import { GolemDiagnosticSeverity } from '@exprtlabs/golem/generator-api';
-import { compile } from '@exprtlabs/golem/validator-compiler';
+import { compile } from '@exprtlabs/golem/internal/validator-compiler';
 import { openApiLine, type OpenApiLine } from './json.js';
 import { checkOpenApiRules } from './openapi-rules.js';
 import { JSON_SCHEMA_2020_12_ID, JSON_SCHEMA_2020_12_META_SCHEMAS } from './openapi-schemas/json-schema-2020-12.js';

@@ -6,7 +6,7 @@ import { pathToFileURL } from 'node:url';
 import test from 'node:test';
 
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
-import { compileSdkValidators } from '@exprtlabs/golem/validation-plan';
+import { compileSdkValidators } from '@exprtlabs/golem/internal/validation-plan';
 import { writeSdk } from '#openapi/generator';
 import {
   artifactBasenames,

@@ -7,7 +7,7 @@ import test from 'node:test';
 import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/golem/conversion';
 import { LibError } from '@exprtlabs/golem/errors';
 import { requireObjectCodec } from '@exprtlabs/golem/serde';
-import { createSchemaGraph } from '@exprtlabs/golem/schema-graph';
+import { createSchemaGraph } from '@exprtlabs/golem/internal/schema-graph';
 import { command } from './support/process.js';
 import { generatedCodecIdFromRoot } from './support/consumer.js';
 import { copyFixture, fileFixtureScope, onceShared, readFixture, type FixtureScope } from './fixture-project.js';

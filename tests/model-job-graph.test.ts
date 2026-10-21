@@ -4,7 +4,7 @@ import path from 'node:path';
 import test, { type TestContext } from 'node:test';
 import type { GolemProfile } from '@exprtlabs/golem/generator-api';
 import type { ModelTypeDescriptor } from '@exprtlabs/golem/model';
-import { createExecutableValidationMemo, hasExecutableValidation } from '@exprtlabs/golem/schema';
+import { createExecutableValidationMemo, hasExecutableValidation } from '@exprtlabs/golem/internal/schema';
 import { generate } from '#model/generator';
 import { writeGeneratedArtifacts } from './fixture-project.js';
 import { buildModelProject, createModelProject, writeModelGolemYaml, writeModelSources } from './model-project.js';

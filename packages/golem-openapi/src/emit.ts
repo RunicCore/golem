@@ -20,7 +20,7 @@ import {
 } from './models.js';
 import { withOrigins, type OriginLocator } from './origin.js';
 import { buildSchemaData } from './schemas.js';
-import { compileSdkValidators, uniqueDiagnostics, type CodecValidationPlan, type PlanValidators, type SchemaPlace } from '@exprtlabs/golem/validation-plan';
+import { compileSdkValidators, uniqueDiagnostics, type CodecValidationPlan, type PlanValidators, type SchemaPlace } from '@exprtlabs/golem/internal/validation-plan';
 import { generateDirectionalSchemas, generateTypes } from './types.js';
 
 interface WriteSdkResult extends GolemResult {}

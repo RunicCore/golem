@@ -1,6 +1,6 @@
 import * as path from 'node:path';
 import { DEFAULT_CONTROLLER_SUFFIXES, discoverSources, stripSourceSuffix, suffixPattern } from '@exprtlabs/golem/generator-api';
-import * as ts from '@exprtlabs/golem/ts';
+import * as ts from '@exprtlabs/golem/internal/ts';
 import {
   GolemDiagnosticSeverity,
   TsToOpenApiError,

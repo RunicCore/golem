@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import YAML from 'yaml';
 import { asRecord, isJsonObject, objectEntries } from './json.js';
-import { assertSupportedModelFieldName } from '@exprtlabs/golem/schema';
+import { assertSupportedModelFieldName } from '@exprtlabs/golem/internal/schema';
 import { componentOrigin, LocatedError, type OriginLocator } from './origin.js';
 import { normalizeDocument, resolveLocalPointer, type NormalizedDocument, type NormalizedOperation } from './normalize.js';
 import { GolemDiagnosticSeverity, type GolemDiagnostic } from '@exprtlabs/golem/generator-api';

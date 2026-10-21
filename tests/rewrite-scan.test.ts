@@ -7,7 +7,7 @@ import { runPipeline } from '#golem/cli';
 import { applyRewrites } from '#golem/rewrite';
 import { RewriteScanner, type FileScanResult } from '#golem/rewrite-scan';
 import { decodeMappings } from '#golem/source-map';
-import { createProjectProgram } from '@exprtlabs/golem/type-analysis';
+import { createProjectProgram } from '@exprtlabs/golem/internal/type-analysis';
 import { writeSdk } from '#openapi/generator';
 import { copyFixtureFile, readFixture, writeGeneratedArtifacts } from './fixture-project.js';
 import { createModelProject } from './model-project.js';
