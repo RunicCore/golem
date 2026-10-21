@@ -182,15 +182,14 @@ test('guide TypeScript is imported except on listed pages', () => {
   assert.deepEqual(over, []);
 });
 
-const PUBLIC_SUBPATHS = ['model', 'validation', 'mobx', 'mobx-validation', 'errors', 'client', 'conversion', 'tags', 'temporal', 'serde', 'nest', 'generator-api', 'manifest', 'rewrite', 'loader', 'register', 'vite', 'esbuild'];
-const INTERNAL_SUBPATHS = ['cli', 'emitter', 'schema', 'schema-graph', 'type-analysis', 'generated-paths', 'validation-runtime', 'validator-compiler', 'validation-plan', 'ts'];
-
-test('the runtime reference covers every @exprtlabs/golem subpath', () => {
+test('the runtime reference has a table row and a section for every public @exprtlabs/golem subpath', () => {
+  // protects: F-41 the public subpath list lives in one table that follows package.json
   const exports = Object.keys(JSON.parse(readFileSync(path.join(root, 'packages/golem/package.json'), 'utf8')).exports as Record<string, unknown>).map(key => key.replace(/^\.\//, ''));
-  assert.deepEqual([...exports].sort(), [...PUBLIC_SUBPATHS, ...INTERNAL_SUBPATHS].sort(), 'classify every new subpath as public or internal');
   const page = readFileSync(path.join(docs, 'reference/runtime-api.md'), 'utf8');
-  for (const subpath of PUBLIC_SUBPATHS) assert.match(page, new RegExp(`^## \`@exprtlabs/golem/${subpath}\``, 'm'), `no section for ${subpath}`);
-  for (const subpath of INTERNAL_SUBPATHS) assert.ok(page.includes(`\`${subpath}\``), `internal subpath ${subpath} is not listed as internal`);
+  for (const subpath of exports.filter(name => !name.startsWith('internal/'))) {
+    assert.match(page, new RegExp(`^\\| \\[\`${subpath}\`\\]`, 'm'), `no table row for ${subpath}`);
+    assert.match(page, new RegExp(`^## \`@exprtlabs/golem/${subpath}\``, 'm'), `no section for ${subpath}`);
+  }
 });
 
 function tsFiles(dir: string): string[] {

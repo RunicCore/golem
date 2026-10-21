@@ -6,6 +6,7 @@ Find every `@exprtlabs/golem` import your application, NestJS app or tool can us
 | --- | --- | --- |
 | [`model`](#model) | `IModel`, `IObject`, generated-model types and guards | none |
 | [`validation`](#validation) | `validate<T>`, `validateInstance`, `getValidator`, `ModelValidator` | none |
+| [`validation-runtime`](#validation-runtime) | Helpers that generated validators import; generated code only | none |
 | [`mobx`](#mobx) | `asGenObservable` and observable API operations | `mobx` |
 | [`mobx-validation`](#mobx-validation) | Observable validator state | `mobx` |
 | [`errors`](#errors) | `LibError`, `LibErrorKind` and the `Issue` type | none |
@@ -23,7 +24,7 @@ Find every `@exprtlabs/golem` import your application, NestJS app or tool can us
 | [`vite`](#vite) | Vite plugin that rewrites TypeScript before Vite strips its types | `vite` |
 | [`esbuild`](#esbuild) | esbuild plugin that rewrites TypeScript before esbuild strips its types | `esbuild` |
 
-Internal subpaths used by the generators: `cli`, `emitter`, `schema`, `schema-graph`, `type-analysis`, `generated-paths`, `validation-runtime`, `validator-compiler`, `validation-plan`, [`ts`](#ts). Don't import them; they may change in any release.
+A path that starts with `internal/` is for the generators and may change in any release. Don't import it ([Compatibility and stability](/compatibility#public-api)).
 
 With `validation: true`, generated files import their own validator modules and need no extra package ([validation profiles](/reference/config#validation-profiles)).
 
@@ -118,6 +119,12 @@ function validateWith(validator: Validator, value: unknown, all = true): Promise
 `validateWith` runs one validator and returns `{ valid, issues }`. `all` defaults to `true`, which reports every issue; pass `false` to stop at the first. A validator that does not return an array throws `TypeError`.
 
 Types: `OperationRuntimeValidators`, `ValidationResult`, `Validator`, `SchemaIssue` and `SchemaIssueDetail`. `OperationRuntimeValidators` is the value type of a client's `operationValidators` option: the input validator and the response validators keyed `status:contentType`. Each validator is a `Validator`: `(value, all) => readonly SchemaIssue[]`, empty when the value is valid.
+
+## `@exprtlabs/golem/validation-runtime` {#validation-runtime}
+
+Generated validator files import this subpath. Your code must not import it.
+
+Semver covers the names that generated validators import.
 
 ## `@exprtlabs/golem/mobx` {#mobx}
 
@@ -538,27 +545,3 @@ An OpenAPI job writes `model-manifest.json` beside its SDK; a model job reads it
 | `MODEL_MANIFEST_FILENAME` | `'model-manifest.json'` | The file name. |
 
 Used by the generators: `ModelManifestEntry`, `ModelManifestProvenance`, `MODEL_MANIFEST_MARKER`, `manifestMarker`, `modelManifestProfile`, `validateModelProfile`, `stableJson`, `stableIdentity`, `sourceDigest`.
-
-## `@exprtlabs/golem/ts` {#ts}
-
-```ts
-import { typescriptVersion, SyntaxKind } from '@exprtlabs/golem/ts';
-```
-
-The generators use this subpath for type analysis and generation. Application code doesn't import it, and it may change in any release. It publishes types that Golem owns, narrowed to what Golem uses: its declarations don't reference `typescript`, and it exports only the value names Golem uses, not the compiler's `API` class or TypeScript 7 client types.
-
-Golem uses your project's installed `typescript`: the package that resolves from the directory of the tsconfig your `golem.yaml` names. The `golem` command and every host (the [Vite](#vite) and [esbuild](#esbuild) plugins and the [Node loader](#loader)) look there, wherever the process runs from. Set `GOLEM_TYPESCRIPT_ROOT` to a directory to use the `typescript` installed there instead; it overrides every project. Library use outside a host looks in `GOLEM_TYPESCRIPT_ROOT`, or from the current directory when the variable is unset. Every lookup falls back to the copy beside Golem. A process loads one TypeScript: when a host opens a second project whose `typescript` is a different install from the one the process holds, it fails and says to run one host per TypeScript install. Projects that share one install, through a link or a hoisted `node_modules`, can open in one process. It selects the backend by version: `>=6.0.0 <7` or `>=7.0.0 <8`. Any other version fails at load:
-
-```text
-golem supports TypeScript 6.0+ and 7.x; found <version> at <path>.
-```
-
-Golem runs the TypeScript 6 backend on the install it resolved. The TypeScript 7 backend loads the TypeScript 7 beside Golem, so the project and Golem must resolve one install. When they differ, loading fails:
-
-```text
-golem loads TypeScript 7 (<version>) from <path> but the project uses <version> at <path>; install one TypeScript 7 for both.
-```
-
-When neither the project nor Golem has `typescript`, loading fails with `golem needs TypeScript 6.0+ or 7.x installed in <directory>.`
-
-Both backends generate byte-identical files. A test lane enforces that.

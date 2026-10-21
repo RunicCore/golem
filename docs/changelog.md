@@ -36,10 +36,16 @@ Nested model references keep their classes, and derived types such as
 
 Generation runs on TypeScript 6.0+ or 7.x, chosen from the `typescript` installed in your project, and writes the same files on both ([Compatibility](/compatibility)). `parse<T>`, `stringify<T>` and the other generic serde calls work on both. TypeScript 5 isn't supported.
 
-- **Breaking:** `@exprtlabs/golem/ts` publishes Golem-owned types narrowed to what Golem uses. Its declarations no longer reference `typescript`, and it no longer exports the `API` class or the TypeScript 7 process-client types ([`ts`](/reference/runtime-api#ts)).
+- **Breaking:** `@exprtlabs/golem/ts` publishes Golem-owned types narrowed to what Golem uses. Its declarations no longer reference `typescript`, and it no longer exports the `API` class or the TypeScript 7 process-client types ([`ts`](/compatibility#ts)).
 - Union members in generated types and schemas appear in a fixed order that doesn't depend on the compiler or locale. Regenerate once; member order changes, and so do the ids of generated codecs.
 - Golem sorts names, keys and imports by code unit, so the same sources write byte-identical files under any machine locale. Regenerate once: an order that followed your locale changes. Fields such as `eTag` and `email` swap places, so the ids of generated codecs and the `_group-` file names of an SDK change too.
 - On TypeScript 7, generation type-checks new files before writing them, so output that doesn't compile now fails with the compiler's message. Sibling model folders under one `tsconfig` no longer interfere.
+
+## Package subpaths
+
+- **Breaking:** eight subpaths of `@exprtlabs/golem` move under `internal/`: `emitter`, `schema`, `schema-graph`, `type-analysis`, `generated-paths`, `ts`, `validation-plan` and `validator-compiler`. A path that starts with `internal/` may change in any release ([Compatibility](/compatibility#public-api)). The old names fail with `ERR_PACKAGE_PATH_NOT_EXPORTED`. Applications that use only the documented subpaths need no change.
+- **Breaking:** `@exprtlabs/golem/cli` is removed. Run the `golem` command.
+- [`validation-runtime`](/reference/runtime-api#validation-runtime) is a public subpath. Generated validators import it. Do not import it in your code.
 
 ## Validation
 

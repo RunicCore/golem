@@ -231,6 +231,12 @@ See [OpenAPI client support](docs/reference/openapi-support.md) for supported ve
 - **Breaking:** the output inventory (`.golem/outputs.json`) records a `destination` and `destinationKind` for every file.
 - Golem sorts names, keys and imports in generated files, `.golem/outputs.json` and `.golem/codec-keys.json` by code unit, so the same sources give byte-identical files under any machine locale. Regenerate once: an order that followed your locale (such as `maximum` before `maxLength`) changes. Field order feeds the codec id, so regenerating changes codec ids and SDK `_group-<hash>` file names once. For example, the fields `eTag` and `email` swap places.
 
+### Package subpaths
+
+- **Breaking:** eight subpaths of `@exprtlabs/golem` move under `internal/`: `emitter`, `schema`, `schema-graph`, `type-analysis`, `generated-paths`, `ts`, `validation-plan` and `validator-compiler` (for example `@exprtlabs/golem/internal/schema`). A path that starts with `internal/` may change in any release. The old names fail with `ERR_PACKAGE_PATH_NOT_EXPORTED`. Applications that use only the documented subpaths need no change.
+- **Breaking:** `@exprtlabs/golem/cli` is removed. Run the `golem` command.
+- `@exprtlabs/golem/validation-runtime` is a public subpath. Generated validators import it, and semver covers the names that they import. Do not import it in your code.
+
 ### Removed APIs (pre-1.0)
 
 - `@exprtlabs/golem/validation`: `getModelValidator` (use `getValidator(model)`), `findCachedModelValidator`, `cacheModelValidator`, `validateGeneratedValue`, `preflightModelValidation`, `formatGeneratedIssues`, `evaluateModel`, `validationTagKey`, `validationTagSchemaDescriptor` and `validationTagGroups` (the first two tag helpers moved to `@exprtlabs/golem/schema`), and the structural validation helpers `fail`, `pushPath`, `popPath`, `enterActive`, `leaveActive`, `readOwn`, `runTag`, `runNestedModel`, `withNestedScope`, `childPath`, `continueStep`, `getProjection`, `rememberProjection`, `projectNestedModel`, `missingValidation` and `ensureNestedReady`. The `ModelValidator` constructor takes only the model.

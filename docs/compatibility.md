@@ -20,13 +20,31 @@ OpenAPI feature support depends on the document version and generation profile (
 
 ## Stability
 
-The configuration format (`version: 1`) and the public subpaths listed on this page follow semver from 1.0.0. Until then, a release candidate may change them; each change is listed in [Release notes](/changelog).
+The configuration format (`version: 1`) and the public subpaths of `@exprtlabs/golem` follow semver from 1.0.0. Until then, a release candidate may change them; each change is listed in [Release notes](/changelog).
 
 ## Public API
 
-Public subpaths of `@exprtlabs/golem` follow semver from 1.0.0: [`model`](/reference/runtime-api#model), [`validation`](/reference/runtime-api#validation), [`mobx`](/reference/runtime-api#mobx), [`mobx-validation`](/reference/runtime-api#mobx-validation), [`errors`](/reference/runtime-api#errors), [`client`](/reference/runtime-api#client), [`conversion`](/reference/runtime-api#conversion), [`tags`](/reference/runtime-api#tags), [`temporal`](/reference/runtime-api#temporal), [`serde`](/reference/runtime-api#serde), [`nest`](/reference/runtime-api#nest), [`generator-api`](/reference/runtime-api#generator-api), [`manifest`](/reference/runtime-api#manifest), [`rewrite`](/reference/runtime-api#rewrite), [`loader`](/reference/runtime-api#loader), [`register`](/reference/runtime-api#register), [`vite`](/reference/runtime-api#vite) and [`esbuild`](/reference/runtime-api#esbuild).
+The [runtime API](/reference/runtime-api) page lists the public subpaths of `@exprtlabs/golem`. They follow semver from 1.0.0.
 
-Internal subpaths `cli`, `emitter`, `schema`, `schema-graph`, `type-analysis`, `generated-paths` and `ts` may change in any release.
+A path that starts with `internal/` may change in any release. Do not import it.
+
+## TypeScript resolution {#ts}
+
+Golem uses your project's installed `typescript`: the package that resolves from the directory of the tsconfig your `golem.yaml` names. The `golem` command and every host (the [Vite](/reference/runtime-api#vite) and [esbuild](/reference/runtime-api#esbuild) plugins and the [Node loader](/reference/runtime-api#loader)) look there, wherever the process runs from. Set `GOLEM_TYPESCRIPT_ROOT` to a directory to use the `typescript` installed there instead; it overrides every project. Library use outside a host looks in `GOLEM_TYPESCRIPT_ROOT`, or from the current directory when the variable is unset. Every lookup falls back to the copy beside Golem. A process loads one TypeScript: when a host opens a second project whose `typescript` is a different install from the one the process holds, it fails and says to run one host per TypeScript install. Projects that share one install, through a link or a hoisted `node_modules`, can open in one process. It selects the backend by version: `>=6.0.0 <7` or `>=7.0.0 <8`. Any other version fails at load:
+
+```text
+golem supports TypeScript 6.0+ and 7.x; found <version> at <path>.
+```
+
+Golem runs the TypeScript 6 backend on the install it resolved. The TypeScript 7 backend loads the TypeScript 7 beside Golem, so the project and Golem must resolve one install. When they differ, loading fails:
+
+```text
+golem loads TypeScript 7 (<version>) from <path> but the project uses <version> at <path>; install one TypeScript 7 for both.
+```
+
+When neither the project nor Golem has `typescript`, loading fails with `golem needs TypeScript 6.0+ or 7.x installed in <directory>.`
+
+Both backends generate byte-identical files. A test lane enforces that.
 
 ## Feature defaults
 
