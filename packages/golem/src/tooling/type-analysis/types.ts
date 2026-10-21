@@ -630,6 +630,29 @@ export function descriptorBuilder(
     );
   };
 
+  /**
+   * An array or tuple type that is met again inside itself, with no model between, never ends: the alias that holds it
+   * (`type TItem = string | TItem[]`) has no object model to refer to. A recursive object has its own check (1056).
+   */
+  const enterSequence = (
+    type: ts.Type,
+    seen: ReadonlySet<ts.Type>,
+    context: TypeAnalysisContext,
+    node: ts.TypeNode | undefined,
+  ): ReadonlySet<ts.Type> => {
+    if (!seen.has(type)) return new Set(seen).add(type);
+    const named = [type, ...(type.flags & ts.TypeFlags.Object ? checker.getTypeArguments(type as ts.TypeReference) : [])]
+      .find((candidate) => candidate.aliasSymbol);
+    const alias = named?.aliasSymbol?.getName() ?? checker.typeToString(type);
+    throw diagnostic(
+      context.sourceFile,
+      node ?? context.declaration,
+      '1003',
+      `Recursive alias ${alias}${context.field === undefined ? '' : ` in field "${context.field}"`} of ${context.name} must resolve to an object model. `
+        + 'Give the recursive shape a named model.',
+    );
+  };
+
   const describe = (
     originalType: ts.Type,
     context: TypeAnalysisContext,
@@ -820,6 +843,7 @@ export function descriptorBuilder(
       }, metadata);
     }
     if (checker.isTupleType(type)) {
+      const sequenceSeen = enterSequence(type, seen, context, node);
       const reference = tupleTarget(type);
       const arguments_ = checker.getTypeArguments(reference);
       const flags: readonly ts.ElementFlags[] = ts.typeReferenceTarget(reference)?.elementFlags ?? [];
@@ -835,7 +859,7 @@ export function descriptorBuilder(
       };
       const describeItem = (item: ts.Type, index: number): ModelConversionDescriptor => {
         const itemNode = tupleElementNode(childNode, index);
-        const descriptor = describe(item, context, seen, itemNode, representation, undefined, childSubstitutions, nameHint, tupleElementNode(nameNode, index));
+        const descriptor = describe(item, context, sequenceSeen, itemNode, representation, undefined, childSubstitutions, nameHint, tupleElementNode(nameNode, index));
         // A checker's indexed access type adds undefined for an optional tuple
         // slot. Preserve it only when the authored element admits undefined;
         // the optional marker already represents an absent slot.
@@ -872,7 +896,7 @@ export function descriptorBuilder(
           kind: 'tuple',
           ...(isReadonlySequenceType(checker, type) ? { isReadonly: true as const } : {}),
           items,
-          rest: { index: restIndex, item: describe(restType, context, seen, tupleElementNode(childNode, restIndex), representation, undefined, childSubstitutions, nameHint, tupleElementNode(nameNode, restIndex)) },
+          rest: { index: restIndex, item: describe(restType, context, sequenceSeen, tupleElementNode(childNode, restIndex), representation, undefined, childSubstitutions, nameHint, tupleElementNode(nameNode, restIndex)) },
           ...(optionalFrom === undefined ? {} : { optionalFrom }),
         } as TupleConversionDescriptor, metadata);
       }
@@ -885,6 +909,7 @@ export function descriptorBuilder(
       }, metadata);
     }
     if (checker.isArrayType(type)) {
+      const sequenceSeen = enterSequence(type, seen, context, node);
       const [item] = checker.getTypeArguments(type as ts.TypeReference);
       const arrayNode = childNode && ts.isTypeOperatorNode(childNode)
         && childNode.operator === ts.SyntaxKind.ReadonlyKeyword
@@ -893,7 +918,7 @@ export function descriptorBuilder(
       return withMetadata({
         kind: 'array',
         ...(isReadonlySequenceType(checker, type) ? { isReadonly: true as const } : {}),
-        item: describe(item ?? checker.getAnyType(), context, seen, arrayNode && ts.isArrayTypeNode(arrayNode) ? arrayNode.elementType : typeArgumentNode(arrayNode, 0), representation, undefined, childSubstitutions, nameHint, arrayItemNameNode(nameNode)),
+        item: describe(item ?? checker.getAnyType(), context, sequenceSeen, arrayNode && ts.isArrayTypeNode(arrayNode) ? arrayNode.elementType : typeArgumentNode(arrayNode, 0), representation, undefined, childSubstitutions, nameHint, arrayItemNameNode(nameNode)),
       }, metadata);
     }
     if ((type.flags & ts.TypeFlags.Object) || objectLikeIntersection) {
@@ -928,7 +953,8 @@ export function descriptorBuilder(
         if (!validationEnabled) return withMetadata({ kind: 'unknown' }, metadata);
         throw diagnostic(context.sourceFile, context.declaration, '1004', `Callable or constructible types cannot be represented by ${context.name}.`);
       }
-      const nextSeen = new Set(seen);
+      // An object breaks any sequence cycle through it: its own revisit is a projection reference or the 1056 diagnostic.
+      const nextSeen = new Set([...seen].filter((entry) => !checker.isArrayType(entry) && !checker.isTupleType(entry)));
       nextSeen.add(type);
       // Keep discovered field names as data until the generation diagnostic
       // rejects unsupported Object.prototype collisions; a normal object
@@ -994,7 +1020,7 @@ export function descriptorBuilder(
         const propertyNode = authoredPropertyTypeNode(childNode, name) ?? propertyTypeNode(checker, property);
         const described = describe(
           valueType,
-          context,
+          { ...context, field: name },
           nextSeen,
           propertyNode,
           representation,

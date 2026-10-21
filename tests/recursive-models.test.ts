@@ -333,3 +333,20 @@ test('a recursive inline discriminated union generates with validation on and ju
   assert.equal(codecs.validateTBranch(tree(1)), false, 'a bad leaf three levels deep fails');
   assert.throws(() => codecs.parseTBranch(JSON.stringify(tree(1))), (error: unknown) => error instanceof LibError && error.causedByInput === true);
 });
+
+const nonObjectAliasSources = {
+  'shelf.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
+export type TItem = string | TItem[];
+export type TShelf = IModel<{ item: TItem }>;
+`,
+};
+
+for (const [label, profile] of profiles) {
+  test(`a model field typed with an alias that reaches itself without a model stops the build with a diagnostic (${label})`, async (t: TestContext) => {
+    // protects: T-213 a recursive non-object alias gives a golem diagnostic, not a stack overflow
+    const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-recursive-alias-', linkTypescript: true });
+    writeModelSources(sourceRoot, nonObjectAliasSources);
+    writeModelGolemYaml(root, profile);
+    await assert.rejects(buildModelProject(root), /RUNM1003: Recursive alias TItem in field "item" of TShelf must resolve to an object model/);
+  });
+}

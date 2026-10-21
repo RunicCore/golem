@@ -33,6 +33,8 @@ export interface TypeAnalysisContext {
   readonly dto?: boolean;
   /** Nested TypeScript-shaped JSON Schema values are metadata, not model fields. */
   readonly schemaData?: boolean;
+  /** The field being described, for a diagnostic; absent at the root of a model. */
+  readonly field?: string;
 }
 
 export interface CollectedSpecifications {
