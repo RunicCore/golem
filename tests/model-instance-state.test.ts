@@ -5,6 +5,7 @@ import test, { type TestContext } from 'node:test';
 import { pathToFileURL } from 'node:url';
 
 import { LibError } from '@exprtlabs/golem/errors';
+import { encodeGeneratedModel } from '@exprtlabs/golem/conversion';
 import { registerGeneratedModel } from '@exprtlabs/golem/model';
 import { requireObjectCodec } from '@exprtlabs/golem/serde';
 
@@ -221,3 +222,11 @@ for (const validation of [true, false]) {
     }
   });
 }
+
+test('the class-level encode of a model writes no program state of an instance inside its unknown field', async (t) => {
+  // protects: bug T-164 a model nested as a field of another model is encoded by the class-level encode, which kept the state of an instance in its unknown field
+  const { Task: TaskModel, Note } = await buildState(t, false);
+  const task = Object.assign(new TaskModel({ title: 't' }), { cache: new Map<string, string>(), hits: 3 });
+  assert.deepEqual(encodeGeneratedModel(new Note({ title: 'n', data: { list: [task] } })), { title: 'n', data: { list: [{ title: 't' }] } });
+  assert.deepEqual(encodeGeneratedModel(new Note({ title: 'n', data: task })), { title: 'n', data: { title: 't' } });
+});

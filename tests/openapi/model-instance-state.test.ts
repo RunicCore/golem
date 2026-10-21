@@ -3,6 +3,7 @@ import path from 'node:path';
 import test from 'node:test';
 import { pathToFileURL } from 'node:url';
 
+import { encodeGeneratedModel } from '@exprtlabs/golem/conversion';
 import { LibError } from '@exprtlabs/golem/errors';
 import { requireObjectCodec } from '@exprtlabs/golem/serde';
 
@@ -233,4 +234,13 @@ test('a model instance in a field of a composed root writes no program state', a
   const value = { lead: Object.assign(new Base({ name: 'n' }), programState()), a: 'x' };
   assert.deepEqual(codec.toWireFormat(value), { lead: { name: 'n' }, a: 'x' });
   assert.equal(codec.stringify(value), '{"lead":{"name":"n"},"a":"x"}');
+});
+
+test('the class-level encode of an SDK model writes no program state of an instance inside its unknown field', async () => {
+  // protects: bug T-164 a model nested as a field of another model is encoded by the class-level encode, which kept the state of an instance in its unknown field
+  const { models } = await validatedSdk();
+  const [Base, Note] = [models.BaseModel, models.NoteModel] as Model[];
+  const task = Object.assign(new Base({ name: 't' }), programState());
+  assert.deepEqual(encodeGeneratedModel(new Note({ title: 'n', data: { list: [task] } })), { title: 'n', data: { list: [{ name: 't' }] } });
+  assert.deepEqual(encodeGeneratedModel(new Note({ title: 'n', data: task })), { title: 'n', data: { name: 't' } });
 });
