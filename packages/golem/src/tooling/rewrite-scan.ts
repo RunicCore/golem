@@ -8,6 +8,7 @@ import { REWRITE_IMPORT_PREFIX } from './rewrite.js';
 import type { FileRewrite, RewriteEdit, RewriteImport } from './rewrite.js';
 import { readModelManifest } from './model-manifest.js';
 import { createProjectProgram, canonicalFilename, isGeneratedCompanion, modelBoundary, retainedProgramSession, type ModelBoundary } from './type-analysis/project.js';
+import { packageSpecifier } from './type-analysis/package-specifier.js';
 import { advertisedModelManifests } from './type-analysis/provenance.js';
 import { fieldProvenance } from './type-analysis/projections.js';
 import { declaredModelAlias, foreignModelReason, modelDeclarationKind, resolveSymbol } from './type-analysis/symbols.js';
@@ -458,20 +459,24 @@ function relativeSpecifier(from: string, target: string): string {
 
 /**
  * A rewrite that names a codec id also loads the module that registers it: TypeScript drops an import that the file uses only as a
- * type, so without this the codec never registers. A project companion is loaded by its own path. For any other module, such as an
- * installed SDK's, the file loads the module it already imports the type from, which is the SDK's entry.
+ * type, so without this the codec never registers. A project companion is loaded by its own path, and an installed SDK's generated
+ * module by the package name and the subpath that reaches it. The module the file imports the type from is only the last resort: it
+ * may re-export the type and compile to an empty import.
  */
 function loadCodecModule(
   scan: FileScan,
-  input: { readonly checker: ts.TypeChecker; readonly keys: CodecKeys; readonly file: ts.SourceFile },
+  input: { readonly root: string; readonly checker: ts.TypeChecker; readonly keys: CodecKeys; readonly file: ts.SourceFile },
   id: string,
   typeName: ts.EntityName | undefined,
 ): void {
-  const { checker, keys, file } = input;
+  const { root, checker, keys, file } = input;
   const module = keys.moduleOf(id);
   if (module === file.fileName) return;
   const project = module !== undefined && !module.split(/[\\/]/).includes('node_modules') && !/\.d\.[cm]?ts$/.test(module);
-  const specifier = project ? relativeSpecifier(file.fileName, module) : typeName && importSpecifierOf(checker, typeName);
+  const installed = module === undefined || project ? undefined : packageSpecifier(module, file.fileName, root);
+  const specifier = project ? relativeSpecifier(file.fileName, module)
+    : installed?.kind === 'package' ? installed.specifier
+      : typeName && importSpecifierOf(checker, typeName);
   if (specifier) scan.loads.add(specifier);
 }
 
@@ -602,7 +607,7 @@ function scanFile(
       text: `${REWRITE_IMPORT_PREFIX}requireObjectCodec(${JSON.stringify(id)}).${method}(`,
     });
     importOf(scan, root, file, call, 'requireObjectCodec', SERDE_MODULE);
-    loadCodecModule(scan, { checker, keys, file }, id, typeName);
+    loadCodecModule(scan, { root, checker, keys, file }, id, typeName);
     if (method === 'parse' || method === 'fromWireFormat') {
       const target = constructTarget(scan, { root, checker, file }, typeName);
       if (target !== undefined) scan.edits.push(...constructOptionEdits(file, call, target));
@@ -622,7 +627,7 @@ function scanFile(
     }
     scan.edits.push(insertion(parameter.name.getStart(file), `@${REWRITE_IMPORT_PREFIX}${NEST_CODEC_DECORATOR}(${JSON.stringify(id)}${array ? ', true' : ''}) `));
     importOf(scan, root, file, parameter, NEST_CODEC_DECORATOR, NEST_MODULE);
-    loadCodecModule(scan, { checker, keys, file }, id, name);
+    loadCodecModule(scan, { root, checker, keys, file }, id, name);
     const { line, character } = file.getLineAndCharacterOfPosition(parameter.type.getStart(file));
     scan.nestSites.push({ file: portable(root, file.fileName), line: line + 1, column: character + 1, decorator, label, id });
   };
@@ -637,7 +642,7 @@ function scanFile(
     if (primitive || id === '') return;
     scan.edits.push(insertion(method.getStart(file), `@${REWRITE_IMPORT_PREFIX}${NEST_RETURN_DECORATOR}(${JSON.stringify(id)}${returned.array ? ', true' : ''}) `));
     importOf(scan, root, file, method, NEST_RETURN_DECORATOR, NEST_MODULE);
-    loadCodecModule(scan, { checker, keys, file }, id, name);
+    loadCodecModule(scan, { root, checker, keys, file }, id, name);
   };
 
   const visit = (node: ts.Node): void => {

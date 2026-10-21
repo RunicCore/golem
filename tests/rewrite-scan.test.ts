@@ -261,8 +261,8 @@ test('a type from an installed SDK resolves through the codec id of its manifest
   assert.deepEqual([...result.files.keys()].filter((file) => file.includes('node_modules')), [], 'installed packages are not rewritten');
 });
 
-test('a call on a type of an installed SDK loads the SDK through the module the type is imported from', (t) => {
-  // protects: T-190 / R-18 an SDK model has no companion in the project, so the file's own import of the SDK is what loads it
+test('a call on a type of an installed SDK loads the module of the SDK that registers its codec', (t) => {
+  // protects: T-190 / R-18 an SDK model has no companion in the project, so the SDK's generated module is what loads
   const root = project(t);
   installSdk(root);
   fs.writeFileSync(path.join(root, 'src/write-sdk.ts'), [
@@ -276,9 +276,29 @@ test('a call on a type of an installed SDK loads the SDK through the module the 
   assert.deepEqual(result.diagnostics, []);
   assert.deepEqual(scanned(result, 'write-sdk.ts').imports, [
     { from: '@exprtlabs/golem/serde', names: ['requireObjectCodec'] },
-    { from: 'sdk', names: [] },
+    { from: 'sdk/models/Money.js', names: [] },
   ]);
-  assert.ok(rewritten(root, result, 'write-sdk.ts').split('\n').includes("import 'sdk';"));
+  assert.ok(rewritten(root, result, 'write-sdk.ts').split('\n').includes("import 'sdk/models/Money.js';"));
+});
+
+test('a call on an SDK type that the file imports through a project re-export loads the module of the SDK that registers it', (t) => {
+  // protects: T-190 a re-exporting project module compiles to an empty import, so the SDK's own module is what must load
+  const root = project(t);
+  installSdk(root);
+  fs.writeFileSync(path.join(root, 'src/types.ts'), "export type { MoneyModel } from 'sdk';\n");
+  fs.writeFileSync(path.join(root, 'src/write-sdk.ts'), [
+    "import { stringify } from '@exprtlabs/golem/serde';",
+    "import type { MoneyModel } from './types.js';",
+    'declare const money: MoneyModel;',
+    'export const text = stringify<MoneyModel>(money);',
+    '',
+  ].join('\n'));
+  const result = scan(root);
+  assert.deepEqual(result.diagnostics, []);
+  assert.deepEqual(scanned(result, 'write-sdk.ts').imports, [
+    { from: '@exprtlabs/golem/serde', names: ['requireObjectCodec'] },
+    { from: 'sdk/models/Money.js', names: [] },
+  ]);
 });
 
 test('an SDK generated before manifests held codec ids still resolves through its key table', (t) => {
