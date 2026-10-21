@@ -16,6 +16,8 @@ export interface BuildInput {
   readonly git: BenchmarkResults['git'];
   readonly packages: Readonly<Record<string, string>>;
   readonly measuredAt: string;
+  /** The adapters that ran; the default is every adapter. Cases, payloads and adapters of the results cover only these. */
+  readonly adapters?: readonly AdapterId[];
 }
 
 export const PACKAGE_NAMES = ['@exprtlabs/golem', '@exprtlabs/golem-model', '@exprtlabs/golem-openapi', 'typescript', 'typia', 'class-transformer', 'class-validator', 'zod', 'ajv'] as const;
@@ -38,7 +40,9 @@ export function summarize(samples: readonly BatchSample[]): OpsPerSec {
 
 export function buildResults(input: BuildInput): BenchmarkResults {
   const byKey = new Map(input.measured.map(m => [`${m.payload}/${m.operation}/${m.adapter}`, m]));
-  const cases: ResultCase[] = CASES.map(c => {
+  const ran = new Set<AdapterId>(input.adapters ?? BENCH_ADAPTERS.map(a => a.id));
+  const partial = ran.size < BENCH_ADAPTERS.length;
+  const cases: ResultCase[] = CASES.filter(c => ran.has(c.adapter)).map(c => {
     const base = { payload: c.payload, operation: c.operation, adapter: c.adapter, support: c.support, ...(c.note ? { note: c.note } : {}) };
     if (c.support === 'none') return base;
     const measured = byKey.get(`${c.payload}/${c.operation}/${c.adapter}`);
@@ -58,9 +62,9 @@ export function buildResults(input: BuildInput): BenchmarkResults {
     packages: input.packages,
     settings: input.settings,
     groups: GROUPS.map(g => ({ id: g.id, label: g.label, description: g.description })),
-    payloads: PAYLOADS.map(p => ({ id: p.id, label: p.label, bytes: bytes(p.id), description: p.description, sourceUrl: `${REPOSITORY_BLOB_URL}/${p.sourceFile}` })),
+    payloads: PAYLOADS.filter(p => !partial || input.measured.some(m => m.payload === p.id)).map(p => ({ id: p.id, label: p.label, bytes: bytes(p.id), description: p.description, sourceUrl: `${REPOSITORY_BLOB_URL}/${p.sourceFile}` })),
     operations: BENCH_OPERATIONS.map(o => ({ id: o.id, label: o.label, description: o.description })),
-    adapters: BENCH_ADAPTERS.map(a => ({ id: a.id, group: a.group, label: a.label, library: a.library, checked: a.checked, sourceUrl: `${REPOSITORY_BLOB_URL}/${a.sourceFile}` })),
+    adapters: BENCH_ADAPTERS.filter(a => ran.has(a.id)).map(a => ({ id: a.id, group: a.group, label: a.label, library: a.library, checked: a.checked, sourceUrl: `${REPOSITORY_BLOB_URL}/${a.sourceFile}` })),
     cases,
   };
 }

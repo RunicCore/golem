@@ -313,7 +313,17 @@ Every library gets the same JSON payload. Before timing, each library must turn 
 npm run bench
 ```
 
-It takes about one minute and rewrites `docs/public/benchmarks/results.json`. To compare two runs:
+It takes about one minute and rewrites `docs/public/benchmarks/results.json`.
+
+To run only some libraries, name them with `--adapters`:
+
+```bash
+npm run bench -- --adapters golem-object,zod
+```
+
+The adapters are `golem-object`, `typia`, `zod`, `ajv`, `golem`, `class-transformer`, `golem-validated` and `class-validator`. A name that is not in this list stops the run before it starts, and the message lists the valid names. A run with `--adapters` writes `.cache/benchmark/results.json` and leaves the page's results unchanged.
+
+To compare two runs:
 
 ```bash
 npm run bench:compare -- before.json after.json
