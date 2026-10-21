@@ -301,3 +301,24 @@ import { ApiResponse } from '@nestjs/swagger';
     (error: unknown) => String(error).includes('NEST1309') && String(error).includes('ApiWidgetResponse'),
   );
 });
+
+test('writes a boolean response as one schema', async (t: TestContext) => {
+  // protects: T-174 a boolean response is one schema, not an anyOf of two
+  const root = fixture(t, `import { Controller, Get } from '@nestjs/common';
+import { ApiOkResponse } from '@nestjs/swagger';
+
+@Controller('flags')
+export class FlagsController {
+  @Get('boolean')
+  @ApiOkResponse({ type: Boolean })
+  flag(): boolean { return true; }
+
+  @Get('optional')
+  @ApiOkResponse({ type: Boolean })
+  optional(): boolean | undefined { return undefined; }
+}
+`);
+  const document = documentOf(await generateDocument(root, 'Flags'));
+  assert.deepEqual(responseOf(document, '/flags/boolean', 'get', '200').content?.['application/json']?.schema, { type: 'boolean' });
+  assert.deepEqual(responseOf(document, '/flags/optional', 'get', '200').content?.['application/json']?.schema, { type: 'boolean' });
+});
