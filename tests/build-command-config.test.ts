@@ -203,14 +203,14 @@ test('a source map of an .mts file names the original and resolves the rewritten
 test('a parent tsconfig builds every package under it, and no package gets build state of its own', async (t) => {
   const { root } = createModelProject(t, { prefix: 'golem-build-monorepo-', name: 'build-monorepo', linkTypescript: true, packages: { '@exprtlabs/golem-model': path.join(workspace, 'packages/golem-model') }, rootDir: '.', include: ['packages/*/src/**/*.ts'] });
   write(root, 'golem.yaml', MINIMAL_GOLEM_YAML);
-  // The fixture's key table is an old SDK table: the one table a scan still reads from the program.
+  copyFixtureFile(root, 'models/serde/base-payment-model/money.model.ts', 'packages/a/src/money.model.ts');
   for (const name of ['a', 'b']) {
-    for (const file of ['payment.model.ts', 'payment.model.generated.ts', 'iobject-plugin-keys.ts', 'calls.ts']) copyFixtureFile(root, `rewrite/${file}`, `packages/${name}/src/${file}`);
+    write(root, `packages/${name}/src/use.ts`, name === 'a' ? USE : USE.replace(/\.\/money\.model\.js/g, '../../a/src/money.model.js'));
     write(root, `packages/${name}/package.json`, JSON.stringify({ name, private: true, type: 'module' }));
   }
   assert.equal((await build(root)).exitCode, 0);
   assert.equal(fs.existsSync(path.join(root, 'packages/a/.golem')), false);
-  for (const name of ['a', 'b']) assert.match(fs.readFileSync(path.join(root, `build/packages/${name}/src/calls.js`), 'utf8'), /requireObjectCodec\("TMoney_11111111"\)\.stringify\(/);
+  for (const name of ['a', 'b']) assert.match(fs.readFileSync(path.join(root, `build/packages/${name}/src/use.js`), 'utf8'), /requireObjectCodec\("TMoney_[0-9a-f]{8}"\)\.stringify\(/);
 });
 
 test('a package without a tsconfig of its own, under a parent tsconfig, builds with the build state of the parent', async (t) => {
@@ -225,15 +225,15 @@ test('a package without a tsconfig of its own, under a parent tsconfig, builds w
   write(root, 'golem.yaml', 'version: 1\nmobx: false\nvalidation: false\nmodels:\n  root: packages/a\n');
   copyFixtureFile(root, 'models/serde/base-payment-model/money.model.ts', 'packages/a/src/money.model.ts');
   write(root, 'packages/a/src/use.ts', USE);
-  // A sibling package that the same tsconfig includes: its sites are not outside the tsconfig directory. Its key table is an old SDK table, still read from the program.
-  for (const file of ['payment.model.ts', 'payment.model.generated.ts', 'iobject-plugin-keys.ts', 'calls.ts']) copyFixtureFile(root, `rewrite/${file}`, `packages/b/src/${file}`);
+  // A sibling package that the same tsconfig includes: its sites are not outside the tsconfig directory. It uses the model of package a.
+  write(root, 'packages/b/src/use.ts', USE.replace(/\.\/money\.model\.js/g, '../../a/src/money.model.js'));
 
   await runPipeline(path.join(root, 'golem.yaml'));
   assert.equal(fs.existsSync(path.join(root, 'packages/a/.golem')), false, 'the package gets no state of its own');
 
   assert.equal((await build(root)).exitCode, 0);
   assert.match(fs.readFileSync(path.join(root, 'build/packages/a/src/use.js'), 'utf8'), /requireObjectCodec\("TMoney_[0-9a-f]{8}"\)\.stringify\(/);
-  assert.match(fs.readFileSync(path.join(root, 'build/packages/b/src/calls.js'), 'utf8'), /requireObjectCodec\("TMoney_11111111"\)\.stringify\(/);
+  assert.match(fs.readFileSync(path.join(root, 'build/packages/b/src/use.js'), 'utf8'), /requireObjectCodec\("TMoney_[0-9a-f]{8}"\)\.stringify\(/);
 });
 
 

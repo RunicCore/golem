@@ -26,12 +26,9 @@ export function codecKeysPath(configDirectory: string): string {
   return path.join(configDirectory, '.golem', CODEC_KEYS_FILE);
 }
 
-/** The `iobject-plugin-keys.ts` table that SDKs generated before the model manifest held codec ids wrote into the program. */
-export const CODEC_KEY_FILE = 'iobject-plugin-keys.ts';
-
-/** A generated companion (`*.generated.ts`, `.mts`, `.cts`), the codec key file or an old key table: the files a rewrite depends on. */
+/** A generated companion (`*.generated.ts`, `.mts`, `.cts`) or the codec key file: the files a rewrite depends on. */
 export function isGeneratedModelFile(filename: string): boolean {
   const base = path.basename(filename);
-  return /\.generated\.[cm]?ts$/.test(filename) || base === CODEC_KEY_FILE
+  return /\.generated\.[cm]?ts$/.test(filename)
     || (base === CODEC_KEYS_FILE && path.basename(path.dirname(filename)) === '.golem');
 }

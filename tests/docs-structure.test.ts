@@ -218,7 +218,7 @@ test('the diagnostics page lists every code the generators emit', () => {
   assert.deepEqual(missing, []);
 });
 
-const INTERNAL_SDK_PATH = /sdk\/(?:client|client-runtime|validation|models|schemas|types|input-schemas|output-schemas|iobject-plugin-keys)\.(?:js|ts)\b|sdk\/models\/_group-|sdk\/validation-schemas\//;
+const INTERNAL_SDK_PATH = /sdk\/(?:client|client-runtime|validation|models|schemas|types|input-schemas|output-schemas)\.(?:js|ts)\b|sdk\/models\/_group-|sdk\/validation-schemas\//;
 
 test('docs and READMEs import only public SDK paths', () => {
   const files = [
