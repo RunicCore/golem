@@ -12,7 +12,7 @@ import { createJobAnalysis } from '#model/emit';
 import { generate } from '#model/generator';
 import { applyRewrites } from '#golem/rewrite';
 import { scanProject } from '#golem/rewrite-scan';
-import { collectSpecifications, createProgram, isOwnModelFile, loadModelManifests, modelBoundary } from '@exprtlabs/golem/type-analysis';
+import { collectSpecifications, companionFilename, createProgram, isOwnModelFile, loadModelManifests, modelBoundary, modelSpecificationForClass } from '@exprtlabs/golem/type-analysis';
 
 const workspace = fileURLToPath(new URL('../../', import.meta.url));
 const PROFILE = { mobx: false, validation: false };
@@ -181,6 +181,25 @@ test('two apps with different profiles each write the companion of a shared alia
   assert.match(companion(web), /models\.validators\.generated/);
   assert.match(companion(worker), /export abstract class TCustomerBaseModel/);
   assert.doesNotMatch(companion(worker), /models\.validators\.generated/);
+});
+
+test('on the first run an app class that imports the shared base through a paths alias is the class of the shared model', (t: TestContext) => {
+  // protects: T-197 final review: module resolution of an expected companion works for any import form, not only a relative one
+  const outer = sharedFolder(t);
+  const app = appWithShared(outer, 'web', false, {
+    'src/order.model.ts': SHARED_ORDER('../../shared/customer.model.js'),
+    'src/customer.ts': SHARED_CUSTOMER_BASE.replace('./generated/models/', '#models/'),
+  });
+  fs.writeFileSync(path.join(app, 'tsconfig.json'), JSON.stringify({ compilerOptions: { strict: true, target: 'ES2022', module: 'NodeNext', moduleResolution: 'NodeNext', skipLibCheck: true, noEmit: true, paths: { '#models/*': ['./src/generated/models/*'] } }, include: ['src/**/*.ts', '../shared/**/*.ts'] }));
+  const boundary = modelBoundary(app, undefined, { directory: app, output: path.join(app, 'src/generated/models') });
+  const customer = path.join(app, 'src/customer.ts');
+  const info = createProgram([path.join(app, 'src/order.model.ts'), customer], app);
+  const { checker, specifications } = collectSpecifications(info.program, [path.join(outer, 'shared/customer.model.ts')], undefined, (file) => companionFilename(boundary, file));
+
+  const classSymbol = checker.getExportsOfModule(checker.getSymbolAtLocation(info.program.getSourceFile(customer)!)!).find((symbol) => symbol.name === 'Customer')!;
+  const specification = modelSpecificationForClass(checker, checker.getDeclaredTypeOfSymbol(classSymbol), specifications, info.options);
+
+  assert.equal(specification?.name, 'TCustomer');
 });
 
 test('an app with no model file of its own generates the companion of the shared alias its program holds', (t: TestContext) => {

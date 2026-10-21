@@ -79,16 +79,6 @@ export function companionOfSpecification(specification: ModelSpecification): str
   return specification.companionFile ?? generatedFilename(specification.sourceFile.fileName);
 }
 
-/**
- * The companion a relative import names when it is not written yet. Module resolution finds only a file whose folder exists,
- * and the folder of a shared companion in `models.output` is made when the models job writes it.
- */
-function unwrittenCompanion(specifier: string, importer: string, expected: ReadonlySet<string>): string | undefined {
-  if (!specifier.startsWith('.')) return undefined;
-  const target = canonicalFilename(resolve(dirname(importer), specifier).replace(/\.([cm]?)js$/, '.$1ts'));
-  return expected.has(target) ? target : undefined;
-}
-
 /** Identify a model class through its generated base import, including first generation. */
 export function modelSpecificationForClass(
   checker: ts.TypeChecker,
@@ -104,9 +94,19 @@ export function modelSpecificationForClass(
   const match = (filename: string, name: string | undefined): ModelSpecification | undefined => specifications.find(specification =>
     canonicalFilename(companionOfSpecification(specification)) === canonicalFilename(filename)
       && name === `${specification.name}BaseModel`);
-  const host: ts.ModuleResolutionHost = {
-    ...ts.sys,
-    fileExists: filename => expected.has(canonicalFilename(filename)) || ts.sys.fileExists(filename),
+  // Module resolution finds only a file whose folder exists, and the folder of a shared companion in `models.output` is made when
+  // the models job writes it: the expected companions exist for every import form (relative, `paths`, `#imports`).
+  const expectedFolders = new Set([...expected].flatMap((filename) => {
+    const folders: string[] = [];
+    for (let folder = dirname(filename); !folders.includes(folder); folder = dirname(folder)) folders.push(folder);
+    return folders;
+  }));
+  // The system carries `directoryExists`, which the compiler's resolution reads and the golem-owned host type leaves out.
+  const system = ts.sys as ts.ModuleResolutionHost & { directoryExists?(directory: string): boolean };
+  const host = {
+    ...system,
+    fileExists: (filename: string) => expected.has(canonicalFilename(filename)) || system.fileExists(filename),
+    directoryExists: (directory: string) => expectedFolders.has(canonicalFilename(directory)) || system.directoryExists?.(directory) === true,
   };
   for (const heritage of declaration.heritageClauses ?? []) {
     if (heritage.token !== ts.SyntaxKind.ExtendsKeyword) continue;
@@ -122,8 +122,7 @@ export function modelSpecificationForClass(
         const statement = alias.parent.parent.parent;
         if (!ts.isImportDeclaration(statement) || !ts.isStringLiteralLike(statement.moduleSpecifier)) continue;
         const importer = statement.getSourceFile().fileName;
-        const resolved = ts.resolveModuleName(statement.moduleSpecifier.text, importer, compilerOptions, host).resolvedModule?.resolvedFileName
-          ?? unwrittenCompanion(statement.moduleSpecifier.text, importer, expected);
+        const resolved = ts.resolveModuleName(statement.moduleSpecifier.text, importer, compilerOptions, host).resolvedModule?.resolvedFileName;
         const specification = resolved && match(resolved, (alias.propertyName ?? alias.name).text);
         if (specification) return specification;
       }
