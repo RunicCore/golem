@@ -232,12 +232,15 @@ function internJobSchemaGraphs(
 ): SourceSchemaGraph[] {
   const codecIds = new Map<ModelSpecification, string>();
   const wireSchemas = new Set<string>();
+  // Every codec emitted elsewhere that publishes a `#wire` schema: the companions above and the manifests below.
+  const wirePlanes = new Set<string>();
   // Models emitted elsewhere (SDK manifests, earlier companions) that publish residual schemas.
   const residualIds = { modelOnly: new Set<string>(), wireOnly: new Set<string>() };
   for (const entry of closure) {
     const names = [entry.codecId, ...(entry.aliases ?? [])];
     if (entry.modelOnlySchema !== undefined) names.forEach((name) => residualIds.modelOnly.add(name));
     if (entry.wireOnlySchema !== undefined) names.forEach((name) => residualIds.wireOnly.add(name));
+    if (entry.wireSchema !== undefined) names.forEach((name) => wirePlanes.add(name));
   }
   const byGraph = new Map<SourceModelGraph, SourceSchemaGraph>();
   const idsFor = (graph: SourceModelGraph, own: ReadonlyMap<string, string>): Map<string, string> => new Map([
@@ -254,7 +257,10 @@ function internJobSchemaGraphs(
       const node = descriptor ? schemaGraph.nodeFor(descriptor, specification.name) : undefined;
       if (!node) continue;
       codecIds.set(specification, node.codecId);
-      if (!node.sameSchema) wireSchemas.add(node.codecId);
+      if (!node.sameSchema) {
+        wireSchemas.add(node.codecId);
+        wirePlanes.add(node.codecId);
+      }
       for (const name of [node.codecId, specification.name]) {
         if (node.modelOnlyJsonSchema !== undefined) residualIds.modelOnly.add(name);
         if (node.wireOnlyJsonSchema !== undefined) residualIds.wireOnly.add(name);
@@ -270,6 +276,7 @@ function internJobSchemaGraphs(
         siblings: graph.siblings,
         defaultValidation,
         externalResidualIds: residualIds,
+        externalWireIds: wirePlanes,
       });
       record(graph, schemaGraph);
       byGraph.set(graph, { graph, schemaGraph, siblingWireCodecIds: wireSchemas, cyclicSiblings: new Set() });
@@ -303,6 +310,7 @@ function internJobSchemaGraphs(
       siblings: outside,
       defaultValidation,
       externalResidualIds: residualIds,
+      externalWireIds: wirePlanes,
     });
     for (const graph of component) record(graph, shared);
     for (const graph of component) {
@@ -317,6 +325,7 @@ function internJobSchemaGraphs(
         siblings: graph.siblings,
         defaultValidation,
         externalResidualIds: residualIds,
+        externalWireIds: wirePlanes,
       });
       const cyclicSiblings = new Set(graph.siblings
         .filter((sibling) => component.some((member) => member !== graph

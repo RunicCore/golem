@@ -996,6 +996,8 @@ export interface SourceSchemaGraphOptions {
   readonly defaultValidation?: boolean;
   /** Codec ids and aliases of models emitted elsewhere that publish residual schemas. */
   readonly externalResidualIds?: { readonly modelOnly: ReadonlySet<string>; readonly wireOnly: ReadonlySet<string> };
+  /** Codec ids and aliases of models emitted elsewhere that publish a `#wire` schema. */
+  readonly externalWireIds?: ReadonlySet<string>;
 }
 
 export function internSourceDefinitions(
@@ -1006,6 +1008,7 @@ export function internSourceDefinitions(
   const schemaGraph = createSchemaGraph({}, {
     ...(options.codecIds ? { codecIds: options.codecIds } : {}),
     ...(options.externalResidualIds ? { externalResidualIds: options.externalResidualIds } : {}),
+    ...(options.externalWireIds ? { externalWireIds: options.externalWireIds } : {}),
   });
   const siblings = new Set(options.siblings ?? []);
   const interned = new Set<string>();

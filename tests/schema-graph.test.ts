@@ -382,6 +382,32 @@ test('IObject references and OpenAPI generated-model refs share a codec shape', 
   assert.match(codecPublicId('Payment', viaRef), /^Payment_[0-9a-f]{8}$/);
 });
 
+test('a model that reaches a codec with a wire schema has a wire schema of its own', () => {
+  // protects: bug T-161 a reference to a codec of another module reads the same in both planes
+  const holder = (field: ModelTypeDescriptor): ModelTypeDescriptor => ({
+    kind: 'object',
+    properties: { child: field, note: { kind: 'string' } },
+    required: ['child', 'note'],
+    additionalProperties: false,
+  });
+  const sealed = (descriptor: ModelTypeDescriptor, externalWireIds?: ReadonlySet<string>) => {
+    const graph = createSchemaGraph({ Holder: holder(descriptor) }, {
+      codecIds: new Map([['Money', 'Money_00000001']]),
+      ...(externalWireIds ? { externalWireIds } : {}),
+    });
+    graph.seal();
+    return graph.nodeFor(graph.nodes.get('Holder')!.descriptor, 'Holder')!.sameSchema;
+  };
+  const sibling: ModelTypeDescriptor = { kind: 'reference', name: 'Money' };
+  const external: ModelTypeDescriptor = { kind: 'generated-model', id: 'Vendor.Money' };
+  assert.equal(sealed(sibling), true, 'a sibling without a wire schema');
+  assert.equal(sealed(sibling, new Set(['Money_00000001'])), false, 'a sibling with a wire schema');
+  assert.equal(sealed(sibling, new Set(['Other_00000002'])), true, 'a wire schema of another codec');
+  assert.equal(sealed(external), true, 'a manifest model without a wire schema');
+  assert.equal(sealed(external, new Set(['Vendor.Money'])), false, 'a manifest model with a wire schema');
+  assert.equal(sealed({ kind: 'array', item: sibling }, new Set(['Money_00000001'])), false, 'a codec reached through an array');
+});
+
 test('parent Payment codec ids include nested Money contract shape', () => {
   const moneyAmount: ModelTypeDescriptor = {
     kind: 'object',
