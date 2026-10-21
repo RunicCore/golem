@@ -457,14 +457,25 @@ function constructTarget(
   return local;
 }
 
-function constructOptionEdits(text: string, file: ts.SourceFile, call: ts.CallExpression, target: string): RewriteEdit[] {
+/** Whether a property name is `construct`, written plain, quoted or as a computed string. */
+function namesConstruct(name: ts.PropertyName): boolean {
+  if (ts.isComputedPropertyName(name)) return ts.isStringLiteralLike(name.expression) && name.expression.text === 'construct';
+  return (ts.isIdentifier(name) || ts.isStringLiteralLike(name)) && name.text === 'construct';
+}
+
+function constructOptionEdits(file: ts.SourceFile, call: ts.CallExpression, target: string): RewriteEdit[] {
   const [first, second] = call.arguments;
   if (!first) return [];
   if (!second) return [insertion(first.end, `, { construct: ${target} }`)];
+  let options: ts.Expression = second;
+  while (ts.isParenthesizedExpression(options)) options = options.expression;
+  const given = ts.isObjectLiteralExpression(options)
+    && options.properties.some((property) => !ts.isSpreadAssignment(property) && namesConstruct(property.name));
+  if (given) return [];
   const start = second.getStart(file);
-  if (text.slice(start, second.end).includes('construct:')) return [];
+  // The options spread last, so a `construct` that the user's options hold, in a variable or a spread, wins over the default class.
   // Boundary insertions keep serde calls nested in the options independent edits.
-  return [insertion(start, '{ ...'), insertion(second.end, `, construct: ${target} }`)];
+  return [insertion(start, `{ construct: ${target}, ...`), insertion(second.end, ' }')];
 }
 
 function scanFile(
@@ -510,7 +521,7 @@ function scanFile(
     importOf(scan, root, file, call, 'requireObjectCodec', SERDE_MODULE);
     if (method === 'parse' || method === 'fromWireFormat') {
       const target = constructTarget(scan, { root, checker, file }, typeName);
-      if (target !== undefined) scan.edits.push(...constructOptionEdits(text, file, call, target));
+      if (target !== undefined) scan.edits.push(...constructOptionEdits(file, call, target));
     }
   };
 

@@ -103,13 +103,32 @@ test('parse and fromWireFormat of a class construct it, and options that name co
   const parse = '__golem_requireObjectCodec("TPayment_22222222").parse';
   assertLines(code, [
     `export const one = ${parse}(text, { construct: Payment });`,
-    `export const two = ${parse}(text, { ...{ validate: false }, construct: Payment });`,
+    `export const two = ${parse}(text, { construct: Payment, ...{ validate: false } });`,
     `export const present = ${parse}(text, { construct: Payment });`,
     `export const wire = __golem_requireObjectCodec("TPayment_22222222").fromWireFormat({ id: '1' }, { construct: Payment });`,
     `export const plain = ${parse}(text);`,
-    `export const nested = ${parse}(text, { ...{ validate: ${parse}(text) === undefined }, construct: Payment });`,
+    `export const nested = ${parse}(text, { construct: Payment, ...{ validate: ${parse}(text) === undefined } });`,
   ]);
   assert.deepEqual(result.files.get('src/construct.ts')?.imports, [{ from: '@exprtlabs/golem/serde', names: ['requireObjectCodec'] }]);
+});
+
+test('a construct option the user wrote is kept, and options held in a variable or a spread are spread after the default class', (t) => {
+  // protects: T-170 a shorthand or quoted construct option must not be overridden by the default class
+  const root = project(t, ['construct-options.ts']);
+  const result = scan(root);
+  assert.deepEqual(result.diagnostics, []);
+  const parse = '__golem_requireObjectCodec("TPayment_22222222").parse';
+  assertLines(rewritten(root, result, 'construct-options.ts'), [
+    `export const shorthand = ${parse}(text, { construct });`,
+    `export const quoted = ${parse}(text, { 'construct': Sub });`,
+    `export const computed = ${parse}(text, { ['construct']: Sub });`,
+    `export const parenthesized = ${parse}(text, ({ validate: false, construct: Sub }));`,
+    `export const commented = ${parse}(text, { construct: Payment, ...{ validate: false /* construct: Sub */ } });`,
+    `export const quotedText = ${parse}(text, { construct: Payment, ...{ validate: text === 'construct:' } });`,
+    `export const variable = ${parse}(text, { construct: Payment, ...options });`,
+    `export const spread = ${parse}(text, { construct: Payment, ...{ ...options, validate: false } });`,
+    `export const called = ${parse}(text, { construct: Payment, ...pick() });`,
+  ]);
 });
 
 test('a class imported only as a type is constructed through an aliased value import of its module', (t) => {
@@ -126,7 +145,7 @@ test('a class imported only as a type is constructed through an aliased value im
     "import { Ledger as __golem_Ledger } from './ledger.model.js';",
     "import { Payment as __golem_Payment } from './payment.model.js';",
     'export const payment = __golem_requireObjectCodec("TPayment_22222222").parse(text, { construct: __golem_Payment });',
-    'export const book = __golem_requireObjectCodec("TLedger_33333333").parse(text, { ...{ validate: false }, construct: __golem_Ledger });',
+    'export const book = __golem_requireObjectCodec("TLedger_33333333").parse(text, { construct: __golem_Ledger, ...{ validate: false } });',
     'export const again = __golem_requireObjectCodec("TPayment_22222222").parse(text, { construct: __golem_Payment });',
   ]);
   assert.ok(code.includes("import type { Payment } from './payment.model.js';"), 'the type-only import stays as the user wrote it');

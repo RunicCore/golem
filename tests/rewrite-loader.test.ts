@@ -103,6 +103,30 @@ test('a validating model project runs when its sources and its companions are im
   assert.deepEqual(JSON.parse(result.stdout.split('\n')[0]!), { good: true, bad: false });
 });
 
+test('a construct option the call passes wins over the rewrite default, given as shorthand or inside a variable', async (t) => {
+  // protects: T-170 the user's own class is built, not the class in the type argument
+  const root = await project(t, 'loader-construct-option');
+  write(root, 'src/main.ts', [
+    `import { parse } from '${SERDE}';`,
+    "import { Payment } from './money.model.ts';",
+    'class Sub extends Payment {}',
+    'const construct = Sub;',
+    'const options = { construct };',
+    "const text = JSON.stringify({ id: '1', amount: { currency: 'USD', value: '1' }, note: 'n' });",
+    'const plain = parse<Payment>(text);',
+    'console.log(JSON.stringify({',
+    '  plain: plain.constructor === Payment,',
+    '  shorthand: parse<Payment>(text, { construct }) instanceof Sub,',
+    '  variable: parse<Payment>(text, options) instanceof Sub,',
+    '  other: parse<Payment>(text, { validate: false }).constructor === Payment,',
+    '}));',
+    '',
+  ].join('\n'));
+  const result = await run(root, 'src/main.ts');
+  assert.equal(result.code, 0, result.stderr);
+  assert.deepEqual(JSON.parse(result.stdout.split('\n')[0]!), { plain: true, shorthand: true, variable: true, other: true });
+});
+
 test('a stack trace through a rewritten file names its original line', async (t) => {
   const root = await project(t, 'loader-source-map');
   const result = await run(root, 'src/main.ts');
