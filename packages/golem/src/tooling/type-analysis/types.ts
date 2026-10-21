@@ -554,6 +554,16 @@ export function descriptorBuilder(
   const stableIdentityRoot = canonicalFilename(identityRoot ?? commonDirectory(
     specifications.map((specification) => specification.sourceFile.fileName),
   ));
+  // The companion of a source file reads the filesystem, so each source file's is computed once.
+  const companions = new Map<string, string>();
+  const companionOf = (sourceFile: string): string => {
+    let companion = companions.get(sourceFile);
+    if (companion === undefined) {
+      companion = companionFilename(boundary, sourceFile);
+      companions.set(sourceFile, companion);
+    }
+    return companion;
+  };
   const structuralModels = new Map<ts.Type, ModelSpecification | undefined>();
   const structuralModel = (type: ts.Type): ModelSpecification | undefined => {
     if (structuralModels.has(type)) return structuralModels.get(type);
@@ -593,7 +603,7 @@ export function descriptorBuilder(
       checker,
       sourceFile: context.sourceFile,
       identityRoot: stableIdentityRoot,
-      importer: companionFilename(boundary, context.sourceFile.fileName),
+      importer: companionOf(context.sourceFile.fileName),
       ...(modelSources ? { isModelSource: (filename: string) => modelSources.has(filename) } : {}),
       diagnostic: (tagNode: ts.Node, code: string, message: string) =>
         diagnostic(context.sourceFile, tagNode, code, message),
@@ -656,7 +666,7 @@ export function descriptorBuilder(
       return withMetadata({ kind: 'class-value', typeName: 'bigint' } as ModelConversionDescriptor, metadata);
     }
     if (metadata.serde && isClassValueType(checker, type)) {
-      return withMetadata({ kind: 'class-value', ...classValueReference(checker, type, context, node ?? context.declaration, stableIdentityRoot, companionFilename(boundary, context.sourceFile.fileName)) } as ModelConversionDescriptor, metadata);
+      return withMetadata({ kind: 'class-value', ...classValueReference(checker, type, context, node ?? context.declaration, stableIdentityRoot, companionOf(context.sourceFile.fileName)) } as ModelConversionDescriptor, metadata);
     }
 
     const provenance = fieldProvenance(checker, node ?? provenanceNode ?? analysis.baseNode, specifications);

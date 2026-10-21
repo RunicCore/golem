@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { basename, dirname, isAbsolute, join, normalize, parse, relative, resolve, sep } from 'node:path';
 import YAML from 'yaml';
 import * as ts from '../typescript-ns.js';
+import { readManifest } from './package-specifier.js';
 import { DEFAULT_MODEL_SUFFIXES, GolemDiagnosticSeverity, canonicalPath, discoverSources, hasErrorCode, suffixPattern, type GeneratorSession, type GolemDiagnostic, type InputObserver } from '../generator-api.js';
 
 export function canonicalFilename(filename: string): string {
@@ -172,27 +173,34 @@ function declaresModelsJob(golemYaml: string, onInput?: InputObserver): boolean 
   }
 }
 
-/** The folder that holds a shared model file's package, or undefined for a file in the folder of the app's own golem.yaml, or above. */
-export function packageFolderOf(filename: string, appDirectory: string): string | undefined {
+/**
+ * The folder that holds a shared model file's package, or undefined for a file in the folder of the app's own golem.yaml, or above.
+ * It is the nearest folder with a package.json that has a `name`: a nameless one (such as `{"type":"module"}`) only scopes the
+ * module format. With no such folder, it is the top folder below the stop. A package.json that cannot be read throws.
+ */
+function packageFolderOf(filename: string, appDirectory: string): string | undefined {
   const app = canonicalPath(appDirectory);
   let top: string | undefined;
   for (let directory = dirname(canonicalPath(filename)); directory !== app && !app.startsWith(`${directory}${sep}`); directory = dirname(directory)) {
     top = directory;
-    if (existsSync(join(directory, 'package.json'))) return directory;
+    if (readManifest(join(directory, 'package.json'))?.name) return directory;
     if (dirname(directory) === directory) break;
   }
   return top;
 }
 
-/** The name of the package that holds a shared model file: the `name` of the package folder's package.json, else the folder's name. */
+/**
+ * The name of the package that holds a shared model file: the `name` of the package folder's package.json, else the folder's name.
+ * The name becomes a folder in `models.output`, so one that leaves it (an absolute name, or one with a `..` segment) is an error.
+ */
 function packageNameOf(packageFolder: string): string {
-  let name: unknown;
-  try {
-    name = (JSON.parse(readFileSync(join(packageFolder, 'package.json'), 'utf8')) as { name?: unknown }).name;
-  } catch {
-    // No readable package.json: the folder's name names the package.
+  const manifestFile = join(packageFolder, 'package.json');
+  const name = readManifest(manifestFile)?.name;
+  if (typeof name !== 'string' || name === '') return basename(packageFolder);
+  if (isAbsolute(name) || /^[a-zA-Z]:/.test(name) || name.split(/[\\/]/).includes('..')) {
+    throw new Error(`${manifestFile} names the package "${name}". The generated files of the package go in a folder of that name in models.output, so the name cannot be absolute or have a ".." segment. Rename the package.`);
   }
-  return typeof name === 'string' && name !== '' ? name : basename(packageFolder);
+  return name;
 }
 
 /**

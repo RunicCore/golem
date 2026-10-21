@@ -272,8 +272,10 @@ export function loadModelManifests(
       );
       for (const symbol of symbols) {
         for (const declaration of symbol.declarations ?? []) {
-          const key = `${canonicalFilename(declaration.getSourceFile().fileName)}\0${symbol.getName()}`;
-          const model = byProvenance.get(key);
+          // A published package ships `.d.ts` for the `.ts` file its manifest names.
+          const file = canonicalFilename(declaration.getSourceFile().fileName);
+          const model = byProvenance.get(`${file}\0${symbol.getName()}`)
+            ?? byProvenance.get(`${file.replace(/\.d\.([cm]?ts)$/, '.$1')}\0${symbol.getName()}`);
           if (model) return model;
         }
       }

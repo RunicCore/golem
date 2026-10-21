@@ -217,25 +217,59 @@ test('an alias in an installed package generates like a shared-folder alias, and
   assert.match(companion?.content ?? '', /from "@acme\/shared\/codecs";/);
 });
 
-test('a shared file reached through a folder link has one codec key, and the rewrite finds its codec id and companion', (t: TestContext) => {
-  // protects: P-12 done check 6: the writer and the reader of the codec key use one real path
+for (const preserveSymlinks of [false, true]) {
+  test(`a shared file reached through a folder link has one codec key, and the rewrite finds its codec id and companion (preserveSymlinks ${preserveSymlinks})`, (t: TestContext) => {
+    // protects: P-12 done check 6: the writer and the reader of the codec key use one real path; preserveSymlinks names the declaration by the link
+    const outer = sharedFolder(t);
+    const app = appWithShared(outer, 'web', false, {
+      'src/order.model.ts': SHARED_ORDER('./linked/customer.model.js'),
+      'src/use.ts': "import { parse } from '@exprtlabs/golem/serde';\nimport type { TCustomer } from './linked/customer.model.js';\nexport const customer = parse<TCustomer>('{}');\n",
+    }, ['src/**/*.ts']);
+    fs.symlinkSync('../../shared', path.join(app, 'src/linked'), 'dir');
+    fs.writeFileSync(path.join(app, 'tsconfig.json'), JSON.stringify({ compilerOptions: { strict: true, target: 'ES2022', module: 'NodeNext', moduleResolution: 'NodeNext', skipLibCheck: true, noEmit: true, preserveSymlinks }, include: ['src/**/*.ts'] }));
+    writeGeneratedArtifacts(generate({ root: app, profile: PROFILE }).artifacts);
+    const keys: { keys: Record<string, string> } = JSON.parse(fs.readFileSync(path.join(app, '.golem/codec-keys.json'), 'utf8'));
+    const id = keys.keys['../shared/customer.model.ts#TCustomer'];
+    assert.match(id ?? '', /^TCustomer_[0-9a-f]{8}$/);
+
+    const scan = scanProject({ root: app, directory: app, modelsRoot: app, output: path.join(app, 'src/generated/models'), configFile: path.join(app, 'tsconfig.json'), nest: false, codecKeysFile: path.join(app, '.golem/codec-keys.json') });
+
+    assert.deepEqual(scan.diagnostics, []);
+    const code = applyRewrites(fs.readFileSync(path.join(app, 'src/use.ts'), 'utf8'), scan.files.get('src/use.ts')!).code;
+    assert.ok(code.includes(`__golem_requireObjectCodec("${id}").parse('{}')`), code);
+    assert.ok(code.includes("import './generated/models/@acme/shared/customer.model.generated.js';"), code);
+  });
+}
+
+for (const name of ['../escape', '/escape', 'a/../../escape']) {
+  test(`a shared package.json name that leaves models.output (${name}) stops generation with an error that names the package.json`, (t: TestContext) => {
+    // protects: P-12 a package name is a folder of models.output and never leaves it
+    const outer = sharedFolder(t);
+    fs.writeFileSync(path.join(outer, 'shared/package.json'), JSON.stringify({ name, type: 'module' }));
+    const app = appWithShared(outer, 'web', false, { 'src/use.ts': "import type { TCustomer } from '../../shared/customer.model.js';\nexport type Used = TCustomer;\n" });
+
+    assert.throws(() => generate({ root: app, profile: PROFILE }), (error: Error) => error.message.startsWith(`${path.join(fs.realpathSync(outer), 'shared/package.json')} names the package "${name}"`));
+  });
+}
+
+test('a shared package.json that is not JSON stops generation with an error that names it, and never falls back to the folder name', (t: TestContext) => {
+  // protects: P-12 fixing a package.json later must not move the companion folder
   const outer = sharedFolder(t);
-  const app = appWithShared(outer, 'web', false, {
-    'src/order.model.ts': SHARED_ORDER('./linked/customer.model.js'),
-    'src/use.ts': "import { parse } from '@exprtlabs/golem/serde';\nimport type { TCustomer } from './linked/customer.model.js';\nexport const customer = parse<TCustomer>('{}');\n",
-  }, ['src/**/*.ts']);
-  fs.symlinkSync('../../shared', path.join(app, 'src/linked'), 'dir');
-  writeGeneratedArtifacts(generate({ root: app, profile: PROFILE }).artifacts);
-  const keys: { keys: Record<string, string> } = JSON.parse(fs.readFileSync(path.join(app, '.golem/codec-keys.json'), 'utf8'));
-  const id = keys.keys['../shared/customer.model.ts#TCustomer'];
-  assert.match(id ?? '', /^TCustomer_[0-9a-f]{8}$/);
+  fs.writeFileSync(path.join(outer, 'shared/package.json'), '{ "name": ');
+  const app = appWithShared(outer, 'web', false, { 'src/use.ts': "import type { TCustomer } from '../../shared/customer.model.js';\nexport type Used = TCustomer;\n" });
 
-  const scan = scanProject({ root: app, directory: app, modelsRoot: app, output: path.join(app, 'src/generated/models'), configFile: path.join(app, 'tsconfig.json'), nest: false, codecKeysFile: path.join(app, '.golem/codec-keys.json') });
+  assert.throws(() => generate({ root: app, profile: PROFILE }), (error: Error) => error.message.includes(`Cannot read ${path.join(fs.realpathSync(outer), 'shared/package.json')}`));
+});
 
-  assert.deepEqual(scan.diagnostics, []);
-  const code = applyRewrites(fs.readFileSync(path.join(app, 'src/use.ts'), 'utf8'), scan.files.get('src/use.ts')!).code;
-  assert.ok(code.includes(`__golem_requireObjectCodec("${id}").parse('{}')`), code);
-  assert.ok(code.includes("import './generated/models/@acme/shared/customer.model.generated.js';"), code);
+test('a nameless package.json under a shared package only scopes the module format: the companion goes in the named package folder', (t: TestContext) => {
+  // protects: P-12 3.2 the package name is the name of the nearest package.json that has one
+  const outer = sharedFolder(t);
+  writeModelSources(path.join(outer, 'shared/dist/esm'), { 'package.json': '{"type":"module"}', 'order.model.ts': PLAIN_ORDER });
+  const app = appWithShared(outer, 'web', false, { 'src/use.ts': 'export {};\n' });
+
+  const { artifacts } = generate({ root: app, profile: PROFILE });
+
+  assert.ok(artifacts.some((artifact) => artifact.path === path.join(app, 'src/generated/models/@acme/shared/dist/esm/order.model.generated.ts')));
 });
 
 test('a shared model file of the program is a watch input, and a model file of node_modules is not', (t: TestContext) => {
@@ -316,6 +350,7 @@ test('a .model.d.ts file of an installed package whose manifest names the .ts fi
 
   assert.equal(diagnostics, undefined);
   assert.deepEqual(artifacts.map((artifact) => path.relative(app, artifact.path)).filter((file) => file.includes('@acme')), []);
+  assert.match(artifacts.find((artifact) => artifact.path === path.join(app, 'src/order.model.generated.ts'))?.content ?? '', /MoneyModel/);
 });
 
 for (const [kind, yaml] of [['controllers', 'version: 1\ncontrollers:\n  root: .\n'], ['openapi', 'version: 1\nopenapi:\n  input: api.json\n'], ['generators', 'version: 1\ngenerators:\n  - package: x\n']] as const) {
