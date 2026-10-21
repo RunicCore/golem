@@ -310,3 +310,26 @@ test('a model that holds an SDK model walks for cycles only when that model is r
   }
   assert.equal(codecs.stringifyTWallet({ money: { amount: 1 } }), '{"money":{"amount":1}}');
 });
+
+const inlineUnionSources = {
+  'expr.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
+import { TBranchBaseModel } from './expr.model.generated.js';
+export type TLeaf = IModel<{ kind: 'leaf'; value: string }>;
+export type TBranch = IModel<{ kind: 'branch'; children: (TLeaf | TBranch)[] }>;
+export class Branch extends TBranchBaseModel {}
+`,
+};
+
+test('a recursive inline discriminated union generates with validation on and judges every depth', async (t: TestContext) => {
+  // protects: T-199 a recursive tagged union of models builds with validation on instead of overflowing the stack
+  const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-recursive-inline-union-', linkTypescript: true });
+  writeModelSources(sourceRoot, inlineUnionSources);
+  writeModelGolemYaml(root, { mobx: false, validation: true });
+  await buildModelProject(root);
+  const codecs = await import(pathToFileURL(path.join(root, 'build/expr.model.generated.js')).href) as Codecs;
+  const tree = (value: unknown) => ({ kind: 'branch', children: [{ kind: 'branch', children: [{ kind: 'branch', children: [{ kind: 'leaf', value }] }] }] });
+  assert.equal(codecs.validateTBranch(tree('a')), true);
+  assert.deepEqual(json(codecs.parseTBranch(JSON.stringify(tree('a')))), tree('a'));
+  assert.equal(codecs.validateTBranch(tree(1)), false, 'a bad leaf three levels deep fails');
+  assert.throws(() => codecs.parseTBranch(JSON.stringify(tree(1))), (error: unknown) => error instanceof LibError && error.causedByInput === true);
+});

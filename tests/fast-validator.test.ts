@@ -530,6 +530,12 @@ const FAST_FORM_ROWS: readonly (readonly [row: string, schema: unknown, valid: u
   ['K19 allOf', { allOf: [{ type: 'object', required: ['a'] }, { type: 'object', required: ['b'] }] }, { a: 1, b: 1 }, { a: 1 }],
   ['K20 anyOf', { anyOf: [{ type: 'string' }, { type: 'null' }] }, null, 1],
   ['K21 oneOf with a discriminator', { oneOf: [{ properties: { k: { const: 'a' } }, required: ['k'] }, { properties: { k: { const: 'b' } }, required: ['k'] }], discriminator: { propertyName: 'k' } }, { k: 'b' }, { k: 'c' }],
+  // protects: T-199 a tagged union inline in a branch it reaches generates, and the fast check agrees with the full validator
+  ['K21 a recursive inline oneOf with a discriminator', { $ref: '#/$defs/Branch', $defs: {
+    Leaf: { type: 'object', required: ['kind', 'value'], properties: { kind: { const: 'leaf' }, value: { type: 'string' } } },
+    Branch: { type: 'object', required: ['kind', 'children'], properties: { kind: { const: 'branch' }, children: { type: 'array', items: {
+      oneOf: [{ $ref: '#/$defs/Leaf' }, { $ref: '#/$defs/Branch' }], discriminator: { propertyName: 'kind' } } } } } } },
+  { kind: 'branch', children: [{ kind: 'branch', children: [{ kind: 'leaf', value: 'a' }] }] }, { kind: 'branch', children: [{ kind: 'branch', children: [{ kind: 'leaf', value: 1 }] }] }],
   ['K22 oneOf', { oneOf: [{ type: 'string' }, { type: 'integer' }] }, 'a', 1.5],
   ['K23 not', { not: { type: 'string' } }, 1, 'a'],
   ['K23 an IModel class union branch', { anyOf: [{ not: { required: ['kind'] }, golemModelInstance: { of: 'Cat', among: ['Cat'], required: true } }, { required: ['kind'] }] }, new Cat(), {}],

@@ -599,6 +599,8 @@ class FunctionWriter {
   public readonly calls = new Set<number>();
   /** The fast checks this one calls, by the id they have after forwarding. */
   public readonly fastCalls = new Set<number>();
+  /** The branch functions of the tagged unions being written in place now; a branch in it is called, not written in place again (see `mergedBranches`). */
+  private readonly merging = new Set<number>();
 
   public constructor(
     public readonly state: ModuleState,
@@ -1186,7 +1188,13 @@ class FunctionWriter {
    */
   private discriminatedUnion(check: IrUnion, discriminator: IrDiscriminator, value: string): void {
     const merged = this.mergedBranches(check);
-    if (merged !== undefined) return this.mergedUnion(merged, discriminator, value);
+    if (merged !== undefined) {
+      const targets = check.branches.map(id => this.target(id));
+      for (const target of targets) this.merging.add(target);
+      this.mergedUnion(merged, discriminator, value);
+      for (const target of targets) this.merging.delete(target);
+      return;
+    }
     this.state.localHelper('isObject');
     const presence = this.mode.presence(this.state, value);
     const property = literal(discriminator.property);
@@ -1234,7 +1242,9 @@ class FunctionWriter {
   /**
    * The object check of each branch, when the mode merges every branch of this union: each is, after forwarding, a
    * function of a type `object` check and one object check that only `properties`, `required` inside them and
-   * `additionalProperties` absent, `true` or `false` make. Any other branch leaves the union to the branch calls.
+   * `additionalProperties` absent, `true` or `false` make. Any other branch leaves the union to the branch calls, as
+   * does a branch that is the function being written or one of a union being written in place: a recursive union
+   * calls the branch's function instead of writing it in place again.
    */
   private mergedBranches(check: IrUnion): readonly IrObject[] | undefined {
     const merges = this.mode.mergesBranch;
@@ -1242,6 +1252,7 @@ class FunctionWriter {
     const objects: IrObject[] = [];
     for (const id of check.branches) {
       const target = this.target(id);
+      if (target === this.fn.id || this.merging.has(target)) return undefined;
       const fn = this.functions[target];
       // A function that keeps or receives an evaluation record has no fast check, so `merges` excludes it.
       if (!merges(target) || fn.body.kind !== 'checks' || fn.body.checks.length !== 2) return undefined;
