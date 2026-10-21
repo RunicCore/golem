@@ -3,7 +3,7 @@ import path from 'node:path';
 import test from 'node:test';
 import { pathToFileURL } from 'node:url';
 
-import { encodeGeneratedModel } from '@exprtlabs/golem/conversion';
+import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/golem/conversion';
 import { LibError } from '@exprtlabs/golem/errors';
 import { requireObjectCodec } from '@exprtlabs/golem/serde';
 
@@ -46,6 +46,8 @@ const document = {
       Note: { type: 'object', required: ['title'], properties: { title: { type: 'string' }, data: {} } },
       Lead: { allOf: [{ type: 'object', required: ['lead'], properties: { lead: ref('Base') } }, { oneOf: [{ type: 'object', required: ['a'], properties: { a: { type: 'string' } } }, { type: 'object', required: ['b'], properties: { b: { type: 'string' } } }] }] },
       Bag: { type: 'object', additionalProperties: { type: 'string' }, required: ['id'], properties: { id: { type: 'string' } } },
+      // A plain field and a converted one (date-time), to read through the constructor, decode and encode.
+      Stamped: { type: 'object', properties: { name: { type: 'string' }, at: { type: 'string', format: 'date-time' } } },
     },
   },
 };
@@ -243,4 +245,34 @@ test('the class-level encode of an SDK model writes no program state of an insta
   const task = Object.assign(new Base({ name: 't' }), programState());
   assert.deepEqual(encodeGeneratedModel(new Note({ title: 'n', data: { list: [task] } })), { title: 'n', data: { list: [{ name: 't' }] } });
   assert.deepEqual(encodeGeneratedModel(new Note({ title: 'n', data: task })), { title: 'n', data: { name: 't' } });
+});
+
+test('an SDK model constructor, decode and encode count only own enumerable keys, and a constructor or encode getter runs once', async () => {
+  // protects: bug T-162 the constructor copied an inherited value (values["name"] !== undefined), against the own-key rule of presence.ts
+  const { models } = await validatedSdk();
+  const Stamped = models.StampedModel as new (values?: object) => { name?: string; at?: Date };
+  const instance = (values: object) => new Stamped(values);
+  const inherited = () => Object.create({ name: 'x', at: '2024-01-02T03:04:05.000Z' }) as object;
+  const counted = (key: string, value: unknown) => {
+    const reads = { count: 0 };
+    const own = Object.defineProperty({}, key, { enumerable: true, get() { reads.count += 1; return value; } });
+    return { own, reads };
+  };
+
+  assert.deepEqual({ ...instance(inherited()) }, {}, 'the constructor leaves an inherited value out');
+  assert.equal(instance({ name: 'x' }).name, 'x', 'the constructor copies an own value');
+  const ctorGetter = counted('name', 'x');
+  assert.equal(instance(ctorGetter.own).name, 'x');
+  assert.equal(ctorGetter.reads.count, 1, 'the constructor reads an own getter once');
+
+  assert.deepEqual({ ...decodeGeneratedModel(Stamped, inherited()) }, {}, 'decode leaves an inherited value out');
+  assert.deepEqual({ ...decodeGeneratedModel(Stamped, { at: '2024-01-02T03:04:05.000Z' }) }, { at: new Date('2024-01-02T03:04:05.000Z') }, 'decode converts an own value');
+
+  const prototype = Object.assign(new Stamped(), { name: 'x', at: new Date('2024-01-02T03:04:05.000Z') });
+  assert.deepEqual(encodeGeneratedModel(Object.create(prototype)), {}, 'encode leaves an inherited value out');
+  assert.deepEqual(encodeGeneratedModel(instance({ at: new Date('2024-01-02T03:04:05.000Z') })), { at: '2024-01-02T03:04:05.000Z' }, 'encode writes an own value');
+  let encodeReads = 0;
+  const encodeGetter = Object.defineProperty(new Stamped(), 'at', { enumerable: true, get() { encodeReads += 1; return new Date('2024-01-02T03:04:05.000Z'); } });
+  assert.deepEqual(encodeGeneratedModel(encodeGetter), { at: '2024-01-02T03:04:05.000Z' });
+  assert.equal(encodeReads, 1, 'encode reads an own getter once');
 });

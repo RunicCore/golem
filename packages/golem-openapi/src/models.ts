@@ -8,6 +8,7 @@ import {
   emitModelToJSON,
   emitCodecRuntime,
   fillFunctionName,
+  presentKeysSource,
   pruneGeneratedImports,
   type CodecRuntimeOptions,
   type FromJsonModelResolver,
@@ -830,9 +831,19 @@ function modelPropertyAccess(name: string): string {
   return `[${JSON.stringify(name)}]`;
 }
 
-function modelPropertyCondition(target: string, name: string): string {
-  const access = `${target}${modelPropertyAccess(name)}`;
-  return `${access} !== undefined`;
+/**
+ * The local that holds one field's present value. `presentKeysSource` fills it in one own-key pass, so an inherited value
+ * never counts and a getter runs once.
+ */
+function modelPresentLocal(index: number): string {
+  return `__golemValue${index}`;
+}
+
+/** The statement that reads the captured fields of `target`; empty when no field is captured. */
+function modelPresentRead(indent: string, target: string, captures: readonly (readonly [name: string, type: string])[]): string[] {
+  if (captures.length === 0) return [];
+  const types = new Map(captures.map(([, type], index) => [modelPresentLocal(index), type]));
+  return [`${indent}${presentKeysSource(target, captures.map(([name], index) => [name, modelPresentLocal(index)] as const), local => `${local}: ${types.get(local)} | undefined`)}`];
 }
 
 function modelPropertyAssignment(target: string, name: string, value: string): string {
@@ -1944,25 +1955,28 @@ export function generateModels(
     const declarations = fields.map(([name, schema]) =>
       modelFieldDeclaration(name, schema, definition.required.has(name), definitions, fieldEnv),
     );
-    const assignments = fields.map(([name, schema]) =>
-      `    if (${modelPropertyCondition('values', name)}) ${modelPropertyAssignment('this', name, `(${modelInitExpression(schema, `values${modelPropertyAccess(name)}`, definitions, fieldEnv, definition.schemaName)}) as ${modelFieldType(schema, definitions, fieldEnv)}`)}`,
-    );
+    const assignments = [
+      ...modelPresentRead('    ', 'values', fields.map(([name]) => [name, `${typeName}Init[${JSON.stringify(name)}]`] as const)),
+      ...fields.map(([name, schema], index) =>
+        `    if (${modelPresentLocal(index)} !== undefined) ${modelPropertyAssignment('this', name, `(${modelInitExpression(schema, modelPresentLocal(index), definitions, fieldEnv, definition.schemaName)}) as ${modelFieldType(schema, definitions, fieldEnv)}`)}`),
+    ];
     const fieldHelpers: string[] = [];
     const fieldHelperName = (direction: 'encode' | 'decode') => (index: number): string => {
       const helper = `convert${typeName}Field${index}${direction === 'encode' ? 'Encode' : 'Decode'}`;
       moduleScope.claim(helper, `internal field converter for ${JSON.stringify(definition.schemaName)}`, definition.schemaName);
       return helper;
     };
-    const jsonProperties = fields.map(([name, schema]) => {
-      const input = `model${modelPropertyAccess(name)}`;
+    const jsonProperties = fields.map(([name, schema], index) => {
+      const input = modelPresentLocal(index);
       const converted = rootFieldConversion(
         fieldHelpers, fieldHelperName('encode'), 'serialize', name, input,
         (value) => modelToJSONExpression(schema, value, definitions, fieldEnv, definition.schemaName),
         // The guard on the property excludes an undefined value before the conversion runs.
         `Exclude<${className}${modelPropertyAccess(name)}, undefined>`,
       );
-      return `  if (${modelPropertyCondition('model', name)}) ${modelPropertyAssignment('result', name, converted)}`;
+      return `  if (${input} !== undefined) ${modelPropertyAssignment('result', name, converted)}`;
     });
+    const jsonRead = modelPresentRead('  ', 'model', fields.map(([name]) => [name, `${className}${modelPropertyAccess(name)}`] as const));
     const allProperties = modelSchemaProperties(fieldEnv, definition.rawSchema);
     const allFieldNames = [...allProperties.keys()];
     const fieldNames = allFieldNames.map(name => JSON.stringify(name)).join(', ');
@@ -1972,8 +1986,10 @@ export function generateModels(
       const expression = emit(definition.additionalProperties, 'value', definitions, fieldEnv, definition.schemaName);
       return expression === 'value' ? '' : `, (value) => ${expression}`;
     };
-    const decodeLines = [...allProperties].flatMap(([name, schema]) => {
-      const expression = `value${modelPropertyAccess(name)}`;
+    const decodeCaptures: (readonly [name: string, type: string])[] = [];
+    const decodeConversions: string[] = [];
+    for (const [name, schema] of allProperties) {
+      const expression = modelPresentLocal(decodeCaptures.length);
       const rootConverted = rootFieldConversion(
         fieldHelpers, fieldHelperName('decode'), 'deserialize', name, expression,
         (input) => modelFromJSONExpression(schema, input, definitions, fieldEnv, definition.schemaName),
@@ -1983,10 +1999,12 @@ export function generateModels(
       // the initializer copy as-is for fields with no wire conversion and
       // only replace values that must become model instances or pass through
       // a codec.  The constructor remains the sole model-instance writer.
-      return rootConverted === expression
-        ? []
-        : [`  if (${modelPropertyCondition('value', name)}) ${modelPropertyAssignment('result', name, rootConverted)}`];
-    });
+      if (rootConverted === expression) continue;
+      decodeCaptures.push([name, 'unknown']);
+      decodeConversions.push(`  if (${expression} !== undefined) ${modelPropertyAssignment('result', name, rootConverted)}`);
+    }
+    // Read the own copy in `result`, so a getter of the input runs once, in the spread.
+    const decodeLines = [...modelPresentRead('  ', 'result', decodeCaptures), ...decodeConversions];
     const additionalFrom = additionalConverter('from');
     const identityDeserialize = decodeLines.length === 0 && additionalFrom === '';
     output.push(
@@ -2056,6 +2074,7 @@ export function generateModels(
       '',
       `${helpers.moduleFile ? 'export ' : ''}function encode${typeName}(model: ${className}): Types.${typeName} {`,
       baseClass ? `  const result: Record<string, unknown> = { ...encode${definition.baseName}(model) };` : '  const result: Record<string, unknown> = {};',
+      ...jsonRead,
       ...jsonProperties,
       ...(additionalPropertyType
         ? [`  if (findGeneratedModelDefinition(model) === findGeneratedModelDefinitionForConstructor(${className})) copyAdditionalProperties(result, model, [${fieldNames}]${additionalConverter('to')});`]
