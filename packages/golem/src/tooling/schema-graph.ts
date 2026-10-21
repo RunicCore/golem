@@ -207,6 +207,7 @@ function codecShapeDescriptor(
       additionalProperties: typeof descriptor.additionalProperties === 'object'
         ? codecShapeDescriptor(descriptor.additionalProperties, lookup)
         : descriptor.additionalProperties,
+      ...(descriptor.additionalPropertiesDeclared ? { additionalPropertiesDeclared: true } : {}),
       ...(descriptor.constraints ? { constraints: descriptor.constraints } : {}),
       ...(descriptor.validations ? { validations: descriptor.validations } : {}),
       ...(descriptor.serde ? { serde: { id: descriptor.serde.id } as typeof descriptor.serde } : {}),

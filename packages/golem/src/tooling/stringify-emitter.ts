@@ -96,6 +96,8 @@ interface EmitCtx {
   readonly wireType?: (node: SchemaNode) => string | undefined;
   readonly fieldsType?: (node: SchemaNode) => string | undefined;
   readonly wireIdentity?: boolean;
+  /** An object root writes each field it holds, and a missing required field is no error: validation did not run. */
+  readonly lenientRoot?: boolean;
   /** Nodes whose `stringify<Id>Wire` function this module emits; wire stringify calls them instead of inlining. */
   readonly wireStringifyIds?: ReadonlySet<string>;
   /** Sibling codecs whose companion exports a wire stringify (`wireStringifyExportName`). */
@@ -111,6 +113,8 @@ interface EmitCtx {
    * A nested trusted call to one skips its validating wrapper.
    */
   readonly localCoreIds?: ReadonlySet<string>;
+  /** Local nodes whose Core keeps the all-required fast path: a lenient caller runs their public function instead. */
+  readonly strictCoreIds?: ReadonlySet<string>;
   /** Expression of the trusted options passed to a nested call; the module-level constant when the module declares one. */
   readonly trustedOptions?: string;
   /** Emit stringify functions that take no options; they only run trusted. */
@@ -135,6 +139,14 @@ const TRUSTED = '{ validate: false }';
 const STRINGIFY_OPTIONS = '_options?: { readonly validate?: boolean; readonly failFast?: boolean }';
 /** Declared once per emitted module that passes trusted options to a function in another module. */
 const TRUSTED_CONSTANT = '__golemTrusted';
+/**
+ * The options of a nested call whose caller already checked the whole value. The mark is a symbol key from the global
+ * symbol registry, so options a user writes or parses from JSON cannot carry it by accident, and every generated module
+ * reads the same key. A function that has a lenient copy runs its all-required fast path for it, and any other options
+ * run the lenient copy.
+ */
+const CHECKED_CONSTANT = '__golemChecked';
+const CHECKED_KEY = '__golemMark';
 // Generated modules import these as `type ValidateOptions as __GolemValidateOptions` and
 // `type SerdeOptions as __GolemSerdeOptions` from @exprtlabs/golem/serde.
 const VALIDATE_OPTIONS = '__GolemValidateOptions';
@@ -146,9 +158,11 @@ function trustedOptions(ctx: EmitCtx): string {
 
 /** A nested stringify call that skips validation: the node's Core function when this module emits it. */
 function nestedStringifyCall(id: string, expression: string, ctx: EmitCtx): string {
-  return ctx.localCoreIds?.has(id)
-    ? `${stringifyFunctionName(id)}Core(${expression} as never)`
-    : `${stringifyFunctionName(id)}(${expression} as never, ${trustedOptions(ctx)})`;
+  if (ctx.localCoreIds?.has(id) && !(ctx.lenientRoot && ctx.strictCoreIds?.has(id))) {
+    return `${stringifyFunctionName(id)}Core(${expression} as never)`;
+  }
+  const options = ctx.trustedOptions !== undefined && !ctx.lenientRoot ? CHECKED_CONSTANT : trustedOptions(ctx);
+  return `${stringifyFunctionName(id)}(${expression} as never, ${options})`;
 }
 
 /** A nested toWireFormat call that skips validation: the node's Core function when this module emits it. */
@@ -467,8 +481,8 @@ function emitObjectInline(
     if (descriptor.additionalProperties === false) return "'{}'";
     return `stringifyJsonScalar(${expression} as never)`;
   }
-  if (typeof descriptor.additionalProperties === 'object') {
-    // A schema for the other names: the encoded record keeps them, and a wire value is already encoded.
+  if (typeof descriptor.additionalProperties === 'object' || descriptor.additionalPropertiesDeclared) {
+    // The other names are data: the encoded record keeps them, and a wire value is already encoded.
     return `stringifyJsonScalar(${ctx.wireIdentity ? expression : emitEncodedRecord(descriptor, expression, ctx)} as never)`;
   }
   if (properties.every(([name]) => required.has(name))) {
@@ -503,7 +517,9 @@ function emitObjectStringify(
     }
     return `function ${fn}(${stringifyParameters('value: Record<string, unknown>', ctx)}): string {\n  return stringifyJsonScalar(value as never);\n}\n`;
   }
-  const additional = typeof descriptor.additionalProperties === 'object' ? descriptor.additionalProperties : undefined;
+  const additional = typeof descriptor.additionalProperties === 'object'
+    ? descriptor.additionalProperties
+    : descriptor.additionalPropertiesDeclared ? { kind: 'unknown' as const } : undefined;
   if (!additional && properties.every(([name]) => required.has(name))) {
     const concatenated = emitRequiredObjectConcat(properties, 'value', ctx);
     return [
@@ -522,7 +538,7 @@ function emitObjectStringify(
   for (const [index, [name, property]] of properties.entries()) {
     const read = access('value', name);
     const value = emitValue(property, read, ctx);
-    const local = `__golemField${index}`;
+    const local = `__golemValue${index}`;
     const needsSnapshot = occurrenceCount(value, read) + (required.has(name) ? 0 : 1) > 1;
     const valueExpr = needsSnapshot ? value.replaceAll(read, local) : value;
     const fieldExpr = needsSnapshot ? local : read;
@@ -547,7 +563,8 @@ function emitObjectStringify(
     }
   }
   if (additional) {
-    // A schema for the other names: they are written after the listed names, each by that schema.
+    // A schema for the other names: they are written after the listed names, each by that schema. Without one, a declared
+    // `additionalProperties: true` makes them data of unknown type.
     lines.push(
       '  for (const key of Object.keys(value)) {',
       `    if (${JSON.stringify(properties.map(([name]) => name))}.includes(key)) continue;`,
@@ -578,9 +595,11 @@ export function emitStringifyFunction(
     nestedImportedSerde: extra?.nestedImportedSerde,
     issueSource: extra?.issueSource ?? 'TypeScript',
     wireIdentity: extra?.wireIdentity,
+    lenientRoot: extra?.lenientRoot,
     wireStringifyIds: extra?.wireStringifyIds,
     siblingWireCodecIds: extra?.siblingWireCodecIds,
     localCoreIds: extra?.localCoreIds,
+    strictCoreIds: extra?.strictCoreIds,
     trustedOptions: extra?.trustedOptions,
     withoutOptions: extra?.withoutOptions,
     wireInlining: extra?.wireIdentity ? new Set([node.id]) : undefined,
@@ -589,13 +608,13 @@ export function emitStringifyFunction(
   const fn = stringifyFunctionName(node.id);
   let source: string;
   // An intersection (allOf) is one merged object: the root writes its declared fields, as decode and encode do. With
-  // validation off a required field can be missing, so the merged root writes each field that is present, as the
-  // generic fallback did. The validated wire stringify has checked the value, so it keeps the all-required fast path.
+  // validation off a required field can be missing, so a lenient root writes each field that is present. A checked
+  // root, such as the validated wire stringify, keeps the all-required fast path.
   const merged = node.descriptor.kind === 'intersection' && node.descriptor.variants.every(variant => resolveObjectDescriptor(variant, ctx) !== undefined)
     ? resolveObjectDescriptor(node.descriptor, ctx)
     : undefined;
-  if (node.descriptor.kind === 'object') source = emitObjectStringify(fn, node.descriptor, ctx);
-  else if (merged) source = emitObjectStringify(fn, ctx.wireIdentity ? merged : { ...merged, required: [] }, ctx);
+  const root = node.descriptor.kind === 'object' ? node.descriptor : merged;
+  if (root) source = emitObjectStringify(fn, ctx.lenientRoot ? { ...root, required: [] } : root, ctx);
   else if (node.descriptor.kind === 'generated-model' || node.descriptor.kind === 'reference') {
     source = `function ${fn}(value: unknown, options?: { readonly validate?: boolean; readonly failFast?: boolean }): string {\n  return requireObjectCodec(${JSON.stringify(node.codecId)}).stringify(value as never, options);\n}\n`;
   } else {
@@ -1526,6 +1545,8 @@ function emitEncodeValue(descriptor: ModelTypeDescriptor, expression: string, ct
     if (node) return nestedToWireCall(node.id, expression, ctx);
     return emitEncodedRecord(descriptor, expression, ctx);
   }
+  // An intersection with a member that is no object is written as it is, without the program state of a model instance.
+  if (descriptor.kind === 'intersection') return `withoutInstanceState(${expression})`;
   return expression;
 }
 
@@ -1557,10 +1578,11 @@ function emitEncodedRecord(
     }
     return [name, `(${local} = ${read}, ${value.replaceAll(read, local)})`] as const;
   });
-  // A schema for the other names: they are kept and encoded by it. An open object writes its listed names only.
+  // A schema for the other names: they are kept and encoded by it. Without one, a declared `additionalProperties: true`
+  // keeps them as they are. Any other object writes its listed names only.
   const additional = typeof descriptor.additionalProperties === 'object' ? descriptor.additionalProperties : undefined;
-  const extras = additional
-    ? [`...Object.fromEntries(Object.entries(${asRecord(expression)}).filter(([key, extra]) => extra !== undefined && !${JSON.stringify(fields.map(([name]) => name))}.includes(key)).map(([key, extra]) => [key, ${emitEncodeValue(additional, 'extra', ctx)}]))`]
+  const extras = additional || descriptor.additionalPropertiesDeclared
+    ? [`...Object.fromEntries(Object.entries(${asRecord(expression)}).filter(([key, extra]) => extra !== undefined && !${JSON.stringify(fields.map(([name]) => name))}.includes(key))${additional ? `.map(([key, extra]) => [key, ${emitEncodeValue(additional, 'extra', ctx)}])` : ''})`]
     : [];
   const record = `{ ${[...extras, ...values.map(([name, value]) => value.startsWith('...')
     ? value
@@ -1673,7 +1695,12 @@ function emitNodeRuntime(
     hoisted: { prefix: node.id, names: new Map(), sources: [] },
     fillThrows: moduleCtx.fillThrows ?? new Map(),
   };
-  const stringifySrc = emitStringifyFunction(node, ctx.graph, ctx.serde, { ...ctx, withoutOptions: true });
+  // The validated call of a codec whose wire and model schemas agree runs this function after its check, so it keeps the
+  // all-required fast path and a call with validation off runs a lenient copy. Any other call is lenient.
+  const checkedCore = validationEnabled && node.sameSchema;
+  const stringifySrc = emitStringifyFunction(node, ctx.graph, ctx.serde, { ...ctx, withoutOptions: true, lenientRoot: !checkedCore });
+  const lenientSource = checkedCore ? emitStringifyFunction(node, ctx.graph, ctx.serde, { ...ctx, withoutOptions: true, lenientRoot: true }) : stringifySrc;
+  const lenientStringify = lenientSource === stringifySrc ? '' : lenientSource.replace(`function ${stringifyFunctionName(node.id)}(`, `function ${stringifyFunctionName(node.id)}Lenient(`);
   const stringifyName = stringifyFunctionName(node.id);
   const fillName = fillFunctionName(node.id);
   const fromWire = fromWireFunctionName(node.id);
@@ -1712,6 +1739,7 @@ function emitNodeRuntime(
 
   const wrappedStringify = [
     stringifySrc.replace(`function ${stringifyName}(`, `function ${stringifyName}Core(`),
+    lenientStringify,
     wireStringifySrc,
     `${exported}function ${stringifyName}(value: ${modelType}, options?: ${SERDE_OPTIONS}): string {`,
     emitSerdeValidates(validationEnabled),
@@ -1724,10 +1752,12 @@ function emitNodeRuntime(
         // The full model check already ran; check only the JSON encoding produced.
         ...(node.wireOnlyJsonSchema !== undefined ? [`    ${wireOnlyAssertName(node)}(wire, options);`] : []),
         `    return ${stringifyName}Wire(wire as never);`,
-      ] : []),
+      ] : lenientStringify ? [`    return ${stringifyName}Core(value as never);`] : []),
       '  }',
     ] : []),
-    `  return ${stringifyName}Core(value as never);`,
+    lenientStringify
+      ? `  return (options as Record<symbol, unknown> | undefined)?.[${CHECKED_KEY}] === true ? ${stringifyName}Core(value as never) : ${stringifyName}Lenient(value as never);`
+      : `  return ${stringifyName}Core(value as never);`,
     '}',
     '',
   ].join('\n');
@@ -1951,6 +1981,7 @@ export function emitCodecRuntime(
     wireStringifyIds: new Set(nodes.filter((node) => !isExternalCodecNode(node) && validates(node) && !node.sameSchema).map((node) => node.id)),
     // emitNodeRuntime emits stringify<Id>Core and toWireFormat<Id>Core for every node that is not external.
     localCoreIds: new Set(nodes.filter((node) => !isExternalCodecNode(node)).map((node) => node.id)),
+    strictCoreIds: new Set(nodes.filter((node) => !isExternalCodecNode(node) && validates(node) && node.sameSchema).map((node) => node.id)),
     trustedOptions: TRUSTED_CONSTANT,
     siblingWireCodecIds: options.siblingWireCodecIds,
     exportWireStringify: options.exportWireStringify,
@@ -1974,13 +2005,19 @@ export function emitCodecRuntime(
     const runtime = emitNodeRuntime(node, ctx, validates(node));
     if (runtime) lines.push(runtime);
   }
-  const runtime = lines.join('\n');
-  // One frozen object serves every nested call that passes trusted options to another module's function.
-  return runtime.includes(TRUSTED_CONSTANT)
-    ? `const ${TRUSTED_CONSTANT} = Object.freeze({ validate: false });\n\n${runtime}`
-    : runtime;
+  return withModuleConstants(lines.join('\n'));
+}
+
+/** One frozen object of each kind serves every nested call that passes options to another module's function. */
+function withModuleConstants(runtime: string): string {
+  const constants = [
+    ...(runtime.includes(TRUSTED_CONSTANT) ? [`const ${TRUSTED_CONSTANT} = Object.freeze({ validate: false });`] : []),
+    ...(runtime.includes(CHECKED_KEY) || runtime.includes(CHECKED_CONSTANT) ? [`const ${CHECKED_KEY} = Symbol.for('@exprtlabs/golem:checked');`] : []),
+    ...(runtime.includes(CHECKED_CONSTANT) ? [`const ${CHECKED_CONSTANT} = Object.freeze({ validate: false, [${CHECKED_KEY}]: true });`] : []),
+  ];
+  return constants.length ? `${constants.join('\n')}\n\n${runtime}` : runtime;
 }
 
 export function emitCodecRegistration(node: SchemaNode, graph: SchemaGraph): string {
-  return emitNodeRuntime(node, { graph, serde: undefined, issueSource: 'TypeScript' }, true);
+  return withModuleConstants(emitNodeRuntime(node, { graph, serde: undefined, issueSource: 'TypeScript' }, true));
 }

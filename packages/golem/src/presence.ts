@@ -33,6 +33,17 @@ export function instanceFields(value: object): readonly string[] | undefined {
 }
 
 /**
+ * `value` as data to write: the value itself, or, for a golem model instance, a copy with the own keys that its model
+ * declares. An own key outside them is program state, which no codec writes.
+ */
+export function withoutInstanceState<Value>(value: Value): Value {
+  if (value === null || typeof value !== 'object') return value;
+  const declared = instanceFields(value);
+  if (declared === undefined) return value;
+  return Object.fromEntries(Object.entries(value).filter(([key]) => declared.includes(key))) as Value;
+}
+
+/**
  * Source text of `instanceFields(value)`: the names that the own model of a golem model instance declares, or
  * `undefined` when the value holds no program state. The nearest prototype that owns a field entry decides, also when
  * the entry is `null` (a model that allows additional keys has no program state). A plain value, or a model of an older
