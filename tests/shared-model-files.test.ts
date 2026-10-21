@@ -166,7 +166,7 @@ function sharedFolder(t: TestContext): string {
 }
 
 test('two apps with different profiles each write the companion of a shared alias in their own models.output, and the shared folder keeps only its author files', (t: TestContext) => {
-  // protects: P-12 done checks 1 and 2: a shared alias works in two apps, each app owns its companion
+  // protects: P-12 done checks 1 and 3: a shared alias works in two apps, each app owns its companion
   const outer = sharedFolder(t);
   const web = appWithShared(outer, 'web', true, { 'src/order.model.ts': SHARED_ORDER('../../shared/customer.model.js'), 'src/customer.ts': SHARED_CUSTOMER_BASE });
   const worker = appWithShared(outer, 'worker', false, { 'src/order.model.ts': SHARED_ORDER('../../shared/customer.model.js'), 'src/customer.ts': SHARED_CUSTOMER_BASE });
@@ -213,7 +213,7 @@ test('an app with no model file of its own generates the companion of the shared
 });
 
 test('two shared model files with one companion path stop generation with an error that names both', (t: TestContext) => {
-  // protects: P-12 done check 3: a companion path clash is an error
+  // protects: P-12 done check 5: a companion path clash is an error
   const outer = sharedFolder(t);
   for (const folder of ['one', 'two']) {
     writeModelSources(path.join(outer, folder), { 'package.json': JSON.stringify({ name: '@acme/twin', private: true }), 'twin.model.ts': PLAIN_ORDER });
@@ -238,7 +238,7 @@ test('an alias in an installed package generates like a shared-folder alias, and
 
 for (const preserveSymlinks of [false, true]) {
   test(`a shared file reached through a folder link has one codec key, and the rewrite finds its codec id and companion (preserveSymlinks ${preserveSymlinks})`, (t: TestContext) => {
-    // protects: P-12 done check 6: the writer and the reader of the codec key use one real path; preserveSymlinks names the declaration by the link
+    // protects: P-12 done check 1: the writer and the reader of the codec key use one real path; preserveSymlinks names the declaration by the link
     const outer = sharedFolder(t);
     const app = appWithShared(outer, 'web', false, {
       'src/order.model.ts': SHARED_ORDER('./linked/customer.model.js'),

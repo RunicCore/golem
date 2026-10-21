@@ -436,9 +436,9 @@ export function generate(context: GolemModelContext): GolemModelResult {
   const ownCandidates = candidates.filter((source) => isOwnModelFile(boundary, source));
   const nested = nestedModelsJobs(boundary.root, canonicalPath(normalized.directory), ownCandidates, normalized.onInput);
   if (nested.length > 0) {
-    throw new Error(`RUNM1077: ${nested.join(', ')} declares a models job below the models root ${boundary.root}, where the models job of ${join(normalized.directory, 'golem.yaml')} already generates the same model files. Two jobs would write one generated file. Remove the models job from ${nested.length === 1 ? 'it' : 'each'}, or move the folder out of the models root.`);
+    throw new Error(`RUNM1077: ${nested.join(', ')} ${nested.length === 1 ? 'declares' : 'declare'} a models job below the models root ${boundary.root}, where the models job of ${join(normalized.directory, 'golem.yaml')} already generates the same model files. Two jobs would write one generated file. Remove the models job from ${nested.length === 1 ? 'it' : 'each'}, or move the folder out of the models root.`);
   }
-  const sharedModelFiles = programModelFiles.filter((source) => !isOwnModelFile(boundary, source) && isModelSource(source));
+  const sharedModelFiles = programModelFiles.filter((source) => !isOwnModelFile(boundary, source));
   // A job with no model file of its own still generates the shared models its program holds.
   if (ownCandidates.length === 0 && sharedModelFiles.length === 0) {
     return emptyResult(programInfo, program, normalized.root);

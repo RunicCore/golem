@@ -545,7 +545,7 @@ export function projectWatchInputs(
 ): string[] {
   const inputs = new Set<string>([
     // An installed package's model file is no watch input: a new install needs a new `golem generate`.
-    ...sources.filter((source) => !canonicalFilename(source).split(sep).includes('node_modules')),
+    ...sources.filter((source) => !canonicalPath(source).split(sep).includes('node_modules')),
     ...manifestPaths,
     ...(info.configPath ? [info.configPath] : []),
     ...info.projectFiles,
