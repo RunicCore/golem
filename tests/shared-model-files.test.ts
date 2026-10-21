@@ -384,30 +384,31 @@ for (const [variant, entry] of [
   });
 }
 
-test('a model of an installed package with a require and an import types condition generates from the file the real resolver picks for a CommonJS app', async (t: TestContext) => {
-  // protects: T-217 both TypeScript lanes pick the require types condition for a CommonJS importer
-  const outer = createFixtureProject(t, 'golem-shared-require-');
-  linkProjectPackages(outer, { '@exprtlabs/golem': path.join(workspace, 'packages/golem') });
-  const declaration = "import type { IModel } from '@exprtlabs/golem/model';\nexport type TCustomer = IModel<{ name: string }>;\n";
-  writeModelSources(path.join(outer, 'node_modules/@acme/shared'), {
-    'package.json': JSON.stringify({ name: '@acme/shared', version: '1.0.0', exports: { './customer.model': { types: { import: './dist/esm/customer.model.d.ts', require: './dist/cjs/customer.model.d.ts' } } } }),
-    'dist/esm/package.json': '{"type":"module"}',
-    'dist/esm/customer.model.d.ts': declaration,
-    'dist/cjs/customer.model.d.ts': declaration,
-  });
-  const app = appWithShared(outer, 'lib', false, {
-    'package.json': JSON.stringify({ name: 'lib', private: true }),
-    'tsconfig.json': JSON.stringify({ compilerOptions: { strict: true, target: 'ES2022', module: 'NodeNext', moduleResolution: 'NodeNext', skipLibCheck: true, noEmit: true }, include: ['src/**/*.ts'] }),
-    'src/order.model.ts': SHARED_ORDER('@acme/shared/customer.model'),
-  });
+for (const [importer, appType, resolved] of [['a CommonJS app', undefined, 'cjs'], ['an ES module app', 'module', 'esm']] as const) {
+  test(`a model of an installed package with a require and an import types condition generates from the file the real resolver picks for ${importer}`, async (t: TestContext) => {
+    // protects: T-217 T-222 both TypeScript lanes pick the types condition of the importer's format
+    const outer = createFixtureProject(t, 'golem-shared-require-');
+    linkProjectPackages(outer, { '@exprtlabs/golem': path.join(workspace, 'packages/golem') });
+    const declaration = "import type { IModel } from '@exprtlabs/golem/model';\nexport type TCustomer = IModel<{ name: string }>;\n";
+    writeModelSources(path.join(outer, 'node_modules/@acme/shared'), {
+      'package.json': JSON.stringify({ name: '@acme/shared', version: '1.0.0', exports: { './customer.model': { types: { import: './dist/esm/customer.model.d.ts', require: './dist/cjs/customer.model.d.ts' } } } }),
+      'dist/esm/package.json': '{"type":"module"}',
+      'dist/esm/customer.model.d.ts': declaration,
+      'dist/cjs/customer.model.d.ts': declaration,
+    });
+    const app = appWithShared(outer, 'lib', false, {
+      'package.json': JSON.stringify({ name: 'lib', private: true, type: appType }),
+      'src/order.model.ts': SHARED_ORDER('@acme/shared/customer.model'),
+    }, ['src/**/*.ts']);
 
-  const { artifacts } = generate({ root: app, profile: PROFILE });
-  writeGeneratedArtifacts(artifacts);
+    const { artifacts } = generate({ root: app, profile: PROFILE });
+    writeGeneratedArtifacts(artifacts);
 
-  const order = artifacts.find((artifact) => artifact.path === path.join(app, 'src/order.model.generated.ts'));
-  assert.match(order?.content ?? '', /from "\.\/generated\/models\/@acme\/shared\/dist\/cjs\/customer\.model\.generated\.js";/);
-  await command(app, process.execPath, [TSC, '-p', 'tsconfig.json', '--noEmit']);
-});
+    const order = artifacts.find((artifact) => artifact.path === path.join(app, 'src/order.model.generated.ts'));
+    assert.match(order?.content ?? '', new RegExp(`from "\\./generated/models/@acme/shared/dist/${resolved}/customer\\.model\\.generated\\.js";`));
+    await command(app, process.execPath, [TSC, '-p', 'tsconfig.json', '--noEmit']);
+  });
+}
 
 test('a generated .d.ts beside the .model.d.ts file of an installed package gives one warning that names it, and the app writes its own companion', (t: TestContext) => {
   // protects: D-34 warn about a companion in an installed package, no hard reject

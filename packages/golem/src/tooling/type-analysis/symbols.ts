@@ -121,8 +121,8 @@ export function modelSpecificationForClass(
         if (!ts.isImportSpecifier(alias)) continue;
         const statement = alias.parent.parent.parent;
         if (!ts.isImportDeclaration(statement) || !ts.isStringLiteralLike(statement.moduleSpecifier)) continue;
-        const importer = statement.getSourceFile().fileName;
-        const resolved = ts.resolveModuleName(statement.moduleSpecifier.text, importer, compilerOptions, host).resolvedModule?.resolvedFileName;
+        const importer = statement.getSourceFile();
+        const resolved = ts.resolveModuleName(statement.moduleSpecifier.text, importer.fileName, compilerOptions, host, importer.impliedNodeFormat).resolvedModule?.resolvedFileName;
         const specification = resolved && match(resolved, (alias.propertyName ?? alias.name).text);
         if (specification) return specification;
       }

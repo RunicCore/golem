@@ -55,6 +55,8 @@ export interface SourceFile extends Node {
   readonly fileName: string;
   readonly text: string;
   readonly isDeclarationFile: boolean;
+  /** The module format the program gives the file under Node16 and NodeNext resolution: CommonJS or ESNext. Undefined when the file has none. */
+  readonly impliedNodeFormat?: ModuleKind | undefined;
   readonly statements: readonly Node[];
   getLineAndCharacterOfPosition(position: number): { readonly line: number; readonly character: number };
 }
@@ -628,7 +630,8 @@ export interface TypeScriptBackend {
   getDecorators(node: Node): readonly Decorator[] | undefined;
   getModifiers(node: Node): readonly Node[] | undefined;
   getPreEmitDiagnostics(program: Program): readonly Diagnostic[];
-  resolveModuleName(moduleName: string, containingFile: string, compilerOptions: CompilerOptions, host: ModuleResolutionHost): { resolvedModule?: ResolvedModule };
+  /** `resolutionMode` is the `impliedNodeFormat` of the importing source file; without it, Node16 and NodeNext resolution matches the `require` conditions. */
+  resolveModuleName(moduleName: string, containingFile: string, compilerOptions: CompilerOptions, host: ModuleResolutionHost, resolutionMode?: ModuleKind): { resolvedModule?: ResolvedModule };
   /** TypeScript 7 names a type parameter's default `defaultType`; TypeScript 6 names it `default`. */
   typeParameterDefault(parameter: TypeParameterDeclaration): TypeNode | undefined;
   /** The generic target of a type reference (e.g. the tuple target of a tuple type). */

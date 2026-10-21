@@ -303,7 +303,7 @@ export function projectFilesImportedBy(file: ts.SourceFile, compilerOptions: ts.
   for (const statement of file.statements) {
     const specifier = ts.isImportDeclaration(statement) || ts.isExportDeclaration(statement) ? statement.moduleSpecifier : undefined;
     if (specifier === undefined || !ts.isStringLiteralLike(specifier)) continue;
-    const resolved = ts.resolveModuleName(specifier.text, file.fileName, compilerOptions, ts.sys).resolvedModule?.resolvedFileName;
+    const resolved = ts.resolveModuleName(specifier.text, file.fileName, compilerOptions, ts.sys, file.impliedNodeFormat).resolvedModule?.resolvedFileName;
     if (resolved === undefined) continue;
     if ((isAmbientDeclaration(resolved) || /(?:^|[\\/])node_modules[\\/]/.test(resolved)) && !isModelFile.test(resolved)) continue;
     found.add(canonicalFilename(resolved));

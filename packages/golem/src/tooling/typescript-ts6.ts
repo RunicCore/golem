@@ -135,7 +135,7 @@ interface ParsedConfigHost {
 
 // Names that this module implements itself; every other seam name is the classic API's own member.
 type Implemented = 'ProgramSession' | 'CheckFlags' | 'sys' | 'createCompilerHost' | 'createProgramFromSources'
-  | 'formatDiagnosticsWithColorAndContext' | 'getPreEmitDiagnostics' | 'typeParameterDefault' | 'typeReferenceTarget';
+  | 'formatDiagnosticsWithColorAndContext' | 'getPreEmitDiagnostics' | 'resolveModuleName' | 'typeParameterDefault' | 'typeReferenceTarget';
 
 interface ClassicTypeScript extends Omit<Golem.TypeScriptBackend, Implemented | 'ObjectFlags' | 'SignatureKind'> {
   readonly SignatureKind: Golem.TypeScriptBackend['SignatureKind'] & { readonly Construct: Golem.SignatureKind };
@@ -158,6 +158,15 @@ interface ClassicTypeScript extends Omit<Golem.TypeScriptBackend, Implemented | 
     host: ParsedConfigHost,
   ): { readonly options: Golem.CompilerOptions; readonly fileNames: string[] } | undefined;
   getPreEmitDiagnostics(program: ClassicProgram): readonly ClassicDiagnostic[];
+  resolveModuleName(
+    moduleName: string,
+    containingFile: string,
+    compilerOptions: Golem.CompilerOptions,
+    host: Golem.ModuleResolutionHost,
+    cache?: undefined,
+    redirectedReference?: undefined,
+    resolutionMode?: Golem.ModuleKind,
+  ): { resolvedModule?: Golem.ResolvedModule };
   flattenDiagnosticMessageText(message: string | ClassicMessageChain | undefined, newLine: string): string;
 }
 
@@ -268,9 +277,19 @@ export const {
   isVariableDeclaration,
   isVariableDeclarationList,
   isVariableStatement,
-  resolveModuleName,
   sys,
 } = classic;
+
+/** The classic resolver takes the mode after its cache and redirect arguments. */
+export function resolveModuleName(
+  moduleName: string,
+  containingFile: string,
+  compilerOptions: Golem.CompilerOptions,
+  host: Golem.ModuleResolutionHost,
+  resolutionMode?: Golem.ModuleKind,
+): { resolvedModule?: Golem.ResolvedModule } {
+  return classic.resolveModuleName(moduleName, containingFile, compilerOptions, host, undefined, undefined, resolutionMode);
+}
 
 /** TypeScript 7 names a type parameter's default `defaultType`; TypeScript 6 names it `default`. */
 export function typeParameterDefault(parameter: Golem.TypeParameterDeclaration): Golem.TypeNode | undefined {
