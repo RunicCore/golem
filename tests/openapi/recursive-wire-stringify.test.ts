@@ -1,5 +1,5 @@
 import { createFixtureProject } from '../fixture-project.js';
-import { compileGeneratedSdk, generateMaterializedSdk, requireRecord } from './helpers.js';
+import { compileGeneratedSdk, generateMaterializedSdk, readGeneratedModelSource, requireRecord } from './helpers.js';
 import assert from 'node:assert/strict';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -43,6 +43,8 @@ test('a model with a date writes a recursive model or oneOf of another module, w
   const output = path.join(createFixtureProject(t, 'golem-openapi-recursive-wire-'), 'sdk');
   await generateMaterializedSdk(document, { output, name: 'RecursiveWire', profile: { mobx: false, validation: true } });
   compileGeneratedSdk(output, [], { strict: true, skipLibCheck: true, noUnusedLocals: true });
+  // Only a recursive model's wire stringify is exported: Report is not recursive.
+  assert.doesNotMatch(readGeneratedModelSource(output), /export \{ stringifyReport\w*Wire as /);
   const models = requireRecord(await import(pathToFileURL(path.join(output, 'dist/index.js')).href), 'generated models');
   const stringifyReport = models.stringifyReport as (value: unknown) => string;
   const parseReport = models.parseReport as (text: string) => unknown;

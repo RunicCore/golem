@@ -10,6 +10,7 @@ import {
   fillFunctionName,
   presentKeysSource,
   pruneGeneratedImports,
+  reachesItself,
   reachesRecursiveNode,
   wireStringifyExportName,
   type CodecRuntimeOptions,
@@ -1549,9 +1550,10 @@ function reachableSchemaNodes(
   return result;
 }
 
-/** Whether a model's group module exports the wire stringify of the model, for a group that writes a recursive model under it. */
-function exportsWireStringify(node: SchemaNode, profile: OpenApiGenerationProfile): boolean {
-  return profile.validation && node.kind !== 'reference' && !node.sameSchema && node.validationEnabled !== false;
+/** Whether a model's group module exports its wire stringify: another group writes a recursive model under it in place and meets it again. */
+function exportsWireStringify(graph: SchemaGraph, node: SchemaNode, profile: OpenApiGenerationProfile): boolean {
+  return profile.validation && node.kind !== 'reference' && !node.sameSchema && node.validationEnabled !== false
+    && reachesItself(graph, node);
 }
 
 function generatedFunctionName(nodeId: string, functionName: 'stringify' | 'fill' | 'fromWire' | 'toWire'): string {
@@ -1692,7 +1694,7 @@ export function generateOpenApiModelArtifacts(
         addImport(codecModule, generatedFunctionName(node.id, functionName));
       }
       if (node.kind === 'object') addImport(codecModule, generatedFunctionName(node.id, 'fill'));
-      if (exportsWireStringify(node, profile)) addImport(codecModule, wireStringifyExportName(node.codecId));
+      if (exportsWireStringify(schemaGraph, node, profile)) addImport(codecModule, wireStringifyExportName(node.codecId));
       const modelName = analysis.definitionNameByNodeId.get(nodeId);
       if (node.emitClass && modelName !== undefined) {
         const modelModule = `./${modelName}.js`;
@@ -2119,10 +2121,10 @@ export function generateModels(
     ...(helpers.fastCheckExports ? { fastCheckName: (id: string) => helpers.fastCheckExports?.get(id) } : {}),
     ...(helpers.resolvedSchemas ? { resolvedSchemasExpr: 'modelSchemas' } : {}),
     issueSource: 'OpenAPI',
-    exportWireStringify: true,
+    exportWireStringify: (node) => exportsWireStringify(analysis.schemaGraph, node, profile),
     siblingWireCodecIds: new Set([...(helpers.dependencyNodeIds ?? [])].flatMap((id) => {
       const node = analysis.nodesById.get(id);
-      return node && exportsWireStringify(node, profile) ? [node.codecId] : [];
+      return node && exportsWireStringify(analysis.schemaGraph, node, profile) ? [node.codecId] : [];
     })),
     wireType: (node) => {
       const modelName = analysis.definitionNameByNodeId.get(node.id);

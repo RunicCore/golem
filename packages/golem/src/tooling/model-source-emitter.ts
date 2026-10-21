@@ -6,6 +6,7 @@ export {
   fillFunctionName,
   fromWireFunctionName,
   parseFunctionName,
+  reachesItself,
   reachesRecursiveNode,
   stringifyFunctionName,
   wireStringifyExportName,

@@ -76,8 +76,8 @@ export interface CodecRuntimeOptions {
   readonly siblingWireCodecIds?: ReadonlySet<string>;
   /** Whether a sibling codec's model is recursive, by codec id. A sibling the job does not know is treated as recursive. */
   readonly siblingRecursion?: ReadonlyMap<string, boolean>;
-  /** Export the wire stringify of every public codec (`wireStringifyExportName`), for other generated modules to import. */
-  readonly exportWireStringify?: boolean;
+  /** Export the wire stringify of every public codec, or of those the function accepts (`wireStringifyExportName`), for other generated modules to import. */
+  readonly exportWireStringify?: boolean | ((node: SchemaNode) => boolean);
   /** Export anonymous codecs' functions: OpenAPI group modules import them from each other. Model companions keep them private. */
   readonly exportAnonymousCodecs?: boolean;
   /** Codecs whose functions stay module-private, such as a model job's derived projections. */
@@ -106,7 +106,7 @@ interface EmitCtx {
   readonly siblingWireCodecIds?: ReadonlySet<string>;
   /** Whether a sibling codec's model is recursive, by codec id. A sibling the job does not know is treated as recursive. */
   readonly siblingRecursion?: ReadonlyMap<string, boolean>;
-  readonly exportWireStringify?: boolean;
+  readonly exportWireStringify?: boolean | ((node: SchemaNode) => boolean);
   readonly exportAnonymousCodecs?: boolean;
   readonly privateCodec?: (node: SchemaNode) => boolean;
   /** Nodes being inlined into the current wire stringify, to reject unbounded expansion. */
@@ -920,6 +920,12 @@ function reachesRecursion(descriptor: ModelTypeDescriptor, ctx: Pick<EmitCtx, 'g
 export function reachesRecursiveNode(graph: SchemaGraph, node: SchemaNode, siblingRecursion?: ReadonlyMap<string, boolean>): boolean {
   return node.descriptor.kind !== 'reference' && node.descriptor.kind !== 'generated-model'
     && reachesRecursion(node.descriptor, { graph, siblingRecursion });
+}
+
+/** Whether the model `node` reaches itself, so another module that writes it in place meets it again. */
+export function reachesItself(graph: SchemaGraph, node: SchemaNode): boolean {
+  return node.descriptor.kind !== 'reference' && node.descriptor.kind !== 'generated-model'
+    && reachesNode(node.descriptor, node.id, { graph });
 }
 
 /**
@@ -1816,7 +1822,7 @@ function emitNodeRuntime(
     : emitEncodeValue(node.descriptor, '(value as never)', encodedWireContext);
   const wireStringifySrc = emitsValidatedWire
     ? `${emitStringifyFunction(node, ctx.graph, ctx.serde, { ...ctx, wireIdentity: true, withoutOptions: true })
-      .replace(`function ${stringifyName}(`, `function ${stringifyName}Wire(`)}${ctx.exportWireStringify === true && exported !== ''
+      .replace(`function ${stringifyName}(`, `function ${stringifyName}Wire(`)}${exported !== '' && (typeof ctx.exportWireStringify === 'function' ? ctx.exportWireStringify(node) : ctx.exportWireStringify === true)
       ? `export { ${stringifyName}Wire as ${wireStringifyExportName(node.codecId)} };\n`
       : ''}`
     : '';
