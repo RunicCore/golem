@@ -65,6 +65,7 @@ export interface Identifier extends Expression {
 }
 export interface QualifiedName extends Node {
   readonly kind: KindOf<'QualifiedName'>;
+  readonly left: EntityName;
   readonly right: Identifier;
 }
 export interface StringLiteral extends Expression {

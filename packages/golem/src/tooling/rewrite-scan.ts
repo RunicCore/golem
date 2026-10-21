@@ -465,11 +465,9 @@ function constructTarget(
   return local;
 }
 
-/** The identifiers of a name, left to right. The compiler shim types a qualified name's `right` only, so the left part is its first child. */
+/** The identifiers of a name, left to right. */
 function entityNameSegments(name: ts.EntityName): ts.Identifier[] {
-  if (ts.isIdentifier(name)) return [name];
-  const left = ts.forEachChild(name, (child) => child) as ts.EntityName;
-  return [...entityNameSegments(left), name.right];
+  return ts.isIdentifier(name) ? [name] : [...entityNameSegments(name.left), name.right];
 }
 
 /** The module of a type-only `import type * as ns from '…'` that binds the namespace; undefined for any other binding. */
