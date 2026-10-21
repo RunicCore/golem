@@ -386,7 +386,9 @@ Pass one `ModelValidationContext` to repeated serde, `validateInstance` and `Mod
 
 Types: `AllowGetterOptions`, `ObjectCodec`, `ObjectCodecImpl`, `SerdeOptions`, `ValidateOptions`, `ValidationPlane`, `WireFormat`; `IssueRepresentation` and `IssueSource` are re-exported from [`errors`](#errors).
 
-Used by generated code: `createObjectCodec`, `registerObjectCodec`, `getObjectCodec`, `requireObjectCodec`, `registerIModelClass`, `getIModelClass`, `requireIModelClass`, `findCodecIdForConstructor`, `resolveGeneratedModelSchemaRefs`, `resolveModelValidationContextValidator`, `assertModelValue`, `isValidModelValue`, `parseJson`, `serdeValidates`, `serdeFailFast`, `validationFailure`, `validationUnavailable` and the `stringifyJson*` writers.
+Used by generated code: `createObjectCodec`, `registerObjectCodec`, `getObjectCodec`, `requireObjectCodec`, `registerIModelClass`, `getIModelClass`, `requireIModelClass`, `findCodecIdForConstructor`, `resolveModelValidationContextValidator`, `assertModelValue`, `isValidModelValue`, `parseJson`, `serdeValidates`, `validationUnavailable` and the `stringifyJson*` writers.
+
+Also exported: `validationFailure(issues)` throws `LibError` `Validation` with the issues. `serdeFailFast(options)` returns `false` only when `failFast` is `false`. `resolveGeneratedModelSchemaRefs(schema, plane)` replaces the model `$ref` placeholders in a schema with registered schema ids.
 
 ## `@exprtlabs/golem/nest` {#nest}
 
