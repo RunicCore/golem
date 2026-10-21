@@ -996,7 +996,8 @@ export function descriptorBuilder(
         if (context.dto && isMethod) continue;
         const valueType = propertyType(checker, property, context.declaration);
         // A member the source type lacks makes the checker's picked type `unknown`; the field is not typed unknown, so `allowAny` is no fix.
-        if (absentFromSource && !fromModel && !context.schemaData && (valueType.flags & ts.TypeFlags.Unknown) !== 0 && !(context.allowAny ?? allowAny)) {
+        // A string index signature holds the member, and then the field is really typed by it.
+        if (absentFromSource && !fromModel && !checker.getIndexTypeOfType(sourceObject!, ts.IndexKind.String) && !context.schemaData && (valueType.flags & ts.TypeFlags.Unknown) !== 0 && !(context.allowAny ?? allowAny)) {
           throw diagnostic(
             context.sourceFile,
             node ?? context.declaration,

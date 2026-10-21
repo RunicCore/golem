@@ -164,6 +164,20 @@ export type TPayload = IModel<{ view: Pick<Source, '${key}'> }>;
   assert.throws(() => generate({ root, sources: [source], profile: profile() }), /RUNM1011.*contains unknown.*allowAny/);
 });
 
+test('a pick of a key an index signature holds is a field typed unknown, so allowAny is advised', (t: TestContext) => {
+  // protects: T-212 RUNM1011 for a Pick from an index-signature type, not RUNM1058 (found in T-211)
+  const { root, source } = modelProject(t);
+  fs.writeFileSync(source, `import type { IModel } from '@exprtlabs/golem/model';
+type Source = { [key: string]: unknown };
+export type TPayload = IModel<{ view: Pick<Source, 'b'> }>;
+`);
+  assert.throws(() => generate({ root, sources: [source], profile: profile() }), (error: unknown) => {
+    assert.match(String(error), /RUNM1011.*contains unknown.*allowAny/);
+    assert.doesNotMatch(String(error), /RUNM1058/);
+    return true;
+  });
+});
+
 test('a tag argument typed unknown passes by default, and a tag argument typed any is still rejected', (t: TestContext) => {
   const { root, source } = modelProject(t);
   const tagged = (argument: string): string => tsSource`import type { IModel } from '@exprtlabs/golem/model';
