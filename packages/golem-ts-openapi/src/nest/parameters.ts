@@ -21,17 +21,47 @@ import {
   typeExpressionFromApiOption,
   typeReference,
 } from './analysis-utils.js';
-import { evaluateStaticValue, isStaticArray } from '../evaluation/static-value.js';
-import { decoratorOptions, readString, type MetadataReader } from './metadata.js';
+import { evaluateStaticValue, isStaticArray, unwrapExpression } from '../evaluation/static-value.js';
+import { decoratorOptions, objectOptions, readString, type DecoratorOptions, type MetadataReader } from './metadata.js';
 import { NEST_COMMON, NEST_SWAGGER, callArguments, decoratorsOf, staticObject } from './symbols.js';
 import type { ControllerParameter, DecoratorInfo, NestAnalysisContext, TypeReference } from './types.js';
 
 /** `@nestjs/swagger` parameter decorators and the location each documents. */
-const SWAGGER_PARAMETER_LOCATIONS: readonly (readonly [string, 'query' | 'path' | 'header'])[] = [
-  ['ApiQuery', 'query'],
-  ['ApiParam', 'path'],
-  ['ApiHeader', 'header'],
+const SWAGGER_PARAMETER_LOCATIONS: readonly (readonly [readonly string[], 'query' | 'path' | 'header'])[] = [
+  [['ApiQuery'], 'query'],
+  [['ApiParam'], 'path'],
+  [['ApiHeader', 'ApiHeaders'], 'header'],
 ];
+
+interface ParameterOptions {
+  readonly decorator: DecoratorInfo;
+  readonly options: DecoratorOptions;
+}
+
+/**
+ * The options of each parameter that the decorators document. `@ApiHeaders([...])`
+ * is a list of `@ApiHeader` options, so each entry is one parameter.
+ */
+function parameterOptionsOf(
+  reader: MetadataReader,
+  decorators: readonly DecoratorInfo[],
+  names: readonly string[],
+): readonly ParameterOptions[] {
+  return hasAnyDecorator(decorators, names, NEST_SWAGGER).flatMap((decorator): readonly ParameterOptions[] => {
+    if (decorator.name !== 'ApiHeaders') return [{ decorator, options: decoratorOptions(reader, decorator) }];
+    const list = callArguments(decorator)[0];
+    const array = list && unwrapExpression(list);
+    if (!array || !ts.isArrayLiteralExpression(array)) {
+      throw new TsToOpenApiError(diagnostic(
+        decorator.decorator.getSourceFile(),
+        list ?? decorator.decorator,
+        TsToOpenApiDiagnosticCode.UnsupportedSchemaMetadata,
+        '@ApiHeaders() must be passed an array literal of header options.',
+      ));
+    }
+    return array.elements.map(element => ({ decorator, options: objectOptions(reader, element, '@ApiHeaders') }));
+  });
+}
 
 /**
  * The key of a parameter override: OpenAPI identifies a parameter by name and
@@ -54,7 +84,7 @@ export function classParameterDecorators(
   controllerClass: ts.ClassLikeDeclaration,
 ): readonly DecoratorInfo[] {
   const headers = classHierarchyBaseToDerived(checker, controllerClass)
-    .flatMap(declaration => hasAnyDecorator(decoratorsOf(checker, declaration), ['ApiHeader'], NEST_SWAGGER));
+    .flatMap(declaration => hasAnyDecorator(decoratorsOf(checker, declaration), ['ApiHeader', 'ApiHeaders'], NEST_SWAGGER));
   const declaring = method.parent;
   const own = ts.isClassLike(declaring)
     ? hasAnyDecorator(decoratorsOf(checker, declaring), ['ApiQuery', 'ApiParam'], NEST_SWAGGER)
@@ -67,11 +97,10 @@ export function parseParameterOverride(
   decorators: readonly DecoratorInfo[],
 ): Readonly<Record<string, Readonly<Record<string, unknown>>>> {
   const result: Record<string, Readonly<Record<string, unknown>>> = {};
-  const declared = SWAGGER_PARAMETER_LOCATIONS.flatMap(([decoratorName, location]) => (
-    hasAnyDecorator(decorators, [decoratorName], NEST_SWAGGER).map(decorator => [decorator, location] as const)
+  const declared = SWAGGER_PARAMETER_LOCATIONS.flatMap(([names, location]) => (
+    parameterOptionsOf(reader, decorators, names).map(entry => [entry, location] as const)
   ));
-  for (const [decorator, location] of declared) {
-    const options = decoratorOptions(reader, decorator);
+  for (const [{ decorator, options }, location] of declared) {
     const name = options.string('name');
     if (!name) continue;
     const typed = typeExpressionFromApiOption(reader.checker, options.expression('type'));
@@ -329,11 +358,11 @@ export function parseParameters(
   const classDecorators = classParameterDecorators(context.checker, method, controllerClass);
   // `@nestjs/swagger` puts class-level headers before the route's own parameters.
   const classHeaders: ControllerParameter[] = [];
-  for (const [decoratorName, location] of SWAGGER_PARAMETER_LOCATIONS) {
-    const inherited = [...hasAnyDecorator(classDecorators, [decoratorName], NEST_SWAGGER)].reverse();
+  for (const [decoratorNames, location] of SWAGGER_PARAMETER_LOCATIONS) {
+    const inherited = [...parameterOptionsOf(context, classDecorators, decoratorNames)].reverse();
     // A method's declaration wins over its class's, and a derived class's over its base's.
-    for (const decorator of [...hasAnyDecorator(methodDecorators, [decoratorName], NEST_SWAGGER), ...inherited]) {
-      const options = decoratorOptions(context, decorator);
+    for (const entry of [...parameterOptionsOf(context, methodDecorators, decoratorNames), ...inherited]) {
+      const { options } = entry;
       const name = options.string('name');
       if (!name || [...parameters, ...classHeaders].some(parameter => parameter.name === name
         && parameterOverrideKey(String(parameter.location), name) === parameterOverrideKey(location, name))) continue;
@@ -344,7 +373,7 @@ export function parseParameters(
         type: context.checker.getStringType(),
         sourceFile: method.getSourceFile(),
       } satisfies TypeReference;
-      (location === 'header' && inherited.includes(decorator) ? classHeaders : parameters).push({
+      (location === 'header' && inherited.includes(entry) ? classHeaders : parameters).push({
         node: method,
         type,
         location,

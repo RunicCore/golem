@@ -251,7 +251,7 @@ function inlineKey(name: ts.PropertyName): string | undefined {
 }
 
 /** Read an options object argument; `code` classifies a non-object argument. */
-function objectOptions(
+export function objectOptions(
   reader: MetadataReader,
   argument: ts.Expression | undefined,
   label: string,
