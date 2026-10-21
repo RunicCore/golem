@@ -922,6 +922,8 @@ export function analyzeSourceGraph(
       const projection = describe.projections.get(name);
       if (!projection || projections.has(name)) continue;
       projections.set(name, projection);
+      // A projection can reach a class (`Pick<TOrder, 'customer'>`), so its models count as siblings before they are asked for.
+      descriptorReferences(projection, classModels, true);
       collectReferences(projection, owner, byName, emitted, pending);
       collectProjections(projection, owner);
     }
