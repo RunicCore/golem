@@ -649,7 +649,8 @@ export function descriptorBuilder(
       node ?? context.declaration,
       '1003',
       `Recursive alias ${alias}${context.field === undefined ? '' : ` in field "${context.field}"`} of ${context.name} must resolve to an object model. `
-        + 'Give the recursive shape a named model.',
+        + 'Golem supports recursion only through an IObject or IModel, so change the shape to pass through one, '
+        + 'for example type TNode = IObject<{ value: string; children: TNode[] }>.',
     );
   };
 

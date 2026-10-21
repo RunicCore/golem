@@ -347,6 +347,6 @@ for (const [label, profile] of profiles) {
     const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-recursive-alias-', linkTypescript: true });
     writeModelSources(sourceRoot, nonObjectAliasSources);
     writeModelGolemYaml(root, profile);
-    await assert.rejects(buildModelProject(root), /RUNM1003: Recursive alias TItem in field "item" of TShelf must resolve to an object model/);
+    await assert.rejects(buildModelProject(root), /RUNM1003: Recursive alias TItem in field "item" of TShelf must resolve to an object model\. Golem supports recursion only through an IObject or IModel, so change the shape to pass through one, for example type TNode = IObject<\{ value: string; children: TNode\[\] \}>\./);
   });
 }
