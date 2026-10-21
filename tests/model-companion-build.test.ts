@@ -70,3 +70,58 @@ test('golem build rewrites nested model serde calls and preserves class construc
   assert.deepEqual({ ...wired }, { title: 'wire', value: 8 });
   assert.ok(wired instanceof loaded.Item);
 });
+
+test('a field typed with an app class from its own file builds, parses and writes that class, and a second build writes the same files', async t => {
+  // protects: T-205 a model field typed with a class that extends a generated base generates
+  const { root, sourceRoot } = companionModelProject(t, 'model-class-field');
+  const imodel = "import type { IModel } from '@exprtlabs/golem/model';\n";
+  writeModelSources(sourceRoot, {
+    'customer.model.ts': `${imodel}export type TCustomer = IModel<{ name: string }>;\n`,
+    'customer.ts': "import { TCustomerBaseModel } from './customer.model.generated.js';\nexport class Customer extends TCustomerBaseModel {}\n",
+    'order.model.ts': `${imodel}import type { Customer } from './customer.js';\nexport type TOrder = IModel<{ id: string; customer: Customer }>;\n`,
+    'use.ts': "import { parse, stringify } from '@exprtlabs/golem/serde';\nimport type { TOrder } from './order.model.js';\nexport { Customer } from './customer.js';\nexport const order = parse<TOrder>('{\"id\":\"o1\",\"customer\":{\"name\":\"Ada\"}}');\nexport const text = stringify<TOrder>(order);\n",
+  });
+  writeModelGolemYaml(root, { mobx: false, validation: true });
+  await buildModelProject(root);
+  const firstFiles = generatedModelFiles(root);
+  const loaded = await import(pathToFileURL(path.join(root, 'build/use.js')).href) as { Customer: new () => object; order: { customer: object }; text: string };
+  assert.ok(loaded.order.customer instanceof loaded.Customer);
+  assert.equal(loaded.text, '{"id":"o1","customer":{"name":"Ada"}}');
+  await buildModelProject(root);
+  assert.deepEqual(generatedModelFiles(root), firstFiles);
+});
+
+test('a class field that a projection reaches builds: a model that picks it from another model parses that class', async t => {
+  // protects: T-205 final review: a class field reached only through a projection (Pick of a model) generates
+  const { root, sourceRoot } = companionModelProject(t, 'model-class-projection');
+  const imodel = "import type { IModel, IObject } from '@exprtlabs/golem/model';\n";
+  writeModelSources(sourceRoot, {
+    'customer.model.ts': `${imodel}export type TCustomer = IModel<{ name: string }>;\n`,
+    'customer.ts': "import { TCustomerBaseModel } from './customer.model.generated.js';\nexport class Customer extends TCustomerBaseModel {}\n",
+    'order.model.ts': `${imodel}import type { Customer } from './customer.js';\nexport type TOrder = IModel<{ id: string; customer: Customer }>;\n`,
+    'invoice.model.ts': `${imodel}import type { TOrder } from './order.model.js';\nexport type TInvoice = IObject<{ order: Pick<TOrder, 'customer'> }>;\n`,
+    'use.ts': "import { parse } from '@exprtlabs/golem/serde';\nimport type { TInvoice } from './invoice.model.js';\nexport { Customer } from './customer.js';\nexport const invoice = parse<TInvoice>('{\"order\":{\"customer\":{\"name\":\"Ada\"}}}');\n",
+  });
+  writeModelGolemYaml(root, { mobx: false, validation: true });
+  await buildModelProject(root);
+  const loaded = await import(pathToFileURL(path.join(root, 'build/use.js')).href) as { Customer: new () => object; invoice: { order: { customer: object } } };
+  assert.ok(loaded.invoice.order.customer instanceof loaded.Customer);
+});
+
+test('two models that name each other through their app classes build, and each parse gives the class of the other', async t => {
+  // protects: T-205 final review: two models that reach each other through app classes are siblings of each other and still generate
+  const { root, sourceRoot } = companionModelProject(t, 'model-class-cycle');
+  const imodel = "import type { IModel } from '@exprtlabs/golem/model';\n";
+  writeModelSources(sourceRoot, {
+    'customer.model.ts': `${imodel}import type { Order } from './order.js';\nexport type TCustomer = IModel<{ name: string; orders: Order[] }>;\n`,
+    'customer.ts': "import { TCustomerBaseModel } from './customer.model.generated.js';\nexport class Customer extends TCustomerBaseModel {}\n",
+    'order.model.ts': `${imodel}import type { Customer } from './customer.js';\nexport type TOrder = IModel<{ id: string; customer: Customer }>;\n`,
+    'order.ts': "import { TOrderBaseModel } from './order.model.generated.js';\nexport class Order extends TOrderBaseModel {}\n",
+    'use.ts': "import { parse } from '@exprtlabs/golem/serde';\nimport type { TCustomer } from './customer.model.js';\nimport type { TOrder } from './order.model.js';\nexport { Customer } from './customer.js';\nexport { Order } from './order.js';\nexport const customer = parse<TCustomer>('{\"name\":\"Ada\",\"orders\":[{\"id\":\"o1\",\"customer\":{\"name\":\"Ada\",\"orders\":[]}}]}');\nexport const order = parse<TOrder>('{\"id\":\"o1\",\"customer\":{\"name\":\"Ada\",\"orders\":[]}}');\n",
+  });
+  writeModelGolemYaml(root, { mobx: false, validation: true });
+  await buildModelProject(root);
+  const loaded = await import(pathToFileURL(path.join(root, 'build/use.js')).href) as { Customer: new () => object; Order: new () => object; customer: { orders: object[] }; order: { customer: object } };
+  assert.ok(loaded.customer.orders[0] instanceof loaded.Order);
+  assert.ok(loaded.order.customer instanceof loaded.Customer);
+});

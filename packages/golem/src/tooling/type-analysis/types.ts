@@ -671,7 +671,7 @@ export function descriptorBuilder(
       return withMetadata({ kind: 'class-value', ...classValueReference(checker, type, context, node ?? context.declaration, stableIdentityRoot, companionOf(context.sourceFile.fileName)) } as ModelConversionDescriptor, metadata);
     }
 
-    const provenance = fieldProvenance(checker, node ?? provenanceNode ?? analysis.baseNode, specifications);
+    const provenance = fieldProvenance(checker, node ?? provenanceNode ?? analysis.baseNode, specifications, manifestIndex.byProvenance);
     if (provenance.anonymous) {
       const alias = declaredModelAlias(provenance.anonymous);
       const foreign = alias ? foreignModelReason(alias, boundary) : undefined;
@@ -715,7 +715,14 @@ export function descriptorBuilder(
         ...(classMatch ? { construct: true as const, ...(type.getSymbol()?.getName() ? { className: type.getSymbol()!.getName() } : {}) } : {}),
       }, metadata);
     }
-    const externalModel = manifestIndex.externalModelForType(type);
+    // An SDK interface names its model by its type; an SDK IObject alias names it by the alias the field's type node reaches,
+    // and the reference whose type equals this type (a variant of `Money | null`, not the union) is the one that counts.
+    const aliased = (type.flags & (ts.TypeFlags.Any | ts.TypeFlags.Unknown | ts.TypeFlags.Never)) !== 0 ? [] : provenance.externals.filter(({ type: reached }) =>
+      checker.isTypeAssignableTo(type, reached) && checker.isTypeAssignableTo(reached, type));
+    if (new Set(aliased.map(({ model }) => model.id)).size > 1) {
+      throw diagnostic(context.sourceFile, node ?? context.declaration, '1054', 'Model identity is ambiguous after type composition. Use an explicit named model reference.');
+    }
+    const externalModel = aliased[0]?.model ?? manifestIndex.externalModelForType(type);
     if (externalModel) return withMetadata({ kind: 'generated-model', id: externalModel.id }, metadata);
     if (type.flags & ts.TypeFlags.Any) {
       if (!allowUnresolved && isErrorAny(type)) throw diagnostic(context.sourceFile, node ?? context.declaration, '1058', 'A contract type could not be resolved. Fix its declaration or import before generating OpenAPI.');
