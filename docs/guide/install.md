@@ -42,7 +42,7 @@ The generators declare the compiler as a peer dependency, so npm installs one co
 
 `golem build` compiles your project the way `tsc -p` does and rewrites `parse<T>()` on the way. `golem generate` writes the generated code that your editor and bundler need.
 
-`parse<T>`, `stringify<T>`, `fromWireFormat<T>` and `toWireFormat<T>` are rewritten at build time to call the generated conversion. `tsc` doesn't do that, so an untransformed call throws at runtime. Build with one of these hosts:
+`parse<T>`, `stringify<T>`, `fromWireFormat<T>`, `toWireFormat<T>`, `validate<T>` and `assertValue<T>` are rewritten at build time to call the generated conversion. `tsc` doesn't do that, so an untransformed call throws at runtime. Build with one of these hosts:
 
 - [`golem build`](/reference/cli#build) generates first, checks your sources and emits JavaScript with the calls rewritten. It replaces `tsc -p`, and a fresh clone builds with this one command.
 - The [Vite](/reference/runtime-api#vite) and [esbuild](/reference/runtime-api#esbuild) plugins rewrite the calls inside your bundler.

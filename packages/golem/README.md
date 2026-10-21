@@ -13,7 +13,7 @@ Use npm with Node.js 22.15 or newer:
 npm install @exprtlabs/golem@rc
 ```
 
-`parse<T>`, `stringify<T>`, `fromWireFormat<T>` and `toWireFormat<T>` need a
+`parse<T>`, `stringify<T>`, `fromWireFormat<T>`, `toWireFormat<T>`, `validate<T>` and `assertValue<T>` need a
 host that rewrites them: `golem build`, the `@exprtlabs/golem/vite` or
 `@exprtlabs/golem/esbuild` plugin, or the Node loader
 (`node --import @exprtlabs/golem/register`). `golem build` compiles your
