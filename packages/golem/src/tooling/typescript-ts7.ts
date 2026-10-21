@@ -918,8 +918,35 @@ function resolveImportMap(
   }
 }
 
-/** The file the `exports` map of the nearest `node_modules/<package>` names for the subpath, by the conditions of type-analysis (`types`, `import`, `node`, `default`), as the real resolver reads it. */
-function resolveExportsMap(moduleName: string, containingFile: string, host: ModuleResolutionHost): string | undefined {
+/**
+ * Whether the real resolver matches `require` for an import in `containingFile`, not `import`: under Node16 and NodeNext
+ * resolution, a `.cts` or `.cjs` file does, and so does a `.ts`, `.js` or `.d.ts` file whose nearest package.json
+ * does not say `"type": "module"`. Any other resolution (bundler) matches `import`.
+ */
+function importsWithRequire(containingFile: string, compilerOptions: CompilerOptions, host: ModuleResolutionHost): boolean {
+  const nodeModule = ([ModuleKind.Node16, ModuleKind.Node18, ModuleKind.Node20, ModuleKind.NodeNext] as readonly (number | undefined)[]).includes(compilerOptions.module);
+  const resolution = (compilerOptions.moduleResolution as number | undefined) ?? (nodeModule ? ModuleResolutionKind.NodeNext : ModuleResolutionKind.Bundler);
+  if (resolution !== ModuleResolutionKind.Node16 && resolution !== ModuleResolutionKind.NodeNext) return false;
+  if (/\.(d\.)?m(ts|js)$/.test(containingFile)) return false;
+  if (/\.(d\.)?c(ts|js)$/.test(containingFile)) return true;
+  let current = dirname(containingFile);
+  for (;;) {
+    const manifest = join(current, 'package.json');
+    if (host.fileExists(manifest)) {
+      try {
+        return (JSON.parse(host.readFile(manifest) ?? '{}') as { type?: unknown } | null)?.type !== 'module';
+      } catch {
+        return true;
+      }
+    }
+    const parent = dirname(current);
+    if (parent === current) return true;
+    current = parent;
+  }
+}
+
+/** The file the `exports` map of the nearest `node_modules/<package>` names for the subpath, as the real resolver reads it for `containingFile`: `types` first, then `require` or `import`, `node`, and `default`, in the order of the map. */
+function resolveExportsMap(moduleName: string, containingFile: string, compilerOptions: CompilerOptions, host: ModuleResolutionHost): string | undefined {
   const segments = moduleName.split('/');
   const nameLength = moduleName.startsWith('@') ? 2 : 1;
   const packageName = segments.slice(0, nameLength).join('/');
@@ -935,7 +962,7 @@ function resolveExportsMap(moduleName: string, containingFile: string, host: Mod
       } catch {
         return undefined;
       }
-      const target = exportsField === undefined ? undefined : resolveExportsSubpath(exportsField, subpath);
+      const target = exportsField === undefined ? undefined : resolveExportsSubpath(exportsField, subpath, importsWithRequire(containingFile, compilerOptions, host) ? 'require' : 'import');
       return target ? firstExisting(host, sourceCandidates(join(packageRoot, target))) : undefined;
     }
     const parent = dirname(current);
@@ -944,12 +971,12 @@ function resolveExportsMap(moduleName: string, containingFile: string, host: Mod
   }
 }
 
-function resolvePackage(moduleName: string, containingFile: string, host: ModuleResolutionHost): string | undefined {
+function resolvePackage(moduleName: string, containingFile: string, compilerOptions: CompilerOptions, host: ModuleResolutionHost): string | undefined {
   if (moduleName.startsWith('#')) {
     const mapped = resolveImportMap(moduleName, containingFile, host);
     if (mapped) return mapped;
   }
-  const exported = resolveExportsMap(moduleName, containingFile, host);
+  const exported = resolveExportsMap(moduleName, containingFile, compilerOptions, host);
   if (exported) return exported;
   try {
     const require = createRequire(containingFile);
@@ -982,7 +1009,7 @@ export function resolveModuleName(
   const resolved = resolveTsconfigPaths(moduleName, containingFile, compilerOptions, host)
     ?? (moduleName.startsWith('.') || isAbsolute(moduleName)
       ? resolveRelative(moduleName, containingFile, host)
-      : resolvePackage(moduleName, containingFile, host));
+      : resolvePackage(moduleName, containingFile, compilerOptions, host));
   if (!resolved) return {};
   const isExternalLibraryImport = resolved.replace(/\\/g, '/').includes('/node_modules/');
   return {

@@ -43,14 +43,16 @@ function nearestManifest(file: string): PackageManifest | undefined {
 }
 
 /** Conditions a generated TypeScript file matches under Node's ESM rules, besides `default`. */
-const CONDITIONS: ReadonlySet<string> = new Set(['types', 'import', 'node', 'default']);
+const IMPORT_CONDITIONS: ReadonlySet<string> = new Set(['types', 'import', 'node', 'default']);
+/** Conditions a CommonJS file matches under Node16 and NodeNext resolution. */
+const REQUIRE_CONDITIONS: ReadonlySet<string> = new Set(['types', 'require', 'node', 'default']);
 
 /**
  * The file one exports target names for a subpath, after Node's target rules: the first matching condition (in
  * object order) decides, the first resolvable array item wins, and `null` excludes. `undefined` means no target
  * applies. `capture` fills each `*` of a pattern target.
  */
-function resolveTarget(target: unknown, capture: string | undefined): string | null | undefined {
+function resolveTarget(target: unknown, capture: string | undefined, conditions: ReadonlySet<string>): string | null | undefined {
   if (target === null) return null;
   if (typeof target === 'string') {
     if (!target.startsWith('./')) return undefined;
@@ -59,7 +61,7 @@ function resolveTarget(target: unknown, capture: string | undefined): string | n
   if (Array.isArray(target)) {
     let excluded: null | undefined;
     for (const item of target) {
-      const resolved = resolveTarget(item, capture);
+      const resolved = resolveTarget(item, capture, conditions);
       if (resolved === null) excluded = null;
       else if (resolved !== undefined) return resolved;
     }
@@ -67,8 +69,8 @@ function resolveTarget(target: unknown, capture: string | undefined): string | n
   }
   if (target && typeof target === 'object') {
     for (const [condition, value] of Object.entries(target)) {
-      if (!CONDITIONS.has(condition)) continue;
-      const resolved = resolveTarget(value, capture);
+      if (!conditions.has(condition)) continue;
+      const resolved = resolveTarget(value, capture, conditions);
       if (resolved !== undefined) return resolved;
     }
   }
@@ -76,8 +78,8 @@ function resolveTarget(target: unknown, capture: string | undefined): string | n
 }
 
 /** Node's PACKAGE_EXPORTS_RESOLVE for one subpath: an exact key, else the pattern key with the longest prefix. */
-function resolveSubpath(map: Readonly<Record<string, unknown>>, subpath: string): string | null | undefined {
-  if (Object.hasOwn(map, subpath) && !subpath.includes('*')) return resolveTarget(map[subpath], undefined);
+function resolveSubpath(map: Readonly<Record<string, unknown>>, subpath: string, conditions: ReadonlySet<string> = IMPORT_CONDITIONS): string | null | undefined {
+  if (Object.hasOwn(map, subpath) && !subpath.includes('*')) return resolveTarget(map[subpath], undefined, conditions);
   let best: { readonly key: string; readonly base: string; readonly capture: string } | undefined;
   for (const key of Object.keys(map)) {
     const star = key.indexOf('*');
@@ -88,7 +90,7 @@ function resolveSubpath(map: Readonly<Record<string, unknown>>, subpath: string)
     if (best && (best.base.length > base.length || (best.base.length === base.length && best.key.length >= key.length))) continue;
     best = { key, base, capture: subpath.slice(base.length, subpath.length - trailer.length) };
   }
-  return best ? resolveTarget(map[best.key], best.capture) : undefined;
+  return best ? resolveTarget(map[best.key], best.capture, conditions) : undefined;
 }
 
 /** The exports field as a map of subpath keys: a string, an array or a condition object with no `.` key is the entry of `.`. */
@@ -99,9 +101,9 @@ function subpathMap(exportsField: unknown): Record<string, unknown> {
     : (exportsField as Record<string, unknown> | undefined) ?? {};
 }
 
-/** The `./`-relative file that the `exports` field of a package names for `subpath` (`.` or `./x`): `null` when excluded, `undefined` when no entry applies. */
-export function resolveExportsSubpath(exportsField: unknown, subpath: string): string | null | undefined {
-  return resolveSubpath(subpathMap(exportsField), subpath);
+/** The `./`-relative file that the `exports` field of a package names for `subpath` (`.` or `./x`) when a file of format `importer` imports it: `null` when excluded, `undefined` when no entry applies. */
+export function resolveExportsSubpath(exportsField: unknown, subpath: string, importer: 'import' | 'require' = 'import'): string | null | undefined {
+  return resolveSubpath(subpathMap(exportsField), subpath, importer === 'require' ? REQUIRE_CONDITIONS : IMPORT_CONDITIONS);
 }
 
 /** Every string target in one exports entry, whatever condition holds it, in object order. */
