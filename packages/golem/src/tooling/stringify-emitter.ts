@@ -477,11 +477,10 @@ function emitObjectInline(
 ): string {
   const required = new Set(descriptor.required);
   const properties = Object.entries(descriptor.properties);
-  if (properties.length === 0) {
-    if (descriptor.additionalProperties === false) return "'{}'";
-    return `stringifyJsonScalar(${expression} as never)`;
-  }
-  if (typeof descriptor.additionalProperties === 'object' || descriptor.additionalPropertiesDeclared) {
+  const hasExtras = typeof descriptor.additionalProperties === 'object' || descriptor.additionalPropertiesDeclared;
+  // An object with no declared field writes `{}`, unless it declares its other names as data.
+  if (properties.length === 0 && !hasExtras) return "'{}'";
+  if (hasExtras) {
     // The other names are data: the encoded record keeps them, and a wire value is already encoded.
     return `stringifyJsonScalar(${ctx.wireIdentity ? expression : emitEncodedRecord(descriptor, expression, ctx)} as never)`;
   }
@@ -511,15 +510,12 @@ function emitObjectStringify(
 ): string {
   const required = new Set(descriptor.required);
   const properties = Object.entries(descriptor.properties);
-  if (properties.length === 0) {
-    if (descriptor.additionalProperties === false) {
-      return `function ${fn}(${stringifyParameters('_value: Record<string, unknown>', ctx)}): string {\n  return '{}';\n}\n`;
-    }
-    return `function ${fn}(${stringifyParameters('value: Record<string, unknown>', ctx)}): string {\n  return stringifyJsonScalar(value as never);\n}\n`;
-  }
   const additional = typeof descriptor.additionalProperties === 'object'
     ? descriptor.additionalProperties
     : descriptor.additionalPropertiesDeclared ? { kind: 'unknown' as const } : undefined;
+  if (properties.length === 0 && !additional) {
+    return `function ${fn}(${stringifyParameters('_value: Record<string, unknown>', ctx)}): string {\n  return '{}';\n}\n`;
+  }
   if (!additional && properties.every(([name]) => required.has(name))) {
     const concatenated = emitRequiredObjectConcat(properties, 'value', ctx);
     return [
@@ -567,7 +563,7 @@ function emitObjectStringify(
     // `additionalProperties: true` makes them data of unknown type.
     lines.push(
       '  for (const key of Object.keys(value)) {',
-      `    if (${JSON.stringify(properties.map(([name]) => name))}.includes(key)) continue;`,
+      ...(properties.length === 0 ? [] : [`    if (${JSON.stringify(properties.map(([name]) => name))}.includes(key)) continue;`]),
       '    const __golemExtra = value[key];',
       '    if (__golemExtra === undefined) continue;',
       '    if (sep) out += ",";',
@@ -1556,10 +1552,6 @@ function emitEncodedRecord(
   ctx: EmitCtx,
 ): string {
   const fields = Object.entries(descriptor.properties);
-  if (fields.length === 0) {
-    if (descriptor.additionalProperties !== false) return `{ ...${asRecord(expression)} }`;
-    return expression;
-  }
   const required = new Set(descriptor.required);
   const values = fields.map(([name, property], index) => {
     const read = access(expression, name);
@@ -1582,11 +1574,12 @@ function emitEncodedRecord(
   // keeps them as they are. Any other object writes its listed names only.
   const additional = typeof descriptor.additionalProperties === 'object' ? descriptor.additionalProperties : undefined;
   const extras = additional || descriptor.additionalPropertiesDeclared
-    ? [`...Object.fromEntries(Object.entries(${asRecord(expression)}).filter(([key, extra]) => extra !== undefined && !${JSON.stringify(fields.map(([name]) => name))}.includes(key))${additional ? `.map(([key, extra]) => [key, ${emitEncodeValue(additional, 'extra', ctx)}])` : ''})`]
+    ? [`...Object.fromEntries(Object.entries(${asRecord(expression)}).filter(([key, extra]) => extra !== undefined${fields.length === 0 ? '' : ` && !${JSON.stringify(fields.map(([name]) => name))}.includes(key)`})${additional ? `.map(([key, extra]) => [key, ${emitEncodeValue(additional, 'extra', ctx)}])` : ''})`]
     : [];
-  const record = `{ ${[...extras, ...values.map(([name, value]) => value.startsWith('...')
+  const entries = [...extras, ...values.map(([name, value]) => value.startsWith('...')
     ? value
-    : `[${JSON.stringify(name)}]: ${value}`)].join(', ')} }`;
+    : `[${JSON.stringify(name)}]: ${value}`)];
+  const record = entries.length === 0 ? '{}' : `{ ${entries.join(', ')} }`;
   // Inline nested records can receive a getter expression from their parent.
   // Bind that object only when its expression would otherwise be evaluated
   // more than once; ordinary top-level `value`/`record` paths stay direct.

@@ -37,6 +37,10 @@ const document = {
       Holder: { type: 'object', required: ['base'], properties: { base: ref('Base') } },
       Tree: { type: 'object', required: ['label'], properties: { label: { type: 'string' }, child: ref('Tree') } },
       Open: { type: 'object', additionalProperties: true, required: ['id'], properties: { id: { type: 'string' } } },
+      // Objects that declare no field: closed, open only by default, and open by an explicit additionalProperties true.
+      EmptyClosed: { type: 'object', additionalProperties: false },
+      EmptyDefault: { type: 'object', properties: {} },
+      EmptyOpen: { type: 'object', additionalProperties: true },
       Bag: { type: 'object', additionalProperties: { type: 'string' }, required: ['id'], properties: { id: { type: 'string' } } },
     },
   },
@@ -169,3 +173,23 @@ test('options a user passes with a checked key still take the lenient path', asy
   const stringifyItem = models.stringifyItem as (value: unknown, options?: object) => string;
   assert.equal(stringifyItem({ serverId: 's' }, { validate: false, checked: true }), '{"serverId":"s"}', 'the missing name is left out');
 });
+
+const programState = () => ({ cache: new Map<string, string>(), hits: 3 });
+
+for (const [name, root, keeps] of [['closed', 'EmptyClosed', false], ['open only by default', 'EmptyDefault', false], ['open by an explicit additionalProperties true', 'EmptyOpen', true]] as const) {
+  test(`an object with no declared field and ${name} writes the same in stringify and toWireFormat`, async () => {
+    // protects: bug T-158 toWireFormat of a model with no declared field returned the instance with its program state; stringify wrote {}
+    const { output, models } = await validatedSdk();
+    const Model = models[`${root}Model`] as Model;
+    const codec = requireObjectCodec(generatedCodecIdFromRoot(output, root));
+    // An instance of a model with an explicit additionalProperties true has no program state: its own keys are data.
+    const state = Object.assign(new Model({}), keeps ? { extra: 'x' } : programState());
+    const wire = codec.toWireFormat(state);
+    assert.deepEqual(wire, keeps ? { extra: 'x' } : {}, 'program state is never written');
+    assert.notEqual(wire, state, 'the wire value is not the instance');
+    assert.equal(codec.stringify(state), keeps ? '{"extra":"x"}' : '{}');
+    const plain = { extra: 'x' };
+    assert.deepEqual(codec.toWireFormat(plain), keeps ? { extra: 'x' } : {}, 'a plain value');
+    assert.equal(codec.stringify(plain), keeps ? '{"extra":"x"}' : '{}', 'a plain value');
+  });
+}
